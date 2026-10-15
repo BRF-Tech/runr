@@ -80,7 +80,7 @@ async function run() {
 
 <template>
   <div class="space-y-3" data-testid="playground" :data-kind="kind">
-    <p v-if="!ready" class="text-xs text-amber-300/90 bg-amber-900/20 rounded px-3 py-2">{{ t('ai.playground.notReady') }}</p>
+    <p v-if="!ready" class="text-xs text-amber-300/90 bg-amber-900/20 rounded-sm px-3 py-2">{{ t('ai.playground.notReady') }}</p>
     <p class="text-[11px] text-gray-400">{{ t(`ai.playground.kinds.${kind}`) }}</p>
 
     <!-- Chat -->
@@ -165,7 +165,7 @@ async function run() {
         <p class="text-[11px] text-gray-400 font-mono break-all">[{{ result.preview.join(', ') }}, …]</p>
       </template>
       <img v-else-if="result.type === 'image'" :src="result.value" alt="" class="max-w-full rounded-md border border-gray-800" data-testid="pg-image" />
-      <pre v-else class="text-xs text-gray-200 whitespace-pre-wrap break-words max-h-80 overflow-y-auto font-mono">{{ result.value }}</pre>
+      <pre v-else class="text-xs text-gray-200 whitespace-pre-wrap wrap-break-word max-h-80 overflow-y-auto font-mono">{{ result.value }}</pre>
     </div>
   </div>
 </template>

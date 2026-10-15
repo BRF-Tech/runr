@@ -30,7 +30,7 @@ function override() {
 
 <template>
   <div class="fixed inset-0 z-50 flex items-center justify-center p-4" data-policy-block>
-    <div class="absolute inset-0 bg-black/70 backdrop-blur-sm" @click="emit('close')" />
+    <div class="absolute inset-0 bg-black/70 backdrop-blur-xs" @click="emit('close')" />
     <div class="relative card w-full max-w-lg space-y-4">
       <div class="flex items-center justify-between">
         <h2 class="text-base font-semibold flex items-center gap-2" :class="pending ? 'text-sky-300' : 'text-red-300'">

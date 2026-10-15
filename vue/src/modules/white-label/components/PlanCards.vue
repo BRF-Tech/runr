@@ -54,7 +54,7 @@ function enabledFeatures(plan) {
         <div>
           <div class="flex items-center justify-between gap-2">
             <h4 class="text-sm font-semibold text-gray-100">{{ plan.name }}</h4>
-            <span v-if="currentId === plan.id" class="px-1.5 py-0.5 rounded text-[10px] border bg-emerald-900/40 border-emerald-800/40 text-emerald-400">
+            <span v-if="currentId === plan.id" class="px-1.5 py-0.5 rounded-sm text-[10px] border bg-emerald-900/40 border-emerald-800/40 text-emerald-400">
               {{ t('whiteLabel.plans.current') }}
             </span>
           </div>

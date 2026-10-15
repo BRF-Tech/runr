@@ -172,18 +172,18 @@ onMounted(() => {
           <tr v-for="row in tenants" :key="rowKey(row)" :data-quota-row="rowKey(row)" class="border-b border-gray-800/60 last:border-0">
             <td class="px-3 py-2">
               <span class="text-gray-200">{{ row.tenant ? row.tenant.name : t('sandboxes.settings.quotas.defaults') }}</span>
-              <span v-if="row.tenant && row.custom" class="ml-1 px-1.5 py-0.5 rounded border border-sky-800/50 bg-sky-950/40 text-[10px] text-sky-400">{{ t('sandboxes.settings.quotas.custom') }}</span>
+              <span v-if="row.tenant && row.custom" class="ml-1 px-1.5 py-0.5 rounded-sm border border-sky-800/50 bg-sky-950/40 text-[10px] text-sky-400">{{ t('sandboxes.settings.quotas.custom') }}</span>
             </td>
             <td v-for="l in LIMITS" :key="l.key" class="px-2 py-2">
-              <input v-model.number="forms[rowKey(row)][l.key]" class="input font-mono !h-8 !w-24 text-xs" type="number" min="0" :name="l.key" />
+              <input v-model.number="forms[rowKey(row)][l.key]" class="input font-mono h-8! w-24! text-xs" type="number" min="0" :name="l.key" />
               <p class="text-[10px] font-mono text-gray-500 mt-0.5">{{ row.usage?.[l.usage] ?? 0 }}</p>
             </td>
             <td class="px-2 py-2">
-              <input v-model="forms[rowKey(row)].allowed_classes" class="input font-mono !h-8 !w-36 text-xs" type="text" name="allowed_classes" :placeholder="t('sandboxes.settings.quotas.allowedClassesHint')" />
+              <input v-model="forms[rowKey(row)].allowed_classes" class="input font-mono h-8! w-36! text-xs" type="text" name="allowed_classes" :placeholder="t('sandboxes.settings.quotas.allowedClassesHint')" />
             </td>
             <td class="px-3 py-2 whitespace-nowrap text-right">
-              <button class="btn-primary !px-2.5 !py-1 text-xs" :disabled="saving[rowKey(row)]" data-action="save-quota" @click="save(row)">{{ t('sandboxes.actions.save') }}</button>
-              <button v-if="row.tenant && row.custom" class="btn-secondary !px-2.5 !py-1 text-xs ml-1" data-action="reset-quota" @click="reset(row)">{{ t('sandboxes.actions.reset') }}</button>
+              <button class="btn-primary px-2.5! py-1! text-xs" :disabled="saving[rowKey(row)]" data-action="save-quota" @click="save(row)">{{ t('sandboxes.actions.save') }}</button>
+              <button v-if="row.tenant && row.custom" class="btn-secondary px-2.5! py-1! text-xs ml-1" data-action="reset-quota" @click="reset(row)">{{ t('sandboxes.actions.reset') }}</button>
             </td>
           </tr>
         </tbody>

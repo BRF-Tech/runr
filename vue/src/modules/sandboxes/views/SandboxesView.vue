@@ -179,7 +179,7 @@ const emptyText = computed(() => status.value === 'active' && !regionId.value ? 
           <select
             v-model="regionId"
             data-filter="region"
-            class="h-9 bg-gray-900 border border-gray-800 rounded-md px-2 text-sm text-gray-100 focus:outline-none focus:border-gray-600"
+            class="h-9 bg-gray-900 border border-gray-800 rounded-md px-2 text-sm text-gray-100 focus:outline-hidden focus:border-gray-600"
             :title="t('sandboxes.filters.region')"
           >
             <option value="">{{ t('sandboxes.filters.allRegions') }}</option>
@@ -245,17 +245,17 @@ const emptyText = computed(() => status.value === 'active' && !regionId.value ? 
               <td class="px-4 py-2.5">
                 <button class="font-mono text-xs text-gray-200 hover:text-brand-500" :title="s.id" @click="openDetail(s)">{{ shortId(s.id) }}</button>
                 <div v-if="metadataChips(s).length" class="flex flex-wrap gap-1 mt-1">
-                  <span v-for="chip in metadataChips(s)" :key="chip" class="px-1.5 py-0.5 rounded border border-gray-700/60 bg-gray-800/50 text-[10px] font-mono text-gray-400">{{ chip }}</span>
+                  <span v-for="chip in metadataChips(s)" :key="chip" class="px-1.5 py-0.5 rounded-sm border border-gray-700/60 bg-gray-800/50 text-[10px] font-mono text-gray-400">{{ chip }}</span>
                 </div>
               </td>
               <td class="px-4 py-2.5 font-mono text-xs text-gray-300">
                 {{ runtimeLabel(s) }}
-                <span v-if="s.from_pool" class="ml-1 inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded border border-emerald-800/50 bg-emerald-950/30 text-[10px] text-emerald-400" :title="t('sandboxes.fromPoolHint', { ms: s.start_ms ?? '—' })">
+                <span v-if="s.from_pool" class="ml-1 inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-sm border border-emerald-800/50 bg-emerald-950/30 text-[10px] text-emerald-400" :title="t('sandboxes.fromPoolHint', { ms: s.start_ms ?? '—' })">
                   <Zap class="w-2.5 h-2.5" />{{ t('sandboxes.fromPool') }}
                 </span>
               </td>
               <td class="px-4 py-2.5">
-                <span class="px-1.5 py-0.5 rounded border text-[11px] font-mono" :class="ISOLATION_STYLES[s.isolation] ?? ISOLATION_STYLES.runc" :title="s.sandbox_class">
+                <span class="px-1.5 py-0.5 rounded-sm border text-[11px] font-mono" :class="ISOLATION_STYLES[s.isolation] ?? ISOLATION_STYLES.runc" :title="s.sandbox_class">
                   {{ s.sandbox_class || s.isolation || '—' }}
                 </span>
               </td>

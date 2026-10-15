@@ -190,7 +190,7 @@ async function resendInvitation(inv) {
 }
 
 const roleBadges = { owner: 'bg-violet-900/40 border-violet-800/40 text-violet-400', admin: 'bg-emerald-900/40 border-emerald-800/40 text-emerald-400', member: 'bg-blue-900/40 border-blue-800/40 text-blue-400', developer: 'bg-blue-900/40 border-blue-800/40 text-blue-400' }
-const roleBadgeClass = (role) => `px-1.5 py-0.5 rounded text-[10px] font-medium border ${roleBadges[role] ?? 'bg-gray-800/40 border-gray-700/40 text-gray-400'}`
+const roleBadgeClass = (role) => `px-1.5 py-0.5 rounded-sm text-[10px] font-medium border ${roleBadges[role] ?? 'bg-gray-800/40 border-gray-700/40 text-gray-400'}`
 const initials = (user) => (user.name || user.email || '?').split(' ').map(w => w[0]).slice(0, 2).join('').toUpperCase()
 const submitLabel = () => formSaving.value ? t('common.saving') : searchResult.value && !searchResult.value.found ? t('tenancy.sendInvitation') : t('tenancy.addUser')
 const canSubmit = () => !!form.value.email.trim() && !searchResult.value?.already_member && !searchResult.value?.pending_invitation
@@ -252,7 +252,7 @@ const canSubmit = () => !!form.value.email.trim() && !searchResult.value?.alread
               <span class="font-medium text-gray-100 truncate">{{ user.name ?? user.email }}</span>
               <span class="text-gray-400 font-mono text-[11px] truncate">{{ user.email }}</span>
               <span v-if="user.two_factor_confirmed_at"
-                class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium border bg-emerald-900/40 border-emerald-800/40 text-emerald-400">
+                class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-sm text-[10px] font-medium border bg-emerald-900/40 border-emerald-800/40 text-emerald-400">
                 <ShieldCheck class="w-3 h-3" />2FA
               </span>
             </div>
@@ -265,7 +265,7 @@ const canSubmit = () => !!form.value.email.trim() && !searchResult.value?.alread
             <ShieldOff class="w-3.5 h-3.5" />
           </button>
           <span v-if="user.role === 'owner' || user.id === currentUserId" :class="roleBadgeClass(user.role)">{{ label(user.role) }}</span>
-          <select v-else class="bg-gray-800 border border-gray-700 text-gray-100 text-[11px] rounded px-1.5 py-0.5 focus:outline-none"
+          <select v-else class="bg-gray-800 border border-gray-700 text-gray-100 text-[11px] rounded-sm px-1.5 py-0.5 focus:outline-hidden"
             :value="user.role" @change="changeRole(user, $event.target.value)">
             <option v-for="r in roles" :key="r.key" :value="r.key" :disabled="r.grantable === false && r.key !== user.role">{{ label(r.key) }}</option>
           </select>

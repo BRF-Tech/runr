@@ -133,7 +133,7 @@ async function copyUrl() {
 
 <template>
   <div class="fixed inset-0 z-50 flex justify-end" data-testid="service-detail">
-    <div class="absolute inset-0 bg-black/60 backdrop-blur-sm" @click="emit('close')" />
+    <div class="absolute inset-0 bg-black/60 backdrop-blur-xs" @click="emit('close')" />
     <aside class="relative w-full max-w-2xl h-full bg-gray-950 border-l border-gray-800 flex flex-col">
       <div class="px-5 py-4 border-b border-gray-800 space-y-2">
         <div class="flex items-start justify-between gap-3">
@@ -143,15 +143,17 @@ async function copyUrl() {
               <span class="inline-block px-2 py-0.5 rounded-md border text-[11px] font-mono" :class="statusClass" data-testid="service-status">
                 {{ t(`ai.services.statuses.${service.status}`, service.status) }}
               </span>
+              <span v-if="service.status_reason" class="inline-block px-2 py-0.5 rounded-md border text-[11px] font-mono" :class="AI_STATUS_CLASSES.failed"
+                :title="t('ai.services.statusReason')" data-testid="service-status-reason">{{ service.status_reason }}</span>
             </div>
             <p class="text-[11px] text-gray-400 font-mono truncate">{{ service.model?.hub_id ?? service.model?.name }} · {{ service.region_name }}</p>
           </div>
           <button class="h-7 w-7 flex items-center justify-center rounded-md text-gray-400 hover:text-gray-100 hover:bg-gray-800" @click="emit('close')"><X class="w-4 h-4" /></button>
         </div>
-        <p v-if="service.status_message" class="text-[11px] font-mono whitespace-pre-wrap" :class="service.status === 'failed' ? 'text-red-300' : 'text-gray-400'">{{ service.status_message }}</p>
+        <p v-if="service.status_message" class="text-[11px] font-mono whitespace-pre-wrap max-h-40 overflow-y-auto" :class="service.status === 'failed' || service.status_reason ? 'text-red-300' : 'text-gray-400'" data-testid="service-status-message">{{ service.status_message }}</p>
         <div v-if="service.url" class="flex items-center gap-2">
-          <code class="text-[11px] text-gray-300 bg-gray-900 rounded px-2 py-1 truncate" data-testid="service-url">{{ service.url }}</code>
-          <button class="p-1 rounded text-gray-400 hover:text-gray-100" :title="t('common.copy')" @click="copyUrl"><Copy class="w-3.5 h-3.5" /></button>
+          <code class="text-[11px] text-gray-300 bg-gray-900 rounded-sm px-2 py-1 truncate" data-testid="service-url">{{ service.url }}</code>
+          <button class="p-1 rounded-sm text-gray-400 hover:text-gray-100" :title="t('common.copy')" @click="copyUrl"><Copy class="w-3.5 h-3.5" /></button>
         </div>
         <div v-if="ai.canDeploy" class="flex items-center gap-2 pt-1">
           <button v-if="!running" class="btn-primary text-xs" :disabled="busy" data-testid="service-deploy" @click="deploy"><Play class="w-3.5 h-3.5" />{{ t('ai.services.deploy') }}</button>
@@ -179,7 +181,7 @@ async function copyUrl() {
             <span class="text-gray-500">{{ t('ai.deploy.image') }}</span><span class="text-gray-200 font-mono break-all">{{ service.image || '—' }}</span>
             <span class="text-gray-500">{{ t('ai.hub.size') }}</span><span class="text-gray-200 font-mono">{{ formatBytes(service.model?.size_bytes) }}</span>
           </div>
-          <p v-if="service.cold_start?.suggest_min_scale && service.scale_to_zero" class="text-[11px] text-gray-400 bg-gray-800/40 border border-gray-700 rounded px-3 py-2">{{ t('ai.deploy.coldStart') }} {{ t('ai.gpu.minScaleSuggestion') }}</p>
+          <p v-if="service.cold_start?.suggest_min_scale && service.scale_to_zero" class="text-[11px] text-gray-400 bg-gray-800/40 border border-gray-700 rounded-sm px-3 py-2">{{ t('ai.deploy.coldStart') }} {{ t('ai.gpu.minScaleSuggestion') }}</p>
 
           <div v-if="ai.canDeploy" class="space-y-3 border-t border-gray-800 pt-3">
             <div class="grid grid-cols-3 gap-3">
@@ -188,7 +190,7 @@ async function copyUrl() {
               <div><label class="label" for="svc-timeout">{{ t('create.fields.timeoutS') }}</label><input id="svc-timeout" v-model.number="edit.timeout_seconds" type="number" min="1" class="input font-mono" /></div>
               <div><label class="label" for="svc-min">{{ t('ai.services.minScale') }}</label><input id="svc-min" v-model.number="edit.min_scale" type="number" min="0" max="10" class="input font-mono" data-testid="svc-min-scale" /></div>
               <div><label class="label" for="svc-max">{{ t('ai.services.maxScale') }}</label><input id="svc-max" v-model.number="edit.max_scale" type="number" min="1" max="100" class="input font-mono" /></div>
-              <label class="flex items-center gap-2 text-gray-300 mt-6"><input v-model="edit.scale_to_zero" type="checkbox" class="rounded border-gray-700 bg-gray-800" />{{ t('ai.services.scaleToZero') }}</label>
+              <label class="flex items-center gap-2 text-gray-300 mt-6"><input v-model="edit.scale_to_zero" type="checkbox" class="rounded-sm border-gray-700 bg-gray-800" />{{ t('ai.services.scaleToZero') }}</label>
             </div>
             <button class="btn-primary text-xs" :disabled="editSaving" data-testid="svc-save" @click="saveConfig">{{ editSaving ? '...' : t('common.save') }}</button>
             <p class="text-[11px] text-gray-400">{{ t('ai.services.saveHint') }}</p>

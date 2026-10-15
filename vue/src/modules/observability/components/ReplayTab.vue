@@ -193,7 +193,7 @@ onMounted(load)
         <div class="flex items-center gap-3">
           <button type="button" class="btn-secondary text-xs px-2.5 py-1" @click="open = null"><ArrowLeft class="w-3 h-3" />{{ t('observability.replay.detail.back') }}</button>
           <span class="font-mono text-xs text-gray-200">{{ open.method }} {{ open.path }}<span v-if="open.query" class="text-gray-500">?{{ open.query }}</span></span>
-          <span class="font-mono text-[11px] px-1.5 rounded bg-red-900/40 text-red-300">{{ open.timed_out ? 'timeout' : open.status }}</span>
+          <span class="font-mono text-[11px] px-1.5 rounded-sm bg-red-900/40 text-red-300">{{ open.timed_out ? 'timeout' : open.status }}</span>
           <button type="button" class="ml-auto text-gray-400 hover:text-red-400" :title="t('observability.replay.detail.delete')" @click="remove(open)"><Trash2 class="w-4 h-4" /></button>
         </div>
 
@@ -221,8 +221,8 @@ onMounted(load)
         <div v-if="canManage" class="bg-gray-900 border border-gray-800 rounded-md p-4 space-y-3">
           <p class="text-xs text-gray-400">{{ t('observability.replay.detail.overrideHint') }}</p>
           <div v-for="(row, i) in overrides" :key="i" class="flex gap-2">
-            <input v-model="row.name" class="input !h-8 text-xs !w-56" :placeholder="t('observability.replay.detail.headerName')" :data-test="`override-name-${i}`">
-            <input v-model="row.value" class="input !h-8 text-xs" :placeholder="t('observability.replay.detail.headerValue')" :data-test="`override-value-${i}`">
+            <input v-model="row.name" class="input h-8! text-xs w-56!" :placeholder="t('observability.replay.detail.headerName')" :data-test="`override-name-${i}`">
+            <input v-model="row.value" class="input h-8! text-xs" :placeholder="t('observability.replay.detail.headerValue')" :data-test="`override-value-${i}`">
             <button type="button" class="text-gray-400 hover:text-red-400" @click="overrides.splice(i, 1)"><X class="w-4 h-4" /></button>
           </div>
           <div class="flex gap-2">
@@ -241,7 +241,7 @@ onMounted(load)
       <section v-else-if="canManage" class="space-y-3">
         <div class="flex items-center gap-3">
           <p class="text-xs text-gray-400 uppercase tracking-wider font-medium">{{ t('observability.replay.list.title', { n: meta.total }) }}</p>
-          <input v-model="filterStatus" type="number" min="100" max="999" class="input !h-8 !w-28 text-xs" :placeholder="t('observability.replay.list.filterStatus')" @change="loadCaptures">
+          <input v-model="filterStatus" type="number" min="100" max="999" class="input h-8! w-28! text-xs" :placeholder="t('observability.replay.list.filterStatus')" @change="loadCaptures">
           <button v-if="captures.length" type="button" class="ml-auto btn-danger text-xs px-2.5 py-1" data-test="delete-all" @click="removeAll">
             <Trash2 class="w-3 h-3" />{{ t('observability.replay.list.deleteAll') }}
           </button>
@@ -263,8 +263,8 @@ onMounted(load)
           <tbody>
             <tr v-for="c in captures" :key="c.id" class="border-b border-gray-800/60 hover:bg-gray-800/40 cursor-pointer" :data-capture="c.id" @click="openCapture(c)">
               <td class="py-2 pr-3 text-gray-400 whitespace-nowrap">{{ new Date(c.captured_at).toLocaleString() }}</td>
-              <td class="py-2 pr-3 font-mono text-gray-100 truncate max-w-[22rem]">{{ c.method }} {{ c.path }}</td>
-              <td class="py-2 pr-3"><span class="px-1.5 py-0.5 rounded bg-red-900/40 text-red-300 font-mono">{{ c.timed_out ? t('observability.replay.list.timedOut') : c.status }}</span></td>
+              <td class="py-2 pr-3 font-mono text-gray-100 truncate max-w-88">{{ c.method }} {{ c.path }}</td>
+              <td class="py-2 pr-3"><span class="px-1.5 py-0.5 rounded-sm bg-red-900/40 text-red-300 font-mono">{{ c.timed_out ? t('observability.replay.list.timedOut') : c.status }}</span></td>
               <td class="py-2 pr-3 text-right font-mono text-gray-300">{{ formatDuration(c.duration_ms) }}</td>
               <td class="py-2 pr-3 text-right text-gray-300">{{ c.replay_count }}<span v-if="c.last_replay_status" class="text-gray-500"> ({{ c.last_replay_status }})</span></td>
             </tr>

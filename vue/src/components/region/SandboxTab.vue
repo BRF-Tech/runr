@@ -65,10 +65,10 @@ const mappingFields = ['xaas', 'faas', 'caas', 'build']
         @uninstall="confirmUninstall('kata')"
       />
       <!-- Hardware virtualization (/dev/kvm) on the nodes: Kata starts VMs -->
-      <p v-if="kataBlocked && kataStatus === 'ready'" class="text-xs text-red-300/90 bg-red-900/20 rounded px-3 py-2">
+      <p v-if="kataBlocked && kataStatus === 'ready'" class="text-xs text-red-300/90 bg-red-900/20 rounded-sm px-3 py-2">
         {{ t('settings.regionDetail.sandbox.kata.kvmMissingInstalled') }}
       </p>
-      <p v-else-if="kataBlocked" class="text-xs text-amber-300/90 bg-amber-900/20 rounded px-3 py-2">
+      <p v-else-if="kataBlocked" class="text-xs text-amber-300/90 bg-amber-900/20 rounded-sm px-3 py-2">
         {{ t('settings.regionDetail.sandbox.kata.kvmMissing') }}
       </p>
       <p v-else-if="kvm && kvm.state === 'mixed'" class="text-[11px] text-gray-400">

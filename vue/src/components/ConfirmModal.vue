@@ -16,7 +16,7 @@ defineEmits(['confirm', 'cancel'])
 
 <template>
   <div class="fixed inset-0 flex items-center justify-center p-4" style="z-index: 70">
-    <div class="absolute inset-0 bg-black/70 backdrop-blur-sm" @click="$emit('cancel')" />
+    <div class="absolute inset-0 bg-black/70 backdrop-blur-xs" @click="$emit('cancel')" />
     <div class="relative card w-full max-w-sm">
       <h2 class="text-base font-semibold text-gray-100 mb-2">{{ title }}</h2>
       <p class="text-sm text-gray-400 mb-6 whitespace-pre-line">{{ message }}</p>

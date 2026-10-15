@@ -316,7 +316,7 @@ function isDataUri(v) {
                 </button>
               </div>
               <div class="flex items-center gap-2">
-                <input type="color" class="h-9 w-12 rounded border border-gray-700 bg-gray-800 cursor-pointer"
+                <input type="color" class="h-9 w-12 rounded-sm border border-gray-700 bg-gray-800 cursor-pointer"
                   :value="normalizeHex(effective(key)) || '#000000'" :data-test="`picker-${key}`"
                   @input="form[key] = $event.target.value" />
                 <input v-model="form[key]" class="input font-mono" maxlength="7" :placeholder="placeholder(key)" :data-test="`field-${key}`" />
@@ -360,9 +360,9 @@ function isDataUri(v) {
           <div v-for="asset in LOGO_ASSETS" :key="asset.kind" class="flex flex-wrap items-center gap-3">
             <div class="w-28 h-14 rounded-lg border border-gray-700 flex items-center justify-center overflow-hidden"
               :class="asset.surface === 'dark' ? 'bg-gray-950' : 'bg-white'">
-              <img :src="effective(asset.field) || asset.fallback" alt="" class="max-h-12 max-w-[6.5rem] object-contain" :data-test="`asset-preview-${asset.kind}`" />
+              <img :src="effective(asset.field) || asset.fallback" alt="" class="max-h-12 max-w-26 object-contain" :data-test="`asset-preview-${asset.kind}`" />
             </div>
-            <div class="flex-1 min-w-[12rem]">
+            <div class="flex-1 min-w-48">
               <p class="text-sm text-gray-100">
                 {{ t(`whiteLabel.branding.asset_${asset.kind}`) }}
                 <span v-if="!effective(asset.field)" class="text-xs text-gray-500">— {{ t('whiteLabel.branding.noImage') }}</span>
@@ -402,9 +402,9 @@ function isDataUri(v) {
           </div>
           <div class="flex flex-wrap items-center gap-3">
             <div class="w-28 h-14 rounded-lg border border-gray-700 flex items-center justify-center overflow-hidden bg-white">
-              <img :src="effective(EMAIL_ASSET.field) || EMAIL_ASSET.fallback" alt="" class="max-h-12 max-w-[6.5rem] object-contain" data-test="asset-preview-email_logo" />
+              <img :src="effective(EMAIL_ASSET.field) || EMAIL_ASSET.fallback" alt="" class="max-h-12 max-w-26 object-contain" data-test="asset-preview-email_logo" />
             </div>
-            <div class="flex-1 min-w-[12rem]">
+            <div class="flex-1 min-w-48">
               <p class="text-sm text-gray-100">{{ t('whiteLabel.branding.asset_email_logo') }}</p>
               <input v-model="form[EMAIL_ASSET.field]" type="text" class="input mt-1 font-mono text-xs" :placeholder="t('whiteLabel.branding.assetUrlPlaceholder')"
                 data-test="field-email_logo_url" />
@@ -479,7 +479,7 @@ function isDataUri(v) {
         <p class="label">{{ t('whiteLabel.branding.preview') }}</p>
         <div class="rounded-xl overflow-hidden border border-gray-800">
           <div class="px-4 py-3 flex items-center gap-3" style="background:#030712">
-            <img v-if="previewDark" :src="previewDark" alt="" class="h-7 max-w-[8rem] object-contain" />
+            <img v-if="previewDark" :src="previewDark" alt="" class="h-7 max-w-32 object-contain" />
             <template v-else>
               <img :src="previewMark" alt="" class="h-7 w-7 object-contain" />
               <span class="text-sm font-bold text-white truncate">
@@ -489,7 +489,7 @@ function isDataUri(v) {
             </template>
           </div>
           <div class="bg-white px-5 py-5 space-y-3">
-            <img v-if="previewLogo" :src="previewLogo" alt="" class="h-8 max-w-[10rem] object-contain" />
+            <img v-if="previewLogo" :src="previewLogo" alt="" class="h-8 max-w-40 object-contain" />
             <p class="text-lg font-bold" style="color:#0f172a">{{ effective('login_headline') || t('whiteLabel.branding.previewHeadline') }}</p>
             <p v-if="effective('login_text')" class="text-xs" style="color:#64748b">{{ effective('login_text') }}</p>
             <div class="h-8 rounded-md" style="background:#f8fafc;border:1.5px solid #e2e8f0" />

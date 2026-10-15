@@ -67,7 +67,7 @@ const workerResources = computed(() => {
         class="flex items-center gap-3 rounded-md border px-3 py-2 text-xs cursor-pointer transition-colors"
         :class="selectedNodes.includes(node.name) ? 'border-brand-600/50 bg-brand-900/20' : 'border-gray-800 bg-gray-900/40 hover:border-gray-700'"
         @click="$emit('toggle', node.name)">
-        <input type="checkbox" :checked="selectedNodes.includes(node.name)" class="rounded"
+        <input type="checkbox" :checked="selectedNodes.includes(node.name)" class="rounded-sm"
           @click.stop @change="$emit('toggle', node.name)" />
         <div class="flex-1 min-w-0">
           <span class="font-mono text-gray-100">{{ node.name }}</span>

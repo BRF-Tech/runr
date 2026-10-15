@@ -32,7 +32,7 @@ language: shell
 extensions: [sh]
 versions:
   - version: "1.0"
-    image: ghcr.io/runrsh/reqs/alpine:3.21
+    image: ghcr.io/brf-tech/reqs/alpine:3.21
     default: true
 handler:
   file: main
@@ -273,7 +273,7 @@ function fmtBytes(n) { return n >= 1024 ? `${(n / 1024).toFixed(1)} KB` : `${n} 
 
 <template>
   <div class="fixed inset-0 z-50 flex items-center justify-center p-4">
-    <div class="absolute inset-0 bg-black/70 backdrop-blur-sm" @click="emit('close')" />
+    <div class="absolute inset-0 bg-black/70 backdrop-blur-xs" @click="emit('close')" />
     <div class="relative w-full max-w-5xl max-h-[92vh] overflow-y-auto">
       <div class="card">
         <!-- Header -->
@@ -291,7 +291,7 @@ function fmtBytes(n) { return n >= 1024 ? `${(n / 1024).toFixed(1)} KB` : `${n} 
           <!-- Manifest -->
           <div class="lg:col-span-3 space-y-3">
             <div class="flex items-center justify-between">
-              <p class="section-title !mb-0 !border-0 !pb-0"><TermText path="runtimes.editor.manifest" /></p>
+              <p class="section-title mb-0! border-0! pb-0!"><TermText path="runtimes.editor.manifest" /></p>
               <label v-if="!isBuiltin" class="btn-secondary text-xs flex items-center gap-1.5 cursor-pointer">
                 <Upload class="w-3.5 h-3.5" />{{ t('runtimes.editor.uploadManifest') }}
                 <input type="file" accept=".yaml,.yml,.json" class="hidden" @change="uploadManifest" />
@@ -356,7 +356,7 @@ function fmtBytes(n) { return n >= 1024 ? `${(n / 1024).toFixed(1)} KB` : `${n} 
               <label class="flex items-center gap-3 cursor-pointer">
                 <button type="button" class="relative inline-flex h-5 w-9 shrink-0 rounded-full border-2 border-transparent transition-colors"
                   :class="enabled ? 'bg-brand-500' : 'bg-gray-700'" @click="enabled = !enabled">
-                  <span class="pointer-events-none inline-block h-4 w-4 rounded-full bg-white shadow transition" :class="enabled ? 'translate-x-4' : 'translate-x-0'" />
+                  <span class="pointer-events-none inline-block h-4 w-4 rounded-full bg-white shadow-sm transition" :class="enabled ? 'translate-x-4' : 'translate-x-0'" />
                 </button>
                 <span class="text-sm" :class="enabled ? 'text-brand-500' : 'text-gray-400'">{{ enabled ? t('runtimes.list.enabled') : t('runtimes.list.disabled') }}</span>
               </label>
@@ -398,7 +398,7 @@ function fmtBytes(n) { return n >= 1024 ? `${(n / 1024).toFixed(1)} KB` : `${n} 
                     <FileText class="w-3.5 h-3.5 text-gray-500 shrink-0" />
                     <input
                       :value="f.name"
-                      class="flex-1 min-w-0 bg-transparent text-xs font-mono text-gray-200 focus:outline-none"
+                      class="flex-1 min-w-0 bg-transparent text-xs font-mono text-gray-200 focus:outline-hidden"
                       @focus="activeFile = f.name"
                       @change="renameFile(f.name, $event.target.value)"
                     />
@@ -431,6 +431,7 @@ function fmtBytes(n) { return n >= 1024 ? `${(n / 1024).toFixed(1)} KB` : `${n} 
 </template>
 
 <style scoped>
+@reference "../../../assets/main.css";
 .section-title {
   @apply text-xs text-gray-400 uppercase tracking-wider font-medium mb-3 border-b border-gray-800/60 pb-2;
 }

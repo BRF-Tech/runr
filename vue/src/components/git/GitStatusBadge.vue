@@ -29,5 +29,5 @@ const label = computed(() => (te(`gitDeploy.status.${props.status}`) ? t(`gitDep
 </script>
 
 <template>
-  <span class="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium border" :class="tone" :data-status="status">{{ label }}</span>
+  <span class="inline-flex items-center px-2 py-0.5 rounded-sm text-[10px] font-medium border" :class="tone" :data-status="status">{{ label }}</span>
 </template>

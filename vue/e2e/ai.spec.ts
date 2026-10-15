@@ -117,7 +117,7 @@ class FakeApi {
       model: { id: 'am1', name: 'all-minilm-l6-v2', hub_id: body.hub_id, task: 'feature-extraction', library: 'sentence-transformers', size_bytes: 90_900_000 },
       knative_region_id: body.knative_region_id, region_name: 'gpu-lab', engine: 'tei', device: body.device, mode: body.mode, api: 'tei',
       gpu: body.gpu ?? null, cpu: body.cpu, memory_mb: body.memory_mb, min_scale: body.min_scale, max_scale: body.max_scale,
-      scale_to_zero: body.scale_to_zero, timeout_seconds: body.timeout_seconds, image: 'ghcr.io/huggingface/text-embeddings-inference:cpu-1.5',
+      scale_to_zero: body.scale_to_zero, timeout_seconds: body.timeout_seconds, image: 'ghcr.io/huggingface/text-embeddings-inference:cpu-1.9.4',
       args: [], env_vars: {}, port: 8080, health_path: '/health', served_name: body.name, status: 'deploying', status_message: 'Pulling image',
       url: `http://m-${body.name}.fn.svc.cluster.local`, playground: { kind: 'embeddings', path: '/v1/embeddings' },
       cold_start: { size_bytes: 90_900_000, suggest_min_scale: false }, bindings_count: 0, deployed_at: null, created_at: '2026-10-10T10:00:00Z',

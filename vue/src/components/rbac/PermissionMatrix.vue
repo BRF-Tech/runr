@@ -55,7 +55,7 @@ function toggle(key) {
           :title="impliedBy(p.key) ? t('rbac.impliedBy', { permission: permLabel(impliedBy(p.key)) }) : permHint(p.key)"
           :data-permission="p.key">
           <input type="checkbox"
-            class="mt-0.5 rounded border-gray-600 bg-gray-800 text-brand-500 focus:ring-brand-500"
+            class="mt-0.5 rounded-sm border-gray-600 bg-gray-800 text-brand-500 focus:ring-brand-500"
             :checked="effective.has(p.key)"
             :disabled="isDisabled(p)"
             @change="toggle(p.key)" />

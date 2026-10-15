@@ -23,11 +23,11 @@ defineEmits(['update:mode', 'update:pasteValue', 'file-change'])
       </div>
     </div>
     <div class="flex gap-2 mb-2">
-      <button type="button" class="px-2 py-1 rounded text-[10px] transition-colors"
+      <button type="button" class="px-2 py-1 rounded-sm text-[10px] transition-colors"
         :class="mode === 'file' ? 'border' : 'text-gray-400 hover:text-gray-100 border border-transparent'"
         :style="mode === 'file' ? 'background:rgb(var(--brand-600)/0.2);border-color:rgb(var(--brand-500)/0.4);color:rgb(var(--brand-500))' : ''"
         @click="$emit('update:mode', 'file')">{{ t('settings.regions.kubeconfigModeFile') }}</button>
-      <button type="button" class="px-2 py-1 rounded text-[10px] transition-colors"
+      <button type="button" class="px-2 py-1 rounded-sm text-[10px] transition-colors"
         :class="mode === 'paste' ? 'border' : 'text-gray-400 hover:text-gray-100 border border-transparent'"
         :style="mode === 'paste' ? 'background:rgb(var(--brand-600)/0.2);border-color:rgb(var(--brand-500)/0.4);color:rgb(var(--brand-500))' : ''"
         @click="$emit('update:mode', 'paste')">{{ t('settings.regions.kubeconfigModePaste') }}</button>

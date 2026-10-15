@@ -205,7 +205,7 @@ onBeforeUnmount(() => clearTimeout(pollTimer))
             <span :class="statusBadgeClass(statusOf(service))" data-service-status>{{ t(`bindings.services.status.${statusOf(service)}`) }}</span>
             <span v-if="services[service]?.installed && services[service]?.mode" class="text-[11px] text-gray-400">{{ t(`bindings.services.modes.${services[service].mode}`) }}</span>
             <span v-if="service === 'object' && services.object?.config?.scoped_keys === false"
-              class="text-[10px] px-1.5 py-0.5 rounded border border-amber-800/40 bg-amber-900/30 text-amber-300" :title="t('bindings.services.sharedKeyHint')" data-shared-key>
+              class="text-[10px] px-1.5 py-0.5 rounded-sm border border-amber-800/40 bg-amber-900/30 text-amber-300" :title="t('bindings.services.sharedKeyHint')" data-shared-key>
               {{ t('bindings.services.sharedKey') }}
             </span>
           </div>

@@ -106,7 +106,7 @@ onMounted(() => {
       <button v-if="ai.canDeploy && !showForm" class="btn-primary text-xs" data-testid="bind-open" @click="showForm = true"><Plus class="w-3.5 h-3.5" />{{ t('ai.project.bind') }}</button>
     </div>
 
-    <p class="flex items-start gap-1.5 text-[11px] text-gray-400 bg-gray-800/40 border border-gray-700 rounded px-3 py-2" data-testid="bind-next-deploy">
+    <p class="flex items-start gap-1.5 text-[11px] text-gray-400 bg-gray-800/40 border border-gray-700 rounded-sm px-3 py-2" data-testid="bind-next-deploy">
       <Info class="w-3.5 h-3.5 shrink-0 mt-0.5" />{{ t('ai.project.nextDeploy') }}
     </p>
 
@@ -133,7 +133,7 @@ onMounted(() => {
           </div>
         </div>
         <label class="flex items-start gap-2 text-xs text-gray-300">
-          <input v-model="form.mount_weights" type="checkbox" class="mt-0.5 rounded border-gray-700 bg-gray-800" data-testid="bind-mount" />
+          <input v-model="form.mount_weights" type="checkbox" class="mt-0.5 rounded-sm border-gray-700 bg-gray-800" data-testid="bind-mount" />
           <span>{{ t('ai.project.mountWeights') }}<span class="block text-[11px] text-gray-400">{{ t('ai.project.mountWeightsHint') }}</span></span>
         </label>
         <div v-if="selected && isValidAlias(form.alias)" class="rounded-lg border border-gray-800 bg-gray-950/60 p-3" data-testid="bind-env-preview">
@@ -156,11 +156,11 @@ onMounted(() => {
         <div class="flex items-center gap-2 min-w-0">
           <code class="text-sm text-gray-100">{{ b.alias }}</code>
           <span class="text-xs text-gray-400 truncate">{{ serviceOf(b)?.name }} · {{ serviceOf(b)?.model?.hub_id ?? serviceOf(b)?.model?.name }}</span>
-          <span v-if="serviceOf(b)?.status" class="inline-block px-1.5 py-0.5 rounded border text-[10px] font-mono" :class="statusClass(serviceOf(b).status)">{{ t(`ai.services.statuses.${serviceOf(b).status}`, serviceOf(b).status) }}</span>
+          <span v-if="serviceOf(b)?.status" class="inline-block px-1.5 py-0.5 rounded-sm border text-[10px] font-mono" :class="statusClass(serviceOf(b).status)">{{ t(`ai.services.statuses.${serviceOf(b).status}`, serviceOf(b).status) }}</span>
         </div>
         <div v-if="ai.canDeploy" class="flex items-center gap-2 shrink-0">
           <label class="flex items-center gap-1.5 text-[11px] text-gray-400">
-            <input type="checkbox" :checked="b.mount_weights" class="rounded border-gray-700 bg-gray-800" @change="toggleMount(b)" />{{ t('ai.project.mountWeightsShort') }}
+            <input type="checkbox" :checked="b.mount_weights" class="rounded-sm border-gray-700 bg-gray-800" @change="toggleMount(b)" />{{ t('ai.project.mountWeightsShort') }}
           </label>
           <button class="p-1.5 rounded-md text-gray-400 hover:text-red-400 hover:bg-red-900/20" :title="t('ai.project.unbind')" @click="unbind(b)"><Trash2 class="w-4 h-4" /></button>
         </div>
@@ -173,10 +173,10 @@ onMounted(() => {
       <div>
         <div class="flex items-center gap-1 mb-1.5">
           <button v-for="lang in ['python', 'node', 'go', 'curl']" :key="lang" type="button"
-            class="px-2.5 py-1 rounded text-[11px] font-mono transition-colors"
+            class="px-2.5 py-1 rounded-sm text-[11px] font-mono transition-colors"
             :class="(snippetLang[b.id] ?? 'python') === lang ? 'bg-gray-800 text-gray-100' : 'text-gray-400 hover:text-gray-100'"
             :data-testid="`snippet-${lang}`" @click="snippetLang[b.id] = lang">{{ t(`ai.project.langs.${lang}`) }}</button>
-          <button class="ml-auto p-1 rounded text-gray-400 hover:text-gray-100" :title="t('common.copy')"
+          <button class="ml-auto p-1 rounded-sm text-gray-400 hover:text-gray-100" :title="t('common.copy')"
             @click="copy(usageSnippets(b.alias, serviceOf(b))[snippetLang[b.id] ?? 'python'])"><Copy class="w-3.5 h-3.5" /></button>
         </div>
         <pre class="rounded-lg border border-gray-800 bg-gray-950 p-3 text-[11px] font-mono text-gray-300 overflow-x-auto" data-testid="binding-snippet">{{ usageSnippets(b.alias, serviceOf(b))[snippetLang[b.id] ?? 'python'] }}</pre>

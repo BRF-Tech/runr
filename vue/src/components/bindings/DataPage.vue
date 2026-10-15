@@ -320,7 +320,7 @@ onBeforeUnmount(() => clearTimeout(pollTimer))
             <component :is="TYPE_ICONS[b.type] || Database" class="w-4 h-4 text-sky-400 shrink-0" />
             <span class="text-sm font-semibold text-gray-100">{{ b.name }}</span>
             <span class="text-[11px] text-gray-400">{{ t(`bindings.types.${b.type}`) }}</span>
-            <span v-if="b.plan === 'dedicated'" class="text-[10px] px-1.5 py-0.5 rounded border border-violet-800/40 bg-violet-900/30 text-violet-300">{{ t('bindings.plans.dedicated') }}</span>
+            <span v-if="b.plan === 'dedicated'" class="text-[10px] px-1.5 py-0.5 rounded-sm border border-violet-800/40 bg-violet-900/30 text-violet-300">{{ t('bindings.plans.dedicated') }}</span>
             <span :class="bindingStatusClass(b.status)" data-binding-status>{{ t(`bindings.status.${b.status}`) }}</span>
             <span v-if="b.region" class="text-[11px] text-gray-500 font-mono">{{ b.region.name }}</span>
           </div>
@@ -353,7 +353,7 @@ onBeforeUnmount(() => clearTimeout(pollTimer))
             <p class="text-gray-500 mb-1">{{ t('bindings.attachedTo') }}</p>
             <div class="flex flex-wrap gap-1">
               <RouterLink v-for="a in (b.attachments ?? [])" :key="a.id" :to="`/projects/${a.project_id}#bindings`"
-                class="px-1.5 py-0.5 rounded border border-gray-700 bg-gray-800/60 text-gray-200 hover:border-sky-700">
+                class="px-1.5 py-0.5 rounded-sm border border-gray-700 bg-gray-800/60 text-gray-200 hover:border-sky-700">
                 {{ a.project?.name ?? a.project_id }}<span v-if="a.env_prefix" class="text-gray-500 font-mono"> · {{ a.env_prefix }}</span>
               </RouterLink>
               <span v-if="!(b.attachments ?? []).length" class="text-gray-500">{{ t('bindings.notAttached') }}</span>
@@ -394,7 +394,7 @@ onBeforeUnmount(() => clearTimeout(pollTimer))
 
     <!-- Delete (typed name) ──────────────────────────────────────────────────────────── -->
     <div v-if="deleting" class="fixed inset-0 flex items-center justify-center p-4" style="z-index: 70" data-delete-dialog>
-      <div class="absolute inset-0 bg-black/70 backdrop-blur-sm" @click="deleting = null" />
+      <div class="absolute inset-0 bg-black/70 backdrop-blur-xs" @click="deleting = null" />
       <div class="relative card w-full max-w-md space-y-3">
         <h2 class="text-base font-semibold text-gray-100">{{ t('bindings.data.deleteTitle', { name: deleting.name }) }}</h2>
         <p class="text-sm text-gray-400">{{ t('bindings.data.deleteIntro', { days: retentionDays }) }}</p>

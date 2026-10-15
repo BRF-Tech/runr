@@ -45,7 +45,7 @@ const {
           <!-- Shell access button — visible only for active/running deployments -->
           <button
             v-if="canExec"
-            class="inline-flex items-center gap-1.5 text-[10px] font-mono px-2 py-1 rounded border transition-all border-gray-700 text-gray-400 hover:border-brand-600 hover:text-brand-300 hover:bg-brand-900/20"
+            class="inline-flex items-center gap-1.5 text-[10px] font-mono px-2 py-1 rounded-sm border transition-all border-gray-700 text-gray-400 hover:border-brand-600 hover:text-brand-300 hover:bg-brand-900/20"
             title="Open shell"
             @click="showShell = true"
           >
@@ -68,7 +68,7 @@ const {
         <span class="text-[10px] text-gray-100 uppercase tracking-wider font-mono shrink-0">{{ t('project.logs.pods') }}</span>
         <button
           v-for="pod in pods" :key="pod.name"
-          class="inline-flex items-center gap-1.5 text-[10px] font-mono px-2 py-0.5 rounded transition-all"
+          class="inline-flex items-center gap-1.5 text-[10px] font-mono px-2 py-0.5 rounded-sm transition-all"
           :class="podClass(pod)" :title="pod.status"
           @click="togglePod(pod.name)"
         >
@@ -96,12 +96,12 @@ const {
             <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
           </svg>
           <input v-model="search" type="text" :placeholder="t('project.logs.searchPlaceholder')"
-            class="w-full bg-gray-950 border border-gray-800 rounded text-xs font-mono text-gray-100 placeholder-gray-700 pl-7 pr-6 py-1.5 focus:outline-none focus:border-gray-400 transition-colors" />
+            class="w-full bg-gray-950 border border-gray-800 rounded-sm text-xs font-mono text-gray-100 placeholder-gray-700 pl-7 pr-6 py-1.5 focus:outline-hidden focus:border-gray-400 transition-colors" />
           <button v-if="search" class="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-100 text-xs" @click="search = ''">✕</button>
         </div>
         <div v-if="availableLevels.length" class="flex items-center gap-1 shrink-0">
           <button v-for="lvl in availableLevels" :key="lvl"
-            class="text-[10px] font-mono px-2 py-1 rounded border transition-all"
+            class="text-[10px] font-mono px-2 py-1 rounded-sm border transition-all"
             :class="activeLevel === lvl ? LEVEL_COLORS[lvl] : 'bg-transparent border-gray-800 text-gray-400 hover:border-gray-700 hover:text-gray-100'"
             @click="toggleLevel(lvl)">{{ lvl }}</button>
           <span class="w-px h-4 bg-gray-800 mx-1 shrink-0" />
@@ -109,13 +109,13 @@ const {
         <!-- Time presets -->
         <div class="flex items-center gap-1 shrink-0">
           <button v-for="p in TIME_PRESETS" :key="p.value ?? 'all'"
-            class="text-[10px] font-mono px-2.5 py-1 rounded border transition-all"
+            class="text-[10px] font-mono px-2.5 py-1 rounded-sm border transition-all"
             :class="!customRange && timeWindow === p.value
               ? 'bg-brand-600/30 border-brand-500/60 text-brand-300'
               : 'bg-transparent border-gray-800 text-gray-400 hover:border-gray-700 hover:text-brand-500'"
             @click="selectPreset(p.value)">{{ t(p.key) }}</button>
           <button
-            class="p-1 rounded border transition-all"
+            class="p-1 rounded-sm border transition-all"
             :class="customRange || showCal ? 'bg-brand-600/30 border-brand-500/60 text-brand-300' : 'border-gray-800 text-gray-400 hover:border-gray-700 hover:text-gray-100'"
             :title="t('project.logs.customRange')"
             @click="showCal = !showCal">
@@ -131,7 +131,7 @@ const {
           {{ stats.hasFilter ? `${stats.shown} / ${stats.total}` : stats.total }}
         </span>
         <button :title="t('project.logs.autoScroll')"
-          class="transition-colors p-0.5 rounded shrink-0"
+          class="transition-colors p-0.5 rounded-sm shrink-0"
           :class="autoScroll ? 'text-brand-400' : 'text-gray-400 hover:text-gray-100'"
           @click="autoScroll = !autoScroll">
           <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
@@ -166,18 +166,18 @@ const {
         <input v-model="calFrom" type="datetime-local"
           :lang="locale === 'tr' ? 'tr-TR' : 'en-US'"
           style="color-scheme: dark"
-          class="log-cal-input bg-gray-900 border border-gray-700 rounded text-xs font-mono text-gray-100 px-2 py-1 focus:outline-none focus:border-brand-600 transition-colors" />
+          class="log-cal-input bg-gray-900 border border-gray-700 rounded-sm text-xs font-mono text-gray-100 px-2 py-1 focus:outline-hidden focus:border-brand-600 transition-colors" />
         <span class="text-[10px] font-mono text-gray-400 shrink-0">{{ t('project.logs.to') }}</span>
         <input v-model="calTo" type="datetime-local"
           :lang="locale === 'tr' ? 'tr-TR' : 'en-US'"
           style="color-scheme: dark"
-          class="log-cal-input bg-gray-900 border border-gray-700 rounded text-xs font-mono text-gray-100 px-2 py-1 focus:outline-none focus:border-brand-600 transition-colors" />
+          class="log-cal-input bg-gray-900 border border-gray-700 rounded-sm text-xs font-mono text-gray-100 px-2 py-1 focus:outline-hidden focus:border-brand-600 transition-colors" />
         <button @click="applyCalendar"
-          class="text-[10px] font-mono px-3 py-1 rounded bg-brand-600/30 border border-brand-500/60 text-brand-300 hover:bg-brand-600/50 transition-colors shrink-0">
+          class="text-[10px] font-mono px-3 py-1 rounded-sm bg-brand-600/30 border border-brand-500/60 text-brand-300 hover:bg-brand-600/50 transition-colors shrink-0">
           {{ t('project.logs.apply') }}
         </button>
         <button @click="clearCalendar"
-          class="text-[10px] font-mono px-2 py-1 rounded border border-gray-800 text-gray-400 hover:text-gray-100 transition-colors shrink-0">
+          class="text-[10px] font-mono px-2 py-1 rounded-sm border border-gray-800 text-gray-400 hover:text-gray-100 transition-colors shrink-0">
           {{ t('common.cancel') }}
         </button>
       </div>
@@ -191,7 +191,7 @@ const {
         </div>
         <div v-else class="divide-y divide-gray-800/30">
           <div v-for="(line, i) in filteredLines" :key="i"
-            class="flex items-baseline gap-0 hover:bg-white/[0.03] transition-colors">
+            class="flex items-baseline gap-0 hover:bg-white/3 transition-colors">
             <span class="text-[10px] font-mono text-gray-400 shrink-0 w-32 px-3 py-0.5 tabular-nums select-none">
               {{ fmtTs(line.ts) }}
             </span>

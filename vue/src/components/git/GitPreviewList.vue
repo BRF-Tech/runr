@@ -47,7 +47,7 @@ function fmtDate(iso) {
                 <a v-if="p.pr_url" :href="p.pr_url" target="_blank" rel="noopener" class="text-gray-100 hover:text-brand-500">#{{ p.number }}</a>
                 <span v-else class="text-gray-100">#{{ p.number }}</span>
                 <span class="text-gray-400 truncate max-w-[16rem]" :title="p.title">{{ p.title }}</span>
-                <span v-if="p.is_fork" class="text-[10px] px-1.5 py-0.5 rounded bg-gray-800 text-gray-400">{{ t('gitDeploy.previews.fork') }}</span>
+                <span v-if="p.is_fork" class="text-[10px] px-1.5 py-0.5 rounded-sm bg-gray-800 text-gray-400">{{ t('gitDeploy.previews.fork') }}</span>
               </div>
               <p class="text-[11px] text-gray-500 font-mono mt-0.5">{{ p.branch }} → {{ p.base_branch }}</p>
             </td>

@@ -70,7 +70,7 @@ watch([gpuRequired, visible], ([required, shown]) => {
         :class="[value.enabled ? 'bg-amber-500' : 'bg-gray-700', gpuRequired ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer']"
         :disabled="gpuRequired" data-testid="gpu-toggle" :aria-pressed="value.enabled"
         @click="setEnabled(!value.enabled)">
-        <span class="pointer-events-none inline-block h-5 w-5 rounded-full bg-white shadow transition" :class="value.enabled ? 'translate-x-5' : 'translate-x-0'" />
+        <span class="pointer-events-none inline-block h-5 w-5 rounded-full bg-white shadow-sm transition" :class="value.enabled ? 'translate-x-5' : 'translate-x-0'" />
       </button>
       <span class="text-sm" :class="value.enabled ? 'text-amber-400' : 'text-gray-400'">
         {{ value.enabled ? t('ai.gpu.enabled') : t('ai.gpu.disabled') }}
@@ -110,6 +110,7 @@ watch([gpuRequired, visible], ([required, shown]) => {
 </template>
 
 <style scoped>
+@reference "../../assets/main.css";
 .section-title {
   @apply text-xs text-gray-400 uppercase tracking-wider font-medium mb-3 border-b border-gray-800/60 pb-2;
 }

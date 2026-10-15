@@ -101,7 +101,7 @@ function fmtTime(iso) {
 
 <template>
   <div class="fixed inset-0 z-50 flex items-center justify-center p-4">
-    <div class="absolute inset-0 bg-black/70 backdrop-blur-sm" @click="emit('close')" />
+    <div class="absolute inset-0 bg-black/70 backdrop-blur-xs" @click="emit('close')" />
     <div class="relative w-full max-w-4xl max-h-[90vh] overflow-y-auto">
       <div class="card">
         <div class="flex items-center justify-between gap-4 mb-1">
@@ -135,7 +135,7 @@ function fmtTime(iso) {
               <td class="py-2.5 pr-3 font-mono text-xs text-gray-200">{{ row.version }}</td>
               <td class="py-2.5 pr-3 font-mono text-xs text-gray-300">{{ row.regionName }}</td>
               <td class="py-2.5 pr-3">
-                <span class="px-1.5 py-0.5 rounded border text-[11px] font-medium"
+                <span class="px-1.5 py-0.5 rounded-sm border text-[11px] font-medium"
                   :class="statusStyle[row.build?.status] ?? 'border-gray-800 text-gray-500'">
                   {{ row.build ? t(`runtimes.builds.status_${row.build.status}`) : t('runtimes.builds.status_none') }}
                 </span>
@@ -143,7 +143,7 @@ function fmtTime(iso) {
               </td>
               <td class="py-2.5 pr-3 text-xs min-w-0">
                 <p v-if="row.build?.image" class="font-mono text-[11px] text-gray-400 break-all">{{ row.build.image }}</p>
-                <p v-if="row.build?.error" class="text-[11px] text-red-400 whitespace-pre-line break-words max-w-md">{{ row.build.error }}</p>
+                <p v-if="row.build?.error" class="text-[11px] text-red-400 whitespace-pre-line wrap-break-word max-w-md">{{ row.build.error }}</p>
               </td>
               <td class="py-2.5 text-right">
                 <button v-if="!row.stale"

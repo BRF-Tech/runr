@@ -187,7 +187,7 @@ watch(() => route.query.request, load)
           <div class="mb-5">
             <p class="label mb-2">{{ t('mcp.consent.scopes') }}</p>
             <div v-if="fixedScopes" class="flex flex-wrap gap-1.5" data-testid="oauth-consent-fixed">
-              <span v-for="s in fixedScopes" :key="s" class="text-xs px-2 py-1 rounded border border-gray-700 bg-gray-800 text-gray-100">{{ permLabel(s) }}</span>
+              <span v-for="s in fixedScopes" :key="s" class="text-xs px-2 py-1 rounded-sm border border-gray-700 bg-gray-800 text-gray-100">{{ permLabel(s) }}</span>
             </div>
             <AbilityPicker v-else v-model="selected" v-model:full-access="fullAccess" :abilities="available" />
           </div>

@@ -42,7 +42,7 @@ const fileNames = computed(() => {
 
 <template>
   <div class="fixed inset-0 z-50 flex items-center justify-center p-4">
-    <div class="absolute inset-0 bg-black/70 backdrop-blur-sm" @click="emit('close')" />
+    <div class="absolute inset-0 bg-black/70 backdrop-blur-xs" @click="emit('close')" />
     <div class="relative w-full max-w-4xl">
       <div class="card">
         <div class="flex items-center justify-between gap-4 mb-4">

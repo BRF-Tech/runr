@@ -272,6 +272,18 @@ export default {
         refreshNodes:  'Yenile',
         taintWarning:  'Seçilen düğümlerde sadece K8s sistem, Knative ve RunR proje pod\'ları çalışacak.',
       },
+      capacity: {
+        title:                  'Kapasite',
+        subtitle:               'Sürekli açık iş yükleri bölge kapasitesini ayırır; sıfıra ölçeklenen iş yükleri bir pod\'la overcommit edilmiş FaaS bütçesinden sayılır.',
+        alwaysOn:               'Sürekli açık (overcommit yok)',
+        faas:                   'FaaS overcommit (× {factor})',
+        free:                   '{value} boş',
+        hint:                   'Sürekli açık: min_scale ≥ 1 ya da sıfıra ölçekleme kapalı, Kata pod ek yükü, kuyruk tüketicileri, sandbox\'lar, model servisleri. FaaS bütçesi: kapasite × katsayı eksi sürekli açık ayrımlar.',
+        faas_cpu_overcommit:    'CPU overcommit katsayısı',
+        faas_memory_overcommit: 'Bellek overcommit katsayısı',
+        save:                   'Katsayıları kaydet',
+        saved:                  'Kapasite ayarları kaydedildi.',
+      },
       config: {
         title:                   'Knative Ayarları',
         namespace:               'Proje Namespace',

@@ -23,7 +23,7 @@ const PYTHON = {
   id: 'python', name: 'Python', description: '', icon: null, language: 'python', extensions: ['py'], category: 'general', source: 'builtin',
   run_mode: 'http', compiled: false, triggers: ['http', 'schedule', 'queue'], sandbox: ['runc', 'gvisor', 'kata'],
   handler: { file: 'main', function: 'handler', filename: 'main.py', pattern: null }, dependency_file: null,
-  versions: [{ version: '3.14', is_default: true, eol_at: null, gpu_required: false, image: 'ghcr.io/runrsh/exec-python:3.14', built: false }],
+  versions: [{ version: '3.14', is_default: true, eol_at: null, gpu_required: false, image: 'ghcr.io/brf-tech/exec-python:3.14', built: false }],
   regions: null, is_enabled: true, projects_count: 0, updated_at: '2026-10-10T08:00:00Z',
 }
 
@@ -58,7 +58,7 @@ class FakeApi {
     const now = Date.now()
     return {
       id, status: 'running', region: { id: 'r1', name: 'eu-1' },
-      runtime: body.runtime ?? 'python', runtime_version: body.version ?? '3.14', image: 'ghcr.io/runrsh/exec-python:3.14',
+      runtime: body.runtime ?? 'python', runtime_version: body.version ?? '3.14', image: 'ghcr.io/brf-tech/exec-python:3.14',
       sandbox_class: 'kata-fc', isolation: 'kata',
       resources: { cpu: body.cpu ?? '500m', cpu_m: 500, memory_mb: body.memory ?? 512, disk_mb: body.disk ?? 1024, pids_limit: 256 },
       network: body.network === 'none' || !body.network ? { mode: 'none', egress_allow: [] } : { mode: 'allowlist', egress_allow: body.network.egress_allow },
@@ -122,7 +122,7 @@ class FakeApi {
       this.poolCreates.push(body)
       const pool = {
         id: `p${this.pools.length + 1}`, region: { id: body.region, name: 'eu-1' }, runtime: body.runtime, runtime_version: body.version,
-        image: 'ghcr.io/runrsh/exec-python:3.14', sandbox_class: 'kata-fc', cpu_m: 500, memory_mb: body.memory, disk_mb: body.disk,
+        image: 'ghcr.io/brf-tech/exec-python:3.14', sandbox_class: 'kata-fc', cpu_m: 500, memory_mb: body.memory, disk_mb: body.disk,
         size: body.size, is_enabled: true, warm: 0, starting: body.size, hits: 0, misses: 0, tenant_id: null, created_at: '2026-10-10T12:00:00Z',
       }
       this.pools.push(pool)

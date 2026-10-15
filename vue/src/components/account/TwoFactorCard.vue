@@ -49,7 +49,7 @@ async function submitDisable() {
     <p class="text-xs text-gray-400 mb-4">{{ t('account.twoFactorDesc') }}</p>
 
     <div class="flex items-center gap-3 mb-4">
-      <span class="text-xs font-medium px-2 py-0.5 rounded"
+      <span class="text-xs font-medium px-2 py-0.5 rounded-sm"
         :class="props.enabled ? 'bg-green-900/30 text-green-400 border border-green-800' : 'bg-gray-800 text-gray-400 border border-gray-700'">
         {{ props.enabled ? t('account.twoFactorEnabled') : t('account.twoFactorDisabled') }}
       </span>
@@ -77,7 +77,7 @@ async function submitDisable() {
       <div v-if="props.recoveryCodes?.length" class="rounded-md border border-gray-700 bg-gray-900/60 p-4 space-y-3">
         <p class="text-xs text-gray-400">{{ t('account.recoveryCodesDesc') }}</p>
         <div class="grid grid-cols-2 gap-1">
-          <code v-for="code in props.recoveryCodes" :key="code" class="text-xs font-mono text-gray-300 bg-gray-800 px-2 py-1 rounded">
+          <code v-for="code in props.recoveryCodes" :key="code" class="text-xs font-mono text-gray-300 bg-gray-800 px-2 py-1 rounded-sm">
             {{ code }}
           </code>
         </div>

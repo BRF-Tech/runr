@@ -1,5 +1,5 @@
 # ─── Stage 1: Build ───────────────────────────────────────────────────────────
-FROM ghcr.io/runrsh/reqs/node:20-alpine AS builder
+FROM ghcr.io/brf-tech/reqs/node:20-alpine AS builder
 
 WORKDIR /app
 
@@ -21,7 +21,7 @@ ENV NODE_OPTIONS="--max-old-space-size=4096"
 RUN npm run build
 
 # ─── Stage 2: Serve ───────────────────────────────────────────────────────────
-FROM ghcr.io/runrsh/reqs/caddy:2-alpine
+FROM ghcr.io/brf-tech/reqs/caddy:2-alpine
 
 LABEL org.opencontainers.image.description="RunR UI"
 

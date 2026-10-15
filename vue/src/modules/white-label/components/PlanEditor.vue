@@ -51,7 +51,7 @@ defineExpose({ form, save })
 
 <template>
   <div class="fixed inset-0 flex items-center justify-center p-4" style="z-index: 60" data-test="plan-editor">
-    <div class="absolute inset-0 bg-black/70 backdrop-blur-sm" @click="emit('close')" />
+    <div class="absolute inset-0 bg-black/70 backdrop-blur-xs" @click="emit('close')" />
     <form class="relative card w-full max-w-3xl max-h-[90vh] overflow-y-auto space-y-5" @submit.prevent="save">
       <div class="flex items-center justify-between">
         <h2 class="text-base font-semibold text-gray-100">{{ isNew ? t('whiteLabel.plans.newPlan') : t('whiteLabel.plans.editPlan') }}</h2>

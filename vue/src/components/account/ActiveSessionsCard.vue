@@ -61,7 +61,7 @@ async function revokeAll() {
         <div class="flex-1 min-w-0">
           <div class="flex items-center gap-2">
             <span class="text-sm text-gray-200 truncate">{{ session.device_name || 'Unknown' }}</span>
-            <span v-if="session.is_current" class="text-[10px] font-medium px-1.5 py-0.5 rounded bg-brand-500/20 text-brand-500 border border-brand-500/30">
+            <span v-if="session.is_current" class="text-[10px] font-medium px-1.5 py-0.5 rounded-sm bg-brand-500/20 text-brand-500 border border-brand-500/30">
               {{ t('account.currentSession') }}
             </span>
           </div>

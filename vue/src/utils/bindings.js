@@ -103,7 +103,7 @@ export function isBusy(binding) {
 
 /** Badge classes of a binding / health state. */
 export function bindingStatusClass(status) {
-  const base = 'inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium border'
+  const base = 'inline-flex items-center px-1.5 py-0.5 rounded-sm text-[10px] font-medium border'
   switch (status) {
     case 'ready':        return `${base} bg-emerald-900/40 border-emerald-800/40 text-emerald-400`
     case 'provisioning':

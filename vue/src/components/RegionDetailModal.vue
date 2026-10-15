@@ -77,7 +77,7 @@ function handleConfirmSkip({ step, warning }) {
 
 <template>
   <div class="fixed inset-0 flex items-center justify-center p-4" style="z-index: 60">
-    <div class="absolute inset-0 bg-black/60 backdrop-blur-sm" @click="isEdit && emit('close')" />
+    <div class="absolute inset-0 bg-black/60 backdrop-blur-xs" @click="isEdit && emit('close')" />
     <div class="relative bg-gray-950 border border-gray-800 rounded-2xl w-full max-w-4xl flex flex-col overflow-hidden" style="max-height: 88vh">
       <!-- Header bar -->
       <div class="flex items-center justify-between px-6 py-4 border-b border-gray-800 shrink-0" style="background:linear-gradient(135deg,rgb(var(--brand-900)/0.3),rgb(var(--brand-700)/0.15))">
@@ -91,7 +91,7 @@ function handleConfirmSkip({ step, warning }) {
               {{ t('settings.regionDetail.wizard.stepOf', { step: wizardStep, total: 7 }) }} — {{ wizardStepTitles[wizardStep - 1] }}
             </p>
           </div>
-          <span v-if="(region?.is_demo || createdRegion?.is_demo)" class="px-1.5 py-0.5 rounded text-[10px] font-medium" style="background:rgb(var(--brand-500)/0.15);color:rgb(var(--brand-500))">
+          <span v-if="(region?.is_demo || createdRegion?.is_demo)" class="px-1.5 py-0.5 rounded-sm text-[10px] font-medium" style="background:rgb(var(--brand-500)/0.15);color:rgb(var(--brand-500))">
             {{ t('settings.regions.demoBadge') }}
           </span>
         </div>
@@ -134,13 +134,13 @@ function handleConfirmSkip({ step, warning }) {
               <FunctionTlsSection v-if="!region?.is_demo && region?.has_serving" :region-id="region.id"
                 :mode="region?.function_tls_mode" :expires-at="region?.function_tls_expires_at" />
             </div>
-            <WorkersTab v-if="activeTab === 'workers'" :is-edit="true" :is-demo="region?.is_demo"
+            <WorkersTab v-if="activeTab === 'workers'" :is-edit="true" :is-demo="region?.is_demo" :region-id="region?.id"
               :project-namespace="projectNamespace" :nodes="nodes" :selected-nodes="selectedNodes" :nodes-loading="nodesLoading"
               :workers-saving="workersSaving" :workers-error="workersError"
               @save-workers="saveWorkers" @toggle-node="toggleNode" @refresh-nodes="loadNodes" />
             <div v-if="activeTab === 'registry'" class="space-y-4">
               <RegistrySection :readonly="true" :registry-mode="region?.registry_mode" :setup-status="region?.registry_status" />
-              <p v-if="region?.registry_address" class="text-xs text-gray-400 font-mono bg-gray-900/60 rounded px-3 py-2">{{ region.registry_address }}</p>
+              <p v-if="region?.registry_address" class="text-xs text-gray-400 font-mono bg-gray-900/60 rounded-sm px-3 py-2">{{ region.registry_address }}</p>
             </div>
             <div v-if="activeTab === 'operator'">
               <ComponentSection component="operator" :status="operatorStatus" :message="operatorMessage" :namespace="nsOperator"

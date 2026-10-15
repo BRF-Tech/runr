@@ -77,7 +77,7 @@ function money(amount, currency) {
 }
 
 function statusCls(status) {
-  const base = 'px-1.5 py-0.5 rounded text-[10px] font-medium border'
+  const base = 'px-1.5 py-0.5 rounded-sm text-[10px] font-medium border'
   return {
     open:   `${base} bg-amber-900/40 border-amber-800/40 text-amber-400`,
     closed: `${base} bg-emerald-900/40 border-emerald-800/40 text-emerald-400`,

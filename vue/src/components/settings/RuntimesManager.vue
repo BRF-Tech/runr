@@ -98,9 +98,9 @@ function onEditorSaved({ runtime, created }) {
             <div class="flex items-center gap-2 flex-wrap">
               <span class="text-sm font-semibold text-gray-100 truncate">{{ r.name }}</span>
               <span class="font-mono text-[11px] text-gray-400">{{ r.id }}</span>
-              <span class="px-1.5 py-0.5 rounded border text-[10px] font-medium" :class="sourceStyle[r.source] ?? sourceStyle.builtin">{{ t(`runtimes.source.${r.source}`) }}</span>
-              <span class="px-1.5 py-0.5 rounded border border-gray-700/60 bg-gray-800/40 text-[10px] font-mono text-gray-300">{{ t(`runtimes.mode.${r.run_mode}`) }}</span>
-              <span v-if="r.compiled" class="px-1.5 py-0.5 rounded border border-amber-800/50 bg-amber-950/30 text-[10px] font-medium text-amber-400">{{ t('runtimes.list.compiled') }}</span>
+              <span class="px-1.5 py-0.5 rounded-sm border text-[10px] font-medium" :class="sourceStyle[r.source] ?? sourceStyle.builtin">{{ t(`runtimes.source.${r.source}`) }}</span>
+              <span class="px-1.5 py-0.5 rounded-sm border border-gray-700/60 bg-gray-800/40 text-[10px] font-mono text-gray-300">{{ t(`runtimes.mode.${r.run_mode}`) }}</span>
+              <span v-if="r.compiled" class="px-1.5 py-0.5 rounded-sm border border-amber-800/50 bg-amber-950/30 text-[10px] font-medium text-amber-400">{{ t('runtimes.list.compiled') }}</span>
             </div>
             <p v-if="r.description" class="text-xs text-gray-400 truncate max-w-[460px]">{{ r.description }}</p>
           </div>
@@ -110,7 +110,7 @@ function onEditorSaved({ runtime, created }) {
         <div class="flex flex-wrap gap-1 max-w-[260px]">
           <span
             v-for="v in r.versions" :key="v.version"
-            class="px-1.5 py-0.5 rounded text-[11px] font-mono border"
+            class="px-1.5 py-0.5 rounded-sm text-[11px] font-mono border"
             :class="v.is_default ? 'border-sky-700/50 bg-sky-950/40 text-sky-300' : 'border-gray-700/50 bg-gray-800/50 text-gray-400'"
             :title="v.eol_at ? t('runtimes.list.eolAt', { date: v.eol_at }) : ''"
           >{{ v.version }}<span v-if="v.built" class="ml-1 text-amber-400">⚒</span></span>
@@ -132,7 +132,7 @@ function onEditorSaved({ runtime, created }) {
             :title="r.is_enabled ? t('runtimes.actions.disable') : t('runtimes.actions.enable')"
             @click="canEdit(r) && toggleEnabled(r)"
           >
-            <span class="pointer-events-none inline-block h-4 w-4 rounded-full bg-white shadow transition" :class="r.is_enabled ? 'translate-x-4' : 'translate-x-0'" />
+            <span class="pointer-events-none inline-block h-4 w-4 rounded-full bg-white shadow-sm transition" :class="r.is_enabled ? 'translate-x-4' : 'translate-x-0'" />
           </button>
           <span class="text-[11px]" :class="r.is_enabled ? 'text-brand-500' : 'text-gray-400'">{{ r.is_enabled ? t('runtimes.list.enabled') : t('runtimes.list.disabled') }}</span>
         </div>
@@ -143,7 +143,7 @@ function onEditorSaved({ runtime, created }) {
           <button v-if="canEdit(r)" class="icon-btn" :title="t('runtimes.actions.edit')" @click="editorTarget = r"><Pencil class="w-4 h-4" /></button>
           <button v-if="canTest(r)" class="icon-btn" :title="t('runtimes.actions.testDeploy')" @click="testTarget = r"><Rocket class="w-4 h-4" /></button>
           <button v-if="canEdit(r) && builtVersions(r).length" class="icon-btn" :title="t('runtimes.actions.builds')" @click="buildsTarget = r"><Hammer class="w-4 h-4" /></button>
-          <button v-if="canDelete(r)" class="icon-btn hover:!text-red-400" :title="t('runtimes.actions.delete')" @click="remove(r)"><Trash2 class="w-4 h-4" /></button>
+          <button v-if="canDelete(r)" class="icon-btn hover:text-red-400!" :title="t('runtimes.actions.delete')" @click="remove(r)"><Trash2 class="w-4 h-4" /></button>
         </div>
       </div>
     </div>
@@ -162,6 +162,7 @@ function onEditorSaved({ runtime, created }) {
 </template>
 
 <style scoped>
+@reference "../../assets/main.css";
 .icon-btn {
   @apply p-1.5 rounded-md text-gray-400 hover:text-gray-100 hover:bg-gray-800 transition-colors;
 }

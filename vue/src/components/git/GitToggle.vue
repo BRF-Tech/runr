@@ -23,7 +23,7 @@ defineEmits(['update:modelValue'])
       :class="modelValue ? 'bg-brand-500' : 'bg-gray-700'"
       @click="$emit('update:modelValue', !modelValue)"
     >
-      <span class="pointer-events-none inline-block h-4 w-4 rounded-full bg-white shadow transition" :class="modelValue ? 'translate-x-4' : 'translate-x-0'" />
+      <span class="pointer-events-none inline-block h-4 w-4 rounded-full bg-white shadow-sm transition" :class="modelValue ? 'translate-x-4' : 'translate-x-0'" />
     </button>
     <div class="min-w-0">
       <p class="text-sm text-gray-200">{{ label }}</p>

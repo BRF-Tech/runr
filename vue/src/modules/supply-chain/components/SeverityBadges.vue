@@ -27,7 +27,7 @@ const tone = {
 function cls(level) {
   const count = props.counts?.[level] ?? 0
   return [
-    'inline-flex items-center gap-1 px-1.5 py-0.5 rounded border text-[10px] font-mono font-medium',
+    'inline-flex items-center gap-1 px-1.5 py-0.5 rounded-sm border text-[10px] font-mono font-medium',
     count > 0 ? tone[level] : 'bg-transparent border-gray-800 text-gray-500',
   ]
 }

@@ -254,7 +254,7 @@ function fmtMem(mb) { return mb >= 1024 ? (mb / 1024).toFixed(1) + ' GB' : mb + 
           </div>
           <span class="font-semibold text-gray-100 font-mono">{{ region.name }}</span>
           <span v-if="region.region_mode === 'infinite'"
-            class="px-1.5 py-0.5 rounded text-[10px] font-medium border bg-blue-900/40 border-blue-800/40 text-blue-400">
+            class="px-1.5 py-0.5 rounded-sm text-[10px] font-medium border bg-blue-900/40 border-blue-800/40 text-blue-400">
             {{ t('tenancy.regionMode_infinite') }}
           </span>
           <span v-else class="text-gray-400 font-mono text-[11px]">{{ fmtCpu(region.cpu_quota_m ?? 0) }} / {{ fmtMem(region.memory_quota_mb ?? 0) }}</span>

@@ -102,7 +102,7 @@ function isVersionSelected(key) {
             <button
               v-for="v in versions"
               :key="v.key"
-              class="px-2 py-0.5 rounded text-[11px] font-mono border transition-all"
+              class="px-2 py-0.5 rounded-sm text-[11px] font-mono border transition-all"
               :class="isVersionSelected(v.key)
                 ? 'bg-sky-900/50 border-sky-600/50 text-sky-300'
                 : 'bg-gray-800/60 border-gray-700/50 text-gray-400 hover:text-gray-100 hover:border-gray-600'"

@@ -71,17 +71,17 @@ defineExpose({ load })
 <template>
   <div class="space-y-3" data-test="runs-table">
     <div class="flex flex-wrap items-center gap-2">
-      <select v-model="filters.status" class="input !w-auto !py-1.5 text-xs" data-test="status-filter">
+      <select v-model="filters.status" class="input w-auto! py-1.5! text-xs" data-test="status-filter">
         <option value="">{{ t('workflows.runs.allStatuses') }}</option>
         <option v-for="s in RUN_STATUSES" :key="s" :value="s">{{ t(`workflows.status.${s}`) }}</option>
       </select>
-      <select v-model="filters.workflow" class="input !w-auto !py-1.5 text-xs" data-test="workflow-filter">
+      <select v-model="filters.workflow" class="input w-auto! py-1.5! text-xs" data-test="workflow-filter">
         <option value="">{{ t('workflows.list.allWorkflows') }}</option>
         <option v-for="w in workflows" :key="w" :value="w">{{ w }}</option>
       </select>
-      <div class="relative flex-1 min-w-[12rem]">
+      <div class="relative flex-1 min-w-48">
         <Search class="w-3.5 h-3.5 text-gray-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
-        <input v-model="filters.q" type="search" class="input !py-1.5 !pl-8 text-xs font-mono" :placeholder="t('workflows.runs.search')" data-test="run-search" />
+        <input v-model="filters.q" type="search" class="input py-1.5! pl-8! text-xs font-mono" :placeholder="t('workflows.runs.search')" data-test="run-search" />
       </div>
       <button type="button" class="btn-secondary text-xs px-3 py-1.5" :disabled="loading" @click="load({ silent: true })">
         <RefreshCw class="w-3.5 h-3.5" :class="loading ? 'animate-spin' : ''" />{{ t('workflows.refresh') }}

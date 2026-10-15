@@ -48,7 +48,7 @@ onMounted(async () => {
       >
         <div class="flex items-center gap-1.5">
           <p class="font-mono font-medium">{{ r.name }}</p>
-          <span v-if="r.is_demo" class="px-1 py-0.5 rounded text-[9px] font-medium" style="background:rgb(var(--brand-500)/0.15);color:rgb(var(--brand-500))">Demo</span>
+          <span v-if="r.is_demo" class="px-1 py-0.5 rounded-sm text-[9px] font-medium" style="background:rgb(var(--brand-500)/0.15);color:rgb(var(--brand-500))">Demo</span>
           <span v-if="!r.is_active" class="text-[9px] text-gray-400">({{ t('settings.regions.inactive') }})</span>
           <span v-else-if="!r.is_synced && !r.is_demo && !r.has_kubeconfig" class="text-[9px] text-orange-500">({{ t('settings.regions.knativeNotReady') }})</span>
           <span v-if="residency?.default_region_id === r.id" class="text-[9px] text-sky-400">({{ t('supplyChain.residency.defaultBadge') }})</span>

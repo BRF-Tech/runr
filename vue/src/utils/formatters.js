@@ -9,7 +9,7 @@ export function fmtMem(mb) {
 }
 
 export function statusBadgeClass(status) {
-  const base = 'inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium'
+  const base = 'inline-flex items-center px-2 py-0.5 rounded-sm text-[10px] font-medium'
   switch (status) {
     case 'ready':         return `${base} bg-emerald-900/40 text-emerald-400 border border-emerald-800/50`
     case 'installing':    return `${base} bg-yellow-900/40 text-yellow-400 border border-yellow-800/50 animate-pulse`
@@ -22,7 +22,7 @@ export function statusBadgeClass(status) {
 }
 
 export function redisStatusBadgeClass(status) {
-  const base = 'inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium'
+  const base = 'inline-flex items-center px-2 py-0.5 rounded-sm text-[10px] font-medium'
   switch (status) {
     case 'ready':        return `${base} bg-emerald-900/40 text-emerald-400 border border-emerald-800/50`
     case 'installing':   return `${base} bg-yellow-900/40 text-yellow-400 border border-yellow-800/50 animate-pulse`

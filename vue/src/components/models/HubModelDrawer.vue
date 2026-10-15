@@ -58,7 +58,7 @@ async function addToLibrary() {
 
 <template>
   <div class="fixed inset-0 z-50 flex justify-end" data-testid="hub-drawer">
-    <div class="absolute inset-0 bg-black/60 backdrop-blur-sm" @click="emit('close')" />
+    <div class="absolute inset-0 bg-black/60 backdrop-blur-xs" @click="emit('close')" />
     <aside class="relative w-full max-w-xl h-full bg-gray-950 border-l border-gray-800 flex flex-col">
       <div class="flex items-center justify-between px-5 py-4 border-b border-gray-800">
         <div class="min-w-0">
@@ -74,10 +74,10 @@ async function addToLibrary() {
 
         <template v-else-if="info">
           <div class="flex flex-wrap items-center gap-2 text-[11px]">
-            <span v-if="info.task" class="px-1.5 py-0.5 rounded bg-gray-800 text-gray-300">{{ t(`ai.tasks.${info.task}`, info.task) }}</span>
-            <span v-if="info.library" class="px-1.5 py-0.5 rounded bg-gray-800 font-mono text-gray-300">{{ info.library }}</span>
-            <span v-if="info.license" class="px-1.5 py-0.5 rounded bg-gray-800 text-gray-300">{{ t('ai.hub.license') }}: {{ info.license }}</span>
-            <span v-if="gated" class="flex items-center gap-1 px-1.5 py-0.5 rounded bg-amber-900/40 border border-amber-800/40 text-amber-300" data-testid="hub-gated">
+            <span v-if="info.task" class="px-1.5 py-0.5 rounded-sm bg-gray-800 text-gray-300">{{ t(`ai.tasks.${info.task}`, info.task) }}</span>
+            <span v-if="info.library" class="px-1.5 py-0.5 rounded-sm bg-gray-800 font-mono text-gray-300">{{ info.library }}</span>
+            <span v-if="info.license" class="px-1.5 py-0.5 rounded-sm bg-gray-800 text-gray-300">{{ t('ai.hub.license') }}: {{ info.license }}</span>
+            <span v-if="gated" class="flex items-center gap-1 px-1.5 py-0.5 rounded-sm bg-amber-900/40 border border-amber-800/40 text-amber-300" data-testid="hub-gated">
               <Lock class="w-3 h-3" />{{ t('ai.hub.gated') }}
             </span>
           </div>
@@ -101,9 +101,9 @@ async function addToLibrary() {
             </div>
           </div>
 
-          <p v-if="gated && !hubTokenConfigured" class="text-xs text-amber-300/90 bg-amber-900/20 rounded px-3 py-2">{{ t('ai.hub.gatedNoToken') }}</p>
+          <p v-if="gated && !hubTokenConfigured" class="text-xs text-amber-300/90 bg-amber-900/20 rounded-sm px-3 py-2">{{ t('ai.hub.gatedNoToken') }}</p>
           <p v-else-if="gated" class="text-xs text-gray-400">{{ t('ai.hub.gatedWithToken') }}</p>
-          <p v-for="w in warnings" :key="w" class="text-xs text-amber-300/90 bg-amber-900/20 rounded px-3 py-2">{{ t(`ai.hub.warnings.${w}`, w) }}</p>
+          <p v-for="w in warnings" :key="w" class="text-xs text-amber-300/90 bg-amber-900/20 rounded-sm px-3 py-2">{{ t(`ai.hub.warnings.${w}`, w) }}</p>
 
           <!-- Engines -->
           <section>
@@ -113,7 +113,7 @@ async function addToLibrary() {
                 <span class="font-medium text-gray-100 w-28">{{ t(`ai.engines.${e.engine}`, e.engine) }}</span>
                 <span class="font-mono text-gray-400">{{ (e.devices ?? []).map(d => d.toUpperCase()).join(' · ') }}</span>
                 <span class="text-gray-500">{{ t(`ai.apis.${e.api}`, e.api ?? '') }}</span>
-                <span v-if="e.recommended" class="ml-auto px-1.5 py-0.5 rounded text-[10px] bg-emerald-900/40 border border-emerald-800/40 text-emerald-300">{{ t('ai.hub.recommended') }}</span>
+                <span v-if="e.recommended" class="ml-auto px-1.5 py-0.5 rounded-sm text-[10px] bg-emerald-900/40 border border-emerald-800/40 text-emerald-300">{{ t('ai.hub.recommended') }}</span>
               </div>
             </div>
             <p v-else class="text-xs text-gray-400">{{ t('ai.hub.customOnly') }}</p>
@@ -167,6 +167,7 @@ async function addToLibrary() {
 </template>
 
 <style scoped>
+@reference "../../assets/main.css";
 .section-title {
   @apply text-xs text-gray-400 uppercase tracking-wider font-medium mb-2 border-b border-gray-800/60 pb-1.5;
 }

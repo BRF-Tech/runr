@@ -181,7 +181,7 @@ onMounted(load)
             <div class="min-w-0">
               <div class="flex items-center gap-2">
                 <span class="text-sm font-semibold text-gray-100">{{ group.name }}</span>
-                <span v-if="group.role" class="text-[10px] px-1.5 py-0.5 rounded border border-sky-800/50 bg-sky-900/30 text-sky-400">{{ roleLabel(group.role, roles) }}</span>
+                <span v-if="group.role" class="text-[10px] px-1.5 py-0.5 rounded-sm border border-sky-800/50 bg-sky-900/30 text-sky-400">{{ roleLabel(group.role, roles) }}</span>
               </div>
               <p class="text-xs text-gray-400">
                 {{ t('rbac.memberCount', { n: group.member_count }) }}
@@ -212,7 +212,7 @@ onMounted(load)
           <div v-for="m in detail.members" :key="m.id" class="flex items-center gap-2 text-xs rounded-md border border-gray-800 px-3 py-2">
             <span class="font-medium text-gray-100">{{ m.name }}</span>
             <span class="text-gray-400">{{ m.email }}</span>
-            <span v-if="m.source === 'sso'" class="text-[10px] px-1.5 py-0.5 rounded border border-emerald-800/40 bg-emerald-900/30 text-emerald-400" :title="t('rbac.sourceSsoHint')">{{ t('rbac.sourceSso') }}</span>
+            <span v-if="m.source === 'sso'" class="text-[10px] px-1.5 py-0.5 rounded-sm border border-emerald-800/40 bg-emerald-900/30 text-emerald-400" :title="t('rbac.sourceSsoHint')">{{ t('rbac.sourceSso') }}</span>
             <span class="flex-1" />
             <button v-if="canManage" class="text-gray-400 hover:text-red-400" :title="t('rbac.removeMember')" @click="removeMember(m)">
               <X class="w-3.5 h-3.5" />

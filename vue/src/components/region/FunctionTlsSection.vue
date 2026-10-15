@@ -75,7 +75,7 @@ async function save() {
     <div class="rounded-md border border-gray-800 bg-gray-900/40 px-3 py-3 space-y-3">
       <!-- Current status -->
       <div v-if="currentMode" class="flex items-center gap-2 text-xs">
-        <span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium" style="background:rgb(var(--brand-500)/0.15);color:rgb(var(--brand-500))">
+        <span class="inline-flex items-center px-1.5 py-0.5 rounded-sm text-[10px] font-medium" style="background:rgb(var(--brand-500)/0.15);color:rgb(var(--brand-500))">
           {{ t(`settings.regionDetail.functionTls.mode_${currentMode}`) }}
         </span>
         <span v-if="expiresLabel" class="text-gray-400">
@@ -86,11 +86,11 @@ async function save() {
 
       <!-- Mode toggle -->
       <div class="flex gap-2">
-        <button type="button" class="px-2 py-1 rounded text-[10px] transition-colors"
+        <button type="button" class="px-2 py-1 rounded-sm text-[10px] transition-colors"
           :class="formMode === 'custom' ? 'border' : 'text-gray-400 hover:text-gray-100 border border-transparent'"
           :style="formMode === 'custom' ? 'background:rgb(var(--brand-600)/0.2);border-color:rgb(var(--brand-500)/0.4);color:rgb(var(--brand-500))' : ''"
           @click="formMode = 'custom'">{{ t('settings.regionDetail.functionTls.modeUpload') }}</button>
-        <button type="button" class="px-2 py-1 rounded text-[10px] transition-colors"
+        <button type="button" class="px-2 py-1 rounded-sm text-[10px] transition-colors"
           :class="formMode === 'console' ? 'border' : 'text-gray-400 hover:text-gray-100 border border-transparent'"
           :style="formMode === 'console' ? 'background:rgb(var(--brand-600)/0.2);border-color:rgb(var(--brand-500)/0.4);color:rgb(var(--brand-500))' : ''"
           @click="formMode = 'console'">{{ t('settings.regionDetail.functionTls.modeConsole') }}</button>

@@ -103,7 +103,7 @@ function removeRow(index) {
             @input="setRow(i, 'key', $event.target.value)" />
           <p v-if="row.key && !isValidEnvKey(row.key)" class="text-[11px] text-red-400 mt-1">{{ t('bindings.external.keyInvalid') }}</p>
         </div>
-        <input class="input font-mono text-xs flex-[2]" type="password" autocomplete="new-password" :placeholder="t('bindings.external.value')"
+        <input class="input font-mono text-xs flex-2" type="password" autocomplete="new-password" :placeholder="t('bindings.external.value')"
           :value="row.value" data-field="external_value" @input="setRow(i, 'value', $event.target.value)" />
         <button type="button" class="p-2 text-gray-400 hover:text-red-400" :title="t('common.delete')" @click="removeRow(i)">
           <X class="w-3.5 h-3.5" />

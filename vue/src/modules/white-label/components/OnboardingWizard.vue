@@ -122,7 +122,7 @@ defineExpose({ steps, load })
 
 <template>
   <div v-if="open" class="fixed inset-0 flex items-center justify-center p-4" style="z-index: 65" data-test="onboarding-wizard">
-    <div class="absolute inset-0 bg-black/70 backdrop-blur-sm" />
+    <div class="absolute inset-0 bg-black/70 backdrop-blur-xs" />
     <div class="relative card w-full max-w-2xl max-h-[90vh] overflow-y-auto">
       <div class="flex items-start justify-between gap-4 mb-5">
         <div>

@@ -92,15 +92,15 @@ onMounted(load)
               <Lock v-if="!tool.allowed" class="w-3.5 h-3.5 text-gray-400" :title="t('mcp.tools.locked')" />
               <code class="text-xs font-mono text-gray-100">{{ tool.name }}</code>
               <span class="text-xs text-gray-400">{{ tool.title }}</span>
-              <span v-if="tool.annotations?.readOnlyHint" class="text-[10px] font-medium px-1.5 py-0.5 rounded border bg-emerald-900/30 border-emerald-800/40 text-emerald-400">{{ t('mcp.tools.readOnly') }}</span>
-              <span v-if="tool.annotations?.destructiveHint" class="text-[10px] font-medium px-1.5 py-0.5 rounded border bg-red-900/30 border-red-800/40 text-red-400">{{ t('mcp.tools.destructive') }}</span>
-              <span v-if="tool.streams" class="text-[10px] font-medium px-1.5 py-0.5 rounded border bg-sky-900/30 border-sky-800/40 text-sky-400">{{ t('mcp.tools.streams') }}</span>
+              <span v-if="tool.annotations?.readOnlyHint" class="text-[10px] font-medium px-1.5 py-0.5 rounded-sm border bg-emerald-900/30 border-emerald-800/40 text-emerald-400">{{ t('mcp.tools.readOnly') }}</span>
+              <span v-if="tool.annotations?.destructiveHint" class="text-[10px] font-medium px-1.5 py-0.5 rounded-sm border bg-red-900/30 border-red-800/40 text-red-400">{{ t('mcp.tools.destructive') }}</span>
+              <span v-if="tool.streams" class="text-[10px] font-medium px-1.5 py-0.5 rounded-sm border bg-sky-900/30 border-sky-800/40 text-sky-400">{{ t('mcp.tools.streams') }}</span>
             </div>
             <p class="text-[11px] text-gray-400 mt-1">{{ tool.description }}</p>
             <div class="flex flex-wrap gap-1 mt-1.5">
-              <span v-if="!(tool.permissions || []).length" class="text-[10px] px-1.5 py-0.5 rounded border border-gray-700/60 bg-gray-800 text-gray-400">{{ t('mcp.tools.everyone') }}</span>
+              <span v-if="!(tool.permissions || []).length" class="text-[10px] px-1.5 py-0.5 rounded-sm border border-gray-700/60 bg-gray-800 text-gray-400">{{ t('mcp.tools.everyone') }}</span>
               <span v-for="p in tool.permissions || []" :key="p"
-                class="text-[10px] px-1.5 py-0.5 rounded border border-gray-700/60 bg-gray-800 text-gray-400">{{ requirementLabel(p) }}</span>
+                class="text-[10px] px-1.5 py-0.5 rounded-sm border border-gray-700/60 bg-gray-800 text-gray-400">{{ requirementLabel(p) }}</span>
             </div>
           </div>
         </div>

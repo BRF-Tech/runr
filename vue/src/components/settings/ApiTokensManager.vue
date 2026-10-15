@@ -142,10 +142,10 @@ async function confirmDelete(token) {
           <div class="flex-1 min-w-0">
             <div class="flex items-center gap-2">
               <span class="text-sm font-semibold text-gray-100">{{ token.name }}</span>
-              <span v-if="isExpired(token)" class="text-[10px] font-medium px-1.5 py-0.5 rounded bg-red-900/30 border border-red-800/50 text-red-400">
+              <span v-if="isExpired(token)" class="text-[10px] font-medium px-1.5 py-0.5 rounded-sm bg-red-900/30 border border-red-800/50 text-red-400">
                 {{ t('tokens.expired') }}
               </span>
-              <span v-if="token.abilities?.includes('*')" class="text-[10px] font-medium px-1.5 py-0.5 rounded bg-emerald-900/30 border border-emerald-800/40 text-emerald-400">
+              <span v-if="token.abilities?.includes('*')" class="text-[10px] font-medium px-1.5 py-0.5 rounded-sm bg-emerald-900/30 border border-emerald-800/40 text-emerald-400">
                 {{ t('tokens.fullAccess') }}
               </span>
             </div>
@@ -157,7 +157,7 @@ async function confirmDelete(token) {
             </div>
             <div v-if="token.abilities && !token.abilities.includes('*')" class="flex flex-wrap gap-1 mt-1.5">
               <span v-for="ab in token.abilities" :key="ab"
-                class="text-[10px] font-medium px-1.5 py-0.5 rounded border"
+                class="text-[10px] font-medium px-1.5 py-0.5 rounded-sm border"
                 :class="[abilityStyle(ab).bg, abilityStyle(ab).border, abilityStyle(ab).text]">
                 {{ abilityLabel(ab) }}
               </span>

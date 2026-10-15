@@ -37,7 +37,7 @@ function fmtVal(v, dec = 2) {
         <span class="text-xs text-gray-400 font-medium mr-1">{{ t('metrics.range') }}</span>
         <button
           v-for="r in rangeOptions" :key="r"
-          class="px-3 py-1.5 text-sm font-mono rounded transition-colors"
+          class="px-3 py-1.5 text-sm font-mono rounded-sm transition-colors"
           :class="selectedRange === r
             ? 'bg-sky-600 text-white'
             : 'bg-gray-800 text-gray-400 hover:text-brand-500'"

@@ -88,7 +88,7 @@ onMounted(load)
           </div>
           <div class="flex flex-wrap gap-1 mt-1.5">
             <span v-for="ab in scopes(client)" :key="ab"
-              class="text-[10px] font-medium px-1.5 py-0.5 rounded border border-gray-700/60 bg-gray-800 text-gray-400">
+              class="text-[10px] font-medium px-1.5 py-0.5 rounded-sm border border-gray-700/60 bg-gray-800 text-gray-400">
               {{ ab === '*' ? t('tokens.fullAccess') : permLabel(ab) }}
             </span>
           </div>

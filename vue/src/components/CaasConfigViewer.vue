@@ -97,7 +97,7 @@ defineProps({
           <div class="flex flex-wrap gap-2">
             <span
               v-for="port in version.config_snapshot.ports" :key="port"
-              class="font-mono text-xs bg-gray-800 border border-gray-700 rounded px-2 py-0.5 text-gray-100"
+              class="font-mono text-xs bg-gray-800 border border-gray-700 rounded-sm px-2 py-0.5 text-gray-100"
             >{{ port }}</span>
           </div>
         </div>

@@ -134,7 +134,7 @@ onMounted(async () => {
         <button v-for="tab in TABS" :key="tab" class="settings-tab" :class="activeTab === tab && 'is-active'"
           :data-testid="`models-tab-${tab}`" @click="setTab(tab)">
           <component :is="tabIcons[tab]" class="w-4 h-4" />{{ t(`ai.tabs.${tab}`) }}
-          <span v-if="tab === 'services' && ai.services.length" class="ml-1 px-1.5 rounded text-[10px] font-mono bg-gray-800 text-gray-300">{{ ai.services.length }}</span>
+          <span v-if="tab === 'services' && ai.services.length" class="ml-1 px-1.5 rounded-sm text-[10px] font-mono bg-gray-800 text-gray-300">{{ ai.services.length }}</span>
         </button>
       </div>
 

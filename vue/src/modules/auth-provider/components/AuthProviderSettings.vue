@@ -228,10 +228,10 @@ fetchProviders()
           <div class="flex-1 min-w-0">
             <div class="flex items-center gap-2">
               <span class="text-sm font-semibold text-gray-100">{{ p.name }}</span>
-              <span class="text-[10px] font-mono font-medium px-1.5 py-0.5 rounded border" :class="[meta(p.driver).bg, meta(p.driver).border, meta(p.driver).text]">
+              <span class="text-[10px] font-mono font-medium px-1.5 py-0.5 rounded-sm border" :class="[meta(p.driver).bg, meta(p.driver).border, meta(p.driver).text]">
                 {{ t(driverLabels[p.driver] || 'authProvider.driverOidc') }}
               </span>
-              <span v-if="p.auto_register" class="text-[10px] font-medium px-1.5 py-0.5 rounded bg-emerald-900/30 border border-emerald-800/40 text-emerald-400">
+              <span v-if="p.auto_register" class="text-[10px] font-medium px-1.5 py-0.5 rounded-sm bg-emerald-900/30 border border-emerald-800/40 text-emerald-400">
                 {{ t('authProvider.autoRegister') }}
               </span>
             </div>

@@ -94,7 +94,7 @@ function goLogin() { router.push('/login') }
               v-model="name"
               type="text"
               required
-              class="w-full bg-gray-800 border border-gray-700 rounded-md px-3 py-2 text-sm text-gray-100 focus:outline-none focus:border-blue-500"
+              class="w-full bg-gray-800 border border-gray-700 rounded-md px-3 py-2 text-sm text-gray-100 focus:outline-hidden focus:border-blue-500"
               :placeholder="t('tenancy.userName')"
             />
           </div>
@@ -107,7 +107,7 @@ function goLogin() { router.push('/login') }
               type="password"
               required
               :minlength="invitation.has_account ? undefined : 8"
-              class="w-full bg-gray-800 border border-gray-700 rounded-md px-3 py-2 text-sm text-gray-100 focus:outline-none focus:border-blue-500"
+              class="w-full bg-gray-800 border border-gray-700 rounded-md px-3 py-2 text-sm text-gray-100 focus:outline-hidden focus:border-blue-500"
               placeholder="••••••••"
             />
             <p v-if="!invitation.has_account" class="text-[11px] text-gray-400 mt-1">

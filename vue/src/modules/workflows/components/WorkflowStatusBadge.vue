@@ -14,7 +14,7 @@ const label = computed(() => t(`workflows.status.${props.status}`, props.status)
 
 <template>
   <span
-    class="inline-flex items-center gap-1 rounded border font-medium whitespace-nowrap"
+    class="inline-flex items-center gap-1 rounded-sm border font-medium whitespace-nowrap"
     :class="[statusClass(status), size === 'xs' ? 'px-1.5 py-px text-[10px]' : 'px-2 py-0.5 text-[11px]']"
     :data-status="status"
   >

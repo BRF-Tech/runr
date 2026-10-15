@@ -139,13 +139,13 @@ onMounted(() => { loadDetail(); subscribeToTicket(); markAsRead() })
           <button class="text-gray-500 hover:text-gray-300 transition-colors shrink-0" @click="emit('close')"><X class="w-5 h-5" /></button>
         </div>
         <div class="flex items-center gap-2.5 flex-wrap">
-          <span class="text-xs font-semibold px-2.5 py-1 rounded" :class="statusClass[detail?.status || ticket.status]">
+          <span class="text-xs font-semibold px-2.5 py-1 rounded-sm" :class="statusClass[detail?.status || ticket.status]">
             {{ t('account.st_' + (detail?.status || ticket.status)) }}
           </span>
-          <span class="text-xs font-semibold px-2.5 py-1 rounded" :class="priorityClass[ticket.priority]">
+          <span class="text-xs font-semibold px-2.5 py-1 rounded-sm" :class="priorityClass[ticket.priority]">
             {{ t('account.pri_' + ticket.priority) }}
           </span>
-          <span class="text-xs font-semibold px-2.5 py-1 rounded bg-gray-800 text-gray-400">{{ t('account.cat_' + ticket.category) }}</span>
+          <span class="text-xs font-semibold px-2.5 py-1 rounded-sm bg-gray-800 text-gray-400">{{ t('account.cat_' + ticket.category) }}</span>
           <span v-for="(tag, i) in currentTags" :key="i"
             class="text-xs font-medium px-2 py-0.5 rounded-full bg-brand-500/10 text-brand-500 border border-brand-500/20">{{ tag }}</span>
           <span v-if="admin" class="text-xs text-gray-500">· {{ ticketUser.name || ticketUser.email }}</span>
@@ -265,7 +265,7 @@ onMounted(() => { loadDetail(); subscribeToTicket(); markAsRead() })
     </div>
 
     <!-- Image lightbox -->
-    <div v-if="lightboxSrc" class="fixed inset-0 z-[60] flex items-center justify-center bg-black/80" @click="lightboxSrc = null">
+    <div v-if="lightboxSrc" class="fixed inset-0 z-60 flex items-center justify-center bg-black/80" @click="lightboxSrc = null">
       <button class="absolute top-4 right-4 text-gray-400 hover:text-white transition-colors" @click="lightboxSrc = null"><X class="w-6 h-6" /></button>
       <img :src="lightboxSrc" class="max-w-[90vw] max-h-[90vh] rounded-lg shadow-2xl" @click.stop />
     </div>

@@ -168,7 +168,7 @@ onUnmounted(() => window.removeEventListener('mouseup', onWindowMouseUp))
       <!-- Chart area -->
       <div
         ref="chartEl"
-        class="flex-1 relative min-w-0 rounded border border-gray-800 bg-gray-950 cursor-crosshair"
+        class="flex-1 relative min-w-0 rounded-sm border border-gray-800 bg-gray-950 cursor-crosshair"
         @mousedown="onMouseDown"
         @mousemove="onMouseMove"
         @mouseleave="hoverIdx = null"
@@ -219,7 +219,7 @@ onUnmounted(() => window.removeEventListener('mouseup', onWindowMouseUp))
           class="absolute top-1 pointer-events-none z-20"
           :style="{ left: tipLeft(hoverPt), transform: tipAnchor(hoverPt) }"
         >
-          <div class="bg-gray-900/95 border border-gray-700/80 rounded shadow-lg px-2.5 py-1 text-[10px] font-mono whitespace-nowrap">
+          <div class="bg-gray-900/95 border border-gray-700/80 rounded-sm shadow-lg px-2.5 py-1 text-[10px] font-mono whitespace-nowrap">
             <span class="text-gray-400">{{ fmtTs(hoverPt.d.t) }}</span>
             <span class="mx-1 text-gray-400">·</span>
             <span class="text-brand-300 font-semibold">{{ fmtEps(hoverPt.d.eps) }}</span>
@@ -234,7 +234,7 @@ onUnmounted(() => window.removeEventListener('mouseup', onWindowMouseUp))
         <div v-if="brushRect && dragStart !== dragCurrent"
           class="absolute top-1 left-1/2 -translate-x-1/2 pointer-events-none z-20"
         >
-          <div class="bg-gray-900/95 border border-brand-700/60 rounded shadow-lg px-2.5 py-1 text-[10px] font-mono whitespace-nowrap text-brand-300">
+          <div class="bg-gray-900/95 border border-brand-700/60 rounded-sm shadow-lg px-2.5 py-1 text-[10px] font-mono whitespace-nowrap text-brand-300">
             {{ fmtTs(data[Math.min(dragStart, dragCurrent)]?.t) }}
             <span class="text-gray-400 mx-1">→</span>
             {{ fmtTs(data[Math.max(dragStart, dragCurrent)]?.t) }}

@@ -113,8 +113,8 @@ async function goToCentral() {
           <div class="w-0.5 h-7 rounded-full shrink-0" style="background:linear-gradient(180deg,rgb(var(--brand-500)),rgb(var(--brand-700)))"></div>
           <div class="min-w-0">
             <p class="text-sm text-gray-100 font-semibold truncate leading-tight">{{ activeName }}</p>
-            <span v-if="store.activeTenant" class="text-[10px] font-mono px-1.5 py-0.5 rounded mt-0.5 inline-block" style="background:rgb(var(--brand-500)/0.12);border:1px solid rgb(var(--brand-500)/0.25);color:rgb(var(--brand-500))">{{ store.activeTenant.slug }}</span>
-            <span v-else-if="auth.isAdmin" class="text-[10px] font-mono px-1.5 py-0.5 rounded mt-0.5 inline-block border text-amber-500" style="background:rgb(180 83 9/0.12);border-color:rgb(180 83 9/0.35)">{{ t('tenancy.platform') }}</span>
+            <span v-if="store.activeTenant" class="text-[10px] font-mono px-1.5 py-0.5 rounded-sm mt-0.5 inline-block" style="background:rgb(var(--brand-500)/0.12);border:1px solid rgb(var(--brand-500)/0.25);color:rgb(var(--brand-500))">{{ store.activeTenant.slug }}</span>
+            <span v-else-if="auth.isAdmin" class="text-[10px] font-mono px-1.5 py-0.5 rounded-sm mt-0.5 inline-block border text-amber-500" style="background:rgb(180 83 9/0.12);border-color:rgb(180 83 9/0.35)">{{ t('tenancy.platform') }}</span>
           </div>
         </div>
       </div>
@@ -129,17 +129,17 @@ async function goToCentral() {
           <Building2 class="w-3.5 h-3.5 text-amber-500" />
           <span class="text-sm text-amber-400 group-hover:text-amber-300">Central</span>
         </div>
-        <span class="text-[10px] font-mono px-1.5 py-0.5 rounded border text-amber-500" style="background:rgb(180 83 9/0.12);border-color:rgb(180 83 9/0.35)">{{ t('tenancy.platform') }}</span>
+        <span class="text-[10px] font-mono px-1.5 py-0.5 rounded-sm border text-amber-500" style="background:rgb(180 83 9/0.12);border-color:rgb(180 83 9/0.35)">{{ t('tenancy.platform') }}</span>
       </button>
 
       <!-- Search -->
       <div class="px-2 py-1.5 border-b border-gray-800">
-        <div class="flex items-center gap-1.5 px-2 py-1 rounded bg-gray-800">
-          <Search class="w-3 h-3 text-gray-400 flex-shrink-0" />
+        <div class="flex items-center gap-1.5 px-2 py-1 rounded-sm bg-gray-800">
+          <Search class="w-3 h-3 text-gray-400 shrink-0" />
           <input
             v-model="search"
             type="text"
-            class="bg-transparent text-xs text-gray-100 placeholder-gray-400 outline-none w-full"
+            class="bg-transparent text-xs text-gray-100 placeholder-gray-400 outline-hidden w-full"
             :placeholder="t('tenancy.searchTenants')"
             @click.stop
           />

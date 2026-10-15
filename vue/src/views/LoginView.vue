@@ -142,13 +142,13 @@ function loginWithProvider(p) {
       <div class="hidden md:flex flex-col justify-center pl-40 pr-8 pb-20 text-white sticky top-0 h-screen">
         <div class="mb-14" data-test="login-brand"><RunrWordmark size="lg" force-white /></div>
         <!-- Branded login text replaces the carousel -->
-        <div v-if="brandHeadline" class="min-h-[10rem]" data-test="login-headline">
+        <div v-if="brandHeadline" class="min-h-40" data-test="login-headline">
           <h1 class="text-6xl font-bold mb-5 leading-tight">{{ brandHeadline }}</h1>
           <p v-if="branding.data.login_text" class="text-blue-200 text-lg leading-relaxed max-w-md whitespace-pre-line">{{ branding.data.login_text }}</p>
         </div>
         <template v-else>
         <Transition name="slide-fade" mode="out-in">
-          <div :key="slideIndex" class="min-h-[10rem]">
+          <div :key="slideIndex" class="min-h-40">
             <h1 class="text-6xl font-bold mb-5 leading-tight">{{ slides[slideIndex].tagline }}</h1>
             <p class="text-blue-200 text-lg leading-relaxed max-w-md">{{ slides[slideIndex].desc }}</p>
           </div>
@@ -202,7 +202,7 @@ function loginWithProvider(p) {
             <div v-if="tenancyEnabled && !(userType === 'tenant' && tenancyStep === 2)" class="flex gap-4 mb-8">
               <button type="button" class="user-type-card flex-1 flex items-center justify-start gap-3 px-4 py-3.5 rounded-md border-2 transition-all text-left"
                 :class="userType === 'platform' ? 'user-type-active' : 'user-type-inactive'" @click="userType = 'platform'">
-                <span class="user-type-radio flex-shrink-0" :class="userType === 'platform' ? 'user-type-radio-active' : 'user-type-radio-inactive'"></span>
+                <span class="user-type-radio shrink-0" :class="userType === 'platform' ? 'user-type-radio-active' : 'user-type-radio-inactive'"></span>
                 <span>
                   <span class="block text-sm font-semibold">{{ t('auth.platformUser') }}</span>
                   <span class="block text-xs mt-0.5 user-type-desc">{{ t('auth.platformUserDesc') }}</span>
@@ -210,7 +210,7 @@ function loginWithProvider(p) {
               </button>
               <button type="button" class="user-type-card flex-1 flex items-center gap-3 px-4 py-3.5 rounded-md border-2 transition-all text-left"
                 :class="userType === 'tenant' ? 'user-type-active' : 'user-type-inactive'" @click="userType = 'tenant'">
-                <span class="user-type-radio flex-shrink-0" :class="userType === 'tenant' ? 'user-type-radio-active' : 'user-type-radio-inactive'"></span>
+                <span class="user-type-radio shrink-0" :class="userType === 'tenant' ? 'user-type-radio-active' : 'user-type-radio-inactive'"></span>
                 <span>
                   <span class="block text-sm font-semibold">{{ t('auth.tenantUser') }}</span>
                   <span class="block text-xs mt-0.5 user-type-desc">{{ t('auth.tenantUserDesc') }}</span>
@@ -237,7 +237,7 @@ function loginWithProvider(p) {
               <!-- Tenant back + tenancy badge -->
               <div v-if="userType === 'tenant'" class="flex items-center gap-2 mb-6">
                 <button type="button" class="text-xs hover:underline" style="color:rgb(var(--brand-600))" @click="backToTenancy">{{ t('common.back') }}</button>
-                <span class="text-xs px-2 py-0.5 rounded" style="background:rgb(var(--brand-600) / .08);border:1px solid rgb(var(--brand-600) / .2);color:rgb(var(--brand-600))">
+                <span class="text-xs px-2 py-0.5 rounded-sm" style="background:rgb(var(--brand-600) / .08);border:1px solid rgb(var(--brand-600) / .2);color:rgb(var(--brand-600))">
                   <span class="font-medium">{{ tenantName }}</span>
                   <span class="font-mono opacity-60 ml-1">{{ tenancySlug }}</span>
                 </span>

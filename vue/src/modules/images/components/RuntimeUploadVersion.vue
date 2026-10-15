@@ -68,6 +68,7 @@ function add() {
 </template>
 
 <style scoped>
+@reference "../../../assets/main.css";
 .section-title {
   @apply text-xs text-gray-400 uppercase tracking-wider font-medium mb-3 border-b border-gray-800/60 pb-2;
 }

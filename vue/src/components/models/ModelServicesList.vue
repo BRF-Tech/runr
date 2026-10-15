@@ -41,15 +41,17 @@ const statusClass = (s) => AI_STATUS_CLASSES[s] ?? 'bg-gray-800 text-gray-400 bo
           <tr v-for="s in ai.services" :key="s.id" class="border-t border-gray-800/60 hover:bg-gray-900/60 cursor-pointer"
             :data-service-row="s.name" @click="emit('select', s)">
             <td class="px-3 py-2 font-mono text-gray-100">{{ s.name }}</td>
-            <td class="px-3 py-2 text-gray-300 font-mono truncate max-w-[14rem]">{{ s.model?.hub_id ?? s.model?.name }}</td>
+            <td class="px-3 py-2 text-gray-300 font-mono truncate max-w-56">{{ s.model?.hub_id ?? s.model?.name }}</td>
             <td class="px-3 py-2 text-gray-300">
               {{ t(`ai.engines.${s.engine}`, s.engine) }}
-              <span class="ml-1 px-1 rounded font-mono text-[10px]" :class="s.device === 'gpu' ? 'bg-amber-900/40 text-amber-300' : 'bg-gray-800 text-gray-400'">{{ (s.device ?? '').toUpperCase() }}</span>
+              <span class="ml-1 px-1 rounded-sm font-mono text-[10px]" :class="s.device === 'gpu' ? 'bg-amber-900/40 text-amber-300' : 'bg-gray-800 text-gray-400'">{{ (s.device ?? '').toUpperCase() }}</span>
             </td>
             <td class="px-3 py-2 text-gray-300">{{ t(`ai.modes.${s.mode}`, s.mode) }}</td>
             <td class="px-3 py-2 text-gray-400">{{ s.region_name }}</td>
             <td class="px-3 py-2">
               <span class="inline-block px-2 py-0.5 rounded-md border text-[11px] font-mono" :class="statusClass(s.status)">{{ t(`ai.services.statuses.${s.status}`, s.status) }}</span>
+              <span v-if="s.status_reason" class="ml-1 inline-block px-2 py-0.5 rounded-md border text-[11px] font-mono" :class="statusClass('failed')"
+                :title="s.status_message || t('ai.services.statusReason')" :data-service-reason="s.name">{{ s.status_reason }}</span>
             </td>
             <td class="px-3 py-2 font-mono text-gray-500 truncate max-w-[16rem]">{{ s.url || '—' }}</td>
           </tr>

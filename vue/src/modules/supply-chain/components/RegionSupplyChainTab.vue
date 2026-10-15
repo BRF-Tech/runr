@@ -313,7 +313,7 @@ onUnmounted(() => clearTimeout(timer))
             <button type="button" class="btn btn-secondary text-[11px] py-1" data-preview @click="togglePreview">{{ preview ? t('supplyChain.region.hidePreview') : t('supplyChain.region.preview') }}</button>
           </div>
           <p v-if="!keyReady" class="text-[11px] text-gray-500">{{ t('supplyChain.region.keyRequired') }}</p>
-          <pre v-if="preview" class="text-[10px] font-mono text-gray-400 bg-gray-950 rounded p-2 max-h-64 overflow-auto" data-preview-body>{{ JSON.stringify(preview.policies, null, 2) }}</pre>
+          <pre v-if="preview" class="text-[10px] font-mono text-gray-400 bg-gray-950 rounded-sm p-2 max-h-64 overflow-auto" data-preview-body>{{ JSON.stringify(preview.policies, null, 2) }}</pre>
         </section>
 
         <!-- Data residency -->

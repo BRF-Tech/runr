@@ -20,6 +20,9 @@ export const knativeRegionsApi = {
   listNodes:          (id)     => client.get(`/knative-regions/${id}/nodes`),
   applyWorkers:       (id, d)  => client.post(`/knative-regions/${id}/workers`, d),
   updateSettings:     (id, d)  => client.put(`/knative-regions/${id}/settings`, d),
+  // Capacity budgets (always-on, FaaS overcommit) and the overcommit factors
+  capacity:           (id)     => client.get(`/knative-regions/${id}/capacity`),
+  updateCapacity:     (id, d)  => client.put(`/knative-regions/${id}/capacity`, d),
   updateFunctionTls:  (id, d)  => client.put(`/knative-regions/${id}/function-tls`, d),
 
   // Redis management

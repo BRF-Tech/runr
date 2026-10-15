@@ -129,8 +129,8 @@ onMounted(load)
     <div v-for="r in regions" :key="r.id" class="bg-gray-900 border border-gray-800 rounded-md p-4 space-y-3" :data-region="r.id">
       <div class="flex flex-wrap items-center gap-3">
         <span class="text-sm text-gray-100 font-medium">{{ r.name }}</span>
-        <span class="text-[11px] px-1.5 rounded bg-gray-800 text-gray-300">{{ t('observability.regions.modes.' + (configs[r.id]?.mode ?? 'managed')) }}</span>
-        <span class="text-[11px] px-1.5 rounded" :class="statusClass(configs[r.id])" data-test="region-tracing-status">{{ statusLabel(configs[r.id]) }}</span>
+        <span class="text-[11px] px-1.5 rounded-sm bg-gray-800 text-gray-300">{{ t('observability.regions.modes.' + (configs[r.id]?.mode ?? 'managed')) }}</span>
+        <span class="text-[11px] px-1.5 rounded-sm" :class="statusClass(configs[r.id])" data-test="region-tracing-status">{{ statusLabel(configs[r.id]) }}</span>
         <span v-if="configs[r.id]?.status_message" class="text-[11px] text-red-400 truncate max-w-[24rem]" :title="configs[r.id].status_message">{{ configs[r.id].status_message }}</span>
         <div v-if="canManage && editing !== r.id" class="ml-auto flex gap-1.5">
           <button type="button" class="btn-secondary text-xs px-2 py-1" :data-test="`edit-tracing-${r.id}`" @click="edit(r)">{{ t('observability.regions.configure') }}</button>
@@ -143,7 +143,7 @@ onMounted(load)
         <div class="md:col-span-2">
           <label class="label">{{ t('observability.regions.mode') }}</label>
           <div class="flex flex-wrap gap-2">
-            <label v-for="m in MODES" :key="m" class="flex items-center gap-1.5 text-xs text-gray-300 bg-gray-800 rounded px-2 py-1">
+            <label v-for="m in MODES" :key="m" class="flex items-center gap-1.5 text-xs text-gray-300 bg-gray-800 rounded-sm px-2 py-1">
               <input v-model="form.mode" type="radio" :value="m" :data-test="`mode-${m}`"> {{ t('observability.regions.modes.' + m) }}
             </label>
           </div>
@@ -175,8 +175,8 @@ onMounted(load)
             <label class="label">{{ t('observability.regions.exportHeaders') }}</label>
             <p class="text-[11px] text-gray-500">{{ configs[r.id]?.export_header_names?.length ? t('observability.regions.exportHeaderSet', { names: configs[r.id].export_header_names.join(', ') }) : t('observability.regions.exportHeadersHint') }}</p>
             <div v-for="(row, i) in headers" :key="i" class="flex gap-2">
-              <input v-model="row.name" class="input !h-8 text-xs !w-56" placeholder="Authorization">
-              <input v-model="row.value" class="input !h-8 text-xs" type="password" autocomplete="off">
+              <input v-model="row.name" class="input h-8! text-xs w-56!" placeholder="Authorization">
+              <input v-model="row.value" class="input h-8! text-xs" type="password" autocomplete="off">
               <button type="button" class="text-gray-400 hover:text-red-400" @click="headers.splice(i, 1)"><X class="w-4 h-4" /></button>
             </div>
             <button type="button" class="btn-secondary text-xs px-2.5 py-1" @click="headers.push({ name: '', value: '' })"><Plus class="w-3 h-3" />{{ t('observability.regions.addHeader') }}</button>

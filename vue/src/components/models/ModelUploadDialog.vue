@@ -119,7 +119,7 @@ async function abort() {
 
 <template>
   <div class="fixed inset-0 z-50 flex items-center justify-center p-4" data-testid="upload-dialog">
-    <div class="absolute inset-0 bg-black/70 backdrop-blur-sm" @click="!busy && emit('close')" />
+    <div class="absolute inset-0 bg-black/70 backdrop-blur-xs" @click="!busy && emit('close')" />
     <div class="relative w-full max-w-xl card space-y-4">
       <div class="flex items-center justify-between">
         <div>

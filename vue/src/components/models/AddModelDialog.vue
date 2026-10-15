@@ -78,7 +78,7 @@ async function submit() {
 
 <template>
   <div class="fixed inset-0 z-50 flex items-center justify-center p-4" data-testid="add-model-dialog">
-    <div class="absolute inset-0 bg-black/70 backdrop-blur-sm" @click="emit('close')" />
+    <div class="absolute inset-0 bg-black/70 backdrop-blur-xs" @click="emit('close')" />
     <div class="relative w-full max-w-lg card space-y-4">
       <div class="flex items-center justify-between">
         <h2 class="text-lg font-semibold text-gray-100">{{ t('ai.library.addTitle') }}</h2>

@@ -119,14 +119,14 @@ const extendOptions = computed(() => [
 
 <template>
   <div class="fixed inset-0 z-50 flex justify-end">
-    <div class="absolute inset-0 bg-black/60 backdrop-blur-sm" @click="emit('close')" />
+    <div class="absolute inset-0 bg-black/60 backdrop-blur-xs" @click="emit('close')" />
     <aside class="relative w-full max-w-4xl h-full bg-gray-950 border-l border-gray-800 shadow-2xl flex flex-col" data-sandbox-detail>
       <!-- Header -->
       <div class="flex items-center justify-between gap-3 px-5 py-3 border-b border-gray-800 bg-gray-900/80 shrink-0">
         <div class="flex items-center gap-3 min-w-0">
           <SandboxStatusBadge :status="current.status" />
           <span class="font-mono text-sm text-gray-100 truncate" :title="current.id">{{ current.id }}</span>
-          <span v-if="current.from_pool" class="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded border border-emerald-800/50 bg-emerald-950/30 text-[10px] text-emerald-400">
+          <span v-if="current.from_pool" class="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-sm border border-emerald-800/50 bg-emerald-950/30 text-[10px] text-emerald-400">
             <Zap class="w-2.5 h-2.5" />{{ t('sandboxes.fromPool') }}
           </span>
         </div>

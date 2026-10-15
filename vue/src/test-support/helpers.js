@@ -39,9 +39,9 @@ export const catalog = {
     handler: { file: 'main', function: 'handler', filename: 'main.py', pattern: 'def\\s+handler\\s*\\(' },
     dependency_file: 'requirements.txt', projects_count: 3,
     versions: [
-      { version: '3.14', is_default: true, eol_at: null, gpu_required: false, image: 'ghcr.io/runrsh/exec-python:3.14', built: false },
-      { version: '3.12', is_default: false, eol_at: null, gpu_required: false, image: 'ghcr.io/runrsh/exec-python:3.12', built: false },
-      { version: '3.9', is_default: false, eol_at: '2025-10-07', gpu_required: false, image: 'ghcr.io/runrsh/exec-python:3.9', built: false },
+      { version: '3.14', is_default: true, eol_at: null, gpu_required: false, image: 'ghcr.io/brf-tech/exec-python:3.14', built: false },
+      { version: '3.12', is_default: false, eol_at: null, gpu_required: false, image: 'ghcr.io/brf-tech/exec-python:3.12', built: false },
+      { version: '3.9', is_default: false, eol_at: '2025-10-07', gpu_required: false, image: 'ghcr.io/brf-tech/exec-python:3.9', built: false },
     ],
   },
   nodejs: {
@@ -49,13 +49,13 @@ export const catalog = {
     run_mode: 'http', compiled: false, triggers: ['http', 'schedule', 'queue'], regions: null, is_enabled: true,
     handler: { file: 'main', function: 'handler', filename: 'main.js', pattern: '(?:exports\\.handler|function\\s+handler)' },
     projects_count: 0,
-    versions: [{ version: '24.14', is_default: true, eol_at: null, gpu_required: false, image: 'ghcr.io/runrsh/exec-nodejs:24.14', built: false }],
+    versions: [{ version: '24.14', is_default: true, eol_at: null, gpu_required: false, image: 'ghcr.io/brf-tech/exec-nodejs:24.14', built: false }],
   },
   c: {
     id: 'c', name: 'C', icon: null, language: 'c', extensions: ['c', 'h'], source: 'platform',
     run_mode: 'exec', compiled: true, triggers: ['http', 'schedule', 'queue'], regions: ['r1'], is_enabled: true,
     handler: { file: 'main', function: 'handler', filename: 'main.c', pattern: null }, projects_count: 1,
-    versions: [{ version: '17', is_default: true, eol_at: null, gpu_required: false, image: 'ghcr.io/runrsh/reqs/alpine:3.21', built: false }],
+    versions: [{ version: '17', is_default: true, eol_at: null, gpu_required: false, image: 'ghcr.io/brf-tech/reqs/alpine:3.21', built: false }],
   },
   q: {
     id: 'q', name: 'Q', description: 'Tiny toy language', icon: Q_ICON, language: 'lua', extensions: ['q'], source: 'custom',
@@ -114,7 +114,7 @@ export function modelService(extra = {}) {
     model: { id: 'am1', name: 'all-minilm-l6-v2', hub_id: 'sentence-transformers/all-MiniLM-L6-v2', task: 'feature-extraction', library: 'sentence-transformers', size_bytes: 90_900_000 },
     knative_region_id: 'r1', region_name: 'eu-1', engine: 'tei', device: 'cpu', mode: 'online', api: 'tei',
     gpu: null, cpu: '1', memory_mb: 1024, min_scale: 0, max_scale: 1, scale_to_zero: true, timeout_seconds: 300,
-    image: 'ghcr.io/huggingface/text-embeddings-inference:cpu-1.5', args: [], env_vars: {}, port: 8080, health_path: '/health',
+    image: 'ghcr.io/huggingface/text-embeddings-inference:cpu-1.9.4', args: [], env_vars: {}, port: 8080, health_path: '/health',
     served_name: 'minilm', status: 'ready', status_message: null, url: 'http://m-minilm.fn.svc.cluster.local',
     playground: { kind: 'embeddings', path: '/v1/embeddings' }, cold_start: { size_bytes: 90_900_000, suggest_min_scale: false },
     bindings_count: 0, deployed_at: '2026-10-10T10:00:00Z', created_at: '2026-10-10T09:59:00Z',

@@ -89,9 +89,9 @@ onMounted(load)
           <div class="min-w-0">
             <p class="text-sm font-semibold text-gray-100">
               {{ p.name }}
-              <span class="ml-2 text-[10px] px-1.5 py-0.5 rounded bg-gray-800 text-gray-400 font-normal">{{ t(`gitDeploy.providerTypes.${p.type}`) }}</span>
-              <span v-if="!p.is_enabled" class="ml-1 text-[10px] px-1.5 py-0.5 rounded bg-gray-800 text-gray-500 font-normal">{{ t('gitDeploy.providers.disabled') }}</span>
-              <span v-else-if="!p.configured" class="ml-1 text-[10px] px-1.5 py-0.5 rounded bg-amber-900/40 text-amber-400 font-normal">{{ t('gitDeploy.providers.incomplete') }}</span>
+              <span class="ml-2 text-[10px] px-1.5 py-0.5 rounded-sm bg-gray-800 text-gray-400 font-normal">{{ t(`gitDeploy.providerTypes.${p.type}`) }}</span>
+              <span v-if="!p.is_enabled" class="ml-1 text-[10px] px-1.5 py-0.5 rounded-sm bg-gray-800 text-gray-500 font-normal">{{ t('gitDeploy.providers.disabled') }}</span>
+              <span v-else-if="!p.configured" class="ml-1 text-[10px] px-1.5 py-0.5 rounded-sm bg-amber-900/40 text-amber-400 font-normal">{{ t('gitDeploy.providers.incomplete') }}</span>
             </p>
             <p class="text-xs text-gray-500 font-mono mt-0.5">{{ p.web_url }}</p>
             <p class="text-xs text-gray-500 mt-0.5">{{ t('gitDeploy.providers.projects', { n: p.links_count }) }}</p>

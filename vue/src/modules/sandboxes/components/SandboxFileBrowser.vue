@@ -179,7 +179,7 @@ onMounted(() => load())
             <span v-if="i > 1" class="text-gray-600">/</span>
             <button
               type="button"
-              class="px-1 py-0.5 rounded hover:bg-gray-800"
+              class="px-1 py-0.5 rounded-sm hover:bg-gray-800"
               :class="i === breadcrumbs(path).length - 1 ? 'text-gray-100' : 'text-gray-400 hover:text-gray-100'"
               :data-crumb="crumb.path"
               @click="preview = null; load(crumb.path)"
@@ -203,7 +203,7 @@ onMounted(() => load())
             :title="t('sandboxes.actions.downloadTar')" @click="downloadFolder">
             <Archive class="w-3.5 h-3.5" />
           </button>
-          <button type="button" class="btn-secondary !px-2.5 !py-1 text-xs flex items-center gap-1" :disabled="uploading" data-action="upload" @click="pickFiles">
+          <button type="button" class="btn-secondary px-2.5! py-1! text-xs flex items-center gap-1" :disabled="uploading" data-action="upload" @click="pickFiles">
             <Upload class="w-3.5 h-3.5" />{{ t('sandboxes.actions.upload') }}
           </button>
           <input ref="fileInput" type="file" multiple class="hidden" data-upload-input @change="onFiles" />
@@ -213,8 +213,8 @@ onMounted(() => load())
       <!-- New folder -->
       <form v-if="newFolder !== null" class="flex items-center gap-2 mb-3" data-new-folder @submit.prevent="createFolder">
         <input v-model="newFolder" class="input font-mono text-xs" :placeholder="t('sandboxes.files.newFolderName')" autofocus />
-        <button type="submit" class="btn-primary !px-3 !py-1.5 text-xs">{{ t('sandboxes.actions.add') }}</button>
-        <button type="button" class="btn-secondary !px-3 !py-1.5 text-xs" @click="newFolder = null">{{ t('sandboxes.actions.cancel') }}</button>
+        <button type="submit" class="btn-primary px-3! py-1.5! text-xs">{{ t('sandboxes.actions.add') }}</button>
+        <button type="button" class="btn-secondary px-3! py-1.5! text-xs" @click="newFolder = null">{{ t('sandboxes.actions.cancel') }}</button>
       </form>
 
       <p v-if="error" class="text-sm text-red-400 mb-3">{{ error }}</p>

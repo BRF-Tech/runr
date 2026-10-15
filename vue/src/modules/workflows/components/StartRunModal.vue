@@ -66,7 +66,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
           <input v-model="idempotencyKey" class="input font-mono text-xs" maxlength="200" />
         </div>
         <label class="flex items-center gap-2 text-xs text-gray-300">
-          <input v-model="test" type="checkbox" class="rounded bg-gray-800 border-gray-700" />
+          <input v-model="test" type="checkbox" class="rounded-sm bg-gray-800 border-gray-700" />
           {{ t('workflows.start.test') }}
         </label>
         <p v-if="error" class="text-xs text-red-400" data-test="start-error">{{ error }}</p>

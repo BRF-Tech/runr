@@ -26,7 +26,7 @@ function fmt(dateTime) {
 
 <template>
   <div class="fixed inset-0 z-50 flex items-center justify-center p-4">
-    <div class="absolute inset-0 bg-black/70 backdrop-blur-sm" @click="$emit('cancel')" />
+    <div class="absolute inset-0 bg-black/70 backdrop-blur-xs" @click="$emit('cancel')" />
     <div class="relative card w-full max-w-lg">
       <div class="flex items-center justify-between mb-5">
         <h2 class="text-base font-semibold">{{ t('project.deploy') }} — {{ projectName }}</h2>
@@ -55,15 +55,15 @@ function fmt(dateTime) {
             <span class="text-gray-400 text-xs ml-2 truncate">{{ v.commit_message ?? '' }}</span>
             <span
               v-if="v.build_status === 'pending' || v.build_status === 'building'"
-              class="text-[10px] ml-1 px-1 rounded bg-yellow-500/20 text-yellow-400"
+              class="text-[10px] ml-1 px-1 rounded-sm bg-yellow-500/20 text-yellow-400"
             >{{ t('build.building') }}</span>
             <span
               v-else-if="v.build_status === 'failed'"
-              class="text-[10px] ml-1 px-1 rounded bg-red-500/20 text-red-400"
+              class="text-[10px] ml-1 px-1 rounded-sm bg-red-500/20 text-red-400"
             >{{ t('build.failed') }}</span>
             <span
               v-else-if="v.build_status === 'pruned'"
-              class="text-[10px] ml-1 px-1 rounded bg-gray-500/20 text-gray-400"
+              class="text-[10px] ml-1 px-1 rounded-sm bg-gray-500/20 text-gray-400"
               :title="t('build.prunedHint')"
             >{{ t('build.pruned') }}</span>
           </div>

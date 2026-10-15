@@ -257,11 +257,11 @@ onMounted(load)
                 {{ c.region?.name ?? t('cost.globalDefault') }}
               </span>
               <span v-if="c.is_active"
-                class="text-[10px] font-medium px-1.5 py-0.5 rounded bg-emerald-900/40 border border-emerald-800/40 text-emerald-400">
+                class="text-[10px] font-medium px-1.5 py-0.5 rounded-sm bg-emerald-900/40 border border-emerald-800/40 text-emerald-400">
                 {{ t('cost.current') }}
               </span>
               <span v-else
-                class="text-[10px] font-medium px-1.5 py-0.5 rounded bg-gray-800/40 border border-gray-700/40 text-gray-500">
+                class="text-[10px] font-medium px-1.5 py-0.5 rounded-sm bg-gray-800/40 border border-gray-700/40 text-gray-500">
                 {{ t('cost.archived') }}
               </span>
             </div>
@@ -270,12 +270,12 @@ onMounted(load)
             </div>
           </div>
           <div class="flex items-center gap-2 text-[11px] text-gray-400 font-mono">
-            <span class="px-1.5 py-0.5 rounded bg-gray-800 border border-gray-700">HTTP ×{{ c.multiplier_http }}</span>
-            <span class="px-1.5 py-0.5 rounded bg-gray-800 border border-gray-700">{{ c.currency }}</span>
+            <span class="px-1.5 py-0.5 rounded-sm bg-gray-800 border border-gray-700">HTTP ×{{ c.multiplier_http }}</span>
+            <span class="px-1.5 py-0.5 rounded-sm bg-gray-800 border border-gray-700">{{ c.currency }}</span>
           </div>
           <Pencil v-if="c.is_active" class="w-3.5 h-3.5 text-gray-400 shrink-0" />
           <button @click.stop="remove(c.id)"
-            class="p-1 rounded hover:bg-red-900/30 transition-colors shrink-0"
+            class="p-1 rounded-sm hover:bg-red-900/30 transition-colors shrink-0"
             :title="t('common.delete')">
             <Trash2 class="w-3.5 h-3.5 text-gray-500 hover:text-red-400" />
           </button>

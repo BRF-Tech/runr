@@ -151,7 +151,7 @@ const alerts = computed(() => {
             <Globe class="w-3.5 h-3.5 text-violet-400" />
           </div>
           <span class="font-semibold text-gray-100 text-xs font-mono">{{ r.name }}</span>
-          <span class="px-1.5 py-0.5 rounded text-[10px] font-medium border bg-violet-900/40 border-violet-800/40 text-violet-400">
+          <span class="px-1.5 py-0.5 rounded-sm text-[10px] font-medium border bg-violet-900/40 border-violet-800/40 text-violet-400">
             {{ t('tenancy.regionMode_infinite') }}
           </span>
         </div>
@@ -189,7 +189,7 @@ const alerts = computed(() => {
               <Globe class="w-3.5 h-3.5 text-sky-400" />
             </div>
             <span class="font-semibold text-gray-100 text-xs font-mono">{{ r.name }}</span>
-            <span class="px-1.5 py-0.5 rounded text-[10px] font-medium border bg-sky-900/40 border-sky-800/40 text-sky-400">
+            <span class="px-1.5 py-0.5 rounded-sm text-[10px] font-medium border bg-sky-900/40 border-sky-800/40 text-sky-400">
               {{ t('tenancy.regionMode_managed') }}
             </span>
             <ChevronDown class="w-4 h-4 text-gray-400 ml-auto transition-transform"

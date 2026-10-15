@@ -158,7 +158,7 @@ function submit() {
       <label class="label">{{ t('observability.alerts.rules.channels') }}</label>
       <p v-if="!channels.length" class="text-xs text-gray-500" data-test="rule-no-channels">{{ t('observability.alerts.rules.noChannels') }}</p>
       <div class="flex flex-wrap gap-2">
-        <label v-for="ch in channels" :key="ch.id" class="flex items-center gap-1.5 text-xs text-gray-300 bg-gray-800 rounded px-2 py-1">
+        <label v-for="ch in channels" :key="ch.id" class="flex items-center gap-1.5 text-xs text-gray-300 bg-gray-800 rounded-sm px-2 py-1">
           <input type="checkbox" :checked="form.channel_ids.includes(ch.id)" :data-test="`rule-channel-${ch.id}`" @change="toggleChannel(ch.id)">
           {{ ch.name }} <span class="text-gray-500">({{ t('observability.alerts.channels.types.' + ch.type) }})</span>
         </label>

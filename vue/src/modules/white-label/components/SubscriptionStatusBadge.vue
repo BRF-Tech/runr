@@ -17,5 +17,5 @@ const label = computed(() => props.status && CLASSES[props.status] ? t(`whiteLab
 </script>
 
 <template>
-  <span class="px-1.5 py-0.5 rounded text-[10px] font-medium border whitespace-nowrap" :class="cls" data-test="subscription-status">{{ label }}</span>
+  <span class="px-1.5 py-0.5 rounded-sm text-[10px] font-medium border whitespace-nowrap" :class="cls" data-test="subscription-status">{{ label }}</span>
 </template>

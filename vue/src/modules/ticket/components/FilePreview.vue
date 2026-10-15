@@ -32,8 +32,8 @@ onUnmounted(() => {
 <template>
   <div v-if="previews.length" class="flex flex-wrap gap-2">
     <div v-for="(p, i) in previews" :key="i"
-      class="relative group flex items-center gap-1.5 bg-gray-800 rounded px-2 py-1.5 border border-gray-700">
-      <img v-if="p.isImage" :src="p.url" :alt="p.name" class="w-8 h-8 rounded object-cover" />
+      class="relative group flex items-center gap-1.5 bg-gray-800 rounded-sm px-2 py-1.5 border border-gray-700">
+      <img v-if="p.isImage" :src="p.url" :alt="p.name" class="w-8 h-8 rounded-sm object-cover" />
       <Paperclip v-else class="w-4 h-4 text-gray-500" />
       <span class="text-[10px] text-gray-300 max-w-[120px] truncate">{{ p.name }}</span>
       <button class="ml-1 text-gray-500 hover:text-red-400 transition-colors" @click="emit('remove', i)">

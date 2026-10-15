@@ -336,6 +336,7 @@ export default {
       deleted:       'Servis silindi.',
       saved:         'Servis güncellendi.',
       urlCopied:     'URL kopyalandı.',
+      statusReason:  'Kubernetes servisin podlarını neden başlatamıyor',
       statuses: {
         stopped:          'Durduruldu',
         waiting_snapshot: 'Çevrim dışı kopya bekleniyor',

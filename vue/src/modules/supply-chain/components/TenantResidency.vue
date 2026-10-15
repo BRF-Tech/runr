@@ -127,7 +127,7 @@ onMounted(load)
           <div>
             <p class="label">{{ t('supplyChain.residency.regions') }}</p>
             <div class="flex flex-wrap gap-2">
-              <label v-for="r in regions" :key="r.id" class="flex items-center gap-1.5 text-xs px-2 py-1 rounded border border-gray-800 bg-gray-900/60" :data-region-option="r.name">
+              <label v-for="r in regions" :key="r.id" class="flex items-center gap-1.5 text-xs px-2 py-1 rounded-sm border border-gray-800 bg-gray-900/60" :data-region-option="r.name">
                 <input type="checkbox" :checked="form.allowed_region_ids.includes(r.id)" @change="toggle('allowed_region_ids', r.id)" />
                 <span class="font-mono text-gray-200">{{ r.name }}</span>
                 <span v-if="r.data_location" class="text-[10px] text-gray-500">{{ r.data_location }}</span>
@@ -139,7 +139,7 @@ onMounted(load)
             <p class="label">{{ t('supplyChain.residency.locations') }}</p>
             <p v-if="!locations.length" class="text-[11px] text-gray-500">{{ t('supplyChain.residency.noLocations') }}</p>
             <div v-else class="flex flex-wrap gap-2">
-              <label v-for="l in locations" :key="l" class="flex items-center gap-1.5 text-xs px-2 py-1 rounded border border-gray-800 bg-gray-900/60" :data-location-option="l">
+              <label v-for="l in locations" :key="l" class="flex items-center gap-1.5 text-xs px-2 py-1 rounded-sm border border-gray-800 bg-gray-900/60" :data-location-option="l">
                 <input type="checkbox" :checked="form.allowed_locations.includes(l)" @change="toggle('allowed_locations', l)" />
                 <span class="font-mono text-gray-200">{{ l }}</span>
               </label>

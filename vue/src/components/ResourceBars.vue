@@ -107,11 +107,11 @@ function barBg(pct) {
           </div>
           <div class="flex items-center gap-2">
             <span v-if="r.cluster_status !== 'online' && !r.is_demo"
-              class="text-[10px] px-1.5 py-0.5 rounded font-medium bg-red-900/30 border border-red-800/40 text-red-400">
+              class="text-[10px] px-1.5 py-0.5 rounded-sm font-medium bg-red-900/30 border border-red-800/40 text-red-400">
               {{ t('projects.regionUnreachable') }}
             </span>
             <span v-if="r.unlimited || r.region_mode === 'infinite'"
-              class="text-[10px] px-1.5 py-0.5 rounded font-mono font-semibold"
+              class="text-[10px] px-1.5 py-0.5 rounded-sm font-mono font-semibold"
               style="background:rgb(var(--brand-500)/0.1);border:1px solid rgb(var(--brand-500)/0.2);color:rgb(var(--brand-500))">∞ unlimited</span>
           </div>
         </div>

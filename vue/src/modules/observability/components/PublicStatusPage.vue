@@ -85,7 +85,7 @@ onMounted(load)
           <article v-for="inc in page.incidents" :key="inc.id" class="border-l-2 pl-4 py-1" :class="inc.status === 'open' ? 'border-red-500' : 'border-gray-700'" :data-incident="inc.id">
             <div class="flex flex-wrap items-center gap-3">
               <span class="font-medium">{{ inc.title }}</span>
-              <span v-if="inc.status === 'open'" class="text-[11px] px-1.5 rounded bg-red-900/40 text-red-300">{{ t('observability.statusPublic.ongoing') }}</span>
+              <span v-if="inc.status === 'open'" class="text-[11px] px-1.5 rounded-sm bg-red-900/40 text-red-300">{{ t('observability.statusPublic.ongoing') }}</span>
               <span v-else class="text-[11px] text-gray-500">{{ t('observability.statusPublic.resolvedAfter', { duration: formatSeconds(inc.duration_seconds) }) }}</span>
             </div>
             <p class="text-xs text-gray-500 mt-0.5">{{ inc.component }} · {{ new Date(inc.started_at).toLocaleString() }}</p>

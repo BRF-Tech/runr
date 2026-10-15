@@ -119,7 +119,7 @@ onMounted(async () => {
       </label>
       <label class="flex items-center gap-2 text-xs text-gray-400">
         {{ t('observability.tracing.sampleRatio') }}
-        <input v-model="ratio" type="number" min="0" max="1" step="0.05" class="input !h-8 !w-24 text-xs" :disabled="!canToggle" data-test="sample-ratio">
+        <input v-model="ratio" type="number" min="0" max="1" step="0.05" class="input h-8! w-24! text-xs" :disabled="!canToggle" data-test="sample-ratio">
       </label>
       <button v-if="canToggle && settings.tracing_enabled" type="button" class="btn-secondary text-xs px-2.5 py-1" :disabled="saving" @click="saveTracing(true)">{{ t('observability.common.save') }}</button>
       <p class="text-[11px] text-gray-500 basis-full">{{ t('observability.tracing.sampleRatioHint') }}</p>
@@ -141,7 +141,7 @@ onMounted(async () => {
       <form class="flex flex-wrap items-end gap-3" data-test="trace-filters" @submit.prevent="search">
         <div>
           <label class="label">{{ t('observability.tracing.filters.status') }}</label>
-          <select v-model="filters.status" class="input !w-36" data-test="filter-status">
+          <select v-model="filters.status" class="input w-36!" data-test="filter-status">
             <option value="all">{{ t('observability.tracing.filters.statusAll') }}</option>
             <option value="error">{{ t('observability.tracing.filters.statusError') }}</option>
             <option value="ok">{{ t('observability.tracing.filters.statusOk') }}</option>
@@ -149,15 +149,15 @@ onMounted(async () => {
         </div>
         <div>
           <label class="label">{{ t('observability.tracing.filters.minDuration') }}</label>
-          <input v-model="filters.min_duration_ms" type="number" min="0" class="input !w-32" placeholder="ms" data-test="filter-min-duration">
+          <input v-model="filters.min_duration_ms" type="number" min="0" class="input w-32!" placeholder="ms" data-test="filter-min-duration">
         </div>
         <div>
           <label class="label">{{ t('observability.tracing.filters.path') }}</label>
-          <input v-model="filters.path" type="text" class="input !w-48" placeholder="/orders" data-test="filter-path">
+          <input v-model="filters.path" type="text" class="input w-48!" placeholder="/orders" data-test="filter-path">
         </div>
         <div>
           <label class="label">{{ t('observability.tracing.filters.range') }}</label>
-          <select v-model="filters.range" class="input !w-28" data-test="filter-range">
+          <select v-model="filters.range" class="input w-28!" data-test="filter-range">
             <option v-for="(_, key) in RANGES" :key="key" :value="key">{{ t('observability.tracing.filters.ranges.' + key) }}</option>
           </select>
         </div>
@@ -196,7 +196,7 @@ onMounted(async () => {
             </td>
             <td class="py-2 pr-3 font-mono text-gray-300 truncate max-w-[16rem]">{{ tr.path || '—' }}</td>
             <td class="py-2 pr-3">
-              <span class="px-1.5 py-0.5 rounded text-[11px]" :class="tr.error ? 'bg-red-900/40 text-red-300' : 'bg-emerald-900/30 text-emerald-300'" data-test="trace-status">
+              <span class="px-1.5 py-0.5 rounded-sm text-[11px]" :class="tr.error ? 'bg-red-900/40 text-red-300' : 'bg-emerald-900/30 text-emerald-300'" data-test="trace-status">
                 {{ tr.status_code ?? (tr.error ? 'error' : 'ok') }}
               </span>
             </td>

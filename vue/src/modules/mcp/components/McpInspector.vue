@@ -200,7 +200,7 @@ function fieldErrorText(name) {
     <div v-if="connected" class="space-y-4">
       <div class="flex flex-wrap items-center gap-2 text-[11px] text-gray-400" data-testid="mcp-inspector-server">
         <span class="font-mono text-gray-100">{{ serverInfo.serverInfo?.name }} {{ serverInfo.serverInfo?.version }}</span>
-        <span class="font-mono px-1.5 py-0.5 rounded border border-gray-700">{{ protocolVersion }}</span>
+        <span class="font-mono px-1.5 py-0.5 rounded-sm border border-gray-700">{{ protocolVersion }}</span>
         <span v-if="sessionId" class="font-mono truncate" data-testid="mcp-inspector-session">{{ t('mcp.inspector.session', { id: sessionId }) }}</span>
       </div>
 
@@ -256,7 +256,7 @@ function fieldErrorText(name) {
             <div class="flex items-center justify-between">
               <code class="text-xs font-mono text-gray-100">{{ selectedTool.name }}</code>
               <label class="flex items-center gap-1.5 text-[11px] text-gray-400">
-                <input v-model="rawMode" type="checkbox" class="rounded border-gray-600 bg-gray-800" data-testid="mcp-inspector-raw-toggle" />
+                <input v-model="rawMode" type="checkbox" class="rounded-sm border-gray-600 bg-gray-800" data-testid="mcp-inspector-raw-toggle" />
                 {{ t('mcp.inspector.rawArguments') }}
               </label>
             </div>
@@ -277,7 +277,7 @@ function fieldErrorText(name) {
                   <option v-for="o in f.options" :key="String(o)" :value="o">{{ o }}</option>
                 </select>
                 <input v-else-if="f.kind === 'boolean'" :id="`mcp-field-${f.name}`" v-model="fieldValues[f.name]" type="checkbox"
-                  class="rounded border-gray-600 bg-gray-800" :data-testid="`mcp-field-${f.name}`" @change="touchBoolean(f.name)" />
+                  class="rounded-sm border-gray-600 bg-gray-800" :data-testid="`mcp-field-${f.name}`" @change="touchBoolean(f.name)" />
                 <input v-else-if="f.kind === 'number' || f.kind === 'integer'" :id="`mcp-field-${f.name}`" v-model="fieldValues[f.name]" type="number"
                   :step="f.kind === 'integer' ? 1 : 'any'" class="input" :data-testid="`mcp-field-${f.name}`" />
                 <textarea v-else-if="f.kind === 'json'" :id="`mcp-field-${f.name}`" v-model="fieldValues[f.name]" rows="3"
@@ -302,7 +302,7 @@ function fieldErrorText(name) {
     <div v-if="log.length" class="pt-2 border-t border-gray-800" data-testid="mcp-inspector-log">
       <p class="text-xs font-semibold text-gray-100 mb-2">{{ t('mcp.inspector.log') }}</p>
       <div class="space-y-1">
-        <div v-for="entry in log" :key="entry.key" class="rounded border border-gray-800 bg-gray-950/40">
+        <div v-for="entry in log" :key="entry.key" class="rounded-sm border border-gray-800 bg-gray-950/40">
           <button type="button" class="w-full flex items-center gap-2 px-2 py-1 text-left" :data-testid="`mcp-log-${entry.direction}`" @click="toggle(entry.key)">
             <ChevronDown v-if="expanded.has(entry.key)" class="w-3 h-3 text-gray-400" />
             <ChevronRight v-else class="w-3 h-3 text-gray-400" />

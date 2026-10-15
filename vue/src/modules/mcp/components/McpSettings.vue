@@ -70,7 +70,7 @@ onMounted(load)
 
       <div class="flex flex-wrap items-center gap-2 text-[11px] text-gray-400">
         <span>{{ t('mcp.settings.transport') }}</span>
-        <span v-for="v in info?.protocol_versions || []" :key="v" class="font-mono px-1.5 py-0.5 rounded border border-gray-700 bg-gray-800/40">{{ v }}</span>
+        <span v-for="v in info?.protocol_versions || []" :key="v" class="font-mono px-1.5 py-0.5 rounded-sm border border-gray-700 bg-gray-800/40">{{ v }}</span>
       </div>
 
       <div class="flex gap-2">

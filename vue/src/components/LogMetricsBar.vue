@@ -79,7 +79,7 @@ function fmtMem(mb) {
 
     <!-- Anlık -->
     <div class="flex-1 relative border-r border-gray-800/60 pt-6 pb-3 px-2">
-      <span class="absolute top-1.5 left-2 text-[9px] font-semibold text-brand-400 uppercase tracking-widest border border-brand-700/50 bg-brand-900/30 rounded px-1.5 py-0.5 leading-none">{{ t('project.logs.metrics.current') }}</span>
+      <span class="absolute top-1.5 left-2 text-[9px] font-semibold text-brand-400 uppercase tracking-widest border border-brand-700/50 bg-brand-900/30 rounded-sm px-1.5 py-0.5 leading-none">{{ t('project.logs.metrics.current') }}</span>
       <div class="flex items-start justify-center gap-8">
         <div class="flex flex-col items-center gap-0.5">
           <span class="text-[11px] text-white uppercase tracking-wider">{{ t('project.logs.metrics.cpu') }}</span>
@@ -99,7 +99,7 @@ function fmtMem(mb) {
 
     <!-- Toplam -->
     <div class="flex-1 relative border-r border-gray-800/60 pt-6 pb-3 px-2">
-      <span class="absolute top-1.5 left-2 text-[9px] font-semibold text-brand-400 uppercase tracking-widest border border-brand-700/50 bg-brand-900/30 rounded px-1.5 py-0.5 leading-none">{{ t('project.logs.metrics.total') }}</span>
+      <span class="absolute top-1.5 left-2 text-[9px] font-semibold text-brand-400 uppercase tracking-widest border border-brand-700/50 bg-brand-900/30 rounded-sm px-1.5 py-0.5 leading-none">{{ t('project.logs.metrics.total') }}</span>
       <div class="flex items-start justify-center gap-8">
         <div class="flex flex-col items-center gap-0.5">
           <span class="text-[11px] text-white uppercase tracking-wider">{{ t('project.logs.metrics.cpu') }}</span>
@@ -120,7 +120,7 @@ function fmtMem(mb) {
 
     <!-- Ortalama (saatlik) -->
     <div class="flex-1 relative pt-6 pb-3 px-2">
-      <span class="absolute top-1.5 left-2 text-[9px] font-semibold text-brand-400 uppercase tracking-widest border border-brand-700/50 bg-brand-900/30 rounded px-1.5 py-0.5 leading-none">{{ t('project.logs.metrics.avgPerH') }}</span>
+      <span class="absolute top-1.5 left-2 text-[9px] font-semibold text-brand-400 uppercase tracking-widest border border-brand-700/50 bg-brand-900/30 rounded-sm px-1.5 py-0.5 leading-none">{{ t('project.logs.metrics.avgPerH') }}</span>
       <div class="flex items-start justify-center gap-8">
         <div class="flex flex-col items-center gap-0.5">
           <span class="text-[11px] text-white uppercase tracking-wider">{{ t('project.logs.metrics.cpu') }}</span>

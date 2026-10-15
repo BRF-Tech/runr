@@ -49,7 +49,7 @@ async function start() {
 
 <template>
   <div class="fixed inset-0 z-50 flex items-center justify-center p-4">
-    <div class="absolute inset-0 bg-black/70 backdrop-blur-sm" @click="emit('close')" />
+    <div class="absolute inset-0 bg-black/70 backdrop-blur-xs" @click="emit('close')" />
     <div class="relative w-full max-w-lg">
       <div class="card">
         <div class="flex items-center gap-3 mb-1">

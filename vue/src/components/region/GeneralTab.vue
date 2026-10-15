@@ -38,14 +38,14 @@ defineEmits([
     <!-- Region name (readonly) -->
     <div>
       <label class="label">{{ t('settings.regions.name') }}</label>
-      <p class="text-xs text-gray-400 font-mono bg-gray-900/60 rounded px-3 py-2">{{ form.name }}</p>
+      <p class="text-xs text-gray-400 font-mono bg-gray-900/60 rounded-sm px-3 py-2">{{ form.name }}</p>
       <p class="text-[10px] text-gray-400 mt-1">{{ t('settings.regions.nameReadonly') }}</p>
     </div>
 
     <!-- Server URL -->
     <div v-if="region?.server_url">
       <label class="label">{{ t('settings.regions.serverUrl') }}</label>
-      <p class="text-xs text-gray-400 font-mono bg-gray-900/60 rounded px-3 py-2">{{ region.server_url }}</p>
+      <p class="text-xs text-gray-400 font-mono bg-gray-900/60 rounded-sm px-3 py-2">{{ region.server_url }}</p>
     </div>
 
     <!-- Region mode (readonly in edit, central admin only) -->
@@ -117,7 +117,7 @@ defineEmits([
   <div v-else-if="isStepReadonly" class="space-y-4">
     <div>
       <label class="label">{{ t('settings.regions.name') }}</label>
-      <p class="text-xs text-gray-400 font-mono bg-gray-900/60 rounded px-3 py-2">{{ form.name }}</p>
+      <p class="text-xs text-gray-400 font-mono bg-gray-900/60 rounded-sm px-3 py-2">{{ form.name }}</p>
     </div>
     <div>
       <label class="label"><TermText path="settings.regions.kubeconfig" /></label>

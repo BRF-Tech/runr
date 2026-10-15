@@ -113,7 +113,7 @@ const pill = (active) => active
 
 <template>
   <div class="fixed inset-0 z-50 flex items-center justify-center p-4">
-    <div class="absolute inset-0 bg-black/70 backdrop-blur-sm" @click="emit('close')" />
+    <div class="absolute inset-0 bg-black/70 backdrop-blur-xs" @click="emit('close')" />
     <div class="relative w-full max-w-2xl max-h-[92vh] overflow-y-auto">
       <form class="card" data-dialog="create-sandbox" @submit.prevent="submit">
         <div class="flex items-start justify-between gap-3 mb-1">
@@ -229,7 +229,7 @@ const pill = (active) => active
           <!-- Environment variables -->
           <div class="mb-4">
             <div class="flex items-center justify-between mb-1.5">
-              <span class="label !mb-0">{{ t('sandboxes.create.env') }}</span>
+              <span class="label mb-0!">{{ t('sandboxes.create.env') }}</span>
               <button type="button" class="text-xs text-brand-500 hover:underline flex items-center gap-1" data-add-row="env" @click="addRow(form.env)">
                 <Plus class="w-3 h-3" />{{ t('sandboxes.create.addRow') }}
               </button>
@@ -264,7 +264,7 @@ const pill = (active) => active
 
             <div>
               <div class="flex items-center justify-between mb-1.5">
-                <span class="label !mb-0">{{ t('sandboxes.create.metadata') }}</span>
+                <span class="label mb-0!">{{ t('sandboxes.create.metadata') }}</span>
                 <button type="button" class="text-xs text-brand-500 hover:underline flex items-center gap-1" data-add-row="metadata" @click="addRow(form.metadata)">
                   <Plus class="w-3 h-3" />{{ t('sandboxes.create.addRow') }}
                 </button>

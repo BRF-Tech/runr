@@ -164,8 +164,8 @@ function totalRuns(w) {
             <div class="flex items-center gap-2">
               <WorkflowIcon class="w-4 h-4 text-violet-300 shrink-0" />
               <button type="button" class="font-mono text-sm text-gray-100 hover:text-sky-300 truncate" @click="selected = selected === w.name ? '' : w.name">{{ w.name }}</button>
-              <span v-if="w.archived" class="text-[10px] px-1.5 rounded bg-gray-800 text-gray-400">{{ t('workflows.list.archived') }}</span>
-              <span v-else-if="!w.is_active" class="text-[10px] px-1.5 rounded bg-amber-900/40 text-amber-300">{{ t('workflows.list.paused') }}</span>
+              <span v-if="w.archived" class="text-[10px] px-1.5 rounded-sm bg-gray-800 text-gray-400">{{ t('workflows.list.archived') }}</span>
+              <span v-else-if="!w.is_active" class="text-[10px] px-1.5 rounded-sm bg-amber-900/40 text-amber-300">{{ t('workflows.list.paused') }}</span>
               <span class="ml-auto text-[11px] text-gray-400">{{ t('workflows.list.runs') }}: {{ totalRuns(w) }}</span>
             </div>
             <p v-if="w.description" class="text-xs text-gray-400">{{ w.description }}</p>
@@ -173,7 +173,7 @@ function totalRuns(w) {
               <span v-if="!w.triggers?.length" class="text-[11px] text-gray-400">{{ t('workflows.list.noTriggers') }}</span>
               <span
                 v-for="(tr, i) in w.triggers" :key="i"
-                class="inline-flex items-center gap-1 text-[11px] font-mono px-1.5 py-0.5 rounded bg-gray-800 text-gray-300"
+                class="inline-flex items-center gap-1 text-[11px] font-mono px-1.5 py-0.5 rounded-sm bg-gray-800 text-gray-300"
               >
                 <component :is="TRIGGER_ICONS[triggerKind(tr)]" class="w-3 h-3" />{{ triggerLabel(tr) }}
               </span>

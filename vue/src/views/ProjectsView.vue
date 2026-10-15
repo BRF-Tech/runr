@@ -141,7 +141,7 @@ usePlatformSync({ projects, refetch: silentRefresh })
             v-model="searchQuery"
             type="text"
             :placeholder="t('projects.searchPlaceholder')"
-            class="h-9 bg-gray-900 border border-gray-800 rounded-md px-3 text-sm text-gray-100 placeholder-gray-400 focus:outline-none focus:border-gray-600 w-48"
+            class="h-9 bg-gray-900 border border-gray-800 rounded-md px-3 text-sm text-gray-100 placeholder-gray-400 focus:outline-hidden focus:border-gray-600 w-48"
           />
           <div data-tour="filter-tabs" class="h-9 flex items-center gap-1 bg-gray-900 border border-gray-800 rounded-md px-1">
             <button

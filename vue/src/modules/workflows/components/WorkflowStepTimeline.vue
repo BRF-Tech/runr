@@ -46,7 +46,7 @@ function pendingText(step) {
 
     <ol v-else class="relative border-l border-gray-800 ml-2 space-y-3" data-test="step-timeline">
       <li v-for="step in steps" :key="step.id" class="pl-5 relative" :data-step="step.step_key">
-        <span class="absolute -left-[9px] top-1.5 w-4 h-4 rounded-full bg-gray-900 border border-gray-700 flex items-center justify-center">
+        <span class="absolute left-[-9px] top-1.5 w-4 h-4 rounded-full bg-gray-900 border border-gray-700 flex items-center justify-center">
           <component :is="ICONS[step.type] || Play" class="w-2.5 h-2.5 text-gray-300" />
         </span>
 

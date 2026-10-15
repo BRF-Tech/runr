@@ -82,7 +82,7 @@ defineExpose({ load })
 <template>
   <div class="space-y-6" data-test="tenant-subscription">
     <div class="flex items-center gap-3">
-      <div class="w-1 h-8 rounded-full shrink-0 bg-gradient-to-b from-brand-500 to-brand-700"></div>
+      <div class="w-1 h-8 rounded-full shrink-0 bg-linear-to-b from-brand-500 to-brand-700"></div>
       <h3 class="text-base font-semibold text-gray-100">{{ t('whiteLabel.subscription.title') }}</h3>
     </div>
 
@@ -101,7 +101,7 @@ defineExpose({ load })
               <p class="text-lg font-semibold text-gray-100 flex flex-wrap items-center gap-2" data-test="current-plan">
                 {{ plan?.name ?? t('whiteLabel.subscription.noPlan') }}
                 <SubscriptionStatusBadge v-if="subscription" :status="subscription.status" />
-                <span v-if="plan && subscription?.prepaid" class="px-1.5 py-0.5 rounded text-[10px] font-medium border bg-brand-900/40 border-brand-800/40 text-brand-400"
+                <span v-if="plan && subscription?.prepaid" class="px-1.5 py-0.5 rounded-sm text-[10px] font-medium border bg-brand-900/40 border-brand-800/40 text-brand-400"
                   data-test="prepaid-badge">{{ t('whiteLabel.subscription.prepaid') }}</span>
               </p>
               <div class="text-xs text-gray-400 mt-2 space-y-0.5" data-test="subscription-period">

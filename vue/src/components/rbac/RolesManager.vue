@@ -175,7 +175,7 @@ onMounted(load)
             <div class="flex-1 min-w-0">
               <div class="flex items-center gap-2">
                 <span class="text-sm font-semibold text-gray-100">{{ roleLabel(role) }}</span>
-                <span class="text-[10px] px-1.5 py-0.5 rounded border border-gray-700 text-gray-400">{{ t('rbac.readOnly') }}</span>
+                <span class="text-[10px] px-1.5 py-0.5 rounded-sm border border-gray-700 text-gray-400">{{ t('rbac.readOnly') }}</span>
                 <span class="text-[10px] font-mono text-gray-500">{{ role.key }}</span>
               </div>
               <p class="text-xs text-gray-400">{{ roleDescription(role) }}</p>

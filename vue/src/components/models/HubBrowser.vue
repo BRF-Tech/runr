@@ -99,7 +99,7 @@ onMounted(() => search())
           <Lock v-if="m.gated || m.private" class="w-3.5 h-3.5 text-amber-400 shrink-0" :title="t('ai.hub.gated')" />
         </div>
         <div class="flex flex-wrap items-center gap-3 mt-1.5 text-[11px] text-gray-400">
-          <span v-if="m.task" class="px-1.5 py-0.5 rounded bg-gray-800 text-gray-300">{{ t(`ai.tasks.${m.task}`, m.task) }}</span>
+          <span v-if="m.task" class="px-1.5 py-0.5 rounded-sm bg-gray-800 text-gray-300">{{ t(`ai.tasks.${m.task}`, m.task) }}</span>
           <span v-if="m.library" class="font-mono">{{ m.library }}</span>
           <span class="flex items-center gap-1"><Download class="w-3 h-3" />{{ formatCount(m.downloads) }}</span>
           <span class="flex items-center gap-1"><Heart class="w-3 h-3" />{{ formatCount(m.likes) }}</span>

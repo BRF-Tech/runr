@@ -67,11 +67,11 @@ const histograms = computed(() => {
         <p class="text-xs text-gray-400">{{ t('sandboxes.settings.metrics.subtitle') }}</p>
       </div>
       <div class="flex items-center gap-2">
-        <select v-model="regionId" class="input !h-8 !w-40 text-xs" name="metrics_region">
+        <select v-model="regionId" class="input h-8! w-40! text-xs" name="metrics_region">
           <option value="">{{ t('sandboxes.filters.allRegions') }}</option>
           <option v-for="r in regions" :key="r.region.id" :value="r.region.id">{{ r.region.name }}</option>
         </select>
-        <select v-model="windowKey" class="input !h-8 !w-40 text-xs" name="metrics_window" :title="t('sandboxes.settings.metrics.window')">
+        <select v-model="windowKey" class="input h-8! w-40! text-xs" name="metrics_window" :title="t('sandboxes.settings.metrics.window')">
           <option v-for="w in WINDOWS" :key="w" :value="w">{{ t(`sandboxes.settings.metrics.window_${w}`) }}</option>
         </select>
       </div>
@@ -111,8 +111,8 @@ const histograms = computed(() => {
           <div v-else class="space-y-1">
             <div v-for="b in h.bars" :key="String(b.le_ms)" class="flex items-center gap-2 text-[11px] font-mono">
               <span class="w-20 text-right text-gray-500 shrink-0">{{ b.label }}</span>
-              <div class="flex-1 h-3 rounded bg-gray-800 overflow-hidden">
-                <div class="h-full rounded" :style="{ width: b.width + '%', background: h.color }" />
+              <div class="flex-1 h-3 rounded-sm bg-gray-800 overflow-hidden">
+                <div class="h-full rounded-sm" :style="{ width: b.width + '%', background: h.color }" />
               </div>
               <span class="w-10 text-gray-400">{{ b.count }}</span>
             </div>

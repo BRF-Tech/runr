@@ -62,7 +62,7 @@ const showForm = computed(() => canManage.value && !busyStatus.value)
       <div class="flex items-center gap-2 shrink-0">
         <template v-if="status === 'ready'">
           <span v-for="s in installedShims" :key="s"
-            class="text-[10px] font-mono px-1.5 py-0.5 rounded bg-gray-800 border border-gray-700 text-gray-400">{{ s }}</span>
+            class="text-[10px] font-mono px-1.5 py-0.5 rounded-sm bg-gray-800 border border-gray-700 text-gray-400">{{ s }}</span>
         </template>
         <span :class="statusDots[status]" class="w-2 h-2 rounded-full shrink-0" />
         <span :class="statusColors[status]" class="text-xs font-medium" data-testid="wasm-status">{{ statusLabel }}</span>
@@ -70,15 +70,15 @@ const showForm = computed(() => canManage.value && !busyStatus.value)
     </div>
 
     <!-- step log: live while it runs, the error at its end, collapsed once ready -->
-    <p v-if="status === 'error' && message" class="text-xs text-red-400/80 bg-red-900/20 rounded px-3 py-2 font-mono whitespace-pre-wrap break-words max-h-40 overflow-y-auto" data-testid="wasm-log">{{ message }}</p>
-    <p v-else-if="busyStatus && message" class="text-xs text-gray-400 bg-gray-900 rounded px-3 py-2 font-mono whitespace-pre-wrap max-h-32 overflow-y-auto" data-testid="wasm-log">{{ message }}</p>
+    <p v-if="status === 'error' && message" class="text-xs text-red-400/80 bg-red-900/20 rounded-sm px-3 py-2 font-mono whitespace-pre-wrap wrap-break-word max-h-40 overflow-y-auto" data-testid="wasm-log">{{ message }}</p>
+    <p v-else-if="busyStatus && message" class="text-xs text-gray-400 bg-gray-900 rounded-sm px-3 py-2 font-mono whitespace-pre-wrap max-h-32 overflow-y-auto" data-testid="wasm-log">{{ message }}</p>
     <details v-else-if="status === 'ready' && message" class="text-xs text-gray-400">
       <summary class="cursor-pointer select-none hover:text-gray-300">{{ t('settings.regionDetail.sandbox.installLog') }}</summary>
-      <p class="mt-2 bg-gray-900 rounded px-3 py-2 font-mono whitespace-pre-wrap break-words max-h-40 overflow-y-auto">{{ message }}</p>
+      <p class="mt-2 bg-gray-900 rounded-sm px-3 py-2 font-mono whitespace-pre-wrap wrap-break-word max-h-40 overflow-y-auto">{{ message }}</p>
     </details>
 
     <p v-if="error" class="text-xs text-red-400" data-testid="wasm-error">{{ error }}</p>
-    <p v-if="clusterError" class="text-xs text-amber-300/90 bg-amber-900/20 rounded px-3 py-2">{{ t('wasm.card.clusterError', { error: clusterError }) }}</p>
+    <p v-if="clusterError" class="text-xs text-amber-300/90 bg-amber-900/20 rounded-sm px-3 py-2">{{ t('wasm.card.clusterError', { error: clusterError }) }}</p>
     <p v-if="!canManage && !loading" class="text-[11px] text-gray-400 italic">{{ t('wasm.card.readOnly') }}</p>
 
     <template v-if="showForm">
@@ -100,7 +100,7 @@ const showForm = computed(() => canManage.value && !busyStatus.value)
       <div class="space-y-1.5">
         <p class="text-xs text-gray-400 font-medium">{{ t('wasm.card.nodes') }}</p>
         <p v-if="loading && !nodes.length" class="text-[11px] text-gray-500">{{ t('wasm.card.loading') }}</p>
-        <p v-else-if="!clusterError && !eligibleNodes.length" class="text-xs text-amber-300/90 bg-amber-900/20 rounded px-3 py-2" data-testid="wasm-no-eligible">{{ t('wasm.card.noEligible') }}</p>
+        <p v-else-if="!clusterError && !eligibleNodes.length" class="text-xs text-amber-300/90 bg-amber-900/20 rounded-sm px-3 py-2" data-testid="wasm-no-eligible">{{ t('wasm.card.noEligible') }}</p>
         <template v-else-if="nodes.length">
           <label class="flex items-center gap-2 text-xs text-gray-300" data-testid="wasm-all-nodes">
             <input v-model="allNodes" type="checkbox" />
@@ -129,7 +129,7 @@ const showForm = computed(() => canManage.value && !busyStatus.value)
           {{ t(status === 'ready' ? 'wasm.card.applyBtn' : 'wasm.card.installBtn') }}
         </button>
         <button v-if="status === 'ready' || status === 'error'"
-          class="btn-secondary text-xs !text-red-400 hover:!text-red-300" :disabled="busy" data-testid="wasm-uninstall" @click="uninstall">
+          class="btn-secondary text-xs text-red-400! hover:text-red-300!" :disabled="busy" data-testid="wasm-uninstall" @click="uninstall">
           {{ t('wasm.card.uninstallBtn') }}
         </button>
       </div>

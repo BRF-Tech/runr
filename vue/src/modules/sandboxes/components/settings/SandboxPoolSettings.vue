@@ -200,8 +200,8 @@ onMounted(() => {
         </div>
         <div class="flex items-center gap-2">
           <label class="text-[11px] text-gray-500">{{ t('sandboxes.settings.pools.size') }}</label>
-          <input v-model.number="sizes[p.id]" class="input font-mono !w-20 !h-8" type="number" min="0" :disabled="!canManage" :name="`size-${p.id}`" />
-          <button v-if="canManage" class="btn-secondary !px-2.5 !py-1 text-xs" :disabled="sizes[p.id] === p.size" data-action="save-pool" @click="update(p, { size: Number(sizes[p.id]) })">{{ t('sandboxes.actions.save') }}</button>
+          <input v-model.number="sizes[p.id]" class="input font-mono w-20! h-8!" type="number" min="0" :disabled="!canManage" :name="`size-${p.id}`" />
+          <button v-if="canManage" class="btn-secondary px-2.5! py-1! text-xs" :disabled="sizes[p.id] === p.size" data-action="save-pool" @click="update(p, { size: Number(sizes[p.id]) })">{{ t('sandboxes.actions.save') }}</button>
         </div>
         <label class="flex items-center gap-1.5 text-xs text-gray-300">
           <input type="checkbox" :checked="p.is_enabled" :disabled="!canManage" :name="`enabled-${p.id}`" @change="update(p, { is_enabled: $event.target.checked })" />

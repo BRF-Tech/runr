@@ -94,7 +94,7 @@ async function deleteModel(model) {
         <div class="min-w-0">
           <div class="flex items-center gap-2">
             <span class="font-mono text-sm text-gray-100">{{ m.name }}</span>
-            <span class="px-1.5 py-0.5 rounded text-[10px] bg-gray-800 text-gray-300">{{ t(`ai.sources.${m.source}`, m.source) }}</span>
+            <span class="px-1.5 py-0.5 rounded-sm text-[10px] bg-gray-800 text-gray-300">{{ t(`ai.sources.${m.source}`, m.source) }}</span>
             <Lock v-if="m.gated || m.private" class="w-3.5 h-3.5 text-amber-400" />
           </div>
           <p class="text-[11px] text-gray-400 font-mono truncate">
@@ -118,7 +118,7 @@ async function deleteModel(model) {
         <div v-for="s in m.snapshots ?? []" :key="s.id" class="rounded-lg border border-gray-800 bg-gray-950/40" :data-snapshot-region="s.region_name">
           <div class="flex items-center gap-3 px-3 py-1.5 text-[11px]">
             <span class="text-gray-200 w-28 truncate">{{ s.region_name }}</span>
-            <span class="inline-block px-1.5 py-0.5 rounded border font-mono" :class="statusClass(s.status)">{{ t(`ai.library.snapshotStatuses.${s.status}`, s.status) }}</span>
+            <span class="inline-block px-1.5 py-0.5 rounded-sm border font-mono" :class="statusClass(s.status)">{{ t(`ai.library.snapshotStatuses.${s.status}`, s.status) }}</span>
             <span class="font-mono text-gray-400">{{ formatBytes(s.size_bytes) }}<template v-if="s.files_count"> · {{ t('ai.library.files', { n: s.files_count }) }}</template></span>
             <span v-if="s.message" class="text-gray-400 truncate" :title="s.message" data-testid="snapshot-message">{{ s.message }}</span>
             <span class="flex-1" />

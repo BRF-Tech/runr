@@ -241,7 +241,7 @@ const sandboxClass = (s) => s === 'ok'
         </div>
       </div>
 
-      <p v-if="withoutPlugin.length" class="flex items-start gap-2 text-xs text-amber-300/90 bg-amber-900/20 rounded px-3 py-2" data-testid="gpu-without-plugin">
+      <p v-if="withoutPlugin.length" class="flex items-start gap-2 text-xs text-amber-300/90 bg-amber-900/20 rounded-sm px-3 py-2" data-testid="gpu-without-plugin">
         <AlertTriangle class="w-3.5 h-3.5 shrink-0 mt-0.5" />
         {{ t('ai.gpu.region.hardwareWithoutPlugin', { nodes: withoutPlugin.join(', ') }) }}
       </p>
@@ -296,11 +296,11 @@ const sandboxClass = (s) => s === 'ok'
 
           <div v-if="install.mode === 'operator'" class="flex flex-wrap gap-4">
             <label class="flex items-center gap-2 text-xs text-gray-300">
-              <input v-model="install.operator_driver" type="checkbox" class="rounded border-gray-700 bg-gray-800" data-testid="gpu-operator-driver" />
+              <input v-model="install.operator_driver" type="checkbox" class="rounded-sm border-gray-700 bg-gray-800" data-testid="gpu-operator-driver" />
               {{ t('ai.gpu.region.operatorDriver') }}
             </label>
             <label class="flex items-center gap-2 text-xs text-gray-300">
-              <input v-model="install.operator_toolkit" type="checkbox" class="rounded border-gray-700 bg-gray-800" data-testid="gpu-operator-toolkit" />
+              <input v-model="install.operator_toolkit" type="checkbox" class="rounded-sm border-gray-700 bg-gray-800" data-testid="gpu-operator-toolkit" />
               {{ t('ai.gpu.region.operatorToolkit') }}
             </label>
           </div>
@@ -308,7 +308,7 @@ const sandboxClass = (s) => s === 'ok'
           <!-- Device plugin / GFD (operator: operands) only on the GPU nodes -->
           <div class="space-y-2">
             <label class="flex items-start gap-2 text-xs text-gray-300">
-              <input v-model="install.restrict_to_gpu_nodes" type="checkbox" class="mt-0.5 rounded border-gray-700 bg-gray-800" data-testid="gpu-restrict" />
+              <input v-model="install.restrict_to_gpu_nodes" type="checkbox" class="mt-0.5 rounded-sm border-gray-700 bg-gray-800" data-testid="gpu-restrict" />
               <span>
                 {{ t('ai.gpu.region.restrictToGpuNodes') }}
                 <span class="block text-[11px] text-gray-400">{{ t('ai.gpu.region.restrictToGpuNodesHint') }}</span>
@@ -399,14 +399,14 @@ const sandboxClass = (s) => s === 'ok'
           </div>
         </div>
         <label class="flex items-start gap-2 text-xs text-gray-300">
-          <input v-model="settings.gvisor_nvproxy" type="checkbox" class="mt-0.5 rounded border-gray-700 bg-gray-800" data-testid="gpu-nvproxy" />
+          <input v-model="settings.gvisor_nvproxy" type="checkbox" class="mt-0.5 rounded-sm border-gray-700 bg-gray-800" data-testid="gpu-nvproxy" />
           <span>
             {{ t('ai.gpu.region.nvproxy') }}
             <span class="block text-[11px] text-gray-400">{{ t('ai.gpu.region.nvproxyHint') }}</span>
           </span>
         </label>
         <label class="flex items-start gap-2 text-xs text-gray-300">
-          <input v-model="settings.restrict_to_gpu_nodes" type="checkbox" class="mt-0.5 rounded border-gray-700 bg-gray-800" data-testid="gpu-settings-restrict" />
+          <input v-model="settings.restrict_to_gpu_nodes" type="checkbox" class="mt-0.5 rounded-sm border-gray-700 bg-gray-800" data-testid="gpu-settings-restrict" />
           <span>
             {{ t('ai.gpu.region.restrictToGpuNodes') }}
             <span class="block text-[11px] text-gray-400">{{ t('ai.gpu.region.restrictToGpuNodesHint') }}</span>

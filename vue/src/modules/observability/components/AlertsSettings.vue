@@ -161,9 +161,9 @@ onMounted(load)
         <p v-if="!channels.length" class="text-xs text-gray-500" data-test="channels-empty">{{ t('observability.alerts.channels.empty') }}</p>
         <div v-for="ch in channels" :key="ch.id" class="flex flex-wrap items-center gap-3 bg-gray-900 border border-gray-800 rounded-md px-3 py-2" :data-channel="ch.id">
           <span class="text-sm text-gray-100">{{ ch.name }}</span>
-          <span class="text-[11px] px-1.5 rounded bg-gray-800 text-gray-300">{{ t('observability.alerts.channels.types.' + ch.type) }}</span>
+          <span class="text-[11px] px-1.5 rounded-sm bg-gray-800 text-gray-300">{{ t('observability.alerts.channels.types.' + ch.type) }}</span>
           <span class="text-[11px] text-gray-500 font-mono truncate max-w-[18rem]">{{ channelSummary(ch) }}</span>
-          <span v-if="!ch.is_enabled" class="text-[10px] px-1.5 rounded bg-gray-800 text-gray-400">{{ t('observability.common.disabled') }}</span>
+          <span v-if="!ch.is_enabled" class="text-[10px] px-1.5 rounded-sm bg-gray-800 text-gray-400">{{ t('observability.common.disabled') }}</span>
           <span v-if="ch.last_test_at" class="text-[11px]" :class="ch.last_test_ok ? 'text-emerald-400' : 'text-red-400'">
             {{ t('observability.alerts.channels.lastTest') }}: {{ ch.last_test_ok ? 'OK' : ch.last_test_error }}
           </span>
@@ -186,12 +186,12 @@ onMounted(load)
         <div v-for="r in rules" :key="r.id" class="flex flex-wrap items-center gap-3 bg-gray-900 border border-gray-800 rounded-md px-3 py-2" :data-rule="r.id">
           <span class="w-2 h-2 rounded-full" :class="r.state === 'firing' ? 'bg-red-500' : 'bg-emerald-500'" :title="t('observability.alerts.rules.' + (r.state === 'firing' ? 'firing' : 'ok'))" />
           <span class="text-sm text-gray-100">{{ r.name }}</span>
-          <span class="text-[11px] px-1.5 rounded bg-gray-800 text-gray-300">{{ t('observability.alerts.rules.types.' + r.type) }}</span>
+          <span class="text-[11px] px-1.5 rounded-sm bg-gray-800 text-gray-300">{{ t('observability.alerts.rules.types.' + r.type) }}</span>
           <span class="text-[11px] text-gray-400">{{ t('observability.alerts.rules.severities.' + r.severity) }}</span>
           <span class="text-[11px] text-gray-500">{{ r.project_id ? projectName(r.project_id) : t('observability.alerts.rules.allProjects') }}</span>
           <span class="text-[11px] text-gray-500">→ {{ r.channel_ids.length ? r.channel_ids.map(channelName).join(', ') : t('observability.alerts.rules.noChannelsShort') }}</span>
           <span v-if="r.last_value !== null && r.last_value !== undefined" class="text-[11px] text-gray-500">{{ t('observability.alerts.rules.lastValue') }}: {{ Math.round(r.last_value * 100) / 100 }}</span>
-          <span v-if="!r.is_enabled" class="text-[10px] px-1.5 rounded bg-gray-800 text-gray-400">{{ t('observability.common.disabled') }}</span>
+          <span v-if="!r.is_enabled" class="text-[10px] px-1.5 rounded-sm bg-gray-800 text-gray-400">{{ t('observability.common.disabled') }}</span>
           <div class="ml-auto flex gap-1.5">
             <button type="button" class="btn-secondary text-xs px-2 py-1" @click="editingRule = r; formErrors = {}"><Pencil class="w-3 h-3" /></button>
             <button type="button" class="btn-secondary text-xs px-2 py-1" @click="removeRule(r)"><Trash2 class="w-3 h-3" /></button>
@@ -204,7 +204,7 @@ onMounted(load)
         <p class="text-xs text-gray-400 uppercase tracking-wider font-medium border-b border-gray-800/60 pb-2">{{ t('observability.alerts.events.title') }}</p>
         <p v-if="!events.length" class="text-xs text-gray-500">{{ t('observability.alerts.events.empty') }}</p>
         <div v-for="ev in events" :key="ev.id" class="text-xs flex flex-wrap gap-3 py-1">
-          <span class="px-1.5 rounded bg-red-900/40 text-red-300">{{ t('observability.alerts.rules.severities.' + ev.severity) }}</span>
+          <span class="px-1.5 rounded-sm bg-red-900/40 text-red-300">{{ t('observability.alerts.rules.severities.' + ev.severity) }}</span>
           <span class="text-gray-100">{{ ev.title }}</span>
           <span class="text-gray-500">{{ new Date(ev.fired_at).toLocaleString() }}</span>
         </div>
@@ -214,11 +214,11 @@ onMounted(load)
       <section class="space-y-2" data-test="deliveries">
         <div class="flex flex-wrap items-center gap-3 border-b border-gray-800/60 pb-2">
           <p class="text-xs text-gray-400 uppercase tracking-wider font-medium">{{ t('observability.alerts.deliveries.title') }}</p>
-          <select v-model="deliveryFilter.status" class="input !h-8 !w-32 text-xs" @change="loadDeliveries">
+          <select v-model="deliveryFilter.status" class="input h-8! w-32! text-xs" @change="loadDeliveries">
             <option value="">{{ t('observability.alerts.deliveries.all') }}</option>
             <option v-for="s in ['pending', 'sent', 'failed']" :key="s" :value="s">{{ t('observability.alerts.deliveries.statuses.' + s) }}</option>
           </select>
-          <select v-model="deliveryFilter.channel_id" class="input !h-8 !w-44 text-xs" @change="loadDeliveries">
+          <select v-model="deliveryFilter.channel_id" class="input h-8! w-44! text-xs" @change="loadDeliveries">
             <option value="">{{ t('observability.alerts.deliveries.allChannels') }}</option>
             <option v-for="ch in channels" :key="ch.id" :value="ch.id">{{ ch.name }}</option>
           </select>
@@ -233,7 +233,7 @@ onMounted(load)
               <td class="py-1.5 pr-3 text-gray-400">{{ t('observability.alerts.deliveries.kinds.' + d.kind) }}</td>
               <td class="py-1.5 pr-3 text-gray-300 truncate max-w-[20rem]">{{ d.event?.title ?? '—' }}</td>
               <td class="py-1.5 pr-3">
-                <span class="px-1.5 rounded" :class="{ 'bg-emerald-900/30 text-emerald-300': d.status === 'sent', 'bg-red-900/40 text-red-300': d.status === 'failed', 'bg-gray-800 text-gray-300': d.status === 'pending' }">{{ t('observability.alerts.deliveries.statuses.' + d.status) }}</span>
+                <span class="px-1.5 rounded-sm" :class="{ 'bg-emerald-900/30 text-emerald-300': d.status === 'sent', 'bg-red-900/40 text-red-300': d.status === 'failed', 'bg-gray-800 text-gray-300': d.status === 'pending' }">{{ t('observability.alerts.deliveries.statuses.' + d.status) }}</span>
               </td>
               <td class="py-1.5 pr-3 text-gray-500">{{ t('observability.alerts.deliveries.attempts', { n: d.attempts }) }}</td>
               <td class="py-1.5 pr-3 text-red-400 truncate max-w-[16rem]" :title="d.last_error">{{ d.last_error }}</td>

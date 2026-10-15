@@ -29,7 +29,7 @@ const LIMITS = { max_concurrent: 20, max_cpu_m: 8000, max_memory_mb: 16384, max_
 const USAGE  = { concurrent: 3, cpu_m: 1500, memory_mb: 1536, sandbox_seconds_month: 7200, pool_size: 2 }
 
 const pool = {
-  id: 'p1', region: { id: 'r1', name: 'eu-1' }, runtime: 'python', runtime_version: '3.14', image: 'ghcr.io/runrsh/exec-python:3.14',
+  id: 'p1', region: { id: 'r1', name: 'eu-1' }, runtime: 'python', runtime_version: '3.14', image: 'ghcr.io/brf-tech/exec-python:3.14',
   sandbox_class: 'kata-fc', cpu_m: 500, memory_mb: 512, disk_mb: 1024, size: 2, is_enabled: true, warm: 2, starting: 0, hits: 10, misses: 3,
   tenant_id: null, created_at: '2026-10-10T10:00:00Z',
 }

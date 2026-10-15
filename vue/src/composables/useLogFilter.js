@@ -176,7 +176,7 @@ export function useLogFilter(linesRef) {
     let last = 0
     for (const m of text.matchAll(re)) {
       html += escapeHtml(text.slice(last, m.index))
-        + `<mark class="bg-yellow-400/25 text-yellow-200 rounded-sm not-italic">${escapeHtml(m[0])}</mark>`
+        + `<mark class="bg-yellow-400/25 text-yellow-200 rounded-xs not-italic">${escapeHtml(m[0])}</mark>`
       last = m.index + m[0].length
     }
     return html + escapeHtml(text.slice(last))

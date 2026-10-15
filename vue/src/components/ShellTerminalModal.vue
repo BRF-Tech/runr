@@ -221,7 +221,7 @@ onUnmounted(() => {
 
 <template>
   <div
-    class="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 backdrop-blur-sm"
+    class="fixed inset-0 z-60 flex items-center justify-center bg-black/60 backdrop-blur-xs"
     @click.self="closeSession"
   >
     <div class="w-[960px] h-[600px] bg-gray-950 border border-gray-800 rounded-xl shadow-2xl flex flex-col overflow-hidden">

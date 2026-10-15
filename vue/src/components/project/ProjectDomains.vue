@@ -91,7 +91,7 @@ function toggle(d) {
 }
 
 function statusClass(status) {
-  const base = 'inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium border'
+  const base = 'inline-flex items-center px-2 py-0.5 rounded-sm text-[10px] font-medium border'
   switch (status) {
     case 'active':   return `${base} bg-emerald-900/40 text-emerald-400 border-emerald-800/50`
     case 'verified': return `${base} bg-blue-900/40 text-blue-300 border-blue-800/50`
@@ -280,7 +280,7 @@ function onTlsSaved({ domain, message }) {
               v-model="newDomain"
               type="text"
               class="input font-mono"
-              :class="addError ? '!border-red-700' : ''"
+              :class="addError ? 'border-red-700!' : ''"
               :placeholder="t('project.domains.placeholder')"
               :disabled="adding"
               autocomplete="off"

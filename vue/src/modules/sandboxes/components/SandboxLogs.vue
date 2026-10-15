@@ -63,7 +63,7 @@ onMounted(load)
     <ul v-else class="space-y-1 mb-5">
       <li v-for="e in events" :key="e.id" class="flex items-start gap-2 text-xs" :data-event="e.type">
         <span class="font-mono text-gray-500 w-40 shrink-0">{{ formatDateTime(e.created_at) }}</span>
-        <span class="px-1.5 py-0.5 rounded border font-mono text-[10px] shrink-0" :class="typeStyle(e.type)">{{ e.type }}</span>
+        <span class="px-1.5 py-0.5 rounded-sm border font-mono text-[10px] shrink-0" :class="typeStyle(e.type)">{{ e.type }}</span>
         <span class="text-gray-300 break-all">{{ e.message }}</span>
       </li>
     </ul>

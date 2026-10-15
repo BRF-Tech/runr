@@ -43,13 +43,13 @@ defineEmits(['toggle', 'clear', 'update:open'])
         <input
           type="checkbox"
           :checked="selectedRegions.includes(r.id)"
-          class="rounded border-gray-700 bg-gray-800 focus:ring-2 h-3.5 w-3.5"
+          class="rounded-sm border-gray-700 bg-gray-800 focus:ring-2 h-3.5 w-3.5"
           @change="$emit('toggle', r.id)"
         />
         <span class="font-mono" :class="selectedRegions.includes(r.id) ? 'text-gray-100' : 'text-gray-400'">{{ r.name }}</span>
         <span
           v-if="r.is_demo"
-          class="text-[9px] px-1 py-0.5 rounded leading-none" style="background:rgb(var(--brand-500)/0.15);color:rgb(var(--brand-500))"
+          class="text-[9px] px-1 py-0.5 rounded-sm leading-none" style="background:rgb(var(--brand-500)/0.15);color:rgb(var(--brand-500))"
         >demo</span>
       </label>
       <button

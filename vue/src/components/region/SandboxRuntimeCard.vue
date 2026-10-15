@@ -60,7 +60,7 @@ const notAdded = computed(() => {
         <!-- Show hypervisor badges when Kata is installed -->
         <template v-if="runtime === 'kata' && hypervisor && status === 'ready'">
           <span v-for="hv in (Array.isArray(hypervisor) ? hypervisor : [hypervisor])" :key="hv"
-            class="text-[10px] font-mono px-1.5 py-0.5 rounded bg-gray-800 border border-gray-700 text-gray-400">
+            class="text-[10px] font-mono px-1.5 py-0.5 rounded-sm bg-gray-800 border border-gray-700 text-gray-400">
             {{ hv }}
           </span>
         </template>
@@ -70,24 +70,24 @@ const notAdded = computed(() => {
     </div>
 
     <!-- Error: the step log, ending with the error line -->
-    <p v-if="status === 'error' && message" class="text-xs text-red-400/80 bg-red-900/20 rounded px-3 py-2 font-mono whitespace-pre-wrap break-words max-h-40 overflow-y-auto">
+    <p v-if="status === 'error' && message" class="text-xs text-red-400/80 bg-red-900/20 rounded-sm px-3 py-2 font-mono whitespace-pre-wrap wrap-break-word max-h-40 overflow-y-auto">
       {{ message }}
     </p>
 
     <!-- Install log -->
-    <p v-if="['installing', 'uninstalling'].includes(status) && message" class="text-xs text-gray-400 bg-gray-900 rounded px-3 py-2 font-mono whitespace-pre-wrap max-h-24 overflow-y-auto">
+    <p v-if="['installing', 'uninstalling'].includes(status) && message" class="text-xs text-gray-400 bg-gray-900 rounded-sm px-3 py-2 font-mono whitespace-pre-wrap max-h-24 overflow-y-auto">
       {{ message }}
     </p>
 
     <!-- Ready, but the last install's additions failed (the working install was kept) -->
-    <p v-if="notAdded" class="text-xs text-amber-300/90 bg-amber-900/20 rounded px-3 py-2 font-mono whitespace-pre-wrap break-words">{{ notAdded }}</p>
+    <p v-if="notAdded" class="text-xs text-amber-300/90 bg-amber-900/20 rounded-sm px-3 py-2 font-mono whitespace-pre-wrap wrap-break-word">{{ notAdded }}</p>
 
     <!-- Ready: the install's step log stays available (collapsed) -->
     <details v-if="status === 'ready' && message" class="text-xs text-gray-400">
       <summary class="cursor-pointer select-none hover:text-gray-300">
         {{ t('settings.regionDetail.sandbox.installLog') }}
       </summary>
-      <p class="mt-2 bg-gray-900 rounded px-3 py-2 font-mono whitespace-pre-wrap break-words max-h-40 overflow-y-auto">{{ message }}</p>
+      <p class="mt-2 bg-gray-900 rounded-sm px-3 py-2 font-mono whitespace-pre-wrap wrap-break-word max-h-40 overflow-y-auto">{{ message }}</p>
     </details>
 
     <!-- Action buttons -->
@@ -99,7 +99,7 @@ const notAdded = computed(() => {
         {{ t(`settings.regionDetail.sandbox.${runtime}.installBtn`) }}
       </button>
       <button v-if="status === 'ready'"
-        class="btn-secondary text-xs !text-red-400 hover:!text-red-300"
+        class="btn-secondary text-xs text-red-400! hover:text-red-300!"
         :disabled="installing"
         @click="$emit('uninstall')">
         {{ t(`settings.regionDetail.sandbox.${runtime}.uninstallBtn`) }}

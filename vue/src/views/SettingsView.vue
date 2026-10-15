@@ -223,7 +223,7 @@ const isTenantContext = computed(() => {
               <div class="flex items-center gap-3">
                 <button type="button" class="relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors"
                   :class="registrationEnabled ? 'bg-brand-500' : 'bg-gray-700'" @click="registrationEnabled = !registrationEnabled">
-                  <span class="pointer-events-none inline-block h-5 w-5 rounded-full bg-white shadow transition" :class="registrationEnabled ? 'translate-x-5' : 'translate-x-0'" />
+                  <span class="pointer-events-none inline-block h-5 w-5 rounded-full bg-white shadow-sm transition" :class="registrationEnabled ? 'translate-x-5' : 'translate-x-0'" />
                 </button>
                 <span class="text-sm" :class="registrationEnabled ? 'text-brand-500' : 'text-gray-400'">
                   {{ registrationEnabled ? t('settings.registration.enabled') : t('settings.registration.disabled') }}
@@ -240,7 +240,7 @@ const isTenantContext = computed(() => {
               <div class="flex items-center gap-3">
                 <button type="button" class="relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors"
                   :class="gpuDemoEnabled ? 'bg-amber-500' : 'bg-gray-700'" @click="gpuDemoEnabled = !gpuDemoEnabled">
-                  <span class="pointer-events-none inline-block h-5 w-5 rounded-full bg-white shadow transition" :class="gpuDemoEnabled ? 'translate-x-5' : 'translate-x-0'" />
+                  <span class="pointer-events-none inline-block h-5 w-5 rounded-full bg-white shadow-sm transition" :class="gpuDemoEnabled ? 'translate-x-5' : 'translate-x-0'" />
                 </button>
                 <span class="text-sm" :class="gpuDemoEnabled ? 'text-amber-400' : 'text-gray-400'">
                   {{ gpuDemoEnabled ? t('settings.gpuDemo.enabled') : t('settings.gpuDemo.disabled') }}
@@ -257,7 +257,7 @@ const isTenantContext = computed(() => {
               <div class="flex items-center gap-3">
                 <button type="button" class="relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors"
                   :class="customRuntimesEnabled ? 'bg-brand-500' : 'bg-gray-700'" @click="customRuntimesEnabled = !customRuntimesEnabled">
-                  <span class="pointer-events-none inline-block h-5 w-5 rounded-full bg-white shadow transition" :class="customRuntimesEnabled ? 'translate-x-5' : 'translate-x-0'" />
+                  <span class="pointer-events-none inline-block h-5 w-5 rounded-full bg-white shadow-sm transition" :class="customRuntimesEnabled ? 'translate-x-5' : 'translate-x-0'" />
                 </button>
                 <span class="text-sm" :class="customRuntimesEnabled ? 'text-brand-500' : 'text-gray-400'">
                   {{ customRuntimesEnabled ? t('runtimes.customSetting.enabled') : t('runtimes.customSetting.disabled') }}

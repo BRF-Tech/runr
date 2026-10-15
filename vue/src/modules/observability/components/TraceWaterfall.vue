@@ -57,7 +57,7 @@ function toggle(row) {
         </div>
         <div class="relative h-5">
           <div
-            class="absolute top-1 h-3 rounded-sm"
+            class="absolute top-1 h-3 rounded-xs"
             :class="row.isError ? 'bg-red-500/80' : ''"
             :style="{ left: row.leftPct + '%', width: row.widthPct + '%', background: row.isError ? undefined : row.color }"
             data-test="span-bar"
@@ -83,7 +83,7 @@ function toggle(row) {
         <span v-if="selected.missing_parent" class="text-amber-300">{{ t('observability.tracing.detail.missingParent') }}</span>
       </div>
 
-      <div v-if="selected.isError" class="bg-red-900/20 border border-red-800/40 rounded px-3 py-2 text-xs text-red-300" data-test="span-status-error">
+      <div v-if="selected.isError" class="bg-red-900/20 border border-red-800/40 rounded-sm px-3 py-2 text-xs text-red-300" data-test="span-status-error">
         {{ t('observability.tracing.detail.statusMessage') }}: {{ selected.status?.message || 'error' }}
       </div>
 

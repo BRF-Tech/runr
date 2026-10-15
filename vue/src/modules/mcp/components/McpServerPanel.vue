@@ -95,7 +95,7 @@ async function remove() {
         <p class="text-sm font-semibold text-gray-100">{{ t('mcp.project.title') }}</p>
         <p class="text-xs text-gray-400 mt-0.5">{{ t('mcp.project.hint') }}</p>
       </div>
-      <span class="text-[11px] font-medium px-2 py-1 rounded border border-gray-700 bg-gray-800 text-gray-100" data-testid="mcp-current-mode">{{ t(`mcp.access.${server.access_mode}`) }}</span>
+      <span class="text-[11px] font-medium px-2 py-1 rounded-sm border border-gray-700 bg-gray-800 text-gray-100" data-testid="mcp-current-mode">{{ t(`mcp.access.${server.access_mode}`) }}</span>
     </div>
 
     <CopyBlock :text="server.url" :label="t('mcp.project.url')" inline />
@@ -116,7 +116,7 @@ async function remove() {
           <input id="mcp-path" v-model="path" class="input w-56 font-mono" placeholder="/mcp" data-testid="mcp-path" />
         </div>
         <label class="flex items-center gap-2 text-xs text-gray-100 pb-2">
-          <input v-model="auditCalls" type="checkbox" class="rounded border-gray-600 bg-gray-800" data-testid="mcp-audit-calls" />
+          <input v-model="auditCalls" type="checkbox" class="rounded-sm border-gray-600 bg-gray-800" data-testid="mcp-audit-calls" />
           {{ t('mcp.project.auditCalls') }}
         </label>
       </div>

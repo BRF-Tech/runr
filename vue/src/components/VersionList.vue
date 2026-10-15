@@ -25,7 +25,7 @@ function fmt(dateTime) {
     <div class="flex items-center gap-2 px-2.5 mb-3 shrink-0">
       <div class="w-0.5 h-5 rounded-full shrink-0" style="background:linear-gradient(180deg,rgb(var(--brand-500)),rgb(var(--brand-700)))"></div>
       <span class="text-[15px] font-semibold text-gray-100">{{ t('project.tabs.versions') }}</span>
-      <span v-if="versionsLoaded && versions.length" class="ml-auto text-[10px] font-mono px-1.5 py-0.5 rounded" style="background:rgb(var(--brand-500)/0.1);color:rgb(var(--brand-500))">{{ versions.length }}</span>
+      <span v-if="versionsLoaded && versions.length" class="ml-auto text-[10px] font-mono px-1.5 py-0.5 rounded-sm" style="background:rgb(var(--brand-500)/0.1);color:rgb(var(--brand-500))">{{ versions.length }}</span>
     </div>
 
     <!-- Loading -->
@@ -57,28 +57,28 @@ function fmt(dateTime) {
           <span class="font-mono text-sm font-semibold leading-tight">{{ v.label }}</span>
           <span
             v-if="i === 0"
-            class="text-[9px] px-1.5 py-0.5 rounded font-medium leading-none"
+            class="text-[9px] px-1.5 py-0.5 rounded-sm font-medium leading-none"
             :style="selectedVersion?.id === v.id
               ? 'background:rgb(255 255 255/0.15);color:#fff'
               : 'background:rgb(var(--brand-500)/0.15);color:rgb(var(--brand-500))'"
           >latest</span>
           <span
             v-if="configMode === 'blueprint'"
-            class="text-[9px] px-1.5 py-0.5 rounded font-medium leading-none bg-amber-500/15 text-amber-400"
+            class="text-[9px] px-1.5 py-0.5 rounded-sm font-medium leading-none bg-amber-500/15 text-amber-400"
           >blueprint</span>
           <span
             v-if="v.build_status === 'pending' || v.build_status === 'building'"
-            class="text-[9px] px-1.5 py-0.5 rounded font-medium leading-none bg-yellow-500/15 text-yellow-400"
+            class="text-[9px] px-1.5 py-0.5 rounded-sm font-medium leading-none bg-yellow-500/15 text-yellow-400"
             :title="t('build.building')"
           >{{ t('build.building') }}</span>
           <span
             v-else-if="v.build_status === 'failed'"
-            class="text-[9px] px-1.5 py-0.5 rounded font-medium leading-none bg-red-500/15 text-red-400"
+            class="text-[9px] px-1.5 py-0.5 rounded-sm font-medium leading-none bg-red-500/15 text-red-400"
             :title="v.build_error || t('build.failed')"
           >{{ t('build.failed') }}</span>
           <span
             v-else-if="v.build_status === 'pruned'"
-            class="text-[9px] px-1.5 py-0.5 rounded font-medium leading-none bg-gray-500/15 text-gray-400"
+            class="text-[9px] px-1.5 py-0.5 rounded-sm font-medium leading-none bg-gray-500/15 text-gray-400"
             :title="t('build.prunedHint')"
           >{{ t('build.pruned') }}</span>
         </div>
@@ -93,7 +93,7 @@ function fmt(dateTime) {
         <div class="flex items-center gap-1 pl-2 text-[11px]"
           :class="selectedVersion?.id === v.id ? 'text-gray-400' : 'text-gray-500'">
           <template v-if="v.created_by?.name">
-            <span class="truncate max-w-[5rem]">{{ v.created_by.name }}</span>
+            <span class="truncate max-w-20">{{ v.created_by.name }}</span>
             <span>·</span>
           </template>
           <span class="whitespace-nowrap">{{ fmt(v.created_at) }}</span>

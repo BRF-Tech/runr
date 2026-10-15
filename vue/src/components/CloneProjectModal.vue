@@ -90,7 +90,7 @@ async function submit() {
 
 <template>
   <div class="fixed inset-0 z-50 flex items-center justify-center p-4">
-    <div class="absolute inset-0 bg-black/70 backdrop-blur-sm" @click="emit('close')" />
+    <div class="absolute inset-0 bg-black/70 backdrop-blur-xs" @click="emit('close')" />
     <div class="relative w-full max-w-3xl">
       <div class="card">
 
@@ -117,9 +117,9 @@ async function submit() {
           <p class="text-sm text-gray-400 mb-1">{{ t('clone.subtitle') }}</p>
           <p class="text-xs text-gray-400 mb-6 font-mono">
             {{ t('clone.sourceLabel') }}: <span class="text-gray-400">{{ project.name }}</span>
-            <span class="ml-2 px-1.5 py-0.5 rounded bg-gray-800 text-[10px]">{{ project.service_type }}</span>
-            <span v-if="project.runtime" class="ml-1 px-1.5 py-0.5 rounded bg-gray-800 text-[10px]">{{ runtimeLabel(project.runtime) }}</span>
-            <span v-if="project.runtime_version" class="ml-1 px-1.5 py-0.5 rounded bg-gray-800 text-[10px]">{{ project.runtime_version }}</span>
+            <span class="ml-2 px-1.5 py-0.5 rounded-sm bg-gray-800 text-[10px]">{{ project.service_type }}</span>
+            <span v-if="project.runtime" class="ml-1 px-1.5 py-0.5 rounded-sm bg-gray-800 text-[10px]">{{ runtimeLabel(project.runtime) }}</span>
+            <span v-if="project.runtime_version" class="ml-1 px-1.5 py-0.5 rounded-sm bg-gray-800 text-[10px]">{{ project.runtime_version }}</span>
           </p>
 
           <label class="label">{{ t('create.fields.name') }}</label>
@@ -235,6 +235,7 @@ async function submit() {
 </template>
 
 <style scoped>
+@reference "../assets/main.css";
 .section-title {
   @apply text-xs text-gray-400 uppercase tracking-wider font-medium mb-3 border-b border-gray-800/60 pb-2;
 }

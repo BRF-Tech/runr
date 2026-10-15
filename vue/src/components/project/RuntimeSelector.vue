@@ -59,12 +59,12 @@ function title(r) {
       >
         <span
           v-if="r.source && r.source !== 'builtin'"
-          class="absolute top-1 right-1 px-1 rounded text-[9px] font-mono leading-tight border"
+          class="absolute top-1 right-1 px-1 rounded-sm text-[9px] font-mono leading-tight border"
           :class="r.source === 'custom' ? 'border-violet-800/60 text-violet-400 bg-violet-950/40' : 'border-sky-800/60 text-sky-400 bg-sky-950/40'"
         >{{ t(`runtimes.source.${r.source}`) }}</span>
         <span
           v-if="isWasmRuntime(r)"
-          class="wasm-badge absolute top-1 left-1 px-1 rounded text-[9px] font-mono leading-tight border border-indigo-700/60 text-indigo-300 bg-indigo-950/40"
+          class="wasm-badge absolute top-1 left-1 px-1 rounded-sm text-[9px] font-mono leading-tight border border-indigo-700/60 text-indigo-300 bg-indigo-950/40"
           :title="t('wasm.picker.badgeTitle')"
         >{{ t('wasm.picker.badge') }}</span>
         <RuntimeIcon :runtime="r.id" :size="28" />
@@ -98,6 +98,7 @@ function title(r) {
 </template>
 
 <style scoped>
+@reference "../../assets/main.css";
 .section-title {
   @apply text-xs text-gray-400 uppercase tracking-wider font-medium mb-3 border-b border-gray-800/60 pb-2;
 }

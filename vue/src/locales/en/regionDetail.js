@@ -272,6 +272,18 @@ export default {
         refreshNodes:  'Refresh',
         taintWarning:  'Selected nodes will be tainted — only K8s system, Knative and RunR project pods will run on them.',
       },
+      capacity: {
+        title:                  'Capacity',
+        subtitle:               'Always-on workloads reserve the region capacity; scale-to-zero workloads count one pod against the overcommitted FaaS budget.',
+        alwaysOn:               'Always-on (no overcommit)',
+        faas:                   'FaaS overcommit (× {factor})',
+        free:                   '{value} free',
+        hint:                   'Always-on: min_scale ≥ 1 or scale to zero off, Kata pod overhead, queue consumers, sandboxes, model services. FaaS budget: capacity × factor minus the always-on reservations.',
+        faas_cpu_overcommit:    'CPU overcommit factor',
+        faas_memory_overcommit: 'Memory overcommit factor',
+        save:                   'Save factors',
+        saved:                  'Capacity settings saved.',
+      },
       config: {
         title:                   'Knative Settings',
         namespace:               'Project Namespace',

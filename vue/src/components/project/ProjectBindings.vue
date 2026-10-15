@@ -319,7 +319,7 @@ onBeforeUnmount(() => clearTimeout(pollTimer))
           <label class="label">{{ t('bindings.envPreview') }}</label>
           <div class="flex flex-wrap gap-1" data-env-preview>
             <code v-for="n in previewNames" :key="n"
-              class="px-1.5 py-0.5 rounded text-[10px] font-mono border"
+              class="px-1.5 py-0.5 rounded-sm text-[10px] font-mono border"
               :class="conflicts.includes(n) ? 'border-red-800/60 bg-red-900/30 text-red-300' : 'border-gray-700 bg-gray-800/60 text-gray-200'">{{ n }}</code>
           </div>
           <p v-if="conflicts.length" class="text-xs text-red-400 mt-1 flex items-center gap-1" data-env-conflict>
@@ -359,7 +359,7 @@ onBeforeUnmount(() => clearTimeout(pollTimer))
             <component :is="TYPE_ICONS[a.binding?.type] || Database" class="w-4 h-4 text-sky-400 shrink-0" />
             <span class="text-sm font-semibold text-gray-100">{{ a.binding?.name }}</span>
             <span class="text-[11px] text-gray-400">{{ t(`bindings.types.${a.binding?.type}`) }}</span>
-            <span v-if="a.binding?.plan === 'dedicated'" class="text-[10px] px-1.5 py-0.5 rounded border border-violet-800/40 bg-violet-900/30 text-violet-300">{{ t('bindings.plans.dedicated') }}</span>
+            <span v-if="a.binding?.plan === 'dedicated'" class="text-[10px] px-1.5 py-0.5 rounded-sm border border-violet-800/40 bg-violet-900/30 text-violet-300">{{ t('bindings.plans.dedicated') }}</span>
             <span :class="bindingStatusClass(a.binding?.status)" data-binding-status>{{ t(`bindings.status.${a.binding?.status ?? 'pending'}`) }}</span>
           </div>
           <div class="flex items-center gap-1">
@@ -395,7 +395,7 @@ onBeforeUnmount(() => clearTimeout(pollTimer))
             <Pencil class="w-3 h-3" /> {{ a.env_prefix ? a.env_prefix : t('bindings.editPrefix') }}
           </button>
           <code v-for="n in (editingPrefix[a.id] !== undefined ? bindingEnvNames(a.binding, editingPrefix[a.id]) : a.env_names)" :key="n"
-            class="px-1.5 py-0.5 rounded text-[10px] font-mono border border-gray-700 bg-gray-800/60 text-gray-200">{{ n }}</code>
+            class="px-1.5 py-0.5 rounded-sm text-[10px] font-mono border border-gray-700 bg-gray-800/60 text-gray-200">{{ n }}</code>
         </div>
 
         <!-- Details -->

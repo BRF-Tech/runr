@@ -113,7 +113,7 @@ async function reveal() {
         <p v-if="app?.endpoint_url" class="font-mono text-gray-100 break-all" data-test="endpoint-url">{{ app.endpoint_url }}</p>
         <p v-else class="text-yellow-400">{{ t('workflows.app.endpointUnknown') }}</p>
         <form v-if="canManage" class="flex items-center gap-2 mt-2" @submit.prevent="saveEndpoint">
-          <input v-model="override" class="input !py-1.5 font-mono text-xs" :placeholder="t('workflows.app.endpointPlaceholder')" data-test="endpoint-override" />
+          <input v-model="override" class="input py-1.5! font-mono text-xs" :placeholder="t('workflows.app.endpointPlaceholder')" data-test="endpoint-override" />
           <button type="submit" class="btn-secondary text-xs px-3 py-1.5 shrink-0" :disabled="saving"><Save class="w-3.5 h-3.5" />{{ t('workflows.app.save') }}</button>
         </form>
       </div>
@@ -124,7 +124,7 @@ async function reveal() {
           <button v-if="canManage" type="button" class="btn-secondary text-xs px-2.5 py-1" @click="reveal"><Eye class="w-3.5 h-3.5" />{{ t('workflows.app.revealKey') }}</button>
           <button v-if="canManage" type="button" class="btn-secondary text-xs px-2.5 py-1 text-amber-300" :disabled="rotating" data-test="rotate-key" @click="rotate"><KeyRound class="w-3.5 h-3.5" />{{ t('workflows.app.rotateKey') }}</button>
         </div>
-        <p v-if="key" class="font-mono text-gray-100 break-all mt-2 bg-gray-950/60 border border-gray-800 rounded px-2 py-1" data-test="signing-key">{{ key }}</p>
+        <p v-if="key" class="font-mono text-gray-100 break-all mt-2 bg-gray-950/60 border border-gray-800 rounded-sm px-2 py-1" data-test="signing-key">{{ key }}</p>
         <p class="text-gray-400 mt-1">{{ t('workflows.app.keyHint') }}</p>
       </div>
     </div>

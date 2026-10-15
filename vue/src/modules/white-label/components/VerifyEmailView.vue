@@ -91,7 +91,7 @@ async function resend() {
         <form class="space-y-3" @submit.prevent="resend">
           <label class="block text-xs font-bold uppercase tracking-widest" style="color:#374151">{{ t('auth.email') }}</label>
           <input v-model="email" type="email" required autocomplete="email"
-            class="w-full px-4 py-3 rounded-md text-base outline-none" style="background:#f8fafc;border:1.5px solid #e2e8f0;color:#0f172a" />
+            class="w-full px-4 py-3 rounded-md text-base outline-hidden" style="background:#f8fafc;border:1.5px solid #e2e8f0;color:#0f172a" />
           <p v-if="resent" class="text-sm font-medium" style="color:#059669">{{ t('whiteLabel.signup.resent') }}</p>
           <button type="submit" class="w-full py-3 rounded-md text-base font-semibold text-white disabled:opacity-50"
             style="background:rgb(var(--brand-600))" :disabled="resending || !email" data-test="verify-resend">

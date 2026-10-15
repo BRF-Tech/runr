@@ -123,11 +123,11 @@ defineExpose({ openAdd })
                 <span class="text-gray-400 font-mono">@{{ user.username }}</span>
                 <span class="text-gray-400">{{ user.email }}</span>
                 <span v-if="user.two_factor_confirmed_at"
-                  class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium border bg-emerald-900/40 border-emerald-800/40 text-emerald-400">
+                  class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-sm text-[10px] font-medium border bg-emerald-900/40 border-emerald-800/40 text-emerald-400">
                   <ShieldCheck class="w-3 h-3" />2FA
                 </span>
                 <span v-for="g in memberGroups[user.id] || []" :key="g.id"
-                  class="px-1.5 py-0.5 rounded text-[10px] border border-gray-700 text-gray-400"
+                  class="px-1.5 py-0.5 rounded-sm text-[10px] border border-gray-700 text-gray-400"
                   :title="g.source === 'sso' ? t('rbac.sourceSsoHint') : t('rbac.groups')">{{ g.name }}</span>
               </div>
             </div>
@@ -135,7 +135,7 @@ defineExpose({ openAdd })
             <RoleSelect v-if="canSetRoles && user.id !== currentUserId && roles.length" class="w-40 shrink-0" size="xs"
               :model-value="user.role" :roles="roles" include-owner :data-user-role="user.username"
               @update:model-value="role => setRole(user, role)" />
-            <span v-else-if="user.role" class="text-[10px] px-1.5 py-0.5 rounded border border-gray-700 text-gray-300 shrink-0">{{ roleLabel(user.role, roles) }}</span>
+            <span v-else-if="user.role" class="text-[10px] px-1.5 py-0.5 rounded-sm border border-gray-700 text-gray-300 shrink-0">{{ roleLabel(user.role, roles) }}</span>
             <!-- Reset 2FA (not self, only if 2FA enabled) -->
             <button v-if="canUpdate && user.id !== currentUserId && user.two_factor_confirmed_at"
               class="text-gray-400 hover:text-amber-400 transition-colors shrink-0"

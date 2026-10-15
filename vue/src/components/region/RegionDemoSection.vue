@@ -109,7 +109,7 @@ async function remove() {
     <div class="flex items-center justify-between rounded-md border border-gray-800 bg-gray-900/40 px-3 py-2.5">
       <div>
         <p v-if="loaded" class="text-xs text-gray-100 flex items-center gap-2">
-          <span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium" style="background:rgb(var(--brand-500)/0.15);color:rgb(var(--brand-500))">
+          <span class="inline-flex items-center px-1.5 py-0.5 rounded-sm text-[10px] font-medium" style="background:rgb(var(--brand-500)/0.15);color:rgb(var(--brand-500))">
             {{ t('settings.regionDemo.loaded') }}
           </span>
         </p>
@@ -139,7 +139,7 @@ async function remove() {
       <button
         v-if="loaded || hasError"
         type="button"
-        class="text-xs text-red-500 hover:text-red-400 border border-red-800/50 hover:border-red-600/50 rounded px-2.5 py-1 transition-colors shrink-0 ml-3"
+        class="text-xs text-red-500 hover:text-red-400 border border-red-800/50 hover:border-red-600/50 rounded-sm px-2.5 py-1 transition-colors shrink-0 ml-3"
         @click="remove"
       >
         {{ t('settings.regionDemo.removeBtn') }}
@@ -147,7 +147,7 @@ async function remove() {
       <button
         v-else
         type="button"
-        class="text-xs border rounded px-2.5 py-1 transition-colors shrink-0 ml-3 flex items-center gap-1.5"
+        class="text-xs border rounded-sm px-2.5 py-1 transition-colors shrink-0 ml-3 flex items-center gap-1.5"
         :class="(!canSeed || busy) ? 'opacity-40 cursor-not-allowed' : ''"
         :disabled="!canSeed || busy"
         style="color:rgb(var(--brand-500));border-color:rgb(var(--brand-500)/0.4)"

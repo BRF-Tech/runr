@@ -72,7 +72,7 @@ function toggle(key) {
             class="flex items-center gap-2 cursor-pointer group/ab" :data-ability="key">
             <input type="checkbox"
               :checked="modelValue.includes(key)"
-              class="rounded border-gray-600 bg-gray-800 text-brand-500 focus:ring-brand-500"
+              class="rounded-sm border-gray-600 bg-gray-800 text-brand-500 focus:ring-brand-500"
               @change="toggle(key)" />
             <span class="text-xs text-gray-400 group-hover/ab:text-gray-100 transition-colors">{{ permLabel(key) }}</span>
           </label>

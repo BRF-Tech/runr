@@ -167,7 +167,7 @@ onMounted(async () => {
             <td class="px-3 py-2 font-mono text-gray-100">{{ e.action }}</td>
             <td class="px-3 py-2 text-gray-300 truncate max-w-[16rem]">{{ targetLabel(e) }}</td>
             <td class="px-3 py-2">
-              <span class="px-2 py-0.5 rounded border text-[11px]" :class="resultClass[e.result]">{{ t(`audit.results.${e.result}`) }}</span>
+              <span class="px-2 py-0.5 rounded-sm border text-[11px]" :class="resultClass[e.result]">{{ t(`audit.results.${e.result}`) }}</span>
             </td>
             <td class="px-3 py-2 font-mono text-gray-400">{{ e.ip_address || '-' }}</td>
           </tr>
@@ -251,7 +251,7 @@ onMounted(async () => {
         <div v-if="changes.length" class="mt-5">
           <p class="text-xs font-semibold text-gray-100 mb-2">{{ t('audit.detail.changes') }}</p>
           <ul class="space-y-2">
-            <li v-for="(c, i) in changes" :key="i" class="rounded border border-gray-800 bg-gray-950/60 p-2 text-[11px]" data-testid="audit-change">
+            <li v-for="(c, i) in changes" :key="i" class="rounded-sm border border-gray-800 bg-gray-950/60 p-2 text-[11px]" data-testid="audit-change">
               <p class="font-mono text-gray-100">{{ c.model }} {{ c.name || c.id }} · {{ c.event }}</p>
               <p v-if="c.fields?.length" class="text-gray-400">{{ c.fields.join(', ') }}</p>
               <p v-if="c.env_vars" class="text-gray-400 font-mono">env: {{ JSON.stringify(c.env_vars) }}</p>
@@ -262,7 +262,7 @@ onMounted(async () => {
 
         <div class="mt-5">
           <p class="text-xs font-semibold text-gray-100 mb-2">{{ t('audit.detail.metadata') }}</p>
-          <pre v-if="metadataText" class="rounded border border-gray-800 bg-gray-950/60 p-2 text-[11px] text-gray-300 whitespace-pre-wrap break-all" data-testid="audit-metadata">{{ metadataText }}</pre>
+          <pre v-if="metadataText" class="rounded-sm border border-gray-800 bg-gray-950/60 p-2 text-[11px] text-gray-300 whitespace-pre-wrap break-all" data-testid="audit-metadata">{{ metadataText }}</pre>
           <p v-else class="text-xs text-gray-500">{{ t('audit.detail.noMetadata') }}</p>
         </div>
       </aside>
@@ -271,6 +271,7 @@ onMounted(async () => {
 </template>
 
 <style scoped>
+@reference "../../../assets/main.css";
 .label {
   @apply block text-[11px] text-gray-400 mb-1;
 }

@@ -1,6 +1,34 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import 'tailwindcss';
+/* Tailwind 3's palette, line heights, base styles and space-x/y on Tailwind 4 */
+@import './tailwind-v3-compat.css';
+
+@theme {
+  --font-mono: JetBrains Mono, Fira Code, monospace;
+
+  /* Brand palette: the --brand-* variables below, set by the white-label branding at runtime */
+  --color-brand-300: rgb(var(--brand-300, 253 186 116));
+  --color-brand-400: rgb(var(--brand-400, 251 146 60));
+  --color-brand-500: rgb(var(--brand-500, 249 115 22));
+  --color-brand-600: rgb(var(--brand-600, 234 88 12));
+  --color-brand-700: rgb(var(--brand-700, 194 65 12));
+  --color-brand-800: rgb(var(--brand-800, 154 52 18));
+  --color-brand-900: rgb(var(--brand-900, 124 45 18));
+  --color-brand-primary: rgb(var(--brand-500, 249 115 22));
+  --color-brand-accent: rgb(var(--brand-accent, 230 57 70));
+
+  /* Theme tones: the --gray-* variables of the dark, full-dark and light themes below */
+  --color-gray-50: rgb(var(--gray-50));
+  --color-gray-100: rgb(var(--gray-100));
+  --color-gray-200: rgb(var(--gray-200));
+  --color-gray-300: rgb(var(--gray-300));
+  --color-gray-400: rgb(var(--gray-400));
+  --color-gray-500: rgb(var(--gray-500));
+  --color-gray-600: rgb(var(--gray-600));
+  --color-gray-700: rgb(var(--gray-700));
+  --color-gray-800: rgb(var(--gray-800));
+  --color-gray-900: rgb(var(--gray-900));
+  --color-gray-950: rgb(var(--gray-950));
+}
 
 /* Scrollbar alanını her zaman rezerve et — layout kaymasını önler */
 html { scrollbar-gutter: stable; }
@@ -103,72 +131,71 @@ html { scrollbar-gutter: stable; }
   }
 }
 
-@layer components {
-  .btn {
-    @apply inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium
-           transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-900
+/* Component classes: @utility, so that they work with @apply (btn-primary applies btn) */
+@utility btn {
+  @apply inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium
+           transition-colors focus:outline-hidden focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-900
            disabled:opacity-50 disabled:cursor-not-allowed;
-  }
-  .btn-primary {
-    @apply btn text-white;
-    background-color: rgb(var(--brand-600));
-    --tw-ring-color: rgb(var(--brand-500) / 0.5);
-  }
-  .btn-primary:hover:not(:disabled) { background-color: rgb(var(--brand-500)); }
-  .btn-secondary {
-    @apply btn bg-gray-800 text-gray-100 hover:bg-gray-700 focus:ring-gray-600;
-  }
-  .btn-danger {
-    @apply btn bg-red-700 text-white hover:bg-red-600 focus:ring-red-500;
-  }
-  .input {
-    @apply w-full px-3 py-2 rounded-lg bg-gray-800 border border-gray-700 text-gray-100
+}
+@utility btn-primary {
+  @apply btn text-white;
+  background-color: rgb(var(--brand-600));
+  --tw-ring-color: rgb(var(--brand-500) / 0.5);
+  &:hover:not(:disabled) { background-color: rgb(var(--brand-500)); }
+}
+@utility btn-secondary {
+  @apply btn bg-gray-800 text-gray-100 hover:bg-gray-700 focus:ring-gray-600;
+}
+@utility btn-danger {
+  @apply btn bg-red-700 text-white hover:bg-red-600 focus:ring-red-500;
+}
+@utility input {
+  @apply w-full px-3 py-2 rounded-lg bg-gray-800 border border-gray-700 text-gray-100
            placeholder-gray-400 text-sm
-           focus:outline-none
+           focus:outline-hidden
            transition-colors;
-  }
   /* Normalize height for single-line inputs and selects so they render at the
      same visual height regardless of browser default select arrow styling. */
-  input.input, select.input {
+  &:is(input, select) {
     @apply h-9;
   }
-  .input:focus {
+  &:focus {
     border-color: rgb(var(--brand-500) / 0.7);
   }
-  .label {
-    @apply block text-xs font-medium text-gray-400 mb-1.5 uppercase tracking-wider;
-  }
-  .card {
-    @apply bg-gray-900 border border-gray-800 rounded-xl p-5;
-  }
-  /* Pill-style tab button — rounded background tabs */
-  .tab-pill {
-    @apply px-4 py-1.5 rounded text-sm transition-colors text-gray-400;
-  }
-  .tab-pill:hover { color: rgb(var(--brand-500)); }
-  .tab-pill.is-active {
+}
+@utility label {
+  @apply block text-xs font-medium text-gray-400 mb-1.5 uppercase tracking-wider;
+}
+@utility card {
+  @apply bg-gray-900 border border-gray-800 rounded-xl p-5;
+}
+/* Pill-style tab button — rounded background tabs */
+@utility tab-pill {
+  @apply px-4 py-1.5 rounded-sm text-sm transition-colors text-gray-400;
+  &:hover { color: rgb(var(--brand-500)); }
+  &.is-active {
     color: rgb(var(--brand-500));
     background: rgb(var(--brand-500) / 0.1);
   }
-  /* Underline-style tab button — bottom-border tabs */
-  .tab-line {
-    @apply px-4 py-2 text-sm border-b-2 border-transparent transition-colors text-gray-400;
-  }
-  .tab-line:hover { color: rgb(var(--brand-500)); }
-  .tab-line.is-active {
+}
+/* Underline-style tab button — bottom-border tabs */
+@utility tab-line {
+  @apply px-4 py-2 text-sm border-b-2 border-transparent transition-colors text-gray-400;
+  &:hover { color: rgb(var(--brand-500)); }
+  &.is-active {
     color: rgb(var(--brand-500));
     border-bottom-color: rgb(var(--brand-500));
   }
+}
 
-  /* Pill-style settings tab — icon + label */
-  .settings-tab {
-    @apply flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium transition-all border cursor-pointer;
-    @apply bg-gray-900 border-gray-800 text-gray-400;
-  }
-  .settings-tab:hover {
+/* Pill-style settings tab — icon + label */
+@utility settings-tab {
+  @apply flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium transition-all border cursor-pointer;
+  @apply bg-gray-900 border-gray-800 text-gray-400;
+  &:hover {
     @apply text-gray-200 border-gray-700;
   }
-  .settings-tab.is-active {
+  &.is-active {
     background: rgb(var(--brand-500) / 0.1);
     border-color: rgb(var(--brand-500) / 0.4);
     color: rgb(var(--brand-500));

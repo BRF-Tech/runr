@@ -89,7 +89,7 @@ async function remove(b) {
 }
 
 function stateCls(state) {
-  const base = 'px-1.5 py-0.5 rounded text-[10px] font-medium border'
+  const base = 'px-1.5 py-0.5 rounded-sm text-[10px] font-medium border'
   return {
     ready: `${base} bg-emerald-900/40 border-emerald-800/40 text-emerald-400`,
     pending: `${base} bg-amber-900/40 border-amber-800/40 text-amber-400`,

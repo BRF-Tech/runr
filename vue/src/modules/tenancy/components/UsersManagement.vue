@@ -128,7 +128,7 @@ async function deleteUser(user) {
 }
 
 function roleBadge(role) {
-  const base = 'px-1.5 py-0.5 rounded text-[10px] font-medium border'
+  const base = 'px-1.5 py-0.5 rounded-sm text-[10px] font-medium border'
   switch (role) {
     case 'owner': return `${base} bg-violet-900/40 border-violet-800/40 text-violet-400`
     case 'admin': return `${base} bg-emerald-900/40 border-emerald-800/40 text-emerald-400`
@@ -200,11 +200,11 @@ function initials(user) {
                   <span class="text-sm font-semibold text-gray-100">{{ user.name }}</span>
                   <span class="text-gray-400 font-mono text-[11px]">{{ user.email }}</span>
                   <span v-if="user.is_admin"
-                    class="px-1.5 py-0.5 rounded text-[10px] font-medium border bg-amber-900/40 border-amber-800/40 text-amber-400">
+                    class="px-1.5 py-0.5 rounded-sm text-[10px] font-medium border bg-amber-900/40 border-amber-800/40 text-amber-400">
                     {{ t('tenancy.platformAdmin') }}
                   </span>
                   <span v-if="user.two_factor_confirmed_at"
-                    class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium border bg-emerald-900/40 border-emerald-800/40 text-emerald-400">
+                    class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-sm text-[10px] font-medium border bg-emerald-900/40 border-emerald-800/40 text-emerald-400">
                     <ShieldCheck class="w-3 h-3" />2FA
                   </span>
                 </div>

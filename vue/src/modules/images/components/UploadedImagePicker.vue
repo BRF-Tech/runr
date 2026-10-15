@@ -54,12 +54,12 @@ function setSource(value) {
 <template>
   <div data-testid="uploaded-image-picker">
     <div class="flex items-center justify-between mb-1">
-      <label class="label !mb-0">{{ label || t('create.fields.image') }}</label>
+      <label class="label mb-0!">{{ label || t('create.fields.image') }}</label>
       <div v-if="canView" class="flex gap-1" role="group" :aria-label="t('images.picker.source')">
-        <button type="button" class="px-2 py-0.5 rounded text-[11px] border"
+        <button type="button" class="px-2 py-0.5 rounded-sm text-[11px] border"
           :class="source === 'registry' ? 'border-sky-600 text-sky-300' : 'border-gray-700 text-gray-400'"
           data-testid="image-source-registry" @click="setSource('registry')">{{ t('images.picker.registry') }}</button>
-        <button type="button" class="px-2 py-0.5 rounded text-[11px] border"
+        <button type="button" class="px-2 py-0.5 rounded-sm text-[11px] border"
           :class="source === 'uploaded' ? 'border-sky-600 text-sky-300' : 'border-gray-700 text-gray-400'"
           data-testid="image-source-uploaded" @click="setSource('uploaded')">{{ t('images.picker.uploaded') }}</button>
       </div>

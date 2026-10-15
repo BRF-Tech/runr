@@ -64,7 +64,7 @@ onMounted(loadTenants)
           <div class="flex-1 min-w-0">
             <div class="flex items-center gap-2">
               <span class="text-sm font-semibold text-gray-100">{{ tenant.name }}</span>
-              <code class="text-[10px] font-mono px-1.5 py-0.5 rounded bg-gray-800 border border-gray-700 text-gray-400">{{ tenant.slug }}</code>
+              <code class="text-[10px] font-mono px-1.5 py-0.5 rounded-sm bg-gray-800 border border-gray-700 text-gray-400">{{ tenant.slug }}</code>
             </div>
           </div>
           <span v-if="tenantCosts[tenant.id]" class="font-mono text-sm font-semibold" style="color:rgb(var(--brand-500))">

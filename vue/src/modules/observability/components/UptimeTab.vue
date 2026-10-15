@@ -141,7 +141,7 @@ onMounted(load)
           <span class="text-sm text-gray-100 font-medium">{{ c.name }}</span>
           <span class="text-[11px] font-mono text-gray-400 truncate max-w-[24rem]">{{ c.method }} {{ c.url || c.path }}</span>
           <span class="text-[11px] text-gray-500">{{ c.locations === 'regions' ? t('observability.uptime.form.regions') : t('observability.uptime.form.controlPlane') }}</span>
-          <span v-if="!c.is_enabled" class="text-[10px] px-1.5 rounded bg-gray-800 text-gray-400">{{ t('observability.uptime.disabled') }}</span>
+          <span v-if="!c.is_enabled" class="text-[10px] px-1.5 rounded-sm bg-gray-800 text-gray-400">{{ t('observability.uptime.disabled') }}</span>
           <div v-if="canManage" class="ml-auto flex gap-1.5">
             <button type="button" class="btn-secondary text-xs px-2 py-1" :data-test="`run-${c.id}`" @click="run(c)"><Play class="w-3 h-3" />{{ t('observability.uptime.runNow') }}</button>
             <button type="button" class="btn-secondary text-xs px-2 py-1" @click="editing = c; formErrors = {}"><Pencil class="w-3 h-3" /></button>
@@ -169,7 +169,7 @@ onMounted(load)
       <p v-if="!incidents.length" class="text-xs text-gray-500">{{ t('observability.uptime.incidents.empty') }}</p>
       <div v-for="inc in incidents" :key="inc.id" class="text-xs border-b border-gray-800/40 py-2" :data-incident="inc.id">
         <div class="flex flex-wrap items-center gap-3">
-          <span class="px-1.5 rounded" :class="inc.status === 'open' ? 'bg-red-900/40 text-red-300' : 'bg-emerald-900/30 text-emerald-300'">{{ t('observability.uptime.incidents.' + inc.status) }}</span>
+          <span class="px-1.5 rounded-sm" :class="inc.status === 'open' ? 'bg-red-900/40 text-red-300' : 'bg-emerald-900/30 text-emerald-300'">{{ t('observability.uptime.incidents.' + inc.status) }}</span>
           <span class="text-gray-100">{{ inc.title }}</span>
           <span class="text-gray-500">{{ new Date(inc.started_at).toLocaleString() }}</span>
           <span class="text-gray-500">{{ t('observability.uptime.incidents.duration') }} {{ formatSeconds(inc.duration_seconds) }}</span>
@@ -178,7 +178,7 @@ onMounted(load)
         <p v-if="inc.cause" class="text-gray-400 mt-1">{{ t('observability.uptime.incidents.cause') }}: {{ inc.cause }}</p>
         <p v-if="inc.message" class="text-gray-300 mt-1">{{ inc.message }}</p>
         <div v-if="editingIncident?.id === inc.id" class="mt-2 space-y-2">
-          <input v-model="editingIncident.title" class="input !h-8 text-xs">
+          <input v-model="editingIncident.title" class="input h-8! text-xs">
           <textarea v-model="editingIncident.message" class="input text-xs" rows="2" />
           <button type="button" class="btn-primary text-xs px-3 py-1" @click="saveIncident">{{ t('observability.uptime.incidents.saveMessage') }}</button>
         </div>

@@ -110,7 +110,7 @@ onMounted(load)
         <label class="flex items-center gap-2 text-sm text-gray-200"><input v-model="page.show_incident_history" type="checkbox"> {{ t('observability.status.history') }}</label>
         <div>
           <label class="label">{{ t('observability.status.historyDays') }}</label>
-          <input v-model="page.history_days" type="number" min="7" max="90" class="input !w-28">
+          <input v-model="page.history_days" type="number" min="7" max="90" class="input w-28!">
         </div>
       </div>
 
@@ -129,8 +129,8 @@ onMounted(load)
           <input v-model="c.show_on_status_page" type="checkbox" :data-test="`component-${c.id}`">
           <span class="text-sm text-gray-100">{{ c.name }}</span>
           <span class="text-[11px] text-gray-500">{{ c.project_name }}</span>
-          <input v-if="c.show_on_status_page" v-model="c.status_page_name" class="input !h-8 !w-56 text-xs" :placeholder="t('observability.status.displayName')">
-          <input v-if="c.show_on_status_page" v-model.number="c.status_page_order" type="number" class="input !h-8 !w-20 text-xs" :placeholder="String(i)">
+          <input v-if="c.show_on_status_page" v-model="c.status_page_name" class="input h-8! w-56! text-xs" :placeholder="t('observability.status.displayName')">
+          <input v-if="c.show_on_status_page" v-model.number="c.status_page_order" type="number" class="input h-8! w-20! text-xs" :placeholder="String(i)">
         </div>
       </section>
 

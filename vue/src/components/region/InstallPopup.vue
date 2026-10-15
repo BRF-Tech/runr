@@ -67,7 +67,7 @@ const confirmDisabled = () => {
       </div>
 
       <!-- Error -->
-      <p v-if="error" class="text-xs text-red-400 bg-red-900/20 border border-red-800/40 rounded px-3 py-2">{{ error }}</p>
+      <p v-if="error" class="text-xs text-red-400 bg-red-900/20 border border-red-800/40 rounded-sm px-3 py-2">{{ error }}</p>
 
       <!-- Actions -->
       <div class="flex justify-end gap-3 pt-3 border-t border-gray-800/60">

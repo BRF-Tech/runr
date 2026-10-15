@@ -80,7 +80,7 @@ function safeUrl(url) {
         <tbody>
           <tr v-for="f in shown" :key="`${f.id}|${f.package}|${f.installed}`" class="border-t border-gray-800/80" :data-finding="f.id">
             <td class="px-3 py-1.5">
-              <span class="px-1.5 py-0.5 rounded border text-[10px] font-medium" :class="tone[f.severity] ?? tone.UNKNOWN">
+              <span class="px-1.5 py-0.5 rounded-sm border text-[10px] font-medium" :class="tone[f.severity] ?? tone.UNKNOWN">
                 {{ t(`supplyChain.severity.${(f.severity ?? 'UNKNOWN').toLowerCase()}`) }}
               </span>
             </td>

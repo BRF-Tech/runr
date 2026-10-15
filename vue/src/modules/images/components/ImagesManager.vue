@@ -120,7 +120,7 @@ onMounted(() => {
       <Package class="w-4 h-4" style="color:rgb(var(--brand-500))" />
       <h3 class="text-sm font-semibold text-gray-100">{{ t('images.title') }}</h3>
       <div class="ml-auto flex items-center gap-2">
-        <select v-model="regionId" class="input !py-1 text-xs w-44" data-testid="images-region-filter">
+        <select v-model="regionId" class="input py-1! text-xs w-44" data-testid="images-region-filter">
           <option value="">{{ t('images.allRegions') }}</option>
           <option v-for="r in regions" :key="r.id" :value="r.id">{{ r.name }}</option>
         </select>

@@ -92,7 +92,7 @@ onMounted(load)
               <p v-if="call.error" class="text-[11px] text-red-400 mt-0.5 break-all">{{ call.error }}</p>
             </td>
             <td class="py-1.5 pr-3 whitespace-nowrap">
-              <span class="text-[10px] font-medium px-1.5 py-0.5 rounded border" :class="outcomeStyle[call.outcome] || outcomeStyle.unreachable">
+              <span class="text-[10px] font-medium px-1.5 py-0.5 rounded-sm border" :class="outcomeStyle[call.outcome] || outcomeStyle.unreachable">
                 {{ t(`mcp.calls.outcome.${call.outcome}`) }}
               </span>
               <span v-if="call.status_code" class="text-[10px] font-mono text-gray-500 ml-1">{{ call.status_code }}</span>

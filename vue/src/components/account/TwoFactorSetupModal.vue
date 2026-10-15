@@ -76,7 +76,7 @@ function submit() {
           <div>
             <p class="text-xs text-gray-500 mb-1">{{ t('account.setup2FAManual') }}</p>
             <button
-              class="w-full text-left font-mono text-xs text-gray-300 bg-gray-800 px-3 py-2 rounded break-all transition-all duration-700"
+              class="w-full text-left font-mono text-xs text-gray-300 bg-gray-800 px-3 py-2 rounded-sm break-all transition-all duration-700"
               :class="secretCopied
                 ? ['text-green-400 bg-green-900/20', secretFading ? 'opacity-0' : 'opacity-100']
                 : 'hover:bg-gray-700 cursor-pointer opacity-100'"
@@ -105,7 +105,7 @@ function submit() {
         <div class="space-y-4">
           <p class="text-xs text-gray-400">{{ t('account.recoveryCodesDesc') }}</p>
           <div class="grid grid-cols-2 gap-1">
-            <code v-for="c in props.recoveryCodes" :key="c" class="text-xs font-mono text-gray-300 bg-gray-800 px-2 py-1 rounded">
+            <code v-for="c in props.recoveryCodes" :key="c" class="text-xs font-mono text-gray-300 bg-gray-800 px-2 py-1 rounded-sm">
               {{ c }}
             </code>
           </div>

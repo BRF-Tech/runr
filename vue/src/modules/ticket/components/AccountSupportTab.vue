@@ -191,17 +191,17 @@ onMounted(async () => { await load(); subscribeToTickets(); if (route.query.tick
               <td class="px-5 py-4 text-xs text-gray-500 font-mono">{{ tk.id }}</td>
               <td class="px-4 py-4"><p class="text-sm text-gray-100 font-medium truncate max-w-sm">{{ tk.subject }}</p></td>
               <td class="px-4 py-4">
-                <span class="text-xs font-semibold px-2 py-1 rounded whitespace-nowrap" :class="statusClass[tk.status]">
+                <span class="text-xs font-semibold px-2 py-1 rounded-sm whitespace-nowrap" :class="statusClass[tk.status]">
                   {{ t('account.st_' + tk.status) }}
                 </span>
               </td>
               <td class="px-4 py-4">
-                <span class="text-xs font-semibold px-2 py-1 rounded whitespace-nowrap" :class="priorityClass[tk.priority]">
+                <span class="text-xs font-semibold px-2 py-1 rounded-sm whitespace-nowrap" :class="priorityClass[tk.priority]">
                   {{ t('account.pri_' + tk.priority) }}
                 </span>
               </td>
               <td class="px-4 py-4">
-                <span class="text-xs font-semibold px-2 py-1 rounded bg-gray-800 text-gray-400 whitespace-nowrap">
+                <span class="text-xs font-semibold px-2 py-1 rounded-sm bg-gray-800 text-gray-400 whitespace-nowrap">
                   {{ t('account.cat_' + tk.category) }}
                 </span>
               </td>
@@ -210,7 +210,7 @@ onMounted(async () => { await load(); subscribeToTickets(); if (route.query.tick
                   <Building2 class="w-3 h-3" />{{ tk.tenant_name }}
                 </span>
               </td>
-              <td class="px-4 py-4 text-sm text-gray-400 truncate max-w-[10rem]">{{ tk.user?.name || tk.user?.email || '—' }}</td>
+              <td class="px-4 py-4 text-sm text-gray-400 truncate max-w-40">{{ tk.user?.name || tk.user?.email || '—' }}</td>
               <td class="px-4 py-4 text-xs text-gray-500 text-right whitespace-nowrap">{{ formatDate(tk.created_at) }}</td>
             </tr>
           </tbody>
@@ -220,9 +220,9 @@ onMounted(async () => { await load(); subscribeToTickets(); if (route.query.tick
       <div v-if="totalPages > 1" class="flex items-center justify-between px-5 py-3 border-t border-gray-800">
         <span class="text-[10px] text-gray-500">{{ t('account.pageInfo', { page: page, total: totalPages }) }}</span>
         <div class="flex gap-1">
-          <button class="h-7 w-7 flex items-center justify-center rounded border border-gray-700 text-gray-400 hover:text-gray-200 hover:border-gray-600 transition-colors disabled:opacity-30 disabled:pointer-events-none"
+          <button class="h-7 w-7 flex items-center justify-center rounded-sm border border-gray-700 text-gray-400 hover:text-gray-200 hover:border-gray-600 transition-colors disabled:opacity-30 disabled:pointer-events-none"
             :disabled="page <= 1" @click="goPage(page - 1)"><ChevronLeft class="w-3.5 h-3.5" /></button>
-          <button class="h-7 w-7 flex items-center justify-center rounded border border-gray-700 text-gray-400 hover:text-gray-200 hover:border-gray-600 transition-colors disabled:opacity-30 disabled:pointer-events-none"
+          <button class="h-7 w-7 flex items-center justify-center rounded-sm border border-gray-700 text-gray-400 hover:text-gray-200 hover:border-gray-600 transition-colors disabled:opacity-30 disabled:pointer-events-none"
             :disabled="page >= totalPages" @click="goPage(page + 1)"><ChevronRight class="w-3.5 h-3.5" /></button>
         </div>
       </div>

@@ -117,11 +117,11 @@ watch(() => filters.name, () => {
     </div>
 
     <div class="flex flex-wrap items-center gap-2">
-      <div class="relative flex-1 min-w-[12rem]">
+      <div class="relative flex-1 min-w-48">
         <Search class="w-3.5 h-3.5 text-gray-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
-        <input v-model="filters.name" type="search" class="input !py-1.5 !pl-8 text-xs font-mono" :placeholder="t('workflows.events.filterName')" data-test="event-filter" />
+        <input v-model="filters.name" type="search" class="input py-1.5! pl-8! text-xs font-mono" :placeholder="t('workflows.events.filterName')" data-test="event-filter" />
       </div>
-      <select v-model="filters.source" class="input !w-auto !py-1.5 text-xs">
+      <select v-model="filters.source" class="input w-auto! py-1.5! text-xs">
         <option value="">{{ t('workflows.events.allSources') }}</option>
         <option v-for="s in SOURCES" :key="s" :value="s">{{ t(`workflows.events.source_values.${s}`) }}</option>
       </select>

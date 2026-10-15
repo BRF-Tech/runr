@@ -24,7 +24,7 @@ defineEmits(['kubeconfig-change', 'start', 'complete', 'rollback'])
     <!-- Status badge -->
     <div v-if="migrationStatus" class="flex items-center gap-3">
       <span
-        class="px-2 py-0.5 rounded text-xs font-medium"
+        class="px-2 py-0.5 rounded-sm text-xs font-medium"
         :class="{
           'bg-yellow-900/50 text-yellow-400': ['pending', 'in_progress'].includes(migrationStatus),
           'bg-blue-900/50 text-blue-400': migrationStatus === 'dns_check',
@@ -66,13 +66,13 @@ defineEmits(['kubeconfig-change', 'start', 'complete', 'rollback'])
       <input
         type="file"
         accept=".yaml,.yml,.conf,*"
-        class="block w-full text-xs text-gray-400 file:mr-3 file:py-1 file:px-3 file:rounded file:border-0 file:text-xs file:font-medium file:bg-gray-700 file:text-gray-100 hover:file:bg-gray-600"
+        class="block w-full text-xs text-gray-400 file:mr-3 file:py-1 file:px-3 file:rounded-sm file:border-0 file:text-xs file:font-medium file:bg-gray-700 file:text-gray-100 hover:file:bg-gray-600"
         @change="$emit('kubeconfig-change', $event)"
       />
       <p v-if="migrationKubeconfigName" class="text-xs text-gray-400">{{ migrationKubeconfigName }}</p>
 
       <button
-        class="px-3 py-1.5 text-xs font-medium rounded bg-amber-600 hover:bg-amber-500 text-white disabled:opacity-50 disabled:cursor-not-allowed"
+        class="px-3 py-1.5 text-xs font-medium rounded-sm bg-amber-600 hover:bg-amber-500 text-white disabled:opacity-50 disabled:cursor-not-allowed"
         :disabled="!migrationKubeconfigName || migrationLoading"
         @click="$emit('start')"
       >
@@ -83,14 +83,14 @@ defineEmits(['kubeconfig-change', 'start', 'complete', 'rollback'])
     <!-- Complete / Rollback buttons -->
     <div v-if="migrationStatus === 'dns_check'" class="flex gap-2">
       <button
-        class="px-3 py-1.5 text-xs font-medium rounded bg-green-600 hover:bg-green-500 text-white disabled:opacity-50"
+        class="px-3 py-1.5 text-xs font-medium rounded-sm bg-green-600 hover:bg-green-500 text-white disabled:opacity-50"
         :disabled="migrationLoading"
         @click="$emit('complete')"
       >
         {{ t('settings.regionDetail.migration.completeMigration') }}
       </button>
       <button
-        class="px-3 py-1.5 text-xs font-medium rounded bg-red-600 hover:bg-red-500 text-white disabled:opacity-50"
+        class="px-3 py-1.5 text-xs font-medium rounded-sm bg-red-600 hover:bg-red-500 text-white disabled:opacity-50"
         :disabled="migrationLoading"
         @click="$emit('rollback')"
       >
@@ -101,7 +101,7 @@ defineEmits(['kubeconfig-change', 'start', 'complete', 'rollback'])
     <!-- Rollback on failure -->
     <div v-if="migrationStatus === 'failed'" class="flex gap-2">
       <button
-        class="px-3 py-1.5 text-xs font-medium rounded bg-red-600 hover:bg-red-500 text-white disabled:opacity-50"
+        class="px-3 py-1.5 text-xs font-medium rounded-sm bg-red-600 hover:bg-red-500 text-white disabled:opacity-50"
         :disabled="migrationLoading"
         @click="$emit('rollback')"
       >

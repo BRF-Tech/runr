@@ -20,7 +20,7 @@ const tone = {
 
 <template>
   <span
-    class="inline-flex items-center px-1.5 py-0.5 rounded border text-[10px] font-medium"
+    class="inline-flex items-center px-1.5 py-0.5 rounded-sm border text-[10px] font-medium"
     :class="tone[props.status] ?? tone.skipped"
     :data-step-status="props.status ?? 'none'"
   >{{ props.label ?? (props.status ? t(`supplyChain.step.${props.status}`) : '—') }}</span>

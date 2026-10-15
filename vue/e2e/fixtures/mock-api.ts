@@ -245,6 +245,30 @@ function runtimeCatalog(db: MockDb): Json[] {
   })
 }
 
+/**
+ * GET /knative-regions/{id}/capacity (RegionCapacityController): both budgets per resource, with
+ * the region's used figures counted as scale-to-zero (FaaS) use and nothing always-on.
+ */
+function regionCapacity(region: Json): Json {
+  const budget = (capacity: number, factor: number, used: number) => {
+    const faasBudget = Math.floor(capacity * factor)
+    return {
+      capacity, always_on_used: 0, always_on_available: capacity, faas_overcommit: factor,
+      faas_budget: faasBudget, faas_used: used, faas_available: Math.max(0, faasBudget - used),
+      utilization: faasBudget > 0 ? Math.round((used / faasBudget) * 1000) / 10 : null,
+    }
+  }
+  const cpu = region.faas_cpu_overcommit ?? 3
+  const memory = region.faas_memory_overcommit ?? 1.5
+  return {
+    region_id: region.id,
+    faas_cpu_overcommit: cpu,
+    faas_memory_overcommit: memory,
+    cpu_m: budget(region.total_cpu_m ?? 0, cpu, region.used_cpu_m ?? 0),
+    memory_mb: budget(region.total_memory_mb ?? 0, memory, region.used_memory_mb ?? 0),
+  }
+}
+
 /** GET /knative-regions/{id}/gpu of a region without GPU nodes or GPU support (GpuController::status). */
 function noGpu(): Json {
   return {
@@ -711,6 +735,25 @@ function registerDefaults(api: MockApi): void {
   api.define('GET', '/knative-regions/:id/check-namespace', (req, db) => ok({ exists: db.namespaceTaken.includes(req.query.get('name') ?? '') }))
   api.define('GET', '/knative-regions/:id/redis-status', () => ok({ status: null }))
   api.define('GET', '/knative-regions/:id/gpu', () => ok(noGpu()))
+  // Capacity budgets (RegionCapacityController): the region's used figures as scale-to-zero use
+  api.define('GET', '/knative-regions/:id/capacity', (req, db) => {
+    const region = db.regions.find(r => r.id === req.params.id)
+    return region ? ok({ data: regionCapacity(region) }) : notFound()
+  })
+  api.define('PUT', '/knative-regions/:id/capacity', (req, db) => {
+    const region = db.regions.find(r => r.id === req.params.id)
+    if (!region) return notFound()
+    for (const field of ['faas_cpu_overcommit', 'faas_memory_overcommit']) {
+      const value = req.body?.[field]
+      if (value === undefined) continue
+      if (typeof value !== 'number' || value < 1 || value > 10) {
+        const message = `The ${field.replaceAll('_', ' ')} field must be between 1 and 10.`
+        return ok({ message, errors: { [field]: [message] } }, 422)
+      }
+      region[field] = value
+    }
+    return ok({ message: 'Capacity settings updated.', data: regionCapacity(region) })
+  })
   api.define('GET', '/knative-regions/:id/kata-shims', (req, db) => {
     const region = db.regions.find(r => r.id === req.params.id)
     if (!region) return notFound()

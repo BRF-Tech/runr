@@ -202,13 +202,13 @@ function toggleExpand(tenant) {
             <div class="flex-1 min-w-0">
               <div class="flex items-center gap-2 flex-wrap">
                 <span class="text-sm font-semibold text-gray-100">{{ tenant.name }}</span>
-                <code class="text-[10px] font-mono px-1.5 py-0.5 rounded bg-gray-800 border border-gray-700 text-gray-400">{{ tenant.slug }}</code>
+                <code class="text-[10px] font-mono px-1.5 py-0.5 rounded-sm bg-gray-800 border border-gray-700 text-gray-400">{{ tenant.slug }}</code>
                 <span v-if="isDeleting(tenant)"
-                  class="flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium border bg-amber-900/30 border-amber-800/40 text-amber-400">
+                  class="flex items-center gap-1 px-1.5 py-0.5 rounded-sm text-[10px] font-medium border bg-amber-900/30 border-amber-800/40 text-amber-400">
                   <Loader2 class="w-3 h-3 animate-spin" />{{ t('tenancy.statusDeleting') }}
                 </span>
                 <span v-else-if="deleteFailed(tenant)"
-                  class="px-1.5 py-0.5 rounded text-[10px] font-medium border bg-red-900/30 border-red-800/40 text-red-400">
+                  class="px-1.5 py-0.5 rounded-sm text-[10px] font-medium border bg-red-900/30 border-red-800/40 text-red-400">
                   {{ t('tenancy.statusDeleteFailed') }}
                 </span>
               </div>
@@ -217,7 +217,7 @@ function toggleExpand(tenant) {
                 <span class="flex items-center gap-1"><Globe class="w-3 h-3" />{{ t('tenancy.regionCount', { n: tenant.region_count ?? 0 }) }}</span>
               </div>
               <p v-if="deleteFailed(tenant) && tenant.status_message"
-                class="mt-1 text-[11px] text-red-400 break-words">{{ tenant.status_message }}</p>
+                class="mt-1 text-[11px] text-red-400 wrap-break-word">{{ tenant.status_message }}</p>
             </div>
             <button class="p-1.5 rounded-md text-gray-400 hover:text-gray-100 hover:bg-gray-800 transition-colors shrink-0 disabled:opacity-40 disabled:pointer-events-none"
               :disabled="!!tenant.status && tenant.status !== 'active'"

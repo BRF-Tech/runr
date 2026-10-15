@@ -127,8 +127,8 @@ const err = (k) => (props.errors?.[k] || [])[0]
       <label class="label">{{ t('observability.uptime.form.headers') }}</label>
       <p class="text-[11px] text-gray-500">{{ check?.header_names?.length ? t('observability.uptime.form.headersKept', { names: check.header_names.join(', ') }) : t('observability.uptime.form.headersHint') }}</p>
       <div v-for="(row, i) in headers" :key="i" class="flex gap-2">
-        <input v-model="row.name" class="input !h-8 text-xs !w-56" placeholder="X-Health-Token">
-        <input v-model="row.value" class="input !h-8 text-xs" type="password" autocomplete="off">
+        <input v-model="row.name" class="input h-8! text-xs w-56!" placeholder="X-Health-Token">
+        <input v-model="row.value" class="input h-8! text-xs" type="password" autocomplete="off">
         <button type="button" class="text-gray-400 hover:text-red-400" @click="headers.splice(i, 1)"><X class="w-4 h-4" /></button>
       </div>
       <button type="button" class="btn-secondary text-xs px-2.5 py-1" @click="headers.push({ name: '', value: '' })"><Plus class="w-3 h-3" />{{ t('observability.uptime.form.addHeader') }}</button>
@@ -137,7 +137,7 @@ const err = (k) => (props.errors?.[k] || [])[0]
     <label class="flex items-center gap-2 text-xs text-gray-300"><input v-model="form.is_enabled" type="checkbox"> {{ t('observability.uptime.form.enabled') }}</label>
     <div class="flex items-center gap-2">
       <label class="flex items-center gap-2 text-xs text-gray-300"><input v-model="form.show_on_status_page" type="checkbox" data-test="check-status-page"> {{ t('observability.uptime.form.showOnStatusPage') }}</label>
-      <input v-if="form.show_on_status_page" v-model="form.status_page_name" class="input !h-8 text-xs" :placeholder="t('observability.uptime.form.statusPageName')">
+      <input v-if="form.show_on_status_page" v-model="form.status_page_name" class="input h-8! text-xs" :placeholder="t('observability.uptime.form.statusPageName')">
     </div>
 
     <div class="md:col-span-2 flex gap-2">

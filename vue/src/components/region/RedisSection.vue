@@ -68,11 +68,11 @@ const modeCards = [
     <!-- Ready: readonly info + remove button -->
     <template v-if="redisStatus === 'ready'">
       <div v-if="redisMode" class="text-xs text-gray-400">
-        <p class="font-mono bg-gray-900/60 rounded px-3 py-2">
+        <p class="font-mono bg-gray-900/60 rounded-sm px-3 py-2">
           {{ redisMode === 'managed' ? t('settings.regionDetail.redis.modeManaged') : t('settings.regionDetail.installPopup.redisExisting') }}
         </p>
       </div>
-      <button v-if="!readonly" type="button" class="btn-secondary text-xs !text-red-400 hover:!text-red-300"
+      <button v-if="!readonly" type="button" class="btn-secondary text-xs text-red-400! hover:text-red-300!"
         @click="$emit('remove')">
         {{ t('settings.regionDetail.redis.removeRedis') }}
       </button>

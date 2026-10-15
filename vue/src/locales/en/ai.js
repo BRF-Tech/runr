@@ -336,6 +336,7 @@ export default {
       deleted:       'Service deleted.',
       saved:         'Service updated.',
       urlCopied:     'URL copied.',
+      statusReason:  'Why Kubernetes cannot start the pods of the service',
       statuses: {
         stopped:          'Stopped',
         waiting_snapshot: 'Waiting for offline copy',

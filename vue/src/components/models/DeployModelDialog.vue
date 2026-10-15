@@ -161,7 +161,7 @@ async function submit() {
 
 <template>
   <div class="fixed inset-0 z-50 flex items-center justify-center p-4" data-testid="deploy-dialog">
-    <div class="absolute inset-0 bg-black/70 backdrop-blur-sm" @click="emit('close')" />
+    <div class="absolute inset-0 bg-black/70 backdrop-blur-xs" @click="emit('close')" />
     <div class="relative w-full max-w-2xl card max-h-[90vh] flex flex-col">
       <div class="flex items-start justify-between mb-4">
         <div class="min-w-0">
@@ -314,6 +314,7 @@ async function submit() {
 </template>
 
 <style scoped>
+@reference "../../assets/main.css";
 .section-title {
   @apply text-xs text-gray-400 uppercase tracking-wider font-medium mb-3 border-b border-gray-800/60 pb-2;
 }

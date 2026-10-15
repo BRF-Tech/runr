@@ -122,8 +122,8 @@ onMounted(load)
       <div v-for="m in mappings" :key="m.id" class="flex items-center gap-3 rounded-md border border-gray-800 px-3 py-2 text-xs" :data-mapping="m.external_group">
         <span class="font-mono text-gray-100">{{ m.external_group }}</span>
         <span class="text-gray-500">→</span>
-        <span v-if="m.group" class="px-1.5 py-0.5 rounded border border-gray-700 text-gray-300">{{ m.group.name }}</span>
-        <span v-if="m.role" class="px-1.5 py-0.5 rounded border border-sky-800/50 bg-sky-900/30 text-sky-400">{{ roleLabel(m.role, roles) }}</span>
+        <span v-if="m.group" class="px-1.5 py-0.5 rounded-sm border border-gray-700 text-gray-300">{{ m.group.name }}</span>
+        <span v-if="m.role" class="px-1.5 py-0.5 rounded-sm border border-sky-800/50 bg-sky-900/30 text-sky-400">{{ roleLabel(m.role, roles) }}</span>
         <span class="flex-1" />
         <span class="text-gray-500">{{ m.provider?.name ?? t('authProvider.mappingAnyProvider') }}</span>
         <button class="text-gray-400 hover:text-red-400" @click="remove(m)"><Trash2 class="w-3.5 h-3.5" /></button>

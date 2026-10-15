@@ -61,11 +61,11 @@ const canUpgrade = () => {
     <template v-if="readonly">
       <div v-if="namespace">
         <label class="label">{{ t('settings.regionDetail.namespace.label') }}</label>
-        <p class="text-xs text-gray-400 font-mono bg-gray-900/60 rounded px-3 py-2">{{ namespace }}</p>
+        <p class="text-xs text-gray-400 font-mono bg-gray-900/60 rounded-sm px-3 py-2">{{ namespace }}</p>
       </div>
       <div v-if="version && component !== 'operator'">
         <label class="label">{{ t(`settings.regionDetail.${component}.versionLabel`) }}</label>
-        <p class="text-xs text-gray-400 font-mono bg-gray-900/60 rounded px-3 py-2">{{ version }}</p>
+        <p class="text-xs text-gray-400 font-mono bg-gray-900/60 rounded-sm px-3 py-2">{{ version }}</p>
       </div>
       <div class="flex items-center gap-3">
         <span :class="statusBadgeClass(status)">{{ statusLabel(status) }}</span>
@@ -82,20 +82,20 @@ const canUpgrade = () => {
       <!-- Namespace (readonly when installed) -->
       <div v-if="isReady()">
         <label class="label">{{ t('settings.regionDetail.namespace.label') }}</label>
-        <p class="text-xs text-gray-400 font-mono bg-gray-900/60 rounded px-3 py-2">{{ namespace }}</p>
+        <p class="text-xs text-gray-400 font-mono bg-gray-900/60 rounded-sm px-3 py-2">{{ namespace }}</p>
         <p class="text-[10px] text-gray-400 mt-1">{{ t('settings.regionDetail.namespace.readonly') }}</p>
       </div>
 
       <!-- Ingress class (serving only) -->
       <div v-if="component === 'serving' && isReady()">
         <label class="label">{{ t('settings.regionDetail.serving.ingressClass') }}</label>
-        <p class="text-xs text-gray-400 font-mono bg-gray-900/60 rounded px-3 py-2">Traefik</p>
+        <p class="text-xs text-gray-400 font-mono bg-gray-900/60 rounded-sm px-3 py-2">Traefik</p>
       </div>
 
       <!-- Version (serving, when ready) -->
       <div v-if="component !== 'operator' && isReady() && version">
         <label class="label">{{ t(`settings.regionDetail.${component}.versionLabel`) }}</label>
-        <p class="text-xs text-gray-400 font-mono bg-gray-900/60 rounded px-3 py-2">{{ version }}</p>
+        <p class="text-xs text-gray-400 font-mono bg-gray-900/60 rounded-sm px-3 py-2">{{ version }}</p>
       </div>
 
       <!-- Adopted info -->
@@ -124,7 +124,7 @@ const canUpgrade = () => {
           {{ t(`settings.regionDetail.${component}.upgradeBtn`) }}
         </button>
         <button v-if="canUninstall()"
-          type="button" class="btn-secondary text-xs !text-red-400 hover:!text-red-300" @click="$emit('uninstall')">
+          type="button" class="btn-secondary text-xs text-red-400! hover:text-red-300!" @click="$emit('uninstall')">
           {{ t(`settings.regionDetail.${component}.uninstallBtn`) }}
         </button>
       </div>

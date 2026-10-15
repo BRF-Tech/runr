@@ -151,7 +151,7 @@ function readFileAsText(file) {
       <span class="truncate">{{ name }}</span>
       <button
         v-if="isLatest && name !== mainFile"
-        class="opacity-0 group-hover:opacity-60 hover:!opacity-100 text-xs transition-opacity ml-1 shrink-0"
+        class="opacity-0 group-hover:opacity-60 hover:opacity-100! text-xs transition-opacity ml-1 shrink-0"
         @click.stop="$emit('remove', name)"
       >✕</button>
     </div>

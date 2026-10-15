@@ -269,7 +269,7 @@ onMounted(async () => {
     <!-- Billing settings -->
     <section>
       <div class="flex items-center gap-3 mb-2">
-        <div class="w-1 h-8 rounded-full shrink-0 bg-gradient-to-b from-brand-500 to-brand-700"></div>
+        <div class="w-1 h-8 rounded-full shrink-0 bg-linear-to-b from-brand-500 to-brand-700"></div>
         <h3 class="text-base font-semibold text-gray-100">{{ t('whiteLabel.billing.title') }}</h3>
       </div>
       <p class="text-xs text-gray-400 mb-4 max-w-3xl">{{ t('whiteLabel.billing.intro') }}</p>
@@ -328,7 +328,7 @@ onMounted(async () => {
     <section data-test="billing-events">
       <div class="flex items-center justify-between mb-4">
         <div class="flex items-center gap-3">
-          <div class="w-1 h-8 rounded-full shrink-0 bg-gradient-to-b from-brand-500 to-brand-700"></div>
+          <div class="w-1 h-8 rounded-full shrink-0 bg-linear-to-b from-brand-500 to-brand-700"></div>
           <h3 class="text-base font-semibold text-gray-100">{{ t('whiteLabel.events.title') }}</h3>
         </div>
         <button type="button" class="btn-secondary" :disabled="testing" data-test="billing-test-event" @click="sendTest">
@@ -355,7 +355,7 @@ onMounted(async () => {
               <td class="px-4 py-2.5 font-mono text-xs text-gray-200">{{ event.type }}</td>
               <td class="px-4 py-2.5 text-xs text-gray-300">{{ event.tenant?.slug ?? '—' }}</td>
               <td class="px-4 py-2.5">
-                <span class="px-1.5 py-0.5 rounded text-[10px] font-medium border" :class="DELIVERY_CLASSES[event.delivery?.status] ?? DELIVERY_CLASSES.skipped">
+                <span class="px-1.5 py-0.5 rounded-sm text-[10px] font-medium border" :class="DELIVERY_CLASSES[event.delivery?.status] ?? DELIVERY_CLASSES.skipped">
                   {{ t(`whiteLabel.events.status_${event.delivery?.status ?? 'skipped'}`) }}
                 </span>
                 <span v-if="event.delivery?.last_error" class="block text-[10px] text-red-400 mt-1 break-all">{{ event.delivery.last_error }}</span>
@@ -379,7 +379,7 @@ onMounted(async () => {
     <section>
       <div class="flex items-center justify-between mb-4">
         <div class="flex items-center gap-3">
-          <div class="w-1 h-8 rounded-full shrink-0 bg-gradient-to-b from-brand-500 to-brand-700"></div>
+          <div class="w-1 h-8 rounded-full shrink-0 bg-linear-to-b from-brand-500 to-brand-700"></div>
           <h3 class="text-base font-semibold text-gray-100">{{ t('whiteLabel.plans.title') }}</h3>
         </div>
         <button type="button" class="btn-primary" data-test="plan-new" @click="editing = {}">
@@ -407,9 +407,9 @@ onMounted(async () => {
                 <div class="flex items-center gap-2 flex-wrap">
                   <span class="text-gray-100 font-medium">{{ plan.name }}</span>
                   <span class="text-xs font-mono text-gray-500">{{ plan.slug }}</span>
-                  <span v-if="plan.is_default" class="px-1.5 py-0.5 rounded text-[10px] border bg-brand-900/40 border-brand-800/40 text-brand-400">{{ t('whiteLabel.plans.default') }}</span>
-                  <span v-if="!plan.is_public" class="px-1.5 py-0.5 rounded text-[10px] border bg-gray-800/40 border-gray-700/40 text-gray-400">{{ t('whiteLabel.plans.hidden') }}</span>
-                  <span v-if="plan.is_archived" class="px-1.5 py-0.5 rounded text-[10px] border bg-gray-800/40 border-gray-700/40 text-gray-400">{{ t('whiteLabel.plans.archivedBadge') }}</span>
+                  <span v-if="plan.is_default" class="px-1.5 py-0.5 rounded-sm text-[10px] border bg-brand-900/40 border-brand-800/40 text-brand-400">{{ t('whiteLabel.plans.default') }}</span>
+                  <span v-if="!plan.is_public" class="px-1.5 py-0.5 rounded-sm text-[10px] border bg-gray-800/40 border-gray-700/40 text-gray-400">{{ t('whiteLabel.plans.hidden') }}</span>
+                  <span v-if="plan.is_archived" class="px-1.5 py-0.5 rounded-sm text-[10px] border bg-gray-800/40 border-gray-700/40 text-gray-400">{{ t('whiteLabel.plans.archivedBadge') }}</span>
                 </div>
                 <p v-if="plan.trial_days" class="text-xs text-gray-400 mt-0.5">{{ t('whiteLabel.plans.trialDays', { n: plan.trial_days }) }}</p>
               </td>
@@ -436,7 +436,7 @@ onMounted(async () => {
     <!-- Tenants and their plans -->
     <section>
       <div class="flex items-center gap-3 mb-2">
-        <div class="w-1 h-8 rounded-full shrink-0 bg-gradient-to-b from-brand-500 to-brand-700"></div>
+        <div class="w-1 h-8 rounded-full shrink-0 bg-linear-to-b from-brand-500 to-brand-700"></div>
         <h3 class="text-base font-semibold text-gray-100">{{ t('whiteLabel.subscriptions.title') }}</h3>
       </div>
       <p class="text-xs text-gray-400 mb-4 max-w-3xl">{{ t('whiteLabel.subscriptions.hint') }}</p>
@@ -461,7 +461,7 @@ onMounted(async () => {
               </td>
               <td class="px-4 py-3">
                 <div class="flex gap-2">
-                  <select v-model="drafts[row.tenant.id].plan" class="input h-8 text-xs min-w-[9rem]" :disabled="busyTenant === row.tenant.id"
+                  <select v-model="drafts[row.tenant.id].plan" class="input h-8 text-xs min-w-36" :disabled="busyTenant === row.tenant.id"
                     :data-test="`assign-${row.tenant.slug}`">
                     <option value="">{{ t('whiteLabel.subscriptions.noPlan') }}</option>
                     <option v-for="p in activePlans" :key="p.id" :value="p.id">{{ p.name }}</option>
@@ -476,7 +476,7 @@ onMounted(async () => {
               <td class="px-4 py-3">
                 <div class="flex flex-wrap items-center gap-1">
                   <SubscriptionStatusBadge :status="row.subscription?.plan_id ? row.subscription.status : null" />
-                  <span v-if="row.subscription?.prepaid" class="px-1.5 py-0.5 rounded text-[10px] font-medium border bg-brand-900/40 border-brand-800/40 text-brand-400">
+                  <span v-if="row.subscription?.prepaid" class="px-1.5 py-0.5 rounded-sm text-[10px] font-medium border bg-brand-900/40 border-brand-800/40 text-brand-400">
                     {{ t('whiteLabel.subscription.prepaid') }}
                   </span>
                 </div>
