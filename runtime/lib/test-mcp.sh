@@ -33,7 +33,7 @@
 #             (test-runtimes.sh: acquire_kind_lock).
 
 MCP_E2E_CLIENT_IMAGE="${MCP_E2E_CLIENT_IMAGE:-runr-mcp-e2e-client:latest}"
-MCP_E2E_PYTHON_IMAGE="${MCP_E2E_PYTHON_IMAGE:-ghcr.io/runrsh/reqs/python:3.13-slim}"
+MCP_E2E_PYTHON_IMAGE="${MCP_E2E_PYTHON_IMAGE:-ghcr.io/brf-tech/reqs/python:3.13-slim}"
 MCP_E2E_SDK="${MCP_E2E_SDK:-mcp>=1.12,<2}"
 
 cmd_test_mcp() {

@@ -259,6 +259,8 @@ return [
     'DELETE knative-regions/{knative_region}' => 'regions.manage',
     'GET knative-regions/{knativeRegion}/kubeconfig' => 'regions.manage',
     'PUT knative-regions/{knativeRegion}/settings' => 'regions.manage',
+    'GET knative-regions/{knativeRegion}/capacity' => 'regions.view',
+    'PUT knative-regions/{knativeRegion}/capacity' => 'regions.manage',
     'PUT knative-regions/{knativeRegion}/function-tls' => 'regions.manage',
     'GET knative-regions/{knativeRegion}/skupper' => 'regions.view',
     'POST knative-regions/{knativeRegion}/skupper/site' => 'regions.manage',

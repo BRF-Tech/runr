@@ -1,13 +1,13 @@
-module github.com/runrsh/core/terraform-provider-runr
+module github.com/brf-tech/runr/terraform-provider-runr
 
-go 1.26.0
+go 1.26.9
 
 require (
 	github.com/hashicorp/terraform-plugin-framework v1.19.0
 	github.com/hashicorp/terraform-plugin-framework-validators v0.19.0
 	github.com/hashicorp/terraform-plugin-go v0.31.0
 	github.com/hashicorp/terraform-plugin-testing v1.16.0
-	github.com/runrsh/core/cli v0.0.0
+	github.com/brf-tech/runr/cli v0.0.0
 	gopkg.in/yaml.v3 v3.0.1
 )
 
@@ -66,4 +66,4 @@ require (
 
 // The provider shares the API client (pkg/runr) and the fake API (pkg/runr/runrtest) with
 // the runr CLI in this repository.
-replace github.com/runrsh/core/cli => ../cli
+replace github.com/brf-tech/runr/cli => ../cli

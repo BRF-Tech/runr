@@ -207,7 +207,7 @@ trait E2eTestSandboxTrait
             [
                 'service_type' => 'caas',
                 'trigger_type' => 'http',
-                'image' => 'ghcr.io/runrsh/reqs/nginx:1.27-alpine',
+                'image' => 'ghcr.io/brf-tech/reqs/nginx:1.27-alpine',
             ],
             $regionId,
         );

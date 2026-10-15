@@ -30,6 +30,7 @@ use Illuminate\Support\Str;
  * @property bool $is_region_demo
  * @property string $endpoint_type
  * @property string|null $created_by
+ * @property string|null $deployed_runtime_class RuntimeClass of the last deploy ("runc" for none; null: unknown, the region's mapping counts)
  * @property-read Deployment|null $activeDeployment
  * @property-read ContainerConfig|null $containerConfig
  * @property-read User|null $creator

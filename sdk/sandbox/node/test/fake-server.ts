@@ -37,7 +37,7 @@ function sandboxObject(id: string, body: Json, status: string): Json {
     region: { id: 'r1', name: 'eu-1' },
     runtime: body.runtime ?? 'python',
     runtime_version: body.version ?? '3.14',
-    image: body.image ?? 'ghcr.io/runrsh/exec-python:3.14',
+    image: body.image ?? 'ghcr.io/brf-tech/exec-python:3.14',
     sandbox_class: 'gvisor',
     isolation: 'gvisor',
     resources: { cpu: '500m', cpu_m: 500, memory_mb: 512, disk_mb: 1024, pids_limit: 256 },

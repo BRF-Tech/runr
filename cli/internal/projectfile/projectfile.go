@@ -13,8 +13,8 @@ import (
 
 	"gopkg.in/yaml.v3"
 
-	"github.com/runrsh/core/cli/internal/runtimes"
-	"github.com/runrsh/core/cli/pkg/runr"
+	"github.com/brf-tech/runr/cli/internal/runtimes"
+	"github.com/brf-tech/runr/cli/pkg/runr"
 )
 
 // FileName is the project file name; runr.yml is accepted as well.

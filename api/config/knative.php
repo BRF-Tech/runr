@@ -2,10 +2,11 @@
 
 use App\Services\Contracts\KnativeConstants;
 use App\Services\Manifests\BuildManifests;
+use App\Support\Images\RegistryMove;
 
 // The region Traefik's image (TraefikImage): the reqs mirror of the pinned chart's image, or
 // KNATIVE_TRAEFIK_IMAGE (Helm value knative.traefikImage), e.g. for a registry of your own
-$traefikImage = env('KNATIVE_TRAEFIK_IMAGE') ?: KnativeConstants::TRAEFIK_IMAGE;
+$traefikImage = RegistryMove::ref(env('KNATIVE_TRAEFIK_IMAGE') ?: KnativeConstants::TRAEFIK_IMAGE);
 
 return [
     /*
@@ -90,13 +91,13 @@ return [
     'prepull_images' => [
         // the image the region Traefik runs (TraefikImage)
         $traefikImage,
-        'ghcr.io/runrsh/runr-queue-consumer:latest',
+        'ghcr.io/brf-tech/runr-queue-consumer:latest',
         BuildManifests::KANIKO_IMAGE,
-        'ghcr.io/runrsh/reqs/redis:7-alpine',
-        'ghcr.io/runrsh/reqs/alpine:3.20',
-        'ghcr.io/runrsh/reqs/alpine:3.21',
-        'ghcr.io/runrsh/reqs/busybox:latest',
-        'ghcr.io/runrsh/reqs/curl:latest',
-        'ghcr.io/runrsh/reqs/composer:latest',
+        'ghcr.io/brf-tech/reqs/redis:7-alpine',
+        'ghcr.io/brf-tech/reqs/alpine:3.20',
+        'ghcr.io/brf-tech/reqs/alpine:3.21',
+        'ghcr.io/brf-tech/reqs/busybox:latest',
+        'ghcr.io/brf-tech/reqs/curl:latest',
+        'ghcr.io/brf-tech/reqs/composer:latest',
     ],
 ];

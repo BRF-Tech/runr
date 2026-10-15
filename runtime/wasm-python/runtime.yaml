@@ -15,7 +15,7 @@ extensions: [py]
 category: general
 versions:
   - version: "4.1"
-    image: ghcr.io/runrsh/exec-wasm-python:4.1
+    image: ghcr.io/brf-tech/exec-wasm-python:4.1
     default: true
 handler:
   file: app

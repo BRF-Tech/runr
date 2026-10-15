@@ -7,7 +7,7 @@
   "homepage": "https://runr.sh",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/runrsh/core.git",
+    "url": "git+https://github.com/brf-tech/runr.git",
     "directory": "sdk/sandbox/node"
   },
   "keywords": [

@@ -35,7 +35,7 @@ spec:
       {{- include "runr.pod-colocation" . | nindent 6 }}
       containers:
         - name: migrate
-          image: "{{ .Values.api.image.repository }}:{{ .Values.api.image.tag }}"
+          image: {{ include "runr.image" (printf "%v:%v" .Values.api.image.repository .Values.api.image.tag) | quote }}
           imagePullPolicy: {{ .Values.api.image.pullPolicy }}
           {{- include "runr.envFrom" . | nindent 10 }}
           env:
@@ -82,7 +82,7 @@ spec:
       {{- include "runr.pod-colocation" . | nindent 6 }}
       containers:
         - name: migrate
-          image: "{{ .Values.api.image.repository }}:{{ .Values.api.image.tag }}"
+          image: {{ include "runr.image" (printf "%v:%v" .Values.api.image.repository .Values.api.image.tag) | quote }}
           imagePullPolicy: {{ .Values.api.image.pullPolicy }}
           {{- include "runr.envFrom" . | nindent 10 }}
           env:

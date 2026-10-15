@@ -42,7 +42,7 @@ spec:
       {{- include "runr.pod-colocation" . | nindent 6 }}
       containers:
         - name: bootstrap
-          image: "{{ .Values.api.image.repository }}:{{ .Values.api.image.tag }}"
+          image: {{ include "runr.image" (printf "%v:%v" .Values.api.image.repository .Values.api.image.tag) | quote }}
           imagePullPolicy: {{ .Values.api.image.pullPolicy }}
           command: ["/bin/sh", "-c"]
           args:
@@ -61,6 +61,10 @@ spec:
               # 0.3.3+: the agent connects with a per-region token; reinstall the (old) region agents that have no token.
               # An unreachable region must not block the upgrade: time limit + errors swallowed (manually: php artisan agent:redeploy)
               timeout 120 php artisan agent:redeploy --missing || echo "runr-bootstrap: agent redeploy skipped (run php artisan agent:redeploy --missing)"
+
+              # Stored image references of RunR's image namespace up to 0.5.0 move to ghcr.io/brf-tech: the upgrade migration
+              # moved them, this catches rows the previous version's pods wrote during the rollout (idempotent)
+              timeout 60 php artisan images:move-registry || echo "runr-bootstrap: image references not moved (run php artisan images:move-registry)"
 
               # Apply this version's region-side changes to existing regions (KnativeServing config merge-patch,
               # Prometheus NodePort removal + agent PROMETHEUS_URL). Idempotent; an unreachable region must not

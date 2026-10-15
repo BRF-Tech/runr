@@ -9,7 +9,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/runrsh/core/cli/pkg/runr"
+	"github.com/brf-tech/runr/cli/pkg/runr"
 )
 
 // The fake's models, model services, uploads and project model bindings (api/routes/ai.php):

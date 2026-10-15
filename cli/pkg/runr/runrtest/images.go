@@ -4,7 +4,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/runrsh/core/cli/pkg/runr"
+	"github.com/brf-tech/runr/cli/pkg/runr"
 )
 
 // The fake's uploaded images (api/routes/images.php, docs/images.md): uploads take chunks at

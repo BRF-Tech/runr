@@ -5,8 +5,8 @@ namespace App\Services;
 use App\Models\ExecutorImage;
 use App\Models\KnativeRegion;
 use App\Models\Project;
-use App\Services\Ai\Models\ModelServiceReservations;
 use App\Services\Concerns\RegionDemoCodeTrait;
+use App\Services\Helpers\RegionCapacity;
 use App\Services\Helpers\ResourceReservation;
 use App\Services\Manifests\QueueConsumerManifests;
 use Illuminate\Support\Facades\Log;
@@ -43,33 +43,19 @@ class RegionDemoService
 
     /**
      * The demo projects are admitted like any other project (region capacity with their
-     * effective size — the service type's default, ResourceReservation): all four must fit next
-     * to the region's projects, otherwise none is created.
+     * effective size — the service type's default, ResourceReservation; scale-to-zero, so against
+     * the FaaS overcommit budget, the queue consumer and any Kata overhead against the always-on
+     * one): all four must fit next to what runs on the region, otherwise none is created.
      */
     public function validateCapacity(KnativeRegion $region): void
     {
-        $needed = ResourceReservation::zero();
+        $needed = ResourceReservation::noDemand();
         foreach ($this->demoProjects() as $project) {
-            $reservation = ResourceReservation::forConfig($project['config'], $project['service_type'], $region);
-            $needed['cpu_m'] += $reservation['cpu_m'];
-            $needed['memory_mb'] += $reservation['memory_mb'];
+            $needed = ResourceReservation::addDemand($needed, ResourceReservation::demandForConfig($project['config'], $project['service_type'], $region));
         }
 
-        $used = ResourceReservation::sum($region->projects()->with('xaasConfig', 'faasConfig', 'containerConfig')->get());
-        // running model services reserve capacity too
-        $models = ModelServiceReservations::sum($region);
-        $used = ['cpu_m' => $used['cpu_m'] + $models['cpu_m'], 'memory_mb' => $used['memory_mb'] + $models['memory_mb']];
-        $limit = ['cpu_m' => (int) $region->total_cpu_m, 'memory_mb' => (int) $region->total_memory_mb];
-
-        foreach (['cpu_m', 'memory_mb'] as $key) {
-            if ($limit[$key] > 0 && $limit[$key] < $used[$key] + $needed[$key]) {
-                throw new InvalidArgumentException(sprintf(
-                    'Not enough free capacity on this region for the demo projects: they reserve %dm CPU / %d MB, available %dm CPU / %d MB (total %dm / %d MB).',
-                    $needed['cpu_m'], $needed['memory_mb'],
-                    max(0, $limit['cpu_m'] - $used['cpu_m']), max(0, $limit['memory_mb'] - $used['memory_mb']),
-                    $limit['cpu_m'], $limit['memory_mb'],
-                ));
-            }
+        if ($problems = RegionCapacity::problems($region, $needed)) {
+            throw new InvalidArgumentException('Not enough free capacity on this region for the demo projects. '.implode(' ', $problems));
         }
     }
 

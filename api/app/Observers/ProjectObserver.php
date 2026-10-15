@@ -20,6 +20,12 @@ class ProjectObserver
         if ($project->isDirty('name')) {
             $project->slug = Project::slugFor($project->name);
         }
+
+        // A moved project runs nowhere until its next deploy: region capacity counts it with the
+        // new region's RuntimeClass mapping until then (ResourceReservation::deployedClassOf)
+        if ($project->isDirty('knative_region_id') && $project->getAttribute('deployed_runtime_class') !== null) {
+            $project->setAttribute('deployed_runtime_class', null);
+        }
     }
 
     public function created(Project $project): void

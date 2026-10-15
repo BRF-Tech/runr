@@ -1,5 +1,5 @@
 ARG VERSION=2.3
-FROM ghcr.io/runrsh/reqs/python:3.12-slim
+FROM ghcr.io/brf-tech/reqs/python:3.12-slim
 # An ARG declared before FROM is not visible inside the stage without this line
 ARG VERSION
 

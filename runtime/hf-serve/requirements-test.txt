@@ -1,7 +1,7 @@
 # The tests run against fake pipelines: torch, transformers and huggingface_hub are not needed.
 #   pip install -r requirements-test.txt && python -m pytest tests
-fastapi==0.142.2
-starlette==0.52.1
-httpx==0.28.1
+fastapi==0.143.2
+starlette==1.8.0
+httpx2==2.13.1
 pillow==12.3.0
-pytest==8.3.4
+pytest==9.1.1

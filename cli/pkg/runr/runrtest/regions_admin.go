@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"sort"
 
-	"github.com/runrsh/core/cli/pkg/runr"
+	"github.com/brf-tech/runr/cli/pkg/runr"
 )
 
 // Region administration of the fake: the tracing backend (RegionTracingController) and the

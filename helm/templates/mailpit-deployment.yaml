@@ -21,7 +21,7 @@ spec:
       {{- include "runr.imagePullSecrets" . | nindent 6 }}
       containers:
         - name: mailpit
-          image: "{{ .Values.mailpit.image.repository }}:{{ .Values.mailpit.image.tag }}"
+          image: {{ include "runr.image" (printf "%v:%v" .Values.mailpit.image.repository .Values.mailpit.image.tag) | quote }}
           ports:
             - name: smtp
               containerPort: 1025

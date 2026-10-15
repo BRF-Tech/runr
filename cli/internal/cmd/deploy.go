@@ -12,11 +12,11 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/runrsh/core/cli/internal/output"
-	"github.com/runrsh/core/cli/internal/projectfile"
-	"github.com/runrsh/core/cli/internal/runtimes"
-	"github.com/runrsh/core/cli/internal/scaffold"
-	"github.com/runrsh/core/cli/pkg/runr"
+	"github.com/brf-tech/runr/cli/internal/output"
+	"github.com/brf-tech/runr/cli/internal/projectfile"
+	"github.com/brf-tech/runr/cli/internal/runtimes"
+	"github.com/brf-tech/runr/cli/internal/scaffold"
+	"github.com/brf-tech/runr/cli/pkg/runr"
 )
 
 func newInitCmd(app *App) *cobra.Command {

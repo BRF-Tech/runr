@@ -34,7 +34,7 @@ class QueueProxyCpuBurstTest extends TestCase
         parent::setUp();
 
         foreach ([['python', '3.14'], ['nodejs', '24.14']] as $i => [$runtime, $version]) {
-            ExecutorImage::create(['runtime' => $runtime, 'version' => $version, 'docker_image' => "ghcr.io/runrsh/exec-{$runtime}:{$version}",
+            ExecutorImage::create(['runtime' => $runtime, 'version' => $version, 'docker_image' => "ghcr.io/brf-tech/exec-{$runtime}:{$version}",
                 'is_default' => true, 'is_active' => true, 'sort_order' => $i]);
         }
     }

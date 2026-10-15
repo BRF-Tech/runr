@@ -8,15 +8,17 @@ use App\Services\Helpers\TraefikImage;
 use App\Services\RegionReconcile\ClusterGroup;
 use App\Services\RegionReconcile\HelmReleaseUpgrade;
 use App\Services\RegionReconcile\ReconcileStep;
+use App\Support\Images\RegistryMove;
 
 /**
  * Region Traefik image (0.5.0): the region Traefik runs its image from the reqs mirror
- * (TraefikImage, ghcr.io/runrsh/reqs/traefik) instead of Docker Hub, whose anonymous pull limit
+ * (TraefikImage, ghcr.io/brf-tech/reqs/traefik) instead of Docker Hub, whose anonymous pull limit
  * three replicas — and every node that schedules one later — run into on a shared address.
  *
  * Only a Traefik RunR installed (Helm release "traefik" in the serving namespace), and only when
  * it runs the same Traefik version from another registry: the image moves, the version does
- * not (a Traefik of an older chart is left alone). Updated like IngressTrustStep: the Helm
+ * not (a Traefik of an older chart is left alone — unless it runs RunR's mirror under RunR's
+ * namespace up to 0.5.0, RegistryMove: then that version moves to ghcr.io/brf-tech). Updated like IngressTrustStep: the Helm
  * release, upgraded with its own values reused and only image.registry / image.repository /
  * image.tag set, at the chart version it runs (HelmReleaseUpgrade); the Deployment rolls its
  * Traefik pods once.
@@ -61,7 +63,12 @@ final class TraefikImageStep implements ReconcileStep
 
         $release = $namespace.'/'.KnativeConstants::TRAEFIK_RELEASE;
         if (TraefikImage::version($current) !== TraefikImage::version($wanted)) {
-            return "left alone: Traefik {$release} runs {$current}, another Traefik version than {$wanted}";
+            // RunR's mirror under its namespace up to 0.5.0: the same version under RunR's namespace
+            $moved = RegistryMove::ref($current);
+            if ($moved === $current) {
+                return "left alone: Traefik {$release} runs {$current}, another Traefik version than {$wanted}";
+            }
+            $wanted = $moved;
         }
 
         return HelmReleaseUpgrade::apply(

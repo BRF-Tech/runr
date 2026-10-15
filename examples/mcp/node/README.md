@@ -8,7 +8,7 @@ and transport per request), behind the RunR MCP gateway
 
 | File | |
 |---|---|
-| `runtime.yaml` | the `mcp-node` runtime: image `ghcr.io/runrsh/reqs/node:22-slim`, dependencies from `package.json` into `/app/code/node_modules`, `run.command` `node --experimental-strip-types --disable-warning=ExperimentalWarning /app/code/server.ts` (http mode), starter template `server.ts` |
+| `runtime.yaml` | the `mcp-node` runtime: image `ghcr.io/brf-tech/reqs/node:22-slim`, dependencies from `package.json` into `/app/code/node_modules`, `run.command` `node --experimental-strip-types --disable-warning=ExperimentalWarning /app/code/server.ts` (http mode), starter template `server.ts` |
 | `server.ts` | tools `hello`, `add`, `whoami`, resource `starter://about`, prompt `greet`; `verifySignature` checks `X-RunR-Signature` |
 | `package.json` | `@modelcontextprotocol/sdk`, `zod`; `"type": "module"` |
 | `Dockerfile` | the same server as an image for a CaaS project |

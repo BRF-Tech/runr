@@ -109,7 +109,7 @@ input problems).
 | 404 | `not_found`, `tenant_gone` | unknown sandbox (or another organization's), unknown file or process; the sandbox's organization no longer exists |
 | 409 | `not_running`, `runtime_image_building`, `region_unavailable` | the sandbox is not in a state for the call (`status` says which); a runtime image is being built in the region; the sandbox's region is gone or has no kubeconfig |
 | 413 | `file_too_large` | upload / download above the limit |
-| 422 | `invalid`, `network_invalid`, `class_unavailable`, `region_unavailable`, `runtime_unavailable`, `quota_concurrent`, `quota_cpu`, `quota_memory`, `quota_seconds`, `quota_region`, `quota_pool`, `file_op_failed`, `process_failed` | input, availability or quota refusals; quota refusals carry `limits` and `usage` |
+| 422 | `invalid`, `network_invalid`, `class_unavailable`, `region_unavailable`, `runtime_unavailable`, `quota_concurrent`, `quota_cpu`, `quota_memory`, `quota_seconds`, `quota_region`, `quota_capacity`, `quota_pool`, `file_op_failed`, `process_failed` | input, availability or quota refusals; organization quota refusals carry `limits` and `usage`; `quota_capacity`: the region's always-on capacity budget is used up |
 | 422 | (`code: region_not_allowed`) | the organization's data residency policy does not allow the region |
 | 429 | | rate limit (`Retry-After`) |
 | 502 | `cluster_error`, `start_failed`, `files_failed` | the cluster refused the call, the sandbox could not start (`data` is the failed sandbox), or the create request's files could not be written |
@@ -121,7 +121,7 @@ input problems).
   "id": "01jb2x7k3m9q4r5s6t7v8w9xyz",
   "status": "running",
   "region": {"id": "01j…", "name": "eu-1"},
-  "runtime": "python", "runtime_version": "3.14", "image": "ghcr.io/runrsh/exec-python:3.14",
+  "runtime": "python", "runtime_version": "3.14", "image": "ghcr.io/brf-tech/exec-python:3.14",
   "sandbox_class": "kata-fc", "isolation": "kata",
   "resources": {"cpu": "500m", "cpu_m": 500, "memory_mb": 512, "disk_mb": 1024, "pids_limit": 256},
   "network": {"mode": "allowlist", "egress_allow": ["pypi.org:443"]},
@@ -487,6 +487,14 @@ cannot both take the last slot. With tenancy, a sandbox's CPU and memory — the
 overhead and warm pods included — also count against the organization's region quota, the same
 quota its projects use. The namespace gets a pod-count ResourceQuota (concurrency + pool size) as a
 backstop.
+
+**Region capacity**: a sandbox pod runs until it ends, so every live sandbox and warm pod holds
+its CPU and memory plus the pod overhead of its class on the region's always-on capacity budget,
+next to the always-on projects and model services, without overcommit
+([Region capacity and admission](architecture.md#region-capacity-and-admission)). A sandbox that
+needs a new pod is refused with `quota_capacity` when that budget has no room left; one served
+from a warm pod is not checked again (the warm pod holds its share already), and a pool stops
+starting warm pods at the limit (`last_error` says why).
 
 **Usage metering**: every five minutes the usage of today (and of yesterday during the first hour
 of a day) is aggregated per organization × region × day into `sandbox_usage_records`: number of

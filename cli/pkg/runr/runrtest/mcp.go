@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/runrsh/core/cli/pkg/runr"
+	"github.com/brf-tech/runr/cli/pkg/runr"
 )
 
 // AI agents of the fake (api McpSettingsController, HostedServerController): the MCP server's

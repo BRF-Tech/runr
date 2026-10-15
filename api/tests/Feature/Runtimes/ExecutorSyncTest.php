@@ -61,7 +61,7 @@ class ExecutorSyncTest extends TestCase
 
         $python = ExecutorImage::where('runtime', 'python')->orderBy('sort_order')->get();
         $this->assertSame(['3.12', '3.14'], $python->pluck('version')->all());
-        $this->assertSame(['ghcr.io/runrsh/exec-python:3.12', 'ghcr.io/runrsh/exec-python:3.14'], $python->pluck('docker_image')->all());
+        $this->assertSame(['ghcr.io/brf-tech/exec-python:3.12', 'ghcr.io/brf-tech/exec-python:3.14'], $python->pluck('docker_image')->all());
         $this->assertSame([false, true], $python->pluck('is_default')->all());
         $this->assertSame('2028-10-31', $python->first()->eol_at->toDateString());
 
@@ -75,7 +75,7 @@ class ExecutorSyncTest extends TestCase
 
     public function test_versions_gone_from_docker_hub_are_retired(): void
     {
-        ExecutorImage::create(['runtime' => 'php', 'version' => '8.1', 'docker_image' => 'ghcr.io/runrsh/exec-php:8.1', 'is_active' => true]);
+        ExecutorImage::create(['runtime' => 'php', 'version' => '8.1', 'docker_image' => 'ghcr.io/brf-tech/exec-php:8.1', 'is_active' => true]);
 
         $this->artisan('executor:sync')->assertExitCode(0);
 

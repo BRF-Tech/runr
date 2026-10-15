@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/runrsh/core/cli/pkg/runr"
+	"github.com/brf-tech/runr/cli/pkg/runr"
 )
 
 const bqTenant = "01JTENANT0000000000000000A"

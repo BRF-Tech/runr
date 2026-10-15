@@ -21,7 +21,7 @@ spec:
       {{- include "runr.imagePullSecrets" . | nindent 6 }}
       containers:
         - name: redis
-          image: "{{ .Values.redis.image.repository }}:{{ .Values.redis.image.tag }}"
+          image: {{ include "runr.image" (printf "%v:%v" .Values.redis.image.repository .Values.redis.image.tag) | quote }}
           ports:
             - containerPort: 6379
           resources:

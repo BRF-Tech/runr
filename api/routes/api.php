@@ -23,6 +23,7 @@ use App\Http\Controllers\Api\PrivateDatabaseBindingController;
 use App\Http\Controllers\Api\ProjectController;
 use App\Http\Controllers\Api\ProjectDomainController;
 use App\Http\Controllers\Api\ProjectSecretController;
+use App\Http\Controllers\Api\RegionCapacityController;
 use App\Http\Controllers\Api\RegionDemoController;
 use App\Http\Controllers\Api\RegionMigrateController;
 use App\Http\Controllers\Api\RegistryController;
@@ -130,6 +131,10 @@ Route::middleware('auth:sanctum')->group(function () {
         ->middleware('region.mutable');
     Route::get('/knative-regions/{knativeRegion}/kubeconfig', [KnativeRegionController::class, 'downloadKubeconfig'])->middleware('region.mutable');
     Route::put('/knative-regions/{knativeRegion}/settings', [KnativeRegionController::class, 'updateSettings'])->middleware('region.mutable');
+
+    // Capacity budgets (always-on, FaaS overcommit) and the overcommit factors → RegionCapacityController
+    Route::get('/knative-regions/{knativeRegion}/capacity', [RegionCapacityController::class, 'show']);
+    Route::put('/knative-regions/{knativeRegion}/capacity', [RegionCapacityController::class, 'update'])->middleware('region.mutable');
 
     // Function-domain TLS (region's own Traefik, separate from the console's Ingress) — 100% opt-in
     Route::put('/knative-regions/{knativeRegion}/function-tls', [KnativeFunctionTlsController::class, 'update'])->middleware('region.mutable');

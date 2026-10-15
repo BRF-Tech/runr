@@ -14,7 +14,7 @@
             "category": "general",
             "versionDiscovery": {
                 "repository": "runrsh/exec-python",
-                "image": "ghcr.io/runrsh/exec-python:{version}",
+                "image": "ghcr.io/brf-tech/exec-python:{version}",
                 "eol": "python"
             },
             "handler": {
@@ -69,7 +69,7 @@
             "category": "general",
             "versionDiscovery": {
                 "repository": "runrsh/exec-nodejs",
-                "image": "ghcr.io/runrsh/exec-nodejs:{version}",
+                "image": "ghcr.io/brf-tech/exec-nodejs:{version}",
                 "eol": "nodejs",
                 "filter": "lts-even-major"
             },
@@ -122,7 +122,7 @@
             "category": "general",
             "versionDiscovery": {
                 "repository": "runrsh/exec-go",
-                "image": "ghcr.io/runrsh/exec-go:{version}",
+                "image": "ghcr.io/brf-tech/exec-go:{version}",
                 "eol": "go"
             },
             "handler": {
@@ -138,7 +138,7 @@
             "build": {
                 "image": "{image}",
                 "command": "mkdir -p /build/src && cp /build/code/*.go /build/src/ && cd /build/src && go mod init runr-function && go mod tidy && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags=\"-s -w\" -o /build/out/handler .",
-                "runImage": "ghcr.io/runrsh/reqs/alpine:3.20",
+                "runImage": "ghcr.io/brf-tech/reqs/alpine:3.20",
                 "source": false,
                 "files": {
                     "runr_wrapper_.go": {
@@ -178,7 +178,7 @@
             "category": "general",
             "versionDiscovery": {
                 "repository": "runrsh/exec-php",
-                "image": "ghcr.io/runrsh/exec-php:{version}",
+                "image": "ghcr.io/brf-tech/exec-php:{version}",
                 "eol": "php"
             },
             "handler": {
@@ -194,7 +194,7 @@
             "dependencies": {
                 "file": "composer.json",
                 "template": "{\"require\":{\"predis/predis\":\"^2.0\"}}",
-                "image": "ghcr.io/runrsh/reqs/composer:latest",
+                "image": "ghcr.io/brf-tech/reqs/composer:latest",
                 "install": "cd /build/code && {if:semver}composer config platform.php {semver} && {end}composer install --no-dev --no-interaction",
                 "copy": [
                     {
@@ -231,7 +231,7 @@
             "category": "ml",
             "versionDiscovery": {
                 "repository": "runrsh/exec-tensorflow",
-                "image": "ghcr.io/runrsh/exec-tensorflow:{version}",
+                "image": "ghcr.io/brf-tech/exec-tensorflow:{version}",
                 "eol": "tensorflow"
             },
             "handler": {
@@ -285,7 +285,7 @@
             "category": "ml",
             "versionDiscovery": {
                 "repository": "runrsh/exec-pytorch",
-                "image": "ghcr.io/runrsh/exec-pytorch:{version}",
+                "image": "ghcr.io/brf-tech/exec-pytorch:{version}",
                 "eol": "pytorch"
             },
             "handler": {
@@ -346,7 +346,7 @@
             "versions": [
                 {
                     "version": "4.1",
-                    "image": "ghcr.io/runrsh/exec-wasm-exec:4.1",
+                    "image": "ghcr.io/brf-tech/exec-wasm-exec:4.1",
                     "default": true
                 }
             ],
@@ -400,7 +400,7 @@
             "versions": [
                 {
                     "version": "4.1",
-                    "image": "ghcr.io/runrsh/exec-wasm-go:4.1",
+                    "image": "ghcr.io/brf-tech/exec-wasm-go:4.1",
                     "default": true
                 }
             ],
@@ -457,7 +457,7 @@
             "versions": [
                 {
                     "version": "4.1",
-                    "image": "ghcr.io/runrsh/exec-wasm-js:4.1",
+                    "image": "ghcr.io/brf-tech/exec-wasm-js:4.1",
                     "default": true
                 }
             ],
@@ -513,7 +513,7 @@
             "versions": [
                 {
                     "version": "4.1",
-                    "image": "ghcr.io/runrsh/exec-wasm-python:4.1",
+                    "image": "ghcr.io/brf-tech/exec-wasm-python:4.1",
                     "default": true
                 }
             ],
@@ -572,7 +572,7 @@
             "versions": [
                 {
                     "version": "4.1",
-                    "image": "ghcr.io/runrsh/exec-wasm-rust:4.1",
+                    "image": "ghcr.io/brf-tech/exec-wasm-rust:4.1",
                     "default": true
                 }
             ],

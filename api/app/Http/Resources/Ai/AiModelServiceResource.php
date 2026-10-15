@@ -50,6 +50,8 @@ class AiModelServiceResource extends JsonResource
             'served_name' => $this->served_name,
             'status' => $this->status,
             'status_message' => $this->status_message,
+            // Kubernetes' reason the pods do not start: CrashLoopBackOff, ImagePullBackOff, ErrImagePull, OOMKilled, Unschedulable …
+            'status_reason' => $this->status_reason,
             'url' => $this->relationLoaded('region') && $this->region ? $this->resource->internalUrl() : null,
             'openai_base' => $this->relationLoaded('region') && $this->region && EngineCatalog::hasOpenAiRoutes($this->engine, $task)
                 ? $this->resource->internalUrl().'/v1'

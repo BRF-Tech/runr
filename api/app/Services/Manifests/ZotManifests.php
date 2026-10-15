@@ -97,8 +97,8 @@ class ZotManifests
     public const GHCR_UPSTREAM = 'https://ghcr.io';
 
     /**
-     * Local namespace of the ghcr.io pull-through cache: {zot}/ghcr.io/runrsh/exec-python:3.14 is
-     * synced on demand from ghcr.io/runrsh/exec-python:3.14 (KnativeRegion::buildBaseImageRef()).
+     * Local namespace of the ghcr.io pull-through cache: {zot}/ghcr.io/brf-tech/exec-python:3.14 is
+     * synced on demand from ghcr.io/brf-tech/exec-python:3.14 (KnativeRegion::buildBaseImageRef()).
      */
     public const GHCR_NAMESPACE = 'ghcr.io';
 
@@ -382,7 +382,7 @@ class ZotManifests
             'hostPID' => true,
             'containers' => [[
                 'name' => 'mirror-config',
-                'image' => 'ghcr.io/runrsh/reqs/busybox:latest',
+                'image' => 'ghcr.io/brf-tech/reqs/busybox:latest',
                 'command' => ['sh', '-c', $script],
                 'securityContext' => ['privileged' => true],
                 'resources' => [

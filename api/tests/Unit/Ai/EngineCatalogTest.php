@@ -136,7 +136,11 @@ class EngineCatalogTest extends TestCase
         $this->assertSame('turing-', EngineCatalog::teiArch('7.5'));
         $this->assertSame('', EngineCatalog::teiArch('8.0'));
         $this->assertSame('hopper-', EngineCatalog::teiArch('9.0'));
-        $this->assertSame('86-', EngineCatalog::teiArch(null));
+        $this->assertSame('100-', EngineCatalog::teiArch('10.0'));
+        $this->assertSame('120-', EngineCatalog::teiArch('12.0'));
+        $this->assertSame('121-', EngineCatalog::teiArch('12.1'));
+        $this->assertSame('cuda-', EngineCatalog::teiArch('8.7'), 'the image that picks its kernels at start');
+        $this->assertSame('cuda-', EngineCatalog::teiArch(null));
     }
 
     public function test_catalog_lists_engines_and_task_defaults(): void

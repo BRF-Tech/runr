@@ -137,17 +137,17 @@ class KataResourceReservationTest extends TestCase
 
     public function test_region_capacity_check_includes_the_kata_overhead(): void
     {
-        // 1000m region, xaas on kata-clh: 400m + 100m queue-proxy + 250m overhead = 750m fits,
-        // 700m would be 1050m (without the overhead: 800m)
+        // 1000m region, always-on xaas on kata-clh: 400m + 100m queue-proxy + 250m overhead =
+        // 750m fits, 700m would be 1050m (without the overhead: 800m)
         $kata = $this->region('kata', ['sandbox_xaas_runtime' => 'kata-clh'], 1000, 8192);
 
-        $rule = fn () => ['cpu' => [new WithinResourceLimit('cpu', null, $kata->id, 'http', 0, 'xaas')]];
+        $rule = fn () => ['cpu' => [new WithinResourceLimit('cpu', null, $kata->id, 'http', 1, 'xaas')]];
 
         $this->assertTrue(Validator::make(['cpu' => '400m'], $rule())->passes());
         $this->assertFalse(Validator::make(['cpu' => '700m'], $rule())->passes());
 
         // same size on a runc service type fits
-        $faas = ['cpu' => [new WithinResourceLimit('cpu', null, $kata->id, 'http', 0, 'faas')]];
+        $faas = ['cpu' => [new WithinResourceLimit('cpu', null, $kata->id, 'http', 1, 'faas')]];
         $this->assertTrue(Validator::make(['cpu' => '700m'], $faas)->passes());
     }
 }

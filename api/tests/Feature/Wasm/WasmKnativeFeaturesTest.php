@@ -14,6 +14,7 @@ use App\Services\Wasm\WasmInstallService;
 use App\Services\Wasm\WasmKnativeFeatures;
 use App\Services\Wasm\WasmManifests;
 use App\Services\Wasm\WasmShim;
+use App\Support\Images\RegistryMove;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Queue;
 use Tests\Concerns\FakesWasmCluster;
@@ -178,13 +179,39 @@ class WasmKnativeFeaturesTest extends TestCase
         $region->refresh();
         $this->assertSame('ready', $region->sandbox_wasm_status);
         $spec = $this->daemonSets[WasmManifests::INSTALLER_DS]['spec']['template']['spec'];
-        $this->assertSame('ghcr.io/runrsh/containerd-shim-spin:v0.26.0-runr.1', $spec['initContainers'][0]['image']);
+        $this->assertSame('ghcr.io/brf-tech/containerd-shim-spin:v0.26.0-runr.1', $spec['initContainers'][0]['image']);
         $env = array_column($spec['containers'][0]['env'], 'value', 'name');
         $this->assertSame(WasmShim::get('spin')->scriptLine(), $env['WASM_SHIMS']);
         $this->assertSame('true', $this->labelsOf('worker-1')['runr.dev/wasm-spin'] ?? null);
 
         // the next reconcile has nothing left to do
         $this->assertSame([], (new WasmSandboxStep)->run(new ClusterGroup('uid:wasm', [new ReconcileTarget($region)], $this->k8s()), false));
+    }
+
+    public function test_an_installer_of_runrs_image_namespace_up_to_0_5_0_is_re_run_for_the_new_namespace(): void
+    {
+        Queue::fake();
+        $this->addNode('worker-1', ['runr.dev/wasm' => 'true', 'runr.dev/wasm-spin' => 'true', 'runr.dev/wasm-target' => 'true']);
+        $region = $this->wasmRegion(['sandbox_wasm_status' => 'ready', 'sandbox_wasm_shims' => ['spin'], 'sandbox_wasm_nodes' => ['worker-1']]);
+        $cluster = new ClusterGroup('uid:wasm', [new ReconcileTarget($region)], $this->k8s());
+        $this->servingFeatures = WasmKnativeFeatures::FEATURES;
+        $this->runtimeClasses['wasmtime-spin-v2'] = WasmManifests::runtimeClass(WasmShim::get('spin'));
+        // RunR 0.5.0: the same installer, its shim image under ghcr.io/runrsh
+        $this->liveInstaller(['spin']);
+        $this->daemonSets[WasmManifests::INSTALLER_DS] = RegistryMove::legacy($this->daemonSets[WasmManifests::INSTALLER_DS]);
+        $this->assertSame('ghcr.io/runrsh/containerd-shim-spin:v0.26.0-runr.1', $this->daemonSets[WasmManifests::INSTALLER_DS]['spec']['template']['spec']['initContainers'][0]['image']);
+
+        $drift = app(WasmInstallService::class)->installerDrift($this->k8s(), [WasmShim::get('spin')]);
+        $this->assertSame(['outdated', true], [$drift['state'], $drift['namespace']]);
+
+        $dry = (new WasmSandboxStep)->run($cluster, true);
+        $this->assertSame('would re-run the WebAssembly installer on the region\'s nodes with the shims of this release (Spin v0.26.0-runr.1; '
+            .'the shim images move to ghcr.io/brf-tech (RunR\'s image namespace), the binaries stay the same) — the shim binaries are replaced in place '
+            .'one node at a time (running Wasm pods keep the shim they started with); the container runtime restarts only on nodes where RunR\'s '
+            .'configuration block changes', $dry[0]);
+
+        (new WasmSandboxStep)->run($cluster, false);
+        Queue::assertPushed(InstallWasmJob::class, 1);
     }
 
     public function test_a_ready_install_without_its_installer_is_installed_again(): void

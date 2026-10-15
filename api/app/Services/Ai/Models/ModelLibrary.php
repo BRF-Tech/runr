@@ -13,9 +13,9 @@ use Illuminate\Validation\ValidationException;
 /**
  * Adding models to the organization: a Hub model is pinned to the commit its revision points to
  * (so every mirror and online start serves the same files) with its task, library, license,
- * gated flag, size and card summary; an uploaded model is a name and a task; an import names
- * the folder of the model volume (pvc) or the OCI artifact (oci) and the region it is in, and
- * starts that import right away.
+ * gated flag, size (of the weights an engine loads, ModelWeights) and card summary; an uploaded
+ * model is a name and a task; an import names the folder of the model volume (pvc) or the OCI
+ * artifact (oci) and the region it is in, and starts that import right away.
  */
 class ModelLibrary
 {
@@ -50,8 +50,37 @@ class ModelLibrary
     {
         $revision = $revision ?: 'main';
         $existing = AiModel::where('source', 'hub')->where('hub_id', $hubId)->where('revision', $revision)->first();
+        if ($existing) {
+            return $this->resized($existing);
+        }
 
-        return $existing ?? $this->addHub(['hub_id' => $hubId, 'revision' => $revision], $userId);
+        return $this->addHub(['hub_id' => $hubId, 'revision' => $revision], $userId);
+    }
+
+    /**
+     * A Hub model added while its size counted every weight file of the repository (no
+     * weights_format in its metadata) is sized again from the weights an engine loads; the
+     * stored size stays when the Hub cannot be asked.
+     */
+    public function resized(AiModel $model): AiModel
+    {
+        $metadata = (array) ($model->metadata ?? []);
+        if (! $model->isHub() || $metadata === [] || array_key_exists('weights_format', $metadata) || ! $this->hub->enabled()) {
+            return $model;
+        }
+
+        try {
+            $info = $this->hub->info((string) $model->hub_id, (string) ($model->revision_sha ?: $model->revision));
+        } catch (HubException) {
+            return $model;
+        }
+
+        $model->update([
+            'size_bytes' => $info['size_bytes'] ?? $model->size_bytes,
+            'metadata' => $metadata + ['weights_format' => $info['weights']['format'] ?? null],
+        ]);
+
+        return $model;
     }
 
     public function delete(AiModel $model): void
@@ -99,6 +128,7 @@ class ModelLibrary
                 'downloads' => $info['downloads'],
                 'likes' => $info['likes'],
                 'files' => count($info['files']),
+                'weights_format' => $info['weights']['format'] ?? null,
             ] : null,
             'created_by' => $userId,
         ]);

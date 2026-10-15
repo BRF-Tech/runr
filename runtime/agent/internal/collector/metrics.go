@@ -12,7 +12,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/runrsh/core/runtime/agent/internal/podname"
+	"github.com/brf-tech/runr/runtime/agent/internal/podname"
 )
 
 // Collector queries Prometheus for per-project metrics.

@@ -66,15 +66,15 @@ used there.
 
 | Component | Image / process | Role |
 |-----------|-----------------|------|
-| `runr-gateway` | `ghcr.io/runrsh/reqs/caddy` with the chart's Caddyfile (`helm/templates/gateway-configmap.yaml`) | Single entry point; routes `/`, `/api`, `/horizon`, `/storage`, `/ws`, `/git` (when `gitDeploy.enabled`, streamed) and `/mcp`, `/oauth2`, `/.well-known/oauth-*` (streamed, [mcp.md](mcp.md)); `/healthz` answers itself |
-| `runr-ui` | `ghcr.io/runrsh/runr/ui` (`vue/Dockerfile`, Caddy) | Vue 3 + Vite SPA (the console): Pinia, vue-i18n (EN/TR), Tailwind CSS, Monaco editor, xterm.js, driver.js tours |
-| `runr-api` | `ghcr.io/runrsh/runr/api`, `CONTAINER_ROLE=api` | REST API (`api/routes/*.php`), Sanctum token auth, OpenAPI docs via Scramble; also the MCP server and OAuth authorization server, the hosted MCP server gateway, the git remotes (`git http-backend`), the durable workflows engine API and the Sandbox API |
+| `runr-gateway` | `ghcr.io/brf-tech/reqs/caddy` with the chart's Caddyfile (`helm/templates/gateway-configmap.yaml`) | Single entry point; routes `/`, `/api`, `/horizon`, `/storage`, `/ws`, `/git` (when `gitDeploy.enabled`, streamed) and `/mcp`, `/oauth2`, `/.well-known/oauth-*` (streamed, [mcp.md](mcp.md)); `/healthz` answers itself |
+| `runr-ui` | `ghcr.io/brf-tech/runr/ui` (`vue/Dockerfile`, Caddy) | Vue 3 + Vite SPA (the console): Pinia, vue-i18n (EN/TR), Tailwind CSS, Monaco editor, xterm.js, driver.js tours |
+| `runr-api` | `ghcr.io/brf-tech/runr/api`, `CONTAINER_ROLE=api` | REST API (`api/routes/*.php`), Sanctum token auth, OpenAPI docs via Scramble; also the MCP server and OAuth authorization server, the hosted MCP server gateway, the git remotes (`git http-backend`), the durable workflows engine API and the Sandbox API |
 | `runr-horizon` | same image, `CONTAINER_ROLE=horizon` | Queue workers: deploys, builds, region installs, supply-chain runs, workflow steps, binding operations, image uploads, demo data |
 | `runr-scheduler` | same image, `CONTAINER_ROLE=scheduler` | Periodic tasks (`api/routes/console.php` and the feature service providers) |
 | `runr-reverb` | same image, `CONTAINER_ROLE=reverb` | WebSocket server: broadcasting, shell and sandbox PTYs, Sandbox API exec streams, runr-agent connections |
-| PostgreSQL | `ghcr.io/runrsh/reqs/postgres:17-alpine` or external | Application data; one schema per tenant in multi-tenant mode |
-| Redis | `ghcr.io/runrsh/reqs/redis:7-alpine` or external | Queues, cache, sessions, shell and exec tokens, live metrics |
-| Mailpit | `ghcr.io/runrsh/reqs/mailpit` | SMTP catch-all, installed only when no SMTP host is set |
+| PostgreSQL | `ghcr.io/brf-tech/reqs/postgres:17-alpine` or external | Application data; one schema per tenant in multi-tenant mode |
+| Redis | `ghcr.io/brf-tech/reqs/redis:7-alpine` or external | Queues, cache, sessions, shell and exec tokens, live metrics |
+| Mailpit | `ghcr.io/brf-tech/reqs/mailpit` | SMTP catch-all, installed only when no SMTP host is set |
 
 The roles are selected in `api/docker/entrypoint.sh`. The API role runs
 `php artisan octane:start --server=frankenphp`. Reverb runs `php artisan reverb:start-shell`, a
@@ -115,7 +115,7 @@ Setting up a region (each step is a queued job that reports progress over WebSoc
    versions depend on the cluster's Kubernetes minor (`KnativeVersionHelper::KNATIVE_K8S_COMPAT`).
 4. **Knative Serving** (`KnativeInstallService::installServing`): the KnativeServing resource, Traefik
    as Knative ingress (`KnativeTraefikTrait`, chart `traefik/traefik` pinned in
-   `KnativeConstants`, its image from the `ghcr.io/runrsh/reqs` mirror; Helm value
+   `KnativeConstants`, its image from the `ghcr.io/brf-tech/reqs` mirror; Helm value
    `knative.traefikImage` / `KNATIVE_TRAEFIK_IMAGE` names another), the project namespace with an optional ResourceQuota/LimitRange,
    Prometheus and Loki (installed, or existing ones reused), the tracing backend
    (`observability.tracing.installWithServing`) and the runr-agent.
@@ -136,8 +136,9 @@ Optional per-region features, each installed from the region's settings in the c
 
 `region:reconcile` brings existing regions up to date with the running release. Its steps are in
 `App\Services\RegionReconcile\Steps`: Knative Serving config, Prometheus exposure, namespace
-quota, registry sync, ingress trust, Traefik image, Kata sandbox, WebAssembly sandbox and Loki
-deletion.
+quota, registry sync, ingress trust, Traefik image, Loki deletion, Kata sandbox, WebAssembly
+sandbox, admission policy and image registry (workloads onto RunR's image namespace
+`ghcr.io/brf-tech`, [upgrade.md](upgrade.md#image-namespace-ghcriobrf-tech)).
 
 **Region migration** (`RegionMigrateService`, `POST /api/knative-regions/{id}/migrate`) moves a
 region to a new cluster. It installs the infrastructure there, redeploys every project's latest
@@ -145,6 +146,108 @@ version and waits for the region's DNS to point at the new ingress. The status g
 `pending → in_progress → dns_check → completed`; a migration in `dns_check` or `failed` can be
 rolled back to the previous kubeconfig. `DomainMigrateService` moves the regions to a new base
 domain with the same DNS check; the scheduler completes expired domain migrations hourly.
+
+### Region capacity and admission
+
+The **region capacity** (`total_cpu_m` / `total_memory_mb`) is what the nodes RunR workloads run
+on leave for them: per node the allocatable minus the requests of the platform pods on it
+(Kubernetes, Knative, the ingress, the registry, observability, DaemonSets and anything else the
+cluster runs). With dedicated workers only those nodes count. Pods of projects (label
+`runr/project-id`, build Jobs included), model services (`runr.sh/model-service`) and the Sandbox
+API (`runr.dev/sandbox=true`, warm pool pods included) are not platform pods: admission counts them
+from their own records, once. The region status check refreshes the capacity
+(`KnativeNodeService`).
+
+Admission (`App\Services\Helpers\RegionCapacity`) splits every workload's reservation between two
+budgets per resource:
+
+| Budget | Size | What counts against it |
+|---|---|---|
+| **Always-on** | the region capacity, no overcommit | always-on projects (`min_scale` ≥ 1, or `scale_to_zero: false`): (size + queue-proxy + Kata pod overhead) × `max(1, min_scale)`; the Kata pod overhead of one pod of every scale-to-zero project that runs on Kata; queue consumers; model services by the same rules; live sandboxes and warm pool pods (size + Kata pod overhead) |
+| **FaaS overcommit** | capacity × the region's overcommit factor, minus what the always-on budget holds | one pod of every scale-to-zero project and model service: size + queue-proxy (a `schedule` project: its size, the CronJob has no queue-proxy) |
+
+The queue-proxy counts with its requests (100m CPU, 100 MiB); a schedule project counts as
+scale-to-zero whatever its `min_scale`, as its CronJob runs only while a run lasts. A workload is
+admitted when its always-on part fits what the always-on budget has free and its whole reservation
+fits what the FaaS budget has free. Admission runs on project create, on update (size,
+`min_scale`, `scale_to_zero`, trigger or region), on deploy, for model services on create, start
+and change, and for every new sandbox and warm pool pod. A project or model service whose
+reservation does not grow always passes, even on a region that is over capacity. A sandbox
+served from a warm pod passes too: the warm pod holds its capacity already.
+
+A refusal (422) names the budget and what is still free:
+
+```text
+CPU limit exceeded on the FaaS overcommit budget: this needs 350m, 200m of 3000m are free (region capacity 1000m × 3, minus 0m always-on).
+CPU limit exceeded on the always-on budget (no overcommit): this needs 400m, 200m of the region capacity 1000m are free. Always-on workloads, Kata pod overhead, queue consumers, sandboxes and model services reserve real capacity.
+```
+
+The Sandbox API refuses with reason `quota_capacity` ([Errors](sandbox-api.md#errors)).
+
+**Kata pod overhead.** A pod under a Kata RuntimeClass carries that class's `overhead.podFixed`
+(250m CPU, 256–320 MiB, [kata-hypervisors.md](kata-hypervisors.md)). A project counts the overhead
+of the RuntimeClass it was last deployed with: the deploy records it
+(`projects.deployed_runtime_class`, `runc` when the pods have none). A changed sandbox mapping
+therefore counts from each project's next deploy, which is checked against the new mapping. A
+project that was never deployed, or was moved to another region, counts with its region's current
+mapping until its next deploy. Model services record theirs the same way
+(`ai_model_services.runtime_class`, the region's CaaS mapping until their first deploy); sandboxes
+count their sandbox class.
+
+**Overcommit factors.** Each region has one factor per resource:
+
+| Setting | Default | Range |
+|---|---|---|
+| `faas_cpu_overcommit` | 3 | 1–10, two decimals |
+| `faas_memory_overcommit` | 1.5 | 1–10, two decimals |
+
+Overcommit admits more scale-to-zero workloads than the region can run at the same time; it does
+not overcommit a node. The scheduler places pods by their requests, so when more of them wake up
+at once than the region holds, the extra pods wait as Pending until others scale to zero, and
+Knative's activator holds their requests up to the request timeout. The defaults reflect how
+the two resources behave when that happens:
+
+- **CPU, 3:** CPU is shared by weight. Pods on a busy node slow down instead of failing, and the
+  queue-proxy's CPU limit above its request (1 CPU) only uses CPU the node has idle. A
+  scale-to-zero function holds its CPU request only while it serves requests.
+- **Memory, 1.5:** memory cannot be shared or reclaimed from a running pod. A pod holds its memory
+  request from start to scale-down, including Knative's idle window after its last request, and a
+  node that runs short of memory evicts or OOM-kills pods instead of slowing them down. Memory
+  the requests do not show (page cache, kernel, a Kata VMM above its overhead) adds to that
+  pressure. With the lower factor, the worst case (every admitted workload awake at once) asks
+  for at most half the region capacity more than fits.
+
+A factor of 1 turns overcommit off: every reservation then counts against the region capacity.
+New regions start with the defaults; the upgrade migration gives existing regions the defaults too.
+
+Settings → Regions → (region) → Workers shows both budgets and sets the factors. In the API:
+
+```bash
+curl -sS "$API/knative-regions/$REGION/capacity" -H "Authorization: Bearer $TOKEN"
+curl -sS -X PUT "$API/knative-regions/$REGION/capacity" -H "Authorization: Bearer $TOKEN" \
+  -H 'Content-Type: application/json' -d '{"faas_cpu_overcommit": 4, "faas_memory_overcommit": 1.5}'
+```
+
+```json
+{"data": {"region_id": "01J…", "faas_cpu_overcommit": 3, "faas_memory_overcommit": 1.5,
+  "cpu_m": {"capacity": 4505, "always_on_used": 1200, "always_on_available": 3305,
+            "faas_overcommit": 3, "faas_budget": 12315, "faas_used": 3150, "faas_available": 9165,
+            "utilization": 32.2},
+  "memory_mb": {"capacity": 12000, "…": "…"}}}
+```
+
+`faas_budget` is capacity × factor minus `always_on_used`; `utilization` is the fuller budget in
+percent. Reading needs `regions.view`, changing `regions.manage` (both in
+`api/config/route_permissions.php`; with the Tenancy module a platform region is changed by the
+platform administrators, an organization's own region by its owner or admins, and an organization
+reading a platform region gets 403, its quota applies). The region resource
+(`GET /api/knative-regions/{id}`) carries the factors and the same `capacity` object; its
+`used_cpu_m` / `used_memory_mb` add up every admitted reservation (projects, model services,
+sandboxes) and can exceed `total_cpu_m` / `total_memory_mb` on an overcommitted region. Capacity
+alerts (`resource_threshold`, 60 % / 80 %) measure the fuller of the two budgets.
+
+Organization quotas (Tenancy module) are each organization's share of a region and count the
+whole reservation of every workload, scale-to-zero ones included, next to this admission.
 
 ## Project types
 
@@ -161,7 +264,7 @@ Runtimes for `xaas`/`faas` are plugins ([runtimes.md](runtimes.md)): a `runtime.
 a runtime image, from the built-in catalog (`runtime/<id>/`), registered by a platform
 administrator, or registered by an organization (custom). They are `Runtime` rows
 (`RuntimeRegistry`); each version is an `ExecutorImage` row with its runtime image.
-`executor:sync` discovers the versions of the built-in images (`ghcr.io/runrsh/exec-<runtime>:<version>`)
+`executor:sync` discovers the versions of the built-in images (`ghcr.io/brf-tech/exec-<runtime>:<version>`)
 and `runtimes:sync` brings the catalog rows and registered versions up to date. The built-in
 catalog holds Python, Node.js, Go, PHP, PyTorch and TensorFlow, and the WebAssembly runtimes
 `wasm-rust`, `wasm-go`, `wasm-js`, `wasm-python` and `wasm-exec` ([wasm.md](wasm.md)). Runtimes in
@@ -169,7 +272,8 @@ catalog holds Python, Node.js, Go, PHP, PyTorch and TensorFlow, and the WebAssem
 which an init container copies into code-mounted pods. A runtime version past its end-of-life
 date can no longer be deployed.
 
-Common per-project settings: CPU and memory (checked against region limits and tenant quota),
+Common per-project settings: CPU and memory (checked against the region's capacity budgets,
+[Region capacity and admission](#region-capacity-and-admission), and the tenant quota),
 GPUs ([ai.md](ai.md)), timeout, environment variables and secrets, scale-to-zero and min/max
 scale. A project can also have custom domains (`ProjectDomain`, Traefik IngressRoute with an
 uploaded or cert-manager certificate), [bindings](bindings.md) to data services and model
@@ -433,7 +537,7 @@ envelope names; without a DSN the proxy refuses them (503), and envelopes over 1
 
 Images are built and mirrored by `runtime/ci.sh` (subcommands in `runtime/lib/`: build, setup,
 test, eol, mirror, deploy; see [runtime/README.md](../runtime/README.md)). Third-party base images
-are mirrored to `ghcr.io/runrsh/reqs/`.
+are mirrored to `ghcr.io/brf-tech/reqs/`.
 
 Clients outside the console: the `runr` CLI ([cli.md](cli.md)), the Terraform provider
 ([terraform.md](terraform.md)), the GitHub Action ([github-action.md](github-action.md)) and the

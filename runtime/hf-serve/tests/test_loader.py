@@ -66,3 +66,30 @@ def test_invalid_settings_raise_before_any_import(monkeypatch):
     monkeypatch.setitem(sys.modules, "transformers", None)  # importing would fail
     with pytest.raises(ValueError, match="RUNR_TASK"):
         load_model(Settings(model_id="org/name"))
+
+
+def test_tasks_transformers_5_dropped_use_runr_pipelines(fake_transformers, monkeypatch):
+    loaded = []
+
+    def load(task, source, device, kwargs):
+        loaded.append((task, source, device, kwargs))
+        return types.SimpleNamespace(tokenizer="t5-tok")
+
+    monkeypatch.setattr("runr_hf_serve.pipelines.load", load)
+
+    model = load_model(Settings(model_id="org/t5", revision="abc", task="summarization", device="cpu", token="hf_x"))
+
+    assert loaded == [("summarization", "org/t5", "cpu", {"revision": "abc", "token": "hf_x"})]
+    assert fake_transformers == []  # transformers.pipeline() is not called
+    assert model.tokenizer == "t5-tok"
+    assert model.task == "summarization"
+
+
+def test_torch_threads_follow_the_configured_count(fake_transformers, monkeypatch):
+    applied = []
+    monkeypatch.setenv("OMP_NUM_THREADS", "2")
+    monkeypatch.setattr("runr_hf_serve.threads.apply_torch", applied.append)
+
+    load_model(Settings(model_id="org/name", task="fill-mask", device="cpu"))
+
+    assert applied == [2]

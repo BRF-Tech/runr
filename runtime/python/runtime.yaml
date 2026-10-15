@@ -10,7 +10,7 @@ extensions: [py]
 category: general
 versionDiscovery:
   repository: runrsh/exec-python
-  image: "ghcr.io/runrsh/exec-python:{version}"
+  image: "ghcr.io/brf-tech/exec-python:{version}"
   eol: python
 handler:
   file: main

@@ -7,8 +7,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/runrsh/core/cli/internal/output"
-	"github.com/runrsh/core/cli/pkg/runr"
+	"github.com/brf-tech/runr/cli/internal/output"
+	"github.com/brf-tech/runr/cli/pkg/runr"
 )
 
 // `runr metrics`: the recorded metrics of a project — a summary of a period and the snapshots.

@@ -210,7 +210,7 @@ GO;
 
     public function statsDockerImage(): string
     {
-        return 'ghcr.io/runrsh/reqs/redis:7-alpine';
+        return 'ghcr.io/brf-tech/reqs/redis:7-alpine';
     }
 
     public function statsCommand(): array

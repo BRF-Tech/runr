@@ -52,9 +52,9 @@ class ModelServiceManifestTest extends TestCase
         $container = $spec['containers'][0];
         $env = $this->env($container);
 
-        $this->assertSame('ghcr.io/huggingface/text-embeddings-inference:cpu-1.5', $container['image']);
+        $this->assertSame('ghcr.io/huggingface/text-embeddings-inference:cpu-1.9.4', $container['image']);
         $this->assertSame([
-            '--model-id', 'sentence-transformers/all-MiniLM-L6-v2', '--hostname', '0.0.0.0', '--port', '8080',
+            '--model-id', 'sentence-transformers/all-MiniLM-L6-v2', '--served-model-name', 'all-minilm-l6-v2', '--hostname', '0.0.0.0', '--port', '8080',
             '--revision', str_repeat('a', 40),
         ], $container['args'], 'the pinned commit, not the branch');
         $this->assertSame([['name' => 'http1', 'containerPort' => 8080]], $container['ports']);
@@ -88,7 +88,7 @@ class ModelServiceManifestTest extends TestCase
         $container = $spec['containers'][0];
         $env = $this->env($container);
 
-        $this->assertSame('ghcr.io/runrsh/hf-serve:1.0.0', $container['image']);
+        $this->assertSame('ghcr.io/brf-tech/hf-serve:1.1.0', $container['image']);
         $this->assertSame('/models/model', $env['RUNR_MODEL_PATH']);
         $this->assertSame('feature-extraction', $env['RUNR_TASK']);
         $this->assertSame('cpu', $env['RUNR_DEVICE']);
@@ -157,7 +157,7 @@ class ModelServiceManifestTest extends TestCase
         // TEI GPU image matches the GPU's compute capability (8.9 → 89-)
         $emb = $this->hubModel(['name' => 'emb']);
         $tei = $this->manifests()->engineContainer($this->modelService($emb, $region, ['engine' => 'tei', 'device' => 'gpu', 'gpu' => ['count' => 1]]), $emb, null, $region, null);
-        $this->assertSame('ghcr.io/huggingface/text-embeddings-inference:89-1.5', $tei['image']);
+        $this->assertSame('ghcr.io/huggingface/text-embeddings-inference:89-1.9.4', $tei['image']);
 
         $custom = $this->manifests()->engineContainer(
             $this->modelService($llm, $region, ['engine' => 'custom', 'image' => 'ghcr.io/acme/server:2', 'port' => 9000, 'args' => ['--serve'], 'health_path' => '/ready']),
@@ -263,5 +263,43 @@ class ModelServiceManifestTest extends TestCase
         $this->assertSame($snapshot->path, $pod['spec']['containers'][0]['volumeMounts'][0]['subPath']);
         $this->assertSame(['runr.sh/model-upload' => $upload->id], $svc['spec']['selector']);
         $this->assertSame($pod['metadata']['name'], $svc['metadata']['name']);
+    }
+
+    public function test_engine_threads_follow_the_cpu_limit(): void
+    {
+        $region = $this->gpuRegion();
+        $model = $this->hubModel(['task' => 'text-classification', 'library' => 'transformers']);
+        $container = fn (array $attributes) => $this->manifests()->engineContainer(
+            $this->modelService($model, $region, $attributes), $model, null, $region, null,
+        );
+
+        // hf-serve under a 1-CPU limit: one thread, not one per node CPU
+        $one = $container(['engine' => 'transformers', 'cpu' => '1']);
+        $this->assertSame('1', $this->env($one)['OMP_NUM_THREADS']);
+        $this->assertSame('1', $this->env($one)['MKL_NUM_THREADS']);
+        $this->assertSame('1', $one['resources']['limits']['cpu']);
+
+        $this->assertSame('2', $this->env($container(['engine' => 'transformers', 'cpu' => '1500m']))['OMP_NUM_THREADS'], 'ceil(1.5)');
+        $this->assertSame('1', $this->env($container(['engine' => 'tei', 'cpu' => '250m']))['OMP_NUM_THREADS'], 'at least one');
+        $this->assertSame('4', $this->env($container(['engine' => 'tei', 'cpu' => '4']))['MKL_NUM_THREADS']);
+
+        $own = $container(['engine' => 'transformers', 'cpu' => '2', 'env_vars' => ['OMP_NUM_THREADS' => '1']]);
+        $this->assertSame('1', $this->env($own)['OMP_NUM_THREADS'], 'the service env wins');
+        $this->assertSame('2', $this->env($own)['MKL_NUM_THREADS']);
+        $this->assertCount(1, array_filter($own['env'], fn ($e) => $e['name'] === 'OMP_NUM_THREADS'));
+
+        $this->assertSame(['OMP_NUM_THREADS' => '3', 'MKL_NUM_THREADS' => '3'], ModelServiceManifests::threadEnv('2.2'));
+        $this->assertSame(['OMP_NUM_THREADS' => '1', 'MKL_NUM_THREADS' => '1'], ModelServiceManifests::threadEnv(''));
+    }
+
+    public function test_an_engine_that_crashes_leaves_its_log_tail_as_termination_message(): void
+    {
+        $region = $this->gpuRegion();
+        $model = $this->hubModel();
+
+        foreach (['tei', 'transformers'] as $engine) {
+            $container = $this->manifests()->engineContainer($this->modelService($model, $region, ['engine' => $engine]), $model, null, $region, null);
+            $this->assertSame('FallbackToLogsOnError', $container['terminationMessagePolicy'], $engine);
+        }
     }
 }

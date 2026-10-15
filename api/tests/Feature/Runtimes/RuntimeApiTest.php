@@ -209,7 +209,7 @@ class RuntimeApiTest extends TestCase
             ->assertJsonPath('data.compiled', true)
             ->assertJsonPath('data.run_mode', 'exec')
             ->assertJsonPath('data.versions.0.version', '17')
-            ->assertJsonPath('data.versions.0.image', 'ghcr.io/runrsh/reqs/alpine:3.21');
+            ->assertJsonPath('data.versions.0.image', 'ghcr.io/brf-tech/reqs/alpine:3.21');
 
         $runtime = Runtime::findOrFail('c');
         $this->assertSame((string) $admin->id, $runtime->created_by);
@@ -218,7 +218,7 @@ class RuntimeApiTest extends TestCase
         $this->assertStringContainsString('gcc -O2', $runtime->manifest_source);
 
         $version = ExecutorImage::where('runtime', 'c')->sole();
-        $this->assertSame(['17', 'ghcr.io/runrsh/reqs/alpine:3.21', true, true], [$version->version, $version->docker_image, $version->is_default, $version->is_active]);
+        $this->assertSame(['17', 'ghcr.io/brf-tech/reqs/alpine:3.21', true, true], [$version->version, $version->docker_image, $version->is_default, $version->is_active]);
 
         // the id is taken now, and built-in ids are taken from the start
         $this->actingAs($admin, 'sanctum')->postJson('/api/runtimes', ['manifest' => $this->cManifest()])->assertStatus(422)->assertJsonValidationErrors('manifest');

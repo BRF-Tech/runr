@@ -21,7 +21,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - id: runr
-        uses: runrsh/core/actions/deploy@v0.5.0
+        uses: brf-tech/runr/actions/deploy@v0.5.0
         with:
           api-url: https://runr.example.com
           token: ${{ secrets.RUNR_TOKEN }}
@@ -40,7 +40,7 @@ Build and push the image, then deploy that tag:
           push: true
           tags: ghcr.io/acme/web:${{ github.sha }}
 
-      - uses: runrsh/core/actions/deploy@v0.5.0
+      - uses: brf-tech/runr/actions/deploy@v0.5.0
         with:
           api-url: https://runr.example.com
           token: ${{ secrets.RUNR_TOKEN }}
@@ -65,7 +65,7 @@ deploy, so the new deployment runs with them. Each value is masked in the log an
 comments are skipped; spaces around the key and the value are removed.
 
 ```yaml
-      - uses: runrsh/core/actions/deploy@v0.5.0
+      - uses: brf-tech/runr/actions/deploy@v0.5.0
         with:
           api-url: https://runr.example.com
           token: ${{ secrets.RUNR_TOKEN }}

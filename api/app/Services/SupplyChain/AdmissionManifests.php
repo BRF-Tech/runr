@@ -164,7 +164,7 @@ class AdmissionManifests
                 (string) config('executor.wrapper_image'),
                 BuildManifests::KANIKO_IMAGE,
                 BuildManifests::INIT_IMAGE,
-                'ghcr.io/runrsh/runr-queue-consumer:latest',
+                'ghcr.io/brf-tech/runr-queue-consumer:latest',
             ],
             self::runtimeImages(),
         );

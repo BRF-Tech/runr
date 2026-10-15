@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/runrsh/core/cli/pkg/runr"
+	"github.com/brf-tech/runr/cli/pkg/runr"
 )
 
 // Durable workflows (routes/workflows.php): definitions per project, runs and the

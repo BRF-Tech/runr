@@ -10,6 +10,7 @@ import logging
 from dataclasses import dataclass, field
 from typing import Any, Callable, Optional
 
+from . import pipelines, threads
 from .config import Settings
 
 log = logging.getLogger("runr_hf_serve")
@@ -70,6 +71,8 @@ def load_model(settings: Settings) -> LoadedModel:
 def _load_transformers(settings: Settings, device: str) -> LoadedModel:
     from transformers import pipeline  # noqa: WPS433
 
+    threads.apply_torch(threads.thread_count())
+
     kwargs = dict(settings.pipeline_kwargs)
     if not settings.offline:
         if settings.revision:
@@ -78,7 +81,11 @@ def _load_transformers(settings: Settings, device: str) -> LoadedModel:
             kwargs.setdefault("token", settings.token)
 
     task = PIPELINE_ALIASES.get(settings.task, settings.task)
-    pipe = pipeline(task=task, model=settings.source, device=0 if device == "cuda" else -1, **kwargs)
+    if task in pipelines.TASKS:
+        # transformers 5 dropped these pipelines: RunR's own, same call and output shapes
+        pipe = pipelines.load(task, settings.source, device, kwargs)
+    else:
+        pipe = pipeline(task=task, model=settings.source, device=0 if device == "cuda" else -1, **kwargs)
 
     return LoadedModel(
         task=settings.task,
@@ -92,6 +99,8 @@ def _load_transformers(settings: Settings, device: str) -> LoadedModel:
 def _load_diffusers(settings: Settings, device: str) -> LoadedModel:
     import torch  # noqa: WPS433
     from diffusers import DiffusionPipeline  # noqa: WPS433
+
+    threads.apply_torch(threads.thread_count())
 
     kwargs = dict(settings.pipeline_kwargs)
     kwargs.setdefault("torch_dtype", torch.float16 if device == "cuda" else torch.float32)

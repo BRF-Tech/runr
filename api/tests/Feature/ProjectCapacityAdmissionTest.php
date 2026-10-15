@@ -29,6 +29,10 @@ use Tests\TestCase;
  * region reached 9100m used of 4505m.
  *
  * Existing projects that do not grow stay grandfathered.
+ *
+ * The regions here run without FaaS overcommit (factors 1: every reservation against the real
+ * capacity), so the sizes add up as plainly as possible; the budgets themselves are covered by
+ * RegionCapacityAdmissionTest.
  */
 class ProjectCapacityAdmissionTest extends TestCase
 {
@@ -53,6 +57,8 @@ class ProjectCapacityAdmissionTest extends TestCase
             'is_demo' => true, // no kubeconfig needed to pick it
             'total_cpu_m' => $cpuM,
             'total_memory_mb' => $memoryMb,
+            'faas_cpu_overcommit' => 1,
+            'faas_memory_overcommit' => 1,
         ]);
     }
 
@@ -120,7 +126,7 @@ class ProjectCapacityAdmissionTest extends TestCase
 
         // CaaS defaults to small: 500m + 100m does not fit
         $errors = $this->errors(StoreProjectRequest::class, $this->storePayload('too-big', 'caas'));
-        $this->assertSame(['CPU limit exceeded. Available: 350m (total: 1000m).'], $errors['config.cpu']);
+        $this->assertSame(['CPU limit exceeded on the FaaS overcommit budget: this needs 600m, 350m of 1000m are free (region capacity 1000m × 1, minus 0m always-on).'], $errors['config.cpu']);
         $this->assertArrayNotHasKey('config.memory_mb', $errors, '512 + 100 MB fit');
 
         // min_scale 2 without a size: 2 × 350m
@@ -146,7 +152,7 @@ class ProjectCapacityAdmissionTest extends TestCase
         // 256 + 100 MB fits in 400 MB, the CaaS 512 + 100 MB does not
         $this->assertArrayNotHasKey('config.memory_mb', $this->errors(StoreProjectRequest::class, $this->storePayload('fn', 'xaas', $region)));
         $errors = $this->errors(StoreProjectRequest::class, $this->storePayload('ctr', 'caas', $region));
-        $this->assertSame(['Memory limit exceeded. Available: 400 MB (total: 400 MB).'], $errors['config.memory_mb']);
+        $this->assertSame(['Memory limit exceeded on the FaaS overcommit budget: this needs 612 MB, 400 MB of 400 MB are free (region capacity 400 MB × 1, minus 0 MB always-on).'], $errors['config.memory_mb']);
     }
 
     public function test_the_kata_overhead_is_part_of_the_default_reservation(): void
@@ -179,7 +185,7 @@ class ProjectCapacityAdmissionTest extends TestCase
 
         // min_scale 2 without a size: 2 × (250m + 100m) = 700m > 350m + 150m
         $errors = $this->errors(DeployProjectRequest::class, ['version_id' => $version->id, 'deploy_config' => ['min_scale' => 2]], $project);
-        $this->assertSame(['CPU limit exceeded. Available: 500m (total: 1000m).'], $errors['deploy_config.cpu']);
+        $this->assertSame(['CPU limit exceeded on the FaaS overcommit budget: this needs 700m, 500m of 1000m are free (region capacity 1000m × 1, minus 0m always-on).'], $errors['deploy_config.cpu']);
     }
 
     public function test_a_deploy_without_size_under_capacity_is_allowed(): void
@@ -268,7 +274,7 @@ class ProjectCapacityAdmissionTest extends TestCase
 
         $this->project('more', '1m', 0, $tight); // 101m more
         $this->expectException(\InvalidArgumentException::class);
-        $this->expectExceptionMessage('Not enough free capacity on this region for the demo projects: they reserve 1600m CPU / 1644 MB, available 1499m CPU');
+        $this->expectExceptionMessage('Not enough free capacity on this region for the demo projects. CPU limit exceeded on the FaaS overcommit budget: this needs 1600m, 1499m of 2000m are free');
         $service->validateCapacity($tight);
     }
 }

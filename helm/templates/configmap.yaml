@@ -135,12 +135,12 @@ data:
   {{- $ms := $ai.modelStorage | default dict }}
   AI_HF_ENDPOINT: {{ $hf.endpoint | default "https://huggingface.co" | quote }}
   AI_HF_BROWSE: {{ ternary "true" "false" (ne (toString $hf.browse) "false") | quote }}
-  AI_IMAGE_HF_SERVE: {{ $img.hfServe | default "ghcr.io/runrsh/hf-serve:1.0.0" | quote }}
-  AI_IMAGE_HF_SERVE_CUDA: {{ $img.hfServeCuda | default "ghcr.io/runrsh/hf-serve:1.0.0-cuda" | quote }}
+  AI_IMAGE_HF_SERVE: {{ include "runr.image" ($img.hfServe | default "ghcr.io/brf-tech/hf-serve:1.1.0") | quote }}
+  AI_IMAGE_HF_SERVE_CUDA: {{ include "runr.image" ($img.hfServeCuda | default "ghcr.io/brf-tech/hf-serve:1.1.0-cuda") | quote }}
   AI_IMAGE_VLLM: {{ $img.vllm | default "docker.io/vllm/vllm-openai:v0.6.6" | quote }}
   AI_IMAGE_TGI: {{ $img.tgi | default "ghcr.io/huggingface/text-generation-inference:3.0.1" | quote }}
-  AI_IMAGE_TEI_CPU: {{ $img.teiCpu | default "ghcr.io/huggingface/text-embeddings-inference:cpu-1.5" | quote }}
-  AI_IMAGE_TEI_GPU: {{ $img.teiGpu | default "ghcr.io/huggingface/text-embeddings-inference:{arch}1.5" | quote }}
+  AI_IMAGE_TEI_CPU: {{ $img.teiCpu | default "ghcr.io/huggingface/text-embeddings-inference:cpu-1.9.4" | quote }}
+  AI_IMAGE_TEI_GPU: {{ $img.teiGpu | default "ghcr.io/huggingface/text-embeddings-inference:{arch}1.9.4" | quote }}
   AI_IMAGE_ORAS: {{ $img.oras | default "ghcr.io/oras-project/oras:v1.2.0" | quote }}
   AI_GPU_DEVICE_PLUGIN_CHART_VERSION: {{ $gpu.devicePluginChartVersion | default "0.17.0" | quote }}
   AI_GPU_OPERATOR_CHART_VERSION: {{ $gpu.operatorChartVersion | default "v24.9.2" | quote }}
@@ -166,7 +166,7 @@ data:
   # Knative
   KNATIVE_MIN_K8S_MINOR: {{ .Values.knative.minK8sMinor | quote }}
   {{- with .Values.knative.traefikImage }}
-  KNATIVE_TRAEFIK_IMAGE: {{ . | quote }}
+  KNATIVE_TRAEFIK_IMAGE: {{ include "runr.image" . | quote }}
   {{- end }}
 
   # Observability (values observability.*, api config/observability.php)
@@ -256,7 +256,7 @@ data:
   BINDINGS_QUOTA_DEDICATED_POSTGRES: {{ $bq.dedicatedPostgres | default 0 | quote }}
   BINDINGS_KV_MAXMEMORY_MB: {{ $bkv.maxmemoryMb | default 512 | quote }}
   BINDINGS_KV_STORAGE: {{ $bkv.storage | default "2Gi" | quote }}
-  BINDINGS_OBJECT_IMAGE: {{ $bobj.image | default "ghcr.io/runrsh/reqs/garage:v2.1.0" | quote }}
+  BINDINGS_OBJECT_IMAGE: {{ include "runr.image" ($bobj.image | default "ghcr.io/brf-tech/reqs/garage:v2.1.0") | quote }}
   BINDINGS_OBJECT_STORAGE: {{ $bobj.storage | default "20Gi" | quote }}
   BINDINGS_OBJECT_S3_REGION: {{ $bobj.s3Region | default "garage" | quote }}
   BINDINGS_CNPG_CHART_VERSION: {{ $bpg.cnpgChartVersion | default "0.26.0" | quote }}
@@ -269,7 +269,7 @@ data:
   {{- $pc := $sc.policyController | default dict }}
   RUNR_SUPPLY_CHAIN_ENABLED: {{ ternary "true" "false" (ne (toString $sc.enabled) "false") | quote }}
   {{- with $sc.toolsImage }}
-  RUNR_SUPPLY_CHAIN_IMAGE: {{ . | quote }}
+  RUNR_SUPPLY_CHAIN_IMAGE: {{ include "runr.image" . | quote }}
   {{- end }}
   {{- with $sc.jobNamespace }}
   RUNR_SUPPLY_CHAIN_NAMESPACE: {{ . | quote }}
@@ -299,7 +299,7 @@ data:
   # Uploaded images (docs/images.md) — empty values keep the application defaults
   {{- $img := .Values.images | default dict }}
   {{- with $img.uploadImage }}
-  RUNR_IMAGE_UPLOAD_IMAGE: {{ . | quote }}
+  RUNR_IMAGE_UPLOAD_IMAGE: {{ include "runr.image" . | quote }}
   {{- end }}
   {{- if not (kindIs "invalid" $img.quotaGb) }}{{- if ne (toString $img.quotaGb) "" }}
   RUNR_IMAGES_QUOTA_GB: {{ $img.quotaGb | quote }}

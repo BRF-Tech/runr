@@ -16,10 +16,10 @@ use Tests\Concerns\BuildsAiFixtures;
 use Tests\TestCase;
 
 /**
- * Model services count in the region no-overcommit capacity next to the projects: project
- * admission (WithinResourceLimit), model service admission, region usage (region resource) and
- * capacity alerts. Stopped services reserve nothing; a running service that does not grow is
- * always admitted.
+ * Model services count in the region capacity next to the projects: project admission
+ * (WithinResourceLimit), model service admission, region usage (region resource) and capacity
+ * alerts. Stopped services reserve nothing; a running service that does not grow is always
+ * admitted.
  */
 class ModelServiceCapacityTest extends TestCase
 {
@@ -32,8 +32,12 @@ class ModelServiceCapacityTest extends TestCase
         parent::setUp();
         Queue::fake();
         $this->actingAs(User::factory()->create(), 'sanctum');
-        // 4000m / 8192 MiB for workloads
-        $this->region = $this->gpuRegion(null, ['kubeconfig' => $this->fakeKubeconfig(), 'total_cpu_m' => 4000, 'total_memory_mb' => 8192]);
+        // 4000m / 8192 MiB for workloads, without FaaS overcommit (factor 1): every reservation
+        // counts against the capacity (the budgets: RegionCapacityAdmissionTest)
+        $this->region = $this->gpuRegion(null, [
+            'kubeconfig' => $this->fakeKubeconfig(), 'total_cpu_m' => 4000, 'total_memory_mb' => 8192,
+            'faas_cpu_overcommit' => 1, 'faas_memory_overcommit' => 1,
+        ]);
     }
 
     private function cpuCheck(string $cpu): array

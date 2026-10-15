@@ -27,12 +27,13 @@ class DeployProjectRequest extends FormRequest
         $regionId = $project?->knative_region_id;
         // Sizing context of the capacity check; null = the project's stored value
         $minScale = is_numeric($m = $this->input('deploy_config.min_scale')) ? (int) $m : null;
+        $scaleToZero = $this->input('deploy_config.scale_to_zero');
 
         return [
             'version_id' => 'required|ulid|exists:versions,id',
             'deploy_config' => 'nullable|array',
-            'deploy_config.cpu' => ['bail', 'nullable', 'string', new KubernetesCpu, new WithinResourceLimit('cpu', $project?->id, $regionId, null, $minScale)],
-            'deploy_config.memory_mb' => ['nullable', 'integer', 'min:64', new WithinResourceLimit('memory', $project?->id, $regionId, null, $minScale)],
+            'deploy_config.cpu' => ['bail', 'nullable', 'string', new KubernetesCpu, new WithinResourceLimit('cpu', $project?->id, $regionId, null, $minScale, null, $scaleToZero)],
+            'deploy_config.memory_mb' => ['nullable', 'integer', 'min:64', new WithinResourceLimit('memory', $project?->id, $regionId, null, $minScale, null, $scaleToZero)],
             'deploy_config.timeout_seconds' => ['nullable', 'integer', 'min:1', new WithinRegionTimeout($regionId)],
             'deploy_config.scale_to_zero' => 'nullable|boolean',
             'deploy_config.min_scale' => 'nullable|integer|min:0|max:10',

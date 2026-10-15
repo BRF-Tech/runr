@@ -6,6 +6,8 @@ use App\Models\Project;
 use App\Models\Setting;
 use App\Services\Ai\Gpu\GpuInventory;
 use App\Services\Concerns\ResourceComputationTrait;
+use App\Services\Helpers\RegionCapacity;
+use App\Services\Helpers\ResourceReservation;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
@@ -38,13 +40,14 @@ class KnativeRegionResource extends JsonResource
 
     private function buildFullResponse(): array
     {
-        $projects = Project::where('knative_region_id', $this->id)
-            ->with(['xaasConfig', 'faasConfig', 'containerConfig'])
-            ->get();
-
         $workers = is_array($this->selected_workers)
             ? $this->selected_workers
             : json_decode($this->selected_workers ?? '[]', true) ?? [];
+
+        // projects, model services that are not stopped and sandboxes, by budget (RegionCapacity)
+        $usage = $this->regionUsage($this->resource);
+        $used = ResourceReservation::total($usage);
+        $factors = RegionCapacity::factors($this->resource);
 
         return [
             'id' => $this->id,
@@ -58,10 +61,14 @@ class KnativeRegionResource extends JsonResource
             'is_synced' => false,
             'region_mode' => $this->region_mode ?? 'managed',
             'has_kubeconfig' => ! empty($this->kubeconfig),
-            // projects and running model services (docs/huggingface.md)
-            'used_cpu_m' => $this->computeUsedCpu($projects) + ($models = $this->modelServiceUsage($this->resource))['cpu_m'],
-            'used_memory_mb' => $this->computeUsedMemory($projects) + $models['memory_mb'],
-            'project_count' => $projects->count(),
+            // every admitted reservation: always-on + scale-to-zero (may exceed the total: FaaS overcommit)
+            'used_cpu_m' => $used['cpu_m'],
+            'used_memory_mb' => $used['memory_mb'],
+            'faas_cpu_overcommit' => $factors['cpu_m'],
+            'faas_memory_overcommit' => $factors['memory_mb'],
+            // the always-on and FaaS overcommit budgets (docs/architecture.md → Region capacity and admission)
+            'capacity' => RegionCapacity::summary($this->resource, $usage),
+            'project_count' => Project::where('knative_region_id', $this->id)->count(),
             'knative_status' => $this->knative_status,
             'knative_status_message' => $this->knative_status_message,
             'knative_status_checked_at' => $this->knative_status_checked_at?->toISOString(),

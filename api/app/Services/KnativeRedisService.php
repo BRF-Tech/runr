@@ -16,7 +16,7 @@ class KnativeRedisService
 
     private const REDIS_DEPLOYMENT_NAME = 'runr-redis';
 
-    private const REDIS_IMAGE = 'ghcr.io/runrsh/reqs/redis:7-alpine';
+    private const REDIS_IMAGE = 'ghcr.io/brf-tech/reqs/redis:7-alpine';
 
     private const REDIS_HELM_NAMESPACE = 'runr-system';
 

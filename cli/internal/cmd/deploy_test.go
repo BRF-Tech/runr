@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/runrsh/core/cli/internal/projectfile"
-	"github.com/runrsh/core/cli/pkg/runr"
+	"github.com/brf-tech/runr/cli/internal/projectfile"
+	"github.com/brf-tech/runr/cli/pkg/runr"
 )
 
 func TestInitScaffoldsEachRuntime(t *testing.T) {

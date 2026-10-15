@@ -7,7 +7,7 @@ at `/mcp` on `$PORT`, stateless, behind the RunR MCP gateway
 
 | File | |
 |---|---|
-| `runtime.yaml` | the `mcp-python` runtime: image `ghcr.io/runrsh/reqs/python:3.13-slim`, dependencies from `requirements.txt` into `/app/vendor`, `run.command` `python -u /app/code/server.py` (http mode), starter template `server.py` |
+| `runtime.yaml` | the `mcp-python` runtime: image `ghcr.io/brf-tech/reqs/python:3.13-slim`, dependencies from `requirements.txt` into `/app/vendor`, `run.command` `python -u /app/code/server.py` (http mode), starter template `server.py` |
 | `server.py` | tools `hello`, `add`, `whoami`, resource `starter://about`, prompt `greet`; `GatewaySignature` checks `X-RunR-Signature` |
 | `requirements.txt` | `mcp`, `uvicorn` |
 | `Dockerfile` | the same server as an image for a CaaS project |

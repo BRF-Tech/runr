@@ -109,7 +109,7 @@
       "title": "Uploaded images",
       "description": "Container images and WebAssembly modules uploaded into region registries (docs/images.md).",
       "properties": {
-        "uploadImage": {"type": "string", "title": "Receiver image", "description": "Image of the upload receiver Job in the regions. Empty: ghcr.io/runrsh/image-upload:1.0.0."},
+        "uploadImage": {"type": "string", "title": "Receiver image", "description": "Image of the upload receiver Job in the regions. Empty: ghcr.io/brf-tech/image-upload:1.0.0."},
         "quotaGb": {"type": ["string", "integer"], "title": "Storage per organization (GiB)", "description": "Uploaded images over every region. Empty: 50; 0: unlimited."},
         "maxUploadGb": {"type": ["string", "integer"], "title": "Largest upload (GiB)", "description": "Empty: 20."},
         "uploadTtlHours": {"type": ["string", "integer"], "title": "Upload time limit (hours)", "description": "Empty: 24."}
@@ -121,7 +121,7 @@
       "description": "SBOMs, vulnerability scans, image signatures and the admission policy per region (docs/supply-chain.md). Each region is configured in the UI (Region → Supply chain); these are the platform defaults.",
       "properties": {
         "enabled": {"type": "boolean", "title": "Supply-chain runs after builds", "description": "Every image RunR builds gets an SBOM, a scan and a signature as its region's settings define."},
-        "toolsImage": {"type": "string", "title": "Tools image", "description": "Image of the supply-chain Jobs (syft, trivy, cosign, oras). Empty: ghcr.io/runrsh/runr-supply-chain:1.0.0."},
+        "toolsImage": {"type": "string", "title": "Tools image", "description": "Image of the supply-chain Jobs (syft, trivy, cosign, oras). Empty: ghcr.io/brf-tech/runr-supply-chain:1.0.0."},
         "jobNamespace": {"type": "string", "title": "Job namespace", "description": "Namespace of the supply-chain Jobs and the signing key in each region. Empty: runr-supply-chain."},
         "rescanHours": {"type": ["string", "integer"], "title": "Re-scan interval (hours)", "description": "Default for new regions. Empty: 24."},
         "trivyDbSource": {"type": "string", "title": "Vulnerability DB source", "description": "Copied into the region registry in mirror mode. Empty: mirror.gcr.io/aquasec/trivy-db:2."},

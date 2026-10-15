@@ -7,7 +7,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/runrsh/core/cli/pkg/runr"
+	"github.com/brf-tech/runr/cli/pkg/runr"
 )
 
 // Observability endpoints (routes/observability.php): project switches, traces, request

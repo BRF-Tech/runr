@@ -34,7 +34,7 @@ test = ["pytest>=7.0"]
 
 [project.urls]
 Homepage = "https://runr.sh"
-Repository = "https://github.com/runrsh/core"
+Repository = "https://github.com/brf-tech/runr"
 Documentation = "https://runr.sh/docs/sandbox-api"
 
 [tool.hatch.build.targets.wheel]

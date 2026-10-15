@@ -8,7 +8,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-testing/plancheck"
 	"github.com/hashicorp/terraform-plugin-testing/terraform"
 
-	"github.com/runrsh/core/cli/pkg/runr/runrtest"
+	"github.com/brf-tech/runr/cli/pkg/runr/runrtest"
 )
 
 func faasProject(srv *runrtest.Server, runtime string, memory, max int) string {

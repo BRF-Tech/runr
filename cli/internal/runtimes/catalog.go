@@ -7,7 +7,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/runrsh/core/cli/pkg/runr"
+	"github.com/brf-tech/runr/cli/pkg/runr"
 )
 
 // CatalogLister is the part of runr.Client the catalog resolver uses.

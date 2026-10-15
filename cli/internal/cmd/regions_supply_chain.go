@@ -12,8 +12,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/runrsh/core/cli/internal/output"
-	"github.com/runrsh/core/cli/pkg/runr"
+	"github.com/brf-tech/runr/cli/internal/output"
+	"github.com/brf-tech/runr/cli/pkg/runr"
 )
 
 // `runr regions supply-chain`: a region's SBOM and scan switches, scanner DB, policy gate,

@@ -1,7 +1,7 @@
 terraform {
   required_providers {
     runr = {
-      source  = "runrsh/runr"
+      source  = "brf-tech/runr"
       version = "~> 0.5"
     }
   }

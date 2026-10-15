@@ -10,7 +10,7 @@ extensions: [rs]
 category: general
 versions:
   - version: "1.83"
-    image: ghcr.io/runrsh/reqs/rust:1.83-alpine
+    image: ghcr.io/brf-tech/reqs/rust:1.83-alpine
     default: true
 handler:
   file: main
@@ -125,7 +125,7 @@ template:
 build:
   image: "{image}"
   command: "rustc --edition 2021 -O -o /build/out/server {file}"
-  runImage: ghcr.io/runrsh/reqs/alpine:3.21
+  runImage: ghcr.io/brf-tech/reqs/alpine:3.21
   source: false
 run:
   mode: http

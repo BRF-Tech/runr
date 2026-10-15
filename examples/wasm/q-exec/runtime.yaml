@@ -28,7 +28,7 @@ template:
       print "Hello, {name}! (from Q)"
 build:
   # the wasm-exec toolchain image fetches the uploaded interpreter (RUNR_WASM_MODULE) as main.wasm
-  image: ghcr.io/runrsh/exec-wasm-exec:4.1
+  image: ghcr.io/brf-tech/exec-wasm-exec:4.1
   command: runr-wasm-exec build
   source: false
 run:

@@ -11,7 +11,7 @@ extensions: [php]
 category: general
 versionDiscovery:
   repository: runrsh/exec-php
-  image: "ghcr.io/runrsh/exec-php:{version}"
+  image: "ghcr.io/brf-tech/exec-php:{version}"
   eol: php
 handler:
   file: main
@@ -29,7 +29,7 @@ template:
 dependencies:
   file: composer.json
   template: '{"require":{"predis/predis":"^2.0"}}'
-  image: ghcr.io/runrsh/reqs/composer:latest
+  image: ghcr.io/brf-tech/reqs/composer:latest
   install: cd /build/code && {if:semver}composer config platform.php {semver} && {end}composer install --no-dev --no-interaction
   copy:
     - { from: /build/code/vendor, to: /app/code/vendor }

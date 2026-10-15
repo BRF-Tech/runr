@@ -83,7 +83,7 @@ and the scanning of external images are off, the vulnerability DB mode is `onlin
 ## Where it runs
 
 Every step runs in the region, next to the registry that holds the image, as one Kubernetes
-Job of the **tools image** `ghcr.io/runrsh/runr-supply-chain` (`runtime/supply-chain`): Trivy's
+Job of the **tools image** `ghcr.io/brf-tech/runr-supply-chain` (`runtime/supply-chain`): Trivy's
 image plus syft, cosign and oras (release binaries verified against their published checksums)
 and the driver script `runr-supply-chain`. Build it with `runtime/ci.sh supply-chain [--push]`;
 regions without internet pull it through their registry mirror or a mirror of your own
@@ -252,7 +252,7 @@ ClusterImagePolicies (an image must pass every policy whose globs match it):
 | Policy | Images | Authority |
 |---|---|---|
 | `runr-signed-images` | `<registry>/runr-builds/**`, `<registry>/runr-runtimes/**`, `<registry>/runr-uploads/**` (uploaded images, signed after their scan) | the region's trusted keys (current + retired); optionally the signed SPDX attestation (*Also require the signed SBOM attestation*) |
-| `runr-system-images` | RunR's own images: `ghcr.io/runrsh/**` (also through the registry mirror), Knative (`gcr.io/knative-releases/**`), Kaniko, the runtime wrapper, the queue consumer, built-in and platform runtime images and the toolchain images their WebAssembly builds run, the AI engine images of `config/ai.php` (vLLM, TGI, TEI, hf-serve), Skupper routers, plus the region's extra exemptions | static pass |
+| `runr-system-images` | RunR's own images: `ghcr.io/brf-tech/**` (also through the registry mirror), Knative (`gcr.io/knative-releases/**`), Kaniko, the runtime wrapper, the queue consumer, built-in and platform runtime images and the toolchain images their WebAssembly builds run, the AI engine images of `config/ai.php` (vLLM, TGI, TEI, hf-serve), Skupper routers, plus the region's extra exemptions | static pass |
 | `runr-caas-images` | CaaS registries of the allow list (`docker.io/library` → `index.docker.io/library/**`) | static pass (*Only listed registries*) or one of the trusted CaaS public keys (*Listed registries, signed by a trusted key*) |
 
 Before any policy, the webhook resolves every image tag to a digest on the image's registry
@@ -420,7 +420,7 @@ All under `/api`, authenticated; the rules are in `api/config/route_permissions.
 | Variable (Helm `supplyChain.*`) | Default |
 |---|---|
 | `RUNR_SUPPLY_CHAIN_ENABLED` (`enabled`) | `true` — supply-chain runs after builds |
-| `RUNR_SUPPLY_CHAIN_IMAGE` (`toolsImage`) | `ghcr.io/runrsh/runr-supply-chain:1.0.0` |
+| `RUNR_SUPPLY_CHAIN_IMAGE` (`toolsImage`) | `ghcr.io/brf-tech/runr-supply-chain:1.0.0` |
 | `RUNR_SUPPLY_CHAIN_NAMESPACE` (`jobNamespace`) | `runr-supply-chain` |
 | `RUNR_SUPPLY_CHAIN_RESCAN_HOURS` (`rescanHours`) | `24` |
 | `RUNR_TRIVY_DB_SOURCE` / `RUNR_TRIVY_JAVA_DB_SOURCE` (`trivyDbSource` / `trivyJavaDbSource`) | `mirror.gcr.io/aquasec/trivy-db:2` / `…/trivy-java-db:1` |

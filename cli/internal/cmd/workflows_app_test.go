@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/runrsh/core/cli/pkg/runr"
+	"github.com/brf-tech/runr/cli/pkg/runr"
 )
 
 func TestWorkflowsAppShowAndEndpoint(t *testing.T) {

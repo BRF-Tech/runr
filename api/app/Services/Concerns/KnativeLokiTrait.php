@@ -55,7 +55,7 @@ trait KnativeLokiTrait
                 ],
                 'initContainers' => [[
                     'name' => 'fix-permissions',
-                    'image' => 'ghcr.io/runrsh/reqs/busybox:latest',
+                    'image' => 'ghcr.io/brf-tech/reqs/busybox:latest',
                     'command' => ['sh', '-c', 'chown -R 10001:10001 /data'],
                     'volumeMounts' => [['name' => 'storage', 'mountPath' => '/data']],
                     'securityContext' => ['runAsUser' => 0, 'runAsNonRoot' => false],

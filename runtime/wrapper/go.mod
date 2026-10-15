@@ -1,3 +1,3 @@
-module github.com/runrsh/core/runtime/wrapper
+module github.com/brf-tech/runr/runtime/wrapper
 
-go 1.23
+go 1.26.9

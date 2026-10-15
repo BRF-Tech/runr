@@ -276,7 +276,7 @@ trait KataKvmProbeTrait
                         'securityContext' => ['runAsNonRoot' => true, 'runAsUser' => 65534, 'runAsGroup' => 65534],
                         'containers' => [[
                             'name' => 'kvm-probe',
-                            'image' => 'ghcr.io/runrsh/reqs/alpine:3.21',
+                            'image' => 'ghcr.io/brf-tech/reqs/alpine:3.21',
                             'command' => ['sh', '-c', self::kvmProbeScript()],
                             'env' => [['name' => 'NODE_NAME', 'valueFrom' => ['fieldRef' => ['fieldPath' => 'spec.nodeName']]]],
                             'securityContext' => [

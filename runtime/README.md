@@ -105,7 +105,7 @@ bash runtime/ci.sh help
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `REGISTRY` | Image registry namespace | `ghcr.io/runrsh` |
+| `REGISTRY` | Image registry namespace | `ghcr.io/brf-tech` |
 | `PLATFORMS` | Build platforms | `linux/amd64,linux/arm64` |
 | `DOCKER_HUB_USER` | Docker Hub user (for `eol --prune`) | — |
 | `DOCKER_HUB_TOKEN` | Docker Hub token/password (for `eol --prune`) | — |

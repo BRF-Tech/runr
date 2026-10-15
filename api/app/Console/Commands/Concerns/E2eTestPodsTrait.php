@@ -92,7 +92,7 @@ trait E2eTestPodsTrait
                 'restartPolicy' => 'Never',
                 'containers' => [[
                     'name' => 'curl',
-                    'image' => 'ghcr.io/runrsh/reqs/curl:latest',
+                    'image' => 'ghcr.io/brf-tech/reqs/curl:latest',
                     'command' => [
                         'curl', '-sf', '-o', '/dev/null', '-w', '%{http_code}',
                         '--max-time', '10', '--retry', '5', '--retry-delay', '5',
@@ -246,7 +246,7 @@ trait E2eTestPodsTrait
                 'restartPolicy' => 'Never',
                 'containers' => [[
                     'name' => 'redis-xadd',
-                    'image' => 'ghcr.io/runrsh/reqs/redis:7-alpine',
+                    'image' => 'ghcr.io/brf-tech/reqs/redis:7-alpine',
                     'command' => $command,
                     'resources' => [
                         'requests' => ['cpu' => '50m', 'memory' => '32Mi'],

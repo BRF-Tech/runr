@@ -1,7 +1,7 @@
 # cmd_eol — EOL report of the runtime images + optional prune
 #
 # The images are the ones `ci.sh build --push` publishes: ${REGISTRY}/exec-<runtime> for the
-# runtimes in RUNTIME_DEFS (REGISTRY defaults to ghcr.io/runrsh). Their tags are read from that
+# runtimes in RUNTIME_DEFS (REGISTRY defaults to ghcr.io/brf-tech). Their tags are read from that
 # registry through the OCI distribution API (GET /v2/<repo>/tags/list with the registry's token
 # service), not from Docker Hub — Docker Hub only hosts the upstream base images.
 #
@@ -9,7 +9,7 @@
 # OCI API): GHCR_TOKEN needs delete:packages; GHCR_OWNER_KIND=users for a user-owned namespace.
 # GHCR_USERNAME + GHCR_TOKEN also authenticate the tag listing of private packages.
 
-# "ghcr.io/runrsh" → "ghcr.io" (Docker Hub's API host is registry-1.docker.io)
+# "ghcr.io/brf-tech" → "ghcr.io" (Docker Hub's API host is registry-1.docker.io)
 registry_api_host() {
   local host="${1%%/*}"
   case "$host" in
@@ -18,7 +18,7 @@ registry_api_host() {
   esac
 }
 
-# "ghcr.io/runrsh" → "runrsh" ("" for a registry without a namespace)
+# "ghcr.io/brf-tech" → "brf-tech" ("" for a registry without a namespace)
 registry_namespace() {
   local ref="$1"
   if [[ "$ref" == */* ]]; then echo "${ref#*/}"; else echo ""; fi

@@ -19,6 +19,8 @@ use Modules\Tenancy\Models\Tenant;
  * @property string|null $kubeconfig
  * @property int $total_cpu_m
  * @property int $total_memory_mb
+ * @property float $faas_cpu_overcommit
+ * @property float $faas_memory_overcommit
  * @property bool $is_active
  * @property bool $is_demo
  * @property bool $is_synced
@@ -211,6 +213,9 @@ class KnativeRegion extends Model
         'kubeconfig',
         'total_cpu_m',
         'total_memory_mb',
+        // FaaS overcommit factors of the region capacity (App\Services\Helpers\RegionCapacity)
+        'faas_cpu_overcommit',
+        'faas_memory_overcommit',
         'is_active',
         'region_status',
         'is_demo',
@@ -308,6 +313,8 @@ class KnativeRegion extends Model
         'is_demo' => 'boolean',
         'total_cpu_m' => 'integer',
         'total_memory_mb' => 'integer',
+        'faas_cpu_overcommit' => 'float',
+        'faas_memory_overcommit' => 'float',
         'selected_workers' => 'array',
         'knative_settings' => 'array',
         'knative_status_checked_at' => 'datetime',

@@ -14,8 +14,8 @@ import (
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
 
-	"github.com/runrsh/core/cli/internal/output"
-	"github.com/runrsh/core/cli/pkg/runr"
+	"github.com/brf-tech/runr/cli/internal/output"
+	"github.com/brf-tech/runr/cli/pkg/runr"
 )
 
 // Background processes, pause / resume, lifetime, the terminal, warm pools, quotas, usage and

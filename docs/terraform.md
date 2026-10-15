@@ -35,28 +35,28 @@ table below.
 terraform {
   required_providers {
     runr = {
-      source  = "runrsh/runr"
+      source  = "brf-tech/runr"
       version = "~> 0.5"
     }
   }
 }
 ```
 
-The provider's registry address is `runrsh/runr` (provider name `runr`). The Terraform
+The provider's registry address is `brf-tech/runr` (provider name `runr`). The Terraform
 Registry publishes a provider from a repository named `terraform-provider-<name>`, so releases
-reach the registry through the mirror repository `runrsh/terraform-provider-runr`, which
-carries `terraform-provider-runr/` of [runrsh/core](https://github.com/runrsh/core) and its
+reach the registry through the mirror repository `brf-tech/terraform-provider-runr`, which
+carries `terraform-provider-runr/` of [brf-tech/runr](https://github.com/brf-tech/runr) and its
 signed release archives.
 
 To use a build from this repository, build and install it into the local plugin directory
 and run `terraform init` as usual:
 
 ```sh
-make -C terraform-provider-runr install VERSION=0.5.0   # ~/.terraform.d/plugins/registry.terraform.io/runrsh/runr/0.5.0/<os>_<arch>/
+make -C terraform-provider-runr install VERSION=0.5.0   # ~/.terraform.d/plugins/registry.terraform.io/brf-tech/runr/0.5.0/<os>_<arch>/
 ```
 
 During provider development a `dev_overrides` block in `~/.terraformrc` points
-`runrsh/runr` at the directory with the binary (`make -C terraform-provider-runr build`).
+`brf-tech/runr` at the directory with the binary (`make -C terraform-provider-runr build`).
 
 ## Provider configuration
 
@@ -520,7 +520,7 @@ part of the service; keep them in the configuration.
 ## Development
 
 The provider lives in `terraform-provider-runr/` (Go module
-`github.com/runrsh/core/terraform-provider-runr`; it uses `../cli` through a `replace`
+`github.com/brf-tech/runr/terraform-provider-runr`; it uses `../cli` through a `replace`
 directive).
 
 ```sh

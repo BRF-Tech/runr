@@ -12,7 +12,7 @@ return new class extends Migration
             $table->ulid('id')->primary();
             $table->string('runtime');       // python, nodejs, go, php
             $table->string('version');       // 3.12, 22, 1.26, 8.4
-            $table->string('docker_image');  // runrsh/python:3.12
+            $table->string('docker_image');  // brf-tech/python:3.12
             $table->boolean('is_default')->default(false);
             $table->boolean('is_active')->default(true);
             $table->unsignedInteger('sort_order')->default(0);

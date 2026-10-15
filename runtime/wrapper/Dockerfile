@@ -1,6 +1,6 @@
 # RunR universal wrapper (runtime contract v1): one static binary, nothing else. Init containers
 # run `runr-wrapper install <dest>` to copy it into a pod or a build context — no shell needed.
-FROM --platform=$BUILDPLATFORM ghcr.io/runrsh/reqs/golang:1.26-alpine AS builder
+FROM --platform=$BUILDPLATFORM ghcr.io/brf-tech/reqs/golang:1.26-alpine AS builder
 ARG TARGETOS=linux
 ARG TARGETARCH
 WORKDIR /src

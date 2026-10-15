@@ -38,6 +38,8 @@ class StoreProjectRequest extends FormRequest
         $minScale = is_numeric($m = $this->input('config.min_scale')) ? (int) $m : 0;
         // Kata pod overhead when the region maps this service type to a kata-* RuntimeClass
         $serviceType = is_string($s = $this->input('service_type')) ? $s : null;
+        // scale to zero off keeps a pod running: the always-on budget, not the FaaS overcommit one
+        $scaleToZero = $this->input('config.scale_to_zero') ?? true;
 
         return [
             'name' => ['required', 'string', 'max:255', 'unique:projects,name', new ProjectSlug],
@@ -105,8 +107,8 @@ class StoreProjectRequest extends FormRequest
             // Secret variables, name => value; checked in withValidator
             'config.secret_env_vars' => 'nullable|array',
             'config.ports' => 'nullable|array',
-            'config.memory_mb' => ['nullable', 'integer', 'min:64', new WithinResourceLimit('memory', null, $knativeRegionId, $triggerType, $minScale, $serviceType)],
-            'config.cpu' => ['bail', 'nullable', 'string', new KubernetesCpu, new WithinResourceLimit('cpu', null, $knativeRegionId, $triggerType, $minScale, $serviceType)],
+            'config.memory_mb' => ['nullable', 'integer', 'min:64', new WithinResourceLimit('memory', null, $knativeRegionId, $triggerType, $minScale, $serviceType, $scaleToZero)],
+            'config.cpu' => ['bail', 'nullable', 'string', new KubernetesCpu, new WithinResourceLimit('cpu', null, $knativeRegionId, $triggerType, $minScale, $serviceType, $scaleToZero)],
             'config.timeout_seconds' => ['nullable', 'integer', 'min:1', new WithinRegionTimeout($knativeRegionId)],
             'config.image_pull_policy' => 'nullable|string|in:Always,IfNotPresent,Never',
             'config.image_pull_secret' => 'nullable|string',

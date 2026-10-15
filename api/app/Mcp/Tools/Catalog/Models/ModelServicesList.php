@@ -76,6 +76,7 @@ class ModelServicesList extends Tool
             'gpu' => $service['gpu'] ?? null,
             'status' => $service['status'] ?? null,
             'status_message' => $service['status_message'] ?? null,
+            'status_reason' => $service['status_reason'] ?? null,
             'url' => $service['url'] ?? null,
             'openai_base' => $service['openai_base'] ?? null,
             'playground' => $service['playground'] ?? null,

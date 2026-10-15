@@ -14,7 +14,7 @@ extensions: [rs]
 category: general
 versions:
   - version: "4.1"
-    image: ghcr.io/runrsh/exec-wasm-rust:4.1
+    image: ghcr.io/brf-tech/exec-wasm-rust:4.1
     default: true
 handler:
   file: lib

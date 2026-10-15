@@ -164,7 +164,7 @@ SH);
         chmod("{$files}/{$binary}", 0755);
         file_put_contents("{$files}/SHA256SUMS", hash('sha256', $content)."  {$binary}\n");
         file_put_contents("{$files}/VERSION", "{$version}\n");
-        $image = "ghcr.io/runrsh/containerd-shim-{$id}:{$version}";
+        $image = "ghcr.io/brf-tech/containerd-shim-{$id}:{$version}";
 
         return implode(' ', [$id, $binary, $handler, $type, 'image', $image, 'image', $image]);
     }
@@ -458,7 +458,7 @@ SH;
         $this->assertSame($binary, $this->read('usr/local/bin/containerd-shim-spin-v2'));
         $this->assertTrue(is_executable($this->path('usr/local/bin/containerd-shim-spin-v2')));
         $this->assertSame(hash('sha256', $binary), trim($this->read('var/lib/runr/wasm/containerd-shim-spin-v2.sha256')));
-        $this->assertStringContainsString('from image ghcr.io/runrsh/containerd-shim-spin:v0.26.0-runr.1 (v0.26.0-runr.1)', $out);
+        $this->assertStringContainsString('from image ghcr.io/brf-tech/containerd-shim-spin:v0.26.0-runr.1 (v0.26.0-runr.1)', $out);
         $this->assertFileDoesNotExist($this->path('state/downloads'), 'nothing downloaded');
         $this->assertStringContainsString("runtimes.spin-runr]\n  runtime_type = \"io.containerd.spin.v2\"", $this->read('etc/containerd/config.toml'));
         $this->assertSame(['containerd'], $this->restarts());
@@ -507,7 +507,7 @@ SH;
         [$code, $out] = $this->runOnNode(WasmNodeScripts::install());
 
         $this->assertNotSame(0, $code);
-        $this->assertStringContainsString("runr: ERROR: containerd-shim-spin-v2 of image ghcr.io/runrsh/containerd-shim-spin:v0.26.0-runr.1 does not match the image's SHA256SUMS", $out);
+        $this->assertStringContainsString("runr: ERROR: containerd-shim-spin-v2 of image ghcr.io/brf-tech/containerd-shim-spin:v0.26.0-runr.1 does not match the image's SHA256SUMS", $out);
         $this->assertFileDoesNotExist($this->path('usr/local/bin/containerd-shim-spin-v2'));
         $this->assertSame(self::ORIGINAL_V3, $this->read('etc/containerd/config.toml'));
         $this->assertSame([], $this->restarts());
@@ -517,7 +517,7 @@ SH;
         [$code, $out] = $this->runOnNode(WasmNodeScripts::install());
         $this->assertNotSame(0, $code);
         $this->assertStringContainsString('runr: ERROR: containerd-shim-spin-v2 or SHA256SUMS missing in', $out);
-        $this->assertStringContainsString('(init container shim-spin, image ghcr.io/runrsh/containerd-shim-spin:v0.26.0-runr.1)', $out);
+        $this->assertStringContainsString('(init container shim-spin, image ghcr.io/brf-tech/containerd-shim-spin:v0.26.0-runr.1)', $out);
     }
 
     public function test_a_tarball_that_does_not_match_its_sha256_is_not_installed(): void

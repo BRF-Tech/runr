@@ -29,7 +29,7 @@ _deploy_build_images() {
     --output "type=docker,dest=${_deploy_build_dir}/api.tar" \
     --build-arg "APP_VERSION=${_deploy_app_version}" \
     --provenance=false --sbom=false $cache_flag \
-    -t "ghcr.io/runrsh/runr/api:latest" \
+    -t "ghcr.io/brf-tech/runr/api:latest" \
     "${root_dir}/api" 2>&1
   echo -e "${GREEN}  API OK${NC}"
 
@@ -42,7 +42,7 @@ _deploy_build_images() {
     --build-arg "VITE_TENANCY_ENABLED=${_deploy_tenancy}" \
     --build-arg "VITE_AUTH_PROVIDER_ENABLED=${_deploy_auth_provider}" \
     --build-arg "VITE_TICKET_ENABLED=${_deploy_ticket}" \
-    -t "ghcr.io/runrsh/runr/ui:latest" \
+    -t "ghcr.io/brf-tech/runr/ui:latest" \
     "${root_dir}/vue" 2>&1
   echo -e "${GREEN}  UI OK${NC}"
 
@@ -50,9 +50,9 @@ _deploy_build_images() {
   docker buildx build --platform linux/amd64 \
     --output "type=docker,dest=${_deploy_build_dir}/gateway.tar" \
     --provenance=false --sbom=false $cache_flag \
-    -t "ghcr.io/runrsh/reqs/caddy:2-alpine" \
+    -t "ghcr.io/brf-tech/reqs/caddy:2-alpine" \
     - <<'CADDY_EOF' 2>&1
-FROM ghcr.io/runrsh/reqs/caddy:2-alpine
+FROM ghcr.io/brf-tech/reqs/caddy:2-alpine
 CADDY_EOF
   echo -e "${GREEN}  Gateway OK${NC}"
 
@@ -100,7 +100,7 @@ metadata:
 spec:
   containers:
   - name: server
-    image: ghcr.io/runrsh/reqs/busybox:latest
+    image: ghcr.io/brf-tech/reqs/busybox:latest
     command: ["sh", "-c", "httpd -f -p 80 -h /data"]
     ports:
     - containerPort: 80
@@ -166,7 +166,7 @@ spec:
       - operator: Exists
       initContainers:
       - name: download
-        image: ghcr.io/runrsh/reqs/redis:7-alpine
+        image: ghcr.io/brf-tech/reqs/redis:7-alpine
         command:
         - sh
         - -c
@@ -181,7 +181,7 @@ spec:
           mountPath: /host-tmp
       containers:
       - name: importer
-        image: ghcr.io/runrsh/reqs/redis:7-alpine
+        image: ghcr.io/brf-tech/reqs/redis:7-alpine
         securityContext:
           privileged: true
         command:
@@ -269,12 +269,12 @@ _images_cleanup() {
 
 _deploy_registry_push() {
   local target="$1"
-  local registry="${2:-ghcr.io/runrsh/runr}"
+  local registry="${2:-ghcr.io/brf-tech/runr}"
 
   if [ "$target" = "api" ] || [ "$target" = "all" ]; then
     local api_tag="${registry}/api:latest"
     docker load -i "${_DEPLOY_TAR_DIR}/api.tar"
-    docker tag "ghcr.io/runrsh/runr/api:latest" "$api_tag" 2>/dev/null || true
+    docker tag "ghcr.io/brf-tech/runr/api:latest" "$api_tag" 2>/dev/null || true
     echo -e "${BOLD}Pushing $api_tag ...${NC}"
     docker push "$api_tag"
     echo -e "${GREEN}  API push OK${NC}"
@@ -283,7 +283,7 @@ _deploy_registry_push() {
   if [ "$target" = "ui" ] || [ "$target" = "all" ]; then
     local ui_tag="${registry}/ui:latest"
     docker load -i "${_DEPLOY_TAR_DIR}/ui.tar"
-    docker tag "ghcr.io/runrsh/runr/ui:latest" "$ui_tag" 2>/dev/null || true
+    docker tag "ghcr.io/brf-tech/runr/ui:latest" "$ui_tag" 2>/dev/null || true
     echo -e "${BOLD}Pushing $ui_tag ...${NC}"
     docker push "$ui_tag"
     echo -e "${GREEN}  UI push OK${NC}"

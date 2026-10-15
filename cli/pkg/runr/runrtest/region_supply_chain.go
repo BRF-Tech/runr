@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/runrsh/core/cli/pkg/runr"
+	"github.com/brf-tech/runr/cli/pkg/runr"
 )
 
 // The supply chain of a region (RegionSupplyChainController) of the fake. Key generation, the

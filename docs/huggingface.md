@@ -23,6 +23,7 @@ GPU nodes, GPU scheduling, quotas and billing are in [ai.md](ai.md).
 - [Usage metering](#usage-metering)
 - [CLI](#cli)
 - [API](#api)
+- [Status reasons](#status-reasons)
 - [Troubleshooting](#troubleshooting)
 
 ## One-click flow
@@ -30,13 +31,16 @@ GPU nodes, GPU scheduling, quotas and billing are in [ai.md](ai.md).
 1. **Models → Browse Hub**: search the Hub by name, filter by task (pipeline tag) and library, sort
    by downloads, likes, trending or last update. RunR's API calls the Hub for the console
    (`GET /api/models/hub/search`), with the organization's token when one is set.
-2. **Model card**: the summary of the README, size of the weight files, parameter count, license,
-   gated flag, tags, and the engines that serve the model with RunR's pick and size.
+2. **Model card**: the summary of the README, size of the weights an engine loads, parameter
+   count, license, gated flag, tags, and the engines that serve the model with RunR's pick and
+   size.
 3. **Deploy**: choose the region, **online** or **offline**, CPU or GPU, the engine (**auto** =
    RunR's pick), resources and scaling; Deploy adds the model to the organization's library
    pinned to the commit its revision points to, creates the model service and deploys it.
 4. **Services**: the service goes `deploying` → `ready` (offline: `waiting_snapshot` first while
-   the region's copy is made). The detail shows the internal URL, status message, pods and logs.
+   the region's copy is made). The detail shows the internal URL, status message, pods and logs;
+   when Kubernetes cannot start the pods, the status carries the reason
+   ([status reasons](#status-reasons)).
 5. **Playground**: a form for the model's task — chat, embeddings, classification, NER, fill-mask,
    question answering, summarization, translation, speech recognition (audio file), image
    classification (image file), text-to-image — sent through the API to the service.
@@ -59,9 +63,9 @@ curl -sS -X POST "$API/model-services" -H "Authorization: Bearer $TOKEN" -H 'Con
 |---|---|---|---|---|
 | `vllm` | GPU | OpenAI-compatible (`/v1/chat/completions`, `/v1/completions`, `/v1/models`) | `docker.io/vllm/vllm-openai:v0.6.6` | text-generation |
 | `tgi` | GPU | OpenAI-compatible Messages API, `/generate`, `/info` | `ghcr.io/huggingface/text-generation-inference:3.0.1` | text-generation |
-| `tei` | CPU, GPU | `/embed`, OpenAI-compatible `/v1/embeddings`, `/rerank`, `/predict` | `…/text-embeddings-inference:cpu-1.5`; GPU `…:{arch}1.5` | feature-extraction, sentence-similarity |
-| `transformers` | CPU, GPU | RunR hf-serve: `/predict` + OpenAI-compatible routes for its tasks | `ghcr.io/runrsh/hf-serve:1.0.0` (CPU), `…:1.0.0-cuda` (GPU) | text-classification, token-classification, summarization, translation, text2text-generation, fill-mask, question-answering, zero-shot-classification, automatic-speech-recognition, image-classification, object-detection, feature-extraction, sentence-similarity, text-generation |
-| `diffusers` | GPU | RunR hf-serve: `/predict`, `/v1/images/generations` | `ghcr.io/runrsh/hf-serve:1.0.0-cuda` | text-to-image |
+| `tei` | CPU, GPU | `/embed`, OpenAI-compatible `/v1/embeddings`, `/rerank`, `/predict` | `…/text-embeddings-inference:cpu-1.9.4`; GPU `…:{arch}1.9.4` | feature-extraction, sentence-similarity |
+| `transformers` | CPU, GPU | RunR hf-serve: `/predict` + OpenAI-compatible routes for its tasks | `ghcr.io/brf-tech/hf-serve:1.1.0` (CPU), `…:1.1.0-cuda` (GPU) | text-classification, token-classification, summarization, translation, text2text-generation, fill-mask, question-answering, zero-shot-classification, automatic-speech-recognition, image-classification, object-detection, feature-extraction, sentence-similarity, text-generation |
+| `diffusers` | GPU | RunR hf-serve: `/predict`, `/v1/images/generations` | `ghcr.io/brf-tech/hf-serve:1.1.0-cuda` | text-to-image |
 | `custom` | CPU, GPU | whatever the image serves | your image | any |
 
 How **auto** picks (`EngineCatalog::recommended()`):
@@ -76,10 +80,26 @@ How **auto** picks (`EngineCatalog::recommended()`):
 
 The device defaults to GPU for text generation when the region has GPUs and for GPU-only
 engines, otherwise CPU. The TEI GPU image is chosen by the GPU's compute capability: 7.5
-`turing-`, 8.0 (no prefix), 8.6 `86-`, 8.9 `89-`, 9.0 `hopper-`. Default resources follow the
-model size ([sizing guidance](ai.md#sizing-guidance)); the deploy dialog shows them and the
-warnings RunR found (`large_for_cpu`, `gpu_required`, `unsupported_library`, `unknown_size`,
-`gated`, `gated_needs_token`).
+`turing-`, 8.0 (no prefix), 8.6 `86-`, 8.9 `89-`, 9.0 `hopper-`, Blackwell 10.0 `100-`, 12.0
+`120-`, 12.1 `121-`, and `cuda-` (the image that picks its kernels when it starts) for any other
+GPU. Default resources follow the model size ([sizing guidance](ai.md#sizing-guidance)); the
+deploy dialog shows them and the warnings RunR found (`large_for_cpu`, `gpu_required`,
+`unsupported_library`, `unknown_size`, `gated`, `gated_needs_token`).
+
+The model size is the size of the weights an engine loads, not of every file in the
+repository. A Hub repository often holds the same model in several formats (safetensors,
+PyTorch `.bin`, TensorFlow, Flax, ONNX, OpenVINO); RunR counts one of them:
+
+| Repository | Counted |
+|---|---|
+| transformers / sentence-transformers | the root's safetensors, else its PyTorch checkpoint (`.bin`, `.pt`), else TensorFlow / Flax; only the transformers file names (`model.safetensors`, `model-00001-of-00002.safetensors`) when they exist, so a second copy such as `consolidated.safetensors` is not counted; sentence-transformers module folders (`2_Dense/`) are |
+| diffusers | one checkpoint per component folder (`unet/`, `vae/`, `text_encoder/` …), the plain file before a variant such as `.fp16` |
+| ONNX only | `model.onnx` with its external data, else the largest `.onnx` |
+| GGUF only | the largest `.gguf` |
+
+Training state (`optimizer.pt`, `training_args.bin`) and OpenVINO files never count. A Hub
+model added to the library before this rule is sized again the next time a one-click deploy
+reuses it.
 
 What each engine gets (online → Hub id and pinned commit, offline → `/models/model`):
 
@@ -87,13 +107,19 @@ What each engine gets (online → Hub id and pinned commit, offline → `/models
 |---|---|
 | vllm | `--model <ref> --served-model-name <served name> --host 0.0.0.0 --port 8080 [--revision <sha>] [--tensor-parallel-size <GPUs>]` |
 | tgi | `MODEL_ID=<ref>`, `REVISION`, `PORT=8080`, `HOSTNAME=0.0.0.0`, `NUM_SHARD=<GPUs>` (more than one GPU) |
-| tei | `--model-id <ref> --hostname 0.0.0.0 --port 8080 [--revision <sha>]` |
+| tei | `--model-id <ref> --served-model-name <served name> --hostname 0.0.0.0 --port 8080 [--revision <sha>]` |
 | transformers, diffusers | `RUNR_MODEL_ID` / `RUNR_MODEL_REVISION` or `RUNR_MODEL_PATH`, `RUNR_TASK`, `RUNR_ENGINE`, `RUNR_SERVED_NAME`, `RUNR_DEVICE` (`cpu` / `cuda`), `PORT=8080` |
 | custom | `RUNR_MODEL_ID` / `RUNR_MODEL_REVISION` or `RUNR_MODEL_PATH` |
 
 Every engine container also gets the Hub client environment of its mode, a readiness probe on
-the engine's health path (`/health`, hf-serve `/healthz`), port 8080 and the requested CPU /
-memory (request = limit).
+the engine's health path (`/health`, hf-serve `/healthz`), port 8080, the requested CPU /
+memory (request = limit) and:
+
+- `OMP_NUM_THREADS` and `MKL_NUM_THREADS` = the CPU limit rounded up (`1500m` → 2). PyTorch,
+  MKL and OpenMP otherwise start one thread per CPU of the node; under a smaller limit those
+  threads spend most periods throttled. A value in the service's `env_vars` wins.
+- `terminationMessagePolicy: FallbackToLogsOnError`: an engine that exits without a
+  termination message leaves its last log lines, which the service status shows.
 
 ## Advanced settings
 
@@ -201,6 +227,22 @@ Job waiting for such a claim shows its snapshot as `pending` with the same messa
 offline services waiting for the snapshot carry it too; once the claim is bound the snapshot is
 `running` again.
 
+### Image pre-pull
+
+The hf-serve image is about half a gigabyte; pulling it was most of a new service's first answer.
+RunR pulls model images onto the nodes before a service needs them, with the same mechanism as
+the region's image pre-pull at registry setup (a DaemonSet that runs `crictl pull` on each node,
+removed once every node has the images, or after 30 minutes):
+
+| When | Images | Nodes |
+|---|---|---|
+| model storage is set up (`PUT …/model-storage`, or the region's first model volume) | the CPU hf-serve image (CPU services, mirror Jobs, upload receivers) | the nodes projects run on (the dedicated workers when the region has them) |
+| a model service is created or deployed | its engine image and, online, the cache init image | CPU: as above; GPU: GPU nodes (of the requested GPU type) |
+
+The DaemonSet runs in the region's registry namespace (internal registry), else in the AI
+namespace (`ai.gpu.namespace`), and pulls the references the pods use, so a region registry
+that mirrors the images serves the pre-pull too. Custom engine images are not pre-pulled.
+
 ## Air-gapped regions
 
 A region without internet access gets its models in one of three ways; all of them end as an
@@ -270,7 +312,7 @@ metadata: {name: models-copy, namespace: runr-projects}
 spec:
   containers:
     - name: copy
-      image: ghcr.io/runrsh/reqs/busybox:latest
+      image: ghcr.io/brf-tech/reqs/busybox:latest
       command: ["sleep", "3600"]
       volumeMounts: [{name: models, mountPath: /imports, subPath: imports/default}]
   volumes:
@@ -440,9 +482,22 @@ Logs: the last lines of the engine container of up to five pods
 
 ## hf-serve reference
 
-`runtime/hf-serve` is RunR's server for the `transformers` and `diffusers` engines. It loads one
-pipeline at start (in the background — `/healthz` answers 503 while loading, 500 when loading
-failed with the reason, 200 when ready) and serves one request at a time per pod.
+`runtime/hf-serve` is RunR's server for the `transformers` and `diffusers` engines (PyTorch
+2.14, transformers 5.20; the GPU image adds diffusers on CUDA 12.6). It loads one pipeline at
+start in the background — `/healthz` answers 503 while loading and 200 when ready — and serves
+one request at a time per pod. When the model fails to load, hf-serve writes the reason
+(`the model failed to load: <error>`) to the termination log and exits with status 1: the pod
+restarts with back-off, so a passing Hub error heals on the next start, and the service shows
+`CrashLoopBackOff` with that reason ([status reasons](#status-reasons)).
+
+Threads: hf-serve runs as many PyTorch threads as its CPU limit allows — `OMP_NUM_THREADS` when
+set (RunR sets it from the service's CPU), else the container's cgroup CPU quota rounded up,
+at most the CPUs it sees — and exports `OMP_NUM_THREADS` / `MKL_NUM_THREADS` before PyTorch
+starts. Without a limit PyTorch keeps its default.
+
+Summarization, translation, text2text-generation and question answering, which transformers 5
+no longer ships as pipelines, run in hf-serve itself with the same inputs and outputs (and the
+model's `task_specific_params`, such as T5's prefixes).
 
 | Variable | Meaning |
 |---|---|
@@ -455,6 +510,8 @@ failed with the reason, 200 when ready) and serves one request at a time per pod
 | `RUNR_PIPELINE_KWARGS` | JSON object passed to `pipeline()` / `from_pretrained()` (e.g. `{"torch_dtype": "float16"}`) |
 | `PORT` | 8080 |
 | `HF_TOKEN` | gated / private repositories |
+| `OMP_NUM_THREADS` | PyTorch / OpenMP threads (default: the CPU limit) |
+| `RUNR_TERMINATION_LOG` | where a load failure is written (`/dev/termination-log`) |
 
 | Route | Body → answer |
 |---|---|
@@ -568,7 +625,7 @@ A model service:
   "engine": "tei", "device": "cpu", "mode": "offline", "api": "tei", "gpu": null,
   "cpu": "1", "memory_mb": 1024, "min_scale": 0, "max_scale": 1, "scale_to_zero": true, "timeout_seconds": 300,
   "image": null, "args": null, "env_vars": null, "port": null, "health_path": null,
-  "served_name": "all-minilm-l6-v2", "status": "ready", "status_message": null,
+  "served_name": "all-minilm-l6-v2", "status": "ready", "status_message": null, "status_reason": null,
   "url": "http://m-all-minilm-l6-v2.runr-projects.svc.cluster.local",
   "openai_base": "http://m-all-minilm-l6-v2.runr-projects.svc.cluster.local/v1",
   "playground": {"kind": "embeddings", "path": "/v1/embeddings"},
@@ -606,13 +663,30 @@ An upload:
 Upload statuses: `preparing` (receiver starting), `ready`, `completing`, `completed`, `failed`,
 `aborted`.
 
+## Status reasons
+
+While a service deploys, RunR reads its pods on every readiness check (every 15 s). When
+Kubernetes cannot start them, `status_reason` names why and `status_message` gives the details;
+the console shows the reason next to the status. Kubernetes keeps retrying, so the service stays
+`deploying` until it becomes ready, Knative gives up on the revision or the start-up deadline
+passes (`failed`, the reason kept). A reason that clears takes its message with it.
+
+| `status_reason` | `status_message` | What to do |
+|---|---|---|
+| `CrashLoopBackOff` | restarts, last exit code and reason, and the engine's last output (its termination message or log tail) | read the output: a model the engine cannot load, a wrong engine for the model, a Hub error |
+| `OOMKilled` | as above, with the memory limit | raise `memory_mb` |
+| `ImagePullBackOff`, `ErrImagePull`, `InvalidImageName` | the image and the registry's answer | check the image reference (`ai.images.*`, the service's `image`) and that the region reaches its registry |
+| `CreateContainerConfigError`, `CreateContainerError`, `RunContainerError` | Kubernetes' message | a missing Secret or ConfigMap, a broken image |
+| `Unschedulable` | the scheduler's message (for example `Insufficient memory`) | free capacity, lower `memory_mb` / `cpu`, check GPU and dedicated-worker placement |
+
 ## Troubleshooting
 
 | Status / message | Meaning | What to do |
 |---|---|---|
 | service `waiting_snapshot` | the offline copy of the model is being made in the region | wait; the library shows the mirror's status and logs |
 | snapshot `failed` with a gated / not found hint | the Hub refused the mirror | accept the model's terms, set the token, mirror again |
-| service `deploying` for long | image pull or model download / load | check the logs; large images and weights take a while on a node the first time; the start-up deadline is 1800 s |
+| service `deploying` for long without a reason | image pull or model download / load | check the logs; large images and weights take a while on a node the first time (model storage set up ahead [pre-pulls](#image-pre-pull) hf-serve); the start-up deadline is 1800 s |
+| service `deploying` with a reason | Kubernetes cannot start the pods | see [status reasons](#status-reasons) |
 | service `failed`: "did not become ready within the start-up deadline" | the engine never answered its health check | logs: out of memory (raise `memory_mb`), GPU memory (raise `gpu.memory_min`, use a smaller model or more GPUs), wrong engine for the model |
 | 422 "Region … has no GPU nodes" / "… without GPU support" | GPU requested where no node offers one | install GPU support in the region's GPU tab or deploy on CPU |
 | 422 GPU quota exceeded | the organization's GPU quota on the region is used up | stop a GPU service, lower min scale, or ask the platform administrator |

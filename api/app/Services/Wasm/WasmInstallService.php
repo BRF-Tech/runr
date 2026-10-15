@@ -8,6 +8,7 @@ use App\Models\KnativeRegion;
 use App\Services\Concerns\KnativeClusterTrait;
 use App\Services\Helpers\ContainerRuntimeHelper;
 use App\Services\KubernetesClient;
+use App\Support\Images\RegistryMove;
 use Illuminate\Support\Facades\Log;
 
 /**
@@ -334,11 +335,12 @@ class WasmInstallService
     /**
      * Whether the wasm-installer DaemonSet on the cluster installs what this release installs for
      * $shims: "current", "outdated" (it installs other shim binaries — an install of an earlier
-     * release) or "missing".
+     * release) or "missing". namespace: outdated only because a shim image is referenced under
+     * RunR's image namespace up to 0.5.0 (RegistryMove) — the same image, the same binaries.
      *
      * @param  list<WasmShim>  $shims
-     * @return array{state: string, installs: string} installs: the shims the live installer
-     *                                                installs (id + source), for the report
+     * @return array{state: string, installs: string, namespace?: bool} installs: the shims the live
+     *                                                                  installer installs (id + source), for the report
      */
     public function installerDrift(KubernetesClient $k8s, array $shims): array
     {
@@ -360,7 +362,13 @@ class WasmInstallService
             return ($f[0] ?? '?').' ('.(($f[4] ?? '') === 'image' ? ($f[5] ?? '?') : basename(dirname((string) ($f[4] ?? '?')))).')';
         }, array_filter(explode("\n", $live), fn ($l) => trim($l) !== '')));
 
-        return ['state' => $live === WasmManifests::shimLines($shims) ? 'current' : 'outdated', 'installs' => $installs];
+        $wanted = WasmManifests::shimLines($shims);
+
+        return [
+            'state' => $live === $wanted ? 'current' : 'outdated',
+            'installs' => $installs,
+            'namespace' => $live !== $wanted && RegistryMove::text($live) === $wanted,
+        ];
     }
 
     /**

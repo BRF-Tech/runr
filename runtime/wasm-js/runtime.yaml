@@ -14,7 +14,7 @@ extensions: [js, ts, mjs]
 category: general
 versions:
   - version: "4.1"
-    image: ghcr.io/runrsh/exec-wasm-js:4.1
+    image: ghcr.io/brf-tech/exec-wasm-js:4.1
     default: true
 handler:
   file: index

@@ -9,7 +9,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-testing/plancheck"
 	"github.com/hashicorp/terraform-plugin-testing/terraform"
 
-	"github.com/runrsh/core/cli/pkg/runr/runrtest"
+	"github.com/brf-tech/runr/cli/pkg/runr/runrtest"
 )
 
 // rtTFManifest is an exec runtime on the bash image; id and the extra version vary per step.

@@ -21,7 +21,7 @@ class BuildManifests
     public const KANIKO_IMAGE = 'ghcr.io/osscontainertools/kaniko:v1.28.5';
 
     /** copy-src init container of the build Job. */
-    public const INIT_IMAGE = 'ghcr.io/runrsh/reqs/alpine:3.20';
+    public const INIT_IMAGE = 'ghcr.io/brf-tech/reqs/alpine:3.20';
 
     /**
      * Kaniko image for a region's build Job (registryImageRef() keeps a Docker Hub short name

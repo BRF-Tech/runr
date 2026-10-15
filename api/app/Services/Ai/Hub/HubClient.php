@@ -3,6 +3,7 @@
 namespace App\Services\Ai\Hub;
 
 use App\Services\Ai\Engines\EngineCatalog;
+use App\Services\Ai\Engines\ModelWeights;
 use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Cache;
@@ -10,9 +11,10 @@ use Illuminate\Support\Facades\Http;
 
 /**
  * Server-side proxy to the Hugging Face Hub API (config ai.huggingface.endpoint): model search,
- * model info (pinned commit, size from the file list, license, gated flag) and a summary of the
- * model card. The organization's token (HubToken) is sent when one is set, so private and
- * gated models the token may read are found too. Answers are cached briefly per token.
+ * model info (pinned commit, size of the weights an engine loads (ModelWeights), license, gated
+ * flag) and a summary of the model card. The organization's token (HubToken) is sent when one
+ * is set, so private and gated models the token may read are found too. Answers are cached
+ * briefly per token.
  */
 class HubClient
 {
@@ -22,9 +24,6 @@ class HubClient
         'trending' => 'trendingScore',
         'updated' => 'lastModified',
     ];
-
-    /** Weight files counted for the model size (the repository also holds docs, configs, other formats). */
-    private const WEIGHT_PATTERNS = ['/\.safetensors$/', '/\.bin$/', '/\.gguf$/', '/\.onnx$/', '/\.pt$/', '/\.pth$/', '/\.h5$/', '/\.msgpack$/', '/\.ckpt$/'];
 
     public function __construct(private HubToken $token) {}
 
@@ -76,15 +75,11 @@ class HubClient
         $data = is_array($response['json']) ? $response['json'] : [];
 
         $files = [];
-        $size = 0;
         foreach ($data['siblings'] ?? [] as $file) {
-            $name = (string) ($file['rfilename'] ?? '');
-            $bytes = isset($file['size']) ? (int) $file['size'] : null;
-            $files[] = ['name' => $name, 'size' => $bytes];
-            if ($bytes !== null && self::isWeightFile($name)) {
-                $size += $bytes;
-            }
+            $files[] = ['name' => (string) ($file['rfilename'] ?? ''), 'size' => isset($file['size']) ? (int) $file['size'] : null];
         }
+        // Sized from the weights an engine loads, not every format the repository carries
+        $weights = ModelWeights::loaded($files, $data['library_name'] ?? null);
 
         $tags = array_values(array_filter((array) ($data['tags'] ?? []), 'is_string'));
         $license = $data['cardData']['license'] ?? self::tagValue($tags, 'license');
@@ -101,7 +96,8 @@ class HubClient
             'downloads' => (int) ($data['downloads'] ?? 0),
             'likes' => (int) ($data['likes'] ?? 0),
             'tags' => array_slice($tags, 0, 30),
-            'size_bytes' => $size > 0 ? $size : null,
+            'size_bytes' => $weights['bytes'] ?: null,
+            'weights' => ['format' => $weights['format'], 'files' => $weights['files']],
             'parameters' => isset($data['safetensors']['total']) ? (int) $data['safetensors']['total'] : null,
             'files' => $files,
             'card_summary' => $this->cardSummary($id, (string) ($data['sha'] ?? $revision)),
@@ -164,17 +160,6 @@ class HubClient
         }
 
         return mb_strlen($text) > 1200 ? rtrim(mb_substr($text, 0, 1200)).'…' : $text;
-    }
-
-    public static function isWeightFile(string $name): bool
-    {
-        foreach (self::WEIGHT_PATTERNS as $pattern) {
-            if (preg_match($pattern, $name)) {
-                return true;
-            }
-        }
-
-        return false;
     }
 
     /** Hub repository ids: owner/name (letters, digits, - _ .). */

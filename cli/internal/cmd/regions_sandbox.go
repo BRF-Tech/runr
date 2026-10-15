@@ -9,8 +9,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/runrsh/core/cli/internal/output"
-	"github.com/runrsh/core/cli/pkg/runr"
+	"github.com/brf-tech/runr/cli/internal/output"
+	"github.com/brf-tech/runr/cli/pkg/runr"
 )
 
 // `runr regions sandbox`: the sandbox runtimes of a region (Kata Containers and gVisor on its

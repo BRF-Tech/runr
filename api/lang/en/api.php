@@ -26,6 +26,8 @@ return [
     // ── Region (Knative) ──
     'region' => [
         'demo_not_modifiable' => 'Demo region cannot be modified.',
+        'capacity_updated' => 'Capacity settings updated.',
+        'capacity_platform_managed' => 'The capacity of a platform region is managed by the platform administrators; your organization quota applies.',
         'platform_region_read_only' => 'Platform regions are managed by the platform administrators.',
         'region_admin_required' => 'Only the tenant owner or a tenant admin can change this region.',
         'platform_admin_required' => 'Only platform administrators can change regions.',
@@ -101,9 +103,11 @@ return [
     ],
 
     // ── Region capacity (WithinResourceLimit) ──
+    // Region capacity admission (App\Services\Helpers\RegionCapacity)
     'resource_limit' => [
-        'cpu_exceeded' => 'CPU limit exceeded. Available: :availablem (total: :limitm).',
-        'memory_exceeded' => 'Memory limit exceeded. Available: :available MB (total: :limit MB).',
+        'memory' => 'Memory',
+        'always_on_exceeded' => ':resource limit exceeded on the always-on budget (no overcommit): this needs :needed, :available of the region capacity :total are free. Always-on workloads, Kata pod overhead, queue consumers, sandboxes and model services reserve real capacity.',
+        'faas_exceeded' => ':resource limit exceeded on the FaaS overcommit budget: this needs :needed, :available of :total are free (region capacity :capacity × :factor, minus :reserved always-on).',
     ],
 
     // ── Project custom domains ──

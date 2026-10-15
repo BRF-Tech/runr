@@ -39,7 +39,7 @@ if (Schema::connection($users->getConnectionName())->hasColumn($users->getTable(
 
 ExecutorImage::query()->firstOrCreate(
     ['runtime' => 'python', 'version' => '3.12'],
-    ['docker_image' => 'ghcr.io/runrsh/exec-python:3.12', 'is_default' => true, 'is_active' => true, 'sort_order' => 1],
+    ['docker_image' => 'ghcr.io/brf-tech/exec-python:3.12', 'is_default' => true, 'is_active' => true, 'sort_order' => 1],
 );
 
 echo json_encode(['region_id' => $region->id]), "\n";

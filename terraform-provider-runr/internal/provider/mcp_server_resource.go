@@ -15,7 +15,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 
-	"github.com/runrsh/core/cli/pkg/runr"
+	"github.com/brf-tech/runr/cli/pkg/runr"
 )
 
 func init() { registerResource(NewMCPServerResource) }
@@ -51,7 +51,7 @@ func (r *mcpServerResource) Schema(_ context.Context, _ resource.SchemaRequest, 
 	resp.Schema = schema.Schema{
 		MarkdownDescription: "Serves a project as a hosted MCP server at `<console>/mcp/servers/<handle>` behind RunR's " +
 			"gateway, which authenticates callers, forwards their identity with a signature and records every call " +
-			"([hosted MCP servers](https://github.com/runrsh/core/blob/main/docs/mcp.md#hosting-mcp-servers)). The " +
+			"([hosted MCP servers](https://github.com/brf-tech/runr/blob/main/docs/mcp.md#hosting-mcp-servers)). The " +
 			"project needs the http trigger.\n\n" +
 			"The gateway key reaches the workload with a deploy: put `id` into `runr_deployment.triggers` so the " +
 			"project is deployed once the server exists. Needs `mcp.servers.manage` on the project.",

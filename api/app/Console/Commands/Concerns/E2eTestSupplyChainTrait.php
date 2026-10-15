@@ -266,7 +266,7 @@ trait E2eTestSupplyChainTrait
                     'containers' => [[
                         'name' => 'copy',
                         'image' => (string) config('supply_chain.tools_image'),
-                        'command' => ['oras', 'cp', '--to-plain-http', 'ghcr.io/runrsh/reqs/busybox:latest', $target],
+                        'command' => ['oras', 'cp', '--to-plain-http', 'ghcr.io/brf-tech/reqs/busybox:latest', $target],
                     ]],
                 ]],
             ],
@@ -300,12 +300,12 @@ trait E2eTestSupplyChainTrait
     /**
      * The Spin app of sc-wasm-gated: WebAssembly support (spin) installed and the Rust example built
      * as a Spin app, before sc-admission installs the admission policy — as sc-build's Kaniko build
-     * is. The build Job runs the runtime's toolchain image (ghcr.io/runrsh/exec-wasm-rust:<version>)
+     * is. The build Job runs the runtime's toolchain image (ghcr.io/brf-tech/exec-wasm-rust:<version>)
      * in the project namespace, and policy-controller admits a pod there only with every image
      * resolved to a digest on its registry: the harness builds the toolchain image from the checkout
      * and loads it into Kind, so before a release it is on no registry and policy-controller would
      * refuse the Job ("must be an image digest"). A published toolchain image resolves and passes
-     * runr-system-images (ghcr.io/runrsh/**, AdmissionManifestsTest).
+     * runr-system-images (ghcr.io/brf-tech/**, AdmissionManifestsTest).
      *
      * @return array{installed: bool, test: ?array, error: ?string}
      */

@@ -8,9 +8,9 @@ use App\Services\Contracts\KnativeConstants;
 
 /**
  * The CPU / memory a project reserves — the one formula used by tenant quota admission
- * (TenantQuotaService, CheckTenantQuota), region capacity validation (WithinResourceLimit) and
- * usage reporting (ResourceComputationTrait, ResourceUsageController). Quota model option C
- * (Limits Decisions §4): the configured size × max(1, min_scale) is admitted;
+ * (TenantQuotaService, CheckTenantQuota), region capacity admission (RegionCapacity,
+ * WithinResourceLimit) and usage reporting (ResourceComputationTrait, ResourceUsageController).
+ * Quota model option C (Limits Decisions §4): the configured size × max(1, min_scale) is admitted;
  * max_scale is not — runtime use above that is bounded by the namespace ResourceQuota of the
  * organization ceiling (RegionNamespaceQuotaService).
  *
@@ -24,10 +24,19 @@ use App\Services\Contracts\KnativeConstants;
  * A config without a size uses the service type's default (InstanceSizes), the same value the
  * manifests fall back to.
  *
- * Pods of a service type the region maps to a Kata RuntimeClass (sandbox_*_runtime = kata-*)
- * also carry that RuntimeClass's overhead.podFixed (KataRuntime::OVERHEAD) — Kubernetes adds it
- * to the pod's requests / limits, the scheduler and the namespace ResourceQuota count it, so
- * RunR reserves it per pod too (Knative Service and CronJob pods; the queue consumer runs runc).
+ * Pods that run under a Kata RuntimeClass also carry that RuntimeClass's overhead.podFixed
+ * (KataRuntime::OVERHEAD) — Kubernetes adds it to the pod's requests / limits, the scheduler and
+ * the namespace ResourceQuota count it, so RunR reserves it per pod too (Knative Service and
+ * CronJob pods; the queue consumer runs runc). The RuntimeClass is the one the project was last
+ * deployed with (projects.deployed_runtime_class, written by KnativeDeployService); a project
+ * that has not been deployed since that column exists counts with the region's mapping for its
+ * service type (sandbox_*_runtime), the class its next deploy gets.
+ *
+ * Region admission splits the same reservation by budget (demandForSize(), RegionCapacity):
+ * what keeps running — always-on pods (scale_to_zero off or min_scale >= 1), the Kata overhead of
+ * a scale-to-zero pod, the queue consumer — is "hard" and must fit the region's real capacity;
+ * one pod of a scale-to-zero workload is "burst" and counts against the region's FaaS
+ * overcommit budget. hard + burst = forSize().
  *
  * Everything here is requests. The queue-proxy's CPU limit above its request
  * (KnativeConstants::QUEUE_PROXY_CPU_LIMIT_M, on every Knative Service pod since 0.4.2) is not
@@ -35,6 +44,9 @@ use App\Services\Contracts\KnativeConstants;
  */
 final class ResourceReservation
 {
+    /** deployed_runtime_class of a workload deployed without a RuntimeClass (the node's default runtime). */
+    public const RUNC = 'runc';
+
     /** @return array{cpu_m: int, memory_mb: int} */
     public static function zero(): array
     {
@@ -66,6 +78,19 @@ final class ResourceReservation
     public static function runsKnativeService(?string $triggerType): bool
     {
         return ($triggerType ?: 'http') !== 'schedule';
+    }
+
+    /**
+     * Whether a workload keeps pods running: a Knative Service with scale to zero off or a
+     * min_scale of at least 1. Schedule (CronJob) pods run only while a run lasts.
+     */
+    public static function isAlwaysOn(?string $triggerType, mixed $minScale, mixed $scaleToZero = true): bool
+    {
+        if (! self::runsKnativeService($triggerType)) {
+            return false;
+        }
+
+        return (int) $minScale >= 1 || ! self::truthy($scaleToZero);
     }
 
     /**
@@ -107,6 +132,37 @@ final class ResourceReservation
     }
 
     /**
+     * Per-pod overhead of a workload: the RuntimeClass it was deployed with when known
+     * ($deployedClass, "runc" for none), else the region's mapping for its service type.
+     *
+     * @return array{cpu_m: int, memory_mb: int}
+     */
+    public static function overheadFor(?KnativeRegion $region, ?string $serviceType, ?string $deployedClass = null): array
+    {
+        if ($deployedClass !== null && $deployedClass !== '') {
+            return KataRuntime::podOverhead($deployedClass);
+        }
+
+        return self::podOverhead($region, $serviceType);
+    }
+
+    /** RuntimeClass of a pod spec as RunR records it: its runtimeClassName, "runc" without one. */
+    public static function runtimeClassOfPodSpec(array $podSpec): string
+    {
+        $class = $podSpec['runtimeClassName'] ?? null;
+
+        return is_string($class) && $class !== '' ? $class : self::RUNC;
+    }
+
+    /** The RuntimeClass a project was last deployed with ("runc" for none), null when unknown. */
+    public static function deployedClassOf(Project $project): ?string
+    {
+        $class = $project->getAttribute('deployed_runtime_class');
+
+        return is_string($class) && $class !== '' ? $class : null;
+    }
+
+    /**
      * Admitted reservation of one project with the given instance size.
      *
      * @param  array{cpu_m?: int, memory_mb?: int}  $podOverhead  RuntimeClass overhead per pod (podOverhead())
@@ -130,16 +186,44 @@ final class ResourceReservation
     }
 
     /**
-     * Reservation of a project config — a config model (XaasConfig / FaasConfig /
-     * ContainerConfig) or an array / object with cpu, memory_mb, trigger_type, min_scale.
-     * $region: the region the project runs on (its sandbox mapping decides the pod overhead).
+     * Capacity demand of one workload, split by budget (RegionCapacity):
+     *  - hard: always-on pods ((size + queue-proxy + RuntimeClass overhead) × max(1, min_scale)),
+     *    the RuntimeClass overhead of one pod of a scale-to-zero workload (Kata), the queue consumer
+     *  - burst: one pod of a scale-to-zero workload (size + queue-proxy; CronJob: size)
+     * hard + burst = forSize() of the same size, trigger, min_scale and overhead.
      *
-     * @return array{cpu_m: int, memory_mb: int}
+     * @param  array{cpu_m?: int, memory_mb?: int}  $podOverhead
+     * @return array{hard: array{cpu_m: int, memory_mb: int}, burst: array{cpu_m: int, memory_mb: int}}
      */
-    public static function forConfig(object|array|null $config, ?string $serviceType, ?KnativeRegion $region = null): array
+    public static function demandForSize(int $cpuM, int $memoryMb, ?string $triggerType = 'http', mixed $minScale = 0, mixed $scaleToZero = true, array $podOverhead = []): array
+    {
+        $trigger = $triggerType ?: 'http';
+
+        if (self::isAlwaysOn($trigger, $minScale, $scaleToZero)) {
+            return ['hard' => self::forSize($cpuM, $memoryMb, $trigger, $minScale, $podOverhead), 'burst' => self::zero()];
+        }
+
+        $hard = [
+            'cpu_m' => (int) ($podOverhead['cpu_m'] ?? 0),
+            'memory_mb' => (int) ($podOverhead['memory_mb'] ?? 0),
+        ];
+        if ($trigger === 'queue') {
+            $hard['cpu_m'] += KnativeConstants::QUEUE_CONSUMER_CPU_M;
+            $hard['memory_mb'] += KnativeConstants::QUEUE_CONSUMER_MEMORY_MB;
+        }
+
+        return ['hard' => $hard, 'burst' => self::perPod($cpuM, $memoryMb, $trigger)];
+    }
+
+    /**
+     * Demand of a project config (see forConfig() for $config), split by budget.
+     *
+     * @return array{hard: array{cpu_m: int, memory_mb: int}, burst: array{cpu_m: int, memory_mb: int}}
+     */
+    public static function demandForConfig(object|array|null $config, ?string $serviceType, ?KnativeRegion $region = null, ?string $deployedClass = null): array
     {
         if ($config === null) {
-            return self::zero();
+            return self::noDemand();
         }
 
         $read = fn (string $key) => is_array($config) ? ($config[$key] ?? null) : ($config->{$key} ?? null);
@@ -148,13 +232,96 @@ final class ResourceReservation
         $cpu = $read('cpu');
         $memory = $read('memory_mb');
 
-        return self::forSize(
+        return self::demandForSize(
             self::parseCpu(($cpu === null || $cpu === '') ? $defaults['cpu'] : $cpu),
             ($memory === null || $memory === '') ? $defaults['memory_mb'] : (int) $memory,
             $read('trigger_type') ?: 'http',
             $read('min_scale') ?? 0,
-            self::podOverhead($region, $serviceType),
+            $read('scale_to_zero') ?? true,
+            self::overheadFor($region, $serviceType, $deployedClass),
         );
+    }
+
+    /**
+     * Demand of a project: its config, with the RuntimeClass it was deployed with.
+     *
+     * @return array{hard: array{cpu_m: int, memory_mb: int}, burst: array{cpu_m: int, memory_mb: int}}
+     */
+    public static function demandForProject(Project $project, ?KnativeRegion $region = null): array
+    {
+        return self::demandForConfig(self::configOf($project), $project->service_type, $region ?? $project->knativeRegion, self::deployedClassOf($project));
+    }
+
+    /**
+     * @param  iterable<Project>  $projects
+     * @return array{hard: array{cpu_m: int, memory_mb: int}, burst: array{cpu_m: int, memory_mb: int}}
+     */
+    public static function sumDemand(iterable $projects): array
+    {
+        $total = self::noDemand();
+        $regions = [];
+
+        foreach ($projects as $project) {
+            // one region lookup per region, not per project
+            $regionId = (string) $project->knative_region_id;
+            if (! array_key_exists($regionId, $regions)) {
+                $regions[$regionId] = $project->knative_region_id ? $project->knativeRegion : null;
+            }
+
+            $total = self::addDemand($total, self::demandForProject($project, $regions[$regionId]));
+        }
+
+        return $total;
+    }
+
+    /** @return array{hard: array{cpu_m: int, memory_mb: int}, burst: array{cpu_m: int, memory_mb: int}} */
+    public static function noDemand(): array
+    {
+        return ['hard' => self::zero(), 'burst' => self::zero()];
+    }
+
+    /**
+     * @param  array{hard: array{cpu_m: int, memory_mb: int}, burst: array{cpu_m: int, memory_mb: int}}  $a
+     * @param  array{hard: array{cpu_m: int, memory_mb: int}, burst: array{cpu_m: int, memory_mb: int}}  $b
+     * @return array{hard: array{cpu_m: int, memory_mb: int}, burst: array{cpu_m: int, memory_mb: int}}
+     */
+    public static function addDemand(array $a, array $b): array
+    {
+        return ['hard' => self::add($a['hard'], $b['hard']), 'burst' => self::add($a['burst'], $b['burst'])];
+    }
+
+    /**
+     * hard + burst of a demand: the whole admitted reservation.
+     *
+     * @param  array{hard: array{cpu_m: int, memory_mb: int}, burst: array{cpu_m: int, memory_mb: int}}  $demand
+     * @return array{cpu_m: int, memory_mb: int}
+     */
+    public static function total(array $demand): array
+    {
+        return self::add($demand['hard'], $demand['burst']);
+    }
+
+    /**
+     * @param  array{cpu_m: int, memory_mb: int}  $a
+     * @param  array{cpu_m: int, memory_mb: int}  $b
+     * @return array{cpu_m: int, memory_mb: int}
+     */
+    public static function add(array $a, array $b): array
+    {
+        return ['cpu_m' => $a['cpu_m'] + $b['cpu_m'], 'memory_mb' => $a['memory_mb'] + $b['memory_mb']];
+    }
+
+    /**
+     * Reservation of a project config — a config model (XaasConfig / FaasConfig /
+     * ContainerConfig) or an array / object with cpu, memory_mb, trigger_type, min_scale,
+     * scale_to_zero. $region: the region the project runs on (its sandbox mapping decides the pod
+     * overhead unless $deployedClass, the RuntimeClass the project was deployed with, is known).
+     *
+     * @return array{cpu_m: int, memory_mb: int}
+     */
+    public static function forConfig(object|array|null $config, ?string $serviceType, ?KnativeRegion $region = null, ?string $deployedClass = null): array
+    {
+        return self::total(self::demandForConfig($config, $serviceType, $region, $deployedClass));
     }
 
     /**
@@ -174,7 +341,7 @@ final class ResourceReservation
     /** @return array{cpu_m: int, memory_mb: int} */
     public static function forProject(Project $project, ?KnativeRegion $region = null): array
     {
-        return self::forConfig(self::configOf($project), $project->service_type, $region ?? $project->knativeRegion);
+        return self::total(self::demandForProject($project, $region));
     }
 
     /**
@@ -183,21 +350,16 @@ final class ResourceReservation
      */
     public static function sum(iterable $projects): array
     {
-        $total = self::zero();
-        $regions = [];
+        return self::total(self::sumDemand($projects));
+    }
 
-        foreach ($projects as $project) {
-            // one region lookup per region, not per project
-            $regionId = (string) $project->knative_region_id;
-            if (! array_key_exists($regionId, $regions)) {
-                $regions[$regionId] = $project->knative_region_id ? $project->knativeRegion : null;
-            }
-
-            $reservation = self::forProject($project, $regions[$regionId]);
-            $total['cpu_m'] += $reservation['cpu_m'];
-            $total['memory_mb'] += $reservation['memory_mb'];
+    /** A boolean setting that may arrive as "0" / "false" / 0 (requests, JSON, DB); null is the column default (true). */
+    private static function truthy(mixed $value): bool
+    {
+        if ($value === null) {
+            return true;
         }
 
-        return $total;
+        return filter_var($value, FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE) ?? (bool) $value;
     }
 }

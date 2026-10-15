@@ -17,14 +17,14 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/runrsh/core/cli/pkg/runr"
+	"github.com/brf-tech/runr/cli/pkg/runr"
 )
 
 // EnvRegistry overrides the registry the executor images are pulled from (mirrors).
 const EnvRegistry = "RUNR_RUNTIME_REGISTRY"
 
-// DefaultRegistry hosts the executor images (runrsh/exec-<runtime>:<version>).
-const DefaultRegistry = "ghcr.io/runrsh"
+// DefaultRegistry hosts the executor images (brf-tech/exec-<runtime>:<version>).
+const DefaultRegistry = "ghcr.io/brf-tech"
 
 // Spec is everything needed to run code of one runtime version.
 type Spec struct {

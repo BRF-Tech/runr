@@ -389,6 +389,7 @@ class KubernetesClient
             'RuntimeClass' => 'runtimeclasses',
             'ClusterImagePolicy' => 'clusterimagepolicies', // sigstore policy-controller (supply chain)
             'NetworkPolicy' => 'networkpolicies',
+            'Prometheus' => 'prometheuses',                 // prometheus-operator (region metrics)
             default => strtolower($kind).'s',
         };
     }

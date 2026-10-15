@@ -1,5 +1,5 @@
 # cmd_build_wasm — build images of the WebAssembly runtimes (runtime/wasm-<lang>):
-# ghcr.io/runrsh/exec-wasm-<lang>:<version>, the version from the runtime's runtime.yaml.
+# ghcr.io/brf-tech/exec-wasm-<lang>:<version>, the version from the runtime's runtime.yaml.
 #
 #   ci.sh wasm                 all five (rust, go, js, python, exec), local single-platform build
 #   ci.sh wasm rust js         only these
@@ -55,7 +55,7 @@ cmd_build_wasm() {
 }
 
 # cmd_build_wasm_shim — the Spin shim RunR installs on region nodes (runtime/wasm-shim-spin):
-# ghcr.io/runrsh/containerd-shim-spin:<version>, the version from the Dockerfile's ARG VERSION
+# ghcr.io/brf-tech/containerd-shim-spin:<version>, the version from the Dockerfile's ARG VERSION
 # (App\Services\Wasm\WasmShim pins the same tag). The binaries are cross-compiled on the build
 # platform (amd64), so --push builds both platforms without emulating a compiler.
 #

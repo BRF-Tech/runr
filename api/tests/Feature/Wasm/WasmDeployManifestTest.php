@@ -27,7 +27,7 @@ class WasmDeployManifestTest extends TestCase
         parent::setUp();
         $this->seedBuiltinVersions();
         foreach (['wasm-rust', 'wasm-js'] as $runtime) {
-            ExecutorImage::create(['runtime' => $runtime, 'version' => '4.1', 'docker_image' => "ghcr.io/runrsh/exec-{$runtime}:4.1", 'is_default' => true, 'is_active' => true]);
+            ExecutorImage::create(['runtime' => $runtime, 'version' => '4.1', 'docker_image' => "ghcr.io/brf-tech/exec-{$runtime}:4.1", 'is_default' => true, 'is_active' => true]);
         }
     }
 
@@ -132,7 +132,7 @@ class WasmDeployManifestTest extends TestCase
         $this->assertCount(1, $spec['containers']);
         $tick = $spec['containers'][0];
         $this->assertSame('runr-tick', $tick['name']);
-        $this->assertSame('ghcr.io/runrsh/runr-wrapper:1.1.0', $tick['image']);
+        $this->assertSame('ghcr.io/brf-tech/runr-wrapper:1.1.0', $tick['image']);
         $this->assertSame(['/runr-wrapper', 'tick'], $tick['command']);
         $this->assertSame(['8080', '30'], [$this->env($tick)['PORT'], $this->env($tick)['RUNR_TIMEOUT']]);
     }

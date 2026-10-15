@@ -17,7 +17,7 @@ extensions: [c, h, cc, cpp, zig, go]
 category: general
 versions:
   - version: "4.1"
-    image: ghcr.io/runrsh/exec-wasm-exec:4.1
+    image: ghcr.io/brf-tech/exec-wasm-exec:4.1
     default: true
 handler:
   file: main

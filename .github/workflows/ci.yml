@@ -19,7 +19,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      # Every ghcr.io/runrsh/reqs/* image the repository references is mirrored by runtime/ci.sh
+      # Every ghcr.io/brf-tech/reqs/* image the repository references is mirrored by runtime/ci.sh
       - run: bash ci/check-reqs-mirror.sh
 
   api:
@@ -69,6 +69,23 @@ jobs:
         env:
           NODE_OPTIONS: --max-old-space-size=4096
 
+  sdk-node:
+    name: Workflow SDK (Node) typecheck + tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: sdk/node
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      # No lockfile (a library, sdk/.gitignore): npm 10 fails to resolve Vitest 4 (devEngines)
+      - run: npm install -g npm@11 --no-audit --no-fund
+      - run: npm install --no-audit --no-fund
+      - run: npm run typecheck
+      - run: npm test
+
   ui-e2e:
     name: UI e2e (mocked API)
     runs-on: ubuntu-latest
@@ -101,9 +118,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      # go1.26.9: the stdlib security fixes (GO-2026-6603 … 6617); the modules tested here declare it
       - uses: actions/setup-go@v5
         with:
-          go-version: '1.23'
+          go-version: '1.26.9'
           cache-dependency-path: '**/go.sum'
       # The Terraform provider's tests run real plans against the fake API (write-only attributes
       # need Terraform 1.11+); without a terraform binary every test would download one.

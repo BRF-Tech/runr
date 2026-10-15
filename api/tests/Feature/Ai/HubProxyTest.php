@@ -45,11 +45,19 @@ class HubProxyTest extends TestCase
                 'likes' => 10,
                 'tags' => ['sentence-transformers', 'pytorch', 'text-embeddings-inference', 'license:apache-2.0'],
                 'cardData' => ['license' => 'apache-2.0'],
+                // the same model in seven formats, as the real repository has it
                 'siblings' => [
-                    ['rfilename' => 'model.safetensors', 'size' => 90_000_000],
-                    ['rfilename' => 'pytorch_model.bin', 'size' => 90_000_000],
+                    ['rfilename' => '1_Pooling/config.json', 'size' => 190],
                     ['rfilename' => 'README.md', 'size' => 10_000],
                     ['rfilename' => 'config.json', 'size' => 600],
+                    ['rfilename' => 'model.safetensors', 'size' => 90_000_000],
+                    ['rfilename' => 'onnx/model.onnx', 'size' => 90_400_000],
+                    ['rfilename' => 'onnx/model_qint8_avx512.onnx', 'size' => 23_000_000],
+                    ['rfilename' => 'openvino/openvino_model.bin', 'size' => 90_300_000],
+                    ['rfilename' => 'pytorch_model.bin', 'size' => 90_900_000],
+                    ['rfilename' => 'rust_model.ot', 'size' => 90_900_000],
+                    ['rfilename' => 'tf_model.h5', 'size' => 91_000_000],
+                    ['rfilename' => 'tokenizer.json', 'size' => 466_000],
                 ],
                 'safetensors' => ['total' => 22_700_000],
             ]),
@@ -101,7 +109,9 @@ class HubProxyTest extends TestCase
         $this->assertSame('sentence-similarity', $info['task']);
         $this->assertSame('apache-2.0', $info['license']);
         $this->assertFalse($info['gated']);
-        $this->assertSame(180_000_000, $info['size_bytes'], 'weight files only (safetensors + bin), not README / config');
+        $this->assertSame(90_000_000, $info['size_bytes'], 'the safetensors the engines load, not the other six formats, README or config');
+        $this->assertSame(['format' => 'safetensors', 'files' => ['model.safetensors']], $info['weights']);
+        $this->assertSame(1024, $info['suggested']['memory_mb'], 'TEI: 2 × 86 MiB + 512 MiB, at least 1 GiB');
         $this->assertSame(22_700_000, $info['parameters']);
         $this->assertStringStartsWith('# all-MiniLM-L6-v2', $info['card_summary'], 'YAML header stripped');
         $this->assertStringNotContainsString('badge', $info['card_summary'], 'images stripped');
@@ -196,8 +206,6 @@ class HubProxyTest extends TestCase
         $this->assertNull(HubClient::summarize("---\na: b\n---\n"));
         $this->assertSame(1201, mb_strlen(HubClient::summarize(str_repeat('x', 5000))), '1200 characters + ellipsis');
         $this->assertNull(HubClient::nextCursor(null));
-        $this->assertTrue(HubClient::isWeightFile('model-00001-of-00002.safetensors'));
-        $this->assertFalse(HubClient::isWeightFile('tokenizer.json'));
 
         $this->expectException(HubException::class);
         HubClient::assertId('not-a-repo-id');

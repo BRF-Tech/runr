@@ -1,9 +1,9 @@
-# Build image of the wasm-js runtime (ghcr.io/runrsh/exec-wasm-js:<version>): Node.js, the Spin CLI
+# Build image of the wasm-js runtime (ghcr.io/brf-tech/exec-wasm-js:<version>): Node.js, the Spin CLI
 # of the Spin runtime the shim embeds, and the node_modules of the default package.json (Spin JS
 # SDK build tools, esbuild) installed once under /opt/runr/js. It runs as the build Job of a
 # function version (WasmBuildService); it is never deployed as a function.
 #
-#   docker build -t ghcr.io/runrsh/exec-wasm-js:4.1 runtime/wasm-js     (or: runtime/ci.sh wasm)
+#   docker build -t ghcr.io/brf-tech/exec-wasm-js:4.1 runtime/wasm-js     (or: runtime/ci.sh wasm)
 ARG NODE_VERSION=22
 FROM node:${NODE_VERSION}-bookworm-slim
 

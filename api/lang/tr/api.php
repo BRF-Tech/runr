@@ -26,6 +26,8 @@ return [
     // ── Region (Knative) ──
     'region' => [
         'demo_not_modifiable' => 'Demo bölge değiştirilemez.',
+        'capacity_updated' => 'Kapasite ayarları güncellendi.',
+        'capacity_platform_managed' => 'Platform bölgesinin kapasitesini platform yöneticileri yönetir; organizasyonunuzun kotası geçerlidir.',
         'platform_region_read_only' => 'Platform bölgeleri platform yöneticileri tarafından yönetilir.',
         'region_admin_required' => 'Bu bölgeyi yalnız kiracı sahibi ya da kiracı yöneticisi değiştirebilir.',
         'platform_admin_required' => 'Bölgeleri yalnız platform yöneticileri değiştirebilir.',
@@ -101,9 +103,11 @@ return [
     ],
 
     // ── Bölge kapasitesi (WithinResourceLimit) ──
+    // Bölge kapasitesi kabulü (App\Services\Helpers\RegionCapacity)
     'resource_limit' => [
-        'cpu_exceeded' => 'CPU limiti aşılıyor. Kullanılabilir: :availablem (toplam: :limitm).',
-        'memory_exceeded' => 'Memory limiti aşılıyor. Kullanılabilir: :available MB (toplam: :limit MB).',
+        'memory' => 'Bellek',
+        'always_on_exceeded' => ':resource limiti sürekli açık bütçede aşılıyor (overcommit yok): :needed gerekiyor, bölge kapasitesi :total içinden :available boş. Sürekli açık iş yükleri, Kata pod ek yükü, kuyruk tüketicileri, sandbox\'lar ve model servisleri gerçek kapasite ayırır.',
+        'faas_exceeded' => ':resource limiti FaaS overcommit bütçesinde aşılıyor: :needed gerekiyor, :total içinden :available boş (bölge kapasitesi :capacity × :factor, eksi :reserved sürekli açık).',
     ],
 
     // ── Proje özel alan adları ──

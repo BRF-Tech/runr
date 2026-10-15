@@ -10,7 +10,7 @@
 #
 # Prerequisites: what `ci.sh test` needs (docker, kind, kubectl, the compose stack) plus internet
 # access from the Kind nodes: the CPU cases download hf-internal-testing/tiny-random-bert (a few
-# MB) from huggingface.co, the TEI case pulls ghcr.io/huggingface/text-embeddings-inference:cpu-1.5.
+# MB) from huggingface.co, the TEI case pulls ghcr.io/huggingface/text-embeddings-inference:cpu-1.9.4.
 #
 # Shared hosts: KIND_LOCK defaults to /tmp/runr-kind.lock here — one Kind cluster at a time
 # (cmd_test waits for the lock, see test-runtimes.sh).
@@ -32,9 +32,9 @@
 # support (device plugin) through the RunR API and deploys the gpu-caas image with
 # config.gpu {count: 1}; the check runs a tiny network, so any CUDA-capable GPU will do.
 
-AI_HF_SERVE_VERSION="${HF_SERVE_VERSION:-1.0.0}"
+AI_HF_SERVE_VERSION="${HF_SERVE_VERSION:-1.1.0}"
 AI_HF_SERVE_TAG="${REGISTRY}/hf-serve:${AI_HF_SERVE_VERSION}"
-AI_HF_SERVE_DEFAULT_TAG="ghcr.io/runrsh/hf-serve:${AI_HF_SERVE_VERSION}"
+AI_HF_SERVE_DEFAULT_TAG="ghcr.io/brf-tech/hf-serve:${AI_HF_SERVE_VERSION}"
 AI_GPU_IMAGE_TAG="${REGISTRY}/ai-gpu-caas:e2e"
 
 _ai_gpu=""

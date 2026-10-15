@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/runrsh/core/cli/pkg/runr"
+	"github.com/brf-tech/runr/cli/pkg/runr"
 )
 
 // Bindings of the fake (api BindingController, ProjectBindingController, BindingManager):

@@ -4,7 +4,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/runrsh/core/cli/pkg/runr"
+	"github.com/brf-tech/runr/cli/pkg/runr"
 )
 
 // Create, update and delete of git providers (GitProviderController). The fake keeps the

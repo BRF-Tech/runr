@@ -4,7 +4,7 @@
 # the frankenphp binary Octane needs.
 
 # ─── Stage 1: Composer dependencies ──────────────────────────────────────────
-FROM ghcr.io/runrsh/reqs/composer:2.7 AS vendor
+FROM ghcr.io/brf-tech/reqs/composer:2.7 AS vendor
 
 WORKDIR /app
 COPY composer.json composer.lock ./
@@ -21,9 +21,9 @@ RUN composer install \
     --ignore-platform-req=ext-pcntl
 
 # ─── Stage 2: Runtime image ───────────────────────────────────────────────────
-FROM ghcr.io/runrsh/reqs/frankenphp:1-php8.3-alpine AS base
+FROM ghcr.io/brf-tech/reqs/frankenphp:1-php8.3-alpine AS base
 
-LABEL org.opencontainers.image.source="https://github.com/runrsh/core"
+LABEL org.opencontainers.image.source="https://github.com/brf-tech/runr"
 LABEL org.opencontainers.image.description="RunR API (development)"
 
 # PHP extensions

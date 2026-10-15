@@ -77,6 +77,8 @@ class RegionsList extends Tool
             'gpu' => $region['gpu'] ?? null,
             'cpu_m' => isset($region['total_cpu_m']) ? ['used' => $region['used_cpu_m'] ?? null, 'total' => $region['total_cpu_m']] : null,
             'memory_mb' => isset($region['total_memory_mb']) ? ['used' => $region['used_memory_mb'] ?? null, 'total' => $region['total_memory_mb']] : null,
+            // always-on and FaaS overcommit budgets: what a new always-on / scale-to-zero project still gets
+            'capacity' => $region['capacity'] ?? null,
             'projects' => $region['project_count'] ?? null,
             'function_domain' => $region['knative_settings']['knative_domain'] ?? null,
         ], fn ($v) => $v !== null);

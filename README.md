@@ -167,7 +167,7 @@ events back. See [docs/architecture.md](docs/architecture.md) for the full pictu
 Requirements: Docker with the Compose plugin.
 
 ```bash
-git clone https://github.com/runrsh/core.git
+git clone https://github.com/brf-tech/runr.git
 cd core
 bash scripts/devready.sh docker
 ```
@@ -218,7 +218,7 @@ runr dev          # http://localhost:8080, restarts on every change
 runr deploy       # builds, deploys and prints the URL
 ```
 
-Install the CLI from the [releases](https://github.com/runrsh/core/releases) or with
+Install the CLI from the [releases](https://github.com/brf-tech/runr/releases) or with
 `go install`; see [docs/cli.md](docs/cli.md#install).
 
 ## Repository layout

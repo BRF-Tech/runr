@@ -77,7 +77,8 @@ class RegionCapacityConsumersTest extends TestCase
     public function test_admission_measures_against_what_the_platform_leaves(): void
     {
         $region = $this->region();
-        $rule = fn () => ['cpu' => [new WithinResourceLimit('cpu', null, $region->id)]];
+        // an always-on project (min_scale 1): the always-on budget is the capacity itself
+        $rule = fn () => ['cpu' => [new WithinResourceLimit('cpu', null, $region->id, 'http', 1)]];
 
         // 4400m + 100m queue-proxy = 4500m ≤ 4535m
         $this->assertTrue(Validator::make(['cpu' => '4400m'], $rule())->passes());
@@ -103,11 +104,12 @@ class RegionCapacityConsumersTest extends TestCase
             'memory_mb' => 128,
             'timeout_seconds' => 30,
             'trigger_type' => 'http',
+            'min_scale' => 1,
         ]);
 
         app(ResourceThresholdService::class)->checkRegion($region);
 
-        // 3000m reserved: 66 % of 4535m (41 % of the 7250m allocatable would stay silent)
+        // 3000m always-on: 66 % of 4535m (41 % of the 7250m allocatable would stay silent)
         $notification = Notification::where('type', 'resource_threshold')->first();
         $this->assertNotNull($notification);
         $this->assertSame('warning', $notification->level);

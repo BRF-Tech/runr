@@ -12,9 +12,9 @@ import (
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
 	"github.com/hashicorp/terraform-plugin-testing/terraform"
 
-	"github.com/runrsh/core/cli/pkg/config"
-	"github.com/runrsh/core/cli/pkg/runr"
-	"github.com/runrsh/core/cli/pkg/runr/runrtest"
+	"github.com/brf-tech/runr/cli/pkg/config"
+	"github.com/brf-tech/runr/cli/pkg/runr"
+	"github.com/brf-tech/runr/cli/pkg/runr/runrtest"
 )
 
 // The tests are acceptance tests in the terraform-plugin-testing sense (real terraform plan /

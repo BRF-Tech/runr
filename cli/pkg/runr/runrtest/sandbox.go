@@ -13,7 +13,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/runrsh/core/cli/pkg/runr"
+	"github.com/brf-tech/runr/cli/pkg/runr"
 )
 
 // Sandbox API of the fake (docs/sandbox-api.md): sandboxes live in memory, commands are
@@ -347,7 +347,7 @@ func (s *Server) newSandbox(body map[string]any) *sbxSandbox {
 		}
 	}
 	if image == "" && runtime != "" {
-		image = "ghcr.io/runrsh/exec-" + runtime + ":" + version
+		image = "ghcr.io/brf-tech/exec-" + runtime + ":" + version
 	}
 	class := str("sandbox_class")
 	switch class {

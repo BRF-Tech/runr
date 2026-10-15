@@ -275,3 +275,60 @@ def test_image_generations(client_for):
 
     assert client.post("/v1/images/generations", json={"prompt": ""}).status_code == 400
     assert client.post("/v1/images/generations", json={"prompt": "x", "size": "big"}).status_code == 400
+
+
+# ── Load failures of `python -m runr_hf_serve serve` ────────────────────────
+
+
+def test_a_failed_load_exits_with_the_reason_in_the_termination_log(monkeypatch, tmp_path):
+    from runr_hf_serve import server
+
+    log_file = tmp_path / "termination-log"
+    monkeypatch.setenv("RUNR_TERMINATION_LOG", str(log_file))
+    exits = []
+    monkeypatch.setattr(server, "_exit", exits.append)
+
+    def broken(_settings):
+        raise OSError("relative URL\nwithout a base")
+
+    app = create_app(Settings(model_id="org/m", task="fill-mask"), loader=broken, background=False, exit_on_error=True)
+    with TestClient(app):
+        pass
+
+    assert exits == [1]
+    assert log_file.read_text(encoding="utf-8") == "the model failed to load: OSError: relative URL without a base"
+
+
+def test_the_termination_reason_is_one_line_of_at_most_2_kb():
+    from runr_hf_serve import server
+
+    reason = server.termination_reason("ValueError: " + "é" * 3000)
+    assert "\n" not in reason
+    assert len(reason.encode("utf-8")) <= 2048
+    assert reason.startswith("the model failed to load: ValueError: é")
+
+
+def test_an_unwritable_termination_log_is_ignored(monkeypatch, tmp_path):
+    from runr_hf_serve import server
+
+    exits = []
+    monkeypatch.setattr(server, "_exit", exits.append)
+    assert server.write_termination_log("x", str(tmp_path / "missing" / "log")) is False
+
+    monkeypatch.setenv("RUNR_TERMINATION_LOG", str(tmp_path / "missing" / "log"))
+    server.exit_on_load_error("OSError: boom")
+    assert exits == [1]
+
+
+def test_without_exit_on_error_the_process_keeps_answering(monkeypatch):
+    from runr_hf_serve import server
+
+    exits = []
+    monkeypatch.setattr(server, "_exit", exits.append)
+
+    def broken(_settings):
+        raise OSError("nope")
+
+    with TestClient(create_app(Settings(model_id="org/m", task="fill-mask"), loader=broken, background=False)) as client:
+        assert client.get("/healthz").status_code == 500
+    assert exits == []

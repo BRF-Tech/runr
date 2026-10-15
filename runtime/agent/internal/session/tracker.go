@@ -12,7 +12,7 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 
-	"github.com/runrsh/core/runtime/agent/internal/podname"
+	"github.com/brf-tech/runr/runtime/agent/internal/podname"
 )
 
 const (

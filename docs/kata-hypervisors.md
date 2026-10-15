@@ -32,6 +32,9 @@ RunR installs each hypervisor as a kata-deploy "custom runtime" (handler `kata-<
 The RuntimeClasses carry `overhead.podFixed` and `scheduling.nodeSelector`
 `katacontainers.io/kata-runtime=true` + `runr.dev/kvm=true` (fc also `runr.dev/devmapper-snapshotter=true`).
 The overhead values are derived in `api/app/Services/Helpers/KataRuntime.php`.
+Region capacity admission reserves the overhead of the RuntimeClass a project or model service was
+deployed with on the region's always-on budget: per pod for always-on workloads, one pod's worth
+for scale-to-zero ones ([Region capacity and admission](architecture.md#region-capacity-and-admission)).
 
 ### Guest size
 
@@ -109,7 +112,9 @@ then renamed) and is deleted; the ConfigMap is updated as well (kata-deploy copi
 run). containerd / k3s / RKE2 are not restarted. The shim reads its configuration at every sandbox start, so
 new Kata pods start with the new drop-in while running pods keep their VMs. RunR 0.4.1 installs are
 recognised (0.4.1's hash over pod spec + ConfigMap matches this release's pod spec and the ConfigMap in the
-cluster), so a 0.4.1 → 0.4.2 upgrade restarts nothing on Kata nodes.
+cluster), so a 0.4.1 → 0.4.2 upgrade restarts nothing on Kata nodes. An installer whose pod spec differs only in
+RunR's image namespace (`ghcr.io/runrsh` up to 0.5.0, `ghcr.io/brf-tech` since) counts as the same installer:
+it keeps running with its pod template, and a drop-in update re-applies that template as it is.
 
 ### Firecracker and devmapper
 

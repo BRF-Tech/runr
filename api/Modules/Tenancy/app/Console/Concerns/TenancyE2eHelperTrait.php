@@ -108,7 +108,7 @@ trait TenancyE2eHelperTrait
         ExecutorImage::firstOrCreate(
             ['runtime' => 'python', 'version' => '3.12'],
             [
-                'docker_image' => 'ghcr.io/runrsh/python:3.12',
+                'docker_image' => 'ghcr.io/brf-tech/python:3.12',
                 'is_default' => true,
                 'is_active' => true,
                 'sort_order' => 1,

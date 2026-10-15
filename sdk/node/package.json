@@ -12,6 +12,17 @@
   "engines": {
     "node": ">=18"
   },
+  "devEngines": {
+    "runtime": {
+      "name": "node",
+      "version": ">=20"
+    },
+    "packageManager": {
+      "name": "npm",
+      "version": ">=11",
+      "onFail": "error"
+    }
+  },
   "keywords": [
     "runr",
     "workflows",
@@ -27,6 +38,6 @@
   "devDependencies": {
     "@types/node": "^20.14.0",
     "typescript": "^5.5.0",
-    "vitest": "^2.1.0"
+    "vitest": "^4.1.11"
   }
 }

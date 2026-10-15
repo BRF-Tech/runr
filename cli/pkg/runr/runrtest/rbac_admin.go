@@ -7,7 +7,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/runrsh/core/cli/pkg/runr"
+	"github.com/brf-tech/runr/cli/pkg/runr"
 )
 
 // Role-based access control administration: the permission catalog, built-in and custom

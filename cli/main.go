@@ -4,7 +4,7 @@ package main
 import (
 	"os"
 
-	"github.com/runrsh/core/cli/internal/cmd"
+	"github.com/brf-tech/runr/cli/internal/cmd"
 )
 
 func main() {

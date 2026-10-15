@@ -16,14 +16,14 @@ func TestWrapperVersionMatchesThePlatformDefault(t *testing.T) {
 		t.Skipf("api/config/executor.php not available: %v", err)
 	}
 
-	m := regexp.MustCompile(`'wrapper_image'\s*=>\s*env\('RUNR_WRAPPER_IMAGE',\s*'[^']*/runr-wrapper:([^']+)'\)`).FindSubmatch(config)
+	m := regexp.MustCompile(`'wrapper_image'\s*=>\s*(?:RegistryMove::ref\()?env\('RUNR_WRAPPER_IMAGE',\s*'[^']*/runr-wrapper:([^']+)'\)`).FindSubmatch(config)
 	if m == nil {
 		t.Fatal("no runr-wrapper default in api/config/executor.php")
 	}
 	if got := string(m[1]); got != WrapperVersion {
 		t.Errorf("WrapperVersion = %q, the API installs runr-wrapper:%s", WrapperVersion, got)
 	}
-	if want := "ghcr.io/runrsh/runr-wrapper:" + WrapperVersion; WrapperImage() != want && os.Getenv(EnvWrapperImage) == "" && os.Getenv("RUNR_RUNTIME_REGISTRY") == "" {
+	if want := "ghcr.io/brf-tech/runr-wrapper:" + WrapperVersion; WrapperImage() != want && os.Getenv(EnvWrapperImage) == "" && os.Getenv("RUNR_RUNTIME_REGISTRY") == "" {
 		t.Errorf("WrapperImage() = %q, want %q", WrapperImage(), want)
 	}
 }

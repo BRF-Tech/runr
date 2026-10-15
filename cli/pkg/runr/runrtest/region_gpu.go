@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/runrsh/core/cli/pkg/runr"
+	"github.com/brf-tech/runr/cli/pkg/runr"
 )
 
 // GPU support and model storage of a region (GpuController) of the fake. Installs, removals and

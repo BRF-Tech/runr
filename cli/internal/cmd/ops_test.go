@@ -11,8 +11,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/runrsh/core/cli/internal/dev"
-	"github.com/runrsh/core/cli/pkg/runr"
+	"github.com/brf-tech/runr/cli/internal/dev"
+	"github.com/brf-tech/runr/cli/pkg/runr"
 )
 
 func TestLogs(t *testing.T) {
@@ -251,7 +251,7 @@ func TestRegionsAndRuntimes(t *testing.T) {
 	}
 
 	r = h.mustRun("runtimes", "ls")
-	contains(t, r.out, "ghcr.io/runrsh/exec-python:3.13")
+	contains(t, r.out, "ghcr.io/brf-tech/exec-python:3.13")
 	contains(t, r.out, "2028-10-31")
 }
 
@@ -333,7 +333,7 @@ func TestDevPrint(t *testing.T) {
 		Install []string `json:"docker_install"`
 	}
 	decodeJSON(t, r.out, &plan)
-	if plan.Image != "ghcr.io/runrsh/exec-python:3.13" || plan.Port != 9090 {
+	if plan.Image != "ghcr.io/brf-tech/exec-python:3.13" || plan.Port != 9090 {
 		t.Fatalf("plan = %+v", plan)
 	}
 	joined := strings.Join(plan.Run, " ")
@@ -371,7 +371,7 @@ func TestDevRunsAndStopsContainer(t *testing.T) {
 		t.Fatalf("%d containers started", h.docker.startCount())
 	}
 	// Offline (not logged in): the built-in default version is used.
-	contains(t, strings.Join(h.docker.starts[0], " "), "ghcr.io/runrsh/exec-python:3.13")
+	contains(t, strings.Join(h.docker.starts[0], " "), "ghcr.io/brf-tech/exec-python:3.13")
 }
 
 func TestDevInvoke(t *testing.T) {

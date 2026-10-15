@@ -115,10 +115,19 @@ Secret env vars: APP_KEY (+ APP_PREVIOUS_KEYS during a key rotation), REVERB_APP
 {{- end -}}
 
 {{/*
-initContainer image (fix-permissions / fix-pgdata) — the ghcr.io/runrsh/reqs mirror instead of docker.io
+Image reference in RunR's image namespace: a reference under ghcr.io/runrsh/ (RunR up to 0.5.0 —
+values an install set, or the previous chart's defaults that `helm upgrade --reuse-values` reuses)
+is the same image under ghcr.io/brf-tech/. Exact prefix only: other registries stay as given.
+*/}}
+{{- define "runr.image" -}}
+{{- regexReplaceAll "^ghcr\\.io/runrsh/" (toString .) "ghcr.io/brf-tech/" -}}
+{{- end -}}
+
+{{/*
+initContainer image (fix-permissions / fix-pgdata) — the ghcr.io/brf-tech/reqs mirror instead of docker.io
 */}}
 {{- define "runr.initImage" -}}
-{{- printf "%s:%s" .Values.initImage.repository .Values.initImage.tag | quote -}}
+{{- include "runr.image" (printf "%v:%v" .Values.initImage.repository .Values.initImage.tag) | quote -}}
 {{- end -}}
 
 {{/*
@@ -203,7 +212,7 @@ UI image: modules are selected at build time, so a multi-tenant install uses a s
 {{- define "runr.uiImage" -}}
 {{- $tag := .Values.ui.image.tag -}}
 {{- if eq .Values.edition "multi-tenant" -}}{{- $tag = printf "%s%s" $tag .Values.ui.image.multiTenantSuffix -}}{{- end -}}
-{{- printf "%s:%s" .Values.ui.image.repository $tag -}}
+{{- include "runr.image" (printf "%v:%v" .Values.ui.image.repository $tag) -}}
 {{- end -}}
 
 {{/*

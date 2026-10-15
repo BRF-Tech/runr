@@ -1,9 +1,9 @@
-# Build image of the wasm-python runtime (ghcr.io/runrsh/exec-wasm-python:<version>): Python with
+# Build image of the wasm-python runtime (ghcr.io/brf-tech/exec-wasm-python:<version>): Python with
 # componentize-py and the Spin Python SDK, and the Spin CLI of the Spin runtime the shim embeds.
 # It runs as the build Job of a function version (WasmBuildService); it is never deployed as a
 # function.
 #
-#   docker build -t ghcr.io/runrsh/exec-wasm-python:4.1 runtime/wasm-python     (or: runtime/ci.sh wasm)
+#   docker build -t ghcr.io/brf-tech/exec-wasm-python:4.1 runtime/wasm-python     (or: runtime/ci.sh wasm)
 ARG PYTHON_VERSION=3.13
 FROM python:${PYTHON_VERSION}-slim-bookworm
 

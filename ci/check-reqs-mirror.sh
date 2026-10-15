@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # ── Reqs mirror check ────────────────────────────────────────────────────────
-# Every ghcr.io/runrsh/reqs/<image>:<tag> the repository references — API code and config, the
+# Every ghcr.io/brf-tech/reqs/<image>:<tag> the repository references — API code and config, the
 # Helm chart (templates and values), Compose files, Dockerfiles, CI, runtime scripts, examples,
 # tests and docs — must be mirrored by runtime/ci.sh: an entry of REQS_IMAGES
 # (runtime/lib/mirror.sh, `ci.sh mirror-reqs`) or a runtime base image that `ci.sh mirror-bases`
@@ -13,7 +13,7 @@ set -euo pipefail
 #
 # Also counted: ${REGISTRY}/reqs/… and "/reqs/…" string literals (code that prefixes the
 # registry). References with a variable tag (${VERSION}, {version}) are not checked; a Helm
-# `repository: ghcr.io/runrsh/reqs/<image>` takes the `tag:` of its block.
+# `repository: ghcr.io/brf-tech/reqs/<image>` takes the `tag:` of its block.
 # Needs bash, git, GNU grep and sort -V.
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -73,19 +73,19 @@ files() {
 # file:line:<image>:<tag> for every reference
 references() {
   # literal references; a trailing $ or { is a variable tag
-  files | xargs -0 grep -I -n -o -E "(ghcr\.io/runrsh|REGISTRY\}?|[\"'\`])/reqs/[a-z0-9._/-]+:[A-Za-z0-9._-]+[\$\{]?" 2>/dev/null \
+  files | xargs -0 grep -I -n -o -E "(ghcr\.io/brf-tech|REGISTRY\}?|[\"'\`])/reqs/[a-z0-9._/-]+:[A-Za-z0-9._-]+[\$\{]?" 2>/dev/null \
     | sed -E 's#^([^:]+:[0-9]+:).*/reqs/#\1#' \
     | grep -v -E '[$\{]$' || true
 
-  # Helm values: repository: ghcr.io/runrsh/reqs/<image> + the tag: of the same block
+  # Helm values: repository: ghcr.io/brf-tech/reqs/<image> + the tag: of the same block
   # (a block that ends without a tag: "<image>:", any mirrored tag of the image counts)
   files | grep -z -E '\.ya?ml$' | xargs -0 awk '
     function pending() { if (repo != "") print file ":" at ":" repo ":"; repo = "" }
     FNR == 1 { pending(); file = FILENAME }
-    /^[[:space:]]*repository:[[:space:]]*"?ghcr\.io\/runrsh\/reqs\/[a-z0-9._\/-]+"?[[:space:]]*(#.*)?$/ {
+    /^[[:space:]]*repository:[[:space:]]*"?ghcr\.io\/brf-tech\/reqs\/[a-z0-9._\/-]+"?[[:space:]]*(#.*)?$/ {
       pending()
       repo = $0
-      sub(/^[[:space:]]*repository:[[:space:]]*"?ghcr\.io\/runrsh\/reqs\//, "", repo)
+      sub(/^[[:space:]]*repository:[[:space:]]*"?ghcr\.io\/brf-tech\/reqs\//, "", repo)
       sub(/"?[[:space:]]*(#.*)?$/, "", repo)
       indent = match($0, /[^ ]/); at = FNR
       next

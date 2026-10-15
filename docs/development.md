@@ -561,7 +561,7 @@ go test -race ./...       # the race detector needs cgo (gcc)
 ```
 
 Without a local Go toolchain:
-`docker run --rm -v "$PWD":/src -w /src/runtime/agent ghcr.io/runrsh/reqs/golang:1.26-alpine sh -c 'apk add --no-cache build-base && CGO_ENABLED=1 go test -race ./...'`
+`docker run --rm -v "$PWD":/src -w /src/runtime/agent ghcr.io/brf-tech/reqs/golang:1.26-alpine sh -c 'apk add --no-cache build-base && CGO_ENABLED=1 go test -race ./...'`
 (the image `test:go` uses; `GOTOOLCHAIN=auto` fetches a newer toolchain for a module that asks for one).
 The queue-consumer stream tests use an in-process miniredis; set
 `QC_TEST_REDIS=localhost:6379` to run them against a real Redis. The Sentry tunnel's tests
@@ -606,7 +606,7 @@ cd api && composer audit --locked                   # reported
 | Job | Runs | Blocking |
 |---|---|---|
 | `secrets:gitleaks` | MRs, default branch | yes |
-| `check:reqs-mirror` (`ci/check-reqs-mirror.sh`: every `ghcr.io/runrsh/reqs/*` reference is in the mirror list of `runtime/lib/mirror.sh`) | MRs, default branch | yes |
+| `check:reqs-mirror` (`ci/check-reqs-mirror.sh`: every `ghcr.io/brf-tech/reqs/*` reference is in the mirror list of `runtime/lib/mirror.sh`) | MRs, default branch | yes |
 | `test:api` (PHPUnit with the coverage floor) | MRs / default branch touching `api/**` | yes |
 | `lint:php` (Pint) | same as `test:api` | yes |
 | `analyse:php` | same as `test:api` | yes |

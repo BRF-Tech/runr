@@ -37,8 +37,8 @@ class ImageRefTest extends TestCase
             ImageRef::parse('rust:1.82-alpine')->policyGlobs(),
         );
         $this->assertSame(
-            ['ghcr.io/runrsh/runr-wrapper:*', 'ghcr.io/runrsh/runr-wrapper@*'],
-            ImageRef::parse('ghcr.io/runrsh/runr-wrapper:1.0.0')->policyGlobs(),
+            ['ghcr.io/brf-tech/runr-wrapper:*', 'ghcr.io/brf-tech/runr-wrapper@*'],
+            ImageRef::parse('ghcr.io/brf-tech/runr-wrapper:1.0.0')->policyGlobs(),
         );
     }
 }

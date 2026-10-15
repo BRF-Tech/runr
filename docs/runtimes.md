@@ -254,7 +254,7 @@ program.
 ## The universal wrapper
 
 `runr-wrapper` lives in `runtime/wrapper` (Go, standard library only) and ships as the image
-`ghcr.io/runrsh/runr-wrapper:<version>` (`FROM scratch`, the binary at `/runr-wrapper`). RunR
+`ghcr.io/brf-tech/runr-wrapper:<version>` (`FROM scratch`, the binary at `/runr-wrapper`). RunR
 configures it through the environment; an image that wants the wrapper as its own entrypoint
 sets the same variables.
 
@@ -311,11 +311,11 @@ name: C
 extensions: [c, h]
 versions:
   - version: "17"
-    image: ghcr.io/runrsh/reqs/alpine:3.21
+    image: ghcr.io/brf-tech/reqs/alpine:3.21
     default: true
 build:
   command: "apk add --no-cache gcc musl-dev >/dev/null && gcc -O2 -static -o /build/out/handler {file}"
-  runImage: ghcr.io/runrsh/reqs/alpine:3.21
+  runImage: ghcr.io/brf-tech/reqs/alpine:3.21
   source: false
 run:
   mode: exec
@@ -388,7 +388,7 @@ the default version, as with any retired version.
 
 `versionDiscovery` (built-in catalog) replaces a static list with the images RunR publishes:
 `executor:sync` lists the clean `X.Y[.Z]` tags of the Docker Hub `repository`, maps each to
-`image` (`ghcr.io/runrsh/exec-python:{version}`), marks the newest as default, deactivates tags
+`image` (`ghcr.io/brf-tech/exec-python:{version}`), marks the newest as default, deactivates tags
 that left the repository, reads end-of-life dates for the `eol` product from
 [endoflife.date](https://endoflife.date) and, with `filter: lts-even-major`, keeps the newest
 minor of each even major (Node.js LTS lines).
@@ -540,7 +540,7 @@ A `build` section makes every saved version a build — the same pipeline Go use
 build:
   image: "{image}"                      # build image (default: the version image)
   command: "gcc -O2 -static -o /build/out/handler {file}"
-  runImage: ghcr.io/runrsh/reqs/alpine:3.21   # final image (default: the version image)
+  runImage: ghcr.io/brf-tech/reqs/alpine:3.21   # final image (default: the version image)
   source: false                         # copy the code into /app/code of the final image (default true)
   files:                                # extra files placed next to the code before the build
     runr_wrapper_.go: {http: "…", schedule: "…"}
@@ -838,7 +838,7 @@ php artisan runtimes:bundle --check  # CI: exit 1 when the bundle differs from r
 |---|---|---|
 | `python`, `nodejs`, `php` | `http`, `schedule: native` | the image's own server (`server.py`, `server.js`, `server.php`) loads `RUNR_FILENAME` from `/app/code` and calls `RUNR_HANDLER(event, context)`; `requirements.txt`, `package.json`, `composer.json` trigger a dependency build in FaaS projects (Composer in the composer image, pinned to the runtime's PHP version) |
 | `pytorch`, `tensorflow` | `http`, `schedule: native` | Python images with the ML stack preinstalled (`category: ml`), the same handler server as `python` |
-| `go` | `http`, `schedule: native`, `build` | the project's `.go` files are compiled together with RunR's Go wrapper for the trigger (`runtime/go/wrapper_http.go` / `wrapper_schedule.go` as `build.files`) into a static binary, `/app/handler` on `ghcr.io/runrsh/reqs/alpine:3.20` |
+| `go` | `http`, `schedule: native`, `build` | the project's `.go` files are compiled together with RunR's Go wrapper for the trigger (`runtime/go/wrapper_http.go` / `wrapper_schedule.go` as `build.files`) into a static binary, `/app/handler` on `ghcr.io/brf-tech/reqs/alpine:3.20` |
 | `wasm-rust`, `wasm-go`, `wasm-js`, `wasm-python` | `http`, `schedule: native`, `build`, `runtimeClass: wasmtime-spin-v2` | WebAssembly: built into a Spin OCI artifact and run on the Spin shim; offered in regions with WebAssembly support — [wasm.md](wasm.md) |
 | `wasm-exec` | `http`, `schedule: native`, `build`, `runtimeClass: wasmtime-spin-v2`, `wagi` | any WASI preview 1 command module — C / C++ (wasi-sdk), Zig, Go (TinyGo), a `build.sh`, an uploaded `.wasm` — on Spin's WAGI executor (CGI on stdin / stdout) — [wasm.md](wasm.md#wasm-exec) |
 
@@ -860,7 +860,7 @@ until a holder of `runtimes.manage` switches **Custom Runtimes** on.
 |---|---|---|
 | `EXECUTOR_RUNTIMES` | `python,nodejs,go,php,tensorflow,pytorch,wasm-rust,wasm-go,wasm-js,wasm-python,wasm-exec` | built-in runtimes offered on the platform; projects of a built-in left out keep deploying (the Wasm runtimes appear only in regions with WebAssembly support) |
 | `RUNR_RUNTIME_CATALOG` | `../runtime` when present | directory of the built-in catalog sources |
-| `RUNR_WRAPPER_IMAGE` | `ghcr.io/runrsh/runr-wrapper:1.1.0` | the universal wrapper image for init containers and build Jobs |
+| `RUNR_WRAPPER_IMAGE` | `ghcr.io/brf-tech/runr-wrapper:1.1.0` | the universal wrapper image for init containers and build Jobs |
 
 These are environment variables of the API (`api/config/executor.php`); the Helm chart has no
 dedicated values for them, so a Helm installation sets them via `extraEnv`.

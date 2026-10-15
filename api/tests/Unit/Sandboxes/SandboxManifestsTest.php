@@ -24,7 +24,7 @@ class SandboxManifestsTest extends TestCase
             'status' => Sandbox::STATUS_PENDING,
             'runtime' => 'python',
             'runtime_version' => '3.14',
-            'image' => 'ghcr.io/runrsh/exec-python:3.14',
+            'image' => 'ghcr.io/brf-tech/exec-python:3.14',
             'sandbox_class' => 'kata-fc',
             'cpu_m' => 500,
             'memory_mb' => 512,
@@ -76,7 +76,7 @@ class SandboxManifestsTest extends TestCase
 
         $container = $spec['containers'][0];
         $this->assertSame('sandbox', $container['name']);
-        $this->assertSame('ghcr.io/runrsh/exec-python:3.14', $container['image']);
+        $this->assertSame('ghcr.io/brf-tech/exec-python:3.14', $container['image']);
         $this->assertSame(['/bin/sh', '-c', SandboxManifests::KEEPALIVE], $container['command']);
         $this->assertSame('/workspace', $container['workingDir']);
         $this->assertSame([

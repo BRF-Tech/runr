@@ -6,9 +6,9 @@ use App\Events\NotificationCreated;
 use App\Mail\ResourceThresholdMail;
 use App\Models\KnativeRegion;
 use App\Models\Notification;
-use App\Models\Project;
 use App\Models\User;
 use App\Services\Concerns\ResourceComputationTrait;
+use App\Services\Helpers\RegionCapacity;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Mail;
 
@@ -29,33 +29,20 @@ class ResourceThresholdService
 
     public function checkRegion(KnativeRegion $region): void
     {
-        $projects = Project::where('knative_region_id', $region->id)
-            ->with(['xaasConfig', 'faasConfig', 'containerConfig'])
-            ->get();
+        // Projects, model services and sandboxes, against the fuller of the two capacity
+        // budgets (always-on: the capacity; FaaS: capacity × overcommit factor)
+        $summary = RegionCapacity::summary($region, $this->regionUsage($region));
 
-        $this->checkResource($region, $projects, 'cpu');
-        $this->checkResource($region, $projects, 'memory');
+        $this->checkResource($region, $summary['cpu_m'], 'cpu');
+        $this->checkResource($region, $summary['memory_mb'], 'memory');
     }
 
-    protected function checkResource(KnativeRegion $region, $projects, string $type): void
+    /** @param  array{capacity: int, always_on_used: int, faas_overcommit: float, faas_used: int}  $budgets  one resource of RegionCapacity::summary() */
+    protected function checkResource(KnativeRegion $region, array $budgets, string $type): void
     {
-        // Projects and running model services (docs/huggingface.md)
-        $models = $this->modelServiceUsage($region);
-        if ($type === 'cpu') {
-            $used = $this->computeUsedCpu($projects) + $models['cpu_m'];
-            $total = $region->total_cpu_m;
-        } else {
-            $used = $this->computeUsedMemory($projects) + $models['memory_mb'];
-            $total = $region->total_memory_mb;
-        }
+        $pct = RegionCapacity::utilization($budgets);
 
-        if (! $total || $total <= 0) {
-            return;
-        }
-
-        $pct = round($used / $total * 100, 1);
-
-        if ($pct < self::WARNING) {
+        if ($pct === null || $pct < self::WARNING) {
             return;
         }
 

@@ -14,7 +14,7 @@ extensions: [ts]
 category: general
 versions:
   - version: "22"
-    image: ghcr.io/runrsh/reqs/node:22-slim
+    image: ghcr.io/brf-tech/reqs/node:22-slim
     default: true
 handler:
   file: server

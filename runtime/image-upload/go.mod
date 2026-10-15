@@ -1,6 +1,6 @@
-module github.com/runrsh/core/runtime/image-upload
+module github.com/brf-tech/runr/runtime/image-upload
 
-go 1.25.0
+go 1.26.9
 
 require github.com/google/go-containerregistry v0.22.1
 

@@ -405,7 +405,7 @@ cmd_build_deploy() {
 # ── Registry push ──
 cmd_registry_push() {
   local target="${1:-all}"
-  local registry="${2:-ghcr.io/runrsh/runr}"
+  local registry="${2:-ghcr.io/brf-tech/runr}"
   _deploy_registry_push "$target" "$registry"
   echo -e "\n${GREEN}Registry push done: $registry${NC}"
 }

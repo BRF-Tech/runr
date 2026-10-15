@@ -42,7 +42,7 @@ class RuntimeBuildManifestTest extends TestCase
         $this->submit($this->buildVersion('c', null, 'internal', ['main.c' => 'int main(void) { return 0; }']));
 
         $dockerfile = $this->dockerfile();
-        $this->assertSame([self::ZOT.'/ghcr.io/runrsh/reqs/alpine:3.21', self::ZOT.'/ghcr.io/runrsh/reqs/alpine:3.21'], $this->fromLines());
+        $this->assertSame([self::ZOT.'/ghcr.io/brf-tech/reqs/alpine:3.21', self::ZOT.'/ghcr.io/brf-tech/reqs/alpine:3.21'], $this->fromLines());
         $this->assertStringContainsString('RUN mkdir -p /build/out && apk add --no-cache gcc musl-dev >/dev/null && gcc -O2 -static -o /build/out/handler main.c', $dockerfile);
         $this->assertStringContainsString('COPY --from=build /build/out/ /app/', $dockerfile);
         $this->assertStringNotContainsString('COPY code/ /app/code/', $dockerfile); // build.source: false
@@ -55,7 +55,7 @@ class RuntimeBuildManifestTest extends TestCase
         // the wrapper reaches the build context through an init container of the Kaniko Job
         $init = $this->job()['spec']['template']['spec']['initContainers'];
         $this->assertSame(['copy-src', 'runr-wrapper'], array_column($init, 'name'));
-        $this->assertSame('ghcr.io/runrsh/runr-wrapper:1.1.0', $init[1]['image']);
+        $this->assertSame('ghcr.io/brf-tech/runr-wrapper:1.1.0', $init[1]['image']);
         $this->assertSame(['/runr-wrapper', 'install', '/workspace/.runr/runr-wrapper'], $init[1]['command']);
         $this->assertStringContainsString('cp "/src/code---main.c" "/workspace/code/main.c"', $init[0]['command'][2]);
     }
@@ -66,13 +66,13 @@ class RuntimeBuildManifestTest extends TestCase
         $this->registerRuntime($this->serverManifest(['build' => [
             'image' => 'docker.io/library/rust:1.83-alpine',
             'command' => 'rustc -O -o /build/out/server {file}',
-            'runImage' => 'ghcr.io/runrsh/reqs/alpine:3.21',
+            'runImage' => 'ghcr.io/brf-tech/reqs/alpine:3.21',
             'source' => false,
         ], 'run' => ['command' => ['/app/server', null, null]]]));
         $this->submit($this->buildVersion('srv', null, 'internal', ['main.txt' => 'fn main() {}']));
 
         $dockerfile = $this->dockerfile();
-        $this->assertSame(['docker.io/library/rust:1.83-alpine', self::ZOT.'/ghcr.io/runrsh/reqs/alpine:3.21'], $this->fromLines());
+        $this->assertSame(['docker.io/library/rust:1.83-alpine', self::ZOT.'/ghcr.io/brf-tech/reqs/alpine:3.21'], $this->fromLines());
         $this->assertStringContainsString('rustc -O -o /build/out/server main.txt', $dockerfile);
         $this->assertStringEndsWith('ENTRYPOINT ["/app/server"]', $dockerfile);
         // its schedule trigger runs through the wrapper, so the image carries it
@@ -87,7 +87,7 @@ class RuntimeBuildManifestTest extends TestCase
         $dockerfile = $this->dockerfile();
         $data = $this->created('configmaps')['data'];
 
-        $this->assertSame([self::ZOT.'/ghcr.io/runrsh/exec-go:1.26', self::ZOT.'/ghcr.io/runrsh/reqs/alpine:3.20'], $this->fromLines());
+        $this->assertSame([self::ZOT.'/ghcr.io/brf-tech/exec-go:1.26', self::ZOT.'/ghcr.io/brf-tech/reqs/alpine:3.20'], $this->fromLines());
         $this->assertStringContainsString('go mod init runr-function && go mod tidy && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o /build/out/handler .', $dockerfile);
         $this->assertStringContainsString('ENV RUNR_MODE=http', $dockerfile);
         $this->assertStringEndsWith('ENTRYPOINT ["/app/handler"]', $dockerfile);
@@ -102,12 +102,12 @@ class RuntimeBuildManifestTest extends TestCase
         $this->submit($this->buildVersion('python', null, 'internal', ['main.py' => 'x', 'requirements.txt' => "redis\n"]));
 
         $this->assertSame(implode("\n", [
-            'FROM '.self::ZOT.'/ghcr.io/runrsh/exec-python:3.14 AS build',
+            'FROM '.self::ZOT.'/ghcr.io/brf-tech/exec-python:3.14 AS build',
             'WORKDIR /build/code',
             'COPY code/ /build/code/',
             'RUN pip install --no-cache-dir --target=/build/vendor -r /build/code/requirements.txt',
             '',
-            'FROM '.self::ZOT.'/ghcr.io/runrsh/exec-python:3.14',
+            'FROM '.self::ZOT.'/ghcr.io/brf-tech/exec-python:3.14',
             'WORKDIR /app',
             'COPY code/ /app/code/',
             'COPY --from=build /build/vendor /app/vendor',

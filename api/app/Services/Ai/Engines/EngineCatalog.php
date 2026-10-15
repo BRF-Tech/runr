@@ -364,7 +364,11 @@ class EngineCatalog
         ];
     }
 
-    /** TEI GPU image tag prefix from the GPU's compute capability (turing-, "", 86-, 89-, hopper-). */
+    /**
+     * TEI GPU image tag prefix from the GPU's compute capability: turing-, "" (Ampere 8.0), 86-,
+     * 89-, hopper-, Blackwell 100- / 120- / 121-; cuda- (the image that picks its kernels when it
+     * starts) for any other or an unknown GPU.
+     */
     public static function teiArch(?string $computeCapability): string
     {
         return match ($computeCapability) {
@@ -373,7 +377,10 @@ class EngineCatalog
             '8.6' => '86-',
             '8.9' => '89-',
             '9.0' => 'hopper-',
-            default => '86-',
+            '10.0' => '100-',
+            '12.0' => '120-',
+            '12.1' => '121-',
+            default => 'cuda-',
         };
     }
 }

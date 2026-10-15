@@ -25,7 +25,7 @@ services:
     restart: "no"
 
   postgres:
-    image: ghcr.io/runrsh/reqs/postgres:17-alpine
+    image: ghcr.io/brf-tech/reqs/postgres:17-alpine
     ports:
       - "${DB_PORT:-8062}:5432"
     volumes:
@@ -41,7 +41,7 @@ services:
       retries: 5
 
   redis:
-    image: ghcr.io/runrsh/reqs/redis:7-alpine
+    image: ghcr.io/brf-tech/reqs/redis:7-alpine
     ports:
       - "${REDIS_PORT:-8063}:6379"
     healthcheck:
@@ -188,14 +188,14 @@ services:
     restart: unless-stopped
 
   mailpit:
-    image: ghcr.io/runrsh/reqs/mailpit:latest
+    image: ghcr.io/brf-tech/reqs/mailpit:latest
     ports:
       - "${MAILPIT_SMTP_PORT:-8065}:1025"
       - "${MAILPIT_UI_PORT:-8066}:8025"
     restart: unless-stopped
 
   vue:
-    image: ghcr.io/runrsh/reqs/node:22-alpine
+    image: ghcr.io/brf-tech/reqs/node:22-alpine
     # platform: linux/arm64  # uncomment for Apple Silicon (M1/M2/M3)
     working_dir: /app
     ports:

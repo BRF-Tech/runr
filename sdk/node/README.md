@@ -59,4 +59,5 @@ Steps passed to `Promise.all` run one per invocation, in call order.
 (`sendMany(events)` for several); without options it reads `RUNR_API_URL`, `RUNR_API_TOKEN`
 and, on multi-tenant installations, `RUNR_TENANT_ID` (sent as `X-Tenant-ID`).
 
-Scripts: `npm run build`, `npm run typecheck`, `npm test`.
+Development needs Node.js 20+ and npm 11 (`devEngines`): the SDK keeps no lockfile, and npm 10
+fails to resolve Vitest 4. Scripts: `npm run build`, `npm run typecheck`, `npm test`.

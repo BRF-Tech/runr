@@ -160,6 +160,9 @@ class SandboxService
                 return $claimed;
             }
 
+            // A new pod: the region's always-on capacity budget (a claimed warm pod holds it already)
+            $this->quotas->checkRegionCapacity($spec->region, $spec->cpuM, $spec->memoryMb, $spec->sandboxClass);
+
             $id = (string) Str::ulid();
 
             return Sandbox::create([

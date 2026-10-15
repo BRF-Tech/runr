@@ -11,7 +11,9 @@ use Illuminate\Foundation\Queue\Queueable;
 
 /**
  * Poll a deploying model service until its Knative Service is Ready (or failed) — every 15 s for
- * up to the progress deadline (model downloads and loads take minutes, not seconds).
+ * up to the progress deadline (model downloads and loads take minutes, not seconds). Meanwhile
+ * the service shows why its pods do not start (status_reason: CrashLoopBackOff with the
+ * engine's last output, ImagePullBackOff, ErrImagePull, OOMKilled, Unschedulable …).
  */
 class CheckModelServiceReadyJob implements ShouldQueue
 {
@@ -33,13 +35,13 @@ class CheckModelServiceReadyJob implements ShouldQueue
         }
 
         try {
-            [$ready, $message] = $deployer->readiness($service);
+            [$ready, $message, $reason] = $deployer->readiness($service);
         } catch (\Throwable $e) {
-            [$ready, $message] = [null, $e->getMessage()];
+            [$ready, $message, $reason] = [null, $e->getMessage(), $service->status_reason];
         }
 
         if ($ready === true) {
-            $service->update(['status' => AiModelService::STATUS_READY, 'status_message' => null]);
+            $service->update(['status' => AiModelService::STATUS_READY, 'status_message' => null, 'status_reason' => null]);
             $this->broadcast($service, 'model_service.ready');
 
             return;
@@ -49,14 +51,27 @@ class CheckModelServiceReadyJob implements ShouldQueue
             $service->update([
                 'status' => AiModelService::STATUS_FAILED,
                 'status_message' => mb_substr((string) ($message ?: __('ai.models.not_ready_in_time')), 0, 2000),
+                'status_reason' => $reason,
             ]);
             $this->broadcast($service, 'model_service.failed');
 
             return;
         }
 
+        // Still deploying: why the pods do not start (CrashLoopBackOff, ImagePullBackOff …) or
+        // Knative's progress; a problem that is gone takes its message with it
+        $changes = [];
+        if ($reason !== $service->status_reason) {
+            $changes['status_reason'] = $reason;
+            if ($message === null) {
+                $changes['status_message'] = null;
+            }
+        }
         if ($message && $message !== $service->status_message) {
-            $service->update(['status_message' => mb_substr($message, 0, 2000)]);
+            $changes['status_message'] = mb_substr($message, 0, 2000);
+        }
+        if ($changes !== []) {
+            $service->update($changes);
         }
 
         self::dispatch($this->serviceId, $this->attempt + 1)->delay(now()->addSeconds(self::POLL_SECONDS));

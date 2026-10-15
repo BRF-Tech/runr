@@ -19,8 +19,8 @@ final class TraefikImage
     }
 
     /**
-     * The chart's image values for a reference: "ghcr.io/runrsh/reqs/traefik:v3.7.4" →
-     * registry ghcr.io, repository runrsh/reqs/traefik, tag v3.7.4. Without a registry host the
+     * The chart's image values for a reference: "ghcr.io/brf-tech/reqs/traefik:v3.7.4" →
+     * registry ghcr.io, repository brf-tech/reqs/traefik, tag v3.7.4. Without a registry host the
      * image is on Docker Hub; "<tag>@<digest>" stays the tag (the chart accepts the pair), a
      * digest alone is image.digest.
      *

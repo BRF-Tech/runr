@@ -12,8 +12,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/runrsh/core/cli/internal/dev"
-	"github.com/runrsh/core/cli/pkg/runr"
+	"github.com/brf-tech/runr/cli/internal/dev"
+	"github.com/brf-tech/runr/cli/pkg/runr"
 )
 
 const devPluginScript = "#!/usr/bin/env bash\necho \"hello from bash\"\n"
@@ -71,7 +71,7 @@ func TestDevPluginExecPrint(t *testing.T) {
 	if len(plan.Prepare) != 1 || len(plan.Prepare[0]) != 7 ||
 		strings.Join(plan.Prepare[0][:3], " ") != "run --rm --mount" ||
 		!strings.HasPrefix(plan.Prepare[0][3], "type=bind,source=") || !strings.HasSuffix(plan.Prepare[0][3], ",target=/runr") ||
-		strings.Join(plan.Prepare[0][4:], " ") != "ghcr.io/runrsh/runr-wrapper:"+dev.WrapperVersion+" install /runr/runr-wrapper" {
+		strings.Join(plan.Prepare[0][4:], " ") != "ghcr.io/brf-tech/runr-wrapper:"+dev.WrapperVersion+" install /runr/runr-wrapper" {
 		t.Fatalf("prepare = %v", plan.Prepare)
 	}
 
@@ -103,7 +103,7 @@ func TestDevPluginRunsWrapperAndSyncsCode(t *testing.T) {
 	if r.code != 0 {
 		t.Fatalf("exit %d: %s", r.code, r.err)
 	}
-	contains(t, r.err, "Installing the universal wrapper from ghcr.io/runrsh/runr-wrapper:"+dev.WrapperVersion)
+	contains(t, r.err, "Installing the universal wrapper from ghcr.io/brf-tech/runr-wrapper:"+dev.WrapperVersion)
 	contains(t, r.err, "Starting hello-sh on http://localhost:8080 (bash:5)")
 	install := false
 	for _, a := range h.docker.runs {
@@ -327,7 +327,7 @@ handler:
   function: handle
 versions:
   - version: "4.1"
-    image: ghcr.io/runrsh/exec-wasm-rust:4.1
+    image: ghcr.io/brf-tech/exec-wasm-rust:4.1
 run:
   mode: http
 triggers: [http, schedule, queue]

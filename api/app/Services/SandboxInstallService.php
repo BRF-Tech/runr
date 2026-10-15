@@ -16,13 +16,15 @@ use App\Services\Concerns\SandboxManifestTrait;
 use App\Services\Helpers\ContainerRuntimeHelper;
 use App\Services\Helpers\KataRuntime;
 use App\Services\RegionReconcile\Steps\NamespaceQuotaStep;
+use App\Support\Images\RegistryMove;
 use Illuminate\Support\Facades\Log;
 
 class SandboxInstallService
 {
     use CiliumSandboxCompatTrait, KataDevmapperTrait, KataKvmProbeTrait, KataManifestTrait, KataShimDetectionTrait, KnativeClusterTrait, SandboxManifestTrait;
 
-    private const SANDBOX_NAMESPACE = 'runr-sandbox';
+    /** Namespace of the sandbox runtimes' node installers (Kata, gVisor; WebAssembly: WasmManifests::NAMESPACE). */
+    public const SANDBOX_NAMESPACE = 'runr-sandbox';
 
     private const GVISOR_CLEANUP_DS = 'gvisor-cleanup';
 
@@ -133,7 +135,7 @@ class SandboxInstallService
             $restart = self::runtimeRestartText($runtime['flavor']);
             // kata-deploy runs again only when what it installs changed — a drop-in-only change is
             // written to the nodes in place afterwards (syncKataDropIns(), no restart)
-            $rerun = ! $live || $this->kataLiveState($k8s, $live, $ds)['installer'] !== self::kataInstallerHashOf($ds);
+            $rerun = ! $live || $this->kataLiveState($k8s, $live, $ds, $configMap['data'])['installer'] !== self::kataInstallerHashOf($ds);
 
             // Firecracker: devmapper snapshotter on the nodes before kata-deploy restarts the runtime,
             // so that one restart loads both
@@ -382,7 +384,8 @@ class SandboxInstallService
         $hasDedicated = $this->hasDedicatedWorkerNodes($k8s);
         $runtime = $this->detectSandboxRuntime($k8s, $hasDedicated);
         $desired = $this->buildKataInstallerDaemonSet(self::SANDBOX_NAMESPACE, $hypervisors, $hasDedicated, $runtime['flavor']);
-        $state = $this->kataLiveState($k8s, $live, $desired);
+        $configMap = $this->buildKataConfigMap(self::SANDBOX_NAMESPACE, $hypervisors, $runtime['flavor']);
+        $state = $this->kataLiveState($k8s, $live, $desired, $configMap['data']);
         $current = $state['installer'] === self::kataInstallerHashOf($desired);
 
         return [
@@ -404,24 +407,42 @@ class SandboxInstallService
      * when that hash matches $desired's pod spec with the ConfigMap on the cluster — then kata-deploy
      * ran with exactly that ConfigMap and its drop-ins are the ones on the nodes.
      *
-     * @return array{installer: ?string, dropins: ?string}
+     * legacy: the installer is $desired's with RunR's images under RunR's namespace up to 0.5.0
+     * (RegistryMove) — the same Kata install, reported with $desired's installer hash. It keeps its
+     * pod template: rolling kata-deploy for the image namespace alone would restart the container
+     * runtime on every node (syncKataDropIns() re-applies it as it is).
+     *
+     * @param  array<string, string>  $configMapData  buildKataConfigMap() data of $desired
+     * @return array{installer: ?string, dropins: ?string, legacy: bool}
      */
-    private function kataLiveState(KubernetesClient $k8s, array $live, array $desired): array
+    private function kataLiveState(KubernetesClient $k8s, array $live, array $desired, array $configMapData): array
     {
+        $podSpec = $desired['spec']['template']['spec'];
+        $legacySpec = RegistryMove::legacy($podSpec);
+        $hasLegacy = $legacySpec !== $podSpec;
+
         $annotations = $live['metadata']['annotations'] ?? [];
         if (isset($annotations[self::KATA_INSTALLER_HASH_ANNOTATION])) {
-            return ['installer' => $annotations[self::KATA_INSTALLER_HASH_ANNOTATION], 'dropins' => $annotations[self::KATA_DROPINS_HASH_ANNOTATION] ?? null];
+            $installer = $annotations[self::KATA_INSTALLER_HASH_ANNOTATION];
+            $dropins = $annotations[self::KATA_DROPINS_HASH_ANNOTATION] ?? null;
+            if ($hasLegacy && $installer !== self::kataInstallerHashOf($desired) && $installer === self::kataInstallerHash($legacySpec, $configMapData)) {
+                return ['installer' => self::kataInstallerHashOf($desired), 'dropins' => $dropins, 'legacy' => true];
+            }
+
+            return ['installer' => $installer, 'dropins' => $dropins, 'legacy' => false];
         }
 
         $template = self::kataTemplateHash($live);
         $data = $template ? ($k8s->getResourceStatus('v1', 'ConfigMap', self::KATA_CONFIG_MAP, self::SANDBOX_NAMESPACE)['data'] ?? null) : null;
-        $podSpec = $desired['spec']['template']['spec'];
 
         if (is_array($data) && $template === self::kataConfigHash($podSpec, $data)) {
-            return ['installer' => self::kataInstallerHash($podSpec, $data), 'dropins' => self::kataDropInsHash($data)];
+            return ['installer' => self::kataInstallerHash($podSpec, $data), 'dropins' => self::kataDropInsHash($data), 'legacy' => false];
+        }
+        if (is_array($data) && $hasLegacy && $template === self::kataConfigHash($legacySpec, $data)) {
+            return ['installer' => self::kataInstallerHash($podSpec, $data), 'dropins' => self::kataDropInsHash($data), 'legacy' => true];
         }
 
-        return ['installer' => null, 'dropins' => null];
+        return ['installer' => null, 'dropins' => null, 'legacy' => false];
     }
 
     private static function kataInstallerHashOf(array $ds): ?string
@@ -458,7 +479,7 @@ class SandboxInstallService
         $configMap = $this->buildKataConfigMap(self::SANDBOX_NAMESPACE, $hypervisors, $runtime['flavor']);
         $desired = $this->buildKataInstallerDaemonSet(self::SANDBOX_NAMESPACE, $hypervisors, $hasDedicated, $runtime['flavor']);
         $live = $k8s->getResourceStatus('apps/v1', 'DaemonSet', self::KATA_DS_NAME, self::SANDBOX_NAMESPACE);
-        $state = $live ? $this->kataLiveState($k8s, $live, $desired) : ['installer' => null, 'dropins' => null];
+        $state = $live ? $this->kataLiveState($k8s, $live, $desired, $configMap['data']) : ['installer' => null, 'dropins' => null, 'legacy' => false];
 
         if ($state['installer'] === null || $state['installer'] !== self::kataInstallerHashOf($desired)) {
             throw new \RuntimeException('the Kata installer is not current — install Kata again (kata-deploy re-runs)');
@@ -466,6 +487,11 @@ class SandboxInstallService
 
         // 1. record what the nodes run; the pod template stays exactly as it is
         $recorded = $desired;
+        if ($state['legacy']) {
+            // RunR's images under their namespace up to 0.5.0, as the installer runs them
+            $recorded['spec']['template']['spec'] = RegistryMove::legacy($recorded['spec']['template']['spec']);
+            $recorded['metadata']['annotations'][self::KATA_INSTALLER_HASH_ANNOTATION] = self::kataInstallerHash($recorded['spec']['template']['spec'], $configMap['data']);
+        }
         $recorded['spec']['template']['metadata']['annotations'][self::KATA_CONFIG_HASH_ANNOTATION] = self::kataTemplateHash($live);
         $recorded['metadata']['annotations'][self::KATA_DROPINS_HASH_ANNOTATION] = $state['dropins'];
         if (! $k8s->applyResource($recorded, self::SANDBOX_NAMESPACE)) {

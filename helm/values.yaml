@@ -10,7 +10,7 @@ gateway:
   serviceType: ClusterIP
   port: 80
   image:
-    repository: ghcr.io/runrsh/reqs/caddy
+    repository: ghcr.io/brf-tech/reqs/caddy
     tag: "2-alpine"
     pullPolicy: IfNotPresent
   resources:
@@ -27,7 +27,7 @@ gateway:
 # ─── API ──────────────────────────────────────
 api:
   image:
-    repository: ghcr.io/runrsh/runr/api
+    repository: ghcr.io/brf-tech/runr/api
     tag: latest
     pullPolicy: IfNotPresent
   replicas: 2
@@ -50,7 +50,7 @@ api:
 # ─── UI ───────────────────────────────────────
 ui:
   image:
-    repository: ghcr.io/runrsh/runr/ui
+    repository: ghcr.io/brf-tech/runr/ui
     tag: latest
     # Appended to the tag when edition=multi-tenant (UI built with the tenancy + auth-provider modules)
     multiTenantSuffix: ""
@@ -96,7 +96,7 @@ redis:
   host: ""
   port: "6379"
   image:
-    repository: ghcr.io/runrsh/reqs/redis
+    repository: ghcr.io/brf-tech/reqs/redis
     tag: "7-alpine"
   resources:
     requests: { cpu: 100m, memory: 128Mi }
@@ -116,7 +116,7 @@ database:
   user: runr
   postgres:
     image:
-      repository: ghcr.io/runrsh/reqs/postgres
+      repository: ghcr.io/brf-tech/reqs/postgres
       tag: "17-alpine"
     storage: 10Gi
     fixPgdata: true         # initContainer: moves lost+found out of the way, PGDATA in a subdirectory
@@ -154,7 +154,7 @@ mail:
 
 mailpit:
   image:
-    repository: ghcr.io/runrsh/reqs/mailpit
+    repository: ghcr.io/brf-tech/reqs/mailpit
     tag: latest
   uiPort: 8025
   resources:
@@ -262,7 +262,7 @@ signup:
 
 knative:
   minK8sMinor: "30"
-  # Image of the region Traefik (Knative ingress); empty: ghcr.io/runrsh/reqs/traefik at the version
+  # Image of the region Traefik (Knative ingress); empty: ghcr.io/brf-tech/reqs/traefik at the version
   # of the pinned chart (the mirror of docker.io/traefik). Point it at a registry the regions reach,
   # with the same Traefik version; `region:reconcile` moves existing regions to it.
   traefikImage: ""
@@ -353,7 +353,7 @@ gitDeploy:
 # until an administrator enables them (publish / mirror toolsImage first).
 supplyChain:
   enabled: true                 # build-ready hooks: every RunR-built image gets its supply-chain run
-  toolsImage: ""                # default ghcr.io/runrsh/runr-supply-chain:1.0.0 (ci.sh supply-chain)
+  toolsImage: ""                # default ghcr.io/brf-tech/runr-supply-chain:1.0.0 (ci.sh supply-chain)
   jobNamespace: ""              # default runr-supply-chain (Jobs + region signing key, per region)
   rescanHours: ""               # default re-scan interval of deployed images for new regions (24)
   trivyDbSource: ""             # mirror source of the vulnerability DB (mirror.gcr.io/aquasec/trivy-db:2)
@@ -368,7 +368,7 @@ supplyChain:
 # Container images (docker save / OCI layout tars) and .wasm modules uploaded through the console,
 # the API or `runr images push` into a region's internal registry. Empty values keep the defaults.
 images:
-  uploadImage: ""              # receiver image the regions pull (default ghcr.io/runrsh/image-upload:1.0.0, ci.sh image-upload)
+  uploadImage: ""              # receiver image the regions pull (default ghcr.io/brf-tech/image-upload:1.0.0, ci.sh image-upload)
   quotaGb: ""                  # storage of uploaded images per organization over every region (default 50, 0 = unlimited)
   maxUploadGb: ""              # largest file of one upload (default 20)
   uploadTtlHours: ""           # an upload not completed within this time is aborted (default 24)
@@ -383,13 +383,13 @@ ai:
     # false: the console does not call the Hub (air-gapped console); models are uploaded or imported
     browse: true
   images:
-    hfServe: ghcr.io/runrsh/hf-serve:1.0.0
-    hfServeCuda: ghcr.io/runrsh/hf-serve:1.0.0-cuda
+    hfServe: ghcr.io/brf-tech/hf-serve:1.1.0
+    hfServeCuda: ghcr.io/brf-tech/hf-serve:1.1.0-cuda
     vllm: docker.io/vllm/vllm-openai:v0.6.6
     tgi: ghcr.io/huggingface/text-generation-inference:3.0.1
-    teiCpu: ghcr.io/huggingface/text-embeddings-inference:cpu-1.5
-    # {arch}: turing- | "" | 86- | 89- | hopper-, from the GPU's compute capability
-    teiGpu: "ghcr.io/huggingface/text-embeddings-inference:{arch}1.5"
+    teiCpu: ghcr.io/huggingface/text-embeddings-inference:cpu-1.9.4
+    # {arch} from the GPU's compute capability: turing- | "" | 86- | 89- | hopper- | 100- | 120- | 121- | cuda- (any other)
+    teiGpu: "ghcr.io/huggingface/text-embeddings-inference:{arch}1.9.4"
     oras: ghcr.io/oras-project/oras:v1.2.0
   gpu:
     devicePluginChartVersion: "0.17.0"
@@ -426,7 +426,7 @@ bindings:
     maxmemoryMb: 512          # managed KV Redis: memory (noeviction) and AOF volume
     storage: 2Gi
   object:
-    image: ghcr.io/runrsh/reqs/garage:v2.1.0
+    image: ghcr.io/brf-tech/reqs/garage:v2.1.0
     storage: 20Gi
     s3Region: garage
   postgres:
@@ -530,9 +530,9 @@ deployTimestamp: ""
 
 # ─── Init Container Image ───────────────────────
 # initContainer image (fix-permissions / fix-pgdata)
-# ghcr.io/runrsh/reqs/busybox mirrors docker.io/library/busybox (runtime/lib/mirror.sh); only the "latest" tag exists
+# ghcr.io/brf-tech/reqs/busybox mirrors docker.io/library/busybox (runtime/lib/mirror.sh); only the "latest" tag exists
 initImage:
-  repository: ghcr.io/runrsh/reqs/busybox
+  repository: ghcr.io/brf-tech/reqs/busybox
   tag: "latest"
 
 # ─── Cluster ─────────────────────────────────

@@ -100,10 +100,11 @@ class ProjectService
         $trigger = is_string($t = $config['trigger_type'] ?? null) && $t !== '' ? $t : 'http';
         $minScale = is_numeric($m = $config['min_scale'] ?? null) ? (int) $m : 0;
         $type = $data['service_type'] ?? null;
+        $scaleToZero = array_key_exists('scale_to_zero', $config) && $config['scale_to_zero'] !== null ? $config['scale_to_zero'] : true;
 
         Validator::make(['config' => $config], [
-            'config.cpu' => [new WithinResourceLimit('cpu', null, $regionId, $trigger, $minScale, $type)],
-            'config.memory_mb' => [new WithinResourceLimit('memory', null, $regionId, $trigger, $minScale, $type)],
+            'config.cpu' => [new WithinResourceLimit('cpu', null, $regionId, $trigger, $minScale, $type, $scaleToZero)],
+            'config.memory_mb' => [new WithinResourceLimit('memory', null, $regionId, $trigger, $minScale, $type, $scaleToZero)],
         ])->validate();
     }
 

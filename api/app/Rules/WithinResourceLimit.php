@@ -4,24 +4,29 @@ namespace App\Rules;
 
 use App\Models\KnativeRegion;
 use App\Models\Project;
-use App\Services\Ai\Models\ModelServiceReservations;
 use App\Services\Helpers\InstanceSizes;
+use App\Services\Helpers\RegionCapacity;
 use App\Services\Helpers\ResourceReservation;
 use Closure;
 use Illuminate\Contracts\Validation\ValidationRule;
+use Illuminate\Support\Collection;
 
 /**
- * A project's CPU / memory must fit the region capacity next to the other projects and the
- * running model services (ModelServiceReservations). Every
- * project counts with its admitted reservation — size × max(1, min_scale), queue-proxy per
- * Knative Service pod, queue consumer for queue projects (ResourceReservation).
+ * A project's CPU / memory must fit the region's budgets next to what already runs there
+ * (RegionCapacity): an always-on project (scale to zero off or min_scale >= 1) reserves
+ * (size + queue-proxy + Kata overhead) × min_scale against the real capacity; a scale-to-zero
+ * project reserves only its Kata pod overhead (and queue consumer) there and counts one pod of
+ * its size against the FaaS overcommit budget (capacity × the region's factor, minus the
+ * always-on reservations). Model services and sandboxes count the same way.
  *
  * The check uses the effective size, also when the request has none: the value sent, else the
  * project's stored one (update / deploy), else the service type's default size — the size the
  * project is created and deployed with (InstanceSizes). The rule is implicit, so it runs for a
  * missing field too: a create or deploy without config.cpu / config.memory_mb is admitted like
  * one that sends the default (0.4.1 skipped the check — a test region reached 9100m used of 4505m).
- * A min_scale / trigger change or a region move without a size is checked the same way.
+ * A min_scale / scale_to_zero / trigger change or a region move without a size is checked the
+ * same way. The Kata overhead of the incoming size is the region's mapping for the service type
+ * (the RuntimeClass the next deploy gets).
  *
  * An existing project (update / deploy) that does not raise its own reservation always
  * passes, even when the region is already over capacity.
@@ -38,6 +43,7 @@ class WithinResourceLimit implements ValidationRule
      * @param  string|null  $triggerType  Requested trigger; null = the project's stored one, else http
      * @param  mixed  $minScale  Requested min_scale; null = the project's stored one, else 0
      * @param  string|null  $serviceType  New project's service type; null = the project's (Kata pod overhead)
+     * @param  mixed  $scaleToZero  Requested scale_to_zero; null = the project's stored one, else true
      */
     public function __construct(
         private readonly string $resource,
@@ -46,14 +52,16 @@ class WithinResourceLimit implements ValidationRule
         private readonly ?string $triggerType = null,
         private readonly mixed $minScale = null,
         private readonly ?string $serviceType = null,
+        private readonly mixed $scaleToZero = null,
     ) {}
 
     public function validate(string $attribute, mixed $value, Closure $fail): void
     {
-        $limit = $this->resolveLimit();
+        $regions = $this->regions();
+        $limits = RegionCapacity::limits($regions);
 
         // No limit defined: nothing to validate
-        if ($limit <= 0) {
+        if ($limits['capacity'][$this->key()] <= 0) {
             return;
         }
 
@@ -68,33 +76,29 @@ class WithinResourceLimit implements ValidationRule
 
         $serviceType = $this->serviceType ?? $project?->service_type;
         // Kata pod overhead of the target region's mapping for this service type
-        $region = $this->knativeRegionId ? KnativeRegion::find($this->knativeRegionId) : $project?->knativeRegion;
+        $region = $this->knativeRegionId ? $regions->first() : $project?->knativeRegion;
         $value = $this->effectiveValue($value, $config, $serviceType);
 
-        $reservation = ResourceReservation::forSize(
+        $demand = ResourceReservation::demandForSize(
             $this->resource === 'cpu' ? ResourceReservation::parseCpu($value) : 0,
             $this->resource === 'memory' ? (int) $value : 0,
             $this->triggerType ?? $config?->trigger_type ?? 'http',
             $this->minScale ?? $config?->min_scale ?? 0,
+            $this->scaleToZero ?? ($config ? $config->scale_to_zero : null) ?? true,
             ResourceReservation::podOverhead($region, $serviceType),
         );
-        $incoming = $reservation[$this->key()];
 
-        // Grandfathered: an existing project on this region that does not grow
-        if ($project && $config && (! $this->knativeRegionId || $project->knative_region_id === $this->knativeRegionId)) {
-            if ($incoming <= ResourceReservation::forProject($project)[$this->key()]) {
-                return;
-            }
+        // Grandfathered: an existing project on this region whose reservation does not grow
+        if ($project && (! $this->knativeRegionId || $project->knative_region_id === $this->knativeRegionId)
+            && ! $this->grows($demand, ResourceReservation::demandForProject($project))) {
+            return;
         }
 
-        $used = $this->usedWithoutProject();
+        $usage = RegionCapacity::usage($this->knativeRegionId, $this->excludeProjectId);
+        $shortfall = RegionCapacity::shortfalls($limits, $usage, $this->only($demand))[$this->key()] ?? null;
 
-        if ($used + $incoming > $limit) {
-            $available = max(0, $limit - $used);
-            $fail(match ($this->resource) {
-                'cpu' => __('api.resource_limit.cpu_exceeded', ['available' => $available, 'limit' => $limit]),
-                'memory' => __('api.resource_limit.memory_exceeded', ['available' => $available, 'limit' => $limit]),
-            });
+        if ($shortfall) {
+            $fail(RegionCapacity::message($this->key(), $shortfall));
         }
     }
 
@@ -114,39 +118,40 @@ class WithinResourceLimit implements ValidationRule
         return ($stored === null || $stored === '') ? InstanceSizes::defaultFor($serviceType)[$field] : $stored;
     }
 
+    /**
+     * Whether the new demand needs more of this resource than the project holds now: more
+     * always-on, or more in all.
+     */
+    private function grows(array $new, array $current): bool
+    {
+        $key = $this->key();
+
+        return $new['hard'][$key] > $current['hard'][$key]
+            || $new['hard'][$key] + $new['burst'][$key] > $current['hard'][$key] + $current['burst'][$key];
+    }
+
+    /** The demand of this rule's resource only (the other one has its own rule). */
+    private function only(array $demand): array
+    {
+        $other = $this->resource === 'cpu' ? 'memory_mb' : 'cpu_m';
+        $demand['hard'][$other] = 0;
+        $demand['burst'][$other] = 0;
+
+        return $demand;
+    }
+
     private function key(): string
     {
         return $this->resource === 'cpu' ? 'cpu_m' : 'memory_mb';
     }
 
-    private function resolveLimit(): int
+    /** The region checked against, or every active region. */
+    private function regions(): Collection
     {
         if ($this->knativeRegionId) {
-            $config = KnativeRegion::find($this->knativeRegionId);
-            if (! $config) {
-                return 0;
-            }
-
-            return $this->resource === 'cpu'
-                ? (int) $config->total_cpu_m
-                : (int) $config->total_memory_mb;
+            return collect([KnativeRegion::find($this->knativeRegionId)])->filter()->values();
         }
 
-        return $this->resource === 'cpu'
-            ? (int) KnativeRegion::where('is_active', true)->sum('total_cpu_m')
-            : (int) KnativeRegion::where('is_active', true)->sum('total_memory_mb');
-    }
-
-    private function usedWithoutProject(): int
-    {
-        $projects = Project::with('xaasConfig', 'faasConfig', 'containerConfig')
-            ->when($this->excludeProjectId, fn ($q) => $q->where('id', '!=', $this->excludeProjectId))
-            ->when($this->knativeRegionId, fn ($q) => $q->where('knative_region_id', $this->knativeRegionId))
-            ->get();
-
-        // Running model services of the region(s) reserve capacity too (docs/huggingface.md)
-        $models = ModelServiceReservations::sumIn($this->knativeRegionId);
-
-        return ResourceReservation::sum($projects)[$this->key()] + $models[$this->key()];
+        return KnativeRegion::where('is_active', true)->get();
     }
 }

@@ -18,7 +18,7 @@ class TraefikImageTest extends TestCase
     {
         // A chart bump changes the image: update TRAEFIK_IMAGE with it (appVersion of the chart)
         // and its REQS_IMAGES entry (runtime/lib/mirror.sh)
-        $this->assertSame(['40.3.0', 'ghcr.io/runrsh/reqs/traefik:v3.7.4'], [KnativeConstants::TRAEFIK_CHART_VERSION, KnativeConstants::TRAEFIK_IMAGE]);
+        $this->assertSame(['40.3.0', 'ghcr.io/brf-tech/reqs/traefik:v3.7.4'], [KnativeConstants::TRAEFIK_CHART_VERSION, KnativeConstants::TRAEFIK_IMAGE]);
     }
 
     public function test_the_mirror_copies_it_from_docker_hub(): void
@@ -28,7 +28,7 @@ class TraefikImageTest extends TestCase
             $this->markTestSkipped('runtime/lib/mirror.sh is not part of this checkout');
         }
 
-        // target|source: ghcr.io/runrsh/reqs/traefik:<appVersion> from docker.io/traefik:<appVersion>
+        // target|source: ghcr.io/brf-tech/reqs/traefik:<appVersion> from docker.io/traefik:<appVersion>
         $tag = TraefikImage::version(KnativeConstants::TRAEFIK_IMAGE);
         $this->assertStringContainsString("\"traefik:{$tag}|traefik:{$tag}\"", (string) file_get_contents($mirror));
     }
@@ -74,23 +74,23 @@ class TraefikImageTest extends TestCase
 
     public function test_chart_image_values(): void
     {
-        $this->assertSame(['registry' => 'ghcr.io', 'repository' => 'runrsh/reqs/traefik', 'tag' => 'v3.7.4'], TraefikImage::helmValues('ghcr.io/runrsh/reqs/traefik:v3.7.4'));
+        $this->assertSame(['registry' => 'ghcr.io', 'repository' => 'brf-tech/reqs/traefik', 'tag' => 'v3.7.4'], TraefikImage::helmValues('ghcr.io/brf-tech/reqs/traefik:v3.7.4'));
         // the chart's default: Docker Hub
         $this->assertSame(['registry' => 'docker.io', 'repository' => 'traefik', 'tag' => 'v3.7.4'], TraefikImage::helmValues('traefik:v3.7.4'));
         $this->assertSame(['registry' => 'docker.io', 'repository' => 'traefik', 'tag' => 'v3.7.4'], TraefikImage::helmValues('docker.io/traefik:v3.7.4'));
         // a registry with a port, a version pinned by digest, a digest alone, no tag
         $this->assertSame(['registry' => 'registry.local:5000', 'repository' => 'mirror/traefik', 'tag' => 'v3.7.4@sha256:abc'], TraefikImage::helmValues('registry.local:5000/mirror/traefik:v3.7.4@sha256:abc'));
         $this->assertSame(['registry' => 'localhost:5000', 'repository' => 'traefik', 'digest' => 'sha256:abc'], TraefikImage::helmValues('localhost:5000/traefik@sha256:abc'));
-        $this->assertSame(['registry' => 'ghcr.io', 'repository' => 'runrsh/reqs/traefik'], TraefikImage::helmValues('ghcr.io/runrsh/reqs/traefik'));
+        $this->assertSame(['registry' => 'ghcr.io', 'repository' => 'brf-tech/reqs/traefik'], TraefikImage::helmValues('ghcr.io/brf-tech/reqs/traefik'));
     }
 
     public function test_set_json_and_version(): void
     {
         $this->assertSame([
             'image.registry' => '"ghcr.io"',
-            'image.repository' => '"runrsh/reqs/traefik"',
+            'image.repository' => '"brf-tech/reqs/traefik"',
             'image.tag' => '"v3.7.4"',
-        ], TraefikImage::helmSetJson('ghcr.io/runrsh/reqs/traefik:v3.7.4'));
+        ], TraefikImage::helmSetJson('ghcr.io/brf-tech/reqs/traefik:v3.7.4'));
 
         $this->assertSame('v3.7.4', TraefikImage::version('docker.io/traefik:v3.7.4'));
         $this->assertSame('v3.7.4', TraefikImage::version('registry.local:5000/traefik:v3.7.4@sha256:abc'));

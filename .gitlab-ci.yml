@@ -16,18 +16,18 @@ variables:
 
 # Shared setup for Docker build + push (multi-arch: amd64 + arm64)
 .docker_build:
-  image: ghcr.io/runrsh/reqs/docker:27
+  image: ghcr.io/brf-tech/reqs/docker:27
   services:
-    - ghcr.io/runrsh/reqs/docker:27-dind
+    - ghcr.io/brf-tech/reqs/docker:27-dind
   before_script:
     - docker login -u "$CI_REGISTRY_USER" -p "$CI_REGISTRY_PASSWORD" "$CI_REGISTRY"
-    - docker run --rm --privileged ghcr.io/runrsh/reqs/binfmt:latest --install all
+    - docker run --rm --privileged ghcr.io/brf-tech/reqs/binfmt:latest --install all
     - docker buildx create --name multiarch --driver docker-container --use
     - docker buildx inspect --bootstrap multiarch >/dev/null
 
 # Shared setup for Helm deploys
 .helm_deploy:
-  image: ghcr.io/runrsh/reqs/helm:3.15
+  image: ghcr.io/brf-tech/reqs/helm:3.15
   before_script:
     - mkdir -p ~/.kube
     - echo "$KUBE_CONFIG" | base64 -d > ~/.kube/config
@@ -36,7 +36,7 @@ variables:
 
 # Composer dependencies (incl. dev tools) for PHP quality jobs; working dir: api/
 .php_composer:
-  image: ghcr.io/runrsh/reqs/php:8.2-cli-alpine
+  image: ghcr.io/brf-tech/reqs/php:8.2-cli-alpine
   variables:
     COMPOSER_CACHE_DIR: "$CI_PROJECT_DIR/.composer-cache"
   cache:
@@ -86,13 +86,13 @@ secrets:gitleaks:
     - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
 
 # ─── Reqs mirror ─────────────────────────────────────────────────────────────
-# Every ghcr.io/runrsh/reqs/* image the repository references is in the mirror list (REQS_IMAGES
+# Every ghcr.io/brf-tech/reqs/* image the repository references is in the mirror list (REQS_IMAGES
 # of runtime/lib/mirror.sh, or a runtime base image of mirror-bases), so build:runtime's
 # `ci.sh mirror-reqs` copies it to ghcr.io (ci/check-reqs-mirror.sh).
 
 check:reqs-mirror:
   stage: check
-  image: ghcr.io/runrsh/reqs/alpine:3.21
+  image: ghcr.io/brf-tech/reqs/alpine:3.21
   before_script:
     - apk add --no-cache bash git grep coreutils
   script:
@@ -105,7 +105,7 @@ check:reqs-mirror:
 
 check:knative-releases:
   stage: check
-  image: ghcr.io/runrsh/reqs/helm:3.15
+  image: ghcr.io/brf-tech/reqs/helm:3.15
   before_script:
     - apk add --no-cache bash curl jq git
   script:
@@ -117,7 +117,7 @@ check:knative-releases:
 
 check:helm-releases:
   stage: check
-  image: ghcr.io/runrsh/reqs/helm:3.15
+  image: ghcr.io/brf-tech/reqs/helm:3.15
   before_script:
     - apk add --no-cache bash curl jq git
   script:
@@ -137,7 +137,7 @@ check:helm-releases:
 # Kubernetes 1.30 and later (ci/check-helm-chart.sh)
 lint:helm:
   stage: test
-  image: ghcr.io/runrsh/reqs/helm:3.15
+  image: ghcr.io/brf-tech/reqs/helm:3.15
   variables:
     KUBECONFORM_VERSION: v0.7.0
   before_script:
@@ -159,7 +159,7 @@ lint:helm:
 
 test:api:
   stage: test
-  image: ghcr.io/runrsh/reqs/php:8.2-cli-alpine
+  image: ghcr.io/brf-tech/reqs/php:8.2-cli-alpine
   before_script:
     # git-daemon: git-http-backend, as in the API image (the git deploy tests serve the project remotes)
     - apk add --no-cache git git-daemon sqlite-dev unzip
@@ -206,7 +206,7 @@ analyse:php:
 
 test:ui:
   stage: test
-  image: ghcr.io/runrsh/reqs/node:22-alpine
+  image: ghcr.io/brf-tech/reqs/node:22-alpine
   variables:
     npm_config_cache: "$CI_PROJECT_DIR/.npm"
     NODE_OPTIONS: "--max-old-space-size=4096"
@@ -242,6 +242,35 @@ test:ui:
     - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
       changes:
         - vue/**/*
+        - .gitlab-ci.yml
+
+# Workflow SDK (@runr/workflows, sdk/node): typecheck + Vitest. A library keeps no lockfile
+# (sdk/.gitignore), so npm resolves the tree on every install: npm 10 fails to resolve Vitest 4,
+# hence npm 11 (devEngines in sdk/node/package.json).
+test:sdk-node:
+  stage: test
+  image: ghcr.io/brf-tech/reqs/node:22-alpine
+  variables:
+    npm_config_cache: "$CI_PROJECT_DIR/.npm"
+  cache:
+    key: npm-sdk-node
+    paths:
+      - .npm/
+  before_script:
+    - npm install -g npm@11 --no-audit --no-fund
+    - cd sdk/node
+    - npm install --no-audit --no-fund
+  script:
+    - npm run typecheck
+    - npm test
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+      changes:
+        - sdk/node/**/*
+        - .gitlab-ci.yml
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+      changes:
+        - sdk/node/**/*
         - .gitlab-ci.yml
 
 # Playwright UI e2e against a mocked API (route interception; Vite dev servers
@@ -290,7 +319,7 @@ test:ui-e2e:stack:
   stage: test
   image: mcr.microsoft.com/playwright:v1.64.0-noble
   services:
-    - name: ghcr.io/runrsh/reqs/docker:27-dind
+    - name: ghcr.io/brf-tech/reqs/docker:27-dind
       alias: docker
   variables:
     DOCKER_HOST: "tcp://docker:2376"
@@ -350,9 +379,11 @@ test:ui-e2e:stack:
 # build image, not by the host Go toolchain.
 test:go:
   stage: test
-  # Newer than every module's go directive: a toolchain that GOTOOLCHAIN downloads for a newer
-  # module (go1.25+) has no covdata, so -coverprofile fails on packages without tests.
-  image: ghcr.io/runrsh/reqs/golang:1.26-alpine
+  # At least every module's go directive (go 1.26.9, the stdlib security fixes GO-2026-6603 …
+  # 6617); the mirrored 1.26-alpine follows the latest 1.26 patch. A toolchain that GOTOOLCHAIN
+  # downloads for a newer module (go1.25+) has no covdata, so -coverprofile fails on packages
+  # without tests.
+  image: ghcr.io/brf-tech/reqs/golang:1.26-alpine
   variables:
     CGO_ENABLED: "1"
     GOTOOLCHAIN: auto
@@ -402,10 +433,10 @@ test:go:
 
 # Shipped UI bundle: a high/critical advisory in a production dependency fails.
 # Build/test tooling (devDependencies) is reported with exit code 3, an allowed
-# failure: its remaining fixes are upstream major upgrades (tailwindcss 4).
+# failure: its fix can wait for an upstream major upgrade.
 audit:npm:
   stage: test
-  image: ghcr.io/runrsh/reqs/node:22-alpine
+  image: ghcr.io/brf-tech/reqs/node:22-alpine
   script:
     - cd vue
     - npm audit --omit=dev --audit-level=high
@@ -426,7 +457,7 @@ audit:npm:
 # constraints; reported without blocking until composer.lock is refreshed.
 audit:composer:
   stage: test
-  image: ghcr.io/runrsh/reqs/composer:2.7
+  image: ghcr.io/brf-tech/reqs/composer:2.7
   script:
     - cd api
     - composer audit --locked --no-interaction
@@ -444,9 +475,9 @@ audit:composer:
 # inside docker-in-docker. Long-running: manual, or a schedule with SCHEDULED_JOB=e2e.
 e2e:kind:
   stage: test
-  image: ghcr.io/runrsh/reqs/docker:27
+  image: ghcr.io/brf-tech/reqs/docker:27
   services:
-    - name: ghcr.io/runrsh/reqs/docker:27-dind
+    - name: ghcr.io/brf-tech/reqs/docker:27-dind
       alias: docker
   variables:
     DOCKER_HOST: "tcp://docker:2376"
@@ -530,7 +561,7 @@ build:ui:
         - vue/Dockerfile
 
 # ─── Runtime Images (ghcr.io) ─────────────────────────────────────────────────
-# build.sh discovers versions dynamically and builds + pushes them under ghcr.io/runrsh/.
+# build.sh discovers versions dynamically and builds + pushes them under ghcr.io/brf-tech/.
 # Runs when something under runtime/ changes, or manually.
 # Secrets: GHCR_USERNAME, GHCR_TOKEN (write:packages scope)
 
@@ -540,9 +571,9 @@ build:runtime:
   before_script:
     - echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USERNAME" --password-stdin
     - apk add --no-cache bash curl
-    - docker run --rm --privileged ghcr.io/runrsh/reqs/binfmt:latest --install all
+    - docker run --rm --privileged ghcr.io/brf-tech/reqs/binfmt:latest --install all
   script:
-    # The reqs mirror first (ghcr.io/runrsh/reqs/*): every REQS_IMAGES entry of
+    # The reqs mirror first (ghcr.io/brf-tech/reqs/*): every REQS_IMAGES entry of
     # runtime/lib/mirror.sh (an entry added to the list is copied here, not by hand), then the
     # runtime base images — a new upstream patch version (e.g. node:24.21-slim) must be mirrored
     # before build discovers and uses it

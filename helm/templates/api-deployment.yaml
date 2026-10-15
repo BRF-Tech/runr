@@ -25,7 +25,7 @@ spec:
       {{- include "runr.pod-colocation" . | nindent 6 }}
       containers:
         - name: api
-          image: "{{ .Values.api.image.repository }}:{{ .Values.api.image.tag }}"
+          image: {{ include "runr.image" (printf "%v:%v" .Values.api.image.repository .Values.api.image.tag) | quote }}
           imagePullPolicy: {{ .Values.api.image.pullPolicy }}
           ports:
             - containerPort: {{ .Values.api.port }}

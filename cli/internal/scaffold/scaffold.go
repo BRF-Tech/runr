@@ -10,9 +10,9 @@ import (
 	"strings"
 	"text/template"
 
-	"github.com/runrsh/core/cli/internal/projectfile"
-	"github.com/runrsh/core/cli/internal/runtimes"
-	"github.com/runrsh/core/cli/pkg/runr"
+	"github.com/brf-tech/runr/cli/internal/projectfile"
+	"github.com/brf-tech/runr/cli/internal/runtimes"
+	"github.com/brf-tech/runr/cli/pkg/runr"
 )
 
 // Options of a scaffold.

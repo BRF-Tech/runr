@@ -53,8 +53,8 @@ ensure_image() {
     fi
 }
 
-ensure_image "ghcr.io/runrsh/reqs/postgres:17-alpine"
-ensure_image "ghcr.io/runrsh/reqs/redis:7-alpine"
+ensure_image "ghcr.io/brf-tech/reqs/postgres:17-alpine"
+ensure_image "ghcr.io/brf-tech/reqs/redis:7-alpine"
 
 # ── Export ────────────────────────────────────────────────────────────────────
 echo ""
@@ -62,8 +62,8 @@ echo "▶ Exporting images to ${OUTPUT} ..."
 docker save -o "$OUTPUT" \
     runr-api:latest \
     runr-ui:latest \
-    ghcr.io/runrsh/reqs/postgres:17-alpine \
-    ghcr.io/runrsh/reqs/redis:7-alpine
+    ghcr.io/brf-tech/reqs/postgres:17-alpine \
+    ghcr.io/brf-tech/reqs/redis:7-alpine
 
 SIZE=$(du -h "$OUTPUT" | cut -f1)
 echo ""

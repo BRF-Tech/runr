@@ -102,6 +102,9 @@ class ModelServiceController extends Controller
             DeployModelServiceJob::dispatch($service->id, (string) auth()->id());
         }
 
+        // Its engine image onto the nodes, while the model is mirrored or before the first deploy
+        app(ModelServiceDeployer::class)->prepullImages($service);
+
         return response()->json(new AiModelServiceResource($service->fresh(['model', 'region'])->loadCount('bindings')), 201);
     }
 

@@ -48,6 +48,29 @@ for name in "${scenarios[@]}"; do
   echo "✓ $name: lint + template ($(grep -c '^kind:' "$OUT/$name.yaml") resources)"
 done
 
+# An upgrade from RunR ≤ 0.5.0 keeps the previous chart's image values (`helm upgrade
+# --reuse-values` reuses them, installs may have set them): every image under RunR's namespace up
+# to 0.5.0 renders as the same image under ghcr.io/brf-tech (template helper runr.image).
+old_ns="ghcr.io/runrsh"
+sed "s#ghcr\.io/brf-tech/#${old_ns}/#g" "$ROOT/helm/values.yaml" >"$OUT/values-0.5.0.values"
+if helm template runr "$ROOT/helm" --namespace runr -f "$OUT/values-0.5.0.values" --set domain=console.acme-cloud.example \
+    --set "supplyChain.toolsImage=${old_ns}/runr-supply-chain:1.0.0" --set "images.uploadImage=${old_ns}/image-upload:1.0.0" \
+    --set "knative.traefikImage=${old_ns}/reqs/traefik:v3.7.4" >"$OUT/upgrade-images.render" 2>"$OUT/upgrade-images.err"; then
+  left=$(grep -n "${old_ns}/" "$OUT/upgrade-images.render" || true)
+  moved=$(grep -c 'ghcr\.io/brf-tech/' "$OUT/upgrade-images.render" || true)
+  if [ -z "$left" ] && [ "$moved" -ge 12 ]; then
+    echo "✓ upgrade-images: values of RunR ≤ 0.5.0 render ghcr.io/brf-tech ($moved references)"
+  else
+    echo "✗ upgrade-images: values of RunR ≤ 0.5.0 still render ${old_ns}/ (or too few ghcr.io/brf-tech references: ${moved})"
+    echo "$left"
+    fail=1
+  fi
+else
+  echo "✗ upgrade-images: helm template"
+  cat "$OUT/upgrade-images.err"
+  fail=1
+fi
+
 # kubeconform from the PATH, else in a container. The renderings go in on stdin: no bind mount,
 # so a remote Docker daemon (docker-in-docker) works too.
 run_kubeconform() {

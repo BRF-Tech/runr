@@ -5,7 +5,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/runrsh/core/cli/pkg/runr"
+	"github.com/brf-tech/runr/cli/pkg/runr"
 )
 
 // Catalog is the permission catalog the fake knows (api/config/permissions.php).

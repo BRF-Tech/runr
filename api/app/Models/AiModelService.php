@@ -37,8 +37,10 @@ use Illuminate\Support\Carbon;
  * @property string $served_name
  * @property string $status
  * @property string|null $status_message
+ * @property string|null $status_reason Kubernetes' reason the pods do not start (CrashLoopBackOff, ImagePullBackOff …)
  * @property string|null $snapshot_id
  * @property Carbon|null $deployed_at
+ * @property string|null $runtime_class RuntimeClass of the last deploy ("runc" for none; null: unknown, the region's CaaS mapping counts)
  * @property string|null $created_by
  * @property-read AiModel $model
  * @property-read KnativeRegion|null $region
@@ -72,7 +74,7 @@ class AiModelService extends Model
         'ai_model_id', 'knative_region_id', 'name', 'service_name', 'engine', 'device', 'mode',
         'gpu', 'cpu', 'memory_mb', 'min_scale', 'max_scale', 'scale_to_zero', 'timeout_seconds',
         'image', 'args', 'env_vars', 'port', 'health_path', 'served_name', 'status',
-        'status_message', 'snapshot_id', 'deployed_at', 'created_by',
+        'status_message', 'status_reason', 'snapshot_id', 'deployed_at', 'created_by',
     ];
 
     protected $casts = [
@@ -87,6 +89,17 @@ class AiModelService extends Model
         'port' => 'integer',
         'deployed_at' => 'datetime',
     ];
+
+    protected static function booted(): void
+    {
+        // The pods' reason belongs to the status it was seen in: a new status (deploy queued,
+        // stopped, ready) starts without one unless it is set with it
+        static::saving(function (AiModelService $service) {
+            if ($service->isDirty('status') && ! $service->isDirty('status_reason')) {
+                $service->status_reason = null;
+            }
+        });
+    }
 
     public function model(): BelongsTo
     {

@@ -9,6 +9,7 @@ use App\Services\RegionReconcile\ClusterGroup;
 use App\Services\RegionReconcile\ReconcileTarget;
 use App\Services\RegionReconcile\Steps\KataSandboxStep;
 use App\Services\SandboxInstallService;
+use App\Support\Images\RegistryMove;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Queue;
 use Tests\Concerns\FakesKataCluster;
@@ -179,6 +180,75 @@ class KataSandboxReconcileStepTest extends TestCase
     private function cluster(KnativeRegion $region): ClusterGroup
     {
         return new ClusterGroup('uid:op', [new ReconcileTarget($region)], new KubernetesClient($region->kubeconfig));
+    }
+
+    /**
+     * A plain containerd node with Kata installed by RunR 0.5.0: this release's installer with its
+     * config-fixup init container image under RunR's image namespace up to 0.5.0 (ghcr.io/runrsh).
+     * $dropIns: the drop-in hash the installer recorded (null: this release's).
+     *
+     * @return array{0: KnativeRegion, 1: string} the region and the installer hash 0.5.0 recorded
+     */
+    private function containerd050Cluster(?string $dropIns = null): array
+    {
+        $this->addNode('node-1', ['katacontainers.io/kata-runtime' => 'true', 'runr.dev/kvm' => 'true'], 'containerd://1.7.27', 'v1.32.0');
+        $service = app(SandboxInstallService::class);
+        $hypervisors = self::OP_HYPERVISORS;
+        $desired = (fn () => $this->buildKataInstallerDaemonSet('runr-sandbox', $hypervisors, false, 'containerd'))->call($service);
+        $data = (fn () => $this->buildKataConfigMap('runr-sandbox', $hypervisors, 'containerd'))->call($service)['data'];
+
+        $live = RegistryMove::legacy($desired);
+        $this->assertSame('ghcr.io/runrsh/reqs/busybox:latest', $live['spec']['template']['spec']['initContainers'][0]['image']);
+        $hash = SandboxInstallService::kataInstallerHash($live['spec']['template']['spec'], $data);
+        $this->assertNotSame($desired['metadata']['annotations'][SandboxInstallService::KATA_INSTALLER_HASH_ANNOTATION], $hash);
+        $live['metadata']['annotations'][SandboxInstallService::KATA_INSTALLER_HASH_ANNOTATION] = $hash;
+        $live['spec']['template']['metadata']['annotations'][SandboxInstallService::KATA_CONFIG_HASH_ANNOTATION] = $hash;
+        if ($dropIns !== null) {
+            $live['metadata']['annotations'][SandboxInstallService::KATA_DROPINS_HASH_ANNOTATION] = $dropIns;
+        }
+        $live['metadata']['generation'] = 1;
+        $this->daemonSets['kata-installer'] = $live;
+        $this->configMaps['kata-runr-config'] = ['metadata' => ['name' => 'kata-runr-config', 'namespace' => 'runr-sandbox'], 'data' => $data];
+        foreach ($this->desired('runtime_classes') as $rc) {
+            $this->runtimeClasses[$rc['metadata']['name']] = $rc;
+        }
+        $this->podLogs['kata-installer-node-1'] = "Kata Containers installation completed successfully\n";
+        $this->onApply['kata-dropins'] = fn () => $this->podLogs['kata-dropins-node-1'] = "runr: kata drop-ins updated (3 runtime handler(s), node node-1)\n";
+        $this->fakeKataCluster();
+
+        return [$this->kataRegion(['sandbox_kata_status' => 'ready', 'sandbox_kata_hypervisor' => self::OP_HYPERVISORS]), $hash];
+    }
+
+    public function test_the_image_namespace_move_alone_does_not_re_run_kata_deploy(): void
+    {
+        [$region] = $this->containerd050Cluster();
+        Queue::fake();
+
+        $drift = app(SandboxInstallService::class)->kataDrift(new KubernetesClient($region->kubeconfig), self::OP_HYPERVISORS);
+        $this->assertSame(['current', 'current'], [$drift['installer'], $drift['dropins']]);
+
+        $this->assertSame([], (new KataSandboxStep)->run($this->cluster($region), true));
+        $this->assertSame([], (new KataSandboxStep)->run($this->cluster($region), false));
+        $this->assertSame([], $this->writes(), 'the installer keeps its pods (kata-deploy would restart containerd)');
+        Queue::assertNothingPushed();
+    }
+
+    public function test_a_drop_in_update_keeps_the_installer_of_the_old_image_namespace_as_it_runs(): void
+    {
+        [$region, $hash] = $this->containerd050Cluster('0123456789abcdef');
+        $template = $this->daemonSets['kata-installer']['spec']['template'];
+        Queue::fake();
+
+        $lines = (new KataSandboxStep)->run($this->cluster($region), false);
+
+        $this->assertStringStartsWith('Kata configuration drop-ins (kata-clh-runr, kata-qemu-runr, kata-dragonball-runr) updated in place on 1 node(s)', $lines[0]);
+        Queue::assertNothingPushed();
+        $ds = $this->daemonSets['kata-installer'];
+        $this->assertEquals($template['spec'], $ds['spec']['template']['spec'], 'pod template as it runs: nothing rolls');
+        $this->assertSame($template['metadata']['annotations'], $ds['spec']['template']['metadata']['annotations']);
+        $this->assertSame($hash, $ds['metadata']['annotations'][SandboxInstallService::KATA_INSTALLER_HASH_ANNOTATION]);
+
+        $this->assertSame([], (new KataSandboxStep)->run($this->cluster($region), false), 'nothing left to do');
     }
 
     public function test_dry_run_on_op_reports_the_kata_deploy_re_run_and_its_restarts(): void

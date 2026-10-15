@@ -8,7 +8,7 @@ import (
 
 	"github.com/hashicorp/terraform-plugin-framework/providerserver"
 
-	"github.com/runrsh/core/terraform-provider-runr/internal/provider"
+	"github.com/brf-tech/runr/terraform-provider-runr/internal/provider"
 )
 
 // Generate the registry documentation from the schema and examples/.
@@ -23,7 +23,7 @@ func main() {
 	flag.Parse()
 
 	err := providerserver.Serve(context.Background(), provider.New(version), providerserver.ServeOpts{
-		Address: "registry.terraform.io/runrsh/runr",
+		Address: "registry.terraform.io/brf-tech/runr",
 		Debug:   debug,
 	})
 	if err != nil {

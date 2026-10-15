@@ -148,7 +148,7 @@ trait FakesSupplyChainCluster
     {
         $region->forceFill(['sandbox_wasm_status' => 'ready', 'sandbox_wasm_shims' => ['spin']])->save();
         ExecutorImage::firstOrCreate(['runtime' => 'wasm-rust', 'version' => '4.1'], [
-            'docker_image' => 'ghcr.io/runrsh/exec-wasm-rust:4.1', 'is_default' => true, 'is_active' => true,
+            'docker_image' => 'ghcr.io/brf-tech/exec-wasm-rust:4.1', 'is_default' => true, 'is_active' => true,
         ]);
 
         $n = ++$this->scProjects;

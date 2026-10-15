@@ -15,7 +15,7 @@ here="$(cd "$(dirname "$0")/.." && pwd)"
 api="$(cd "$here/../api" && pwd)"
 out="${1:-$here/pkg/runr/testdata/openapi.json}"
 case "$out" in /*) ;; *) out="$here/$out" ;; esac
-image="${RUNR_API_IMAGE:-ghcr.io/runrsh/runr/api:latest}"
+image="${RUNR_API_IMAGE:-ghcr.io/brf-tech/runr/api:latest}"
 
 # The document's info.description is the deployment's own text; the contract test does not
 # use it, so it is stored neutral.

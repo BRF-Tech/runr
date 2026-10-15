@@ -12,6 +12,7 @@ use App\Services\Ai\Gpu\GpuInventory;
 use App\Services\Ai\Gpu\GpuRequest;
 use App\Services\Ai\Gpu\GpuScheduling;
 use App\Services\Contracts\KnativeConstants;
+use App\Services\Helpers\ResourceReservation;
 use App\Services\Manifests\KnativeManifests;
 
 /**
@@ -173,7 +174,8 @@ class ModelServiceManifests
         // User arguments: appended to the engine's (custom: the only ones)
         $args = array_merge($args, array_map('strval', (array) ($service->args ?? [])));
 
-        $env = array_merge($env, $this->hubEnv($offline));
+        $cpu = (string) ($service->cpu ?: '1');
+        $env = array_merge($env, self::threadEnv($cpu), $this->hubEnv($offline));
 
         $envList = [];
         foreach ($env as $name => $value) {
@@ -194,7 +196,6 @@ class ModelServiceManifests
         }
 
         $memory = max(256, (int) $service->memory_mb).'Mi';
-        $cpu = (string) ($service->cpu ?: '1');
 
         $container = [
             'name' => 'model',
@@ -208,6 +209,9 @@ class ModelServiceManifests
             'volumeMounts' => [$offline
                 ? ['name' => ModelStorage::VOLUME_NAME, 'mountPath' => ModelStorage::MOUNT_SNAPSHOT, 'subPath' => (string) $snapshot?->path, 'readOnly' => true]
                 : ['name' => ModelStorage::VOLUME_NAME, 'mountPath' => ModelStorage::MOUNT_CACHE, 'subPath' => $this->storage->cacheSubPath()]],
+            // An engine that exits without a termination message (a panic, a failed model load)
+            // leaves the tail of its log there: the service status shows why it crash-loops
+            'terminationMessagePolicy' => 'FallbackToLogsOnError',
         ];
 
         if ($args !== []) {
@@ -225,6 +229,21 @@ class ModelServiceManifests
         }
 
         return $container;
+    }
+
+    /**
+     * Thread pools of the math libraries (OpenMP, MKL; PyTorch, ONNX Runtime and TEI's backends
+     * use them) sized to the CPU limit, ceil(cpu): they default to the node's CPUs, and that
+     * many threads under a smaller limit spend most periods throttled. hf-serve also reads the
+     * cgroup quota when the variables are missing.
+     *
+     * @return array<string, string>
+     */
+    public static function threadEnv(string $cpu): array
+    {
+        $threads = (string) max(1, (int) ceil(ResourceReservation::parseCpu($cpu) / 1000));
+
+        return ['OMP_NUM_THREADS' => $threads, 'MKL_NUM_THREADS' => $threads];
     }
 
     /** @return array{0: string, 1: list<string>, 2: array<string, string>} */
@@ -270,7 +289,8 @@ class ModelServiceManifests
             $image = (string) config('ai.images.tei_cpu');
         }
 
-        $args = ['--model-id', $ref, '--hostname', '0.0.0.0', '--port', (string) self::PORT];
+        // --served-model-name: the `model` of /v1/embeddings answers, as vLLM and hf-serve name it
+        $args = ['--model-id', $ref, '--served-model-name', $service->served_name, '--hostname', '0.0.0.0', '--port', (string) self::PORT];
         if ($revision) {
             array_push($args, '--revision', $revision);
         }

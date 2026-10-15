@@ -53,7 +53,7 @@ trait KnativePrometheusTrait
                     ],
                     'initContainers' => [[
                         'name' => 'fix-permissions',
-                        'image' => 'ghcr.io/runrsh/reqs/busybox:latest',
+                        'image' => 'ghcr.io/brf-tech/reqs/busybox:latest',
                         'command' => ['sh', '-c', 'mkdir -p /prometheus/prometheus-db && chown -R 1000:1000 /prometheus'],
                         'volumeMounts' => [['name' => $volumeName, 'mountPath' => '/prometheus']],
                         'securityContext' => ['runAsUser' => 0, 'runAsNonRoot' => false],

@@ -9,7 +9,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 
-	"github.com/runrsh/core/cli/pkg/runr"
+	"github.com/brf-tech/runr/cli/pkg/runr"
 )
 
 // The runtime catalog of the fake (api RuntimeController): built-in runtimes from the executor
@@ -46,7 +46,7 @@ triggers: [http, schedule, queue]
 `
 
 // qFiles are the files uploaded with the q plugin.
-var qFiles = map[string]string{"Dockerfile": "FROM ghcr.io/runrsh/reqs/golang:1.23-alpine\nCOPY . /src\n"}
+var qFiles = map[string]string{"Dockerfile": "FROM ghcr.io/brf-tech/reqs/golang:1.23-alpine\nCOPY . /src\n"}
 
 // registeredRuntime is a runtime of POST /runtimes (or a seeded one).
 type registeredRuntime struct {
@@ -345,7 +345,7 @@ func (s *Server) catalog() []runr.CatalogRuntime {
 		if _, plugin := pluginRuntimes[img.Runtime]; plugin {
 			v.Built = true
 		} else {
-			v.Image = "ghcr.io/runrsh/exec-" + img.Runtime + ":" + img.Version
+			v.Image = "ghcr.io/brf-tech/exec-" + img.Runtime + ":" + img.Version
 		}
 		rt.Versions = append(rt.Versions, v)
 	}

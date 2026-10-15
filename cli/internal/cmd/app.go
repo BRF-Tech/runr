@@ -18,13 +18,13 @@ import (
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
 
-	"github.com/runrsh/core/cli/internal/dev"
-	"github.com/runrsh/core/cli/internal/output"
-	"github.com/runrsh/core/cli/internal/projectfile"
-	"github.com/runrsh/core/cli/internal/runtimes"
-	"github.com/runrsh/core/cli/internal/version"
-	"github.com/runrsh/core/cli/pkg/config"
-	"github.com/runrsh/core/cli/pkg/runr"
+	"github.com/brf-tech/runr/cli/internal/dev"
+	"github.com/brf-tech/runr/cli/internal/output"
+	"github.com/brf-tech/runr/cli/internal/projectfile"
+	"github.com/brf-tech/runr/cli/internal/runtimes"
+	"github.com/brf-tech/runr/cli/internal/version"
+	"github.com/brf-tech/runr/cli/pkg/config"
+	"github.com/brf-tech/runr/cli/pkg/runr"
 )
 
 // EnvProject names the default project (like --project).
@@ -84,7 +84,7 @@ func NewApp() *App {
 		},
 		OpenURL:    openBrowser,
 		Docker:     dev.ExecDocker{},
-		ReleaseURL: "https://api.github.com/repos/runrsh/core/releases/latest",
+		ReleaseURL: "https://api.github.com/repos/brf-tech/runr/releases/latest",
 	}
 }
 

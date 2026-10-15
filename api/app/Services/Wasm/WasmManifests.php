@@ -26,7 +26,7 @@ final class WasmManifests
 
     public const CLEANUP_DS = 'wasm-cleanup';
 
-    public const IMAGE = 'ghcr.io/runrsh/reqs/alpine:3.21';
+    public const IMAGE = 'ghcr.io/brf-tech/reqs/alpine:3.21';
 
     /** Installer pod template annotation: the shims it installs (drift check, UI). */
     public const SHIMS_ANNOTATION = 'runr.dev/wasm-shims';

@@ -38,7 +38,7 @@ kind_nodes_dbus() {
 }
 
 # kind_load_wasm_shim CLUSTER — the image of the Spin shim RunR installs (runtime/wasm-shim-spin,
-# ghcr.io/runrsh/containerd-shim-spin:<version>) into the Kind nodes, where the wasm-installer's init
+# ghcr.io/brf-tech/containerd-shim-spin:<version>) into the Kind nodes, where the wasm-installer's init
 # container takes it from. A local image of that version is used as it is (its tag changes with
 # every change of the build); otherwise it is pulled, or built (ci.sh wasm-shim: a full Rust build).
 kind_load_wasm_shim() {

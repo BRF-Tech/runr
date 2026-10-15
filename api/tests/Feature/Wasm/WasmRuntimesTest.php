@@ -64,7 +64,7 @@ class WasmRuntimesTest extends TestCase
             $this->assertStringStartsWith('data:image/svg+xml;base64,', $m->icon(), $id);
 
             $version = $m->versions()[0];
-            $this->assertSame(['4.1', "ghcr.io/runrsh/exec-{$id}:4.1", true], [$version['version'], $version['image'], $version['default']], $id);
+            $this->assertSame(['4.1', "ghcr.io/brf-tech/exec-{$id}:4.1", true], [$version['version'], $version['image'], $version['default']], $id);
         }
     }
 
@@ -126,7 +126,7 @@ class WasmRuntimesTest extends TestCase
 
         foreach (self::WASM as $id) {
             $image = ExecutorImage::where('runtime', $id)->sole();
-            $this->assertSame(['4.1', "ghcr.io/runrsh/exec-{$id}:4.1", true, true], [$image->version, $image->docker_image, $image->is_default, $image->is_active], $id);
+            $this->assertSame(['4.1', "ghcr.io/brf-tech/exec-{$id}:4.1", true, true], [$image->version, $image->docker_image, $image->is_default, $image->is_active], $id);
         }
         // their images are build toolchains: never pre-pulled onto the nodes
         $this->assertSame([], array_filter($this->registry()->prepullImages(), fn ($i) => str_contains($i, 'exec-wasm-')));

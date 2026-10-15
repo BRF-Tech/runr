@@ -1,5 +1,7 @@
 <?php
 
+use App\Support\Images\RegistryMove;
+
 /*
 |--------------------------------------------------------------------------
 | Uploaded images (docs/images.md)
@@ -15,7 +17,7 @@
 return [
     // Receiver / pusher image (runtime/image-upload); regions without internet pull it through
     // their registry mirror or a mirror of your own
-    'upload_image' => env('RUNR_IMAGE_UPLOAD_IMAGE', 'ghcr.io/runrsh/image-upload:1.0.0'),
+    'upload_image' => RegistryMove::ref(env('RUNR_IMAGE_UPLOAD_IMAGE', 'ghcr.io/brf-tech/image-upload:1.0.0')),
 
     // Bytes per chunk the clients send (the API's request body limit is 64 MiB)
     'chunk_bytes' => max(1024 * 1024, (int) env('RUNR_IMAGE_UPLOAD_CHUNK_BYTES', 8 * 1024 * 1024)),

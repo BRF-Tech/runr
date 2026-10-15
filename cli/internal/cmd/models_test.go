@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/runrsh/core/cli/pkg/runr"
+	"github.com/brf-tech/runr/cli/pkg/runr"
 )
 
 const modelHubMiniLM = "sentence-transformers/all-MiniLM-L6-v2"

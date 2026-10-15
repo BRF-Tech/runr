@@ -1,6 +1,6 @@
-module github.com/runrsh/core/runtime/queue-consumer
+module github.com/brf-tech/runr/runtime/queue-consumer
 
-go 1.23
+go 1.26.9
 
 require (
 	github.com/alicebob/miniredis/v2 v2.40.0

@@ -1,7 +1,7 @@
 # ── Shared variables and functions ──
 # This file is sourced, so it has no shebang.
 
-REGISTRY="${REGISTRY:-ghcr.io/runrsh}"
+REGISTRY="${REGISTRY:-ghcr.io/brf-tech}"
 EOL_API="https://endoflife.date/api"
 
 RED='\033[0;31m'

@@ -39,7 +39,7 @@ scales Wasm functions to zero and back exactly like every other RunR function.
 ```text
 Settings → Regions → (region) → Isolation → WebAssembly → Install (shims, nodes)
   └─ wasm-installer DaemonSet (runr-sandbox) on the selected nodes
-       ├─ /usr/local/bin/containerd-shim-spin-v2 (from ghcr.io/runrsh/containerd-shim-spin, sha256-checked)
+       ├─ /usr/local/bin/containerd-shim-spin-v2 (from ghcr.io/brf-tech/containerd-shim-spin, sha256-checked)
        ├─ runtime handler spin-runr → io.containerd.spin.v2 in containerd's configuration
        └─ containerd / k3s / RKE2 restarted once where the configuration changed
   └─ node labels runr.dev/wasm=true, runr.dev/wasm-spin=true
@@ -72,7 +72,7 @@ and reports it instead of replacing it.
 ### The Spin shim RunR installs
 
 RunR installs its own build of containerd-shim-spin: **v0.26.0-runr.1**, the image
-`ghcr.io/runrsh/containerd-shim-spin:v0.26.0-runr.1`, built from `runtime/wasm-shim-spin`. It is the
+`ghcr.io/brf-tech/containerd-shim-spin:v0.26.0-runr.1`, built from `runtime/wasm-shim-spin`. It is the
 upstream tag v0.26.0 with one change in the runwasi library it is built on (containerd-shim-wasm
 1.0.1): the Linux containers of a Wasm pod run with the environment of their pod spec. The upstream
 releases since v0.16.0 start them with the shim's own environment, and Knative's queue-proxy, which
@@ -147,7 +147,7 @@ same version on that node loads precompiled code. That is why RunR pushes artifa
 image `FROM scratch` with `spin.toml`: the shim reads such an image from its filesystem and
 compiles it again on every start.
 
-The build images are pulled by the nodes like any image (`ghcr.io/runrsh/exec-wasm-<lang>:4.1`,
+The build images are pulled by the nodes like any image (`ghcr.io/brf-tech/exec-wasm-<lang>:4.1`,
 built from `runtime/wasm-<lang>/Dockerfile` with `runtime/ci.sh wasm`) and come with the
 dependencies of the default project already fetched and compiled — Rust's `CARGO_TARGET_DIR`,
 Go's module and TinyGo caches, JavaScript's `node_modules` — so a build of the starter code only
@@ -338,7 +338,7 @@ which WAGI modules do not read.
 
 ### Building
 
-The build Job runs `runr-wasm-exec build` in `ghcr.io/runrsh/exec-wasm-exec:4.1` (wasi-sdk 34, Zig
+The build Job runs `runr-wasm-exec build` in `ghcr.io/brf-tech/exec-wasm-exec:4.1` (wasi-sdk 34, Zig
 0.16, TinyGo 0.42 with wasm-tools 1.240, the Spin CLI 4.1, `runtime/wasm-exec`); the first match
 makes `main.wasm`:
 
@@ -390,7 +390,7 @@ versions:
   - version: "1.0"
     upload: q-interpreter:1.0          # runr images push q.wasm --name q-interpreter:1.0
 build:
-  image: ghcr.io/runrsh/exec-wasm-exec:4.1
+  image: ghcr.io/brf-tech/exec-wasm-exec:4.1
   command: runr-wasm-exec build        # fetches the module (RUNR_WASM_MODULE) as main.wasm
 runtimeClass: wasmtime-spin-v2
 wagi:

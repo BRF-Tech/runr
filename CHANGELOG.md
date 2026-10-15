@@ -8,6 +8,120 @@ did not change says so.
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-10-16
+
+### Upgrade notes
+
+- **Region capacity admission.** Scale-to-zero projects and model services no longer hold the
+  region capacity: each counts one pod against a FaaS overcommit budget of capacity × 3 (CPU) and
+  × 1.5 (memory), set per region. Every existing region gets these defaults; a factor of 1 keeps
+  every reservation against the capacity. Sandbox and model service pods are no longer subtracted
+  as platform pods, so a region's capacity rises by what they request at its next status check
+  ([docs/architecture.md](docs/architecture.md#region-capacity-and-admission)).
+- **Image namespace `ghcr.io/brf-tech`.** RunR's images are published under `ghcr.io/brf-tech` —
+  the same names, tags and digests as under `ghcr.io/runrsh` up to 0.5.0 — and the upgrade moves
+  every reference an existing installation holds (exact prefix only; other registries stay):
+  image values of the Helm release, also the ones `--reuse-values` keeps (chart helper
+  `runr.image`); stored references in the central and every tenant schema (migration
+  `move_images_to_brf_tech_registry`, `php artisan images:move-registry` in the bootstrap job);
+  and the workloads in the regions (`region:reconcile`). Knative Services get a new revision that
+  takes the traffic once it is ready; the other workloads roll once. The node installers of Kata
+  and gVisor and the region's in-memory queue Redis keep running as they are, a restart would cost
+  more than the move ([docs/upgrade.md](docs/upgrade.md#image-namespace-ghcriobrf-tech)).
+- **Terraform.** The provider's address is `brf-tech/runr`: change `source` and run
+  `terraform state replace-provider registry.terraform.io/runrsh/runr registry.terraform.io/brf-tech/runr`
+  once.
+- **Model images.** The defaults move to TEI 1.9.4 (`ai.images.teiCpu` `…:cpu-1.9.4`,
+  `ai.images.teiGpu` `…:{arch}1.9.4`) and hf-serve 1.1.0 (`ghcr.io/brf-tech/hf-serve:1.1.0`,
+  `…:1.1.0-cuda`). Installations that set these values, for example to a registry mirror of an
+  air-gapped region, update them and mirror the new images: TEI 1.5 can no longer download
+  models from the Hugging Face Hub.
+
+### Added
+
+- **Why a model service does not start.** While a model service deploys, RunR reads its pods
+  and shows Kubernetes' reason next to the status — `CrashLoopBackOff` with the engine's last
+  output, `OOMKilled` with the memory limit, `ImagePullBackOff` / `ErrImagePull` with the image
+  and the registry's answer, `Unschedulable` with the scheduler's message — in the console, the
+  API (`status_reason`, details in `status_message`) and the MCP tools
+  ([docs/huggingface.md](docs/huggingface.md#status-reasons)).
+- **Model image pre-pull.** Setting up a region's model storage pulls the hf-serve image onto
+  the nodes projects run on, and creating or deploying a model service pulls its engine image
+  onto the nodes it can run on (GPU nodes for GPU services), so a first start no longer waits
+  for a half-gigabyte image ([docs/huggingface.md](docs/huggingface.md#image-pre-pull)).
+- **TEI on Blackwell GPUs.** Compute capability 10.0, 12.0 and 12.1 get TEI's `100-`, `120-`
+  and `121-` images; any other GPU gets `cuda-`, which picks its kernels when it starts. TEI
+  services answer with their served name in `/v1/embeddings`.
+
+### Changed
+
+- **Region capacity: always-on and FaaS overcommit budgets.** Always-on projects
+  (`min_scale` ≥ 1 or `scale_to_zero: false`) reserve (size + queue-proxy + Kata overhead) ×
+  `max(1, min_scale)` against the region capacity without overcommit, together with the Kata pod
+  overhead of scale-to-zero projects, queue consumers, always-on model services, sandboxes and
+  warm pool pods. Scale-to-zero projects and model services count one pod (size + queue-proxy)
+  against capacity × the region's overcommit factor, minus the always-on reservations.
+  Refusals name the budget and what is still free.
+- **Overcommit settings.** `GET` / `PUT /api/knative-regions/{id}/capacity` (`regions.view` /
+  `regions.manage`) shows both budgets and sets `faas_cpu_overcommit` and
+  `faas_memory_overcommit` (1–10); Settings → Regions → (region) → Workers shows and sets them.
+  The region resource carries the factors and a `capacity` object; `used_cpu_m` /
+  `used_memory_mb` now include the sandboxes and may exceed the total on an overcommitted region.
+  Capacity alerts measure the fuller budget. Audit event `region.capacity.update`.
+- **Sandbox API.** A sandbox that needs a new pod, and every warm pool pod, needs room on the
+  region's always-on budget; otherwise the create is refused with `quota_capacity`.
+- **Repository.** The repository is [github.com/brf-tech/runr](https://github.com/brf-tech/runr): Go module paths
+  `github.com/brf-tech/runr/…`, the GitHub Action `brf-tech/runr/actions/deploy`, CLI release
+  downloads and update checks, the Terraform provider `brf-tech/runr` (mirror repository
+  `brf-tech/terraform-provider-runr`), chart and SDK metadata.
+- **Images.** Images under `ghcr.io/brf-tech`: the API and UI, the runtime and WebAssembly build images, the
+  wrapper, region agent, queue consumer, image-upload, supply-chain, hf-serve and Spin shim images
+  and the `reqs` mirror; the CLI's `runr dev` and every region component use them.
+- **Region reconcile.** `region:reconcile` has two more steps: `admission-policy` brings the supply-chain admission
+  policy of a region to this release's image globs, `image-registry` moves region workloads to
+  RunR's image namespace; `traefik-image` also moves a Traefik of another version from
+  `ghcr.io/runrsh`, and `wasm-sandbox` re-runs the WebAssembly installer for its shim image.
+- **Model sizes count the weights an engine loads.** A Hub repository that holds one model in
+  several formats (safetensors, PyTorch, TensorFlow, Flax, ONNX, OpenVINO) counts one of them:
+  a 268 MB model gets 1536 MiB on CPU instead of 3328 MiB. Hub models already in the library are
+  sized again the next time a one-click deploy reuses them
+  ([docs/huggingface.md](docs/huggingface.md#engines-per-task)).
+- **Model service threads follow the CPU limit.** Model service containers get
+  `OMP_NUM_THREADS` / `MKL_NUM_THREADS` = the CPU limit rounded up, and hf-serve reads its cgroup
+  quota when they are missing: a 1-CPU hf-serve service no longer runs one PyTorch thread per
+  node CPU.
+- **hf-serve 1.1.0 restarts on a failed model load.** It writes the reason to the termination
+  log and exits, so the pod retries with back-off and the service status shows why, instead of
+  staying unready.
+
+### Security
+
+- Dependency updates for published advisories: the console's code editor takes monaco-editor 0.57
+  (its bundled DOMPurify 3.4.15) and the console builds with Tailwind CSS 4 (it looks as before;
+  braces, micromatch, chokidar, fast-glob and postcss-selector-parser leave the build tooling), the
+  workflow SDK tests with Vitest 4 (development needs npm 11), every Go module requires go1.26.9
+  (GO-2026-6603 … 6617 in net/http, HTTP/2, net/textproto and crypto/tls) and the CLI takes
+  `golang.org/x/sys` 0.48. `npm audit` reports one low advisory: DOMPurify's `IN_PLACE` mode in
+  the copy bundled with Monaco, which does not use that mode. With Tailwind CSS 4 the console
+  needs Safari 16.4, Chrome 111, Firefox 128 or newer.
+- **hf-serve 1.1.0** (the `transformers` / `diffusers` engine and the mirror and upload helpers):
+  PyTorch 2.5.1 → 2.14.1 (19 advisories, among them CVE-2025-32434), transformers 4.49 → 5.20
+  (24), Starlette 0.52 → 1.8 with FastAPI 0.143 (5), huggingface_hub 1.33, pip 26.2 and
+  setuptools 84 in the image (8); the GPU image is built on PyTorch 2.14.1 with CUDA 12.6 and
+  diffusers 0.41. `pip-audit` finds no known vulnerability in the new image; hf-serve's tests run
+  on pytest 9.1.
+
+### Fixed
+
+- **Kata overhead of the deployed RuntimeClass.** Capacity counted a project's Kata pod overhead
+  from the region's current sandbox mapping; it now follows the RuntimeClass the project (or model
+  service) was last deployed with, so a mapping change counts from each workload's next deploy.
+- **Model services and sandboxes counted twice.** The capacity refresh subtracted model service
+  and sandbox pods as platform pods while admission counted them as well (a region showed 3800m
+  used of 3405m). They are counted once now, from their records.
+- **TEI embedding services crash-looped** with "relative URL without a base": the Hugging Face
+  Hub answers downloads with a relative redirect that TEI 1.5 cannot follow. RunR runs TEI 1.9.4.
+
 ## [0.5.0] - 2026-10-15
 
 ### Upgrade notes
@@ -635,5 +749,6 @@ Initial tagged release.
 - API gateways with routes, in-app notifications and support tickets.
 - Helm chart with a single-tenant / multi-tenant edition, an install form (`values.schema.json`), generated secrets and a Traefik ingress; a Docker Compose setup for development.
 
-[Unreleased]: https://github.com/runrsh/core/compare/v0.5.0...main
-[0.5.0]: https://github.com/runrsh/core/releases/tag/v0.5.0
+[Unreleased]: https://github.com/brf-tech/runr/compare/v0.5.1...main
+[0.5.1]: https://github.com/brf-tech/runr/releases/tag/v0.5.1
+[0.5.0]: https://github.com/brf-tech/runr/releases/tag/v0.5.0

@@ -5,7 +5,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/runrsh/core/cli/pkg/runr"
+	"github.com/brf-tech/runr/cli/pkg/runr"
 )
 
 // Secret variables of a project (ProjectSecretController, ProjectSecretWriter): names are

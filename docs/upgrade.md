@@ -40,17 +40,63 @@ What runs during the upgrade, in order:
 | --- | --- | --- |
 | `runr-migrate-upgrade-<revision>` Job | pre-upgrade hook, before any Deployment changes | `php artisan migrate` (and `tenancy:migrate`) with the **new** API image; the previous version keeps serving meanwhile |
 | Deployments | after the hook | api, horizon, scheduler, reverb, ui and gateway roll to the new images |
-| `runr-bootstrap` Job | post-upgrade hook | `agent:redeploy --missing`, `region:reconcile` (region-side changes of the new version, idempotent), `rbac:assign-missing`, the first administrator when none exists |
+| `runr-bootstrap` Job | post-upgrade hook | `agent:redeploy --missing`, `images:move-registry` (stored image references, idempotent), `region:reconcile` (region-side changes of the new version, idempotent), `rbac:assign-missing`, the first administrator when none exists |
 
 Functions keep serving throughout: their traffic goes through each region's ingress, not through
 the console. Existing Knative Services, CronJobs and sandboxes are not redeployed by the upgrade;
-they pick up the new version's manifests on their next deploy.
+they pick up the new version's manifests on their next deploy. `region:reconcile` changes only
+what a release lists below (e.g. the image namespace of 0.5.1).
 
 Between the migration job and the end of the rollout the previous version still serves the
 console — 27 seconds in the e2e run below (migration job 9 s, then the new pods ready). Do not
 edit projects, deploy or change regions in that time: the previous version cannot read values the
 migration has just encrypted, shows env vars as empty and would save that. Its region status
 checks fail in that window and the new version's next check reports the region again.
+
+## 0.5.0 → 0.5.1
+
+### Image namespace ghcr.io/brf-tech
+
+RunR's repository is [github.com/brf-tech/runr](https://github.com/brf-tech/runr) and its images
+are published under `ghcr.io/brf-tech` — the same image names, tags and digests that releases up
+to 0.5.0 published under `ghcr.io/runrsh`. The upgrade moves every reference an existing
+installation holds (also one that comes from 0.4.x); only the exact prefix `ghcr.io/runrsh/`
+moves, references into other registries — a mirror of your own, the region registry's
+`<registry>/ghcr.io/…` path — stay as they are:
+
+| Where | What moves | How |
+| --- | --- | --- |
+| Helm values | Image values under `ghcr.io/runrsh/` — set at install, or the previous chart's defaults that `--reuse-values` keeps — render as the same image under `ghcr.io/brf-tech/`: API, UI, gateway, PostgreSQL, Redis, Mailpit, init containers, `ai.images`, `bindings.object.image`, `supplyChain.toolsImage`, `images.uploadImage`, `knative.traefikImage` | template helper `runr.image` |
+| Database | Runtime versions; runtime plugins (manifest, `runtime.yaml` as submitted and uploaded Dockerfiles — their region builds stay valid); CaaS images and version snapshots; region, binding and supply-chain settings; model services; sandboxes; security reports — the central schema and every tenant schema | migration `move_images_to_brf_tech_registry` and tenant migration `0054`; the bootstrap job runs `php artisan images:move-registry` once more for rows the previous version's pods wrote during the rollout |
+| Region workloads | Every workload RunR deployed: the region agent, queue consumers, the registry and its node mirror, Loki, Prometheus, binding data services, image pre-pull, CronJobs and the Knative Services of functions, CaaS projects, model services and hosted MCP servers (the wrapper init container and runtime images included) | `region:reconcile` (`image-registry`): one patch per workload; a Knative Service gets a new revision that takes the traffic once it is ready, the previous revision serves until then; the other workloads roll once |
+| Region Traefik | `ghcr.io/runrsh/reqs/traefik` of any version | `region:reconcile` (`traefik-image`): Helm upgrade of the `traefik` release with the same version |
+| WebAssembly | The shim image of the `wasm-installer` | `region:reconcile` (`wasm-sandbox`) re-runs the installer: the same binaries, no container runtime restart |
+| Admission policy | The system images policy passes `ghcr.io/brf-tech/**` | `region:reconcile` (`admission-policy`), before the workloads move |
+
+Two kinds of region workloads keep running as they are, because a restart costs more than the
+move: the node installers of Kata (with its devmapper) and gVisor — a restart re-runs the install
+on every node, and kata-deploy's cleanup restarts the container runtime — move with the next
+change of that installation (`region:reconcile` does not count the image namespace alone as a
+Kata change); the region's queue Redis (`runr-redis`), whose streams live in memory, moves when it
+is installed again. `region:reconcile` lists them as `kept:`; their images stay pullable under
+`ghcr.io/runrsh`, and the system images policy keeps passing that namespace.
+
+In the console's namespace the chart's PostgreSQL, Redis, gateway and Mailpit roll once with their
+moved images, together with the new version's API and UI: PostgreSQL is unavailable for a few
+seconds (an API pod that starts meanwhile restarts until it is back) and Redis starts empty — the
+usual rule of the rollout window applies, do not deploy or edit projects until it is over.
+
+`php artisan images:move-registry --dry-run` and `php artisan region:reconcile --dry-run` show
+what moves before the upgrade's bootstrap job does it.
+
+Outside the installation:
+
+- **CLI**: `runr` downloads and update checks use the `brf-tech/runr` releases; with Go:
+  `go install github.com/brf-tech/runr/cli@latest`.
+- **GitHub Action**: `uses: brf-tech/runr/actions/deploy@<tag>`.
+- **Terraform**: the provider's address is `brf-tech/runr`. Change `source` in
+  `required_providers` and move the state once:
+  `terraform state replace-provider registry.terraform.io/runrsh/runr registry.terraform.io/brf-tech/runr`.
 
 ## 0.4.x → 0.5.0
 
@@ -148,7 +194,7 @@ URL the events are kept for `GET /api/billing/events`.
 
 ### Region Traefik image
 
-The region Traefik runs `ghcr.io/runrsh/reqs/traefik:v3.7.4`, RunR's mirror of the
+The region Traefik runs `ghcr.io/brf-tech/reqs/traefik:v3.7.4`, RunR's mirror of the
 `docker.io/traefik` image its pinned chart runs, so its replicas — and a node that schedules one
 later — no longer pull from Docker Hub and its anonymous pull limit. `region:reconcile` moves the
 Traefik of existing regions that runs the same Traefik version from Docker Hub (a Helm upgrade
@@ -167,8 +213,8 @@ next deploy.
 
 `runtime/ci.sh test-helm-upgrade` repeats the upgrade on a Kind cluster (`runtime/ci.sh
 test-upgrade` does the same for a Docker Compose install): it installs the chart and images of
-`main` (`--from=<ref>`; images `ghcr.io/runrsh/runr/{api,ui}:<appVersion>`, built from
-that ref when they are not public) with the chart defaults, creates data through the old API —
+`main` (`--from=<ref>`; the API and UI images of that ref's chart values at its `appVersion`,
+built from that ref when they are not public) with the chart defaults, creates data through the old API —
 the administrator and a second user, the same cluster as a region (registry, Knative Serving,
 Traefik, the region agent), a Python function with two env vars, a full-access and a
 `projects:read` token — and runs `helm upgrade --reuse-values` (`--values-mode=reset`:
@@ -189,7 +235,13 @@ function every second. It then checks:
   references them and contains no value, the function reads them after the redeploy;
 - the region reports Knative Serving ready and its agent reconnected to the new Reverb;
 - `/api/branding` returns the brand (names, palette, logos) and serves the logo from its
-  `data:` URI.
+  `data:` URI;
+- nothing of `ghcr.io/runrsh` is left (the image namespace up to 0.5.0): no workload of the
+  cluster — control plane and region, Deployments, StatefulSets, DaemonSets, CronJobs, Knative
+  Services — and no running pod references it apart from the ones `region:reconcile` keeps on
+  purpose, and no database row of the central and the tenant schemas does (a CaaS project and,
+  multi-tenant, a tenant-schema row of a `ghcr.io/runrsh` image are created before the upgrade);
+  the region agent runs `ghcr.io/brf-tech/runr-agent`.
 
 `--edition=multi-tenant` installs `edition: multi-tenant` (UI images with the `-mt` suffix) and,
 instead of the region and the function, creates a tenant that the platform administrator owns with

@@ -130,7 +130,7 @@ class SandboxWarmPoolTest extends SandboxTestCase
             ['read_only_root' => false],
             ['pids_limit' => 64],
             ['sandbox_class' => 'gvisor'],
-            ['image' => 'ghcr.io/runrsh/exec-python:3.14'],
+            ['image' => 'ghcr.io/brf-tech/exec-python:3.14'],
         ] as $input) {
             $data = $this->createSandbox($input);
             $this->assertFalse($data['from_pool'], json_encode($input));

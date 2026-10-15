@@ -10,6 +10,7 @@ use App\Services\Wasm\WasmInstallService;
 use App\Services\Wasm\WasmKnativeFeatures;
 use App\Services\Wasm\WasmManifests;
 use App\Services\Wasm\WasmShim;
+use App\Support\Images\RegistryMove;
 
 /**
  * Keeps what WebAssembly functions depend on in place on clusters whose region has WebAssembly
@@ -19,7 +20,8 @@ use App\Services\Wasm\WasmShim;
  *    those two keys only (WasmKnativeFeatures);
  *  - the shims on the nodes: when the wasm-installer DaemonSet installs other shim binaries than
  *    this release (an install of an earlier release, e.g. the upstream Spin shim before RunR's
- *    v0.26.0-runr.1 build) or is missing (a failed change deletes it; the nodes keep what they
+ *    v0.26.0-runr.1 build), takes a shim image from RunR's image namespace up to 0.5.0
+ *    (RegistryMove: the same binaries, a re-run without restart) or is missing (a failed change deletes it; the nodes keep what they
  *    had), the region's WebAssembly install is queued once with its recorded shims and nodes
  *    (InstallWasmJob, as a change of a working install: a failure keeps the region ready). The
  *    installer replaces the binaries in place, one node at a time; the container runtime restarts
@@ -77,6 +79,7 @@ final class WasmSandboxStep implements ReconcileStep
         if ($drift['state'] !== 'current') {
             $now = match (true) {
                 $drift['state'] === 'missing' => 'the '.WasmManifests::INSTALLER_DS.' DaemonSet is missing, as after a failed change',
+                ! empty($drift['namespace']) => 'the shim images move to '.RegistryMove::TO.' (RunR\'s image namespace), the binaries stay the same',
                 $drift['installs'] !== '' => "installed now: {$drift['installs']}",
                 default => 'the installer installs other shim binaries',
             };

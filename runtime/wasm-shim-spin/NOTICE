@@ -1,4 +1,4 @@
-containerd-shim-spin v0.26.0-runr.1 (ghcr.io/runrsh/containerd-shim-spin)
+containerd-shim-spin v0.26.0-runr.1 (ghcr.io/brf-tech/containerd-shim-spin)
 
 The binary in this image is containerd-shim-spin (https://github.com/spinframework/containerd-shim-spin),
 tag v0.26.0, commit 922760061d91bacd455c5824b8143dec2a372515, licensed under the Apache License,

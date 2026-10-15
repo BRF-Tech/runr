@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/runrsh/core/cli/pkg/runr"
+	"github.com/brf-tech/runr/cli/pkg/runr"
 )
 
 func TestImagesGet(t *testing.T) {
@@ -77,7 +77,7 @@ func TestModelServiceSecurity(t *testing.T) {
 	h.srv.SeedModelServiceReport("minilm", runr.SeverityCounts{Critical: 1, High: 2, Medium: 3},
 		runr.SecurityFinding{ID: "CVE-2026-0001", Severity: "CRITICAL", Package: "openssl", Installed: "3.0.1", Fixed: "3.0.15"})
 	r = h.mustRun("models", "services", "security", "minilm")
-	contains(t, r.out, "ghcr.io/runrsh/runr/model-")
+	contains(t, r.out, "ghcr.io/brf-tech/runr/model-")
 	contains(t, r.out, "1 critical, 2 high, 3 medium")
 	contains(t, r.out, "CVE-2026-0001")
 

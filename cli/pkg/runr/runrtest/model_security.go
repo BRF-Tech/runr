@@ -1,7 +1,7 @@
 package runrtest
 
 import (
-	"github.com/runrsh/core/cli/pkg/runr"
+	"github.com/brf-tech/runr/cli/pkg/runr"
 )
 
 // The supply-chain report of a model service's image (ModelServiceSecurityController) of the
@@ -24,7 +24,7 @@ func fakeModelServiceImage(svc *fakeModelService) string {
 	if engine == "" {
 		engine = "vllm"
 	}
-	return "ghcr.io/runrsh/runr/model-" + engine + ":0.5.0"
+	return "ghcr.io/brf-tech/runr/model-" + engine + ":0.5.0"
 }
 
 // SeedModelServiceReport records a finished report of a model service's image with counts and

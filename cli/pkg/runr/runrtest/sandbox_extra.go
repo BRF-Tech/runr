@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/runrsh/core/cli/pkg/runr"
+	"github.com/brf-tech/runr/cli/pkg/runr"
 )
 
 // Background processes, pause / resume, the terminal session, warm pools, quotas, usage and

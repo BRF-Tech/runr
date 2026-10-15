@@ -1,5 +1,5 @@
 ARG VERSION=22
-FROM ghcr.io/runrsh/reqs/node:${VERSION}-slim
+FROM ghcr.io/brf-tech/reqs/node:${VERSION}-slim
 
 WORKDIR /app
 

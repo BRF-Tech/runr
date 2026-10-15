@@ -197,6 +197,7 @@ class SandboxPoolService
         for ($i = 0; $i < $deficit; $i++) {
             try {
                 $this->quotas->checkRegionQuota($pool->tenant_id, $region, $pool->cpu_m, $pool->memory_mb, $class);
+                $this->quotas->checkRegionCapacity($region, $pool->cpu_m, $pool->memory_mb, $class);
             } catch (SandboxException $e) {
                 $error = $e->getMessage();
                 break;

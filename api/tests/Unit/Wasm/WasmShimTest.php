@@ -45,7 +45,7 @@ class WasmShimTest extends TestCase
         $spin = WasmShim::get('spin');
 
         // runtime/wasm-shim-spin: containerd-shim-spin v0.26.0 with the env of Linux containers fixed
-        $this->assertSame('ghcr.io/runrsh/containerd-shim-spin:v0.26.0-runr.1', $spin->image);
+        $this->assertSame('ghcr.io/brf-tech/containerd-shim-spin:v0.26.0-runr.1', $spin->image);
         $this->assertStringEndsWith(':'.$spin->version, $spin->image, 'the image tag is the shim version');
         $this->assertSame([], $spin->artifacts);
         $this->assertSame(['x86_64', 'aarch64'], $spin->arches);
@@ -53,7 +53,7 @@ class WasmShimTest extends TestCase
         // the build file carries the same version and the upstream tag it is built from
         $dockerfile = (string) file_get_contents(dirname(__DIR__, 4).'/runtime/wasm-shim-spin/Dockerfile');
         $this->assertStringContainsString('ARG VERSION='.$spin->version, $dockerfile);
-        $this->assertStringContainsString('ghcr.io/runrsh/containerd-shim-spin:'.$spin->version, $dockerfile);
+        $this->assertStringContainsString('ghcr.io/brf-tech/containerd-shim-spin:'.$spin->version, $dockerfile);
         $this->assertStringContainsString('ARG SHIM_SPIN_COMMIT=922760061d91bacd455c5824b8143dec2a372515', $dockerfile);
     }
 
@@ -95,7 +95,7 @@ class WasmShimTest extends TestCase
         $spin = WasmShim::get('spin');
         $this->assertSame([
             'spin', 'containerd-shim-spin-v2', 'spin-runr', 'io.containerd.spin.v2',
-            'image', 'ghcr.io/runrsh/containerd-shim-spin:v0.26.0-runr.1', 'image', 'ghcr.io/runrsh/containerd-shim-spin:v0.26.0-runr.1',
+            'image', 'ghcr.io/brf-tech/containerd-shim-spin:v0.26.0-runr.1', 'image', 'ghcr.io/brf-tech/containerd-shim-spin:v0.26.0-runr.1',
         ], explode(' ', $spin->scriptLine()));
         $this->assertSame(['id', 'name', 'version', 'runtime_class', 'handler', 'description'], array_keys($spin->toArray()));
     }

@@ -56,7 +56,7 @@ class SandboxLifecycleApiTest extends SandboxTestCase
         // The pod
         $pod = $this->podOf($data['id']);
         $this->assertSame('kata-fc', $pod['spec']['runtimeClassName']);
-        $this->assertSame('ghcr.io/runrsh/exec-python:3.14', $pod['spec']['containers'][0]['image']);
+        $this->assertSame('ghcr.io/brf-tech/exec-python:3.14', $pod['spec']['containers'][0]['image']);
         $this->assertFalse($pod['spec']['automountServiceAccountToken']);
         $this->assertSame('1000m', $pod['spec']['containers'][0]['resources']['limits']['cpu']);
         $this->assertStringNotContainsString('sk-secret', json_encode($pod));

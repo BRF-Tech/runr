@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/runrsh/core/cli/pkg/runr"
-	"github.com/runrsh/core/cli/pkg/runr/runrtest"
+	"github.com/brf-tech/runr/cli/pkg/runr"
+	"github.com/brf-tech/runr/cli/pkg/runr/runrtest"
 )
 
 func TestSandboxProcessesClient(t *testing.T) {

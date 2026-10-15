@@ -16,8 +16,8 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 
-	"github.com/runrsh/core/cli/pkg/config"
-	"github.com/runrsh/core/cli/pkg/runr"
+	"github.com/brf-tech/runr/cli/pkg/config"
+	"github.com/brf-tech/runr/cli/pkg/runr"
 )
 
 // Client is what resources and data sources get from Configure.
@@ -71,7 +71,7 @@ func (p *runrProvider) Schema(_ context.Context, _ provider.SchemaRequest, resp 
 	resp.Schema = schema.Schema{
 		Description: "Manage RunR projects, environment variables, custom domains, deployments, bindings, runtime plugins, " +
 			"workflow triggers, model services, hosted MCP servers, access control and branding.",
-		MarkdownDescription: "Manage [RunR](https://github.com/runrsh/core) projects, environment variables, custom domains, deployments, " +
+		MarkdownDescription: "Manage [RunR](https://github.com/brf-tech/runr) projects, environment variables, custom domains, deployments, " +
 			"bindings, runtime plugins, workflow triggers, model services, hosted MCP servers, access control and branding.\n\n" +
 			"Credentials come from the provider block, else `RUNR_API_URL` / `RUNR_TOKEN`, else the current context of the `runr` CLI (`runr login`).",
 		Attributes: map[string]schema.Attribute{

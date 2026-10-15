@@ -134,7 +134,7 @@ See [Git deploy](git-deploy.md).
 | Permission | Scope | Includes | Allows |
 | --- | --- | --- | --- |
 | `regions.view` | organization | — | see regions, their components and status |
-| `regions.manage` | organization | `regions.view` | create, configure, upgrade, migrate and delete regions; Knative, Redis, workers, function TLS, demo projects, kubeconfig download |
+| `regions.manage` | organization | `regions.view` | create, configure, upgrade, migrate and delete regions; Knative, Redis, workers, capacity overcommit factors, function TLS, demo projects, kubeconfig download |
 | `sandbox.manage` | organization | `regions.view` | install and configure the region's sandbox runtimes (gVisor, Kata Containers) and WebAssembly support ([WebAssembly](wasm.md)) |
 | `registry.manage` | organization | `regions.view` | set up and remove region registries |
 | `regions.data_services.manage` | organization | `regions.view` | install, configure and remove the data services of a region: KV Redis, object store, CloudNativePG ([Bindings](bindings.md#region-setup)) |

@@ -10,7 +10,7 @@ extensions: [py]
 category: ml
 versionDiscovery:
   repository: runrsh/exec-pytorch
-  image: "ghcr.io/runrsh/exec-pytorch:{version}"
+  image: "ghcr.io/brf-tech/exec-pytorch:{version}"
   eol: pytorch
 handler:
   file: main

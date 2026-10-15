@@ -490,7 +490,7 @@ class ZotRegistryService
                 'securityContext' => ['fsGroup' => 1000],
                 'initContainers' => [[
                     'name' => 'fix-permissions',
-                    'image' => 'ghcr.io/runrsh/reqs/busybox:latest',
+                    'image' => 'ghcr.io/brf-tech/reqs/busybox:latest',
                     'command' => ['sh', '-c', 'chown -R 1000:1000 /var/lib/registry'],
                     'volumeMounts' => [['name' => self::ZOT_RELEASE_NAME.'-pvc', 'mountPath' => '/var/lib/registry']],
                     'securityContext' => ['runAsUser' => 0],

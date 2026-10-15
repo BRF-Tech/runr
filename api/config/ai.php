@@ -1,5 +1,7 @@
 <?php
 
+use App\Support\Images\RegistryMove;
+
 /*
 |--------------------------------------------------------------------------
 | AI: GPU support and Hugging Face models (docs/ai.md, docs/huggingface.md)
@@ -24,15 +26,17 @@ return [
     ],
 
     'images' => [
-        'hf_serve' => env('AI_IMAGE_HF_SERVE', 'ghcr.io/runrsh/hf-serve:1.0.0'),
-        'hf_serve_cuda' => env('AI_IMAGE_HF_SERVE_CUDA', 'ghcr.io/runrsh/hf-serve:1.0.0-cuda'),
+        'hf_serve' => RegistryMove::ref(env('AI_IMAGE_HF_SERVE', 'ghcr.io/brf-tech/hf-serve:1.1.0')),
+        'hf_serve_cuda' => RegistryMove::ref(env('AI_IMAGE_HF_SERVE_CUDA', 'ghcr.io/brf-tech/hf-serve:1.1.0-cuda')),
         'vllm' => env('AI_IMAGE_VLLM', 'docker.io/vllm/vllm-openai:v0.6.6'),
         'tgi' => env('AI_IMAGE_TGI', 'ghcr.io/huggingface/text-generation-inference:3.0.1'),
-        'tei_cpu' => env('AI_IMAGE_TEI_CPU', 'ghcr.io/huggingface/text-embeddings-inference:cpu-1.5'),
-        // {arch}: turing | 86 | 89 | hopper | "" (Ampere 80) from the GPU's compute capability
-        'tei_gpu' => env('AI_IMAGE_TEI_GPU', 'ghcr.io/huggingface/text-embeddings-inference:{arch}1.5'),
+        // TEI 1.6.1+ follows the Hub's relative redirects on resolve (1.5 fails: "relative URL without a base")
+        'tei_cpu' => env('AI_IMAGE_TEI_CPU', 'ghcr.io/huggingface/text-embeddings-inference:cpu-1.9.4'),
+        // {arch} from the GPU's compute capability: turing- | "" (Ampere 8.0) | 86- | 89- | hopper- |
+        // 100- | 120- | 121- (Blackwell) | cuda- (any other: picks its kernels at start)
+        'tei_gpu' => env('AI_IMAGE_TEI_GPU', 'ghcr.io/huggingface/text-embeddings-inference:{arch}1.9.4'),
         'oras' => env('AI_IMAGE_ORAS', 'ghcr.io/oras-project/oras:v1.2.0'),
-        'busybox' => env('AI_IMAGE_BUSYBOX', 'ghcr.io/runrsh/reqs/busybox:latest'),
+        'busybox' => RegistryMove::ref(env('AI_IMAGE_BUSYBOX', 'ghcr.io/brf-tech/reqs/busybox:latest')),
     ],
 
     'gpu' => [

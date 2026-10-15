@@ -156,7 +156,7 @@ trait KataManifestTrait
                         ]],
                         'containers' => [[
                             'name' => 'dropins',
-                            'image' => 'ghcr.io/runrsh/reqs/alpine:3.21',
+                            'image' => 'ghcr.io/brf-tech/reqs/alpine:3.21',
                             'command' => ['sh', '-c', $this->kataDropInsScript($configMapData)],
                             'env' => [
                                 ['name' => 'NODE_NAME', 'valueFrom' => ['fieldRef' => ['fieldPath' => 'spec.nodeName']]],
@@ -292,7 +292,7 @@ trait KataManifestTrait
 
         return [
             'name' => 'config-fixup',
-            'image' => 'ghcr.io/runrsh/reqs/busybox:latest',
+            'image' => 'ghcr.io/brf-tech/reqs/busybox:latest',
             'securityContext' => ['privileged' => true],
             'command' => ['nsenter', '--target', '1', '--mount', '--uts', '--ipc', '--pid', '--', 'sh', '-c', $script],
         ];

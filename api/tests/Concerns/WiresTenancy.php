@@ -46,6 +46,7 @@ trait WiresTenancy
         'Modules/Tenancy/Database/TenantMigrations/0024_add_function_tls_to_knative_regions.php',
         'Modules/Tenancy/Database/TenantMigrations/0035_add_wasm_sandbox_to_knative_regions.php',
         'Modules/Tenancy/Database/TenantMigrations/0045_add_gpu_columns.php',
+        'Modules/Tenancy/Database/TenantMigrations/0052_add_capacity_admission_columns.php',
     ];
 
     protected function setUpTenancy(): void

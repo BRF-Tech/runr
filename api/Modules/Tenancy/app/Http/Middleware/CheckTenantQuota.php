@@ -114,7 +114,7 @@ class CheckTenantQuota
         ], $project->service_type, $region);
 
         if ($region->id === $project->knative_region_id) {
-            $current = ResourceReservation::forConfig($config, $project->service_type, $region);
+            $current = ResourceReservation::forProject($project, $region);
 
             if ($reservation['cpu_m'] <= $current['cpu_m'] && $reservation['memory_mb'] <= $current['memory_mb']) {
                 return $next($request);

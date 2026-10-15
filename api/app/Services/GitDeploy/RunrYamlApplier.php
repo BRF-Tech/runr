@@ -154,10 +154,11 @@ class RunrYamlApplier
         $regionId = $project->knative_region_id;
         $trigger = $changes['trigger_type'] ?? null;
         $minScale = $changes['min_scale'] ?? null;
+        $scaleToZero = $changes['scale_to_zero'] ?? null;
 
         $rules = [
-            'memory_mb' => ['integer', 'min:64', new WithinResourceLimit('memory', $project->id, $regionId, $trigger, $minScale)],
-            'cpu' => ['bail', 'string', new KubernetesCpu, new WithinResourceLimit('cpu', $project->id, $regionId, $trigger, $minScale)],
+            'memory_mb' => ['integer', 'min:64', new WithinResourceLimit('memory', $project->id, $regionId, $trigger, $minScale, null, $scaleToZero)],
+            'cpu' => ['bail', 'string', new KubernetesCpu, new WithinResourceLimit('cpu', $project->id, $regionId, $trigger, $minScale, null, $scaleToZero)],
             'timeout_seconds' => ['integer', 'min:1', new WithinRegionTimeout($regionId)],
             'trigger_type' => ['string', 'in:'.implode(',', Project::TRIGGER_TYPES)],
             'schedule' => ['string', new CronSchedule],
@@ -234,7 +235,7 @@ class RunrYamlApplier
         $next = ResourceReservation::forConfig([
             'cpu' => $pick('cpu'), 'memory_mb' => $pick('memory_mb'), 'trigger_type' => $pick('trigger_type'), 'min_scale' => $pick('min_scale'),
         ], $project->service_type, $region);
-        $current = ResourceReservation::forConfig($config, $project->service_type, $region);
+        $current = ResourceReservation::forConfig($config, $project->service_type, $region, ResourceReservation::deployedClassOf($project));
 
         if ($next['cpu_m'] <= $current['cpu_m'] && $next['memory_mb'] <= $current['memory_mb']) {
             return null;

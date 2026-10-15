@@ -450,6 +450,7 @@ final class AuditCatalog
             'DELETE api/knative-regions/{knative_region}' => $r('region.delete', 'region', 'param:knative_region'),
             'GET api/knative-regions/{knativeRegion}/kubeconfig' => $r('region.kubeconfig.download', 'region', 'param:knativeRegion'),
             'PUT api/knative-regions/{knativeRegion}/settings' => $r('region.settings.update', 'region', 'param:knativeRegion', meta: fn (Request $q) => ['fields' => array_keys($q->all())]),
+            'PUT api/knative-regions/{knativeRegion}/capacity' => $r('region.capacity.update', 'region', 'param:knativeRegion', meta: fn (Request $q) => $q->only(['faas_cpu_overcommit', 'faas_memory_overcommit'])),
             'PUT api/knative-regions/{knativeRegion}/function-tls' => $r('region.tls.update', 'region', 'param:knativeRegion', meta: fn (Request $q) => ['mode' => $q->input('mode')]),
             'POST api/knative-regions/{knativeRegion}/skupper/site' => $r('region.skupper.site.ensure', 'region', 'param:knativeRegion'),
             'POST api/knative-regions/{knativeRegion}/install-knative' => $r('region.knative.install', 'region', 'param:knativeRegion'),

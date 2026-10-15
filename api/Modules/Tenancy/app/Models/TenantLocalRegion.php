@@ -28,6 +28,9 @@ class TenantLocalRegion extends KnativeRegion implements Syncable
         'name',
         'total_cpu_m',
         'total_memory_mb',
+        // FaaS overcommit factors (TenantMigrations/0052): admission on the copy uses the platform's
+        'faas_cpu_overcommit',
+        'faas_memory_overcommit',
         'is_active',
         'is_demo',
         'is_synced',

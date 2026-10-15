@@ -131,6 +131,13 @@ class ModelStorage
                 throw new \RuntimeException(__('ai.models.storage_create_failed', ['name' => $this->pvcName()]));
             }
 
+            // A region's first model volume: the hf-serve image onto the project nodes too
+            try {
+                app(ModelImagePrepull::class)->forStorage($region);
+            } catch (\Throwable) {
+                // an optimisation only
+            }
+
             return;
         }
 

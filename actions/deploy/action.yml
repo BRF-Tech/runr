@@ -47,7 +47,7 @@ inputs:
   cli-base-url:
     description: Download base of the CLI archives (mirrors); <base>/<tag>/runr_<os>_<arch>.tar.gz
     required: false
-    default: "https://github.com/runrsh/core/releases/download"
+    default: "https://github.com/brf-tech/runr/releases/download"
   github-token:
     description: Token used to look up the latest CLI release (rate limits)
     required: false

@@ -8,10 +8,12 @@ use App\Models\KnativeRegion;
 use App\Services\Ai\Gpu\GpuInstallService;
 use App\Services\Ai\Gpu\GpuInventory;
 use App\Services\Ai\Gpu\GpuPolicy;
+use App\Services\Ai\Models\ModelImagePrepull;
 use App\Services\Ai\Models\ModelStorage;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\Rule;
 
 /**
@@ -174,6 +176,14 @@ class GpuController extends Controller
         }
 
         $knativeRegion->update(['model_storage' => array_merge((array) ($knativeRegion->model_storage ?? []), array_map(fn ($v) => $v ?? '', $data))]);
+
+        // Model storage set up: the hf-serve image onto the project nodes before the first model
+        // service, mirror or upload needs it
+        try {
+            app(ModelImagePrepull::class)->forStorage($knativeRegion);
+        } catch (\Throwable $e) {
+            Log::warning('Model image pre-pull not started', ['region' => $knativeRegion->name, 'error' => $e->getMessage()]);
+        }
 
         return response()->json($storage->status($knativeRegion->fresh()));
     }

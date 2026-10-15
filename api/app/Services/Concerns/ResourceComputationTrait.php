@@ -4,13 +4,14 @@ namespace App\Services\Concerns;
 
 use App\Models\KnativeRegion;
 use App\Services\Ai\Models\ModelServiceReservations;
+use App\Services\Helpers\RegionCapacity;
 use App\Services\Helpers\ResourceReservation;
 use Illuminate\Support\Collection;
 
 /**
- * Region usage (region cards, capacity alerts): the sum of the projects' admitted reservations
- * — the same formula as tenant quota admission and region capacity validation
- * (ResourceReservation).
+ * Region usage (region cards, capacity alerts): the projects' admitted reservations — the same
+ * formula as tenant quota admission and region capacity admission (ResourceReservation) — next
+ * to the model services and sandboxes, and both capacity budgets (RegionCapacity).
  */
 trait ResourceComputationTrait
 {
@@ -33,6 +34,17 @@ trait ResourceComputationTrait
     protected function modelServiceUsage(?KnativeRegion $region): array
     {
         return $region ? ModelServiceReservations::sum($region) : ResourceReservation::zero();
+    }
+
+    /**
+     * Everything that holds the region, split by budget: projects, model services that are not
+     * stopped, live sandboxes and warm pool pods (RegionCapacity::usage()).
+     *
+     * @return array{hard: array{cpu_m: int, memory_mb: int}, burst: array{cpu_m: int, memory_mb: int}}
+     */
+    protected function regionUsage(KnativeRegion $region): array
+    {
+        return RegionCapacity::usage($region->id);
     }
 
     protected function parseCpu(mixed $value): int

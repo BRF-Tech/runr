@@ -1,9 +1,9 @@
-# Build image of the wasm-go runtime (ghcr.io/runrsh/exec-wasm-go:<version>): TinyGo (with its Go
+# Build image of the wasm-go runtime (ghcr.io/brf-tech/exec-wasm-go:<version>): TinyGo (with its Go
 # toolchain), the Spin CLI of the Spin runtime the shim embeds, and the Spin Go SDK in the module
 # cache with TinyGo's build cache warm. It runs as the build Job of a function version
 # (WasmBuildService); it is never deployed as a function.
 #
-#   docker build -t ghcr.io/runrsh/exec-wasm-go:4.1 runtime/wasm-go     (or: runtime/ci.sh wasm)
+#   docker build -t ghcr.io/brf-tech/exec-wasm-go:4.1 runtime/wasm-go     (or: runtime/ci.sh wasm)
 ARG TINYGO_VERSION=0.42.0
 FROM tinygo/tinygo:${TINYGO_VERSION}
 

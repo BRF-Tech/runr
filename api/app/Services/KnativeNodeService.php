@@ -2,25 +2,32 @@
 
 namespace App\Services;
 
+use App\Models\AiModelService;
 use App\Models\KnativeRegion;
 use App\Services\Ai\Gpu\GpuInstallService;
 use App\Services\Concerns\KnativeNodeTaintTrait;
 use App\Services\Helpers\KubeQuantity;
+use App\Services\Sandboxes\SandboxManifests;
 use App\Services\Wasm\WasmKnativeFeatures;
 use Illuminate\Support\Facades\Log;
 
 /**
  * Worker selection and region capacity.
  *
- * Region capacity (total_cpu_m / total_memory_mb — what region admission, tenant quota defaults,
- * the no-overcommit check and the resource thresholds measure against) is, per node RunR
- * projects run on, the node's allocatable minus the requests of the pods on it that are NOT
- * RunR project workloads: Kubernetes, Knative, the ingress, the RunR control plane,
- * observability, the registry, DaemonSets and anything else the cluster runs. A pod is a project
- * workload when it carries the label runr/project-id — Knative Service pods (template labels),
- * queue consumers, CronJob pods and Kaniko build Job pods. Build pods are transient (≤ 300 s,
- * one per build): counted as platform they would lower the capacity for as long as a build
- * happened to run at the refresh, so they count with the projects.
+ * Region capacity (total_cpu_m / total_memory_mb — what region admission (RegionCapacity), tenant
+ * quota defaults and the resource thresholds measure against) is, per node RunR projects run on,
+ * the node's allocatable minus the requests of the pods on it that are NOT RunR workloads:
+ * Kubernetes, Knative, the ingress, the RunR control plane, observability, the registry,
+ * DaemonSets and anything else the cluster runs. A pod is a RunR workload (isRunrWorkload()) when
+ * it carries
+ *  - runr/project-id: Knative Service pods (template labels), queue consumers, CronJob pods and
+ *    Kaniko build Job pods. Build pods are transient (≤ 300 s, one per build): counted as
+ *    platform they would lower the capacity for as long as a build happened to run at the
+ *    refresh, so they count with the projects;
+ *  - runr.sh/model-service: model service pods;
+ *  - runr.dev/sandbox=true: Sandbox API pods and warm pool pods.
+ * Region admission counts these workloads itself from their rows (projects, model services,
+ * sandboxes) — subtracting them here as well would count them twice.
  */
 class KnativeNodeService
 {
@@ -258,7 +265,7 @@ class KnativeNodeService
             if ($node === '' || in_array($pod['status']['phase'] ?? '', ['Succeeded', 'Failed'], true)) {
                 continue;
             }
-            if (self::isProjectWorkload($pod)) {
+            if (self::isRunrWorkload($pod)) {
                 continue;
             }
 
@@ -274,6 +281,19 @@ class KnativeNodeService
     public static function isProjectWorkload(array $pod): bool
     {
         return (string) ($pod['metadata']['labels'][self::PROJECT_POD_LABEL] ?? '') !== '';
+    }
+
+    /**
+     * A workload region admission counts from its own row: a project pod, a model service pod
+     * (runr.sh/model-service) or a Sandbox API pod (runr.dev/sandbox=true, warm pool pods too).
+     */
+    public static function isRunrWorkload(array $pod): bool
+    {
+        $labels = $pod['metadata']['labels'] ?? [];
+
+        return self::isProjectWorkload($pod)
+            || (string) ($labels[AiModelService::LABEL] ?? '') !== ''
+            || ($labels[SandboxManifests::LABEL_SANDBOX] ?? null) === 'true';
     }
 
     /**

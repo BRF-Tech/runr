@@ -72,7 +72,7 @@ def _sandbox(sid: str, body: Dict[str, Any], status: str) -> Dict[str, Any]:
         "region": {"id": "r1", "name": "eu-1"},
         "runtime": body.get("runtime") or "python",
         "runtime_version": body.get("version") or "3.14",
-        "image": body.get("image") or "ghcr.io/runrsh/exec-python:3.14",
+        "image": body.get("image") or "ghcr.io/brf-tech/exec-python:3.14",
         "sandbox_class": "gvisor",
         "isolation": "gvisor",
         "resources": {"cpu": "500m", "cpu_m": 500, "memory_mb": 512, "disk_mb": 1024, "pids_limit": 256},

@@ -1,5 +1,7 @@
 <?php
 
+use App\Support\Images\RegistryMove;
+
 /*
 |--------------------------------------------------------------------------
 | Software supply chain (docs/supply-chain.md)
@@ -19,7 +21,7 @@ return [
     'enabled' => (bool) env('RUNR_SUPPLY_CHAIN_ENABLED', true),
 
     // Tools image: syft + trivy + cosign + oras + runr-supply-chain (runtime/supply-chain/Dockerfile)
-    'tools_image' => env('RUNR_SUPPLY_CHAIN_IMAGE', 'ghcr.io/runrsh/runr-supply-chain:1.0.0'),
+    'tools_image' => RegistryMove::ref(env('RUNR_SUPPLY_CHAIN_IMAGE', 'ghcr.io/brf-tech/runr-supply-chain:1.0.0')),
 
     // Namespace of the supply-chain Jobs and of the region signing key (one per region)
     'namespace' => env('RUNR_SUPPLY_CHAIN_NAMESPACE', 'runr-supply-chain'),
@@ -75,9 +77,12 @@ return [
             ->all(),
     ],
 
-    // Image globs every region exempts from signature checks (RunR's own system images)
+    // Image globs every region exempts from signature checks (RunR's own system images). RunR's
+    // namespace up to 0.5.0 stays among them: a workload that keeps its pods across the upgrade
+    // (region:reconcile, image-registry) is admitted when Kubernetes recreates one
     'system_images' => [
-        'ghcr.io/runrsh/**',
+        RegistryMove::TO.'/**',
+        RegistryMove::FROM.'/**',
         'gcr.io/knative-releases/**',
     ],
 ];

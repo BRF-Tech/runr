@@ -1,7 +1,9 @@
 # RunR hf-serve, GPU image: the CPU image's pipelines on CUDA PyTorch, plus diffusers for
 # text-to-image. Model services on the "transformers" engine with a GPU and on the "diffusers"
 # engine run it.
-FROM docker.io/pytorch/pytorch:2.5.1-cuda12.4-cudnn9-runtime
+# torch 2.14.1 built for CUDA 12.6 (the same torch as the CPU image): CUDA 12.x runs on the R550
+# drivers of the GPU Operator RunR installs (minor version compatibility); CUDA 13 builds need R580+.
+FROM docker.io/pytorch/pytorch:2.14.1-cuda12.6-cudnn9-runtime
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
@@ -22,7 +24,8 @@ WORKDIR /opt/hf-serve
 
 # torch comes with the base image; the same pins as the CPU image for everything else
 COPY requirements.txt requirements-cuda.txt ./
-RUN pip install -r requirements.txt -r requirements-cuda.txt
+RUN pip install --upgrade pip==26.2.1 setuptools==84.0.0 \
+ && pip install -r requirements.txt -r requirements-cuda.txt
 
 COPY runr_hf_serve ./runr_hf_serve
 RUN python -m compileall -q runr_hf_serve

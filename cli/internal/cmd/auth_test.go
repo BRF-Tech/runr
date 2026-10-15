@@ -9,9 +9,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/runrsh/core/cli/pkg/config"
-	"github.com/runrsh/core/cli/pkg/runr"
-	"github.com/runrsh/core/cli/pkg/runr/runrtest"
+	"github.com/brf-tech/runr/cli/pkg/config"
+	"github.com/brf-tech/runr/cli/pkg/runr"
+	"github.com/brf-tech/runr/cli/pkg/runr/runrtest"
 )
 
 func TestLoginWithTokenFromStdin(t *testing.T) {

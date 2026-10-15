@@ -120,20 +120,20 @@ preload_kind_images() {
       ->where("is_active", true)
       ->pluck("docker_image")
       ->each(fn($i) => print($i . "\n"));
-  ' 2>/dev/null | grep '^runrsh/' || true)
+  ' 2>/dev/null | grep '^brf-tech/' || true)
 
   # Static utility images
   local static_imgs=(
-    "ghcr.io/runrsh/reqs/nginx:1.27-alpine"
-    "ghcr.io/runrsh/reqs/curl:latest"
-    "ghcr.io/runrsh/reqs/busybox:latest"
-    "ghcr.io/runrsh/reqs/redis:7-alpine"
-    "ghcr.io/runrsh/runr-queue-consumer:latest"
+    "ghcr.io/brf-tech/reqs/nginx:1.27-alpine"
+    "ghcr.io/brf-tech/reqs/curl:latest"
+    "ghcr.io/brf-tech/reqs/busybox:latest"
+    "ghcr.io/brf-tech/reqs/redis:7-alpine"
+    "ghcr.io/brf-tech/runr-queue-consumer:latest"
     "ghcr.io/project-zot/zot:v2.1.14"
     "ghcr.io/osscontainertools/kaniko:v1.28.5"
     # the region Traefik (KnativeConstants::TRAEFIK_IMAGE): three replicas that would each pull it
     # (pull_image takes it from Docker Hub while the mirror lacks it)
-    "ghcr.io/runrsh/reqs/traefik:v3.7.4"
+    "ghcr.io/brf-tech/reqs/traefik:v3.7.4"
   )
 
   # Load executor images (if any)

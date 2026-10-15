@@ -3,6 +3,7 @@
 namespace Tests\Feature\Ai;
 
 use App\Jobs\Ai\DeployModelServiceJob;
+use App\Jobs\Ai\PrepullModelImagesJob;
 use App\Jobs\Ai\StartModelSnapshotJob;
 use App\Models\AiModel;
 use App\Models\AiModelBinding;
@@ -11,6 +12,7 @@ use App\Models\AiModelSnapshot;
 use App\Models\Project;
 use App\Models\Setting;
 use App\Models\User;
+use App\Services\Ai\Gpu\GpuScheduling;
 use App\Services\Ai\Models\ModelServiceDeployer;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
@@ -85,6 +87,30 @@ class ModelServiceApiTest extends TestCase
         $this->postJson('/api/model-services', ['hub_id' => 'sentence-transformers/all-MiniLM-L6-v2', 'knative_region_id' => $region->id, 'name' => 'second'])->assertCreated();
         $this->assertSame(1, AiModel::count());
         $this->assertSame(2, AiModelService::count());
+        $this->assertSame(90_000_000, $model->fresh()->size_bytes);
+        $this->assertSame('safetensors', $model->fresh()->metadata['weights_format']);
+    }
+
+    public function test_a_hub_model_sized_from_its_whole_repository_is_sized_again_on_reuse(): void
+    {
+        $this->fakeHubModel();
+        $region = $this->region();
+        // added before the size came from the loaded weights: every format of the repository
+        $model = $this->hubModel(['revision_sha' => str_repeat('c', 40), 'size_bytes' => 4 * 90_000_000, 'metadata' => ['tags' => ['text-embeddings-inference'], 'files' => 12]]);
+
+        $this->postJson('/api/model-services', ['hub_id' => 'sentence-transformers/all-MiniLM-L6-v2', 'knative_region_id' => $region->id, 'engine' => 'transformers'])
+            ->assertCreated()
+            ->assertJsonPath('model.size_bytes', 90_000_000)
+            ->assertJsonPath('memory_mb', 1024);
+
+        $this->assertSame(1, AiModel::count());
+        $this->assertSame(['tags' => ['text-embeddings-inference'], 'files' => 12, 'weights_format' => 'safetensors'], $model->fresh()->metadata);
+
+        // sized once: the Hub is not asked again
+        $hubCalls = fn () => Http::recorded(fn ($request) => str_starts_with($request->url(), 'https://huggingface.co/'))->count();
+        $asked = $hubCalls();
+        $this->postJson('/api/model-services', ['hub_id' => 'sentence-transformers/all-MiniLM-L6-v2', 'knative_region_id' => $region->id, 'name' => 'again'])->assertCreated();
+        $this->assertSame($asked, $hubCalls());
     }
 
     public function test_services_that_cannot_run_are_refused(): void
@@ -127,7 +153,12 @@ class ModelServiceApiTest extends TestCase
             ->assertJsonPath('playground.kind', 'chat')
             ->assertJsonPath('cold_start.suggest_min_scale', true);
 
-        Queue::assertNothingPushed();
+        Queue::assertNotPushed(DeployModelServiceJob::class);
+        // not deployed yet, but its engine image is pulled onto the GPU nodes already
+        Queue::assertPushed(PrepullModelImagesJob::class, fn (PrepullModelImagesJob $job) => $job->regionId === $region->id
+            && $job->images === ['docker.io/vllm/vllm-openai:v0.6.6', config('ai.images.busybox')]
+            && $job->placement['tolerations'] === GpuScheduling::TOLERATIONS
+            && $job->placement['affinity']['nodeAffinity']['requiredDuringSchedulingIgnoredDuringExecution']['nodeSelectorTerms'][0]['matchExpressions'][0]['key'] === 'nvidia.com/gpu.count');
     }
 
     public function test_update_redeploys_a_running_service_and_stop_and_delete(): void

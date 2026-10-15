@@ -52,6 +52,7 @@ class GpuQuotaAndUsageTest extends TestCase
         'Modules/Tenancy/Database/TenantMigrations/0024_add_function_tls_to_knative_regions.php',
         'Modules/Tenancy/Database/TenantMigrations/0045_add_gpu_columns.php',
         'Modules/Tenancy/Database/TenantMigrations/0046_create_ai_model_tables.php',
+        'Modules/Tenancy/Database/TenantMigrations/0053_add_status_reason_to_ai_model_services.php',
     ];
 
     private Tenant $tenant;

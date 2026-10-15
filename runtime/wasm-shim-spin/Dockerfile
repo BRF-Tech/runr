@@ -4,7 +4,7 @@
 # containerd-shim-spin v0.26.0 built with one change in its runwasi library (containerd-shim-wasm
 # 1.0.1), versioned v0.26.0-runr.1.
 #
-#   docker build -t ghcr.io/runrsh/containerd-shim-spin:v0.26.0-runr.1 runtime/wasm-shim-spin
+#   docker build -t ghcr.io/brf-tech/containerd-shim-spin:v0.26.0-runr.1 runtime/wasm-shim-spin
 #   runtime/ci.sh wasm-shim [--push]          (--push: linux/amd64 + linux/arm64)
 #   docker build --target test runtime/wasm-shim-spin    the patched executor's unit tests
 #
@@ -33,7 +33,7 @@
 ARG RUST_IMAGE=rust:1.95.0-slim-bookworm@sha256:d7482085ff5b415f84dba5647ae71606650bdef00db7aeb69f4b3d170c3e4082
 ARG CROSS_IMAGE_AMD64=ghcr.io/cross-rs/x86_64-unknown-linux-musl:main@sha256:a5b346562935938c10d99d88adbcb809ec8c01e20f4bdef14584654b876c0c07
 ARG CROSS_IMAGE_ARM64=ghcr.io/cross-rs/aarch64-unknown-linux-musl:main@sha256:5ca8072c8ff326c2285221c22b8bf4959b2d85c9fe0a0ad3ed2ec4d023a3b18e
-ARG BASE_IMAGE=ghcr.io/runrsh/reqs/alpine:3.21
+ARG BASE_IMAGE=ghcr.io/brf-tech/reqs/alpine:3.21
 
 FROM --platform=$BUILDPLATFORM ${RUST_IMAGE} AS rust
 FROM --platform=$BUILDPLATFORM ${CROSS_IMAGE_AMD64} AS cross-amd64

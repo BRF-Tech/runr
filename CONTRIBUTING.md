@@ -20,7 +20,7 @@ are reported privately — see [SECURITY.md](SECURITY.md), never in a public iss
 The full setup is described in [docs/development.md](docs/development.md). The short version:
 
 ```bash
-git clone https://github.com/runrsh/core.git
+git clone https://github.com/brf-tech/runr.git
 cd core
 bash scripts/devready.sh docker      # Docker Compose: API, UI, Reverb, Horizon, PostgreSQL, Redis
 ```
@@ -83,9 +83,10 @@ ESLint, Vitest, Playwright and the end-to-end suites on kind, is described in
 
 - **PHP**: PSR-12, typed properties and return types, Laravel conventions (form requests for
   validation, resources for responses, services for logic). Keep controllers thin.
-- **Vue**: `<script setup>` single-file components, Composition API, Pinia stores, Tailwind
-  utility classes. User-facing strings go through `vue-i18n` (`vue/src/locales`) in English and
-  Turkish.
+- **Vue**: `<script setup>` single-file components, Composition API, Pinia stores, Tailwind CSS 4
+  utility classes (theme in `vue/src/assets/main.css`; a `<style>` block that uses `@apply` starts
+  with `@reference` to it). User-facing strings go through `vue-i18n` (`vue/src/locales`) in
+  English and Turkish.
 - **Go**: `gofmt`.
 - **Comments** explain why, not what.
 

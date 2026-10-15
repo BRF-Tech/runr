@@ -8,7 +8,7 @@ import os
 import sys
 from typing import List, Optional
 
-from . import __version__, mirror
+from . import __version__, mirror, threads
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -47,9 +47,14 @@ def main(argv: Optional[List[str]] = None) -> int:
         uvicorn.run(create_receiver_app(args.root), host="0.0.0.0", port=port)
         return 0
 
+    # before anything imports torch: OpenMP / MKL read their thread counts once
+    threads.configure()
+
     from .server import create_app  # noqa: WPS433
 
-    uvicorn.run(create_app(), host="0.0.0.0", port=port, timeout_keep_alive=75)
+    # a model that does not load ends the process (exit 1, reason in the termination log): the
+    # pod restarts with back-off (transient Hub errors heal) and Kubernetes shows why
+    uvicorn.run(create_app(exit_on_error=True), host="0.0.0.0", port=port, timeout_keep_alive=75)
     return 0
 
 

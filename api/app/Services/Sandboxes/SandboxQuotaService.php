@@ -8,6 +8,8 @@ use App\Models\SandboxPool;
 use App\Models\SandboxQuota;
 use App\Models\SandboxUsageRecord;
 use App\Services\Helpers\KataRuntime;
+use App\Services\Helpers\RegionCapacity;
+use App\Services\Helpers\ResourceReservation;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
 use Modules\Tenancy\Models\Tenant;
@@ -24,7 +26,8 @@ use Modules\Tenancy\Services\TenantQuotaService;
  *  - allowed_classes: sandbox classes the organization may use (null: what the region allows)
  *
  * With tenancy the sandboxes' CPU / memory (Kata overhead included) — warm pods too — also count
- * against the organization's region quota (tenant_regions, the same quota projects use).
+ * against the organization's region quota (tenant_regions, the same quota projects use). Every
+ * sandbox and warm pod also has to fit the region's always-on capacity budget (RegionCapacity).
  */
 final class SandboxQuotaService
 {
@@ -89,6 +92,28 @@ final class SandboxQuotaService
 
         if (! $platformAdmin) {
             $this->checkRegionQuota($tenantId, $region, $cpuM, $memoryMb, $class);
+        }
+    }
+
+    /**
+     * Region capacity (RegionCapacity): a sandbox pod keeps running until it ends, so its size
+     * plus the pod overhead of its class must fit the region's always-on budget next to the
+     * projects, model services and the other sandboxes and warm pods — no overcommit. Checked
+     * for a new pod (a sandbox not served from a warm pod, a warm pod of a pool); a claimed warm
+     * pod is counted already.
+     *
+     * @throws SandboxException quota_capacity
+     */
+    public function checkRegionCapacity(KnativeRegion $region, int $cpuM, int $memoryMb, string $class): void
+    {
+        $demand = ['hard' => RegionCapacity::sandboxDemand($cpuM, $memoryMb, $class), 'burst' => ResourceReservation::zero()];
+        $problems = RegionCapacity::problems($region, $demand);
+
+        if ($problems !== []) {
+            $message = implode(' ', $problems);
+            throw new SandboxException($message, 422, 'quota_capacity', ['errors' => [
+                (isset($problems['cpu_m']) ? 'cpu' : 'memory') => [$message],
+            ]]);
         }
     }
 

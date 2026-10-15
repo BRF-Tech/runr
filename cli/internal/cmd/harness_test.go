@@ -12,9 +12,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/runrsh/core/cli/internal/dev"
-	"github.com/runrsh/core/cli/pkg/config"
-	"github.com/runrsh/core/cli/pkg/runr/runrtest"
+	"github.com/brf-tech/runr/cli/internal/dev"
+	"github.com/brf-tech/runr/cli/pkg/config"
+	"github.com/brf-tech/runr/cli/pkg/runr/runrtest"
 )
 
 // harness runs runr commands against the fake API (runrtest), with an isolated config file,

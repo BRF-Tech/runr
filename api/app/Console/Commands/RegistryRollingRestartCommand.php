@@ -333,7 +333,7 @@ class RegistryRollingRestartCommand extends Command
                 'tolerations' => [['operator' => 'Exists']],
                 'containers' => [[
                     'name' => 'restart',
-                    'image' => 'ghcr.io/runrsh/reqs/busybox:latest',
+                    'image' => 'ghcr.io/brf-tech/reqs/busybox:latest',
                     'command' => ['nsenter', '--target', '1', '--mount', '--uts', '--ipc', '--pid', '--',
                         'systemctl', 'restart', 'containerd'],
                     'securityContext' => ['privileged' => true],

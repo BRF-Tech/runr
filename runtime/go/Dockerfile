@@ -1,5 +1,5 @@
 ARG VERSION=1.26
-FROM ghcr.io/runrsh/reqs/golang:${VERSION}-alpine
+FROM ghcr.io/brf-tech/reqs/golang:${VERSION}-alpine
 
 WORKDIR /app
 

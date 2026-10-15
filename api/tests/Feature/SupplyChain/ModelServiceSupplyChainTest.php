@@ -124,7 +124,7 @@ class ModelServiceSupplyChainTest extends TestCase
 
         $this->assertSame(ImageSecurityReport::SUBJECT_MODEL_SERVICE, $report->subject_type);
         $this->assertSame(ImageSecurityReport::KIND_EXTERNAL, $report->image_kind);
-        $this->assertSame('ghcr.io/huggingface/text-embeddings-inference:cpu-1.5', $report->image_ref, 'the TEI CPU engine image');
+        $this->assertSame('ghcr.io/huggingface/text-embeddings-inference:cpu-1.9.4', $report->image_ref, 'the TEI CPU engine image');
         $this->assertSame(['sbom', 'scan'], $report->steps);
         $this->assertNull($report->project_id);
 
@@ -156,7 +156,7 @@ class ModelServiceSupplyChainTest extends TestCase
         $service = $this->modelService($this->hubModel(), $region, ['status' => AiModelService::STATUS_STOPPED]);
         ImageSecurityReport::create([
             'subject_type' => ImageSecurityReport::SUBJECT_MODEL_SERVICE, 'subject_id' => $service->id, 'knative_region_id' => $region->id,
-            'image_kind' => 'external', 'image_ref' => 'ghcr.io/huggingface/text-embeddings-inference:cpu-1.5',
+            'image_kind' => 'external', 'image_ref' => 'ghcr.io/huggingface/text-embeddings-inference:cpu-1.9.4',
             'status' => 'completed', 'sbom_status' => 'ok', 'scan_status' => 'ok', 'critical_count' => 3,
         ]);
 
@@ -193,7 +193,7 @@ class ModelServiceSupplyChainTest extends TestCase
         $service = $this->modelService($this->hubModel(), $region);
         ImageSecurityReport::create([
             'subject_type' => ImageSecurityReport::SUBJECT_MODEL_SERVICE, 'subject_id' => $service->id, 'knative_region_id' => $region->id,
-            'image_kind' => 'external', 'image_ref' => 'ghcr.io/huggingface/text-embeddings-inference:cpu-1.5',
+            'image_kind' => 'external', 'image_ref' => 'ghcr.io/huggingface/text-embeddings-inference:cpu-1.9.4',
             'status' => 'completed', 'sbom_status' => 'ok', 'scan_status' => 'ok', 'scanned_at' => now()->subDays(2),
         ]);
 
@@ -201,7 +201,7 @@ class ModelServiceSupplyChainTest extends TestCase
         $this->assertSame(['scan'], ImageSecurityReport::forModelService($service)->steps);
 
         $this->getJson("/api/model-services/{$service->id}/security")->assertOk()
-            ->assertJsonPath('data.image', 'ghcr.io/huggingface/text-embeddings-inference:cpu-1.5')
+            ->assertJsonPath('data.image', 'ghcr.io/huggingface/text-embeddings-inference:cpu-1.9.4')
             ->assertJsonPath('data.scanned', true)
             ->assertJsonPath('data.current', true)
             ->assertJsonPath('data.report.subject_type', 'model_service');

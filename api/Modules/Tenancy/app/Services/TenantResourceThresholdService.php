@@ -4,8 +4,9 @@ namespace Modules\Tenancy\Services;
 
 use App\Models\KnativeRegion;
 use App\Models\Notification;
-use App\Models\Project;
 use App\Models\User;
+use App\Services\Helpers\RegionCapacity;
+use App\Services\Helpers\ResourceReservation;
 use App\Services\ResourceThresholdService;
 use Illuminate\Support\Collection;
 use Modules\Tenancy\Models\Tenant;
@@ -41,23 +42,22 @@ class TenantResourceThresholdService extends ResourceThresholdService
     }
 
     /**
-     * For platform-level regions, collect projects from all tenant schemas.
+     * For platform-level regions, collect what every tenant runs there (projects, model services,
+     * sandboxes; RegionCapacity::usage() in each tenant schema) and measure both budgets.
      */
     protected function checkPlatformRegion(KnativeRegion $region, Collection $tenants): void
     {
-        $allProjects = collect();
+        $usage = ResourceReservation::noDemand();
 
         foreach ($tenants as $tenant) {
-            $tenant->run(function () use ($region, &$allProjects) {
-                $projects = Project::where('knative_region_id', $region->id)
-                    ->with(['xaasConfig', 'faasConfig', 'containerConfig'])
-                    ->get();
-                $allProjects = $allProjects->merge($projects);
+            $tenant->run(function () use ($region, &$usage) {
+                $usage = ResourceReservation::addDemand($usage, RegionCapacity::usage($region->id));
             });
         }
 
-        $this->checkResource($region, $allProjects, 'cpu');
-        $this->checkResource($region, $allProjects, 'memory');
+        $summary = RegionCapacity::summary($region, $usage);
+        $this->checkResource($region, $summary['cpu_m'], 'cpu');
+        $this->checkResource($region, $summary['memory_mb'], 'memory');
     }
 
     protected function getMailRecipients()

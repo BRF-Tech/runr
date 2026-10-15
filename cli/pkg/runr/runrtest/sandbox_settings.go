@@ -5,7 +5,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/runrsh/core/cli/pkg/runr"
+	"github.com/brf-tech/runr/cli/pkg/runr"
 )
 
 // The network of a running sandbox (SandboxesController::network) and the sandbox settings of

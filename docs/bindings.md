@@ -510,7 +510,7 @@ bindings:
     maxmemoryMb: 512
     storage: 2Gi
   object:
-    image: ghcr.io/runrsh/reqs/garage:v2.1.0
+    image: ghcr.io/brf-tech/reqs/garage:v2.1.0
     storage: 20Gi
     s3Region: garage
   postgres:
@@ -529,7 +529,7 @@ The settings without a Helm value of their own are set via `extraEnv`: `BINDINGS
 operation pod), `BINDINGS_OPS_TOOLBOX_IMAGE`, `BINDINGS_OBJECT_CLIENT_IMAGE` and
 `BINDINGS_POLL_INTERVAL` (3 s).
 Images of the data services and their operations (`garage`, `rclone`, `python:3.12-slim`,
-`redis:7-alpine`) are mirrored under `ghcr.io/runrsh/reqs/` (`runtime/ci.sh mirror-reqs`);
+`redis:7-alpine`) are mirrored under `ghcr.io/brf-tech/reqs/` (`runtime/ci.sh mirror-reqs`);
 regions with a registry mirror pull Docker Hub names through it.
 
 ## Audit

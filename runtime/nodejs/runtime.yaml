@@ -10,7 +10,7 @@ extensions: [js]
 category: general
 versionDiscovery:
   repository: runrsh/exec-nodejs
-  image: "ghcr.io/runrsh/exec-nodejs:{version}"
+  image: "ghcr.io/brf-tech/exec-nodejs:{version}"
   eol: nodejs
   filter: lts-even-major
 handler:

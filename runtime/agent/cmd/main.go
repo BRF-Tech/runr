@@ -9,11 +9,11 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/runrsh/core/runtime/agent/internal/collector"
-	"github.com/runrsh/core/runtime/agent/internal/session"
-	"github.com/runrsh/core/runtime/agent/internal/uptime"
-	"github.com/runrsh/core/runtime/agent/internal/watcher"
-	"github.com/runrsh/core/runtime/agent/internal/ws"
+	"github.com/brf-tech/runr/runtime/agent/internal/collector"
+	"github.com/brf-tech/runr/runtime/agent/internal/session"
+	"github.com/brf-tech/runr/runtime/agent/internal/uptime"
+	"github.com/brf-tech/runr/runtime/agent/internal/watcher"
+	"github.com/brf-tech/runr/runtime/agent/internal/ws"
 )
 
 func main() {

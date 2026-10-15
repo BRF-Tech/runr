@@ -40,19 +40,19 @@ runr deploy       # https://hello.<region>.<domain>
 ## Install
 
 Download the archive for your platform from the
-[releases](https://github.com/runrsh/core/releases) (Linux, macOS and Windows on amd64 and
+[releases](https://github.com/brf-tech/runr/releases) (Linux, macOS and Windows on amd64 and
 arm64; static binaries; `runr_<os>_<arch>.tar.gz`, `.zip` for Windows), check it against
 `checksums.txt` and put `runr` on your `PATH`:
 
 ```sh
-curl -fsSLO https://github.com/runrsh/core/releases/latest/download/runr_linux_amd64.tar.gz
-curl -fsSLO https://github.com/runrsh/core/releases/latest/download/checksums.txt
+curl -fsSLO https://github.com/brf-tech/runr/releases/latest/download/runr_linux_amd64.tar.gz
+curl -fsSLO https://github.com/brf-tech/runr/releases/latest/download/checksums.txt
 grep ' runr_linux_amd64.tar.gz$' checksums.txt | sha256sum -c
 tar -xzf runr_linux_amd64.tar.gz runr && sudo mv runr /usr/local/bin/
 runr version
 ```
 
-With Go installed: `go install github.com/runrsh/core/cli@latest` (the binary is named `cli`;
+With Go installed: `go install github.com/brf-tech/runr/cli@latest` (the binary is named `cli`;
 rename it to `runr`), or build from the repository with `make -C cli build` (`cli/bin/runr`).
 
 Shell completion: `runr completion bash|zsh|fish|powershell`, e.g.
@@ -380,7 +380,7 @@ runr dev --print            # show the docker commands instead of running them
 
 - **Same image and wrapper.** The runtime image of the project's runtime and version — the
   image the platform's runtime catalog names when you are logged in (the version defaults to
-  the platform's default), else `ghcr.io/runrsh/exec-<runtime>:<version>` with the CLI's
+  the platform's default), else `ghcr.io/brf-tech/exec-<runtime>:<version>` with the CLI's
   default version — started with its own entrypoint (the HTTP server that calls your
   handler).
 - **Same environment.** The project directory is mounted read-only and copied to
@@ -416,7 +416,7 @@ cluster runs:
 |---|---|
 | The runtime version's `image` | the same image |
 | A `dockerfile` or `git` version, built by RunR in each region | built locally with `docker build` from the files uploaded with the runtime (or the Git URL, `ref` and `path`), tagged `runr-dev-runtime-<id>:<version>-<digest>`; an unchanged source reuses the image |
-| exec and persistent runtimes: the universal wrapper (`runr-wrapper`) as entrypoint, copied into the pod by an init container (`runr-wrapper install /runr/runr-wrapper`) | the same install runs from the wrapper image (`ghcr.io/runrsh/runr-wrapper:1.1.0`, or `RUNR_WRAPPER_IMAGE`) into the cache directory, which is mounted read-only at `/runr`; the container's entrypoint is `/runr/runr-wrapper` |
+| exec and persistent runtimes: the universal wrapper (`runr-wrapper`) as entrypoint, copied into the pod by an init container (`runr-wrapper install /runr/runr-wrapper`) | the same install runs from the wrapper image (`ghcr.io/brf-tech/runr-wrapper:1.1.0`, or `RUNR_WRAPPER_IMAGE`) into the cache directory, which is mounted read-only at `/runr`; the container's entrypoint is `/runr/runr-wrapper` |
 | http runtimes: `run.command` (or the image's entrypoint) serves `$PORT` | the same command as entrypoint, no wrapper |
 | The code as a ConfigMap at `/app/code` | the files `runr deploy` uploads (FaaS: the flat file set after the ignore rules; XaaS: the script), copied into the cache and mounted read-only at `/app/code` |
 | Compiled runtimes (`build`) and FaaS projects with the dependency file: a Kaniko build of a two-stage Dockerfile, wrapper baked in at `/runr/runr-wrapper` | the same Dockerfile, built locally with `docker build` on every start (Docker's layer cache keeps unchanged steps); the image carries code, build output, dependencies and wrapper |
@@ -460,7 +460,7 @@ state file in the cache directory, `--url` addresses another server.
 
 Requirements: Docker (the `docker` CLI on `PATH`, or `RUNR_DOCKER`). Images the CLI names
 itself (runtime images without a login, the Composer builder of PHP, the wrapper) come from
-`ghcr.io/runrsh`; `RUNR_RUNTIME_REGISTRY` points to a mirror.
+`ghcr.io/brf-tech`; `RUNR_RUNTIME_REGISTRY` points to a mirror.
 
 ## Command reference
 
@@ -2146,7 +2146,7 @@ deploy:
     RUNR_VERSION: v0.5.0
   before_script:
     - apk add --no-cache curl tar
-    - curl -fsSL "https://github.com/runrsh/core/releases/download/${RUNR_VERSION}/runr_linux_amd64.tar.gz" | tar -xz -C /usr/local/bin runr
+    - curl -fsSL "https://github.com/brf-tech/runr/releases/download/${RUNR_VERSION}/runr_linux_amd64.tar.gz" | tar -xz -C /usr/local/bin runr
   script:
     - runr deploy --message "$CI_COMMIT_SHORT_SHA $CI_COMMIT_TITLE" --output-env deploy.env
   artifacts:
@@ -2168,7 +2168,7 @@ deploy:
 | `RUNR_CONTEXT` | Context to use (like `--context`) |
 | `RUNR_CONFIG` | Path of the config file |
 | `RUNR_PROJECT` | Default project (like `--project`) |
-| `RUNR_RUNTIME_REGISTRY` | Registry of the runtime images for `runr dev` (default `ghcr.io/runrsh`) |
+| `RUNR_RUNTIME_REGISTRY` | Registry of the runtime images for `runr dev` (default `ghcr.io/brf-tech`) |
 | `RUNR_WRAPPER_IMAGE` | Image of the universal wrapper `runr dev` installs for exec and persistent runtime plugins (default `<registry>/runr-wrapper:1.1.0`; `RUNR_RUNTIME_REGISTRY` sets the registry) |
 | `RUNR_DOCKER` | Docker CLI binary for `runr dev` |
 
@@ -2189,7 +2189,7 @@ update_check: false         # true: runr version looks up the latest release
 
 ## Building the CLI
 
-The CLI lives in `cli/` (Go module `github.com/runrsh/core/cli`):
+The CLI lives in `cli/` (Go module `github.com/brf-tech/runr/cli`):
 
 ```sh
 cd cli

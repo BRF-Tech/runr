@@ -5,6 +5,8 @@ namespace App\Services\RegionReconcile;
 use App\Models\KnativeRegion;
 use App\Services\Helpers\RunrClusterIdentity;
 use App\Services\KubernetesClient;
+use App\Services\RegionReconcile\Steps\AdmissionPolicyStep;
+use App\Services\RegionReconcile\Steps\ImageRegistryStep;
 use App\Services\RegionReconcile\Steps\IngressTrustStep;
 use App\Services\RegionReconcile\Steps\KataSandboxStep;
 use App\Services\RegionReconcile\Steps\KnativeServingConfigStep;
@@ -53,6 +55,10 @@ class RegionReconciler
             new LokiDeletionStep,
             new KataSandboxStep,
             new WasmSandboxStep,
+            // RunR's image namespace (ghcr.io/brf-tech): the admission policy admits it before
+            // image-registry rolls the region's workloads onto it
+            new AdmissionPolicyStep,
+            new ImageRegistryStep,
         ];
     }
 

@@ -132,10 +132,10 @@ class GpuWorkloadManifestTest extends TestCase
     {
         $this->seedBuiltinVersions();
         ExecutorImage::updateOrCreate(['runtime' => 'pytorch', 'version' => '2.3-gpu'], [
-            'docker_image' => 'ghcr.io/runrsh/exec-pytorch:2.3-gpu', 'is_default' => false, 'is_active' => true, 'gpu_required' => true, 'category' => 'ml',
+            'docker_image' => 'ghcr.io/brf-tech/exec-pytorch:2.3-gpu', 'is_default' => false, 'is_active' => true, 'gpu_required' => true, 'category' => 'ml',
         ]);
         ExecutorImage::updateOrCreate(['runtime' => 'pytorch', 'version' => '2.3'], [
-            'docker_image' => 'ghcr.io/runrsh/exec-pytorch:2.3', 'is_default' => true, 'is_active' => true, 'gpu_required' => false, 'category' => 'ml',
+            'docker_image' => 'ghcr.io/brf-tech/exec-pytorch:2.3', 'is_default' => true, 'is_active' => true, 'gpu_required' => false, 'category' => 'ml',
         ]);
 
         [$project, $version] = $this->runtimeProject('pytorch', 'http', ['main.py' => 'def handler(e, c): return 1']);
@@ -143,7 +143,7 @@ class GpuWorkloadManifestTest extends TestCase
         $project = $project->fresh(['xaasConfig', 'knativeRegion']);
 
         $container = $this->service($this->build($project, $version))['spec']['template']['spec']['containers'][0];
-        $this->assertSame('ghcr.io/runrsh/exec-pytorch:2.3-gpu', $container['image']);
+        $this->assertSame('ghcr.io/brf-tech/exec-pytorch:2.3-gpu', $container['image']);
         $this->assertSame('1', $container['resources']['limits']['nvidia.com/gpu'], 'GPU version without config.gpu: one GPU');
 
         $project->xaasConfig->update(['gpu' => ['count' => 2]]);

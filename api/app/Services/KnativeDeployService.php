@@ -9,6 +9,7 @@ use App\Models\Project;
 use App\Models\Version;
 use App\Services\Concerns\KnativeManifestTrait;
 use App\Services\Concerns\KnativeQueueConsumerTrait;
+use App\Services\Helpers\ResourceReservation;
 use App\Services\Runtimes\ProjectEntrypoint;
 use App\Services\Runtimes\RuntimeRegistry;
 use App\Support\DeployGate;
@@ -104,6 +105,10 @@ class KnativeDeployService
                     return;
                 }
             }
+
+            // Region capacity counts the Kata pod overhead of the RuntimeClass the pods now run
+            // with, not the region's mapping at the time of counting (ResourceReservation)
+            $this->recordRuntimeClass($project, $manifests);
 
             // The project's last secret env var was removed: its Secret goes too (404 = none)
             if (! $this->secretEnvValues($project)) {
@@ -400,6 +405,35 @@ class KnativeDeployService
     private function cronJobName(Project $project): string
     {
         return $project->slug.'-trigger';
+    }
+
+    /**
+     * projects.deployed_runtime_class: the RuntimeClass of the workload just applied (the
+     * Knative Service template or the CronJob pod), "runc" without one.
+     *
+     * @param  list<array>  $manifests
+     */
+    private function recordRuntimeClass(Project $project, array $manifests): void
+    {
+        foreach ($manifests as $manifest) {
+            $podSpec = match (true) {
+                ($manifest['kind'] ?? null) === 'Service' && str_starts_with((string) ($manifest['apiVersion'] ?? ''), 'serving.knative.dev/') => $manifest['spec']['template']['spec'] ?? null,
+                ($manifest['kind'] ?? null) === 'CronJob' => $manifest['spec']['jobTemplate']['spec']['template']['spec'] ?? null,
+                default => null,
+            };
+            if (! is_array($podSpec)) {
+                continue;
+            }
+
+            $class = ResourceReservation::runtimeClassOfPodSpec($podSpec);
+            if ($project->getAttribute('deployed_runtime_class') !== $class) {
+                Project::whereKey($project->id)->update(['deployed_runtime_class' => $class]);
+                $project->setAttribute('deployed_runtime_class', $class);
+                $project->syncOriginalAttribute('deployed_runtime_class');
+            }
+
+            return;
+        }
     }
 
     private function fail(Deployment $deployment, string $reason): void

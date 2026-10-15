@@ -10,7 +10,7 @@ extensions: [py]
 category: ml
 versionDiscovery:
   repository: runrsh/exec-tensorflow
-  image: "ghcr.io/runrsh/exec-tensorflow:{version}"
+  image: "ghcr.io/brf-tech/exec-tensorflow:{version}"
   eol: tensorflow
 handler:
   file: main

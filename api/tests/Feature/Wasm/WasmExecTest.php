@@ -30,7 +30,7 @@ class WasmExecTest extends TestCase
         parent::setUp();
         $this->setUpBuildCluster();
         ExecutorImage::create([
-            'runtime' => 'wasm-exec', 'version' => '4.1', 'docker_image' => 'ghcr.io/runrsh/exec-wasm-exec:4.1',
+            'runtime' => 'wasm-exec', 'version' => '4.1', 'docker_image' => 'ghcr.io/brf-tech/exec-wasm-exec:4.1',
             'is_default' => true, 'is_active' => true, 'sort_order' => 110,
         ]);
     }
@@ -76,7 +76,7 @@ class WasmExecTest extends TestCase
         $this->assertSame('runr-wasm-exec build', $m->build()['command']);
         $this->assertSame(['http', 'schedule', 'queue'], $m->triggers());
         $this->assertSame('main.c', $m->defaultFilename());
-        $this->assertSame('ghcr.io/runrsh/exec-wasm-exec:4.1', $m->version('4.1')['image']);
+        $this->assertSame('ghcr.io/brf-tech/exec-wasm-exec:4.1', $m->version('4.1')['image']);
         $this->assertStringContainsString('HTTP_CE_TYPE', $m->templateFiles('main.c', 'main', false)['main.c']);
     }
 
@@ -86,7 +86,7 @@ class WasmExecTest extends TestCase
         $this->submit($version);
 
         $c = $this->container();
-        $this->assertSame('ghcr.io/runrsh/exec-wasm-exec:4.1', $c['image']);
+        $this->assertSame('ghcr.io/brf-tech/exec-wasm-exec:4.1', $c['image']);
         $this->assertStringContainsString('runr-wasm-exec build', $c['command'][2]);
         $this->assertStringContainsString('spin registry push --insecure', $c['command'][2]);
         $this->assertArrayNotHasKey('RUNR_WASM_MODULE', $this->env(), 'compiled, nothing fetched');
@@ -156,7 +156,7 @@ class WasmExecTest extends TestCase
         $this->submit($version);
 
         $c = $this->container();
-        $this->assertSame('ghcr.io/runrsh/exec-wasm-exec:4.1', $c['image'], 'build.image, not the uploaded module');
+        $this->assertSame('ghcr.io/brf-tech/exec-wasm-exec:4.1', $c['image'], 'build.image, not the uploaded module');
         $this->assertSame(self::ZOT.'/runr-uploads/platform/q-interpreter@sha256:'.str_repeat('d', 64), $this->env()['RUNR_WASM_MODULE']);
         $toml = $this->sourceFiles()['spin.toml'];
         $this->assertStringContainsString('executor = { type = "wagi", argv = "q -cgi /main.q" }', $toml);

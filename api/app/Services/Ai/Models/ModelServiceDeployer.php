@@ -10,6 +10,7 @@ use App\Models\KnativeRegion;
 use App\Services\Ai\Engines\EngineCatalog;
 use App\Services\Ai\Gpu\GpuInstallService;
 use App\Services\Ai\Hub\HubToken;
+use App\Services\Helpers\ResourceReservation;
 use App\Services\KubernetesClient;
 use App\Support\DeployGate;
 use Illuminate\Support\Facades\Log;
@@ -24,11 +25,18 @@ use Illuminate\Support\Facades\Log;
  */
 class ModelServiceDeployer
 {
+    /** Waiting reasons of a container that Kubernetes retries without getting further. */
+    private const WAITING_PROBLEMS = [
+        'ImagePullBackOff', 'ErrImagePull', 'InvalidImageName', 'ErrImageNeverPull',
+        'CreateContainerConfigError', 'CreateContainerError', 'RunContainerError',
+    ];
+
     public function __construct(
         private ModelServiceManifests $manifests,
         private ModelStorage $storage,
         private HubToken $token,
         private SnapshotService $snapshots,
+        private ModelImagePrepull $prepull,
     ) {}
 
     public function deploy(AiModelService $service): void
@@ -106,6 +114,12 @@ class ModelServiceDeployer
                 throw new \RuntimeException(__('ai.models.apply_failed', ['kind' => 'Knative Service']));
             }
 
+            // The engine image onto the other nodes the service can run on (scale-out, a
+            // rescheduled pod, a start from zero elsewhere)
+            $this->prepullImages($service);
+
+            // Region capacity counts the Kata pod overhead of the RuntimeClass the service runs with
+            $service->forceFill(['runtime_class' => ResourceReservation::runtimeClassOfPodSpec($manifest['spec']['template']['spec'] ?? [])]);
             $service->update([
                 'status' => AiModelService::STATUS_DEPLOYING,
                 'status_message' => null,
@@ -117,6 +131,16 @@ class ModelServiceDeployer
         } catch (\Throwable $e) {
             Log::error('Model service deploy failed', ['service' => $service->name, 'error' => $e->getMessage()]);
             $this->fail($service, $e->getMessage());
+        }
+    }
+
+    /** Start pre-pulling the service's images (ModelImagePrepull); never fails the caller. */
+    public function prepullImages(AiModelService $service): void
+    {
+        try {
+            $this->prepull->forService($service);
+        } catch (\Throwable $e) {
+            Log::warning('Model image pre-pull not started', ['service' => $service->name, 'error' => $e->getMessage()]);
         }
     }
 
@@ -154,24 +178,132 @@ class ModelServiceDeployer
     }
 
     /**
-     * Readiness of the Knative Service: [ready (true/false/null = still starting), message].
+     * Readiness of the Knative Service: [ready (true/false/null = still starting), message,
+     * reason]. While it is not ready the pods say why when Kubernetes cannot start them
+     * (podProblem(): CrashLoopBackOff, ImagePullBackOff, …): that reason, and its message in
+     * place of Knative's progress message.
      *
-     * @return array{0: ?bool, 1: ?string}
+     * @return array{0: ?bool, 1: ?string, 2: ?string}
      */
     public function readiness(AiModelService $service): array
     {
         $region = $service->region;
         if (! $region || ! $region->kubeconfig) {
-            return [false, __('ai.models.region_unavailable', ['region' => $region?->name ?? '?'])];
+            return [false, __('ai.models.region_unavailable', ['region' => $region?->name ?? '?']), null];
         }
 
         $k8s = new KubernetesClient($region->kubeconfig);
         $ksvc = $k8s->getResourceStatus('serving.knative.dev/v1', 'Service', $service->service_name, $service->namespace());
         if (! $ksvc) {
-            return [null, null];
+            return [null, null, null];
         }
 
-        return self::readinessOf($ksvc);
+        [$ready, $message] = self::readinessOf($ksvc);
+        if ($ready === true) {
+            return [true, null, null];
+        }
+
+        try {
+            $pods = $k8s->listResources('v1', 'Pod', $service->namespace(), [AiModelService::LABEL => $service->id])['items'] ?? [];
+            $problem = self::podProblem($pods, (int) $service->memory_mb);
+        } catch (\Throwable) {
+            $problem = null;
+        }
+
+        if (! $problem) {
+            return [$ready, $message, null];
+        }
+
+        // A failed revision keeps Knative's message (it names the revision and the cause)
+        return [$ready, $ready === false && $message ? $message : $problem['message'], $problem['reason']];
+    }
+
+    /**
+     * Why the pods of a model service do not start, from the first pod with a reason:
+     *
+     *  - a container (init containers first) waiting with a reason Kubernetes only retries:
+     *    CrashLoopBackOff, with the last termination (exit code, reason and the termination
+     *    message: the engine's log tail through terminationMessagePolicy FallbackToLogsOnError),
+     *    ImagePullBackOff / ErrImagePull / InvalidImageName, CreateContainerConfigError …;
+     *  - a container that was OOMKilled and is not ready (killed at the memory limit);
+     *  - a pod the scheduler cannot place (PodScheduled False, e.g. Insufficient memory).
+     *
+     * Null while the pods are only starting (ContainerCreating, PodInitializing, loading).
+     *
+     * @param  list<array>  $pods
+     * @return array{reason: string, message: string}|null
+     */
+    public static function podProblem(array $pods, int $memoryMb = 0): ?array
+    {
+        foreach ($pods as $pod) {
+            $statuses = array_merge($pod['status']['initContainerStatuses'] ?? [], $pod['status']['containerStatuses'] ?? []);
+
+            foreach ($statuses as $status) {
+                $container = (string) ($status['name'] ?? '?');
+                $waiting = $status['state']['waiting'] ?? null;
+                $reason = (string) ($waiting['reason'] ?? '');
+                $last = $status['lastState']['terminated'] ?? null;
+
+                if ($reason === 'CrashLoopBackOff' || (($last['reason'] ?? '') === 'OOMKilled' && ! ($status['ready'] ?? false))) {
+                    return self::crashProblem($reason ?: 'OOMKilled', $container, (int) ($status['restartCount'] ?? 0), $last, $memoryMb);
+                }
+
+                if (in_array($reason, self::WAITING_PROBLEMS, true)) {
+                    $detail = self::clean((string) ($waiting['message'] ?? ''), 600);
+
+                    return [
+                        'reason' => $reason,
+                        'message' => __(str_contains($reason, 'Image') ? 'ai.models.pod_image' : 'ai.models.pod_waiting', [
+                            'reason' => $reason,
+                            'container' => $container,
+                            'message' => $detail !== '' ? $detail : $reason,
+                        ]),
+                    ];
+                }
+            }
+
+            foreach ($pod['status']['conditions'] ?? [] as $condition) {
+                if (($condition['type'] ?? '') === 'PodScheduled' && ($condition['status'] ?? '') === 'False') {
+                    return [
+                        'reason' => (string) ($condition['reason'] ?? 'Unschedulable'),
+                        'message' => __('ai.models.pod_unschedulable', ['message' => self::clean((string) ($condition['message'] ?? ''), 600)]),
+                    ];
+                }
+            }
+        }
+
+        return null;
+    }
+
+    /** @return array{reason: string, message: string} */
+    private static function crashProblem(string $reason, string $container, int $restarts, ?array $last, int $memoryMb): array
+    {
+        $message = __('ai.models.pod_crash_loop', [
+            'reason' => $reason,
+            'container' => $container,
+            'restarts' => $restarts,
+            'code' => $last['exitCode'] ?? '?',
+            'why' => $last['reason'] ?? 'Error',
+        ]);
+
+        if (($last['reason'] ?? '') === 'OOMKilled') {
+            $message .= ' '.__('ai.models.pod_oom', ['memory' => $memoryMb]);
+        }
+
+        $output = self::clean((string) ($last['message'] ?? ''), 1500);
+        if ($output !== '') {
+            $message .= "\n".$output;
+        }
+
+        return ['reason' => $reason, 'message' => $message];
+    }
+
+    /** A Kubernetes message without colour codes: its last $max characters. */
+    private static function clean(string $text, int $max): string
+    {
+        $text = trim((string) preg_replace('/\e\[[0-9;?]*[A-Za-z]/', '', $text));
+
+        return mb_strlen($text) > $max ? '…'.ltrim(mb_substr($text, -$max)) : $text;
     }
 
     /**

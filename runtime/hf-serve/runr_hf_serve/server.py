@@ -1,13 +1,18 @@
 """The model server: a uniform ``/predict`` route plus OpenAI-compatible routes per task.
 
 The model is loaded once at startup (in a background thread, so the process answers health
-checks meanwhile): ``/healthz`` answers 503 while loading, 500 when loading failed — the pod
-never becomes ready and the reason is in the logs and the body — and 200 once the model serves.
+checks meanwhile): ``/healthz`` answers 503 while loading and 200 once the model serves. When
+loading fails, ``python -m runr_hf_serve serve`` (``exit_on_error``) writes the reason to the
+Kubernetes termination log (``RUNR_TERMINATION_LOG``, default ``/dev/termination-log``), logs it
+and exits with status 1: the pod restarts with back-off and its status names the reason. Without
+``exit_on_error`` (library use, tests) ``/healthz`` answers 500 with the reason.
 """
 
 from __future__ import annotations
 
 import logging
+import os
+import sys
 import threading
 import time
 import uuid
@@ -26,13 +31,57 @@ log = logging.getLogger("runr_hf_serve")
 
 Loader = Callable[[Settings], LoadedModel]
 
+TERMINATION_LOG = "/dev/termination-log"
+
+# Kubernetes keeps at most 4096 bytes of a termination message; RunR shows up to 2 KB
+TERMINATION_MAX_BYTES = 2048
+
+# os._exit, replaceable in tests
+_exit = os._exit
+
+
+def termination_reason(error: str) -> str:
+    """One line of at most 2 KB: ``the model failed to load: <Type>: <message>``."""
+    line = " ".join(f"the model failed to load: {error}".split())
+    return line.encode("utf-8")[:TERMINATION_MAX_BYTES].decode("utf-8", errors="ignore")
+
+
+def write_termination_log(reason: str, path: Optional[str] = None) -> bool:
+    """The reason into the termination log; False when it cannot be written (not in a pod)."""
+    path = path or os.environ.get("RUNR_TERMINATION_LOG") or TERMINATION_LOG
+    try:
+        with open(path, "w", encoding="utf-8") as handle:
+            handle.write(reason)
+        return True
+    except OSError:
+        return False
+
+
+def exit_on_load_error(error: str) -> None:
+    """Termination log, log line, exit status 1 (from the loader thread: os._exit)."""
+    reason = termination_reason(error)
+    write_termination_log(reason)
+    log.error(reason)
+    for handler in logging.getLogger().handlers:
+        try:
+            handler.flush()
+        except Exception:
+            pass
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.flush()
+        except Exception:
+            pass
+    _exit(1)
+
 
 class ModelState:
     """Loading status and the loaded model; inference is serialised (pipelines are not thread-safe)."""
 
-    def __init__(self, settings: Settings, loader: Loader):
+    def __init__(self, settings: Settings, loader: Loader, on_error: Optional[Callable[[str], None]] = None):
         self.settings = settings
         self.loader = loader
+        self.on_error = on_error
         self.status = "loading"
         self.error: Optional[str] = None
         self.model: Optional[LoadedModel] = None
@@ -50,6 +99,8 @@ class ModelState:
             self.status = "error"
             self.error = f"{type(exc).__name__}: {exc}"
             log.exception("loading the model failed")
+            if self.on_error is not None:
+                self.on_error(self.error)
 
 
 def _error(status: int, message: str) -> JSONResponse:
@@ -66,9 +117,14 @@ async def _json_body(request: Request) -> dict:
     return body
 
 
-def create_app(settings: Optional[Settings] = None, loader: Optional[Loader] = None, background: bool = True) -> FastAPI:
+def create_app(
+    settings: Optional[Settings] = None,
+    loader: Optional[Loader] = None,
+    background: bool = True,
+    exit_on_error: bool = False,
+) -> FastAPI:
     settings = settings or Settings.from_env()
-    state = ModelState(settings, loader or load_model)
+    state = ModelState(settings, loader or load_model, on_error=exit_on_load_error if exit_on_error else None)
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI):

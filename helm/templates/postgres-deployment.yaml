@@ -24,7 +24,7 @@ spec:
       {{- include "runr.postgres-init" . | nindent 6 }}
       containers:
         - name: postgres
-          image: "{{ .Values.database.postgres.image.repository }}:{{ .Values.database.postgres.image.tag }}"
+          image: {{ include "runr.image" (printf "%v:%v" .Values.database.postgres.image.repository .Values.database.postgres.image.tag) | quote }}
           ports:
             - containerPort: 5432
           env:

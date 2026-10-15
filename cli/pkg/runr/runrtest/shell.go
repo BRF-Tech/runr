@@ -3,7 +3,7 @@ package runrtest
 import (
 	"fmt"
 
-	"github.com/runrsh/core/cli/pkg/runr"
+	"github.com/brf-tech/runr/cli/pkg/runr"
 )
 
 // The web shell of a deployment (ExecController::start) of the fake: a one-time session of the

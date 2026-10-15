@@ -19,7 +19,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/runrsh/core/cli/pkg/runr"
+	"github.com/brf-tech/runr/cli/pkg/runr"
 )
 
 // DefaultToken is the API token the fake accepts unless Server.Token is changed.

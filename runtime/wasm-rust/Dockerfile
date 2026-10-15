@@ -1,10 +1,10 @@
-# Build image of the wasm-rust runtime (ghcr.io/runrsh/exec-wasm-rust:<version>): Rust with the
+# Build image of the wasm-rust runtime (ghcr.io/brf-tech/exec-wasm-rust:<version>): Rust with the
 # wasm32-wasip1 target, the Spin CLI of the Spin runtime the shim embeds, and the dependencies of
 # the default Cargo.toml fetched and compiled once (CARGO_TARGET_DIR), so a function build only
 # compiles the function's own crate. It runs as the build Job of a function version
 # (WasmBuildService); it is never deployed as a function.
 #
-#   docker build -t ghcr.io/runrsh/exec-wasm-rust:4.1 runtime/wasm-rust     (or: runtime/ci.sh wasm)
+#   docker build -t ghcr.io/brf-tech/exec-wasm-rust:4.1 runtime/wasm-rust     (or: runtime/ci.sh wasm)
 ARG RUST_VERSION=1.98.1
 FROM rust:${RUST_VERSION}-slim-bookworm
 

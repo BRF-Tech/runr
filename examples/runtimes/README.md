@@ -8,7 +8,7 @@ The full contract and manifest reference are in [docs/runtimes.md](../../docs/ru
 |---|---|---|---|---|
 | C | [`c/`](c/) | `exec`, raw input | built per function version (gcc, static binary on Alpine) | a compiled language; the wrapper runs the binary once per invocation |
 | Rust | [`rust/`](rust/) | `http` | built per function version (rustc, std only) | a binary that is its own HTTP server; schedule runs through the wrapper (`schedule: invoke`) |
-| Bash | [`bash/`](bash/) | `exec`, raw input | `ghcr.io/runrsh/reqs/bash:5.2` (the official `bash:5.2`, mirrored) | an interpreted language with zero build steps |
+| Bash | [`bash/`](bash/) | `exec`, raw input | `ghcr.io/brf-tech/reqs/bash:5.2` (the official `bash:5.2`, mirrored) | an interpreted language with zero build steps |
 | Q | [`q/`](q/) | `persistent` | built per region from the uploaded Dockerfile | a language nobody has heard of: one long-lived interpreter process answers every request |
 
 Every example answers all three triggers the same way:

@@ -311,10 +311,14 @@ while they are not stopped. Admission:
 | model service create / start / change of a running one | GPUs, plus CPU / memory against the tenant quota |
 
 Region capacity (every edition): the region's CPU and memory (`total_cpu_m` / `total_memory_mb`)
-are shared by the projects **and the running model services** — project admission
-(create, update, deploy), model service admission (create with deploy, start, change of a running
-service; one that does not grow always passes), the region's used figures and the capacity
-alerts count both. Stopped model services reserve nothing.
+are shared by the projects, the sandboxes **and the model services that are not stopped** —
+project admission (create, update, deploy), model service admission (create with deploy, start,
+change of a running service; one that does not grow always passes), the region's used figures and
+the capacity alerts count them all. A model service that keeps pods running (`min_scale` ≥ 1 or
+`scale_to_zero: false`) holds the always-on budget; a scale-to-zero one counts one pod against
+the FaaS overcommit budget ([Region capacity and admission](architecture.md#region-capacity-and-admission)).
+Its Kata pod overhead follows the RuntimeClass it was deployed with. Stopped model services
+reserve nothing.
 
 Platform administrators are exempt, as with CPU and memory quotas; regions in mode *infinite*
 have no quota. Platform administrators set the quota in Tenants → (tenant) → Quotas or with
@@ -346,7 +350,9 @@ API.
 
 ## Sizing guidance
 
-Guidance, derived from the model size; measure your own workload before you fix sizes.
+Guidance, derived from the model size — the weights an engine loads, one format of the
+repository ([how RunR counts them](huggingface.md#engines-per-task)); measure your own workload
+before you fix sizes.
 
 - **GPU memory**: the weights (file size of the safetensors / bin files in the precision you
   serve) plus headroom for activations and, for text generation, the KV cache. RunR's deploy
@@ -363,8 +369,14 @@ Guidance, derived from the model size; measure your own workload before you fix 
 - **CPU or GPU**: embeddings, classification, NER and small speech or vision models run on CPU;
   text generation above a few GB of weights and image generation want a GPU (RunR offers CPU
   text generation up to 3 GiB of weights).
-- **Cold start**: size of the image and of the weights dominates. Keep one instance warm
-  (min scale 1) for interactive use, scale to zero for batch and occasional use.
+- **CPU threads**: model services get `OMP_NUM_THREADS` / `MKL_NUM_THREADS` = the CPU limit
+  rounded up, so PyTorch runs as many threads as the limit allows instead of one per node CPU
+  (throttled most of the time). More CPU means more threads; set the variables in `env_vars` to
+  choose otherwise.
+- **Cold start**: size of the image and of the weights dominates. RunR pre-pulls model images
+  onto the nodes when model storage is set up and when a service is created
+  ([image pre-pull](huggingface.md#image-pre-pull)). Keep one instance warm (min scale 1) for
+  interactive use, scale to zero for batch and occasional use.
 
 ## Permissions
 
@@ -439,12 +451,12 @@ ai:
     endpoint: https://huggingface.co   # Hub API (a mirror with the same API works)
     browse: true                       # false: the console does not call the Hub (air-gapped)
   images:
-    hfServe: ghcr.io/runrsh/hf-serve:1.0.0
-    hfServeCuda: ghcr.io/runrsh/hf-serve:1.0.0-cuda
+    hfServe: ghcr.io/brf-tech/hf-serve:1.1.0
+    hfServeCuda: ghcr.io/brf-tech/hf-serve:1.1.0-cuda
     vllm: docker.io/vllm/vllm-openai:v0.6.6
     tgi: ghcr.io/huggingface/text-generation-inference:3.0.1
-    teiCpu: ghcr.io/huggingface/text-embeddings-inference:cpu-1.5
-    teiGpu: "ghcr.io/huggingface/text-embeddings-inference:{arch}1.5"
+    teiCpu: ghcr.io/huggingface/text-embeddings-inference:cpu-1.9.4
+    teiGpu: "ghcr.io/huggingface/text-embeddings-inference:{arch}1.9.4"
     oras: ghcr.io/oras-project/oras:v1.2.0
   gpu:
     devicePluginChartVersion: "0.17.0"
