@@ -21,7 +21,7 @@ The full setup is described in [docs/development.md](docs/development.md). The s
 
 ```bash
 git clone https://github.com/runrsh/core.git
-cd runr
+cd core
 bash scripts/devready.sh docker      # Docker Compose: API, UI, Reverb, Horizon, PostgreSQL, Redis
 ```
 

@@ -168,7 +168,7 @@ Requirements: Docker with the Compose plugin.
 
 ```bash
 git clone https://github.com/runrsh/core.git
-cd runr
+cd core
 bash scripts/devready.sh docker
 ```
 
