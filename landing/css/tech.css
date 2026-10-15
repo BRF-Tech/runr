@@ -202,6 +202,21 @@
 .s2p-langs h4 { font-size: 14px; margin-bottom: 12px; color: var(--accent); }
 .s2p-langs h4:not(:first-child) { margin-top: 22px; padding-top: 18px; border-top: 1px dashed var(--border-strong); }
 .s2p-langs-note { font-size: 12px; color: var(--text-muted); margin-top: 12px; line-height: 1.6; }
+.s2p-langs-perf { font-size: 11px; color: var(--text-faint); margin-top: 8px; line-height: 1.6; }
+
+/* Measured value chip (RunR measurement; the conditions sit in the .perf-note next to it) */
+.perf-chip {
+  display: inline-block;
+  margin-top: 14px;
+  padding: 5px 12px;
+  border-radius: 4px;
+  background: rgba(74,222,128,.12);
+  color: var(--success);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.5;
+}
 .s2p-langs-list {
   display: flex;
   flex-wrap: wrap;
