@@ -1,0 +1,51 @@
+{{- if not .Values.mail.host }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: runr-mailpit
+  namespace: {{ include "runr.namespace" . }}
+  labels:
+    app: runr-mailpit
+    {{- include "runr.labels" . | nindent 4 }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: runr-mailpit
+  template:
+    metadata:
+      labels:
+        app: runr-mailpit
+    spec:
+      automountServiceAccountToken: false
+      {{- include "runr.imagePullSecrets" . | nindent 6 }}
+      containers:
+        - name: mailpit
+          image: "{{ .Values.mailpit.image.repository }}:{{ .Values.mailpit.image.tag }}"
+          ports:
+            - name: smtp
+              containerPort: 1025
+            - name: ui
+              containerPort: {{ .Values.mailpit.uiPort }}
+          resources:
+            {{- toYaml .Values.mailpit.resources | nindent 12 }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: runr-mailpit
+  namespace: {{ include "runr.namespace" . }}
+  labels:
+    app: runr-mailpit
+    {{- include "runr.labels" . | nindent 4 }}
+spec:
+  selector:
+    app: runr-mailpit
+  ports:
+    - name: smtp
+      port: 1025
+      targetPort: 1025
+    - name: ui
+      port: {{ .Values.mailpit.uiPort }}
+      targetPort: {{ .Values.mailpit.uiPort }}
+{{- end }}

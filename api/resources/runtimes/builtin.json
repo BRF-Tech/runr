@@ -1,0 +1,616 @@
+{
+    "_comment": "Generated from runtime/*/runtime.yaml by `php artisan runtimes:bundle` — edit the YAML, then re-run it.",
+    "runtimes": [
+        {
+            "apiVersion": "runr.sh/v1",
+            "kind": "Runtime",
+            "id": "python",
+            "name": "Python",
+            "description": "CPython with the RunR handler server — def handler(event, context).",
+            "language": "python",
+            "extensions": [
+                "py"
+            ],
+            "category": "general",
+            "versionDiscovery": {
+                "repository": "runrsh/exec-python",
+                "image": "ghcr.io/runrsh/exec-python:{version}",
+                "eol": "python"
+            },
+            "handler": {
+                "file": "main",
+                "function": "handler",
+                "pattern": "def\\s+handler\\s*\\("
+            },
+            "template": {
+                "files": {
+                    "{file}": "def {handler}(event, context):\n    return {\"statusCode\": 200, \"body\": \"Hello, World!\"}"
+                }
+            },
+            "dependencies": {
+                "file": "requirements.txt",
+                "template": "redis>=5.0\n",
+                "install": "pip install --no-cache-dir --target=/build/vendor -r /build/code/requirements.txt",
+                "copy": [
+                    {
+                        "from": "/build/vendor",
+                        "to": "/app/vendor"
+                    }
+                ],
+                "env": {
+                    "PYTHONPATH": "/app/vendor"
+                }
+            },
+            "run": {
+                "mode": "http",
+                "schedule": "native"
+            },
+            "triggers": [
+                "http",
+                "schedule",
+                "queue"
+            ],
+            "sandbox": [
+                "runc",
+                "gvisor",
+                "kata"
+            ]
+        },
+        {
+            "apiVersion": "runr.sh/v1",
+            "kind": "Runtime",
+            "id": "nodejs",
+            "name": "Node.js",
+            "description": "Node.js LTS with the RunR handler server — exports.handler = async (event, context).",
+            "language": "javascript",
+            "extensions": [
+                "js"
+            ],
+            "category": "general",
+            "versionDiscovery": {
+                "repository": "runrsh/exec-nodejs",
+                "image": "ghcr.io/runrsh/exec-nodejs:{version}",
+                "eol": "nodejs",
+                "filter": "lts-even-major"
+            },
+            "handler": {
+                "file": "main",
+                "function": "handler",
+                "pattern": "(?:exports\\.handler|module\\.exports\\.handler|function\\s+handler|const\\s+handler)"
+            },
+            "template": {
+                "files": {
+                    "{file}": "exports.{handler} = async (event, context) => {\n    return { statusCode: 200, body: 'Hello, World!' };\n};"
+                }
+            },
+            "dependencies": {
+                "file": "package.json",
+                "template": "{\"dependencies\":{\"ioredis\":\"^5\"}}",
+                "install": "cd /build/code && npm install --production",
+                "copy": [
+                    {
+                        "from": "/build/code/node_modules",
+                        "to": "/app/code/node_modules"
+                    }
+                ]
+            },
+            "run": {
+                "mode": "http",
+                "schedule": "native"
+            },
+            "triggers": [
+                "http",
+                "schedule",
+                "queue"
+            ],
+            "sandbox": [
+                "runc",
+                "gvisor",
+                "kata"
+            ]
+        },
+        {
+            "apiVersion": "runr.sh/v1",
+            "kind": "Runtime",
+            "id": "go",
+            "name": "Go",
+            "description": "Go, compiled to a static binary — func Handler(event, context interface{}) (interface{}, error).",
+            "language": "go",
+            "extensions": [
+                "go"
+            ],
+            "category": "general",
+            "versionDiscovery": {
+                "repository": "runrsh/exec-go",
+                "image": "ghcr.io/runrsh/exec-go:{version}",
+                "eol": "go"
+            },
+            "handler": {
+                "file": "main",
+                "function": "handler",
+                "pattern": "func\\s+Handler\\s*\\("
+            },
+            "template": {
+                "files": {
+                    "{file}": "package main\n\n// {Handler} is the entry point for this function.\nfunc {Handler}(event interface{}, context interface{}) (interface{}, error) {\n\treturn map[string]interface{}{\n\t\t\"statusCode\": 200,\n\t\t\"body\":       \"Hello, World!\",\n\t}, nil\n}"
+                }
+            },
+            "build": {
+                "image": "{image}",
+                "command": "mkdir -p /build/src && cp /build/code/*.go /build/src/ && cd /build/src && go mod init runr-function && go mod tidy && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags=\"-s -w\" -o /build/out/handler .",
+                "runImage": "ghcr.io/runrsh/reqs/alpine:3.20",
+                "source": false,
+                "files": {
+                    "runr_wrapper_.go": {
+                        "http": "package main\n\nimport (\n\t\"encoding/json\"\n\t\"fmt\"\n\t\"io\"\n\t\"net/http\"\n\t\"os\"\n\t\"strings\"\n)\n\nfunc main() {\n\thttp.HandleFunc(\"/\", func(w http.ResponseWriter, r *http.Request) {\n\t\tif r.Header.Get(\"K-Network-Probe\") != \"\" || r.Header.Get(\"K-Kubelet-Probe\") != \"\" {\n\t\t\tw.WriteHeader(200)\n\t\t\tw.Write([]byte(\"ok\"))\n\t\t\treturn\n\t\t}\n\n\t\tbody, _ := io.ReadAll(r.Body)\n\t\tdefer r.Body.Close()\n\n\t\tvar event interface{}\n\t\tif err := json.Unmarshal(body, &event); err != nil {\n\t\t\tevent = map[string]interface{}{\"body\": string(body)}\n\t\t}\n\n\t\tcontext := map[string]interface{}{\n\t\t\t\"method\":  r.Method,\n\t\t\t\"path\":    r.URL.Path,\n\t\t\t\"headers\": r.Header,\n\t\t}\n\n\t\t// CORS preflight\n\t\tif r.Method == \"OPTIONS\" {\n\t\t\tw.Header().Set(\"Access-Control-Allow-Origin\", \"*\")\n\t\t\tw.Header().Set(\"Access-Control-Allow-Methods\", \"GET, POST, PUT, DELETE, PATCH, OPTIONS\")\n\t\t\tw.Header().Set(\"Access-Control-Allow-Headers\", \"Content-Type, Authorization\")\n\t\t\tw.Header().Set(\"Access-Control-Max-Age\", \"86400\")\n\t\t\tw.WriteHeader(204)\n\t\t\treturn\n\t\t}\n\n\t\tresult, err := Handler(event, context)\n\t\tif err != nil {\n\t\t\tw.Header().Set(\"Access-Control-Allow-Origin\", \"*\")\n\t\t\tw.Header().Set(\"Content-Type\", \"application/json\")\n\t\t\tw.WriteHeader(500)\n\t\t\tjson.NewEncoder(w).Encode(map[string]string{\"error\": err.Error()})\n\t\t\treturn\n\t\t}\n\n\t\tw.Header().Set(\"Access-Control-Allow-Origin\", \"*\")\n\n\t\tif m, ok := result.(map[string]interface{}); ok {\n\t\t\tif hRaw, hasHeaders := m[\"headers\"]; hasHeaders {\n\t\t\t\tif hMap, ok := hRaw.(map[string]interface{}); ok {\n\t\t\t\t\tfor k, v := range hMap {\n\t\t\t\t\t\tw.Header().Set(k, fmt.Sprintf(\"%v\", v))\n\t\t\t\t\t}\n\t\t\t\t}\n\t\t\t\tstatusCode := 200\n\t\t\t\tif sc, ok := m[\"statusCode\"]; ok {\n\t\t\t\t\tif scF, ok := sc.(float64); ok {\n\t\t\t\t\t\tstatusCode = int(scF)\n\t\t\t\t\t}\n\t\t\t\t}\n\t\t\t\trespBody := m[\"body\"]\n\t\t\t\tct := w.Header().Get(\"Content-Type\")\n\t\t\t\tif bodyStr, ok := respBody.(string); ok && !strings.Contains(ct, \"application/json\") {\n\t\t\t\t\tw.WriteHeader(statusCode)\n\t\t\t\t\tw.Write([]byte(bodyStr))\n\t\t\t\t} else {\n\t\t\t\t\tw.Header().Set(\"Content-Type\", \"application/json\")\n\t\t\t\t\tw.WriteHeader(statusCode)\n\t\t\t\t\tjson.NewEncoder(w).Encode(respBody)\n\t\t\t\t}\n\t\t\t\treturn\n\t\t\t}\n\t\t}\n\n\t\tw.Header().Set(\"Content-Type\", \"application/json\")\n\t\tjson.NewEncoder(w).Encode(result)\n\t})\n\n\tport := os.Getenv(\"PORT\")\n\tif port == \"\" {\n\t\tport = \"8080\"\n\t}\n\tfmt.Printf(\"RunR Go runtime listening on :%s\\n\", port)\n\thttp.ListenAndServe(\":\"+port, nil)\n}\n",
+                        "schedule": "package main\n\nimport (\n\t\"encoding/json\"\n\t\"fmt\"\n\t\"os\"\n)\n\nfunc main() {\n\tevent := map[string]interface{}{\"trigger\": \"schedule\"}\n\tcontext := map[string]interface{}{\"mode\": \"schedule\"}\n\n\tresult, err := Handler(event, context)\n\tif err != nil {\n\t\tfmt.Fprintf(os.Stderr, \"Error: %v\\n\", err)\n\t\tos.Exit(1)\n\t}\n\n\toutput, _ := json.Marshal(result)\n\tfmt.Println(string(output))\n}\n"
+                    }
+                }
+            },
+            "run": {
+                "mode": "http",
+                "schedule": "native",
+                "command": [
+                    "/app/handler"
+                ]
+            },
+            "triggers": [
+                "http",
+                "schedule",
+                "queue"
+            ],
+            "sandbox": [
+                "runc",
+                "gvisor",
+                "kata"
+            ]
+        },
+        {
+            "apiVersion": "runr.sh/v1",
+            "kind": "Runtime",
+            "id": "php",
+            "name": "PHP",
+            "description": "PHP CLI with the RunR handler server — function handler($event, $context).",
+            "language": "php",
+            "extensions": [
+                "php"
+            ],
+            "category": "general",
+            "versionDiscovery": {
+                "repository": "runrsh/exec-php",
+                "image": "ghcr.io/runrsh/exec-php:{version}",
+                "eol": "php"
+            },
+            "handler": {
+                "file": "main",
+                "function": "handler",
+                "pattern": "function\\s+handler\\s*\\("
+            },
+            "template": {
+                "files": {
+                    "{file}": "<?php\n\nfunction {handler}($event, $context): array\n{\n    return ['statusCode' => 200, 'body' => 'Hello, World!'];\n}"
+                }
+            },
+            "dependencies": {
+                "file": "composer.json",
+                "template": "{\"require\":{\"predis/predis\":\"^2.0\"}}",
+                "image": "ghcr.io/runrsh/reqs/composer:latest",
+                "install": "cd /build/code && {if:semver}composer config platform.php {semver} && {end}composer install --no-dev --no-interaction",
+                "copy": [
+                    {
+                        "from": "/build/code/vendor",
+                        "to": "/app/code/vendor"
+                    }
+                ]
+            },
+            "run": {
+                "mode": "http",
+                "schedule": "native"
+            },
+            "triggers": [
+                "http",
+                "schedule",
+                "queue"
+            ],
+            "sandbox": [
+                "runc",
+                "gvisor",
+                "kata"
+            ]
+        },
+        {
+            "apiVersion": "runr.sh/v1",
+            "kind": "Runtime",
+            "id": "tensorflow",
+            "name": "TensorFlow",
+            "description": "Python with TensorFlow preinstalled — def handler(event, context).",
+            "language": "python",
+            "extensions": [
+                "py"
+            ],
+            "category": "ml",
+            "versionDiscovery": {
+                "repository": "runrsh/exec-tensorflow",
+                "image": "ghcr.io/runrsh/exec-tensorflow:{version}",
+                "eol": "tensorflow"
+            },
+            "handler": {
+                "file": "main",
+                "function": "handler"
+            },
+            "template": {
+                "files": {
+                    "{file}": "import tensorflow as tf\n\ndef {handler}(event, context):\n    \"\"\"TensorFlow inference handler\"\"\"\n    tensor = tf.constant([[1.0, 2.0], [3.0, 4.0]])\n    result = tf.reduce_mean(tensor).numpy()\n    return {\"statusCode\": 200, \"body\": f\"TensorFlow {tf.__version__} — mean: {result}\"}"
+                }
+            },
+            "dependencies": {
+                "file": "requirements.txt",
+                "template": "",
+                "install": "pip install --no-cache-dir --target=/build/vendor -r /build/code/requirements.txt",
+                "copy": [
+                    {
+                        "from": "/build/vendor",
+                        "to": "/app/vendor"
+                    }
+                ],
+                "env": {
+                    "PYTHONPATH": "/app/vendor"
+                }
+            },
+            "run": {
+                "mode": "http",
+                "schedule": "native"
+            },
+            "triggers": [
+                "http",
+                "schedule",
+                "queue"
+            ],
+            "sandbox": [
+                "runc",
+                "gvisor",
+                "kata"
+            ]
+        },
+        {
+            "apiVersion": "runr.sh/v1",
+            "kind": "Runtime",
+            "id": "pytorch",
+            "name": "PyTorch",
+            "description": "Python with PyTorch preinstalled — def handler(event, context).",
+            "language": "python",
+            "extensions": [
+                "py"
+            ],
+            "category": "ml",
+            "versionDiscovery": {
+                "repository": "runrsh/exec-pytorch",
+                "image": "ghcr.io/runrsh/exec-pytorch:{version}",
+                "eol": "pytorch"
+            },
+            "handler": {
+                "file": "main",
+                "function": "handler"
+            },
+            "template": {
+                "files": {
+                    "{file}": "import torch\n\ndef {handler}(event, context):\n    \"\"\"PyTorch inference handler\"\"\"\n    tensor = torch.tensor([[1.0, 2.0], [3.0, 4.0]])\n    result = tensor.mean().item()\n    return {\"statusCode\": 200, \"body\": f\"PyTorch {torch.__version__} — mean: {result}\"}"
+                }
+            },
+            "dependencies": {
+                "file": "requirements.txt",
+                "template": "",
+                "install": "pip install --no-cache-dir --target=/build/vendor -r /build/code/requirements.txt",
+                "copy": [
+                    {
+                        "from": "/build/vendor",
+                        "to": "/app/vendor"
+                    }
+                ],
+                "env": {
+                    "PYTHONPATH": "/app/vendor"
+                }
+            },
+            "run": {
+                "mode": "http",
+                "schedule": "native"
+            },
+            "triggers": [
+                "http",
+                "schedule",
+                "queue"
+            ],
+            "sandbox": [
+                "runc",
+                "gvisor",
+                "kata"
+            ]
+        },
+        {
+            "apiVersion": "runr.sh/v1",
+            "kind": "Runtime",
+            "id": "wasm-exec",
+            "name": "WASI (Wasm exec)",
+            "description": "Any language compiled to a WASI command (C / C++ with wasi-sdk, Zig, Go with TinyGo, or an uploaded .wasm), run on Spin's WAGI executor: the request on stdin and in CGI environment variables, the response on stdout. Needs WebAssembly support in the region.",
+            "icon": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA2NCA2NCI+PHJlY3Qgd2lkdGg9IjY0IiBoZWlnaHQ9IjY0IiByeD0iMTIiIGZpbGw9IiM2NTRGRjAiLz48cGF0aCBkPSJNMjAgMGgyNHY4YTEyIDEyIDAgMCAxLTI0IDB6IiBmaWxsPSIjZmZmIiBmaWxsLW9wYWNpdHk9Ii4xOCIvPjx0ZXh0IHg9IjMyIiB5PSIzOCIgZm9udC1mYW1pbHk9IkFyaWFsLEhlbHZldGljYSxzYW5zLXNlcmlmIiBmb250LXNpemU9IjE3IiBmb250LXdlaWdodD0iNzAwIiBmaWxsPSIjZmZmIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIj5XQTwvdGV4dD48dGV4dCB4PSIzMiIgeT0iNTYiIGZvbnQtZmFtaWx5PSJBcmlhbCxIZWx2ZXRpY2Esc2Fucy1zZXJpZiIgZm9udC1zaXplPSIxMSIgZm9udC13ZWlnaHQ9IjcwMCIgZmlsbD0iI2ZmZiIgZmlsbC1vcGFjaXR5PSIuODUiIHRleHQtYW5jaG9yPSJtaWRkbGUiPkVYRUM8L3RleHQ+PC9zdmc+",
+            "language": "c",
+            "extensions": [
+                "c",
+                "h",
+                "cc",
+                "cpp",
+                "zig",
+                "go"
+            ],
+            "category": "general",
+            "versions": [
+                {
+                    "version": "4.1",
+                    "image": "ghcr.io/runrsh/exec-wasm-exec:4.1",
+                    "default": true
+                }
+            ],
+            "handler": {
+                "file": "main",
+                "function": "main"
+            },
+            "template": {
+                "files": {
+                    "{file}": "// A RunR wasm-exec function: a WASI command module on Spin's WAGI executor (CGI).\n// The request body is on stdin, the request in the environment (REQUEST_METHOD, PATH_INFO,\n// QUERY_STRING, CONTENT_TYPE, HTTP_<HEADER>); the response goes to stdout: CGI headers, a\n// blank line, the body. Logs go to stderr. Queue messages and schedule ticks arrive as\n// CloudEvents: the HTTP_CE_TYPE variable names the event.\n#include <stdio.h>\n#include <stdlib.h>\n#include <string.h>\n\n// value of a query parameter (not URL-decoded), \"\" when absent\nstatic void query_param(const char *name, char *out, size_t size) {\n    const char *q = getenv(\"QUERY_STRING\");\n    size_t n = strlen(name);\n    out[0] = '\\0';\n    while (q && *q) {\n        if (strncmp(q, name, n) == 0 && q[n] == '=') {\n            q += n + 1;\n            size_t i = 0;\n            while (q[i] && q[i] != '&' && i + 1 < size) {\n                out[i] = q[i];\n                i++;\n            }\n            out[i] = '\\0';\n            return;\n        }\n        q = strchr(q, '&');\n        if (q) q++;\n    }\n}\n\nint main(void) {\n    const char *event = getenv(\"HTTP_CE_TYPE\");\n    printf(\"Content-Type: text/plain\\n\\n\");\n\n    if (event && strcmp(event, \"dev.runr.schedule.tick\") == 0) {\n        fprintf(stderr, \"tick from C (Wasm)\\n\");\n        printf(\"tick from C (Wasm)\");\n        return 0;\n    }\n    if (event && strcmp(event, \"dev.runr.queue.message\") == 0) {\n        char body[4096];\n        size_t len = fread(body, 1, sizeof body - 1, stdin);\n        body[len] = '\\0';\n        printf(\"processed %s (from C, Wasm)\", body);\n        return 0;\n    }\n\n    char name[128];\n    query_param(\"name\", name, sizeof name);\n    printf(\"Hello, %s! (from C, Wasm)\", name[0] ? name : \"World\");\n    return 0;\n}\n"
+                }
+            },
+            "build": {
+                "command": "runr-wasm-exec build",
+                "source": false
+            },
+            "run": {
+                "mode": "http",
+                "schedule": "native",
+                "env": {
+                    "SPIN_HTTP_LISTEN_ADDR": "0.0.0.0:8080"
+                }
+            },
+            "triggers": [
+                "http",
+                "schedule",
+                "queue"
+            ],
+            "resources": {
+                "cpu": "100m",
+                "memory_mb": 128
+            },
+            "runtimeClass": "wasmtime-spin-v2",
+            "wagi": {
+                "argv": "${SCRIPT_NAME} ${ARGS}",
+                "files": true
+            }
+        },
+        {
+            "apiVersion": "runr.sh/v1",
+            "kind": "Runtime",
+            "id": "wasm-go",
+            "name": "Go (Wasm)",
+            "description": "Go compiled with TinyGo to a WebAssembly component with the Spin Go SDK — spinhttp.Handle(func(w http.ResponseWriter, r *http.Request)). Millisecond-class cold starts in the WebAssembly sandbox; needs WebAssembly support in the region.",
+            "icon": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA2NCA2NCI+PHJlY3Qgd2lkdGg9IjY0IiBoZWlnaHQ9IjY0IiByeD0iMTIiIGZpbGw9IiM2NTRGRjAiLz48cGF0aCBkPSJNMjAgMGgyNHY4YTEyIDEyIDAgMCAxLTI0IDB6IiBmaWxsPSIjZmZmIiBmaWxsLW9wYWNpdHk9Ii4xOCIvPjx0ZXh0IHg9IjMyIiB5PSIzOCIgZm9udC1mYW1pbHk9IkFyaWFsLEhlbHZldGljYSxzYW5zLXNlcmlmIiBmb250LXNpemU9IjE3IiBmb250LXdlaWdodD0iNzAwIiBmaWxsPSIjZmZmIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIj5XQTwvdGV4dD48dGV4dCB4PSIzMiIgeT0iNTYiIGZvbnQtZmFtaWx5PSJBcmlhbCxIZWx2ZXRpY2Esc2Fucy1zZXJpZiIgZm9udC1zaXplPSIxMiIgZm9udC13ZWlnaHQ9IjcwMCIgZmlsbD0iI2ZmZiIgZmlsbC1vcGFjaXR5PSIuODUiIHRleHQtYW5jaG9yPSJtaWRkbGUiPkdPPC90ZXh0Pjwvc3ZnPg==",
+            "language": "go",
+            "extensions": [
+                "go"
+            ],
+            "category": "general",
+            "versions": [
+                {
+                    "version": "4.1",
+                    "image": "ghcr.io/runrsh/exec-wasm-go:4.1",
+                    "default": true
+                }
+            ],
+            "handler": {
+                "file": "main",
+                "function": "handler",
+                "pattern": "Handle\\s*\\("
+            },
+            "template": {
+                "files": {
+                    "{file}": "package main\n\nimport (\n\t\"fmt\"\n\t\"io\"\n\t\"net/http\"\n\n\tspinhttp \"github.com/spinframework/spin-go-sdk/v2/http\"\n)\n\n// Every trigger reaches the component as an HTTP request: queue messages and schedule ticks\n// arrive as CloudEvents (the ce-type header names the event).\nfunc init() {\n\tspinhttp.Handle(func(w http.ResponseWriter, r *http.Request) {\n\t\tvar body string\n\t\tswitch r.Header.Get(\"ce-type\") {\n\t\tcase \"dev.runr.schedule.tick\":\n\t\t\tbody = \"tick from Go (Wasm)\"\n\t\tcase \"dev.runr.queue.message\":\n\t\t\tdata, _ := io.ReadAll(r.Body)\n\t\t\tbody = fmt.Sprintf(\"processed %s (from Go, Wasm)\", data)\n\t\tdefault:\n\t\t\tname := r.URL.Query().Get(\"name\")\n\t\t\tif name == \"\" {\n\t\t\t\tname = \"World\"\n\t\t\t}\n\t\t\tbody = fmt.Sprintf(\"Hello, %s! (from Go, Wasm)\", name)\n\t\t}\n\t\tfmt.Println(body)\n\t\tw.Header().Set(\"Content-Type\", \"text/plain\")\n\t\tfmt.Fprint(w, body)\n\t})\n}\n\n// main is required by the compiler; the component's entry point is the handler above.\nfunc main() {}\n"
+                }
+            },
+            "build": {
+                "command": "{ [ -f go.sum ] || cp /opt/runr/go/go.sum . ; } && spin build",
+                "source": false,
+                "files": {
+                    "go.mod": "module runr-function\n\ngo 1.22\n\nrequire github.com/spinframework/spin-go-sdk/v2 v2.2.1\n",
+                    "spin.toml": "#:schema https://schemas.spinframework.dev/spin/manifest-v2/latest.json\n# Default Spin manifest of a wasm-go function (build.files). One component serves every path;\n# RunR's triggers (http, queue, schedule) all arrive as HTTP requests on it.\nspin_manifest_version = 2\n\n[application]\nname = \"runr-function\"\nversion = \"0.1.0\"\ndescription = \"A RunR function (Go, TinyGo + Spin Go SDK)\"\n\n[[trigger.http]]\nroute = \"/...\"\ncomponent = \"function\"\n\n[component.function]\nsource = \"main.wasm\"\n# outbound HTTP(S) to any host; narrow it in a project's own spin.toml\nallowed_outbound_hosts = [\"https://*:*\", \"http://*:*\"]\n\n[component.function.build]\ncommand = \"tinygo build -target=wasip1 -gc=leaking -buildmode=c-shared -no-debug -o main.wasm .\"\n"
+                }
+            },
+            "run": {
+                "mode": "http",
+                "schedule": "native",
+                "env": {
+                    "SPIN_HTTP_LISTEN_ADDR": "0.0.0.0:8080"
+                }
+            },
+            "triggers": [
+                "http",
+                "schedule",
+                "queue"
+            ],
+            "resources": {
+                "cpu": "100m",
+                "memory_mb": 128
+            },
+            "runtimeClass": "wasmtime-spin-v2"
+        },
+        {
+            "apiVersion": "runr.sh/v1",
+            "kind": "Runtime",
+            "id": "wasm-js",
+            "name": "JavaScript (Wasm)",
+            "description": "JavaScript or TypeScript as a WebAssembly component with the Spin JS SDK — addEventListener('fetch', ...) with the web Request / Response API. Millisecond-class cold starts in the WebAssembly sandbox; needs WebAssembly support in the region.",
+            "icon": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA2NCA2NCI+PHJlY3Qgd2lkdGg9IjY0IiBoZWlnaHQ9IjY0IiByeD0iMTIiIGZpbGw9IiM2NTRGRjAiLz48cGF0aCBkPSJNMjAgMGgyNHY4YTEyIDEyIDAgMCAxLTI0IDB6IiBmaWxsPSIjZmZmIiBmaWxsLW9wYWNpdHk9Ii4xOCIvPjx0ZXh0IHg9IjMyIiB5PSIzOCIgZm9udC1mYW1pbHk9IkFyaWFsLEhlbHZldGljYSxzYW5zLXNlcmlmIiBmb250LXNpemU9IjE3IiBmb250LXdlaWdodD0iNzAwIiBmaWxsPSIjZmZmIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIj5XQTwvdGV4dD48dGV4dCB4PSIzMiIgeT0iNTYiIGZvbnQtZmFtaWx5PSJBcmlhbCxIZWx2ZXRpY2Esc2Fucy1zZXJpZiIgZm9udC1zaXplPSIxMiIgZm9udC13ZWlnaHQ9IjcwMCIgZmlsbD0iI2ZmZiIgZmlsbC1vcGFjaXR5PSIuODUiIHRleHQtYW5jaG9yPSJtaWRkbGUiPkpTPC90ZXh0Pjwvc3ZnPg==",
+            "language": "javascript",
+            "extensions": [
+                "js",
+                "ts",
+                "mjs"
+            ],
+            "category": "general",
+            "versions": [
+                {
+                    "version": "4.1",
+                    "image": "ghcr.io/runrsh/exec-wasm-js:4.1",
+                    "default": true
+                }
+            ],
+            "handler": {
+                "file": "index",
+                "function": "handler",
+                "pattern": "addEventListener\\s*\\(\\s*['\"]fetch['\"]"
+            },
+            "template": {
+                "files": {
+                    "{file}": "// Every trigger reaches the component as an HTTP request: queue messages and schedule ticks\n// arrive as CloudEvents (the ce-type header names the event).\nasync function handle(request) {\n  const event = request.headers.get('ce-type') || ''\n  let body\n  if (event === 'dev.runr.schedule.tick') {\n    body = 'tick from JavaScript (Wasm)'\n  } else if (event === 'dev.runr.queue.message') {\n    body = `processed ${await request.text()} (from JavaScript, Wasm)`\n  } else {\n    const name = new URL(request.url).searchParams.get('name') || 'World'\n    body = `Hello, ${name}! (from JavaScript, Wasm)`\n  }\n  console.log(body)\n  return new Response(body, { status: 200, headers: { 'content-type': 'text/plain' } })\n}\n\naddEventListener('fetch', (event) => {\n  event.respondWith(handle(event.request))\n})\n"
+                }
+            },
+            "build": {
+                "command": "if cmp -s package.json /opt/runr/js/package.json; then ln -sfn /opt/runr/js/node_modules node_modules; else npm install --no-audit --no-fund --prefer-offline; fi && spin build",
+                "source": false,
+                "files": {
+                    "package.json": "{\n  \"name\": \"runr-function\",\n  \"version\": \"1.0.0\",\n  \"private\": true,\n  \"description\": \"A RunR function (JavaScript / TypeScript, Spin JS SDK)\",\n  \"scripts\": {\n    \"build\": \"node build.mjs\"\n  },\n  \"dependencies\": {\n    \"@spinframework/wasi-http-proxy\": \"^2.0.0\"\n  },\n  \"devDependencies\": {\n    \"@spinframework/build-tools\": \"^2.1.3\",\n    \"esbuild\": \"^0.25.8\",\n    \"mkdirp\": \"^3.0.1\"\n  }\n}\n",
+                    "build.mjs": "// Bundles the function (index.ts when the project has one, else index.js) with esbuild and\n// componentizes it into dist/app.wasm (Spin JS SDK, StarlingMonkey). Run by `spin build`.\nimport { existsSync } from 'node:fs'\nimport { build } from 'esbuild'\nimport { SpinEsbuildPlugin } from '@spinframework/build-tools/plugins/esbuild'\n\nconst entry = ['./index.ts', './index.mjs', './index.js'].find((f) => existsSync(f)) ?? './index.js'\n\nawait build({\n  entryPoints: [entry],\n  outfile: './build/bundle.js',\n  bundle: true,\n  format: 'esm',\n  platform: 'browser',\n  sourcemap: true,\n  minify: false,\n  resolveExtensions: ['.ts', '.mjs', '.js'],\n  plugins: [await SpinEsbuildPlugin({\n    componentize: {\n      debug: process.argv.includes('--debug'),\n      output: './dist/app.wasm',\n      initLocation: 'http://runr-function.localhost',\n    },\n  })],\n})\n",
+                    "spin.toml": "#:schema https://schemas.spinframework.dev/spin/manifest-v2/latest.json\n# Default Spin manifest of a wasm-js function (build.files). One component serves every path;\n# RunR's triggers (http, queue, schedule) all arrive as HTTP requests on it.\nspin_manifest_version = 2\n\n[application]\nname = \"runr-function\"\nversion = \"0.1.0\"\ndescription = \"A RunR function (JavaScript / TypeScript, Spin JS SDK)\"\n\n[[trigger.http]]\nroute = \"/...\"\ncomponent = \"function\"\n\n[component.function]\nsource = \"dist/app.wasm\"\nexclude_files = [\"**/node_modules\"]\n# outbound HTTP(S) to any host; narrow it in a project's own spin.toml\nallowed_outbound_hosts = [\"https://*:*\", \"http://*:*\"]\n\n[component.function.build]\ncommand = \"node build.mjs\"\n"
+                }
+            },
+            "run": {
+                "mode": "http",
+                "schedule": "native",
+                "env": {
+                    "SPIN_HTTP_LISTEN_ADDR": "0.0.0.0:8080"
+                }
+            },
+            "triggers": [
+                "http",
+                "schedule",
+                "queue"
+            ],
+            "resources": {
+                "cpu": "100m",
+                "memory_mb": 128
+            },
+            "runtimeClass": "wasmtime-spin-v2"
+        },
+        {
+            "apiVersion": "runr.sh/v1",
+            "kind": "Runtime",
+            "id": "wasm-python",
+            "name": "Python (Wasm)",
+            "description": "Python as a WebAssembly component (componentize-py, Spin Python SDK) — class HttpHandler(http.Handler) with async handle_request(request). Pure-Python dependencies from requirements.txt; needs WebAssembly support in the region.",
+            "icon": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA2NCA2NCI+PHJlY3Qgd2lkdGg9IjY0IiBoZWlnaHQ9IjY0IiByeD0iMTIiIGZpbGw9IiM2NTRGRjAiLz48cGF0aCBkPSJNMjAgMGgyNHY4YTEyIDEyIDAgMCAxLTI0IDB6IiBmaWxsPSIjZmZmIiBmaWxsLW9wYWNpdHk9Ii4xOCIvPjx0ZXh0IHg9IjMyIiB5PSIzOCIgZm9udC1mYW1pbHk9IkFyaWFsLEhlbHZldGljYSxzYW5zLXNlcmlmIiBmb250LXNpemU9IjE3IiBmb250LXdlaWdodD0iNzAwIiBmaWxsPSIjZmZmIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIj5XQTwvdGV4dD48dGV4dCB4PSIzMiIgeT0iNTYiIGZvbnQtZmFtaWx5PSJBcmlhbCxIZWx2ZXRpY2Esc2Fucy1zZXJpZiIgZm9udC1zaXplPSIxMiIgZm9udC13ZWlnaHQ9IjcwMCIgZmlsbD0iI2ZmZiIgZmlsbC1vcGFjaXR5PSIuODUiIHRleHQtYW5jaG9yPSJtaWRkbGUiPlBZPC90ZXh0Pjwvc3ZnPg==",
+            "language": "python",
+            "extensions": [
+                "py"
+            ],
+            "category": "general",
+            "versions": [
+                {
+                    "version": "4.1",
+                    "image": "ghcr.io/runrsh/exec-wasm-python:4.1",
+                    "default": true
+                }
+            ],
+            "handler": {
+                "file": "app",
+                "function": "handler",
+                "pattern": "class\\s+HttpHandler\\s*\\("
+            },
+            "template": {
+                "files": {
+                    "{file}": "from urllib.parse import parse_qs, urlsplit\n\nfrom spin_sdk import http\nfrom spin_sdk.http import Request, Response\n\n\nclass HttpHandler(http.Handler):\n    \"\"\"Every trigger reaches the component as an HTTP request: queue messages and schedule\n    ticks arrive as CloudEvents (the ce-type header names the event).\"\"\"\n\n    async def handle_request(self, request: Request) -> Response:\n        event = request.headers.get(\"ce-type\", \"\")\n        if event == \"dev.runr.schedule.tick\":\n            body = \"tick from Python (Wasm)\"\n        elif event == \"dev.runr.queue.message\":\n            body = f\"processed {(request.body or b'').decode()} (from Python, Wasm)\"\n        else:\n            name = parse_qs(urlsplit(request.uri).query).get(\"name\", [\"World\"])[0]\n            body = f\"Hello, {name}! (from Python, Wasm)\"\n        print(body)\n        return Response(200, {\"content-type\": \"text/plain\"}, bytes(body, \"utf-8\"))\n"
+                }
+            },
+            "dependencies": {
+                "file": "requirements.txt",
+                "template": "",
+                "install": "pip install --no-cache-dir --target /tmp/runr-deps -r requirements.txt"
+            },
+            "build": {
+                "command": "mkdir -p /tmp/runr-deps && spin build",
+                "source": false,
+                "files": {
+                    "spin.toml": "#:schema https://schemas.spinframework.dev/spin/manifest-v2/latest.json\n# Default Spin manifest of a wasm-python function (build.files). One component serves every path;\n# RunR's triggers (http, queue, schedule) all arrive as HTTP requests on it. The packages of a\n# project's requirements.txt are installed into /tmp/runr-deps before `spin build`.\nspin_manifest_version = 2\n\n[application]\nname = \"runr-function\"\nversion = \"0.1.0\"\ndescription = \"A RunR function (Python, componentize-py + Spin Python SDK)\"\n\n[[trigger.http]]\nroute = \"/...\"\ncomponent = \"function\"\n\n[component.function]\nsource = \"app.wasm\"\n# outbound HTTP(S) to any host; narrow it in a project's own spin.toml\nallowed_outbound_hosts = [\"https://*:*\", \"http://*:*\"]\n\n[component.function.build]\ncommand = \"componentize-py -w spin:up/http-trigger@4.1.0 componentize -p . -p /tmp/runr-deps app -o app.wasm\"\n"
+                }
+            },
+            "run": {
+                "mode": "http",
+                "schedule": "native",
+                "env": {
+                    "SPIN_HTTP_LISTEN_ADDR": "0.0.0.0:8080"
+                }
+            },
+            "triggers": [
+                "http",
+                "schedule",
+                "queue"
+            ],
+            "resources": {
+                "cpu": "100m",
+                "memory_mb": 128
+            },
+            "runtimeClass": "wasmtime-spin-v2"
+        },
+        {
+            "apiVersion": "runr.sh/v1",
+            "kind": "Runtime",
+            "id": "wasm-rust",
+            "name": "Rust (Wasm)",
+            "description": "Rust compiled to a WebAssembly component with the Spin SDK — #[http_component] fn handle(req: Request). Millisecond-class cold starts in the WebAssembly sandbox; needs WebAssembly support in the region.",
+            "icon": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA2NCA2NCI+PHJlY3Qgd2lkdGg9IjY0IiBoZWlnaHQ9IjY0IiByeD0iMTIiIGZpbGw9IiM2NTRGRjAiLz48cGF0aCBkPSJNMjAgMGgyNHY4YTEyIDEyIDAgMCAxLTI0IDB6IiBmaWxsPSIjZmZmIiBmaWxsLW9wYWNpdHk9Ii4xOCIvPjx0ZXh0IHg9IjMyIiB5PSIzOCIgZm9udC1mYW1pbHk9IkFyaWFsLEhlbHZldGljYSxzYW5zLXNlcmlmIiBmb250LXNpemU9IjE3IiBmb250LXdlaWdodD0iNzAwIiBmaWxsPSIjZmZmIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIj5XQTwvdGV4dD48dGV4dCB4PSIzMiIgeT0iNTYiIGZvbnQtZmFtaWx5PSJBcmlhbCxIZWx2ZXRpY2Esc2Fucy1zZXJpZiIgZm9udC1zaXplPSIxMiIgZm9udC13ZWlnaHQ9IjcwMCIgZmlsbD0iI2ZmZiIgZmlsbC1vcGFjaXR5PSIuODUiIHRleHQtYW5jaG9yPSJtaWRkbGUiPlJTPC90ZXh0Pjwvc3ZnPg==",
+            "language": "rust",
+            "extensions": [
+                "rs"
+            ],
+            "category": "general",
+            "versions": [
+                {
+                    "version": "4.1",
+                    "image": "ghcr.io/runrsh/exec-wasm-rust:4.1",
+                    "default": true
+                }
+            ],
+            "handler": {
+                "file": "lib",
+                "function": "handle",
+                "pattern": "#\\[http_component\\]"
+            },
+            "template": {
+                "files": {
+                    "{file}": "use spin_sdk::http::{IntoResponse, Request, Response};\nuse spin_sdk::http_component;\n\n/// Every trigger reaches the component as an HTTP request: queue messages and schedule\n/// ticks arrive as CloudEvents (the ce-type header names the event).\n#[http_component]\nfn handle(req: Request) -> anyhow::Result<impl IntoResponse> {\n    let event = req.header(\"ce-type\").and_then(|v| v.as_str()).unwrap_or(\"\");\n    let body = match event {\n        \"dev.runr.schedule.tick\" => \"tick from Rust (Wasm)\".to_string(),\n        \"dev.runr.queue.message\" => format!(\"processed {} (from Rust, Wasm)\", String::from_utf8_lossy(req.body())),\n        _ => {\n            let name = req.query().split('&').find_map(|p| p.strip_prefix(\"name=\")).unwrap_or(\"World\");\n            format!(\"Hello, {name}! (from Rust, Wasm)\")\n        }\n    };\n    println!(\"{body}\");\n    Ok(Response::builder()\n        .status(200)\n        .header(\"content-type\", \"text/plain\")\n        .body(body)\n        .build())\n}\n"
+                }
+            },
+            "build": {
+                "command": "{ [ -f Cargo.lock ] || cp /opt/runr/rust/Cargo.lock . ; } && ln -sfn \"$CARGO_TARGET_DIR\" target && spin build",
+                "source": false,
+                "files": {
+                    "Cargo.toml": "# Default Cargo.toml of a wasm-rust function (build.files): the handler file is the crate root.\n# A FaaS project may bring its own Cargo.toml (more crates); keep crate-type cdylib and the\n# package name, or change the component source in spin.toml with it.\n[package]\nname = \"runr-function\"\nversion = \"0.1.0\"\nedition = \"2021\"\nrust-version = \"1.78\"\npublish = false\n\n[lib]\ncrate-type = [\"cdylib\"]\npath = \"lib.rs\"\n\n[dependencies]\nanyhow = \"1\"\nspin-sdk = \"5.2.0\"\n\n[workspace]\n",
+                    "spin.toml": "#:schema https://schemas.spinframework.dev/spin/manifest-v2/latest.json\n# Default Spin manifest of a wasm-rust function (build.files). One component serves every path;\n# RunR's triggers (http, queue, schedule) all arrive as HTTP requests on it.\nspin_manifest_version = 2\n\n[application]\nname = \"runr-function\"\nversion = \"0.1.0\"\ndescription = \"A RunR function (Rust, Spin SDK)\"\n\n[[trigger.http]]\nroute = \"/...\"\ncomponent = \"function\"\n\n[component.function]\nsource = \"target/wasm32-wasip1/release/runr_function.wasm\"\n# outbound HTTP(S) to any host; narrow it in a project's own spin.toml\nallowed_outbound_hosts = [\"https://*:*\", \"http://*:*\"]\n\n[component.function.build]\ncommand = \"cargo build --target wasm32-wasip1 --release\"\n"
+                }
+            },
+            "run": {
+                "mode": "http",
+                "schedule": "native",
+                "env": {
+                    "SPIN_HTTP_LISTEN_ADDR": "0.0.0.0:8080"
+                }
+            },
+            "triggers": [
+                "http",
+                "schedule",
+                "queue"
+            ],
+            "resources": {
+                "cpu": "100m",
+                "memory_mb": 128
+            },
+            "runtimeClass": "wasmtime-spin-v2"
+        }
+    ]
+}

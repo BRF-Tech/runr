@@ -1,0 +1,36 @@
+# Q runtime for RunR: Q is a toy language made for this example. The interpreter
+# (interpreter/, Go) is built into the runtime image by RunR in each region from the
+# uploaded Dockerfile; it runs as a long-lived process that answers request envelopes
+# line by line (persistent mode). Register it with POST /api/runtimes (see ../README.md).
+apiVersion: runr.sh/v1
+kind: Runtime
+id: q
+name: Q
+description: Q, a tiny line-based language; one long-lived interpreter process answers every request.
+icon: "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAzMiAzMiI+PHJlY3Qgd2lkdGg9IjMyIiBoZWlnaHQ9IjMyIiByeD0iNyIgZmlsbD0iIzdjM2FlZCIvPjxjaXJjbGUgY3g9IjE1IiBjeT0iMTUiIHI9IjgiIGZpbGw9Im5vbmUiIHN0cm9rZT0iI2ZmZiIgc3Ryb2tlLXdpZHRoPSIzIi8+PHBhdGggZD0iTTE4IDE4bDYgNiIgc3Ryb2tlPSIjZmZmIiBzdHJva2Utd2lkdGg9IjMiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIvPjwvc3ZnPg=="
+language: plaintext
+extensions: [q]
+category: general
+versions:
+  - version: "1.0"
+    dockerfile: Dockerfile
+    default: true
+handler:
+  file: main
+template:
+  files:
+    "{file}": |
+      # main.q: hello world in Q, for every trigger
+      set name = query.name or "World"
+      if trigger == "schedule" then return "tick from Q"
+      if trigger == "queue" then return "processed {data.msg} (from Q)"
+      print "Hello, {name}! (from Q)"
+run:
+  mode: persistent
+  command: ["q", "/app/code/{file}"]
+  workers: 1
+triggers: [http, schedule, queue]
+sandbox: [runc, gvisor, kata]
+resources:
+  cpu: "250m"
+  memory_mb: 128

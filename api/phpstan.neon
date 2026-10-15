@@ -1,0 +1,13 @@
+includes:
+    - vendor/larastan/larastan/extension.neon
+    - phpstan-baseline.neon
+
+parameters:
+    level: 5
+    paths:
+        - app/
+        - Modules/
+        - SharedSupport/
+    tmpDir: storage/framework/cache/phpstan
+    # Other branches delete or rewrite code; stale baseline entries must not fail the build.
+    reportUnmatchedIgnoredErrors: false

@@ -1,0 +1,12 @@
+vendor/
+node_modules/
+storage/git/
+storage/logs/
+storage/app/
+storage/framework/cache/*
+storage/framework/sessions/*
+storage/framework/views/*
+.env
+.env.docker
+tests/
+phpunit.xml

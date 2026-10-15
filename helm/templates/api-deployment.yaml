@@ -1,0 +1,78 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: runr-api
+  namespace: {{ include "runr.namespace" . }}
+  labels:
+    app: runr-api
+    {{- include "runr.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.api.replicas }}
+  selector:
+    matchLabels:
+      app: runr-api
+  template:
+    metadata:
+      labels:
+        app: runr-api
+        {{- include "runr.colocation-label" . | nindent 8 }}
+      annotations:
+        {{- include "runr.checksum" . | nindent 8 }}
+    spec:
+      serviceAccountName: runr-api
+      {{- include "runr.imagePullSecrets" . | nindent 6 }}
+      {{- include "runr.storage-init" . | nindent 6 }}
+      {{- include "runr.pod-colocation" . | nindent 6 }}
+      containers:
+        - name: api
+          image: "{{ .Values.api.image.repository }}:{{ .Values.api.image.tag }}"
+          imagePullPolicy: {{ .Values.api.image.pullPolicy }}
+          ports:
+            - containerPort: {{ .Values.api.port }}
+          {{- include "runr.envFrom" . | nindent 10 }}
+          env:
+            - name: CONTAINER_ROLE
+              value: "api"
+            {{- include "runr.secret-env" . | nindent 12 }}
+          resources:
+            {{- toYaml .Values.api.resources | nindent 12 }}
+          volumeMounts:
+            - name: api-storage
+              mountPath: /var/www/html/storage
+          readinessProbe:
+            httpGet:
+              path: /up
+              port: {{ .Values.api.port }}
+              httpHeaders:
+                - name: Host
+                  value: localhost
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /up
+              port: {{ .Values.api.port }}
+              httpHeaders:
+                - name: Host
+                  value: localhost
+            initialDelaySeconds: 30
+            periodSeconds: 30
+      volumes:
+        - name: api-storage
+          persistentVolumeClaim:
+            claimName: runr-api-storage
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: runr-api
+  namespace: {{ include "runr.namespace" . }}
+  labels:
+    app: runr-api
+    {{- include "runr.labels" . | nindent 4 }}
+spec:
+  selector:
+    app: runr-api
+  ports:
+    - port: 80
+      targetPort: {{ .Values.api.port }}

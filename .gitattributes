@@ -1,0 +1,72 @@
+# Text files are stored and checked out with LF on every platform, whatever core.autocrlf
+# says: shell scripts, git hooks and Dockerfiles run in Linux containers, and gofmt, Pint and
+# ESLint expect LF. Files git detects as binary are left untouched.
+* text=auto eol=lf
+
+# Sources and configuration (explicit, so they stay text even if detection guesses wrong)
+*.sh          text eol=lf
+*.bash        text eol=lf
+*.go          text eol=lf
+go.mod        text eol=lf
+go.sum        text eol=lf
+*.php         text eol=lf
+*.js          text eol=lf
+*.mjs         text eol=lf
+*.cjs         text eol=lf
+*.ts          text eol=lf
+*.vue         text eol=lf
+*.css         text eol=lf
+*.html        text eol=lf
+*.json        text eol=lf
+*.yaml        text eol=lf
+*.yml         text eol=lf
+*.toml        text eol=lf
+*.tf          text eol=lf
+*.tpl         text eol=lf
+*.neon        text eol=lf
+*.ini         text eol=lf
+*.xml         text eol=lf
+*.md          text eol=lf
+*.txt         text eol=lf
+*.py          text eol=lf
+*.rs          text eol=lf
+*.c           text eol=lf
+*.svg         text eol=lf
+*.example     text eol=lf
+Dockerfile    text eol=lf
+Dockerfile.*  text eol=lf
+*.dockerfile  text eol=lf
+Makefile      text eol=lf
+Caddyfile*    text eol=lf
+.gitignore    text eol=lf
+.dockerignore text eol=lf
+.editorconfig text eol=lf
+.env.example  text eol=lf
+
+# Scripts without an extension (git hooks, wrappers)
+api/artisan                    text eol=lf
+**/pre-receive                 text eol=lf
+**/post-receive                text eol=lf
+runtime/**/runr-wasm-exec      text eol=lf
+
+# Binaries
+*.png    binary
+*.jpg    binary
+*.jpeg   binary
+*.gif    binary
+*.webp   binary
+*.ico    binary
+*.pdf    binary
+*.woff   binary
+*.woff2  binary
+*.ttf    binary
+*.otf    binary
+*.eot    binary
+*.zip    binary
+*.gz     binary
+*.tgz    binary
+*.tar    binary
+*.wasm   binary
+*.jar    binary
+*.mp4    binary
+*.webm   binary

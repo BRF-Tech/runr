@@ -1,0 +1,30 @@
+containerd-shim-spin v0.26.0-runr.1 (ghcr.io/runrsh/containerd-shim-spin)
+
+The binary in this image is containerd-shim-spin (https://github.com/spinframework/containerd-shim-spin),
+tag v0.26.0, commit 922760061d91bacd455c5824b8143dec2a372515, licensed under the Apache License,
+Version 2.0 (LICENSE), built by RunR with one modification:
+
+  patches/containerd-shim-wasm-1.0.1-linux-container-env.patch changes
+  src/sys/unix/container/executor.rs of containerd-shim-wasm 1.0.1 (runwasi,
+  https://github.com/containerd/runwasi, Apache License, Version 2.0) with the change of
+  containerd/runwasi pull request #1183 (commit 814b711804057cfc11550d81d91bea6b299dacb7):
+  Linux containers run with the environment of their OCI spec.
+
+  patches/containerd-shim-spin-v0.26.0-patched-shim-wasm.patch points containerd-shim-spin's
+  Cargo workspace at that modified crate.
+
+runwasi's NOTICE:
+
+  Docker | Containerd
+  Copyright 2022 Docker, Inc.
+
+  This product includes software developed at Deis Labs (https://github.com/deislabs)
+  but ownership transitioned from deislabs to the containerd org since 2022.
+
+  This product includes software developed at
+  The Containerd (https://github.com/containerd/runwasi).
+
+  The Initial Developer of some parts of the file
+  crates/containerd-shim-wasm/src/sandbox/shim.rs, which are copied from,
+  derived from, or inspired by Youki (https://github.com/containers/youki)
+  Copyright 2021 - 2022 Youki. All Rights Reserved.

@@ -1,0 +1,21 @@
+{
+  "workflows": [
+    {
+      "name": "process-order",
+      "description": "Reserve, charge, wait for the shipment, notify",
+      "triggers": [{ "event": "order.created" }],
+      "retries": 4,
+      "timeout": "7d",
+      "concurrency": { "limit": 10, "key": "event.data.customer_id" },
+      "idempotency": "event.data.order_id",
+      "cancel_on": [{ "event": "order.cancelled", "match": "data.order_id" }]
+    },
+    {
+      "name": "nightly-report",
+      "triggers": [{ "cron": "0 2 * * *", "timezone": "Europe/Istanbul" }],
+      "retries": 2
+    },
+    { "name": "render-report", "retries": 1 },
+    { "name": "resize-image", "triggers": [{ "queue": "images" }], "concurrency": 5 }
+  ]
+}

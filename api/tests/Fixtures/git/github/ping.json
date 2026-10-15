@@ -1,0 +1,5 @@
+{
+  "zen": "Design for failure.",
+  "hook_id": 470000001,
+  "hook": { "type": "App", "id": 470000001, "active": true, "events": ["pull_request", "push"], "app_id": 12345 }
+}

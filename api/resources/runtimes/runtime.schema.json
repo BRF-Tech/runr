@@ -1,0 +1,235 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://runr.sh/schemas/runtime-v1.json",
+  "title": "RunR runtime manifest (runtime.yaml), apiVersion runr.sh/v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["apiVersion", "kind", "id", "name", "extensions", "run"],
+  "properties": {
+    "apiVersion": { "const": "runr.sh/v1" },
+    "kind": { "const": "Runtime" },
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]{0,31}$",
+      "description": "Runtime id stored on projects (projects.runtime)."
+    },
+    "name": { "type": "string", "minLength": 1, "maxLength": 64 },
+    "description": { "type": "string", "maxLength": 500 },
+    "icon": {
+      "type": "string",
+      "maxLength": 65536,
+      "pattern": "^(data:image/(svg\\+xml|png|jpeg|webp);base64,[A-Za-z0-9+/=]+|https://\\S+)$"
+    },
+    "language": { "type": "string", "pattern": "^[a-z0-9+#._-]{1,32}$" },
+    "extensions": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 10,
+      "uniqueItems": true,
+      "items": { "type": "string", "pattern": "^[a-z0-9]{1,10}$" }
+    },
+    "category": { "enum": ["general", "ml"] },
+    "versions": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 50,
+      "items": { "$ref": "#/$defs/version" }
+    },
+    "versionDiscovery": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["repository", "image"],
+      "properties": {
+        "repository": { "type": "string", "pattern": "^[a-z0-9._-]+/[a-z0-9._-]+$" },
+        "image": { "type": "string", "minLength": 1, "maxLength": 255 },
+        "eol": { "type": "string", "pattern": "^[a-z0-9._-]{1,64}$" },
+        "filter": { "enum": ["lts-even-major"] }
+      }
+    },
+    "handler": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "file": { "type": "string", "pattern": "^[A-Za-z0-9_-]{1,64}$" },
+        "function": { "type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,63}$" },
+        "pattern": { "type": "string", "minLength": 1, "maxLength": 500 }
+      }
+    },
+    "template": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["files"],
+      "properties": {
+        "files": { "$ref": "#/$defs/fileMap" }
+      }
+    },
+    "dependencies": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["file", "install"],
+      "properties": {
+        "file": { "$ref": "#/$defs/fileName" },
+        "template": { "type": "string", "maxLength": 65536 },
+        "image": { "$ref": "#/$defs/imageTemplate" },
+        "install": { "$ref": "#/$defs/command" },
+        "copy": {
+          "type": "array",
+          "maxItems": 10,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["from", "to"],
+            "properties": {
+              "from": { "$ref": "#/$defs/absPath" },
+              "to": { "$ref": "#/$defs/absPath" }
+            }
+          }
+        },
+        "env": { "$ref": "#/$defs/envMap" }
+      }
+    },
+    "build": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["command"],
+      "properties": {
+        "image": { "$ref": "#/$defs/imageTemplate" },
+        "command": { "$ref": "#/$defs/command" },
+        "runImage": { "$ref": "#/$defs/imageTemplate" },
+        "source": { "type": "boolean" },
+        "files": {
+          "type": "object",
+          "maxProperties": 20,
+          "propertyNames": { "$ref": "#/$defs/fileName" },
+          "additionalProperties": {
+            "oneOf": [
+              { "type": "string", "maxLength": 262144 },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["http", "schedule"],
+                "properties": {
+                  "http": { "type": "string", "maxLength": 262144 },
+                  "schedule": { "type": "string", "maxLength": 262144 }
+                }
+              }
+            ]
+          }
+        }
+      }
+    },
+    "run": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mode"],
+      "properties": {
+        "mode": { "enum": ["http", "exec", "persistent"] },
+        "command": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 32,
+          "items": { "type": "string", "minLength": 1, "maxLength": 1024 }
+        },
+        "schedule": { "enum": ["native", "invoke"] },
+        "input": { "enum": ["json", "raw"] },
+        "workers": { "type": "integer", "minimum": 1, "maximum": 16 },
+        "env": { "$ref": "#/$defs/envMap" }
+      }
+    },
+    "triggers": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": { "enum": ["http", "schedule", "queue"] }
+    },
+    "sandbox": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": { "enum": ["runc", "gvisor", "kata"] }
+    },
+    "resources": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "cpu": { "type": "string", "pattern": "^([0-9]+m|[0-9]+(\\.[0-9]{1,3})?)$" },
+        "memory_mb": { "type": "integer", "minimum": 64, "maximum": 65536 },
+        "gpu": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["count"],
+          "properties": {
+            "count": { "type": "integer", "minimum": 1, "maximum": 8 },
+            "resource": { "type": "string", "pattern": "^[a-z0-9.-]+/[a-z0-9.-]+$", "maxLength": 128 }
+          }
+        }
+      }
+    },
+    "wagi": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "WebAssembly runtimes on the Spin shim: RunR generates a spin.toml with Spin's WAGI executor (CGI: request on stdin + environment, response on stdout) for the module the build produces (docs/wasm.md#wasm-exec).",
+      "properties": {
+        "argv": { "type": "string", "minLength": 1, "maxLength": 1024 },
+        "files": { "type": "boolean" },
+        "environment": { "$ref": "#/$defs/envMap" }
+      }
+    },
+    "runtimeClass": {
+      "type": "string",
+      "pattern": "^[a-z0-9]([a-z0-9.-]{0,61}[a-z0-9])?$",
+      "description": "RuntimeClass the function pods run with instead of the region's sandbox mapping (built-in and platform runtimes)."
+    }
+  },
+  "$defs": {
+    "version": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version"],
+      "properties": {
+        "version": { "type": "string", "pattern": "^[0-9A-Za-z][0-9A-Za-z._-]{0,31}$" },
+        "image": { "type": "string", "minLength": 1, "maxLength": 255, "pattern": "^[a-z0-9][a-z0-9._:/@-]*[a-zA-Z0-9_.-]$" },
+        "dockerfile": { "$ref": "#/$defs/fileName" },
+        "upload": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 255,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._/:@-]*$",
+          "description": "An uploaded image of the runtime's owner (docs/images.md): repository[:tag], repository@sha256:<digest> or the upload's id."
+        },
+        "git": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["url"],
+          "properties": {
+            "url": { "type": "string", "pattern": "^https://[^\\s#]+$", "maxLength": 512 },
+            "ref": { "type": "string", "pattern": "^[A-Za-z0-9._/-]{1,128}$" },
+            "path": { "type": "string", "pattern": "^[A-Za-z0-9._/-]{0,255}$" },
+            "dockerfile": { "type": "string", "pattern": "^[A-Za-z0-9._/-]{1,255}$" }
+          }
+        },
+        "buildArgs": { "$ref": "#/$defs/envMap" },
+        "default": { "type": "boolean" },
+        "eol": { "type": "string", "format": "date" },
+        "gpu": { "type": "boolean" }
+      }
+    },
+    "fileName": { "type": "string", "pattern": "^[A-Za-z0-9._-]{1,128}$" },
+    "fileMap": {
+      "type": "object",
+      "minProperties": 1,
+      "maxProperties": 20,
+      "propertyNames": { "type": "string", "pattern": "^(\\{file\\}|[A-Za-z0-9._-]{1,128})$" },
+      "additionalProperties": { "type": "string", "maxLength": 262144 }
+    },
+    "imageTemplate": { "type": "string", "minLength": 1, "maxLength": 255 },
+    "command": { "type": "string", "minLength": 1, "maxLength": 8192 },
+    "absPath": { "type": "string", "pattern": "^/[A-Za-z0-9._/-]{0,255}$" },
+    "envMap": {
+      "type": "object",
+      "maxProperties": 50,
+      "propertyNames": { "type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,127}$" },
+      "additionalProperties": { "type": "string", "maxLength": 4096 }
+    }
+  }
+}

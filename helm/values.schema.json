@@ -1,0 +1,1011 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema#",
+  "title": "RunR",
+  "type": "object",
+  "required": [
+    "domain"
+  ],
+  "properties": {
+    "domain": {
+      "type": "string",
+      "title": "Domain",
+      "description": "Host name of the RunR console, e.g. runr.example.com. Create a DNS record for it pointing to the cluster ingress. Function URLs use a separate wildcard domain configured later in RunR (Regions)."
+    },
+    "edition": {
+      "type": "string",
+      "title": "Installation type",
+      "enum": [
+        "single-tenant",
+        "multi-tenant"
+      ],
+      "description": "single-tenant: one organization uses this RunR (users sign in with local accounts). multi-tenant: several tenants share this RunR — each tenant has its own data schema and CPU / memory quota per region, and SSO providers (OpenID Connect / OAuth) can be added."
+    },
+    "admin": {
+      "type": "object",
+      "title": "Administrator account",
+      "properties": {
+        "username": {
+          "type": "string",
+          "title": "Username",
+          "pattern": "^[a-z][a-z0-9_.-]{2,31}$",
+          "description": "First administrator, created at install time."
+        },
+        "email": {
+          "type": "string",
+          "title": "E-mail",
+          "format": "email"
+        },
+        "password": {
+          "type": "string",
+          "title": "Password",
+          "description": "At least 12 characters. Leave empty to generate one — it is stored in the Secret runr-secret (key ADMIN_PASSWORD) in the installation namespace. Applied only on first install."
+        }
+      }
+    },
+    "ingress": {
+      "type": "object",
+      "title": "Access",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "title": "Expose through ingress",
+          "description": "Publishes the console on the domain above through the cluster ingress controller."
+        },
+        "className": {
+          "type": "string",
+          "title": "Ingress class",
+          "description": "Ingress class of the controller that publishes the console, e.g. traefik."
+        },
+        "tls": {
+          "type": "object",
+          "title": "TLS",
+          "properties": {
+            "mode": {
+              "type": "string",
+              "title": "TLS certificate",
+              "enum": [
+                "",
+                "letsencrypt",
+                "custom",
+                "none"
+              ],
+              "description": "letsencrypt: cert-manager issues the certificate (annotation cert-manager.io/cluster-issuer; without cert-manager in the cluster it behaves like none). custom: the chart stores certificate + privateKey in a kubernetes.io/tls Secret. none: no tls section, the ingress controller serves its default certificate. Empty: enabled / clusterIssuer / secretName decide (values written before 0.3.6)."
+            },
+            "enabled": {
+              "type": "boolean",
+              "title": "Enable TLS",
+              "description": "Only used when mode is empty."
+            },
+            "clusterIssuer": {
+              "type": "string",
+              "title": "cert-manager ClusterIssuer",
+              "description": "mode letsencrypt: defaults to letsencrypt-prod. mode empty: if set, cert-manager issues the certificate."
+            },
+            "secretName": {
+              "type": "string",
+              "title": "TLS Secret name",
+              "description": "Defaults to runr-tls (letsencrypt) or runr-tls-custom (custom)."
+            },
+            "certificate": {
+              "type": "string",
+              "title": "Certificate (PEM)",
+              "description": "mode custom: full chain, server certificate first. Base64-encoded PEM is accepted too."
+            },
+            "privateKey": {
+              "type": "string",
+              "title": "Private key (PEM)",
+              "writeOnly": true,
+              "description": "mode custom: unencrypted private key of the certificate. Never printed by the chart."
+            }
+          }
+        }
+      }
+    },
+    "api": {
+      "type": "object",
+      "properties": {
+        "images": {
+      "type": "object",
+      "title": "Uploaded images",
+      "description": "Container images and WebAssembly modules uploaded into region registries (docs/images.md).",
+      "properties": {
+        "uploadImage": {"type": "string", "title": "Receiver image", "description": "Image of the upload receiver Job in the regions. Empty: ghcr.io/runrsh/image-upload:1.0.0."},
+        "quotaGb": {"type": ["string", "integer"], "title": "Storage per organization (GiB)", "description": "Uploaded images over every region. Empty: 50; 0: unlimited."},
+        "maxUploadGb": {"type": ["string", "integer"], "title": "Largest upload (GiB)", "description": "Empty: 20."},
+        "uploadTtlHours": {"type": ["string", "integer"], "title": "Upload time limit (hours)", "description": "Empty: 24."}
+      }
+    },
+        "supplyChain": {
+      "type": "object",
+      "title": "Software supply chain",
+      "description": "SBOMs, vulnerability scans, image signatures and the admission policy per region (docs/supply-chain.md). Each region is configured in the UI (Region → Supply chain); these are the platform defaults.",
+      "properties": {
+        "enabled": {"type": "boolean", "title": "Supply-chain runs after builds", "description": "Every image RunR builds gets an SBOM, a scan and a signature as its region's settings define."},
+        "toolsImage": {"type": "string", "title": "Tools image", "description": "Image of the supply-chain Jobs (syft, trivy, cosign, oras). Empty: ghcr.io/runrsh/runr-supply-chain:1.0.0."},
+        "jobNamespace": {"type": "string", "title": "Job namespace", "description": "Namespace of the supply-chain Jobs and the signing key in each region. Empty: runr-supply-chain."},
+        "rescanHours": {"type": ["string", "integer"], "title": "Re-scan interval (hours)", "description": "Default for new regions. Empty: 24."},
+        "trivyDbSource": {"type": "string", "title": "Vulnerability DB source", "description": "Copied into the region registry in mirror mode. Empty: mirror.gcr.io/aquasec/trivy-db:2."},
+        "trivyJavaDbSource": {"type": "string", "title": "Java DB source", "description": "Empty: mirror.gcr.io/aquasec/trivy-java-db:1."},
+        "trivyDbRefreshHours": {"type": ["string", "integer"], "title": "DB refresh interval (hours)", "description": "Empty: 12."},
+        "policyController": {
+          "type": "object",
+          "title": "Admission policy (sigstore policy-controller)",
+          "properties": {
+            "helmRepo": {"type": "string", "title": "Helm repository"},
+            "chartVersion": {"type": "string", "title": "Chart version"},
+            "extraArgs": {"type": "string", "title": "Webhook flags", "description": "Comma separated key=value, e.g. disable-tuf=true."}
+          }
+        }
+      }
+    },
+    "storage": {
+          "type": "object",
+          "properties": {
+            "size": {
+              "type": "string",
+              "title": "Application storage",
+              "pattern": "^[0-9]+Gi$",
+              "description": "Git repositories of projects and logs, e.g. 10Gi. Can be grown later, never shrunk."
+            }
+          }
+        }
+      }
+    },
+    "database": {
+      "type": "object",
+      "properties": {
+        "postgres": {
+          "type": "object",
+          "properties": {
+            "storage": {
+              "type": "string",
+              "title": "Database storage",
+              "pattern": "^[0-9]+Gi$",
+              "description": "Built-in PostgreSQL volume, e.g. 10Gi."
+            }
+          }
+        }
+      }
+    },
+    "clientIp": {
+      "type": "object",
+      "title": "Client IP",
+      "description": "How the API finds the client IP (per-IP rate limits, audit IPs) behind ingress controller → runr-gateway.",
+      "properties": {
+        "trustedProxies": {
+          "type": "string",
+          "title": "Trusted proxy addresses",
+          "description": "CIDRs the proxies connect from, comma-separated; private_ranges = RFC 1918 / IPv6 ULA / loopback / link-local (the pod network). Empty: no proxy is trusted."
+        },
+        "proxyHops": {
+          "type": "integer",
+          "minimum": 0,
+          "title": "Proxy hops",
+          "description": "Proxies in front of the API that append to X-Forwarded-For. 0 = automatic: 2 with the Ingress, 1 without."
+        }
+      }
+    },
+    "ai": {
+      "type": "object",
+      "title": "AI (GPU support, Hugging Face models)",
+      "description": "Images and charts for GPU support and Hugging Face model services (docs/ai.md, docs/huggingface.md). Point the images at a registry the regions reach for air-gapped installations.",
+      "properties": {
+        "huggingface": {
+          "type": "object",
+          "properties": {
+            "endpoint": {"type": "string", "title": "Hugging Face Hub URL", "pattern": "^https?://.+$"},
+            "browse": {"type": "boolean", "title": "Browse the Hub from the console", "description": "Off for consoles without internet access: models are uploaded or imported."}
+          }
+        },
+        "images": {
+          "type": "object",
+          "properties": {
+            "hfServe": {"type": "string"},
+            "hfServeCuda": {"type": "string"},
+            "vllm": {"type": "string"},
+            "tgi": {"type": "string"},
+            "teiCpu": {"type": "string"},
+            "teiGpu": {"type": "string"},
+            "oras": {"type": "string"}
+          }
+        },
+        "gpu": {
+          "type": "object",
+          "properties": {
+            "devicePluginChartVersion": {"type": "string"},
+            "operatorChartVersion": {"type": "string"},
+            "defaultTimeout": {"type": "integer", "minimum": 1, "maximum": 3600},
+            "progressDeadline": {"type": "string", "pattern": "^[0-9]+[sm]$"},
+            "scaleToZeroRetention": {"type": "string", "pattern": "^[0-9]+[smh]$"}
+          }
+        },
+        "modelStorage": {
+          "type": "object",
+          "properties": {
+            "sizeGi": {"type": "integer", "minimum": 1},
+            "accessMode": {"type": "string", "enum": ["ReadWriteMany", "ReadWriteOnce"]},
+            "storageClass": {"type": "string"}
+          }
+        }
+      }
+    },
+    "billing": {
+      "type": "object",
+      "title": "Billing",
+      "description": "Billing (multi-tenant, docs/billing.md): RunR calculates what each tenant owes; an external billing system reads the amounts through the billing API and receives billing events on the webhook. Leave the webhook URL empty to keep events for GET /api/billing/events only.",
+      "properties": {
+        "webhookUrl": {
+          "type": "string",
+          "title": "Billing webhook URL",
+          "pattern": "^(https?://.+)?$",
+          "description": "Billing events (billing.period.closed, billing.plan.changed, billing.usage.threshold, billing.charge.voided) are POSTed here. Empty: no delivery."
+        },
+        "webhookSecret": {
+          "type": "string",
+          "title": "Billing webhook signing secret",
+          "writeOnly": true,
+          "description": "HMAC-SHA256 key of the X-RunR-Signature header: sha256=HMAC(secret, \"<X-RunR-Timestamp>.<raw body>\"). Stored in the Secret runr-secret (key BILLING_WEBHOOK_SECRET). Empty: events are sent unsigned."
+        },
+        "usageThresholds": {
+          "type": "string",
+          "title": "Usage thresholds",
+          "pattern": "^[0-9.,\\s]*$",
+          "description": "Month-to-date usage amounts (in the usage currency) that raise billing.usage.threshold once per tenant and month, comma separated, e.g. 100,500,1000."
+        },
+        "storeUrl": {
+          "type": "string",
+          "title": "Store URL",
+          "pattern": "^(https?://.+)?$",
+          "description": "Where tenants buy plans and credits; the console links to it from Settings → Subscription."
+        }
+      }
+    },
+    "branding": {
+      "type": "object",
+      "title": "Branding",
+      "description": "Brand of this installation (docs/white-label.md) — applied at start-up, no rebuild. Per field, a value saved in Settings → Branding wins over these values; resetting it there brings these back. Empty fields: the RunR default (RunR by BRF Teknoloji).",
+      "properties": {
+        "productName": {
+          "type": "string",
+          "title": "Product name",
+          "maxLength": 80,
+          "description": "Shown in the console header, login page, browser title and e-mails. Empty: RunR."
+        },
+        "companyName": {
+          "type": "string",
+          "title": "Company name",
+          "maxLength": 120,
+          "description": "Copyright line of the login page and e-mails. Empty: BRF Teknoloji."
+        },
+        "logo": {
+          "type": "object",
+          "title": "Logos",
+          "properties": {
+            "light": {
+              "title": "Logo (light background)",
+              "description": "Light theme and e-mails. https URL, a data:image/…;base64,… URI (SVG, PNG, JPEG, WebP, ICO; at most ~700 KB) or a reference to a key of an existing ConfigMap / Secret in the release namespace whose content is one of those (or raw <svg> markup). Empty: the RunR default.",
+              "oneOf": [
+                {
+                  "type": "string",
+                  "pattern": "^(|https://\\S+|/\\S*|data:image/(png|jpeg|webp|gif|svg\\+xml|x-icon|vnd\\.microsoft\\.icon);base64,[A-Za-z0-9+/=]+)$",
+                  "maxLength": 750000
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "configMapKeyRef": {
+                      "type": "object",
+                      "properties": {
+                        "name": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "key": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "optional": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "name",
+                        "key"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "configMapKeyRef"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "secretKeyRef": {
+                      "type": "object",
+                      "properties": {
+                        "name": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "key": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "optional": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "name",
+                        "key"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "secretKeyRef"
+                  ],
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "dark": {
+              "title": "Logo (dark background)",
+              "description": "Dark themes and the login page. https URL, a data:image/…;base64,… URI (SVG, PNG, JPEG, WebP, ICO; at most ~700 KB) or a reference to a key of an existing ConfigMap / Secret in the release namespace whose content is one of those (or raw <svg> markup). Empty: the RunR default.",
+              "oneOf": [
+                {
+                  "type": "string",
+                  "pattern": "^(|https://\\S+|/\\S*|data:image/(png|jpeg|webp|gif|svg\\+xml|x-icon|vnd\\.microsoft\\.icon);base64,[A-Za-z0-9+/=]+)$",
+                  "maxLength": 750000
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "configMapKeyRef": {
+                      "type": "object",
+                      "properties": {
+                        "name": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "key": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "optional": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "name",
+                        "key"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "configMapKeyRef"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "secretKeyRef": {
+                      "type": "object",
+                      "properties": {
+                        "name": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "key": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "optional": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "name",
+                        "key"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "secretKeyRef"
+                  ],
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "mark": {
+              "title": "Logo mark (square icon)",
+              "description": "Compact places such as the collapsed header. https URL, a data:image/…;base64,… URI (SVG, PNG, JPEG, WebP, ICO; at most ~700 KB) or a reference to a key of an existing ConfigMap / Secret in the release namespace whose content is one of those (or raw <svg> markup). Empty: the RunR default.",
+              "oneOf": [
+                {
+                  "type": "string",
+                  "pattern": "^(|https://\\S+|/\\S*|data:image/(png|jpeg|webp|gif|svg\\+xml|x-icon|vnd\\.microsoft\\.icon);base64,[A-Za-z0-9+/=]+)$",
+                  "maxLength": 750000
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "configMapKeyRef": {
+                      "type": "object",
+                      "properties": {
+                        "name": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "key": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "optional": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "name",
+                        "key"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "configMapKeyRef"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "secretKeyRef": {
+                      "type": "object",
+                      "properties": {
+                        "name": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "key": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "optional": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "name",
+                        "key"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "secretKeyRef"
+                  ],
+                  "additionalProperties": false
+                }
+              ]
+            }
+          },
+          "additionalProperties": false
+        },
+        "favicon": {
+          "title": "Favicon",
+          "description": "Browser tab icon. https URL, a data:image/…;base64,… URI (SVG, PNG, JPEG, WebP, ICO; at most ~700 KB) or a reference to a key of an existing ConfigMap / Secret in the release namespace whose content is one of those (or raw <svg> markup). Empty: the RunR default.",
+          "oneOf": [
+            {
+              "type": "string",
+              "pattern": "^(|https://\\S+|/\\S*|data:image/(png|jpeg|webp|gif|svg\\+xml|x-icon|vnd\\.microsoft\\.icon);base64,[A-Za-z0-9+/=]+)$",
+              "maxLength": 750000
+            },
+            {
+              "type": "object",
+              "properties": {
+                "configMapKeyRef": {
+                  "type": "object",
+                  "properties": {
+                    "name": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "key": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "optional": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "name",
+                    "key"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "configMapKeyRef"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "secretKeyRef": {
+                  "type": "object",
+                  "properties": {
+                    "name": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "key": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "optional": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "name",
+                    "key"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "secretKeyRef"
+              ],
+              "additionalProperties": false
+            }
+          ]
+        },
+        "colors": {
+          "type": "object",
+          "title": "Colours",
+          "properties": {
+            "primary": {
+              "title": "Primary colour",
+              "description": "Either one base colour \"#rrggbb\" (shade 500; 300–900 are derived from it) or the full scale {\"300\": …, …, \"900\": …} with \"#rrggbb\" or \"r g b\" values.",
+              "oneOf": [
+                {
+                  "type": "string",
+                  "pattern": "^(#([0-9a-fA-F]{3}|[0-9a-fA-F]{6}))?$"
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "300": {
+                      "type": "string",
+                      "pattern": "^(#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})|(rgb\\()?\\s*\\d{1,3}[ ,]+\\d{1,3}[ ,]+\\d{1,3}\\s*\\)?)$"
+                    },
+                    "400": {
+                      "type": "string",
+                      "pattern": "^(#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})|(rgb\\()?\\s*\\d{1,3}[ ,]+\\d{1,3}[ ,]+\\d{1,3}\\s*\\)?)$"
+                    },
+                    "500": {
+                      "type": "string",
+                      "pattern": "^(#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})|(rgb\\()?\\s*\\d{1,3}[ ,]+\\d{1,3}[ ,]+\\d{1,3}\\s*\\)?)$"
+                    },
+                    "600": {
+                      "type": "string",
+                      "pattern": "^(#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})|(rgb\\()?\\s*\\d{1,3}[ ,]+\\d{1,3}[ ,]+\\d{1,3}\\s*\\)?)$"
+                    },
+                    "700": {
+                      "type": "string",
+                      "pattern": "^(#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})|(rgb\\()?\\s*\\d{1,3}[ ,]+\\d{1,3}[ ,]+\\d{1,3}\\s*\\)?)$"
+                    },
+                    "800": {
+                      "type": "string",
+                      "pattern": "^(#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})|(rgb\\()?\\s*\\d{1,3}[ ,]+\\d{1,3}[ ,]+\\d{1,3}\\s*\\)?)$"
+                    },
+                    "900": {
+                      "type": "string",
+                      "pattern": "^(#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})|(rgb\\()?\\s*\\d{1,3}[ ,]+\\d{1,3}[ ,]+\\d{1,3}\\s*\\)?)$"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "accent": {
+              "type": "string",
+              "pattern": "^(#([0-9a-fA-F]{3}|[0-9a-fA-F]{6}))?$",
+              "title": "Accent colour",
+              "description": "\"#rrggbb\" — highlights such as the wordmark letter. Empty: RunR red."
+            }
+          },
+          "additionalProperties": false
+        },
+        "loginHeadline": {
+          "type": "string",
+          "title": "Login headline",
+          "maxLength": 120
+        },
+        "loginText": {
+          "type": "string",
+          "title": "Login text",
+          "maxLength": 600
+        },
+        "supportUrl": {
+          "type": "string",
+          "title": "Support URL",
+          "pattern": "^(https?://.+)?$"
+        },
+        "supportEmail": {
+          "type": "string",
+          "title": "Support e-mail",
+          "pattern": "^([^@\\s]+@[^@\\s]+)?$"
+        },
+        "footerLinks": {
+          "type": "array",
+          "title": "Footer links",
+          "maxItems": 8,
+          "items": {
+            "type": "object",
+            "properties": {
+              "label": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 60
+              },
+              "url": {
+                "type": "string",
+                "pattern": "^(https?://|mailto:)\\S+$"
+              }
+            },
+            "required": [
+              "label",
+              "url"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "poweredBy": {
+          "type": "boolean",
+          "title": "Show \"Powered by RunR\"",
+          "description": "Shown on a re-branded login page and in e-mails. Default true."
+        },
+        "email": {
+          "type": "object",
+          "title": "E-mail template",
+          "properties": {
+            "fromName": {
+              "type": "string",
+              "title": "Sender name",
+              "maxLength": 120,
+              "description": "Empty: the product name."
+            },
+            "logo": {
+              "title": "E-mail logo",
+              "description": "Empty: the light logo. A data: URI is served to mail clients through /api/branding/assets/email_logo. https URL, a data:image/…;base64,… URI (SVG, PNG, JPEG, WebP, ICO; at most ~700 KB) or a reference to a key of an existing ConfigMap / Secret in the release namespace whose content is one of those (or raw <svg> markup). Empty: the RunR default.",
+              "oneOf": [
+                {
+                  "type": "string",
+                  "pattern": "^(|https://\\S+|/\\S*|data:image/(png|jpeg|webp|gif|svg\\+xml|x-icon|vnd\\.microsoft\\.icon);base64,[A-Za-z0-9+/=]+)$",
+                  "maxLength": 750000
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "configMapKeyRef": {
+                      "type": "object",
+                      "properties": {
+                        "name": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "key": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "optional": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "name",
+                        "key"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "configMapKeyRef"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "secretKeyRef": {
+                      "type": "object",
+                      "properties": {
+                        "name": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "key": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "optional": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "name",
+                        "key"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "secretKeyRef"
+                  ],
+                  "additionalProperties": false
+                }
+              ]
+            }
+          },
+          "additionalProperties": false
+        },
+        "tenantOverrides": {
+          "type": "boolean",
+          "title": "Tenant branding",
+          "description": "Multi-tenant: tenant owners may brand what their users see."
+        }
+      }
+    },
+    "storage": {
+      "type": "object",
+      "title": "Storage",
+      "description": "Overrides api.storage.size and database.postgres.storage when set. Volumes can be grown later, never shrunk.",
+      "properties": {
+        "application": {
+          "type": "string",
+          "title": "Application storage",
+          "pattern": "^([0-9]+Gi)?$",
+          "description": "Git repositories of projects and logs, e.g. 20Gi."
+        },
+        "database": {
+          "type": "string",
+          "title": "Database storage",
+          "pattern": "^([0-9]+Gi)?$",
+          "description": "Built-in PostgreSQL volume, e.g. 20Gi."
+        }
+      }
+    },
+    "quota": {
+      "type": "object",
+      "title": "Resource ceiling",
+      "description": "CPU and memory the functions of this installation may use in total. Applied as a ResourceQuota (with a LimitRange of default container requests / limits) in the project namespace of each Region; in the multi-tenant edition also the default tenant quota and the upper bound of all tenant quotas on a Region. 0 or empty: no ceiling.",
+      "properties": {
+        "cpu": {
+          "type": ["number", "string"],
+          "title": "CPU ceiling (vCPU)",
+          "minimum": 0,
+          "pattern": "^([0-9]+(\\.[0-9]+)?)?$",
+          "description": "Total vCPU, e.g. 8 or 0.5. 0 or empty: no CPU ceiling."
+        },
+        "memoryGiB": {
+          "type": ["number", "string"],
+          "title": "Memory ceiling (GiB)",
+          "minimum": 0,
+          "pattern": "^([0-9]+(\\.[0-9]+)?)?$",
+          "description": "Total memory in GiB, e.g. 16. 0 or empty: no memory ceiling."
+        }
+      }
+    },
+    "observability": {
+      "type": "object",
+      "title": "Observability",
+      "description": "Tracing backend per Region (OpenTelemetry Collector + Grafana Tempo), request replay, uptime checks, status page and alert delivery (docs/observability.md).",
+      "properties": {
+        "tracing": {
+          "type": "object",
+          "title": "Tracing",
+          "properties": {
+            "defaultMode": {
+              "type": "string",
+              "title": "Default tracing mode of a Region",
+              "enum": ["managed", "reuse", "external", "off"],
+              "description": "managed: RunR installs the collector and Tempo with Knative Serving. reuse / external / off are chosen per Region in the console."
+            },
+            "installWithServing": {
+              "type": "boolean",
+              "title": "Install the tracing backend with Knative Serving"
+            },
+            "knativeSampleRate": {
+              "type": ["number", "string"],
+              "title": "Knative span sampling",
+              "minimum": 0,
+              "maximum": 1,
+              "description": "Share of requests whose activator / queue-proxy spans are recorded (0 to 1)."
+            },
+            "tempoRetentionHours": {
+              "type": ["integer", "string"],
+              "title": "Trace retention (hours)",
+              "minimum": 1
+            },
+            "tempoStorage": {
+              "type": "string",
+              "title": "Tempo volume size",
+              "pattern": "^[0-9]+(Mi|Gi|Ti)$"
+            }
+          }
+        },
+        "replay": {
+          "type": "object",
+          "title": "Request replay",
+          "properties": {
+            "maxBodyBytes": { "type": ["integer", "string"], "title": "Default captured body limit (bytes)", "minimum": 0 },
+            "retentionDays": { "type": ["integer", "string"], "title": "Default capture retention (days)", "minimum": 1 },
+            "maxCaptures": { "type": ["integer", "string"], "title": "Captures kept per project", "minimum": 1 },
+            "ingestUrl": {
+              "type": "string",
+              "title": "RunR URL seen from Region pods",
+              "pattern": "^(https?://.+)?$",
+              "description": "Empty: the URL the Region's agent connects to."
+            }
+          }
+        },
+        "uptime": {
+          "type": "object",
+          "title": "Uptime checks",
+          "properties": {
+            "minIntervalSeconds": { "type": ["integer", "string"], "title": "Shortest check interval (seconds)", "minimum": 10 },
+            "resultsRetentionDays": { "type": ["integer", "string"], "title": "Result retention (days)", "minimum": 1 },
+            "allowPrivateTargets": { "type": "boolean", "title": "Allow checks of private addresses" }
+          }
+        },
+        "statusPage": {
+          "type": "object",
+          "title": "Status page",
+          "properties": {
+            "enabled": { "type": "boolean", "title": "Public status pages" }
+          }
+        },
+        "alerts": {
+          "type": "object",
+          "title": "Alert delivery",
+          "properties": {
+            "deliveryTries": { "type": ["integer", "string"], "title": "Delivery attempts", "minimum": 1 },
+            "allowPrivateTargets": { "type": "boolean", "title": "Allow webhooks to private addresses" }
+          }
+        }
+      }
+    },
+    "sandboxApi": {
+      "type": "object",
+      "title": "Sandbox API",
+      "description": "Isolated execution of untrusted code for AI agents and apps: plain pods in a namespace per organization under each region's strongest sandbox class (Kata Containers, gVisor; runc only where a region allows it). Regions, warm pools and organization quotas are configured in Settings → Sandboxes; these are the platform defaults and ceilings.",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "title": "Enable the Sandbox API",
+          "description": "Off: the /api/sandboxes endpoints and their scheduled jobs are not registered."
+        },
+        "namespacePrefix": {
+          "type": "string",
+          "title": "Namespace prefix",
+          "pattern": "^[a-z0-9]([a-z0-9-]{0,20}[a-z0-9])?$",
+          "description": "Sandboxes of an organization run in the namespace <prefix>-<organization> of each region."
+        },
+        "allowCustomImages": {
+          "type": "boolean",
+          "title": "Allow custom images",
+          "description": "Sandboxes may run any image instead of a runtime of the catalog."
+        }
+      }
+    },
+    "bindings": {
+      "type": "object",
+      "title": "Bindings",
+      "description": "Managed KV, object storage and Postgres that projects attach to (docs/bindings.md). The data services are installed per region from the console (Region → Data services).",
+      "properties": {
+        "namespace": {
+          "type": "string",
+          "title": "Data namespace",
+          "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$",
+          "description": "Namespace of the region data services (KV Redis, object store, Postgres clusters)."
+        },
+        "retentionDays": {
+          "type": "integer",
+          "title": "Retention after delete (days)",
+          "minimum": 1,
+          "description": "A deleted binding keeps its data this many days; it can be restored until then."
+        },
+        "storageClass": {
+          "type": "string",
+          "title": "Storage class",
+          "description": "Storage class of the data service volumes. Empty: the cluster default."
+        },
+        "quotas": {
+          "type": "object",
+          "title": "Limits per organization",
+          "description": "Per organization (per tenant in the multi-tenant edition). 0: unlimited.",
+          "properties": {
+            "maxBindings": { "type": "integer", "title": "Bindings", "minimum": 0, "description": "Number of bindings of every type." },
+            "kvMb": { "type": "integer", "title": "KV memory (MB)", "minimum": 0, "description": "Sum of the memory limits of KV bindings." },
+            "objectGb": { "type": "integer", "title": "Object storage (GB)", "minimum": 0, "description": "Sum of the bucket quotas of object bindings." },
+            "postgresGb": { "type": "integer", "title": "Postgres storage (GB)", "minimum": 0, "description": "Sum of the storage of Postgres bindings." },
+            "dedicatedPostgres": { "type": "integer", "title": "Dedicated Postgres clusters", "minimum": 0, "description": "Number of Postgres bindings with their own cluster." }
+          }
+        }
+      }
+    },
+    "gitDeploy": {
+      "type": "object",
+      "title": "Git deploy",
+      "description": "Project git remotes (https://<domain>/git/<organization>/<project>.git), push-to-deploy from GitHub, GitLab and Forgejo/Gitea, and preview environments of pull requests (docs/git-deploy.md).",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "title": "Git deploy",
+          "default": true,
+          "description": "Off: the /git endpoints and provider webhooks answer 404."
+        },
+        "maxPushMb": {
+          "type": "integer",
+          "title": "Largest push (MB)",
+          "minimum": 1,
+          "maximum": 60,
+          "default": 50,
+          "description": "Largest pack one git push may send."
+        },
+        "remoteOwner": {
+          "type": "string",
+          "title": "Remote URL owner",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$",
+          "default": "runr",
+          "description": "Path segment before the project in remote URLs of the single-organization edition (multi-tenant: the organization's slug)."
+        },
+        "webhookBaseUrl": {
+          "type": "string",
+          "title": "Webhook base URL",
+          "pattern": "^(https?://.+)?$",
+          "default": "",
+          "description": "Base URL git providers call the webhooks at. Empty: https://<domain>."
+        },
+        "previews": {
+          "type": "object",
+          "title": "Preview environments",
+          "properties": {
+            "limit": {
+              "type": "integer",
+              "title": "Previews per project",
+              "minimum": 0,
+              "maximum": 20,
+              "default": 3,
+              "description": "Default limit of live previews per project; projects can change it up to maxLimit."
+            },
+            "ttlHours": {
+              "type": "integer",
+              "title": "Preview lifetime (hours)",
+              "minimum": 1,
+              "maximum": 720,
+              "default": 72,
+              "description": "A preview without a new commit for this long is deleted."
+            },
+            "maxLimit": {
+              "type": "integer",
+              "title": "Highest per-project limit",
+              "minimum": 0,
+              "maximum": 100,
+              "default": 20
+            }
+          }
+        }
+      }
+    }
+  }
+}

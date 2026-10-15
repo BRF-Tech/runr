@@ -1,0 +1,50 @@
+# ci/check-helm-chart.sh: a white-label installation (docs/white-label.md) — data: URI logos,
+# a ConfigMap reference and an explicit primary scale 300–900
+domain: console.acme-cloud.example
+branding:
+  productName: Acme Cloud
+  companyName: Acme Ltd
+  logo:
+    light: "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAzMiAzMiI+PHJlY3Qgd2lkdGg9IjMyIiBoZWlnaHQ9IjMyIiByeD0iNiIgZmlsbD0iIzAwOWZlMyIvPjwvc3ZnPg=="
+    dark: "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAzMiAzMiI+PHJlY3Qgd2lkdGg9IjMyIiBoZWlnaHQ9IjMyIiByeD0iNiIgZmlsbD0iIzAwOWZlMyIvPjwvc3ZnPg=="
+    mark:
+      configMapKeyRef: { name: acme-brand, key: mark.svg }
+  favicon: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
+  colors:
+    primary:
+      "300": "102 197 237"
+      "400": "51 181 233"
+      "500": "#009fe3"
+      "600": "0 123 192"
+      "700": "rgb(0, 85, 184)"
+      "800": "0 68 153"
+      "900": "0 43 128"
+    accent: "#e63946"
+  loginHeadline: Build on Acme Cloud
+  loginText: "Sign in with your Acme account."
+  supportUrl: https://support.acme-cloud.example
+  supportEmail: support@acme-cloud.example
+  footerLinks:
+    - { label: Status, url: "https://status.acme-cloud.example" }
+    - { label: Terms, url: "https://acme-cloud.example/terms" }
+  poweredBy: false
+  email:
+    fromName: Acme Cloud
+    logo:
+      secretKeyRef: { name: acme-brand-secret, key: email-logo, optional: true }
+  tenantOverrides: false
+signup:
+  emailVerification: true
+  allowedDomains: "acme-cloud.example,*.acme.example"
+  captcha:
+    provider: turnstile
+    siteKey: 0x4AAAAAAAexample
+  termsUrl: https://acme-cloud.example/terms
+  privacyUrl: https://acme-cloud.example/privacy
+plans:
+  enabled: true
+billing:
+  webhookUrl: https://billing.acme-cloud.example/hooks/runr
+  webhookSecret: whsec-acme-example-0123456789
+  usageThresholds: "100,500"
+  storeUrl: https://shop.acme-cloud.example

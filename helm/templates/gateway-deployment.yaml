@@ -1,0 +1,69 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: runr-gateway
+  namespace: {{ include "runr.namespace" . }}
+  labels:
+    app: runr-gateway
+    {{- include "runr.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.gateway.replicas }}
+  selector:
+    matchLabels:
+      app: runr-gateway
+  template:
+    metadata:
+      labels:
+        app: runr-gateway
+      annotations:
+        checksum/caddy: {{ include (print $.Template.BasePath "/gateway-configmap.yaml") . | sha256sum }}
+        {{- with .Values.deployTimestamp }}
+        deploy-timestamp: {{ . | quote }}
+        {{- end }}
+    spec:
+      automountServiceAccountToken: false
+      {{- include "runr.imagePullSecrets" . | nindent 6 }}
+      containers:
+        - name: caddy
+          image: "{{ .Values.gateway.image.repository }}:{{ .Values.gateway.image.tag }}"
+          imagePullPolicy: {{ .Values.gateway.image.pullPolicy | default "IfNotPresent" }}
+          ports:
+            - containerPort: {{ .Values.gateway.port }}
+          resources:
+            {{- toYaml .Values.gateway.resources | nindent 12 }}
+          volumeMounts:
+            - name: caddy-config
+              mountPath: /etc/caddy/Caddyfile
+              subPath: Caddyfile
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: {{ .Values.gateway.port }}
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: {{ .Values.gateway.port }}
+            initialDelaySeconds: 10
+            periodSeconds: 30
+      volumes:
+        - name: caddy-config
+          configMap:
+            name: runr-gateway-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: runr-gateway
+  namespace: {{ include "runr.namespace" . }}
+  labels:
+    app: runr-gateway
+    {{- include "runr.labels" . | nindent 4 }}
+spec:
+  type: {{ .Values.gateway.serviceType }}
+  selector:
+    app: runr-gateway
+  ports:
+    - port: {{ .Values.gateway.port }}
+      targetPort: {{ .Values.gateway.port }}

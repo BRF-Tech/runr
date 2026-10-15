@@ -1,0 +1,12 @@
+# ci/check-helm-chart.sh: the multi-tenant edition (Tenancy + Auth Provider modules)
+domain: console.acme-cloud.example
+edition: multi-tenant
+tenancy:
+  enabled: true
+authProvider:
+  enabled: true
+signup:
+  tenantAutoCreate: true
+  defaultQuota:
+    cpuM: 4000
+    memoryMb: 8192

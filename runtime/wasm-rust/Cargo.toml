@@ -1,0 +1,19 @@
+# Default Cargo.toml of a wasm-rust function (build.files): the handler file is the crate root.
+# A FaaS project may bring its own Cargo.toml (more crates); keep crate-type cdylib and the
+# package name, or change the component source in spin.toml with it.
+[package]
+name = "runr-function"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.78"
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+path = "lib.rs"
+
+[dependencies]
+anyhow = "1"
+spin-sdk = "5.2.0"
+
+[workspace]

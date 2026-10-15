@@ -1,0 +1,33 @@
+# ci/check-helm-chart.sh: a highly available installation — autoscaling, disruption budgets,
+# cert-manager TLS on the Ingress
+domain: console.acme-cloud.example
+gateway:
+  hpa:
+    enabled: true
+  pdb:
+    enabled: true
+api:
+  hpa:
+    enabled: true
+  pdb:
+    enabled: true
+ui:
+  hpa:
+    enabled: true
+  pdb:
+    enabled: true
+redis:
+  pdb:
+    enabled: true
+database:
+  postgres:
+    pdb:
+      enabled: true
+ingress:
+  className: nginx
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-buffering: "off"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "900"
+  tls:
+    mode: letsencrypt
+    clusterIssuer: letsencrypt-staging

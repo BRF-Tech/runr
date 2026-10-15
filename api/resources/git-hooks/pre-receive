@@ -1,0 +1,18 @@
+#!/bin/sh
+# Installed by RunR into every project remote (ProjectRemote::writeHooks).
+# The deploy branch (RUNR_DEPLOY_BRANCH, set per push by the API) cannot be deleted.
+# Non-fast-forward updates are refused by receive.denyNonFastForwards unless the project allows
+# force pushes.
+branch="${RUNR_DEPLOY_BRANCH:-main}"
+status=0
+while read -r old new ref; do
+  [ "$ref" = "refs/heads/$branch" ] || continue
+  case "$new" in
+    *[!0]*) ;;
+    *)
+      echo "RunR: the deploy branch $branch cannot be deleted."
+      status=1
+      ;;
+  esac
+done
+exit $status

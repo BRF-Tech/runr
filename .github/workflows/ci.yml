@@ -1,0 +1,128 @@
+# Core checks of the GitLab pipeline (.gitlab-ci.yml) for the public GitHub mirror.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  reqs-mirror:
+    name: Reqs mirror list
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # Every ghcr.io/runrsh/reqs/* image the repository references is mirrored by runtime/ci.sh
+      - run: bash ci/check-reqs-mirror.sh
+
+  api:
+    name: API tests + static analysis
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: api
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.2'
+          extensions: pdo_sqlite, pcntl
+          coverage: pcov
+          tools: composer:v2
+      - name: Composer cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.composer/cache
+          key: composer-${{ hashFiles('api/composer.lock') }}
+          restore-keys: composer-
+      - run: composer install --no-interaction --prefer-dist --no-progress
+      - run: vendor/bin/pint --test
+      - run: cp .env.example .env && php artisan key:generate
+      # Coverage floor as in GitLab's test:api (docs/development.md → Testing)
+      - run: php -d memory_limit=1G artisan test --compact --coverage --min=76
+      - run: vendor/bin/phpstan analyse --memory-limit=1G --no-progress
+
+  ui:
+    name: UI lint + unit tests + build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: vue
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: vue/package-lock.json
+      - run: npm ci --no-audit --no-fund
+      - run: npm run lint
+      - run: npm run test:coverage
+      - run: npm run build
+        env:
+          NODE_OPTIONS: --max-old-space-size=4096
+
+  ui-e2e:
+    name: UI e2e (mocked API)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: vue
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: vue/package-lock.json
+      - run: npm ci --no-audit --no-fund
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:e2e:mock
+        env:
+          NODE_OPTIONS: --max-old-space-size=4096
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report
+          path: |
+            vue/playwright-report/
+            vue/test-results/
+          retention-days: 7
+
+  go:
+    name: Go vet + race tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+          cache-dependency-path: '**/go.sum'
+      # The Terraform provider's tests run real plans against the fake API (write-only attributes
+      # need Terraform 1.11+); without a terraform binary every test would download one.
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: '1.13.3'
+          terraform_wrapper: false
+      - name: gofmt + go vet + go test -race (every go.mod)
+        env:
+          GOTOOLCHAIN: auto
+          GOFLAGS: -mod=readonly
+          CHECKPOINT_DISABLE: '1'
+        run: |
+          # runtime/wasm-go, examples/wasm/go: TinyGo / wasip1 modules (wasm-go build image)
+          for mod in $(find . -name go.mod -not -path '*/node_modules/*' -not -path '*/vendor/*' -not -path './runtime/wasm-go/*' -not -path './examples/wasm/*' | sort); do
+            dir=$(dirname "$mod")
+            echo "::group::$dir"
+            unformatted=$(cd "$dir" && gofmt -l .)
+            if [ -n "$unformatted" ]; then echo "gofmt -w needed in $dir:"; echo "$unformatted"; exit 1; fi
+            (cd "$dir" && go vet ./... && go test -race -count=1 ./...) || exit 1
+            echo "::endgroup::"
+          done

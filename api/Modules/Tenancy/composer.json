@@ -1,0 +1,14 @@
+{
+    "name": "modules/tenancy",
+    "description": "Multi-tenancy module for RunR",
+    "require": {
+        "stancl/tenancy": "^3.0"
+    },
+    "autoload": {
+        "psr-4": {
+            "Modules\\Tenancy\\": "app/",
+            "Modules\\Tenancy\\Database\\": "Database/",
+            "Modules\\Tenancy\\Database\\Seeders\\": "Database/Seeders/"
+        }
+    }
+}

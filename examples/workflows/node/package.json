@@ -1,0 +1,13 @@
+{
+  "name": "runr-workflows-example",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Order fulfilment with RunR durable workflows",
+  "main": "main.js",
+  "scripts": {
+    "serve": "node -e \"require('./main').workflows.serve()\""
+  },
+  "dependencies": {
+    "@runr/workflows": "^0.1.0"
+  }
+}

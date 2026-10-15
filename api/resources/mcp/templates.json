@@ -1,0 +1,127 @@
+{
+    "_comment": "Generated from examples/mcp/*/runtime.yaml by `php artisan mcp:templates-bundle` — edit the sources, then re-run it.",
+    "templates": {
+        "python": {
+            "apiVersion": "runr.sh/v1",
+            "kind": "Runtime",
+            "id": "mcp-python",
+            "name": "MCP server (Python)",
+            "description": "Model Context Protocol server on the official MCP Python SDK (FastMCP), Streamable HTTP at /mcp on $PORT behind the RunR MCP gateway.",
+            "language": "python",
+            "extensions": [
+                "py"
+            ],
+            "category": "general",
+            "versions": [
+                {
+                    "version": "3.13",
+                    "image": "ghcr.io/runrsh/reqs/python:3.13-slim",
+                    "default": true
+                }
+            ],
+            "handler": {
+                "file": "server",
+                "function": "main"
+            },
+            "template": {
+                "files": {
+                    "{file}": "\"\"\"RunR MCP server starter (Python).\n\nA Model Context Protocol server on the official MCP Python SDK (FastMCP), served over\nStreamable HTTP at /mcp on $PORT. RunR runs it as a project and puts its gateway in front:\nclients connect to https://<console>/mcp/servers/<handle>, the gateway checks their access\n(public, RunR token or OAuth) and forwards every request here with two headers:\n\n  X-RunR-Identity   base64url JSON of the caller: {\"auth\", \"user\", \"tenant\", \"token_id\",\n                    \"client_id\", \"scopes\"}\n  X-RunR-Signature  t=<unix seconds>,v1=<hex>[,v1=<hex>]\n                    hex = HMAC-SHA256(RUNR_MCP_GATEWAY_KEY,\n                          \"<t>.\" + METHOD + \"\\n\" + PATH + \"\\n\" + sha256(body) + \"\\n\" + identity)\n\nRUNR_MCP_GATEWAY_KEY reaches the container as a secret environment variable. With the key set,\nGatewaySignature below answers 401 to every request that does not carry a valid signature, so\nthe function URL itself cannot be used to get around the gateway. Without the key (running on\nyour machine) requests pass unchecked.\n\nEdit the tools, resources and prompts below; save to create a new version and deploy it.\n\"\"\"\n\nimport base64\nimport hashlib\nimport hmac\nimport json\nimport os\nimport time\nfrom contextvars import ContextVar\n\nimport uvicorn\nfrom mcp.server.fastmcp import Context, FastMCP\n\nGATEWAY_KEY = os.environ.get(\"RUNR_MCP_GATEWAY_KEY\", \"\")\nSIGNATURE_TOLERANCE = 300  # seconds between the gateway's timestamp and this clock\n\n# The caller of the current request, as the gateway identified it (None outside the gateway)\ncurrent_identity: ContextVar[dict | None] = ContextVar(\"runr_identity\", default=None)\n\n# host=\"0.0.0.0\": listen for the gateway, not only on localhost. stateless_http: every request\n# stands on its own, so any replica can answer it when Knative scales the server out.\nmcp = FastMCP(\"RunR MCP starter\", host=\"0.0.0.0\", stateless_http=True)\n\n\n# ── Tools ────────────────────────────────────────────────────────────────────\n\n\n@mcp.tool()\ndef hello(name: str = \"World\") -> str:\n    \"\"\"Greets someone by name.\"\"\"\n    return f\"Hello, {name}! (from RunR)\"\n\n\n@mcp.tool()\ndef add(a: float, b: float) -> float:\n    \"\"\"Adds two numbers.\"\"\"\n    return a + b\n\n\n@mcp.tool()\ndef whoami(ctx: Context) -> dict:\n    \"\"\"Who is calling: the identity the RunR gateway forwarded for this request.\"\"\"\n    identity = identity_of(ctx)\n    if identity is None:\n        return {\"auth\": \"none\", \"note\": \"This request did not come through the RunR gateway.\"}\n    return identity\n\n\n# ── Resources and prompts ────────────────────────────────────────────────────\n\n\n@mcp.resource(\"starter://about\")\ndef about() -> str:\n    \"\"\"What this server is.\"\"\"\n    return \"A RunR MCP starter: tools hello, add and whoami; edit server.py to add your own.\"\n\n\n@mcp.prompt()\ndef greet(name: str) -> str:\n    \"\"\"A prompt that asks the model to greet someone with the hello tool.\"\"\"\n    return f\"Use the hello tool to greet {name}, then tell them which RunR user called the server (whoami).\"\n\n\n# ── Gateway identity and signature ───────────────────────────────────────────\n\n\ndef decode_identity(header: str) -> dict | None:\n    if not header:\n        return None\n    try:\n        padded = header + \"=\" * (-len(header) % 4)\n        return json.loads(base64.urlsafe_b64decode(padded.encode()).decode())\n    except (ValueError, json.JSONDecodeError):\n        return None\n\n\ndef identity_of(ctx: Context) -> dict | None:\n    \"\"\"The identity of the request a tool runs for (request headers, else the context variable).\"\"\"\n    request = getattr(getattr(ctx, \"request_context\", None), \"request\", None)\n    headers = getattr(request, \"headers\", None)\n    if headers is not None:\n        return decode_identity(headers.get(\"x-runr-identity\", \"\"))\n    return current_identity.get()\n\n\ndef verify_signature(method: str, path: str, body: bytes, identity: str, header: str) -> bool:\n    \"\"\"X-RunR-Signature check: any v1 matches and the timestamp is fresh.\"\"\"\n    timestamp = None\n    signatures = []\n    for part in header.split(\",\"):\n        key, _, value = part.strip().partition(\"=\")\n        if key == \"t\" and value.isdigit():\n            timestamp = int(value)\n        elif key == \"v1\" and value:\n            signatures.append(value.lower())\n    if timestamp is None or not signatures or abs(time.time() - timestamp) > SIGNATURE_TOLERANCE:\n        return False\n\n    signed = f\"{timestamp}.{method}\\n{path}\\n{hashlib.sha256(body).hexdigest()}\\n{identity}\".encode()\n    expected = hmac.new(GATEWAY_KEY.encode(), signed, hashlib.sha256).hexdigest()\n    return any(hmac.compare_digest(expected, candidate) for candidate in signatures)\n\n\nclass GatewaySignature:\n    \"\"\"ASGI middleware: only requests signed by the RunR gateway reach the MCP app.\n\n    The body is read once to check its hash and then handed to the app unchanged. Knative probes\n    and GET / (health) are answered here without a signature.\n    \"\"\"\n\n    def __init__(self, app):\n        self.app = app\n\n    async def __call__(self, scope, receive, send):\n        if scope[\"type\"] != \"http\":\n            await self.app(scope, receive, send)  # lifespan: starts FastMCP's session manager\n            return\n\n        headers = {k.decode(\"latin-1\").lower(): v.decode(\"latin-1\") for k, v in scope.get(\"headers\", [])}\n        if \"k-network-probe\" in headers or \"k-kubelet-probe\" in headers or (scope[\"method\"] == \"GET\" and scope[\"path\"] in (\"/\", \"/healthz\")):\n            await respond(send, 200, b\"ok\")\n            return\n\n        body = b\"\"\n        more = True\n        while more:\n            message = await receive()\n            if message[\"type\"] == \"http.disconnect\":\n                return\n            body += message.get(\"body\", b\"\")\n            more = message.get(\"more_body\", False)\n\n        identity = headers.get(\"x-runr-identity\", \"\")\n        if GATEWAY_KEY and not verify_signature(scope[\"method\"], scope[\"path\"], body, identity, headers.get(\"x-runr-signature\", \"\")):\n            await respond(send, 401, b'{\"error\":\"requests must come through the RunR gateway\"}', b\"application/json\")\n            return\n\n        replayed = False\n\n        async def replay():\n            nonlocal replayed\n            if not replayed:\n                replayed = True\n                return {\"type\": \"http.request\", \"body\": body, \"more_body\": False}\n            return await receive()\n\n        token = current_identity.set(decode_identity(identity))\n        try:\n            await self.app(scope, replay, send)\n        finally:\n            current_identity.reset(token)\n\n\nasync def respond(send, status: int, body: bytes, content_type: bytes = b\"text/plain\") -> None:\n    await send({\"type\": \"http.response.start\", \"status\": status, \"headers\": [(b\"content-type\", content_type)]})\n    await send({\"type\": \"http.response.body\", \"body\": body})\n\n\ndef main() -> None:\n    port = int(os.environ.get(\"PORT\", \"8080\"))\n    if not GATEWAY_KEY:\n        print(\"RUNR_MCP_GATEWAY_KEY is not set: requests are not checked for the gateway signature\")\n    print(f\"RunR MCP starter: Streamable HTTP on :{port}{mcp.settings.streamable_http_path}\")\n    uvicorn.run(GatewaySignature(mcp.streamable_http_app()), host=\"0.0.0.0\", port=port, proxy_headers=True, forwarded_allow_ips=\"*\")\n\n\nif __name__ == \"__main__\":\n    main()\n"
+                }
+            },
+            "dependencies": {
+                "file": "requirements.txt",
+                "template": "mcp>=1.12,<2\nuvicorn>=0.30\n",
+                "install": "pip install --no-cache-dir --target=/build/vendor -r /build/code/requirements.txt",
+                "copy": [
+                    {
+                        "from": "/build/vendor",
+                        "to": "/app/vendor"
+                    }
+                ],
+                "env": {
+                    "PYTHONPATH": "/app/vendor"
+                }
+            },
+            "run": {
+                "mode": "http",
+                "command": [
+                    "python",
+                    "-u",
+                    "/app/code/server.py"
+                ]
+            },
+            "triggers": [
+                "http"
+            ],
+            "sandbox": [
+                "runc",
+                "gvisor",
+                "kata"
+            ],
+            "resources": {
+                "cpu": "250m",
+                "memory_mb": 256
+            }
+        },
+        "node": {
+            "apiVersion": "runr.sh/v1",
+            "kind": "Runtime",
+            "id": "mcp-node",
+            "name": "MCP server (TypeScript)",
+            "description": "Model Context Protocol server on the official TypeScript SDK, Streamable HTTP at /mcp on $PORT behind the RunR MCP gateway.",
+            "language": "typescript",
+            "extensions": [
+                "ts"
+            ],
+            "category": "general",
+            "versions": [
+                {
+                    "version": "22",
+                    "image": "ghcr.io/runrsh/reqs/node:22-slim",
+                    "default": true
+                }
+            ],
+            "handler": {
+                "file": "server",
+                "function": "main"
+            },
+            "template": {
+                "files": {
+                    "{file}": "/**\n * RunR MCP server starter (TypeScript).\n *\n * A Model Context Protocol server on the official TypeScript SDK (@modelcontextprotocol/sdk),\n * served over Streamable HTTP at /mcp on $PORT. Node runs this file directly\n * (--experimental-strip-types), so it uses erasable TypeScript only: types and interfaces, no\n * enums or namespaces.\n *\n * RunR puts its gateway in front: clients connect to https://<console>/mcp/servers/<handle>,\n * the gateway checks their access (public, RunR token or OAuth) and forwards every request here\n * with two headers:\n *\n *   X-RunR-Identity   base64url JSON of the caller: {auth, user, tenant, token_id, client_id, scopes}\n *   X-RunR-Signature  t=<unix seconds>,v1=<hex>[,v1=<hex>]\n *                     hex = HMAC-SHA256(RUNR_MCP_GATEWAY_KEY,\n *                           \"<t>.\" + METHOD + \"\\n\" + PATH + \"\\n\" + sha256(body) + \"\\n\" + identity)\n *\n * RUNR_MCP_GATEWAY_KEY reaches the container as a secret environment variable. With the key set,\n * requests without a valid signature get 401, so the function URL itself cannot be used to get\n * around the gateway. Without the key (running on your machine) requests pass unchecked.\n *\n * Every request gets its own server and transport (stateless mode), so any replica can answer\n * it when Knative scales the server out.\n */\nimport { createHash, createHmac, timingSafeEqual } from \"node:crypto\";\nimport { createServer, type IncomingMessage, type ServerResponse } from \"node:http\";\nimport { McpServer } from \"@modelcontextprotocol/sdk/server/mcp.js\";\nimport { StreamableHTTPServerTransport } from \"@modelcontextprotocol/sdk/server/streamableHttp.js\";\nimport { z } from \"zod\";\n\nconst GATEWAY_KEY = process.env.RUNR_MCP_GATEWAY_KEY ?? \"\";\nconst SIGNATURE_TOLERANCE = 300; // seconds between the gateway's timestamp and this clock\nconst MCP_PATH = \"/mcp\";\nconst MAX_BODY_BYTES = 4 * 1024 * 1024;\n\ninterface Identity {\n  auth: \"public\" | \"token\" | \"oauth\" | \"console\";\n  user: { id: string; name?: string; email?: string } | null;\n  tenant: string | null;\n  token_id: string | null;\n  client_id: string | null;\n  scopes: string[];\n}\n\n// ── Tools, resources and prompts ─────────────────────────────────────────────\n\nfunction buildServer(identity: Identity | null): McpServer {\n  const server = new McpServer({ name: \"runr-mcp-starter\", version: \"1.0.0\" });\n\n  server.registerTool(\n    \"hello\",\n    {\n      title: \"Say hello\",\n      description: \"Greets someone by name.\",\n      inputSchema: { name: z.string().default(\"World\").describe(\"Who to greet\") },\n    },\n    async ({ name }) => ({ content: [{ type: \"text\", text: `Hello, ${name}! (from RunR)` }] }),\n  );\n\n  server.registerTool(\n    \"add\",\n    {\n      title: \"Add two numbers\",\n      description: \"Adds two numbers.\",\n      inputSchema: { a: z.number(), b: z.number() },\n    },\n    async ({ a, b }) => ({ content: [{ type: \"text\", text: String(a + b) }] }),\n  );\n\n  server.registerTool(\n    \"whoami\",\n    {\n      title: \"Who am I\",\n      description: \"Who is calling: the identity the RunR gateway forwarded for this request.\",\n      inputSchema: {},\n    },\n    async () => {\n      const result = identity ?? { auth: \"none\", note: \"This request did not come through the RunR gateway.\" };\n      return { content: [{ type: \"text\", text: JSON.stringify(result, null, 2) }] };\n    },\n  );\n\n  server.registerResource(\n    \"about\",\n    \"starter://about\",\n    { title: \"About this server\", description: \"What this server is.\", mimeType: \"text/plain\" },\n    async (uri) => ({\n      contents: [{ uri: uri.href, text: \"A RunR MCP starter: tools hello, add and whoami; edit server.ts to add your own.\" }],\n    }),\n  );\n\n  server.registerPrompt(\n    \"greet\",\n    {\n      title: \"Greet someone\",\n      description: \"Asks the model to greet someone with the hello tool.\",\n      argsSchema: { name: z.string() },\n    },\n    ({ name }) => ({\n      messages: [\n        {\n          role: \"user\",\n          content: { type: \"text\", text: `Use the hello tool to greet ${name}, then tell them which RunR user called the server (whoami).` },\n        },\n      ],\n    }),\n  );\n\n  return server;\n}\n\n// ── Gateway identity and signature ───────────────────────────────────────────\n\nfunction decodeIdentity(header: string): Identity | null {\n  if (!header) return null;\n  try {\n    return JSON.parse(Buffer.from(header, \"base64url\").toString(\"utf8\")) as Identity;\n  } catch {\n    return null;\n  }\n}\n\nfunction verifySignature(method: string, path: string, body: Buffer, identity: string, header: string): boolean {\n  let timestamp: number | null = null;\n  const signatures: string[] = [];\n  for (const part of header.split(\",\")) {\n    const [key, value = \"\"] = part.trim().split(\"=\", 2);\n    if (key === \"t\" && /^\\d+$/.test(value)) timestamp = Number(value);\n    else if (key === \"v1\" && value) signatures.push(value.toLowerCase());\n  }\n  if (timestamp === null || signatures.length === 0 || Math.abs(Date.now() / 1000 - timestamp) > SIGNATURE_TOLERANCE) {\n    return false;\n  }\n\n  const bodyHash = createHash(\"sha256\").update(body).digest(\"hex\");\n  const expected = Buffer.from(\n    createHmac(\"sha256\", GATEWAY_KEY).update(`${timestamp}.${method}\\n${path}\\n${bodyHash}\\n${identity}`).digest(\"hex\"),\n  );\n  return signatures.some((candidate) => {\n    const given = Buffer.from(candidate);\n    return given.length === expected.length && timingSafeEqual(given, expected);\n  });\n}\n\nasync function readBody(req: IncomingMessage): Promise<Buffer | null> {\n  const chunks: Buffer[] = [];\n  let size = 0;\n  for await (const chunk of req) {\n    size += (chunk as Buffer).length;\n    if (size > MAX_BODY_BYTES) return null;\n    chunks.push(chunk as Buffer);\n  }\n  return Buffer.concat(chunks);\n}\n\nfunction send(res: ServerResponse, status: number, body: string, type = \"text/plain\"): void {\n  res.writeHead(status, { \"Content-Type\": type }).end(body);\n}\n\n// ── HTTP ─────────────────────────────────────────────────────────────────────\n\nasync function handle(req: IncomingMessage, res: ServerResponse): Promise<void> {\n  const path = new URL(req.url ?? \"/\", \"http://localhost\").pathname;\n\n  // Knative probes and the health check need no signature\n  if (req.headers[\"k-network-probe\"] || req.headers[\"k-kubelet-probe\"] || (req.method === \"GET\" && (path === \"/\" || path === \"/healthz\"))) {\n    send(res, 200, \"ok\");\n    return;\n  }\n\n  if (path !== MCP_PATH) {\n    send(res, 404, \"not found\");\n    return;\n  }\n\n  // Stateless mode: no session to stream to or to end\n  if (req.method !== \"POST\") {\n    res.writeHead(405, { Allow: \"POST\", \"Content-Type\": \"application/json\" }).end(\n      JSON.stringify({ jsonrpc: \"2.0\", error: { code: -32000, message: \"Method not allowed.\" }, id: null }),\n    );\n    return;\n  }\n\n  const body = await readBody(req);\n  if (body === null) {\n    send(res, 413, \"request too large\");\n    return;\n  }\n\n  const identityHeader = String(req.headers[\"x-runr-identity\"] ?? \"\");\n  if (GATEWAY_KEY && !verifySignature(req.method, path, body, identityHeader, String(req.headers[\"x-runr-signature\"] ?? \"\"))) {\n    send(res, 401, JSON.stringify({ error: \"requests must come through the RunR gateway\" }), \"application/json\");\n    return;\n  }\n\n  let message: unknown;\n  try {\n    message = JSON.parse(body.toString(\"utf8\"));\n  } catch {\n    res.writeHead(400, { \"Content-Type\": \"application/json\" }).end(\n      JSON.stringify({ jsonrpc: \"2.0\", error: { code: -32700, message: \"Parse error\" }, id: null }),\n    );\n    return;\n  }\n\n  const server = buildServer(decodeIdentity(identityHeader));\n  const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });\n  res.on(\"close\", () => {\n    void transport.close();\n    void server.close();\n  });\n  await server.connect(transport);\n  await transport.handleRequest(req, res, message);\n}\n\nfunction main(): void {\n  const port = Number(process.env.PORT ?? \"8080\");\n  if (!GATEWAY_KEY) {\n    console.log(\"RUNR_MCP_GATEWAY_KEY is not set: requests are not checked for the gateway signature\");\n  }\n  createServer((req, res) => {\n    handle(req, res).catch((error) => {\n      console.error(\"request failed:\", error);\n      if (!res.headersSent) send(res, 500, \"internal error\");\n      else res.end();\n    });\n  }).listen(port, \"0.0.0.0\", () => console.log(`RunR MCP starter: Streamable HTTP on :${port}${MCP_PATH}`));\n}\n\nmain();\n"
+                }
+            },
+            "dependencies": {
+                "file": "package.json",
+                "template": "{\n  \"name\": \"runr-mcp-starter\",\n  \"version\": \"1.0.0\",\n  \"private\": true,\n  \"type\": \"module\",\n  \"description\": \"RunR MCP server starter on the official TypeScript SDK, Streamable HTTP at /mcp\",\n  \"scripts\": {\n    \"start\": \"node --experimental-strip-types server.ts\"\n  },\n  \"engines\": {\n    \"node\": \">=22.6\"\n  },\n  \"dependencies\": {\n    \"@modelcontextprotocol/sdk\": \"^1.20.0\",\n    \"zod\": \"^3.25.0\"\n  }\n}\n",
+                "install": "cd /build/code && npm install --omit=dev --no-audit --no-fund",
+                "copy": [
+                    {
+                        "from": "/build/code/node_modules",
+                        "to": "/app/code/node_modules"
+                    }
+                ]
+            },
+            "run": {
+                "mode": "http",
+                "command": [
+                    "node",
+                    "--experimental-strip-types",
+                    "--disable-warning=ExperimentalWarning",
+                    "/app/code/server.ts"
+                ]
+            },
+            "triggers": [
+                "http"
+            ],
+            "sandbox": [
+                "runc",
+                "gvisor",
+                "kata"
+            ],
+            "resources": {
+                "cpu": "250m",
+                "memory_mb": 256
+            }
+        }
+    }
+}

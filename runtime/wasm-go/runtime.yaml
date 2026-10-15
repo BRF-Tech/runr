@@ -1,0 +1,81 @@
+# Built-in runtime: Go → WebAssembly (TinyGo + Spin Go SDK). Every version is compiled with TinyGo
+# (wasip1, c-shared) into a Spin component and pushed to the region registry as a Spin OCI
+# artifact; the pods run under containerd-shim-spin (RuntimeClass wasmtime-spin-v2) on the nodes
+# with WebAssembly support — docs/wasm.md. Every trigger is an HTTP request: queue messages and
+# schedule ticks arrive as CloudEvents (ce-type header).
+apiVersion: runr.sh/v1
+kind: Runtime
+id: wasm-go
+name: Go (Wasm)
+description: "Go compiled with TinyGo to a WebAssembly component with the Spin Go SDK — spinhttp.Handle(func(w http.ResponseWriter, r *http.Request)). Millisecond-class cold starts in the WebAssembly sandbox; needs WebAssembly support in the region."
+icon: data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA2NCA2NCI+PHJlY3Qgd2lkdGg9IjY0IiBoZWlnaHQ9IjY0IiByeD0iMTIiIGZpbGw9IiM2NTRGRjAiLz48cGF0aCBkPSJNMjAgMGgyNHY4YTEyIDEyIDAgMCAxLTI0IDB6IiBmaWxsPSIjZmZmIiBmaWxsLW9wYWNpdHk9Ii4xOCIvPjx0ZXh0IHg9IjMyIiB5PSIzOCIgZm9udC1mYW1pbHk9IkFyaWFsLEhlbHZldGljYSxzYW5zLXNlcmlmIiBmb250LXNpemU9IjE3IiBmb250LXdlaWdodD0iNzAwIiBmaWxsPSIjZmZmIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIj5XQTwvdGV4dD48dGV4dCB4PSIzMiIgeT0iNTYiIGZvbnQtZmFtaWx5PSJBcmlhbCxIZWx2ZXRpY2Esc2Fucy1zZXJpZiIgZm9udC1zaXplPSIxMiIgZm9udC13ZWlnaHQ9IjcwMCIgZmlsbD0iI2ZmZiIgZmlsbC1vcGFjaXR5PSIuODUiIHRleHQtYW5jaG9yPSJtaWRkbGUiPkdPPC90ZXh0Pjwvc3ZnPg==
+language: go
+extensions: [go]
+category: general
+versions:
+  - version: "4.1"
+    image: ghcr.io/runrsh/exec-wasm-go:4.1
+    default: true
+handler:
+  file: main
+  function: handler
+  pattern: 'Handle\s*\('
+template:
+  files:
+    "{file}": |
+      package main
+
+      import (
+      	"fmt"
+      	"io"
+      	"net/http"
+
+      	spinhttp "github.com/spinframework/spin-go-sdk/v2/http"
+      )
+
+      // Every trigger reaches the component as an HTTP request: queue messages and schedule ticks
+      // arrive as CloudEvents (the ce-type header names the event).
+      func init() {
+      	spinhttp.Handle(func(w http.ResponseWriter, r *http.Request) {
+      		var body string
+      		switch r.Header.Get("ce-type") {
+      		case "dev.runr.schedule.tick":
+      			body = "tick from Go (Wasm)"
+      		case "dev.runr.queue.message":
+      			data, _ := io.ReadAll(r.Body)
+      			body = fmt.Sprintf("processed %s (from Go, Wasm)", data)
+      		default:
+      			name := r.URL.Query().Get("name")
+      			if name == "" {
+      				name = "World"
+      			}
+      			body = fmt.Sprintf("Hello, %s! (from Go, Wasm)", name)
+      		}
+      		fmt.Println(body)
+      		w.Header().Set("Content-Type", "text/plain")
+      		fmt.Fprint(w, body)
+      	})
+      }
+
+      // main is required by the compiler; the component's entry point is the handler above.
+      func main() {}
+build:
+  # the image's module cache, go.sum and TinyGo cache serve the default go.mod; a project's own
+  # go.mod resolves what it adds (GOFLAGS=-mod=mod)
+  command: >-
+    { [ -f go.sum ] || cp /opt/runr/go/go.sum . ; } &&
+    spin build
+  source: false
+  files:
+    go.mod: "@go.mod"
+    spin.toml: "@spin.toml"
+run:
+  mode: http
+  schedule: native
+  env:
+    SPIN_HTTP_LISTEN_ADDR: "0.0.0.0:8080"
+triggers: [http, schedule, queue]
+resources:
+  cpu: "100m"
+  memory_mb: 128
+runtimeClass: wasmtime-spin-v2

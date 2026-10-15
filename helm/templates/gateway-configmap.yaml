@@ -1,0 +1,88 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: runr-gateway-config
+  namespace: {{ include "runr.namespace" . }}
+  labels:
+    app: runr-gateway
+    {{- include "runr.labels" . | nindent 4 }}
+data:
+  Caddyfile: |
+    {{- $trusted := include "runr.caddyTrustedProxies" . }}
+    {{- if and $trusted (ge (int (include "runr.proxyHops" .)) 2) }}
+    # Client IP (values clientIp): X-Forwarded-For from the ingress controller in front of the
+    # gateway (a peer in these ranges) is kept and the peer appended; from any other peer it is
+    # replaced with the peer's address. runr-api takes the client from it (TRUSTED_PROXY_HOPS).
+    {
+        servers {
+            trusted_proxies static {{ $trusted }}
+        }
+    }
+    {{ end }}
+    :{{ .Values.gateway.port }} {
+
+        # WebSocket → reverb (the /ws prefix is stripped)
+        handle /ws/* {
+            uri strip_prefix /ws
+            reverse_proxy runr-reverb:{{ .Values.reverb.port }}
+        }
+
+        # API — X-Forwarded-Host always from the request's Host (a trusted ingress must not pass
+        # a client-chosen one through)
+        handle /api/* {
+            reverse_proxy runr-api:80 {
+                header_up X-Forwarded-Proto {scheme}
+                header_up X-Forwarded-Host {host}
+                header_up X-Real-IP {remote_host}
+            }
+        }
+
+        # AI agents (docs/mcp.md): RunR MCP server, hosted MCP servers (/mcp/servers/*), the
+        # OAuth authorization server and its metadata — SSE streamed through without buffering
+        @mcp path /mcp /mcp/* /oauth2/* /.well-known/oauth-*
+        handle @mcp {
+            reverse_proxy runr-api:80 {
+                header_up X-Forwarded-Proto {scheme}
+                header_up X-Forwarded-Host {host}
+                header_up X-Real-IP {remote_host}
+                flush_interval -1
+            }
+        }
+
+        # Project git remotes (smart HTTP, served by runr-api; streamed both ways)
+        {{- $gitDeploy := .Values.gitDeploy | default dict }}
+        {{- if or (not (hasKey $gitDeploy "enabled")) $gitDeploy.enabled }}
+        handle /git/* {
+            reverse_proxy runr-api:80 {
+                header_up X-Forwarded-Proto {scheme}
+                header_up X-Forwarded-Host {host}
+                header_up X-Real-IP {remote_host}
+                flush_interval -1
+            }
+        }
+        {{- end }}
+
+        # Horizon dashboard
+        handle /horizon/* {
+            reverse_proxy runr-api:80 {
+                header_up X-Forwarded-Proto {scheme}
+                header_up X-Forwarded-Host {host}
+                header_up X-Real-IP {remote_host}
+            }
+        }
+
+        # Storage (Laravel public disk)
+        handle /storage/* {
+            reverse_proxy runr-api:80
+        }
+
+        # Health check
+        handle /healthz {
+            respond "ok" 200
+        }
+
+        # UI (catch-all)
+        handle {
+            reverse_proxy runr-ui:80
+        }
+    }

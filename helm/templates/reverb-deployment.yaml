@@ -1,0 +1,71 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: runr-reverb
+  namespace: {{ include "runr.namespace" . }}
+  labels:
+    app: runr-reverb
+    {{- include "runr.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.reverb.replicas }}
+  selector:
+    matchLabels:
+      app: runr-reverb
+  template:
+    metadata:
+      labels:
+        app: runr-reverb
+        {{- include "runr.colocation-label" . | nindent 8 }}
+      annotations:
+        {{- include "runr.checksum" . | nindent 8 }}
+    spec:
+      serviceAccountName: runr-api
+      automountServiceAccountToken: false
+      {{- include "runr.imagePullSecrets" . | nindent 6 }}
+      {{- include "runr.storage-init" . | nindent 6 }}
+      {{- include "runr.pod-colocation" . | nindent 6 }}
+      containers:
+        - name: reverb
+          image: "{{ .Values.api.image.repository }}:{{ .Values.api.image.tag }}"
+          imagePullPolicy: {{ .Values.api.image.pullPolicy }}
+          ports:
+            - containerPort: {{ .Values.reverb.port }}
+          {{- include "runr.envFrom" . | nindent 10 }}
+          env:
+            - name: CONTAINER_ROLE
+              value: "reverb"
+            {{- include "runr.secret-env" . | nindent 12 }}
+          resources:
+            {{- toYaml .Values.reverb.resources | nindent 12 }}
+          volumeMounts:
+            - name: api-storage
+              mountPath: /var/www/html/storage
+          readinessProbe:
+            tcpSocket:
+              port: {{ .Values.reverb.port }}
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket:
+              port: {{ .Values.reverb.port }}
+            initialDelaySeconds: 10
+            periodSeconds: 30
+      volumes:
+        - name: api-storage
+          persistentVolumeClaim:
+            claimName: runr-api-storage
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: runr-reverb
+  namespace: {{ include "runr.namespace" . }}
+  labels:
+    app: runr-reverb
+    {{- include "runr.labels" . | nindent 4 }}
+spec:
+  selector:
+    app: runr-reverb
+  ports:
+    - port: {{ .Values.reverb.port }}
+      targetPort: {{ .Values.reverb.port }}

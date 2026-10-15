@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: runr-api-storage
+  namespace: {{ include "runr.namespace" . }}
+  labels:
+    app: runr-api
+    {{- include "runr.labels" . | nindent 4 }}
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: {{ include "runr.apiStorageSize" . }}
+  {{- if .Values.api.storage.storageClassName }}
+  storageClassName: {{ .Values.api.storage.storageClassName }}
+  {{- end }}

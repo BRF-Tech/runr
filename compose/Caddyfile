@@ -1,0 +1,70 @@
+:80 {
+    # MCP responses may be SSE streams: never compressed (encode would buffer them)
+    @compressible not path /mcp /mcp/* /oauth2/* /.well-known/oauth-*
+    encode @compressible zstd gzip
+
+    # WebSocket → reverb (the /ws prefix is stripped)
+    handle /ws/* {
+        uri strip_prefix /ws
+        reverse_proxy reverb:8080
+    }
+
+    # AI agents (docs/mcp.md): RunR MCP server, hosted MCP servers (/mcp/servers/*), the OAuth
+    # authorization server and its metadata — streamed through (SSE)
+    @mcp path /mcp /mcp/* /oauth2/* /.well-known/oauth-*
+    handle @mcp {
+        reverse_proxy api:80 {
+            header_up X-Forwarded-Proto {scheme}
+            header_up X-Real-IP {remote_host}
+            flush_interval -1
+        }
+    }
+
+    # API
+    handle /api/* {
+        reverse_proxy api:80 {
+            header_up X-Forwarded-Proto {scheme}
+            header_up X-Real-IP {remote_host}
+        }
+    }
+
+    # OAuth callback (web route on API)
+    handle /oauth/* {
+        reverse_proxy api:80 {
+            header_up X-Forwarded-Proto {scheme}
+            header_up X-Real-IP {remote_host}
+        }
+    }
+
+    # Project git remotes (smart HTTP, served by the API; responses streamed)
+    handle /git/* {
+        reverse_proxy api:80 {
+            header_up X-Forwarded-Proto {scheme}
+            header_up X-Real-IP {remote_host}
+            flush_interval -1
+        }
+    }
+
+    # Storage (Laravel public disk)
+    handle /storage/* {
+        reverse_proxy api:80
+    }
+
+    # SPA static files (catch-all)
+    handle {
+        root * /srv
+
+        @assets {
+            path *.js *.css *.woff *.woff2 *.svg *.png *.jpg *.ico *.webp *.ttf *.eot
+        }
+        header @assets Cache-Control "public, max-age=31536000, immutable"
+
+        @index {
+            path /index.html
+        }
+        header @index Cache-Control "no-store, no-cache, must-revalidate"
+
+        try_files {path} /index.html
+        file_server
+    }
+}

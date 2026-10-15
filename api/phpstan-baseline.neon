@@ -1,0 +1,4879 @@
+parameters:
+	ignoreErrors:
+		-
+			message: '#^Called ''env'' outside of the config directory which returns null when the config is cached, use ''config''\.$#'
+			identifier: larastan.noEnvCallsOutsideOfConfig
+			count: 2
+			path: Modules/AuthProvider/Config/config.php
+
+		-
+			message: '#^Property Modules\\AuthProvider\\Console\\AuthProviderE2eCommand\:\:\$socialAccountId \(string\|null\) does not accept int\.$#'
+			identifier: assign.propertyType
+			count: 1
+			path: Modules/AuthProvider/app/Console/AuthProviderE2eCommand.php
+
+		-
+			message: '#^Expression on left side of \?\? is not nullable\.$#'
+			identifier: nullCoalesce.expr
+			count: 1
+			path: Modules/AuthProvider/app/Console/Concerns/AuthProviderE2eSocialTrait.php
+
+		-
+			message: '#^Access to an undefined property Modules\\AuthProvider\\Models\\AuthProvider\:\:\$is_enabled\.$#'
+			identifier: property.notFound
+			count: 1
+			path: Modules/AuthProvider/app/Controllers/AuthProviderController.php
+
+		-
+			message: '#^Parameter \#1 \$boolean of function abort_unless expects bool, Modules\\AuthProvider\\Models\\AuthProvider\|null given\.$#'
+			identifier: argument.type
+			count: 1
+			path: Modules/AuthProvider/app/Controllers/SamlController.php
+
+		-
+			message: '#^Access to an undefined property Modules\\AuthProvider\\Models\\SocialAccount\:\:\$user_id\.$#'
+			identifier: property.notFound
+			count: 1
+			path: Modules/AuthProvider/app/Controllers/SocialAccountController.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$driver\.$#'
+			identifier: property.notFound
+			count: 1
+			path: Modules/AuthProvider/app/Controllers/SsoGroupMappingController.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$id\.$#'
+			identifier: property.notFound
+			count: 2
+			path: Modules/AuthProvider/app/Controllers/SsoGroupMappingController.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$name\.$#'
+			identifier: property.notFound
+			count: 2
+			path: Modules/AuthProvider/app/Controllers/SsoGroupMappingController.php
+
+		-
+			message: '#^Access to an undefined property Modules\\AuthProvider\\Models\\AuthProvider\:\:\$driver\.$#'
+			identifier: property.notFound
+			count: 1
+			path: Modules/AuthProvider/app/Models/AuthProvider.php
+
+		-
+			message: '#^Access to an undefined property Modules\\AuthProvider\\Models\\AuthProvider\:\:\$auto_register\.$#'
+			identifier: property.notFound
+			count: 1
+			path: Modules/AuthProvider/app/Services/OAuthService.php
+
+		-
+			message: '#^Access to an undefined property Modules\\AuthProvider\\Models\\AuthProvider\:\:\$default_role\.$#'
+			identifier: property.notFound
+			count: 1
+			path: Modules/AuthProvider/app/Services/OAuthService.php
+
+		-
+			message: '#^Access to an undefined property Modules\\AuthProvider\\Models\\AuthProvider\:\:\$scopes\.$#'
+			identifier: property.notFound
+			count: 1
+			path: Modules/AuthProvider/app/Services/OAuthService.php
+
+		-
+			message: '#^Access to an undefined property Modules\\AuthProvider\\Models\\SocialAccount\:\:\$access_token\.$#'
+			identifier: property.notFound
+			count: 1
+			path: Modules/AuthProvider/app/Services/OAuthService.php
+
+		-
+			message: '#^Access to an undefined property Modules\\AuthProvider\\Models\\SocialAccount\:\:\$avatar_url\.$#'
+			identifier: property.notFound
+			count: 1
+			path: Modules/AuthProvider/app/Services/OAuthService.php
+
+		-
+			message: '#^Access to an undefined property Modules\\AuthProvider\\Models\\SocialAccount\:\:\$email\.$#'
+			identifier: property.notFound
+			count: 1
+			path: Modules/AuthProvider/app/Services/OAuthService.php
+
+		-
+			message: '#^Access to an undefined property Modules\\AuthProvider\\Models\\SocialAccount\:\:\$name\.$#'
+			identifier: property.notFound
+			count: 1
+			path: Modules/AuthProvider/app/Services/OAuthService.php
+
+		-
+			message: '#^Access to an undefined property Modules\\AuthProvider\\Models\\SocialAccount\:\:\$refresh_token\.$#'
+			identifier: property.notFound
+			count: 1
+			path: Modules/AuthProvider/app/Services/OAuthService.php
+
+		-
+			message: '#^Access to an undefined property Modules\\AuthProvider\\Models\\SocialAccount\:\:\$token_expires_at\.$#'
+			identifier: property.notFound
+			count: 1
+			path: Modules/AuthProvider/app/Services/OAuthService.php
+
+		-
+			message: '#^Call to an undefined method Laravel\\Socialite\\Contracts\\Provider\:\:scopes\(\)\.$#'
+			identifier: method.notFound
+			count: 1
+			path: Modules/AuthProvider/app/Services/OAuthService.php
+
+		-
+			message: '#^Call to an undefined method Laravel\\Socialite\\Contracts\\Provider\:\:stateless\(\)\.$#'
+			identifier: method.notFound
+			count: 2
+			path: Modules/AuthProvider/app/Services/OAuthService.php
+
+		-
+			message: '#^Call to method create\(\) on an unknown class App\\Models\\TenantAwareUser\.$#'
+			identifier: class.notFound
+			count: 1
+			path: Modules/AuthProvider/app/Services/OAuthService.php
+
+		-
+			message: '#^Call to method where\(\) on an unknown class App\\Models\\TenantAwareUser\.$#'
+			identifier: class.notFound
+			count: 1
+			path: Modules/AuthProvider/app/Services/OAuthService.php
+
+		-
+			message: '#^Parameter \#2 \$user of method Modules\\AuthProvider\\Services\\OAuthService\:\:signIn\(\) expects App\\Models\\User, Illuminate\\Database\\Eloquent\\Model\|null given\.$#'
+			identifier: argument.type
+			count: 1
+			path: Modules/AuthProvider/app/Services/OAuthService.php
+
+		-
+			message: '#^Access to an undefined property Modules\\AuthProvider\\Models\\AuthProvider\:\:\$client_id\.$#'
+			identifier: property.notFound
+			count: 1
+			path: Modules/AuthProvider/app/Services/ProviderConfigService.php
+
+		-
+			message: '#^Access to an undefined property Modules\\AuthProvider\\Models\\AuthProvider\:\:\$client_secret\.$#'
+			identifier: property.notFound
+			count: 1
+			path: Modules/AuthProvider/app/Services/ProviderConfigService.php
+
+		-
+			message: '#^Access to an undefined property Modules\\AuthProvider\\Models\\AuthProvider\:\:\$gitlab_instance_uri\.$#'
+			identifier: property.notFound
+			count: 1
+			path: Modules/AuthProvider/app/Services/ProviderConfigService.php
+
+		-
+			message: '#^Access to an undefined property Modules\\AuthProvider\\Models\\AuthProvider\:\:\$google_hosted_domain\.$#'
+			identifier: property.notFound
+			count: 1
+			path: Modules/AuthProvider/app/Services/ProviderConfigService.php
+
+		-
+			message: '#^Access to an undefined property Modules\\AuthProvider\\Models\\AuthProvider\:\:\$oidc_discovery_url\.$#'
+			identifier: property.notFound
+			count: 1
+			path: Modules/AuthProvider/app/Services/ProviderConfigService.php
+
+		-
+			message: '#^Access to an undefined property Modules\\AuthProvider\\Models\\AuthProvider\:\:\$oidc_issuer\.$#'
+			identifier: property.notFound
+			count: 1
+			path: Modules/AuthProvider/app/Services/ProviderConfigService.php
+
+		-
+			message: '#^Access to an undefined property Modules\\AuthProvider\\Models\\AuthProvider\:\:\$scopes\.$#'
+			identifier: property.notFound
+			count: 1
+			path: Modules/AuthProvider/app/Services/ProviderConfigService.php
+
+		-
+			message: '#^Access to an undefined property Modules\\AuthProvider\\Models\\AuthProvider\:\:\$saml_sign_requests\.$#'
+			identifier: property.notFound
+			count: 1
+			path: Modules/AuthProvider/app/Services/Saml/SamlConfigValidator.php
+
+		-
+			message: '#^Access to an undefined property Modules\\AuthProvider\\Models\\AuthProvider\:\:\$saml_sp_private_key\.$#'
+			identifier: property.notFound
+			count: 1
+			path: Modules/AuthProvider/app/Services/Saml/SamlConfigValidator.php
+
+		-
+			message: '#^Access to an undefined property Modules\\AuthProvider\\Models\\AuthProvider\:\:\$saml_sp_x509_cert\.$#'
+			identifier: property.notFound
+			count: 1
+			path: Modules/AuthProvider/app/Services/Saml/SamlConfigValidator.php
+
+		-
+			message: '#^Using nullsafe property access "\?\-\>saml_sign_requests" on left side of \?\? is unnecessary\. Use \-\> instead\.$#'
+			identifier: nullsafe.neverNull
+			count: 1
+			path: Modules/AuthProvider/app/Services/Saml/SamlConfigValidator.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\|Stancl\\Tenancy\\Contracts\\Tenant\:\:\$slug\.$#'
+			identifier: property.notFound
+			count: 1
+			path: Modules/AuthProvider/app/Services/Saml/SamlService.php
+
+		-
+			message: '#^Access to an undefined property Modules\\AuthProvider\\Models\\AuthProvider\:\:\$saml_email_attribute\.$#'
+			identifier: property.notFound
+			count: 1
+			path: Modules/AuthProvider/app/Services/Saml/SamlService.php
+
+		-
+			message: '#^Access to an undefined property Modules\\AuthProvider\\Models\\AuthProvider\:\:\$saml_idp_entity_id\.$#'
+			identifier: property.notFound
+			count: 1
+			path: Modules/AuthProvider/app/Services/Saml/SamlService.php
+
+		-
+			message: '#^Access to an undefined property Modules\\AuthProvider\\Models\\AuthProvider\:\:\$saml_idp_sso_url\.$#'
+			identifier: property.notFound
+			count: 1
+			path: Modules/AuthProvider/app/Services/Saml/SamlService.php
+
+		-
+			message: '#^Access to an undefined property Modules\\AuthProvider\\Models\\AuthProvider\:\:\$saml_idp_x509_cert\.$#'
+			identifier: property.notFound
+			count: 1
+			path: Modules/AuthProvider/app/Services/Saml/SamlService.php
+
+		-
+			message: '#^Access to an undefined property Modules\\AuthProvider\\Models\\AuthProvider\:\:\$saml_name_attribute\.$#'
+			identifier: property.notFound
+			count: 1
+			path: Modules/AuthProvider/app/Services/Saml/SamlService.php
+
+		-
+			message: '#^Access to an undefined property Modules\\AuthProvider\\Models\\AuthProvider\:\:\$saml_sign_requests\.$#'
+			identifier: property.notFound
+			count: 1
+			path: Modules/AuthProvider/app/Services/Saml/SamlService.php
+
+		-
+			message: '#^Access to an undefined property Modules\\AuthProvider\\Models\\AuthProvider\:\:\$saml_sp_private_key\.$#'
+			identifier: property.notFound
+			count: 1
+			path: Modules/AuthProvider/app/Services/Saml/SamlService.php
+
+		-
+			message: '#^Access to an undefined property Modules\\AuthProvider\\Models\\AuthProvider\:\:\$saml_sp_x509_cert\.$#'
+			identifier: property.notFound
+			count: 1
+			path: Modules/AuthProvider/app/Services/Saml/SamlService.php
+
+		-
+			message: '#^Using nullsafe property access on non\-nullable type DOMDocument\. Use \-\> instead\.$#'
+			identifier: nullsafe.neverNull
+			count: 1
+			path: Modules/AuthProvider/app/Services/Saml/SamlService.php
+
+		-
+			message: '#^Access to an undefined property Modules\\AuthProvider\\Models\\AuthProvider\:\:\$default_role\.$#'
+			identifier: property.notFound
+			count: 2
+			path: Modules/AuthProvider/app/Services/SsoGroupSync.php
+
+		-
+			message: '#^Access to an undefined property Modules\\AuthProvider\\Models\\AuthProvider\:\:\$groups_attribute\.$#'
+			identifier: property.notFound
+			count: 1
+			path: Modules/AuthProvider/app/Services/SsoGroupSync.php
+
+		-
+			message: '#^Called ''env'' outside of the config directory which returns null when the config is cached, use ''config''\.$#'
+			identifier: larastan.noEnvCallsOutsideOfConfig
+			count: 36
+			path: Modules/Tenancy/Config/config.php
+
+		-
+			message: '#^Access to an undefined property App\\Models\\User\:\:\$is_admin\.$#'
+			identifier: property.notFound
+			count: 1
+			path: Modules/Tenancy/Database/Seeders/TenancySeeder.php
+
+		-
+			message: '#^Access to an undefined property App\\Models\\User\:\:\$is_admin\.$#'
+			identifier: property.notFound
+			count: 3
+			path: Modules/Tenancy/app/Console/TenancyE2eCommand.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$slug\.$#'
+			identifier: property.notFound
+			count: 1
+			path: Modules/Tenancy/app/Console/TenancySetupCommand.php
+
+		-
+			message: '#^Call to an undefined method Illuminate\\Database\\Eloquent\\Model\:\:run\(\)\.$#'
+			identifier: method.notFound
+			count: 1
+			path: Modules/Tenancy/app/Console/TenancySetupCommand.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$name\.$#'
+			identifier: property.notFound
+			count: 2
+			path: Modules/Tenancy/app/Http/Controllers/InvitationController.php
+
+		-
+			message: '#^Access to an undefined property Modules\\Tenancy\\Models\\TenantInvitation\:\:\$email\.$#'
+			identifier: property.notFound
+			count: 5
+			path: Modules/Tenancy/app/Http/Controllers/InvitationController.php
+
+		-
+			message: '#^Access to an undefined property Modules\\Tenancy\\Models\\TenantInvitation\:\:\$role\.$#'
+			identifier: property.notFound
+			count: 2
+			path: Modules/Tenancy/app/Http/Controllers/InvitationController.php
+
+		-
+			message: '#^Access to an undefined property Modules\\Tenancy\\Models\\TenantInvitation\:\:\$tenant_id\.$#'
+			identifier: property.notFound
+			count: 2
+			path: Modules/Tenancy/app/Http/Controllers/InvitationController.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$id\.$#'
+			identifier: property.notFound
+			count: 1
+			path: Modules/Tenancy/app/Http/Controllers/TenancyAdminSupportTicketController.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$is_internal\.$#'
+			identifier: property.notFound
+			count: 1
+			path: Modules/Tenancy/app/Http/Controllers/TenancyAdminSupportTicketController.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$name\.$#'
+			identifier: property.notFound
+			count: 1
+			path: Modules/Tenancy/app/Http/Controllers/TenancyAdminSupportTicketController.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$slug\.$#'
+			identifier: property.notFound
+			count: 1
+			path: Modules/Tenancy/app/Http/Controllers/TenancyAdminSupportTicketController.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$user_id\.$#'
+			identifier: property.notFound
+			count: 1
+			path: Modules/Tenancy/app/Http/Controllers/TenancyAdminSupportTicketController.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\|Stancl\\Tenancy\\Contracts\\Tenant\:\:\$id\.$#'
+			identifier: property.notFound
+			count: 1
+			path: Modules/Tenancy/app/Http/Controllers/TenancyAdminSupportTicketController.php
+
+		-
+			message: '#^Parameter \#1 \$array \(list\<non\-empty\-array\<mixed\>\>\) of array_values is already a list, call has no effect\.$#'
+			identifier: arrayValues.list
+			count: 1
+			path: Modules/Tenancy/app/Http/Controllers/TenancyAdminSupportTicketController.php
+
+		-
+			message: '#^Parameter \#1 \$array of function array_values contains unresolvable type\.$#'
+			identifier: argument.unresolvableType
+			count: 1
+			path: Modules/Tenancy/app/Http/Controllers/TenancyAdminSupportTicketController.php
+
+		-
+			message: '#^Parameter \#1 \$array of function usort contains unresolvable type\.$#'
+			identifier: argument.unresolvableType
+			count: 1
+			path: Modules/Tenancy/app/Http/Controllers/TenancyAdminSupportTicketController.php
+
+		-
+			message: '#^Parameter \#2 \$callback of function usort contains unresolvable type\.$#'
+			identifier: argument.unresolvableType
+			count: 1
+			path: Modules/Tenancy/app/Http/Controllers/TenancyAdminSupportTicketController.php
+
+		-
+			message: '#^Parameter \#2 \$reply of class Modules\\Ticket\\Events\\SupportTicketInternalNote constructor expects Modules\\Ticket\\Models\\SupportTicketReply, Illuminate\\Database\\Eloquent\\Model given\.$#'
+			identifier: argument.type
+			count: 1
+			path: Modules/Tenancy/app/Http/Controllers/TenancyAdminSupportTicketController.php
+
+		-
+			message: '#^Parameter \#2 \$reply of class Modules\\Ticket\\Events\\SupportTicketReplied constructor expects Modules\\Ticket\\Models\\SupportTicketReply, Illuminate\\Database\\Eloquent\\Model given\.$#'
+			identifier: argument.type
+			count: 1
+			path: Modules/Tenancy/app/Http/Controllers/TenancyAdminSupportTicketController.php
+
+		-
+			message: '#^Right side of && is always true\.$#'
+			identifier: booleanAnd.rightAlwaysTrue
+			count: 1
+			path: Modules/Tenancy/app/Http/Controllers/TenancyAdminSupportTicketController.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$email\.$#'
+			identifier: property.notFound
+			count: 1
+			path: Modules/Tenancy/app/Http/Controllers/TenancyApiTokenController.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$name\.$#'
+			identifier: property.notFound
+			count: 1
+			path: Modules/Tenancy/app/Http/Controllers/TenancyApiTokenController.php
+
+		-
+			message: '#^Parameter \#1 \$callback of method Illuminate\\Database\\Eloquent\\Collection\<int,Laravel\\Sanctum\\PersonalAccessToken\>\:\:map\(\) contains unresolvable type\.$#'
+			identifier: argument.unresolvableType
+			count: 1
+			path: Modules/Tenancy/app/Http/Controllers/TenancyApiTokenController.php
+
+		-
+			message: '#^Using nullsafe property access on non\-nullable type Laravel\\Sanctum\\PersonalAccessToken\. Use \-\> instead\.$#'
+			identifier: nullsafe.neverNull
+			count: 1
+			path: Modules/Tenancy/app/Http/Controllers/TenancyApiTokenController.php
+
+		-
+			message: '#^Access to an undefined property App\\Models\\User\|Illuminate\\Database\\Eloquent\\Collection\<int, App\\Models\\User\>\:\:\$is_admin\.$#'
+			identifier: property.notFound
+			count: 1
+			path: Modules/Tenancy/app/Http/Controllers/TenancyAuthController.php
+
+		-
+			message: '#^Parameter \#2 \$userId of job class Modules\\Tenancy\\Jobs\\SeedTenantDemoJob constructor expects string in Modules\\Tenancy\\Jobs\\SeedTenantDemoJob\:\:dispatch\(\), int\<0, max\> given\.$#'
+			identifier: argument.type
+			count: 1
+			path: Modules/Tenancy/app/Http/Controllers/TenancyDemoController.php
+
+		-
+			message: '#^Access to an undefined property App\\Models\\User\:\:\$is_admin\.$#'
+			identifier: property.notFound
+			count: 1
+			path: Modules/Tenancy/app/Http/Controllers/TenancyNotificationController.php
+
+		-
+			message: '#^Call to method whereNull\(\) on an unknown class App\\Models\\TenantAwareKnativeRegion\.$#'
+			identifier: class.notFound
+			count: 1
+			path: Modules/Tenancy/app/Http/Controllers/TenancySettingsController.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$user_id\.$#'
+			identifier: property.notFound
+			count: 2
+			path: Modules/Tenancy/app/Http/Controllers/TenancySupportTicketController.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\|Stancl\\Tenancy\\Contracts\\Tenant\:\:\$id\.$#'
+			identifier: property.notFound
+			count: 2
+			path: Modules/Tenancy/app/Http/Controllers/TenancySupportTicketController.php
+
+		-
+			message: '#^Parameter \#2 \$reply of class Modules\\Ticket\\Events\\SupportTicketReplied constructor expects Modules\\Ticket\\Models\\SupportTicketReply, Illuminate\\Database\\Eloquent\\Model given\.$#'
+			identifier: argument.type
+			count: 1
+			path: Modules/Tenancy/app/Http/Controllers/TenancySupportTicketController.php
+
+		-
+			message: '#^Access to an undefined property App\\Models\\User\:\:\$is_admin\.$#'
+			identifier: property.notFound
+			count: 5
+			path: Modules/Tenancy/app/Http/Controllers/TenancyUserController.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$id\.$#'
+			identifier: property.notFound
+			count: 1
+			path: Modules/Tenancy/app/Http/Controllers/TenancyUserController.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$name\.$#'
+			identifier: property.notFound
+			count: 1
+			path: Modules/Tenancy/app/Http/Controllers/TenancyUserController.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$pivot\.$#'
+			identifier: property.notFound
+			count: 1
+			path: Modules/Tenancy/app/Http/Controllers/TenancyUserController.php
+
+		-
+			message: '#^Access to an undefined property Modules\\Tenancy\\Models\\TenantInvitation\:\:\$email\.$#'
+			identifier: property.notFound
+			count: 1
+			path: Modules/Tenancy/app/Http/Controllers/TenancyUserController.php
+
+		-
+			message: '#^Access to an undefined property Modules\\Tenancy\\Models\\TenantInvitation\:\:\$expires_at\.$#'
+			identifier: property.notFound
+			count: 1
+			path: Modules/Tenancy/app/Http/Controllers/TenancyUserController.php
+
+		-
+			message: '#^Access to an undefined property Modules\\Tenancy\\Models\\TenantInvitation\:\:\$role\.$#'
+			identifier: property.notFound
+			count: 1
+			path: Modules/Tenancy/app/Http/Controllers/TenancyUserController.php
+
+		-
+			message: '#^Cannot call method toISOString\(\) on string\.$#'
+			identifier: method.nonObject
+			count: 1
+			path: Modules/Tenancy/app/Http/Controllers/TenancyUserController.php
+
+		-
+			message: '#^Parameter \#1 \$callback of method Illuminate\\Database\\Eloquent\\Collection\<\(int\|string\),Illuminate\\Database\\Eloquent\\Model\>\:\:map\(\) contains unresolvable type\.$#'
+			identifier: argument.unresolvableType
+			count: 1
+			path: Modules/Tenancy/app/Http/Controllers/TenancyUserController.php
+
+		-
+			message: '#^Parameter \#1 \$callback of method Illuminate\\Database\\Eloquent\\Collection\<int,App\\Models\\User\>\:\:map\(\) contains unresolvable type\.$#'
+			identifier: argument.unresolvableType
+			count: 1
+			path: Modules/Tenancy/app/Http/Controllers/TenancyUserController.php
+
+		-
+			message: '#^Parameter \#1 \$callback of method Illuminate\\Database\\Eloquent\\Collection\<int,Modules\\Tenancy\\Models\\TenantInvitation\>\:\:map\(\) contains unresolvable type\.$#'
+			identifier: argument.unresolvableType
+			count: 1
+			path: Modules/Tenancy/app/Http/Controllers/TenancyUserController.php
+
+		-
+			message: '#^Access to an undefined property App\\Models\\User\:\:\$is_admin\.$#'
+			identifier: property.notFound
+			count: 3
+			path: Modules/Tenancy/app/Http/Controllers/TenantController.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$id\.$#'
+			identifier: property.notFound
+			count: 2
+			path: Modules/Tenancy/app/Http/Controllers/TenantController.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$name\.$#'
+			identifier: property.notFound
+			count: 1
+			path: Modules/Tenancy/app/Http/Controllers/TenantController.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$regions_count\.$#'
+			identifier: property.notFound
+			count: 1
+			path: Modules/Tenancy/app/Http/Controllers/TenantController.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$slug\.$#'
+			identifier: property.notFound
+			count: 1
+			path: Modules/Tenancy/app/Http/Controllers/TenantController.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$users_count\.$#'
+			identifier: property.notFound
+			count: 1
+			path: Modules/Tenancy/app/Http/Controllers/TenantController.php
+
+		-
+			message: '#^Access to an undefined property Modules\\Tenancy\\Models\\Tenant\:\:\$regions\.$#'
+			identifier: property.notFound
+			count: 1
+			path: Modules/Tenancy/app/Http/Controllers/TenantController.php
+
+		-
+			message: '#^Access to an undefined property Modules\\Tenancy\\Models\\Tenant\:\:\$status\.$#'
+			identifier: property.notFound
+			count: 1
+			path: Modules/Tenancy/app/Http/Controllers/TenantController.php
+
+		-
+			message: '#^Parameter \#1 \$callback of method Illuminate\\Database\\Eloquent\\Collection\<\(int\|string\),Illuminate\\Database\\Eloquent\\Model\>\:\:map\(\) contains unresolvable type\.$#'
+			identifier: argument.unresolvableType
+			count: 2
+			path: Modules/Tenancy/app/Http/Controllers/TenantController.php
+
+		-
+			message: '#^Parameter \#3 \$initiatorId of job class Modules\\Tenancy\\Jobs\\DeleteTenantJob constructor expects string\|null in Modules\\Tenancy\\Jobs\\DeleteTenantJob\:\:dispatch\(\), int\<0, max\>\|null given\.$#'
+			identifier: argument.type
+			count: 1
+			path: Modules/Tenancy/app/Http/Controllers/TenantController.php
+
+		-
+			message: '#^Relation ''regions'' is not found in Modules\\Tenancy\\Models\\Tenant model\.$#'
+			identifier: larastan.relationExistence
+			count: 2
+			path: Modules/Tenancy/app/Http/Controllers/TenantController.php
+
+		-
+			message: '#^Relation ''users'' is not found in Modules\\Tenancy\\Models\\Tenant model\.$#'
+			identifier: larastan.relationExistence
+			count: 3
+			path: Modules/Tenancy/app/Http/Controllers/TenantController.php
+
+		-
+			message: '#^Using nullsafe method call on non\-nullable type Carbon\\Carbon\. Use \-\> instead\.$#'
+			identifier: nullsafe.neverNull
+			count: 1
+			path: Modules/Tenancy/app/Http/Controllers/TenantController.php
+
+		-
+			message: '#^Access to an undefined property App\\Models\\User\:\:\$is_admin\.$#'
+			identifier: property.notFound
+			count: 1
+			path: Modules/Tenancy/app/Http/Controllers/TenantUserController.php
+
+		-
+			message: '#^Access to an undefined property Modules\\Tenancy\\Models\\TenantInvitation\:\:\$email\.$#'
+			identifier: property.notFound
+			count: 2
+			path: Modules/Tenancy/app/Http/Controllers/TenantUserController.php
+
+		-
+			message: '#^Access to an undefined property Modules\\Tenancy\\Models\\TenantInvitation\:\:\$expires_at\.$#'
+			identifier: property.notFound
+			count: 1
+			path: Modules/Tenancy/app/Http/Controllers/TenantUserController.php
+
+		-
+			message: '#^Access to an undefined property Modules\\Tenancy\\Models\\TenantInvitation\:\:\$role\.$#'
+			identifier: property.notFound
+			count: 1
+			path: Modules/Tenancy/app/Http/Controllers/TenantUserController.php
+
+		-
+			message: '#^Access to an undefined property Modules\\Tenancy\\Models\\TenantUser\:\:\$role\.$#'
+			identifier: property.notFound
+			count: 1
+			path: Modules/Tenancy/app/Http/Controllers/TenantUserController.php
+
+		-
+			message: '#^Access to an undefined property Modules\\Tenancy\\Models\\TenantUser\:\:\$user_id\.$#'
+			identifier: property.notFound
+			count: 3
+			path: Modules/Tenancy/app/Http/Controllers/TenantUserController.php
+
+		-
+			message: '#^Parameter \#1 \$callback of method Illuminate\\Database\\Eloquent\\Collection\<int,Modules\\Tenancy\\Models\\TenantInvitation\>\:\:map\(\) contains unresolvable type\.$#'
+			identifier: argument.unresolvableType
+			count: 1
+			path: Modules/Tenancy/app/Http/Controllers/TenantUserController.php
+
+		-
+			message: '#^Access to an undefined property App\\Models\\User\:\:\$is_admin\.$#'
+			identifier: property.notFound
+			count: 1
+			path: Modules/Tenancy/app/Http/Middleware/CheckTenantQuota.php
+
+		-
+			message: '#^Access to an undefined property App\\Models\\User\:\:\$is_admin\.$#'
+			identifier: property.notFound
+			count: 1
+			path: Modules/Tenancy/app/Http/Middleware/EnforcePlanLimits.php
+
+		-
+			message: '#^Access to an undefined property App\\Models\\User\:\:\$is_admin\.$#'
+			identifier: property.notFound
+			count: 1
+			path: Modules/Tenancy/app/Http/Middleware/EnsureTenantRegionMutable.php
+
+		-
+			message: '#^Access to an undefined property App\\Models\\User\:\:\$is_admin\.$#'
+			identifier: property.notFound
+			count: 1
+			path: Modules/Tenancy/app/Http/Middleware/IdentifyTenant.php
+
+		-
+			message: '#^Access to an undefined property Laravel\\Sanctum\\PersonalAccessToken\:\:\$tenant_id\.$#'
+			identifier: property.notFound
+			count: 1
+			path: Modules/Tenancy/app/Http/Middleware/IdentifyTenant.php
+
+		-
+			message: '#^Access to an undefined property Modules\\Tenancy\\Models\\TenantUser\:\:\$tenant_id\.$#'
+			identifier: property.notFound
+			count: 1
+			path: Modules/Tenancy/app/Http/Middleware/IdentifyTenant.php
+
+		-
+			message: '#^Access to an undefined property App\\Models\\User\:\:\$is_admin\.$#'
+			identifier: property.notFound
+			count: 1
+			path: Modules/Tenancy/app/Http/Middleware/RequireAdmin.php
+
+		-
+			message: '#^Access to an undefined property Modules\\Tenancy\\Models\\Tenant\:\:\$slug\.$#'
+			identifier: property.notFound
+			count: 5
+			path: Modules/Tenancy/app/Jobs/DeleteTenantJob.php
+
+		-
+			message: '#^Access to an undefined property Modules\\Tenancy\\Models\\Tenant\:\:\$slug\.$#'
+			identifier: property.notFound
+			count: 3
+			path: Modules/Tenancy/app/Jobs/DetachRegionCleanupJob.php
+
+		-
+			message: '#^Access to an undefined property Modules\\Tenancy\\Models\\Tenant\:\:\$slug\.$#'
+			identifier: property.notFound
+			count: 3
+			path: Modules/Tenancy/app/Jobs/RemoveTenantDemoJob.php
+
+		-
+			message: '#^Using nullsafe method call on non\-nullable type Illuminate\\Database\\Eloquent\\Relations\\HasOne\. Use \-\> instead\.$#'
+			identifier: nullsafe.neverNull
+			count: 3
+			path: Modules/Tenancy/app/Jobs/RemoveTenantDemoJob.php
+
+		-
+			message: '#^Access to an undefined property Modules\\Tenancy\\Models\\Tenant\:\:\$slug\.$#'
+			identifier: property.notFound
+			count: 6
+			path: Modules/Tenancy/app/Jobs/SeedTenantDemoJob.php
+
+		-
+			message: '#^Match expression does not handle remaining value\: string$#'
+			identifier: match.unhandled
+			count: 1
+			path: Modules/Tenancy/app/Jobs/SeedTenantDemoJob.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$slug\.$#'
+			identifier: property.notFound
+			count: 1
+			path: Modules/Tenancy/app/Jobs/UsageAggregationJob.php
+
+		-
+			message: '#^Parameter \#1 \$tenant of method Modules\\Tenancy\\Jobs\\UsageAggregationJob\:\:aggregateForTenant\(\) expects Modules\\Tenancy\\Models\\Tenant, Illuminate\\Database\\Eloquent\\Model given\.$#'
+			identifier: argument.type
+			count: 1
+			path: Modules/Tenancy/app/Jobs/UsageAggregationJob.php
+
+		-
+			message: '#^Using nullsafe property access "\?\-\>count" on left side of \?\? is unnecessary\. Use \-\> instead\.$#'
+			identifier: nullsafe.neverNull
+			count: 2
+			path: Modules/Tenancy/app/Jobs/UsageAggregationJob.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$name\.$#'
+			identifier: property.notFound
+			count: 1
+			path: Modules/Tenancy/app/Mail/TenantInvitationMail.php
+
+		-
+			message: '#^Parameter \$markdown of class Illuminate\\Mail\\Mailables\\Content constructor expects view\-string\|null, string given\.$#'
+			identifier: argument.type
+			count: 1
+			path: Modules/Tenancy/app/Mail/TenantInvitationMail.php
+
+		-
+			message: '#^Access to an undefined property Modules\\Tenancy\\Models\\CapacityDeal\:\:\$end_date\.$#'
+			identifier: property.notFound
+			count: 1
+			path: Modules/Tenancy/app/Models/CapacityDeal.php
+
+		-
+			message: '#^Constant Modules\\Tenancy\\Models\\CentralSyncableUser\:\:EXCLUDED_FROM_SYNC is unused\.$#'
+			identifier: classConstant.unused
+			count: 1
+			path: Modules/Tenancy/app/Models/CentralSyncableUser.php
+
+		-
+			message: '#^Access to an undefined property Modules\\Tenancy\\Models\\CostConfig\:\:\$currency\.$#'
+			identifier: property.notFound
+			count: 1
+			path: Modules/Tenancy/app/Models/CostConfig.php
+
+		-
+			message: '#^Access to an undefined property Modules\\Tenancy\\Models\\CostConfig\:\:\$kv_price_per_gb_hour\.$#'
+			identifier: property.notFound
+			count: 1
+			path: Modules/Tenancy/app/Models/CostConfig.php
+
+		-
+			message: '#^Access to an undefined property Modules\\Tenancy\\Models\\CostConfig\:\:\$multiplier_http\.$#'
+			identifier: property.notFound
+			count: 1
+			path: Modules/Tenancy/app/Models/CostConfig.php
+
+		-
+			message: '#^Access to an undefined property Modules\\Tenancy\\Models\\CostConfig\:\:\$multiplier_queue\.$#'
+			identifier: property.notFound
+			count: 1
+			path: Modules/Tenancy/app/Models/CostConfig.php
+
+		-
+			message: '#^Access to an undefined property Modules\\Tenancy\\Models\\CostConfig\:\:\$multiplier_schedule\.$#'
+			identifier: property.notFound
+			count: 1
+			path: Modules/Tenancy/app/Models/CostConfig.php
+
+		-
+			message: '#^Access to an undefined property Modules\\Tenancy\\Models\\CostConfig\:\:\$object_price_per_gb_hour\.$#'
+			identifier: property.notFound
+			count: 1
+			path: Modules/Tenancy/app/Models/CostConfig.php
+
+		-
+			message: '#^Access to an undefined property Modules\\Tenancy\\Models\\CostConfig\:\:\$postgres_price_per_gb_hour\.$#'
+			identifier: property.notFound
+			count: 1
+			path: Modules/Tenancy/app/Models/CostConfig.php
+
+		-
+			message: '#^Unsafe usage of new static\(\)\.$#'
+			identifier: new.static
+			count: 1
+			path: Modules/Tenancy/app/Models/CostConfig.php
+
+		-
+			message: '#^Access to an undefined property Modules\\Tenancy\\Models\\Plan\:\:\$created_at\.$#'
+			identifier: property.notFound
+			count: 1
+			path: Modules/Tenancy/app/Models/Plan.php
+
+		-
+			message: '#^Access to an undefined property Modules\\Tenancy\\Models\\Plan\:\:\$updated_at\.$#'
+			identifier: property.notFound
+			count: 1
+			path: Modules/Tenancy/app/Models/Plan.php
+
+		-
+			message: '#^Access to an undefined property Modules\\Tenancy\\Models\\TenantInvitation\:\:\$accepted_at\.$#'
+			identifier: property.notFound
+			count: 2
+			path: Modules/Tenancy/app/Models/TenantInvitation.php
+
+		-
+			message: '#^Access to an undefined property Modules\\Tenancy\\Models\\TenantInvitation\:\:\$expires_at\.$#'
+			identifier: property.notFound
+			count: 2
+			path: Modules/Tenancy/app/Models/TenantInvitation.php
+
+		-
+			message: '#^Access to an undefined property Modules\\Tenancy\\Models\\TenantUser\:\:\$tenant_id\.$#'
+			identifier: property.notFound
+			count: 2
+			path: Modules/Tenancy/app/Models/TenantUser.php
+
+		-
+			message: '#^Access to an undefined property Modules\\Tenancy\\Models\\TenantUser\:\:\$user_id\.$#'
+			identifier: property.notFound
+			count: 4
+			path: Modules/Tenancy/app/Models/TenantUser.php
+
+		-
+			message: '#^Access to an undefined property Modules\\Tenancy\\Models\\Tenant\:\:\$name\.$#'
+			identifier: property.notFound
+			count: 1
+			path: Modules/Tenancy/app/Providers/PlanServiceProvider.php
+
+		-
+			message: '#^Access to an undefined property Modules\\Tenancy\\Models\\Tenant\:\:\$slug\.$#'
+			identifier: property.notFound
+			count: 1
+			path: Modules/Tenancy/app/Providers/PlanServiceProvider.php
+
+		-
+			message: '#^Access to an undefined property App\\Models\\User\:\:\$is_admin\.$#'
+			identifier: property.notFound
+			count: 1
+			path: Modules/Tenancy/app/Providers/TenancyServiceProvider.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\|Stancl\\Tenancy\\Contracts\\Tenant\:\:\$id\.$#'
+			identifier: property.notFound
+			count: 1
+			path: Modules/Tenancy/app/Providers/TenancyServiceProvider.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\|Stancl\\Tenancy\\Contracts\\Tenant\:\:\$slug\.$#'
+			identifier: property.notFound
+			count: 4
+			path: Modules/Tenancy/app/Providers/TenancyServiceProvider.php
+
+		-
+			message: '#^PHPDoc tag @var with type Illuminate\\Database\\Eloquent\\Model is not subtype of native type class\-string\.$#'
+			identifier: varTag.nativeType
+			count: 1
+			path: Modules/Tenancy/app/Providers/TenancyServiceProvider.php
+
+		-
+			message: '#^Access to an undefined property Modules\\Tenancy\\Models\\CostConfig\:\:\$postgres_instance_price_per_hour\.$#'
+			identifier: property.notFound
+			count: 1
+			path: Modules/Tenancy/app/Services/Bindings/BindingUsagePricing.php
+
+		-
+			message: '#^Access to an undefined property Modules\\Tenancy\\Models\\CapacityDeal\:\:\$currency\.$#'
+			identifier: property.notFound
+			count: 1
+			path: Modules/Tenancy/app/Services/CapacityDealService.php
+
+		-
+			message: '#^Using nullsafe property access "\?\-\>currency" on left side of \?\? is unnecessary\. Use \-\> instead\.$#'
+			identifier: nullsafe.neverNull
+			count: 1
+			path: Modules/Tenancy/app/Services/CapacityDealService.php
+
+		-
+			message: '#^Access to an undefined property Modules\\Tenancy\\Models\\CostConfig\:\:\$cpu_price_per_mc_ms\.$#'
+			identifier: property.notFound
+			count: 2
+			path: Modules/Tenancy/app/Services/CostCalculationService.php
+
+		-
+			message: '#^Access to an undefined property Modules\\Tenancy\\Models\\CostConfig\:\:\$gpu_price_per_unit_ms\.$#'
+			identifier: property.notFound
+			count: 1
+			path: Modules/Tenancy/app/Services/CostCalculationService.php
+
+		-
+			message: '#^Access to an undefined property Modules\\Tenancy\\Models\\CostConfig\:\:\$memory_price_per_mib_ms\.$#'
+			identifier: property.notFound
+			count: 2
+			path: Modules/Tenancy/app/Services/CostCalculationService.php
+
+		-
+			message: '#^Access to an undefined property Modules\\Tenancy\\Models\\Tenant\:\:\$slug\.$#'
+			identifier: property.notFound
+			count: 1
+			path: Modules/Tenancy/app/Services/Plans/PlanLimitService.php
+
+		-
+			message: '#^Access to an undefined property Modules\\Tenancy\\Models\\Tenant\:\:\$slug\.$#'
+			identifier: property.notFound
+			count: 1
+			path: Modules/Tenancy/app/Services/Plans/PlanQuotaService.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$currency\.$#'
+			identifier: property.notFound
+			count: 1
+			path: Modules/Tenancy/app/Services/Plans/PlanService.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$name\.$#'
+			identifier: property.notFound
+			count: 1
+			path: Modules/Tenancy/app/Services/Plans/PlanService.php
+
+		-
+			message: '#^Call to an undefined method Illuminate\\Database\\Eloquent\\Model\:\:price\(\)\.$#'
+			identifier: method.notFound
+			count: 1
+			path: Modules/Tenancy/app/Services/Plans/PlanService.php
+
+		-
+			message: '#^Using nullsafe property access "\?\-\>id" on left side of \?\? is unnecessary\. Use \-\> instead\.$#'
+			identifier: nullsafe.neverNull
+			count: 1
+			path: Modules/Tenancy/app/Services/Plans/PlanService.php
+
+		-
+			message: '#^Using nullsafe property access "\?\-\>periodEnd" on left side of \?\? is unnecessary\. Use \-\> instead\.$#'
+			identifier: nullsafe.neverNull
+			count: 1
+			path: Modules/Tenancy/app/Services/Plans/PlanService.php
+
+		-
+			message: '#^Access to an undefined property Modules\\Tenancy\\Models\\Tenant\:\:\$regions\.$#'
+			identifier: property.notFound
+			count: 1
+			path: Modules/Tenancy/app/Services/Plans/RegionQuotaAllocator.php
+
+		-
+			message: '#^Access to an undefined property Modules\\Tenancy\\Models\\Tenant\:\:\$name\.$#'
+			identifier: property.notFound
+			count: 3
+			path: Modules/Tenancy/app/Services/Plans/SelfServiceOnboarding.php
+
+		-
+			message: '#^Access to an undefined property Modules\\Tenancy\\Models\\Tenant\:\:\$slug\.$#'
+			identifier: property.notFound
+			count: 3
+			path: Modules/Tenancy/app/Services/Plans/SelfServiceOnboarding.php
+
+		-
+			message: '#^Call to method where\(\) on an unknown class App\\Models\\TenantAwareKnativeRegion\.$#'
+			identifier: class.notFound
+			count: 1
+			path: Modules/Tenancy/app/Services/Plans/SelfServiceOnboarding.php
+
+		-
+			message: '#^Call to method whereNull\(\) on an unknown class App\\Models\\TenantAwareKnativeRegion\.$#'
+			identifier: class.notFound
+			count: 1
+			path: Modules/Tenancy/app/Services/Plans/SelfServiceOnboarding.php
+
+		-
+			message: '#^Using nullsafe property access "\?\-\>status" on left side of \?\? is unnecessary\. Use \-\> instead\.$#'
+			identifier: nullsafe.neverNull
+			count: 1
+			path: Modules/Tenancy/app/Services/Plans/SelfServiceOnboarding.php
+
+		-
+			message: '#^Access to an undefined property App\\Models\\User\:\:\$is_admin\.$#'
+			identifier: property.notFound
+			count: 1
+			path: Modules/Tenancy/app/Services/TenancyLoginService.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$id\.$#'
+			identifier: property.notFound
+			count: 2
+			path: Modules/Tenancy/app/Services/TenancyLoginService.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$name\.$#'
+			identifier: property.notFound
+			count: 1
+			path: Modules/Tenancy/app/Services/TenancyLoginService.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$slug\.$#'
+			identifier: property.notFound
+			count: 1
+			path: Modules/Tenancy/app/Services/TenancyLoginService.php
+
+		-
+			message: '#^Parameter \#1 \$callback of method Illuminate\\Database\\Eloquent\\Collection\<\(int\|string\),Illuminate\\Database\\Eloquent\\Model\>\:\:map\(\) contains unresolvable type\.$#'
+			identifier: argument.unresolvableType
+			count: 1
+			path: Modules/Tenancy/app/Services/TenancyLoginService.php
+
+		-
+			message: '#^Access to an undefined property Modules\\Tenancy\\Models\\CostConfig\:\:\$cpu_price_per_core_month\.$#'
+			identifier: property.notFound
+			count: 1
+			path: Modules/Tenancy/app/Services/TenantBillingService.php
+
+		-
+			message: '#^Access to an undefined property Modules\\Tenancy\\Models\\CostConfig\:\:\$memory_price_per_gb_month\.$#'
+			identifier: property.notFound
+			count: 1
+			path: Modules/Tenancy/app/Services/TenantBillingService.php
+
+		-
+			message: '#^Access to an undefined property Modules\\Tenancy\\Models\\Tenant\:\:\$name\.$#'
+			identifier: property.notFound
+			count: 1
+			path: Modules/Tenancy/app/Services/TenantBillingService.php
+
+		-
+			message: '#^Access to an undefined property Modules\\Tenancy\\Models\\UsageRecord\:\:\$project_id\.$#'
+			identifier: property.notFound
+			count: 2
+			path: Modules/Tenancy/app/Services/TenantBillingService.php
+
+		-
+			message: '#^Parameter \#1 \$callback of method Illuminate\\Database\\Eloquent\\Collection\<int,Modules\\Tenancy\\Models\\UsageRecord\>\:\:map\(\) contains unresolvable type\.$#'
+			identifier: argument.unresolvableType
+			count: 1
+			path: Modules/Tenancy/app/Services/TenantBillingService.php
+
+		-
+			message: '#^Access to an undefined property Modules\\Tenancy\\Models\\Tenant\:\:\$slug\.$#'
+			identifier: property.notFound
+			count: 6
+			path: Modules/Tenancy/app/Services/TenantDeletionService.php
+
+		-
+			message: '#^Call to method get\(\) on an unknown class App\\Models\\TenantAwareKnativeRegion\.$#'
+			identifier: class.notFound
+			count: 1
+			path: Modules/Tenancy/app/Services/TenantDeletionService.php
+
+		-
+			message: '#^Access to an undefined property Modules\\Tenancy\\Models\\Tenant\:\:\$slug\.$#'
+			identifier: property.notFound
+			count: 1
+			path: Modules/Tenancy/app/Services/TenantDomainService.php
+
+		-
+			message: '#^Access to an undefined property App\\Models\\User\:\:\$is_admin\.$#'
+			identifier: property.notFound
+			count: 1
+			path: Modules/Tenancy/app/Services/TenantGpuQuota.php
+
+		-
+			message: '#^Using nullsafe property access "\?\-\>is_admin" on left side of \?\? is unnecessary\. Use \-\> instead\.$#'
+			identifier: nullsafe.neverNull
+			count: 1
+			path: Modules/Tenancy/app/Services/TenantGpuQuota.php
+
+		-
+			message: '#^Access to an undefined property Modules\\Tenancy\\Models\\Tenant\:\:\$slug\.$#'
+			identifier: property.notFound
+			count: 1
+			path: Modules/Tenancy/app/Services/TenantModelUsageMeter.php
+
+		-
+			message: '#^Parameter \#1 \$callback of method Illuminate\\Support\\Collection\<\(int\|string\),Illuminate\\Database\\Eloquent\\Model\>\:\:each\(\) expects callable\(Illuminate\\Database\\Eloquent\\Model, int\|string\)\: mixed, Closure\(Modules\\Tenancy\\Models\\Tenant\)\: void given\.$#'
+			identifier: argument.type
+			count: 1
+			path: Modules/Tenancy/app/Services/TenantModelUsageMeter.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$id\.$#'
+			identifier: property.notFound
+			count: 1
+			path: Modules/Tenancy/app/Services/TenantRegionReconcileSource.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$slug\.$#'
+			identifier: property.notFound
+			count: 1
+			path: Modules/Tenancy/app/Services/TenantRegionReconcileSource.php
+
+		-
+			message: '#^Call to an undefined method Illuminate\\Database\\Eloquent\\Model\:\:run\(\)\.$#'
+			identifier: method.notFound
+			count: 2
+			path: Modules/Tenancy/app/Services/TenantRegionReconcileSource.php
+
+		-
+			message: '#^Parameter \#1 \$callback of method Illuminate\\Support\\Collection\<\(int\|string\),Illuminate\\Database\\Eloquent\\Model\>\:\:each\(\) expects callable\(Illuminate\\Database\\Eloquent\\Model, int\|string\)\: mixed, Closure\(Modules\\Tenancy\\Models\\Tenant\)\: void given\.$#'
+			identifier: argument.type
+			count: 1
+			path: Modules/Tenancy/app/Services/TenantResourceThresholdService.php
+
+		-
+			message: '#^Method Modules\\Tenancy\\Support\\TenantOrganization\:\:members\(\) should return Illuminate\\Support\\Collection\<int, object\{id\: int\|string, name\: string, email\: string, username\: string\|null, role\: string\|null\}\> but returns Illuminate\\Support\\Collection\<int, object\{id\: int\<0, max\>, name\: string, email\: string, username\: string, role\: mixed\}&stdClass\>\.$#'
+			identifier: return.type
+			count: 1
+			path: Modules/Tenancy/app/Support/TenantOrganization.php
+
+		-
+			message: '#^Access to an undefined property Modules\\Tenancy\\Models\\Tenant\:\:\$name\.$#'
+			identifier: property.notFound
+			count: 1
+			path: Modules/Tenancy/routes/public.php
+
+		-
+			message: '#^Access to an undefined property Modules\\Tenancy\\Models\\Tenant\:\:\$slug\.$#'
+			identifier: property.notFound
+			count: 1
+			path: Modules/Tenancy/routes/public.php
+
+		-
+			message: '#^Called ''env'' outside of the config directory which returns null when the config is cached, use ''config''\.$#'
+			identifier: larastan.noEnvCallsOutsideOfConfig
+			count: 1
+			path: Modules/Ticket/Config/config.php
+
+		-
+			message: '#^Parameter \#2 \$reply of class Modules\\Ticket\\Events\\SupportTicketInternalNote constructor expects Modules\\Ticket\\Models\\SupportTicketReply, Illuminate\\Database\\Eloquent\\Model given\.$#'
+			identifier: argument.type
+			count: 1
+			path: Modules/Ticket/app/Console/TicketE2eCommand.php
+
+		-
+			message: '#^Parameter \#2 \$reply of class Modules\\Ticket\\Events\\SupportTicketReplied constructor expects Modules\\Ticket\\Models\\SupportTicketReply, Illuminate\\Database\\Eloquent\\Model given\.$#'
+			identifier: argument.type
+			count: 4
+			path: Modules/Ticket/app/Console/TicketE2eCommand.php
+
+		-
+			message: '#^Ternary operator condition is always true\.$#'
+			identifier: ternary.alwaysTrue
+			count: 1
+			path: Modules/Ticket/app/Events/SupportTicketCreated.php
+
+		-
+			message: '#^Ternary operator condition is always true\.$#'
+			identifier: ternary.alwaysTrue
+			count: 1
+			path: Modules/Ticket/app/Events/SupportTicketInternalNote.php
+
+		-
+			message: '#^Access to an undefined property Modules\\Ticket\\Models\\SupportTicket\:\:\$admin_read_at\.$#'
+			identifier: property.notFound
+			count: 1
+			path: Modules/Ticket/app/Events/SupportTicketRead.php
+
+		-
+			message: '#^Access to an undefined property Modules\\Ticket\\Models\\SupportTicket\:\:\$user_read_at\.$#'
+			identifier: property.notFound
+			count: 1
+			path: Modules/Ticket/app/Events/SupportTicketRead.php
+
+		-
+			message: '#^Ternary operator condition is always true\.$#'
+			identifier: ternary.alwaysTrue
+			count: 1
+			path: Modules/Ticket/app/Events/SupportTicketReplied.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$is_internal\.$#'
+			identifier: property.notFound
+			count: 1
+			path: Modules/Ticket/app/Http/Controllers/AdminSupportTicketController.php
+
+		-
+			message: '#^Parameter \#2 \$reply of class Modules\\Ticket\\Events\\SupportTicketInternalNote constructor expects Modules\\Ticket\\Models\\SupportTicketReply, Illuminate\\Database\\Eloquent\\Model given\.$#'
+			identifier: argument.type
+			count: 1
+			path: Modules/Ticket/app/Http/Controllers/AdminSupportTicketController.php
+
+		-
+			message: '#^Parameter \#2 \$reply of class Modules\\Ticket\\Events\\SupportTicketReplied constructor expects Modules\\Ticket\\Models\\SupportTicketReply, Illuminate\\Database\\Eloquent\\Model given\.$#'
+			identifier: argument.type
+			count: 1
+			path: Modules/Ticket/app/Http/Controllers/AdminSupportTicketController.php
+
+		-
+			message: '#^Parameter \#2 \$reply of class Modules\\Ticket\\Events\\SupportTicketReplied constructor expects Modules\\Ticket\\Models\\SupportTicketReply, Illuminate\\Database\\Eloquent\\Model given\.$#'
+			identifier: argument.type
+			count: 1
+			path: Modules/Ticket/app/Http/Controllers/SupportTicketController.php
+
+		-
+			message: '#^Result of && is always false\.$#'
+			identifier: booleanAnd.alwaysFalse
+			count: 1
+			path: app/Console/Commands/Concerns/E2eTestBindingsTrait.php
+
+		-
+			message: '#^Strict comparison using \=\=\= between mixed and null will always evaluate to false\.$#'
+			identifier: identical.alwaysFalse
+			count: 1
+			path: app/Console/Commands/Concerns/E2eTestBindingsTrait.php
+
+		-
+			message: '#^Using nullsafe property access "\?\-\>usage_bytes" on left side of \?\? is unnecessary\. Use \-\> instead\.$#'
+			identifier: nullsafe.neverNull
+			count: 1
+			path: app/Console/Commands/Concerns/E2eTestBindingsTrait.php
+
+		-
+			message: '#^Using nullsafe property access "\?\-\>id" on left side of \?\? is unnecessary\. Use \-\> instead\.$#'
+			identifier: nullsafe.neverNull
+			count: 1
+			path: app/Console/Commands/Concerns/E2eTestSandboxApiTrait.php
+
+		-
+			message: '#^Call to an undefined method App\\Console\\Commands\\E2eTestCommand\:\:appendLog\(\)\.$#'
+			identifier: method.notFound
+			count: 3
+			path: app/Console/Commands/E2eTestCommand.php
+
+		-
+			message: '#^Match expression does not handle remaining value\: mixed$#'
+			identifier: match.unhandled
+			count: 2
+			path: app/Console/Commands/E2eTestCommand.php
+
+		-
+			message: '#^Parameter \#1 \$num1 of function intdiv expects int, float given\.$#'
+			identifier: argument.type
+			count: 2
+			path: app/Console/Commands/E2eTestCommand.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$name\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Console/Commands/GpuRefreshCommand.php
+
+		-
+			message: '#^Parameter \#1 \$region of method App\\Services\\Ai\\Gpu\\GpuInstallService\:\:syncNodeLabels\(\) expects App\\Models\\KnativeRegion, Illuminate\\Database\\Eloquent\\Model given\.$#'
+			identifier: argument.type
+			count: 1
+			path: app/Console/Commands/GpuRefreshCommand.php
+
+		-
+			message: '#^Parameter \#1 \$region of method App\\Services\\Ai\\Gpu\\GpuInventory\:\:refresh\(\) expects App\\Models\\KnativeRegion, Illuminate\\Database\\Eloquent\\Model given\.$#'
+			identifier: argument.type
+			count: 1
+			path: app/Console/Commands/GpuRefreshCommand.php
+
+		-
+			message: '#^Parameter \#1 \$region of static method App\\Console\\Commands\\GpuRefreshCommand\:\:due\(\) expects App\\Models\\KnativeRegion, Illuminate\\Database\\Eloquent\\Model given\.$#'
+			identifier: argument.type
+			count: 1
+			path: app/Console/Commands/GpuRefreshCommand.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$name\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Console/Commands/InstallTracingCommand.php
+
+		-
+			message: '#^Parameter \#1 \$region of method App\\Services\\Observability\\TracingInstallService\:\:install\(\) expects App\\Models\\KnativeRegion, Illuminate\\Database\\Eloquent\\Model given\.$#'
+			identifier: argument.type
+			count: 1
+			path: app/Console/Commands/InstallTracingCommand.php
+
+		-
+			message: '#^Parameter \#1 \$region of static method App\\Models\\Observability\\RegionTracingConfig\:\:forRegion\(\) expects App\\Models\\KnativeRegion, Illuminate\\Database\\Eloquent\\Model given\.$#'
+			identifier: argument.type
+			count: 1
+			path: app/Console/Commands/InstallTracingCommand.php
+
+		-
+			message: '#^Call to method find\(\) on an unknown class App\\Models\\TenantAwareKnativeRegion\.$#'
+			identifier: class.notFound
+			count: 1
+			path: app/Console/Commands/ObservabilityCommand.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$kubeconfig\.$#'
+			identifier: property.notFound
+			count: 4
+			path: app/Console/Commands/PatchClusterObservabilityCommand.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$loki_url\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Console/Commands/PatchClusterObservabilityCommand.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$name\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Console/Commands/PatchClusterObservabilityCommand.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$prometheus_url\.$#'
+			identifier: property.notFound
+			count: 2
+			path: app/Console/Commands/PatchClusterObservabilityCommand.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$sandbox_gvisor_status\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Console/Commands/PatchClusterObservabilityCommand.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$sandbox_kata_status\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Console/Commands/PatchClusterObservabilityCommand.php
+
+		-
+			message: '#^Call to an undefined method App\\Console\\Commands\\PatchClusterObservabilityCommand\:\:appendLog\(\)\.$#'
+			identifier: method.notFound
+			count: 3
+			path: app/Console/Commands/PatchClusterObservabilityCommand.php
+
+		-
+			message: '#^Call to an undefined method Illuminate\\Database\\Eloquent\\Model\:\:isLokiManaged\(\)\.$#'
+			identifier: method.notFound
+			count: 1
+			path: app/Console/Commands/PatchClusterObservabilityCommand.php
+
+		-
+			message: '#^Call to an undefined method Illuminate\\Database\\Eloquent\\Model\:\:isPrometheusManaged\(\)\.$#'
+			identifier: method.notFound
+			count: 1
+			path: app/Console/Commands/PatchClusterObservabilityCommand.php
+
+		-
+			message: '#^Class App\\Services\\HelmService does not have a constructor and must be instantiated without any parameters\.$#'
+			identifier: new.noConstructor
+			count: 1
+			path: app/Console/Commands/PatchClusterObservabilityCommand.php
+
+		-
+			message: '#^Parameter \#2 \$region of method App\\Console\\Commands\\PatchClusterObservabilityCommand\:\:deployAgent\(\) expects App\\Models\\KnativeRegion, Illuminate\\Database\\Eloquent\\Model given\.$#'
+			identifier: argument.type
+			count: 1
+			path: app/Console/Commands/PatchClusterObservabilityCommand.php
+
+		-
+			message: '#^Parameter \#2 \$region of method App\\Console\\Commands\\PatchClusterObservabilityCommand\:\:ensureCiliumSandboxCompat\(\) expects App\\Models\\KnativeRegion, Illuminate\\Database\\Eloquent\\Model given\.$#'
+			identifier: argument.type
+			count: 1
+			path: app/Console/Commands/PatchClusterObservabilityCommand.php
+
+		-
+			message: '#^Using nullsafe method call on non\-nullable type App\\Models\\AiModel\. Use \-\> instead\.$#'
+			identifier: nullsafe.neverNull
+			count: 1
+			path: app/Http/Controllers/Api/Ai/ProjectModelBindingController.php
+
+		-
+			message: '#^Using nullsafe property access on non\-nullable type Laravel\\Sanctum\\PersonalAccessToken\. Use \-\> instead\.$#'
+			identifier: nullsafe.neverNull
+			count: 1
+			path: app/Http/Controllers/Api/ApiTokenController.php
+
+		-
+			message: '#^Using nullsafe method call on non\-nullable type Carbon\\Carbon\. Use \-\> instead\.$#'
+			identifier: nullsafe.neverNull
+			count: 1
+			path: app/Http/Controllers/Api/BindingController.php
+
+		-
+			message: '#^Parameter \#3 \$userId of method App\\Services\\ProjectService\:\:saveFaaSFiles\(\) expects string, int\<0, max\> given\.$#'
+			identifier: argument.type
+			count: 1
+			path: app/Http/Controllers/Api/CodeController.php
+
+		-
+			message: '#^Parameter \#3 \$userId of method App\\Services\\ProjectService\:\:saveXaaSCode\(\) expects string, int\<0, max\> given\.$#'
+			identifier: argument.type
+			count: 1
+			path: app/Http/Controllers/Api/CodeController.php
+
+		-
+			message: '#^Match expression does not handle remaining value\: string$#'
+			identifier: match.unhandled
+			count: 1
+			path: app/Http/Controllers/Api/DataServiceController.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Collection\<int, Illuminate\\Database\\Eloquent\\Model\>\|Illuminate\\Database\\Eloquent\\Model\:\:\$build_status\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Controllers/Api/DeploymentController.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Collection\<int, Illuminate\\Database\\Eloquent\\Model\>\|Illuminate\\Database\\Eloquent\\Model\:\:\$id\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Controllers/Api/DeploymentController.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Collection\<int, Illuminate\\Database\\Eloquent\\Model\>\|Illuminate\\Database\\Eloquent\\Model\:\:\$number\.$#'
+			identifier: property.notFound
+			count: 2
+			path: app/Http/Controllers/Api/DeploymentController.php
+
+		-
+			message: '#^Parameter \#1 \$deployment of class App\\Events\\DeploymentCreated constructor expects App\\Models\\Deployment, Illuminate\\Database\\Eloquent\\Model given\.$#'
+			identifier: argument.type
+			count: 1
+			path: app/Http/Controllers/Api/DeploymentController.php
+
+		-
+			message: '#^Parameter \#1 \$deployment of class App\\Events\\DeploymentStatusChanged constructor expects App\\Models\\Deployment, Illuminate\\Database\\Eloquent\\Model given\.$#'
+			identifier: argument.type
+			count: 1
+			path: app/Http/Controllers/Api/DeploymentController.php
+
+		-
+			message: '#^Parameter \#2 \$deployment of method App\\Services\\SupplyChain\\DeployPolicyGate\:\:recordFor\(\) expects App\\Models\\Deployment, Illuminate\\Database\\Eloquent\\Model given\.$#'
+			identifier: argument.type
+			count: 1
+			path: app/Http/Controllers/Api/DeploymentController.php
+
+		-
+			message: '#^Parameter \#3 \$version of class App\\Events\\DeploymentCreated constructor expects App\\Models\\Version, Illuminate\\Database\\Eloquent\\Collection\<int, Illuminate\\Database\\Eloquent\\Model\>\|Illuminate\\Database\\Eloquent\\Model given\.$#'
+			identifier: argument.type
+			count: 1
+			path: app/Http/Controllers/Api/DeploymentController.php
+
+		-
+			message: '#^Parameter \#3 \$version of method App\\Services\\SupplyChain\\DeployPolicyGate\:\:authorize\(\) expects App\\Models\\Version, Illuminate\\Database\\Eloquent\\Collection\<int, Illuminate\\Database\\Eloquent\\Model\>\|Illuminate\\Database\\Eloquent\\Model given\.$#'
+			identifier: argument.type
+			count: 1
+			path: app/Http/Controllers/Api/DeploymentController.php
+
+		-
+			message: '#^Using nullsafe property access on non\-nullable type App\\Models\\Version\. Use \-\> instead\.$#'
+			identifier: nullsafe.neverNull
+			count: 1
+			path: app/Http/Controllers/Api/ExecController.php
+
+		-
+			message: '#^Using nullsafe property access "\?\-\>type" on left side of \?\? is unnecessary\. Use \-\> instead\.$#'
+			identifier: nullsafe.neverNull
+			count: 1
+			path: app/Http/Controllers/Api/GitProviderController.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$name\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Controllers/Api/GroupController.php
+
+		-
+			message: '#^Parameter \#1 \$callback of method Illuminate\\Database\\Eloquent\\Collection\<int,App\\Models\\RoleAssignment\>\:\:map\(\) contains unresolvable type\.$#'
+			identifier: argument.unresolvableType
+			count: 1
+			path: app/Http/Controllers/Api/GroupController.php
+
+		-
+			message: '#^Parameter \#1 \$boolean of function abort_unless expects bool, App\\Models\\ImageSecurityReport\|null given\.$#'
+			identifier: argument.type
+			count: 1
+			path: app/Http/Controllers/Api/ModelServiceSecurityController.php
+
+		-
+			message: '#^Using nullsafe property access on non\-nullable type App\\Models\\RegionSupplyChainSetting\. Use \-\> instead\.$#'
+			identifier: nullsafe.neverNull
+			count: 1
+			path: app/Http/Controllers/Api/ModelServiceSecurityController.php
+
+		-
+			message: '#^Call to an undefined method Illuminate\\Database\\Eloquent\\Builder\:\:unread\(\)\.$#'
+			identifier: method.notFound
+			count: 3
+			path: app/Http/Controllers/Api/NotificationController.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$channel\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Controllers/Api/NotificationPreferenceController.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$enabled\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Controllers/Api/NotificationPreferenceController.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$type\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Controllers/Api/NotificationPreferenceController.php
+
+		-
+			message: '#^Call to method whereKey\(\) on an unknown class App\\Models\\TenantAwareKnativeRegion\.$#'
+			identifier: class.notFound
+			count: 1
+			path: app/Http/Controllers/Api/Observability/AlertRuleController.php
+
+		-
+			message: '#^Call to function is_array\(\) with array\<string, mixed\> will always evaluate to true\.$#'
+			identifier: function.alreadyNarrowedType
+			count: 1
+			path: app/Http/Controllers/Api/Observability/ObservabilityIngestController.php
+
+		-
+			message: '#^Call to method whereKey\(\) on an unknown class App\\Models\\TenantAwareKnativeRegion\.$#'
+			identifier: class.notFound
+			count: 1
+			path: app/Http/Controllers/Api/Observability/UptimeCheckController.php
+
+		-
+			message: '#^Parameter \#1 \$callback of method Illuminate\\Database\\Eloquent\\Collection\<int,Illuminate\\Database\\Eloquent\\Model\>\:\:map\(\) expects callable\(Illuminate\\Database\\Eloquent\\Model, int\)\: array, Closure\(App\\Models\\Observability\\UptimeIncident\)\: array given\.$#'
+			identifier: argument.type
+			count: 1
+			path: app/Http/Controllers/Api/Observability/UptimeCheckController.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$resource_name\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Controllers/Api/PrivateDatabaseBindingController.php
+
+		-
+			message: '#^Parameter \#1 \$binding of method App\\Services\\Skupper\\SkupperService\:\:remove\(\) expects App\\Models\\PrivateDatabaseBinding, Illuminate\\Database\\Eloquent\\Model given\.$#'
+			identifier: argument.type
+			count: 1
+			path: app/Http/Controllers/Api/PrivateDatabaseBindingController.php
+
+		-
+			message: '#^Parameter \#1 \$binding of method App\\Services\\Skupper\\SkupperService\:\:status\(\) expects App\\Models\\PrivateDatabaseBinding, Illuminate\\Database\\Eloquent\\Model given\.$#'
+			identifier: argument.type
+			count: 1
+			path: app/Http/Controllers/Api/PrivateDatabaseBindingController.php
+
+		-
+			message: '#^Parameter \#3 \$userId of method App\\Services\\ProjectService\:\:updateCaaSConfig\(\) expects string, int\<0, max\> given\.$#'
+			identifier: argument.type
+			count: 1
+			path: app/Http/Controllers/Api/ProjectController.php
+
+		-
+			message: '#^Parameter \#3 \$userId of method App\\Services\\ProjectService\:\:updateFaaSConfig\(\) expects string, int\<0, max\> given\.$#'
+			identifier: argument.type
+			count: 1
+			path: app/Http/Controllers/Api/ProjectController.php
+
+		-
+			message: '#^Parameter \#3 \$userId of method App\\Services\\ProjectService\:\:updateXaaSConfig\(\) expects string, int\<0, max\> given\.$#'
+			identifier: argument.type
+			count: 1
+			path: app/Http/Controllers/Api/ProjectController.php
+
+		-
+			message: '#^Parameter \#1 \$callback of method Illuminate\\Support\\Collection\<int,Illuminate\\Database\\Eloquent\\Model\>\:\:each\(\) expects callable\(Illuminate\\Database\\Eloquent\\Model, int\)\: mixed, Closure\(App\\Models\\ProjectDomain\)\: App\\Models\\ProjectDomain given\.$#'
+			identifier: argument.type
+			count: 1
+			path: app/Http/Controllers/Api/ProjectDomainController.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$sha256\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Controllers/Api/ProjectSecurityController.php
+
+		-
+			message: '#^Call to an undefined method Illuminate\\Database\\Eloquent\\Model\:\:document\(\)\.$#'
+			identifier: method.notFound
+			count: 1
+			path: app/Http/Controllers/Api/ProjectSecurityController.php
+
+		-
+			message: '#^Parameter \#1 \$boolean of function abort_unless expects bool, App\\Models\\ImageSecurityReport\|null given\.$#'
+			identifier: argument.type
+			count: 1
+			path: app/Http/Controllers/Api/ProjectSecurityController.php
+
+		-
+			message: '#^Parameter \#1 \$boolean of function abort_unless expects bool, Illuminate\\Database\\Eloquent\\Model\|null given\.$#'
+			identifier: argument.type
+			count: 1
+			path: app/Http/Controllers/Api/ProjectSecurityController.php
+
+		-
+			message: '#^Parameter \#1 \$callback of method Illuminate\\Database\\Eloquent\\Collection\<int,Illuminate\\Database\\Eloquent\\Model\>\:\:map\(\) expects callable\(Illuminate\\Database\\Eloquent\\Model, int\)\: array, Closure\(App\\Models\\Version\)\: array given\.$#'
+			identifier: argument.type
+			count: 1
+			path: app/Http/Controllers/Api/ProjectSecurityController.php
+
+		-
+			message: '#^Parameter \#1 \$callback of method Illuminate\\Database\\Eloquent\\Collection\<int,Illuminate\\Database\\Eloquent\\Model\>\:\:map\(\) expects callable\(Illuminate\\Database\\Eloquent\\Model, int\)\: array\{id\: string, status\: string, version_id\: string, version_label\: string, created_at\: string\|null, report\: array\|null\}, Closure\(App\\Models\\Deployment\)\: array\{id\: string, status\: string, version_id\: string, version_label\: string, created_at\: string\|null, report\: array\|null\} given\.$#'
+			identifier: argument.type
+			count: 1
+			path: app/Http/Controllers/Api/ProjectSecurityController.php
+
+		-
+			message: '#^Ternary operator condition is always true\.$#'
+			identifier: ternary.alwaysTrue
+			count: 2
+			path: app/Http/Controllers/Api/ProjectSecurityController.php
+
+		-
+			message: '#^Using nullsafe property access on non\-nullable type App\\Models\\Version\. Use \-\> instead\.$#'
+			identifier: nullsafe.neverNull
+			count: 1
+			path: app/Http/Controllers/Api/ProjectSecurityController.php
+
+		-
+			message: '#^Parameter \#2 \$userId of job class App\\Jobs\\SeedRegionDemoJob constructor expects string in App\\Jobs\\SeedRegionDemoJob\:\:dispatch\(\), int\<0, max\> given\.$#'
+			identifier: argument.type
+			count: 1
+			path: app/Http/Controllers/Api/RegionDemoController.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$image_ref\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Controllers/Api/RegionSupplyChainController.php
+
+		-
+			message: '#^Call to an undefined method Illuminate\\Database\\Eloquent\\Model\:\:summary\(\)\.$#'
+			identifier: method.notFound
+			count: 1
+			path: app/Http/Controllers/Api/RegionSupplyChainController.php
+
+		-
+			message: '#^Parameter \#1 \$callback of method Illuminate\\Database\\Eloquent\\Collection\<int,App\\Models\\RuntimeBuild\>\:\:map\(\) contains unresolvable type\.$#'
+			identifier: argument.unresolvableType
+			count: 1
+			path: app/Http/Controllers/Api/RegionSupplyChainController.php
+
+		-
+			message: '#^Parameter \#1 \$report of static method App\\Http\\Controllers\\Api\\ProjectSecurityController\:\:download\(\) expects App\\Models\\ImageSecurityReport, Illuminate\\Database\\Eloquent\\Model given\.$#'
+			identifier: argument.type
+			count: 1
+			path: app/Http/Controllers/Api/RegionSupplyChainController.php
+
+		-
+			message: '#^Access to an undefined property App\\Models\\User\:\:\$is_admin\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Controllers/Api/ResidencyController.php
+
+		-
+			message: '#^Call to method get\(\) on an unknown class App\\Models\\TenantAwareKnativeRegion\.$#'
+			identifier: class.notFound
+			count: 2
+			path: app/Http/Controllers/Api/ResidencyController.php
+
+		-
+			message: '#^Call to method orderBy\(\) on an unknown class App\\Models\\TenantAwareKnativeRegion\.$#'
+			identifier: class.notFound
+			count: 2
+			path: app/Http/Controllers/Api/ResidencyController.php
+
+		-
+			message: '#^Using nullsafe property access "\?\-\>allowed_locations" on left side of \?\? is unnecessary\. Use \-\> instead\.$#'
+			identifier: nullsafe.neverNull
+			count: 2
+			path: app/Http/Controllers/Api/ResidencyController.php
+
+		-
+			message: '#^Using nullsafe property access "\?\-\>allowed_region_ids" on left side of \?\? is unnecessary\. Use \-\> instead\.$#'
+			identifier: nullsafe.neverNull
+			count: 1
+			path: app/Http/Controllers/Api/ResidencyController.php
+
+		-
+			message: '#^Using nullsafe property access "\?\-\>is_admin" on left side of \?\? is unnecessary\. Use \-\> instead\.$#'
+			identifier: nullsafe.neverNull
+			count: 1
+			path: app/Http/Controllers/Api/ResidencyController.php
+
+		-
+			message: '#^Using nullsafe property access "\?\-\>residency_enforced" on left side of \?\? is unnecessary\. Use \-\> instead\.$#'
+			identifier: nullsafe.neverNull
+			count: 1
+			path: app/Http/Controllers/Api/ResidencyController.php
+
+		-
+			message: '#^Call to method pluck\(\) on an unknown class App\\Models\\TenantAwareKnativeRegion\.$#'
+			identifier: class.notFound
+			count: 1
+			path: app/Http/Controllers/Api/RuntimeController.php
+
+		-
+			message: '#^Access to an undefined property App\\Models\\User\:\:\$is_admin\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Controllers/Api/Sandboxes/SandboxAdminController.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$name\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Controllers/Api/Sandboxes/SandboxAdminController.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$slug\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Controllers/Api/Sandboxes/SandboxAdminController.php
+
+		-
+			message: '#^Call to an undefined method Illuminate\\Database\\Eloquent\\Model\:\:getTenantKey\(\)\.$#'
+			identifier: method.notFound
+			count: 1
+			path: app/Http/Controllers/Api/Sandboxes/SandboxAdminController.php
+
+		-
+			message: '#^Using nullsafe property access "\?\-\>is_admin" on left side of \?\? is unnecessary\. Use \-\> instead\.$#'
+			identifier: nullsafe.neverNull
+			count: 1
+			path: app/Http/Controllers/Api/Sandboxes/SandboxAdminController.php
+
+		-
+			message: '#^Access to an undefined property App\\Models\\User\:\:\$is_admin\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Controllers/Api/Sandboxes/SandboxApiController.php
+
+		-
+			message: '#^Using nullsafe property access "\?\-\>is_admin" on left side of \?\? is unnecessary\. Use \-\> instead\.$#'
+			identifier: nullsafe.neverNull
+			count: 1
+			path: app/Http/Controllers/Api/Sandboxes/SandboxApiController.php
+
+		-
+			message: '#^Parameter \#2 \$default of method Illuminate\\Http\\Request\:\:header\(\) expects array\<string, string\>\|string\|null, int given\.$#'
+			identifier: argument.type
+			count: 2
+			path: app/Http/Controllers/Api/Sandboxes/SandboxFilesController.php
+
+		-
+			message: '#^Access to an undefined property App\\Models\\User\:\:\$is_admin\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Controllers/Api/Sandboxes/SandboxesController.php
+
+		-
+			message: '#^Match expression does not handle remaining value\: mixed$#'
+			identifier: match.unhandled
+			count: 1
+			path: app/Http/Controllers/Api/Sandboxes/SandboxesController.php
+
+		-
+			message: '#^Using nullsafe property access "\?\-\>is_admin" on left side of \?\? is unnecessary\. Use \-\> instead\.$#'
+			identifier: nullsafe.neverNull
+			count: 1
+			path: app/Http/Controllers/Api/Sandboxes/SandboxesController.php
+
+		-
+			message: '#^Cannot call method toISOString\(\) on string\.$#'
+			identifier: method.nonObject
+			count: 1
+			path: app/Http/Controllers/Api/UserController.php
+
+		-
+			message: '#^Parameter \#3 \$fail of method App\\Rules\\ConfigMapKey\:\:validate\(\) expects Closure\(string, string\|null\=\)\: Illuminate\\Translation\\PotentiallyTranslatedString, Closure\(mixed\)\: void given\.$#'
+			identifier: argument.type
+			count: 1
+			path: app/Http/Requests/Runtime/SaveRuntimeRequest.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\AaasConfigResource\:\:\$blueprint_graph\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/AaasConfigResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\AaasConfigResource\:\:\$cpu\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/AaasConfigResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\AaasConfigResource\:\:\$env_vars\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/AaasConfigResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\AaasConfigResource\:\:\$event_source_project_id\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/AaasConfigResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\AaasConfigResource\:\:\$filename\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/AaasConfigResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\AaasConfigResource\:\:\$handler\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/AaasConfigResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\AaasConfigResource\:\:\$max_scale\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/AaasConfigResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\AaasConfigResource\:\:\$memory_mb\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/AaasConfigResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\AaasConfigResource\:\:\$min_scale\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/AaasConfigResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\AaasConfigResource\:\:\$queue_stream\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/AaasConfigResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\AaasConfigResource\:\:\$scale_to_zero\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/AaasConfigResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\AaasConfigResource\:\:\$schedule\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/AaasConfigResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\AaasConfigResource\:\:\$timeout_seconds\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/AaasConfigResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\AaasConfigResource\:\:\$trigger_type\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/AaasConfigResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\AgentFlowConfigResource\:\:\$blueprint_graph\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/AgentFlowConfigResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\AgentFlowConfigResource\:\:\$cpu\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/AgentFlowConfigResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\AgentFlowConfigResource\:\:\$env_vars\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/AgentFlowConfigResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\AgentFlowConfigResource\:\:\$event_source_project_id\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/AgentFlowConfigResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\AgentFlowConfigResource\:\:\$handler\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/AgentFlowConfigResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\AgentFlowConfigResource\:\:\$max_scale\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/AgentFlowConfigResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\AgentFlowConfigResource\:\:\$memory_mb\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/AgentFlowConfigResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\AgentFlowConfigResource\:\:\$min_scale\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/AgentFlowConfigResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\AgentFlowConfigResource\:\:\$queue_stream\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/AgentFlowConfigResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\AgentFlowConfigResource\:\:\$scale_to_zero\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/AgentFlowConfigResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\AgentFlowConfigResource\:\:\$schedule\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/AgentFlowConfigResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\AgentFlowConfigResource\:\:\$timeout_seconds\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/AgentFlowConfigResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\AgentFlowConfigResource\:\:\$trigger_type\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/AgentFlowConfigResource.php
+
+		-
+			message: '#^Parameter \#1 \$callback of method Illuminate\\Database\\Eloquent\\Collection\<int,Illuminate\\Database\\Eloquent\\Model\>\:\:map\(\) expects callable\(Illuminate\\Database\\Eloquent\\Model, int\)\: array, Closure\(App\\Models\\BindingAttachment\)\: array given\.$#'
+			identifier: argument.type
+			count: 1
+			path: app/Http/Resources/BindingResource.php
+
+		-
+			message: '#^Right side of && is always true\.$#'
+			identifier: booleanAnd.rightAlwaysTrue
+			count: 1
+			path: app/Http/Resources/BindingResource.php
+
+		-
+			message: '#^Ternary operator condition is always true\.$#'
+			identifier: ternary.alwaysTrue
+			count: 1
+			path: app/Http/Resources/BindingResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\ContainerConfigResource\:\:\$args\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/ContainerConfigResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\ContainerConfigResource\:\:\$command\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/ContainerConfigResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\ContainerConfigResource\:\:\$cpu\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/ContainerConfigResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\ContainerConfigResource\:\:\$env_vars\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/ContainerConfigResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\ContainerConfigResource\:\:\$gpu\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/ContainerConfigResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\ContainerConfigResource\:\:\$image\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/ContainerConfigResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\ContainerConfigResource\:\:\$image_pull_policy\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/ContainerConfigResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\ContainerConfigResource\:\:\$max_scale\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/ContainerConfigResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\ContainerConfigResource\:\:\$memory_mb\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/ContainerConfigResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\ContainerConfigResource\:\:\$min_scale\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/ContainerConfigResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\ContainerConfigResource\:\:\$ports\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/ContainerConfigResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\ContainerConfigResource\:\:\$queue_stream\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/ContainerConfigResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\ContainerConfigResource\:\:\$scale_to_zero\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/ContainerConfigResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\ContainerConfigResource\:\:\$schedule\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/ContainerConfigResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\ContainerConfigResource\:\:\$timeout_seconds\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/ContainerConfigResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\ContainerConfigResource\:\:\$trigger_type\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/ContainerConfigResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\DeploymentResource\:\:\$created_at\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/DeploymentResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\DeploymentResource\:\:\$deploy_config\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/DeploymentResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\DeploymentResource\:\:\$deployed_by\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/DeploymentResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\DeploymentResource\:\:\$id\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/DeploymentResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\DeploymentResource\:\:\$k8s_job_name\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/DeploymentResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\DeploymentResource\:\:\$knative_message\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/DeploymentResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\DeploymentResource\:\:\$knative_ready\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/DeploymentResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\DeploymentResource\:\:\$project_id\.$#'
+			identifier: property.notFound
+			count: 2
+			path: app/Http/Resources/DeploymentResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\DeploymentResource\:\:\$ready_at\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/DeploymentResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\DeploymentResource\:\:\$status\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/DeploymentResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\DeploymentResource\:\:\$version\.$#'
+			identifier: property.notFound
+			count: 2
+			path: app/Http/Resources/DeploymentResource.php
+
+		-
+			message: '#^Using nullsafe property access "\?\-\>config_snapshot" on left side of \?\? is unnecessary\. Use \-\> instead\.$#'
+			identifier: nullsafe.neverNull
+			count: 1
+			path: app/Http/Resources/DeploymentResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\FaasConfigResource\:\:\$cpu\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/FaasConfigResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\FaasConfigResource\:\:\$env_vars\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/FaasConfigResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\FaasConfigResource\:\:\$gpu\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/FaasConfigResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\FaasConfigResource\:\:\$handler\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/FaasConfigResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\FaasConfigResource\:\:\$max_scale\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/FaasConfigResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\FaasConfigResource\:\:\$memory_mb\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/FaasConfigResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\FaasConfigResource\:\:\$min_scale\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/FaasConfigResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\FaasConfigResource\:\:\$queue_stream\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/FaasConfigResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\FaasConfigResource\:\:\$scale_to_zero\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/FaasConfigResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\FaasConfigResource\:\:\$schedule\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/FaasConfigResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\FaasConfigResource\:\:\$timeout_seconds\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/FaasConfigResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\FaasConfigResource\:\:\$trigger_type\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/FaasConfigResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\GatewayResource\:\:\$created_at\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/GatewayResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\GatewayResource\:\:\$custom_domain\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/GatewayResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\GatewayResource\:\:\$id\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/GatewayResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\GatewayResource\:\:\$knative_region_id\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/GatewayResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\GatewayResource\:\:\$rate_limit_average\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/GatewayResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\GatewayResource\:\:\$rate_limit_burst\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/GatewayResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\GatewayResource\:\:\$status\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/GatewayResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\GatewayResource\:\:\$subdomain\.$#'
+			identifier: property.notFound
+			count: 3
+			path: app/Http/Resources/GatewayResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\KnativeRegionResource\:\:\$cluster_status_message\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/KnativeRegionResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\KnativeRegionResource\:\:\$dns_resolved\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/KnativeRegionResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\KnativeRegionResource\:\:\$domain_migration_started_at\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/KnativeRegionResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\KnativeRegionResource\:\:\$domain_migration_status\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/KnativeRegionResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\KnativeRegionResource\:\:\$external_ip\.$#'
+			identifier: property.notFound
+			count: 2
+			path: app/Http/Resources/KnativeRegionResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\KnativeRegionResource\:\:\$function_tls_expires_at\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/KnativeRegionResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\KnativeRegionResource\:\:\$function_tls_mode\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/KnativeRegionResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\KnativeRegionResource\:\:\$id\.$#'
+			identifier: property.notFound
+			count: 3
+			path: app/Http/Resources/KnativeRegionResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\KnativeRegionResource\:\:\$is_active\.$#'
+			identifier: property.notFound
+			count: 2
+			path: app/Http/Resources/KnativeRegionResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\KnativeRegionResource\:\:\$is_demo\.$#'
+			identifier: property.notFound
+			count: 2
+			path: app/Http/Resources/KnativeRegionResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\KnativeRegionResource\:\:\$knative_operator_status_message\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/KnativeRegionResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\KnativeRegionResource\:\:\$knative_redis_status\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/KnativeRegionResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\KnativeRegionResource\:\:\$knative_redis_status_message\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/KnativeRegionResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\KnativeRegionResource\:\:\$knative_serving_status_message\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/KnativeRegionResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\KnativeRegionResource\:\:\$knative_status\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/KnativeRegionResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\KnativeRegionResource\:\:\$knative_status_checked_at\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/KnativeRegionResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\KnativeRegionResource\:\:\$knative_status_message\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/KnativeRegionResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\KnativeRegionResource\:\:\$migration_old_ip\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/KnativeRegionResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\KnativeRegionResource\:\:\$migration_started_at\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/KnativeRegionResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\KnativeRegionResource\:\:\$migration_status\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/KnativeRegionResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\KnativeRegionResource\:\:\$name\.$#'
+			identifier: property.notFound
+			count: 3
+			path: app/Http/Resources/KnativeRegionResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\KnativeRegionResource\:\:\$redis_address\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/KnativeRegionResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\KnativeRegionResource\:\:\$redis_mode\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/KnativeRegionResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\KnativeRegionResource\:\:\$region_demo_status\.$#'
+			identifier: property.notFound
+			count: 2
+			path: app/Http/Resources/KnativeRegionResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\KnativeRegionResource\:\:\$registry_address\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/KnativeRegionResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\KnativeRegionResource\:\:\$registry_mode\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/KnativeRegionResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\KnativeRegionResource\:\:\$registry_status\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/KnativeRegionResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\KnativeRegionResource\:\:\$registry_status_message\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/KnativeRegionResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\KnativeRegionResource\:\:\$registry_storage_type\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/KnativeRegionResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\KnativeRegionResource\:\:\$sandbox_gvisor_status_message\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/KnativeRegionResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\KnativeRegionResource\:\:\$sandbox_kata_hypervisor\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/KnativeRegionResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\KnativeRegionResource\:\:\$sandbox_kata_status_message\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/KnativeRegionResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\KnativeRegionResource\:\:\$selected_workers\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/KnativeRegionResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\KnativeRegionResource\:\:\$total_cpu_m\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/KnativeRegionResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\KnativeRegionResource\:\:\$total_memory_mb\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/KnativeRegionResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\MaasConfigResource\:\:\$env_vars\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/MaasConfigResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\MaasConfigResource\:\:\$gpu_count\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/MaasConfigResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\MaasConfigResource\:\:\$gpu_type\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/MaasConfigResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\MaasConfigResource\:\:\$max_scale\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/MaasConfigResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\MaasConfigResource\:\:\$min_scale\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/MaasConfigResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\MaasConfigResource\:\:\$scale_to_zero\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/MaasConfigResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\MaasConfigResource\:\:\$timeout_seconds\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/MaasConfigResource.php
+
+		-
+			message: '#^Ternary operator condition is always true\.$#'
+			identifier: ternary.alwaysTrue
+			count: 1
+			path: app/Http/Resources/ProjectDomainResource.php
+
+		-
+			message: '#^Using nullsafe property access on non\-nullable type App\\Models\\Project\. Use \-\> instead\.$#'
+			identifier: nullsafe.neverNull
+			count: 1
+			path: app/Http/Resources/ProjectDomainResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\ProjectResource\:\:\$created_at\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/ProjectResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\ProjectResource\:\:\$creator\.$#'
+			identifier: property.notFound
+			count: 2
+			path: app/Http/Resources/ProjectResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\ProjectResource\:\:\$description\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/ProjectResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\ProjectResource\:\:\$endpoint_type\.$#'
+			identifier: property.notFound
+			count: 2
+			path: app/Http/Resources/ProjectResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\ProjectResource\:\:\$id\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/ProjectResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\ProjectResource\:\:\$knative_region_id\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/ProjectResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\ProjectResource\:\:\$name\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/ProjectResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\ProjectResource\:\:\$runtime\.$#'
+			identifier: property.notFound
+			count: 2
+			path: app/Http/Resources/ProjectResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\ProjectResource\:\:\$runtime_version\.$#'
+			identifier: property.notFound
+			count: 2
+			path: app/Http/Resources/ProjectResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\ProjectResource\:\:\$service_type\.$#'
+			identifier: property.notFound
+			count: 3
+			path: app/Http/Resources/ProjectResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\ProjectResource\:\:\$slug\.$#'
+			identifier: property.notFound
+			count: 2
+			path: app/Http/Resources/ProjectResource.php
+
+		-
+			message: '#^Call to method whereKey\(\) on an unknown class App\\Models\\TenantAwareKnativeRegion\.$#'
+			identifier: class.notFound
+			count: 1
+			path: app/Http/Resources/SandboxResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\VersionResource\:\:\$build_error\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/VersionResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\VersionResource\:\:\$build_status\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/VersionResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\VersionResource\:\:\$changed_files\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/VersionResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\VersionResource\:\:\$commit_id\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/VersionResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\VersionResource\:\:\$commit_message\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/VersionResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\VersionResource\:\:\$config_snapshot\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/VersionResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\VersionResource\:\:\$created_at\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/VersionResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\VersionResource\:\:\$creator\.$#'
+			identifier: property.notFound
+			count: 2
+			path: app/Http/Resources/VersionResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\VersionResource\:\:\$id\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/VersionResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\VersionResource\:\:\$label\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/VersionResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\VersionResource\:\:\$number\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/VersionResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\VersionResource\:\:\$project_id\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/VersionResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\XaasConfigResource\:\:\$cpu\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/XaasConfigResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\XaasConfigResource\:\:\$env_vars\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/XaasConfigResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\XaasConfigResource\:\:\$filename\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/XaasConfigResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\XaasConfigResource\:\:\$gpu\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/XaasConfigResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\XaasConfigResource\:\:\$handler\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/XaasConfigResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\XaasConfigResource\:\:\$max_scale\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/XaasConfigResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\XaasConfigResource\:\:\$memory_mb\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/XaasConfigResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\XaasConfigResource\:\:\$min_scale\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/XaasConfigResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\XaasConfigResource\:\:\$queue_stream\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/XaasConfigResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\XaasConfigResource\:\:\$scale_to_zero\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/XaasConfigResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\XaasConfigResource\:\:\$schedule\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/XaasConfigResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\XaasConfigResource\:\:\$timeout_seconds\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/XaasConfigResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\XaasConfigResource\:\:\$trigger_type\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/XaasConfigResource.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$gpu_status\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Jobs/Ai/InstallGpuSupportJob.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$gpu_status_message\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Jobs/Ai/InstallGpuSupportJob.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$id\.$#'
+			identifier: property.notFound
+			count: 2
+			path: app/Jobs/Ai/InstallGpuSupportJob.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$name\.$#'
+			identifier: property.notFound
+			count: 4
+			path: app/Jobs/Ai/InstallGpuSupportJob.php
+
+		-
+			message: '#^Parameter \#1 \$region of method App\\Services\\Ai\\Gpu\\GpuInstallService\:\:install\(\) expects App\\Models\\KnativeRegion, Illuminate\\Database\\Eloquent\\Model given\.$#'
+			identifier: argument.type
+			count: 1
+			path: app/Jobs/Ai/InstallGpuSupportJob.php
+
+		-
+			message: '#^Parameter \#1 \$region of method App\\Services\\Ai\\Gpu\\GpuInstallService\:\:reconfigure\(\) expects App\\Models\\KnativeRegion, Illuminate\\Database\\Eloquent\\Model given\.$#'
+			identifier: argument.type
+			count: 1
+			path: app/Jobs/Ai/InstallGpuSupportJob.php
+
+		-
+			message: '#^Parameter \#1 \$region of method App\\Services\\Ai\\Gpu\\GpuInstallService\:\:uninstall\(\) expects App\\Models\\KnativeRegion, Illuminate\\Database\\Eloquent\\Model given\.$#'
+			identifier: argument.type
+			count: 1
+			path: app/Jobs/Ai/InstallGpuSupportJob.php
+
+		-
+			message: '#^Call to method find\(\) on an unknown class App\\Models\\TenantAwareKnativeRegion\.$#'
+			identifier: class.notFound
+			count: 1
+			path: app/Jobs/Bindings/DataServiceJob.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$id\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Jobs/GitDeploy/BuildPreviewJob.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$project\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Jobs/GitDeploy/BuildPreviewJob.php
+
+		-
+			message: '#^Parameter \#1 \$version of method App\\Services\\FunctionBuildService\:\:submitBuild\(\) expects App\\Models\\Version, Illuminate\\Database\\Eloquent\\Model given\.$#'
+			identifier: argument.type
+			count: 1
+			path: app/Jobs/GitDeploy/BuildPreviewJob.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$build_status\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Jobs/GitDeploy/CheckPreviewBuildJob.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$id\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Jobs/GitDeploy/CheckPreviewBuildJob.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$number\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Jobs/GitDeploy/CheckPreviewBuildJob.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$project\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Jobs/GitDeploy/CheckPreviewBuildJob.php
+
+		-
+			message: '#^Using nullsafe property access on non\-nullable type App\\Models\\Project\. Use \-\> instead\.$#'
+			identifier: nullsafe.neverNull
+			count: 1
+			path: app/Jobs/GitDeploy/CheckPreviewReadyJob.php
+
+		-
+			message: '#^Match expression does not handle remaining value\: string$#'
+			identifier: match.unhandled
+			count: 1
+			path: app/Jobs/InstallSandboxJob.php
+
+		-
+			message: '#^Call to method find\(\) on an unknown class App\\Models\\TenantAwareKnativeRegion\.$#'
+			identifier: class.notFound
+			count: 1
+			path: app/Jobs/InstallTracingJob.php
+
+		-
+			message: '#^Using nullsafe method call on non\-nullable type Illuminate\\Database\\Eloquent\\Relations\\HasOne\. Use \-\> instead\.$#'
+			identifier: nullsafe.neverNull
+			count: 3
+			path: app/Jobs/RemoveDemoJob.php
+
+		-
+			message: '#^Parameter \#1 \$deployment of class App\\Events\\DeploymentCreated constructor expects App\\Models\\Deployment, Illuminate\\Database\\Eloquent\\Model given\.$#'
+			identifier: argument.type
+			count: 1
+			path: app/Jobs/RuntimeTestDeployJob.php
+
+		-
+			message: '#^Match expression does not handle remaining value\: string$#'
+			identifier: match.unhandled
+			count: 1
+			path: app/Jobs/UninstallSandboxJob.php
+
+		-
+			message: '#^Negated boolean expression is always false\.$#'
+			identifier: booleanNot.alwaysFalse
+			count: 1
+			path: app/Listeners/ProcessTeardown.php
+
+		-
+			message: '#^PHPDoc tag @var for variable \$user contains unresolvable type\.$#'
+			identifier: varTag.unresolvableType
+			count: 1
+			path: app/Mcp/Hosting/GatewayAuthenticator.php
+
+		-
+			message: '#^Instanceof between Laravel\\Sanctum\\PersonalAccessToken and Laravel\\Sanctum\\PersonalAccessToken will always evaluate to true\.$#'
+			identifier: instanceof.alwaysTrue
+			count: 1
+			path: app/Mcp/Http/Controllers/HostedServerController.php
+
+		-
+			message: '#^Method App\\Mcp\\Http\\Controllers\\HostedServerController\:\:triggerType\(\) never returns null so it can be removed from the return type\.$#'
+			identifier: return.unusedType
+			count: 1
+			path: app/Mcp/Http/Controllers/HostedServerController.php
+
+		-
+			message: '#^Call to function is_array\(\) with list\<string\|null\> will always evaluate to true\.$#'
+			identifier: function.alreadyNarrowedType
+			count: 1
+			path: app/Mcp/Http/Controllers/McpGatewayController.php
+
+		-
+			message: '#^Using nullsafe property access "\?\-\>name" on left side of \?\? is unnecessary\. Use \-\> instead\.$#'
+			identifier: nullsafe.neverNull
+			count: 1
+			path: app/Mcp/Http/Controllers/McpSettingsController.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$created_at\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Mcp/Http/Resources/HostedServerResource.php
+
+		-
+			message: '#^Using nullsafe method call on non\-nullable type Illuminate\\Support\\Carbon\. Use \-\> instead\.$#'
+			identifier: nullsafe.neverNull
+			count: 1
+			path: app/Mcp/Models/HostedServerCall.php
+
+		-
+			message: '#^Right side of && is always true\.$#'
+			identifier: booleanAnd.rightAlwaysTrue
+			count: 1
+			path: app/Mcp/Models/OAuthRequest.php
+
+		-
+			message: '#^Access to an undefined property Modules\\Tenancy\\Models\\Tenant\:\:\$name\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Mcp/OAuth/AuthorizationServer.php
+
+		-
+			message: '#^Call to method whereKey\(\) on an unknown class App\\Models\\TenantAwareUser\.$#'
+			identifier: class.notFound
+			count: 1
+			path: app/Mcp/OAuth/AuthorizationServer.php
+
+		-
+			message: '#^Parameter \#1 \$array \(list\<string\>\) of array_values is already a list, call has no effect\.$#'
+			identifier: arrayValues.list
+			count: 1
+			path: app/Mcp/OAuth/AuthorizationServer.php
+
+		-
+			message: '#^Parameter \#1 \$array \(non\-empty\-list\<string\>\) of array_values is already a list, call has no effect\.$#'
+			identifier: arrayValues.list
+			count: 1
+			path: app/Mcp/OAuth/AuthorizationServer.php
+
+		-
+			message: '#^Using nullsafe method call on non\-nullable type Illuminate\\Support\\Carbon\. Use \-\> instead\.$#'
+			identifier: nullsafe.neverNull
+			count: 1
+			path: app/Mcp/OAuth/AuthorizationServer.php
+
+		-
+			message: '#^Using nullsafe property access "\?\-\>name" on left side of \?\? is unnecessary\. Use \-\> instead\.$#'
+			identifier: nullsafe.neverNull
+			count: 1
+			path: app/Mcp/OAuth/AuthorizationServer.php
+
+		-
+			message: '#^Strict comparison using \!\=\= between string and null will always evaluate to true\.$#'
+			identifier: notIdentical.alwaysTrue
+			count: 1
+			path: app/Mcp/Prompts/PromptRegistry.php
+
+		-
+			message: '#^Left side of && is always true\.$#'
+			identifier: booleanAnd.leftAlwaysTrue
+			count: 1
+			path: app/Mcp/Server/SessionStore.php
+
+		-
+			message: '#^Negated boolean expression is always false\.$#'
+			identifier: booleanNot.alwaysFalse
+			count: 1
+			path: app/Mcp/Server/SessionStore.php
+
+		-
+			message: '#^Parameter \#1 \$array \(list\<string\>\) of array_values is already a list, call has no effect\.$#'
+			identifier: arrayValues.list
+			count: 1
+			path: app/Mcp/Support/McpAudit.php
+
+		-
+			message: '#^Offset ''status'' on non\-empty\-array\<mixed\> on left side of \?\? always exists and is not nullable\.$#'
+			identifier: nullCoalesce.offset
+			count: 1
+			path: app/Mcp/Tools/Catalog/Models/ModelServiceDeploy.php
+
+		-
+			message: '#^Parameter \#1 \$array \(list\<string\>\) of array_values is already a list, call has no effect\.$#'
+			identifier: arrayValues.list
+			count: 1
+			path: app/Mcp/Tools/Catalog/Models/ModelServicesList.php
+
+		-
+			message: '#^Parameter \#1 \$array \(list\<string\>\) of array_values is already a list, call has no effect\.$#'
+			identifier: arrayValues.list
+			count: 1
+			path: app/Mcp/Tools/Catalog/Projects/ProjectGet.php
+
+		-
+			message: '#^Parameter \#1 \$array \(list\<''command''\|''config''\|''config_message''\|''cpu''\|''description''\|''handler''\|''image''\|''knative_region_id''\|''max_scale''\|''memory_mb''\|''min_scale''\|''ports''\|''queue_stream''\|''scale_to_zero''\|''schedule''\|''timeout_seconds''\|''trigger_type''\>\) of array_values is already a list, call has no effect\.$#'
+			identifier: arrayValues.list
+			count: 1
+			path: app/Mcp/Tools/Catalog/Projects/ProjectUpdate.php
+
+		-
+			message: '#^Parameter \#1 \$array \(list\<int\|string\>\) of array_values is already a list, call has no effect\.$#'
+			identifier: arrayValues.list
+			count: 1
+			path: app/Mcp/Tools/Schema.php
+
+		-
+			message: '#^Parameter \#1 \$array \(non\-empty\-list\<string\>\) of array_values is already a list, call has no effect\.$#'
+			identifier: arrayValues.list
+			count: 1
+			path: app/Mcp/Tools/Schema.php
+
+		-
+			message: '#^Method App\\Models\\AiModel\:\:readySnapshotIn\(\) should return App\\Models\\AiModelSnapshot\|null but returns Illuminate\\Database\\Eloquent\\Model\|null\.$#'
+			identifier: return.type
+			count: 1
+			path: app/Models/AiModel.php
+
+		-
+			message: '#^Using nullsafe property access "\?\-\>name" on left side of \?\? is unnecessary\. Use \-\> instead\.$#'
+			identifier: nullsafe.neverNull
+			count: 1
+			path: app/Models/AiModelService.php
+
+		-
+			message: '#^Unsafe usage of new static\(\)\.$#'
+			identifier: new.static
+			count: 1
+			path: app/Models/BindingRegionService.php
+
+		-
+			message: '#^Unsafe usage of new static\(\)\.$#'
+			identifier: new.static
+			count: 2
+			path: app/Models/Branding.php
+
+		-
+			message: '#^Call to function is_string\(\) with array\<mixed\>\|null will always evaluate to false\.$#'
+			identifier: function.impossibleType
+			count: 1
+			path: app/Models/Concerns/KnativeRegionAccessorsTrait.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$id\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Models/Git/GitDeploy.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$label\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Models/Git/GitDeploy.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$number\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Models/Git/GitDeploy.php
+
+		-
+			message: '#^Method App\\Models\\ImageSecurityReport\:\:forRuntimeBuild\(\) should return App\\Models\\ImageSecurityReport\|null but returns Illuminate\\Database\\Eloquent\\Model\|null\.$#'
+			identifier: return.type
+			count: 1
+			path: app/Models/ImageSecurityReport.php
+
+		-
+			message: '#^Method App\\Models\\ImageSecurityReport\:\:forUploadedImage\(\) should return App\\Models\\ImageSecurityReport\|null but returns Illuminate\\Database\\Eloquent\\Model\|null\.$#'
+			identifier: return.type
+			count: 1
+			path: app/Models/ImageSecurityReport.php
+
+		-
+			message: '#^PHPDoc tag @method for method App\\Models\\KnativeRegion\:\:demo\(\) return type contains unknown class App\\Models\\TenantAwareKnativeRegion\.$#'
+			identifier: class.notFound
+			count: 1
+			path: app/Models/KnativeRegion.php
+
+		-
+			message: '#^PHPDoc tag @method for method App\\Models\\KnativeRegion\:\:newModelQuery\(\) return type contains unknown class App\\Models\\TenantAwareKnativeRegion\.$#'
+			identifier: class.notFound
+			count: 1
+			path: app/Models/KnativeRegion.php
+
+		-
+			message: '#^PHPDoc tag @method for method App\\Models\\KnativeRegion\:\:newQuery\(\) return type contains unknown class App\\Models\\TenantAwareKnativeRegion\.$#'
+			identifier: class.notFound
+			count: 1
+			path: app/Models/KnativeRegion.php
+
+		-
+			message: '#^PHPDoc tag @method for method App\\Models\\KnativeRegion\:\:query\(\) return type contains unknown class App\\Models\\TenantAwareKnativeRegion\.$#'
+			identifier: class.notFound
+			count: 1
+			path: app/Models/KnativeRegion.php
+
+		-
+			message: '#^PHPDoc tag @method for method App\\Models\\KnativeRegion\:\:real\(\) return type contains unknown class App\\Models\\TenantAwareKnativeRegion\.$#'
+			identifier: class.notFound
+			count: 1
+			path: app/Models/KnativeRegion.php
+
+		-
+			message: '#^PHPDoc tag @method for method App\\Models\\KnativeRegion\:\:whereClusterStatus\(\) return type contains unknown class App\\Models\\TenantAwareKnativeRegion\.$#'
+			identifier: class.notFound
+			count: 1
+			path: app/Models/KnativeRegion.php
+
+		-
+			message: '#^PHPDoc tag @method for method App\\Models\\KnativeRegion\:\:whereClusterStatusMessage\(\) return type contains unknown class App\\Models\\TenantAwareKnativeRegion\.$#'
+			identifier: class.notFound
+			count: 1
+			path: app/Models/KnativeRegion.php
+
+		-
+			message: '#^PHPDoc tag @method for method App\\Models\\KnativeRegion\:\:whereCreatedAt\(\) return type contains unknown class App\\Models\\TenantAwareKnativeRegion\.$#'
+			identifier: class.notFound
+			count: 1
+			path: app/Models/KnativeRegion.php
+
+		-
+			message: '#^PHPDoc tag @method for method App\\Models\\KnativeRegion\:\:whereDnsResolved\(\) return type contains unknown class App\\Models\\TenantAwareKnativeRegion\.$#'
+			identifier: class.notFound
+			count: 1
+			path: app/Models/KnativeRegion.php
+
+		-
+			message: '#^PHPDoc tag @method for method App\\Models\\KnativeRegion\:\:whereDomainMigrationOldDomain\(\) return type contains unknown class App\\Models\\TenantAwareKnativeRegion\.$#'
+			identifier: class.notFound
+			count: 1
+			path: app/Models/KnativeRegion.php
+
+		-
+			message: '#^PHPDoc tag @method for method App\\Models\\KnativeRegion\:\:whereDomainMigrationStartedAt\(\) return type contains unknown class App\\Models\\TenantAwareKnativeRegion\.$#'
+			identifier: class.notFound
+			count: 1
+			path: app/Models/KnativeRegion.php
+
+		-
+			message: '#^PHPDoc tag @method for method App\\Models\\KnativeRegion\:\:whereDomainMigrationStatus\(\) return type contains unknown class App\\Models\\TenantAwareKnativeRegion\.$#'
+			identifier: class.notFound
+			count: 1
+			path: app/Models/KnativeRegion.php
+
+		-
+			message: '#^PHPDoc tag @method for method App\\Models\\KnativeRegion\:\:whereExternalIp\(\) return type contains unknown class App\\Models\\TenantAwareKnativeRegion\.$#'
+			identifier: class.notFound
+			count: 1
+			path: app/Models/KnativeRegion.php
+
+		-
+			message: '#^PHPDoc tag @method for method App\\Models\\KnativeRegion\:\:whereId\(\) return type contains unknown class App\\Models\\TenantAwareKnativeRegion\.$#'
+			identifier: class.notFound
+			count: 1
+			path: app/Models/KnativeRegion.php
+
+		-
+			message: '#^PHPDoc tag @method for method App\\Models\\KnativeRegion\:\:whereIsActive\(\) return type contains unknown class App\\Models\\TenantAwareKnativeRegion\.$#'
+			identifier: class.notFound
+			count: 1
+			path: app/Models/KnativeRegion.php
+
+		-
+			message: '#^PHPDoc tag @method for method App\\Models\\KnativeRegion\:\:whereIsDemo\(\) return type contains unknown class App\\Models\\TenantAwareKnativeRegion\.$#'
+			identifier: class.notFound
+			count: 1
+			path: app/Models/KnativeRegion.php
+
+		-
+			message: '#^PHPDoc tag @method for method App\\Models\\KnativeRegion\:\:whereIsSynced\(\) return type contains unknown class App\\Models\\TenantAwareKnativeRegion\.$#'
+			identifier: class.notFound
+			count: 1
+			path: app/Models/KnativeRegion.php
+
+		-
+			message: '#^PHPDoc tag @method for method App\\Models\\KnativeRegion\:\:whereKnativeEventingNamespace\(\) return type contains unknown class App\\Models\\TenantAwareKnativeRegion\.$#'
+			identifier: class.notFound
+			count: 1
+			path: app/Models/KnativeRegion.php
+
+		-
+			message: '#^PHPDoc tag @method for method App\\Models\\KnativeRegion\:\:whereKnativeEventingStatus\(\) return type contains unknown class App\\Models\\TenantAwareKnativeRegion\.$#'
+			identifier: class.notFound
+			count: 1
+			path: app/Models/KnativeRegion.php
+
+		-
+			message: '#^PHPDoc tag @method for method App\\Models\\KnativeRegion\:\:whereKnativeEventingStatusMessage\(\) return type contains unknown class App\\Models\\TenantAwareKnativeRegion\.$#'
+			identifier: class.notFound
+			count: 1
+			path: app/Models/KnativeRegion.php
+
+		-
+			message: '#^PHPDoc tag @method for method App\\Models\\KnativeRegion\:\:whereKnativeEventingVersion\(\) return type contains unknown class App\\Models\\TenantAwareKnativeRegion\.$#'
+			identifier: class.notFound
+			count: 1
+			path: app/Models/KnativeRegion.php
+
+		-
+			message: '#^PHPDoc tag @method for method App\\Models\\KnativeRegion\:\:whereKnativeOperatorNamespace\(\) return type contains unknown class App\\Models\\TenantAwareKnativeRegion\.$#'
+			identifier: class.notFound
+			count: 1
+			path: app/Models/KnativeRegion.php
+
+		-
+			message: '#^PHPDoc tag @method for method App\\Models\\KnativeRegion\:\:whereKnativeOperatorStatus\(\) return type contains unknown class App\\Models\\TenantAwareKnativeRegion\.$#'
+			identifier: class.notFound
+			count: 1
+			path: app/Models/KnativeRegion.php
+
+		-
+			message: '#^PHPDoc tag @method for method App\\Models\\KnativeRegion\:\:whereKnativeOperatorStatusMessage\(\) return type contains unknown class App\\Models\\TenantAwareKnativeRegion\.$#'
+			identifier: class.notFound
+			count: 1
+			path: app/Models/KnativeRegion.php
+
+		-
+			message: '#^PHPDoc tag @method for method App\\Models\\KnativeRegion\:\:whereKnativeRedisStatus\(\) return type contains unknown class App\\Models\\TenantAwareKnativeRegion\.$#'
+			identifier: class.notFound
+			count: 1
+			path: app/Models/KnativeRegion.php
+
+		-
+			message: '#^PHPDoc tag @method for method App\\Models\\KnativeRegion\:\:whereKnativeRedisStatusMessage\(\) return type contains unknown class App\\Models\\TenantAwareKnativeRegion\.$#'
+			identifier: class.notFound
+			count: 1
+			path: app/Models/KnativeRegion.php
+
+		-
+			message: '#^PHPDoc tag @method for method App\\Models\\KnativeRegion\:\:whereKnativeServingIngressClass\(\) return type contains unknown class App\\Models\\TenantAwareKnativeRegion\.$#'
+			identifier: class.notFound
+			count: 1
+			path: app/Models/KnativeRegion.php
+
+		-
+			message: '#^PHPDoc tag @method for method App\\Models\\KnativeRegion\:\:whereKnativeServingNamespace\(\) return type contains unknown class App\\Models\\TenantAwareKnativeRegion\.$#'
+			identifier: class.notFound
+			count: 1
+			path: app/Models/KnativeRegion.php
+
+		-
+			message: '#^PHPDoc tag @method for method App\\Models\\KnativeRegion\:\:whereKnativeServingStatus\(\) return type contains unknown class App\\Models\\TenantAwareKnativeRegion\.$#'
+			identifier: class.notFound
+			count: 1
+			path: app/Models/KnativeRegion.php
+
+		-
+			message: '#^PHPDoc tag @method for method App\\Models\\KnativeRegion\:\:whereKnativeServingStatusMessage\(\) return type contains unknown class App\\Models\\TenantAwareKnativeRegion\.$#'
+			identifier: class.notFound
+			count: 1
+			path: app/Models/KnativeRegion.php
+
+		-
+			message: '#^PHPDoc tag @method for method App\\Models\\KnativeRegion\:\:whereKnativeServingVersion\(\) return type contains unknown class App\\Models\\TenantAwareKnativeRegion\.$#'
+			identifier: class.notFound
+			count: 1
+			path: app/Models/KnativeRegion.php
+
+		-
+			message: '#^PHPDoc tag @method for method App\\Models\\KnativeRegion\:\:whereKnativeSettings\(\) return type contains unknown class App\\Models\\TenantAwareKnativeRegion\.$#'
+			identifier: class.notFound
+			count: 1
+			path: app/Models/KnativeRegion.php
+
+		-
+			message: '#^PHPDoc tag @method for method App\\Models\\KnativeRegion\:\:whereKnativeStatus\(\) return type contains unknown class App\\Models\\TenantAwareKnativeRegion\.$#'
+			identifier: class.notFound
+			count: 1
+			path: app/Models/KnativeRegion.php
+
+		-
+			message: '#^PHPDoc tag @method for method App\\Models\\KnativeRegion\:\:whereKnativeStatusCheckedAt\(\) return type contains unknown class App\\Models\\TenantAwareKnativeRegion\.$#'
+			identifier: class.notFound
+			count: 1
+			path: app/Models/KnativeRegion.php
+
+		-
+			message: '#^PHPDoc tag @method for method App\\Models\\KnativeRegion\:\:whereKnativeStatusMessage\(\) return type contains unknown class App\\Models\\TenantAwareKnativeRegion\.$#'
+			identifier: class.notFound
+			count: 1
+			path: app/Models/KnativeRegion.php
+
+		-
+			message: '#^PHPDoc tag @method for method App\\Models\\KnativeRegion\:\:whereKubeconfig\(\) return type contains unknown class App\\Models\\TenantAwareKnativeRegion\.$#'
+			identifier: class.notFound
+			count: 1
+			path: app/Models/KnativeRegion.php
+
+		-
+			message: '#^PHPDoc tag @method for method App\\Models\\KnativeRegion\:\:whereLokiManaged\(\) return type contains unknown class App\\Models\\TenantAwareKnativeRegion\.$#'
+			identifier: class.notFound
+			count: 1
+			path: app/Models/KnativeRegion.php
+
+		-
+			message: '#^PHPDoc tag @method for method App\\Models\\KnativeRegion\:\:whereLokiStatus\(\) return type contains unknown class App\\Models\\TenantAwareKnativeRegion\.$#'
+			identifier: class.notFound
+			count: 1
+			path: app/Models/KnativeRegion.php
+
+		-
+			message: '#^PHPDoc tag @method for method App\\Models\\KnativeRegion\:\:whereLokiUrl\(\) return type contains unknown class App\\Models\\TenantAwareKnativeRegion\.$#'
+			identifier: class.notFound
+			count: 1
+			path: app/Models/KnativeRegion.php
+
+		-
+			message: '#^PHPDoc tag @method for method App\\Models\\KnativeRegion\:\:whereMigrationOldIp\(\) return type contains unknown class App\\Models\\TenantAwareKnativeRegion\.$#'
+			identifier: class.notFound
+			count: 1
+			path: app/Models/KnativeRegion.php
+
+		-
+			message: '#^PHPDoc tag @method for method App\\Models\\KnativeRegion\:\:whereMigrationOldKubeconfig\(\) return type contains unknown class App\\Models\\TenantAwareKnativeRegion\.$#'
+			identifier: class.notFound
+			count: 1
+			path: app/Models/KnativeRegion.php
+
+		-
+			message: '#^PHPDoc tag @method for method App\\Models\\KnativeRegion\:\:whereMigrationStartedAt\(\) return type contains unknown class App\\Models\\TenantAwareKnativeRegion\.$#'
+			identifier: class.notFound
+			count: 1
+			path: app/Models/KnativeRegion.php
+
+		-
+			message: '#^PHPDoc tag @method for method App\\Models\\KnativeRegion\:\:whereMigrationStatus\(\) return type contains unknown class App\\Models\\TenantAwareKnativeRegion\.$#'
+			identifier: class.notFound
+			count: 1
+			path: app/Models/KnativeRegion.php
+
+		-
+			message: '#^PHPDoc tag @method for method App\\Models\\KnativeRegion\:\:whereName\(\) return type contains unknown class App\\Models\\TenantAwareKnativeRegion\.$#'
+			identifier: class.notFound
+			count: 1
+			path: app/Models/KnativeRegion.php
+
+		-
+			message: '#^PHPDoc tag @method for method App\\Models\\KnativeRegion\:\:whereOwnerTenantId\(\) return type contains unknown class App\\Models\\TenantAwareKnativeRegion\.$#'
+			identifier: class.notFound
+			count: 1
+			path: app/Models/KnativeRegion.php
+
+		-
+			message: '#^PHPDoc tag @method for method App\\Models\\KnativeRegion\:\:whereProjectNamespace\(\) return type contains unknown class App\\Models\\TenantAwareKnativeRegion\.$#'
+			identifier: class.notFound
+			count: 1
+			path: app/Models/KnativeRegion.php
+
+		-
+			message: '#^PHPDoc tag @method for method App\\Models\\KnativeRegion\:\:wherePrometheusManaged\(\) return type contains unknown class App\\Models\\TenantAwareKnativeRegion\.$#'
+			identifier: class.notFound
+			count: 1
+			path: app/Models/KnativeRegion.php
+
+		-
+			message: '#^PHPDoc tag @method for method App\\Models\\KnativeRegion\:\:wherePrometheusUrl\(\) return type contains unknown class App\\Models\\TenantAwareKnativeRegion\.$#'
+			identifier: class.notFound
+			count: 1
+			path: app/Models/KnativeRegion.php
+
+		-
+			message: '#^PHPDoc tag @method for method App\\Models\\KnativeRegion\:\:whereRedisAddress\(\) return type contains unknown class App\\Models\\TenantAwareKnativeRegion\.$#'
+			identifier: class.notFound
+			count: 1
+			path: app/Models/KnativeRegion.php
+
+		-
+			message: '#^PHPDoc tag @method for method App\\Models\\KnativeRegion\:\:whereRedisMode\(\) return type contains unknown class App\\Models\\TenantAwareKnativeRegion\.$#'
+			identifier: class.notFound
+			count: 1
+			path: app/Models/KnativeRegion.php
+
+		-
+			message: '#^PHPDoc tag @method for method App\\Models\\KnativeRegion\:\:whereRedisPassword\(\) return type contains unknown class App\\Models\\TenantAwareKnativeRegion\.$#'
+			identifier: class.notFound
+			count: 1
+			path: app/Models/KnativeRegion.php
+
+		-
+			message: '#^PHPDoc tag @method for method App\\Models\\KnativeRegion\:\:whereRegionDemoStatus\(\) return type contains unknown class App\\Models\\TenantAwareKnativeRegion\.$#'
+			identifier: class.notFound
+			count: 1
+			path: app/Models/KnativeRegion.php
+
+		-
+			message: '#^PHPDoc tag @method for method App\\Models\\KnativeRegion\:\:whereRegionMode\(\) return type contains unknown class App\\Models\\TenantAwareKnativeRegion\.$#'
+			identifier: class.notFound
+			count: 1
+			path: app/Models/KnativeRegion.php
+
+		-
+			message: '#^PHPDoc tag @method for method App\\Models\\KnativeRegion\:\:whereRegionStatus\(\) return type contains unknown class App\\Models\\TenantAwareKnativeRegion\.$#'
+			identifier: class.notFound
+			count: 1
+			path: app/Models/KnativeRegion.php
+
+		-
+			message: '#^PHPDoc tag @method for method App\\Models\\KnativeRegion\:\:whereRegistryAddress\(\) return type contains unknown class App\\Models\\TenantAwareKnativeRegion\.$#'
+			identifier: class.notFound
+			count: 1
+			path: app/Models/KnativeRegion.php
+
+		-
+			message: '#^PHPDoc tag @method for method App\\Models\\KnativeRegion\:\:whereRegistryMode\(\) return type contains unknown class App\\Models\\TenantAwareKnativeRegion\.$#'
+			identifier: class.notFound
+			count: 1
+			path: app/Models/KnativeRegion.php
+
+		-
+			message: '#^PHPDoc tag @method for method App\\Models\\KnativeRegion\:\:whereRegistryNamespace\(\) return type contains unknown class App\\Models\\TenantAwareKnativeRegion\.$#'
+			identifier: class.notFound
+			count: 1
+			path: app/Models/KnativeRegion.php
+
+		-
+			message: '#^PHPDoc tag @method for method App\\Models\\KnativeRegion\:\:whereRegistryPassword\(\) return type contains unknown class App\\Models\\TenantAwareKnativeRegion\.$#'
+			identifier: class.notFound
+			count: 1
+			path: app/Models/KnativeRegion.php
+
+		-
+			message: '#^PHPDoc tag @method for method App\\Models\\KnativeRegion\:\:whereRegistryStatus\(\) return type contains unknown class App\\Models\\TenantAwareKnativeRegion\.$#'
+			identifier: class.notFound
+			count: 1
+			path: app/Models/KnativeRegion.php
+
+		-
+			message: '#^PHPDoc tag @method for method App\\Models\\KnativeRegion\:\:whereRegistryStatusMessage\(\) return type contains unknown class App\\Models\\TenantAwareKnativeRegion\.$#'
+			identifier: class.notFound
+			count: 1
+			path: app/Models/KnativeRegion.php
+
+		-
+			message: '#^PHPDoc tag @method for method App\\Models\\KnativeRegion\:\:whereRegistryStorageConfig\(\) return type contains unknown class App\\Models\\TenantAwareKnativeRegion\.$#'
+			identifier: class.notFound
+			count: 1
+			path: app/Models/KnativeRegion.php
+
+		-
+			message: '#^PHPDoc tag @method for method App\\Models\\KnativeRegion\:\:whereRegistryStorageType\(\) return type contains unknown class App\\Models\\TenantAwareKnativeRegion\.$#'
+			identifier: class.notFound
+			count: 1
+			path: app/Models/KnativeRegion.php
+
+		-
+			message: '#^PHPDoc tag @method for method App\\Models\\KnativeRegion\:\:whereRegistryUsername\(\) return type contains unknown class App\\Models\\TenantAwareKnativeRegion\.$#'
+			identifier: class.notFound
+			count: 1
+			path: app/Models/KnativeRegion.php
+
+		-
+			message: '#^PHPDoc tag @method for method App\\Models\\KnativeRegion\:\:whereSandboxBuildRuntime\(\) return type contains unknown class App\\Models\\TenantAwareKnativeRegion\.$#'
+			identifier: class.notFound
+			count: 1
+			path: app/Models/KnativeRegion.php
+
+		-
+			message: '#^PHPDoc tag @method for method App\\Models\\KnativeRegion\:\:whereSandboxCaasRuntime\(\) return type contains unknown class App\\Models\\TenantAwareKnativeRegion\.$#'
+			identifier: class.notFound
+			count: 1
+			path: app/Models/KnativeRegion.php
+
+		-
+			message: '#^PHPDoc tag @method for method App\\Models\\KnativeRegion\:\:whereSandboxFaasRuntime\(\) return type contains unknown class App\\Models\\TenantAwareKnativeRegion\.$#'
+			identifier: class.notFound
+			count: 1
+			path: app/Models/KnativeRegion.php
+
+		-
+			message: '#^PHPDoc tag @method for method App\\Models\\KnativeRegion\:\:whereSandboxGvisorStatus\(\) return type contains unknown class App\\Models\\TenantAwareKnativeRegion\.$#'
+			identifier: class.notFound
+			count: 1
+			path: app/Models/KnativeRegion.php
+
+		-
+			message: '#^PHPDoc tag @method for method App\\Models\\KnativeRegion\:\:whereSandboxGvisorStatusMessage\(\) return type contains unknown class App\\Models\\TenantAwareKnativeRegion\.$#'
+			identifier: class.notFound
+			count: 1
+			path: app/Models/KnativeRegion.php
+
+		-
+			message: '#^PHPDoc tag @method for method App\\Models\\KnativeRegion\:\:whereSandboxKataHypervisor\(\) return type contains unknown class App\\Models\\TenantAwareKnativeRegion\.$#'
+			identifier: class.notFound
+			count: 1
+			path: app/Models/KnativeRegion.php
+
+		-
+			message: '#^PHPDoc tag @method for method App\\Models\\KnativeRegion\:\:whereSandboxKataStatus\(\) return type contains unknown class App\\Models\\TenantAwareKnativeRegion\.$#'
+			identifier: class.notFound
+			count: 1
+			path: app/Models/KnativeRegion.php
+
+		-
+			message: '#^PHPDoc tag @method for method App\\Models\\KnativeRegion\:\:whereSandboxKataStatusMessage\(\) return type contains unknown class App\\Models\\TenantAwareKnativeRegion\.$#'
+			identifier: class.notFound
+			count: 1
+			path: app/Models/KnativeRegion.php
+
+		-
+			message: '#^PHPDoc tag @method for method App\\Models\\KnativeRegion\:\:whereSandboxXaasRuntime\(\) return type contains unknown class App\\Models\\TenantAwareKnativeRegion\.$#'
+			identifier: class.notFound
+			count: 1
+			path: app/Models/KnativeRegion.php
+
+		-
+			message: '#^PHPDoc tag @method for method App\\Models\\KnativeRegion\:\:whereSelectedWorkers\(\) return type contains unknown class App\\Models\\TenantAwareKnativeRegion\.$#'
+			identifier: class.notFound
+			count: 1
+			path: app/Models/KnativeRegion.php
+
+		-
+			message: '#^PHPDoc tag @method for method App\\Models\\KnativeRegion\:\:whereTotalCpuM\(\) return type contains unknown class App\\Models\\TenantAwareKnativeRegion\.$#'
+			identifier: class.notFound
+			count: 1
+			path: app/Models/KnativeRegion.php
+
+		-
+			message: '#^PHPDoc tag @method for method App\\Models\\KnativeRegion\:\:whereTotalMemoryMb\(\) return type contains unknown class App\\Models\\TenantAwareKnativeRegion\.$#'
+			identifier: class.notFound
+			count: 1
+			path: app/Models/KnativeRegion.php
+
+		-
+			message: '#^PHPDoc tag @method for method App\\Models\\KnativeRegion\:\:whereUpdatedAt\(\) return type contains unknown class App\\Models\\TenantAwareKnativeRegion\.$#'
+			identifier: class.notFound
+			count: 1
+			path: app/Models/KnativeRegion.php
+
+		-
+			message: '#^Access to an undefined property App\\Models\\Observability\\AlertChannel\:\:\$created_at\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Models/Observability/AlertChannel.php
+
+		-
+			message: '#^Access to an undefined property App\\Models\\Observability\\AlertDelivery\:\:\$created_at\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Models/Observability/AlertDelivery.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$name\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Models/Observability/AlertDelivery.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$severity\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Models/Observability/AlertDelivery.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$status\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Models/Observability/AlertDelivery.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$title\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Models/Observability/AlertDelivery.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$type\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Models/Observability/AlertDelivery.php
+
+		-
+			message: '#^Using nullsafe method call on non\-nullable type Illuminate\\Support\\Carbon\. Use \-\> instead\.$#'
+			identifier: nullsafe.neverNull
+			count: 1
+			path: app/Models/Observability/AlertEvent.php
+
+		-
+			message: '#^Using nullsafe method call on non\-nullable type Illuminate\\Support\\Carbon\. Use \-\> instead\.$#'
+			identifier: nullsafe.neverNull
+			count: 2
+			path: app/Models/Observability/ReplayCapture.php
+
+		-
+			message: '#^Ternary operator condition is always true\.$#'
+			identifier: ternary.alwaysTrue
+			count: 1
+			path: app/Models/Observability/UptimeIncident.php
+
+		-
+			message: '#^Using nullsafe method call on non\-nullable type Illuminate\\Support\\Carbon\. Use \-\> instead\.$#'
+			identifier: nullsafe.neverNull
+			count: 1
+			path: app/Models/Observability/UptimeIncident.php
+
+		-
+			message: '#^Using nullsafe method call on non\-nullable type Illuminate\\Support\\Carbon\. Use \-\> instead\.$#'
+			identifier: nullsafe.neverNull
+			count: 1
+			path: app/Models/Observability/UptimeResult.php
+
+		-
+			message: '#^Unsafe call to private method App\\Models\\RegionSupplyChainSetting\:\:defaultsFor\(\) through static\:\:\.$#'
+			identifier: staticClassAccess.privateMethod
+			count: 2
+			path: app/Models/RegionSupplyChainSetting.php
+
+		-
+			message: '#^Unsafe usage of new static\(\)\.$#'
+			identifier: new.static
+			count: 1
+			path: app/Models/RegionSupplyChainSetting.php
+
+		-
+			message: '#^Unsafe usage of new static\(\)\.$#'
+			identifier: new.static
+			count: 1
+			path: app/Models/SandboxRegionSetting.php
+
+		-
+			message: '#^PHPDoc tag @method for method App\\Models\\User\:\:newModelQuery\(\) return type contains unknown class App\\Models\\TenantAwareUser\.$#'
+			identifier: class.notFound
+			count: 1
+			path: app/Models/User.php
+
+		-
+			message: '#^PHPDoc tag @method for method App\\Models\\User\:\:newQuery\(\) return type contains unknown class App\\Models\\TenantAwareUser\.$#'
+			identifier: class.notFound
+			count: 1
+			path: app/Models/User.php
+
+		-
+			message: '#^PHPDoc tag @method for method App\\Models\\User\:\:query\(\) return type contains unknown class App\\Models\\TenantAwareUser\.$#'
+			identifier: class.notFound
+			count: 1
+			path: app/Models/User.php
+
+		-
+			message: '#^Call to function method_exists\(\) with ''Modules\\\\Tenancy\\\\Services\\\\TenantQuotaService'' and ''addUsageContributor'' will always evaluate to true\.$#'
+			identifier: function.alreadyNarrowedType
+			count: 1
+			path: app/Providers/GitDeployServiceProvider.php
+
+		-
+			message: '#^Left side of && is always true\.$#'
+			identifier: booleanAnd.leftAlwaysTrue
+			count: 1
+			path: app/Providers/GitDeployServiceProvider.php
+
+		-
+			message: '#^Call to function method_exists\(\) with Illuminate\\Foundation\\Http\\Kernel and ''prependMiddleware'' will always evaluate to true\.$#'
+			identifier: function.alreadyNarrowedType
+			count: 1
+			path: app/Providers/McpServiceProvider.php
+
+		-
+			message: '#^Call to function method_exists\(\) with NunoMaduro\\Collision\\Adapters\\Laravel\\ExceptionHandler and ''renderable'' will always evaluate to true\.$#'
+			identifier: function.alreadyNarrowedType
+			count: 1
+			path: app/Providers/McpServiceProvider.php
+
+		-
+			message: '#^Using nullsafe property access on non\-nullable type App\\Models\\Project\. Use \-\> instead\.$#'
+			identifier: nullsafe.neverNull
+			count: 1
+			path: app/Providers/SupplyChainServiceProvider.php
+
+		-
+			message: '#^Call to function method_exists\(\) with NunoMaduro\\Collision\\Adapters\\Laravel\\ExceptionHandler and ''renderable'' will always evaluate to true\.$#'
+			identifier: function.alreadyNarrowedType
+			count: 1
+			path: app/Providers/WorkflowServiceProvider.php
+
+		-
+			message: '#^Negated boolean expression is always false\.$#'
+			identifier: booleanNot.alwaysFalse
+			count: 1
+			path: app/Providers/WorkflowServiceProvider.php
+
+		-
+			message: '#^Using nullsafe property access "\?\-\>trigger_type" on left side of \?\? is unnecessary\. Use \-\> instead\.$#'
+			identifier: nullsafe.neverNull
+			count: 1
+			path: app/Providers/WorkflowServiceProvider.php
+
+		-
+			message: '#^Match expression does not handle remaining value\: string$#'
+			identifier: match.unhandled
+			count: 1
+			path: app/Rules/WithinResourceLimit.php
+
+		-
+			message: '#^Right side of && is always true\.$#'
+			identifier: booleanAnd.rightAlwaysTrue
+			count: 1
+			path: app/Rules/WithinResourceLimit.php
+
+		-
+			message: '#^Using nullsafe property access "\?\-\>min_scale" on left side of \?\? is unnecessary\. Use \-\> instead\.$#'
+			identifier: nullsafe.neverNull
+			count: 1
+			path: app/Rules/WithinResourceLimit.php
+
+		-
+			message: '#^Using nullsafe property access "\?\-\>trigger_type" on left side of \?\? is unnecessary\. Use \-\> instead\.$#'
+			identifier: nullsafe.neverNull
+			count: 1
+			path: app/Rules/WithinResourceLimit.php
+
+		-
+			message: '#^Match expression does not handle remaining value\: string$#'
+			identifier: match.unhandled
+			count: 1
+			path: app/Services/Ai/Gpu/GpuQuota.php
+
+		-
+			message: '#^If condition is always true\.$#'
+			identifier: if.alwaysTrue
+			count: 1
+			path: app/Services/Ai/Gpu/GpuSupportManifests.php
+
+		-
+			message: '#^Offset ''restrict_to_gpu…'' on array\{time_slicing_replicas\?\: int\|null, runtime_class\?\: string\|null\} on left side of \?\? does not exist\.$#'
+			identifier: nullCoalesce.offset
+			count: 1
+			path: app/Services/Ai/Gpu/GpuSupportManifests.php
+
+		-
+			message: '#^Offset ''body'' on array\{json\: mixed, body\: string, link\: string\|null\} on left side of \?\? always exists and is not nullable\.$#'
+			identifier: nullCoalesce.offset
+			count: 1
+			path: app/Services/Ai/Hub/HubClient.php
+
+		-
+			message: '#^Strict comparison using \!\=\= between mixed and null will always evaluate to true\.$#'
+			identifier: notIdentical.alwaysTrue
+			count: 1
+			path: app/Services/Ai/Hub/HubClient.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$alias\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Services/Ai/Models/ModelBindingEnv.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$mount_weights\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Services/Ai/Models/ModelBindingEnv.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$service\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Services/Ai/Models/ModelBindingEnv.php
+
+		-
+			message: '#^Call to an undefined method Illuminate\\Database\\Eloquent\\Model\:\:mountPath\(\)\.$#'
+			identifier: method.notFound
+			count: 1
+			path: app/Services/Ai/Models/ModelBindingEnv.php
+
+		-
+			message: '#^Negated boolean expression is always false\.$#'
+			identifier: booleanNot.alwaysFalse
+			count: 1
+			path: app/Services/Ai/Models/ModelBindingEnv.php
+
+		-
+			message: '#^Parameter \#1 \$binding of method App\\Services\\Ai\\Models\\ModelBindingEnv\:\:envFor\(\) expects App\\Models\\AiModelBinding, Illuminate\\Database\\Eloquent\\Model given\.$#'
+			identifier: argument.type
+			count: 1
+			path: app/Services/Ai/Models/ModelBindingEnv.php
+
+		-
+			message: '#^Parameter \#1 \$binding of method App\\Services\\Ai\\Models\\ModelBindingEnv\:\:weightsSnapshot\(\) expects App\\Models\\AiModelBinding, Illuminate\\Database\\Eloquent\\Model given\.$#'
+			identifier: argument.type
+			count: 1
+			path: app/Services/Ai/Models/ModelBindingEnv.php
+
+		-
+			message: '#^Using nullsafe method call on non\-nullable type App\\Models\\AiModel\. Use \-\> instead\.$#'
+			identifier: nullsafe.neverNull
+			count: 1
+			path: app/Services/Ai/Models/ModelBindingEnv.php
+
+		-
+			message: '#^Using nullsafe property access "\?\-\>knative_region_id" on left side of \?\? is unnecessary\. Use \-\> instead\.$#'
+			identifier: nullsafe.neverNull
+			count: 1
+			path: app/Services/Ai/Models/ModelBindingEnv.php
+
+		-
+			message: '#^Using nullsafe property access on non\-nullable type App\\Models\\AiModel\. Use \-\> instead\.$#'
+			identifier: nullsafe.neverNull
+			count: 1
+			path: app/Services/Ai/Models/ModelBindingEnv.php
+
+		-
+			message: '#^Using nullsafe property access on non\-nullable type App\\Models\\AiModelService\. Use \-\> instead\.$#'
+			identifier: nullsafe.neverNull
+			count: 2
+			path: app/Services/Ai/Models/ModelBindingEnv.php
+
+		-
+			message: '#^Parameter \#1 \$snapshot of method App\\Services\\Ai\\Models\\SnapshotService\:\:delete\(\) expects App\\Models\\AiModelSnapshot, Illuminate\\Database\\Eloquent\\Model given\.$#'
+			identifier: argument.type
+			count: 1
+			path: app/Services/Ai/Models/ModelLibrary.php
+
+		-
+			message: '#^Negated boolean expression is always false\.$#'
+			identifier: booleanNot.alwaysFalse
+			count: 1
+			path: app/Services/Ai/Models/ModelServiceDeployer.php
+
+		-
+			message: '#^Using nullsafe property access "\?\-\>name" on left side of \?\? is unnecessary\. Use \-\> instead\.$#'
+			identifier: nullsafe.neverNull
+			count: 2
+			path: app/Services/Ai/Models/ModelServiceDeployer.php
+
+		-
+			message: '#^Using nullsafe property access on non\-nullable type App\\Models\\AiModel\. Use \-\> instead\.$#'
+			identifier: nullsafe.neverNull
+			count: 1
+			path: app/Services/Ai/Models/ModelServiceDeployer.php
+
+		-
+			message: '#^Strict comparison using \=\=\= between mixed and null will always evaluate to false\.$#'
+			identifier: identical.alwaysFalse
+			count: 1
+			path: app/Services/Ai/Models/ModelServiceSpec.php
+
+		-
+			message: '#^Using nullsafe property access "\?\-\>cpu" on left side of \?\? is unnecessary\. Use \-\> instead\.$#'
+			identifier: nullsafe.neverNull
+			count: 1
+			path: app/Services/Ai/Models/ModelServiceSpec.php
+
+		-
+			message: '#^Using nullsafe property access "\?\-\>device" on left side of \?\? is unnecessary\. Use \-\> instead\.$#'
+			identifier: nullsafe.neverNull
+			count: 1
+			path: app/Services/Ai/Models/ModelServiceSpec.php
+
+		-
+			message: '#^Using nullsafe property access "\?\-\>engine" on left side of \?\? is unnecessary\. Use \-\> instead\.$#'
+			identifier: nullsafe.neverNull
+			count: 1
+			path: app/Services/Ai/Models/ModelServiceSpec.php
+
+		-
+			message: '#^Using nullsafe property access "\?\-\>gpu" on left side of \?\? is unnecessary\. Use \-\> instead\.$#'
+			identifier: nullsafe.neverNull
+			count: 1
+			path: app/Services/Ai/Models/ModelServiceSpec.php
+
+		-
+			message: '#^Using nullsafe property access "\?\-\>max_scale" on left side of \?\? is unnecessary\. Use \-\> instead\.$#'
+			identifier: nullsafe.neverNull
+			count: 1
+			path: app/Services/Ai/Models/ModelServiceSpec.php
+
+		-
+			message: '#^Using nullsafe property access "\?\-\>memory_mb" on left side of \?\? is unnecessary\. Use \-\> instead\.$#'
+			identifier: nullsafe.neverNull
+			count: 1
+			path: app/Services/Ai/Models/ModelServiceSpec.php
+
+		-
+			message: '#^Using nullsafe property access "\?\-\>min_scale" on left side of \?\? is unnecessary\. Use \-\> instead\.$#'
+			identifier: nullsafe.neverNull
+			count: 1
+			path: app/Services/Ai/Models/ModelServiceSpec.php
+
+		-
+			message: '#^Using nullsafe property access "\?\-\>mode" on left side of \?\? is unnecessary\. Use \-\> instead\.$#'
+			identifier: nullsafe.neverNull
+			count: 1
+			path: app/Services/Ai/Models/ModelServiceSpec.php
+
+		-
+			message: '#^Using nullsafe property access "\?\-\>name" on left side of \?\? is unnecessary\. Use \-\> instead\.$#'
+			identifier: nullsafe.neverNull
+			count: 1
+			path: app/Services/Ai/Models/ModelServiceSpec.php
+
+		-
+			message: '#^Using nullsafe property access "\?\-\>scale_to_zero" on left side of \?\? is unnecessary\. Use \-\> instead\.$#'
+			identifier: nullsafe.neverNull
+			count: 1
+			path: app/Services/Ai/Models/ModelServiceSpec.php
+
+		-
+			message: '#^Using nullsafe property access "\?\-\>served_name" on left side of \?\? is unnecessary\. Use \-\> instead\.$#'
+			identifier: nullsafe.neverNull
+			count: 1
+			path: app/Services/Ai/Models/ModelServiceSpec.php
+
+		-
+			message: '#^Using nullsafe property access "\?\-\>service_name" on left side of \?\? is unnecessary\. Use \-\> instead\.$#'
+			identifier: nullsafe.neverNull
+			count: 1
+			path: app/Services/Ai/Models/ModelServiceSpec.php
+
+		-
+			message: '#^Using nullsafe property access "\?\-\>timeout_seconds" on left side of \?\? is unnecessary\. Use \-\> instead\.$#'
+			identifier: nullsafe.neverNull
+			count: 1
+			path: app/Services/Ai/Models/ModelServiceSpec.php
+
+		-
+			message: '#^Parameter &\$podsByRegion by\-ref type of method App\\Services\\Ai\\Models\\ModelUsageMeter\:\:meterCurrent\(\) expects array\<string, array\|null\>\|null, array\<array\|null\> given\.$#'
+			identifier: parameterByRef.type
+			count: 1
+			path: app/Services/Ai/Models/ModelUsageMeter.php
+
+		-
+			message: '#^Right side of && is always true\.$#'
+			identifier: booleanAnd.rightAlwaysTrue
+			count: 1
+			path: app/Services/Ai/Models/SnapshotService.php
+
+		-
+			message: '#^Using nullsafe property access on non\-nullable type App\\Models\\AiModel\. Use \-\> instead\.$#'
+			identifier: nullsafe.neverNull
+			count: 2
+			path: app/Services/Ai/Models/SnapshotService.php
+
+		-
+			message: '#^Negated boolean expression is always false\.$#'
+			identifier: booleanNot.alwaysFalse
+			count: 1
+			path: app/Services/Bindings/BindingEnv.php
+
+		-
+			message: '#^Parameter \#1 \$array \(list\<string\>\) of array_values is already a list, call has no effect\.$#'
+			identifier: arrayValues.list
+			count: 1
+			path: app/Services/Bindings/BindingEnv.php
+
+		-
+			message: '#^Call to method find\(\) on an unknown class App\\Models\\TenantAwareKnativeRegion\.$#'
+			identifier: class.notFound
+			count: 1
+			path: app/Services/Bindings/BindingManager.php
+
+		-
+			message: '#^If condition is always true\.$#'
+			identifier: if.alwaysTrue
+			count: 2
+			path: app/Services/Bindings/BindingManager.php
+
+		-
+			message: '#^Method App\\Services\\Bindings\\BindingManager\:\:reveal\(\) should return array\{env\: array\<string, string\>, credentials\: array\} but returns array\{env\: array\<string, string\>\}\.$#'
+			identifier: return.type
+			count: 1
+			path: app/Services/Bindings/BindingManager.php
+
+		-
+			message: '#^Ternary operator condition is always true\.$#'
+			identifier: ternary.alwaysTrue
+			count: 1
+			path: app/Services/Bindings/BindingManager.php
+
+		-
+			message: '#^Offset ''instances'' on array\{bytes\: int, instances\: int\} on left side of \?\? always exists and is not nullable\.$#'
+			identifier: nullCoalesce.offset
+			count: 1
+			path: app/Services/Bindings/BindingUsageMeter.php
+
+		-
+			message: '#^Using nullsafe property access "\?\-\>status" on left side of \?\? is unnecessary\. Use \-\> instead\.$#'
+			identifier: nullsafe.neverNull
+			count: 1
+			path: app/Services/Bindings/DataServiceManager.php
+
+		-
+			message: '#^Using nullsafe property access "\?\-\>effective_settings" on left side of \?\? is unnecessary\. Use \-\> instead\.$#'
+			identifier: nullsafe.neverNull
+			count: 1
+			path: app/Services/Concerns/KnativeManifestTrait.php
+
+		-
+			message: '#^Variable \$images in empty\(\) always exists and is not falsy\.$#'
+			identifier: empty.variable
+			count: 1
+			path: app/Services/Concerns/ZotPrepullTrait.php
+
+		-
+			message: '#^Parameter \#1 \$route of method App\\Services\\GatewayService\:\:buildRouteRule\(\) expects App\\Models\\GatewayRoute, Illuminate\\Database\\Eloquent\\Model given\.$#'
+			identifier: argument.type
+			count: 1
+			path: app/Services/GatewayService.php
+
+		-
+			message: '#^Using nullsafe property access "\?\-\>name" on left side of \?\? is unnecessary\. Use \-\> instead\.$#'
+			identifier: nullsafe.neverNull
+			count: 1
+			path: app/Services/GitDeploy/DeployChecks.php
+
+		-
+			message: '#^Method App\\Services\\GitDeploy\\DeploymentStarter\:\:start\(\) should return App\\Models\\Deployment but returns Illuminate\\Database\\Eloquent\\Model\.$#'
+			identifier: return.type
+			count: 1
+			path: app/Services/GitDeploy/DeploymentStarter.php
+
+		-
+			message: '#^Parameter \#1 \$deployment of class App\\Events\\DeploymentCreated constructor expects App\\Models\\Deployment, Illuminate\\Database\\Eloquent\\Model given\.$#'
+			identifier: argument.type
+			count: 1
+			path: app/Services/GitDeploy/DeploymentStarter.php
+
+		-
+			message: '#^Parameter \#1 \$deployment of class App\\Events\\DeploymentStatusChanged constructor expects App\\Models\\Deployment, Illuminate\\Database\\Eloquent\\Model given\.$#'
+			identifier: argument.type
+			count: 1
+			path: app/Services/GitDeploy/DeploymentStarter.php
+
+		-
+			message: '#^Using nullsafe property access "\?\-\>username" on left side of \?\? is unnecessary\. Use \-\> instead\.$#'
+			identifier: nullsafe.neverNull
+			count: 1
+			path: app/Services/GitDeploy/GitDeployService.php
+
+		-
+			message: '#^If condition is always true\.$#'
+			identifier: if.alwaysTrue
+			count: 1
+			path: app/Services/GitDeploy/PreviewService.php
+
+		-
+			message: '#^Method App\\Services\\GitDeploy\\PreviewService\:\:previewVersions\(\) should return Illuminate\\Support\\Collection\<int, App\\Models\\Version\> but returns Illuminate\\Database\\Eloquent\\Collection\<int, Illuminate\\Database\\Eloquent\\Model\>\.$#'
+			identifier: return.type
+			count: 1
+			path: app/Services/GitDeploy/PreviewService.php
+
+		-
+			message: '#^Negated boolean expression is always false\.$#'
+			identifier: booleanNot.alwaysFalse
+			count: 2
+			path: app/Services/GitDeploy/PreviewService.php
+
+		-
+			message: '#^Parameter \#2 \$version of method App\\Services\\KnativeDeployService\:\:buildManifests\(\) expects App\\Models\\Version, Illuminate\\Database\\Eloquent\\Model given\.$#'
+			identifier: argument.type
+			count: 1
+			path: app/Services/GitDeploy/PreviewService.php
+
+		-
+			message: '#^Parameter \#2 \$version of static method App\\Services\\GitDeploy\\DeployChecks\:\:assert\(\) expects App\\Models\\Version, Illuminate\\Database\\Eloquent\\Model given\.$#'
+			identifier: argument.type
+			count: 1
+			path: app/Services/GitDeploy/PreviewService.php
+
+		-
+			message: '#^Using nullsafe method call on non\-nullable type App\\Models\\Project\. Use \-\> instead\.$#'
+			identifier: nullsafe.neverNull
+			count: 1
+			path: app/Services/GitDeploy/PreviewService.php
+
+		-
+			message: '#^Using nullsafe property access "\?\-\>trigger_type" on left side of \?\? is unnecessary\. Use \-\> instead\.$#'
+			identifier: nullsafe.neverNull
+			count: 1
+			path: app/Services/GitDeploy/PreviewService.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$url\.$#'
+			identifier: property.notFound
+			count: 2
+			path: app/Services/GitDeploy/StatusReporter.php
+
+		-
+			message: '#^Negated boolean expression is always false\.$#'
+			identifier: booleanNot.alwaysFalse
+			count: 2
+			path: app/Services/GitDeploy/StatusReporter.php
+
+		-
+			message: '#^Ternary operator condition is always true\.$#'
+			identifier: ternary.alwaysTrue
+			count: 2
+			path: app/Services/GitDeploy/StatusReporter.php
+
+		-
+			message: '#^Using nullsafe property access "\?\-\>url" on left side of \?\? is unnecessary\. Use \-\> instead\.$#'
+			identifier: nullsafe.neverNull
+			count: 1
+			path: app/Services/GitDeploy/StatusReporter.php
+
+		-
+			message: '#^Match expression does not handle remaining value\: string$#'
+			identifier: match.unhandled
+			count: 1
+			path: app/Services/GitDeploy/VersionImporter.php
+
+		-
+			message: '#^Call to function is_string\(\) with string will always evaluate to true\.$#'
+			identifier: function.alreadyNarrowedType
+			count: 1
+			path: app/Services/Helpers/IngressTrust.php
+
+		-
+			message: '#^Parameter \#1 \$array \(list\<string\>\) of array_values is already a list, call has no effect\.$#'
+			identifier: arrayValues.list
+			count: 2
+			path: app/Services/Helpers/IngressTrust.php
+
+		-
+			message: '#^Strict comparison using \=\=\= between ''devmapper'' and ''devmapper'' will always evaluate to true\.$#'
+			identifier: identical.alwaysTrue
+			count: 1
+			path: app/Services/Helpers/KataRuntime.php
+
+		-
+			message: '#^Using nullsafe property access "\?\-\>size_bytes" on left side of \?\? is unnecessary\. Use \-\> instead\.$#'
+			identifier: nullsafe.neverNull
+			count: 1
+			path: app/Services/Images/ImageQuota.php
+
+		-
+			message: '#^Expression on left side of \?\? is not nullable\.$#'
+			identifier: nullCoalesce.expr
+			count: 1
+			path: app/Services/Images/UploadedImages.php
+
+		-
+			message: '#^Using nullsafe property access "\?\-\>name" on left side of \?\? is unnecessary\. Use \-\> instead\.$#'
+			identifier: nullsafe.neverNull
+			count: 1
+			path: app/Services/Images/UploadedImages.php
+
+		-
+			message: '#^Match expression does not handle remaining value\: string$#'
+			identifier: match.unhandled
+			count: 1
+			path: app/Services/KnativeDeployService.php
+
+		-
+			message: '#^Parameter \#2 \$bindings of static method App\\Services\\Skupper\\SkupperManifests\:\:mergeEnv\(\) expects iterable\<App\\Models\\PrivateDatabaseBinding\>, Illuminate\\Database\\Eloquent\\Collection\<int, Illuminate\\Database\\Eloquent\\Model\> given\.$#'
+			identifier: argument.type
+			count: 1
+			path: app/Services/KnativeDeployService.php
+
+		-
+			message: '#^Right side of && is always true\.$#'
+			identifier: booleanAnd.rightAlwaysTrue
+			count: 2
+			path: app/Services/KnativeDeployService.php
+
+		-
+			message: '#^Offset ''knative\-serving'' on array\{knative\-serving\: string\} on left side of \?\? always exists and is not nullable\.$#'
+			identifier: nullCoalesce.offset
+			count: 1
+			path: app/Services/KnativeNodeService.php
+
+		-
+			message: '#^Access to an undefined property App\\Models\\MetricSnapshot\:\:\$avg_cpu\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Services/MetricsPersistenceService.php
+
+		-
+			message: '#^Access to an undefined property App\\Models\\MetricSnapshot\:\:\$avg_memory\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Services/MetricsPersistenceService.php
+
+		-
+			message: '#^Access to an undefined property App\\Models\\MetricSnapshot\:\:\$avg_rps\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Services/MetricsPersistenceService.php
+
+		-
+			message: '#^Access to an undefined property App\\Models\\MetricSnapshot\:\:\$max_cpu\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Services/MetricsPersistenceService.php
+
+		-
+			message: '#^Access to an undefined property App\\Models\\MetricSnapshot\:\:\$max_memory\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Services/MetricsPersistenceService.php
+
+		-
+			message: '#^Access to an undefined property App\\Models\\MetricSnapshot\:\:\$max_rps\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Services/MetricsPersistenceService.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$name\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Services/Observability/Alerts/AlertManager.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$type\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Services/Observability/Alerts/AlertManager.php
+
+		-
+			message: '#^Parameter \#1 \$channel of method App\\Services\\Observability\\Alerts\\Channels\\ChannelSender\:\:send\(\) expects App\\Models\\Observability\\AlertChannel, Illuminate\\Database\\Eloquent\\Model given\.$#'
+			identifier: argument.type
+			count: 1
+			path: app/Services/Observability/Alerts/AlertManager.php
+
+		-
+			message: '#^Parameter \#1 \$event of static method App\\Services\\Observability\\Alerts\\AlertMessage\:\:fromEvent\(\) expects App\\Models\\Observability\\AlertEvent, Illuminate\\Database\\Eloquent\\Model given\.$#'
+			identifier: argument.type
+			count: 1
+			path: app/Services/Observability/Alerts/AlertManager.php
+
+		-
+			message: '#^Using nullsafe method call on non\-nullable type Illuminate\\Support\\Carbon\. Use \-\> instead\.$#'
+			identifier: nullsafe.neverNull
+			count: 1
+			path: app/Services/Observability/Alerts/AlertMessage.php
+
+		-
+			message: '#^Using nullsafe property access "\?\-\>trigger_type" on left side of \?\? is unnecessary\. Use \-\> instead\.$#'
+			identifier: nullsafe.neverNull
+			count: 1
+			path: app/Services/Observability/Replay/ReplayService.php
+
+		-
+			message: '#^Access to an undefined property Modules\\Tenancy\\Models\\Tenant\:\:\$slug\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Services/Observability/StatusPageService.php
+
+		-
+			message: '#^Call to an undefined method Illuminate\\Database\\Eloquent\\Model\:\:getTenantKey\(\)\.$#'
+			identifier: method.notFound
+			count: 1
+			path: app/Services/Observability/TenantScope.php
+
+		-
+			message: '#^Call to an undefined method Illuminate\\Database\\Eloquent\\Model\:\:run\(\)\.$#'
+			identifier: method.notFound
+			count: 1
+			path: app/Services/Observability/TenantScope.php
+
+		-
+			message: '#^Access to an undefined property App\\Models\\Observability\\UptimeResult\:\:\$up\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Services/Observability/Uptime/UptimeService.php
+
+		-
+			message: '#^Using nullsafe property access "\?\-\>name" on left side of \?\? is unnecessary\. Use \-\> instead\.$#'
+			identifier: nullsafe.neverNull
+			count: 1
+			path: app/Services/Observability/Uptime/UptimeService.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$resource_name\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Services/ProjectCleanupService.php
+
+		-
+			message: '#^Parameter \#1 \$binding of method App\\Services\\Skupper\\SkupperService\:\:remove\(\) expects App\\Models\\PrivateDatabaseBinding, Illuminate\\Database\\Eloquent\\Model given\.$#'
+			identifier: argument.type
+			count: 1
+			path: app/Services/ProjectCleanupService.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$domain\.$#'
+			identifier: property.notFound
+			count: 4
+			path: app/Services/ProjectDomainService.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$status\.$#'
+			identifier: property.notFound
+			count: 2
+			path: app/Services/ProjectDomainService.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$tls_mode\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Services/ProjectDomainService.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$tls_secret_name\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Services/ProjectDomainService.php
+
+		-
+			message: '#^Parameter \#1 \$domain of method App\\Services\\ProjectDomainService\:\:activate\(\) expects App\\Models\\ProjectDomain, Illuminate\\Database\\Eloquent\\Model given\.$#'
+			identifier: argument.type
+			count: 1
+			path: app/Services/ProjectDomainService.php
+
+		-
+			message: '#^Parameter \#1 \$domain of method App\\Services\\ProjectDomainService\:\:removeFromRegion\(\) expects App\\Models\\ProjectDomain, Illuminate\\Database\\Eloquent\\Model given\.$#'
+			identifier: argument.type
+			count: 2
+			path: app/Services/ProjectDomainService.php
+
+		-
+			message: '#^Using nullsafe property access "\?\-\>trigger_type" on left side of \?\? is unnecessary\. Use \-\> instead\.$#'
+			identifier: nullsafe.neverNull
+			count: 1
+			path: app/Services/ProjectDomainService.php
+
+		-
+			message: '#^Using nullsafe property access on non\-nullable type App\\Models\\Project\. Use \-\> instead\.$#'
+			identifier: nullsafe.neverNull
+			count: 1
+			path: app/Services/ProjectDomainService.php
+
+		-
+			message: '#^Access to an undefined property App\\Models\\ContainerConfig\:\:\$gpu\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Services/ProjectService.php
+
+		-
+			message: '#^Match expression does not handle remaining value\: string$#'
+			identifier: match.unhandled
+			count: 1
+			path: app/Services/ProjectService.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$containerConfig\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Services/RegionDemoService.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$faasConfig\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Services/RegionDemoService.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$slug\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Services/RegionDemoService.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$xaasConfig\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Services/RegionDemoService.php
+
+		-
+			message: '#^Call to an undefined method Illuminate\\Database\\Eloquent\\Model\:\:deployments\(\)\.$#'
+			identifier: method.notFound
+			count: 2
+			path: app/Services/RegionDemoService.php
+
+		-
+			message: '#^Call to an undefined method Illuminate\\Database\\Eloquent\\Model\:\:versions\(\)\.$#'
+			identifier: method.notFound
+			count: 1
+			path: app/Services/RegionDemoService.php
+
+		-
+			message: '#^Parameter \#1 \$project of method App\\Services\\KnativeDeployService\:\:teardown\(\) expects App\\Models\\Project, Illuminate\\Database\\Eloquent\\Model given\.$#'
+			identifier: argument.type
+			count: 1
+			path: app/Services/RegionDemoService.php
+
+		-
+			message: '#^Parameter \#1 \$projects of static method App\\Services\\Helpers\\ResourceReservation\:\:sum\(\) expects iterable\<App\\Models\\Project\>, Illuminate\\Database\\Eloquent\\Collection\<int, Illuminate\\Database\\Eloquent\\Model\> given\.$#'
+			identifier: argument.type
+			count: 1
+			path: app/Services/RegionDemoService.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$id\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Services/RegionMigrateService.php
+
+		-
+			message: '#^Call to an undefined method App\\Services\\RegionMigrateService\:\:appendLog\(\)\.$#'
+			identifier: method.notFound
+			count: 3
+			path: app/Services/RegionMigrateService.php
+
+		-
+			message: '#^Parameter \#2 \$version of method App\\Services\\KnativeDeployService\:\:deploy\(\) expects App\\Models\\Version, Illuminate\\Database\\Eloquent\\Model given\.$#'
+			identifier: argument.type
+			count: 1
+			path: app/Services/RegionMigrateService.php
+
+		-
+			message: '#^Parameter \#3 \$deployment of method App\\Services\\KnativeDeployService\:\:deploy\(\) expects App\\Models\\Deployment, Illuminate\\Database\\Eloquent\\Model given\.$#'
+			identifier: argument.type
+			count: 1
+			path: app/Services/RegionMigrateService.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$build_image\.$#'
+			identifier: property.notFound
+			count: 3
+			path: app/Services/RegistryImageLifecycleService.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$build_status\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Services/RegistryImageLifecycleService.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$id\.$#'
+			identifier: property.notFound
+			count: 2
+			path: app/Services/RegistryImageLifecycleService.php
+
+		-
+			message: '#^Parameter \#1 \$callback of method Illuminate\\Database\\Eloquent\\Collection\<int,Illuminate\\Database\\Eloquent\\Model\>\:\:map\(\) expects callable\(Illuminate\\Database\\Eloquent\\Model, int\)\: array\{id\: string, number\: int, build_status\: string, build_image\: string\|null\}, Closure\(App\\Models\\Version\)\: array\{id\: string, number\: int, build_status\: string, build_image\: string\|null\} given\.$#'
+			identifier: argument.type
+			count: 1
+			path: app/Services/RegistryImageLifecycleService.php
+
+		-
+			message: '#^Parameter \#1 \$version of method App\\Services\\RegistryImageLifecycleService\:\:imageSharedWithAnotherProject\(\) expects App\\Models\\Version, Illuminate\\Database\\Eloquent\\Model given\.$#'
+			identifier: argument.type
+			count: 2
+			path: app/Services/RegistryImageLifecycleService.php
+
+		-
+			message: '#^Call to method pluck\(\) on an unknown class App\\Models\\TenantAwareKnativeRegion\.$#'
+			identifier: class.notFound
+			count: 1
+			path: app/Services/Residency/RegionPolicy.php
+
+		-
+			message: '#^Call to method whereIn\(\) on an unknown class App\\Models\\TenantAwareKnativeRegion\.$#'
+			identifier: class.notFound
+			count: 1
+			path: app/Services/Residency/RegionPolicy.php
+
+		-
+			message: '#^Using nullsafe property access "\?\-\>name" on left side of \?\? is unnecessary\. Use \-\> instead\.$#'
+			identifier: nullsafe.neverNull
+			count: 1
+			path: app/Services/Residency/RegionPolicy.php
+
+		-
+			message: '#^Using nullsafe property access "\?\-\>version" on left side of \?\? is unnecessary\. Use \-\> instead\.$#'
+			identifier: nullsafe.neverNull
+			count: 1
+			path: app/Services/Runtimes/RuntimeContainerSpec.php
+
+		-
+			message: '#^Call to method get\(\) on an unknown class App\\Models\\TenantAwareKnativeRegion\.$#'
+			identifier: class.notFound
+			count: 1
+			path: app/Services/Runtimes/RuntimeImageBuildService.php
+
+		-
+			message: '#^Parameter \#1 \$array \(non\-empty\-list\<non\-falsy\-string\>\) of array_values is already a list, call has no effect\.$#'
+			identifier: arrayValues.list
+			count: 1
+			path: app/Services/Runtimes/RuntimeImageBuildService.php
+
+		-
+			message: '#^Call to method get\(\) on an unknown class App\\Models\\TenantAwareKnativeRegion\.$#'
+			identifier: class.notFound
+			count: 1
+			path: app/Services/Runtimes/RuntimeRegistry.php
+
+		-
+			message: '#^Using nullsafe property access "\?\-\>name" on left side of \?\? is unnecessary\. Use \-\> instead\.$#'
+			identifier: nullsafe.neverNull
+			count: 1
+			path: app/Services/Runtimes/RuntimeRegistry.php
+
+		-
+			message: '#^Method App\\Services\\SandboxInstallService\:\:appendLog\(\) invoked with 2 parameters, 3\-4 required\.$#'
+			identifier: arguments.count
+			count: 3
+			path: app/Services/SandboxInstallService.php
+
+		-
+			message: '#^Parameter \#1 \$array \(list\<string\>\) of array_values is already a list, call has no effect\.$#'
+			identifier: arrayValues.list
+			count: 1
+			path: app/Services/Sandboxes/Exec/ExecScript.php
+
+		-
+			message: '#^Access to an undefined property Modules\\Tenancy\\Models\\Tenant\:\:\$slug\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Services/Sandboxes/SandboxContext.php
+
+		-
+			message: '#^Using nullsafe property access "\?\-\>slug" on left side of \?\? is unnecessary\. Use \-\> instead\.$#'
+			identifier: nullsafe.neverNull
+			count: 1
+			path: app/Services/Sandboxes/SandboxContext.php
+
+		-
+			message: '#^Access to an undefined property App\\Models\\Sandbox\:\:\$n\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Services/Sandboxes/SandboxMetrics.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$created_at\.$#'
+			identifier: property.notFound
+			count: 2
+			path: app/Services/Sandboxes/SandboxPoolService.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$image\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Services/Sandboxes/SandboxPoolService.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$namespace\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Services/Sandboxes/SandboxPoolService.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$pod_name\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Services/Sandboxes/SandboxPoolService.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$sandbox_class\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Services/Sandboxes/SandboxPoolService.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$status\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Services/Sandboxes/SandboxPoolService.php
+
+		-
+			message: '#^Parameter \#1 \$sandbox of method App\\Services\\Sandboxes\\SandboxService\:\:terminate\(\) expects App\\Models\\Sandbox, Illuminate\\Database\\Eloquent\\Model given\.$#'
+			identifier: argument.type
+			count: 4
+			path: app/Services/Sandboxes/SandboxPoolService.php
+
+		-
+			message: '#^Parameter \#1 \$sandbox of method App\\Services\\Sandboxes\\SandboxService\:\:terminate\(\) expects App\\Models\\Sandbox, Illuminate\\Database\\Eloquent\\Model\|null given\.$#'
+			identifier: argument.type
+			count: 1
+			path: app/Services/Sandboxes/SandboxPoolService.php
+
+		-
+			message: '#^Offset ''allowed'' on array\{allowed\: bool, message\?\: string, remaining_cpu_m\?\: int, remaining_memory_mb\?\: int\} on left side of \?\? always exists and is not nullable\.$#'
+			identifier: nullCoalesce.offset
+			count: 1
+			path: app/Services/Sandboxes/SandboxQuotaService.php
+
+		-
+			message: '#^Using nullsafe property access "\?\-\>\(Expression\)" on left side of \?\? is unnecessary\. Use \-\> instead\.$#'
+			identifier: nullsafe.neverNull
+			count: 2
+			path: app/Services/Sandboxes/SandboxQuotaService.php
+
+		-
+			message: '#^Using nullsafe property access "\?\-\>allowed_classes" on left side of \?\? is unnecessary\. Use \-\> instead\.$#'
+			identifier: nullsafe.neverNull
+			count: 1
+			path: app/Services/Sandboxes/SandboxQuotaService.php
+
+		-
+			message: '#^Call to method where\(\) on an unknown class App\\Models\\TenantAwareKnativeRegion\.$#'
+			identifier: class.notFound
+			count: 1
+			path: app/Services/Sandboxes/SandboxRegions.php
+
+		-
+			message: '#^Dead catch \- RuntimeException is never thrown in the try block\.$#'
+			identifier: catch.neverThrown
+			count: 1
+			path: app/Services/Sandboxes/SandboxService.php
+
+		-
+			message: '#^Call to method whereKey\(\) on an unknown class App\\Models\\TenantAwareKnativeRegion\.$#'
+			identifier: class.notFound
+			count: 1
+			path: app/Services/Sandboxes/SandboxUsageAggregator.php
+
+		-
+			message: '#^Negated boolean expression is always true\.$#'
+			identifier: booleanNot.alwaysTrue
+			count: 1
+			path: app/Services/Shell/SandboxExecSocket.php
+
+		-
+			message: '#^Offset ''pid'' on array\{command\: string, pid\: int, running\: bool, signaled\: bool, stopped\: bool, exitcode\: int, termsig\: int, stopsig\: int\} on left side of \?\? always exists and is not nullable\.$#'
+			identifier: nullCoalesce.offset
+			count: 1
+			path: app/Services/Shell/ShellPtyProcess.php
+
+		-
+			message: '#^Offset ''running'' on array\{command\: string, pid\: int, running\: bool, signaled\: bool, stopped\: bool, exitcode\: int, termsig\: int, stopsig\: int\} on left side of \?\? always exists and is not nullable\.$#'
+			identifier: nullCoalesce.offset
+			count: 1
+			path: app/Services/Shell/ShellPtyProcess.php
+
+		-
+			message: '#^Parameter \#2 \$bindings of static method App\\Services\\Skupper\\SkupperManifests\:\:mergeEnv\(\) expects iterable\<App\\Models\\PrivateDatabaseBinding\>, Illuminate\\Database\\Eloquent\\Collection\<int, Illuminate\\Database\\Eloquent\\Model\> given\.$#'
+			identifier: argument.type
+			count: 1
+			path: app/Services/Skupper/SkupperService.php
+
+		-
+			message: '#^Using nullsafe property access "\?\-\>name" on left side of \?\? is unnecessary\. Use \-\> instead\.$#'
+			identifier: nullsafe.neverNull
+			count: 1
+			path: app/Services/SupplyChain/DeployPolicyGate.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$subject_id\.$#'
+			identifier: property.notFound
+			count: 2
+			path: app/Services/SupplyChain/RescanService.php
+
+		-
+			message: '#^Parameter \#1 \$report of method App\\Services\\SupplyChain\\RescanService\:\:due\(\) expects App\\Models\\ImageSecurityReport, Illuminate\\Database\\Eloquent\\Model given\.$#'
+			identifier: argument.type
+			count: 2
+			path: app/Services/SupplyChain/RescanService.php
+
+		-
+			message: '#^Parameter \#2 \$report of method App\\Services\\SupplyChain\\RescanService\:\:queue\(\) expects App\\Models\\ImageSecurityReport, Illuminate\\Database\\Eloquent\\Model given\.$#'
+			identifier: argument.type
+			count: 2
+			path: app/Services/SupplyChain/RescanService.php
+
+		-
+			message: '#^Call to an undefined method Illuminate\\Database\\Eloquent\\Model\:\:isActive\(\)\.$#'
+			identifier: method.notFound
+			count: 1
+			path: app/Services/SupplyChain/SupplyChainContext.php
+
+		-
+			message: '#^Method App\\Services\\SupplyChain\\SupplyChainContext\:\:tenants\(\) should return iterable\<Modules\\Tenancy\\Models\\Tenant\> but returns Stancl\\Tenancy\\Database\\TenantCollection\.$#'
+			identifier: return.type
+			count: 1
+			path: app/Services/SupplyChain/SupplyChainContext.php
+
+		-
+			message: '#^Negated boolean expression is always false\.$#'
+			identifier: booleanNot.alwaysFalse
+			count: 1
+			path: app/Services/SupplyChain/SupplyChainPipeline.php
+
+		-
+			message: '#^Using nullsafe property access on non\-nullable type App\\Models\\Project\. Use \-\> instead\.$#'
+			identifier: nullsafe.neverNull
+			count: 1
+			path: app/Services/SupplyChain/SupplyChainPipeline.php
+
+		-
+			message: '#^Offset ''argv'' on array\{argv\: string, files\: bool, environment\: array\<string, string\>\} on left side of \?\? always exists and is not nullable\.$#'
+			identifier: nullCoalesce.offset
+			count: 1
+			path: app/Services/Wasm/WagiSpinManifest.php
+
+		-
+			message: '#^Offset ''environment'' on array\{argv\: string, files\: bool, environment\: array\<string, string\>\} on left side of \?\? always exists and is not nullable\.$#'
+			identifier: nullCoalesce.offset
+			count: 1
+			path: app/Services/Wasm/WagiSpinManifest.php
+
+		-
+			message: '#^Offset ''files'' on array\{argv\: string, files\: bool, environment\: array\<string, string\>\} on left side of \?\? always exists and is not nullable\.$#'
+			identifier: nullCoalesce.offset
+			count: 1
+			path: app/Services/Wasm/WagiSpinManifest.php
+
+		-
+			message: '#^Parameter \#1 \$array \(array\{0\: array\{name\: ''RUNR_BUILD_IMAGE'', value\: string\}, 1\: array\{name\: ''HOME'', value\: ''/tmp/home''\}, 2\: array\{name\: ''RUNR_RUNTIME'', value\: string\}, 3\?\: array\{name\: ''RUNR_WASM_MODULE'', value\: string\}\}\) of array_values is already a list, call has no effect\.$#'
+			identifier: arrayValues.list
+			count: 1
+			path: app/Services/Wasm/WasmBuildService.php
+
+		-
+			message: '#^Using nullsafe property access "\?\-\>name" on left side of \?\? is unnecessary\. Use \-\> instead\.$#'
+			identifier: nullsafe.neverNull
+			count: 1
+			path: app/Services/Wasm/WasmBuildService.php
+
+		-
+			message: '#^Using nullsafe property access "\?\-\>version" on left side of \?\? is unnecessary\. Use \-\> instead\.$#'
+			identifier: nullsafe.neverNull
+			count: 1
+			path: app/Services/Wasm/WasmBuildService.php
+
+		-
+			message: '#^Expression on left side of \?\? is always null\.$#'
+			identifier: nullCoalesce.expr
+			count: 1
+			path: app/Services/WhiteLabel/BrandingService.php
+
+		-
+			message: '#^Method App\\Services\\WhiteLabel\\BrandingService\:\:expand\(\) should return array\<string, string\> but returns array\<int, string\>\.$#'
+			identifier: return.type
+			count: 1
+			path: app/Services/WhiteLabel/BrandingService.php
+
+		-
+			message: '#^Method App\\Services\\WhiteLabel\\BrandingService\:\:normalizeScale\(\) should return array\<string, string\>\|null but returns array\<int, string\>\|null\.$#'
+			identifier: return.type
+			count: 1
+			path: app/Services/WhiteLabel/BrandingService.php
+
+		-
+			message: '#^Method App\\Services\\WhiteLabel\\BrandingService\:\:palette\(\) should return array\<string, string\> but returns array\<int, mixed\>\.$#'
+			identifier: return.type
+			count: 1
+			path: app/Services/WhiteLabel/BrandingService.php
+
+		-
+			message: '#^Offset ''500'' on array\<string, string\>\|null in isset\(\) does not exist\.$#'
+			identifier: isset.offset
+			count: 1
+			path: app/Services/WhiteLabel/BrandingService.php
+
+		-
+			message: '#^Using nullsafe property access "\?\-\>settings" on left side of \?\? is unnecessary\. Use \-\> instead\.$#'
+			identifier: nullsafe.neverNull
+			count: 1
+			path: app/Services/WhiteLabel/BrandingService.php
+
+		-
+			message: '#^Call to method where\(\) on an unknown class App\\Models\\TenantAwareUser\.$#'
+			identifier: class.notFound
+			count: 2
+			path: app/Services/WhiteLabel/SignupService.php
+
+		-
+			message: '#^Call to an undefined method App\\Services\\ZotRegistryService\:\:appendLog\(\)\.$#'
+			identifier: method.notFound
+			count: 3
+			path: app/Services/ZotRegistryService.php
+
+		-
+			message: '#^Match expression does not handle remaining value\: mixed$#'
+			identifier: match.unhandled
+			count: 1
+			path: app/Services/ZotRegistryService.php
+
+		-
+			message: '#^Call to method find\(\) on an unknown class App\\Models\\TenantAwareUser\.$#'
+			identifier: class.notFound
+			count: 1
+			path: app/Support/Rbac/AccessManager.php
+
+		-
+			message: '#^Call to method whereKeyNot\(\) on an unknown class App\\Models\\TenantAwareUser\.$#'
+			identifier: class.notFound
+			count: 1
+			path: app/Support/Rbac/AccessManager.php
+
+		-
+			message: '#^Parameter \#1 \$tenant of class Modules\\Tenancy\\Support\\TenantOrganization constructor expects Modules\\Tenancy\\Models\\Tenant, Illuminate\\Database\\Eloquent\\Model\|Stancl\\Tenancy\\Contracts\\Tenant given\.$#'
+			identifier: argument.type
+			count: 1
+			path: app/Support/Rbac/OrganizationResolver.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$project_id\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Support/Rbac/Rbac.php
+
+		-
+			message: '#^Parameter \#1 \$array \(list\<string\>\) of array_values is already a list, call has no effect\.$#'
+			identifier: arrayValues.list
+			count: 1
+			path: app/Support/Rbac/RoutePermissions.php
+
+		-
+			message: '#^Call to method get\(\) on an unknown class App\\Models\\TenantAwareUser\.$#'
+			identifier: class.notFound
+			count: 1
+			path: app/Support/Rbac/SingleTenantOrganization.php
+
+		-
+			message: '#^Call to method orderBy\(\) on an unknown class App\\Models\\TenantAwareUser\.$#'
+			identifier: class.notFound
+			count: 1
+			path: app/Support/Rbac/SingleTenantOrganization.php
+
+		-
+			message: '#^Call to method whereKey\(\) on an unknown class App\\Models\\TenantAwareUser\.$#'
+			identifier: class.notFound
+			count: 1
+			path: app/Support/Rbac/SingleTenantOrganization.php
+
+		-
+			message: '#^Method App\\Support\\Rbac\\SingleTenantOrganization\:\:members\(\) should return Illuminate\\Support\\Collection\<int, object\{id\: int\|string, name\: string, email\: string, username\: string\|null, role\: string\|null\}\> but returns Illuminate\\Support\\Collection\<int, object\{id\: int\<0, max\>, name\: string, email\: string, username\: string, role\: mixed\}&stdClass\>\.$#'
+			identifier: return.type
+			count: 1
+			path: app/Support/Rbac/SingleTenantOrganization.php
+
+		-
+			message: '#^Access to an undefined property App\\Workflows\\Models\\WorkflowRun\:\:\$aggregate\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Workflows/Http/Controllers/WorkflowController.php
+
+		-
+			message: '#^Access to an undefined property App\\Workflows\\Models\\Workflow\:\:\$created_at\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Workflows/Http/Resources/WorkflowResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Workflows\\Models\\Workflow\:\:\$last_run_at\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Workflows/Http/Resources/WorkflowResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Workflows\\Models\\Workflow\:\:\$run_counts\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Workflows/Http/Resources/WorkflowResource.php
+
+		-
+			message: '#^Call to an undefined method Illuminate\\Database\\Eloquent\\Model\:\:getTenantKey\(\)\.$#'
+			identifier: method.notFound
+			count: 2
+			path: app/Workflows/Support/WorkflowContexts.php
+
+		-
+			message: '#^Call to an undefined method Illuminate\\Database\\Eloquent\\Model\:\:run\(\)\.$#'
+			identifier: method.notFound
+			count: 1
+			path: app/Workflows/Support/WorkflowContexts.php

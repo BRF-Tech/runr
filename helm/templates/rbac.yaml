@@ -1,0 +1,108 @@
+{{- /* In a marketplace install the platform creates the namespace → createNamespace: false */}}
+{{- if .Values.createNamespace }}
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: {{ include "runr.namespace" . }}
+  labels:
+    {{- include "runr.labels" . | nindent 4 }}
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: {{ .Values.projectNamespace }}
+  labels:
+    {{- include "runr.labels" . | nindent 4 }}
+---
+{{- end }}
+{{- /*
+  runr-api ServiceAccount — what RunR's own identity is used for, and nothing more.
+
+  RunR manages every region (Knative install, deploys, registry, sandbox, agent, nodes, ...)
+  exclusively through that region's stored kubeconfig, including a region that is this same
+  cluster. The in-cluster token of runr-api is read in exactly one place,
+  App\Services\Helpers\RunrClusterIdentity::inClusterClient(), for two read-only calls:
+
+    1. GET namespaces/kube-system (cluster-scoped): its UID tells whether a region's
+       kubeconfig points at the cluster RunR runs in (same-cluster detection: agent
+       WebSocket URL, registry mirror restart mode, function-domain TLS "console" mode).
+    2. GET the console TLS Secret in RunR's own namespace: function-domain TLS
+       "reuse the console certificate" mode copies it into the region.
+
+  Hence a ClusterRole with `get` on the kube-system Namespace only and, when the console has a
+  TLS Secret, a Role in the release namespace with `get` on that one Secret only. No list/watch,
+  no writes, nothing in any other namespace. Pods that never call the API (reverb, scheduler,
+  migration jobs, ui, gateway, redis, postgres, mailpit) mount no service account token at all.
+*/}}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: runr-api
+  namespace: {{ include "runr.namespace" . }}
+  labels:
+    {{- include "runr.labels" . | nindent 4 }}
+---
+# (1) Same-cluster detection: read the kube-system Namespace object (for its UID), nothing else.
+# Name kept from earlier chart versions so `helm upgrade` replaces the old, broader rules in place.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: runr-deploy-role-{{ include "runr.namespace" . }}
+  labels:
+    {{- include "runr.labels" . | nindent 4 }}
+rules:
+  - apiGroups: [""]
+    resources: ["namespaces"]
+    resourceNames: ["kube-system"]
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: runr-deploy-rolebinding-{{ include "runr.namespace" . }}
+  labels:
+    {{- include "runr.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: runr-deploy-role-{{ include "runr.namespace" . }}
+subjects:
+  - kind: ServiceAccount
+    name: runr-api
+    namespace: {{ include "runr.namespace" . }}
+{{- $t := include "runr.ingressTls" . | fromJson }}
+{{- if $t.secret }}
+---
+# (2) Function-domain TLS "reuse the console certificate": read the console's TLS Secret (the one
+# ingress.yaml serves, resolved by the same "runr.ingressTls" helper) in RunR's own namespace only.
+# Rendered only when the console has a TLS Secret (ingress.tls.mode letsencrypt/custom, or legacy
+# tls.enabled). Names kept from earlier chart versions (the old Job/Pod rules were unused).
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: runr-api-role
+  namespace: {{ include "runr.namespace" . }}
+  labels:
+    {{- include "runr.labels" . | nindent 4 }}
+rules:
+  - apiGroups: [""]
+    resources: ["secrets"]
+    resourceNames: [{{ $t.secret | quote }}]
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: runr-api-rolebinding
+  namespace: {{ include "runr.namespace" . }}
+  labels:
+    {{- include "runr.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: runr-api-role
+subjects:
+  - kind: ServiceAccount
+    name: runr-api
+    namespace: {{ include "runr.namespace" . }}
+{{- end }}

@@ -1,0 +1,98 @@
+{{/*
+  post-install: migrate + seed on the first install (migrator)
+  pre-upgrade:  migrate only on upgrade (migrate-only, no seed)
+*/}}
+
+# ── Post-install: migrate + seed ──────────────────────────────────────────────
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: runr-migrate-install-{{ .Release.Revision }}
+  namespace: {{ include "runr.namespace" . }}
+  labels:
+    app: runr-migrate
+    {{- include "runr.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/hook": post-install
+    "helm.sh/hook-weight": "0"
+    "helm.sh/hook-delete-policy": before-hook-creation
+spec:
+  backoffLimit: 3
+  activeDeadlineSeconds: 300
+  template:
+    metadata:
+      labels:
+        app: runr-migrate
+        {{- include "runr.colocation-label" . | nindent 8 }}
+      annotations:
+        {{- include "runr.checksum" . | nindent 8 }}
+    spec:
+      serviceAccountName: runr-api
+      automountServiceAccountToken: false
+      restartPolicy: OnFailure
+      {{- include "runr.imagePullSecrets" . | nindent 6 }}
+      {{- include "runr.storage-init" . | nindent 6 }}
+      {{- include "runr.pod-colocation" . | nindent 6 }}
+      containers:
+        - name: migrate
+          image: "{{ .Values.api.image.repository }}:{{ .Values.api.image.tag }}"
+          imagePullPolicy: {{ .Values.api.image.pullPolicy }}
+          {{- include "runr.envFrom" . | nindent 10 }}
+          env:
+            - name: CONTAINER_ROLE
+              value: "migrator"
+            {{- include "runr.secret-env" . | nindent 12 }}
+          volumeMounts:
+            - name: api-storage
+              mountPath: /var/www/html/storage
+      volumes:
+        - name: api-storage
+          persistentVolumeClaim:
+            claimName: runr-api-storage
+---
+# ── Pre-upgrade: migrate only (no seed) ──────────────────────────────────────
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: runr-migrate-upgrade-{{ .Release.Revision }}
+  namespace: {{ include "runr.namespace" . }}
+  labels:
+    app: runr-migrate
+    {{- include "runr.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/hook": pre-upgrade
+    "helm.sh/hook-weight": "0"
+    "helm.sh/hook-delete-policy": before-hook-creation
+spec:
+  backoffLimit: 3
+  activeDeadlineSeconds: 300
+  template:
+    metadata:
+      labels:
+        app: runr-migrate
+        {{- include "runr.colocation-label" . | nindent 8 }}
+      annotations:
+        {{- include "runr.checksum" . | nindent 8 }}
+    spec:
+      serviceAccountName: runr-api
+      automountServiceAccountToken: false
+      restartPolicy: OnFailure
+      {{- include "runr.imagePullSecrets" . | nindent 6 }}
+      {{- include "runr.storage-init" . | nindent 6 }}
+      {{- include "runr.pod-colocation" . | nindent 6 }}
+      containers:
+        - name: migrate
+          image: "{{ .Values.api.image.repository }}:{{ .Values.api.image.tag }}"
+          imagePullPolicy: {{ .Values.api.image.pullPolicy }}
+          {{- include "runr.envFrom" . | nindent 10 }}
+          env:
+            - name: CONTAINER_ROLE
+              value: "migrate-only"
+            {{- include "runr.secret-env" . | nindent 12 }}
+          volumeMounts:
+            - name: api-storage
+              mountPath: /var/www/html/storage
+      volumes:
+        - name: api-storage
+          persistentVolumeClaim:
+            claimName: runr-api-storage

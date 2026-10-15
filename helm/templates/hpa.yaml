@@ -1,0 +1,74 @@
+{{- if .Values.gateway.hpa.enabled }}
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: runr-gateway
+  namespace: {{ include "runr.namespace" . }}
+  labels:
+    app: runr-gateway
+    {{- include "runr.labels" . | nindent 4 }}
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: runr-gateway
+  minReplicas: {{ .Values.gateway.hpa.minReplicas }}
+  maxReplicas: {{ .Values.gateway.hpa.maxReplicas }}
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: {{ .Values.gateway.hpa.targetCPU }}
+{{- end }}
+---
+{{- if .Values.api.hpa.enabled }}
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: runr-api
+  namespace: {{ include "runr.namespace" . }}
+  labels:
+    app: runr-api
+    {{- include "runr.labels" . | nindent 4 }}
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: runr-api
+  minReplicas: {{ .Values.api.hpa.minReplicas }}
+  maxReplicas: {{ .Values.api.hpa.maxReplicas }}
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: {{ .Values.api.hpa.targetCPU }}
+{{- end }}
+---
+{{- if .Values.ui.hpa.enabled }}
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: runr-ui
+  namespace: {{ include "runr.namespace" . }}
+  labels:
+    app: runr-ui
+    {{- include "runr.labels" . | nindent 4 }}
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: runr-ui
+  minReplicas: {{ .Values.ui.hpa.minReplicas }}
+  maxReplicas: {{ .Values.ui.hpa.maxReplicas }}
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: {{ .Values.ui.hpa.targetCPU }}
+{{- end }}

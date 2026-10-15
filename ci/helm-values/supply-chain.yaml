@@ -1,0 +1,19 @@
+# ci/check-helm-chart.sh: supply chain on with every platform default set (docs/supply-chain.md)
+domain: console.acme-cloud.example
+supplyChain:
+  enabled: true
+  toolsImage: registry.acme-cloud.example/runr/runr-supply-chain:1.0.0
+  jobNamespace: acme-supply-chain
+  rescanHours: "12"
+  trivyDbSource: registry.acme-cloud.example/aquasec/trivy-db:2
+  trivyJavaDbSource: registry.acme-cloud.example/aquasec/trivy-java-db:1
+  trivyDbRefreshHours: "6"
+  policyController:
+    helmRepo: https://charts.acme-cloud.example/sigstore
+    chartVersion: "0.10.0"
+    extraArgs: "disable-tuf=true"
+images:
+  uploadImage: registry.acme-cloud.example/runr/image-upload:1.0.0
+  quotaGb: "100"
+  maxUploadGb: "10"
+  uploadTtlHours: "12"

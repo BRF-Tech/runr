@@ -1,0 +1,21 @@
+#:schema https://schemas.spinframework.dev/spin/manifest-v2/latest.json
+# C on Spin's WAGI executor: a plain WASI command module (no Spin SDK), the request on stdin and in
+# CGI environment variables, the response as CGI on stdout. In RunR the wasm-exec runtime builds
+# main.c and generates an equivalent spin.toml; this one is for `spin build && spin up` locally.
+spin_manifest_version = 2
+
+[application]
+name = "c-exec"
+version = "0.1.0"
+description = "A RunR wasm-exec function in C (wasi-sdk)"
+
+[[trigger.http]]
+route = "/..."
+component = "function"
+executor = { type = "wagi" }
+
+[component.function]
+source = "main.wasm"
+
+[component.function.build]
+command = "$WASI_SDK_PATH/bin/clang --target=wasm32-wasip1 -O2 -o main.wasm main.c"

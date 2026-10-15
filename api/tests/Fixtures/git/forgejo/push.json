@@ -1,0 +1,39 @@
+{
+  "ref": "refs/heads/main",
+  "before": "0000000000000000000000000000000000000000",
+  "after": "1a2b3c4d5e6f708192a3b4c5d6e7f80910a1b2c3",
+  "compare_url": "https://forgejo.test/acme/orders/compare/main",
+  "commits": [
+    {
+      "id": "1a2b3c4d5e6f708192a3b4c5d6e7f80910a1b2c3",
+      "message": "fix: answer with the order id\n",
+      "url": "https://forgejo.test/acme/orders/commit/1a2b3c4d5e6f708192a3b4c5d6e7f80910a1b2c3",
+      "author": { "name": "Ada Lovelace", "email": "ada@example.com", "username": "ada" },
+      "committer": { "name": "Ada Lovelace", "email": "ada@example.com", "username": "ada" },
+      "timestamp": "2026-10-10T12:00:00Z",
+      "added": [],
+      "removed": [],
+      "modified": ["main.py"]
+    }
+  ],
+  "total_commits": 1,
+  "head_commit": {
+    "id": "1a2b3c4d5e6f708192a3b4c5d6e7f80910a1b2c3",
+    "message": "fix: answer with the order id\n",
+    "url": "https://forgejo.test/acme/orders/commit/1a2b3c4d5e6f708192a3b4c5d6e7f80910a1b2c3",
+    "author": { "name": "Ada Lovelace", "email": "ada@example.com", "username": "ada" },
+    "timestamp": "2026-10-10T12:00:00Z"
+  },
+  "repository": {
+    "id": 4242,
+    "owner": { "id": 1, "login": "acme", "username": "acme" },
+    "name": "orders",
+    "full_name": "acme/orders",
+    "private": true,
+    "fork": false,
+    "html_url": "https://forgejo.test/acme/orders",
+    "default_branch": "main"
+  },
+  "pusher": { "id": 2, "login": "ada", "full_name": "Ada Lovelace", "email": "ada@example.com", "username": "ada" },
+  "sender": { "id": 2, "login": "ada", "username": "ada" }
+}

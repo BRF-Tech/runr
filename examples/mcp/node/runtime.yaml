@@ -1,0 +1,38 @@
+# MCP server runtime for RunR (TypeScript): the starter template is server.ts, a Model Context
+# Protocol server on the official TypeScript SDK that serves Streamable HTTP on $PORT itself
+# (http mode). Node runs the TypeScript file directly with type stripping, so there is no
+# compile step. The API ships this manifest with "@file" references inlined
+# (php artisan mcp:templates-bundle → api/resources/mcp/templates.json); the console registers it
+# in one click (New MCP server), or register it with POST /api/runtimes yourself. docs/mcp.md
+apiVersion: runr.sh/v1
+kind: Runtime
+id: mcp-node
+name: MCP server (TypeScript)
+description: Model Context Protocol server on the official TypeScript SDK, Streamable HTTP at /mcp on $PORT behind the RunR MCP gateway.
+language: typescript
+extensions: [ts]
+category: general
+versions:
+  - version: "22"
+    image: ghcr.io/runrsh/reqs/node:22-slim
+    default: true
+handler:
+  file: server
+  function: main
+template:
+  files:
+    "{file}": "@server.ts"
+dependencies:
+  file: package.json
+  template: "@package.json"
+  install: cd /build/code && npm install --omit=dev --no-audit --no-fund
+  copy:
+    - { from: /build/code/node_modules, to: /app/code/node_modules }
+run:
+  mode: http
+  command: ["node", "--experimental-strip-types", "--disable-warning=ExperimentalWarning", "/app/code/server.ts"]
+triggers: [http]
+sandbox: [runc, gvisor, kata]
+resources:
+  cpu: "250m"
+  memory_mb: 256

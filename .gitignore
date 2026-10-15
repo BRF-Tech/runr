@@ -1,0 +1,83 @@
+*.log
+.DS_Store
+.idea
+.vscode/
+*.swp
+vendor/
+!/api/resources/views/vendor/
+node_modules/
+.claude
+CLAUDE.md
+
+# Environment files — only the *.example templates are tracked
+.env
+.env.*
+!.env.example
+!.env.*.example
+!**/.env.example
+!**/.env.*.example
+# Local Docker Compose defaults (no secrets; devready.sh fills in APP_KEY)
+!/api/.env.docker
+
+# Credentials — never commit kubeconfigs, keys or certificates
+# (kubeconfig* is spelled out so it does not hit Kubeconfig*.php / *.vue sources on
+# case-insensitive file systems)
+*.kubeconfig
+kubeconfig
+kubeconfig.*
+kubeconfig-*
+kubeconfig_*
+*-kubeconfig.yaml
+*-kubeconfig.yml
+.kube/
+*.pem
+*.key
+*.p12
+*.pfx
+id_rsa*
+id_ed25519*
+
+# Local handover / scratch notes
+HANDOVER.md
+
+# Tool leftovers: browser-automation sessions, test reports, Go / Python build and test
+# output, the CI jobs' caches inside the project directory
+.playwright-mcp/
+playwright-report/
+test-results/
+*.exe
+*.test
+cover.out
+coverage.out
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+.composer-cache/
+.npm/
+.go-cache/
+# Octane downloads FrankenPHP here when it is not on the PATH
+/api/frankenphp
+
+# Build output
+dist/
+coverage/
+.phpunit.result.cache
+.phpunit.cache/
+
+# Laravel storage — git repos created at runtime
+api/storage/git/
+
+# docs/ copied into the API image at build time (runr://docs/{page}, docs/mcp.md)
+/api/resources/docs/
+/api/storage/*.md
+/api/storage/tenant*/
+# Local dev overrides
+docker-compose.override.yml
+
+# Architecture diagrams (private)
+architecture*.svg
+/deploy/runr-images.tar
+/deploy/*.tar
+/deploy/*.tar*
+/compose/.tars/

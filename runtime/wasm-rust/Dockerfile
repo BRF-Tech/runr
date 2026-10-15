@@ -1,0 +1,47 @@
+# Build image of the wasm-rust runtime (ghcr.io/runrsh/exec-wasm-rust:<version>): Rust with the
+# wasm32-wasip1 target, the Spin CLI of the Spin runtime the shim embeds, and the dependencies of
+# the default Cargo.toml fetched and compiled once (CARGO_TARGET_DIR), so a function build only
+# compiles the function's own crate. It runs as the build Job of a function version
+# (WasmBuildService); it is never deployed as a function.
+#
+#   docker build -t ghcr.io/runrsh/exec-wasm-rust:4.1 runtime/wasm-rust     (or: runtime/ci.sh wasm)
+ARG RUST_VERSION=1.98.1
+FROM rust:${RUST_VERSION}-slim-bookworm
+
+ARG SPIN_VERSION=4.1.0
+ARG SPIN_SHA256_AMD64=02fdfe34a52f8bb41da5ac0a7b52abfbf0534cd57710c3a30d13293f4245e65e
+ARG SPIN_SHA256_ARM64=dc19096a4da6038142dc5088f16ec04a18ff8eab08e3afbd587568b578195094
+ARG TARGETARCH
+
+RUN set -eu; \
+    apt-get update; \
+    apt-get install -y --no-install-recommends ca-certificates curl; \
+    rm -rf /var/lib/apt/lists/*; \
+    case "${TARGETARCH:-amd64}" in \
+      amd64) arch=amd64; sum="$SPIN_SHA256_AMD64" ;; \
+      arm64) arch=aarch64; sum="$SPIN_SHA256_ARM64" ;; \
+      *) echo "unsupported architecture ${TARGETARCH}" >&2; exit 1 ;; \
+    esac; \
+    curl -fsSL -o /tmp/spin.tar.gz "https://github.com/spinframework/spin/releases/download/v${SPIN_VERSION}/spin-v${SPIN_VERSION}-static-linux-${arch}.tar.gz"; \
+    echo "${sum}  /tmp/spin.tar.gz" | sha256sum -c -; \
+    mkdir -p /tmp/spin; \
+    tar -xzf /tmp/spin.tar.gz -C /tmp/spin; \
+    install -m 0755 "$(find /tmp/spin -type f -name spin | head -n 1)" /usr/local/bin/spin; \
+    rm -rf /tmp/spin /tmp/spin.tar.gz; \
+    spin --version; \
+    rustup target add wasm32-wasip1
+
+ENV CARGO_TARGET_DIR=/opt/runr/rust/target \
+    CARGO_TERM_COLOR=never
+
+# The default crate of a function, compiled once: its Cargo.lock is what builds start from
+WORKDIR /opt/runr/rust
+COPY Cargo.toml spin.toml ./
+COPY prewarm.rs lib.rs
+RUN set -eu; \
+    cargo generate-lockfile; \
+    cargo build --target wasm32-wasip1 --release; \
+    rm -f "$CARGO_TARGET_DIR/wasm32-wasip1/release/runr_function.wasm"; \
+    chmod -R a+rwX /usr/local/cargo /opt/runr
+
+WORKDIR /workspace/code

@@ -1,0 +1,46 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: runr-scheduler
+  namespace: {{ include "runr.namespace" . }}
+  labels:
+    app: runr-scheduler
+    {{- include "runr.labels" . | nindent 4 }}
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: runr-scheduler
+  template:
+    metadata:
+      labels:
+        app: runr-scheduler
+        {{- include "runr.colocation-label" . | nindent 8 }}
+      annotations:
+        {{- include "runr.checksum" . | nindent 8 }}
+    spec:
+      serviceAccountName: runr-api
+      automountServiceAccountToken: false
+      {{- include "runr.imagePullSecrets" . | nindent 6 }}
+      {{- include "runr.storage-init" . | nindent 6 }}
+      {{- include "runr.pod-colocation" . | nindent 6 }}
+      containers:
+        - name: scheduler
+          image: "{{ .Values.api.image.repository }}:{{ .Values.api.image.tag }}"
+          imagePullPolicy: {{ .Values.api.image.pullPolicy }}
+          {{- include "runr.envFrom" . | nindent 10 }}
+          env:
+            - name: CONTAINER_ROLE
+              value: "scheduler"
+            {{- include "runr.secret-env" . | nindent 12 }}
+          resources:
+            {{- toYaml .Values.scheduler.resources | nindent 12 }}
+          volumeMounts:
+            - name: api-storage
+              mountPath: /var/www/html/storage
+      volumes:
+        - name: api-storage
+          persistentVolumeClaim:
+            claimName: runr-api-storage

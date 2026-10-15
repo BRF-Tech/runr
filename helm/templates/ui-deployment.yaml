@@ -1,0 +1,51 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: runr-ui
+  namespace: {{ include "runr.namespace" . }}
+  labels:
+    app: runr-ui
+    {{- include "runr.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.ui.replicas }}
+  selector:
+    matchLabels:
+      app: runr-ui
+  template:
+    metadata:
+      labels:
+        app: runr-ui
+      annotations:
+        {{- include "runr.checksum" . | nindent 8 }}
+    spec:
+      automountServiceAccountToken: false
+      {{- include "runr.imagePullSecrets" . | nindent 6 }}
+      containers:
+        - name: ui
+          image: {{ include "runr.uiImage" . | quote }}
+          imagePullPolicy: {{ .Values.ui.image.pullPolicy }}
+          ports:
+            - containerPort: {{ .Values.ui.port }}
+          resources:
+            {{- toYaml .Values.ui.resources | nindent 12 }}
+          readinessProbe:
+            httpGet:
+              path: /
+              port: {{ .Values.ui.port }}
+            initialDelaySeconds: 5
+            periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: runr-ui
+  namespace: {{ include "runr.namespace" . }}
+  labels:
+    app: runr-ui
+    {{- include "runr.labels" . | nindent 4 }}
+spec:
+  selector:
+    app: runr-ui
+  ports:
+    - port: 80
+      targetPort: {{ .Values.ui.port }}

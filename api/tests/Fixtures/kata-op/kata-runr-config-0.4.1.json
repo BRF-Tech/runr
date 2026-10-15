@@ -1,0 +1,10 @@
+{
+ "_source": "OP (runr-test), 2026-09-30: data of ConfigMap runr-sandbox/kata-runr-config and the pod template annotation runr.dev/kata-config-hash of DaemonSet runr-sandbox/kata-installer, as RunR 0.4.1 installed Kata (clh, qemu, dragonball) on single-node k3s",
+ "kata_config_hash": "84038a9a3fd01e59",
+ "data": {
+  "custom-runtimes.list": "kata-clh-runr:clh::\nkata-qemu-runr:qemu::\nkata-dragonball-runr:dragonball::\n",
+  "dropin-kata-clh-runr.toml": "# RunR: the whole sandbox (shim, VMM, virtiofsd) runs in the pod cgroup, sized by the\n# RuntimeClass overhead; the VM gets the pod limits on top of a small base.\n[hypervisor.clh]\ndefault_vcpus = 1\ndefault_memory = 256\nreclaim_guest_freed_memory = true\n\n[runtime]\nsandbox_cgroup_only = true\nstatic_sandbox_resource_mgmt = true\n",
+  "dropin-kata-dragonball-runr.toml": "# RunR: the whole sandbox (shim, VMM, virtiofsd) runs in the pod cgroup, sized by the\n# RuntimeClass overhead; the VM gets the pod limits on top of a small base.\n[hypervisor.dragonball]\ndefault_vcpus = 1\ndefault_memory = 256\nreclaim_guest_freed_memory = true\n\n[runtime]\nsandbox_cgroup_only = true\nstatic_sandbox_resource_mgmt = true\n",
+  "dropin-kata-qemu-runr.toml": "# RunR: the whole sandbox (shim, VMM, virtiofsd) runs in the pod cgroup, sized by the\n# RuntimeClass overhead; the VM gets the pod limits on top of a small base.\n[hypervisor.qemu]\ndefault_vcpus = 1\ndefault_memory = 256\nreclaim_guest_freed_memory = true\n\n[runtime]\nsandbox_cgroup_only = true\nstatic_sandbox_resource_mgmt = true\n"
+ }
+}

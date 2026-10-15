@@ -1,0 +1,13 @@
+# Server, mirror and receiver. torch is installed separately: CPU wheels in Dockerfile, the CUDA
+# build comes with the base image of Dockerfile.cuda.
+fastapi==0.142.2
+starlette==0.52.1
+uvicorn==0.34.0
+huggingface_hub==0.34.6
+transformers==4.49.0
+tokenizers==0.21.0
+safetensors==0.8.0
+sentencepiece==0.2.1
+pillow==12.3.0
+numpy==2.2.1
+soundfile==0.12.1

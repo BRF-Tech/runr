@@ -1,0 +1,361 @@
+<?php
+
+namespace App\Models;
+
+use App\Casts\Encrypted;
+use App\Models\Concerns\KnativeRegionAccessorsTrait;
+use Eloquent;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Collection;
+use Illuminate\Database\Eloquent\Concerns\HasUlids;
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Support\Carbon;
+use Modules\Tenancy\Models\Tenant;
+
+/**
+ * @property string $id
+ * @property string $name
+ * @property string|null $kubeconfig
+ * @property int $total_cpu_m
+ * @property int $total_memory_mb
+ * @property bool $is_active
+ * @property bool $is_demo
+ * @property bool $is_synced
+ * @property string|null $owner_tenant_id
+ * @property string $region_mode
+ * @property string $knative_status
+ * @property string|null $knative_status_message
+ * @property Carbon|null $knative_status_checked_at
+ * @property array<array-key, mixed>|null $selected_workers
+ * @property array<array-key, mixed>|null $knative_settings
+ * @property string $cluster_status
+ * @property string|null $cluster_status_message
+ * @property string|null $external_ip
+ * @property string $knative_operator_status
+ * @property string|null $knative_operator_status_message
+ * @property string $knative_operator_namespace
+ * @property string $knative_serving_status
+ * @property string|null $knative_serving_status_message
+ * @property string $knative_serving_namespace
+ * @property string $knative_serving_ingress_class
+ * @property string|null $knative_serving_version
+ * @property string $knative_eventing_status
+ * @property string|null $knative_eventing_status_message
+ * @property string $knative_eventing_namespace
+ * @property string|null $knative_eventing_version
+ * @property string|null $redis_mode
+ * @property string|null $redis_address
+ * @property string|null $redis_password
+ * @property string|null $knative_redis_status
+ * @property string|null $knative_redis_status_message
+ * @property string|null $registry_mode
+ * @property string|null $registry_address
+ * @property string|null $registry_username
+ * @property string|null $registry_password
+ * @property string|null $registry_storage_type
+ * @property array<array-key, mixed>|null $registry_storage_config
+ * @property string|null $registry_status
+ * @property string|null $registry_status_message
+ * @property string $registry_namespace
+ * @property string $project_namespace
+ * @property string|null $prometheus_url
+ * @property bool $prometheus_managed
+ * @property string|null $loki_url
+ * @property string|null $loki_status
+ * @property bool $loki_managed
+ * @property string|null $loki_org_id
+ * @property string|null $agent_token_hash
+ * @property string|null $region_demo_status
+ * @property bool|null $dns_resolved
+ * @property Carbon|null $created_at
+ * @property Carbon|null $updated_at
+ * @property string|null $migration_status
+ * @property Carbon|null $migration_started_at
+ * @property string|null $migration_old_ip
+ * @property string|null $migration_old_kubeconfig
+ * @property string|null $domain_migration_status
+ * @property Carbon|null $domain_migration_started_at
+ * @property string|null $domain_migration_old_domain
+ * @property string|null $function_tls_mode
+ * @property string|null $function_tls_secret_name
+ * @property Carbon|null $function_tls_expires_at
+ * @property string $sandbox_kata_status
+ * @property string|null $sandbox_kata_status_message
+ * @property array<array-key, mixed>|null $sandbox_kata_hypervisor
+ * @property string $sandbox_gvisor_status
+ * @property string|null $sandbox_gvisor_status_message
+ * @property string $sandbox_xaas_runtime
+ * @property string $sandbox_faas_runtime
+ * @property string $sandbox_caas_runtime
+ * @property string $sandbox_build_runtime
+ * @property string $sandbox_wasm_status
+ * @property string|null $sandbox_wasm_status_message
+ * @property array<array-key, mixed>|null $sandbox_wasm_shims
+ * @property array<array-key, mixed>|null $sandbox_wasm_nodes
+ * @property string $region_status
+ * @property-read array $effective_settings
+ * @property-read bool $has_redis
+ * @property-read bool $has_registry
+ * @property-read bool $has_sandbox_gvisor
+ * @property-read bool $has_sandbox_kata
+ * @property-read bool $has_serving
+ * @property-read bool $is_domain_migrating
+ * @property-read bool $is_inactive
+ * @property-read bool $is_maintenance
+ * @property-read bool $is_migrating
+ * @property-read string|null $server_url
+ * @property-read Tenant|null $ownerTenant
+ * @property-read Collection<int, Project> $projects
+ * @property-read int|null $projects_count
+ *
+ * @method static Builder<static>|TenantAwareKnativeRegion demo()
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|TenantAwareKnativeRegion newModelQuery()
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|TenantAwareKnativeRegion newQuery()
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|TenantAwareKnativeRegion query()
+ * @method static Builder<static>|TenantAwareKnativeRegion real()
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|TenantAwareKnativeRegion whereClusterStatus($value)
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|TenantAwareKnativeRegion whereClusterStatusMessage($value)
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|TenantAwareKnativeRegion whereCreatedAt($value)
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|TenantAwareKnativeRegion whereDnsResolved($value)
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|TenantAwareKnativeRegion whereDomainMigrationOldDomain($value)
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|TenantAwareKnativeRegion whereDomainMigrationStartedAt($value)
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|TenantAwareKnativeRegion whereDomainMigrationStatus($value)
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|TenantAwareKnativeRegion whereExternalIp($value)
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|TenantAwareKnativeRegion whereId($value)
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|TenantAwareKnativeRegion whereIsActive($value)
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|TenantAwareKnativeRegion whereIsDemo($value)
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|TenantAwareKnativeRegion whereIsSynced($value)
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|TenantAwareKnativeRegion whereKnativeEventingNamespace($value)
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|TenantAwareKnativeRegion whereKnativeEventingStatus($value)
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|TenantAwareKnativeRegion whereKnativeEventingStatusMessage($value)
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|TenantAwareKnativeRegion whereKnativeEventingVersion($value)
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|TenantAwareKnativeRegion whereKnativeOperatorNamespace($value)
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|TenantAwareKnativeRegion whereKnativeOperatorStatus($value)
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|TenantAwareKnativeRegion whereKnativeOperatorStatusMessage($value)
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|TenantAwareKnativeRegion whereKnativeRedisStatus($value)
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|TenantAwareKnativeRegion whereKnativeRedisStatusMessage($value)
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|TenantAwareKnativeRegion whereKnativeServingIngressClass($value)
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|TenantAwareKnativeRegion whereKnativeServingNamespace($value)
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|TenantAwareKnativeRegion whereKnativeServingStatus($value)
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|TenantAwareKnativeRegion whereKnativeServingStatusMessage($value)
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|TenantAwareKnativeRegion whereKnativeServingVersion($value)
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|TenantAwareKnativeRegion whereKnativeSettings($value)
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|TenantAwareKnativeRegion whereKnativeStatus($value)
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|TenantAwareKnativeRegion whereKnativeStatusCheckedAt($value)
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|TenantAwareKnativeRegion whereKnativeStatusMessage($value)
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|TenantAwareKnativeRegion whereKubeconfig($value)
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|TenantAwareKnativeRegion whereLokiManaged($value)
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|TenantAwareKnativeRegion whereLokiStatus($value)
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|TenantAwareKnativeRegion whereLokiUrl($value)
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|TenantAwareKnativeRegion whereMigrationOldIp($value)
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|TenantAwareKnativeRegion whereMigrationOldKubeconfig($value)
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|TenantAwareKnativeRegion whereMigrationStartedAt($value)
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|TenantAwareKnativeRegion whereMigrationStatus($value)
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|TenantAwareKnativeRegion whereName($value)
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|TenantAwareKnativeRegion whereOwnerTenantId($value)
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|TenantAwareKnativeRegion whereProjectNamespace($value)
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|TenantAwareKnativeRegion wherePrometheusManaged($value)
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|TenantAwareKnativeRegion wherePrometheusUrl($value)
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|TenantAwareKnativeRegion whereRedisAddress($value)
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|TenantAwareKnativeRegion whereRedisMode($value)
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|TenantAwareKnativeRegion whereRedisPassword($value)
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|TenantAwareKnativeRegion whereRegionDemoStatus($value)
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|TenantAwareKnativeRegion whereRegionMode($value)
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|TenantAwareKnativeRegion whereRegionStatus($value)
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|TenantAwareKnativeRegion whereRegistryAddress($value)
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|TenantAwareKnativeRegion whereRegistryMode($value)
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|TenantAwareKnativeRegion whereRegistryNamespace($value)
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|TenantAwareKnativeRegion whereRegistryPassword($value)
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|TenantAwareKnativeRegion whereRegistryStatus($value)
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|TenantAwareKnativeRegion whereRegistryStatusMessage($value)
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|TenantAwareKnativeRegion whereRegistryStorageConfig($value)
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|TenantAwareKnativeRegion whereRegistryStorageType($value)
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|TenantAwareKnativeRegion whereRegistryUsername($value)
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|TenantAwareKnativeRegion whereSandboxBuildRuntime($value)
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|TenantAwareKnativeRegion whereSandboxCaasRuntime($value)
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|TenantAwareKnativeRegion whereSandboxFaasRuntime($value)
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|TenantAwareKnativeRegion whereSandboxGvisorStatus($value)
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|TenantAwareKnativeRegion whereSandboxGvisorStatusMessage($value)
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|TenantAwareKnativeRegion whereSandboxKataHypervisor($value)
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|TenantAwareKnativeRegion whereSandboxKataStatus($value)
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|TenantAwareKnativeRegion whereSandboxKataStatusMessage($value)
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|TenantAwareKnativeRegion whereSandboxXaasRuntime($value)
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|TenantAwareKnativeRegion whereSelectedWorkers($value)
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|TenantAwareKnativeRegion whereTotalCpuM($value)
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|TenantAwareKnativeRegion whereTotalMemoryMb($value)
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|TenantAwareKnativeRegion whereUpdatedAt($value)
+ *
+ * @mixin Eloquent
+ */
+class KnativeRegion extends Model
+{
+    use HasUlids, KnativeRegionAccessorsTrait;
+
+    private const DEFAULT_SETTINGS = [
+        'request_timeout' => 300,
+    ];
+
+    /**
+     * RunR installs and manages a region's Prometheus/Loki unless the operator supplied their
+     * own at creation. Same default as the DB columns, so a model that was never read back (or a
+     * row from a schema without the columns) still counts as managed.
+     */
+    protected $attributes = [
+        'prometheus_managed' => true,
+        'loki_managed' => true,
+    ];
+
+    protected $fillable = [
+        'name',
+        'kubeconfig',
+        'total_cpu_m',
+        'total_memory_mb',
+        'is_active',
+        'region_status',
+        'is_demo',
+        'region_mode',
+        'knative_status',
+        'knative_status_message',
+        'knative_status_checked_at',
+        'external_ip',
+        'cluster_status',
+        'cluster_status_message',
+        'selected_workers',
+        'knative_settings',
+        'project_namespace',
+        'redis_mode',
+        'redis_address',
+        'redis_password',
+        'knative_redis_status',
+        'knative_redis_status_message',
+        // Component statuses
+        'knative_operator_status',
+        'knative_operator_status_message',
+        'knative_operator_namespace',
+        'knative_serving_status',
+        'knative_serving_status_message',
+        'knative_serving_namespace',
+        'knative_serving_ingress_class',
+        'knative_serving_version',
+        'knative_eventing_status',         // legacy — kept for DB compat
+        'knative_eventing_status_message', // legacy
+        'knative_eventing_namespace',      // legacy
+        'knative_eventing_version',        // legacy
+        // Registry
+        'registry_mode',
+        'registry_address',
+        'registry_username',
+        'registry_password',
+        'registry_storage_type',
+        'registry_storage_config',
+        'registry_status',
+        'registry_status_message',
+        'registry_namespace',
+        'region_demo_status',
+        'dns_resolved',
+        'prometheus_url',
+        'prometheus_managed',
+        'loki_url',
+        'loki_status',
+        'loki_managed',
+        'loki_org_id',
+        // Sandbox (Runtime Isolation)
+        'sandbox_kata_status',
+        'sandbox_kata_status_message',
+        'sandbox_kata_hypervisor',
+        'sandbox_gvisor_status',
+        'sandbox_gvisor_status_message',
+        'sandbox_xaas_runtime',
+        'sandbox_faas_runtime',
+        'sandbox_caas_runtime',
+        'sandbox_build_runtime',
+        // WebAssembly support (runwasi shims, App\Services\Wasm\WasmInstallService)
+        'sandbox_wasm_status',
+        'sandbox_wasm_status_message',
+        'sandbox_wasm_shims',
+        'sandbox_wasm_nodes',
+        // GPU
+        'gpu_mode',
+        'gpu_available',
+        'gpu_allocated',
+        'gpu_status',
+        'gpu_status_message',
+        'gpu_settings',
+        // Model volume (PVC) of the Hugging Face model cache and offline snapshots
+        'model_storage',
+        // Migration
+        'migration_status',
+        'migration_started_at',
+        'migration_old_ip',
+        'migration_old_kubeconfig',
+        'domain_migration_status',
+        'domain_migration_started_at',
+        'domain_migration_old_domain',
+        // Function-domain TLS (region's own Traefik, separate from the console's Ingress)
+        'function_tls_mode',
+        'function_tls_secret_name',
+        'function_tls_expires_at',
+    ];
+
+    // Secrets never appear in API responses (registry_storage_config holds S3 credentials)
+    // agent_token_hash is not fillable: only the agent deploy writes it (forceFill)
+    protected $hidden = ['kubeconfig', 'redis_password', 'registry_password', 'registry_storage_config', 'migration_old_kubeconfig', 'agent_token_hash'];
+
+    // Secret columns are encrypted at rest (App\Casts\Encrypted, docs/security.md)
+    protected $casts = [
+        'is_active' => 'boolean',
+        'is_demo' => 'boolean',
+        'total_cpu_m' => 'integer',
+        'total_memory_mb' => 'integer',
+        'selected_workers' => 'array',
+        'knative_settings' => 'array',
+        'knative_status_checked_at' => 'datetime',
+        'kubeconfig' => Encrypted::class,
+        'migration_old_kubeconfig' => Encrypted::class,
+        'redis_password' => Encrypted::class,
+        'registry_password' => Encrypted::class,
+        'registry_storage_config' => Encrypted::class.':array',
+        'dns_resolved' => 'boolean',
+        'prometheus_managed' => 'boolean',
+        'loki_managed' => 'boolean',
+        'sandbox_kata_hypervisor' => 'array',
+        'sandbox_wasm_shims' => 'array',
+        'sandbox_wasm_nodes' => 'array',
+        'gpu_available' => 'array',
+        'gpu_allocated' => 'array',
+        'gpu_settings' => 'array',
+        'model_storage' => 'array',
+        'migration_started_at' => 'datetime',
+        'domain_migration_started_at' => 'datetime',
+        'function_tls_expires_at' => 'datetime',
+    ];
+
+    /**
+     * Query on the container-bound region model. With the Tenancy module active that is
+     * TenantAwareKnativeRegion, whose saved() hook pushes every change of a platform region to
+     * the tenants' copies (central → tenant sync). Console commands and jobs that write region
+     * fields tenants read (prometheus_url, loki_url, …) load regions through this —
+     * KnativeRegion::where() would update the central row only and leave the copies stale.
+     */
+    public static function syncedQuery(): Builder
+    {
+        return app(self::class)->newQuery();
+    }
+
+    public function scopeReal($query)
+    {
+        return $query->where('is_demo', false);
+    }
+
+    public function scopeDemo($query)
+    {
+        return $query->where('is_demo', true);
+    }
+
+    public function projects(): HasMany
+    {
+        // Explicit key: the tenant copy (TenantAwareKnativeRegion) would otherwise look for tenant_aware_knative_region_id
+        return $this->hasMany(Project::class, 'knative_region_id');
+    }
+}

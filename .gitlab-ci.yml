@@ -1,0 +1,621 @@
+# ─── Global ───────────────────────────────────────────────────────────────────
+stages:
+  - check
+  - test
+  - build
+  - export
+  - deploy
+
+variables:
+  DOCKER_DRIVER: overlay2
+  DOCKER_TLS_CERTDIR: "/certs"
+  API_IMAGE: "${CI_REGISTRY_IMAGE}/api"
+  UI_IMAGE:  "${CI_REGISTRY_IMAGE}/ui"
+
+# ─── Templates ────────────────────────────────────────────────────────────────
+
+# Shared setup for Docker build + push (multi-arch: amd64 + arm64)
+.docker_build:
+  image: ghcr.io/runrsh/reqs/docker:27
+  services:
+    - ghcr.io/runrsh/reqs/docker:27-dind
+  before_script:
+    - docker login -u "$CI_REGISTRY_USER" -p "$CI_REGISTRY_PASSWORD" "$CI_REGISTRY"
+    - docker run --rm --privileged ghcr.io/runrsh/reqs/binfmt:latest --install all
+    - docker buildx create --name multiarch --driver docker-container --use
+    - docker buildx inspect --bootstrap multiarch >/dev/null
+
+# Shared setup for Helm deploys
+.helm_deploy:
+  image: ghcr.io/runrsh/reqs/helm:3.15
+  before_script:
+    - mkdir -p ~/.kube
+    - echo "$KUBE_CONFIG" | base64 -d > ~/.kube/config
+  after_script:
+    - rm -f ~/.kube/config
+
+# Composer dependencies (incl. dev tools) for PHP quality jobs; working dir: api/
+.php_composer:
+  image: ghcr.io/runrsh/reqs/php:8.2-cli-alpine
+  variables:
+    COMPOSER_CACHE_DIR: "$CI_PROJECT_DIR/.composer-cache"
+  cache:
+    key:
+      files:
+        - api/composer.lock
+      prefix: composer
+    paths:
+      - .composer-cache/
+  # No .env, key or migrate: Pint and Larastan need neither, and a migrate would
+  # let the ide-helper hook rewrite model docblocks before the analysis.
+  before_script:
+    - apk add --no-cache git unzip
+    - docker-php-ext-install pcntl
+    - curl -sS https://getcomposer.org/installer | php -- --install-dir=/usr/local/bin --filename=composer
+    - cd api
+    - composer install --no-interaction --prefer-dist --no-progress
+
+# Same triggers as test:api
+.rules_api:
+  rules: &rules_api
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+      changes:
+        - api/**/*
+        - .gitlab-ci.yml
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+      changes:
+        - api/**/*
+        - .gitlab-ci.yml
+
+# ─── Secret scan ─────────────────────────────────────────────────────────────
+# Scans the files of the checked-out commit (not history). Allowlist: .gitleaks.toml
+
+secrets:gitleaks:
+  stage: check
+  image:
+    name: ghcr.io/gitleaks/gitleaks:v8.30.1
+    entrypoint: [""]
+  variables:
+    GIT_DEPTH: "1"
+  script:
+    - git config --global --add safe.directory "$CI_PROJECT_DIR"
+    - mkdir -p /tmp/tree && git archive HEAD | tar -x -C /tmp/tree
+    - cd /tmp/tree && gitleaks dir . --config "$CI_PROJECT_DIR/.gitleaks.toml" --redact --no-banner --verbose
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+
+# ─── Reqs mirror ─────────────────────────────────────────────────────────────
+# Every ghcr.io/runrsh/reqs/* image the repository references is in the mirror list (REQS_IMAGES
+# of runtime/lib/mirror.sh, or a runtime base image of mirror-bases), so build:runtime's
+# `ci.sh mirror-reqs` copies it to ghcr.io (ci/check-reqs-mirror.sh).
+
+check:reqs-mirror:
+  stage: check
+  image: ghcr.io/runrsh/reqs/alpine:3.21
+  before_script:
+    - apk add --no-cache bash git grep coreutils
+  script:
+    - bash ci/check-reqs-mirror.sh
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+
+# ─── Release Checks ──────────────────────────────────────────────────────────
+
+check:knative-releases:
+  stage: check
+  image: ghcr.io/runrsh/reqs/helm:3.15
+  before_script:
+    - apk add --no-cache bash curl jq git
+  script:
+    - bash ci/check-knative-releases.sh
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "schedule" && $SCHEDULED_JOB == "knative-releases"
+    - when: manual
+      allow_failure: true
+
+check:helm-releases:
+  stage: check
+  image: ghcr.io/runrsh/reqs/helm:3.15
+  before_script:
+    - apk add --no-cache bash curl jq git
+  script:
+    - bash ci/check-helm-releases.sh
+  cache:
+    key: helm-version-cache
+    paths:
+      - .helm-version-cache/
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "schedule" && $SCHEDULED_JOB == "helm-releases"
+    - when: manual
+      allow_failure: true
+
+# ─── Test ─────────────────────────────────────────────────────────────────────
+
+# Helm chart: lint + template with the defaults and ci/helm-values/*, kubeconform against
+# Kubernetes 1.30 and later (ci/check-helm-chart.sh)
+lint:helm:
+  stage: test
+  image: ghcr.io/runrsh/reqs/helm:3.15
+  variables:
+    KUBECONFORM_VERSION: v0.7.0
+  before_script:
+    - apk add --no-cache bash curl
+    - curl -fsSL "https://github.com/yannh/kubeconform/releases/download/${KUBECONFORM_VERSION}/kubeconform-linux-amd64.tar.gz" | tar xz -C /usr/local/bin kubeconform
+  script:
+    - bash ci/check-helm-chart.sh
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+      changes:
+        - helm/**/*
+        - ci/helm-values/**/*
+        - ci/check-helm-chart.sh
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+      changes:
+        - helm/**/*
+        - ci/helm-values/**/*
+        - ci/check-helm-chart.sh
+
+test:api:
+  stage: test
+  image: ghcr.io/runrsh/reqs/php:8.2-cli-alpine
+  before_script:
+    # git-daemon: git-http-backend, as in the API image (the git deploy tests serve the project remotes)
+    - apk add --no-cache git git-daemon sqlite-dev unzip
+    - docker-php-ext-install pdo pdo_sqlite pcntl
+    # pcov: line coverage for the floor below
+    - apk add --no-cache $PHPIZE_DEPS linux-headers && pecl install pcov && docker-php-ext-enable pcov
+    - curl -sS https://getcomposer.org/installer | php -- --install-dir=/usr/local/bin --filename=composer
+    - cd api
+    - composer install --no-interaction --prefer-dist
+    - cp .env.example .env
+    - php artisan key:generate
+    - php artisan migrate --force
+  script:
+    # before_script and script share one shell: the working directory is already api/
+    # Coverage floor: line coverage of app/ (phpunit.xml <source>), the measured value rounded down
+    # to whole percent; raise it with the coverage. This process (not PHPUnit's) reads the report,
+    # hence its memory limit (docs/development.md → Testing).
+    - php -d memory_limit=1G artisan test --stop-on-failure --compact --coverage --min=76
+  coverage: '/^\s*Total:\s*(\d+(?:\.\d+)?) %/'
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+      changes:
+        - api/**/*
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+      changes:
+        - api/**/*
+
+# PHP code style (Laravel Pint, api/pint.json). Fix locally with: cd api && vendor/bin/pint
+lint:php:
+  extends: .php_composer
+  stage: test
+  script:
+    - vendor/bin/pint --test
+  rules: *rules_api
+
+# Static analysis (Larastan). New findings fail; known ones live in
+# api/phpstan-baseline.neon (regenerate: see docs/development.md → Testing).
+analyse:php:
+  extends: .php_composer
+  stage: test
+  script:
+    - vendor/bin/phpstan analyse --memory-limit=1G --no-progress
+  rules: *rules_api
+
+test:ui:
+  stage: test
+  image: ghcr.io/runrsh/reqs/node:22-alpine
+  variables:
+    npm_config_cache: "$CI_PROJECT_DIR/.npm"
+    NODE_OPTIONS: "--max-old-space-size=4096"
+  cache:
+    key:
+      files:
+        - vue/package-lock.json
+      prefix: npm
+    paths:
+      - .npm/
+  before_script:
+    - cd vue
+    - npm ci --prefer-offline --no-audit --no-fund
+  script:
+    - npm run lint
+    - npm run test:coverage
+    - npm run build
+  coverage: '/^Statements\s*:\s*(\d+(?:\.\d+)?)%/'
+  artifacts:
+    when: always
+    expire_in: 7 days
+    paths:
+      - vue/coverage/
+    reports:
+      coverage_report:
+        coverage_format: cobertura
+        path: vue/coverage/cobertura-coverage.xml
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+      changes:
+        - vue/**/*
+        - .gitlab-ci.yml
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+      changes:
+        - vue/**/*
+        - .gitlab-ci.yml
+
+# Playwright UI e2e against a mocked API (route interception; Vite dev servers
+# are started by playwright.config.ts). Image tag = @playwright/test version.
+test:ui-e2e:
+  stage: test
+  image: mcr.microsoft.com/playwright:v1.64.0-noble
+  variables:
+    npm_config_cache: "$CI_PROJECT_DIR/.npm"
+    NODE_OPTIONS: "--max-old-space-size=4096"
+  cache:
+    key:
+      files:
+        - vue/package-lock.json
+      prefix: npm
+    paths:
+      - .npm/
+  before_script:
+    - cd vue
+    - npm ci --prefer-offline --no-audit --no-fund
+  script:
+    - npm run test:e2e:mock
+  artifacts:
+    when: always
+    expire_in: 7 days
+    paths:
+      - vue/playwright-report/
+      - vue/test-results/
+    reports:
+      junit: vue/test-results/junit.xml
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+      changes:
+        - vue/**/*
+        - .gitlab-ci.yml
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+      changes:
+        - vue/**/*
+        - .gitlab-ci.yml
+
+# Playwright UI e2e against the real dev stack (docker compose: postgres, redis,
+# api + migrator/seed, horizon, reverb, mailpit, vue dev server) inside
+# docker-in-docker. Specs that need a Kubernetes cluster skip themselves in this
+# mode. Manual, or a schedule with SCHEDULED_JOB=ui-e2e.
+test:ui-e2e:stack:
+  stage: test
+  image: mcr.microsoft.com/playwright:v1.64.0-noble
+  services:
+    - name: ghcr.io/runrsh/reqs/docker:27-dind
+      alias: docker
+  variables:
+    DOCKER_HOST: "tcp://docker:2376"
+    DOCKER_TLS_VERIFY: "1"
+    DOCKER_CERT_PATH: "$DOCKER_TLS_CERTDIR/client"
+    DOCKER_CLI_VERSION: "27.5.1"
+    COMPOSE_VERSION: v2.32.4
+    TENANCY_ENABLED: "false"
+    E2E_TENANCY: "false"
+    # One account, two workers: above the console's per-user default (docs/development.md)
+    API_USER_RATE_LIMIT_PER_MINUTE: "3000"
+    E2E_SEED_DEMO: "true"
+    NODE_OPTIONS: "--max-old-space-size=4096"
+  before_script:
+    - curl -fsSL "https://download.docker.com/linux/static/stable/x86_64/docker-${DOCKER_CLI_VERSION}.tgz" | tar xz --strip-components=1 -C /usr/local/bin docker/docker
+    - mkdir -p ~/.docker/cli-plugins
+    - curl -fsSLo ~/.docker/cli-plugins/docker-compose "https://github.com/docker/compose/releases/download/${COMPOSE_VERSION}/docker-compose-linux-x86_64"
+    - chmod +x ~/.docker/cli-plugins/docker-compose
+    - docker info
+  script:
+    # Secrets are encrypted at rest with APP_KEY (empty in api/.env.docker; devready.sh fills it in)
+    - sed -i "s|^APP_KEY=.*|APP_KEY=base64:$(head -c 32 /dev/urandom | base64)|" api/.env.docker
+    # The API services also join the external `kind` network (docker-compose.yml), which a fresh
+    # dind daemon does not have
+    - docker network inspect kind >/dev/null 2>&1 || docker network create kind
+    - docker compose up -d --build --wait api
+    # Horizon seeds the demo data (E2E_SEED_DEMO) the project specs need without a cluster.
+    # Reverb and Mailpit as in an install: the API broadcasts to Reverb (REVERB_HOST) and the
+    # queued mail goes to Mailpit (MAIL_HOST, api/.env.docker)
+    - docker compose up -d horizon reverb mailpit vue
+    # Vite only answers to localhost/IP hosts: address the dind daemon by IP
+    - export E2E_BASE_URL="http://$(getent hosts docker | awk '{print $1}'):${VUE_PORT:-8061}"
+    - timeout 600 sh -c 'until curl -sf "$E2E_BASE_URL/" >/dev/null; do sleep 5; done'
+    - cd vue
+    - npm ci --no-audit --no-fund
+    - npm run test:e2e
+  after_script:
+    - docker compose logs api horizon reverb vue > compose.log 2>&1 || true
+    - docker compose down -v || true
+  artifacts:
+    when: always
+    expire_in: 7 days
+    paths:
+      - compose.log
+      - vue/playwright-report/
+      - vue/test-results/
+    reports:
+      junit: vue/test-results/junit.xml
+  timeout: 60m
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "schedule" && $SCHEDULED_JOB == "ui-e2e"
+    - when: manual
+      allow_failure: true
+
+# go vet + race-enabled tests for every Go module in the tree (each go.mod). The WebAssembly
+# modules (runtime/wasm-go, examples/wasm/go) are TinyGo / wasip1 programs, built by the wasm-go
+# build image, not by the host Go toolchain.
+test:go:
+  stage: test
+  # Newer than every module's go directive: a toolchain that GOTOOLCHAIN downloads for a newer
+  # module (go1.25+) has no covdata, so -coverprofile fails on packages without tests.
+  image: ghcr.io/runrsh/reqs/golang:1.26-alpine
+  variables:
+    CGO_ENABLED: "1"
+    GOTOOLCHAIN: auto
+    GOFLAGS: "-mod=readonly"
+    GOPATH: "$CI_PROJECT_DIR/.go"
+    # The Terraform provider's tests run real plans against the fake API (write-only attributes
+    # need Terraform 1.11+); without a terraform binary every test would download one.
+    TERRAFORM_VERSION: "1.13.3"
+    TF_ACC_TERRAFORM_PATH: /usr/local/bin/terraform
+    CHECKPOINT_DISABLE: "1"
+  cache:
+    key: go-modules
+    paths:
+      - .go/pkg/mod/
+  before_script:
+    - apk add --no-cache build-base git curl unzip
+    - curl -fsSL -o /tmp/terraform.zip "https://releases.hashicorp.com/terraform/${TERRAFORM_VERSION}/terraform_${TERRAFORM_VERSION}_linux_amd64.zip"
+    - unzip -q -o /tmp/terraform.zip terraform -d /usr/local/bin && terraform version
+  script:
+    - |
+      modules=$(find . -name go.mod -not -path './.go/*' -not -path '*/node_modules/*' -not -path '*/vendor/*' -not -path './runtime/wasm-go/*' -not -path './examples/wasm/*' | sort)
+      for mod in $modules; do
+        dir=$(dirname "$mod")
+        echo "── $dir"
+        unformatted=$(cd "$dir" && gofmt -l .)
+        if [ -n "$unformatted" ]; then echo "gofmt -w needed in $dir:"; echo "$unformatted"; exit 1; fi
+        (cd "$dir" && go vet ./... && go test -race -count=1 -coverprofile=cover.out ./... && go tool cover -func=cover.out | tail -n 1) || exit 1
+      done
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+      changes:
+        - "**/*.go"
+        - "**/go.mod"
+        - "**/go.sum"
+        - .gitlab-ci.yml
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+      changes:
+        - "**/*.go"
+        - "**/go.mod"
+        - "**/go.sum"
+        - .gitlab-ci.yml
+
+# ─── Security ─────────────────────────────────────────────────────────────────
+# Advisories are published without any change on our side, so the audits run on
+# every default-branch and scheduled pipeline, and on merge requests that touch
+# the lockfile (a fresh upstream advisory must not block an unrelated MR).
+
+# Shipped UI bundle: a high/critical advisory in a production dependency fails.
+# Build/test tooling (devDependencies) is reported with exit code 3, an allowed
+# failure: its remaining fixes are upstream major upgrades (tailwindcss 4).
+audit:npm:
+  stage: test
+  image: ghcr.io/runrsh/reqs/node:22-alpine
+  script:
+    - cd vue
+    - npm audit --omit=dev --audit-level=high
+    - npm audit --audit-level=high || exit 3
+  allow_failure:
+    exit_codes:
+      - 3
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "schedule"
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+      changes:
+        - vue/package.json
+        - vue/package-lock.json
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+
+# Most advisories sit in transitive packages (league/commonmark, guzzle,
+# phpseclib, symfony/*) and clear with a lock refresh inside the existing
+# constraints; reported without blocking until composer.lock is refreshed.
+audit:composer:
+  stage: test
+  image: ghcr.io/runrsh/reqs/composer:2.7
+  script:
+    - cd api
+    - composer audit --locked --no-interaction
+  allow_failure: true
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "schedule"
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+      changes:
+        - api/composer.json
+        - api/composer.lock
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+
+# ─── E2E ──────────────────────────────────────────────────────────────────────
+# Kind (1 control-plane + 2 workers) + Knative + the API stack via Docker Compose,
+# inside docker-in-docker. Long-running: manual, or a schedule with SCHEDULED_JOB=e2e.
+e2e:kind:
+  stage: test
+  image: ghcr.io/runrsh/reqs/docker:27
+  services:
+    - name: ghcr.io/runrsh/reqs/docker:27-dind
+      alias: docker
+  variables:
+    DOCKER_HOST: "tcp://docker:2376"
+    DOCKER_TLS_VERIFY: "1"
+    DOCKER_CERT_PATH: "$DOCKER_TLS_CERTDIR/client"
+    # Ports published by the dind daemon are reached via its hostname, not localhost
+    E2E_DOCKER_ADDR: docker
+    E2E_API_WAIT: "300"
+    KIND_VERSION: v0.26.0
+    KUBECTL_VERSION: v1.32.0
+    CLOUD_PROVIDER_KIND_VERSION: v0.10.0
+  before_script:
+    - apk add --no-cache bash curl coreutils
+    - curl -fsSLo /usr/local/bin/kind "https://github.com/kubernetes-sigs/kind/releases/download/${KIND_VERSION}/kind-linux-amd64"
+    - curl -fsSLo /usr/local/bin/kubectl "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/amd64/kubectl"
+    - chmod +x /usr/local/bin/kind /usr/local/bin/kubectl
+    # cloud-provider-kind must reach the Kind API server, which lives in the dind
+    # daemon's network: run it there (host network of the daemon) instead of here.
+    - |
+      cat > /usr/local/bin/cloud-provider-kind <<EOF
+      #!/bin/sh
+      exec docker run --rm --network host -v /var/run/docker.sock:/var/run/docker.sock registry.k8s.io/cloud-provider-kind/cloud-controller-manager:${CLOUD_PROVIDER_KIND_VERSION}
+      EOF
+    - chmod +x /usr/local/bin/cloud-provider-kind
+    - docker info
+  script:
+    - bash runtime/ci.sh test --k8s=1.32.0
+  timeout: 90m
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "schedule" && $SCHEDULED_JOB == "e2e"
+    - when: manual
+      allow_failure: true
+
+# ─── Build ────────────────────────────────────────────────────────────────────
+
+build:api:
+  extends: .docker_build
+  stage: build
+  script:
+    # runr://docs/{page} of the MCP server (docs/mcp.md): the image carries docs/ as resources/docs
+    - mkdir -p api/resources/docs && cp docs/*.md api/resources/docs/
+    - >
+      docker buildx build
+      --platform linux/amd64,linux/arm64
+      --provenance=false --sbom=false
+      --cache-from "type=registry,ref=$API_IMAGE:latest"
+      --tag "$API_IMAGE:$CI_COMMIT_SHA"
+      --tag "$API_IMAGE:$CI_COMMIT_REF_SLUG"
+      --tag "$API_IMAGE:latest"
+      --output "type=image,push=true,oci-mediatypes=true"
+      --file api/Dockerfile.prod
+      api/
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+      changes:
+        - api/**/*
+
+build:ui:
+  extends: .docker_build
+  stage: build
+  script:
+    - >
+      docker buildx build
+      --platform linux/amd64,linux/arm64
+      --provenance=false --sbom=false
+      --cache-from "type=registry,ref=$UI_IMAGE:latest"
+      --tag "$UI_IMAGE:$CI_COMMIT_SHA"
+      --tag "$UI_IMAGE:$CI_COMMIT_REF_SLUG"
+      --tag "$UI_IMAGE:latest"
+      --output "type=image,push=true,oci-mediatypes=true"
+      vue/
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+      exists:
+        - vue/Dockerfile
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+      changes:
+        - vue/**/*
+      exists:
+        - vue/Dockerfile
+
+# ─── Runtime Images (ghcr.io) ─────────────────────────────────────────────────
+# build.sh discovers versions dynamically and builds + pushes them under ghcr.io/runrsh/.
+# Runs when something under runtime/ changes, or manually.
+# Secrets: GHCR_USERNAME, GHCR_TOKEN (write:packages scope)
+
+build:runtime:
+  extends: .docker_build
+  stage: build
+  before_script:
+    - echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USERNAME" --password-stdin
+    - apk add --no-cache bash curl
+    - docker run --rm --privileged ghcr.io/runrsh/reqs/binfmt:latest --install all
+  script:
+    # The reqs mirror first (ghcr.io/runrsh/reqs/*): every REQS_IMAGES entry of
+    # runtime/lib/mirror.sh (an entry added to the list is copied here, not by hand), then the
+    # runtime base images — a new upstream patch version (e.g. node:24.21-slim) must be mirrored
+    # before build discovers and uses it
+    - curl -fsSL https://github.com/google/go-containerregistry/releases/download/v0.21.2/go-containerregistry_Linux_x86_64.tar.gz | tar xz -C /usr/local/bin crane
+    - bash runtime/ci.sh mirror-reqs
+    - bash runtime/ci.sh mirror-bases
+    - bash runtime/ci.sh build --push
+    - bash runtime/ci.sh wrapper --push
+  timeout: 30m
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "schedule" && $SCHEDULED_JOB == "runtime"
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+      changes:
+        - runtime/**/*
+    - when: manual
+      allow_failure: true
+
+# ─── Export ───────────────────────────────────────────────────────────────────
+# Produces the OpenAPI JSON as a static artifact.
+# Usable for GitLab Pages or as any other artifact.
+
+export:openapi:
+  stage: export
+  image: "$API_IMAGE:$CI_COMMIT_SHA"
+  # The artisan command runs inside the built image; without a DB, only the routes are scanned
+  before_script:
+    - cd /var/www/html
+    - cp .env.example .env || true
+    - php artisan key:generate --quiet
+  script:
+    - php artisan scramble:export --path=openapi.json
+    - cp /var/www/html/openapi.json "$CI_PROJECT_DIR/openapi.json"
+  artifacts:
+    name: "openapi-$CI_COMMIT_SHA"
+    paths:
+      - openapi.json
+    expire_in: 30 days
+    expose_as: "OpenAPI Spec"
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+  needs:
+    - build:api
+
+# ─── Deploy ───────────────────────────────────────────────────────────────────
+
+deploy:production:
+  extends: .helm_deploy
+  stage: deploy
+  script:
+    - >
+      helm upgrade --install runr ./helm
+      --namespace runr
+      --create-namespace
+      --set secret.create=false
+      --set ingress.enabled=false
+      --set createNamespace=true
+      --set database.postgres.fixPgdata=false
+      --set api.storage.fixPermissions=false
+      --set podColocation=false
+      --set bootstrap.enabled=false
+      --set api.image.repository="$API_IMAGE"
+      --set api.image.tag="$CI_COMMIT_SHA"
+      --set ui.image.repository="$UI_IMAGE"
+      --set ui.image.tag="$CI_COMMIT_SHA"
+      --atomic
+      --timeout 5m
+  environment:
+    name: production
+    url: https://runr.sh
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+      when: manual
+  needs:
+    - build:api
+    # build:ui is not here yet; add it here once it is:
+    # - build:ui

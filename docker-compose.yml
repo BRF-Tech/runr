@@ -1,0 +1,244 @@
+x-api-build: &api-build
+  build:
+    context: ./api
+  # RUNR_API_IMAGE / RUNR_VENDOR_IMAGE / RUNR_COMPOSE_NETWORK: a second stack on the same Docker
+  # host (runtime/lib/test.sh derives them from COMPOSE_PROJECT_NAME) keeps its own images and network
+  image: ${RUNR_API_IMAGE:-runr-api}
+
+x-api-volumes: &api-volumes
+  volumes:
+    - ./api:/var/www/html
+    - ./runtime:/var/www/runtime
+    # runr://docs/{page} of the MCP server (docs/mcp.md): ../docs next to the API
+    - ./docs:/var/www/docs:ro
+    - api_vendor:/var/www/html/vendor
+
+services:
+  vendor-init:
+    build:
+      context: ./api
+      target: vendor
+    image: ${RUNR_VENDOR_IMAGE:-runr-vendor}
+    volumes:
+      - api_vendor:/vendor
+    command: sh -c "cp -r /app/vendor/. /vendor/"
+    restart: "no"
+
+  postgres:
+    image: ghcr.io/runrsh/reqs/postgres:17-alpine
+    ports:
+      - "${DB_PORT:-8062}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    environment:
+      POSTGRES_DB: ${DB_NAME:-runr}
+      POSTGRES_USER: ${DB_USER:-runr}
+      POSTGRES_PASSWORD: ${DB_PASS:-runr}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-runr}"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  redis:
+    image: ghcr.io/runrsh/reqs/redis:7-alpine
+    ports:
+      - "${REDIS_PORT:-8063}:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  api:
+    <<: [*api-build, *api-volumes]
+    ports:
+      - "${API_PORT:-8060}:80"
+    env_file: ./api/.env.docker
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrator:
+        condition: service_completed_successfully
+    environment:
+      CONTAINER_ROLE: api
+      TENANCY_ENABLED: ${TENANCY_ENABLED:-true}
+      AUTH_PROVIDER_ENABLED: ${AUTH_PROVIDER_ENABLED:-false}
+      SENTRY_LARAVEL_DSN: ${SENTRY_LARAVEL_DSN_DOCKER:-${SENTRY_LARAVEL_DSN:-}}
+      # Hosted MCP servers (docs/mcp.md): a Kind region's Traefik answers with its default
+      # certificate, so `ci.sh test-mcp` turns the gateway's TLS check off
+      MCP_GATEWAY_VERIFY_TLS: ${MCP_GATEWAY_VERIFY_TLS:-true}
+      # Per-user API rate limit (config/ratelimit.php): the Playwright stack suite drives the
+      # console with one account from several workers at once and raises it (docs/development.md)
+      API_USER_RATE_LIMIT_PER_MINUTE: ${API_USER_RATE_LIMIT_PER_MINUTE:-300}
+    networks:
+      - default
+      - kind
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost/up"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+      start_period: 30s
+
+  horizon:
+    <<: [*api-build, *api-volumes]
+    env_file: ./api/.env.docker
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      api:
+        condition: service_healthy
+    environment:
+      CONTAINER_ROLE: horizon
+      TENANCY_ENABLED: ${TENANCY_ENABLED:-true}
+      AUTH_PROVIDER_ENABLED: ${AUTH_PROVIDER_ENABLED:-false}
+      SENTRY_LARAVEL_DSN: ${SENTRY_LARAVEL_DSN_DOCKER:-${SENTRY_LARAVEL_DSN:-}}
+    networks:
+      - default
+      - kind
+    # The image's own check is the API's (FrankenPHP admin port): a worker is healthy while its
+    # process runs
+    healthcheck:
+      test: ["CMD", "pgrep", "-f", "artisan horizon"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+
+  scheduler:
+    <<: [*api-build, *api-volumes]
+    env_file: ./api/.env.docker
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      api:
+        condition: service_healthy
+    environment:
+      CONTAINER_ROLE: scheduler
+      TENANCY_ENABLED: ${TENANCY_ENABLED:-true}
+      AUTH_PROVIDER_ENABLED: ${AUTH_PROVIDER_ENABLED:-false}
+      SENTRY_LARAVEL_DSN: ${SENTRY_LARAVEL_DSN_DOCKER:-${SENTRY_LARAVEL_DSN:-}}
+    networks:
+      - default
+      - kind
+    healthcheck:
+      test: ["CMD", "pgrep", "-f", "artisan schedule:work"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+
+  migrator:
+    <<: [*api-build, *api-volumes]
+    env_file: ./api/.env.docker
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      vendor-init:
+        condition: service_completed_successfully
+    environment:
+      CONTAINER_ROLE: migrator
+      TENANCY_ENABLED: ${TENANCY_ENABLED:-true}
+      AUTH_PROVIDER_ENABLED: ${AUTH_PROVIDER_ENABLED:-false}
+    restart: "no"
+
+  migrator-fresh:
+    <<: [*api-build, *api-volumes]
+    env_file: ./api/.env.docker
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      CONTAINER_ROLE: migrator-fresh
+      TENANCY_ENABLED: ${TENANCY_ENABLED:-true}
+      AUTH_PROVIDER_ENABLED: ${AUTH_PROVIDER_ENABLED:-false}
+    profiles: ["migrate"]
+
+  reverb:
+    <<: [*api-build, *api-volumes]
+    env_file: ./api/.env.docker
+    depends_on:
+      api:
+        condition: service_healthy
+    environment:
+      CONTAINER_ROLE: reverb
+      TENANCY_ENABLED: ${TENANCY_ENABLED:-true}
+      AUTH_PROVIDER_ENABLED: ${AUTH_PROVIDER_ENABLED:-false}
+      SENTRY_LARAVEL_DSN: ${SENTRY_LARAVEL_DSN_DOCKER:-${SENTRY_LARAVEL_DSN:-}}
+    ports:
+      - "${REVERB_PORT:-8064}:8080"
+    networks:
+      default:
+        # The stack reaches Reverb as runr-reverb (REVERB_HOST, like the Helm chart's Service):
+        # `reverb` alone also names the Reverb of every other stack on the shared kind network
+        aliases: [runr-reverb]
+      kind: {}
+    healthcheck:
+      test: ["CMD", "pgrep", "-f", "reverb:start"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+
+  mailpit:
+    image: ghcr.io/runrsh/reqs/mailpit:latest
+    ports:
+      - "${MAILPIT_SMTP_PORT:-8065}:1025"
+      - "${MAILPIT_UI_PORT:-8066}:8025"
+    restart: unless-stopped
+
+  vue:
+    image: ghcr.io/runrsh/reqs/node:22-alpine
+    # platform: linux/arm64  # uncomment for Apple Silicon (M1/M2/M3)
+    working_dir: /app
+    ports:
+      - "${VUE_PORT:-8061}:5173"
+    volumes:
+      - ./vue:/app
+      - vue_modules:/app/node_modules
+    command: sh -c "npm install && npm run dev -- --host 0.0.0.0"
+    depends_on:
+      - api
+    environment:
+      VITE_API_PROXY_TARGET: http://api
+      VITE_REVERB_TARGET: http://reverb:8080
+      VITE_REVERB_KEY: runr-local-key
+      VITE_TENANCY_ENABLED: ${TENANCY_ENABLED:-true}
+      VITE_AUTH_PROVIDER_ENABLED: ${AUTH_PROVIDER_ENABLED:-false}
+      VITE_TICKET_ENABLED: ${TICKET_ENABLED:-false}
+      VITE_SENTRY_DSN: ${VITE_SENTRY_DSN:-}
+      VITE_SENTRY_TUNNEL_TARGET: http://sentry-proxy:8080
+
+  sentry-proxy:
+    build:
+      context: ./proxy
+    image: runr-sentry-proxy
+    ports:
+      - "${SENTRY_PROXY_PORT:-8067}:8080"
+    environment:
+      REDIS_URL: redis://redis:6379
+      RETRY_INTERVAL: ${SENTRY_RETRY_INTERVAL:-5000}
+      SENTRY_LARAVEL_DSN: ${SENTRY_LARAVEL_DSN:-}
+      VITE_SENTRY_DSN: ${VITE_SENTRY_DSN:-}
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  vue_modules:
+  api_vendor:
+
+networks:
+  default:
+    name: ${RUNR_COMPOSE_NETWORK:-runr_default}
+  kind:
+    external: true

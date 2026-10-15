@@ -1,0 +1,99 @@
+# C runtime for RunR: compiled with gcc into a static binary, run once per request by
+# RunR's universal wrapper (exec mode). Register it with POST /api/runtimes (see ../README.md).
+apiVersion: runr.sh/v1
+kind: Runtime
+id: c
+name: C
+description: C17 compiled with gcc into a static binary; RunR runs it once per invocation.
+language: c
+extensions: [c, h]
+category: general
+versions:
+  - version: "17"
+    image: ghcr.io/runrsh/reqs/alpine:3.21
+    default: true
+handler:
+  file: main
+  pattern: 'int\s+main\s*\('
+template:
+  files:
+    "{file}": |
+      /* RunR C example: exec mode, raw input.
+       * RunR runs this binary once per invocation: the request body arrives on stdin,
+       * the request metadata in RUNR_* environment variables, stdout is the response body. */
+      #include <ctype.h>
+      #include <stdio.h>
+      #include <stdlib.h>
+      #include <string.h>
+
+      static int hex(int c) {
+          if (c >= '0' && c <= '9') return c - '0';
+          c = tolower(c);
+          return (c >= 'a' && c <= 'f') ? c - 'a' + 10 : -1;
+      }
+
+      /* URL-decoded value of `key` in a raw query string ("a=1&name=RunR"); 0 when absent or empty. */
+      static int query_param(const char *query, const char *key, char *out, size_t cap) {
+          size_t klen = strlen(key);
+          while (query && *query) {
+              const char *end = strchr(query, '&');
+              if (!end) end = query + strlen(query);
+              if ((size_t) (end - query) > klen && strncmp(query, key, klen) == 0 && query[klen] == '=') {
+                  size_t n = 0;
+                  for (const char *v = query + klen + 1; v < end && n + 1 < cap; v++) {
+                      if (*v == '+') {
+                          out[n++] = ' ';
+                      } else if (*v == '%' && v + 2 < end && hex(v[1]) >= 0 && hex(v[2]) >= 0) {
+                          out[n++] = (char) (hex(v[1]) * 16 + hex(v[2]));
+                          v += 2;
+                      } else {
+                          out[n++] = *v;
+                      }
+                  }
+                  out[n] = '\0';
+                  return n > 0;
+              }
+              query = *end ? end + 1 : end;
+          }
+          return 0;
+      }
+
+      int main(void) {
+          const char *trigger = getenv("RUNR_TRIGGER");
+          if (!trigger) trigger = "http";
+
+          if (strcmp(trigger, "schedule") == 0) {
+              fprintf(stderr, "schedule trigger fired\n");
+              printf("tick from C\n");
+              return 0;
+          }
+
+          if (strcmp(trigger, "queue") == 0) {
+              static char body[65536];
+              size_t n = fread(body, 1, sizeof body - 1, stdin);
+              while (n > 0 && (body[n - 1] == '\n' || body[n - 1] == '\r')) n--;
+              body[n] = '\0';
+              fprintf(stderr, "queue message received\n");
+              printf("processed %s (from C)", body);
+              return 0;
+          }
+
+          char name[256];
+          if (!query_param(getenv("RUNR_QUERY"), "name", name, sizeof name)) strcpy(name, "World");
+          printf("Hello, %s! (from C)", name);
+          return 0;
+      }
+build:
+  image: "{image}"
+  command: "apk add --no-cache gcc musl-dev >/dev/null && gcc -O2 -static -o /build/out/handler {file}"
+  runImage: ghcr.io/runrsh/reqs/alpine:3.21
+  source: false
+run:
+  mode: exec
+  input: raw
+  command: ["/app/handler"]
+triggers: [http, schedule, queue]
+sandbox: [runc, gvisor, kata]
+resources:
+  cpu: "250m"
+  memory_mb: 128

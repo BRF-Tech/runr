@@ -1,0 +1,548 @@
+# ─── Domain ───────────────────────────────────
+# Host name of the console; sets APP_URL, FRONTEND_URL and CORS.
+# Empty: those values are not set.
+domain: ""
+
+# ─── Gateway ─────────────────────────────────
+# Single entry point: routes /, /api, /horizon, /ws
+gateway:
+  replicas: 2
+  serviceType: ClusterIP
+  port: 80
+  image:
+    repository: ghcr.io/runrsh/reqs/caddy
+    tag: "2-alpine"
+    pullPolicy: IfNotPresent
+  resources:
+    requests: { cpu: 50m, memory: 64Mi }
+    limits:   { cpu: 250m, memory: 128Mi }
+  hpa:
+    enabled: false
+    minReplicas: 2
+    maxReplicas: 6
+    targetCPU: 70
+  pdb:
+    enabled: false
+
+# ─── API ──────────────────────────────────────
+api:
+  image:
+    repository: ghcr.io/runrsh/runr/api
+    tag: latest
+    pullPolicy: IfNotPresent
+  replicas: 2
+  port: 80
+  resources:
+    requests: { cpu: 200m, memory: 256Mi }
+    limits:   { cpu: "1", memory: "1Gi" }
+  storage:
+    size: 10Gi
+    fixPermissions: true    # initContainer: chown www-data (some volume types, e.g. ext4 block volumes, come owned by root)
+    # storageClassName: ""  # set when RWX is needed
+  hpa:
+    enabled: false
+    minReplicas: 2
+    maxReplicas: 6
+    targetCPU: 70
+  pdb:
+    enabled: false
+
+# ─── UI ───────────────────────────────────────
+ui:
+  image:
+    repository: ghcr.io/runrsh/runr/ui
+    tag: latest
+    # Appended to the tag when edition=multi-tenant (UI built with the tenancy + auth-provider modules)
+    multiTenantSuffix: ""
+    pullPolicy: IfNotPresent
+  replicas: 2
+  port: 80
+  resources:
+    requests: { cpu: 50m, memory: 64Mi }
+    limits:   { cpu: 200m, memory: 128Mi }
+  hpa:
+    enabled: false
+    minReplicas: 2
+    maxReplicas: 4
+    targetCPU: 70
+  pdb:
+    enabled: false
+
+# ─── Reverb (required, no toggle) ────────────
+reverb:
+  replicas: 1
+  port: 8080
+  resources:
+    requests: { cpu: 100m, memory: 128Mi }
+    limits:   { cpu: 500m, memory: 512Mi }
+
+# ─── Horizon ─────────────────────────────────
+horizon:
+  replicas: 1
+  resources:
+    requests: { cpu: 200m, memory: 256Mi }
+    limits:   { cpu: "1", memory: "1Gi" }
+
+# ─── Scheduler ───────────────────────────────
+scheduler:
+  resources:
+    requests: { cpu: 50m, memory: 64Mi }
+    limits:   { cpu: 256m, memory: 256Mi }
+
+# ─── Redis ───────────────────────────────────
+# host empty → an internal Redis is installed
+# host set   → that external Redis is used, no internal one is installed
+redis:
+  host: ""
+  port: "6379"
+  image:
+    repository: ghcr.io/runrsh/reqs/redis
+    tag: "7-alpine"
+  resources:
+    requests: { cpu: 100m, memory: 128Mi }
+    limits:   { cpu: 500m, memory: 512Mi }
+  pdb:
+    enabled: false
+
+# ─── Database ────────────────────────────────
+# host empty + driver=pgsql → an internal PostgreSQL is installed
+# host set → that external database is used, no internal one is installed
+# driver=sqlite → no database server is installed (only with tenancy.enabled=false)
+database:
+  driver: pgsql
+  host: ""
+  port: "5432"
+  name: runr
+  user: runr
+  postgres:
+    image:
+      repository: ghcr.io/runrsh/reqs/postgres
+      tag: "17-alpine"
+    storage: 10Gi
+    fixPgdata: true         # initContainer: moves lost+found out of the way, PGDATA in a subdirectory
+    resources:
+      requests: { cpu: 200m, memory: 256Mi }
+      limits:   { cpu: "1", memory: "1Gi" }
+    pdb:
+      enabled: false
+
+# ─── Disk sizes (shortcut) ───────────────────
+# When set, used instead of api.storage.size / database.postgres.storage (e.g. from an install
+# form). A PVC can grow, never shrink.
+storage:
+  application: ""
+  database: ""
+
+# ─── Organization CPU / RAM ceiling ──────────
+# 0 or empty → no ceiling.
+# Applied to every region's project namespace as a ResourceQuota (CPU: requests = ceiling — the
+# queue-proxy CPU burst of project pods is not reserved; memory: requests/limits = ceiling) plus a
+# LimitRange (default request/limit). In the multi-tenant edition it is the default tenant quota
+# and the upper bound of the sum of tenant quotas on a region.
+quota:
+  cpu: 0          # vCPU, e.g. 8 or 0.5
+  memoryGiB: 0    # GiB, e.g. 16
+
+# ─── Mail ────────────────────────────────────
+# host empty → Mailpit is installed (dev/staging SMTP catch-all)
+# host set   → that external SMTP server is used, no Mailpit
+mail:
+  host: ""
+  port: "1025"
+  from: "noreply@runr.sh"
+  fromName: RunR
+
+mailpit:
+  image:
+    repository: ghcr.io/runrsh/reqs/mailpit
+    tag: latest
+  uiPort: 8025
+  resources:
+    requests: { cpu: 25m, memory: 32Mi }
+    limits:   { cpu: 100m, memory: 64Mi }
+
+# ─── App Config ──────────────────────────────
+app:
+  env: production
+  debug: "false"
+  logChannel: stderr
+
+queue:
+  connection: redis
+
+cache:
+  store: redis
+
+# ─── Edition ─────────────────────────────────
+# single-tenant: one organization · multi-tenant: Tenancy + Auth Provider modules on
+edition: single-tenant
+
+tenancy:
+  enabled: false
+
+authProvider:
+  enabled: false
+
+# ─── Billing (multi-tenant, docs/billing.md) ─
+# RunR calculates what each tenant owes (usage, plan fees, capacity deals); your billing system reads
+# the amounts through the billing API, invoices, and records purchases back. Billing events (period
+# closed, plan changed, usage threshold) are POSTed to webhookUrl — empty: they are only kept for
+# GET /api/billing/events. webhookSecret signs them (X-RunR-Signature: sha256=HMAC-SHA256(secret,
+# "<X-RunR-Timestamp>.<raw body>")); it goes into the chart's Secret (secretName) — with
+# secret.create=false add the key BILLING_WEBHOOK_SECRET to that Secret yourself (optional).
+# Platform admins override every value in Settings → Plans & Billing.
+billing:
+  webhookUrl: ""
+  webhookSecret: ""
+  # Month-to-date usage amounts that raise billing.usage.threshold, e.g. "100,500,1000"
+  usageThresholds: ""
+  # Where tenants buy plans and credits (a link in the console), e.g. https://shop.example.com
+  storeUrl: ""
+
+# ─── Plans (docs/billing.md) ─────────────────
+# Optional, off by default: while off no plan appears anywhere in the console and tenant quotas
+# are managed per region as before. Plans are defined in Settings → Plans & Billing.
+plans:
+  enabled: false
+
+# ─── Branding (white-label, docs/white-label.md) ─
+# The installation's brand — no rebuild, applied when the pods start. Precedence (per field):
+# value saved in Settings → Branding > this value > the RunR default (RunR by BRF Teknoloji).
+# "Reset to default" in the console brings a field back to this value.
+# Logo / favicon: an https URL, a data:image/...;base64,... URI or a reference to a key of an
+# existing ConfigMap / Secret in the release namespace (content: URL, data: URI or raw <svg>; ≤ ~700 KB):
+#   logo:
+#     light: { configMapKeyRef: { name: my-brand, key: logo-light.svg } }
+#     dark:  { secretKeyRef: { name: my-brand-secret, key: logo-dark } }
+branding:
+  productName: ""          # empty: RunR
+  companyName: ""          # empty: BRF Teknoloji
+  logo:
+    light: ""              # light theme / e-mails
+    dark: ""               # dark themes / login page
+    mark: ""               # square icon
+  favicon: ""
+  colors:
+    # One base colour "#rrggbb" (shade 500; 300–900 are derived) or the full scale:
+    #   primary: { "300": "102 197 237", "400": "51 181 233", "500": "0 159 227", "600": "0 123 192",
+    #              "700": "0 85 184", "800": "0 68 153", "900": "0 43 128" }   # "Ocean" example preset
+    primary: ""            # empty: RunR orange (#f97316 scale)
+    accent: ""             # empty: #e63946
+  loginHeadline: ""
+  loginText: ""
+  supportUrl: ""
+  supportEmail: ""
+  footerLinks: []          # [{label: Status, url: https://status.example.com}]
+  poweredBy: true          # "Powered by RunR" on a re-branded login page / in e-mails
+  email:
+    fromName: ""           # empty: productName
+    logo: ""               # empty: logo.light (data: URIs reach mail clients through /api/branding/assets)
+  tenantOverrides: true    # multi-tenant: tenant owners may brand what their users see
+
+# ─── Self-service signup (docs/white-label.md) ─
+# registration_enabled is a separate runtime setting and stays on by default (Settings → Platform).
+signup:
+  emailVerification: false # on: the account is created when the e-mail link is opened
+  verificationTtlHours: 48
+  allowedDomains: ""       # comma-separated: "example.com,*.example.org"; empty = any domain
+  inviteOnly: false        # invitations only (tenant invitations / accounts created by an admin)
+  captcha:
+    provider: none         # none | turnstile | hcaptcha
+    siteKey: ""
+    secret: ""             # Secret: SIGNUP_CAPTCHA_SECRET
+  termsUrl: ""
+  privacyUrl: ""
+  # multi-tenant: every signup gets its own tenant; the onboarding wizard (organization name,
+  # region, plan) runs at the first sign-in
+  tenantAutoCreate: true
+  defaultQuota:
+    cpuM: 2000
+    memoryMb: 4096
+  regions: ""              # platform region ids offered in the wizard (comma-separated); empty = all active regions
+
+knative:
+  minK8sMinor: "30"
+  # Image of the region Traefik (Knative ingress); empty: ghcr.io/runrsh/reqs/traefik at the version
+  # of the pinned chart (the mirror of docker.io/traefik). Point it at a registry the regions reach,
+  # with the same Traefik version; `region:reconcile` moves existing regions to it.
+  traefikImage: ""
+
+# ─── Observability (docs/observability.md) ───
+# Tracing backend per region (OpenTelemetry Collector + Grafana Tempo, installed with Knative
+# Serving; each region can reuse an in-cluster Tempo, export OTLP elsewhere or switch tracing off
+# in the console), request replay, uptime checks, the public status page and alert delivery.
+observability:
+  tracing:
+    defaultMode: managed          # managed | reuse | external | off — regions without their own setting
+    installWithServing: true      # install the backend together with Knative Serving
+    knativeSampleRate: 0.1        # activator / queue-proxy span sampling (region setting overrides)
+    tempoRetentionHours: 72
+    tempoStorage: 10Gi
+    collectorChartVersion: "0.175.1"  # open-telemetry/opentelemetry-collector (collector 0.161.0, contrib image)
+    tempoChartVersion: "3.1.0"        # grafana-community/tempo, single binary (Tempo 3.1.0)
+  replay:
+    maxBodyBytes: 65536           # project default; projects choose up to 1 MiB
+    retentionDays: 7              # project default; projects choose up to 30
+    maxCaptures: 500              # per project, oldest dropped first
+    ingestUrl: ""                 # RunR as seen from region pods; empty: the region's agent URL
+  uptime:
+    minIntervalSeconds: 30
+    resultsRetentionDays: 90
+    allowPrivateTargets: false    # true: checks of an absolute URL may target private addresses
+  statusPage:
+    enabled: true
+  alerts:
+    deliveryTries: 4
+    allowPrivateTargets: false    # true: webhook / Slack / Teams URLs may be private addresses
+
+# ─── Sandbox API (docs/sandbox-api.md) ───────
+# Isolated execution of untrusted code (AI agents, code interpreters): plain pods in a namespace per
+# organization under each region's strongest sandbox class (Kata > gVisor; runc only where a region
+# allows it). Region settings, warm pools and organization quotas are set in Settings → Sandboxes;
+# the values below are the platform defaults and ceilings.
+sandboxApi:
+  enabled: true
+  namespacePrefix: runr-sbx       # namespace "<prefix>-<organization>" per region
+  defaultRuntime: python
+  allowCustomImages: true         # `image` instead of a runtime of the catalog
+  defaults:
+    cpuM: 500
+    memoryMb: 512
+    diskMb: 1024
+    ttlSeconds: 900
+    idleTimeoutSeconds: 600
+  limits:                         # per sandbox; a region may lower them
+    maxCpuM: 4000
+    maxMemoryMb: 8192
+    maxDiskMb: 10240
+    maxTtlSeconds: 86400
+  quota:                          # per organization unless set in Settings → Sandboxes; 0 = unlimited
+    maxConcurrent: 20
+    maxCpuM: 8000
+    maxMemoryMb: 16384
+    maxSandboxSecondsMonth: 0
+    maxPoolSize: 10
+  exec:
+    defaultTimeout: 60
+    maxTimeout: 3600
+  files:
+    maxUploadBytes: 52428800
+    maxDownloadBytes: 52428800
+  poolMaxAgeSeconds: 3600         # warm pods are replaced after this
+  retentionDays: 30               # ended sandboxes are removed after this
+
+# ─── Git deploy (docs/git-deploy.md) ─────────
+# Every project gets a git remote https://<domain>/git/<organization>/<project>.git (served by
+# runr-api behind runr-gateway's /git route); GitHub / GitLab / Forgejo providers are added in
+# Settings → Git providers. Remotes live on the api-storage volume (git-remotes/).
+gitDeploy:
+  enabled: true
+  maxPushMb: 50           # largest pack one push may send (stay below the API's 64 MB body limit)
+  remoteOwner: runr       # owner segment of remote URLs in the single-organization edition
+  webhookBaseUrl: ""      # empty: https://<domain>; set when providers reach the console elsewhere
+  previews:
+    limit: 3              # default live previews per project (project setting)
+    ttlHours: 72          # default hours a preview lives without a new commit
+    maxLimit: 20          # highest per-project preview limit
+
+# ─── Software supply chain (docs/supply-chain.md) ─
+# SBOM (syft), vulnerability scan (Trivy), cosign signatures and the sigstore policy-controller
+# admission policy per region. What runs in a region is set in the UI (Region → Supply chain);
+# these are the platform-wide defaults and images. Empty values keep the application defaults.
+# New regions start with SBOM + scan on; regions that existed before the upgrade keep them off
+# until an administrator enables them (publish / mirror toolsImage first).
+supplyChain:
+  enabled: true                 # build-ready hooks: every RunR-built image gets its supply-chain run
+  toolsImage: ""                # default ghcr.io/runrsh/runr-supply-chain:1.0.0 (ci.sh supply-chain)
+  jobNamespace: ""              # default runr-supply-chain (Jobs + region signing key, per region)
+  rescanHours: ""               # default re-scan interval of deployed images for new regions (24)
+  trivyDbSource: ""             # mirror source of the vulnerability DB (mirror.gcr.io/aquasec/trivy-db:2)
+  trivyJavaDbSource: ""         # mirror source of the Java DB (mirror.gcr.io/aquasec/trivy-java-db:1)
+  trivyDbRefreshHours: ""       # refresh interval of mirrored DBs (12)
+  policyController:
+    helmRepo: ""                # default https://sigstore.github.io/helm-charts
+    chartVersion: ""            # default pinned in config/supply_chain.php
+    extraArgs: ""               # webhook flags, e.g. "disable-tuf=true" for regions without internet
+
+# ─── Uploaded images (docs/images.md) ─
+# Container images (docker save / OCI layout tars) and .wasm modules uploaded through the console,
+# the API or `runr images push` into a region's internal registry. Empty values keep the defaults.
+images:
+  uploadImage: ""              # receiver image the regions pull (default ghcr.io/runrsh/image-upload:1.0.0, ci.sh image-upload)
+  quotaGb: ""                  # storage of uploaded images per organization over every region (default 50, 0 = unlimited)
+  maxUploadGb: ""              # largest file of one upload (default 20)
+  uploadTtlHours: ""           # an upload not completed within this time is aborted (default 24)
+
+# ─── AI: GPU support and Hugging Face models (docs/ai.md, docs/huggingface.md) ─
+# Images and charts the regions pull. Point them at a registry the regions reach for
+# air-gapped installations; the defaults are the public upstream images.
+ai:
+  huggingface:
+    # Hub API of the console's model browser and of online model downloads (a mirror with the same API works)
+    endpoint: https://huggingface.co
+    # false: the console does not call the Hub (air-gapped console); models are uploaded or imported
+    browse: true
+  images:
+    hfServe: ghcr.io/runrsh/hf-serve:1.0.0
+    hfServeCuda: ghcr.io/runrsh/hf-serve:1.0.0-cuda
+    vllm: docker.io/vllm/vllm-openai:v0.6.6
+    tgi: ghcr.io/huggingface/text-generation-inference:3.0.1
+    teiCpu: ghcr.io/huggingface/text-embeddings-inference:cpu-1.5
+    # {arch}: turing- | "" | 86- | 89- | hopper-, from the GPU's compute capability
+    teiGpu: "ghcr.io/huggingface/text-embeddings-inference:{arch}1.5"
+    oras: ghcr.io/oras-project/oras:v1.2.0
+  gpu:
+    devicePluginChartVersion: "0.17.0"
+    operatorChartVersion: "v24.9.2"
+    # Default timeout (s) of GPU projects and model services
+    defaultTimeout: 300
+    # Revision start-up deadline of GPU workloads and model services (image pull + model load)
+    progressDeadline: 1800s
+    # GPU pods stay this long after the last request before they scale to zero
+    scaleToZeroRetention: 5m
+  modelStorage:
+    # Default size (GiB), access mode and storage class of a region's model volume (PVC runr-models);
+    # each region can change them before its first model
+    sizeGi: 100
+    accessMode: ReadWriteMany
+    storageClass: ""
+
+# ─── Bindings (docs/bindings.md) ─────────────
+# Managed KV, object storage and Postgres that projects attach to. The data services are
+# installed per region from the console (Region → Data services) into `namespace`; these are
+# their defaults and the per-organization limits (per tenant in multi-tenant installs).
+bindings:
+  namespace: runr-data
+  retentionDays: 7            # a deleted binding keeps its data this long (restore possible)
+  rotationGraceSeconds: 600   # old credentials keep working this long after a rotation
+  storageClass: ""            # PVCs of the data services; empty = the cluster default
+  quotas:                     # 0 = unlimited
+    maxBindings: 20
+    kvMb: 1024
+    objectGb: 100
+    postgresGb: 50
+    dedicatedPostgres: 2
+  kv:
+    maxmemoryMb: 512          # managed KV Redis: memory (noeviction) and AOF volume
+    storage: 2Gi
+  object:
+    image: ghcr.io/runrsh/reqs/garage:v2.1.0
+    storage: 20Gi
+    s3Region: garage
+  postgres:
+    cnpgChartVersion: "0.26.0"
+    image: ghcr.io/cloudnative-pg/postgresql:17.5
+    sharedInstances: 1
+    sharedStorage: 10Gi
+    backupRetention: 7d
+
+# ─── Secret ──────────────────────────────────
+# One Secret: APP_KEY + REVERB_APP_SECRET + DB_PASSWORD (+ ADMIN_PASSWORD)
+# create: true → the chart generates it (default); false → create it before installing (ci.sh / CI deploy)
+secretName: runr-secret
+secret:
+  create: true
+  # APP_KEY encrypts secrets at rest (env vars, kubeconfigs, credentials — docs/security.md).
+  # Empty: generated at install and kept on upgrade. Key rotation: set appKey to the new key
+  # ("base64:" + 32 random bytes, base64) and previousAppKeys to the old one, upgrade, run
+  # `php artisan secrets:encrypt --rotate` in the api pod, then clear previousAppKeys and upgrade again.
+  appKey: ""
+  # Comma-separated earlier keys (APP_PREVIOUS_KEYS): values encrypted with them still decrypt.
+  # Present only while set here. With secret.create=false add APP_PREVIOUS_KEYS to your Secret.
+  previousAppKeys: ""
+
+# ─── Audit log (docs/security.md) ────────────
+audit:
+  # Events older than this are deleted daily (0 = keep forever); the platform setting in
+  # Settings → Audit log overrides it
+  retentionDays: 365
+  # SIEM forwarding: every audit event also goes to the api / horizon / reverb container log
+  # (stdout) as one JSON line ({"log_type":"runr.audit", …}) for a log collector to ship
+  siemForwarding: false
+
+# ─── First administrator account ─────────────
+# password empty: generated randomly when secret.create=true, otherwise the application generates one
+admin:
+  username: admin
+  email: admin@example.com
+  password: ""
+
+# ─── Bootstrap (post-install / post-upgrade hook) ─
+# Runs after the migrate hooks: creates the administrator above when the users table is empty
+# (AdminSeeder + is_admin). Leaves everything alone when users exist.
+# false → the Job is not rendered (ci.sh / the CI deploy run their own admin step)
+bootstrap:
+  enabled: true
+
+# ─── Ingress ─────────────────────────────────
+# domain → runr-gateway. className: the cluster's ingress class (traefik on k3s)
+ingress:
+  enabled: true
+  className: traefik
+  # With ingress-nginx, MCP streams (SSE on /mcp, docs/mcp.md) need
+  #   nginx.ingress.kubernetes.io/proxy-buffering: "off"
+  #   nginx.ingress.kubernetes.io/proxy-read-timeout: "900"
+  annotations: {}
+  tls:
+    # Console certificate:
+    #   letsencrypt — issued by cert-manager: annotation cert-manager.io/cluster-issuer: <clusterIssuer> on the
+    #                 Ingress + tls (secretName). Behaves like none when the cluster has no cert-manager.
+    #   custom      — certificate + privateKey (PEM) → the chart creates a kubernetes.io/tls Secret.
+    #   none        — no tls on the Ingress; the ingress controller serves its default certificate (e.g. Traefik TLSStore default).
+    #   ""          — the older keys apply: enabled / clusterIssuer / secretName (0.3.5 and earlier, --reuse-values).
+    mode: ""
+    enabled: false        # only with mode ""
+    secretName: ""        # empty: letsencrypt → runr-tls · custom → runr-tls-custom
+    clusterIssuer: ""     # letsencrypt: empty → letsencrypt-prod · mode "": when set, cert-manager issues the certificate
+    certificate: ""       # custom: full PEM chain (server certificate first); base64-encoded PEM works too
+    privateKey: ""        # custom: the certificate's unencrypted private key (PEM); never written to any output
+
+# ─── Client IP (X-Forwarded-For) ─────────────
+# Request path: client → ingress controller (Traefik) → runr-gateway (Caddy) → runr-api. The API takes
+# the client IP — per-IP rate limits, IPs in logs and audit records — from X-Forwarded-For only as far
+# as these proxies wrote it: the entry the ingress controller appended. What a client puts in the
+# header itself never counts, and a peer outside trustedProxies is the client itself.
+clientIp:
+  # Addresses the proxies connect from: CIDRs, comma-separated. private_ranges = RFC 1918, IPv6 ULA,
+  # loopback and link-local — covers the pod network of any cluster. runr-gateway keeps (and appends
+  # to) the X-Forwarded-For of an ingress controller in these ranges; runr-api (env TRUSTED_PROXIES)
+  # accepts it from a gateway in them. A narrower value is the cluster's pod CIDR, e.g. 10.42.0.0/16.
+  trustedProxies: "private_ranges"
+  # Proxies in front of runr-api that append to X-Forwarded-For (env TRUSTED_PROXY_HOPS).
+  # 0 = automatic: 2 with the chart's Ingress (ingress controller + runr-gateway), 1 without it
+  # (runr-gateway exposed directly; it then replaces X-Forwarded-For with the connecting address).
+  # Add 1 per HTTP proxy in front of the ingress controller whose X-Forwarded-For the ingress
+  # controller keeps (Traefik forwardedHeaders.trustedIPs; RunR's region Traefik: the region setting
+  # ingress_trusted_ips), e.g. an L7 load balancer. A load balancer that sends PROXY protocol adds
+  # no hop: the ingress controller then records the client address itself.
+  proxyHops: 0
+
+# ─── Custom env override ─────────────────────
+extraEnv: {}
+
+# ─── Pod Colocation ─────────────────────────────
+# Schedules the pods that share an RWO PVC onto the same node
+podColocation: true
+
+# ─── Deploy Timestamp ───────────────────────────
+# Set by ci.sh deploy; triggers a rollout on every deploy
+deployTimestamp: ""
+
+# ─── Init Container Image ───────────────────────
+# initContainer image (fix-permissions / fix-pgdata)
+# ghcr.io/runrsh/reqs/busybox mirrors docker.io/library/busybox (runtime/lib/mirror.sh); only the "latest" tag exists
+initImage:
+  repository: ghcr.io/runrsh/reqs/busybox
+  tag: "latest"
+
+# ─── Cluster ─────────────────────────────────
+# Pull secrets added to every pod (deployments, hook jobs, UI): ["regcred"] or [{name: regcred}]
+imagePullSecrets: []
+# true → the imagePullSecrets of the "default" ServiceAccount in the release namespace are added too (lookup).
+# Platforms that attach their pull secret to the default ServiceAccount then work without knowing its name.
+imagePullSecretsFromDefaultServiceAccount: true
+# namespace empty → the Helm release namespace (default; ci.sh deploy sets it explicitly)
+namespace: ""
+# false → no Namespace objects are created (the platform / helm creates the namespace)
+createNamespace: false
+projectNamespace: runr-projects

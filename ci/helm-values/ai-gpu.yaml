@@ -1,0 +1,24 @@
+# ci/check-helm-chart.sh: AI with GPUs, air-gapped images and model storage (docs/ai.md)
+domain: console.acme-cloud.example
+ai:
+  huggingface:
+    endpoint: https://hf-mirror.acme-cloud.example
+    browse: false
+  images:
+    hfServe: registry.acme-cloud.example/runr/hf-serve:1.0.0
+    hfServeCuda: registry.acme-cloud.example/runr/hf-serve:1.0.0-cuda
+    vllm: registry.acme-cloud.example/vllm/vllm-openai:v0.6.6
+    tgi: registry.acme-cloud.example/huggingface/text-generation-inference:3.0.1
+    teiCpu: registry.acme-cloud.example/huggingface/text-embeddings-inference:cpu-1.5
+    teiGpu: "registry.acme-cloud.example/huggingface/text-embeddings-inference:{arch}1.5"
+    oras: registry.acme-cloud.example/oras-project/oras:v1.2.0
+  gpu:
+    devicePluginChartVersion: "0.17.0"
+    operatorChartVersion: "v24.9.2"
+    defaultTimeout: 600
+    progressDeadline: 3600s
+    scaleToZeroRetention: 15m
+  modelStorage:
+    sizeGi: 500
+    accessMode: ReadWriteOnce
+    storageClass: fast-ssd

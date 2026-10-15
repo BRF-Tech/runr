@@ -1,0 +1,26 @@
+{
+  "action": "closed",
+  "number": 12,
+  "pull_request": {
+    "html_url": "https://github.com/acme/orders/pull/12",
+    "number": 12,
+    "state": "closed",
+    "title": "Add order lookup",
+    "user": { "login": "grace", "id": 502 },
+    "merged": true,
+    "merged_at": "2026-10-11T09:00:00Z",
+    "head": {
+      "ref": "feature/lookup",
+      "sha": "c30867b14bb761a232cd80139fbd4c0d33264242",
+      "repo": { "id": 4242, "full_name": "acme/orders", "fork": false }
+    },
+    "base": {
+      "ref": "main",
+      "sha": "a10867b14bb761a232cd80139fbd4c0d33264240",
+      "repo": { "id": 4242, "full_name": "acme/orders", "fork": false }
+    }
+  },
+  "repository": { "id": 4242, "full_name": "acme/orders", "html_url": "https://github.com/acme/orders", "default_branch": "main" },
+  "sender": { "login": "ada", "id": 501 },
+  "installation": { "id": 777 }
+}

@@ -1,0 +1,13 @@
+apiVersion: v2
+name: runr
+description: RunR — serverless application platform on Kubernetes / Knative (functions, multi-file projects and containers with scale-to-zero)
+type: application
+version: 0.5.0
+appVersion: "0.5.0"
+keywords:
+  - serverless
+  - knative
+  - faas
+home: https://runr.sh
+sources:
+  - https://github.com/runrsh/core

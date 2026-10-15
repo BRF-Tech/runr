@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 80" width="320" height="80">
+  <defs>
+    <linearGradient id="hot" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FF8C42"/>
+      <stop offset="100%" stop-color="#E63946"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="320" height="80" rx="8" fill="#0A0A0A"/>
+
+  <text x="24" y="56" font-family="'Inter', 'Helvetica Neue', 'Arial', sans-serif"
+    font-size="52" font-weight="800" fill="#F0F0F0" letter-spacing="-2">Run<tspan fill="url(#hot)">R</tspan></text>
+</svg>

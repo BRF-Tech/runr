@@ -1,0 +1,25 @@
+# ── RunR Host Caddy Config (SSL Reverse Proxy) ───────────────────────────────
+# Example config for a Caddy on the host in front of Docker Compose.
+# Setup:
+#   sudo cp Caddyfile-host /etc/caddy/Caddyfile
+#   sudo systemctl reload caddy
+#
+# Certificates:
+#   Let's Encrypt (automatic): point the domain at this host and Caddy does the rest.
+#   Own certificate: uncomment the tls line below and set the paths:
+#     tls /etc/ssl/private/runr.example.com/fullchain.pem /etc/ssl/private/runr.example.com/privkey.pem
+
+runr.example.com {
+    # tls /etc/ssl/private/runr.example.com/fullchain.pem /etc/ssl/private/runr.example.com/privkey.pem
+
+    request_body {
+        max_size 64MB
+    }
+
+    reverse_proxy localhost:8080 {
+        header_up X-Forwarded-Proto {scheme}
+        header_up X-Real-IP {remote_host}
+        # SSE (MCP streams, docs/mcp.md) passes through without buffering
+        flush_interval -1
+    }
+}

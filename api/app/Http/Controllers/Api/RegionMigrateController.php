@@ -1,0 +1,64 @@
+<?php
+
+namespace App\Http\Controllers\Api;
+
+use App\Jobs\MigrateRegionJob;
+use App\Models\KnativeRegion;
+use App\Services\RegionMigrateService;
+use App\Services\Residency\RegionPolicy;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
+
+class RegionMigrateController extends Controller
+{
+    public function startMigration(Request $request, KnativeRegion $knativeRegion): JsonResponse
+    {
+        $request->validate([
+            'kubeconfig' => 'required|string',
+        ]);
+
+        if ($knativeRegion->is_migrating) {
+            return response()->json(['message' => __('api.migration.in_progress')], 422);
+        }
+
+        // Data residency (docs/supply-chain.md): a region with a data location moves only within it
+        app(RegionPolicy::class)->authorizeRegionMigration($knativeRegion, $request->input('data_location'));
+
+        MigrateRegionJob::dispatch($knativeRegion, $request->kubeconfig, auth()->id());
+
+        return response()->json(['message' => __('api.migration.started'), 'status' => 'pending']);
+    }
+
+    public function migrationStatus(KnativeRegion $knativeRegion): JsonResponse
+    {
+        return response()->json([
+            'migration_status' => $knativeRegion->migration_status,
+            'migration_started_at' => $knativeRegion->migration_started_at?->toISOString(),
+            'migration_old_ip' => $knativeRegion->migration_old_ip,
+            'current_ip' => $knativeRegion->external_ip,
+            'is_migrating' => $knativeRegion->is_migrating,
+        ]);
+    }
+
+    public function completeMigration(KnativeRegion $knativeRegion, RegionMigrateService $service): JsonResponse
+    {
+        if ($knativeRegion->migration_status !== 'dns_check') {
+            return response()->json(['message' => __('api.migration.not_dns_phase')], 422);
+        }
+
+        $service->completeMigration($knativeRegion);
+
+        return response()->json(['message' => __('api.migration.completed')]);
+    }
+
+    public function rollbackMigration(KnativeRegion $knativeRegion, RegionMigrateService $service): JsonResponse
+    {
+        if (! in_array($knativeRegion->migration_status, ['dns_check', 'failed'])) {
+            return response()->json(['message' => __('api.migration.cannot_rollback')], 422);
+        }
+
+        $service->rollbackMigration($knativeRegion);
+
+        return response()->json(['message' => __('api.migration.rolled_back')]);
+    }
+}

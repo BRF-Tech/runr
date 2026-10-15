@@ -1,0 +1,99 @@
+# Built-in runtime: any language that compiles to a WASI command — a preview 1 module (wasm32-wasip1)
+# or, for Go, a WASI 0.2 component — without a Spin SDK; the WebAssembly counterpart of exec mode. The build compiles the project (C / C++ with wasi-sdk,
+# Zig, Go with TinyGo, or a build.sh of its own) into main.wasm, or takes an uploaded module
+# (wasm.upload, docs/images.md); RunR generates a spin.toml with Spin's WAGI executor (CGI: the
+# request body on stdin, the request in the environment, the response on stdout) and pushes the Spin
+# OCI artifact. The pods run under containerd-shim-spin (RuntimeClass wasmtime-spin-v2) on the nodes
+# with WebAssembly support — docs/wasm.md#wasm-exec. Every trigger is an HTTP request: queue messages
+# and schedule ticks arrive as CloudEvents (HTTP_CE_TYPE).
+apiVersion: runr.sh/v1
+kind: Runtime
+id: wasm-exec
+name: WASI (Wasm exec)
+description: "Any language compiled to a WASI command (C / C++ with wasi-sdk, Zig, Go with TinyGo, or an uploaded .wasm), run on Spin's WAGI executor: the request on stdin and in CGI environment variables, the response on stdout. Needs WebAssembly support in the region."
+icon: data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA2NCA2NCI+PHJlY3Qgd2lkdGg9IjY0IiBoZWlnaHQ9IjY0IiByeD0iMTIiIGZpbGw9IiM2NTRGRjAiLz48cGF0aCBkPSJNMjAgMGgyNHY4YTEyIDEyIDAgMCAxLTI0IDB6IiBmaWxsPSIjZmZmIiBmaWxsLW9wYWNpdHk9Ii4xOCIvPjx0ZXh0IHg9IjMyIiB5PSIzOCIgZm9udC1mYW1pbHk9IkFyaWFsLEhlbHZldGljYSxzYW5zLXNlcmlmIiBmb250LXNpemU9IjE3IiBmb250LXdlaWdodD0iNzAwIiBmaWxsPSIjZmZmIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIj5XQTwvdGV4dD48dGV4dCB4PSIzMiIgeT0iNTYiIGZvbnQtZmFtaWx5PSJBcmlhbCxIZWx2ZXRpY2Esc2Fucy1zZXJpZiIgZm9udC1zaXplPSIxMSIgZm9udC13ZWlnaHQ9IjcwMCIgZmlsbD0iI2ZmZiIgZmlsbC1vcGFjaXR5PSIuODUiIHRleHQtYW5jaG9yPSJtaWRkbGUiPkVYRUM8L3RleHQ+PC9zdmc+
+language: c
+extensions: [c, h, cc, cpp, zig, go]
+category: general
+versions:
+  - version: "4.1"
+    image: ghcr.io/runrsh/exec-wasm-exec:4.1
+    default: true
+handler:
+  file: main
+  function: main
+template:
+  files:
+    "{file}": |
+      // A RunR wasm-exec function: a WASI command module on Spin's WAGI executor (CGI).
+      // The request body is on stdin, the request in the environment (REQUEST_METHOD, PATH_INFO,
+      // QUERY_STRING, CONTENT_TYPE, HTTP_<HEADER>); the response goes to stdout: CGI headers, a
+      // blank line, the body. Logs go to stderr. Queue messages and schedule ticks arrive as
+      // CloudEvents: the HTTP_CE_TYPE variable names the event.
+      #include <stdio.h>
+      #include <stdlib.h>
+      #include <string.h>
+
+      // value of a query parameter (not URL-decoded), "" when absent
+      static void query_param(const char *name, char *out, size_t size) {
+          const char *q = getenv("QUERY_STRING");
+          size_t n = strlen(name);
+          out[0] = '\0';
+          while (q && *q) {
+              if (strncmp(q, name, n) == 0 && q[n] == '=') {
+                  q += n + 1;
+                  size_t i = 0;
+                  while (q[i] && q[i] != '&' && i + 1 < size) {
+                      out[i] = q[i];
+                      i++;
+                  }
+                  out[i] = '\0';
+                  return;
+              }
+              q = strchr(q, '&');
+              if (q) q++;
+          }
+      }
+
+      int main(void) {
+          const char *event = getenv("HTTP_CE_TYPE");
+          printf("Content-Type: text/plain\n\n");
+
+          if (event && strcmp(event, "dev.runr.schedule.tick") == 0) {
+              fprintf(stderr, "tick from C (Wasm)\n");
+              printf("tick from C (Wasm)");
+              return 0;
+          }
+          if (event && strcmp(event, "dev.runr.queue.message") == 0) {
+              char body[4096];
+              size_t len = fread(body, 1, sizeof body - 1, stdin);
+              body[len] = '\0';
+              printf("processed %s (from C, Wasm)", body);
+              return 0;
+          }
+
+          char name[128];
+          query_param("name", name, sizeof name);
+          printf("Hello, %s! (from C, Wasm)", name[0] ? name : "World");
+          return 0;
+      }
+build:
+  # main.wasm from the project (wasi-sdk, Zig, TinyGo, build.sh) or the uploaded module
+  # (RUNR_WASM_MODULE); the spin.toml is generated from `wagi` unless the project has one
+  command: runr-wasm-exec build
+  source: false
+run:
+  mode: http
+  schedule: native
+  env:
+    SPIN_HTTP_LISTEN_ADDR: "0.0.0.0:8080"
+triggers: [http, schedule, queue]
+resources:
+  cpu: "100m"
+  memory_mb: 128
+runtimeClass: wasmtime-spin-v2
+wagi:
+  # argv of the module: the request path and the query words, as CGI scripts get them
+  argv: "${SCRIPT_NAME} ${ARGS}"
+  # the project's files are mapped read-only under their names (an interpreter reads its script there)
+  files: true

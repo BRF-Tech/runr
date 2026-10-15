@@ -1,0 +1,69 @@
+# Built-in runtime: Rust → WebAssembly (Spin Rust SDK). Every version is compiled with cargo into a
+# Spin component (wasm32-wasip1) and pushed to the region registry as a Spin OCI artifact; the
+# pods run under containerd-shim-spin (RuntimeClass wasmtime-spin-v2) on the nodes with
+# WebAssembly support — docs/wasm.md. Every trigger is an HTTP request: queue messages and
+# schedule ticks arrive as CloudEvents (ce-type header).
+apiVersion: runr.sh/v1
+kind: Runtime
+id: wasm-rust
+name: Rust (Wasm)
+description: "Rust compiled to a WebAssembly component with the Spin SDK — #[http_component] fn handle(req: Request). Millisecond-class cold starts in the WebAssembly sandbox; needs WebAssembly support in the region."
+icon: data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA2NCA2NCI+PHJlY3Qgd2lkdGg9IjY0IiBoZWlnaHQ9IjY0IiByeD0iMTIiIGZpbGw9IiM2NTRGRjAiLz48cGF0aCBkPSJNMjAgMGgyNHY4YTEyIDEyIDAgMCAxLTI0IDB6IiBmaWxsPSIjZmZmIiBmaWxsLW9wYWNpdHk9Ii4xOCIvPjx0ZXh0IHg9IjMyIiB5PSIzOCIgZm9udC1mYW1pbHk9IkFyaWFsLEhlbHZldGljYSxzYW5zLXNlcmlmIiBmb250LXNpemU9IjE3IiBmb250LXdlaWdodD0iNzAwIiBmaWxsPSIjZmZmIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIj5XQTwvdGV4dD48dGV4dCB4PSIzMiIgeT0iNTYiIGZvbnQtZmFtaWx5PSJBcmlhbCxIZWx2ZXRpY2Esc2Fucy1zZXJpZiIgZm9udC1zaXplPSIxMiIgZm9udC13ZWlnaHQ9IjcwMCIgZmlsbD0iI2ZmZiIgZmlsbC1vcGFjaXR5PSIuODUiIHRleHQtYW5jaG9yPSJtaWRkbGUiPlJTPC90ZXh0Pjwvc3ZnPg==
+language: rust
+extensions: [rs]
+category: general
+versions:
+  - version: "4.1"
+    image: ghcr.io/runrsh/exec-wasm-rust:4.1
+    default: true
+handler:
+  file: lib
+  function: handle
+  pattern: '#\[http_component\]'
+template:
+  files:
+    "{file}": |
+      use spin_sdk::http::{IntoResponse, Request, Response};
+      use spin_sdk::http_component;
+
+      /// Every trigger reaches the component as an HTTP request: queue messages and schedule
+      /// ticks arrive as CloudEvents (the ce-type header names the event).
+      #[http_component]
+      fn handle(req: Request) -> anyhow::Result<impl IntoResponse> {
+          let event = req.header("ce-type").and_then(|v| v.as_str()).unwrap_or("");
+          let body = match event {
+              "dev.runr.schedule.tick" => "tick from Rust (Wasm)".to_string(),
+              "dev.runr.queue.message" => format!("processed {} (from Rust, Wasm)", String::from_utf8_lossy(req.body())),
+              _ => {
+                  let name = req.query().split('&').find_map(|p| p.strip_prefix("name=")).unwrap_or("World");
+                  format!("Hello, {name}! (from Rust, Wasm)")
+              }
+          };
+          println!("{body}");
+          Ok(Response::builder()
+              .status(200)
+              .header("content-type", "text/plain")
+              .body(body)
+              .build())
+      }
+build:
+  # the image's Cargo.lock and compiled dependencies (CARGO_TARGET_DIR) serve the default Cargo.toml;
+  # a project's own Cargo.toml resolves what it adds
+  command: >-
+    { [ -f Cargo.lock ] || cp /opt/runr/rust/Cargo.lock . ; } &&
+    ln -sfn "$CARGO_TARGET_DIR" target &&
+    spin build
+  source: false
+  files:
+    Cargo.toml: "@Cargo.toml"
+    spin.toml: "@spin.toml"
+run:
+  mode: http
+  schedule: native
+  env:
+    SPIN_HTTP_LISTEN_ADDR: "0.0.0.0:8080"
+triggers: [http, schedule, queue]
+resources:
+  cpu: "100m"
+  memory_mb: 128
+runtimeClass: wasmtime-spin-v2

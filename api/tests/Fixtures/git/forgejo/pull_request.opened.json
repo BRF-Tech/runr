@@ -1,0 +1,31 @@
+{
+  "action": "opened",
+  "number": 3,
+  "pull_request": {
+    "id": 30,
+    "url": "https://forgejo.test/acme/orders/pulls/3",
+    "number": 3,
+    "user": { "id": 3, "login": "grace", "username": "grace" },
+    "title": "Add order lookup",
+    "body": "",
+    "state": "open",
+    "html_url": "https://forgejo.test/acme/orders/pulls/3",
+    "merged": false,
+    "head": {
+      "label": "feature/lookup",
+      "ref": "feature/lookup",
+      "sha": "2b3c4d5e6f708192a3b4c5d6e7f80910a1b2c3d4",
+      "repo_id": 4242,
+      "repo": { "id": 4242, "full_name": "acme/orders", "fork": false }
+    },
+    "base": {
+      "label": "main",
+      "ref": "main",
+      "sha": "1a2b3c4d5e6f708192a3b4c5d6e7f80910a1b2c3",
+      "repo_id": 4242,
+      "repo": { "id": 4242, "full_name": "acme/orders", "fork": false }
+    }
+  },
+  "repository": { "id": 4242, "full_name": "acme/orders", "html_url": "https://forgejo.test/acme/orders", "default_branch": "main" },
+  "sender": { "id": 3, "login": "grace", "username": "grace" }
+}

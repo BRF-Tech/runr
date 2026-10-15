@@ -1,0 +1,11 @@
+{
+    "name": "Tenancy",
+    "alias": "tenancy",
+    "description": "Multi-tenancy module for RunR — schema-per-tenant with stancl/tenancy",
+    "keywords": ["tenancy", "multi-tenant"],
+    "priority": 0,
+    "providers": [
+        "Modules\\Tenancy\\Providers\\TenancyServiceProvider"
+    ],
+    "files": []
+}

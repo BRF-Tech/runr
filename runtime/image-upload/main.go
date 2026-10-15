@@ -1,0 +1,71 @@
+// runr-image-upload is the region side of RunR's image uploads (docs/images.md).
+//
+//	runr-image-upload [serve]          receiver of one upload: chunks at their offsets, then the
+//	                                   verification and the push into the region registry
+//	runr-image-upload fetch REF OUT    writes the WebAssembly module of an OCI artifact to OUT
+//	                                   (the wasm-exec build image uses it for uploaded modules)
+//	runr-image-upload version
+//
+// RunR starts `serve` as a Job in the region and forwards every chunk the browser or the CLI
+// sends through the Kubernetes API server's service proxy, so the RunR API keeps nothing on
+// disk and the region needs no route to RunR or the internet. The receiver is configured
+// through the environment (config.go).
+package main
+
+import (
+	"context"
+	"fmt"
+	"os"
+	"os/signal"
+	"syscall"
+)
+
+// version is set at build time (-ldflags "-X main.version=…").
+var version = "1.0.0"
+
+func main() {
+	os.Exit(run(os.Args[1:]))
+}
+
+func run(args []string) int {
+	cmd := "serve"
+	if len(args) > 0 {
+		cmd, args = args[0], args[1:]
+	}
+
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	switch cmd {
+	case "serve":
+		cfg, err := configFromEnv(os.Getenv)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "runr-image-upload:", err)
+			return 2
+		}
+		if err := serve(ctx, cfg); err != nil {
+			fmt.Fprintln(os.Stderr, "runr-image-upload:", err)
+			return 1
+		}
+		return 0
+	case "fetch":
+		if len(args) != 2 {
+			fmt.Fprintln(os.Stderr, "usage: runr-image-upload fetch <reference> <out.wasm>")
+			return 2
+		}
+		plain := os.Getenv("RUNR_REGISTRY_PLAIN_HTTP") != "false"
+		digest, err := fetchModule(ctx, args[0], args[1], plain)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "runr-image-upload:", err)
+			return 1
+		}
+		fmt.Printf("runr: module %s (%s) → %s\n", args[0], digest, args[1])
+		return 0
+	case "version", "--version", "-v":
+		fmt.Println(version)
+		return 0
+	default:
+		fmt.Fprintf(os.Stderr, "runr-image-upload: unknown command %q (serve | fetch | version)\n", cmd)
+		return 2
+	}
+}

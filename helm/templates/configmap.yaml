@@ -1,0 +1,317 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: runr-config
+  namespace: {{ include "runr.namespace" . }}
+  labels:
+    {{- include "runr.labels" . | nindent 4 }}
+data:
+  # App
+  APP_ENV: {{ .Values.app.env | quote }}
+  APP_DEBUG: {{ .Values.app.debug | quote }}
+  APP_VERSION: {{ .Values.appVersion | default (printf "v%s" .Chart.AppVersion) | quote }}
+  {{- if .Values.domain }}
+  APP_URL: {{ printf "https://%s" .Values.domain | quote }}
+  FRONTEND_URL: {{ printf "https://%s" .Values.domain | quote }}
+  {{- end }}
+  LOG_CHANNEL: {{ .Values.app.logChannel | quote }}
+
+  # Queue & Cache
+  QUEUE_CONNECTION: {{ .Values.queue.connection | quote }}
+  CACHE_STORE: {{ .Values.cache.store | quote }}
+
+  # Redis
+  REDIS_CLIENT: "phpredis"
+  REDIS_HOST: {{ .Values.redis.host | default "runr-redis" | quote }}
+  REDIS_PORT: {{ .Values.redis.port | quote }}
+
+  # Reverb
+  BROADCAST_CONNECTION: "reverb"
+  REVERB_APP_ID: "runr"
+  REVERB_APP_KEY: "runr-key"
+  REVERB_SERVER_HOST: "0.0.0.0"
+  REVERB_SERVER_PORT: {{ .Values.reverb.port | quote }}
+  REVERB_HOST: "runr-reverb"
+  REVERB_PORT: {{ .Values.reverb.port | quote }}
+  REVERB_SCHEME: "http"
+
+  # Database
+  DB_CONNECTION: {{ .Values.database.driver | quote }}
+  {{- if eq .Values.database.driver "pgsql" }}
+  DB_HOST: {{ .Values.database.host | default "runr-postgres" | quote }}
+  DB_PORT: {{ .Values.database.port | quote }}
+  DB_DATABASE: {{ .Values.database.name | quote }}
+  DB_USERNAME: {{ .Values.database.user | quote }}
+  {{- end }}
+
+  # Mail
+  MAIL_MAILER: "smtp"
+  {{- if .Values.mail.host }}
+  MAIL_HOST: {{ .Values.mail.host | quote }}
+  MAIL_PORT: {{ .Values.mail.port | quote }}
+  {{- else }}
+  MAIL_HOST: "runr-mailpit"
+  MAIL_PORT: "1025"
+  {{- end }}
+  MAIL_FROM_ADDRESS: {{ .Values.mail.from | quote }}
+  MAIL_FROM_NAME: {{ .Values.mail.fromName | quote }}
+
+  # Tenancy
+  TENANCY_ENABLED: {{ include "runr.tenancyEnabled" . | quote }}
+
+  # AuthProvider
+  AUTH_PROVIDER_ENABLED: {{ include "runr.authProviderEnabled" . | quote }}
+
+  # Audit log retention (0 = keep forever) + SIEM forwarding (values audit.*, api config/audit.php).
+  # `--reuse-values` with older values has no audit key → defaults.
+  {{- $audit := .Values.audit | default dict }}
+  AUDIT_RETENTION_DAYS: {{ if hasKey $audit "retentionDays" }}{{ int $audit.retentionDays | toString | quote }}{{ else }}"365"{{ end }}
+  AUDIT_FORWARD_ENABLED: {{ ternary "true" "false" (eq (toString $audit.siemForwarding) "true") | quote }}
+
+  # Billing (docs/billing.md): billing events webhook, usage thresholds, store link, plans — the
+  # webhook secret comes from the Secret
+  {{- $billing := .Values.billing | default dict }}
+  BILLING_WEBHOOK_URL: {{ $billing.webhookUrl | default "" | quote }}
+  BILLING_USAGE_THRESHOLDS: {{ $billing.usageThresholds | default "" | toString | quote }}
+  BILLING_STORE_URL: {{ $billing.storeUrl | default "" | quote }}
+  PLANS_ENABLED: {{ (.Values.plans | default dict).enabled | default false | quote }}
+
+  # White-label branding (Settings → Branding overrides it per field). Logos given as a
+  # ConfigMap / Secret reference are not here: runr.secret-env sets them with valueFrom.
+  {{- $brand := .Values.branding | default dict }}
+  {{- $logo := $brand.logo | default dict }}
+  {{- $colors := $brand.colors | default dict }}
+  {{- $mail := $brand.email | default dict }}
+  BRANDING_PRODUCT_NAME: {{ $brand.productName | default "" | quote }}
+  BRANDING_COMPANY_NAME: {{ $brand.companyName | default "" | quote }}
+  {{- range $name, $value := dict "BRANDING_LOGO_LIGHT" $logo.light "BRANDING_LOGO_DARK" $logo.dark "BRANDING_LOGO_MARK" $logo.mark "BRANDING_FAVICON" $brand.favicon "BRANDING_EMAIL_LOGO" $mail.logo }}
+  {{- if not (kindIs "map" $value) }}
+  {{ $name }}: {{ $value | default "" | quote }}
+  {{- end }}
+  {{- end }}
+  {{- if kindIs "map" $colors.primary }}
+  BRANDING_PRIMARY_COLOR: {{ index $colors.primary "500" | default "" | quote }}
+  BRANDING_PRIMARY_SCALE: {{ $colors.primary | toJson | quote }}
+  {{- else }}
+  BRANDING_PRIMARY_COLOR: {{ $colors.primary | default "" | quote }}
+  BRANDING_PRIMARY_SCALE: ""
+  {{- end }}
+  BRANDING_ACCENT_COLOR: {{ $colors.accent | default "" | quote }}
+  BRANDING_EMAIL_FROM_NAME: {{ $mail.fromName | default "" | quote }}
+  BRANDING_LOGIN_HEADLINE: {{ $brand.loginHeadline | default "" | quote }}
+  BRANDING_LOGIN_TEXT: {{ $brand.loginText | default "" | quote }}
+  BRANDING_SUPPORT_EMAIL: {{ $brand.supportEmail | default "" | quote }}
+  BRANDING_SUPPORT_URL: {{ $brand.supportUrl | default "" | quote }}
+  BRANDING_FOOTER_LINKS: {{ $brand.footerLinks | default list | toJson | quote }}
+  BRANDING_POWERED_BY: {{ hasKey $brand "poweredBy" | ternary ($brand.poweredBy | toString) "true" | quote }}
+  BRANDING_TENANT_OVERRIDES: {{ hasKey $brand "tenantOverrides" | ternary ($brand.tenantOverrides | toString) "true" | quote }}
+
+  # Self-service signup (registration_enabled stays a runtime setting, default on)
+  {{- $signup := .Values.signup | default dict }}
+  {{- $captcha := $signup.captcha | default dict }}
+  {{- $quota := $signup.defaultQuota | default dict }}
+  SIGNUP_EMAIL_VERIFICATION: {{ $signup.emailVerification | default false | quote }}
+  SIGNUP_VERIFICATION_TTL_HOURS: {{ $signup.verificationTtlHours | default 48 | quote }}
+  SIGNUP_ALLOWED_DOMAINS: {{ $signup.allowedDomains | default "" | quote }}
+  SIGNUP_INVITE_ONLY: {{ $signup.inviteOnly | default false | quote }}
+  SIGNUP_CAPTCHA_PROVIDER: {{ $captcha.provider | default "none" | quote }}
+  SIGNUP_CAPTCHA_SITE_KEY: {{ $captcha.siteKey | default "" | quote }}
+  SIGNUP_TERMS_URL: {{ $signup.termsUrl | default "" | quote }}
+  SIGNUP_PRIVACY_URL: {{ $signup.privacyUrl | default "" | quote }}
+  SIGNUP_TENANT_AUTO_CREATE: {{ hasKey $signup "tenantAutoCreate" | ternary ($signup.tenantAutoCreate | toString) "true" | quote }}
+  SIGNUP_DEFAULT_CPU_QUOTA_M: {{ $quota.cpuM | default 2000 | quote }}
+  SIGNUP_DEFAULT_MEMORY_QUOTA_MB: {{ $quota.memoryMb | default 4096 | quote }}
+  SIGNUP_REGIONS: {{ $signup.regions | default "" | quote }}
+
+  # First administrator account (the password is in the Secret: ADMIN_PASSWORD)
+  ADMIN_USERNAME: {{ .Values.admin.username | quote }}
+  ADMIN_EMAIL: {{ .Values.admin.email | quote }}
+
+  # AI: GPU support and Hugging Face models (values ai.*, api config/ai.php)
+  {{- $ai := .Values.ai | default dict }}
+  {{- $hf := $ai.huggingface | default dict }}
+  {{- $img := $ai.images | default dict }}
+  {{- $gpu := $ai.gpu | default dict }}
+  {{- $ms := $ai.modelStorage | default dict }}
+  AI_HF_ENDPOINT: {{ $hf.endpoint | default "https://huggingface.co" | quote }}
+  AI_HF_BROWSE: {{ ternary "true" "false" (ne (toString $hf.browse) "false") | quote }}
+  AI_IMAGE_HF_SERVE: {{ $img.hfServe | default "ghcr.io/runrsh/hf-serve:1.0.0" | quote }}
+  AI_IMAGE_HF_SERVE_CUDA: {{ $img.hfServeCuda | default "ghcr.io/runrsh/hf-serve:1.0.0-cuda" | quote }}
+  AI_IMAGE_VLLM: {{ $img.vllm | default "docker.io/vllm/vllm-openai:v0.6.6" | quote }}
+  AI_IMAGE_TGI: {{ $img.tgi | default "ghcr.io/huggingface/text-generation-inference:3.0.1" | quote }}
+  AI_IMAGE_TEI_CPU: {{ $img.teiCpu | default "ghcr.io/huggingface/text-embeddings-inference:cpu-1.5" | quote }}
+  AI_IMAGE_TEI_GPU: {{ $img.teiGpu | default "ghcr.io/huggingface/text-embeddings-inference:{arch}1.5" | quote }}
+  AI_IMAGE_ORAS: {{ $img.oras | default "ghcr.io/oras-project/oras:v1.2.0" | quote }}
+  AI_GPU_DEVICE_PLUGIN_CHART_VERSION: {{ $gpu.devicePluginChartVersion | default "0.17.0" | quote }}
+  AI_GPU_OPERATOR_CHART_VERSION: {{ $gpu.operatorChartVersion | default "v24.9.2" | quote }}
+  AI_GPU_DEFAULT_TIMEOUT: {{ $gpu.defaultTimeout | default 300 | quote }}
+  AI_PROGRESS_DEADLINE: {{ $gpu.progressDeadline | default "1800s" | quote }}
+  AI_GPU_SCALE_TO_ZERO_RETENTION: {{ $gpu.scaleToZeroRetention | default "5m" | quote }}
+  AI_MODEL_STORAGE_GI: {{ $ms.sizeGi | default 100 | quote }}
+  AI_MODEL_STORAGE_ACCESS_MODE: {{ $ms.accessMode | default "ReadWriteMany" | quote }}
+  AI_MODEL_STORAGE_CLASS: {{ $ms.storageClass | default "" | quote }}
+
+  # Organization CPU / RAM ceiling (quota.cpu vCPU, quota.memoryGiB GiB) — empty: no ceiling
+  QUOTA_CPU: {{ include "runr.quotaCpu" . | quote }}
+  QUOTA_MEMORY_GIB: {{ include "runr.quotaMemoryGiB" . | quote }}
+
+  # Console TLS Secret: a region's function-domain TLS copies it in "console certificate" mode
+  # (same "runr.ingressTls" resolution as ingress.yaml and rbac.yaml: letsencrypt → runr-tls, custom → runr-tls-custom)
+  CONSOLE_TLS_SECRET_NAME: {{ (include "runr.ingressTls" . | fromJson).secret | default "runr-tls-custom" | quote }}
+
+  # Client IP behind ingress controller → runr-gateway (values clientIp, api config/trustedproxy.php)
+  TRUSTED_PROXIES: {{ include "runr.trustedProxies" . | quote }}
+  TRUSTED_PROXY_HOPS: {{ include "runr.proxyHops" . | quote }}
+
+  # Knative
+  KNATIVE_MIN_K8S_MINOR: {{ .Values.knative.minK8sMinor | quote }}
+  {{- with .Values.knative.traefikImage }}
+  KNATIVE_TRAEFIK_IMAGE: {{ . | quote }}
+  {{- end }}
+
+  # Observability (values observability.*, api config/observability.php)
+  {{- $obs := .Values.observability | default dict }}
+  OBS_TRACING_DEFAULT_MODE: {{ dig "tracing" "defaultMode" "managed" $obs | quote }}
+  OBS_TRACING_INSTALL_WITH_SERVING: {{ dig "tracing" "installWithServing" true $obs | ternary "true" "false" | quote }}
+  OBS_KNATIVE_TRACING_SAMPLE_RATE: {{ dig "tracing" "knativeSampleRate" 0.1 $obs | toString | quote }}
+  OBS_TEMPO_RETENTION_HOURS: {{ dig "tracing" "tempoRetentionHours" 72 $obs | toString | quote }}
+  OBS_TEMPO_STORAGE: {{ dig "tracing" "tempoStorage" "10Gi" $obs | quote }}
+  OBS_OTEL_COLLECTOR_CHART_VERSION: {{ dig "tracing" "collectorChartVersion" "0.175.1" $obs | quote }}
+  OBS_TEMPO_CHART_VERSION: {{ dig "tracing" "tempoChartVersion" "3.1.0" $obs | quote }}
+  OBS_REPLAY_MAX_BODY_BYTES: {{ dig "replay" "maxBodyBytes" 65536 $obs | toString | quote }}
+  OBS_REPLAY_RETENTION_DAYS: {{ dig "replay" "retentionDays" 7 $obs | toString | quote }}
+  OBS_REPLAY_MAX_CAPTURES: {{ dig "replay" "maxCaptures" 500 $obs | toString | quote }}
+  OBS_INGEST_URL: {{ dig "replay" "ingestUrl" "" $obs | quote }}
+  OBS_UPTIME_MIN_INTERVAL: {{ dig "uptime" "minIntervalSeconds" 30 $obs | toString | quote }}
+  OBS_UPTIME_RETENTION_DAYS: {{ dig "uptime" "resultsRetentionDays" 90 $obs | toString | quote }}
+  OBS_UPTIME_ALLOW_PRIVATE: {{ dig "uptime" "allowPrivateTargets" false $obs | ternary "true" "false" | quote }}
+  OBS_STATUS_PAGE_ENABLED: {{ dig "statusPage" "enabled" true $obs | ternary "true" "false" | quote }}
+  OBS_ALERT_DELIVERY_TRIES: {{ dig "alerts" "deliveryTries" 4 $obs | toString | quote }}
+  OBS_ALERT_ALLOW_PRIVATE: {{ dig "alerts" "allowPrivateTargets" false $obs | ternary "true" "false" | quote }}
+
+  # Sandbox API (api/config/sandbox.php)
+  {{- with (.Values.sandboxApi | default dict) }}
+  SANDBOX_API_ENABLED: {{ ternary "true" "false" (ne .enabled false) | quote }}
+  SANDBOX_NAMESPACE_PREFIX: {{ .namespacePrefix | default "runr-sbx" | quote }}
+  SANDBOX_DEFAULT_RUNTIME: {{ .defaultRuntime | default "python" | quote }}
+  SANDBOX_ALLOW_CUSTOM_IMAGES: {{ ternary "true" "false" (ne .allowCustomImages false) | quote }}
+  {{- with (.defaults | default dict) }}
+  SANDBOX_DEFAULT_CPU_M: {{ .cpuM | default 500 | quote }}
+  SANDBOX_DEFAULT_MEMORY_MB: {{ .memoryMb | default 512 | quote }}
+  SANDBOX_DEFAULT_DISK_MB: {{ .diskMb | default 1024 | quote }}
+  SANDBOX_DEFAULT_TTL: {{ .ttlSeconds | default 900 | quote }}
+  SANDBOX_DEFAULT_IDLE_TIMEOUT: {{ .idleTimeoutSeconds | default 600 | quote }}
+  {{- end }}
+  {{- with (.limits | default dict) }}
+  SANDBOX_MAX_CPU_M: {{ .maxCpuM | default 4000 | quote }}
+  SANDBOX_MAX_MEMORY_MB: {{ .maxMemoryMb | default 8192 | quote }}
+  SANDBOX_MAX_DISK_MB: {{ .maxDiskMb | default 10240 | quote }}
+  SANDBOX_MAX_TTL: {{ .maxTtlSeconds | default 86400 | quote }}
+  {{- end }}
+  {{- with (.quota | default dict) }}
+  {{- /* 0 = unlimited: missing keys fall back to the defaults, a 0 stays 0 */}}
+  SANDBOX_QUOTA_CONCURRENT: {{ ternary 20 .maxConcurrent (kindIs "invalid" .maxConcurrent) | int64 | quote }}
+  SANDBOX_QUOTA_CPU_M: {{ ternary 8000 .maxCpuM (kindIs "invalid" .maxCpuM) | int64 | quote }}
+  SANDBOX_QUOTA_MEMORY_MB: {{ ternary 16384 .maxMemoryMb (kindIs "invalid" .maxMemoryMb) | int64 | quote }}
+  SANDBOX_QUOTA_SECONDS_MONTH: {{ .maxSandboxSecondsMonth | default 0 | int64 | quote }}
+  SANDBOX_QUOTA_POOL_SIZE: {{ ternary 10 .maxPoolSize (kindIs "invalid" .maxPoolSize) | int64 | quote }}
+  {{- end }}
+  {{- with (.exec | default dict) }}
+  SANDBOX_EXEC_TIMEOUT: {{ .defaultTimeout | default 60 | quote }}
+  SANDBOX_EXEC_MAX_TIMEOUT: {{ .maxTimeout | default 3600 | quote }}
+  {{- end }}
+  {{- with (.files | default dict) }}
+  SANDBOX_MAX_UPLOAD_BYTES: {{ .maxUploadBytes | default 52428800 | int64 | quote }}
+  SANDBOX_MAX_DOWNLOAD_BYTES: {{ .maxDownloadBytes | default 52428800 | int64 | quote }}
+  {{- end }}
+  SANDBOX_POOL_MAX_AGE: {{ .poolMaxAgeSeconds | default 3600 | quote }}
+  SANDBOX_RETENTION_DAYS: {{ .retentionDays | default 30 | quote }}
+  {{- end }}
+
+  # Git deploy (docs/git-deploy.md): project git remotes, provider webhooks, previews
+  {{- $gitDeploy := .Values.gitDeploy | default dict }}
+  {{- $previews := $gitDeploy.previews | default dict }}
+  GIT_DEPLOY_ENABLED: {{ (or (not (hasKey $gitDeploy "enabled")) $gitDeploy.enabled) | ternary "true" "false" | quote }}
+  GIT_MAX_PUSH_MB: {{ $gitDeploy.maxPushMb | default 50 | quote }}
+  GIT_REMOTE_OWNER: {{ $gitDeploy.remoteOwner | default "runr" | quote }}
+  GIT_WEBHOOK_BASE_URL: {{ $gitDeploy.webhookBaseUrl | default "" | quote }}
+  GIT_PREVIEW_LIMIT: {{ $previews.limit | default 3 | quote }}
+  GIT_PREVIEW_TTL_HOURS: {{ $previews.ttlHours | default 72 | quote }}
+  GIT_PREVIEW_MAX_LIMIT: {{ $previews.maxLimit | default 20 | quote }}
+
+  # Bindings (docs/bindings.md)
+  {{- $b := .Values.bindings | default dict }}
+  {{- $bq := $b.quotas | default dict }}
+  {{- $bkv := $b.kv | default dict }}
+  {{- $bobj := $b.object | default dict }}
+  {{- $bpg := $b.postgres | default dict }}
+  BINDINGS_NAMESPACE: {{ $b.namespace | default "runr-data" | quote }}
+  BINDINGS_RETENTION_DAYS: {{ $b.retentionDays | default 7 | quote }}
+  BINDINGS_ROTATION_GRACE: {{ $b.rotationGraceSeconds | default 600 | quote }}
+  BINDINGS_STORAGE_CLASS: {{ $b.storageClass | default "" | quote }}
+  BINDINGS_QUOTA_MAX_BINDINGS: {{ $bq.maxBindings | default 0 | quote }}
+  BINDINGS_QUOTA_KV_MB: {{ $bq.kvMb | default 0 | quote }}
+  BINDINGS_QUOTA_OBJECT_GB: {{ $bq.objectGb | default 0 | quote }}
+  BINDINGS_QUOTA_POSTGRES_GB: {{ $bq.postgresGb | default 0 | quote }}
+  BINDINGS_QUOTA_DEDICATED_POSTGRES: {{ $bq.dedicatedPostgres | default 0 | quote }}
+  BINDINGS_KV_MAXMEMORY_MB: {{ $bkv.maxmemoryMb | default 512 | quote }}
+  BINDINGS_KV_STORAGE: {{ $bkv.storage | default "2Gi" | quote }}
+  BINDINGS_OBJECT_IMAGE: {{ $bobj.image | default "ghcr.io/runrsh/reqs/garage:v2.1.0" | quote }}
+  BINDINGS_OBJECT_STORAGE: {{ $bobj.storage | default "20Gi" | quote }}
+  BINDINGS_OBJECT_S3_REGION: {{ $bobj.s3Region | default "garage" | quote }}
+  BINDINGS_CNPG_CHART_VERSION: {{ $bpg.cnpgChartVersion | default "0.26.0" | quote }}
+  BINDINGS_POSTGRES_IMAGE: {{ $bpg.image | default "ghcr.io/cloudnative-pg/postgresql:17.5" | quote }}
+  BINDINGS_POSTGRES_SHARED_INSTANCES: {{ $bpg.sharedInstances | default 1 | quote }}
+  BINDINGS_POSTGRES_SHARED_STORAGE: {{ $bpg.sharedStorage | default "10Gi" | quote }}
+  BINDINGS_POSTGRES_BACKUP_RETENTION: {{ $bpg.backupRetention | default "7d" | quote }}
+  # Software supply chain (docs/supply-chain.md) — empty values keep the application defaults
+  {{- $sc := .Values.supplyChain | default dict }}
+  {{- $pc := $sc.policyController | default dict }}
+  RUNR_SUPPLY_CHAIN_ENABLED: {{ ternary "true" "false" (ne (toString $sc.enabled) "false") | quote }}
+  {{- with $sc.toolsImage }}
+  RUNR_SUPPLY_CHAIN_IMAGE: {{ . | quote }}
+  {{- end }}
+  {{- with $sc.jobNamespace }}
+  RUNR_SUPPLY_CHAIN_NAMESPACE: {{ . | quote }}
+  {{- end }}
+  {{- with $sc.rescanHours }}
+  RUNR_SUPPLY_CHAIN_RESCAN_HOURS: {{ . | quote }}
+  {{- end }}
+  {{- with $sc.trivyDbSource }}
+  RUNR_TRIVY_DB_SOURCE: {{ . | quote }}
+  {{- end }}
+  {{- with $sc.trivyJavaDbSource }}
+  RUNR_TRIVY_JAVA_DB_SOURCE: {{ . | quote }}
+  {{- end }}
+  {{- with $sc.trivyDbRefreshHours }}
+  RUNR_TRIVY_DB_REFRESH_HOURS: {{ . | quote }}
+  {{- end }}
+  {{- with $pc.helmRepo }}
+  RUNR_POLICY_CONTROLLER_HELM_REPO: {{ . | quote }}
+  {{- end }}
+  {{- with $pc.chartVersion }}
+  RUNR_POLICY_CONTROLLER_CHART_VERSION: {{ . | quote }}
+  {{- end }}
+  {{- with $pc.extraArgs }}
+  RUNR_POLICY_CONTROLLER_EXTRA_ARGS: {{ . | quote }}
+  {{- end }}
+
+  # Uploaded images (docs/images.md) — empty values keep the application defaults
+  {{- $img := .Values.images | default dict }}
+  {{- with $img.uploadImage }}
+  RUNR_IMAGE_UPLOAD_IMAGE: {{ . | quote }}
+  {{- end }}
+  {{- if not (kindIs "invalid" $img.quotaGb) }}{{- if ne (toString $img.quotaGb) "" }}
+  RUNR_IMAGES_QUOTA_GB: {{ $img.quotaGb | quote }}
+  {{- end }}{{- end }}
+  {{- with $img.maxUploadGb }}
+  RUNR_IMAGE_UPLOAD_MAX_GB: {{ . | quote }}
+  {{- end }}
+  {{- with $img.uploadTtlHours }}
+  RUNR_IMAGE_UPLOAD_TTL_HOURS: {{ . | quote }}
+  {{- end }}
+
+  # Extra env overrides
+  {{- range $key, $val := .Values.extraEnv }}
+  {{ $key }}: {{ $val | quote }}
+  {{- end }}

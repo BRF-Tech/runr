@@ -1,0 +1,175 @@
+name: RunR deploy
+description: Deploy a function or container to RunR with the runr CLI and wait until it serves.
+author: RunR
+branding:
+  icon: upload-cloud
+  color: blue
+
+inputs:
+  api-url:
+    description: RunR console or API URL, e.g. https://runr.example.com
+    required: true
+  token:
+    description: RunR API token (store it as a secret; `runr tokens create github-actions`)
+    required: true
+  project:
+    description: Project name or id. Default the name in runr.yaml.
+    required: false
+    default: ""
+  path:
+    description: Project directory (holds runr.yaml and the code)
+    required: false
+    default: "."
+  image:
+    description: Container image to deploy (caas projects), e.g. ghcr.io/acme/web:${{ github.sha }}
+    required: false
+    default: ""
+  region:
+    description: Region of a project the first deploy creates (overrides runr.yaml)
+    required: false
+    default: ""
+  message:
+    description: Version message. Default "<workflow> <short sha>".
+    required: false
+    default: ""
+  wait:
+    description: Wait until the deployment is ready ("true") or return once it started ("false")
+    required: false
+    default: "true"
+  timeout:
+    description: How long to wait for the build and the deployment (Go duration)
+    required: false
+    default: "10m"
+  version:
+    description: runr CLI release to use ("latest" or a tag such as v0.5.0)
+    required: false
+    default: "latest"
+  cli-base-url:
+    description: Download base of the CLI archives (mirrors); <base>/<tag>/runr_<os>_<arch>.tar.gz
+    required: false
+    default: "https://github.com/runrsh/core/releases/download"
+  github-token:
+    description: Token used to look up the latest CLI release (rate limits)
+    required: false
+    default: ${{ github.token }}
+  args:
+    description: Extra arguments for `runr deploy`
+    required: false
+    default: ""
+  secrets:
+    description: >-
+      Secret environment variables, one KEY=VALUE per line (take the values from repository
+      secrets). They are stored write-only before the deploy, so the new deployment runs with them.
+    required: false
+    default: ""
+
+outputs:
+  url:
+    description: Public URL of the project (empty for schedule and queue triggers)
+    value: ${{ steps.redeploy.outputs.url || steps.deploy.outputs.url }}
+  project:
+    description: Project name
+    value: ${{ steps.redeploy.outputs.project || steps.deploy.outputs.project }}
+  project-id:
+    description: Project id
+    value: ${{ steps.redeploy.outputs.project_id || steps.deploy.outputs.project_id }}
+  version:
+    description: Deployed version label (v7)
+    value: ${{ steps.redeploy.outputs.version || steps.deploy.outputs.version }}
+  version-id:
+    description: Deployed version id
+    value: ${{ steps.redeploy.outputs.version_id || steps.deploy.outputs.version_id }}
+  deployment-id:
+    description: Deployment id
+    value: ${{ steps.redeploy.outputs.deployment_id || steps.deploy.outputs.deployment_id }}
+  status:
+    description: Deployment status (active, or pending with wait false)
+    value: ${{ steps.redeploy.outputs.status || steps.deploy.outputs.status }}
+
+runs:
+  using: composite
+  steps:
+    - name: Resolve the runr CLI release
+      id: resolve
+      shell: bash
+      env:
+        RUNR_CLI_VERSION: ${{ inputs.version }}
+        GH_TOKEN: ${{ inputs.github-token }}
+      run: bash "${{ github.action_path }}/scripts/resolve.sh"
+
+    - name: Cache the runr CLI
+      id: cache
+      uses: actions/cache@v4
+      with:
+        path: ${{ steps.resolve.outputs.dir }}
+        key: runr-cli-${{ steps.resolve.outputs.tag }}-${{ steps.resolve.outputs.os }}-${{ steps.resolve.outputs.arch }}
+
+    - name: Install the runr CLI
+      if: steps.cache.outputs.cache-hit != 'true'
+      shell: bash
+      env:
+        RUNR_CLI_TAG: ${{ steps.resolve.outputs.tag }}
+        RUNR_CLI_OS: ${{ steps.resolve.outputs.os }}
+        RUNR_CLI_ARCH: ${{ steps.resolve.outputs.arch }}
+        RUNR_CLI_DIR: ${{ steps.resolve.outputs.dir }}
+        RUNR_CLI_BASE_URL: ${{ inputs.cli-base-url }}
+      run: bash "${{ github.action_path }}/scripts/install.sh"
+
+    - name: Add runr to PATH
+      shell: bash
+      run: |
+        echo "${{ steps.resolve.outputs.dir }}" >> "$GITHUB_PATH"
+
+    - name: Set secret variables
+      id: secrets
+      if: inputs.secrets != ''
+      shell: bash
+      env:
+        RUNR_API_URL: ${{ inputs.api-url }}
+        RUNR_TOKEN: ${{ inputs.token }}
+        INPUT_PROJECT: ${{ inputs.project }}
+        INPUT_PATH: ${{ inputs.path }}
+        INPUT_SECRETS: ${{ inputs.secrets }}
+        RUNR_CLI_DIR: ${{ steps.resolve.outputs.dir }}
+      run: bash "${{ github.action_path }}/scripts/secrets.sh"
+
+    - name: Deploy
+      id: deploy
+      shell: bash
+      env:
+        RUNR_API_URL: ${{ inputs.api-url }}
+        RUNR_TOKEN: ${{ inputs.token }}
+        INPUT_PROJECT: ${{ inputs.project }}
+        INPUT_PATH: ${{ inputs.path }}
+        INPUT_IMAGE: ${{ inputs.image }}
+        INPUT_REGION: ${{ inputs.region }}
+        INPUT_MESSAGE: ${{ inputs.message }}
+        INPUT_WAIT: ${{ inputs.wait }}
+        INPUT_TIMEOUT: ${{ inputs.timeout }}
+        INPUT_ARGS: ${{ inputs.args }}
+        RUNR_CLI_DIR: ${{ steps.resolve.outputs.dir }}
+      run: bash "${{ github.action_path }}/scripts/deploy.sh"
+
+    # The first deploy created the project: set its secret variables, then deploy again so the
+    # deployment runs with them.
+    - name: Set secret variables of the new project and deploy again
+      id: redeploy
+      if: steps.secrets.outputs.pending == 'true'
+      shell: bash
+      env:
+        RUNR_API_URL: ${{ inputs.api-url }}
+        RUNR_TOKEN: ${{ inputs.token }}
+        INPUT_PROJECT: ${{ inputs.project }}
+        INPUT_PATH: ${{ inputs.path }}
+        INPUT_SECRETS: ${{ inputs.secrets }}
+        RUNR_SECRETS_MODE: after
+        INPUT_IMAGE: ${{ inputs.image }}
+        INPUT_REGION: ${{ inputs.region }}
+        INPUT_MESSAGE: ${{ inputs.message }}
+        INPUT_WAIT: ${{ inputs.wait }}
+        INPUT_TIMEOUT: ${{ inputs.timeout }}
+        INPUT_ARGS: ${{ inputs.args }}
+        RUNR_CLI_DIR: ${{ steps.resolve.outputs.dir }}
+      run: |
+        bash "${{ github.action_path }}/scripts/secrets.sh"
+        bash "${{ github.action_path }}/scripts/deploy.sh"

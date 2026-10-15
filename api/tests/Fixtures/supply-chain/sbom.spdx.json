@@ -1,0 +1,43 @@
+{
+  "spdxVersion": "SPDX-2.3",
+  "dataLicense": "CC0-1.0",
+  "SPDXID": "SPDXRef-DOCUMENT",
+  "name": "10.43.0.5:5000/runr-builds/orders-api",
+  "documentNamespace": "https://anchore.com/syft/image/orders-api-2c1b0a",
+  "creationInfo": {
+    "licenseListVersion": "3.25",
+    "creators": ["Organization: Anchore, Inc", "Tool: syft-1.18.1"],
+    "created": "2026-10-10T08:14:31Z"
+  },
+  "packages": [
+    {
+      "name": "10.43.0.5:5000/runr-builds/orders-api",
+      "SPDXID": "SPDXRef-DocumentRoot-Image-orders-api",
+      "versionInfo": "sha256:4f2a0c3a",
+      "downloadLocation": "NOASSERTION",
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "NOASSERTION"
+    },
+    {
+      "name": "libexpat1",
+      "SPDXID": "SPDXRef-Package-deb-libexpat1",
+      "versionInfo": "2.5.0-1",
+      "downloadLocation": "NOASSERTION",
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "MIT",
+      "externalRefs": [{"referenceCategory": "PACKAGE-MANAGER", "referenceType": "purl", "referenceLocator": "pkg:deb/debian/libexpat1@2.5.0-1?arch=amd64"}]
+    },
+    {
+      "name": "requests",
+      "SPDXID": "SPDXRef-Package-python-requests",
+      "versionInfo": "2.31.0",
+      "downloadLocation": "NOASSERTION",
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "Apache-2.0",
+      "externalRefs": [{"referenceCategory": "PACKAGE-MANAGER", "referenceType": "purl", "referenceLocator": "pkg:pypi/requests@2.31.0"}]
+    }
+  ],
+  "relationships": [
+    {"spdxElementId": "SPDXRef-DOCUMENT", "relatedSpdxElement": "SPDXRef-DocumentRoot-Image-orders-api", "relationshipType": "DESCRIBES"}
+  ]
+}

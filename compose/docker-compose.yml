@@ -1,0 +1,156 @@
+services:
+  # ── Gateway: SPA + reverse proxy (/api → api, /ws → reverb) ────────────────
+  gateway:
+    image: runr-ui:latest
+    ports:
+      - "${PORT:-80}:80"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # ── API: Laravel Octane on FrankenPHP ──────────────────────────────────────
+  api:
+    image: runr-api:latest
+    env_file: ./api.env
+    environment:
+      CONTAINER_ROLE: api
+      TENANCY_ENABLED: ${TENANCY_ENABLED:-false}
+      AUTH_PROVIDER_ENABLED: ${AUTH_PROVIDER_ENABLED:-false}
+      TICKET_ENABLED: ${TICKET_ENABLED:-true}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - api_storage:/var/www/html/storage
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost/up"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+      start_period: 30s
+    restart: unless-stopped
+
+  # ── Horizon: Queue worker ──────────────────────────────────────────────────
+  horizon:
+    image: runr-api:latest
+    env_file: ./api.env
+    environment:
+      CONTAINER_ROLE: horizon
+      TENANCY_ENABLED: ${TENANCY_ENABLED:-false}
+      AUTH_PROVIDER_ENABLED: ${AUTH_PROVIDER_ENABLED:-false}
+      TICKET_ENABLED: ${TICKET_ENABLED:-true}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - api_storage:/var/www/html/storage
+    depends_on:
+      api:
+        condition: service_healthy
+    # The image's own check is the API's (FrankenPHP admin port): a worker is healthy while its
+    # process runs
+    healthcheck:
+      test: ["CMD", "pgrep", "-f", "artisan horizon"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+
+  # ── Scheduler: Cron ────────────────────────────────────────────────────────
+  scheduler:
+    image: runr-api:latest
+    env_file: ./api.env
+    environment:
+      CONTAINER_ROLE: scheduler
+      TENANCY_ENABLED: ${TENANCY_ENABLED:-false}
+      AUTH_PROVIDER_ENABLED: ${AUTH_PROVIDER_ENABLED:-false}
+      TICKET_ENABLED: ${TICKET_ENABLED:-true}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - api_storage:/var/www/html/storage
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "pgrep", "-f", "artisan schedule:work"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+
+  # ── Reverb: WebSocket server ───────────────────────────────────────────────
+  reverb:
+    image: runr-api:latest
+    env_file: ./api.env
+    environment:
+      CONTAINER_ROLE: reverb
+      TENANCY_ENABLED: ${TENANCY_ENABLED:-false}
+      AUTH_PROVIDER_ENABLED: ${AUTH_PROVIDER_ENABLED:-false}
+      TICKET_ENABLED: ${TICKET_ENABLED:-true}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - api_storage:/var/www/html/storage
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "pgrep", "-f", "reverb:start"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+
+  # ── PostgreSQL ─────────────────────────────────────────────────────────────
+  postgres:
+    image: ghcr.io/runrsh/reqs/postgres:17-alpine
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    environment:
+      POSTGRES_DB: ${DB_NAME:-runr}
+      POSTGRES_USER: ${DB_USER:-runr}
+      POSTGRES_PASSWORD: ${DB_PASS}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-runr}"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+
+  # ── Redis ──────────────────────────────────────────────────────────────────
+  redis:
+    image: ghcr.io/runrsh/reqs/redis:7-alpine
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+
+  # ── Migrator (one-shot, only when needed) ─────────────────────────────────
+  migrator:
+    image: runr-api:latest
+    env_file: ./api.env
+    environment:
+      CONTAINER_ROLE: migrator
+      TENANCY_ENABLED: ${TENANCY_ENABLED:-false}
+      AUTH_PROVIDER_ENABLED: ${AUTH_PROVIDER_ENABLED:-false}
+      TICKET_ENABLED: ${TICKET_ENABLED:-true}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    profiles: ["migrate"]
+
+volumes:
+  postgres_data:
+  redis_data:
+  api_storage:

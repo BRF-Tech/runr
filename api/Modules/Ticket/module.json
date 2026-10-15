@@ -1,0 +1,11 @@
+{
+  "name": "Ticket",
+  "alias": "ticket",
+  "description": "Support ticket system for RunR — tenant-scoped",
+  "keywords": ["ticket", "support"],
+  "priority": 1,
+  "providers": [
+    "Modules\\Ticket\\Providers\\TicketServiceProvider"
+  ],
+  "files": []
+}

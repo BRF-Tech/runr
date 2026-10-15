@@ -1,0 +1,105 @@
+{{- if .Values.bootstrap.enabled }}
+{{/*
+  post-install / post-upgrade: the first administrator account (after the migrate hooks)
+  - if the admin.username account does NOT exist and there is no other administrator: AdminSeeder (admin.username /
+    admin.email / ADMIN_PASSWORD) + is_admin
+  - "is the users table empty" is not enough: non-administrator accounts may exist (e.g. the test user an old
+    TenancySeeder created in production) → the administrator from the install form would never be created
+  - does nothing if the account exists, another administrator (is_admin) exists or admin.email belongs to another
+    account (existing accounts, passwords and settings are kept; without an is_admin column: if any user exists)
+  - first: reinstalls the region agents that have no token (agent:redeploy --missing, 0.3.3 token auth),
+    then brings the existing regions up to this version (region:reconcile), then gives users the previous
+    version created during the upgrade a role (rbac:assign-missing)
+  The entrypoint.sh role logic does not run (command override): no migrate / executor:sync / server.
+*/}}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: runr-bootstrap
+  namespace: {{ include "runr.namespace" . }}
+  labels:
+    app: runr-bootstrap
+    {{- include "runr.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/hook": post-install,post-upgrade
+    "helm.sh/hook-weight": "10"
+    "helm.sh/hook-delete-policy": before-hook-creation
+spec:
+  backoffLimit: 3
+  activeDeadlineSeconds: 300
+  template:
+    metadata:
+      labels:
+        app: runr-bootstrap
+        {{- include "runr.colocation-label" . | nindent 8 }}
+      annotations:
+        {{- include "runr.checksum" . | nindent 8 }}
+    spec:
+      serviceAccountName: runr-api
+      restartPolicy: OnFailure
+      {{- include "runr.imagePullSecrets" . | nindent 6 }}
+      {{- include "runr.storage-init" . | nindent 6 }}
+      {{- include "runr.pod-colocation" . | nindent 6 }}
+      containers:
+        - name: bootstrap
+          image: "{{ .Values.api.image.repository }}:{{ .Values.api.image.tag }}"
+          imagePullPolicy: {{ .Values.api.image.pullPolicy }}
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              set -e
+              cd /var/www/html
+              # Same module selection as docker/entrypoint.sh (the app boots with the same module set as api/migrator)
+              toggle() {
+                if [ "$2" = "true" ]; then php artisan module:enable "$1" >/dev/null 2>&1 || true
+                else php artisan module:disable "$1" >/dev/null 2>&1 || true; fi
+              }
+              toggle Tenancy "${TENANCY_ENABLED:-false}"
+              toggle AuthProvider "${AUTH_PROVIDER_ENABLED:-false}"
+              toggle Ticket "${TICKET_ENABLED:-true}"
+
+              # 0.3.3+: the agent connects with a per-region token; reinstall the (old) region agents that have no token.
+              # An unreachable region must not block the upgrade: time limit + errors swallowed (manually: php artisan agent:redeploy)
+              timeout 120 php artisan agent:redeploy --missing || echo "runr-bootstrap: agent redeploy skipped (run php artisan agent:redeploy --missing)"
+
+              # Apply this version's region-side changes to existing regions (KnativeServing config merge-patch,
+              # Prometheus NodePort removal + agent PROMETHEUS_URL). Idempotent; an unreachable region must not
+              # block the upgrade: time limit + errors swallowed (manually: php artisan region:reconcile [--dry-run])
+              timeout 120 php artisan region:reconcile || echo "runr-bootstrap: region reconcile skipped (run php artisan region:reconcile)"
+
+              # 0.5.0+ roles: the upgrade migration gave every existing user a role, but the previous version's pods
+              # kept serving until they were replaced and created users without one (sign-ups, Users page) — those
+              # get the default role here, after the rollout above had time to finish (docs/upgrade.md)
+              php artisan rbac:assign-missing || echo "runr-bootstrap: role check skipped (run php artisan rbac:assign-missing)"
+
+              # 0 = create the administrator, 3 = not needed (the reason is printed), other = error (DB unreachable, etc.)
+              set +e
+              php -r 'require "vendor/autoload.php"; $app = require "bootstrap/app.php"; $app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+                $name = config("app.admin.username"); $mail = config("app.admin.email");
+                if (App\Models\User::query()->where("username", $name)->exists()) { echo "runr-bootstrap: administrator account " . $name . " exists, nothing to do" . PHP_EOL; exit(3); }
+                $flag = Illuminate\Support\Facades\Schema::hasColumn((new App\Models\User)->getTable(), "is_admin");
+                if ($flag ? App\Models\User::query()->where("is_admin", true)->exists() : App\Models\User::query()->exists()) { echo "runr-bootstrap: another administrator account exists, nothing to do" . PHP_EOL; exit(3); }
+                if (App\Models\User::query()->where("email", $mail)->exists()) { echo "runr-bootstrap: WARNING e-mail " . $mail . " belongs to another account, administrator not created" . PHP_EOL; exit(3); }
+                exit(0);'
+              rc=$?
+              set -e
+              if [ "$rc" = "3" ]; then
+                exit 0
+              elif [ "$rc" != "0" ]; then
+                echo "runr-bootstrap: user check failed (exit $rc)" >&2
+                exit "$rc"
+              fi
+
+              php artisan db:seed --class='Database\Seeders\AdminSeeder' --force
+              php -r 'require "vendor/autoload.php"; $app = require "bootstrap/app.php"; $app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap(); $u = App\Models\User::query()->where("username", config("app.admin.username"))->firstOrFail(); if (Illuminate\Support\Facades\Schema::hasColumn($u->getTable(), "is_admin")) { $u->forceFill(["is_admin" => true])->save(); } echo "runr-bootstrap: administrator account created: " . $u->username . PHP_EOL;'
+          {{- include "runr.envFrom" . | nindent 10 }}
+          env:
+            {{- include "runr.secret-env" . | nindent 12 }}
+          volumeMounts:
+            - name: api-storage
+              mountPath: /var/www/html/storage
+      volumes:
+        - name: api-storage
+          persistentVolumeClaim:
+            claimName: runr-api-storage
+{{- end }}

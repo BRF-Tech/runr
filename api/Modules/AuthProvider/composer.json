@@ -1,0 +1,17 @@
+{
+    "name": "modules/authprovider",
+    "description": "OAuth/SSO authentication provider module for RunR",
+    "require": {
+        "laravel/socialite": "^5.0",
+        "socialiteproviders/manager": "^4.0",
+        "socialiteproviders/microsoft": "^4.0",
+        "socialiteproviders/gitlab": "^4.0",
+        "onelogin/php-saml": "^4.2"
+    },
+    "autoload": {
+        "psr-4": {
+            "Modules\\AuthProvider\\": "app/",
+            "Modules\\AuthProvider\\Database\\": "Database/"
+        }
+    }
+}

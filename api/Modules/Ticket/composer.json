@@ -1,0 +1,10 @@
+{
+  "name": "modules/ticket",
+  "description": "Support ticket module for RunR",
+  "autoload": {
+    "psr-4": {
+      "Modules\\Ticket\\": "app/",
+      "Modules\\Ticket\\Database\\": "Database/"
+    }
+  }
+}

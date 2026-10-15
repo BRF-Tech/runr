@@ -1,0 +1,39 @@
+# MCP server runtime for RunR (Python): the starter template is server.py, a Model Context
+# Protocol server on the official MCP Python SDK (FastMCP) that serves Streamable HTTP on $PORT
+# itself (http mode). The API ships this manifest with "@file" references inlined
+# (php artisan mcp:templates-bundle → api/resources/mcp/templates.json); the console registers it
+# in one click (New MCP server), or register it with POST /api/runtimes yourself. docs/mcp.md
+apiVersion: runr.sh/v1
+kind: Runtime
+id: mcp-python
+name: MCP server (Python)
+description: Model Context Protocol server on the official MCP Python SDK (FastMCP), Streamable HTTP at /mcp on $PORT behind the RunR MCP gateway.
+language: python
+extensions: [py]
+category: general
+versions:
+  - version: "3.13"
+    image: ghcr.io/runrsh/reqs/python:3.13-slim
+    default: true
+handler:
+  file: server
+  function: main
+template:
+  files:
+    "{file}": "@server.py"
+dependencies:
+  file: requirements.txt
+  template: "@requirements.txt"
+  install: pip install --no-cache-dir --target=/build/vendor -r /build/code/requirements.txt
+  copy:
+    - { from: /build/vendor, to: /app/vendor }
+  env:
+    PYTHONPATH: /app/vendor
+run:
+  mode: http
+  command: ["python", "-u", "/app/code/server.py"]
+triggers: [http]
+sandbox: [runc, gvisor, kata]
+resources:
+  cpu: "250m"
+  memory_mb: 256

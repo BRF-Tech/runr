@@ -1,0 +1,45 @@
+{{/*
+  External access: domain → runr-gateway (UI, /api, /ws). Managed platforms usually ship Traefik.
+  TLS: ingress.tls.mode (see _helpers.tpl "runr.ingressTls") — letsencrypt: the cert-manager annotation,
+  custom: the Secret from tls-secret.yaml, none: the ingress controller's default certificate.
+*/}}
+{{- if and .Values.ingress.enabled .Values.domain }}
+{{- $t := include "runr.ingressTls" . | fromJson }}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: runr
+  namespace: {{ include "runr.namespace" . }}
+  labels:
+    {{- include "runr.labels" . | nindent 4 }}
+  {{- if or .Values.ingress.annotations $t.issuer }}
+  annotations:
+    {{- with .Values.ingress.annotations }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+    {{- if $t.issuer }}
+    cert-manager.io/cluster-issuer: {{ $t.issuer | quote }}
+    {{- end }}
+  {{- end }}
+spec:
+  {{- if .Values.ingress.className }}
+  ingressClassName: {{ .Values.ingress.className }}
+  {{- end }}
+  {{- if $t.secret }}
+  tls:
+    - hosts:
+        - {{ .Values.domain | quote }}
+      secretName: {{ $t.secret }}
+  {{- end }}
+  rules:
+    - host: {{ .Values.domain | quote }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: runr-gateway
+                port:
+                  number: {{ .Values.gateway.port }}
+{{- end }}

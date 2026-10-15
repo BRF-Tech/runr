@@ -1,0 +1,22 @@
+#!/bin/sh
+# Installed by RunR into every project remote (ProjectRemote::writeHooks).
+# Tells the pusher what happens with a push to the deploy branch; the API imports it as a
+# version (and deploys it when auto-deploy is on) after the push.
+branch="${RUNR_DEPLOY_BRANCH:-main}"
+while read -r old new ref; do
+  [ "$ref" = "refs/heads/$branch" ] || continue
+  case "$new" in
+    *[!0]*) ;;
+    *) continue ;;
+  esac
+  short=$(printf '%s' "$new" | cut -c1-7)
+  if [ "${RUNR_AUTO_DEPLOY:-1}" = "1" ]; then
+    echo "RunR: $short on $branch received. A new version is created and deployed."
+  else
+    echo "RunR: $short on $branch received. A new version is created (auto-deploy is off)."
+  fi
+  if [ -n "$RUNR_PROJECT_URL" ]; then
+    echo "RunR: follow it at $RUNR_PROJECT_URL"
+  fi
+done
+exit 0

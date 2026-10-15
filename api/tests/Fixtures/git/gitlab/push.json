@@ -1,0 +1,45 @@
+{
+  "object_kind": "push",
+  "event_name": "push",
+  "before": "95790bf891e76fee5e1747ab589903a6a1f80f22",
+  "after": "da1560886d4f094c3e6c9ef40349f7d38b5d27d7",
+  "ref": "refs/heads/main",
+  "ref_protected": true,
+  "checkout_sha": "da1560886d4f094c3e6c9ef40349f7d38b5d27d7",
+  "user_id": 4,
+  "user_name": "Ada Lovelace",
+  "user_username": "ada",
+  "user_email": "",
+  "project_id": 4242,
+  "project": {
+    "id": 4242,
+    "name": "orders",
+    "web_url": "https://gitlab.test/acme/orders",
+    "path_with_namespace": "acme/orders",
+    "default_branch": "main"
+  },
+  "commits": [
+    {
+      "id": "b6568db1bc1dcd7f8b4d5a946b0b91f9dacd7327",
+      "message": "Update the README\n",
+      "title": "Update the README",
+      "timestamp": "2026-10-10T11:00:00+02:00",
+      "url": "https://gitlab.test/acme/orders/-/commit/b6568db1bc1dcd7f8b4d5a946b0b91f9dacd7327",
+      "author": { "name": "Grace Hopper", "email": "grace@example.com" }
+    },
+    {
+      "id": "da1560886d4f094c3e6c9ef40349f7d38b5d27d7",
+      "message": "fix: answer with the order id\n",
+      "title": "fix: answer with the order id",
+      "timestamp": "2026-10-10T12:00:00+02:00",
+      "url": "https://gitlab.test/acme/orders/-/commit/da1560886d4f094c3e6c9ef40349f7d38b5d27d7",
+      "author": { "name": "Ada Lovelace", "email": "ada@example.com" }
+    }
+  ],
+  "total_commits_count": 2,
+  "repository": {
+    "name": "orders",
+    "url": "git@gitlab.test:acme/orders.git",
+    "homepage": "https://gitlab.test/acme/orders"
+  }
+}

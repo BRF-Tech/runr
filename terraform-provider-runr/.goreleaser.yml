@@ -1,0 +1,61 @@
+# goreleaser configuration of terraform-provider-runr in the layout the Terraform Registry
+# expects (zip per platform, SHA256SUMS signed with GPG, the registry manifest).
+#
+# Publishing is off: `make snapshot` (goreleaser release --snapshot --clean --skip=sign)
+# builds dist/ only. To publish a GitHub release for the registry set RUNR_PUBLISH=true,
+# GITHUB_TOKEN and GPG_FINGERPRINT (the signing key's fingerprint).
+version: 2
+
+project_name: terraform-provider-runr
+
+before:
+  hooks:
+    - go mod download
+
+builds:
+  - env:
+      - CGO_ENABLED=0
+    mod_timestamp: "{{ .CommitTimestamp }}"
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w -X main.version={{ .Version }}
+    goos: [freebsd, windows, linux, darwin]
+    goarch: [amd64, "386", arm, arm64]
+    ignore:
+      - goos: darwin
+        goarch: "386"
+      - goos: darwin
+        goarch: arm
+    binary: "{{ .ProjectName }}_v{{ .Version }}"
+
+archives:
+  - formats: [zip]
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+
+checksum:
+  extra_files:
+    - glob: terraform-registry-manifest.json
+      name_template: "{{ .ProjectName }}_{{ .Version }}_manifest.json"
+  name_template: "{{ .ProjectName }}_{{ .Version }}_SHA256SUMS"
+  algorithm: sha256
+
+signs:
+  - artifacts: checksum
+    args:
+      - --batch
+      - --local-user
+      - "{{ .Env.GPG_FINGERPRINT }}"
+      - --output
+      - "${signature}"
+      - --detach-sign
+      - "${artifact}"
+
+release:
+  disable: '{{ ne (envOrDefault "RUNR_PUBLISH" "false") "true" }}'
+  extra_files:
+    - glob: terraform-registry-manifest.json
+      name_template: "{{ .ProjectName }}_{{ .Version }}_manifest.json"
+
+changelog:
+  disable: true

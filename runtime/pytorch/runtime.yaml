@@ -1,0 +1,40 @@
+# Built-in runtime: PyTorch (Python with PyTorch CPU and the ML essentials preinstalled). Same
+# handler server as the Python runtime.
+apiVersion: runr.sh/v1
+kind: Runtime
+id: pytorch
+name: PyTorch
+description: Python with PyTorch preinstalled — def handler(event, context).
+language: python
+extensions: [py]
+category: ml
+versionDiscovery:
+  repository: runrsh/exec-pytorch
+  image: "ghcr.io/runrsh/exec-pytorch:{version}"
+  eol: pytorch
+handler:
+  file: main
+  function: handler
+template:
+  files:
+    "{file}": |-
+      import torch
+
+      def {handler}(event, context):
+          """PyTorch inference handler"""
+          tensor = torch.tensor([[1.0, 2.0], [3.0, 4.0]])
+          result = tensor.mean().item()
+          return {"statusCode": 200, "body": f"PyTorch {torch.__version__} — mean: {result}"}
+dependencies:
+  file: requirements.txt
+  template: ""
+  install: pip install --no-cache-dir --target=/build/vendor -r /build/code/requirements.txt
+  copy:
+    - { from: /build/vendor, to: /app/vendor }
+  env:
+    PYTHONPATH: /app/vendor
+run:
+  mode: http
+  schedule: native
+triggers: [http, schedule, queue]
+sandbox: [runc, gvisor, kata]

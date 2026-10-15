@@ -1,0 +1,69 @@
+# Built-in runtime: Python → WebAssembly (componentize-py + Spin Python SDK). Every version is
+# componentized (CPython compiled to WebAssembly, the app's modules and pure-Python dependencies
+# bundled) into a Spin component and pushed to the region registry as a Spin OCI artifact; the
+# pods run under containerd-shim-spin (RuntimeClass wasmtime-spin-v2) on the nodes with
+# WebAssembly support — docs/wasm.md. Every trigger is an HTTP request: queue messages and
+# schedule ticks arrive as CloudEvents (ce-type header).
+apiVersion: runr.sh/v1
+kind: Runtime
+id: wasm-python
+name: Python (Wasm)
+description: "Python as a WebAssembly component (componentize-py, Spin Python SDK) — class HttpHandler(http.Handler) with async handle_request(request). Pure-Python dependencies from requirements.txt; needs WebAssembly support in the region."
+icon: data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA2NCA2NCI+PHJlY3Qgd2lkdGg9IjY0IiBoZWlnaHQ9IjY0IiByeD0iMTIiIGZpbGw9IiM2NTRGRjAiLz48cGF0aCBkPSJNMjAgMGgyNHY4YTEyIDEyIDAgMCAxLTI0IDB6IiBmaWxsPSIjZmZmIiBmaWxsLW9wYWNpdHk9Ii4xOCIvPjx0ZXh0IHg9IjMyIiB5PSIzOCIgZm9udC1mYW1pbHk9IkFyaWFsLEhlbHZldGljYSxzYW5zLXNlcmlmIiBmb250LXNpemU9IjE3IiBmb250LXdlaWdodD0iNzAwIiBmaWxsPSIjZmZmIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIj5XQTwvdGV4dD48dGV4dCB4PSIzMiIgeT0iNTYiIGZvbnQtZmFtaWx5PSJBcmlhbCxIZWx2ZXRpY2Esc2Fucy1zZXJpZiIgZm9udC1zaXplPSIxMiIgZm9udC13ZWlnaHQ9IjcwMCIgZmlsbD0iI2ZmZiIgZmlsbC1vcGFjaXR5PSIuODUiIHRleHQtYW5jaG9yPSJtaWRkbGUiPlBZPC90ZXh0Pjwvc3ZnPg==
+language: python
+extensions: [py]
+category: general
+versions:
+  - version: "4.1"
+    image: ghcr.io/runrsh/exec-wasm-python:4.1
+    default: true
+handler:
+  file: app
+  function: handler
+  pattern: 'class\s+HttpHandler\s*\('
+template:
+  files:
+    "{file}": |
+      from urllib.parse import parse_qs, urlsplit
+
+      from spin_sdk import http
+      from spin_sdk.http import Request, Response
+
+
+      class HttpHandler(http.Handler):
+          """Every trigger reaches the component as an HTTP request: queue messages and schedule
+          ticks arrive as CloudEvents (the ce-type header names the event)."""
+
+          async def handle_request(self, request: Request) -> Response:
+              event = request.headers.get("ce-type", "")
+              if event == "dev.runr.schedule.tick":
+                  body = "tick from Python (Wasm)"
+              elif event == "dev.runr.queue.message":
+                  body = f"processed {(request.body or b'').decode()} (from Python, Wasm)"
+              else:
+                  name = parse_qs(urlsplit(request.uri).query).get("name", ["World"])[0]
+                  body = f"Hello, {name}! (from Python, Wasm)"
+              print(body)
+              return Response(200, {"content-type": "text/plain"}, bytes(body, "utf-8"))
+dependencies:
+  file: requirements.txt
+  template: ""
+  # pure-Python packages only: they are bundled into the component (no native extensions in Wasm)
+  install: "pip install --no-cache-dir --target /tmp/runr-deps -r requirements.txt"
+build:
+  command: >-
+    mkdir -p /tmp/runr-deps &&
+    spin build
+  source: false
+  files:
+    spin.toml: "@spin.toml"
+run:
+  mode: http
+  schedule: native
+  env:
+    SPIN_HTTP_LISTEN_ADDR: "0.0.0.0:8080"
+triggers: [http, schedule, queue]
+resources:
+  cpu: "100m"
+  memory_mb: 128
+runtimeClass: wasmtime-spin-v2

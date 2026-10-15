@@ -1,0 +1,24 @@
+#:schema https://schemas.spinframework.dev/spin/manifest-v2/latest.json
+# Q on WebAssembly: the Q interpreter (examples/runtimes/q/interpreter) compiled with TinyGo to a WASI
+# command module, run on Spin's WAGI executor in CGI mode (`q -cgi /main.q`) with main.q mapped into
+# the component. For `spin build && spin up` locally; in RunR the q-wasm runtime (runtime.yaml)
+# generates the equivalent spin.toml around the uploaded interpreter.
+spin_manifest_version = 2
+
+[application]
+name = "q-exec"
+version = "0.1.0"
+description = "Q on WebAssembly (TinyGo + WAGI)"
+
+[[trigger.http]]
+route = "/..."
+component = "function"
+executor = { type = "wagi", argv = "q -cgi /main.q" }
+
+[component.function]
+source = "q.wasm"
+files = ["main.q"]
+
+[component.function.build]
+workdir = "../../runtimes/q/interpreter"
+command = "tinygo build -target=wasip2 -no-debug -o ../../../wasm/q-exec/q.wasm ."

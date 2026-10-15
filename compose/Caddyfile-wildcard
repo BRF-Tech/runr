@@ -1,0 +1,26 @@
+# ── RunR Wildcard Proxy (Kind Traefik) ───────────────────────────────────────
+# *.my-region.example.com → LoadBalancer IP of the Kind cluster's Traefik
+# Setup:
+#   sudo cp Caddyfile-wildcard /etc/caddy/Caddyfile
+#   sudo systemctl reload caddy
+#
+# A wildcard certificate needs the DNS challenge:
+#   see https://caddyserver.com/docs/automatic-https#dns-challenge
+#
+# The IP below is the Traefik LoadBalancer IP on the kind Docker network; update it
+# when it changes (for example after a kind restart).
+
+*.my-region.example.com {
+    tls /etc/ssl/private/wildcard.example.com/fullchain.pem /etc/ssl/private/wildcard.example.com/privkey.pem
+
+    reverse_proxy 172.19.0.5:80 {
+        header_up X-Forwarded-Proto {scheme}
+        header_up X-Real-IP {remote_host}
+        # Streaming functions (SSE of hosted MCP servers, docs/mcp.md) are not buffered
+        flush_interval -1
+        transport http {
+            read_timeout  300s
+            write_timeout 300s
+        }
+    }
+}

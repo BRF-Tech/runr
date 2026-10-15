@@ -1,0 +1,4 @@
+/bin/
+/dist/
+# copied from the repository root by goreleaser
+/LICENSE

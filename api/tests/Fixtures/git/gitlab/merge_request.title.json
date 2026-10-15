@@ -1,0 +1,19 @@
+{
+  "object_kind": "merge_request",
+  "event_type": "merge_request",
+  "user": { "id": 5, "name": "Grace Hopper", "username": "grace" },
+  "project": { "id": 4242, "web_url": "https://gitlab.test/acme/orders", "path_with_namespace": "acme/orders", "default_branch": "main" },
+  "object_attributes": {
+    "iid": 7,
+    "title": "Add order lookup by id",
+    "state": "opened",
+    "action": "update",
+    "source_branch": "feature/lookup",
+    "target_branch": "main",
+    "source_project_id": 4242,
+    "target_project_id": 4242,
+    "url": "https://gitlab.test/acme/orders/-/merge_requests/7",
+    "last_commit": { "id": "f80867b14bb761a232cd80139fbd4c0d33264245", "message": "fix: lookup by id\n" }
+  },
+  "changes": { "title": { "previous": "Add order lookup", "current": "Add order lookup by id" } }
+}

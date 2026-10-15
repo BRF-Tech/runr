@@ -1,0 +1,26 @@
+diff --git a/Cargo.lock b/Cargo.lock
+index 214c80a..cebb0fe 100644
+--- a/Cargo.lock
++++ b/Cargo.lock
+@@ -1762,8 +1762,6 @@ dependencies = [
+ [[package]]
+ name = "containerd-shim-wasm"
+ version = "1.0.1"
+-source = "registry+https://github.com/rust-lang/crates.io-index"
+-checksum = "38357d0c7fdb42eea29ad99f1da2488c2a93ad3ca5d0e684121b34ca815c75c0"
+ dependencies = [
+  "anyhow",
+  "caps",
+diff --git a/Cargo.toml b/Cargo.toml
+index b94e578..c905e9d 100644
+--- a/Cargo.toml
++++ b/Cargo.toml
+@@ -14,3 +14,8 @@ members = [
+     "containerd-shim-spin",
+     "conformance-tests"
+ ]
++
++# RunR (containerd-shim-spin v0.26.0-runr.1): containerd-shim-wasm 1.0.1 with containerd/runwasi
++# PR #1183 applied (Linux containers of a Wasm pod get the env of their OCI spec, runwasi #1061).
++[patch.crates-io]
++containerd-shim-wasm = { path = "../containerd-shim-wasm" }

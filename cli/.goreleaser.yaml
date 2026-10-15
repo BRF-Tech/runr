@@ -1,0 +1,59 @@
+# goreleaser configuration of the runr CLI. Builds static binaries for Linux, macOS and
+# Windows (amd64, arm64) with versionless archive names, so
+#   https://github.com/runrsh/core/releases/latest/download/runr_linux_amd64.tar.gz
+# always points at the newest release (the GitHub Action uses that layout).
+#
+# Publishing is off: `goreleaser release --clean` builds dist/ only. To attach the archives to
+# a GitHub release set RUNR_PUBLISH=true (and GITHUB_TOKEN).
+version: 2
+
+project_name: runr
+
+before:
+  hooks:
+    - go mod download
+    # Ship the repository's license in every archive (archives pick up LICENSE* by default).
+    - sh -c 'cp ../LICENSE LICENSE 2>/dev/null || true'
+
+builds:
+  - id: runr
+    main: .
+    binary: runr
+    env:
+      - CGO_ENABLED=0
+    goos: [linux, darwin, windows]
+    goarch: [amd64, arm64]
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w
+      - -X github.com/runrsh/core/cli/internal/version.Version={{ .Version }}
+      - -X github.com/runrsh/core/cli/internal/version.Commit={{ .ShortCommit }}
+      - -X github.com/runrsh/core/cli/internal/version.Date={{ .Date }}
+    mod_timestamp: "{{ .CommitTimestamp }}"
+
+archives:
+  - id: runr
+    ids: [runr]
+    formats: [tar.gz]
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+    name_template: "runr_{{ .Os }}_{{ .Arch }}"
+
+checksum:
+  name_template: checksums.txt
+  algorithm: sha256
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-next"
+
+changelog:
+  disable: true
+
+release:
+  disable: '{{ ne (envOrDefault "RUNR_PUBLISH" "false") "true" }}'
+  github:
+    owner: runrsh
+    name: core
+  mode: append

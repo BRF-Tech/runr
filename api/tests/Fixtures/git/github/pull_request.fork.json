@@ -1,0 +1,26 @@
+{
+  "action": "opened",
+  "number": 13,
+  "pull_request": {
+    "html_url": "https://github.com/acme/orders/pull/13",
+    "number": 13,
+    "state": "open",
+    "title": "Typo in the greeting",
+    "user": { "login": "mallory", "id": 666 },
+    "merged": false,
+    "head": {
+      "label": "mallory:patch-1",
+      "ref": "patch-1",
+      "sha": "d40867b14bb761a232cd80139fbd4c0d33264243",
+      "repo": { "id": 6666, "full_name": "mallory/orders", "fork": true }
+    },
+    "base": {
+      "ref": "main",
+      "sha": "a10867b14bb761a232cd80139fbd4c0d33264240",
+      "repo": { "id": 4242, "full_name": "acme/orders", "fork": false }
+    }
+  },
+  "repository": { "id": 4242, "full_name": "acme/orders", "html_url": "https://github.com/acme/orders", "default_branch": "main" },
+  "sender": { "login": "mallory", "id": 666 },
+  "installation": { "id": 777 }
+}

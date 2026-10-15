@@ -1,0 +1,120 @@
+{
+  "SchemaVersion": 2,
+  "CreatedAt": "2026-10-10T08:15:02.512345Z",
+  "ArtifactName": "10.43.0.5:5000/runr-builds/orders-api@sha256:4f2a0c3ad1b6f6c1d9a1f6b1f3f6ab0a1e0f5c3f2a1d9e8c7b6a5f4e3d2c1b0a",
+  "ArtifactType": "container_image",
+  "Metadata": {
+    "OS": {"Family": "debian", "Name": "12.7"},
+    "ImageID": "sha256:9a8b7c6d5e4f3a2b1c0d9e8f7a6b5c4d3e2f1a0b9c8d7e6f5a4b3c2d1e0f9a8b",
+    "RepoTags": ["10.43.0.5:5000/runr-builds/orders-api:v3"],
+    "RepoDigests": ["10.43.0.5:5000/runr-builds/orders-api@sha256:4f2a0c3ad1b6f6c1d9a1f6b1f3f6ab0a1e0f5c3f2a1d9e8c7b6a5f4e3d2c1b0a"]
+  },
+  "Results": [
+    {
+      "Target": "10.43.0.5:5000/runr-builds/orders-api (debian 12.7)",
+      "Class": "os-pkgs",
+      "Type": "debian",
+      "Vulnerabilities": [
+        {
+          "VulnerabilityID": "CVE-2024-45491",
+          "PkgID": "libexpat1@2.5.0-1",
+          "PkgName": "libexpat1",
+          "InstalledVersion": "2.5.0-1",
+          "FixedVersion": "2.5.0-1+deb12u1",
+          "Status": "fixed",
+          "Severity": "CRITICAL",
+          "Title": "libexpat: Integer Overflow or Wraparound",
+          "PrimaryURL": "https://avd.aquasec.com/nvd/cve-2024-45491"
+        },
+        {
+          "VulnerabilityID": "CVE-2023-45853",
+          "PkgID": "zlib1g@1:1.2.13.dfsg-1",
+          "PkgName": "zlib1g",
+          "InstalledVersion": "1:1.2.13.dfsg-1",
+          "Status": "will_not_fix",
+          "Severity": "CRITICAL",
+          "Title": "zlib: integer overflow and resultant heap-based buffer overflow in zipOpenNewFileInZip4_6"
+        },
+        {
+          "VulnerabilityID": "CVE-2024-2511",
+          "PkgID": "libssl3@3.0.11-1~deb12u2",
+          "PkgName": "libssl3",
+          "InstalledVersion": "3.0.11-1~deb12u2",
+          "FixedVersion": "3.0.13-1~deb12u1",
+          "Status": "fixed",
+          "Severity": "HIGH",
+          "Title": "openssl: Unbounded memory growth with session handling in TLSv1.3",
+          "PrimaryURL": "https://avd.aquasec.com/nvd/cve-2024-2511"
+        },
+        {
+          "VulnerabilityID": "CVE-2024-2511",
+          "PkgID": "libssl3@3.0.11-1~deb12u2",
+          "PkgName": "libssl3",
+          "InstalledVersion": "3.0.11-1~deb12u2",
+          "FixedVersion": "3.0.13-1~deb12u1",
+          "Status": "fixed",
+          "Severity": "HIGH",
+          "Title": "openssl: duplicate entry from a second layer"
+        },
+        {
+          "VulnerabilityID": "CVE-2023-50495",
+          "PkgID": "ncurses-base@6.4-4",
+          "PkgName": "ncurses-base",
+          "InstalledVersion": "6.4-4",
+          "Status": "affected",
+          "Severity": "MEDIUM",
+          "Title": "ncurses: segmentation fault via _nc_wrap_entry()"
+        },
+        {
+          "VulnerabilityID": "CVE-2011-3374",
+          "PkgID": "apt@2.6.1",
+          "PkgName": "apt",
+          "InstalledVersion": "2.6.1",
+          "Status": "affected",
+          "Severity": "LOW",
+          "Title": "It was found that apt-key in apt, all versions, do not correctly validate gpg keys"
+        },
+        {
+          "VulnerabilityID": "TEMP-0841856-B18BAF",
+          "PkgID": "bash@5.2.15-2+b2",
+          "PkgName": "bash",
+          "InstalledVersion": "5.2.15-2+b2",
+          "Status": "affected",
+          "Severity": "NEGLIGIBLE"
+        }
+      ]
+    },
+    {
+      "Target": "Python",
+      "Class": "lang-pkgs",
+      "Type": "python-pkg",
+      "Vulnerabilities": [
+        {
+          "VulnerabilityID": "GHSA-9wx4-h78v-vm56",
+          "PkgID": "requests@2.31.0",
+          "PkgName": "requests",
+          "InstalledVersion": "2.31.0",
+          "FixedVersion": "2.32.0",
+          "Status": "fixed",
+          "Severity": "MEDIUM",
+          "Title": "Requests `Session` object does not verify requests after making first request with verify=False"
+        },
+        {
+          "VulnerabilityID": "CVE-2024-6345",
+          "PkgID": "setuptools@68.0.0",
+          "PkgName": "setuptools",
+          "InstalledVersion": "68.0.0",
+          "FixedVersion": "70.0.0",
+          "Status": "fixed",
+          "Severity": "HIGH",
+          "Title": "pypa/setuptools: Remote code execution via download functions in the package_index module"
+        }
+      ]
+    },
+    {
+      "Target": "app/requirements.txt",
+      "Class": "lang-pkgs",
+      "Type": "pip"
+    }
+  ]
+}

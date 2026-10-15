@@ -1,0 +1,11 @@
+{
+    "name": "AuthProvider",
+    "alias": "authprovider",
+    "description": "OAuth/SSO authentication provider module for RunR — Google, GitHub, Microsoft, GitLab, Generic OIDC, SAML 2.0",
+    "keywords": ["oauth", "sso", "authentication"],
+    "priority": 0,
+    "providers": [
+        "Modules\\AuthProvider\\Providers\\AuthProviderServiceProvider"
+    ],
+    "files": []
+}

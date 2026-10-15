@@ -1,0 +1,25 @@
+# ci/check-helm-chart.sh: observability with every knob set (docs/observability.md)
+domain: console.acme-cloud.example
+observability:
+  tracing:
+    defaultMode: external
+    installWithServing: false
+    knativeSampleRate: 0.5
+    tempoRetentionHours: 168
+    tempoStorage: 50Gi
+    collectorChartVersion: "0.110.0"
+    tempoChartVersion: "1.10.0"
+  replay:
+    maxBodyBytes: 131072
+    retentionDays: 14
+    maxCaptures: 1000
+    ingestUrl: https://console.acme-cloud.example
+  uptime:
+    minIntervalSeconds: 60
+    resultsRetentionDays: 30
+    allowPrivateTargets: true
+  statusPage:
+    enabled: false
+  alerts:
+    deliveryTries: 6
+    allowPrivateTargets: true

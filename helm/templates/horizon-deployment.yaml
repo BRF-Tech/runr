@@ -1,0 +1,50 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: runr-horizon
+  namespace: {{ include "runr.namespace" . }}
+  labels:
+    app: runr-horizon
+    {{- include "runr.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.horizon.replicas }}
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: runr-horizon
+  template:
+    metadata:
+      labels:
+        app: runr-horizon
+        {{- include "runr.colocation-label" . | nindent 8 }}
+      annotations:
+        {{- include "runr.checksum" . | nindent 8 }}
+    spec:
+      serviceAccountName: runr-api
+      terminationGracePeriodSeconds: 60
+      {{- include "runr.imagePullSecrets" . | nindent 6 }}
+      {{- include "runr.storage-init" . | nindent 6 }}
+      {{- include "runr.pod-colocation" . | nindent 6 }}
+      containers:
+        - name: horizon
+          image: "{{ .Values.api.image.repository }}:{{ .Values.api.image.tag }}"
+          imagePullPolicy: {{ .Values.api.image.pullPolicy }}
+          {{- include "runr.envFrom" . | nindent 10 }}
+          env:
+            - name: CONTAINER_ROLE
+              value: "horizon"
+            {{- include "runr.secret-env" . | nindent 12 }}
+          lifecycle:
+            preStop:
+              exec:
+                command: ["php", "artisan", "horizon:terminate"]
+          resources:
+            {{- toYaml .Values.horizon.resources | nindent 12 }}
+          volumeMounts:
+            - name: api-storage
+              mountPath: /var/www/html/storage
+      volumes:
+        - name: api-storage
+          persistentVolumeClaim:
+            claimName: runr-api-storage

@@ -1,0 +1,7 @@
+/dist/
+/terraform-provider-runr
+/terraform-provider-runr.exe
+.terraform/
+*.tfstate
+*.tfstate.*
+.terraform.lock.hcl

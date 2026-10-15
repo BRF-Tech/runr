@@ -1,0 +1,24 @@
+{
+  "$schema": "http://cyclonedx.org/schema/bom-1.6.schema.json",
+  "bomFormat": "CycloneDX",
+  "specVersion": "1.6",
+  "serialNumber": "urn:uuid:3a1c4a77-2b9e-4e52-9d1f-1f2e3d4c5b6a",
+  "version": 1,
+  "metadata": {
+    "timestamp": "2026-10-10T08:14:31Z",
+    "tools": {
+      "components": [
+        {"type": "application", "author": "anchore", "name": "syft", "version": "1.18.1"}
+      ]
+    },
+    "component": {"bom-ref": "img", "type": "container", "name": "10.43.0.5:5000/runr-builds/orders-api", "version": "sha256:4f2a0c3a"}
+  },
+  "components": [
+    {"bom-ref": "pkg:deb/debian/libexpat1@2.5.0-1", "type": "library", "name": "libexpat1", "version": "2.5.0-1", "licenses": [{"license": {"id": "MIT"}}], "purl": "pkg:deb/debian/libexpat1@2.5.0-1?arch=amd64&distro=debian-12"},
+    {"bom-ref": "pkg:deb/debian/libssl3@3.0.11", "type": "library", "name": "libssl3", "version": "3.0.11-1~deb12u2", "licenses": [{"license": {"id": "Apache-2.0"}}], "purl": "pkg:deb/debian/libssl3@3.0.11-1~deb12u2?arch=amd64&distro=debian-12"},
+    {"bom-ref": "pkg:deb/debian/zlib1g@1.2.13", "type": "library", "name": "zlib1g", "version": "1:1.2.13.dfsg-1", "licenses": [{"license": {"name": "Zlib"}}], "purl": "pkg:deb/debian/zlib1g@1:1.2.13.dfsg-1?arch=amd64&distro=debian-12"},
+    {"bom-ref": "pkg:pypi/requests@2.31.0", "type": "library", "name": "requests", "version": "2.31.0", "licenses": [{"license": {"id": "Apache-2.0"}}], "purl": "pkg:pypi/requests@2.31.0"},
+    {"bom-ref": "pkg:pypi/redis@5.0.8", "type": "library", "name": "redis", "version": "5.0.8", "licenses": [{"expression": "MIT"}], "purl": "pkg:pypi/redis@5.0.8"},
+    {"bom-ref": "file-1", "type": "file", "name": "/app/code/main.py"}
+  ]
+}

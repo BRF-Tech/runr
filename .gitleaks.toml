@@ -1,0 +1,13 @@
+# Secret scanning of the checked-out tree (CI job secrets:gitleaks).
+# Run locally: git archive HEAD | tar -x -C /tmp/runr-tree && gitleaks dir /tmp/runr-tree --config .gitleaks.toml
+
+title = "RunR"
+
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Self-signed throwaway TLS material used only by the API test suite"
+paths = [
+  '''(^|/)api/tests/''',
+]

@@ -1,0 +1,47 @@
+# Q on WebAssembly as a platform runtime (docs/wasm.md#wasm-exec, docs/images.md): the Q interpreter
+# compiled with TinyGo to WASI is an uploaded image (q-interpreter:1.0, `runr images push q.wasm`), the
+# version source of this runtime; every function build packages it with the project's main.q into a
+# Spin app on the WAGI executor — nothing is compiled per function. Register it with
+# POST /api/runtimes as a platform administrator (WebAssembly runtimes set runtimeClass, which only
+# platform runtimes may).
+apiVersion: runr.sh/v1
+kind: Runtime
+id: q-wasm
+name: Q (Wasm)
+description: Q, a tiny line-based language, interpreted by a WebAssembly module on Spin's WAGI executor — one instance per request.
+language: plaintext
+extensions: [q]
+category: general
+versions:
+  - version: "1.0"
+    upload: q-interpreter:1.0
+    default: true
+handler:
+  file: main
+template:
+  files:
+    "{file}": |
+      # main.q: hello world in Q, for every trigger
+      set name = query.name or "World"
+      if trigger == "schedule" then return "tick from Q"
+      if trigger == "queue" then return "processed {data.msg} (from Q)"
+      print "Hello, {name}! (from Q)"
+build:
+  # the wasm-exec toolchain image fetches the uploaded interpreter (RUNR_WASM_MODULE) as main.wasm
+  image: ghcr.io/runrsh/exec-wasm-exec:4.1
+  command: runr-wasm-exec build
+  source: false
+run:
+  mode: http
+  schedule: native
+  env:
+    SPIN_HTTP_LISTEN_ADDR: "0.0.0.0:8080"
+triggers: [http, schedule, queue]
+resources:
+  cpu: "100m"
+  memory_mb: 128
+runtimeClass: wasmtime-spin-v2
+wagi:
+  # the interpreter in CGI mode; the project's files are mapped at / under their names
+  argv: "q -cgi /{file}"
+  files: true
