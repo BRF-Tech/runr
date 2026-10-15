@@ -1,0 +1,172 @@
+/* ============================================================
+   RunR Landing — sections.css
+   Built-in Modules · Runtime Isolation/Sandbox
+   (Tech architecture · S2P · type-card extras → tech.css)
+   ============================================================ */
+
+/* ── BUILT-IN MODULES ───────────────────────────────────── */
+.modules-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 14px;
+}
+@media (max-width: 1100px) { .modules-grid { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 700px)  { .modules-grid { grid-template-columns: 1fr; } }
+
+.module-card {
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 24px;
+  position: relative;
+  overflow: hidden;
+  transition: border-color .3s, transform .3s;
+}
+.module-card:hover { transform: translateY(-3px); border-color: var(--border-strong); }
+.module-card::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0;
+  width: 4px; height: 100%;
+  background: var(--mc, var(--accent));
+  border-radius: 4px 0 0 4px;
+}
+.module-card .mod-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.module-card .mod-icon {
+  width: 40px; height: 40px;
+  display: flex; align-items: center; justify-content: center;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--mc, var(--accent)) 18%, transparent);
+  color: var(--mc, var(--accent));
+  font-size: 20px;
+  font-weight: 800;
+  font-family: ui-monospace, monospace;
+}
+.module-card h4 { font-size: 16px; color: var(--mc, var(--accent)); }
+.module-card .mod-sub { color: var(--text-muted); font-size: 11px; font-family: ui-monospace, monospace; }
+.module-card p { color: var(--text-dim); font-size: 13px; line-height: 1.6; margin-bottom: 12px; }
+.module-card .mod-features {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding-top: 10px;
+  border-top: 1px dashed var(--border-strong);
+}
+.module-card .mod-features li {
+  list-style: none;
+  font-size: 12px;
+  color: var(--text-dim);
+  padding-left: 18px;
+  position: relative;
+}
+.module-card .mod-features li::before {
+  content: '▸';
+  position: absolute;
+  left: 4px;
+  color: var(--mc, var(--accent));
+}
+
+/* ── SANDBOX / RUNTIME ISOLATION ────────────────────────── */
+.sandbox-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 18px;
+  margin-bottom: 32px;
+}
+@media (max-width: 900px) { .sandbox-grid { grid-template-columns: 1fr; } }
+
+.sandbox-card {
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 28px;
+  position: relative;
+  overflow: hidden;
+}
+.sandbox-card.recommended { border-color: var(--accent); }
+.sandbox-card.recommended::after {
+  content: 'RECOMMENDED';
+  position: absolute;
+  top: 14px; right: -34px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 9px;
+  font-weight: 800;
+  padding: 3px 36px;
+  transform: rotate(35deg);
+  letter-spacing: 0.1em;
+}
+.sandbox-card h3 {
+  font-size: 22px;
+  display: flex; align-items: center; gap: 10px;
+  margin-bottom: 4px;
+}
+.sandbox-card h3 .badge {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-family: ui-monospace, monospace;
+  letter-spacing: 0.05em;
+}
+.sandbox-card .sb-sub { color: var(--text-muted); font-size: 12px; margin-bottom: 16px; }
+.sandbox-card .sb-stats {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin: 14px 0;
+}
+.sandbox-card .sb-stat {
+  background: var(--bg-soft);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 12px;
+}
+.sandbox-card .sb-stat .k { font-size: 10px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; }
+.sandbox-card .sb-stat .v { font-size: 16px; font-weight: 700; color: var(--text); font-family: ui-monospace, monospace; margin-top: 2px; }
+.sandbox-card .sb-list { padding-top: 12px; border-top: 1px dashed var(--border-strong); }
+.sandbox-card .sb-list li {
+  list-style: none;
+  font-size: 13px;
+  color: var(--text-dim);
+  padding: 4px 0 4px 18px;
+  position: relative;
+}
+.sandbox-card .sb-list li::before {
+  content: '✓';
+  position: absolute;
+  left: 0;
+  color: var(--success);
+  font-weight: 700;
+}
+
+.sandbox-note {
+  background: rgba(56, 189, 248, 0.06);
+  border: 1px solid rgba(56, 189, 248, 0.3);
+  border-radius: var(--radius);
+  padding: 20px 24px;
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+}
+.sandbox-note .ico {
+  font-size: 22px;
+  flex-shrink: 0;
+  line-height: 1;
+}
+.sandbox-note h4 { font-size: 14px; color: var(--info); margin-bottom: 6px; }
+.sandbox-note p { font-size: 13px; color: var(--text-dim); line-height: 1.65; }
+.sandbox-note code {
+  font-family: ui-monospace, monospace;
+  background: var(--bg-soft);
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-size: 12px;
+  color: var(--accent-soft);
+  border: 1px solid var(--border);
+}

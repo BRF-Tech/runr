@@ -1,0 +1,4 @@
+Contact: mailto:security@runr.sh
+Expires: 2027-10-01T00:00:00.000Z
+Canonical: https://runr.sh/.well-known/security.txt
+Preferred-Languages: en, tr

@@ -1,0 +1,50 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <defs>
+    <linearGradient id="g" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FFB347"/>
+      <stop offset="45%" stop-color="#FF8C42"/>
+      <stop offset="100%" stop-color="#E63946"/>
+    </linearGradient>
+    <linearGradient id="fill" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FF8C42" stop-opacity="0.1"/>
+      <stop offset="100%" stop-color="#E63946" stop-opacity="0.05"/>
+    </linearGradient>
+    <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="4" result="blur"/>
+      <feFlood flood-color="#FF8C42" flood-opacity="0.35" result="color"/>
+      <feComposite in="color" in2="blur" operator="in" result="glow"/>
+      <feComposite in="SourceGraphic" in2="glow" operator="over"/>
+    </filter>
+  </defs>
+
+
+  <g transform="translate(128, 128)">
+    <!-- Outer hex -->
+    <polygon points="0,-88 76,-44 76,44 0,88 -76,44 -76,-44"
+      fill="none" stroke="url(#g)" stroke-width="3.5" opacity="0.25"/>
+
+    <!-- Inner hex -->
+    <polygon points="0,-66 57,-33 57,33 0,66 -57,33 -57,-33"
+      fill="url(#fill)" stroke="url(#g)" stroke-width="4"/>
+
+    <!-- Play arrow -->
+    <polygon points="-20,-28 24,0 -20,28"
+      fill="url(#g)" filter="url(#glow)"/>
+
+    <!-- Vertex nodes -->
+    <circle cx="0" cy="-88" r="6.5" fill="#FFB347">
+      <animate attributeName="r" values="6.5;4.5;6.5" dur="3s" repeatCount="indefinite"/>
+    </circle>
+    <circle cx="76" cy="44" r="6.5" fill="#FF8C42">
+      <animate attributeName="r" values="6.5;4.5;6.5" dur="3s" begin="1s" repeatCount="indefinite"/>
+    </circle>
+    <circle cx="-76" cy="44" r="6.5" fill="#E63946">
+      <animate attributeName="r" values="6.5;4.5;6.5" dur="3s" begin="2s" repeatCount="indefinite"/>
+    </circle>
+
+    <!-- Connection lines -->
+    <line x1="0" y1="-88" x2="76" y2="44" stroke="#FFB347" stroke-width="1.2" opacity="0.12" stroke-dasharray="4,4"/>
+    <line x1="76" y1="44" x2="-76" y2="44" stroke="#FF8C42" stroke-width="1.2" opacity="0.12" stroke-dasharray="4,4"/>
+    <line x1="-76" y1="44" x2="0" y2="-88" stroke="#E63946" stroke-width="1.2" opacity="0.12" stroke-dasharray="4,4"/>
+  </g>
+</svg>

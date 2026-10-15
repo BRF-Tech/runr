@@ -1,0 +1,233 @@
+/* ============================================================
+   RunR Landing — tech.css
+   Technical architecture · Source-to-Pod build · Project type extras
+   ============================================================ */
+
+/* ── TECHNICAL ARCHITECTURE ─────────────────────────────── */
+.arch-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 14px;
+}
+@media (max-width: 1100px) { .arch-grid { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 600px)  { .arch-grid { grid-template-columns: 1fr; } }
+
+.arch-card {
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 18px;
+  position: relative;
+  transition: transform .25s, border-color .25s;
+}
+.arch-card:hover { transform: translateY(-2px); border-color: var(--border-strong); }
+.arch-card .arch-num {
+  font-size: 11px;
+  font-family: ui-monospace, monospace;
+  color: var(--text-faint);
+  letter-spacing: 0.1em;
+  margin-bottom: 6px;
+}
+.arch-card h4 {
+  font-size: 15px;
+  color: var(--ac, var(--accent));
+  margin-bottom: 4px;
+}
+.arch-card .arch-sub {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-bottom: 12px;
+  font-family: ui-monospace, monospace;
+}
+.arch-card .arch-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.arch-card .arch-tags .tag {
+  font-size: 10px;
+  padding: 2px 7px;
+  background: var(--bg-soft);
+  border: 1px solid var(--border-strong);
+  color: var(--text-dim);
+  border-radius: 4px;
+  font-family: ui-monospace, monospace;
+}
+
+.arch-stats {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 10px;
+  margin-top: 32px;
+}
+@media (max-width: 900px) { .arch-stats { grid-template-columns: repeat(3, 1fr); } }
+@media (max-width: 500px) { .arch-stats { grid-template-columns: repeat(2, 1fr); } }
+.arch-stat {
+  text-align: center;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 14px 8px;
+}
+.arch-stat .n {
+  font-size: 22px;
+  font-weight: 800;
+  font-family: ui-monospace, monospace;
+  background: var(--grad-r);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+.arch-stat .l { font-size: 10px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; margin-top: 2px; }
+
+/* ── PROJECT TYPE CARDS — Consistent tag layout ──────────── */
+.type-card .type-runtimes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 14px;
+  padding-bottom: 14px;
+  border-bottom: 1px dashed var(--border-strong);
+}
+.type-card .type-runtime {
+  font-size: 11px;
+  font-weight: 700;
+  padding: 4px 10px;
+  background: var(--bg-soft);
+  border: 1px solid var(--border-strong);
+  color: var(--text);
+  border-radius: 6px;
+  font-family: ui-monospace, monospace;
+}
+.type-card .type-features {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.type-card .type-feature {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+.type-card .type-feature::before {
+  content: '✓';
+  color: var(--success);
+  font-weight: 700;
+}
+
+/* ── SOURCE-TO-POD BUILD ───────────────────────────────── */
+.s2p-grid {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  gap: 22px;
+  align-items: stretch;
+  margin-bottom: 28px;
+}
+@media (max-width: 900px) { .s2p-grid { grid-template-columns: 1fr; gap: 14px; } }
+
+.s2p-side {
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 24px;
+  position: relative;
+}
+.s2p-side.runr { border-color: var(--accent); background: linear-gradient(135deg, rgba(249,115,22,.06), rgba(230,57,70,.03)); }
+.s2p-side .s2p-label {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.15em;
+  padding: 3px 10px;
+  border-radius: 4px;
+  margin-bottom: 14px;
+  text-transform: uppercase;
+}
+.s2p-side.runr .s2p-label { background: var(--grad-r); color: #fff; }
+.s2p-side.them .s2p-label { background: var(--bg-soft); color: var(--text-muted); border: 1px solid var(--border-strong); }
+.s2p-side h3 { font-size: 18px; margin-bottom: 4px; }
+.s2p-side .s2p-tag { color: var(--text-muted); font-size: 12px; margin-bottom: 18px; }
+.s2p-steps { display: flex; flex-direction: column; gap: 8px; margin-bottom: 18px; }
+.s2p-step {
+  display: flex; align-items: center; gap: 12px;
+  padding: 10px 12px;
+  background: var(--bg-soft);
+  border-radius: 8px;
+  font-size: 13px;
+  border: 1px solid var(--border);
+}
+.s2p-side.them .s2p-step { color: var(--text-dim); }
+.s2p-side.runr .s2p-step { color: var(--text); border-color: rgba(249,115,22,.2); }
+.s2p-step .n {
+  width: 22px; height: 22px;
+  display: flex; align-items: center; justify-content: center;
+  border-radius: 50%;
+  font-size: 11px;
+  font-weight: 800;
+  font-family: ui-monospace, monospace;
+  flex-shrink: 0;
+}
+.s2p-side.them .s2p-step .n { background: var(--bg-elev); color: var(--text-muted); border: 1px solid var(--border-strong); }
+.s2p-side.runr .s2p-step .n { background: var(--accent); color: #fff; }
+.s2p-side .s2p-time {
+  font-size: 13px;
+  font-weight: 700;
+  font-family: ui-monospace, monospace;
+  padding: 6px 12px;
+  border-radius: 6px;
+  display: inline-block;
+}
+.s2p-side.them .s2p-time { background: rgba(239,68,68,.1); color: var(--danger); }
+.s2p-side.runr .s2p-time { background: rgba(74,222,128,.12); color: var(--success); }
+
+.s2p-vs {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 36px;
+  font-weight: 900;
+  font-family: ui-monospace, monospace;
+  color: var(--text-faint);
+}
+@media (max-width: 900px) { .s2p-vs { padding: 6px 0; } }
+
+.s2p-langs {
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 20px 24px;
+}
+.s2p-langs h4 { font-size: 14px; margin-bottom: 12px; color: var(--accent); }
+.s2p-langs-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.s2p-lang {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 14px;
+  border-radius: 999px;
+  border: 1px solid;
+  font-size: 13px;
+  font-weight: 600;
+  font-family: ui-monospace, monospace;
+}
+.s2p-lang.live   { background: rgba(74,222,128,.08); border-color: var(--success); color: var(--success); }
+.s2p-lang.live::before { content: '●'; font-size: 8px; color: var(--success); }
+.s2p-lang.soon   { background: var(--bg-soft); border-color: var(--border-strong); color: var(--text-muted); }
+.s2p-lang.soon::before { content: '○'; font-size: 8px; color: var(--text-muted); }
+
+/* ── ARCH MINI DIAGRAM (inline SVG block) ───────────────── */
+.arch-diagram {
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 24px;
+  margin-bottom: 32px;
+  overflow-x: auto;
+}
+.arch-diagram svg { display: block; width: 100%; min-width: 700px; height: auto; }
