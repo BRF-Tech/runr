@@ -46,8 +46,8 @@
     "softwareVersion": "0.5.0",
     "license": "https://opensource.org/licenses/MIT",
     "url": "https://runr.sh",
-    "downloadUrl": "https://github.com/runrsh/core/releases",
-    "sameAs": ["https://github.com/runrsh/core"],
+    "downloadUrl": "https://github.com/brf-tech/runr/releases",
+    "sameAs": ["https://github.com/brf-tech/runr"],
     "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
     "author": { "@type": "Organization", "name": "BRF Teknoloji", "url": "https://brf.sh" }
   }
@@ -96,17 +96,17 @@
     <a href="#compare"    data-tr="Karşılaştır" data-en="Compare">Karşılaştır</a>
     <a href="#faq"        data-tr="SSS" data-en="FAQ">SSS</a>
     <!-- In the mobile menu only: the nav buttons below are hidden on narrow screens -->
-    <a class="nav-mobile-only" href="https://github.com/runrsh/core/tree/main/docs" target="_blank" rel="noopener"
+    <a class="nav-mobile-only" href="https://github.com/brf-tech/runr/tree/main/docs" target="_blank" rel="noopener"
        data-tr="Dokümanlar" data-en="Docs">Dokümanlar</a>
-    <a class="nav-mobile-only" href="https://github.com/runrsh/core" target="_blank" rel="noopener">GitHub</a>
+    <a class="nav-mobile-only" href="https://github.com/brf-tech/runr" target="_blank" rel="noopener">GitHub</a>
     <a class="nav-mobile-only" href="#" data-open-modal="enterprise" data-source="nav"
        data-tr="Enterprise Al" data-en="Get Enterprise">Enterprise Al</a>
   </div>
   <div class="nav-spacer"></div>
   <div class="nav-actions">
-    <a class="btn btn-ghost btn-nav" href="https://github.com/runrsh/core/tree/main/docs" target="_blank" rel="noopener"
+    <a class="btn btn-ghost btn-nav" href="https://github.com/brf-tech/runr/tree/main/docs" target="_blank" rel="noopener"
        data-tr="Dokümanlar" data-en="Docs">Dokümanlar</a>
-    <a class="btn btn-ghost btn-nav" href="https://github.com/runrsh/core" target="_blank" rel="noopener">GitHub</a>
+    <a class="btn btn-ghost btn-nav" href="https://github.com/brf-tech/runr" target="_blank" rel="noopener">GitHub</a>
     <button class="btn btn-enterprise" data-open-modal="enterprise" data-source="nav"
             data-tr="Enterprise Al" data-en="Get Enterprise">Enterprise Al</button>
     <button class="lang-btn" aria-label="Toggle language">EN</button>
@@ -140,7 +140,7 @@
     <div class="hero-cta reveal">
       <a class="btn btn-primary btn-lg btn-magnetic" href="#install"
          data-tr="Kuruluma Başla" data-en="Get Started">Kuruluma Başla</a>
-      <a class="btn btn-ghost btn-lg" href="https://github.com/runrsh/core" target="_blank" rel="noopener"
+      <a class="btn btn-ghost btn-lg" href="https://github.com/brf-tech/runr" target="_blank" rel="noopener"
          data-tr="GitHub'da İncele" data-en="View on GitHub">GitHub'da İncele</a>
     </div>
     <div class="stats reveal-stagger">
@@ -1399,12 +1399,12 @@
       <p data-tr="Kontrol düzlemi tek bir Helm chart: gateway, UI, API, worker'lar, scheduler, Reverb; kendi servislerinizi göstermezseniz PostgreSQL ve Redis de."
          data-en="The control plane as one Helm chart: gateway, UI, API, workers, scheduler and Reverb, plus PostgreSQL and Redis unless you point it at your own.">
          Kontrol düzlemi tek bir Helm chart: gateway, UI, API, worker'lar, scheduler, Reverb; kendi servislerinizi göstermezseniz PostgreSQL ve Redis de.</p>
-      <pre><code>git clone https://github.com/runrsh/core.git
+      <pre><code>git clone https://github.com/brf-tech/runr.git
 cd core
 helm upgrade --install runr ./helm \
   -n runr --create-namespace \
   --set domain=runr.example.com</code></pre>
-      <a class="install-link" href="https://github.com/runrsh/core#kubernetes-helm" target="_blank" rel="noopener"
+      <a class="install-link" href="https://github.com/brf-tech/runr#kubernetes-helm" target="_blank" rel="noopener"
          data-tr="Helm ile kurulum →" data-en="Install with Helm →">Helm ile kurulum →</a>
     </div>
 
@@ -1418,7 +1418,7 @@ cp .env.example .env
 cp api.env.example api.env   # + APP_KEY
 docker compose up -d
 docker compose run --rm migrator</code></pre>
-      <a class="install-link" href="https://github.com/runrsh/core/blob/main/compose/README.md" target="_blank" rel="noopener"
+      <a class="install-link" href="https://github.com/brf-tech/runr/blob/main/compose/README.md" target="_blank" rel="noopener"
          data-tr="Tek sunucu kurulum rehberi →" data-en="Single-host install guide →">Tek sunucu kurulum rehberi →</a>
     </div>
 
@@ -1432,24 +1432,24 @@ runr init hello --runtime python
 cd hello
 runr dev       # localhost:8080
 runr deploy</code></pre>
-      <a class="install-link" href="https://github.com/runrsh/core/releases" target="_blank" rel="noopener"
+      <a class="install-link" href="https://github.com/brf-tech/runr/releases" target="_blank" rel="noopener"
          data-tr="CLI'ı indir →" data-en="Download the CLI →">CLI'ı indir →</a>
     </div>
 
     <div class="install-card reveal">
-      <h4>Terraform <span class="install-kind">runrsh/runr</span></h4>
+      <h4>Terraform <span class="install-kind">brf-tech/runr</span></h4>
       <p data-tr="Projeler, değişkenler, domain'ler, deploy'lar, binding'ler, runtime'lar, workflow tetikleyicileri, modeller, MCP sunucuları, roller ve marka — kod olarak."
          data-en="Projects, variables, domains, deployments, bindings, runtimes, workflow triggers, models, MCP servers, roles and branding — as code.">
          Projeler, değişkenler, domain'ler, deploy'lar, binding'ler, runtime'lar, workflow tetikleyicileri, modeller, MCP sunucuları, roller ve marka — kod olarak.</p>
       <pre><code>terraform {
   required_providers {
     runr = {
-      source  = "runrsh/runr"
+      source  = "brf-tech/runr"
       version = "~&gt; 0.5"
     }
   }
 }</code></pre>
-      <a class="install-link" href="https://github.com/runrsh/core/blob/main/docs/terraform.md" target="_blank" rel="noopener"
+      <a class="install-link" href="https://github.com/brf-tech/runr/blob/main/docs/terraform.md" target="_blank" rel="noopener"
          data-tr="Terraform provider →" data-en="Terraform provider →">Terraform provider →</a>
     </div>
 
@@ -1458,12 +1458,12 @@ runr deploy</code></pre>
       <p data-tr="Her push'ta deploy edin, pull request'ler için preview ortamları açın."
          data-en="Deploy on every push and run preview environments for pull requests.">
          Her push'ta deploy edin, pull request'ler için preview ortamları açın.</p>
-      <pre><code>- uses: runrsh/core/actions/deploy@v0.5.0
+      <pre><code>- uses: brf-tech/runr/actions/deploy@v0.5.0
   with:
     api-url: https://runr.example.com
     token: ${{ secrets.RUNR_TOKEN }}
     path: ./functions/orders</code></pre>
-      <a class="install-link" href="https://github.com/runrsh/core/blob/main/docs/github-action.md" target="_blank" rel="noopener"
+      <a class="install-link" href="https://github.com/brf-tech/runr/blob/main/docs/github-action.md" target="_blank" rel="noopener"
          data-tr="GitHub Action →" data-en="GitHub Action →">GitHub Action →</a>
     </div>
 
@@ -1473,11 +1473,11 @@ runr deploy</code></pre>
          data-en="The architecture, a page for every feature, the upgrade from 0.4.x and the release notes — in the repository's <code>docs/</code>.">
          Mimari, her özelliğin sayfası, 0.4.x'ten yükseltme ve sürüm notları — deponun <code>docs/</code> klasöründe.</p>
       <ul class="install-links">
-        <li><a href="https://github.com/runrsh/core/tree/main/docs" target="_blank" rel="noopener" data-tr="Doküman dizini" data-en="Documentation index">Doküman dizini</a></li>
-        <li><a href="https://github.com/runrsh/core#quick-start" target="_blank" rel="noopener" data-tr="Hızlı başlangıç" data-en="Quick start">Hızlı başlangıç</a></li>
-        <li><a href="https://github.com/runrsh/core/blob/main/docs/architecture.md" target="_blank" rel="noopener" data-tr="Mimari" data-en="Architecture">Mimari</a></li>
-        <li><a href="https://github.com/runrsh/core/blob/main/docs/upgrade.md" target="_blank" rel="noopener" data-tr="Yükseltme" data-en="Upgrading">Yükseltme</a></li>
-        <li><a href="https://github.com/runrsh/core/blob/main/CHANGELOG.md" target="_blank" rel="noopener" data-tr="Sürüm notları" data-en="Changelog">Sürüm notları</a></li>
+        <li><a href="https://github.com/brf-tech/runr/tree/main/docs" target="_blank" rel="noopener" data-tr="Doküman dizini" data-en="Documentation index">Doküman dizini</a></li>
+        <li><a href="https://github.com/brf-tech/runr#quick-start" target="_blank" rel="noopener" data-tr="Hızlı başlangıç" data-en="Quick start">Hızlı başlangıç</a></li>
+        <li><a href="https://github.com/brf-tech/runr/blob/main/docs/architecture.md" target="_blank" rel="noopener" data-tr="Mimari" data-en="Architecture">Mimari</a></li>
+        <li><a href="https://github.com/brf-tech/runr/blob/main/docs/upgrade.md" target="_blank" rel="noopener" data-tr="Yükseltme" data-en="Upgrading">Yükseltme</a></li>
+        <li><a href="https://github.com/brf-tech/runr/blob/main/CHANGELOG.md" target="_blank" rel="noopener" data-tr="Sürüm notları" data-en="Changelog">Sürüm notları</a></li>
       </ul>
     </div>
 
@@ -1500,9 +1500,9 @@ runr deploy</code></pre>
       <span>✓ <strong data-tr="Katkıya açık" data-en="Open to contributions">Katkıya açık</strong></span>
     </div>
     <div class="os-cta">
-      <a class="btn btn-primary btn-magnetic" href="https://github.com/runrsh/core" target="_blank" rel="noopener"
+      <a class="btn btn-primary btn-magnetic" href="https://github.com/brf-tech/runr" target="_blank" rel="noopener"
          data-tr="GitHub'da Yıldız Ver" data-en="Star on GitHub">GitHub'da Yıldız Ver</a>
-      <a class="btn btn-ghost" href="https://github.com/runrsh/core/blob/main/CONTRIBUTING.md" target="_blank" rel="noopener"
+      <a class="btn btn-ghost" href="https://github.com/brf-tech/runr/blob/main/CONTRIBUTING.md" target="_blank" rel="noopener"
          data-tr="Katkıda Bulun" data-en="Contribute">Katkıda Bulun</a>
     </div>
   </div>
@@ -1542,8 +1542,8 @@ runr deploy</code></pre>
     <details class="faq-item reveal">
       <summary data-tr="Nasıl kurarım?" data-en="How do I install it?">Nasıl kurarım?</summary>
       <div class="faq-body"
-        data-tr="Kubernetes'te deponun Helm chart'ıyla (<code>helm upgrade --install runr ./helm</code>), tek sunucuda Docker Compose ile. <code>runr</code> CLI'ı GitHub sürümlerinden indirilir; Terraform provider'ı <code>runrsh/runr</code>, GitHub Action'ı <code>runrsh/core/actions/deploy@v0.5.0</code>. Ayrıntılar yukarıdaki kurulum bölümünde ve <a href='https://github.com/runrsh/core/tree/main/docs' target='_blank' rel='noopener'>dokümanlarda</a>."
-        data-en="On Kubernetes with the repository's Helm chart (<code>helm upgrade --install runr ./helm</code>), on a single host with Docker Compose. The <code>runr</code> CLI comes from GitHub releases; the Terraform provider is <code>runrsh/runr</code> and the GitHub Action <code>runrsh/core/actions/deploy@v0.5.0</code>. Details in the install section above and in the <a href='https://github.com/runrsh/core/tree/main/docs' target='_blank' rel='noopener'>documentation</a>.">
+        data-tr="Kubernetes'te deponun Helm chart'ıyla (<code>helm upgrade --install runr ./helm</code>), tek sunucuda Docker Compose ile. <code>runr</code> CLI'ı GitHub sürümlerinden indirilir; Terraform provider'ı <code>brf-tech/runr</code>, GitHub Action'ı <code>brf-tech/runr/actions/deploy@v0.5.0</code>. Ayrıntılar yukarıdaki kurulum bölümünde ve <a href='https://github.com/brf-tech/runr/tree/main/docs' target='_blank' rel='noopener'>dokümanlarda</a>."
+        data-en="On Kubernetes with the repository's Helm chart (<code>helm upgrade --install runr ./helm</code>), on a single host with Docker Compose. The <code>runr</code> CLI comes from GitHub releases; the Terraform provider is <code>brf-tech/runr</code> and the GitHub Action <code>brf-tech/runr/actions/deploy@v0.5.0</code>. Details in the install section above and in the <a href='https://github.com/brf-tech/runr/tree/main/docs' target='_blank' rel='noopener'>documentation</a>.">
         Helm, Docker Compose, CLI, Terraform ya da GitHub Action ile.
       </div>
     </details>
@@ -1590,8 +1590,8 @@ runr deploy</code></pre>
     <details class="faq-item reveal">
       <summary data-tr="Bir güvenlik açığını nasıl bildiririm?" data-en="How do I report a security issue?">Bir güvenlik açığını nasıl bildiririm?</summary>
       <div class="faq-body"
-        data-tr="Gizli olarak <a href='mailto:security@runr.sh'>security@runr.sh</a> adresine e-posta ile — herkese açık bir issue açmadan. Raporları üç iş günü içinde teyit ederiz; ayrıntılar <a href='https://github.com/runrsh/core/blob/main/SECURITY.md' target='_blank' rel='noopener'>SECURITY.md</a>'de."
-        data-en="Privately, by e-mail to <a href='mailto:security@runr.sh'>security@runr.sh</a> — not in a public issue. We acknowledge reports within three business days; details in <a href='https://github.com/runrsh/core/blob/main/SECURITY.md' target='_blank' rel='noopener'>SECURITY.md</a>.">
+        data-tr="Gizli olarak <a href='mailto:security@runr.sh'>security@runr.sh</a> adresine e-posta ile — herkese açık bir issue açmadan. Raporları üç iş günü içinde teyit ederiz; ayrıntılar <a href='https://github.com/brf-tech/runr/blob/main/SECURITY.md' target='_blank' rel='noopener'>SECURITY.md</a>'de."
+        data-en="Privately, by e-mail to <a href='mailto:security@runr.sh'>security@runr.sh</a> — not in a public issue. We acknowledge reports within three business days; details in <a href='https://github.com/brf-tech/runr/blob/main/SECURITY.md' target='_blank' rel='noopener'>SECURITY.md</a>.">
         Gizli olarak security@runr.sh adresine e-posta ile.
       </div>
     </details>
@@ -1638,17 +1638,17 @@ runr deploy</code></pre>
       </div>
       <div class="footer-links">
         <a href="#features" data-tr="Özellikler" data-en="Features">Özellikler</a>
-        <a href="https://github.com/runrsh/core" target="_blank" rel="noopener">GitHub</a>
+        <a href="https://github.com/brf-tech/runr" target="_blank" rel="noopener">GitHub</a>
         <a href="#platform" data-tr="Platform" data-en="Platform">Platform</a>
-        <a href="https://github.com/runrsh/core/tree/main/docs" target="_blank" rel="noopener" data-tr="Dokümanlar" data-en="Docs">Dokümanlar</a>
+        <a href="https://github.com/brf-tech/runr/tree/main/docs" target="_blank" rel="noopener" data-tr="Dokümanlar" data-en="Docs">Dokümanlar</a>
         <a href="#install" data-tr="Kurulum" data-en="Install">Kurulum</a>
-        <a href="https://github.com/runrsh/core/blob/main/CHANGELOG.md" target="_blank" rel="noopener" data-tr="Sürüm notları" data-en="Changelog">Sürüm notları</a>
+        <a href="https://github.com/brf-tech/runr/blob/main/CHANGELOG.md" target="_blank" rel="noopener" data-tr="Sürüm notları" data-en="Changelog">Sürüm notları</a>
         <a href="#compare" data-tr="Karşılaştır" data-en="Compare">Karşılaştır</a>
-        <a href="https://github.com/runrsh/core/blob/main/CONTRIBUTING.md" target="_blank" rel="noopener" data-tr="Katkıda bulunma" data-en="Contributing">Katkıda bulunma</a>
+        <a href="https://github.com/brf-tech/runr/blob/main/CONTRIBUTING.md" target="_blank" rel="noopener" data-tr="Katkıda bulunma" data-en="Contributing">Katkıda bulunma</a>
         <a href="#faq" data-tr="SSS" data-en="FAQ">SSS</a>
-        <a href="https://github.com/runrsh/core/blob/main/SECURITY.md" target="_blank" rel="noopener" data-tr="Güvenlik politikası" data-en="Security policy">Güvenlik politikası</a>
-        <a href="https://github.com/runrsh/core/blob/main/LICENSE" target="_blank" rel="noopener" data-tr="Lisans (MIT)" data-en="License (MIT)">Lisans (MIT)</a>
-        <a href="https://github.com/runrsh/core/blob/main/CODE_OF_CONDUCT.md" target="_blank" rel="noopener" data-tr="Davranış kuralları" data-en="Code of conduct">Davranış kuralları</a>
+        <a href="https://github.com/brf-tech/runr/blob/main/SECURITY.md" target="_blank" rel="noopener" data-tr="Güvenlik politikası" data-en="Security policy">Güvenlik politikası</a>
+        <a href="https://github.com/brf-tech/runr/blob/main/LICENSE" target="_blank" rel="noopener" data-tr="Lisans (MIT)" data-en="License (MIT)">Lisans (MIT)</a>
+        <a href="https://github.com/brf-tech/runr/blob/main/CODE_OF_CONDUCT.md" target="_blank" rel="noopener" data-tr="Davranış kuralları" data-en="Code of conduct">Davranış kuralları</a>
       </div>
       <div class="footer-meta">
         <p class="made">Made with ❤️ by</p>
