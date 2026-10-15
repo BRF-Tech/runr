@@ -58,11 +58,26 @@
 .mobile-toggle { display: none; padding: 8px; }
 .mobile-toggle span { display: block; width: 22px; height: 2px; background: var(--text); margin: 4px 0; transition: transform .3s; }
 
+.nav-logo { flex-shrink: 0; }
+.nav-actions .btn { padding: 8px 14px; font-size: 13px; }
+/* Links that only appear in the opened mobile menu (their nav buttons are hidden there) */
+.nav-links .nav-mobile-only { display: none; }
+
+@media (max-width: 1180px) {
+  .nav-links { margin-left: 16px; }
+  .nav-links a { padding: 6px 8px; }
+}
 @media (max-width: 900px) {
   .nav-links { display: none; }
   .nav-links.is-open { display: flex; flex-direction: column; position: absolute; top: 100%; left: 0; right: 0; background: var(--bg-elev); padding: 16px; border-bottom: 1px solid var(--border); margin-left: 0; gap: 8px; }
   .nav-links.is-open a { width: 100%; padding: 10px 16px; }
-  .mobile-toggle { display: block; }
+  .nav-links.is-open .nav-mobile-only { display: block; }
+  .nav-actions .btn-nav { display: none; }
+  .mobile-toggle { display: block; order: 10; }
+}
+@media (max-width: 600px) {
+  .nav { padding-left: 16px; padding-right: 16px; }
+  .nav-actions .btn-enterprise { display: none; }
 }
 
 /* ── BUTTONS ────────────────────────────────────────────── */
@@ -88,47 +103,6 @@
 .btn-primary:hover { transform: translateY(-1px); box-shadow: 0 8px 24px rgba(249, 115, 22, 0.45); }
 .btn-ghost { background: transparent; border-color: var(--border-strong); color: var(--text); }
 .btn-ghost:hover { border-color: var(--accent); color: var(--accent); background: rgba(249, 115, 22, 0.05); }
-.btn-soon {
-  background: transparent;
-  border-color: var(--border-strong);
-  color: var(--text-muted);
-  position: relative;
-}
-.btn-soon::after {
-  content: attr(data-soon-label);
-  position: absolute;
-  bottom: calc(100% + 8px); left: 50%;
-  transform: translateX(-50%) translateY(4px);
-  font-size: 10px;
-  font-weight: 700;
-  padding: 4px 10px;
-  background: var(--accent);
-  color: #fff;
-  border-radius: 4px;
-  white-space: nowrap;
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity .2s, transform .2s;
-  letter-spacing: 0.05em;
-}
-.btn-soon::before {
-  content: '';
-  position: absolute;
-  bottom: calc(100% + 3px); left: 50%;
-  transform: translateX(-50%);
-  border: 5px solid transparent;
-  border-top-color: var(--accent);
-  opacity: 0;
-  transition: opacity .2s;
-}
-.btn-soon:hover { border-color: var(--accent); color: var(--accent); }
-.btn-soon:hover::after { opacity: 1; transform: translateX(-50%) translateY(0); }
-.btn-soon:hover::before { opacity: 1; }
-
-/* .btn-soon inside the nav — open downward so it doesn't go above the viewport */
-.nav .btn-soon::after  { top: calc(100% + 8px); bottom: auto; transform: translateX(-50%) translateY(-4px); }
-.nav .btn-soon::before { top: calc(100% + 3px); bottom: auto; border-top-color: transparent; border-bottom-color: var(--accent); }
-.nav .btn-soon:hover::after { transform: translateX(-50%) translateY(0); }
 .btn-enterprise { background: transparent; border: 1px solid rgba(167,139,250,0.50); color: #c4b5fd; transition: all .2s; }
 .btn-enterprise:hover { background: rgba(167,139,250,0.12); border-color: #a78bfa; color: #ddd6fe; box-shadow: 0 0 18px rgba(167,139,250,0.35); transform: translateY(-1px); }
 .btn-lg { padding: 14px 28px; font-size: 16px; }

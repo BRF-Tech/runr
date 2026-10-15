@@ -2,16 +2,14 @@
    RunR Landing — turnstile.js
    Cloudflare Turnstile (bot blocker) frontend integration.
 
-   The site key will be set in the brf-mono backend. Currently a placeholder.
-   In production:
-     window.RUNR_TURNSTILE_SITEKEY = '0x4AAAAA...';   (injected into index.html as config)
+   The site key comes from index.html:
+     window.RUNR_TURNSTILE_SITEKEY = '0x4AAAAA...';
    ============================================================ */
 
 (function () {
   'use strict';
 
-  // Placeholder — replace with the real site key in production.
-  // Can be overridden from index.html via `window.RUNR_TURNSTILE_SITEKEY`.
+  // Used only when index.html sets no `window.RUNR_TURNSTILE_SITEKEY`.
   const FALLBACK_SITEKEY = '1x00000000000000000000AA'; // CF Turnstile "always passes" test key
 
   const widgets = new Map(); // formName → widgetId
@@ -85,6 +83,8 @@
 
   // The Turnstile loader script uses ?onload=onTurnstileLoad.
   window.onTurnstileLoad = function () { renderAll(); };
+  // The loader is async and may finish before this deferred script runs; render now in that case.
+  if (typeof window.turnstile !== 'undefined') renderAll();
 
   // Re-render the widgets on locale change (to update their language)
   document.addEventListener('click', (e) => {

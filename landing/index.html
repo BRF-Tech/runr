@@ -4,10 +4,10 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>RunR — Açık Kaynak Serverless Mimari · Kubernetes Üzerinde</title>
-  <meta name="description" content="Tek dosya fonksiyonları, çoklu dosya projeleri veya container'ları kendi Knative cluster'ınızda deploy edin. Scale-to-zero, multi-tenant, sıfır vendor lock-in. %100 açık kaynak.">
-  <meta name="keywords" content="serverless, knative, kubernetes, open source, faas, caas, xaas, self-hosted, multi-tenant, scale-to-zero">
+  <meta name="description" content="Fonksiyonlar, çoklu dosya projeleri, container'lar ve WebAssembly kendi Kubernetes cluster'larınızda, Knative ile scale-to-zero. Sandbox API, durable workflow, GPU ve MCP dahil. MIT lisanslı açık kaynak.">
+  <meta name="keywords" content="serverless, knative, kubernetes, open source, mit, self-hosted, faas, caas, webassembly, sandbox, gvisor, kata containers, durable workflows, gpu, hugging face, mcp, multi-tenant, scale-to-zero">
   <meta name="theme-color" content="#0a0e1a">
-  <meta name="author" content="brf.sh / burak.sh">
+  <meta name="author" content="BRF Teknoloji">
 
   <!-- Canonical & hreflang -->
   <link rel="canonical" href="https://runr.sh/">
@@ -21,7 +21,7 @@
   <!-- Open Graph -->
   <meta property="og:type" content="website">
   <meta property="og:title" content="RunR — Open Source Serverless Architecture">
-  <meta property="og:description" content="Run functions, projects, or containers on Knative — on your own K8s cluster. Scale-to-zero, multi-tenant, zero vendor lock-in. 100% open source.">
+  <meta property="og:description" content="Functions, multi-file projects, containers and WebAssembly on Knative — on your own Kubernetes clusters, with a Sandbox API, durable workflows, GPUs and MCP built in. Open source under the MIT license.">
   <meta property="og:url" content="https://runr.sh/">
   <meta property="og:image" content="https://runr.sh/assets/og-image.png">
   <meta property="og:image:width" content="1200">
@@ -31,7 +31,7 @@
   <!-- Twitter -->
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:title" content="RunR — Open Source Serverless Architecture">
-  <meta name="twitter:description" content="Run functions, projects, or containers on your own Knative cluster. 100% open source.">
+  <meta name="twitter:description" content="Functions, projects, containers and WebAssembly on your own Kubernetes clusters, with scale-to-zero. Open source under the MIT license.">
   <meta name="twitter:image" content="https://runr.sh/assets/og-image.png">
 
   <!-- JSON-LD: Schema.org SoftwareApplication -->
@@ -40,12 +40,16 @@
     "@context": "https://schema.org",
     "@type": "SoftwareApplication",
     "name": "RunR",
-    "description": "Open source serverless platform built on Kubernetes and Knative. Deploy functions, projects, or containers with scale-to-zero, multi-tenancy, and zero vendor lock-in.",
+    "description": "Open source serverless platform built on Kubernetes and Knative. Deploy functions, projects, containers and WebAssembly on your own clusters with scale-to-zero, sandboxes, durable workflows, GPUs and MCP.",
     "applicationCategory": "DeveloperApplication",
     "operatingSystem": "Linux, Kubernetes",
+    "softwareVersion": "0.5.0",
+    "license": "https://opensource.org/licenses/MIT",
     "url": "https://runr.sh",
+    "downloadUrl": "https://github.com/runrsh/core/releases",
+    "sameAs": ["https://github.com/runrsh/core"],
     "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
-    "author": { "@type": "Organization", "name": "RunR" }
+    "author": { "@type": "Organization", "name": "BRF Teknoloji", "url": "https://brf.sh" }
   }
   </script>
 
@@ -63,7 +67,9 @@
        Note: 0.158 is the last UMD-bundled version; 0.160+ ships ES modules only. -->
   <script src="https://cdn.jsdelivr.net/npm/three@0.158.0/build/three.min.js" defer></script>
 
-  <!-- Cloudflare Turnstile (bot blocker, frontend widget) -->
+  <!-- Cloudflare Turnstile (bot blocker, frontend widget). The stub exists before the async
+       loader can finish; js/turnstile.js replaces it and renders the widgets. -->
+  <script>window.onTurnstileLoad = function () {};</script>
   <script src="https://challenges.cloudflare.com/turnstile/v0/api.js?onload=onTurnstileLoad" async defer></script>
 </head>
 
@@ -83,26 +89,26 @@
   </button>
   <div class="nav-links">
     <a href="#features"   data-tr="Özellikler" data-en="Features">Özellikler</a>
-    <a href="#modules"    data-tr="Modüller" data-en="Modules">Modüller</a>
-    <a href="#build"      data-tr="Build" data-en="Build">Build</a>
+    <a href="#platform"   data-tr="Platform" data-en="Platform">Platform</a>
+    <a href="#ai"         data-tr="AI" data-en="AI">AI</a>
     <a href="#sandbox"    data-tr="Sandbox" data-en="Sandbox">Sandbox</a>
-    <a href="#architecture" data-tr="Mimari" data-en="Architecture">Mimari</a>
+    <a href="#install"    data-tr="Kurulum" data-en="Install">Kurulum</a>
     <a href="#compare"    data-tr="Karşılaştır" data-en="Compare">Karşılaştır</a>
     <a href="#faq"        data-tr="SSS" data-en="FAQ">SSS</a>
+    <!-- In the mobile menu only: the nav buttons below are hidden on narrow screens -->
+    <a class="nav-mobile-only" href="https://github.com/runrsh/core/tree/main/docs" target="_blank" rel="noopener"
+       data-tr="Dokümanlar" data-en="Docs">Dokümanlar</a>
+    <a class="nav-mobile-only" href="https://github.com/runrsh/core" target="_blank" rel="noopener">GitHub</a>
+    <a class="nav-mobile-only" href="#" data-open-modal="enterprise" data-source="nav"
+       data-tr="Enterprise Al" data-en="Get Enterprise">Enterprise Al</a>
   </div>
   <div class="nav-spacer"></div>
   <div class="nav-actions">
+    <a class="btn btn-ghost btn-nav" href="https://github.com/runrsh/core/tree/main/docs" target="_blank" rel="noopener"
+       data-tr="Dokümanlar" data-en="Docs">Dokümanlar</a>
+    <a class="btn btn-ghost btn-nav" href="https://github.com/runrsh/core" target="_blank" rel="noopener">GitHub</a>
     <button class="btn btn-enterprise" data-open-modal="enterprise" data-source="nav"
             data-tr="Enterprise Al" data-en="Get Enterprise">Enterprise Al</button>
-    <button class="btn btn-soon" data-open-modal="waitlist" data-source="docs"
-            data-soon-label="Coming Soon"
-            data-tr="Dokümanlar" data-en="Docs">Dokümanlar</button>
-    <button class="btn btn-soon" data-open-modal="waitlist" data-source="login"
-            data-soon-label="Coming Soon"
-            data-tr="Giriş" data-en="Login">Giriş</button>
-    <button class="btn btn-primary btn-soon btn-magnetic" data-open-modal="waitlist" data-source="register"
-            data-soon-label="Coming Soon"
-            data-tr="Kayıt Ol" data-en="Register">Kayıt Ol</button>
     <button class="lang-btn" aria-label="Toggle language">EN</button>
   </div>
 </nav>
@@ -119,7 +125,7 @@
     <span class="hero-spark s5"></span>
   </div>
   <div class="hero-content">
-    <span class="eyebrow reveal" data-tr="Knative Üzerinde · Üretime Hazır" data-en="Built on Knative · Production Ready">Knative Üzerinde · Üretime Hazır</span>
+    <span class="eyebrow reveal" data-tr="AÇIK KAYNAK · MIT · KNATIVE" data-en="Open source · MIT · Knative">AÇIK KAYNAK · MIT · KNATIVE</span>
     <h1 class="reveal"><span class="run">Run</span><span class="r">R</span></h1>
     <p class="tagline reveal"
        data-tr="Açık Kaynak Serverless Mimari — Kubernetes Üzerinde, Sizin Kontrolünüzde."
@@ -127,40 +133,36 @@
       Açık Kaynak Serverless Mimari — Kubernetes Üzerinde, Sizin Kontrolünüzde.
     </p>
     <p class="subtitle reveal"
-       data-tr="Fonksiyonları, projeleri veya container'ları Knative üzerinde çalıştırın — kendi K8s cluster'ınızda. İstek başı ücret yok. Lock-in yok. Asla."
-       data-en="Run functions, projects, or containers on Knative — on your own K8s cluster. No per-request fees. No lock-in. Ever.">
-      Fonksiyonları, projeleri veya container'ları Knative üzerinde çalıştırın — kendi K8s cluster'ınızda. İstek başı ücret yok. Lock-in yok. Asla.
+       data-tr="Fonksiyonlar, çoklu dosya projeleri, container'lar ve WebAssembly Knative üzerinde — kendi Kubernetes cluster'larınızda; Sandbox API, durable workflow, GPU ve MCP dahil. İstek başı ücret yok. Lock-in yok."
+       data-en="Functions, multi-file projects, containers and WebAssembly on Knative — on your own Kubernetes clusters, with a Sandbox API, durable workflows, GPUs and MCP built in. No per-request fees. No lock-in.">
+      Fonksiyonlar, çoklu dosya projeleri, container'lar ve WebAssembly Knative üzerinde — kendi Kubernetes cluster'larınızda; Sandbox API, durable workflow, GPU ve MCP dahil. İstek başı ücret yok. Lock-in yok.
     </p>
     <div class="hero-cta reveal">
-      <button class="btn btn-primary btn-lg btn-magnetic" data-open-modal="waitlist" data-source="hero"
-              data-tr="Waitlist'e Katıl" data-en="Join Waitlist">Waitlist'e Katıl</button>
-      <a class="btn btn-ghost btn-lg" href="#compare"
-         data-tr="Karşılaştırmayı Gör" data-en="View Comparison">Karşılaştırmayı Gör</a>
+      <a class="btn btn-primary btn-lg btn-magnetic" href="#install"
+         data-tr="Kuruluma Başla" data-en="Get Started">Kuruluma Başla</a>
+      <a class="btn btn-ghost btn-lg" href="https://github.com/runrsh/core" target="_blank" rel="noopener"
+         data-tr="GitHub'da İncele" data-en="View on GitHub">GitHub'da İncele</a>
     </div>
     <div class="stats reveal-stagger">
       <div class="stat reveal">
         <div class="num"><span class="counter" data-target="6">0</span>+</div>
-        <div class="label" data-tr="DAHİLİ MODÜL" data-en="BUILT-IN MODULES">DAHİLİ MODÜL</div>
+        <div class="label" data-tr="DAHİLİ RUNTIME" data-en="BUILT-IN RUNTIMES">DAHİLİ RUNTIME</div>
       </div>
       <div class="stat reveal">
         <div class="num"><span class="counter" data-target="3">0</span></div>
         <div class="label" data-tr="SANDBOX RUNTIME" data-en="SANDBOX RUNTIMES">SANDBOX RUNTIME</div>
       </div>
       <div class="stat reveal">
-        <div class="num"><span class="counter" data-target="60">0</span>+</div>
-        <div class="label" data-tr="COMPONENT / SERVICE" data-en="COMPONENT / SERVICE">COMPONENT / SERVICE</div>
+        <div class="num"><span class="counter" data-target="4">0</span></div>
+        <div class="label" data-tr="BINDING TÜRÜ" data-en="BINDING TYPES">BINDING TÜRÜ</div>
       </div>
       <div class="stat reveal">
         <div class="num">0</div>
         <div class="label" data-tr="BOŞTA POD · SCALE-TO-ZERO" data-en="IDLE PODS · SCALE-TO-ZERO">BOŞTA POD · SCALE-TO-ZERO</div>
       </div>
       <div class="stat reveal">
-        <div class="num"><span class="counter" data-target="100">0</span>%</div>
+        <div class="num">MIT</div>
         <div class="label" data-tr="AÇIK KAYNAK" data-en="OPEN SOURCE">AÇIK KAYNAK</div>
-      </div>
-      <div class="stat reveal">
-        <div class="num">∞</div>
-        <div class="label" data-tr="MULTI-REGION" data-en="MULTI-REGION">MULTI-REGION</div>
       </div>
     </div>
   </div>
@@ -171,26 +173,30 @@
      so the TR locale doesn't mangle "i → İ". -->
 <div class="marquee" aria-hidden="true" lang="en">
   <div class="marquee-track">
-    <span class="marquee-item hot">OPEN SOURCE</span>
+    <span class="marquee-item hot">OPEN SOURCE · MIT</span>
     <span class="marquee-item">KNATIVE</span>
     <span class="marquee-item hot">SCALE-TO-ZERO</span>
-    <span class="marquee-item">MULTI-TENANT</span>
-    <span class="marquee-item hot">ZERO LOCK-IN</span>
+    <span class="marquee-item">WEBASSEMBLY</span>
+    <span class="marquee-item hot">SANDBOX API</span>
     <span class="marquee-item">GVISOR + KATA</span>
-    <span class="marquee-item hot">SOURCE-TO-POD BUILD</span>
-    <span class="marquee-item">SELF-HOST</span>
-    <span class="marquee-item hot">PRODUCTION-READY</span>
+    <span class="marquee-item hot">DURABLE WORKFLOWS</span>
+    <span class="marquee-item">GIT PUSH DEPLOY</span>
+    <span class="marquee-item hot">GPU + HUGGING FACE</span>
+    <span class="marquee-item">MCP</span>
+    <span class="marquee-item hot">ZERO LOCK-IN</span>
     <span class="marquee-item">MULTI-REGION</span>
     <!-- duplicate for seamless loop -->
-    <span class="marquee-item hot">OPEN SOURCE</span>
+    <span class="marquee-item hot">OPEN SOURCE · MIT</span>
     <span class="marquee-item">KNATIVE</span>
     <span class="marquee-item hot">SCALE-TO-ZERO</span>
-    <span class="marquee-item">MULTI-TENANT</span>
-    <span class="marquee-item hot">ZERO LOCK-IN</span>
+    <span class="marquee-item">WEBASSEMBLY</span>
+    <span class="marquee-item hot">SANDBOX API</span>
     <span class="marquee-item">GVISOR + KATA</span>
-    <span class="marquee-item hot">SOURCE-TO-POD BUILD</span>
-    <span class="marquee-item">SELF-HOST</span>
-    <span class="marquee-item hot">PRODUCTION-READY</span>
+    <span class="marquee-item hot">DURABLE WORKFLOWS</span>
+    <span class="marquee-item">GIT PUSH DEPLOY</span>
+    <span class="marquee-item hot">GPU + HUGGING FACE</span>
+    <span class="marquee-item">MCP</span>
+    <span class="marquee-item hot">ZERO LOCK-IN</span>
     <span class="marquee-item">MULTI-REGION</span>
   </div>
 </div>
@@ -200,9 +206,9 @@
   <div class="section-head reveal" data-num="01">
     <span class="eyebrow" data-tr="ÜÇ PROJE TİPİ" data-en="THREE PROJECT TYPES">ÜÇ PROJE TİPİ</span>
     <h2 data-tr="Tek dosyadan tam container'a kadar." data-en="From a single file to a full container.">Tek dosyadan tam container'a kadar.</h2>
-    <p data-tr="Aynı platform, üç farklı deployment modeli. Hangisini seçeceğinize siz karar verin."
-       data-en="One platform, three deployment models. You choose which fits.">
-       Aynı platform, üç farklı deployment modeli. Hangisini seçeceğinize siz karar verin.</p>
+    <p data-tr="Aynı platform, üç deployment modeli — hepsi Knative ile scale-to-zero. Web editöründen, <code>git push</code> ile ya da CLI'dan deploy edin; HTTP, zamanlama, kuyruk ya da workflow ile tetikleyin."
+       data-en="One platform, three deployment models — all scaling to zero on Knative. Deploy from the web editor, with <code>git push</code> or from the CLI; trigger by HTTP, schedule, queue or workflow.">
+       Aynı platform, üç deployment modeli — hepsi Knative ile scale-to-zero. Web editöründen, <code>git push</code> ile ya da CLI'dan deploy edin; HTTP, zamanlama, kuyruk ya da workflow ile tetikleyin.</p>
   </div>
   <div class="grid g3 reveal-stagger">
     <div class="type-card tilt-card reveal" style="--c1:#4ade80;--c2:#22c55e">
@@ -211,21 +217,22 @@
         <div class="type-icon">X</div>
         <h3>XaaS</h3>
         <p class="type-desc"
-           data-tr="Tek dosya, tek fonksiyon. Web editöründe kodu yapıştır, saniyeler içinde yayında."
-           data-en="One file, one function. Paste code in the web editor, live in seconds.">
-          Tek dosya, tek fonksiyon. Web editöründe kodu yapıştır, saniyeler içinde yayında.</p>
+           data-tr="Tek dosya, tek fonksiyon. Web editöründe kodu yaz ya da yapıştır, deploy'a bas."
+           data-en="One file, one function. Write or paste code in the web editor and hit deploy.">
+          Tek dosya, tek fonksiyon. Web editöründe kodu yaz ya da yapıştır, deploy'a bas.</p>
         <div class="type-runtimes">
           <span class="type-runtime">Python</span>
           <span class="type-runtime">Node.js</span>
           <span class="type-runtime">Go</span>
           <span class="type-runtime">PHP</span>
-          <span class="type-runtime">PyTorch</span>
+          <span class="type-runtime">Wasm</span>
+          <span class="type-runtime" data-tr="+ plugin'ler" data-en="+ plugins">+ plugin'ler</span>
         </div>
         <ul class="type-features">
           <li class="type-feature" data-tr="Scale-to-Zero · Knative" data-en="Scale-to-Zero · Knative">Scale-to-Zero · Knative</li>
+          <li class="type-feature" data-tr="Tetikleyici: HTTP · zamanlama · kuyruk · workflow" data-en="Triggers: HTTP · schedule · queue · workflow">Tetikleyici: HTTP · zamanlama · kuyruk · workflow</li>
           <li class="type-feature" data-tr="Sandbox: runc · gVisor · Kata" data-en="Sandbox: runc · gVisor · Kata">Sandbox: runc · gVisor · Kata</li>
           <li class="type-feature" data-tr="Versiyon geçmişi + rollback" data-en="Version history + rollback">Versiyon geçmişi + rollback</li>
-          <li class="type-feature" data-tr="Canlı log + metrik" data-en="Live logs + metrics">Canlı log + metrik</li>
         </ul>
       </div>
       <div class="type-blob"></div>
@@ -237,21 +244,22 @@
         <div class="type-icon">F</div>
         <h3>FaaS</h3>
         <p class="type-desc"
-           data-tr="Web IDE'de çoklu dosya projeleri. Her kayıt platformun kendi Git deposunda versiyonlanır, dependency'ler cluster içinde build edilir."
-           data-en="Multi-file projects in the web IDE. Every save is versioned in RunR's own Git repository, dependencies are built in-cluster.">
-          Web IDE'de çoklu dosya projeleri. Her kayıt platformun kendi Git deposunda versiyonlanır, dependency'ler cluster içinde build edilir.</p>
+           data-tr="Çoklu dosya projeleri — web IDE'de ya da kendi git deponuzdan. Her kayıt ve her push, projenin git deposunda bir versiyondur; dependency'ler cluster içinde build edilir."
+           data-en="Multi-file projects — in the web IDE or from your own git repository. Every save and every push is a version in the project's git repository; dependencies are built in-cluster.">
+          Çoklu dosya projeleri — web IDE'de ya da kendi git deponuzdan. Her kayıt ve her push, projenin git deposunda bir versiyondur; dependency'ler cluster içinde build edilir.</p>
         <div class="type-runtimes">
           <span class="type-runtime">Python</span>
           <span class="type-runtime">Node.js</span>
           <span class="type-runtime">Go</span>
           <span class="type-runtime">PHP</span>
           <span class="type-runtime">PyTorch</span>
+          <span class="type-runtime">Wasm</span>
         </div>
         <ul class="type-features">
           <li class="type-feature" data-tr="Scale-to-Zero · Knative" data-en="Scale-to-Zero · Knative">Scale-to-Zero · Knative</li>
-          <li class="type-feature" data-tr="Sandbox: runc · gVisor · Kata" data-en="Sandbox: runc · gVisor · Kata">Sandbox: runc · gVisor · Kata</li>
+          <li class="type-feature" data-tr="git push · GitHub · GitLab · Forgejo / Gitea" data-en="git push · GitHub · GitLab · Forgejo / Gitea">git push · GitHub · GitLab · Forgejo / Gitea</li>
+          <li class="type-feature" data-tr="Pull request başına preview ortamı" data-en="A preview environment per pull request">Pull request başına preview ortamı</li>
           <li class="type-feature" data-tr="Dependency'ler Kaniko ile build" data-en="Dependencies built with Kaniko">Dependency'ler Kaniko ile build</li>
-          <li class="type-feature" data-tr="Versiyon geçmişi + rollback" data-en="Version history + rollback">Versiyon geçmişi + rollback</li>
         </ul>
       </div>
       <div class="type-blob"></div>
@@ -263,21 +271,22 @@
         <div class="type-icon">C</div>
         <h3>CaaS</h3>
         <p class="type-desc"
-           data-tr="Herhangi bir container image. OCI/Docker uyumlu, istenirse Kata ile mikro-VM izolasyonu."
-           data-en="Any container image. OCI/Docker compatible, with optional Kata micro-VM isolation.">
-          Herhangi bir container image. OCI/Docker uyumlu, istenirse Kata ile mikro-VM izolasyonu.</p>
+           data-tr="Herhangi bir container image: registry'den, yüklenen bir <code>docker save</code> arşivinden ya da GPU iş yükü olarak. İstenirse Kata ile mikro-VM izolasyonu."
+           data-en="Any container image: from a registry, from an uploaded <code>docker save</code> archive or as a GPU workload. Optional Kata micro-VM isolation.">
+          Herhangi bir container image: registry'den, yüklenen bir <code>docker save</code> arşivinden ya da GPU iş yükü olarak. İstenirse Kata ile mikro-VM izolasyonu.</p>
         <div class="type-runtimes">
           <span class="type-runtime">OCI</span>
           <span class="type-runtime">Docker</span>
           <span class="type-runtime">Any Lang</span>
+          <span class="type-runtime">GPU</span>
           <span class="type-runtime">Cron</span>
           <span class="type-runtime">Queue</span>
         </div>
         <ul class="type-features">
           <li class="type-feature" data-tr="Scale-to-Zero · Knative" data-en="Scale-to-Zero · Knative">Scale-to-Zero · Knative</li>
           <li class="type-feature" data-tr="Kata + Cloud Hypervisor (önerilen)" data-en="Kata + Cloud Hypervisor (recommended)">Kata + Cloud Hypervisor (önerilen)</li>
+          <li class="type-feature" data-tr="GPU: adet · ürün · minimum bellek" data-en="GPU: count · product · minimum memory">GPU: adet · ürün · minimum bellek</li>
           <li class="type-feature" data-tr="Zot pull-through cache" data-en="Zot pull-through cache">Zot pull-through cache</li>
-          <li class="type-feature" data-tr="Proje başına ortam değişkenleri" data-en="Environment variables per project">Proje başına ortam değişkenleri</li>
         </ul>
       </div>
       <div class="type-blob"></div>
@@ -285,145 +294,145 @@
   </div>
 </section>
 
-<!-- ═══ BUILT-IN MODULES ═══ -->
-<section class="section" id="modules">
+<!-- ═══ PLATFORM: what ships in one install ═══ -->
+<section class="section" id="platform">
   <div class="section-head reveal" data-num="02">
-    <span class="eyebrow" data-tr="DAHİLİ MODÜLLER" data-en="BUILT-IN MODULES">DAHİLİ MODÜLLER</span>
+    <span class="eyebrow" data-tr="TEK KURULUMDA" data-en="IN ONE INSTALL">TEK KURULUMDA</span>
     <h2 data-tr="Sadece deploy değil — komple platform."
         data-en="More than deploy — a complete platform.">Sadece deploy değil — komple platform.</h2>
-    <p data-tr="Multi-tenancy, kimlik doğrulama, destek, bildirim, izleme, faturalama — hepsi tek bir kurulumda dahil. Tenancy, SSO ve destek modülleri tek bir env ayarıyla açılıp kapatılır."
-       data-en="Multi-tenancy, auth, support, notifications, monitoring, billing — all included in a single install. Tenancy, SSO and support are Laravel modules you switch on or off with one env flag.">
-       Multi-tenancy, kimlik doğrulama, destek, bildirim, izleme, faturalama — hepsi tek bir kurulumda dahil. Tenancy, SSO ve destek modülleri tek bir env ayarıyla açılıp kapatılır.</p>
+    <p data-tr="Deploy, veri, erişim kontrolü, tedarik zinciri, gözlemlenebilirlik, multi-tenancy ve faturalama hesabı — hepsi aynı açık kaynak kurulumda. Paywall arkasında tek bir özellik yok."
+       data-en="Deploy, data, access control, supply chain, observability, multi-tenancy and billing calculation — all in the same open-source install. Not a single feature behind a paywall.">
+       Deploy, veri, erişim kontrolü, tedarik zinciri, gözlemlenebilirlik, multi-tenancy ve faturalama hesabı — hepsi aynı açık kaynak kurulumda. Paywall arkasında tek bir özellik yok.</p>
   </div>
 
   <div class="modules-grid reveal-stagger">
 
-    <div class="module-card reveal" style="--mc:#fbbf24">
+    <div class="module-card reveal" style="--mc:#38bdf8">
       <div class="mod-header">
-        <div class="mod-icon">T</div>
+        <div class="mod-icon">D</div>
         <div>
-          <h4>Tenancy</h4>
-          <span class="mod-sub">Modules/Tenancy</span>
+          <h4>Deploy</h4>
+          <span class="mod-sub">git · CLI · Terraform · GitHub Action</span>
         </div>
       </div>
-      <p data-tr="stancl/tenancy v3 + nwidart/laravel-modules v11. PostgreSQL schema-per-tenant, otomatik resource sync, tenant context middleware."
-         data-en="stancl/tenancy v3 + nwidart/laravel-modules v11. PostgreSQL schema-per-tenant, automatic resource sync, tenant context middleware.">
-         stancl/tenancy v3 + nwidart/laravel-modules v11. PostgreSQL schema-per-tenant.</p>
+      <p data-tr="Her projenin kendi git remote'u var: push'layın, deploy olsun. GitHub App, GitLab ve Forgejo / Gitea bağlantıları commit status'ları ve deploy geçmişiyle gelir."
+         data-en="Every project has its own git remote: push, and it deploys. GitHub App, GitLab and Forgejo / Gitea connections come with commit statuses and a deploy history.">
+         Her projenin kendi git remote'u var: push'layın, deploy olsun. GitHub App, GitLab ve Forgejo / Gitea bağlantıları commit status'ları ve deploy geçmişiyle gelir.</p>
       <ul class="mod-features">
-        <li data-tr="Schema-per-tenant izolasyon" data-en="Schema-per-tenant isolation">Schema-per-tenant izolasyon</li>
-        <li data-tr="Admin için tenant impersonation" data-en="Tenant impersonation for admins">Admin için tenant impersonation</li>
-        <li data-tr="Knative çakışma koruması (slug suffix)" data-en="Knative collision protection (slug suffix)">Knative çakışma koruması (slug suffix)</li>
-        <li data-tr="TENANCY_ENABLED toggle ile aç/kapat" data-en="TENANCY_ENABLED toggle">TENANCY_ENABLED toggle</li>
+        <li data-tr="Pull / merge request başına preview ortamı, kapanınca silinir" data-en="A preview environment per pull / merge request, removed on close">Pull / merge request başına preview ortamı, kapanınca silinir</li>
+        <li data-tr="<code>runr</code> CLI: init · dev · deploy ve her özellik için komutlar" data-en="<code>runr</code> CLI: init · dev · deploy and commands for every feature"><code>runr</code> CLI: init · dev · deploy ve her özellik için komutlar</li>
+        <li data-tr="Terraform provider ve GitHub Action" data-en="Terraform provider and GitHub Action">Terraform provider ve GitHub Action</li>
+        <li data-tr="İmaj yükleme: <code>docker save</code>, OCI tar, <code>.wasm</code> — internetsiz region'lar dahil" data-en="Image uploads: <code>docker save</code>, OCI tars, <code>.wasm</code> — also for regions without internet">İmaj yükleme: <code>docker save</code>, OCI tar, <code>.wasm</code> — internetsiz region'lar dahil</li>
       </ul>
     </div>
 
     <div class="module-card reveal" style="--mc:#4ade80">
       <div class="mod-header">
-        <div class="mod-icon">A</div>
+        <div class="mod-icon">B</div>
         <div>
-          <h4 data-tr="Auth Provider" data-en="Auth Provider">Auth Provider</h4>
-          <span class="mod-sub">Modules/AuthProvider</span>
+          <h4 data-tr="Veri + Workflow" data-en="Data + Workflows">Veri + Workflow</h4>
+          <span class="mod-sub">KV · S3 · Postgres · Workflows</span>
         </div>
       </div>
-      <p data-tr="Google, GitHub, Microsoft ve GitLab ile giriş; OpenID Connect ve SAML 2.0 ile SSO. Sanctum API token'ları, tenant rolleri ve davet sistemi."
-         data-en="Sign in with Google, GitHub, Microsoft or GitLab; SSO with OpenID Connect and SAML 2.0. Sanctum API tokens, tenant roles and invitations.">
-         Google, GitHub, Microsoft, GitLab girişi; OIDC + SAML 2.0 SSO.</p>
+      <p data-tr="Projelere bağlanan binding'ler: yönetilen KV (Redis), nesne depolama (Garage ya da harici S3) ve Postgres (CloudNativePG). Kimlik bilgileri ortam değişkeni olarak gelir; rotasyon, saklama ve geri yükleme dahil."
+         data-en="Bindings attached to projects: managed KV (Redis), object storage (Garage or an external S3) and Postgres (CloudNativePG). Credentials arrive as environment variables, with rotation, retention and restore.">
+         Projelere bağlanan binding'ler: yönetilen KV (Redis), nesne depolama (Garage ya da harici S3) ve Postgres (CloudNativePG). Kimlik bilgileri ortam değişkeni olarak gelir; rotasyon, saklama ve geri yükleme dahil.</p>
       <ul class="mod-features">
-        <li data-tr="SSO: OpenID Connect + SAML 2.0" data-en="SSO: OpenID Connect + SAML 2.0">SSO: OpenID Connect + SAML 2.0</li>
-        <li data-tr="Yetki kapsamlı, süreli API token'ları" data-en="Scoped API tokens with expiry">Yetki kapsamlı, süreli API token'ları</li>
-        <li data-tr="Tenant rolleri: owner · admin · member · viewer" data-en="Tenant roles: owner · admin · member · viewer">Tenant rolleri: owner · admin · member · viewer</li>
-        <li data-tr="Davet linki + onboarding akışı" data-en="Invite links + onboarding flow">Davet linki + onboarding akışı</li>
+        <li data-tr="Durable workflow'lar: çökme, redeploy ve günlerce uyku sonrası kaldığı yerden devam" data-en="Durable workflows resume after crashes, redeploys and sleeps of days">Durable workflow'lar: çökme, redeploy ve günlerce uyku sonrası kaldığı yerden devam</li>
+        <li data-tr="Adımlar, retry, timer, event, child workflow" data-en="Steps, retries, timers, events, child workflows">Adımlar, retry, timer, event, child workflow</li>
+        <li data-tr="Python (<code>runr-workflows</code>) ve TypeScript (<code>@runr/workflows</code>) SDK'ları" data-en="Python (<code>runr-workflows</code>) and TypeScript (<code>@runr/workflows</code>) SDKs">Python (<code>runr-workflows</code>) ve TypeScript (<code>@runr/workflows</code>) SDK'ları</li>
+        <li data-tr="Organizasyon başına kota ve kullanım ölçümü" data-en="Per-organization quotas and usage metering">Organizasyon başına kota ve kullanım ölçümü</li>
       </ul>
     </div>
 
-    <div class="module-card reveal" style="--mc:#06b6d4">
+    <div class="module-card reveal" style="--mc:#f472b6">
+      <div class="mod-header">
+        <div class="mod-icon">R</div>
+        <div>
+          <h4 data-tr="Erişim + Güvenlik" data-en="Access + Security">Erişim + Güvenlik</h4>
+          <span class="mod-sub">RBAC · SSO · Secrets · Audit</span>
+        </div>
+      </div>
+      <p data-tr="Tek izin kataloğu: hazır ve özel roller, gruplar, proje bazında erişim ve sahibinin izinlerinin bir alt kümesiyle sınırlı API token'ları. SSO grupları RunR grup ve rollerine eşlenir."
+         data-en="One permission catalog: built-in and custom roles, groups, per-project access and API tokens limited to a subset of their owner's permissions. SSO groups map to RunR groups and roles.">
+         Tek izin kataloğu: hazır ve özel roller, gruplar, proje bazında erişim ve sahibinin izinlerinin bir alt kümesiyle sınırlı API token'ları. SSO grupları RunR grup ve rollerine eşlenir.</p>
+      <ul class="mod-features">
+        <li data-tr="SSO: Google, GitHub, Microsoft, GitLab, OIDC, SAML 2.0" data-en="SSO: Google, GitHub, Microsoft, GitLab, OIDC, SAML 2.0">SSO: Google, GitHub, Microsoft, GitLab, OIDC, SAML 2.0</li>
+        <li data-tr="Saklanan her secret şifreli, anahtar rotasyonuyla" data-en="Every stored secret encrypted at rest, with key rotation">Saklanan her secret şifreli, anahtar rotasyonuyla</li>
+        <li data-tr="Secret ortam değişkenleri yalnız Kubernetes Secret ile iş yüküne ulaşır" data-en="Secret environment variables reach workloads only through Kubernetes Secrets">Secret ortam değişkenleri yalnız Kubernetes Secret ile iş yüküne ulaşır</li>
+        <li data-tr="Append-only audit log: CSV / JSON dışa aktarma, SIEM'e iletme" data-en="Append-only audit log: CSV / JSON export, SIEM forwarding">Append-only audit log: CSV / JSON dışa aktarma, SIEM'e iletme</li>
+      </ul>
+    </div>
+
+    <div class="module-card reveal" style="--mc:#fbbf24">
       <div class="mod-header">
         <div class="mod-icon">S</div>
         <div>
-          <h4 data-tr="Ticket / Destek" data-en="Ticket / Support">Ticket / Destek</h4>
-          <span class="mod-sub">Modules/Ticket</span>
+          <h4 data-tr="Tedarik Zinciri + Veri Yerleşimi" data-en="Supply Chain + Residency">Tedarik Zinciri + Veri Yerleşimi</h4>
+          <span class="mod-sub">SBOM · Scan · Sign · Admission</span>
         </div>
       </div>
-      <p data-tr="SupportTicket + SupportTicketReply, real-time broadcasting, attachment upload. Tenancy ile uyumlu, admin panel dahil."
-         data-en="SupportTicket + SupportTicketReply, real-time broadcasting, attachment upload. Tenancy-aware with admin panel.">
-         SupportTicket + Reply, real-time, attachment, admin panel. Tenancy-aware.</p>
+      <p data-tr="RunR'ın build ettiği ya da aldığı her imaja SBOM (SPDX, CycloneDX), zafiyet taraması (çevrimdışı veritabanıyla da) ve region anahtarıyla cosign imzası."
+         data-en="Every image RunR builds or receives gets an SBOM (SPDX, CycloneDX), a vulnerability scan (also with an offline database) and a cosign signature with the region's key.">
+         RunR'ın build ettiği ya da aldığı her imaja SBOM (SPDX, CycloneDX), zafiyet taraması (çevrimdışı veritabanıyla da) ve region anahtarıyla cosign imzası.</p>
       <ul class="mod-features">
-        <li data-tr="Real-time mesajlaşma (Reverb WS)" data-en="Real-time chat (Reverb WS)">Real-time mesajlaşma (Reverb WS)</li>
-        <li data-tr="Dosya ekleri + önizleme" data-en="File attachments + preview">Dosya ekleri + önizleme</li>
-        <li data-tr="Admin panel + öncelik seviyeleri" data-en="Admin panel + priority levels">Admin panel + öncelik seviyeleri</li>
-        <li data-tr="Tenant izolasyonlu" data-en="Tenant-isolated">Tenant izolasyonlu</li>
-      </ul>
-    </div>
-
-    <div class="module-card reveal" style="--mc:#9333ea">
-      <div class="mod-header">
-        <div class="mod-icon">N</div>
-        <div>
-          <h4 data-tr="Bildirimler" data-en="Notifications">Bildirimler</h4>
-          <span class="mod-sub">Reverb · Mail · In-App</span>
-        </div>
-      </div>
-      <p data-tr="Reverb WebSocket üzerinde gerçek zamanlı toast'lar. Mail, in-app ve threshold-based alarm. Redis cooldown ile spam koruması."
-         data-en="Real-time toasts over Reverb WebSocket. Mail, in-app, and threshold-based alarms. Redis cooldown anti-spam.">
-         Reverb üzerinde real-time toast, mail, in-app, threshold alarm.</p>
-      <ul class="mod-features">
-        <li data-tr="WebSocket broadcasting (Reverb)" data-en="WebSocket broadcasting (Reverb)">WebSocket broadcasting (Reverb)</li>
-        <li data-tr="resources:check-thresholds scheduler" data-en="resources:check-thresholds scheduler">resources:check-thresholds scheduler</li>
-        <li data-tr="Mail + in-app kanalları" data-en="Mail + in-app channels">Mail + in-app kanalları</li>
-        <li data-tr="1 saat Redis cooldown" data-en="1-hour Redis cooldown">1 saat Redis cooldown</li>
+        <li data-tr="Deploy öncesi policy kapısı" data-en="A policy gate before deploy">Deploy öncesi policy kapısı</li>
+        <li data-tr="Region'da imzalı imaj admission'ı, deploy edilmiş imajları yeniden tarama" data-en="Signed-image admission in the region, re-scans of deployed images">Region'da imzalı imaj admission'ı, deploy edilmiş imajları yeniden tarama</li>
+        <li data-tr="WebAssembly uygulamaları da imzalanır ve doğrulanır" data-en="WebAssembly apps are signed and verified too">WebAssembly uygulamaları da imzalanır ve doğrulanır</li>
+        <li data-tr="Veri yerleşimi: organizasyonlar izinli region ve veri konumlarıyla sınırlı" data-en="Data residency: organizations limited to allowed regions and data locations">Veri yerleşimi: organizasyonlar izinli region ve veri konumlarıyla sınırlı</li>
       </ul>
     </div>
 
     <div class="module-card reveal" style="--mc:#e6522c">
       <div class="mod-header">
-        <div class="mod-icon">M</div>
+        <div class="mod-icon">O</div>
         <div>
-          <h4 data-tr="İzleme + Maliyet" data-en="Monitoring + Cost">İzleme + Maliyet</h4>
-          <span class="mod-sub">Prometheus · Loki · Go Agent</span>
+          <h4 data-tr="Gözlemlenebilirlik" data-en="Observability">Gözlemlenebilirlik</h4>
+          <span class="mod-sub">OpenTelemetry · Tempo · Prometheus · Loki</span>
         </div>
       </div>
-      <p data-tr="Region başına tek Go agent: proje bazında CPU/bellek, istek oturumları ve cluster olayları. Prometheus + Loki ile metrik ve log; MetricsPersistenceService ile uzun dönem saklama."
-         data-en="One Go agent per region: per-project CPU/memory, request sessions and cluster events. Prometheus + Loki for metrics and logs; MetricsPersistenceService for long-term retention.">
-         Region başına Go agent, Prometheus, Loki, MetricsPersistenceService.</p>
+      <p data-tr="Region başına OpenTelemetry Collector ve Grafana Tempo (ya da mevcut backend'iniz), fonksiyonlarda otomatik enstrümantasyon, arama ve waterfall'lu Traces sekmesi; proje bazında metrik ve log."
+         data-en="An OpenTelemetry Collector and Grafana Tempo per region (or your existing backend), auto-instrumented functions and a Traces tab with search and waterfall; metrics and logs per project.">
+         Region başına OpenTelemetry Collector ve Grafana Tempo (ya da mevcut backend'iniz), fonksiyonlarda otomatik enstrümantasyon, arama ve waterfall'lu Traces sekmesi; proje bazında metrik ve log.</p>
       <ul class="mod-features">
-        <li data-tr="Region agent'ı (proje başına CPU/bellek)" data-en="Region agent (per-project CPU/memory)">Region agent'ı (proje başına CPU/bellek)</li>
-        <li data-tr="HistoricalMetrics + SessionTracking" data-en="HistoricalMetrics + SessionTracking">HistoricalMetrics + SessionTracking</li>
-        <li data-tr="Cluster patch komutu" data-en="Cluster patch command">Cluster patch komutu</li>
-        <li data-tr="Loki log aggregation" data-en="Loki log aggregation">Loki log aggregation</li>
+        <li data-tr="Request replay: yakalanan hatalı isteği yeniden oynat, yanıtı karşılaştır" data-en="Request replay: re-run a captured failed request, diff the response">Request replay: yakalanan hatalı isteği yeniden oynat, yanıtı karşılaştır</li>
+        <li data-tr="Region agent'ının çalıştırdığı uptime kontrolleri" data-en="Uptime checks run by the region agent">Region agent'ının çalıştırdığı uptime kontrolleri</li>
+        <li data-tr="Organizasyon başına herkese açık status sayfası" data-en="A public status page per organization">Organizasyon başına herkese açık status sayfası</li>
+        <li data-tr="Alarm kanalları ve kuralları" data-en="Alert channels and rules">Alarm kanalları ve kuralları</li>
       </ul>
     </div>
 
     <div class="module-card reveal" style="--mc:#a78bfa">
       <div class="mod-header">
-        <div class="mod-icon">B</div>
+        <div class="mod-icon">T</div>
         <div>
-          <h4 data-tr="Faturalama + Kota" data-en="Billing + Quota">Faturalama + Kota</h4>
-          <span class="mod-sub">CostCalculation · CapacityDeal</span>
+          <h4 data-tr="Multi-Tenant + White-Label + Faturalama" data-en="Multi-Tenant + White-Label + Billing">Multi-Tenant + White-Label + Faturalama</h4>
+          <span class="mod-sub">Tenancy · Branding · Billing API</span>
         </div>
       </div>
-      <p data-tr="Tenant başına kullanım toplama (UsageAggregationJob), kapasite anlaşmaları, real-time maliyet hesaplama, CostConfigEditor UI."
-         data-en="Per-tenant usage aggregation (UsageAggregationJob), capacity deals, real-time cost calc, CostConfigEditor UI.">
-         UsageAggregationJob, CapacityDeal, real-time maliyet, CostConfigEditor.</p>
+      <p data-tr="Tenant başına PostgreSQL şeması, region başına kota. Kurulumun ve her tenant'ın markası rebuild olmadan; e-posta doğrulamalı self-servis kayıt, deneme günleri ve limitleri olan opsiyonel planlar."
+         data-en="A PostgreSQL schema per tenant, quotas per region. The brand of the installation and of each tenant without a rebuild; self-service signup with e-mail verification, optional plans with limits and trial days.">
+         Tenant başına PostgreSQL şeması, region başına kota. Kurulumun ve her tenant'ın markası rebuild olmadan; e-posta doğrulamalı self-servis kayıt, deneme günleri ve limitleri olan opsiyonel planlar.</p>
       <ul class="mod-features">
-        <li data-tr="CPU / bellek fiyatı + tetikleyici çarpanları" data-en="CPU / memory pricing + per-trigger multipliers">CPU / bellek fiyatı + tetikleyici çarpanları</li>
-        <li data-tr="Kapasite anlaşmaları + ödeme takibi" data-en="Capacity deals + payment tracking">Kapasite anlaşmaları + ödeme takibi</li>
-        <li data-tr="TenantBilling dashboard" data-en="TenantBilling dashboard">TenantBilling dashboard</li>
-        <li data-tr="Threshold-based bildirim entegrasyonu" data-en="Threshold-based notifications">Threshold-based bildirim entegrasyonu</li>
+        <li data-tr="Faturalama hesaplar: kullanım, plan ücretleri, tenant başına aylık tahakkuk" data-en="Billing calculates usage, plan fees and monthly charges per tenant">Faturalama hesaplar: kullanım, plan ücretleri, tenant başına aylık tahakkuk</li>
+        <li data-tr="Faturayı kendi sisteminiz keser: billing API + imzalı webhook'lar" data-en="Your own billing system invoices: billing API + signed webhooks">Faturayı kendi sisteminiz keser: billing API + imzalı webhook'lar</li>
+        <li data-tr="Ek dosyalı, atamalı, gerçek zamanlı destek ticket'ları" data-en="Support tickets with attachments, assignment and real-time updates">Ek dosyalı, atamalı, gerçek zamanlı destek ticket'ları</li>
+        <li data-tr="Tek kiracılı ya da multi-tenant sürüm" data-en="Single-tenant or multi-tenant edition">Tek kiracılı ya da multi-tenant sürüm</li>
       </ul>
     </div>
 
   </div>
 </section>
 
-<!-- ═══ SOURCE-TO-POD BUILD (no one else has it) ═══ -->
+<!-- ═══ SOURCE-TO-POD BUILD + RUNTIMES ═══ -->
 <section class="section" id="build">
   <div class="section-head reveal" data-num="03">
-    <span class="eyebrow" data-tr="GERÇEK ZAMANLI BUILD" data-en="REAL-TIME BUILD">GERÇEK ZAMANLI BUILD</span>
+    <span class="eyebrow" data-tr="KAYNAKTAN POD'A" data-en="SOURCE TO POD">KAYNAKTAN POD'A</span>
     <h2 data-tr="Kaynaktan doğrudan pod'a. Container hazırlamak yok."
         data-en="Source code to pod. No container required.">Kaynaktan doğrudan pod'a. Container hazırlamak yok.</h2>
-    <p data-tr="Dockerfile değil, handler yazın. RunR kaynağınızı — tek dosya ya da koca bir proje — alır, dependency'leri kurar, Go'yu derler, imajı cluster'ınızın içinde Kaniko ile üretir ve Knative'e teslim eder."
-       data-en="Write the handler, not the Dockerfile. RunR takes your source — a single file or a whole project — installs its dependencies, compiles Go, builds the image inside your cluster with Kaniko and hands it to Knative.">
-       Dockerfile değil, handler yazın. RunR kaynağınızı — tek dosya ya da koca bir proje — alır, dependency'leri kurar, Go'yu derler, imajı cluster'ınızın içinde Kaniko ile üretir ve Knative'e teslim eder.</p>
+    <p data-tr="Dockerfile değil, handler yazın. RunR kaynağınızı — tek dosya ya da koca bir proje; web editöründen, <code>git push</code> ile ya da CLI'dan — alır, dependency'leri kurar, Go'yu derler, imajı cluster'ınızın içinde Kaniko ile üretir ve Knative'e teslim eder."
+       data-en="Write the handler, not the Dockerfile. RunR takes your source — a single file or a whole project, from the web editor, <code>git push</code> or the CLI — installs its dependencies, compiles Go, builds the image inside your cluster with Kaniko and hands it to Knative.">
+       Dockerfile değil, handler yazın. RunR kaynağınızı — tek dosya ya da koca bir proje; web editöründen, <code>git push</code> ile ya da CLI'dan — alır, dependency'leri kurar, Go'yu derler, imajı cluster'ınızın içinde Kaniko ile üretir ve Knative'e teslim eder.</p>
   </div>
 
   <div class="s2p-grid reveal">
@@ -453,8 +462,8 @@
       <p class="s2p-tag" data-tr="Platform dependency'leri kurar, Go'yu derler, imajı cluster içinde Kaniko ile üretir ve Knative'e teslim eder."
                         data-en="RunR installs dependencies, compiles Go, builds the image in-cluster with Kaniko and ships it to Knative.">Platform dependency'leri kurar, Go'yu derler, imajı cluster içinde Kaniko ile üretir ve Knative'e teslim eder.</p>
       <div class="s2p-steps">
-        <div class="s2p-step"><span class="n">1</span><span data-tr="Web editörde kodu yaz — her kayıt bir versiyon" data-en="Write code in the web editor — every save is a version">Web editörde kodu yaz — her kayıt bir versiyon</span></div>
-        <div class="s2p-step"><span class="n">2</span><span data-tr="Deploy butonuna bas" data-en="Hit deploy">Deploy butonuna bas</span></div>
+        <div class="s2p-step"><span class="n">1</span><span data-tr="Web editörde kodu yaz ya da <code>git push</code> — her değişiklik bir versiyon" data-en="Write code in the web editor or <code>git push</code> — every change is a version">Web editörde kodu yaz ya da <code>git push</code> — her değişiklik bir versiyon</span></div>
+        <div class="s2p-step"><span class="n">2</span><span data-tr="Deploy'a bas, <code>runr deploy</code> çalıştır ya da push deploy etsin" data-en="Hit deploy, run <code>runr deploy</code> or let the push deploy">Deploy'a bas, <code>runr deploy</code> çalıştır ya da push deploy etsin</span></div>
       </div>
       <p style="font-size:12px;color:var(--text-muted);margin:14px 0">
         <strong style="color:var(--accent)" data-tr="Arka planda otomatik:" data-en="Behind the scenes:">Arka planda otomatik:</strong>
@@ -462,17 +471,17 @@
               data-en=" dependency install or Go compile → Kaniko build as a Kubernetes Job (linux/amd64) → push to the region's registry → Knative revision. Code without dependencies skips the build and goes live straight from a ConfigMap.">
            dependency kurulumu ya da Go derlemesi → Kubernetes Job olarak Kaniko build (linux/amd64) → region registry'sine push → Knative revision. Dependency'si olmayan kod build'e hiç girmez, doğrudan ConfigMap'ten yayına çıkar.</span>
       </p>
-      <span class="s2p-time" data-tr="⚡ ~3 sn (bağımlılıksız) · ~23 sn (build'li) / değişiklik" data-en="⚡ ~3 s (no dependencies) · ~23 s (with a build) / change">⚡ ~3 sn (bağımlılıksız) · ~23 sn (build'li) / değişiklik</span>
+      <!-- Measured value (data-measured = RunR release); conditions in #perf-build-note -->
+      <span class="s2p-time" id="perf-build-time" data-measured="v0.4.2" data-tr="⚡ ~3 sn (bağımlılıksız) · ~23 sn (build'li) / değişiklik" data-en="⚡ ~3 s (no dependencies) · ~23 s (with a build) / change">⚡ ~3 sn (bağımlılıksız) · ~23 sn (build'li) / değişiklik</span>
     </div>
   </div>
-  <p class="faint" style="font-size:11px;margin:-16px 0 24px;text-align:center"
+  <p class="faint perf-note" id="perf-build-note" data-measured="v0.4.2" style="font-size:11px;margin:-16px 0 24px;text-align:center"
      data-tr="RunR ölçümü: v0.4.2, tek düğümlü k3s (8 vCPU, 16 GB); kaydetmeden yeni kodun yanıt vermesine kadar medyan (n=3). Bağımlılıksız 2,7 sn (2,7–3,7 sn); build'li 23,0 sn (22,0–25,0 sn; Kaniko, Node + 1 npm bağımlılığı, temel imajlar region registry önbelleğinden). Projenin ilk build'ine bir kerelik temel imaj çekme eklenir."
      data-en="RunR measurement: v0.4.2, single-node k3s (8 vCPU, 16 GB); median from save until the new code answers (n=3). No dependencies 2.7 s (2.7–3.7 s); with a build 23.0 s (22.0–25.0 s; Kaniko, Node + 1 npm dependency, base images from the region registry cache). A project's first-ever build adds a one-time base-image fetch.">
      RunR ölçümü: v0.4.2, tek düğümlü k3s (8 vCPU, 16 GB); kaydetmeden yeni kodun yanıt vermesine kadar medyan (n=3). Bağımlılıksız 2,7 sn (2,7–3,7 sn); build'li 23,0 sn (22,0–25,0 sn; Kaniko, Node + 1 npm bağımlılığı, temel imajlar region registry önbelleğinden). Projenin ilk build'ine bir kerelik temel imaj çekme eklenir.</p>
 
   <div class="s2p-langs reveal">
-    <h4 data-tr="Şu an doğrudan yazabileceğiniz diller (kaynak kod kabul):"
-        data-en="Languages you can write directly (source code accepted):">Şu an doğrudan yazabileceğiniz diller (kaynak kod kabul):</h4>
+    <h4 data-tr="Dahili runtime'lar" data-en="Built-in runtimes">Dahili runtime'lar</h4>
     <div class="s2p-langs-list">
       <span class="s2p-lang live">Python</span>
       <span class="s2p-lang live">Node.js</span>
@@ -481,16 +490,134 @@
       <span class="s2p-lang live">PyTorch</span>
       <span class="s2p-lang live">TensorFlow</span>
     </div>
-    <p style="font-size:12px;color:var(--text-muted);margin-top:14px"
+    <p class="s2p-langs-note"
        data-tr="Runtime imajları upstream'i takip eder: ömrünü doldurmamış (EOL olmayan) her sürüm hazır gelir, her proje kendi sürümünü seçer."
        data-en="Runtime images track upstream: every version that hasn't reached end-of-life is available, and each project picks its own.">
        Runtime imajları upstream'i takip eder: ömrünü doldurmamış (EOL olmayan) her sürüm hazır gelir, her proje kendi sürümünü seçer.</p>
+
+    <h4 data-tr="Her dil: runtime plugin'leri" data-en="Any language: runtime plugins">Her dil: runtime plugin'leri</h4>
+    <div class="s2p-langs-list">
+      <span class="s2p-lang plugin">C</span>
+      <span class="s2p-lang plugin">Rust</span>
+      <span class="s2p-lang plugin">Bash</span>
+      <span class="s2p-lang plugin">Q</span>
+      <span class="s2p-lang plugin" data-tr="sizin diliniz" data-en="your language">sizin diliniz</span>
+    </div>
+    <p class="s2p-langs-note"
+       data-tr="Bir runtime, bir <code>runtime.yaml</code> manifesti ve bir imajdır. Universal wrapper (<code>runr-wrapper</code>) HTTP isteklerini, kuyruk mesajlarını ve zamanlama tetiklerini stdin / stdout üzerinden çağrılara çevirir; <code>http</code>, <code>exec</code> ve <code>persistent</code> modları. Platform yöneticileri ve organizasyonlar kendi runtime'larını kaydeder; <code>runr dev</code> aynı imajlarla yerelde çalıştırır."
+       data-en="A runtime is a <code>runtime.yaml</code> manifest plus an image. The universal wrapper (<code>runr-wrapper</code>) turns HTTP requests, queue messages and schedule ticks into invocations over stdin / stdout, in <code>http</code>, <code>exec</code> or <code>persistent</code> mode. Platform administrators and organizations register their own runtimes; <code>runr dev</code> runs them locally on the same images.">
+       Bir runtime, bir <code>runtime.yaml</code> manifesti ve bir imajdır. Universal wrapper (<code>runr-wrapper</code>) HTTP isteklerini, kuyruk mesajlarını ve zamanlama tetiklerini stdin / stdout üzerinden çağrılara çevirir; <code>http</code>, <code>exec</code> ve <code>persistent</code> modları. Platform yöneticileri ve organizasyonlar kendi runtime'larını kaydeder; <code>runr dev</code> aynı imajlarla yerelde çalıştırır.</p>
+
+    <h4 data-tr="WebAssembly (Spin)" data-en="WebAssembly (Spin)">WebAssembly (Spin)</h4>
+    <div class="s2p-langs-list">
+      <span class="s2p-lang wasm">Rust</span>
+      <span class="s2p-lang wasm">Go (TinyGo)</span>
+      <span class="s2p-lang wasm">JavaScript / TypeScript</span>
+      <span class="s2p-lang wasm">Python</span>
+      <span class="s2p-lang wasm">wasm-exec: C / C++ · Zig · .wasm</span>
+    </div>
+    <p class="s2p-langs-note"
+       data-tr="Wasm fonksiyonları runwasi'nin Spin shim'i üzerinde Spin bileşeni olarak çalışır; region'ın Isolation sekmesinden tek tıkla kurulur. <code>wasm-exec</code>, her WASI komutunu Spin'in WAGI executor'ında çalıştırır."
+       data-en="Wasm functions run as Spin components on runwasi's Spin shim, installed per region in one click from its Isolation tab. <code>wasm-exec</code> runs any WASI command on Spin's WAGI executor.">
+       Wasm fonksiyonları runwasi'nin Spin shim'i üzerinde Spin bileşeni olarak çalışır; region'ın Isolation sekmesinden tek tıkla kurulur. <code>wasm-exec</code>, her WASI komutunu Spin'in WAGI executor'ında çalıştırır.</p>
+  </div>
+</section>
+
+<!-- ═══ AI: GPUs, models, MCP, Sandbox API ═══ -->
+<section class="section" id="ai">
+  <div class="section-head reveal" data-num="04">
+    <span class="eyebrow" data-tr="AI · KENDİ CLUSTER'INIZDA" data-en="AI · ON YOUR OWN CLUSTER">AI · KENDİ CLUSTER'INIZDA</span>
+    <h2 data-tr="GPU'lar, modeller ve ajanlar için altyapı."
+        data-en="Infrastructure for GPUs, models and agents.">GPU'lar, modeller ve ajanlar için altyapı.</h2>
+    <p data-tr="RunR GPU node'larını algılar, Hugging Face modellerini tek tıkla servis eder, AI ajanlarına MCP üzerinden izinleriyle sınırlı erişim verir ve yazdıkları kodu izole sandbox'larda çalıştırır."
+       data-en="RunR detects GPU nodes, serves Hugging Face models in one click, gives AI agents permission-scoped access over MCP and runs the code they write in isolated sandboxes.">
+       RunR GPU node'larını algılar, Hugging Face modellerini tek tıkla servis eder, AI ajanlarına MCP üzerinden izinleriyle sınırlı erişim verir ve yazdıkları kodu izole sandbox'larda çalıştırır.</p>
+  </div>
+
+  <div class="grid g2 reveal-stagger">
+
+    <div class="module-card reveal" style="--mc:#4ade80">
+      <div class="mod-header">
+        <div class="mod-icon">G</div>
+        <div>
+          <h4 data-tr="GPU Worker'lar" data-en="GPU Workers">GPU Worker'lar</h4>
+          <span class="mod-sub">NVIDIA device plugin · GPU Operator</span>
+        </div>
+      </div>
+      <p data-tr="Region'daki NVIDIA GPU node'larını algılar, device plugin'i ya da GPU Operator'ı kurar ve GPU fonksiyonlarını ve container'larını oraya yerleştirir — scale-to-zero, GPU süresiyle ölçülür."
+         data-en="Detects the NVIDIA GPU nodes of a region, installs the device plugin or the GPU Operator and schedules GPU functions and containers there — scaling to zero, metered by GPU time.">
+         Region'daki NVIDIA GPU node'larını algılar, device plugin'i ya da GPU Operator'ı kurar ve GPU fonksiyonlarını ve container'larını oraya yerleştirir — scale-to-zero, GPU süresiyle ölçülür.</p>
+      <ul class="mod-features">
+        <li data-tr="<code>config.gpu</code>: adet · ürün · minimum GPU belleği" data-en="<code>config.gpu</code>: count · product · minimum GPU memory"><code>config.gpu</code>: adet · ürün · minimum GPU belleği</li>
+        <li data-tr="GPU Feature Discovery, opsiyonel time-slicing" data-en="GPU Feature Discovery, optional time-slicing">GPU Feature Discovery, opsiyonel time-slicing</li>
+        <li data-tr="runc ya da gVisor (nvproxy) altında" data-en="Under runc or gVisor (nvproxy)">runc ya da gVisor (nvproxy) altında</li>
+        <li data-tr="Tenant başına GPU kotası" data-en="GPU quota per tenant">Tenant başına GPU kotası</li>
+      </ul>
+    </div>
+
+    <div class="module-card reveal" style="--mc:#fbbf24">
+      <div class="mod-header">
+        <div class="mod-icon">H</div>
+        <div>
+          <h4 data-tr="Hugging Face Modelleri" data-en="Hugging Face Models">Hugging Face Modelleri</h4>
+          <span class="mod-sub">vLLM · TGI · TEI · hf-serve</span>
+        </div>
+      </div>
+      <p data-tr="Hub tarayıcısından tek tıkla model servisi — vLLM, TGI, TEI, RunR'ın <code>hf-serve</code>'ü ya da kendi imajınız; çevrimiçi ya da tamamen çevrimdışı."
+         data-en="One-click model services from a Hub browser — vLLM, TGI, TEI, RunR's <code>hf-serve</code> or your own image — online or fully offline.">
+         Hub tarayıcısından tek tıkla model servisi — vLLM, TGI, TEI, RunR'ın <code>hf-serve</code>'ü ya da kendi imajınız; çevrimiçi ya da tamamen çevrimdışı.</p>
+      <ul class="mod-features">
+        <li data-tr="Region'ın model volume'unda çevrimdışı kopyalar" data-en="Offline copies in the region's model volume">Region'ın model volume'unda çevrimdışı kopyalar</li>
+        <li data-tr="Air-gapped region'lar için parçalı yükleme ve içe aktarma" data-en="Chunked uploads and imports for air-gapped regions">Air-gapped region'lar için parçalı yükleme ve içe aktarma</li>
+        <li data-tr="Konsolda playground" data-en="A playground in the console">Konsolda playground</li>
+        <li data-tr="Model binding: her dilde <code>RUNR_MODEL_&amp;lt;ALIAS&amp;gt;_*</code> değişkenleri" data-en="Model bindings: <code>RUNR_MODEL_&amp;lt;ALIAS&amp;gt;_*</code> variables in any language">Model binding: her dilde <code>RUNR_MODEL_&lt;ALIAS&gt;_*</code> değişkenleri</li>
+      </ul>
+    </div>
+
+    <div class="module-card reveal" style="--mc:#a78bfa">
+      <div class="mod-header">
+        <div class="mod-icon">M</div>
+        <div>
+          <h4 data-tr="MCP Sunucusu + MCP Barındırma" data-en="MCP Server + MCP Hosting">MCP Sunucusu + MCP Barındırma</h4>
+          <span class="mod-sub">Model Context Protocol · OAuth 2.1</span>
+        </div>
+      </div>
+      <p data-tr="<code>/mcp</code> adresinde dahili MCP sunucusu: Claude Code gibi ajanlar RunR'ı token'larının izinleri dahilinde yönetir, her çağrı audit log'a düşer. MCP istemcileri API token'ı ya da tek tıkla OAuth 2.1 ile bağlanır."
+         data-en="A built-in MCP server at <code>/mcp</code>: agents such as Claude Code operate RunR within their token's permissions, and every call is audited. MCP clients connect with an API token or one-click OAuth 2.1.">
+         <code>/mcp</code> adresinde dahili MCP sunucusu: Claude Code gibi ajanlar RunR'ı token'larının izinleri dahilinde yönetir, her çağrı audit log'a düşer. MCP istemcileri API token'ı ya da tek tıkla OAuth 2.1 ile bağlanır.</p>
+      <ul class="mod-features">
+        <li data-tr="Kendi MCP sunucularınız proje olarak, gateway arkasında" data-en="Your own MCP servers run as projects behind a gateway">Kendi MCP sunucularınız proje olarak, gateway arkasında</li>
+        <li data-tr="Erişim: herkese açık, RunR token'ı ya da OAuth" data-en="Access: public, RunR token or OAuth">Erişim: herkese açık, RunR token'ı ya da OAuth</li>
+        <li data-tr="İmzalı çağıran kimliği, çağrı kaydı ve inspector" data-en="A signed caller identity, a call log and an inspector">İmzalı çağıran kimliği, çağrı kaydı ve inspector</li>
+        <li data-tr="Python ve TypeScript başlangıç runtime'ları" data-en="Python and TypeScript starter runtimes">Python ve TypeScript başlangıç runtime'ları</li>
+      </ul>
+    </div>
+
+    <div class="module-card reveal" style="--mc:#f472b6">
+      <div class="mod-header">
+        <div class="mod-icon">S</div>
+        <div>
+          <h4>Sandbox API</h4>
+          <span class="mod-sub">gVisor · Kata · warm pools · SDKs</span>
+        </div>
+      </div>
+      <p data-tr="AI ajanlarının yazdığı kod için izole, kısa ömürlü sandbox'lar: region'ın en güçlü izolasyonunda (KVM'li node'larda Kata mikro-VM'i, yoksa gVisor), varsayılan olarak ağ erişimi olmadan, kendi CPU, bellek ve disk limitleriyle."
+         data-en="Isolated, short-lived sandboxes for the code AI agents write: under the region's strongest isolation (a Kata micro-VM on nodes with KVM, otherwise gVisor), without network access by default, with their own CPU, memory and disk limits.">
+         AI ajanlarının yazdığı kod için izole, kısa ömürlü sandbox'lar: region'ın en güçlü izolasyonunda (KVM'li node'larda Kata mikro-VM'i, yoksa gVisor), varsayılan olarak ağ erişimi olmadan, kendi CPU, bellek ve disk limitleriyle.</p>
+      <ul class="mod-features">
+        <li data-tr="Exec: JSON, Server-Sent Events ya da WebSocket; dosyalar, arka plan süreçleri" data-en="Exec as JSON, Server-Sent Events or WebSocket; files, background processes">Exec: JSON, Server-Sent Events ya da WebSocket; dosyalar, arka plan süreçleri</li>
+        <li data-tr="Code interpreter ve konsol terminali" data-en="A code interpreter and a console terminal">Code interpreter ve konsol terminali</li>
+        <li data-tr="Warm pool, pause / resume, TTL, kota ve kullanım ölçümü" data-en="Warm pools, pause / resume, TTL, quotas and usage metering">Warm pool, pause / resume, TTL, kota ve kullanım ölçümü</li>
+        <li data-tr="Python (<code>runr-sandbox</code>) ve TypeScript (<code>@runr/sandbox</code>) SDK'ları" data-en="Python (<code>runr-sandbox</code>) and TypeScript (<code>@runr/sandbox</code>) SDKs">Python (<code>runr-sandbox</code>) ve TypeScript (<code>@runr/sandbox</code>) SDK'ları</li>
+      </ul>
+    </div>
+
   </div>
 </section>
 
 <!-- ═══ WHY RUNR ═══ -->
 <section class="section" id="why">
-  <div class="section-head reveal" data-num="04">
+  <div class="section-head reveal" data-num="05">
     <span class="eyebrow" data-tr="NEDEN RUNR" data-en="WHY RUNR">NEDEN RUNR</span>
     <h2 data-tr="Serverless deneyimi — kendi sunucunuzda." data-en="Serverless experience — on your own metal.">Serverless deneyimi — kendi sunucunuzda.</h2>
     <p data-tr="Cloud sağlayıcıların verdiği rahatlık, açık kaynağın özgürlüğü."
@@ -502,16 +629,16 @@
     <div class="card card-featured reveal" style="--accent-color:#f97316;grid-column:span 1">
       <div class="icon">⚡</div>
       <h3 data-tr="%100 Açık Kaynak" data-en="100% Open Source">%100 Açık Kaynak</h3>
-      <p data-tr="Tüm kod açık. Self-host edin, fork'layın, modify edin. Hiçbir özellik paywall arkasında değil."
-         data-en="All code public. Self-host, fork, modify. Nothing is locked behind a paywall.">
-         Tüm kod açık. Self-host edin, fork'layın, modify edin. Hiçbir özellik paywall arkasında değil.</p>
-      <span class="hl" data-tr="MIT lisansı" data-en="MIT license">MIT lisansı</span>
+      <p data-tr="Tüm kod GitHub'da, MIT lisansıyla. Self-host edin, fork'layın, değiştirin. Hiçbir özellik paywall arkasında değil."
+         data-en="All code on GitHub under the MIT license. Self-host, fork, modify. Nothing is locked behind a paywall.">
+         Tüm kod GitHub'da, MIT lisansıyla. Self-host edin, fork'layın, değiştirin. Hiçbir özellik paywall arkasında değil.</p>
+      <span class="hl" data-tr="MIT lisansı · BRF Teknoloji" data-en="MIT license · BRF Teknoloji">MIT lisansı · BRF Teknoloji</span>
     </div>
 
     <div class="card reveal" style="--accent-color:#4ade80">
       <div class="icon">📉</div>
       <h3 data-tr="Scale-to-Zero" data-en="Scale-to-Zero">Scale-to-Zero</h3>
-      <p data-tr="Knative ile boşta kalan pod'lar tamamen kapanır: son istekten ~60 sn sonra replika sıfıra iner, pod ~93 sn'de tamamen gider (Knative varsayılanı: 60 sn kararlılık penceresi + 30 sn bekleme). Boştaki fonksiyon kaynak tutmaz; kapasite diğer iş yüklerine kalır."
+      <p id="perf-scale-to-zero" data-measured="v0.4.2" data-tr="Knative ile boşta kalan pod'lar tamamen kapanır: son istekten ~60 sn sonra replika sıfıra iner, pod ~93 sn'de tamamen gider (Knative varsayılanı: 60 sn kararlılık penceresi + 30 sn bekleme). Boştaki fonksiyon kaynak tutmaz; kapasite diğer iş yüklerine kalır."
          data-en="Knative-powered: idle pods scale to zero. Replicas reach zero ~60 s after the last request and the pod is gone by ~93 s (Knative defaults: 60 s stable window + 30 s grace period). Idle functions hold no resources; the capacity is freed for other workloads.">
          Knative ile boşta kalan pod'lar tamamen kapanır: son istekten ~60 sn sonra replika sıfıra iner, pod ~93 sn'de tamamen gider (Knative varsayılanı: 60 sn kararlılık penceresi + 30 sn bekleme). Boştaki fonksiyon kaynak tutmaz; kapasite diğer iş yüklerine kalır.</p>
     </div>
@@ -519,46 +646,46 @@
     <div class="card reveal" style="--accent-color:#a78bfa">
       <div class="icon">🏢</div>
       <h3 data-tr="Multi-Tenant + RBAC" data-en="Multi-Tenant + RBAC">Multi-Tenant + RBAC</h3>
-      <p data-tr="Schema-per-tenant izolasyon. Kota yönetimi, faturalandırma ve rol bazlı erişim."
-         data-en="Schema-per-tenant isolation. Quotas, billing, and role-based access included.">
-         Schema-per-tenant izolasyon. Kota yönetimi, faturalandırma ve rol bazlı erişim.</p>
+      <p data-tr="Tenant başına şema izolasyonu ve region başına kota; hazır ve özel roller, gruplar, SSO grup eşlemesi ve kapsamı sınırlı API token'ları."
+         data-en="Schema-per-tenant isolation and quotas per region; built-in and custom roles, groups, SSO group mapping and scoped API tokens.">
+         Tenant başına şema izolasyonu ve region başına kota; hazır ve özel roller, gruplar, SSO grup eşlemesi ve kapsamı sınırlı API token'ları.</p>
     </div>
 
     <div class="card reveal" style="--accent-color:#f472b6">
       <div class="icon">🛡️</div>
       <h3 data-tr="Sandbox İzolasyonu" data-en="Sandbox Isolation">Sandbox İzolasyonu</h3>
-      <p data-tr="Her region'da proje tipine göre seçilir: syscall seviyesinde gVisor, mikro-VM'li Kata Containers (Cloud Hypervisor, QEMU, Firecracker) ya da düz runc."
-         data-en="Chosen per project type in each region: gVisor for syscall-level isolation, Kata Containers micro-VMs (Cloud Hypervisor, QEMU, Firecracker) or plain runc.">
-         Her region'da proje tipine göre seçilir: syscall seviyesinde gVisor, mikro-VM'li Kata Containers (Cloud Hypervisor, QEMU, Firecracker) ya da düz runc.</p>
+      <p data-tr="Her region'da proje tipine göre seçilir: syscall seviyesinde gVisor, mikro-VM'li Kata Containers (Cloud Hypervisor, QEMU, Dragonball, Firecracker; donanım sanallaştırmalı node'larda) ya da düz runc."
+         data-en="Chosen per project type in each region: gVisor for syscall-level isolation, Kata Containers micro-VMs (Cloud Hypervisor, QEMU, Dragonball, Firecracker; on nodes with hardware virtualization) or plain runc.">
+         Her region'da proje tipine göre seçilir: syscall seviyesinde gVisor, mikro-VM'li Kata Containers (Cloud Hypervisor, QEMU, Dragonball, Firecracker; donanım sanallaştırmalı node'larda) ya da düz runc.</p>
     </div>
 
     <div class="card reveal" style="--accent-color:#38bdf8">
       <div class="icon">🔓</div>
       <h3 data-tr="Sıfır Vendor Lock-in" data-en="Zero Vendor Lock-in">Sıfır Vendor Lock-in</h3>
-      <p data-tr="Standart Knative API'leri. Yarın AWS'e geçmek isterseniz aynı manifestler çalışır."
-         data-en="Standard Knative APIs. Want to move to AWS tomorrow? Same manifests work.">
-         Standart Knative API'leri. Yarın AWS'e geçmek isterseniz aynı manifestler çalışır.</p>
+      <p data-tr="Standart Knative API'leri, OCI imajları ve MIT lisanslı kod. İş yükleriniz Knative çalışan her Kubernetes'e taşınır; platformun kendisi de sizindir."
+         data-en="Standard Knative APIs, OCI images and MIT-licensed code. Your workloads move to any Kubernetes that runs Knative, and the platform itself is yours too.">
+         Standart Knative API'leri, OCI imajları ve MIT lisanslı kod. İş yükleriniz Knative çalışan her Kubernetes'e taşınır; platformun kendisi de sizindir.</p>
     </div>
 
     <div class="card reveal" style="--accent-color:#fbbf24">
       <div class="icon">🌍</div>
       <h3 data-tr="Kendi Cluster'larınızda" data-en="On Your Own Clusters">Kendi Cluster'larınızda</h3>
-      <p data-tr="Platformu tek bir Helm chart ile kurun, sonra istediğiniz kadar cluster'ı kubeconfig yükleyerek region olarak ekleyin."
-         data-en="Install the platform with a single Helm chart, then add as many clusters as you like as regions — just upload a kubeconfig.">
-         Platformu tek bir Helm chart ile kurun, sonra istediğiniz kadar cluster'ı kubeconfig yükleyerek region olarak ekleyin.</p>
+      <p data-tr="Platformu Helm chart'ı ya da tek sunucuda Docker Compose ile kurun (air-gapped dahil), sonra istediğiniz kadar Kubernetes cluster'ını kubeconfig yükleyerek region olarak ekleyin."
+         data-en="Install the platform with its Helm chart or with Docker Compose on a single host (air-gapped too), then add as many Kubernetes clusters as you like as regions — just upload a kubeconfig.">
+         Platformu Helm chart'ı ya da tek sunucuda Docker Compose ile kurun (air-gapped dahil), sonra istediğiniz kadar Kubernetes cluster'ını kubeconfig yükleyerek region olarak ekleyin.</p>
     </div>
   </div>
 </section>
 
 <!-- ═══ SANDBOX / RUNTIME ISOLATION ═══ -->
 <section class="section" id="sandbox">
-  <div class="section-head reveal" data-num="05">
+  <div class="section-head reveal" data-num="06">
     <span class="eyebrow" data-tr="SANDBOX & RUNTIME İZOLASYON" data-en="SANDBOX & RUNTIME ISOLATION">SANDBOX & RUNTIME İZOLASYON</span>
     <h2 data-tr="Container'ın altında bir şey değiştirmek istediğinizde."
         data-en="When you need to change what's beneath the container.">Container'ın altında bir şey değiştirmek istediğinizde.</h2>
-    <p data-tr="Her region, XaaS, FaaS, CaaS ve build job'larını RuntimeClass üzerinden ayrı ayrı bir container runtime'a eşler: varsayılan runc, kurulduktan sonra gVisor ya da Kata. gVisor syscall'ları intercept eder, Kata her pod'u kendi mikro-VM'inde çalıştırır, Firecracker (AWS Lambda'nın da kullandığı) en yalın mikro-VM'i sunar. Hangisi sizin için doğru — siz seçersiniz."
-       data-en="Each region maps XaaS, FaaS, CaaS and build jobs to a container runtime of their own via RuntimeClass: runc by default, gVisor or Kata once installed. gVisor intercepts syscalls, Kata runs each pod in its own micro-VM, and Firecracker (the same Lambda uses) is the most minimal micro-VM of them. You pick what's right for you.">
-       Her region, XaaS, FaaS, CaaS ve build job'larını RuntimeClass üzerinden ayrı ayrı bir container runtime'a eşler: varsayılan runc, kurulduktan sonra gVisor ya da Kata. gVisor syscall'ları intercept eder, Kata her pod'u kendi mikro-VM'inde çalıştırır, Firecracker (AWS Lambda'nın da kullandığı) en yalın mikro-VM'i sunar.</p>
+    <p data-tr="Her region, XaaS, FaaS, CaaS ve build job'larını RuntimeClass üzerinden ayrı ayrı bir container runtime'a eşler: varsayılan runc, kurulduktan sonra gVisor ya da Kata. gVisor syscall'ları intercept eder, Kata her pod'u kendi mikro-VM'inde çalıştırır, Firecracker (AWS Lambda'nın da kullandığı) en yalın mikro-VM'i sunar. Aynı izolasyon Sandbox API'nin sandbox'larını da korur."
+       data-en="Each region maps XaaS, FaaS, CaaS and build jobs to a container runtime of their own via RuntimeClass: runc by default, gVisor or Kata once installed. gVisor intercepts syscalls, Kata runs each pod in its own micro-VM, and Firecracker (the same Lambda uses) is the most minimal micro-VM of them. The same isolation protects the sandboxes of the Sandbox API.">
+       Her region, XaaS, FaaS, CaaS ve build job'larını RuntimeClass üzerinden ayrı ayrı bir container runtime'a eşler: varsayılan runc, kurulduktan sonra gVisor ya da Kata. gVisor syscall'ları intercept eder, Kata her pod'u kendi mikro-VM'inde çalıştırır, Firecracker (AWS Lambda'nın da kullandığı) en yalın mikro-VM'i sunar. Aynı izolasyon Sandbox API'nin sandbox'larını da korur.</p>
   </div>
 
   <div class="sandbox-grid reveal-stagger">
@@ -571,10 +698,10 @@
       <p class="sb-sub" data-tr="Google · User-space kernel · runsc shim"
                         data-en="Google · User-space kernel · runsc shim">Google · User-space kernel · runsc shim</p>
       <div class="sb-stats">
-        <div class="sb-stat"><div class="k">Cold start</div><div class="v" data-tr="1,8 sn" data-en="1.8 s">1,8 sn</div></div>
-        <div class="sb-stat"><div class="k">Mem overhead</div><div class="v" data-tr="Düşük (VM yok)" data-en="Low (no VM)">Düşük (VM yok)</div></div>
-        <div class="sb-stat"><div class="k">Isolation</div><div class="v" data-tr="OS" data-en="OS">OS</div></div>
-        <div class="sb-stat"><div class="k">Use</div><div class="v">XaaS · FaaS</div></div>
+        <div class="sb-stat"><div class="k" lang="en">Cold start</div><div class="v" id="perf-sb-gvisor-cold" data-measured="v0.4.2" data-tr="1,8 sn" data-en="1.8 s">1,8 sn</div></div>
+        <div class="sb-stat"><div class="k" lang="en">Mem overhead</div><div class="v" data-tr="Düşük (VM yok)" data-en="Low (no VM)">Düşük (VM yok)</div></div>
+        <div class="sb-stat"><div class="k" lang="en">Isolation</div><div class="v" data-tr="OS" data-en="OS">OS</div></div>
+        <div class="sb-stat"><div class="k" lang="en">Use</div><div class="v">XaaS · FaaS</div></div>
       </div>
       <ul class="sb-list">
         <li data-tr="Syscall interception (270+ syscall filtreli)" data-en="Syscall interception (270+ filtered)">Syscall interception (270+ syscall filtreli)</li>
@@ -592,10 +719,10 @@
       <p class="sb-sub" data-tr="Kata Containers · Cloud Hypervisor · kata-clh shim"
                         data-en="Kata Containers · Cloud Hypervisor · kata-clh shim">Kata Containers · Cloud Hypervisor · kata-clh shim</p>
       <div class="sb-stats">
-        <div class="sb-stat"><div class="k">Cold start</div><div class="v" data-tr="2,6–3,1 sn" data-en="2.6–3.1 s">2,6–3,1 sn</div></div>
-        <div class="sb-stat"><div class="k">Mem overhead</div><div class="v">~130–150 MiB</div></div>
-        <div class="sb-stat"><div class="k">Isolation</div><div class="v">Hardware</div></div>
-        <div class="sb-stat"><div class="k">Use</div><div class="v">CaaS · Build</div></div>
+        <div class="sb-stat"><div class="k" lang="en">Cold start</div><div class="v" id="perf-sb-kata-cold" data-measured="v0.4.2" data-tr="2,6–3,1 sn" data-en="2.6–3.1 s">2,6–3,1 sn</div></div>
+        <div class="sb-stat"><div class="k" lang="en">Mem overhead</div><div class="v" id="perf-sb-kata-mem" data-measured="v0.4.2">~130–150 MiB</div></div>
+        <div class="sb-stat"><div class="k" lang="en">Isolation</div><div class="v">Hardware</div></div>
+        <div class="sb-stat"><div class="k" lang="en">Use</div><div class="v">CaaS · Build</div></div>
       </div>
       <ul class="sb-list">
         <li data-tr="Her pod kendi mikro-VM'inde; guest doğrudan Kata agent ile açılır (systemd yok)" data-en="Each pod gets its own micro-VM, booted straight into the Kata agent (no guest systemd)">Her pod kendi mikro-VM'inde; guest doğrudan Kata agent ile açılır (systemd yok)</li>
@@ -613,10 +740,10 @@
       <p class="sb-sub" data-tr="AWS · Rust · firecracker-containerd"
                         data-en="AWS · Rust · firecracker-containerd">AWS · Rust · firecracker-containerd</p>
       <div class="sb-stats">
-        <div class="sb-stat"><div class="k">Cold start</div><div class="v" data-tr="2,8–3,3 sn" data-en="2.8–3.3 s">2,8–3,3 sn</div></div>
-        <div class="sb-stat"><div class="k">Mem overhead</div><div class="v">~150 MiB</div></div>
-        <div class="sb-stat"><div class="k">Isolation</div><div class="v">Hardware</div></div>
-        <div class="sb-stat"><div class="k">Use</div><div class="v">High-throughput</div></div>
+        <div class="sb-stat"><div class="k" lang="en">Cold start</div><div class="v" id="perf-sb-fc-cold" data-measured="v0.4.3" data-tr="2,8–3,3 sn" data-en="2.8–3.3 s">2,8–3,3 sn</div></div>
+        <div class="sb-stat"><div class="k" lang="en">Mem overhead</div><div class="v" id="perf-sb-fc-mem" data-measured="v0.4.3">~150 MiB</div></div>
+        <div class="sb-stat"><div class="k" lang="en">Isolation</div><div class="v">Hardware</div></div>
+        <div class="sb-stat"><div class="k" lang="en">Use</div><div class="v">High-throughput</div></div>
       </div>
       <ul class="sb-list">
         <li data-tr="AWS Lambda'nın altında çalışan motor" data-en="The engine behind AWS Lambda">AWS Lambda'nın altında çalışan motor</li>
@@ -627,7 +754,8 @@
       </ul>
     </div>
   </div>
-  <p class="faint" style="font-size:11px;margin:-20px 0 24px;text-align:center"
+  <!-- Measured values above (ids perf-sb-*); this note gives their conditions -->
+  <p class="faint perf-note" id="perf-sandbox-note" data-measured="v0.4.2 + v0.4.3" style="font-size:11px;margin:-20px 0 24px;text-align:center"
      data-tr="RunR ölçümü: v0.4.2, tek düğümlü k3s (8 vCPU, 16 GB, iç içe KVM), Knative 1.21, fonksiyon 250m CPU / 256 MiB, imaj düğümde; sıfır replikadan ilk HTTPS yanıtına medyan — runc: Node.js 1,52, Python 1,83, PHP 1,83 sn (n=12); gVisor: Node.js 1,77, Python 1,84 sn (n=12); Kata + CLH: Node.js 2,60, Python 3,10 sn (n=3; aynı yapılandırmada optimizasyon turu 2,70 / 3,09 sn, n=12); Kata + QEMU ~3,5–3,7 sn, Dragonball ~3,6–3,7 sn; sıcak istek ~8–12 ms. Kata + Firecracker (RunR v0.4.3, aynı koşullar; kök dosya sistemi containerd devmapper snapshotter'da): Python 2,78 sn, Node.js 3,27 sn (n=6); sıcak istek ~10–11 ms; bellek ek yükü ~145–155 MiB. Bellek ek yükü, boştaki Kata pod'u başına host'ta shim + VMM (CLH'de + virtiofsd) PSS toplamından fonksiyonun guest içindeki kendi belleği düşülerek hesaplanır."
      data-en="RunR measurement: v0.4.2, single-node k3s (8 vCPU, 16 GB, nested KVM), Knative 1.21, function 250m CPU / 256 MiB, image on the node; median from zero replicas to the first HTTPS response — runc: Node.js 1.52, Python 1.83, PHP 1.83 s (n=12); gVisor: Node.js 1.77, Python 1.84 s (n=12); Kata + CLH: Node.js 2.60, Python 3.10 s (n=3; an optimization run on the same configuration gave 2.70 / 3.09 s, n=12); Kata + QEMU ~3.5–3.7 s, Dragonball ~3.6–3.7 s; warm request ~8–12 ms. Kata + Firecracker (RunR v0.4.3, same conditions; root filesystem on containerd's devmapper snapshotter): Python 2.78 s, Node.js 3.27 s (n=6); warm request ~10–11 ms; memory overhead ~145–155 MiB. Memory overhead is the host PSS of shim + VMM (+ virtiofsd with CLH) per idle Kata pod, minus the function's own memory in the guest.">
      RunR ölçümü: v0.4.2, tek düğümlü k3s (8 vCPU, 16 GB, iç içe KVM), Knative 1.21, fonksiyon 250m CPU / 256 MiB, imaj düğümde; sıfır replikadan ilk HTTPS yanıtına medyan — runc: Node.js 1,52, Python 1,83, PHP 1,83 sn (n=12); gVisor: Node.js 1,77, Python 1,84 sn (n=12); Kata + CLH: Node.js 2,60, Python 3,10 sn (n=3; aynı yapılandırmada optimizasyon turu 2,70 / 3,09 sn, n=12); Kata + QEMU ~3,5–3,7 sn, Dragonball ~3,6–3,7 sn; sıcak istek ~8–12 ms. Kata + Firecracker (RunR v0.4.3, aynı koşullar; kök dosya sistemi containerd devmapper snapshotter'da): Python 2,78 sn, Node.js 3,27 sn (n=6); sıcak istek ~10–11 ms; bellek ek yükü ~145–155 MiB. Bellek ek yükü, boştaki Kata pod'u başına host'ta shim + VMM (CLH'de + virtiofsd) PSS toplamından fonksiyonun guest içindeki kendi belleği düşülerek hesaplanır.</p>
@@ -637,9 +765,9 @@
     <div>
       <h4 data-tr="Containerd shim seçimi — proje tipi başına"
           data-en="Containerd shim selection — per project type">Containerd shim seçimi — proje tipi başına</h4>
-      <p data-tr="Her region XaaS, FaaS, CaaS ve build job'larını ayrı ayrı bir runtime'a eşler — varsayılan runc; gVisor ya da bir Kata hypervisor'ı kurulduğu anda seçilebilir. Deploy sırasında Knative manifestine uygun <code>runtimeClassName</code> (<code>gvisor</code>, <code>kata-clh</code>, <code>kata-qemu</code>…) otomatik yazılır."
-         data-en="Each region maps XaaS, FaaS, CaaS and build jobs to a runtime of their own — runc by default, gVisor or any Kata hypervisor as soon as it is installed. On deploy the Knative manifest gets the matching <code>runtimeClassName</code> (<code>gvisor</code>, <code>kata-clh</code>, <code>kata-qemu</code>…) automatically.">
-         Her region XaaS, FaaS, CaaS ve build job'larını ayrı ayrı bir runtime'a eşler — varsayılan runc; gVisor ya da bir Kata hypervisor'ı kurulduğu anda seçilebilir. Deploy sırasında Knative manifestine uygun <code>runtimeClassName</code> (<code>gvisor</code>, <code>kata-clh</code>, <code>kata-qemu</code>…) otomatik yazılır.</p>
+      <p data-tr="Her region XaaS, FaaS, CaaS ve build job'larını ayrı ayrı bir runtime'a eşler — varsayılan runc; gVisor ya da bir Kata hypervisor'ı kurulduğu anda seçilebilir. Deploy sırasında Knative manifestine uygun <code>runtimeClassName</code> (<code>gvisor</code>, <code>kata-clh</code>, <code>kata-qemu</code>, <code>kata-dragonball</code>, <code>kata-fc</code>) otomatik yazılır; WebAssembly fonksiyonları <code>wasmtime-spin-v2</code> ile Spin shim'inde çalışır."
+         data-en="Each region maps XaaS, FaaS, CaaS and build jobs to a runtime of their own — runc by default, gVisor or any Kata hypervisor as soon as it is installed. On deploy the Knative manifest gets the matching <code>runtimeClassName</code> (<code>gvisor</code>, <code>kata-clh</code>, <code>kata-qemu</code>, <code>kata-dragonball</code>, <code>kata-fc</code>) automatically; WebAssembly functions run on the Spin shim with <code>wasmtime-spin-v2</code>.">
+         Her region XaaS, FaaS, CaaS ve build job'larını ayrı ayrı bir runtime'a eşler — varsayılan runc; gVisor ya da bir Kata hypervisor'ı kurulduğu anda seçilebilir. Deploy sırasında Knative manifestine uygun <code>runtimeClassName</code> (<code>gvisor</code>, <code>kata-clh</code>, <code>kata-qemu</code>, <code>kata-dragonball</code>, <code>kata-fc</code>) otomatik yazılır; WebAssembly fonksiyonları <code>wasmtime-spin-v2</code> ile Spin shim'inde çalışır.</p>
     </div>
   </div>
 
@@ -657,13 +785,13 @@
 
 <!-- ═══ TECHNICAL ARCHITECTURE ═══ -->
 <section class="section" id="architecture">
-  <div class="section-head reveal" data-num="06">
+  <div class="section-head reveal" data-num="07">
     <span class="eyebrow" data-tr="TEKNİK MİMARİ" data-en="TECHNICAL ARCHITECTURE">TEKNİK MİMARİ</span>
     <h2 data-tr="Tek bir kutu değil — 12 katmanlı bir platform."
         data-en="Not a single box — a 12-layer platform.">Tek bir kutu değil — 12 katmanlı bir platform.</h2>
-    <p data-tr="Frontend SPA, Laravel API, queue worker'lar ve WebSocket katmanı tek bir Helm chart ile gelir; Knative Serving, Traefik, Zot registry, sandbox'lar ve observability stack'ini RunR her region cluster'ına kendisi kurar."
-       data-en="Frontend SPA, Laravel API, queue workers and the WebSocket layer ship as one Helm chart; RunR then installs Knative Serving, Traefik, the Zot registry, sandboxes and the observability stack on every region cluster for you.">
-       Frontend SPA, Laravel API, queue worker'lar ve WebSocket katmanı tek bir Helm chart ile gelir; Knative Serving, Traefik, Zot registry, sandbox'lar ve observability stack'ini RunR her region cluster'ına kendisi kurar.</p>
+    <p data-tr="Kontrol düzlemi — Vue SPA, Octane üzerinde Laravel API, queue worker'lar, scheduler ve WebSocket sunucusu, tek bir gateway arkasında — Helm chart'ı ya da tek sunuculu Compose kurulumu olarak gelir. Knative Serving, Traefik, Zot registry, sandbox'lar, Spin shim'i, GPU desteği, veri servisleri ve observability stack'ini RunR her region cluster'ına kendisi kurar."
+       data-en="The control plane — Vue SPA, Laravel API on Octane, queue workers, scheduler and WebSocket server, behind one gateway — ships as a Helm chart or a single-host Compose install. RunR then installs Knative Serving, Traefik, the Zot registry, sandboxes, the Spin shim, GPU support, data services and the observability stack on every region cluster for you.">
+       Kontrol düzlemi — Vue SPA, Octane üzerinde Laravel API, queue worker'lar, scheduler ve WebSocket sunucusu, tek bir gateway arkasında — Helm chart'ı ya da tek sunuculu Compose kurulumu olarak gelir. Knative Serving, Traefik, Zot registry, sandbox'lar, Spin shim'i, GPU desteği, veri servisleri ve observability stack'ini RunR her region cluster'ına kendisi kurar.</p>
   </div>
 
   <div class="arch-diagram reveal">
@@ -680,16 +808,16 @@
       <!-- User -->
       <rect x="20" y="40" width="130" height="60" rx="10" fill="#111827" stroke="#94a3b8" stroke-width="1.5" filter="url(#aGlow)"/>
       <text x="85" y="68" text-anchor="middle" fill="#e2e8f0" font-size="13" font-weight="700" data-tr="Kullanıcı" data-en="User">Kullanıcı</text>
-      <text x="85" y="86" text-anchor="middle" fill="#64748b" font-size="10">Browser / CLI</text>
+      <text x="85" y="86" text-anchor="middle" fill="#64748b" font-size="10">Browser · CLI · MCP</text>
 
       <!-- Vue -->
       <rect x="200" y="20" width="220" height="100" rx="12" fill="#111827" stroke="#42b883" stroke-width="2" filter="url(#aGlow)"/>
       <rect x="200" y="20" width="220" height="28" rx="12" fill="url(#aVue)"/>
       <text x="310" y="40" text-anchor="middle" fill="#fff" font-size="13" font-weight="700">Vue 3 + Vite</text>
-      <text x="310" y="66" text-anchor="middle" fill="#86efac" font-size="11">60+ component · 30+ composable</text>
-      <text x="310" y="82" text-anchor="middle" fill="#86efac" font-size="11">5 store · driver.js tour</text>
-      <text x="310" y="100" text-anchor="middle" fill="#64748b" font-size="10">Tailwind · Monaco · i18n</text>
-      <text x="310" y="116" text-anchor="middle" fill="#475569" font-size="10">:8061</text>
+      <text x="310" y="66" text-anchor="middle" fill="#86efac" font-size="11">100+ component · 30+ composable</text>
+      <text x="310" y="82" text-anchor="middle" fill="#86efac" font-size="11">7 store · driver.js tour</text>
+      <text x="310" y="100" text-anchor="middle" fill="#64748b" font-size="10">Tailwind · Monaco · xterm.js · i18n</text>
+      <text x="310" y="116" text-anchor="middle" fill="#475569" font-size="10">runr-ui</text>
 
       <line x1="150" y1="70" x2="195" y2="70" stroke="#475569" stroke-width="1.5" marker-end="url(#aArr)"/>
 
@@ -697,11 +825,11 @@
       <rect x="200" y="160" width="220" height="130" rx="12" fill="#111827" stroke="#ff2d20" stroke-width="2" filter="url(#aGlow)"/>
       <rect x="200" y="160" width="220" height="28" rx="12" fill="url(#aApi)"/>
       <text x="310" y="180" text-anchor="middle" fill="#fff" font-size="13" font-weight="700">Laravel 12 API · PHP 8.3</text>
-      <text x="310" y="206" text-anchor="middle" fill="#fca5a5" font-size="11">24+ Controller · 20+ Service</text>
-      <text x="310" y="222" text-anchor="middle" fill="#fca5a5" font-size="11">20+ Job · 30+ Model · 20+ Trait</text>
-      <text x="310" y="240" text-anchor="middle" fill="#94a3b8" font-size="10">Sanctum · Scramble · ETag</text>
-      <text x="310" y="256" text-anchor="middle" fill="#94a3b8" font-size="10">Events · Broadcasting</text>
-      <text x="310" y="272" text-anchor="middle" fill="#475569" font-size="10">:8060</text>
+      <text x="310" y="206" text-anchor="middle" fill="#fca5a5" font-size="11">110+ Controller · 70+ Service</text>
+      <text x="310" y="222" text-anchor="middle" fill="#fca5a5" font-size="11">70+ Job · 100+ Model · 90+ Trait</text>
+      <text x="310" y="240" text-anchor="middle" fill="#94a3b8" font-size="10">Sanctum · Scramble · ETag · RBAC</text>
+      <text x="310" y="256" text-anchor="middle" fill="#94a3b8" font-size="10">MCP · git HTTP · OAuth 2.1</text>
+      <text x="310" y="272" text-anchor="middle" fill="#475569" font-size="10">runr-api · Octane (FrankenPHP)</text>
 
       <line x1="310" y1="120" x2="310" y2="155" stroke="#60a5fa" stroke-width="2" marker-end="url(#aArr)"/>
       <text x="320" y="142" fill="#60a5fa" font-size="9">REST + WS</text>
@@ -733,7 +861,7 @@
       <!-- K8s -->
       <rect x="200" y="320" width="540" height="120" rx="12" fill="#111827" stroke="#326ce5" stroke-width="2" filter="url(#aGlow)"/>
       <rect x="200" y="320" width="540" height="28" rx="12" fill="url(#aK8s)"/>
-      <text x="470" y="340" text-anchor="middle" fill="#fff" font-size="13" font-weight="700">Kubernetes Cluster · add-ons via Helm</text>
+      <text x="470" y="340" text-anchor="middle" fill="#fff" font-size="13" font-weight="700">Region · any Kubernetes cluster · add-ons via Helm</text>
 
       <line x1="310" y1="295" x2="310" y2="315" stroke="#326ce5" stroke-width="2" stroke-dasharray="6,3" marker-end="url(#aArr)"/>
       <text x="318" y="312" fill="#60a5fa" font-size="9">kubeconfig</text>
@@ -747,7 +875,7 @@
       <rect x="350" y="360" width="120" height="65" rx="8" fill="#0f172a" stroke="#f472b6"/>
       <text x="410" y="378" text-anchor="middle" fill="#f472b6" font-size="11" font-weight="700">Sandbox</text>
       <text x="410" y="394" text-anchor="middle" fill="#94a3b8" font-size="9">runc · gVisor (runsc)</text>
-      <text x="410" y="408" text-anchor="middle" fill="#94a3b8" font-size="9">Kata + Cloud Hyper.</text>
+      <text x="410" y="408" text-anchor="middle" fill="#94a3b8" font-size="9">Kata · Spin (Wasm)</text>
       <text x="410" y="420" text-anchor="middle" fill="#94a3b8" font-size="9">RuntimeClass per type</text>
 
       <rect x="485" y="360" width="120" height="65" rx="8" fill="#0f172a" stroke="#2496ed"/>
@@ -766,17 +894,18 @@
       <rect x="780" y="160" width="180" height="280" rx="12" fill="#111827" stroke="#e6522c" stroke-width="2" filter="url(#aGlow)"/>
       <rect x="780" y="160" width="180" height="28" rx="12" fill="#9a3412"/>
       <text x="870" y="180" text-anchor="middle" fill="#fed7aa" font-size="13" font-weight="700">Observability</text>
-      <text x="800" y="210" fill="#fb923c" font-size="11" font-weight="600">Metrics</text>
-      <text x="800" y="228" fill="#94a3b8" font-size="10">Prometheus + cAdvisor</text>
-      <text x="800" y="246" fill="#94a3b8" font-size="10">MetricsPersistenceService</text>
-      <text x="800" y="272" fill="#fb923c" font-size="11" font-weight="600">Logs</text>
-      <text x="800" y="290" fill="#94a3b8" font-size="10">Loki + Promtail</text>
-      <text x="800" y="316" fill="#fb923c" font-size="11" font-weight="600">Region Agent</text>
-      <text x="800" y="334" fill="#94a3b8" font-size="10">Go · one per region</text>
+      <text x="800" y="208" fill="#fb923c" font-size="11" font-weight="600">Metrics + Logs</text>
+      <text x="800" y="224" fill="#94a3b8" font-size="10">Prometheus + cAdvisor</text>
+      <text x="800" y="240" fill="#94a3b8" font-size="10">Loki + Promtail</text>
+      <text x="800" y="264" fill="#fb923c" font-size="11" font-weight="600">Traces</text>
+      <text x="800" y="280" fill="#94a3b8" font-size="10">OpenTelemetry + Tempo</text>
+      <text x="800" y="296" fill="#94a3b8" font-size="10">replay · uptime · alerts</text>
+      <text x="800" y="320" fill="#fb923c" font-size="11" font-weight="600">Region Agent</text>
+      <text x="800" y="336" fill="#94a3b8" font-size="10">Go · one per region</text>
       <text x="800" y="352" fill="#94a3b8" font-size="10">metrics · sessions · events</text>
-      <text x="800" y="378" fill="#fb923c" font-size="11" font-weight="600">Cost + Billing</text>
-      <text x="800" y="396" fill="#94a3b8" font-size="10">UsageAggregationJob</text>
-      <text x="800" y="414" fill="#94a3b8" font-size="10">CapacityDealService</text>
+      <text x="800" y="376" fill="#fb923c" font-size="11" font-weight="600">Usage + Billing</text>
+      <text x="800" y="392" fill="#94a3b8" font-size="10">UsageAggregationJob</text>
+      <text x="800" y="408" fill="#94a3b8" font-size="10">Billing API · webhooks</text>
 
       <!-- Tenancy -->
       <rect x="980" y="40" width="110" height="200" rx="12" fill="#111827" stroke="#fbbf24" stroke-width="2"/>
@@ -798,25 +927,25 @@
     <div class="arch-card reveal" style="--ac:#42b883">
       <div class="arch-num">01</div>
       <h4>Frontend</h4>
-      <div class="arch-sub">Vue 3 · Vite · :8061</div>
+      <div class="arch-sub">Vue 3 · Vite · runr-ui</div>
       <div class="arch-tags">
-        <span class="tag">60+ component</span><span class="tag">30+ composable</span><span class="tag">Pinia</span><span class="tag">Monaco</span><span class="tag">i18n</span><span class="tag">driver.js</span>
+        <span class="tag">100+ component</span><span class="tag">30+ composable</span><span class="tag">Pinia</span><span class="tag">Monaco</span><span class="tag">xterm.js</span><span class="tag">i18n EN · TR</span>
       </div>
     </div>
     <div class="arch-card reveal" style="--ac:#ff2d20">
       <div class="arch-num">02</div>
       <h4>Backend API</h4>
-      <div class="arch-sub">Laravel 12 · PHP 8.3 · :8060</div>
+      <div class="arch-sub">Laravel 12 · PHP 8.3 · Octane (FrankenPHP)</div>
       <div class="arch-tags">
-        <span class="tag">24+ controller</span><span class="tag">20+ service</span><span class="tag">30+ model</span><span class="tag">Sanctum</span><span class="tag">Horizon</span><span class="tag">Scramble</span>
+        <span class="tag">110+ controller</span><span class="tag">70+ service</span><span class="tag">100+ model</span><span class="tag">Sanctum</span><span class="tag">Horizon</span><span class="tag">Scramble</span>
       </div>
     </div>
     <div class="arch-card reveal" style="--ac:#9333ea">
       <div class="arch-num">03</div>
       <h4>Real-Time</h4>
-      <div class="arch-sub">Reverb WebSocket · :8064</div>
+      <div class="arch-sub">Reverb WebSocket · runr-reverb</div>
       <div class="arch-tags">
-        <span class="tag">Broadcasting</span><span class="tag">Shell PTY</span><span class="tag">Notifications</span><span class="tag">Live metrics</span>
+        <span class="tag">Private channels</span><span class="tag">Shell PTY</span><span class="tag">Notifications</span><span class="tag">Live metrics</span>
       </div>
     </div>
     <div class="arch-card reveal" style="--ac:#326ce5">
@@ -840,7 +969,7 @@
       <h4>Sandbox</h4>
       <div class="arch-sub">RuntimeClass per project type</div>
       <div class="arch-tags">
-        <span class="tag">runc</span><span class="tag">gVisor</span><span class="tag">Kata + CLH</span><span class="tag">Firecracker</span>
+        <span class="tag">runc</span><span class="tag">gVisor</span><span class="tag">Kata: CLH · QEMU · Dragonball · FC</span><span class="tag">Spin (Wasm)</span>
       </div>
     </div>
     <div class="arch-card reveal" style="--ac:#2496ed">
@@ -856,15 +985,15 @@
       <h4>Registry</h4>
       <div class="arch-sub">Zot · OCI compliant</div>
       <div class="arch-tags">
-        <span class="tag">Pull-through cache</span><span class="tag">S3 / PVC</span><span class="tag">Node pre-pull</span><span class="tag">Image cleanup</span>
+        <span class="tag">Pull-through cache</span><span class="tag">S3 / PVC</span><span class="tag">Node pre-pull</span><span class="tag">Image uploads</span>
       </div>
     </div>
     <div class="arch-card reveal" style="--ac:#e6522c">
       <div class="arch-num">09</div>
       <h4>Observability</h4>
-      <div class="arch-sub">Prometheus · Loki · Go Agent</div>
+      <div class="arch-sub">OpenTelemetry · Tempo · Prometheus · Loki</div>
       <div class="arch-tags">
-        <span class="tag">Region agent</span><span class="tag">Historical</span><span class="tag">Session track</span><span class="tag">cAdvisor</span>
+        <span class="tag">Traces</span><span class="tag">Replay</span><span class="tag">Uptime</span><span class="tag">Status page</span><span class="tag">Alerts</span><span class="tag">Region agent</span>
       </div>
     </div>
     <div class="arch-card reveal" style="--ac:#fbbf24">
@@ -872,15 +1001,15 @@
       <h4>Tenancy</h4>
       <div class="arch-sub">stancl/tenancy v3 + Modules v11</div>
       <div class="arch-tags">
-        <span class="tag">Schema-per-tenant</span><span class="tag">Resource sync</span><span class="tag">Impersonation</span><span class="tag">RBAC</span>
+        <span class="tag">Schema-per-tenant</span><span class="tag">Resource sync</span><span class="tag">Impersonation</span><span class="tag">White-label</span>
       </div>
     </div>
     <div class="arch-card reveal" style="--ac:#277a9f">
       <div class="arch-num">11</div>
-      <h4>CI/CD</h4>
-      <div class="arch-sub">ghcr.io · multi-arch · buildx</div>
+      <h4>Supply Chain</h4>
+      <div class="arch-sub">SBOM · scan · cosign · admission</div>
       <div class="arch-tags">
-        <span class="tag">ci.sh</span><span class="tag">GitLab CI</span><span class="tag">multi-arch</span><span class="tag">Helm release</span>
+        <span class="tag">SPDX · CycloneDX</span><span class="tag">Offline scan DB</span><span class="tag">Policy gate</span><span class="tag">Signed admission</span>
       </div>
     </div>
     <div class="arch-card reveal" style="--ac:#22d3ee">
@@ -893,19 +1022,19 @@
     </div>
   </div>
 
-  <div class="arch-stats reveal-stagger">
-    <div class="arch-stat reveal"><div class="n"><span class="counter" data-target="60">0</span>+</div><div class="l">Components</div></div>
-    <div class="arch-stat reveal"><div class="n"><span class="counter" data-target="24">0</span>+</div><div class="l">Controllers</div></div>
-    <div class="arch-stat reveal"><div class="n"><span class="counter" data-target="20">0</span>+</div><div class="l">Services</div></div>
-    <div class="arch-stat reveal"><div class="n"><span class="counter" data-target="30">0</span>+</div><div class="l">Models</div></div>
+  <div class="arch-stats reveal-stagger" lang="en">
+    <div class="arch-stat reveal"><div class="n"><span class="counter" data-target="100">0</span>+</div><div class="l">Components</div></div>
+    <div class="arch-stat reveal"><div class="n"><span class="counter" data-target="110">0</span>+</div><div class="l">Controllers</div></div>
+    <div class="arch-stat reveal"><div class="n"><span class="counter" data-target="70">0</span>+</div><div class="l">Services</div></div>
+    <div class="arch-stat reveal"><div class="n"><span class="counter" data-target="100">0</span>+</div><div class="l">Models</div></div>
     <div class="arch-stat reveal"><div class="n"><span class="counter" data-target="30">0</span>+</div><div class="l">Composables</div></div>
-    <div class="arch-stat reveal"><div class="n"><span class="counter" data-target="6">0</span></div><div class="l">Helm Charts</div></div>
+    <div class="arch-stat reveal"><div class="n"><span class="counter" data-target="70">0</span>+</div><div class="l">Queued Jobs</div></div>
   </div>
 </section>
 
 <!-- ═══ HOW IT WORKS ═══ -->
 <section class="section" id="how">
-  <div class="section-head reveal" data-num="07">
+  <div class="section-head reveal" data-num="08">
     <span class="eyebrow" data-tr="NASIL ÇALIŞIR" data-en="HOW IT WORKS">NASIL ÇALIŞIR</span>
     <h2 data-tr="Dört adım, üretime canlı." data-en="Four steps, live in production.">Dört adım, üretime canlı.</h2>
   </div>
@@ -913,16 +1042,16 @@
     <div class="flow-step reveal">
       <div class="step-num">1</div>
       <h4 data-tr="Yaz" data-en="Write">Yaz</h4>
-      <p data-tr="Web editöründe kodu yapıştır — runtime'ı seç, gerisi bizde."
-         data-en="Paste code in the web editor — pick a runtime, we handle the rest.">
-         Web editöründe kodu yapıştır — runtime'ı seç, gerisi bizde.</p>
+      <p data-tr="Web editöründe kodu yaz, <code>git push</code> yap ya da <code>runr init</code> ile başla — runtime'ı seç, gerisi RunR'da."
+         data-en="Write code in the web editor, <code>git push</code> or start with <code>runr init</code> — pick a runtime, RunR handles the rest.">
+         Web editöründe kodu yaz, <code>git push</code> yap ya da <code>runr init</code> ile başla — runtime'ı seç, gerisi RunR'da.</p>
     </div>
     <div class="flow-step reveal">
       <div class="step-num">2</div>
       <h4 data-tr="Deploy Et" data-en="Deploy">Deploy Et</h4>
-      <p data-tr="Her kayıt bir versiyondur, gerekiyorsa otomatik build edilir. Tek tıkla o versiyon Knative'de yayında."
-         data-en="Every save is a version, built automatically when needed. One click puts that version live on Knative.">
-         Her kayıt bir versiyondur, gerekiyorsa otomatik build edilir. Tek tıkla o versiyon Knative'de yayında.</p>
+      <p data-tr="Her değişiklik bir versiyondur, gerekiyorsa otomatik build edilir. Tek tık, bir push ya da <code>runr deploy</code> o versiyonu Knative'de yayına alır."
+         data-en="Every change is a version, built automatically when needed. One click, a push or <code>runr deploy</code> puts that version live on Knative.">
+         Her değişiklik bir versiyondur, gerekiyorsa otomatik build edilir. Tek tık, bir push ya da <code>runr deploy</code> o versiyonu Knative'de yayına alır.</p>
     </div>
     <div class="flow-step reveal">
       <div class="step-num">3</div>
@@ -934,16 +1063,16 @@
     <div class="flow-step reveal">
       <div class="step-num">4</div>
       <h4 data-tr="İzle" data-en="Monitor">İzle</h4>
-      <p data-tr="Canlı log, metrik, maliyet takibi. Prometheus + Loki entegre."
-         data-en="Live logs, metrics, cost tracking. Prometheus + Loki built-in.">
-         Canlı log, metrik, maliyet takibi. Prometheus + Loki entegre.</p>
+      <p data-tr="Canlı log, metrik, trace ve maliyet takibi. Prometheus, Loki ve OpenTelemetry dahil."
+         data-en="Live logs, metrics, traces and cost tracking. Prometheus, Loki and OpenTelemetry built in.">
+         Canlı log, metrik, trace ve maliyet takibi. Prometheus, Loki ve OpenTelemetry dahil.</p>
     </div>
   </div>
 </section>
 
 <!-- ═══ COMPARISON TABLE ═══ -->
 <section class="section" id="compare">
-  <div class="section-head reveal" data-num="08">
+  <div class="section-head reveal" data-num="09">
     <span class="eyebrow" data-tr="KARŞILAŞTIRMA" data-en="COMPARISON">KARŞILAŞTIRMA</span>
     <h2 data-tr="RunR vs. herkes." data-en="RunR vs. everyone.">RunR vs. herkes.</h2>
     <p data-tr="Aynı özellikleri büyük cloud sağlayıcılarda bulmak için üç ayrı ürün satın almanız gerekir."
@@ -953,9 +1082,9 @@
 
   <div class="tbl-wrap reveal">
     <table class="tbl">
-      <thead>
+      <thead lang="en">
         <tr>
-          <th style="min-width:140px" data-tr="Özellik" data-en="Feature">Özellik</th>
+          <th style="min-width:140px" data-tr="ÖZELLİK" data-en="FEATURE">ÖZELLİK</th>
           <th class="runr-tier" style="color:#4ade80">RunR</th>
           <th>AWS Lambda</th>
           <th>AWS Fargate</th>
@@ -970,7 +1099,7 @@
       <tbody>
         <tr>
           <td><strong data-tr="Açık Kaynak" data-en="Open Source">Açık Kaynak</strong></td>
-          <td class="runr-cell yes">100%</td>
+          <td class="runr-cell yes">100% · MIT</td>
           <td class="no" data-tr="Hayır" data-en="No">Hayır</td><td class="no" data-tr="Hayır" data-en="No">Hayır</td>
           <td class="partial">Knative</td><td class="partial">Runtime</td>
           <td class="no" data-tr="Hayır" data-en="No">Hayır</td><td class="partial" data-tr="Kısmi" data-en="Partial">Kısmi</td>
@@ -997,14 +1126,14 @@
         </tr>
         <tr>
           <td><strong>FaaS</strong></td>
-          <td class="runr-cell yes">XaaS+FaaS</td>
+          <td class="runr-cell yes">XaaS + FaaS + Wasm</td>
           <td class="yes">Lambda</td><td class="no" data-tr="Hayır" data-en="No">Hayır</td>
           <td class="yes">Functions</td><td class="yes">Functions</td><td class="yes">Functions</td>
           <td class="no" data-tr="Hayır" data-en="No">Hayır</td><td class="no" data-tr="Hayır" data-en="No">Hayır</td><td class="yes">V8 Isolates</td>
         </tr>
         <tr>
           <td><strong data-tr="Kaynak Kod Build" data-en="Source Code Build">Kaynak Kod Build</strong></td>
-          <td class="runr-cell yes" data-tr="Dahili (Kaniko)" data-en="Built-in (Kaniko)">Dahili (Kaniko)</td>
+          <td class="runr-cell yes" data-tr="Dahili (Kaniko · git push)" data-en="Built-in (Kaniko · git push)">Dahili (Kaniko · git push)</td>
           <td class="partial" data-tr="Sınırlı runtime" data-en="Limited runtimes">Sınırlı runtime</td>
           <td class="no" data-tr="Container şart" data-en="Container only">Container şart</td>
           <td class="partial">Buildpacks</td>
@@ -1053,7 +1182,7 @@
         </tr>
         <tr>
           <td><strong>Cold Start</strong></td>
-          <td class="runr-cell" style="color:#fbbf24"><span data-tr="1,5–1,8 sn (runc) · 1,8 sn (gVisor) · 2,6–3,3 sn (Kata)" data-en="1.5–1.8 s (runc) · 1.8 s (gVisor) · 2.6–3.3 s (Kata)">1,5–1,8 sn (runc) · 1,8 sn (gVisor) · 2,6–3,3 sn (Kata)</span></td>
+          <td class="runr-cell" style="color:#fbbf24"><span id="perf-compare-cold" data-measured="v0.4.2 + v0.4.3" data-tr="1,5–1,8 sn (runc) · 1,8 sn (gVisor) · 2,6–3,3 sn (Kata)" data-en="1.5–1.8 s (runc) · 1.8 s (gVisor) · 2.6–3.3 s (Kata)">1,5–1,8 sn (runc) · 1,8 sn (gVisor) · 2,6–3,3 sn (Kata)</span></td>
           <td style="color:#fbbf24" data-tr="Değişken" data-en="Variable">Değişken</td><td>N/A</td>
           <td style="color:#fbbf24" data-tr="Değişken" data-en="Variable">Değişken</td><td style="color:#ef4444" data-tr="Yavaş olabilir" data-en="Can be slow">Yavaş olabilir</td>
           <td style="color:#4ade80" data-tr="Hızlı" data-en="Fast">Hızlı</td><td data-tr="Saniyeler" data-en="Seconds">Saniyeler</td>
@@ -1086,7 +1215,8 @@
       </tbody>
     </table>
   </div>
-  <p class="faint" style="font-size:11px;margin-top:10px;text-align:center"
+  <!-- RunR cold start in the table (#perf-compare-cold) is measured; this note gives the conditions -->
+  <p class="faint perf-note" id="perf-compare-note" data-measured="v0.4.2 + v0.4.3" style="font-size:11px;margin-top:10px;text-align:center"
      data-tr="RunR ölçümü: v0.4.2, tek düğümlü k3s (8 vCPU, 16 GB, iç içe KVM), Knative 1.21, fonksiyon 250m CPU / 256 MiB (container 500m / 512 MiB), imaj düğümde; sıfır replikadan ilk HTTPS yanıtına medyan — runc: Node.js 1,52, Python 1,83, PHP 1,83 sn (n=12), container (CaaS) 1,73 sn (n=6); gVisor: Node.js 1,77, Python 1,84 sn (n=12); Kata + CLH: Node.js 2,60, Python 3,10 sn (n=3); sıcak istek ~8–12 ms. Kata + Firecracker (RunR v0.4.3, aynı koşullar; kök dosya sistemi containerd devmapper snapshotter'da): Python 2,78 sn, Node.js 3,27 sn (n=6); sıcak istek ~10–11 ms; bellek ek yükü ~145–155 MiB. Rakiplerin cold start değerleri nitel. Ücretsiz kota ve liste fiyatı satırları: 2026-10-01 tarihli resmi fiyat sayfaları (USD, vergi ve veri transferi hariç); bölgeler ve kaynak bağlantıları aşağıdaki notta."
      data-en="RunR measurement: v0.4.2, single-node k3s (8 vCPU, 16 GB, nested KVM), Knative 1.21, function 250m CPU / 256 MiB (container 500m / 512 MiB), image on the node; median from zero replicas to the first HTTPS response — runc: Node.js 1.52, Python 1.83, PHP 1.83 s (n=12), container (CaaS) 1.73 s (n=6); gVisor: Node.js 1.77, Python 1.84 s (n=12); Kata + CLH: Node.js 2.60, Python 3.10 s (n=3); warm request ~8–12 ms. Kata + Firecracker (RunR v0.4.3, same conditions; root filesystem on containerd's devmapper snapshotter): Python 2.78 s, Node.js 3.27 s (n=6); warm request ~10–11 ms; memory overhead ~145–155 MiB. Competitor cold starts are qualitative. Free-tier and list-price rows: official pricing pages as of 2026-10-01 (USD, excluding tax and data transfer); regions and source links in the note below.">
      RunR ölçümü: v0.4.2, tek düğümlü k3s (8 vCPU, 16 GB, iç içe KVM), Knative 1.21, fonksiyon 250m CPU / 256 MiB (container 500m / 512 MiB), imaj düğümde; sıfır replikadan ilk HTTPS yanıtına medyan — runc: Node.js 1,52, Python 1,83, PHP 1,83 sn (n=12), container (CaaS) 1,73 sn (n=6); gVisor: Node.js 1,77, Python 1,84 sn (n=12); Kata + CLH: Node.js 2,60, Python 3,10 sn (n=3); sıcak istek ~8–12 ms. Kata + Firecracker (RunR v0.4.3, aynı koşullar; kök dosya sistemi containerd devmapper snapshotter'da): Python 2,78 sn, Node.js 3,27 sn (n=6); sıcak istek ~10–11 ms; bellek ek yükü ~145–155 MiB. Rakiplerin cold start değerleri nitel. Ücretsiz kota ve liste fiyatı satırları: 2026-10-01 tarihli resmi fiyat sayfaları (USD, vergi ve veri transferi hariç); bölgeler ve kaynak bağlantıları aşağıdaki notta.</p>
@@ -1161,7 +1291,7 @@
 
 <!-- ═══ MIGRATION ═══ -->
 <section class="section" id="migration">
-  <div class="section-head reveal" data-num="09">
+  <div class="section-head reveal" data-num="10">
     <span class="eyebrow" data-tr="GEÇİŞ" data-en="MIGRATION">GEÇİŞ</span>
     <h2 data-tr="Cloud'dan RunR'a — aylar değil saatler."
         data-en="From cloud to RunR — hours, not months.">Cloud'dan RunR'a — aylar değil saatler.</h2>
@@ -1236,32 +1366,136 @@
   </div>
 </section>
 
+<!-- ═══ INSTALL ═══ -->
+<section class="section" id="install">
+  <div class="section-head reveal" data-num="11">
+    <span class="eyebrow" data-tr="KURULUM" data-en="INSTALL">KURULUM</span>
+    <h2 data-tr="Kurun, bir cluster bağlayın, deploy edin."
+        data-en="Install it, connect a cluster, deploy.">Kurun, bir cluster bağlayın, deploy edin.</h2>
+    <p data-tr="RunR bir yazılımdır, barındırılan bir hizmet değil: kontrol düzlemi ve tüm region'lar sizin işlettiğiniz altyapıda çalışır — bare metal, private cloud ya da yönetilen Kubernetes; internete bağlı ya da air-gapped."
+       data-en="RunR is software you install, not a hosted service: the control plane and every region run on infrastructure you operate — bare metal, a private cloud or managed Kubernetes, connected or air-gapped.">
+       RunR bir yazılımdır, barındırılan bir hizmet değil: kontrol düzlemi ve tüm region'lar sizin işlettiğiniz altyapıda çalışır — bare metal, private cloud ya da yönetilen Kubernetes; internete bağlı ya da air-gapped.</p>
+  </div>
+
+  <div class="install-grid reveal-stagger">
+
+    <div class="install-card reveal">
+      <h4>Helm <span class="install-kind">Kubernetes</span></h4>
+      <p data-tr="Kontrol düzlemi tek bir Helm chart: gateway, UI, API, worker'lar, scheduler, Reverb; kendi servislerinizi göstermezseniz PostgreSQL ve Redis de."
+         data-en="The control plane as one Helm chart: gateway, UI, API, workers, scheduler and Reverb, plus PostgreSQL and Redis unless you point it at your own.">
+         Kontrol düzlemi tek bir Helm chart: gateway, UI, API, worker'lar, scheduler, Reverb; kendi servislerinizi göstermezseniz PostgreSQL ve Redis de.</p>
+      <pre><code>git clone https://github.com/runrsh/core.git
+cd core
+helm upgrade --install runr ./helm \
+  -n runr --create-namespace \
+  --set domain=runr.example.com</code></pre>
+      <a class="install-link" href="https://github.com/runrsh/core#kubernetes-helm" target="_blank" rel="noopener"
+         data-tr="Helm ile kurulum →" data-en="Install with Helm →">Helm ile kurulum →</a>
+    </div>
+
+    <div class="install-card reveal">
+      <h4>Docker Compose <span class="install-kind" data-tr="tek sunucu" data-en="single host">tek sunucu</span></h4>
+      <p data-tr="Hazır imajlarla tek makinede üretim kurulumu; internetsiz (air-gapped) sunucular dahil."
+         data-en="A production install on one machine with prebuilt images, including air-gapped hosts.">
+         Hazır imajlarla tek makinede üretim kurulumu; internetsiz (air-gapped) sunucular dahil.</p>
+      <pre><code>docker load -i runr-images.tar
+cp .env.example .env
+cp api.env.example api.env   # + APP_KEY
+docker compose up -d
+docker compose run --rm migrator</code></pre>
+      <a class="install-link" href="https://github.com/runrsh/core/blob/main/compose/README.md" target="_blank" rel="noopener"
+         data-tr="Tek sunucu kurulum rehberi →" data-en="Single-host install guide →">Tek sunucu kurulum rehberi →</a>
+    </div>
+
+    <div class="install-card reveal">
+      <h4>runr CLI <span class="install-kind">Linux · macOS · Windows</span></h4>
+      <p data-tr="İskelet oluşturun, runtime imajlarıyla yerelde çalıştırın ve deploy edin. İkili dosyalar GitHub sürümlerinde."
+         data-en="Scaffold, run locally on the runtime images and deploy. Binaries are on GitHub releases.">
+         İskelet oluşturun, runtime imajlarıyla yerelde çalıştırın ve deploy edin. İkili dosyalar GitHub sürümlerinde.</p>
+      <pre><code>runr login https://runr.example.com
+runr init hello --runtime python
+cd hello
+runr dev       # localhost:8080
+runr deploy</code></pre>
+      <a class="install-link" href="https://github.com/runrsh/core/releases" target="_blank" rel="noopener"
+         data-tr="CLI'ı indir →" data-en="Download the CLI →">CLI'ı indir →</a>
+    </div>
+
+    <div class="install-card reveal">
+      <h4>Terraform <span class="install-kind">runrsh/runr</span></h4>
+      <p data-tr="Projeler, değişkenler, domain'ler, deploy'lar, binding'ler, runtime'lar, workflow tetikleyicileri, modeller, MCP sunucuları, roller ve marka — kod olarak."
+         data-en="Projects, variables, domains, deployments, bindings, runtimes, workflow triggers, models, MCP servers, roles and branding — as code.">
+         Projeler, değişkenler, domain'ler, deploy'lar, binding'ler, runtime'lar, workflow tetikleyicileri, modeller, MCP sunucuları, roller ve marka — kod olarak.</p>
+      <pre><code>terraform {
+  required_providers {
+    runr = {
+      source  = "runrsh/runr"
+      version = "~&gt; 0.5"
+    }
+  }
+}</code></pre>
+      <a class="install-link" href="https://github.com/runrsh/core/blob/main/docs/terraform.md" target="_blank" rel="noopener"
+         data-tr="Terraform provider →" data-en="Terraform provider →">Terraform provider →</a>
+    </div>
+
+    <div class="install-card reveal">
+      <h4>GitHub Action <span class="install-kind">CI/CD</span></h4>
+      <p data-tr="Her push'ta deploy edin, pull request'ler için preview ortamları açın."
+         data-en="Deploy on every push and run preview environments for pull requests.">
+         Her push'ta deploy edin, pull request'ler için preview ortamları açın.</p>
+      <pre><code>- uses: runrsh/core/actions/deploy@v0.5.0
+  with:
+    api-url: https://runr.example.com
+    token: ${{ secrets.RUNR_TOKEN }}
+    path: ./functions/orders</code></pre>
+      <a class="install-link" href="https://github.com/runrsh/core/blob/main/docs/github-action.md" target="_blank" rel="noopener"
+         data-tr="GitHub Action →" data-en="GitHub Action →">GitHub Action →</a>
+    </div>
+
+    <div class="install-card install-docs reveal">
+      <h4 data-tr="Dokümantasyon" data-en="Documentation">Dokümantasyon</h4>
+      <p data-tr="Mimari, her özelliğin sayfası, 0.4.x'ten yükseltme ve sürüm notları — deponun <code>docs/</code> klasöründe."
+         data-en="The architecture, a page for every feature, the upgrade from 0.4.x and the release notes — in the repository's <code>docs/</code>.">
+         Mimari, her özelliğin sayfası, 0.4.x'ten yükseltme ve sürüm notları — deponun <code>docs/</code> klasöründe.</p>
+      <ul class="install-links">
+        <li><a href="https://github.com/runrsh/core/tree/main/docs" target="_blank" rel="noopener" data-tr="Doküman dizini" data-en="Documentation index">Doküman dizini</a></li>
+        <li><a href="https://github.com/runrsh/core#quick-start" target="_blank" rel="noopener" data-tr="Hızlı başlangıç" data-en="Quick start">Hızlı başlangıç</a></li>
+        <li><a href="https://github.com/runrsh/core/blob/main/docs/architecture.md" target="_blank" rel="noopener" data-tr="Mimari" data-en="Architecture">Mimari</a></li>
+        <li><a href="https://github.com/runrsh/core/blob/main/docs/upgrade.md" target="_blank" rel="noopener" data-tr="Yükseltme" data-en="Upgrading">Yükseltme</a></li>
+        <li><a href="https://github.com/runrsh/core/blob/main/CHANGELOG.md" target="_blank" rel="noopener" data-tr="Sürüm notları" data-en="Changelog">Sürüm notları</a></li>
+      </ul>
+    </div>
+
+  </div>
+</section>
+
 <!-- ═══ OPEN SOURCE BLOCK ═══ -->
 <section class="section" id="opensource">
   <div class="os-block reveal">
     <span class="eyebrow" data-tr="AÇIK KAYNAK" data-en="OPEN SOURCE">AÇIK KAYNAK</span>
     <h2 data-tr="Bizim değil — sizin." data-en="Not ours — yours.">Bizim değil — sizin.</h2>
     <p class="muted" style="max-width:680px;margin:14px auto 0;font-size:16px"
-       data-tr="Her satır kod açık. Hiçbir özellik paywall arkasında değil. Kendi cluster'ınızda, kendi kurallarınızla çalıştırın. İstediğiniz zaman fork'layın, modify edin, fork olun."
-       data-en="Every line of code is public. Nothing locked behind a paywall. Run on your own cluster, your own rules. Fork, modify, or stay — your choice.">
-       Her satır kod açık. Hiçbir özellik paywall arkasında değil. Kendi cluster'ınızda, kendi kurallarınızla çalıştırın. İstediğiniz zaman fork'layın, modify edin, fork olun.</p>
+       data-tr="RunR, BRF Teknoloji tarafından geliştirilir ve MIT lisansıyla açık kaynaktır. Her satır kod GitHub'da; hiçbir özellik paywall arkasında değil. Kendi cluster'larınızda, kendi kurallarınızla çalıştırın — fork'layın, değiştirin, katkıda bulunun."
+       data-en="RunR is developed by BRF Teknoloji and open source under the MIT license. Every line is on GitHub and nothing sits behind a paywall. Run it on your own clusters, on your own terms — fork it, change it, contribute.">
+       RunR, BRF Teknoloji tarafından geliştirilir ve MIT lisansıyla açık kaynaktır. Her satır kod GitHub'da; hiçbir özellik paywall arkasında değil. Kendi cluster'larınızda, kendi kurallarınızla çalıştırın — fork'layın, değiştirin, katkıda bulunun.</p>
     <div class="os-points">
       <span>✓ <strong data-tr="MIT lisansı" data-en="MIT license">MIT lisansı</strong></span>
       <span>✓ <strong data-tr="Tüm özellikler bedava" data-en="All features free">Tüm özellikler bedava</strong></span>
-      <span>✓ <strong data-tr="Self-host destek" data-en="Self-host support">Self-host destek</strong></span>
-      <span>✓ <strong data-tr="Topluluk yönetimi" data-en="Community-driven">Topluluk yönetimi</strong></span>
+      <span>✓ <strong data-tr="Kendi altyapınızda" data-en="On your own infrastructure">Kendi altyapınızda</strong></span>
+      <span>✓ <strong data-tr="Katkıya açık" data-en="Open to contributions">Katkıya açık</strong></span>
     </div>
-    <div style="margin-top:24px">
-      <button class="btn btn-soon btn-magnetic" data-open-modal="waitlist" data-source="github"
-              data-soon-label="Coming Soon"
-              data-tr="GitHub'da Yıldız Ver" data-en="Star on GitHub">GitHub'da Yıldız Ver</button>
+    <div class="os-cta">
+      <a class="btn btn-primary btn-magnetic" href="https://github.com/runrsh/core" target="_blank" rel="noopener"
+         data-tr="GitHub'da Yıldız Ver" data-en="Star on GitHub">GitHub'da Yıldız Ver</a>
+      <a class="btn btn-ghost" href="https://github.com/runrsh/core/blob/main/CONTRIBUTING.md" target="_blank" rel="noopener"
+         data-tr="Katkıda Bulun" data-en="Contribute">Katkıda Bulun</a>
     </div>
   </div>
 </section>
 
 <!-- ═══ FAQ ═══ -->
 <section class="section" id="faq">
-  <div class="section-head reveal" data-num="10">
+  <div class="section-head reveal" data-num="12">
     <span class="eyebrow" data-tr="SSS" data-en="FAQ">SSS</span>
     <h2 data-tr="Sıkça Sorulan Sorular" data-en="Frequently Asked">Sıkça Sorulan Sorular</h2>
   </div>
@@ -1269,40 +1503,56 @@
     <details class="faq-item reveal" open>
       <summary data-tr="RunR tam olarak nedir?" data-en="What exactly is RunR?">RunR tam olarak nedir?</summary>
       <div class="faq-body"
-        data-tr="RunR, Kubernetes ve Knative üzerine kurulu açık kaynak bir serverless platformdur. Tek dosya fonksiyonları (XaaS), çoklu dosya projeleri (FaaS) veya container'ları (CaaS) — hepsini tek bir web UI'dan deploy edebilirsiniz. Kendi AWS Lambda + ECS'iniz gibi düşünün, ama kontrol ettiğiniz K8s cluster'ında."
-        data-en="RunR is an open-source serverless platform built on Kubernetes and Knative. Deploy single-file functions (XaaS), multi-file projects (FaaS), or containers (CaaS) — all from a unified web UI. Think of it as your own AWS Lambda + ECS, on any K8s cluster you control.">
-        RunR, Kubernetes ve Knative üzerine kurulu açık kaynak bir serverless platformdur.
+        data-tr="RunR, Kubernetes ve Knative üzerine kurulu, BRF Teknoloji'nin geliştirdiği MIT lisanslı açık kaynak bir serverless platformdur. Tek dosya fonksiyonları (XaaS), çoklu dosya projeleri (FaaS), container'ları (CaaS) ve WebAssembly'yi web konsolundan, <code>git push</code> ile, CLI'dan, Terraform'dan ya da bir GitHub Action'dan deploy edersiniz; sandbox'lar, durable workflow'lar, binding'ler, GPU'lar ve MCP dahildir. Kendi AWS Lambda + ECS'iniz gibi düşünün — ama kontrol ettiğiniz Kubernetes cluster'larında."
+        data-en="RunR is an open-source serverless platform on Kubernetes and Knative, developed by BRF Teknoloji under the MIT license. You deploy single-file functions (XaaS), multi-file projects (FaaS), containers (CaaS) and WebAssembly from the web console, with <code>git push</code>, from the CLI, Terraform or a GitHub Action — with sandboxes, durable workflows, bindings, GPUs and MCP built in. Think of it as your own AWS Lambda + ECS, on Kubernetes clusters you control.">
+        RunR, Kubernetes ve Knative üzerine kurulu, BRF Teknoloji'nin geliştirdiği MIT lisanslı açık kaynak bir serverless platformdur.
+      </div>
+    </details>
+    <details class="faq-item reveal">
+      <summary data-tr="RunR barındırılan bir hizmet mi?" data-en="Is RunR a hosted service?">RunR barındırılan bir hizmet mi?</summary>
+      <div class="faq-body"
+        data-tr="Hayır. RunR kurduğunuz bir yazılımdır: kontrol düzlemini Helm ya da tek sunucuda Docker Compose ile kurarsınız, ardından kendi Kubernetes cluster'larınızı region olarak eklersiniz. Kodunuz, verileriniz ve log'larınız sizin altyapınızda kalır."
+        data-en="No. RunR is software you install: you set up the control plane with Helm or with Docker Compose on a single host, then add your own Kubernetes clusters as regions. Your code, data and logs stay on your infrastructure.">
+        Hayır. RunR kurduğunuz bir yazılımdır.
       </div>
     </details>
     <details class="faq-item reveal">
       <summary data-tr="Gerçekten ücretsiz mi? Para nereden geliyor?" data-en="Is it really free? Where does money come from?">Gerçekten ücretsiz mi? Para nereden geliyor?</summary>
       <div class="faq-body"
-        data-tr="Evet, %100 ücretsiz — özellik kısıtlaması yok. Open-Core değil, tamamen açık kaynak: tenancy, SSO, faturalama ve izleme aynı kurulumda gelir. Gelir, isteyen ekiplere sunulan enterprise destek ve SLA garantilerinden gelir."
-        data-en="Yes, 100% free — no feature gates. Not open-core, fully open source: tenancy, SSO, billing and monitoring all ship in the same install. Revenue comes from enterprise support and SLA guarantees for teams that want them.">
-        Evet, %100 ücretsiz.
+        data-tr="Evet. MIT lisansı, özellik kısıtlaması yok, open-core değil: tenancy, SSO, RBAC, audit log, faturalama hesabı ve observability aynı depoda gelir. Gelir, isteyen ekiplere sunulan enterprise destek ve SLA garantilerinden gelir."
+        data-en="Yes. MIT license, no feature gates, not open-core: tenancy, SSO, RBAC, the audit log, billing calculation and observability all ship in the same repository. Revenue comes from enterprise support and SLA guarantees for teams that want them.">
+        Evet, MIT lisanslı ve tamamen ücretsiz.
+      </div>
+    </details>
+    <details class="faq-item reveal">
+      <summary data-tr="Nasıl kurarım?" data-en="How do I install it?">Nasıl kurarım?</summary>
+      <div class="faq-body"
+        data-tr="Kubernetes'te deponun Helm chart'ıyla (<code>helm upgrade --install runr ./helm</code>), tek sunucuda Docker Compose ile. <code>runr</code> CLI'ı GitHub sürümlerinden indirilir; Terraform provider'ı <code>runrsh/runr</code>, GitHub Action'ı <code>runrsh/core/actions/deploy@v0.5.0</code>. Ayrıntılar yukarıdaki kurulum bölümünde ve <a href='https://github.com/runrsh/core/tree/main/docs' target='_blank' rel='noopener'>dokümanlarda</a>."
+        data-en="On Kubernetes with the repository's Helm chart (<code>helm upgrade --install runr ./helm</code>), on a single host with Docker Compose. The <code>runr</code> CLI comes from GitHub releases; the Terraform provider is <code>runrsh/runr</code> and the GitHub Action <code>runrsh/core/actions/deploy@v0.5.0</code>. Details in the install section above and in the <a href='https://github.com/runrsh/core/tree/main/docs' target='_blank' rel='noopener'>documentation</a>.">
+        Helm, Docker Compose, CLI, Terraform ya da GitHub Action ile.
       </div>
     </details>
     <details class="faq-item reveal">
       <summary data-tr="Doğrudan Knative kullanmaktan farkı ne?" data-en="How is it different from raw Knative?">Doğrudan Knative kullanmaktan farkı ne?</summary>
       <div class="faq-body"
-        data-tr="Knative motor, RunR araba. Knative size serverless ilkeller verir ama YAML yazmak, image build etmek, deployment yönetmek, monitoring kurmak hala sizin işiniz. RunR bunları cilalı bir UI'da sarar: versiyon, tek tıkla deploy, canlı log, faturalama, multi-tenant — hepsi dahil."
-        data-en="Knative is the engine; RunR is the car. Knative gives you primitives, but you still write YAML, build images, manage deployments, set up monitoring. RunR wraps it in a polished UI: version control, one-click deploy, live logs, billing, multi-tenancy — all included.">
+        data-tr="Knative motor, RunR araba. Knative size serverless ilkeller verir ama YAML yazmak, image build etmek, deployment yönetmek, izolasyonu ve izlemeyi kurmak hâlâ sizin işinizdir. RunR bunları bir konsolda ve API'de toplar: versiyonlar, tek tıkla ya da <code>git push</code> ile deploy, sandbox'lar, canlı log ve trace, roller, faturalama hesabı, multi-tenancy — hepsi dahil."
+        data-en="Knative is the engine; RunR is the car. Knative gives you primitives, but you still write YAML, build images, manage deployments and set up isolation and monitoring. RunR wraps it in a console and an API: versions, one-click or <code>git push</code> deploys, sandboxes, live logs and traces, roles, billing calculation, multi-tenancy — all included.">
         Knative motor, RunR araba.
       </div>
     </details>
     <details class="faq-item reveal">
       <summary data-tr="Multi-tenancy olmadan kullanabilir miyim?" data-en="Can I run without multi-tenancy?">Multi-tenancy olmadan kullanabilir miyim?</summary>
       <div class="faq-body"
-        data-tr="Evet. Multi-tenancy bir modül — açıp kapatabilirsiniz (TENANCY_ENABLED=false). Kapalıyken platform tek kiracılı modda çalışır: kullanıcı yönetimi devam eder, birden çok kullanıcı kullanır, sadece izolasyon olmaz."
-        data-en="Yes. Multi-tenancy is a toggleable module (TENANCY_ENABLED=false). When off, the platform runs single-tenant: user management still works, multiple users can use it, just no tenant isolation.">
+        data-tr="Evet. Multi-tenancy bir modül — açıp kapatabilirsiniz (TENANCY_ENABLED=false). Kapalıyken platform tek kiracılı modda çalışır: kullanıcı yönetimi, roller ve gruplar devam eder, birden çok kullanıcı kullanır, sadece tenant izolasyonu olmaz."
+        data-en="Yes. Multi-tenancy is a toggleable module (TENANCY_ENABLED=false). When off, the platform runs single-tenant: user management, roles and groups still work and multiple users can use it, just without tenant isolation.">
         Evet, modül kapatılabilir.
       </div>
     </details>
     <details class="faq-item reveal">
       <summary data-tr="Kod çalıştırma ne kadar güvenli?" data-en="How secure is code execution?">Kod çalıştırma ne kadar güvenli?</summary>
       <div class="faq-body"
-        data-tr="Her proje tipi, region'ın atadığı sandbox'ta çalışır: düz runc, gVisor (user-space kernel) ya da Kata Containers (pod başına mikro-VM). Tenant'lara region başına CPU ve bellek kotası tanımlanır; registry ve Redis parolaları ile SSO client secret'ları AES-256 ile şifreli saklanır."
-        data-en="Every project type runs in the sandbox its region assigns: plain runc, gVisor (user-space kernel) or Kata Containers (a micro-VM per pod). Tenants get CPU and memory quotas per region, and registry and Redis passwords and SSO client secrets are stored AES-256 encrypted.">
+        data-tr="Her proje tipi, region'ın atadığı sandbox'ta çalışır: düz runc, gVisor (user-space kernel) ya da Kata Containers (donanım sanallaştırmalı node'larda pod başına mikro-VM). Üstüne: kapsamı sınırlı token'larla RBAC, şifreli saklanan secret'lar, append-only audit log, SBOM, tarama, imza ve region'da imzalı imaj admission'ı. Tenant'lara region başına CPU, bellek ve GPU kotası tanımlanır."
+        data-en="Every project type runs in the sandbox its region assigns: plain runc, gVisor (a user-space kernel) or Kata Containers (a micro-VM per pod, on nodes with hardware virtualization). On top: RBAC with scoped tokens, secrets encrypted at rest, an append-only audit log, SBOMs, scans, signatures and signed-image admission in the region. Tenants get CPU, memory and GPU quotas per region.">
         Region'ın atadığı sandbox: runc, gVisor ya da Kata.
       </div>
     </details>
@@ -1317,29 +1567,37 @@
     <details class="faq-item reveal">
       <summary data-tr="Üretim-hazır mı?" data-en="Is it production-ready?">Üretim-hazır mı?</summary>
       <div class="faq-body"
-        data-tr="Evet. RunR çoklu node K8s cluster'larında üretimde aktif olarak deploy edilmektedir — multi-tenancy, gerçek iş yükleri, otomatik CI/CD. PDB (Pod Disruption Budget), HPA, health check, otomatik geçiş ve rollback desteği dahil."
-        data-en="Yes. RunR is actively deployed in production on multi-node K8s clusters — multi-tenancy, real workloads, automated CI/CD. PDB, HPA, health checks, automatic migration, and rollback support all included.">
+        data-tr="Evet. RunR çoklu node K8s cluster'larında üretimde aktif olarak deploy edilmektedir — multi-tenancy, gerçek iş yükleri, otomatik CI/CD. PDB (Pod Disruption Budget), HPA, health check, otomatik geçiş ve rollback desteği dahil; kurulumlar <code>helm upgrade</code> ile yerinde yükseltilir."
+        data-en="Yes. RunR is actively deployed in production on multi-node K8s clusters — multi-tenancy, real workloads, automated CI/CD. PDB, HPA, health checks, automatic migration and rollback support are all included, and installations upgrade in place with <code>helm upgrade</code>.">
         Evet, üretimde aktif.
+      </div>
+    </details>
+    <details class="faq-item reveal">
+      <summary data-tr="Bir güvenlik açığını nasıl bildiririm?" data-en="How do I report a security issue?">Bir güvenlik açığını nasıl bildiririm?</summary>
+      <div class="faq-body"
+        data-tr="Gizli olarak <a href='mailto:security@runr.sh'>security@runr.sh</a> adresine e-posta ile — herkese açık bir issue açmadan. Raporları üç iş günü içinde teyit ederiz; ayrıntılar <a href='https://github.com/runrsh/core/blob/main/SECURITY.md' target='_blank' rel='noopener'>SECURITY.md</a>'de."
+        data-en="Privately, by e-mail to <a href='mailto:security@runr.sh'>security@runr.sh</a> — not in a public issue. We acknowledge reports within three business days; details in <a href='https://github.com/runrsh/core/blob/main/SECURITY.md' target='_blank' rel='noopener'>SECURITY.md</a>.">
+        Gizli olarak security@runr.sh adresine e-posta ile.
       </div>
     </details>
   </div>
 </section>
 
-<!-- ═══ FINAL CTA ═══ -->
+<!-- ═══ FINAL CTA: release announcements ═══ -->
 <section class="section">
   <div class="waitlist-cta reveal">
-    <span class="eyebrow" data-tr="WAITLIST" data-en="WAITLIST">WAITLIST</span>
-    <h2 data-tr="İlk erişimi siz alın." data-en="Get early access.">İlk erişimi siz alın.</h2>
+    <span class="eyebrow" data-tr="SÜRÜM DUYURULARI" data-en="RELEASE NEWS">SÜRÜM DUYURULARI</span>
+    <h2 data-tr="Yeni sürümlerden ilk siz haberdar olun." data-en="Hear about new releases first.">Yeni sürümlerden ilk siz haberdar olun.</h2>
     <p class="dim" style="max-width:560px;margin:14px auto 0"
-       data-tr="Lansman, yeni özellikler ve ilk erişim için listede olun. Spam yok, sadece önemli güncellemeler."
-       data-en="Get the launch, new features and early access. No spam, just the important stuff.">
-       Lansman, yeni özellikler ve ilk erişim için listede olun. Spam yok, sadece önemli güncellemeler.</p>
+       data-tr="Yeni RunR sürümleri ve önemli duyurular e-postanıza gelsin. Spam yok, sadece önemli güncellemeler."
+       data-en="New RunR releases and important announcements in your inbox. No spam, just the important stuff.">
+       Yeni RunR sürümleri ve önemli duyurular e-postanıza gelsin. Spam yok, sadece önemli güncellemeler.</p>
     <form id="form-final-cta" class="waitlist-form" novalidate>
       <input type="email" name="email" required
              data-tr="E-posta adresiniz" data-en="Your email address"
              data-target="placeholder" placeholder="E-posta adresiniz">
       <button type="submit" class="btn btn-primary btn-magnetic"
-              data-tr="Listeye Katıl" data-en="Join Waitlist">Listeye Katıl</button>
+              data-tr="Abone Ol" data-en="Subscribe">Abone Ol</button>
     </form>
     <div class="turnstile-slot" data-form="final" style="display:flex;justify-content:center;margin-top:14px"></div>
     <p class="privacy faint" style="margin-top:14px;font-size:11px"
@@ -1359,60 +1617,37 @@
           <img src="assets/runr-wordmark.svg" alt="RunR" class="wordmark">
         </div>
         <p class="footer-tagline"
-           data-tr="Açık kaynak serverless mimari, Kubernetes üzerinde."
-           data-en="Open source serverless architecture, on Kubernetes.">
-           Açık kaynak serverless mimari, Kubernetes üzerinde.</p>
+           data-tr="Açık kaynak serverless mimari, Kubernetes üzerinde. MIT lisanslı."
+           data-en="Open source serverless architecture, on Kubernetes. MIT licensed.">
+           Açık kaynak serverless mimari, Kubernetes üzerinde. MIT lisanslı.</p>
       </div>
       <div class="footer-links">
         <a href="#features" data-tr="Özellikler" data-en="Features">Özellikler</a>
+        <a href="https://github.com/runrsh/core" target="_blank" rel="noopener">GitHub</a>
+        <a href="#platform" data-tr="Platform" data-en="Platform">Platform</a>
+        <a href="https://github.com/runrsh/core/tree/main/docs" target="_blank" rel="noopener" data-tr="Dokümanlar" data-en="Docs">Dokümanlar</a>
+        <a href="#install" data-tr="Kurulum" data-en="Install">Kurulum</a>
+        <a href="https://github.com/runrsh/core/blob/main/CHANGELOG.md" target="_blank" rel="noopener" data-tr="Sürüm notları" data-en="Changelog">Sürüm notları</a>
         <a href="#compare" data-tr="Karşılaştır" data-en="Compare">Karşılaştır</a>
-        <a href="#migration" data-tr="Geçiş" data-en="Migration">Geçiş</a>
-        <a href="#opensource" data-tr="Açık Kaynak" data-en="Open Source">Açık Kaynak</a>
+        <a href="https://github.com/runrsh/core/blob/main/CONTRIBUTING.md" target="_blank" rel="noopener" data-tr="Katkıda bulunma" data-en="Contributing">Katkıda bulunma</a>
         <a href="#faq" data-tr="SSS" data-en="FAQ">SSS</a>
-        <a href="#" data-open-modal="waitlist" data-source="footer-docs" data-tr="Dokümanlar (Yakında)" data-en="Docs (Soon)">Dokümanlar (Yakında)</a>
+        <a href="https://github.com/runrsh/core/blob/main/SECURITY.md" target="_blank" rel="noopener" data-tr="Güvenlik politikası" data-en="Security policy">Güvenlik politikası</a>
+        <a href="https://github.com/runrsh/core/blob/main/LICENSE" target="_blank" rel="noopener" data-tr="Lisans (MIT)" data-en="License (MIT)">Lisans (MIT)</a>
+        <a href="https://github.com/runrsh/core/blob/main/CODE_OF_CONDUCT.md" target="_blank" rel="noopener" data-tr="Davranış kuralları" data-en="Code of conduct">Davranış kuralları</a>
       </div>
       <div class="footer-meta">
         <p class="made">Made with ❤️ by</p>
         <p class="made"><a href="https://brf.sh" target="_blank" rel="noopener">brf.sh</a> / <a href="https://burak.sh" target="_blank" rel="noopener">burak.sh</a></p>
+        <p class="footer-contact"><span data-tr="Güvenlik:" data-en="Security:">Güvenlik:</span> <a href="mailto:security@runr.sh">security@runr.sh</a></p>
+        <p class="footer-contact"><span data-tr="Davranış kuralları:" data-en="Conduct:">Davranış kuralları:</span> <a href="mailto:conduct@runr.sh">conduct@runr.sh</a></p>
       </div>
     </div>
     <div class="footer-bottom">
-      <span>© 2026 RunR. <span data-tr="Tüm haklar saklıdır." data-en="All rights reserved.">Tüm haklar saklıdır.</span></span>
+      <span>© 2026 BRF Teknoloji and RunR contributors. <span data-tr="MIT lisansıyla yayımlanır." data-en="Released under the MIT License.">MIT lisansıyla yayımlanır.</span></span>
       <span class="mono">runr.sh</span>
     </div>
   </div>
 </footer>
-
-<!-- ═══ MODAL: WAITLIST ═══ -->
-<div class="modal-backdrop" id="modal-waitlist">
-  <div class="modal">
-    <button class="modal-close" data-close-modal aria-label="Close">×</button>
-    <h3 data-tr="Çok yakında — Sizi haberdar edelim"
-        data-en="Coming Soon — Get notified">Çok yakında — Sizi haberdar edelim</h3>
-    <p class="modal-sub"
-       data-tr="Bu özellik henüz hazır değil. Hazır olunca size ilk haber verelim mi?"
-       data-en="This feature isn't ready yet. Want to be the first to know when it is?">
-       Bu özellik henüz hazır değil. Hazır olunca size ilk haber verelim mi?</p>
-    <form id="form-waitlist" novalidate>
-      <div class="field">
-        <label data-tr="E-posta" data-en="Email">E-posta</label>
-        <input type="email" name="email" required
-               data-tr="ornek@sirket.com" data-en="you@company.com"
-               data-target="placeholder" placeholder="ornek@sirket.com">
-      </div>
-      <div class="turnstile-slot" data-form="waitlist" style="display:flex;justify-content:center;margin:8px 0 14px"></div>
-      <div class="modal-actions">
-        <button type="button" class="btn btn-ghost" data-close-modal
-                data-tr="İptal" data-en="Cancel">İptal</button>
-        <button type="submit" class="btn btn-primary"
-                data-tr="Bana Haber Ver" data-en="Notify Me">Bana Haber Ver</button>
-      </div>
-    </form>
-    <p class="privacy"
-       data-tr="Spam yok. İstediğiniz zaman çıkabilirsiniz."
-       data-en="No spam. Unsubscribe anytime.">Spam yok. İstediğiniz zaman çıkabilirsiniz.</p>
-  </div>
-</div>
 
 <!-- ═══ MODAL: ENTERPRISE ═══ -->
 <div class="modal-backdrop" id="modal-enterprise">
@@ -1483,7 +1718,7 @@
 <script src="js/forms.js" defer></script>
 
 <!-- ───────────────────────────────────────────────────────────
-     Backend config — to be updated once brf-mono is deployed.
+     Backend config for the forms (same-origin /api on runr.sh).
      `RUNR_TURNSTILE_SITEKEY`: Cloudflare Turnstile site key
      (dashboard.cloudflare.com → Turnstile → Site key)
 ─────────────────────────────────────────────────────────── -->

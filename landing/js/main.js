@@ -12,11 +12,11 @@
   const META = {
     tr: {
       title: 'RunR — Açık Kaynak Serverless Mimari · Kubernetes Üzerinde',
-      desc:  'Tek dosya fonksiyonları, çoklu dosya projeleri veya container\'ları kendi Knative cluster\'ınızda deploy edin. Scale-to-zero, multi-tenant, sıfır vendor lock-in. %100 açık kaynak.'
+      desc:  'Fonksiyonlar, çoklu dosya projeleri, container\'lar ve WebAssembly kendi Kubernetes cluster\'larınızda, Knative ile scale-to-zero. Sandbox API, durable workflow, GPU ve MCP dahil. MIT lisanslı açık kaynak.'
     },
     en: {
       title: 'RunR — Open Source Serverless Architecture on Kubernetes',
-      desc:  'Deploy single-file functions, multi-file projects, or full containers on your own Knative cluster. Scale-to-zero, multi-tenant, zero vendor lock-in. 100% open source.'
+      desc:  'Functions, multi-file projects, containers and WebAssembly on your own Kubernetes clusters, with Knative scale-to-zero. Sandbox API, durable workflows, GPUs and MCP built in. Open source under the MIT license.'
     }
   };
 
@@ -86,7 +86,6 @@
 
   // ── MODAL ──
   const modals = {
-    waitlist: document.getElementById('modal-waitlist'),
     enterprise: document.getElementById('modal-enterprise'),
   };
 

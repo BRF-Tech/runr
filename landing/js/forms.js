@@ -1,6 +1,6 @@
 /* ============================================================
    RunR Landing — forms.js
-   Waitlist + Enterprise contact form handlers.
+   Release-news sign-up (POST /api/waitlist) + Enterprise contact form handlers.
    Depends on window.RunR namespace (exposed by main.js).
    ============================================================ */
 
@@ -11,7 +11,6 @@
     if (!window.RunR) { setTimeout(init, 30); return; }
     const R = window.RunR;
 
-    const waitlistForm = document.getElementById('form-waitlist');
     const finalForm    = document.getElementById('form-final-cta');
     const entForm      = document.getElementById('form-enterprise');
 
@@ -29,8 +28,6 @@
         });
         if (ok) {
           R.toast(R.locale() === 'tr' ? 'Listedesiniz! Teşekkürler.' : "You're on the list. Thanks!", 'success');
-          R.closeModal();
-          waitlistForm && waitlistForm.reset();
           finalForm && finalForm.reset();
         } else {
           R.toast(R.errMessage((data && data.error) || 'network'), 'error');
@@ -43,14 +40,6 @@
       }
     }
 
-    if (waitlistForm) {
-      waitlistForm.addEventListener('submit', (e) => {
-        e.preventDefault();
-        const email = waitlistForm.email.value;
-        const src = (R.modals.waitlist && R.modals.waitlist.dataset.source) || 'modal';
-        submitWaitlist(email, src, waitlistForm.querySelector('button[type=submit]'), 'waitlist');
-      });
-    }
     if (finalForm) {
       finalForm.addEventListener('submit', (e) => {
         e.preventDefault();

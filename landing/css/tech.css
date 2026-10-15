@@ -200,6 +200,8 @@
   padding: 20px 24px;
 }
 .s2p-langs h4 { font-size: 14px; margin-bottom: 12px; color: var(--accent); }
+.s2p-langs h4:not(:first-child) { margin-top: 22px; padding-top: 18px; border-top: 1px dashed var(--border-strong); }
+.s2p-langs-note { font-size: 12px; color: var(--text-muted); margin-top: 12px; line-height: 1.6; }
 .s2p-langs-list {
   display: flex;
   flex-wrap: wrap;
@@ -218,8 +220,63 @@
 }
 .s2p-lang.live   { background: rgba(74,222,128,.08); border-color: var(--success); color: var(--success); }
 .s2p-lang.live::before { content: '●'; font-size: 8px; color: var(--success); }
-.s2p-lang.soon   { background: var(--bg-soft); border-color: var(--border-strong); color: var(--text-muted); }
-.s2p-lang.soon::before { content: '○'; font-size: 8px; color: var(--text-muted); }
+.s2p-lang.plugin { background: rgba(56,189,248,.08); border-color: var(--info); color: var(--info); }
+.s2p-lang.plugin::before { content: '◆'; font-size: 8px; color: var(--info); }
+.s2p-lang.wasm   { background: rgba(167,139,250,.08); border-color: var(--purple); color: var(--purple); }
+.s2p-lang.wasm::before { content: '◆'; font-size: 8px; color: var(--purple); }
+
+/* ── INSTALL CARDS ──────────────────────────────────────── */
+.install-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 14px;
+}
+@media (max-width: 1100px) { .install-grid { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 700px)  { .install-grid { grid-template-columns: 1fr; } }
+.install-card {
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 22px;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  transition: border-color .3s, transform .3s;
+}
+.install-card:hover { transform: translateY(-2px); border-color: var(--border-strong); }
+.install-card h4 { font-size: 16px; display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px; }
+.install-card .install-kind { font-size: 11px; font-weight: 600; color: var(--text-muted); font-family: ui-monospace, monospace; }
+.install-card p { color: var(--text-dim); font-size: 13px; line-height: 1.6; margin-bottom: 12px; }
+.install-card pre {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px 14px;
+  overflow-x: auto;
+  margin-bottom: 14px;
+  flex: 1;
+}
+.install-card pre code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace;
+  font-size: 12px;
+  font-weight: 400;
+  font-variant-ligatures: none;
+  line-height: 1.6;
+  color: var(--text);
+  white-space: pre;
+}
+@media (max-width: 480px) {
+  .install-card { padding: 18px; }
+  .install-card pre { padding: 10px 12px; }
+  .install-card pre code { font-size: 11px; }
+}
+.install-card .install-link { font-size: 13px; font-weight: 600; color: var(--accent); margin-top: auto; }
+.install-card .install-link:hover { text-decoration: underline; }
+.install-card.install-docs { border-color: rgba(249,115,22,.35); background: linear-gradient(135deg, rgba(249,115,22,.06), rgba(230,57,70,.03)); }
+.install-links { display: flex; flex-direction: column; gap: 8px; list-style: none; padding: 0; margin: 0; }
+.install-links a { font-size: 13px; color: var(--text); font-weight: 600; }
+.install-links a::before { content: '→ '; color: var(--accent); }
+.install-links a:hover { color: var(--accent); }
 
 /* ── ARCH MINI DIAGRAM (inline SVG block) ───────────────── */
 .arch-diagram {

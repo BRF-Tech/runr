@@ -122,6 +122,10 @@
 .footer-meta .made { color: var(--text-muted); font-size: 13px; }
 .footer-meta .made a { color: var(--accent); font-weight: 700; }
 .footer-meta .made a:hover { text-decoration: underline; }
+.footer-meta .footer-contact { color: var(--text-muted); font-size: 12px; margin-top: 6px; }
+.footer-meta .made + .footer-contact { margin-top: 14px; }
+.footer-meta .footer-contact a { color: var(--text-dim); }
+.footer-meta .footer-contact a:hover { color: var(--accent); }
 .footer-bottom {
   display: flex;
   justify-content: space-between;
