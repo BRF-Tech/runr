@@ -1,0 +1,303 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Scrollbar alanını her zaman rezerve et — layout kaymasını önler */
+html { scrollbar-gutter: stable; }
+
+/* ── Brand variables ──────────────────────────────────────────────────────────
+   RunR palette (brand-300 … brand-900, accent). The white-label branding (GET /api/branding)
+   overrides them at runtime; the Tailwind brand-* tokens (brand-300 … brand-900, brand-primary,
+   brand-accent) read them. */
+:root {
+  --brand-300: 253 186 116;
+  --brand-400: 251 146 60;
+  --brand-500: 249 115 22;
+  --brand-600: 234 88 12;
+  --brand-700: 194 65 12;
+  --brand-800: 154 52 18;
+  --brand-900: 124 45 18;
+  --brand-accent: 230 57 70;
+}
+
+/* ── Theme variables ──────────────────────────────────────────────────────── */
+
+/* Dark (Navy) — default
+   600-300: text tones — high contrast (near-white)
+   700-950: bg / border tones — unchanged */
+:root,
+[data-theme="dark"] {
+  --gray-950: 9 27 78;
+  --gray-900: 15 36 96;
+  --gray-800: 22 46 114;
+  --gray-700: 30 59 133;
+  --gray-600: 175 195 225;
+  --gray-500: 205 218 240;
+  --gray-400: 222 232 248;
+  --gray-300: 235 240 250;
+  --gray-200: 242 245 252;
+  --gray-100: 248 250 254;
+  --gray-50:  252 253 255;
+  color-scheme: dark;
+}
+
+/* Full Dark — pure gray, high-contrast text */
+[data-theme="fulldark"] {
+  --gray-950: 3 7 18;
+  --gray-900: 17 24 39;
+  --gray-800: 31 41 55;
+  --gray-700: 55 65 81;
+  --gray-600: 180 186 200;
+  --gray-500: 210 215 225;
+  --gray-400: 228 232 240;
+  --gray-300: 238 240 245;
+  --gray-200: 245 246 248;
+  --gray-100: 250 250 252;
+  --gray-50:  253 253 254;
+  color-scheme: dark;
+}
+
+/* Light — navy inverted, high-contrast text (near-black) */
+[data-theme="light"] {
+  --gray-950: 255 255 255;
+  --gray-900: 245 247 252;
+  --gray-800: 230 235 245;
+  --gray-700: 200 210 228;
+  --gray-600: 55 70 105;
+  --gray-500: 30 45 80;
+  --gray-400: 18 30 62;
+  --gray-300: 10 22 50;
+  --gray-200: 6 15 40;
+  --gray-100: 3 10 32;
+  --gray-50:  2 6 25;
+  color-scheme: light;
+}
+
+/* ── Base ─────────────────────────────────────────────────────────────────── */
+
+@layer base {
+  * {
+    @apply box-border;
+  }
+  body {
+    @apply min-h-screen antialiased;
+  }
+  /* Hide number input spinners */
+  input[type="number"]::-webkit-inner-spin-button,
+  input[type="number"]::-webkit-outer-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+  }
+  input[type="number"] {
+    -moz-appearance: textfield;
+  }
+  /* Scrollbar */
+  ::-webkit-scrollbar {
+    @apply w-1.5 h-1.5;
+  }
+  ::-webkit-scrollbar-track {
+    @apply bg-gray-900;
+  }
+  ::-webkit-scrollbar-thumb {
+    @apply bg-gray-700 rounded-full;
+  }
+}
+
+@layer components {
+  .btn {
+    @apply inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium
+           transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-900
+           disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+  .btn-primary {
+    @apply btn text-white;
+    background-color: rgb(var(--brand-600));
+    --tw-ring-color: rgb(var(--brand-500) / 0.5);
+  }
+  .btn-primary:hover:not(:disabled) { background-color: rgb(var(--brand-500)); }
+  .btn-secondary {
+    @apply btn bg-gray-800 text-gray-100 hover:bg-gray-700 focus:ring-gray-600;
+  }
+  .btn-danger {
+    @apply btn bg-red-700 text-white hover:bg-red-600 focus:ring-red-500;
+  }
+  .input {
+    @apply w-full px-3 py-2 rounded-lg bg-gray-800 border border-gray-700 text-gray-100
+           placeholder-gray-400 text-sm
+           focus:outline-none
+           transition-colors;
+  }
+  /* Normalize height for single-line inputs and selects so they render at the
+     same visual height regardless of browser default select arrow styling. */
+  input.input, select.input {
+    @apply h-9;
+  }
+  .input:focus {
+    border-color: rgb(var(--brand-500) / 0.7);
+  }
+  .label {
+    @apply block text-xs font-medium text-gray-400 mb-1.5 uppercase tracking-wider;
+  }
+  .card {
+    @apply bg-gray-900 border border-gray-800 rounded-xl p-5;
+  }
+  /* Pill-style tab button — rounded background tabs */
+  .tab-pill {
+    @apply px-4 py-1.5 rounded text-sm transition-colors text-gray-400;
+  }
+  .tab-pill:hover { color: rgb(var(--brand-500)); }
+  .tab-pill.is-active {
+    color: rgb(var(--brand-500));
+    background: rgb(var(--brand-500) / 0.1);
+  }
+  /* Underline-style tab button — bottom-border tabs */
+  .tab-line {
+    @apply px-4 py-2 text-sm border-b-2 border-transparent transition-colors text-gray-400;
+  }
+  .tab-line:hover { color: rgb(var(--brand-500)); }
+  .tab-line.is-active {
+    color: rgb(var(--brand-500));
+    border-bottom-color: rgb(var(--brand-500));
+  }
+
+  /* Pill-style settings tab — icon + label */
+  .settings-tab {
+    @apply flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium transition-all border cursor-pointer;
+    @apply bg-gray-900 border-gray-800 text-gray-400;
+  }
+  .settings-tab:hover {
+    @apply text-gray-200 border-gray-700;
+  }
+  .settings-tab.is-active {
+    background: rgb(var(--brand-500) / 0.1);
+    border-color: rgb(var(--brand-500) / 0.4);
+    color: rgb(var(--brand-500));
+  }
+}
+
+/* ── driver.js theme — uses CSS vars ──────────────────────────────────────── */
+.runr-tour-popover.driver-popover {
+  background: rgb(var(--gray-900));
+  border: 1px solid rgb(var(--gray-700));
+  color: rgb(var(--gray-200));
+  box-shadow: 0 25px 50px -12px rgb(0 0 0 / 0.5);
+}
+.runr-tour-popover .driver-popover-title {
+  color: rgb(var(--gray-50));
+  font-size: 0.95rem;
+}
+.runr-tour-popover .driver-popover-description {
+  color: rgb(var(--gray-400));
+  font-size: 0.85rem;
+  line-height: 1.5;
+}
+.runr-tour-popover .driver-popover-close-btn {
+  color: rgb(var(--gray-500));
+}
+.runr-tour-popover .driver-popover-close-btn:hover {
+  color: rgb(var(--gray-50));
+}
+.runr-tour-popover .driver-popover-progress-text {
+  color: rgb(var(--gray-500));
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+}
+.runr-tour-popover .driver-popover-next-btn {
+  background: rgb(79 70 229);
+  color: #fff;
+  border: none;
+  border-radius: 0.5rem;
+  padding: 0.35rem 1rem;
+  font-size: 0.8rem;
+  text-shadow: none;
+}
+.runr-tour-popover .driver-popover-next-btn:hover {
+  background: rgb(99 102 241);
+}
+.runr-tour-popover .driver-popover-prev-btn {
+  background: rgb(var(--gray-800));
+  color: rgb(var(--gray-300));
+  border: 1px solid rgb(var(--gray-700));
+  border-radius: 0.5rem;
+  padding: 0.35rem 1rem;
+  font-size: 0.8rem;
+  text-shadow: none;
+}
+.runr-tour-popover .driver-popover-prev-btn:hover {
+  background: rgb(var(--gray-700));
+}
+.runr-tour-popover .driver-popover-arrow-side-left .driver-popover-arrow,
+.runr-tour-popover .driver-popover-arrow-side-right .driver-popover-arrow,
+.runr-tour-popover .driver-popover-arrow-side-top .driver-popover-arrow,
+.runr-tour-popover .driver-popover-arrow-side-bottom .driver-popover-arrow {
+  border-color: rgb(var(--gray-700));
+}
+/* Lang toggle clickable during tutorial */
+.driver-active [data-tour="lang-toggle"] {
+  position: relative;
+  z-index: 10002;
+}
+
+/* ── Light theme: badge & accent color overrides ─────────────────────────── */
+/* Backgrounds: dark-900 tones → light-50 tones */
+[data-theme="light"] [class*="bg-emerald-900"] { background-color: rgb(236 253 245 / 0.8); }
+[data-theme="light"] [class*="bg-violet-900"]  { background-color: rgb(245 243 255 / 0.8); }
+[data-theme="light"] [class*="bg-red-900"]     { background-color: rgb(254 242 242 / 0.8); }
+[data-theme="light"] [class*="bg-yellow-900"]  { background-color: rgb(254 252 232 / 0.8); }
+[data-theme="light"] [class*="bg-orange-900"]  { background-color: rgb(255 247 237 / 0.8); }
+[data-theme="light"] [class*="bg-blue-900"]    { background-color: rgb(239 246 255 / 0.8); }
+[data-theme="light"] [class*="bg-purple-900"]  { background-color: rgb(250 245 255 / 0.8); }
+[data-theme="light"] [class*="bg-indigo-900"]  { background-color: rgb(238 242 255 / 0.6); }
+[data-theme="light"] [class*="bg-indigo-600\\/20"] { background-color: rgb(238 242 255 / 0.6); }
+[data-theme="light"] [class*="bg-indigo-500\\/20"] { background-color: rgb(238 242 255 / 0.6); }
+[data-theme="light"] [class*="bg-brand-900"]   { background-color: rgb(var(--brand-300) / 0.15); }
+[data-theme="light"] [class*="bg-white\\/20"]   { background-color: rgb(var(--gray-800) / 0.15); }
+
+/* Text: light 300-400 tones → dark 700 tones */
+[data-theme="light"] [class*="text-emerald-3"],
+[data-theme="light"] [class*="text-emerald-4"] { color: rgb(4 120 87); }
+[data-theme="light"] [class*="text-violet-4"]  { color: rgb(109 40 217); }
+[data-theme="light"] [class*="text-red-3"],
+[data-theme="light"] [class*="text-red-4"]     { color: rgb(185 28 28); }
+[data-theme="light"] [class*="text-yellow-3"],
+[data-theme="light"] [class*="text-yellow-4"]  { color: rgb(161 98 7); }
+[data-theme="light"] [class*="text-orange-3"],
+[data-theme="light"] [class*="text-orange-4"],
+[data-theme="light"] [class*="text-orange-5"]  { color: rgb(194 65 12); }
+[data-theme="light"] [class*="text-blue-3"]    { color: rgb(29 78 216); }
+[data-theme="light"] [class*="text-purple-3"],
+[data-theme="light"] [class*="text-purple-4"]  { color: rgb(126 34 206); }
+[data-theme="light"] [class*="text-indigo-3"],
+[data-theme="light"] [class*="text-indigo-4"]  { color: rgb(67 56 202); }
+[data-theme="light"] [class*="text-brand-3"],
+[data-theme="light"] [class*="text-brand-4"]    { color: rgb(var(--brand-700)); }
+[data-theme="light"] [class*="text-amber-3"],
+[data-theme="light"] [class*="text-amber-4"],
+[data-theme="light"] [class*="text-amber-5"]   { color: rgb(146 64 14); }
+
+/* Borders: dark-800 tones → light-200 tones */
+[data-theme="light"] [class*="border-emerald-8"] { border-color: rgb(167 243 208); }
+[data-theme="light"] [class*="border-violet-8"]  { border-color: rgb(221 214 254); }
+[data-theme="light"] [class*="border-red-8"]     { border-color: rgb(254 202 202); }
+[data-theme="light"] [class*="border-yellow-8"]  { border-color: rgb(254 240 138); }
+[data-theme="light"] [class*="border-orange-8"]  { border-color: rgb(254 215 170); }
+[data-theme="light"] [class*="border-blue-8"]    { border-color: rgb(191 219 254); }
+[data-theme="light"] [class*="border-purple-8"]  { border-color: rgb(233 213 255); }
+[data-theme="light"] [class*="border-indigo-6"]  { border-color: rgb(199 210 254); }
+[data-theme="light"] [class*="border-indigo-5"]  { border-color: rgb(199 210 254); }
+[data-theme="light"] [class*="border-brand-5"],
+[data-theme="light"] [class*="border-brand-6"],
+[data-theme="light"] [class*="border-brand-8"]  { border-color: rgb(var(--brand-300) / 0.6); }
+
+/* ── Driver.js (tutorial) buton rengi override ────────────────────────────── */
+.driver-popover-next-btn,
+.driver-popover-done-btn {
+  background-color: rgb(var(--brand-600)) !important;
+  border-color: rgb(var(--brand-600)) !important;
+  text-shadow: none !important;
+}
+.driver-popover-next-btn:hover,
+.driver-popover-done-btn:hover {
+  background-color: rgb(var(--brand-500)) !important;
+  border-color: rgb(var(--brand-500)) !important;
+}

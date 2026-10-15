@@ -1,0 +1,37 @@
+export default {
+  wasm: {
+    picker: {
+      badge:      'Wasm',
+      badgeTitle: 'Runs as WebAssembly (Spin) — offered in regions with WebAssembly support',
+    },
+    card: {
+      title:          'WebAssembly',
+      description:    'WebAssembly functions on runwasi shims (Spin) — cold starts in milliseconds, capability-based sandbox. Enables the Rust, Go, JavaScript and Python (Wasm) runtimes in this region.',
+      installBtn:     'Install WebAssembly',
+      applyBtn:       'Apply changes',
+      installConfirm: 'Install and restart',
+      uninstallBtn:   'Uninstall WebAssembly',
+      uninstallConfirm: 'Remove WebAssembly support from the nodes? It is refused while WebAssembly functions run; the container runtime restarts on the nodes where the shims are loaded.',
+      installWarning: 'Installing WebAssembly support restarts the container runtime once on every selected node where its configuration changes (containerd, or the k3s / RKE2 service that runs it), one node at a time. Running pods keep running; on a single-node k3s or RKE2 cluster the Kubernetes API is unavailable for about 10–20 seconds.',
+      shims:          'Shims',
+      shimVersion:    '{name} {version} · RuntimeClass {runtimeClass}',
+      shimRequired:   'required by the Wasm runtimes',
+      nodes:          'Nodes',
+      allNodes:       'All eligible nodes ({count})',
+      selectedNodes:  '{count} selected',
+      noEligible:     'No node of this region can get WebAssembly support: it needs Linux nodes (amd64 / arm64) with containerd (plain, k3s or RKE2) that projects can run on.',
+      nodeReady:      'shims: {shims}',
+      clusterError:   'The cluster could not be read: {error}',
+      loading:        'Reading the nodes…',
+      knativePending: 'Knative features still to enable (done by the install): {features}',
+      readOnly:       'Managing WebAssembly support needs the sandbox.manage permission (Manage runtime isolation).',
+      reason: {
+        not_linux:     'not Linux',
+        not_dedicated: 'not a dedicated worker',
+        tainted:       'tainted / cordoned',
+        runtime:       'not containerd',
+        arch:          'unsupported architecture',
+      },
+    },
+  },
+}

@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 92" width="200" height="92">
+  <defs>
+    <linearGradient id="runr-d" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FF8C42"/>
+      <stop offset="100%" stop-color="#E63946"/>
+    </linearGradient>
+  </defs>
+
+  <text text-anchor="end" x="180" y="56"
+    font-family="'Inter', 'Helvetica Neue', 'Arial', sans-serif"
+    font-size="52" font-weight="800" fill="#F0F0F0" letter-spacing="-2">Run<tspan fill="url(#runr-d)">R</tspan></text>
+
+  <text text-anchor="end" x="180" y="78"
+    font-family="'Inter', 'Helvetica Neue', 'Arial', sans-serif"
+    font-size="18" font-weight="500" letter-spacing="1" fill="#666666">server<tspan fill="url(#runr-d)">less</tspan></text>
+</svg>

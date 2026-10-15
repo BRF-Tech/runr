@@ -1,0 +1,17 @@
+:80 {
+    root * /srv
+    encode zstd gzip
+
+    @assets {
+        path *.js *.css *.woff *.woff2 *.svg *.png *.jpg *.ico *.webp *.ttf *.eot
+    }
+    header @assets Cache-Control "public, max-age=31536000, immutable"
+
+    @index {
+        path /index.html
+    }
+    header @index Cache-Control "no-store, no-cache, must-revalidate"
+
+    try_files {path} /index.html
+    file_server
+}

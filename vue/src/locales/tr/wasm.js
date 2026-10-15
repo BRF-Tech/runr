@@ -1,0 +1,37 @@
+export default {
+  wasm: {
+    picker: {
+      badge:      'Wasm',
+      badgeTitle: 'WebAssembly (Spin) olarak çalışır — WebAssembly desteği olan bölgelerde sunulur',
+    },
+    card: {
+      title:          'WebAssembly',
+      description:    'runwasi shim\'leri (Spin) üzerinde WebAssembly fonksiyonları — milisaniye düzeyinde soğuk başlangıç, yetki tabanlı sandbox. Bu bölgede Rust, Go, JavaScript ve Python (Wasm) runtime\'larını açar.',
+      installBtn:     'WebAssembly kur',
+      applyBtn:       'Değişiklikleri uygula',
+      installConfirm: 'Kur ve yeniden başlat',
+      uninstallBtn:   'WebAssembly kaldır',
+      uninstallConfirm: 'WebAssembly desteği node\'lardan kaldırılsın mı? WebAssembly fonksiyonları çalışırken reddedilir; shim\'lerin yüklü olduğu node\'larda container runtime yeniden başlar.',
+      installWarning: 'WebAssembly desteğini kurmak, yapılandırması değişen her seçili node\'da container runtime\'ı (containerd ya da onu çalıştıran k3s / RKE2 servisi) bir kez, node node yeniden başlatır. Çalışan pod\'lar çalışmaya devam eder; tek node\'lu k3s veya RKE2 cluster\'ında Kubernetes API yaklaşık 10–20 saniye erişilemez.',
+      shims:          'Shim\'ler',
+      shimVersion:    '{name} {version} · RuntimeClass {runtimeClass}',
+      shimRequired:   'Wasm runtime\'ları için gerekli',
+      nodes:          'Node\'lar',
+      allNodes:       'Uygun tüm node\'lar ({count})',
+      selectedNodes:  '{count} seçili',
+      noEligible:     'Bu bölgede WebAssembly desteği alabilecek node yok: projelerin çalışabildiği, containerd (düz, k3s veya RKE2) kullanan Linux node\'ları (amd64 / arm64) gerekir.',
+      nodeReady:      'shim\'ler: {shims}',
+      clusterError:   'Cluster okunamadı: {error}',
+      loading:        'Node\'lar okunuyor…',
+      knativePending: 'Açılacak Knative özellikleri (kurulum açar): {features}',
+      readOnly:       'WebAssembly desteğini yönetmek sandbox.manage yetkisi (Çalışma izolasyonunu yönet) ister.',
+      reason: {
+        not_linux:     'Linux değil',
+        not_dedicated: 'ayrılmış worker değil',
+        tainted:       'taint\'li / cordon\'lu',
+        runtime:       'containerd değil',
+        arch:          'desteklenmeyen mimari',
+      },
+    },
+  },
+}

@@ -1,0 +1,97 @@
+export default {
+  account: {
+    // Ticket system
+    ticketTitle:        'Support Tickets',
+    newTicket:          'New Ticket',
+    myTickets:          'My Tickets',
+    noTickets:          'No tickets yet. Create one to get help from our team.',
+    ticketSubject:      'Subject',
+    ticketDescription:  'Description',
+    ticketDescPlaceholder: 'Describe your issue in detail...',
+    ticketCategory:     'Category',
+    ticketPriority:     'Priority',
+    ticketStatus:       'Status',
+    ticketCreated:      'Created',
+    ticketCreateTitle:  'Create Support Ticket',
+    ticketCreatedMsg:   'Ticket created successfully.',
+    ticketDetail:       'Ticket Detail',
+    ticketRef:          'Ref',
+    ticketReply:        'Reply',
+    ticketReplyPlaceholder: 'Type your message...',
+    ticketSend:         'Send',
+    ticketConversation: 'Conversation',
+    ticketStaffLabel:   'Support Team',
+    ticketNoReplies:    'No messages yet. Start the conversation.',
+    ticketSeen:         'Seen',
+    openOriginal:       'Open Original',
+
+    // Tabs in detail modal
+    tabConversation:    'Conversation',
+    tabNotes:           'Internal Notes',
+    ticketNoInternalNotes: 'No internal notes yet.',
+
+    // Categories
+    cat_faas:           'FaaS',
+    cat_xaas:           'XaaS',
+    cat_caas:           'CaaS',
+    cat_deployment:     'Deployment',
+    cat_quota:          'Quota & Resources',
+    cat_region:         'Region & Infrastructure',
+    cat_account:        'Account',
+    cat_other:          'Other',
+
+    // Priorities
+    pri_low:            'Low',
+    pri_medium:         'Medium',
+    pri_high:           'High',
+    pri_critical:       'Critical',
+
+    // Statuses
+    st_open:            'Open',
+    st_in_progress:     'In Progress',
+    st_resolved:        'Resolved',
+    st_closed:          'Closed',
+
+    // Table columns
+    colTenant:          'Tenant',
+    colUser:            'User',
+    pageInfo:           'Page {page} of {total}',
+
+    // Stats
+    statOpen:           'Open',
+    statInProgress:     'In Progress',
+    statResolved:       'Resolved',
+
+    // Admin features
+    ticketAssignTo:         'Assign To',
+    ticketUnassigned:       'Unassigned',
+    ticketInternalNote:     'Internal Note',
+    ticketInternalLabel:    'Staff Only',
+    ticketTags:             'Tags',
+    ticketAddTag:           'Add tag...',
+    ticketSuggestions:      'Similar Open Tickets',
+    ticketSuggestionHint:   'You may already have an open ticket about this:',
+    ticketDraftRestored:    'Draft restored from previous session.',
+    ticketValidationRequired: 'This field is required.',
+    ticketSectionInfo:      'Ticket Info',
+    ticketSectionDesc:      'Description',
+    ticketSectionAttach:    'Attachments',
+    ticketSelectTenant:     'Select a tenant from the tenant switcher to view support tickets.',
+  },
+  adminTickets: {
+    tab:              'Support Tickets',
+    title:            'Support Ticket Management',
+    allTickets:       'All Support Tickets',
+    totalTickets:     'Total',
+    searchPlaceholder:'Search by subject...',
+    changeStatus:     'Change Status',
+    replyAsStaff:     'Reply as Support',
+    noTickets:        'No tickets found.',
+    user:             'User',
+    statusChanged:    'Status updated.',
+    attachment:       'Attachment',
+    attachments:      'Attachments',
+    addAttachment:    'Add Screenshot',
+    maxFiles:         'Max 3 files, 5 MB each (JPG, PNG, WebP, PDF)',
+  },
+}
