@@ -78,20 +78,13 @@ const eventsLoading = ref(true)
 const testing = ref(false)
 const redelivering = ref(null)
 
-/** The newest events: the API pages oldest first, so follow the cursor to the end. */
+/** The newest events, newest first (one page of GET /billing/events?order=desc). */
 async function loadEvents() {
   eventsLoading.value = true
   try {
-    let after = null
-    let all = []
-    for (let page = 0; page < 10; page++) {
-      const { data } = await billingApi.events({ limit: 500, ...(after ? { after } : {}) })
-      all = [...all, ...(data?.data ?? [])].slice(-RECENT)
-      webhookConfigured.value = !!data?.meta?.webhook_configured
-      after = data?.meta?.next_after ?? null
-      if (!after) break
-    }
-    events.value = all.reverse()
+    const { data } = await billingApi.events({ order: 'desc', limit: RECENT })
+    events.value = data?.data ?? []
+    webhookConfigured.value = !!data?.meta?.webhook_configured
   } catch {
     events.value = []
   } finally {

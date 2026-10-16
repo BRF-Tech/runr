@@ -32,7 +32,7 @@ language: shell
 extensions: [sh]
 versions:
   - version: "1.0"
-    image: ghcr.io/brf-tech/reqs/alpine:3.21
+    image: ghcr.io/brf-tech/runr/reqs/alpine:3.21
     default: true
 handler:
   file: main

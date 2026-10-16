@@ -838,7 +838,7 @@ function registerDefaults(api: MockApi): void {
   api.define('GET', '/billing/charges', () => ok({ data: [], meta: { current_page: 1, last_page: 1, per_page: 50, total: 0 } }))
   api.define('GET', '/billing/charges/:id', () => notFound())
   api.define('GET', '/billing/purchases', () => ok({ data: [], meta: { current_page: 1, last_page: 1, per_page: 50, total: 0 } }))
-  api.define('GET', '/billing/events', () => ok({ data: [], meta: { next_after: null, webhook_configured: false } }))
+  api.define('GET', '/billing/events', () => ok({ data: [], meta: { next_after: null, next_before: null, webhook_configured: false } }))
   api.define('GET', '/tenant/billing', () => ok({ charges: [], credit_balances: {}, purchases: [], store_url: null }))
   api.define('GET', '/admin/billing-settings', () => ok({
     plans_enabled: false, webhook: { url: null, url_source: 'config', secret_set: false },

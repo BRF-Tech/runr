@@ -13,7 +13,7 @@ const PYTHON: Json = {
   source: 'builtin', run_mode: 'http', compiled: false, triggers: ['http', 'schedule', 'queue'], sandbox: ['runc', 'gvisor', 'kata'],
   runtime_class: null, wasm: null,
   handler: { file: 'main', function: 'handler', filename: 'main.py', pattern: 'def\\s+handler\\s*\\(' }, dependency_file: 'requirements.txt',
-  versions: [{ version: '3.14', is_default: true, eol_at: null, gpu_required: false, image: 'ghcr.io/brf-tech/exec-python:3.14', built: false }],
+  versions: [{ version: '3.14', is_default: true, eol_at: null, gpu_required: false, image: 'ghcr.io/brf-tech/runr/exec-python:3.14', built: false }],
   regions: null, is_enabled: true, projects_count: 0,
 }
 
@@ -22,7 +22,7 @@ const WASM_RUST: Json = {
   language: 'rust', extensions: ['rs'], category: 'general', source: 'builtin', run_mode: 'http', compiled: true,
   triggers: ['http', 'schedule', 'queue'], sandbox: ['runc', 'gvisor', 'kata'], runtime_class: 'wasmtime-spin-v2', wasm: 'spin',
   handler: { file: 'lib', function: 'handle', filename: 'lib.rs', pattern: '#\\[http_component\\]' }, dependency_file: null,
-  versions: [{ version: '4.1', is_default: true, eol_at: null, gpu_required: false, image: 'ghcr.io/brf-tech/exec-wasm-rust:4.1', built: false }],
+  versions: [{ version: '4.1', is_default: true, eol_at: null, gpu_required: false, image: 'ghcr.io/brf-tech/runr/exec-wasm-rust:4.1', built: false }],
   regions: null, is_enabled: true, projects_count: 0,
 }
 

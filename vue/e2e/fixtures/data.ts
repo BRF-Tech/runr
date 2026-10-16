@@ -108,10 +108,10 @@ export const CRON_REGION: Json = {
 }
 
 export const EXECUTOR_IMAGES: Json[] = [
-  { id: 1, runtime: 'python', version: '3.12', is_default: true, docker_image: 'ghcr.io/brf-tech/python:3.12', eol_at: null },
-  { id: 2, runtime: 'nodejs', version: '22', is_default: true, docker_image: 'ghcr.io/brf-tech/nodejs:22', eol_at: null },
-  { id: 3, runtime: 'go', version: '1.23', is_default: true, docker_image: 'ghcr.io/brf-tech/go:1.23', eol_at: null },
-  { id: 4, runtime: 'php', version: '8.3', is_default: true, docker_image: 'ghcr.io/brf-tech/php:8.3', eol_at: null },
+  { id: 1, runtime: 'python', version: '3.12', is_default: true, docker_image: 'ghcr.io/brf-tech/runr/python:3.12', eol_at: null },
+  { id: 2, runtime: 'nodejs', version: '22', is_default: true, docker_image: 'ghcr.io/brf-tech/runr/nodejs:22', eol_at: null },
+  { id: 3, runtime: 'go', version: '1.23', is_default: true, docker_image: 'ghcr.io/brf-tech/runr/go:1.23', eol_at: null },
+  { id: 4, runtime: 'php', version: '8.3', is_default: true, docker_image: 'ghcr.io/brf-tech/runr/php:8.3', eol_at: null },
 ]
 
 const baseConfig = {

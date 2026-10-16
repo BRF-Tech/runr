@@ -35,7 +35,7 @@ function routes({ billing = settings(), events = [event()], webhook = true, tena
   vi.mocked(client.get).mockImplementation((url) => {
     if (url === '/admin/billing-settings') return ok(billing)
     if (url === '/admin/plans') return ok([{ ...publicPlan(), is_public: true, is_archived: false, tenant_count: 1 }, { ...publicPlan({ id: 'plan-pro', slug: 'pro', name: 'Pro', price_yearly: null }), is_public: true, is_archived: false, tenant_count: 0 }])
-    if (url === '/billing/events') return ok({ data: events, meta: { next_after: null, webhook_configured: webhook } })
+    if (url === '/billing/events') return ok({ data: events, meta: { next_after: null, next_before: null, webhook_configured: webhook } })
     if (url === '/billing/tenants') return ok({ plans_enabled: true, tenants })
     return ok({})
   })
@@ -132,10 +132,11 @@ describe('PlansAdmin', () => {
 
   it('lists the newest events first and delivers a failed one again', async () => {
     const failed = event({ id: '01EV2', type: 'billing.usage.threshold', delivery: { status: 'failed', attempts: 10, last_error: 'HTTP 500' } })
-    routes({ events: [event(), failed] })
+    routes({ events: [failed, event()] })
     vi.mocked(client.post).mockReturnValue(ok({ event: { ...failed, delivery: { status: 'delivered', attempts: 1, last_error: null } } }))
     const wrapper = await mountAdmin()
 
+    expect(client.get).toHaveBeenCalledWith('/billing/events', { params: { order: 'desc', limit: 20 } })
     const rows = wrapper.findAll('[data-test^="event-01"]')
     expect(rows.map(r => r.attributes('data-test'))).toEqual(['event-01EV2', 'event-01EV1'])
     expect(rows[0].text()).toContain('HTTP 500')
@@ -147,16 +148,16 @@ describe('PlansAdmin', () => {
     expect(wrapper.find('[data-test="event-01EV2"]').text()).toContain('Delivered')
   })
 
-  it('follows the event cursor to the newest events and warns without a webhook', async () => {
+  it('reads one page of the newest events and warns without a webhook', async () => {
     routes({ webhook: false, events: [] })
-    vi.mocked(client.get).mockImplementation((url, config) => {
+    vi.mocked(client.get).mockImplementation((url) => {
       if (url !== '/billing/events') return ok({})
-      return config?.params?.after
-        ? ok({ data: [event({ id: '01EV5' })], meta: { next_after: null, webhook_configured: false } })
-        : ok({ data: [event({ id: '01EV4' })], meta: { next_after: '01EV4', webhook_configured: false } })
+      return ok({ data: [event({ id: '01EV5' }), event({ id: '01EV4' })], meta: { next_after: null, next_before: '01EV4', webhook_configured: false } })
     })
     const wrapper = await mountAdmin()
 
+    // Newest first from the API: no walk over the older pages
+    expect(vi.mocked(client.get).mock.calls.filter(([url]) => url === '/billing/events')).toEqual([['/billing/events', { params: { order: 'desc', limit: 20 } }]])
     expect(wrapper.findAll('[data-test^="event-01"]').map(r => r.attributes('data-test'))).toEqual(['event-01EV5', 'event-01EV4'])
     expect(wrapper.find('[data-test="billing-no-webhook"]').exists()).toBe(true)
   })

@@ -45,7 +45,7 @@ run:
 triggers: [http, queue]
 `
 
-const Q_DOCKERFILE = 'FROM ghcr.io/brf-tech/reqs/golang:1.23-alpine AS build\nCOPY . /src\nRUN cd /src && go build -o /q .\nFROM ghcr.io/brf-tech/reqs/alpine:3.21\nCOPY --from=build /q /usr/local/bin/q\n'
+const Q_DOCKERFILE = 'FROM ghcr.io/brf-tech/runr/reqs/golang:1.23-alpine AS build\nCOPY . /src\nRUN cd /src && go build -o /q .\nFROM ghcr.io/brf-tech/runr/reqs/alpine:3.21\nCOPY --from=build /q /usr/local/bin/q\n'
 
 const REGIONS = [
   { id: 'r1', name: 'eu-1', is_active: true, is_synced: true, has_serving: true, has_redis: true, has_kubeconfig: true, cluster_status: 'online', total_cpu_m: 4000, total_memory_mb: 8192, used_cpu_m: 0, used_memory_mb: 0 },
@@ -56,7 +56,7 @@ function builtin(id: string, name: string, ext: string, language: string, versio
     id, name, description: '', icon: null, language, extensions: [ext], category: 'general', source: 'builtin',
     run_mode: 'http', compiled: id === 'go', triggers: ['http', 'schedule', 'queue'], sandbox: ['runc', 'gvisor', 'kata'],
     handler: { file: 'main', function: 'handler', filename: `main.${ext}`, pattern }, dependency_file: null,
-    versions: [{ version, is_default: true, eol_at: null, gpu_required: false, image: `ghcr.io/brf-tech/exec-${id}:${version}`, built: false }],
+    versions: [{ version, is_default: true, eol_at: null, gpu_required: false, image: `ghcr.io/brf-tech/runr/exec-${id}:${version}`, built: false }],
     regions: null, is_enabled: true, projects_count: 0, updated_at: '2026-10-10T08:00:00Z',
   }
 }

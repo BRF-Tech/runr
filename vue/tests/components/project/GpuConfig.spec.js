@@ -18,8 +18,8 @@ const mounted = []
 const pytorch = {
   ...catalog.python, id: 'pytorch', name: 'PyTorch', category: 'ml',
   versions: [
-    { version: '2.3', is_default: true, eol_at: null, gpu_required: false, image: 'ghcr.io/brf-tech/exec-pytorch:2.3', built: false },
-    { version: '2.3-gpu', is_default: false, eol_at: null, gpu_required: true, image: 'ghcr.io/brf-tech/exec-pytorch:2.3-gpu', built: false },
+    { version: '2.3', is_default: true, eol_at: null, gpu_required: false, image: 'ghcr.io/brf-tech/runr/exec-pytorch:2.3', built: false },
+    { version: '2.3-gpu', is_default: false, eol_at: null, gpu_required: true, image: 'ghcr.io/brf-tech/runr/exec-pytorch:2.3-gpu', built: false },
   ],
 }
 
