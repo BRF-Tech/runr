@@ -6,6 +6,7 @@ workload, how the encryption key is rotated, and what the audit log records.
 - [Encryption at rest](#encryption-at-rest)
 - [Where secrets never appear](#where-secrets-never-appear)
 - [Real-time channels](#real-time-channels)
+- [Sign-in sessions and API tokens](#sign-in-sessions-and-api-tokens)
 - [SSO sign-in handoff](#sso-sign-in-handoff)
 - [Secret environment variables](#secret-environment-variables)
 - [Key rotation](#key-rotation)
@@ -150,6 +151,34 @@ public channels subscribes to them as private channels (`private-<name>` in the 
 `POST /api/broadcasting/auth` (`socket_id`, `channel_name`), sending `Authorization: Bearer <API
 token>` and, in a tenant, `X-Tenant-ID`. Notifications addressed to one user arrive on
 `notifications.{userId}`, internal ticket notes on `support-ticket.{ticketId}.internal`.
+
+## Sign-in sessions and API tokens
+
+Every sign-in of a Platform user or a Tenant user — with a password in the console or with
+`runr login --with-password`, through SSO, after a self-service signup or when accepting an
+invitation — creates a **sign-in session**: an API token the console sends with every request.
+API tokens are the ones users create themselves (Settings → API Tokens, `runr tokens create`, the
+`runr-cli@<host>` token of `runr login --with-password`). Both are stored as SHA-256 hashes.
+**Account → Active Sessions** lists every token of the user — sign-in sessions and API tokens —
+with its device, address and last use.
+
+- **Lifetime.** A sign-in session ends 30 days after the sign-in (`RUNR_LOGIN_TOKEN_TTL_DAYS`,
+  Helm value `auth.loginTokenTtlDays`); the console then asks to sign in again. The lifetime
+  counts from the sign-in for every session, also for sessions signed in before the value was set
+  or lowered. `0` keeps sessions until they are signed out or revoked. API tokens keep the expiry
+  they were created with: none, or the date given.
+- **Signing out** (`POST /api/auth/logout`) deletes the session's token. **Revoking** a session
+  (`DELETE /api/account/sessions/{id}`) deletes that token, **revoking all others**
+  (`POST /api/account/sessions/revoke-all`) every token of the user except the current one; the
+  browsers that held them are signed out. Deleting an API token (`DELETE /api/tokens/{id}`,
+  `runr logout`) ends it. A deleted token answers 401 from then on.
+- **Changing the password** (`POST /api/account/password`) ends the user's other sign-in
+  sessions; the session that changed it and the API tokens stay. **Disabling the account** ends
+  every token but the current one, which is refused from then on; **deleting it** ends all.
+- API tokens cannot be named `api` or `invitation-accept`: these names mark sign-in sessions.
+- **Cleanup.** `php artisan tokens:prune` (scheduled daily at 03:15) removes the sign-in sessions
+  that ended, and API tokens 30 days after they expired — until then the console lists an expired
+  token as expired.
 
 ## SSO sign-in handoff
 

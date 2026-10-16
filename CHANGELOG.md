@@ -8,6 +8,35 @@ did not change says so.
 
 ## [Unreleased]
 
+## [0.5.5] - 2026-10-17
+
+### Security
+
+- **Signing out did not end the session.** From 0.3.0 to 0.5.4, `POST /api/auth/logout` answered
+  "Logged out." and deleted the session's token, but the API's session tracking (client address,
+  user agent and device of a token), which runs after every request, saved the deleted token
+  again: the token stayed valid. The same kept the sign-in session alive that
+  `runr login --with-password` ends once it has created its API token. The session tracking now
+  updates the token's row and never re-creates it, and writes only when the address, user agent
+  or device changed. Revoking sessions, deleting API tokens and disabling or deleting the account
+  deleted their tokens as intended; tests now cover each of these paths.
+- **Sign-in sessions expire.** A sign-in session — a password sign-in of the console or the CLI,
+  an SSO sign-in, a self-service signup, an accepted invitation — ends 30 days after the sign-in
+  (`RUNR_LOGIN_TOKEN_TTL_DAYS`, Helm value `auth.loginTokenTtlDays`; `0` keeps sessions until
+  they are signed out). They had no expiry before. The lifetime counts from the sign-in for the
+  sessions that exist at the upgrade as well: those older than 30 days end with the upgrade,
+  among them the sessions that were signed out but stayed valid, and their users sign in again.
+  Operators need to do nothing. A session signed out during the 30 days before the upgrade stays
+  valid until it is 30 days old; its user can end it at once under **Account → Active Sessions**
+  (**Revoke**). API tokens keep the expiry they were created with.
+- **Changing the password ends the user's other sign-in sessions** (their browsers are signed
+  out); the session that changed it and the API tokens stay.
+- `php artisan tokens:prune`, scheduled daily, removes the sign-in sessions that ended and API
+  tokens 30 days after they expired. API tokens cannot be named `invitation-accept` (nor `api`, as
+  before): these names mark sign-in sessions, and the API token list no longer shows the session
+  of an accepted invitation, which **Account → Active Sessions** lists
+  ([docs/security.md](docs/security.md#sign-in-sessions-and-api-tokens)).
+
 ## [0.5.4] - 2026-10-17
 
 ### Upgrade notes
@@ -1132,7 +1161,8 @@ Initial tagged release.
 - API gateways with routes, in-app notifications and support tickets.
 - Helm chart with a single-tenant / multi-tenant edition, an install form (`values.schema.json`), generated secrets and a Traefik ingress; a Docker Compose setup for development.
 
-[Unreleased]: https://github.com/brf-tech/runr/compare/v0.5.4...main
+[Unreleased]: https://github.com/brf-tech/runr/compare/v0.5.5...main
+[0.5.5]: https://github.com/brf-tech/runr/releases/tag/v0.5.5
 [0.5.4]: https://github.com/brf-tech/runr/releases/tag/v0.5.4
 [0.5.3]: https://github.com/brf-tech/runr/releases/tag/v0.5.3
 [0.5.2]: https://github.com/brf-tech/runr/releases/tag/v0.5.2

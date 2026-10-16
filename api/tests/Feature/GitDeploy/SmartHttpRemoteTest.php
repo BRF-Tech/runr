@@ -77,6 +77,11 @@ class SmartHttpRemoteTest extends TestCase
         $token = $this->owner->createToken('old', ['*'], now()->subMinute())->plainTextToken;
 
         $this->infoRefs('git-upload-pack', $this->basic($token))->assertStatus(401);
+
+        // A sign-in session past its lifetime, from before sessions carried an expiry
+        $session = $this->owner->createToken('api');
+        $session->accessToken->forceFill(['created_at' => now()->subDays(31)])->save();
+        $this->infoRefs('git-upload-pack', $this->basic($session->plainTextToken))->assertStatus(401);
     }
 
     public function test_a_pull_token_gets_the_upload_pack_advertisement(): void

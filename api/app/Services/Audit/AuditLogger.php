@@ -3,6 +3,7 @@
 namespace App\Services\Audit;
 
 use App\Models\AuditEvent;
+use App\Support\Auth\LoginTokens;
 use App\Support\Rbac\Rbac;
 use App\Support\Secrets\SecretRedactor;
 use App\Support\TenantAccess;
@@ -185,9 +186,9 @@ class AuditLogger
         $method = 'session';
         $token = method_exists($user, 'currentAccessToken') ? $user->currentAccessToken() : null;
 
-        // Sign-in tokens are named "api" (password / SSO login) or "invitation-accept"; any other
-        // Sanctum token is an API token the user created (ApiTokenController)
-        if ($token instanceof PersonalAccessToken && ! in_array($token->name, ['api', 'invitation-accept'], true)) {
+        // Sign-in sessions (LoginTokens: password / SSO sign-in, signup, accepted invitation); any
+        // other Sanctum token is an API token the user created (ApiTokenController)
+        if ($token instanceof PersonalAccessToken && ! LoginTokens::isLoginToken($token)) {
             $type = AuditEvent::ACTOR_API_TOKEN;
             $method = 'api_token:'.$token->getKey();
         }

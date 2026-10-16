@@ -2,12 +2,16 @@
 
 namespace App\Http\Controllers\Api;
 
+use App\Events\PlatformEvent;
 use App\Http\Requests\Account\ChangePasswordRequest;
 use App\Http\Requests\Account\UpdateProfileRequest;
+use App\Support\Auth\LoginTokens;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Storage;
+use Laravel\Sanctum\Contracts\HasAbilities;
+use Laravel\Sanctum\PersonalAccessToken;
 
 class AccountController extends Controller
 {
@@ -71,6 +75,23 @@ class AccountController extends Controller
         }
 
         $user->update(['password' => $request->input('password')]);
+
+        // Whoever signed in elsewhere (with the old password) is signed out: the user's other
+        // sign-in sessions end, the event signs their browsers out. API tokens stay.
+        /** @var HasAbilities|null $current a stored token, or none (a session without a token) */
+        $current = $user->currentAccessToken();
+        $currentId = $current instanceof PersonalAccessToken ? $current->getKey() : null;
+        $revokedIds = $user->tokens()
+            ->whereIn('name', LoginTokens::NAMES)
+            ->when($currentId !== null, fn ($q) => $q->whereKeyNot($currentId))
+            ->pluck('id')
+            ->map(fn ($id) => (int) $id)
+            ->all();
+
+        if ($revokedIds !== []) {
+            $user->tokens()->whereKey($revokedIds)->delete();
+            event(new PlatformEvent('session.revoked', ['token_ids' => $revokedIds]));
+        }
 
         return response()->json(['message' => __('api.account.password_changed')]);
     }

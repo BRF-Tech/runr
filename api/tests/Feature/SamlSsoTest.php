@@ -315,7 +315,11 @@ class SamlSsoTest extends TestCase
         $this->assertArrayNotHasKey('token', $query);
         $handoff = $this->postJson('/api/oauth/exchange', ['code' => $query['code']])->assertOk();
         $this->assertSame((string) $user->id, (string) $handoff->json('user_id'));
-        $this->assertSame((string) $user->id, (string) PersonalAccessToken::findToken($handoff->json('token'))?->tokenable_id);
+        $session = PersonalAccessToken::findToken($handoff->json('token'));
+        $this->assertSame((string) $user->id, (string) $session?->tokenable_id);
+        // A sign-in session with its lifetime (docs/security.md)
+        $this->assertSame('api', $session->name);
+        $this->assertTrue($session->expires_at?->between(now()->addDays(30)->subMinute(), now()->addDays(30)->addMinute()));
         $this->postJson('/api/oauth/exchange', ['code' => $query['code']])->assertUnprocessable();
 
         $account = SocialAccount::where('user_id', $user->id)->firstOrFail();

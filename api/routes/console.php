@@ -3,6 +3,7 @@
 use App\Console\Commands\CheckKnativeStatusCommand;
 use App\Console\Commands\CheckResourceThresholdsCommand;
 use App\Console\Commands\CheckStaleBuildCommand;
+use App\Console\Commands\PruneTokensCommand;
 use App\Console\Commands\SyncExecutorImagesCommand;
 use App\Jobs\CloseStaleSessionsJob;
 use App\Jobs\DownsampleMetricsJob;
@@ -81,6 +82,12 @@ Schedule::job(new PruneRegistryRepositoriesJob)
     ->dailyAt('04:45')
     ->name('registry-empty-repositories')
     ->withoutOverlapping(120);
+
+// Ended sign-in sessions and long-expired API tokens (config/auth.php login_token_ttl_days)
+Schedule::command(PruneTokensCommand::class)
+    ->dailyAt('03:15')
+    ->name('token-prune')
+    ->withoutOverlapping(60);
 
 // Audit log retention (config/audit.php, setting audit_retention_days)
 Schedule::job(new PruneAuditEventsJob)

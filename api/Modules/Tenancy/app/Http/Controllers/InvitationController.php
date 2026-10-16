@@ -4,6 +4,7 @@ namespace Modules\Tenancy\Http\Controllers;
 
 use App\Http\Controllers\Api\Controller;
 use App\Models\User;
+use App\Support\Auth\LoginTokens;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
@@ -87,7 +88,7 @@ class InvitationController extends Controller
 
         $invitation->update(['accepted_at' => now()]);
 
-        $authToken = $user->createToken('invitation-accept')->plainTextToken;
+        $authToken = LoginTokens::issue($user, 'invitation-accept')->plainTextToken;
 
         return response()->json([
             'message' => __('api.invitation.accepted'),

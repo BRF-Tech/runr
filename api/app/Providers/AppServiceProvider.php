@@ -16,11 +16,14 @@ use App\Models\Version;
 use App\Models\XaasConfig;
 use App\Observers\CacheInvalidationObserver;
 use App\Support\ApiRateLimits;
+use App\Support\Auth\LoginTokens;
 use Dedoc\Scramble\Scramble;
 use Dedoc\Scramble\Support\Generator\OpenApi;
 use Dedoc\Scramble\Support\Generator\SecurityScheme;
 use Illuminate\Routing\Route;
 use Illuminate\Support\ServiceProvider;
+use Laravel\Sanctum\PersonalAccessToken;
+use Laravel\Sanctum\Sanctum;
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -39,6 +42,11 @@ class AppServiceProvider extends ServiceProvider
         $this->registerCacheObservers();
 
         ApiRateLimits::register();
+
+        // A sign-in session ends after its lifetime, also one signed in before it had an expiry
+        Sanctum::authenticateAccessTokensUsing(
+            fn (PersonalAccessToken $token, bool $isValid) => $isValid && ! LoginTokens::outlived($token)
+        );
 
         if (class_exists(Scramble::class)) {
             // Route filter (a closure cannot be serialized in config, so it is defined here)

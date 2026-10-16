@@ -3,6 +3,7 @@
 namespace Modules\AuthProvider\Services\Concerns;
 
 use App\Models\User;
+use App\Support\Auth\LoginTokens;
 use App\Support\Rbac\AccessManager;
 use App\Support\Rbac\PermissionCatalog;
 use App\Support\Rbac\Rbac;
@@ -164,7 +165,7 @@ trait OAuthCallbackTrait
 
     protected function issueToken(User $user): array
     {
-        $token = $user->createToken('api')->plainTextToken;
+        $token = LoginTokens::issue($user)->plainTextToken;
 
         return ['user' => $user, 'token' => $token];
     }

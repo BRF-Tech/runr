@@ -6,6 +6,7 @@ use App\Events\UserRegistered;
 use App\Mail\SignupVerificationMail;
 use App\Models\PendingSignup;
 use App\Models\User;
+use App\Support\Auth\LoginTokens;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
@@ -67,7 +68,7 @@ class SignupService
 
         event(new UserRegistered($user, $input));
 
-        $token = $user->createToken('api')->plainTextToken;
+        $token = LoginTokens::issue($user)->plainTextToken;
 
         return response()->json(['user' => $user, 'token' => $token], 201);
     }
@@ -118,7 +119,7 @@ class SignupService
         event(new UserRegistered($user, $requestData));
 
         $user->refresh();
-        $token = $user->createToken('api')->plainTextToken;
+        $token = LoginTokens::issue($user)->plainTextToken;
 
         $data = ['user' => $user, 'token' => $token];
         if (self::$loginDataResolver) {

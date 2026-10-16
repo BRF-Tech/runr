@@ -2,8 +2,8 @@ apiVersion: v2
 name: runr
 description: RunR — serverless application platform on Kubernetes / Knative (functions, multi-file projects and containers with scale-to-zero)
 type: application
-version: 0.5.4
-appVersion: "0.5.4"
+version: 0.5.5
+appVersion: "0.5.5"
 keywords:
   - serverless
   - knative

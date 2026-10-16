@@ -114,4 +114,18 @@ return [
 
     'password_timeout' => env('AUTH_PASSWORD_TIMEOUT', 10800),
 
+    /*
+    |--------------------------------------------------------------------------
+    | Sign-in session lifetime (docs/security.md, "Sign-in sessions and API tokens")
+    |--------------------------------------------------------------------------
+    |
+    | Days a sign-in session (the token of a console or CLI sign-in, an SSO sign-in, a self-service
+    | signup or an accepted invitation) stays valid, counted from the sign-in. It also applies to
+    | sessions signed in before it was set or lowered. 0: a session lasts until it is signed out
+    | or revoked. API tokens users create keep the expiry they were created with.
+    |
+    */
+
+    'login_token_ttl_days' => max(0, (int) env('RUNR_LOGIN_TOKEN_TTL_DAYS', 30)),
+
 ];

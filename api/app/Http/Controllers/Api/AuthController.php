@@ -7,6 +7,7 @@ use App\Http\Requests\Auth\RegisterRequest;
 use App\Models\User;
 use App\Services\WhiteLabel\SignupService;
 use App\Services\WhiteLabel\SignupSettings;
+use App\Support\Auth\LoginTokens;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
@@ -56,7 +57,7 @@ class AuthController extends Controller
             }
         }
 
-        $accessToken = $user->createToken('api');
+        $accessToken = LoginTokens::issue($user);
 
         // Track session info on token
         $accessToken->accessToken->forceFill([

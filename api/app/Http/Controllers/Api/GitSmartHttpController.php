@@ -14,6 +14,7 @@ use App\Services\GitDeploy\PktLine;
 use App\Services\GitDeploy\ProjectRemote;
 use App\Services\GitDeploy\SmartHttpBackend;
 use App\Services\GitDeploy\TenantContext;
+use App\Support\Auth\LoginTokens;
 use App\Support\Rbac\Rbac;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
@@ -206,12 +207,7 @@ class GitSmartHttpController extends Controller
         $token = $model::findToken($secret);
         $user = $token?->tokenable;
 
-        $expired = $token && (
-            ($token->expires_at && $token->expires_at->isPast())
-            || (($minutes = config('sanctum.expiration')) && $token->created_at && $token->created_at->lte(now()->subMinutes((int) $minutes)))
-        );
-
-        if (! $token || ! $user instanceof User || $expired) {
+        if (! $token || ! $user instanceof User || LoginTokens::expired($token)) {
             RateLimiter::hit($key, 60);
 
             return $this->challenge();

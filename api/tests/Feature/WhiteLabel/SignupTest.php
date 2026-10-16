@@ -14,6 +14,7 @@ use Illuminate\Http\Client\Request as HttpRequest;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Mail;
+use Laravel\Sanctum\PersonalAccessToken;
 use Tests\Feature\WhiteLabel\Concerns\CoreWhiteLabel;
 use Tests\TestCase;
 
@@ -62,11 +63,16 @@ class SignupTest extends TestCase
             'tenant_auto_create' => false,
         ]);
 
-        $this->postJson('/api/auth/register', $this->form())
+        $token = $this->postJson('/api/auth/register', $this->form())
             ->assertCreated()
-            ->assertJsonStructure(['user' => ['id', 'email'], 'token']);
+            ->assertJsonStructure(['user' => ['id', 'email'], 'token'])
+            ->json('token');
 
         $this->assertDatabaseHas('users', ['email' => 'jane@example.com', 'username' => 'jane']);
+        // A sign-in session with its lifetime (docs/security.md)
+        $session = PersonalAccessToken::findToken($token);
+        $this->assertSame('api', $session->name);
+        $this->assertTrue($session->expires_at?->between(now()->addDays(30)->subMinute(), now()->addDays(30)->addMinute()));
         Event::assertDispatched(UserRegistered::class);
         Mail::assertNothingSent();
     }
@@ -114,9 +120,10 @@ class SignupTest extends TestCase
 
         parse_str((string) parse_url($link, PHP_URL_QUERY), $query);
 
-        $this->postJson('/api/auth/signup/verify', ['token' => $query['token']])
+        $verified = $this->postJson('/api/auth/signup/verify', ['token' => $query['token']])
             ->assertCreated()
             ->assertJsonStructure(['user' => ['id'], 'token']);
+        $this->assertNotNull(PersonalAccessToken::findToken($verified->json('token'))->expires_at, 'a sign-in session with its lifetime');
 
         $user = User::query()->where('email', 'jane@example.com')->firstOrFail();
         $this->assertNotNull($user->email_verified_at);

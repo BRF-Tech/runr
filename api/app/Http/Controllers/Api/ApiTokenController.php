@@ -2,16 +2,19 @@
 
 namespace App\Http\Controllers\Api;
 
+use App\Support\Auth\LoginTokens;
 use App\Support\Rbac\PermissionCatalog;
 use App\Support\Rbac\Rbac;
 use App\Support\Rbac\TokenAbilities;
 use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
 
 /**
  * Personal API tokens. A token carries '*' (everything its owner may do) or a list of
  * permissions; either way it never exceeds what the owner may do at the time it is used.
+ * Sign-in sessions (LoginTokens) are tokens too; they are listed under the account's sessions.
  */
 class ApiTokenController extends Controller
 {
@@ -20,7 +23,7 @@ class ApiTokenController extends Controller
         $currentTokenId = $request->user()->currentAccessToken()?->id;
 
         $tokens = $request->user()->tokens()
-            ->where('name', '!=', 'api')
+            ->whereNotIn('name', LoginTokens::NAMES)
             ->when($currentTokenId, fn ($q) => $q->where('id', '!=', $currentTokenId))
             ->orderByDesc('created_at')
             ->get()
@@ -92,7 +95,7 @@ class ApiTokenController extends Controller
     protected function validatedToken(Request $request): array
     {
         $data = $request->validate([
-            'name' => ['required', 'string', 'max:255', 'not_in:api'],
+            'name' => ['required', 'string', 'max:255', Rule::notIn(LoginTokens::NAMES)],
             'abilities' => 'sometimes|array',
             'abilities.*' => 'string|max:64',
             'expires_at' => 'sometimes|nullable|date|after:now',

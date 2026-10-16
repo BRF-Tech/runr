@@ -202,6 +202,11 @@ class McpGatewayTest extends TestCase
         PersonalAccessToken::findToken($expired)->forceFill(['expires_at' => now()->subMinute()])->save();
         $this->gateway($expired)->assertUnauthorized();
 
+        // A sign-in session past its lifetime, from before sessions carried an expiry
+        $session = $this->mcpToken($this->owner, ['*'], 'api');
+        PersonalAccessToken::findToken($session)->forceFill(['created_at' => now()->subDays(31)])->save();
+        $this->gateway($session)->assertUnauthorized();
+
         $forMcp = $this->mcpToken($this->owner);
         PersonalAccessToken::findToken($forMcp)->forceFill(['oauth_resource' => 'http://localhost/mcp', 'oauth_client_id' => 'rmc_x'])->save();
         $this->gateway($forMcp)->assertUnauthorized();

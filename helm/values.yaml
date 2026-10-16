@@ -472,6 +472,13 @@ audit:
   # (stdout) as one JSON line ({"log_type":"runr.audit", …}) for a log collector to ship
   siemForwarding: false
 
+# ─── Sign-in sessions (docs/security.md) ─────
+auth:
+  # Days a sign-in to the console or the CLI stays valid, counted from the sign-in
+  # (env RUNR_LOGIN_TOKEN_TTL_DAYS); it applies to sessions signed in earlier as well.
+  # 0 = until signed out. API tokens keep the expiry they were created with.
+  loginTokenTtlDays: 30
+
 # ─── First administrator account ─────────────
 # password empty: generated randomly when secret.create=true, otherwise the application generates one
 admin:

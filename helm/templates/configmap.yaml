@@ -68,6 +68,11 @@ data:
   AUDIT_RETENTION_DAYS: {{ if hasKey $audit "retentionDays" }}{{ int $audit.retentionDays | toString | quote }}{{ else }}"365"{{ end }}
   AUDIT_FORWARD_ENABLED: {{ ternary "true" "false" (eq (toString $audit.siemForwarding) "true") | quote }}
 
+  # Sign-in session lifetime in days, 0 = until signed out (values auth.loginTokenTtlDays, api
+  # config/auth.php). `--reuse-values` with older values has no auth key → default.
+  {{- $auth := .Values.auth | default dict }}
+  RUNR_LOGIN_TOKEN_TTL_DAYS: {{ if hasKey $auth "loginTokenTtlDays" }}{{ int $auth.loginTokenTtlDays | toString | quote }}{{ else }}"30"{{ end }}
+
   # Billing (docs/billing.md): billing events webhook, usage thresholds, store link, plans — the
   # webhook secret comes from the Secret
   {{- $billing := .Values.billing | default dict }}

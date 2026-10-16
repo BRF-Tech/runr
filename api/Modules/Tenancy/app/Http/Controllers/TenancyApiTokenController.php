@@ -3,6 +3,7 @@
 namespace Modules\Tenancy\Http\Controllers;
 
 use App\Http\Controllers\Api\ApiTokenController;
+use App\Support\Auth\LoginTokens;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Laravel\Sanctum\PersonalAccessToken;
@@ -20,7 +21,7 @@ class TenancyApiTokenController extends ApiTokenController
 
         // All tokens in this tenant (with creator info)
         $tokens = PersonalAccessToken::where('tenant_id', $tenant?->id)
-            ->where('name', '!=', 'api')
+            ->whereNotIn('name', LoginTokens::NAMES)
             ->when($currentTokenId, fn ($q) => $q->where('id', '!=', $currentTokenId))
             ->with('tokenable:id,name,email')
             ->orderByDesc('created_at')

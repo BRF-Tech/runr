@@ -6,6 +6,7 @@ use App\Mcp\Models\HostedServer;
 use App\Mcp\Support\McpAuth;
 use App\Mcp\Support\McpUrls;
 use App\Models\Project;
+use App\Support\Auth\LoginTokens;
 use App\Support\Rbac\Rbac;
 use Illuminate\Contracts\Auth\Authenticatable;
 use Illuminate\Http\JsonResponse;
@@ -92,14 +93,13 @@ final class GatewayAuthenticator
         ]);
     }
 
-    /** Sanctum's checks: global expiration, expires_at, an existing and enabled owner. */
+    /**
+     * Sanctum's checks (global expiration, expires_at, the sign-in session lifetime), an existing
+     * and enabled owner.
+     */
     private function valid(PersonalAccessToken $token): bool
     {
-        $expiration = config('sanctum.expiration');
-        if ($expiration && $token->created_at && $token->created_at->lte(now()->subMinutes((int) $expiration))) {
-            return false;
-        }
-        if ($token->expires_at && $token->expires_at->isPast()) {
+        if (LoginTokens::expired($token)) {
             return false;
         }
 
