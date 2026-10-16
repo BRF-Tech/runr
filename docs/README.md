@@ -13,7 +13,7 @@ release.
 | [Single-host install](../compose/README.md) | Production install with Docker Compose on one machine, including air-gapped hosts |
 | [Helm values](../helm/values.yaml) | Every value of the control-plane chart, validated by [values.schema.json](../helm/values.schema.json) |
 | [Versioning](versioning.md) | The `/api/version` endpoint and how Compose, `runtime/ci.sh` and Helm set the version |
-| [Upgrading](upgrade.md) | `helm upgrade` of an existing installation, what runs during it, the 0.4.x → 0.5.0 changes and the upgrade e2e |
+| [Upgrading](upgrade.md) | `helm upgrade` of an existing installation, what runs during it, the changes per release (0.4.x → 0.5.0, 0.5.0 → 0.5.1, 0.5.1 → 0.5.2) and the upgrade e2e |
 
 ## Functions and runtimes
 

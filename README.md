@@ -122,20 +122,32 @@ the [MIT License](LICENSE).
 
 ## Measured cold starts
 
-Median time from zero replicas to the first HTTPS response, measured with RunR v0.4.2 on a
-single-node k3s cluster (8 vCPU, 16 GB, nested KVM), Knative 1.21, function size 250m CPU /
-256 MiB, image already on the node:
+Measured on RunR 0.5.0, 2026-10-15: single-node k3s v1.34.11 on a test VM (8 vCPU Broadwell,
+nested KVM, 15.6 GiB), Knative 1.21.3, gVisor 20260921.0, Kata Containers 3.28.0; function
+250m CPU / 256 MiB (container 500m / 512 MiB, WebAssembly 250m / 128 MiB), image on the node,
+RunR's default scale-to-zero; HTTPS from inside the VM through Traefik, a new connection per
+request. Cold start: from zero replicas to the first full HTTPS response, median (p90), n=12 each.
+Warm request: median of 100 requests.
 
-| Sandbox runtime | Node.js | Python | PHP | Samples |
-| --- | --- | --- | --- | --- |
-| runc | 1.52 s | 1.83 s | 1.83 s | n=12 |
-| gVisor | 1.77 s | 1.84 s | — | n=12 |
-| Kata Containers + Cloud Hypervisor | 2.70 s | 3.09 s | — | n=12 |
-| Kata Containers + Firecracker (RunR v0.4.3) | 3.27 s | 2.78 s | — | n=6 |
+| Sandbox runtime | Function | Cold start | Warm request |
+| --- | --- | --- | --- |
+| runc | Python | 1.50 s (2.14) | 9 ms |
+| runc | Node.js | 1.62 s (2.21) | 9 ms |
+| runc | Go | 1.54 s (1.87) | 9 ms |
+| runc | PHP | 1.65 s (2.48) | 9 ms |
+| runc | Container image (CaaS) | 1.57 s (2.02) | 9 ms |
+| gVisor | Python | 1.97 s (2.64) | 12 ms |
+| Kata Containers + Cloud Hypervisor | Python | 3.11 s (3.25) | 10 ms |
+| Kata Containers + Firecracker | Python | 3.21 s (3.47) | 10 ms |
+| Kata Containers + QEMU | Python | 3.89 s (4.45) | 10 ms |
+| Kata Containers + Dragonball | Python | 3.95 s (4.04) | 11 ms |
+| WebAssembly (Spin shim) | Rust | 1.54 s (1.84) | 9 ms |
+| WebAssembly (Spin shim) | JavaScript | 2.12 s (2.58) | 11 ms |
 
-Warm requests took about 8–12 ms in the same setup (10–11 ms with Firecracker). Firecracker was
-measured with RunR v0.4.3 under the same conditions, with the root filesystem on containerd's
-devmapper snapshotter.
+Kata was measured with Python only; Firecracker's root filesystem is on containerd's devmapper
+snapshotter. Sandbox API, create to first command (Python 3.14, 500m / 512 MiB, n=10 per class):
+cold 2.01 s under gVisor, 2.99 s under Kata Firecracker, 4.01 s under Kata Cloud Hypervisor;
+0.28–0.36 s from a warm pool of 2.
 
 ## Architecture
 
@@ -168,7 +180,7 @@ Requirements: Docker with the Compose plugin.
 
 ```bash
 git clone https://github.com/brf-tech/runr.git
-cd core
+cd runr
 bash scripts/devready.sh docker
 ```
 

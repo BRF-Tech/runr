@@ -2354,7 +2354,7 @@ deploy:
   stage: deploy
   image: alpine:3.21
   variables:
-    RUNR_VERSION: v0.5.0
+    RUNR_VERSION: v0.5.3
   before_script:
     - apk add --no-cache curl tar
     - curl -fsSL "https://github.com/brf-tech/runr/releases/download/${RUNR_VERSION}/runr_linux_amd64.tar.gz" | tar -xz -C /usr/local/bin runr
