@@ -43,7 +43,7 @@
     "description": "Open source serverless platform built on Kubernetes and Knative. Deploy functions, projects, containers and WebAssembly on your own clusters with scale-to-zero, sandboxes, durable workflows, GPUs and MCP.",
     "applicationCategory": "DeveloperApplication",
     "operatingSystem": "Linux, Kubernetes",
-    "softwareVersion": "0.5.0",
+    "softwareVersion": "0.5.3",
     "license": "https://opensource.org/licenses/MIT",
     "url": "https://runr.sh",
     "downloadUrl": "https://github.com/brf-tech/runr/releases",
@@ -253,6 +253,7 @@
           <span class="type-runtime">Go</span>
           <span class="type-runtime">PHP</span>
           <span class="type-runtime">PyTorch</span>
+          <span class="type-runtime">TensorFlow</span>
           <span class="type-runtime">Wasm</span>
         </div>
         <ul class="type-features">
@@ -558,6 +559,7 @@
         <li data-tr="<code>config.gpu</code>: adet · ürün · minimum GPU belleği" data-en="<code>config.gpu</code>: count · product · minimum GPU memory"><code>config.gpu</code>: adet · ürün · minimum GPU belleği</li>
         <li data-tr="GPU Feature Discovery, opsiyonel time-slicing" data-en="GPU Feature Discovery, optional time-slicing">GPU Feature Discovery, opsiyonel time-slicing</li>
         <li data-tr="runc ya da gVisor (nvproxy) altında" data-en="Under runc or gVisor (nvproxy)">runc ya da gVisor (nvproxy) altında</li>
+        <li data-tr="PyTorch ve TensorFlow runtime'ları, CPU ve CUDA imajlarıyla" data-en="PyTorch and TensorFlow runtimes, with CPU and CUDA images">PyTorch ve TensorFlow runtime'ları, CPU ve CUDA imajlarıyla</li>
         <li data-tr="Tenant başına GPU kotası" data-en="GPU quota per tenant">Tenant başına GPU kotası</li>
       </ul>
     </div>
@@ -612,8 +614,8 @@
          data-en="Isolated, short-lived sandboxes for the code AI agents write: under the region's strongest isolation (a Kata micro-VM on nodes with KVM, otherwise gVisor), without network access by default, with their own CPU, memory and disk limits.">
          AI ajanlarının yazdığı kod için izole, kısa ömürlü sandbox'lar: region'ın en güçlü izolasyonunda (KVM'li node'larda Kata mikro-VM'i, yoksa gVisor), varsayılan olarak ağ erişimi olmadan, kendi CPU, bellek ve disk limitleriyle.</p>
       <ul class="mod-features">
-        <li data-tr="Exec: JSON, Server-Sent Events ya da WebSocket; dosyalar, arka plan süreçleri" data-en="Exec as JSON, Server-Sent Events or WebSocket; files, background processes">Exec: JSON, Server-Sent Events ya da WebSocket; dosyalar, arka plan süreçleri</li>
-        <li data-tr="Code interpreter ve konsol terminali" data-en="A code interpreter and a console terminal">Code interpreter ve konsol terminali</li>
+        <li data-tr="Exec: JSON, Server-Sent Events ya da WebSocket, istenirse terminalde (TTY); dosyalar, arka plan süreçleri" data-en="Exec as JSON, Server-Sent Events or WebSocket, also on a terminal (TTY); files, background processes">Exec: JSON, Server-Sent Events ya da WebSocket, istenirse terminalde (TTY); dosyalar, arka plan süreçleri</li>
+        <li data-tr="Code interpreter, konsol terminali ve <code>runr sandbox exec -it</code>" data-en="A code interpreter, a console terminal and <code>runr sandbox exec -it</code>">Code interpreter, konsol terminali ve <code>runr sandbox exec -it</code></li>
         <li data-tr="Warm pool, pause / resume, TTL, kota ve kullanım ölçümü" data-en="Warm pools, pause / resume, TTL, quotas and usage metering">Warm pool, pause / resume, TTL, kota ve kullanım ölçümü</li>
         <li data-tr="Python (<code>runr-sandbox</code>) ve TypeScript (<code>@runr/sandbox</code>) SDK'ları" data-en="Python (<code>runr-sandbox</code>) and TypeScript (<code>@runr/sandbox</code>) SDKs">Python (<code>runr-sandbox</code>) ve TypeScript (<code>@runr/sandbox</code>) SDK'ları</li>
       </ul>
@@ -656,6 +658,9 @@
       <p id="perf-scale-to-zero" data-measured="v0.4.2" data-tr="Knative ile boşta kalan pod'lar tamamen kapanır: son istekten ~60 sn sonra replika sıfıra iner, pod ~93 sn'de tamamen gider (RunR v0.4.2 ölçümü; Knative varsayılanı: 60 sn kararlılık penceresi + 30 sn bekleme). Boştaki fonksiyon kaynak tutmaz; kapasite diğer iş yüklerine kalır."
          data-en="Knative-powered: idle pods scale to zero. Replicas reach zero ~60 s after the last request and the pod is gone by ~93 s (RunR v0.4.2 measurement; Knative defaults: 60 s stable window + 30 s grace period). Idle functions hold no resources; the capacity is freed for other workloads.">
          Knative ile boşta kalan pod'lar tamamen kapanır: son istekten ~60 sn sonra replika sıfıra iner, pod ~93 sn'de tamamen gider (RunR v0.4.2 ölçümü; Knative varsayılanı: 60 sn kararlılık penceresi + 30 sn bekleme). Boştaki fonksiyon kaynak tutmaz; kapasite diğer iş yüklerine kalır.</p>
+      <p style="margin-top:8px" data-tr="Region, scale-to-zero projeleri bir overcommit bütçesine göre kabul eder — varsayılan olarak CPU'sunun 3, belleğinin 1,5 katı, region başına ayarlanır; sürekli açık projeler tam boyutlarını ayırır."
+         data-en="A region admits scale-to-zero projects against an overcommit budget — by default 3× its CPU and 1.5× its memory, set per region — while always-on projects reserve their full size.">
+         Region, scale-to-zero projeleri bir overcommit bütçesine göre kabul eder — varsayılan olarak CPU'sunun 3, belleğinin 1,5 katı, region başına ayarlanır; sürekli açık projeler tam boyutlarını ayırır.</p>
     </div>
 
     <div class="card reveal" style="--accent-color:#a78bfa">
@@ -685,9 +690,9 @@
     <div class="card reveal" style="--accent-color:#fbbf24">
       <div class="icon">🌍</div>
       <h3 data-tr="Kendi Cluster'larınızda" data-en="On Your Own Clusters">Kendi Cluster'larınızda</h3>
-      <p data-tr="Platformu Helm chart'ı ya da tek sunucuda Docker Compose ile kurun (air-gapped dahil), sonra istediğiniz kadar Kubernetes cluster'ını kubeconfig yükleyerek region olarak ekleyin."
-         data-en="Install the platform with its Helm chart or with Docker Compose on a single host (air-gapped too), then add as many Kubernetes clusters as you like as regions — just upload a kubeconfig.">
-         Platformu Helm chart'ı ya da tek sunucuda Docker Compose ile kurun (air-gapped dahil), sonra istediğiniz kadar Kubernetes cluster'ını kubeconfig yükleyerek region olarak ekleyin.</p>
+      <p data-tr="Platformu Helm chart'ı ya da tek sunucuda Docker Compose ile kurun (air-gapped dahil), sonra istediğiniz kadar Kubernetes cluster'ını kubeconfig'iyle region olarak ekleyin — konsoldan ya da <code>runr regions create</code> ile."
+         data-en="Install the platform with its Helm chart or with Docker Compose on a single host (air-gapped too), then add as many Kubernetes clusters as you like as regions with their kubeconfig — in the console or with <code>runr regions create</code>.">
+         Platformu Helm chart'ı ya da tek sunucuda Docker Compose ile kurun (air-gapped dahil), sonra istediğiniz kadar Kubernetes cluster'ını kubeconfig'iyle region olarak ekleyin — konsoldan ya da <code>runr regions create</code> ile.</p>
     </div>
   </div>
 </section>
@@ -976,7 +981,7 @@
       <h4>Knative Serving</h4>
       <div class="arch-sub">Matched to K8s · auto-scale</div>
       <div class="arch-tags">
-        <span class="tag">Scale-to-zero</span><span class="tag">Revisions</span><span class="tag">Min / max scale</span><span class="tag">KPA</span>
+        <span class="tag">Scale-to-zero</span><span class="tag">Revisions</span><span class="tag">Min / max scale</span><span class="tag">KPA</span><span class="tag">Capacity admission</span>
       </div>
     </div>
     <div class="arch-card reveal" style="--ac:#f472b6">
@@ -1209,7 +1214,7 @@
           <td data-tr="1M istek + 400K GB-sn / ay" data-en="1M req + 400K GB-s / mo">1M istek + 400K GB-sn / ay</td>
           <td data-tr="Yok" data-en="None">Yok</td>
           <td data-tr="2M istek + 180K vCPU-sn + 360K GiB-sn / ay" data-en="2M req + 180K vCPU-s + 360K GiB-s / mo">2M istek + 180K vCPU-sn + 360K GiB-sn / ay</td>
-          <td data-tr="1M çalıştırma + 400K GB-sn / ay" data-en="1M exec + 400K GB-s / mo">1M çalıştırma + 400K GB-sn / ay</td>
+          <td data-tr="Consumption: 1M çalıştırma + 400K GB-sn / ay · Flex Consumption: 250K çalıştırma + 100K GB-sn / ay" data-en="Consumption: 1M exec + 400K GB-s / mo · Flex Consumption: 250K exec + 100K GB-s / mo">Consumption: 1M çalıştırma + 400K GB-sn / ay · Flex Consumption: 250K çalıştırma + 100K GB-sn / ay</td>
           <td data-tr="Hobby: 1M çağrı + 4 sa CPU + 360 GB-sa / ay" data-en="Hobby: 1M inv + 4 h CPU + 360 GB-h / mo">Hobby: 1M çağrı + 4 sa CPU + 360 GB-sa / ay</td>
           <td data-tr="Yok · deneme: 2 VM-saat veya 7 gün" data-en="None · trial: 2 VM-hours or 7 days">Yok · deneme: 2 VM-saat veya 7 gün</td>
           <td data-tr="750 örnek-saat / ay · 15 dk boşta kalınca uyur" data-en="750 instance-hours / mo · sleeps after 15 min idle">750 örnek-saat / ay · 15 dk boşta kalınca uyur</td>
@@ -1221,7 +1226,7 @@
           <td data-tr="$0,20 / 1M istek + $0,0000166667 / GB-sn" data-en="$0.20 / 1M req + $0.0000166667 / GB-s">$0,20 / 1M istek + $0,0000166667 / GB-sn</td>
           <td data-tr="$0,000011244 / vCPU-sn + $0,000001235 / GB-sn · en küçük görev (0,25 vCPU, 0,5 GB) sürekli açık ≈ $9,01 / ay" data-en="$0.000011244 / vCPU-s + $0.000001235 / GB-s · smallest task (0.25 vCPU, 0.5 GB) always on ≈ $9.01 / mo">$0,000011244 / vCPU-sn + $0,000001235 / GB-sn · en küçük görev (0,25 vCPU, 0,5 GB) sürekli açık ≈ $9,01 / ay</td>
           <td data-tr="$0,40 / 1M istek + $0,000024 / vCPU-sn + $0,0000025 / GiB-sn" data-en="$0.40 / 1M req + $0.000024 / vCPU-s + $0.0000025 / GiB-s">$0,40 / 1M istek + $0,000024 / vCPU-sn + $0,0000025 / GiB-sn</td>
-          <td data-tr="$0,20 / 1M çalıştırma + $0,000016 / GB-sn" data-en="$0.20 / 1M exec + $0.000016 / GB-s">$0,20 / 1M çalıştırma + $0,000016 / GB-sn</td>
+          <td data-tr="Consumption (eski, Windows): $0,20 / 1M çalıştırma + $0,000016 / GB-sn · Flex Consumption: $0,40 / 1M + $0,000026 / GB-sn" data-en="Consumption (legacy, Windows): $0.20 / 1M exec + $0.000016 / GB-s · Flex Consumption: $0.40 / 1M + $0.000026 / GB-s">Consumption (eski, Windows): $0,20 / 1M çalıştırma + $0,000016 / GB-sn · Flex Consumption: $0,40 / 1M + $0,000026 / GB-sn</td>
           <td data-tr="Pro: $20 / geliştirici / ay ($20 kullanım kredisi dahil) · $0,60 / 1M çağrı + $0,128 / CPU-sa + $0,0106 / GB-sa" data-en="Pro: $20 / developer / mo ($20 usage credit included) · $0.60 / 1M inv + $0.128 / CPU-h + $0.0106 / GB-h">Pro: $20 / geliştirici / ay ($20 kullanım kredisi dahil) · $0,60 / 1M çağrı + $0,128 / CPU-sa + $0,0106 / GB-sa</td>
           <td data-tr="shared-cpu-1x 256 MB sürekli açık ≈ $1,94 / ay · durdurulmuş: $0,15 / GB rootfs / ay" data-en="shared-cpu-1x 256 MB always on ≈ $1.94 / mo · stopped: $0.15 / GB rootfs / mo">shared-cpu-1x 256 MB sürekli açık ≈ $1,94 / ay · durdurulmuş: $0,15 / GB rootfs / ay</td>
           <td data-tr="Starter (512 MB, 0,5 CPU) $7 / ay, saniye bazlı" data-en="Starter (512 MB, 0.5 CPU) $7 / mo, prorated per second">Starter (512 MB, 0,5 CPU) $7 / ay, saniye bazlı</td>
@@ -1400,7 +1405,7 @@
          data-en="The control plane as one Helm chart: gateway, UI, API, workers, scheduler and Reverb, plus PostgreSQL and Redis unless you point it at your own.">
          Kontrol düzlemi tek bir Helm chart: gateway, UI, API, worker'lar, scheduler, Reverb; kendi servislerinizi göstermezseniz PostgreSQL ve Redis de.</p>
       <pre><code>git clone https://github.com/brf-tech/runr.git
-cd core
+cd runr
 helm upgrade --install runr ./helm \
   -n runr --create-namespace \
   --set domain=runr.example.com</code></pre>
@@ -1458,7 +1463,7 @@ runr deploy</code></pre>
       <p data-tr="Her push'ta deploy edin, pull request'ler için preview ortamları açın."
          data-en="Deploy on every push and run preview environments for pull requests.">
          Her push'ta deploy edin, pull request'ler için preview ortamları açın.</p>
-      <pre><code>- uses: brf-tech/runr/actions/deploy@v0.5.0
+      <pre><code>- uses: brf-tech/runr/actions/deploy@v0.5.3
   with:
     api-url: https://runr.example.com
     token: ${{ secrets.RUNR_TOKEN }}
@@ -1469,9 +1474,9 @@ runr deploy</code></pre>
 
     <div class="install-card install-docs reveal">
       <h4 data-tr="Dokümantasyon" data-en="Documentation">Dokümantasyon</h4>
-      <p data-tr="Mimari, her özelliğin sayfası, 0.4.x'ten yükseltme ve sürüm notları — deponun <code>docs/</code> klasöründe."
-         data-en="The architecture, a page for every feature, the upgrade from 0.4.x and the release notes — in the repository's <code>docs/</code>.">
-         Mimari, her özelliğin sayfası, 0.4.x'ten yükseltme ve sürüm notları — deponun <code>docs/</code> klasöründe.</p>
+      <p data-tr="Mimari, her özelliğin sayfası, sürümler arası yükseltme notları ve sürüm notları — deponun <code>docs/</code> klasöründe."
+         data-en="The architecture, a page for every feature, upgrade notes between releases and the changelog — in the repository's <code>docs/</code>.">
+         Mimari, her özelliğin sayfası, sürümler arası yükseltme notları ve sürüm notları — deponun <code>docs/</code> klasöründe.</p>
       <ul class="install-links">
         <li><a href="https://github.com/brf-tech/runr/tree/main/docs" target="_blank" rel="noopener" data-tr="Doküman dizini" data-en="Documentation index">Doküman dizini</a></li>
         <li><a href="https://github.com/brf-tech/runr#quick-start" target="_blank" rel="noopener" data-tr="Hızlı başlangıç" data-en="Quick start">Hızlı başlangıç</a></li>
@@ -1542,8 +1547,8 @@ runr deploy</code></pre>
     <details class="faq-item reveal">
       <summary data-tr="Nasıl kurarım?" data-en="How do I install it?">Nasıl kurarım?</summary>
       <div class="faq-body"
-        data-tr="Kubernetes'te deponun Helm chart'ıyla (<code>helm upgrade --install runr ./helm</code>), tek sunucuda Docker Compose ile. <code>runr</code> CLI'ı GitHub sürümlerinden indirilir; Terraform provider'ı <code>brf-tech/runr</code>, GitHub Action'ı <code>brf-tech/runr/actions/deploy@v0.5.0</code>. Ayrıntılar yukarıdaki kurulum bölümünde ve <a href='https://github.com/brf-tech/runr/tree/main/docs' target='_blank' rel='noopener'>dokümanlarda</a>."
-        data-en="On Kubernetes with the repository's Helm chart (<code>helm upgrade --install runr ./helm</code>), on a single host with Docker Compose. The <code>runr</code> CLI comes from GitHub releases; the Terraform provider is <code>brf-tech/runr</code> and the GitHub Action <code>brf-tech/runr/actions/deploy@v0.5.0</code>. Details in the install section above and in the <a href='https://github.com/brf-tech/runr/tree/main/docs' target='_blank' rel='noopener'>documentation</a>.">
+        data-tr="Kubernetes'te deponun Helm chart'ıyla (<code>helm upgrade --install runr ./helm</code>), tek sunucuda Docker Compose ile. <code>runr</code> CLI'ı GitHub sürümlerinden indirilir; Terraform provider'ı <code>brf-tech/runr</code>, GitHub Action'ı <code>brf-tech/runr/actions/deploy@v0.5.3</code>. Ayrıntılar yukarıdaki kurulum bölümünde ve <a href='https://github.com/brf-tech/runr/tree/main/docs' target='_blank' rel='noopener'>dokümanlarda</a>."
+        data-en="On Kubernetes with the repository's Helm chart (<code>helm upgrade --install runr ./helm</code>), on a single host with Docker Compose. The <code>runr</code> CLI comes from GitHub releases; the Terraform provider is <code>brf-tech/runr</code> and the GitHub Action <code>brf-tech/runr/actions/deploy@v0.5.3</code>. Details in the install section above and in the <a href='https://github.com/brf-tech/runr/tree/main/docs' target='_blank' rel='noopener'>documentation</a>.">
         Helm, Docker Compose, CLI, Terraform ya da GitHub Action ile.
       </div>
     </details>
@@ -1659,7 +1664,7 @@ runr deploy</code></pre>
     </div>
     <div class="footer-bottom">
       <span>© 2026 BRF Teknoloji and RunR contributors. <span data-tr="MIT lisansıyla yayımlanır." data-en="Released under the MIT License.">MIT lisansıyla yayımlanır.</span></span>
-      <span class="mono">runr.sh</span>
+      <span class="mono">runr.sh · <a href="https://github.com/brf-tech/runr/releases" target="_blank" rel="noopener">v0.5.3</a></span>
     </div>
   </div>
 </footer>
