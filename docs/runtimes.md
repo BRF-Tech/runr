@@ -254,7 +254,7 @@ program.
 ## The universal wrapper
 
 `runr-wrapper` lives in `runtime/wrapper` (Go, standard library only) and ships as the image
-`ghcr.io/brf-tech/runr-wrapper:<version>` (`FROM scratch`, the binary at `/runr-wrapper`). RunR
+`ghcr.io/brf-tech/runr/wrapper:<version>` (`FROM scratch`, the binary at `/runr-wrapper`). RunR
 configures it through the environment; an image that wants the wrapper as its own entrypoint
 sets the same variables.
 
@@ -311,11 +311,11 @@ name: C
 extensions: [c, h]
 versions:
   - version: "17"
-    image: ghcr.io/brf-tech/reqs/alpine:3.21
+    image: ghcr.io/brf-tech/runr/reqs/alpine:3.21
     default: true
 build:
   command: "apk add --no-cache gcc musl-dev >/dev/null && gcc -O2 -static -o /build/out/handler {file}"
-  runImage: ghcr.io/brf-tech/reqs/alpine:3.21
+  runImage: ghcr.io/brf-tech/runr/reqs/alpine:3.21
   source: false
 run:
   mode: exec
@@ -387,11 +387,18 @@ Up to 50 versions. Removing a version from the manifest retires it: projects pin
 the default version, as with any retired version.
 
 `versionDiscovery` (built-in catalog) replaces a static list with the images RunR publishes:
-`executor:sync` lists the clean `X.Y[.Z]` tags of the Docker Hub `repository`, maps each to
-`image` (`ghcr.io/brf-tech/exec-python:{version}`), marks the newest as default, deactivates tags
-that left the repository, reads end-of-life dates for the `eol` product from
+`executor:sync` lists the clean `X.Y[.Z]` tags of the image `repository`
+(`ghcr.io/brf-tech/runr/exec-python`) in its own registry, maps each to `image`
+(`ghcr.io/brf-tech/runr/exec-python:{version}`), marks the newest as default, deactivates tags that
+left the repository, reads end-of-life dates for the `eol` product from
 [endoflife.date](https://endoflife.date) and, with `filter: lts-even-major`, keeps the newest
-minor of each even major (Node.js LTS lines).
+minor of each even major (Node.js LTS lines). A `X.Y-gpu` tag next to a listed version is that
+version's GPU build: a version of its own (`2.14-gpu`, `gpu_required`), listed after it and never
+the default ([ML runtimes](#ml-runtimes)). The tags come from the registry's OCI distribution API
+(`GET /v2/<name>/tags/list`, every page of its `Link` header), read anonymously with a pull token
+from the registry's token service; a `repository` without a registry host is on Docker Hub
+(`registry-1.docker.io`). A runtime whose registry does not answer keeps its versions, and a
+partial tag list deactivates none.
 
 ### handler and template
 
@@ -507,7 +514,9 @@ pushes `runr-runtimes/<id>:<version>-<digest>` to the region's registry. The dig
 version source, the build args and — for `dockerfile` versions — the uploaded files, so a changed
 Dockerfile builds a new image and an unchanged one is reused: the image is cached in the region
 registry for every function of that runtime. Git sources are cloned by Kaniko
-(`git://<host>/<path>#<ref>`, `path` as the context sub-directory).
+(`git://<host>/<path>#<ref>`, `path` as the context sub-directory). Deleting the runtime deletes
+its images (`runr-runtimes/<id>`, every version and earlier source) from the registries of the
+regions it was built in.
 
 Builds start when a runtime is registered, changed or re-enabled (in every active region with a
 registry it is available in), from **Settings → Runtimes → Builds** or
@@ -540,14 +549,14 @@ A `build` section makes every saved version a build — the same pipeline Go use
 build:
   image: "{image}"                      # build image (default: the version image)
   command: "gcc -O2 -static -o /build/out/handler {file}"
-  runImage: ghcr.io/brf-tech/reqs/alpine:3.21   # final image (default: the version image)
+  runImage: ghcr.io/brf-tech/runr/reqs/alpine:3.21   # final image (default: the version image)
   source: false                         # copy the code into /app/code of the final image (default true)
   files:                                # extra files placed next to the code before the build
     runr_wrapper_.go: {http: "…", schedule: "…"}
 ```
 
 RunR generates a two-stage Dockerfile and runs it with Kaniko in the project's region
-(`activeDeadlineSeconds` 300):
+(`activeDeadlineSeconds`: `BUILD_DEADLINE_SECONDS`, 900 by default):
 
 1. `FROM <build.image> AS build`: the project's files plus `build.files` in `/build/code` — a
    `{http, schedule}` pair picks the variant for the project's trigger (queue uses `http`) — and
@@ -561,8 +570,21 @@ RunR generates a two-stage Dockerfile and runs it with Kaniko in the project's r
    the wrapper variables), `EXPOSE 8080` and the entrypoint: `run.command` in http mode, the
    wrapper in exec and persistent mode.
 
+The base images come through the region registry's pull-through cache (Zot), which fetches an
+image it does not hold yet from its upstream before it answers — for a large image that took
+4.5 to 5 minutes on a test region. `region:reconcile` (run after every install and upgrade) has
+the registry of each region fetch the base images of the release's function builds ahead of the
+first build: the default version of every built-in and platform runtime that builds, through a
+Job `runr-registry-prewarm-<hash>` in the registry namespace that logs how long each image took.
+A build that still runs past its deadline while Kaniko waits for its base image (Kaniko's last log
+line `Retrieving image …`) is built once more; meanwhile its `build_error` says so. If the second
+build runs out of time too, the version fails.
+
 The image is pushed to the region registry as `runr-builds/<project>:v<N>` and old build images
-are trimmed by the registry retention. Build errors appear on the version. Kaniko builds run
+are trimmed by the registry retention. A build that fails leaves nothing in the registry (Kaniko
+runs with `--skip-push-permission-check`, so it contacts the registry only to push the finished
+image). Once a day, build repositories without a tag (`runr-builds/…`, `runr-runtimes/…`) are
+handed to Zot's garbage collection, which removes them after its delay (one hour by default). Build errors appear on the version. Kaniko builds run
 under the region's build sandbox (`sandbox_build_runtime`). A manifest change applies to the
 versions built after it.
 
@@ -819,7 +841,8 @@ registers them for hosted MCP servers ([AI agents](mcp.md#templates)).
 
 The built-in runtimes are manifests in `runtime/<id>/runtime.yaml`, next to each image's
 Dockerfile and language wrapper; `runtime/ci.sh build` builds the python, nodejs, go and php
-images, skipping versions past their end of life, and `runtime/ci.sh wasm` the build images of
+images, skipping versions past their end of life, `runtime/ci.sh ml-runtimes` the PyTorch and
+TensorFlow images ([ML runtimes](#ml-runtimes)) and `runtime/ci.sh wasm` the build images of
 the WebAssembly runtimes. Built-in manifests may use `versionDiscovery`
 and `@path` references in `build.files` (a file next to the manifest, inlined when the catalog is
 bundled).
@@ -837,8 +860,8 @@ php artisan runtimes:bundle --check  # CI: exit 1 when the bundle differs from r
 | Runtime | Mode | Notes |
 |---|---|---|
 | `python`, `nodejs`, `php` | `http`, `schedule: native` | the image's own server (`server.py`, `server.js`, `server.php`) loads `RUNR_FILENAME` from `/app/code` and calls `RUNR_HANDLER(event, context)`; `requirements.txt`, `package.json`, `composer.json` trigger a dependency build in FaaS projects (Composer in the composer image, pinned to the runtime's PHP version) |
-| `pytorch`, `tensorflow` | `http`, `schedule: native` | Python images with the ML stack preinstalled (`category: ml`), the same handler server as `python` |
-| `go` | `http`, `schedule: native`, `build` | the project's `.go` files are compiled together with RunR's Go wrapper for the trigger (`runtime/go/wrapper_http.go` / `wrapper_schedule.go` as `build.files`) into a static binary, `/app/handler` on `ghcr.io/brf-tech/reqs/alpine:3.20` |
+| `pytorch`, `tensorflow` | `http`, `schedule: native` | Python 3.12 images with the ML stack preinstalled (`category: ml`), the same handler server as `python`; a CPU and a `-gpu` version each ([ML runtimes](#ml-runtimes)) |
+| `go` | `http`, `schedule: native`, `build` | the project's `.go` files are compiled together with RunR's Go wrapper for the trigger (`runtime/go/wrapper_http.go` / `wrapper_schedule.go` as `build.files`) into a static binary, `/app/handler` on `ghcr.io/brf-tech/runr/reqs/alpine:3.20` |
 | `wasm-rust`, `wasm-go`, `wasm-js`, `wasm-python` | `http`, `schedule: native`, `build`, `runtimeClass: wasmtime-spin-v2` | WebAssembly: built into a Spin OCI artifact and run on the Spin shim; offered in regions with WebAssembly support — [wasm.md](wasm.md) |
 | `wasm-exec` | `http`, `schedule: native`, `build`, `runtimeClass: wasmtime-spin-v2`, `wagi` | any WASI preview 1 command module — C / C++ (wasi-sdk), Zig, Go (TinyGo), a `build.sh`, an uploaded `.wasm` — on Spin's WAGI executor (CGI on stdin / stdout) — [wasm.md](wasm.md#wasm-exec) |
 
@@ -846,6 +869,43 @@ Built-in versions come from `executor:sync` (at API start and on its schedule): 
 built-in rows, discovers versions through `versionDiscovery` and syncs the versions of platform
 and custom runtimes from their manifests. `php artisan runtimes:sync [--builds]` does the latter
 two on demand, with `--builds` also starting region builds of `dockerfile` / `git` versions.
+
+### ML runtimes
+
+The PyTorch and TensorFlow runtimes are Python 3.12 with the framework and the ML essentials
+preinstalled — NumPy, SciPy, pandas, Matplotlib, scikit-learn, Pillow, and Keras with TensorFlow —
+and run handlers exactly like `python` (`def handler(event, context)`, its `server.py` and
+`runner.py`). A FaaS project's `requirements.txt` is installed on top in a dependency build that
+runs in the version's own image.
+
+| Version | Image | Framework | Unpacked |
+|---|---|---|---|
+| `pytorch` `2.14` (default) | `ghcr.io/brf-tech/runr/exec-pytorch:2.14` | torch 2.14.1 and torchvision 0.29.1, CPU wheels | 1.5 GB |
+| `pytorch` `2.14-gpu` | `ghcr.io/brf-tech/runr/exec-pytorch:2.14-gpu` | the same torch and torchvision built for CUDA 12.6 (PyTorch's `cu126` wheels), the torch hf-serve runs | 7.0 GB |
+| `tensorflow` `2.21` (default) | `ghcr.io/brf-tech/runr/exec-tensorflow:2.21` | TensorFlow 2.21.0, Google's CPU build (`tensorflow-cpu`), Keras 3.15 | 2.0 GB |
+| `tensorflow` `2.21-gpu` | `ghcr.io/brf-tech/runr/exec-tensorflow:2.21-gpu` | TensorFlow 2.21.0 with the CUDA 12 libraries of its `and-cuda` extra, Keras 3.15 | 6.9 GB |
+
+The `-gpu` versions carry the CUDA libraries as NVIDIA's pip packages and need a GPU node whose
+driver supports CUDA 12. A project on a `-gpu` version is a GPU project
+([GPU runtime versions](ai.md#gpu-runtime-versions-xaas--faas)).
+The images are built for `linux/amd64`. Being this large (the unpacked size of each image's
+filesystem above), they are left out of the node pre-pull (below) and pulled by the nodes their
+functions run on.
+
+`runtime/ci.sh ml-runtimes` builds them from `runtime/pytorch` and `runtime/tensorflow`
+(`Dockerfile`, `Dockerfile.gpu`; the handler server comes from `runtime/python`). A version is
+the major.minor of the framework pin (`torch==2.14.1` in `requirements-torch.txt`,
+`tensorflow-cpu==2.21.0` in `requirements-cpu.txt`); `executor:sync` picks up the published tags
+through `versionDiscovery`. Each build pulls its base image, installs the pinned packages, and
+fails unless `pip check` passes, the frameworks import and the version (and, for `-gpu`, the CUDA
+build) matches. A local build also runs a smoke test: a handler doing a tensor op answers an HTTP
+request with JSON through the image's server, and once more as a scheduled run.
+
+```bash
+runtime/ci.sh ml-runtimes --list            # the image references
+runtime/ci.sh ml-runtimes pytorch cpu       # one image, built and smoke-tested locally
+runtime/ci.sh ml-runtimes --push            # build and push all four (linux/amd64)
+```
 
 **Upgrading.** A migration adds the `runtimes` and `runtime_builds` tables with a built-in row
 each for `python`, `nodejs`, `go`, `php`, `tensorflow` and `pytorch`; `executor:sync` adds the
@@ -860,14 +920,16 @@ until a holder of `runtimes.manage` switches **Custom Runtimes** on.
 |---|---|---|
 | `EXECUTOR_RUNTIMES` | `python,nodejs,go,php,tensorflow,pytorch,wasm-rust,wasm-go,wasm-js,wasm-python,wasm-exec` | built-in runtimes offered on the platform; projects of a built-in left out keep deploying (the Wasm runtimes appear only in regions with WebAssembly support) |
 | `RUNR_RUNTIME_CATALOG` | `../runtime` when present | directory of the built-in catalog sources |
-| `RUNR_WRAPPER_IMAGE` | `ghcr.io/brf-tech/runr-wrapper:1.1.0` | the universal wrapper image for init containers and build Jobs |
+| `RUNR_WRAPPER_IMAGE` | `ghcr.io/brf-tech/runr/wrapper:1.1.0` | the universal wrapper image for init containers and build Jobs |
+| `BUILD_DEADLINE_SECONDS` | `900` | deadline of a function build Job (Kaniko and WebAssembly toolchain builds; at least 60); the build checks give up a minute later, and a version still building two minutes after the deadline is marked failed |
 
 These are environment variables of the API (`api/config/executor.php`); the Helm chart has no
 dedicated values for them, so a Helm installation sets them via `extraEnv`.
 
 RunR's image pre-pull on region nodes covers the wrapper image and the active versions of the
 built-in and platform runtimes that have a plain image, except the WebAssembly runtimes (their
-image is the build toolchain); custom runtime images and region builds are pulled on first use.
+image is the build toolchain) and the ML runtimes (`category: ml`); those, custom runtime images
+and region builds are pulled on first use.
 
 ## Testing
 
@@ -881,6 +943,9 @@ image is the build toolchain); custom runtime images and region builds are pulle
 - **Wrapper**: `cd runtime/wrapper && go vet ./... && go test -count=1 ./...` (Linux; the race
   detector needs `CGO_ENABLED=1`).
 - **Q interpreter**: `cd examples/runtimes/q/interpreter && go test ./...`.
+- **ML runtime images**: `bash runtime/test/ml_runtimes_test.sh` checks `ci.sh ml-runtimes`
+  without Docker (image list and tags, build flags, smoke test, push);
+  `runtime/ci.sh ml-runtimes` builds the images and smoke-tests each one.
 - **End to end**: `bash runtime/ci.sh test-runtimes` creates a Kind cluster, installs Knative,
   Redis and the region registry through the API (docker compose), builds the wrapper image from
   `runtime/wrapper` and loads it into the cluster, copies `examples/runtimes` into the API

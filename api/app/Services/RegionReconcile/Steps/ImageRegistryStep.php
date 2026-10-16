@@ -11,11 +11,13 @@ use App\Services\Wasm\WasmManifests;
 use App\Support\Images\RegistryMove;
 
 /**
- * RunR's image namespace (0.5.1, App\Support\Images\RegistryMove): workloads RunR deployed into
- * the cluster before the upgrade run images under ghcr.io/runrsh/. Their pod templates move to the
- * same images under ghcr.io/brf-tech/ — every container and init container image, and every env
- * value, that starts with ghcr.io/runrsh/ (exact prefix; images of other registries, also the
- * region registry's pull-through path {registry}/ghcr.io/…, stay):
+ * RunR's image namespace (App\Support\Images\RegistryMove): workloads RunR deployed into the
+ * cluster before the upgrade run images under one of RunR's earlier namespaces — ghcr.io/runrsh/
+ * (up to 0.5.0) or RunR's packages directly under ghcr.io/brf-tech/ (0.5.1). Their pod templates
+ * move to the same images under ghcr.io/brf-tech/runr/ — every container and init container
+ * image, and every env value, that RegistryMove::ref() moves (it starts with such a reference;
+ * images of other registries, also the region registry's pull-through path {registry}/ghcr.io/…,
+ * stay):
  *
  *  - Knative Services (functions with the wrapper init container or a runtime image, CaaS
  *    projects, model services, hosted MCP servers): a new revision; Knative moves the traffic
@@ -121,7 +123,7 @@ final class ImageRegistryStep implements ReconcileStep
 
     /**
      * JSON patch operations that move the pod spec at $specPath: test + replace for every image
-     * and env value under RegistryMove::FROM. Empty when there is nothing to move.
+     * and env value RegistryMove::ref() moves. Empty when there is nothing to move.
      *
      * @param  list<string>  $specPath
      * @return list<array{op: string, path: string, value: string}>

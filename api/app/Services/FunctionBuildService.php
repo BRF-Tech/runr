@@ -139,8 +139,7 @@ class FunctionBuildService
             $steps[] = $render($build['command']);
         }
 
-        $stageImage = $render($build['image'] ?? $deps['image'] ?? '{image}');
-        $runImage = $build ? $render($build['runImage']) : $versionImage;
+        [$stageImage, $runImage] = self::stageImages($manifest, $values);
 
         $lines = [
             "FROM {$from($stageImage)} AS build",
@@ -190,6 +189,22 @@ class FunctionBuildService
         }
 
         return implode("\n", $lines);
+    }
+
+    /**
+     * The images a build of a runtime version starts FROM: the build stage (build.image, else
+     * dependencies.image, else the version image) and the final image (build.runImage, else the
+     * version image), placeholders resolved with $values (version and image at least).
+     *
+     * @return array{0: string, 1: string}
+     */
+    public static function stageImages(RuntimeManifest $manifest, array $values): array
+    {
+        $build = $manifest->build();
+        $deps = $manifest->dependencies();
+        $stage = Placeholders::render($build['image'] ?? $deps['image'] ?? '{image}', $values);
+
+        return [$stage, $build ? Placeholders::render($build['runImage'], $values) : (string) $values['image']];
     }
 
     /**
@@ -325,7 +340,7 @@ class FunctionBuildService
                 'annotations' => ['runr.sh/project-id' => $project->id],
             ],
             'spec' => [
-                'activeDeadlineSeconds' => 300,
+                'activeDeadlineSeconds' => BuildManifests::deadlineSeconds(),
                 'backoffLimit' => 0,
                 'ttlSecondsAfterFinished' => 300,
                 'template' => [
@@ -346,6 +361,7 @@ class FunctionBuildService
                                 '--dockerfile=/workspace/Dockerfile',
                                 '--context=dir:///workspace',
                                 "--destination={$imageRef}",
+                                BuildManifests::SKIP_PUSH_PERMISSION_CHECK,
                                 '--insecure',
                                 '--insecure-pull',
                                 '--custom-platform=linux/amd64',

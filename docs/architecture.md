@@ -66,15 +66,15 @@ used there.
 
 | Component | Image / process | Role |
 |-----------|-----------------|------|
-| `runr-gateway` | `ghcr.io/brf-tech/reqs/caddy` with the chart's Caddyfile (`helm/templates/gateway-configmap.yaml`) | Single entry point; routes `/`, `/api`, `/horizon`, `/storage`, `/ws`, `/git` (when `gitDeploy.enabled`, streamed) and `/mcp`, `/oauth2`, `/.well-known/oauth-*` (streamed, [mcp.md](mcp.md)); `/healthz` answers itself |
+| `runr-gateway` | `ghcr.io/brf-tech/runr/reqs/caddy` with the chart's Caddyfile (`helm/templates/gateway-configmap.yaml`) | Single entry point; routes `/`, `/api`, `/horizon`, `/storage`, `/ws`, `/git` (when `gitDeploy.enabled`, streamed) and `/mcp`, `/oauth2`, `/.well-known/oauth-*` (streamed, [mcp.md](mcp.md)); `/healthz` answers itself |
 | `runr-ui` | `ghcr.io/brf-tech/runr/ui` (`vue/Dockerfile`, Caddy) | Vue 3 + Vite SPA (the console): Pinia, vue-i18n (EN/TR), Tailwind CSS, Monaco editor, xterm.js, driver.js tours |
 | `runr-api` | `ghcr.io/brf-tech/runr/api`, `CONTAINER_ROLE=api` | REST API (`api/routes/*.php`), Sanctum token auth, OpenAPI docs via Scramble; also the MCP server and OAuth authorization server, the hosted MCP server gateway, the git remotes (`git http-backend`), the durable workflows engine API and the Sandbox API |
 | `runr-horizon` | same image, `CONTAINER_ROLE=horizon` | Queue workers: deploys, builds, region installs, supply-chain runs, workflow steps, binding operations, image uploads, demo data |
 | `runr-scheduler` | same image, `CONTAINER_ROLE=scheduler` | Periodic tasks (`api/routes/console.php` and the feature service providers) |
 | `runr-reverb` | same image, `CONTAINER_ROLE=reverb` | WebSocket server: broadcasting, shell and sandbox PTYs, Sandbox API exec streams, runr-agent connections |
-| PostgreSQL | `ghcr.io/brf-tech/reqs/postgres:17-alpine` or external | Application data; one schema per tenant in multi-tenant mode |
-| Redis | `ghcr.io/brf-tech/reqs/redis:7-alpine` or external | Queues, cache, sessions, shell and exec tokens, live metrics |
-| Mailpit | `ghcr.io/brf-tech/reqs/mailpit` | SMTP catch-all, installed only when no SMTP host is set |
+| PostgreSQL | `ghcr.io/brf-tech/runr/reqs/postgres:17-alpine` or external | Application data; one schema per tenant in multi-tenant mode |
+| Redis | `ghcr.io/brf-tech/runr/reqs/redis:7-alpine` or external | Queues, cache, sessions, shell and exec tokens, live metrics |
+| Mailpit | `ghcr.io/brf-tech/runr/reqs/mailpit` | SMTP catch-all, installed only when no SMTP host is set |
 
 The roles are selected in `api/docker/entrypoint.sh`. The API role runs
 `php artisan octane:start --server=frankenphp`. Reverb runs `php artisan reverb:start-shell`, a
@@ -89,6 +89,8 @@ Scheduled tasks include `executor:sync` (runtime versions, every 30 minutes),
 in every tenant schema, `LogRetentionJob` (daily),
 `metric-snapshot-retention` (daily: metric snapshots older than 90 days are removed, the daily
 ones kept, in the central schema and in every tenant schema),
+`registry-empty-repositories` (daily: build repositories without a tag in the regions' internal
+registries go to Zot's garbage collection),
 `close-stale-sessions` (every ten minutes: deployment sessions open for more than 30 minutes
 without a reported end are closed, in the central schema and in every tenant schema; when the pod
 was still running, its real end later corrects the session), the GPU inventory (`gpu:refresh`,
@@ -115,7 +117,7 @@ Setting up a region (each step is a queued job that reports progress over WebSoc
    versions depend on the cluster's Kubernetes minor (`KnativeVersionHelper::KNATIVE_K8S_COMPAT`).
 4. **Knative Serving** (`KnativeInstallService::installServing`): the KnativeServing resource, Traefik
    as Knative ingress (`KnativeTraefikTrait`, chart `traefik/traefik` pinned in
-   `KnativeConstants`, its image from the `ghcr.io/brf-tech/reqs` mirror; Helm value
+   `KnativeConstants`, its image from the `ghcr.io/brf-tech/runr/reqs` mirror; Helm value
    `knative.traefikImage` / `KNATIVE_TRAEFIK_IMAGE` names another), the project namespace with an optional ResourceQuota/LimitRange,
    Prometheus and Loki (installed, or existing ones reused), the tracing backend
    (`observability.tracing.installWithServing`) and the runr-agent.
@@ -136,9 +138,10 @@ Optional per-region features, each installed from the region's settings in the c
 
 `region:reconcile` brings existing regions up to date with the running release. Its steps are in
 `App\Services\RegionReconcile\Steps`: Knative Serving config, Prometheus exposure, namespace
-quota, registry sync, ingress trust, Traefik image, Loki deletion, Kata sandbox, WebAssembly
-sandbox, admission policy and image registry (workloads onto RunR's image namespace
-`ghcr.io/brf-tech`, [upgrade.md](upgrade.md#image-namespace-ghcriobrf-tech)).
+quota, registry sync, registry pre-warm (the base images of function builds), ingress trust,
+Traefik image, Loki deletion, tracing backend (where tracing is enabled), Kata sandbox,
+WebAssembly sandbox, admission policy and image registry (workloads onto RunR's image namespace
+`ghcr.io/brf-tech/runr`, [upgrade.md](upgrade.md#image-namespace-ghcriobrf-techrunr)).
 
 **Region migration** (`RegionMigrateService`, `POST /api/knative-regions/{id}/migrate`) moves a
 region to a new cluster. It installs the infrastructure there, redeploys every project's latest
@@ -264,7 +267,7 @@ Runtimes for `xaas`/`faas` are plugins ([runtimes.md](runtimes.md)): a `runtime.
 a runtime image, from the built-in catalog (`runtime/<id>/`), registered by a platform
 administrator, or registered by an organization (custom). They are `Runtime` rows
 (`RuntimeRegistry`); each version is an `ExecutorImage` row with its runtime image.
-`executor:sync` discovers the versions of the built-in images (`ghcr.io/brf-tech/exec-<runtime>:<version>`)
+`executor:sync` discovers the versions of the built-in images (`ghcr.io/brf-tech/runr/exec-<runtime>:<version>`)
 and `runtimes:sync` brings the catalog rows and registered versions up to date. The built-in
 catalog holds Python, Node.js, Go, PHP, PyTorch and TensorFlow, and the WebAssembly runtimes
 `wasm-rust`, `wasm-go`, `wasm-js`, `wasm-python` and `wasm-exec` ([wasm.md](wasm.md)). Runtimes in
@@ -537,7 +540,7 @@ envelope names; without a DSN the proxy refuses them (503), and envelopes over 1
 
 Images are built and mirrored by `runtime/ci.sh` (subcommands in `runtime/lib/`: build, setup,
 test, eol, mirror, deploy; see [runtime/README.md](../runtime/README.md)). Third-party base images
-are mirrored to `ghcr.io/brf-tech/reqs/`.
+are mirrored to `ghcr.io/brf-tech/runr/reqs/`.
 
 Clients outside the console: the `runr` CLI ([cli.md](cli.md)), the Terraform provider
 ([terraform.md](terraform.md)), the GitHub Action ([github-action.md](github-action.md)) and the

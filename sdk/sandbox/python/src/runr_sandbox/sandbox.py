@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 import os
+import ssl
 import time
 from types import TracebackType
 from typing import Any, Dict, Iterator, List, Mapping, Optional, Type, Union
@@ -17,6 +18,7 @@ from ._tar import extract_archive, tar_directory, tar_files
 from ._transport import SyncTransport
 from .config import resolve_config
 from .errors import ConflictError, NotFoundError, RunrSandboxError, SandboxStartTimeout
+from .exec_ws import ExecSession
 from .models import ExecEvent, ExecResult, FileEntry, Process, ProcessLogs, RunResult
 from .sse import SSEDecoder
 
@@ -236,6 +238,43 @@ class Sandbox:
         ``exit`` event."""
         body = _api.exec_body(cmd, stdin=stdin, timeout=timeout, env=env, cwd=cwd, stream=True)
         yield from self._stream("POST", self._path("/exec"), body)
+
+    def exec_ws(
+        self,
+        cmd: Optional[Command] = None,
+        *,
+        code: Optional[str] = None,
+        language: Optional[str] = None,
+        stdin: Union[str, bytes, None] = None,
+        tty: bool = False,
+        cols: Optional[int] = None,
+        rows: Optional[int] = None,
+        timeout: Optional[int] = None,
+        env: Optional[Mapping[str, str]] = None,
+        cwd: Optional[str] = None,
+        ssl_context: Optional[ssl.SSLContext] = None,
+    ) -> ExecSession:
+        """Run a command over the exec WebSocket and return its session: send input while it runs
+        (:meth:`ExecSession.send_stdin`), read its output as it arrives (iterate, or
+        :meth:`ExecSession.wait`), kill it.
+
+        ``cmd`` is a shell string or an argv list; ``code`` (with ``language``) runs code with the
+        language's interpreter instead. ``stdin`` is sent before the command starts. ``tty=True``
+        runs the command on a terminal of ``cols`` × ``rows`` (default 80 × 24) — its stdout and
+        stderr then arrive together as ``stdout`` events — and :meth:`ExecSession.resize` changes
+        the size. ``ssl_context`` sets the TLS settings of a ``wss://`` connection (default: the
+        CA bundle of ``SSL_CERT_FILE`` / ``SSL_CERT_DIR``, else certifi's)::
+
+            with sandbox.exec_ws(["python3", "-i"]) as session:
+                session.send_stdin("print(6 * 7)\\n")
+                session.close_stdin()
+                print(session.wait().stdout)
+        """
+        body = _api.exec_ws_body(
+            cmd, code=code, language=language, stdin=stdin, tty=tty, cols=cols, rows=rows,
+            timeout=timeout, env=env, cwd=cwd,
+        )
+        return ExecSession.open(self._transport, self._path("/exec/ws"), body, ssl_context=ssl_context)
 
     def run_code(
         self,

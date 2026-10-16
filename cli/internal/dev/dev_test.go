@@ -48,7 +48,7 @@ func TestPlanPython(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if p.Image != "ghcr.io/brf-tech/exec-python:3.13" || p.MainFile != "app.py" || p.HandlerName != "run" || p.Port != 8080 {
+	if p.Image != "ghcr.io/brf-tech/runr/exec-python:3.13" || p.MainFile != "app.py" || p.HandlerName != "run" || p.Port != 8080 {
 		t.Fatalf("plan = %+v", p)
 	}
 	args := strings.Join(p.RunArgs(), " ")
@@ -56,7 +56,7 @@ func TestPlanPython(t *testing.T) {
 		"run --rm --name runr-dev-hello-", "-p 127.0.0.1:8080:8080", "type=bind,source=" + dir + ",target=/src,readonly",
 		"target=/app/vendor,readonly", "-e A=override", "-e B=2", "-e C=3", "-e PYTHONPATH=/app/vendor",
 		"-e RUNR_FILENAME=app.py", "-e RUNR_HANDLER=run", "-e RUNR_MODE=http", "-e PORT=8080",
-		"--entrypoint sh ghcr.io/brf-tech/exec-python:3.13 -c",
+		"--entrypoint sh ghcr.io/brf-tech/runr/exec-python:3.13 -c",
 	} {
 		if !strings.Contains(args, want) {
 			t.Fatalf("run args lack %q:\n%s", want, args)
@@ -97,7 +97,7 @@ func TestPlanNodeGoPHPAndCaas(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if p.Spec.BuilderImage != "ghcr.io/brf-tech/reqs/composer:latest" || !strings.Contains(p.Spec.InstallScript, "platform.php 8.4") {
+	if p.Spec.BuilderImage != "ghcr.io/brf-tech/runr/reqs/composer:latest" || !strings.Contains(p.Spec.InstallScript, "platform.php 8.4") {
 		t.Fatalf("php spec = %+v", p.Spec)
 	}
 	if !strings.Contains(strings.Join(p.RunArgs(), " "), "RUNR_FILENAME=job.php") {

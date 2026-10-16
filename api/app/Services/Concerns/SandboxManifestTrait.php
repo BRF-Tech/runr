@@ -93,7 +93,7 @@ trait SandboxManifestTrait
                         ]],
                         'containers' => [[
                             'name' => $name === 'gvisor-installer' ? 'installer' : 'cleanup',
-                            'image' => 'ghcr.io/brf-tech/reqs/alpine:3.21',
+                            'image' => 'ghcr.io/brf-tech/runr/reqs/alpine:3.21',
                             'securityContext' => ['privileged' => true],
                             'command' => ['sh', '-c', $script],
                             'env' => $env,

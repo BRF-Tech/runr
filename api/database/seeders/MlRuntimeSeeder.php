@@ -5,19 +5,19 @@ namespace Database\Seeders;
 use App\Models\ExecutorImage;
 use Illuminate\Database\Seeder;
 
+/**
+ * The ML runtime versions RunR publishes (runtime/ci.sh ml-runtimes --list), for local and demo
+ * installs that do not run executor:sync against the image registry.
+ */
 class MlRuntimeSeeder extends Seeder
 {
     public function run(): void
     {
         $runtimes = [
-            ['runtime' => 'tensorflow', 'version' => '2.16',     'docker_image' => 'ghcr.io/brf-tech/exec-tensorflow:2.16',     'is_default' => true,  'category' => 'ml', 'gpu_required' => false, 'sort_order' => 1],
-            ['runtime' => 'tensorflow', 'version' => '2.16-gpu', 'docker_image' => 'ghcr.io/brf-tech/exec-tensorflow:2.16-gpu', 'is_default' => false, 'category' => 'ml', 'gpu_required' => true,  'sort_order' => 2],
-            ['runtime' => 'tensorflow', 'version' => '2.15',     'docker_image' => 'ghcr.io/brf-tech/exec-tensorflow:2.15',     'is_default' => false, 'category' => 'ml', 'gpu_required' => false, 'sort_order' => 3],
-            ['runtime' => 'tensorflow', 'version' => '2.15-gpu', 'docker_image' => 'ghcr.io/brf-tech/exec-tensorflow:2.15-gpu', 'is_default' => false, 'category' => 'ml', 'gpu_required' => true,  'sort_order' => 4],
-            ['runtime' => 'pytorch',    'version' => '2.3',      'docker_image' => 'ghcr.io/brf-tech/exec-pytorch:2.3',         'is_default' => true,  'category' => 'ml', 'gpu_required' => false, 'sort_order' => 1],
-            ['runtime' => 'pytorch',    'version' => '2.3-gpu',  'docker_image' => 'ghcr.io/brf-tech/exec-pytorch:2.3-gpu',     'is_default' => false, 'category' => 'ml', 'gpu_required' => true,  'sort_order' => 2],
-            ['runtime' => 'pytorch',    'version' => '2.2',      'docker_image' => 'ghcr.io/brf-tech/exec-pytorch:2.2',         'is_default' => false, 'category' => 'ml', 'gpu_required' => false, 'sort_order' => 3],
-            ['runtime' => 'pytorch',    'version' => '2.2-gpu',  'docker_image' => 'ghcr.io/brf-tech/exec-pytorch:2.2-gpu',     'is_default' => false, 'category' => 'ml', 'gpu_required' => true,  'sort_order' => 4],
+            ['runtime' => 'tensorflow', 'version' => '2.21',     'docker_image' => 'ghcr.io/brf-tech/runr/exec-tensorflow:2.21',     'is_default' => true,  'category' => 'ml', 'gpu_required' => false, 'sort_order' => 1],
+            ['runtime' => 'tensorflow', 'version' => '2.21-gpu', 'docker_image' => 'ghcr.io/brf-tech/runr/exec-tensorflow:2.21-gpu', 'is_default' => false, 'category' => 'ml', 'gpu_required' => true,  'sort_order' => 2],
+            ['runtime' => 'pytorch',    'version' => '2.14',     'docker_image' => 'ghcr.io/brf-tech/runr/exec-pytorch:2.14',        'is_default' => true,  'category' => 'ml', 'gpu_required' => false, 'sort_order' => 1],
+            ['runtime' => 'pytorch',    'version' => '2.14-gpu', 'docker_image' => 'ghcr.io/brf-tech/runr/exec-pytorch:2.14-gpu',    'is_default' => false, 'category' => 'ml', 'gpu_required' => true,  'sort_order' => 2],
         ];
 
         foreach ($runtimes as $rt) {

@@ -36,6 +36,9 @@ type SandboxExecCall struct {
 	// WebSocket is set for a command run over the exec WebSocket; its Stdin holds the initial
 	// stdin_base64 followed by every stdin frame.
 	WebSocket bool
+	// TTY, Cols and Rows: the exec WebSocket's terminal (Cols × Rows as requested, 0 when not).
+	TTY        bool
+	Cols, Rows int
 }
 
 // SandboxChunk is one piece of output in the order the command wrote it.
@@ -347,7 +350,7 @@ func (s *Server) newSandbox(body map[string]any) *sbxSandbox {
 		}
 	}
 	if image == "" && runtime != "" {
-		image = "ghcr.io/brf-tech/exec-" + runtime + ":" + version
+		image = "ghcr.io/brf-tech/runr/exec-" + runtime + ":" + version
 	}
 	class := str("sandbox_class")
 	switch class {

@@ -24,6 +24,9 @@ use Symfony\Component\HttpFoundation\Response;
  */
 class SandboxExecController extends SandboxApiController
 {
+    /** Largest terminal width / height of a TTY exec (columns, rows) */
+    public const MAX_TERMINAL_SIZE = 1000;
+
     public function __construct(
         private SandboxService $sandboxes,
         private CodeRunner $runner,
@@ -76,25 +79,41 @@ class SandboxExecController extends SandboxApiController
 
     /**
      * One-time token for the exec WebSocket (/ws/sandbox-exec?token=…): output frames as they
-     * come, stdin from the client, kill.
+     * come, stdin from the client, kill. With `tty` the command runs on a terminal of `cols` ×
+     * `rows` (default 80 × 24) that resize frames change.
      */
     public function execWs(Request $request, string $sandbox): JsonResponse
     {
         $row = $this->findSandbox($request, $sandbox, 'sandboxes.exec');
-        $data = $this->validateExec($request);
+        // The body of exec (without stream) and the terminal: inline, so the API document has it
+        $data = $request->validate([
+            'cmd' => 'required_without:code',
+            'code' => 'nullable|string',
+            'language' => 'nullable|string|max:32',
+            'stdin' => 'nullable|string|max:'.(int) config('sandbox.exec.max_stdin', 10485760),
+            'stdin_base64' => 'nullable|string',
+            'timeout' => 'nullable|integer|min:1',
+            'env' => 'nullable|array|max:100',
+            'cwd' => 'nullable|string|max:4096',
+            'tty' => 'nullable|boolean',
+            'cols' => 'nullable|integer|min:1|max:'.self::MAX_TERMINAL_SIZE,
+            'rows' => 'nullable|integer|min:1|max:'.self::MAX_TERMINAL_SIZE,
+        ]);
+        $this->assertCommand($data);
         $this->sandboxes->assertRunning($row);
 
         $region = $this->sandboxes->regionOf($row);
         $timeout = $this->sandboxes->timeout($data['timeout'] ?? null);
         $execId = strtolower((string) Str::ulid());
         $cwd = isset($data['cwd']) ? SandboxFiles::normalizePath($data['cwd'], 'cwd') : null;
+        $tty = (bool) ($data['tty'] ?? false);
 
         if (! isset($data['cmd']) && isset($data['code'])) {
             [, , $candidates] = $this->runner->interpreter($data['language'] ?? null, $row);
             $data['cmd'] = $this->interpreterCommand($candidates, (string) $data['code']);
         }
 
-        $argv = ExecScript::command($data['cmd'], $this->env($request), $cwd, $timeout, $row->pids_limit, $execId);
+        $argv = ExecScript::command($data['cmd'], $this->env($request), $cwd, $timeout, $row->pids_limit, $execId, $tty);
         $token = Str::uuid()->toString();
         $ttl = (int) config('sandbox.exec.ws_token_ttl', 60);
 
@@ -112,6 +131,9 @@ class SandboxExecController extends SandboxApiController
             'exec_id' => $execId,
             'user_id' => $this->userId($request),
             'command' => SandboxLog::commandLine($data['cmd']),
+            'tty' => $tty,
+            'cols' => (int) ($data['cols'] ?? 80),
+            'rows' => (int) ($data['rows'] ?? 24),
         ])));
 
         $row->touchActivity();
@@ -121,6 +143,7 @@ class SandboxExecController extends SandboxApiController
             'url' => "/ws/sandbox-exec?token={$token}",
             'exec_id' => $execId,
             'expires_in' => $ttl,
+            'tty' => $tty,
         ]]);
     }
 
@@ -209,7 +232,14 @@ class SandboxExecController extends SandboxApiController
             'cwd' => 'nullable|string|max:4096',
             'stream' => 'nullable|boolean',
         ]);
+        $this->assertCommand($data);
 
+        return $data;
+    }
+
+    /** A cmd is a non-empty string or a non-empty list of scalars. */
+    private function assertCommand(array $data): void
+    {
         if (isset($data['cmd'])) {
             $cmd = $data['cmd'];
             $valid = is_string($cmd) ? trim($cmd) !== '' : (is_array($cmd) && array_is_list($cmd) && $cmd !== [] && count(array_filter($cmd, 'is_scalar')) === count($cmd));
@@ -217,8 +247,6 @@ class SandboxExecController extends SandboxApiController
                 abort(response()->json(['message' => __('sandboxes.exec_cmd_required'), 'errors' => ['cmd' => [__('sandboxes.exec_cmd_required')]]], 422));
             }
         }
-
-        return $data;
     }
 
     /**

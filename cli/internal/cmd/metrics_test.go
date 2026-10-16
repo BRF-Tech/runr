@@ -82,3 +82,53 @@ func TestMetricsHistory(t *testing.T) {
 	r = h.expectCode(ExitAuth, "metrics", "-p", "orders")
 	contains(t, r.err, "metrics.view")
 }
+
+func TestMetricsLive(t *testing.T) {
+	h := newHarness(t).login()
+	h.srv.SeedProject("orders", runr.TypeFaaS, "python", "eu-1", nil)
+
+	// No live deployment yet.
+	h.expectCode(ExitNotFound, "metrics", "live", "-p", "orders")
+
+	h.srv.SeedFiles("orders", map[string]string{"main.py": "def handler(event, context):\n    return {}\n"})
+	d := h.srv.SeedDeployment("orders", 1)
+
+	// Scaled to zero: no readings.
+	r := h.mustRun("metrics", "live", "-p", "orders")
+	contains(t, r.out, d.ID)
+	contains(t, r.out, "no reading")
+
+	f := func(v float64) *float64 { return &v }
+	h.srv.SetLiveMetrics("orders", runrtest.LiveMetrics{CPU: f(0.1234), MemoryMB: f(87.5), RPS: f(3.25), CPUAvg1h: f(0.05), MemoryAvg1hMB: f(80)})
+	r = h.mustRun("metrics", "live", "-p", "orders")
+	contains(t, r.out, "0.123 cores")
+	contains(t, r.out, "88 MiB")
+	contains(t, r.out, "3.25/s")
+	contains(t, r.out, "0.050 cores on average")
+	notContains(t, r.out, "no reading")
+	p, _ := h.srv.Project("orders")
+	calls := h.srv.CallsTo("GET /projects/{project}/deployments/{deployment}/metrics")
+	if last := calls[len(calls)-1]; last.Query != "" || last.Path != "/projects/"+p.ID+"/deployments/"+d.ID+"/metrics" {
+		t.Fatalf("call = %+v", last)
+	}
+
+	// --quick: the current values only; -o json carries the API's fields.
+	var m runr.DeploymentMetrics
+	decodeJSON(t, h.mustRun("metrics", "live", "-p", "orders", "--quick", "--deployment", d.ID, "-o", "json").out, &m)
+	if m.CPU == nil || *m.CPU != 0.1234 || m.RPS == nil || *m.RPS != 3.25 || m.CPUAvg1h != nil {
+		t.Fatalf("json = %+v", m)
+	}
+	calls = h.srv.CallsTo("GET /projects/{project}/deployments/{deployment}/metrics")
+	if q, _ := url.ParseQuery(calls[len(calls)-1].Query); q.Get("quick") != "1" {
+		t.Fatalf("query = %q", calls[len(calls)-1].Query)
+	}
+	r = h.mustRun("metrics", "live", "-p", "orders", "--quick")
+	notContains(t, r.out, "last hour")
+
+	h.expectCode(ExitNotFound, "metrics", "live", "-p", "orders", "--deployment", "01J00000000000000000000099")
+	h.expectCode(ExitUsage, "metrics", "live", "-p", "orders", "--watch", "100ms")
+
+	h.loginWith(h.srv.ScopedToken("dev", "projects.view"))
+	r = h.expectCode(ExitAuth, "metrics", "live", "-p", "orders")
+	contains(t, r.err, "metrics.view")
+}

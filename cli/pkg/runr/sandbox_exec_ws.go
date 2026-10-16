@@ -19,11 +19,17 @@ import (
 //  1. POST /sandboxes/{id}/exec/ws with the body of exec (without stream) answers a one-time
 //     token (valid for 60 seconds) and its path /ws/sandbox-exec?token=…;
 //  2. the client opens that WebSocket on the console host and exchanges JSON text frames:
-//     server → client  {"type":"start","exec_id"}, {"type":"stdout"|"stderr","data":"<base64>"},
+//     server → client  {"type":"start","exec_id","tty"}, {"type":"stdout"|"stderr","data":"<base64>"},
 //     {"type":"exit","exit_code","timed_out","duration_ms","killed"}, {"type":"error","message"}
-//     client → server  {"type":"stdin","data":"<base64>"}, {"type":"stdin_close"}, {"type":"kill"}
+//     client → server  {"type":"stdin","data":"<base64>"}, {"type":"stdin_close"}, {"type":"kill"},
+//     {"type":"resize","cols","rows"}
 //  3. the server closes the connection after the exit frame; a client that goes away stops the
 //     command.
+//
+// With SandboxExecInput.TTY the command runs on a terminal: its output (stdout and stderr merged
+// by the terminal) arrives in stdout frames, resize frames change the terminal's size and
+// stdin_close sends Ctrl+D. An API that predates terminals answers tty false and runs the
+// command without one.
 
 // SandboxExecSession is the answer of POST /sandboxes/{id}/exec/ws.
 type SandboxExecSession struct {
@@ -32,6 +38,8 @@ type SandboxExecSession struct {
 	URL       string `json:"url"`
 	ExecID    string `json:"exec_id"`
 	ExpiresIn int    `json:"expires_in"`
+	// TTY is set when the command runs on a terminal.
+	TTY bool `json:"tty"`
 	// WebSocketURL is the URL the client connects to (filled by OpenSandboxExecSocket).
 	WebSocketURL string `json:"websocket_url"`
 }
@@ -63,6 +71,8 @@ type SandboxExecFrame struct {
 	// Type is start, stdout, stderr, exit or error.
 	Type   string
 	ExecID string
+	// TTY is set on the start frame of a command that runs on a terminal.
+	TTY bool
 	// Data is the output of a stdout or stderr frame (decoded from base64).
 	Data       []byte
 	ExitCode   int
@@ -112,6 +122,11 @@ func (s *SandboxExecSocket) CloseStdin() error {
 // Kill stops the command (SIGKILL); the server answers with the exit frame.
 func (s *SandboxExecSocket) Kill() error { return s.send(map[string]string{"type": "kill"}) }
 
+// Resize changes the size of the command's terminal (a command without one ignores it).
+func (s *SandboxExecSocket) Resize(cols, rows int) error {
+	return s.send(map[string]any{"type": "resize", "cols": cols, "rows": rows})
+}
+
 // Next returns the next frame of the server; io.EOF when the server closed the connection.
 func (s *SandboxExecSocket) Next() (*SandboxExecFrame, error) {
 	for {
@@ -122,6 +137,7 @@ func (s *SandboxExecSocket) Next() (*SandboxExecFrame, error) {
 		var m struct {
 			Type       string `json:"type"`
 			ExecID     string `json:"exec_id"`
+			TTY        bool   `json:"tty"`
 			Data       string `json:"data"`
 			ExitCode   int    `json:"exit_code"`
 			TimedOut   bool   `json:"timed_out"`
@@ -132,7 +148,7 @@ func (s *SandboxExecSocket) Next() (*SandboxExecFrame, error) {
 		if json.Unmarshal(data, &m) != nil || m.Type == "" {
 			continue // not a message of the exec protocol
 		}
-		f := &SandboxExecFrame{Type: m.Type, ExecID: m.ExecID, ExitCode: m.ExitCode, TimedOut: m.TimedOut,
+		f := &SandboxExecFrame{Type: m.Type, ExecID: m.ExecID, TTY: m.TTY, ExitCode: m.ExitCode, TimedOut: m.TimedOut,
 			DurationMS: m.DurationMS, Killed: m.Killed, Message: m.Message}
 		if m.Type == "stdout" || m.Type == "stderr" {
 			out, err := base64.StdEncoding.DecodeString(m.Data)
@@ -153,8 +169,9 @@ var execKillGrace = 3 * time.Second
 
 // StreamSandboxExecWS runs a command over the exec WebSocket and writes its output to out as it
 // arrives. stdin, when not nil, is sent to the command while it runs and closed at its EOF;
-// without it the command's stdin is closed at once (in.StdinBase64 is still sent first). When
-// ctx ends, the command is killed, its exit frame awaited briefly, and ctx's error returned.
+// without it the command's stdin is closed at once (in.StdinBase64 is still sent first). With
+// in.TTY the command runs on a terminal and out.Resize sizes become resize frames. When ctx
+// ends, the command is killed, its exit frame awaited briefly, and ctx's error returned.
 func (c *Client) StreamSandboxExecWS(ctx context.Context, id string, in SandboxExecInput, out SandboxStream, stdin io.Reader) (*SandboxStreamResult, error) {
 	sess, err := c.OpenSandboxExecSocket(ctx, id, in)
 	if err != nil {
@@ -169,7 +186,7 @@ func (c *Client) StreamSandboxExecWS(ctx context.Context, id string, in SandboxE
 	}
 	defer sock.Close()
 
-	res := &SandboxStreamResult{ExecID: sess.ExecID}
+	res := &SandboxStreamResult{ExecID: sess.ExecID, TTY: sess.TTY}
 	cancelled := make(chan struct{})
 	finished := make(chan struct{})
 	defer close(finished)
@@ -207,6 +224,7 @@ func (c *Client) StreamSandboxExecWS(ctx context.Context, id string, in SandboxE
 			if f.ExecID != "" {
 				res.ExecID = f.ExecID
 			}
+			res.TTY = res.TTY || f.TTY
 			if out.OnStart != nil {
 				out.OnStart(res.ExecID)
 			}
@@ -216,6 +234,9 @@ func (c *Client) StreamSandboxExecWS(ctx context.Context, id string, in SandboxE
 					_ = sock.CloseStdin()
 				} else {
 					go pumpStdin(sock, stdin, finished)
+				}
+				if out.Resize != nil && res.TTY {
+					go pumpResize(sock, out.Resize, finished)
 				}
 			}
 		case "stdout", "stderr":
@@ -249,6 +270,23 @@ func TextOrBase64Fields(b []byte) (text, b64 string) {
 		return string(b), ""
 	}
 	return "", base64.StdEncoding.EncodeToString(b)
+}
+
+// pumpResize sends every terminal size of sizes as a resize frame until the command ends.
+func pumpResize(sock *SandboxExecSocket, sizes <-chan TerminalSize, done <-chan struct{}) {
+	for {
+		select {
+		case <-done:
+			return
+		case s, ok := <-sizes:
+			if !ok {
+				return
+			}
+			if s.Cols > 0 && s.Rows > 0 && sock.Resize(s.Cols, s.Rows) != nil {
+				return
+			}
+		}
+	}
 }
 
 // pumpStdin copies r to the command's stdin and closes it at EOF.

@@ -23,7 +23,7 @@ func (l *lister) ExecutorImages(context.Context) ([]runr.ExecutorImage, error) {
 func TestBuiltin(t *testing.T) {
 	t.Setenv(EnvRegistry, "")
 	s, err := Builtin{}.Resolve(context.Background(), "nodejs", "")
-	if err != nil || s.Version != "22" || s.Image != "ghcr.io/brf-tech/exec-nodejs:22" || s.CodeDir != "/app/code" || s.Port != 8080 {
+	if err != nil || s.Version != "22" || s.Image != "ghcr.io/brf-tech/runr/exec-nodejs:22" || s.CodeDir != "/app/code" || s.Port != 8080 {
 		t.Fatalf("nodejs = %+v %v", s, err)
 	}
 	if s.BuilderImage != s.Image {
@@ -35,7 +35,7 @@ func TestBuiltin(t *testing.T) {
 	if _, err := (Builtin{}).Resolve(context.Background(), "pytorch", ""); err == nil {
 		t.Fatal("pytorch has no default version")
 	}
-	if s, _ := (Builtin{}).Resolve(context.Background(), "pytorch", "2.5"); s.DependencyFile != "requirements.txt" || s.Image != "ghcr.io/brf-tech/exec-pytorch:2.5" {
+	if s, _ := (Builtin{}).Resolve(context.Background(), "pytorch", "2.5"); s.DependencyFile != "requirements.txt" || s.Image != "ghcr.io/brf-tech/runr/exec-pytorch:2.5" {
 		t.Fatalf("pytorch = %+v", s)
 	}
 	list, _ := Builtin{}.List(context.Background())
@@ -70,7 +70,7 @@ func TestAPIResolver(t *testing.T) {
 		t.Fatalf("default = %+v %v", s, err)
 	}
 	s, _ = a.Resolve(context.Background(), "python", "3.12")
-	if s.Image != "ghcr.io/brf-tech/exec-python:3.12" {
+	if s.Image != "ghcr.io/brf-tech/runr/exec-python:3.12" {
 		t.Fatalf("explicit = %+v", s)
 	}
 	if s, _ := a.Resolve(context.Background(), "go", ""); s.Version != "1.26" {
@@ -103,7 +103,7 @@ func (c *catalogLister) ListRuntimes(context.Context) ([]runr.CatalogRuntime, er
 func TestCatalogResolver(t *testing.T) {
 	t.Setenv(EnvRegistry, "")
 	cat := &Catalog{Client: &catalogLister{list: []runr.CatalogRuntime{
-		{ID: "python", Versions: []runr.RuntimeVersion{{Version: "3.12", Image: "ghcr.io/brf-tech/exec-python:3.12"},
+		{ID: "python", Versions: []runr.RuntimeVersion{{Version: "3.12", Image: "ghcr.io/brf-tech/runr/exec-python:3.12"},
 			{Version: "3.14", IsDefault: true, Image: "registry.example.com/exec-python:3.14"}}},
 		{ID: "q", RunMode: "persistent", Source: "custom", Versions: []runr.RuntimeVersion{{Version: "1.0", Built: true}}},
 	}}}
@@ -189,7 +189,7 @@ func TestCatalogResolvesPlugins(t *testing.T) {
 		{ID: "q", Source: "custom", RunMode: "persistent", Versions: []runr.RuntimeVersion{{Version: "1", IsDefault: true, Built: true}}},
 		{ID: "bash", Source: "platform", RunMode: "exec", Versions: []runr.RuntimeVersion{{Version: "5", IsDefault: true, Image: "bash:5"}}},
 		{ID: "wasm-rust", Source: "builtin", RunMode: "http", Wasm: "spin",
-			Versions: []runr.RuntimeVersion{{Version: "4.1", IsDefault: true, Image: "ghcr.io/brf-tech/exec-wasm-rust:4.1"}}},
+			Versions: []runr.RuntimeVersion{{Version: "4.1", IsDefault: true, Image: "ghcr.io/brf-tech/runr/exec-wasm-rust:4.1"}}},
 	}}, detail: rtQDetail()}
 	cat := &Catalog{Client: cl}
 

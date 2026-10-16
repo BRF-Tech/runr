@@ -26,6 +26,7 @@ from .errors import (
     SandboxStartTimeout,
     ValidationError,
 )
+from .exec_ws import AsyncExecSession, ExecSession
 from .models import ExecEvent, ExecResult, FileChange, FileEntry, Process, ProcessLogs, RichOutput, RunResult
 from .sandbox import Files, Processes, Sandbox
 from .sse import SSEDecoder, SSEEvent
@@ -38,6 +39,8 @@ __all__ = [
     "Processes",
     "AsyncFiles",
     "AsyncProcesses",
+    "ExecSession",
+    "AsyncExecSession",
     "ClientConfig",
     "resolve_config",
     "ExecResult",

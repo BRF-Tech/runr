@@ -1,22 +1,27 @@
-# Build image of the wasm-exec runtime (ghcr.io/brf-tech/exec-wasm-exec:<version>): the toolchains of
+# Build image of the wasm-exec runtime (ghcr.io/brf-tech/runr/exec-wasm-exec:<version>): the toolchains of
 # languages that compile to WASI — wasi-sdk (C / C++) and Zig to preview 1 command modules, TinyGo (Go)
 # with wasm-tools to WASI 0.2 command components — the Spin CLI of the Spin runtime the shim embeds
 # (spin registry push), runr-image-upload (fetches uploaded modules) and runr-wasm-exec, the build
 # step. It runs as the build Job of a function version (WasmBuildService); it is never deployed as a
 # function.
 #
-#   docker build -t ghcr.io/brf-tech/exec-wasm-exec:4.1 runtime/wasm-exec     (or: runtime/ci.sh wasm exec)
+#   docker build -t ghcr.io/brf-tech/runr/exec-wasm-exec:4.1 runtime/wasm-exec     (or: runtime/ci.sh wasm exec)
 #
 # Release archives are checked against the sha256 their releases publish (wasi-sdk, wasm-tools: the
 # GitHub release asset digest; Zig: ziglang.org/download/index.json; Spin: as the other wasm runtimes).
 ARG TINYGO_VERSION=0.42.0
-ARG IMAGE_UPLOAD_IMAGE=ghcr.io/brf-tech/image-upload:1.0.0
+ARG IMAGE_UPLOAD_IMAGE=ghcr.io/brf-tech/runr/image-upload:1.0.0
 
 FROM ${IMAGE_UPLOAD_IMAGE} AS image-upload
 
-FROM tinygo/tinygo:${TINYGO_VERSION}
+FROM ghcr.io/brf-tech/runr/reqs/tinygo:${TINYGO_VERSION}
 
 USER root
+
+# The RUN steps only, not the image: a docker-container BuildKit builder gives them
+# OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=unix:///dev/otel-grpc.sock, which Spin's telemetry rejects
+# ("invalid URI") before the command runs (ci/check-dockerfiles.sh)
+ARG OTEL_SDK_DISABLED=true
 
 ARG SPIN_VERSION=4.1.0
 ARG SPIN_SHA256_AMD64=02fdfe34a52f8bb41da5ac0a7b52abfbf0534cd57710c3a30d13293f4245e65e

@@ -23,7 +23,7 @@ class WasmBuildTest extends TestCase
         $this->setUpBuildCluster();
         foreach (['wasm-rust', 'wasm-go', 'wasm-js', 'wasm-python'] as $i => $runtime) {
             ExecutorImage::create([
-                'runtime' => $runtime, 'version' => '4.1', 'docker_image' => "ghcr.io/brf-tech/exec-{$runtime}:4.1",
+                'runtime' => $runtime, 'version' => '4.1', 'docker_image' => "ghcr.io/brf-tech/runr/exec-{$runtime}:4.1",
                 'is_default' => true, 'is_active' => true, 'sort_order' => 100 + $i,
             ]);
         }
@@ -73,11 +73,11 @@ class WasmBuildTest extends TestCase
             $this->assertSame("build-{$slug}-v1", $job['metadata']['name'], $runtime);
             $this->assertSame('wasm', $job['metadata']['labels']['runr.dev/build-kind'], $runtime);
             $this->assertSame('true', $job['metadata']['labels']['runr/build'], $runtime);
-            $this->assertSame(300, $job['spec']['activeDeadlineSeconds'], $runtime);
+            $this->assertSame(900, $job['spec']['activeDeadlineSeconds'], $runtime);
 
             $c = $this->container();
             $this->assertSame('build', $c['name'], $runtime);
-            $this->assertSame("ghcr.io/brf-tech/exec-{$runtime}:4.1", $c['image'], $runtime);
+            $this->assertSame("ghcr.io/brf-tech/runr/exec-{$runtime}:4.1", $c['image'], $runtime);
             $env = array_column($c['env'], 'value', 'name');
             $this->assertSame(self::ZOT."/runr-builds/{$slug}:v1", $env['RUNR_BUILD_IMAGE'], $runtime);
             $this->assertSame('/tmp/home', $env['HOME'], $runtime);

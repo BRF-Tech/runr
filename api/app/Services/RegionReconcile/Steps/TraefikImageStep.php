@@ -12,16 +12,16 @@ use App\Support\Images\RegistryMove;
 
 /**
  * Region Traefik image (0.5.0): the region Traefik runs its image from the reqs mirror
- * (TraefikImage, ghcr.io/brf-tech/reqs/traefik) instead of Docker Hub, whose anonymous pull limit
- * three replicas — and every node that schedules one later — run into on a shared address.
+ * (TraefikImage, ghcr.io/brf-tech/runr/reqs/traefik) instead of Docker Hub, whose anonymous pull
+ * limit three replicas — and every node that schedules one later — run into on a shared address.
  *
  * Only a Traefik RunR installed (Helm release "traefik" in the serving namespace), and only when
  * it runs the same Traefik version from another registry: the image moves, the version does
- * not (a Traefik of an older chart is left alone — unless it runs RunR's mirror under RunR's
- * namespace up to 0.5.0, RegistryMove: then that version moves to ghcr.io/brf-tech). Updated like IngressTrustStep: the Helm
- * release, upgraded with its own values reused and only image.registry / image.repository /
- * image.tag set, at the chart version it runs (HelmReleaseUpgrade); the Deployment rolls its
- * Traefik pods once.
+ * not (a Traefik of an older chart is left alone — unless it runs RunR's mirror under one of
+ * RunR's earlier namespaces, RegistryMove: then that version moves to ghcr.io/brf-tech/runr).
+ * Updated like IngressTrustStep: the Helm release, upgraded with its own values reused and only
+ * image.registry / image.repository / image.tag set, at the chart version it runs
+ * (HelmReleaseUpgrade); the Deployment rolls its Traefik pods once.
  */
 final class TraefikImageStep implements ReconcileStep
 {

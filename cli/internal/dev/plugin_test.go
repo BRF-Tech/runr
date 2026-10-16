@@ -35,9 +35,9 @@ func devPluginSpec(m *runr.RuntimeManifest, version string, files map[string]str
 func devCManifest() *runr.RuntimeManifest {
 	f := false
 	return &runr.RuntimeManifest{ID: "c", Name: "C", Extensions: []string{"c", "h"},
-		Versions: []runr.ManifestVersion{{Version: "17", Image: "ghcr.io/brf-tech/reqs/alpine:3.21", Default: true}},
+		Versions: []runr.ManifestVersion{{Version: "17", Image: "ghcr.io/brf-tech/runr/reqs/alpine:3.21", Default: true}},
 		Handler:  runr.ManifestHandler{File: "main", Function: "handler"},
-		Build: &runr.ManifestBuild{Image: "{image}", RunImage: "ghcr.io/brf-tech/reqs/alpine:3.21", Source: &f,
+		Build: &runr.ManifestBuild{Image: "{image}", RunImage: "ghcr.io/brf-tech/runr/reqs/alpine:3.21", Source: &f,
 			Command: "apk add --no-cache gcc musl-dev >/dev/null && gcc -O2 -static -o /build/out/handler {file}",
 			Files:   map[string]runr.ManifestBuildFile{"helper.h": {Content: "/* {file} */"}}},
 		Run:      runr.ManifestRun{Mode: "exec", Input: "raw", Command: []string{"/app/handler"}},
@@ -61,9 +61,9 @@ func TestPluginPlanCompiledExec(t *testing.T) {
 	}
 	df := pp.Dockerfile
 	for _, want := range []string{
-		"FROM ghcr.io/brf-tech/reqs/alpine:3.21 AS build\nWORKDIR /build/code\nCOPY code/ /build/code/\n",
+		"FROM ghcr.io/brf-tech/runr/reqs/alpine:3.21 AS build\nWORKDIR /build/code\nCOPY code/ /build/code/\n",
 		"RUN mkdir -p /build/out && apk add --no-cache gcc musl-dev >/dev/null && gcc -O2 -static -o /build/out/handler main.c\n",
-		"\nFROM ghcr.io/brf-tech/reqs/alpine:3.21\nWORKDIR /app\n",
+		"\nFROM ghcr.io/brf-tech/runr/reqs/alpine:3.21\nWORKDIR /app\n",
 		"COPY --from=build /build/out/ /app/\n", "COPY .runr/runr-wrapper /runr/runr-wrapper\n",
 		"RUNR_MODE=http RUNR_HANDLER=handler RUNR_FILENAME=main.c", "RUNR_INPUT=raw", `RUNR_COMMAND="[\"/app/handler\"]"`,
 		"RUNR_WRAPPER_MODE=exec", "EXPOSE 8080\n", `ENTRYPOINT ["/runr/runr-wrapper"]`,

@@ -7,6 +7,7 @@ use App\Models\Project;
 use App\Models\Runtime;
 use App\Models\Version;
 use App\Services\Runtimes\RuntimeImageBuildService;
+use App\Support\Images\RegistryMove;
 use App\Support\Secrets\SecretCipher;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
@@ -15,18 +16,20 @@ use Tests\Concerns\WiresTenancy;
 use Tests\TestCase;
 
 /**
- * RunR's image namespace (0.5.1): the upgrade migrations (central and tenant schema) and
- * `php artisan images:move-registry` move every stored image reference under ghcr.io/runrsh/ to
- * ghcr.io/brf-tech/ — exact prefix only, references into other registries stay. Runs on SQLite
- * and on PostgreSQL (DB_CONNECTION=pgsql: json columns, tenant schemas next to "public").
+ * RunR's image namespace (0.5.2): the upgrade migrations (central and tenant schema) and
+ * `php artisan images:move-registry` move every stored image reference under ghcr.io/runrsh/
+ * (up to 0.5.0) and of RunR's packages directly under ghcr.io/brf-tech/ (0.5.1) to
+ * ghcr.io/brf-tech/runr/ — exact prefix only; the organization's other packages and references
+ * into other registries stay. Runs on SQLite and on PostgreSQL (DB_CONNECTION=pgsql: json
+ * columns, tenant schemas next to "public").
  */
 class ImageRegistryMoveTest extends TestCase
 {
     use RefreshDatabase, WiresTenancy;
 
-    private const MIGRATION = 'database/migrations/2026_10_16_000001_move_images_to_brf_tech_registry.php';
+    private const MIGRATION = 'database/migrations/2026_10_17_000001_move_images_to_runr_namespace.php';
 
-    private const TENANT_MIGRATION = 'Modules/Tenancy/Database/TenantMigrations/0054_move_images_to_brf_tech_registry.php';
+    private const TENANT_MIGRATION = 'Modules/Tenancy/Database/TenantMigrations/0055_move_images_to_runr_namespace.php';
 
     protected function tearDown(): void
     {
@@ -44,13 +47,18 @@ class ImageRegistryMoveTest extends TestCase
         return ['created_at' => now(), 'updated_at' => now()];
     }
 
-    /** A region, a CaaS project with a version and a deployment, in the current schema. @return array<string, string> ids */
+    /**
+     * A region, a CaaS project with a version and a deployment, in the current schema — references
+     * of both earlier namespaces (0.5.0: ghcr.io/runrsh, 0.5.1: ghcr.io/brf-tech).
+     *
+     * @return array<string, string> ids
+     */
     private function seedShared(string $suffix = ''): array
     {
         $region = (string) Str::ulid();
         DB::table('knative_regions')->insert(['id' => $region, 'name' => 'eu-1'.$suffix,
             // JSON as the array cast writes it: escaped slashes
-            'knative_settings' => json_encode(['sandbox_image' => 'ghcr.io/runrsh/exec-python:3.14', 'request_timeout' => 30, 'empty' => new \stdClass]),
+            'knative_settings' => json_encode(['sandbox_image' => 'ghcr.io/brf-tech/exec-python:3.14', 'request_timeout' => 30, 'empty' => new \stdClass]),
             'gpu_settings' => json_encode(['device_plugin_image' => 'nvcr.io/nvidia/k8s-device-plugin:v0.17.0']),
         ] + $this->now());
 
@@ -75,11 +83,11 @@ class ImageRegistryMoveTest extends TestCase
         $service = (string) Str::ulid();
         DB::table('ai_model_services')->insert(['id' => $service, 'ai_model_id' => (string) Str::ulid(), 'knative_region_id' => $region,
             'name' => 'chat'.$suffix, 'service_name' => 'chat'.$suffix, 'engine' => 'custom', 'served_name' => 'chat',
-            'image' => 'ghcr.io/runrsh/hf-serve:1.0.0'] + $this->now());
+            'image' => 'ghcr.io/brf-tech/hf-serve:1.0.0'] + $this->now());
 
         $binding = (string) Str::ulid();
         DB::table('bindings')->insert(['id' => $binding, 'name' => 'cache'.$suffix, 'resource_name' => 'cache'.$suffix, 'type' => 'kv', 'knative_region_id' => $region,
-            'settings' => json_encode(['image' => 'ghcr.io/runrsh/reqs/redis:7-alpine'])] + $this->now());
+            'settings' => json_encode(['image' => 'ghcr.io/brf-tech/reqs/redis:7-alpine'])] + $this->now());
         $regionService = (string) Str::ulid();
         DB::table('binding_region_services')->insert(['id' => $regionService, 'knative_region_id' => $region, 'service' => 'kv',
             'config' => json_encode(['image' => 'ghcr.io/runrsh/reqs/redis:7-alpine', 'storage' => '2Gi'])] + $this->now());
@@ -99,33 +107,36 @@ class ImageRegistryMoveTest extends TestCase
     /** @param  array<string, string>  $ids */
     private function assertSharedMoved(array $ids): void
     {
-        $this->assertSame('ghcr.io/brf-tech/reqs/nginx:1.27-alpine', $this->value('container_configs', 'image', $ids['config']));
+        $this->assertSame('ghcr.io/brf-tech/runr/reqs/nginx:1.27-alpine', $this->value('container_configs', 'image', $ids['config']));
         $this->assertSame('registry.example.com/runrsh/api:2', $this->value('container_configs', 'image', $ids['other']), 'another registry stays');
 
         $snapshot = $this->value('versions', 'config_snapshot', $ids['version']);
         $this->assertTrue(SecretCipher::isEncrypted($snapshot), 'the snapshot stays encrypted');
-        $this->assertSame(['image' => 'ghcr.io/brf-tech/reqs/nginx:1.27-alpine', 'env_vars' => ['TOKEN' => 'snap-secret']], SecretCipher::decode($snapshot, true));
+        $this->assertSame(['image' => 'ghcr.io/brf-tech/runr/reqs/nginx:1.27-alpine', 'env_vars' => ['TOKEN' => 'snap-secret']], SecretCipher::decode($snapshot, true));
 
-        $this->assertSame(['image' => 'ghcr.io/brf-tech/reqs/nginx:1.27-alpine', 'min_scale' => 0], json_decode($this->value('deployments', 'deploy_config', $ids['deployment']), true));
+        $this->assertSame(['image' => 'ghcr.io/brf-tech/runr/reqs/nginx:1.27-alpine', 'min_scale' => 0], json_decode($this->value('deployments', 'deploy_config', $ids['deployment']), true));
 
         $settings = $this->value('knative_regions', 'knative_settings', $ids['region']);
-        $this->assertSame('ghcr.io/brf-tech/exec-python:3.14', json_decode($settings, true)['sandbox_image']);
+        $this->assertSame('ghcr.io/brf-tech/runr/exec-python:3.14', json_decode($settings, true)['sandbox_image']);
         $this->assertSame(30, json_decode($settings, true)['request_timeout']);
         $this->assertInstanceOf(\stdClass::class, json_decode($settings)->empty, 'an empty object stays an object');
         $this->assertStringContainsString('nvcr.io\/nvidia', $this->value('knative_regions', 'gpu_settings', $ids['region']), 'a document without the namespace is not rewritten');
 
-        $this->assertSame('ghcr.io/brf-tech/hf-serve:1.0.0', $this->value('ai_model_services', 'image', $ids['service']));
-        $this->assertSame(['image' => 'ghcr.io/brf-tech/reqs/redis:7-alpine'], json_decode($this->value('bindings', 'settings', $ids['binding']), true));
-        $this->assertSame(['image' => 'ghcr.io/brf-tech/reqs/redis:7-alpine', 'storage' => '2Gi'], json_decode($this->value('binding_region_services', 'config', $ids['regionService']), true));
-        $this->assertSame('ghcr.io/brf-tech/reqs/nginx:1.27-alpine', $this->value('image_security_reports', 'image_ref', $ids['report']));
+        $this->assertSame('ghcr.io/brf-tech/runr/hf-serve:1.0.0', $this->value('ai_model_services', 'image', $ids['service']));
+        $this->assertSame(['image' => 'ghcr.io/brf-tech/runr/reqs/redis:7-alpine'], json_decode($this->value('bindings', 'settings', $ids['binding']), true));
+        $this->assertSame(['image' => 'ghcr.io/brf-tech/runr/reqs/redis:7-alpine', 'storage' => '2Gi'], json_decode($this->value('binding_region_services', 'config', $ids['regionService']), true));
+        $this->assertSame('ghcr.io/brf-tech/runr/reqs/nginx:1.27-alpine', $this->value('image_security_reports', 'image_ref', $ids['report']));
     }
 
     public function test_the_migration_moves_every_stored_reference_of_the_central_schema(): void
     {
         $ids = $this->seedShared();
         $images = [
-            'ghcr.io/runrsh/exec-python:3.12' => 'ghcr.io/brf-tech/exec-python:3.12',
-            'ghcr.io/runrsh/exec-wasm-rust:4.1' => 'ghcr.io/brf-tech/exec-wasm-rust:4.1',
+            'ghcr.io/runrsh/exec-python:3.12' => 'ghcr.io/brf-tech/runr/exec-python:3.12',
+            'ghcr.io/runrsh/exec-wasm-rust:4.1' => 'ghcr.io/brf-tech/runr/exec-wasm-rust:4.1',
+            'ghcr.io/brf-tech/runr-wrapper:1.1.0' => 'ghcr.io/brf-tech/runr/wrapper:1.1.0',
+            'ghcr.io/brf-tech/runr/exec-go:1.26' => 'ghcr.io/brf-tech/runr/exec-go:1.26',
+            'ghcr.io/brf-tech/other-app:1' => 'ghcr.io/brf-tech/other-app:1',
             'docker.io/library/python:3.12-slim' => 'docker.io/library/python:3.12-slim',
             'zot.runr-registry.svc:5000/ghcr.io/runrsh/exec-go:1.26' => 'zot.runr-registry.svc:5000/ghcr.io/runrsh/exec-go:1.26',
         ];
@@ -139,7 +150,7 @@ class ImageRegistryMoveTest extends TestCase
             'image' => 'ghcr.io/runrsh/exec-python:3.14', 'cpu_m' => 500, 'memory_mb' => 512, 'disk_mb' => 1024, 'pids_limit' => 256, 'uid' => 1000, 'ttl_seconds' => 600] + $this->now());
         DB::table('region_supply_chain_settings')->insert(['knative_region_id' => $ids['region'],
             'admission_exempt_images' => json_encode(['ghcr.io/runrsh/reqs/**', 'quay.io/acme/**']),
-            'caas_allowed_registries' => json_encode(['ghcr.io/runrsh', 'docker.io/library']),
+            'caas_allowed_registries' => json_encode(['ghcr.io/runrsh', 'ghcr.io/brf-tech', 'docker.io/library']),
         ] + $this->now());
 
         $this->migrate();
@@ -148,18 +159,18 @@ class ImageRegistryMoveTest extends TestCase
         foreach ($images as $from => $to) {
             $this->assertSame($to, $this->value('executor_images', 'docker_image', $executor[$from]), $from);
         }
-        $this->assertSame('ghcr.io/brf-tech/exec-python:3.14', $this->value('sandboxes', 'image', $sandbox));
-        $this->assertSame(['ghcr.io/brf-tech/reqs/**', 'quay.io/acme/**'], json_decode($this->value('region_supply_chain_settings', 'admission_exempt_images', $ids['region'], 'knative_region_id'), true));
-        $this->assertSame(['ghcr.io/brf-tech', 'docker.io/library'], json_decode($this->value('region_supply_chain_settings', 'caas_allowed_registries', $ids['region'], 'knative_region_id'), true));
+        $this->assertSame('ghcr.io/brf-tech/runr/exec-python:3.14', $this->value('sandboxes', 'image', $sandbox));
+        $this->assertSame(['ghcr.io/brf-tech/runr/reqs/**', 'quay.io/acme/**'], json_decode($this->value('region_supply_chain_settings', 'admission_exempt_images', $ids['region'], 'knative_region_id'), true));
+        $this->assertSame(['ghcr.io/brf-tech/runr', 'ghcr.io/brf-tech', 'docker.io/library'], json_decode($this->value('region_supply_chain_settings', 'caas_allowed_registries', $ids['region'], 'knative_region_id'), true));
 
         // The models read the moved values
-        $this->assertSame('ghcr.io/brf-tech/reqs/nginx:1.27-alpine', Version::find($ids['version'])->config_snapshot['image']);
-        $this->assertSame('ghcr.io/brf-tech/reqs/nginx:1.27-alpine', Project::find($ids['project'])->containerConfig->image);
+        $this->assertSame('ghcr.io/brf-tech/runr/reqs/nginx:1.27-alpine', Version::find($ids['version'])->config_snapshot['image']);
+        $this->assertSame('ghcr.io/brf-tech/runr/reqs/nginx:1.27-alpine', Project::find($ids['project'])->containerConfig->image);
     }
 
     public function test_runtime_plugins_move_with_their_region_builds(): void
     {
-        $dockerfile = "FROM ghcr.io/runrsh/reqs/golang:1.26-alpine AS build\nCOPY . /src\nFROM ghcr.io/runrsh/reqs/alpine:3.21\n";
+        $dockerfile = "FROM ghcr.io/brf-tech/reqs/golang:1.26-alpine AS build\nCOPY . /src\nFROM ghcr.io/runrsh/reqs/alpine:3.21\n";
         $manifest = [
             'id' => 'q', 'name' => 'Q', 'image' => 'ghcr.io/runrsh/reqs/alpine:3.21',
             'versions' => [
@@ -187,13 +198,13 @@ class ImageRegistryMoveTest extends TestCase
 
         $row = DB::table('runtimes')->where('id', 'q')->first();
         $moved = json_decode($row->manifest, true);
-        $this->assertSame('ghcr.io/brf-tech/reqs/alpine:3.21', $moved['image']);
-        $this->assertSame('ghcr.io/brf-tech/reqs/alpine:3.21', $moved['versions'][0]['buildArgs']['BASE']);
-        $this->assertSame('ghcr.io/brf-tech/reqs/alpine:3.20', $moved['versions'][1]['image']);
-        $this->assertSame('ghcr.io/brf-tech/reqs/alpine:3.21', $moved['build']['runImage']);
-        $this->assertStringNotContainsString('runrsh', $row->manifest_source);
-        $this->assertStringContainsString('runImage: ghcr.io/brf-tech/reqs/alpine:3.21', $row->manifest_source);
-        $this->assertSame(['Dockerfile' => "FROM ghcr.io/brf-tech/reqs/golang:1.26-alpine AS build\nCOPY . /src\nFROM ghcr.io/brf-tech/reqs/alpine:3.21\n"], json_decode($row->files, true));
+        $this->assertSame('ghcr.io/brf-tech/runr/reqs/alpine:3.21', $moved['image']);
+        $this->assertSame('ghcr.io/brf-tech/runr/reqs/alpine:3.21', $moved['versions'][0]['buildArgs']['BASE']);
+        $this->assertSame('ghcr.io/brf-tech/runr/reqs/alpine:3.20', $moved['versions'][1]['image']);
+        $this->assertSame('ghcr.io/brf-tech/runr/reqs/alpine:3.21', $moved['build']['runImage']);
+        $this->assertFalse(RegistryMove::mentions($row->manifest_source));
+        $this->assertStringContainsString('runImage: ghcr.io/brf-tech/runr/reqs/alpine:3.21', $row->manifest_source);
+        $this->assertSame(['Dockerfile' => "FROM ghcr.io/brf-tech/runr/reqs/golang:1.26-alpine AS build\nCOPY . /src\nFROM ghcr.io/brf-tech/runr/reqs/alpine:3.21\n"], json_decode($row->files, true));
         $this->assertSame(hash('sha256', json_encode($moved, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)), $row->digest);
 
         // The region build of the unchanged source still counts as built: its digest is the new source's
@@ -214,16 +225,16 @@ class ImageRegistryMoveTest extends TestCase
             ->expectsOutput('  central: container_configs.image 1, versions.config_snapshot 1, deployments.deploy_config 1, '
                 .'knative_regions.knative_settings 1, ai_model_services.image 1, bindings.settings 1, binding_region_services.config 1, '
                 .'image_security_reports.image_ref 1, executor_images.docker_image 1')
-            ->expectsOutput('Would move 9 stored image reference(s) to ghcr.io/brf-tech.')
+            ->expectsOutput('Would move 9 stored image reference(s) to ghcr.io/brf-tech/runr.')
             ->assertSuccessful();
         $this->assertSame('ghcr.io/runrsh/reqs/nginx:1.27-alpine', $this->value('container_configs', 'image', $ids['config']), 'dry run: nothing written');
 
-        $this->artisan('images:move-registry')->expectsOutput('Moved 9 stored image reference(s) to ghcr.io/brf-tech.')->assertSuccessful();
+        $this->artisan('images:move-registry')->expectsOutput('Moved 9 stored image reference(s) to ghcr.io/brf-tech/runr.')->assertSuccessful();
         $this->assertSharedMoved($ids);
 
         $this->artisan('images:move-registry')
             ->expectsOutput('  central: nothing to move')
-            ->expectsOutput('Moved 0 stored image reference(s) to ghcr.io/brf-tech.')
+            ->expectsOutput('Moved 0 stored image reference(s) to ghcr.io/brf-tech/runr.')
             ->assertSuccessful();
         $this->migrate();
         $this->assertSharedMoved($ids);
@@ -251,7 +262,7 @@ class ImageRegistryMoveTest extends TestCase
 
         // the central schema is the central migration's
         $this->assertSame('ghcr.io/runrsh/reqs/nginx:1.27-alpine', $this->value('container_configs', 'image', $central['config']));
-        $this->assertSame('ghcr.io/runrsh/hf-serve:1.0.0', $this->value('ai_model_services', 'image', $central['service']));
+        $this->assertSame('ghcr.io/brf-tech/hf-serve:1.0.0', $this->value('ai_model_services', 'image', $central['service']));
 
         // the command covers both
         config(['tenancy.enabled' => true]);

@@ -48,12 +48,12 @@ const WrapperVersion = "1.1.0"
 const WrapperPath = "/runr/runr-wrapper"
 
 // WrapperImage returns the image of the universal wrapper: RUNR_WRAPPER_IMAGE, else
-// <registry>/runr-wrapper:<WrapperVersion> (RUNR_RUNTIME_REGISTRY applies).
+// <registry>/wrapper:<WrapperVersion> (RUNR_RUNTIME_REGISTRY applies).
 func WrapperImage() string {
 	if v := strings.TrimSpace(os.Getenv(EnvWrapperImage)); v != "" {
 		return v
 	}
-	return runtimes.Registry() + "/runr-wrapper:" + WrapperVersion
+	return runtimes.Registry() + "/wrapper:" + WrapperVersion
 }
 
 // PluginPlan is what a project of a runtime plugin runs.

@@ -24,7 +24,8 @@ class ManagedTracingTest extends TestCase
 
         $this->assertSame('deployment', $values['mode']);
         $this->assertSame('otel-collector', $values['fullnameOverride']);
-        $this->assertSame('otel/opentelemetry-collector-contrib', $values['image']['repository']);
+        $this->assertSame(['repository' => 'ghcr.io/brf-tech/runr/reqs/opentelemetry-collector-contrib', 'tag' => '0.162.0'], $values['image'],
+            'the reqs mirror of docker.io/otel/opentelemetry-collector-contrib at the pinned chart\'s version');
         $this->assertSame('observability-critical', $values['priorityClassName']);
         $this->assertTrue($values['presets']['kubernetesAttributes']['enabled']);
 
@@ -99,6 +100,42 @@ class ManagedTracingTest extends TestCase
 
         $this->assertArrayNotHasKey('storageClassName', ManagedTracing::tempoValues()['persistence'], 'cluster default storage class');
         $this->assertSame('72h', ManagedTracing::tempoValues()['tempo']['retention']);
+        $this->assertSame(['ghcr.io', 'brf-tech/runr/reqs/tempo', '3.1.0'], [$values['tempo']['registry'], $values['tempo']['repository'], $values['tempo']['tag']],
+            'the reqs mirror of docker.io/grafana/tempo at the pinned chart\'s version');
+    }
+
+    public function test_images_come_from_the_reqs_mirror_unless_configured(): void
+    {
+        $this->assertSame('ghcr.io/brf-tech/runr/reqs/opentelemetry-collector-contrib:0.162.0', ManagedTracing::collectorImage());
+        $this->assertSame('ghcr.io/brf-tech/runr/reqs/tempo:3.1.0', ManagedTracing::tempoImage());
+        $this->assertSame(ManagedTracing::COLLECTOR_IMAGE, ManagedTracing::collectorImage());
+        $this->assertSame(ManagedTracing::TEMPO_IMAGE, ManagedTracing::tempoImage());
+        $this->assertSame('0.176.0', config('observability.tracing.collector_chart_version'));
+        $this->assertSame('3.2.0', config('observability.tracing.tempo_chart_version'));
+
+        // a registry of your own: as given; without a tag the pinned version, a tag setting replaces it
+        config([
+            'observability.tracing.collector_image' => 'registry.example.com:5000/mirror/otelcol-contrib',
+            'observability.tracing.tempo_image' => 'registry.example.com:5000/mirror/tempo:3.1.0',
+            'observability.tracing.tempo_image_tag' => '3.1.1',
+        ]);
+        $this->assertSame('registry.example.com:5000/mirror/otelcol-contrib:0.162.0', ManagedTracing::collectorImage());
+        $this->assertSame('registry.example.com:5000/mirror/tempo:3.1.1', ManagedTracing::tempoImage());
+        $collector = ManagedTracing::collectorValues($this->config([]), 'eu-1')['image'];
+        $this->assertSame(['repository' => 'registry.example.com:5000/mirror/otelcol-contrib', 'tag' => '0.162.0'], $collector);
+        $tempo = ManagedTracing::tempoValues()['tempo'];
+        $this->assertSame(['registry.example.com:5000', 'mirror/tempo', '3.1.1'], [$tempo['registry'], $tempo['repository'], $tempo['tag']]);
+
+        // Docker Hub, by digest, and RunR's namespace up to 0.5.0 (RegistryMove)
+        config([
+            'observability.tracing.collector_image' => 'otel/opentelemetry-collector-contrib@sha256:39923a8e431bd1f57be82411999d389fcfe40857492e4365456d97a4c1f74be6',
+            'observability.tracing.tempo_image' => 'ghcr.io/runrsh/reqs/tempo:3.1.0',
+            'observability.tracing.tempo_image_tag' => '',
+        ]);
+        $this->assertSame('otel/opentelemetry-collector-contrib:0.162.0@sha256:39923a8e431bd1f57be82411999d389fcfe40857492e4365456d97a4c1f74be6', ManagedTracing::collectorImage());
+        $this->assertSame(['repository' => 'otel/opentelemetry-collector-contrib', 'tag' => '0.162.0@sha256:39923a8e431bd1f57be82411999d389fcfe40857492e4365456d97a4c1f74be6'],
+            ManagedTracing::collectorValues($this->config([]), 'eu-1')['image']);
+        $this->assertSame('ghcr.io/brf-tech/runr/reqs/tempo:3.1.0', ManagedTracing::tempoImage());
     }
 
     public function test_knative_tracing_configuration(): void

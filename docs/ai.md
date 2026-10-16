@@ -245,8 +245,9 @@ The GPU CaaS example [`examples/ai/gpu-caas`](../examples/ai/gpu-caas/) reports 
 
 Code projects get GPUs through their runtime version:
 
-- the built-in **PyTorch** and **TensorFlow** runtimes have `-gpu` versions (e.g. `2.3-gpu`,
-  `2.16-gpu`, CUDA images, `gpu_required` in the catalog);
+- the built-in **PyTorch** and **TensorFlow** runtimes have `-gpu` versions (`2.14-gpu`,
+  `2.21-gpu`: CUDA 12 images, `gpu_required` in the catalog;
+  [ML runtimes](runtimes.md#ml-runtimes));
 - a runtime manifest can declare `resources.gpu: {count, resource}` ([runtimes.md](runtimes.md#resources)).
 
 A project on such a version is a GPU project: it asks for the runtime's GPU count (1) unless
@@ -255,7 +256,7 @@ project (limits, node selector, affinity, tolerations, RuntimeClass, annotations
 on a runtime version without a GPU is refused with a hint to pick a GPU version.
 
 ```json
-{"name": "torch-infer", "service_type": "faas", "runtime": "pytorch", "runtime_version": "2.3-gpu",
+{"name": "torch-infer", "service_type": "faas", "runtime": "pytorch", "runtime_version": "2.14-gpu",
  "knative_region_id": "01J9ZK8E5V6G2Y3N4P5Q6R7S8T", "config": {"handler": "main.handler"}}
 ```
 
@@ -451,8 +452,8 @@ ai:
     endpoint: https://huggingface.co   # Hub API (a mirror with the same API works)
     browse: true                       # false: the console does not call the Hub (air-gapped)
   images:
-    hfServe: ghcr.io/brf-tech/hf-serve:1.1.0
-    hfServeCuda: ghcr.io/brf-tech/hf-serve:1.1.0-cuda
+    hfServe: ghcr.io/brf-tech/runr/hf-serve:1.1.0
+    hfServeCuda: ghcr.io/brf-tech/runr/hf-serve:1.1.0-cuda
     vllm: docker.io/vllm/vllm-openai:v0.6.6
     tgi: ghcr.io/huggingface/text-generation-inference:3.0.1
     teiCpu: ghcr.io/huggingface/text-embeddings-inference:cpu-1.9.4

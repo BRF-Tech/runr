@@ -26,8 +26,8 @@ return [
     ],
 
     'images' => [
-        'hf_serve' => RegistryMove::ref(env('AI_IMAGE_HF_SERVE', 'ghcr.io/brf-tech/hf-serve:1.1.0')),
-        'hf_serve_cuda' => RegistryMove::ref(env('AI_IMAGE_HF_SERVE_CUDA', 'ghcr.io/brf-tech/hf-serve:1.1.0-cuda')),
+        'hf_serve' => RegistryMove::ref(env('AI_IMAGE_HF_SERVE', 'ghcr.io/brf-tech/runr/hf-serve:1.1.0')),
+        'hf_serve_cuda' => RegistryMove::ref(env('AI_IMAGE_HF_SERVE_CUDA', 'ghcr.io/brf-tech/runr/hf-serve:1.1.0-cuda')),
         'vllm' => env('AI_IMAGE_VLLM', 'docker.io/vllm/vllm-openai:v0.6.6'),
         'tgi' => env('AI_IMAGE_TGI', 'ghcr.io/huggingface/text-generation-inference:3.0.1'),
         // TEI 1.6.1+ follows the Hub's relative redirects on resolve (1.5 fails: "relative URL without a base")
@@ -36,7 +36,7 @@ return [
         // 100- | 120- | 121- (Blackwell) | cuda- (any other: picks its kernels at start)
         'tei_gpu' => env('AI_IMAGE_TEI_GPU', 'ghcr.io/huggingface/text-embeddings-inference:{arch}1.9.4'),
         'oras' => env('AI_IMAGE_ORAS', 'ghcr.io/oras-project/oras:v1.2.0'),
-        'busybox' => RegistryMove::ref(env('AI_IMAGE_BUSYBOX', 'ghcr.io/brf-tech/reqs/busybox:latest')),
+        'busybox' => RegistryMove::ref(env('AI_IMAGE_BUSYBOX', 'ghcr.io/brf-tech/runr/reqs/busybox:latest')),
     ],
 
     'gpu' => [

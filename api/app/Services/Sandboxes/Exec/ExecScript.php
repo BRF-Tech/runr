@@ -21,11 +21,16 @@ final class ExecScript
     public const EXIT_NO_CWD = 125;
 
     /**
+     * With $tty the command runs on a terminal (kubectl exec -t): TERM defaults to
+     * xterm-256color, and GNU timeout runs with --foreground — without it, timeout moves the
+     * command into a process group of its own, which may not read the terminal (SIGTTIN) and
+     * gets none of its signals (Ctrl+C). busybox timeout keeps the process group.
+     *
      * @param  string|list<string>  $cmd  a shell command line or an argv
      * @param  array<string, string>  $env
      * @return list<string>
      */
-    public static function command(string|array $cmd, array $env = [], ?string $cwd = null, int $timeout = 60, int $pids = 0, ?string $execId = null): array
+    public static function command(string|array $cmd, array $env = [], ?string $cwd = null, int $timeout = 60, int $pids = 0, ?string $execId = null, bool $tty = false): array
     {
         $argv = is_array($cmd) ? array_values(array_map('strval', $cmd)) : ['/bin/sh', '-c', $cmd];
         if ($argv === [] || $argv[0] === '') {
@@ -33,10 +38,17 @@ final class ExecScript
         }
 
         $script = self::prologue($env, $cwd ?? SandboxManifests::WORKSPACE, $pids);
+        if ($tty) {
+            // The sandbox env file and the request's env may set another TERM
+            $script .= 'export TERM="${TERM:-xterm-256color}"'."\n";
+        }
         if ($execId !== null) {
             $script .= 'mkdir -p /tmp/.runr/exec 2>/dev/null && echo $$ > /tmp/.runr/exec/'.self::safeName($execId).'.pid 2>/dev/null'."\n";
         }
         if ($timeout > 0) {
+            if ($tty) {
+                $script .= 'if timeout --foreground 1 true >/dev/null 2>&1; then exec timeout --foreground -s KILL '.(int) $timeout.' "$@"; fi'."\n";
+            }
             $script .= 'if command -v timeout >/dev/null 2>&1; then exec timeout -s KILL '.(int) $timeout.' "$@"; fi'."\n";
         }
         $script .= 'exec "$@"';

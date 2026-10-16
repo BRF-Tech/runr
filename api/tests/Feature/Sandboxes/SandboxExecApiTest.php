@@ -173,6 +173,59 @@ class SandboxExecApiTest extends SandboxTestCase
         $this->assertSame([], $this->exec->calls);
     }
 
+    public function test_websocket_without_tty_keeps_its_session_format(): void
+    {
+        $row = $this->runningSandbox();
+        $stored = null;
+        Redis::shouldReceive('setex')->once()->withArgs(function ($key, $ttl, $value) use (&$stored) {
+            $stored = json_decode(Crypt::decryptString($value), true);
+
+            return true;
+        });
+
+        $data = $this->postJson("/api/sandboxes/{$row->id}/exec/ws", ['cmd' => 'cat'])->assertOk()->json('data');
+
+        $this->assertFalse($data['tty']);
+        $this->assertFalse($stored['tty']);
+        $this->assertSame([80, 24], [$stored['cols'], $stored['rows']]);
+        $this->assertStringNotContainsString('--foreground', $stored['argv'][2]);
+        $this->assertStringNotContainsString('TERM', $stored['argv'][2]);
+    }
+
+    public function test_websocket_with_a_terminal(): void
+    {
+        $row = $this->runningSandbox();
+        $stored = null;
+        Redis::shouldReceive('setex')->once()->withArgs(function ($key, $ttl, $value) use (&$stored) {
+            $stored = json_decode(Crypt::decryptString($value), true);
+
+            return true;
+        });
+
+        $data = $this->postJson("/api/sandboxes/{$row->id}/exec/ws", ['cmd' => ['vim', 'notes.txt'], 'tty' => true, 'cols' => 132, 'rows' => 43, 'timeout' => 600])
+            ->assertOk()->json('data');
+
+        $this->assertTrue($data['tty']);
+        $this->assertSame("/ws/sandbox-exec?token={$data['token']}", $data['url']);
+        $this->assertTrue($stored['tty']);
+        $this->assertSame([132, 43], [$stored['cols'], $stored['rows']]);
+        $this->assertSame(['vim', 'notes.txt'], FakeSandboxExecTransport::userArgv($stored['argv']));
+        // A terminal type unless the sandbox or the request sets one; GNU timeout in the foreground
+        $this->assertStringContainsString('export TERM="${TERM:-xterm-256color}"', $stored['argv'][2]);
+        $this->assertStringContainsString('exec timeout --foreground -s KILL 600 "$@"', $stored['argv'][2]);
+    }
+
+    public function test_websocket_terminal_sizes_are_validated(): void
+    {
+        $row = $this->runningSandbox();
+
+        $this->postJson("/api/sandboxes/{$row->id}/exec/ws", ['cmd' => 'sh', 'tty' => true, 'cols' => 0])->assertStatus(422)->assertJsonValidationErrors('cols');
+        $this->postJson("/api/sandboxes/{$row->id}/exec/ws", ['cmd' => 'sh', 'tty' => true, 'rows' => 1001])->assertStatus(422)->assertJsonValidationErrors('rows');
+        $this->postJson("/api/sandboxes/{$row->id}/exec/ws", ['cmd' => 'sh', 'tty' => 'sometimes'])->assertStatus(422)->assertJsonValidationErrors('tty');
+        $this->postJson("/api/sandboxes/{$row->id}/exec/ws", ['cmd' => []])->assertStatus(422)->assertJsonValidationErrors('cmd');
+        $this->postJson("/api/sandboxes/{$row->id}/exec/ws", ['tty' => true])->assertStatus(422)->assertJsonValidationErrors('cmd');
+    }
+
     public function test_websocket_code_runs_through_the_interpreter(): void
     {
         $row = $this->runningSandbox();

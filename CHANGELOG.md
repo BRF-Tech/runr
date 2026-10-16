@@ -8,6 +8,166 @@ did not change says so.
 
 ## [Unreleased]
 
+## [0.5.2] - 2026-10-16
+
+### Upgrade notes
+
+- **Image namespace ghcr.io/brf-tech/runr.** Stored image references move automatically, from
+  0.5.1 (`ghcr.io/brf-tech/<name>`) and from earlier releases (`ghcr.io/runrsh/<name>`): Helm
+  values (`runr.image`), the database (migration `move_images_to_runr_namespace`, tenant migration
+  `0055`, `images:move-registry` in the bootstrap job) and the region workloads (`region:reconcile`).
+  A registry of your own that holds copies of RunR's images under their paths needs them under the
+  new paths: copy them from `ghcr.io/brf-tech/runr`
+  ([docs/upgrade.md](docs/upgrade.md#image-namespace-ghcriobrf-techrunr)).
+- **ML runtime versions.** PyTorch 2.2 / 2.3 and TensorFlow 2.15 / 2.16 and their `-gpu`
+  versions, listed by the local and demo seeders only and never published as images, leave the
+  catalog (migration `retire_unpublished_ml_runtime_versions`). Projects that name one keep
+  running as deployed and take the runtime's default version at their next deploy.
+  `executor:sync` lists the published versions: PyTorch `2.14` / `2.14-gpu`, TensorFlow `2.21` /
+  `2.21-gpu` ([docs/runtimes.md](docs/runtimes.md#ml-runtimes)).
+- **Tracing backend on existing regions.** `region:reconcile` (step `tracing`) installs the
+  OpenTelemetry Collector and Grafana Tempo where tracing is enabled and the backend is missing —
+  the region's own tracing mode, or for a region without one (Knative Serving installed by 0.4.x)
+  the platform's `observability.tracing.defaultMode` while `installWithServing` is on — and moves
+  installed backends to collector chart 0.176.0 (collector 0.162.0) and Tempo chart 3.2.0
+  (Tempo 3.1.0); the collector and Tempo pods roll once. Tempo chart 3.2.0 applies
+  `tempoRetentionHours` (default 72 hours) to the deletion of old traces, which chart 3.1.0 left
+  at Tempo's 14 days. To keep tracing off on regions without their own setting, set
+  `observability.tracing.installWithServing=false` in the upgrade
+  ([docs/upgrade.md](docs/upgrade.md#tracing-backend)).
+
+### Added
+
+- **PyTorch and TensorFlow runtime images.** `ghcr.io/brf-tech/runr/exec-pytorch:2.14` (torch 2.14.1,
+  torchvision 0.29.1) and `…:2.14-gpu` (the same torch for CUDA 12.6),
+  `ghcr.io/brf-tech/runr/exec-tensorflow:2.21` (TensorFlow 2.21.0, CPU build) and `…:2.21-gpu`
+  (CUDA 12): Python 3.12 with Keras (TensorFlow), NumPy, SciPy, pandas, Matplotlib, scikit-learn
+  and Pillow, on the Python runtime's handler server, for linux/amd64. `runtime/ci.sh ml-runtimes
+  [--push] [--list]` builds them; a build fails unless `pip check` passes and the framework and
+  its CUDA build match the tag, and a local build answers a tensor-op handler over HTTP and as a
+  scheduled run. `executor:sync` reads a `X.Y-gpu` tag as the GPU version of `X.Y`. The node
+  image pre-pull and the region registry pre-warm leave the ML runtime images out: the nodes
+  their functions run on pull them
+  ([docs/runtimes.md](docs/runtimes.md#ml-runtimes)).
+- **Billing events, newest first.** `GET /api/billing/events?order=desc` lists the newest events
+  first; `before=<event id>` bounds the list as `after=` does, and `meta.next_before` continues a
+  newest-first list (`meta.next_after` an oldest-first one) ([docs/billing.md](docs/billing.md)).
+  The console's billing settings read their 20 newest events with one request.
+- **Registry pre-warm.** `region:reconcile` has the internal registry of each region fetch the base
+  images of the release's function builds before a first build needs them (step
+  `registry-prewarm`, a Job in the registry namespace) ([docs/runtimes.md](docs/runtimes.md#compiled-languages)).
+- **Any sandbox command on a terminal.** `POST /api/sandboxes/{id}/exec/ws` takes `tty`, `cols`
+  and `rows`: the command runs on a terminal of that size, so shells, REPLs, editors and pagers
+  work as in a terminal window. `{"type":"resize","cols","rows"}` frames change the size,
+  `stdin_close` sends Ctrl+D, `TERM` defaults to `xterm-256color`, and the start frame and the
+  answer say whether the command has a terminal. Without `tty` the exec WebSocket works as
+  before ([docs/sandbox-api.md](docs/sandbox-api.md#exec)).
+- **`runr sandbox exec -it`.** `-t` runs the command on a terminal over the exec WebSocket; with
+  `-it` on a terminal runr's terminal is raw while the command runs (every key, Ctrl+C included,
+  goes to the command), the size follows the window (`SIGWINCH` on Linux and macOS, the console
+  size on Windows), the terminal is restored on every way out and runr exits with the command's
+  exit code ([docs/cli.md](docs/cli.md#sandboxes)).
+- **Exec WebSocket in the sandbox SDKs.** Python `Sandbox.exec_ws()` / `AsyncSandbox.exec_ws()`
+  and Node `sandbox.execWs()` / `runCodeWs()` run a command over the exec WebSocket: input goes
+  to the command while it runs (`send_stdin` / `sendStdin`, `close_stdin` / `closeStdin`), the
+  output arrives as events or through `wait()`, `kill()` stops the command, and with a terminal
+  (`tty`, `cols`, `rows`) `resize()` changes its size. The Python SDK depends on `websockets` 13
+  or newer; the Node SDK uses the runtime's `WebSocket` (Node.js 22+, Bun, Deno) or its own
+  client on Node.js 18 and 20 and keeps no dependencies
+  ([sdk/sandbox/python](sdk/sandbox/python/README.md#interactive-commands-the-exec-websocket),
+  [sdk/sandbox/node](sdk/sandbox/node/README.md#websocket-exec)).
+- **`runr metrics live`** reads what a deployment uses right now — CPU, memory and requests per
+  second from the region's Prometheus, with the averages of the last hour (`--quick` without
+  them) — for the live deployment or `--deployment`, once or every `--watch` interval, `-o json`
+  ([docs/cli.md](docs/cli.md#recorded-metrics)).
+- **Region lifecycle in the CLI.** `runr regions` creates, checks, changes and removes regions
+  (`create`, `check`, `get`, `set`, `rm`, `status`), saves a region's kubeconfig to a file only
+  its owner can read (`kubeconfig`; `--stdout` prints it) and chooses the worker nodes projects
+  run on (`nodes set`). It installs, adopts and removes Knative (`knative install|uninstall|detect`)
+  and manages the queue Redis, the image registry (also regions created with one, and checks of
+  their storage), the move to another cluster (`migration`), function-domain TLS, Skupper sites,
+  the FaaS overcommit factors (`capacity`), demo projects and WebAssembly support
+  (`wasm [status]|install|uninstall`). Kubeconfigs, passwords and keys come from files or stdin
+  and never reach the trace; removals ask for confirmation unless `--yes`, and `--wait` follows
+  background installs ([docs/cli.md](docs/cli.md#regions)).
+- **Mirror fallback for Docker Hub's pull limit.** When Docker Hub refuses a copy, `ci.sh
+  mirror-reqs` and `mirror-bases` copy the image from `mirror.gcr.io` or
+  `public.ecr.aws/docker`, by the digest Docker Hub reports for it, so the copy is the same image
+  (`REQS_UPSTREAMS` sets the sources and their order). `mirror-reqs` takes image names to copy
+  only those and exits 1 when a copy fails.
+
+### Changed
+
+- **Build deadline.** Function build Jobs (Kaniko and WebAssembly toolchain builds) run up to
+  `BUILD_DEADLINE_SECONDS`, 900 s by default; the build checks and the stale-build check follow
+  it. A build that runs out of time while the region registry still fetches its base image is
+  built once more, and its `build_error` says so meanwhile.
+- **Sandbox start.** A starting sandbox pod is read every 150 ms (`SANDBOX_START_POLL_MS`, 100–200)
+  for its first 30 s and once a second after that, so a sandbox is reported running at most one
+  interval after its pod runs ([docs/sandbox-api.md](docs/sandbox-api.md)).
+- **Warm pools.** A pod a pool refill starts can be claimed as soon as it runs; the next per-minute
+  refill no longer has to mark it warm first ([docs/sandbox-api.md](docs/sandbox-api.md#warm-pool)).
+- **Model docblocks.** A `migrate` runs `ide-helper:models --write --reset` only with `APP_ENV=local`
+  and `IDE_HELPER_POST_MIGRATE=true`, so migrations in test containers leave the models alone
+  ([docs/development.md](docs/development.md#migrations)).
+- **Tracing images from the reqs mirror.** The region collector and Tempo run
+  `ghcr.io/brf-tech/runr/reqs/opentelemetry-collector-contrib:0.162.0` and
+  `ghcr.io/brf-tech/runr/reqs/tempo:3.1.0`, RunR's copies of the Docker Hub images; the Helm values
+  `observability.tracing.collectorImage` / `tempoImage` point them at a registry of your own.
+  `collectorChartVersion` / `tempoChartVersion` are empty by default: the versions RunR pins.
+- **Build base images from the reqs mirror.** The WebAssembly build images, the Spin shim build,
+  hf-serve's GPU image and the GPU images of the pytorch and tensorflow runtimes build on
+  `ghcr.io/brf-tech/runr/reqs` copies of their Docker Hub bases (TinyGo, Node.js, Python, Rust,
+  PyTorch, CUDA). `ci/check-dockerfiles.sh` (CI job `check:build-scripts`) fails on a Docker Hub
+  base image.
+- **Image builds pull their base images.** Every image build of `runtime/ci.sh` (local and
+  `--push`, the release tars of `build-deploy`) and of `compose/build.sh` / `compose/deploy.sh`
+  runs with `--pull`, so an older copy of a base image in the build host's Docker is never built
+  on.
+- **Runtime versions from the image registry.** `executor:sync` lists the versions of the
+  built-in runtimes from the tags of their images under `ghcr.io/brf-tech/runr` (the registry's
+  OCI distribution API, read anonymously) instead of Docker Hub's `runrsh/exec-*` repositories, so
+  every version published in RunR's image namespace reaches the catalog, PyTorch and TensorFlow
+  included. `versionDiscovery.repository` names the whole image repository
+  (`ghcr.io/brf-tech/runr/exec-python`); one without a registry host is on Docker Hub
+  ([docs/runtimes.md](docs/runtimes.md#versions)).
+- **Image namespace ghcr.io/brf-tech/runr.** RunR publishes every image under
+  `ghcr.io/brf-tech/runr`, so the organization's other packages never share a name with RunR's:
+  `reqs/<image>`, `exec-<runtime>`, `hf-serve`, `image-upload`, `containerd-shim-spin` keep their
+  names there, `runr-wrapper`, `runr-agent`, `runr-queue-consumer` and `runr-supply-chain` become
+  `wrapper`, `agent`, `queue-consumer` and `supply-chain`, and `runr/api` and `runr/ui` stay where
+  they are. `runtime/ci.sh` pushes to `REGISTRY=ghcr.io/brf-tech/runr` by default, `runr dev`
+  pulls from it, and the system images policy passes `ghcr.io/brf-tech/runr/**`.
+
+### Security
+
+- **ML runtimes.** `pip-audit` finds no known vulnerability in the packages of the four ML runtime
+  images. The PyTorch 2.3 package set they replace had 20 advisories in torch (among them
+  CVE-2025-32434) and the TensorFlow 2.16 set one in protobuf that TensorFlow 2.16's
+  `protobuf < 5` pin cannot take the fix of; pip and setuptools are upgraded to 26.2.1 and 84.0.0.
+  The PyTorch weights example (`examples/ai/hf-python/weights`) takes transformers 5.20.
+
+### Fixed
+
+- **Registry leftovers.** Deleting a runtime deletes its images (`runr-runtimes/<id>`) from the
+  registries of the regions it was built in. Builds no longer open an upload before they are
+  built, so a failed build leaves no empty repository, and a daily job hands build repositories
+  without a tag to Zot's garbage collection, which removes them.
+- **Sandbox API e2e.** The Kata guest-size check creates its sandboxes with `cpu` and `memory`, so
+  they have the size whose vCPUs it checks.
+- **Upgrade hook while PostgreSQL restarts.** An upgrade that restarts the control plane's
+  PostgreSQL (a new image, or its volume moving to another node) failed in the post-upgrade
+  `runr-bootstrap` hook, which started before the database accepted connections. The hook now
+  waits up to 4 minutes for the database, and its deadline is 10 minutes.
+- **WebAssembly build images on a docker-container builder.** A buildx builder with the
+  docker-container driver (`ci.sh wasm --push`, CI) gives every build step
+  `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=unix:///dev/otel-grpc.sock`, and Spin 4.1 exited with
+  "Failed to initialize telemetry: invalid URI". The build steps of `runtime/wasm-*` run Spin with
+  `OTEL_SDK_DISABLED=true` (a build argument: the images do not carry it).
+- **`--push` exited 1 after a successful push.** `ci.sh build`, `queue-consumer`, `wrapper`,
+  `build-agent`, `test-image` and `supply-chain` ended with a test that failed when pushing; they
+  exit 0 once the push is done.
+
 ## [0.5.1] - 2026-10-16
 
 ### Upgrade notes
@@ -749,6 +909,7 @@ Initial tagged release.
 - API gateways with routes, in-app notifications and support tickets.
 - Helm chart with a single-tenant / multi-tenant edition, an install form (`values.schema.json`), generated secrets and a Traefik ingress; a Docker Compose setup for development.
 
-[Unreleased]: https://github.com/brf-tech/runr/compare/v0.5.1...main
+[Unreleased]: https://github.com/brf-tech/runr/compare/v0.5.2...main
+[0.5.2]: https://github.com/brf-tech/runr/releases/tag/v0.5.2
 [0.5.1]: https://github.com/brf-tech/runr/releases/tag/v0.5.1
 [0.5.0]: https://github.com/brf-tech/runr/releases/tag/v0.5.0

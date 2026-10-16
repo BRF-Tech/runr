@@ -43,6 +43,11 @@ var redactedFields = map[string]bool{
 	"access_key_id":     true,
 	"secret_access_key": true,
 	"export_headers":    true,
+	// The Redis password and the registry credentials of a region (POST /knative-regions,
+	// /registry-setup/start).
+	"redis_password":    true,
+	"registry_password": true,
+	"external_password": true,
 }
 
 // secretBodyPaths are endpoints whose whole request and answer bodies stay out of the trace:
@@ -60,6 +65,8 @@ var secretBodyPaths = []*regexp.Regexp{
 	regexp.MustCompile(`/sandboxes/[^/]+/terminal$`),
 	regexp.MustCompile(`/sandboxes/[^/]+/exec/ws$`),
 	regexp.MustCompile(`/projects/[^/]+/deployments/[^/]+/exec$`),
+	// A region's kubeconfig (YAML, not JSON: field redaction does not reach it).
+	regexp.MustCompile(`/knative-regions/[^/]+/kubeconfig$`),
 }
 
 // secretBody reports whether the bodies of path are withheld from the trace.

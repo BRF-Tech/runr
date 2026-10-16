@@ -26,7 +26,7 @@ metadata:
     "helm.sh/hook-delete-policy": before-hook-creation
 spec:
   backoffLimit: 3
-  activeDeadlineSeconds: 300
+  activeDeadlineSeconds: 600
   template:
     metadata:
       labels:
@@ -58,11 +58,24 @@ spec:
               toggle AuthProvider "${AUTH_PROVIDER_ENABLED:-false}"
               toggle Ticket "${TICKET_ENABLED:-true}"
 
+              # The upgrade can restart the control plane's PostgreSQL (a new image, or the volume moving to another
+              # node), and the hook starts without waiting for it: wait until the database accepts connections
+              i=0
+              until php -r 'require "vendor/autoload.php"; $app = require "bootstrap/app.php"; $app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap(); Illuminate\Support\Facades\DB::connection()->getPdo();' >/dev/null 2>&1; do
+                i=$((i + 1))
+                if [ "$i" -ge 48 ]; then
+                  echo "runr-bootstrap: the database did not accept connections within 4 minutes" >&2
+                  exit 1
+                fi
+                echo "runr-bootstrap: waiting for the database"
+                sleep 5
+              done
+
               # 0.3.3+: the agent connects with a per-region token; reinstall the (old) region agents that have no token.
               # An unreachable region must not block the upgrade: time limit + errors swallowed (manually: php artisan agent:redeploy)
               timeout 120 php artisan agent:redeploy --missing || echo "runr-bootstrap: agent redeploy skipped (run php artisan agent:redeploy --missing)"
 
-              # Stored image references of RunR's image namespace up to 0.5.0 move to ghcr.io/brf-tech: the upgrade migration
+              # Stored image references of RunR's earlier image namespaces move to ghcr.io/brf-tech/runr: the upgrade migration
               # moved them, this catches rows the previous version's pods wrote during the rollout (idempotent)
               timeout 60 php artisan images:move-registry || echo "runr-bootstrap: image references not moved (run php artisan images:move-registry)"
 

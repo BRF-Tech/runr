@@ -32,6 +32,7 @@ runr deploy       # https://hello.<region>.<domain>
 - [Data residency: runr residency](#data-residency-runr-residency)
 - [Access control: members, roles, groups](#access-control-members-roles-groups)
 - [Audit log: runr audit](#audit-log-runr-audit)
+- [Regions](#regions)
 - [Output, errors and exit codes](#output-errors-and-exit-codes)
 - [CI/CD](#cicd)
 - [Configuration reference](#configuration-reference)
@@ -380,7 +381,7 @@ runr dev --print            # show the docker commands instead of running them
 
 - **Same image and wrapper.** The runtime image of the project's runtime and version — the
   image the platform's runtime catalog names when you are logged in (the version defaults to
-  the platform's default), else `ghcr.io/brf-tech/exec-<runtime>:<version>` with the CLI's
+  the platform's default), else `ghcr.io/brf-tech/runr/exec-<runtime>:<version>` with the CLI's
   default version — started with its own entrypoint (the HTTP server that calls your
   handler).
 - **Same environment.** The project directory is mounted read-only and copied to
@@ -416,7 +417,7 @@ cluster runs:
 |---|---|
 | The runtime version's `image` | the same image |
 | A `dockerfile` or `git` version, built by RunR in each region | built locally with `docker build` from the files uploaded with the runtime (or the Git URL, `ref` and `path`), tagged `runr-dev-runtime-<id>:<version>-<digest>`; an unchanged source reuses the image |
-| exec and persistent runtimes: the universal wrapper (`runr-wrapper`) as entrypoint, copied into the pod by an init container (`runr-wrapper install /runr/runr-wrapper`) | the same install runs from the wrapper image (`ghcr.io/brf-tech/runr-wrapper:1.1.0`, or `RUNR_WRAPPER_IMAGE`) into the cache directory, which is mounted read-only at `/runr`; the container's entrypoint is `/runr/runr-wrapper` |
+| exec and persistent runtimes: the universal wrapper (`runr-wrapper`) as entrypoint, copied into the pod by an init container (`runr-wrapper install /runr/runr-wrapper`) | the same install runs from the wrapper image (`ghcr.io/brf-tech/runr/wrapper:1.1.0`, or `RUNR_WRAPPER_IMAGE`) into the cache directory, which is mounted read-only at `/runr`; the container's entrypoint is `/runr/runr-wrapper` |
 | http runtimes: `run.command` (or the image's entrypoint) serves `$PORT` | the same command as entrypoint, no wrapper |
 | The code as a ConfigMap at `/app/code` | the files `runr deploy` uploads (FaaS: the flat file set after the ignore rules; XaaS: the script), copied into the cache and mounted read-only at `/app/code` |
 | Compiled runtimes (`build`) and FaaS projects with the dependency file: a Kaniko build of a two-stage Dockerfile, wrapper baked in at `/runr/runr-wrapper` | the same Dockerfile, built locally with `docker build` on every start (Docker's layer cache keeps unchanged steps); the image carries code, build output, dependencies and wrapper |
@@ -460,7 +461,7 @@ state file in the cache directory, `--url` addresses another server.
 
 Requirements: Docker (the `docker` CLI on `PATH`, or `RUNR_DOCKER`). Images the CLI names
 itself (runtime images without a login, the Composer builder of PHP, the wrapper) come from
-`ghcr.io/brf-tech`; `RUNR_RUNTIME_REGISTRY` points to a mirror.
+`ghcr.io/brf-tech/runr`; `RUNR_RUNTIME_REGISTRY` points to a mirror.
 
 ## Command reference
 
@@ -488,6 +489,23 @@ Most groups without a subcommand run their `ls`, `get` or `status` command (`run
 | `runr open` | Open the project URL (`--print`) |
 | `runr domains ls\|add\|verify\|tls\|rm` | Custom domains, their DNS records and certificates (`tls --mode none\|cert-manager\|custom`, `--cert`, `--key`; `rm --yes`) |
 | `runr regions ls` | Regions, their status and whether queues (Redis) are available |
+| `runr regions get [REGION]` | A region: cluster, Knative, Redis, registry, worker nodes, capacity, settings |
+| `runr regions create NAME --kubeconfig FILE` | Connect a cluster as a region (`--node`, `--inactive`, `--redis`, `--redis-address`, `--redis-password-file`, `--prometheus-url`, `--loki-url`, `--registry internal\|external`, `--registry-storage`, `--storage-class`, `--registry-size`, `--registry-s3`, `--registry-address`, `--registry-credentials`, `--retry`, `--wait`) |
+| `runr regions check [NAME] --kubeconfig FILE` | Kubeconfig, Kubernetes version, worker nodes, StorageClasses and the namespace of a cluster before `create` |
+| `runr regions set REGION` | Status, settings or kubeconfig of a region (`--set status\|request_timeout\|agent_ws_url\|cert_manager_cluster_issuer\|ingress_trusted_ips=…`, `--kubeconfig`) |
+| `runr regions rm REGION` | Remove a region from RunR (`--yes`) |
+| `runr regions status [REGION]` | Check the cluster and its Knative installation now (`--refresh`) |
+| `runr regions kubeconfig REGION` | Save the region's kubeconfig with mode 0600 (`-f`, `--force`; `--stdout` prints it) |
+| `runr regions nodes [ls]\|set REGION` | Worker nodes and the ones projects run on (`set NODE…`, `--all`, `--yes`) |
+| `runr regions knative [status]\|install\|uninstall\|detect\|versions\|namespace` | Knative operator and Serving of a region (`[all\|operator\|serving]`, `--namespace`, `--version`, `--remove-traefik`, `--wait`, `--yes`) |
+| `runr regions redis [status]\|test\|set\|rm` | The Redis of queue triggers (`--mode`, `--address`, `--password-file`, `--wait`, `--yes`) |
+| `runr regions registry [status]\|rm\|setup-status\|test` | The region's image registry, the setup of a region created with `--registry`, checks of a StorageClass, bucket or external registry (`--wait`, `--yes`) |
+| `runr regions migration [status]\|start\|complete\|rollback` | Move a region to another cluster (`--kubeconfig`, `--data-location`, `--wait`, `--yes`) |
+| `runr regions function-tls [get]\|set` | The certificate of the region's function domains (`--mode console\|custom`, `--cert`, `--key`, `--replace-existing`) |
+| `runr regions skupper [status]\|site` | Skupper for private database connections; create the project namespace's site |
+| `runr regions capacity [get]\|set` | Capacity budgets and FaaS overcommit factors (`--set faas_cpu_overcommit=…`) |
+| `runr regions demo [status]\|install\|rm` | Demo projects of a region (`--wait`, `--yes`) |
+| `runr regions wasm [status]\|install\|uninstall` | WebAssembly support: shims, nodes, eligibility (`--no-cluster`, `--shim`, `--node`, `--wait`, `--yes`) |
 | `runr env ls\|set\|unset` | Plain and secret environment variables (`--secret`, `--from-file`, `--no-deploy`, `--timeout`, `--show-values`, `--reveal`) |
 | `runr dev [path]` | Run locally in Docker with hot reload, built-in runtimes and runtime plugins (`--port`, `-e`, `--no-watch`, `--print`) |
 | `runr dev invoke` | Send an http, queue or schedule event to the dev server (`--trigger`, `--event`, `-X`, `--path`, `-H`, `--url`) |
@@ -547,7 +565,7 @@ Most groups without a subcommand run their `ls`, `get` or `status` command (`run
 | `runr regions gpu [status]\|install\|uninstall\|set` | GPU support of a region: device plugin or GPU operator, nodes, allocation, settings (`--refresh`, `--mode`, `--time-slicing`, `--runtime-class`, `--gpu-node`, `--gvisor-nvproxy`, `--wait`, `--yes`) |
 | `runr regions model-storage [get]\|set` | The claim model weights live on (`--storage-class`, `--size`, `--access-mode`) |
 | `runr sandbox create` | Create a sandbox, wait until it runs, print its id (`--runtime`, `--image`, `--ttl`, `--allow`, `-e`, `--class`, `--region`, `--no-wait`, …) |
-| `runr sandbox exec ID -- CMD` | Run a command with streamed output; exits with its exit code (`--cwd`, `-e`, `--timeout`, `-i`; the exec WebSocket for `-i` on a terminal, `--ws` / `--ws=false` to choose) |
+| `runr sandbox exec ID -- CMD` | Run a command with streamed output; exits with its exit code (`--cwd`, `-e`, `--timeout`, `-i`; the exec WebSocket for `-i` on a terminal, `--ws` / `--ws=false` to choose; `-t` / `-it` on a terminal) |
 | `runr sandbox run [FILE\|-]` | Run code with the code interpreter, in a throw-away sandbox unless `--sandbox` (`--lang`, `--code`, `--keep`, `--outputs`) |
 | `runr sandbox cp SRC DST` | Copy files or directories into or out of a sandbox (`ID:/path`, `-` for stdin/stdout; `--timeout`) |
 | `runr sandbox ls\|get\|files\|logs\|rm` | List, show, browse, read the activity log of and remove sandboxes (`logs --pod`, `rm --yes`, `--all`) |
@@ -571,7 +589,7 @@ Most groups without a subcommand run their `ls`, `get` or `status` command (`run
 | `runr traces get TRACE_ID` | A trace as a waterfall (`--logs` adds its log lines) |
 | `runr traces status\|enable\|disable` | Tracing and replay switches; `enable` / `disable` redeploy (`--sample-ratio`, `--no-deploy`) |
 | `runr traces replay ls\|get\|run\|rm\|enable\|disable` | Captured failed requests and their replay with a diff (`-H`, `--query`, `--all`) |
-| `runr metrics [history]` | Recorded metrics: a summary of the last `--period` (`7d`, `30d`, `90d`); the snapshots (`--since`, `--from`, `--to`, `--granularity`) |
+| `runr metrics [history\|live]` | Recorded metrics: a summary of the last `--period` (`7d`, `30d`, `90d`); the snapshots (`--since`, `--from`, `--to`, `--granularity`); the live deployment's usage (`--quick`, `--deployment`, `--watch`) |
 | `runr uptime ls\|create\|update\|rm\|results\|run` | Uptime checks (`--path`, `--url`, `--interval`, `--expect`, `--region`, `--status-page`) |
 | `runr uptime incidents [update]` | Incidents of the checks (`--open`, `--title`, `--message`) |
 | `runr alerts channels ls\|create\|update\|rm\|test` | Alert channels: email, slack, teams, telegram, webhook (secrets write-only) |
@@ -1286,7 +1304,17 @@ runr sandbox run analysis.py --outputs ./charts     # a throw-away sandbox for o
   terminal uses the WebSocket, everything else Server-Sent Events; `--ws` picks the WebSocket
   (also for piped stdin, which then streams instead of being sent up front) and `--ws=false`
   Server-Sent Events. Output, exit codes, `--timeout`, Ctrl+C and `-o json` work the same over
-  both. Neither gives the command a TTY; `runr sandbox terminal` opens a shell with one.
+  both.
+- **`exec -t`** runs the command on a terminal (the exec WebSocket with a TTY), so shells,
+  REPLs, editors and pagers work as in a terminal window: `runr sandbox exec -it $SBX -- bash`.
+  The terminal merges the command's stderr into its output. With `-it` on a terminal, runr's
+  terminal is raw while the command runs — every key goes to the command as typed, Ctrl+C and
+  Ctrl+D included — the size follows the window (`SIGWINCH` on Linux and macOS, the console
+  size on Windows), and the terminal is restored when the command ends, also after an error,
+  `SIGTERM` or `SIGHUP`. runr exits with the command's exit code. `TERM` is `xterm-256color`
+  unless `-e TERM=…` sets it. `-t` without `-i` gives the command a terminal without input
+  (its input ends at once); piped stdin with `-it` is sent as typed and ends with Ctrl+D. `-t`
+  does not combine with `--ws=false` or `-o json|yaml`.
 - **`run [FILE|-]`** runs code with the code interpreter: the language comes from `--lang` or
   the file extension (`.py`, `.js`, `.ts`, `.sh`, `.php`, `.rb`, `.go`), else the sandbox's
   runtime; `--code '…'` instead of a file. Without `--sandbox ID` a throw-away sandbox of the
@@ -1363,7 +1391,8 @@ sent as typed input and ends with Ctrl+D, so the shell exits after the last line
 ends when the shell exits or after five idle minutes; runr then ends with exit code 0. A refused
 session ends with exit code 1 and the server's message. With `-o json|yaml` runr prints the
 session (`session_id`, `websocket_url`) for another client to connect to and does not attach.
-The session token never appears in `--debug` traces.
+The session token never appears in `--debug` traces. Any other command runs on a terminal with
+`runr sandbox exec -it ID -- CMD`, which also passes on the command's exit code.
 
 ### Pause, resume and lifetime
 
@@ -1580,6 +1609,8 @@ runr metrics                                        # the last 7 days: CPU, memo
 runr metrics --period 30d
 runr metrics history --since 6h                     # the 5-minute snapshots
 runr metrics history --from 2026-10-01 --to 2026-10-08 --granularity 1d
+runr metrics live                                   # what the live deployment uses right now
+runr metrics live --quick --watch 5s                # read again every 5 seconds until Ctrl+C
 ```
 
 RunR records the CPU, memory, requests per second, concurrency, pods and cold starts of a
@@ -1589,6 +1620,15 @@ deployment sessions (how many, how long, how much CPU). `runr metrics history` l
 snapshots of the last `--since` (default 24 hours) or between `--from` and `--to` (RFC 3339 or
 `YYYY-MM-DD`) at a `--granularity` of `1m`, `5m`, `1h` or `1d` — by default `5m` up to a day,
 `1h` up to two weeks and `1d` beyond. `-o json` prints the API's answers.
+
+`runr metrics live` reads the live deployment's usage from its region's Prometheus (`GET
+/projects/{project}/deployments/{deployment}/metrics`): CPU (cores), memory (MiB) and requests
+per second of the last minute, and the averages of the last hour; `--quick` reads the current
+values only and answers faster. `--deployment ID` reads another deployment of the project,
+`--watch DURATION` (at least `1s`) reads again until Ctrl+C. A dash is a value the region has
+no reading for — no pod running (scaled to zero), or a region without Prometheus. `-o json`
+prints the API's answer (`cpu`, `memory`, `rps`, `cpuAvg1h`, `memAvg1h`), one document per
+reading.
 
 ### Uptime checks
 
@@ -1708,7 +1748,7 @@ fails, 7 after `--timeout` (default 15 minutes). A region without a cluster conn
 | `runr traces status` | `projects.view` |
 | `runr traces enable\|disable` | `projects.update` (and `projects.deploy` for the redeploy, or `--no-deploy`) |
 | `runr traces replay …` | `replay.manage` (`enable\|disable` redeploy like `traces enable`) |
-| `runr metrics [history]`, `runr uptime ls\|results\|incidents` | `metrics.view` |
+| `runr metrics [history\|live]`, `runr uptime ls\|results\|incidents` | `metrics.view` |
 | `runr uptime create\|update\|rm\|run`, `incidents update` | `uptime.manage` |
 | `runr alerts …` | `alerts.manage` |
 | `runr status-page …` | `status_page.manage` |
@@ -2093,6 +2133,177 @@ longest retention the API allows, 3650 days). `runr audit settings` needs `audit
 `settings set` needs `settings.manage`, and on an installation with several organizations a
 platform administrator outside any organization (others get exit code 3).
 
+## Regions
+
+A region is a Kubernetes cluster (1.30 or newer) projects run in ([architecture](architecture.md#regions)).
+`runr regions` connects clusters, installs what projects need on them — Knative, a Redis for
+queue triggers, an image registry, WebAssembly support — and changes, moves and removes them. A
+region is named by its name or id; with one active region the name may be left out of reading
+commands.
+
+```sh
+runr regions check eu-2 --kubeconfig eu-2.yaml      # version, nodes, StorageClasses, the namespace
+runr regions create eu-2 --kubeconfig eu-2.yaml --node worker-1 --node worker-2
+runr regions knative install eu-2 --wait            # the Knative operator, then Knative Serving
+runr regions get eu-2                               # cluster, Knative, Redis, registry, workers, capacity
+runr regions status eu-2                            # checks the cluster now
+```
+
+### Creating a region
+
+`runr regions create NAME --kubeconfig FILE` connects a cluster. NAME is also the namespace the
+region's projects run in, which must not exist on the cluster yet; `runr regions check [NAME]
+--kubeconfig FILE` tests the kubeconfig, the Kubernetes version and the namespace and lists the
+worker nodes and StorageClasses (exit code 5 when one of them stands in the way). A kubeconfig is
+read from a file or stdin (`-`), never from an argument; RunR stores it encrypted and runr's
+trace (`--debug`) never shows it.
+
+| Flag | Meaning |
+|---|---|
+| `--node NODE` | a worker node projects run on (repeatable); default: every schedulable node |
+| `--inactive` | create the region inactive (no deploys until `runr regions set REGION --set status=active`) |
+| `--redis MODE` | the Redis of queue triggers: `managed` (default, RunR installs it), `in_cluster` or `external` (`--redis-address host:port`, `--redis-password-file FILE`), `none` |
+| `--prometheus-url`, `--loki-url`, `--loki-org-id` | reuse a Prometheus / Loki already running in the cluster (an in-cluster Service URL) instead of installing RunR's |
+| `--registry internal\|external` | set the region up with an image registry, in the background (below) |
+| `--wait`, `--timeout` | wait until the region and its Redis are set up (exit code 6 when the setup fails) |
+
+With `--registry` the region and its registry are set up in the background: `internal` runs
+RunR's registry on a volume (`--registry-storage pvc`, the default, with `--storage-class` —
+default the cluster's default class — and `--registry-size`, default `10Gi`) or on S3
+(`--registry-storage s3 --registry-s3 FILE` with `ENDPOINT`, `BUCKET`, `REGION`, `ACCESS_KEY` and
+`SECRET_KEY` lines); `external` uses yours (`--registry-address`, `--registry-credentials FILE`
+with `USERNAME` and `PASSWORD` lines). The command prints a setup token; `--wait` (or
+`runr regions registry setup-status TOKEN --wait`) follows it until the region exists. A failed
+setup starts again with `runr regions create NAME --retry TOKEN` and the same flags.
+`runr regions registry test pvc|s3|external --kubeconfig FILE` checks a StorageClass, a bucket or
+an external registry from a pod in the cluster first.
+
+```sh
+runr regions registry test pvc --kubeconfig eu-2.yaml --storage-class fast-ssd
+runr regions create eu-2 --kubeconfig eu-2.yaml --registry internal --storage-class fast-ssd --wait
+runr regions create eu-3 --kubeconfig - --registry external --registry-address registry.example.com/team \
+    --registry-credentials registry.env < eu-3.yaml
+```
+
+### Status, Knative and worker nodes
+
+`runr regions get` shows the whole region; `runr regions status` checks the cluster now: whether
+RunR reaches it and Knative Serving and the region's Traefik are ready (`ready`, `degraded` with
+the reasons, `not_installed`). While an install runs or after an error it shows the recorded
+state; `--refresh` checks anyway.
+
+`runr regions knative [REGION]` shows the Knative operator and Knative Serving. `install REGION`
+installs both with Helm; `install REGION operator` and then `install REGION serving` install them
+one by one (`--namespace`; `--version` picks a Knative minor version of
+`runr regions knative versions`, default the newest the cluster supports). An operator or Serving
+already running in the namespace is adopted instead, and `runr regions knative detect REGION`
+adopts what runs on the cluster. `uninstall REGION [all|operator|serving]` removes them (the
+operator after Serving; the region's Traefik stays while it serves other Ingresses, such as the
+console on the same cluster, unless `--remove-traefik`). Installs and removals run in the
+background: `--wait` waits, exit code 6 when one fails.
+
+`runr regions nodes [REGION]` lists the worker nodes with their capacity and whether projects run
+on them; `runr regions nodes set REGION NODE…` reserves nodes for projects (a taint only projects
+tolerate) and releases the others, `--all` reserves none. Releasing nodes asks for confirmation.
+The region's capacity follows the selection.
+
+### Kubeconfig
+
+```sh
+runr regions kubeconfig eu-1                          # ./eu-1-kubeconfig.yaml, mode 0600
+runr regions kubeconfig eu-1 -f ~/.kube/eu-1.yaml --force
+runr regions kubeconfig eu-1 --stdout | kubectl --kubeconfig /dev/stdin get nodes
+```
+
+The kubeconfig RunR uses for a region is a credential. `runr regions kubeconfig` writes it to a
+file only you can read (mode 0600; an existing file is kept unless `--force`, which also tightens
+its mode) and prints it only with `--stdout`; `-o json` prints the file name and size, never the
+content. `runr regions set REGION --kubeconfig FILE` replaces it, for example after a credential
+rotation.
+
+### Settings, capacity and function TLS
+
+`runr regions set REGION --set KEY=VALUE` changes a region:
+
+| Key | Value |
+|---|---|
+| `status` | `active`, `inactive` (no new deploys) or `maintenance` |
+| `request_timeout` | the longest request of a function in seconds (1–3600, default 300) |
+| `agent_ws_url` | RunR's address as the region's agents reach it (`wss://…`); empty: the console URL |
+| `cert_manager_cluster_issuer` | the ClusterIssuer of custom-domain certificates; empty: none |
+| `ingress_trusted_ips` | comma-separated addresses or CIDRs of a load balancer in front of the region's Traefik that sends PROXY protocol or `X-Forwarded-For`; empty: trust nobody |
+
+`runr regions capacity [REGION]` shows the region's capacity budgets: the always-on budget (the
+capacity, without overcommit) and the FaaS overcommit budget of scale-to-zero projects and model
+services ([architecture](architecture.md#region-capacity-and-admission)).
+`runr regions capacity set REGION --set faas_cpu_overcommit=4 --set faas_memory_overcommit=1.25`
+changes the factors (1–10, two decimals; 1 = no overcommit).
+
+`runr regions function-tls [REGION]` shows the certificate the region's Traefik serves function
+domains with; `runr regions function-tls set REGION --mode console` uses the console's
+certificate, `--mode custom --cert FILE --key FILE` (PEM, `-` for stdin) your own.
+`--replace-existing` replaces a default TLS store of the region's Traefik that RunR did not create.
+
+### Redis, registry and Skupper
+
+`runr regions redis [REGION]` shows the Redis queue triggers use. `runr regions redis test REGION
+--address host:port --password-file FILE` checks from a pod in the cluster that a Redis answers;
+`runr regions redis set REGION --mode managed|in_cluster|external` installs or connects one
+(`--address`, `--password-file`, `--wait`), `runr regions redis rm REGION` removes it.
+
+`runr regions registry [REGION]` shows the region's image registry; `runr regions registry rm
+REGION` removes it (RunR's registry with its images). Builds in a region — runtime plugins with a
+build step, WebAssembly functions — push their images to it.
+
+Private database connections of [bindings](bindings.md) run over Skupper v2, which the cluster's
+operators install: `runr regions skupper [REGION]` shows whether the cluster runs it and the site
+of the region's project namespace, `runr regions skupper site REGION` creates the site.
+
+### Moving a region to another cluster
+
+```sh
+runr regions migration start eu-1 --kubeconfig new-cluster.yaml --wait
+runr regions migration eu-1                             # dns_check: point DNS at the new address
+runr regions migration complete eu-1                    # or: runr regions migration rollback eu-1
+```
+
+`start` installs the region's components on the new cluster and deploys its projects there again,
+in the background (`--wait` waits until the move reaches the DNS step; exit code 6 when it
+fails). Then point the region's DNS at the new address and `complete` the move, which releases the
+old cluster, or `rollback` to the old cluster (also after a failed move). A region with a data
+location moves only within it: `--data-location` names the new cluster's.
+
+### WebAssembly and demo projects
+
+`runr regions wasm [REGION]` shows WebAssembly support: its status, the shims, and — read from the
+cluster — every node with its eligibility, the RuntimeClasses and the installer ([WebAssembly](wasm.md#install-webassembly-support);
+`--no-cluster` shows the recorded state only). `runr regions wasm install REGION` installs the
+Spin shim (`--shim spin --shim wasmtime` for both) on every eligible node or the `--node` ones;
+installing again changes the shims or nodes. It restarts the container runtime once on every
+selected node, so it asks for confirmation (`--yes`); `--wait` follows it.
+`runr regions wasm uninstall REGION` removes it (refused while Wasm projects run).
+
+`runr regions demo install REGION` deploys a set of demo projects to a region with Knative
+Serving, `runr regions demo rm REGION` removes them; `runr regions demo [REGION]` shows their state.
+
+Every command that removes something — `rm`, the `uninstall` commands, `redis rm`,
+`registry rm`, `migration rollback`, `demo rm`, `nodes set` when it releases nodes — asks for
+confirmation on a terminal and needs `--yes` elsewhere.
+
+### Permissions
+
+| Commands | Permission |
+|---|---|
+| `get`, `status`, `nodes`, `knative`, `knative versions\|namespace`, `redis`, `registry`, `registry setup-status`, `migration`, `function-tls`, `skupper`, `capacity`, `demo`, `wasm` | `regions.view` |
+| `create`, `check`, `set`, `rm`, `kubeconfig`, `nodes set`, `knative install\|uninstall\|detect`, `redis test\|set\|rm`, `migration start\|complete\|rollback`, `function-tls set`, `skupper site`, `capacity set`, `demo install\|rm` | `regions.manage` |
+| `create --registry` | `regions.manage` and `registry.manage` |
+| `registry rm`, `registry test` | `registry.manage` |
+| `wasm install\|uninstall` | `sandbox.manage` |
+
+On a multi-tenant installation the changes need a region your organization may change: the
+platform's regions are read-only for organizations, an organization's own regions are changed by
+its owners and admins.
+
 ## Output, errors and exit codes
 
 Every command prints a human table by default and the API objects with `-o json` or
@@ -2168,8 +2379,8 @@ deploy:
 | `RUNR_CONTEXT` | Context to use (like `--context`) |
 | `RUNR_CONFIG` | Path of the config file |
 | `RUNR_PROJECT` | Default project (like `--project`) |
-| `RUNR_RUNTIME_REGISTRY` | Registry of the runtime images for `runr dev` (default `ghcr.io/brf-tech`) |
-| `RUNR_WRAPPER_IMAGE` | Image of the universal wrapper `runr dev` installs for exec and persistent runtime plugins (default `<registry>/runr-wrapper:1.1.0`; `RUNR_RUNTIME_REGISTRY` sets the registry) |
+| `RUNR_RUNTIME_REGISTRY` | Registry of the runtime images for `runr dev` (default `ghcr.io/brf-tech/runr`) |
+| `RUNR_WRAPPER_IMAGE` | Image of the universal wrapper `runr dev` installs for exec and persistent runtime plugins (default `<registry>/wrapper:1.1.0`; `RUNR_RUNTIME_REGISTRY` sets the registry) |
 | `RUNR_DOCKER` | Docker CLI binary for `runr dev` |
 
 The config file:

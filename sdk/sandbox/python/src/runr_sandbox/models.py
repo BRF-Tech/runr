@@ -41,6 +41,8 @@ class ExecResult:
     truncated: bool = False
     stdout_bytes: bytes = b""
     stderr_bytes: bytes = b""
+    #: True when a kill request ended the command (:meth:`ExecSession.kill`).
+    killed: bool = False
 
     @property
     def ok(self) -> bool:
@@ -222,8 +224,9 @@ class ExecEvent:
     """One event of a streamed command.
 
     ``type`` is ``stdout`` or ``stderr`` (``data`` holds the bytes), ``exit`` (``exit_code``,
-    ``timed_out``, ``duration_ms``, ``truncated``) or — for :meth:`Sandbox.run_code_stream` only —
-    ``result`` (``result`` holds the :class:`RunResult` without stdout / stderr, which were streamed).
+    ``timed_out``, ``duration_ms``, ``truncated``; ``killed`` on the exec WebSocket) or — for
+    :meth:`Sandbox.run_code_stream` only — ``result`` (``result`` holds the :class:`RunResult`
+    without stdout / stderr, which were streamed).
     """
 
     type: str
@@ -234,6 +237,7 @@ class ExecEvent:
     truncated: Optional[bool] = None
     exec_id: Optional[str] = None
     result: Optional[RunResult] = None
+    killed: Optional[bool] = None
 
     @property
     def text(self) -> str:

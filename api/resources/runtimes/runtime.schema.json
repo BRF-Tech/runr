@@ -40,7 +40,12 @@
       "additionalProperties": false,
       "required": ["repository", "image"],
       "properties": {
-        "repository": { "type": "string", "pattern": "^[a-z0-9._-]+/[a-z0-9._-]+$" },
+        "repository": {
+          "type": "string",
+          "maxLength": 255,
+          "pattern": "^[a-z0-9._-]+(:[0-9]+)?(/[a-z0-9._-]+)+$",
+          "description": "Image repository whose tags are the versions, read from its registry (ghcr.io/brf-tech/runr/exec-python); without a registry host it is on Docker Hub."
+        },
         "image": { "type": "string", "minLength": 1, "maxLength": 255 },
         "eol": { "type": "string", "pattern": "^[a-z0-9._-]{1,64}$" },
         "filter": { "enum": ["lts-even-major"] }

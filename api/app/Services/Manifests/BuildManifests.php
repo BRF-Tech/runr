@@ -20,8 +20,23 @@ class BuildManifests
      */
     public const KANIKO_IMAGE = 'ghcr.io/osscontainertools/kaniko:v1.28.5';
 
+    /**
+     * Kaniko flag of every build that pushes to the region registry. Without it Kaniko opens a
+     * blob upload in the destination repository before building, to check that it may push —
+     * Zot creates the repository for that upload, so a build that failed afterwards left an
+     * empty repository in the catalog (kept for good by Zot releases before the pinned one,
+     * RegistryImageLifecycleService::pruneEmptyRepositories()).
+     */
+    public const SKIP_PUSH_PERMISSION_CHECK = '--skip-push-permission-check';
+
+    /** activeDeadlineSeconds of a function build Job (executor.build_deadline_seconds, ≥ 60). */
+    public static function deadlineSeconds(): int
+    {
+        return max(60, (int) config('executor.build_deadline_seconds', 900));
+    }
+
     /** copy-src init container of the build Job. */
-    public const INIT_IMAGE = 'ghcr.io/brf-tech/reqs/alpine:3.20';
+    public const INIT_IMAGE = 'ghcr.io/brf-tech/runr/reqs/alpine:3.20';
 
     /**
      * Kaniko image for a region's build Job (registryImageRef() keeps a Docker Hub short name

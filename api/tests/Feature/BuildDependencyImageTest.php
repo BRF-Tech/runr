@@ -28,7 +28,7 @@ class BuildDependencyImageTest extends TestCase
     {
         $this->submit($this->buildVersion('python', null));
 
-        $this->assertSame(['ghcr.io/brf-tech/exec-python:3.14', 'ghcr.io/brf-tech/exec-python:3.14'], $this->fromLines());
+        $this->assertSame(['ghcr.io/brf-tech/runr/exec-python:3.14', 'ghcr.io/brf-tech/runr/exec-python:3.14'], $this->fromLines());
         $this->assertStringContainsString('RUN pip install --no-cache-dir --target=/build/vendor -r /build/code/requirements.txt', $this->dockerfile());
         $this->assertStringContainsString('PYTHONPATH=/app/vendor', $this->dockerfile());
     }
@@ -37,36 +37,36 @@ class BuildDependencyImageTest extends TestCase
     {
         $this->submit($this->buildVersion('python', '3.12'));
 
-        $this->assertSame(['ghcr.io/brf-tech/exec-python:3.12', 'ghcr.io/brf-tech/exec-python:3.12'], $this->fromLines());
+        $this->assertSame(['ghcr.io/brf-tech/runr/exec-python:3.12', 'ghcr.io/brf-tech/runr/exec-python:3.12'], $this->fromLines());
     }
 
     public function test_node_default_and_explicit_versions(): void
     {
         $this->submit($this->buildVersion('nodejs', null));
-        $this->assertSame(['ghcr.io/brf-tech/exec-nodejs:24.14', 'ghcr.io/brf-tech/exec-nodejs:24.14'], $this->fromLines());
+        $this->assertSame(['ghcr.io/brf-tech/runr/exec-nodejs:24.14', 'ghcr.io/brf-tech/runr/exec-nodejs:24.14'], $this->fromLines());
         $this->assertStringContainsString('RUN cd /build/code && npm install --production', $this->dockerfile());
 
         $this->submit($this->buildVersion('nodejs', '22.22'));
-        $this->assertSame(['ghcr.io/brf-tech/exec-nodejs:22.22', 'ghcr.io/brf-tech/exec-nodejs:22.22'], $this->fromLines());
+        $this->assertSame(['ghcr.io/brf-tech/runr/exec-nodejs:22.22', 'ghcr.io/brf-tech/runr/exec-nodejs:22.22'], $this->fromLines());
     }
 
     public function test_ml_runtime_builds_deps_in_its_own_image(): void
     {
-        $this->submit($this->buildVersion('pytorch', '2.3'));
-        $this->assertSame(['ghcr.io/brf-tech/exec-pytorch:2.3', 'ghcr.io/brf-tech/exec-pytorch:2.3'], $this->fromLines());
+        $this->submit($this->buildVersion('pytorch', '2.14'));
+        $this->assertSame(['ghcr.io/brf-tech/runr/exec-pytorch:2.14', 'ghcr.io/brf-tech/runr/exec-pytorch:2.14'], $this->fromLines());
 
         $this->submit($this->buildVersion('pytorch', null));
-        $this->assertSame(['ghcr.io/brf-tech/exec-pytorch:2.3', 'ghcr.io/brf-tech/exec-pytorch:2.3'], $this->fromLines());
+        $this->assertSame(['ghcr.io/brf-tech/runr/exec-pytorch:2.14', 'ghcr.io/brf-tech/runr/exec-pytorch:2.14'], $this->fromLines());
     }
 
     public function test_php_composer_resolves_for_the_runtime_php_version(): void
     {
         $this->submit($this->buildVersion('php', null));
-        $this->assertSame(['ghcr.io/brf-tech/reqs/composer:latest', 'ghcr.io/brf-tech/exec-php:8.4'], $this->fromLines());
+        $this->assertSame(['ghcr.io/brf-tech/runr/reqs/composer:latest', 'ghcr.io/brf-tech/runr/exec-php:8.4'], $this->fromLines());
         $this->assertStringContainsString('RUN cd /build/code && composer config platform.php 8.4 && composer install --no-dev --no-interaction', $this->dockerfile());
 
         $this->submit($this->buildVersion('php', '8.2'));
-        $this->assertSame(['ghcr.io/brf-tech/reqs/composer:latest', 'ghcr.io/brf-tech/exec-php:8.2'], $this->fromLines());
+        $this->assertSame(['ghcr.io/brf-tech/runr/reqs/composer:latest', 'ghcr.io/brf-tech/runr/exec-php:8.2'], $this->fromLines());
         $this->assertStringContainsString('composer config platform.php 8.2 && composer install', $this->dockerfile());
     }
 
@@ -79,10 +79,10 @@ class BuildDependencyImageTest extends TestCase
 
     public function test_builder_image_follows_the_executor_record(): void
     {
-        $gpu = new ExecutorImage(['runtime' => 'tensorflow', 'version' => '2.16-gpu', 'docker_image' => 'ghcr.io/brf-tech/exec-tensorflow:2.16-gpu']);
+        $gpu = new ExecutorImage(['runtime' => 'tensorflow', 'version' => '2.21-gpu', 'docker_image' => 'ghcr.io/brf-tech/runr/exec-tensorflow:2.21-gpu']);
 
-        $this->assertSame('ghcr.io/brf-tech/exec-tensorflow:2.16-gpu', FunctionBuildService::builderImage('tensorflow', $gpu));
-        $this->assertSame('ghcr.io/brf-tech/reqs/composer:latest', FunctionBuildService::builderImage('php', $gpu));
+        $this->assertSame('ghcr.io/brf-tech/runr/exec-tensorflow:2.21-gpu', FunctionBuildService::builderImage('tensorflow', $gpu));
+        $this->assertSame('ghcr.io/brf-tech/runr/reqs/composer:latest', FunctionBuildService::builderImage('php', $gpu));
     }
 
     public function test_an_unavailable_runtime_version_fails_the_build_submission(): void
@@ -97,7 +97,7 @@ class BuildDependencyImageTest extends TestCase
     {
         $this->assertSame('3.14', ExecutorImage::resolve('python')->version);
         $this->assertSame('3.12', ExecutorImage::resolve('python', '3.12')->version);
-        $this->assertSame('ghcr.io/brf-tech/exec-nodejs:24.14', ExecutorImage::resolveImage('nodejs'));
+        $this->assertSame('ghcr.io/brf-tech/runr/exec-nodejs:24.14', ExecutorImage::resolveImage('nodejs'));
         // Unknown version falls back to the default, like resolveImage()
         $this->assertSame('24.14', ExecutorImage::resolve('nodejs', '18.0')->version);
         $this->assertNull(ExecutorImage::resolve('rust'));

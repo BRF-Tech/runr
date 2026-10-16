@@ -9,8 +9,8 @@ language: javascript
 extensions: [js]
 category: general
 versionDiscovery:
-  repository: runrsh/exec-nodejs
-  image: "ghcr.io/brf-tech/exec-nodejs:{version}"
+  repository: ghcr.io/brf-tech/runr/exec-nodejs
+  image: "ghcr.io/brf-tech/runr/exec-nodejs:{version}"
   eol: nodejs
   filter: lts-even-major
 handler:

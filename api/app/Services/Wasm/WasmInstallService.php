@@ -336,7 +336,7 @@ class WasmInstallService
      * Whether the wasm-installer DaemonSet on the cluster installs what this release installs for
      * $shims: "current", "outdated" (it installs other shim binaries — an install of an earlier
      * release) or "missing". namespace: outdated only because a shim image is referenced under
-     * RunR's image namespace up to 0.5.0 (RegistryMove) — the same image, the same binaries.
+     * one of RunR's earlier image namespaces (RegistryMove) — the same image, the same binaries.
      *
      * @param  list<WasmShim>  $shims
      * @return array{state: string, installs: string, namespace?: bool} installs: the shims the live

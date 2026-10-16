@@ -57,7 +57,7 @@ abstract class SandboxTestCase extends TestCase
             'status' => Sandbox::STATUS_RUNNING,
             'runtime' => 'python',
             'runtime_version' => '3.14',
-            'image' => 'ghcr.io/brf-tech/exec-python:3.14',
+            'image' => 'ghcr.io/brf-tech/runr/exec-python:3.14',
             'sandbox_class' => 'kata-fc',
             'cpu_m' => 500,
             'memory_mb' => 512,

@@ -34,7 +34,7 @@
 
 AI_HF_SERVE_VERSION="${HF_SERVE_VERSION:-1.1.0}"
 AI_HF_SERVE_TAG="${REGISTRY}/hf-serve:${AI_HF_SERVE_VERSION}"
-AI_HF_SERVE_DEFAULT_TAG="ghcr.io/brf-tech/hf-serve:${AI_HF_SERVE_VERSION}"
+AI_HF_SERVE_DEFAULT_TAG="ghcr.io/brf-tech/runr/hf-serve:${AI_HF_SERVE_VERSION}"
 AI_GPU_IMAGE_TAG="${REGISTRY}/ai-gpu-caas:e2e"
 
 _ai_gpu=""
@@ -142,7 +142,7 @@ cmd_test_ai() {
 
   echo -e "${BOLD}AI e2e — model services, offline snapshots, bindings, GPU${NC}"
   echo "  hf-serve image: ${AI_HF_SERVE_TAG} (building runtime/hf-serve, CPU)"
-  docker build -q -t "$AI_HF_SERVE_TAG" "${SCRIPT_DIR}/hf-serve" >/dev/null
+  docker build -q --pull -t "$AI_HF_SERVE_TAG" "${SCRIPT_DIR}/hf-serve" >/dev/null
   if [ "$AI_HF_SERVE_TAG" != "$AI_HF_SERVE_DEFAULT_TAG" ]; then
     docker tag "$AI_HF_SERVE_TAG" "$AI_HF_SERVE_DEFAULT_TAG"
   fi
@@ -167,7 +167,7 @@ cmd_test_ai() {
     reason=$(ai_gpu_unavailable_reason)
     if [ -z "$reason" ]; then
       echo "  GPU case: on — building ${AI_GPU_IMAGE_TAG} (examples/ai/gpu-caas)"
-      docker build -q -t "$AI_GPU_IMAGE_TAG" "${SCRIPT_DIR}/../examples/ai/gpu-caas" >/dev/null
+      docker build -q --pull -t "$AI_GPU_IMAGE_TAG" "${SCRIPT_DIR}/../examples/ai/gpu-caas" >/dev/null
       export KIND_EXTRA_NODES_YAML='  - role: worker
     extraMounts:
       - hostPath: /dev/null

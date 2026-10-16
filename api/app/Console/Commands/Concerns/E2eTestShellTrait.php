@@ -241,8 +241,10 @@ trait E2eTestShellTrait
      * Perform WebSocket upgrade handshake, return stream or null. Reverb is reached the way the
      * API's broadcasting reaches it (REVERB_HOST / REVERB_PORT): under docker compose an alias on
      * the stack's own network, not `reverb`, which other stacks on the shared kind network answer too.
+     * $path is Reverb's route: /shell (the web shell) or /sandbox-exec (the exec WebSocket); the
+     * ingress strips the /ws prefix of the public URLs.
      */
-    private function wsUpgrade(string $token): mixed
+    private function wsUpgrade(string $token, string $path = '/shell'): mixed
     {
         $options = config('reverb.apps.apps.0.options', []);
         $address = (($options['host'] ?? null) ?: 'reverb').':'.(($options['port'] ?? null) ?: 8080);
@@ -252,7 +254,7 @@ trait E2eTestShellTrait
         }
 
         $key = base64_encode(random_bytes(16));
-        fwrite($ws, "GET /shell?token={$token} HTTP/1.1\r\n"
+        fwrite($ws, "GET {$path}?token={$token} HTTP/1.1\r\n"
             ."Host: {$address}\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n"
             ."Sec-WebSocket-Key: {$key}\r\nSec-WebSocket-Version: 13\r\n\r\n");
 

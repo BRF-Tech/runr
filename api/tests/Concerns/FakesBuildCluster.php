@@ -16,8 +16,8 @@ use Symfony\Component\Yaml\Yaml;
 /**
  * Submits Kaniko builds (FunctionBuildService) against a fake region cluster and
  * reads back the generated Dockerfile and Job. Executor images: python 3.12 / 3.14 (default),
- * nodejs 22.22 / 24.14 (default), php 8.2 / 8.4 (default), go 1.26, pytorch 2.3 — like
- * executor:sync lists them (ghcr.io/brf-tech/exec-{runtime}:{version}).
+ * nodejs 22.22 / 24.14 (default), php 8.2 / 8.4 (default), go 1.26, pytorch 2.14 — like
+ * executor:sync lists them (ghcr.io/brf-tech/runr/exec-{runtime}:{version}).
  */
 trait FakesBuildCluster
 {
@@ -38,13 +38,13 @@ trait FakesBuildCluster
             ['nodejs', '22.22', false], ['nodejs', '24.14', true],
             ['php', '8.2', false], ['php', '8.4', true],
             ['go', '1.26', true],
-            ['pytorch', '2.3', true],
+            ['pytorch', '2.14', true],
         ];
         foreach ($images as $i => [$runtime, $version, $default]) {
             ExecutorImage::create([
                 'runtime' => $runtime,
                 'version' => $version,
-                'docker_image' => "ghcr.io/brf-tech/exec-{$runtime}:{$version}",
+                'docker_image' => "ghcr.io/brf-tech/runr/exec-{$runtime}:{$version}",
                 'is_default' => $default,
                 'is_active' => true,
                 'sort_order' => $i,

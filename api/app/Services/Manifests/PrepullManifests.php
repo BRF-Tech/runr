@@ -36,7 +36,7 @@ class PrepullManifests
             'initContainers' => [
                 [
                     'name' => 'tune-sysctl',
-                    'image' => 'ghcr.io/brf-tech/reqs/busybox:latest',
+                    'image' => 'ghcr.io/brf-tech/runr/reqs/busybox:latest',
                     'command' => ['nsenter', '--target', '1', '--mount', '--', 'sh', '-c',
                         'sysctl -w fs.inotify.max_user_instances=1024 fs.inotify.max_user_watches=524288',
                     ],
@@ -48,7 +48,7 @@ class PrepullManifests
                 ],
                 [
                     'name' => 'pull-all',
-                    'image' => 'ghcr.io/brf-tech/reqs/busybox:latest',
+                    'image' => 'ghcr.io/brf-tech/runr/reqs/busybox:latest',
                     'command' => ['nsenter', '--target', '1', '--mount', '--net', '--', 'sh', '-c', $script],
                     'securityContext' => ['privileged' => true],
                     'resources' => [
@@ -59,7 +59,7 @@ class PrepullManifests
             ],
             'containers' => [[
                 'name' => 'done',
-                'image' => 'ghcr.io/brf-tech/reqs/busybox:latest',
+                'image' => 'ghcr.io/brf-tech/runr/reqs/busybox:latest',
                 'command' => ['sh', '-c', 'while true; do sleep 3600; done'],
                 'resources' => [
                     'requests' => ['cpu' => '10m', 'memory' => '16Mi'],

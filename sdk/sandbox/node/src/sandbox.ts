@@ -10,10 +10,13 @@ import {
   listQuery,
   normalizeNetwork,
   runBody,
+  toBase64,
   toExecResult,
+  ttyFields,
   toRunResult,
 } from './convert.js'
 import { ConflictError, NotFoundError, RunrSandboxError, SandboxStartTimeoutError } from './errors.js'
+import { ExecSession, terminalSize, type ExecWsTicket } from './exec-ws.js'
 import { Files } from './files.js'
 import { HttpClient, unwrap, type Query } from './http.js'
 import { Processes } from './processes.js'
@@ -23,10 +26,12 @@ import type {
   ExecEvent,
   ExecOptions,
   ExecResult,
+  ExecWsOptions,
   ListFilters,
   NetworkSpec,
   RunOptions,
   RunResult,
+  RunWsOptions,
   SandboxInfo,
   SandboxLogs,
   TerminalSession,
@@ -187,6 +192,39 @@ export class Sandbox implements AsyncDisposable {
   /** Like `runCode`, streamed: output events, `exit`, then a `result` event. */
   runCodeStream(code: string, options: RunOptions = {}): AsyncIterable<ExecEvent> {
     return this.stream('POST', this.path('/run'), runBody(code, options, true), undefined, options.signal)
+  }
+
+  /**
+   * Run a command over the exec WebSocket: send stdin while it runs (`sendStdin`, `closeStdin`),
+   * optionally on a terminal (`tty`, `resize`), and read its output as it arrives. Resolves once
+   * the command started; `wait()` or iterating the session reads the rest.
+   *
+   * ```ts
+   * await using session = await sandbox.execWs(['python3', '-i'], { tty: true, cols: 120, rows: 40 })
+   * session.sendStdin('print(6 * 7)\n')
+   * session.closeStdin()
+   * const result = await session.wait()
+   * ```
+   */
+  async execWs(cmd: string | string[], options: ExecWsOptions = {}): Promise<ExecSession> {
+    return this.openExecWs({ ...execBody(cmd, options), ...ttyFields(options, terminalSize) }, options)
+  }
+
+  /** Like `execWs`, for code run with the language's interpreter (up to 120 KB of code). */
+  async runCodeWs(code: string, options: RunWsOptions = {}): Promise<ExecSession> {
+    const body = runBody(code, options)
+    if (options.stdin instanceof Uint8Array) body.stdin_base64 = toBase64(options.stdin)
+    else if (options.stdin !== undefined) body.stdin = options.stdin
+    return this.openExecWs({ ...body, ...ttyFields(options, terminalSize) }, options)
+  }
+
+  private async openExecWs(body: Record<string, unknown>, options: ExecWsOptions): Promise<ExecSession> {
+    const payload = await this.http.json('POST', this.path('/exec/ws'), { json: body, signal: options.signal })
+    return ExecSession.open(unwrap<ExecWsTicket>(payload) ?? {}, {
+      apiUrl: this.http.config.apiUrl,
+      transport: options.transport,
+      signal: options.signal,
+    })
   }
 
   private async *stream(method: string, path: string, body?: unknown, query?: Query, signal?: AbortSignal): AsyncGenerator<ExecEvent> {

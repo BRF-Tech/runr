@@ -42,6 +42,8 @@ class RegionReconcileCommandTest extends TestCase
         parent::setUp();
         // Not in a pod: RunR's own cluster is never detected (agent URL resolution, cluster identity)
         config(['knative.agent.serviceaccount_dir' => sys_get_temp_dir().'/runr-no-sa-'.uniqid()]);
+        // the tracing step installs no backend on these regions (TracingBackendReconcileStepTest)
+        config(['observability.tracing.install_with_serving' => false]);
         RegionReconciler::clearRegionSources();
     }
 

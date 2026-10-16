@@ -81,7 +81,7 @@ _up_build() {
   local tree="$1" tag="$2"
   mkdir -p "$tree/api/resources/docs"
   cp "$tree"/docs/*.md "$tree/api/resources/docs/" 2>/dev/null || true
-  docker build --file "$tree/api/Dockerfile.prod" --target base -t "$tag" "$tree/api"
+  docker build --pull --file "$tree/api/Dockerfile.prod" --target base -t "$tag" "$tree/api"
 }
 
 # A compose directory for one release: its compose/ files, the install's .env / api.env and an

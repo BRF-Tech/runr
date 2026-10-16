@@ -17,7 +17,7 @@ use Tests\TestCase;
 
 /**
  * region:reconcile brings the admission policy of a region with the policy-controller installed to
- * this release's image globs (AdmissionPolicyStep) — RunR's images under ghcr.io/brf-tech pass the
+ * this release's image globs (AdmissionPolicyStep) — RunR's images under ghcr.io/brf-tech/runr pass the
  * system policy before image-registry rolls the region's workloads onto them.
  */
 class AdmissionPolicyReconcileStepTest extends TestCase
@@ -65,14 +65,14 @@ class AdmissionPolicyReconcileStepTest extends TestCase
 
         $dry = (new AdmissionPolicyStep)->run($this->cluster($region), true);
         $this->assertSame(["would sync ClusterImagePolicies runr-system-images of region {$region->name} with this release's image globs "
-            .'(system images: ghcr.io/brf-tech/**, ghcr.io/runrsh/**, gcr.io/knative-releases/**)'], $dry);
+            .'(system images: ghcr.io/brf-tech/runr/**, ghcr.io/brf-tech/**, ghcr.io/runrsh/**, gcr.io/knative-releases/**)'], $dry);
         $this->assertSame([], $this->scCalls('PATCH', '/clusterimagepolicies/'), 'dry run: read-only');
 
         $lines = (new AdmissionPolicyStep)->run($this->cluster($region), false);
         $this->assertStringStartsWith('synced ClusterImagePolicies runr-system-images of region', $lines[0]);
         $applied = collect($this->scCalls('PATCH', self::SYSTEM_POLICY))->first()['body'];
         $globs = array_column($applied['spec']['images'], 'glob');
-        foreach (['ghcr.io/brf-tech/**', self::SC_ZOT.'/ghcr.io/brf-tech/**', 'ghcr.io/runrsh/**', self::SC_ZOT.'/ghcr.io/runrsh/**'] as $glob) {
+        foreach (['ghcr.io/brf-tech/runr/**', self::SC_ZOT.'/ghcr.io/brf-tech/runr/**', 'ghcr.io/brf-tech/**', self::SC_ZOT.'/ghcr.io/brf-tech/**', 'ghcr.io/runrsh/**', self::SC_ZOT.'/ghcr.io/runrsh/**'] as $glob) {
             $this->assertContains($glob, $globs);
         }
         $this->assertNotEmpty($this->scCalls('PATCH', '/configmaps/config-policy-controller'), 'synced like a settings change');

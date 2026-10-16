@@ -1060,11 +1060,23 @@
                                                 },
                                                 "size_bytes": {
                                                     "type": [
-                                                        "integer",
+                                                        "string",
                                                         "null"
-                                                    ],
-                                                    "enum": [
-                                                        0
+                                                    ]
+                                                },
+                                                "weights": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                        "format": {
+                                                            "type": "string"
+                                                        },
+                                                        "files": {
+                                                            "type": "string"
+                                                        }
+                                                    },
+                                                    "required": [
+                                                        "format",
+                                                        "files"
                                                     ]
                                                 },
                                                 "parameters": {
@@ -1275,6 +1287,7 @@
                                                 "likes",
                                                 "tags",
                                                 "size_bytes",
+                                                "weights",
                                                 "parameters",
                                                 "files",
                                                 "card_summary",
@@ -5952,7 +5965,26 @@
                 ],
                 "parameters": [
                     {
+                        "name": "order",
+                        "in": "query",
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "asc",
+                                "desc"
+                            ]
+                        }
+                    },
+                    {
                         "name": "after",
+                        "in": "query",
+                        "schema": {
+                            "type": "string",
+                            "maxLength": 26
+                        }
+                    },
+                    {
+                        "name": "before",
                         "in": "query",
                         "schema": {
                             "type": "string",
@@ -6011,12 +6043,19 @@
                                                         "null"
                                                     ]
                                                 },
+                                                "next_before": {
+                                                    "type": [
+                                                        "string",
+                                                        "null"
+                                                    ]
+                                                },
                                                 "webhook_configured": {
                                                     "type": "boolean"
                                                 }
                                             },
                                             "required": [
                                                 "next_after",
+                                                "next_before",
                                                 "webhook_configured"
                                             ]
                                         }
@@ -20013,6 +20052,150 @@
                                         "settings",
                                         "region"
                                     ]
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "$ref": "#/components/responses/ModelNotFoundException"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/AuthenticationException"
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/ValidationException"
+                    }
+                },
+                "security": [
+                    {
+                        "http": []
+                    }
+                ]
+            }
+        },
+        "/knative-regions/{knativeRegion}/capacity": {
+            "get": {
+                "operationId": "regionCapacity.show",
+                "summary": "Both budgets per resource, the factors and how full they are",
+                "tags": [
+                    "Regions",
+                    "RegionCapacity"
+                ],
+                "parameters": [
+                    {
+                        "name": "knativeRegion",
+                        "in": "path",
+                        "required": true,
+                        "description": "The knative region ID",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "region_id": {
+                                                    "type": "string"
+                                                },
+                                                "faas_cpu_overcommit": {},
+                                                "faas_memory_overcommit": {},
+                                                "cpu_m": {
+                                                    "type": "string"
+                                                },
+                                                "memory_mb": {
+                                                    "type": "string"
+                                                }
+                                            },
+                                            "required": [
+                                                "region_id",
+                                                "faas_cpu_overcommit",
+                                                "faas_memory_overcommit",
+                                                "cpu_m",
+                                                "memory_mb"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "data"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "message": {
+                                            "type": "string"
+                                        }
+                                    },
+                                    "required": [
+                                        "message"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "$ref": "#/components/responses/ModelNotFoundException"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/AuthenticationException"
+                    }
+                },
+                "security": [
+                    {
+                        "http": []
+                    }
+                ]
+            },
+            "put": {
+                "operationId": "regionCapacity.update",
+                "summary": "Set the FaaS overcommit factors (1 = no overcommit, every reservation against the capacity)",
+                "tags": [
+                    "Regions",
+                    "RegionCapacity"
+                ],
+                "parameters": [
+                    {
+                        "name": "knativeRegion",
+                        "in": "path",
+                        "required": true,
+                        "description": "The knative region ID",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/UpdateRegionCapacityRequest"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "string"
                                 }
                             }
                         }
@@ -34630,7 +34813,7 @@
         "/sandboxes/{sandbox}/exec/ws": {
             "post": {
                 "operationId": "sandboxes.exec.ws",
-                "summary": "One-time token for the exec WebSocket (/ws/sandbox-exec?token=\u2026): output frames as they\ncome, stdin from the client, kill",
+                "summary": "One-time token for the exec WebSocket (/ws/sandbox-exec?token=\u2026): output frames as they\ncome, stdin from the client, kill. With `tty` the command runs on a terminal of `cols` \u00d7\n`rows` (default 80 \u00d7 24) that resize frames change",
                 "tags": [
                     "Sandboxes\n\nCommands in a sandbox: exec (JSON result",
                     " Server-Sent Events",
@@ -34649,6 +34832,92 @@
                         }
                     }
                 ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "cmd": {
+                                        "type": "string"
+                                    },
+                                    "code": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ]
+                                    },
+                                    "language": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "maxLength": 32
+                                    },
+                                    "stdin": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "maxLength": 10485760
+                                    },
+                                    "stdin_base64": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ]
+                                    },
+                                    "timeout": {
+                                        "type": [
+                                            "integer",
+                                            "null"
+                                        ],
+                                        "minimum": 1
+                                    },
+                                    "env": {
+                                        "type": [
+                                            "array",
+                                            "null"
+                                        ],
+                                        "items": {
+                                            "type": "string"
+                                        },
+                                        "maxItems": 100
+                                    },
+                                    "cwd": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "maxLength": 4096
+                                    },
+                                    "tty": {
+                                        "type": [
+                                            "boolean",
+                                            "null"
+                                        ]
+                                    },
+                                    "cols": {
+                                        "type": [
+                                            "integer",
+                                            "null"
+                                        ],
+                                        "minimum": 1,
+                                        "maximum": 1000
+                                    },
+                                    "rows": {
+                                        "type": [
+                                            "integer",
+                                            "null"
+                                        ],
+                                        "minimum": 1,
+                                        "maximum": 1000
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
                 "responses": {
                     "200": {
                         "description": "",
@@ -34671,13 +34940,17 @@
                                                 },
                                                 "expires_in": {
                                                     "type": "integer"
+                                                },
+                                                "tty": {
+                                                    "type": "boolean"
                                                 }
                                             },
                                             "required": [
                                                 "token",
                                                 "url",
                                                 "exec_id",
-                                                "expires_in"
+                                                "expires_in",
+                                                "tty"
                                             ]
                                         }
                                     },
@@ -34687,6 +34960,9 @@
                                 }
                             }
                         }
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/ValidationException"
                     },
                     "401": {
                         "$ref": "#/components/responses/AuthenticationException"
@@ -37845,6 +38121,9 @@
                                 }
                             }
                         }
+                    },
+                    "404": {
+                        "$ref": "#/components/responses/ModelNotFoundException"
                     },
                     "401": {
                         "$ref": "#/components/responses/AuthenticationException"
@@ -44163,6 +44442,13 @@
                             "null"
                         ]
                     },
+                    "status_reason": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "description": "Kubernetes' reason the pods do not start: CrashLoopBackOff, ImagePullBackOff, ErrImagePull, OOMKilled, Unschedulable \u2026"
+                    },
                     "url": {
                         "type": [
                             "string",
@@ -44504,6 +44790,7 @@
                     "served_name",
                     "status",
                     "status_message",
+                    "status_reason",
                     "url",
                     "openai_base",
                     "playground",
@@ -46865,6 +47152,19 @@
                     }
                 },
                 "title": "UpdateProjectRequest"
+            },
+            "UpdateRegionCapacityRequest": {
+                "type": "object",
+                "description": "PUT /knative-regions/{id}/capacity: the region's FaaS overcommit factors (regions.manage).",
+                "properties": {
+                    "faas_cpu_overcommit": {
+                        "type": "number"
+                    },
+                    "faas_memory_overcommit": {
+                        "type": "number"
+                    }
+                },
+                "title": "UpdateRegionCapacityRequest"
             },
             "UpdateRegionSettingsRequest": {
                 "type": "object",

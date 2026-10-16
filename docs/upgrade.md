@@ -53,9 +53,97 @@ edit projects, deploy or change regions in that time: the previous version canno
 migration has just encrypted, shows env vars as empty and would save that. Its region status
 checks fail in that window and the new version's next check reports the region again.
 
+## 0.5.1 → 0.5.2
+
+### Tracing backend
+
+`region:reconcile` (step `tracing`) brings the tracing backend of every region to this release
+where tracing is enabled, and installs nothing anywhere else:
+
+| Region | The step |
+| --- | --- |
+| Tracing mode `managed` (its own setting) | installs or updates the OpenTelemetry Collector and Grafana Tempo |
+| Tracing mode `reuse` or `external` | installs or updates the collector |
+| Tracing mode `off` | does nothing |
+| No tracing setting of its own — Knative Serving installed by 0.4.x, or with `installWithServing: false` | does what an install of Knative Serving does now: the platform's `observability.tracing.defaultMode` (default `managed`) while `observability.tracing.installWithServing` is `true` (the default); nothing otherwise |
+
+It installs a missing backend and updates one whose chart version or image differs from this
+release's: chart `open-telemetry/opentelemetry-collector` 0.176.0 with
+`ghcr.io/brf-tech/reqs/opentelemetry-collector-contrib:0.162.0`, chart `grafana-community/tempo`
+3.2.0 with `ghcr.io/brf-tech/reqs/tempo:3.1.0` — RunR's mirrors of the Docker Hub images 0.5.0
+and 0.5.1 pulled directly (`otel/opentelemetry-collector-contrib`, `grafana/tempo`), so regions
+no longer depend on Docker Hub's anonymous pull limit for them. It runs what
+`php artisan cluster:install-tracing` runs: a Helm upgrade (or install) of the `otel-collector`
+and `tempo` releases with their values rendered anew, the span-metrics PodMonitor and Knative's
+tracing configuration. The collector and Tempo pods roll once — spans sent while the collector
+restarts are dropped, Tempo keeps its traces on its volume — and the region's tracing status is
+`installing` until they run. Regions on one cluster share the backend: the first region of the
+cluster with tracing enabled decides it.
+
+Tempo chart 3.2.0 applies the retention (`observability.tracing.tempoRetentionHours`, default
+72 hours, or the region's own) where Tempo deletes old traces; with chart 3.1.0 the setting did
+not reach that part of Tempo, which kept traces for its default of 14 days (the chart's upgrade
+notes). After the update traces older than the retention are removed: raise it before the
+upgrade to keep them longer.
+
+Before the upgrade:
+
+- `php artisan region:reconcile --dry-run` lists what the step would install or update.
+- To keep tracing off on regions without their own setting, set
+  `observability.tracing.installWithServing=false` (or `defaultMode=off`) in the upgrade; for one
+  region, set its tracing mode to `off` in the console.
+- Regions that pull from a registry of your own: mirror the two images there and set
+  `observability.tracing.collectorImage` / `tempoImage` (the same versions).
+
+`observability.tracing.collectorChartVersion` and `tempoChartVersion` are empty by default (the
+versions above). The values the charts of 0.5.0 and 0.5.1 set, `0.175.1` and `3.1.0`, which
+`--reuse-values` keeps, count as empty; set another version to pin one.
+
+### Image namespace ghcr.io/brf-tech/runr
+
+RunR's images are published under `ghcr.io/brf-tech/runr`, so the organization's other packages
+never share a name with RunR's. The tags and digests are the ones 0.5.1 published directly under
+`ghcr.io/brf-tech` (and releases up to 0.5.0 under `ghcr.io/runrsh`); the `runr-` prefix of the
+component images is gone:
+
+| Up to 0.5.0 | 0.5.1 | 0.5.2 |
+| --- | --- | --- |
+| `ghcr.io/runrsh/reqs/<image>` | `ghcr.io/brf-tech/reqs/<image>` | `ghcr.io/brf-tech/runr/reqs/<image>` |
+| `ghcr.io/runrsh/exec-<runtime>` | `ghcr.io/brf-tech/exec-<runtime>` | `ghcr.io/brf-tech/runr/exec-<runtime>` |
+| `ghcr.io/runrsh/runr-wrapper` | `ghcr.io/brf-tech/runr-wrapper` | `ghcr.io/brf-tech/runr/wrapper` |
+| `ghcr.io/runrsh/runr-agent` | `ghcr.io/brf-tech/runr-agent` | `ghcr.io/brf-tech/runr/agent` |
+| `ghcr.io/runrsh/runr-queue-consumer` | `ghcr.io/brf-tech/runr-queue-consumer` | `ghcr.io/brf-tech/runr/queue-consumer` |
+| `ghcr.io/runrsh/runr-supply-chain` | `ghcr.io/brf-tech/runr-supply-chain` | `ghcr.io/brf-tech/runr/supply-chain` |
+| `ghcr.io/runrsh/hf-serve`, `image-upload`, `containerd-shim-spin` | `ghcr.io/brf-tech/hf-serve`, `image-upload`, `containerd-shim-spin` | `ghcr.io/brf-tech/runr/hf-serve`, `image-upload`, `containerd-shim-spin` |
+| `ghcr.io/runrsh/runr/api`, `runr/ui` | `ghcr.io/brf-tech/runr/api`, `runr/ui` | the same as 0.5.1 |
+
+The upgrade moves every reference an existing installation holds, from 0.5.1 and from earlier
+releases alike, the way the [0.5.1 move](#image-namespace-ghcriobrf-tech) did: Helm values
+(template helper `runr.image`), the database (migration `move_images_to_runr_namespace` and tenant
+migration `0055`, then `php artisan images:move-registry` in the bootstrap job), the region
+workloads, the region Traefik and the WebAssembly installer (`region:reconcile`: `image-registry`,
+`traefik-image`, `wasm-sandbox`). Only RunR's own packages move: another package directly under
+`ghcr.io/brf-tech`, a mirror of your own and the region registry's `<registry>/ghcr.io/…` path
+stay as they are. The system images policy passes `ghcr.io/brf-tech/runr/**` (`region:reconcile`,
+`admission-policy`, before the workloads move) and keeps passing `ghcr.io/brf-tech/**` and
+`ghcr.io/runrsh/**` for the workloads that keep their pods: the node installers of Kata (with its
+devmapper) and gVisor and the region's queue Redis move with the next change of their
+installation, as in 0.5.1; their images stay pullable under the earlier names.
+
+`php artisan images:move-registry --dry-run` and `php artisan region:reconcile --dry-run` show
+what moves before the upgrade's bootstrap job does it.
+
+A registry of your own that holds copies of RunR's images under their paths (an air-gapped
+registry, the CLI's `RUNR_RUNTIME_REGISTRY`) needs them under the new paths: copy them from
+`ghcr.io/brf-tech/runr`. Image settings that point into such a registry stay as they are.
+
 ## 0.5.0 → 0.5.1
 
 ### Image namespace ghcr.io/brf-tech
+
+0.5.2 moves these references on to `ghcr.io/brf-tech/runr`
+([Image namespace ghcr.io/brf-tech/runr](#image-namespace-ghcriobrf-techrunr)); an upgrade from
+0.5.0 straight to 0.5.2 moves them there in one step.
 
 RunR's repository is [github.com/brf-tech/runr](https://github.com/brf-tech/runr) and its images
 are published under `ghcr.io/brf-tech` — the same image names, tags and digests that releases up
@@ -204,10 +292,12 @@ of your own, set `knative.traefikImage` (the same Traefik version) before the up
 
 ### Kata Containers
 
-`region:reconcile` writes the new Kata drop-ins to the nodes of every region with Kata
-(no kata-deploy run, no restart). Dragonball guests get 1 vCPU + the pod's CPU limits from 0.5.0
-on ([kata-hypervisors.md](kata-hypervisors.md#guest-size)); a Dragonball function gets them at its
-next deploy.
+Of RunR's Kata drop-ins only Dragonball's changed: on regions whose Kata install includes
+Dragonball, `region:reconcile` writes the new Dragonball drop-in to the nodes (no kata-deploy run,
+no restart); regions with the other hypervisors only keep theirs (from 0.4.1, whose guests still
+boot systemd, every drop-in is written once). Dragonball guests get 1 vCPU + the pod's CPU limits
+from 0.5.0 on ([kata-hypervisors.md](kata-hypervisors.md#guest-size)); a Dragonball function gets
+them at its next deploy.
 
 ## Testing the upgrade path
 

@@ -12,7 +12,7 @@ use App\Services\SupplyChain\AdmissionPolicyService;
 /**
  * Admission policy (supply chain) of a cluster whose region has the sigstore policy-controller
  * installed: its ClusterImagePolicies get this release's image globs — e.g. RunR's own images
- * under ghcr.io/brf-tech (0.5.1), which the system policy passes. Runs before image-registry,
+ * under ghcr.io/brf-tech/runr (0.5.2), which the system policy passes. Runs before image-registry,
  * which rolls workloads of the policy's namespace onto those images.
  *
  * The policies are cluster-wide objects: the first region of the cluster with the admission

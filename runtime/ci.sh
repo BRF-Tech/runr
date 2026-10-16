@@ -13,6 +13,7 @@ source "${SCRIPT_DIR}/lib/test-runtimes.sh"
 source "${SCRIPT_DIR}/lib/test-observability.sh"
 source "${SCRIPT_DIR}/lib/test-wasm.sh"
 source "${SCRIPT_DIR}/lib/build-wasm.sh"
+source "${SCRIPT_DIR}/lib/build-ml.sh"
 source "${SCRIPT_DIR}/lib/test-sandbox-api.sh"
 source "${SCRIPT_DIR}/lib/test-supply-chain.sh"
 source "${SCRIPT_DIR}/lib/test-ai.sh"
@@ -40,10 +41,13 @@ Commands:
   wrapper [--push]                    Build + push the universal runtime wrapper image (runr-wrapper)
   wasm [--push] [lang...]             WebAssembly runtime build images (exec-wasm-rust|go|js|python|exec) build + push
   wasm-shim [--push]                  The Spin shim RunR installs on region nodes (containerd-shim-spin, runtime/wasm-shim-spin)
+  ml-runtimes [--push] [--list] [--no-smoke] [pytorch|tensorflow] [cpu|gpu]
+                                      PyTorch / TensorFlow runtime images, CPU and -gpu (linux/amd64);
+                                      local builds are smoke-tested, --list prints the image references
   supply-chain [--push]               Supply-chain tools image (runr-supply-chain: syft, trivy, cosign, oras)
   image-upload [--push]               Image upload receiver (runr-image-upload: chunks → region registry)
   build-agent [--push]                Build + push the RunR monitoring agent image
-  mirror-reqs [--dry-run]             Multi-arch mirror of the upstream reqs images
+  mirror-reqs [--dry-run] [image...]  Multi-arch mirror of the upstream reqs images (all, or the ones named)
   mirror-bases [--dry-run]            Multi-arch mirror of the runtime base images
   eol [--prune] [--yes]               EOL check of the GHCR exec-* images + optional cleanup
   test-image [--push]                 Build + push the CaaS test image (nginx-test)
@@ -83,7 +87,9 @@ Commands:
   help                                Show this message
 
 Environment:
-  PLATFORMS  Build platforms (default: linux/amd64,linux/arm64)
+  PLATFORMS       Build platforms (default: linux/amd64,linux/arm64)
+  REQS_UPSTREAMS  Mirror sources in order (default: docker.io mirror.gcr.io public.ecr.aws/docker);
+                  a Docker Hub mirror is copied from only by Docker Hub's digest
 
 Examples:
   ci.sh build                    Build only (local, single platform)
@@ -129,6 +135,7 @@ case "$command" in
   wrapper)         cmd_build_wrapper "$@" ;;
   wasm)            cmd_build_wasm "$@" ;;
   wasm-shim)       cmd_build_wasm_shim "$@" ;;
+  ml-runtimes)     cmd_build_ml_runtimes "$@" ;;
   supply-chain)    cmd_build_supply_chain "$@" ;;
   image-upload)    cmd_build_image_upload "$@" ;;
   build-agent)     cmd_build_agent "$@" ;;

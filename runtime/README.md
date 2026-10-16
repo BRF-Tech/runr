@@ -41,6 +41,11 @@ bash runtime/ci.sh build --push
 Discovers the versions of the upstream Docker Hub images (python, node, golang, php), checks them against the
 endoflife.date API, skips EOL versions and builds the rest as `$REGISTRY/exec-<runtime>:<version>`.
 
+Every image build of `ci.sh` — local `docker build` and `--push` through buildx, the release tars of
+`build-deploy` — runs with `--pull`: base images come from their registry, never from an older copy
+the build host's Docker holds. Each build command exits 0 once its images are built (and pushed).
+`runtime/test/build_push_test.sh` checks both without Docker.
+
 #### EOL — EOL report and cleanup
 
 ```bash
@@ -88,10 +93,11 @@ installs Knative through the API. See [docs/development.md](../docs/development.
 | `build-agent [--push]` | Build the runr-agent image |
 | `wrapper [--push]` | Build the universal wrapper image (`runr-wrapper`) |
 | `wasm [--push]` | Build the toolchain images of the WebAssembly runtimes |
+| `ml-runtimes [--push] [--list] [--no-smoke] [pytorch\|tensorflow] [cpu\|gpu]` | Build the PyTorch and TensorFlow runtime images, CPU and `-gpu`, for linux/amd64 (`exec-<runtime>:<X.Y>[-gpu]`, X.Y from the framework pin); local builds are smoke-tested, `--list` prints the image references ([docs/runtimes.md](../docs/runtimes.md#ml-runtimes)) |
 | `supply-chain [--push]` | Build the supply-chain tools image |
 | `image-upload [--push]` | Build the image-upload receiver |
 | `test-runtimes`, `test-wasm`, `test-images`, `test-observability`, `test-sandbox-api`, `test-supply-chain`, `test-ai`, `test-bindings`, `test-git-deploy`, `test-mcp` | End-to-end suite of one feature on Kind + Knative (same flags as `test`) |
-| `mirror-reqs` / `mirror-bases [--dry-run]` | Mirror upstream and runtime base images to `$REGISTRY/reqs/` (multi-arch); every `reqs/` image the repository references is in one of the two lists (`ci/check-reqs-mirror.sh`) |
+| `mirror-reqs [--dry-run] [image...]` / `mirror-bases [--dry-run]` | Mirror upstream and runtime base images to `$REGISTRY/reqs/` (multi-arch); every `reqs/` image the repository references is in one of the two lists (`ci/check-reqs-mirror.sh`). When Docker Hub refuses a copy (anonymous pull limit), the image comes from the next upstream of `REQS_UPSTREAMS` that has Docker Hub's digest of it, copied by that digest (`runtime/test/mirror_test.sh`) |
 | `test-tenancy` / `test-authprovider` / `test-ticket` | Module E2E tests on Docker Compose (no Kubernetes) |
 | `build-deploy`, `deploy`, `upgrade`, `registry-push`, `deploy-status` | Build the API/UI images and install or upgrade RunR with Helm |
 
@@ -105,8 +111,10 @@ bash runtime/ci.sh help
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `REGISTRY` | Image registry namespace | `ghcr.io/brf-tech` |
+| `REGISTRY` | Image registry namespace | `ghcr.io/brf-tech/runr` |
 | `PLATFORMS` | Build platforms | `linux/amd64,linux/arm64` |
+| `BUILDER_NAME` | The docker-container buildx builder of `--push` builds: created when missing, named on each build (never made the host's current builder), removed after the push | `runr-multiarch` |
+| `REQS_UPSTREAMS` | Where `mirror-reqs` / `mirror-bases` copy from, in order: Docker Hub, then pull-through mirrors of it (`<mirror>/library/alpine`, …), a mirror only by Docker Hub's digest | `docker.io mirror.gcr.io public.ecr.aws/docker` |
 | `DOCKER_HUB_USER` | Docker Hub user (for `eol --prune`) | — |
 | `DOCKER_HUB_TOKEN` | Docker Hub token/password (for `eol --prune`) | — |
 | `K8S_VERSION` | Kind Kubernetes version (for `test`) | `1.32.0` |

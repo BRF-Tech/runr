@@ -9,9 +9,11 @@ use Illuminate\Console\Command;
 use Modules\Tenancy\Models\Tenant;
 
 /**
- * RunR's image namespace (docs/upgrade.md): stored image references under ghcr.io/runrsh/ move to
- * ghcr.io/brf-tech/ — the same images. The upgrade's migrations do it once; the Helm bootstrap job
- * runs this command after the rollout as well, for rows an old pod wrote meanwhile.
+ * RunR's image namespace (docs/upgrade.md): stored image references of RunR's earlier namespaces
+ * (ghcr.io/runrsh/…, RunR's packages directly under ghcr.io/brf-tech/…) move to
+ * ghcr.io/brf-tech/runr/ — the same images (RegistryMove). The upgrade's migrations do it once;
+ * the Helm bootstrap job runs this command after the rollout as well, for rows an old pod wrote
+ * meanwhile.
  *
  *   php artisan images:move-registry            central schema and every tenant schema
  *   php artisan images:move-registry --dry-run  count what would move
@@ -24,7 +26,7 @@ class MoveImageRegistryCommand extends Command
         {--dry-run : Count the references that would move, write nothing}
         {--tenant= : Only this tenant (slug); the central schema is skipped}';
 
-    protected $description = 'Move stored image references from RunR\'s namespace up to 0.5.0 (ghcr.io/runrsh) to ghcr.io/brf-tech';
+    protected $description = 'Move stored image references from RunR\'s earlier namespaces (ghcr.io/runrsh, ghcr.io/brf-tech) to ghcr.io/brf-tech/runr';
 
     public function handle(): int
     {

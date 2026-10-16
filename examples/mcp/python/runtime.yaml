@@ -13,7 +13,7 @@ extensions: [py]
 category: general
 versions:
   - version: "3.13"
-    image: ghcr.io/brf-tech/reqs/python:3.13-slim
+    image: ghcr.io/brf-tech/runr/reqs/python:3.13-slim
     default: true
 handler:
   file: server

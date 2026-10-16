@@ -30,7 +30,7 @@ class BuildJobAdmissionTest extends TestCase
         $this->setUpBuildCluster();
         foreach (['wasm-rust', 'wasm-go', 'wasm-js', 'wasm-python'] as $i => $runtime) {
             ExecutorImage::create([
-                'runtime' => $runtime, 'version' => '4.1', 'docker_image' => "ghcr.io/brf-tech/exec-{$runtime}:4.1",
+                'runtime' => $runtime, 'version' => '4.1', 'docker_image' => "ghcr.io/brf-tech/runr/exec-{$runtime}:4.1",
                 'is_default' => true, 'is_active' => true, 'sort_order' => 100 + $i,
             ]);
         }
@@ -75,8 +75,8 @@ class BuildJobAdmissionTest extends TestCase
             }
         }
 
-        // the toolchain of a Wasm build is the runtime's own image (ghcr.io/brf-tech/exec-wasm-*)
-        $this->assertContains('ghcr.io/brf-tech/exec-wasm-python:4.1', $images);
+        // the toolchain of a Wasm build is the runtime's own image (ghcr.io/brf-tech/runr/exec-wasm-*)
+        $this->assertContains('ghcr.io/brf-tech/runr/exec-wasm-python:4.1', $images);
     }
 
     public function test_the_toolchain_of_a_platform_wasm_runtime_passes_the_system_policy(): void

@@ -11,7 +11,8 @@ namespace App\Console\Commands\Concerns;
  *    Cloud Hypervisor, QEMU and Dragonball installed, and per hypervisor the guest's vCPUs (nproc)
  *    for a 1 and a 2 CPU sandbox — 1 + the CPU limit
  *  - lifecycle: create (pod spec checked in the cluster: RuntimeClass, security context, no
- *    service-account token), exec (stdout, stderr, exit code), SSE streaming, timeout, code run
+ *    service-account token), exec (stdout, stderr, exit code), SSE streaming, the exec WebSocket
+ *    with a terminal (size, resize, typed input, exit code), timeout, code run
  *    with an image output, files (write / read / list / tar round trip / delete), background
  *    processes, pause / resume, network none (egress blocked where the CNI enforces policies),
  *    TTL expiry through the reaper, warm pool claim, quota refusal, delete
@@ -68,6 +69,7 @@ trait E2eTestSandboxApiTrait
         $events = $this->sseEvents($r->body());
         $lines = implode('', array_map(fn ($e) => $e['data']['data'] ?? '', array_filter($events, fn ($e) => $e['event'] === 'stdout')));
         $tests[] = $this->sbxEntry('sbx-exec-sse', ($lines === "line 1\nline 2\nline 3\n" && end($events)['event'] === 'exit') ?: $r->body());
+        $tests[] = $this->sbxEntry('sbx-exec-tty', $this->checkSandboxTtyExec($id));
 
         $r = $exec(['cmd' => 'sleep 30', 'timeout' => 2]);
         $tests[] = $this->sbxEntry('sbx-exec-timeout', ($r->json('data.timed_out') === true) ?: $r->body());
@@ -196,7 +198,7 @@ trait E2eTestSandboxApiTrait
         foreach (self::SANDBOX_KATA_HYPERVISORS as $hv) {
             foreach ([1000, 2000] as $cpuM) {
                 $name = "sbx-kata-{$hv}-vcpus-{$cpuM}m";
-                $r = $create(['runtime' => 'python', 'sandbox_class' => "kata-{$hv}", 'cpu_m' => $cpuM, 'memory_mb' => 512]);
+                $r = $create(self::kataSizeRequest($hv, $cpuM));
                 if ($r->status() !== 201) {
                     $entries[] = $this->sbxEntry($name, 'create: HTTP '.$r->status().' '.mb_substr($r->body(), 0, 300));
 
@@ -219,6 +221,15 @@ trait E2eTestSandboxApiTrait
         }
 
         return $entries;
+    }
+
+    /**
+     * Create request of a guest-size check: the size in the API's fields (`cpu` as millicores,
+     * `memory` in MiB, docs/sandbox-api.md), not the response's cpu_m / memory_mb.
+     */
+    private static function kataSizeRequest(string $hypervisor, int $cpuM): array
+    {
+        return ['runtime' => 'python', 'sandbox_class' => "kata-{$hypervisor}", 'cpu' => "{$cpuM}m", 'memory' => 512];
     }
 
     /** The pod in the cluster: class, non-root, no token, no capabilities, deadline. */
@@ -313,12 +324,24 @@ trait E2eTestSandboxApiTrait
         }
 
         $r = $create(['runtime' => 'python', 'sandbox_class' => 'gvisor']);
+        $claimedAt = microtime(true);
         $ok = $r->status() === 201 && $r->json('data.from_pool') === true;
         if ($ok) {
             $this->sandboxStarts['warm pool (gvisor)'] = (int) $r->json('data.start_ms');
             $exec = $this->api()->post('/api/sandboxes/'.$r->json('data.id').'/exec', ['cmd' => 'echo $RUNR_SANDBOX_ID']);
             $ok = trim((string) $exec->json('data.stdout')) === strtolower($r->json('data.id'));
             $this->api()->delete('/api/sandboxes/'.$r->json('data.id'));
+
+            // The claim's refill (queue) starts a replacement, warm as soon as its pod runs:
+            // claim → warm again is printed with the start times (not asserted)
+            do {
+                $pools = collect($this->api()->get('/api/sandbox-pools')->json('data'));
+                if ((int) ($pools->firstWhere('id', $poolId)['warm'] ?? 0) > 0) {
+                    $this->sandboxStarts['pool warm again'] = (int) round((microtime(true) - $claimedAt) * 1000);
+                    break;
+                }
+                usleep(250_000);
+            } while (microtime(true) - $claimedAt < 90);
         }
 
         $this->api()->delete("/api/sandbox-pools/{$poolId}");
@@ -327,6 +350,67 @@ trait E2eTestSandboxApiTrait
     }
 
     /** @return list<array{event: string, data: mixed}> */
+    /**
+     * The exec WebSocket with a terminal: a TTY of the requested size, a resize frame that reaches
+     * the command, typed input (Enter is \r on a terminal) and the command's exit code.
+     */
+    private function checkSandboxTtyExec(string $id): bool|string
+    {
+        $script = '[ -t 0 ] && [ -t 1 ] && echo tty-yes; stty size; read a; stty size; read b; echo "got:$b"; exit 7';
+        $r = $this->api()->timeout(60)->post("/api/sandboxes/{$id}/exec/ws", [
+            'cmd' => ['/bin/sh', '-c', $script], 'tty' => true, 'cols' => 100, 'rows' => 30, 'timeout' => 60,
+        ]);
+        if (! $r->successful() || $r->json('data.tty') !== true) {
+            return 'POST exec/ws: '.$r->status().' '.mb_substr($r->body(), 0, 300);
+        }
+        $ws = $this->wsUpgrade((string) $r->json('data.token'), '/sandbox-exec');
+        if (! $ws) {
+            return 'the exec WebSocket did not open';
+        }
+
+        $out = '';
+        $start = $exit = null;
+        $step = 0;
+        try {
+            $deadline = time() + 60;
+            while ($exit === null && time() < $deadline) {
+                $frame = $this->wsReadFrame($ws, 10);
+                if ($frame === null) {
+                    if (feof($ws)) {
+                        break;
+                    }
+
+                    continue;
+                }
+                $msg = (array) json_decode($frame, true);
+                match ($msg['type'] ?? null) {
+                    'start' => $start = $msg,
+                    'stdout', 'stderr' => $out .= base64_decode((string) ($msg['data'] ?? '')),
+                    'exit' => $exit = $msg,
+                    'error' => $exit = $msg,
+                    default => null,
+                };
+                if ($step === 0 && str_contains($out, '30 100')) {
+                    // A new window size, then Enter: the command prints the size it sees now
+                    $step = 1;
+                    $this->wsSendText($ws, (string) json_encode(['type' => 'resize', 'cols' => 120, 'rows' => 40]));
+                    usleep(500_000);
+                    $this->wsSendText($ws, (string) json_encode(['type' => 'stdin', 'data' => base64_encode("next\r")]));
+                } elseif ($step === 1 && str_contains($out, '40 120')) {
+                    $step = 2;
+                    $this->wsSendText($ws, (string) json_encode(['type' => 'stdin', 'data' => base64_encode("hello\r")]));
+                }
+            }
+        } finally {
+            @fclose($ws);
+        }
+
+        $ok = ($start['tty'] ?? null) === true && str_contains($out, 'tty-yes') && $step === 2
+            && str_contains($out, 'got:hello') && ($exit['exit_code'] ?? null) === 7;
+
+        return $ok ?: 'start '.json_encode($start).', exit '.json_encode($exit).', output '.json_encode(mb_substr($out, 0, 400));
+    }
+
     private function sseEvents(string $body): array
     {
         $events = [];

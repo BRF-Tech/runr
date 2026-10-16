@@ -14,7 +14,7 @@ use Modules\Tenancy\Services\Billing\BillingSettings;
 /**
  * Billing API — billing events (docs/billing.md), the same payloads the billing webhook receives:
  *
- *  GET  /api/billing/events                     ?after=<event id> &type= &tenant= &limit= (oldest first)
+ *  GET  /api/billing/events                     ?order=asc|desc &after= &before=<event id> &type= &tenant= &limit=
  *  POST /api/billing/events/{event}/redeliver   queue a delivery to the webhook again
  *  POST /api/billing/events/test                record and deliver a billing.test event
  */
@@ -30,17 +30,25 @@ class BillingEventController extends Controller
     public function index(Request $request): JsonResponse
     {
         $request->validate([
+            'order' => ['sometimes', Rule::in(['asc', 'desc'])],
             'after' => ['sometimes', 'string', 'max:26'],
+            'before' => ['sometimes', 'string', 'max:26'],
             'type' => ['sometimes', Rule::in(BillingEvents::TYPES)],
             'tenant' => ['sometimes', 'string', 'max:64'],
             'limit' => ['sometimes', 'integer', 'min:1', 'max:500'],
         ]);
 
+        // Event ids are ULIDs: their order is the order the events were recorded in. A page
+        // continues with ?after=<next_after> oldest first, or ?before=<next_before> newest first.
+        $desc = $request->query('order') === 'desc';
         $limit = (int) $request->query('limit', 100);
-        $query = BillingEvent::query()->orderBy('id');
+        $query = BillingEvent::query()->orderBy('id', $desc ? 'desc' : 'asc');
 
         if ($after = $request->query('after')) {
             $query->where('id', '>', (string) $after);
+        }
+        if ($before = $request->query('before')) {
+            $query->where('id', '<', (string) $before);
         }
         if ($type = $request->query('type')) {
             $query->where('type', $type);
@@ -56,7 +64,8 @@ class BillingEventController extends Controller
         return response()->json([
             'data' => $events->map(fn (BillingEvent $e) => $e->toApiArray())->values(),
             'meta' => [
-                'next_after' => $more ? $events->last()?->id : null,
+                'next_after' => $more && ! $desc ? $events->last()?->id : null,
+                'next_before' => $more && $desc ? $events->last()?->id : null,
                 'webhook_configured' => $this->settings->webhookUrl() !== '',
             ],
         ]);

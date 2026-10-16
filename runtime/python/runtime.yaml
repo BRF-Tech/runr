@@ -9,8 +9,8 @@ language: python
 extensions: [py]
 category: general
 versionDiscovery:
-  repository: runrsh/exec-python
-  image: "ghcr.io/brf-tech/exec-python:{version}"
+  repository: ghcr.io/brf-tech/runr/exec-python
+  image: "ghcr.io/brf-tech/runr/exec-python:{version}"
   eol: python
 handler:
   file: main

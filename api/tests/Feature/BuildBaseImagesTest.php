@@ -28,13 +28,13 @@ class BuildBaseImagesTest extends TestCase
     public function test_builder_and_runtime_images_come_through_the_zot_cache(): void
     {
         $this->submit($this->buildVersion('python', null));
-        $this->assertSame([self::ZOT.'/ghcr.io/brf-tech/exec-python:3.14', self::ZOT.'/ghcr.io/brf-tech/exec-python:3.14'], $this->fromLines());
+        $this->assertSame([self::ZOT.'/ghcr.io/brf-tech/runr/exec-python:3.14', self::ZOT.'/ghcr.io/brf-tech/runr/exec-python:3.14'], $this->fromLines());
 
         $this->submit($this->buildVersion('nodejs', '22.22'));
-        $this->assertSame([self::ZOT.'/ghcr.io/brf-tech/exec-nodejs:22.22', self::ZOT.'/ghcr.io/brf-tech/exec-nodejs:22.22'], $this->fromLines());
+        $this->assertSame([self::ZOT.'/ghcr.io/brf-tech/runr/exec-nodejs:22.22', self::ZOT.'/ghcr.io/brf-tech/runr/exec-nodejs:22.22'], $this->fromLines());
 
         $this->submit($this->buildVersion('php', null));
-        $this->assertSame([self::ZOT.'/ghcr.io/brf-tech/reqs/composer:latest', self::ZOT.'/ghcr.io/brf-tech/exec-php:8.4'], $this->fromLines());
+        $this->assertSame([self::ZOT.'/ghcr.io/brf-tech/runr/reqs/composer:latest', self::ZOT.'/ghcr.io/brf-tech/runr/exec-php:8.4'], $this->fromLines());
 
         // Kaniko pulls them over plain HTTP from the in-cluster registry
         $args = $this->created('jobs')['spec']['template']['spec']['containers'][0]['args'];
@@ -46,7 +46,7 @@ class BuildBaseImagesTest extends TestCase
     {
         $this->submit($this->buildVersion('go', null, 'internal', ['main.go' => 'package main']));
 
-        $this->assertSame([self::ZOT.'/ghcr.io/brf-tech/exec-go:1.26', self::ZOT.'/ghcr.io/brf-tech/reqs/alpine:3.20'], $this->fromLines());
+        $this->assertSame([self::ZOT.'/ghcr.io/brf-tech/runr/exec-go:1.26', self::ZOT.'/ghcr.io/brf-tech/runr/reqs/alpine:3.20'], $this->fromLines());
     }
 
     public function test_zot_without_the_ghcr_upstream_keeps_ghcr_references(): void
@@ -57,18 +57,18 @@ class BuildBaseImagesTest extends TestCase
         $this->zotConfig = json_encode($old);
 
         $this->submit($this->buildVersion('nodejs', null));
-        $this->assertSame(['ghcr.io/brf-tech/exec-nodejs:24.14', 'ghcr.io/brf-tech/exec-nodejs:24.14'], $this->fromLines());
+        $this->assertSame(['ghcr.io/brf-tech/runr/exec-nodejs:24.14', 'ghcr.io/brf-tech/runr/exec-nodejs:24.14'], $this->fromLines());
 
         $this->zotConfig = null;
         $this->submit($this->buildVersion('go', null, 'internal', ['main.go' => 'package main']));
-        $this->assertSame(['ghcr.io/brf-tech/exec-go:1.26', 'ghcr.io/brf-tech/reqs/alpine:3.20'], $this->fromLines());
+        $this->assertSame(['ghcr.io/brf-tech/runr/exec-go:1.26', 'ghcr.io/brf-tech/runr/reqs/alpine:3.20'], $this->fromLines());
     }
 
     public function test_external_registry_keeps_ghcr_references_and_never_reads_zot(): void
     {
         $this->submit($this->buildVersion('python', null, 'external'));
 
-        $this->assertSame(['ghcr.io/brf-tech/exec-python:3.14', 'ghcr.io/brf-tech/exec-python:3.14'], $this->fromLines());
+        $this->assertSame(['ghcr.io/brf-tech/runr/exec-python:3.14', 'ghcr.io/brf-tech/runr/exec-python:3.14'], $this->fromLines());
         $this->assertFalse(collect($this->calls)->contains(fn ($c) => str_contains($c['path'], 'runr-zot-config')));
     }
 

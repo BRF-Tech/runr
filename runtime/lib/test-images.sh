@@ -37,8 +37,11 @@ prepare_images_e2e() {
   fi
 
   echo "  receiver image: ${upload_tag}"
-  docker build -q -t "${upload_tag}" "${SCRIPT_DIR}/image-upload" >/dev/null
+  docker build -q --pull -t "${upload_tag}" "${SCRIPT_DIR}/image-upload" >/dev/null
   echo "  wasm-exec build image: ${exec_tag}"
+  # the receiver is the local image above, which --pull would look up in a registry: the other
+  # bases are pulled on their own instead (test.sh)
+  pull_dockerfile_bases "${SCRIPT_DIR}/wasm-exec/Dockerfile" "IMAGE_UPLOAD_IMAGE=${upload_tag}"
   docker build -q --build-arg "IMAGE_UPLOAD_IMAGE=${upload_tag}" -t "${exec_tag}" "${SCRIPT_DIR}/wasm-exec" >/dev/null
   if [ -n "$cluster" ]; then
     kind load docker-image "${upload_tag}" --name "$cluster" >/dev/null
@@ -47,7 +50,7 @@ prepare_images_e2e() {
   fi
 
   # the file to upload: a docker save archive of a small HTTP server (answers {"status":"ok",...})
-  docker build -q -t "${echo_tag}" "${SCRIPT_DIR}/nginx-test" >/dev/null
+  docker build -q --pull -t "${echo_tag}" "${SCRIPT_DIR}/nginx-test" >/dev/null
   docker save "${echo_tag}" -o "${work}/echo.tar"
   echo "  ${echo_tag} → ${work}/echo.tar ($(du -h "${work}/echo.tar" | cut -f1))"
 

@@ -82,6 +82,36 @@ func (c *Client) ProjectMetricsSummary(ctx context.Context, projectID string, da
 	return &out, nil
 }
 
+// DeploymentMetrics is GET /projects/{project}/deployments/{deployment}/metrics: what the
+// deployment's pods use right now, read from the region's Prometheus. A value is nil when the
+// region has no reading (no pods, no Prometheus); the hourly averages are left out of a quick
+// reading.
+type DeploymentMetrics struct {
+	// CPU is in cores, MemoryMB in MiB, RPS requests per second over the last minute.
+	CPU      *FlexFloat `json:"cpu"`
+	MemoryMB *FlexFloat `json:"memory"`
+	RPS      *FlexFloat `json:"rps"`
+	// CPUAvg1h and MemoryAvg1hMB average the last hour.
+	CPUAvg1h      *FlexFloat `json:"cpuAvg1h,omitempty"`
+	MemoryAvg1hMB *FlexFloat `json:"memAvg1h,omitempty"`
+}
+
+// DeploymentMetrics returns the live metrics of a deployment (metrics.view). quick reads the
+// current values only (cached for at most a few seconds); the full reading adds the hourly
+// averages (cached for up to a minute).
+func (c *Client) DeploymentMetrics(ctx context.Context, projectID, deploymentID string, quick bool) (*DeploymentMetrics, error) {
+	q := url.Values{}
+	if quick {
+		q.Set("quick", "1")
+	}
+	var out DeploymentMetrics
+	path := "/projects/" + seg(projectID) + "/deployments/" + seg(deploymentID) + "/metrics"
+	if err := c.do(ctx, request{method: http.MethodGet, path: path, query: q}, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
 // MetricPoint is one recorded snapshot.
 type MetricPoint struct {
 	RecordedAt  string     `json:"recorded_at"`

@@ -27,7 +27,7 @@ classifiers = [
     "Topic :: Software Development :: Libraries",
     "Typing :: Typed",
 ]
-dependencies = ["httpx>=0.25"]
+dependencies = ["httpx>=0.25", "websockets>=13"]
 
 [project.optional-dependencies]
 test = ["pytest>=7.0"]

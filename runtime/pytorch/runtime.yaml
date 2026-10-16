@@ -1,5 +1,7 @@
-# Built-in runtime: PyTorch (Python with PyTorch CPU and the ML essentials preinstalled). Same
-# handler server as the Python runtime.
+# Built-in runtime: PyTorch (Python 3.12 with torch, torchvision and the ML essentials
+# preinstalled; the handler server is the Python runtime's). Its versions are the image tags
+# runtime/ci.sh ml-runtimes publishes: torch's major.minor (CPU, Dockerfile) and <major.minor>-gpu
+# (CUDA 12.6, Dockerfile.gpu).
 apiVersion: runr.sh/v1
 kind: Runtime
 id: pytorch
@@ -9,8 +11,8 @@ language: python
 extensions: [py]
 category: ml
 versionDiscovery:
-  repository: runrsh/exec-pytorch
-  image: "ghcr.io/brf-tech/exec-pytorch:{version}"
+  repository: ghcr.io/brf-tech/runr/exec-pytorch
+  image: "ghcr.io/brf-tech/runr/exec-pytorch:{version}"
   eol: pytorch
 handler:
   file: main

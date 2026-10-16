@@ -3,12 +3,14 @@
 # engine run it.
 # torch 2.14.1 built for CUDA 12.6 (the same torch as the CPU image): CUDA 12.x runs on the R550
 # drivers of the GPU Operator RunR installs (minor version compatibility); CUDA 13 builds need R580+.
-FROM docker.io/pytorch/pytorch:2.14.1-cuda12.6-cudnn9-runtime
+# From the reqs mirror of docker.io/pytorch/pytorch (runtime/lib/mirror.sh).
+FROM ghcr.io/brf-tech/runr/reqs/pytorch:2.14.1-cuda12.6-cudnn9-runtime
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    PIP_BREAK_SYSTEM_PACKAGES=1 \
     HF_HOME=/models/hf \
     HF_HUB_DISABLE_TELEMETRY=1 \
     NVIDIA_VISIBLE_DEVICES=all \
@@ -22,9 +24,11 @@ RUN apt-get update \
 
 WORKDIR /opt/hf-serve
 
-# torch comes with the base image; the same pins as the CPU image for everything else
+# torch comes with the base image; the same pins as the CPU image for everything else. The base's
+# Python is the system Python (PEP 668 marks it externally managed, PIP_BREAK_SYSTEM_PACKAGES above):
+# this image is its only user. pip and setuptools are installed next to the distribution's copies.
 COPY requirements.txt requirements-cuda.txt ./
-RUN pip install --upgrade pip==26.2.1 setuptools==84.0.0 \
+RUN pip install --ignore-installed pip==26.2.1 setuptools==84.0.0 \
  && pip install -r requirements.txt -r requirements-cuda.txt
 
 COPY runr_hf_serve ./runr_hf_serve

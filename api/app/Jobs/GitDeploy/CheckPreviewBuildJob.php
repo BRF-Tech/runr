@@ -6,22 +6,22 @@ use App\Models\Git\PreviewEnvironment;
 use App\Services\GitDeploy\PreviewService;
 use App\Services\GitDeploy\PreviewVersionScope;
 use App\Services\KubernetesClient;
+use App\Services\Manifests\BuildManifests;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Foundation\Queue\Queueable;
 
 /**
  * Poll the Kaniko Job of a preview build (build-<slug>-v<N>) every POLL seconds, up to
- * MAX_ATTEMPTS; ready → DeployPreviewJob, failed or timed out → the preview fails. Unlike a
- * project build, no "build completed" notification goes out: the PR comment carries the status.
+ * maxAttempts() (the build Job's deadline and a minute); ready → DeployPreviewJob, failed or
+ * timed out → the preview fails. Unlike a project build, no "build completed" notification goes
+ * out: the PR comment carries the status.
  */
 class CheckPreviewBuildJob implements ShouldQueue
 {
     use Dispatchable, Queueable;
 
     public const POLL = 5;
-
-    public const MAX_ATTEMPTS = 120;
 
     public int $tries = 1;
 
@@ -32,6 +32,12 @@ class CheckPreviewBuildJob implements ShouldQueue
         public string $versionId,
         public int $attempt = 1,
     ) {}
+
+    /** Checks until the build Job's deadline (BuildManifests::deadlineSeconds()) and a minute have passed. */
+    public static function maxAttempts(): int
+    {
+        return (int) ceil((BuildManifests::deadlineSeconds() + 60) / self::POLL);
+    }
 
     public function handle(PreviewService $previews): void
     {
@@ -74,7 +80,7 @@ class CheckPreviewBuildJob implements ShouldQueue
             return;
         }
 
-        if ($this->attempt >= self::MAX_ATTEMPTS) {
+        if ($this->attempt >= self::maxAttempts()) {
             $version->update(['build_status' => 'failed', 'build_error' => 'Build timeout']);
             $previews->fail($preview, $previews->currentDeploy($preview), 'The build did not finish in time');
 

@@ -46,7 +46,7 @@ triggers: [http, schedule, queue]
 `
 
 // qFiles are the files uploaded with the q plugin.
-var qFiles = map[string]string{"Dockerfile": "FROM ghcr.io/brf-tech/reqs/golang:1.23-alpine\nCOPY . /src\n"}
+var qFiles = map[string]string{"Dockerfile": "FROM ghcr.io/brf-tech/runr/reqs/golang:1.23-alpine\nCOPY . /src\n"}
 
 // registeredRuntime is a runtime of POST /runtimes (or a seeded one).
 type registeredRuntime struct {
@@ -345,7 +345,7 @@ func (s *Server) catalog() []runr.CatalogRuntime {
 		if _, plugin := pluginRuntimes[img.Runtime]; plugin {
 			v.Built = true
 		} else {
-			v.Image = "ghcr.io/brf-tech/exec-" + img.Runtime + ":" + img.Version
+			v.Image = "ghcr.io/brf-tech/runr/exec-" + img.Runtime + ":" + img.Version
 		}
 		rt.Versions = append(rt.Versions, v)
 	}

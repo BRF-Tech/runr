@@ -4,6 +4,8 @@
 #   - docker pull --platform manifest problem → buildx with FROM (caddy buildx inline)
 #   - kubectl cp sets mode 600 → busybox httpd cannot read it → chmod 644 is required
 #   - K8s DNS does not resolve in the nsenter host ns → download in an initContainer, import with nsenter
+#   - a base image the build host's Docker already holds (e.g. an old ghcr.io/brf-tech/runr/reqs/caddy
+#     pull) was built on instead of the registry's → every build runs with --pull
 
 _deploy_build_dir=""
 _DEPLOY_TAR_DIR="${SCRIPT_DIR}/../deploy"
@@ -24,7 +26,7 @@ _deploy_build_images() {
   echo -e "${BOLD}[1/3] Building the API image (linux/amd64)...${NC}"
   # runr://docs/{page} of the MCP server (docs/mcp.md): the image carries docs/ as resources/docs
   mkdir -p "${root_dir}/api/resources/docs" && cp "${root_dir}"/docs/*.md "${root_dir}/api/resources/docs/"
-  docker buildx build --platform linux/amd64 \
+  docker buildx build --pull --platform linux/amd64 \
     --file "${root_dir}/api/Dockerfile.prod" \
     --output "type=docker,dest=${_deploy_build_dir}/api.tar" \
     --build-arg "APP_VERSION=${_deploy_app_version}" \
@@ -34,7 +36,7 @@ _deploy_build_images() {
   echo -e "${GREEN}  API OK${NC}"
 
   echo -e "${BOLD}[2/3] Building the UI image (linux/amd64)...${NC}"
-  docker buildx build --platform linux/amd64 \
+  docker buildx build --pull --platform linux/amd64 \
     --output "type=docker,dest=${_deploy_build_dir}/ui.tar" \
     --provenance=false --sbom=false $cache_flag \
     --build-arg VITE_WS_PROXY=true \
@@ -47,12 +49,12 @@ _deploy_build_images() {
   echo -e "${GREEN}  UI OK${NC}"
 
   echo -e "${BOLD}[3/3] Preparing the gateway (caddy) image...${NC}"
-  docker buildx build --platform linux/amd64 \
+  docker buildx build --pull --platform linux/amd64 \
     --output "type=docker,dest=${_deploy_build_dir}/gateway.tar" \
     --provenance=false --sbom=false $cache_flag \
-    -t "ghcr.io/brf-tech/reqs/caddy:2-alpine" \
+    -t "ghcr.io/brf-tech/runr/reqs/caddy:2-alpine" \
     - <<'CADDY_EOF' 2>&1
-FROM ghcr.io/brf-tech/reqs/caddy:2-alpine
+FROM ghcr.io/brf-tech/runr/reqs/caddy:2-alpine
 CADDY_EOF
   echo -e "${GREEN}  Gateway OK${NC}"
 
@@ -100,7 +102,7 @@ metadata:
 spec:
   containers:
   - name: server
-    image: ghcr.io/brf-tech/reqs/busybox:latest
+    image: ghcr.io/brf-tech/runr/reqs/busybox:latest
     command: ["sh", "-c", "httpd -f -p 80 -h /data"]
     ports:
     - containerPort: 80
@@ -166,7 +168,7 @@ spec:
       - operator: Exists
       initContainers:
       - name: download
-        image: ghcr.io/brf-tech/reqs/redis:7-alpine
+        image: ghcr.io/brf-tech/runr/reqs/redis:7-alpine
         command:
         - sh
         - -c
@@ -181,7 +183,7 @@ spec:
           mountPath: /host-tmp
       containers:
       - name: importer
-        image: ghcr.io/brf-tech/reqs/redis:7-alpine
+        image: ghcr.io/brf-tech/runr/reqs/redis:7-alpine
         securityContext:
           privileged: true
         command:

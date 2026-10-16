@@ -382,6 +382,7 @@ class BillingApiTest extends TestCase
             ->assertJsonPath('data.0.delivery.status', 'skipped')
             ->assertJsonPath('meta.webhook_configured', false);
 
+        $page->assertJsonPath('meta.next_after', $b->id)->assertJsonPath('meta.next_before', null);
         $this->actingAs($admin)->getJson('/api/billing/events?after='.$page->json('meta.next_after'))->assertOk()
             ->assertJsonCount(1, 'data')->assertJsonPath('data.0.id', $c->id)->assertJsonPath('meta.next_after', null);
         $this->actingAs($admin)->getJson('/api/billing/events?type=billing.plan.changed&tenant='.$this->tenant->slug)->assertOk()
@@ -390,5 +391,34 @@ class BillingApiTest extends TestCase
         // without a webhook there is nothing to deliver to
         $this->bearer($admin, ['billing.manage'])->postJson('/api/billing/events/test')->assertStatus(409);
         $this->bearer($admin, ['billing.manage'])->postJson("/api/billing/events/{$a->id}/redeliver")->assertStatus(409);
+    }
+
+    public function test_events_are_read_newest_first_with_a_before_cursor(): void
+    {
+        $admin = $this->admin();
+        $events = app(BillingEvents::class);
+        $a = $events->record(BillingEvents::USAGE_THRESHOLD, (string) $this->tenant->id, ['kind' => 'amount']);
+        $b = $events->record(BillingEvents::PLAN_CHANGED, (string) $this->tenant->id, ['source' => 'api']);
+        $c = $events->record(BillingEvents::TEST, null, ['message' => 'hi']);
+
+        $page = $this->bearer($admin, ['billing.view'])->getJson('/api/billing/events?order=desc&limit=2')->assertOk()
+            ->assertJsonCount(2, 'data')
+            ->assertJsonPath('data.0.id', $c->id)
+            ->assertJsonPath('data.1.id', $b->id)
+            ->assertJsonPath('meta.next_before', $b->id)
+            ->assertJsonPath('meta.next_after', null);
+
+        $this->actingAs($admin)->getJson('/api/billing/events?order=desc&before='.$page->json('meta.next_before'))->assertOk()
+            ->assertJsonCount(1, 'data')->assertJsonPath('data.0.id', $a->id)->assertJsonPath('meta.next_before', null);
+
+        // after / before bound the list in either order
+        $this->actingAs($admin)->getJson("/api/billing/events?order=desc&after={$a->id}")->assertOk()
+            ->assertJsonCount(2, 'data')->assertJsonPath('data.0.id', $c->id)->assertJsonPath('data.1.id', $b->id);
+        $this->actingAs($admin)->getJson("/api/billing/events?before={$c->id}")->assertOk()
+            ->assertJsonCount(2, 'data')->assertJsonPath('data.0.id', $a->id)->assertJsonPath('data.1.id', $b->id);
+        $this->actingAs($admin)->getJson('/api/billing/events?order=desc&type=billing.plan.changed&tenant='.$this->tenant->slug)->assertOk()
+            ->assertJsonCount(1, 'data')->assertJsonPath('data.0.id', $b->id);
+
+        $this->actingAs($admin)->getJson('/api/billing/events?order=newest')->assertStatus(422)->assertJsonValidationErrors('order');
     }
 }

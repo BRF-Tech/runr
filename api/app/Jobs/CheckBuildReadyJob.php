@@ -6,7 +6,9 @@ use App\Jobs\Concerns\BroadcastsJobCompletion;
 use App\Models\KnativeRegion;
 use App\Models\Project;
 use App\Models\Version;
+use App\Services\FunctionBuildService;
 use App\Services\KubernetesClient;
+use App\Services\Manifests\BuildManifests;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Foundation\Bus\PendingDispatch;
@@ -29,27 +31,44 @@ class CheckBuildReadyJob implements ShouldQueue
 
     public const POLL_INTERVAL = 2;
 
-    /** Overall timeout, unchanged (formerly 72 checks × 5 s): maxAttempts() checks on this schedule */
-    public const TIMEOUT_SECONDS = 360;
+    /** The checks go on this long after the build Job's deadline (BuildManifests::deadlineSeconds()) */
+    public const TIMEOUT_MARGIN_SECONDS = 60;
 
+    /**
+     * Kaniko's last log line while it waits for a FROM image: the region registry is still
+     * fetching that image from its upstream (the first pull of a base image through Zot)
+     */
+    private const BASE_IMAGE_PULL = '/Retrieving image (?:manifest )?(\S+)/';
+
+    /**
+     * @param  bool  $retried  the build was submitted again after it ran out of time while the
+     *                         registry fetched its base image (once per build)
+     */
     public function __construct(
         public Version $version,
         public int $attempt = 1,
         ?string $initiatorId = null,
+        public bool $retried = false,
     ) {
         $this->initiatorId = $initiatorId;
     }
 
     /** The first check of a submitted build. */
-    public static function start(Version $version, ?string $initiatorId = null): PendingDispatch
+    public static function start(Version $version, ?string $initiatorId = null, bool $retried = false): PendingDispatch
     {
-        return self::dispatch($version, 1, $initiatorId)->delay(now()->addSeconds(self::FIRST_CHECK_DELAY));
+        return self::dispatch($version, 1, $initiatorId, $retried)->delay(now()->addSeconds(self::FIRST_CHECK_DELAY));
+    }
+
+    /** Overall timeout of the checks: the build Job's deadline plus a margin. */
+    public static function timeoutSeconds(): int
+    {
+        return BuildManifests::deadlineSeconds() + self::TIMEOUT_MARGIN_SECONDS;
     }
 
     /** Checks that fit the timeout: the first one plus one per poll interval. */
     public static function maxAttempts(): int
     {
-        return 1 + (int) ceil((self::TIMEOUT_SECONDS - self::FIRST_CHECK_DELAY) / self::POLL_INTERVAL);
+        return 1 + (int) ceil((self::timeoutSeconds() - self::FIRST_CHECK_DELAY) / self::POLL_INTERVAL);
     }
 
     public function handle(): void
@@ -107,6 +126,12 @@ class CheckBuildReadyJob implements ShouldQueue
             }
 
             if (($status['failed'] ?? 0) >= 1) {
+                if (! $this->retried && ($image = $this->baseImageStillPulling($k8s, $job, $namespace)) !== null) {
+                    $this->buildAgain($version, $image);
+
+                    return;
+                }
+
                 $error = $this->extractErrorFromJob($k8s, $job, $namespace);
                 $this->markFailed($version, $error);
 
@@ -170,6 +195,47 @@ class CheckBuildReadyJob implements ShouldQueue
         return 'Build failed (no details available)';
     }
 
+    /**
+     * The FROM image a Kaniko build was still waiting for when its Job ran past the deadline
+     * (condition DeadlineExceeded, Kaniko's last log line "Retrieving image …"), else null.
+     */
+    private function baseImageStillPulling(KubernetesClient $k8s, array $job, string $namespace): ?string
+    {
+        $deadline = collect($job['status']['conditions'] ?? [])
+            ->contains(fn ($c) => ($c['type'] ?? '') === 'Failed' && ($c['reason'] ?? '') === 'DeadlineExceeded');
+        $podName = $deadline ? $this->findJobPodName($k8s, $job, $namespace) : null;
+        if (! $podName) {
+            return null;
+        }
+
+        $lines = array_values(array_filter(array_map('trim', explode("\n", (string) $k8s->getPodLogs($podName, $namespace, 'kaniko', 5)))));
+        $last = preg_replace('/\x1b\[[0-9;]*m/', '', (string) end($lines));
+
+        return preg_match(self::BASE_IMAGE_PULL, $last, $m) ? $m[1] : null;
+    }
+
+    /**
+     * The build ran out of time while the region registry fetched its base image from upstream
+     * for the first time — the registry goes on fetching it. Submitted once more; the version says
+     * so in build_error while it builds.
+     */
+    private function buildAgain(Version $version, string $image): void
+    {
+        $note = 'The build ran past its deadline of '.BuildManifests::deadlineSeconds()."s while the region registry fetched the base image {$image} for the first time; building once more.";
+
+        try {
+            app(FunctionBuildService::class)->submitBuild($version);
+        } catch (\Throwable $e) {
+            $this->markFailed($version, "{$note} The new build could not start: {$e->getMessage()}");
+
+            return;
+        }
+
+        $version->update(['build_error' => mb_substr($note, 0, 1000)]);
+        Log::warning('Build timed out on a base image pull, building again', ['version' => $version->id, 'image' => $image]);
+        self::start($version, $this->initiatorId, true);
+    }
+
     private function findJobPodName(KubernetesClient $k8s, array $job, string $namespace): ?string
     {
         $jobName = $job['metadata']['name'] ?? '';
@@ -202,7 +268,7 @@ class CheckBuildReadyJob implements ShouldQueue
                 'attempt' => $this->attempt,
                 'error' => $e?->getMessage(),
             ]);
-            self::dispatch($version, $this->attempt + 1, $this->initiatorId)
+            self::dispatch($version, $this->attempt + 1, $this->initiatorId, $this->retried)
                 ->delay(now()->addSeconds(self::POLL_INTERVAL));
 
             return;
@@ -214,12 +280,12 @@ class CheckBuildReadyJob implements ShouldQueue
     private function retryOrTimeout(Version $version, string $message): void
     {
         if ($this->attempt >= self::maxAttempts()) {
-            $this->markFailed($version, 'Build timeout after '.self::TIMEOUT_SECONDS.'s: '.$message);
+            $this->markFailed($version, 'Build timeout after '.self::timeoutSeconds().'s: '.$message);
 
             return;
         }
 
-        self::dispatch($version, $this->attempt + 1, $this->initiatorId)
+        self::dispatch($version, $this->attempt + 1, $this->initiatorId, $this->retried)
             ->delay(now()->addSeconds(self::POLL_INTERVAL));
     }
 

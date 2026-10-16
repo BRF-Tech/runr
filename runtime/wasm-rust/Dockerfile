@@ -1,12 +1,17 @@
-# Build image of the wasm-rust runtime (ghcr.io/brf-tech/exec-wasm-rust:<version>): Rust with the
+# Build image of the wasm-rust runtime (ghcr.io/brf-tech/runr/exec-wasm-rust:<version>): Rust with the
 # wasm32-wasip1 target, the Spin CLI of the Spin runtime the shim embeds, and the dependencies of
 # the default Cargo.toml fetched and compiled once (CARGO_TARGET_DIR), so a function build only
 # compiles the function's own crate. It runs as the build Job of a function version
 # (WasmBuildService); it is never deployed as a function.
 #
-#   docker build -t ghcr.io/brf-tech/exec-wasm-rust:4.1 runtime/wasm-rust     (or: runtime/ci.sh wasm)
+#   docker build -t ghcr.io/brf-tech/runr/exec-wasm-rust:4.1 runtime/wasm-rust     (or: runtime/ci.sh wasm)
 ARG RUST_VERSION=1.98.1
-FROM rust:${RUST_VERSION}-slim-bookworm
+FROM ghcr.io/brf-tech/runr/reqs/rust:${RUST_VERSION}-slim-bookworm
+
+# The RUN steps only, not the image: a docker-container BuildKit builder gives them
+# OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=unix:///dev/otel-grpc.sock, which Spin's telemetry rejects
+# ("invalid URI") before the command runs (ci/check-dockerfiles.sh)
+ARG OTEL_SDK_DISABLED=true
 
 ARG SPIN_VERSION=4.1.0
 ARG SPIN_SHA256_AMD64=02fdfe34a52f8bb41da5ac0a7b52abfbf0534cd57710c3a30d13293f4245e65e

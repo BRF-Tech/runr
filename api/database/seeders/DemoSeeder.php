@@ -19,10 +19,10 @@ class DemoSeeder extends Seeder
         $this->call([
             AdminSeeder::class,
             SettingsSeeder::class,
+            MlRuntimeSeeder::class,
         ]);
 
         $this->seedEolRuntimes();
-        $this->seedMlRuntimes();
         $region = $this->seedDemoRegion();
         $this->seedDemoProjects($region);
     }
@@ -32,34 +32,13 @@ class DemoSeeder extends Seeder
         // Runtime past its EOL (red badge)
         ExecutorImage::firstOrCreate(
             ['runtime' => 'python', 'version' => '3.9'],
-            ['docker_image' => 'ghcr.io/brf-tech/exec-python:3.9', 'is_default' => false, 'is_active' => true, 'eol_at' => '2025-10-07', 'sort_order' => 90],
+            ['docker_image' => 'ghcr.io/brf-tech/runr/exec-python:3.9', 'is_default' => false, 'is_active' => true, 'eol_at' => '2025-10-07', 'sort_order' => 90],
         );
         // Runtime nearing its EOL — sunsetting (yellow badge)
         ExecutorImage::firstOrCreate(
             ['runtime' => 'nodejs', 'version' => '18'],
-            ['docker_image' => 'ghcr.io/brf-tech/exec-nodejs:18', 'is_default' => false, 'is_active' => true, 'eol_at' => now()->addWeeks(8)->toDateString(), 'sort_order' => 90],
+            ['docker_image' => 'ghcr.io/brf-tech/runr/exec-nodejs:18', 'is_default' => false, 'is_active' => true, 'eol_at' => now()->addWeeks(8)->toDateString(), 'sort_order' => 90],
         );
-    }
-
-    private function seedMlRuntimes(): void
-    {
-        $mlRuntimes = [
-            ['runtime' => 'tensorflow', 'version' => '2.16',     'docker_image' => 'ghcr.io/brf-tech/exec-tensorflow:2.16',     'is_default' => true,  'category' => 'ml', 'gpu_required' => false, 'sort_order' => 1],
-            ['runtime' => 'tensorflow', 'version' => '2.16-gpu', 'docker_image' => 'ghcr.io/brf-tech/exec-tensorflow:2.16-gpu', 'is_default' => false, 'category' => 'ml', 'gpu_required' => true,  'sort_order' => 2],
-            ['runtime' => 'tensorflow', 'version' => '2.15',     'docker_image' => 'ghcr.io/brf-tech/exec-tensorflow:2.15',     'is_default' => false, 'category' => 'ml', 'gpu_required' => false, 'sort_order' => 3],
-            ['runtime' => 'tensorflow', 'version' => '2.15-gpu', 'docker_image' => 'ghcr.io/brf-tech/exec-tensorflow:2.15-gpu', 'is_default' => false, 'category' => 'ml', 'gpu_required' => true,  'sort_order' => 4],
-            ['runtime' => 'pytorch',    'version' => '2.3',      'docker_image' => 'ghcr.io/brf-tech/exec-pytorch:2.3',         'is_default' => true,  'category' => 'ml', 'gpu_required' => false, 'sort_order' => 1],
-            ['runtime' => 'pytorch',    'version' => '2.3-gpu',  'docker_image' => 'ghcr.io/brf-tech/exec-pytorch:2.3-gpu',     'is_default' => false, 'category' => 'ml', 'gpu_required' => true,  'sort_order' => 2],
-            ['runtime' => 'pytorch',    'version' => '2.2',      'docker_image' => 'ghcr.io/brf-tech/exec-pytorch:2.2',         'is_default' => false, 'category' => 'ml', 'gpu_required' => false, 'sort_order' => 3],
-            ['runtime' => 'pytorch',    'version' => '2.2-gpu',  'docker_image' => 'ghcr.io/brf-tech/exec-pytorch:2.2-gpu',     'is_default' => false, 'category' => 'ml', 'gpu_required' => true,  'sort_order' => 4],
-        ];
-
-        foreach ($mlRuntimes as $ml) {
-            ExecutorImage::firstOrCreate(
-                ['runtime' => $ml['runtime'], 'version' => $ml['version']],
-                array_merge($ml, ['is_active' => true]),
-            );
-        }
     }
 
     private function seedDemoRegion(): KnativeRegion
@@ -152,13 +131,13 @@ class DemoSeeder extends Seeder
                 'name' => 'demo-caas-http',
                 'service_type' => 'caas',
                 'description' => 'Demo CaaS HTTP konteyner',
-                'config' => ['image' => 'ghcr.io/brf-tech/reqs/nginx:1.27-alpine', 'trigger_type' => 'http', 'cpu' => '500m', 'memory_mb' => 256, 'timeout_seconds' => 30],
+                'config' => ['image' => 'ghcr.io/brf-tech/runr/reqs/nginx:1.27-alpine', 'trigger_type' => 'http', 'cpu' => '500m', 'memory_mb' => 256, 'timeout_seconds' => 30],
             ],
             [
                 'name' => 'demo-caas-schedule',
                 'service_type' => 'caas',
                 'description' => 'Demo CaaS cron konteyner',
-                'config' => ['image' => 'ghcr.io/brf-tech/reqs/alpine:3.21', 'command' => ['echo', 'hello'], 'trigger_type' => 'schedule', 'schedule' => '0 0 * * *', 'cpu' => '250m', 'memory_mb' => 256, 'timeout_seconds' => 60],
+                'config' => ['image' => 'ghcr.io/brf-tech/runr/reqs/alpine:3.21', 'command' => ['echo', 'hello'], 'trigger_type' => 'schedule', 'schedule' => '0 0 * * *', 'cpu' => '250m', 'memory_mb' => 256, 'timeout_seconds' => 60],
             ],
             [
                 'name' => 'demo-xaas-queue',
@@ -180,7 +159,7 @@ class DemoSeeder extends Seeder
                 'name' => 'demo-caas-queue',
                 'service_type' => 'caas',
                 'description' => 'Demo CaaS event consumer',
-                'config' => ['image' => 'ghcr.io/brf-tech/reqs/nginx:1.27-alpine', 'trigger_type' => 'queue', 'queue_stream' => 'notification-events', 'cpu' => '250m', 'memory_mb' => 256, 'timeout_seconds' => 30],
+                'config' => ['image' => 'ghcr.io/brf-tech/runr/reqs/nginx:1.27-alpine', 'trigger_type' => 'queue', 'queue_stream' => 'notification-events', 'cpu' => '250m', 'memory_mb' => 256, 'timeout_seconds' => 30],
             ],
             // Project past its EOL (red card)
             [

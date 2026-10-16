@@ -81,7 +81,7 @@ class AdmissionPolicyTest extends TestCase
 
     public function test_system_images_are_exempt(): void
     {
-        ExecutorImage::create(['runtime' => 'python', 'version' => '3.14', 'docker_image' => 'ghcr.io/brf-tech/exec-python:3.14', 'is_default' => true, 'is_active' => true]);
+        ExecutorImage::create(['runtime' => 'python', 'version' => '3.14', 'docker_image' => 'ghcr.io/brf-tech/runr/exec-python:3.14', 'is_default' => true, 'is_active' => true]);
         $region = $this->scRegion();
         $settings = $this->scSettings($region, ['admission_exempt_images' => ['registry.example.com/tools/**']]);
 
@@ -89,9 +89,11 @@ class AdmissionPolicyTest extends TestCase
         $globs = array_column($system['spec']['images'], 'glob');
 
         foreach ([
+            'ghcr.io/brf-tech/runr/**',
+            self::SC_ZOT.'/ghcr.io/brf-tech/runr/**',
+            // RunR's earlier namespaces (0.5.1, up to 0.5.0): workloads that keep their pods across the upgrade
             'ghcr.io/brf-tech/**',
             self::SC_ZOT.'/ghcr.io/brf-tech/**',
-            // RunR's namespace up to 0.5.0: workloads that keep their pods across the upgrade
             'ghcr.io/runrsh/**',
             self::SC_ZOT.'/ghcr.io/runrsh/**',
             'gcr.io/knative-releases/**',

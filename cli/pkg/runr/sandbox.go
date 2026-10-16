@@ -330,6 +330,11 @@ type SandboxExecInput struct {
 	Env         map[string]string `json:"env,omitempty"`
 	Cwd         string            `json:"cwd,omitempty"`
 	Stream      bool              `json:"stream,omitempty"`
+	// TTY runs the command on a terminal of Cols × Rows (exec WebSocket only; the API's default
+	// size is 80 × 24).
+	TTY  bool `json:"tty,omitempty"`
+	Cols int  `json:"cols,omitempty"`
+	Rows int  `json:"rows,omitempty"`
 }
 
 // SandboxRunInput is the body of POST /sandboxes/{id}/run (the code interpreter).

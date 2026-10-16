@@ -1,0 +1,10 @@
+# exec-tensorflow: Keras and the ML essentials next to TensorFlow (both images, from PyPI). A
+# function's own requirements.txt is installed to /app/vendor when it is built (runtime.yaml
+# dependencies), ahead of these on the import path.
+keras==3.15.1
+numpy==2.5.4
+scipy==1.18.1
+pandas==3.0.6
+matplotlib==3.11.2
+scikit-learn==1.9.1
+pillow==12.3.0

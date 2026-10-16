@@ -90,7 +90,7 @@ class WasmManifestsTest extends TestCase
         $this->assertCount(1, $spec['initContainers']);
         $init = $spec['initContainers'][0];
         $this->assertSame('shim-spin', $init['name']);
-        $this->assertSame('ghcr.io/brf-tech/containerd-shim-spin:v0.26.0-runr.1', $init['image']);
+        $this->assertSame('ghcr.io/brf-tech/runr/containerd-shim-spin:v0.26.0-runr.1', $init['image']);
         $this->assertSame(['sh', '-c', 'mkdir -p '.WasmNodeScripts::SHIM_FILES.'/spin && cp -a /shim/. '.WasmNodeScripts::SHIM_FILES.'/spin/'], $init['command']);
         $this->assertArrayNotHasKey('securityContext', $init, 'copying the files needs no privileges');
         $this->assertSame([['name' => 'shim-files', 'mountPath' => WasmNodeScripts::SHIM_FILES]], $init['volumeMounts']);

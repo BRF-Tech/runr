@@ -1,13 +1,18 @@
-# Build image of the wasm-go runtime (ghcr.io/brf-tech/exec-wasm-go:<version>): TinyGo (with its Go
+# Build image of the wasm-go runtime (ghcr.io/brf-tech/runr/exec-wasm-go:<version>): TinyGo (with its Go
 # toolchain), the Spin CLI of the Spin runtime the shim embeds, and the Spin Go SDK in the module
 # cache with TinyGo's build cache warm. It runs as the build Job of a function version
 # (WasmBuildService); it is never deployed as a function.
 #
-#   docker build -t ghcr.io/brf-tech/exec-wasm-go:4.1 runtime/wasm-go     (or: runtime/ci.sh wasm)
+#   docker build -t ghcr.io/brf-tech/runr/exec-wasm-go:4.1 runtime/wasm-go     (or: runtime/ci.sh wasm)
 ARG TINYGO_VERSION=0.42.0
-FROM tinygo/tinygo:${TINYGO_VERSION}
+FROM ghcr.io/brf-tech/runr/reqs/tinygo:${TINYGO_VERSION}
 
 USER root
+
+# The RUN steps only, not the image: a docker-container BuildKit builder gives them
+# OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=unix:///dev/otel-grpc.sock, which Spin's telemetry rejects
+# ("invalid URI") before the command runs (ci/check-dockerfiles.sh)
+ARG OTEL_SDK_DISABLED=true
 
 ARG SPIN_VERSION=4.1.0
 ARG SPIN_SHA256_AMD64=02fdfe34a52f8bb41da5ac0a7b52abfbf0534cd57710c3a30d13293f4245e65e

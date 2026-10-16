@@ -184,12 +184,13 @@ class KataSandboxReconcileStepTest extends TestCase
 
     /**
      * A plain containerd node with Kata installed by RunR 0.5.0: this release's installer with its
-     * config-fixup init container image under RunR's image namespace up to 0.5.0 (ghcr.io/runrsh).
+     * config-fixup init container image under RunR's image namespace up to 0.5.0 (ghcr.io/runrsh;
+     * $namespace RegistryMove::FLAT: RunR 0.5.1's, directly under ghcr.io/brf-tech).
      * $dropIns: the drop-in hash the installer recorded (null: this release's).
      *
      * @return array{0: KnativeRegion, 1: string} the region and the installer hash 0.5.0 recorded
      */
-    private function containerd050Cluster(?string $dropIns = null): array
+    private function containerd050Cluster(?string $dropIns = null, string $namespace = RegistryMove::FROM): array
     {
         $this->addNode('node-1', ['katacontainers.io/kata-runtime' => 'true', 'runr.dev/kvm' => 'true'], 'containerd://1.7.27', 'v1.32.0');
         $service = app(SandboxInstallService::class);
@@ -197,8 +198,8 @@ class KataSandboxReconcileStepTest extends TestCase
         $desired = (fn () => $this->buildKataInstallerDaemonSet('runr-sandbox', $hypervisors, false, 'containerd'))->call($service);
         $data = (fn () => $this->buildKataConfigMap('runr-sandbox', $hypervisors, 'containerd'))->call($service)['data'];
 
-        $live = RegistryMove::legacy($desired);
-        $this->assertSame('ghcr.io/runrsh/reqs/busybox:latest', $live['spec']['template']['spec']['initContainers'][0]['image']);
+        $live = RegistryMove::legacy($desired, $namespace);
+        $this->assertSame("{$namespace}/reqs/busybox:latest", $live['spec']['template']['spec']['initContainers'][0]['image']);
         $hash = SandboxInstallService::kataInstallerHash($live['spec']['template']['spec'], $data);
         $this->assertNotSame($desired['metadata']['annotations'][SandboxInstallService::KATA_INSTALLER_HASH_ANNOTATION], $hash);
         $live['metadata']['annotations'][SandboxInstallService::KATA_INSTALLER_HASH_ANNOTATION] = $hash;
@@ -230,6 +231,19 @@ class KataSandboxReconcileStepTest extends TestCase
         $this->assertSame([], (new KataSandboxStep)->run($this->cluster($region), true));
         $this->assertSame([], (new KataSandboxStep)->run($this->cluster($region), false));
         $this->assertSame([], $this->writes(), 'the installer keeps its pods (kata-deploy would restart containerd)');
+        Queue::assertNothingPushed();
+    }
+
+    public function test_the_flat_image_namespace_of_0_5_1_alone_does_not_re_run_kata_deploy_either(): void
+    {
+        [$region] = $this->containerd050Cluster(null, RegistryMove::FLAT);
+        Queue::fake();
+
+        $drift = app(SandboxInstallService::class)->kataDrift(new KubernetesClient($region->kubeconfig), self::OP_HYPERVISORS);
+        $this->assertSame(['current', 'current'], [$drift['installer'], $drift['dropins']]);
+
+        $this->assertSame([], (new KataSandboxStep)->run($this->cluster($region), false));
+        $this->assertSame([], $this->writes(), 'the installer keeps its pods');
         Queue::assertNothingPushed();
     }
 

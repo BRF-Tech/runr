@@ -64,8 +64,8 @@ curl -sS -X POST "$API/model-services" -H "Authorization: Bearer $TOKEN" -H 'Con
 | `vllm` | GPU | OpenAI-compatible (`/v1/chat/completions`, `/v1/completions`, `/v1/models`) | `docker.io/vllm/vllm-openai:v0.6.6` | text-generation |
 | `tgi` | GPU | OpenAI-compatible Messages API, `/generate`, `/info` | `ghcr.io/huggingface/text-generation-inference:3.0.1` | text-generation |
 | `tei` | CPU, GPU | `/embed`, OpenAI-compatible `/v1/embeddings`, `/rerank`, `/predict` | `…/text-embeddings-inference:cpu-1.9.4`; GPU `…:{arch}1.9.4` | feature-extraction, sentence-similarity |
-| `transformers` | CPU, GPU | RunR hf-serve: `/predict` + OpenAI-compatible routes for its tasks | `ghcr.io/brf-tech/hf-serve:1.1.0` (CPU), `…:1.1.0-cuda` (GPU) | text-classification, token-classification, summarization, translation, text2text-generation, fill-mask, question-answering, zero-shot-classification, automatic-speech-recognition, image-classification, object-detection, feature-extraction, sentence-similarity, text-generation |
-| `diffusers` | GPU | RunR hf-serve: `/predict`, `/v1/images/generations` | `ghcr.io/brf-tech/hf-serve:1.1.0-cuda` | text-to-image |
+| `transformers` | CPU, GPU | RunR hf-serve: `/predict` + OpenAI-compatible routes for its tasks | `ghcr.io/brf-tech/runr/hf-serve:1.1.0` (CPU), `…:1.1.0-cuda` (GPU) | text-classification, token-classification, summarization, translation, text2text-generation, fill-mask, question-answering, zero-shot-classification, automatic-speech-recognition, image-classification, object-detection, feature-extraction, sentence-similarity, text-generation |
+| `diffusers` | GPU | RunR hf-serve: `/predict`, `/v1/images/generations` | `ghcr.io/brf-tech/runr/hf-serve:1.1.0-cuda` | text-to-image |
 | `custom` | CPU, GPU | whatever the image serves | your image | any |
 
 How **auto** picks (`EngineCatalog::recommended()`):
@@ -312,7 +312,7 @@ metadata: {name: models-copy, namespace: runr-projects}
 spec:
   containers:
     - name: copy
-      image: ghcr.io/brf-tech/reqs/busybox:latest
+      image: ghcr.io/brf-tech/runr/reqs/busybox:latest
       command: ["sleep", "3600"]
       volumeMounts: [{name: models, mountPath: /imports, subPath: imports/default}]
   volumes:

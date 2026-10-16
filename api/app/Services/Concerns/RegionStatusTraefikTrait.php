@@ -145,7 +145,7 @@ JS;
                     'spec' => [
                         'containers' => [[
                             'name' => 'responder',
-                            'image' => $region->registryImageRef('ghcr.io/brf-tech/reqs/node:22-alpine'),
+                            'image' => $region->registryImageRef('ghcr.io/brf-tech/runr/reqs/node:22-alpine'),
                             'command' => ['node', '/app/server.js'],
                             'ports' => [['containerPort' => self::RESPONDER_PORT]],
                             'resources' => [

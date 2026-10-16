@@ -59,7 +59,7 @@ class SupplyChainManifestsTest extends TestCase
         $this->assertArrayNotHasKey('runtimeClassName', $pod, 'runc build runtime: no RuntimeClass');
 
         $container = $pod['containers'][0];
-        $this->assertSame('ghcr.io/brf-tech/runr-supply-chain:1.0.0', $container['image']);
+        $this->assertSame('ghcr.io/brf-tech/runr/supply-chain:1.0.0', $container['image']);
         $this->assertSame(['pipeline'], $container['args']);
         $this->assertFalse($container['securityContext']['allowPrivilegeEscalation']);
 

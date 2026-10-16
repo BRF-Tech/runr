@@ -139,6 +139,15 @@ type SandboxStream struct {
 	Stderr io.Writer
 	// OnStart is called with the exec id when the command started (may be nil).
 	OnStart func(execID string)
+	// Resize delivers new terminal sizes while a command with a terminal runs (the exec
+	// WebSocket with SandboxExecInput.TTY; nil: the size stays).
+	Resize <-chan TerminalSize
+}
+
+// TerminalSize is the size of a terminal in columns and rows.
+type TerminalSize struct {
+	Cols int `json:"cols"`
+	Rows int `json:"rows"`
 }
 
 // SandboxStreamResult is how a streamed command ended.
@@ -148,6 +157,8 @@ type SandboxStreamResult struct {
 	TimedOut   bool   `json:"timed_out"`
 	DurationMS int64  `json:"duration_ms"`
 	Truncated  bool   `json:"truncated"`
+	// TTY is set when the command ran on a terminal (the exec WebSocket).
+	TTY bool `json:"tty,omitempty"`
 	// Result is the structured result of a code run (the result event), nil for exec.
 	Result *SandboxExecResult `json:"result,omitempty"`
 }

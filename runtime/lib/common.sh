@@ -1,7 +1,7 @@
 # ── Shared variables and functions ──
 # This file is sourced, so it has no shebang.
 
-REGISTRY="${REGISTRY:-ghcr.io/brf-tech}"
+REGISTRY="${REGISTRY:-ghcr.io/brf-tech/runr}"
 EOL_API="https://endoflife.date/api"
 
 RED='\033[0;31m'
@@ -85,6 +85,88 @@ filter_nodejs_lts() {
   for major in $(echo "${!latest_minor[@]}" | tr ' ' '\n' | sort -n); do
     echo "${latest_minor[$major]}"
   done
+}
+
+# ── Docker Hub and Dockerfile base images ──
+
+# dockerhub_path SOURCE — the Docker Hub repository path of an image: alpine:3.21 →
+# library/alpine:3.21; tinygo/tinygo:0.42.0 and a tag@digest stay as they are
+dockerhub_path() {
+  case "${1%%[:@]*}" in
+    */*) echo "$1" ;;
+    *) echo "library/$1" ;;
+  esac
+}
+
+# dockerhub_digest PATH — Docker Hub's digest of a repository path (library/alpine:3.21; a
+# path@sha256:… is its own digest), read with a HEAD request, which the anonymous pull limit does
+# not count: crane when it is installed, otherwise curl against the registry API
+dockerhub_digest() {
+  local path="$1" repo ref token digest
+  case "$path" in
+    *@sha256:*) echo "${path##*@}"; return 0 ;;
+  esac
+  if command -v crane >/dev/null 2>&1; then
+    crane digest "docker.io/${path}" 2>/dev/null
+    return
+  fi
+  repo="${path%:*}"
+  ref="${path##*:}"
+  token=$(curl -fsSL "https://auth.docker.io/token?service=registry.docker.io&scope=repository:${repo}:pull" 2>/dev/null \
+    | sed -n 's/.*"token":"\([^"]*\)".*/\1/p') || return 1
+  digest=$(curl -fsSI -H "Authorization: Bearer ${token}" \
+    -H 'Accept: application/vnd.oci.image.index.v1+json, application/vnd.docker.distribution.manifest.list.v2+json, application/vnd.oci.image.manifest.v1+json, application/vnd.docker.distribution.manifest.v2+json' \
+    "https://registry-1.docker.io/v2/${repo}/manifests/${ref}" 2>/dev/null \
+    | tr -d '\r' | awk -F': ' 'tolower($1) == "docker-content-digest" { print $2 }')
+  [ -n "$digest" ] && echo "$digest"
+}
+
+# dockerfile_bases DOCKERFILE [NAME=VALUE...] — the base image of every stage of a Dockerfile,
+# ${NAME} replaced by the build argument given or by the default of its ARG before the first FROM.
+# Stage names, scratch and references that stay variable (cross-${TARGETARCH}) are left out.
+dockerfile_bases() {
+  local file="$1"
+  shift
+  awk -v overrides="$*" '
+    BEGIN {
+      n = split(overrides, kv, " ")
+      for (i = 1; i <= n; i++) {
+        eq = index(kv[i], "=")
+        if (eq) given[substr(kv[i], 1, eq - 1)] = substr(kv[i], eq + 1)
+      }
+    }
+    function subst(s,   out, m, name, val) {
+      out = ""
+      while (match(s, /[$]([{][A-Za-z_][A-Za-z0-9_]*[}]|[A-Za-z_][A-Za-z0-9_]*)/)) {
+        m = substr(s, RSTART, RLENGTH)
+        name = m
+        gsub(/[${}]/, "", name)
+        if (name in given) val = given[name]
+        else if (name in args) val = args[name]
+        else { unresolved = 1; val = m }
+        out = out substr(s, 1, RSTART - 1) val
+        s = substr(s, RSTART + RLENGTH)
+      }
+      return out s
+    }
+    toupper($1) == "ARG" && !from {
+      eq = index($2, "=")
+      if (eq) {
+        val = substr($2, eq + 1)
+        gsub(/^["\047]|["\047]$/, "", val)
+        args[substr($2, 1, eq - 1)] = val
+      }
+    }
+    toupper($1) == "FROM" {
+      from = 1
+      i = 2
+      while ($i ~ /^--/) i++
+      unresolved = 0
+      ref = subst($i)
+      if (!unresolved && ref != "scratch" && !(tolower(ref) in stages)) print ref
+      if (tolower($(i + 1)) == "as") stages[tolower($(i + 2))] = 1
+    }
+  ' "$file"
 }
 
 # ── Git version: the tag if there is one, otherwise main-<hash> ──

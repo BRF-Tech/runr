@@ -23,6 +23,7 @@ use App\Support\RequestTime;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Sleep;
 use Illuminate\Support\Str;
 
 /**
@@ -269,24 +270,41 @@ class SandboxService
 
     /**
      * Wait for the pod: true when it runs, null when $timeout passed while it is still starting,
-     * or the reason it cannot start (image pull error, …).
+     * or the reason it cannot start (image pull error, …). The pod is read on the start-poll
+     * schedule (startPollDelayUs()), so a running pod is seen within one short interval.
      */
     public function waitRunning(Sandbox $sandbox, KnativeRegion $region, int $timeout): bool|string|null
     {
         $k8s = $this->k8s($region);
         $deadline = microtime(true) + $timeout;
-        $poll = 200_000;
+        $polls = 0;
 
         do {
             $state = self::podState($k8s->getResourceStatus('v1', 'Pod', $sandbox->pod_name, $sandbox->namespace));
             if ($state === true || is_string($state)) {
                 return $state;
             }
-            usleep($poll);
-            $poll = min(1_000_000, (int) ($poll * 1.5));
+            $left = (int) (($deadline - microtime(true)) * 1_000_000);
+            if ($left > 0) {
+                Sleep::usleep(min(self::startPollDelayUs($polls++), $left));
+            }
         } while (microtime(true) < $deadline);
 
         return null;
+    }
+
+    /**
+     * Delay before the next read of a starting pod (sandboxes and warm pool pods): a constant
+     * sandbox.start_poll_ms (150, bounded to 100–200) for the first sandbox.start_poll_fast_seconds
+     * (30) — a start from a cached image is reported at most one interval after the pod runs —
+     * then one second (image pulls), so a long start does not read the pod several times a second.
+     */
+    public static function startPollDelayUs(int $polls): int
+    {
+        $ms = max(100, min((int) config('sandbox.start_poll_ms', 150), 200));
+        $fastPolls = intdiv(max(0, (int) config('sandbox.start_poll_fast_seconds', 30)) * 1000, $ms);
+
+        return ($polls < $fastPolls ? $ms : 1000) * 1000;
     }
 
     /**

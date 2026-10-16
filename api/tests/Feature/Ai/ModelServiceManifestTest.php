@@ -88,7 +88,7 @@ class ModelServiceManifestTest extends TestCase
         $container = $spec['containers'][0];
         $env = $this->env($container);
 
-        $this->assertSame('ghcr.io/brf-tech/hf-serve:1.1.0', $container['image']);
+        $this->assertSame('ghcr.io/brf-tech/runr/hf-serve:1.1.0', $container['image']);
         $this->assertSame('/models/model', $env['RUNR_MODEL_PATH']);
         $this->assertSame('feature-extraction', $env['RUNR_TASK']);
         $this->assertSame('cpu', $env['RUNR_DEVICE']);

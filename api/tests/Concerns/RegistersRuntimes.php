@@ -28,13 +28,13 @@ trait RegistersRuntimes
             'name' => 'C',
             'language' => 'c',
             'extensions' => ['c', 'h'],
-            'versions' => [['version' => '17', 'image' => 'ghcr.io/brf-tech/reqs/alpine:3.21', 'default' => true]],
+            'versions' => [['version' => '17', 'image' => 'ghcr.io/brf-tech/runr/reqs/alpine:3.21', 'default' => true]],
             'handler' => ['file' => 'main', 'pattern' => 'int\s+main\s*\('],
             'template' => ['files' => ['{file}' => "#include <stdio.h>\nint main(void) { puts(\"Hello\"); return 0; }\n"]],
             'build' => [
                 'image' => '{image}',
                 'command' => 'apk add --no-cache gcc musl-dev >/dev/null && gcc -O2 -static -o /build/out/handler {file}',
-                'runImage' => 'ghcr.io/brf-tech/reqs/alpine:3.21',
+                'runImage' => 'ghcr.io/brf-tech/runr/reqs/alpine:3.21',
                 'source' => false,
             ],
             'run' => ['mode' => 'exec', 'input' => 'raw', 'command' => ['/app/handler']],
@@ -87,7 +87,7 @@ trait RegistersRuntimes
     protected function qFiles(): array
     {
         return [
-            'Dockerfile' => "FROM ghcr.io/brf-tech/reqs/golang:1.23-alpine AS build\nCOPY go.mod main.go ./\nRUN go build -o /q .\nFROM ghcr.io/brf-tech/reqs/alpine:3.21\nCOPY --from=build /q /usr/local/bin/q\n",
+            'Dockerfile' => "FROM ghcr.io/brf-tech/runr/reqs/golang:1.23-alpine AS build\nCOPY go.mod main.go ./\nRUN go build -o /q .\nFROM ghcr.io/brf-tech/runr/reqs/alpine:3.21\nCOPY --from=build /q /usr/local/bin/q\n",
             'go.mod' => "module example.com/q\n\ngo 1.23\n",
             'main.go' => "package main\n\nfunc main() {}\n",
         ];
@@ -172,7 +172,7 @@ trait RegistersRuntimes
     {
         foreach ([['python', '3.14'], ['nodejs', '24.14'], ['go', '1.26'], ['php', '8.4']] as [$runtime, $version]) {
             ExecutorImage::updateOrCreate(['runtime' => $runtime, 'version' => $version], [
-                'docker_image' => "ghcr.io/brf-tech/exec-{$runtime}:{$version}",
+                'docker_image' => "ghcr.io/brf-tech/runr/exec-{$runtime}:{$version}",
                 'is_default' => true,
                 'is_active' => true,
             ]);

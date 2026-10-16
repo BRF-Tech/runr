@@ -13,7 +13,9 @@ use App\Services\RegionReconcile\Steps\KnativeServingConfigStep;
 use App\Services\RegionReconcile\Steps\LokiDeletionStep;
 use App\Services\RegionReconcile\Steps\NamespaceQuotaStep;
 use App\Services\RegionReconcile\Steps\PrometheusExposureStep;
+use App\Services\RegionReconcile\Steps\RegistryPrewarmStep;
 use App\Services\RegionReconcile\Steps\RegistrySyncConfigStep;
+use App\Services\RegionReconcile\Steps\TracingBackendStep;
 use App\Services\RegionReconcile\Steps\TraefikImageStep;
 use App\Services\RegionReconcile\Steps\WasmSandboxStep;
 use Closure;
@@ -50,12 +52,15 @@ class RegionReconciler
             new PrometheusExposureStep,
             new NamespaceQuotaStep,
             new RegistrySyncConfigStep,
+            new RegistryPrewarmStep,
             new IngressTrustStep,
             new TraefikImageStep,
             new LokiDeletionStep,
+            // the tracing backend where tracing is enabled (the region's or the platform's mode)
+            new TracingBackendStep,
             new KataSandboxStep,
             new WasmSandboxStep,
-            // RunR's image namespace (ghcr.io/brf-tech): the admission policy admits it before
+            // RunR's image namespace (ghcr.io/brf-tech/runr): the admission policy admits it before
             // image-registry rolls the region's workloads onto it
             new AdmissionPolicyStep,
             new ImageRegistryStep,

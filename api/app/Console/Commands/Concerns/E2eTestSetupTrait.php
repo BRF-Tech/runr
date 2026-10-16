@@ -284,7 +284,7 @@ trait E2eTestSetupTrait
      * Knative resolves every image tag of a Revision to a digest on its registry, init containers
      * included. The e2e harness builds RunR's own images from this checkout (the universal wrapper
      * of runtime plugins, the hf-serve image, …) and loads them into the Kind nodes under their
-     * release names (ghcr.io/brf-tech/runr-wrapper:<version>); a tag that is not on the registry yet
+     * release names (ghcr.io/brf-tech/runr/wrapper:<version>); a tag that is not on the registry yet
      * fails the Revision ("failed to resolve image to digest"). The e2e region adds that registry
      * to Knative's registries-skipping-tag-resolving, next to Knative's own defaults, so the nodes
      * run the loaded images by their tags. Regions outside the e2e keep the resolution.

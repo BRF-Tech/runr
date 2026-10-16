@@ -113,7 +113,7 @@ run). containerd / k3s / RKE2 are not restarted. The shim reads its configuratio
 new Kata pods start with the new drop-in while running pods keep their VMs. RunR 0.4.1 installs are
 recognised (0.4.1's hash over pod spec + ConfigMap matches this release's pod spec and the ConfigMap in the
 cluster), so a 0.4.1 → 0.4.2 upgrade restarts nothing on Kata nodes. An installer whose pod spec differs only in
-RunR's image namespace (`ghcr.io/runrsh` up to 0.5.0, `ghcr.io/brf-tech` since) counts as the same installer:
+RunR's image namespace (`ghcr.io/runrsh` up to 0.5.0, `ghcr.io/brf-tech` in 0.5.1, `ghcr.io/brf-tech/runr` since) counts as the same installer:
 it keeps running with its pod template, and a drop-in update re-applies that template as it is.
 
 ### Firecracker and devmapper

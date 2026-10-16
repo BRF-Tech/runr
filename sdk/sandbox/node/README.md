@@ -9,7 +9,8 @@ network access unless you allow it.
 npm install @runr/sandbox
 ```
 
-Node.js 18 or newer, ESM, no runtime dependencies (it uses the built-in `fetch`).
+Node.js 18 or newer, ESM, no runtime dependencies (it uses the built-in `fetch`, and the built-in
+`WebSocket` where the runtime has one).
 
 ## Configuration
 
@@ -87,6 +88,64 @@ for await (const event of sandbox.execStream('pip install --user requests')) {
 
 Output arrives as Server-Sent Events while the command runs. Pass `signal` (an `AbortSignal`) to stop
 reading early; breaking out of the loop closes the stream as well.
+
+### WebSocket exec
+
+`execStream` sends stdin up front. A program that reads its input while it runs — a REPL, a
+prompt, a consumer of a stream — runs over the exec WebSocket instead: `execWs` resolves once the
+command started, and its session sends stdin as you write it.
+
+```ts
+await using session = await sandbox.execWs(['python3', '-i'])
+session.sendStdin('x = 6 * 7\n')
+session.sendStdin('print(x)\n')
+session.closeStdin()                   // the program reads end of file
+
+for await (const event of session) {
+  if (event.type === 'stdout') process.stdout.write(event.data)
+  else if (event.type === 'stderr') process.stderr.write(event.data)
+  else console.log('exit code', event.exitCode)
+}
+```
+
+`tty: true` runs the command on a terminal of `cols` × `rows` (default 80 × 24): programs see a TTY
+(colors, line editing, full-screen tools), stdout and stderr arrive together as `stdout`, and
+`closeStdin()` sends Ctrl+D. `resize()` follows the size of your own terminal:
+
+```ts
+await using session = await sandbox.execWs('bash', {
+  tty: true, cols: process.stdout.columns ?? 80, rows: process.stdout.rows ?? 24,
+})
+process.stdin.setRawMode?.(true)
+process.stdin.on('data', (chunk) => session.sendStdin(chunk))
+process.stdout.on('resize', () => session.resize(process.stdout.columns, process.stdout.rows))
+for await (const event of session) {
+  if (event.type === 'stdout') process.stdout.write(event.data)
+}
+process.stdin.setRawMode?.(false)
+process.stdin.pause()
+const result = await session.wait()    // exit code, killed, timedOut
+process.exitCode = result.exitCode
+```
+
+| Session | |
+|---|---|
+| `sendStdin(data)` | bytes or UTF-8 text to the command's stdin (false once the command ended) |
+| `closeStdin()` | end of input (on a terminal: Ctrl+D) |
+| `resize(cols, rows)` | the terminal's size, 1–1000 each (`tty` sessions) |
+| `kill()` | stop the command; it ends with exit code 137 and `killed: true` |
+| iterating | `stdout` / `stderr` events, then one `exit` event (`exitCode`, `timedOut`, `killed`) |
+| `wait()` | the result: `exitCode`, `ok`, `killed`, `timedOut`, `tty` and the output no loop read |
+| `close()` | end the session; a command that still runs is stopped |
+
+`execWs` takes the options of `exec` (`stdin` for input sent before the command starts, `timeout`,
+`env`, `cwd`, `signal`) plus `tty`, `cols` and `rows`; `runCodeWs(code, { language })` does the same
+for code run by the language's interpreter. An abort of `signal` kills the command. The session is
+a one-time WebSocket on your RunR address (`wss://` for `https://`); it uses the runtime's
+`WebSocket` (Node.js 22+, Bun, Deno) or the SDK's own client on Node.js 18 and 20
+(`transport: 'builtin'` picks that one on any Node.js version). The command's own `timeout`
+applies; an error of the session rejects with a `RunrSandboxError` (`reason` `exec_error` for an
+error of the server, `websocket_closed` when the connection ends before the command did).
 
 ## Running code
 

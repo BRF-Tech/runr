@@ -180,10 +180,11 @@ func init() {
 			Response: prefix("data.", sandboxFields), Sources: sandboxSources},
 
 		// The exec WebSocket: a one-time token for /ws/sandbox-exec?token=… (outside /api, served
-		// by SandboxExecSocket; sandbox_exec_ws.go).
+		// by SandboxExecSocket; sandbox_exec_ws.go). tty, cols and rows: a terminal for the command.
 		Endpoint{Method: "POST", Path: "/sandboxes/{sandbox}/exec/ws", Status: 200, Permission: "sandboxes.exec",
-			Request: []string{"cmd", "stdin_base64", "timeout", "env", "cwd"}, FreeForm: []string{"env"},
-			Response: []string{"data.token", "data.url", "data.exec_id", "data.expires_in"}, Sources: sandboxExecSources},
+			Request: []string{"cmd", "stdin_base64", "timeout", "env", "cwd", "tty", "cols", "rows"}, FreeForm: []string{"env"},
+			Response: []string{"data.token", "data.url", "data.exec_id", "data.expires_in"}, Sources: sandboxExecSources,
+			Capabilities: []string{"data.tty"}},
 
 		// The terminal: a one-time session of the web shell's WebSocket (/ws/shell?token=…,
 		// outside /api; sandbox_terminal.go).

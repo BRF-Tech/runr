@@ -1,11 +1,16 @@
-# Build image of the wasm-python runtime (ghcr.io/brf-tech/exec-wasm-python:<version>): Python with
+# Build image of the wasm-python runtime (ghcr.io/brf-tech/runr/exec-wasm-python:<version>): Python with
 # componentize-py and the Spin Python SDK, and the Spin CLI of the Spin runtime the shim embeds.
 # It runs as the build Job of a function version (WasmBuildService); it is never deployed as a
 # function.
 #
-#   docker build -t ghcr.io/brf-tech/exec-wasm-python:4.1 runtime/wasm-python     (or: runtime/ci.sh wasm)
+#   docker build -t ghcr.io/brf-tech/runr/exec-wasm-python:4.1 runtime/wasm-python     (or: runtime/ci.sh wasm)
 ARG PYTHON_VERSION=3.13
-FROM python:${PYTHON_VERSION}-slim-bookworm
+FROM ghcr.io/brf-tech/runr/reqs/python:${PYTHON_VERSION}-slim-bookworm
+
+# The RUN steps only, not the image: a docker-container BuildKit builder gives them
+# OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=unix:///dev/otel-grpc.sock, which Spin's telemetry rejects
+# ("invalid URI") before the command runs (ci/check-dockerfiles.sh)
+ARG OTEL_SDK_DISABLED=true
 
 ARG SPIN_VERSION=4.1.0
 ARG SPIN_SHA256_AMD64=02fdfe34a52f8bb41da5ac0a7b52abfbf0534cd57710c3a30d13293f4245e65e

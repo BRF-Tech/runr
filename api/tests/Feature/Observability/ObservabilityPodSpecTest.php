@@ -206,7 +206,7 @@ class ObservabilityPodSpecTest extends TestCase
 
     public function test_a_wasm_function_gets_the_env_but_no_wrapper_and_no_capture(): void
     {
-        ExecutorImage::create(['runtime' => 'wasm-rust', 'version' => '4.1', 'docker_image' => 'ghcr.io/brf-tech/exec-wasm-rust:4.1', 'is_default' => true, 'is_active' => true]);
+        ExecutorImage::create(['runtime' => 'wasm-rust', 'version' => '4.1', 'docker_image' => 'ghcr.io/brf-tech/runr/exec-wasm-rust:4.1', 'is_default' => true, 'is_active' => true]);
         [$project, $version] = $this->runtimeProject('wasm-rust', 'http', ['lib.rs' => 'x'],
             ['sandbox_wasm_status' => 'ready', 'sandbox_wasm_shims' => ['spin']], '10.43.0.5:5000/runr-builds/hello:v1');
         $this->ready($project->knativeRegion);

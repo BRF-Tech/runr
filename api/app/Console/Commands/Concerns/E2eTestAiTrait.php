@@ -56,7 +56,7 @@ PY;
         $this->info('');
         $this->info('── AI: model services, offline snapshots, bindings, GPU ──');
 
-        $hfServe = (string) ($this->option('hf-serve-image') ?: (getenv('RUNR_E2E_HF_SERVE_IMAGE') ?: 'ghcr.io/brf-tech/hf-serve:1.1.0'));
+        $hfServe = (string) ($this->option('hf-serve-image') ?: (getenv('RUNR_E2E_HF_SERVE_IMAGE') ?: 'ghcr.io/brf-tech/runr/hf-serve:1.1.0'));
         $this->line("  hf-serve image: {$hfServe}");
 
         $tests = [];
@@ -327,7 +327,7 @@ PY;
 
     private function aiGpuCase(string $name, string $regionId): array
     {
-        $image = (string) ($this->option('gpu-image') ?: (getenv('RUNR_E2E_GPU_IMAGE') ?: 'ghcr.io/brf-tech/ai-gpu-caas:e2e'));
+        $image = (string) ($this->option('gpu-image') ?: (getenv('RUNR_E2E_GPU_IMAGE') ?: 'ghcr.io/brf-tech/runr/ai-gpu-caas:e2e'));
         $test = $this->makeTestEntry($name, ['service_type' => 'caas', 'trigger_type' => 'http', 'image' => $image], $regionId);
         $test['startTime'] = microtime(true);
 

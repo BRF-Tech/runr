@@ -18,7 +18,7 @@ use App\Services\Manifests\QueueConsumerManifests;
  */
 trait KnativeQueueConsumerTrait
 {
-    private const QUEUE_CONSUMER_IMAGE = 'ghcr.io/brf-tech/runr-queue-consumer:latest';
+    private const QUEUE_CONSUMER_IMAGE = 'ghcr.io/brf-tech/runr/queue-consumer:latest';
 
     private function buildQueueConsumerDeployment(Project $project, string $namespace): array
     {

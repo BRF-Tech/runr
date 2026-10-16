@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Sandboxes;
 
+use App\Jobs\Sandboxes\PromoteWarmSandboxesJob;
 use App\Jobs\Sandboxes\RefillSandboxPoolsJob;
 use App\Models\Sandbox;
 use App\Models\SandboxPool;
@@ -10,11 +11,12 @@ use App\Services\Sandboxes\SandboxMetrics;
 use App\Services\Sandboxes\SandboxPoolService;
 use App\Services\Sandboxes\Tar\TarReader;
 use Illuminate\Support\Facades\Queue;
+use Illuminate\Support\Sleep;
 
 /**
- * Warm pools: refill (start, warming → warm, surplus, stale and disabled pools), the atomic claim
- * on create (same id, labels, egress policy, env + files after the claim, hit counter), misses,
- * spec mismatches and the metrics they feed.
+ * Warm pools: refill (start, warming → warm as soon as the pod runs, surplus, stale and disabled
+ * pools), the atomic claim on create (same id, labels, egress policy, env + files after the claim,
+ * hit counter), misses, spec mismatches and the metrics they feed.
  */
 class SandboxWarmPoolTest extends SandboxTestCase
 {
@@ -40,12 +42,14 @@ class SandboxWarmPoolTest extends SandboxTestCase
 
     public function test_refill_starts_warm_pods_and_marks_them_warm_once_running(): void
     {
+        Queue::fake();
         $pool = $this->pool(['size' => 2]);
 
         $this->assertSame(2, $this->refill());
         $members = Sandbox::where('pool_id', $pool->id)->get();
         $this->assertCount(2, $members);
         $this->assertSame(['warming', 'warming'], $members->pluck('status')->all());
+        Queue::assertPushed(PromoteWarmSandboxesJob::class, fn ($job) => $job->poolId === $pool->id && $job->sandboxIds === $members->pluck('id')->all());
 
         $pod = $this->podOf($members[0]->id);
         $this->assertSame('warm', $pod['metadata']['labels']['runr.dev/sandbox-state']);
@@ -57,6 +61,61 @@ class SandboxWarmPoolTest extends SandboxTestCase
         // Next run: the pods run → warm; nothing new to start
         $this->assertSame(0, $this->refill());
         $this->assertSame(['warm', 'warm'], Sandbox::where('pool_id', $pool->id)->pluck('status')->all());
+    }
+
+    public function test_a_started_pod_is_warm_as_soon_as_it_runs(): void
+    {
+        Sleep::fake();
+        $this->podStartState = 'pending';
+        $this->podRunsAfterReads = 2;
+        $pool = $this->pool(['size' => 1]);
+
+        // The refill's promotion (sync queue here) reads the pod until it runs: no second refill
+        $this->assertSame(1, $this->refill());
+
+        $this->assertSame(['warm'], Sandbox::where('pool_id', $pool->id)->pluck('status')->all());
+        Sleep::assertSequence([Sleep::usleep(150_000), Sleep::usleep(150_000)]);
+        $this->assertSame(1, app(SandboxPoolService::class)->describe($pool)['warm']);
+    }
+
+    public function test_a_claim_is_served_from_the_replacement_within_seconds(): void
+    {
+        Sleep::fake();
+        $pool = $this->pool(['size' => 1]);
+        $this->refill();
+        $first = $this->createSandbox();
+        $this->assertTrue($first['from_pool']);
+
+        // The claim's refill (sync queue) started the replacement and warmed it: the next create
+        // gets a warm pod as well, without waiting for the minute's refill
+        $second = $this->createSandbox();
+        $this->assertTrue($second['from_pool']);
+        $this->assertNotSame($first['id'], $second['id']);
+        $this->assertSame(2, $pool->fresh()->hits);
+    }
+
+    public function test_pods_still_starting_after_the_wait_are_left_to_the_refill(): void
+    {
+        Queue::fake();
+        Sleep::fake();
+        $this->podStartState = 'pending';
+        $pool = $this->pool(['size' => 1]);
+        $this->refill();
+        $member = Sandbox::where('pool_id', $pool->id)->sole();
+
+        $this->assertSame(0, app(SandboxPoolService::class)->promote($pool, [$member->id], 0));
+        $this->assertSame('warming', $member->fresh()->status);
+
+        // An image error is not the promotion's to handle either: the refill replaces the pod
+        $key = $member->namespace.'/'.$member->pod_name;
+        $this->setPodStatus($key, ['phase' => 'Pending', 'containerStatuses' => [['name' => 'sandbox', 'state' => ['waiting' => ['reason' => 'ErrImagePull', 'message' => 'no']]]]]);
+        $this->assertSame(0, app(SandboxPoolService::class)->promote($pool, [$member->id], 5));
+        Sleep::assertNeverSlept();
+        $this->assertSame('warming', $member->fresh()->status);
+
+        $this->refill();
+        $this->assertSame('failed', $member->fresh()->status);
+        $this->assertStringContainsString('ErrImagePull', (string) $pool->fresh()->last_error);
     }
 
     public function test_create_claims_a_warm_pod(): void
@@ -130,7 +189,7 @@ class SandboxWarmPoolTest extends SandboxTestCase
             ['read_only_root' => false],
             ['pids_limit' => 64],
             ['sandbox_class' => 'gvisor'],
-            ['image' => 'ghcr.io/brf-tech/exec-python:3.14'],
+            ['image' => 'ghcr.io/brf-tech/runr/exec-python:3.14'],
         ] as $input) {
             $data = $this->createSandbox($input);
             $this->assertFalse($data['from_pool'], json_encode($input));

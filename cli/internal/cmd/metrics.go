@@ -23,11 +23,12 @@ func newMetricsCmd(app *App) *cobra.Command {
 		Long: "A summary of the project's recorded metrics over the last 7, 30 or 90 days (--period):\n" +
 			"average and peak CPU, memory and requests per second, cold starts, and the deployment\n" +
 			"sessions (how long the workload ran and what it used). `runr metrics history` lists the\n" +
-			"recorded snapshots.",
+			"recorded snapshots, `runr metrics live` reads what the live deployment uses right now.",
 		Example: "  runr metrics\n" +
 			"  runr metrics --period 30d -p orders\n" +
 			"  runr metrics history --since 6h\n" +
-			"  runr metrics history --from 2026-10-01 --to 2026-10-08 --granularity 1d",
+			"  runr metrics history --from 2026-10-01 --to 2026-10-08 --granularity 1d\n" +
+			"  runr metrics live --watch 5s",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			days := 0
@@ -53,8 +54,99 @@ func newMetricsCmd(app *App) *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&period, "period", "7d", "7d, 30d or 90d")
-	cmd.AddCommand(newMetricsHistoryCmd(app))
+	cmd.AddCommand(newMetricsHistoryCmd(app), newMetricsLiveCmd(app))
 	return cmd
+}
+
+func newMetricsLiveCmd(app *App) *cobra.Command {
+	var deploymentID string
+	var quick bool
+	var watch time.Duration
+	cmd := &cobra.Command{
+		Use:   "live",
+		Short: "What the live deployment uses right now: CPU, memory, requests per second",
+		Long: "Read the live usage of the project's deployment from its region's Prometheus: CPU in cores,\n" +
+			"memory in MiB and requests per second over the last minute, with the averages of the last\n" +
+			"hour (--quick leaves them out and answers faster). --deployment picks another deployment\n" +
+			"than the live one; --watch reads again at that interval until Ctrl+C (one JSON document per\n" +
+			"reading with -o json). A dash is a value the region has no reading for: no pods running\n" +
+			"(scaled to zero) or no Prometheus.",
+		Example: "  runr metrics live\n" +
+			"  runr metrics live -p orders --quick --watch 5s\n" +
+			"  runr metrics live --deployment 01JB… -o json",
+		Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if watch != 0 && watch < time.Second {
+				return usageErrorf("--watch must be at least 1s")
+			}
+			ctx := cmd.Context()
+			c, p, err := app.Project(ctx)
+			if err != nil {
+				return err
+			}
+			id := deploymentID
+			if id == "" {
+				d, err := c.CurrentDeployment(ctx, p.ID)
+				if err != nil {
+					return err
+				}
+				if d == nil {
+					return &runr.NotFoundError{Kind: "deployment of project", Ref: p.Name}
+				}
+				id = d.ID
+			}
+			for {
+				m, err := c.DeploymentMetrics(ctx, p.ID, id, quick)
+				if err != nil {
+					if watch > 0 && ctx.Err() != nil {
+						return nil
+					}
+					return err
+				}
+				if err := app.Printer().Print(m, func(t *output.TableWriter) { liveMetricsDetail(t, p, id, m, quick) }); err != nil {
+					return err
+				}
+				if watch == 0 {
+					return nil
+				}
+				select {
+				case <-ctx.Done():
+					return nil
+				case <-time.After(watch):
+				}
+			}
+		},
+	}
+	cmd.Flags().StringVar(&deploymentID, "deployment", "", "deployment id (default: the live deployment)")
+	cmd.Flags().BoolVar(&quick, "quick", false, "current values only, without the hourly averages")
+	cmd.Flags().DurationVarP(&watch, "watch", "w", 0, "read again at this interval (at least 1s) until interrupted")
+	return cmd
+}
+
+func liveMetricsDetail(t *output.TableWriter, p *runr.Project, deploymentID string, m *runr.DeploymentMetrics, quick bool) {
+	t.KV("Project", p.Name)
+	t.KV("Deployment", deploymentID)
+	t.KV("CPU", unitText(m.CPU, 3, "cores"))
+	t.KV("Memory", unitText(m.MemoryMB, 0, "MiB"))
+	t.KV("Requests", unitText(m.RPS, 2, "/s"))
+	if !quick {
+		t.KV("CPU, last hour", unitText(m.CPUAvg1h, 3, "cores on average"))
+		t.KV("Memory, last hour", unitText(m.MemoryAvg1hMB, 0, "MiB on average"))
+	}
+	if m.CPU == nil && m.MemoryMB == nil && m.RPS == nil {
+		t.Note("The region has no reading: no pod of the deployment runs (scaled to zero), or the region has no Prometheus.")
+	}
+}
+
+// unitText is a value with its unit, or a dash for none.
+func unitText(v *runr.FlexFloat, prec int, unit string) string {
+	if v == nil {
+		return "-"
+	}
+	if unit == "/s" {
+		return flexText(v, prec) + unit
+	}
+	return flexText(v, prec) + " " + unit
 }
 
 func flexText(v *runr.FlexFloat, prec int) string {

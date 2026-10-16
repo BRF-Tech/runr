@@ -20,12 +20,17 @@ import (
 // Region administration: the tracing backend (runr regions tracing), the data services
 // bindings run on (runr regions data-services), the sandbox runtimes (runr regions sandbox,
 // regions_sandbox.go), the supply chain (runr regions supply-chain, regions_supply_chain.go),
-// GPU support and model storage (runr regions gpu, runr regions model-storage, regions_gpu.go).
-// They hang under `runr regions`.
+// GPU support and model storage (runr regions gpu, runr regions model-storage, regions_gpu.go),
+// the lifecycle of a region (create, get, set, rm, status, kubeconfig, nodes:
+// regions_lifecycle.go), Knative (regions_knative.go), its services (redis, registry, migration,
+// function-tls, skupper, capacity, demo: regions_services.go) and WebAssembly support
+// (regions_webassembly.go). They hang under `runr regions`.
 
 func addRegionAdminCommands(app *App, regions *cobra.Command) {
 	regions.AddCommand(newRegionTracingCmd(app), newRegionDataServicesCmd(app), newRegionSandboxCmd(app), newRegionSupplyChainCmd(app),
-		newRegionGPUCmd(app), newRegionModelStorageCmd(app))
+		newRegionGPUCmd(app), newRegionModelStorageCmd(app), newRegionKnativeCmd(app), newRegionWasmCmd(app))
+	regions.AddCommand(newRegionLifecycleCommands(app)...) // regions_lifecycle.go
+	regions.AddCommand(newRegionServiceCommands(app)...)   // regions_services.go
 }
 
 // radmRegion resolves REGION (name or id; empty: the only active region).

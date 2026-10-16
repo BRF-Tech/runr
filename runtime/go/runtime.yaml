@@ -9,8 +9,8 @@ language: go
 extensions: [go]
 category: general
 versionDiscovery:
-  repository: runrsh/exec-go
-  image: "ghcr.io/brf-tech/exec-go:{version}"
+  repository: ghcr.io/brf-tech/runr/exec-go
+  image: "ghcr.io/brf-tech/runr/exec-go:{version}"
   eol: go
 handler:
   file: main
@@ -34,7 +34,7 @@ build:
     mkdir -p /build/src && cp /build/code/*.go /build/src/ && cd /build/src &&
     go mod init runr-function && go mod tidy &&
     CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o /build/out/handler .
-  runImage: ghcr.io/brf-tech/reqs/alpine:3.20
+  runImage: ghcr.io/brf-tech/runr/reqs/alpine:3.20
   source: false
   files:
     runr_wrapper_.go:

@@ -1,0 +1,4 @@
+# exec-tensorflow CPU image: Google's CPU-only TensorFlow build (the `tensorflow` module). The
+# image tag is its major.minor (runtime/ci.sh ml-runtimes reads it from this pin); keep
+# requirements-cuda.txt on the same version.
+tensorflow-cpu==2.21.0

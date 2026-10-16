@@ -213,7 +213,7 @@ YAML);
 
     public function test_built_in_only_features(): void
     {
-        $discovery = $this->bashManifest(['versions' => null, 'versionDiscovery' => ['repository' => 'brf-tech/exec-bash', 'image' => 'ghcr.io/brf-tech/exec-bash:{version}']]);
+        $discovery = $this->bashManifest(['versions' => null, 'versionDiscovery' => ['repository' => 'ghcr.io/brf-tech/runr/exec-bash', 'image' => 'ghcr.io/brf-tech/runr/exec-bash:{version}']]);
         $this->assertContains(
             ['path' => '/versionDiscovery', 'message' => 'is only available to the built-in catalog; list versions instead'],
             $this->problems($discovery),

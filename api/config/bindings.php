@@ -33,7 +33,7 @@ return [
     'ops' => [
         'timeout' => (int) env('BINDINGS_OPS_TIMEOUT', 180),
         // Python toolbox of the admin API calls (Garage); mirrored python:3.12-slim
-        'toolbox_image' => RegistryMove::ref(env('BINDINGS_OPS_TOOLBOX_IMAGE', 'ghcr.io/brf-tech/reqs/python:3.12-slim')),
+        'toolbox_image' => RegistryMove::ref(env('BINDINGS_OPS_TOOLBOX_IMAGE', 'ghcr.io/brf-tech/runr/reqs/python:3.12-slim')),
     ],
 
     /*
@@ -50,7 +50,7 @@ return [
 
     // ── KV: Redis with one ACL user + key prefix per binding ─────────────────────────────
     'kv' => [
-        'image' => RegistryMove::ref(env('BINDINGS_KV_IMAGE', 'ghcr.io/brf-tech/reqs/redis:7-alpine')),
+        'image' => RegistryMove::ref(env('BINDINGS_KV_IMAGE', 'ghcr.io/brf-tech/runr/reqs/redis:7-alpine')),
         // Instance memory (maxmemory, noeviction) and AOF volume of the managed KV Redis
         'maxmemory_mb' => (int) env('BINDINGS_KV_MAXMEMORY_MB', 512),
         'storage' => env('BINDINGS_KV_STORAGE', '2Gi'),
@@ -62,7 +62,7 @@ return [
     // ── Object storage: Garage (managed) or an external S3 endpoint ──────────────────────
     'object' => [
         // Mirror of dxflrs/garage (runtime/lib/mirror.sh)
-        'image' => RegistryMove::ref(env('BINDINGS_OBJECT_IMAGE', 'ghcr.io/brf-tech/reqs/garage:v2.1.0')),
+        'image' => RegistryMove::ref(env('BINDINGS_OBJECT_IMAGE', 'ghcr.io/brf-tech/runr/reqs/garage:v2.1.0')),
         'storage' => env('BINDINGS_OBJECT_STORAGE', '20Gi'),
         'meta_storage' => env('BINDINGS_OBJECT_META_STORAGE', '1Gi'),
         'storage_class' => env('BINDINGS_STORAGE_CLASS', ''),
@@ -70,7 +70,7 @@ return [
         'default_quota_gb' => 5,
         'max_quota_gb' => 1000,
         // S3 client of the purge / external-bucket operations (mirror of rclone/rclone)
-        'client_image' => RegistryMove::ref(env('BINDINGS_OBJECT_CLIENT_IMAGE', 'ghcr.io/brf-tech/reqs/rclone:1.68.2')),
+        'client_image' => RegistryMove::ref(env('BINDINGS_OBJECT_CLIENT_IMAGE', 'ghcr.io/brf-tech/runr/reqs/rclone:1.68.2')),
     ],
 
     // ── Postgres: CloudNativePG operator, shared cluster or a dedicated one per binding ──

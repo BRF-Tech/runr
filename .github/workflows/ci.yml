@@ -19,8 +19,19 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      # Every ghcr.io/brf-tech/reqs/* image the repository references is mirrored by runtime/ci.sh
+      # Every ghcr.io/brf-tech/runr/reqs/* image the repository references is mirrored by runtime/ci.sh
       - run: bash ci/check-reqs-mirror.sh
+
+  build-scripts:
+    name: Dockerfiles + build scripts
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # No Docker Hub base image; Spin RUN steps with OTEL_SDK_DISABLED=true (docker-container builders)
+      - run: bash ci/check-dockerfiles.sh
+      # runtime/ci.sh without Docker or a registry: build/push exit codes and --pull, the mirror's
+      # Docker Hub fallback, the EOL report, the shared Kind helpers
+      - run: for t in runtime/test/*_test.sh; do echo "── $t"; bash "$t"; done
 
   api:
     name: API tests + static analysis

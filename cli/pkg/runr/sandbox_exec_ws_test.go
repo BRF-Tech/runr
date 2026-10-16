@@ -195,6 +195,93 @@ func TestSandboxExecSocketIsOneTime(t *testing.T) {
 	}
 }
 
+// A command on a terminal: tty, cols and rows in the request, tty on the session and the start
+// frame, sizes of SandboxStream.Resize as resize frames, the output in stdout frames.
+func TestSandboxExecWebSocketTTY(t *testing.T) {
+	srv := runrtest.New(t)
+	c := client(t, srv)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	sb := srv.SeedSandbox("python")
+	srv.SetSandboxExec(func(call runrtest.SandboxExecCall) runrtest.SandboxExecReply {
+		return runrtest.SandboxExecReply{ExitCode: 2, Output: []runrtest.SandboxChunk{
+			{Stream: "stdout", Data: []byte("$ " + string(call.Stdin))},
+			{Stream: "stderr", Data: []byte("sh: oops\r\n")},
+		}}
+	})
+
+	sess, err := c.OpenSandboxExecSocket(ctx, sb.ID, runr.SandboxExecInput{Cmd: []string{"sh"}, TTY: true, Cols: 132, Rows: 43})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !sess.TTY {
+		t.Fatalf("session = %+v", sess)
+	}
+	body := srv.CallsTo("POST /sandboxes/{sandbox}/exec/ws")[0].Body
+	if body["tty"] != true || body["cols"] != float64(132) || body["rows"] != float64(43) {
+		t.Fatalf("exec/ws body = %v", body)
+	}
+	sock, err := c.DialSandboxExec(ctx, sess)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if f, err := sock.Next(); err != nil || f.Type != "start" || !f.TTY {
+		t.Fatalf("start = %+v, %v", f, err)
+	}
+	sock.Close()
+
+	// The stream: resize frames while it runs; Ctrl+D ends the input; the terminal merges stderr.
+	pr, pw := io.Pipe()
+	sizes := make(chan runr.TerminalSize, 2)
+	var out, errOut bytes.Buffer
+	done := make(chan struct{})
+	var res *runr.SandboxStreamResult
+	go func() {
+		defer close(done)
+		res, err = c.StreamSandboxExecWS(ctx, sb.ID, runr.SandboxExecInput{Cmd: []string{"sh"}, TTY: true},
+			runr.SandboxStream{Stdout: &out, Stderr: &errOut, Resize: sizes}, pr)
+	}()
+	sizes <- runr.TerminalSize{Cols: 100, Rows: 30}
+	sizes <- runr.TerminalSize{Cols: 0, Rows: 30} // not a size: not sent
+	for deadline := time.Now().Add(5 * time.Second); ; time.Sleep(5 * time.Millisecond) {
+		socks := srv.SandboxExecSockets()
+		if len(socks) == 2 && len(socks[1].Resizes) == 1 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("no resize frame: %+v", socks)
+		}
+	}
+	if _, err := pw.Write([]byte("ls\r\x04")); err != nil {
+		t.Fatal(err)
+	}
+	<-done
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.ExitCode != 2 || !res.TTY || out.String() != "$ ls\rsh: oops\r\n" || errOut.Len() != 0 {
+		t.Fatalf("result = %+v, stdout %q, stderr %q", res, out.String(), errOut.String())
+	}
+	sock2 := srv.SandboxExecSockets()[1]
+	if !sock2.TTY || sock2.Resizes[0] != (runr.TerminalSize{Cols: 100, Rows: 30}) || !sock2.StdinClosed {
+		t.Fatalf("socket = %+v", sock2)
+	}
+	if call := srv.SandboxCalls()[0]; !call.TTY || call.Cols != 0 || call.Rows != 0 {
+		t.Fatalf("call = %+v", call)
+	}
+
+	// Without tty the request carries none of the terminal fields.
+	if _, err := c.OpenSandboxExecSocket(ctx, sb.ID, runr.SandboxExecInput{Cmd: "ls"}); err != nil {
+		t.Fatal(err)
+	}
+	last := srv.CallsTo("POST /sandboxes/{sandbox}/exec/ws")
+	for _, k := range []string{"tty", "cols", "rows"} {
+		if _, ok := last[len(last)-1].Body[k]; ok {
+			t.Fatalf("exec/ws without a terminal sent %s: %v", k, last[len(last)-1].Body)
+		}
+	}
+}
+
 type writerFunc func([]byte) (int, error)
 
 func (f writerFunc) Write(b []byte) (int, error) { return f(b) }

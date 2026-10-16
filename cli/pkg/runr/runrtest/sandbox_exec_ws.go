@@ -1,19 +1,24 @@
 package runrtest
 
 import (
+	"bytes"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"path"
 	"strings"
+
+	"github.com/brf-tech/runr/cli/pkg/runr"
 )
 
 // The exec WebSocket of the fake (SandboxExecController::execWs, SandboxExecSocket):
 // POST /sandboxes/{id}/exec/ws stores the prepared command under a one-time token, and
 // /ws/sandbox-exec?token=… runs it. The fake's command reads its stdin until stdin_close and
 // then answers with SandboxExecFunc (stdout, stderr, exit); `cat` echoes every stdin frame at
-// once instead, and a kill frame ends any command with exit code 137.
+// once instead, and a kill frame ends any command with exit code 137. With a terminal (tty)
+// every output chunk goes out as a stdout frame, as a terminal merges the streams, resize frames
+// are recorded and Ctrl+D (0x04) in a stdin frame ends the input like stdin_close.
 
 // SandboxExecSocketLog is what an exec WebSocket of the fake received.
 type SandboxExecSocketLog struct {
@@ -24,6 +29,9 @@ type SandboxExecSocketLog struct {
 	// StdinClosed is set by a stdin_close frame, Killed by a kill frame.
 	StdinClosed bool
 	Killed      bool
+	// TTY is the session's terminal; Resizes are the sizes of its resize frames.
+	TTY     bool
+	Resizes []runr.TerminalSize
 }
 
 type sbxExecSession struct {
@@ -52,6 +60,7 @@ func (s *Server) SandboxExecSockets() []SandboxExecSocketLog {
 		cp := *l
 		cp.Stdin = append([]byte(nil), l.Stdin...)
 		cp.Cmd = append([]string(nil), l.Cmd...)
+		cp.Resizes = append([]runr.TerminalSize(nil), l.Resizes...)
 		out = append(out, cp)
 	}
 	return out
@@ -75,6 +84,25 @@ func init() {
 		if t, ok := q.Body["timeout"].(float64); ok {
 			call.Timeout = int(t)
 		}
+		if tty, ok := q.Body["tty"]; ok {
+			b, isBool := tty.(bool)
+			if !isBool {
+				return 0, nil, errValidation("tty", "The tty field must be true or false.")
+			}
+			call.TTY = b
+		}
+		for _, f := range []struct {
+			name string
+			dst  *int
+		}{{"cols", &call.Cols}, {"rows", &call.Rows}} {
+			if v, ok := q.Body[f.name]; ok {
+				n, isNum := v.(float64)
+				if !isNum || n != float64(int(n)) || n < 1 || n > 1000 {
+					return 0, nil, errValidation(f.name, "The "+f.name+" field must be between 1 and 1000.")
+				}
+				*f.dst = int(n)
+			}
+		}
 		if err := sbxCommand(q, &call); err != nil {
 			return 0, nil, err
 		}
@@ -85,7 +113,7 @@ func init() {
 		st.sessions[token] = &sbxExecSession{call: call, execID: execID}
 		sb.data.LastActivityAt = nowRFC3339()
 		return 200, map[string]any{"data": map[string]any{
-			"token": token, "url": "/ws/sandbox-exec?token=" + token, "exec_id": execID, "expires_in": 60,
+			"token": token, "url": "/ws/sandbox-exec?token=" + token, "exec_id": execID, "expires_in": 60, "tty": call.TTY,
 		}}, nil
 	})
 	rawRoutes["/ws/sandbox-exec"] = (*Server).sbxExecSocket
@@ -105,7 +133,7 @@ func (s *Server) sbxExecSocket(w http.ResponseWriter, r *http.Request) {
 	delete(st.sessions, token) // one-time
 	var log *SandboxExecSocketLog
 	if sess != nil {
-		log = &SandboxExecSocketLog{SandboxID: sess.call.SandboxID, Cmd: sess.call.Cmd}
+		log = &SandboxExecSocketLog{SandboxID: sess.call.SandboxID, Cmd: sess.call.Cmd, TTY: sess.call.TTY}
 		st.sockets = append(st.sockets, log)
 	}
 	s.mu.Unlock()
@@ -117,7 +145,7 @@ func (s *Server) sbxExecSocket(w http.ResponseWriter, r *http.Request) {
 
 	call := sess.call
 	isCat := len(call.Cmd) > 0 && path.Base(call.Cmd[len(call.Cmd)-1]) == "cat"
-	ws.sendJSON(map[string]any{"type": "start", "exec_id": sess.execID})
+	ws.sendJSON(map[string]any{"type": "start", "exec_id": sess.execID, "tty": call.TTY})
 	exit := func(code int, timedOut, killed bool) {
 		ws.sendJSON(map[string]any{"type": "exit", "exit_code": code, "timed_out": timedOut, "duration_ms": 12, "killed": killed})
 		ws.closeHandshake()
@@ -159,26 +187,14 @@ func (s *Server) sbxExecSocket(w http.ResponseWriter, r *http.Request) {
 		var m struct {
 			Type string `json:"type"`
 			Data string `json:"data"`
+			Cols int    `json:"cols"`
+			Rows int    `json:"rows"`
 		}
 		if json.Unmarshal(msg, &m) != nil {
 			continue
 		}
-		switch m.Type {
-		case "stdin":
-			in, err := base64.StdEncoding.DecodeString(m.Data)
-			if err != nil {
-				continue
-			}
-			s.mu.Lock()
-			closed := log.StdinClosed
-			if !closed {
-				log.Stdin = append(log.Stdin, in...)
-			}
-			s.mu.Unlock()
-			if isCat && !closed {
-				ws.sendJSON(map[string]any{"type": "stdout", "data": base64.StdEncoding.EncodeToString(in)})
-			}
-		case "stdin_close":
+		// endInput answers the end of the command's input: cat exits, any other command replies.
+		endInput := func() {
 			s.mu.Lock()
 			log.StdinClosed = true
 			fn := s.sbx().exec
@@ -195,10 +211,49 @@ func (s *Server) sbxExecSocket(w http.ResponseWriter, r *http.Request) {
 				reply = fn(c)
 			}
 			for _, ch := range reply.Output {
-				ws.sendJSON(map[string]any{"type": ch.Stream, "data": base64.StdEncoding.EncodeToString(ch.Data)})
+				stream := ch.Stream
+				if call.TTY {
+					stream = "stdout" // the terminal merges the streams
+				}
+				ws.sendJSON(map[string]any{"type": stream, "data": base64.StdEncoding.EncodeToString(ch.Data)})
 			}
 			exit(reply.ExitCode, reply.TimedOut, false)
+		}
+		switch m.Type {
+		case "stdin":
+			in, err := base64.StdEncoding.DecodeString(m.Data)
+			if err != nil {
+				continue
+			}
+			eot := -1
+			if call.TTY {
+				eot = bytes.IndexByte(in, 0x04) // Ctrl+D on a terminal: the end of the input
+			}
+			if eot >= 0 {
+				in = in[:eot]
+			}
+			s.mu.Lock()
+			closed := log.StdinClosed
+			if !closed {
+				log.Stdin = append(log.Stdin, in...)
+			}
+			s.mu.Unlock()
+			if isCat && !closed && len(in) > 0 {
+				ws.sendJSON(map[string]any{"type": "stdout", "data": base64.StdEncoding.EncodeToString(in)})
+			}
+			if eot >= 0 && !closed {
+				endInput()
+				return
+			}
+		case "stdin_close":
+			endInput()
 			return
+		case "resize":
+			if call.TTY {
+				s.mu.Lock()
+				log.Resizes = append(log.Resizes, runr.TerminalSize{Cols: m.Cols, Rows: m.Rows})
+				s.mu.Unlock()
+			}
 		case "kill":
 			s.mu.Lock()
 			log.Killed = true

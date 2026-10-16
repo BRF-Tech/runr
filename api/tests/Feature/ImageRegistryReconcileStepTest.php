@@ -16,9 +16,10 @@ use Symfony\Component\Yaml\Yaml;
 use Tests\TestCase;
 
 /**
- * region:reconcile moves the workloads RunR deployed before 0.5.1 to RunR's image namespace
+ * region:reconcile moves the workloads RunR deployed before 0.5.2 to RunR's image namespace
  * (ImageRegistryStep): one guarded JSON patch per workload whose pod template runs an image of
- * ghcr.io/runrsh/; what other steps own or what must keep its pods is left alone.
+ * ghcr.io/runrsh/ or one of RunR's packages directly under ghcr.io/brf-tech/; what other steps own
+ * or what must keep its pods is left alone.
  */
 class ImageRegistryReconcileStepTest extends TestCase
 {
@@ -78,6 +79,11 @@ class ImageRegistryReconcileStepTest extends TestCase
                     ['ownerReferences' => [['kind' => 'Revision', 'name' => 'fn-hello-00001', 'controller' => true]]]),
                 $this->workload('runr-api', 'runr', ['containers' => [['image' => 'ghcr.io/runrsh/runr/api:0.5.0']]], ['labels' => ['helm.sh/chart' => 'runr-0.5.0']]),
                 $this->workload('builder', 'eu-1', ['containers' => [['image' => '10.43.0.5:5000/ghcr.io/runrsh/exec-go:1.26']]]),
+                // RunR 0.5.1: its packages directly under ghcr.io/brf-tech; another package of the organization stays
+                $this->workload('runr-queue-consumer', 'eu-1', ['containers' => [
+                    ['name' => 'consumer', 'image' => 'ghcr.io/brf-tech/runr-queue-consumer:latest'],
+                    ['name' => 'sidecar', 'image' => 'ghcr.io/brf-tech/other-app:1'],
+                ]]),
             ],
             '/apis/apps/v1/statefulsets' => [
                 $this->workload('loki-stack', 'observability', [
@@ -133,31 +139,33 @@ class ImageRegistryReconcileStepTest extends TestCase
 
     private const KEPT = [
         "kept: Deployment eu-1/runr-redis runs ghcr.io/runrsh/reqs/redis:7-alpine — the region's queue Redis keeps its streams in memory only "
-            .'(a restart drops queued messages); it moves to ghcr.io/brf-tech when it is installed again',
+            .'(a restart drops queued messages); it moves to ghcr.io/brf-tech/runr when it is installed again',
         'kept: DaemonSet runr-sandbox/kata-installer runs ghcr.io/runrsh/reqs/busybox:latest — node installer of a sandbox runtime: rolling it '
-            ."re-runs the install on every node (Kata: kata-deploy's cleanup restarts the container runtime); it moves to ghcr.io/brf-tech "
+            ."re-runs the install on every node (Kata: kata-deploy's cleanup restarts the container runtime); it moves to ghcr.io/brf-tech/runr "
             .'with the next change of that installation',
     ];
 
-    public function test_workloads_move_to_ghcr_io_brf_tech_with_one_guarded_patch_each(): void
+    public function test_workloads_move_to_ghcr_io_brf_tech_runr_with_one_guarded_patch_each(): void
     {
         $lines = (new ImageRegistryStep)->run($this->cluster(), false);
 
         $this->assertSame([
-            'moved Service eu-1/fn-hello: ghcr.io/runrsh/runr-wrapper:1.1.0 → ghcr.io/brf-tech/runr-wrapper:1.1.0, '
-                .'ghcr.io/runrsh/exec-python:3.12 → ghcr.io/brf-tech/exec-python:3.12, ghcr.io/runrsh/reqs/curl:latest → ghcr.io/brf-tech/reqs/curl:latest'
+            'moved Service eu-1/fn-hello: ghcr.io/runrsh/runr-wrapper:1.1.0 → ghcr.io/brf-tech/runr/wrapper:1.1.0, '
+                .'ghcr.io/runrsh/exec-python:3.12 → ghcr.io/brf-tech/runr/exec-python:3.12, ghcr.io/runrsh/reqs/curl:latest → ghcr.io/brf-tech/runr/reqs/curl:latest'
                 .' — a new revision takes the traffic once it is ready',
-            'moved Deployment observability/runr-agent: ghcr.io/runrsh/runr-agent:latest → ghcr.io/brf-tech/runr-agent:latest — its pods roll once',
+            'moved Deployment observability/runr-agent: ghcr.io/runrsh/runr-agent:latest → ghcr.io/brf-tech/runr/agent:latest — its pods roll once',
             self::KEPT[0],
-            'moved StatefulSet observability/loki-stack: ghcr.io/runrsh/reqs/busybox:latest → ghcr.io/brf-tech/reqs/busybox:latest — its pods roll once',
+            'moved Deployment eu-1/runr-queue-consumer: ghcr.io/brf-tech/runr-queue-consumer:latest → ghcr.io/brf-tech/runr/queue-consumer:latest — its pods roll once',
+            'moved StatefulSet observability/loki-stack: ghcr.io/runrsh/reqs/busybox:latest → ghcr.io/brf-tech/runr/reqs/busybox:latest — its pods roll once',
             self::KEPT[1],
-            'moved DaemonSet kube-system/runr-registry-mirror: ghcr.io/runrsh/reqs/busybox:latest → ghcr.io/brf-tech/reqs/busybox:latest — its pods roll once',
-            'moved CronJob eu-1/fn-nightly: ghcr.io/runrsh/runr-wrapper:1.1.0 → ghcr.io/brf-tech/runr-wrapper:1.1.0 — from its next run',
+            'moved DaemonSet kube-system/runr-registry-mirror: ghcr.io/runrsh/reqs/busybox:latest → ghcr.io/brf-tech/runr/reqs/busybox:latest — its pods roll once',
+            'moved CronJob eu-1/fn-nightly: ghcr.io/runrsh/runr-wrapper:1.1.0 → ghcr.io/brf-tech/runr/wrapper:1.1.0 — from its next run',
         ], $lines);
 
         $this->assertSame([
             '/apis/serving.knative.dev/v1/namespaces/eu-1/services/fn-hello',
             '/apis/apps/v1/namespaces/observability/deployments/runr-agent',
+            '/apis/apps/v1/namespaces/eu-1/deployments/runr-queue-consumer',
             '/apis/apps/v1/namespaces/observability/statefulsets/loki-stack',
             '/apis/apps/v1/namespaces/kube-system/daemonsets/runr-registry-mirror',
             '/apis/batch/v1/namespaces/eu-1/cronjobs/fn-nightly',
@@ -165,16 +173,20 @@ class ImageRegistryReconcileStepTest extends TestCase
         $this->assertSame('application/json-patch+json', $this->patches[0]['type']);
         $this->assertSame([
             ['op' => 'test', 'path' => '/spec/template/spec/initContainers/0/image', 'value' => 'ghcr.io/runrsh/runr-wrapper:1.1.0'],
-            ['op' => 'replace', 'path' => '/spec/template/spec/initContainers/0/image', 'value' => 'ghcr.io/brf-tech/runr-wrapper:1.1.0'],
+            ['op' => 'replace', 'path' => '/spec/template/spec/initContainers/0/image', 'value' => 'ghcr.io/brf-tech/runr/wrapper:1.1.0'],
             ['op' => 'test', 'path' => '/spec/template/spec/containers/0/image', 'value' => 'ghcr.io/runrsh/exec-python:3.12'],
-            ['op' => 'replace', 'path' => '/spec/template/spec/containers/0/image', 'value' => 'ghcr.io/brf-tech/exec-python:3.12'],
+            ['op' => 'replace', 'path' => '/spec/template/spec/containers/0/image', 'value' => 'ghcr.io/brf-tech/runr/exec-python:3.12'],
             ['op' => 'test', 'path' => '/spec/template/spec/containers/0/env/0/value', 'value' => 'ghcr.io/runrsh/reqs/curl:latest'],
-            ['op' => 'replace', 'path' => '/spec/template/spec/containers/0/env/0/value', 'value' => 'ghcr.io/brf-tech/reqs/curl:latest'],
+            ['op' => 'replace', 'path' => '/spec/template/spec/containers/0/env/0/value', 'value' => 'ghcr.io/brf-tech/runr/reqs/curl:latest'],
         ], $this->patches[0]['ops']);
         $this->assertSame([
             ['op' => 'test', 'path' => '/spec/jobTemplate/spec/template/spec/initContainers/0/image', 'value' => 'ghcr.io/runrsh/runr-wrapper:1.1.0'],
-            ['op' => 'replace', 'path' => '/spec/jobTemplate/spec/template/spec/initContainers/0/image', 'value' => 'ghcr.io/brf-tech/runr-wrapper:1.1.0'],
-        ], $this->patches[4]['ops']);
+            ['op' => 'replace', 'path' => '/spec/jobTemplate/spec/template/spec/initContainers/0/image', 'value' => 'ghcr.io/brf-tech/runr/wrapper:1.1.0'],
+        ], $this->patches[5]['ops']);
+        $this->assertSame([
+            ['op' => 'test', 'path' => '/spec/template/spec/containers/0/image', 'value' => 'ghcr.io/brf-tech/runr-queue-consumer:latest'],
+            ['op' => 'replace', 'path' => '/spec/template/spec/containers/0/image', 'value' => 'ghcr.io/brf-tech/runr/queue-consumer:latest'],
+        ], $this->patches[2]['ops'], 'another package of the organization stays');
 
         // moved: only what keeps its pods is reported again
         $this->collections = array_map(fn ($items) => array_map(function ($o) {
@@ -191,8 +203,8 @@ class ImageRegistryReconcileStepTest extends TestCase
     {
         $lines = (new ImageRegistryStep)->run($this->cluster(), true);
 
-        $this->assertCount(7, $lines);
-        $this->assertStringStartsWith('would move Service eu-1/fn-hello: ghcr.io/runrsh/runr-wrapper:1.1.0 → ghcr.io/brf-tech/runr-wrapper:1.1.0', $lines[0]);
+        $this->assertCount(8, $lines);
+        $this->assertStringStartsWith('would move Service eu-1/fn-hello: ghcr.io/runrsh/runr-wrapper:1.1.0 → ghcr.io/brf-tech/runr/wrapper:1.1.0', $lines[0]);
         $this->assertSame(self::KEPT[0], $lines[2]);
         $this->assertSame([], $this->patches);
     }
@@ -205,9 +217,9 @@ class ImageRegistryReconcileStepTest extends TestCase
             (new ImageRegistryStep)->run($this->cluster(), false);
             $this->fail('a refused patch must fail the step');
         } catch (\RuntimeException $e) {
-            $this->assertStringStartsWith('1 workload(s) not moved to ghcr.io/brf-tech (patch refused, see the API log; the next run tries again): Deployment observability/runr-agent — done: moved Service eu-1/fn-hello', $e->getMessage());
+            $this->assertStringStartsWith('1 workload(s) not moved to ghcr.io/brf-tech/runr (patch refused, see the API log; the next run tries again): Deployment observability/runr-agent — done: moved Service eu-1/fn-hello', $e->getMessage());
         }
-        $this->assertCount(5, $this->patches, 'every other workload was patched');
+        $this->assertCount(6, $this->patches, 'every other workload was patched');
     }
 
     public function test_prometheus_of_the_operator_moves_through_its_resource(): void
@@ -220,7 +232,7 @@ class ImageRegistryReconcileStepTest extends TestCase
 
         $lines = (new ImageRegistryStep)->run($this->cluster(), false);
 
-        $this->assertSame(['moved Prometheus monitoring/kps-prometheus: ghcr.io/runrsh/reqs/busybox:latest → ghcr.io/brf-tech/reqs/busybox:latest — the operator rolls it once'], $lines);
+        $this->assertSame(['moved Prometheus monitoring/kps-prometheus: ghcr.io/runrsh/reqs/busybox:latest → ghcr.io/brf-tech/runr/reqs/busybox:latest — the operator rolls it once'], $lines);
         $this->assertSame('/apis/monitoring.coreos.com/v1/namespaces/monitoring/prometheuses/kps-prometheus', $this->patches[0]['path']);
         $this->assertSame('/spec/initContainers/0/image', $this->patches[0]['ops'][1]['path']);
     }
@@ -229,7 +241,7 @@ class ImageRegistryReconcileStepTest extends TestCase
     {
         $this->served = [];
         unset($this->collections['/apis/serving.knative.dev/v1/services']);
-        $this->assertCount(6, (new ImageRegistryStep)->run($this->cluster(), true), 'no Knative Services to list');
+        $this->assertCount(7, (new ImageRegistryStep)->run($this->cluster(), true), 'no Knative Services to list');
 
         unset($this->collections['/apis/apps/v1/statefulsets']);
         $this->expectExceptionMessage('cannot list StatefulSets (apps/v1)');

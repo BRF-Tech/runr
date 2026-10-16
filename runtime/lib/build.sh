@@ -1,26 +1,28 @@
 # ── Multiplatform buildx ─────────────────────────────────────────────────────
 PLATFORMS="${PLATFORMS:-linux/amd64,linux/arm64}"
-BUILDER_NAME="runr-multiarch"
+# The docker-container builder of --push builds: created when missing, named on each build
+# (--builder) and removed after the push. It never becomes the host's current builder, so other
+# builds on a shared host keep theirs.
+BUILDER_NAME="${BUILDER_NAME:-runr-multiarch}"
 
 ensure_buildx() {
   if ! docker buildx inspect "$BUILDER_NAME" >/dev/null 2>&1; then
     echo "Creating buildx builder (${BUILDER_NAME})..."
-    docker buildx create --name "$BUILDER_NAME" --driver docker-container --use
+    docker buildx create --name "$BUILDER_NAME" --driver docker-container
     docker buildx inspect --bootstrap "$BUILDER_NAME" >/dev/null
-  else
-    docker buildx use "$BUILDER_NAME"
   fi
 }
 
 cleanup_buildx() {
   if docker buildx inspect "$BUILDER_NAME" >/dev/null 2>&1; then
     echo "Removing buildx builder (${BUILDER_NAME})..."
-    docker buildx use default 2>/dev/null || true
     docker buildx rm "$BUILDER_NAME" 2>/dev/null || true
   fi
 }
 
-# Build helper — multiplatform push or local single-platform
+# Build helper — multiplatform push or local single-platform. --pull: base images come from their
+# registry, never from a copy the build host's Docker already holds (an old pull of a
+# ghcr.io/brf-tech/runr/reqs tag would otherwise be built on); a caller's --pull=false, after it, wins.
 do_build() {
   local tag="$1" context="$2" push="$3"
   shift 3
@@ -29,6 +31,8 @@ do_build() {
   if [ "$push" = "1" ]; then
     ensure_buildx
     docker buildx build \
+      --builder "${BUILDER_NAME}" \
+      --pull \
       --platform "${PLATFORMS}" \
       --provenance=false \
       --sbom=false \
@@ -37,7 +41,7 @@ do_build() {
       --output "type=image,push=true,oci-mediatypes=true" \
       "${context}"
   else
-    docker build "$@" -t "${tag}" "${context}"
+    docker build --pull "$@" -t "${tag}" "${context}"
   fi
 }
 
@@ -119,11 +123,15 @@ cmd_build() {
     done
   done
 
-  [ "$push" = "1" ] && cleanup_buildx
+  if [ "$push" = "1" ]; then
+    cleanup_buildx
+  fi
 
   echo "========================================="
   echo "Done. ${total} images built."
-  [ "$push" = "0" ] && echo "To push: ci.sh build --push"
+  if [ "$push" = "0" ]; then
+    echo "To push: ci.sh build --push"
+  fi
 }
 
 # cmd_build_queue_consumer — Build queue-consumer sidecar image
@@ -136,7 +144,7 @@ cmd_build_queue_consumer() {
   done
 
   local dir="${SCRIPT_DIR}/queue-consumer"
-  local tag="${REGISTRY}/runr-queue-consumer:latest"
+  local tag="${REGISTRY}/queue-consumer:latest"
 
   if [ ! -d "$dir" ]; then
     echo -e "${RED}queue-consumer directory not found: ${dir}${NC}"
@@ -148,11 +156,15 @@ cmd_build_queue_consumer() {
   echo "==> Building ${tag}"
   do_build "${tag}" "${dir}" "$push"
 
-  [ "$push" = "1" ] && cleanup_buildx
+  if [ "$push" = "1" ]; then
+    cleanup_buildx
+  fi
 
   echo ""
   echo -e "${GREEN}Done.${NC}"
-  [ "$push" = "0" ] && echo "To push: ci.sh queue-consumer --push"
+  if [ "$push" = "0" ]; then
+    echo "To push: ci.sh queue-consumer --push"
+  fi
 }
 
 # cmd_build_wrapper — Build the universal runtime wrapper image (runr-wrapper, FROM scratch)
@@ -165,7 +177,7 @@ cmd_build_wrapper() {
   done
 
   local dir="${SCRIPT_DIR}/wrapper"
-  local tag="${REGISTRY}/runr-wrapper:${WRAPPER_VERSION:-1.1.0}"
+  local tag="${REGISTRY}/wrapper:${WRAPPER_VERSION:-1.1.0}"
 
   if [ ! -d "$dir" ]; then
     echo -e "${RED}wrapper directory not found: ${dir}${NC}"
@@ -177,11 +189,15 @@ cmd_build_wrapper() {
   echo "==> Building ${tag}"
   do_build "${tag}" "${dir}" "$push"
 
-  [ "$push" = "1" ] && cleanup_buildx
+  if [ "$push" = "1" ]; then
+    cleanup_buildx
+  fi
 
   echo ""
   echo -e "${GREEN}Done.${NC}"
-  [ "$push" = "0" ] && echo "To push: ci.sh wrapper --push"
+  if [ "$push" = "0" ]; then
+    echo "To push: ci.sh wrapper --push"
+  fi
 }
 
 # cmd_build_image_upload — Build the image upload receiver (runr-image-upload, FROM scratch):
@@ -202,11 +218,15 @@ cmd_build_image_upload() {
   echo "==> Building ${tag}"
   do_build "${tag}" "${dir}" "$push" --build-arg "VERSION=${version}"
 
-  [ "$push" = "1" ] && cleanup_buildx
+  if [ "$push" = "1" ]; then
+    cleanup_buildx
+  fi
 
   echo ""
   echo -e "${GREEN}Done.${NC}"
-  [ "$push" = "0" ] && echo "Push: ci.sh image-upload --push"
+  if [ "$push" = "0" ]; then
+    echo "Push: ci.sh image-upload --push"
+  fi
   return 0
 }
 
@@ -220,7 +240,7 @@ cmd_build_agent() {
   done
 
   local dir="${SCRIPT_DIR}/agent"
-  local tag="${REGISTRY}/runr-agent:latest"
+  local tag="${REGISTRY}/agent:latest"
 
   if [ ! -d "$dir" ]; then
     echo -e "${RED}agent directory not found: ${dir}${NC}"
@@ -232,9 +252,13 @@ cmd_build_agent() {
   echo "==> Building ${tag}"
   do_build "${tag}" "${dir}" "$push"
 
-  [ "$push" = "1" ] && cleanup_buildx
+  if [ "$push" = "1" ]; then
+    cleanup_buildx
+  fi
 
   echo ""
   echo -e "${GREEN}Done.${NC}"
-  [ "$push" = "0" ] && echo "To push: ci.sh build-agent --push"
+  if [ "$push" = "0" ]; then
+    echo "To push: ci.sh build-agent --push"
+  fi
 }

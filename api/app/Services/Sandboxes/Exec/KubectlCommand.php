@@ -28,14 +28,20 @@ final class KubectlCommand
     }
 
     /**
+     * $tty adds -t: the command runs on a terminal in the pod. kubectl then needs a terminal
+     * as its own stdin (SandboxExecSocket hands it a pseudo-terminal).
+     *
      * @param  list<string>  $argv
      * @return list<string>
      */
-    public static function argv(PodTarget $target, string $kubeconfigPath, array $argv, bool $stdin): array
+    public static function argv(PodTarget $target, string $kubeconfigPath, array $argv, bool $stdin, bool $tty = false): array
     {
         $cmd = [(string) config('sandbox.exec.kubectl', 'kubectl'), 'exec'];
         if ($stdin) {
             $cmd[] = '-i';
+        }
+        if ($tty) {
+            $cmd[] = '-t';
         }
 
         return array_merge($cmd, [

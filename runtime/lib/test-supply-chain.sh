@@ -20,7 +20,7 @@
 # see acquire_kind_lock in test-runtimes.sh).
 
 supply_chain_image_tag() {
-  echo "${REGISTRY}/runr-supply-chain:${SUPPLY_CHAIN_VERSION:-1.0.0}"
+  echo "${REGISTRY}/supply-chain:${SUPPLY_CHAIN_VERSION:-1.0.0}"
 }
 
 cmd_build_supply_chain() {
@@ -44,11 +44,15 @@ cmd_build_supply_chain() {
   echo "==> Building ${tag}"
   do_build "${tag}" "${dir}" "$push"
 
-  [ "$push" = "1" ] && cleanup_buildx
+  if [ "$push" = "1" ]; then
+    cleanup_buildx
+  fi
 
   echo ""
   echo -e "${GREEN}Done.${NC}"
-  [ "$push" = "0" ] && echo "Push: ci.sh supply-chain --push"
+  if [ "$push" = "0" ]; then
+    echo "Push: ci.sh supply-chain --push"
+  fi
 }
 
 prepare_supply_chain_e2e() {
@@ -59,7 +63,7 @@ prepare_supply_chain_e2e() {
   echo ""
   echo "Supply-chain e2e preparation..."
   echo "  tools image: ${tag}"
-  docker build -q -t "${tag}" "${SCRIPT_DIR}/supply-chain" >/dev/null
+  docker build -q --pull -t "${tag}" "${SCRIPT_DIR}/supply-chain" >/dev/null
 
   if [ -n "$cluster" ]; then
     kind load docker-image "${tag}" --name "$cluster" >/dev/null

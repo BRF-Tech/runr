@@ -32,6 +32,7 @@ type SessionStats struct {
 type metricsState struct {
 	snapshots map[string][]MetricSnapshot // project id → snapshots
 	sessions  map[string]SessionStats
+	live      map[string]LiveMetrics // project id → live reading of its deployments
 }
 
 func (s *Server) metricsSt() *metricsState {
@@ -66,7 +67,45 @@ func (s *Server) SetSessionStats(projectName string, st SessionStats) {
 
 func metricDecimal(v float64, places int) string { return strconv.FormatFloat(v, 'f', places, 64) }
 
+// LiveMetrics is the live reading of a deployment (KnativeMetricsService::getDeploymentMetrics);
+// a nil value is a reading the region does not have.
+type LiveMetrics struct {
+	CPU, MemoryMB, RPS, CPUAvg1h, MemoryAvg1hMB *float64
+}
+
+// SetLiveMetrics sets what GET …/deployments/{deployment}/metrics answers for every deployment
+// of a project (default: no readings, as for a region without Prometheus).
+func (s *Server) SetLiveMetrics(projectName string, m LiveMetrics) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	p := s.projectByName(projectName)
+	if p == nil {
+		s.t.Fatalf("runrtest: project %q does not exist", projectName)
+	}
+	st := s.metricsSt()
+	if st.live == nil {
+		st.live = map[string]LiveMetrics{}
+	}
+	st.live[p.data.ID] = m
+}
+
 func init() {
+	handle("GET /projects/{project}/deployments/{deployment}/metrics", func(s *Server, q *featureReq) (int, any, *apiErr) {
+		p, err := s.projectOf(q)
+		if err != nil {
+			return 0, nil, err
+		}
+		if len(q.Segs) < 4 || s.deploymentByID(p, q.Segs[3]) == nil {
+			return 0, nil, errNotFound()
+		}
+		m := s.metricsSt().live[p.data.ID]
+		out := map[string]any{"cpu": m.CPU, "memory": m.MemoryMB, "rps": m.RPS}
+		if q.query("quick") != "1" {
+			out["cpuAvg1h"], out["memAvg1h"] = m.CPUAvg1h, m.MemoryAvg1hMB
+		}
+		return 200, out, nil
+	})
+
 	handle("GET /projects/{project}/metrics/summary", func(s *Server, q *featureReq) (int, any, *apiErr) {
 		p, err := s.projectOf(q)
 		if err != nil {

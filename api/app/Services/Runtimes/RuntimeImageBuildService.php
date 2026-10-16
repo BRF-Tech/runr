@@ -131,7 +131,13 @@ class RuntimeImageBuildService
 
     public static function imageRef(KnativeRegion $region, string $id, string $version, string $digest): string
     {
-        return rtrim((string) $region->registry_address, '/')."/runr-runtimes/{$id}:{$version}-".substr($digest, 0, 12);
+        return rtrim((string) $region->registry_address, '/').'/'.self::repository($id).":{$version}-".substr($digest, 0, 12);
+    }
+
+    /** Registry repository of a runtime's builds: runr-runtimes/<id>. */
+    public static function repository(string $id): string
+    {
+        return "runr-runtimes/{$id}";
     }
 
     public static function jobName(string $id, string $version, string $digest): string
@@ -181,6 +187,8 @@ class RuntimeImageBuildService
 
         $args = array_merge($args, array_filter([
             "--destination={$image}",
+            // No upload before the build: a failed build leaves no empty repository behind
+            BuildManifests::SKIP_PUSH_PERMISSION_CHECK,
             '--insecure',
             '--insecure-pull',
             '--custom-platform=linux/amd64',

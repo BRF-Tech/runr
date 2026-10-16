@@ -38,7 +38,7 @@ kind_nodes_dbus() {
 }
 
 # kind_load_wasm_shim CLUSTER — the image of the Spin shim RunR installs (runtime/wasm-shim-spin,
-# ghcr.io/brf-tech/containerd-shim-spin:<version>) into the Kind nodes, where the wasm-installer's init
+# ghcr.io/brf-tech/runr/containerd-shim-spin:<version>) into the Kind nodes, where the wasm-installer's init
 # container takes it from. A local image of that version is used as it is (its tag changes with
 # every change of the build); otherwise it is pulled, or built (ci.sh wasm-shim: a full Rust build).
 kind_load_wasm_shim() {
@@ -50,7 +50,7 @@ kind_load_wasm_shim() {
     echo "  Spin shim image: ${tag} (pulled)"
   else
     echo "  Spin shim image: ${tag} — building it (Rust build of containerd-shim-spin)..."
-    docker build -q -t "$tag" "${SCRIPT_DIR}/wasm-shim-spin" >/dev/null
+    docker build -q --pull -t "$tag" "${SCRIPT_DIR}/wasm-shim-spin" >/dev/null
   fi
   kind load docker-image "$tag" --name "$cluster" >/dev/null
   echo "  ${tag} loaded into kind/${cluster}"
@@ -71,6 +71,8 @@ prepare_wasm_e2e() {
     version="$(wasm_runtime_version "$lang")"
     local tag="${REGISTRY}/exec-wasm-${lang}:${version}"
     echo "  build image: ${tag}"
+    # current bases, also a reqs mirror entry this checkout adds before a release copies it (test.sh)
+    pull_dockerfile_bases "${SCRIPT_DIR}/wasm-${lang}/Dockerfile"
     docker build -q -t "${tag}" "${SCRIPT_DIR}/wasm-${lang}" >/dev/null
     if [ -n "$cluster" ]; then
       kind load docker-image "${tag}" --name "$cluster" >/dev/null

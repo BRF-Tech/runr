@@ -1,4 +1,4 @@
-# Bash runtime for RunR: the official bash image (bash:5.2, from the ghcr.io/brf-tech/reqs mirror), the
+# Bash runtime for RunR: the official bash image (bash:5.2, from the ghcr.io/brf-tech/runr/reqs mirror), the
 # script runs once per invocation (exec mode, raw input). Register it with POST /api/runtimes (see ../README.md).
 apiVersion: runr.sh/v1
 kind: Runtime
@@ -10,7 +10,7 @@ extensions: [sh, bash]
 category: general
 versions:
   - version: "5.2"
-    image: ghcr.io/brf-tech/reqs/bash:5.2
+    image: ghcr.io/brf-tech/runr/reqs/bash:5.2
     default: true
 handler:
   file: main

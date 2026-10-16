@@ -97,6 +97,26 @@ export interface ExecOptions {
   signal?: AbortSignal
 }
 
+/** Options of `execWs()` / `runCodeWs()`: the command's options plus its terminal. */
+export interface ExecWsOptions extends ExecOptions {
+  /** Run the command on a terminal (TTY): stdout and stderr then both arrive as `stdout`. */
+  tty?: boolean
+  /** Initial terminal size with `tty` (1–1000; default 80 × 24). */
+  cols?: number
+  rows?: number
+  /**
+   * Which WebSocket client connects: the runtime's global `WebSocket` (`'global'`), the SDK's own
+   * on node:http / node:https (`'builtin'`), or the global one when the runtime has it (`'auto'`,
+   * the default).
+   */
+  transport?: 'auto' | 'global' | 'builtin'
+}
+
+export interface RunWsOptions extends ExecWsOptions {
+  /** `python`, `javascript`, `typescript`, `bash`, `sh`, `php`, `ruby`, `go` or an exec runtime id. */
+  language?: string
+}
+
 export interface RunOptions {
   /** `python`, `javascript`, `typescript`, `bash`, `sh`, `php`, `ruby`, `go` or an exec runtime id. */
   language?: string
@@ -117,6 +137,15 @@ export interface ExecResult {
   truncated: boolean
   /** `exitCode === 0` and not timed out. */
   ok: boolean
+}
+
+/** The end of a command run over the exec WebSocket. */
+export interface ExecWsResult extends ExecResult {
+  /** Stopped by `kill()`. */
+  killed: boolean
+  execId: string
+  /** The command ran on a terminal. */
+  tty: boolean
 }
 
 export interface FileChange {
@@ -153,6 +182,8 @@ export interface ExitEvent {
   timedOut: boolean
   durationMs: number
   truncated: boolean
+  /** Exec WebSocket only: the command was stopped by `kill()` (or a client that went away). */
+  killed?: boolean
   execId: string | null
 }
 

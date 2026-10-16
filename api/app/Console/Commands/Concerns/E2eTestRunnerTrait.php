@@ -71,7 +71,7 @@ trait E2eTestRunnerTrait
             [
                 'service_type' => 'caas',
                 'trigger_type' => 'http',
-                'image' => 'ghcr.io/brf-tech/reqs/nginx:1.27-alpine',
+                'image' => 'ghcr.io/brf-tech/runr/reqs/nginx:1.27-alpine',
             ],
             $regionId
         );

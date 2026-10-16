@@ -3,6 +3,7 @@ import './polyfill.js'
 export { Sandbox } from './sandbox.js'
 export { Files } from './files.js'
 export { Processes } from './processes.js'
+export { ExecSession } from './exec-ws.js'
 export { apiBaseUrl, resolveConfig, DEFAULT_TIMEOUT_MS } from './config.js'
 export type { ClientOptions, ResolvedConfig } from './config.js'
 export {
@@ -30,8 +31,11 @@ export type {
   CreateOptions,
   ListFilters,
   ExecOptions,
+  ExecWsOptions,
   RunOptions,
+  RunWsOptions,
   ExecResult,
+  ExecWsResult,
   RunResult,
   RichOutput,
   FileChange,

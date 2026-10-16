@@ -1,5 +1,5 @@
 ARG VERSION=3.13
-FROM ghcr.io/brf-tech/reqs/python:${VERSION}-slim
+FROM ghcr.io/brf-tech/runr/reqs/python:${VERSION}-slim
 
 WORKDIR /app
 

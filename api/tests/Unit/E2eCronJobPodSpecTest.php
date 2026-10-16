@@ -19,7 +19,7 @@ class E2eCronJobPodSpecTest extends TestCase
             'securityContext' => new \stdClass,
             'initContainers' => [[
                 'name' => 'runr-wrapper',
-                'image' => 'ghcr.io/brf-tech/runr-wrapper:1.1.0',
+                'image' => 'ghcr.io/brf-tech/runr/wrapper:1.1.0',
                 'command' => ['/runr-wrapper', 'install', '/runr/runr-wrapper'],
                 'resources' => new \stdClass,
             ]],

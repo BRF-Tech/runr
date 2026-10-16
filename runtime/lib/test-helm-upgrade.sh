@@ -22,7 +22,7 @@
 #      a secret env var lands in the project's Kubernetes Secret (never in the Knative Service),
 #      the tokens work with their scopes, the function answered during and after the upgrade,
 #      the agent reconnected, /api/branding and the brand assets serve the brand, and nothing of
-#      RunR's image namespace up to 0.5.0 is left: no workload or running pod of the cluster
+#      the installed version's image namespace is left: no workload or running pod of the cluster
 #      (control plane and region) and no database row (central and tenant schemas) references it.
 #
 # Flags:
@@ -66,10 +66,12 @@ _upg_ns="runr"
 _upg_region="upg"
 # The region Traefik's image after the upgrade (KnativeConstants::TRAEFIK_IMAGE): region:reconcile
 # moves a Traefik of the same version from Docker Hub to it
-_UPG_TRAEFIK_IMAGE="ghcr.io/brf-tech/reqs/traefik:v3.7.4"
-# RunR's image namespace up to 0.5.0: the upgrade moves every reference to ghcr.io/brf-tech (chart
-# helper runr.image, the database migration, region:reconcile image-registry)
+_UPG_TRAEFIK_IMAGE="ghcr.io/brf-tech/runr/reqs/traefik:v3.7.4"
+# The installed version's image namespace (ghcr.io/runrsh up to 0.5.0, ghcr.io/brf-tech in 0.5.1;
+# set from --from's chart): the upgrade moves every reference to ghcr.io/brf-tech/runr (chart helper
+# runr.image, the database migrations, region:reconcile image-registry)
 _UPG_OLD_NS="ghcr.io/runrsh"
+_UPG_NEW_NS="ghcr.io/brf-tech/runr"
 # Image repositories of the installed version's chart (--from's helm/values.yaml)
 _upg_from_api_repo=""
 _upg_from_ui_repo=""
@@ -175,7 +177,7 @@ _upg_from_images() {
   mkdir -p "$src"
   git -C "$root" archive --format=tar "$ref" api vue docs | tar -x -C "$src"
   mkdir -p "${src}/api/resources/docs" && cp "${src}"/docs/*.md "${src}/api/resources/docs/"
-  docker build -q -f "${src}/api/Dockerfile.prod" --build-arg "APP_VERSION=v${tag}" -t "$api" "${src}/api" >/dev/null
+  docker build -q --pull -f "${src}/api/Dockerfile.prod" --build-arg "APP_VERSION=v${tag}" -t "$api" "${src}/api" >/dev/null
   _upg_build_ui "$ui" "${src}/vue"
 }
 
@@ -184,7 +186,7 @@ _upg_from_images() {
 _upg_build_ui() {
   local image="$1" context="$2" modules=false
   [ "$_upg_mt" = "1" ] && modules=true
-  docker build -q --build-arg VITE_WS_PROXY=true --build-arg VITE_REVERB_KEY=runr-key \
+  docker build -q --pull --build-arg VITE_WS_PROXY=true --build-arg VITE_REVERB_KEY=runr-key \
     --build-arg "VITE_TENANCY_ENABLED=${modules}" --build-arg "VITE_AUTH_PROVIDER_ENABLED=${modules}" \
     --build-arg VITE_TICKET_ENABLED=true -t "$image" "$context" >/dev/null
 }
@@ -193,7 +195,7 @@ _upg_build_ui() {
 _upg_to_images() {
   local root="$1" api="$2" ui="$3"
   mkdir -p "${root}/api/resources/docs" && cp "${root}"/docs/*.md "${root}/api/resources/docs/"
-  docker build -q -f "${root}/api/Dockerfile.prod" --build-arg "APP_VERSION=$(resolve_app_version "$root")" -t "$api" "${root}/api" >/dev/null
+  docker build -q --pull -f "${root}/api/Dockerfile.prod" --build-arg "APP_VERSION=$(resolve_app_version "$root")" -t "$api" "${root}/api" >/dev/null
   _upg_build_ui "${ui}${_upg_ui_suffix}" "${root}/vue"
   echo "  ${api}, ${ui}${_upg_ui_suffix}: built from this checkout"
 }
@@ -320,44 +322,45 @@ _upg_wait_deployment_active() {
 
 # _upg_old_workloads — "<kind> <ns>/<name>: <image>" for every workload of the cluster (Deployment,
 # StatefulSet, DaemonSet, CronJob, Knative Service; no controller-owned ones such as a Knative
-# revision's Deployment) whose pod template has an image or env value of RunR's namespace up to
-# 0.5.0. KEPT=1: also the ones region:reconcile keeps on purpose (the region's queue Redis, the
-# node installers of the sandbox runtimes)
+# revision's Deployment) whose pod template has an image or env value of the installed version's
+# namespace (outside ghcr.io/brf-tech/runr). KEPT=1: also the ones region:reconcile keeps on purpose
+# (the region's queue Redis, the node installers of the sandbox runtimes)
 _upg_old_workloads() {
   local json
   json=$( { _upg_kubectl get deployments,statefulsets,daemonsets,cronjobs -A -o json 2>/dev/null | jq -c '.items[]'
             _upg_kubectl get ksvc -A -o json 2>/dev/null | jq -c '.items[]'; } | jq -s '{items: .}')
-  echo "$json" | jq -r --arg ns "${_UPG_OLD_NS}/" --arg kept "${KEPT:-0}" '
+  echo "$json" | jq -r --arg ns "${_UPG_OLD_NS}/" --arg new "${_UPG_NEW_NS}/" --arg kept "${KEPT:-0}" '
     .items[]
     | select([.metadata.ownerReferences[]? | select(.controller == true)] | length == 0)
     | select($kept == "1" or ((.kind == "Deployment" and .metadata.labels["app.kubernetes.io/name"] == "runr-redis")
         or (.kind == "DaemonSet" and .metadata.namespace == "runr-sandbox") | not))
     | . as $o
     | (if .kind == "CronJob" then .spec.jobTemplate.spec.template.spec else .spec.template.spec end) as $p
-    | ([$p.initContainers[]?, $p.containers[]?] | map(.image, (.env[]?.value // empty)) | map(select(type == "string" and startswith($ns))) | unique)[]
+    | ([$p.initContainers[]?, $p.containers[]?] | map(.image, (.env[]?.value // empty)) | map(select(type == "string" and startswith($ns) and (startswith($new) | not))) | unique)[]
     | "\($o.kind) \($o.metadata.namespace)/\($o.metadata.name): \(.)"'
 }
 
 # _upg_old_pods — "<ns>/<pod>: <image>" for every pod that is not finished and runs an image of
-# RunR's namespace up to 0.5.0 (pods of the kept workloads aside)
+# the installed version's namespace (pods of the kept workloads aside)
 _upg_old_pods() {
-  _upg_kubectl get pods -A -o json 2>/dev/null | jq -r --arg ns "${_UPG_OLD_NS}/" '
+  _upg_kubectl get pods -A -o json 2>/dev/null | jq -r --arg ns "${_UPG_OLD_NS}/" --arg new "${_UPG_NEW_NS}/" '
     .items[]
     | select(.status.phase != "Succeeded" and .status.phase != "Failed")
     | select((.metadata.labels["app.kubernetes.io/name"] == "runr-redis" or .metadata.namespace == "runr-sandbox") | not)
     | . as $o
-    | ([.spec.initContainers[]?, .spec.containers[]?] | map(.image) | map(select(startswith($ns))) | unique)[]
+    | ([.spec.initContainers[]?, .spec.containers[]?] | map(.image) | map(select(startswith($ns) and (startswith($new) | not))) | unique)[]
     | "\($o.metadata.namespace)/\($o.metadata.name): \(.)"'
 }
 
 # _upg_old_rows — rows of the central and every tenant schema whose image columns
-# (App\Support\Images\RegistryMoveColumns, runtimes) name RunR's namespace up to 0.5.0, as
-# "<schema>.<table>.<column> <count>" lines (nothing when there are none)
+# (App\Support\Images\RegistryMoveColumns, runtimes) name the installed version's namespace
+# (outside ghcr.io/brf-tech/runr), as "<schema>.<table>.<column> <count>" lines (nothing when there
+# are none)
 _upg_old_rows() {
   _upg_psql "select c.table_schema || '.' || c.table_name || '.' || c.column_name || ' ' || n.count
     from information_schema.columns c,
-      lateral (select (xpath('/row/n/text()', query_to_xml(format('select count(*) as n from %I.%I where strpos(replace(cast(%I as text), %L, %L), %L) > 0',
-        c.table_schema, c.table_name, c.column_name, '\/', '/', '${_UPG_OLD_NS}/'), false, true, '')))[1]::text::int as count) n
+      lateral (select (xpath('/row/n/text()', query_to_xml(format('select count(*) as n from %I.%I where strpos(replace(replace(cast(%I as text), %L, %L), %L, %L), %L) > 0',
+        c.table_schema, c.table_name, c.column_name, '\/', '/', '${_UPG_NEW_NS}/', '', '${_UPG_OLD_NS}/'), false, true, '')))[1]::text::int as count) n
     where (c.table_schema = 'public' or c.table_schema like 'tenant%')
       and (c.table_name, c.column_name) in (('executor_images','docker_image'), ('runtimes','manifest'), ('runtimes','manifest_source'),
         ('runtimes','files'), ('sandboxes','image'), ('region_supply_chain_settings','admission_exempt_images'),
@@ -369,7 +372,7 @@ _upg_old_rows() {
     order by 1"
 }
 
-# Before the upgrade: what of RunR's namespace up to 0.5.0 the installed version holds (the checks
+# Before the upgrade: what of its image namespace the installed version holds (the checks
 # after it then prove the move, not an empty start)
 _upg_old_ns_before() {
   local workloads rows
@@ -519,8 +522,8 @@ _upg_st_checks() {
 
   # The CaaS project's image moved with the database (container_configs.image)
   _upg_call GET "/api/projects/${caas_project}" "$admin_token"
-  _upg_check "the CaaS project's image moved to ghcr.io/brf-tech (container_configs)" \
-    _upg_eq "$(echo "$_upg_body" | jq -r '.data.config.image // .data.container_config.image // empty')" "ghcr.io/brf-tech/reqs/nginx:1.27-alpine"
+  _upg_check "the CaaS project's image moved to ghcr.io/brf-tech/runr (container_configs)" \
+    _upg_eq "$(echo "$_upg_body" | jq -r '.data.config.image // .data.container_config.image // empty')" "ghcr.io/brf-tech/runr/reqs/nginx:1.27-alpine"
 
   # Function, during and after
   out=$(_upg_function_get)
@@ -712,6 +715,7 @@ cmd_test_helm_upgrade() {
     || { echo -e "${RED}--from: no api / ui image repository in ${from}:helm/values.yaml${NC}"; return 1; }
   # registry namespace of the installed version (its reqs mirror): .../runr/api → ...
   local from_ns="${_upg_from_api_repo%/runr/api}"
+  _UPG_OLD_NS="$from_ns"
 
   _upg_cluster="${UPGRADE_CLUSTER:-runr-upgrade-helm}"
   _upg_tmp=$(mktemp -d /tmp/runr-upgrade-helm.XXXXXX)
@@ -740,7 +744,7 @@ cmd_test_helm_upgrade() {
   acquire_kind_lock
   _upg_log "Kind cluster"
   _upg_kind_cluster "$k8s"
-  # The installed chart's images and, after the upgrade, the same ones under ghcr.io/brf-tech
+  # The installed chart's images and, after the upgrade, the same ones under ghcr.io/brf-tech/runr
   local reqs=() img
   for img in caddy:2-alpine redis:7-alpine postgres:17-alpine mailpit:latest busybox:latest curl:latest; do
     reqs+=("${from_ns}/reqs/${img}")
@@ -846,10 +850,10 @@ EOF
 
   if [ "$_upg_mt" = "1" ]; then _upg_mt_checks; else _upg_st_checks; fi
 
-  # RunR's image namespace up to 0.5.0: nothing left in the workloads (control plane: the chart's
+  # The installed version's image namespace: nothing left in the workloads (control plane: the chart's
   # runr.image helper over the reused values; region: region:reconcile image-registry), the
   # running pods (old Knative revisions scale down) and the database (migrations)
-  _upg_log "Image namespace ${_UPG_OLD_NS} → ghcr.io/brf-tech"
+  _upg_log "Image namespace ${_UPG_OLD_NS} → ${_UPG_NEW_NS}"
   local left_workloads left_pods left_rows kept
   left_workloads=$(_upg_old_workloads)
   _upg_check "no workload references ${_UPG_OLD_NS}/ (Deployments, StatefulSets, DaemonSets, CronJobs, Knative Services)" test -z "$left_workloads"
@@ -866,8 +870,8 @@ EOF
   left_rows=$(_upg_old_rows)
   _upg_check "no database row (central and tenant schemas) references ${_UPG_OLD_NS}/" test -z "$left_rows"
   [ -z "$left_rows" ] || echo "$left_rows" | sed 's/^/    /'
-  _upg_check "the region agent runs ghcr.io/brf-tech/runr-agent" \
-    bash -c '[ "$1" = 1 ] || [[ "$2" == ghcr.io/brf-tech/runr-agent:* ]]' _ "$_upg_mt" \
+  _upg_check "the region agent runs ghcr.io/brf-tech/runr/agent" \
+    bash -c '[ "$1" = 1 ] || [[ "$2" == ghcr.io/brf-tech/runr/agent:* ]]' _ "$_upg_mt" \
     "$(_upg_kubectl -n observability get deploy runr-agent -o jsonpath='{.spec.template.spec.containers[0].image}' 2>/dev/null)"
 
   # White-label

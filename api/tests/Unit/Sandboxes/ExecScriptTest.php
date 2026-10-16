@@ -35,6 +35,22 @@ class ExecScriptTest extends TestCase
         $this->assertStringEndsWith('exec "$@"', $script);
     }
 
+    public function test_terminal_commands_get_a_term_and_a_foreground_timeout(): void
+    {
+        $script = ExecScript::command(['top'], ['TERM' => 'screen'], null, 45, 0, null, true)[2];
+
+        // The request's TERM is exported before the default, which keeps it
+        $this->assertLessThan(strpos($script, 'export TERM="${TERM:-xterm-256color}"'), strpos($script, "export TERM='screen'"));
+        // GNU timeout with --foreground; busybox timeout (no such option) or none fall through
+        $this->assertStringContainsString('if timeout --foreground 1 true >/dev/null 2>&1; then exec timeout --foreground -s KILL 45 "$@"; fi', $script);
+        $this->assertLessThan(strpos($script, 'then exec timeout -s KILL 45'), strpos($script, '--foreground -s KILL 45'));
+        $this->assertStringEndsWith('exec "$@"', $script);
+
+        $plain = ExecScript::command(['top'], [], null, 45)[2];
+        $this->assertStringNotContainsString('--foreground', $plain);
+        $this->assertStringNotContainsString('xterm', $plain);
+    }
+
     public function test_string_commands_run_through_sh(): void
     {
         $argv = ExecScript::command('ls -la | wc -l');
@@ -135,6 +151,8 @@ class ExecScriptTest extends TestCase
             KubectlCommand::argv($target, '/tmp/k', ['echo', 'hi'], true),
         );
         $this->assertNotContains('-i', KubectlCommand::argv($target, '/tmp/k', ['true'], false));
+        $this->assertNotContains('-t', KubectlCommand::argv($target, '/tmp/k', ['true'], true));
+        $this->assertSame(['kubectl', 'exec', '-i', '-t', 'sbx-1'], array_slice(KubectlCommand::argv($target, '/tmp/k', ['sh'], true, true), 0, 5));
     }
 
     public function test_kubectl_errors_versus_remote_exit_codes(): void

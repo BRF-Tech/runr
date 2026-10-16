@@ -154,7 +154,7 @@ trait KnativeRegionAccessorsTrait
      * Image reference for a FROM line of an in-region Kaniko build (builder and runtime base).
      * With the internal (Zot) registry and its ghcr.io upstream ($ghcrSynced, see
      * ZotRegistryService::syncsGhcr()) a ghcr.io image comes through the pull-through cache —
-     * {registry}/ghcr.io/brf-tech/exec-python:3.14 is fetched from ghcr.io once per tag, not on
+     * {registry}/ghcr.io/brf-tech/runr/exec-python:3.14 is fetched from ghcr.io once per tag, not on
      * every build. Anything else maps as registryImageRef().
      */
     public function buildBaseImageRef(string $image, bool $ghcrSynced): string

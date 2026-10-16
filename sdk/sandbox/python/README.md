@@ -9,7 +9,8 @@ unless you allow it.
 pip install runr-sandbox
 ```
 
-Python 3.9 or newer. The only dependency is [httpx](https://www.python-httpx.org/).
+Python 3.9 or newer. Dependencies: [httpx](https://www.python-httpx.org/) and, for the exec
+WebSocket, [websockets](https://websockets.readthedocs.io/).
 
 ## Configuration
 
@@ -82,6 +83,49 @@ for event in sandbox.exec_stream("pip install --user requests"):
 ```
 
 Output arrives as Server-Sent Events while the command runs; `event.data` holds the bytes.
+
+### Interactive commands: the exec WebSocket
+
+`exec_ws()` runs a command over the exec WebSocket. The session sends input while the command
+runs, so an interactive program reads each line as it is sent:
+
+```python
+with sandbox.exec_ws(["python3", "-i", "-q"]) as session:
+    session.send_stdin("x = 6 * 7\n")
+    session.send_stdin("print(x)\n")
+    session.close_stdin()                 # end of input: the interpreter exits
+    result = session.wait()               # exit code and the collected output
+    print(result.exit_code, result.stdout)
+```
+
+Iterate over the session to read the output as it arrives (`stdout` / `stderr` events, then one
+`exit` event); `send_stdin()` may be called from another thread meanwhile. `kill()` stops the
+command (its exit event has `killed` set, exit code 137); leaving the block closes the connection,
+which stops a command that still runs.
+
+With `tty=True` the command runs on a terminal of `cols` × `rows` (default 80 × 24): programs see a
+TTY (prompts, colours, line editing), stdout and stderr arrive together as `stdout` events with
+terminal line endings, `resize()` changes the size, and `close_stdin()` sends Ctrl+D:
+
+```python
+import shutil
+
+cols, rows = shutil.get_terminal_size()
+with sandbox.exec_ws("bash", tty=True, cols=cols, rows=rows) as session:
+    session.send_stdin("ls --color=auto /workspace\n")
+    session.resize(120, 40)
+    session.send_stdin("exit\n")
+    for event in session:
+        if event.type == "stdout":
+            print(event.text, end="")
+```
+
+`exec_ws()` takes the options of `exec()` (`stdin`, `timeout`, `env`, `cwd`), or `code` with
+`language` instead of a command. The WebSocket opens on the host of `RUNR_API_URL` (`wss://` for
+`https`) with a one-time token, which the SDK never logs; `ssl_context` sets its TLS settings
+(default: the CA bundle of `SSL_CERT_FILE` / `SSL_CERT_DIR`, else certifi's). `AsyncSandbox` has
+the same as `async with sandbox.exec_ws(...) as session:`, with `await session.send_stdin(...)`
+and `async for event in session`.
 
 ## Running code
 
@@ -236,6 +280,11 @@ All exceptions derive from `RunrSandboxError` (`status`, `message`, `reason`, `b
 | `RateLimitError` | 429 — `retry_after` holds the seconds to wait |
 | `SandboxStartTimeout` | the sandbox did not run within `start_timeout` (also a `TimeoutError`) |
 
+On the exec WebSocket, `RunrSandboxError` carries the reason `exec_error` when the API ends the
+command with an error message, `ws_closed` when the connection ends before the exit event, and
+`ws_error`, `ws_handshake` or `ws_timeout` when it cannot be opened; a refused upgrade maps its
+HTTP status to the classes above.
+
 ## Development
 
 ```bash
@@ -243,7 +292,8 @@ pip install -e '.[test]'
 pytest
 ```
 
-The tests run against an in-process fake of the API (`tests/fake_server.py`).
+The tests run against an in-process fake of the API (`tests/fake_server.py`), which serves the
+exec WebSocket with its own RFC 6455 framing.
 
 ## License
 

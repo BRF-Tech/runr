@@ -120,7 +120,7 @@ trait KataDevmapperTrait
                         ]],
                         'containers' => [[
                             'name' => $name === self::KATA_DEVMAPPER_DS ? 'devmapper' : 'cleanup',
-                            'image' => 'ghcr.io/brf-tech/reqs/alpine:3.21',
+                            'image' => 'ghcr.io/brf-tech/runr/reqs/alpine:3.21',
                             'securityContext' => ['privileged' => true],
                             'command' => ['sh', '-c', $script],
                             'env' => $env,

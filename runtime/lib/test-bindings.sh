@@ -20,10 +20,10 @@
 #                            /tmp/runr-kind.lock here (test-runtimes.sh: acquire_kind_lock).
 
 BINDINGS_E2E_IMAGES=(
-  "ghcr.io/brf-tech/reqs/redis:7-alpine"
-  "ghcr.io/brf-tech/reqs/garage:v2.1.0"
-  "ghcr.io/brf-tech/reqs/rclone:1.68.2"
-  "ghcr.io/brf-tech/reqs/python:3.12-slim"
+  "ghcr.io/brf-tech/runr/reqs/redis:7-alpine"
+  "ghcr.io/brf-tech/runr/reqs/garage:v2.1.0"
+  "ghcr.io/brf-tech/runr/reqs/rclone:1.68.2"
+  "ghcr.io/brf-tech/runr/reqs/python:3.12-slim"
   "ghcr.io/cloudnative-pg/postgresql:17.5"
 )
 

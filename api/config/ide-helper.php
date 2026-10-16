@@ -349,9 +349,14 @@ return [
     |
     | The specified commands should run after migrations are finished running.
     |
+    | Only on a local development checkout that asks for it (APP_ENV=local and
+    | IDE_HELPER_POST_MIGRATE=true, docs/development.md → Migrations): the command rewrites the
+    | docblocks of every model, so in test containers, CI and installs a migrate would leave
+    | the mounted checkout with changed model files.
+    |
     */
-    'post_migrate' => [
-        'ide-helper:models --write --reset',
-    ],
+    'post_migrate' => env('APP_ENV') === 'local' && (bool) env('IDE_HELPER_POST_MIGRATE', false)
+        ? ['ide-helper:models --write --reset']
+        : [],
 
 ];

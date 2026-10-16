@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 import base64
+import binascii
+import json
+import re
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Union
-from urllib.parse import quote
+from urllib.parse import quote, urlsplit
 
 from .errors import RunrSandboxError
 from .models import ExecEvent, RunResult
@@ -144,6 +147,150 @@ def exec_body(
     if stream:
         body["stream"] = True
     return body
+
+
+#: Terminal sizes the exec WebSocket accepts (columns and rows).
+TERMINAL_SIZE_RANGE = (1, 1000)
+
+
+def terminal_size(name: str, value: Any) -> int:
+    """A terminal width or height: an int from 1 to 1000."""
+    low, high = TERMINAL_SIZE_RANGE
+    if isinstance(value, bool) or not isinstance(value, int) or not low <= value <= high:
+        raise ValueError(f"{name} must be an integer from {low} to {high}, not {value!r}")
+    return value
+
+
+def exec_ws_body(
+    cmd: Optional[Command] = None,
+    *,
+    code: Optional[str] = None,
+    language: Optional[str] = None,
+    stdin: Union[str, bytes, None] = None,
+    tty: bool = False,
+    cols: Optional[int] = None,
+    rows: Optional[int] = None,
+    timeout: Optional[int] = None,
+    env: Optional[Mapping[str, str]] = None,
+    cwd: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Body of ``POST /sandboxes/{id}/exec/ws``: a command (or code with its language), stdin, and
+    with ``tty`` the terminal's initial size."""
+    if (cmd is None) == (code is None):
+        raise ValueError("give either cmd or code")
+    if not tty and (cols is not None or rows is not None):
+        raise ValueError("cols and rows set the size of a terminal: pass tty=True")
+    if cmd is not None:
+        body = exec_body(cmd, stdin=stdin, timeout=timeout, env=env, cwd=cwd)
+    else:
+        body = run_body(str(code), language=language, timeout=timeout, env=env, cwd=cwd)
+        if isinstance(stdin, (bytes, bytearray)):
+            body["stdin_base64"] = base64.b64encode(bytes(stdin)).decode("ascii")
+        elif stdin is not None:
+            body["stdin"] = stdin
+    if tty:
+        body["tty"] = True
+        if cols is not None:
+            body["cols"] = terminal_size("cols", cols)
+        if rows is not None:
+            body["rows"] = terminal_size("rows", rows)
+    return body
+
+
+_TOKEN = re.compile(r"(token=)[^&#\s]+")
+
+
+def redact_token(text: str) -> str:
+    """``…?token=secret`` → ``…?token=[redacted]`` (WebSocket session URLs carry a one-time token)."""
+    return _TOKEN.sub(r"\1[redacted]", text)
+
+
+def websocket_url(api_url: str, url: str) -> str:
+    """The URL of a WebSocket the API names by its path (``/ws/sandbox-exec?token=…``): on the
+    console host, ``wss`` for an ``https`` API and ``ws`` for ``http``. Absolute ``ws(s)://`` URLs
+    are kept; ``http(s)://`` ones get the matching WebSocket scheme."""
+    if url.startswith(("ws://", "wss://")):
+        return url
+    if url.startswith("https://"):
+        return "wss://" + url[len("https://"):]
+    if url.startswith("http://"):
+        return "ws://" + url[len("http://"):]
+    base = urlsplit(api_url)
+    scheme = "ws" if base.scheme == "http" else "wss"
+    return f"{scheme}://{base.netloc}{url if url.startswith('/') else '/' + url}"
+
+
+def exec_ws_session_url(data: Mapping[str, Any]) -> str:
+    """The WebSocket path of an exec session answer (``url``, or built from ``token``)."""
+    url = data.get("url")
+    if url:
+        return str(url)
+    token = data.get("token")
+    if token:
+        return "/ws/sandbox-exec?token=" + quote(str(token), safe="")
+    raise RunrSandboxError(None, "The RunR API answered no exec WebSocket session.", "bad_response")
+
+
+class ExecSocketState:
+    """Turns the JSON messages of the exec WebSocket into :class:`ExecEvent` objects: the start
+    message sets ``exec_id`` and ``tty``, an error message raises :class:`RunrSandboxError`."""
+
+    def __init__(self, exec_id: Optional[str] = None, tty: bool = False) -> None:
+        self.exec_id = exec_id
+        self.tty = tty
+        self.started = False
+        self.exit: Optional[ExecEvent] = None
+
+    def convert(self, message: Union[str, bytes]) -> Optional[ExecEvent]:
+        try:
+            payload = json.loads(message)
+        except ValueError:
+            return None  # not a message of the exec protocol
+        if not isinstance(payload, dict):
+            return None
+        kind = payload.get("type")
+        if kind == "start":
+            self.started = True
+            if payload.get("exec_id"):
+                self.exec_id = str(payload["exec_id"])
+            if "tty" in payload:
+                self.tty = bool(payload["tty"])
+            return None
+        if kind in ("stdout", "stderr"):
+            try:
+                data = base64.b64decode(str(payload.get("data") or ""), validate=True)
+            except (binascii.Error, ValueError) as exc:
+                raise RunrSandboxError(None, f"A {kind} message of the exec WebSocket is not base64.", "bad_response", payload) from exc
+            return ExecEvent(type=kind, data=data, exec_id=self.exec_id)
+        if kind == "exit":
+            code = payload.get("exit_code")
+            self.exit = ExecEvent(
+                type="exit",
+                exit_code=int(code) if code is not None else -1,
+                timed_out=bool(payload.get("timed_out", False)),
+                duration_ms=int(payload.get("duration_ms") or 0),
+                truncated=bool(payload.get("truncated", False)),
+                killed=bool(payload.get("killed", False)),
+                exec_id=self.exec_id,
+            )
+            return self.exit
+        if kind == "error":
+            raise RunrSandboxError(None, str(payload.get("message") or "The exec WebSocket failed."), str(payload.get("reason") or "exec_error"), payload)
+        # Unknown messages are left out for forward compatibility
+        return None
+
+
+def stdin_message(data: Union[str, bytes, bytearray]) -> str:
+    raw = data.encode("utf-8") if isinstance(data, str) else bytes(data)
+    return json.dumps({"type": "stdin", "data": base64.b64encode(raw).decode("ascii")})
+
+
+def resize_message(cols: int, rows: int) -> str:
+    return json.dumps({"type": "resize", "cols": terminal_size("cols", cols), "rows": terminal_size("rows", rows)})
+
+
+STDIN_CLOSE_MESSAGE = json.dumps({"type": "stdin_close"})
+KILL_MESSAGE = json.dumps({"type": "kill"})
 
 
 def run_body(

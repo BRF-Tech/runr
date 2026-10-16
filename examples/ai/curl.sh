@@ -2,7 +2,7 @@
 # Request shapes of RunR model services, per engine. Run inside the cluster — from a function,
 # or a debug pod in the region's project namespace:
 #
-#   kubectl -n <project namespace> run curl --rm -it --image=ghcr.io/brf-tech/reqs/curl:latest -- sh
+#   kubectl -n <project namespace> run curl --rm -it --image=ghcr.io/brf-tech/runr/reqs/curl:latest -- sh
 #
 # and set the URLs from the bound model's environment (Project → Models shows them):
 #   EMBED=http://m-minilm.fn.svc.cluster.local   CHAT=http://m-qwen.fn.svc.cluster.local

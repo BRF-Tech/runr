@@ -10,7 +10,7 @@ extensions: [c, h]
 category: general
 versions:
   - version: "17"
-    image: ghcr.io/brf-tech/reqs/alpine:3.21
+    image: ghcr.io/brf-tech/runr/reqs/alpine:3.21
     default: true
 handler:
   file: main
@@ -86,7 +86,7 @@ template:
 build:
   image: "{image}"
   command: "apk add --no-cache gcc musl-dev >/dev/null && gcc -O2 -static -o /build/out/handler {file}"
-  runImage: ghcr.io/brf-tech/reqs/alpine:3.21
+  runImage: ghcr.io/brf-tech/runr/reqs/alpine:3.21
   source: false
 run:
   mode: exec

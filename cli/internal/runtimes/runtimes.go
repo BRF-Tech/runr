@@ -23,8 +23,8 @@ import (
 // EnvRegistry overrides the registry the executor images are pulled from (mirrors).
 const EnvRegistry = "RUNR_RUNTIME_REGISTRY"
 
-// DefaultRegistry hosts the executor images (brf-tech/exec-<runtime>:<version>).
-const DefaultRegistry = "ghcr.io/brf-tech"
+// DefaultRegistry hosts the executor images (brf-tech/runr/exec-<runtime>:<version>).
+const DefaultRegistry = "ghcr.io/brf-tech/runr"
 
 // Spec is everything needed to run code of one runtime version.
 type Spec struct {

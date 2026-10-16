@@ -33,7 +33,7 @@ interface KnativeConstants
     // chart's image (KnativeTraefikTrait), pre-pulled by the nodes (config knative.prepull_images)
     // and loaded into Kind by the e2e. KNATIVE_TRAEFIK_IMAGE overrides it (TraefikImage).
     // Changes with TRAEFIK_CHART_VERSION, together with its REQS_IMAGES entry.
-    const TRAEFIK_IMAGE = 'ghcr.io/brf-tech/reqs/traefik:v3.7.4';
+    const TRAEFIK_IMAGE = 'ghcr.io/brf-tech/runr/reqs/traefik:v3.7.4';
 
     // IngressClass owned by the region Traefik; "traefik-knative" when another controller owns "traefik"
     const TRAEFIK_INGRESS_CLASS = 'traefik';

@@ -13,7 +13,8 @@ use Illuminate\Support\Facades\Schema;
 
 /**
  * Moves the image references of one schema (RegistryMoveColumns) to RunR's image namespace
- * (RegistryMove: ghcr.io/runrsh/… → ghcr.io/brf-tech/…).
+ * (RegistryMove: ghcr.io/runrsh/… and RunR's packages under ghcr.io/brf-tech/… →
+ * ghcr.io/brf-tech/runr/…).
  *
  * Idempotent and on the connection's current schema (a tenant schema in tenant context): missing
  * tables or columns are skipped, rows without a reference to move are not written. Rows are
@@ -201,17 +202,19 @@ class RegistryMoveRewriter
     }
 
     /**
-     * Rows whose $column names the old namespace somewhere (json / jsonb columns compared as text
-     * on PostgreSQL).
+     * Rows whose $column names one of the earlier namespaces somewhere — ghcr.io/runrsh or
+     * ghcr.io/brf-tech, whose packages RegistryMove tells apart (json / jsonb columns compared as
+     * text on PostgreSQL).
      */
     private function mentions($query, string $column, string $boolean = 'and')
     {
         $db = $this->db();
+        $value = $db->getQueryGrammar()->wrap($column);
         if ($db->getDriverName() === 'pgsql') {
-            return $query->whereRaw('cast('.$db->getQueryGrammar()->wrap($column).' as text) like ?', ['%runrsh%'], $boolean);
+            $value = "cast({$value} as text)";
         }
 
-        return $query->where($column, 'like', '%runrsh%', $boolean);
+        return $query->where(fn ($q) => $q->whereRaw("{$value} like ?", ['%runrsh%'])->orWhereRaw("{$value} like ?", ['%brf-tech%']), null, null, $boolean);
     }
 
     /** The stored value with its references moved; null when nothing has to change. */

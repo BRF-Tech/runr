@@ -334,7 +334,8 @@ func newSandboxTerminalCmd(app *App) *cobra.Command {
 			"terminal of the console. On a terminal, keys go to the shell as typed (Ctrl+C too) and the\n" +
 			"size follows the window; leave with exit or Ctrl+D. Piped stdin is sent as typed input and\n" +
 			"ends with Ctrl+D. With -o json or yaml the session (a one-time WebSocket URL, valid for 120\n" +
-			"seconds) is printed instead of attaching.",
+			"seconds) is printed instead of attaching. Any other command runs on a terminal with\n" +
+			"`runr sandbox exec -it ID -- CMD`, which also passes on its exit code.",
 		Example: "  runr sandbox terminal $SBX\n" +
 			"  printf 'ls -la\\nexit\\n' | runr sandbox terminal $SBX",
 		Args: cobra.ExactArgs(1),

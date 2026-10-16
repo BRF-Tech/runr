@@ -4,8 +4,8 @@
 #           (docker save / OCI layout tars incl. multi-platform indexes, .wasm modules)
 #   fetch   the WebAssembly module of an OCI artifact (copied into the wasm-exec build image)
 #
-#   docker build -t ghcr.io/brf-tech/image-upload:1.0.0 runtime/image-upload   (or: runtime/ci.sh image-upload)
-FROM --platform=$BUILDPLATFORM ghcr.io/brf-tech/reqs/golang:1.26-alpine AS builder
+#   docker build -t ghcr.io/brf-tech/runr/image-upload:1.0.0 runtime/image-upload   (or: runtime/ci.sh image-upload)
+FROM --platform=$BUILDPLATFORM ghcr.io/brf-tech/runr/reqs/golang:1.26-alpine AS builder
 ARG TARGETOS=linux
 ARG TARGETARCH
 ARG VERSION=1.0.0

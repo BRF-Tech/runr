@@ -11,15 +11,24 @@ subset of the API the SDK uses, with deterministic behaviour:
   sends an error event; anything else prints ``ran: <cmd>``. Streams are written in small pieces
   with a comment line in between.
 - files: an in-memory file system per sandbox, real tar handling for the archive endpoints.
+- the exec WebSocket: ``POST …/exec/ws`` stores a one-time session, ``GET /ws/sandbox-exec`` speaks
+  RFC 6455 itself (no library, so the client is checked against an independent implementation).
+  ``cat`` echoes stdin (and the initial stdin) until ``stdin_close``; ``echo X`` prints and exits;
+  ``multi`` sends a fragmented message, a ping, stderr and binary output, then exits 3; ``size``
+  (with ``tty``) prints the terminal size at the start and after every ``resize``; ``sleep`` runs
+  until ``kill``; ``error`` sends an error message; ``drop`` closes without an exit message,
+  ``abort`` drops the TCP connection; ``legacy`` answers like an API without terminal support.
 """
 
 from __future__ import annotations
 
 import base64
+import hashlib
 import io
 import json
 import posixpath
 import re
+import struct
 import tarfile
 import threading
 from datetime import datetime, timezone
@@ -44,6 +53,9 @@ class FakeState:
         self.pending_polls: Dict[str, int] = {}
         self.requests: List[Dict[str, Any]] = []
         self.counter = 0
+        # exec WebSocket: one-time sessions by token, and what every connection received
+        self.ws_sessions: Dict[str, Dict[str, Any]] = {}
+        self.ws_logs: List[Dict[str, Any]] = []
 
     def next_id(self, prefix: str = "sbx") -> str:
         self.counter += 1
@@ -72,7 +84,7 @@ def _sandbox(sid: str, body: Dict[str, Any], status: str) -> Dict[str, Any]:
         "region": {"id": "r1", "name": "eu-1"},
         "runtime": body.get("runtime") or "python",
         "runtime_version": body.get("version") or "3.14",
-        "image": body.get("image") or "ghcr.io/brf-tech/exec-python:3.14",
+        "image": body.get("image") or "ghcr.io/brf-tech/runr/exec-python:3.14",
         "sandbox_class": "gvisor",
         "isolation": "gvisor",
         "resources": {"cpu": "500m", "cpu_m": 500, "memory_mb": 512, "disk_mb": 1024, "pids_limit": 256},
@@ -111,6 +123,17 @@ class Handler(BaseHTTPRequestHandler):
         return
 
     def do_GET(self) -> None:
+        path = urlparse(self.path).path
+        if path == "/ws/sandbox-exec":
+            return self._websocket()
+        if path.startswith("/ws/"):
+            # Not upgraded (a WebSocket client wants an HTTP/1.1 status line)
+            raw = json.dumps({"message": "Unauthenticated."}).encode()
+            self.wfile.write(
+                b"HTTP/1.1 401 Unauthorized\r\nContent-Type: application/json\r\nConnection: close\r\n"
+                + f"Content-Length: {len(raw)}\r\n\r\n".encode() + raw
+            )
+            return
         self._dispatch("GET")
 
     def do_POST(self) -> None:
@@ -262,6 +285,8 @@ class Handler(BaseHTTPRequestHandler):
 
         if rest == "/exec" and method == "POST":
             return self._exec(sid, sandbox, body)
+        if rest == "/exec/ws" and method == "POST":
+            return self._exec_ws(sid, body)
         if rest == "/run" and method == "POST":
             return self._run(body)
         if rest.startswith("/files"):
@@ -395,6 +420,195 @@ class Handler(BaseHTTPRequestHandler):
         self._sse("exit", {"exit_code": result["exit_code"], "timed_out": False, "duration_ms": 30, "truncated": False})
         final = {k: v for k, v in result.items() if k not in ("stdout", "stderr")}
         self._sse("result", final, split=False)
+
+    # ── exec WebSocket ──────────────────────────────────────────────────────
+
+    def _exec_ws(self, sid: str, body: Dict[str, Any]) -> None:
+        if "stream" in body:
+            return self._error(422, "The exec WebSocket takes no stream field.", errors={"stream": ["invalid"]})
+        if not body.get("cmd") and not body.get("code"):
+            return self._error(422, "Give a command.", errors={"cmd": ["required"]})
+        cmd = self._command(body) if body.get("cmd") else "code"
+        with self.state.lock:
+            token = f"tok-{self.state.next_id('ws')}"
+            exec_id = f"exec-{token[4:]}"
+            if cmd != "expired":  # "expired": the token is unknown when the client connects
+                self.state.ws_sessions[token] = {"sid": sid, "body": body, "cmd": cmd, "exec_id": exec_id}
+        data: Dict[str, Any] = {"token": token, "url": f"/ws/sandbox-exec?token={token}", "exec_id": exec_id, "expires_in": 60}
+        if cmd == "badpath":  # a path the server does not upgrade (answers 401)
+            data["url"] = f"/ws/nowhere?token={token}"
+        if cmd == "refused":  # nothing listens there
+            data["url"] = f"ws://127.0.0.1:9/ws/sandbox-exec?token={token}"
+        if cmd == "token-only":  # an answer without url
+            del data["url"]
+        if cmd != "legacy":
+            data["tty"] = bool(body.get("tty"))
+        return self._send_json({"data": data})
+
+    # RFC 6455 framing (server side: client frames are masked, ours are not)
+
+    def _ws_frame(self) -> Optional[Tuple[bool, int, bytes, bool]]:
+        head = self.rfile.read(2)
+        if len(head) < 2:
+            return None
+        fin, opcode = bool(head[0] & 0x80), head[0] & 0x0F
+        masked, length = bool(head[1] & 0x80), head[1] & 0x7F
+        if length == 126:
+            length = struct.unpack("!H", self.rfile.read(2))[0]
+        elif length == 127:
+            length = struct.unpack("!Q", self.rfile.read(8))[0]
+        mask = self.rfile.read(4) if masked else b""
+        payload = self.rfile.read(length)
+        if masked:
+            payload = bytes(b ^ mask[i % 4] for i, b in enumerate(payload))
+        return fin, opcode, payload, masked
+
+    def _ws_write(self, opcode: int, payload: bytes, fin: bool = True) -> None:
+        head = bytes([(0x80 if fin else 0) | opcode])
+        n = len(payload)
+        if n < 126:
+            head += bytes([n])
+        elif n < 65536:
+            head += bytes([126]) + struct.pack("!H", n)
+        else:
+            head += bytes([127]) + struct.pack("!Q", n)
+        self.wfile.write(head + payload)
+        self.wfile.flush()
+
+    def _ws_send(self, message: Dict[str, Any]) -> None:
+        self._ws_write(0x1, json.dumps(message).encode("utf-8"))
+
+    def _ws_output(self, stream: str, data: bytes) -> None:
+        self._ws_send({"type": stream, "data": base64.b64encode(data).decode()})
+
+    def _ws_close(self, log: Dict[str, Any]) -> None:
+        """Closing handshake: our close frame, then the client's (or the end of the connection)."""
+        self._ws_write(0x8, struct.pack("!H", 1000))
+        try:
+            while True:
+                frame = self._ws_frame()
+                if frame is None:
+                    return
+                if frame[1] == 0x8:
+                    log["client_closed"] = True
+                    return
+                if frame[1] == 0xA:
+                    log["pongs"].append(frame[2])
+                elif frame[1] == 0x1:
+                    with self.state.lock:
+                        log["messages"].append(json.loads(frame[2].decode("utf-8")))
+        except OSError:
+            return
+
+    def _websocket(self) -> None:
+        parsed = urlparse(self.path)
+        token = (parse_qs(parsed.query).get("token") or [""])[-1]
+        log: Dict[str, Any] = {
+            "token": token,
+            "headers": {k.lower(): v for k, v in self.headers.items()},
+            "messages": [],
+            "pongs": [],
+            "unmasked": 0,
+            "client_closed": False,
+        }
+        with self.state.lock:
+            self.state.ws_logs.append(log)
+            session = self.state.ws_sessions.pop(token, None)  # one-time
+        key = self.headers.get("Sec-WebSocket-Key", "")
+        if self.headers.get("Upgrade", "").lower() != "websocket" or not key:
+            return self._error(400, "Not a WebSocket request.")
+        accept = base64.b64encode(hashlib.sha1((key + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11").encode()).digest()).decode()
+        self.wfile.write(
+            ("HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n"
+             f"Sec-WebSocket-Accept: {accept}\r\n\r\n").encode()
+        )
+        self.wfile.flush()
+        self.connection.settimeout(10)
+        try:
+            self._ws_session(session, log)
+        except OSError:  # pragma: no cover - the client went away
+            pass
+
+    def _ws_session(self, session: Optional[Dict[str, Any]], log: Dict[str, Any]) -> None:
+        if session is None:
+            self._ws_send({"type": "error", "message": "The exec session has expired. Request a new token."})
+            return self._ws_close(log)
+        body, cmd = session["body"], session["cmd"]
+        tty = bool(body.get("tty")) and cmd != "legacy"
+        start: Dict[str, Any] = {"type": "start", "exec_id": session["exec_id"]}
+        if cmd != "legacy":
+            start["tty"] = tty
+        self._ws_send(start)
+
+        def exit_(code: int, killed: bool = False, duration: int = 12) -> None:
+            self._ws_send({"type": "exit", "exit_code": code, "timed_out": False, "duration_ms": duration, "killed": killed})
+            self._ws_close(log)
+
+        if cmd == "error":
+            self._ws_send({"type": "error", "message": "The sandbox ended during the command."})
+            return self._ws_close(log)
+        if cmd == "drop":
+            self._ws_output("stdout", b"partial\n")
+            return self._ws_close(log)
+        if cmd == "abort":
+            self._ws_output("stdout", b"partial\n")
+            self.connection.shutdown(2)
+            return
+        if cmd.startswith("echo "):
+            self._ws_output("stdout", cmd[5:].encode() + b"\n")
+            return exit_(0)
+        if cmd == "multi":
+            message = json.dumps({"type": "stdout", "data": base64.b64encode(b"line 1\n").decode()}).encode()
+            self._ws_write(0x1, message[:10], fin=False)
+            self._ws_write(0x0, message[10:20], fin=False)
+            self._ws_write(0x0, message[20:])
+            self._ws_write(0x9, b"are you there")
+            self._ws_output("stderr", b"warning\n")
+            self._ws_output("stdout", b"\xff\xfe")
+            return exit_(3, duration=21)
+        if cmd == "cat":
+            initial = base64.b64decode(body["stdin_base64"]) if body.get("stdin_base64") else str(body.get("stdin") or "").encode()
+            if initial:
+                self._ws_output("stdout", initial)
+        if cmd == "size":
+            self._ws_output("stdout", f"{body.get('cols', 80)}x{body.get('rows', 24)}\r\n".encode())
+
+        fragments = b""
+        while True:
+            frame = self._ws_frame()
+            if frame is None:
+                return
+            fin, opcode, payload, masked = frame
+            if not masked:
+                log["unmasked"] += 1
+            if opcode == 0x9:
+                self._ws_write(0xA, payload)
+                continue
+            if opcode == 0xA:
+                log["pongs"].append(payload)
+                continue
+            if opcode == 0x8:
+                log["client_closed"] = True
+                self._ws_write(0x8, payload[:2])
+                return
+            fragments += payload
+            if not fin:
+                continue
+            message, fragments = json.loads(fragments.decode("utf-8")), b""
+            with self.state.lock:
+                log["messages"].append(message)
+            kind = message.get("type")
+            if kind == "stdin" and cmd == "cat":
+                data = base64.b64decode(message.get("data") or "")
+                self._ws_output("stdout", data.replace(b"\n", b"\r\n") if tty else data)
+            elif kind == "resize" and cmd == "size" and tty:
+                self._ws_output("stdout", f"{message.get('cols')}x{message.get('rows')}\r\n".encode())
+            elif kind == "stdin_close" and not cmd.startswith("sleep"):
+                if cmd not in ("cat", "size"):
+                    self._ws_output("stdout", f"ran: {cmd}\n".encode())
+                return exit_(0)
+            elif kind == "kill":
+                return exit_(137, killed=True)
 
     # ── files ───────────────────────────────────────────────────────────────
 

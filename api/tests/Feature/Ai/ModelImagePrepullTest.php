@@ -44,7 +44,7 @@ class ModelImagePrepullTest extends TestCase
 
         Queue::assertPushed(PrepullModelImagesJob::class, fn (PrepullModelImagesJob $job) => $job->regionId === $region->id
             && $job->attempt === 0
-            && $job->images === ['ghcr.io/brf-tech/hf-serve:1.1.0']
+            && $job->images === ['ghcr.io/brf-tech/runr/hf-serve:1.1.0']
             && $job->placement === [
                 'nodeSelector' => ['runr.dev/dedicated' => 'projects'],
                 'tolerations' => [['key' => 'runr.dev/dedicated', 'operator' => 'Equal', 'value' => 'projects', 'effect' => 'NoSchedule']],
@@ -64,7 +64,7 @@ class ModelImagePrepullTest extends TestCase
         app(ModelStorage::class)->ensure($region, new KubernetesClient($region->kubeconfig), 'fn');
 
         $this->assertNotEmpty($this->k8sCallsTo('POST', '/namespaces/fn/persistentvolumeclaims'));
-        Queue::assertPushed(PrepullModelImagesJob::class, fn (PrepullModelImagesJob $job) => $job->images === ['ghcr.io/brf-tech/hf-serve:1.1.0'] && $job->placement === []);
+        Queue::assertPushed(PrepullModelImagesJob::class, fn (PrepullModelImagesJob $job) => $job->images === ['ghcr.io/brf-tech/runr/hf-serve:1.1.0'] && $job->placement === []);
     }
 
     public function test_services_pull_their_engine_image_on_the_nodes_they_run_on(): void
@@ -78,7 +78,7 @@ class ModelImagePrepullTest extends TestCase
 
         // offline hf-serve: no init container
         $this->prepull()->forService($this->modelService($model, $region, ['engine' => 'transformers', 'mode' => 'offline']));
-        Queue::assertPushed(PrepullModelImagesJob::class, fn ($job) => $job->images === ['ghcr.io/brf-tech/hf-serve:1.1.0']);
+        Queue::assertPushed(PrepullModelImagesJob::class, fn ($job) => $job->images === ['ghcr.io/brf-tech/runr/hf-serve:1.1.0']);
 
         // a GPU service of a GPU type: the CUDA image on GPU nodes of that type (8.9 → 89- TEI)
         $this->prepull()->forService($this->modelService($model, $region, ['engine' => 'tei', 'device' => 'gpu', 'gpu' => ['count' => 1, 'type' => 'NVIDIA-L4']]));
@@ -133,7 +133,7 @@ class ModelImagePrepullTest extends TestCase
     public function test_the_job_applies_the_daemonset_waits_for_every_node_and_removes_it(): void
     {
         $region = $this->gpuRegion(null, ['kubeconfig' => $this->fakeKubeconfig()]);
-        $images = ['ghcr.io/brf-tech/hf-serve:1.1.0'];
+        $images = ['ghcr.io/brf-tech/runr/hf-serve:1.1.0'];
         $status = ['desiredNumberScheduled' => 3, 'numberReady' => 1];
         $this->fakeCluster([
             'GET /apis/apps/v1/namespaces/runr-gpu/daemonsets/runr-model-prepull-abc' => function () use (&$status) {
@@ -146,7 +146,7 @@ class ModelImagePrepullTest extends TestCase
         $this->assertNotEmpty($this->k8sCallsTo('PATCH', '/api/v1/namespaces/runr-gpu'), 'the AI namespace is created when missing');
         $apply = $this->k8sCallsTo('PATCH', '/apis/apps/v1/namespaces/runr-gpu/daemonsets/runr-model-prepull-abc');
         $this->assertCount(1, $apply);
-        $this->assertStringContainsString("crictl pull 'ghcr.io/brf-tech/hf-serve:1.1.0'", $apply[0]['body']['spec']['template']['spec']['initContainers'][0]['command'][8]);
+        $this->assertStringContainsString("crictl pull 'ghcr.io/brf-tech/runr/hf-serve:1.1.0'", $apply[0]['body']['spec']['template']['spec']['initContainers'][0]['command'][8]);
         Queue::assertPushed(PrepullModelImagesJob::class, fn ($job) => $job->attempt === 1 && $job->images === $images);
 
         // one of three nodes has the image: wait
@@ -178,7 +178,7 @@ class ModelImagePrepullTest extends TestCase
         $name = $this->prepull()->forStorage($region);
         $this->assertNull($this->prepull()->forStorage($region), 'running');
 
-        (new PrepullModelImagesJob($region->id, $name, ['ghcr.io/brf-tech/hf-serve:1.1.0']))->handle();
+        (new PrepullModelImagesJob($region->id, $name, ['ghcr.io/brf-tech/runr/hf-serve:1.1.0']))->handle();
 
         $this->assertSame([], $this->k8sCallsTo('PATCH', '/api/v1/namespaces/runr-gpu'), 'the namespace exists');
         Queue::assertNotPushed(PrepullModelImagesJob::class, fn ($job) => $job->attempt === 1);

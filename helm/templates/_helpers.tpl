@@ -115,16 +115,23 @@ Secret env vars: APP_KEY (+ APP_PREVIOUS_KEYS during a key rotation), REVERB_APP
 {{- end -}}
 
 {{/*
-Image reference in RunR's image namespace: a reference under ghcr.io/runrsh/ (RunR up to 0.5.0 —
-values an install set, or the previous chart's defaults that `helm upgrade --reuse-values` reuses)
-is the same image under ghcr.io/brf-tech/. Exact prefix only: other registries stay as given.
+Image reference in RunR's image namespace ghcr.io/brf-tech/runr: a reference of RunR's earlier
+namespaces — values an install set, or the previous chart's defaults that `helm upgrade
+--reuse-values` reuses — is the same image there (App\Support\Images\RegistryMove), a leading
+"runr-" / "runr/" of the name dropped:
+  ghcr.io/runrsh/<name> (up to 0.5.0)                         → ghcr.io/brf-tech/runr/<name>
+  ghcr.io/brf-tech/<RunR's package> (0.5.1: reqs/…, exec-…,
+  runr-…, hf-serve, image-upload, containerd-shim-spin, …)     → ghcr.io/brf-tech/runr/<name>
+Exact prefix only: other packages of ghcr.io/brf-tech and other registries stay as given.
 */}}
 {{- define "runr.image" -}}
-{{- regexReplaceAll "^ghcr\\.io/runrsh/" (toString .) "ghcr.io/brf-tech/" -}}
+{{- $ref := regexReplaceAll "^ghcr\\.io/runrsh/(runr[/-])?" (toString .) "ghcr.io/brf-tech/runr/" -}}
+{{- $ref = regexReplaceAll "^ghcr\\.io/brf-tech/runr-" $ref "ghcr.io/brf-tech/runr/" -}}
+{{- regexReplaceAll "^ghcr\\.io/brf-tech/(reqs/|exec-|(hf-serve|image-upload|containerd-shim-spin|ai-gpu-caas|nginx-test)([:@/]|$))" $ref "ghcr.io/brf-tech/runr/${1}" -}}
 {{- end -}}
 
 {{/*
-initContainer image (fix-permissions / fix-pgdata) — the ghcr.io/brf-tech/reqs mirror instead of docker.io
+initContainer image (fix-permissions / fix-pgdata) — the ghcr.io/brf-tech/runr/reqs mirror instead of docker.io
 */}}
 {{- define "runr.initImage" -}}
 {{- include "runr.image" (printf "%v:%v" .Values.initImage.repository .Values.initImage.tag) | quote -}}

@@ -164,7 +164,7 @@ class AdmissionManifests
                 (string) config('executor.wrapper_image'),
                 BuildManifests::KANIKO_IMAGE,
                 BuildManifests::INIT_IMAGE,
-                'ghcr.io/brf-tech/runr-queue-consumer:latest',
+                'ghcr.io/brf-tech/runr/queue-consumer:latest',
             ],
             self::runtimeImages(),
         );
@@ -211,7 +211,7 @@ class AdmissionManifests
         try {
             $registry = app(RuntimeRegistry::class);
 
-            return array_merge($registry->prepullImages(), $registry->wasmBuildImages());
+            return array_merge($registry->runtimeImages(), $registry->wasmBuildImages());
         } catch (\Throwable) {
             return [];
         }

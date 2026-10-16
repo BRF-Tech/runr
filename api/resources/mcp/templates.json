@@ -15,7 +15,7 @@
             "versions": [
                 {
                     "version": "3.13",
-                    "image": "ghcr.io/brf-tech/reqs/python:3.13-slim",
+                    "image": "ghcr.io/brf-tech/runr/reqs/python:3.13-slim",
                     "default": true
                 }
             ],
@@ -77,7 +77,7 @@
             "versions": [
                 {
                     "version": "22",
-                    "image": "ghcr.io/brf-tech/reqs/node:22-slim",
+                    "image": "ghcr.io/brf-tech/runr/reqs/node:22-slim",
                     "default": true
                 }
             ],

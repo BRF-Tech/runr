@@ -62,6 +62,11 @@ return [
 
     'start_timeout_seconds' => (int) env('SANDBOX_START_TIMEOUT', 120),
 
+    // A starting pod (sandbox or warm pool pod) is read every start_poll_ms (100–200) for the first
+    // start_poll_fast_seconds, then every second (SandboxService::startPollDelayUs())
+    'start_poll_ms' => (int) env('SANDBOX_START_POLL_MS', 150),
+    'start_poll_fast_seconds' => 30,
+
     'exec' => [
         'default_timeout' => (int) env('SANDBOX_EXEC_TIMEOUT', 60),
         'max_timeout' => (int) env('SANDBOX_EXEC_MAX_TIMEOUT', 3600),
@@ -107,6 +112,9 @@ return [
         // A warm pod older than this is replaced (it keeps the pod's activeDeadlineSeconds headroom)
         'max_age_seconds' => (int) env('SANDBOX_POOL_MAX_AGE', 3600),
         'max_pool_size' => 50,
+        // A pod a refill started becomes warm as soon as it runs; after this many seconds the
+        // next refill (every minute) takes over
+        'promote_wait_seconds' => 60,
     ],
 
     // Unix UIDs of sandboxes: every sandbox runs as a UID of its own from this range, so per-UID

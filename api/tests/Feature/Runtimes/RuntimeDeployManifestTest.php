@@ -54,7 +54,7 @@ class RuntimeDeployManifestTest extends TestCase
         $container = $spec['containers'][0];
         $env = $this->env($container);
 
-        $this->assertSame('ghcr.io/brf-tech/exec-python:3.14', $container['image']);
+        $this->assertSame('ghcr.io/brf-tech/runr/exec-python:3.14', $container['image']);
         $this->assertArrayNotHasKey('command', $container);
         $this->assertArrayNotHasKey('initContainers', $spec);
         $this->assertSame([['name' => 'code', 'configMap' => ['name' => $project->slug.'-v1']]], $spec['volumes']);
@@ -81,7 +81,7 @@ class RuntimeDeployManifestTest extends TestCase
 
         $init = $spec['initContainers'][0];
         $this->assertSame('runr-wrapper', $init['name']);
-        $this->assertSame('ghcr.io/brf-tech/runr-wrapper:1.1.0', $init['image']);
+        $this->assertSame('ghcr.io/brf-tech/runr/wrapper:1.1.0', $init['image']);
         $this->assertSame(['/runr-wrapper', 'install', '/runr/runr-wrapper'], $init['command']);
         // as large as the function container: no extra capacity, no slower copy
         $this->assertSame($container['resources'], $init['resources']);

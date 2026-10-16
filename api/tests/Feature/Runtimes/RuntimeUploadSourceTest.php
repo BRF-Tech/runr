@@ -156,7 +156,7 @@ class RuntimeUploadSourceTest extends TestCase
         $withImage = $this->uploadManifest('q-interpreter:1.0', [
             'run' => ['mode' => 'http', 'input' => null, 'command' => null, 'schedule' => 'native'],
             'runtimeClass' => 'wasmtime-spin-v2',
-            'build' => ['command' => 'runr-wasm-exec build', 'image' => 'ghcr.io/brf-tech/exec-wasm-exec:4.1'],
+            'build' => ['command' => 'runr-wasm-exec build', 'image' => 'ghcr.io/brf-tech/runr/exec-wasm-exec:4.1'],
             'wagi' => ['argv' => 'q -cgi /{file}', 'files' => true],
         ]);
         $parsed = $validator->parse($withImage);

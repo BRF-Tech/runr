@@ -1,5 +1,7 @@
 <?php
 
+use App\Services\Helpers\ManagedTracing;
+
 /*
 |--------------------------------------------------------------------------
 | Observability v2 — tracing, request replay, uptime checks, status page, alerting
@@ -21,14 +23,18 @@ return [
         // Install the tracing backend together with Knative Serving (installServing)
         'install_with_serving' => (bool) env('OBS_TRACING_INSTALL_WITH_SERVING', true),
 
-        // Pinned chart versions (the e2e of runtime/ci.sh test-observability runs them); the
-        // collector image tag defaults to the chart's appVersion
+        // Chart versions (empty: the pinned ones, which the e2e of runtime/ci.sh
+        // test-observability runs) and their images from the reqs mirror
+        // (ManagedTracing::COLLECTOR_IMAGE / TEMPO_IMAGE). An image here is a full reference, e.g.
+        // into a registry of your own; *_IMAGE_TAG replaces its tag.
         'collector_chart' => env('OBS_OTEL_COLLECTOR_CHART', 'open-telemetry/opentelemetry-collector'),
-        'collector_chart_version' => env('OBS_OTEL_COLLECTOR_CHART_VERSION', '0.175.1'),
-        'collector_image' => env('OBS_OTEL_COLLECTOR_IMAGE', 'otel/opentelemetry-collector-contrib'),
+        'collector_chart_version' => env('OBS_OTEL_COLLECTOR_CHART_VERSION') ?: ManagedTracing::COLLECTOR_CHART_VERSION,
+        'collector_image' => env('OBS_OTEL_COLLECTOR_IMAGE') ?: ManagedTracing::COLLECTOR_IMAGE,
         'collector_image_tag' => env('OBS_OTEL_COLLECTOR_IMAGE_TAG', ''),
         'tempo_chart' => env('OBS_TEMPO_CHART', 'grafana-community/tempo'),
-        'tempo_chart_version' => env('OBS_TEMPO_CHART_VERSION', '3.1.0'),
+        'tempo_chart_version' => env('OBS_TEMPO_CHART_VERSION') ?: ManagedTracing::TEMPO_CHART_VERSION,
+        'tempo_image' => env('OBS_TEMPO_IMAGE') ?: ManagedTracing::TEMPO_IMAGE,
+        'tempo_image_tag' => env('OBS_TEMPO_IMAGE_TAG', ''),
         'tempo_storage' => env('OBS_TEMPO_STORAGE', '10Gi'),
         'tempo_retention_hours' => (int) env('OBS_TEMPO_RETENTION_HOURS', 72),
 

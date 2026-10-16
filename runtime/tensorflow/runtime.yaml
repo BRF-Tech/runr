@@ -1,5 +1,7 @@
-# Built-in runtime: TensorFlow (Python with TensorFlow and the ML essentials preinstalled). Same
-# handler server as the Python runtime.
+# Built-in runtime: TensorFlow (Python 3.12 with TensorFlow, Keras and the ML essentials
+# preinstalled; the handler server is the Python runtime's). Its versions are the image tags
+# runtime/ci.sh ml-runtimes publishes: TensorFlow's major.minor (CPU, Dockerfile) and
+# <major.minor>-gpu (CUDA 12, Dockerfile.gpu).
 apiVersion: runr.sh/v1
 kind: Runtime
 id: tensorflow
@@ -9,8 +11,8 @@ language: python
 extensions: [py]
 category: ml
 versionDiscovery:
-  repository: runrsh/exec-tensorflow
-  image: "ghcr.io/brf-tech/exec-tensorflow:{version}"
+  repository: ghcr.io/brf-tech/runr/exec-tensorflow
+  image: "ghcr.io/brf-tech/runr/exec-tensorflow:{version}"
   eol: tensorflow
 handler:
   file: main

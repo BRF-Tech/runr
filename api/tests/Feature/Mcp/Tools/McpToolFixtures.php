@@ -240,7 +240,7 @@ trait McpToolFixtures
     {
         foreach ([['python', '3.14'], ['nodejs', '24.14']] as [$runtime, $version]) {
             ExecutorImage::updateOrCreate(['runtime' => $runtime, 'version' => $version], [
-                'docker_image' => "ghcr.io/brf-tech/exec-{$runtime}:{$version}",
+                'docker_image' => "ghcr.io/brf-tech/runr/exec-{$runtime}:{$version}",
                 'is_default' => true,
                 'is_active' => true,
             ]);

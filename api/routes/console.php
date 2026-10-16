@@ -9,6 +9,7 @@ use App\Jobs\DownsampleMetricsJob;
 use App\Jobs\LogRetentionJob;
 use App\Jobs\PruneAuditEventsJob;
 use App\Jobs\PruneMetricSnapshotsJob;
+use App\Jobs\PruneRegistryRepositoriesJob;
 use App\Jobs\SnapshotMetricsJob;
 use App\Services\DomainMigrateService;
 use Illuminate\Support\Facades\Schedule;
@@ -74,6 +75,12 @@ Schedule::job(new LogRetentionJob)
     ->daily()
     ->name('log-retention-cleanup')
     ->withoutOverlapping();
+
+// Build repositories without a tag in the regions' internal registries go to Zot's garbage collection
+Schedule::job(new PruneRegistryRepositoriesJob)
+    ->dailyAt('04:45')
+    ->name('registry-empty-repositories')
+    ->withoutOverlapping(120);
 
 // Audit log retention (config/audit.php, setting audit_retention_days)
 Schedule::job(new PruneAuditEventsJob)

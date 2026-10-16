@@ -8,6 +8,7 @@ use App\Services\Concerns\ZotManifestTrait;
 use App\Services\Concerns\ZotPrepullTrait;
 use App\Services\Helpers\RunrClusterIdentity;
 use App\Services\Manifests\ZotManifests;
+use App\Services\Runtimes\RuntimeRegistry;
 use Illuminate\Support\Facades\Log;
 
 class ZotRegistryService
@@ -344,6 +345,74 @@ class ZotRegistryService
     }
 
     /**
+     * Has the region's Zot fetch the base images of function builds (RuntimeRegistry::
+     * buildBaseImages(), through the ghcr.io / Docker Hub pull-through cache) before a build needs
+     * them: Zot fetches an image it does not hold before it answers the build, minutes for a large
+     * one, and a build waiting on that could run past its deadline. Images Zot holds already
+     * (tags/list) are skipped; the rest go to one Job (ZotManifests::prewarmJob()) named after the
+     * list, so a second run while it exists starts nothing new.
+     *
+     * @return string|null what was started (dry run: would be), "skipped: …", null = nothing to do
+     */
+    public function prewarmBuildBaseImages(KubernetesClient $k8s, KnativeRegion $region, bool $dryRun): ?string
+    {
+        if (! $this->syncsGhcr($region, $k8s)) {
+            return 'skipped: the registry has no ghcr.io upstream (builds pull their base images from ghcr.io)';
+        }
+
+        $ns = $region->registry_namespace ?: self::ZOT_DEFAULT_NS;
+        $prefix = rtrim((string) $region->registry_address, '/').'/';
+        $missing = [];
+        foreach (app(RuntimeRegistry::class)->buildBaseImages() as $image) {
+            $local = $region->buildBaseImageRef($image, true);
+            // Only images the builds take through this registry, by tag
+            if (! str_starts_with($local, $prefix) || str_contains($local, '@')) {
+                continue;
+            }
+            $path = substr($local, strlen($prefix));
+            $colon = strrpos($path, ':');
+            if ($colon === false || str_contains(substr($path, $colon), '/')) {
+                continue;
+            }
+            [$repo, $tag] = [substr($path, 0, $colon), substr($path, $colon + 1)];
+            if (! isset($missing["{$repo}:{$tag}"]) && ! $this->holdsTag($k8s, $ns, $repo, $tag)) {
+                $missing["{$repo}:{$tag}"] = [$repo, $tag];
+            }
+        }
+
+        if ($missing === []) {
+            return null;
+        }
+
+        $list = implode(', ', array_keys($missing));
+        $name = ZotManifests::PREWARM_JOB_PREFIX.substr(hash('sha256', $region->registry_address."\n".$list), 0, 10);
+        if ($k8s->getResourceStatus('batch/v1', 'Job', $name, $ns)) {
+            return null;
+        }
+        if ($dryRun) {
+            return 'would fetch '.count($missing)." build base image(s) into the registry (Job {$ns}/{$name}): {$list}";
+        }
+
+        if (! $k8s->createResource(ZotManifests::prewarmJob($name, $ns, (string) $region->registry_address, array_values($missing)), $ns)) {
+            throw new \RuntimeException("Job {$ns}/{$name} could not be created");
+        }
+
+        return 'fetching '.count($missing)." build base image(s) into the registry (Job {$ns}/{$name}): {$list}";
+    }
+
+    /** Whether Zot holds repository:tag (tags/list — it does not fetch from upstream). */
+    private function holdsTag(KubernetesClient $k8s, string $ns, string $repo, string $tag): bool
+    {
+        try {
+            $response = $k8s->serviceProxyRequest('GET', $ns, self::ZOT_RELEASE_NAME, 5000, "v2/{$repo}/tags/list");
+        } catch (\Throwable) {
+            return false;
+        }
+
+        return $response->successful() && in_array($tag, (array) ($response->json('tags') ?? []), true);
+    }
+
+    /**
      * Zot workload: StatefulSet (PVC) or Deployment (S3).
      *
      * @return array{0: string, 1: ?array} [kind, object]
@@ -490,7 +559,7 @@ class ZotRegistryService
                 'securityContext' => ['fsGroup' => 1000],
                 'initContainers' => [[
                     'name' => 'fix-permissions',
-                    'image' => 'ghcr.io/brf-tech/reqs/busybox:latest',
+                    'image' => 'ghcr.io/brf-tech/runr/reqs/busybox:latest',
                     'command' => ['sh', '-c', 'chown -R 1000:1000 /var/lib/registry'],
                     'volumeMounts' => [['name' => self::ZOT_RELEASE_NAME.'-pvc', 'mountPath' => '/var/lib/registry']],
                     'securityContext' => ['runAsUser' => 0],

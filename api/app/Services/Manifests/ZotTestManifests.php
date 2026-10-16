@@ -38,7 +38,7 @@ class ZotTestManifests
                 'restartPolicy' => 'Never',
                 'containers' => [[
                     'name' => 'pvc-consumer',
-                    'image' => 'ghcr.io/brf-tech/reqs/busybox:latest',
+                    'image' => 'ghcr.io/brf-tech/runr/reqs/busybox:latest',
                     'command' => ['sh', '-c', 'exit 0'],
                     'volumeMounts' => [['name' => 'test-vol', 'mountPath' => '/mnt/test']],
                     'resources' => [
@@ -70,7 +70,7 @@ class ZotTestManifests
                 'restartPolicy' => 'Never',
                 'containers' => [[
                     'name' => 's3-test',
-                    'image' => 'ghcr.io/brf-tech/reqs/curl:latest',
+                    'image' => 'ghcr.io/brf-tech/runr/reqs/curl:latest',
                     'command' => ['sh', '-c', $script],
                     'resources' => [
                         'requests' => ['cpu' => '50m', 'memory' => '32Mi'],
@@ -103,7 +103,7 @@ class ZotTestManifests
                 'restartPolicy' => 'Never',
                 'containers' => [[
                     'name' => 'registry-test',
-                    'image' => 'ghcr.io/brf-tech/reqs/curl:latest',
+                    'image' => 'ghcr.io/brf-tech/runr/reqs/curl:latest',
                     'command' => ['sh', '-c', $curlCmd],
                     'resources' => [
                         'requests' => ['cpu' => '50m', 'memory' => '32Mi'],

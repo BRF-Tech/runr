@@ -2,17 +2,20 @@
 
 namespace App\Services\Runtimes;
 
+use App\Jobs\DeleteRuntimeImagesJob;
 use App\Models\ExecutorImage;
 use App\Models\KnativeRegion;
 use App\Models\Project;
 use App\Models\Runtime;
 use App\Models\RuntimeBuild;
 use App\Models\UploadedImage;
+use App\Services\FunctionBuildService;
 use App\Services\Images\ImageOwner;
 use App\Services\Images\UploadedImages;
 use App\Services\Wasm\WasmRuntimes;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\ValidationException;
 use Stancl\Tenancy\Tenancy;
 
@@ -311,19 +314,46 @@ class RuntimeRegistry
     }
 
     /**
-     * Images worth pre-pulling on region nodes: active versions of built-in and platform
-     * runtimes that have a plain image (custom runtimes and region builds are pulled on demand).
+     * Images the platform runs functions on: active versions of built-in and platform runtimes
+     * that have a plain image (custom runtimes and region builds excluded), the WebAssembly
+     * runtimes left out — their image is the build toolchain (wasmBuildImages()).
+     *
+     * @return list<string>
+     */
+    public function runtimeImages(): array
+    {
+        return $this->activeImages(fn (string $id) => ! WasmRuntimes::isWasm($this->manifest($id)));
+    }
+
+    /**
+     * Images worth pre-pulling on every region node: runtimeImages() without the ML runtimes
+     * (category ml: PyTorch, TensorFlow and their GPU builds, several GB each), which the nodes
+     * their functions run on pull on first use, like custom runtimes and region builds.
      *
      * @return list<string>
      */
     public function prepullImages(): array
     {
+        return $this->activeImages(function (string $id) {
+            $manifest = $this->manifest($id);
+
+            return ! WasmRuntimes::isWasm($manifest) && $manifest?->category() !== 'ml';
+        });
+    }
+
+    /**
+     * Plain images of the active versions of built-in and platform runtimes that pass $keep.
+     *
+     * @param  callable(string): bool  $keep
+     * @return list<string>
+     */
+    private function activeImages(callable $keep): array
+    {
         $ids = array_merge(
             $this->builtinIds(),
             Runtime::where('source', Runtime::SOURCE_PLATFORM)->where('is_enabled', true)->pluck('id')->all(),
         );
-        // A WebAssembly runtime's image is its build toolchain, never run on the nodes
-        $ids = array_values(array_filter($ids, fn (string $id) => ! WasmRuntimes::isWasm($this->manifest($id))));
+        $ids = array_values(array_filter($ids, $keep));
 
         return ExecutorImage::where('is_active', true)
             ->whereIn('runtime', $ids)
@@ -335,9 +365,49 @@ class RuntimeRegistry
     }
 
     /**
+     * The images function builds start FROM (FunctionBuildService::stageImages()) for the default
+     * version of every active built-in and platform runtime that builds with Kaniko — one with a
+     * build step or dependencies, not WebAssembly — when that version runs an image (a version
+     * built in the region or uploaded is in the region registry already), the ML runtimes left out
+     * as in prepullImages(). `region:reconcile` has the region registry fetch them before the first
+     * build needs them (RegistryPrewarmStep).
+     *
+     * @return list<string>
+     */
+    public function buildBaseImages(): array
+    {
+        $ids = array_merge(
+            $this->builtinIds(),
+            Runtime::where('source', Runtime::SOURCE_PLATFORM)->where('is_enabled', true)->pluck('id')->all(),
+        );
+
+        $images = [];
+        foreach ($ids as $id) {
+            $manifest = $this->manifest($id);
+            if ($manifest === null || WasmRuntimes::isWasm($manifest) || $manifest->category() === 'ml'
+                || ($manifest->build() === null && $manifest->dependencies() === null)) {
+                continue;
+            }
+            $executor = ExecutorImage::resolve($id);
+            if (! $executor) {
+                continue;
+            }
+            $spec = $manifest->version($executor->version);
+            $image = $spec === null ? (string) $executor->docker_image : (string) ($spec['image'] ?? '');
+            if ($image === '') {
+                continue;
+            }
+
+            array_push($images, ...FunctionBuildService::stageImages($manifest, ['version' => $executor->version, 'image' => $image]));
+        }
+
+        return array_values(array_unique(array_filter($images)));
+    }
+
+    /**
      * Toolchain images the build Jobs of WebAssembly runtimes run in a project namespace (the
      * manifest's build.image, by default the version image; WasmBuildService::job()): active
-     * versions of built-in and platform runtimes. Like prepullImages(), what the platform chose,
+     * versions of built-in and platform runtimes. Like runtimeImages(), what the platform chose,
      * never a tenant — the admission policy exempts both (AdmissionManifests::systemGlobs()). A
      * version built in the region or uploaded is in the region registry (runr-runtimes/,
      * runr-uploads/), signed there.
@@ -461,14 +531,26 @@ class RuntimeRegistry
         });
     }
 
+    /** Delete a runtime, its versions and builds; its built images leave the region registries. */
     public function delete(Runtime $runtime): void
     {
+        $builtIn = RuntimeBuild::where('runtime_id', $runtime->id)->whereNotNull('image')
+            ->pluck('knative_region_id')->map(fn ($id) => (string) $id)->unique()->values()->all();
+
         DB::transaction(function () use ($runtime) {
             ExecutorImage::where('runtime', $runtime->id)->delete();
             RuntimeBuild::where('runtime_id', $runtime->id)->delete();
             $runtime->delete();
         });
         $this->forget($runtime->id);
+
+        if ($builtIn !== []) {
+            try {
+                DeleteRuntimeImagesJob::dispatch($runtime->id, $builtIn);
+            } catch (\Throwable $e) {
+                Log::warning('Runtime image cleanup not dispatched', ['runtime' => $runtime->id, 'error' => $e->getMessage()]);
+            }
+        }
     }
 
     /**

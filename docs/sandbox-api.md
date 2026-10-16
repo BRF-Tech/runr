@@ -121,7 +121,7 @@ input problems).
   "id": "01jb2x7k3m9q4r5s6t7v8w9xyz",
   "status": "running",
   "region": {"id": "01j…", "name": "eu-1"},
-  "runtime": "python", "runtime_version": "3.14", "image": "ghcr.io/brf-tech/exec-python:3.14",
+  "runtime": "python", "runtime_version": "3.14", "image": "ghcr.io/brf-tech/runr/exec-python:3.14",
   "sandbox_class": "kata-fc", "isolation": "kata",
   "resources": {"cpu": "500m", "cpu_m": 500, "memory_mb": 512, "disk_mb": 1024, "pids_limit": 256},
   "network": {"mode": "allowlist", "egress_allow": ["pypi.org:443"]},
@@ -223,16 +223,40 @@ the stream with `event: error` / `{"message", "reason"}`. A `: ping` comment lin
 idle connections open. A client that disconnects stops the command.
 
 **WebSocket** — `POST /sandboxes/{id}/exec/ws` with the same body (no `stream`) returns a one-time
-token valid for 60 s: `{"data": {"token", "url": "/ws/sandbox-exec?token=…", "exec_id", "expires_in": 60}}`.
+token valid for 60 s: `{"data": {"token", "url": "/ws/sandbox-exec?token=…", "exec_id", "expires_in": 60, "tty"}}`.
 Connect to `wss://<console host><url>`:
 
 | Direction | Frame (JSON text) |
 |---|---|
-| server → client | `{"type":"start","exec_id"}`, `{"type":"stdout","data":"<base64>"}`, `{"type":"stderr","data":"<base64>"}`, `{"type":"exit","exit_code","timed_out","duration_ms","killed"}`, `{"type":"error","message"}` |
-| client → server | `{"type":"stdin","data":"<base64>"}`, `{"type":"stdin_close"}`, `{"type":"kill"}` |
+| server → client | `{"type":"start","exec_id","tty"}`, `{"type":"stdout","data":"<base64>"}`, `{"type":"stderr","data":"<base64>"}`, `{"type":"exit","exit_code","timed_out","duration_ms","killed"}`, `{"type":"error","message"}` |
+| client → server | `{"type":"stdin","data":"<base64>"}`, `{"type":"stdin_close"}`, `{"type":"kill"}`, `{"type":"resize","cols","rows"}` |
 
 The WebSocket is the way for interactive programs that read stdin while they run; the connection
-closes after the `exit` frame.
+closes after the `exit` frame. `kill` stops the command (`killed: true`, exit code 137).
+
+**A terminal for any command** — `"tty": true` in the body runs the command on a terminal
+(`kubectl exec -t`), so shells, REPLs, editors and pagers behave as in a terminal window:
+
+| Field | Meaning |
+|---|---|
+| `tty` | run the command on a terminal (default `false`) |
+| `cols`, `rows` | initial size of the terminal, 1–1000 (default 80 × 24) |
+
+With a terminal:
+
+- the command's stdout and stderr are merged by the terminal and arrive as `stdout` frames,
+  terminal-formatted (`\r\n` line ends, escape sequences); `stderr` frames carry messages of the
+  exec bridge itself;
+- `{"type":"resize","cols":120,"rows":40}` changes the size (the command gets `SIGWINCH`); frames
+  that arrive within 100 ms are applied once, with the last size; without a terminal they are ignored;
+- typed input goes in `stdin` frames as a terminal sends it (Enter is `\r`, Ctrl+C is `\x03`);
+  `stdin_close` sends Ctrl+D, which ends the input of a program that reads the terminal line by
+  line;
+- `TERM` is `xterm-256color` unless the sandbox's or the request's `env` sets it;
+- the `timeout` applies as without a terminal; the exit code is the command's.
+
+`"tty": false` (the default) keeps stdout and stderr apart and binary-safe. `runr sandbox exec
+-it` runs a command with a terminal ([CLI](cli.md#sandboxes)).
 
 ### Terminal
 
@@ -336,12 +360,13 @@ Uploads and downloads are limited to 50 MiB each (`sandbox.files.max_upload_byte
 
 ## SDKs
 
-Two clients cover the sandbox endpoints — lifecycle, exec and streaming, code runs, files,
-background processes, activity logs and terminal sessions. Region settings, warm pools, quotas
-and metrics are managed through the API, the CLI or Settings → Sandboxes; the exec WebSocket is
-an API endpoint that `runr sandbox exec` uses for `-i` on a terminal (and with `--ws`). Both clients read `RUNR_API_URL` (`https://runr.example.com`; `/api` is
+Two clients cover the sandbox endpoints — lifecycle, exec and streaming, the exec WebSocket
+(with a terminal), code runs, files, background processes, activity logs and terminal sessions.
+Region settings, warm pools, quotas and metrics are managed through the API, the CLI or
+Settings → Sandboxes. Both clients read `RUNR_API_URL` (`https://runr.example.com`; `/api` is
 appended), `RUNR_API_KEY` and, on multi-tenant installations, `RUNR_TENANT_ID`. The CLI is
-`runr sandbox` ([CLI](cli.md#sandboxes)).
+`runr sandbox` ([CLI](cli.md#sandboxes)); it uses the exec WebSocket for `-i` on a terminal,
+`--ws` and `-t`.
 
 **Python** — `pip install runr-sandbox` ([`sdk/sandbox/python`](../sdk/sandbox/python/README.md)), sync and asyncio:
 
@@ -382,6 +407,32 @@ for await (const ev of sb.execStream('npm --version && sleep 1 && echo done')) {
 const tree = await sb.files.downloadDirectory('/workspace')   // { 'main.js': Uint8Array }
 // `await using` removes the sandbox at the end of the scope
 ```
+
+**Exec WebSocket** — for programs that read stdin while they run, both SDKs open an exec
+WebSocket session: Python `sb.exec_ws(cmd, tty=False, cols=None, rows=None, …)` (sync and
+asyncio), Node `sb.execWs(cmd, { tty, cols, rows, … })` (and `runCodeWs(code, { language })`).
+The session sends input (`send_stdin` / `sendStdin`), ends it (`close_stdin` / `closeStdin`),
+changes the terminal's size (`resize(cols, rows)`) and stops the command (`kill()`); its output
+arrives as `stdout` / `stderr` events and one `exit` event (`killed` after a kill), or `wait()`
+returns the result. With a terminal, stdout and stderr arrive together as `stdout`:
+
+```python
+with sb.exec_ws(["python3", "-i"], tty=True, cols=100, rows=30) as session:
+    session.send_stdin("print(6 * 7)\r")
+    session.close_stdin()                     # Ctrl+D ends the REPL
+    print(session.wait().stdout)
+```
+
+```ts
+await using session = await sb.execWs(['bash'], { tty: true, cols: process.stdout.columns, rows: process.stdout.rows })
+process.stdout.on('resize', () => session.resize(process.stdout.columns, process.stdout.rows))
+session.sendStdin('ls -la\r')
+session.closeStdin()
+for await (const ev of session) if (ev.type === 'stdout') process.stdout.write(ev.data)
+```
+
+The Python SDK carries the connection with `websockets`; the Node SDK uses the runtime's
+`WebSocket` (Node.js 22+, Bun, Deno) or its own client on Node.js 18 and 20.
 
 Both SDKs map the error reasons to exception classes (`NotFoundError`, `ConflictError`,
 `QuotaError`, `AuthError`, …), poll a 202 create until the sandbox runs, and ignore a 404 on
@@ -517,8 +568,10 @@ request's files are written into it, and the sandbox runs — with the pod's id 
 valid). Every command sources the env file, so a claimed pod sees the same environment a cold one
 gets through `secretKeyRef`.
 
-The pool is refilled asynchronously after every claim or miss and every minute: pods that do not
-start are replaced (the reason is shown as `last_error`), surplus pods go when the size is lowered,
+The pool is refilled asynchronously after every claim or miss and every minute. A pod the refill
+starts is warm, and can be claimed, as soon as it runs: RunR reads it on the start poll (every
+150 ms) for up to a minute, so the replacement of a claimed pod is ready about one pod start after
+the claim. Pods that do not start are replaced (the reason is shown as `last_error`), surplus pods go when the size is lowered,
 pods of a class or image the pool no longer uses are replaced, and warm pods older than
 `sandbox.pool.max_age_seconds` (3600) are recycled, so a claimed pod keeps its full lifetime before
 the pod deadline. A disabled pool is drained.
@@ -614,6 +667,7 @@ ConfigMap):
 | `SANDBOX_POOL_MAX_AGE` | `sandboxApi.poolMaxAgeSeconds` | 3600 | warm pods are recycled after this |
 | `SANDBOX_RETENTION_DAYS` | `sandboxApi.retentionDays` | 30 | ended sandboxes (rows, processes, events) are removed after this |
 | `SANDBOX_START_TIMEOUT` | via `extraEnv` | 120 | default `start_timeout` |
+| `SANDBOX_START_POLL_MS` | via `extraEnv` | 150 | how often a starting pod is read (100–200 ms; after 30 s once a second), so a sandbox runs at most one interval after its pod |
 | `SANDBOX_DEFAULT_PIDS`, `SANDBOX_MAX_PIDS` | via `extraEnv` | 256, 4096 | default / maximum `pids_limit` |
 | `SANDBOX_DEFAULT_READ_ONLY_ROOT` | via `extraEnv` | true | default `read_only_root` |
 | `SANDBOX_MAX_CREATE_FILES_BYTES` | via `extraEnv` | 10485760 | the create request's `files` together |
@@ -656,7 +710,8 @@ NetworkPolicies and ResourceQuotas — the access RunR uses for its own installs
   API, runc opted in, the lifecycle with the pod spec checked in the cluster, exec / SSE / timeout,
   a code run with an image output, files with a tar round trip, processes, pause / resume, network
   none, TTL expiry through the reaper, a warm pool claim and a quota refusal; it prints the start
-  times of cold and pool-claimed sandboxes. gVisor runs inside the Kind nodes (runsc and its
+  times of cold and pool-claimed sandboxes and the time from the claim until the pool is warm
+  again. gVisor runs inside the Kind nodes (runsc and its
   containerd shim from RunR's installer; the install takes 3.5–5 minutes there, measured in WSL 2).
   Kata runs only where the host has hardware virtualization — the CPU's vmx / svm flag and a
   `/dev/kvm` that opens (detected; `SANDBOX_KATA=0|1` overrides) — otherwise its checks are

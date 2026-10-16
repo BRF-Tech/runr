@@ -25,8 +25,10 @@ echo "▶ [1/3] Building runr-api:latest ..."
 # runr://docs/{page} of the MCP server (docs/mcp.md): the image carries docs/ as resources/docs
 mkdir -p "${PROJECT_ROOT}/api/resources/docs" && cp "${PROJECT_ROOT}"/docs/*.md "${PROJECT_ROOT}/api/resources/docs/"
 # Dockerfile.prod: FrankenPHP base (Octane's server binary) + vendor/ baked in — the target
-# machine is air-gapped, nothing is mounted or downloaded at start (compose/deploy.sh, ci.sh deploy)
+# machine is air-gapped, nothing is mounted or downloaded at start (compose/deploy.sh, ci.sh deploy).
+# --pull: base images from their registry, not a copy this machine's Docker pulled long ago
 docker build \
+    --pull \
     --file "${PROJECT_ROOT}/api/Dockerfile.prod" \
     --target base \
     -t runr-api:latest \
@@ -35,6 +37,7 @@ docker build \
 # ── 2. Vue image (SPA build + Caddy) ─────────────────────────────────────────
 echo "▶ [2/3] Building runr-ui:latest ..."
 docker build \
+    --pull \
     --build-arg VITE_WS_PROXY=true \
     --build-arg VITE_REVERB_KEY="${REVERB_KEY}" \
     -t runr-ui:latest \
@@ -43,18 +46,15 @@ docker build \
 # ── 3. Base images (postgres, redis) ─────────────────────────────────────────
 echo "▶ [3/3] Pulling base images ..."
 
+# the registry's image, also when this machine's Docker already holds an older pull of the tag
 ensure_image() {
     local img="$1"
-    if docker image inspect "$img" &>/dev/null; then
-        echo "  ✓ $img (cached)"
-    else
-        docker pull "$img"
-        echo "  ✓ $img"
-    fi
+    docker pull "$img"
+    echo "  ✓ $img"
 }
 
-ensure_image "ghcr.io/brf-tech/reqs/postgres:17-alpine"
-ensure_image "ghcr.io/brf-tech/reqs/redis:7-alpine"
+ensure_image "ghcr.io/brf-tech/runr/reqs/postgres:17-alpine"
+ensure_image "ghcr.io/brf-tech/runr/reqs/redis:7-alpine"
 
 # ── Export ────────────────────────────────────────────────────────────────────
 echo ""
@@ -62,8 +62,8 @@ echo "▶ Exporting images to ${OUTPUT} ..."
 docker save -o "$OUTPUT" \
     runr-api:latest \
     runr-ui:latest \
-    ghcr.io/brf-tech/reqs/postgres:17-alpine \
-    ghcr.io/brf-tech/reqs/redis:7-alpine
+    ghcr.io/brf-tech/runr/reqs/postgres:17-alpine \
+    ghcr.io/brf-tech/runr/reqs/redis:7-alpine
 
 SIZE=$(du -h "$OUTPUT" | cut -f1)
 echo ""

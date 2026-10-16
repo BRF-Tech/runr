@@ -131,19 +131,19 @@ class GpuWorkloadManifestTest extends TestCase
     public function test_a_code_project_on_a_gpu_runtime_version_gets_a_gpu(): void
     {
         $this->seedBuiltinVersions();
-        ExecutorImage::updateOrCreate(['runtime' => 'pytorch', 'version' => '2.3-gpu'], [
-            'docker_image' => 'ghcr.io/brf-tech/exec-pytorch:2.3-gpu', 'is_default' => false, 'is_active' => true, 'gpu_required' => true, 'category' => 'ml',
+        ExecutorImage::updateOrCreate(['runtime' => 'pytorch', 'version' => '2.14-gpu'], [
+            'docker_image' => 'ghcr.io/brf-tech/runr/exec-pytorch:2.14-gpu', 'is_default' => false, 'is_active' => true, 'gpu_required' => true, 'category' => 'ml',
         ]);
-        ExecutorImage::updateOrCreate(['runtime' => 'pytorch', 'version' => '2.3'], [
-            'docker_image' => 'ghcr.io/brf-tech/exec-pytorch:2.3', 'is_default' => true, 'is_active' => true, 'gpu_required' => false, 'category' => 'ml',
+        ExecutorImage::updateOrCreate(['runtime' => 'pytorch', 'version' => '2.14'], [
+            'docker_image' => 'ghcr.io/brf-tech/runr/exec-pytorch:2.14', 'is_default' => true, 'is_active' => true, 'gpu_required' => false, 'category' => 'ml',
         ]);
 
         [$project, $version] = $this->runtimeProject('pytorch', 'http', ['main.py' => 'def handler(e, c): return 1']);
-        $project->forceFill(['runtime_version' => '2.3-gpu', 'knative_region_id' => $this->gpuRegion()->id])->saveQuietly();
+        $project->forceFill(['runtime_version' => '2.14-gpu', 'knative_region_id' => $this->gpuRegion()->id])->saveQuietly();
         $project = $project->fresh(['xaasConfig', 'knativeRegion']);
 
         $container = $this->service($this->build($project, $version))['spec']['template']['spec']['containers'][0];
-        $this->assertSame('ghcr.io/brf-tech/exec-pytorch:2.3-gpu', $container['image']);
+        $this->assertSame('ghcr.io/brf-tech/runr/exec-pytorch:2.14-gpu', $container['image']);
         $this->assertSame('1', $container['resources']['limits']['nvidia.com/gpu'], 'GPU version without config.gpu: one GPU');
 
         $project->xaasConfig->update(['gpu' => ['count' => 2]]);
@@ -151,7 +151,7 @@ class GpuWorkloadManifestTest extends TestCase
         $this->assertSame('2', $container['resources']['limits']['nvidia.com/gpu']);
 
         // the CPU version stays a CPU workload
-        $project->forceFill(['runtime_version' => '2.3'])->saveQuietly();
+        $project->forceFill(['runtime_version' => '2.14'])->saveQuietly();
         $project->xaasConfig->update(['gpu' => null]);
         $container = $this->service($this->build($project->fresh(['xaasConfig', 'knativeRegion']), $version))['spec']['template']['spec']['containers'][0];
         $this->assertArrayNotHasKey('nvidia.com/gpu', $container['resources']['limits']);

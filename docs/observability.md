@@ -307,9 +307,9 @@ Projects can switch tracing on only in a region whose backend is `ready`.
 
 | Component | Release / chart | Details |
 |-----------|-----------------|---------|
-| OpenTelemetry Collector | `otel-collector` / `open-telemetry/opentelemetry-collector` chart 0.175.1 (collector 0.161.0, contrib image), Deployment, 1 replica | receivers OTLP gRPC 4317, OTLP HTTP 4318, Zipkin 9411; `memory_limiter`, `batch`, `resource/runr` (adds `runr.region`), Kubernetes attributes preset; requests 100m / 128Mi, limits 500m / 512Mi; PriorityClass `observability-critical` |
+| OpenTelemetry Collector | `otel-collector` / `open-telemetry/opentelemetry-collector` chart 0.176.0 (collector 0.162.0, contrib image `ghcr.io/brf-tech/runr/reqs/opentelemetry-collector-contrib:0.162.0`, RunR's mirror of `docker.io/otel/opentelemetry-collector-contrib`), Deployment, 1 replica | receivers OTLP gRPC 4317, OTLP HTTP 4318, Zipkin 9411; `memory_limiter`, `batch`, `resource/runr` (adds `runr.region`), Kubernetes attributes preset; requests 100m / 128Mi, limits 500m / 512Mi; PriorityClass `observability-critical` |
 | Span metrics | collector `spanmetrics` connector → Prometheus exporter on 8889 | histogram buckets 5 ms – 30 s, dimension `runr.cold_start`, flushed every 15 s; scraped through `PodMonitor/otel-collector-spanmetrics` when the Prometheus Operator CRDs exist |
-| Grafana Tempo | `tempo` / `grafana-community/tempo` chart 3.1.0 (Tempo 3.1.0, single binary; repository `https://grafana-community.github.io/helm-charts`, where the chart moved from `grafana/helm-charts`) | OTLP 4317 / 4318, HTTP API 3200, filesystem PVC (`tempoStorage`, default 10Gi, region registry StorageClass when set), retention `tempoRetentionHours` (default 72 h, per region `retention_hours`); requests 100m / 256Mi, limits 1 CPU / 1Gi |
+| Grafana Tempo | `tempo` / `grafana-community/tempo` chart 3.2.0 (Tempo 3.1.0, single binary, image `ghcr.io/brf-tech/runr/reqs/tempo:3.1.0`, RunR's mirror of `docker.io/grafana/tempo`; repository `https://grafana-community.github.io/helm-charts`, where the chart moved from `grafana/helm-charts`) | OTLP 4317 / 4318, HTTP API 3200, filesystem PVC (`tempoStorage`, default 10Gi, region registry StorageClass when set), retention `tempoRetentionHours` (default 72 h, per region `retention_hours`); requests 100m / 256Mi, limits 1 CPU / 1Gi |
 
 Function pods export to `http://otel-collector.observability.svc.cluster.local:4318`; RunR queries
 Tempo at `http://tempo.observability.svc.cluster.local:3200` (managed) through the same
@@ -340,6 +340,12 @@ php artisan cluster:install-tracing {regionId?} {--mode=managed|reuse|external|o
 installs (or reconfigures) the backend of one region or of every Knative region;
 `POST /api/observability/regions/{region}/tracing/install` queues the same install
 (`InstallTracingJob`), `DELETE /api/observability/regions/{region}/tracing` removes it.
+
+`php artisan region:reconcile` (the Helm bootstrap job runs it after every install and upgrade)
+runs the same install where tracing is enabled — the region's mode, or for a region without its
+own setting `defaultMode` while `installWithServing` is on — and the backend is missing or runs
+another chart version or image than the pinned ones (step `tracing`, `TracingBackendStep`;
+[upgrade.md](upgrade.md#tracing-backend)). Where tracing is not enabled it installs nothing.
 
 ---
 
@@ -635,11 +641,12 @@ Helm values (`observability.*`, rendered into the API's `OBS_*` variables):
 | Value | Default | |
 |-------|---------|-|
 | `tracing.defaultMode` | `managed` | mode of regions without their own setting |
-| `tracing.installWithServing` | `true` | install the backend with Knative Serving |
+| `tracing.installWithServing` | `true` | install the backend with Knative Serving, and with `region:reconcile` on a region without its own setting |
 | `tracing.knativeSampleRate` | `0.1` | activator / queue-proxy sampling |
 | `tracing.tempoRetentionHours` | `72` | |
 | `tracing.tempoStorage` | `10Gi` | Tempo PVC |
-| `tracing.collectorChartVersion`, `tracing.tempoChartVersion` | `0.175.1`, `3.1.0` | chart versions (the ones `runtime/ci.sh test-observability` runs); `""` installs the newest |
+| `tracing.collectorChartVersion`, `tracing.tempoChartVersion` | `""` | chart versions; empty: the pinned `0.176.0` and `3.2.0` (the ones `runtime/ci.sh test-observability` runs) |
+| `tracing.collectorImage`, `tracing.tempoImage` | `""` | images, e.g. from a registry of your own (the same versions); empty: `ghcr.io/brf-tech/runr/reqs/opentelemetry-collector-contrib:0.162.0` and `ghcr.io/brf-tech/runr/reqs/tempo:3.1.0` |
 | `replay.maxBodyBytes`, `replay.retentionDays`, `replay.maxCaptures` | `65536`, `7`, `500` | project defaults / limit |
 | `replay.ingestUrl` | `""` | RunR's base URL as seen from region pods; empty: derived from the region's agent URL |
 | `uptime.minIntervalSeconds`, `uptime.resultsRetentionDays` | `30`, `90` | |
@@ -674,8 +681,9 @@ Scheduled tasks (`ObservabilityServiceProvider`): `observability:run uptime` eve
 | `Services/LogRetentionService.php` | Per-region log retention via Loki delete requests |
 | `vue/src/composables/useDeploymentLogs.js` | Log + metric polling timers (used by `DeploymentLogPanel.vue`) |
 | `config/observability.php` | Tracing, replay, uptime, status page and alert settings (`OBS_*`) |
-| `Services/Helpers/ManagedTracing.php` | Collector / Tempo releases, Helm values, Knative tracing config |
+| `Services/Helpers/ManagedTracing.php` | Collector / Tempo releases, pinned charts and images, Helm values, Knative tracing config |
 | `Services/Observability/TracingInstallService.php` | Install, reconfigure, uninstall and status of the tracing backend |
+| `Services/RegionReconcile/Steps/TracingBackendStep.php` | `region:reconcile`: the backend where tracing is enabled, at the pinned charts and images |
 | `Services/Observability/ObservabilityPodSpec.php` | Deploy hook: tracing / replay variables, fronting http runtimes with the wrapper |
 | `Services/Observability/Tracing/*` | Tempo client, TraceQL search, trace normalization, trace logs |
 | `Services/Observability/Replay/*` | Capture ingest and redaction, replay, response diff |

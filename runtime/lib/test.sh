@@ -22,9 +22,15 @@ cmd_test_image() {
   echo "==> Building ${tag}"
   do_build "${tag}" "${images_dir}" "$push"
 
+  if [ "$push" = "1" ]; then
+    cleanup_buildx
+  fi
+
   echo ""
   echo -e "${GREEN}Done.${NC}"
-  [ "$push" = "0" ] && echo "To push: ci.sh test-image --push"
+  if [ "$push" = "0" ]; then
+    echo "To push: ci.sh test-image --push"
+  fi
 }
 
 # Cleanup state (module-level so trap handler can access)
@@ -74,21 +80,42 @@ ensure_compose_app_key() {
 
 # pull_image IMAGE — docker pull. An image of the reqs mirror that is not published yet (`ci.sh
 # mirror-reqs` copies REQS_IMAGES of lib/mirror.sh at release time) comes from its upstream source
-# in that list, tagged with the mirror name, so a checkout can test a mirror entry it adds.
+# in that list, tagged with the mirror name, so a checkout can test a mirror entry it adds: from
+# the upstreams of REQS_UPSTREAMS in order, a Docker Hub mirror only by Docker Hub's digest.
 pull_image() {
-  local img="$1" prefix="${REGISTRY}/reqs/" entry source
+  local img="$1" prefix="${REGISTRY}/reqs/" entry name path upstream src want=""
   docker pull -q "$img" >/dev/null 2>&1 && return 0
   docker image inspect "$img" >/dev/null 2>&1 && return 0
   [[ "$img" == "$prefix"* ]] || return 1
+  name="${img#"$prefix"}"
   for entry in "${REQS_IMAGES[@]}"; do
-    [ "${entry%%|*}" = "${img#"$prefix"}" ] || continue
-    source="docker.io/${entry#*|}"
-    if docker pull -q "$source" >/dev/null 2>&1 && docker tag "$source" "$img"; then
-      echo "  ${img}: not in the mirror yet, ${source} tagged as it"
-      return 0
-    fi
+    [ "${entry%%|*}" = "${name%@*}" ] || continue
+    path="$(dockerhub_path "${entry#*|}")"
+    for upstream in $REQS_UPSTREAMS; do
+      if [ "$upstream" = "docker.io" ]; then
+        src="docker.io/${path}"
+      elif [ -n "$want" ] || want=$(dockerhub_digest "$path"); then
+        src="${upstream}/${path%%[:@]*}@${want}"
+      else
+        break
+      fi
+      if docker pull -q "$src" >/dev/null 2>&1 && docker tag "$src" "${img%@*}"; then
+        echo "  ${img}: not in the mirror yet, ${src} tagged as it"
+        return 0
+      fi
+    done
   done
   return 1
+}
+
+# pull_dockerfile_bases DOCKERFILE [NAME=VALUE...] — the base images of a Dockerfile
+# (dockerfile_bases) through pull_image: a build without --pull then runs on current bases, also
+# on a reqs mirror entry this checkout adds before the release copies it
+pull_dockerfile_bases() {
+  local base
+  for base in $(dockerfile_bases "$@"); do
+    pull_image "$base" || echo "  ${base}: not pullable"
+  done
 }
 
 # kind_load_image IMAGE CLUSTER — a local image into every node of a Kind cluster. A pulled
@@ -124,16 +151,20 @@ preload_kind_images() {
 
   # Static utility images
   local static_imgs=(
-    "ghcr.io/brf-tech/reqs/nginx:1.27-alpine"
-    "ghcr.io/brf-tech/reqs/curl:latest"
-    "ghcr.io/brf-tech/reqs/busybox:latest"
-    "ghcr.io/brf-tech/reqs/redis:7-alpine"
-    "ghcr.io/brf-tech/runr-queue-consumer:latest"
+    "ghcr.io/brf-tech/runr/reqs/nginx:1.27-alpine"
+    "ghcr.io/brf-tech/runr/reqs/curl:latest"
+    "ghcr.io/brf-tech/runr/reqs/busybox:latest"
+    "ghcr.io/brf-tech/runr/reqs/redis:7-alpine"
+    "ghcr.io/brf-tech/runr/queue-consumer:latest"
     "ghcr.io/project-zot/zot:v2.1.14"
     "ghcr.io/osscontainertools/kaniko:v1.28.5"
     # the region Traefik (KnativeConstants::TRAEFIK_IMAGE): three replicas that would each pull it
     # (pull_image takes it from Docker Hub while the mirror lacks it)
-    "ghcr.io/brf-tech/reqs/traefik:v3.7.4"
+    "ghcr.io/brf-tech/runr/reqs/traefik:v3.7.4"
+    # the region tracing backend (ManagedTracing::COLLECTOR_IMAGE / TEMPO_IMAGE), installed with
+    # Knative Serving
+    "ghcr.io/brf-tech/runr/reqs/opentelemetry-collector-contrib:0.162.0"
+    "ghcr.io/brf-tech/runr/reqs/tempo:3.1.0"
   )
 
   # Load executor images (if any)

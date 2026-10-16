@@ -212,6 +212,12 @@ func init() {
 					"cold_starts", "avg_duration_ms"})),
 			Sources: []string{"app/Http/Controllers/Api/HistoricalMetricsController.php",
 				"app/Mcp/Tools/Catalog/Operations/MetricsSummary.php"}},
+		// Live metrics of a deployment, read from the region's Prometheus (KnativeMetricsService:
+		// the answer is built with compact(), which the generator leaves untyped).
+		Endpoint{Method: "GET", Path: "/projects/{project}/deployments/{deployment}/metrics", Query: []string{"quick"}, Status: 200,
+			Permission: "metrics.view",
+			Response:   []string{"cpu", "memory", "rps", "cpuAvg1h", "memAvg1h"},
+			Sources:    []string{"app/Services/KnativeMetricsService.php", "app/Http/Controllers/Api/DeploymentController.php"}},
 		Endpoint{Method: "GET", Path: "/projects/{project}/metrics/history", Query: []string{"from", "to", "granularity"}, Status: 200,
 			Permission: "metrics.view",
 			Response: concat([]string{"granularity", "from", "to"}, prefix("data[].", []string{"recorded_at", "cpu_cores", "memory_mb",

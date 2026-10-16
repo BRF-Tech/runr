@@ -6,12 +6,19 @@
  *  - exec: "echo X", "exit N", "binary", "cat" (stdin), "printenv K", "sleep" (timeout), "error"
  *    (stream error event), "multi" (stream with a comment and a data_base64 chunk).
  *  - files: an in-memory file system per sandbox; archives are real tar files.
+ *  - exec WebSocket (POST …/exec/ws, then /ws/sandbox-exec?token=…): "cat" echoes each stdin
+ *    frame and exits at stdin_close; "sleep" runs until kill (exit 137, killed); "fail" answers an
+ *    error frame; "drop" ends the connection without exit; "fragmented" sends a ping, a stdout
+ *    message in three frames and one of 70000 bytes; anything else answers like exec. Every
+ *    client frame is recorded in `execSockets`.
  */
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
 import type { AddressInfo } from 'node:net'
+import type { Duplex } from 'node:stream'
 import { Buffer } from 'node:buffer'
 
 import { createTar, readTar } from '../src/tar.js'
+import { acceptUpgrade, ServerSocket } from './ws-server.js'
 
 export const TOKEN = 'test-token'
 export const PNG = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0, 0, 0, 0, 0])
@@ -37,7 +44,7 @@ function sandboxObject(id: string, body: Json, status: string): Json {
     region: { id: 'r1', name: 'eu-1' },
     runtime: body.runtime ?? 'python',
     runtime_version: body.version ?? '3.14',
-    image: body.image ?? 'ghcr.io/brf-tech/exec-python:3.14',
+    image: body.image ?? 'ghcr.io/brf-tech/runr/exec-python:3.14',
     sandbox_class: 'gvisor',
     isolation: 'gvisor',
     resources: { cpu: '500m', cpu_m: 500, memory_mb: 512, disk_mb: 1024, pids_limit: 256 },
@@ -64,14 +71,36 @@ function sandboxObject(id: string, body: Json, status: string): Json {
   }
 }
 
+/** One exec WebSocket the fake served. */
+export interface ExecSocketLog {
+  token: string
+  body: Json
+  /** The client's text frames, decoded. */
+  messages: Json[]
+  socket: ServerSocket
+  /** The connection's URL as requested (path and query). */
+  url: string
+  headers: Record<string, string | string[] | undefined>
+}
+
 export class FakeApi {
   readonly sandboxes = new Map<string, Json>()
+  /** Exec WebSocket tickets not used yet (token → request body). */
+  readonly execTickets = new Map<string, Json>()
+  readonly execSockets: ExecSocketLog[] = []
+  /** Answer like a server without the tty option: no `tty` in the ticket and the start frame. */
+  legacyExecWs = false
+  /** Answer the ticket's url as a full ws:// URL instead of a path. */
+  absoluteExecWsUrl = false
+  /** Hand out tickets the WebSocket then refuses as expired. */
+  expireExecTickets = false
   readonly fs = new Map<string, Map<string, Uint8Array>>()
   readonly processes = new Map<string, Map<string, Json>>()
   readonly pendingPolls = new Map<string, number>()
   readonly requests: RecordedRequest[] = []
   private counter = 0
   private server: Server | null = null
+  private readonly upgraded = new Set<Duplex>()
   url = ''
 
   async start(): Promise<this> {
@@ -81,6 +110,12 @@ export class FakeApi {
         else res.end()
       })
     })
+    this.server.on('upgrade', (req: IncomingMessage, socket: Duplex, head: Buffer) => {
+      // Upgraded connections are no longer the HTTP server's: stop() ends them itself
+      this.upgraded.add(socket)
+      socket.on('close', () => this.upgraded.delete(socket))
+      this.upgrade(req, socket, head)
+    })
     await new Promise<void>((resolve) => this.server!.listen(0, '127.0.0.1', resolve))
     const address = this.server.address() as AddressInfo
     this.url = `http://127.0.0.1:${address.port}`
@@ -89,6 +124,7 @@ export class FakeApi {
 
   async stop(): Promise<void> {
     if (!this.server) return
+    for (const socket of this.upgraded) socket.destroy()
     this.server.closeAllConnections?.()
     await new Promise<void>((resolve) => this.server!.close(() => resolve()))
   }
@@ -238,6 +274,7 @@ export class FakeApi {
     const stream = Boolean(body.stream) || String(req.headers.accept ?? '').includes('text/event-stream')
     if (rest === '/exec' && method === 'POST') return this.exec(res, id, body, stream)
     if (rest === '/run' && method === 'POST') return this.run(res, body, stream)
+    if (rest === '/exec/ws' && method === 'POST') return this.execWsTicket(res, body)
     if (rest.startsWith('/files')) return this.files(res, id, method, rest, query, body, raw, contentType)
     if (rest.startsWith('/processes')) return this.processRoutes(res, id, method, rest, query, body)
     return this.error(res, 404, 'Not found.')
@@ -356,6 +393,105 @@ export class FakeApi {
     const { stdout: _o, stderr: _e, ...final } = result
     await this.sse(res, 'result', final, false)
     res.end()
+  }
+
+  // ── exec WebSocket ────────────────────────────────────────────────────────
+
+  private execWsTicket(res: ServerResponse, body: Json): void {
+    if ('stream' in body) return this.error(res, 422, 'The exec WebSocket takes no stream field.')
+    if (body.tty !== undefined && (typeof body.cols !== 'number' || typeof body.rows !== 'number')) {
+      return this.error(res, 422, 'cols and rows are required with tty.')
+    }
+    const token = `tok-${this.nextId('ws')}`
+    if (!this.expireExecTickets) this.execTickets.set(token, body)
+    const path = `/ws/sandbox-exec?token=${token}`
+    const data: Json = {
+      token,
+      url: this.absoluteExecWsUrl ? `${this.url.replace(/^http/, 'ws')}${path}` : path,
+      exec_id: `exec-${token}`,
+      expires_in: 60,
+    }
+    if (!this.legacyExecWs) data.tty = body.tty === true
+    this.json(res, { data })
+  }
+
+  private upgrade(req: IncomingMessage, socket: Duplex, head: Buffer): void {
+    const url = new URL(req.url ?? '/', 'http://fake')
+    if (url.pathname !== '/ws/sandbox-exec' || !acceptUpgrade(req, socket)) {
+      if (!socket.destroyed) socket.end('HTTP/1.1 404 Not Found\r\nConnection: close\r\n\r\n')
+      return
+    }
+    const token = url.searchParams.get('token') ?? ''
+    const body = this.execTickets.get(token)
+    this.execTickets.delete(token) // one-time
+    const log: ExecSocketLog = { token, body: body ?? {}, messages: [], socket: null as unknown as ServerSocket, url: req.url ?? '', headers: req.headers }
+    log.socket = new ServerSocket(socket, head, (text) => {
+      const message = JSON.parse(text) as Json
+      log.messages.push(message)
+      this.execWsMessage(log, message)
+    })
+    this.execSockets.push(log)
+    const ws = log.socket
+    if (!body) {
+      ws.sendJson({ type: 'error', message: 'The exec session has expired. Request a new token.' })
+      ws.close()
+      return
+    }
+    const start: Json = { type: 'start', exec_id: `exec-${token}` }
+    if (!this.legacyExecWs) start.tty = body.tty === true
+    ws.sendJson(start)
+    const cmd = FakeApi.command(body)
+    if (body.stdin !== undefined || body.stdin_base64 !== undefined) {
+      if (cmd === 'cat') {
+        const initial = body.stdin_base64 ? Buffer.from(body.stdin_base64, 'base64') : Buffer.from(String(body.stdin))
+        ws.sendJson({ type: 'stdout', data: initial.toString('base64') })
+      }
+    }
+    if (cmd === 'cat' || cmd === 'sleep') return
+    if (cmd === 'fail') {
+      ws.sendJson({ type: 'error', message: 'The sandbox ended during the command.' })
+      ws.close()
+      return
+    }
+    if (cmd === 'drop') {
+      setImmediate(() => ws.drop())
+      return
+    }
+    if (cmd === 'fragmented') {
+      ws.ping('heartbeat')
+      ws.sendFragmented(JSON.stringify({ type: 'stdout', data: Buffer.from('part one, part two\n').toString('base64') }), 3)
+      ws.sendJson({ type: 'stdout', data: Buffer.alloc(70000, 0x61).toString('base64') })
+      ws.sendJson({ type: 'exit', exit_code: 0, timed_out: false, duration_ms: 9, killed: false })
+      ws.close()
+      return
+    }
+    const [stdout, stderr, code, timedOut] = this.outcome(body)
+    if (stdout.length) ws.sendJson({ type: 'stdout', data: stdout.toString('base64') })
+    if (stderr.length) ws.sendJson({ type: 'stderr', data: stderr.toString('base64') })
+    ws.sendJson({ type: 'exit', exit_code: code, timed_out: timedOut, duration_ms: 5, killed: false })
+    ws.close()
+  }
+
+  private execWsMessage(log: ExecSocketLog, message: Json): void {
+    const ws = log.socket
+    const cmd = FakeApi.command(log.body)
+    switch (message.type) {
+      case 'stdin':
+        if (cmd === 'cat') ws.sendJson({ type: 'stdout', data: String(message.data) })
+        return
+      case 'stdin_close':
+        if (cmd === 'cat') {
+          ws.sendJson({ type: 'exit', exit_code: 0, timed_out: false, duration_ms: 7, killed: false })
+          ws.close()
+        }
+        return
+      case 'kill':
+        ws.sendJson({ type: 'exit', exit_code: 137, timed_out: false, duration_ms: 8, killed: true })
+        ws.close()
+        return
+      default:
+        // resize and unknown frames: recorded only
+    }
   }
 
   // ── files ─────────────────────────────────────────────────────────────────

@@ -411,10 +411,10 @@ func (f *sandboxCommandFlags) register(c *cobra.Command) {
 
 func newSandboxExecCmd(app *App) *cobra.Command {
 	f := &sandboxCommandFlags{}
-	var stdin, useWS bool
+	var stdin, useWS, tty bool
 	c := &cobra.Command{
 		Use:   "exec [flags] ID [--] CMD [ARG...]",
-		Short: "Run a command in a sandbox, streaming its output",
+		Short: "Run a command in a sandbox, streaming its output (-it: on a terminal)",
 		Long: "Run a command in a running sandbox. Its stdout and stderr are streamed to runr's stdout and\n" +
 			"stderr as they are written, and runr exits with the command's exit code (137 when the\n" +
 			"timeout killed it). One argument is run by /bin/sh -c (pipes and && work); several are the\n" +
@@ -424,12 +424,18 @@ func newSandboxExecCmd(app *App) *cobra.Command {
 			"to its end) and stream the output. The exec WebSocket sends stdin while the command runs,\n" +
 			"so an interactive program reads each line as it is typed. runr uses the WebSocket for -i\n" +
 			"on a terminal and Server-Sent Events otherwise; --ws picks the WebSocket, --ws=false\n" +
-			"Server-Sent Events. Neither gives the command a TTY: runr sandbox terminal opens a shell\n" +
-			"with one.",
+			"Server-Sent Events.\n\n" +
+			"-t runs the command on a terminal (over the exec WebSocket), so shells, REPLs, editors and\n" +
+			"pagers work as in a terminal window; the terminal merges the command's stderr into its\n" +
+			"output. With -it on a terminal, runr's terminal is raw while the command runs: every key\n" +
+			"goes to the command as typed (Ctrl+C and Ctrl+D too), the size follows the window, and\n" +
+			"the terminal is restored when the command ends. TERM is xterm-256color unless -e sets it.",
 		Example: "  runr sandbox exec $SBX -- python3 -c 'print(6 * 7)'\n" +
 			"  runr sandbox exec $SBX 'pip install --user pandas && python3 train.py'\n" +
 			"  cat data.csv | runr sandbox exec -i $SBX -- python3 load.py\n" +
 			"  runr sandbox exec -i $SBX -- python3 -i          # on a terminal: the exec WebSocket\n" +
+			"  runr sandbox exec -it $SBX -- bash                # an interactive shell on a terminal\n" +
+			"  runr sandbox exec -it $SBX -- vim /workspace/main.py\n" +
 			"  runr sandbox exec --ws -i $SBX -- ./consumer < events.ndjson\n" +
 			"  runr sandbox exec --cwd /workspace/app -e DEBUG=1 --timeout 10m $SBX -- make test",
 		Args: func(cmd *cobra.Command, args []string) error {
@@ -459,6 +465,15 @@ func newSandboxExecCmd(app *App) *cobra.Command {
 			}
 			if len(env) > 0 {
 				in.Env = env
+			}
+			if tty {
+				if cmd.Flags().Changed("ws") && !useWS {
+					return usageErrorf("-t runs over the exec WebSocket: it does not combine with --ws=false")
+				}
+				if app.Printer().Machine() {
+					return usageErrorf("-t streams to the terminal: it does not combine with -o %s", app.OutputFmt)
+				}
+				return sandboxExecTTY(cmd.Context(), app, args[0], in, stdin)
 			}
 			if !cmd.Flags().Changed("ws") {
 				// Typed input reaches the command line by line only over the WebSocket; Server-Sent
@@ -497,7 +512,8 @@ func newSandboxExecCmd(app *App) *cobra.Command {
 	c.Flags().SetInterspersed(false)
 	f.register(c)
 	c.Flags().BoolVarP(&stdin, "stdin", "i", false, "send runr's stdin to the command")
-	c.Flags().BoolVar(&useWS, "ws", false, "run over the exec WebSocket, which sends stdin while the command runs (default: with -i on a terminal; --ws=false uses Server-Sent Events)")
+	c.Flags().BoolVarP(&tty, "tty", "t", false, "run the command on a terminal (with -i on a terminal: an interactive session)")
+	c.Flags().BoolVar(&useWS, "ws", false, "run over the exec WebSocket, which sends stdin while the command runs (default: with -i on a terminal, and with -t; --ws=false uses Server-Sent Events)")
 	return c
 }
 

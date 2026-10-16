@@ -91,13 +91,13 @@ return [
     'prepull_images' => [
         // the image the region Traefik runs (TraefikImage)
         $traefikImage,
-        'ghcr.io/brf-tech/runr-queue-consumer:latest',
+        'ghcr.io/brf-tech/runr/queue-consumer:latest',
         BuildManifests::KANIKO_IMAGE,
-        'ghcr.io/brf-tech/reqs/redis:7-alpine',
-        'ghcr.io/brf-tech/reqs/alpine:3.20',
-        'ghcr.io/brf-tech/reqs/alpine:3.21',
-        'ghcr.io/brf-tech/reqs/busybox:latest',
-        'ghcr.io/brf-tech/reqs/curl:latest',
-        'ghcr.io/brf-tech/reqs/composer:latest',
+        'ghcr.io/brf-tech/runr/reqs/redis:7-alpine',
+        'ghcr.io/brf-tech/runr/reqs/alpine:3.20',
+        'ghcr.io/brf-tech/runr/reqs/alpine:3.21',
+        'ghcr.io/brf-tech/runr/reqs/busybox:latest',
+        'ghcr.io/brf-tech/runr/reqs/curl:latest',
+        'ghcr.io/brf-tech/runr/reqs/composer:latest',
     ],
 ];

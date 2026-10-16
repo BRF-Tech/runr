@@ -127,13 +127,16 @@ console) or token.
 | GET | `/billing/purchases/{purchase}` | one purchase |
 | POST | `/billing/tenants/{tenant}/purchases` | record a purchase — [Purchases](#purchases) |
 | POST | `/billing/purchases/{purchase}/void` | the purchase was reversed in your system |
-| GET | `/billing/events` | billing events, oldest first: `?after=<event id>` `?type=` `?tenant=` `?limit=` (≤ 500) |
+| GET | `/billing/events` | billing events, oldest first (`?order=desc`: newest first): `?after=<event id>` `?before=<event id>` `?type=` `?tenant=` `?limit=` (≤ 500, default 100) |
 | POST | `/billing/events/{event}/redeliver` | deliver an event to the webhook again |
 | POST | `/billing/events/test` | record and deliver a `billing.test` event |
 
 Lists answer `{"data": [...], "meta": {"current_page", "last_page", "per_page", "total"}}`; the
-event list answers `{"data": [...], "meta": {"next_after", "webhook_configured"}}` — read on with
-`?after=<meta.next_after>` until it is `null`. Errors: `401` no or invalid token, `403` with the
+event list answers `{"data": [...], "meta": {"next_after", "next_before", "webhook_configured"}}`.
+`after` and `before` are event ids that bound the list (only events recorded after / before that
+one); the next page of an oldest-first list is `?after=<meta.next_after>`, of a newest-first list
+`?order=desc&before=<meta.next_before>` — read on until it is `null` (the other cursor is always
+`null`). Errors: `401` no or invalid token, `403` with the
 permission that is needed (`{"permissions": ["billing.manage"]}`) or for users who are not platform
 administrators, `404` unknown tenant / charge / purchase / event, `409` plans are off (plan
 changes) or no webhook is configured (test, redeliver), `422` validation errors.
@@ -385,7 +388,8 @@ def verify(secret: bytes, timestamp: str, raw_body: bytes, signature: str, toler
 **Event log.** Every event is kept for 90 days (`BILLING_EVENTS_RETENTION_DAYS`), with or without
 a webhook. `GET /api/billing/events?after=<id>` returns the events after the last one you
 processed — a webhook outage is caught up by reading the log; each event carries its `delivery`
-status, attempts and last error.
+status, attempts and last error. `GET /api/billing/events?order=desc&limit=20` returns the 20 most
+recent events.
 
 ---
 

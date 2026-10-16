@@ -33,7 +33,7 @@
 #             (test-runtimes.sh: acquire_kind_lock).
 
 MCP_E2E_CLIENT_IMAGE="${MCP_E2E_CLIENT_IMAGE:-runr-mcp-e2e-client:latest}"
-MCP_E2E_PYTHON_IMAGE="${MCP_E2E_PYTHON_IMAGE:-ghcr.io/brf-tech/reqs/python:3.13-slim}"
+MCP_E2E_PYTHON_IMAGE="${MCP_E2E_PYTHON_IMAGE:-ghcr.io/brf-tech/runr/reqs/python:3.13-slim}"
 MCP_E2E_SDK="${MCP_E2E_SDK:-mcp>=1.12,<2}"
 
 cmd_test_mcp() {
@@ -110,7 +110,7 @@ mcp_after_e2e() {
   echo -e "${BOLD}MCP e2e — RunR MCP server, OAuth, hosted MCP servers (${base_url})${NC}"
   echo "  client image: ${MCP_E2E_CLIENT_IMAGE} (${MCP_E2E_PYTHON_IMAGE} + ${MCP_E2E_SDK})"
   printf 'FROM %s\nRUN pip install --no-cache-dir "%s"\n' "$MCP_E2E_PYTHON_IMAGE" "$MCP_E2E_SDK" \
-    | docker build -q -t "$MCP_E2E_CLIENT_IMAGE" - >/dev/null
+    | docker build -q --pull -t "$MCP_E2E_CLIENT_IMAGE" - >/dev/null
 
   local admin_user admin_password env_file="${SCRIPT_DIR}/../api/.env.docker"
   admin_user=$(grep -E '^ADMIN_USERNAME=' "$env_file" 2>/dev/null | cut -d= -f2- || true)

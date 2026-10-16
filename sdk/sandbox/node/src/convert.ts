@@ -7,6 +7,7 @@ import type {
   ExecEvent,
   ExecOptions,
   ExecResult,
+  ExecWsOptions,
   FileEntry,
   FileSpec,
   ListFilters,
@@ -203,6 +204,12 @@ export function execBody(cmd: string | string[], options: ExecOptions = {}, stre
   Object.assign(body, compact({ timeout: options.timeout, env: options.env, cwd: options.cwd }))
   if (stream) body.stream = true
   return body
+}
+
+/** The terminal fields of an exec WebSocket request (`tty`, `cols`, `rows`; none without tty). */
+export function ttyFields(options: ExecWsOptions, size: (name: string, value: number) => number): Json {
+  if (!options.tty) return {}
+  return { tty: true, cols: size('cols', options.cols ?? 80), rows: size('rows', options.rows ?? 24) }
 }
 
 export function runBody(code: string, options: RunOptions = {}, stream = false): Json {

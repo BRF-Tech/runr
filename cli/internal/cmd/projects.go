@@ -401,7 +401,7 @@ func newRegionsCmd(app *App) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "regions",
 		Aliases: []string{"region"},
-		Short:   "List the regions projects run in; their tracing backend, data services and sandbox runtimes",
+		Short:   "The clusters projects run in: create, inspect, configure and remove regions and their services",
 	}
 	ls := &cobra.Command{
 		Use:     "ls",

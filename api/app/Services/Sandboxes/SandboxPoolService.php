@@ -2,6 +2,7 @@
 
 namespace App\Services\Sandboxes;
 
+use App\Jobs\Sandboxes\PromoteWarmSandboxesJob;
 use App\Jobs\Sandboxes\RefillSandboxPoolsJob;
 use App\Models\ExecutorImage;
 use App\Models\KnativeRegion;
@@ -11,6 +12,7 @@ use App\Models\SandboxRegionSetting;
 use App\Services\Residency\RegionPolicy;
 use App\Services\Runtimes\RuntimeRegistry;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Sleep;
 use Illuminate\Support\Str;
 
 /**
@@ -19,8 +21,10 @@ use Illuminate\Support\Str;
  * request with the same spec (no custom image, default PID limit and root filesystem mode) claims
  * the oldest warm pod — an atomic warm → claiming update of its row, so two requests never get
  * the same pod — then its labels, egress policy, env file and files are applied and it runs. The
- * pool is refilled asynchronously (RefillSandboxPoolsJob, also every minute); warm pods older than
- * sandbox.pool.max_age_seconds are replaced so every claimed pod keeps its full lifetime.
+ * pool is refilled asynchronously (RefillSandboxPoolsJob, also every minute); a pod the refill
+ * started becomes warm as soon as it runs (PromoteWarmSandboxesJob), not at the next refill. Warm
+ * pods older than sandbox.pool.max_age_seconds are replaced so every claimed pod keeps its full
+ * lifetime.
  *
  * Pool hits and misses are counted on the pool (a miss: a pool exists for the spec but no warm
  * pod was free); the sandboxes' start_ms with from_pool feed the start-time histograms.
@@ -193,7 +197,7 @@ class SandboxPoolService
         }
 
         $deficit = min($pool->size - count($live), self::MAX_STARTS_PER_RUN);
-        $started = 0;
+        $started = [];
         for ($i = 0; $i < $deficit; $i++) {
             try {
                 $this->quotas->checkRegionQuota($pool->tenant_id, $region, $pool->cpu_m, $pool->memory_mb, $class);
@@ -203,14 +207,74 @@ class SandboxPoolService
                 break;
             }
 
-            $this->startWarmPod($pool, $region, $class, $image);
-            $started++;
+            $started[] = $this->startWarmPod($pool, $region, $class, $image)->id;
         }
 
         // The last problem stays visible on the pool until a run goes through without one
         $pool->update(['last_error' => $error !== null ? mb_substr($error, 0, 1000) : null]);
 
-        return $started;
+        if ($started !== []) {
+            $this->dispatchPromote($pool->id, $started);
+        }
+
+        return count($started);
+    }
+
+    /** Warm the pods a refill just started as soon as they run (PromoteWarmSandboxesJob). */
+    public function dispatchPromote(string $poolId, array $sandboxIds): void
+    {
+        try {
+            PromoteWarmSandboxesJob::dispatch($poolId, array_values($sandboxIds));
+        } catch (\Throwable $e) {
+            Log::warning('sandbox pool promotion not dispatched', ['pool' => $poolId, 'error' => $e->getMessage()]);
+        }
+    }
+
+    /**
+     * Pods of the pool that a refill started: warming → warm as soon as each pod runs, read on the
+     * start-poll schedule (SandboxService::startPollDelayUs()) for up to $wait seconds
+     * (sandbox.pool.promote_wait_seconds). A pod that cannot start, or still starts after the wait,
+     * stays warming: the next refill replaces it (recording why) or warms it. Call in the pool's
+     * organization context. Returns the pods warmed.
+     *
+     * @param  list<string>  $sandboxIds
+     */
+    public function promote(SandboxPool $pool, array $sandboxIds, ?int $wait = null): int
+    {
+        $pending = Sandbox::query()->whereIn('id', $sandboxIds)->where('pool_id', $pool->id)
+            ->where('status', Sandbox::STATUS_WARMING)->get()->keyBy('id');
+        $region = KnativeRegion::find($pool->knative_region_id);
+        if ($pending->isEmpty() || ! $region || ! $region->kubeconfig) {
+            return 0;
+        }
+
+        $k8s = app(SandboxService::class)->k8s($region);
+        $deadline = microtime(true) + max(0, $wait ?? (int) config('sandbox.pool.promote_wait_seconds', 60));
+        $promoted = 0;
+        $polls = 0;
+
+        while (true) {
+            foreach ($pending as $id => $member) {
+                try {
+                    $state = SandboxService::podState($k8s->getResourceStatus('v1', 'Pod', $member->pod_name, $member->namespace));
+                } catch (\Throwable) {
+                    continue;   // the cluster did not answer: read it again
+                }
+                if ($state === true) {
+                    $promoted += Sandbox::query()->whereKey($id)->where('status', Sandbox::STATUS_WARMING)
+                        ->update(['status' => Sandbox::STATUS_WARM, 'updated_at' => now()]);
+                    $pending->forget($id);
+                } elseif (is_string($state)) {
+                    $pending->forget($id);   // the refill replaces it and records the reason
+                }
+            }
+
+            $left = (int) (($deadline - microtime(true)) * 1_000_000);
+            if ($pending->isEmpty() || $left <= 0) {
+                return $promoted;
+            }
+            Sleep::usleep(min(SandboxService::startPollDelayUs($polls++), $left));
+        }
     }
 
     /** Create one warm pod of the pool. */

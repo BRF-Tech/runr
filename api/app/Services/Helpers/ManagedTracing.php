@@ -3,6 +3,8 @@
 namespace App\Services\Helpers;
 
 use App\Models\Observability\RegionTracingConfig;
+use App\Support\Images\ImageReference;
+use App\Support\Images\RegistryMove;
 
 /**
  * RunR's tracing backend in a region's 'observability' namespace (docs/observability.md#tracing):
@@ -34,6 +36,27 @@ final class ManagedTracing
 
     public const TEMPO_REPO_URL = 'https://grafana-community.github.io/helm-charts';
 
+    // Pinned chart versions (the e2e of runtime/ci.sh test-observability runs them) and the images
+    // they run (their appVersion), from the reqs mirror of docker.io/otel/opentelemetry-collector-
+    // contrib and docker.io/grafana/tempo like RunR's other third-party images (runtime/lib/mirror.sh):
+    // set as the charts' image values (collectorValues(), tempoValues()) and loaded into Kind by the
+    // e2e. OBS_OTEL_COLLECTOR_IMAGE / OBS_TEMPO_IMAGE override them (Helm values
+    // observability.tracing.collectorImage / tempoImage); region:reconcile (TracingBackendStep)
+    // brings installed backends to them. A chart version changes together with its image here and
+    // the image's REQS_IMAGES entry.
+    public const COLLECTOR_CHART_VERSION = '0.176.0';
+
+    public const COLLECTOR_IMAGE = 'ghcr.io/brf-tech/runr/reqs/opentelemetry-collector-contrib:0.162.0';
+
+    public const TEMPO_CHART_VERSION = '3.2.0';
+
+    public const TEMPO_IMAGE = 'ghcr.io/brf-tech/runr/reqs/tempo:3.1.0';
+
+    /** Chart names: the workloads' helm.sh/chart label is "<name>-<version>" */
+    public const COLLECTOR_CHART = 'opentelemetry-collector';
+
+    public const TEMPO_CHART = 'tempo';
+
     public const EXPORT_SECRET = 'otel-collector-export';
 
     public const OTLP_GRPC_PORT = 4317;
@@ -45,6 +68,30 @@ final class ManagedTracing
     public const SPANMETRICS_PORT = 8889;
 
     public const TEMPO_HTTP_PORT = 3200;
+
+    /**
+     * The collector image: config observability.tracing.collector_image (default COLLECTOR_IMAGE),
+     * its tag replaced by collector_image_tag when that is set; a reference without a tag gets
+     * COLLECTOR_IMAGE's.
+     */
+    public static function collectorImage(): string
+    {
+        return ImageReference::withTag(
+            (string) (RegistryMove::ref((string) config('observability.tracing.collector_image')) ?: self::COLLECTOR_IMAGE),
+            (string) config('observability.tracing.collector_image_tag', ''),
+            ImageReference::tag(self::COLLECTOR_IMAGE),
+        );
+    }
+
+    /** The Tempo image: config observability.tracing.tempo_image / tempo_image_tag, as collectorImage(). */
+    public static function tempoImage(): string
+    {
+        return ImageReference::withTag(
+            (string) (RegistryMove::ref((string) config('observability.tracing.tempo_image')) ?: self::TEMPO_IMAGE),
+            (string) config('observability.tracing.tempo_image_tag', ''),
+            ImageReference::tag(self::TEMPO_IMAGE),
+        );
+    }
 
     /** Where function pods send their spans (OTEL_EXPORTER_OTLP_ENDPOINT, OTLP/HTTP). */
     public static function collectorOtlpHttpUrl(): string
@@ -139,9 +186,12 @@ final class ManagedTracing
             }
         }
 
+        // the chart takes the registry as part of image.repository
+        $split = ImageReference::split(self::collectorImage());
         $image = array_filter([
-            'repository' => (string) config('observability.tracing.collector_image', 'otel/opentelemetry-collector-contrib'),
-            'tag' => (string) config('observability.tracing.collector_image_tag', '') ?: null,
+            'repository' => $split['registry'] === 'docker.io' ? $split['repository'] : $split['registry'].'/'.$split['repository'],
+            'tag' => $split['tag'] ?? null,
+            'digest' => $split['digest'] ?? null,
         ]);
 
         return array_filter([
@@ -229,10 +279,15 @@ final class ManagedTracing
     public static function tempoValues(string $storageClass = '', ?int $retentionHours = null): array
     {
         $retention = max(1, $retentionHours ?? (int) config('observability.tracing.tempo_retention_hours', 72));
+        // tempoImage() always has a tag ("<tag>@<digest>" renders as the pair)
+        $image = ImageReference::split(self::tempoImage());
 
         return [
             'fullnameOverride' => self::TEMPO_RELEASE,
             'tempo' => [
+                'registry' => $image['registry'],
+                'repository' => $image['repository'],
+                'tag' => $image['tag'] ?? ImageReference::tag(self::TEMPO_IMAGE),
                 'retention' => $retention.'h',
                 'reportingEnabled' => false,
                 'receivers' => [

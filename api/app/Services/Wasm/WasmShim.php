@@ -18,7 +18,7 @@ namespace App\Services\Wasm;
  *
  * Where the binary comes from:
  * - spin:     RunR's build of containerd-shim-spin (runtime/wasm-shim-spin), an image
- *             (ghcr.io/brf-tech/containerd-shim-spin) whose /shim the installer pod's init container
+ *             (ghcr.io/brf-tech/runr/containerd-shim-spin) whose /shim the installer pod's init container
  *             copies; the installer checks the binary against the image's SHA256SUMS. The build
  *             gives the Linux containers of a Wasm pod (queue-proxy) the environment of their pod
  *             spec, which the upstream releases since v0.16.0 do not (containerd/runwasi #1061,
@@ -58,7 +58,7 @@ final class WasmShim
             'handler' => 'spin-runr',
             // the name the Spin operator (SpinKube) uses for its shim executor
             'runtime_class' => 'wasmtime-spin-v2',
-            'image' => 'ghcr.io/brf-tech/containerd-shim-spin:v0.26.0-runr.1',
+            'image' => 'ghcr.io/brf-tech/runr/containerd-shim-spin:v0.26.0-runr.1',
             // the platforms of the image (linux/amd64, linux/arm64) as uname -m
             'arches' => ['x86_64', 'aarch64'],
             'artifacts' => [],

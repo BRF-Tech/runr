@@ -179,7 +179,7 @@ class WasmKnativeFeaturesTest extends TestCase
         $region->refresh();
         $this->assertSame('ready', $region->sandbox_wasm_status);
         $spec = $this->daemonSets[WasmManifests::INSTALLER_DS]['spec']['template']['spec'];
-        $this->assertSame('ghcr.io/brf-tech/containerd-shim-spin:v0.26.0-runr.1', $spec['initContainers'][0]['image']);
+        $this->assertSame('ghcr.io/brf-tech/runr/containerd-shim-spin:v0.26.0-runr.1', $spec['initContainers'][0]['image']);
         $env = array_column($spec['containers'][0]['env'], 'value', 'name');
         $this->assertSame(WasmShim::get('spin')->scriptLine(), $env['WASM_SHIMS']);
         $this->assertSame('true', $this->labelsOf('worker-1')['runr.dev/wasm-spin'] ?? null);
@@ -204,9 +204,17 @@ class WasmKnativeFeaturesTest extends TestCase
         $drift = app(WasmInstallService::class)->installerDrift($this->k8s(), [WasmShim::get('spin')]);
         $this->assertSame(['outdated', true], [$drift['state'], $drift['namespace']]);
 
+        // RunR 0.5.1: the same installer, its shim image directly under ghcr.io/brf-tech
+        $live = $this->daemonSets[WasmManifests::INSTALLER_DS];
+        $this->daemonSets[WasmManifests::INSTALLER_DS] = RegistryMove::legacy(RegistryMove::value($live), RegistryMove::FLAT);
+        $this->assertSame('ghcr.io/brf-tech/containerd-shim-spin:v0.26.0-runr.1', $this->daemonSets[WasmManifests::INSTALLER_DS]['spec']['template']['spec']['initContainers'][0]['image']);
+        $drift = app(WasmInstallService::class)->installerDrift($this->k8s(), [WasmShim::get('spin')]);
+        $this->assertSame(['outdated', true], [$drift['state'], $drift['namespace']]);
+        $this->daemonSets[WasmManifests::INSTALLER_DS] = $live;
+
         $dry = (new WasmSandboxStep)->run($cluster, true);
         $this->assertSame('would re-run the WebAssembly installer on the region\'s nodes with the shims of this release (Spin v0.26.0-runr.1; '
-            .'the shim images move to ghcr.io/brf-tech (RunR\'s image namespace), the binaries stay the same) — the shim binaries are replaced in place '
+            .'the shim images move to ghcr.io/brf-tech/runr (RunR\'s image namespace), the binaries stay the same) — the shim binaries are replaced in place '
             .'one node at a time (running Wasm pods keep the shim they started with); the container runtime restarts only on nodes where RunR\'s '
             .'configuration block changes', $dry[0]);
 

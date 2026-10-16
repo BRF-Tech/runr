@@ -48,26 +48,59 @@ for name in "${scenarios[@]}"; do
   echo "✓ $name: lint + template ($(grep -c '^kind:' "$OUT/$name.yaml") resources)"
 done
 
-# An upgrade from RunR ≤ 0.5.0 keeps the previous chart's image values (`helm upgrade
-# --reuse-values` reuses them, installs may have set them): every image under RunR's namespace up
-# to 0.5.0 renders as the same image under ghcr.io/brf-tech (template helper runr.image).
-old_ns="ghcr.io/runrsh"
-sed "s#ghcr\.io/brf-tech/#${old_ns}/#g" "$ROOT/helm/values.yaml" >"$OUT/values-0.5.0.values"
-if helm template runr "$ROOT/helm" --namespace runr -f "$OUT/values-0.5.0.values" --set domain=console.acme-cloud.example \
-    --set "supplyChain.toolsImage=${old_ns}/runr-supply-chain:1.0.0" --set "images.uploadImage=${old_ns}/image-upload:1.0.0" \
-    --set "knative.traefikImage=${old_ns}/reqs/traefik:v3.7.4" >"$OUT/upgrade-images.render" 2>"$OUT/upgrade-images.err"; then
-  left=$(grep -n "${old_ns}/" "$OUT/upgrade-images.render" || true)
-  moved=$(grep -c 'ghcr\.io/brf-tech/' "$OUT/upgrade-images.render" || true)
-  if [ -z "$left" ] && [ "$moved" -ge 12 ]; then
-    echo "✓ upgrade-images: values of RunR ≤ 0.5.0 render ghcr.io/brf-tech ($moved references)"
+# An upgrade keeps the previous chart's image values (`helm upgrade --reuse-values` reuses them,
+# installs may have set them): every image of RunR's earlier namespaces — ghcr.io/runrsh up to
+# 0.5.0, RunR's packages directly under ghcr.io/brf-tech in 0.5.1 — renders as the same image under
+# ghcr.io/brf-tech/runr (template helper runr.image).
+old_refs='ghcr\.io/runrsh/|ghcr\.io/brf-tech/(reqs/|exec-|runr-|hf-serve|image-upload|containerd-shim-spin)'
+for release in 0.5.0 0.5.1; do
+  if [ "$release" = 0.5.0 ]; then
+    old_ns="ghcr.io/runrsh"
+    sed -E -e 's#ghcr\.io/brf-tech/runr/(api|ui)#ghcr.io/runrsh/runr/\1#g' -e 's#ghcr\.io/brf-tech/runr/#ghcr.io/runrsh/#g' \
+      "$ROOT/helm/values.yaml" >"$OUT/values-${release}.values"
   else
-    echo "✗ upgrade-images: values of RunR ≤ 0.5.0 still render ${old_ns}/ (or too few ghcr.io/brf-tech references: ${moved})"
-    echo "$left"
+    old_ns="ghcr.io/brf-tech"
+    sed -E 's#ghcr\.io/brf-tech/runr/(reqs/|hf-serve)#ghcr.io/brf-tech/\1#g' "$ROOT/helm/values.yaml" >"$OUT/values-${release}.values"
+  fi
+  if helm template runr "$ROOT/helm" --namespace runr -f "$OUT/values-${release}.values" --set domain=console.acme-cloud.example \
+      --set "supplyChain.toolsImage=${old_ns}/runr-supply-chain:1.0.0" --set "images.uploadImage=${old_ns}/image-upload:1.0.0" \
+      --set "knative.traefikImage=${old_ns}/reqs/traefik:v3.7.4" >"$OUT/upgrade-images-${release}.render" 2>"$OUT/upgrade-images.err"; then
+    left=$(grep -n -E "$old_refs" "$OUT/upgrade-images-${release}.render" || true)
+    moved=$(grep -c 'ghcr\.io/brf-tech/runr/' "$OUT/upgrade-images-${release}.render" || true)
+    if [ -z "$left" ] && [ "$moved" -ge 12 ]; then
+      echo "✓ upgrade-images: values of RunR ${release} render ghcr.io/brf-tech/runr ($moved references)"
+    else
+      echo "✗ upgrade-images: values of RunR ${release} still render ${old_ns}/ (or too few ghcr.io/brf-tech/runr references: ${moved})"
+      echo "$left"
+      fail=1
+    fi
+  else
+    echo "✗ upgrade-images (${release}): helm template"
+    cat "$OUT/upgrade-images.err"
+    fail=1
+  fi
+done
+
+# The tracing chart versions the values.yaml of 0.5.0 / 0.5.1 set, which `helm upgrade --reuse-values` keeps: no
+# OBS_*_CHART_VERSION, so the API installs the versions it pins; another version is passed on
+if helm template runr "$ROOT/helm" --namespace runr --set domain=console.acme-cloud.example \
+    --set observability.tracing.collectorChartVersion=0.175.1 --set observability.tracing.tempoChartVersion=3.1.0 \
+    >"$OUT/upgrade-tracing.render" 2>"$OUT/upgrade-tracing.err" \
+  && helm template runr "$ROOT/helm" --namespace runr --set domain=console.acme-cloud.example \
+    --set observability.tracing.collectorChartVersion=0.177.0 --set observability.tracing.collectorImage=registry.example.com/otelcol:0.163.0 \
+    >"$OUT/tracing-set.render" 2>>"$OUT/upgrade-tracing.err"; then
+  if ! grep -q 'OBS_\(OTEL_COLLECTOR\|TEMPO\)_CHART_VERSION' "$OUT/upgrade-tracing.render" \
+    && grep -q 'OBS_OTEL_COLLECTOR_CHART_VERSION: "0.177.0"' "$OUT/tracing-set.render" \
+    && grep -q 'OBS_OTEL_COLLECTOR_IMAGE: "registry.example.com/otelcol:0.163.0"' "$OUT/tracing-set.render"; then
+    echo "✓ upgrade-tracing: the tracing chart versions of 0.5.0 / 0.5.1 give way to the pinned ones, set values pass"
+  else
+    echo "✗ upgrade-tracing: OBS_*_CHART_VERSION / OBS_OTEL_COLLECTOR_IMAGE rendered wrong"
+    grep 'OBS_\(OTEL\|TEMPO\)' "$OUT/upgrade-tracing.render" "$OUT/tracing-set.render" || true
     fail=1
   fi
 else
-  echo "✗ upgrade-images: helm template"
-  cat "$OUT/upgrade-images.err"
+  echo "✗ upgrade-tracing: helm template"
+  cat "$OUT/upgrade-tracing.err"
   fail=1
 fi
 

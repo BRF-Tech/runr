@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import os
+import ssl
 import time
 from types import TracebackType
 from typing import Any, AsyncIterator, Awaitable, Callable, Dict, Generator, List, Mapping, Optional, Type, Union
@@ -18,6 +19,7 @@ from ._tar import extract_archive, tar_directory, tar_files
 from ._transport import AsyncTransport
 from .config import resolve_config
 from .errors import ConflictError, NotFoundError, RunrSandboxError, SandboxStartTimeout
+from .exec_ws import AsyncExecSession, ExecSessionOpening
 from .models import ExecEvent, ExecResult, FileEntry, Process, ProcessLogs, RunResult
 from .sse import SSEDecoder
 
@@ -249,6 +251,31 @@ class AsyncSandbox:
         body = _api.exec_body(cmd, stdin=stdin, timeout=timeout, env=env, cwd=cwd, stream=True)
         async for event in self._stream("POST", self._path("/exec"), body):
             yield event
+
+    def exec_ws(
+        self,
+        cmd: Optional[Command] = None,
+        *,
+        code: Optional[str] = None,
+        language: Optional[str] = None,
+        stdin: Union[str, bytes, None] = None,
+        tty: bool = False,
+        cols: Optional[int] = None,
+        rows: Optional[int] = None,
+        timeout: Optional[int] = None,
+        env: Optional[Mapping[str, str]] = None,
+        cwd: Optional[str] = None,
+        ssl_context: Optional[ssl.SSLContext] = None,
+    ) -> ExecSessionOpening:
+        """Run a command over the exec WebSocket (see :meth:`runr_sandbox.Sandbox.exec_ws`). Await
+        the result for the :class:`AsyncExecSession`, or use it directly as
+        ``async with sandbox.exec_ws(...) as session:``."""
+        body = _api.exec_ws_body(
+            cmd, code=code, language=language, stdin=stdin, tty=tty, cols=cols, rows=rows,
+            timeout=timeout, env=env, cwd=cwd,
+        )
+        transport, path = self._transport, self._path("/exec/ws")
+        return ExecSessionOpening(lambda: AsyncExecSession.open(transport, path, body, ssl_context=ssl_context))
 
     async def run_code(
         self,

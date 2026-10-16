@@ -17,7 +17,8 @@ use Tests\Support\FakeSandboxExecTransport;
  * and a region with gVisor and Kata (fc, clh) installed.
  *
  * Pods created through the API start in $podStartState: running (default), pending or
- * image_error (ErrImagePull).
+ * image_error (ErrImagePull). With $podRunsAfterReads a pending pod runs from the read after
+ * that many GETs of it.
  */
 trait FakesSandboxCluster
 {
@@ -43,6 +44,12 @@ trait FakesSandboxCluster
     protected array $k8sSecrets = [];
 
     protected string $podStartState = 'running';
+
+    /** A pending pod runs once it was read this many times (null: it stays as it started) */
+    protected ?int $podRunsAfterReads = null;
+
+    /** @var array<string, int> "ns/name" → GETs of a pod */
+    protected array $podReads = [];
 
     protected FakeSandboxExecTransport $exec;
 
@@ -184,6 +191,12 @@ trait FakesSandboxCluster
             if (! isset($this->k8sPods[$key])) {
                 return $notFound();
             }
+            if ($method === 'GET' && $this->podRunsAfterReads !== null) {
+                $this->podReads[$key] = ($this->podReads[$key] ?? 0) + 1;
+                if ($this->podReads[$key] > $this->podRunsAfterReads && ($this->k8sPods[$key]['status']['phase'] ?? null) === 'Pending') {
+                    $this->k8sPods[$key]['status'] = $this->runningStatus();
+                }
+            }
             if ($method === 'PATCH') {
                 foreach (($body['metadata']['labels'] ?? []) as $label => $value) {
                     if ($value === null) {
@@ -279,11 +292,16 @@ trait FakesSandboxCluster
                 'name' => 'sandbox',
                 'state' => ['waiting' => ['reason' => 'ErrImagePull', 'message' => 'pull access denied for example.com/nope']],
             ]]],
-            default => ['phase' => 'Running', 'containerStatuses' => [[
-                'name' => 'sandbox',
-                'ready' => true,
-                'state' => ['running' => ['startedAt' => now()->toIso8601String()]],
-            ]]],
+            default => $this->runningStatus(),
         };
+    }
+
+    private function runningStatus(): array
+    {
+        return ['phase' => 'Running', 'containerStatuses' => [[
+            'name' => 'sandbox',
+            'ready' => true,
+            'state' => ['running' => ['startedAt' => now()->toIso8601String()]],
+        ]]];
     }
 }

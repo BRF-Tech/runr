@@ -135,8 +135,8 @@ data:
   {{- $ms := $ai.modelStorage | default dict }}
   AI_HF_ENDPOINT: {{ $hf.endpoint | default "https://huggingface.co" | quote }}
   AI_HF_BROWSE: {{ ternary "true" "false" (ne (toString $hf.browse) "false") | quote }}
-  AI_IMAGE_HF_SERVE: {{ include "runr.image" ($img.hfServe | default "ghcr.io/brf-tech/hf-serve:1.1.0") | quote }}
-  AI_IMAGE_HF_SERVE_CUDA: {{ include "runr.image" ($img.hfServeCuda | default "ghcr.io/brf-tech/hf-serve:1.1.0-cuda") | quote }}
+  AI_IMAGE_HF_SERVE: {{ include "runr.image" ($img.hfServe | default "ghcr.io/brf-tech/runr/hf-serve:1.1.0") | quote }}
+  AI_IMAGE_HF_SERVE_CUDA: {{ include "runr.image" ($img.hfServeCuda | default "ghcr.io/brf-tech/runr/hf-serve:1.1.0-cuda") | quote }}
   AI_IMAGE_VLLM: {{ $img.vllm | default "docker.io/vllm/vllm-openai:v0.6.6" | quote }}
   AI_IMAGE_TGI: {{ $img.tgi | default "ghcr.io/huggingface/text-generation-inference:3.0.1" | quote }}
   AI_IMAGE_TEI_CPU: {{ $img.teiCpu | default "ghcr.io/huggingface/text-embeddings-inference:cpu-1.9.4" | quote }}
@@ -176,8 +176,22 @@ data:
   OBS_KNATIVE_TRACING_SAMPLE_RATE: {{ dig "tracing" "knativeSampleRate" 0.1 $obs | toString | quote }}
   OBS_TEMPO_RETENTION_HOURS: {{ dig "tracing" "tempoRetentionHours" 72 $obs | toString | quote }}
   OBS_TEMPO_STORAGE: {{ dig "tracing" "tempoStorage" "10Gi" $obs | quote }}
-  OBS_OTEL_COLLECTOR_CHART_VERSION: {{ dig "tracing" "collectorChartVersion" "0.175.1" $obs | quote }}
-  OBS_TEMPO_CHART_VERSION: {{ dig "tracing" "tempoChartVersion" "3.1.0" $obs | quote }}
+  {{- /* Chart versions of the tracing backend: unset, the ones the API pins. The defaults of earlier
+         charts, which --reuse-values keeps, are no choice of the installation: left out too. */}}
+  {{- $collectorChart := toString (dig "tracing" "collectorChartVersion" "" $obs) }}
+  {{- if and $collectorChart (not (has $collectorChart (list "0.175.1"))) }}
+  OBS_OTEL_COLLECTOR_CHART_VERSION: {{ $collectorChart | quote }}
+  {{- end }}
+  {{- $tempoChart := toString (dig "tracing" "tempoChartVersion" "" $obs) }}
+  {{- if and $tempoChart (not (has $tempoChart (list "3.1.0"))) }}
+  OBS_TEMPO_CHART_VERSION: {{ $tempoChart | quote }}
+  {{- end }}
+  {{- with dig "tracing" "collectorImage" "" $obs }}
+  OBS_OTEL_COLLECTOR_IMAGE: {{ include "runr.image" . | quote }}
+  {{- end }}
+  {{- with dig "tracing" "tempoImage" "" $obs }}
+  OBS_TEMPO_IMAGE: {{ include "runr.image" . | quote }}
+  {{- end }}
   OBS_REPLAY_MAX_BODY_BYTES: {{ dig "replay" "maxBodyBytes" 65536 $obs | toString | quote }}
   OBS_REPLAY_RETENTION_DAYS: {{ dig "replay" "retentionDays" 7 $obs | toString | quote }}
   OBS_REPLAY_MAX_CAPTURES: {{ dig "replay" "maxCaptures" 500 $obs | toString | quote }}
@@ -256,7 +270,7 @@ data:
   BINDINGS_QUOTA_DEDICATED_POSTGRES: {{ $bq.dedicatedPostgres | default 0 | quote }}
   BINDINGS_KV_MAXMEMORY_MB: {{ $bkv.maxmemoryMb | default 512 | quote }}
   BINDINGS_KV_STORAGE: {{ $bkv.storage | default "2Gi" | quote }}
-  BINDINGS_OBJECT_IMAGE: {{ include "runr.image" ($bobj.image | default "ghcr.io/brf-tech/reqs/garage:v2.1.0") | quote }}
+  BINDINGS_OBJECT_IMAGE: {{ include "runr.image" ($bobj.image | default "ghcr.io/brf-tech/runr/reqs/garage:v2.1.0") | quote }}
   BINDINGS_OBJECT_STORAGE: {{ $bobj.storage | default "20Gi" | quote }}
   BINDINGS_OBJECT_S3_REGION: {{ $bobj.s3Region | default "garage" | quote }}
   BINDINGS_CNPG_CHART_VERSION: {{ $bpg.cnpgChartVersion | default "0.26.0" | quote }}

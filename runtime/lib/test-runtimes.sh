@@ -16,12 +16,12 @@
 
 prepare_runtime_e2e() {
   local cluster="$1"
-  local tag="${REGISTRY}/runr-wrapper:${WRAPPER_VERSION:-1.1.0}"
+  local tag="${REGISTRY}/wrapper:${WRAPPER_VERSION:-1.1.0}"
 
   echo ""
   echo "Preparing the runtime plugin e2e..."
   echo "  wrapper image: ${tag}"
-  docker build -q -t "${tag}" "${SCRIPT_DIR}/wrapper" >/dev/null
+  docker build -q --pull -t "${tag}" "${SCRIPT_DIR}/wrapper" >/dev/null
 
   if [ -n "$cluster" ]; then
     kind load docker-image "${tag}" --name "$cluster" >/dev/null

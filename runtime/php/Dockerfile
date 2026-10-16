@@ -1,5 +1,5 @@
 ARG VERSION=8.4
-FROM ghcr.io/brf-tech/reqs/php:${VERSION}-cli-alpine
+FROM ghcr.io/brf-tech/runr/reqs/php:${VERSION}-cli-alpine
 
 WORKDIR /app
 

@@ -10,7 +10,7 @@ gateway:
   serviceType: ClusterIP
   port: 80
   image:
-    repository: ghcr.io/brf-tech/reqs/caddy
+    repository: ghcr.io/brf-tech/runr/reqs/caddy
     tag: "2-alpine"
     pullPolicy: IfNotPresent
   resources:
@@ -96,7 +96,7 @@ redis:
   host: ""
   port: "6379"
   image:
-    repository: ghcr.io/brf-tech/reqs/redis
+    repository: ghcr.io/brf-tech/runr/reqs/redis
     tag: "7-alpine"
   resources:
     requests: { cpu: 100m, memory: 128Mi }
@@ -116,7 +116,7 @@ database:
   user: runr
   postgres:
     image:
-      repository: ghcr.io/brf-tech/reqs/postgres
+      repository: ghcr.io/brf-tech/runr/reqs/postgres
       tag: "17-alpine"
     storage: 10Gi
     fixPgdata: true         # initContainer: moves lost+found out of the way, PGDATA in a subdirectory
@@ -154,7 +154,7 @@ mail:
 
 mailpit:
   image:
-    repository: ghcr.io/brf-tech/reqs/mailpit
+    repository: ghcr.io/brf-tech/runr/reqs/mailpit
     tag: latest
   uiPort: 8025
   resources:
@@ -262,7 +262,7 @@ signup:
 
 knative:
   minK8sMinor: "30"
-  # Image of the region Traefik (Knative ingress); empty: ghcr.io/brf-tech/reqs/traefik at the version
+  # Image of the region Traefik (Knative ingress); empty: ghcr.io/brf-tech/runr/reqs/traefik at the version
   # of the pinned chart (the mirror of docker.io/traefik). Point it at a registry the regions reach,
   # with the same Traefik version; `region:reconcile` moves existing regions to it.
   traefikImage: ""
@@ -273,13 +273,25 @@ knative:
 # in the console), request replay, uptime checks, the public status page and alert delivery.
 observability:
   tracing:
-    defaultMode: managed          # managed | reuse | external | off — regions without their own setting
+    # managed | reuse | external | off — regions without their own setting. With installWithServing
+    # it also decides whether `region:reconcile` installs the backend on such a region
+    defaultMode: managed
     installWithServing: true      # install the backend together with Knative Serving
     knativeSampleRate: 0.1        # activator / queue-proxy span sampling (region setting overrides)
     tempoRetentionHours: 72
     tempoStorage: 10Gi
-    collectorChartVersion: "0.175.1"  # open-telemetry/opentelemetry-collector (collector 0.161.0, contrib image)
-    tempoChartVersion: "3.1.0"        # grafana-community/tempo, single binary (Tempo 3.1.0)
+    # Chart versions; empty: the ones this release pins — open-telemetry/opentelemetry-collector
+    # 0.176.0 (collector 0.162.0, contrib image) and grafana-community/tempo 3.2.0 (Tempo 3.1.0,
+    # single binary)
+    collectorChartVersion: ""
+    tempoChartVersion: ""
+    # Images of the collector and Tempo; empty: ghcr.io/brf-tech/runr/reqs/opentelemetry-collector-contrib
+    # and ghcr.io/brf-tech/runr/reqs/tempo at the versions of the pinned charts (the mirrors of
+    # docker.io/otel/opentelemetry-collector-contrib and docker.io/grafana/tempo). Point them at a
+    # registry the regions reach, with the same versions; `region:reconcile` moves installed
+    # backends to them.
+    collectorImage: ""
+    tempoImage: ""
   replay:
     maxBodyBytes: 65536           # project default; projects choose up to 1 MiB
     retentionDays: 7              # project default; projects choose up to 30
@@ -353,7 +365,7 @@ gitDeploy:
 # until an administrator enables them (publish / mirror toolsImage first).
 supplyChain:
   enabled: true                 # build-ready hooks: every RunR-built image gets its supply-chain run
-  toolsImage: ""                # default ghcr.io/brf-tech/runr-supply-chain:1.0.0 (ci.sh supply-chain)
+  toolsImage: ""                # default ghcr.io/brf-tech/runr/supply-chain:1.0.0 (ci.sh supply-chain)
   jobNamespace: ""              # default runr-supply-chain (Jobs + region signing key, per region)
   rescanHours: ""               # default re-scan interval of deployed images for new regions (24)
   trivyDbSource: ""             # mirror source of the vulnerability DB (mirror.gcr.io/aquasec/trivy-db:2)
@@ -368,7 +380,7 @@ supplyChain:
 # Container images (docker save / OCI layout tars) and .wasm modules uploaded through the console,
 # the API or `runr images push` into a region's internal registry. Empty values keep the defaults.
 images:
-  uploadImage: ""              # receiver image the regions pull (default ghcr.io/brf-tech/image-upload:1.0.0, ci.sh image-upload)
+  uploadImage: ""              # receiver image the regions pull (default ghcr.io/brf-tech/runr/image-upload:1.0.0, ci.sh image-upload)
   quotaGb: ""                  # storage of uploaded images per organization over every region (default 50, 0 = unlimited)
   maxUploadGb: ""              # largest file of one upload (default 20)
   uploadTtlHours: ""           # an upload not completed within this time is aborted (default 24)
@@ -383,8 +395,8 @@ ai:
     # false: the console does not call the Hub (air-gapped console); models are uploaded or imported
     browse: true
   images:
-    hfServe: ghcr.io/brf-tech/hf-serve:1.1.0
-    hfServeCuda: ghcr.io/brf-tech/hf-serve:1.1.0-cuda
+    hfServe: ghcr.io/brf-tech/runr/hf-serve:1.1.0
+    hfServeCuda: ghcr.io/brf-tech/runr/hf-serve:1.1.0-cuda
     vllm: docker.io/vllm/vllm-openai:v0.6.6
     tgi: ghcr.io/huggingface/text-generation-inference:3.0.1
     teiCpu: ghcr.io/huggingface/text-embeddings-inference:cpu-1.9.4
@@ -426,7 +438,7 @@ bindings:
     maxmemoryMb: 512          # managed KV Redis: memory (noeviction) and AOF volume
     storage: 2Gi
   object:
-    image: ghcr.io/brf-tech/reqs/garage:v2.1.0
+    image: ghcr.io/brf-tech/runr/reqs/garage:v2.1.0
     storage: 20Gi
     s3Region: garage
   postgres:
@@ -530,9 +542,9 @@ deployTimestamp: ""
 
 # ─── Init Container Image ───────────────────────
 # initContainer image (fix-permissions / fix-pgdata)
-# ghcr.io/brf-tech/reqs/busybox mirrors docker.io/library/busybox (runtime/lib/mirror.sh); only the "latest" tag exists
+# ghcr.io/brf-tech/runr/reqs/busybox mirrors docker.io/library/busybox (runtime/lib/mirror.sh); only the "latest" tag exists
 initImage:
-  repository: ghcr.io/brf-tech/reqs/busybox
+  repository: ghcr.io/brf-tech/runr/reqs/busybox
   tag: "latest"
 
 # ─── Cluster ─────────────────────────────────

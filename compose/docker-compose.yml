@@ -110,7 +110,7 @@ services:
 
   # ── PostgreSQL ─────────────────────────────────────────────────────────────
   postgres:
-    image: ghcr.io/brf-tech/reqs/postgres:17-alpine
+    image: ghcr.io/brf-tech/runr/reqs/postgres:17-alpine
     volumes:
       - postgres_data:/var/lib/postgresql/data
     environment:
@@ -126,7 +126,7 @@ services:
 
   # ── Redis ──────────────────────────────────────────────────────────────────
   redis:
-    image: ghcr.io/brf-tech/reqs/redis:7-alpine
+    image: ghcr.io/brf-tech/runr/reqs/redis:7-alpine
     volumes:
       - redis_data:/data
     healthcheck:

@@ -47,11 +47,16 @@ class TracingBackendTest extends TestCase
         $this->assertSame(['tempo', 'otel-collector'], array_keys($this->helm->installs));
         $tempo = $this->helm->installs['tempo'];
         $this->assertSame(['grafana-community/tempo', 'observability', false], [$tempo['chart'], $tempo['namespace'], $tempo['wait']]);
-        $this->assertSame('3.1.0', $tempo['version'], 'pinned chart (config observability.tracing.tempo_chart_version)');
+        $this->assertSame('3.2.0', $tempo['version'], 'pinned chart (config observability.tracing.tempo_chart_version)');
+        $this->assertSame(['ghcr.io', 'brf-tech/runr/reqs/tempo', '3.1.0'], [
+            $tempo['valuesArray']['tempo']['registry'], $tempo['valuesArray']['tempo']['repository'], $tempo['valuesArray']['tempo']['tag'],
+        ], 'the reqs mirror of docker.io/grafana/tempo');
         $this->assertSame('fast', $tempo['valuesArray']['persistence']['storageClassName']);
         $collector = $this->helm->installs['otel-collector'];
         $this->assertSame('open-telemetry/opentelemetry-collector', $collector['chart']);
-        $this->assertSame('0.175.1', $collector['version'], 'pinned chart (config observability.tracing.collector_chart_version)');
+        $this->assertSame('0.176.0', $collector['version'], 'pinned chart (config observability.tracing.collector_chart_version)');
+        $this->assertSame(['repository' => 'ghcr.io/brf-tech/runr/reqs/opentelemetry-collector-contrib', 'tag' => '0.162.0'], $collector['valuesArray']['image'],
+            'the reqs mirror of docker.io/otel/opentelemetry-collector-contrib');
         $this->assertSame('tempo.observability.svc.cluster.local:4317', $collector['valuesArray']['config']['exporters']['otlp/tempo']['endpoint']);
         $this->assertSame(['grafana-community', 'open-telemetry'], array_keys($this->helm->repos));
         $this->assertSame('https://grafana-community.github.io/helm-charts', $this->helm->repos['grafana-community']);

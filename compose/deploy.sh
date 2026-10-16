@@ -38,7 +38,9 @@ info() { echo -e "  ${CYAN}▸${NC} $1"; }
 build_api() {
   local version="$1"
   info "Building runr-api:latest ..."
+  # --pull: base images from their registry, not a copy this machine's Docker pulled long ago
   docker build \
+    --pull \
     --file "$PROJECT_ROOT/api/Dockerfile.prod" \
     --build-arg APP_VERSION="$version" \
     -t "runr-api:latest" \
@@ -54,6 +56,7 @@ build_api() {
 build_ui() {
   info "Building runr-ui:latest ..."
   docker build \
+    --pull \
     --build-arg VITE_WS_PROXY=true \
     --build-arg VITE_REVERB_KEY="${REVERB_KEY}" \
     -t "runr-ui:latest" \

@@ -97,8 +97,8 @@ class ZotManifests
     public const GHCR_UPSTREAM = 'https://ghcr.io';
 
     /**
-     * Local namespace of the ghcr.io pull-through cache: {zot}/ghcr.io/brf-tech/exec-python:3.14 is
-     * synced on demand from ghcr.io/brf-tech/exec-python:3.14 (KnativeRegion::buildBaseImageRef()).
+     * Local namespace of the ghcr.io pull-through cache: {zot}/ghcr.io/brf-tech/runr/exec-python:3.14 is
+     * synced on demand from ghcr.io/brf-tech/runr/exec-python:3.14 (KnativeRegion::buildBaseImageRef()).
      */
     public const GHCR_NAMESPACE = 'ghcr.io';
 
@@ -323,6 +323,69 @@ class ZotManifests
         return $value;
     }
 
+    /** Name prefix of the registry pre-warm Jobs (prewarmJob()). */
+    public const PREWARM_JOB_PREFIX = 'runr-registry-prewarm-';
+
+    /**
+     * Job in the registry namespace that asks the region's Zot for the manifest of each image,
+     * one after the other: Zot fetches an image it does not hold from its upstream (pull-through
+     * cache) before it answers, so builds later find their base images in the region. Waits for
+     * Zot to answer first (it may just restart with a changed config), tries each image twice and
+     * logs how long each took; the Job fails when an image could not be fetched.
+     *
+     * @param  list<array{0: string, 1: string}>  $images  [repository, tag] in the registry, e.g.
+     *                                                     ['ghcr.io/brf-tech/runr/exec-python', '3.14']
+     */
+    public static function prewarmJob(string $name, string $namespace, string $registryAddress, array $images): array
+    {
+        $accept = 'Accept: '.RegistryImageManifests::MANIFEST_ACCEPT;
+        $lines = [
+            'set -u',
+            'R='.escapeshellarg('http://'.rtrim($registryAddress, '/')),
+            'A='.escapeshellarg($accept),
+            'i=0; until wget -q -O /dev/null "$R/v2/"; do i=$((i+1)); [ "$i" -ge 60 ] && { echo "registry $R does not answer"; exit 1; }; sleep 5; done',
+            'failed=0',
+            'fetch() { s=$(date +%s); if wget -q -O /dev/null -T 1800 --header "$A" "$R/v2/$1/manifests/$2" || wget -q -O /dev/null -T 1800 --header "$A" "$R/v2/$1/manifests/$2"; then echo "$1:$2 in the registry after $(( $(date +%s) - s )) s"; else echo "$1:$2 could not be fetched"; failed=1; fi; }',
+        ];
+        foreach ($images as [$repo, $tag]) {
+            $lines[] = 'fetch '.escapeshellarg($repo).' '.escapeshellarg($tag);
+        }
+        $lines[] = 'exit $failed';
+
+        return [
+            'apiVersion' => 'batch/v1',
+            'kind' => 'Job',
+            'metadata' => [
+                'name' => $name,
+                'namespace' => $namespace,
+                'labels' => ['app.kubernetes.io/managed-by' => 'runr', 'app.kubernetes.io/component' => 'registry-prewarm'],
+            ],
+            'spec' => [
+                'activeDeadlineSeconds' => 3600,
+                'backoffLimit' => 0,
+                'ttlSecondsAfterFinished' => 86400,
+                'template' => [
+                    'metadata' => ['labels' => ['app.kubernetes.io/component' => 'registry-prewarm']],
+                    'spec' => [
+                        'restartPolicy' => 'Never',
+                        'automountServiceAccountToken' => false,
+                        'securityContext' => ['runAsNonRoot' => true, 'runAsUser' => 65534, 'seccompProfile' => ['type' => 'RuntimeDefault']],
+                        'containers' => [[
+                            'name' => 'prewarm',
+                            'image' => BuildManifests::INIT_IMAGE,
+                            'command' => ['sh', '-c', implode("\n", $lines)],
+                            'securityContext' => ['allowPrivilegeEscalation' => false, 'readOnlyRootFilesystem' => true, 'capabilities' => ['drop' => ['ALL']]],
+                            'resources' => [
+                                'requests' => ['cpu' => '10m', 'memory' => '16Mi'],
+                                'limits' => ['memory' => '64Mi'],
+                            ],
+                        ]],
+                    ],
+                ],
+            ],
+        ];
+    }
+
     public static function testPvc(string $storageClass, string $size, string $namespace): array
     {
         return ZotTestManifests::testPvc($storageClass, $size, $namespace);
@@ -382,7 +445,7 @@ class ZotManifests
             'hostPID' => true,
             'containers' => [[
                 'name' => 'mirror-config',
-                'image' => 'ghcr.io/brf-tech/reqs/busybox:latest',
+                'image' => 'ghcr.io/brf-tech/runr/reqs/busybox:latest',
                 'command' => ['sh', '-c', $script],
                 'securityContext' => ['privileged' => true],
                 'resources' => [

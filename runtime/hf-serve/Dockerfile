@@ -1,7 +1,7 @@
 # RunR hf-serve, CPU image: transformers pipelines (classification, NER, summarization, speech
 # recognition, image classification, embeddings, small text generation) plus the mirror and
 # upload-receiver helpers. Model services on the "transformers" engine without a GPU run it.
-FROM ghcr.io/brf-tech/reqs/python:3.12-slim
+FROM ghcr.io/brf-tech/runr/reqs/python:3.12-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \

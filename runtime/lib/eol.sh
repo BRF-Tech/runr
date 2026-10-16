@@ -1,7 +1,7 @@
 # cmd_eol — EOL report of the runtime images + optional prune
 #
 # The images are the ones `ci.sh build --push` publishes: ${REGISTRY}/exec-<runtime> for the
-# runtimes in RUNTIME_DEFS (REGISTRY defaults to ghcr.io/brf-tech). Their tags are read from that
+# runtimes in RUNTIME_DEFS (REGISTRY defaults to ghcr.io/brf-tech/runr). Their tags are read from that
 # registry through the OCI distribution API (GET /v2/<repo>/tags/list with the registry's token
 # service), not from Docker Hub — Docker Hub only hosts the upstream base images.
 #
@@ -9,7 +9,7 @@
 # OCI API): GHCR_TOKEN needs delete:packages; GHCR_OWNER_KIND=users for a user-owned namespace.
 # GHCR_USERNAME + GHCR_TOKEN also authenticate the tag listing of private packages.
 
-# "ghcr.io/brf-tech" → "ghcr.io" (Docker Hub's API host is registry-1.docker.io)
+# "ghcr.io/brf-tech/runr" → "ghcr.io" (Docker Hub's API host is registry-1.docker.io)
 registry_api_host() {
   local host="${1%%/*}"
   case "$host" in
@@ -18,7 +18,7 @@ registry_api_host() {
   esac
 }
 
-# "ghcr.io/brf-tech" → "brf-tech" ("" for a registry without a namespace)
+# "ghcr.io/brf-tech/runr" → "brf-tech/runr" ("" for a registry without a namespace)
 registry_namespace() {
   local ref="$1"
   if [[ "$ref" == */* ]]; then echo "${ref#*/}"; else echo ""; fi
@@ -139,14 +139,17 @@ cmd_eol() {
   fi
 }
 
-# prune_eol_tags <yes> <repo:tag>… — delete the EOL versions of ghcr.io/<owner>/<repo>. A package
-# version is one manifest: it is deleted only when every tag it carries is EOL.
+# prune_eol_tags <yes> <repo:tag>… — delete the EOL versions of ghcr.io/<owner>[/<path>]/<repo>.
+# The GitHub package of ghcr.io/brf-tech/runr/exec-python is "runr/exec-python" of the owner
+# brf-tech. A package version is one manifest: it is deleted only when every tag it carries is EOL.
 prune_eol_tags() {
   local yes="$1"
   shift
-  local host ns
+  local host ns owner path=""
   host=$(registry_api_host "$REGISTRY")
   ns=$(registry_namespace "$REGISTRY")
+  owner="${ns%%/*}"
+  [[ "$ns" == */* ]] && path="${ns#*/}/"
 
   if [ "$host" != "ghcr.io" ] || [ -z "$ns" ]; then
     echo -e "${RED}--prune supports GHCR (ghcr.io/<owner>) only; delete the EOL tags of ${REGISTRY} in that registry.${NC}"
@@ -167,18 +170,20 @@ prune_eol_tags() {
     [[ "$confirm" =~ ^[yY]$ ]] || { echo "Cancelled."; exit 0; }
   fi
 
-  local api="https://api.github.com/${GHCR_OWNER_KIND:-orgs}/${ns}/packages/container"
+  local api="https://api.github.com/${GHCR_OWNER_KIND:-orgs}/${owner}/packages/container"
   local gh=(-H "Authorization: Bearer ${GHCR_TOKEN}" -H "Accept: application/vnd.github+json" -H "X-GitHub-Api-Version: 2022-11-28")
   local eol=" $* "
   local entry
   for entry in "$@"; do
     local repo="${entry%%:*}" tag="${entry#*:}"
+    local package="${path}${repo}"
+    package="${package//\//%2F}"
     echo -n "  Deleting ${REGISTRY}/${repo}:${tag}... "
 
     # The package version carrying the tag: "<id> <tag,tag,…>"
     local match="" page=1 versions
     while [ -z "$match" ] && [ "$page" -le 20 ]; do
-      versions=$(curl -sf "${gh[@]}" "${api}/${repo}/versions?per_page=100&page=${page}" 2>/dev/null) || break
+      versions=$(curl -sf "${gh[@]}" "${api}/${package}/versions?per_page=100&page=${page}" 2>/dev/null) || break
       [ "$(echo "$versions" | jq 'length')" = "0" ] && break
       match=$(echo "$versions" | jq -r --arg t "$tag" '.[] | select((.metadata.container.tags // []) | index($t)) | "\(.id) \(.metadata.container.tags | join(","))"' | head -1)
       page=$((page + 1))
@@ -198,7 +203,7 @@ prune_eol_tags() {
     fi
 
     local status_code
-    status_code=$(curl -s -o /dev/null -w "%{http_code}" -X DELETE "${gh[@]}" "${api}/${repo}/versions/${id}") || true
+    status_code=$(curl -s -o /dev/null -w "%{http_code}" -X DELETE "${gh[@]}" "${api}/${package}/versions/${id}") || true
     if [ "$status_code" = "204" ]; then
       echo -e "${GREEN}done${NC}"
     else

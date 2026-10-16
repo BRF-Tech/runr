@@ -29,7 +29,7 @@ import (
 	"os"
 )
 
-// version of the wrapper binary (the image tag ghcr.io/brf-tech/runr-wrapper:<version>).
+// version of the wrapper binary (the image tag ghcr.io/brf-tech/runr/wrapper:<version>).
 const version = "1.1.0"
 
 var logger = log.New(os.Stderr, "[runr-wrapper] ", log.LstdFlags|log.Lmsgprefix)

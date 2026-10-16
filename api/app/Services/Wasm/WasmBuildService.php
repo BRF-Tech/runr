@@ -38,9 +38,6 @@ use Illuminate\Support\Facades\Log;
  */
 class WasmBuildService
 {
-    /** Job deadline (the toolchain image is pulled once per node; dependencies come pre-fetched with it). */
-    public const DEADLINE_SECONDS = 300;
-
     public function __construct(private GitService $git) {}
 
     public function submitBuild(Version $version, RuntimeManifest $manifest, ExecutorImage $executor, string $versionImage): void
@@ -225,7 +222,7 @@ class WasmBuildService
                 'annotations' => ['runr.sh/project-id' => $project->id],
             ],
             'spec' => [
-                'activeDeadlineSeconds' => self::DEADLINE_SECONDS,
+                'activeDeadlineSeconds' => BuildManifests::deadlineSeconds(),
                 'backoffLimit' => 0,
                 'ttlSecondsAfterFinished' => 300,
                 'template' => [

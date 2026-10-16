@@ -21,8 +21,8 @@ use Symfony\Component\Yaml\Yaml;
 use Tests\TestCase;
 
 /**
- * Build / deployment readiness: first check ~1 s after submit / apply, then every 2 s, with the
- * overall timeout unchanged (360 s / 300 s). The checks are delayed queue jobs, which Redis
+ * Build / deployment readiness: first check ~1 s after submit / apply, then every 2 s, up to the
+ * overall timeout (the build Job's deadline + 60 s / 300 s). The checks are delayed queue jobs, which Redis
  * workers pick up only when they pop: block_for + Horizon sleep bounds how late a due check runs.
  */
 class ReadinessPollingScheduleTest extends TestCase
@@ -71,10 +71,13 @@ class ReadinessPollingScheduleTest extends TestCase
 
     public function test_the_schedule_keeps_the_overall_timeouts(): void
     {
-        foreach ([CheckBuildReadyJob::class => 360, CheckDeploymentReadyJob::class => 300] as $job => $timeout) {
+        // Builds: the build Job's deadline (900 s by default) plus a minute
+        $this->assertSame(960, CheckBuildReadyJob::timeoutSeconds());
+
+        foreach ([CheckBuildReadyJob::class => 960, CheckDeploymentReadyJob::class => 300] as $job => $timeout) {
             $this->assertSame(1, $job::FIRST_CHECK_DELAY);
             $this->assertSame(2, $job::POLL_INTERVAL);
-            $this->assertSame($timeout, $job::TIMEOUT_SECONDS);
+            $this->assertSame($timeout, $job === CheckBuildReadyJob::class ? $job::timeoutSeconds() : $job::TIMEOUT_SECONDS);
 
             // the last check is the first one at or after the timeout
             $lastCheckAt = fn (int $attempts) => $job::FIRST_CHECK_DELAY + ($attempts - 1) * $job::POLL_INTERVAL;
@@ -82,7 +85,7 @@ class ReadinessPollingScheduleTest extends TestCase
             $this->assertLessThan($timeout, $lastCheckAt($job::maxAttempts() - 1), $job);
         }
 
-        $this->assertSame(181, CheckBuildReadyJob::maxAttempts());
+        $this->assertSame(481, CheckBuildReadyJob::maxAttempts());
         $this->assertSame(151, CheckDeploymentReadyJob::maxAttempts());
     }
 
@@ -137,7 +140,7 @@ class ReadinessPollingScheduleTest extends TestCase
         (new CheckBuildReadyJob($version, CheckBuildReadyJob::maxAttempts()))->handle();
 
         $this->assertSame('failed', $version->fresh()->build_status);
-        $this->assertStringStartsWith('Build timeout after 360s', $version->fresh()->build_error);
+        $this->assertStringStartsWith('Build timeout after 960s', $version->fresh()->build_error);
     }
 
     public function test_a_check_that_runs_out_of_time_checks_again_instead_of_failing_the_build(): void

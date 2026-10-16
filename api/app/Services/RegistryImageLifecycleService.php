@@ -6,6 +6,7 @@ use App\Models\KnativeRegion;
 use App\Models\Project;
 use App\Models\Version;
 use App\Services\Manifests\RegistryImageManifests;
+use App\Services\Runtimes\RuntimeImageBuildService;
 use Illuminate\Support\Facades\Log;
 
 /**
@@ -33,6 +34,12 @@ class RegistryImageLifecycleService
 
     /** Zot error codes of a GET on a tag that does not exist (image already gone) */
     private const ABSENT_CODES = ['MANIFEST_UNKNOWN', 'NAME_UNKNOWN'];
+
+    /** Repositories per /v2/_catalog page */
+    private const CATALOG_PAGE = 1000;
+
+    /** Content of the blob that lets Zot's garbage collection remove an empty repository */
+    public const GC_SEED = "runr: empty repository, removed by the registry garbage collection\n";
 
     /**
      * List every tag pushed under a repository (e.g. "runr-builds/my-project").
@@ -263,7 +270,148 @@ class RegistryImageLifecycleService
         }
     }
 
+    /**
+     * Delete every image of a runtime in the region: its repository runr-runtimes/<id> (every
+     * version, also the builds of earlier sources). Called when the runtime is deleted — nothing
+     * can use its builds any more; Zot frees the blobs and the repository with its garbage
+     * collection.
+     *
+     * @return int tags deleted
+     */
+    public function deleteRuntimeImages(KnativeRegion $region, string $runtimeId): int
+    {
+        if (! $this->applies($region)) {
+            return 0;
+        }
+
+        $repoName = RuntimeImageBuildService::repository($runtimeId);
+        $deleted = 0;
+        foreach ($this->listTags($region, $repoName) as $tag) {
+            if ($this->deleteImage($region, $repoName, (string) $tag)) {
+                $deleted++;
+            }
+        }
+
+        if ($deleted > 0) {
+            Log::info('Registry runtime images deleted', ['region' => $region->name, 'repo' => $repoName, 'tags' => $deleted]);
+        }
+
+        return $deleted;
+    }
+
+    /**
+     * Build repositories (runr-builds/…, runr-runtimes/…) without a tag. A repository is created by
+     * the first upload into it; one whose push never finished (a build that failed after the
+     * registry was contacted) stays listed in the catalog. Zot has no API to delete a repository.
+     * Zot 2.1.21 (the pinned chart) removes an idle repository in its garbage collection; older
+     * releases (2.1.2, checked) remove one only together with its last unreferenced blob, so a
+     * repository without any blob stays for good. Each empty one therefore gets one small
+     * unreferenced blob: the next garbage collection after Zot's GC delay (1 h by default) deletes
+     * the blob and, with it, the repository, on every release. A push into the repository before
+     * then keeps it; the blob alone is collected.
+     *
+     * @return list<string> repositories handed to the garbage collection
+     */
+    public function pruneEmptyRepositories(KnativeRegion $region): array
+    {
+        $k8s = $this->client($region);
+        if (! $k8s) {
+            return [];
+        }
+
+        $repos = $this->catalog($k8s, $region);
+        if ($repos === null) {
+            return [];
+        }
+
+        $pruned = [];
+        foreach ($repos as $repo) {
+            if (! $this->isBuildRepository($repo)) {
+                continue;
+            }
+
+            try {
+                $tags = $k8s->serviceProxyRequest('GET', $this->registryNamespace($region), self::ZOT_SERVICE_NAME, self::ZOT_SERVICE_PORT, "v2/{$repo}/tags/list");
+                if (! $tags->successful() || ($tags->json('tags') ?? []) !== []) {
+                    continue;
+                }
+
+                $seed = $k8s->serviceProxySend(
+                    'POST',
+                    $this->registryNamespace($region),
+                    self::ZOT_SERVICE_NAME,
+                    self::ZOT_SERVICE_PORT,
+                    "v2/{$repo}/blobs/uploads/?digest=".self::gcSeedDigest(),
+                    ['Content-Type' => 'application/octet-stream'],
+                    self::GC_SEED,
+                );
+                if ($seed->status() === 201) {
+                    $pruned[] = $repo;
+                } else {
+                    Log::warning('Registry empty repository could not be handed to the garbage collection', [
+                        'region' => $region->name, 'repo' => $repo, 'status' => $seed->status(),
+                    ]);
+                }
+            } catch (\Throwable $e) {
+                Log::warning('Registry empty repository check failed', ['region' => $region->name, 'repo' => $repo, 'error' => $e->getMessage()]);
+            }
+        }
+
+        if ($pruned) {
+            Log::info('Registry empty repositories handed to the garbage collection', ['region' => $region->name, 'repos' => $pruned]);
+        }
+
+        return $pruned;
+    }
+
+    public static function gcSeedDigest(): string
+    {
+        return 'sha256:'.hash('sha256', self::GC_SEED);
+    }
+
     // ── Private helpers ─────────────────────────────────────────────────────
+
+    /** Repositories RunR's builds push to (function builds, runtime image builds). */
+    private function isBuildRepository(string $repo): bool
+    {
+        return str_starts_with($repo, RegistryImageManifests::repositoryName(''))
+            || str_starts_with($repo, RuntimeImageBuildService::repository(''));
+    }
+
+    /**
+     * Every repository of the registry (/v2/_catalog, paged with n / last). null when the catalog
+     * could not be read completely.
+     *
+     * @return list<string>|null
+     */
+    private function catalog(KubernetesClient $k8s, KnativeRegion $region): ?array
+    {
+        $repos = [];
+        $last = null;
+
+        try {
+            for ($page = 0; $page < 100; $page++) {
+                $query = ['n' => self::CATALOG_PAGE] + ($last !== null ? ['last' => $last] : []);
+                $response = $k8s->serviceProxyRequest('GET', $this->registryNamespace($region), self::ZOT_SERVICE_NAME, self::ZOT_SERVICE_PORT, 'v2/_catalog', query: $query);
+                if (! $response->successful()) {
+                    return null;
+                }
+
+                $batch = array_values(array_filter((array) ($response->json('repositories') ?? []), 'is_string'));
+                $repos = array_merge($repos, $batch);
+                if (count($batch) < self::CATALOG_PAGE || ! $response->header('Link')) {
+                    return array_values(array_unique($repos));
+                }
+                $last = end($batch);
+            }
+        } catch (\Throwable $e) {
+            Log::warning('Registry catalog could not be read', ['region' => $region->name, 'error' => $e->getMessage()]);
+
+            return null;
+        }
+
+        return array_values(array_unique($repos));
+    }
 
     /**
      * @return string|false|null the digest; false when the registry confirms the tag does not

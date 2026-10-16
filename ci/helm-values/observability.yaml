@@ -9,6 +9,8 @@ observability:
     tempoStorage: 50Gi
     collectorChartVersion: "0.110.0"
     tempoChartVersion: "1.10.0"
+    collectorImage: registry.acme-cloud.example/mirror/opentelemetry-collector-contrib:0.162.0
+    tempoImage: registry.acme-cloud.example/mirror/tempo:3.1.0
   replay:
     maxBodyBytes: 131072
     retentionDays: 14

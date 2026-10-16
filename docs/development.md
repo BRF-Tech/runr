@@ -109,6 +109,12 @@ docker compose run --rm migrator-fresh
 The migrator also runs the module migrations (`Modules/*/Database/Migrations`) and, with tenancy enabled,
 `php artisan tenancy:migrate` for existing tenant schemas.
 
+Model docblocks (`@property` lines) come from `php artisan ide-helper:models --write --reset`; run it
+after a schema change. To have every `migrate` run it, set `IDE_HELPER_POST_MIGRATE=true` in
+`api/.env.docker` (or `api/.env`); the hook needs `APP_ENV=local` as well. Without the flag a migrate
+leaves the models alone, so the migrator, test containers and CI never rewrite them in the mounted
+checkout.
+
 ### Code changes and reloading
 
 - **API**: runs on Laravel Octane (FrankenPHP workers), so workers keep code in memory. After PHP changes run
@@ -421,8 +427,8 @@ vendor/bin/phpstan analyse --memory-limit=1G   # Larastan level 5 (CI: analyse:p
 
 `api/phpstan-baseline.neon` records the findings that existed when Larastan was
 introduced, so only new findings fail. After fixing baseline entries, or after a
-large merge, regenerate it on a checkout that has not run `php artisan migrate`
-(the ide-helper migrate hook rewrites model docblocks):
+large merge, regenerate it on a checkout whose model docblocks match the committed ones
+(not right after a migrate with `IDE_HELPER_POST_MIGRATE=true`, see [Migrations](#migrations)):
 
 ```bash
 cd api && vendor/bin/phpstan analyse --memory-limit=1G --generate-baseline
@@ -561,7 +567,7 @@ go test -race ./...       # the race detector needs cgo (gcc)
 ```
 
 Without a local Go toolchain:
-`docker run --rm -v "$PWD":/src -w /src/runtime/agent ghcr.io/brf-tech/reqs/golang:1.26-alpine sh -c 'apk add --no-cache build-base && CGO_ENABLED=1 go test -race ./...'`
+`docker run --rm -v "$PWD":/src -w /src/runtime/agent ghcr.io/brf-tech/runr/reqs/golang:1.26-alpine sh -c 'apk add --no-cache build-base && CGO_ENABLED=1 go test -race ./...'`
 (the image `test:go` uses; `GOTOOLCHAIN=auto` fetches a newer toolchain for a module that asks for one).
 The queue-consumer stream tests use an in-process miniredis; set
 `QC_TEST_REDIS=localhost:6379` to run them against a real Redis. The Sentry tunnel's tests
@@ -606,7 +612,8 @@ cd api && composer audit --locked                   # reported
 | Job | Runs | Blocking |
 |---|---|---|
 | `secrets:gitleaks` | MRs, default branch | yes |
-| `check:reqs-mirror` (`ci/check-reqs-mirror.sh`: every `ghcr.io/brf-tech/reqs/*` reference is in the mirror list of `runtime/lib/mirror.sh`) | MRs, default branch | yes |
+| `check:reqs-mirror` (`ci/check-reqs-mirror.sh`: every `ghcr.io/brf-tech/runr/reqs/*` reference is in the mirror list of `runtime/lib/mirror.sh`) | MRs, default branch | yes |
+| `check:build-scripts` (`ci/check-dockerfiles.sh`: no Docker Hub base image, `OTEL_SDK_DISABLED=true` before Spin runs in a build step; `runtime/test/*_test.sh`: `runtime/ci.sh` without Docker or a registry) | MRs, default branch | yes |
 | `test:api` (PHPUnit with the coverage floor) | MRs / default branch touching `api/**` | yes |
 | `lint:php` (Pint) | same as `test:api` | yes |
 | `analyse:php` | same as `test:api` | yes |
@@ -619,8 +626,9 @@ cd api && composer audit --locked                   # reported
 | `audit:composer` | default branch, schedules, MRs touching `api/composer.*` | no |
 | `e2e:kind` (`runtime/ci.sh test` in dind) | manual, schedule `SCHEDULED_JOB=e2e` | no |
 
-`.github/workflows/ci.yml` runs the core checks (reqs mirror list, API tests + Larastan, UI
-lint/unit/build, UI e2e in mocked mode, Go) on GitHub pull requests and pushes to `main`.
+`.github/workflows/ci.yml` runs the core checks (reqs mirror list, Dockerfiles and build scripts,
+API tests + Larastan, UI lint/unit/build, UI e2e in mocked mode, Go) on GitHub pull requests and
+pushes to `main`.
 
 ---
 

@@ -16,7 +16,7 @@ class E2eTagResolutionTest extends TestCase
     {
         $this->assertSame(
             'kind.local,ko.local,dev.local,ghcr.io',
-            E2eTestCommand::e2eRegistriesSkippingTagResolving('ghcr.io/brf-tech/runr-wrapper:1.1.0'),
+            E2eTestCommand::e2eRegistriesSkippingTagResolving('ghcr.io/brf-tech/runr/wrapper:1.1.0'),
         );
     }
 

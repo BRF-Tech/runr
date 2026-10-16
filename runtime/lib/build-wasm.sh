@@ -1,5 +1,5 @@
 # cmd_build_wasm — build images of the WebAssembly runtimes (runtime/wasm-<lang>):
-# ghcr.io/brf-tech/exec-wasm-<lang>:<version>, the version from the runtime's runtime.yaml.
+# ghcr.io/brf-tech/runr/exec-wasm-<lang>:<version>, the version from the runtime's runtime.yaml.
 #
 #   ci.sh wasm                 all five (rust, go, js, python, exec), local single-platform build
 #   ci.sh wasm rust js         only these
@@ -40,22 +40,39 @@ cmd_build_wasm() {
     echo "==> Building ${tag}"
     if [ "$lang" = "exec" ]; then
       # the receiver image carries runr-image-upload, which the toolchain image copies
-      do_build "${tag}" "${dir}" "$push" --build-arg "IMAGE_UPLOAD_IMAGE=${IMAGE_UPLOAD_IMAGE:-${REGISTRY}/image-upload:${IMAGE_UPLOAD_VERSION:-1.0.0}}"
+      local upload="${IMAGE_UPLOAD_IMAGE:-${REGISTRY}/image-upload:${IMAGE_UPLOAD_VERSION:-1.0.0}}"
+      local extra=(--build-arg "IMAGE_UPLOAD_IMAGE=${upload}")
+      if [ "$push" = "0" ] && docker image inspect "$upload" >/dev/null 2>&1; then
+        # a receiver built here (ci.sh image-upload) is used as it is, which --pull would replace
+        # with the registry's: the other bases are pulled on their own instead
+        local base
+        for base in $(dockerfile_bases "${dir}/Dockerfile" "IMAGE_UPLOAD_IMAGE=${upload}"); do
+          if [ "$base" != "$upload" ]; then
+            docker pull -q "$base" >/dev/null
+          fi
+        done
+        extra+=(--pull=false)
+      fi
+      do_build "${tag}" "${dir}" "$push" "${extra[@]}"
     else
       do_build "${tag}" "${dir}" "$push"
     fi
     echo ""
   done
 
-  [ "$push" = "1" ] && cleanup_buildx
+  if [ "$push" = "1" ]; then
+    cleanup_buildx
+  fi
 
   echo -e "${GREEN}Done.${NC}"
-  [ "$push" = "0" ] && echo "To push: ci.sh wasm --push"
+  if [ "$push" = "0" ]; then
+    echo "To push: ci.sh wasm --push"
+  fi
   return 0
 }
 
 # cmd_build_wasm_shim — the Spin shim RunR installs on region nodes (runtime/wasm-shim-spin):
-# ghcr.io/brf-tech/containerd-shim-spin:<version>, the version from the Dockerfile's ARG VERSION
+# ghcr.io/brf-tech/runr/containerd-shim-spin:<version>, the version from the Dockerfile's ARG VERSION
 # (App\Services\Wasm\WasmShim pins the same tag). The binaries are cross-compiled on the build
 # platform (amd64), so --push builds both platforms without emulating a compiler.
 #
@@ -85,10 +102,14 @@ cmd_build_wasm_shim() {
   echo "==> Building ${tag}"
   PLATFORMS="linux/amd64,linux/arm64" do_build "${tag}" "${SCRIPT_DIR}/wasm-shim-spin" "$push"
 
-  [ "$push" = "1" ] && cleanup_buildx
+  if [ "$push" = "1" ]; then
+    cleanup_buildx
+  fi
 
   echo ""
   echo -e "${GREEN}Done.${NC}"
-  [ "$push" = "0" ] && echo "To push: ci.sh wasm-shim --push"
+  if [ "$push" = "0" ]; then
+    echo "To push: ci.sh wasm-shim --push"
+  fi
   return 0
 }

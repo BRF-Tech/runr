@@ -29,7 +29,7 @@ class InstallCommand extends Command
         $this->call('db:seed', ['--class' => 'AdminSeeder', '--force' => true]);
         $this->call('db:seed', ['--class' => 'SettingsSeeder', '--force' => true]);
 
-        $this->info('Syncing executor images from Docker Hub...');
+        $this->info('Syncing runtime versions from the image registry...');
         $this->call('executor:sync');
 
         if ($demo) {

@@ -75,7 +75,7 @@ final class GpuRequest
 
     /**
      * GPU of a runtime version: the manifest's resources.gpu, else {count 1} for a version
-     * flagged gpu (executor_images.gpu_required, e.g. pytorch 2.3-gpu). Null for CPU versions.
+     * flagged gpu (executor_images.gpu_required, e.g. pytorch 2.14-gpu). Null for CPU versions.
      *
      * @return array{count: int, resource: string}|null
      */

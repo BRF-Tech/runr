@@ -180,7 +180,7 @@ trait KnativeAgentTrait
                         'serviceAccountName' => 'runr-agent',
                         'containers' => [[
                             'name' => 'agent',
-                            'image' => 'ghcr.io/brf-tech/runr-agent:latest',
+                            'image' => 'ghcr.io/brf-tech/runr/agent:latest',
                             'env' => [
                                 ['name' => 'RUNR_WS_URL',      'value' => $wsUrl],
                                 ['name' => 'RUNR_REGION_ID',   'value' => $regionId],
