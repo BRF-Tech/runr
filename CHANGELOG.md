@@ -8,6 +8,31 @@ did not change says so.
 
 ## [Unreleased]
 
+## [0.5.3] - 2026-10-16
+
+### Fixed
+
+- **Tempo crash loop on storage that ignores fsGroup.** With a storage driver that does not apply
+  the pod's `fsGroup`, Tempo's volume stayed owned by root and Tempo restarted with
+  "mkdir /var/tempo/traces: permission denied". Tempo gets an init container `fix-permissions`
+  that hands `/var/tempo` to Tempo's user, as Loki's does; `region:reconcile` (step `tracing`) adds
+  it to installed backends. A Tempo pod that crash-loops with the earlier template kept its
+  StatefulSet from rolling: the step replaces it, and the new pod starts with the init container.
+- **Tracing requests on small regions.** On a single-node region, Knative's own pods stayed
+  Pending on "Insufficient cpu" once the tracing backend was installed. The collector and Tempo
+  request 50m CPU each (100m before), in line with the other region add-ons; the limits are
+  unchanged. `region:reconcile` (step `tracing`) moves installed backends to these requests, and
+  the region capacity subtracts them like every other platform pod.
+- **Registry pre-warm while the registry restarts.** The `registry-prewarm` Job started before
+  `image-registry` rolled the registry, so every image failed with "Connection refused", and the
+  failed Job kept later reconciles from starting another one for 24 hours. The step now runs last
+  in `region:reconcile`; the Job waits for the registry to answer before it starts and before each
+  further try of an image (three tries, backing off), a failed pod is retried twice, and a Job
+  that failed is deleted and started again by the next reconcile.
+- **`runr regions` showed 0 projects to a tenant.** A platform region assigned to a tenant
+  answered without `project_count` in the tenant's view (`GET /api/knative-regions`). It now counts
+  the tenant's own projects there.
+
 ## [0.5.2] - 2026-10-16
 
 ### Upgrade notes
@@ -909,7 +934,8 @@ Initial tagged release.
 - API gateways with routes, in-app notifications and support tickets.
 - Helm chart with a single-tenant / multi-tenant edition, an install form (`values.schema.json`), generated secrets and a Traefik ingress; a Docker Compose setup for development.
 
-[Unreleased]: https://github.com/brf-tech/runr/compare/v0.5.2...main
+[Unreleased]: https://github.com/brf-tech/runr/compare/v0.5.3...main
+[0.5.3]: https://github.com/brf-tech/runr/releases/tag/v0.5.3
 [0.5.2]: https://github.com/brf-tech/runr/releases/tag/v0.5.2
 [0.5.1]: https://github.com/brf-tech/runr/releases/tag/v0.5.1
 [0.5.0]: https://github.com/brf-tech/runr/releases/tag/v0.5.0

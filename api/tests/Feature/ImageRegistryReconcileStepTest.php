@@ -252,7 +252,8 @@ class ImageRegistryReconcileStepTest extends TestCase
     {
         $steps = array_map(fn ($s) => $s->name(), app(RegionReconciler::class)->steps());
 
-        $this->assertSame(['admission-policy', 'image-registry'], array_slice($steps, -2));
+        // registry-prewarm follows: its Job asks the registry this step may roll
+        $this->assertSame(['admission-policy', 'image-registry', 'registry-prewarm'], array_slice($steps, -3));
         $this->assertLessThan(array_search('image-registry', $steps), array_search('traefik-image', $steps));
         $this->assertLessThan(array_search('image-registry', $steps), array_search('wasm-sandbox', $steps));
         $this->assertLessThan(array_search('image-registry', $steps), array_search('kata-sandbox', $steps));

@@ -52,7 +52,6 @@ class RegionReconciler
             new PrometheusExposureStep,
             new NamespaceQuotaStep,
             new RegistrySyncConfigStep,
-            new RegistryPrewarmStep,
             new IngressTrustStep,
             new TraefikImageStep,
             new LokiDeletionStep,
@@ -64,6 +63,9 @@ class RegionReconciler
             // image-registry rolls the region's workloads onto it
             new AdmissionPolicyStep,
             new ImageRegistryStep,
+            // after every step that restarts the registry (registry-sync-config, image-registry):
+            // its Job asks Zot for the build base images
+            new RegistryPrewarmStep,
         ];
     }
 

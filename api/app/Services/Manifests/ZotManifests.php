@@ -326,12 +326,24 @@ class ZotManifests
     /** Name prefix of the registry pre-warm Jobs (prewarmJob()). */
     public const PREWARM_JOB_PREFIX = 'runr-registry-prewarm-';
 
+    /** Tries per image of the pre-warm Job, and the Job's retries in a new pod */
+    public const PREWARM_TRIES = 3;
+
+    public const PREWARM_BACKOFF_LIMIT = 2;
+
+    /** How long the pre-warm Job waits for Zot to answer /v2/ again, at most, in seconds */
+    public const PREWARM_WAIT_SECONDS = 600;
+
     /**
      * Job in the registry namespace that asks the region's Zot for the manifest of each image,
      * one after the other: Zot fetches an image it does not hold from its upstream (pull-through
-     * cache) before it answers, so builds later find their base images in the region. Waits for
-     * Zot to answer first (it may just restart with a changed config), tries each image twice and
-     * logs how long each took; the Job fails when an image could not be fetched.
+     * cache) before it answers, so builds later find their base images in the region. Zot may
+     * restart meanwhile (a changed config, its pods moving to new images): the Job waits for its
+     * /v2/ to answer before it starts and, 10 / 15 s after a failed try, before the next try of an
+     * image, backing off from 2 to 30 s, PREWARM_WAIT_SECONDS at most each time (the pod fails
+     * when Zot does not answer by then). It tries each image PREWARM_TRIES times and
+     * logs how long each took; the pod fails when an image could not be fetched, and the Job tries
+     * again in a new pod up to PREWARM_BACKOFF_LIMIT times (images fetched by then answer at once).
      *
      * @param  list<array{0: string, 1: string}>  $images  [repository, tag] in the registry, e.g.
      *                                                     ['ghcr.io/brf-tech/runr/exec-python', '3.14']
@@ -343,9 +355,10 @@ class ZotManifests
             'set -u',
             'R='.escapeshellarg('http://'.rtrim($registryAddress, '/')),
             'A='.escapeshellarg($accept),
-            'i=0; until wget -q -O /dev/null "$R/v2/"; do i=$((i+1)); [ "$i" -ge 60 ] && { echo "registry $R does not answer"; exit 1; }; sleep 5; done',
+            'up() { w=2; t=0; until wget -q -O /dev/null -T 10 "$R/v2/"; do [ "$t" -ge '.self::PREWARM_WAIT_SECONDS.' ] && { echo "registry $R does not answer"; return 1; }; sleep "$w"; t=$((t+w)); w=$((w*2)); if [ "$w" -gt 30 ]; then w=30; fi; done; }',
+            'up || exit 1',
             'failed=0',
-            'fetch() { s=$(date +%s); if wget -q -O /dev/null -T 1800 --header "$A" "$R/v2/$1/manifests/$2" || wget -q -O /dev/null -T 1800 --header "$A" "$R/v2/$1/manifests/$2"; then echo "$1:$2 in the registry after $(( $(date +%s) - s )) s"; else echo "$1:$2 could not be fetched"; failed=1; fi; }',
+            'fetch() { s=$(date +%s); n=1; until wget -q -O /dev/null -T 1800 --header "$A" "$R/v2/$1/manifests/$2"; do if [ "$n" -ge '.self::PREWARM_TRIES.' ]; then echo "$1:$2 could not be fetched"; failed=1; return; fi; n=$((n+1)); echo "$1:$2 not fetched yet, try $n once the registry answers"; sleep $((n*5)); up || exit 1; done; echo "$1:$2 in the registry after $(( $(date +%s) - s )) s"; }',
         ];
         foreach ($images as [$repo, $tag]) {
             $lines[] = 'fetch '.escapeshellarg($repo).' '.escapeshellarg($tag);
@@ -362,7 +375,7 @@ class ZotManifests
             ],
             'spec' => [
                 'activeDeadlineSeconds' => 3600,
-                'backoffLimit' => 0,
+                'backoffLimit' => self::PREWARM_BACKOFF_LIMIT,
                 'ttlSecondsAfterFinished' => 86400,
                 'template' => [
                     'metadata' => ['labels' => ['app.kubernetes.io/component' => 'registry-prewarm']],

@@ -10,8 +10,10 @@ use App\Services\ZotRegistryService;
  * Has the internal registry (Zot pull-through cache) of existing regions fetch the base images of
  * this release's function builds (ZotRegistryService::prewarmBuildBaseImages()): Zot fetches an
  * image it does not hold before it answers a build, and the first build of a new base image could
- * run past its deadline waiting for that. Runs after registry-sync-config, which adds the ghcr.io
- * upstream. Starts a Job and does not wait for it.
+ * run past its deadline waiting for that. Runs last: after registry-sync-config, which adds the
+ * ghcr.io upstream and restarts Zot, and after image-registry, which rolls Zot onto RunR's image
+ * namespace. Starts a Job and does not wait for it; the Job waits for Zot to answer and a Job
+ * that failed is started again by the next run.
  *
  * Once per registry namespace of the cluster, for regions with a ready internal registry.
  */

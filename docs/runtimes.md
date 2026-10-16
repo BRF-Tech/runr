@@ -576,6 +576,8 @@ image it does not hold yet from its upstream before it answers — for a large i
 the registry of each region fetch the base images of the release's function builds ahead of the
 first build: the default version of every built-in and platform runtime that builds, through a
 Job `runr-registry-prewarm-<hash>` in the registry namespace that logs how long each image took.
+The Job waits while the registry restarts and tries each image three times; a Job that failed is
+started again by the next `region:reconcile`.
 A build that still runs past its deadline while Kaniko waits for its base image (Kaniko's last log
 line `Retrieving image …`) is built once more; meanwhile its `build_error` says so. If the second
 build runs out of time too, the version fails.

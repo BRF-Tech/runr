@@ -69,6 +69,25 @@ final class ManagedTracing
 
     public const TEMPO_HTTP_PORT = 3200;
 
+    /** User / group Tempo runs as (the chart's pod securityContext) and its data volume */
+    public const TEMPO_UID = 10001;
+
+    public const TEMPO_DATA_PATH = '/var/tempo';
+
+    /** Init container of Tempo that hands its data volume to TEMPO_UID (tempoValues()) */
+    public const TEMPO_FIX_PERMISSIONS = 'fix-permissions';
+
+    /**
+     * CPU / memory requests of the collector and Tempo, in line with the other region add-ons
+     * (Promtail, the queue Redis): on a single-node region every millicore requested here is one
+     * less for functions and Knative's own pods; the limits allow bursts. The region capacity
+     * subtracts them like any other platform pod (KnativeNodeService::platformRequestsByNode()).
+     * region:reconcile (TracingBackendStep) brings installed backends to them.
+     */
+    public const COLLECTOR_REQUESTS = ['cpu' => '50m', 'memory' => '128Mi'];
+
+    public const TEMPO_REQUESTS = ['cpu' => '50m', 'memory' => '256Mi'];
+
     /**
      * The collector image: config observability.tracing.collector_image (default COLLECTOR_IMAGE),
      * its tag replaced by collector_image_tag when that is set; a reference without a tag gets
@@ -202,7 +221,7 @@ final class ManagedTracing
             'replicaCount' => 1,
             'priorityClassName' => 'observability-critical',
             'resources' => [
-                'requests' => ['cpu' => '100m', 'memory' => '128Mi'],
+                'requests' => self::COLLECTOR_REQUESTS,
                 'limits' => ['cpu' => '500m', 'memory' => '512Mi'],
             ],
             'presets' => ['kubernetesAttributes' => ['enabled' => true]],
@@ -274,7 +293,9 @@ final class ManagedTracing
     }
 
     /**
-     * Helm values of RunR's Tempo (single binary).
+     * Helm values of RunR's Tempo (single binary). The init container fix-permissions hands the
+     * data volume to Tempo's user, as Loki's does: a storage driver that does not apply the pod's
+     * fsGroup leaves the volume owned by root, and Tempo could not create /var/tempo/traces.
      */
     public static function tempoValues(string $storageClass = '', ?int $retentionHours = null): array
     {
@@ -297,10 +318,22 @@ final class ManagedTracing
                     ]],
                 ],
                 'resources' => [
-                    'requests' => ['cpu' => '100m', 'memory' => '256Mi'],
+                    'requests' => self::TEMPO_REQUESTS,
                     'limits' => ['cpu' => '1', 'memory' => '1Gi'],
                 ],
             ],
+            // the chart mounts the volume claim "storage" at /var/tempo
+            'initContainers' => [[
+                'name' => self::TEMPO_FIX_PERMISSIONS,
+                'image' => 'ghcr.io/brf-tech/runr/reqs/busybox:latest',
+                'command' => ['sh', '-c', 'chown -R '.self::TEMPO_UID.':'.self::TEMPO_UID.' '.self::TEMPO_DATA_PATH],
+                'volumeMounts' => [['name' => 'storage', 'mountPath' => self::TEMPO_DATA_PATH]],
+                'securityContext' => ['runAsUser' => 0, 'runAsNonRoot' => false],
+                'resources' => [
+                    'requests' => ['cpu' => '10m', 'memory' => '16Mi'],
+                    'limits' => ['memory' => '32Mi'],
+                ],
+            ]],
             'persistence' => array_filter([
                 'enabled' => true,
                 'size' => (string) config('observability.tracing.tempo_storage', '10Gi'),

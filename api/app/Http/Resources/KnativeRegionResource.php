@@ -30,6 +30,8 @@ class KnativeRegionResource extends JsonResource
                 'region_mode' => $this->region_mode ?? 'managed',
                 'region_status' => $this->region_status ?? 'active',
                 'region_demo_status' => $this->region_demo_status,
+                // the tenant's own projects there (tenant context: the tenant's projects table)
+                'project_count' => $this->projectCount(),
                 // GPU products / capacity for the project GPU fields (docs/ai.md)
                 'gpu' => app(GpuInventory::class)->publicSummary($this->resource),
             ];
@@ -68,7 +70,7 @@ class KnativeRegionResource extends JsonResource
             'faas_memory_overcommit' => $factors['memory_mb'],
             // the always-on and FaaS overcommit budgets (docs/architecture.md → Region capacity and admission)
             'capacity' => RegionCapacity::summary($this->resource, $usage),
-            'project_count' => Project::where('knative_region_id', $this->id)->count(),
+            'project_count' => $this->projectCount(),
             'knative_status' => $this->knative_status,
             'knative_status_message' => $this->knative_status_message,
             'knative_status_checked_at' => $this->knative_status_checked_at?->toISOString(),
@@ -135,6 +137,15 @@ class KnativeRegionResource extends JsonResource
             'domain_migration_started_at' => $this->domain_migration_started_at?->toISOString(),
             'is_domain_migrating' => $this->resource->is_domain_migrating,
         ];
+    }
+
+    /**
+     * Projects in the region, from the projects table of the current context: the platform's
+     * (central) or, for a tenant's request, the tenant's — its copy of a platform region included.
+     */
+    private function projectCount(): int
+    {
+        return Project::where('knative_region_id', $this->id)->count();
     }
 
     private function buildDnsInstruction(): ?array

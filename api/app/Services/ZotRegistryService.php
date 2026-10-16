@@ -350,7 +350,8 @@ class ZotRegistryService
      * them: Zot fetches an image it does not hold before it answers the build, minutes for a large
      * one, and a build waiting on that could run past its deadline. Images Zot holds already
      * (tags/list) are skipped; the rest go to one Job (ZotManifests::prewarmJob()) named after the
-     * list, so a second run while it exists starts nothing new.
+     * list, so a second run while it runs or after it succeeded starts nothing new; a Job that
+     * failed is deleted and started again.
      *
      * @return string|null what was started (dry run: would be), "skipped: …", null = nothing to do
      */
@@ -386,18 +387,36 @@ class ZotRegistryService
 
         $list = implode(', ', array_keys($missing));
         $name = ZotManifests::PREWARM_JOB_PREFIX.substr(hash('sha256', $region->registry_address."\n".$list), 0, 10);
-        if ($k8s->getResourceStatus('batch/v1', 'Job', $name, $ns)) {
+        $job = $k8s->getResourceStatus('batch/v1', 'Job', $name, $ns);
+        // running or done: nothing new; failed: started again (it stays until its TTL otherwise)
+        if ($job && ! self::jobFailed($job)) {
             return null;
         }
+        $what = count($missing)." build base image(s) into the registry (Job {$ns}/{$name}".($job ? ', again: the previous run failed' : '')."): {$list}";
         if ($dryRun) {
-            return 'would fetch '.count($missing)." build base image(s) into the registry (Job {$ns}/{$name}): {$list}";
+            return "would fetch {$what}";
         }
 
+        if ($job && ! $k8s->deleteResource('batch/v1', 'Job', $name, $ns, 'Background')) {
+            throw new \RuntimeException("the failed Job {$ns}/{$name} could not be deleted");
+        }
         if (! $k8s->createResource(ZotManifests::prewarmJob($name, $ns, (string) $region->registry_address, array_values($missing)), $ns)) {
             throw new \RuntimeException("Job {$ns}/{$name} could not be created");
         }
 
-        return 'fetching '.count($missing)." build base image(s) into the registry (Job {$ns}/{$name}): {$list}";
+        return "fetching {$what}";
+    }
+
+    /** A Job that gave up: its Failed condition (backoff limit or deadline reached). */
+    private static function jobFailed(array $job): bool
+    {
+        foreach ($job['status']['conditions'] ?? [] as $condition) {
+            if (($condition['type'] ?? '') === 'Failed' && ($condition['status'] ?? '') === 'True') {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /** Whether Zot holds repository:tag (tags/list — it does not fetch from upstream). */

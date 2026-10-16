@@ -102,6 +102,31 @@ class ManagedTracingTest extends TestCase
         $this->assertSame('72h', ManagedTracing::tempoValues()['tempo']['retention']);
         $this->assertSame(['ghcr.io', 'brf-tech/runr/reqs/tempo', '3.1.0'], [$values['tempo']['registry'], $values['tempo']['repository'], $values['tempo']['tag']],
             'the reqs mirror of docker.io/grafana/tempo at the pinned chart\'s version');
+
+        // the data volume belongs to Tempo's user also where the storage driver ignores fsGroup
+        // (the chart's volume claim "storage" at /var/tempo, the busybox of Loki's fix-permissions)
+        $this->assertCount(1, $values['initContainers']);
+        $init = $values['initContainers'][0];
+        $this->assertSame('fix-permissions', $init['name']);
+        $this->assertSame('ghcr.io/brf-tech/runr/reqs/busybox:latest', $init['image']);
+        $this->assertSame(['sh', '-c', 'chown -R 10001:10001 /var/tempo'], $init['command']);
+        $this->assertSame([['name' => 'storage', 'mountPath' => '/var/tempo']], $init['volumeMounts']);
+        $this->assertSame(['runAsUser' => 0, 'runAsNonRoot' => false], $init['securityContext']);
+        $this->assertSame(['requests' => ['cpu' => '10m', 'memory' => '16Mi'], 'limits' => ['memory' => '32Mi']], $init['resources']);
+    }
+
+    /**
+     * The collector and Tempo request what the other region add-ons do (Promtail, the queue Redis):
+     * 50m CPU each — on a single-node region the 100m each of 0.5.2 left Knative's own pods
+     * Pending on "Insufficient cpu". The limits stay where they were.
+     */
+    public function test_requests_are_those_of_a_region_add_on(): void
+    {
+        $collector = ManagedTracing::collectorValues($this->config([]), 'eu-1')['resources'];
+        $tempo = ManagedTracing::tempoValues()['tempo']['resources'];
+
+        $this->assertSame(['requests' => ['cpu' => '50m', 'memory' => '128Mi'], 'limits' => ['cpu' => '500m', 'memory' => '512Mi']], $collector);
+        $this->assertSame(['requests' => ['cpu' => '50m', 'memory' => '256Mi'], 'limits' => ['cpu' => '1', 'memory' => '1Gi']], $tempo);
     }
 
     public function test_images_come_from_the_reqs_mirror_unless_configured(): void

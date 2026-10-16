@@ -3,6 +3,7 @@
 namespace Tests\Unit;
 
 use App\Services\Helpers\KubeQuantity;
+use App\Services\Helpers\ManagedTracing;
 use App\Services\KnativeNodeService;
 use PHPUnit\Framework\TestCase;
 
@@ -171,6 +172,33 @@ class RegionCapacityTest extends TestCase
         $this->assertSame(['w1', 'w2'], $capacity['nodes']);
         $this->assertSame(16000 - 300 + 16000 - 100, $capacity['total_cpu_m']);
         $this->assertSame(32768 - 60 + 32768 - 128, $capacity['total_memory_mb']);
+    }
+
+    /**
+     * The tracing backend (OpenTelemetry Collector, Tempo with its fix-permissions init container,
+     * namespace observability) is a platform add-on like Loki: what it requests is not offered to
+     * tenants nor to the FaaS budget.
+     */
+    public function test_the_tracing_backend_is_subtracted_like_the_other_add_ons(): void
+    {
+        $node = $this->node('runr-test', '4', '8Gi');
+        $tracing = ['app.kubernetes.io/part-of' => 'runr'];
+        $pods = [
+            $this->pod('runr-test', [['100m', '128Mi']], ['name' => 'loki-stack-0', 'labels' => ['app' => 'loki']]),
+            $this->pod('runr-test', [array_values(ManagedTracing::COLLECTOR_REQUESTS)], [
+                'name' => 'otel-collector-6d9f', 'labels' => $tracing + ['app.kubernetes.io/name' => 'opentelemetry-collector'],
+            ]),
+            $this->pod('runr-test', [array_values(ManagedTracing::TEMPO_REQUESTS)], [
+                'name' => 'tempo-0', 'labels' => $tracing + ['app.kubernetes.io/name' => 'tempo'],
+                'init' => [['name' => 'fix-permissions', 'resources' => ['requests' => ['cpu' => '10m', 'memory' => '16Mi']]]],
+            ]),
+        ];
+
+        $capacity = (new KnativeNodeService)->schedulableCapacity([$node], $pods);
+
+        $this->assertSame(100 + 50 + 50, $capacity['platform_cpu_m']);
+        $this->assertSame(4000 - 200, $capacity['total_cpu_m']);
+        $this->assertSame(8192 - 128 - 128 - 256, $capacity['total_memory_mb']);
     }
 
     public function test_pod_requests_follow_the_scheduler(): void

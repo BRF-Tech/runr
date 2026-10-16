@@ -307,9 +307,17 @@ Projects can switch tracing on only in a region whose backend is `ready`.
 
 | Component | Release / chart | Details |
 |-----------|-----------------|---------|
-| OpenTelemetry Collector | `otel-collector` / `open-telemetry/opentelemetry-collector` chart 0.176.0 (collector 0.162.0, contrib image `ghcr.io/brf-tech/runr/reqs/opentelemetry-collector-contrib:0.162.0`, RunR's mirror of `docker.io/otel/opentelemetry-collector-contrib`), Deployment, 1 replica | receivers OTLP gRPC 4317, OTLP HTTP 4318, Zipkin 9411; `memory_limiter`, `batch`, `resource/runr` (adds `runr.region`), Kubernetes attributes preset; requests 100m / 128Mi, limits 500m / 512Mi; PriorityClass `observability-critical` |
+| OpenTelemetry Collector | `otel-collector` / `open-telemetry/opentelemetry-collector` chart 0.176.0 (collector 0.162.0, contrib image `ghcr.io/brf-tech/runr/reqs/opentelemetry-collector-contrib:0.162.0`, RunR's mirror of `docker.io/otel/opentelemetry-collector-contrib`), Deployment, 1 replica | receivers OTLP gRPC 4317, OTLP HTTP 4318, Zipkin 9411; `memory_limiter`, `batch`, `resource/runr` (adds `runr.region`), Kubernetes attributes preset; requests 50m / 128Mi, limits 500m / 512Mi; PriorityClass `observability-critical` |
 | Span metrics | collector `spanmetrics` connector → Prometheus exporter on 8889 | histogram buckets 5 ms – 30 s, dimension `runr.cold_start`, flushed every 15 s; scraped through `PodMonitor/otel-collector-spanmetrics` when the Prometheus Operator CRDs exist |
-| Grafana Tempo | `tempo` / `grafana-community/tempo` chart 3.2.0 (Tempo 3.1.0, single binary, image `ghcr.io/brf-tech/runr/reqs/tempo:3.1.0`, RunR's mirror of `docker.io/grafana/tempo`; repository `https://grafana-community.github.io/helm-charts`, where the chart moved from `grafana/helm-charts`) | OTLP 4317 / 4318, HTTP API 3200, filesystem PVC (`tempoStorage`, default 10Gi, region registry StorageClass when set), retention `tempoRetentionHours` (default 72 h, per region `retention_hours`); requests 100m / 256Mi, limits 1 CPU / 1Gi |
+| Grafana Tempo | `tempo` / `grafana-community/tempo` chart 3.2.0 (Tempo 3.1.0, single binary, image `ghcr.io/brf-tech/runr/reqs/tempo:3.1.0`, RunR's mirror of `docker.io/grafana/tempo`; repository `https://grafana-community.github.io/helm-charts`, where the chart moved from `grafana/helm-charts`) | OTLP 4317 / 4318, HTTP API 3200, filesystem PVC (`tempoStorage`, default 10Gi, region registry StorageClass when set), retention `tempoRetentionHours` (default 72 h, per region `retention_hours`); init container `fix-permissions` (`ghcr.io/brf-tech/runr/reqs/busybox`, as Loki's) hands `/var/tempo` to Tempo's user 10001, also where the storage driver does not apply the pod's `fsGroup`; requests 50m / 256Mi, limits 1 CPU / 1Gi |
+
+The collector and Tempo request about as much as the other region add-ons; the region capacity
+offered to projects is the nodes' allocatable minus these requests, like every other platform pod
+([architecture.md](architecture.md#region-capacity-and-admission)). `region:reconcile` (step
+`tracing`) brings an installed backend to the chart versions, images, requests and init container
+above. A Tempo pod that is not ready with an earlier template (crash-looping) would keep its
+StatefulSet from rolling; the install deletes it and the StatefulSet starts it with the new
+template.
 
 Function pods export to `http://otel-collector.observability.svc.cluster.local:4318`; RunR queries
 Tempo at `http://tempo.observability.svc.cluster.local:3200` (managed) through the same

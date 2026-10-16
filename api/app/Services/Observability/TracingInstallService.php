@@ -9,6 +9,7 @@ use App\Services\HelmService;
 use App\Services\Helpers\ManagedTracing;
 use App\Services\KubernetesClient;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Sleep;
 use RuntimeException;
 use Throwable;
 
@@ -16,7 +17,8 @@ use Throwable;
  * Installs, reconfigures and removes a region's tracing backend (ManagedTracing): the
  * OpenTelemetry Collector gateway in every mode but "off", Grafana Tempo in mode "managed",
  * the span-metrics PodMonitor and Knative's activator / queue-proxy tracing configuration.
- * Helm runs without --wait; refreshStatus() moves installing → ready once the pods run.
+ * Helm runs without --wait; refreshStatus() moves installing → ready once the pods run. A Tempo
+ * pod that would hold up the update of its StatefulSet (stuckTempoPods()) is replaced.
  */
 class TracingInstallService
 {
@@ -96,6 +98,7 @@ class TracingInstallService
                 if (! $result->success) {
                     throw new RuntimeException('Tempo: '.$result->error);
                 }
+                $this->replaceStuckTempoPods($k8s);
                 $config->tempo_url = ManagedTracing::managedTempoUrl();
             } else {
                 // A previous managed Tempo is left alone (its traces stay readable until removed)
@@ -190,6 +193,86 @@ class TracingInstallService
         $config->fill(['status' => RegionTracingConfig::STATUS_READY, 'status_message' => null])->save();
 
         return $config;
+    }
+
+    /**
+     * Tempo pods that hold up their StatefulSet's rolling update: not ready and of a revision
+     * before the current template's. With the chart's pod management (OrderedReady) the
+     * controller waits for such a pod to become ready before it replaces it, and one that
+     * crash-loops never does — e.g. on a volume Tempo cannot write, which the new template's
+     * fix-permissions init container fixes. Empty while the controller has not seen the current
+     * template yet ($statefulSet: the StatefulSet as read already).
+     *
+     * @return list<string> pod names
+     */
+    public function stuckTempoPods(KubernetesClient $k8s, ?array $statefulSet = null): array
+    {
+        $set = $statefulSet ?? $k8s->getResourceStatus('apps/v1', 'StatefulSet', ManagedTracing::TEMPO_RELEASE, ManagedTracing::NAMESPACE);
+        $revision = (string) ($set['status']['updateRevision'] ?? '');
+        if (! $set || $revision === '' || ! self::observed($set)) {
+            return [];
+        }
+
+        $pods = $k8s->listResources('v1', 'Pod', ManagedTracing::NAMESPACE, [
+            'app.kubernetes.io/name' => ManagedTracing::TEMPO_CHART,
+            'app.kubernetes.io/instance' => ManagedTracing::TEMPO_RELEASE,
+        ]);
+
+        $stuck = [];
+        foreach ($pods['items'] ?? [] as $pod) {
+            $podRevision = (string) ($pod['metadata']['labels']['controller-revision-hash'] ?? $revision);
+            if ($podRevision !== $revision && ! self::podReady($pod) && empty($pod['metadata']['deletionTimestamp'])) {
+                $stuck[] = (string) $pod['metadata']['name'];
+            }
+        }
+
+        return $stuck;
+    }
+
+    /**
+     * After a Helm upgrade of Tempo: deletes the pods that would hold up its rolling update
+     * (stuckTempoPods()) once the StatefulSet controller has seen the new template (it takes
+     * moments; 4.5 s at most are waited for), and the controller starts them again from it.
+     * Tempo keeps its traces on its volume.
+     */
+    private function replaceStuckTempoPods(KubernetesClient $k8s): void
+    {
+        $set = null;
+        for ($i = 0; $i < 10; $i++) {
+            if ($i > 0) {
+                Sleep::for(500)->milliseconds();
+            }
+            $set = $k8s->getResourceStatus('apps/v1', 'StatefulSet', ManagedTracing::TEMPO_RELEASE, ManagedTracing::NAMESPACE);
+            if (! $set || self::observed($set)) {
+                break;
+            }
+        }
+        if (! $set) {
+            return;
+        }
+
+        foreach ($this->stuckTempoPods($k8s, $set) as $pod) {
+            $k8s->deleteResource('v1', 'Pod', $pod, ManagedTracing::NAMESPACE);
+            $this->say("Tempo pod {$pod} was not ready with the previous settings: deleted, its StatefulSet starts it with the new ones.");
+        }
+    }
+
+    /** Whether the StatefulSet controller has seen the object's current spec. */
+    private static function observed(array $set): bool
+    {
+        return (int) ($set['status']['observedGeneration'] ?? 0) >= (int) ($set['metadata']['generation'] ?? 0);
+    }
+
+    /** The pod's Ready condition is True. */
+    private static function podReady(array $pod): bool
+    {
+        foreach ($pod['status']['conditions'] ?? [] as $condition) {
+            if (($condition['type'] ?? '') === 'Ready') {
+                return ($condition['status'] ?? '') === 'True';
+            }
+        }
+
+        return false;
     }
 
     private function podRunning(KubernetesClient $k8s, string $name, string $instance): bool

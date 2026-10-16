@@ -137,11 +137,14 @@ Optional per-region features, each installed from the region's settings in the c
 | Sandbox API | Namespaces `runr-sbx-<organization>` with Pod Security `restricted` and a default-deny NetworkPolicy, created on first use | [sandbox-api.md](sandbox-api.md) |
 
 `region:reconcile` brings existing regions up to date with the running release. Its steps are in
-`App\Services\RegionReconcile\Steps`: Knative Serving config, Prometheus exposure, namespace
-quota, registry sync, registry pre-warm (the base images of function builds), ingress trust,
-Traefik image, Loki deletion, tracing backend (where tracing is enabled), Kata sandbox,
-WebAssembly sandbox, admission policy and image registry (workloads onto RunR's image namespace
-`ghcr.io/brf-tech/runr`, [upgrade.md](upgrade.md#image-namespace-ghcriobrf-techrunr)).
+`App\Services\RegionReconcile\Steps`, in this order: Knative Serving config, Prometheus exposure,
+namespace quota, registry sync, ingress trust, Traefik image, Loki deletion, tracing backend
+(where tracing is enabled), Kata sandbox, WebAssembly sandbox, admission policy, image registry
+(workloads onto RunR's image namespace `ghcr.io/brf-tech/runr`,
+[upgrade.md](upgrade.md#image-namespace-ghcriobrf-techrunr)) and registry pre-warm (the base
+images of function builds). The pre-warm comes last because registry sync and image registry
+restart the registry; its Job waits for the registry to answer, and a pre-warm Job that failed is
+started again by the next run.
 
 **Region migration** (`RegionMigrateService`, `POST /api/knative-regions/{id}/migrate`) moves a
 region to a new cluster. It installs the infrastructure there, redeploys every project's latest
