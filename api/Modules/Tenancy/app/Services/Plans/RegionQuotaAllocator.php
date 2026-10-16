@@ -10,9 +10,10 @@ use Modules\Tenancy\Models\Tenant;
 
 /**
  * Writes tenant region quotas (tenant_regions) for self-service flows — onboarding and plans —
- * with the same no-overcommit rule as the admin's region assignment (TenantRegionTrait): the
- * tenants' quotas on a managed region add up to at most the region capacity and the organization
- * ceiling. Self-service values that do not fit are lowered to what is still free (clamped).
+ * with the same rule as the admin's region assignment (TenantRegionTrait): quotas are shares of
+ * the region capacity, the tenants' quotas on a managed region add up to at most the region
+ * capacity and the organization ceiling. Self-service values that do not fit are lowered to what
+ * is still free (clamped).
  */
 class RegionQuotaAllocator
 {

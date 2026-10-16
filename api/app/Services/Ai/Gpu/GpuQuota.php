@@ -102,13 +102,13 @@ class GpuQuota
     }
 
     /**
-     * CPU / memory admission of a model service (projects are admitted by the Tenancy module's
-     * CheckTenantQuota middleware). No quota here.
+     * CPU / memory admission of a model service against the organization quota (projects are
+     * admitted by the Tenancy module's CheckTenantQuota middleware). No quota here.
      *
-     * @param  array{cpu_m: int, memory_mb: int}  $reservation
-     * @return array{allowed: bool, message?: string}
+     * @param  array{hard: array{cpu_m: int, memory_mb: int}, burst: array{cpu_m: int, memory_mb: int}}  $demand  ModelServiceReservations::demandFor()
+     * @return array{allowed: bool, message?: string, budget?: string, problems?: array<string, string>, remaining_cpu_m?: int, remaining_memory_mb?: int}
      */
-    public function checkResources(KnativeRegion $region, array $reservation, ?string $excludeServiceId = null): array
+    public function checkResources(KnativeRegion $region, array $demand, ?string $excludeServiceId = null): array
     {
         return ['allowed' => true];
     }

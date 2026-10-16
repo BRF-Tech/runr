@@ -37,6 +37,9 @@ class ImageRegistryReconcileStepTest extends TestCase
     /** paths whose PATCH is refused */
     private array $refuse = [];
 
+    /** @var (\Closure(string, array): bool)|null refuses a PATCH by path and operations */
+    private ?\Closure $refuseIf = null;
+
     protected function setUp(): void
     {
         parent::setUp();
@@ -46,7 +49,9 @@ class ImageRegistryReconcileStepTest extends TestCase
             if ($request->method() === 'PATCH') {
                 $this->patches[] = ['path' => $path, 'ops' => json_decode($request->body(), true), 'type' => $request->header('Content-Type')[0] ?? ''];
 
-                return in_array($path, $this->refuse, true)
+                $ops = (array) json_decode($request->body(), true);
+
+                return in_array($path, $this->refuse, true) || ($this->refuseIf && ($this->refuseIf)($path, $ops))
                     ? Http::response(['kind' => 'Status', 'message' => 'the test operation failed'], 422)
                     : Http::response(['kind' => 'Status'], 200);
             }
@@ -73,7 +78,7 @@ class ImageRegistryReconcileStepTest extends TestCase
             ],
             '/apis/apps/v1/deployments' => [
                 $this->workload('runr-agent', 'observability', ['containers' => [['name' => 'agent', 'image' => 'ghcr.io/runrsh/runr-agent:latest']]]),
-                $this->workload('runr-redis', 'eu-1', ['containers' => [['image' => 'ghcr.io/runrsh/reqs/redis:7-alpine']]], ['labels' => ['app.kubernetes.io/name' => 'runr-redis']]),
+                $this->redis(),
                 $this->workload('traefik', 'knative-serving', ['containers' => [['name' => 'traefik', 'image' => 'ghcr.io/runrsh/reqs/traefik:v3.7.4']]]),
                 $this->workload('fn-hello-00001-deployment', 'eu-1', ['containers' => [['image' => 'ghcr.io/runrsh/exec-python:3.12']]],
                     ['ownerReferences' => [['kind' => 'Revision', 'name' => 'fn-hello-00001', 'controller' => true]]]),
@@ -96,6 +101,11 @@ class ImageRegistryReconcileStepTest extends TestCase
                 $this->workload('kata-installer', 'runr-sandbox', ['initContainers' => [['image' => 'ghcr.io/runrsh/reqs/busybox:latest']]]),
                 $this->workload('runr-registry-mirror', 'kube-system', ['containers' => [['name' => 'mirror-config', 'image' => 'ghcr.io/runrsh/reqs/busybox:latest']]]),
             ],
+            // the queue Redis's ReplicaSets: the one that runs its pod, and one of an earlier template
+            '/apis/apps/v1/namespaces/eu-1/replicasets' => [
+                $this->replicaSet('runr-redis-7c9d5f6b8', 1, $this->redis()['spec']['template']),
+                $this->replicaSet('runr-redis-55f4c8d7f9', 0, ['metadata' => ['labels' => ['app.kubernetes.io/name' => 'runr-redis']], 'spec' => ['containers' => [['name' => 'redis', 'image' => 'ghcr.io/runrsh/reqs/redis:6-alpine']]]]),
+            ],
             '/apis/batch/v1/cronjobs' => [[
                 'metadata' => ['name' => 'fn-nightly', 'namespace' => 'eu-1'],
                 'spec' => ['jobTemplate' => ['spec' => ['template' => ['spec' => [
@@ -109,6 +119,37 @@ class ImageRegistryReconcileStepTest extends TestCase
     private function workload(string $name, string $namespace, array $podSpec, array $meta = []): array
     {
         return ['metadata' => ['name' => $name, 'namespace' => $namespace] + $meta, 'spec' => ['template' => ['spec' => $podSpec]]];
+    }
+
+    /** The region's queue Redis as KnativeRedisService deploys it (RedisManifests::deployment()), RunR 0.5.0's image. */
+    private function redis(array $spec = [], array $annotations = []): array
+    {
+        return [
+            'metadata' => ['name' => 'runr-redis', 'namespace' => 'eu-1', 'uid' => 'uid-redis',
+                'labels' => ['app.kubernetes.io/name' => 'runr-redis', 'app.kubernetes.io/managed-by' => 'runr'],
+                'annotations' => ['deployment.kubernetes.io/revision' => '2'] + $annotations],
+            'spec' => $spec + [
+                'replicas' => 1,
+                'selector' => ['matchLabels' => ['app.kubernetes.io/name' => 'runr-redis']],
+                'template' => [
+                    'metadata' => ['labels' => ['app.kubernetes.io/name' => 'runr-redis']],
+                    'spec' => ['containers' => [['name' => 'redis', 'image' => 'ghcr.io/runrsh/reqs/redis:7-alpine', 'args' => ['--port', '6379']]]],
+                ],
+            ],
+        ];
+    }
+
+    /** A ReplicaSet of the queue Redis's Deployment: its pod template with the controller's hash label. */
+    private function replicaSet(string $name, int $replicas, array $template): array
+    {
+        $template['metadata']['labels']['pod-template-hash'] = substr($name, strlen('runr-redis-'));
+
+        return [
+            'metadata' => ['name' => $name, 'namespace' => 'eu-1',
+                'ownerReferences' => [['apiVersion' => 'apps/v1', 'kind' => 'Deployment', 'name' => 'runr-redis', 'uid' => 'uid-redis', 'controller' => true]]],
+            'spec' => ['replicas' => $replicas, 'template' => $template],
+            'status' => ['replicas' => $replicas],
+        ];
     }
 
     private ?ClusterGroup $cluster = null;
@@ -137,12 +178,27 @@ class ImageRegistryReconcileStepTest extends TestCase
         return $this->cluster = new ClusterGroup('uid-c', [new ReconcileTarget($region)], new KubernetesClient($region->kubeconfig));
     }
 
-    private const KEPT = [
-        "kept: Deployment eu-1/runr-redis runs ghcr.io/runrsh/reqs/redis:7-alpine — the region's queue Redis keeps its streams in memory only "
-            .'(a restart drops queued messages); it moves to ghcr.io/brf-tech/runr when it is installed again',
-        'kept: DaemonSet runr-sandbox/kata-installer runs ghcr.io/runrsh/reqs/busybox:latest — node installer of a sandbox runtime: rolling it '
-            ."re-runs the install on every node (Kata: kata-deploy's cleanup restarts the container runtime); it moves to ghcr.io/brf-tech/runr "
-            .'with the next change of that installation',
+    private const REDIS_MOVED = 'moved Deployment eu-1/runr-redis: ghcr.io/runrsh/reqs/redis:7-alpine → ghcr.io/brf-tech/runr/reqs/redis:7-alpine — '
+        .'its pod keeps running (the queue Redis holds its streams and the KV data in memory only): its ReplicaSet takes the moved image first, '
+        .'a pod created later starts from it';
+
+    private const PINNED = ' — its pods keep running (update strategy OnDelete: rolling them would re-run the install on every node, '
+        ."and Kata's install restarts the container runtime); a pod created later starts from the moved image";
+
+    private const REDIS_PATH = '/apis/apps/v1/namespaces/eu-1/deployments/runr-redis';
+
+    private const REDIS_RS_PATH = '/apis/apps/v1/namespaces/eu-1/replicasets/runr-redis-7c9d5f6b8';
+
+    /** The queue Redis's image: test + replace (the Deployment's and its ReplicaSet's pod template alike). */
+    private const REDIS_OPS = [
+        ['op' => 'test', 'path' => '/spec/template/spec/containers/0/image', 'value' => 'ghcr.io/runrsh/reqs/redis:7-alpine'],
+        ['op' => 'replace', 'path' => '/spec/template/spec/containers/0/image', 'value' => 'ghcr.io/brf-tech/runr/reqs/redis:7-alpine'],
+    ];
+
+    private const RESUME_OPS = [
+        ['op' => 'test', 'path' => '/metadata/annotations/runr.dev~1image-move-paused', 'value' => 'true'],
+        ['op' => 'add', 'path' => '/spec/paused', 'value' => false],
+        ['op' => 'remove', 'path' => '/metadata/annotations/runr.dev~1image-move-paused'],
     ];
 
     public function test_workloads_move_to_ghcr_io_brf_tech_runr_with_one_guarded_patch_each(): void
@@ -154,10 +210,10 @@ class ImageRegistryReconcileStepTest extends TestCase
                 .'ghcr.io/runrsh/exec-python:3.12 → ghcr.io/brf-tech/runr/exec-python:3.12, ghcr.io/runrsh/reqs/curl:latest → ghcr.io/brf-tech/runr/reqs/curl:latest'
                 .' — a new revision takes the traffic once it is ready',
             'moved Deployment observability/runr-agent: ghcr.io/runrsh/runr-agent:latest → ghcr.io/brf-tech/runr/agent:latest — its pods roll once',
-            self::KEPT[0],
+            self::REDIS_MOVED,
             'moved Deployment eu-1/runr-queue-consumer: ghcr.io/brf-tech/runr-queue-consumer:latest → ghcr.io/brf-tech/runr/queue-consumer:latest — its pods roll once',
             'moved StatefulSet observability/loki-stack: ghcr.io/runrsh/reqs/busybox:latest → ghcr.io/brf-tech/runr/reqs/busybox:latest — its pods roll once',
-            self::KEPT[1],
+            'moved DaemonSet runr-sandbox/kata-installer: ghcr.io/runrsh/reqs/busybox:latest → ghcr.io/brf-tech/runr/reqs/busybox:latest'.self::PINNED,
             'moved DaemonSet kube-system/runr-registry-mirror: ghcr.io/runrsh/reqs/busybox:latest → ghcr.io/brf-tech/runr/reqs/busybox:latest — its pods roll once',
             'moved CronJob eu-1/fn-nightly: ghcr.io/runrsh/runr-wrapper:1.1.0 → ghcr.io/brf-tech/runr/wrapper:1.1.0 — from its next run',
         ], $lines);
@@ -165,8 +221,12 @@ class ImageRegistryReconcileStepTest extends TestCase
         $this->assertSame([
             '/apis/serving.knative.dev/v1/namespaces/eu-1/services/fn-hello',
             '/apis/apps/v1/namespaces/observability/deployments/runr-agent',
+            self::REDIS_PATH,
+            self::REDIS_RS_PATH,
+            self::REDIS_PATH,
             '/apis/apps/v1/namespaces/eu-1/deployments/runr-queue-consumer',
             '/apis/apps/v1/namespaces/observability/statefulsets/loki-stack',
+            '/apis/apps/v1/namespaces/runr-sandbox/daemonsets/kata-installer',
             '/apis/apps/v1/namespaces/kube-system/daemonsets/runr-registry-mirror',
             '/apis/batch/v1/namespaces/eu-1/cronjobs/fn-nightly',
         ], array_column($this->patches, 'path'));
@@ -182,21 +242,173 @@ class ImageRegistryReconcileStepTest extends TestCase
         $this->assertSame([
             ['op' => 'test', 'path' => '/spec/jobTemplate/spec/template/spec/initContainers/0/image', 'value' => 'ghcr.io/runrsh/runr-wrapper:1.1.0'],
             ['op' => 'replace', 'path' => '/spec/jobTemplate/spec/template/spec/initContainers/0/image', 'value' => 'ghcr.io/brf-tech/runr/wrapper:1.1.0'],
-        ], $this->patches[5]['ops']);
+        ], $this->patches[9]['ops']);
         $this->assertSame([
             ['op' => 'test', 'path' => '/spec/template/spec/containers/0/image', 'value' => 'ghcr.io/brf-tech/runr-queue-consumer:latest'],
             ['op' => 'replace', 'path' => '/spec/template/spec/containers/0/image', 'value' => 'ghcr.io/brf-tech/runr/queue-consumer:latest'],
-        ], $this->patches[2]['ops'], 'another package of the organization stays');
+        ], $this->patches[5]['ops'], 'another package of the organization stays');
+        // a node installer: moved with its pods pinned, in the same patch
+        $this->assertSame([
+            ['op' => 'test', 'path' => '/spec/template/spec/initContainers/0/image', 'value' => 'ghcr.io/runrsh/reqs/busybox:latest'],
+            ['op' => 'replace', 'path' => '/spec/template/spec/initContainers/0/image', 'value' => 'ghcr.io/brf-tech/runr/reqs/busybox:latest'],
+            ['op' => 'add', 'path' => '/spec/updateStrategy', 'value' => ['type' => 'OnDelete']],
+        ], $this->patches[7]['ops']);
+        $this->assertSame([
+            ['op' => 'test', 'path' => '/spec/template/spec/containers/0/image', 'value' => 'ghcr.io/runrsh/reqs/busybox:latest'],
+            ['op' => 'replace', 'path' => '/spec/template/spec/containers/0/image', 'value' => 'ghcr.io/brf-tech/runr/reqs/busybox:latest'],
+        ], $this->patches[8]['ops'], 'a DaemonSet outside runr-sandbox rolls');
 
-        // moved: only what keeps its pods is reported again
-        $this->collections = array_map(fn ($items) => array_map(function ($o) {
-            $kept = ($o['metadata']['labels']['app.kubernetes.io/name'] ?? null) === 'runr-redis' || $o['metadata']['name'] === 'kata-installer';
-
-            return $kept ? $o : RegistryMove::value($o);
-        }, $items), $this->collections);
+        // moved: nothing left, nothing reported
+        $this->collections = array_map(fn ($items) => array_map(fn ($o) => RegistryMove::value($o), $items), $this->collections);
         $this->patches = [];
-        $this->assertSame(self::KEPT, (new ImageRegistryStep)->run($this->cluster(), false));
+        $this->assertSame([], (new ImageRegistryStep)->run($this->cluster(), false));
         $this->assertSame([], $this->patches);
+    }
+
+    public function test_the_queue_redis_keeps_its_pod_its_replica_set_moves_while_the_deployment_is_paused(): void
+    {
+        $this->onlyRedis();
+
+        $this->assertSame([self::REDIS_MOVED], (new ImageRegistryStep)->run($this->cluster(), false));
+
+        // 1. paused (guarded by the images it moves), marked as paused by this step
+        // 2. the ReplicaSet that runs the pod: its template, for the pods it creates later
+        // 3. the Deployment: the same template, resumed in the same patch — its controller takes that
+        //    ReplicaSet as the current one and starts no pod
+        $this->assertSame([self::REDIS_PATH, self::REDIS_RS_PATH, self::REDIS_PATH], array_column($this->patches, 'path'));
+        $this->assertSame([
+            self::REDIS_OPS[0],
+            ['op' => 'add', 'path' => '/spec/paused', 'value' => true],
+            ['op' => 'add', 'path' => '/metadata/annotations/runr.dev~1image-move-paused', 'value' => 'true'],
+        ], $this->patches[0]['ops']);
+        $this->assertSame(self::REDIS_OPS, $this->patches[1]['ops']);
+        $this->assertSame([...self::REDIS_OPS, ...self::RESUME_OPS], $this->patches[2]['ops']);
+
+        // dry run: read-only, says the same
+        $this->patches = [];
+        $this->assertSame(['would move'.substr(self::REDIS_MOVED, strlen('moved'))], (new ImageRegistryStep)->run($this->cluster(), true));
+        $this->assertSame([], $this->patches);
+    }
+
+    public function test_a_queue_redis_without_annotations_gets_the_pause_marker_as_a_map(): void
+    {
+        $redis = $this->redis();
+        unset($redis['metadata']['annotations']);
+        $this->onlyRedis($redis);
+
+        (new ImageRegistryStep)->run($this->cluster(), false);
+
+        $this->assertSame(['op' => 'add', 'path' => '/metadata/annotations', 'value' => ['runr.dev/image-move-paused' => 'true']], $this->patches[0]['ops'][2]);
+    }
+
+    public function test_a_refused_replica_set_patch_resumes_the_queue_redis_as_it_was(): void
+    {
+        $this->onlyRedis();
+        $this->refuse = [self::REDIS_RS_PATH];
+
+        try {
+            (new ImageRegistryStep)->run($this->cluster(), false);
+            $this->fail('a refused patch must fail the step');
+        } catch (\RuntimeException $e) {
+            $this->assertSame('1 workload(s) not moved to ghcr.io/brf-tech/runr (patch refused, see the API log; the next run tries again): '
+                .'Deployment eu-1/runr-redis (its ReplicaSet runr-redis-7c9d5f6b8 refused the patch; the Deployment is resumed as it was)', $e->getMessage());
+        }
+        $this->assertSame([self::REDIS_PATH, self::REDIS_RS_PATH, self::REDIS_PATH], array_column($this->patches, 'path'));
+        $this->assertSame([self::REDIS_OPS[0], ...self::RESUME_OPS], $this->patches[2]['ops'], 'its template untouched');
+    }
+
+    public function test_a_queue_redis_left_paused_by_a_refused_deployment_patch_is_finished_by_the_next_run(): void
+    {
+        $this->onlyRedis();
+        $this->refuseIf = fn (string $path, array $ops) => $path === self::REDIS_PATH && in_array('replace', array_column($ops, 'op'), true);
+
+        try {
+            (new ImageRegistryStep)->run($this->cluster(), false);
+            $this->fail('a refused patch must fail the step');
+        } catch (\RuntimeException $e) {
+            $this->assertStringEndsWith('Deployment eu-1/runr-redis (the Deployment refused the patch; it stays paused (its ReplicaSet '
+                .'runr-redis-7c9d5f6b8 is moved) until the next run finishes the move)', $e->getMessage());
+        }
+
+        // what the cluster holds now: the Deployment paused by this step, its ReplicaSet moved
+        $this->onlyRedis($this->redis(['paused' => true], [ImageRegistryStep::PAUSED_ANNOTATION => 'true']), true);
+        $this->refuseIf = null;
+
+        $this->assertSame([self::REDIS_MOVED], (new ImageRegistryStep)->run($this->cluster(), false));
+        $this->assertSame([self::REDIS_PATH], array_column($this->patches, 'path'), 'neither a second pause nor a second ReplicaSet patch');
+        $this->assertSame([...self::REDIS_OPS, ...self::RESUME_OPS], $this->patches[0]['ops']);
+    }
+
+    public function test_a_queue_redis_paused_by_an_earlier_run_whose_template_moved_meanwhile_is_resumed(): void
+    {
+        $this->onlyRedis(RegistryMove::value($this->redis(['paused' => true], [ImageRegistryStep::PAUSED_ANNOTATION => 'true'])), true);
+
+        $this->assertSame(['would resume Deployment eu-1/runr-redis (paused by an earlier run; its ReplicaSet runr-redis-7c9d5f6b8 is moved)'],
+            (new ImageRegistryStep)->run($this->cluster(), true));
+        $this->assertSame(['resumed Deployment eu-1/runr-redis (paused by an earlier run; its ReplicaSet runr-redis-7c9d5f6b8 is moved)'],
+            (new ImageRegistryStep)->run($this->cluster(), false));
+        $this->assertSame([self::REDIS_PATH], array_column($this->patches, 'path'));
+        $this->assertSame(self::RESUME_OPS, $this->patches[0]['ops']);
+    }
+
+    public function test_the_queue_redis_is_kept_while_paused_by_someone_else_or_during_a_rollout(): void
+    {
+        $kept = 'kept: Deployment eu-1/runr-redis runs ghcr.io/runrsh/reqs/redis:7-alpine — ';
+
+        // paused, not by this step
+        $this->onlyRedis($this->redis(['paused' => true]));
+        $this->assertSame([$kept.'the Deployment is paused; it moves once it is resumed'], (new ImageRegistryStep)->run($this->cluster(), false));
+
+        // two ReplicaSets with pods
+        $this->onlyRedis();
+        $this->collections['/apis/apps/v1/namespaces/eu-1/replicasets'][1]['spec']['replicas'] = 1;
+        $this->assertSame([$kept.'2 of its ReplicaSets run pods (a rollout in progress); the next run moves it'], (new ImageRegistryStep)->run($this->cluster(), false));
+
+        // the ReplicaSet with the pod runs another template
+        $this->onlyRedis();
+        $this->collections['/apis/apps/v1/namespaces/eu-1/replicasets'][0]['spec']['template']['spec']['containers'][0]['args'] = ['--port', '6380'];
+        $this->assertSame([$kept.'its ReplicaSet runr-redis-7c9d5f6b8 runs another pod template (a rollout in progress); the next run moves it'],
+            (new ImageRegistryStep)->run($this->cluster(), false));
+
+        // … also when this step paused it: the next run, or a resume, rolls it
+        $this->onlyRedis($this->redis(['paused' => true], [ImageRegistryStep::PAUSED_ANNOTATION => 'true']));
+        $this->collections['/apis/apps/v1/namespaces/eu-1/replicasets'][0]['spec']['template']['spec']['containers'][0]['args'] = ['--port', '6380'];
+        $this->assertSame([$kept.'its ReplicaSet runr-redis-7c9d5f6b8 runs another pod template (a rollout in progress), paused by an earlier run: '
+            .'`kubectl -n eu-1 rollout resume deployment/runr-redis` rolls it; the next run moves it'], (new ImageRegistryStep)->run($this->cluster(), false));
+
+        $this->assertSame([], $this->patches);
+    }
+
+    public function test_a_queue_redis_without_a_running_pod_moves_in_one_patch(): void
+    {
+        $this->onlyRedis($this->redis(['replicas' => 0]));
+        $this->collections['/apis/apps/v1/namespaces/eu-1/replicasets'][0]['spec']['replicas'] = 0;
+        $this->collections['/apis/apps/v1/namespaces/eu-1/replicasets'][0]['status']['replicas'] = 0;
+
+        $this->assertSame(['moved Deployment eu-1/runr-redis: ghcr.io/runrsh/reqs/redis:7-alpine → ghcr.io/brf-tech/runr/reqs/redis:7-alpine — no pod runs'],
+            (new ImageRegistryStep)->run($this->cluster(), false));
+        $this->assertSame([self::REDIS_PATH], array_column($this->patches, 'path'));
+        $this->assertSame(self::REDIS_OPS, $this->patches[0]['ops']);
+    }
+
+    public function test_the_node_installers_of_gvisor_and_kata_firecracker_keep_their_pods(): void
+    {
+        $this->collections = array_fill_keys(['/apis/serving.knative.dev/v1/services', '/apis/apps/v1/deployments', '/apis/apps/v1/statefulsets', '/apis/batch/v1/cronjobs'], []);
+        $this->collections['/apis/apps/v1/daemonsets'] = [
+            $this->workload('gvisor-installer', 'runr-sandbox', ['containers' => [['name' => 'installer', 'image' => 'ghcr.io/runrsh/reqs/alpine:3.21']]]),
+            $this->workload('kata-devmapper', 'runr-sandbox', ['containers' => [['name' => 'devmapper', 'image' => 'ghcr.io/brf-tech/reqs/alpine:3.21']]]),
+            // installed by this release: nothing to patch
+            $this->workload('kata-installer', 'runr-sandbox', ['containers' => [['name' => 'kata-deploy', 'image' => 'quay.io/kata-containers/kata-deploy:3.28.0']]]),
+        ];
+
+        $this->assertSame([
+            'moved DaemonSet runr-sandbox/gvisor-installer: ghcr.io/runrsh/reqs/alpine:3.21 → ghcr.io/brf-tech/runr/reqs/alpine:3.21'.self::PINNED,
+            'moved DaemonSet runr-sandbox/kata-devmapper: ghcr.io/brf-tech/reqs/alpine:3.21 → ghcr.io/brf-tech/runr/reqs/alpine:3.21'.self::PINNED,
+        ], (new ImageRegistryStep)->run($this->cluster(), false));
+        $this->assertCount(2, $this->patches);
+        foreach ($this->patches as $patch) {
+            $this->assertSame(['op' => 'add', 'path' => '/spec/updateStrategy', 'value' => ['type' => 'OnDelete']], end($patch['ops']));
+        }
     }
 
     public function test_dry_run_changes_nothing(): void
@@ -205,7 +417,8 @@ class ImageRegistryReconcileStepTest extends TestCase
 
         $this->assertCount(8, $lines);
         $this->assertStringStartsWith('would move Service eu-1/fn-hello: ghcr.io/runrsh/runr-wrapper:1.1.0 → ghcr.io/brf-tech/runr/wrapper:1.1.0', $lines[0]);
-        $this->assertSame(self::KEPT[0], $lines[2]);
+        $this->assertSame('would move'.substr(self::REDIS_MOVED, strlen('moved')), $lines[2]);
+        $this->assertSame('would move DaemonSet runr-sandbox/kata-installer: ghcr.io/runrsh/reqs/busybox:latest → ghcr.io/brf-tech/runr/reqs/busybox:latest'.self::PINNED, $lines[5]);
         $this->assertSame([], $this->patches);
     }
 
@@ -219,7 +432,24 @@ class ImageRegistryReconcileStepTest extends TestCase
         } catch (\RuntimeException $e) {
             $this->assertStringStartsWith('1 workload(s) not moved to ghcr.io/brf-tech/runr (patch refused, see the API log; the next run tries again): Deployment observability/runr-agent — done: moved Service eu-1/fn-hello', $e->getMessage());
         }
-        $this->assertCount(6, $this->patches, 'every other workload was patched');
+        $this->assertCount(10, $this->patches, 'every other workload was patched');
+    }
+
+    /** A cluster with the queue Redis only ($movedReplicaSet: its ReplicaSet runs the moved template already). */
+    private function onlyRedis(?array $redis = null, bool $movedReplicaSet = false): void
+    {
+        $redis ??= $this->redis();
+        $template = $this->redis()['spec']['template'];
+        $this->collections = array_fill_keys(['/apis/serving.knative.dev/v1/services', '/apis/apps/v1/statefulsets', '/apis/apps/v1/daemonsets', '/apis/batch/v1/cronjobs'], []);
+        $this->collections['/apis/apps/v1/deployments'] = [$redis];
+        $this->collections['/apis/apps/v1/namespaces/eu-1/replicasets'] = [
+            $this->replicaSet('runr-redis-7c9d5f6b8', 1, $movedReplicaSet ? RegistryMove::value($template) : $template),
+            $this->replicaSet('runr-redis-55f4c8d7f9', 0, ['metadata' => ['labels' => ['app.kubernetes.io/name' => 'runr-redis']], 'spec' => ['containers' => [['name' => 'redis', 'image' => 'ghcr.io/runrsh/reqs/redis:6-alpine']]]]),
+            // another Deployment's ReplicaSet with the same labels
+            ['metadata' => ['name' => 'other-7f7f7f7f7f', 'namespace' => 'eu-1', 'ownerReferences' => [['kind' => 'Deployment', 'name' => 'other', 'uid' => 'uid-other', 'controller' => true]]],
+                'spec' => ['replicas' => 1, 'template' => $template], 'status' => ['replicas' => 1]],
+        ];
+        $this->patches = [];
     }
 
     public function test_prometheus_of_the_operator_moves_through_its_resource(): void

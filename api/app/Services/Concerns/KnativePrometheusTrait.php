@@ -3,6 +3,7 @@
 namespace App\Services\Concerns;
 
 use App\Services\HelmService;
+use App\Services\Helpers\DedicatedWorkers;
 use App\Services\KubernetesClient;
 
 trait KnativePrometheusTrait
@@ -20,11 +21,37 @@ trait KnativePrometheusTrait
     private function installPrometheus(HelmService $helm, KubernetesClient $k8s, string $kubeconfig, string $servingNs, string $storageClass = ''): string
     {
         $ns = 'observability';
-        $release = 'knative';
-        $volumeName = "prometheus-{$release}-kube-prometheus-st-prometheus-db";
 
         $helm->repoAdd('prometheus-community', 'https://prometheus-community.github.io/helm-charts');
         $helm->repoUpdate();
+
+        $helm->install(
+            release: 'knative',
+            chart: 'prometheus-community/kube-prometheus-stack',
+            namespace: $ns,
+            setValues: [],
+            kubeconfigYaml: $kubeconfig,
+            valuesArray: self::prometheusHelmValues($servingNs, $storageClass),
+            wait: false,
+        );
+
+        // Deploy cAdvisor DaemonSet with 1s housekeeping
+        $this->deployCAdvisor($k8s, $ns);
+
+        // In-cluster ClusterIP URL. Reads go through this directly when the RunR pod
+        // network can route to it, and fall back to the K8s API service proxy otherwise
+        // (KnativeMetricsService::runParallel) — no unauthenticated external exposure.
+        return $this->resolvePrometheusUrl($k8s, $ns);
+    }
+
+    /**
+     * kube-prometheus-stack values of RunR's Prometheus (release "knative"). Prometheus tolerates
+     * the dedicated-worker taint and prefers the other nodes (DedicatedWorkers::systemPlacement()):
+     * its volume may be bound to a node selected as a dedicated worker later.
+     */
+    public static function prometheusHelmValues(string $servingNs, string $storageClass = ''): array
+    {
+        $volumeName = 'prometheus-knative-kube-prometheus-st-prometheus-db';
 
         $storageSpec = [
             'volumeClaimTemplate' => [
@@ -38,7 +65,7 @@ trait KnativePrometheusTrait
             $storageSpec['volumeClaimTemplate']['spec']['storageClassName'] = $storageClass;
         }
 
-        $values = [
+        return [
             'alertmanager' => ['enabled' => false],
             'grafana' => ['enabled' => false],
             // Disable kubelet cAdvisor scraping — replaced by our 1s standalone DaemonSet
@@ -64,6 +91,7 @@ trait KnativePrometheusTrait
                     ]],
                     'retention' => '15d',
                     'storageSpec' => $storageSpec,
+                    ...DedicatedWorkers::systemPlacement(),
                     'podMonitorSelectorNilUsesHelmValues' => false,
                     'serviceMonitorSelectorNilUsesHelmValues' => false,
                     'ruleSelectorNilUsesHelmValues' => false,
@@ -84,24 +112,6 @@ trait KnativePrometheusTrait
                 ],
             ],
         ];
-
-        $helm->install(
-            release: $release,
-            chart: 'prometheus-community/kube-prometheus-stack',
-            namespace: $ns,
-            setValues: [],
-            kubeconfigYaml: $kubeconfig,
-            valuesArray: $values,
-            wait: false,
-        );
-
-        // Deploy cAdvisor DaemonSet with 1s housekeeping
-        $this->deployCAdvisor($k8s, $ns);
-
-        // In-cluster ClusterIP URL. Reads go through this directly when the RunR pod
-        // network can route to it, and fall back to the K8s API service proxy otherwise
-        // (KnativeMetricsService::runParallel) — no unauthenticated external exposure.
-        return $this->resolvePrometheusUrl($k8s, $ns);
     }
 
     /**

@@ -64,8 +64,8 @@ curl -sS -X POST "$API/model-services" -H "Authorization: Bearer $TOKEN" -H 'Con
 | `vllm` | GPU | OpenAI-compatible (`/v1/chat/completions`, `/v1/completions`, `/v1/models`) | `docker.io/vllm/vllm-openai:v0.6.6` | text-generation |
 | `tgi` | GPU | OpenAI-compatible Messages API, `/generate`, `/info` | `ghcr.io/huggingface/text-generation-inference:3.0.1` | text-generation |
 | `tei` | CPU, GPU | `/embed`, OpenAI-compatible `/v1/embeddings`, `/rerank`, `/predict` | `…/text-embeddings-inference:cpu-1.9.4`; GPU `…:{arch}1.9.4` | feature-extraction, sentence-similarity |
-| `transformers` | CPU, GPU | RunR hf-serve: `/predict` + OpenAI-compatible routes for its tasks | `ghcr.io/brf-tech/runr/hf-serve:1.1.0` (CPU), `…:1.1.0-cuda` (GPU) | text-classification, token-classification, summarization, translation, text2text-generation, fill-mask, question-answering, zero-shot-classification, automatic-speech-recognition, image-classification, object-detection, feature-extraction, sentence-similarity, text-generation |
-| `diffusers` | GPU | RunR hf-serve: `/predict`, `/v1/images/generations` | `ghcr.io/brf-tech/runr/hf-serve:1.1.0-cuda` | text-to-image |
+| `transformers` | CPU, GPU | RunR hf-serve: `/predict` + OpenAI-compatible routes for its tasks | `ghcr.io/brf-tech/runr/hf-serve:1.1.1` (CPU), `…:1.1.1-cuda` (GPU) | text-classification, token-classification, summarization, translation, text2text-generation, fill-mask, question-answering, zero-shot-classification, automatic-speech-recognition, image-classification, object-detection, feature-extraction, sentence-similarity, text-generation |
+| `diffusers` | GPU | RunR hf-serve: `/predict`, `/v1/images/generations` | `ghcr.io/brf-tech/runr/hf-serve:1.1.1-cuda` | text-to-image |
 | `custom` | CPU, GPU | whatever the image serves | your image | any |
 
 How **auto** picks (`EngineCatalog::recommended()`):
@@ -166,6 +166,14 @@ organization, not at every start.
 
 Online mode needs a model from the Hub (`source: hub`); uploaded and imported models run
 offline.
+
+hf-serve (the `transformers` and `diffusers` engines) starts a model it has loaded before
+without a request to the Hub: after a load of the pinned commit it records the load next to the
+cached repository (`/models/hf/hub/models--<org>--<name>/.runr-complete/`, per engine, task and
+pipeline arguments), and a later start with the same settings loads the cached snapshot directory
+directly. A start from zero then depends on the model volume only, not on the Hub's reachability
+or latency. When the cached snapshot does not load (files removed from the volume), hf-serve loads
+from the Hub as on the first start.
 
 ## Offline mode
 
@@ -483,7 +491,7 @@ Logs: the last lines of the engine container of up to five pods
 ## hf-serve reference
 
 `runtime/hf-serve` is RunR's server for the `transformers` and `diffusers` engines (PyTorch
-2.14, transformers 5.20; the GPU image adds diffusers on CUDA 12.6). It loads one pipeline at
+2.14, transformers 5.20; the GPU image adds diffusers 0.41 on CUDA 12.6). It loads one pipeline at
 start in the background — `/healthz` answers 503 while loading and 200 when ready — and serves
 one request at a time per pod. When the model fails to load, hf-serve writes the reason
 (`the model failed to load: <error>`) to the termination log and exits with status 1: the pod
@@ -507,7 +515,7 @@ model's `task_specific_params`, such as T5's prefixes).
 | `RUNR_ENGINE` | `transformers` or `diffusers` |
 | `RUNR_SERVED_NAME` | the OpenAI `model` name |
 | `RUNR_DEVICE` | `auto`, `cpu`, `cuda` |
-| `RUNR_PIPELINE_KWARGS` | JSON object passed to `pipeline()` / `from_pretrained()` (e.g. `{"torch_dtype": "float16"}`) |
+| `RUNR_PIPELINE_KWARGS` | JSON object passed to `pipeline()` / `from_pretrained()` (e.g. `{"dtype": "float16"}`; `torch_dtype`, the earlier name, is passed as `dtype`) |
 | `PORT` | 8080 |
 | `HF_TOKEN` | gated / private repositories |
 | `OMP_NUM_THREADS` | PyTorch / OpenMP threads (default: the CPU limit) |

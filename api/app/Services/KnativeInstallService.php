@@ -143,7 +143,7 @@ class KnativeInstallService implements KnativeConstants
 
             $this->appendComponentLog($region, 'operator', 'Connecting to cluster...');
             $k8s = new KubernetesClient($kubeconfig);
-            $helm = new HelmService;
+            $helm = app(HelmService::class);
 
             $this->appendComponentLog($region, 'operator', 'Cleaning up previous operator installation...');
             $this->cleanupOperator($region);
@@ -163,13 +163,22 @@ class KnativeInstallService implements KnativeConstants
             $appVersion = $versions['app'];
 
             $this->appendComponentLog($region, 'operator', 'Installing Knative Operator via Helm ('.$chartVersion.')...');
-            $result = $helm->install(
-                release: self::HELM_RELEASE,
-                chart: self::HELM_CHART,
-                namespace: $namespace,
-                setValues: [],
-                kubeconfigYaml: $kubeconfig,
-                version: $chartVersion,
+            // A short hiccup of the API server (etcd timing out on a busy disk, a 5xx answer) is
+            // tried again a few times; any other failure fails the install at once
+            $result = HelmService::retryTransient(
+                fn () => $helm->install(
+                    release: self::HELM_RELEASE,
+                    chart: self::HELM_CHART,
+                    namespace: $namespace,
+                    setValues: [],
+                    kubeconfigYaml: $kubeconfig,
+                    version: $chartVersion,
+                ),
+                fn (HelmResult $failed, int $next, int $wait) => $this->appendComponentLog(
+                    $region,
+                    'operator',
+                    "Helm install hit a transient Kubernetes API error ({$failed->errorLine()}): try {$next} of ".HelmService::TRANSIENT_TRIES." in {$wait} s...",
+                ),
             );
 
             if (! $result->success) {

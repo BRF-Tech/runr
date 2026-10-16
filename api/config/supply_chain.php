@@ -78,8 +78,8 @@ return [
     ],
 
     // Image globs every region exempts from signature checks (RunR's own system images). RunR's
-    // earlier namespaces stay among them: a workload that keeps its pods across the upgrade
-    // (region:reconcile, image-registry) is admitted when Kubernetes recreates one
+    // earlier namespaces stay among them: the pods region:reconcile (image-registry) keeps running
+    // with such an image (the sandbox node installers, the queue Redis) stay admitted
     'system_images' => [
         RegistryMove::TO.'/**',
         RegistryMove::FLAT.'/**',

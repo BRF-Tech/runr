@@ -192,6 +192,11 @@ return [
         'region_not_assignable' => 'Tenant\'a ait bölgeler atanamaz.',
         'no_region_access' => 'Tenant\'ın bu bölgeye erişimi yok.',
         'quota_exceeded' => 'Kota aşıldı.',
+        // Kuruluş kotası kabulü (Modules\Tenancy\Services\TenantQuotaService)
+        'quota_budget' => [
+            'always_on_exceeded' => ':resource kotası kuruluşun sürekli açık bütçesinde aşılıyor (overcommit yok): :needed gerekiyor, bu bölgedeki :total kotanın :available kadarı boş. Sürekli açık iş yükleri, Kata pod ek yükü, kuyruk tüketicileri ve sandbox\'lar tam sayılır.',
+            'faas_exceeded' => ':resource kotası kuruluşun FaaS overcommit bütçesinde aşılıyor: :needed gerekiyor, bu bölgede :total içinden :available boş (kota :capacity × :factor, eksi :reserved sürekli açık).',
+        ],
         'already_impersonating' => 'Zaten kimliğe bürünme oturumu aktif. Önce mevcut oturumu durdurun.',
         'impersonation_started' => 'Kimliğe bürünme başlatıldı.',
         'no_impersonation' => 'Aktif kimliğe bürünme oturumu yok.',

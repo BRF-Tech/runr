@@ -265,6 +265,57 @@ class KataSandboxReconcileStepTest extends TestCase
         $this->assertSame([], (new KataSandboxStep)->run($this->cluster($region), false), 'nothing left to do');
     }
 
+    /**
+     * What region:reconcile's image-registry leaves of that installer: its pod template moved to
+     * ghcr.io/brf-tech/runr with its pods pinned (update strategy OnDelete) — they stay on the
+     * earlier revision (no pod updated) and carry the template's config hash.
+     */
+    private function pinInstaller(): void
+    {
+        $this->daemonSets['kata-installer']['spec']['template']['spec'] = RegistryMove::value($this->daemonSets['kata-installer']['spec']['template']['spec']);
+        $this->daemonSets['kata-installer']['spec']['updateStrategy'] = ['type' => 'OnDelete'];
+        $this->updatedPods['kata-installer'] = 0;
+    }
+
+    public function test_an_installer_whose_pods_image_registry_pinned_counts_as_rolled_out(): void
+    {
+        [$region] = $this->containerd050Cluster();
+        $this->pinInstaller();
+        $k8s = new KubernetesClient($region->kubeconfig);
+        Queue::fake();
+
+        $rollout = app(SandboxInstallService::class)->kataRolloutStatus($k8s);
+        $this->assertTrue($rollout['done'], implode('; ', $rollout['pending']));
+        $this->assertSame([], (new KataSandboxStep)->run($this->cluster($region), false));
+        $this->assertSame([], $this->writes());
+        Queue::assertNothingPushed();
+
+        // not pinned: pods of an earlier revision are a rollout in progress
+        $this->daemonSets['kata-installer']['spec']['updateStrategy'] = ['type' => 'RollingUpdate', 'rollingUpdate' => ['maxUnavailable' => 1]];
+        $this->assertSame(['installer rollout (0/1 pods updated)'], app(SandboxInstallService::class)->kataRolloutStatus($k8s)['pending']);
+    }
+
+    public function test_a_drop_in_update_keeps_a_pinned_installer_moved_and_pinned(): void
+    {
+        [$region, $hash] = $this->containerd050Cluster('0123456789abcdef');
+        $this->pinInstaller();
+        $template = $this->daemonSets['kata-installer']['spec']['template'];
+        Queue::fake();
+
+        $lines = (new KataSandboxStep)->run($this->cluster($region), false);
+
+        $this->assertStringStartsWith('Kata configuration drop-ins (kata-clh-runr, kata-qemu-runr, kata-dragonball-runr) updated in place on 1 node(s)', $lines[0]);
+        Queue::assertNothingPushed();
+        $ds = $this->daemonSets['kata-installer'];
+        $this->assertEquals($template['spec'], $ds['spec']['template']['spec'], 'the moved pod template stays');
+        $this->assertSame('ghcr.io/brf-tech/runr/reqs/busybox:latest', $ds['spec']['template']['spec']['initContainers'][0]['image']);
+        $this->assertSame($template['metadata']['annotations'], $ds['spec']['template']['metadata']['annotations']);
+        $this->assertSame(['type' => 'OnDelete'], $ds['spec']['updateStrategy'], 'RollingUpdate would re-run kata-deploy on every node');
+        $this->assertSame($hash, $ds['metadata']['annotations'][SandboxInstallService::KATA_INSTALLER_HASH_ANNOTATION]);
+
+        $this->assertSame([], (new KataSandboxStep)->run($this->cluster($region), false), 'nothing left to do');
+    }
+
     public function test_dry_run_on_op_reports_the_kata_deploy_re_run_and_its_restarts(): void
     {
         $region = $this->opCluster();

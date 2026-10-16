@@ -6,4 +6,4 @@ Hub repository into region storage) and ``receive`` (the target of chunked uploa
 air-gapped regions). Everything is configured through the environment, see ``config.py``.
 """
 
-__version__ = "1.1.0"
+__version__ = "1.1.1"

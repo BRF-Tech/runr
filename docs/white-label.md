@@ -238,7 +238,9 @@ default). On the first sign-in the owner sees the **onboarding wizard**:
 1. **Organization name** (renames the tenant)
 2. **Region** — asked only when several self-service regions are offered; with one region it is
    assigned directly. The quota is the plan's (plans on) or the default signup quota, lowered to
-   what is still free on the region (no overcommit).
+   what is still free of the region capacity (the organizations' quotas on a region add up to at
+   most its capacity; inside a quota, scale-to-zero projects overcommit by the region's factors,
+   [Organization quotas](architecture.md#region-capacity-and-admission)).
 
 Tenants created by a platform administrator never see the wizard. Other plans are put into effect
 by the platform administrator or by your billing system ([billing.md](billing.md#plans-and-subscriptions)).

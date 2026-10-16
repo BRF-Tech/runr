@@ -135,8 +135,8 @@ data:
   {{- $ms := $ai.modelStorage | default dict }}
   AI_HF_ENDPOINT: {{ $hf.endpoint | default "https://huggingface.co" | quote }}
   AI_HF_BROWSE: {{ ternary "true" "false" (ne (toString $hf.browse) "false") | quote }}
-  AI_IMAGE_HF_SERVE: {{ include "runr.image" ($img.hfServe | default "ghcr.io/brf-tech/runr/hf-serve:1.1.0") | quote }}
-  AI_IMAGE_HF_SERVE_CUDA: {{ include "runr.image" ($img.hfServeCuda | default "ghcr.io/brf-tech/runr/hf-serve:1.1.0-cuda") | quote }}
+  AI_IMAGE_HF_SERVE: {{ include "runr.image" ($img.hfServe | default "ghcr.io/brf-tech/runr/hf-serve:1.1.1") | quote }}
+  AI_IMAGE_HF_SERVE_CUDA: {{ include "runr.image" ($img.hfServeCuda | default "ghcr.io/brf-tech/runr/hf-serve:1.1.1-cuda") | quote }}
   AI_IMAGE_VLLM: {{ $img.vllm | default "docker.io/vllm/vllm-openai:v0.6.6" | quote }}
   AI_IMAGE_TGI: {{ $img.tgi | default "ghcr.io/huggingface/text-generation-inference:3.0.1" | quote }}
   AI_IMAGE_TEI_CPU: {{ $img.teiCpu | default "ghcr.io/huggingface/text-embeddings-inference:cpu-1.9.4" | quote }}

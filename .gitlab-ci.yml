@@ -18,11 +18,15 @@ variables:
 .docker_build:
   image: ghcr.io/brf-tech/runr/reqs/docker:27
   services:
-    - ghcr.io/brf-tech/runr/reqs/docker:27-dind
+    # The client reaches the daemon as tcp://docker:2376; a mirrored image gets no "docker" alias
+    - name: ghcr.io/brf-tech/runr/reqs/docker:27-dind
+      alias: docker
   before_script:
     - docker login -u "$CI_REGISTRY_USER" -p "$CI_REGISTRY_PASSWORD" "$CI_REGISTRY"
     - docker run --rm --privileged ghcr.io/brf-tech/runr/reqs/binfmt:latest --install all
-    - docker buildx create --name multiarch --driver docker-container --use
+    # buildx takes the daemon's TLS settings from a context, not from DOCKER_HOST / DOCKER_CERT_PATH
+    - docker context create tls-env
+    - docker buildx create --name multiarch --driver docker-container --use tls-env
     - docker buildx inspect --bootstrap multiarch >/dev/null
 
 # Shared setup for Helm deploys

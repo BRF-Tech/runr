@@ -68,8 +68,9 @@ acquire_kind_lock() {
     sleep 10
     waited=$((waited + 10))
   done
-  echo "${KIND_LOCK_OWNER:-runtimes-e2e} $$ $(date -u +%FT%TZ)" > "${KIND_LOCK}/owner"
+  # held from here on: a run stopped right now still releases it
   _test_kind_lock_held=1
+  echo "${KIND_LOCK_OWNER:-runtimes-e2e} $$ $(date -u +%FT%TZ)" > "${KIND_LOCK}/owner"
 }
 
 release_kind_lock() {
@@ -82,9 +83,14 @@ release_kind_lock() {
 # finish_kind_cluster NAME DELETE — the end of a run's Kind cluster: DELETE=1 deletes it, DELETE=0
 # (--no-cleanup) keeps it. The Kind lock is released only once the cluster is gone, so no other run
 # starts a second cluster next to one that is kept or could not be deleted. Returns 1 when the
-# cluster could not be deleted.
+# cluster could not be deleted. A run that never got the Kind lock never created a cluster: one
+# stopped while it waits for the lock leaves the cluster of that name (the run holding the lock
+# may use it) and the lock alone.
 finish_kind_cluster() {
   local cluster="$1" delete="$2"
+  if [ -n "${KIND_LOCK:-}" ] && [ "${_test_kind_lock_held:-}" != "1" ]; then
+    return 0
+  fi
   if [ "$delete" = "1" ] && [ -n "$cluster" ]; then
     echo "Deleting Kind cluster: ${cluster}"
     # A delete can fail on a busy host (the node containers stay): retry
@@ -104,6 +110,22 @@ finish_kind_cluster() {
     return 0
   fi
   release_kind_lock
+}
+
+# kind_cleanup_begin NAME — the first step of a Kind run's EXIT trap (_test_cleanup,
+# _upg_cleanup_all). The trap also runs when the run is stopped from outside: bash runs it right
+# away on TERM and HUP, also while a command runs in the foreground, and the run's INT trap ends
+# the run once the foreground command has stopped. Nothing may cut the cleanup short then: no
+# errexit, a second INT, TERM or HUP is ignored, and when the run's output is gone (the terminal
+# closed, the reader of a pipe stopped together with the run) the cleanup writes to
+# ${TMPDIR:-/tmp}/NAME-cleanup.log instead, where its first line would otherwise end it.
+kind_cleanup_begin() {
+  set +e
+  trap '' INT TERM HUP PIPE
+  if ! { printf '\n'; } 2>/dev/null; then
+    exec >>"${TMPDIR:-/tmp}/${1:-runr-e2e-$$}-cleanup.log" 2>&1
+    echo "Cleanup of a run whose output was gone ($(date -u +%FT%TZ), PID $$)"
+  fi
 }
 
 # Cloud Provider KIND (the LoadBalancer Services of Kind clusters): one process per Docker host,

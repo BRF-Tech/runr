@@ -15,6 +15,7 @@ use App\Services\Concerns\KnativeClusterTrait;
 use App\Services\Concerns\SandboxManifestTrait;
 use App\Services\Helpers\ContainerRuntimeHelper;
 use App\Services\Helpers\KataRuntime;
+use App\Services\RegionReconcile\Steps\ImageRegistryStep;
 use App\Services\RegionReconcile\Steps\NamespaceQuotaStep;
 use App\Support\Images\RegistryMove;
 use Illuminate\Support\Facades\Log;
@@ -409,9 +410,12 @@ class SandboxInstallService
      *
      * legacy: the installer is $desired's with RunR's images under one of RunR's earlier image
      * namespaces (RegistryMove::FROM up to 0.5.0, RegistryMove::FLAT in 0.5.1) — the same Kata
-     * install, reported with $desired's installer hash; legacy names that namespace. It keeps its
-     * pod template: rolling kata-deploy for the image namespace alone would restart the container
-     * runtime on every node (syncKataDropIns() re-applies it as it is).
+     * install, reported with $desired's installer hash; legacy names that namespace. kata-deploy is
+     * not re-run for the image namespace alone (its cleanup and reinstall would restart the container
+     * runtime on every node): region:reconcile (image-registry) moves the pod template with the
+     * installer pods pinned (update strategy OnDelete), and syncKataDropIns() re-applies the
+     * template and the strategy as they are. Only the installer hash annotation and the pod
+     * template's config hash count here, never the template's images.
      *
      * @param  array<string, string>  $configMapData  buildKataConfigMap() data of $desired
      * @return array{installer: ?string, dropins: ?string, legacy: ?string}
@@ -473,7 +477,8 @@ class SandboxInstallService
      * so new Kata pods use the new drop-ins; running pods keep the VM they have.
      *
      *  1. the kata-installer DaemonSet records what its nodes run (a RunR 0.4.1 installer carried
-     *     that only in its pod template hash) — its pod template is re-applied unchanged, nothing rolls;
+     *     that only in its pod template hash) — its pod template and update strategy are re-applied
+     *     unchanged, nothing rolls;
      *  2. the ConfigMap gets the new drop-ins (what kata-deploy copies when it runs next: a new node,
      *     a restarted installer pod);
      *  3. only when the drop-ins differ: the kata-dropins DaemonSet writes them on every installer
@@ -497,15 +502,24 @@ class SandboxInstallService
             throw new \RuntimeException('the Kata installer is not current — install Kata again (kata-deploy re-runs)');
         }
 
-        // 1. record what the nodes run; the pod template stays exactly as it is
+        // 1. record what the nodes run; the pod template and the update strategy stay exactly as they are
         $recorded = $desired;
         if ($state['legacy'] !== null) {
-            // RunR's images under the earlier namespace the installer runs them from
-            $recorded['spec']['template']['spec'] = RegistryMove::legacy($recorded['spec']['template']['spec'], $state['legacy']);
-            $recorded['metadata']['annotations'][self::KATA_INSTALLER_HASH_ANNOTATION] = self::kataInstallerHash($recorded['spec']['template']['spec'], $configMap['data']);
+            // kata-deploy runs RunR's images under the earlier namespace …
+            $legacySpec = RegistryMove::legacy($recorded['spec']['template']['spec'], $state['legacy']);
+            $recorded['metadata']['annotations'][self::KATA_INSTALLER_HASH_ANNOTATION] = self::kataInstallerHash($legacySpec, $configMap['data']);
+            // … and so does the pod template, unless region:reconcile (image-registry) moved it
+            if (ImageRegistryStep::patch($live, ['spec', 'template', 'spec']) !== []) {
+                $recorded['spec']['template']['spec'] = $legacySpec;
+            }
         }
         $recorded['spec']['template']['metadata']['annotations'][self::KATA_CONFIG_HASH_ANNOTATION] = self::kataTemplateHash($live);
         $recorded['metadata']['annotations'][self::KATA_DROPINS_HASH_ANNOTATION] = $state['dropins'];
+        if (($live['spec']['updateStrategy']['type'] ?? null) === 'OnDelete') {
+            // the installer pods pinned to the earlier revision (image-registry): RollingUpdate would
+            // replace them, and kata-deploy's cleanup and reinstall restart the container runtime
+            $recorded['spec']['updateStrategy'] = ['type' => 'OnDelete'];
+        }
         if (! $k8s->applyResource($recorded, self::SANDBOX_NAMESPACE)) {
             throw new \RuntimeException('cannot apply DaemonSet '.self::SANDBOX_NAMESPACE.'/'.self::KATA_DS_NAME);
         }
@@ -631,7 +645,11 @@ class SandboxInstallService
             return ['done' => false, 'failure' => $failure, 'desired' => $desired, 'pending' => []];
         }
 
-        if (($status['observedGeneration'] ?? 0) < ($ds['metadata']['generation'] ?? 1) || $desired < 1 || $updated < $desired) {
+        // region:reconcile (image-registry) moves the installer's images with its pods pinned (update
+        // strategy OnDelete): they stay on the earlier revision, and the config hash each pod carries
+        // (below) says whether it runs this installer
+        $pinned = ($ds['spec']['updateStrategy']['type'] ?? null) === 'OnDelete';
+        if (($status['observedGeneration'] ?? 0) < ($ds['metadata']['generation'] ?? 1) || $desired < 1 || (! $pinned && $updated < $desired)) {
             return ['done' => false, 'failure' => null, 'desired' => $desired, 'pending' => ["installer rollout ({$updated}/{$desired} pods updated)"]];
         }
 

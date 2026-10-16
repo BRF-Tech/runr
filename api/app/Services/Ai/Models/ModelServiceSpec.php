@@ -11,7 +11,6 @@ use App\Services\Ai\Gpu\GpuInventory;
 use App\Services\Ai\Gpu\GpuPolicy;
 use App\Services\Ai\Gpu\GpuQuota;
 use App\Services\Ai\Gpu\GpuRequest;
-use App\Services\Helpers\ResourceReservation;
 
 /**
  * Resolves the settings of a model service from what was asked for and the model: engine
@@ -124,16 +123,18 @@ class ModelServiceSpec
         if ($admit) {
             // the RuntimeClass of the next deploy: the region's CaaS mapping
             $demand = ModelServiceReservations::demandFor(new AiModelService($spec + ['ai_model_id' => $model->id]), $region);
-            $reservation = ResourceReservation::total($demand);
 
-            // Region capacity (always-on and FaaS overcommit budgets), then the tenant quota
+            // Region capacity (always-on and FaaS overcommit budgets), then the organization
+            // quota (the same two budgets of the quota)
             foreach (ModelServiceReservations::regionProblems($region, $demand, $existing) as $field => $message) {
                 $errors[$field][] = $message;
             }
 
-            $check = $this->quota->checkResources($region, $reservation, $existing?->id);
+            $check = $this->quota->checkResources($region, $demand, $existing?->id);
             if (! $check['allowed']) {
-                $errors['memory_mb'][] = $check['message'];
+                foreach ($check['problems'] ?? ['memory_mb' => $check['message'] ?? __('api.tenant.quota_exceeded')] as $key => $message) {
+                    $errors[$key === 'cpu_m' ? 'cpu' : 'memory_mb'][] = $message;
+                }
             }
         }
 

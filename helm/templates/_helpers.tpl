@@ -168,17 +168,56 @@ initContainers:
 {{- end }}
 
 {{/*
-Pod colocation: schedules the pods sharing an RWO PVC onto the same node
+Placement of a RunR pod: nodeSelector, affinity and tolerations. Takes (dict "root" . "colocate" bool).
+- placement.nodeSelector / placement.affinity / placement.tolerations as the operator set them;
+- placement.tolerateDedicatedWorkers: the toleration of the dedicated-worker taint
+  (runr.dev/dedicated=projects:NoSchedule, a region's worker selection on this cluster) and a
+  preferred node affinity for the other nodes, both added to the operator's: a pod whose volume
+  (PostgreSQL, the API storage) is bound to a node selected as a dedicated worker later starts
+  there again;
+- colocate + podColocation: the pods sharing the RWO API storage on the same node (pod affinity).
 */}}
-{{- define "runr.pod-colocation" -}}
-{{- if .Values.podColocation }}
+{{- define "runr.placement" -}}
+{{- $p := .root.Values.placement | default dict -}}
+{{- $affinity := deepCopy ($p.affinity | default dict) -}}
+{{- $tolerations := list -}}
+{{- range ($p.tolerations | default list) }}
+{{- $tolerations = append $tolerations . -}}
+{{- end }}
+{{- /* on unless set to false: values reused from a release before the switch existed have none */ -}}
+{{- $tolerate := true -}}
+{{- if hasKey $p "tolerateDedicatedWorkers" }}
+{{- $tolerate = $p.tolerateDedicatedWorkers -}}
+{{- end }}
+{{- if $tolerate }}
+{{- $toleration := dict "key" "runr.dev/dedicated" "operator" "Equal" "value" "projects" "effect" "NoSchedule" -}}
+{{- if not (has $toleration $tolerations) }}
+{{- $tolerations = append $tolerations $toleration -}}
+{{- end }}
+{{- $node := $affinity.nodeAffinity | default dict -}}
+{{- $preferred := $node.preferredDuringSchedulingIgnoredDuringExecution | default list -}}
+{{- $other := dict "weight" 100 "preference" (dict "matchExpressions" (list (dict "key" "runr.dev/dedicated" "operator" "NotIn" "values" (list "projects")))) -}}
+{{- $_ := set $node "preferredDuringSchedulingIgnoredDuringExecution" (append $preferred $other) -}}
+{{- $_ := set $affinity "nodeAffinity" $node -}}
+{{- end }}
+{{- if and .colocate .root.Values.podColocation }}
+{{- $pod := $affinity.podAffinity | default dict -}}
+{{- $required := $pod.requiredDuringSchedulingIgnoredDuringExecution | default list -}}
+{{- $group := dict "labelSelector" (dict "matchLabels" (dict "runr/storage-group" "api")) "topologyKey" "kubernetes.io/hostname" -}}
+{{- $_ := set $pod "requiredDuringSchedulingIgnoredDuringExecution" (append $required $group) -}}
+{{- $_ := set $affinity "podAffinity" $pod -}}
+{{- end }}
+{{- with $p.nodeSelector }}
+nodeSelector:
+  {{- toYaml . | nindent 2 }}
+{{- end }}
+{{- with $affinity }}
 affinity:
-  podAffinity:
-    requiredDuringSchedulingIgnoredDuringExecution:
-      - labelSelector:
-          matchLabels:
-            runr/storage-group: api
-        topologyKey: kubernetes.io/hostname
+  {{- toYaml . | nindent 2 }}
+{{- end }}
+{{- with $tolerations }}
+tolerations:
+  {{- toYaml . | nindent 2 }}
 {{- end }}
 {{- end }}
 

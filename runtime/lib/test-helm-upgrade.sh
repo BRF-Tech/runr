@@ -32,9 +32,16 @@
 #   --k8s=X.Y.Z           Kind node version (default 1.32.0)
 #   --edition=EDITION     single-tenant (default) | multi-tenant: the chart's edition=multi-tenant
 #                         with the -mt UI images; instead of the region and the function it
-#                         creates a tenant with an admin, a member and a viewer and checks that
-#                         every one signs in and keeps the tenant role (member → the custom role
-#                         Member, viewer → read-only Viewer)
+#                         creates a tenant with an admin, a member (from 0.5.x: a developer) and
+#                         a viewer and checks that every one signs in and keeps the tenant role
+#                         (from 0.4.x: member → the custom role Member, viewer → read-only Viewer)
+#   --dedicated-worker    single-tenant: a Kind cluster with a second worker; on the installed
+#                         version the worker the region registry's volume is on is selected as
+#                         the dedicated project worker (runr.dev/dedicated=projects:NoSchedule), as
+#                         an operator does after the registry was installed. After the upgrade:
+#                         region:reconcile (bootstrap job) gave Zot the toleration of the taint,
+#                         Zot runs on that node and comes back there after a restart, and no pod
+#                         waits Pending on the taint
 #   --skip-build          use the images UPGRADE_TO_API_IMAGE / UPGRADE_TO_UI_IMAGE (+ -mt) as they are
 #   --no-cleanup          keep the cluster and, with it, the Kind lock (the run prints the
 #                         `kind delete cluster` and `rm -rf <lock>` that free both)
@@ -61,6 +68,9 @@ _upg_lb_ip=""
 _upg_mt=0
 _upg_ui_suffix=""
 _upg_tenant=""
+# --dedicated-worker: the node of the region registry's volume, selected as the dedicated worker
+_upg_dedicated=0
+_upg_zot_node=""
 
 _upg_ns="runr"
 _upg_region="upg"
@@ -141,7 +151,7 @@ _upg_psql() {
 }
 
 _upg_cleanup_all() {
-  echo ""
+  kind_cleanup_begin "$_upg_cluster"
   echo "Cleanup..."
   [ -n "$_upg_probe_pid" ] && kill "$_upg_probe_pid" 2>/dev/null || true
   # stops it unless another run's Kind cluster still uses it
@@ -213,14 +223,15 @@ containerdConfigPatches:
 nodes:
   - role: control-plane
   - role: worker
+$([ "$_upg_dedicated" = "1" ] && echo "  - role: worker")
 KINDEOF
   kind create cluster --name "$_upg_cluster" --image "${REGISTRY}/reqs/kindest-node:v${k8s}" --config "$config"
   kind get kubeconfig --name "$_upg_cluster" > "$_upg_kubeconfig"
 
   # Traefik's LoadBalancer Service in the region (Knative Serving install waits for its address);
   # shared with the host's other Kind runs (test-runtimes.sh)
-  start_cloud_provider_kind
   _upg_cpk=1
+  start_cloud_provider_kind
 }
 
 # Images the nodes would otherwise pull (an image kind cannot load is pulled by the nodes); a reqs
@@ -323,17 +334,14 @@ _upg_wait_deployment_active() {
 # _upg_old_workloads — "<kind> <ns>/<name>: <image>" for every workload of the cluster (Deployment,
 # StatefulSet, DaemonSet, CronJob, Knative Service; no controller-owned ones such as a Knative
 # revision's Deployment) whose pod template has an image or env value of the installed version's
-# namespace (outside ghcr.io/brf-tech/runr). KEPT=1: also the ones region:reconcile keeps on purpose
-# (the region's queue Redis, the node installers of the sandbox runtimes)
+# namespace (outside ghcr.io/brf-tech/runr)
 _upg_old_workloads() {
   local json
   json=$( { _upg_kubectl get deployments,statefulsets,daemonsets,cronjobs -A -o json 2>/dev/null | jq -c '.items[]'
             _upg_kubectl get ksvc -A -o json 2>/dev/null | jq -c '.items[]'; } | jq -s '{items: .}')
-  echo "$json" | jq -r --arg ns "${_UPG_OLD_NS}/" --arg new "${_UPG_NEW_NS}/" --arg kept "${KEPT:-0}" '
+  echo "$json" | jq -r --arg ns "${_UPG_OLD_NS}/" --arg new "${_UPG_NEW_NS}/" '
     .items[]
     | select([.metadata.ownerReferences[]? | select(.controller == true)] | length == 0)
-    | select($kept == "1" or ((.kind == "Deployment" and .metadata.labels["app.kubernetes.io/name"] == "runr-redis")
-        or (.kind == "DaemonSet" and .metadata.namespace == "runr-sandbox") | not))
     | . as $o
     | (if .kind == "CronJob" then .spec.jobTemplate.spec.template.spec else .spec.template.spec end) as $p
     | ([$p.initContainers[]?, $p.containers[]?] | map(.image, (.env[]?.value // empty)) | map(select(type == "string" and startswith($ns) and (startswith($new) | not))) | unique)[]
@@ -341,12 +349,14 @@ _upg_old_workloads() {
 }
 
 # _upg_old_pods — "<ns>/<pod>: <image>" for every pod that is not finished and runs an image of
-# the installed version's namespace (pods of the kept workloads aside)
+# the installed version's namespace, apart from the pods region:reconcile keeps running on purpose
+# (the region's queue Redis, the node installers of the sandbox runtimes; their templates move).
+# KEPT=1: those pods only
 _upg_old_pods() {
-  _upg_kubectl get pods -A -o json 2>/dev/null | jq -r --arg ns "${_UPG_OLD_NS}/" --arg new "${_UPG_NEW_NS}/" '
+  _upg_kubectl get pods -A -o json 2>/dev/null | jq -r --arg ns "${_UPG_OLD_NS}/" --arg new "${_UPG_NEW_NS}/" --arg kept "${KEPT:-0}" '
     .items[]
     | select(.status.phase != "Succeeded" and .status.phase != "Failed")
-    | select((.metadata.labels["app.kubernetes.io/name"] == "runr-redis" or .metadata.namespace == "runr-sandbox") | not)
+    | select((.metadata.labels["app.kubernetes.io/name"] == "runr-redis" or .metadata.namespace == "runr-sandbox") == ($kept == "1"))
     | . as $o
     | ([.spec.initContainers[]?, .spec.containers[]?] | map(.image) | map(select(startswith($ns) and (startswith($new) | not))) | unique)[]
     | "\($o.metadata.namespace)/\($o.metadata.name): \(.)"'
@@ -472,6 +482,59 @@ _upg_st_data() {
   read_token=$(echo "$_upg_body" | jq -r .plain_token)
   echo "  API tokens: ci-full (*), ci-read (projects:read)"
   echo "  env_vars in the database before: $(_upg_psql "select env_vars from xaas_configs where project_id = '${project}'")"
+  if [ "$_upg_dedicated" = "1" ]; then _upg_dedicate_registry_node || return 1; fi
+}
+
+# --dedicated-worker, on the installed version: the worker the registry's (node-bound) volume is on
+# becomes the region's dedicated project worker, after the registry was installed
+_upg_dedicate_registry_node() {
+  _upg_zot_node=$(_upg_kubectl -n runr-registry get pod -l app.kubernetes.io/instance=runr-zot -o jsonpath='{.items[0].spec.nodeName}' 2>/dev/null)
+  [ -n "$_upg_zot_node" ] || { echo -e "${RED}--dedicated-worker: the registry runs on no node${NC}"; return 1; }
+  if _upg_kubectl get node "$_upg_zot_node" -o jsonpath='{.metadata.labels}' | grep -q 'node-role.kubernetes.io/control-plane'; then
+    echo -e "${RED}--dedicated-worker: the registry's volume is on the control-plane ${_upg_zot_node}, which is no worker to select${NC}"
+    return 1
+  fi
+  _upg_call_ok POST "/api/knative-regions/${region_id}/workers" "$admin_token" "$(jq -nc --arg n "$_upg_zot_node" '{nodes: [$n]}')"
+  echo "  ${_upg_zot_node} (the registry's volume) selected as the dedicated worker; Zot's tolerations on ${from_tag}:" \
+    "$(_upg_kubectl -n runr-registry get statefulset runr-zot -o jsonpath='{.spec.template.spec.tolerations}' 2>/dev/null || true)"
+}
+
+# Zot's StatefulSet tolerates the dedicated-worker taint
+_upg_zot_tolerates() {
+  _upg_kubectl -n runr-registry get statefulset runr-zot -o json \
+    | jq -e '[.spec.template.spec.tolerations[]? | select(.key == "runr.dev/dedicated" and .value == "projects" and (.effect // "NoSchedule") == "NoSchedule")] | length > 0' >/dev/null
+}
+
+# Zot rolled out and runs on the node of its volume
+_upg_zot_runs_on_its_node() {
+  _upg_kubectl -n runr-registry rollout status statefulset/runr-zot --timeout=300s >/dev/null 2>&1 \
+    && [ "$(_upg_kubectl -n runr-registry get pod runr-zot-0 -o jsonpath='{.status.phase} {.spec.nodeName}')" = "Running ${_upg_zot_node}" ]
+}
+
+# pods (any namespace) waiting Pending on the dedicated-worker taint
+_upg_pending_on_taint() {
+  _upg_kubectl get pods -A -o json 2>/dev/null | jq -r '.items[]
+    | select(.status.phase == "Pending")
+    | select([.status.conditions[]? | select(.type == "PodScheduled" and .status == "False" and ((.message // "") | contains("runr.dev/dedicated")))] | length > 0)
+    | "\(.metadata.namespace)/\(.metadata.name)"'
+}
+
+# --dedicated-worker checks after the upgrade
+_upg_dedicated_checks() {
+  local pending
+  _upg_check "region:reconcile (bootstrap) gave Zot the toleration of runr.dev/dedicated=projects:NoSchedule" \
+    grep -qF "[dedicated-worker-toleration] added the toleration of runr.dev/dedicated=projects:NoSchedule to StatefulSet runr-registry/runr-zot" "${_upg_tmp}/bootstrap.log"
+  _upg_check "Zot's StatefulSet tolerates the dedicated-worker taint" _upg_zot_tolerates
+  _upg_check "Zot runs on its dedicated worker ${_upg_zot_node}" _upg_zot_runs_on_its_node
+  _upg_kubectl -n runr-registry rollout restart statefulset/runr-zot >/dev/null
+  _upg_check "Zot restarted runs on ${_upg_zot_node} again" _upg_zot_runs_on_its_node
+  for i in $(seq 1 12); do
+    pending=$(_upg_pending_on_taint)
+    [ -z "$pending" ] && break
+    sleep 10
+  done
+  _upg_check "no pod waits Pending on the dedicated-worker taint" test -z "$pending"
+  [ -z "$pending" ] || echo "$pending" | sed 's/^/    /'
 }
 
 # Single-tenant checks after the upgrade (same shared variables)
@@ -588,6 +651,7 @@ _upg_st_checks() {
     sleep 5
   done
   _upg_check "region agent reconnected after the upgrade" test "$connected" = 1
+  if [ "$_upg_dedicated" = "1" ]; then _upg_dedicated_checks; fi
 }
 
 # Sign-in of a tenant user to the test tenant (0.4.x and this version: login + tenant_slug)
@@ -596,15 +660,27 @@ _upg_mt_login() {
   [ "$_upg_code" = "200" ] && echo "$_upg_body" | jq -r .token
 }
 
+# The tenant role next to admin and viewer the installed version ($1, its image tag) gives: 0.4.x
+# member; from 0.5.0 on the tenant roles are RBAC roles (member became the custom role Member of the
+# upgraded tenants), and a tenant of 0.5.x has developer
+_upg_mt_second_role() {
+  case "$1" in
+    0.[0-4]|0.[0-4].*) echo member ;;
+    *) echo developer ;;
+  esac
+}
+
 # Multi-tenant data: a tenant the bootstrap administrator (platform administrator) creates and so
-# owns, and central users added to it with each other 0.4.x tenant role (admin, member, viewer)
+# owns, and central users added to it with each other tenant role of the installed version
+# (0.4.x: admin, member, viewer; 0.5.x: admin, developer, viewer)
 _upg_mt_data() {
-  local role viewer_token
+  local role viewer_token mid
+  mid=$(_upg_mt_second_role "$from_tag")
   admin_token=$(_upg_login admin "$admin_pw")
   [ -n "$admin_token" ] || { echo -e "${RED}admin login failed: ${_upg_body}${NC}"; return 1; }
   _upg_call_ok POST /api/tenants "$admin_token" '{"name":"Upgrade Tenant","slug":"upgrade-tenant"}'
   tenant_id=$(echo "$_upg_body" | jq -r '.id // .data.id // .tenant.id')
-  for role in admin member viewer; do
+  for role in admin "$mid" viewer; do
     _upg_call_ok POST /api/users "$admin_token" "$(jq -nc --arg r "$role" --arg p "$member_pw" \
       '{name: ("Tenant " + $r), username: ("t-" + $r), email: ("t-" + $r + "@example.test"), password: $p}')"
     _upg_call_ok POST "/api/tenants/${tenant_id}/users" "$admin_token" "$(jq -nc --arg r "$role" '{email: ("t-" + $r + "@example.test"), role: $r}')"
@@ -619,7 +695,7 @@ _upg_mt_data() {
   _upg_psql "insert into \"${schema}\".image_security_reports (id, subject_type, subject_id, knative_region_id, image_kind, image_ref, created_at, updated_at)
     values ('01UPGRADEIMAGEMOVE00000000', 'version', '01UPGRADEIMAGEMOVE00000001', '01UPGRADEIMAGEMOVE00000002', 'caas', '${_UPG_OLD_NS}/reqs/nginx:1.27-alpine', now(), now())" >/dev/null
   echo "  tenant schema ${schema}: a security report of ${_UPG_OLD_NS}/reqs/nginx:1.27-alpine"
-  for role in admin member viewer; do
+  for role in admin "$mid" viewer; do
     [ -n "$(_upg_mt_login "t-${role}")" ] || { echo -e "${RED}t-${role} cannot sign in: ${_upg_body}${NC}"; return 1; }
   done
   # 0.4.x showed the viewer role but did not enforce it: a project create reaches validation
@@ -627,21 +703,23 @@ _upg_mt_data() {
   _upg_tenant="$tenant_id"
   _upg_call POST /api/projects "$viewer_token" '{}'
   _upg_tenant=""
-  echo "  0.4.x: tenant viewer POST /api/projects → HTTP ${_upg_code} (not refused)"
+  echo "  ${from_tag}: tenant viewer POST /api/projects → HTTP ${_upg_code}"
 }
 
 # Multi-tenant checks after the upgrade: everybody signs in, the tenant roles map to the 0.5.0 roles
-# (owner → Owner, admin → Admin, member → the custom role Member, viewer → Viewer, read-only now)
+# (owner → Owner, admin → Admin, member → the custom role Member, viewer → Viewer, read-only now);
+# from a 0.5.x installation everybody keeps the role (developer next to admin and viewer)
 _upg_mt_checks() {
-  local role perms
+  local role perms mid
   local -A tokens
+  mid=$(_upg_mt_second_role "$from_tag")
   # Signed in here, not through $(_upg_login …): the body the is_admin check reads is set by
   # _upg_call, and a command substitution keeps it in its subshell
   _upg_call POST /api/auth/login "" "$(jq -nc --arg p "$admin_pw" '{login: "admin", password: $p}')"
   admin_token=$(echo "$_upg_body" | jq -r '.token // empty' 2>/dev/null)
   _upg_check "platform administrator signs in" test -n "$admin_token"
   _upg_check "platform administrator keeps is_admin" _upg_eq "$(echo "$_upg_body" | jq -r .user.is_admin)" true
-  for role in admin member viewer; do
+  for role in admin "$mid" viewer; do
     tokens[$role]=$(_upg_mt_login "t-${role}")
     _upg_check "tenant ${role} signs in to the tenant" test -n "${tokens[$role]}"
   done
@@ -650,23 +728,27 @@ _upg_mt_checks() {
   _upg_call GET /api/members "$admin_token"
   echo "  tenant members: $(echo "$_upg_body" | jq -c '[.members[] | {username, role}]' 2>/dev/null)"
   _upg_check "the tenant's creator stays Owner" _upg_eq "$(echo "$_upg_body" | jq -r '[.members[] | select(.username == "admin")][0].role')" owner
-  for role in admin member viewer; do
+  for role in admin "$mid" viewer; do
     _upg_check "tenant ${role} keeps the role ${role}" _upg_eq "$(echo "$_upg_body" | jq -r --arg u "t-${role}" '[.members[] | select(.username == $u)][0].role')" "$role"
   done
-  _upg_call GET /api/roles "$admin_token"
-  _upg_check "the tenant has the custom role Member" \
-    _upg_eq "$(echo "$_upg_body" | jq -r '[.roles[] | select(.key == "member" and .builtin == false)] | length')" 1
-  _upg_call GET /api/auth/permissions "${tokens[member]}"
+  _upg_call GET /api/auth/permissions "${tokens[$mid]}"
   perms=" $(echo "$_upg_body" | jq -r '.permissions | join(" ")' 2>/dev/null) "
-  _upg_check "member keeps what 0.4.x members could do (settings.manage, sso.manage, projects.deploy)" \
-    bash -c '[[ "$1" == *" settings.manage "* && "$1" == *" sso.manage "* && "$1" == *" projects.deploy "* ]]' _ "$perms"
-  _upg_check "member does not manage roles or members" _upg_absent "$perms" " roles.manage " " members.invite "
+  if [ "$mid" = "member" ]; then
+    _upg_call GET /api/roles "$admin_token"
+    _upg_check "the tenant has the custom role Member" \
+      _upg_eq "$(echo "$_upg_body" | jq -r '[.roles[] | select(.key == "member" and .builtin == false)] | length')" 1
+    _upg_check "member keeps what 0.4.x members could do (settings.manage, sso.manage, projects.deploy)" \
+      bash -c '[[ "$1" == *" settings.manage "* && "$1" == *" sso.manage "* && "$1" == *" projects.deploy "* ]]' _ "$perms"
+  else
+    _upg_check "developer keeps projects.deploy" bash -c '[[ "$1" == *" projects.deploy "* ]]' _ "$perms"
+  fi
+  _upg_check "${mid} does not manage roles or members" _upg_absent "$perms" " roles.manage " " members.invite "
   _upg_call GET /api/projects "${tokens[viewer]}"
   _upg_check "viewer lists projects" _upg_eq "$_upg_code" 200
   _upg_call POST /api/projects "${tokens[viewer]}" '{}'
   _upg_check "viewer is read-only now (POST /api/projects 403)" _upg_eq "$_upg_code" 403
-  _upg_call POST /api/projects "${tokens[member]}" '{}'
-  _upg_check "member still creates projects (validation, no 403)" _upg_eq "$_upg_code" 422
+  _upg_call POST /api/projects "${tokens[$mid]}" '{}'
+  _upg_check "${mid} still creates projects (validation, no 403)" _upg_eq "$_upg_code" 422
   _upg_call POST /api/projects "${tokens[admin]}" '{}'
   _upg_check "tenant admin still creates projects (validation, no 403)" _upg_eq "$_upg_code" 422
   _upg_tenant=""
@@ -685,6 +767,7 @@ cmd_test_helm_upgrade() {
       --skip-build) skip_build=1 ;;
       --edition=single-tenant) _upg_mt=0; _upg_ui_suffix="" ;;
       --edition=multi-tenant) _upg_mt=1; _upg_ui_suffix="-mt" ;;
+      --dedicated-worker) _upg_dedicated=1 ;;
       --no-cleanup) _upg_cleanup=0 ;;
       --cleanup) _upg_cleanup=1 ;;
       *) echo "Unknown flag: ${arg}"; return 1 ;;
@@ -740,7 +823,9 @@ cmd_test_helm_upgrade() {
     _upg_to_images "$root" "$to_api" "$to_ui"
   fi
 
+  # also when the run is stopped from outside (as in cmd_test, lib/test.sh)
   trap _upg_cleanup_all EXIT
+  trap 'exit 130' INT
   acquire_kind_lock
   _upg_log "Kind cluster"
   _upg_kind_cluster "$k8s"
@@ -822,7 +907,7 @@ EOF
     --set "api.image.repository=${to_api%:*}" --set "api.image.tag=${to_api##*:}" \
     --set "ui.image.repository=${to_ui%:*}" --set "ui.image.tag=${to_ui##*:}" \
     --wait --timeout 15m || helm_status=$?
-  _upg_kubectl -n "$_upg_ns" logs job/runr-bootstrap --tail=40 2>/dev/null | sed 's/^/  bootstrap: /' || true
+  _upg_kubectl -n "$_upg_ns" logs job/runr-bootstrap --tail=60 2>/dev/null | tee "${_upg_tmp}/bootstrap.log" | sed 's/^/  bootstrap: /' || true
   if [ "$helm_status" != "0" ]; then
     echo -e "${RED}helm upgrade failed (${helm_status})${NC}"
     _upg_kubectl -n "$_upg_ns" get pods,jobs 2>/dev/null || true
@@ -858,8 +943,8 @@ EOF
   left_workloads=$(_upg_old_workloads)
   _upg_check "no workload references ${_UPG_OLD_NS}/ (Deployments, StatefulSets, DaemonSets, CronJobs, Knative Services)" test -z "$left_workloads"
   [ -z "$left_workloads" ] || echo "$left_workloads" | sed 's/^/    /'
-  kept=$(KEPT=1 _upg_old_workloads | grep -v -F -x -f <(printf '%s\n' "$left_workloads") || true)
-  [ -z "$kept" ] || { echo "  kept by region:reconcile (in-memory queue Redis, sandbox node installers):"; echo "$kept" | sed 's/^/    /'; }
+  kept=$(KEPT=1 _upg_old_pods || true)
+  [ -z "$kept" ] || { echo "  pods region:reconcile keeps running (in-memory queue Redis, sandbox node installers; their templates moved):"; echo "$kept" | sed 's/^/    /'; }
   for i in $(seq 1 60); do
     left_pods=$(_upg_old_pods)
     [ -z "$left_pods" ] && break

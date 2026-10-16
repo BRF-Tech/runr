@@ -6,6 +6,7 @@ use App\Models\KnativeRegion;
 use App\Services\Helpers\RunrClusterIdentity;
 use App\Services\KubernetesClient;
 use App\Services\RegionReconcile\Steps\AdmissionPolicyStep;
+use App\Services\RegionReconcile\Steps\DedicatedWorkerTolerationStep;
 use App\Services\RegionReconcile\Steps\ImageRegistryStep;
 use App\Services\RegionReconcile\Steps\IngressTrustStep;
 use App\Services\RegionReconcile\Steps\KataSandboxStep;
@@ -48,6 +49,9 @@ class RegionReconciler
     public function steps(): array
     {
         return [
+            // before every step that restarts a component with a node-bound volume (registry,
+            // Loki, Tempo): their next pod may have to start on a dedicated worker
+            new DedicatedWorkerTolerationStep,
             new KnativeServingConfigStep,
             new PrometheusExposureStep,
             new NamespaceQuotaStep,

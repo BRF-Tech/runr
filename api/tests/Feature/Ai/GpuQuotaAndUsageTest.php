@@ -12,6 +12,7 @@ use App\Models\KnativeRegion;
 use App\Models\Project;
 use App\Models\User;
 use App\Models\Version;
+use App\Services\Ai\Models\ModelServiceReservations;
 use App\Services\Ai\Models\ModelUsageMeter;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
@@ -187,6 +188,33 @@ class GpuQuotaAndUsageTest extends TestCase
 
             $this->assertGreaterThanOrEqual(2000, $after['cpu_m'] - $before['cpu_m']);
             $this->assertGreaterThanOrEqual(8192, $after['memory_mb'] - $before['memory_mb']);
+        });
+    }
+
+    public function test_model_services_are_admitted_against_both_budgets_of_the_quota(): void
+    {
+        DB::connection('central')->table('tenant_regions')->update(['cpu_quota_m' => 4000]);
+
+        $this->inTenant(function () {
+            $region = KnativeRegion::find($this->regionId);
+            $quota = app(TenantGpuQuota::class);
+            $demand = fn (int $minScale) => ModelServiceReservations::demandFor(new AiModelService([
+                'cpu' => '2', 'memory_mb' => 1024, 'min_scale' => $minScale, 'scale_to_zero' => true,
+            ]), $region);
+
+            $running = $this->gpuService(0, 1); // 2000m + 100m queue-proxy always-on
+
+            // always-on: 2100m more, 4200m > the 4000m quota
+            $refused = $quota->checkResources($region, $demand(1));
+            $this->assertFalse($refused['allowed']);
+            $this->assertSame('always_on', $refused['budget']);
+            $this->assertStringContainsString('this needs 2100m, 1900m of the quota 4000m on this region are free', $refused['problems']['cpu_m']);
+
+            // scale to zero: one pod against 4000m × 3 minus 2100m always-on
+            $this->assertTrue($quota->checkResources($region, $demand(0))['allowed']);
+
+            // a change of the running service does not count it twice
+            $this->assertTrue($quota->checkResources($region, $demand(1), $running->id)['allowed']);
         });
     }
 

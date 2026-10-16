@@ -6,6 +6,7 @@ use App\Models\KnativeRegion;
 use App\Services\Concerns\KnativeClusterTrait;
 use App\Services\Concerns\ZotManifestTrait;
 use App\Services\Concerns\ZotPrepullTrait;
+use App\Services\Helpers\DedicatedWorkers;
 use App\Services\Helpers\RunrClusterIdentity;
 use App\Services\Manifests\ZotManifests;
 use App\Services\Runtimes\RuntimeRegistry;
@@ -292,7 +293,8 @@ class ZotRegistryService
      * Brings the running Zot's config.json in $ns to RunR's sync upstreams
      * (ZotManifests::reconcileSyncConfig(): only RunR's entries/keys change) and restarts Zot —
      * only when the config changed. manifestCheckInterval is written only for a Zot image that
-     * knows the key (older ones refuse to start on it).
+     * knows the key (older ones refuse to start on it). The restart adds the toleration of the
+     * dedicated-worker taint to a Zot without it, as an install of this release has it.
      *
      * @return string|null what changed (in dry-run: would change), "skipped: …", null = up to date
      */
@@ -326,9 +328,14 @@ class ZotRegistryService
             .($interval ? ', manifestCheckInterval '.ZotManifests::GHCR_MANIFEST_CHECK_INTERVAL : '; Zot older than '.ZotManifests::MANIFEST_CHECK_INTERVAL_SINCE.': no manifestCheckInterval')
             .') + Docker Hub';
         $workloadRef = "{$kind} {$ns}/".self::ZOT_RELEASE_NAME;
+        // the restart also gives Zot the toleration of the dedicated-worker taint, as Zot installed
+        // by this release has it: its volume may be bound to a node selected as a dedicated worker
+        $tolerations = (array) ($workload['spec']['template']['spec']['tolerations'] ?? []);
+        $tolerated = DedicatedWorkers::tolerated($tolerations);
+        $withToleration = $tolerated ? '' : ' with the toleration of '.DedicatedWorkers::taint();
 
         if ($dryRun) {
-            return "would update {$what}, then restart {$workloadRef}";
+            return "would update {$what}, then restart {$workloadRef}{$withToleration}";
         }
 
         if (! $k8s->mergePatch('v1', 'ConfigMap', self::ZOT_CONFIG_MAP, $ns, ['data' => [self::ZOT_CONFIG_KEY => $new]])) {
@@ -337,11 +344,14 @@ class ZotRegistryService
 
         // A new pod reads the ConfigMap as it is now; the annotation only changes with the config
         $restart = ['spec' => ['template' => ['metadata' => ['annotations' => [self::CONFIG_HASH_ANNOTATION => hash('sha256', $new)]]]]];
+        if (! $tolerated) {
+            $restart['spec']['template']['spec']['tolerations'] = DedicatedWorkers::withToleration($tolerations);
+        }
         if (! $k8s->mergePatch('apps/v1', $kind, self::ZOT_RELEASE_NAME, $ns, $restart)) {
             throw new \RuntimeException("{$cmRef} updated, but the restart of {$workloadRef} was rejected — restart it to load the new config");
         }
 
-        return "updated {$what}; restarted {$workloadRef}";
+        return "updated {$what}; restarted {$workloadRef}{$withToleration}";
     }
 
     /**

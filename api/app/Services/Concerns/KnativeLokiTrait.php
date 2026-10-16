@@ -3,6 +3,7 @@
 namespace App\Services\Concerns;
 
 use App\Services\HelmService;
+use App\Services\Helpers\DedicatedWorkers;
 use App\Services\Helpers\ManagedLoki;
 
 /**
@@ -40,6 +41,9 @@ trait KnativeLokiTrait
     /**
      * loki-stack values. loki.config: the delete API and allowed deletes that log retention
      * (LogRetentionService) uses, with Loki's own retention effectively unlimited (ManagedLoki).
+     * Loki tolerates the dedicated-worker taint and prefers the other nodes
+     * (DedicatedWorkers::systemPlacement()): its volume may be bound to a node selected as a
+     * dedicated worker later.
      */
     public static function lokiHelmValues(string $storageClass = ''): array
     {
@@ -75,7 +79,7 @@ trait KnativeLokiTrait
                     'requests' => ['cpu' => '100m', 'memory' => '128Mi'],
                     'limits' => ['cpu' => '500m', 'memory' => '512Mi'],
                 ],
-            ],
+            ] + DedicatedWorkers::systemPlacement(),
             'promtail' => [
                 'enabled' => true,
                 'resources' => [

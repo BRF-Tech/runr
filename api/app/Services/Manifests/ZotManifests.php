@@ -3,6 +3,7 @@
 namespace App\Services\Manifests;
 
 use App\Services\Helpers\ContainerRuntimeHelper;
+use App\Services\Helpers\DedicatedWorkers;
 
 class ZotManifests
 {
@@ -341,7 +342,8 @@ class ZotManifests
      * restart meanwhile (a changed config, its pods moving to new images): the Job waits for its
      * /v2/ to answer before it starts and, 10 / 15 s after a failed try, before the next try of an
      * image, backing off from 2 to 30 s, PREWARM_WAIT_SECONDS at most each time (the pod fails
-     * when Zot does not answer by then). It tries each image PREWARM_TRIES times and
+     * when Zot does not answer by then), with one line per wait in the pod log (wget's own error
+     * on a refused connection is left out). It tries each image PREWARM_TRIES times and
      * logs how long each took; the pod fails when an image could not be fetched, and the Job tries
      * again in a new pod up to PREWARM_BACKOFF_LIMIT times (images fetched by then answer at once).
      *
@@ -355,7 +357,7 @@ class ZotManifests
             'set -u',
             'R='.escapeshellarg('http://'.rtrim($registryAddress, '/')),
             'A='.escapeshellarg($accept),
-            'up() { w=2; t=0; until wget -q -O /dev/null -T 10 "$R/v2/"; do [ "$t" -ge '.self::PREWARM_WAIT_SECONDS.' ] && { echo "registry $R does not answer"; return 1; }; sleep "$w"; t=$((t+w)); w=$((w*2)); if [ "$w" -gt 30 ]; then w=30; fi; done; }',
+            'up() { w=2; t=0; until wget -q -O /dev/null -T 10 "$R/v2/" 2>/dev/null; do [ "$t" -ge '.self::PREWARM_WAIT_SECONDS.' ] && { echo "registry $R does not answer after $t s"; return 1; }; echo "waiting for registry $R to answer: next try in $w s ($t s waited)"; sleep "$w"; t=$((t+w)); w=$((w*2)); if [ "$w" -gt 30 ]; then w=30; fi; done; }',
             'up || exit 1',
             'failed=0',
             'fetch() { s=$(date +%s); n=1; until wget -q -O /dev/null -T 1800 --header "$A" "$R/v2/$1/manifests/$2"; do if [ "$n" -ge '.self::PREWARM_TRIES.' ]; then echo "$1:$2 could not be fetched"; failed=1; return; fi; n=$((n+1)); echo "$1:$2 not fetched yet, try $n once the registry answers"; sleep $((n*5)); up || exit 1; done; echo "$1:$2 in the registry after $(( $(date +%s) - s )) s"; }',
@@ -703,22 +705,20 @@ SH;
     }
 
     /**
-     * Zot Helm nodeSelector + tolerations values for worker-only scheduling.
+     * Zot Helm placement values. $workersOnly: on the dedicated workers (nodeSelector + toleration).
+     * Otherwise on any node, preferring the ones that are not dedicated workers, and tolerating the
+     * dedicated-worker taint: a node-bound volume keeps Zot on the node it was provisioned on, and
+     * that node may be selected as a dedicated worker later (DedicatedWorkers::systemPlacement()).
      */
     public static function workerAffinityValues(bool $workersOnly): array
     {
         if (! $workersOnly) {
-            return [];
+            return DedicatedWorkers::systemPlacement();
         }
 
         return [
-            'nodeSelector' => ['runr.dev/dedicated' => 'projects'],
-            'tolerations' => [[
-                'key' => 'runr.dev/dedicated',
-                'operator' => 'Equal',
-                'value' => 'projects',
-                'effect' => 'NoSchedule',
-            ]],
+            'nodeSelector' => [DedicatedWorkers::KEY => DedicatedWorkers::VALUE],
+            'tolerations' => [DedicatedWorkers::toleration()],
         ];
     }
 

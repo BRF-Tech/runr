@@ -12,17 +12,19 @@ use Modules\Tenancy\Services\TenantQuotaService;
 use Symfony\Component\HttpFoundation\Response;
 
 /**
- * Tenant quota admission for project writes (quota model option C). The size
- * a request asks for is turned into the project's admitted reservation by
- * ResourceReservation (size × max(1, min_scale), queue-proxy per Knative Service pod, the Kata
- * RuntimeClass overhead per pod when the region maps the service type to kata-*, queue
- * consumer for queue projects; missing values fall back to the stored config, then to the
- * service type's default size).
+ * Organization quota admission for project writes (quota model option C, TenantQuotaService).
+ * The size a request asks for is turned into the project's demand by ResourceReservation
+ * (size × max(1, min_scale), queue-proxy per Knative Service pod, the Kata RuntimeClass overhead
+ * per pod when the region maps the service type to kata-*, queue consumer for queue projects;
+ * missing values fall back to the stored config, then to the service type's default size),
+ * split by budget: an always-on project (scale to zero off or min_scale >= 1) counts in full
+ * against the quota, a scale-to-zero project counts one pod against quota × the region's
+ * overcommit factor (its Kata overhead against the quota).
  *
  * Existing projects are grandfathered: a write that does not raise the project's reservation
  * (deploy, redeploy, env edit, smaller size) is always allowed, even when the tenant is over
- * quota — e.g. after the reservation formula grew with an upgrade. Only increases and new
- * projects are checked against the remaining quota.
+ * quota — e.g. after the reservation formula grew with an upgrade. Only increases (more
+ * always-on, or more in all) and new projects are checked against the remaining budgets.
  */
 class CheckTenantQuota
 {
@@ -78,9 +80,9 @@ class CheckTenantQuota
         }
 
         $config = (array) $request->input('config', []);
-        $reservation = ResourceReservation::forConfig($config, $request->input('service_type'), $region);
+        $demand = ResourceReservation::demandForConfig($config, $request->input('service_type'), $region);
 
-        return $this->respond($request, $next, $tenant, $region, $reservation);
+        return $this->respond($request, $next, $tenant, $region, $demand);
     }
 
     protected function checkExistingProject(Request $request, Closure $next, Tenant $tenant, Project $project): Response
@@ -106,38 +108,58 @@ class CheckTenantQuota
             ?? $request->input("deploy_config.{$key}")
             ?? $config->{$key};
 
-        $reservation = ResourceReservation::forConfig([
+        $demand = ResourceReservation::demandForConfig([
             'cpu' => $pick('cpu'),
             'memory_mb' => $pick('memory_mb'),
             'trigger_type' => $request->input('config.trigger_type') ?? $config->trigger_type,
             'min_scale' => $pick('min_scale'),
+            'scale_to_zero' => $pick('scale_to_zero'),
         ], $project->service_type, $region);
 
-        if ($region->id === $project->knative_region_id) {
-            $current = ResourceReservation::forProject($project, $region);
-
-            if ($reservation['cpu_m'] <= $current['cpu_m'] && $reservation['memory_mb'] <= $current['memory_mb']) {
-                return $next($request);
-            }
+        if ($region->id === $project->knative_region_id
+            && ! $this->grows($demand, ResourceReservation::demandForProject($project, $region))) {
+            return $next($request);
         }
 
         // Exclude this project's current usage from the total
-        return $this->respond($request, $next, $tenant, $region, $reservation, $project->id);
+        return $this->respond($request, $next, $tenant, $region, $demand, $project->id);
     }
 
     /**
-     * @param  array{cpu_m: int, memory_mb: int}  $reservation
+     * Whether a project's new demand needs more of a resource than it holds now: more always-on,
+     * or more in all.
+     *
+     * @param  array{hard: array{cpu_m: int, memory_mb: int}, burst: array{cpu_m: int, memory_mb: int}}  $new
+     * @param  array{hard: array{cpu_m: int, memory_mb: int}, burst: array{cpu_m: int, memory_mb: int}}  $current
      */
-    protected function respond(Request $request, Closure $next, Tenant $tenant, KnativeRegion $region, array $reservation, ?string $excludeProjectId = null): Response
+    protected function grows(array $new, array $current): bool
     {
-        $result = $this->quotaService->checkReservation($tenant, $region, $reservation, $excludeProjectId);
+        foreach (['cpu_m', 'memory_mb'] as $key) {
+            if ($new['hard'][$key] > $current['hard'][$key]
+                || $new['hard'][$key] + $new['burst'][$key] > $current['hard'][$key] + $current['burst'][$key]) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * @param  array{hard: array{cpu_m: int, memory_mb: int}, burst: array{cpu_m: int, memory_mb: int}}  $demand
+     */
+    protected function respond(Request $request, Closure $next, Tenant $tenant, KnativeRegion $region, array $demand, ?string $excludeProjectId = null): Response
+    {
+        $result = $this->quotaService->checkReservation($tenant, $region, $demand, $excludeProjectId);
 
         if (! $result['allowed']) {
-            return response()->json([
+            return response()->json(array_filter([
                 'message' => $result['message'] ?? __('api.tenant.quota_exceeded'),
-                'remaining_cpu_m' => $result['remaining_cpu_m'] ?? 0,
-                'remaining_memory_mb' => $result['remaining_memory_mb'] ?? 0,
-            ], 422);
+                // always_on or faas: the budget of the organization quota that is used up
+                'budget' => $result['budget'] ?? null,
+                // what is left, for the resources with a quota only
+                'remaining_cpu_m' => $result['remaining_cpu_m'] ?? null,
+                'remaining_memory_mb' => $result['remaining_memory_mb'] ?? null,
+            ], fn ($value) => $value !== null), 422);
         }
 
         return $next($request);

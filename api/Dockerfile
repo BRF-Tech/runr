@@ -39,12 +39,27 @@ RUN install-php-extensions \
 
 # System packages + helm + kubectl
 # git-daemon: git-http-backend of the project git remotes (/git/<org>/<project>.git)
+# helm and kubectl are pinned and checked against their published SHA-256 (amd64 / arm64), so every
+# build of a release tag gets the same binaries; kubectl 1.35 is within one minor version of the
+# Kubernetes versions RunR supports
+ARG HELM_VERSION=v3.16.0
+ARG KUBECTL_VERSION=v1.35.9
 RUN apk add --no-cache git git-daemon sqlite curl libpq \
     && KUBE_ARCH="$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/')" \
-    && curl -fsSL "https://get.helm.sh/helm-v3.16.0-linux-${KUBE_ARCH}.tar.gz" | tar xz -C /tmp \
+    && case "$KUBE_ARCH" in \
+         amd64) HELM_SHA=327cfbc7ddc5a3eb644039ceb0cff66394628654c4f5a76bf715ed15b893983b; \
+                KUBECTL_SHA=3cfeaf80be482b435b0aa214aff6e0b2c312ee23c0ff20810c75517b6004c6eb ;; \
+         arm64) HELM_SHA=fc121590b532d7f2037ae5cdd39d2b56dec96069d8bc613a08965f29a156e84f; \
+                KUBECTL_SHA=39c98bca82875d9a9ddfb6f3c5ab17c3f78ea0801230683e538a67d5c053308d ;; \
+         *) echo "unsupported architecture $KUBE_ARCH" >&2; exit 1 ;; \
+       esac \
+    && curl -fsSL --retry 5 --retry-all-errors -o /tmp/helm.tar.gz "https://get.helm.sh/helm-${HELM_VERSION}-linux-${KUBE_ARCH}.tar.gz" \
+    && echo "${HELM_SHA}  /tmp/helm.tar.gz" | sha256sum -c - \
+    && tar xzf /tmp/helm.tar.gz -C /tmp \
     && mv "/tmp/linux-${KUBE_ARCH}/helm" /usr/local/bin/helm \
-    && rm -rf /tmp/linux-* \
-    && curl -fsSL "https://dl.k8s.io/release/$(curl -fsSL https://dl.k8s.io/release/stable.txt)/bin/linux/${KUBE_ARCH}/kubectl" -o /usr/local/bin/kubectl \
+    && rm -rf /tmp/linux-* /tmp/helm.tar.gz \
+    && curl -fsSL --retry 5 --retry-all-errors -o /usr/local/bin/kubectl "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/${KUBE_ARCH}/kubectl" \
+    && echo "${KUBECTL_SHA}  /usr/local/bin/kubectl" | sha256sum -c - \
     && chmod +x /usr/local/bin/kubectl
 
 # Composer binary (required for dump-autoload in the entrypoint)

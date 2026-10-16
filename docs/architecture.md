@@ -76,6 +76,16 @@ used there.
 | Redis | `ghcr.io/brf-tech/runr/reqs/redis:7-alpine` or external | Queues, cache, sessions, shell and exec tokens, live metrics |
 | Mailpit | `ghcr.io/brf-tech/runr/reqs/mailpit` | SMTP catch-all, installed only when no SMTP host is set |
 
+Placement (Helm values `placement.*`): every pod of the chart — the Deployments above and the
+migration and bootstrap hook Jobs — tolerates the dedicated-worker taint
+`runr.dev/dedicated=projects:NoSchedule` and prefers the nodes that are not dedicated workers
+(`placement.tolerateDedicatedWorkers`, on by default). When RunR runs in a cluster it also uses as
+a region, a node holding PostgreSQL's volume or the API storage can be selected as a dedicated
+worker ([Dedicated workers](#dedicated-workers)); the pods still start there after a restart or an
+upgrade. `placement.tolerations`, `placement.affinity` and `placement.nodeSelector` apply to every
+pod as given; the dedicated-worker toleration and preference and the colocation of the pods that
+share the API storage (`podColocation`) are added to them.
+
 The roles are selected in `api/docker/entrypoint.sh`. The API role runs
 `php artisan octane:start --server=frankenphp`. Reverb runs `php artisan reverb:start-shell`, a
 Reverb server extended by `App\Services\Shell\ShellAwareFactory` with three raw WebSocket routes:
@@ -110,9 +120,11 @@ URL. All cluster operations go through
 Setting up a region (each step is a queued job that reports progress over WebSocket):
 
 1. **Kubeconfig**: upload, validate and preview the nodes. Worker nodes can be dedicated with
-   taints and labels (`KnativeNodeTaintTrait`).
+   taints and labels (`KnativeNodeTaintTrait`, [Dedicated workers](#dedicated-workers)).
 2. **Registry + region**: `InstallRegistryAndCreateRegionJob` tests the storage and installs Zot
    (`ZotRegistryService`). Storage is a PVC or S3; an external registry can be used instead.
+   With dedicated workers selected Zot runs on them; without, on any node, tolerating the
+   dedicated-worker taint.
 3. **Knative Operator**: Helm chart `knative-operator/knative-operator`. Offered Knative
    versions depend on the cluster's Kubernetes minor (`KnativeVersionHelper::KNATIVE_K8S_COMPAT`).
 4. **Knative Serving** (`KnativeInstallService::installServing`): the KnativeServing resource, Traefik
@@ -137,7 +149,9 @@ Optional per-region features, each installed from the region's settings in the c
 | Sandbox API | Namespaces `runr-sbx-<organization>` with Pod Security `restricted` and a default-deny NetworkPolicy, created on first use | [sandbox-api.md](sandbox-api.md) |
 
 `region:reconcile` brings existing regions up to date with the running release. Its steps are in
-`App\Services\RegionReconcile\Steps`, in this order: Knative Serving config, Prometheus exposure,
+`App\Services\RegionReconcile\Steps`, in this order: dedicated-worker toleration
+([Dedicated workers](#dedicated-workers); first, as the steps after it restart the registry, Loki
+and Tempo), Knative Serving config, Prometheus exposure,
 namespace quota, registry sync, ingress trust, Traefik image, Loki deletion, tracing backend
 (where tracing is enabled), Kata sandbox, WebAssembly sandbox, admission policy, image registry
 (workloads onto RunR's image namespace `ghcr.io/brf-tech/runr`,
@@ -152,6 +166,70 @@ version and waits for the region's DNS to point at the new ingress. The status g
 `pending → in_progress → dns_check → completed`; a migration in `dns_check` or `failed` can be
 rolled back to the previous kubeconfig. `DomainMigrateService` moves the regions to a new base
 domain with the same DNS check; the scheduler completes expired domain migrations hourly.
+
+### Dedicated workers
+
+Selecting worker nodes (region setup, or Settings → Regions → (region) → Workers;
+`KnativeNodeService::applyWorkerSelection()`) labels and taints them
+`runr.dev/dedicated=projects:NoSchedule`; deselected nodes lose both. Project workloads (Knative
+Services, queue consumers, CronJobs, model services, sandboxes) carry the matching nodeSelector and
+toleration and run on the dedicated workers only; Knative's system deployments move there too.
+
+RunR's components with a node-bound volume tolerate the taint and prefer the nodes that are not
+dedicated workers (`DedicatedWorkers::systemPlacement()`: the toleration and a preferred node
+affinity):
+
+| Component | Namespace | Volume |
+|---|---|---|
+| Registry (Zot, `runr-zot`) | the region's registry namespace (`runr-registry`) | PVC of its StatefulSet (storage `pvc`; with S3 Zot has none) |
+| Prometheus (`knative` release) | `observability` | 50Gi PVC |
+| Loki (`loki-stack`) | `observability` | 20Gi PVC |
+| Tempo (`tempo`, tracing mode `managed`) | `observability` | `tempoStorage` PVC |
+| KV Redis, Garage, CloudNativePG clusters | `runr-data` | the data services' PVCs |
+
+RunR's own pods (the Helm chart, PostgreSQL and the API storage included) tolerate the taint and
+prefer the other nodes as well, for a RunR that runs in a cluster it also uses as a region
+([Control plane](#control-plane), `placement.tolerateDedicatedWorkers`).
+
+A node-bound volume (local-path, k3s's default class, any volume with node affinity) keeps its pod
+on the node it was provisioned on, and that node can be selected as a dedicated worker later. The
+taint leaves the running pod alone; the next pod (a restart, a new pod template, a Helm upgrade, a
+moved image) has to start on the same node again, which the toleration allows. A registry
+installed while dedicated workers are selected runs on them (nodeSelector and toleration).
+
+A component installed by an earlier release gets the toleration added to its pod template (the
+Prometheus and CloudNativePG resources: their spec) when it needs it
+(`DedicatedWorkerTolerationService`): a pod of it runs on a dedicated worker, or waits Pending on
+the taint ("untolerated taint {runr.dev/dedicated: projects}" together with "volume node affinity
+conflict"). The worker selection does this for the nodes it selects; `region:reconcile` (step
+`dedicated-worker-toleration`) for every dedicated worker of the cluster:
+
+- a pod on a dedicated worker restarts once, on the same node;
+- a pod Pending on the taint, created from the spec without the toleration, is deleted once its
+  controller has the new spec, and the controller starts it again with the toleration — a
+  StatefulSet does not replace a pod that never became ready by itself, and the CloudNativePG
+  operator recreates the instance on its volume. The KV Redis Deployment replaces its pod itself.
+
+Components on the other nodes keep their pod template until their node is selected. The registry
+restart of `registry-sync-config` adds the toleration too, so a registry restarted there needs no
+second restart later.
+
+A registry installed while dedicated workers are selected, its node mirror and Knative's system
+deployments select the workers with a nodeSelector on the label. When deselected nodes lose it,
+the worker selection and the same `region:reconcile` step keep them schedulable:
+
+| Component | While some node carries the label | Once none does |
+|---|---|---|
+| Zot (StatefulSet on a volume) | stays on the workers; if its volume binds it to a node that lost the label (its pod there, or Pending on the nodeSelector), it moves to the placement above: nodeSelector dropped, toleration kept, the other nodes preferred, a Pending pod replaced | moves to that placement; its pod restarts once, on its volume's node |
+| Zot (Deployment, S3) | follows the remaining workers | moves to that placement |
+| Node mirror (`runr-registry-mirror`) | follows the remaining workers | applied for every node, as an install without dedicated workers has it |
+| Knative system deployments | follow the remaining workers | nodeSelector dropped, toleration kept |
+
+Without dedicated workers projects run on any schedulable node, and a node pulls images from the
+registry (an http address) only with the containerd configuration the mirror writes, so the
+mirror moves to every node. On plain containerd a node whose `config.toml` the mirror changes
+needs the containerd restart its log names (`php artisan registry:rolling-restart <region-id>`);
+k3s and rke2 read the mirror's `hosts.toml` without a restart.
 
 ### Region capacity and admission
 
@@ -252,8 +330,38 @@ reading a platform region gets 403, its quota applies). The region resource
 sandboxes) and can exceed `total_cpu_m` / `total_memory_mb` on an overcommitted region. Capacity
 alerts (`resource_threshold`, 60 % / 80 %) measure the fuller of the two budgets.
 
-Organization quotas (Tenancy module) are each organization's share of a region and count the
-whole reservation of every workload, scale-to-zero ones included, next to this admission.
+**Organization quotas.** With the Tenancy module each organization has a CPU and memory quota per
+platform region (`cpu_quota_m` / `memory_quota_mb`, 0 = no limit for that resource), its share of
+the region capacity: the quotas on a region add up to at most its capacity (and the
+[organization ceiling](#editions)). Admission (`TenantQuotaService`, `CheckTenantQuota`) splits a
+quota into the same two budgets, with the region's overcommit factors:
+
+| Budget | Size | What counts against it |
+|---|---|---|
+| **Always-on** | the quota | the organization's always-on projects and model services, the Kata pod overhead of its scale-to-zero ones, queue consumers, its sandboxes and warm pool pods |
+| **FaaS overcommit** | quota × the region's factor, minus what the always-on budget holds | one pod of every scale-to-zero project, model service and [git deploy preview](git-deploy.md#preview-environments) of the organization |
+
+A workload has to fit both the region's budgets and its organization's. Because the quotas share
+out the capacity and use the region's factors, the organizations' quotas × factor add up to at
+most the region's capacity × factor. A factor of 1 on a region makes the quotas there hard limits
+for every workload. The refusal (422) names the budget (`budget`: `always_on` or `faas`) and the
+resource that is short, and gives what is left for each resource with a quota (`remaining_cpu_m`,
+`remaining_memory_mb`; a resource with quota 0 is not limited and has no entry):
+
+```text
+CPU quota exceeded on the organization's FaaS overcommit budget: this needs 350m, 200m of 3000m are free on this region (quota 1000m × 3, minus 0m always-on).
+CPU quota exceeded on the organization's always-on budget (no overcommit): this needs 700m, 650m of the quota 1000m on this region are free. Always-on workloads, Kata pod overhead, queue consumers and sandboxes count in full.
+```
+
+In an organization, `GET /api/settings` gives each platform region with a quota the quota's
+budgets as its `capacity` (the shape above, `capacity_scope: "quota"`). The projects page shows
+both budgets per resource, of the regions or of the organization's quotas, summed and per region.
+Platform administrators see each organization's quota budgets in Tenants → (tenant) → Quotas
+(`GET /api/tenants/{id}/regions`: `capacity` per region, `used_cpu_m` / `used_memory_mb` the sum
+of both budgets), counted from the organization's own schema whichever organization the
+administrator works in.
+The split decides admission only; billing calculates from measured usage, plans and deals as
+before ([billing.md](billing.md)).
 
 ## Project types
 
@@ -278,8 +386,8 @@ catalog holds Python, Node.js, Go, PHP, PyTorch and TensorFlow, and the WebAssem
 which an init container copies into code-mounted pods. A runtime version past its end-of-life
 date can no longer be deployed.
 
-Common per-project settings: CPU and memory (checked against the region's capacity budgets,
-[Region capacity and admission](#region-capacity-and-admission), and the tenant quota),
+Common per-project settings: CPU and memory (checked against the region's capacity budgets and
+the same budgets of the organization quota, [Region capacity and admission](#region-capacity-and-admission)),
 GPUs ([ai.md](ai.md)), timeout, environment variables and secrets, scale-to-zero and min/max
 scale. A project can also have custom domains (`ProjectDomain`, Traefik IngressRoute with an
 uploaded or cert-manager certificate), [bindings](bindings.md) to data services and model
@@ -432,7 +540,8 @@ Multi-tenancy with stancl/tenancy v3 on PostgreSQL, one schema per tenant:
   capacity deals, charges, purchases, billing events, plans). Tenant schemas hold projects, versions, deployments and
   settings. `PostgreSQLSchemaManagerWithPublic` sets `search_path = tenant_<slug>, public`.
 - `IdentifyTenant` selects the tenant from the `X-Tenant-ID` header. `CheckTenantQuota` rejects
-  mutations that would exceed the tenant's CPU/memory quota on a region (HTTP 422).
+  mutations that would exceed the always-on or the FaaS overcommit budget of the tenant's
+  CPU/memory quota on a region (HTTP 422, [Organization quotas](#region-capacity-and-admission)).
 - Users and regions sync one way, central → tenant (`CentralSyncableUser`,
   `CentralSyncableRegion`); a region's kubeconfig is never copied into tenant schemas.
 - Region mode `managed` (default): only assigned tenants see the region, within their quota.

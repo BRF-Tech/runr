@@ -36,7 +36,7 @@ upload the code as a new version and deploy it.
          - uses: actions/checkout@v4
 
          - id: runr
-           uses: brf-tech/runr/actions/deploy@v0.5.3
+           uses: brf-tech/runr/actions/deploy@v0.5.4
            with:
              api-url: https://runr.example.com
              token: ${{ secrets.RUNR_TOKEN }}
@@ -69,7 +69,7 @@ jobs:
           push: true
           tags: ghcr.io/acme/web:${{ github.sha }}
 
-      - uses: brf-tech/runr/actions/deploy@v0.5.3
+      - uses: brf-tech/runr/actions/deploy@v0.5.4
         with:
           api-url: https://runr.example.com
           token: ${{ secrets.RUNR_TOKEN }}
@@ -88,7 +88,7 @@ pull secret).
         service: [orders, billing, notify]
     steps:
       - uses: actions/checkout@v4
-      - uses: brf-tech/runr/actions/deploy@v0.5.3
+      - uses: brf-tech/runr/actions/deploy@v0.5.4
         with:
           api-url: ${{ vars.RUNR_API_URL }}
           token: ${{ secrets.RUNR_TOKEN }}
@@ -103,7 +103,7 @@ before the deploy, so the new deployment runs with them. Take the values from re
 environment secrets:
 
 ```yaml
-      - uses: brf-tech/runr/actions/deploy@v0.5.3
+      - uses: brf-tech/runr/actions/deploy@v0.5.4
         with:
           api-url: https://runr.example.com
           token: ${{ secrets.RUNR_TOKEN }}
@@ -171,7 +171,7 @@ jobs:
         run: sed -i "s/^name: .*/name: ${PREVIEW}/" functions/orders/runr.yaml
 
       - id: runr
-        uses: brf-tech/runr/actions/deploy@v0.5.3
+        uses: brf-tech/runr/actions/deploy@v0.5.4
         with:
           api-url: ${{ vars.RUNR_API_URL }}
           token: ${{ secrets.RUNR_PREVIEW_TOKEN }}
@@ -186,7 +186,7 @@ jobs:
     env:
       RUNR_API_URL: ${{ vars.RUNR_API_URL }}
       RUNR_TOKEN: ${{ secrets.RUNR_PREVIEW_TOKEN }}
-      RUNR_VERSION: v0.5.3
+      RUNR_VERSION: v0.5.4
     steps:
       - name: Install the runr CLI
         run: |
@@ -216,7 +216,7 @@ jobs:
 | `message` | `<workflow> <short sha>` | Version message |
 | `wait` | `true` | Wait until the deployment is ready; `false` returns once it started |
 | `timeout` | `10m` | How long to wait for the build and the deployment |
-| `version` | `latest` | CLI release: `latest` or a tag such as `v0.5.3` (pin it for reproducible runs) |
+| `version` | `latest` | CLI release: `latest` or a tag such as `v0.5.4` (pin it for reproducible runs) |
 | `cli-base-url` | `https://github.com/brf-tech/runr/releases/download` | Download base of the CLI archives, for a mirror: `<base>/<tag>/runr_<os>_<arch>.tar.gz` and `checksums.txt` |
 | `github-token` | `github.token` | Token for the latest-release lookup (API rate limits) |
 | `secrets` | | Secret environment variables, one `KEY=VALUE` per line, stored write-only before the deploy |
@@ -286,7 +286,7 @@ deploy:
   stage: deploy
   image: alpine:3.21
   variables:
-    RUNR_VERSION: v0.5.3
+    RUNR_VERSION: v0.5.4
   before_script:
     - apk add --no-cache curl tar
     - curl -fsSL "https://github.com/brf-tech/runr/releases/download/${RUNR_VERSION}/runr_linux_amd64.tar.gz" | tar -xz -C /usr/local/bin runr

@@ -207,9 +207,9 @@ class RunrYamlApplier
         }
 
         // Organization quota (multi-tenant): a larger reservation must fit what is left
-        if (! isset($errors['cpu']) && ! isset($errors['memory_mb']) && array_intersect_key($changes, array_flip(['cpu', 'memory_mb', 'min_scale', 'trigger_type']))) {
+        if (! isset($errors['cpu']) && ! isset($errors['memory_mb']) && array_intersect_key($changes, array_flip(['cpu', 'memory_mb', 'min_scale', 'scale_to_zero', 'trigger_type']))) {
             if ($message = $this->quotaError($project, $config, $changes)) {
-                foreach (['cpu', 'memory_mb', 'min_scale'] as $key) {
+                foreach (['cpu', 'memory_mb', 'min_scale', 'scale_to_zero'] as $key) {
                     if (array_key_exists($key, $changes)) {
                         $errors[$key] = $message;
                     }
@@ -232,12 +232,19 @@ class RunrYamlApplier
         }
 
         $pick = fn (string $key) => $changes[$key] ?? $config->{$key} ?? null;
-        $next = ResourceReservation::forConfig([
-            'cpu' => $pick('cpu'), 'memory_mb' => $pick('memory_mb'), 'trigger_type' => $pick('trigger_type'), 'min_scale' => $pick('min_scale'),
+        // split by budget: always-on against the quota, scale-to-zero against quota × factor
+        $next = ResourceReservation::demandForConfig([
+            'cpu' => $pick('cpu'), 'memory_mb' => $pick('memory_mb'), 'trigger_type' => $pick('trigger_type'),
+            'min_scale' => $pick('min_scale'), 'scale_to_zero' => $pick('scale_to_zero'),
         ], $project->service_type, $region);
-        $current = ResourceReservation::forConfig($config, $project->service_type, $region, ResourceReservation::deployedClassOf($project));
+        $current = ResourceReservation::demandForConfig($config, $project->service_type, $region, ResourceReservation::deployedClassOf($project));
 
-        if ($next['cpu_m'] <= $current['cpu_m'] && $next['memory_mb'] <= $current['memory_mb']) {
+        $grows = false;
+        foreach (['cpu_m', 'memory_mb'] as $key) {
+            $grows = $grows || $next['hard'][$key] > $current['hard'][$key]
+                || $next['hard'][$key] + $next['burst'][$key] > $current['hard'][$key] + $current['burst'][$key];
+        }
+        if (! $grows) {
             return null;
         }
 

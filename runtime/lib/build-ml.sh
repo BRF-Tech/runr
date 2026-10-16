@@ -11,9 +11,15 @@
 #   ci.sh ml-runtimes --push           build + push (the images a release publishes)
 #   ci.sh ml-runtimes --list           print the image references, build nothing
 #
-# The smoke test runs a handler through the image's own server, like a function: a tensor op on
-# the request's values, answered as JSON (http trigger), and the same handler once with
-# RUNR_MODE=schedule (runner.py). No port is published; the request comes from inside the container.
+# The smoke test runs a handler through the image's own server, like a function: tensor ops on
+# the request's values (a mean and a matrix product), answered as JSON (http trigger), and the same
+# handler once with RUNR_MODE=schedule (runner.py). No port is published; the request comes from
+# inside the container. A -gpu image is smoke-tested on the host's GPU when `docker run --gpus all`
+# gives its containers one (nvidia-smi -L lists a GPU in the image): the http and the schedule run
+# then get the GPU, and in both the framework has to see at least one GPU and run the ops on it
+# (torch: cuda:0, TensorFlow: GPU:0). On a host without one the -gpu image is checked for its CUDA
+# build only and the output says the GPU check was skipped. ML_SMOKE_GPU=auto (default) | 1 (a GPU
+# is required: the smoke test fails without one) | 0 (never on the GPU).
 
 ML_PLATFORM="${ML_PLATFORM:-linux/amd64}"
 
@@ -67,13 +73,36 @@ ml_runtime_images() {
   done
 }
 
+# ml_docker_gpu <image> — `docker run --gpus all` gives the image's containers a GPU on this host
+ml_docker_gpu() {
+  docker run --rm --gpus all --entrypoint nvidia-smi "$1" -L 2>/dev/null | grep -q '^GPU '
+}
+
 # ml_runtime_smoke <image> <runtime> <variant> <X.Y> — the image answers a handler like a function
 ml_runtime_smoke() {
   local image="$1" runtime="$2" variant="$3" version="$4"
-  local tmp name rc=0 http="" schedule="" cuda
+  local tmp name rc=0 http="" schedule="" cuda gpu_skipped="" gpu_flags=()
   tmp="$(mktemp -d)"
   name="runr-ml-smoke-${runtime}-${variant}-$$"
 
+  if [ "$variant" = gpu ]; then
+    case "${ML_SMOKE_GPU:-auto}" in
+      0) gpu_skipped="ML_SMOKE_GPU=0" ;;
+      *)
+        if ml_docker_gpu "$image"; then
+          gpu_flags=(--gpus all)
+        elif [ "${ML_SMOKE_GPU:-auto}" = 1 ]; then
+          echo -e "  ${RED}✗ ML_SMOKE_GPU=1, but docker run --gpus all gives ${image} no GPU on this host${NC}"
+          rmdir -- "$tmp"
+          return 1
+        else
+          gpu_skipped="docker run --gpus all gives no GPU on this host"
+        fi ;;
+    esac
+  fi
+
+  # The ops run on the GPU when the framework sees one (a -gpu image's runs with --gpus all), on
+  # the CPU otherwise; "device" says where they ran, "gpus" how many it sees.
   case "$runtime" in
     pytorch)
       cat > "${tmp}/main.py" <<'PY'
@@ -81,10 +110,12 @@ import torch
 
 
 def handler(event, context):
-    x = torch.tensor(event.get("values", [[1.0, 2.0], [3.0, 4.0]]))
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    x = torch.tensor(event.get("values", [[1.0, 2.0], [3.0, 4.0]]), device=device)
     return {"statusCode": 200, "body": {
         "runtime": "pytorch", "version": torch.__version__, "cuda": torch.version.cuda,
-        "mean": x.mean().item(), "trigger": event.get("trigger", "http"),
+        "gpus": torch.cuda.device_count(), "device": str(x.device),
+        "mean": x.mean().item(), "matmul": (x @ x).sum().item(), "trigger": event.get("trigger", "http"),
     }}
 PY
       ;;
@@ -95,10 +126,13 @@ import tensorflow as tf
 
 def handler(event, context):
     x = tf.constant(event.get("values", [[1.0, 2.0], [3.0, 4.0]]))
+    product = tf.matmul(x, x)
     return {"statusCode": 200, "body": {
         "runtime": "tensorflow", "version": tf.__version__,
         "cuda": tf.sysconfig.get_build_info().get("cuda_version"),
-        "mean": float(tf.reduce_mean(x).numpy()), "trigger": event.get("trigger", "http"),
+        "gpus": len(tf.config.list_physical_devices("GPU")), "device": product.device,
+        "mean": float(tf.reduce_mean(x).numpy()), "matmul": float(tf.reduce_sum(product).numpy()),
+        "trigger": event.get("trigger", "http"),
     }}
 PY
       ;;
@@ -127,8 +161,10 @@ while True:
         time.sleep(1)
 PY
 
-  # http trigger: the image's server (entrypoint.sh → server.py) with the handler in /app/code
-  if docker create --name "$name" -e TF_CPP_MIN_LOG_LEVEL=2 "$image" >/dev/null \
+  # http trigger: the image's server (entrypoint.sh → server.py) with the handler in /app/code;
+  # TensorFlow takes GPU memory as it needs it, not the whole card of a shared host
+  if docker create --name "$name" ${gpu_flags[@]+"${gpu_flags[@]}"} \
+      -e TF_CPP_MIN_LOG_LEVEL=2 -e TF_FORCE_GPU_ALLOW_GROWTH=true "$image" >/dev/null \
     && tar -C "$tmp" -cf - main.py | docker cp - "${name}:/app/code" \
     && docker start "$name" >/dev/null; then
     http=$(docker exec -i "$name" python - < "${tmp}/request.py") || rc=1
@@ -137,9 +173,11 @@ PY
   fi
   [ "$rc" = 0 ] || docker logs --tail 40 "$name" 2>&1 | sed 's/^/  | /' || true
 
-  # schedule trigger (schedule: native): runner.py calls the handler once and prints the result
+  # schedule trigger (schedule: native): runner.py calls the handler once and prints the result;
+  # with the GPU as well where the http run has it
   if [ "$rc" = 0 ]; then
-    if docker create --name "${name}-schedule" -e RUNR_MODE=schedule -e TF_CPP_MIN_LOG_LEVEL=2 "$image" >/dev/null \
+    if docker create --name "${name}-schedule" ${gpu_flags[@]+"${gpu_flags[@]}"} -e RUNR_MODE=schedule \
+        -e TF_CPP_MIN_LOG_LEVEL=2 -e TF_FORCE_GPU_ALLOW_GROWTH=true "$image" >/dev/null \
       && tar -C "$tmp" -cf - main.py | docker cp - "${name}-schedule:/app/code"; then
       schedule=$(docker start -a "${name}-schedule" 2>&1) || rc=1
     else
@@ -157,12 +195,30 @@ PY
   echo "  schedule: ${schedule}"
   if [ "$variant" = gpu ]; then cuda='"cuda": "1'; else cuda='"cuda": null'; fi
   local want
-  for want in "200 {" "\"runtime\": \"${runtime}\"" "\"version\": \"${version}." "$cuda" '"mean": 2.5' '"trigger": "http"'; do
+  for want in "200 {" "\"runtime\": \"${runtime}\"" "\"version\": \"${version}." "$cuda" '"mean": 2.5' '"matmul": 54.0' '"trigger": "http"'; do
     [[ "${http:-}" == *"$want"* ]] || rc=1
   done
-  for want in '"statusCode": 200' '"mean": 2.5' '"trigger": "schedule"'; do
+  for want in '"statusCode": 200' '"mean": 2.5' '"matmul": 54.0' '"trigger": "schedule"'; do
     [[ "$schedule" == *"$want"* ]] || rc=1
   done
+  if [ "${#gpu_flags[@]}" -gt 0 ]; then
+    # in both runs at least one GPU seen, and the ops ran on the first one
+    local run result off=""
+    for run in http schedule; do
+      if [ "$run" = http ]; then result="${http:-}"; else result="$schedule"; fi
+      if ! [[ "$result" =~ \"gpus\":\ [1-9] && "$result" =~ \"device\":\ \"[^\"]*(cuda:0|GPU:0)\" ]]; then
+        off="${off:+${off}, }${run}"
+      fi
+    done
+    if [ -z "$off" ]; then
+      echo "  GPU:      the framework sees the host's GPU and ran the ops on it (http and schedule)"
+    else
+      echo -e "  ${RED}GPU:      docker run --gpus all gives a GPU, but the framework does not run on it (${off})${NC}"
+      rc=1
+    fi
+  elif [ -n "$gpu_skipped" ]; then
+    echo -e "  ${YELLOW}GPU:      skipped (${gpu_skipped}): only the CUDA build is checked${NC}"
+  fi
   if [ "$rc" != 0 ]; then
     echo -e "  ${RED}✗ smoke test of ${image} failed${NC}"
     return 1

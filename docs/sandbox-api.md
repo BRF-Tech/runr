@@ -536,7 +536,8 @@ organization (the defaults row) and per organization (Settings → Sandboxes →
 `PUT /sandbox-quotas/{tenantId}`). Admission is serialized per organization, so parallel creates
 cannot both take the last slot. With tenancy, a sandbox's CPU and memory — the Kata RuntimeClass
 overhead and warm pods included — also count against the organization's region quota, the same
-quota its projects use. The namespace gets a pod-count ResourceQuota (concurrency + pool size) as a
+quota its projects use, in full on its always-on budget
+([Organization quotas](architecture.md#region-capacity-and-admission)). The namespace gets a pod-count ResourceQuota (concurrency + pool size) as a
 backstop.
 
 **Region capacity**: a sandbox pod runs until it ends, so every live sandbox and warm pod holds
@@ -715,6 +716,10 @@ NetworkPolicies and ResourceQuotas — the access RunR uses for its own installs
   containerd shim from RunR's installer; the install takes 3.5–5 minutes there, measured in WSL 2).
   Kata runs only where the host has hardware virtualization — the CPU's vmx / svm flag and a
   `/dev/kvm` that opens (detected; `SANDBOX_KATA=0|1` overrides) — otherwise its checks are
-  reported as skipped.
+  reported as skipped. Afterwards the runr CLI of the checkout runs on a pseudo-terminal against the
+  same stack (`runtime/lib/sandbox_tty_client.py`): `runr sandbox exec -it` gets a terminal of the
+  window's size, follows a window change, reads typed lines, passes Ctrl+C to the command, exits
+  with the command's exit code and restores the terminal; `-t` with output to a pipe still runs on
+  a terminal (`SANDBOX_CLI_E2E=0` leaves this out).
   `KIND_LOCK=/tmp/runr-kind.lock` serializes Kind clusters on a shared host, as for
   `test-runtimes`.

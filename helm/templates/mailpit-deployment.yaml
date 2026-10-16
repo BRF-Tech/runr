@@ -19,6 +19,7 @@ spec:
     spec:
       automountServiceAccountToken: false
       {{- include "runr.imagePullSecrets" . | nindent 6 }}
+      {{- include "runr.placement" (dict "root" . "colocate" false) | nindent 6 }}
       containers:
         - name: mailpit
           image: {{ include "runr.image" (printf "%v:%v" .Values.mailpit.image.repository .Values.mailpit.image.tag) | quote }}

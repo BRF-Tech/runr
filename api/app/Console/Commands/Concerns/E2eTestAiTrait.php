@@ -18,7 +18,8 @@ use Illuminate\Http\Client\Response;
  *                       carries RUNR_MODEL_EMBED_URL and the function gets an embedding from it
  *  - ai-tei-cpu         (--ai-tei / RUNR_E2E_TEI=1) sentence-transformers/all-MiniLM-L6-v2 on TEI (CPU)
  *  - ai-gpu-caas        (--ai-gpu / RUNR_E2E_GPU=1) GPU support (device plugin) installed through the API,
- *                       a CaaS project with config.gpu {count: 1} answers "cuda": true
+ *                       a CaaS project with config.gpu {count: 1} (examples/ai/gpu-caas) sees the GPU
+ *                       ("cuda": true), runs a CUDA kernel on it and returns the result the CPU computes
  * Optional cases that are not enabled are listed as skipped and not counted.
  */
 trait E2eTestAiTrait
@@ -56,7 +57,7 @@ PY;
         $this->info('');
         $this->info('── AI: model services, offline snapshots, bindings, GPU ──');
 
-        $hfServe = (string) ($this->option('hf-serve-image') ?: (getenv('RUNR_E2E_HF_SERVE_IMAGE') ?: 'ghcr.io/brf-tech/runr/hf-serve:1.1.0'));
+        $hfServe = (string) ($this->option('hf-serve-image') ?: (getenv('RUNR_E2E_HF_SERVE_IMAGE') ?: 'ghcr.io/brf-tech/runr/hf-serve:1.1.1'));
         $this->line("  hf-serve image: {$hfServe}");
 
         $tests = [];
@@ -432,11 +433,15 @@ PY;
         } else {
             [$status, , $body] = $result;
             $json = json_decode($body, true);
-            $test['steps']['verify'] = $status === '200' && is_array($json) && ($json['cuda'] ?? null) === true
-                ? true
-                : "HTTP {$status}: ".mb_substr($body, 0, 300);
+            // the container sees the GPU, ran the kernel on it, and its result equals the CPU's
+            $ok = $status === '200' && is_array($json)
+                && ($json['cuda'] ?? null) === true
+                && ($json['computed_on'] ?? null) === 'gpu'
+                && ($json['result_ok'] ?? null) === true
+                && isset($json['checksum']) && $json['checksum'] === ($json['expected_checksum'] ?? null);
+            $test['steps']['verify'] = $ok ? true : "HTTP {$status}: ".mb_substr($body, 0, 400);
             if ($test['steps']['verify'] === true) {
-                $this->line('  GPU seen by the container: '.($json['device'] ?? '?'));
+                $this->line('  GPU seen by the container: '.($json['device'] ?? '?').', kernel result checked ('.($json['elapsed_ms'] ?? '?').' ms)');
             }
         }
         $this->aiLine($test);

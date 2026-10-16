@@ -2,7 +2,8 @@
 # Tests `ci.sh ml-runtimes` without Docker: docker is a shell function that records every call and
 # answers like a working (or, for one case, broken) image. Checks the image list and its tags (the
 # framework pins' major.minor, CPU and -gpu), the build flags (--pull, linux/amd64, the Python
-# runtime's handler server as build context, VERSION), the smoke test of a local build and the push.
+# runtime's handler server as build context, VERSION), the smoke test of a local build — on a host
+# without a GPU and on one where `docker run --gpus all` gives the -gpu images a GPU — and the push.
 #
 #   bash runtime/test/ml_runtimes_test.sh
 set -euo pipefail
@@ -24,6 +25,9 @@ REGISTRY="ghcr.io/brf-tech/runr"
 calls="$tmp/calls"
 : > "$calls"
 smoke_status=200
+gpu_host=0       # docker run --gpus all gives containers a GPU
+framework_gpu=1  # the framework in a container with the GPU uses it (0: it runs on the CPU)
+schedule_gpu=1   # …in the schedule run too (0: only over http)
 
 # the pins of the checkout: "torch==2.14.1" → 2.14
 pin() { sed -n -E "s/^$2==([0-9]+\.[0-9]+)\..*/\1/p" "$here/$1"; }
@@ -38,15 +42,29 @@ docker() {
   case "$1 ${2:-}" in
     "image inspect") echo 2345000000 ;;
     "buildx inspect") return 0 ;;
+    "run --rm")
+      # the GPU probe: nvidia-smi -L in the image with --gpus all
+      if [ "$gpu_host" = 1 ]; then echo "GPU 0: NVIDIA GeForce RTX 4080 (UUID: GPU-0)"; return 0; fi
+      echo 'docker: Error response from daemon: could not select device driver "" with capabilities: [[gpu]]' >&2
+      return 125 ;;
     "exec -i")
       cat > /dev/null
-      local name="$3" runtime cuda=null version
-      case "$name" in *pytorch*) runtime=pytorch version="$torch" ;; *) runtime=tensorflow version="$tf" ;; esac
+      local name="$3" runtime cuda=null version gpus=0 device=cpu
+      case "$name" in *pytorch*) runtime=pytorch version="$torch" ;; *) runtime=tensorflow version="$tf" device="/job:localhost/replica:0/task:0/device:CPU:0" ;; esac
       case "$name" in *-gpu-*) cuda='"12.6"' ;; esac
-      echo "${smoke_status} {\"runtime\": \"${runtime}\", \"version\": \"${version}.1\", \"cuda\": ${cuda}, \"mean\": 2.5, \"trigger\": \"http\"}" ;;
+      if grep -q "^docker create --name ${name} --gpus all " "$calls" && [ "$framework_gpu" = 1 ]; then
+        gpus=1
+        if [ "$runtime" = pytorch ]; then device="cuda:0"; else device="/job:localhost/replica:0/task:0/device:GPU:0"; fi
+      fi
+      echo "${smoke_status} {\"runtime\": \"${runtime}\", \"version\": \"${version}.1\", \"cuda\": ${cuda}, \"gpus\": ${gpus}, \"device\": \"${device}\", \"mean\": 2.5, \"matmul\": 54.0, \"trigger\": \"http\"}" ;;
     "start -a")
       echo "W0000 a framework log line"
-      echo '{"statusCode": 200, "body": {"mean": 2.5, "trigger": "schedule"}}' ;;
+      local sgpus=0 sdevice=cpu
+      if grep -q "^docker create --name ${3} --gpus all " "$calls" && [ "$framework_gpu" = 1 ] && [ "$schedule_gpu" = 1 ]; then
+        sgpus=1
+        case "$3" in *pytorch*) sdevice="cuda:0" ;; *) sdevice="/job:localhost/replica:0/task:0/device:GPU:0" ;; esac
+      fi
+      echo "{\"statusCode\": 200, \"body\": {\"gpus\": ${sgpus}, \"device\": \"${sdevice}\", \"mean\": 2.5, \"matmul\": 54.0, \"trigger\": \"schedule\"}}" ;;
     "cp -") cat > /dev/null ;;
   esac
   return 0
@@ -93,6 +111,53 @@ grep -q '^docker rm -f runr-ml-smoke-pytorch-gpu-' "$calls" || fail "smoke conta
 grep -q -- '--push\|push=true' "$calls" && fail "a local build pushed"
 [ "$(echo "$out" | grep -c '✓ smoke test')" = 2 ] || fail "smoke results: $out"
 echo "$out" | grep -q 'size (docker image inspect): 2345 MB' || fail "image size not printed: $out"
+# no GPU on this host: the -gpu image is probed once, smoke-tested without one, and says so
+[ "$(grep -c "^docker run --rm --gpus all --entrypoint nvidia-smi ghcr.io/brf-tech/runr/exec-pytorch:${torch}-gpu -L" "$calls")" = 1 ] \
+  || fail "GPU probe: $(grep '^docker run' "$calls" || true)"
+grep -q -- '--gpus all -e' "$calls" && fail "a smoke container got --gpus without a GPU"
+[ "$(echo "$out" | grep -c 'GPU: *skipped (docker run --gpus all gives no GPU on this host)')" = 1 ] || fail "GPU skip not reported once: $out"
+
+# --- smoke test on the host's GPU --------------------------------------------------------------
+: > "$calls"
+gpu_host=1
+out=$(cmd_build_ml_runtimes tensorflow 2>&1) || fail "smoke test on a GPU host failed: $out"
+grep -q "^docker create --name runr-ml-smoke-tensorflow-gpu-[0-9]* --gpus all -e TF_CPP_MIN_LOG_LEVEL=2 -e TF_FORCE_GPU_ALLOW_GROWTH=true ghcr.io/brf-tech/runr/exec-tensorflow:${tf}-gpu" "$calls" \
+  || fail "-gpu smoke container without the GPU: $(grep '^docker create' "$calls")"
+grep -q "^docker create --name runr-ml-smoke-tensorflow-gpu-[0-9]*-schedule --gpus all -e RUNR_MODE=schedule -e TF_CPP_MIN_LOG_LEVEL=2 -e TF_FORCE_GPU_ALLOW_GROWTH=true ghcr.io/brf-tech/runr/exec-tensorflow:${tf}-gpu" "$calls" \
+  || fail "-gpu schedule run without the GPU: $(grep '^docker create' "$calls")"
+grep -q '^docker create --name runr-ml-smoke-tensorflow-cpu-[0-9]* --gpus' "$calls" && fail "the CPU image got the GPU"
+grep -q '^docker create --name runr-ml-smoke-tensorflow-cpu-[0-9]*-schedule --gpus' "$calls" && fail "the CPU image's schedule run got the GPU"
+grep -q '^docker run --rm --gpus all --entrypoint nvidia-smi .*exec-tensorflow:[0-9.]*  *-L' "$calls" && fail "the CPU image was probed"
+[ "$(echo "$out" | grep -c "the framework sees the host's GPU and ran the ops on it (http and schedule)")" = 1 ] || fail "GPU result: $out"
+echo "$out" | grep -q 'skipped' && fail "GPU check reported as skipped on a GPU host: $out"
+
+# the framework does not use the GPU it was given (TensorFlow without a CUDA library): failure
+: > "$calls"
+framework_gpu=0
+out=$( (cmd_build_ml_runtimes tensorflow gpu) 2>&1) && fail "a -gpu image running on the CPU passed: $out"
+echo "$out" | grep -q 'docker run --gpus all gives a GPU, but the framework does not run on it (http, schedule)' || fail "GPU failure: $out"
+echo "$out" | grep -q "smoke test of ghcr.io/brf-tech/runr/exec-tensorflow:${tf}-gpu failed" || fail "GPU failure result: $out"
+framework_gpu=1
+
+# …or uses it over http only: the schedule run fails the smoke test
+: > "$calls"
+schedule_gpu=0
+out=$( (cmd_build_ml_runtimes pytorch gpu) 2>&1) && fail "a schedule run on the CPU passed: $out"
+echo "$out" | grep -q 'docker run --gpus all gives a GPU, but the framework does not run on it (schedule)' || fail "schedule GPU failure: $out"
+schedule_gpu=1
+
+# ML_SMOKE_GPU=0: never on the GPU; ML_SMOKE_GPU=1: a GPU is required
+: > "$calls"
+out=$(ML_SMOKE_GPU=0 cmd_build_ml_runtimes pytorch gpu 2>&1) || fail "ML_SMOKE_GPU=0: $out"
+grep -q '^docker run --rm --gpus' "$calls" && fail "ML_SMOKE_GPU=0 probed the GPU"
+grep -q -- '--gpus all -e' "$calls" && fail "ML_SMOKE_GPU=0 gave the container the GPU"
+echo "$out" | grep -q 'GPU: *skipped (ML_SMOKE_GPU=0)' || fail "ML_SMOKE_GPU=0 not reported: $out"
+gpu_host=0
+: > "$calls"
+out=$( (ML_SMOKE_GPU=1 cmd_build_ml_runtimes pytorch gpu) 2>&1) && fail "ML_SMOKE_GPU=1 passed without a GPU: $out"
+echo "$out" | grep -q 'ML_SMOKE_GPU=1, but docker run --gpus all gives .*exec-pytorch:.*-gpu no GPU' || fail "ML_SMOKE_GPU=1: $out"
+grep -q '^docker create' "$calls" && fail "ML_SMOKE_GPU=1 without a GPU still started containers"
+out=$(ML_SMOKE_GPU=1 cmd_build_ml_runtimes pytorch cpu 2>&1) || fail "ML_SMOKE_GPU=1 applies to -gpu images only: $out"
 
 # a broken image fails the command
 : > "$calls"

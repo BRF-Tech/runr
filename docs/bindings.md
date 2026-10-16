@@ -284,6 +284,12 @@ one is installed there: creating a `kv`, `object` or `postgres` binding is refus
 matching service is ready in its region (Postgres backups also need the object store);
 `external` bindings need none.
 
+The managed KV Redis, Garage and the CloudNativePG clusters keep their data on volumes. They
+tolerate the dedicated-worker taint `runr.dev/dedicated=projects:NoSchedule` and prefer the nodes
+that are not dedicated workers: a node-bound volume keeps a pod on the node it was provisioned
+on, and that node may be selected as a dedicated worker later
+([architecture.md](architecture.md#dedicated-workers)).
+
 ### KV
 
 | Mode | What runs | Notes |

@@ -230,6 +230,48 @@ class RegistrySyncConfigReconcileStepTest extends TestCase
         $this->assertSame([], $this->writes);
     }
 
+    /**
+     * The restart gives a Zot installed without it the toleration of the dedicated-worker taint
+     * (as an install of this release has it): its volume may be bound to a node selected as a
+     * dedicated worker, where the restarted pod has to start again.
+     */
+    public function test_the_restart_carries_the_dedicated_worker_toleration(): void
+    {
+        $toleration = ['key' => 'runr.dev/dedicated', 'operator' => 'Equal', 'value' => 'projects', 'effect' => 'NoSchedule'];
+        $other = ['key' => 'example.com/maintenance', 'operator' => 'Exists', 'effect' => 'NoSchedule'];
+        $this->fakeCluster();
+        $this->seedZot($this->installedConfig());
+        $this->objects['statefulsets/runr-zot']['spec']['template']['spec']['tolerations'] = [$other];
+        $cluster = $this->cluster($this->region());
+
+        $this->assertStringEndsWith(
+            'then restart StatefulSet runr-registry/runr-zot with the toleration of runr.dev/dedicated=projects:NoSchedule',
+            (new RegistrySyncConfigStep)->run($cluster, true)[0],
+        );
+
+        $lines = (new RegistrySyncConfigStep)->run($cluster, false);
+
+        $this->assertStringEndsWith('restarted StatefulSet runr-registry/runr-zot with the toleration of runr.dev/dedicated=projects:NoSchedule', $lines[0]);
+        $restart = $this->writes[1]['body']['spec']['template'];
+        $this->assertSame([$other, $toleration], $restart['spec']['tolerations'], 'the ones there kept');
+        $this->assertArrayHasKey(ZotRegistryService::CONFIG_HASH_ANNOTATION, $restart['metadata']['annotations']);
+    }
+
+    public function test_a_zot_that_tolerates_the_taint_restarts_with_its_tolerations_as_they_are(): void
+    {
+        $this->fakeCluster();
+        $this->seedZot($this->installedConfig());
+        // installed on the dedicated workers (nodeSelector + toleration)
+        $this->objects['statefulsets/runr-zot']['spec']['template']['spec']['tolerations'] = [
+            ['key' => 'runr.dev/dedicated', 'operator' => 'Equal', 'value' => 'projects', 'effect' => 'NoSchedule'],
+        ];
+
+        $lines = (new RegistrySyncConfigStep)->run($this->cluster($this->region()), false);
+
+        $this->assertStringEndsWith('restarted StatefulSet runr-registry/runr-zot', $lines[0]);
+        $this->assertSame(['metadata'], array_keys($this->writes[1]['body']['spec']['template']), 'the annotation only');
+    }
+
     public function test_step_is_part_of_region_reconcile(): void
     {
         $steps = array_map(fn ($s) => $s->name(), app(RegionReconciler::class)->steps());

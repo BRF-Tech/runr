@@ -270,7 +270,9 @@ class RegistryPrewarmReconcileStepTest extends TestCase
         $lines = explode("\n", $script);
 
         // Zot answers /v2/ before the first image and before each further try, backing off 2 → 30 s, 600 s at most
-        $this->assertStringContainsString('up() { w=2; t=0; until wget -q -O /dev/null -T 10 "$R/v2/"; do [ "$t" -ge 600 ]', $script);
+        $this->assertStringContainsString('up() { w=2; t=0; until wget -q -O /dev/null -T 10 "$R/v2/" 2>/dev/null; do [ "$t" -ge 600 ]', $script);
+        // one progress line per wait, wget's own "can't connect … Connection refused" left out
+        $this->assertStringContainsString('echo "waiting for registry $R to answer: next try in $w s ($t s waited)"; sleep "$w";', $script);
         $this->assertStringContainsString('w=$((w*2)); if [ "$w" -gt 30 ]; then w=30; fi; done; }', $script);
         $this->assertLessThan(array_search("fetch 'ghcr.io/brf-tech/runr/exec-python' '3.14'", $lines, true), array_search('up || exit 1', $lines, true));
         $this->assertStringContainsString('if [ "$n" -ge 3 ]; then echo "$1:$2 could not be fetched"; failed=1; return; fi', $script);
@@ -319,7 +321,9 @@ class RegistryPrewarmReconcileStepTest extends TestCase
         // Zot does not answer: the wait is bounded
         [$code, $out, $calls, $sleeps] = $this->runPrewarm($images, [], 'fail');
         $this->assertSame(1, $code, $out);
-        $this->assertStringContainsString('registry http://'.self::ZOT.' does not answer', $out);
+        $this->assertStringContainsString('registry http://'.self::ZOT.' does not answer after 600 s', $out);
+        $this->assertStringContainsString('waiting for registry http://'.self::ZOT.' to answer: next try in 2 s (0 s waited)', $out);
+        $this->assertStringContainsString('waiting for registry http://'.self::ZOT.' to answer: next try in 30 s (570 s waited)', $out);
         $this->assertSame([2, 4, 8, 16], array_slice($sleeps, 0, 4));
         $this->assertSame(30, max($sleeps));
         $this->assertGreaterThanOrEqual(600, array_sum($sleeps));

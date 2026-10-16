@@ -380,7 +380,7 @@ Every suite runs locally with the commands below; CI runs the same commands
 | UI e2e (Playwright) | `vue/e2e/` | `cd vue && npm run test:e2e:mock` / `npm run test:e2e` |
 | Go | every `go.mod`: `cli`, `terraform-provider-runr`, `runtime/agent`, `runtime/queue-consumer`, `runtime/wrapper`, `runtime/image-upload`, `proxy`, `examples/runtimes/q/interpreter` | `gofmt -l . && go vet ./... && go test -race ./...` per module |
 | Helm chart | `helm/`, scenarios in `ci/helm-values/` | `bash ci/check-helm-chart.sh` (`helm lint --strict` + `helm template` per scenario, kubeconform against Kubernetes 1.30–1.35; needs helm and kubeconform or docker) |
-| Kubernetes e2e (Kind) | `runtime/lib/test*.sh` | `bash runtime/ci.sh test`, and one suite per feature: `test-runtimes`, `test-wasm`, `test-images`, `test-observability`, `test-sandbox-api`, `test-supply-chain`, `test-ai`, `test-bindings`, `test-git-deploy`, `test-mcp` |
+| Kubernetes e2e (Kind) | `runtime/lib/test*.sh` | `bash runtime/ci.sh test`, and one suite per feature: `test-runtimes`, `test-wasm`, `test-images`, `test-observability`, `test-reconcile`, `test-sandbox-api`, `test-supply-chain`, `test-ai`, `test-bindings`, `test-git-deploy`, `test-mcp` |
 
 ### API (PHPUnit)
 
@@ -679,12 +679,29 @@ stack running (Compose project `runr-upgrade`, API on `127.0.0.1:18060`).
   other's database, Redis or images; Mailpit's ports go to free host ports unless
   `MAILPIT_SMTP_PORT` / `MAILPIT_UI_PORT` are set (`docker compose port mailpit 8025` shows the UI's)
 - **Slow disks**: `KIND_ETCD_IN_MEMORY=1` keeps etcd's data on the control-plane's tmpfs; for hosts
-  where etcd's fsyncs time out (`etcdserver: request timed out`, build Jobs that never start)
+  where etcd's fsyncs time out (`etcdserver: request timed out`, build Jobs that never start).
+  `test-ai` sets it by default, since its region setup installs several Helm charts while the
+  suite's images fill the disk; `KIND_ETCD_IN_MEMORY=0` puts etcd back on the disk
+- **Little free disk**: every node holds the images the region pre-pulls (5–7 GB per node with the
+  built-in runtimes, measured in WSL 2). `KIND_WORKERS=1` runs one worker (the suites select it as
+  the dedicated project worker) and a control-plane without its NoSchedule taint for the platform
+  pods; `KIND_PRELOAD=0` leaves out loading images into the nodes, which then pull only what they
+  run. `test-ai` with the GPU case adds up what the run writes (the built images' sizes per Kind
+  node, each node's own data, the Compose stack, the preloaded images unless `KIND_PRELOAD=0`,
+  `RUNR_E2E_GPU_RESERVE_GB` for the rest) and does not start when Docker's root has less free; its
+  `kind load` archives go to `RUNR_E2E_TMPDIR` (default `/var/tmp`) instead of a RAM-backed `/tmp`
+  ([docs/ai.md](ai.md#testing))
 - **Kubeconfig**: for Kind, `kind get kubeconfig --internal` (the API services join the `kind` network and reach the control-plane container by name, on Linux hosts too); for an external cluster, `127.0.0.1` is rewritten to `host.docker.internal`. The file is copied into the container with `docker compose cp`
 - **Test command**: `docker compose exec api php artisan test:e2e --base-url=http://localhost --kubeconfig=/tmp/kubeconfig`
 - **Cleanup**: `docker compose down` + Kind cluster deletion (unless `--no-cleanup`); with `KIND_LOCK`,
   the lock is released only once the cluster is gone (the delete is retried; a cluster that cannot be
-  deleted keeps the lock and the run says how to remove both)
+  deleted keeps the lock and the run says how to remove both). A run stopped from outside cleans up
+  the same way: on TERM or HUP right away, also in the middle of a step; on INT (Ctrl-C) once the
+  running command has stopped. It removes only what it created — its Kind cluster, its Compose
+  project, the Kind lock when it holds it, Cloud Provider KIND when no other Kind cluster uses it —
+  so a run stopped while it waits for the lock leaves the lock holder alone. When the run's output
+  is gone by then (a closed terminal, a log pipe stopped with the run), the cleanup writes to
+  `${TMPDIR:-/tmp}/<cluster>-cleanup.log`
 
 ### Requirements
 

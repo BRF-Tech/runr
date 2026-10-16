@@ -5,6 +5,7 @@ namespace Modules\Tenancy\Http\Controllers\Concerns;
 use App\Models\KnativeRegion;
 use App\Services\CacheVersionService;
 use App\Services\Helpers\OrganizationCeiling;
+use App\Services\Helpers\ResourceReservation;
 use App\Services\KnativeNodeService;
 use App\Services\ResourceThresholdService;
 use Illuminate\Http\JsonResponse;
@@ -21,9 +22,16 @@ trait TenantRegionTrait
     {
         $tenant = Tenant::findOrFail($id);
         $quotaService = app(TenantQuotaService::class);
+        $assigned = $tenant->regions;
 
-        $regions = $tenant->regions->map(function ($r) use ($quotaService) {
-            $usage = $quotaService->currentUsage($r);
+        // What holds the quotas lives in the tenant's own schema (its projects, model services,
+        // previews): counted there, whichever organization the administrator's request runs in
+        $usage = $tenant->run(fn () => $assigned->mapWithKeys(fn ($r) => [$r->id => $quotaService->currentDemand($r)])->all());
+
+        $regions = $assigned->map(function ($r) use ($quotaService, $usage) {
+            $demand = $usage[$r->id] ?? ResourceReservation::noDemand();
+            $used = ResourceReservation::total($demand);
+            $managed = ($r->region_mode ?? 'managed') !== 'infinite';
 
             return [
                 'id' => $r->id,
@@ -32,8 +40,14 @@ trait TenantRegionTrait
                 'region_mode' => $r->region_mode ?? 'managed',
                 'cpu_quota_m' => $r->pivot->cpu_quota_m,
                 'memory_quota_mb' => $r->pivot->memory_quota_mb,
-                'used_cpu_m' => $usage['cpu_m'],
-                'used_memory_mb' => $usage['memory_mb'],
+                'used_cpu_m' => $used['cpu_m'],
+                'used_memory_mb' => $used['memory_mb'],
+                // the quota's always-on and FaaS overcommit budgets (TenantQuotaService); an
+                // infinite region has no quota
+                'capacity' => $managed ? $quotaService->budgets($r, [
+                    'cpu_m' => (int) $r->pivot->cpu_quota_m,
+                    'memory_mb' => (int) $r->pivot->memory_quota_mb,
+                ], $demand) : null,
                 // GPU quota (null = no GPU limit), set with PUT /tenants/{tenant}/regions/{region}/gpu-quota
                 'gpu_quota' => $r->pivot->gpu_quota,
             ];
@@ -47,7 +61,7 @@ trait TenantRegionTrait
         $tenant = Tenant::findOrFail($id);
 
         // With an organization ceiling a quota may be left out: it defaults to
-        // the ceiling, bounded by what is still free on the region (no overcommit)
+        // the ceiling, bounded by what is still free of the region capacity
         $ceilingCpu = OrganizationCeiling::cpuMillicores();
         $ceilingMem = OrganizationCeiling::memoryMb();
 
@@ -162,8 +176,10 @@ trait TenantRegionTrait
     }
 
     /**
-     * No overcommit: the tenants' quotas on a region add up to at most the
-     * region capacity and, when configured, the organization ceiling.
+     * Quotas are shares of the region capacity: the tenants' quotas on a region add up to at
+     * most the region capacity and, when configured, the organization ceiling. Admission inside
+     * a quota overcommits scale-to-zero workloads by the region's factors (TenantQuotaService),
+     * so the quotas × factor add up to at most the region capacity × factor.
      * A quota of 0 means "unlimited" and is not part of the sum.
      */
     protected function validateQuotaCapacity(KnativeRegion $region, int $cpuM, int $memMb, ?string $excludeTenantId = null): ?JsonResponse

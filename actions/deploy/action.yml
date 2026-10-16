@@ -41,7 +41,7 @@ inputs:
     required: false
     default: "10m"
   version:
-    description: runr CLI release to use ("latest" or a tag such as v0.5.0)
+    description: runr CLI release to use ("latest" or a release tag, vMAJOR.MINOR.PATCH)
     required: false
     default: "latest"
   cli-base-url:

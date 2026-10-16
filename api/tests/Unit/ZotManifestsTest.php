@@ -51,6 +51,32 @@ class ZotManifestsTest extends TestCase
         $this->assertArrayNotHasKey('pvc', $values);
     }
 
+    /**
+     * Zot installed before the workers were selected sits on any node; its node-bound volume may
+     * be on a node selected as a dedicated worker later, so it tolerates the taint (and prefers
+     * the other nodes). With dedicated workers it runs on them.
+     */
+    public function test_zot_tolerates_the_dedicated_worker_taint_wherever_it_runs(): void
+    {
+        $toleration = ['key' => 'runr.dev/dedicated', 'operator' => 'Equal', 'value' => 'projects', 'effect' => 'NoSchedule'];
+        $s3 = ['endpoint' => 'https://s3', 'region' => 'r', 'bucket' => 'b', 'access_key' => 'a', 'secret_key' => 's'];
+
+        foreach ([ZotManifests::pvcValues('', '20Gi'), ZotManifests::s3Values($s3)] as $values) {
+            $this->assertSame([$toleration], $values['tolerations']);
+            $this->assertArrayNotHasKey('nodeSelector', $values, 'any node');
+            $this->assertSame(
+                [['key' => 'runr.dev/dedicated', 'operator' => 'NotIn', 'values' => ['projects']]],
+                $values['affinity']['nodeAffinity']['preferredDuringSchedulingIgnoredDuringExecution'][0]['preference']['matchExpressions'],
+                'the other nodes preferred, not required',
+            );
+        }
+
+        $workers = ZotManifests::pvcValues('', '20Gi', true);
+        $this->assertSame(['runr.dev/dedicated' => 'projects'], $workers['nodeSelector']);
+        $this->assertSame([$toleration], $workers['tolerations']);
+        $this->assertArrayNotHasKey('affinity', $workers);
+    }
+
     public function test_existing_statefulset_keeps_immutable_claim_template(): void
     {
         $sts = ['spec' => ['volumeClaimTemplates' => [[

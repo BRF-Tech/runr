@@ -2,7 +2,7 @@
 
 | Example | What it shows |
 |---|---|
-| [`gpu-caas/`](gpu-caas/) | a CaaS image on CUDA PyTorch: reports the GPU it sees and runs a small inference (`config.gpu: {count: 1}`) |
+| [`gpu-caas/`](gpu-caas/) | a CaaS image of about 43 MB: reports the GPU it sees and runs a small CUDA kernel on it, checked against the CPU (`config.gpu: {count: 1}`) |
 | [`hf-python/`](hf-python/) | a Python function using bound Hugging Face models over HTTP (embeddings, chat) and a PyTorch function loading mounted weights |
 | [`hf-node/`](hf-node/) | the same from Node.js with `fetch` |
 | [`hf-go/`](hf-go/) | embeddings from a Go function |

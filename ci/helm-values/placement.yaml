@@ -1,0 +1,35 @@
+# ci/check-helm-chart.sh: placement an operator sets — infra nodes by nodeSelector, a taint of their
+# own, a required node affinity and a zone spread. The chart adds the toleration of the dedicated
+# workers, its preferred node affinity and the colocation of the API storage to them.
+domain: console.acme-cloud.example
+placement:
+  tolerations:
+    - key: dedicated
+      operator: Equal
+      value: infra
+      effect: NoSchedule
+  affinity:
+    nodeAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        nodeSelectorTerms:
+          - matchExpressions:
+              - key: node-role.kubernetes.io/infra
+                operator: Exists
+    podAffinity:
+      preferredDuringSchedulingIgnoredDuringExecution:
+        - weight: 10
+          podAffinityTerm:
+            topologyKey: kubernetes.io/hostname
+            labelSelector:
+              matchLabels:
+                app: runr-redis
+    podAntiAffinity:
+      preferredDuringSchedulingIgnoredDuringExecution:
+        - weight: 50
+          podAffinityTerm:
+            topologyKey: topology.kubernetes.io/zone
+            labelSelector:
+              matchLabels:
+                app.kubernetes.io/part-of: runr
+  nodeSelector:
+    node-role.kubernetes.io/infra: "true"

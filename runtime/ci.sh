@@ -11,6 +11,7 @@ source "${SCRIPT_DIR}/lib/eol.sh"
 source "${SCRIPT_DIR}/lib/test.sh"
 source "${SCRIPT_DIR}/lib/test-runtimes.sh"
 source "${SCRIPT_DIR}/lib/test-observability.sh"
+source "${SCRIPT_DIR}/lib/test-reconcile.sh"
 source "${SCRIPT_DIR}/lib/test-wasm.sh"
 source "${SCRIPT_DIR}/lib/build-wasm.sh"
 source "${SCRIPT_DIR}/lib/build-ml.sh"
@@ -54,12 +55,17 @@ Commands:
   test [--k8s=X.Y.Z] [--no-cleanup]  Kind cluster + Knative + e2e test (runtime plugins included)
   test-runtimes [test flags]          Kind + Knative, runtime plugin e2e only (python, C, Q, schedule, queue)
   test-observability [test flags]     Kind + Knative, observability e2e only (collector + Tempo, traces, replay)
-  test-wasm [test flags]              Kind + Knative, WebAssembly e2e (spin shim, Rust + JS functions, cold starts)
+  test-reconcile [test flags]         Kind + Knative, region:reconcile e2e: tracing backend update (Tempo
+                                      fix-permissions, requests, stuck pod), registry pre-warm Job (failed
+                                      Job started again, waits for Zot, every image fetched), Zot restart,
+                                      step order
+  test-wasm [test flags]            Kind + Knative, WebAssembly e2e (spin shim, Rust + JS functions, cold starts)
   test-sandbox-api [test flags]       Kind, Sandbox API e2e only (gVisor / runc; Kata where /dev/kvm exists)
   test-supply-chain [test flags]      Kind + Knative, supply-chain e2e only (SBOM, scan, signing, admission)
   test-ai [test flags]                Kind + Knative, AI e2e: model services online/offline, snapshots, bindings
                                       (RUNR_E2E_TEI=1 adds TEI; GPU case when the host can give Kind a GPU,
-                                      see lib/test-ai.sh; KIND_LOCK defaults to /tmp/runr-kind.lock)
+                                      see lib/test-ai.sh; KIND_LOCK defaults to /tmp/runr-kind.lock,
+                                      KIND_ETCD_IN_MEMORY to 1)
   test-bindings [test flags]          Kind + Knative, bindings e2e only (KV Redis, Garage, CloudNativePG, external)
   test-images [test flags]            Kind + Knative, uploaded images e2e (tar + wasm upload, CaaS from an
                                       upload, wasm-exec in C and Q; KIND_LOCK defaults to /tmp/runr-kind.lock)
@@ -146,6 +152,7 @@ case "$command" in
   test)            cmd_test "$@" ;;
   test-runtimes)   cmd_test_runtimes "$@" ;;
   test-observability) cmd_test_observability "$@" ;;
+  test-reconcile)  cmd_test_reconcile "$@" ;;
   test-wasm)       cmd_test_wasm "$@" ;;
   test-sandbox-api) cmd_test_sandbox_api "$@" ;;
   test-supply-chain) cmd_test_supply_chain "$@" ;;

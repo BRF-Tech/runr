@@ -52,6 +52,9 @@ trait FakesKataCluster
      */
     protected array $stalePods = [];
 
+    /** @var array<string, int> DaemonSet name → updatedNumberScheduled (missing: every node) */
+    protected array $updatedPods = [];
+
     /** @var array<string, Closure(array): void> reaction to a DaemonSet apply (the "node side") */
     protected array $onApply = [];
 
@@ -226,7 +229,7 @@ trait FakesKataCluster
                 $ds['status'] = [
                     'observedGeneration' => $ds['metadata']['generation'] ?? 1,
                     'desiredNumberScheduled' => $n,
-                    'updatedNumberScheduled' => $n,
+                    'updatedNumberScheduled' => $this->updatedPods[$name] ?? $n,
                     'numberReady' => $n,
                 ];
 

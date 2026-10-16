@@ -32,11 +32,12 @@ use App\Services\Contracts\KnativeConstants;
  * that has not been deployed since that column exists counts with the region's mapping for its
  * service type (sandbox_*_runtime), the class its next deploy gets.
  *
- * Region admission splits the same reservation by budget (demandForSize(), RegionCapacity):
- * what keeps running — always-on pods (scale_to_zero off or min_scale >= 1), the Kata overhead of
- * a scale-to-zero pod, the queue consumer — is "hard" and must fit the region's real capacity;
- * one pod of a scale-to-zero workload is "burst" and counts against the region's FaaS
- * overcommit budget. hard + burst = forSize().
+ * Region admission and organization quota admission split the same reservation by budget
+ * (demandForSize(), RegionCapacity, TenantQuotaService): what keeps running — always-on pods
+ * (scale_to_zero off or min_scale >= 1), the Kata overhead of a scale-to-zero pod, the queue
+ * consumer — is "hard" and must fit the region's real capacity (the organization's quota); one pod
+ * of a scale-to-zero workload is "burst" and counts against the FaaS overcommit budget of the
+ * region (of the quota). hard + burst = forSize().
  *
  * Everything here is requests. The queue-proxy's CPU limit above its request
  * (KnativeConstants::QUEUE_PROXY_CPU_LIMIT_M, on every Knative Service pod since 0.4.2) is not

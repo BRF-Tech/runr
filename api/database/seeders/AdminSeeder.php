@@ -27,7 +27,7 @@ class AdminSeeder extends Seeder
             // seeding process's own STDOUT only (the operator running the seeder sees it once).
             $password = Str::random(20);
             Log::warning('No ADMIN_PASSWORD set — generated a random administrator password (shown only on the console that ran the seeder; set ADMIN_PASSWORD or reset it to choose your own).');
-            if (app()->runningInConsole()) {
+            if (app()->runningInConsole() && ! app()->runningUnitTests()) {
                 fwrite(STDOUT, "Generated admin password (ADMIN_PASSWORD was not set): {$password}\n");
             }
         }

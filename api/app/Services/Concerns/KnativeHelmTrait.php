@@ -102,7 +102,7 @@ trait KnativeHelmTrait
     private function cleanupOperator(KnativeRegion $region): void
     {
         $k8s = new KubernetesClient($region->kubeconfig);
-        $helm = new HelmService;
+        $helm = app(HelmService::class);
 
         $ns = $region->knative_operator_namespace ?? self::HELM_NAMESPACE;
 

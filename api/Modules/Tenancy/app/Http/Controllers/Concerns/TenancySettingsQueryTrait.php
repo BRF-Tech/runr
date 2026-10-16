@@ -7,6 +7,7 @@ use App\Models\KnativeRegion;
 use App\Models\Project;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\DB;
+use Modules\Tenancy\Services\TenantQuotaService;
 
 trait TenancySettingsQueryTrait
 {
@@ -105,9 +106,10 @@ trait TenancySettingsQueryTrait
             ])->values()->all();
 
             $regions = collect($data['regions']->resolve());
+            $quotas = app(TenantQuotaService::class);
             $totalCpu = 0;
             $totalMem = 0;
-            $data['regions'] = $regions->map(function ($r) use ($quotaMap, &$totalCpu, &$totalMem) {
+            $data['regions'] = $regions->map(function ($r) use ($quotaMap, $quotas, &$totalCpu, &$totalMem) {
                 if (($r['region_mode'] ?? null) === 'infinite') {
                     // Infinite regions: hide real capacity, show as unlimited
                     $r['total_cpu_m'] = 0;
@@ -115,8 +117,13 @@ trait TenancySettingsQueryTrait
                     $r['unlimited'] = true;
                 } elseif ($quotaMap->has($r['id'])) {
                     // Managed region with quota: use pivot values
-                    $r['total_cpu_m'] = (int) $quotaMap[$r['id']]->pivot->cpu_quota_m;
-                    $r['total_memory_mb'] = (int) $quotaMap[$r['id']]->pivot->memory_quota_mb;
+                    $region = $quotaMap[$r['id']];
+                    $r['total_cpu_m'] = (int) $region->pivot->cpu_quota_m;
+                    $r['total_memory_mb'] = (int) $region->pivot->memory_quota_mb;
+                    // the quota's always-on and FaaS overcommit budgets (TenantQuotaService), in
+                    // the shape of a region's capacity
+                    $r['capacity'] = $quotas->budgets($region, ['cpu_m' => $r['total_cpu_m'], 'memory_mb' => $r['total_memory_mb']]);
+                    $r['capacity_scope'] = 'quota';
                 }
                 $totalCpu += $r['total_cpu_m'] ?? 0;
                 $totalMem += $r['total_memory_mb'] ?? 0;

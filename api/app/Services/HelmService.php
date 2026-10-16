@@ -3,11 +3,20 @@
 namespace App\Services;
 
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Sleep;
 use Symfony\Component\Process\Process;
 use Symfony\Component\Yaml\Yaml;
 
 class HelmService
 {
+    /** Tries of a Helm call that keeps failing on transient API server errors (retryTransient) */
+    public const TRANSIENT_TRIES = 5;
+
+    /** Seconds before the second try; doubled before each next one, at most TRANSIENT_MAX_WAIT */
+    public const TRANSIENT_FIRST_WAIT = 2;
+
+    public const TRANSIENT_MAX_WAIT = 30;
+
     private ?string $tmpKubeconfig = null;
 
     public function __destruct()
@@ -27,6 +36,38 @@ class HelmService
     public static function valuesYaml(array $values): string
     {
         return Yaml::dump($values, 10, 2);
+    }
+
+    /**
+     * $attempt (a Helm call) tried again while it fails on a transient error of the Kubernetes API
+     * server (HelmResult::transientApiError: an etcd timeout, a 5xx answer, a dropped connection),
+     * $tries tries in all, 2, 4, 8, 16 s apart (at most TRANSIENT_MAX_WAIT). Any other result — a
+     * success, a failure of the release itself — is returned at once, as is the last try's.
+     * $onRetry gets the failed result, the number of the next try and the wait before it.
+     *
+     * @param  callable(): HelmResult  $attempt
+     * @param  (callable(HelmResult, int, int): mixed)|null  $onRetry
+     */
+    public static function retryTransient(callable $attempt, ?callable $onRetry = null, int $tries = self::TRANSIENT_TRIES): HelmResult
+    {
+        for ($try = 1; ; $try++) {
+            $result = $attempt();
+            if ($result->success || $try >= $tries || ! $result->transientApiError()) {
+                return $result;
+            }
+
+            $wait = min(self::TRANSIENT_MAX_WAIT, self::TRANSIENT_FIRST_WAIT * 2 ** ($try - 1));
+            Log::warning('Helm: transient Kubernetes API error, trying again', [
+                'try' => $try + 1,
+                'of' => $tries,
+                'wait_s' => $wait,
+                'error' => $result->errorLine(),
+            ]);
+            if ($onRetry) {
+                $onRetry($result, $try + 1, $wait);
+            }
+            Sleep::for($wait)->seconds();
+        }
     }
 
     /**

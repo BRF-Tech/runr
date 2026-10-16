@@ -395,8 +395,8 @@ ai:
     # false: the console does not call the Hub (air-gapped console); models are uploaded or imported
     browse: true
   images:
-    hfServe: ghcr.io/brf-tech/runr/hf-serve:1.1.0
-    hfServeCuda: ghcr.io/brf-tech/runr/hf-serve:1.1.0-cuda
+    hfServe: ghcr.io/brf-tech/runr/hf-serve:1.1.1
+    hfServeCuda: ghcr.io/brf-tech/runr/hf-serve:1.1.1-cuda
     vllm: docker.io/vllm/vllm-openai:v0.6.6
     tgi: ghcr.io/huggingface/text-generation-inference:3.0.1
     teiCpu: ghcr.io/huggingface/text-embeddings-inference:cpu-1.9.4
@@ -535,6 +535,22 @@ extraEnv: {}
 # ─── Pod Colocation ─────────────────────────────
 # Schedules the pods that share an RWO PVC onto the same node
 podColocation: true
+
+# ─── Placement ──────────────────────────────────
+# Where RunR's own pods run (every Deployment and hook Job of the chart).
+placement:
+  # A region on this cluster can select nodes as dedicated workers: RunR labels and taints them
+  # runr.dev/dedicated=projects:NoSchedule. true → RunR's pods tolerate that taint and prefer the
+  # other nodes (preferred node affinity), so a pod whose volume (PostgreSQL, the API storage) is
+  # bound to a node selected later still starts there. Added to the values below.
+  tolerateDedicatedWorkers: true
+  # Added to every RunR pod as given, e.g. [{key: dedicated, operator: Equal, value: infra, effect: NoSchedule}]
+  tolerations: []
+  # affinity of every RunR pod (nodeAffinity, podAffinity, podAntiAffinity); podColocation and
+  # tolerateDedicatedWorkers add their terms to it
+  affinity: {}
+  # nodeSelector of every RunR pod, e.g. {node-role.kubernetes.io/infra: "true"}
+  nodeSelector: {}
 
 # ─── Deploy Timestamp ───────────────────────────
 # Set by ci.sh deploy; triggers a rollout on every deploy

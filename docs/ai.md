@@ -238,8 +238,9 @@ the node to start the container — pulling a CUDA image the first time on a nod
 weights into GPU memory. For latency-sensitive services, set **min scale 1** to keep one
 instance warm; that instance holds its GPU (and reserves it in the quota) all the time.
 
-The GPU CaaS example [`examples/ai/gpu-caas`](../examples/ai/gpu-caas/) reports what PyTorch sees
-(`"cuda": true`, the device name) and runs a small inference — a first test of a new GPU node.
+The GPU CaaS example [`examples/ai/gpu-caas`](../examples/ai/gpu-caas/) reports the GPU the
+container sees (`"cuda": true`, the device name) and runs a small CUDA kernel on it, checked
+against the CPU — a first test of a new GPU node, in an image of about 43 MB.
 
 ## GPU runtime versions (XaaS / FaaS)
 
@@ -309,7 +310,7 @@ while they are not stopped. Admission:
 | project create | the requested GPUs fit the remaining quota |
 | project update | when `config.gpu`, `min_scale` or the region changes (the project's own reservation excluded) |
 | deploy | the project's GPUs fit (a lowered quota applies at the next deploy) |
-| model service create / start / change of a running one | GPUs, plus CPU / memory against the tenant quota |
+| model service create / start / change of a running one | GPUs, plus CPU / memory against the organization quota: an always-on service in full, a scale-to-zero one with one pod against quota × the region's overcommit factor ([Organization quotas](architecture.md#region-capacity-and-admission)) |
 
 Region capacity (every edition): the region's CPU and memory (`total_cpu_m` / `total_memory_mb`)
 are shared by the projects, the sandboxes **and the model services that are not stopped** —
@@ -452,8 +453,8 @@ ai:
     endpoint: https://huggingface.co   # Hub API (a mirror with the same API works)
     browse: true                       # false: the console does not call the Hub (air-gapped)
   images:
-    hfServe: ghcr.io/brf-tech/runr/hf-serve:1.1.0
-    hfServeCuda: ghcr.io/brf-tech/runr/hf-serve:1.1.0-cuda
+    hfServe: ghcr.io/brf-tech/runr/hf-serve:1.1.1
+    hfServeCuda: ghcr.io/brf-tech/runr/hf-serve:1.1.1-cuda
     vllm: docker.io/vllm/vllm-openai:v0.6.6
     tgi: ghcr.io/huggingface/text-generation-inference:3.0.1
     teiCpu: ghcr.io/huggingface/text-embeddings-inference:cpu-1.9.4
@@ -499,18 +500,52 @@ RUNR_E2E_GPU=0 runtime/ci.sh test-ai          # never the GPU case
 `test-ai` builds the hf-serve CPU image and loads it into Kind; the CPU cases download
 `hf-internal-testing/tiny-random-bert` from the Hub, so the Kind nodes need internet access.
 `KIND_LOCK` (default `/tmp/runr-kind.lock` for this suite) keeps one Kind cluster at a time on a
-shared host.
+shared host. `KIND_ETCD_IN_MEMORY` defaults to `1` for this suite: etcd keeps its data on the Kind
+control-plane's tmpfs, so the Kubernetes API answers in time while the region's Helm installs run
+on a busy disk (`KIND_ETCD_IN_MEMORY=0` puts it on the disk). `kind load` writes its temporary
+image archive to `RUNR_E2E_TMPDIR` (default `/var/tmp`, which is on disk where `/tmp` may be a
+RAM-backed tmpfs; `$TMPDIR` when `/var/tmp` is not writable).
 
 The GPU case runs when the host can give a Kind node a GPU, and is skipped with the reason
 printed otherwise:
 
 - `nvidia-smi -L` lists a GPU;
-- the NVIDIA Container Toolkit is Docker's default runtime (`docker info` → Default Runtime: nvidia);
-- `/etc/nvidia-container-runtime/config.toml` has `accept-nvidia-visible-devices-as-volume-mounts = true`;
-- enough free space under Docker's root for the CUDA image (`RUNR_E2E_GPU_MIN_FREE_GB`, 20).
+- the NVIDIA Container Toolkit: `nvidia-container-cli list` names the driver's files and the host
+  has the NVIDIA device nodes (`/dev/nvidiactl`) — or, where it is configured that way, the
+  NVIDIA runtime is Docker's default runtime (`docker info` → Default Runtime: nvidia) and
+  `/etc/nvidia-container-runtime/config.toml` has `accept-nvidia-visible-devices-as-volume-mounts = true`.
 
-The suite never changes the host's Docker or containerd configuration: it adds a Kind worker
-that sees the GPU (`/dev/null` mounted at `/var/run/nvidia-container-devices/all`), installs the
-NVIDIA Container Toolkit inside that Kind node only, labels it `nvidia.com/gpu.present=true`,
-installs GPU support through the RunR API and deploys `examples/ai/gpu-caas` with
-`config.gpu: {count: 1}`, expecting `"cuda": true`.
+The GPU case then builds the image of [`examples/ai/gpu-caas`](../examples/ai/gpu-caas/)
+(Python's slim image and a CUDA kernel run through the driver API, about 43 MB compressed) and
+checks the disk before the cluster is created. Under Docker's root it needs:
+
+- `RUNR_E2E_GPU_RESERVE_GB` (default 12) for the images the Kind nodes pull for the region
+  (registry, Knative, Redis, tracing, GPU support) and the rest of the run;
+- 3 GiB for the Compose stack (the API images, their base images and build cache);
+- per Kind node 1 GiB of its own (Kubernetes' images, copied into each node) plus each image
+  the suite loads, counted from the built images' sizes (`docker save` archive and unpacked
+  layers) for every node that gets it: hf-serve on all nodes, the GPU image on the GPU worker
+  only;
+- with the preload on (unless `KIND_PRELOAD=0`), 1.4 GiB of preloaded images per Kind node and
+  on the host;
+- `kind load`'s temporary archive, or that much in `RUNR_E2E_TMPDIR` when that is on another
+  filesystem.
+
+With the default Kind cluster (a control-plane, two workers and the GPU worker) and hf-serve
+1.1.1 this comes to about 35 GiB; with `KIND_WORKERS=1 KIND_PRELOAD=0` (three nodes), about
+25 GiB. When the run would not fit, `test-ai` does not start and prints what it needs and what
+is free; `RUNR_E2E_GPU=0` runs the CPU cases without the GPU worker.
+
+The suite never changes the host's Docker or containerd configuration. It adds a Kind worker with
+the GPU: the driver's files that `nvidia-container-cli list` names (what the NVIDIA runtime puts
+into a GPU container), mounted read-only at the same paths, while Kind's privileged nodes see the
+host's `/dev/nvidia*` already; with the NVIDIA runtime as Docker's default, `/dev/null` mounted at
+`/var/run/nvidia-container-devices/all` instead (NVIDIA's nvkind approach). The GPU nodes are the
+Kind nodes where `nvidia-smi -L` lists a GPU — every Kind node sees the device nodes, only that
+worker has the driver. The suite installs the NVIDIA Container Toolkit inside that Kind node
+only, labels it `nvidia.com/gpu.present=true` and loads the GPU image into it (only there; the
+host's copy is removed afterwards). It installs GPU support (device plugin) through the RunR API
+for that node and deploys `examples/ai/gpu-caas` with `config.gpu: {count: 1}`, expecting the
+container to see the GPU (`"cuda": true`), run the CUDA kernel on it (`"computed_on": "gpu"`) and
+return the result the CPU computes (`"result_ok": true`). `bash runtime/test/ai_gpu_test.sh`
+checks this setup without Docker or a GPU.

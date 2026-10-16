@@ -114,7 +114,11 @@ new Kata pods start with the new drop-in while running pods keep their VMs. RunR
 recognised (0.4.1's hash over pod spec + ConfigMap matches this release's pod spec and the ConfigMap in the
 cluster), so a 0.4.1 → 0.4.2 upgrade restarts nothing on Kata nodes. An installer whose pod spec differs only in
 RunR's image namespace (`ghcr.io/runrsh` up to 0.5.0, `ghcr.io/brf-tech` in 0.5.1, `ghcr.io/brf-tech/runr` since) counts as the same installer:
-it keeps running with its pod template, and a drop-in update re-applies that template as it is.
+kata-deploy does not run again for it. `region:reconcile` (`image-registry`) moves the pod template to
+`ghcr.io/brf-tech/runr` with the update strategy `OnDelete`, so the installer pods keep running as they are
+and a pod created later (a new node) starts from the moved image; the rollout status counts the pinned pods
+by their config hash, and a drop-in update re-applies the template and the strategy as they are. A Kata
+install that re-runs kata-deploy applies `RollingUpdate` again.
 
 ### Firecracker and devmapper
 

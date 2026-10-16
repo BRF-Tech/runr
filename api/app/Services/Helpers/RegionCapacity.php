@@ -27,6 +27,11 @@ use Illuminate\Database\QueryException;
  * A workload is admitted when its hard part fits the always-on budget and its hard + burst parts
  * fit what is left of capacity × factor. A factor of 1 is the 0.5.0 behaviour: every reservation
  * against the real capacity. Region capacity 0 (not measured yet) admits everything.
+ *
+ * Organization quotas (Tenancy module, Modules\Tenancy\Services\TenantQuotaService) are split
+ * the same way with the same region's factors: the quota is the organization's always-on budget,
+ * and quota × factor minus what that holds is its FaaS overcommit budget (limitsOf(),
+ * shortfalls(), budgets()).
  */
 final class RegionCapacity
 {
@@ -79,12 +84,38 @@ final class RegionCapacity
         $limits = ['capacity' => ResourceReservation::zero(), 'overcommit' => ResourceReservation::zero()];
 
         foreach ($regions as $region) {
-            $factors = self::factors($region);
+            $capacity = [];
             foreach (self::RESOURCES as $key => [$column]) {
-                $capacity = max(0, (int) $region->getAttribute($column));
-                $limits['capacity'][$key] += $capacity;
-                $limits['overcommit'][$key] += (int) floor($capacity * $factors[$key]);
+                $capacity[$key] = (int) $region->getAttribute($column);
             }
+
+            $one = self::limitsOf($capacity, self::factors($region));
+            $limits = [
+                'capacity' => ResourceReservation::add($limits['capacity'], $one['capacity']),
+                'overcommit' => ResourceReservation::add($limits['overcommit'], $one['overcommit']),
+            ];
+        }
+
+        return $limits;
+    }
+
+    /**
+     * Both budgets of one capacity — a region's, or an organization's quota on a region — with
+     * the overcommit factors that apply to it: the capacity (always-on) and capacity × factor
+     * (always-on + FaaS overcommit). 0 or less: no limit for that resource.
+     *
+     * @param  array{cpu_m: int, memory_mb: int}  $capacity
+     * @param  array{cpu_m: float, memory_mb: float}  $factors  factors()
+     * @return array{capacity: array{cpu_m: int, memory_mb: int}, overcommit: array{cpu_m: int, memory_mb: int}}
+     */
+    public static function limitsOf(array $capacity, array $factors): array
+    {
+        $limits = ['capacity' => ResourceReservation::zero(), 'overcommit' => ResourceReservation::zero()];
+
+        foreach (array_keys(self::RESOURCES) as $key) {
+            $value = max(0, (int) $capacity[$key]);
+            $limits['capacity'][$key] = $value;
+            $limits['overcommit'][$key] = (int) floor($value * (float) $factors[$key]);
         }
 
         return $limits;
@@ -194,16 +225,18 @@ final class RegionCapacity
     }
 
     /**
-     * The refusal of a shortfall: which budget is used up and what is still free.
+     * The refusal of a shortfall: which budget is used up and what is still free. $messages: the
+     * translation group with always_on_exceeded / faas_exceeded — the region's
+     * (api.resource_limit) or an organization quota's (api.tenant.quota_budget).
      *
      * @param  array{budget: string, needed: int, available: int, total: int, capacity: int, factor: float, reserved: int}  $shortfall
      */
-    public static function message(string $key, array $shortfall): string
+    public static function message(string $key, array $shortfall, string $messages = 'api.resource_limit'): string
     {
         $cpu = $key === 'cpu_m';
         $unit = fn (int $value) => $cpu ? "{$value}m" : "{$value} MB";
 
-        return __($shortfall['budget'] === self::ALWAYS_ON ? 'api.resource_limit.always_on_exceeded' : 'api.resource_limit.faas_exceeded', [
+        return __($messages.($shortfall['budget'] === self::ALWAYS_ON ? '.always_on_exceeded' : '.faas_exceeded'), [
             'resource' => $cpu ? 'CPU' : __('api.resource_limit.memory'),
             'needed' => $unit($shortfall['needed']),
             'available' => $unit($shortfall['available']),
@@ -241,10 +274,20 @@ final class RegionCapacity
      */
     public static function summary(KnativeRegion $region, ?array $usage = null): array
     {
-        $limits = self::limits([$region]);
-        $usage ??= self::usage($region->id);
-        $factors = self::factors($region);
+        return self::budgets(self::limits([$region]), self::factors($region), $usage ?? self::usage($region->id));
+    }
 
+    /**
+     * Both budgets of a capacity (limitsOf()) with what holds them, in the shape of summary():
+     * a region's, or an organization's quota on a region (TenantQuotaService::budgets()).
+     *
+     * @param  array{capacity: array{cpu_m: int, memory_mb: int}, overcommit: array{cpu_m: int, memory_mb: int}}  $limits
+     * @param  array{cpu_m: float, memory_mb: float}  $factors
+     * @param  array{hard: array{cpu_m: int, memory_mb: int}, burst: array{cpu_m: int, memory_mb: int}}  $usage
+     * @return array<string, array{capacity: int, always_on_used: int, always_on_available: int, faas_overcommit: float, faas_budget: int, faas_used: int, faas_available: int}>
+     */
+    public static function budgets(array $limits, array $factors, array $usage): array
+    {
         $summary = [];
         foreach (array_keys(self::RESOURCES) as $key) {
             $capacity = $limits['capacity'][$key];

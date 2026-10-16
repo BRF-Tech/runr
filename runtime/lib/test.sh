@@ -33,7 +33,10 @@ cmd_test_image() {
   fi
 }
 
-# Cleanup state (module-level so trap handler can access)
+# Cleanup state (module-level so trap handler can access). Each is set before the step that
+# creates the resource, so a run stopped during that step removes it as well — and only what this
+# run created: its Kind cluster (named once it holds the Kind lock), its Compose project, the lock
+# when it holds it, the shared Cloud Provider KIND unless another Kind cluster uses it.
 _test_cloud_provider=""
 _test_kubeconfig_file=""
 _test_cleanup_kind=""
@@ -41,8 +44,10 @@ _test_cluster_name=""
 _test_compose_up=""
 _test_e2e_kubeconfig=""
 
+# The EXIT trap of cmd_test: at the end of the run, and when it is stopped from outside (INT,
+# TERM, HUP: see kind_cleanup_begin in test-runtimes.sh)
 _test_cleanup() {
-  echo ""
+  kind_cleanup_begin "${_test_cluster_name:-runr-e2e-$$}"
   echo "Cleanup..."
   # stops it unless another run's Kind cluster still uses it
   [ -n "$_test_cloud_provider" ] && stop_cloud_provider_kind "$_test_cluster_name" || true
@@ -51,7 +56,8 @@ _test_cleanup() {
   fi
   if [ "$_test_compose_up" = "1" ]; then
     echo "Stopping Docker Compose..."
-    docker compose down -v 2>/dev/null || true
+    # the project of `docker compose up` (its directory, COMPOSE_PROJECT_NAME)
+    (cd "${SCRIPT_DIR}/.." && docker compose down -v 2>/dev/null) || true
   fi
   [ -n "$_test_kubeconfig_file" ] && [ "$_test_cleanup_kind" = "1" ] && rm -f "$_test_kubeconfig_file"
   [ -n "$_test_e2e_kubeconfig" ] && rm -f "$_test_e2e_kubeconfig"
@@ -138,16 +144,26 @@ kind_load_image() {
 preload_kind_images() {
   local cluster="$1"
   echo ""
+  # KIND_PRELOAD=0: the nodes pull what they run. A loaded image keeps its compressed layers next
+  # to the unpacked ones on every node, a pulled one only its unpacked layers (Kind's containerd
+  # discards the rest) on the nodes that run it: less disk on a shared host, more pulls
+  if [ "${KIND_PRELOAD:-1}" = "0" ]; then
+    echo "Images not loaded into the Kind cluster (KIND_PRELOAD=0): the nodes pull them"
+    return 0
+  fi
   echo "Loading images into the Kind cluster..."
 
-  # Default executor images from DB (executor:sync runs inside e2e, so this can be empty here)
+  # Default executor images from DB (executor:sync runs inside e2e, so this can be empty here):
+  # RunR's general runtimes under ghcr.io/brf-tech/runr/; an ML runtime (several GB) is pulled by
+  # the node that runs it
   local executor_imgs=""
   executor_imgs=$(docker compose exec -T api php artisan tinker --execute='
     App\Models\ExecutorImage::where("is_default", true)
       ->where("is_active", true)
+      ->where("category", "general")
       ->pluck("docker_image")
       ->each(fn($i) => print($i . "\n"));
-  ' 2>/dev/null | grep '^brf-tech/' || true)
+  ' 2>/dev/null | grep '^ghcr\.io/brf-tech/runr/' || true)
 
   # Static utility images
   local static_imgs=(
@@ -156,7 +172,8 @@ preload_kind_images() {
     "ghcr.io/brf-tech/runr/reqs/busybox:latest"
     "ghcr.io/brf-tech/runr/reqs/redis:7-alpine"
     "ghcr.io/brf-tech/runr/queue-consumer:latest"
-    "ghcr.io/project-zot/zot:v2.1.14"
+    # the Zot of the pinned chart (ZotRegistryService::ZOT_CHART_VERSION 0.1.125)
+    "ghcr.io/project-zot/zot:v2.1.21"
     "ghcr.io/osscontainertools/kaniko:v1.28.5"
     # the region Traefik (KnativeConstants::TRAEFIK_IMAGE): three replicas that would each pull it
     # (pull_image takes it from Docker Hub while the mirror lacks it)
@@ -216,7 +233,12 @@ cmd_test() {
     esac
   done
 
+  # Cleanup at the end, also when the run is stopped from outside. bash runs the EXIT trap on TERM
+  # and HUP by itself, right away, also during a long foreground step (a trap set for them would
+  # wait until that step ends). INT gets a trap: without it, a foreground command that handles INT
+  # and exits normally would let the run go on with its next step.
   trap _test_cleanup EXIT
+  trap 'exit 130' INT
 
   if [ -n "$external_kubeconfig" ]; then
     # External cluster mode — skip Kind entirely
@@ -235,7 +257,6 @@ cmd_test() {
     if [ -z "$cluster_name" ]; then
       cluster_name="runr-e2e-$(head -c4 /dev/urandom | od -An -tx1 | tr -d ' ')"
     fi
-    _test_cluster_name="$cluster_name"
     _test_cleanup_kind="$cleanup"
 
     echo -e "${BOLD}E2E Test — Kind + Knative (API-driven)${NC}"
@@ -246,8 +267,21 @@ cmd_test() {
     # 0. One Kind cluster at a time on a shared host (KIND_LOCK, see test-runtimes.sh)
     acquire_kind_lock
 
-    # 1. Kind cluster (1 control-plane + 2 workers)
-    echo "Creating Kind cluster (1m + 2w)..."
+    # 1. Kind cluster (1 control-plane + 2 workers). KIND_WORKERS=1 (a host short of disk: every
+    #    node holds the region's pre-pulled images): one worker, which the suites select as the
+    #    dedicated project worker, and a control-plane without its NoSchedule taint for the
+    #    platform pods (registry, Knative, observability) that run next to the workers otherwise
+    local workers="${KIND_WORKERS:-2}" worker_nodes="" cp_patch=""
+    for _ in $(seq 1 "$workers"); do
+      worker_nodes="${worker_nodes}  - role: worker"$'\n'
+    done
+    if [ "$workers" -lt 2 ]; then
+      cp_patch='      - |
+        kind: InitConfiguration
+        nodeRegistration:
+          taints: []'
+    fi
+    echo "Creating Kind cluster (1m + ${workers}w)..."
     # KIND_ETCD_IN_MEMORY=1: etcd keeps its data on the node's tmpfs (/tmp) — for hosts whose disk
     # is too slow for etcd's fsyncs ("etcdserver: request timed out", Jobs never started)
     local etcd_patch=""
@@ -280,11 +314,12 @@ nodes:
             - "host.docker.internal"
             - "${kube_server_addr}"
 ${etcd_patch}
-  - role: worker
-  - role: worker
-${KIND_EXTRA_NODES_YAML:-}
+${cp_patch}
+${worker_nodes}${KIND_EXTRA_NODES_YAML:-}
 KINDEOF
     local kind_status=0
+    # this run's cluster from here on (cleanup deletes it, also half-created)
+    _test_cluster_name="$cluster_name"
     kind create cluster --name "$cluster_name" \
       --image "${REGISTRY}/reqs/kindest-node:v${k8s_ver}" \
       --config "$kind_config" || kind_status=$?
@@ -311,8 +346,8 @@ KINDEOF
 
     # 1b. Cloud Provider KIND (LoadBalancer support), shared with the host's other Kind runs
     #     (test-runtimes.sh)
-    start_cloud_provider_kind
     _test_cloud_provider=1
+    start_cloud_provider_kind
 
     echo ""
     echo "Kubeconfig: ${_test_kubeconfig_file}"
@@ -338,8 +373,8 @@ KINDEOF
   echo "Starting Docker Compose (api, horizon, scheduler, reverb, mailpit) [TENANCY_ENABLED=false]..."
   cd "${SCRIPT_DIR}/.."
   ensure_compose_app_key
-  docker compose up -d --build api horizon scheduler reverb mailpit
   _test_compose_up="1"
+  docker compose up -d --build api horizon scheduler reverb mailpit
 
   # Wait for API to be ready (E2E_API_WAIT seconds, default 30 — build + startup)
   echo "Waiting for the API to be ready..."

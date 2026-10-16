@@ -23,6 +23,7 @@ spec:
     spec:
       automountServiceAccountToken: false
       {{- include "runr.imagePullSecrets" . | nindent 6 }}
+      {{- include "runr.placement" (dict "root" . "colocate" false) | nindent 6 }}
       containers:
         - name: caddy
           image: {{ include "runr.image" (printf "%v:%v" .Values.gateway.image.repository .Values.gateway.image.tag) | quote }}

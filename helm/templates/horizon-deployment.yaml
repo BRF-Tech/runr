@@ -25,7 +25,7 @@ spec:
       terminationGracePeriodSeconds: 60
       {{- include "runr.imagePullSecrets" . | nindent 6 }}
       {{- include "runr.storage-init" . | nindent 6 }}
-      {{- include "runr.pod-colocation" . | nindent 6 }}
+      {{- include "runr.placement" (dict "root" . "colocate" true) | nindent 6 }}
       containers:
         - name: horizon
           image: {{ include "runr.image" (printf "%v:%v" .Values.api.image.repository .Values.api.image.tag) | quote }}

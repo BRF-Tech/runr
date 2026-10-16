@@ -295,7 +295,10 @@ final class ManagedTracing
     /**
      * Helm values of RunR's Tempo (single binary). The init container fix-permissions hands the
      * data volume to Tempo's user, as Loki's does: a storage driver that does not apply the pod's
-     * fsGroup leaves the volume owned by root, and Tempo could not create /var/tempo/traces.
+     * fsGroup leaves the volume owned by root, and Tempo could not create /var/tempo/traces. Tempo
+     * tolerates the dedicated-worker taint and prefers the other nodes
+     * (DedicatedWorkers::systemPlacement()): its volume may be bound to a node selected as a
+     * dedicated worker later.
      */
     public static function tempoValues(string $storageClass = '', ?int $retentionHours = null): array
     {
@@ -340,7 +343,7 @@ final class ManagedTracing
                 'storageClassName' => $storageClass ?: null,
             ]),
             'podLabels' => ['app.kubernetes.io/part-of' => 'runr'],
-        ];
+        ] + DedicatedWorkers::systemPlacement();
     }
 
     /**

@@ -5,8 +5,8 @@ ai:
     endpoint: https://hf-mirror.acme-cloud.example
     browse: false
   images:
-    hfServe: registry.acme-cloud.example/runr/hf-serve:1.1.0
-    hfServeCuda: registry.acme-cloud.example/runr/hf-serve:1.1.0-cuda
+    hfServe: registry.acme-cloud.example/runr/hf-serve:1.1.1
+    hfServeCuda: registry.acme-cloud.example/runr/hf-serve:1.1.1-cuda
     vllm: registry.acme-cloud.example/vllm/vllm-openai:v0.6.6
     tgi: registry.acme-cloud.example/huggingface/text-generation-inference:3.0.1
     teiCpu: registry.acme-cloud.example/huggingface/text-embeddings-inference:cpu-1.9.4

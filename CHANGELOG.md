@@ -8,6 +8,204 @@ did not change says so.
 
 ## [Unreleased]
 
+## [0.5.4] - 2026-10-17
+
+### Upgrade notes
+
+- **The last region workloads on RunR's earlier image names move too.** `region:reconcile` (step
+  `image-registry`) left the node installers of Kata (with Firecracker's devmapper setup) and
+  gVisor and the region's queue Redis on `ghcr.io/runrsh` / `ghcr.io/brf-tech` until their next
+  install. Their pod templates now move to `ghcr.io/brf-tech/runr` as well, and their running pods
+  keep running: the installer DaemonSets get the new images together with the update strategy
+  `OnDelete` (a new pod would re-run the install on its node; kata-deploy's cleanup and reinstall
+  restart the container runtime); the queue Redis, whose streams, consumer groups and KV bindings'
+  data live in memory only, keeps its pod — the Deployment is paused while its ReplicaSet takes the
+  new image, then takes it as well and is resumed without starting a pod. A pod created later (a
+  new node, a deleted or evicted pod) starts from `ghcr.io/brf-tech/runr`. A gVisor install, a Kata
+  install that re-runs kata-deploy and Kata's Firecracker setup apply `RollingUpdate` again; Kata's
+  rollout status counts the pinned installer pods by their config hash, and its in-place drop-in
+  update keeps them pinned ([docs/upgrade.md](docs/upgrade.md#image-namespace-ghcriobrf-techrunr)).
+- **hf-serve 1.1.1.** The defaults move to `ghcr.io/brf-tech/runr/hf-serve:1.1.1` and
+  `…:1.1.1-cuda` (`ai.images.hfServe`, `ai.images.hfServeCuda`). Installations that set these
+  values, for example to a registry mirror of an air-gapped region, update them and mirror the new
+  images.
+- **Components on dedicated workers restart once.** `region:reconcile` (step
+  `dedicated-worker-toleration`) gives the registry, Prometheus, Loki, Tempo and the data services
+  the toleration of the dedicated-worker taint where a pod of them runs on a dedicated worker; that
+  pod restarts once, on the same node (below, Fixed). Components on the other nodes keep running
+  as they are. `php artisan region:reconcile --dry-run` lists them.
+- **`exec-tensorflow:2.21-gpu` is published again under the same tag** (below, Fixed). A function
+  on `tensorflow` `2.21-gpu` runs on the new image from its next deploy: Knative resolves the tag
+  to the new digest for the new revision. Installations that mirror RunR's images copy the tag
+  again.
+
+### Changed
+
+- **hf-serve starts a cached model without the Hub.** In online mode hf-serve asked the Hub at
+  every start, also when the pinned commit was already on the model volume, so a start from zero
+  depended on the Hub's reachability and latency. After a load of a pinned commit it now records
+  the load next to the cached repository (per engine, task and pipeline arguments), and a later
+  start with the same settings loads the cached snapshot directly; when that does not load, it
+  loads from the Hub as before. A revision that is a branch or tag is still resolved by the Hub at
+  each start ([docs/huggingface.md](docs/huggingface.md#online-mode)).
+- **The GPU case of `ci.sh test-ai` leaves Docker's default runtime alone.** The Kind worker with
+  the GPU gets the driver's files that `nvidia-container-cli list` names, mounted read-only (Kind's
+  privileged nodes see the host's `/dev/nvidia*` already), so a host with the NVIDIA driver and
+  Container Toolkit runs the case as it is configured. Where the NVIDIA runtime is Docker's default
+  runtime and accepts device requests as volume mounts, the worker gets the GPU that way, as
+  before ([docs/ai.md](docs/ai.md#testing)).
+- **The GPU case of `ci.sh test-ai` needs far less disk.** Its check image is the new GPU CaaS
+  example (below) instead of CUDA PyTorch (3.3 GB compressed), it goes into the Kind GPU worker
+  only instead of every node, and the host's copy is removed once the worker has it. `kind load`
+  writes its temporary archives to `RUNR_E2E_TMPDIR` (default `/var/tmp`) instead of `/tmp`,
+  which is a RAM-backed tmpfs on some hosts. Before the cluster is created the suite adds up what
+  the run writes, from the built images' sizes and per Kind node, plus `RUNR_E2E_GPU_RESERVE_GB`
+  (default 12) for the rest; it does not start when Docker's root has less free and prints both
+  figures. This replaces the fixed `RUNR_E2E_GPU_MIN_FREE_GB`. The case now also asserts that the
+  container ran the kernel on the GPU and returned the CPU's result
+  ([docs/ai.md](docs/ai.md#testing)).
+- **The GPU CaaS example runs a CUDA kernel in a 43 MB image.** `examples/ai/gpu-caas` was CUDA
+  PyTorch with a small inference: 3.3 GB compressed, about 9 GB unpacked. It is now Python's slim
+  image with a standard-library server that runs a SAXPY kernel through the CUDA driver API (the
+  driver compiles the kernel's PTX for its GPU, so no CUDA toolkit is in the image) and compares
+  the result with the CPU's: 43 MB compressed, 134 MB unpacked, for NVIDIA GPUs from compute
+  capability 5.0 on. The answer keeps `cuda`, `device` and `device_count`; the PyTorch fields give
+  way to `compute_capability`, `memory_mb`, `driver_cuda_version`, `computed_on`, `checksum`,
+  `expected_checksum` and `result_ok` ([examples/ai/gpu-caas](examples/ai/gpu-caas/README.md)).
+- **`ci.sh ml-runtimes` smoke-tests the `-gpu` images on the GPU.** On a host where `docker run
+  --gpus all` gives containers a GPU, the handler of a `-gpu` image's smoke test runs with it, over
+  HTTP and as a scheduled run: in both, the framework has to see the GPU and run a mean and a
+  matrix product on it. Without a GPU the CUDA build is checked as before and the output says the
+  GPU check was skipped; `ML_SMOKE_GPU=1` requires it, `ML_SMOKE_GPU=0` leaves it out
+  ([docs/runtimes.md](docs/runtimes.md#ml-runtimes)).
+- **Pinned helm and kubectl in the API image.** The image took kubectl from the latest stable
+  Kubernetes release at build time, so two builds of one tag could differ. helm v3.16.0 and kubectl
+  v1.35.9 are now pinned and checked against their published SHA-256 for amd64 and arm64, and the
+  downloads retry on network errors.
+- **`ci.sh test-ai` keeps etcd in memory.** The suite sets `KIND_ETCD_IN_MEMORY=1` unless it is
+  set: etcd keeps its data on the Kind control-plane's tmpfs. On a GPU host whose disk other jobs
+  kept busy, the region setup's Knative Operator install failed with `etcdserver: request timed
+  out`; with etcd in memory the same run got past it. `KIND_ETCD_IN_MEMORY=0` puts etcd on the
+  disk again ([docs/ai.md](docs/ai.md#testing)).
+
+- **Organization quotas overcommit scale-to-zero workloads.** In the multi-tenant edition an
+  organization's CPU and memory quota on a region splits into the same two budgets as the region
+  capacity, with the region's overcommit factors. Always-on projects and model services, the Kata
+  pod overhead, queue consumers, sandboxes and warm pool pods count in full against the quota; one
+  pod of every scale-to-zero project, model service and git deploy preview counts against quota ×
+  the factor (CPU 3, memory 1.5 by default) minus what the always-on part holds. A factor of 1 on
+  a region keeps the quotas there hard. The quotas on a region still add up to at most its
+  capacity, stored quotas stay as they are, and billing is unchanged. A refusal (422) names the
+  budget that is used up (`budget`: `always_on` or `faas`) and what it has free
+  ([docs/architecture.md](docs/architecture.md#region-capacity-and-admission)).
+
+### Fixed
+
+- **The region registry stopped after a worker selection.** Zot installed before a region's
+  workers were selected had no toleration of the dedicated-worker taint. Its node-bound volume
+  (local-path, k3s's default class) keeps it on its node, and when that node was selected as a
+  dedicated worker (`runr.dev/dedicated=projects:NoSchedule`), the next Zot pod — after the
+  restart of `region:reconcile`'s `registry-sync-config`, the roll of `image-registry`,
+  `registry:rolling-restart` or a Helm upgrade — stayed Pending ("untolerated taint" and "volume
+  node affinity conflict"): builds failed and the registry pre-warm Job gave up after 600 s.
+  Prometheus, Loki, Tempo and the data services (KV Redis, Garage, the CloudNativePG clusters) had
+  the same exposure. All of them now tolerate the taint and prefer the nodes that are not
+  dedicated workers. The worker selection adds the toleration to such a component whose pod runs
+  on a selected node, and `region:reconcile` (new first step `dedicated-worker-toleration`) to
+  those on any dedicated worker; a pod Pending on the taint is replaced, as a StatefulSet does not
+  replace a pod that never became ready. The registry restart of `registry-sync-config` carries
+  the toleration as well ([docs/architecture.md](docs/architecture.md#dedicated-workers)).
+- **The registry and Knative after deselecting workers.** A registry installed while dedicated
+  workers were selected, its node mirror and Knative's system deployments select the workers by
+  the label `runr.dev/dedicated=projects`. Once the last worker was deselected their next pods found
+  no node, and a registry whose volume sat on a deselected node could not start there again. The
+  worker selection and `region:reconcile` (step `dedicated-worker-toleration`) now move such a
+  registry to any node (the toleration kept, the other nodes preferred, a Pending pod replaced),
+  apply the node mirror for every node once no worker is left — projects then run on any node and
+  pull from the registry there — and drop Knative's nodeSelector
+  ([docs/architecture.md](docs/architecture.md#dedicated-workers)).
+- **RunR's own pods on a node selected as a dedicated worker.** When RunR runs in a cluster it
+  also uses as a region, the node holding PostgreSQL's volume or the API storage could be selected
+  as a dedicated worker; its taint then kept the next pods (a restart, an upgrade) from starting
+  there. Every pod of the chart — the Deployments and the migration and bootstrap hook Jobs — now
+  tolerates `runr.dev/dedicated=projects:NoSchedule` and prefers the nodes that are not dedicated
+  workers (`placement.tolerateDedicatedWorkers`, on by default). New values
+  `placement.tolerations`, `placement.affinity` and `placement.nodeSelector` apply to every pod; the
+  chart adds its toleration, preference and the API storage colocation to them
+  ([docs/architecture.md](docs/architecture.md#control-plane)).
+- **The registry pre-warm Job's log.** While the registry did not answer, every try printed
+  wget's "can't connect to remote host: Connection refused". The Job now prints one line per wait
+  instead: `waiting for registry http://… to answer: next try in 4 s (2 s waited)`.
+- **Executor images in the Kind cluster of `ci.sh test`.** The preload of the default executor
+  images matched `brf-tech/…` and loaded none since RunR's images moved to
+  `ghcr.io/brf-tech/runr/`. It loads the default general runtimes from there again; an ML runtime
+  (several GB) is pulled by the node that runs it.
+- **The TensorFlow `-gpu` runtime ran on the CPU.** In `exec-tensorflow:2.21-gpu` TensorFlow
+  registered no GPU and ran every function on the CPU, without an error: it opens the CUDA
+  libraries of NVIDIA's pip packages by soname through its RUNPATH, which lacks the cuSOLVER
+  directory, and one library it cannot open makes it skip all GPUs. The image now puts every
+  `site-packages/nvidia/*/lib` directory into the dynamic loader's cache, whatever the entrypoint
+  and a function's own `LD_LIBRARY_PATH`, and its build fails unless every library there is in the
+  cache.
+- **diffusers model services and `dtype`.** hf-serve passed the dtype to diffusers as
+  `torch_dtype`, which diffusers 0.41 deprecates (removed in 1.0); with a `dtype` in
+  `RUNR_PIPELINE_KWARGS` the load failed, because diffusers refuses both arguments together, and a
+  dtype name such as `"float16"` fell back to float32. hf-serve 1.1.1 passes `dtype` to both
+  engines, takes `torch_dtype` of the pipeline arguments as `dtype`, and gives diffusers the torch
+  dtype a name stands for.
+- **pip's dependency conflict in hf-serve's GPU image.** The PyTorch base image ships `spin` 0.18,
+  a developer CLI that requires click below 8.4, and hf-serve's server brings click 8.5: the build
+  printed pip's dependency-conflict error and `pip check` failed in the image. hf-serve
+  1.1.1-cuda leaves `spin` out, which nothing in the image uses, and its build fails unless
+  `pip check` passes.
+- **GPU nodes of `ci.sh test-ai`.** Every Kind node counted as a GPU node, because all of them are
+  privileged and see `/dev/nvidia0`: on a GPU host each would have got the NVIDIA Container
+  Toolkit, the GPU label and a `--gpu-node` argument. Only Kind nodes where `nvidia-smi -L` lists a
+  GPU count now — the worker with the driver.
+- **Resource bars on overcommitted regions.** The projects page added up the projects'
+  reservations in the browser against the region capacity and capped the bar at 100 %, so a region
+  holding more scale-to-zero reservations than its capacity looked full while it still admitted
+  projects. "Total Resources" now shows the always-on and the FaaS overcommit budget per resource
+  as the API admits against them, summed over the regions and per region, with the bars of
+  Settings → Regions → (region) → Workers. In an organization a platform region shows the
+  organization's quota there, split the same way (`capacity` with `capacity_scope: "quota"` in
+  `GET /api/settings`), and no longer shows as unreachable.
+- **An organization's quota usage seen by platform administrators.** Tenants → (tenant) → Quotas
+  (`GET /api/tenants/{id}/regions`) counted the projects of the organization the administrator
+  was working in, not those of the organization opened. It now counts in that organization's own
+  schema and shows its quota's always-on and FaaS overcommit budgets (`capacity` per region) with
+  the bars of the projects page.
+- **Quota refusals for a resource without a quota.** A 422 of the organization quota (and a
+  sandbox's `quota_region`) reported 9223372036854775807 as what was left of a resource with quota
+  0. It now gives `remaining_cpu_m` / `remaining_memory_mb` only for the resources with a quota and
+  names only the resource that is short.
+- **The disk check of `ci.sh test-ai` counts the whole run.** It counted hf-serve and the GPU image
+  per Kind node plus a 12 GiB reserve, and let a GPU run start with 23 GiB free under Docker's
+  root; that run was down to 5 GiB free by its first AI case, with the other AI cases, GPU support
+  and the GPU case still ahead. The check now also counts each Kind node's own data (1 GiB:
+  Kubernetes' images, copied into every node), the Compose stack (3 GiB) and, unless
+  `KIND_PRELOAD=0`, the preloaded images on every node and the host (1.4 GiB each): about 35 GiB
+  with the default Kind cluster, 25 GiB with `KIND_WORKERS=1 KIND_PRELOAD=0`. Its refusal names
+  both options ([docs/ai.md](docs/ai.md#testing)).
+- **A Kind e2e run stopped from outside cleans up.** `ci.sh test`, its suites (`test-ai`,
+  `test-runtimes`, …) and `test-helm-upgrade` remove their Kind cluster, Compose project, Kind lock
+  and Cloud Provider KIND also when they are stopped: on TERM or HUP at once, also in the middle of
+  a step, and on INT (Ctrl-C) once the running command has stopped. A run whose output pipe was
+  stopped together with it ended at the cleanup's first line and left all of them behind; INT to
+  the run while a command ran could let it go on with its next step; a stop during `docker compose
+  up` left the Compose stack; and a run stopped while it waited for the Kind lock deleted the
+  cluster of the same name that the lock holder used. The cleanup touches only what the run
+  created, and when the run's output is gone it writes to `${TMPDIR:-/tmp}/<cluster>-cleanup.log`
+  ([docs/development.md](docs/development.md#how-it-works)).
+- **A short hiccup of the Kubernetes API server no longer fails the Knative Operator install.**
+  The operator's Helm install failed on its first error, and with it the region setup: on a
+  cluster whose etcd could not keep up with a busy disk, Helm got `etcdserver: request timed out`
+  once and the region had no Knative. The install is now tried again on transient errors of the
+  API server — etcd timeouts and leader changes, 5xx and 429 answers, timeouts and dropped
+  connections on the way to it — five tries in all, 2, 4, 8 and 16 s apart, each retry in the
+  operator's install log. Any other failure, Helm's own `--wait` running out included, fails the
+  install at once, as before.
+
 ## [0.5.3] - 2026-10-16
 
 ### Fixed
@@ -934,7 +1132,8 @@ Initial tagged release.
 - API gateways with routes, in-app notifications and support tickets.
 - Helm chart with a single-tenant / multi-tenant edition, an install form (`values.schema.json`), generated secrets and a Traefik ingress; a Docker Compose setup for development.
 
-[Unreleased]: https://github.com/brf-tech/runr/compare/v0.5.3...main
+[Unreleased]: https://github.com/brf-tech/runr/compare/v0.5.4...main
+[0.5.4]: https://github.com/brf-tech/runr/releases/tag/v0.5.4
 [0.5.3]: https://github.com/brf-tech/runr/releases/tag/v0.5.3
 [0.5.2]: https://github.com/brf-tech/runr/releases/tag/v0.5.2
 [0.5.1]: https://github.com/brf-tech/runr/releases/tag/v0.5.1

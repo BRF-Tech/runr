@@ -59,6 +59,7 @@ container_memory_working_set_bytes
 |-----------|-------|
 | Retention | 15 days |
 | Storage | 50Gi PVC (the region's registry StorageClass when set, otherwise the cluster default) |
+| Placement | tolerates `runr.dev/dedicated=projects:NoSchedule`, prefers nodes that are not dedicated workers ([Dedicated workers](#7-dedicated-workers)) |
 | AlertManager | Disabled |
 | Grafana | Disabled |
 
@@ -128,6 +129,7 @@ honorLabels:   true
 | Component | Parameter | Value |
 |-----------|-----------|-------|
 | Loki | Storage | 20Gi PVC (filesystem) |
+| Loki | Placement | tolerates `runr.dev/dedicated=projects:NoSchedule`, prefers nodes that are not dedicated workers ([Dedicated workers](#7-dedicated-workers)) |
 | Loki | CPU request/limit | 100m / 500m |
 | Loki | Memory request/limit | 128Mi / 512Mi |
 | Promtail | Tolerations | `[{operator: Exists}]` — every node |
@@ -163,6 +165,10 @@ Observability pods are not evicted under node memory pressure; with `Never` pree
 | `loki-pdb` | `app: loki` | 1 |
 
 During node drains and rolling upgrades at least one pod of each stays up. Both are single-replica setups; the PDBs protect them from voluntary disruption.
+
+### 7. Dedicated workers
+
+Prometheus, Loki and Tempo keep their data on a PVC. A node-bound volume (local-path, k3s's default class, any volume with node affinity) keeps its pod on the node it was provisioned on, and that node can be selected as a dedicated worker of the region later (taint `runr.dev/dedicated=projects:NoSchedule`, [architecture.md](architecture.md#dedicated-workers)). The taint leaves the running pod alone; the next one (a restart, a Helm upgrade) has to start on the same node again. All three therefore tolerate the taint and prefer the nodes that are not dedicated workers (a preferred node affinity, so they still run where every node with room is a dedicated worker). Promtail and cAdvisor tolerate every taint and run on every node.
 
 ---
 
@@ -309,7 +315,7 @@ Projects can switch tracing on only in a region whose backend is `ready`.
 |-----------|-----------------|---------|
 | OpenTelemetry Collector | `otel-collector` / `open-telemetry/opentelemetry-collector` chart 0.176.0 (collector 0.162.0, contrib image `ghcr.io/brf-tech/runr/reqs/opentelemetry-collector-contrib:0.162.0`, RunR's mirror of `docker.io/otel/opentelemetry-collector-contrib`), Deployment, 1 replica | receivers OTLP gRPC 4317, OTLP HTTP 4318, Zipkin 9411; `memory_limiter`, `batch`, `resource/runr` (adds `runr.region`), Kubernetes attributes preset; requests 50m / 128Mi, limits 500m / 512Mi; PriorityClass `observability-critical` |
 | Span metrics | collector `spanmetrics` connector → Prometheus exporter on 8889 | histogram buckets 5 ms – 30 s, dimension `runr.cold_start`, flushed every 15 s; scraped through `PodMonitor/otel-collector-spanmetrics` when the Prometheus Operator CRDs exist |
-| Grafana Tempo | `tempo` / `grafana-community/tempo` chart 3.2.0 (Tempo 3.1.0, single binary, image `ghcr.io/brf-tech/runr/reqs/tempo:3.1.0`, RunR's mirror of `docker.io/grafana/tempo`; repository `https://grafana-community.github.io/helm-charts`, where the chart moved from `grafana/helm-charts`) | OTLP 4317 / 4318, HTTP API 3200, filesystem PVC (`tempoStorage`, default 10Gi, region registry StorageClass when set), retention `tempoRetentionHours` (default 72 h, per region `retention_hours`); init container `fix-permissions` (`ghcr.io/brf-tech/runr/reqs/busybox`, as Loki's) hands `/var/tempo` to Tempo's user 10001, also where the storage driver does not apply the pod's `fsGroup`; requests 50m / 256Mi, limits 1 CPU / 1Gi |
+| Grafana Tempo | `tempo` / `grafana-community/tempo` chart 3.2.0 (Tempo 3.1.0, single binary, image `ghcr.io/brf-tech/runr/reqs/tempo:3.1.0`, RunR's mirror of `docker.io/grafana/tempo`; repository `https://grafana-community.github.io/helm-charts`, where the chart moved from `grafana/helm-charts`) | OTLP 4317 / 4318, HTTP API 3200, filesystem PVC (`tempoStorage`, default 10Gi, region registry StorageClass when set), retention `tempoRetentionHours` (default 72 h, per region `retention_hours`); init container `fix-permissions` (`ghcr.io/brf-tech/runr/reqs/busybox`, as Loki's) hands `/var/tempo` to Tempo's user 10001, also where the storage driver does not apply the pod's `fsGroup`; requests 50m / 256Mi, limits 1 CPU / 1Gi; tolerates `runr.dev/dedicated=projects:NoSchedule` and prefers nodes that are not dedicated workers ([Dedicated workers](#7-dedicated-workers)) |
 
 The collector and Tempo request about as much as the other region add-ons; the region capacity
 offered to projects is the nodes' allocatable minus these requests, like every other platform pod
@@ -680,6 +686,7 @@ Scheduled tasks (`ObservabilityServiceProvider`): `observability:run uptime` eve
 | `Services/Concerns/KnativePrometheusTrait.php` | Prometheus Helm install, ClusterIP URL, scrape resources for a reused Prometheus |
 | `Services/Concerns/KnativeLokiTrait.php` | Loki Stack Helm install and values |
 | `Services/Concerns/KnativeObservabilityHATrait.php` | PriorityClass + PodDisruptionBudgets |
+| `Services/Helpers/DedicatedWorkers.php` | Toleration of the dedicated-worker taint and the preferred node affinity of Prometheus, Loki and Tempo |
 | `Services/Helpers/ManagedLoki.php` | Loki release/chart constants, delete-API config |
 | `Services/Helpers/MonitoringEndpoint.php` | Parse in-cluster Service URLs, direct/proxy URLs |
 | `Services/KnativeMetricsService.php` | Prometheus queries, SWR cache, direct/proxy routing |

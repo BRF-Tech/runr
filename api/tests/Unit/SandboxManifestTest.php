@@ -74,6 +74,8 @@ class SandboxManifestTest extends TestCase
         $this->assertSame('containerd', $env['RUNTIME_FLAVOR']);
         $this->assertSame('/etc/containerd', $env['CONTAINERD_CONFIG_DIR']);
         $this->assertSame('containerd', $env['RESTART_UNITS']);
+        // explicit: an install takes back the OnDelete with which region:reconcile keeps the pods of a moved installer
+        $this->assertSame(['type' => 'RollingUpdate', 'rollingUpdate' => ['maxUnavailable' => 1]], $ds['spec']['updateStrategy']);
     }
 
     public function test_gvisor_installs_pinned_release_tarball_with_checksum(): void

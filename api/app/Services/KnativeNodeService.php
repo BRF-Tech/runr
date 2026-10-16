@@ -10,6 +10,7 @@ use App\Services\Helpers\KubeQuantity;
 use App\Services\Sandboxes\SandboxManifests;
 use App\Services\Wasm\WasmKnativeFeatures;
 use Illuminate\Support\Facades\Log;
+use Throwable;
 
 /**
  * Worker selection and region capacity.
@@ -143,6 +144,7 @@ class KnativeNodeService
                 app(GpuInstallService::class)->enableKnativeFeatures($k8s, $region);
             }
         }
+        $this->placeSystemComponents($k8s, $region);
 
         // Update region
         $region->update([
@@ -419,7 +421,7 @@ class KnativeNodeService
     {
         try {
             return $k8s->listActivePods();
-        } catch (\Throwable $e) {
+        } catch (Throwable $e) {
             Log::warning('Listing pods for the region capacity failed', ['error' => $e->getMessage()]);
 
             return null;
@@ -573,6 +575,33 @@ class KnativeNodeService
 
                 $k8s->strategicMergePatch('apps/v1', 'Deployment', $deployment, $actualNs, $patch);
             }
+        }
+    }
+
+    /**
+     * RunR's components follow the new selection (DedicatedWorkerTolerationService): the ones with
+     * a node-bound volume whose pods run on a selected worker (the registry, Prometheus, Loki,
+     * Tempo, the data services) get the toleration of the taint just set and restart once on the
+     * same node; a registry installed on the dedicated workers, its node mirror and Knative's
+     * system deployments leave their nodeSelector where no node carries the label any more (or,
+     * for the registry, its volume binds it to a node that lost it). Never fails the selection —
+     * region:reconcile does the same.
+     */
+    private function placeSystemComponents(KubernetesClient $k8s, KnativeRegion $region): void
+    {
+        try {
+            $nodes = $k8s->listClusterResources('v1', 'Node');
+            if ($nodes === null) {
+                throw new \RuntimeException('the nodes could not be listed');
+            }
+            foreach (app(DedicatedWorkerTolerationService::class)->reconcile($k8s, [$region], $nodes['items'] ?? [], false) as $line) {
+                Log::info("Worker selection: {$line}", ['region' => $region->name]);
+            }
+        } catch (Throwable $e) {
+            Log::warning('Worker selection: RunR\'s components could not follow it — run php artisan region:reconcile --region='.$region->id, [
+                'region' => $region->name,
+                'error' => $e->getMessage(),
+            ]);
         }
     }
 

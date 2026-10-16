@@ -77,6 +77,9 @@ trait SandboxManifestTrait
                 'labels' => ['app.kubernetes.io/managed-by' => 'runr', 'runr.dev/component' => 'gvisor'],
             ],
             'spec' => [
+                // Explicit: an install takes back the OnDelete with which region:reconcile
+                // (image-registry) keeps the pods of an installer whose image it moved
+                'updateStrategy' => ['type' => 'RollingUpdate', 'rollingUpdate' => ['maxUnavailable' => 1]],
                 'selector' => ['matchLabels' => ['runr.dev/component' => $name]],
                 'template' => [
                     'metadata' => ['labels' => ['runr.dev/component' => $name]],

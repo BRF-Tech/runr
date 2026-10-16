@@ -1026,6 +1026,40 @@
           }
         }
       }
+    },
+    "placement": {
+      "type": "object",
+      "title": "Placement",
+      "description": "Where RunR's own pods run: every Deployment and hook Job of the chart.",
+      "properties": {
+        "tolerateDedicatedWorkers": {
+          "type": "boolean",
+          "title": "Tolerate dedicated workers",
+          "default": true,
+          "description": "RunR's pods tolerate the taint runr.dev/dedicated=projects:NoSchedule that a region's worker selection puts on this cluster's nodes, and prefer the other nodes: a pod whose volume is bound to a node selected later still starts there. Added to the tolerations and affinity below."
+        },
+        "tolerations": {
+          "type": "array",
+          "title": "Tolerations",
+          "description": "Added to every RunR pod as given.",
+          "items": {
+            "type": "object"
+          }
+        },
+        "affinity": {
+          "type": "object",
+          "title": "Affinity",
+          "description": "Affinity of every RunR pod; podColocation and tolerateDedicatedWorkers add their terms to it."
+        },
+        "nodeSelector": {
+          "type": "object",
+          "title": "Node selector",
+          "description": "nodeSelector of every RunR pod.",
+          "additionalProperties": {
+            "type": "string"
+          }
+        }
+      }
     }
   }
 }

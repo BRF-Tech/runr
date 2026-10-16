@@ -889,7 +889,10 @@ runs in the version's own image.
 
 The `-gpu` versions carry the CUDA libraries as NVIDIA's pip packages and need a GPU node whose
 driver supports CUDA 12. A project on a `-gpu` version is a GPU project
-([GPU runtime versions](ai.md#gpu-runtime-versions-xaas--faas)).
+([GPU runtime versions](ai.md#gpu-runtime-versions-xaas--faas)). In the TensorFlow `-gpu` image
+the library directories of these packages (`site-packages/nvidia/*/lib`) are in the dynamic
+loader's cache, so TensorFlow opens every CUDA library it needs whatever the entrypoint and the
+function's `LD_LIBRARY_PATH`.
 The images are built for `linux/amd64`. Being this large (the unpacked size of each image's
 filesystem above), they are left out of the node pre-pull (below) and pulled by the nodes their
 functions run on.
@@ -900,12 +903,19 @@ the major.minor of the framework pin (`torch==2.14.1` in `requirements-torch.txt
 `tensorflow-cpu==2.21.0` in `requirements-cpu.txt`); `executor:sync` picks up the published tags
 through `versionDiscovery`. Each build pulls its base image, installs the pinned packages, and
 fails unless `pip check` passes, the frameworks import and the version (and, for `-gpu`, the CUDA
-build) matches. A local build also runs a smoke test: a handler doing a tensor op answers an HTTP
-request with JSON through the image's server, and once more as a scheduled run.
+build) matches. A local build also runs a smoke test: a handler doing tensor ops (a mean and a
+matrix product) answers an HTTP request with JSON through the image's server, and once more as a
+scheduled run. On a host where `docker run --gpus all` gives containers a GPU, a `-gpu` image
+gets the GPU for both runs: in each, the framework has to see at least one GPU
+(`torch.cuda.is_available()`, `tf.config.list_physical_devices('GPU')`) and run the ops on it
+(`cuda:0`, `GPU:0`). On a host without one, the `-gpu` image is checked for its CUDA build and
+the output says that the GPU check was skipped. `ML_SMOKE_GPU=1` makes the GPU check required
+(the smoke test fails without a GPU), `ML_SMOKE_GPU=0` leaves it out.
 
 ```bash
 runtime/ci.sh ml-runtimes --list            # the image references
 runtime/ci.sh ml-runtimes pytorch cpu       # one image, built and smoke-tested locally
+ML_SMOKE_GPU=1 runtime/ci.sh ml-runtimes gpu  # the -gpu images, smoke-tested on this host's GPU
 runtime/ci.sh ml-runtimes --push            # build and push all four (linux/amd64)
 ```
 
@@ -946,7 +956,7 @@ and region builds are pulled on first use.
   detector needs `CGO_ENABLED=1`).
 - **Q interpreter**: `cd examples/runtimes/q/interpreter && go test ./...`.
 - **ML runtime images**: `bash runtime/test/ml_runtimes_test.sh` checks `ci.sh ml-runtimes`
-  without Docker (image list and tags, build flags, smoke test, push);
+  without Docker (image list and tags, build flags, smoke test with and without a GPU, push);
   `runtime/ci.sh ml-runtimes` builds the images and smoke-tests each one.
 - **End to end**: `bash runtime/ci.sh test-runtimes` creates a Kind cluster, installs Knative,
   Redis and the region registry through the API (docker compose), builds the wrapper image from

@@ -8,6 +8,7 @@ use App\Console\Commands\Concerns\E2eTestGitDeployTrait;
 use App\Console\Commands\Concerns\E2eTestImagesTrait;
 use App\Console\Commands\Concerns\E2eTestMigrationTrait;
 use App\Console\Commands\Concerns\E2eTestObservabilityTrait;
+use App\Console\Commands\Concerns\E2eTestReconcileTrait;
 use App\Console\Commands\Concerns\E2eTestResultTrait;
 use App\Console\Commands\Concerns\E2eTestRunnerTrait;
 use App\Console\Commands\Concerns\E2eTestRuntimesTrait;
@@ -32,6 +33,7 @@ class E2eTestCommand extends Command
     use E2eTestImagesTrait;
     use E2eTestMigrationTrait;
     use E2eTestObservabilityTrait;
+    use E2eTestReconcileTrait;
     use E2eTestResultTrait;
     use E2eTestRunnerTrait;
     use E2eTestRuntimesTrait;
@@ -48,10 +50,10 @@ class E2eTestCommand extends Command
         {--kubeconfig= : Path to kubeconfig file for test region}
         {--timeout=300 : Deploy wait timeout in seconds}
         {--skip-sandbox : Skip sandbox runtime isolation tests}
-        {--suite=all : all = every phase incl. runtime plugins; runtimes = runtime plugin functions only; supply-chain = SBOM / scan / signing / admission; ai = model services, offline snapshots, bindings, GPU; bindings = bindings only (data services, KV / object / Postgres / external); sandbox-api = Sandbox API only; wasm = WebAssembly support + Wasm runtimes; observability = tracing backend, traces, replay; git-deploy = git remote, Forgejo push and previews; images = uploaded images (tar + wasm), CaaS from an upload, wasm-exec in C and Q}
+        {--suite=all : all = every phase incl. runtime plugins; runtimes = runtime plugin functions only; supply-chain = SBOM / scan / signing / admission; ai = model services, offline snapshots, bindings, GPU; bindings = bindings only (data services, KV / object / Postgres / external); sandbox-api = Sandbox API only; wasm = WebAssembly support + Wasm runtimes; observability = tracing backend, traces, replay; reconcile = region:reconcile tracing backend and registry pre-warm steps; git-deploy = git remote, Forgejo push and previews; images = uploaded images (tar + wasm), CaaS from an upload, wasm-exec in C and Q}
         {--sandbox-kata : sandbox-api suite: also install Kata and run a Kata sandbox (nodes with /dev/kvm)}
         {--examples=/tmp/runr-examples : examples/runtimes copied into the container (runtime plugin suite)}
-        {--hf-serve-image= : AI suite: hf-serve image of the CPU model services (default ghcr.io/brf-tech/runr/hf-serve:1.1.0, or RUNR_E2E_HF_SERVE_IMAGE)}
+        {--hf-serve-image= : AI suite: hf-serve image of the CPU model services (default ghcr.io/brf-tech/runr/hf-serve:1.1.1, or RUNR_E2E_HF_SERVE_IMAGE)}
         {--ai-tei : AI suite: also serve sentence-transformers/all-MiniLM-L6-v2 on TEI (CPU), or RUNR_E2E_TEI=1}
         {--ai-gpu : AI suite: also install GPU support and run a GPU CaaS project (needs a GPU visible to the nodes), or RUNR_E2E_GPU=1}
         {--gpu-image= : AI suite: image of the GPU CaaS check, built from examples/ai/gpu-caas (or RUNR_E2E_GPU_IMAGE)}
@@ -155,6 +157,15 @@ class E2eTestCommand extends Command
         // Observability only: tracing backend, traced function, trace search / logs, replay (E2eTestObservabilityTrait)
         if ($this->option('suite') === 'observability') {
             $tests = $this->runObservabilitySuite($regionId);
+            $this->printResultsTable($tests, $startTime);
+            $this->saveResultsMarkdown($tests, $startTime);
+
+            return $this->countResults($tests)['failed'] > 0 ? 1 : 0;
+        }
+
+        // region:reconcile only: tracing backend update, registry pre-warm Job (E2eTestReconcileTrait)
+        if ($this->option('suite') === 'reconcile') {
+            $tests = $this->runReconcileSuite($regionId);
             $this->printResultsTable($tests, $startTime);
             $this->saveResultsMarkdown($tests, $startTime);
 

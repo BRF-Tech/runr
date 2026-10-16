@@ -12,7 +12,8 @@
 | - Applied as a ResourceQuota + LimitRange in each Region's project namespace
 |   (App\Services\RegionNamespaceQuotaService::applyNamespaceQuota).
 | - Multi-tenant edition: default tenant quota on a Region, and the upper bound of the sum of
-|   all tenants' quotas on a Region (no overcommit).
+|   all tenants' quotas on a Region (quotas are shares of the Region capacity; admission inside a
+|   quota overcommits scale-to-zero workloads by the Region's factors, TenantQuotaService).
 |
 */
 

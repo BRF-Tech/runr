@@ -124,8 +124,9 @@ class GitDeployServiceProvider extends ServiceProvider
     }
 
     /**
-     * Previews count against the organization quota (Tenancy module): their admitted
-     * reservation (one pod of the project's size, scale to zero) is added to the region usage.
+     * Previews count against the organization quota (Tenancy module): their demand (one pod of
+     * the project's size that scales to zero: the quota's FaaS overcommit budget) is added to
+     * the region usage.
      */
     private function registerQuotaContribution(): void
     {
@@ -137,7 +138,7 @@ class GitDeployServiceProvider extends ServiceProvider
         self::$quotaHooked = true; // a static registry: once per process (Octane workers, test runs)
 
         TenantQuotaService::addUsageContributor(function ($region, ?string $excludeProjectId) {
-            $total = ResourceReservation::zero();
+            $total = ResourceReservation::noDemand();
 
             // A schema that has not been migrated to git deploy yet holds no previews
             if (! GitTables::present('preview_environments')) {
@@ -150,9 +151,7 @@ class GitDeployServiceProvider extends ServiceProvider
                 ->with('project.xaasConfig', 'project.faasConfig', 'project.knativeRegion')
                 ->get()
                 ->each(function (PreviewEnvironment $preview) use (&$total) {
-                    $r = PreviewService::reservation($preview->project);
-                    $total['cpu_m'] += $r['cpu_m'];
-                    $total['memory_mb'] += $r['memory_mb'];
+                    $total = ResourceReservation::addDemand($total, PreviewService::demand($preview->project));
                 });
 
             return $total;

@@ -192,6 +192,11 @@ return [
         'region_not_assignable' => 'Tenant-owned regions cannot be assigned.',
         'no_region_access' => 'Tenant has no access to this region.',
         'quota_exceeded' => 'Quota exceeded.',
+        // Organization quota admission (Modules\Tenancy\Services\TenantQuotaService)
+        'quota_budget' => [
+            'always_on_exceeded' => ':resource quota exceeded on the organization\'s always-on budget (no overcommit): this needs :needed, :available of the quota :total on this region are free. Always-on workloads, Kata pod overhead, queue consumers and sandboxes count in full.',
+            'faas_exceeded' => ':resource quota exceeded on the organization\'s FaaS overcommit budget: this needs :needed, :available of :total are free on this region (quota :capacity × :factor, minus :reserved always-on).',
+        ],
         'already_impersonating' => 'Already impersonating. Stop current session first.',
         'impersonation_started' => 'Impersonation started.',
         'no_impersonation' => 'No active impersonation session.',

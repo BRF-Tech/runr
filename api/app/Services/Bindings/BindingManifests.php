@@ -4,6 +4,7 @@ namespace App\Services\Bindings;
 
 use App\Models\Binding;
 use App\Models\Project;
+use App\Services\Helpers\DedicatedWorkers;
 use App\Services\Manifests\KnativeManifests;
 
 /**
@@ -265,6 +266,8 @@ class BindingManifests
                             ],
                         ]],
                         'volumes' => [['name' => 'data', 'persistentVolumeClaim' => ['claimName' => self::KV_NAME.'-data']]],
+                        // its volume may be bound to a node selected as a dedicated worker later
+                        ...DedicatedWorkers::systemPlacement(),
                     ],
                 ],
             ],
@@ -360,6 +363,8 @@ class BindingManifests
                             ],
                         ]],
                         'volumes' => [['name' => 'config', 'secret' => ['secretName' => self::OBJECT_NAME.'-config']]],
+                        // its volumes may be bound to a node selected as a dedicated worker later
+                        ...DedicatedWorkers::systemPlacement(),
                     ],
                 ],
                 'volumeClaimTemplates' => [$claim('meta', $metaSize), $claim('data', $dataSize)],
@@ -387,6 +392,7 @@ class BindingManifests
             'imageName' => $image,
             'enableSuperuserAccess' => true,
             'storage' => self::cnpgStorage($storage, $storageClass),
+            'affinity' => self::cnpgAffinity(),
             'postgresql' => ['parameters' => ['max_connections' => (string) $maxConnections]],
             'inheritedMetadata' => ['labels' => self::labels(['runr.dev/data-service' => 'postgres'])],
         ];
@@ -439,6 +445,7 @@ class BindingManifests
             'imageName' => $image,
             'enableSuperuserAccess' => true,
             'storage' => self::cnpgStorage($storage, $storageClass),
+            'affinity' => self::cnpgAffinity(),
             'bootstrap' => ['initdb' => [
                 'database' => $role,
                 'owner' => $role,
@@ -525,6 +532,19 @@ class BindingManifests
                 'data' => ['compression' => 'gzip'],
             ],
             'retentionPolicy' => (string) config('bindings.postgres.backup.retention', '7d'),
+        ];
+    }
+
+    /**
+     * The instances tolerate the dedicated-worker taint and prefer the other nodes, as RunR's
+     * other components with a node-bound volume (DedicatedWorkers::systemPlacement()); the
+     * operator's own pod anti-affinity (one instance per node, preferred) stays on.
+     */
+    private static function cnpgAffinity(): array
+    {
+        return [
+            'tolerations' => [DedicatedWorkers::toleration()],
+            'nodeAffinity' => DedicatedWorkers::preferOtherNodes()['nodeAffinity'],
         ];
     }
 

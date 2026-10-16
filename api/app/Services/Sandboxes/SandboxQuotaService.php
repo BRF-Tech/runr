@@ -118,8 +118,9 @@ final class SandboxQuotaService
     }
 
     /**
-     * The organization's region quota (tenancy): its projects plus its live sandboxes and warm pods
-     * in the region plus the new one must fit.
+     * The organization's region quota (tenancy): its live sandboxes and warm pods in the region
+     * plus the new one keep running, so they count in full against the quota (its always-on
+     * budget), next to its projects, model services and previews (TenantQuotaService).
      *
      * @throws SandboxException quota_region
      */
@@ -141,13 +142,14 @@ final class SandboxQuotaService
         $reservation['memory_mb'] += $memoryMb + $overhead['memory_mb'];
 
         $result = SandboxContext::run($tenantId, fn () => app(TenantQuotaService::class)
-            ->checkReservation($tenant, $region, $reservation));
+            ->checkReservation($tenant, $region, ['hard' => $reservation, 'burst' => ResourceReservation::zero()]));
 
-        if (! ($result['allowed'] ?? true)) {
-            throw new SandboxException($result['message'] ?? __('sandboxes.quota_region'), 422, 'quota_region', [
-                'remaining_cpu_m' => $result['remaining_cpu_m'] ?? 0,
-                'remaining_memory_mb' => $result['remaining_memory_mb'] ?? 0,
-            ]);
+        if (! $result['allowed']) {
+            // what is left, for the resources with a quota only
+            throw new SandboxException($result['message'] ?? __('sandboxes.quota_region'), 422, 'quota_region', array_filter([
+                'remaining_cpu_m' => $result['remaining_cpu_m'] ?? null,
+                'remaining_memory_mb' => $result['remaining_memory_mb'] ?? null,
+            ], fn ($value) => $value !== null));
         }
     }
 

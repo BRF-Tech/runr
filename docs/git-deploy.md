@@ -271,9 +271,10 @@ Rules:
 - **Residency and policy**: a preview is a deployment in the project's region: the
   organization's data residency (`preview` entry point) and the region's policy gate apply as
   for production; a preview waits for the security checks of its version like a push does.
-- **Quota**: in a multi-tenant install a preview's reservation (one pod of the project's size)
-  counts against the organization quota of the region, next to the projects; a preview that
-  does not fit is not deployed.
+- **Quota**: in a multi-tenant install a preview's reservation (one pod of the project's size
+  that scales to zero) counts against the FaaS overcommit budget of the organization quota on the
+  region, next to the projects ([Organization quotas](architecture.md#region-capacity-and-admission));
+  a preview that does not fit is not deployed.
 
 ## Status on the provider
 

@@ -302,19 +302,32 @@ class PreviewService
             ->each(fn (PreviewEnvironment $p) => $this->teardown($p, $reason));
     }
 
-    /** Admitted reservation of the project's live previews in a region (quota contributor). */
+    /** Admitted reservation of one preview of the project, both budgets together. */
     public static function reservation(Project $project): array
+    {
+        return ResourceReservation::total(self::demand($project));
+    }
+
+    /**
+     * Demand of one preview of the project (quota contributor, admission): one pod of the
+     * project's size that scales to zero (http, min_scale 0) — the organization quota's FaaS
+     * overcommit budget, its Kata pod overhead the always-on budget.
+     *
+     * @return array{hard: array{cpu_m: int, memory_mb: int}, burst: array{cpu_m: int, memory_mb: int}}
+     */
+    public static function demand(Project $project): array
     {
         $config = ResourceReservation::configOf($project);
         if (! $config) {
-            return ResourceReservation::zero();
+            return ResourceReservation::noDemand();
         }
 
-        return ResourceReservation::forConfig([
+        return ResourceReservation::demandForConfig([
             'cpu' => $config->cpu ?? null,
             'memory_mb' => $config->memory_mb ?? null,
             'trigger_type' => 'http',
             'min_scale' => 0,
+            'scale_to_zero' => true,
         ], $project->service_type, $project->knativeRegion);
     }
 
@@ -381,7 +394,7 @@ class PreviewService
         }
 
         $result = app(TenantQuotaService::class)
-            ->checkReservation($tenant, $region, self::reservation($project));
+            ->checkReservation($tenant, $region, self::demand($project));
 
         return $result['allowed'] ? null : 'The organization quota leaves no room for a preview: '.($result['message'] ?? '');
     }

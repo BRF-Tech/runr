@@ -21,6 +21,7 @@ spec:
     spec:
       automountServiceAccountToken: false
       {{- include "runr.imagePullSecrets" . | nindent 6 }}
+      {{- include "runr.placement" (dict "root" . "colocate" false) | nindent 6 }}
       {{- include "runr.postgres-init" . | nindent 6 }}
       containers:
         - name: postgres

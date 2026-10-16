@@ -104,6 +104,45 @@ else
   fail=1
 fi
 
+# Placement of RunR's pods (template helper runr.placement): by default every pod template — the
+# Deployments and the hook Jobs — tolerates the dedicated workers' taint and prefers the other
+# nodes; with ci/helm-values/placement.yaml both come on top of the operator's tolerations,
+# affinity (node, pod, anti) and nodeSelector, and the API storage colocation stays; switched off
+# (placement.tolerateDedicatedWorkers=false, podColocation=false) nothing is added. Values without
+# placement (reused from a release before it) get the default
+count() { grep -c -E -- "$1" "$2" || true; }
+if helm template runr "$ROOT/helm" --namespace runr --set domain=console.acme-cloud.example >"$OUT/placement-default.render" 2>"$OUT/placement.err" \
+  && helm template runr "$ROOT/helm" --namespace runr --set domain=console.acme-cloud.example --set placement=null >"$OUT/placement-reused.render" 2>>"$OUT/placement.err" \
+  && helm template runr "$ROOT/helm" --namespace runr -f "$ROOT/ci/helm-values/placement.yaml" >"$OUT/placement-set.render" 2>>"$OUT/placement.err" \
+  && helm template runr "$ROOT/helm" --namespace runr --set domain=console.acme-cloud.example \
+    --set placement.tolerateDedicatedWorkers=false --set podColocation=false >"$OUT/placement-off.render" 2>>"$OUT/placement.err"; then
+  pods=$(count '^kind: (Deployment|Job)$' "$OUT/placement-default.render")
+  colocated=$(count 'requiredDuringSchedulingIgnoredDuringExecution:' "$OUT/placement-default.render")
+  problems=()
+  [ "$pods" -ge 12 ] || problems+=("only $pods pod templates")
+  for f in placement-default placement-reused placement-set; do
+    [ "$(count '^ +value: projects$' "$OUT/$f.render")" = "$pods" ] || problems+=("$f: not every pod tolerates runr.dev/dedicated=projects")
+    [ "$(count '^ +operator: NotIn$' "$OUT/$f.render")" = "$pods" ] || problems+=("$f: not every pod prefers the nodes that are not dedicated workers")
+  done
+  [ "$colocated" -ge 7 ] || problems+=("only $colocated pods colocated with the API storage")
+  for want in '^ +value: infra$' '^ +- key: node-role\.kubernetes\.io/infra$' '^ +weight: 10$' 'topologyKey: topology\.kubernetes\.io/zone$' '^ +node-role\.kubernetes\.io/infra: "true"$'; do
+    [ "$(count "$want" "$OUT/placement-set.render")" = "$pods" ] || problems+=("placement-set: ${want} not on every pod")
+  done
+  [ "$(count 'requiredDuringSchedulingIgnoredDuringExecution:' "$OUT/placement-set.render")" = "$((pods + colocated))" ] \
+    || problems+=("placement-set: the required node affinity and the colocation do not both stay")
+  [ "$(count 'runr\.dev/dedicated|^ +(affinity|tolerations):$' "$OUT/placement-off.render")" = 0 ] || problems+=("placement-off: placement rendered although switched off")
+  if [ ${#problems[@]} -eq 0 ]; then
+    echo "✓ placement: $pods pod templates tolerate the dedicated workers, operator placement merged, $colocated colocated, nothing when switched off"
+  else
+    printf '✗ placement: %s\n' "${problems[@]}"
+    fail=1
+  fi
+else
+  echo "✗ placement: helm template"
+  cat "$OUT/placement.err"
+  fail=1
+fi
+
 # kubeconform from the PATH, else in a container. The renderings go in on stdin: no bind mount,
 # so a remote Docker daemon (docker-in-docker) works too.
 run_kubeconform() {

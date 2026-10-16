@@ -320,6 +320,12 @@ class PreviewLifecycleTest extends TestCase
         $this->assertSame($projects['cpu_m'] + $preview['cpu_m'], $usage['cpu_m']);
         $this->assertSame($projects['memory_mb'] + $preview['memory_mb'], $usage['memory_mb']);
         $this->assertGreaterThan(0, $preview['cpu_m']);
+
+        // a preview scales to zero: its pod counts against the quota's FaaS overcommit budget
+        $demand = PreviewService::demand($this->project->fresh(['faasConfig', 'knativeRegion']));
+        $this->assertSame($preview, ResourceReservation::total($demand));
+        $this->assertSame($preview['cpu_m'], $demand['burst']['cpu_m']);
+        $this->assertSame(ResourceReservation::zero(), $demand['hard']);
     }
 
     public function test_deleting_the_project_removes_its_previews(): void

@@ -126,9 +126,21 @@ workloads, the region Traefik and the WebAssembly installer (`region:reconcile`:
 `ghcr.io/brf-tech`, a mirror of your own and the region registry's `<registry>/ghcr.io/…` path
 stay as they are. The system images policy passes `ghcr.io/brf-tech/runr/**` (`region:reconcile`,
 `admission-policy`, before the workloads move) and keeps passing `ghcr.io/brf-tech/**` and
-`ghcr.io/runrsh/**` for the workloads that keep their pods: the node installers of Kata (with its
-devmapper) and gVisor and the region's queue Redis move with the next change of their
-installation, as in 0.5.1; their images stay pullable under the earlier names.
+`ghcr.io/runrsh/**` for the pods that keep running with an image of the earlier names.
+
+Two kinds of region workloads move their pod template but keep their running pods, because a
+restart costs more than the move; a pod created later — on a new node, or after the pod was deleted
+or evicted — starts from `ghcr.io/brf-tech/runr`:
+
+| Workload | Why its pods stay | How it moves |
+| --- | --- | --- |
+| Node installers of Kata (`kata-installer`, Firecracker's `kata-devmapper`) and gVisor (`gvisor-installer`) in `runr-sandbox` | A new pod re-runs the install on its node; kata-deploy's cleanup and reinstall restart the container runtime | One patch: the new images and the update strategy `OnDelete`, so the DaemonSet controller replaces no pod. A gVisor install, a Kata install that re-runs kata-deploy and Kata's Firecracker setup apply `RollingUpdate` again; Kata's drop-in update keeps `OnDelete` |
+| The region's queue Redis (`runr-redis`) | Its streams, consumer groups and the KV bindings' data live in memory only: a new pod starts empty | The Deployment is paused, its ReplicaSet gets the new image (the running pod stays), then the Deployment gets it and is resumed in one patch: the Deployment controller keeps that ReplicaSet and starts no pod. A run that stops half-way leaves it paused (annotation `runr.dev/image-move-paused`); the next run finishes the move |
+
+`region:reconcile` reports them as `moved`, with what keeps running; such a pod runs its image from
+the earlier name until it is replaced. A Redis Deployment paused by someone else, or in the middle
+of a rollout, is listed as `kept:` and moves at the first run after it is resumed or the rollout is
+over.
 
 `php artisan images:move-registry --dry-run` and `php artisan region:reconcile --dry-run` show
 what moves before the upgrade's bootstrap job does it.
@@ -156,18 +168,17 @@ moves, references into other registries — a mirror of your own, the region reg
 | --- | --- | --- |
 | Helm values | Image values under `ghcr.io/runrsh/` — set at install, or the previous chart's defaults that `--reuse-values` keeps — render as the same image under `ghcr.io/brf-tech/`: API, UI, gateway, PostgreSQL, Redis, Mailpit, init containers, `ai.images`, `bindings.object.image`, `supplyChain.toolsImage`, `images.uploadImage`, `knative.traefikImage` | template helper `runr.image` |
 | Database | Runtime versions; runtime plugins (manifest, `runtime.yaml` as submitted and uploaded Dockerfiles — their region builds stay valid); CaaS images and version snapshots; region, binding and supply-chain settings; model services; sandboxes; security reports — the central schema and every tenant schema | migration `move_images_to_brf_tech_registry` and tenant migration `0054`; the bootstrap job runs `php artisan images:move-registry` once more for rows the previous version's pods wrote during the rollout |
-| Region workloads | Every workload RunR deployed: the region agent, queue consumers, the registry and its node mirror, Loki, Prometheus, binding data services, image pre-pull, CronJobs and the Knative Services of functions, CaaS projects, model services and hosted MCP servers (the wrapper init container and runtime images included) | `region:reconcile` (`image-registry`): one patch per workload; a Knative Service gets a new revision that takes the traffic once it is ready, the previous revision serves until then; the other workloads roll once |
+| Region workloads | Every workload RunR deployed: the region agent, queue consumers, the registry and its node mirror, Loki, Prometheus, binding data services, image pre-pull, CronJobs and the Knative Services of functions, CaaS projects, model services and hosted MCP servers (the wrapper init container and runtime images included) | `region:reconcile` (`image-registry`): one patch per workload; a Knative Service gets a new revision that takes the traffic once it is ready, the previous revision serves until then; the other workloads roll once, apart from the sandbox node installers and the queue Redis, which keep their running pods (below) |
 | Region Traefik | `ghcr.io/runrsh/reqs/traefik` of any version | `region:reconcile` (`traefik-image`): Helm upgrade of the `traefik` release with the same version |
 | WebAssembly | The shim image of the `wasm-installer` | `region:reconcile` (`wasm-sandbox`) re-runs the installer: the same binaries, no container runtime restart |
 | Admission policy | The system images policy passes `ghcr.io/brf-tech/**` | `region:reconcile` (`admission-policy`), before the workloads move |
 
-Two kinds of region workloads keep running as they are, because a restart costs more than the
-move: the node installers of Kata (with its devmapper) and gVisor — a restart re-runs the install
-on every node, and kata-deploy's cleanup restarts the container runtime — move with the next
-change of that installation (`region:reconcile` does not count the image namespace alone as a
-Kata change); the region's queue Redis (`runr-redis`), whose streams live in memory, moves when it
-is installed again. `region:reconcile` lists them as `kept:`; their images stay pullable under
-`ghcr.io/runrsh`, and the system images policy keeps passing that namespace.
+The node installers of Kata (with its devmapper) and gVisor — a new pod re-runs the install on its
+node, and kata-deploy's cleanup restarts the container runtime — and the region's queue Redis
+(`runr-redis`), whose streams live in memory, move their pod template but keep their running pods
+(`region:reconcile` does not count the image namespace alone as a Kata change); how is described
+under [Image namespace ghcr.io/brf-tech/runr](#image-namespace-ghcriobrf-techrunr). The system
+images policy keeps passing `ghcr.io/runrsh` for those pods.
 
 In the console's namespace the chart's PostgreSQL, Redis, gateway and Mailpit roll once with their
 moved images, together with the new version's API and UI: PostgreSQL is unavailable for a few
@@ -328,10 +339,10 @@ function every second. It then checks:
   `data:` URI;
 - nothing of `ghcr.io/runrsh` is left (the image namespace up to 0.5.0): no workload of the
   cluster — control plane and region, Deployments, StatefulSets, DaemonSets, CronJobs, Knative
-  Services — and no running pod references it apart from the ones `region:reconcile` keeps on
-  purpose, and no database row of the central and the tenant schemas does (a CaaS project and,
-  multi-tenant, a tenant-schema row of a `ghcr.io/runrsh` image are created before the upgrade);
-  the region agent runs `ghcr.io/brf-tech/runr-agent`.
+  Services — references it, no running pod apart from the ones `region:reconcile` keeps running on
+  purpose (the sandbox node installers and the queue Redis), and no database row of the central and
+  the tenant schemas (a CaaS project and, multi-tenant, a tenant-schema row of a `ghcr.io/runrsh`
+  image are created before the upgrade); the region agent runs `ghcr.io/brf-tech/runr/agent`.
 
 `--edition=multi-tenant` installs `edition: multi-tenant` (UI images with the `-mt` suffix) and,
 instead of the region and the function, creates a tenant that the platform administrator owns with

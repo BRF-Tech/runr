@@ -11,3 +11,11 @@ description = "Self-signed throwaway TLS material used only by the API test suit
 paths = [
   '''(^|/)api/tests/''',
 ]
+
+[[allowlists]]
+description = "Made-up tokens, passwords and throwaway keys in the Go, UI and end-to-end test suites"
+paths = [
+  '''_test\.go$''',
+  '''(^|/)vue/e2e/''',
+  '''(^|/)vue/tests/''',
+]
