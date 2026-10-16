@@ -1,13 +1,15 @@
 <script setup>
 // Region → Workers → Capacity: per resource the always-on budget (the region capacity, no
-// overcommit) and the FaaS overcommit budget (capacity × factor − always-on), and the overcommit
-// factors (GET / PUT /knative-regions/{id}/capacity; docs/architecture.md → Region capacity and admission).
+// overcommit) and the FaaS overcommit budget (capacity × factor − always-on), drawn by
+// CapacityBudgets as on the projects page, and the overcommit factors
+// (GET / PUT /knative-regions/{id}/capacity; docs/architecture.md → Region capacity and admission).
 import { ref, reactive, computed, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { knativeRegionsApi } from '@/api/knativeRegions'
 import { usePermissionsStore } from '@/stores/permissions'
 import { useToast } from '@/composables/useToast'
 import TermText from '@/components/TermText.vue'
+import CapacityBudgets from './CapacityBudgets.vue'
 
 const props = defineProps({
   regionId: { type: String, default: null },
@@ -26,17 +28,8 @@ const form = reactive({ faas_cpu_overcommit: 3, faas_memory_overcommit: 1.5 })
 
 const canManage = computed(() => perms.can('regions.manage'))
 
-const resources = computed(() => {
-  if (!capacity.value) return []
-  return [
-    { key: 'cpu_m', label: t('common.cpu'), unit: 'm', field: 'faas_cpu_overcommit', ...capacity.value.cpu_m },
-    { key: 'memory_mb', label: t('common.memory'), unit: ' MB', field: 'faas_memory_overcommit', ...capacity.value.memory_mb },
-  ]
-})
-
-function pct(used, total) {
-  return total > 0 ? Math.min(100, Math.round((used / total) * 100)) : 0
-}
+// the factor inputs, one per resource
+const factorFields = ['faas_cpu_overcommit', 'faas_memory_overcommit']
 
 function apply(data) {
   capacity.value = data
@@ -92,34 +85,14 @@ watch(() => props.regionId, load, { immediate: true })
 
     <p v-if="loading && !capacity" class="text-xs text-gray-400">{{ t('common.loading') }}</p>
 
-    <div v-for="r in resources" :key="r.key" class="rounded-md border border-gray-800 bg-gray-900/40 px-3 py-2.5 space-y-2" :data-testid="`capacity-${r.key}`">
-      <p class="text-xs font-medium text-gray-300">{{ r.label }}</p>
-      <div>
-        <div class="flex items-center justify-between text-[11px] text-gray-400 gap-2">
-          <span>{{ t('settings.regionDetail.capacity.alwaysOn') }}</span>
-          <span class="font-mono">{{ r.always_on_used }}{{ r.unit }} / {{ r.capacity }}{{ r.unit }} · {{ t('settings.regionDetail.capacity.free', { value: r.always_on_available + r.unit }) }}</span>
-        </div>
-        <div class="h-1.5 rounded-full bg-gray-800 overflow-hidden mt-1">
-          <div class="h-full rounded-full" style="background:rgb(var(--brand-500))" :style="{ width: pct(r.always_on_used, r.capacity) + '%' }" />
-        </div>
-      </div>
-      <div>
-        <div class="flex items-center justify-between text-[11px] text-gray-400 gap-2">
-          <span>{{ t('settings.regionDetail.capacity.faas', { factor: r.faas_overcommit }) }}</span>
-          <span class="font-mono">{{ r.faas_used }}{{ r.unit }} / {{ r.faas_budget }}{{ r.unit }} · {{ t('settings.regionDetail.capacity.free', { value: r.faas_available + r.unit }) }}</span>
-        </div>
-        <div class="h-1.5 rounded-full bg-gray-800 overflow-hidden mt-1">
-          <div class="h-full rounded-full" style="background:rgb(var(--brand-500))" :style="{ width: pct(r.faas_used, r.faas_budget) + '%' }" />
-        </div>
-      </div>
-    </div>
+    <CapacityBudgets v-if="capacity" :capacity="capacity" boxed />
 
     <p v-if="capacity" class="text-[10px] text-gray-400">{{ t('settings.regionDetail.capacity.hint') }}</p>
 
     <div v-if="capacity && canManage" class="grid grid-cols-2 gap-3">
-      <div v-for="r in resources" :key="r.field">
-        <label class="label" :for="`capacity-${r.field}`"><TermText :path="`settings.regionDetail.capacity.${r.field}`" /></label>
-        <input :id="`capacity-${r.field}`" v-model="form[r.field]" type="number" min="1" max="10" step="0.05" class="input font-mono" />
+      <div v-for="field in factorFields" :key="field">
+        <label class="label" :for="`capacity-${field}`"><TermText :path="`settings.regionDetail.capacity.${field}`" /></label>
+        <input :id="`capacity-${field}`" v-model="form[field]" type="number" min="1" max="10" step="0.05" class="input font-mono" />
       </div>
     </div>
 

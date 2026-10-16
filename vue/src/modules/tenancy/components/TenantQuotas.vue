@@ -5,7 +5,8 @@ import { tenantsApi } from '../api/tenants'
 import { useSettingsStore } from '@/stores/settings'
 import { useConfirm } from '@/composables/useConfirm'
 import { useToast } from '@/composables/useToast'
-import { Globe, Plus, Pencil, Trash2, Cpu, HardDrive, Info } from 'lucide-vue-next'
+import { Globe, Plus, Pencil, Trash2, Info } from 'lucide-vue-next'
+import CapacityBudgets from '@/components/region/CapacityBudgets.vue'
 import TenantBindingQuota from './TenantBindingQuota.vue'
 
 const props = defineProps({
@@ -160,18 +161,6 @@ async function removeRegion(region) {
   }
 }
 
-function usagePercent(used, quota) {
-  if (!quota) return 0
-  return Math.min((used / quota * 100), 100).toFixed(1)
-}
-
-function usageBarColor(used, quota) {
-  const pct = quota ? (used / quota * 100) : 0
-  if (pct >= 90) return '#ef4444'
-  if (pct >= 70) return '#eab308'
-  return 'rgb(var(--brand-500))'
-}
-
 function fmtCpu(m)  { return m >= 1000 ? (m / 1000).toFixed(1) + ' core' : m + 'm' }
 function fmtMem(mb) { return mb >= 1024 ? (mb / 1024).toFixed(1) + ' GB' : mb + ' MB' }
 </script>
@@ -272,32 +261,9 @@ function fmtMem(mb) { return mb >= 1024 ? (mb / 1024).toFixed(1) + ' GB' : mb + 
             <Trash2 class="w-3.5 h-3.5" />
           </button>
         </div>
-        <!-- Usage bars -->
-        <div v-if="region.region_mode !== 'infinite'" class="space-y-1.5 ml-10">
-          <div>
-            <div class="flex justify-between text-[10px] mb-0.5">
-              <span class="text-gray-400 flex items-center gap-1"><Cpu class="w-2.5 h-2.5" />CPU</span>
-              <span class="font-mono text-gray-100">
-                {{ fmtCpu(region.used_cpu_m ?? 0) }} / {{ fmtCpu(region.cpu_quota_m ?? 0) }}
-              </span>
-            </div>
-            <div class="h-1.5 bg-gray-800 rounded-full overflow-hidden">
-              <div class="h-full rounded-full transition-all duration-500"
-                :style="{ width: usagePercent(region.used_cpu_m ?? 0, region.cpu_quota_m) + '%', backgroundColor: usageBarColor(region.used_cpu_m ?? 0, region.cpu_quota_m) }" />
-            </div>
-          </div>
-          <div>
-            <div class="flex justify-between text-[10px] mb-0.5">
-              <span class="text-gray-400 flex items-center gap-1"><HardDrive class="w-2.5 h-2.5" />{{ t('tenancy.usageMemory') }}</span>
-              <span class="font-mono text-gray-100">
-                {{ fmtMem(region.used_memory_mb ?? 0) }} / {{ fmtMem(region.memory_quota_mb ?? 0) }}
-              </span>
-            </div>
-            <div class="h-1.5 bg-gray-800 rounded-full overflow-hidden">
-              <div class="h-full rounded-full transition-all duration-500"
-                :style="{ width: usagePercent(region.used_memory_mb ?? 0, region.memory_quota_mb) + '%', backgroundColor: usageBarColor(region.used_memory_mb ?? 0, region.memory_quota_mb) }" />
-            </div>
-          </div>
+        <!-- The quota's always-on and FaaS overcommit budgets, as on the organization's projects page -->
+        <div v-if="region.region_mode !== 'infinite' && region.capacity" class="ml-10" :data-testid="`quota-budgets-${region.id}`">
+          <CapacityBudgets :capacity="region.capacity" icons />
         </div>
       </div>
 

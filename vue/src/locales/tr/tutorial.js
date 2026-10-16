@@ -17,7 +17,7 @@ export default {
       newProject:     'Yeni Proje',
       newProjectDesc: 'Yeni bir serverless proje oluşturmak için buraya tıklayın.',
       resources:      'Kaynak Barları',
-      resourcesDesc:  'Tüm projeleriniz ve bölgeleriniz genelinde toplam CPU ve bellek kullanımını izleyin.',
+      resourcesDesc:  'Bölgeleriniz genelinde CPU ve bellek bütçeleri: sürekli açık projeler kapasiteyi, sıfıra ölçeklenen projeler overcommit edilmiş FaaS bütçesini kullanır. Bölge bölge görmek için tıklayın.',
       card:           'Proje Kartı',
       cardDesc:       'Her kart bir projenin türünü, runtime bilgisini, durumunu ve son versiyon bilgisini gösterir. Açmak için tıklayın.',
       notifications:     'Bildirimler',

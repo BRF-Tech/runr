@@ -20,6 +20,8 @@ export default {
     scalingCustomDesc:   'Set min/max pod count',
     scalingCustomLabel:  '{min}-{max} instances',
     totalResources: 'Total Resources',
+    totalResourcesHint: 'Always-on projects reserve the capacity; scale-to-zero projects count one pod against the overcommitted FaaS budget.',
+    orgQuota:       'Organization quota',
     regionUnreachable:  'Unreachable',
     regionBreakdown:    'Region Breakdown',
     runtimeTagCaas: 'img',

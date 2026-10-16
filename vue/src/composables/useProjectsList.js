@@ -1,6 +1,7 @@
 import { ref, computed } from 'vue'
 import { useSettingsStore } from '@/stores/settings'
 import { projectReservation } from '@/utils/instanceSizes'
+import { sumCapacities, hasLimit } from '@/utils/capacityBudgets'
 
 /**
  * Filter state, resource computations, and region helpers for ProjectsView.
@@ -67,34 +68,31 @@ export function useProjectsList(projects) {
     if (!e.target.closest('[data-scaling-dropdown]')) scalingDropOpen.value = false
   }
 
-  // ── Resource computations ───────────────────────────────────────────────────
-  const managedProjects = computed(() => {
-    const regions = settingsStore.data.regions ?? []
-    const infiniteIds = new Set(regions.filter(r => r.unlimited || r.region_mode === 'infinite').map(r => r.id))
-    return projects.value.filter(p => !infiniteIds.has(p.knative_region_id))
-  })
-  // Admitted reservations, as the API counts them for quotas and capacity
-  const usedMemoryMb = computed(() => managedProjects.value.reduce((sum, p) => sum + projectReservation(p).memory_mb, 0))
-  const usedCpuM = computed(() => managedProjects.value.reduce((sum, p) => sum + projectReservation(p).cpu_m, 0))
-  const memPct = computed(() => {
-    if (!settingsStore.data.total_memory_mb) return 0
-    return Math.min(100, Math.round(usedMemoryMb.value / settingsStore.data.total_memory_mb * 100))
-  })
-  const cpuPct = computed(() => {
-    if (!settingsStore.data.total_cpu_m) return 0
-    return Math.min(100, Math.round(usedCpuM.value / settingsStore.data.total_cpu_m * 100))
-  })
+  // ── Resource budgets ────────────────────────────────────────────────────────
+  // Each region of GET /settings carries its budgets as the API admits against them (`capacity`:
+  // the always-on and the FaaS overcommit budget per resource): the region capacity, or in an
+  // organization the organization's quota on a platform region (capacity_scope "quota").
+  const isInfinite = r => r.unlimited || r.region_mode === 'infinite'
+  // a platform region in an organization (is_synced) reports no cluster status of its own
+  const isReachable = r => r.is_synced || r.is_demo || r.cluster_status === 'online'
 
   const regionBreakdown = computed(() => {
     return (settingsStore.data.regions ?? []).map((r) => {
+      if (!isInfinite(r)) return { ...r, reachable: isReachable(r) }
+      // no budgets on an unlimited region: what the projects there reserve
       const rp = projects.value.filter((p) => p.knative_region_id === r.id)
       const usedMem = rp.reduce((s, p) => s + projectReservation(p).memory_mb, 0)
       const usedCpu = rp.reduce((s, p) => s + projectReservation(p).cpu_m, 0)
-      const memPct  = r.total_memory_mb ? Math.min(100, Math.round(usedMem / r.total_memory_mb * 100)) : 0
-      const cpuPct  = r.total_cpu_m     ? Math.min(100, Math.round(usedCpu / r.total_cpu_m     * 100)) : 0
-      return { ...r, usedMem, usedCpu, memPct, cpuPct }
+      return { ...r, reachable: isReachable(r), usedMem, usedCpu }
     })
   })
+
+  // Total over the active, reachable regions with budgets (infinite regions have none)
+  const capacityTotal = computed(() => sumCapacities(
+    regionBreakdown.value
+      .filter(r => !isInfinite(r) && r.is_active !== false && r.reachable && hasLimit(r.capacity))
+      .map(r => r.capacity),
+  ))
 
   const hasReadyRegion = computed(() =>
     (settingsStore.data.regions ?? []).some(r => r.is_active && (r.is_synced || r.is_demo || r.has_kubeconfig)),
@@ -115,7 +113,7 @@ export function useProjectsList(projects) {
     runtimeFilter, runtimeDropOpen, availableRuntimes,
     scalingFilter, scalingDropOpen,
     filtered, toggleFilter, closeDropdowns,
-    usedCpuM, usedMemoryMb, cpuPct, memPct, regionBreakdown, hasReadyRegion,
+    capacityTotal, regionBreakdown, hasReadyRegion,
     regionName, isDemoRegion,
     settingsStore,
   }

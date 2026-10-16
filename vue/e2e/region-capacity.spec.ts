@@ -32,6 +32,21 @@ test.describe('Region capacity', () => {
     await expect(page.getByText('Capacity settings saved.')).toBeVisible()
   })
 
+  test('the projects page shows both budgets, summed and per region', async ({ page, auth }) => {
+    await auth.signIn()
+    await page.goto('/projects')
+
+    // eu-1 and region-b, 8000m each × 3 for scale-to-zero workloads, 700m of it used on eu-1
+    const total = page.getByTestId('resource-total').getByTestId('capacity-cpu_m')
+    await expect(total).toContainText('0m / 16000m · 16000m free')
+    await expect(total).toContainText('FaaS overcommit (× 3)')
+    await expect(total).toContainText('700m / 48000m · 47300m free')
+
+    await page.getByTestId('resource-bars').click()
+    await expect(page.getByTestId('region-budgets-r-ready').getByTestId('capacity-cpu_m')).toContainText('700m / 24000m · 23300m free')
+    await expect(page.getByTestId('region-budgets-r-cron').getByTestId('capacity-memory_mb')).toContainText('FaaS overcommit (× 1.5)')
+  })
+
   test('a refused factor shows the reason', async ({ page, auth, mockApi }) => {
     Object.assign(mockApi.db.regions[0], { is_synced: false })
     await auth.signIn()

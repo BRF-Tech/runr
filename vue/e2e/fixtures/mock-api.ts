@@ -185,7 +185,12 @@ function addVersion(api: MockApi, db: MockDb, projectId: string, message: string
 }
 
 function settingsPayload(db: MockDb): Json {
-  return { ...db.settings, regions: db.regions, executor_images: db.executorImages }
+  // a region carries both capacity budgets (KnativeRegionResource `capacity`), shown on the projects page
+  const regions = db.regions.map((r) => {
+    const { cpu_m, memory_mb } = regionCapacity(r)
+    return { capacity: { cpu_m, memory_mb }, ...r }
+  })
+  return { ...db.settings, regions, executor_images: db.executorImages }
 }
 
 /** GET /branding with nothing customised (BrandingService::publicPayload): RunR by BRF Teknoloji. */

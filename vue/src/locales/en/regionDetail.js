@@ -277,6 +277,8 @@ export default {
         subtitle:               'Always-on workloads reserve the region capacity; scale-to-zero workloads count one pod against the overcommitted FaaS budget.',
         alwaysOn:               'Always-on (no overcommit)',
         faas:                   'FaaS overcommit (× {factor})',
+        faasMixed:              'FaaS overcommit',
+        noLimit:                'no limit',
         free:                   '{value} free',
         hint:                   'Always-on: min_scale ≥ 1 or scale to zero off, Kata pod overhead, queue consumers, sandboxes, model services. FaaS budget: capacity × factor minus the always-on reservations.',
         faas_cpu_overcommit:    'CPU overcommit factor',

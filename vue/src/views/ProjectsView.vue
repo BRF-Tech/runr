@@ -39,7 +39,7 @@ const {
   runtimeFilter, runtimeDropOpen, availableRuntimes,
   scalingFilter, scalingDropOpen,
   filtered, toggleFilter, closeDropdowns,
-  usedCpuM, usedMemoryMb, cpuPct, memPct, regionBreakdown, hasReadyRegion,
+  capacityTotal, regionBreakdown, hasReadyRegion,
   regionName, isDemoRegion,
   settingsStore,
 } = useProjectsList(projects)
@@ -219,14 +219,9 @@ usePlatformSync({ projects, refetch: silentRefresh })
       </div>
 
       <!-- Resource bars -->
-      <div v-if="!loading && (settingsStore.data.total_memory_mb || settingsStore.data.total_cpu_m)" data-tour="resource-bars">
+      <div v-if="!loading && capacityTotal" data-tour="resource-bars">
       <ResourceBars
-        :cpu-used="usedCpuM"
-        :cpu-total="settingsStore.data.total_cpu_m"
-        :cpu-pct="cpuPct"
-        :mem-used="usedMemoryMb"
-        :mem-total="settingsStore.data.total_memory_mb"
-        :mem-pct="memPct"
+        :total="capacityTotal"
         :region-breakdown="regionBreakdown"
       />
       </div>

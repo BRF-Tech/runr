@@ -20,6 +20,8 @@ export default {
     scalingCustomDesc:   'Min/max pod sayısını belirle',
     scalingCustomLabel:  '{min}-{max} kopya',
     totalResources: 'Toplam Kaynak',
+    totalResourcesHint: 'Sürekli açık projeler kapasiteyi ayırır; sıfıra ölçeklenen projeler bir pod\'la overcommit edilmiş FaaS bütçesinden sayılır.',
+    orgQuota:       'Kuruluş kotası',
     regionUnreachable:  'Erişilemez',
     regionBreakdown:    'Bölge Dağılımı',
     runtimeTagCaas: 'imj',

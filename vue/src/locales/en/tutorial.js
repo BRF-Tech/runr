@@ -17,7 +17,7 @@ export default {
       newProject:     'New Project',
       newProjectDesc: 'Click here to create a new serverless project.',
       resources:      'Resource Bars',
-      resourcesDesc:  'Monitor total CPU and memory usage across all your projects and regions.',
+      resourcesDesc:  'CPU and memory budgets across your regions: always-on projects use the capacity, scale-to-zero projects the overcommitted FaaS budget. Click for each region.',
       card:           'Project Card',
       cardDesc:       'Each card shows a project with its type, runtime, status and last version info. Click to open.',
       notifications:     'Notifications',
