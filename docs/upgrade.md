@@ -20,10 +20,13 @@ generated `runr-secret`, whose `APP_KEY` encrypts the secrets in the database.
    GitOps controllers) cannot read the Secret: give them `secret.appKey` with the current key, or
    manage the Secret yourself (`secret.create=false`).
 
-3. **Upgrade the release** with the new chart and its images:
+3. **Upgrade the release** with the new chart and its images. The chart comes from RunR's
+   private Helm repository, added as `runr` at install
+   ([Kubernetes (Helm)](../README.md#kubernetes-helm)):
 
    ```sh
-   helm upgrade runr ./helm -n runr --reuse-values \
+   helm repo update runr
+   helm upgrade runr runr/runr --version <version> -n runr --reuse-values \
      --set api.image.tag=<version> --set ui.image.tag=<version>
    ```
 
@@ -157,10 +160,9 @@ registry, the CLI's `RUNR_RUNTIME_REGISTRY`) needs them under the new paths: cop
 ([Image namespace ghcr.io/brf-tech/runr](#image-namespace-ghcriobrf-techrunr)); an upgrade from
 0.5.0 straight to 0.5.2 moves them there in one step.
 
-RunR's repository is [github.com/brf-tech/runr](https://github.com/brf-tech/runr) and its images
-are published under `ghcr.io/brf-tech` — the same image names, tags and digests that releases up
-to 0.5.0 published under `ghcr.io/runrsh`. The upgrade moves every reference an existing
-installation holds (also one that comes from 0.4.x); only the exact prefix `ghcr.io/runrsh/`
+RunR's images are published under `ghcr.io/brf-tech` — the same image names, tags and digests
+that releases up to 0.5.0 published under `ghcr.io/runrsh`. The upgrade moves every reference an
+existing installation holds (also one that comes from 0.4.x); only the exact prefix `ghcr.io/runrsh/`
 moves, references into other registries — a mirror of your own, the region registry's
 `<registry>/ghcr.io/…` path — stay as they are:
 

@@ -58,6 +58,27 @@ grep -qx "os=$os" "$GITHUB_OUTPUT" || fail "resolve: os"
 dir="$(sed -n 's/^dir=//p' "$GITHUB_OUTPUT")"
 [ "$dir" = "$tmp/toolcache/runr-cli/v9.9.9/$os-$arch" ] || fail "resolve: dir $dir"
 
+# "latest" is the tag in <cli-base-url>/latest.txt.
+printf 'v9.9.9
+' > "$tmp/release/latest.txt"
+: > "$GITHUB_OUTPUT"
+RUNR_CLI_VERSION=latest RUNR_CLI_BASE_URL="file://$tmp/release" bash "$here/scripts/resolve.sh" >/dev/null ||
+  fail "resolve: latest"
+grep -qx "tag=v9.9.9" "$GITHUB_OUTPUT" || fail "resolve: latest tag $(cat "$GITHUB_OUTPUT")"
+
+# A latest.txt without a release tag, or none at all, is refused.
+for bad in '<html>not found</html>' 'latest' 'v9.9'; do
+  printf '%s
+' "$bad" > "$tmp/release/latest.txt"
+  if RUNR_CLI_VERSION=latest RUNR_CLI_BASE_URL="file://$tmp/release" bash "$here/scripts/resolve.sh" >/dev/null 2>&1; then
+    fail "resolve: accepted latest.txt '$bad'"
+  fi
+done
+rm -f "$tmp/release/latest.txt"
+if RUNR_CLI_VERSION=latest RUNR_CLI_BASE_URL="file://$tmp/release" bash "$here/scripts/resolve.sh" >/dev/null 2>&1; then
+  fail "resolve: accepted a missing latest.txt"
+fi
+
 # --- install.sh ---------------------------------------------------------------------------
 RUNR_CLI_TAG=v9.9.9 RUNR_CLI_OS=$os RUNR_CLI_ARCH=$arch RUNR_CLI_DIR="$dir" \
   RUNR_CLI_BASE_URL="file://$tmp/release" bash "$here/scripts/install.sh" >/dev/null

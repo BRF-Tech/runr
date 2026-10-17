@@ -1,7 +1,7 @@
 # goreleaser configuration of the runr CLI. Builds static binaries for Linux, macOS and
-# Windows (amd64, arm64) with versionless archive names, so
-#   https://github.com/brf-tech/runr/releases/latest/download/runr_linux_amd64.tar.gz
-# always points at the newest release (the GitHub Action uses that layout).
+# Windows (amd64, arm64) with versionless archive names, published on runr.sh as
+#   https://runr.sh/dl/cli/<tag>/runr_linux_amd64.tar.gz (+ checksums.txt; latest.txt names the
+#   newest tag), the layout of https://runr.sh/install.sh and of the GitHub Action.
 #
 # Publishing is off: `goreleaser release --clean` builds dist/ only. To attach the archives to
 # a GitHub release set RUNR_PUBLISH=true (and GITHUB_TOKEN).

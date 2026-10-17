@@ -58,6 +58,8 @@ class E2eTestCommand extends Command
         {--ai-gpu : AI suite: also install GPU support and run a GPU CaaS project (needs a GPU visible to the nodes), or RUNR_E2E_GPU=1}
         {--gpu-image= : AI suite: image of the GPU CaaS check, built from examples/ai/gpu-caas (or RUNR_E2E_GPU_IMAGE)}
         {--gpu-node=* : AI suite: the GPU nodes GPU support is restricted to (repeatable; default: detected)}
+        {--ai-cases= : AI suite: only these cases, comma-separated, plus what they need (e.g. ai-gpu-caas; or RUNR_E2E_AI_CASES)}
+        {--gpu-abort-file=/tmp/runr-e2e-gpu-abort : AI suite: the GPU case stops with the text of this file once it exists (runtime/lib/test-ai.sh writes it when the host GPU needs a reset)}
         {--forgejo=/tmp/runr-forgejo.json : git-deploy suite: address and token of the throwaway Forgejo}';
 
     protected $description = 'Run end-to-end tests against a running API + Knative cluster';

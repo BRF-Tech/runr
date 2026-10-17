@@ -92,7 +92,7 @@ Example preset **"Ocean"** (blue scale, also available as a preset button in Set
 ### 1.4 Installing with your own brand via Helm values
 
 ```yaml
-# values-brand.yaml — helm upgrade --install runr ./helm -f values-brand.yaml
+# values-brand.yaml — helm upgrade --install runr runr/runr -f values-brand.yaml
 domain: console.example.com
 edition: multi-tenant
 
@@ -143,7 +143,7 @@ kubectl -n runr create secret generic example-brand-secret --from-file=favicon=.
 ```
 
 (`favicon.png.b64` holds a `data:image/png;base64,…` line.) The chart validates every
-`branding.*` value against `helm/values.schema.json` (URLs, data: URIs, colour formats, links).
+`branding.*` value against its `values.schema.json` (URLs, data: URIs, colour formats, links).
 
 The values become environment variables of the API, Horizon and scheduler pods
 (`BRANDING_PRODUCT_NAME`, `BRANDING_COMPANY_NAME`, `BRANDING_LOGO_LIGHT`, `BRANDING_LOGO_DARK`,

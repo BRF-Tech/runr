@@ -66,7 +66,8 @@ Commands:
   test-ai [test flags]                Kind + Knative, AI e2e: model services online/offline, snapshots, bindings
                                       (RUNR_E2E_TEI=1 adds TEI; GPU case when the host can give Kind a GPU,
                                       see lib/test-ai.sh; KIND_LOCK defaults to /tmp/runr-kind.lock,
-                                      KIND_ETCD_IN_MEMORY to 1)
+                                      KIND_ETCD_IN_MEMORY to 1; RUNR_E2E_AI_CASES=ai-gpu-caas runs single
+                                      cases; a host GPU that needs a reset ends the GPU case at once)
   test-bindings [test flags]          Kind + Knative, bindings e2e only (KV Redis, Garage, CloudNativePG, external)
   test-images [test flags]            Kind + Knative, uploaded images e2e (tar + wasm upload, CaaS from an
                                       upload, wasm-exec in C and Q; KIND_LOCK defaults to /tmp/runr-kind.lock)

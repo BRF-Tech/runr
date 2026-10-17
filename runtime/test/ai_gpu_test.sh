@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC2119  # cmd_test_ai runs without arguments here, as `ci.sh test-ai` does
 # Tests the GPU path of `ci.sh test-ai` (lib/test-ai.sh) without Docker, a GPU or Kind: docker,
 # nvidia-smi, nvidia-container-cli, df, kind, kubectl and cmd_test are shell functions. Checks the
 # reasons the GPU case is skipped, how the Kind GPU worker gets the GPU (Docker's default runtime
@@ -6,8 +7,11 @@
 # Kind nodes where the driver works become GPU nodes — every privileged Kind node sees the host's
 # /dev/nvidia* — and get the GPU image, the host's copy removed after that, `kind load`'s archive
 # in RUNR_E2E_TMPDIR, the disk check (the built images' sizes, every Kind node's own data, the
-# Compose stack, the preload) that keeps a GPU run from starting where it would fill the disk, and
-# etcd in memory unless KIND_ETCD_IN_MEMORY=0.
+# Compose stack, the preload) that keeps a GPU run from starting where it would fill the disk,
+# etcd in memory unless KIND_ETCD_IN_MEMORY=0, single cases (RUNR_E2E_AI_CASES, the GPU case on its
+# own without hf-serve) and the fail-fast of the GPU case when the host GPU needs a reset (nvidia-smi
+# says so, or dmesg has new Xid 119 / 154 lines): before the run, and by the watch that tells the
+# GPU case in the API container while the suite runs.
 #
 #   bash runtime/test/ai_gpu_test.sh
 set -euo pipefail
@@ -24,7 +28,8 @@ source "$here/lib/common.sh"
 source "$here/lib/test-ai.sh"
 
 # the knobs the expectations below assume unset
-unset KIND_WORKERS KIND_PRELOAD KIND_ETCD_IN_MEMORY RUNR_E2E_GPU_RESERVE_GB RUNR_E2E_GPU
+unset KIND_WORKERS KIND_PRELOAD KIND_ETCD_IN_MEMORY RUNR_E2E_GPU_RESERVE_GB RUNR_E2E_GPU RUNR_E2E_AI_CASES \
+  RUNR_E2E_TEI RUNR_E2E_GPU_WATCH_SECONDS
 AI_NVIDIA_RUNTIME_CONFIG="$tmp/config.toml"
 AI_NVIDIA_DEVICE="$tmp/nvidiactl"
 calls="$tmp/calls"
@@ -46,13 +51,17 @@ driver_files="/usr/bin/nvidia-smi
 /lib/firmware/nvidia/595.91.07/gsp_ga10x.bin"
 kind_nodes="ai-control-plane ai-worker ai-worker2 ai-worker3"
 driver_nodes="ai-worker3"  # the Kind nodes where nvidia-smi works
+smi_pstate=P8              # nvidia-smi --query-gpu=pstate
+dmesg_readable=1           # dmesg works for this user
+dmesg_lines=""             # the kernel's log
 
 host() {
   absent="" smi_gpu=1 default_runtime=runc host_free_kb=$((60 * 1024 * 1024))
   scratch_mount=/ scratch_dev=/dev/sdc scratch_free_kb=0
   img_hf_archive=$((GiB / 2)) img_hf_layers=("$GiB" 0 "$GiB")
   img_gpu_archive=$((45 * 1048576)) img_gpu_layers=($((126 * 1048576)) 0 $((8 * 1048576)))
-  rm -f -- "$AI_NVIDIA_RUNTIME_CONFIG" "$tmp/etcd"
+  smi_pstate=P8 dmesg_readable=1 dmesg_lines="" _ai_hf_serve=1 _ai_gpu_mark="0 0" _ai_gpu_watch_pid=""
+  rm -f -- "$AI_NVIDIA_RUNTIME_CONFIG" "$tmp/etcd" "$tmp/abort" "$tmp/hooks"
   touch "$AI_NVIDIA_DEVICE"
   : > "$calls"
 }
@@ -75,7 +84,15 @@ command() {
   if [ "${1:-}" = "-v" ] && [[ " $absent " == *" ${2:-} "* ]]; then return 1; fi
   builtin command "$@"
 }
-nvidia-smi() { [ "$smi_gpu" = 1 ] && echo "GPU 0: NVIDIA GeForce RTX 4050 Laptop GPU (UUID: GPU-0)"; return 0; }
+nvidia-smi() {
+  if [[ " $* " == *" --query-gpu=pstate "* ]]; then echo "$smi_pstate"; return 0; fi
+  [ "$smi_gpu" = 1 ] && echo "GPU 0: NVIDIA GeForce RTX 4050 Laptop GPU (UUID: GPU-0)"
+  return 0
+}
+dmesg() {
+  [ "$dmesg_readable" = 1 ] || { echo "dmesg: read kernel buffer failed: Operation not permitted" >&2; return 1; }
+  [ -z "$dmesg_lines" ] || printf '%s\n' "$dmesg_lines"
+}
 nvidia-container-cli() {
   [ "$1" = list ] || return 1
   # what the real one lists: device nodes first, then the driver's files
@@ -103,6 +120,12 @@ docker() {
         inspect) image_inspect_size "${*: -1}" ;;
         history) image_history_sizes "${*: -1}" ;;
       esac ;;
+    compose)
+      # the API container: the GPU case's abort file
+      case "$*" in
+        *"cat > ${AI_GPU_ABORT_FILE}"*) cat > "$tmp/abort" ;;
+        *"rm -f ${AI_GPU_ABORT_FILE}"*) rm -f -- "$tmp/abort" ;;
+      esac ;;
     exec)
       # every Kind node sees /dev/nvidia0; nvidia-smi works where the driver is
       case "$*" in
@@ -114,6 +137,7 @@ docker() {
 }
 kind() {
   echo "kind $* TMPDIR=${TMPDIR:-}" >> "$calls"
+  # shellcheck disable=SC2086  # the node names, one word each
   [ "$1 $2" = "get nodes" ] && printf '%s\n' $kind_nodes
   return 0
 }
@@ -123,6 +147,7 @@ cmd_test() {
   printf '%s\n' "${KIND_EXTRA_NODES_YAML:-}" > "$tmp/kind-nodes.yaml"
   printf '%s\n' "$TEST_E2E_EXTRA_ARGS" > "$tmp/args"
   printf '%s\n' "${KIND_ETCD_IN_MEMORY:-}" > "$tmp/etcd"
+  printf '%s %s\n' "${TEST_BEFORE_E2E:-}" "${TEST_AFTER_E2E:-}" > "$tmp/hooks"
 }
 
 reason_is() {
@@ -317,5 +342,129 @@ grep -q "^kind load docker-image ${AI_GPU_IMAGE_TAG}" "$calls" && fail "GPU imag
 grep -q "^docker rmi ${AI_GPU_IMAGE_TAG}" "$calls" || fail "GPU image kept on the host without a GPU node"
 driver_nodes="ai-worker3"
 echo "ok - only Kind nodes with a working driver become GPU nodes and get the GPU image"
+
+# ── the host GPU: the GPU case ends at once when it needs a reset ───────────────────────────────
+host
+[ -z "$(ai_host_gpu_problem "0 0")" ] || fail "a usable GPU: $(ai_host_gpu_problem "0 0")"
+smi_pstate="[GPU requires reset]"
+[ "$(ai_host_gpu_problem "0 0")" = "host GPU needs a reset (nvidia-smi: [GPU requires reset])" ] || fail "pstate: $(ai_host_gpu_problem "0 0")"
+smi_pstate="ERR!"
+[ "$(ai_host_gpu_problem "0 0")" = "host GPU needs a reset (nvidia-smi: ERR!)" ] || fail "ERR!: $(ai_host_gpu_problem "0 0")"
+# dmesg: Xid 119 (GSP RPC timeout) and 154 (reset required) after the mark count, others not
+host
+dmesg_lines='[   50.000001] NVRM: Xid (PCI:0000:01:00): 119, Timeout after 6s of waiting for RPC response from GPU0 GSP! Expected function 4097 (GSP_INIT_DONE)
+[  120.100000] NVRM: Xid (PCI:0000:01:00): 13, Graphics Exception: ESR 0x404600
+[  150.500000] NVRM: Xid (PCI:0000:01:00): 119, pid=216976, name=nvidia-containe, Timeout after 7s of waiting for RPC response from GPU0 GSP!
+[  151.000000] NVRM: Xid (PCI:0000:01:00): 154, GPU recovery action changed from 0x0 (None) to 0x1 (GPU Reset Required)'
+[ "$(ai_host_gpu_mark | cut -d' ' -f2)" = 3 ] || fail "the mark counts the Xid 119/154 lines: $(ai_host_gpu_mark)"
+[ "$(ai_host_gpu_problem "100 1")" = "host GPU needs a reset (Xid 119,154)" ] || fail "new Xids: $(ai_host_gpu_problem "100 1")"
+[ -z "$(ai_host_gpu_problem "200 3")" ] || fail "Xids before the mark counted: $(ai_host_gpu_problem "200 3")"
+smi_pstate="[GPU requires reset]"
+[ "$(ai_host_gpu_problem "100 1")" = "host GPU needs a reset (Xid 119,154; nvidia-smi: [GPU requires reset])" ] \
+  || fail "Xids and pstate: $(ai_host_gpu_problem "100 1")"
+# lines without a timestamp (dmesg -t, printk.time=0): those after the counted ones are new
+host
+dmesg_lines='NVRM: Xid (PCI:0000:01:00): 119, Timeout after 6s of waiting for RPC response from GPU0 GSP!
+NVRM: Xid (PCI:0000:01:00): 154, GPU recovery action changed from 0x0 (None) to 0x1 (GPU Reset Required)'
+[ "$(ai_host_gpu_problem "0 1")" = "host GPU needs a reset (Xid 154)" ] || fail "untimed lines: $(ai_host_gpu_problem "0 1")"
+[ -z "$(ai_host_gpu_problem "0 2")" ] || fail "counted untimed lines: $(ai_host_gpu_problem "0 2")"
+# dmesg not readable (kernel.dmesg_restrict): nvidia-smi alone
+host; dmesg_readable=0
+dmesg_lines='[  150.5] NVRM: Xid (PCI:0000:01:00): 154, GPU recovery action changed from 0x0 (None) to 0x1 (GPU Reset Required)'
+[ -z "$(ai_host_gpu_problem "0 0")" ] || fail "an unreadable dmesg counted: $(ai_host_gpu_problem "0 0")"
+[ "$(ai_host_gpu_mark | cut -d' ' -f2)" = 0 ] || fail "mark with an unreadable dmesg: $(ai_host_gpu_mark)"
+echo "ok - host GPU problem: nvidia-smi's pstate, Xid 119 / 154 after the mark, dmesg where readable"
+
+# the watch tells the GPU case (the abort file in the API container) and ends
+host; smi_pstate="[GPU requires reset]"
+out=$(ai_gpu_watch "0 0" "$$" 2>&1) || fail "watch: $out"
+echo "$out" | grep -q '✗ host GPU needs a reset (nvidia-smi: \[GPU requires reset\]): the GPU case stops' || fail "watch output: $out"
+[ "$(cat "$tmp/abort")" = "host GPU needs a reset (nvidia-smi: [GPU requires reset])" ] || fail "abort file: $(cat "$tmp/abort" 2>&1)"
+grep -q "^docker compose exec -T api sh -c cat > ${AI_GPU_ABORT_FILE}" "$calls" || fail "not written in the API container: $(cat "$calls")"
+# the run gone: the watch ends without a word
+host; smi_pstate="[GPU requires reset]"
+sleep 0 & gone=$!; wait "$gone"
+ai_gpu_watch "0 0" "$gone" >/dev/null 2>&1 || fail "watch of a finished run failed"
+[ ! -e "$tmp/abort" ] || fail "a watch whose run is gone wrote the abort file"
+# a usable GPU: the watch polls while the run lasts and leaves the GPU case alone
+host; sleep 1 & run=$!
+RUNR_E2E_GPU_WATCH_SECONDS=0.2 ai_gpu_watch "0 0" "$run" >/dev/null 2>&1 || fail "watch of a usable GPU failed"
+[ ! -e "$tmp/abort" ] || fail "a usable GPU stopped the GPU case"
+# TEST_BEFORE_E2E / TEST_AFTER_E2E: the watch runs with the suite when the GPU case is on
+host; _ai_gpu=1; smi_pstate="[GPU requires reset]"; echo "old" > "$tmp/abort"
+ai_before_e2e >/dev/null
+[ -n "$_ai_gpu_watch_pid" ] || fail "no watch with the GPU case on"
+for _ in $(seq 1 50); do [ "$(cat "$tmp/abort" 2>/dev/null)" != old ] && [ -s "$tmp/abort" ] && break; sleep 0.1; done
+[ "$(cat "$tmp/abort")" = "host GPU needs a reset (nvidia-smi: [GPU requires reset])" ] || fail "the watch did not tell the GPU case: $(cat "$tmp/abort" 2>&1)"
+rm_at=$(grep -n "^docker compose exec -T api rm -f ${AI_GPU_ABORT_FILE}" "$calls" | cut -d: -f1)
+write_at=$(grep -n "^docker compose exec -T api sh -c cat > " "$calls" | cut -d: -f1)
+[ -n "$rm_at" ] && [ -n "$write_at" ] && [ "$rm_at" -lt "$write_at" ] || fail "an earlier run's reason not removed first: $(cat "$calls")"
+ai_after_e2e
+[ -z "$_ai_gpu_watch_pid" ] || fail "watch not ended by TEST_AFTER_E2E"
+host; _ai_gpu=""; smi_pstate="[GPU requires reset]"
+ai_before_e2e >/dev/null
+[ -z "$_ai_gpu_watch_pid" ] || fail "a watch without the GPU case"
+grep -q '^docker compose' "$calls" && fail "the API container touched without the GPU case"
+ai_after_e2e
+echo "ok - the watch: the abort file for the GPU case, only with the GPU case on, ends with the run"
+
+# ── single cases: RUNR_E2E_AI_CASES ─────────────────────────────────────────────────────────────
+[ "$(ai_selected_cases | paste -sd' ' -)" = "$AI_CASES" ] || fail "all cases by default: $(ai_selected_cases)"
+[ "$(RUNR_E2E_AI_CASES="ai-gpu-caas, ai-model ai-gpu-caas" ai_selected_cases | paste -sd' ' -)" = "ai-gpu-caas ai-model" ] \
+  || fail "named cases: $(RUNR_E2E_AI_CASES="ai-gpu-caas, ai-model ai-gpu-caas" ai_selected_cases)"
+out=$(RUNR_E2E_AI_CASES=ai-gpu,ai-model ai_selected_cases) && fail "an unknown case passed: $out"
+[[ "$out" == "RUNR_E2E_AI_CASES names no case of the suite: ai-gpu (the cases: ai-model, "* ]] || fail "unknown case: $out"
+
+# the GPU case on its own: no hf-serve, the suite told, the watch hooked in
+host; _ai_gpu=""; unset KIND_EXTRA_NODES_YAML
+out=$(RUNR_E2E_AI_CASES=ai-gpu-caas cmd_test_ai 2>&1) || fail "the GPU case alone: $out"
+echo "$out" | grep -q 'cases: ai-gpu-caas (RUNR_E2E_AI_CASES' || fail "cases not shown: $out"
+echo "$out" | grep -q 'hf-serve image: not needed by the selected cases' || fail "hf-serve note: $out"
+grep -q '^docker build .*runtime/hf-serve' "$calls" && fail "hf-serve built for the GPU case alone"
+grep -q -- "--ai-cases=ai-gpu-caas" "$tmp/args" || fail "suite not told: $(cat "$tmp/args")"
+grep -q -- "--ai-gpu --gpu-image=${AI_GPU_IMAGE_TAG}" "$tmp/args" || fail "GPU case not on: $(cat "$tmp/args")"
+[ "$(cat "$tmp/hooks")" = "ai_before_e2e ai_after_e2e" ] || fail "hooks: $(cat "$tmp/hooks")"
+# …no hf-serve in the Kind nodes or in the disk check
+host; _ai_gpu=1; _ai_hf_serve=0
+TEST_E2E_EXTRA_ARGS="--hf-serve-image=x --ai-cases=ai-gpu-caas --ai-gpu --gpu-image=${AI_GPU_IMAGE_TAG}"
+out=$(ai_after_kind_create ai 2>&1) || fail "after create, GPU case alone: $out"
+grep -q "^kind load docker-image ${AI_HF_SERVE_TAG}" "$calls" && fail "hf-serve loaded for the GPU case alone"
+grep -qx "kind load docker-image ${AI_GPU_IMAGE_TAG} --name ai --nodes ai-worker3 TMPDIR=${RUNR_E2E_TMPDIR}" "$calls" || fail "GPU image: $(grep '^kind load' "$calls")"
+host; _ai_hf_serve=0; host_free_kb=$((1024 * 1024))
+[[ "$(ai_gpu_disk_problem)" == *"hf-serve 0.0 GiB"* ]] || fail "hf-serve counted for the GPU case alone: $(ai_gpu_disk_problem)"
+
+# the GPU case alone where it cannot run: the run ends before a cluster
+host; smi_gpu=0; unset KIND_EXTRA_NODES_YAML
+out=$( (RUNR_E2E_AI_CASES=ai-gpu-caas cmd_test_ai) 2>&1) && fail "the GPU case alone without a GPU started: $out"
+echo "$out" | grep -q 'the GPU case does not run here: nothing to run' || fail "no reason: $out"
+grep -q '^cmd_test' "$calls" && fail "cmd_test called without a case to run"
+host; smi_pstate="[GPU requires reset]"; unset KIND_EXTRA_NODES_YAML
+out=$( (RUNR_E2E_AI_CASES=ai-gpu-caas cmd_test_ai) 2>&1) && fail "the GPU case alone on a GPU that needs a reset started: $out"
+echo "$out" | grep -q '✗ GPU case: host GPU needs a reset (nvidia-smi: \[GPU requires reset\])' || fail "reset not reported: $out"
+grep -q '^cmd_test' "$calls" && fail "cmd_test called on a GPU that needs a reset"
+grep -q 'gpu-caas' "$calls" && fail "GPU image built on a GPU that needs a reset"
+# …with the other cases: they run, the GPU case stops once the suite gets there
+host; smi_pstate="[GPU requires reset]"; unset KIND_EXTRA_NODES_YAML
+out=$(cmd_test_ai 2>&1) || fail "all cases on a GPU that needs a reset: $out"
+echo "$out" | grep -q 'The GPU case stops with it once the suite gets there; the other cases run' || fail "note: $out"
+grep -q '^cmd_test --suite=ai' "$calls" || fail "cmd_test not called"
+grep -q -- '--ai-gpu' "$tmp/args" || fail "GPU case not on (it has to fail in the suite): $(cat "$tmp/args")"
+
+# other selections
+host; unset KIND_EXTRA_NODES_YAML
+out=$(RUNR_E2E_AI_CASES=ai-online-cpu cmd_test_ai 2>&1) || fail "ai-online-cpu: $out"
+echo "$out" | grep -q 'GPU case: not selected (RUNR_E2E_AI_CASES)' || fail "GPU case not deselected: $out"
+grep -q 'gpu-caas' "$calls" && fail "GPU image built for ai-online-cpu"
+grep -q '^docker build -q --pull -t .*hf-serve' "$calls" || fail "hf-serve not built for ai-online-cpu"
+grep -q -- "--ai-cases=ai-online-cpu" "$tmp/args" || fail "suite args: $(cat "$tmp/args")"
+grep -q -- '--ai-gpu\|--ai-tei' "$tmp/args" && fail "optional cases on: $(cat "$tmp/args")"
+host; unset KIND_EXTRA_NODES_YAML
+out=$(RUNR_E2E_AI_CASES=ai-tei-cpu RUNR_E2E_GPU=0 cmd_test_ai 2>&1) || fail "ai-tei-cpu: $out"
+grep -q -- "--ai-cases=ai-tei-cpu --ai-tei" "$tmp/args" || fail "TEI not turned on by naming it: $(cat "$tmp/args")"
+host; unset KIND_EXTRA_NODES_YAML
+out=$( (RUNR_E2E_AI_CASES=ai-gpu cmd_test_ai) 2>&1) && fail "an unknown case started: $out"
+echo "$out" | grep -q 'RUNR_E2E_AI_CASES names no case of the suite: ai-gpu' || fail "unknown case: $out"
+grep -q '^docker build' "$calls" && fail "built for an unknown case"
+echo "ok - single cases: RUNR_E2E_AI_CASES, the GPU case alone (no hf-serve, ends at once where it cannot run)"
 
 echo "ok: ai-gpu"

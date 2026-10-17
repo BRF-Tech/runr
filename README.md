@@ -202,8 +202,14 @@ Details: [docs/development.md](docs/development.md).
 
 ### Kubernetes (Helm)
 
+The Helm chart is provided to customers from RunR's private Helm repository. Its address and
+credentials come with access, which you request through the
+[enterprise contact form](https://runr.sh/#enterprise) on runr.sh. Add the repository once
+(the password on stdin), then install the chart:
+
 ```bash
-helm upgrade --install runr ./helm \
+helm repo add runr <repository URL> --username <user> --password-stdin
+helm upgrade --install runr runr/runr \
   --namespace runr --create-namespace \
   --set domain=runr.example.com
 ```
@@ -212,7 +218,7 @@ The chart installs the gateway, UI, API, Horizon, scheduler, Reverb and — unle
 external services — PostgreSQL, Redis and Mailpit, plus migration and bootstrap hooks that create
 the first administrator. `helm status runr -n runr` prints how to read the generated password.
 Set `edition=multi-tenant` for the Tenancy and Auth Provider modules. All values are documented in
-[helm/values.yaml](helm/values.yaml) and validated by [helm/values.schema.json](helm/values.schema.json).
+the chart's `values.yaml` (`helm show values runr/runr`) and validated by its `values.schema.json`.
 Existing installations are upgraded in place with `helm upgrade`: [docs/upgrade.md](docs/upgrade.md).
 
 ### Single host (Docker Compose with prebuilt images)
@@ -230,8 +236,8 @@ runr dev          # http://localhost:8080, restarts on every change
 runr deploy       # builds, deploys and prints the URL
 ```
 
-Install the CLI from the [releases](https://github.com/brf-tech/runr/releases) or with
-`go install`; see [docs/cli.md](docs/cli.md#install).
+Install the CLI with `curl -fsSL https://runr.sh/install.sh | sh` (Linux, macOS) or download it
+for your platform from [runr.sh/dl](https://runr.sh/dl/); see [docs/cli.md](docs/cli.md#install).
 
 ## Repository layout
 

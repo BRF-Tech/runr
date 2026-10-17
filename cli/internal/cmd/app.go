@@ -60,7 +60,7 @@ type App struct {
 	DevCacheDir string
 	// MaxFollowPolls stops `logs -f` after that many polls (tests); 0 = until interrupted.
 	MaxFollowPolls int
-	// ReleaseURL is the GitHub API URL of the latest CLI release (update check).
+	// ReleaseURL is the URL of the plain-text tag of the latest CLI release (update check).
 	ReleaseURL string
 
 	cfg    *config.File
@@ -84,7 +84,7 @@ func NewApp() *App {
 		},
 		OpenURL:    openBrowser,
 		Docker:     dev.ExecDocker{},
-		ReleaseURL: "https://api.github.com/repos/brf-tech/runr/releases/latest",
+		ReleaseURL: "https://runr.sh/dl/cli/latest.txt",
 	}
 }
 

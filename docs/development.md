@@ -691,6 +691,14 @@ stack running (Compose project `runr-upgrade`, API on `127.0.0.1:18060`).
   `RUNR_E2E_GPU_RESERVE_GB` for the rest) and does not start when Docker's root has less free; its
   `kind load` archives go to `RUNR_E2E_TMPDIR` (default `/var/tmp`) instead of a RAM-backed `/tmp`
   ([docs/ai.md](ai.md#testing))
+- **Single AI cases, a GPU that needs a reset**: `RUNR_E2E_AI_CASES=ai-gpu-caas runtime/ci.sh test-ai`
+  runs only the named cases (comma-separated, `test:e2e --ai-cases`) and what they need
+  (`ai-binding` → `ai-offline-cpu` → `ai-mirror` → `ai-model`); the GPU case alone builds and loads
+  no hf-serve image. The GPU case ends at once with "host GPU needs a reset (…)" when
+  `nvidia-smi --query-gpu=pstate` reports "GPU requires reset" / ERR! or dmesg (where readable) has
+  new Xid 119 / 154 lines: before the run (the GPU case alone does not start then) and, every
+  `RUNR_E2E_GPU_WATCH_SECONDS` (default 10), while the suite waits for an allocatable
+  `nvidia.com/gpu` — instead of after 1200 s
 - **Kubeconfig**: for Kind, `kind get kubeconfig --internal` (the API services join the `kind` network and reach the control-plane container by name, on Linux hosts too); for an external cluster, `127.0.0.1` is rewritten to `host.docker.internal`. The file is copied into the container with `docker compose cp`
 - **Test command**: `docker compose exec api php artisan test:e2e --base-url=http://localhost --kubeconfig=/tmp/kubeconfig`
 - **Cleanup**: `docker compose down` + Kind cluster deletion (unless `--no-cleanup`); with `KIND_LOCK`,

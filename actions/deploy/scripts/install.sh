@@ -7,7 +7,7 @@ tag="${RUNR_CLI_TAG:?}"
 os="${RUNR_CLI_OS:?}"
 arch="${RUNR_CLI_ARCH:?}"
 dir="${RUNR_CLI_DIR:?}"
-base="${RUNR_CLI_BASE_URL:-https://github.com/brf-tech/runr/releases/download}"
+base="${RUNR_CLI_BASE_URL:-https://runr.sh/dl/cli}"
 
 ext=tar.gz
 [ "$os" = windows ] && ext=zip

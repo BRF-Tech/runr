@@ -7,6 +7,11 @@
 #                 ai-model, ai-online-cpu, ai-mirror, ai-offline-cpu, ai-binding
 #                 [ai-tei-cpu]  RUNR_E2E_TEI=1
 #                 [ai-gpu-caas] RUNR_E2E_GPU=auto (default) | 1 | 0
+#               RUNR_E2E_AI_CASES=<case>[,<case>…] runs only these cases (test:e2e --ai-cases) and
+#               what they need (ai-binding → ai-offline-cpu → ai-mirror → ai-model, ai-online-cpu →
+#               ai-model); naming ai-tei-cpu turns it on. RUNR_E2E_AI_CASES=ai-gpu-caas runs the GPU
+#               case on its own: no hf-serve image is built or loaded, and the run ends right away
+#               when the GPU case cannot run.
 #
 # Prerequisites: what `ci.sh test` needs (docker, kind, kubectl, the compose stack) plus internet
 # access from the Kind nodes: the CPU cases download hf-internal-testing/tiny-random-bert (a few
@@ -54,6 +59,14 @@
 # compiles for its GPU), so any NVIDIA GPU from compute capability 5.0 on will do. The GPU image
 # goes into the GPU node(s) only, and the host's copy is removed once they have it. The driver
 # files are those of the host when the cluster is created; each run creates its own cluster.
+#
+# A host GPU that needs a reset ends the GPU case at once, instead of after AI_WAIT_GPU (1200 s) of
+# waiting for an allocatable nvidia.com/gpu (ai_host_gpu_problem): `nvidia-smi --query-gpu=pstate`
+# says "GPU requires reset" or ERR!, or dmesg (where it is readable) has Xid 119 (GSP RPC timeout)
+# or 154 (GPU reset required) lines since the run started. A laptop GPU that fails to wake from
+# runtime D3 does that. It is checked before the run (a run of the GPU case alone ends there) and,
+# while the suite runs, every RUNR_E2E_GPU_WATCH_SECONDS (default 10) (ai_before_e2e): the reason
+# then goes into the API container (AI_GPU_ABORT_FILE), where the GPU case reads it and stops.
 
 AI_HF_SERVE_VERSION="${HF_SERVE_VERSION:-1.1.1}"
 AI_HF_SERVE_TAG="${REGISTRY}/hf-serve:${AI_HF_SERVE_VERSION}"
@@ -63,7 +76,112 @@ AI_GPU_IMAGE_TAG="${REGISTRY}/ai-gpu-caas:e2e"
 AI_NVIDIA_RUNTIME_CONFIG="${AI_NVIDIA_RUNTIME_CONFIG:-/etc/nvidia-container-runtime/config.toml}"
 AI_NVIDIA_DEVICE="${AI_NVIDIA_DEVICE:-/dev/nvidiactl}"
 
+# The suite's cases, in its order, and those that use the hf-serve image
+AI_CASES="ai-model ai-online-cpu ai-mirror ai-offline-cpu ai-binding ai-tei-cpu ai-gpu-caas"
+AI_HF_SERVE_CASES="ai-model ai-online-cpu ai-mirror ai-offline-cpu ai-binding"
+# In the API container: the GPU case stops with this file's text (ai_gpu_watch writes it)
+AI_GPU_ABORT_FILE="/tmp/runr-e2e-gpu-abort"
+
 _ai_gpu=""
+_ai_hf_serve=1
+_ai_gpu_mark="0 0"
+_ai_gpu_watch_pid=""
+
+# ai_selected_cases — the cases RUNR_E2E_AI_CASES names (comma- or space-separated), one per line;
+# every case when it is unset. Fails on a name that is not a case of the suite.
+ai_selected_cases() {
+  local spec="${RUNR_E2E_AI_CASES:-}" name unknown=""
+  spec="${spec//,/ }"
+  if [ -z "${spec// /}" ]; then
+    # shellcheck disable=SC2086  # the list's words
+    printf '%s\n' $AI_CASES
+    return 0
+  fi
+  for name in $spec; do
+    [[ " $AI_CASES " == *" $name "* ]] || unknown="${unknown:+${unknown}, }${name}"
+  done
+  if [ -n "$unknown" ]; then
+    echo "RUNR_E2E_AI_CASES names no case of the suite: ${unknown} (the cases: ${AI_CASES// /, })"
+    return 1
+  fi
+  # shellcheck disable=SC2086  # the list's words
+  printf '%s\n' $spec | awk '!seen[$0]++'
+}
+
+# ai_case_selected <case> — RUNR_E2E_AI_CASES is unset or names <case>
+ai_case_selected() {
+  ai_selected_cases 2>/dev/null | grep -qx -- "$1"
+}
+
+# ai_host_gpu_xids — the host kernel's Xid 119 (GSP RPC timeout) and 154 (GPU reset required)
+# lines from dmesg; none where the kernel's log is not readable
+ai_host_gpu_xids() {
+  dmesg 2>/dev/null | grep -E 'NVRM: Xid \([^)]*\): (119|154),' || true
+}
+
+# ai_host_gpu_mark — where the host stands now, "<seconds since boot> <Xid 119/154 lines>":
+# ai_host_gpu_problem counts the Xid lines after it as new
+ai_host_gpu_mark() {
+  local up
+  up=$(awk '{ printf "%d", $1 }' /proc/uptime 2>/dev/null || true)
+  echo "${up:-0} $(ai_host_gpu_xids | grep -c . || true)"
+}
+
+# ai_host_gpu_problem [mark] — empty while the host's GPU is usable, otherwise "host GPU needs a
+# reset (…)": nvidia-smi's pstate says "GPU requires reset" or ERR!, or dmesg has Xid 119 / 154
+# lines after <mark> (ai_host_gpu_mark; by their timestamp, by their count where they have none)
+ai_host_gpu_problem() {
+  local since count state codes detail=""
+  read -r since count <<< "${1:-0 0}"
+  state=$(nvidia-smi --query-gpu=pstate --format=csv,noheader 2>&1 | head -n 1 || true)
+  codes=$(ai_host_gpu_xids | awk -v since="${since:-0}" -v count="${count:-0}" '
+    { n++; t = -1
+      if (match($0, /^\[ *[0-9]+\.[0-9]+\]/)) { s = substr($0, RSTART + 1, RLENGTH - 2); t = s + 0 }
+      if ((t >= 0 && t >= since) || (t < 0 && n > count)) print }' \
+    | grep -o -E 'Xid \([^)]*\): (119|154)' | awk '{ print $NF }' | sort -u | paste -sd, - || true)
+  [ -z "$codes" ] || detail="Xid ${codes}"
+  case "$state" in
+    *"requires reset"* | *"ERR!"*) detail="${detail:+${detail}; }nvidia-smi: ${state}" ;;
+  esac
+  [ -z "$detail" ] || echo "host GPU needs a reset (${detail})"
+}
+
+# ai_gpu_watch <mark> <pid> — while the run (<pid>) lasts, the host's GPU every
+# RUNR_E2E_GPU_WATCH_SECONDS (default 10) s; once it needs a reset, the reason goes into the API
+# container, where the GPU case stops with it
+ai_gpu_watch() {
+  local mark="$1" parent="$2" problem
+  while kill -0 "$parent" 2>/dev/null; do
+    problem=$(ai_host_gpu_problem "$mark")
+    if [ -n "$problem" ]; then
+      echo -e "  ${RED}✗ ${problem}: the GPU case stops${NC}"
+      printf '%s\n' "$problem" | docker compose exec -T api sh -c "cat > ${AI_GPU_ABORT_FILE}" >/dev/null 2>&1 \
+        || echo "  (could not tell the GPU case: docker compose exec failed)"
+      return 0
+    fi
+    sleep "${RUNR_E2E_GPU_WATCH_SECONDS:-10}"
+  done
+}
+
+# TEST_BEFORE_E2E hook of cmd_test: with the GPU case on, the host GPU watch for the suite's run
+# (a reason left by an earlier run in the same container removed first)
+ai_before_e2e() {
+  [ "$_ai_gpu" = "1" ] || return 0
+  docker compose exec -T api rm -f "$AI_GPU_ABORT_FILE" >/dev/null 2>&1 || true
+  ai_gpu_watch "$_ai_gpu_mark" "$$" &
+  _ai_gpu_watch_pid=$!
+}
+
+# TEST_AFTER_E2E hook of cmd_test: the watch ends with the suite (it also ends by itself once the
+# run is gone)
+ai_after_e2e() {
+  if [ -n "$_ai_gpu_watch_pid" ]; then
+    kill "$_ai_gpu_watch_pid" 2>/dev/null || true
+    wait "$_ai_gpu_watch_pid" 2>/dev/null || true
+    _ai_gpu_watch_pid=""
+  fi
+  return 0
+}
 
 # The NVIDIA driver's files the NVIDIA runtime puts into a GPU container (libraries, binaries,
 # firmware), one per line, as `nvidia-container-cli list` names them; the device nodes left out.
@@ -174,6 +292,8 @@ ai_gpu_disk_problem() {
   local node=$((AI_DISK_NODE_MIB * mib)) compose=$((AI_DISK_COMPOSE_MIB * mib)) preload=$((AI_DISK_PRELOAD_MIB * mib))
   local root_free="" root_mount="" root_source="" tmp_free="" tmp_mount="" tmp_source="" detail
   read -r hf_archive hf_unpacked < <(ai_image_sizes "$AI_HF_SERVE_TAG")
+  # no selected case uses hf-serve (RUNR_E2E_AI_CASES): not built, not loaded
+  [ "$_ai_hf_serve" = "1" ] || { hf_archive=0; hf_unpacked=0; }
   read -r gpu_archive gpu_unpacked < <(ai_image_sizes "$AI_GPU_IMAGE_TAG")
   hf=$((hf_archive + hf_unpacked))
   gpu=$((gpu_archive + gpu_unpacked))
@@ -258,12 +378,14 @@ ai_after_kind_create() {
   local cluster="$1"
   echo ""
   echo "AI e2e: images into kind/${cluster}..."
-  ai_kind_load "$cluster" "$AI_HF_SERVE_TAG"
-  if [ "$AI_HF_SERVE_TAG" != "$AI_HF_SERVE_DEFAULT_TAG" ]; then
-    # mirror Jobs and receivers use the configured default image
-    ai_kind_load "$cluster" "$AI_HF_SERVE_DEFAULT_TAG"
+  if [ "$_ai_hf_serve" = "1" ]; then
+    ai_kind_load "$cluster" "$AI_HF_SERVE_TAG"
+    if [ "$AI_HF_SERVE_TAG" != "$AI_HF_SERVE_DEFAULT_TAG" ]; then
+      # mirror Jobs and receivers use the configured default image
+      ai_kind_load "$cluster" "$AI_HF_SERVE_DEFAULT_TAG"
+    fi
+    echo "  ${AI_HF_SERVE_TAG}"
   fi
-  echo "  ${AI_HF_SERVE_TAG}"
 
   [ "$_ai_gpu" = "1" ] || return 0
 
@@ -309,23 +431,47 @@ cmd_test_ai() {
   done
 
   echo -e "${BOLD}AI e2e — model services, offline snapshots, bindings, GPU${NC}"
+  local cases case only_gpu=0
+  if ! cases=$(ai_selected_cases); then
+    echo -e "${RED}  ${cases}${NC}"
+    return 1
+  fi
+  if [ -n "${RUNR_E2E_AI_CASES:-}" ]; then
+    echo "  cases: $(echo "$cases" | paste -sd, -) (RUNR_E2E_AI_CASES; the suite adds what they need)"
+    if [ "$cases" = "ai-gpu-caas" ]; then only_gpu=1; fi
+  fi
   if [ "$external" = "0" ] && ! ai_kind_tmpdir >/dev/null; then
     echo -e "${RED}  RUNR_E2E_TMPDIR=${RUNR_E2E_TMPDIR} is not a writable directory (kind load's temporary archive)${NC}"
     return 1
   fi
-  echo "  hf-serve image: ${AI_HF_SERVE_TAG} (building runtime/hf-serve, CPU)"
-  docker build -q --pull -t "$AI_HF_SERVE_TAG" "${SCRIPT_DIR}/hf-serve" >/dev/null
-  if [ "$AI_HF_SERVE_TAG" != "$AI_HF_SERVE_DEFAULT_TAG" ]; then
-    docker tag "$AI_HF_SERVE_TAG" "$AI_HF_SERVE_DEFAULT_TAG"
+  _ai_hf_serve=0
+  for case in $AI_HF_SERVE_CASES; do
+    if ai_case_selected "$case"; then _ai_hf_serve=1; fi
+  done
+  if [ "$_ai_hf_serve" = "1" ]; then
+    echo "  hf-serve image: ${AI_HF_SERVE_TAG} (building runtime/hf-serve, CPU)"
+    docker build -q --pull -t "$AI_HF_SERVE_TAG" "${SCRIPT_DIR}/hf-serve" >/dev/null
+    if [ "$AI_HF_SERVE_TAG" != "$AI_HF_SERVE_DEFAULT_TAG" ]; then
+      docker tag "$AI_HF_SERVE_TAG" "$AI_HF_SERVE_DEFAULT_TAG"
+    fi
+  else
+    echo "  hf-serve image: not needed by the selected cases"
   fi
 
   local extra="--hf-serve-image=${AI_HF_SERVE_TAG}"
-  if [ "${RUNR_E2E_TEI:-0}" = "1" ]; then
+  if [ -n "${RUNR_E2E_AI_CASES:-}" ]; then
+    extra="${extra} --ai-cases=$(echo "$cases" | paste -sd, -)"
+    if ai_case_selected ai-tei-cpu; then
+      extra="${extra} --ai-tei"
+    fi
+  elif [ "${RUNR_E2E_TEI:-0}" = "1" ]; then
     extra="${extra} --ai-tei"
   fi
 
   local gpu="${RUNR_E2E_GPU:-auto}" reason="" route="" problem=""
-  if [ "$gpu" = "0" ]; then
+  if ! ai_case_selected ai-gpu-caas; then
+    echo "  GPU case: not selected (RUNR_E2E_AI_CASES)"
+  elif [ "$gpu" = "0" ]; then
     echo "  GPU case: off (RUNR_E2E_GPU=0)"
   elif [ "$external" = "1" ]; then
     # External cluster: its GPU nodes are its own business; only on explicit request
@@ -338,6 +484,18 @@ cmd_test_ai() {
   else
     reason=$(ai_gpu_unavailable_reason)
     if [ -z "$reason" ]; then
+      # dmesg's Xid lines from here on count; nvidia-smi's state counts already
+      _ai_gpu_mark=$(ai_host_gpu_mark)
+      problem=$(ai_host_gpu_problem "$_ai_gpu_mark")
+      if [ -n "$problem" ]; then
+        echo -e "  ${RED}✗ GPU case: ${problem}${NC}"
+        if [ "$only_gpu" = "1" ]; then
+          echo "  RUNR_E2E_AI_CASES=ai-gpu-caas: nothing else to run; reset the GPU (nvidia-smi --gpu-reset, or reboot) first"
+          return 1
+        fi
+        echo "  The GPU case stops with it once the suite gets there; the other cases run"
+        problem=""
+      fi
       route=$(ai_gpu_route)
       echo "  GPU case: on (Kind GPU worker: ${route}) — building ${AI_GPU_IMAGE_TAG} (examples/ai/gpu-caas)"
       docker build -q --pull -t "$AI_GPU_IMAGE_TAG" "${SCRIPT_DIR}/../examples/ai/gpu-caas" >/dev/null
@@ -358,8 +516,15 @@ cmd_test_ai() {
     fi
   fi
 
+  if [ "$only_gpu" = "1" ] && [[ "$extra" != *"--ai-gpu"* ]]; then
+    echo -e "  ${RED}✗ RUNR_E2E_AI_CASES=ai-gpu-caas, but the GPU case does not run here: nothing to run${NC}"
+    return 1
+  fi
+
   export TEST_E2E_EXTRA_ARGS="$extra"
   export TEST_AFTER_KIND_CREATE=ai_after_kind_create
+  export TEST_BEFORE_E2E=ai_before_e2e
+  export TEST_AFTER_E2E=ai_after_e2e
 
   cmd_test --suite=ai "$@"
 }

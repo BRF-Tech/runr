@@ -627,7 +627,7 @@ also the default tenant quota.
 - The runr-agent authenticates with a per-region token. Shell and exec sessions use one-time
   tokens stored in Redis.
 - Client IPs come from `X-Forwarded-For` only as far as trusted proxies wrote it
-  (`clientIp.trustedProxies`, `clientIp.proxyHops` in `helm/values.yaml`).
+  (Helm values `clientIp.trustedProxies`, `clientIp.proxyHops`).
 - Workload isolation: one project namespace per region, optional ResourceQuota, sandbox
   RuntimeClasses per workload kind; supply-chain checks and an optional admission policy for
   images ([supply-chain.md](supply-chain.md)).

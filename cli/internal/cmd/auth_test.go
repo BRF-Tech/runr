@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -570,15 +571,38 @@ func TestVersionCommand(t *testing.T) {
 	r = h.mustRun("version", "--client", "-o", "json")
 	notContains(t, r.out, "v0.5.0")
 
-	gh := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte(`{"tag_name":"v9.9.9"}`))
+	var latest atomic.Value
+	latest.Store("v9.9.9\n")
+	dl := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/dl/cli/latest.txt" {
+			http.NotFound(w, r)
+			return
+		}
+		w.Write([]byte(latest.Load().(string)))
 	}))
-	defer gh.Close()
-	h.release = gh.URL
+	defer dl.Close()
+	h.release = dl.URL + "/dl/cli/latest.txt"
 	r = h.mustRun("version", "--check-update")
+	contains(t, r.out, "Latest release")
 	contains(t, r.out, "v9.9.9")
+	contains(t, r.out, "A newer runr is available: v9.9.9")
 
-	// Without --check-update GitHub is not contacted.
+	r = h.mustRun("version", "--check-update", "-o", "json")
+	contains(t, r.out, `"latest_release": "v9.9.9"`)
+
+	// Anything but a release tag is ignored.
+	for _, bad := range []string{"<html>not found</html>", "latest", "v1.2", ""} {
+		latest.Store(bad)
+		r = h.mustRun("version", "--check-update")
+		notContains(t, r.out, "Latest release")
+	}
+
+	// A missing file is no error either.
+	h.release = dl.URL + "/missing"
+	r = h.mustRun("version", "--check-update")
+	notContains(t, r.out, "Latest release")
+
+	// Without --check-update runr.sh is not contacted.
 	h.release = "http://127.0.0.1:1/never"
 	r = h.mustRun("version")
 	notContains(t, r.out, "Latest release")

@@ -2,8 +2,9 @@ package cmd
 
 import (
 	"context"
-	"encoding/json"
+	"io"
 	"net/http"
+	"regexp"
 	"runtime"
 	"strings"
 	"time"
@@ -31,8 +32,8 @@ func newVersionCmd(app *App) *cobra.Command {
 		Use:   "version",
 		Short: "Print the CLI and API versions",
 		Long: "Print the CLI version and, when logged in, the API version. --check-update looks up\n" +
-			"the latest release on GitHub (also when update_check: true is set in the config file);\n" +
-			"the CLI never contacts GitHub otherwise.",
+			"the latest release on runr.sh (also when update_check: true is set in the config file);\n" +
+			"the CLI never contacts runr.sh otherwise.",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			info := VersionInfo{Client: version.Version, Commit: version.Commit, BuildDate: version.Date,
@@ -77,10 +78,16 @@ func newVersionCmd(app *App) *cobra.Command {
 		},
 	}
 	cmd.Flags().BoolVar(&clientOnly, "client", false, "print only the CLI version")
-	cmd.Flags().BoolVar(&checkUpdate, "check-update", false, "look up the latest release on GitHub")
+	cmd.Flags().BoolVar(&checkUpdate, "check-update", false, "look up the latest release on runr.sh")
 	return cmd
 }
 
+// releaseTag is the form of a release tag in latest.txt: vMAJOR.MINOR.PATCH with an optional
+// pre-release suffix.
+var releaseTag = regexp.MustCompile(`^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$`)
+
+// latestRelease reads the tag of the latest release from app.ReleaseURL (a plain-text file such
+// as "v0.5.6\n"); "" when it cannot be read or does not hold a release tag.
 func latestRelease(ctx context.Context, app *App) string {
 	if app.ReleaseURL == "" {
 		return ""
@@ -91,7 +98,6 @@ func latestRelease(ctx context.Context, app *App) string {
 	if err != nil {
 		return ""
 	}
-	req.Header.Set("Accept", "application/vnd.github+json")
 	hc := app.HTTPClient
 	if hc == nil {
 		hc = http.DefaultClient
@@ -101,11 +107,16 @@ func latestRelease(ctx context.Context, app *App) string {
 		return ""
 	}
 	defer resp.Body.Close()
-	var rel struct {
-		TagName string `json:"tag_name"`
-	}
-	if resp.StatusCode != 200 || json.NewDecoder(resp.Body).Decode(&rel) != nil {
+	if resp.StatusCode != http.StatusOK {
 		return ""
 	}
-	return rel.TagName
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 256))
+	if err != nil {
+		return ""
+	}
+	tag := strings.TrimSpace(string(body))
+	if !releaseTag.MatchString(tag) {
+		return ""
+	}
+	return tag
 }

@@ -3,13 +3,13 @@
 page_title: "runr_mcp_server Resource - runr"
 subcategory: ""
 description: |-
-  Serves a project as a hosted MCP server at <console>/mcp/servers/<handle> behind RunR's gateway, which authenticates callers, forwards their identity with a signature and records every call (hosted MCP servers https://github.com/brf-tech/runr/blob/main/docs/mcp.md#hosting-mcp-servers). The project needs the http trigger.
+  Serves a project as a hosted MCP server at <console>/mcp/servers/<handle> behind RunR's gateway, which authenticates callers, forwards their identity with a signature and records every call (hosted MCP servers https://runr.sh/docs/mcp/#hosting-mcp-servers). The project needs the http trigger.
   The gateway key reaches the workload with a deploy: put id into runr_deployment.triggers so the project is deployed once the server exists. Needs mcp.servers.manage on the project.
 ---
 
 # runr_mcp_server (Resource)
 
-Serves a project as a hosted MCP server at `<console>/mcp/servers/<handle>` behind RunR's gateway, which authenticates callers, forwards their identity with a signature and records every call ([hosted MCP servers](https://github.com/brf-tech/runr/blob/main/docs/mcp.md#hosting-mcp-servers)). The project needs the http trigger.
+Serves a project as a hosted MCP server at `<console>/mcp/servers/<handle>` behind RunR's gateway, which authenticates callers, forwards their identity with a signature and records every call ([hosted MCP servers](https://runr.sh/docs/mcp/#hosting-mcp-servers)). The project needs the http trigger.
 
 The gateway key reaches the workload with a deploy: put `id` into `runr_deployment.triggers` so the project is deployed once the server exists. Needs `mcp.servers.manage` on the project.
 

@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Resolves the runr CLI release tag, OS and architecture of the runner and the install
-# directory, and writes them to $GITHUB_OUTPUT (tag, os, arch, dir).
+# directory, and writes them to $GITHUB_OUTPUT (tag, os, arch, dir). "latest" is the tag in
+# $RUNR_CLI_BASE_URL/latest.txt.
 set -euo pipefail
 
 version="${RUNR_CLI_VERSION:-latest}"
@@ -19,15 +20,11 @@ case "${RUNNER_ARCH:-$(uname -m)}" in
 esac
 
 if [ "$version" = "latest" ]; then
-  auth=()
-  if [ -n "${GH_TOKEN:-}" ]; then
-    auth=(-H "Authorization: Bearer ${GH_TOKEN}")
-  fi
-  api="${GITHUB_API_URL:-https://api.github.com}/repos/brf-tech/runr/releases/latest"
-  tag="$(curl -fsSL ${auth[@]+"${auth[@]}"} -H "Accept: application/vnd.github+json" "$api" |
-    sed -n 's/.*"tag_name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -n1)"
-  if [ -z "$tag" ]; then
-    echo "::error::could not look up the latest runr release ($api); set the version input"
+  base="${RUNR_CLI_BASE_URL:-https://runr.sh/dl/cli}"
+  latest="${base%/}/latest.txt"
+  tag="$(curl -fsSL --retry 3 --max-filesize 256 "$latest" 2>/dev/null | tr -d '[:space:]' || true)"
+  if ! [[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+    echo "::error::could not look up the latest runr release ($latest holds no release tag); set the version input"
     exit 1
   fi
 else

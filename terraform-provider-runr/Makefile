@@ -2,7 +2,7 @@
 
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null | sed 's/^v//' || echo dev)
 OS_ARCH ?= $(shell go env GOOS)_$(shell go env GOARCH)
-PLUGIN_DIR := $(HOME)/.terraform.d/plugins/registry.terraform.io/brf-tech/runr/$(VERSION)/$(OS_ARCH)
+PLUGIN_DIR := $(HOME)/.terraform.d/plugins/runr.sh/brf-tech/runr/$(VERSION)/$(OS_ARCH)
 
 .PHONY: help build install test testacc vet fmt docs snapshot clean
 

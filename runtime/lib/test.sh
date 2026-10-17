@@ -420,8 +420,13 @@ KINDEOF
   fi
   docker compose cp "$_test_e2e_kubeconfig" api:/tmp/kubeconfig
 
-  # 6. E2E test (Knative install happens via API, DaemonSet handles containerd config)
+  # 6. E2E test (Knative install happens via API, DaemonSet handles containerd config). Suite hook
+  #    right before it (e.g. test-ai.sh: the host GPU watch that stops the GPU case when the GPU
+  #    needs a reset); what it starts in the background ends in TEST_AFTER_E2E or with the run
   local e2e_status=0
+  if [ -n "${TEST_BEFORE_E2E:-}" ]; then
+    "$TEST_BEFORE_E2E" || true
+  fi
   docker compose exec -T api php artisan test:e2e \
     --base-url=http://localhost \
     --kubeconfig=/tmp/kubeconfig \

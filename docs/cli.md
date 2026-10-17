@@ -40,21 +40,43 @@ runr deploy       # https://hello.<region>.<domain>
 
 ## Install
 
-Download the archive for your platform from the
-[releases](https://github.com/brf-tech/runr/releases) (Linux, macOS and Windows on amd64 and
-arm64; static binaries; `runr_<os>_<arch>.tar.gz`, `.zip` for Windows), check it against
-`checksums.txt` and put `runr` on your `PATH`:
+On Linux and macOS (amd64 and arm64) the install script downloads the latest release from
+[runr.sh](https://runr.sh/dl/), checks its SHA-256 against the release's `checksums.txt` and
+installs `runr` into `/usr/local/bin` when that is writable, else into `~/.local/bin`:
 
 ```sh
-curl -fsSLO https://github.com/brf-tech/runr/releases/latest/download/runr_linux_amd64.tar.gz
-curl -fsSLO https://github.com/brf-tech/runr/releases/latest/download/checksums.txt
+curl -fsSL https://runr.sh/install.sh | sh
+curl -fsSL https://runr.sh/install.sh | RUNR_VERSION=v0.5.7 sh             # a specific release
+curl -fsSL https://runr.sh/install.sh | RUNR_INSTALL_DIR="$HOME/bin" sh    # another directory
+```
+
+The archives are static binaries, `runr_<os>_<arch>.tar.gz` (`.zip` for Windows), under
+`https://runr.sh/dl/cli/<tag>/` next to the release's `checksums.txt`;
+`https://runr.sh/dl/cli/latest.txt` holds the tag of the latest release. By hand:
+
+```sh
+tag=$(curl -fsSL https://runr.sh/dl/cli/latest.txt)
+curl -fsSLO "https://runr.sh/dl/cli/$tag/runr_linux_amd64.tar.gz"
+curl -fsSLO "https://runr.sh/dl/cli/$tag/checksums.txt"
 grep ' runr_linux_amd64.tar.gz$' checksums.txt | sha256sum -c
 tar -xzf runr_linux_amd64.tar.gz runr && sudo mv runr /usr/local/bin/
 runr version
 ```
 
-With Go installed: `go install github.com/brf-tech/runr/cli@latest` (the binary is named `cli`;
-rename it to `runr`), or build from the repository with `make -C cli build` (`cli/bin/runr`).
+On Windows (amd64 or arm64) download `runr_windows_amd64.zip` (or `runr_windows_arm64.zip`),
+compare its hash with `checksums.txt` and put `runr.exe` into a directory on your `PATH`:
+
+```powershell
+$tag = (Invoke-RestMethod https://runr.sh/dl/cli/latest.txt).Trim()
+Invoke-WebRequest "https://runr.sh/dl/cli/$tag/runr_windows_amd64.zip" -OutFile runr_windows_amd64.zip
+Invoke-WebRequest "https://runr.sh/dl/cli/$tag/checksums.txt" -OutFile checksums.txt
+(Get-FileHash runr_windows_amd64.zip -Algorithm SHA256).Hash.ToLower()   # must match the line in checksums.txt
+Select-String 'runr_windows_amd64.zip' checksums.txt
+Expand-Archive runr_windows_amd64.zip -DestinationPath "$env:LOCALAPPDATA\runr" -Force
+[Environment]::SetEnvironmentVariable('Path', "$([Environment]::GetEnvironmentVariable('Path', 'User'));$env:LOCALAPPDATA\runr", 'User')
+```
+
+From the source tree: `make -C cli build` (`cli/bin/runr`).
 
 Shell completion: `runr completion bash|zsh|fish|powershell`, e.g.
 `runr completion bash > /etc/bash_completion.d/runr`.
@@ -2359,10 +2381,10 @@ deploy:
   stage: deploy
   image: alpine:3.21
   variables:
-    RUNR_VERSION: v0.5.6
+    RUNR_VERSION: v0.5.7
   before_script:
     - apk add --no-cache curl tar
-    - curl -fsSL "https://github.com/brf-tech/runr/releases/download/${RUNR_VERSION}/runr_linux_amd64.tar.gz" | tar -xz -C /usr/local/bin runr
+    - curl -fsSL https://runr.sh/install.sh | sh
   script:
     - runr deploy --message "$CI_COMMIT_SHORT_SHA $CI_COMMIT_TITLE" --output-env deploy.env
   artifacts:
@@ -2402,7 +2424,8 @@ contexts:
 update_check: false         # true: runr version looks up the latest release
 ```
 
-`runr` contacts GitHub only for `runr version --check-update` or with `update_check: true`.
+`runr` looks up the latest release (`https://runr.sh/dl/cli/latest.txt`) only for
+`runr version --check-update` or with `update_check: true`.
 
 ## Building the CLI
 

@@ -8,6 +8,37 @@ did not change says so.
 
 ## [Unreleased]
 
+## [0.5.7] - 2026-10-17
+
+### Changed
+
+- **The CLI downloads from runr.sh.** `curl -fsSL https://runr.sh/install.sh | sh` installs the
+  `runr` CLI on Linux and macOS (amd64, arm64): it reads the latest release from
+  `https://runr.sh/dl/cli/latest.txt` (`RUNR_VERSION` pins one), checks the archive's SHA-256
+  against the release's `checksums.txt` and installs into `/usr/local/bin` when that is writable,
+  else into `~/.local/bin` (`RUNR_INSTALL_DIR` sets another directory). The archives of every
+  platform, Windows included, are under `https://runr.sh/dl/cli/<tag>/`.
+  `runr version --check-update` (and `update_check: true`) reads the latest release from that
+  `latest.txt` ([docs/cli.md](docs/cli.md#install)).
+- **Terraform provider address `runr.sh/brf-tech/runr`.** runr.sh serves Terraform's provider
+  registry protocol: with `source = "runr.sh/brf-tech/runr"`, `terraform init` downloads the
+  archive for the platform and checks it against the release's `SHA256SUMS`, signed with the RunR
+  release key (key ID `2588846B241BC095`). A configuration that used `brf-tech/runr` changes
+  `source` and moves its state once with
+  `terraform state replace-provider registry.terraform.io/brf-tech/runr runr.sh/brf-tech/runr`
+  ([docs/terraform.md](docs/terraform.md#install)).
+- **The GitHub Action downloads the CLI from runr.sh.** `cli-base-url` defaults to
+  `https://runr.sh/dl/cli` and `version: latest` is the tag in `<cli-base-url>/latest.txt`; the
+  `github-token` input is gone (a workflow that still sets it gets an "unexpected input"
+  warning) ([docs/github-action.md](docs/github-action.md#inputs)).
+- **Documentation on runr.sh.** The documentation is published at <https://runr.sh/docs/> and the
+  security policy at <https://runr.sh/security/>.
+- **The Helm chart comes from RunR's private Helm repository.** Customers get the repository's
+  address and credentials through the enterprise contact form on runr.sh
+  (<https://runr.sh/#enterprise>); the install, upgrade, key rotation and white-label examples use
+  `helm repo add runr …` and the chart `runr/runr` instead of `./helm` of a repository checkout
+  ([README](README.md#kubernetes-helm), [docs/upgrade.md](docs/upgrade.md#procedure)).
+
 ## [0.5.6] - 2026-10-17
 
 ### Changed
@@ -1203,7 +1234,8 @@ Initial tagged release.
 - API gateways with routes, in-app notifications and support tickets.
 - Helm chart with a single-tenant / multi-tenant edition, an install form (`values.schema.json`), generated secrets and a Traefik ingress; a Docker Compose setup for development.
 
-[Unreleased]: https://github.com/brf-tech/runr/compare/v0.5.6...main
+[Unreleased]: https://github.com/brf-tech/runr/compare/v0.5.7...main
+[0.5.7]: https://github.com/brf-tech/runr/releases/tag/v0.5.7
 [0.5.6]: https://github.com/brf-tech/runr/releases/tag/v0.5.6
 [0.5.5]: https://github.com/brf-tech/runr/releases/tag/v0.5.5
 [0.5.4]: https://github.com/brf-tech/runr/releases/tag/v0.5.4

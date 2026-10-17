@@ -47,7 +47,7 @@ The chart's ConfigMap sets `APP_VERSION` from `.Values.appVersion`, defaulting t
 `appVersion` (`helm/Chart.yaml`).
 
 ```bash
-helm upgrade --install runr ./helm --set appVersion=v1.0.0
+helm upgrade --install runr runr/runr --set appVersion=v1.0.0
 ```
 
 ## Flow

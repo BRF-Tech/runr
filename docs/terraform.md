@@ -35,28 +35,36 @@ table below.
 terraform {
   required_providers {
     runr = {
-      source  = "brf-tech/runr"
+      source  = "runr.sh/brf-tech/runr"
       version = "~> 0.5"
     }
   }
 }
 ```
 
-The provider's registry address is `brf-tech/runr` (provider name `runr`). The Terraform
-Registry publishes a provider from a repository named `terraform-provider-<name>`, so releases
-reach the registry through the mirror repository `brf-tech/terraform-provider-runr`, which
-carries `terraform-provider-runr/` of [brf-tech/runr](https://github.com/brf-tech/runr) and its
-signed release archives.
+The provider's address is `runr.sh/brf-tech/runr` (provider name `runr`): runr.sh serves
+Terraform's provider registry protocol, so `terraform init` (and OpenTofu's `tofu init`) finds
+the releases there and downloads the archive for your platform from
+`https://runr.sh/dl/terraform/<tag>/`. Before it installs the archive, `terraform init` checks
+its SHA-256 against the release's `SHA256SUMS` and the signature of that file against the RunR
+release key (key ID `2588846B241BC095`, fingerprint
+`2CA5 13A7 57AE 0C94 BD8A 7EE2 2588 846B 241B C095`, public key at
+<https://runr.sh/dl/runr-release-signing.pub.asc>). The lock file `.terraform.lock.hcl` records
+the checksums.
+
+A configuration that used the address `brf-tech/runr` changes `source` as above and moves its
+state once:
+`terraform state replace-provider registry.terraform.io/brf-tech/runr runr.sh/brf-tech/runr`.
 
 To use a build from this repository, build and install it into the local plugin directory
 and run `terraform init` as usual:
 
 ```sh
-make -C terraform-provider-runr install VERSION=0.5.6   # ~/.terraform.d/plugins/registry.terraform.io/brf-tech/runr/0.5.6/<os>_<arch>/
+make -C terraform-provider-runr install VERSION=0.5.7   # ~/.terraform.d/plugins/runr.sh/brf-tech/runr/0.5.7/<os>_<arch>/
 ```
 
 During provider development a `dev_overrides` block in `~/.terraformrc` points
-`brf-tech/runr` at the directory with the binary (`make -C terraform-provider-runr build`).
+`runr.sh/brf-tech/runr` at the directory with the binary (`make -C terraform-provider-runr build`).
 
 ## Provider configuration
 

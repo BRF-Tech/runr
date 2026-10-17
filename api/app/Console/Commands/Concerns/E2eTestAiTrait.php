@@ -21,9 +21,29 @@ use Illuminate\Http\Client\Response;
  *                       a CaaS project with config.gpu {count: 1} (examples/ai/gpu-caas) sees the GPU
  *                       ("cuda": true), runs a CUDA kernel on it and returns the result the CPU computes
  * Optional cases that are not enabled are listed as skipped and not counted.
+ *
+ * --ai-cases / RUNR_E2E_AI_CASES runs only the named cases and what they need (aiSelectCases);
+ * the others are listed as not selected. A selected case that cannot run here (ai-gpu-caas without
+ * --ai-gpu) counts as failed. The GPU case stops at once with the text of --gpu-abort-file when that
+ * file exists (runtime/lib/test-ai.sh writes it when the host GPU needs a reset) — before it
+ * installs GPU support and while it waits for an allocatable nvidia.com/gpu.
  */
 trait E2eTestAiTrait
 {
+    /** The suite's cases, in the order they run */
+    private const AI_CASES = ['ai-model', 'ai-online-cpu', 'ai-mirror', 'ai-offline-cpu', 'ai-binding', 'ai-tei-cpu', 'ai-gpu-caas'];
+
+    /** A case → the case that has to run before it */
+    private const AI_CASE_NEEDS = [
+        'ai-online-cpu' => 'ai-model',
+        'ai-mirror' => 'ai-model',
+        'ai-offline-cpu' => 'ai-mirror',
+        'ai-binding' => 'ai-offline-cpu',
+    ];
+
+    /** The cases built on the tiny model of the library */
+    private const AI_MODEL_CASES = ['ai-model', 'ai-online-cpu', 'ai-mirror', 'ai-offline-cpu', 'ai-binding'];
+
     private const AI_TINY_MODEL = 'hf-internal-testing/tiny-random-bert';
 
     private const AI_TEI_MODEL = 'sentence-transformers/all-MiniLM-L6-v2';
@@ -63,70 +83,111 @@ PY;
         $tests = [];
         $skipped = [];
 
-        $this->aiModelStorageForCluster($regionId);
+        // ── --ai-cases / RUNR_E2E_AI_CASES ──
+        $selection = self::aiSelectCases((string) ($this->option('ai-cases') ?: (getenv('RUNR_E2E_AI_CASES') ?: '')));
+        if ($selection['unknown'] !== []) {
+            $row = $this->makeTestEntry('ai-cases', ['service_type' => 'model', 'trigger_type' => 'http'], $regionId);
+            $row['steps'] = [
+                'version' => 'no such case: '.implode(', ', $selection['unknown']).' (the cases: '.implode(', ', self::AI_CASES).')',
+                'deploy' => 'skipped', 'ready' => 'skipped', 'verify' => 'skipped',
+            ];
+            $this->aiLine($row);
 
-        // ── Model in the library ──
-        $modelRow = $this->makeTestEntry('ai-model', ['service_type' => 'model', 'trigger_type' => 'http'], $regionId);
-        $modelRow['startTime'] = microtime(true);
-        $model = $this->aiEnsureModel(self::AI_TINY_MODEL, 'feature-extraction', $modelRow);
-        $modelRow['steps']['deploy'] = $model ? true : 'skipped';
-        $modelRow['steps']['ready'] = $model ? true : 'skipped';
-        $modelRow['steps']['verify'] = $model ? (($model['revision_sha'] ?? null) ? true : 'revision not pinned to a commit') : 'skipped';
-        $tests[] = $this->finishTest($modelRow);
+            return [$row];
+        }
+        $selected = $selection['cases'];
+        $want = fn (string $case): bool => $selected === null || in_array($case, $selected, true);
+        if ($selected !== null) {
+            $this->line('  cases: '.implode(', ', $selected).' (--ai-cases / RUNR_E2E_AI_CASES, with what they need)');
+        }
+        $notSelected = 'not selected (--ai-cases / RUNR_E2E_AI_CASES)';
+        $teiOn = $selected !== null ? $want('ai-tei-cpu') : ($this->option('ai-tei') || getenv('RUNR_E2E_TEI') === '1');
 
-        if (! $model) {
-            return $tests;
+        if ($want('ai-model') || $teiOn) {
+            $this->aiModelStorageForCluster($regionId);
         }
 
-        // ── Online model service (CPU, transformers) ──
-        $online = $this->aiServiceCase('ai-online-cpu', $regionId, [
-            'ai_model_id' => $model['id'],
-            'name' => 'e2e-tiny-online',
-            'mode' => 'online',
-            'device' => 'cpu',
-            'engine' => 'transformers',
-            'image' => $hfServe,
-            'cpu' => '500m',
-            'memory_mb' => 1024,
-        ], fn (array $service) => $this->aiVerifyEmbeddings($service));
-        $tests[] = $online['row'];
+        $model = null;
+        if ($want('ai-model')) {
+            // ── Model in the library ──
+            $modelRow = $this->makeTestEntry('ai-model', ['service_type' => 'model', 'trigger_type' => 'http'], $regionId);
+            $modelRow['startTime'] = microtime(true);
+            $model = $this->aiEnsureModel(self::AI_TINY_MODEL, 'feature-extraction', $modelRow);
+            $modelRow['steps']['deploy'] = $model ? true : 'skipped';
+            $modelRow['steps']['ready'] = $model ? true : 'skipped';
+            $modelRow['steps']['verify'] = $model ? (($model['revision_sha'] ?? null) ? true : 'revision not pinned to a commit') : 'skipped';
+            $tests[] = $this->finishTest($modelRow);
 
-        // ── Offline snapshot (mirror Job) ──
-        $mirror = $this->aiMirrorCase('ai-mirror', $regionId, $model['id']);
-        $tests[] = $mirror;
+            if (! $model) {
+                return $tests;
+            }
+        }
 
-        // ── Offline model service + NetworkPolicy ──
-        $offline = ['row' => null, 'service' => null];
-        if ($mirror['steps']['ready'] === true) {
-            $offline = $this->aiServiceCase('ai-offline-cpu', $regionId, [
-                'ai_model_id' => $model['id'],
-                'name' => 'e2e-tiny-offline',
-                'mode' => 'offline',
-                'device' => 'cpu',
-                'engine' => 'transformers',
-                'image' => $hfServe,
-                'cpu' => '500m',
-                'memory_mb' => 1024,
-            ], function (array $service) {
-                $embeddings = $this->aiVerifyEmbeddings($service);
-                if ($embeddings !== true) {
-                    return $embeddings;
+        if ($model) {
+            // ── Online model service (CPU, transformers) ──
+            if ($want('ai-online-cpu')) {
+                $online = $this->aiServiceCase('ai-online-cpu', $regionId, [
+                    'ai_model_id' => $model['id'],
+                    'name' => 'e2e-tiny-online',
+                    'mode' => 'online',
+                    'device' => 'cpu',
+                    'engine' => 'transformers',
+                    'image' => $hfServe,
+                    'cpu' => '500m',
+                    'memory_mb' => 1024,
+                ], fn (array $service) => $this->aiVerifyEmbeddings($service));
+                $tests[] = $online['row'];
+            }
+
+            // ── Offline snapshot (mirror Job) ──
+            $mirror = null;
+            if ($want('ai-mirror')) {
+                $mirror = $this->aiMirrorCase('ai-mirror', $regionId, $model['id']);
+                $tests[] = $mirror;
+            }
+
+            // ── Offline model service + NetworkPolicy ──
+            $offline = ['row' => null, 'service' => null];
+            if ($want('ai-offline-cpu')) {
+                if ($mirror && $mirror['steps']['ready'] === true) {
+                    $offline = $this->aiServiceCase('ai-offline-cpu', $regionId, [
+                        'ai_model_id' => $model['id'],
+                        'name' => 'e2e-tiny-offline',
+                        'mode' => 'offline',
+                        'device' => 'cpu',
+                        'engine' => 'transformers',
+                        'image' => $hfServe,
+                        'cpu' => '500m',
+                        'memory_mb' => 1024,
+                    ], function (array $service) {
+                        $embeddings = $this->aiVerifyEmbeddings($service);
+                        if ($embeddings !== true) {
+                            return $embeddings;
+                        }
+
+                        return $this->aiVerifyEgressPolicy($service);
+                    });
+                    $tests[] = $offline['row'];
+                } else {
+                    $tests[] = $this->aiSkippedRow('ai-offline-cpu', $regionId, 'no ready snapshot');
                 }
+            }
 
-                return $this->aiVerifyEgressPolicy($service);
-            });
-            $tests[] = $offline['row'];
-        } else {
-            $tests[] = $this->aiSkippedRow('ai-offline-cpu', $regionId, 'no ready snapshot');
+            // ── Binding to a function ──
+            if ($want('ai-binding')) {
+                $tests[] = $offline['service'] && $offline['row']['steps']['ready'] === true
+                    ? $this->aiBindingCase('ai-binding', $regionId, $offline['service'])
+                    : $this->aiSkippedRow('ai-binding', $regionId, 'offline model service not ready');
+            }
         }
-
-        // ── Binding to a function ──
-        $tests[] = $offline['service'] && $offline['row']['steps']['ready'] === true
-            ? $this->aiBindingCase('ai-binding', $regionId, $offline['service'])
-            : $this->aiSkippedRow('ai-binding', $regionId, 'offline model service not ready');
+        foreach (self::AI_MODEL_CASES as $case) {
+            if (! $want($case)) {
+                $skipped[$case] = $notSelected;
+            }
+        }
 
         // ── Optional: TEI on CPU ──
-        if ($this->option('ai-tei') || getenv('RUNR_E2E_TEI') === '1') {
+        if ($teiOn) {
             $teiRow = $this->makeTestEntry('ai-tei-cpu', ['service_type' => 'model', 'trigger_type' => 'http'], $regionId);
             $tei = $this->aiEnsureModel(self::AI_TEI_MODEL, 'feature-extraction', $teiRow);
             $tests[] = $tei
@@ -141,12 +202,18 @@ PY;
                 ], fn (array $service) => $this->aiVerifyEmbeddings($service, 384))['row']
                 : $teiRow;
         } else {
-            $skipped['ai-tei-cpu'] = 'not enabled (--ai-tei or RUNR_E2E_TEI=1)';
+            $skipped['ai-tei-cpu'] = $selected !== null ? $notSelected : 'not enabled (--ai-tei or RUNR_E2E_TEI=1)';
         }
 
         // ── Optional: GPU CaaS ──
-        if ($this->option('ai-gpu') || getenv('RUNR_E2E_GPU') === '1') {
+        $gpuOn = $this->option('ai-gpu') || getenv('RUNR_E2E_GPU') === '1';
+        if (! $want('ai-gpu-caas')) {
+            $skipped['ai-gpu-caas'] = $notSelected;
+        } elseif ($gpuOn) {
             $tests[] = $this->aiGpuCase('ai-gpu-caas', $regionId);
+        } elseif ($selected !== null) {
+            // named, but it cannot run here: a failure, not a skip
+            $tests[] = $this->aiSkippedRow('ai-gpu-caas', $regionId, 'selected, but no GPU visible to the Kind nodes (see runtime/lib/test-ai.sh)');
         } else {
             $skipped['ai-gpu-caas'] = 'no GPU visible to the Kind nodes (see runtime/lib/test-ai.sh)';
         }
@@ -156,6 +223,47 @@ PY;
         }
 
         return $tests;
+    }
+
+    /**
+     * The cases --ai-cases / RUNR_E2E_AI_CASES names (comma- or space-separated) and the cases they
+     * need (ai-binding → ai-offline-cpu → ai-mirror → ai-model, ai-online-cpu → ai-model), in the
+     * suite's order; null when nothing is named (every case). Names the suite lacks in "unknown".
+     *
+     * @return array{cases: ?list<string>, unknown: list<string>}
+     */
+    private static function aiSelectCases(string $spec): array
+    {
+        $names = array_values(array_filter(preg_split('/[\s,]+/', trim($spec)) ?: [], fn (string $n) => $n !== ''));
+        if ($names === []) {
+            return ['cases' => null, 'unknown' => []];
+        }
+
+        $set = [];
+        foreach (array_intersect($names, self::AI_CASES) as $name) {
+            for ($case = $name; $case !== null; $case = self::AI_CASE_NEEDS[$case] ?? null) {
+                $set[$case] = true;
+            }
+        }
+
+        return [
+            'cases' => array_values(array_filter(self::AI_CASES, fn (string $c) => isset($set[$c]))),
+            'unknown' => array_values(array_unique(array_diff($names, self::AI_CASES))),
+        ];
+    }
+
+    /**
+     * Why the GPU case has to stop, from the harness (runtime/lib/test-ai.sh writes --gpu-abort-file
+     * when the host GPU needs a reset); null while there is no such file or it is empty.
+     */
+    private static function aiHostGpuProblem(string $path): ?string
+    {
+        if ($path === '' || ! is_file($path)) {
+            return null;
+        }
+        $text = trim((string) @file_get_contents($path));
+
+        return $text === '' ? null : mb_substr($text, 0, 400);
     }
 
     // ── Cases ───────────────────────────────────────────────────────────────
@@ -332,6 +440,17 @@ PY;
         $test = $this->makeTestEntry($name, ['service_type' => 'caas', 'trigger_type' => 'http', 'image' => $image], $regionId);
         $test['startTime'] = microtime(true);
 
+        // A host GPU that needs a reset (the harness says so through --gpu-abort-file) ends the case
+        // here, and while it waits for an allocatable GPU below, instead of after AI_WAIT_GPU
+        $abortFile = (string) ($this->option('gpu-abort-file') ?: '/tmp/runr-e2e-gpu-abort');
+        if (($problem = self::aiHostGpuProblem($abortFile)) !== null) {
+            $test['steps']['version'] = $problem;
+            $this->skipRemaining($test, 'deploy');
+            $this->aiLine($test);
+
+            return $test;
+        }
+
         // 1. GPU support through the API (device plugin; the Kind GPU node runs nvidia as containerd's default runtime)
         // Restricted to the GPU nodes (on by default): Kind workers share the host's PCI view, so
         // only the prepared GPU node(s) may run the plugin — the suite names them
@@ -350,14 +469,25 @@ PY;
             return $test;
         }
 
-        $deadline = time() + self::AI_WAIT_GPU;
+        $waitStart = time();
+        $deadline = $waitStart + self::AI_WAIT_GPU;
         $gpu = [];
         while (time() < $deadline) {
+            if (($problem = self::aiHostGpuProblem($abortFile)) !== null) {
+                break;
+            }
             $gpu = $this->aiData($this->api()->get("/api/knative-regions/{$regionId}/gpu", ['refresh' => 1]));
             if ((int) ($gpu['summary']['allocatable'] ?? 0) > 0) {
                 break;
             }
             sleep(10);
+        }
+        if ($problem !== null) {
+            $test['steps']['version'] = $problem.' — stopped after '.(time() - $waitStart).' s of waiting for an allocatable nvidia.com/gpu';
+            $this->skipRemaining($test, 'deploy');
+            $this->aiLine($test);
+
+            return $test;
         }
         if ((int) ($gpu['summary']['allocatable'] ?? 0) < 1) {
             $test['steps']['version'] = 'no allocatable nvidia.com/gpu after '.self::AI_WAIT_GPU.'s (GPU support '.($gpu['status'] ?? '?').': '

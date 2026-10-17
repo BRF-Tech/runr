@@ -36,7 +36,7 @@ upload the code as a new version and deploy it.
          - uses: actions/checkout@v4
 
          - id: runr
-           uses: brf-tech/runr/actions/deploy@v0.5.6
+           uses: brf-tech/runr/actions/deploy@v0.5.7
            with:
              api-url: https://runr.example.com
              token: ${{ secrets.RUNR_TOKEN }}
@@ -69,7 +69,7 @@ jobs:
           push: true
           tags: ghcr.io/acme/web:${{ github.sha }}
 
-      - uses: brf-tech/runr/actions/deploy@v0.5.6
+      - uses: brf-tech/runr/actions/deploy@v0.5.7
         with:
           api-url: https://runr.example.com
           token: ${{ secrets.RUNR_TOKEN }}
@@ -88,7 +88,7 @@ pull secret).
         service: [orders, billing, notify]
     steps:
       - uses: actions/checkout@v4
-      - uses: brf-tech/runr/actions/deploy@v0.5.6
+      - uses: brf-tech/runr/actions/deploy@v0.5.7
         with:
           api-url: ${{ vars.RUNR_API_URL }}
           token: ${{ secrets.RUNR_TOKEN }}
@@ -103,7 +103,7 @@ before the deploy, so the new deployment runs with them. Take the values from re
 environment secrets:
 
 ```yaml
-      - uses: brf-tech/runr/actions/deploy@v0.5.6
+      - uses: brf-tech/runr/actions/deploy@v0.5.7
         with:
           api-url: https://runr.example.com
           token: ${{ secrets.RUNR_TOKEN }}
@@ -171,7 +171,7 @@ jobs:
         run: sed -i "s/^name: .*/name: ${PREVIEW}/" functions/orders/runr.yaml
 
       - id: runr
-        uses: brf-tech/runr/actions/deploy@v0.5.6
+        uses: brf-tech/runr/actions/deploy@v0.5.7
         with:
           api-url: ${{ vars.RUNR_API_URL }}
           token: ${{ secrets.RUNR_PREVIEW_TOKEN }}
@@ -186,11 +186,11 @@ jobs:
     env:
       RUNR_API_URL: ${{ vars.RUNR_API_URL }}
       RUNR_TOKEN: ${{ secrets.RUNR_PREVIEW_TOKEN }}
-      RUNR_VERSION: v0.5.6
+      RUNR_VERSION: v0.5.7
     steps:
       - name: Install the runr CLI
         run: |
-          curl -fsSL "https://github.com/brf-tech/runr/releases/download/${RUNR_VERSION}/runr_linux_amd64.tar.gz" \
+          curl -fsSL "https://runr.sh/dl/cli/${RUNR_VERSION}/runr_linux_amd64.tar.gz" \
             | sudo tar -xz -C /usr/local/bin runr
       - name: Delete the preview project
         run: runr projects delete "$PREVIEW" --yes || [ $? -eq 4 ]   # 4: it was never created
@@ -216,9 +216,8 @@ jobs:
 | `message` | `<workflow> <short sha>` | Version message |
 | `wait` | `true` | Wait until the deployment is ready; `false` returns once it started |
 | `timeout` | `10m` | How long to wait for the build and the deployment |
-| `version` | `latest` | CLI release: `latest` or a tag such as `v0.5.6` (pin it for reproducible runs) |
-| `cli-base-url` | `https://github.com/brf-tech/runr/releases/download` | Download base of the CLI archives, for a mirror: `<base>/<tag>/runr_<os>_<arch>.tar.gz` and `checksums.txt` |
-| `github-token` | `github.token` | Token for the latest-release lookup (API rate limits) |
+| `version` | `latest` | CLI release: `latest` or a tag such as `v0.5.7` (pin it for reproducible runs) |
+| `cli-base-url` | `https://runr.sh/dl/cli` | Download base of the CLI archives, for a mirror: `<base>/latest.txt` (tag of the latest release), `<base>/<tag>/runr_<os>_<arch>.tar.gz` and `<base>/<tag>/checksums.txt` |
 | `secrets` | | Secret environment variables, one `KEY=VALUE` per line, stored write-only before the deploy |
 | `args` | | Extra arguments for `runr deploy`, split on whitespace |
 
@@ -238,13 +237,13 @@ The action also adds a summary (project, version, URL) to the job page.
 
 ## How it works
 
-1. **Resolve** the CLI release: `latest` is looked up through the GitHub API (with
-   `github-token`), a tag is used as given; the runner's OS (Linux, macOS, Windows) and
-   architecture (x64, ARM64) pick the archive.
+1. **Resolve** the CLI release: `latest` is the tag in `<cli-base-url>/latest.txt`
+   (`https://runr.sh/dl/cli/latest.txt`), a tag is used as given; the runner's OS (Linux,
+   macOS, Windows) and architecture (x64, ARM64) pick the archive.
 2. **Cache**: the CLI is cached with `actions/cache` per release, OS and architecture, so
    later runs skip the download.
-3. **Install**: the archive and the release's `checksums.txt` are downloaded; the archive's
-   SHA-256 must match before it is unpacked.
+3. **Install**: the archive and the release's `checksums.txt` are downloaded from
+   `<cli-base-url>/<tag>/`; the archive's SHA-256 must match before it is unpacked.
 4. **Secrets** (with `secrets`): each `KEY=VALUE` is stored with
    `runr env set --secret --no-deploy` (values masked, passed on stdin); a project the first
    deploy is about to create gets them right after that deploy, followed by a second deploy.
@@ -286,10 +285,10 @@ deploy:
   stage: deploy
   image: alpine:3.21
   variables:
-    RUNR_VERSION: v0.5.6
+    RUNR_VERSION: v0.5.7
   before_script:
     - apk add --no-cache curl tar
-    - curl -fsSL "https://github.com/brf-tech/runr/releases/download/${RUNR_VERSION}/runr_linux_amd64.tar.gz" | tar -xz -C /usr/local/bin runr
+    - curl -fsSL https://runr.sh/install.sh | sh     # installs $RUNR_VERSION
   script:
     - runr deploy services/orders --message "$CI_COMMIT_SHORT_SHA" --output-env deploy.env
   artifacts:
