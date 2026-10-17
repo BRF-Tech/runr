@@ -255,6 +255,8 @@ PY;
     /**
      * Why the GPU case has to stop, from the harness (runtime/lib/test-ai.sh writes --gpu-abort-file
      * when the host GPU needs a reset); null while there is no such file or it is empty.
+     *
+     * @phpstan-impure the file can appear between two calls
      */
     private static function aiHostGpuProblem(string $path): ?string
     {
