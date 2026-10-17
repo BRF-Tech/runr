@@ -166,7 +166,9 @@ with its device, address and last use.
   Helm value `auth.loginTokenTtlDays`); the console then asks to sign in again. The lifetime
   counts from the sign-in for every session, also for sessions signed in before the value was set
   or lowered. `0` keeps sessions until they are signed out or revoked. API tokens keep the expiry
-  they were created with: none, or the date given.
+  they were created with: none, or the date given. The `runr-cli@<host>` token of
+  `runr login --with-password` expires 90 days after the login unless `--token-ttl` sets another
+  lifetime ([CLI](cli.md#log-in)).
 - **Signing out** (`POST /api/auth/logout`) deletes the session's token. **Revoking** a session
   (`DELETE /api/account/sessions/{id}`) deletes that token, **revoking all others**
   (`POST /api/account/sessions/revoke-all`) every token of the user except the current one; the
@@ -174,11 +176,25 @@ with its device, address and last use.
   `runr logout`) ends it. A deleted token answers 401 from then on.
 - **Changing the password** (`POST /api/account/password`) ends the user's other sign-in
   sessions; the session that changed it and the API tokens stay. **Disabling the account** ends
-  every token but the current one, which is refused from then on; **deleting it** ends all.
+  every token but the current one, which is refused from then on.
+- **Deleting a user** — the user's own account deletion (`DELETE /api/account`) or an
+  administrator's (`DELETE /api/users/{id}`, in the multi-tenant edition from the platform
+  administrators' user list) — deletes every sign-in session and API token of the user in the
+  transaction that deletes the account, then the user's MCP server sessions. In the multi-tenant
+  edition, the account's memberships go with it, and so do its copies in the organizations it
+  belonged to — each organization keeps a copy of its members in its own schema — with the
+  user's groups and role assignments there. Removing a member from an organization
+  (`DELETE /api/tenants/{tenant}/users/{user}`) deletes the API tokens the member created in that
+  organization, which work there only; their sign-in sessions and their tokens of other
+  organizations stay. Deleting an organization deletes every API token created in it.
 - API tokens cannot be named `api` or `invitation-accept`: these names mark sign-in sessions.
 - **Cleanup.** `php artisan tokens:prune` (scheduled daily at 03:15) removes the sign-in sessions
-  that ended, and API tokens 30 days after they expired — until then the console lists an expired
-  token as expired.
+  that ended, API tokens 30 days after they expired — until then the console lists an expired
+  token as expired — and the tokens of users that no longer exist. In the multi-tenant edition it
+  also removes the tokens created in an organization that no longer exists or whose user is no
+  longer its member (a platform administrator's token keeps working in an organization), and the
+  organizations' copies, groups and role assignments of users that no longer exist. These are the
+  rows user deletions, member removals and organization deletions of releases before 0.5.6 left.
 
 ## SSO sign-in handoff
 

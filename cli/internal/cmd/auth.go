@@ -27,6 +27,7 @@ func newLoginCmd(app *App) *cobra.Command {
 		passwordStdin bool
 		otp           string
 		tokenName     string
+		tokenTTL      string
 	)
 	cmd := &cobra.Command{
 		Use:   "login [api-url]",
@@ -34,14 +35,23 @@ func newLoginCmd(app *App) *cobra.Command {
 		Long: "Log in to a RunR API and save the API URL and token as a context in the config file\n" +
 			"(0600 permissions). The token is an API token from the console (Account → API tokens):\n" +
 			"paste it at the prompt or pipe it with --token-stdin. With --with-password the CLI logs in\n" +
-			"with your username and password and creates a dedicated API token for this machine.\n\n" +
+			"with your username and password and creates a dedicated API token for this machine, which\n" +
+			"expires after 90 days (--token-ttl; 0: no expiry); log in again then.\n\n" +
 			"In CI, skip login and set RUNR_API_URL and RUNR_TOKEN instead.",
 		Example: "  runr login https://runr.example.com\n" +
 			"  echo \"$RUNR_TOKEN\" | runr login https://runr.example.com --token-stdin\n" +
-			"  runr login https://runr.example.com --with-password --username ada",
+			"  runr login https://runr.example.com --with-password --username ada\n" +
+			"  runr login https://runr.example.com --with-password --username ada --token-ttl 30d",
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
+			ttl, err := parseTokenTTL(tokenTTL)
+			if err != nil {
+				return usageErrorf("--token-ttl: %v", err)
+			}
+			if cmd.Flags().Changed("token-ttl") && !withPassword {
+				return usageErrorf("--token-ttl sets the lifetime of the API token --with-password creates")
+			}
 			if len(args) == 1 {
 				apiURL = args[0]
 			}
@@ -71,11 +81,13 @@ func newLoginCmd(app *App) *cobra.Command {
 
 			stored := &config.Context{APIURL: strings.TrimSuffix(anon.ConsoleURL(), "/")}
 			var token string
+			var created *loginToken
 			if withPassword {
-				token, stored.TokenID, err = loginWithPassword(cmd, app, anon, username, passwordStdin, otp, tokenName)
+				created, err = loginWithPassword(cmd, app, anon, username, passwordStdin, otp, tokenName, ttl)
 				if err != nil {
 					return err
 				}
+				token, stored.TokenID, stored.TokenExpiresAt = created.plain, created.id, created.expiresAt
 			} else {
 				token, err = readToken(app, tokenStdin)
 				if err != nil {
@@ -96,19 +108,42 @@ func newLoginCmd(app *App) *cobra.Command {
 			if err != nil {
 				return err
 			}
+			prev := cfg.Contexts[name]
 			cfg.Set(name, stored)
 			if err := cfg.Save(); err != nil {
 				return err
+			}
+			// The token an earlier `login --with-password` created for this context is replaced:
+			// revoked, as `runr logout` would (nothing else refers to it any more)
+			if prev != nil && prev.TokenID != "" && prev.TokenID != stored.TokenID && prev.APIURL == stored.APIURL &&
+				!prev.TokenExpired(time.Now()) {
+				if err := c.DeleteToken(ctx, prev.TokenID); err != nil && !runr.IsNotFound(err) {
+					app.Warn("could not revoke the API token of the previous login (id %s): %v", prev.TokenID, err)
+				}
 			}
 			perms, _ := c.Permissions(ctx)
 			out := map[string]any{"context": name, "api_url": stored.APIURL, "user": user}
 			if perms != nil {
 				out["permissions"] = perms
 			}
+			if created != nil {
+				out["token_name"] = created.name
+				if created.expiresAt != nil {
+					out["token_expires_at"] = created.expiresAt
+				}
+			}
 			return app.Printer().Print(out, func(t *output.TableWriter) {
 				t.Note("Logged in to %s as %s (context %q, saved in %s).", stored.APIURL, user.Username, name, cfg.FilePath())
 				if perms != nil {
 					t.Note("%s", scopeSummary(perms))
+				}
+				if created != nil {
+					if created.expiresAt != nil {
+						t.Note("The API token %q expires %s; log in again then (--token-ttl sets its lifetime).",
+							created.name, tokenExpiryLabel(created.expiresAt, time.Now()))
+					} else {
+						t.Note("The API token %q does not expire (--token-ttl 0).", created.name)
+					}
 				}
 			})
 		},
@@ -121,7 +156,34 @@ func newLoginCmd(app *App) *cobra.Command {
 	f.BoolVar(&passwordStdin, "password-stdin", false, "read the password from stdin (--with-password)")
 	f.StringVar(&otp, "otp", "", "two-factor code (--with-password)")
 	f.StringVar(&tokenName, "token-name", "", "name of the API token --with-password creates (default: runr-cli@<host>)")
+	f.StringVar(&tokenTTL, "token-ttl", defaultTokenTTL, "lifetime of the API token --with-password creates, e.g. 90d or 720h; 0 or never: no expiry")
 	return cmd
+}
+
+// defaultTokenTTL is the lifetime of the API token `runr login --with-password` creates.
+const defaultTokenTTL = "90d"
+
+// parseTokenTTL reads --token-ttl: a lifetime like --expires of `runr tokens create` (90d, 720h),
+// or 0 (never) for a token without expiry.
+func parseTokenTTL(s string) (time.Duration, error) {
+	switch strings.ToLower(strings.TrimSpace(s)) {
+	case "0", "never":
+		return 0, nil
+	}
+	return parseDays(s)
+}
+
+// tokenExpiryLabel says when a token expires: the local time and how long until then, or that
+// it has expired.
+func tokenExpiryLabel(at *time.Time, now time.Time) string {
+	if at == nil {
+		return "never"
+	}
+	when := at.Local().Format(time.RFC3339)
+	if !now.Before(*at) {
+		return "expired " + when
+	}
+	return when + " (in " + output.Duration(at.Sub(now).Round(time.Hour)) + ")"
 }
 
 // scopeSummary describes what a token may do in one line.
@@ -168,42 +230,48 @@ func readToken(app *App, fromStdin bool) (string, error) {
 	return t, nil
 }
 
-func loginWithPassword(cmd *cobra.Command, app *App, anon *runr.Client, username string, passwordStdin bool, otp, tokenName string) (string, string, error) {
+// loginToken is the API token `runr login --with-password` created.
+type loginToken struct {
+	plain, id, name string
+	expiresAt       *time.Time
+}
+
+func loginWithPassword(cmd *cobra.Command, app *App, anon *runr.Client, username string, passwordStdin bool, otp, tokenName string, ttl time.Duration) (*loginToken, error) {
 	ctx := cmd.Context()
 	var err error
 	if username == "" {
 		if !app.interactive() {
-			return "", "", usageErrorf("pass --username")
+			return nil, usageErrorf("pass --username")
 		}
 		if username, err = app.readLine("Username or e-mail: "); err != nil {
-			return "", "", err
+			return nil, err
 		}
 	}
 	var password string
 	switch {
 	case passwordStdin:
 		if password, err = app.readLine(""); err != nil {
-			return "", "", err
+			return nil, err
 		}
 	case app.interactive():
 		if password, err = app.ReadSecret("Password: "); err != nil {
-			return "", "", err
+			return nil, err
 		}
 	default:
-		return "", "", usageErrorf("pass --password-stdin in a non-interactive session")
+		return nil, usageErrorf("pass --password-stdin in a non-interactive session")
 	}
 	session, _, err := anon.Login(ctx, username, password, otp)
 	if errors.Is(err, runr.ErrTwoFactorRequired) {
 		if !app.interactive() {
-			return "", "", usageErrorf("the account uses two-factor authentication: pass --otp")
+			return nil, usageErrorf("the account uses two-factor authentication: pass --otp")
 		}
 		if otp, err = app.readLine("Two-factor code: "); err != nil {
-			return "", "", err
+			return nil, err
 		}
 		session, _, err = anon.Login(ctx, username, password, strings.TrimSpace(otp))
 	}
 	if err != nil {
-		return "", "", err
+		return nil, err
 	}
 	sc := anon.WithToken(session)
 	if tokenName == "" {
@@ -213,15 +281,30 @@ func loginWithPassword(cmd *cobra.Command, app *App, anon *runr.Client, username
 		}
 		tokenName = "runr-cli@" + host
 	}
-	plain, tok, err := sc.CreateToken(ctx, runr.CreateTokenInput{Name: tokenName})
+	in := runr.CreateTokenInput{Name: tokenName}
+	if ttl > 0 {
+		exp := time.Now().Add(ttl).UTC().Truncate(time.Second)
+		in.ExpiresAt = &exp
+	}
+	plain, tok, err := sc.CreateToken(ctx, in)
 	if err != nil {
-		return "", "", fmt.Errorf("create an API token: %w", err)
+		return nil, fmt.Errorf("create an API token: %w", err)
 	}
 	// The session token is not needed any more.
 	if err := sc.Logout(ctx); err != nil {
 		app.Warn("could not end the login session: %v", err)
 	}
-	return plain, tok.ID.String(), nil
+	created := &loginToken{plain: plain, id: tok.ID.String(), name: tokenName}
+	// The expiry the API stored (none when it answers without one)
+	if tok.ExpiresAt != "" {
+		if exp, err := time.Parse(time.RFC3339, tok.ExpiresAt); err == nil {
+			exp = exp.UTC()
+			created.expiresAt = &exp
+		} else {
+			created.expiresAt = in.ExpiresAt
+		}
+	}
+	return created, nil
 }
 
 func newLogoutCmd(app *App) *cobra.Command {
@@ -246,7 +329,8 @@ func newLogoutCmd(app *App) *cobra.Command {
 			if !ok {
 				return usageErrorf("no context to log out of")
 			}
-			if c.TokenID != "" && !keep {
+			// An expired token is refused: there is nothing to revoke
+			if c.TokenID != "" && !keep && !c.TokenExpired(time.Now()) {
 				client, err := app.newClient(c.APIURL, c.Token)
 				if err == nil {
 					if err := client.DeleteToken(cmd.Context(), c.TokenID); err != nil && !runr.IsNotFound(err) {
@@ -285,11 +369,14 @@ func newWhoamiCmd(app *App) *cobra.Command {
 			cfg, _ := app.Config()
 			res, _ := cfg.Resolve(app.ContextName)
 			ctxName := ""
+			// The token runr login --with-password created: its expiry is known
+			var login *config.Context
 			if res != nil {
 				ctxName = res.Name
 				if res.FromEnv {
 					ctxName = "(environment)"
 				}
+				login = res.LoginToken()
 			}
 			perms, err := c.Permissions(cmd.Context())
 			if err != nil && !errors.Is(err, runr.ErrUnsupported) {
@@ -299,12 +386,18 @@ func newWhoamiCmd(app *App) *cobra.Command {
 			if perms != nil {
 				out["permissions"] = perms
 			}
+			if login != nil && login.TokenExpiresAt != nil {
+				out["token_expires_at"] = login.TokenExpiresAt
+			}
 			return app.Printer().Print(out, func(t *output.TableWriter) {
 				t.KV("User", u.Username)
 				t.KV("Name", output.Dash(u.Name))
 				t.KV("E-mail", output.Dash(u.Email))
 				t.KV("API", c.ConsoleURL())
 				t.KV("Context", output.Dash(ctxName))
+				if login != nil {
+					t.KV("Token expires", tokenExpiryLabel(login.TokenExpiresAt, time.Now()))
+				}
 				if perms != nil {
 					role := perms.Role
 					if perms.PlatformAdmin {
@@ -566,8 +659,8 @@ func uniqSorted(s []string) []string {
 func parseDays(s string) (time.Duration, error) {
 	s = strings.TrimSpace(s)
 	if strings.HasSuffix(s, "d") {
-		var n int
-		if _, err := fmt.Sscanf(strings.TrimSuffix(s, "d"), "%d", &n); err != nil || n <= 0 {
+		n, err := strconv.Atoi(strings.TrimSuffix(s, "d"))
+		if err != nil || n <= 0 {
 			return 0, fmt.Errorf("invalid duration %q", s)
 		}
 		return time.Duration(n) * 24 * time.Hour, nil

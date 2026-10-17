@@ -6,6 +6,7 @@ use App\Events\PlatformEvent;
 use App\Http\Requests\Account\ChangePasswordRequest;
 use App\Http\Requests\Account\UpdateProfileRequest;
 use App\Support\Auth\LoginTokens;
+use App\Support\Auth\UserTokens;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
@@ -121,12 +122,12 @@ class AccountController extends Controller
             return response()->json(['message' => __('api.account.wrong_password')], 422);
         }
 
+        // Every sign-in session and API token of the account goes with it, in one transaction
+        UserTokens::deleteUser($user);
+
         if ($user->avatar_path) {
             Storage::disk('public')->delete($user->avatar_path);
         }
-
-        $user->tokens()->delete();
-        $user->delete();
 
         return response()->json(['message' => __('api.account.deleted')]);
     }

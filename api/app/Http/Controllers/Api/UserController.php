@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Models\User;
+use App\Support\Auth\UserTokens;
 use App\Support\Rbac\AccessManager;
 use App\Support\Rbac\Rbac;
 use Illuminate\Http\JsonResponse;
@@ -83,9 +84,15 @@ class UserController extends Controller
         $access->assertCanManageMember(auth()->user(), $user->id);
         $access->assertNotLastOwner($user->id);
 
-        $user->delete();
+        $this->deleteUser($user);
 
         return response()->json(['message' => __('api.user.deleted')]);
+    }
+
+    /** The user with every sign-in session and API token of theirs, in one transaction. */
+    protected function deleteUser(User $user): void
+    {
+        UserTokens::deleteUser($user);
     }
 
     public function reset2FA(string $userId): JsonResponse

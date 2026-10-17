@@ -52,7 +52,7 @@ To use a build from this repository, build and install it into the local plugin 
 and run `terraform init` as usual:
 
 ```sh
-make -C terraform-provider-runr install VERSION=0.5.5   # ~/.terraform.d/plugins/registry.terraform.io/brf-tech/runr/0.5.5/<os>_<arch>/
+make -C terraform-provider-runr install VERSION=0.5.6   # ~/.terraform.d/plugins/registry.terraform.io/brf-tech/runr/0.5.6/<os>_<arch>/
 ```
 
 During provider development a `dev_overrides` block in `~/.terraformrc` points

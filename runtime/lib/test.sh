@@ -141,6 +141,12 @@ kind_load_image() {
   docker exec "$node" crictl inspecti -q "$img" >/dev/null 2>&1
 }
 
+# preload_kind_images CLUSTER — the region's utility images (Redis, the queue consumer, Zot,
+# Kaniko, the region Traefik, the tracing backend, curl/busybox/nginx of the suites), pulled on
+# the host and loaded into every Kind node. The runtime images are not among them: the e2e run
+# writes the runtime versions (executor:sync) when it starts, and the region's image pre-pull
+# (ZotPrepullTrait) then pulls the active versions of the built-in runtimes onto every node (an
+# ML or WebAssembly runtime's image where it runs).
 preload_kind_images() {
   local cluster="$1"
   echo ""
@@ -153,20 +159,7 @@ preload_kind_images() {
   fi
   echo "Loading images into the Kind cluster..."
 
-  # Default executor images from DB (executor:sync runs inside e2e, so this can be empty here):
-  # RunR's general runtimes under ghcr.io/brf-tech/runr/; an ML runtime (several GB) is pulled by
-  # the node that runs it
-  local executor_imgs=""
-  executor_imgs=$(docker compose exec -T api php artisan tinker --execute='
-    App\Models\ExecutorImage::where("is_default", true)
-      ->where("is_active", true)
-      ->where("category", "general")
-      ->pluck("docker_image")
-      ->each(fn($i) => print($i . "\n"));
-  ' 2>/dev/null | grep '^ghcr\.io/brf-tech/runr/' || true)
-
-  # Static utility images
-  local static_imgs=(
+  local imgs=(
     "ghcr.io/brf-tech/runr/reqs/nginx:1.27-alpine"
     "ghcr.io/brf-tech/runr/reqs/curl:latest"
     "ghcr.io/brf-tech/runr/reqs/busybox:latest"
@@ -184,16 +177,8 @@ preload_kind_images() {
     "ghcr.io/brf-tech/runr/reqs/tempo:3.1.0"
   )
 
-  # Load executor images (if any)
-  for img in $executor_imgs; do
-    [ -z "$img" ] && continue
-    echo "  ${img}"
-    pull_image "$img" || true
-    kind_load_image "$img" "$cluster" || echo "    not loaded (the nodes pull it)"
-  done
-
-  # Load static images
-  for img in "${static_imgs[@]}"; do
+  local img
+  for img in "${imgs[@]}"; do
     echo "  ${img}"
     pull_image "$img" || true
     kind_load_image "$img" "$cluster" || echo "    not loaded (the nodes pull it)"

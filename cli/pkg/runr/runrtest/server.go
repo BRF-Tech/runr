@@ -78,8 +78,10 @@ type Server struct {
 	// LogLines is returned by the logs endpoint, one batch per call (then empty answers).
 	LogLines []string
 
-	mu        sync.Mutex
-	valid     map[string]bool
+	mu    sync.Mutex
+	valid map[string]bool
+	// expires holds the expiry of API tokens created with expires_at (ExpireToken moves it)
+	expires   map[string]time.Time
 	scopes    map[string][]string
 	bearer    string
 	seq       int
@@ -138,6 +140,7 @@ func New(t testing.TB) *Server {
 		FailMessage: "RevisionFailed: container exited with code 1",
 		LogLines:    []string{"RunR Python runtime listening on :8080\n"},
 		valid:       map[string]bool{},
+		expires:     map[string]time.Time{},
 		scopes:      map[string][]string{},
 		RBAC:        true,
 		Catalog:     true,
@@ -167,7 +170,24 @@ func (s *Server) authorized(bearer string) bool {
 	if bearer == s.Token && !s.revoked(bearer) {
 		return true
 	}
+	if exp, ok := s.expires[bearer]; ok && !time.Now().Before(exp) {
+		return false
+	}
 	return s.valid[bearer]
+}
+
+// ExpireToken lets the API token created with the plain value expire (as if its expires_at had
+// passed): the API answers it with 401 from then on.
+func (s *Server) ExpireToken(plain string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	exp := time.Now().Add(-time.Minute).UTC().Truncate(time.Second)
+	s.expires[plain] = exp
+	for _, t := range s.tokens {
+		if t.plain == plain {
+			t.data.ExpiresAt = exp.Format(time.RFC3339)
+		}
+	}
 }
 
 func (s *Server) revoked(bearer string) bool {
@@ -857,6 +877,9 @@ func (s *Server) createToken(body map[string]any) (int, any, *apiErr) {
 		CreatedAt: time.Now().UTC().Format(time.RFC3339)}}
 	if e, ok := body["expires_at"].(string); ok {
 		t.data.ExpiresAt = e
+		if exp, err := time.Parse(time.RFC3339, e); err == nil {
+			s.expires[plain] = exp
+		}
 	}
 	s.tokens = append(s.tokens, t)
 	s.valid[plain] = true

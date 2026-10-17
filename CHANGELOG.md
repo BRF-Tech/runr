@@ -8,6 +8,48 @@ did not change says so.
 
 ## [Unreleased]
 
+## [0.5.6] - 2026-10-17
+
+### Changed
+
+- **The CLI's own API token expires.** `runr login --with-password` created its
+  `runr-cli@<host>` API token without an expiry. The token now expires 90 days after the login;
+  `--token-ttl` sets another lifetime (`30d`, `720h`; `0` or `never` keeps a token without
+  expiry). `runr login` and `runr whoami` show when it expires (`token_expires_at` in their JSON
+  output, and in the context of the config file); once it has expired, a command the API refuses
+  says that the token of the context expired and to log in again, and `runr logout` no longer
+  tries to revoke it. A new `runr login` into a context revokes the token an earlier
+  `runr login --with-password` created for it, as `runr logout` does: logging in again replaces
+  a token from an earlier release with an expiring one. `--expires` of `runr tokens create` and
+  `--token-ttl` refuse a fractional day count such as `1.5d` instead of reading it as `1d`
+  ([docs/cli.md](docs/cli.md#log-in)).
+
+### Fixed
+
+- **`ci.sh ml-runtimes --push` pushed untested images.** The push built the PyTorch and
+  TensorFlow images in a separate builder and pushed them right away; the smoke test, and on a GPU
+  host its GPU check, ran for local builds only. `--push` now builds every image into the local
+  Docker, smoke-tests it like a local build (with the GPU check where `docker run --gpus all` gives
+  a GPU, required with `ML_SMOKE_GPU=1`) and pushes only once every image passed: `docker push` of
+  the image the smoke test ran, its image ID checked again before the push. `--push --no-smoke` is
+  refused ([docs/runtimes.md](docs/runtimes.md#ml-runtimes)).
+- **A deleted user's tokens stayed in the database.** An administrator deleting a user
+  (`DELETE /api/users/{id}`) left the user's sign-in sessions and API tokens behind; no request
+  could use them without the user, but the rows stayed. Deleting a user — by an administrator or,
+  as before, by the user (`DELETE /api/account`) — now deletes every sign-in session and API token
+  of the user in the same transaction as the account, then the user's MCP server sessions. In the
+  multi-tenant edition, a deleted account's copies in the organizations it belonged to go as well,
+  with its groups and role assignments there (only the memberships went before); a member removed
+  from an organization loses the API tokens they created in it (these work in that organization
+  only; sign-in sessions and other organizations' tokens stay), and deleting an organization
+  deletes the tokens created in it. The daily `php artisan tokens:prune` also removes the tokens
+  of users that no longer exist and, in the multi-tenant edition, the tokens created in an
+  organization that no longer exists or whose user is no longer a member (a platform
+  administrator's token stays), and the organizations' copies and role rows of users that no
+  longer exist; an organization whose schema is missing is skipped. The rows earlier deletions
+  left go after the upgrade without any action
+  ([docs/security.md](docs/security.md#sign-in-sessions-and-api-tokens)).
+
 ## [0.5.5] - 2026-10-17
 
 ### Security
@@ -1161,7 +1203,8 @@ Initial tagged release.
 - API gateways with routes, in-app notifications and support tickets.
 - Helm chart with a single-tenant / multi-tenant edition, an install form (`values.schema.json`), generated secrets and a Traefik ingress; a Docker Compose setup for development.
 
-[Unreleased]: https://github.com/brf-tech/runr/compare/v0.5.5...main
+[Unreleased]: https://github.com/brf-tech/runr/compare/v0.5.6...main
+[0.5.6]: https://github.com/brf-tech/runr/releases/tag/v0.5.6
 [0.5.5]: https://github.com/brf-tech/runr/releases/tag/v0.5.5
 [0.5.4]: https://github.com/brf-tech/runr/releases/tag/v0.5.4
 [0.5.3]: https://github.com/brf-tech/runr/releases/tag/v0.5.3

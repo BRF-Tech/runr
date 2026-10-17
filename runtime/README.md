@@ -93,7 +93,7 @@ installs Knative through the API. See [docs/development.md](../docs/development.
 | `build-agent [--push]` | Build the runr-agent image |
 | `wrapper [--push]` | Build the universal wrapper image (`runr-wrapper`) |
 | `wasm [--push]` | Build the toolchain images of the WebAssembly runtimes |
-| `ml-runtimes [--push] [--list] [--no-smoke] [pytorch\|tensorflow] [cpu\|gpu]` | Build the PyTorch and TensorFlow runtime images, CPU and `-gpu`, for linux/amd64 (`exec-<runtime>:<X.Y>[-gpu]`, X.Y from the framework pin); local builds are smoke-tested, `--list` prints the image references ([docs/runtimes.md](../docs/runtimes.md#ml-runtimes)) |
+| `ml-runtimes [--push] [--list] [--no-smoke] [pytorch\|tensorflow] [cpu\|gpu]` | Build the PyTorch and TensorFlow runtime images, CPU and `-gpu`, for linux/amd64 (`exec-<runtime>:<X.Y>[-gpu]`, X.Y from the framework pin); every image is smoke-tested, `--push` pushes them once all passed, `--list` prints the image references ([docs/runtimes.md](../docs/runtimes.md#ml-runtimes)) |
 | `supply-chain [--push]` | Build the supply-chain tools image |
 | `image-upload [--push]` | Build the image-upload receiver |
 | `test-runtimes`, `test-wasm`, `test-images`, `test-observability`, `test-reconcile`, `test-sandbox-api`, `test-supply-chain`, `test-ai`, `test-bindings`, `test-git-deploy`, `test-mcp` | End-to-end suite of one feature on Kind + Knative (same flags as `test`) |

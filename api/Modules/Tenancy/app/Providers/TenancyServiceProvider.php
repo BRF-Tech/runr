@@ -9,6 +9,8 @@ use App\Http\Middleware\NormalizeApiTags;
 use App\Http\Middleware\ResponseCache;
 use App\Models\KnativeRegion;
 use App\Models\Setting;
+use App\Support\Auth\AccountPruner;
+use App\Support\Auth\UserDeletionHook;
 use Database\Seeders\DatabaseSeeder;
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Contracts\Auth\Middleware\AuthenticatesRequests;
@@ -37,6 +39,8 @@ use Modules\Tenancy\Providers\Concerns\TenancyServiceOverridesTrait;
 use Modules\Tenancy\Services\CapacityDealService;
 use Modules\Tenancy\Services\PostgreSQLSchemaManagerWithPublic;
 use Modules\Tenancy\Services\TenantRegionReconcileSource;
+use Modules\Tenancy\Support\TenantMembers;
+use Modules\Tenancy\Support\TenantTokens;
 use Stancl\Tenancy\Bootstrappers\CacheTenancyBootstrapper;
 use Stancl\Tenancy\Bootstrappers\DatabaseTenancyBootstrapper;
 use Stancl\Tenancy\Bootstrappers\QueueTenancyBootstrapper;
@@ -87,6 +91,7 @@ class TenancyServiceProvider extends ServiceProvider
         $this->registerScheduledJobs();
         $this->registerApiTags();
         $this->registerEventListeners();
+        self::registerAccountCleanup();
         // region:reconcile also reconciles each tenant's own regions
         TenantRegionReconcileSource::register();
     }
@@ -303,6 +308,16 @@ class TenancyServiceProvider extends ServiceProvider
             UserRegistered::class,
             CreateTenantOnRegistration::class,
         );
+    }
+
+    /**
+     * A deleted account's copies in its organizations go with it (UserTokens::deleteUser);
+     * tokens:prune removes the tokens organizations refuse for good and copies of deleted users.
+     */
+    public static function registerAccountCleanup(): void
+    {
+        app()->tag([TenantMembers::class], UserDeletionHook::HOOKS);
+        app()->tag([TenantTokens::class, TenantMembers::class], AccountPruner::PRUNERS);
     }
 
     protected function registerScheduledJobs(): void

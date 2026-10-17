@@ -4,7 +4,9 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
+	"time"
 )
 
 func TestSaveLoadRoundTripWithPrivatePermissions(t *testing.T) {
@@ -102,5 +104,46 @@ func TestPathHonoursRUNR_CONFIG(t *testing.T) {
 	t.Setenv(EnvConfig, "")
 	if p, err := Path(); err != nil || filepath.Base(p) != "config.yaml" || filepath.Base(filepath.Dir(p)) != "runr" {
 		t.Fatalf("default Path = %s %v", p, err)
+	}
+}
+
+func TestTokenExpiryRoundTripAndLoginToken(t *testing.T) {
+	t.Setenv(EnvAPIURL, "")
+	t.Setenv(EnvToken, "")
+	t.Setenv(EnvContext, "")
+	p := filepath.Join(t.TempDir(), "config.yaml")
+	f, _ := LoadFrom(p)
+	exp := time.Date(2027, 1, 15, 10, 30, 0, 0, time.UTC)
+	f.Set("pasted", &Context{APIURL: "https://runr.example.com", Token: "t1"})
+	f.Set("cli", &Context{APIURL: "https://runr.example.com", Token: "t2", TokenID: "9", TokenExpiresAt: &exp})
+	if err := f.Save(); err != nil {
+		t.Fatal(err)
+	}
+	data, _ := os.ReadFile(p)
+	if !strings.Contains(string(data), "token_expires_at: 2027-01-15T10:30:00Z") {
+		t.Fatalf("config file:\n%s", data)
+	}
+	g, err := LoadFrom(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := g.Contexts["cli"]
+	if c.TokenExpiresAt == nil || !c.TokenExpiresAt.Equal(exp) || g.Contexts["pasted"].TokenExpiresAt != nil {
+		t.Fatalf("loaded = %+v / %+v", c, g.Contexts["pasted"])
+	}
+	if c.TokenExpired(exp.Add(-time.Second)) || !c.TokenExpired(exp) || g.Contexts["pasted"].TokenExpired(exp.AddDate(10, 0, 0)) {
+		t.Fatal("TokenExpired")
+	}
+
+	r, _ := g.Resolve("cli")
+	if r.LoginToken() != c {
+		t.Fatal("the context's own token is the login token")
+	}
+	if r, _ := g.Resolve("pasted"); r.LoginToken() != nil {
+		t.Fatal("a pasted token is no login token")
+	}
+	t.Setenv(EnvToken, "from-env")
+	if r, _ := g.Resolve("cli"); r.LoginToken() != nil {
+		t.Fatal("RUNR_TOKEN overrides the login token")
 	}
 }

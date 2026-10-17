@@ -2,11 +2,14 @@
 
 namespace Tests\Feature\Rbac;
 
+use App\Http\Controllers\Api\UserController;
+use App\Mcp\Models\McpSession;
 use App\Models\Group;
 use App\Models\Project;
 use App\Models\Role;
 use App\Models\RoleAssignment;
 use App\Models\User;
+use App\Support\Auth\LoginTokens;
 use App\Support\Rbac\NoOrganization;
 use App\Support\Rbac\OrganizationResolver;
 use App\Support\Rbac\PermissionCatalog;
@@ -15,9 +18,13 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Route as Router;
 use Illuminate\Support\Str;
+use Laravel\Sanctum\PersonalAccessToken;
+use Modules\Tenancy\Http\Controllers\TenancyUserController;
 use Modules\Tenancy\Http\Middleware\IdentifyTenant;
 use Modules\Tenancy\Http\Middleware\RequireAdmin;
 use Modules\Tenancy\Models\Tenant;
+use Modules\Tenancy\Models\TenantLocalUser;
+use Modules\Tenancy\Models\TenantUser;
 use Modules\Tenancy\Support\TenantOrganization;
 use Symfony\Component\HttpKernel\Exception\HttpException;
 use Tests\Concerns\ActsWithRoles;
@@ -28,7 +35,7 @@ use Tests\TestCase;
  * Multi-tenant: the active tenant is the organization — the member's role is tenant_users.role
  * (built-in or custom), groups / custom roles / project access live in the tenant schema; the
  * central context grants nothing but to platform admins; upgraded "member" users keep exactly
- * what they could do; tokens stay in their tenant.
+ * what they could do; tokens stay in their tenant and go with the membership or the account.
  */
 class TenantRolesTest extends TestCase
 {
@@ -269,5 +276,98 @@ class TenantRolesTest extends TestCase
         } catch (HttpException $e) {
             $this->assertSame(403, $e->getStatusCode());
         }
+    }
+
+    // ── Removed members and deleted accounts take their tokens along ────────
+
+    /** An API token of $user created in $tenant (pinned to it, as TenancyApiTokenController does). */
+    private function tokenIn(User $user, ?Tenant $tenant, string $name): int
+    {
+        $token = $user->createToken($name)->accessToken;
+        $token->forceFill(['tenant_id' => $tenant?->id])->save();
+
+        return (int) $token->getKey();
+    }
+
+    private function mcpSession(User $user, ?Tenant $tenant, string $id): void
+    {
+        McpSession::query()->create([
+            'id' => hash('sha256', $id), 'user_id' => (string) $user->id, 'tenant_id' => $tenant?->id,
+            'protocol_version' => '2025-06-18', 'last_seen_at' => now(),
+        ]);
+    }
+
+    /** @return list<int> */
+    private function tokenIds(User $user): array
+    {
+        return PersonalAccessToken::query()->where('tokenable_id', $user->id)->orderBy('id')->pluck('id')->map(fn ($id) => (int) $id)->all();
+    }
+
+    public function test_a_member_removed_from_a_tenant_loses_the_tokens_created_in_it(): void
+    {
+        $this->tenantRoutes();
+        // The membership's deleted hook removes the tenant's copy of the user
+        $this->acme->run(fn () => (require base_path('Modules/Tenancy/Database/TenantMigrations/0003_create_users_table.php'))->up());
+        $globex = Tenant::create(['name' => 'Globex', 'slug' => 'globex']);
+        $owner = $this->member($this->acme, 'owner');
+        $dev = $this->member($this->acme, 'developer');
+        $this->member($globex, 'developer', $dev);
+        $this->tokenIn($dev, $this->acme, 'ci-acme');
+        $inGlobex = $this->tokenIn($dev, $globex, 'ci-globex');
+        $session = (int) LoginTokens::issue($dev)->accessToken->getKey();
+        $this->mcpSession($dev, $this->acme, 'dev-acme');
+        $this->mcpSession($dev, $globex, 'dev-globex');
+        $this->inTenant($this->acme);
+
+        $this->signedIn($owner)->deleteJson("/api/tenants/{$this->acme->id}/users/{$dev->id}")
+            ->assertOk()->assertJsonPath('message', __('api.tenant_user.removed'));
+
+        tenancy()->end();
+        $this->assertFalse(TenantUser::query()->where('tenant_id', $this->acme->id)->where('user_id', $dev->id)->exists());
+        // Their sign-in session and the token of the other tenant stay
+        $this->assertSame([$inGlobex, $session], $this->tokenIds($dev));
+        $this->assertSame([$globex->id], McpSession::query()->where('user_id', (string) $dev->id)->pluck('tenant_id')->all());
+    }
+
+    public function test_a_platform_admin_deletes_the_account_with_every_token(): void
+    {
+        $this->app->bind(UserController::class, TenancyUserController::class);
+        $root = $this->platformAdmin();
+        $dev = $this->member($this->acme, 'developer');
+        $this->tokenIn($dev, $this->acme, 'ci-acme');
+        LoginTokens::issue($dev);
+        $this->mcpSession($dev, $this->acme, 'dev-acme');
+        $rootToken = $this->tokenIn($root, null, 'root-ci');
+
+        $this->signedIn($root)->deleteJson("/api/users/{$dev->id}")->assertOk();
+
+        $this->assertNull(User::query()->find($dev->id));
+        $this->assertSame([], $this->tokenIds($dev));
+        $this->assertSame(0, McpSession::query()->where('user_id', (string) $dev->id)->count());
+        $this->assertFalse(TenantUser::query()->where('user_id', $dev->id)->exists(), 'memberships cascade with the account');
+        $this->assertSame([$rootToken], $this->tokenIds($root));
+    }
+
+    public function test_in_a_tenant_deleting_a_user_leaves_the_account_and_its_tokens(): void
+    {
+        $this->tenantRoutes();
+        $this->app->bind(UserController::class, TenancyUserController::class);
+        $this->acme->run(fn () => (require base_path('Modules/Tenancy/Database/TenantMigrations/0003_create_users_table.php'))->up());
+        $owner = $this->member($this->acme, 'owner');
+        $dev = $this->member($this->acme, 'developer');
+        $this->acme->run(fn () => TenantLocalUser::withoutEvents(fn () => TenantLocalUser::query()->create([
+            'id' => $dev->id, 'name' => $dev->name, 'username' => $dev->username, 'email' => $dev->email, 'password' => 'x',
+        ])));
+        $tokens = [$this->tokenIn($dev, $this->acme, 'ci-acme'), (int) LoginTokens::issue($dev)->accessToken->getKey()];
+        $this->inTenant($this->acme);
+
+        // The users table of a tenant holds its copy of the members: the account is not deleted
+        $this->signedIn($owner)->deleteJson("/api/users/{$dev->id}")->assertOk();
+
+        tenancy()->end();
+        $this->assertNotNull(User::query()->find($dev->id));
+        $this->assertSame($tokens, $this->tokenIds($dev));
+        $this->assertTrue(TenantUser::query()->where('tenant_id', $this->acme->id)->where('user_id', $dev->id)->exists());
+        $this->acme->run(fn () => $this->assertNull(TenantLocalUser::query()->find($dev->id)));
     }
 }

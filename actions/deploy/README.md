@@ -21,7 +21,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - id: runr
-        uses: brf-tech/runr/actions/deploy@v0.5.5
+        uses: brf-tech/runr/actions/deploy@v0.5.6
         with:
           api-url: https://runr.example.com
           token: ${{ secrets.RUNR_TOKEN }}
@@ -40,7 +40,7 @@ Build and push the image, then deploy that tag:
           push: true
           tags: ghcr.io/acme/web:${{ github.sha }}
 
-      - uses: brf-tech/runr/actions/deploy@v0.5.5
+      - uses: brf-tech/runr/actions/deploy@v0.5.6
         with:
           api-url: https://runr.example.com
           token: ${{ secrets.RUNR_TOKEN }}
@@ -65,7 +65,7 @@ deploy, so the new deployment runs with them. Each value is masked in the log an
 comments are skipped; spaces around the key and the value are removed.
 
 ```yaml
-      - uses: brf-tech/runr/actions/deploy@v0.5.5
+      - uses: brf-tech/runr/actions/deploy@v0.5.6
         with:
           api-url: https://runr.example.com
           token: ${{ secrets.RUNR_TOKEN }}
@@ -91,7 +91,7 @@ needs `env.edit` (part of the `deploy` preset).
 | `message` | `<workflow> <short sha>` | Version message |
 | `wait` | `true` | Wait until the deployment is ready |
 | `timeout` | `10m` | How long to wait for the build and the deployment |
-| `version` | `latest` | runr CLI release (`latest` or a tag such as `v0.5.5`) |
+| `version` | `latest` | runr CLI release (`latest` or a tag such as `v0.5.6`) |
 | `cli-base-url` | GitHub releases | Download base of the CLI archives (mirror) |
 | `github-token` | `github.token` | Token for the latest-release lookup |
 | `args` | | Extra arguments for `runr deploy` |

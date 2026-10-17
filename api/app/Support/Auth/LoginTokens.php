@@ -75,10 +75,11 @@ final class LoginTokens
     }
 
     /**
-     * Removes the sign-in sessions that ended and the API tokens that expired more than
-     * EXPIRED_TOKEN_RETENTION_DAYS ago.
+     * Removes the sign-in sessions that ended, the API tokens that expired more than
+     * EXPIRED_TOKEN_RETENTION_DAYS ago, the tokens of users that no longer exist, and what the
+     * registered AccountPruners remove (more: their counts by label).
      *
-     * @return array{sessions: int, tokens: int}
+     * @return array{sessions: int, tokens: int, orphans: int, more: array<string, int>}
      */
     public static function prune(): array
     {
@@ -99,7 +100,16 @@ final class LoginTokens
             ->where('expires_at', '<', now()->subDays(self::EXPIRED_TOKEN_RETENTION_DAYS))
             ->delete();
 
-        return ['sessions' => $sessions, 'tokens' => $tokens];
+        $orphans = UserTokens::orphans()->delete();
+
+        $more = [];
+        foreach (app()->tagged(AccountPruner::PRUNERS) as $pruner) {
+            if ($pruner instanceof AccountPruner) {
+                $more[$pruner->label()] = $pruner->prune();
+            }
+        }
+
+        return ['sessions' => $sessions, 'tokens' => $tokens, 'orphans' => $orphans, 'more' => $more];
     }
 
     /** @return Builder<PersonalAccessToken> */

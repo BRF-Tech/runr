@@ -44,7 +44,8 @@ Commands:
   wasm-shim [--push]                  The Spin shim RunR installs on region nodes (containerd-shim-spin, runtime/wasm-shim-spin)
   ml-runtimes [--push] [--list] [--no-smoke] [pytorch|tensorflow] [cpu|gpu]
                                       PyTorch / TensorFlow runtime images, CPU and -gpu (linux/amd64);
-                                      local builds are smoke-tested, --list prints the image references
+                                      every image is smoke-tested (--push pushes them once all passed),
+                                      --list prints the image references
   supply-chain [--push]               Supply-chain tools image (runr-supply-chain: syft, trivy, cosign, oras)
   image-upload [--push]               Image upload receiver (runr-image-upload: chunks → region registry)
   build-agent [--push]                Build + push the RunR monitoring agent image

@@ -65,6 +65,7 @@ Shell completion: `runr completion bash|zsh|fish|powershell`, e.g.
 runr login https://runr.example.com            # prompts for an API token
 echo "$TOKEN" | runr login https://runr.example.com --token-stdin
 runr login https://runr.example.com --with-password --username ada
+runr login https://runr.example.com --with-password --username ada --token-ttl 30d
 ```
 
 - **API token** (default): create one in the console (Settings → API Tokens) or with
@@ -73,8 +74,12 @@ runr login https://runr.example.com --with-password --username ada
 - **Username and password** (`--with-password`): the CLI signs in with `--username` and the
   password from a hidden prompt or `--password-stdin` (asking for a two-factor code when the
   account has one, or taking `--otp`), creates an API token named `runr-cli@<host>` (or
-  `--token-name`) for this machine and ends the sign-in session. `runr logout` revokes that
-  token again (`--keep-token` keeps it).
+  `--token-name`) for this machine and ends the sign-in session. The token expires after 90 days:
+  `--token-ttl` sets another lifetime (`30d`, `720h`; `0` or `never`: no expiry). `runr login`
+  and `runr whoami` show when it expires; once it has expired, a command that the API refuses
+  says so and to log in again (`runr login <url> --with-password`). `runr logout` revokes that
+  token again (`--keep-token` keeps it; an expired token needs no revoking), and so does a new
+  `runr login` into the same context, which replaces it.
 
 The URL may be the console URL or its API root (`…/api`); without an argument `runr login`
 takes `RUNR_API_URL` or asks. The login is stored as a **context** — API URL, token and user —
@@ -83,7 +88,7 @@ Linux, `~/Library/Application Support/runr/` on macOS, `%AppData%\runr\` on Wind
 `0600` permissions. `RUNR_CONFIG` points to another file.
 
 ```sh
-runr whoami                  # user, API, context, role and the token's permissions
+runr whoami                  # user, API, context, the token's expiry, role and permissions
 runr context ls              # all contexts, * marks the current one
 runr context use staging
 runr --context prod projects ls
@@ -472,9 +477,9 @@ Most groups without a subcommand run their `ls`, `get` or `status` command (`run
 
 | Command | What it does |
 |---|---|
-| `runr login [url]` | Save an API URL and token as a context (`--token-stdin`, `--with-password`, `--username`, `--password-stdin`, `--otp`, `--token-name`, `--name`) |
+| `runr login [url]` | Save an API URL and token as a context (`--token-stdin`, `--with-password`, `--username`, `--password-stdin`, `--otp`, `--token-name`, `--token-ttl`, `--name`) |
 | `runr logout` | Remove the current context and revoke the token `login --with-password` created (`--keep-token`) |
-| `runr whoami` | User, API, context, role and token permissions |
+| `runr whoami` | User, API, context, role and token permissions; the expiry of the token `login --with-password` created |
 | `runr context ls\|use\|rm\|current` | Manage contexts |
 | `runr tokens ls\|create\|rm` | API tokens (`--ability`, `--preset`, `--expires`) |
 | `runr init [dir]` | Scaffold a project (`--name`, `--type`, `--runtime`, `--runtime-version`, `--region`, `--image`, `--force`) |
@@ -2354,7 +2359,7 @@ deploy:
   stage: deploy
   image: alpine:3.21
   variables:
-    RUNR_VERSION: v0.5.5
+    RUNR_VERSION: v0.5.6
   before_script:
     - apk add --no-cache curl tar
     - curl -fsSL "https://github.com/brf-tech/runr/releases/download/${RUNR_VERSION}/runr_linux_amd64.tar.gz" | tar -xz -C /usr/local/bin runr
@@ -2392,6 +2397,7 @@ contexts:
     api_url: https://runr.example.com
     token: 12|…
     token_id: "12"          # set by login --with-password; logout revokes it
+    token_expires_at: 2027-01-15T10:30:00Z   # when that token expires (--token-ttl)
     user: ada
 update_check: false         # true: runr version looks up the latest release
 ```

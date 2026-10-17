@@ -48,6 +48,23 @@ class TenancyUserController extends UserController
         ]);
     }
 
+    /**
+     * Centrally (the platform administrators' user list) the account goes with every token of it.
+     * In an organization the users table holds the organization's copy of its members: deleting
+     * that copy leaves the account, its memberships and its tokens alone (a member leaves an
+     * organization through DELETE /tenants/{tenant}/users/{user}).
+     */
+    protected function deleteUser(User $user): void
+    {
+        if (tenancy()->initialized) {
+            $user->delete();
+
+            return;
+        }
+
+        parent::deleteUser($user);
+    }
+
     public function reset2FA(string $userId): JsonResponse
     {
         if (! request()->user()->is_admin) {

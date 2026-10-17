@@ -12,6 +12,7 @@ use Modules\Tenancy\Mail\TenantInvitationMail;
 use Modules\Tenancy\Models\Tenant;
 use Modules\Tenancy\Models\TenantInvitation;
 use Modules\Tenancy\Models\TenantUser;
+use Modules\Tenancy\Support\TenantTokens;
 
 class TenantUserController extends Controller
 {
@@ -201,7 +202,8 @@ class TenantUserController extends Controller
         // Members with a role the remover could not grant (an owner, for an admin) stay
         Tenant::findOrFail($tenantId)->run(fn () => $this->access()->assertCanManageMember(auth()->user(), $userId));
 
-        $tenantUser->delete();
+        // With the API tokens the member created in this tenant (they work in it only)
+        TenantTokens::removeMember($tenantUser);
 
         return response()->json(['message' => __('api.tenant_user.removed')]);
     }

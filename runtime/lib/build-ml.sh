@@ -8,8 +8,12 @@
 #   ci.sh ml-runtimes                  local builds of the four images, each one smoke-tested
 #   ci.sh ml-runtimes pytorch gpu      only these (runtime: pytorch, tensorflow; variant: cpu, gpu)
 #   ci.sh ml-runtimes --no-smoke       local builds without the smoke test
-#   ci.sh ml-runtimes --push           build + push (the images a release publishes)
+#   ci.sh ml-runtimes --push           build + smoke test + push (the images a release publishes)
 #   ci.sh ml-runtimes --list           print the image references, build nothing
+#
+# --push builds and smoke-tests every image like a local build and pushes only once all of them
+# passed: `docker push` of the image the smoke test ran (its image ID is checked again right before
+# the push), so the registry gets exactly the tested image. --push --no-smoke is refused.
 #
 # The smoke test runs a handler through the image's own server, like a function: tensor ops on
 # the request's values (a mean and a matrix product), answered as JSON (http trigger), and the same
@@ -237,6 +241,10 @@ cmd_build_ml_runtimes() {
       *) echo -e "${RED}unknown argument: ${arg} (pytorch, tensorflow, cpu, gpu, --push, --list, --no-smoke)${NC}"; exit 1 ;;
     esac
   done
+  if [ "$push" = "1" ] && [ "$smoke" = "0" ] && [ "$list" = "0" ]; then
+    echo -e "${RED}--push smoke-tests every image before it is pushed: --no-smoke is for local builds${NC}"
+    exit 1
+  fi
 
   local images
   images="$(ml_runtime_images ${filters[@]+"${filters[@]}"})" || return 1
@@ -250,7 +258,7 @@ cmd_build_ml_runtimes() {
   fi
 
   echo -e "${BOLD}── ML runtime images (${ML_PLATFORM}) ──${NC}"
-  local runtime variant dockerfile tag image version args built=0
+  local runtime variant dockerfile tag image version args id built=0 tested=()
   # the list on fd 3: docker (and what wraps it) may read stdin
   while IFS='|' read -r runtime variant dockerfile tag <&3; do
     image="${REGISTRY}/exec-${runtime}:${tag}"
@@ -259,23 +267,40 @@ cmd_build_ml_runtimes() {
       --build-context "runtime-python=${SCRIPT_DIR}/python"
       --build-arg "VERSION=${version}")
 
+    # --push too: built into the local Docker, so the smoke test runs the image that is pushed
     echo "==> Building ${image}"
-    if [ "$push" = "1" ]; then
-      PLATFORMS="$ML_PLATFORM" do_build "$image" "${SCRIPT_DIR}/${runtime}" 1 "${args[@]}" || return 1
-    else
-      do_build "$image" "${SCRIPT_DIR}/${runtime}" 0 --platform "$ML_PLATFORM" --load "${args[@]}" || return 1
-      echo "  size (docker image inspect): $(( $(docker image inspect -f '{{.Size}}' "$image") / 1000000 )) MB"
-      if [ "$smoke" = "1" ]; then
-        ml_runtime_smoke "$image" "$runtime" "$variant" "$version" || return 1
-      fi
+    do_build "$image" "${SCRIPT_DIR}/${runtime}" 0 --platform "$ML_PLATFORM" --load "${args[@]}" || return 1
+    id="$(docker image inspect -f '{{.Id}}' "$image")"
+    echo "  size (docker image inspect): $(( $(docker image inspect -f '{{.Size}}' "$image") / 1000000 )) MB"
+    if [ "$smoke" = "1" ]; then
+      ml_runtime_smoke "$image" "$runtime" "$variant" "$version" || return 1
     fi
+    tested+=("${image}|${id}")
     built=$((built + 1))
     echo ""
   done 3<<< "$images"
 
-  [ "$push" = "1" ] && cleanup_buildx
+  if [ "$push" = "1" ]; then
+    # only once every image passed; each one exactly as it was tested (same image ID), checked
+    # for all of them before the first push
+    local entry
+    for entry in "${tested[@]}"; do
+      image="${entry%|*}"
+      id="${entry##*|}"
+      if [ "$(docker image inspect -f '{{.Id}}' "$image" 2>/dev/null)" != "$id" ]; then
+        echo -e "${RED}${image} is no longer the image the smoke test ran (${id}): nothing pushed${NC}"
+        return 1
+      fi
+    done
+    for entry in "${tested[@]}"; do
+      echo "==> Pushing ${entry%|*} (${entry##*|}, smoke-tested)"
+      docker push "${entry%|*}" || return 1
+    done
+    echo -e "${GREEN}Done. ${built} images built, smoke-tested and pushed.${NC}"
+    return 0
+  fi
 
   echo -e "${GREEN}Done. ${built} images.${NC}"
-  [ "$push" = "0" ] && echo "To push: ci.sh ml-runtimes --push"
+  echo "To push: ci.sh ml-runtimes --push"
   return 0
 }

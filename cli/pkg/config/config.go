@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	"gopkg.in/yaml.v3"
 )
@@ -27,9 +28,17 @@ const (
 type Context struct {
 	APIURL string `yaml:"api_url"`
 	Token  string `yaml:"token,omitempty"`
-	// TokenID is set when `runr login --password` created the token, so logout can revoke it.
+	// TokenID is set when `runr login --with-password` created the token, so logout can revoke it.
 	TokenID string `yaml:"token_id,omitempty"`
-	User    string `yaml:"user,omitempty"`
+	// TokenExpiresAt is when the token `runr login --with-password` created expires (nil: never,
+	// or a token the CLI did not create).
+	TokenExpiresAt *time.Time `yaml:"token_expires_at,omitempty"`
+	User           string     `yaml:"user,omitempty"`
+}
+
+// TokenExpired reports whether the token the CLI created for this context has expired at now.
+func (c *Context) TokenExpired(now time.Time) bool {
+	return c != nil && c.TokenExpiresAt != nil && !now.Before(*c.TokenExpiresAt)
 }
 
 // File is the configuration file.
@@ -199,4 +208,13 @@ func (f *File) Resolve(name string) (*Resolved, error) {
 		r.FromEnv = true
 	}
 	return r, nil
+}
+
+// LoginToken returns the context when the command authenticates with the API token that
+// `runr login --with-password` created for it, not with one RUNR_API_URL / RUNR_TOKEN override.
+func (r *Resolved) LoginToken() *Context {
+	if r == nil || r.Context == nil || r.Context.TokenID == "" || r.Token != r.Context.Token || r.APIURL != r.Context.APIURL {
+		return nil
+	}
+	return r.Context
 }

@@ -31,7 +31,10 @@ variables:
 
 # Shared setup for Helm deploys
 .helm_deploy:
-  image: ghcr.io/brf-tech/runr/reqs/helm:3.15
+  # The image's entrypoint is helm; the job script needs a shell
+  image:
+    name: ghcr.io/brf-tech/runr/reqs/helm:3.15
+    entrypoint: [""]
   before_script:
     - mkdir -p ~/.kube
     - echo "$KUBE_CONFIG" | base64 -d > ~/.kube/config
@@ -126,7 +129,10 @@ check:build-scripts:
 
 check:knative-releases:
   stage: check
-  image: ghcr.io/brf-tech/runr/reqs/helm:3.15
+  # The image's entrypoint is helm; the job script needs a shell
+  image:
+    name: ghcr.io/brf-tech/runr/reqs/helm:3.15
+    entrypoint: [""]
   before_script:
     - apk add --no-cache bash curl jq git
   script:
@@ -138,7 +144,10 @@ check:knative-releases:
 
 check:helm-releases:
   stage: check
-  image: ghcr.io/brf-tech/runr/reqs/helm:3.15
+  # The image's entrypoint is helm; the job script needs a shell
+  image:
+    name: ghcr.io/brf-tech/runr/reqs/helm:3.15
+    entrypoint: [""]
   before_script:
     - apk add --no-cache bash curl jq git
   script:
@@ -158,7 +167,10 @@ check:helm-releases:
 # Kubernetes 1.30 and later (ci/check-helm-chart.sh)
 lint:helm:
   stage: test
-  image: ghcr.io/brf-tech/runr/reqs/helm:3.15
+  # The image's entrypoint is helm; the job script needs a shell
+  image:
+    name: ghcr.io/brf-tech/runr/reqs/helm:3.15
+    entrypoint: [""]
   variables:
     KUBECONFORM_VERSION: v0.7.0
   before_script:
@@ -177,6 +189,7 @@ lint:helm:
         - helm/**/*
         - ci/helm-values/**/*
         - ci/check-helm-chart.sh
+        - .gitlab-ci.yml
 
 test:api:
   stage: test
@@ -197,8 +210,9 @@ test:api:
     # before_script and script share one shell: the working directory is already api/
     # Coverage floor: line coverage of app/ (phpunit.xml <source>), the measured value rounded down
     # to whole percent; raise it with the coverage. This process (not PHPUnit's) reads the report,
-    # hence its memory limit (docs/development.md → Testing).
-    - php -d memory_limit=1G artisan test --stop-on-failure --compact --coverage --min=76
+    # hence its memory limit (docs/development.md → Testing). PHPUnit's own options go last: the
+    # first option `artisan test` does not know ends the parsing of its own (--coverage, --min).
+    - php -d memory_limit=1G artisan test --compact --coverage --min=76 --stop-on-failure
   coverage: '/^\s*Total:\s*(\d+(?:\.\d+)?) %/'
   rules:
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
@@ -613,9 +627,9 @@ build:runtime:
       allow_failure: true
 
 # The PyTorch and TensorFlow runtime images, CPU and -gpu, linux/amd64 only: ci.sh ml-runtimes
-# builds and pushes exactly the images `ci.sh ml-runtimes --list` prints (several GB each, so a
-# job of their own). Runs when their sources change on the default branch, on the "ml-runtimes"
-# schedule, or manually.
+# builds, smoke-tests and then pushes exactly the images `ci.sh ml-runtimes --list` prints (several
+# GB each, so a job of their own); nothing is pushed unless every smoke test passed. Runs when
+# their sources change on the default branch, on the "ml-runtimes" schedule, or manually.
 # Secrets: GHCR_USERNAME, GHCR_TOKEN (write:packages scope)
 build:ml-runtimes:
   extends: .docker_build

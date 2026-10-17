@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Mcp\Models\McpSession;
 use App\Models\Deployment;
 use App\Models\KnativeRegion;
 use App\Models\Project;
@@ -18,6 +19,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Http;
+use Laravel\Sanctum\PersonalAccessToken;
 use Modules\Tenancy\Http\Controllers\TenantController;
 use Modules\Tenancy\Http\Middleware\IdentifyTenant;
 use Modules\Tenancy\Jobs\DeleteTenantJob;
@@ -206,9 +208,40 @@ class TenantTeardownTest extends TestCase
         return app(TenantController::class)->destroy($request, $tenant->id);
     }
 
+    /**
+     * A member's API tokens created in the tenant and in another tenant, and their sign-in session
+     * (no tenant), with an MCP session in the tenant.
+     *
+     * @return array{0: User, 1: array<string, int>} the member and their token ids by name
+     */
+    private function memberTokens(Tenant $tenant): array
+    {
+        $user = User::factory()->create(['username' => 'member']);
+        $other = Tenant::create(['name' => 'Globex', 'slug' => 'globex']);
+        $ids = [];
+        foreach ([$tenant->id => 'ci-acme', $other->id => 'ci-globex', '' => 'api'] as $tenantId => $name) {
+            $token = $user->createToken($name)->accessToken;
+            $token->forceFill(['tenant_id' => $tenantId ?: null])->save();
+            $ids[$name] = (int) $token->getKey();
+        }
+        McpSession::query()->create([
+            'id' => hash('sha256', 'member-acme'), 'token_id' => $ids['ci-acme'], 'user_id' => (string) $user->id,
+            'tenant_id' => $tenant->id, 'protocol_version' => '2025-06-18', 'last_seen_at' => now(),
+        ]);
+
+        return [$user, $ids];
+    }
+
+    /** @return list<int> */
+    private function tokenIds(User $user): array
+    {
+        return PersonalAccessToken::query()->where('tokenable_id', $user->id)->orderBy('id')->pluck('id')->map(fn ($id) => (int) $id)->all();
+    }
+
     public function test_delete_answers_202_and_the_job_tears_everything_down(): void
     {
         $tenant = $this->tenant([['proj-a', 'own'], ['proj-b', 'own']]);
+        [$member, $tokens] = $this->memberTokens($tenant);
         File::ensureDirectoryExists(storage_path('git/acme/some-project'));
         File::put(storage_path('git/acme/some-project/main.py'), 'print(1)');
         $this->fakeCluster();
@@ -221,11 +254,15 @@ class TenantTeardownTest extends TestCase
         $this->assertNull(Tenant::find($tenant->id), 'tenant row is gone once teardown succeeded');
         $this->assertFalse($this->tenantDatabaseExists($tenant), 'tenant database dropped');
         $this->assertDirectoryDoesNotExist(storage_path('git/acme'));
+        // The tokens created in the tenant went with it; the member's others stay
+        $this->assertSame([$tokens['ci-globex'], $tokens['api']], $this->tokenIds($member));
+        $this->assertSame(0, McpSession::query()->where('tenant_id', $tenant->id)->count());
     }
 
     public function test_a_failed_teardown_keeps_the_tenant_as_delete_failed_and_a_retry_completes_it(): void
     {
         $tenant = $this->tenant([['proj-broken', 'own'], ['proj-ok', 'own']]);
+        [$member] = $this->memberTokens($tenant);
         $this->failDeletes = ['tenant.test/apis/serving.knative.dev/v1/namespaces/fn/services/proj-broken'];
         $this->fakeCluster();
 
@@ -236,6 +273,7 @@ class TenantTeardownTest extends TestCase
 
         $kept = Tenant::find($tenant->id);
         $this->assertNotNull($kept, 'tenant kept while something is still running');
+        $this->assertCount(3, $this->tokenIds($member), 'the tokens of a kept tenant stay');
         $this->assertSame(Tenant::STATUS_DELETE_FAILED, $kept->status);
         $this->assertStringContainsString('proj-broken', $kept->status_message);
         $this->assertTrue($this->tenantDatabaseExists($tenant), 'database kept for the retry');

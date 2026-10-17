@@ -373,10 +373,32 @@ func Execute(app *App, args []string) int {
 		case runr.IsUnauthorized(err) && statusOf(err) == 403:
 			fmt.Fprintln(app.Err, "The token or your role does not allow this.")
 		case runr.IsUnauthorized(err):
-			fmt.Fprintln(app.Err, "The token was rejected: run `runr login` again or check RUNR_TOKEN.")
+			if name, c := app.expiredLoginToken(); c != nil {
+				fmt.Fprintf(app.Err, "The API token of context %q expired on %s: log in again (runr login %s --with-password).\n",
+					name, c.TokenExpiresAt.Local().Format(time.RFC3339), c.APIURL)
+			} else {
+				fmt.Fprintln(app.Err, "The token was rejected: run `runr login` again or check RUNR_TOKEN.")
+			}
 		}
 	}
 	return ExitCode(err)
+}
+
+// expiredLoginToken returns the selected context when the command used the API token that
+// `runr login --with-password` created for it and that token has expired.
+func (a *App) expiredLoginToken() (string, *config.Context) {
+	cfg, err := a.Config()
+	if err != nil {
+		return "", nil
+	}
+	res, err := cfg.Resolve(a.ContextName)
+	if err != nil {
+		return "", nil
+	}
+	if c := res.LoginToken(); c.TokenExpired(time.Now()) {
+		return res.Name, c
+	}
+	return "", nil
 }
 
 func statusOf(err error) int {

@@ -3,8 +3,11 @@
 namespace Tests\Feature;
 
 use App\Events\PlatformEvent;
+use App\Mcp\Models\McpSession;
+use App\Models\Project;
 use App\Models\User;
 use App\Support\Auth\LoginTokens;
+use App\Support\Auth\UserTokens;
 use Illuminate\Console\Scheduling\Event as ScheduledEvent;
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Database\Events\QueryExecuted;
@@ -13,14 +16,15 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Testing\TestResponse;
 use Laravel\Sanctum\PersonalAccessToken;
+use Modules\Tenancy\Models\TenantAwareUser;
 use Tests\TestCase;
 
 /**
  * Sign-in sessions and API tokens (docs/security.md, "Sign-in sessions and API tokens"): a token
  * that was signed out, revoked or deleted answers 401 for good (the session tracking after the
- * request never writes it back), a sign-in session ends after its lifetime (also one signed in
- * before sessions had an expiry), API tokens keep their own expiry, and the daily prune removes
- * what ended.
+ * request never writes it back), a deleted user's tokens go with the user in one transaction, a
+ * sign-in session ends after its lifetime (also one signed in before sessions had an expiry), API
+ * tokens keep their own expiry, and the daily prune removes what ended.
  */
 class SignInSessionTest extends TestCase
 {
@@ -212,6 +216,74 @@ class SignInSessionTest extends TestCase
         $this->assertSame(0, PersonalAccessToken::query()->where('tokenable_id', $grace->id)->count());
     }
 
+    /** grace with a sign-in session, the API token of `runr login --with-password` and an MCP session. */
+    private function graceWithTokens(): array
+    {
+        $grace = User::factory()->create(['username' => 'grace', 'password' => 'grace-password']);
+        $session = LoginTokens::issue($grace)->plainTextToken;
+        $cli = $grace->createToken('runr-cli@laptop', ['*'], now()->addDays(90));
+        McpSession::query()->create([
+            'id' => hash('sha256', 'grace-mcp'), 'token_id' => $cli->accessToken->getKey(), 'user_id' => (string) $grace->id,
+            'protocol_version' => '2025-06-18', 'last_seen_at' => now(),
+        ]);
+
+        return [$grace, $session, $cli->plainTextToken];
+    }
+
+    public function test_a_user_deleted_by_an_administrator_keeps_no_token(): void
+    {
+        [$grace, $session, $cli] = $this->graceWithTokens();
+        $admin = $this->signIn();
+        $adaTokens = $this->user->tokens()->count();
+
+        $this->as($admin)->deleteJson("/api/users/{$grace->id}")->assertOk()->assertJsonPath('message', __('api.user.deleted'));
+
+        $this->assertNull(User::find($grace->id));
+        $this->assertSame(0, PersonalAccessToken::query()->where('tokenable_id', $grace->id)->count());
+        $this->me($session)->assertUnauthorized();
+        $this->me($cli)->assertUnauthorized();
+        $this->assertSame(0, McpSession::query()->where('user_id', (string) $grace->id)->count());
+        // The administrator's own tokens stay
+        $this->assertSame($adaTokens, $this->user->tokens()->count());
+        $this->me($admin)->assertOk();
+    }
+
+    public function test_a_user_and_their_tokens_are_deleted_in_one_transaction(): void
+    {
+        [$grace, $session, $cli] = $this->graceWithTokens();
+        User::deleted(function (User $user) {
+            throw new \RuntimeException("deleting {$user->username} failed");
+        });
+
+        try {
+            UserTokens::deleteUser($grace);
+            $this->fail('the failed delete was not reported');
+        } catch (\RuntimeException $e) {
+            $this->assertSame('deleting grace failed', $e->getMessage());
+        }
+
+        // Rolled back together: the account and every token of it are still there
+        $this->assertNotNull(User::find($grace->id));
+        $this->assertSame(2, PersonalAccessToken::query()->where('tokenable_id', $grace->id)->count());
+        $this->assertSame(1, McpSession::query()->where('user_id', (string) $grace->id)->count());
+        $this->me($session)->assertOk();
+        $this->me($cli)->assertOk();
+    }
+
+    public function test_every_token_of_a_deleted_user_goes_whichever_user_class_created_it(): void
+    {
+        [$grace] = $this->graceWithTokens();
+        // A token created through the multi-tenant edition's user model…
+        $grace->createToken('ci')->accessToken->forceFill(['tokenable_type' => TenantAwareUser::class])->save();
+        // …and a row of another model with the same id, which is not grace's
+        $other = $grace->createToken('not-grace');
+        $other->accessToken->forceFill(['tokenable_type' => Project::class])->save();
+
+        UserTokens::deleteUser($grace);
+
+        $this->assertSame([$other->accessToken->getKey()], PersonalAccessToken::query()->where('tokenable_id', $grace->id)->pluck('id')->all());
+    }
+
     // ── Lifetime ────────────────────────────────────────────────────────────
 
     public function test_a_sign_in_session_lasts_the_configured_lifetime(): void
@@ -310,8 +382,18 @@ class SignInSessionTest extends TestCase
         $this->tokenAged('old', 90, now()->subDays(31));
         $this->tokenAged('Assistant (MCP)', 60, now()->subDays(40));
 
+        // Tokens of a user deleted without them (an earlier release): a session and an API token
+        // that never expire; a row of another model with the user's former id stays
+        $gone = User::factory()->create(['username' => 'gone']);
+        $gone->createToken('api');
+        $gone->createToken('ci');
+        $other = $gone->createToken('not-a-user')->accessToken;
+        $other->forceFill(['tokenable_type' => Project::class])->save();
+        $keep[] = (int) $other->getKey();
+        User::query()->whereKey($gone->id)->delete();
+
         $this->artisan('tokens:prune')
-            ->expectsOutputToContain('Removed 2 sign-in session(s) and 2 expired API token(s).')
+            ->expectsOutputToContain('Removed 2 sign-in session(s), 2 expired API token(s) and 2 token(s) of deleted users.')
             ->assertSuccessful();
 
         $this->assertEqualsCanonicalizing($keep, PersonalAccessToken::query()->pluck('id')->map(fn ($id) => (int) $id)->all());

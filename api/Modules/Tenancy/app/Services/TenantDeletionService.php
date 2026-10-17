@@ -13,6 +13,7 @@ use App\Services\ProjectCleanupService;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Log;
 use Modules\Tenancy\Models\Tenant;
+use Modules\Tenancy\Support\TenantTokens;
 
 /**
  * Tears a tenant down (DeleteTenantJob), in this order:
@@ -27,7 +28,7 @@ use Modules\Tenancy\Models\Tenant;
  *     Kaniko build Jobs (labelled runr/project-id)
  *  3. tenant-owned regions only: the runr-agent (it would reconnect forever otherwise)
  *  4. only when nothing was left behind — or $force: drop the tenant database, delete
- *     storage/git/<slug>, delete the tenant row
+ *     storage/git/<slug>, delete the tenant row with the API tokens created in it
  *
  * Anything left behind without $force → status delete_failed with the reasons; row and database
  * stay so the delete can be retried.
@@ -116,8 +117,9 @@ class TenantDeletionService
 
         $tenant->database()->manager()->deleteDatabase($tenant);
         $this->deleteGitRepository($tenant);
-        // tenant_users / tenant_regions rows cascade on tenant_id at the DB level
-        $tenant->delete();
+        // With the API tokens created in the tenant; tenant_users / tenant_regions rows cascade on
+        // tenant_id at the DB level
+        TenantTokens::deleteTenant($tenant);
 
         return ['deleted' => true, 'failures' => $failures];
     }
