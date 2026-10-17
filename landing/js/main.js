@@ -126,6 +126,13 @@
     if (e.key === 'Escape') closeModal();
   });
 
+  // runr.sh/#enterprise (linked from the docs and the downloads page) opens the contact form.
+  function openFromHash() {
+    if (location.hash === '#enterprise') openModal('enterprise', 'link');
+  }
+  openFromHash();
+  window.addEventListener('hashchange', openFromHash);
+
   // ── TOAST ──
   function toast(message, type = 'success', duration = 3500) {
     let t = document.getElementById('toast');
