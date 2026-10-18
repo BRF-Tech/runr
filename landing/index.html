@@ -1422,10 +1422,11 @@ helm upgrade --install runr brf-tech/runr \
       <p data-tr="Tek makinede üretim kurulumu: <code>compose/build.sh</code> imajları sürüm etiketinden derler; internetsiz (air-gapped) sunucuya <code>runr-images.tar</code> olarak taşınır."
          data-en="A production install on one machine: <code>compose/build.sh</code> builds the images from the release tag; air-gapped hosts get them as <code>runr-images.tar</code>.">
          Tek makinede üretim kurulumu: <code>compose/build.sh</code> imajları sürüm etiketinden derler; internetsiz (air-gapped) sunucuya <code>runr-images.tar</code> olarak taşınır.</p>
-      <pre><code>git clone -b v0.5.7 https://github.com/BRF-Tech/runr.git
+      <pre><code>git clone -b v0.5.7 \
+  https://github.com/BRF-Tech/runr.git
 cd runr &amp;&amp; bash compose/build.sh
 cd compose &amp;&amp; cp .env.example .env
-cp api.env.example api.env   # + APP_KEY
+cp api.env.example api.env  # + APP_KEY
 docker compose up -d
 docker compose run --rm migrator</code></pre>
       <a class="install-link" href="/docs/compose/"
