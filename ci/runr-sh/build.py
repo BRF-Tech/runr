@@ -3,9 +3,10 @@
 
   prepare  picks the documentation pages (docs/*.md, the root Markdown files and every Markdown
            page they link to), applies the site's text substitutions and writes the pandoc inputs
-  render   turns the pandoc output into pages (links between pages rewritten to runr.sh URLs),
-           adds the landing, the downloads (CLI, Terraform provider, signing key), the Terraform
-           provider registry, checks every internal link and writes a deterministic ZIP
+  render   turns the pandoc output into pages (links between pages rewritten to runr.sh URLs, links
+           to unpublished repository files to GitHub at the release tag), adds the landing, the
+           downloads (CLI, Terraform provider, signing key), the Terraform provider registry, checks
+           every internal link and writes a deterministic ZIP
 
 Only the standard library is used. Paths in the arguments are local paths.
 """
@@ -23,6 +24,7 @@ import time
 import zipfile
 
 SITE = "https://runr.sh"
+REPO = "https://github.com/BRF-Tech/runr"
 NAMESPACE, PROVIDER = "brf-tech", "runr"
 MAX_ENTRIES = 5000                 # StaticSites ZIP limits (brf-mono config staticsites.zip)
 MAX_BYTES = 512 * 1024 * 1024
@@ -43,16 +45,12 @@ SPECIAL_URLS = {
     "actions/deploy/README.md": "/docs/github-action/action/",
 }
 
-# Site-only text substitutions: (pages, regex, replacement). The repository itself stays as it
-# is; the published copy must not point at the repository host. Each rule must match at least
-# once, so a changed source fails the build instead of slipping through.
-SUBSTITUTIONS = [
-    (("README.md", "CONTRIBUTING.md"),
-     r"git clone https://github\.com/brf-tech/runr\.git\ncd runr\n",
-     "# in a checkout of the RunR repository\n"),
-]
+# Site-only text substitutions: (pages, regex, replacement), for text that reads differently on
+# runr.sh than in the repository. Each rule must match at least once, so a changed source fails
+# the build instead of slipping through. None at the moment.
+SUBSTITUTIONS = []
 
-REPO_URL = re.compile(r"^https?://github\.com/brf-tech/runr(?:\.git)?(?P<rest>[/#?].*)?$")
+REPO_URL = re.compile(r"^https?://github\.com/brf-tech/runr(?:\.git)?(?P<rest>[/#?].*)?$", re.I)
 LINK_MD = re.compile(r"\]\(\s*<?([^)\s>]+)>?(?:\s+\"[^\"]*\")?\s*\)")
 LINK_REF = re.compile(r"^\s{0,3}\[[^\]]+\]:\s*<?(\S+?)>?(?:\s+\"[^\"]*\")?\s*$", re.M)
 A_TAG = re.compile(r"<a\s+([^>]*?)>(.*?)</a>", re.S)
@@ -126,6 +124,24 @@ def normalize_repo_path(src, path):
     return path if os.path.isfile(full) else None
 
 
+def repo_file_target(src, page, target):
+    """A relative link in `page` to a repository file or directory → (kind, path, anchor), kind
+    "blob" or "tree"; (None, path, anchor) when nothing exists there, None for other links."""
+    target = html.unescape(target)
+    if re.match(r"^[a-z][a-z0-9+.-]*:", target) or target.startswith(("#", "/")):
+        return None
+    path, _, anchor = target.partition("#")
+    path = path.split("?")[0]
+    if not path:
+        return None
+    joined = posixpath.normpath(posixpath.join(posixpath.dirname(page), path))
+    if joined.startswith("..") or joined == ".":
+        return None
+    full = os.path.join(src, *joined.split("/"))
+    kind = "tree" if os.path.isdir(full) else "blob" if os.path.isfile(full) else None
+    return kind, joined, anchor
+
+
 def collect_pages(src):
     docs = sorted("docs/" + f for f in os.listdir(os.path.join(src, "docs")) if f.endswith(".md"))
     queue = [p for p in docs + ROOT_PAGES if os.path.isfile(os.path.join(src, *p.split("/")))]
@@ -197,7 +213,10 @@ def strip_tags(s):
     return html.unescape(re.sub(r"<[^>]+>", "", s)).strip()
 
 
-def rewrite_links(src, page, body, urls, stats):
+def rewrite_links(src, page, body, urls, version, stats):
+    """Links between published pages → runr.sh URLs; links to repository files that are not
+    published → the file (blob) or directory (tree) on GitHub at the release tag; repository URLs
+    stay links. A relative link to nothing in the repository is shown as text."""
     def repl(m):
         attrs, inner = m.group(1), m.group(2)
         hm = HREF.search(attrs)
@@ -218,9 +237,15 @@ def rewrite_links(src, page, body, urls, stats):
             path, anchor = resolve_repo_target(src, page, href)
             if path and path in urls:
                 new = urls[path] + ("#" + anchor if anchor else "")
-            elif repo or not re.match(r"^[a-z][a-z0-9+.-]*:", href):
-                stats["unlinked"].append("%s -> %s" % (page, href))
-                return '<span class="d-nolink">' + inner + "</span>"
+            elif not repo:
+                local = repo_file_target(src, page, href)
+                if local and local[0]:
+                    kind, rel, anchor = local
+                    new = "%s/%s/v%s/%s" % (REPO, kind, version, rel) + ("#" + anchor if anchor else "")
+                    stats["github"].append("%s -> %s" % (page, new))
+                elif not re.match(r"^[a-z][a-z0-9+.-]*:", href):
+                    stats["unlinked"].append("%s -> %s" % (page, href))
+                    return '<span class="d-nolink">' + inner + "</span>"
         if new is None:
             return m.group(0)
         stats["rewritten"] += 1
@@ -272,7 +297,7 @@ def render_sidebar(groups, url):
 
 
 def page_html(title, desc, url, content, version, side=None, nav=None, crumb=True):
-    nav_items = [("/docs/", "Docs"), ("/dl/", "Download"), ("/security/", "Security")]
+    nav_items = [("/docs/", "Docs"), ("/dl/", "Download"), ("/security/", "Security"), (REPO, "GitHub")]
     nav_html = "".join('<a href="%s"%s>%s</a>' % (u, ' aria-current="page"' if nav == u else "", t)
                        for u, t in nav_items)
     crumb_html = '<p class="d-crumb"><a href="/docs/">Documentation</a></p>' if crumb else ""
@@ -306,11 +331,11 @@ def page_html(title, desc, url, content, version, side=None, nav=None, crumb=Tru
 </div>
 <footer class="d-foot"><div class="d-foot-in">
 <span>© 2026 BRF Teknoloji and RunR contributors</span>
-<a href="/">runr.sh</a><a href="/docs/">Docs</a><a href="/dl/">Download</a><a href="/docs/changelog/">Changelog</a><a href="/security/">Security policy</a><a href="/license/">License (MIT)</a>
+<a href="/">runr.sh</a><a href="/docs/">Docs</a><a href="/dl/">Download</a><a href="/docs/changelog/">Changelog</a><a href="/security/">Security policy</a><a href="/license/">License (MIT)</a><a href="{repo}">GitHub</a>
 </div></footer>
 </body>
 </html>
-""".format(title=html.escape(title), desc=html.escape(desc, quote=True), site=SITE, url=url, version=version,
+""".format(title=html.escape(title), desc=html.escape(desc, quote=True), site=SITE, repo=REPO, url=url, version=version,
            nav=nav_html, wrap=wrap, side=side or "", crumb=crumb_html, content=content)
 
 
@@ -337,7 +362,7 @@ def render_pages(a, site, version, stats):
             frag = os.path.join(a.work, "html", page_id(page) + ".html")
             if not os.path.isfile(frag):
                 die("pandoc output missing for " + page)
-            body = rewrite_links(a.src, page, read(frag), urls, stats)
+            body = rewrite_links(a.src, page, read(frag), urls, version, stats)
             body = add_anchors(body)
             h1 = re.search(r"<h1[^>]*>(.*?)</h1>", body, re.S)
             name = strip_tags(h1.group(1)) if h1 else posixpath.basename(page)
@@ -485,9 +510,10 @@ def downloads_page(version, tag, cli_rows, tf_rows, sums_name, key_id, fpr):
     body = """<h1>Download RunR {version}</h1>
 <p>The <code>runr</code> CLI and the Terraform provider of RunR {version}. Every archive is listed with
 its SHA-256; the installer and <code>terraform init</code> check it before anything runs. The control
-plane is installed with the Helm chart, which customers get from RunR's private Helm repository
-(access through the <a href="/#enterprise">enterprise contact form</a>), or with Docker Compose: see
-the <a href="/docs/overview/#quick-start">quick start</a>.</p>
+plane is installed with the <a href="/docs/overview/#kubernetes-helm">Helm chart</a> from BRF's public
+Helm repository (<code>helm repo add brf-tech https://helm.brf.sh</code>, chart <code>brf-tech/runr</code>)
+or with <a href="/docs/compose/">Docker Compose</a> on a single host. The source code is on
+<a href="{repo}/tree/{tag}">GitHub</a>.</p>
 
 <h2 id="cli">runr CLI<a class="d-anchor" href="#cli" aria-label="Link to this section">#</a></h2>
 <p>Linux and macOS (amd64, arm64):</p>
@@ -538,7 +564,7 @@ gpg --import runr-release-signing.pub.asc
 curl -fsSLO https://runr.sh{tf_base}/{sums_name}
 curl -fsSLO https://runr.sh{tf_base}/{sums_name}.sig
 gpg --verify {sums_name}.sig {sums_name}</code></pre>
-""".format(version=version, tag=tag, cli_base=cli_base, tf_base=tf_base, sums_name=sums_name,
+""".format(version=version, tag=tag, repo=REPO, cli_base=cli_base, tf_base=tf_base, sums_name=sums_name,
            cli_table=file_table(cli_rows, cli_base), tf_table=file_table(tf_rows, tf_base),
            key_id=key_id, fpr_spaced=fpr_spaced)
     return page_html("Download · RunR", "Download the RunR %s CLI and Terraform provider, with checksums "
@@ -589,15 +615,13 @@ LOCAL_REF = re.compile(r'\s(?:href|src)="([^"]+)"')
 
 def check_links(site, files):
     """Every local href/src of every page must exist, and so must its #fragment."""
-    ids, errors, warnings, github = {}, [], [], []
+    ids, errors, warnings = {}, [], []
     pages = [(rel, full) for rel, full in files if rel.endswith(".html")]
     for rel, full in pages:
         ids[rel] = set(ID_ATTR.findall(read(full)))
     existing = {rel for rel, _ in files}
     for rel, full in pages:
         text = read(full)
-        if re.search(r'href="https?://(www\.)?github\.com/brf-tech', text):
-            github.append(rel)
         # attribute values inside data-tr/data-en (single-quoted) count too
         refs = LOCAL_REF.findall(text) + re.findall(r"href='([^']+)'", text)
         for ref in refs:
@@ -619,7 +643,7 @@ def check_links(site, files):
                 continue
             if frag and target.endswith(".html") and frag not in ids.get(target, ()):
                 warnings.append("%s: %s (no #%s)" % (rel, ref, frag))
-    return errors, warnings, github
+    return errors, warnings
 
 
 def write_zip(site, files, zip_path, epoch):
@@ -645,22 +669,20 @@ def cmd_render(a):
     site = a.site
     if os.path.exists(site):
         die("site dir exists: " + site)
-    stats = {"rewritten": 0, "unlinked": []}
+    stats = {"rewritten": 0, "github": [], "unlinked": []}
     copy_landing(a.src, site)
     pages = render_pages(a, site, version, stats)
     nplat = render_downloads(a, site, version)
     write_sitemap(site, [u for u in pages] + ["/dl/"], a.date)
 
     files = site_files(site)
-    errors, warnings, github = check_links(site, files)
+    errors, warnings = check_links(site, files)
     for e in errors:
         print("broken link: " + e, file=sys.stderr)
     for w in warnings:
         print("missing anchor: " + w, file=sys.stderr)
-    for g in github:
-        print("repository link left: " + g, file=sys.stderr)
-    if errors or github:
-        die("%d broken links, %d pages with repository links" % (len(errors), len(github)))
+    if errors:
+        die("%d broken links" % len(errors))
     total = sum(os.path.getsize(full) for _, full in files)
     if len(files) > MAX_ENTRIES or total > MAX_BYTES:
         die("site too large for a ZIP deploy: %d files, %d bytes" % (len(files), total))
@@ -670,10 +692,12 @@ def cmd_render(a):
     summary = {
         "zip": os.path.basename(a.zip), "sha256": zsha, "zip_bytes": zsize, "files": len(files),
         "content_bytes": total, "pages": len(pages), "provider_platforms": nplat,
-        "links_rewritten": stats["rewritten"], "links_unlinked": len(stats["unlinked"]),
+        "links_rewritten": stats["rewritten"], "links_github": len(stats["github"]),
+        "links_unlinked": len(stats["unlinked"]),
         "missing_anchors": len(warnings),
     }
     write(os.path.join(a.work, "summary.json"), json.dumps(summary, indent=1))
+    write(os.path.join(a.work, "github.txt"), "\n".join(stats["github"]) + "\n")
     write(os.path.join(a.work, "unlinked.txt"), "\n".join(stats["unlinked"]) + "\n")
     print(json.dumps(summary, indent=1))
 

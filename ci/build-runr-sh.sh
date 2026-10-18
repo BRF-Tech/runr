@@ -67,8 +67,8 @@ mkdir -p "$work/src" "$work/md" "$work/html"
 
 # Source tree: a ref through git archive, or the working tree.
 if [ "$worktree" = true ]; then
-  (cd "$root" && git ls-files -z --cached --others --exclude-standard -- landing docs README.md CHANGELOG.md \
-    SECURITY.md CONTRIBUTING.md CODE_OF_CONDUCT.md LICENSE compose runtime examples sdk actions terraform-provider-runr \
+  # every file, as in a ref's git archive: links to files that are not published point at GitHub
+  (cd "$root" && git ls-files -z --cached --others --exclude-standard \
     | tar --null --ignore-failed-read -T - -cf -) | tar -xf - -C "$work/src"
   commit="$(git -C "$root" rev-parse HEAD)+worktree"
   epoch="$(date +%s)"
@@ -111,7 +111,10 @@ files="$("$PY" -c 'import zipfile, sys; print(len(zipfile.ZipFile(sys.argv[1]).n
   echo "summary:"
   cat "$work/summary.json"
   echo
-  echo "links to repository files that are not published (shown as text):"
+  echo "links to repository files that are not published (to GitHub at the release tag):"
+  cat "$work/github.txt"
+  echo
+  echo "links to nothing in the repository (shown as text):"
   cat "$work/unlinked.txt"
 } > "${out%.zip}.txt"
 
