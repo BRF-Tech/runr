@@ -10,12 +10,6 @@ did not change says so.
 
 ### Changed
 
-- **The Helm chart is public.** The chart `runr` (0.5.7 and later) is installed from BRF's public
-  Helm repository without credentials: `helm repo add brf-tech https://helm.brf.sh`, then
-  `helm upgrade --install runr brf-tech/runr --set domain=…`. The install, upgrade, key rotation
-  and white-label examples use the chart `brf-tech/runr`; an installation that added the
-  repository as `runr` adds it as `brf-tech` and upgrades with `brf-tech/runr`, its values stay
-  as they are ([README](README.md#kubernetes-helm), [docs/upgrade.md](docs/upgrade.md#procedure)).
 - **The source is public** at <https://github.com/BRF-Tech/runr>. The single-host install starts
   from a checkout of the release tag ([compose/README.md](compose/README.md)).
 
@@ -44,10 +38,10 @@ did not change says so.
   warning) ([docs/github-action.md](docs/github-action.md#inputs)).
 - **Documentation on runr.sh.** The documentation is published at <https://runr.sh/docs/> and the
   security policy at <https://runr.sh/security/>.
-- **The Helm chart comes from RunR's private Helm repository.** Customers get the repository's
-  address and credentials through the enterprise contact form on runr.sh
-  (<https://runr.sh/#enterprise>); the install, upgrade, key rotation and white-label examples use
-  `helm repo add runr …` and the chart `runr/runr` instead of `./helm` of a repository checkout
+- **The Helm chart comes from BRF's public Helm repository.** The chart `runr` is installed
+  without credentials: `helm repo add brf-tech https://helm.brf.sh`, then
+  `helm upgrade --install runr brf-tech/runr --set domain=…`; the install, upgrade, key rotation
+  and white-label examples use the chart `brf-tech/runr` instead of `./helm` of a repository checkout
   ([README](README.md#kubernetes-helm), [docs/upgrade.md](docs/upgrade.md#procedure)).
 
 ## [0.5.6] - 2026-10-17
