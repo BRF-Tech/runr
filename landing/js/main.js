@@ -126,7 +126,7 @@
     if (e.key === 'Escape') closeModal();
   });
 
-  // runr.sh/#enterprise (linked from the docs and the downloads page) opens the contact form.
+  // runr.sh/#enterprise opens the contact form (a link that can be shared or used in the docs).
   function openFromHash() {
     if (location.hash === '#enterprise') openModal('enterprise', 'link');
   }

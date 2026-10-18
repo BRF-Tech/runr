@@ -62,12 +62,18 @@
 .nav-actions .btn { padding: 8px 14px; font-size: 13px; }
 /* Links that only appear in the opened mobile menu (their nav buttons are hidden there) */
 .nav-links .nav-mobile-only { display: none; }
+/* GitHub link: the mark, with the label where the nav has room */
+.btn-gh .gh-mark { flex-shrink: 0; }
 
 @media (max-width: 1180px) {
   .nav-links { margin-left: 16px; }
   .nav-links a { padding: 6px 8px; }
+  .nav-actions .btn-gh { padding: 8px 10px; }
+  .nav-actions .btn-gh .gh-label { display: none; }
 }
-@media (max-width: 900px) {
+/* Below 1080px the section links, Docs, Download and GitHub no longer fit next to the logo and the
+   actions: they move into the menu */
+@media (max-width: 1080px) {
   .nav-links { display: none; }
   .nav-links.is-open { display: flex; flex-direction: column; position: absolute; top: 100%; left: 0; right: 0; background: var(--bg-elev); padding: 16px; border-bottom: 1px solid var(--border); margin-left: 0; gap: 8px; }
   .nav-links.is-open a { width: 100%; padding: 10px 16px; }

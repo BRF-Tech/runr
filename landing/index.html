@@ -98,6 +98,7 @@
     <a class="nav-mobile-only" href="/docs/"
        data-tr="Dokümanlar" data-en="Docs">Dokümanlar</a>
     <a class="nav-mobile-only" href="/dl/" data-tr="İndir" data-en="Download">İndir</a>
+    <a class="nav-mobile-only" href="https://github.com/BRF-Tech/runr" data-tr="GitHub" data-en="GitHub">GitHub</a>
     <a class="nav-mobile-only" href="#" data-open-modal="enterprise" data-source="nav"
        data-tr="Enterprise Al" data-en="Get Enterprise">Enterprise Al</a>
   </div>
@@ -106,6 +107,8 @@
     <a class="btn btn-ghost btn-nav" href="/docs/"
        data-tr="Dokümanlar" data-en="Docs">Dokümanlar</a>
     <a class="btn btn-ghost btn-nav" href="/dl/" data-tr="İndir" data-en="Download">İndir</a>
+    <a class="btn btn-ghost btn-nav btn-gh" href="https://github.com/BRF-Tech/runr" aria-label="RunR GitHub'da"
+       data-tr="RunR GitHub'da" data-en="RunR on GitHub" data-target="aria-label"><svg class="gh-mark" viewBox="0 0 16 16" width="16" height="16" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg><span class="gh-label">GitHub</span></a>
     <button class="btn btn-enterprise" data-open-modal="enterprise" data-source="nav"
             data-tr="Enterprise Al" data-en="Get Enterprise">Enterprise Al</button>
     <button class="lang-btn" aria-label="Toggle language">EN</button>
@@ -1403,25 +1406,25 @@
       <p data-tr="Kontrol düzlemi tek bir Helm chart: gateway, UI, API, worker'lar, scheduler, Reverb; kendi servislerinizi göstermezseniz PostgreSQL ve Redis de."
          data-en="The control plane as one Helm chart: gateway, UI, API, workers, scheduler and Reverb, plus PostgreSQL and Redis unless you point it at your own.">
          Kontrol düzlemi tek bir Helm chart: gateway, UI, API, worker'lar, scheduler, Reverb; kendi servislerinizi göstermezseniz PostgreSQL ve Redis de.</p>
-      <p data-tr="Chart, müşterilere RunR'ın özel Helm deposundan sağlanır: depo adresi ve erişim bilgileri için enterprise iletişim formundan bize yazın."
-         data-en="The chart is provided to customers from RunR's private Helm repository: ask for its address and credentials through the enterprise contact form.">
-         Chart, müşterilere RunR'ın özel Helm deposundan sağlanır: depo adresi ve erişim bilgileri için enterprise iletişim formundan bize yazın.</p>
-      <pre><code>helm repo add runr &lt;repository URL&gt; \
-  --username &lt;user&gt; --password-stdin
-helm upgrade --install runr runr/runr \
+      <p data-tr="Chart, BRF'nin herkese açık Helm deposunda: kimlik bilgisi gerekmez, zorunlu tek değer <code>domain</code>."
+         data-en="The chart is in BRF's public Helm repository: no credentials needed, and <code>domain</code> is the only required value.">
+         Chart, BRF'nin herkese açık Helm deposunda: kimlik bilgisi gerekmez, zorunlu tek değer <code>domain</code>.</p>
+      <pre><code>helm repo add brf-tech https://helm.brf.sh
+helm upgrade --install runr brf-tech/runr \
   -n runr --create-namespace \
   --set domain=runr.example.com</code></pre>
-      <a class="install-link" href="#" data-open-modal="enterprise" data-source="install-helm"
-         data-tr="Helm deposuna erişim isteyin →" data-en="Request Helm repository access →">Helm deposuna erişim isteyin →</a>
+      <a class="install-link" href="/docs/overview/#kubernetes-helm"
+         data-tr="Helm kurulum rehberi →" data-en="Helm install guide →">Helm kurulum rehberi →</a>
     </div>
 
     <div class="install-card reveal">
       <h4>Docker Compose <span class="install-kind" data-tr="tek sunucu" data-en="single host">tek sunucu</span></h4>
-      <p data-tr="Hazır imajlarla tek makinede üretim kurulumu; internetsiz (air-gapped) sunucular dahil."
-         data-en="A production install on one machine with prebuilt images, including air-gapped hosts.">
-         Hazır imajlarla tek makinede üretim kurulumu; internetsiz (air-gapped) sunucular dahil.</p>
-      <pre><code>docker load -i runr-images.tar
-cp .env.example .env
+      <p data-tr="Tek makinede üretim kurulumu: <code>compose/build.sh</code> imajları sürüm etiketinden derler; internetsiz (air-gapped) sunucuya <code>runr-images.tar</code> olarak taşınır."
+         data-en="A production install on one machine: <code>compose/build.sh</code> builds the images from the release tag; air-gapped hosts get them as <code>runr-images.tar</code>.">
+         Tek makinede üretim kurulumu: <code>compose/build.sh</code> imajları sürüm etiketinden derler; internetsiz (air-gapped) sunucuya <code>runr-images.tar</code> olarak taşınır.</p>
+      <pre><code>git clone -b v0.5.7 https://github.com/BRF-Tech/runr.git
+cd runr &amp;&amp; bash compose/build.sh
+cd compose &amp;&amp; cp .env.example .env
 cp api.env.example api.env   # + APP_KEY
 docker compose up -d
 docker compose run --rm migrator</code></pre>
@@ -1523,6 +1526,8 @@ deploy:
     <div class="os-cta">
       <a class="btn btn-primary btn-magnetic" href="/dl/"
          data-tr="İndirmeler" data-en="Downloads">İndirmeler</a>
+      <a class="btn btn-ghost btn-gh" href="https://github.com/BRF-Tech/runr"><svg class="gh-mark" viewBox="0 0 16 16" width="16" height="16" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg><span
+         data-tr="GitHub'da görün" data-en="View on GitHub">GitHub'da görün</span></a>
       <a class="btn btn-ghost" href="/docs/contributing/"
          data-tr="Katkıda Bulun" data-en="Contribute">Katkıda Bulun</a>
     </div>
@@ -1563,8 +1568,8 @@ deploy:
     <details class="faq-item reveal">
       <summary data-tr="Nasıl kurarım?" data-en="How do I install it?">Nasıl kurarım?</summary>
       <div class="faq-body"
-        data-tr="Kubernetes'te, müşterilere RunR'ın özel Helm deposundan sağlanan Helm chart'ıyla (erişim: <a href='#' data-open-modal='enterprise' data-source='faq'>enterprise iletişim formu</a>), tek sunucuda Docker Compose ile. <code>runr</code> CLI'ı <code>curl -fsSL https://runr.sh/install.sh | sh</code> ile kurulur ya da <a href='/dl/'>runr.sh/dl</a>'den indirilir; Terraform provider'ı <code>runr.sh/brf-tech/runr</code>. Ayrıntılar yukarıdaki kurulum bölümünde ve <a href='/docs/'>dokümanlarda</a>."
-        data-en="On Kubernetes with the Helm chart, which customers get from RunR's private Helm repository (access: <a href='#' data-open-modal='enterprise' data-source='faq'>enterprise contact form</a>), on a single host with Docker Compose. The <code>runr</code> CLI installs with <code>curl -fsSL https://runr.sh/install.sh | sh</code> or downloads from <a href='/dl/'>runr.sh/dl</a>; the Terraform provider is <code>runr.sh/brf-tech/runr</code>. Details in the install section above and in the <a href='/docs/'>documentation</a>.">
+        data-tr="Kubernetes'te, BRF'nin herkese açık Helm deposundaki chart'la (<code>helm repo add brf-tech https://helm.brf.sh</code>, chart <code>brf-tech/runr</code>; <a href='/docs/overview/#kubernetes-helm'>Helm kurulumu</a>), tek sunucuda Docker Compose ile (<a href='/docs/compose/'>tek sunucu rehberi</a>). <code>runr</code> CLI'ı <code>curl -fsSL https://runr.sh/install.sh | sh</code> ile kurulur ya da <a href='/dl/'>runr.sh/dl</a>'den indirilir; Terraform provider'ı <code>runr.sh/brf-tech/runr</code>. Ayrıntılar yukarıdaki kurulum bölümünde ve <a href='/docs/'>dokümanlarda</a>."
+        data-en="On Kubernetes with the chart from BRF's public Helm repository (<code>helm repo add brf-tech https://helm.brf.sh</code>, chart <code>brf-tech/runr</code>; <a href='/docs/overview/#kubernetes-helm'>Helm install</a>), on a single host with Docker Compose (<a href='/docs/compose/'>single-host guide</a>). The <code>runr</code> CLI installs with <code>curl -fsSL https://runr.sh/install.sh | sh</code> or downloads from <a href='/dl/'>runr.sh/dl</a>; the Terraform provider is <code>runr.sh/brf-tech/runr</code>. Details in the install section above and in the <a href='/docs/'>documentation</a>.">
         Helm, Docker Compose, CLI ya da Terraform ile.
       </div>
     </details>
@@ -1674,6 +1679,7 @@ deploy:
       <div class="footer-meta">
         <p class="made">Made with ❤️ by</p>
         <p class="made"><a href="https://brf.sh" target="_blank" rel="noopener">brf.sh</a> / <a href="https://burak.sh" target="_blank" rel="noopener">burak.sh</a></p>
+        <p class="footer-contact"><span data-tr="Kaynak kod:" data-en="Source code:">Kaynak kod:</span> <a href="https://github.com/BRF-Tech/runr">github.com/BRF-Tech/runr</a></p>
         <p class="footer-contact"><span data-tr="Güvenlik:" data-en="Security:">Güvenlik:</span> <a href="mailto:security@runr.sh">security@runr.sh</a></p>
         <p class="footer-contact"><span data-tr="Davranış kuralları:" data-en="Conduct:">Davranış kuralları:</span> <a href="mailto:conduct@runr.sh">conduct@runr.sh</a></p>
       </div>
