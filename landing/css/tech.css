@@ -287,6 +287,8 @@
 }
 .install-card .install-link { font-size: 13px; font-weight: 600; color: var(--accent); margin-top: auto; }
 .install-card .install-link:hover { text-decoration: underline; }
+.install-card .install-link-row { margin-top: auto; display: flex; flex-wrap: wrap; gap: 6px 18px; }
+.install-card .install-link-row .install-link { margin-top: 0; }
 .install-card.install-docs { border-color: rgba(249,115,22,.35); background: linear-gradient(135deg, rgba(249,115,22,.06), rgba(230,57,70,.03)); }
 .install-links { display: flex; flex-direction: column; gap: 8px; list-style: none; padding: 0; margin: 0; }
 .install-links a { font-size: 13px; color: var(--text); font-weight: 600; }
