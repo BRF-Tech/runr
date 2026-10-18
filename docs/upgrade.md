@@ -20,13 +20,14 @@ generated `runr-secret`, whose `APP_KEY` encrypts the secrets in the database.
    GitOps controllers) cannot read the Secret: give them `secret.appKey` with the current key, or
    manage the Secret yourself (`secret.create=false`).
 
-3. **Upgrade the release** with the new chart and its images. The chart comes from RunR's
-   private Helm repository, added as `runr` at install
-   ([Kubernetes (Helm)](../README.md#kubernetes-helm)):
+3. **Upgrade the release** with the new chart and its images. The chart comes from BRF's
+   public Helm repository, added as `brf-tech` at install
+   ([Kubernetes (Helm)](../README.md#kubernetes-helm)); `--version` and the two image tags pin
+   the release:
 
    ```sh
-   helm repo update runr
-   helm upgrade runr runr/runr --version <version> -n runr --reuse-values \
+   helm repo update brf-tech
+   helm upgrade runr brf-tech/runr --version <version> -n runr --reuse-values \
      --set api.image.tag=<version> --set ui.image.tag=<version>
    ```
 

@@ -14,15 +14,21 @@ Single-host installation with Docker Compose, including air-gapped environments.
 
 ## 1. Build and load the images
 
-On a machine with internet access, build all images into one archive:
+On a machine with internet access, check out the release you install and build all images into
+one archive:
 
 ```bash
+git clone --branch v0.5.7 https://github.com/BRF-Tech/runr.git
+cd runr
 REVERB_KEY=<your reverb key> bash compose/build.sh   # → compose/runr-images.tar
 ```
 
 `REVERB_KEY` is baked into the UI build and must match `REVERB_APP_KEY` in `api.env` (default `runr-prod-key`).
 
-Copy `runr-images.tar` to the target machine and load it:
+Built on the target machine itself, the images are already in its Docker: continue in the
+`compose/` directory with step 2. For another machine (an air-gapped host, for example), copy the
+`compose/` directory — `docker-compose.yml`, `Caddyfile`, `.env.example`, `api.env.example` and
+the new `runr-images.tar` — to it and load the images there:
 
 ```bash
 docker load -i runr-images.tar
@@ -46,6 +52,8 @@ ghcr.io/brf-tech/runr/reqs/redis        7-alpine      ...
 ---
 
 ## 2. Configure the environment
+
+In the `compose/` directory (the `docker compose` commands below run there, too):
 
 ```bash
 cp .env.example .env

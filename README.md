@@ -202,23 +202,30 @@ Details: [docs/development.md](docs/development.md).
 
 ### Kubernetes (Helm)
 
-The Helm chart is provided to customers from RunR's private Helm repository. Its address and
-credentials come with access, which you request through the
-[enterprise contact form](https://runr.sh/#enterprise) on runr.sh. Add the repository once
-(the password on stdin), then install the chart:
+The Helm chart `runr` is published in BRF's public Helm repository; no credentials are needed.
+Add the repository once, then install the chart. `domain` is the only required value:
 
 ```bash
-helm repo add runr <repository URL> --username <user> --password-stdin
-helm upgrade --install runr runr/runr \
+helm repo add brf-tech https://helm.brf.sh
+helm upgrade --install runr brf-tech/runr \
   --namespace runr --create-namespace \
   --set domain=runr.example.com
+```
+
+To install a specific release, pin the chart version and the API and UI image tags to it:
+
+```bash
+helm upgrade --install runr brf-tech/runr --version 0.5.7 \
+  --namespace runr --create-namespace \
+  --set domain=runr.example.com \
+  --set api.image.tag=0.5.7 --set ui.image.tag=0.5.7
 ```
 
 The chart installs the gateway, UI, API, Horizon, scheduler, Reverb and — unless you point it at
 external services — PostgreSQL, Redis and Mailpit, plus migration and bootstrap hooks that create
 the first administrator. `helm status runr -n runr` prints how to read the generated password.
 Set `edition=multi-tenant` for the Tenancy and Auth Provider modules. All values are documented in
-the chart's `values.yaml` (`helm show values runr/runr`) and validated by its `values.schema.json`.
+the chart's `values.yaml` (`helm show values brf-tech/runr`) and validated by its `values.schema.json`.
 Existing installations are upgraded in place with `helm upgrade`: [docs/upgrade.md](docs/upgrade.md).
 
 ### Single host (Docker Compose with prebuilt images)

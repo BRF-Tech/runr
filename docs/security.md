@@ -276,11 +276,11 @@ log.
 
 1. Generate a new key: `php artisan key:generate --show`.
 2. Set the new key as `APP_KEY` and the old one in `APP_PREVIOUS_KEYS`, then roll out. With the
-   Helm chart (from RunR's private Helm repository, added as `runr`; `--version` keeps the
+   Helm chart (from BRF's public Helm repository, added as `brf-tech`; `--version` keeps the
    installed chart version):
 
    ```sh
-   helm upgrade runr runr/runr --version <installed version> --reuse-values \
+   helm upgrade runr brf-tech/runr --version <installed version> --reuse-values \
      --set secret.appKey='base64:NEW…' \
      --set secret.previousAppKeys='base64:OLD…'
    ```
@@ -298,7 +298,7 @@ log.
 4. Remove the previous key and roll out again:
 
    ```sh
-   helm upgrade runr runr/runr --version <installed version> --reuse-values --set secret.previousAppKeys=''
+   helm upgrade runr brf-tech/runr --version <installed version> --reuse-values --set secret.previousAppKeys=''
    ```
 
 Sign-in sessions and API tokens are hashes, not encrypted values: they stay valid across a

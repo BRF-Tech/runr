@@ -12,7 +12,7 @@ are reported privately — see [SECURITY.md](SECURITY.md), never in a public iss
   happened, and your RunR version, edition and Kubernetes / Knative versions.
 - **Propose a feature** — open an issue with the feature template before you start larger work, so
   the design can be agreed first.
-- **Send a merge request** — small, focused changes are easiest to review. Link the issue it
+- **Send a pull request** — small, focused changes are easiest to review. Link the issue it
   resolves.
 
 ## Development environment
@@ -49,10 +49,10 @@ Repository layout:
 ## Making a change
 
 1. Fork the repository and create a branch from `main` (`fix/…`, `feat/…`, `docs/…`).
-2. Keep the change focused; unrelated refactors belong in their own merge request.
+2. Keep the change focused; unrelated refactors belong in their own pull request.
 3. Add or update tests for behaviour you change.
 4. Update the documentation in `docs/` when behaviour, configuration or Helm values change.
-5. Make sure the checks below pass, then open a merge request against `main` and fill in the
+5. Make sure the checks below pass, then open a pull request against `main` and fill in the
    template.
 
 ### Checks
@@ -113,7 +113,7 @@ from these messages, so describe the user-visible effect.
 
 ## Review and merge
 
-A maintainer reviews every merge request. Expect questions and change requests — they are part of
+A maintainer reviews every pull request. Expect questions and change requests — they are part of
 the process. Once approved and green, a maintainer merges it. Releases are tagged `vX.Y.Z` and
 listed in [CHANGELOG.md](CHANGELOG.md).
 

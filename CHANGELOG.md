@@ -8,6 +8,17 @@ did not change says so.
 
 ## [Unreleased]
 
+### Changed
+
+- **The Helm chart is public.** The chart `runr` (0.5.7 and later) is installed from BRF's public
+  Helm repository without credentials: `helm repo add brf-tech https://helm.brf.sh`, then
+  `helm upgrade --install runr brf-tech/runr --set domain=…`. The install, upgrade, key rotation
+  and white-label examples use the chart `brf-tech/runr`; an installation that added the
+  repository as `runr` adds it as `brf-tech` and upgrades with `brf-tech/runr`, its values stay
+  as they are ([README](README.md#kubernetes-helm), [docs/upgrade.md](docs/upgrade.md#procedure)).
+- **The source is public** at <https://github.com/BRF-Tech/runr>. The single-host install starts
+  from a checkout of the release tag ([compose/README.md](compose/README.md)).
+
 ## [0.5.7] - 2026-10-17
 
 ### Changed

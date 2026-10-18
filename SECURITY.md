@@ -13,7 +13,7 @@ release to receive them.
 ## Reporting a vulnerability
 
 Please report vulnerabilities privately by e-mail to **security@runr.sh**. Do not open a
-public issue, merge request or discussion for a suspected vulnerability.
+public issue, pull request or discussion for a suspected vulnerability.
 
 Include as much of the following as you can:
 

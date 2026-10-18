@@ -92,7 +92,7 @@ Example preset **"Ocean"** (blue scale, also available as a preset button in Set
 ### 1.4 Installing with your own brand via Helm values
 
 ```yaml
-# values-brand.yaml — helm upgrade --install runr runr/runr -f values-brand.yaml
+# values-brand.yaml — helm upgrade --install runr brf-tech/runr -f values-brand.yaml
 domain: console.example.com
 edition: multi-tenant
 

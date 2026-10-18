@@ -11,7 +11,7 @@ release.
 | [Architecture](architecture.md) | Control plane, regions, project types, triggers, builds and how the components interact |
 | [Development setup](development.md) | Local stack with Docker Compose or Valet, kind regions, tests and CI checks |
 | [Single-host install](../compose/README.md) | Production install with Docker Compose on one machine, including air-gapped hosts |
-| Helm values | Every value of the control-plane chart: `helm show values runr/runr` (chart from RunR's private Helm repository, see the [quick start](../README.md#kubernetes-helm)), validated by the chart's `values.schema.json` |
+| Helm values | Every value of the control-plane chart: `helm show values brf-tech/runr` (chart from BRF's public Helm repository, see the [quick start](../README.md#kubernetes-helm)), validated by the chart's `values.schema.json` |
 | [Versioning](versioning.md) | The `/api/version` endpoint and how Compose, `runtime/ci.sh` and Helm set the version |
 | [Upgrading](upgrade.md) | `helm upgrade` of an existing installation, what runs during it, the changes per release (0.4.x → 0.5.0, 0.5.0 → 0.5.1, 0.5.1 → 0.5.2) and the upgrade e2e |
 
