@@ -278,7 +278,12 @@ give it an expiry and rotate it with `runr tokens create` / `runr tokens rm`.
 ## Other CI systems
 
 The action is a thin wrapper around `runr deploy`; any CI can do the same with
-`RUNR_API_URL`, `RUNR_TOKEN` and `--output-env`. A GitLab CI job:
+`RUNR_API_URL`, `RUNR_TOKEN` and `--output-env`.
+
+### GitLab CI/CD
+
+Store `RUNR_API_URL` and `RUNR_TOKEN` as CI/CD variables (Settings → CI/CD → Variables; mask
+the token), then add a job to `.gitlab-ci.yml`:
 
 ```yaml
 deploy:
