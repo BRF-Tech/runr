@@ -43,7 +43,7 @@
     "description": "Open source serverless platform built on Kubernetes and Knative. Deploy functions, projects, containers and WebAssembly on your own clusters with scale-to-zero, sandboxes, durable workflows, GPUs and MCP.",
     "applicationCategory": "DeveloperApplication",
     "operatingSystem": "Linux, Kubernetes",
-    "softwareVersion": "0.5.7",
+    "softwareVersion": "0.5.8",
     "license": "https://opensource.org/licenses/MIT",
     "url": "https://runr.sh",
     "downloadUrl": "https://runr.sh/dl/",
@@ -413,11 +413,12 @@
           <span class="mod-sub">Tenancy · Branding · Billing API</span>
         </div>
       </div>
-      <p data-tr="Tenant başına PostgreSQL şeması, region başına kota. Kurulumun ve her tenant'ın markası rebuild olmadan; e-posta doğrulamalı self-servis kayıt, deneme günleri ve limitleri olan opsiyonel planlar."
-         data-en="A PostgreSQL schema per tenant, quotas per region. The brand of the installation and of each tenant without a rebuild; self-service signup with e-mail verification, optional plans with limits and trial days.">
-         Tenant başına PostgreSQL şeması, region başına kota. Kurulumun ve her tenant'ın markası rebuild olmadan; e-posta doğrulamalı self-servis kayıt, deneme günleri ve limitleri olan opsiyonel planlar.</p>
+      <p data-tr="Tenant başına PostgreSQL şeması, region başına kota. Kurulumun ve her tenant'ın markası rebuild olmadan; e-posta doğrulamalı self-servis kayıt."
+         data-en="A PostgreSQL schema per tenant, quotas per region. The brand of the installation and of each tenant without a rebuild; self-service signup with e-mail verification.">
+         Tenant başına PostgreSQL şeması, region başına kota. Kurulumun ve her tenant'ın markası rebuild olmadan; e-posta doğrulamalı self-servis kayıt.</p>
       <ul class="mod-features">
-        <li data-tr="Faturalama hesaplar: kullanım, plan ücretleri, tenant başına aylık tahakkuk" data-en="Billing calculates usage, plan fees and monthly charges per tenant">Faturalama hesaplar: kullanım, plan ücretleri, tenant başına aylık tahakkuk</li>
+        <li data-tr="Billing modülü, tenancy açık olsun olmasın: her projeye aylık fatura, kullandıkça öde ya da sabit kaynaklı region'lar" data-en="Billing module, with or without tenancy: a monthly bill per project, pay-as-you-go or fixed-resource regions">Billing modülü, tenancy açık olsun olmasın: her projeye aylık fatura, kullandıkça öde ya da sabit kaynaklı region'lar</li>
+        <li data-tr="Tenant'lar platformun paylaştığı region'ları kâr payı ekleyerek kendi projelerine satar" data-en="Tenants resell the regions the platform shares with them to their own projects, with a markup">Tenant'lar platformun paylaştığı region'ları kâr payı ekleyerek kendi projelerine satar</li>
         <li data-tr="Faturayı kendi sisteminiz keser: billing API + imzalı webhook'lar" data-en="Your own billing system invoices: billing API + signed webhooks">Faturayı kendi sisteminiz keser: billing API + imzalı webhook'lar</li>
         <li data-tr="Ek dosyalı, atamalı, gerçek zamanlı destek ticket'ları" data-en="Support tickets with attachments, assignment and real-time updates">Ek dosyalı, atamalı, gerçek zamanlı destek ticket'ları</li>
         <li data-tr="Tek kiracılı ya da multi-tenant sürüm" data-en="Single-tenant or multi-tenant edition">Tek kiracılı ya da multi-tenant sürüm</li>
@@ -934,14 +935,15 @@
       <rect x="980" y="40" width="110" height="28" rx="12" fill="#92400e"/>
       <text x="1035" y="60" text-anchor="middle" fill="#fde68a" font-size="12" font-weight="700">Tenancy</text>
       <text x="990" y="86" fill="#fbbf24" font-size="10" font-weight="600">Modules/</text>
-      <text x="990" y="102" fill="#94a3b8" font-size="9">Tenancy</text>
-      <text x="990" y="116" fill="#94a3b8" font-size="9">AuthProvider</text>
-      <text x="990" y="130" fill="#94a3b8" font-size="9">Ticket</text>
+      <text x="990" y="100" fill="#94a3b8" font-size="9">Tenancy</text>
+      <text x="990" y="113" fill="#94a3b8" font-size="9">AuthProvider</text>
+      <text x="990" y="126" fill="#94a3b8" font-size="9">Ticket</text>
+      <text x="990" y="139" fill="#94a3b8" font-size="9">Billing</text>
       <text x="990" y="156" fill="#fbbf24" font-size="10" font-weight="600">Frontend</text>
       <text x="990" y="172" fill="#94a3b8" font-size="9">plugin.js</text>
       <text x="990" y="186" fill="#94a3b8" font-size="9">Tenant switcher</text>
-      <text x="990" y="202" fill="#94a3b8" font-size="9">CostConfigEditor</text>
-      <text x="990" y="226" fill="#475569" font-size="9">TENANCY_ENABLED</text>
+      <text x="990" y="202" fill="#94a3b8" font-size="9">Billing pages</text>
+      <text x="990" y="226" fill="#475569" font-size="9">*_ENABLED flags</text>
     </svg>
   </div>
 
@@ -1422,7 +1424,7 @@ helm upgrade --install runr brf-tech/runr \
       <p data-tr="Tek makinede üretim kurulumu: <code>compose/build.sh</code> imajları sürüm etiketinden derler; internetsiz (air-gapped) sunucuya <code>runr-images.tar</code> olarak taşınır."
          data-en="A production install on one machine: <code>compose/build.sh</code> builds the images from the release tag; air-gapped hosts get them as <code>runr-images.tar</code>.">
          Tek makinede üretim kurulumu: <code>compose/build.sh</code> imajları sürüm etiketinden derler; internetsiz (air-gapped) sunucuya <code>runr-images.tar</code> olarak taşınır.</p>
-      <pre><code>git clone -b v0.5.7 \
+      <pre><code>git clone -b v0.5.8 \
   https://github.com/BRF-Tech/runr.git
 cd runr &amp;&amp; bash compose/build.sh
 cd compose &amp;&amp; cp .env.example .env
@@ -1471,7 +1473,7 @@ runr deploy</code></pre>
          data-en="Deploy on every push and run preview environments for pull / merge requests: the ready-made Action on GitHub, a job that installs the CLI and runs <code>runr deploy</code> on GitLab CI/CD.">
          Her push'ta deploy edin, pull / merge request'ler için preview ortamları açın: GitHub'da hazır Action, GitLab CI/CD'de CLI'ı kurup <code>runr deploy</code> çalıştıran bir job.</p>
       <pre><code># GitHub Actions: secrets RUNR_API_URL, RUNR_TOKEN
-- uses: brf-tech/runr/actions/deploy@v0.5.7
+- uses: brf-tech/runr/actions/deploy@v0.5.8
   with:
     api-url: ${{ secrets.RUNR_API_URL }}
     token: ${{ secrets.RUNR_TOKEN }}
@@ -1687,7 +1689,7 @@ deploy:
     </div>
     <div class="footer-bottom">
       <span>© 2026 BRF Teknoloji and RunR contributors. <span data-tr="MIT lisansıyla yayımlanır." data-en="Released under the MIT License.">MIT lisansıyla yayımlanır.</span></span>
-      <span class="mono">runr.sh · <a href="/dl/">v0.5.7</a></span>
+      <span class="mono">runr.sh · <a href="/dl/">v0.5.8</a></span>
     </div>
   </div>
 </footer>
