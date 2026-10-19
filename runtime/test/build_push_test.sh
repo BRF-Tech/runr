@@ -124,7 +124,7 @@ mkdir -p "$tmp/repo/runtime" "$tmp/repo/docs" "$tmp/repo/api" "$tmp/repo/vue"
 echo "# doc" > "$tmp/repo/docs/a.md"
 SCRIPT_DIR="$tmp/repo/runtime"
 _DEPLOY_TAR_DIR="$tmp/repo/deploy"
-_deploy_no_cache=0 _deploy_tenancy=false _deploy_auth_provider=false _deploy_ticket=false
+_deploy_no_cache=0 _deploy_tenancy=false _deploy_auth_provider=false _deploy_ticket=false _deploy_billing=false
 resolve_app_version() { echo "v0.0.0-test"; }
 run _deploy_build_images
 [ "$(builds_pull "build-deploy")" = "3" ] || fail "build-deploy: not three images (api, ui, gateway)"
