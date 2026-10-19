@@ -1,11 +1,11 @@
 // White-label module (both editions): branding, self-service signup extras, signup e-mail
-// verification page, onboarding wizard, plans and billing settings (docs/billing.md).
+// verification page, onboarding wizard (docs/white-label.md). Billing is the Billing module's.
 // Auto-loaded by modules/index.js (core plugin glob).
 import { defineAsyncComponent, markRaw } from 'vue'
-import { Palette, UserPlus, Layers, Gem, Brush } from 'lucide-vue-next'
+import { Palette, UserPlus, Brush } from 'lucide-vue-next'
 import router from '@/router'
 import { applyBranding, readCachedBranding } from './utils/branding'
-import { canInTenant, canManageInstall, inTenantContext, isCentralAdmin, isMultiTenantBuild } from './utils/context'
+import { canInTenant, canManageInstall, isMultiTenantBuild } from './utils/context'
 import { useBrandingStore } from './stores/branding'
 import en from './locales/en.js'
 import tr from './locales/tr.js'
@@ -52,23 +52,6 @@ export default function (registry) {
       try { return useBrandingStore().features } catch { return {} }
     }
 
-    registry.settingsTabs.push({
-      key: 'plans',
-      labelKey: 'whiteLabel.tabPlans',
-      icon: markRaw(Layers),
-      component: lazy(() => import('./components/PlansAdmin.vue')),
-      visibleIf: () => isCentralAdmin(multiTenant),
-      order: 52,
-    })
-    registry.settingsTabs.push({
-      key: 'subscription',
-      labelKey: 'whiteLabel.tabSubscription',
-      icon: markRaw(Gem),
-      component: lazy(() => import('./components/TenantSubscription.vue')),
-      // The plan page is open to every member of the tenant (GET /api/tenant/subscription)
-      visibleIf: () => inTenantContext(multiTenant) && !!features().plans,
-      order: 53,
-    })
     registry.settingsTabs.push({
       key: 'org-branding',
       labelKey: 'whiteLabel.tabOrgBranding',

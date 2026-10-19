@@ -69,6 +69,8 @@ export default {
     ticketInternalLabel:    'Sadece Ekip',
     ticketTags:             'Etiketler',
     ticketAddTag:           'Etiket ekle...',
+    ticketRemoveTag:        '{tag} etiketini kaldır',
+    ticketStaffSaveFailed:  'Değişiklik kaydedilemedi.',
     ticketSuggestions:      'Benzer Açık Talepler',
     ticketSuggestionHint:   'Bu konuda zaten açık bir talebiniz olabilir:',
     ticketDraftRestored:    'Önceki oturumdan taslak geri yüklendi.',

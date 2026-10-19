@@ -1,7 +1,6 @@
 <script setup>
 // First-run wizard of a self-service tenant (multi-tenant): organization name and region (when the
-// platform offers several) → POST /api/onboarding. With plans on, the organization starts on the
-// default plan; the wizard names it.
+// platform offers several) → POST /api/onboarding.
 import { computed, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute } from 'vue-router'
@@ -24,7 +23,6 @@ const saving = ref(false)
 const error = ref(null)
 
 const regions = computed(() => info.value?.regions ?? [])
-const plan = computed(() => info.value?.plan ?? null)
 const showRegionStep = computed(() => !info.value?.region_assigned && regions.value.length > 1)
 
 const steps = computed(() => [
@@ -155,9 +153,6 @@ defineExpose({ steps, load })
         </p>
         <p v-else-if="!info?.region_assigned && !regions.length" class="text-sm text-amber-400" data-test="onboarding-no-region">
           {{ t('whiteLabel.onboarding.noRegion') }}
-        </p>
-        <p v-if="plan" class="text-sm text-gray-400" data-test="onboarding-plan">
-          {{ t('whiteLabel.onboarding.plan', { name: plan.name }) }}
         </p>
       </div>
 

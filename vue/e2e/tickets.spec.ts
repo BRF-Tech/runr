@@ -1,4 +1,6 @@
 import { test, expect } from './fixtures/test'
+import type { MockApi } from './fixtures/mock-api'
+import { effectivePermissions, type Json } from './fixtures/data'
 import { apiLogin, completeTutorial, type Session } from './helpers/auth'
 import { uniqueName, type Seeder } from './helpers/seed'
 import { field } from './helpers/ui'
@@ -20,10 +22,19 @@ async function memberSession(seed: Seeder): Promise<Session> {
   return completeTutorial(seed.api(), await apiLogin(seed.api(), email, password))
 }
 
+/**
+ * Mock mode: a member who opens tickets — not a platform administrator, and a role without
+ * tickets.manage (the support staff view follows that permission, AccountSupportTab).
+ */
+function ticketUser(mockApi: MockApi, user: Json = {}) {
+  mockApi.db.user = { ...mockApi.db.user, ...user, is_admin: false }
+  mockApi.db.permissions = { ...effectivePermissions('developer', ['projects.view', 'tickets.view', 'tickets.create']), edition: 'multi' }
+}
+
 test.describe('Support tickets', { tag: '@modules' }, () => {
   test('a user opens a ticket with category and priority', async ({ page, auth, mockApi, isStack }) => {
     test.skip(isStack, 'the stack administrator sees the admin queue; asserted on the mocked API')
-    mockApi.db.user = { ...mockApi.db.user, id: 2, name: 'Bob Builder', email: 'bob@runr.test', is_admin: false }
+    ticketUser(mockApi, { id: 2, name: 'Bob Builder', email: 'bob@runr.test' })
     await auth.signIn()
     await page.goto('/settings?tab=support-tickets')
     await expect(page.getByText('Deployment stuck in pending')).toBeVisible()
@@ -52,7 +63,7 @@ test.describe('Support tickets', { tag: '@modules' }, () => {
 
   test('filters the list by status', async ({ page, auth, mockApi, isStack }) => {
     test.skip(isStack, 'relies on the seeded mock tickets')
-    mockApi.db.user = { ...mockApi.db.user, is_admin: false }
+    ticketUser(mockApi)
     mockApi.db.tickets.push({ ...mockApi.db.tickets[0], id: 'tk-2', subject: 'Invoice question', status: 'resolved', category: 'account' })
     await auth.signIn()
     await page.goto('/settings?tab=support-tickets')

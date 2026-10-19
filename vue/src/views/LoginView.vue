@@ -2,6 +2,7 @@
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
+import { ShieldCheck } from 'lucide-vue-next'
 import { useAuthStore } from '@/stores/auth'
 import { authApi } from '@/api/auth'
 import client from '@/api/client'
@@ -120,9 +121,13 @@ async function submit() {
 function loginWithProvider(p) {
   const slug = (userType.value === 'tenant' && tenancyStep.value === 2) ? tenancySlug.value.trim() : null
   const params = slug ? { tenant: slug } : {}
-  client.get(`/oauth/${p.driver}/redirect`, { params })
+  // SAML starts at its service provider endpoint; OAuth / OIDC name the provider (several per driver)
+  const start = p.driver === 'saml'
+    ? client.get(`/saml/${p.id}/login`, { params })
+    : client.get(`/oauth/${p.driver}/redirect`, { params: { ...params, provider: p.id } })
+  start
     .then(({ data }) => { window.location.href = data.redirect_url })
-    .catch(() => { error.value = t('auth.oauthError') })
+    .catch((e) => { error.value = e.response?.data?.message ?? t('auth.oauthError') })
 }
 </script>
 
@@ -271,7 +276,7 @@ function loginWithProvider(p) {
                 <!-- Provider side panel -->
                 <div v-if="providers.length" class="w-56 pl-8 border-l flex flex-col justify-center gap-3" style="border-color:#e2e8f0">
                   <p class="text-xs font-bold uppercase tracking-widest mb-1" style="color:#374151">{{ t('auth.orSignInWith') }}</p>
-                  <button v-for="p in providers" :key="p.id" type="button"
+                  <button v-for="p in providers" :key="p.id" type="button" data-testid="sso-provider"
                     class="oauth-btn flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-semibold transition-all" @click="loginWithProvider(p)">
                     <!-- Google -->
                     <svg v-if="p.driver === 'google'" class="w-5 h-5 shrink-0" viewBox="0 0 24 24">
@@ -293,6 +298,8 @@ function loginWithProvider(p) {
                     <svg v-else-if="p.driver === 'gitlab'" class="w-5 h-5 shrink-0" viewBox="0 0 24 24" fill="#FC6D26">
                       <path d="m23.6004 9.5927-.0337-.0862L20.3.9814a.851.851 0 0 0-.3362-.405.8748.8748 0 0 0-.9997.0539.8748.8748 0 0 0-.29.4399l-2.2055 6.748H7.5375l-2.2057-6.748a.8573.8573 0 0 0-.29-.4412.8748.8748 0 0 0-.9997-.0537.8585.8585 0 0 0-.3362.4049L.4332 9.5015l-.0325.0862a6.0657 6.0657 0 0 0 2.0119 7.0105l.0113.0087.03.0213 4.976 3.7264 2.462 1.8633 1.4995 1.1321a1.0085 1.0085 0 0 0 1.2197 0l1.4995-1.1321 2.4619-1.8633 5.006-3.7489.0125-.01a6.0682 6.0682 0 0 0 2.0094-7.003z"/>
                     </svg>
+                    <!-- SAML 2.0 -->
+                    <ShieldCheck v-else-if="p.driver === 'saml'" class="w-5 h-5 shrink-0" style="color:#059669" />
                     <!-- OIDC / OpenID Connect -->
                     <svg v-else class="w-5 h-5 shrink-0" viewBox="0 0 24 24" fill="#F78C40">
                       <path d="M14.54.889l-3.63 1.773v18.17c-4.15-.52-7.27-2.78-7.27-5.5 0-2.58 2.8-4.75 6.63-5.41v-2.31C4.42 8.322 0 11.502 0 15.332c0 3.96 4.74 7.24 10.91 7.78l3.63-1.71V.888m.64 6.724v2.31c1.43.25 2.71.7 3.76 1.31l-1.97 1.11 7.03 1.53-.5-5.21-1.87 1.06c-1.74-1.06-3.96-1.81-6.45-2.11z"/>

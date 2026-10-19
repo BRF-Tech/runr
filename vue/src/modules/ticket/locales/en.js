@@ -69,6 +69,8 @@ export default {
     ticketInternalLabel:    'Staff Only',
     ticketTags:             'Tags',
     ticketAddTag:           'Add tag...',
+    ticketRemoveTag:        'Remove tag {tag}',
+    ticketStaffSaveFailed:  'The change could not be saved.',
     ticketSuggestions:      'Similar Open Tickets',
     ticketSuggestionHint:   'You may already have an open ticket about this:',
     ticketDraftRestored:    'Draft restored from previous session.',

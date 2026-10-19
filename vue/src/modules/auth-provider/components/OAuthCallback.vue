@@ -20,32 +20,40 @@ onMounted(async () => {
     return
   }
 
-  let token
+  // { token, user_id }; multi-tenant: also tenants and active_tenant like the password sign-in —
+  // a sign-in from a tenant's sign-in page starts in that tenant
+  let signIn
   try {
     const { data } = await authProviderApi.exchangeCode(String(code))
-    token = data.token
+    signIn = data
   } catch (e) {
     error.value = e.response?.data?.message || t('authProvider.oauthError')
     return
   }
   // The code is used up now (one exchange, 60 seconds); the history entry is harmless
+  const { token } = signIn
 
   // Store token and user info
   auth.setTokenDirectly(token)
 
-  // Run module login hooks (e.g. tenancy)
+  let user = null
   try {
     const meResponse = await fetch('/api/auth/me', {
       headers: { Authorization: `Bearer ${token}` },
     })
-    const user = await meResponse.json()
+    user = await meResponse.json()
     auth.setUser(user)
-
-    for (const hook of moduleRegistry.loginHooks) {
-      await hook({ user, token })
-    }
   } catch {
     // Non-critical — user is already logged in
+  }
+
+  // Run module login hooks (e.g. tenancy: the organization the console starts in)
+  for (const hook of moduleRegistry.loginHooks) {
+    try {
+      await hook({ ...signIn, user, token })
+    } catch {
+      // Non-critical — one module's hook does not stop the sign-in
+    }
   }
 
   router.push('/projects')

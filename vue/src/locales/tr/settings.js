@@ -55,7 +55,6 @@ export default {
       kubeconfigSelected: 'Seçildi:',
       kubeconfigDownload: 'Kubeconfig İndir',
       kubeconfigRequired: 'Kubeconfig dosyası zorunludur.',
-      kubeconfigInvalid:  'Cluster\'a bağlanılamadı. Kubeconfig geçersiz veya cluster erişilemez durumda — kubeconfig silindi. Lütfen geçerli bir kubeconfig yükleyin.',
       deleteConfirm:      '"{name}" bölgesini silmek istediğinize emin misiniz?',
       hasProjects:        'Bu bölgede {n} proje mevcut. Projeler silinmeden bölge silinemez.',
       clusterOnline:      'Cluster çevrimiçi',

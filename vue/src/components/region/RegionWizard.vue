@@ -178,7 +178,7 @@ function setStep(n) { emit('update:wizard-step', n) }
     </div>
     <!-- Step 7: Migration -->
     <div v-if="wizardStep === 7" class="space-y-4" data-tour="region-migration">
-      <MigrationTab :region="createdRegion ?? region" :migration-status="migrationStatus"
+      <MigrationTab :region="createdRegion ?? region" :show-data-location="false" :migration-status="migrationStatus"
         :migration-loading="migrationLoading" :migration-error="migrationError"
         :migration-kubeconfig-name="migrationKubeconfigName" :status-label="statusLabel"
         @kubeconfig-change="emit('migration-kubeconfig-change', $event)" @start="emit('start-migration')"

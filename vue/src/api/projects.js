@@ -16,6 +16,17 @@ export const projectsApi = {
   destroy: (id) =>
     client.delete(`/projects/${id}`),
 
+  // Owner (the payer of the project's bills, docs/billing.md): the owner or projects.manage_access
+  transferOwner: (id, userId) =>
+    client.put(`/projects/${id}/owner`, { user_id: userId }),
+
+  // Stop (workloads off, no deploys; the reason is shown to the members) / resume — projects.stop
+  stop: (id, reason) =>
+    client.post(`/projects/${id}/stop`, { reason }),
+
+  resume: (id) =>
+    client.post(`/projects/${id}/resume`),
+
   // Code (XaaS)
   getCode: (id, versionId) =>
     client.get(`/projects/${id}/code`, { params: { version_id: versionId } }),

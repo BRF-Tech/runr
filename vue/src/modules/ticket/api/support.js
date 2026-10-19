@@ -51,6 +51,11 @@ export function updateTicketStatus(id, status, tenantId) {
   return client.patch(`/admin/support-tickets/${id}/status`, { status }, { params })
 }
 
+// Assignee choices: members holding tickets.manage (single-tenant) / platform administrators
+export function fetchTicketStaff() {
+  return client.get('/admin/support-tickets/staff')
+}
+
 export function assignTicket(id, assignedTo, tenantId) {
   const params = tenantId ? { tenant_id: tenantId } : {}
   return client.patch(`/admin/support-tickets/${id}/assign`, { assigned_to: assignedTo }, { params })

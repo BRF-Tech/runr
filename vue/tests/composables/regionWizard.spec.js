@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { defineComponent, h } from 'vue'
 import { mount, flushPromises } from '@vue/test-utils'
 
@@ -16,6 +16,7 @@ import { knativeRegionsApi as api } from '@/api/knativeRegions'
 import { useRegistrySetup } from '@/composables/useRegistrySetup'
 import { useRegionDetail } from '@/composables/useRegionDetail'
 import { dispatchPlatformEvent, useJobEvents } from '@/composables/useJobEvents'
+import { moduleRegistry } from '@/modules/index'
 import { withPlugins } from '../helpers'
 
 // Composables with lifecycle hooks need a component instance.
@@ -237,5 +238,41 @@ describe('region wizard step 1 (useRegionDetail)', () => {
     await flushPromises()
     expect(d.highestStepReached.value).toBe(3)
     expect(d.isStepReadonly.value).toBe(true)
+  })
+})
+
+describe('region hooks of modules (moduleRegistry.regionTabs / regionCreateExtensions)', () => {
+  const tab = { key: 'billing', labelKey: 'billing.region.tab', component: { render: () => null }, visibleIf: (region) => !!region?.id, order: 50 }
+  const later = { key: 'zz', labelKey: 'zz', component: { render: () => null }, order: 90 }
+  const afterCreate = vi.fn(async () => {})
+  const ext = { key: 'billing', component: { render: () => null }, initial: () => ({ billing_type: 'payg' }), afterCreate }
+
+  beforeEach(() => {
+    moduleRegistry.regionTabs.push(later, tab)
+    moduleRegistry.regionCreateExtensions.push(ext, { key: 'plain', component: { render: () => null } })
+    afterCreate.mockReset()
+  })
+  afterEach(() => {
+    moduleRegistry.regionTabs.splice(0)
+    moduleRegistry.regionCreateExtensions.splice(0)
+  })
+
+  it('adds the visible module tabs of a region in order', () => {
+    const { api: edit } = harness(useRegionDetail, { region: { id: 'r1', name: 'eu-1' } })
+    expect(edit.moduleRegionTabs.value.map(t => t.key)).toEqual(['billing', 'zz'])
+    const { api: create } = harness(useRegionDetail)
+    expect(create.moduleRegionTabs.value.map(t => t.key)).toEqual(['zz'])
+  })
+
+  it('starts the wizard with the modules\' initial values and hands them over once the region exists', async () => {
+    const { api: d } = harness(useRegionDetail)
+    expect(d.form.value.extensions).toEqual({ billing: { billing_type: 'payg' }, plain: null })
+    d.form.value.extensions.billing = { billing_type: 'fixed' }
+    await d.runCreateExtensions({ id: 'r9' })
+    expect(afterCreate).toHaveBeenCalledWith({ id: 'r9' }, { billing_type: 'fixed' })
+
+    afterCreate.mockRejectedValueOnce({ response: { data: { message: 'Billing type not saved.' } } })
+    await d.runCreateExtensions({ id: 'r9' })
+    expect(d.workersError.value).toBe('Billing type not saved.')
   })
 })

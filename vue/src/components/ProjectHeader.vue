@@ -10,7 +10,7 @@ import RuntimeIcon from '@/components/RuntimeIcon.vue'
 import { runtimeLabel } from '@/utils/runtimes'
 import { isLegacyServiceType } from '@/utils/projectHelpers'
 import { usePermissionsStore } from '@/stores/permissions'
-import { MapPin, Cpu, MemoryStick, Timer, Pencil, Play, Clock, Zap, Globe, Copy, Check, ArrowUpDown } from 'lucide-vue-next'
+import { MapPin, Cpu, MemoryStick, Timer, Pencil, Play, Clock, Zap, Globe, Copy, Check, ArrowUpDown, UserRound, OctagonPause } from 'lucide-vue-next'
 
 const { t } = useI18n()
 const router = useRouter()
@@ -46,8 +46,18 @@ const canUpdate = computed(() => perms.can('projects.update', props.project.id) 
 const canClone  = computed(() => perms.can('projects.create'))
 const canDelete = computed(() => perms.can('projects.delete', props.project.id))
 const canDeploy = computed(() => perms.can('projects.deploy', props.project.id))
+// Stop / resume (projects.stop) and the owner — the payer of the project's bills. A platform
+// administrator also stops a project its organization stopped: the stop becomes the platform's.
+const isStopped = computed(() => !!props.project.stopped)
+const canStop   = computed(() => perms.can('projects.stop'))
+const canTakeOver = computed(() => isStopped.value && props.project.stopped.level !== 'platform' && perms.platformAdmin)
+const currentUserId = (() => {
+  try { return String(JSON.parse(localStorage.getItem('user') || 'null')?.id ?? '') } catch { return '' }
+})()
+const isOwner = computed(() => !!props.project.owner_id && String(props.project.owner_id) === currentUserId)
+const canTransfer = computed(() => isOwner.value || perms.can('projects.manage_access', props.project.id))
 
-defineEmits(['edit', 'clone', 'delete', 'deploy', 'update:activeTab'])
+defineEmits(['edit', 'clone', 'delete', 'deploy', 'stop', 'transfer-owner', 'update:activeTab'])
 
 const urlCopied = ref(false)
 
@@ -94,6 +104,7 @@ async function copyUrl() {
                 <ArrowUpDown class="w-3 h-3" />
                 {{ project.config.scale_to_zero ? t('projects.scalingS2z') : t('projects.scalingCustomLabel', { min: project.config.min_scale, max: project.config.max_scale }) }}
               </span>
+              <span v-if="isStopped" class="inline-flex items-center gap-1 text-xs font-medium px-2.5 py-1 rounded-md bg-red-900/40 border border-red-800/50 text-red-400" data-test="project-stopped-badge"><OctagonPause class="w-3 h-3" />{{ t('projectLifecycle.stoppedBadge') }}</span>
               <span v-if="isEol" class="inline-flex items-center text-xs font-medium px-2.5 py-1 rounded-md bg-red-900/40 border border-red-800/50 text-red-400">{{ t('projects.eol') }}</span>
               <span v-else-if="isSunsetting" class="inline-flex items-center text-xs font-medium px-2.5 py-1 rounded-md bg-yellow-900/40 border border-yellow-800/50 text-yellow-400" :title="project.runtime_eol">{{ t('projects.eolWeeks', { weeks: eolWeeksLeft }) }}</span>
             </div>
@@ -103,12 +114,13 @@ async function copyUrl() {
         <div data-tour="action-buttons" class="flex items-center gap-2 shrink-0 pt-1">
           <button v-if="!isLegacy && canUpdate" class="btn-secondary flex items-center gap-1.5" @click="$emit('edit')"><Pencil class="w-3.5 h-3.5" />{{ t('project.edit') }}</button>
           <button v-if="!isLegacy && canClone" class="btn-secondary" @click="$emit('clone')">{{ t('project.clone') }}</button>
+          <button v-if="canStop && (!isStopped || canTakeOver) && !isLegacy" class="btn-secondary text-red-400 hover:text-red-300 border-red-900/50 hover:border-red-700" data-test="project-stop" @click="$emit('stop')">{{ canTakeOver ? t('projectLifecycle.takeOver') : t('projectLifecycle.stop') }}</button>
           <button v-if="canDelete" class="btn-secondary text-red-400 hover:text-red-300 border-red-900/50 hover:border-red-700" @click="$emit('delete')">{{ t('project.delete') }}</button>
           <button
             v-if="!isLegacy && canDeploy"
             class="btn-primary flex items-center gap-1.5"
-            :disabled="deploying || !hasVersions || isRuntimeEol"
-            :title="isRuntimeEol ? t('project.eolBlocked') : undefined"
+            :disabled="deploying || !hasVersions || isRuntimeEol || isStopped"
+            :title="isStopped ? t('projectLifecycle.deployBlocked') : isRuntimeEol ? t('project.eolBlocked') : undefined"
             @click="$emit('deploy')"
           ><Play class="w-3.5 h-3.5" />{{ t('project.deploy') }}</button>
         </div>
@@ -116,6 +128,10 @@ async function copyUrl() {
 
       <!-- Meta row -->
       <div class="flex flex-wrap items-center gap-x-3 gap-y-1.5 mb-3 ml-[14px]">
+        <span v-if="project.owner || project.owner_id" class="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-md border border-gray-700/60 bg-gray-800/40 text-gray-300" data-test="project-owner">
+          <UserRound class="w-3 h-3 text-gray-400" />{{ t('projectLifecycle.owner') }}: {{ project.owner?.name ?? project.owner?.username ?? t('projectLifecycle.ownerUnknown') }}
+          <button v-if="canTransfer && !isLegacy" type="button" class="text-brand-400 hover:text-brand-300" data-test="project-owner-transfer" @click="$emit('transfer-owner')">{{ t('projectLifecycle.transfer') }}</button>
+        </span>
         <div v-if="endpointUrl" class="flex items-center gap-1.5 min-w-0">
           <span class="inline-flex items-center gap-1 text-xs font-mono font-medium px-2.5 py-1 rounded-md shrink-0" style="background:rgb(16 185 129/0.12);border:1px solid rgb(16 185 129/0.3);color:#10b981"><Globe class="w-3 h-3" />HTTP</span>
           <a :href="endpointUrl" target="_blank" rel="noopener" class="text-xs font-mono text-brand-400 hover:text-brand-300 truncate transition-colors">{{ endpointUrl }}</a>

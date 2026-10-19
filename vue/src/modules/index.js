@@ -4,7 +4,10 @@ export const moduleRegistry = reactive({
   headerSlots: [],          // Components for AppHeader right side
   appTopSlots: [],          // Components rendered above RouterView
   settingsTabs: [],         // Extra tabs: { key, labelKey, component }
+  accountSections: [],      // Extra sections of Account settings: { key, component }
   projectTabs: [],          // Extra project detail tabs: { id, labelKey, component, visibleIf(project), order }
+  regionTabs: [],           // Extra tabs of an own region's detail: { key, labelKey, component (prop region), visibleIf(region), order }
+  regionCreateExtensions: [], // Fields of the region wizard's first step: { key, component (v-model: value), initial(), afterCreate(region, value) }
   projectsActions: [],      // Components next to "New project" (props hasReadyRegion, existingNames; emits created)
   loginHooks: [],           // async (loginData) => {} — called after successful login
   requestInterceptors: [],  // (config) => config — axios request interceptors
@@ -21,7 +24,7 @@ export const moduleRegistry = reactive({
 })
 
 // Auto-load core module plugins (tenancy + auth-provider excluded — loaded conditionally below)
-const corePlugins = import.meta.glob(['./*/plugin.js', '!./tenancy/plugin.js', '!./auth-provider/plugin.js', '!./ticket/plugin.js'], { eager: true })
+const corePlugins = import.meta.glob(['./*/plugin.js', '!./tenancy/plugin.js', '!./auth-provider/plugin.js', '!./ticket/plugin.js', '!./billing/plugin.js'], { eager: true })
 for (const mod of Object.values(corePlugins)) {
   if (typeof mod.default === 'function') mod.default(moduleRegistry)
 }
@@ -44,6 +47,14 @@ export const authProviderReady = import.meta.env.VITE_AUTH_PROVIDER_ENABLED === 
 // Ticket module: only loaded when VITE_TICKET_ENABLED=true
 export const ticketReady = import.meta.env.VITE_TICKET_ENABLED === 'true'
   ? import('./ticket/plugin.js').then(mod => {
+      if (typeof mod.default === 'function') mod.default(moduleRegistry)
+    })
+  : Promise.resolve()
+
+// Billing module: only loaded when VITE_BILLING_ENABLED=true; its pages also stay hidden while the
+// API reports billing off (GET /api/branding → features.billing)
+export const billingReady = import.meta.env.VITE_BILLING_ENABLED === 'true'
+  ? import('./billing/plugin.js').then(mod => {
       if (typeof mod.default === 'function') mod.default(moduleRegistry)
     })
   : Promise.resolve()

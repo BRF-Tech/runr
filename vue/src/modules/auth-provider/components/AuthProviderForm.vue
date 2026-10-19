@@ -14,6 +14,8 @@ const props = defineProps({
   // SAML: SP endpoints of the saved provider ({ entity_id, acs_url, metadata_url, login_url })
   samlSp: { type: Object, default: null },
   hasSpKey: Boolean,
+  // OAuth / OIDC: redirect URL of the saved provider (API `callback_url`)
+  callbackUrl: { type: String, default: null },
 })
 const emit = defineEmits(['save', 'cancel'])
 const { t } = useI18n()
@@ -45,6 +47,15 @@ rbacApi.roles().then(({ data }) => { roles.value = data.roles ?? [] }).catch(() 
 if (props.initialData) Object.assign(form, props.initialData)
 
 const isSaml = computed(() => form.driver === 'saml')
+
+// The redirect URL to register at the provider: one per driver (/oauth/<driver>/callback on the API host)
+const callbackUrl = computed(() => {
+  if (isSaml.value) return null
+  if (props.editingId && props.callbackUrl) return props.callbackUrl
+  const api = import.meta.env.VITE_API_URL
+  const origin = api && /^https?:\/\//.test(api) ? new URL(api).origin : window.location.origin
+  return `${origin}/oauth/${form.driver}/callback`
+})
 const namePlaceholder = computed(() => t(`authProvider.namePlaceholder${capitalize(form.driver)}`))
 const scopesPlaceholder = computed(() => t(`authProvider.scopesPlaceholder${capitalize(form.driver)}`))
 
@@ -162,6 +173,17 @@ function submit() { emit('save', { ...form }) }
           <p v-if="editingId" class="text-[10px] text-gray-400 mt-1">{{ t('authProvider.clientSecretHint') }}</p>
         </div>
       </div>
+      <div v-if="callbackUrl" class="mt-3" data-testid="auth-provider-callback-url">
+        <label class="label"><TermText path="authProvider.callbackUrl" /></label>
+        <div class="flex items-center gap-2">
+          <input :value="callbackUrl" readonly class="input font-mono text-[11px]" @focus="$event.target.select()" />
+          <button type="button" class="p-1.5 rounded-md text-gray-400 hover:text-gray-100 hover:bg-gray-800 transition-colors shrink-0"
+            :title="t('authProvider.copy')" @click="copy(callbackUrl)">
+            <Copy class="w-3.5 h-3.5" />
+          </button>
+        </div>
+        <p class="text-[10px] text-gray-400 mt-1">{{ t('authProvider.callbackUrlHint') }}</p>
+      </div>
     </div>
 
     <!-- Provider-specific config -->
@@ -197,10 +219,12 @@ function submit() { emit('save', { ...form }) }
         <div>
           <label class="label"><TermText path="authProvider.oidcDiscoveryUrl" /></label>
           <input v-model="form.oidc_discovery_url" class="input text-xs" :placeholder="t('authProvider.oidcDiscoveryPlaceholder')" />
+          <p class="text-[10px] text-gray-400 mt-1">{{ t('authProvider.oidcDiscoveryHint') }}</p>
         </div>
         <div>
           <label class="label">{{ t('authProvider.oidcIssuer') }}</label>
           <input v-model="form.oidc_issuer" class="input text-xs" :placeholder="t('authProvider.oidcIssuerPlaceholder')" />
+          <p class="text-[10px] text-gray-400 mt-1">{{ t('authProvider.oidcIssuerHint') }}</p>
         </div>
       </div>
 

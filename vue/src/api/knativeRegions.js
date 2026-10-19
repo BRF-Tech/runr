@@ -20,6 +20,9 @@ export const knativeRegionsApi = {
   listNodes:          (id)     => client.get(`/knative-regions/${id}/nodes`),
   applyWorkers:       (id, d)  => client.post(`/knative-regions/${id}/workers`, d),
   updateSettings:     (id, d)  => client.put(`/knative-regions/${id}/settings`, d),
+  // Existing in-cluster Prometheus / Loki (URL) or RunR's own (null)
+  updateMonitoring:   (id, d)  => client.put(`/knative-regions/${id}/monitoring`, d),
+  removeFunctionTls:  (id)     => client.delete(`/knative-regions/${id}/function-tls`),
   // Capacity budgets (always-on, FaaS overcommit) and the overcommit factors
   capacity:           (id)     => client.get(`/knative-regions/${id}/capacity`),
   updateCapacity:     (id, d)  => client.put(`/knative-regions/${id}/capacity`, d),
@@ -34,6 +37,8 @@ export const knativeRegionsApi = {
   // Component-based install/uninstall
   installOperator:    (id, d)  => client.post(`/knative-regions/${id}/install-operator`, d),
   installServing:     (id, d)  => client.post(`/knative-regions/${id}/install-serving`, d),
+  // Knative Serving to the next minor version ({ version })
+  upgradeServing:     (id, d)  => client.post(`/knative-regions/${id}/upgrade-serving`, d),
   uninstallOperator:  (id)     => client.post(`/knative-regions/${id}/uninstall-operator`),
   uninstallServing:   (id)     => client.post(`/knative-regions/${id}/uninstall-serving`),
 
@@ -64,6 +69,8 @@ export const knativeRegionsApi = {
 
   // Registry per-region
   registryStatusForRegion: (id) => client.get(`/knative-regions/${id}/registry-status`),
+  // The registry of an existing region (the setup fields: registry_mode, storage_type, …)
+  configureRegistry:       (id, d) => client.post(`/knative-regions/${id}/registry`, d),
   removeRegistry:          (id) => client.delete(`/knative-regions/${id}/registry`),
 
   // Region migration
@@ -71,4 +78,5 @@ export const knativeRegionsApi = {
   migrationStatus:   (id)    => client.get(`/knative-regions/${id}/migration-status`),
   completeMigration: (id)    => client.post(`/knative-regions/${id}/complete-migration`),
   rollbackMigration: (id)    => client.post(`/knative-regions/${id}/rollback-migration`),
+  completeDomainMigration: (id) => client.post(`/knative-regions/${id}/complete-domain-migration`),
 }

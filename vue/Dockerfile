@@ -14,6 +14,8 @@ ARG VITE_REVERB_KEY
 ARG VITE_TENANCY_ENABLED
 ARG VITE_AUTH_PROVIDER_ENABLED
 ARG VITE_TICKET_ENABLED
+# Billing module UI (pages stay hidden while the API reports billing off: official images set true)
+ARG VITE_BILLING_ENABLED
 
 # Kaynak kod
 COPY . .

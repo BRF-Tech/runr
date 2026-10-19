@@ -11,7 +11,7 @@ import App from './App.vue'
 import router from './router'
 import i18n from './i18n'
 
-import { moduleRegistry, tenancyReady, authProviderReady, ticketReady } from '@/modules/index'
+import { moduleRegistry, tenancyReady, authProviderReady, ticketReady, billingReady } from '@/modules/index'
 
 const app = createApp(App)
 app.use(createPinia())
@@ -48,7 +48,7 @@ app.directive('click-outside', {
 // builds (plugin chunk statically imports main bundle which is blocked by await).
 app.mount('#app')
 
-Promise.all([tenancyReady, authProviderReady, ticketReady]).then(() => {
+Promise.all([tenancyReady, authProviderReady, ticketReady, billingReady]).then(() => {
   for (const route of moduleRegistry.routes) {
     router.addRoute(route)
   }

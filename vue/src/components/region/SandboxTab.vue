@@ -40,6 +40,13 @@ const hasSandbox = computed(() =>
   kataStatus.value === 'ready' || gvisorStatus.value === 'ready'
 )
 
+// The hypervisors of a working Kata install, and whether the selection adds any
+const installedShims = computed(() => {
+  const hv = kataHypervisor.value
+  return hv ? (Array.isArray(hv) ? hv : [hv]) : []
+})
+const addingShims = computed(() => selectedShims.value.some(s => !installedShims.value.includes(s)))
+
 const mappingFields = ['xaas', 'faas', 'caas', 'build']
 </script>
 
@@ -106,6 +113,36 @@ const mappingFields = ['xaas', 'faas', 'caas', 'build']
           {{ t('settings.regionDetail.sandbox.kata.installWarning') }}
         </p>
       </template>
+      <!-- A working install: more hypervisors can be added (the installed ones stay) -->
+      <details v-else-if="kataStatus === 'ready' && !kataBlocked" class="space-y-3" data-testid="kata-add-hypervisors">
+        <summary class="cursor-pointer select-none text-xs text-gray-400 hover:text-gray-300">
+          {{ t('settings.regionDetail.sandbox.kata.addTitle') }}
+        </summary>
+        <div class="space-y-3 pt-2">
+          <KataShimSelector v-model="selectedShims" :shims="shims" :loading="shimsLoading" :locked="installedShims" />
+          <div v-if="fcSelected && !installedShims.includes('fc')" class="space-y-1">
+            <label class="text-xs text-gray-400 font-medium" for="kata-devmapper-pool-add">
+              {{ t('settings.regionDetail.sandbox.kata.devmapperPool') }}
+            </label>
+            <div class="flex items-center gap-2">
+              <input
+                id="kata-devmapper-pool-add"
+                v-model.number="devmapperPoolGb"
+                type="number"
+                :min="devmapperLimits.min_pool_gb"
+                :max="devmapperLimits.max_pool_gb"
+                class="w-24 rounded-md border border-gray-800 bg-gray-900/40 px-2 py-1 text-xs text-gray-100"
+              />
+              <span class="text-xs text-gray-400">GiB</span>
+            </div>
+          </div>
+          <p class="text-[11px] text-amber-400/90">{{ t('settings.regionDetail.sandbox.kata.installWarning') }}</p>
+          <button type="button" class="btn-primary text-xs" :disabled="installing.kata || !addingShims" data-testid="kata-add"
+            @click="installRuntime('kata')">
+            {{ t('settings.regionDetail.sandbox.kata.addBtn') }}
+          </button>
+        </div>
+      </details>
     </div>
 
     <!-- gVisor card -->

@@ -25,6 +25,13 @@ export default function (registry) {
     markRaw(defineAsyncComponent(() => import('./components/ImpersonationBar.vue')))
   )
 
+  // Settings page, inside an organization: the organization domain card (SettingsView renders
+  // settingsSlots.tenantDomain for members with settings.manage)
+  registry.settingsSlots = {
+    ...(registry.settingsSlots ?? {}),
+    tenantDomain: markRaw(defineAsyncComponent(() => import('./components/TenantDomainCard.vue'))),
+  }
+
   // Lazy tenancy check — called at render time when settings are loaded
   const isTenancyEnabled = () => useSettingsStore().data?.tenancy_enabled === true
 
@@ -86,30 +93,7 @@ export default function (registry) {
     dataTour: 'settings-usage-tab',
   })
 
-  // Billing & cost tab — central admin only
-  registry.settingsTabs.push({
-    key: 'billing',
-    labelKey: 'tenancy.tabBilling',
-    component: markRaw(defineAsyncComponent(() => import('./components/TenantBilling.vue'))),
-    visibleIf: isCentralAdmin,
-    dataTour: 'settings-billing-tab',
-  })
-
-  // Billing tab of a tenant — billing.view in the active tenant (its charges, credit, purchases)
-  const canViewTenantBilling = () => {
-    if (!isTenancyEnabled()) return false
-    try {
-      const t = JSON.parse(localStorage.getItem('active_tenant') || 'null')
-      if (!t?.id) return false
-      return usePermissionsStore().can('billing.view')
-    } catch { return false }
-  }
-  registry.settingsTabs.push({
-    key: 'charges',
-    labelKey: 'tenancy.tabCharges',
-    component: markRaw(defineAsyncComponent(() => import('./components/TenantOwnBilling.vue'))),
-    visibleIf: canViewTenantBilling,
-  })
+  // Billing (bills, prices, region offers) is the Billing module's (modules/billing)
 
   // Register form: inject workspace name field when tenancy is active
   registry.registerSlots.extraFields = markRaw(defineAsyncComponent(

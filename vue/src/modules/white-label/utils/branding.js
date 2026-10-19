@@ -35,7 +35,8 @@ export const DEFAULT_BRANDING = Object.freeze({
   powered_by:       true,
   is_default_brand: true,
   tenant:           null,
-  features:         Object.freeze({ plans: false, tenant_branding: false, multi_tenant: false }),
+  // billing / tickets: the Billing / Ticket module is on in the API (the console hides their pages otherwise)
+  features:         Object.freeze({ billing: false, tickets: true, tenant_branding: false, multi_tenant: false }),
 })
 
 /** Explicit palette of the payload ("r g b" per shade) or null. */
@@ -76,7 +77,9 @@ export function normalizeBranding(raw) {
     is_default_brand: typeof d.is_default_brand === 'boolean' ? d.is_default_brand : productName === DEFAULT_PRODUCT_NAME,
     tenant:           d.tenant && d.tenant.slug ? { slug: d.tenant.slug, name: d.tenant.name ?? d.tenant.slug } : null,
     features: {
-      plans:           !!d.features?.plans,
+      billing:         d.features?.billing === true,
+      // an API without the flag (before 0.5.8) always had the Ticket module's pages
+      tickets:         d.features?.tickets !== false,
       tenant_branding: !!d.features?.tenant_branding,
       multi_tenant:    !!d.features?.multi_tenant,
     },

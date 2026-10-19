@@ -22,6 +22,7 @@ const formError = ref(null)
 const formInitial = ref(null)
 const formSamlSp = ref(null)
 const formHasSpKey = ref(false)
+const formCallbackUrl = ref(null)
 const formKey = ref(0)
 
 function authProviderSteps(t) {
@@ -109,6 +110,7 @@ function openEdit(p) {
   }
   formSamlSp.value = p.saml_sp || null
   formHasSpKey.value = !!p.has_saml_sp_private_key
+  formCallbackUrl.value = p.callback_url || null
   formError.value = null
   formKey.value++
   showForm.value = true
@@ -237,8 +239,8 @@ fetchProviders()
             </div>
             <div class="text-xs text-gray-400 mt-0.5 font-mono truncate">
               <template v-if="p.scopes?.length">{{ p.scopes.join(', ') }}</template>
-              <template v-if="p.driver === 'oidc' && p.oidc_issuer">
-                <span v-if="p.scopes?.length" class="mx-1">·</span>{{ p.oidc_issuer }}
+              <template v-if="p.driver === 'oidc' && (p.oidc_issuer || p.oidc_discovery_url)">
+                <span v-if="p.scopes?.length" class="mx-1">·</span>{{ p.oidc_issuer || p.oidc_discovery_url }}
               </template>
               <template v-if="p.driver === 'saml'">{{ p.saml_idp_entity_id }}</template>
             </div>
@@ -268,6 +270,7 @@ fetchProviders()
       :initial-data="formInitial"
       :saml-sp="formSamlSp"
       :has-sp-key="formHasSpKey"
+      :callback-url="formCallbackUrl"
       :saving="saving"
       :error="formError"
       @save="handleSave"

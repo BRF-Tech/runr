@@ -55,7 +55,6 @@ export default {
       kubeconfigSelected: 'Selected:',
       kubeconfigDownload: 'Download Kubeconfig',
       kubeconfigRequired: 'Kubeconfig file is required.',
-      kubeconfigInvalid:  'Cannot connect to cluster. Kubeconfig is invalid or the cluster is unreachable — kubeconfig has been removed. Please upload a valid kubeconfig.',
       deleteConfirm:      'Are you sure you want to delete the "{name}" region?',
       hasProjects:        'This region has {n} project(s). Projects must be deleted before the region can be removed.',
       clusterOnline:      'Cluster online',

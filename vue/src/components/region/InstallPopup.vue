@@ -24,6 +24,8 @@ defineEmits([
 
 const confirmDisabled = () => {
   if (props.submitting || !props.namespace.trim()) return true
+  // an upgrade needs the next version (none: the cluster supports no newer one)
+  if (props.mode === 'upgrade' && props.component === 'serving' && !props.version) return true
   return false
 }
 </script>
@@ -64,6 +66,12 @@ const confirmDisabled = () => {
           @change="$emit('update:version', $event.target.value)">
           <option v-for="v in compatibleVersions" :key="v" :value="v">{{ v }}</option>
         </select>
+        <template v-if="mode === 'upgrade'">
+          <p v-if="!versionsLoading && !compatibleVersions.length" class="text-[11px] text-amber-400 mt-1" data-testid="no-upgrade">
+            {{ t('settings.regionDetail.installPopup.noUpgrade') }}
+          </p>
+          <p v-else class="text-[10px] text-gray-400 mt-1">{{ t('settings.regionDetail.installPopup.upgradeHint') }}</p>
+        </template>
       </div>
 
       <!-- Error -->

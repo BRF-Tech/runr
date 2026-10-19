@@ -49,7 +49,6 @@ export interface MockDb {
   // Modules (tenancy, billing, tickets)
   tenants: Json[]
   activeTenant: Json | null
-  billing: Record<string, Json>
   tickets: Json[]
   seq: number
 }
@@ -207,6 +206,7 @@ const CATALOG_ROWS: CatalogRow[] = [
   ['projects.delete', 'projects', 'project', ['projects.view'], 'all'],
   ['projects.deploy', 'projects', 'project', ['projects.view'], 'all'],
   ['projects.manage_access', 'projects', 'project', ['projects.view'], 'all'],
+  ['projects.stop', 'projects', 'org', [], 'all'],
   ['code.edit', 'projects', 'project', ['projects.view'], 'all'],
   ['git.pull', 'git', 'project', ['projects.view'], 'all'],
   ['git.push', 'git', 'project', ['git.pull'], 'all'],
@@ -271,8 +271,10 @@ const CATALOG_ROWS: CatalogRow[] = [
   ['audit.view', 'organization', 'org', [], 'all'],
   ['audit.export', 'organization', 'org', ['audit.view'], 'all'],
   ['tenants.residency.manage', 'organization', 'org', [], 'multi'],
-  ['billing.view', 'billing', 'org', [], 'multi'],
-  ['billing.manage', 'billing', 'org', ['billing.view'], 'multi'],
+  ['billing.view', 'billing', 'org', [], 'all'],
+  ['billing.manage', 'billing', 'org', ['billing.view'], 'all'],
+  ['billing.approve', 'billing', 'org', ['billing.view'], 'all'],
+  ['projects.billing', 'billing', 'project', ['projects.view'], 'all'],
   ['tickets.view', 'support', 'org', [], 'all'],
   ['tickets.create', 'support', 'org', ['tickets.view'], 'all'],
   ['tickets.manage', 'support', 'org', ['tickets.view'], 'single'],
@@ -305,8 +307,8 @@ const ROLE_ROWS: RoleRow[] = [
     'regions.view', 'images.view', 'models.view', 'bindings.view', 'mcp.servers.call', 'members.view', 'tokens.manage',
     'tickets.view', 'tickets.create',
   ]],
-  ['billing', 'Billing', 'Charges, credit, purchases and usage.', 'multi', [
-    'billing.view', 'billing.manage',
+  ['billing', 'Billing', 'Bills, usage, prices, fixed resource approvals and stopping projects.', 'all', [
+    'billing.view', 'billing.manage', 'billing.approve', 'projects.stop',
     'regions.view', 'bindings.view', 'members.view', 'tokens.manage',
     'tickets.view', 'tickets.create',
   ]],
@@ -337,7 +339,7 @@ export function expandPermissions(permissions: string[], catalog: Json[]): strin
   return catalog.map(c => c.key).filter(k => out.has(k))
 }
 
-/** GET /roles built-in entries of an edition (owner, admin, developer, viewer; billing in multi). */
+/** GET /roles built-in entries of an edition (owner, admin, developer, viewer, billing). */
 export function builtinRoles(edition: Edition = 'single'): Json[] {
   const catalog = permissionCatalog(edition)
   return ROLE_ROWS
@@ -461,16 +463,6 @@ export function defaultDb(edition: Edition = 'single'): MockDb {
     namespaceTaken: ['kube-system', 'default'],
     tenants: structuredClone(TENANTS),
     activeTenant: null,
-    billing: {
-      't-acme': {
-        total_cost: 123.45, currency: 'USD', monthly_cost: 100, usage_cost: 23.45,
-        cpu_m: 1500, cpu_quota_m: 4000, memory_mb: 2048, memory_quota_mb: 8192, active_deployments: 3,
-      },
-      't-globex': {
-        total_cost: 9.5, currency: 'USD', monthly_cost: 0, usage_cost: 9.5,
-        cpu_m: 250, cpu_quota_m: 1000, memory_mb: 256, memory_quota_mb: 1024, active_deployments: 1,
-      },
-    },
     tickets: [{
       id: 'tk-1',
       subject: 'Deployment stuck in pending',

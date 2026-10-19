@@ -10,6 +10,8 @@ const props = defineProps({
   shims:        { type: Object, default: null },
   loading:      { type: Boolean, default: false },
   modelValue:   { type: Array, default: () => ['clh'] },
+  // installed hypervisors of a working install: they stay selected (adding only)
+  locked:       { type: Array, default: () => [] },
 })
 
 const emit = defineEmits(['update:modelValue'])
@@ -54,13 +56,14 @@ function isSelected(key) {
 }
 
 function canSelect(shim) {
+  if (props.locked.includes(shim.key)) return false
   if (!shim.available) return false
   if (isSelected(shim.key)) return true // can always deselect
   return !isMaxed.value
 }
 
 function toggle(shim) {
-  if (!shim.available) return
+  if (!shim.available || props.locked.includes(shim.key)) return
   const selected = [...props.modelValue]
 
   if (isSelected(shim.key)) {
@@ -75,6 +78,9 @@ function toggle(shim) {
 }
 
 function shimClass(shim) {
+  if (props.locked.includes(shim.key)) {
+    return 'border-brand-500/60 bg-brand-900/20 text-brand-400 ring-1 ring-brand-500/30 cursor-default'
+  }
   if (!shim.available) {
     return 'border-gray-800/50 bg-gray-900/20 text-gray-400 cursor-not-allowed opacity-50'
   }

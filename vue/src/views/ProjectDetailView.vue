@@ -23,6 +23,10 @@ import ProjectDomains from '@/components/project/ProjectDomains.vue'
 import PrivateConnections from '@/components/project/PrivateConnections.vue'
 import ProjectModels from '@/components/project/ProjectModels.vue'
 import ProjectAccess from '@/components/rbac/ProjectAccess.vue'
+import ProjectStopBanner from '@/components/project/ProjectStopBanner.vue'
+import ProjectStopModal from '@/components/project/ProjectStopModal.vue'
+import ProjectOwnerModal from '@/components/project/ProjectOwnerModal.vue'
+import { useToast } from '@/composables/useToast'
 import { moduleRegistry } from '@/modules/index'
 import PolicyBlockModal from '@/modules/supply-chain/components/PolicyBlockModal.vue'
 
@@ -57,6 +61,29 @@ function onEditorCodeUpdate({ file, content }) {
 
 const selectedDeployment       = ref(null)
 const deploymentToDelete       = ref(null)
+
+// Stop / resume and owner transfer (core; the reason of a stop is shown to every member)
+const toast          = useToast()
+const showStop       = ref(false)
+const showOwner      = ref(false)
+
+function onProjectChanged(updated, message = null) {
+  if (updated) project.value = { ...project.value, ...updated }
+  showStop.value  = false
+  showOwner.value = false
+  if (message) toast.success(message)
+}
+
+// A platform administrator's stop of a project its organization stopped takes the stop over
+function onStopped(updated) {
+  const takenOver = !!project.value?.stopped
+  onProjectChanged(updated, t(takenOver ? 'projectLifecycle.takenOver' : 'projectLifecycle.stopped'))
+}
+
+async function onResumed(updated) {
+  onProjectChanged(updated)
+  if (!updated) await silentRefresh(false)
+}
 
 function onDeploymentStatusChanged(newStatus) {
   if (selectedDeployment.value) {
@@ -111,7 +138,12 @@ onMounted(() => init())
         @clone="showClone = true"
         @delete="deleteProject"
         @deploy="openDeployModal"
+        @stop="showStop = true"
+        @transfer-owner="showOwner = true"
       />
+
+      <!-- ── Stopped project: reason for every member, resume for projects.stop ── -->
+      <ProjectStopBanner :project="project" @resumed="onResumed" />
 
       <!-- ── Retired project type (former AI types): view and delete only ── -->
       <div v-if="isAiProject" class="w-full px-6 pt-2 flex flex-wrap items-center gap-3">
@@ -210,6 +242,22 @@ onMounted(() => init())
 
       </div>
     </template>
+
+    <!-- Stop a project (reason required) -->
+    <ProjectStopModal
+      v-if="showStop && project"
+      :project="project"
+      @stopped="onStopped"
+      @close="showStop = false"
+    />
+
+    <!-- Transfer the project to another owner -->
+    <ProjectOwnerModal
+      v-if="showOwner && project"
+      :project="project"
+      @transferred="(p) => onProjectChanged(p, t('projectLifecycle.transferred'))"
+      @close="showOwner = false"
+    />
 
     <!-- Edit modal -->
     <EditProjectModal

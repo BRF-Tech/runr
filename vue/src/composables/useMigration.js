@@ -9,6 +9,8 @@ export function useMigration(regionId, emit) {
 
   const migrationKubeconfig = ref('')
   const migrationKubeconfigName = ref('')
+  // The new cluster's data location: a region with one moves only within it (data residency)
+  const migrationDataLocation = ref('')
   const migrationLoading = ref(false)
   const migrationError = ref(null)
   const migrationStatus = ref(null)
@@ -37,7 +39,9 @@ export function useMigration(regionId, emit) {
     migrationLoading.value = true
     migrationError.value = null
     try {
-      await knativeRegionsApi.startMigration(regionId.value, { kubeconfig: migrationKubeconfig.value })
+      const payload = { kubeconfig: migrationKubeconfig.value }
+      if (migrationDataLocation.value.trim()) payload.data_location = migrationDataLocation.value.trim()
+      await knativeRegionsApi.startMigration(regionId.value, payload)
       migrationStatus.value = 'pending'
       emit('saved')
     } catch (e) {
@@ -86,6 +90,26 @@ export function useMigration(regionId, emit) {
     }
   }
 
+  // A base-domain migration completed without waiting for RunR to see its DNS record
+  async function completeDomainMigration() {
+    const ok = await confirm({
+      title: t('settings.regionDetail.migration.completeDomainMigration'),
+      message: t('settings.regionDetail.migration.confirmCompleteDomain'),
+    })
+    if (!ok) return
+
+    migrationLoading.value = true
+    migrationError.value = null
+    try {
+      const { data } = await knativeRegionsApi.completeDomainMigration(regionId.value)
+      emit('saved', data.region?.data ?? data.region)
+    } catch (e) {
+      migrationError.value = e.response?.data?.message ?? t('common.error')
+    } finally {
+      migrationLoading.value = false
+    }
+  }
+
   function initMigrationState(region) {
     if (region) {
       migrationStatus.value = region.migration_status || null
@@ -98,9 +122,9 @@ export function useMigration(regionId, emit) {
   }
 
   return {
-    migrationKubeconfig, migrationKubeconfigName,
+    migrationKubeconfig, migrationKubeconfigName, migrationDataLocation,
     migrationLoading, migrationError, migrationStatus, statusLabel,
     onMigrationKubeconfigChange, startMigration, completeMigration,
-    rollbackMigration, initMigrationState,
+    rollbackMigration, initMigrationState, completeDomainMigration,
   }
 }

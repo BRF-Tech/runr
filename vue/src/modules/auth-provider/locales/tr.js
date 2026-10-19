@@ -64,8 +64,13 @@ export default {
     // OIDC specific
     oidcDiscoveryUrl: 'Discovery URL',
     oidcDiscoveryPlaceholder: 'https://auth.example.com/.well-known/openid-configuration',
+    oidcDiscoveryHint: 'Kimlik sağlayıcının …/.well-known/openid-configuration adresi (issuer adresi de olur).',
     oidcIssuer: 'Yayıncı (Issuer)',
     oidcIssuerPlaceholder: 'https://auth.example.com',
+    oidcIssuerHint: 'İsteğe bağlı. Girilirse discovery belgesi bu issuer\'ı göstermeli.',
+    // OAuth / OIDC sağlayıcılarının yönlendirme adresi
+    callbackUrl: 'Yönlendirme URL\'si',
+    callbackUrlHint: 'Bu yönlendirme (callback) URL\'sini OAuth istemcisine ya da kimlik sağlayıcıya kaydedin.',
     // SAML 2.0
     samlIdpEntityId: 'IdP Entity ID',
     samlIdpEntityIdPlaceholder: 'https://idp.example.com/saml/metadata',
@@ -116,12 +121,20 @@ export default {
     loginWith: '{provider} ile giriş yap',
     orDivider: 'veya',
     oauthError: 'Kimlik doğrulama başarısız. Lütfen tekrar deneyin.',
-    // Bağlı hesaplar (kullanıcı profili)
-    socialAccounts: 'Bağlı Hesaplar',
-    noSocialAccounts: 'Bağlı hesap yok.',
-    unlinkAccount: 'Bağlantıyı Kaldır',
-    unlinkConfirm: 'Bu {provider} hesabının bağlantısını kaldırmak istiyor musunuz?',
-    linkAccount: '{provider} Bağla',
+    // Bağlı hesaplar (Hesap ayarları)
+    linkedAccounts: {
+      title: 'Bağlı hesaplar',
+      description: 'Kimlik sağlayıcılarınızdaki bu hesaplarla giriş yaparsınız. Başka bir hesap bağlayın ya da artık kullanmadığınız bir hesabın bağlantısını kaldırın.',
+      none: 'Henüz bağlı hesap yok.',
+      linkWith: '{provider} bağla',
+      linkedOn: '{date} tarihinde bağlandı',
+      unlink: 'Bağlantıyı kaldır',
+      unlinkTitle: 'Hesap bağlantısını kaldır',
+      unlinkConfirm: 'Bu {provider} hesabının bağlantısı kaldırılsın mı? Hesabın e-posta adresi sizinkiyle aynıysa, onunla giriş yapmak hesabı yeniden bağlar.',
+      unlinked: 'Hesap bağlantısı kaldırıldı.',
+      linked: 'Hesap bağlandı.',
+      failed: 'Hesap bağlanamadı.',
+    },
     // Tutorial
     tutorialDriver:          'Sağlayıcı Tipi',
     tutorialDriverDesc:      'Hangi OAuth sağlayıcısını entegre edeceğinizi seçin — Google, GitHub, Microsoft, GitLab, özel bir OIDC sağlayıcısı veya bir SAML 2.0 kimlik sağlayıcısı.',

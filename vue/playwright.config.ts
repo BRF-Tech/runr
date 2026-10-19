@@ -6,7 +6,7 @@ import type { E2eOptions } from './e2e/fixtures/test'
 //   npm run test:e2e:mock   mocked API: Playwright starts two Vite dev servers and
 //                           answers every /api call from an in-memory fake
 //                           (project "mock" = core, "mock-modules" = tenancy,
-//                           ticket and auth-provider modules enabled, @modules specs)
+//                           ticket, auth-provider and billing modules enabled, @modules specs)
 //   npm run test:e2e        full stack: a running dev stack (docker compose up),
 //                           E2E_BASE_URL (default http://localhost:8061 = compose "vue")
 //
@@ -51,6 +51,7 @@ function mockServer(port: number, modules: boolean) {
       VITE_TENANCY_ENABLED: flag,
       VITE_TICKET_ENABLED: flag,
       VITE_AUTH_PROVIDER_ENABLED: flag,
+      VITE_BILLING_ENABLED: flag,
       VITE_SENTRY_DSN: '',
     },
   }

@@ -1,28 +1,28 @@
 <script setup>
 import { ref, computed, onMounted, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { useRouter, useRoute } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { useTenantStore } from '../stores/tenant'
-import { moduleRegistry } from '@/modules/index'
-import { clearEtagCache } from '@/api/client'
+import { useTenantSwitch } from '../composables/useTenantSwitch'
 import { useSettingsStore } from '@/stores/settings'
-import { setBroadcastChannelPrefix, resubscribeBroadcast } from '@/composables/useRealtimeNotifications'
 import { ChevronDown, Building2, Search } from 'lucide-vue-next'
 
 const { t } = useI18n()
-const router = useRouter()
-const route = useRoute()
 const auth = useAuthStore()
 const store = useTenantStore()
 const settingsStore = useSettingsStore()
+const tenantSwitch = useTenantSwitch()
 
 const MAX_DISPLAY = 5
 const open = ref(false)
 const search = ref('')
 const tenancyEnabled = computed(() => settingsStore.data.tenancy_enabled === true)
 
-function tryFetch() { if (tenancyEnabled.value && (!store.loaded || !store.tenants.length)) store.fetchTenants() }
+// The sign-in's tenant list has no membership flag (impersonation): /tenant/current has it
+function tryFetch() {
+  if (!tenancyEnabled.value) return
+  if (!store.loaded || !store.tenants.length || store.tenants.some(tn => tn.member === undefined)) store.fetchTenants()
+}
 onMounted(tryFetch)
 watch(tenancyEnabled, (v) => { if (v) tryFetch() })
 
@@ -57,37 +57,19 @@ function close() { open.value = false; search.value = '' }
 
 const switchError = ref(null)
 
-function redirectIfNeeded() {
-  if (route.path.startsWith('/projects/') || route.path.startsWith('/support')) {
-    router.push('/projects')
-  }
-}
-
 async function select(tenantId) {
   switchError.value = null
-  const ok = await store.switchTenant(tenantId)
+  const ok = await tenantSwitch.enter(tenantId)
   if (!ok) {
     switchError.value = t('tenancy.switchFailed')
     return
   }
   close()
-  setBroadcastChannelPrefix(`tenant.${tenantId}`)
-  resubscribeBroadcast()
-  clearEtagCache()
-  settingsStore.invalidate()
-  redirectIfNeeded()
-  moduleRegistry.viewKey++
 }
 
 async function goToCentral() {
   close()
-  await store.switchTenant(null)
-  setBroadcastChannelPrefix('')
-  resubscribeBroadcast()
-  clearEtagCache()
-  settingsStore.invalidate()
-  redirectIfNeeded()
-  moduleRegistry.viewKey++
+  await tenantSwitch.leave()
 }
 </script>
 
@@ -155,7 +137,7 @@ async function goToCentral() {
           @click="select(tenant.id)"
         >
           <span class="truncate">{{ tenant.name }}</span>
-          <span class="text-[10px] font-mono text-gray-400">{{ tenant.role }}</span>
+          <span class="text-[10px] font-mono text-gray-400" :title="tenant.member === false ? t('tenancy.openAsAdminHint') : undefined">{{ tenant.member === false ? t('tenancy.asAdministrator') : tenant.role }}</span>
         </button>
       </div>
 

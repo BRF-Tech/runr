@@ -104,6 +104,11 @@ const isTenantContext = computed(() => {
   return !moduleRegistry.isCentralAdminFn()
 })
 
+// Inside an organization: its own domain (Tenancy module card), for members with settings.manage
+const tenantDomainCard = computed(() =>
+  isTenantContext.value && canChangeSettings.value ? moduleRegistry.settingsSlots?.tenantDomain ?? null : null
+)
+
 </script>
 
 <template>
@@ -274,6 +279,9 @@ const isTenantContext = computed(() => {
               </button>
             </div>
           </div>
+
+          <!-- Organization domain (inside an organization) -->
+          <component :is="tenantDomainCard" v-if="tenantDomainCard" class="mb-6" />
 
           <!-- Regions -->
           <div :class="isTenantContext ? 'card' : 'col-span-3 card'">

@@ -5,6 +5,7 @@ import AppHeader from '@/components/AppHeader.vue'
 import AccountProfileTab from '@/components/account/AccountProfileTab.vue'
 import { useTutorialStore } from '@/stores/tutorial'
 import { useAccountProfileTutorial } from '@/composables/useTutorial'
+import { moduleRegistry } from '@/modules/index'
 
 const { t } = useI18n()
 const tutorialStore = useTutorialStore()
@@ -31,5 +32,10 @@ watch(() => tutorialStore.restartCounter, () => {
     </div>
 
     <AccountProfileTab />
+
+    <!-- Module sections (e.g. linked accounts of the AuthProvider module) -->
+    <div v-for="section in moduleRegistry.accountSections" :key="section.key" class="mt-8">
+      <component :is="section.component" />
+    </div>
   </main>
 </template>

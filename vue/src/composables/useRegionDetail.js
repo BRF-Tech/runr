@@ -5,6 +5,7 @@ import { useConfirm } from '@/composables/useConfirm'
 import { useInstallPopup } from '@/composables/useInstallPopup'
 import { useRegistrySetup } from '@/composables/useRegistrySetup'
 import { useRegionStatus } from '@/composables/useRegionStatus'
+import { moduleRegistry } from '@/modules/index'
 
 export function useRegionDetail(props, emit) {
   const { t } = useI18n()
@@ -24,13 +25,25 @@ export function useRegionDetail(props, emit) {
 
   const activeTab = ref('general')
   const editTabs = ['general', 'workers', 'registry', 'operator', 'serving', 'redis', 'data', 'sandbox', 'gpu', 'migration', 'supplyChain']
+  // Tabs contributed by modules (moduleRegistry.regionTabs, e.g. Billing)
+  const moduleRegionTabs = computed(() =>
+    (moduleRegistry.regionTabs ?? [])
+      .filter(tab => !tab.visibleIf || tab.visibleIf(props.region))
+      .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
+  )
+
+  // Fields modules add to the wizard's first step (moduleRegistry.regionCreateExtensions): their
+  // values live in form.extensions[key] and go to the module's afterCreate once the region exists
+  const initialExtensions = () => Object.fromEntries(
+    (moduleRegistry.regionCreateExtensions ?? []).map(ext => [ext.key, ext.initial ? ext.initial() : null])
+  )
 
   const createdRegion = ref(null)
   const highestStepReached = ref(1)
   const isStepReadonly = computed(() => wizardStep.value < highestStepReached.value)
   const regionId = computed(() => createdRegion.value?.id ?? props.region?.id)
 
-  const form = ref({ name: '', is_active: true, region_status: 'active', region_mode: 'managed' })
+  const form = ref({ name: '', is_active: true, region_status: 'active', region_mode: 'managed', extensions: initialExtensions() })
   const kubeconfigName  = ref('')
   const kubeconfigMode  = ref('file')
   const kubeconfigPaste = ref('')
@@ -77,7 +90,14 @@ export function useRegionDetail(props, emit) {
 
   const regionStatus = useRegionStatus(regionId, form, emit, confirm, t)
 
+  // A region whose cluster does not answer opens on its Migration tab (moving it elsewhere is
+  // what can be done for it)
+  let tabChosen = false
   watch(() => props.region, (r) => {
+    if (r && !tabChosen) {
+      tabChosen = true
+      if (r.id && r.cluster_status === 'unreachable') activeTab.value = 'migration'
+    }
     if (r) {
       form.value = { name: r.name || '', is_active: r.is_active ?? true, region_status: r.region_status || 'active', region_mode: r.region_mode || 'managed' }
       operatorStatus.value  = r.knative_operator_status || 'not_installed'
@@ -164,11 +184,23 @@ export function useRegionDetail(props, emit) {
     if (s === 'ready' && registry.setupRegionId.value) {
       knativeRegionsApi.list().then(({ data }) => {
         const found = (data.data ?? data).find(r => r.id === registry.setupRegionId.value)
-        if (found) { createdRegion.value = found; wizardStep.value = 3 }
+        if (found) { createdRegion.value = found; wizardStep.value = 3; runCreateExtensions(found) }
       }).finally(() => { workersSaving.value = false })
     }
     if (s === 'error') { workersError.value = registry.setupError.value; workersSaving.value = false }
   })
+
+  /** Hands the new region to the modules' afterCreate (a failure does not stop the wizard). */
+  async function runCreateExtensions(region) {
+    for (const ext of moduleRegistry.regionCreateExtensions ?? []) {
+      if (typeof ext.afterCreate !== 'function') continue
+      try {
+        await ext.afterCreate(region, form.value.extensions?.[ext.key] ?? null)
+      } catch (e) {
+        workersError.value = e?.response?.data?.message ?? t('common.error')
+      }
+    }
+  }
 
   async function checkNs(key, name) {
     if (!name.trim()) return
@@ -262,7 +294,7 @@ export function useRegionDetail(props, emit) {
   })
 
   return {
-    isEdit, wizardStep, wizardStepTitles, activeTab, editTabs,
+    isEdit, wizardStep, moduleRegionTabs, runCreateExtensions, wizardStepTitles, activeTab, editTabs,
     createdRegion, highestStepReached, isStepReadonly, regionId,
     form, kubeconfigName, kubeconfigMode, kubeconfigPaste,
     saving, error, canSaveGeneral,

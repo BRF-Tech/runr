@@ -194,9 +194,8 @@ function fmtTimeAgo(iso) {
               <path fill-rule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm3.293-7.707a1 1 0 011.414 0L9 10.586V3a1 1 0 112 0v7.586l1.293-1.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z" clip-rule="evenodd" />
             </svg>
           </button>
-          <!-- Edit (hidden when cluster is down) -->
+          <!-- Edit — also when the cluster is down: its Migration tab moves the region to another cluster -->
           <button
-            v-if="!isClusterDown(r)"
             type="button"
             class="text-gray-400 hover:text-gray-100 transition-colors shrink-0"
             :title="t('common.edit')"

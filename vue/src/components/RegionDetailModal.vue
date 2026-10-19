@@ -9,7 +9,9 @@ import WorkersTab from './region/WorkersTab.vue'
 import ComponentSection from './region/ComponentSection.vue'
 import RedisSection from './region/RedisSection.vue'
 import InstallPopup from './region/InstallPopup.vue'
-import RegistrySection from './region/RegistrySection.vue'
+import RegistryTab from './region/RegistryTab.vue'
+import RegionSettingsSection from './region/RegionSettingsSection.vue'
+import RegionMonitoringSection from './region/RegionMonitoringSection.vue'
 import RegionDemoSection from './region/RegionDemoSection.vue'
 import FunctionTlsSection from './region/FunctionTlsSection.vue'
 import SandboxTab from './region/SandboxTab.vue'
@@ -27,7 +29,7 @@ const props  = defineProps({
 const emit = defineEmits(['close', 'saved'])
 
 const {
-  isEdit, wizardStep, wizardStepTitles, activeTab, editTabs,
+  isEdit, wizardStep, wizardStepTitles, activeTab, editTabs, moduleRegionTabs,
   createdRegion, isStepReadonly, regionId,
   form, kubeconfigName, kubeconfigMode, kubeconfigPaste,
   saving, error, canSaveGeneral,
@@ -119,6 +121,8 @@ function handleConfirmSkip({ step, warning }) {
           <div class="flex gap-0 shrink-0 border-b border-gray-800 px-6">
             <button v-for="tab in editTabs" :key="tab" class="tab-line text-xs font-medium -mb-px"
               :class="activeTab === tab ? 'is-active' : ''" @click="activeTab = tab">{{ t(`settings.regionDetail.tabs.${tab}`) }}</button>
+            <button v-for="tab in moduleRegionTabs" :key="tab.key" class="tab-line text-xs font-medium -mb-px"
+              :class="activeTab === tab.key ? 'is-active' : ''" :data-test="`region-tab-${tab.key}`" @click="activeTab = tab.key">{{ t(tab.labelKey) }}</button>
           </div>
           <div class="flex-1 overflow-y-auto px-6 py-5">
             <div v-if="activeTab === 'general'">
@@ -133,15 +137,16 @@ function handleConfirmSkip({ step, warning }) {
                 :can-seed="servingStatus === 'ready' && redisMode != null && redisStatus === 'ready' && (region?.has_registry ?? false)" />
               <FunctionTlsSection v-if="!region?.is_demo && region?.has_serving" :region-id="region.id"
                 :mode="region?.function_tls_mode" :expires-at="region?.function_tls_expires_at" />
+              <div v-if="!region?.is_demo" class="mt-6 space-y-4">
+                <RegionSettingsSection :region="region" @saved="(r) => emit('saved', r)" />
+                <RegionMonitoringSection :region="region" @saved="(r) => emit('saved', r)" />
+              </div>
             </div>
             <WorkersTab v-if="activeTab === 'workers'" :is-edit="true" :is-demo="region?.is_demo" :region-id="region?.id"
               :project-namespace="projectNamespace" :nodes="nodes" :selected-nodes="selectedNodes" :nodes-loading="nodesLoading"
               :workers-saving="workersSaving" :workers-error="workersError"
               @save-workers="saveWorkers" @toggle-node="toggleNode" @refresh-nodes="loadNodes" />
-            <div v-if="activeTab === 'registry'" class="space-y-4">
-              <RegistrySection :readonly="true" :registry-mode="region?.registry_mode" :setup-status="region?.registry_status" />
-              <p v-if="region?.registry_address" class="text-xs text-gray-400 font-mono bg-gray-900/60 rounded-sm px-3 py-2">{{ region.registry_address }}</p>
-            </div>
+            <RegistryTab v-if="activeTab === 'registry' && region?.id" :region="region" @saved="(r) => emit('saved', r)" />
             <div v-if="activeTab === 'operator'">
               <ComponentSection component="operator" :status="operatorStatus" :message="operatorMessage" :namespace="nsOperator"
                 :is-installing="installing.operator" :operator-ready="operatorReady" :serving-ready="servingReady" :log-copied="logCopied.operator"
@@ -166,9 +171,15 @@ function handleConfirmSkip({ step, warning }) {
             <MigrationTab v-if="activeTab === 'migration'" :region="region"
               :migration-status="migration.migrationStatus.value" :migration-loading="migration.migrationLoading.value"
               :migration-error="migration.migrationError.value" :migration-kubeconfig-name="migration.migrationKubeconfigName.value"
+              :migration-data-location="migration.migrationDataLocation.value"
               :status-label="migration.statusLabel.value" @kubeconfig-change="migration.onMigrationKubeconfigChange"
-              @start="migration.startMigration" @complete="migration.completeMigration" @rollback="migration.rollbackMigration" />
+              @update:data-location="migration.migrationDataLocation.value = $event"
+              @start="migration.startMigration" @complete="migration.completeMigration" @rollback="migration.rollbackMigration"
+              @complete-domain="migration.completeDomainMigration" />
             <RegionSupplyChainTab v-if="activeTab === 'supplyChain' && region?.id" :region="region" />
+            <template v-for="tab in moduleRegionTabs" :key="tab.key">
+              <component :is="tab.component" v-if="activeTab === tab.key && region?.id" :region="region" />
+            </template>
           </div>
         </template>
       </template>

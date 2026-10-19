@@ -30,7 +30,12 @@ describe('branding: normalize + apply', () => {
     expect(b.is_default_brand).toBe(true)
     expect(b.palette).toBeNull()
     expect(b.logo_mark_url).toBeNull()
-    expect(b.features).toEqual({ plans: false, tenant_branding: false, multi_tenant: false })
+    expect(b.features).toEqual({ billing: false, tickets: true, tenant_branding: false, multi_tenant: false })
+  })
+
+  it('reads the billing and ticket module flags (tickets default to on for older APIs)', () => {
+    expect(normalizeBranding({ features: { billing: true, tickets: false } }).features).toMatchObject({ billing: true, tickets: false })
+    expect(normalizeBranding({ features: { billing: 'yes' } }).features).toMatchObject({ billing: false, tickets: true })
   })
 
   it('fills gaps and drops invalid values', () => {
@@ -95,7 +100,7 @@ describe('branding store', () => {
   })
 
   it('loads the platform branding, applies and caches it', async () => {
-    vi.mocked(client.get).mockReturnValue(ok({ product_name: 'Acme', primary_color: '#ff0000', is_default_brand: false, features: { plans: true } }))
+    vi.mocked(client.get).mockReturnValue(ok({ product_name: 'Acme', primary_color: '#ff0000', is_default_brand: false, features: { billing: true } }))
     const store = useBrandingStore()
 
     await store.load()
@@ -103,7 +108,7 @@ describe('branding store', () => {
     expect(client.get).toHaveBeenCalledWith('/branding', { params: {} })
     expect(store.productName).toBe('Acme')
     expect(store.companyName).toBe('BRF Teknoloji')
-    expect(store.features.plans).toBe(true)
+    expect(store.features.billing).toBe(true)
     expect(store.isDefaultName).toBe(false)
     expect(css('--brand-500')).toBe('255 0 0')
     expect(readCachedBranding().product_name).toBe('Acme')

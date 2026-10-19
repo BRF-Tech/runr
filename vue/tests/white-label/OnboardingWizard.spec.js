@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import client from '@/api/client'
 import OnboardingWizard from '@/modules/white-label/components/OnboardingWizard.vue'
-import { flush, globalOptions, makeRouter, ok, publicPlan, signIn } from './helpers'
+import { flush, globalOptions, makeRouter, ok, signIn } from './helpers'
 
 vi.mock('@/api/client', () => ({
   default: { get: vi.fn(), post: vi.fn(), put: vi.fn(), patch: vi.fn(), delete: vi.fn() },
@@ -24,7 +24,6 @@ const onboarding = (over = {}) => ({
   regions: [{ id: 'r1', name: 'ist-1', region_mode: 'managed' }, { id: 'r2', name: 'ank-1', region_mode: 'managed' }],
   region_assigned: false,
   default_quota: { cpu_quota_m: 2000, memory_quota_mb: 4096 },
-  plan: null,
   ...over,
 })
 
@@ -57,14 +56,12 @@ describe('OnboardingWizard', () => {
     expect(wrapper.find('[data-test="onboarding-org-name"]').element.value).toBe('Acme')
   })
 
-  it('skips the region step with a single region and names the plan the organization starts on', async () => {
+  it('skips the region step with a single region', async () => {
     const wrapper = await mountWizard(onboarding({
       regions: [{ id: 'r1', name: 'ist-1', region_mode: 'managed' }],
-      plan: publicPlan(),
     }))
     expect(steps(wrapper)).toEqual(['organization'])
     expect(wrapper.find('[data-test="onboarding-single-region"]').text()).toContain('ist-1')
-    expect(wrapper.find('[data-test="onboarding-plan"]').text()).toContain('Starter')
   })
 
   it('does not open for a completed onboarding or a member who cannot complete it', async () => {

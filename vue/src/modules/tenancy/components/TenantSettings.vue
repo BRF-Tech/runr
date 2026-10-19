@@ -10,12 +10,14 @@ import TenantUsers from './TenantUsers.vue'
 import TenantQuotas from './TenantQuotas.vue'
 import TenantResidency from '@/modules/supply-chain/components/TenantResidency.vue'
 import { useTenantDetail } from '../composables/useTenantDetail'
-import { Building2, Plus, Pencil, Trash2, ChevronDown, Users, Globe, Loader2, RotateCcw, AlertTriangle } from 'lucide-vue-next'
+import { useTenantSwitch } from '../composables/useTenantSwitch'
+import { Building2, Plus, Pencil, Trash2, ChevronDown, Users, Globe, Loader2, RotateCcw, AlertTriangle, LogIn } from 'lucide-vue-next'
 
 const { t }       = useI18n()
 const { confirm }  = useConfirm()
 const toast        = useToast()
 const detail       = useTenantDetail()
+const tenantSwitch = useTenantSwitch()
 
 const tenants     = ref([])
 const loading     = ref(false)
@@ -137,6 +139,12 @@ async function deleteTenant(tenant, force = false) {
   }
 }
 
+// Open the organization as its administrator (impersonation when not a member, audit-logged)
+async function openAsAdmin(tenant) {
+  const ok = await tenantSwitch.enter(tenant.id, { toProjects: true })
+  if (!ok) toast.error(t('tenancy.switchFailed'))
+}
+
 function toggleExpand(tenant) {
   if (expandedId.value === tenant.id) {
     expandedId.value = null
@@ -219,6 +227,13 @@ function toggleExpand(tenant) {
               <p v-if="deleteFailed(tenant) && tenant.status_message"
                 class="mt-1 text-[11px] text-red-400 wrap-break-word">{{ tenant.status_message }}</p>
             </div>
+            <button class="p-1.5 rounded-md text-gray-400 hover:text-amber-400 hover:bg-gray-800 transition-colors shrink-0"
+              :title="t('tenancy.openAsAdmin')"
+              :aria-label="t('tenancy.openAsAdmin')"
+              data-testid="open-as-admin"
+              @click.stop="openAsAdmin(tenant)">
+              <LogIn class="w-3.5 h-3.5" />
+            </button>
             <button class="p-1.5 rounded-md text-gray-400 hover:text-gray-100 hover:bg-gray-800 transition-colors shrink-0 disabled:opacity-40 disabled:pointer-events-none"
               :disabled="!!tenant.status && tenant.status !== 'active'"
               @click.stop="openEdit(tenant)">

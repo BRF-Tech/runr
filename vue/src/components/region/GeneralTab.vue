@@ -155,6 +155,10 @@ defineEmits([
         </button>
       </div>
     </div>
+    <!-- Fields of modules (moduleRegistry.regionCreateExtensions, e.g. the billing type) -->
+    <template v-if="form.extensions">
+      <component :is="ext.component" v-for="ext in moduleRegistry.regionCreateExtensions" :key="ext.key" v-model="form.extensions[ext.key]" />
+    </template>
     <KubeconfigInput
       :mode="kubeconfigMode" :file-name="kubeconfigName" :paste-value="kubeconfigPaste"
       @update:mode="$emit('update:kubeconfig-mode', $event)" @update:paste-value="$emit('update:kubeconfig-paste', $event)"

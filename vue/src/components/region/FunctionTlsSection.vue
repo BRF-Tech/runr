@@ -3,6 +3,7 @@ import { ref, computed, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { knativeRegionsApi } from '@/api/knativeRegions'
 import { useToast } from '@/composables/useToast'
+import { useConfirm } from '@/composables/useConfirm'
 
 const props = defineProps({
   regionId:  { type: String, required: true },
@@ -12,6 +13,7 @@ const props = defineProps({
 
 const { t } = useI18n()
 const toast = useToast()
+const { confirm } = useConfirm()
 
 const currentMode      = ref(props.mode)
 const currentExpiresAt = ref(props.expiresAt)
@@ -61,6 +63,28 @@ async function save() {
     error.value = err.response?.data?.errors
       ? Object.values(err.response.data.errors).flat().join(' ')
       : (err.response?.data?.message ?? err.message)
+  } finally {
+    saving.value = false
+  }
+}
+
+// Function TLS off: the region's Traefik answers HTTPS with its own default certificate again
+async function remove() {
+  const ok = await confirm({
+    title: t('settings.regionDetail.functionTls.remove'),
+    message: t('settings.regionDetail.functionTls.removeConfirm'),
+    destructive: true,
+  })
+  if (!ok) return
+  error.value = null
+  saving.value = true
+  try {
+    await knativeRegionsApi.removeFunctionTls(props.regionId)
+    currentMode.value = null
+    currentExpiresAt.value = null
+    toast.success(t('settings.regionDetail.functionTls.removed'))
+  } catch (err) {
+    error.value = err.response?.data?.message ?? err.message
   } finally {
     saving.value = false
   }
@@ -118,7 +142,11 @@ async function save() {
         <span>{{ t('settings.regionDetail.functionTls.replaceExisting') }}</span>
       </label>
 
-      <div class="flex justify-end">
+      <div class="flex justify-end gap-2">
+        <button v-if="currentMode" type="button" class="btn-secondary text-xs text-red-400! hover:text-red-300!" :disabled="saving"
+          data-testid="remove-function-tls" @click="remove">
+          {{ t('settings.regionDetail.functionTls.remove') }}
+        </button>
         <button type="button" class="btn-primary text-xs" :disabled="saving || !canSave" @click="save">
           {{ saving ? t('common.saving') : t('settings.regionDetail.functionTls.save') }}
         </button>

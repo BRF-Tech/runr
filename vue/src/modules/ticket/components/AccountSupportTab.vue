@@ -3,6 +3,7 @@ import { ref, computed, onMounted, watch, nextTick } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
+import { usePermissionsStore } from '@/stores/permissions'
 import { useTutorialStore } from '@/stores/tutorial'
 import { createTutorial } from '@/composables/useTutorial'
 import { accountSupportSteps } from '@/composables/tutorialSteps'
@@ -26,8 +27,13 @@ const { start: startTutorial } = createTutorial(accountSupportSteps, {
 })
 watch(() => tutorialStore.restartCounter, () => { nextTick(() => startTutorial()) })
 
-// Support staff view: platform admins (the API also lets tickets.manage holders answer tickets)
-const isAdmin    = computed(() => auth.isAdmin)
+// Support staff view: members whose role holds tickets.manage (owners and admins of a
+// single-tenant install) and platform administrators. permissions.can() answers true until the
+// permissions are loaded — the staff view waits for them.
+const perms      = usePermissionsStore()
+const isStaff    = computed(() => auth.isAdmin || (perms.loaded && perms.can('tickets.manage')))
+// Tickets of several tenants (platform administrators outside a tenant) carry the tenant
+const showTenant = computed(() => isStaff.value && tickets.value.some(tk => tk.tenant_name))
 const loading    = ref(true)
 const tickets    = ref([])
 const stats      = ref({ open: 0, in_progress: 0, resolved: 0, total: 0 })
@@ -61,7 +67,7 @@ async function load() {
   const params = { page: page.value }
   if (filter.value) params.status = filter.value
   if (search.value.trim()) params.search = search.value.trim()
-  const [ticketRes, statsRes] = isAdmin.value
+  const [ticketRes, statsRes] = isStaff.value
     ? await Promise.all([fetchAdminTickets(params), fetchAdminTicketStats()])
     : await Promise.all([fetchTickets(params), fetchTicketStats()])
   tickets.value = ticketRes.data.data || []
@@ -74,7 +80,7 @@ async function silentLoad() {
   const params = { page: page.value }
   if (filter.value) params.status = filter.value
   if (search.value.trim()) params.search = search.value.trim()
-  const [ticketRes, statsRes] = isAdmin.value
+  const [ticketRes, statsRes] = isStaff.value
     ? await Promise.all([fetchAdminTickets(params), fetchAdminTicketStats()])
     : await Promise.all([fetchTickets(params), fetchTicketStats()])
   tickets.value = ticketRes.data.data || []
@@ -100,7 +106,7 @@ async function openTicketById(id, tenantId) {
   if (!id) return
   router.replace({ query: { tab: 'support-tickets' } })
   try {
-    const { data } = isAdmin.value ? await fetchAdminTicket(id, tenantId) : await fetchTicket(id)
+    const { data } = isStaff.value ? await fetchAdminTicket(id, tenantId) : await fetchTicket(id)
     if (tenantId && !data.tenant_id) data.tenant_id = tenantId
     selected.value = data
   } catch { /* ticket not found or no access */ }
@@ -108,14 +114,22 @@ async function openTicketById(id, tenantId) {
 
 watch(() => route.query.ticketId, (id) => openTicketById(id, route.query.tenantId))
 
-onMounted(async () => { await load(); subscribeToTickets(); if (route.query.ticketId) openTicketById(route.query.ticketId, route.query.tenantId) })
+// The staff view needs the permissions (GET /auth/permissions); a role change reloads the list
+watch(isStaff, (staff, before) => { if (staff !== before && !loading.value) { page.value = 1; load() } })
+
+onMounted(async () => {
+  if (!perms.loaded) await perms.load()
+  await load()
+  subscribeToTickets()
+  if (route.query.ticketId) openTicketById(route.query.ticketId, route.query.tenantId)
+})
 </script>
 
 <template>
   <div>
     <!-- Stats ribbon -->
-    <div data-tour="support-stats" class="grid gap-4 mb-6" :class="isAdmin ? 'grid-cols-4' : 'grid-cols-3'">
-      <button v-if="isAdmin"
+    <div data-tour="support-stats" class="grid gap-4 mb-6" :class="isStaff ? 'grid-cols-4' : 'grid-cols-3'">
+      <button v-if="isStaff"
         class="rounded-xl border bg-gray-900/80 p-4 relative overflow-hidden transition-colors text-left"
         :class="!filter ? 'border-brand-500' : 'border-gray-800'"
         @click="filter = ''; page = 1; load()">
@@ -159,7 +173,7 @@ onMounted(async () => { await load(); subscribeToTickets(); if (route.query.tick
             <input v-model="search" class="input pl-9 text-xs h-8" :placeholder="t('adminTickets.searchPlaceholder')"
               @keyup.enter="onSearch()" />
           </div>
-          <button v-if="!isAdmin" data-tour="support-new-ticket" class="btn-primary text-xs gap-1.5 h-8" @click="showCreate = true">
+          <button v-if="!isStaff" data-tour="support-new-ticket" class="btn-primary text-xs gap-1.5 h-8" @click="showCreate = true">
             <Plus class="w-3.5 h-3.5" />{{ t('account.newTicket') }}
           </button>
         </div>
@@ -167,7 +181,7 @@ onMounted(async () => { await load(); subscribeToTickets(); if (route.query.tick
 
       <div v-if="loading" class="py-12 text-center text-gray-400 text-sm">{{ t('common.loading') }}</div>
       <div v-else-if="!tickets.length" class="py-12 text-center text-gray-500 text-sm">
-        {{ isAdmin ? t('adminTickets.noTickets') : t('account.noTickets') }}
+        {{ isStaff ? t('adminTickets.noTickets') : t('account.noTickets') }}
       </div>
 
       <div v-else data-tour="support-ticket-list" class="overflow-x-auto">
@@ -179,7 +193,7 @@ onMounted(async () => { await load(); subscribeToTickets(); if (route.query.tick
               <th class="px-4 py-3 w-28">{{ t('account.ticketStatus') }}</th>
               <th class="px-4 py-3 w-24">{{ t('account.ticketPriority') }}</th>
               <th class="px-4 py-3 w-36">{{ t('account.ticketCategory') }}</th>
-              <th v-if="isAdmin" class="px-4 py-3 w-32">{{ t('account.colTenant') }}</th>
+              <th v-if="showTenant" class="px-4 py-3 w-32">{{ t('account.colTenant') }}</th>
               <th class="px-4 py-3 w-36">{{ t('account.colUser') }}</th>
               <th class="px-4 py-3 w-40 text-right">{{ t('account.ticketCreated') }}</th>
             </tr>
@@ -205,7 +219,7 @@ onMounted(async () => { await load(); subscribeToTickets(); if (route.query.tick
                   {{ t('account.cat_' + tk.category) }}
                 </span>
               </td>
-              <td v-if="isAdmin" class="px-4 py-4">
+              <td v-if="showTenant" class="px-4 py-4">
                 <span v-if="tk.tenant_name" class="inline-flex items-center gap-1.5 text-xs font-medium px-2 py-1 rounded-full bg-purple-900/30 text-purple-300 border border-purple-800/30 whitespace-nowrap">
                   <Building2 class="w-3 h-3" />{{ tk.tenant_name }}
                 </span>
@@ -229,6 +243,6 @@ onMounted(async () => { await load(); subscribeToTickets(); if (route.query.tick
     </div>
 
     <CreateTicketModal v-if="showCreate" ref="createModalRef" @close="showCreate = false" @created="onCreated" />
-    <TicketDetailModal v-if="selected" :ticket="selected" :admin="isAdmin" @close="selected = null" @updated="onUpdated" />
+    <TicketDetailModal v-if="selected" :ticket="selected" :admin="isStaff" @close="selected = null" @updated="onUpdated" @changed="silentLoad" />
   </div>
 </template>

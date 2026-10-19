@@ -20,6 +20,8 @@ defineProps({
   isSettingUp:     { type: Boolean, default: false },
   readonly:        { type: Boolean, default: false },
   hidePlaceholderErrors: { type: Boolean, default: false },
+  // no StorageClass list (an existing region whose classes could not be read): a text input
+  freeStorageClass: { type: Boolean, default: false },
 })
 
 defineEmits([
@@ -92,6 +94,9 @@ function updateExt(emit, current, field, value) {
               <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/>
             </svg>
           </div>
+          <input v-else-if="freeStorageClass" type="text" class="input" :value="pvcConfig.storageClass"
+            :placeholder="t('settings.regionDetail.registry.storageClassPlaceholder')"
+            @input="updatePvc($emit, pvcConfig, 'storageClass', $event.target.value)" />
           <p v-else-if="!hidePlaceholderErrors" class="text-xs text-red-400 mt-1">{{ t('settings.regionDetail.registry.noStorageClass') }}</p>
         </div>
         <div>

@@ -9,12 +9,13 @@ import { useTicketDetailRealtime } from '../composables/useTicketRealtime'
 import FilePreview from './FilePreview.vue'
 import TicketInternalNotes from './TicketInternalNotes.vue'
 import TicketSeenIndicator from './TicketSeenIndicator.vue'
+import TicketStaffControls from './TicketStaffControls.vue'
 
 const props = defineProps({
   ticket: { type: Object, required: true },
   admin:  { type: Boolean, default: false },
 })
-const emit  = defineEmits(['close', 'updated'])
+const emit  = defineEmits(['close', 'updated', 'changed'])
 const { t } = useI18n()
 const auth  = useAuthStore()
 
@@ -90,6 +91,17 @@ async function changeStatus(status) {
   } finally { statusLoading.value = false }
 }
 
+// Staff controls: keep the detail in step, the list reloads in the background
+function onAssigned({ assigned_to: assignedTo, assignee }) {
+  detail.value.assigned_to = assignedTo
+  detail.value.assignee = assignee
+  emit('changed')
+}
+function onTags(tags) {
+  detail.value.tags = tags
+  emit('changed')
+}
+
 function onFileSelect(e) {
   files.value = [...files.value, ...Array.from(e.target.files || [])].slice(0, 3)
   e.target.value = ''
@@ -146,8 +158,10 @@ onMounted(() => { loadDetail(); subscribeToTicket(); markAsRead() })
             {{ t('account.pri_' + ticket.priority) }}
           </span>
           <span class="text-xs font-semibold px-2.5 py-1 rounded-sm bg-gray-800 text-gray-400">{{ t('account.cat_' + ticket.category) }}</span>
-          <span v-for="(tag, i) in currentTags" :key="i"
-            class="text-xs font-medium px-2 py-0.5 rounded-full bg-brand-500/10 text-brand-500 border border-brand-500/20">{{ tag }}</span>
+          <template v-if="!admin">
+            <span v-for="(tag, i) in currentTags" :key="i"
+              class="text-xs font-medium px-2 py-0.5 rounded-full bg-brand-500/10 text-brand-500 border border-brand-500/20">{{ tag }}</span>
+          </template>
           <span v-if="admin" class="text-xs text-gray-500">· {{ ticketUser.name || ticketUser.email }}</span>
           <span class="ml-auto text-xs text-gray-500">{{ formatTime(ticket.created_at) }}</span>
         </div>
@@ -173,6 +187,10 @@ onMounted(() => { loadDetail(); subscribeToTicket(); markAsRead() })
             </button>
           </div>
         </div>
+        <!-- Admin: assignee + tags -->
+        <TicketStaffControls v-if="admin && detail" :ticket-id="ticket.id" :tenant-id="tenantId"
+          :assigned-to="detail.assigned_to ?? null" :tags="currentTags"
+          @assigned="onAssigned" @tags="onTags" />
       </div>
 
       <!-- Conversation tab -->

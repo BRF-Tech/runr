@@ -70,21 +70,6 @@ export function signIn({ admin = false, tenant = null } = {}) {
   else localStorage.removeItem('active_tenant')
 }
 
-export const publicPlan = (over = {}) => ({
-  id: 'plan-starter',
-  slug: 'starter',
-  name: 'Starter',
-  description: 'For side projects',
-  currency: 'USD',
-  price_monthly: 10,
-  price_yearly: 100,
-  trial_days: 14,
-  is_default: true,
-  limits: { cpu_quota_m: 2000, memory_quota_mb: 4096, max_projects: 5, gpu_quota: 0, invocations_per_month: 1000000, storage_quota_mb: 1024 },
-  features: { custom_domains: true, private_connections: false, gpu: false, api_tokens: true, sso: false, metered_usage: false, priority_support: false },
-  ...over,
-})
-
 /**
  * Effective permissions of the signed-in user (the console's roles & permissions store, as
  * GET /auth/permissions answers). Call after makePinia() / globalOptions() made Pinia active.

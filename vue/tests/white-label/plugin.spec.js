@@ -60,38 +60,36 @@ describe('white-label plugin', () => {
     expect(visible(registry)).toEqual(['branding', 'signup'])
   })
 
-  it('multi-tenant central administrator: branding, signup and plans', () => {
+  it('multi-tenant central administrator: branding and signup (plans are gone)', () => {
     vi.stubEnv('VITE_TENANCY_ENABLED', 'true')
     const registry = install()
     expect(registry.appTopSlots).toHaveLength(2) // branding loader, onboarding wizard
     signIn({ admin: true })
     grant([], { platformAdmin: true, edition: 'multi' })
-    useBrandingStore().set({ features: { plans: true, tenant_branding: true, multi_tenant: true } })
+    useBrandingStore().set({ features: { billing: true, tenant_branding: true, multi_tenant: true } })
 
-    expect(visible(registry)).toEqual(['branding', 'signup', 'plans'])
+    expect(visible(registry)).toEqual(['branding', 'signup'])
+    expect(registry.settingsTabs.map(t => t.key)).not.toContain('plans')
+    expect(registry.settingsTabs.map(t => t.key)).not.toContain('subscription')
   })
 
-  it('multi-tenant tenant: subscription for every member with plans on, organization branding needs branding.manage + tenant branding on', () => {
+  it('multi-tenant tenant: organization branding needs branding.manage + tenant branding on', () => {
     vi.stubEnv('VITE_TENANCY_ENABLED', 'true')
     const registry = install()
     signIn({ tenant })
     const branding = useBrandingStore()
 
     grant(['billing.view', 'branding.manage'], { edition: 'multi' })
-    branding.set({ features: { plans: true, tenant_branding: true, multi_tenant: true } })
-    expect(visible(registry)).toEqual(['subscription', 'org-branding'])
-
-    // plans off: nothing about plans shows
-    branding.set({ features: { plans: false, tenant_branding: true, multi_tenant: true } })
+    branding.set({ features: { tenant_branding: true, multi_tenant: true } })
     expect(visible(registry)).toEqual(['org-branding'])
 
     // tenant branding turned off by the platform
-    branding.set({ features: { plans: true, tenant_branding: false, multi_tenant: true } })
-    expect(visible(registry)).toEqual(['subscription'])
+    branding.set({ features: { tenant_branding: false, multi_tenant: true } })
+    expect(visible(registry)).toEqual([])
 
-    // a member without billing or branding permissions still sees the plan page (read-only)
+    // without branding.manage
     grant(['projects.view'], { edition: 'multi' })
-    branding.set({ features: { plans: true, tenant_branding: true, multi_tenant: true } })
-    expect(visible(registry)).toEqual(['subscription'])
+    branding.set({ features: { tenant_branding: true, multi_tenant: true } })
+    expect(visible(registry)).toEqual([])
   })
 })

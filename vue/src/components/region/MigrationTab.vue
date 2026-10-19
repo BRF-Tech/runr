@@ -9,10 +9,13 @@ defineProps({
   migrationLoading:     { type: Boolean, default: false },
   migrationError:       { type: String, default: null },
   migrationKubeconfigName: { type: String, default: '' },
+  migrationDataLocation: { type: String, default: '' },
+  // the wizard's new region has no data location yet
+  showDataLocation:     { type: Boolean, default: true },
   statusLabel:          { type: String, default: '' },
 })
 
-defineEmits(['kubeconfig-change', 'start', 'complete', 'rollback'])
+defineEmits(['kubeconfig-change', 'update:data-location', 'start', 'complete', 'rollback', 'complete-domain'])
 </script>
 
 <template>
@@ -71,6 +74,16 @@ defineEmits(['kubeconfig-change', 'start', 'complete', 'rollback'])
       />
       <p v-if="migrationKubeconfigName" class="text-xs text-gray-400">{{ migrationKubeconfigName }}</p>
 
+      <div v-if="showDataLocation">
+        <label class="block text-xs text-gray-400" for="migration-data-location">
+          {{ t('settings.regionDetail.migration.dataLocation') }}
+        </label>
+        <input id="migration-data-location" type="text" maxlength="64" class="input text-xs font-mono w-48 mt-1"
+          :value="migrationDataLocation" placeholder="EU" data-testid="migration-data-location"
+          @input="$emit('update:data-location', $event.target.value)" />
+        <p class="text-[10px] text-gray-400 mt-1">{{ t('settings.regionDetail.migration.dataLocationHint') }}</p>
+      </div>
+
       <button
         class="px-3 py-1.5 text-xs font-medium rounded-sm bg-amber-600 hover:bg-amber-500 text-white disabled:opacity-50 disabled:cursor-not-allowed"
         :disabled="!migrationKubeconfigName || migrationLoading"
@@ -106,6 +119,21 @@ defineEmits(['kubeconfig-change', 'start', 'complete', 'rollback'])
         @click="$emit('rollback')"
       >
         {{ t('settings.regionDetail.migration.rollbackMigration') }}
+      </button>
+    </div>
+
+    <!-- Base-domain migration: the region answers on the new function domain too until its DNS answers -->
+    <div v-if="region?.is_domain_migrating" class="rounded-md border border-blue-800/50 bg-blue-900/10 px-3 py-3 space-y-2" data-testid="domain-migration">
+      <h4 class="text-xs font-semibold text-gray-100">{{ t('settings.regionDetail.migration.domainMigration') }}</h4>
+      <p class="text-xs text-gray-400">
+        {{ t('settings.regionDetail.migration.domainMigrationHint', { target: region.domain_migration_target || '—' }) }}
+      </p>
+      <p v-if="region.domain_migration_target && region.dns_instruction?.target" class="text-xs font-mono text-brand-400 select-all">
+        *.{{ region.domain_migration_target }} → {{ region.dns_instruction.target }}
+      </p>
+      <button type="button" class="px-3 py-1.5 text-xs font-medium rounded-sm bg-green-600 hover:bg-green-500 text-white disabled:opacity-50"
+        :disabled="migrationLoading" @click="$emit('complete-domain')">
+        {{ t('settings.regionDetail.migration.completeDomainMigration') }}
       </button>
     </div>
 

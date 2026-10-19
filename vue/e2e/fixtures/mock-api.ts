@@ -193,6 +193,13 @@ function settingsPayload(db: MockDb): Json {
   return { ...db.settings, regions, executor_images: db.executorImages }
 }
 
+/** RunR's seeded default prices (DefaultPrices of the Billing module). */
+const BILLING_DEFAULT_PRICES: Json = {
+  cpu_vcpu_hour: 0.04, memory_gb_hour: 0.005, gpu_hour: 1.2, cpu_vcpu_month: 25, memory_gb_month: 3, gpu_month: 700,
+  kv_gb_hour: 0.0002, object_gb_hour: 0.00004, postgres_gb_hour: 0.0002, postgres_instance_hour: 0.05,
+  multiplier_http: 1, multiplier_queue: 1, multiplier_schedule: 1,
+}
+
 /** GET /branding with nothing customised (BrandingService::publicPayload): RunR by BRF Teknoloji. */
 function defaultBranding(multiTenant: boolean): Json {
   return {
@@ -217,7 +224,8 @@ function defaultBranding(multiTenant: boolean): Json {
     accent_rgb: '230 57 70',
     is_default_brand: true,
     tenant: null,
-    features: { multi_tenant: multiTenant, plans: false, tenant_branding: false },
+    // billing: the modules server builds the Billing module in (VITE_BILLING_ENABLED)
+    features: { multi_tenant: multiTenant, billing: multiTenant, tickets: true, tenant_branding: false },
   }
 }
 
@@ -812,7 +820,15 @@ function registerDefaults(api: MockApi): void {
   })
 
   // ── Tenancy module ──
-  api.define('GET', '/tenant/current', (_, db) => ok({ tenants: db.tenants, tenant: db.activeTenant, role: db.activeTenant?.role ?? null }))
+  // TenantController::current: the organization of the request's X-Tenant-ID (none: the platform),
+  // and the account's tenants with the membership flag (false = opened as administrator)
+  api.define('GET', '/tenant/current', (req, db) => {
+    const tenant = db.tenants.find(t => t.id === req.headers['x-tenant-id']) ?? null
+    return ok({
+      tenant, role: tenant?.role ?? null, mode: tenant ? 'tenant' : 'central', impersonating: false,
+      tenants: db.tenants.map(t => ({ member: true, ...t })),
+    })
+  })
   api.define('GET', '/tenant/check/:slug', (req, db) => {
     const t = db.tenants.find(x => x.slug === req.params.slug)
     return t ? ok({ id: t.id, name: t.name, slug: t.slug }) : notFound()
@@ -822,49 +838,58 @@ function registerDefaults(api: MockApi): void {
     const t = db.tenants.find(x => x.id === req.params.id)
     return t ? ok({ data: t }) : notFound()
   })
-  api.define('GET', '/tenants/:id/billing/summary', (req, db) => ok(db.billing[req.params.id] ?? { total_cost: 0, currency: 'USD' }))
-  api.define('GET', '/tenants/:id/billing/usage', () => ok({ data: [] }))
-  api.define('GET', '/tenants/:id/capacity-deals', () => ok({ data: [] }))
-  api.define('GET', '/cost-configs', () => ok({ data: [] }))
   api.define('GET', '/resource-usage', () => ok({ data: [] }))
 
-  // ── Billing API (docs/billing.md): RunR calculates charges; nothing charged yet ──
-  api.define('GET', '/billing/tenants', (_, db) => ok({
-    plans_enabled: false,
-    tenants: db.tenants.map(t => ({ tenant: { id: t.id, slug: t.slug, name: t.name, status: 'active' }, subscription: null })),
+  // ── Billing module (docs/billing.md; the modules server builds it in): nothing billed yet ──
+  const emptyList = () => ok({ data: [], meta: { current_page: 1, last_page: 1, per_page: 50, total: 0 } })
+  const period = new Date().toISOString().slice(0, 7)
+  api.define('GET', '/billing/settings', (_, db) => ok({
+    enabled: true, currency: 'USD', context: db.activeTenant ? 'tenant' : (db.settings.tenancy_enabled ? 'platform' : 'install'),
+    webhook: { url: null, url_source: null, secret_set: false },
   }))
-  api.define('GET', '/billing/tenants/:id', (req, db) => {
-    const t = db.tenants.find(x => x.id === req.params.id || x.slug === req.params.id)
-    return t ? ok({
-      tenant: { id: t.id, slug: t.slug, name: t.name, status: 'active' }, plans_enabled: false, subscription: null,
-      limits: null, addon_limits: {}, metered_usage: true, currency: 'USD', credit_balances: {}, open_charges: [],
-    }) : notFound()
-  })
-  api.define('GET', '/billing/charges', () => ok({ data: [], meta: { current_page: 1, last_page: 1, per_page: 50, total: 0 } }))
-  api.define('GET', '/billing/charges/:id', () => notFound())
-  api.define('GET', '/billing/purchases', () => ok({ data: [], meta: { current_page: 1, last_page: 1, per_page: 50, total: 0 } }))
+  api.define('GET', '/billing/bills', emptyList)
+  api.define('GET', '/billing/me', () => ok({ period, currency: 'USD', total: 0, data: [] }))
+  api.define('GET', '/billing/rollup', () => ok({ period, currency: 'USD', data: [] }))
+  api.define('GET', '/billing/fixed-requests', emptyList)
+  api.define('GET', '/billing/regions', (_, db) => ok({
+    data: db.regions.map(r => ({
+      id: r.id, name: r.name, own: true, billing_type: 'payg', type_locked: false, active_allocations: 0, pending_requests: 0,
+      prices: { ...BILLING_DEFAULT_PRICES, source: 'default', effective_from: '2000-01-01', price_id: null }, scheduled_prices: [],
+    })),
+  }))
+  api.define('GET', '/billing/prices', () => ok({
+    currency: 'USD',
+    fields: Object.keys(BILLING_DEFAULT_PRICES),
+    defaults: { current: { id: 'price-default', region_id: null, effective_from: '2000-01-01', ...BILLING_DEFAULT_PRICES, source: 'platform_default' }, scheduled: [], history: [] },
+    inherited_defaults: null,
+  }))
   api.define('GET', '/billing/events', () => ok({ data: [], meta: { next_after: null, next_before: null, webhook_configured: false } }))
-  api.define('GET', '/tenant/billing', () => ok({ charges: [], credit_balances: {}, purchases: [], store_url: null }))
-  api.define('GET', '/admin/billing-settings', () => ok({
-    plans_enabled: false, webhook: { url: null, url_source: 'config', secret_set: false },
-    usage_thresholds: [], store_url: null, default_currency: 'USD',
-  }))
-  api.define('GET', '/admin/plans', () => ok([]))
+  api.define('GET', '/billing/region-offers', () => ok({ default_markup_percent: 0, data: [] }))
+  api.define('GET', '/billing/markups', () => ok({ default: { current: null, scheduled: [], history: [] }, regions: [] }))
+  api.define('GET', '/billing/platform-bills', emptyList)
+  api.define('GET', '/billing/tenant-bills', emptyList)
+  api.define('GET', '/projects/:id/billing', (req, db) => {
+    const p = project(db, req.params.id)
+    if (!p) return notFound()
+    const region = db.regions.find(r => r.id === p.knative_region_id) ?? null
+    return ok({
+      currency: 'USD', billing_type: 'payg', region: region ? { id: region.id, name: region.name } : null,
+      can_request: false, can_view_costs: true, allocation: null, pending_request: null,
+      current: {
+        id: `bill-${p.id}`, kind: 'project', period, period_start: `${period}-01`, period_end: `${period}-28`, status: 'open', estimate: true,
+        currency: 'USD', source: 'runr', project: { id: p.id, name: p.name }, owner: null, tenant: null, billing_type: 'payg',
+        line_items: [], fixed_total: 0, usage_total: 0, total: 0, metered_cost: 0, difference: 0,
+        payment_url: null, payment_url_set_at: null, paid: false, paid_at: null, payment_reference: null, closed_at: null,
+      },
+      bills: [],
+    })
+  })
 
-  // ── Plans and onboarding (white-label, multi-tenant): plans off, the organization set up ──
-  api.define('GET', '/tenant/subscription', (_, db) => ok({
-    plans_enabled: false,
-    subscription: null,
-    limits: null,
-    addon_limits: {},
-    plans: [],
-    usage: { projects: db.projects.length, gpu: 0, invocations_this_month: 0, storage_mb: 0 },
-    store_url: null,
-  }))
+  // ── Onboarding (white-label, multi-tenant): the organization set up ──
   api.define('GET', '/onboarding', (_, db) => ok({
     status: 'completed', can_complete: false,
     tenant: db.activeTenant ? { id: db.activeTenant.id, name: db.activeTenant.name, slug: db.activeTenant.slug } : null,
-    regions: [], region_assigned: true, default_quota: null, plan: null,
+    regions: [], region_assigned: true, default_quota: null,
   }))
 
   // ── Git deploy of a project (docs/git-deploy.md): nothing pushed, no repository connected ──

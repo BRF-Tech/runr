@@ -43,27 +43,12 @@ export const tenantsApi = {
   // Resource usage (central admin)
   resourceUsage: () => client.get('/resource-usage'),
 
-  // Impersonation
-  impersonate:       (id) => client.post(`/impersonate/${id}`),
-  stopImpersonation: ()   => client.post('/impersonate/stop'),
+  // A platform administrator opens an organization as its administrator (audit-logged); stop names
+  // the organization being left (its X-Tenant-ID context, tenant_id as well)
+  impersonate:       (id)       => client.post(`/impersonate/${id}`),
+  stopImpersonation: (tenantId) => client.post('/impersonate/stop', { tenant_id: tenantId }, {
+    headers: tenantId ? { 'X-Tenant-ID': tenantId } : {},
+  }),
 
-  // Billing & cost
-  billingSummary: (id)         => client.get(`/tenants/${id}/billing/summary`),
-  billingUsage:   (id, params) => client.get(`/tenants/${id}/billing/usage`, { params }),
-
-  // Cost config
-  costConfigs:      ()           => client.get('/cost-configs'),
-  createCostConfig: (data)      => client.post('/cost-configs', data),
-  updateCostConfig: (id, data)  => client.patch(`/cost-configs/${id}`, data),
-  deleteCostConfig: (id)        => client.delete(`/cost-configs/${id}`),
-
-  // Capacity deals
-  capacityDeals:     (id)           => client.get(`/tenants/${id}/capacity-deals`),
-  createCapacityDeal: (id, data)   => client.post(`/tenants/${id}/capacity-deals`, data),
-  updateCapacityDeal: (id, dealId, data) => client.patch(`/tenants/${id}/capacity-deals/${dealId}`, data),
-
-  // Profit/loss
-  regionProfitLoss: (regionId, params) => client.get(`/regions/${regionId}/profit-loss`, { params }),
-
-  // Charges, purchases and plans: the billing API (white-label module, billingApi)
+  // Bills, prices and region offers: the Billing module (modules/billing/api)
 }

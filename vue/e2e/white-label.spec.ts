@@ -4,9 +4,8 @@ import type { MockApi } from './fixtures/mock-api'
 import { ALL_PERMISSIONS, effectivePermissions, type Json } from './fixtures/data'
 
 // White-label console: branding (login page, header, admin editor), self-service signup with
-// e-mail verification, and — multi-tenant (@modules) — the read-only plan page, the tenant's
-// charges, the billing settings of the platform and the onboarding wizard. The white-label
-// elements carry data-test attributes.
+// e-mail verification, and — multi-tenant (@modules) — the onboarding wizard. Plans are gone
+// (billing: e2e/billing.spec.ts). The white-label elements carry data-test attributes.
 
 const byTest = (page: Page, id: string) => page.locator(`[data-test="${id}"]`)
 
@@ -37,7 +36,7 @@ function rebranded(features: Json = {}): Json {
     powered_by: true,
     is_default_brand: false,
     tenant: null,
-    features: { plans: false, tenant_branding: false, multi_tenant: false, ...features },
+    features: { billing: false, tickets: true, tenant_branding: false, multi_tenant: false, ...features },
   }
 }
 
@@ -69,12 +68,6 @@ const brandVars = (page: Page, keys: string[]) => page.evaluate((list) => {
   return list.map(k => style.getPropertyValue(`--brand-${k}`).trim())
 }, keys)
 
-const plan = (over: Json = {}): Json => ({
-  id: 'p-starter', slug: 'starter', name: 'Starter', description: '', currency: 'USD',
-  price_monthly: 10, price_yearly: 100, trial_days: 0, is_default: false,
-  limits: { cpu_quota_m: 2000, memory_quota_mb: 4096, max_projects: 5, gpu_quota: 0, invocations_per_month: 100000, storage_quota_mb: 1024 },
-  features: {}, ...over,
-})
 
 test.describe('White-label branding and signup', () => {
   test.skip(({ e2eMode }) => e2eMode === 'stack', 'needs the mocked API')
@@ -222,7 +215,7 @@ test.describe('White-label branding and signup', () => {
   })
 })
 
-test.describe('White-label plans and billing', { tag: '@modules' }, () => {
+test.describe('White-label onboarding', { tag: '@modules' }, () => {
   test.skip(({ e2eMode }) => e2eMode === 'stack', 'needs the mocked API')
 
   const tenantMember = (mockApi: MockApi, permissions: string[] = [...ALL_PERMISSIONS]) => {
@@ -231,90 +224,14 @@ test.describe('White-label plans and billing', { tag: '@modules' }, () => {
     mockApi.db.permissions = { ...effectivePermissions('owner', permissions), edition: 'multi' }
   }
 
-  const subscription = (over: Json = {}): Json => ({
-    plans_enabled: true,
-    subscription: {
-      plan_id: 'p-starter', plan: plan(), interval: 'month', status: 'active', prepaid: true, external_ref: 'shop-1',
-      trial_ends_at: null, current_period_start: '2026-10-01T00:00:00Z', current_period_end: '2026-11-01T00:00:00Z', cancel_at_period_end: false,
-    },
-    limits: { ...plan().limits, max_projects: 8 },
-    addon_limits: { max_projects: 3 },
-    plans: [plan(), plan({ id: 'p-pro', slug: 'pro', name: 'Pro', price_monthly: 49, price_yearly: 490 })],
-    usage: { projects: 1, invocations_this_month: 120, storage_mb: 12, gpu: 0 },
-    store_url: 'https://shop.acme.test/runr',
-    ...over,
-  })
-
-  test('a tenant sees its plan read-only and buys in the store', async ({ page, auth, mockApi }) => {
-    tenantMember(mockApi)
-    useBranding(mockApi, runrDefault({ plans: true, multi_tenant: true }))
-    mockApi.on('GET', '/onboarding', () => ({ body: { status: 'completed', can_complete: true } }))
-    mockApi.on('GET', '/tenant/subscription', () => ({ body: subscription() }))
-    await auth.signIn()
-    await page.goto('/settings?tab=subscription')
-
-    await expect(byTest(page, 'current-plan')).toContainText('Starter')
-    await expect(byTest(page, 'prepaid-badge')).toBeVisible()
-    await expect(byTest(page, 'usage-max_projects')).toContainText('1 / 8')
-    await expect(byTest(page, 'addon-max_projects')).toContainText('+3')
-    await expect(byTest(page, 'store-link')).toHaveAttribute('href', 'https://shop.acme.test/runr')
-    await expect(byTest(page, 'store-link')).toHaveAttribute('target', '_blank')
-    // plans are information here: no buttons to choose or pay
-    await expect(byTest(page, 'plan-card-pro').locator('button')).toHaveCount(0)
-    await byTest(page, 'interval-year').click()
-    await expect(byTest(page, 'plan-card-pro')).toContainText('/ year')
-  })
-
-  test('the subscription tab is open to every member while plans are on', async ({ page, auth, mockApi }) => {
-    tenantMember(mockApi, ['projects.view'])
-    useBranding(mockApi, runrDefault({ plans: true, multi_tenant: true }))
-    mockApi.on('GET', '/onboarding', () => ({ body: { status: 'completed', can_complete: false } }))
-    await auth.signIn()
-    await page.goto('/settings')
-    await expect(page.getByRole('heading', { name: 'Settings' })).toBeVisible()
-    await expect(page.getByRole('button', { name: 'Subscription' })).toBeVisible()
-    // charges need billing.view
-    await expect(page.getByRole('button', { name: 'Charges' })).toHaveCount(0)
-  })
-
-  test('a tenant with billing.view sees its charges, credit and purchases', async ({ page, auth, mockApi }) => {
-    tenantMember(mockApi, ['projects.view', 'billing.view'])
-    useBranding(mockApi, runrDefault({ plans: false, multi_tenant: true }))
-    mockApi.on('GET', '/onboarding', () => ({ body: { status: 'completed', can_complete: false } }))
-    mockApi.on('GET', '/tenant/billing', () => ({
-      body: {
-        charges: [{
-          id: 'c-1', tenant_id: 't-acme', kind: 'usage', description: 'Usage 2026-09', period: '2026-09', period_start: '2026-09-01', period_end: '2026-09-30',
-          currency: 'USD', status: 'closed', final: true, amount: 0, total: 80, credit_applied: 30, amount_due: 50, external_ref: 'INV-42',
-          line_items: [{ description: 'Project: shop (HTTP, Scale-to-Zero)', quantity: 15000, unit: 'sessions', unit_price: 0.005333, total: 80, metadata: {} }],
-          closed_at: '2026-10-01T02:30:00Z', voided_at: null,
-        }],
-        credit_balances: { USD: 20 },
-        purchases: [{ id: 'p-1', kind: 'credit', external_ref: 'order-1', description: 'Credit pack', amount: 50, currency: 'USD', plan: null, purchased_at: '2026-09-10T00:00:00Z', voided_at: null }],
-        store_url: null,
-      },
-    }))
-    await auth.signIn()
-    await page.goto('/settings?tab=charges')
-
-    await expect(byTest(page, 'charge-status-c-1')).toHaveText('Final')
-    await expect(byTest(page, 'charge-due-c-1')).toContainText('50.00')
-    await expect(byTest(page, 'credit-balances')).toContainText('$20.00')
-    await expect(byTest(page, 'purchase-p-1')).toContainText('Credit pack')
-    await byTest(page, 'charge-c-1').getByText('Usage 2026-09').click()
-    await expect(byTest(page, 'charge-lines-c-1')).toContainText('Project: shop')
-    await expect(byTest(page, 'charge-ref-c-1')).toContainText('INV-42')
-    await expect(byTest(page, 'charge-void-c-1')).toHaveCount(0)
-  })
-
   test('a new organization goes through the onboarding wizard', async ({ page, auth, mockApi }) => {
     tenantMember(mockApi)
-    useBranding(mockApi, runrDefault({ plans: false, multi_tenant: true }))
+    useBranding(mockApi, runrDefault({ multi_tenant: true }))
     mockApi.on('GET', '/onboarding', () => ({
       body: {
         status: 'pending', can_complete: true, tenant: { id: 't-acme', name: 'Acme Corp', slug: 'acme' },
         regions: [{ id: 'r-ist', name: 'ist-1', region_mode: 'managed' }, { id: 'r-ank', name: 'ank-1', region_mode: 'managed' }],
-        region_assigned: false, default_quota: { cpu_quota_m: 2000, memory_quota_mb: 4096 }, plan: null,
+        region_assigned: false, default_quota: { cpu_quota_m: 2000, memory_quota_mb: 4096 },
       },
     }))
     mockApi.on('POST', '/onboarding', req => ({ body: { status: 'completed', tenant: { id: 't-acme', name: req.body.org_name, slug: 'acme' } } }))
@@ -332,47 +249,6 @@ test.describe('White-label plans and billing', { tag: '@modules' }, () => {
 
     expect((await completed).body).toEqual({ org_name: 'Acme Industries', region_id: 'r-ank' })
     await expect(wizard).toBeHidden()
-  })
-
-  test('the central administrator connects the billing system and changes a plan', async ({ page, auth, mockApi }) => {
-    useBranding(mockApi, runrDefault({ multi_tenant: true }))
-    const settings = {
-      plans_enabled: false,
-      webhook: { url: null, url_source: 'config', secret_set: true },
-      usage_thresholds: [],
-      store_url: null,
-      default_currency: 'USD',
-    }
-    mockApi.on('GET', '/admin/billing-settings', () => ({ body: settings }))
-    mockApi.on('PUT', '/admin/billing-settings', req => ({ body: { ...settings, plans_enabled: req.body.plans_enabled, webhook: { url: req.body.webhook_url, url_source: 'settings', secret_set: true } } }))
-    mockApi.on('GET', '/admin/plans', () => ({ body: [{ ...plan(), is_public: true, is_archived: false, sort_order: 0, tenant_count: 2 }] }))
-    mockApi.on('POST', '/billing/events/test', () => ({ status: 409, body: { message: 'No billing webhook is configured.' } }))
-    mockApi.on('PUT', '/billing/tenants/:id/subscription', req => ({
-      body: { subscription: { plan_id: req.body.plan, plan: plan(), interval: req.body.interval, status: 'active', prepaid: false, external_ref: null, current_period_end: '2026-11-15T00:00:00Z', cancel_at_period_end: false } },
-    }))
-    await auth.signIn()
-    await page.goto('/settings?tab=plans')
-
-    await expect(byTest(page, 'plan-row-starter')).toBeVisible()
-    await expect(byTest(page, 'billing-no-webhook')).toBeVisible()
-    await byTest(page, 'field-plans_enabled').check()
-    await byTest(page, 'field-webhook_url').fill('https://billing.acme.test/hooks/runr')
-    await byTest(page, 'field-usage_thresholds').fill('500, 100')
-    await byTest(page, 'webhook-secret-clear').click()
-
-    const saved = mockApi.waitFor('PUT', '/admin/billing-settings')
-    await byTest(page, 'billing-save').click()
-    const body = (await saved).body
-    expect(body).toEqual({ plans_enabled: true, webhook_url: 'https://billing.acme.test/hooks/runr', usage_thresholds: [100, 500], clear_secrets: ['webhook_secret'] })
-
-    await byTest(page, 'billing-test-event').click()
-    await expect(page.getByText('No billing webhook is configured.').first()).toBeVisible()
-
-    const changed = mockApi.waitFor('PUT', '/billing/tenants/:id/subscription')
-    await byTest(page, 'assign-acme').selectOption('p-starter')
-    await byTest(page, 'interval-acme').selectOption('year')
-    await byTest(page, 'save-acme').click()
-    expect((await changed).body).toEqual({ plan: 'p-starter', interval: 'year' })
   })
 })
 

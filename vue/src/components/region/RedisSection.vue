@@ -31,7 +31,7 @@ function redisStatusLabel(status) {
 
 const modeCards = [
   { key: 'managed',    labelKey: 'modeManaged',    descKey: 'modeManagedDesc' },
-  { key: 'in-cluster', labelKey: 'modeInCluster',  descKey: 'modeInClusterDesc' },
+  { key: 'in_cluster', labelKey: 'modeInCluster',  descKey: 'modeInClusterDesc' },
   { key: 'external',   labelKey: 'modeExternal',   descKey: 'modeExternalDesc' },
 ]
 </script>
@@ -93,8 +93,8 @@ const modeCards = [
         </button>
       </div>
 
-      <!-- External / in-cluster: address + password -->
-      <template v-if="popupRedisMode === 'external' || popupRedisMode === 'in-cluster'">
+      <!-- External / in_cluster: address + password -->
+      <template v-if="popupRedisMode === 'external' || popupRedisMode === 'in_cluster'">
         <div>
           <label class="label"><TermText path="settings.regionDetail.redis.addressLabel" /></label>
           <input type="text" class="input" :value="popupRedisAddress"

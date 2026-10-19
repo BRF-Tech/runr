@@ -176,11 +176,21 @@ export function useInstallPopup(deps) {
     try {
       const { data } = await knativeRegionsApi.compatibleVersions(regionId.value)
       compatibleVersions.value = data.versions || []
-      if (compatibleVersions.value.length && !popupVersion.value) {
+      if (installPopupMode.value === 'upgrade') {
+        // Knative upgrades one minor version at a time: only the next one the cluster supports
+        const next = nextMinor(servingVersion.value)
+        compatibleVersions.value = next && compatibleVersions.value.includes(next) ? [next] : []
+        popupVersion.value = compatibleVersions.value[0] ?? null
+      } else if (compatibleVersions.value.length && !popupVersion.value) {
         popupVersion.value = compatibleVersions.value[0]
       }
     } catch { compatibleVersions.value = [] }
     finally { versionsLoading.value = false }
+  }
+  /** "1.20.3" → "1.21" */
+  function nextMinor(version) {
+    const m = /^v?(\d+)\.(\d+)/.exec(version || '')
+    return m ? `${m[1]}.${Number(m[2]) + 1}` : null
   }
   function openInstallPopup(component, mode = 'install') {
     installPopupComponent.value = component
@@ -211,6 +221,19 @@ export function useInstallPopup(deps) {
     if (!regionId.value) return
     popupError.value = null
     popupSubmitting.value = true
+    if (component === 'serving' && installPopupMode.value === 'upgrade') {
+      try {
+        if (!popupVersion.value) throw new Error(t('settings.regionDetail.installPopup.noUpgrade'))
+        await knativeRegionsApi.upgradeServing(regionId.value, { version: popupVersion.value })
+        servingStatus.value = 'installing'
+        servingMessage.value = ''
+        installing.value = { ...installing.value, serving: true }
+        installPopupOpen.value = false
+      } catch (e) {
+        popupError.value = e.response?.data?.message ?? e.message ?? t('common.error')
+      } finally { popupSubmitting.value = false }
+      return
+    }
     try {
       const payload = { namespace: popupNamespace.value }
       if (component === 'serving') {

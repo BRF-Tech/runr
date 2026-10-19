@@ -64,8 +64,13 @@ export default {
     // OIDC specific
     oidcDiscoveryUrl: 'Discovery URL',
     oidcDiscoveryPlaceholder: 'https://auth.example.com/.well-known/openid-configuration',
+    oidcDiscoveryHint: 'The identity provider\'s …/.well-known/openid-configuration URL (the issuer URL works too).',
     oidcIssuer: 'Issuer',
     oidcIssuerPlaceholder: 'https://auth.example.com',
+    oidcIssuerHint: 'Optional. When set, the discovery document must name this issuer.',
+    // Redirect URL of OAuth / OIDC providers
+    callbackUrl: 'Redirect URL',
+    callbackUrlHint: 'Register this redirect (callback) URL with the OAuth client or at the identity provider.',
     // SAML 2.0 specific
     samlIdpEntityId: 'IdP Entity ID',
     samlIdpEntityIdPlaceholder: 'https://idp.example.com/saml/metadata',
@@ -116,12 +121,20 @@ export default {
     loginWith: 'Sign in with {provider}',
     orDivider: 'or',
     oauthError: 'Authentication failed. Please try again.',
-    // Social accounts (user profile)
-    socialAccounts: 'Connected Accounts',
-    noSocialAccounts: 'No connected accounts.',
-    unlinkAccount: 'Unlink',
-    unlinkConfirm: 'Unlink this {provider} account?',
-    linkAccount: 'Connect {provider}',
+    // Linked accounts (Account settings)
+    linkedAccounts: {
+      title: 'Linked accounts',
+      description: 'You sign in with these accounts of your identity providers. Link another one, or unlink one you no longer use.',
+      none: 'No linked accounts yet.',
+      linkWith: 'Link {provider}',
+      linkedOn: 'linked {date}',
+      unlink: 'Unlink',
+      unlinkTitle: 'Unlink account',
+      unlinkConfirm: 'Unlink this {provider} account? When its e-mail address is yours, signing in with it links it again.',
+      unlinked: 'Account unlinked.',
+      linked: 'Account linked.',
+      failed: 'The account could not be linked.',
+    },
     // Tutorial
     tutorialDriver:          'Provider Type',
     tutorialDriverDesc:      'Select which OAuth provider to integrate — Google, GitHub, Microsoft, GitLab, a custom OIDC provider, or a SAML 2.0 identity provider.',
