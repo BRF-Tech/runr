@@ -32,7 +32,7 @@ class ProjectService
         $data = $this->withRuntimeResourceDefaults($data);
         $this->admitRegionCapacity($data);
 
-        $project = Project::create([
+        $attributes = [
             'name' => $data['name'],
             'service_type' => $data['service_type'],
             'runtime' => $data['runtime'] ?? null,
@@ -42,7 +42,14 @@ class ProjectService
             'endpoint_type' => $data['endpoint_type'] ?? 'subdomain',
             'is_region_demo' => $data['is_region_demo'] ?? false,
             'created_by' => $data['created_by'] ?? null,
-        ]);
+        ];
+        // The creator owns (pays for) the project until the ownership is transferred (docs/billing.md)
+        $owner = $data['owner_id'] ?? $data['created_by'] ?? null;
+        if ($owner !== null && $owner !== '' && $owner !== 'system') {
+            $attributes['owner_id'] = (string) $owner;
+        }
+
+        $project = Project::create($attributes);
 
         $this->git->initRepo();
         $project->update(['git_path' => $this->git->projectDir($project)]);

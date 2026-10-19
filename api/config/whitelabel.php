@@ -4,8 +4,8 @@
  * White-label: branding, self-service signup (docs/white-label.md).
  *
  * Every value here is the install default (env / Helm values). Platform admins override them at
- * runtime (Settings → Branding / Signup); the stored value wins over the default. Plans and
- * billing live in the Tenancy module (config tenancy.billing / tenancy.plans, docs/billing.md).
+ * runtime (Settings → Branding / Signup); the stored value wins over the default. Billing is the
+ * Billing module (config billing, docs/billing.md).
  */
 return [
 

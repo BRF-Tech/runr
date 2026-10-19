@@ -195,14 +195,13 @@ type BindingHealth struct {
 	Details json.RawMessage `json:"details,omitempty"`
 }
 
-// BindingUsageRecord is one day of a binding's usage.
+// BindingUsageRecord is one day of a binding's usage: quantities only (what they cost is on the
+// bills of the Billing module, GET /billing/usage).
 type BindingUsageRecord struct {
 	RecordDate     string  `json:"record_date"`
 	StorageGBHours float64 `json:"storage_gb_hours"`
 	InstanceHours  float64 `json:"instance_hours"`
 	PeakBytes      int64   `json:"peak_bytes"`
-	FinalCost      float64 `json:"final_cost"`
-	Currency       string  `json:"currency,omitempty"`
 }
 
 // ProjectBindings is the answer of GET /projects/{project}/bindings.

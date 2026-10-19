@@ -13,6 +13,7 @@ use Illuminate\Http\Response;
 use Modules\AuthProvider\Models\AuthProvider;
 use Modules\AuthProvider\Services\OAuthService;
 use Modules\AuthProvider\Services\Saml\SamlService;
+use Modules\AuthProvider\Services\TenantContext;
 
 /**
  * SAML 2.0 service provider endpoints. `{provider}` is the auth provider ID;
@@ -90,7 +91,7 @@ class SamlController extends Controller
         $this->audit(AuditEvent::RESULT_SUCCESS, $authProvider, $result['user']);
 
         // A one-time code, never the token itself, travels in the redirect URL (POST /api/oauth/exchange)
-        $code = app(SignInHandoffService::class)->issue($result['user'], $result['token']);
+        $code = app(SignInHandoffService::class)->issue($result['user'], $result['token'], app(TenantContext::class)->currentId());
 
         return redirect()->away(
             config('app.frontend_url', '/').'/oauth/callback?'.http_build_query(['code' => $code])

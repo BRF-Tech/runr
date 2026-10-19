@@ -8,6 +8,7 @@ use Illuminate\Support\Facades\Hash;
 use Modules\Tenancy\Models\CentralSyncableUser;
 use Modules\Tenancy\Models\Tenant;
 use Modules\Tenancy\Models\TenantLocalUser;
+use Modules\Tenancy\Services\TenantSchema;
 
 class TenancySeeder extends Seeder
 {
@@ -62,21 +63,8 @@ class TenancySeeder extends Seeder
 
     private function ensureSchema(Tenant $tenant): void
     {
-        $manager = $tenant->database()->manager();
-        $dbName = $tenant->database()->getName();
-
-        if (! $manager->databaseExists($dbName)) {
-            $manager->createDatabase($tenant);
-        }
-
-        // Run tenant-only migrations (not central — tenant schema must not duplicate central tables)
-        $tenant->run(function () {
-            \Artisan::call('migrate', [
-                '--path' => module_path('Tenancy', 'Database/TenantMigrations'),
-                '--realpath' => true,
-                '--force' => true,
-            ]);
-        });
+        // Tenant migrations only (not central — the tenant schema must not duplicate central tables)
+        TenantSchema::create($tenant);
     }
 
     private function assignUser(Tenant $tenant, User $user, string $role): void

@@ -14,7 +14,9 @@ class ApplyWorkersRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'nodes' => 'required|array',
+            // [] = no dedicated workers: every node is released and projects run on every
+            // schedulable node (KnativeNodeService::applyWorkerSelection)
+            'nodes' => 'present|array',
             'nodes.*' => 'string',
         ];
     }

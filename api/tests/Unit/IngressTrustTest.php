@@ -36,7 +36,8 @@ class IngressTrustTest extends TestCase
         // the rest of the entry point is unchanged
         $this->assertSame(8443, $ports['websecure']['port']);
         $this->assertTrue($ports['websecure']['http']['tls']['enabled']);
-        $this->assertSame('120s', $ports['web']['transport']['respondingTimeouts']['readTimeout']);
+        // read / write timeouts follow the default request_timeout (RequestTimeout)
+        $this->assertSame('310s', $ports['web']['transport']['respondingTimeouts']['readTimeout']);
         $this->assertArrayNotHasKey('proxyProtocol', $ports['metrics']);
     }
 

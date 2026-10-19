@@ -39,4 +39,23 @@ class KnativeFunctionTlsController extends Controller
             'region' => new KnativeRegionResource($region),
         ]);
     }
+
+    /**
+     * Function-domain TLS off: the region Traefik serves HTTPS with its own default certificate.
+     */
+    public function destroy(KnativeRegion $knativeRegion, KnativeFunctionTlsService $service): JsonResponse
+    {
+        if ($knativeRegion->is_demo) {
+            return response()->json(['message' => __('api.region.demo_not_modifiable')], 422);
+        }
+
+        if (! $knativeRegion->kubeconfig) {
+            return response()->json(['message' => __('api.region.kubeconfig_missing')], 422);
+        }
+
+        return response()->json([
+            'message' => __('api.region.function_tls_removed'),
+            'region' => new KnativeRegionResource($service->remove($knativeRegion)),
+        ]);
+    }
 }

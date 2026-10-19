@@ -64,6 +64,23 @@ func TestRegionKnativeInstallUninstall(t *testing.T) {
 	h.expectCode(ExitUsage, "regions", "knative", "uninstall", "eu-1", "operator", "--remove-traefik", "--yes")
 }
 
+func TestRegionKnativeUpgrade(t *testing.T) {
+	h := newHarness(t).login()
+	h.srv.SetRegionKnative("eu-1", runr.KnativeReady, runr.KnativeReady)
+
+	h.expectCode(ExitUsage, "regions", "knative", "upgrade", "eu-1")
+	r := h.mustRun("regions", "knative", "upgrade", "eu-1", "--version", "1.21", "--wait")
+	contains(t, r.err, "Knative Serving upgrade to 1.21 started.")
+	contains(t, r.err, "Knative Serving on eu-1: ready.")
+	if b := h.srv.CallsTo("POST /knative-regions/{knativeRegion}/upgrade-serving")[0].Body; b["version"] != "1.21" {
+		t.Fatalf("upgrade body = %v", b)
+	}
+
+	// Serving not installed: the API refuses it
+	h.srv.SetRegionKnative("eu-1", runr.KnativeReady, runr.KnativeNotInstalled)
+	h.expectCode(ExitValidation, "regions", "knative", "upgrade", "eu-1", "--version", "1.21")
+}
+
 func TestRegionKnativeFailedInstall(t *testing.T) {
 	h := newHarness(t).login()
 	h.srv.SetRegionKnative("eu-1", runr.KnativeNotInstalled, runr.KnativeNotInstalled)

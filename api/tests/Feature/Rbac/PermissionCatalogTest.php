@@ -17,7 +17,9 @@ class PermissionCatalogTest extends TestCase
         'code.edit', 'env.view', 'env.edit', 'secrets.view_values', 'domains.manage', 'shell.exec',
         'logs.view', 'metrics.view', 'regions.view', 'regions.manage', 'sandbox.manage',
         'registry.manage', 'members.view', 'members.invite', 'members.remove', 'roles.manage',
-        'tokens.manage', 'billing.view', 'billing.manage', 'settings.manage',
+        'tokens.manage', 'billing.view', 'billing.manage', 'billing.approve', 'settings.manage',
+        // project owners and billing operators (docs/billing.md)
+        'projects.billing', 'projects.stop',
         'tickets.view', 'tickets.create',
         'audit.view', 'audit.export', 'runtimes.manage', 'runtimes.use_custom',
         'models.view', 'models.deploy', 'models.manage', 'regions.gpu.manage',
@@ -63,24 +65,33 @@ class PermissionCatalogTest extends TestCase
         }
     }
 
-    public function test_single_tenant_edition_has_no_billing(): void
+    public function test_billing_is_part_of_both_editions(): void
     {
-        config(['tenancy.enabled' => false]);
+        // The Billing module works with tenancy off and on (docs/billing.md)
+        foreach ([false, true] as $multi) {
+            config(['tenancy.enabled' => $multi]);
 
-        $this->assertSame('single', PermissionCatalog::edition());
-        $this->assertSame(['owner', 'admin', 'developer', 'viewer'], array_keys(PermissionCatalog::builtinRoles()));
-        $this->assertNotContains('billing.view', PermissionCatalog::keys());
-        $this->assertContains('tickets.manage', PermissionCatalog::keys());
+            $this->assertSame(['owner', 'admin', 'developer', 'viewer', 'billing'], array_keys(PermissionCatalog::builtinRoles()));
+            foreach (['billing.view', 'billing.manage', 'billing.approve', 'projects.billing', 'projects.stop'] as $permission) {
+                $this->assertContains($permission, PermissionCatalog::keys());
+            }
+            $this->assertTrue(PermissionCatalog::isProjectScoped('projects.billing'), 'a project owner role can hold it per project');
+
+            $billing = PermissionCatalog::builtinRoles()['billing']['permissions'];
+            $this->assertContains('billing.approve', $billing);
+            $this->assertContains('projects.stop', $billing, 'billing operators stop and resume projects');
+        }
     }
 
-    public function test_multi_tenant_edition_adds_the_billing_role(): void
+    public function test_tickets_manage_is_single_tenant_only(): void
     {
-        config(['tenancy.enabled' => true]);
+        config(['tenancy.enabled' => false]);
+        $this->assertSame('single', PermissionCatalog::edition());
+        $this->assertContains('tickets.manage', PermissionCatalog::keys());
 
-        $this->assertSame('multi', PermissionCatalog::edition());
-        $this->assertArrayHasKey('billing', PermissionCatalog::builtinRoles());
-        $this->assertContains('billing.manage', PermissionCatalog::keys());
         // Answering tickets is the platform operator's job in multi-tenant installs
+        config(['tenancy.enabled' => true]);
+        $this->assertSame('multi', PermissionCatalog::edition());
         $this->assertNotContains('tickets.manage', PermissionCatalog::keys());
     }
 

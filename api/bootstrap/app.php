@@ -12,6 +12,7 @@ use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
 use Illuminate\Http\Middleware\HandleCors;
+use Illuminate\Http\Middleware\TrustHosts;
 use Illuminate\Http\Middleware\TrustProxies;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Middleware\SubstituteBindings;
@@ -27,6 +28,8 @@ return Application::configure(basePath: dirname(__DIR__))
     ->withBroadcasting(__DIR__.'/../routes/channels.php', ['prefix' => 'api', 'middleware' => ['api', 'auth:sanctum']])
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->trustHosts(at: ['runr.test', 'runr.sh', 'localhost']);
+        // The region callbacks (/api/internal/…) also for the addresses RunR hands to the regions
+        $middleware->replace(TrustHosts::class, App\Http\Middleware\TrustHosts::class);
         // Client IP from X-Forwarded-For only as far as the known proxy hops wrote it
         // (config/trustedproxy.php: TRUSTED_PROXIES / TRUSTED_PROXY_HOPS)
         $middleware->replace(TrustProxies::class, App\Http\Middleware\TrustProxies::class);

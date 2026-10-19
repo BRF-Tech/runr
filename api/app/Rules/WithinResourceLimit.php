@@ -30,6 +30,11 @@ use Illuminate\Support\Collection;
  *
  * An existing project (update / deploy) that does not raise its own reservation always
  * passes, even when the region is already over capacity.
+ *
+ * Limits beyond the region capacity — the approved resources of a project in a fixed-price region
+ * (Billing module) — are not checked here: ProjectAdmission's config limiters see a project update
+ * as a whole (UpdateProjectRequest, runr.yaml) and its deploy guards every deploy with its
+ * overrides.
  */
 class WithinResourceLimit implements ValidationRule
 {
@@ -60,11 +65,6 @@ class WithinResourceLimit implements ValidationRule
         $regions = $this->regions();
         $limits = RegionCapacity::limits($regions);
 
-        // No limit defined: nothing to validate
-        if ($limits['capacity'][$this->key()] <= 0) {
-            return;
-        }
-
         $project = $this->excludeProjectId
             ? Project::with('xaasConfig', 'faasConfig', 'containerConfig')->find($this->excludeProjectId)
             : null;
@@ -87,6 +87,11 @@ class WithinResourceLimit implements ValidationRule
             $this->scaleToZero ?? ($config ? $config->scale_to_zero : null) ?? true,
             ResourceReservation::podOverhead($region, $serviceType),
         );
+
+        // No limit defined: nothing to validate
+        if ($limits['capacity'][$this->key()] <= 0) {
+            return;
+        }
 
         // Grandfathered: an existing project on this region whose reservation does not grow
         if ($project && (! $this->knativeRegionId || $project->knative_region_id === $this->knativeRegionId)

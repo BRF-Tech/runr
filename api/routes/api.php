@@ -11,6 +11,7 @@ use App\Http\Controllers\Api\DeploymentController;
 use App\Http\Controllers\Api\ExecController;
 use App\Http\Controllers\Api\GatewayController;
 use App\Http\Controllers\Api\HistoricalMetricsController;
+use App\Http\Controllers\Api\HorizonLinkController;
 use App\Http\Controllers\Api\KnativeFunctionTlsController;
 use App\Http\Controllers\Api\KnativeInstallController;
 use App\Http\Controllers\Api\KnativeNodeController;
@@ -22,7 +23,9 @@ use App\Http\Controllers\Api\NotificationPreferenceController;
 use App\Http\Controllers\Api\PrivateDatabaseBindingController;
 use App\Http\Controllers\Api\ProjectController;
 use App\Http\Controllers\Api\ProjectDomainController;
+use App\Http\Controllers\Api\ProjectOwnershipController;
 use App\Http\Controllers\Api\ProjectSecretController;
+use App\Http\Controllers\Api\ProjectStopController;
 use App\Http\Controllers\Api\RegionCapacityController;
 use App\Http\Controllers\Api\RegionDemoController;
 use App\Http\Controllers\Api\RegionMigrateController;
@@ -60,6 +63,11 @@ Route::middleware('auth:sanctum')->group(function () {
     require __DIR__.'/rbac.php';
 
     Route::apiResource('projects', ProjectController::class);
+
+    // The payer of the project's bills, stop / resume with a reason (docs/billing.md)
+    Route::put('/projects/{project}/owner', [ProjectOwnershipController::class, 'update']);
+    Route::post('/projects/{project}/stop', [ProjectStopController::class, 'stop']);
+    Route::post('/projects/{project}/resume', [ProjectStopController::class, 'resume']);
 
     Route::get('/projects/{project}/code', [CodeController::class, 'getXaaSCode']);
     Route::post('/projects/{project}/code', [CodeController::class, 'saveXaaSCode']);
@@ -131,6 +139,7 @@ Route::middleware('auth:sanctum')->group(function () {
         ->middleware('region.mutable');
     Route::get('/knative-regions/{knativeRegion}/kubeconfig', [KnativeRegionController::class, 'downloadKubeconfig'])->middleware('region.mutable');
     Route::put('/knative-regions/{knativeRegion}/settings', [KnativeRegionController::class, 'updateSettings'])->middleware('region.mutable');
+    Route::put('/knative-regions/{knativeRegion}/monitoring', [KnativeRegionController::class, 'updateMonitoring'])->middleware('region.mutable');
 
     // Capacity budgets (always-on, FaaS overcommit) and the overcommit factors → RegionCapacityController
     Route::get('/knative-regions/{knativeRegion}/capacity', [RegionCapacityController::class, 'show']);
@@ -138,6 +147,7 @@ Route::middleware('auth:sanctum')->group(function () {
 
     // Function-domain TLS (region's own Traefik, separate from the console's Ingress) — 100% opt-in
     Route::put('/knative-regions/{knativeRegion}/function-tls', [KnativeFunctionTlsController::class, 'update'])->middleware('region.mutable');
+    Route::delete('/knative-regions/{knativeRegion}/function-tls', [KnativeFunctionTlsController::class, 'destroy'])->middleware('region.mutable');
 
     // Skupper v2 on the region (detected, never installed by RunR) + the project namespace's Site
     Route::get('/knative-regions/{knativeRegion}/skupper', [PrivateDatabaseBindingController::class, 'regionStatus']);
@@ -149,6 +159,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/knative-regions/{knativeRegion}/uninstall-knative', [KnativeInstallController::class, 'uninstallKnative'])->middleware('region.mutable');
     Route::post('/knative-regions/{knativeRegion}/install-operator', [KnativeInstallController::class, 'installOperator'])->middleware('region.mutable');
     Route::post('/knative-regions/{knativeRegion}/install-serving', [KnativeInstallController::class, 'installServing'])->middleware('region.mutable');
+    Route::post('/knative-regions/{knativeRegion}/upgrade-serving', [KnativeInstallController::class, 'upgradeServing'])->middleware('region.mutable');
     Route::post('/knative-regions/{knativeRegion}/uninstall-operator', [KnativeUninstallController::class, 'uninstallOperator'])->middleware('region.mutable');
     Route::post('/knative-regions/{knativeRegion}/uninstall-serving', [KnativeUninstallController::class, 'uninstallServing'])->middleware('region.mutable');
     Route::post('/knative-regions/{knativeRegion}/detect-components', [KnativeInstallController::class, 'detectComponents'])->middleware('region.mutable');
@@ -183,6 +194,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/knative-regions/{knativeRegion}/migration-status', [RegionMigrateController::class, 'migrationStatus']);
     Route::post('/knative-regions/{knativeRegion}/complete-migration', [RegionMigrateController::class, 'completeMigration'])->middleware('region.mutable');
     Route::post('/knative-regions/{knativeRegion}/rollback-migration', [RegionMigrateController::class, 'rollbackMigration'])->middleware('region.mutable');
+    Route::post('/knative-regions/{knativeRegion}/complete-domain-migration', [RegionMigrateController::class, 'completeDomainMigration'])->middleware('region.mutable');
 
     // Registry setup (async flow with cache token) — creates a region, like POST /knative-regions
     Route::post('/registry-setup/start', [RegistrySetupController::class, 'start'])->middleware('region.mutable');
@@ -194,6 +206,7 @@ Route::middleware('auth:sanctum')->group(function () {
 
     // Registry status/management (per-region)
     Route::get('/knative-regions/{knativeRegion}/registry-status', [RegistryController::class, 'status']);
+    Route::post('/knative-regions/{knativeRegion}/registry', [RegistryController::class, 'store'])->middleware('region.mutable');
     Route::delete('/knative-regions/{knativeRegion}/registry', [RegistryController::class, 'destroy'])->middleware('region.mutable');
 
     // Region demo projects
@@ -275,6 +288,9 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/audit-events/{id}', [AuditEventController::class, 'show']);
     Route::get('/audit-settings', [AuditEventController::class, 'settings']);
     Route::put('/audit-settings', [AuditEventController::class, 'updateSettings']);
+
+    // Horizon dashboard: a single-use sign-in link for platform administrators (docs/install.md)
+    Route::post('/horizon/link', HorizonLinkController::class);
 
     Route::post('/tutorial/complete', function (Request $request) {
         $request->user()->update(['tutorial_completed_at' => now()]);

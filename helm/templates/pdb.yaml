@@ -14,7 +14,10 @@ spec:
       app: runr-gateway
 {{- end }}
 ---
-{{- if .Values.api.pdb.enabled }}
+{{- /* Only with a ReadWriteMany API volume: with ReadWriteOnce the API pods are tied to the volume's
+       node (podColocation), a replacement cannot start elsewhere, and a budget would hold a drain of
+       that node forever. NOTES.txt says when api.pdb.enabled is skipped. */}}
+{{- if and .Values.api.pdb.enabled (include "runr.apiStorageShared" .) }}
 apiVersion: policy/v1
 kind: PodDisruptionBudget
 metadata:

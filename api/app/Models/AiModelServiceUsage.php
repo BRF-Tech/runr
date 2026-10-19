@@ -8,8 +8,8 @@ use Illuminate\Support\Carbon;
 
 /**
  * Metered usage of a model service per day (models:meter samples its running pods every minute):
- * replica, GPU-unit, CPU (millicore) and memory (MiB) milliseconds. The Tenancy usage aggregation
- * prices them with the region's cost config (GPU: gpu_price_per_unit_ms).
+ * replica, GPU-unit, CPU (millicore) and memory (MiB) milliseconds. The usage aggregation adds
+ * them to usage_records (quantities); the Billing module prices them (docs/billing.md).
  *
  * @property string $id
  * @property string $ai_model_service_id

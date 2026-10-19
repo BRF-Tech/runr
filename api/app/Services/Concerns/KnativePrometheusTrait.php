@@ -11,6 +11,12 @@ trait KnativePrometheusTrait
     use KnativeCAdvisorTrait;
 
     /**
+     * Pinned kube-prometheus-stack chart (Prometheus Operator v0.94.1): the version installs
+     * resolved and were tested with. A new chart release can change values or CRDs.
+     */
+    public const PROMETHEUS_CHART_VERSION = '92.10.1';
+
+    /**
      * Install kube-prometheus-stack + standalone cAdvisor with 1s housekeeping.
      * cAdvisor runs as a DaemonSet — works on EKS, AKS, GKE, OpenStack, k3s.
      * No kubelet configuration changes required.
@@ -31,6 +37,7 @@ trait KnativePrometheusTrait
             namespace: $ns,
             setValues: [],
             kubeconfigYaml: $kubeconfig,
+            version: self::PROMETHEUS_CHART_VERSION,
             valuesArray: self::prometheusHelmValues($servingNs, $storageClass),
             wait: false,
         );

@@ -1,0 +1,11 @@
+{
+  "name": "Billing",
+  "alias": "billing",
+  "description": "Billing module for RunR — calculates per-project monthly bills from prices, fixed allocations and metered usage",
+  "keywords": ["billing", "prices", "bills"],
+  "priority": 2,
+  "providers": [
+    "Modules\\Billing\\Providers\\BillingServiceProvider"
+  ],
+  "files": []
+}

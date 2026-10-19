@@ -14,8 +14,9 @@ class UpdateRegionSettingsRequest extends FormRequest
 
     public function rules(): array
     {
+        // The project namespace is the region name and never changes (no `namespace` key)
         return [
-            'namespace' => 'sometimes|string|max:63',
+            // the longest project timeout; Traefik and Knative follow it (RequestTimeout)
             'request_timeout' => 'sometimes|integer|min:1|max:3600',
             // runr-agent: RunR gateway base URL as seen from the region (/ws/agent/{id} appended)
             'agent_ws_url' => ['sometimes', 'nullable', 'string', 'max:2048', 'regex:#^(wss?|https?)://[^\s]+$#i'],

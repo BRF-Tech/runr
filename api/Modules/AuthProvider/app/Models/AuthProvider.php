@@ -5,6 +5,24 @@ namespace Modules\AuthProvider\Models;
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Model;
 
+/**
+ * @property string $id
+ * @property string $name
+ * @property string $driver
+ * @property string|null $client_id
+ * @property string|null $client_secret
+ * @property array<int, string>|null $scopes
+ * @property string|null $oidc_discovery_url
+ * @property string|null $oidc_issuer
+ * @property string|null $google_hosted_domain
+ * @property string|null $microsoft_tenant
+ * @property string|null $gitlab_instance_uri
+ * @property bool $is_enabled
+ * @property bool $auto_register
+ * @property int $display_order
+ * @property string|null $groups_attribute
+ * @property string|null $default_role
+ */
 class AuthProvider extends Model
 {
     use HasUlids;

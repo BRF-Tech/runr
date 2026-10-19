@@ -11,22 +11,18 @@ use App\Models\Project;
 use App\Models\Version;
 use App\Services\AgentMessageHandler;
 use App\Services\SessionTrackingService;
-use Illuminate\Console\Scheduling\CallbackEvent;
 use Illuminate\Console\Scheduling\Event;
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
-use Modules\Tenancy\Models\CapacityDeal;
-use Modules\Tenancy\Models\Tenant;
-use Modules\Tenancy\Providers\TenancyServiceProvider;
 use Tests\Concerns\WiresTenancy;
 use Tests\TestCase;
 
 /**
  * Lifecycle jobs of the scheduler: deployment sessions whose end the region agent never reported
  * are closed (central schema and every tenant schema) — and corrected when the pod turns out to
- * be alive; capacity deals past their end date expire.
+ * be alive; the usage metering is scheduled by the core.
  */
 class StaleSessionsAndDealExpiryTest extends TestCase
 {
@@ -164,32 +160,12 @@ class StaleSessionsAndDealExpiryTest extends TestCase
         $this->assertNotNull($tenant->run(fn () => DeploymentSession::query()->find($id)?->ended_at));
     }
 
-    // ── capacity deals ──────────────────────────────────────────────────────
+    // ── metering ────────────────────────────────────────────────────────────
 
-    public function test_capacity_deals_expire_after_their_end_date(): void
+    public function test_usage_is_aggregated_every_five_minutes_by_the_core(): void
     {
-        // The Tenancy module schedules on boot only with tenancy enabled
-        (fn () => $this->registerScheduledJobs())->call(new TenancyServiceProvider($this->app));
-        $event = $this->scheduledTask('capacity-deal-expiry');
-        $this->assertInstanceOf(CallbackEvent::class, $event);
-        $this->assertSame('0 * * * *', $event->expression);
-
-        Carbon::setTestNow('2026-10-11 09:00:00');
-        $tenant = Tenant::create(['name' => 'Acme', 'slug' => 'acme']);
-        $deal = fn (string $end, string $status = 'active') => CapacityDeal::create([
-            'tenant_id' => $tenant->id, 'region_id' => $this->region->id, 'cpu_m' => 1000, 'memory_mb' => 1024,
-            'start_date' => '2026-01-01', 'end_date' => $end, 'monthly_price' => 10, 'status' => $status,
-        ]);
-        $ended = $deal('2026-10-10');
-        $lastDay = $deal('2026-10-11');
-        $running = $deal('2026-12-31');
-        $cancelled = $deal('2026-10-01', 'cancelled');
-
-        $event->run($this->app);
-
-        $this->assertSame('expired', $ended->fresh()->status);
-        $this->assertSame('active', $lastDay->fresh()->status, 'the end date is the last day of the deal');
-        $this->assertSame('active', $running->fresh()->status);
-        $this->assertSame('cancelled', $cancelled->fresh()->status);
+        // Metering runs with or without tenancy and billing (docs/monitoring.md)
+        $event = $this->scheduledTask('usage-aggregation');
+        $this->assertSame('*/5 * * * *', $event->expression);
     }
 }

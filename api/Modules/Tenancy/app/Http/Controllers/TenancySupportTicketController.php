@@ -74,10 +74,13 @@ class TenancySupportTicketController extends SupportTicketController
         return response()->json($reply->load('user:id,name,email'), 201);
     }
 
-    /** Download attachment — any tenant member can access tenant ticket files. */
+    /**
+     * Download attachment — any tenant member can access the files recorded on a ticket of the
+     * tenant (not those of internal notes).
+     */
     public function downloadAttachment(Request $request, SupportTicket $supportTicket, string $filename): StreamedResponse
     {
-        return $this->serveAttachment($supportTicket->id, $filename);
+        return $this->serveAttachment($supportTicket, $filename);
     }
 
     /** Suggestions: search all tenant tickets (no user_id filter). */

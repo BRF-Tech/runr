@@ -1,14 +1,22 @@
 # ─── Domain ───────────────────────────────────
-# Host name of the console; sets APP_URL, FRONTEND_URL and CORS.
-# Empty: those values are not set.
+# Host name of the console; sets APP_URL and FRONTEND_URL to https://<domain>, which is also the
+# origin CORS allows (with cors.allowedOrigins). Empty: those values are not set.
 domain: ""
+
+# ─── CORS ─────────────────────────────────────
+# The console calls the API on its own origin and needs no CORS. Other origins whose browser pages
+# call the API (/api/*), e.g. ["https://portal.example.com"]: CORS_ALLOWED_ORIGINS.
+cors:
+  allowedOrigins: []
 
 # ─── Gateway ─────────────────────────────────
 # Single entry point: routes /, /api, /horizon, /ws
 gateway:
-  replicas: 2
+  replicas: 2               # ignored while hpa.enabled: the HPA owns the count
   serviceType: ClusterIP
   port: 80
+  # affinity of the gateway pods; empty: placement.affinity
+  affinity: {}
   image:
     repository: ghcr.io/brf-tech/runr/reqs/caddy
     tag: "2-alpine"
@@ -30,21 +38,30 @@ api:
     repository: ghcr.io/brf-tech/runr/api
     tag: latest
     pullPolicy: IfNotPresent
-  replicas: 2
-  port: 80
+  replicas: 2               # ignored while hpa.enabled: the HPA owns the count
+  port: 80                  # port Octane listens on in the API container
   resources:
     requests: { cpu: 200m, memory: 256Mi }
     limits:   { cpu: "1", memory: "1Gi" }
   storage:
     size: 10Gi
+    # Access modes of the PVC runr-api-storage, mounted by the API, Horizon, scheduler, Reverb and the
+    # hook Jobs. ReadWriteOnce: one node at a time, those pods are colocated (podColocation).
+    # [ReadWriteMany] with a ReadWriteMany StorageClass: they run on any node. Set when the claim is
+    # created — Kubernetes does not change it later (docs/install.md, Storage).
+    accessModes: [ReadWriteOnce]
     fixPermissions: true    # initContainer: chown www-data (some volume types, e.g. ext4 block volumes, come owned by root)
-    # storageClassName: ""  # set when RWX is needed
+    # storageClassName: ""  # empty: the cluster's default StorageClass
+  # affinity of the API pods; empty: placement.affinity
+  affinity: {}
   hpa:
     enabled: false
     minReplicas: 2
     maxReplicas: 6
     targetCPU: 70
   pdb:
+    # Created only with a ReadWriteMany API volume: with ReadWriteOnce the API pods cannot move off
+    # the volume's node and a budget would hold a drain of that node forever.
     enabled: false
 
 # ─── UI ───────────────────────────────────────
@@ -52,11 +69,15 @@ ui:
   image:
     repository: ghcr.io/brf-tech/runr/ui
     tag: latest
-    # Appended to the tag when edition=multi-tenant (UI built with the tenancy + auth-provider modules)
-    multiTenantSuffix: ""
+    # Appended to the tag when edition=multi-tenant: the UI variant built with the Tenancy and Auth
+    # Provider modules (published as <version>-mt). With tag latest the multi-tenant image is the
+    # chart's release, <appVersion>-mt. "" = the tag as it is (a UI image of your own with the modules)
+    multiTenantSuffix: "-mt"
     pullPolicy: IfNotPresent
-  replicas: 2
-  port: 80
+  replicas: 2               # ignored while hpa.enabled: the HPA owns the count
+  port: 80                  # port Caddy listens on in the UI container
+  # affinity of the UI pods; empty: placement.affinity
+  affinity: {}
   resources:
     requests: { cpu: 50m, memory: 64Mi }
     limits:   { cpu: 200m, memory: 128Mi }
@@ -70,8 +91,10 @@ ui:
 
 # ─── Reverb (required, no toggle) ────────────
 reverb:
+  # More than 1: the replicas share broadcasts over Redis (REVERB_SCALING_ENABLED); each WebSocket
+  # (console, browser shell, sandbox exec, region agent) stays on the replica it reached
   replicas: 1
-  port: 8080
+  port: 8080                # port Reverb listens on (REVERB_SERVER_PORT) and of the Service
   resources:
     requests: { cpu: 100m, memory: 128Mi }
     limits:   { cpu: 500m, memory: 512Mi }
@@ -95,6 +118,12 @@ scheduler:
 redis:
   host: ""
   port: "6379"
+  username: ""              # ACL user (REDIS_USERNAME); empty: the default user
+  # Password (REDIS_PASSWORD, from a Secret): written to the chart's Secret (secretName), or read from
+  # existingSecret / existingSecretPasswordKey. The chart's Redis then requires it too.
+  password: ""
+  existingSecret: ""
+  existingSecretPasswordKey: password
   image:
     repository: ghcr.io/brf-tech/runr/reqs/redis
     tag: "7-alpine"
@@ -104,21 +133,28 @@ redis:
   pdb:
     enabled: false
 
-# ─── Database ────────────────────────────────
-# host empty + driver=pgsql → an internal PostgreSQL is installed
-# host set → that external database is used, no internal one is installed
-# driver=sqlite → no database server is installed (only with tenancy.enabled=false)
+# ─── Database (PostgreSQL) ───────────────────
+# host empty → an internal PostgreSQL is installed
+# host set   → that external PostgreSQL is used, no internal one is installed
 database:
-  driver: pgsql
+  driver: pgsql             # the only driver: the pods share one database server
   host: ""
   port: "5432"
   name: runr
   user: runr
+  # The user's password (DB_PASSWORD, from a Secret). Empty: generated by the chart on the first
+  # install (secret.create=true) and kept. password: written to the chart's Secret; existingSecret /
+  # existingSecretPasswordKey: read from a Secret of yours. The chart's PostgreSQL applies it when
+  # it initialises an empty volume (later changes: ALTER USER first).
+  password: ""
+  existingSecret: ""
+  existingSecretPasswordKey: password
   postgres:
     image:
       repository: ghcr.io/brf-tech/runr/reqs/postgres
       tag: "17-alpine"
     storage: 10Gi
+    storageClassName: ""    # StorageClass of runr-postgres-data; empty: the cluster's default (set at creation)
     fixPgdata: true         # initContainer: moves lost+found out of the way, PGDATA in a subdirectory
     resources:
       requests: { cpu: 200m, memory: 256Mi }
@@ -151,6 +187,15 @@ mail:
   port: "1025"
   from: "noreply@runr.sh"
   fromName: RunR
+  # SMTP authentication: username (MAIL_USERNAME) and the password (MAIL_PASSWORD, from a Secret) —
+  # written to the chart's Secret, or read from existingSecret / existingSecretPasswordKey
+  username: ""
+  password: ""
+  existingSecret: ""
+  existingSecretPasswordKey: password
+  # "" or starttls: STARTTLS when the server offers it (TLS from the first byte on port 465);
+  # tls: TLS from the first byte on any port
+  encryption: ""
 
 mailpit:
   image:
@@ -183,27 +228,28 @@ tenancy:
 authProvider:
   enabled: false
 
-# ─── Billing (multi-tenant, docs/billing.md) ─
-# RunR calculates what each tenant owes (usage, plan fees, capacity deals); your billing system reads
-# the amounts through the billing API, invoices, and records purchases back. Billing events (period
-# closed, plan changed, usage threshold) are POSTed to webhookUrl — empty: they are only kept for
-# GET /api/billing/events. webhookSecret signs them (X-RunR-Signature: sha256=HMAC-SHA256(secret,
-# "<X-RunR-Timestamp>.<raw body>")); it goes into the chart's Secret (secretName) — with
-# secret.create=false add the key BILLING_WEBHOOK_SECRET to that Secret yourself (optional).
-# Platform admins override every value in Settings → Plans & Billing.
+# Support tickets: the Ticket module of the API (TICKET_ENABLED). The console shows the ticket pages
+# when its UI image is built with VITE_TICKET_ENABLED=true.
+ticket:
+  enabled: true
+
+# ─── Billing (docs/billing.md) ───────────────
+# The Billing module of the API (BILLING_ENABLED), off by default. On: RunR calculates a bill per
+# project and month (payer: the project owner) from region prices — pay-as-you-go usage or fixed
+# resources — and, with tenancy, a bill per tenant for its use of shared platform regions. RunR only
+# calculates: an external invoicing system reads bills and usage through the billing API and gets
+# signed events on webhookUrl (empty: events are only kept for GET /api/billing/events). webhookSecret
+# signs them (X-RunR-Signature: sha256=HMAC-SHA256(secret, "<X-RunR-Timestamp>.<raw body>")); it goes
+# into the chart's Secret (secretName) — with secret.create=false add the key BILLING_WEBHOOK_SECRET to
+# that Secret yourself (optional). A webhook saved in the console (Settings → Billing → Webhook) wins
+# over these two values. The console shows the billing pages when the API reports billing on (the
+# published UI images are built with VITE_BILLING_ENABLED=true).
 billing:
+  enabled: false
+  # ISO 4217 currency of every price and bill of the installation
+  currency: USD
   webhookUrl: ""
   webhookSecret: ""
-  # Month-to-date usage amounts that raise billing.usage.threshold, e.g. "100,500,1000"
-  usageThresholds: ""
-  # Where tenants buy plans and credits (a link in the console), e.g. https://shop.example.com
-  storeUrl: ""
-
-# ─── Plans (docs/billing.md) ─────────────────
-# Optional, off by default: while off no plan appears anywhere in the console and tenant quotas
-# are managed per region as before. Plans are defined in Settings → Plans & Billing.
-plans:
-  enabled: false
 
 # ─── Branding (white-label, docs/white-label.md) ─
 # The installation's brand — no rebuild, applied when the pods start. Precedence (per field):
@@ -449,8 +495,10 @@ bindings:
     backupRetention: 7d
 
 # ─── Secret ──────────────────────────────────
-# One Secret: APP_KEY + REVERB_APP_SECRET + DB_PASSWORD (+ ADMIN_PASSWORD)
-# create: true → the chart generates it (default); false → create it before installing (ci.sh / CI deploy)
+# One Secret: APP_KEY + REVERB_APP_SECRET + DB_PASSWORD (+ ADMIN_PASSWORD, MAIL_PASSWORD, REDIS_PASSWORD)
+# create: true → the chart generates it (default) and keeps the generated values on upgrade; the
+#   passwords of an external database, SMTP server or Redis come from database/mail/redis.password
+#   or .existingSecret. false → create it before installing (ci.sh / CI deploy)
 secretName: runr-secret
 secret:
   create: true
@@ -480,18 +528,25 @@ auth:
   loginTokenTtlDays: 30
 
 # ─── First administrator account ─────────────
-# password empty: generated randomly when secret.create=true, otherwise the application generates one
+# password empty: generated randomly into the Secret (ADMIN_PASSWORD) when secret.create=true;
+# with secret.create=false ADMIN_PASSWORD of your Secret, else the bootstrap Job generates one into
+# the Secret runr-admin (key password). Never written to a log.
 admin:
   username: admin
   email: admin@example.com
   password: ""
 
 # ─── Bootstrap (post-install / post-upgrade hook) ─
-# Runs after the migrate hooks: creates the administrator above when the users table is empty
-# (AdminSeeder + is_admin). Leaves everything alone when users exist.
-# false → the Job is not rendered (ci.sh / the CI deploy run their own admin step)
+# Runs after the migrate hooks: brings the existing regions to this version and creates the
+# administrator above when no administrator exists (AdminSeeder + is_admin). Leaves existing
+# accounts alone. false → the Job is not rendered (ci.sh / the CI deploy run their own admin step)
 bootstrap:
   enabled: true
+  # Multi-tenant edition: an installation that ran single-tenant becomes its first tenant
+  # (php artisan tenancy:setup --force: name Default, slug the git remote owner). Fresh, converted
+  # and multi-tenant installations are left alone. false → run tenancy:setup yourself (to review
+  # the plan with --dry-run first or choose --name / --slug; docs/tenancy.md)
+  tenancySetup: true
 
 # ─── Ingress ─────────────────────────────────
 # domain → runr-gateway. className: the cluster's ingress class (traefik on k3s)
@@ -507,11 +562,12 @@ ingress:
     #   letsencrypt — issued by cert-manager: annotation cert-manager.io/cluster-issuer: <clusterIssuer> on the
     #                 Ingress + tls (secretName). Behaves like none when the cluster has no cert-manager.
     #   custom      — certificate + privateKey (PEM) → the chart creates a kubernetes.io/tls Secret.
+    #   secret      — your own kubernetes.io/tls Secret (secretName, required) in the release namespace.
     #   none        — no tls on the Ingress; the ingress controller serves its default certificate (e.g. Traefik TLSStore default).
     #   ""          — the older keys apply: enabled / clusterIssuer / secretName (0.3.5 and earlier, --reuse-values).
     mode: ""
     enabled: false        # only with mode ""
-    secretName: ""        # empty: letsencrypt → runr-tls · custom → runr-tls-custom
+    secretName: ""        # empty: letsencrypt → runr-tls · custom → runr-tls-custom · secret: required
     clusterIssuer: ""     # letsencrypt: empty → letsencrypt-prod · mode "": when set, cert-manager issues the certificate
     certificate: ""       # custom: full PEM chain (server certificate first); base64-encoded PEM works too
     privateKey: ""        # custom: the certificate's unencrypted private key (PEM); never written to any output
@@ -537,11 +593,34 @@ clientIp:
   proxyHops: 0
 
 # ─── Custom env override ─────────────────────
+# Written to the ConfigMap runr-config: no secrets here (passwords: database/mail/redis.password or
+# .existingSecret)
 extraEnv: {}
 
 # ─── Pod Colocation ─────────────────────────────
-# Schedules the pods that share an RWO PVC onto the same node
+# With a ReadWriteOnce API volume (api.storage.accessModes), the pods that mount it run on its node
+# (required pod affinity). No effect with ReadWriteMany.
 podColocation: true
+
+# ─── Network policies ───────────────────────────
+# true → NetworkPolicies that allow exactly the connections docs/install.md lists and deny the rest
+# (needs a CNI that enforces NetworkPolicy)
+networkPolicy:
+  enabled: false
+  # Who may reach runr-gateway (gateway.port): NetworkPolicy peers, e.g. the ingress controller's
+  # namespace  - namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: ingress-nginx}}
+  # Empty: any source (an ingress controller on the host network, gateway.serviceType LoadBalancer)
+  gatewayFrom: []
+  # Outbound connections of the API, Horizon, scheduler and Reverb pods and the hook Jobs besides the
+  # chart's services, DNS and the external database / Redis / SMTP port: the regions' Kubernetes API
+  # servers, function domains, registries, Helm repositories, ghcr.io, git providers, alert targets
+  egress:
+    to:
+      - ipBlock: { cidr: 0.0.0.0/0 }
+      - ipBlock: { cidr: "::/0" }
+    ports: [80, 443, 6443]  # empty: every port
+  # Further egress rules of those pods (NetworkPolicyEgressRule), e.g. a region registry's NodePort
+  extraEgress: []
 
 # ─── Placement ──────────────────────────────────
 # Where RunR's own pods run (every Deployment and hook Job of the chart).
@@ -553,7 +632,8 @@ placement:
   tolerateDedicatedWorkers: true
   # Added to every RunR pod as given, e.g. [{key: dedicated, operator: Equal, value: infra, effect: NoSchedule}]
   tolerations: []
-  # affinity of every RunR pod (nodeAffinity, podAffinity, podAntiAffinity); podColocation and
+  # affinity of every RunR pod (nodeAffinity, podAffinity, podAntiAffinity) unless gateway.affinity,
+  # api.affinity or ui.affinity replaces it for that component; podColocation and
   # tolerateDedicatedWorkers add their terms to it
   affinity: {}
   # nodeSelector of every RunR pod, e.g. {node-role.kubernetes.io/infra: "true"}

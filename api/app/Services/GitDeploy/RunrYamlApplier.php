@@ -12,6 +12,7 @@ use App\Rules\WithinRegionTimeout;
 use App\Rules\WithinResourceLimit;
 use App\Services\Helpers\ResourceReservation;
 use App\Services\Runtimes\RuntimeRegistry;
+use App\Support\Projects\ProjectAdmission;
 use Illuminate\Support\Facades\Validator;
 use Modules\Tenancy\Services\TenantQuotaService;
 
@@ -214,6 +215,15 @@ class RunrYamlApplier
                         $errors[$key] = $message;
                     }
                 }
+            }
+        }
+
+        // Fixed-price region (ProjectAdmission config limiters, docs/billing.md): the changed
+        // project must fit its approved resources at its worst case (max_scale)
+        $sizing = array_intersect_key(array_diff_key($changes, $errors), array_flip(['cpu', 'memory_mb', 'trigger_type', 'min_scale', 'max_scale', 'scale_to_zero']));
+        if ($sizing !== [] && ($message = ProjectAdmission::configProblem($project, $project->knative_region_id, $sizing))) {
+            foreach (array_keys($sizing) as $key) {
+                $errors[$key] = $message;
             }
         }
 

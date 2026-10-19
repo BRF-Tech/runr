@@ -7,6 +7,8 @@ use App\Models\Git\PreviewEnvironment;
 use App\Models\Project;
 use App\Services\GitDeploy\GitAudit;
 use App\Services\GitDeploy\PreviewService;
+use App\Support\Projects\DeployIntent;
+use App\Support\Projects\ProjectAdmission;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
@@ -42,6 +44,10 @@ class GitPreviewController extends Controller
         if (! $row->version_id || ! in_array($row->status, [PreviewEnvironment::READY, PreviewEnvironment::FAILED], true)) {
             throw ValidationException::withMessages(['preview' => __('git.preview_not_redeployable')]);
         }
+
+        // Not while the project is stopped (409 project_stopped); module guards, e.g. a fixed
+        // region's allocation
+        ProjectAdmission::assertDeployable($project, DeployIntent::preview((string) $row->id));
 
         $row->mark(PreviewEnvironment::DEPLOYING);
         DeployPreviewJob::dispatch($row->id);

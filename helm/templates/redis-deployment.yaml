@@ -23,6 +23,17 @@ spec:
       containers:
         - name: redis
           image: {{ include "runr.image" (printf "%v:%v" .Values.redis.image.repository .Values.redis.image.tag) | quote }}
+          {{- /* redis.password / redis.existingSecret: the chart's Redis requires the password the app pods send */}}
+          {{- $password := include "runr.passwordRef" (dict "root" . "values" .Values.redis "key" "REDIS_PASSWORD") | fromJson }}
+          {{- if $password.name }}
+          args: ["redis-server", "--requirepass", "$(REDIS_PASSWORD)"]
+          env:
+            - name: REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $password.name | quote }}
+                  key: {{ $password.key | quote }}
+          {{- end }}
           ports:
             - containerPort: 6379
           resources:

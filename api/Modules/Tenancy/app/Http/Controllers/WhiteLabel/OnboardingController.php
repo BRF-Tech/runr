@@ -6,12 +6,12 @@ use App\Http\Controllers\Api\Controller;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Modules\Tenancy\Http\Controllers\WhiteLabel\Concerns\ResolvesTenantContext;
-use Modules\Tenancy\Services\Plans\SelfServiceOnboarding;
+use Modules\Tenancy\Services\Onboarding\SelfServiceOnboarding;
 
 /**
  * Onboarding wizard of a self-service tenant (multi-tenant):
  *
- *  GET  /api/onboarding   status (pending | completed | none), offered regions, default quota, plan
+ *  GET  /api/onboarding   status (pending | completed | none), offered regions, default quota
  *  POST /api/onboarding   {org_name, region_id?} → {status, tenant} (settings.manage)
  */
 class OnboardingController extends Controller
@@ -26,7 +26,7 @@ class OnboardingController extends Controller
 
         if (! $tenant) {
             return response()->json(['status' => 'none', 'can_complete' => false, 'tenant' => null, 'regions' => [], 'region_assigned' => false,
-                'default_quota' => null, 'plan' => null]);
+                'default_quota' => null]);
         }
 
         return response()->json($this->onboarding->payload($tenant, $request->user()));
@@ -43,6 +43,6 @@ class OnboardingController extends Controller
             'region_id' => ['sometimes', 'nullable', 'string', 'max:26'],
         ]);
 
-        return response()->json($this->onboarding->complete($tenant, $data));
+        return response()->json($this->onboarding->complete($tenant, $data, $request->user()));
     }
 }

@@ -14,6 +14,7 @@ use App\Services\GitDeploy\PreviewVersionScope;
 use App\Services\GitDeploy\ProjectRemote;
 use App\Services\GitDeploy\Providers\TarGz;
 use App\Services\Helpers\ResourceReservation;
+use App\Services\Projects\ProjectStopService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Testing\TestResponse;
 use Modules\Tenancy\Services\TenantQuotaService;
@@ -326,6 +327,47 @@ class PreviewLifecycleTest extends TestCase
         $this->assertSame($preview, ResourceReservation::total($demand));
         $this->assertSame($preview['cpu_m'], $demand['burst']['cpu_m']);
         $this->assertSame(ResourceReservation::zero(), $demand['hard']);
+    }
+
+    public function test_a_stop_removes_the_previews_and_a_stopped_project_gets_none(): void
+    {
+        $this->deliver('pull_request.opened');
+        $preview = PreviewEnvironment::firstOrFail();
+        $this->assertSame(PreviewEnvironment::READY, $preview->status);
+
+        app(ProjectStopService::class)->stop($this->project, $this->owner, 'Unpaid bill');
+
+        $this->assertSame(PreviewEnvironment::DELETED, $preview->fresh()->status);
+        $this->assertSame('Project stopped', $preview->fresh()->status_message);
+        $this->assertNotEmpty($this->calls('DELETE', '/apis/serving.knative.dev/v1/namespaces/fn/services/orders-pr-12'));
+
+        // A new commit while it is stopped: skipped with the reason, nothing applied
+        $patches = count($this->servicePatches('orders-pr-12'));
+        $this->deliver('pull_request.synchronize');
+        $preview->refresh();
+        $this->assertSame(PreviewEnvironment::SKIPPED, $preview->status);
+        $this->assertStringContainsString('Unpaid bill', (string) $preview->status_message);
+        $this->assertCount($patches, $this->servicePatches('orders-pr-12'));
+    }
+
+    public function test_a_preview_deploy_or_redeploy_of_a_stopped_project_is_refused(): void
+    {
+        $this->deliver('pull_request.opened');
+        $preview = PreviewEnvironment::firstOrFail();
+        $patches = count($this->servicePatches('orders-pr-12'));
+
+        // Stopped while a redeploy was queued (the stop's own teardown aside)
+        $this->project->forceFill(['stopped_at' => now(), 'stop_reason' => 'Abuse report'])->saveQuietly();
+
+        $this->signedIn($this->owner)->postJson("/api/projects/{$this->project->id}/previews/{$preview->id}/redeploy")
+            ->assertStatus(409)->assertJsonPath('code', 'project_stopped');
+
+        $preview->forceFill(['status' => PreviewEnvironment::DEPLOYING])->save();
+        app(PreviewService::class)->deploy($preview->fresh());
+
+        $this->assertSame(PreviewEnvironment::FAILED, $preview->fresh()->status);
+        $this->assertStringContainsString('Abuse report', (string) $preview->fresh()->status_message);
+        $this->assertCount($patches, $this->servicePatches('orders-pr-12'), 'nothing was applied');
     }
 
     public function test_deleting_the_project_removes_its_previews(): void

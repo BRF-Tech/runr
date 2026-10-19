@@ -19,11 +19,15 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 use Laravel\Sanctum\PersonalAccessToken;
 use Modules\Tenancy\Http\Controllers\TenantController;
 use Modules\Tenancy\Http\Middleware\IdentifyTenant;
 use Modules\Tenancy\Jobs\DeleteTenantJob;
 use Modules\Tenancy\Models\Tenant;
+use Modules\Tenancy\Support\TenantCentralTables;
 use Symfony\Component\HttpKernel\Exception\HttpException;
 use Symfony\Component\Yaml\Yaml;
 use Tests\Concerns\WiresTenancy;
@@ -410,5 +414,159 @@ class TenantTeardownTest extends TestCase
     public function test_the_job_is_unique_per_tenant(): void
     {
         $this->assertSame('t-1', (new DeleteTenantJob('t-1'))->uniqueId());
+    }
+
+    // ── Central tables (sandboxes, uploads, MCP, git, status pages, …) ─────────
+
+    /**
+     * A row of a central table with every required column filled, whatever the schema adds;
+     * $values win. Returns the row's id (or '').
+     *
+     * @param  array<string, mixed>  $values
+     */
+    private function centralRow(string $table, array $values): string
+    {
+        $row = [];
+        foreach (Schema::getColumns($table) as $column) {
+            $name = $column['name'];
+            if (array_key_exists($name, $values) || $column['nullable'] || $column['default'] !== null || $column['auto_increment']) {
+                continue;
+            }
+
+            $type = strtolower((string) $column['type']);
+            $length = preg_match('/\((\d+)\)/', $type, $m) ? (int) $m[1] : 20;
+            $row[$name] = match (true) {
+                str_contains($type, 'bool') || str_starts_with($type, 'tinyint') => false,
+                str_contains($type, 'int') || str_contains($type, 'numeric') || str_contains($type, 'decimal')
+                    || str_contains($type, 'double') || str_contains($type, 'float') || str_contains($type, 'real') => 1,
+                str_contains($type, 'json') => '{}',
+                str_contains($type, 'timestamp') || str_contains($type, 'datetime') => now(),
+                str_contains($type, 'date') => now()->toDateString(),
+                default => strtolower(Str::random(min($length, 26))),
+            };
+        }
+
+        $row = $values + $row;
+        DB::table($table)->insert($row);
+
+        return (string) ($row['id'] ?? '');
+    }
+
+    /** Rows of $table whose $column is $value. */
+    private function rows(string $table, string $column, string $value): int
+    {
+        return DB::table($table)->where($column, $value)->count();
+    }
+
+    /**
+     * Tenant "acme" (own region fn @ tenant.test with an internal registry) with what it runs and
+     * stores through central tables, next to rows of "globex", of the platform's regions and the
+     * records that outlive an organization.
+     *
+     * @return array{0: Tenant, 1: Tenant, 2: string, 3: string} acme, globex, own region id, running sandbox id
+     */
+    private function tenantWithCentralRows(): array
+    {
+        config(['tenancy.enabled' => true]); // sandboxes resolve their region in the organization's context
+        Storage::fake('public');
+
+        $tenant = $this->tenant([]);
+        $other = Tenant::create(['name' => 'Globex', 'slug' => 'globex']);
+        $ownId = $tenant->run(function () {
+            $own = KnativeRegion::where('name', 'fn')->firstOrFail();
+            $own->forceFill(['registry_mode' => 'internal'])->save();
+
+            return (string) $own->id;
+        });
+
+        // Run or stored in the region: a sandbox pod, an upload receiver, an image manifest
+        $running = $this->centralRow('sandboxes', [
+            'id' => (string) Str::ulid(), 'tenant_id' => $tenant->id, 'knative_region_id' => $ownId, 'namespace' => 'runr-sbx-acme',
+            'pod_name' => 'sbx-run', 'status' => 'running', 'env' => null,
+        ]);
+        $this->centralRow('sandbox_processes', ['id' => (string) Str::ulid(), 'sandbox_id' => $running]);
+        $this->centralRow('sandbox_events', ['id' => (string) Str::ulid(), 'sandbox_id' => $running]);
+        $this->centralRow('image_uploads', [
+            'id' => (string) Str::ulid(), 'tenant_id' => $tenant->id, 'knative_region_id' => $ownId, 'status' => 'ready', 'receiver_name' => 'recv-acme',
+        ]);
+        $this->centralRow('uploaded_images', [
+            'id' => (string) Str::ulid(), 'tenant_id' => $tenant->id, 'knative_region_id' => $ownId, 'registry_repository' => 'u/acme/app', 'digest' => 'sha256:abc',
+        ]);
+        // A custom runtime with its version and build
+        $this->centralRow('runtimes', ['id' => 'acme-rt', 'source' => 'custom', 'tenant_id' => $tenant->id]);
+        $this->centralRow('runtime_builds', ['id' => (string) Str::ulid(), 'runtime_id' => 'acme-rt', 'knative_region_id' => 'platform-region']);
+        $this->centralRow('executor_images', ['runtime' => 'acme-rt']);
+        // Branding override with an asset
+        Storage::disk('public')->put('branding/acme/logo.png', 'png');
+        $this->centralRow('brandings', ['tenant_id' => $tenant->id, 'logo_light_path' => 'branding/acme/logo.png']);
+
+        // Every other table of the organization's rows: one of acme, one of globex
+        foreach (TenantCentralTables::DELETED_WITH_TENANT as $table => $column) {
+            if (! in_array($table, ['sandboxes', 'image_uploads', 'uploaded_images', 'runtimes', 'brandings'], true)) {
+                $this->centralRow($table, [$column => $tenant->id]);
+            }
+            $this->centralRow($table, [$column => $other->id] + ($table === 'runtimes' ? ['id' => 'globex-rt'] : []));
+        }
+
+        // Settings of acme's own region go, the platform region's stay (also one configured from
+        // inside acme); billing records stay
+        $this->centralRow('sandbox_region_settings', ['knative_region_id' => $ownId]);
+        $this->centralRow('sandbox_region_settings', ['knative_region_id' => 'platform-region']);
+        $this->centralRow('region_tracing_configs', ['region_id' => $ownId, 'tenant_id' => $tenant->id]);
+        $this->centralRow('region_tracing_configs', ['region_id' => 'platform-region', 'tenant_id' => $tenant->id]);
+        $this->centralRow('sandbox_usage_records', ['tenant_id' => $tenant->id, 'knative_region_id' => $ownId]);
+
+        return [$tenant, $other, $ownId, $running];
+    }
+
+    public function test_the_organizations_central_rows_and_what_runs_for_them_go_with_it(): void
+    {
+        [$tenant, $other, $ownId, $running] = $this->tenantWithCentralRows();
+        $this->fakeCluster();
+
+        $this->assertSame(202, $this->destroy($tenant)->getStatusCode());
+        $this->assertNull(Tenant::find($tenant->id));
+
+        // Sandbox pod, upload receiver and image manifest deleted in the region
+        $this->assertContains('DELETE tenant.test/api/v1/namespaces/runr-sbx-acme/pods/sbx-run', $this->deletes());
+        $this->assertContains('DELETE tenant.test/apis/batch/v1/namespaces/fn/jobs/recv-acme', $this->deletes());
+        $this->assertNotEmpty(array_filter($this->deletes(), fn ($c) => str_ends_with($c, '/proxy/v2/u/acme/app/manifests/sha256:abc')));
+
+        foreach (TenantCentralTables::DELETED_WITH_TENANT as $table => $column) {
+            $this->assertSame(0, $this->rows($table, $column, $tenant->id), "{$table} of the deleted organization");
+            $this->assertSame(1, $this->rows($table, $column, $other->id), "{$table} of another organization");
+        }
+        $this->assertSame(0, $this->rows('sandbox_processes', 'sandbox_id', $running));
+        $this->assertSame(0, $this->rows('sandbox_events', 'sandbox_id', $running));
+        $this->assertSame(0, $this->rows('runtime_builds', 'runtime_id', 'acme-rt'));
+        $this->assertSame(0, $this->rows('executor_images', 'runtime', 'acme-rt'));
+        $this->assertSame(0, $this->rows('sandbox_region_settings', 'knative_region_id', $ownId));
+        $this->assertSame(1, $this->rows('sandbox_region_settings', 'knative_region_id', 'platform-region'));
+        $this->assertSame(0, $this->rows('region_tracing_configs', 'region_id', $ownId));
+        $this->assertSame(1, $this->rows('region_tracing_configs', 'region_id', 'platform-region'));
+        $this->assertSame(1, $this->rows('sandbox_usage_records', 'tenant_id', $tenant->id), 'usage records outlive the organization');
+        Storage::disk('public')->assertMissing('branding/acme/logo.png');
+    }
+
+    public function test_a_sandbox_pod_that_cannot_be_deleted_keeps_the_tenant_and_its_central_rows(): void
+    {
+        [$tenant] = $this->tenantWithCentralRows();
+        $this->failDeletes = ['tenant.test/api/v1/namespaces/runr-sbx-acme/pods/sbx-run'];
+        $this->fakeCluster();
+
+        $this->destroy($tenant);
+
+        $kept = Tenant::find($tenant->id);
+        $this->assertSame(Tenant::STATUS_DELETE_FAILED, $kept?->status);
+        $this->assertStringContainsString('sbx-run', (string) $kept->status_message);
+        $this->assertSame(1, $this->rows('sandboxes', 'tenant_id', $tenant->id));
+        $this->assertSame(1, $this->rows('mcp_servers', 'tenant_id', $tenant->id));
+
+        // The retry finishes it once the cluster answers
+        $this->failDeletes = [];
+        $this->destroy($kept);
+
+        $this->assertNull(Tenant::find($tenant->id));
+        $this->assertSame(0, $this->rows('sandboxes', 'tenant_id', $tenant->id));
     }
 }

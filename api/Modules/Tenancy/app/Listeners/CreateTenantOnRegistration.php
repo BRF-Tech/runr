@@ -6,7 +6,8 @@ use App\Events\UserRegistered;
 use Illuminate\Support\Str;
 use Modules\Tenancy\Models\Tenant;
 use Modules\Tenancy\Models\TenantUser;
-use Modules\Tenancy\Services\Plans\SelfServiceOnboarding;
+use Modules\Tenancy\Services\Onboarding\SelfServiceOnboarding;
+use Modules\Tenancy\Services\TenantSchema;
 
 class CreateTenantOnRegistration
 {
@@ -44,20 +45,16 @@ class CreateTenantOnRegistration
             'role' => 'owner',
         ]);
 
-        // Onboarding wizard + (plans on) the default plan
+        // Onboarding wizard
         $onboarding->tenantCreated($tenant, $event->user);
     }
 
     /**
-     * Tenant schema + tenant migrations.
+     * Tenant schema + tenant migrations (every module's, TenantSchema).
      */
     protected function provision(Tenant $tenant): void
     {
-        $tenant->database()->manager()->createDatabase($tenant);
-
-        $tenant->run(function () {
-            \Artisan::call('migrate', config('tenancy.migration_parameters'));
-        });
+        TenantSchema::create($tenant);
     }
 
     protected function generateUniqueSlug(string $name): string

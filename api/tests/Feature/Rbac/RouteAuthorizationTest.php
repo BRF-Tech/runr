@@ -33,11 +33,10 @@ class RouteAuthorizationTest extends TestCase
         $this->app['router']->aliasMiddleware('tenancy.admin', RequireAdmin::class);
         Router::middleware(['api', 'auth:sanctum'])->prefix('api')->group(base_path('Modules/Tenancy/routes/api.php'));
         Router::middleware('api')->prefix('api')->group(base_path('Modules/Tenancy/routes/public.php'));
-        // White-label and billing (PlanServiceProvider): plans, onboarding, tenant branding, the
-        // billing API + the public plan list
+        // White-label (TenantWhiteLabelServiceProvider): onboarding, tenant branding
         Router::middleware(['api', 'auth:sanctum'])->prefix('api')->group(base_path('Modules/Tenancy/routes/white-label.php'));
-        Router::middleware(['api', 'auth:sanctum'])->prefix('api')->group(base_path('Modules/Tenancy/routes/billing.php'));
-        Router::middleware('api')->prefix('api')->group(base_path('Modules/Tenancy/routes/white-label-public.php'));
+        // Billing module (its route file carries the api + auth:sanctum middleware)
+        Router::prefix('api')->group(base_path('Modules/Billing/routes/api.php'));
         Router::middleware(['api', 'auth:sanctum'])->prefix('api')->group(base_path('Modules/AuthProvider/routes/api.php'));
         Router::middleware('api')->prefix('api')->group(base_path('Modules/AuthProvider/routes/public.php'));
         Router::prefix('api')->group(base_path('Modules/Ticket/routes/api.php'));
@@ -132,7 +131,11 @@ class RouteAuthorizationTest extends TestCase
             $this->assertNotSame(RoutePermissions::AUTHENTICATED, $mode, "{$route->uri()} is a project route");
             foreach ($permissions as $permission) {
                 $this->assertTrue(
-                    PermissionCatalog::isProjectScoped($permission) || $permission === 'projects.create',
+                    PermissionCatalog::isProjectScoped($permission)
+                        || $permission === 'projects.create'
+                        // organization-wide on purpose: a project's creator holds the Admin role on
+                        // it and must not resume a stop an administrator ordered
+                        || $permission === 'projects.stop',
                     "{$route->uri()} requires {$permission}, which cannot be granted per project",
                 );
             }
@@ -191,10 +194,13 @@ class RouteAuthorizationTest extends TestCase
         $this->assertSame([RoutePermissions::PLATFORM_SCOPED, ['billing.view', 'billing.manage']], RoutePermissions::parse('@platform:billing.view|billing.manage'));
         $this->assertSame([RoutePermissions::PLATFORM, []], RoutePermissions::parse('@platform'));
 
-        $route = Router::getRoutes()->match(Request::create('/api/billing/charges', 'GET'));
+        $route = Router::getRoutes()->match(Request::create('/api/billing/tenant-bills', 'GET'));
         $this->assertSame('@platform:billing.view', RoutePermissions::requirement($route));
-        $route = Router::getRoutes()->match(Request::create('/api/billing/charges/x', 'PATCH'));
+        $route = Router::getRoutes()->match(Request::create('/api/billing/tenant-bills/x/paid', 'PUT'));
         $this->assertSame('@platform:billing.manage', RoutePermissions::requirement($route));
+        // Bills of the request's organization: the organization's billing permissions
+        $route = Router::getRoutes()->match(Request::create('/api/billing/bills', 'GET'));
+        $this->assertSame('billing.view', RoutePermissions::requirement($route));
     }
 
     public function test_platform_routes_need_a_platform_admin(): void

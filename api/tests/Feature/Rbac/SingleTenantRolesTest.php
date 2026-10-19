@@ -103,12 +103,15 @@ class SingleTenantRolesTest extends TestCase
         }
     }
 
-    public function test_billing_is_not_a_single_tenant_role(): void
+    public function test_the_billing_role_in_a_single_tenant_install(): void
     {
+        // Billing works without tenancy (docs/billing.md): bills, prices, approvals, stopping projects
         $this->userWithRole('owner');
         $user = $this->userWithRole('billing');
 
-        $this->assertFalse($this->can($user, 'billing.view'));
+        foreach (['billing.view', 'billing.manage', 'billing.approve', 'projects.stop'] as $permission) {
+            $this->assertTrue($this->can($user, $permission), "billing may {$permission}");
+        }
         $this->assertFalse($this->can($user, 'projects.view'));
     }
 

@@ -4,8 +4,10 @@ namespace App\Services\Bindings;
 
 use App\Models\Binding;
 use App\Models\BindingUsageRecord;
+use App\Services\Metering\UsageAggregator;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Schema;
 
 /**
  * Hourly measurement of bindings (current organization context): one round-trip per region and
@@ -17,11 +19,16 @@ use Illuminate\Support\Facades\Log;
  *    (dedicated Postgres), peak_bytes;
  *  - the size limit (BindingDriver::enforce: read-only over it).
  *
- * The Tenancy usage aggregation prices the records with the region's CostConfig.
+ * Quantities only, with the binding's creator (created_by — a binding belongs to no project, its
+ * usage is billed to the user who created it); the Billing module prices them (docs/billing.md),
+ * the core metering copies tenant usage in platform regions centrally (UsageAggregator::mirror).
  */
 class BindingUsageMeter
 {
     public const MAX_INTERVAL_HOURS = 2.0;
+
+    /** @var array<string, bool> context (tenant id or "central") => binding_usage_records.created_by exists */
+    private array $creatorColumn = [];
 
     public function __construct(private BindingDrivers $drivers) {}
 
@@ -94,6 +101,10 @@ class BindingUsageMeter
             'plan' => $binding->plan,
             'region_id' => $binding->knative_region_id,
         ]);
+        // A binding belongs to no project: its usage is billed to its creator (docs/billing.md)
+        if ($this->recordsCreator()) {
+            $record->created_by = $binding->created_by;
+        }
         $record->storage_gb_hours = round((float) $record->storage_gb_hours + ($bytes / 1024 ** 3) * $hours, 6);
         $record->instance_hours = round((float) $record->instance_hours + $instances * $hours, 4);
         $record->peak_bytes = max((int) $record->peak_bytes, $bytes);
@@ -103,5 +114,14 @@ class BindingUsageMeter
         $binding->usage_measured_at = $now;
 
         return $record;
+    }
+
+    /** binding_usage_records.created_by exists (a tenant schema may still miss TenantMigrations/0059). */
+    private function recordsCreator(): bool
+    {
+        $record = new BindingUsageRecord;
+        $context = UsageAggregator::tenantKey() ?? 'central';
+
+        return $this->creatorColumn[$context] ??= Schema::connection($record->getConnectionName())->hasColumn($record->getTable(), 'created_by');
     }
 }

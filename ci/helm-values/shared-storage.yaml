@@ -1,0 +1,36 @@
+# ci/check-helm-chart.sh: a ReadWriteMany API volume — the pods that mount it are not colocated, the
+# API's disruption budget is created — with autoscaling, two Reverb replicas, a zone spread of the
+# gateway of its own, StorageClasses for both volumes and the console certificate from an existing
+# Secret
+domain: console.acme-cloud.example
+api:
+  storage:
+    accessModes: [ReadWriteMany]
+    storageClassName: nfs-rwx
+  hpa:
+    enabled: true
+  pdb:
+    enabled: true
+gateway:
+  hpa:
+    enabled: true
+  pdb:
+    enabled: true
+  affinity:
+    podAntiAffinity:
+      preferredDuringSchedulingIgnoredDuringExecution:
+        - weight: 100
+          podAffinityTerm:
+            topologyKey: topology.kubernetes.io/zone
+            labelSelector:
+              matchLabels:
+                app: runr-gateway
+reverb:
+  replicas: 2
+database:
+  postgres:
+    storageClassName: fast-rwo
+ingress:
+  tls:
+    mode: secret
+    secretName: acme-console-tls

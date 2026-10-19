@@ -32,20 +32,14 @@ class KnativeNodeController extends Controller
             return response()->json(['message' => __('api.region.kubeconfig_missing')], 422);
         }
 
+        // A failed read changes nothing on the region: the kubeconfig stays (the cluster may be
+        // back a minute later); the periodic status check records an unreachable cluster
         try {
             $nodes = $nodeService->listWorkerNodes($knativeRegion);
         } catch (\Throwable $e) {
-            $knativeRegion->update([
-                'kubeconfig' => null,
-                'knative_status' => 'error',
-                'knative_status_message' => __('api.region.connect_failed', ['message' => $e->getMessage()]),
-                'knative_status_checked_at' => now(),
-            ]);
-
             return response()->json([
                 'message' => __('api.region.connect_failed', ['message' => $e->getMessage()]),
-                'kubeconfig_cleared' => true,
-                'region' => new KnativeRegionResource($knativeRegion->fresh()),
+                'region' => new KnativeRegionResource($knativeRegion),
             ], 400);
         }
 

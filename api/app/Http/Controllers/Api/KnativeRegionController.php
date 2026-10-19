@@ -6,12 +6,18 @@ use App\Http\Requests\KnativeRegion\CheckNamespacePreviewRequest;
 use App\Http\Requests\KnativeRegion\KubeconfigRequest;
 use App\Http\Requests\KnativeRegion\StoreKnativeRegionRequest;
 use App\Http\Requests\KnativeRegion\UpdateKnativeRegionRequest;
+use App\Http\Requests\KnativeRegion\UpdateRegionMonitoringRequest;
 use App\Http\Requests\KnativeRegion\UpdateRegionSettingsRequest;
 use App\Http\Resources\KnativeRegionResource;
 use App\Jobs\ApplyIngressTrustJob;
+use App\Jobs\ApplyRequestTimeoutJob;
+use App\Jobs\ConfigureRegionMonitoringJob;
+use App\Jobs\InstallRegionRegistryJob;
+use App\Jobs\RedeployRegionAgentJob;
 use App\Models\KnativeRegion;
 use App\Services\Helpers\IngressTrust;
 use App\Services\Helpers\MonitoringEndpointAccess;
+use App\Services\Helpers\RequestTimeout;
 use App\Services\KnativeNodeService;
 use App\Services\KnativeRedisService;
 use App\Services\KnativeStatusService;
@@ -49,27 +55,7 @@ class KnativeRegionController extends Controller
         $validated['kubeconfig'] = KubernetesClient::adaptKubeconfig($validated['kubeconfig']);
 
         // Validate kubeconfig connectivity before creating region
-        try {
-            $k8s = new KubernetesClient($validated['kubeconfig']);
-            $version = $k8s->getServerVersion();
-            if (! $version) {
-                throw new \Exception('Cannot retrieve server version');
-            }
-
-            $minor = (int) rtrim($version['minor'] ?? '', '+');
-            $minRequired = config('knative.min_k8s_minor', 30);
-            if ($minor < $minRequired) {
-                throw ValidationException::withMessages([
-                    'kubeconfig' => __('api.region.k8s_version_required', ['required' => $minRequired, 'detected' => $minor]),
-                ]);
-            }
-        } catch (ValidationException $e) {
-            throw $e;
-        } catch (\Throwable $e) {
-            throw ValidationException::withMessages([
-                'kubeconfig' => __('api.region.connect_failed', ['message' => $e->getMessage()]),
-            ]);
-        }
+        $this->checkedServerVersion($validated['kubeconfig']);
 
         // Region name = project namespace (same value)
         $projectNs = $validated['name'];
@@ -137,7 +123,37 @@ class KnativeRegionController extends Controller
         app(KnativeRedisService::class)
             ->queueInitialInstall($region, $redis['mode'], $redis['address'], $redis['password'], auth()->id());
 
+        // A registry given with the region is set up like POST …/registry (stored, then tested
+        // and installed in the background; registry_status follows)
+        if (! empty($validated['registry_mode'])) {
+            $region->update(['registry_status' => 'installing', 'registry_status_message' => 'Registry setup queued...']);
+            InstallRegionRegistryJob::dispatch($region, self::registryConfig($validated), auth()->id());
+        }
+
         return response()->json(new KnativeRegionResource($region->fresh()), 201);
+    }
+
+    /**
+     * The registry fields of POST /knative-regions (registry_*) in the shape of the region setup's
+     * (RegionRegistrySetup).
+     *
+     * @param  array<string, mixed>  $validated
+     * @return array<string, mixed>
+     */
+    private static function registryConfig(array $validated): array
+    {
+        $storageType = $validated['registry_storage_type'] ?? null;
+
+        return [
+            'registry_mode' => $validated['registry_mode'],
+            'storage_type' => $storageType,
+            'pvc_config' => $storageType === 'pvc' ? $validated['registry_storage_config'] : null,
+            's3_config' => $storageType === 's3' ? $validated['registry_storage_config'] : null,
+            'external_address' => $validated['registry_address'] ?? null,
+            'external_username' => $validated['registry_username'] ?? null,
+            'external_password' => $validated['registry_password'] ?? null,
+            'registry_namespace' => $validated['registry_namespace'] ?? 'runr-registry',
+        ];
     }
 
     /**
@@ -146,28 +162,7 @@ class KnativeRegionController extends Controller
     public function validateKubeconfig(KubeconfigRequest $request): JsonResponse
     {
         $kubeconfig = KubernetesClient::adaptKubeconfig($request->validated()['kubeconfig']);
-
-        try {
-            $k8s = new KubernetesClient($kubeconfig);
-            $version = $k8s->getServerVersion();
-            if (! $version) {
-                throw new \Exception('Cannot retrieve server version');
-            }
-
-            $minor = (int) rtrim($version['minor'] ?? '', '+');
-            $minRequired = config('knative.min_k8s_minor', 30);
-            if ($minor < $minRequired) {
-                throw ValidationException::withMessages([
-                    'kubeconfig' => __('api.region.k8s_version_required', ['required' => $minRequired, 'detected' => $minor]),
-                ]);
-            }
-        } catch (ValidationException $e) {
-            throw $e;
-        } catch (\Throwable $e) {
-            throw ValidationException::withMessages([
-                'kubeconfig' => __('api.region.connect_failed', ['message' => $e->getMessage()]),
-            ]);
-        }
+        $version = $this->checkedServerVersion($kubeconfig);
 
         $adapted = $kubeconfig !== $request->validated()['kubeconfig'];
 
@@ -239,6 +234,15 @@ class KnativeRegionController extends Controller
     {
         $data = $request->validated();
 
+        // A replaced kubeconfig (credential rotation) is checked like a new region's: adapted for
+        // a local cluster, reachable, a supported Kubernetes version — and the same cluster:
+        // moving a region to another cluster is a migration (POST …/migrate)
+        if (array_key_exists('kubeconfig', $data)) {
+            $data['kubeconfig'] = KubernetesClient::adaptKubeconfig($data['kubeconfig']);
+            $this->checkedServerVersion($data['kubeconfig']);
+            $this->assertSameCluster($knativeRegion, $data['kubeconfig']);
+        }
+
         // Backward compat: is_active → region_status
         if (isset($data['is_active']) && ! isset($data['region_status'])) {
             $data['region_status'] = $data['is_active'] ? 'active' : 'inactive';
@@ -256,6 +260,65 @@ class KnativeRegionController extends Controller
         }
 
         return response()->json(new KnativeRegionResource($knativeRegion->fresh()));
+    }
+
+    /**
+     * Connect with the kubeconfig and check the cluster's Kubernetes version against the minimum
+     * (knative.min_k8s_minor); a 422 on kubeconfig otherwise.
+     *
+     * @return array<string, mixed> the /version answer
+     */
+    private function checkedServerVersion(string $kubeconfig): array
+    {
+        try {
+            $k8s = new KubernetesClient($kubeconfig);
+            $version = $k8s->getServerVersion();
+            if (! $version) {
+                throw new \Exception('Cannot retrieve server version');
+            }
+
+            $minor = (int) rtrim($version['minor'] ?? '', '+');
+            $minRequired = config('knative.min_k8s_minor', 30);
+            if ($minor < $minRequired) {
+                throw ValidationException::withMessages([
+                    'kubeconfig' => __('api.region.k8s_version_required', ['required' => $minRequired, 'detected' => $minor]),
+                ]);
+            }
+        } catch (ValidationException $e) {
+            throw $e;
+        } catch (\Throwable $e) {
+            throw ValidationException::withMessages([
+                'kubeconfig' => __('api.region.connect_failed', ['message' => $e->getMessage()]),
+            ]);
+        }
+
+        return $version;
+    }
+
+    /**
+     * The new kubeconfig reaches the region's cluster: the kube-system namespace UIDs match.
+     * When the current kubeconfig no longer answers (expired credentials — the reason for the
+     * replacement) there is nothing to compare, and the new one is taken.
+     */
+    private function assertSameCluster(KnativeRegion $region, string $kubeconfig): void
+    {
+        if (! $region->kubeconfig || $region->is_demo) {
+            return;
+        }
+
+        $uid = static function (string $config): ?string {
+            try {
+                return (new KubernetesClient($config))->getClusterResource('v1', 'Namespace', 'kube-system')['metadata']['uid'] ?? null;
+            } catch (\Throwable) {
+                return null;
+            }
+        };
+
+        $current = $uid($region->kubeconfig);
+        $new = $current ? $uid($kubeconfig) : null;
+        if ($current && $new && ! hash_equals($current, $new)) {
+            throw ValidationException::withMessages(['kubeconfig' => __('api.region.kubeconfig_other_cluster')]);
+        }
     }
 
     public function downloadKubeconfig(KnativeRegion $knativeRegion): StreamedResponse|JsonResponse
@@ -281,6 +344,60 @@ class KnativeRegionController extends Controller
     }
 
     /**
+     * The region's Prometheus and Loki after its creation: a URL points the region at an existing
+     * in-cluster instance (RunR's own release keeps running — regions on the same cluster may use
+     * it), null switches back to RunR's own, which is installed when the region's Serving is
+     * ready (else with the Serving install). loki_org_id is the tenant of an existing Loki.
+     */
+    public function updateMonitoring(UpdateRegionMonitoringRequest $request, KnativeRegion $knativeRegion): JsonResponse
+    {
+        if ($knativeRegion->is_demo) {
+            return response()->json(['message' => __('api.region.demo_not_modifiable')], 422);
+        }
+
+        $validated = $request->validated();
+        $changes = [];
+        $managed = [];
+        $externalPrometheus = false;
+
+        foreach (['prometheus', 'loki'] as $component) {
+            if (! array_key_exists("{$component}_url", $validated)) {
+                continue;
+            }
+
+            $url = $validated["{$component}_url"];
+            $isManaged = $component === 'prometheus' ? $knativeRegion->isPrometheusManaged() : $knativeRegion->isLokiManaged();
+
+            if ($url) {
+                $changes += MonitoringEndpointAccess::regionAttributes(["{$component}_url" => $url]);
+                $externalPrometheus = $externalPrometheus || $component === 'prometheus';
+            } elseif (! $isManaged) {
+                $changes["{$component}_managed"] = true;
+                $changes["{$component}_url"] = null;
+                $managed[] = $component;
+            }
+        }
+
+        if (array_key_exists('loki_org_id', $validated)) {
+            $changes['loki_org_id'] = $validated['loki_org_id'];
+        }
+
+        if ($changes) {
+            $knativeRegion->update($changes);
+        }
+
+        $fresh = $knativeRegion->fresh();
+        if (($managed || $externalPrometheus) && $fresh->has_serving && $fresh->kubeconfig) {
+            ConfigureRegionMonitoringJob::dispatch($fresh, $managed, $externalPrometheus);
+        }
+
+        return response()->json([
+            'message' => __('api.region.monitoring_updated'),
+            'region' => new KnativeRegionResource($fresh),
+        ]);
+    }
+
+    /**
      * Update Knative settings for a region.
      */
     public function updateSettings(UpdateRegionSettingsRequest $request, KnativeRegion $knativeRegion): JsonResponse
@@ -292,15 +409,28 @@ class KnativeRegionController extends Controller
         }
 
         $trustBefore = IngressTrust::forRegion($knativeRegion);
+        $timeoutBefore = RequestTimeout::forRegion($knativeRegion);
+        $agentUrlBefore = $knativeRegion->effective_settings['agent_ws_url'] ?? null;
         $current = $knativeRegion->knative_settings ?? [];
         $merged = array_merge($current, $validated);
 
         $knativeRegion->update(['knative_settings' => $merged]);
+        $fresh = $knativeRegion->fresh();
 
         // The region Traefik picks a changed ingress_trusted_ips up right away (Helm upgrade in
         // the background, the same step region:reconcile runs)
-        if (IngressTrust::forRegion($knativeRegion->fresh()) !== $trustBefore) {
-            ApplyIngressTrustJob::dispatch($knativeRegion->fresh());
+        if (IngressTrust::forRegion($fresh) !== $trustBefore) {
+            ApplyIngressTrustJob::dispatch($fresh);
+        }
+
+        // Traefik's timeouts and Knative's maximum revision timeout follow request_timeout
+        if (RequestTimeout::forRegion($fresh) !== $timeoutBefore) {
+            ApplyRequestTimeoutJob::dispatch($fresh);
+        }
+
+        // The runr-agent connects to a changed agent_ws_url once it is deployed again
+        if (($fresh->effective_settings['agent_ws_url'] ?? null) !== $agentUrlBefore) {
+            RedeployRegionAgentJob::dispatch($fresh);
         }
 
         return response()->json([

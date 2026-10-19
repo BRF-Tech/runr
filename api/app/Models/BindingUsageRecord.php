@@ -7,9 +7,11 @@ use Illuminate\Database\Eloquent\Model;
 
 /**
  * Daily usage of a binding (docs/bindings.md "Usage and billing"): storage GB-hours (measured
- * size × hours, hourly) and — dedicated Postgres — instance hours. The Tenancy usage
- * aggregation prices them with the region's CostConfig (raw_cost / final_cost / currency).
- * binding_name / type are kept so charges still name a purged binding.
+ * size × hours, hourly) and — dedicated Postgres — instance hours, with the binding's creator
+ * (created_by: billed to that user, docs/billing.md). The Billing module prices the quantities;
+ * raw_cost / final_cost / currency are kept for the rows of earlier releases. The central table
+ * also holds copies of tenant usage in platform regions (tenant_id, UsageAggregator::mirror).
+ * binding_name / type are kept so bills still name a purged binding.
  */
 class BindingUsageRecord extends Model
 {
@@ -28,6 +30,8 @@ class BindingUsageRecord extends Model
         'raw_cost',
         'final_cost',
         'currency',
+        'created_by',
+        'tenant_id',
     ];
 
     protected $casts = [

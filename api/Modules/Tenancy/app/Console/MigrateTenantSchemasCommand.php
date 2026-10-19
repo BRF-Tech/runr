@@ -3,16 +3,20 @@
 namespace Modules\Tenancy\Console;
 
 use Illuminate\Console\Command;
+use Illuminate\Console\ConfirmableTrait;
 use Illuminate\Support\Collection;
 use Modules\Tenancy\Models\Tenant;
-use SharedSupport\TenantMigrationRegistry;
+use Modules\Tenancy\Services\TenantSchema;
 
 class MigrateTenantSchemasCommand extends Command
 {
+    use ConfirmableTrait;
+
     protected $signature = 'tenancy:migrate
         {--tenant= : Migrate only a specific tenant by slug}
-        {--fresh : Drop all tables and re-run migrations}
-        {--seed : Seed after migrating}';
+        {--fresh : Drop the tenant schema\'s tables (only those) and run every tenant migration again}
+        {--seed : Seed after migrating}
+        {--force : Run --fresh in production without asking}';
 
     protected $description = 'Run pending migrations for all (or one) tenant schemas';
 
@@ -21,6 +25,11 @@ class MigrateTenantSchemasCommand extends Command
         if (! config('tenancy.enabled')) {
             $this->error('TENANCY_ENABLED is not set to true.');
 
+            return self::FAILURE;
+        }
+
+        // --fresh empties tenant databases: never without a confirmation in production
+        if ($this->option('fresh') && ! $this->confirmToProceed('This drops every table of the selected tenant schemas.')) {
             return self::FAILURE;
         }
 
@@ -70,29 +79,16 @@ class MigrateTenantSchemasCommand extends Command
 
     protected function migrateTenant(Tenant $tenant): void
     {
-        $tenant->run(function () {
-            $command = $this->option('fresh') ? 'migrate:fresh' : 'migrate';
+        // Tenancy's tenant migrations and those other modules register (TenantSchema::paths()).
+        // --fresh recreates the tenant's schema: migrate:fresh in tenant context would drop the
+        // central tables too (the search path is "tenant_<id>, public")
+        $output = $this->option('fresh') ? TenantSchema::fresh($tenant) : TenantSchema::migrate($tenant);
+        if ($output !== '') {
+            $this->line('    '.$output);
+        }
 
-            $paths = [module_path('Tenancy', 'Database/TenantMigrations')];
-            $paths = array_merge($paths, TenantMigrationRegistry::paths());
-
-            $args = [
-                '--path' => $paths,
-                '--realpath' => true,
-                '--force' => true,
-            ];
-
-            if ($this->option('seed') && $command === 'migrate:fresh') {
-                $args['--seed'] = true;
-            }
-
-            \Artisan::call($command, $args);
-            $this->line('    '.trim(\Artisan::output()));
-        });
-
-        // Seed separately when not using --fresh
-        if ($this->option('seed') && ! $this->option('fresh')) {
-            $tenant->run(function () {
+        if ($this->option('seed')) {
+            TenantSchema::inTenant($tenant, function () {
                 \Artisan::call('db:seed', ['--force' => true]);
                 $this->line('    '.trim(\Artisan::output()));
             });

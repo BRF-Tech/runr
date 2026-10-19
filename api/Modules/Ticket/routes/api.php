@@ -16,6 +16,8 @@ Route::middleware(['api', 'auth:sanctum'])->group(function () {
 
     Route::get('/admin/support-tickets', [AdminSupportTicketController::class, 'index']);
     Route::get('/admin/support-tickets/stats', [AdminSupportTicketController::class, 'stats']);
+    // Assignee choices of the staff view (before {id})
+    Route::get('/admin/support-tickets/staff', [AdminSupportTicketController::class, 'staff']);
     Route::get('/admin/support-tickets/{id}', [AdminSupportTicketController::class, 'show']);
     Route::patch('/admin/support-tickets/{id}/status', [AdminSupportTicketController::class, 'updateStatus']);
     Route::patch('/admin/support-tickets/{id}/assign', [AdminSupportTicketController::class, 'assign']);

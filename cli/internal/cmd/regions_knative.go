@@ -17,15 +17,17 @@ import (
 func newRegionKnativeCmd(app *App) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "knative [REGION]",
-		Short: "Knative of a region: the operator and Serving, install, uninstall, adopt",
+		Short: "Knative of a region: the operator and Serving, install, upgrade, uninstall, adopt",
 		Long: "Projects run on Knative Serving, which the Knative operator installs. RunR installs both\n" +
 			"with Helm (install REGION, or one COMPONENT: operator, then serving), adopts an operator or\n" +
-			"Serving already running on the cluster (detect), and removes them (uninstall). Installs and\n" +
-			"removals run in the background: --wait waits (exit code 6 when one fails). Reading needs\n" +
-			"regions.view, changes regions.manage on a region your organization may change.",
+			"Serving already running on the cluster (install and detect), upgrades Serving one minor\n" +
+			"version at a time (upgrade) and removes them (uninstall). Installs, upgrades and removals run\n" +
+			"in the background: --wait waits (exit code 6 when one fails). Reading needs regions.view,\n" +
+			"changes regions.manage on a region your organization may change.",
 		Example: "  runr regions knative eu-1\n" +
 			"  runr regions knative install eu-1 --wait\n" +
 			"  runr regions knative install eu-1 serving --version 1.18 --wait\n" +
+			"  runr regions knative upgrade eu-1 --version 1.21 --wait\n" +
 			"  runr regions knative detect eu-1\n" +
 			"  runr regions knative uninstall eu-1 --yes --wait",
 		Args: cobra.MaximumNArgs(1),
@@ -58,7 +60,7 @@ func newRegionKnativeCmd(app *App) *cobra.Command {
 	}
 	cmd.AddCommand(status)
 	cmd.RunE = status.RunE
-	cmd.AddCommand(newRegionKnativeInstallCmd(app), newRegionKnativeUninstallCmd(app), newRegionKnativeDetectCmd(app),
+	cmd.AddCommand(newRegionKnativeInstallCmd(app), newRegionKnativeUpgradeCmd(app), newRegionKnativeUninstallCmd(app), newRegionKnativeDetectCmd(app),
 		newRegionKnativeVersionsCmd(app), newRegionKnativeNamespaceCmd(app))
 	return cmd
 }
@@ -143,8 +145,10 @@ func newRegionKnativeInstallCmd(app *App) *cobra.Command {
 		Long: "Install the Knative operator and Knative Serving with Helm (all, the default), or one of them:\n" +
 			"operator (--namespace, default knative-operator), then serving (--namespace, default\n" +
 			"knative-serving; --version a Knative minor version from runr regions knative versions,\n" +
-			"default the newest the cluster supports). A component already running in its namespace is\n" +
-			"adopted instead. The install runs in the background: --wait waits (exit code 6 when it fails).",
+			"default the newest the cluster supports). What already runs on the cluster is adopted\n" +
+			"instead, with all too: a running operator is never installed again (that would remove the\n" +
+			"Knative CRDs and every Knative Service), a Ready Knative Serving is never applied again. The\n" +
+			"install runs in the background: --wait waits (exit code 6 when it fails).",
 		Example: "  runr regions knative install eu-1 --wait\n" +
 			"  runr regions knative install eu-1 operator --wait\n" +
 			"  runr regions knative install eu-1 serving --version 1.18 --wait",
@@ -180,6 +184,48 @@ func newRegionKnativeInstallCmd(app *App) *cobra.Command {
 	cmd.Flags().StringVar(&version, "version", "", "serving: Knative minor version (1.18)")
 	cmd.Flags().BoolVar(&wait, "wait", false, "wait until the install ended (exit code 6 when it fails)")
 	cmd.Flags().DurationVar(&timeout, "timeout", 20*time.Minute, "how long --wait waits")
+	return cmd
+}
+
+func newRegionKnativeUpgradeCmd(app *App) *cobra.Command {
+	var version string
+	var wait bool
+	var timeout time.Duration
+	cmd := &cobra.Command{
+		Use:   "upgrade REGION --version VERSION",
+		Short: "Upgrade a region's Knative Serving to the next minor version (regions.manage)",
+		Long: "Upgrade Knative Serving to --version, the minor version after the running one (Knative\n" +
+			"upgrades one minor at a time) that the cluster supports (runr regions knative versions).\n" +
+			"The Knative operator moves to that version first when it is older; the region's Knative\n" +
+			"Services keep running while the operator rolls Serving's components. Regions on the same\n" +
+			"cluster share Knative Serving. The upgrade runs in the background: --wait waits (exit code 6\n" +
+			"when it fails).",
+		Example: "  runr regions knative versions eu-1\n" +
+			"  runr regions knative upgrade eu-1 --version 1.21 --wait",
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if version == "" {
+				return usageErrorf("--version is required (the next minor version, runr regions knative versions)")
+			}
+			ctx := cmd.Context()
+			c, reg, err := radmRegion(ctx, app, args[0])
+			if err != nil {
+				return err
+			}
+			res, err := c.UpgradeKnativeServing(ctx, reg.ID, version)
+			if err != nil {
+				return err
+			}
+			app.Progress("%s", res.Message)
+			if wait {
+				return regionKnativeWait(ctx, app, c, reg, runr.KnativeComponentServing, timeout)
+			}
+			return printRegionOperation(app, reg, res, "runr regions knative "+reg.Name+" shows the progress.")
+		},
+	}
+	cmd.Flags().StringVar(&version, "version", "", "the next Knative minor version (1.21)")
+	cmd.Flags().BoolVar(&wait, "wait", false, "wait until the upgrade ended (exit code 6 when it fails)")
+	cmd.Flags().DurationVar(&timeout, "timeout", 30*time.Minute, "how long --wait waits")
 	return cmd
 }
 

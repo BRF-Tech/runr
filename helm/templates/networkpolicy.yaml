@@ -1,0 +1,247 @@
+{{- /*
+  Optional NetworkPolicies (networkPolicy.enabled): every pod of the chart gets exactly the
+  connections docs/install.md lists, everything else is denied.
+    ingress controller (networkPolicy.gatewayFrom) → runr-gateway (gateway.port)
+    runr-gateway → runr-ui (ui.port), runr-api (api.port), runr-reverb (reverb.port)
+    API, Horizon, scheduler, Reverb, hook Jobs → PostgreSQL, Redis, SMTP / Mailpit, runr-reverb,
+      DNS, and outbound (networkPolicy.egress: regions' Kubernetes API servers, function domains,
+      registries, Helm repositories, ghcr.io, git providers, alert targets) + networkPolicy.extraEgress
+  Region agents reach Reverb through the ingress controller and runr-gateway (/ws).
+  Ports are the containers' ports (the Services' targetPorts).
+*/}}
+{{- if (.Values.networkPolicy | default dict).enabled }}
+{{- $np := .Values.networkPolicy }}
+{{- $ns := include "runr.namespace" . }}
+{{- $app := list "runr-api" "runr-horizon" "runr-scheduler" "runr-reverb" "runr-migrate" "runr-bootstrap" }}
+{{- $bundledDb := not .Values.database.host }}
+{{- $bundledRedis := not .Values.redis.host }}
+{{- $mailpit := not .Values.mail.host }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: runr-gateway
+  namespace: {{ $ns }}
+  labels:
+    {{- include "runr.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app: runr-gateway
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - ports:
+        - port: {{ .Values.gateway.port }}
+          protocol: TCP
+      {{- with $np.gatewayFrom }}
+      from:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+  egress:
+    {{- range $target, $port := dict "runr-ui" .Values.ui.port "runr-api" .Values.api.port "runr-reverb" .Values.reverb.port }}
+    - to:
+        - podSelector:
+            matchLabels:
+              app: {{ $target }}
+      ports:
+        - port: {{ $port }}
+          protocol: TCP
+    {{- end }}
+    {{- include "runr.networkPolicyDns" . | nindent 4 }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: runr-ui
+  namespace: {{ $ns }}
+  labels:
+    {{- include "runr.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app: runr-ui
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: runr-gateway
+      ports:
+        - port: {{ .Values.ui.port }}
+          protocol: TCP
+  egress: []
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: runr-api
+  namespace: {{ $ns }}
+  labels:
+    {{- include "runr.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app: runr-api
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: runr-gateway
+      ports:
+        - port: {{ .Values.api.port }}
+          protocol: TCP
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: runr-reverb
+  namespace: {{ $ns }}
+  labels:
+    {{- include "runr.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app: runr-reverb
+  policyTypes: [Ingress]
+  ingress:
+    # WebSockets through the gateway; broadcasts published by the API, Horizon and the other app pods
+    - from:
+        - podSelector:
+            matchLabels:
+              app: runr-gateway
+        - podSelector:
+            matchExpressions:
+              - key: app
+                operator: In
+                values: {{ toJson $app }}
+      ports:
+        - port: {{ .Values.reverb.port }}
+          protocol: TCP
+---
+# Horizon, the scheduler and the hook Jobs accept no connections
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: runr-workers
+  namespace: {{ $ns }}
+  labels:
+    {{- include "runr.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchExpressions:
+      - key: app
+        operator: In
+        values: ["runr-horizon", "runr-scheduler", "runr-migrate", "runr-bootstrap"]
+  policyTypes: [Ingress]
+  ingress: []
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: runr-app-egress
+  namespace: {{ $ns }}
+  labels:
+    {{- include "runr.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchExpressions:
+      - key: app
+        operator: In
+        values: {{ toJson $app }}
+  policyTypes: [Egress]
+  egress:
+    {{- include "runr.networkPolicyDns" . | nindent 4 }}
+    # PostgreSQL
+    {{- if $bundledDb }}
+    - to:
+        - podSelector:
+            matchLabels:
+              app: runr-postgres
+      ports:
+        - port: 5432
+          protocol: TCP
+    {{- else }}
+    - ports:
+        - port: {{ int .Values.database.port }}
+          protocol: TCP
+    {{- end }}
+    # Redis
+    {{- if $bundledRedis }}
+    - to:
+        - podSelector:
+            matchLabels:
+              app: runr-redis
+      ports:
+        - port: 6379
+          protocol: TCP
+    {{- else }}
+    - ports:
+        - port: {{ int .Values.redis.port }}
+          protocol: TCP
+    {{- end }}
+    # SMTP
+    {{- if $mailpit }}
+    - to:
+        - podSelector:
+            matchLabels:
+              app: runr-mailpit
+      ports:
+        - port: 1025
+          protocol: TCP
+    {{- else }}
+    - ports:
+        - port: {{ int .Values.mail.port }}
+          protocol: TCP
+    {{- end }}
+    # Reverb (broadcasts)
+    - to:
+        - podSelector:
+            matchLabels:
+              app: runr-reverb
+      ports:
+        - port: {{ .Values.reverb.port }}
+          protocol: TCP
+    # Outbound: regions' Kubernetes API servers, function domains, registries, Helm repositories,
+    # ghcr.io, git providers, alert targets (networkPolicy.egress)
+    {{- $egress := $np.egress | default dict }}
+    {{- $rule := dict }}
+    {{- with $egress.to }}{{ $_ := set $rule "to" . }}{{ end }}
+    {{- with $egress.ports }}
+    {{- $ports := list }}
+    {{- range . }}{{ $ports = append $ports (dict "port" (int .) "protocol" "TCP") }}{{ end }}
+    {{- $_ := set $rule "ports" $ports }}
+    {{- end }}
+    - {{ toYaml $rule | indent 6 | trim }}
+    {{- with $np.extraEgress }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+{{- range $name, $port := dict "runr-postgres" (ternary 5432 0 $bundledDb) "runr-redis" (ternary 6379 0 $bundledRedis) "runr-mailpit" (ternary 1025 0 $mailpit) }}
+{{- if $port }}
+---
+# Bundled service: reached by the app pods only, opens no connections
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $name }}
+  namespace: {{ $ns }}
+  labels:
+    {{- include "runr.labels" $ | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app: {{ $name }}
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - podSelector:
+            matchExpressions:
+              - key: app
+                operator: In
+                values: {{ toJson $app }}
+      ports:
+        - port: {{ $port }}
+          protocol: TCP
+  egress: []
+{{- end }}
+{{- end }}
+{{- end }}

@@ -375,11 +375,10 @@ func newBindingsGetCmd(app *App) *cobra.Command {
 					}
 				}
 				if usage {
-					t.Header("DAY", "STORAGE GB-H", "INSTANCE H", "PEAK", "COST")
+					t.Header("DAY", "STORAGE GB-H", "INSTANCE H", "PEAK")
 					for _, r := range records {
 						t.Row(r.RecordDate, strconv.FormatFloat(r.StorageGBHours, 'f', 2, 64),
-							strconv.FormatFloat(r.InstanceHours, 'f', 2, 64), bindingBytes(r.PeakBytes),
-							strings.TrimSpace(strconv.FormatFloat(r.FinalCost, 'f', 2, 64)+" "+r.Currency))
+							strconv.FormatFloat(r.InstanceHours, 'f', 2, 64), bindingBytes(r.PeakBytes))
 					}
 				}
 			})

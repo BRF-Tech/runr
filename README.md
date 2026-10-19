@@ -113,11 +113,14 @@ the [MIT License](LICENSE).
   replay, uptime checks, public status pages and alerting ([observability](docs/observability.md)).
 - **Live console**: real-time updates over WebSockets, a browser shell into running pods, guided
   tours, English and Turkish.
-- **Multi-tenant edition**: one PostgreSQL schema per tenant, per-region quotas, usage metering
-  with configurable prices and monthly charges per tenant, read by your own invoicing system
-  through the billing API and signed billing events ([billing](docs/billing.md)).
+- **Multi-tenant edition**: one PostgreSQL schema per tenant, per-region quotas, platform regions
+  shared with tenants that resell them with a markup ([tenancy](docs/tenancy.md)).
+- **Billing** (optional, both editions): usage metering with region prices — pay as you go, or
+  fixed resources with approval and daily proration — and one bill per project and month for its
+  owner, read by your own invoicing system through the billing API and signed billing events
+  ([billing](docs/billing.md)).
 - **Support tickets** with attachments, assignment and real-time updates.
-- **White-label**: your brand, self-service signup, optional plans with limits and trial days
+- **White-label**: your brand, self-service signup and onboarding
   ([white-label](docs/white-label.md)).
 
 ## Measured cold starts
@@ -215,17 +218,22 @@ helm upgrade --install runr brf-tech/runr \
 To install a specific release, pin the chart version and the API and UI image tags to it:
 
 ```bash
-helm upgrade --install runr brf-tech/runr --version 0.5.7 \
+helm upgrade --install runr brf-tech/runr --version 0.5.8 \
   --namespace runr --create-namespace \
   --set domain=runr.example.com \
-  --set api.image.tag=0.5.7 --set ui.image.tag=0.5.7
+  --set api.image.tag=0.5.8 --set ui.image.tag=0.5.8
 ```
 
 The chart installs the gateway, UI, API, Horizon, scheduler, Reverb and — unless you point it at
 external services — PostgreSQL, Redis and Mailpit, plus migration and bootstrap hooks that create
 the first administrator. `helm status runr -n runr` prints how to read the generated password.
-Set `edition=multi-tenant` for the Tenancy and Auth Provider modules. All values are documented in
-the chart's `values.yaml` (`helm show values brf-tech/runr`) and validated by its `values.schema.json`.
+Set `edition=multi-tenant` for the Tenancy and Auth Provider modules; the UI then runs the
+multi-tenant console image (`ui:<tag>-mt`, with the default tag `latest` the chart's release
+`<appVersion>-mt`). The values are documented in the chart's `values.yaml` (`helm show values brf-tech/runr`)
+and in [docs/helm-values.md](docs/helm-values.md); the chart's `values.schema.json` checks the
+types and allowed values of part of them ([which ones](docs/helm-values.md#validation)).
+For a production install — external PostgreSQL and Redis, TLS, replicas, backups — follow
+[docs/install.md](docs/install.md).
 Existing installations are upgraded in place with `helm upgrade`: [docs/upgrade.md](docs/upgrade.md).
 
 ### Single host (Docker Compose with prebuilt images)

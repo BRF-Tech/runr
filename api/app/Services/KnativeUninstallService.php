@@ -17,13 +17,17 @@ class KnativeUninstallService implements KnativeConstants
     use KnativeClusterTrait, KnativeCrdTrait, KnativeHelmTrait, KnativeLogTrait, KnativeTraefikTrait;
 
     /**
-     * Uninstall Knative from the cluster (legacy full uninstall).
+     * Uninstall Knative from the cluster (legacy full uninstall). The operator and Serving
+     * component statuses follow — the region's knative_status is computed from them, so a
+     * region whose components stayed "ready" kept showing Knative as installed.
      */
     public function uninstall(KnativeRegion $region, bool $removeTraefik = false): void
     {
         $region->update([
             'knative_status' => 'uninstalling',
             'knative_status_message' => '',
+            'knative_operator_status' => 'uninstalling',
+            'knative_serving_status' => 'uninstalling',
         ]);
 
         try {
@@ -35,6 +39,11 @@ class KnativeUninstallService implements KnativeConstants
                 'knative_status' => 'not_installed',
                 'knative_status_message' => $region->knative_status_message,
                 'knative_status_checked_at' => now(),
+                'knative_operator_status' => 'not_installed',
+                'knative_operator_status_message' => null,
+                'knative_serving_status' => 'not_installed',
+                'knative_serving_status_message' => null,
+                'knative_serving_version' => null,
             ]);
 
             Log::info('Knative uninstalled', ['region' => $region->name]);
@@ -46,6 +55,8 @@ class KnativeUninstallService implements KnativeConstants
                 'knative_status' => 'error',
                 'knative_status_message' => $region->knative_status_message,
                 'knative_status_checked_at' => now(),
+                'knative_operator_status' => 'error',
+                'knative_serving_status' => 'error',
             ]);
 
             throw $e;

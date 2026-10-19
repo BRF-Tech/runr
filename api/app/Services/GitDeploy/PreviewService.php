@@ -22,6 +22,8 @@ use App\Services\Manifests\RegistryImageManifests;
 use App\Services\RegistryImageLifecycleService;
 use App\Services\Residency\RegionPolicy;
 use App\Support\DeployGate;
+use App\Support\Projects\DeployIntent;
+use App\Support\Projects\ProjectAdmission;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Log;
 use Modules\Tenancy\Services\TenantQuotaService;
@@ -41,7 +43,10 @@ use Modules\Tenancy\Services\TenantQuotaService;
  * Rules: previews must be on for the project; requests from forks need fork previews on; at
  * most preview_limit live previews per project; HTTP-triggered projects only; in a multi-tenant
  * install the preview's reservation must fit the organization quota (previews count: see
- * GitDeployServiceProvider's quota contributor).
+ * GitDeployServiceProvider's quota contributor). ProjectAdmission is asked on every path (a new
+ * request, its deploy, a redeploy by hand): a stopped project has no previews — the stop removes
+ * them — and in a fixed-price region the project's allocation must hold the preview at its maximum
+ * next to what the project runs (Billing module).
  */
 class PreviewService
 {
@@ -160,6 +165,11 @@ class PreviewService
 
         $region = $project->knativeRegion;
         if (! $region || $region->is_demo) {
+            if ($reason = ProjectAdmission::refusal($project, DeployIntent::preview((string) $preview->id))) {
+                $this->fail($preview, $deploy, $reason);
+
+                return;
+            }
             $preview->update(['status' => PreviewEnvironment::READY, 'url' => GitUrls::function($project, $preview->service_name), 'last_deployed_at' => now()]);
             $deploy?->mark(GitDeploy::ACTIVE);
             $this->reportPreview($preview, $deploy);
@@ -175,6 +185,14 @@ class PreviewService
 
         if (! $region->kubeconfig || ! $region->is_active) {
             $this->fail($preview, $deploy, 'The region is not active');
+
+            return;
+        }
+
+        // A stopped project runs no previews; module guards (a fixed region: the allocation must
+        // hold the preview next to what the project runs)
+        if ($reason = ProjectAdmission::refusal($project, DeployIntent::preview((string) $preview->id))) {
+            $this->fail($preview, $deploy, $reason);
 
             return;
         }
@@ -228,6 +246,18 @@ class PreviewService
         } catch (\Throwable $e) {
             Log::warning('Preview deploy failed', ['preview' => $preview->id, 'error' => $e->getMessage()]);
             $this->fail($preview, $deploy, $e->getMessage());
+
+            return;
+        }
+
+        // Stopped or deleted while it was applied: what the apply created goes again
+        $current = $preview->fresh();
+        $stopped = Project::query()->whereKey($project->getKey())->whereNotNull('stopped_at')->exists();
+        if (! $current || ! $current->isLive() || $stopped) {
+            $this->removeResources($project, $preview);
+            if ($current && $current->isLive()) {
+                $this->fail($current, $deploy, __('api.project.stopped', ['reason' => (string) $project->fresh()?->stop_reason]));
+            }
 
             return;
         }
@@ -354,6 +384,12 @@ class PreviewService
     {
         if (! $project->isSupportedType() || $project->service_type === 'caas') {
             return 'Previews are built from code: container projects have none';
+        }
+
+        // A stopped project (ProjectAdmission) runs no previews; module guards, e.g. a fixed
+        // region whose allocation must hold the preview next to what the project runs
+        if ($reason = ProjectAdmission::refusal($project, DeployIntent::preview((string) ($preview->getKey() ?? '')))) {
+            return $reason;
         }
 
         $trigger = ResourceReservation::configOf($project)?->trigger_type ?? 'http';

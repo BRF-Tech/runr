@@ -580,6 +580,8 @@ build:ui:
       --platform linux/amd64,linux/arm64
       --provenance=false --sbom=false
       --cache-from "type=registry,ref=$UI_IMAGE:latest"
+      --build-arg VITE_TICKET_ENABLED=true
+      --build-arg VITE_BILLING_ENABLED=true
       --tag "$UI_IMAGE:$CI_COMMIT_SHA"
       --tag "$UI_IMAGE:$CI_COMMIT_REF_SLUG"
       --tag "$UI_IMAGE:latest"

@@ -8,10 +8,526 @@ did not change says so.
 
 ## [Unreleased]
 
+## [0.5.8] - 2026-10-19
+
+### Upgrade notes
+
+- **Read [0.5.7 → 0.5.8](docs/upgrade.md#057--058) before the upgrade.** In short: a multi-tenant
+  install upgraded with `--reuse-values` adds `--set ui.image.multiTenantSuffix=-mt`; inactive and
+  maintenance regions stop serving once `region:reconcile` applies their status block; SSO
+  providers need the `https://` callback URL, and a Google provider with a Hosted Domain admits
+  that domain only; switching to the multi-tenant edition converts the installation into its first
+  tenant (`--timeout 20m`); a Compose install takes the new `Caddyfile`.
+- **Billing is rebuilt as the optional Billing module** (off by default). Plans, subscriptions,
+  credits, purchases, add-ons, capacity deals and charges of 0.5.7 are archived in
+  `billing_legacy_archive` and their tables dropped; the cost configuration becomes the platform's
+  prices and closed charges become closed tenant bills. Set `BILLING_CURRENCY` to the currency of
+  your 0.5.7 cost configuration in the upgrade: the import runs also with billing off and warns
+  when they differ ([Billing](docs/upgrade.md#billing)).
+- **Back up the database before the upgrade.** 0.5.8 cannot be rolled back with migrations (they
+  stop with a message instead of half-undoing the billing changes); going back to 0.5.7 is restoring
+  that backup ([Rolling back](docs/upgrade.md#rolling-back)).
+
+### Added
+
+- **Billing module** (`api/Modules/Billing`, `vue/src/modules/billing`; off by default, Helm
+  `billing.enabled`, `BILLING_ENABLED`). RunR calculates one bill per project and calendar month,
+  paid by the project's owner, and an account bill per user for bindings, sandboxes and model
+  services; bills close daily at 02:30 after their month and are never recalculated. Every region
+  has one billing type: **pay as you go** (metered vCPU-hours, GB-hours, GPU-hours, binding
+  storage, sandboxes) or **fixed** (a project requests vCPU, memory and GPUs, sees the monthly
+  price before submitting, the region's seller approves, the price is prorated by day from the
+  approval and the project cannot exceed its allocation — its worst case, every pod up to a
+  required `max_scale` with a deploy's overrides, its previews and GPUs, is checked at every
+  deploy, resume, preview, region migration and size change, and a request or approval smaller
+  than what runs is refused until the project scales down, one while it runs without `max_scale`
+  until it is set and redeployed; administrators see the metered cost
+  next to the fixed price). Prices per region and default prices are versions with an effective date and
+  never missing: region → tenant default → platform default → built-in defaults seeded on the first
+  start. With tenancy the platform bills each tenant for the shared platform regions; a shared region
+  is an offer the tenant's administrators accept with a markup (default markup prefilled, changes
+  with an effective date), and only then can its users use it. RunR only calculates: an external
+  invoicing system reads bills, usage, the rollup per owner and fixed requests through
+  `/api/billing/…`, sets `payment_url` and the paid status of each bill and receives signed events
+  (`bill.closed`, `bill.paid`, `bill.payment_url_set`, `fixed_request.approved` / `.rejected`,
+  `region_share.accepted`, `project.stopped`, …). New permissions `billing.approve`,
+  `projects.billing`; `billing.view` / `billing.manage` and the Billing role now exist in both
+  editions ([docs/billing.md](docs/billing.md)).
+- **How the Billing module counts.** Amounts are exact — decimal arithmetic, each line rounded once,
+  half up, to the currency's minor unit, the bill's total the sum of its lines — and the quote of
+  fixed resources is the bill's own calculation. Days billing was off are not billed: the bills
+  open before end with the last active day, a month inside the off period gets none, billing starts
+  again on the day it comes back. A single-organization installation converted into its first
+  tenant bills every project once, in the tenant, from the conversion day. Fixed allocations end
+  with their project (deleted or moved) also while billing is off, and with their tenant on the day
+  it is deleted. Billing webhooks never reach private or cluster-internal addresses — a tenant's
+  never, the platform's only with `observability.alerts.allowPrivateTargets` — checked on save and
+  before every delivery. Accepting a region offer writes the markup and activates the share in one
+  step, announced after it succeeded ([docs/billing.md](docs/billing.md#turning-billing-off-and-on)).
+- **Project owner.** Every project has an owner (`owner_id`, the creator by default), the payer of
+  its bills — also of the running month's bill, which belongs to whoever owns the project when the
+  month closes; the owner or a holder of `projects.manage_access` transfers it to a member of the
+  organization who sees the project (a platform administrator's access to every organization does
+  not count), who is notified (`PUT /api/projects/{project}/owner`, audited as
+  `project.owner.transfer`) ([docs/billing.md](docs/billing.md#who-pays)).
+- **Project stop and resume.** Administrators (inside a tenant, its administrators) and platform
+  administrators stop a project with a required reason — its workloads and previews are shut
+  down, deploys queued before the stop do nothing and every deploy path (console, git pushes,
+  previews, region migrations) is refused until it is resumed, which redeploys the running version
+  with its overrides through every deploy check — with the new permission `projects.stop`
+  (`POST /api/projects/{project}/stop` / `resume`, audited; the reason is shown to the project's
+  members). A stop by a platform administrator is the platform's: the console says so, and only a
+  platform administrator resumes it; a platform administrator takes an organization's stop over with
+  **Stop for the platform** on the project page
+  ([docs/billing.md](docs/billing.md#project-stop-and-resume)).
+- **The console hides the Ticket and Billing pages at run time** when the API reports the module
+  off (`features.tickets` / `features.billing` of `GET /api/branding`), so the published UI images
+  are built with both screens.
+- **Bills of deleted tenants are kept.** A tenant's project and account bills live in its schema,
+  which tenant deletion drops; the deletion job now copies them first into the central
+  `billing_archived_bills` — line items, amounts, payer, paid status, payment link, closing time and
+  the tenant's id, slug and name (open bills with the estimate of that moment). When the copy fails
+  the tenant stays `delete_failed`, also with Force delete. Platform administrators read them with
+  `GET /api/billing/archived-bills` (`?tenant=<id or slug>`) and `GET /api/billing/archived-bills/{id}`
+  ([docs/billing.md](docs/billing.md#bills-of-deleted-tenants)).
+
+- **Helm: the API volume can be ReadWriteMany.** `api.storage.accessModes` (default
+  `[ReadWriteOnce]`, the mode of every earlier install) sets the access modes of
+  `runr-api-storage`. The API, Horizon, scheduler and Reverb pods are colocated on the volume's
+  node only with ReadWriteOnce; with `[ReadWriteMany]` (and a ReadWriteMany StorageClass) they run
+  on any node. An upgrade that asks an existing claim for other access modes or another
+  StorageClass stops with a message instead of the API server's "spec is immutable";
+  [docs/install.md](docs/install.md#moving-the-api-volume-to-readwritemany) moves an existing
+  volume. `database.postgres.storageClassName` sets the StorageClass of the bundled PostgreSQL's
+  volume.
+- **Helm: passwords of an external database, Redis and SMTP server from Secrets.**
+  `database.password`, `redis.password` and `mail.password` are written to the chart's Secret;
+  `*.existingSecret` / `*.existingSecretPasswordKey` reference a Secret of yours. The pods read them
+  as Secret env vars (`DB_PASSWORD`, `REDIS_PASSWORD`, `MAIL_PASSWORD`), never from the ConfigMap;
+  `mail.username`, `mail.encryption` (`starttls` / `tls`) and `redis.username` complete the
+  settings, and the bundled Redis requires a configured password. The generated `APP_KEY` and
+  `REVERB_APP_SECRET` stay with the chart and are kept on every upgrade: an external database no
+  longer needs `secret.create=false`. `extraEnv` entries keep working
+  ([upgrade note](docs/upgrade.md#passwords-of-an-external-database-redis-and-smtp-server)).
+- **Helm: NetworkPolicies.** `networkPolicy.enabled` (default off) adds policies that allow exactly
+  the connections of [docs/install.md](docs/install.md#network-policies) — ingress controller →
+  gateway (`networkPolicy.gatewayFrom`), gateway → UI / API / Reverb, the API, Horizon, scheduler,
+  Reverb and hook pods → database, Redis, SMTP, Reverb, DNS and outbound to the regions
+  (`networkPolicy.egress`, `networkPolicy.extraEgress`) — and deny the rest.
+- **Horizon dashboard for administrators.** `/horizon` admits platform administrators and, in the
+  single-tenant edition, Owners, signed in with a single-use link (valid 5 minutes, stored as a
+  hash) from `php artisan runr:horizon-link` or `POST /api/horizon/link` (audited as
+  `horizon.link.create`). The session it starts is checked against the account on every request
+  ([docs/install.md](docs/install.md#horizon-dashboard)). Before, the dashboard answered 403 to
+  everyone in production, and its gate would have let any signed-in user in.
+- **Helm: `ingress.tls.mode: secret`** references a `kubernetes.io/tls` Secret you manage
+  (`ingress.tls.secretName`); the legacy `mode: ""` keeps working. `gateway.affinity`,
+  `api.affinity` and `ui.affinity` replace `placement.affinity` for one component.
+- **Helm: more than one Reverb replica.** With `reverb.replicas` above 1 the replicas share
+  broadcasts over Redis (`REVERB_SCALING_ENABLED`); shell, sandbox exec and agent sessions stay on
+  the replica their WebSocket reached.
+- **Helm: `cors.allowedOrigins`** for browser pages on other origins that call the API.
+- **Helm: `kubeVersion: ">=1.23.0-0"`** in `Chart.yaml`, the minimum of the APIs the templates use
+  (`autoscaling/v2`).
+- **Linked accounts in Account settings.** With the AuthProvider module, Account settings list
+  the external accounts a user signs in with: **Link <provider>** connects another OAuth or
+  OpenID Connect account — also one with another e-mail address — and **Unlink** removes one. The
+  provider's callback hands the console a one-time code that only the user who started the link
+  can confirm (`POST /api/oauth/link/complete`); an account linked to another user is refused.
+  `GET /api/oauth/{driver}/link`, which answered a plain sign-in URL, now links. Audited as
+  `social_account.link` ([docs/modules.md](docs/modules.md#linked-accounts)).
+- **Platform administrators open an organization as its administrator.** The tenant switcher or
+  Settings → Tenants → **Open as administrator** opens any organization; a bar names it until
+  **Stop**. Opening and leaving are audit-logged (`impersonation.start`, `impersonation.stop`).
+  `POST /api/impersonate/{tenant}` and `POST /api/impersonate/stop` work again, and
+  `GET /api/tenant/current` reports `impersonating`, and `member` for each organization
+  ([docs/tenancy.md](docs/tenancy.md#opening-a-tenant-as-platform-administrator)).
+- **Organization domain in the console.** Members with `settings.manage` set and clear their
+  organization's own domain in Settings → Organization domain; `GET /api/settings` returns
+  `tenant_base_domain` and `platform_base_domain` inside an organization
+  ([docs/tenancy.md](docs/tenancy.md#organization-domain)).
+- **Support ticket assignment and tags in the console.** The staff view of a ticket assigns it to
+  a staff member and edits its tags; `GET /api/admin/support-tickets/staff` lists the assignee
+  choices ([docs/modules.md](docs/modules.md#ticket)).
+- **`runr whoami` names the organization** the session works in (`organization` in its JSON
+  output); a platform administrator outside any organization sees `platform (no organization)`.
+- **The CLI shows stopped projects and refusal codes.** `runr status` and `runr projects get` say
+  who stopped a project (the platform or the organization), when and why (`stopped` in their JSON
+  output), `runr projects ls` lists it as `stopped`, and an error the API answers with a code prints
+  the code after the message, e.g. `(project_stopped)` or `(fixed_allocation_exceeded)`
+  ([docs/cli.md](docs/cli.md#output-errors-and-exit-codes)).
+- **Helm: the bootstrap Job converts an installation that ran single-tenant.** In the multi-tenant
+  edition it runs `php artisan tenancy:setup --force` before the administrator check, so switching
+  `edition` to `multi-tenant` makes the installation its first tenant (`Default`, the slug of the
+  git remote owner); fresh, converted and multi-tenant installations are left alone, and a
+  conversion that stopped continues on the next run. `bootstrap.tenancySetup=false` leaves the
+  conversion to the operator
+  ([docs/tenancy.md](docs/tenancy.md#converting-a-single-organization-installation)).
+
 ### Changed
+
+- **Usage metering is part of the core** and runs on every installation, single-tenant included
+  (`usage-aggregation` every 5 minutes, central and every tenant schema). It records quantities
+  only; the cost columns of the usage records are no longer filled. Usage of tenant projects in
+  platform regions is copied to the central database for the platform's bills to tenants. An
+  always-on deployment counts its reservation for the time it ran that day with the size it was
+  deployed with (`deployments.sizing`, `deployments.ended_at`), no longer today's configuration for
+  24 hours; `min_scale` ≥ 1 counts as always-on, as documented. `php artisan usage:recalculate`
+  calculates earlier days again; a deployment applied before the upgrade keeps the scale mode and
+  size its 0.5.7 record of the day shows, never today's configuration
+  ([docs/monitoring.md](docs/monitoring.md#metering)).
+- **Sharing a platform region with a tenant is an offer while billing is on**: the region reaches
+  the tenant's users once a tenant administrator accepted it. Existing assignments stay active, and
+  with billing off offers are active at once (pending ones within five minutes) and stay active when
+  billing returns ([docs/tenancy.md](docs/tenancy.md#shared-regions-with-billing)).
+- **White-label keeps branding, self-service signup and the onboarding wizard**, without plans:
+  the wizard assigns the first region with the default signup quota.
 
 - **The source is public** at <https://github.com/BRF-Tech/runr>. The single-host install starts
   from a checkout of the release tag ([compose/README.md](compose/README.md)).
+- **CORS follows the console's domain.** The API allowed a fixed list of development origins in
+  every environment; it now allows the origin of `APP_URL` / `FRONTEND_URL` (Helm: `https://<domain>`)
+  plus `CORS_ALLOWED_ORIGINS` (Helm: `cors.allowedOrigins`), and the development servers only with
+  `APP_ENV=local`. The console is same-origin and unaffected.
+- **A changed organization domain moves like the platform base domain.** The functions keep their
+  URLs and answer on the new domain too — through an alias of the organization's own on platform
+  regions, through the base-domain migration on its own regions — until DNS of the new
+  `<region>.<domain>` answers, or until **Complete now** in the Organization domain card
+  (`PATCH /api/settings` `{"complete_domain_migration": true}`). Setting the previous domain back
+  rolls the move back; `GET /api/settings` shows it as `tenant_domain_migration`
+  ([docs/tenancy.md](docs/tenancy.md#organization-domain)).
+
+### Fixed
+
+- **Helm: uptime checks run in the region that is RunR's own cluster.** Its agent calls the API
+  through the in-cluster gateway (`runr-gateway.<namespace>.svc.cluster.local`), a host the API
+  answered with 400 (`uptime: fetching checks: RunR answered 400`), so checks with location
+  "regions" never ran there; the replay captures of that cluster's function pods, and the callbacks
+  of any region whose agent address is not the console's host (`agent_ws_url`,
+  `RUNR_AGENT_WS_URL`), failed the same way. The region callbacks under `/api/internal/` now also
+  accept the hosts of the addresses RunR hands out: the in-cluster gateway, every region's
+  `agent_ws_url` and `app_url`, `RUNR_AGENT_WS_URL`, `observability.replay.ingestUrl` and
+  `WORKFLOWS_PUBLIC_API_URL`; every other route still answers only for the console's host.
+  Upgrading the API is enough, the agents keep their address
+  ([regions](docs/regions.md#network-reachability)).
+- **Helm: switching a module on in an upgrade creates its tables in every tenant schema.** The
+  pre-upgrade migration Job ran before Helm applied the new ConfigMap and so migrated with the
+  previous release's module switches: an upgrade that turned billing (or tickets) on left the tenant
+  schemas without the module's tables. The migration and bootstrap Jobs now take `TENANCY_ENABLED`,
+  `AUTH_PROVIDER_ENABLED`, `TICKET_ENABLED`, `BILLING_ENABLED` and `BILLING_CURRENCY` from the values,
+  the Billing and Ticket modules register their tenant migrations whether switched on or not, and
+  the bootstrap Job runs `tenancy:migrate` after its module switches as well
+  ([upgrade](docs/upgrade.md#procedure)).
+- **A redeploy no longer counts the day's usage again.** Metering kept a usage record per
+  deployment but filled each with all of the project's sessions of the day, so a project redeployed
+  (or moved, or switched between scale modes or triggers) N times had its morning counted N times,
+  and an always-on project got another full day of reservation per deploy. Every session and every
+  second of a reservation now counts once, and a recalculated day gives the same totals. The run
+  for yesterday during the first hour of a day no longer applies today's state: a project first
+  deployed after midnight has no usage the day before, and a resize after midnight does not change
+  it ([upgrade note](docs/upgrade.md#billing)).
+- **A redeploy while the previous deploy is still starting leaves one live deployment.** A deploy
+  replaced only the active deployment: one still starting went live next to the new one once its
+  readiness check found the project's Knative Service ready, and both were metered. Every live
+  deployment of the project is now replaced (console, CLI, API, git pushes, resumes, runtime test
+  deploys), the readiness check of a replaced one ends it without activating it, and a git deploy
+  replaced before it went live ends as `skipped` instead of `deploying`.
+- **Helm: SSO callback and MCP URLs are `https`.** The gateway overwrote the ingress controller's
+  `X-Forwarded-Proto` with `http`, so the API sent `http://` SSO redirect URIs (which Google
+  rejects) and published `http://` MCP metadata. It now keeps the header of a trusted ingress
+  controller. Providers registered with the `http://` callback need the `https://` one; SAML URLs
+  came from `APP_URL` and do not change ([upgrade note](docs/upgrade.md#https-urls-behind-the-ingress-controller)).
+- **Helm: `api.pdb` no longer blocks node drains.** With the ReadWriteOnce API volume the API pods
+  cannot leave the volume's node, so the budget held a drain forever; it is created only with a
+  ReadWriteMany volume, and `helm status` says when it is skipped.
+- **Helm: upgrades keep the replica count of an autoscaler.** The Deployments of the gateway, API
+  and UI set `replicas` on every upgrade, resetting what their HorizontalPodAutoscaler had scaled
+  to; with the HPA on, the chart leaves the count to it.
+- **Helm: `api.port`, `ui.port` and `reverb.port` take effect.** Octane, the UI's Caddy and Reverb
+  listened on 80, 80 and 8080 whatever the values said; they listen on the configured ports
+  (`RUNR_API_PORT`, `RUNR_UI_PORT`, `REVERB_SERVER_PORT`), the defaults unchanged.
+- **Reverb logs every message only while debugging.** It ran with `--debug` in production; now only
+  with `APP_DEBUG=true` or `APP_ENV=local`.
+- **A generated administrator password is never logged.** With `secret.create=false` and no
+  `ADMIN_PASSWORD`, the seeder printed the generated password into the bootstrap Job's log; the Job
+  now stores it in the Secret `runr-admin` (it may read and patch that one Secret) and `helm status`
+  prints the command that reads it. The seeder shows a password it generates only on an interactive
+  terminal; the Compose migrator still prints it once on the console that runs it.
+- **Helm: `values.schema.json` validates `images.*` and `supplyChain.*`**, the keys the templates
+  read; it checked `api.images` and `api.supplyChain`, which nothing reads (still accepted).
+- **A Compose install has a first administrator.** `docker compose run --rm migrator` ran the
+  seeders, which create accounts only in a local development environment: a production install
+  ended without any account. The migrator now creates the first administrator while the
+  installation has none, with the rules of the Helm chart's bootstrap job: `ADMIN_USERNAME`,
+  `ADMIN_EMAIL` and `ADMIN_PASSWORD` from `api.env` (new in `api.env.example`; defaults `admin`
+  and `admin@example.com`); with an empty `ADMIN_PASSWORD` it generates a password and prints it
+  once at the end of its output, never to the log. Nothing happens when that account exists,
+  another administrator exists (without the Tenancy module's administrator flag: any user) or the
+  e-mail address belongs to another account, so the migrator stays safe to run after every update
+  and an existing install with users gets no new account. `php artisan runr:bootstrap-admin` does
+  the same by hand
+  ([compose/README.md](compose/README.md#5-start-the-services-and-create-the-administrator)).
+- **HTTPS for the Compose install.** The guide served plain HTTP only; the example host proxy
+  configurations were not part of it and disagreed with the default port. Section 7 of
+  [compose/README.md](compose/README.md#7-https) sets up a Caddy on the host for the console
+  domain (Let's Encrypt or an own certificate) and, for a region whose ingress only that host
+  reaches (a kind cluster), the wildcard function domain: `Caddyfile-host` forwards to the gateway
+  on `127.0.0.1:8080` (`PORT` in `.env`), `Caddyfile-wildcard` is appended to it. The gateway
+  (`compose/Caddyfile`) now keeps the `X-Forwarded-Proto` and `X-Forwarded-For` of a proxy on a
+  private address instead of overwriting them, so behind the HTTPS proxy the API builds `https`
+  URLs (the SSO callback URL among them) and, with `TRUSTED_PROXY_HOPS=2` (new in
+  `api.env.example`, default `1`), records the client's address; clients that connect to the
+  gateway directly are handled as before. The examples of `APP_URL`, `FRONTEND_URL` and
+  `SANCTUM_STATEFUL_DOMAINS` match the default port.
+- **Compose module toggles reach the console.** `compose/build.sh` built the UI without the module
+  flags, so `TENANCY_ENABLED`, `AUTH_PROVIDER_ENABLED` and `TICKET_ENABLED` switched the API only.
+  The build now reads them from `compose/.env` (an environment variable of the same name takes
+  precedence), with the defaults of `docker-compose.yml`, and builds the UI with the modules the
+  API enables; `compose/deploy.sh` reads them from the server's `.env`. The guide sets the toggles
+  before the build ([compose/README.md](compose/README.md#1-choose-the-modules)). An existing
+  install keeps its `.env`; its next build shows the modules its API already runs.
+- **The Compose gateway serves the Horizon dashboard.** `/horizon` went to the console; it reaches
+  the API as on the Helm gateway, signed in with the single-use link of
+  `php artisan runr:horizon-link` or `POST /api/horizon/link`
+  ([compose/README.md](compose/README.md#horizon-dashboard)).
+- **SSO callbacks reach the API.** The sign-in callback of an OAuth / OpenID Connect provider is
+  the API's `/oauth/<provider>/callback`. The Helm chart's gateway sent it to the UI, so a provider
+  sign-in ended on the console's start page; the Compose gateway sent every `/oauth/*` path to the
+  API, the console's own `/oauth/callback` page that completes the sign-in included, which then
+  answered 404. Both gateways now route `/oauth/<provider>/callback` to the API and leave
+  `/oauth/callback` to the console; `ci/check-helm-chart.sh` checks the chart's route.
+- **`edition: multi-tenant` runs the multi-tenant console.** The modules of the console are built
+  into its image, and the chart appended `ui.image.multiTenantSuffix` (default empty) to the UI tag
+  of the multi-tenant edition, so `--set edition=multi-tenant` alone ran the single-tenant console
+  without the tenant and SSO pages. The default suffix is now `-mt`, the published multi-tenant UI
+  images (`ghcr.io/brf-tech/runr/ui:<version>-mt`); with the default tag `latest`, which has no
+  multi-tenant variant, the multi-tenant edition runs the chart's release (`<appVersion>-mt`).
+  Single-tenant installs and installs that set the suffix keep their image. `helm upgrade
+  --reuse-values` keeps the empty suffix of an earlier release: add
+  `--set ui.image.multiTenantSuffix=-mt` to that upgrade. A UI image of your own that carries the
+  modules under its plain tag needs `ui.image.multiTenantSuffix=""`.
+- **Helm value `ticket.enabled`.** The Ticket module (support tickets) had no chart value: the API
+  always enabled it, and `runtime/ci.sh deploy --no-ticket` (its default) did not reach the API.
+  `ticket.enabled` sets `TICKET_ENABLED` for every API container and hook job; its default `true`
+  is the module state every earlier install had, also for reused values without the key. Installs
+  deployed with `ci.sh deploy` without `--ticket` carry `ticket.enabled=false`: their API now
+  disables the module, as their console already did. The console shows the ticket pages when its
+  UI image is built with `VITE_TICKET_ENABLED=true`.
+- **OpenID Connect sign-in.** The *Generic OIDC* provider failed at every sign-in: no `oidc`
+  driver existed. RunR now signs in against the identity provider's discovery document with the
+  authorization code flow, PKCE, `state` and `nonce`, verifies the ID token (signature against the
+  published keys, issuer, audience, expiry, nonce) and reads e-mail, name and the groups claim of
+  SSO group mapping from it and the userinfo response
+  ([docs/modules.md](docs/modules.md#openid-connect)).
+- **Google hosted domain.** The provider's Hosted Domain was not sent to Google, so any Google
+  account could sign in. The sign-in now asks for the domain (`hd`) and refuses an account whose
+  `hd` claim is another domain or missing.
+- **SSO sign-in on a tenant's sign-in page.** The redirect used the platform's provider settings
+  and the callback the tenant's: a provider that exists only in the tenant failed. Redirect and
+  callback now use the same provider of the same organization.
+- **SAML button on the sign-in page.** It called an OAuth route that excludes SAML and failed; it
+  now starts at the provider's SAML login.
+- **Several providers of one driver.** A sign-in always took one, arbitrary enabled provider of its
+  driver. The sign-in page's button now names its provider (`?provider=<id>` on
+  `/api/oauth/{driver}/redirect`; without it the first by order, then name), so two OpenID Connect
+  identity providers, or a gitlab.com and a self-managed GitLab, can be enabled side by side.
+  OpenID Connect users are identified per provider and GitLab users per self-managed instance;
+  accounts linked earlier keep working. A self-managed GitLab's Instance URL without a trailing
+  slash works.
+- **Sign-in errors at the provider.** A cancelled sign-in or a code the provider refuses returned an
+  error page; the sign-in page now shows the reason. A provider address marked unverified
+  (`email_verified: false`) is no longer matched to an existing account.
+- **An SSO sign-in from a tenant's sign-in page starts the console in that tenant.** The one-time
+  code of the OAuth, OpenID Connect and SAML handoff names the tenant, and in a multi-tenant
+  install `POST /api/oauth/exchange` answers like the password sign-in, with `tenants` and
+  `active_tenant` next to the token. A tenant's page admits its members and platform
+  administrators only; anyone else gets 403 and the session is revoked. The session is not pinned
+  to the tenant, so the console still switches organizations
+  ([docs/security.md](docs/security.md#sso-sign-in-handoff)).
+- **An SSO sign-in after another session** replaces that session's organization and brand in the
+  console with the ones of the new sign-in.
+- **Converting a single-organization installation into a multi-tenant one.**
+  `php artisan tenancy:setup` migrated the new tenant schema with the central migrations (the next
+  `tenancy:migrate` of every upgrade failed, and a second run created every central table in every
+  tenant schema) and copied nine tables. It now creates the schema with the tenant migrations and
+  copies every table the tenant schema has, in foreign-key order with the ids they had, gives every
+  account its organization role as membership, assigns and syncs the regions, binds the
+  organization's central rows (sandboxes, git installations and repository links, MCP, status
+  pages) and API tokens to it and moves `storage/git` and the git remotes into the
+  organization's directories. The central schema keeps its rows. `--dry-run` shows the plan and
+  changes nothing; a conversion that stopped continues where it stopped; a finished conversion, a
+  fresh installation and an installation with organizations are left alone. The slug defaults to
+  the git remote owner, so existing git remotes keep their URLs
+  ([docs/tenancy.md](docs/tenancy.md#converting-a-single-organization-installation)).
+- **An installation switched to the multi-tenant edition has platform administrators.** The
+  Tenancy migrations added `users.is_admin` as false for every account and the chart's bootstrap
+  creates an administrator only on installs without accounts. A new Tenancy migration makes the
+  owners and admins of the single organization platform administrators when the installation has
+  none (nothing changes where one exists), `tenancy:setup` promotes them too, and
+  `tenancy:setup --admin=<account>` makes any account one.
+- **`tenancy:migrate --fresh` empties the tenant's schema only.** It ran `migrate:fresh` in tenant
+  context, whose search path includes `public`: the central tables were dropped too. It now drops
+  and recreates the tenant's schema, and asks for confirmation in production unless `--force`.
+- **New organizations get every module's tenant migrations.** The console, self-service signups
+  and `tenancy:create-tenant` ran only Tenancy's tenant migrations; the Ticket module's waited for
+  the next upgrade. They now run the same migrations as `tenancy:migrate`.
+- **Single-tenant installs have a support staff view.** Members whose role holds `tickets.manage`
+  (Owner, Admin, custom roles) list, answer, assign and tag tickets in Settings → Support Tickets;
+  it was shown to platform administrators only, which single-tenant installs do not have.
+- **Ticket attachments are kept per organization.** Ticket ids are per organization, so their
+  files shared `support-attachments/<ticket id>/`. Files now go to
+  `support-attachments/<tenant id>/<ticket id>/`, a download serves only files recorded on that
+  ticket of the requesting organization (internal-note files to support staff only), and the
+  upgrade moves each organization's existing files into its directory.
+- **Changing an organization's domain keeps the platform's domain entry.** The previous domain was
+  read with the platform's as fallback, so an organization's first domain removed the platform's
+  `<region>.<platform domain>` entry from the regions; the platform's own domain and malformed
+  host names are refused.
+- **`GET /api/settings` shows the capacity and allocations of every platform region**
+  (`assignable_regions`) to platform administrators only.
+- **Deleting an organization removes what it kept outside its schema:** its sandboxes (pods
+  deleted in the region), warm pools and sandbox quota, uploads in progress and uploaded images
+  (registry manifests included), custom runtimes with their registry images, hosted MCP servers
+  with their calls and sessions, git installations and repository links, status page lookups, its
+  branding override and assets, its support ticket attachments, its notifications and the
+  settings of its own regions. The audit log and billing records are kept; a sandbox pod or image
+  that cannot be removed keeps the organization as `delete_failed` for a retry
+  ([docs/tenancy.md](docs/tenancy.md#tenant-lifecycle)).
+- **Organizations create projects, previews and sandboxes on their own regions.** The
+  organization quota check refused a region the organization added itself, because it has no
+  quota assignment; own regions are limited by their capacity only.
+- **Regions an organization adds are recorded as its own** (`owner_tenant_id`): the
+  installation's organization CPU/RAM ceiling is no longer applied to an organization's own
+  cluster. The upgrade marks existing ones.
+- **A platform region's status reaches the organizations.** Its status (active, inactive,
+  maintenance) and migration state are synced to the organizations' copies, so their deploys
+  respect a region in maintenance.
+- **The status checks of a platform region reach the organizations' copies.** The installation,
+  cluster and DNS status the status jobs write stayed in the platform's row; only changes made
+  through the region API were synced.
+- **Ending a region assignment or deleting a platform region removes the organization's copy.**
+  The organization's projects there are torn down and stay without a region, its API gateways are
+  removed from the region, and the region leaves its list.
+- **Detaching a platform region from an organization, or deleting an organization without a domain
+  of its own, removed the platform's `<region>.<base domain>` entry** from the region's Knative
+  domain configuration; only the organization's entries are removed now.
+- **Reading an unreachable cluster removed its kubeconfig.** `GET /api/knative-regions/{id}/knative-status`
+  (`runr regions status`) and `GET …/nodes` (the Workers tab) set the region's kubeconfig to
+  null on any error, so a network hiccup left the region without access to its cluster. They now
+  answer the error and record the cluster as unreachable; the kubeconfig stays.
+- **The full Knative install deleted the Knative Services of a cluster that already ran Knative.**
+  `POST …/install-knative` (`runr regions knative install REGION`) installed the operator
+  without an adoption check, and the operator install starts by removing the previous operator
+  and the Knative Serving CRDs. It now adopts a running operator and a Ready Knative Serving like
+  the component installs; the operator install itself adopts a running operator, and its cleanup
+  of a broken install keeps the CRDs while Knative Services exist
+  ([docs/regions.md](docs/regions.md#knative-operator-and-serving)).
+- **A changed base domain did not move the regions.** The new `<region>.<base domain>` was added
+  next to the old one (Knative serves only one), the regions' function domain — project URLs,
+  function TLS, the status block, request replay — kept the old one, the DNS check never ran,
+  the old domain was removed after 48 hours whatever DNS said, and the first base domain
+  replaced a region's own domain. A changed base domain now migrates the regions that follow it:
+  both domains are served (the new one by `runr-domain-alias` in the project namespace) until DNS
+  of the new one answers the region's external address, or the migration is completed by hand
+  (Migration tab, `runr regions migration complete REGION --domain`,
+  `POST …/complete-domain-migration`); then the new domain becomes the function domain. Setting
+  the old base domain back rolls the migration back; a region with a domain of its own is never
+  touched ([docs/regions.md](docs/regions.md#changing-the-base-domain)).
+- **Dedicated workers could not be cleared.** `POST …/workers` refused an empty list, so
+  `runr regions nodes set REGION --all` and deselecting every node in the Workers tab failed with
+  422. An empty list releases every node.
+- **The console's "In-cluster" Redis was refused.** The Redis tab sent the mode `in-cluster`; the
+  API takes `in_cluster`.
+- **Upgrade Serving did nothing.** The Serving tab's Upgrade answered "already installed". It
+  upgrades Knative Serving to the next minor version the cluster supports
+  (`POST …/upgrade-serving`, `runr regions knative upgrade REGION --version`): the operator
+  follows when it is older, the version's CRDs are applied, then the KnativeServing resource
+  ([docs/regions.md](docs/regions.md#knative-operator-and-serving)).
+- **The region mode chosen in the wizard was dropped.** `POST /api/registry-setup/start` (the
+  console wizard) ignored `region_mode`; with the Tenancy module it is stored like on
+  `POST /api/knative-regions`.
+- **`region_mode` is a platform administrator's choice.** In a multi-tenant install anyone else's
+  `region_mode` (managed or infinite organization quotas) is ignored on region create and update
+  and on `POST /api/registry-setup/start`, so an organization cannot lift the quotas of a region.
+- **Region settings had no console form, and `agent_ws_url` needed a manual redeploy.** The
+  General tab has the settings form (request timeout, agent address, cert-manager ClusterIssuer,
+  trusted proxies); a changed `agent_ws_url` deploys the region's agent again. `PUT …/settings`
+  no longer takes `namespace`, which was never read ([docs/regions.md](docs/regions.md#general)).
+- **`request_timeout` did not raise the function timeout.** The region Traefik cut every response
+  after 120 s and Knative refused a revision timeout above 600 s, whatever the setting (default
+  300, up to 3600). Traefik's read and write timeouts follow the longest setting of the regions on
+  the cluster plus 10 s, and Knative's maximum revision timeout is raised to it — at install, on a
+  settings change and with `region:reconcile` (Traefik's pods roll once)
+  ([docs/regions.md](docs/regions.md#request-timeout)).
+- **Registry, monitoring and function TLS could not change after a region was created.**
+  `POST …/registry` (the Registry tab, `runr regions registry set`) sets up the registry of an
+  existing region, and `POST /api/knative-regions` with registry fields sets it up instead of only
+  storing them; `PUT …/monitoring` (General tab, `runr regions set --set prometheus_url=…`)
+  switches between an existing Prometheus / Loki and RunR's own; `DELETE …/function-tls`
+  (`runr regions function-tls rm`) switches function TLS off; the Isolation tab adds Kata
+  hypervisors to a working install ([docs/regions.md](docs/regions.md#region-settings-reference)).
+- **A region created inactive was refused deploys while it showed active.** `is_active: false`
+  (`runr regions create --inactive`) left `region_status` active; it is `inactive` now, and the
+  upgrade fixes existing regions.
+- **Inactive and maintenance regions kept serving.** The status block's route used Traefik v2 rule
+  syntax, which never matches on the region Traefik, covered only `*.<function domain>`, was
+  shared by the regions of a cluster and was applied only on a status change. It now matches with
+  Traefik v3 syntax every host of the region — function domain, project custom domains, the
+  domains of its Knative Services — one route per region, and it is applied when the region's
+  Serving becomes ready and by `region:reconcile`, which also removes a leftover from an active
+  region ([docs/regions.md](docs/regions.md#region-status)).
+- **`region:reconcile` keeps the status block of the organizations' own regions.** It applied and
+  removed the block of platform regions only; it now does both for every organization's own
+  regions too, in the organization's context. The tenant schemas get the `region_status` fix of
+  regions created with `is_active: false`.
+- **A region moved to another cluster lost part of its setup.** A migration now also brings the
+  dedicated workers that exist on the new cluster, WebAssembly and GPU support, the data services
+  RunR runs, the admission policy, function TLS, the Skupper site and the status block; the
+  Migration tab sends the new cluster's data location, and a region whose cluster does not answer
+  can be opened in the console to move it
+  ([docs/regions.md](docs/regions.md#moving-a-region-to-another-cluster)).
+- **The DNS check never passed behind a load balancer with a host name.** It compared
+  `gethostbyname()` with the external address, so `dns_resolved` stayed false and a migration to
+  such a cluster waited the full 48 hours. A CNAME to the load balancer, or one of its addresses,
+  now counts.
+- **A removed tracing backend came back.** `DELETE /api/observability/regions/{id}/tracing` kept
+  the region's tracing mode and `region:reconcile` installed the backend again; the removal sets
+  the mode to `off`.
+- **`uninstall-knative` left the region showing Knative installed.** The operator and Serving
+  statuses stayed ready; they are reset to `not_installed`.
+- **A replaced kubeconfig was not checked.** `PUT /api/knative-regions/{id}` with `kubeconfig`
+  (`runr regions set --kubeconfig`) took any value; it is checked like a new region's and has to
+  reach the same cluster ([docs/regions.md](docs/regions.md#general)).
+- **The fallback Knative version needed Kubernetes 1.32.** Without the chart repository RunR
+  installed Knative 1.20 on any cluster; it installs the newest pinned Knative version the
+  cluster supports. RunR's Prometheus (kube-prometheus-stack 92.10.1) and Loki (loki-stack
+  2.10.3) charts are pinned instead of the newest the repository has.
+- **The region-mode hint of the wizard said every tenant gets unlimited access** to an
+  `infinite` region; only the tenants it is assigned to use it.
+
+### Removed
+
+- **Plans and the 0.5.7 billing**: plans and plan limits, plan renewal, subscriptions, trials,
+  credits, purchases, add-ons, capacity deals, cost configurations, charges, usage thresholds and
+  the store link, with Settings → Plans & Billing, Settings → Subscription, Settings → Charges and
+  the old cost overview; the endpoints `/api/admin/plans`, `/api/admin/billing-settings`,
+  `/api/plans/public`, `/api/tenant/subscription`, `/api/tenant/billing`, `/api/cost-configs`,
+  `/api/tenants/{tenant}/billing/*`, `/api/tenants/{tenant}/capacity-deals`,
+  `/api/regions/{region}/profit-loss` and the 0.5.7 `/api/billing/tenants`, `/charges` and
+  `/purchases` routes; the Helm values `plans.enabled`, `billing.usageThresholds`,
+  `billing.storeUrl` and the variables `PLANS_ENABLED`, `BILLING_USAGE_THRESHOLDS`,
+  `BILLING_STORE_URL`, `BILLING_DEFAULT_CURRENCY` (now `BILLING_CURRENCY`). The data is kept in
+  `billing_legacy_archive` ([docs/upgrade.md](docs/upgrade.md#billing)).
+- **Cost fields of the core usage endpoints**: `final_cost`, `raw_cost` and `currency` of
+  `GET /api/bindings/{id}/usage` and `GET /api/sandbox-usage`, which were 0 for every record since
+  metering records quantities only, and the COST column of `runr bindings get --usage` and
+  `runr sandbox usage` (which now totals time, CPU and memory hours). What usage costs comes from the
+  Billing module: `GET /api/billing/usage` and the bills
+  ([upgrade note](docs/upgrade.md#api-changes)).
+
+- **Helm: SQLite is not a chart option.** `database.driver: sqlite` never worked with the chart
+  (no database file on the API volume, one database per pod); the API, Horizon, scheduler and
+  Reverb pods share one PostgreSQL server, and any other driver stops the install with a message.
 
 ## [0.5.7] - 2026-10-17
 
@@ -1239,7 +1755,8 @@ Initial tagged release.
 - API gateways with routes, in-app notifications and support tickets.
 - Helm chart with a single-tenant / multi-tenant edition, an install form (`values.schema.json`), generated secrets and a Traefik ingress; a Docker Compose setup for development.
 
-[Unreleased]: https://github.com/brf-tech/runr/compare/v0.5.7...main
+[Unreleased]: https://github.com/brf-tech/runr/compare/v0.5.8...main
+[0.5.8]: https://github.com/brf-tech/runr/releases/tag/v0.5.8
 [0.5.7]: https://github.com/brf-tech/runr/releases/tag/v0.5.7
 [0.5.6]: https://github.com/brf-tech/runr/releases/tag/v0.5.6
 [0.5.5]: https://github.com/brf-tech/runr/releases/tag/v0.5.5

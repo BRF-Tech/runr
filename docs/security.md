@@ -47,7 +47,8 @@ edition; tables of schema **central** exist in the central schema only.
 | `sign_in_handoffs` | central | `token` (the API token of an SSO sign-in until its one-time code is exchanged, [SSO sign-in handoff](#sso-sign-in-handoff)) |
 | `region_tracing_configs` | central | `export_headers` (headers of an external OTLP endpoint) |
 | `sandboxes` | central | `env` (environment of a sandbox, [Sandbox API](sandbox-api.md); in the cluster the Secret `sbx-<id>-env`) |
-| `secure_settings` | central | `value` (white-label: billing webhook secret, CAPTCHA secret) |
+| `secure_settings` | central | `value` (white-label: CAPTCHA secret) |
+| `billing_settings` | central and tenant schemas | the billing webhook secret (Billing module) |
 | `region_supply_chain_settings` | central | `signing_private_key`, `signing_key_password` (the API's copy of a region's cosign key pair; [supply chain](supply-chain.md#signing)) |
 | `git_providers` | central | `client_secret`, `private_key`, `webhook_secret` (GitHub App key and secrets, GitLab OAuth application secret, [git deploy](git-deploy.md)) |
 | `git_repo_links` | central | `access_token`, `refresh_token`, `webhook_secret` (provider repository connections) |
@@ -118,6 +119,14 @@ encrypted columns cannot be read.
   header to the server — it sends the signed caller identity instead ([AI agents](mcp.md#gateway-headers-and-signature)).
 - **SSO redirects**: the OAuth / OIDC / SAML callback redirects with a one-time code, never the
   API token ([SSO sign-in handoff](#sso-sign-in-handoff)).
+- **The Helm chart's ConfigMap**: the passwords of the database, Redis and the SMTP server
+  (`database.*`, `redis.*`, `mail.*`) reach the pods as Secret environment variables
+  (`runr-secret` or a Secret of yours), never through `runr-config`, which holds `extraEnv`
+  ([install.md](install.md#database-redis-and-mail)).
+- **Logs**: a generated password of the first administrator goes to a Secret (`runr-secret`, or
+  `runr-admin` with `secret.create: false`), never to the bootstrap Job's log; the Compose migrator
+  prints it once on the console that runs it ([First administrator](install.md#first-administrator)).
+  The single-use sign-in link of the Horizon dashboard is kept as a hash and never logged.
 - **Response cache**: cached API responses are kept per user and are only served to a signed-in
   request of the same user; secret endpoints are never cached (`Cache-Control: no-store`).
 - **Audit log**: events record which fields changed; values of secret fields and of every
@@ -154,12 +163,13 @@ token>` and, in a tenant, `X-Tenant-ID`. Notifications addressed to one user arr
 
 ## Sign-in sessions and API tokens
 
-Every sign-in of a Platform user or a Tenant user — with a password in the console or with
-`runr login --with-password`, through SSO, after a self-service signup or when accepting an
-invitation — creates a **sign-in session**: an API token the console sends with every request.
-API tokens are the ones users create themselves (Settings → API Tokens, `runr tokens create`, the
+Every sign-in of a Platform user or a Tenant user (the two choices of the sign-in page in the
+multi-tenant edition, [Tenancy](tenancy.md#platform-users-and-tenant-users)) — with a password in
+the console or with `runr login --with-password`, through SSO, after a self-service signup or when
+accepting an invitation — creates a **sign-in session**: an API token the console sends with every
+request. API tokens are the ones users create themselves (Settings → API Tokens, `runr tokens create`, the
 `runr-cli@<host>` token of `runr login --with-password`). Both are stored as SHA-256 hashes.
-**Account → Active Sessions** lists every token of the user — sign-in sessions and API tokens —
+**User Settings → Active Sessions** lists every token of the user — sign-in sessions and API tokens —
 with its device, address and last use.
 
 - **Lifetime.** A sign-in session ends 30 days after the sign-in (`RUNR_LOGIN_TOKEN_TTL_DAYS`,
@@ -203,6 +213,12 @@ After an OAuth, OIDC or SAML sign-in RunR redirects the browser to
 one exchange. The console trades it for the API token with `POST /api/oauth/exchange`
 (`{"code": "…"}` → `{"token": "…", "user_id": "…"}`, no authentication, rate-limited like the
 other sign-in routes); a used, expired or unknown code answers 422.
+In a multi-tenant install the answer also carries `tenants` and `active_tenant`, like the password
+sign-in (`POST /api/auth/login`): a sign-in started from a tenant's sign-in page starts the
+console in that tenant. The code names the tenant, and the exchange lets in its members and
+platform administrators only — anyone else gets 403 and the session the sign-in created is revoked.
+The session is not pinned to the tenant: the console switches organizations as after a password
+sign-in, and every request is checked against the membership.
 The token therefore never appears in a URL, the browser history, a `Referer` header or an access
 log. RunR stores the code's SHA-256 only, and the token encrypted until the exchange.
 
@@ -368,10 +384,10 @@ Recorded after the API answered, with the outcome of the request:
 
 | Area | Actions |
 |------|---------|
-| Sign-in | `auth.login` (password; failures with the login name tried), `auth.logout`, `auth.sso.login` (OAuth / OIDC / SAML), `user.register`, `user.signup.verify` (self-service signup), `user.signup.resend`, `invitation.accept` |
+| Sign-in | `auth.login` (password; failures with the login name tried), `auth.logout`, `auth.sso.login` (OAuth / OIDC / SAML), `user.register`, `user.signup.verify` (self-service signup), `user.signup.resend`, `invitation.accept`, `horizon.link.create` (a single-use sign-in link of the [Horizon dashboard](install.md#horizon-dashboard), with its expiry; never the link) |
 | Account | `auth.password.change`, `auth.2fa.setup`, `auth.2fa.enable`, `auth.2fa.disable`, `auth.2fa.recovery_codes.regenerate`, `account.profile.update`, `account.avatar.update`, `account.avatar.remove`, `account.disable`, `account.delete`, `account.notification_preferences.update`, `session.revoke`, `session.revoke_all` |
 | API tokens | `api_token.create`, `api_token.revoke` |
-| Projects | `project.create`, `project.update` (changed fields, env var names), `project.delete`, `project.code.save`, `project.secret.set`, `project.secret.delete`, `project.secret.reveal` |
+| Projects | `project.create`, `project.update` (changed fields, env var names), `project.delete`, `project.code.save`, `project.secret.set`, `project.secret.delete`, `project.secret.reveal`, `project.owner.transfer` (new and previous owner), `project.stop` (reason), `project.resume` |
 | Workflows | `workflow.declare`, `workflow.sync`, `workflow.update`, `workflow.app.update`, `workflow.signing_key.rotate`, `workflow.signing_key.reveal`, `workflow.run.start`, `workflow.run.cancel`, `workflow.run.retry`, `workflow.run.replay` |
 | Deployments | `deployment.create`, `deployment.rollback` (a version older than the latest), `deployment.delete`, `deployment.status.update` |
 | Shell | `shell.session.request`, `shell.session.open`, `shell.session.close` (duration, reason) |
@@ -379,7 +395,7 @@ Recorded after the API answered, with the outcome of the request:
 | Gateways | `gateway.update`, `gateway.route.create`, `gateway.route.update`, `gateway.route.delete` |
 | Private databases | `private_connection.create`, `private_connection.delete`, `region.skupper.site.ensure` |
 | Bindings | `binding.create`, `binding.update`, `binding.delete`, `binding.restore`, `binding.credentials.rotate`, `binding.credentials.reveal`, `binding.attach`, `binding.attachment.update`, `binding.detach`, `region.data_service.install`, `region.data_service.uninstall`, `tenant.binding_quota.update`, `binding.purged` (system, after the retention) |
-| Regions | `region.create`, `region.update`, `region.delete`, `region.kubeconfig.download`, `region.settings.update`, `region.capacity.update`, `region.tls.update`, `region.knative.*`, `region.components.detect`, `region.workers.update`, `region.redis.test`, `region.redis.configure`, `region.redis.remove`, `region.sandbox.install`, `region.sandbox.uninstall`, `region.sandbox.mapping.update`, `region.wasm.install`, `region.wasm.uninstall`, `region.migration.start`, `region.migration.complete`, `region.migration.rollback`, `region.registry.remove`, `region.demo.create`, `region.demo.remove`, `registry.setup.start`, `registry.setup.retry` |
+| Regions | `region.create`, `region.update`, `region.delete`, `region.kubeconfig.download`, `region.settings.update`, `region.monitoring.update`, `region.capacity.update`, `region.tls.update`, `region.tls.remove`, `region.knative.*`, `region.components.detect`, `region.workers.update`, `region.redis.test`, `region.redis.configure`, `region.redis.remove`, `region.sandbox.install`, `region.sandbox.uninstall`, `region.sandbox.mapping.update`, `region.wasm.install`, `region.wasm.uninstall`, `region.migration.start`, `region.migration.complete`, `region.migration.rollback`, `region.migration.domain.complete`, `region.registry.setup`, `region.registry.remove`, `region.demo.create`, `region.demo.remove`, `registry.setup.start`, `registry.setup.retry` |
 | Runtimes | `runtime.create`, `runtime.update`, `runtime.delete`, `runtime.build`, `runtime.test_deploy` |
 | GPUs and models ([AI](ai.md), [Hugging Face models](huggingface.md)) | `region.gpu.install`, `region.gpu.uninstall`, `region.gpu.settings.update`, `region.model_storage.update`, `tenant.gpu_quota.update`, `model.hub_token.set`, `model.hub_token.remove`, `model.create`, `model.update`, `model.delete`, `model.snapshot.create`, `model.snapshot.delete`, `model.upload.start`, `model.upload.complete`, `model.upload.abort`, `model_service.create`, `model_service.update`, `model_service.delete`, `model_service.deploy`, `model_service.stop`, `project.model.bind`, `project.model.binding.update`, `project.model.unbind` |
 | Uploaded images ([details](images.md#audit)) | `image.upload.start`, `image.upload.complete`, `image.upload.abort`, `image.delete` (registry manifest removed or not, what still used it); recorded where they happen: `image.upload.pushed` (digest, kind, size, the digest it replaced), `image.upload.failed` (the region's reason) |
@@ -389,12 +405,12 @@ Recorded after the API answered, with the outcome of the request:
 | Tenants & members | `tenant.create`, `tenant.update`, `tenant.delete`, `tenant.switch`, `tenant.region.assign`, `tenant.region.quota.update`, `tenant.region.remove`, `member.add`, `member.invite`, `member.update` (role), `member.remove`, `member.2fa.reset`, `invitation.resend`, `invitation.cancel` |
 | Impersonation | `impersonation.start`, `impersonation.stop`; events in between name the administrator as impersonator |
 | Roles & access | `role.create`, `role.update`, `role.delete`, `role.default.update`, `group.create`, `group.update`, `group.delete`, `group.member.add`, `group.member.remove`, `member.role.update`, `project.access.grant`, `project.access.revoke`, `sso.group_mapping.create` / `.update` / `.delete` |
-| White-label | `branding.update`, `branding.asset.upload` / `.delete`, `tenant.branding.update`, `tenant.branding.asset.upload` / `.delete`, `signup.settings.update`, `tenant.onboarding.complete`, `plan.create`, `plan.update`, `plan.delete`, `billing.settings.update` — settings changes with field names only, never secret values |
+| White-label | `branding.update`, `branding.asset.upload` / `.delete`, `tenant.branding.update`, `tenant.branding.asset.upload` / `.delete`, `signup.settings.update`, `tenant.onboarding.complete` — settings changes with field names only, never secret values |
 | Git deploy ([details](git-deploy.md#security)) | `git.settings.update`, `git.redeploy`, `git.repo.connect`, `git.repo.disconnect`, `git.preview.redeploy`, `git.preview.delete`, `git_provider.create` / `.update` / `.delete`; recorded where they happen: `git.push` (pushes to the RunR git remote, refused pushes as `denied`), `git.installation.link`, `git.webhook.rejected` |
 | AI agents ([details](mcp.md#audit-and-limits)) | recorded where they happen: `mcp.session.start`, `mcp.session.end`, `mcp.tool.call` (tool, target, argument names — never values — result; the API actions a tool performs carry `auth_method` `mcp:<token id>` and `metadata.mcp_tool`), `oauth.client.register`, `oauth.token.issue`, `oauth.token.revoke`, `mcp.server.call` (hosted servers with **Audit calls** on); routes: `oauth.consent.approve`, `oauth.consent.deny`, `mcp.client.revoke`, `mcp_server.create`, `mcp_server.update`, `mcp_server.delete`, `mcp_server.key.rotate`, `mcp_server.inspect` |
 | Settings | `settings.update`, `audit.settings.update` |
-| SSO providers | `auth_provider.create`, `auth_provider.update`, `auth_provider.delete`, `auth_provider.toggle`, `social_account.unlink` |
-| Billing ([details](billing.md)) | `billing.cost_config.create` / `.update` / `.delete`, `billing.capacity_deal.create` / `.update`, `billing.subscription.update` (plan, interval, external reference), `billing.charge.create`, `billing.charge.update` (external reference), `billing.charge.void`, `billing.purchase.record` (kind, reference, amount, plan), `billing.purchase.void`, `billing.event.test`, `billing.event.redeliver` |
+| SSO providers | `auth_provider.create`, `auth_provider.update`, `auth_provider.delete`, `auth_provider.toggle`, `social_account.link`, `social_account.unlink` |
+| Billing ([details](billing.md#permissions)) | `billing.settings.update` (field names only), `billing.price.create` (region, effective date) / `.delete`, `billing.region.update` (billing type), `billing.markup.create` (region, percent, effective date) / `.delete`, `billing.region_offer.accept` (markup), `billing.bill.payment_url.update`, `billing.bill.paid.update` (paid, date, reference), `billing.tenant_bill.payment_url.update`, `billing.tenant_bill.paid.update`, `billing.fixed_request.create` (resources) / `.cancel` / `.approve` / `.reject` (reason), `billing.event.test`, `billing.event.redeliver` |
 | Support | `ticket.status.update`, `ticket.assign`, `ticket.tags.update`, `ticket.admin_reply` |
 | Observability | `region.tracing.update`, `region.tracing.install`, `region.tracing.uninstall`, `project.tracing.update`, `project.replay.update`, `replay.replay`, `replay.delete`, `replay.delete_all`, `uptime_check.create` / `.update` / `.delete` / `.run`, `uptime_incident.update`, `status_page.update`, `alert_channel.create` / `.update` / `.delete` / `.test`, `alert_rule.create` / `.update` / `.delete`, `alert_delivery.retry` |
 | Demo | `demo.seed`, `demo.remove` |

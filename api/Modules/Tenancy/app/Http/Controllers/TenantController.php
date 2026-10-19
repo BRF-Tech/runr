@@ -9,6 +9,7 @@ use Modules\Tenancy\Http\Controllers\Concerns\TenantRegionTrait;
 use Modules\Tenancy\Jobs\DeleteTenantJob;
 use Modules\Tenancy\Models\Tenant;
 use Modules\Tenancy\Models\TenantUser;
+use Modules\Tenancy\Services\TenantSchema;
 
 class TenantController extends Controller
 {
@@ -35,8 +36,7 @@ class TenantController extends Controller
         $tenant = Tenant::create($data);
 
         // Create tenant schema first (TenantUser hooks sync users to schema)
-        $tenant->database()->manager()->createDatabase($tenant);
-        $this->runTenantMigrations($tenant);
+        TenantSchema::create($tenant);
 
         // Assign creator as owner (triggers user sync to tenant schema)
         TenantUser::create([
@@ -110,6 +110,9 @@ class TenantController extends Controller
             'tenant' => $tenant,
             'role' => $role,
             'mode' => $tenant ? 'tenant' : 'central',
+            // A platform administrator in an organization they are no member of: opened as its
+            // administrator (POST /impersonate/{tenant}), the console shows the impersonation bar
+            'impersonating' => $tenant !== null && $user->is_admin && ! ImpersonateController::isMember($tenant, $user->id),
             'tenants' => $this->userTenants($user),
         ]);
     }
@@ -131,6 +134,8 @@ class TenantController extends Controller
             'name' => $t->name,
             'slug' => $t->slug,
             'role' => $user->is_admin ? 'admin' : ($roles[$t->id] ?? null),
+            // false: a platform administrator opens it as administrator (impersonation)
+            'member' => array_key_exists((string) $t->getKey(), $roles),
         ])->all();
     }
 
@@ -157,13 +162,9 @@ class TenantController extends Controller
 
         $tenant = Tenant::findOrFail($request->tenant_id);
 
-        return response()->json(['tenant' => $tenant]);
-    }
-
-    protected function runTenantMigrations(Tenant $tenant): void
-    {
-        $tenant->run(function () {
-            \Artisan::call('migrate', config('tenancy.migration_parameters'));
-        });
+        return response()->json([
+            'tenant' => $tenant,
+            'impersonating' => $user->is_admin && ! ImpersonateController::isMember($tenant, $user->id),
+        ]);
     }
 }

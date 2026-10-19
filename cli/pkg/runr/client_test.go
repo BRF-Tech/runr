@@ -83,6 +83,35 @@ func TestErrorsAreTyped(t *testing.T) {
 	}
 }
 
+// A refusal's code ({message, code}) is kept and named in the message; a numeric code is not one.
+func TestErrorCode(t *testing.T) {
+	answers := map[string]string{
+		"/api/projects/p/deploy": `{"message":"The project is above its approved allocation.","code":"fixed_allocation_exceeded"}`,
+		"/api/projects/q/deploy": `{"message":"Upstream failed.","code":500}`,
+	}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusUnprocessableEntity)
+		w.Write([]byte(answers[r.URL.Path]))
+	}))
+	defer srv.Close()
+	c, _ := runr.New(runr.Options{APIURL: srv.URL, Token: "t", Retries: -1})
+
+	_, err := c.Deploy(context.Background(), "p", "v", nil)
+	var ae *runr.APIError
+	if !errors.As(err, &ae) || ae.Code != "fixed_allocation_exceeded" {
+		t.Fatalf("coded refusal = %#v", err)
+	}
+	if want := "POST /projects/p/deploy: 422 The project is above its approved allocation. (fixed_allocation_exceeded)"; err.Error() != want {
+		t.Fatalf("message = %q, want %q", err.Error(), want)
+	}
+
+	_, err = c.Deploy(context.Background(), "q", "v", nil)
+	if !errors.As(err, &ae) || ae.Code != "" || strings.Contains(err.Error(), "(") {
+		t.Fatalf("numeric code = %#v (%v)", err, err)
+	}
+}
+
 func TestRetriesIdempotentRequestsOnly(t *testing.T) {
 	var gets, posts int32
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

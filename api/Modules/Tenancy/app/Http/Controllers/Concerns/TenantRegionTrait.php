@@ -11,10 +11,12 @@ use App\Services\ResourceThresholdService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Modules\Tenancy\Events\RegionShareOffered;
 use Modules\Tenancy\Jobs\DetachRegionCleanupJob;
 use Modules\Tenancy\Models\CentralSyncableRegion;
 use Modules\Tenancy\Models\Tenant;
 use Modules\Tenancy\Services\TenantQuotaService;
+use Modules\Tenancy\Support\TenantRegionShares;
 
 trait TenantRegionTrait
 {
@@ -22,7 +24,7 @@ trait TenantRegionTrait
     {
         $tenant = Tenant::findOrFail($id);
         $quotaService = app(TenantQuotaService::class);
-        $assigned = $tenant->regions;
+        $assigned = $tenant->regions()->get();
 
         // What holds the quotas lives in the tenant's own schema (its projects, model services,
         // previews): counted there, whichever organization the administrator's request runs in
@@ -50,6 +52,10 @@ trait TenantRegionTrait
                 ], $demand) : null,
                 // GPU quota (null = no GPU limit), set with PUT /tenants/{tenant}/regions/{region}/gpu-quota
                 'gpu_quota' => $r->pivot->gpu_quota,
+                // active, or pending until the tenant accepts the shared region (TenantRegionShares)
+                'share_status' => $r->pivot->status ?? TenantRegionShares::ACTIVE,
+                'offered_at' => $r->pivot->offered_at,
+                'accepted_at' => $r->pivot->accepted_at,
             ];
         });
 
@@ -109,12 +115,35 @@ trait TenantRegionTrait
             }
         }
 
-        $tenant->regions()->syncWithoutDetaching([
-            $data['region_id'] => [
-                'cpu_quota_m' => $data['cpu_quota_m'],
-                'memory_quota_mb' => $data['memory_quota_mb'],
-            ],
-        ]);
+        // A new share waits for the tenant's acceptance while a module requires it (billing on:
+        // the tenant accepts the region's billing type and prices with its markup, docs/billing.md).
+        // A pending share is re-assigned as pending; once acceptance is no longer required it
+        // becomes active.
+        $existing = TenantRegionShares::status((string) $tenant->id, (string) $data['region_id']);
+        $pending = TenantRegionShares::requiresAcceptance() && $existing !== TenantRegionShares::ACTIVE;
+
+        $pivot = [
+            'cpu_quota_m' => $data['cpu_quota_m'],
+            'memory_quota_mb' => $data['memory_quota_mb'],
+        ];
+        if ($existing === null || $existing === TenantRegionShares::PENDING) {
+            $pivot['status'] = $pending ? TenantRegionShares::PENDING : TenantRegionShares::ACTIVE;
+            $pivot += $pending
+                ? ['offered_at' => now()]
+                : ['accepted_at' => now(), 'accepted_by' => auth()->id() !== null ? (string) auth()->id() : null];
+        }
+
+        $tenant->regions()->syncWithoutDetaching([$data['region_id'] => $pivot]);
+
+        if ($pending) {
+            // No copy in the tenant's schema until it is accepted: its users cannot use the region yet
+            app(CacheVersionService::class)->bump('settings');
+            if ($existing === null) {
+                event(new RegionShareOffered($tenant, (string) $data['region_id'], auth()->id() !== null ? (string) auth()->id() : null));
+            }
+
+            return response()->json($tenant->regions()->get());
+        }
 
         // Sync region data to the tenant's schema (kubeconfig excluded)
         $region->triggerSyncEvent();

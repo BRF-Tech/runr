@@ -44,11 +44,14 @@ class ProcessDeployment implements ShouldQueue
         }
 
         $previous = $deployment->status;
-        $deployment->update([
+        // Only while it is still pending / running: a stop in the meantime keeps its status
+        if (! $deployment->transition(['pending', 'running'], [
             'status' => 'failed',
             'knative_ready' => false,
             'knative_message' => mb_substr('Deploy did not complete: '.($e?->getMessage() ?? 'unknown error'), 0, 255),
-        ]);
+        ])) {
+            return;
+        }
 
         Log::error('Deploy job failed', [
             'deployment' => $deployment->id,

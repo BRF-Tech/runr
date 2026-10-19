@@ -119,11 +119,98 @@ class EntrypointTest extends TestCase
         );
     }
 
+    /**
+     * Compose installs get their first administrator from the migrator (BOOTSTRAP_ADMIN=true on
+     * that service); Helm installs from the chart's bootstrap job, so the migrator of the chart's
+     * post-install hook — the same role without the flag — leaves the accounts alone.
+     */
+    public function test_migrators_create_the_first_administrator_only_when_asked(): void
+    {
+        $this->assertMatchesRegularExpression(
+            '/bootstrap_admin\(\) \{\s*\[ "\$\{BOOTSTRAP_ADMIN:-false\}" = "true" \] \|\| return 0\s*php artisan runr:bootstrap-admin\s*\}/',
+            $this->entrypoint(),
+        );
+
+        foreach (['migrator', 'migrator-fresh'] as $role) {
+            $branch = $this->roleBranch($role);
+            $this->assertStringContainsString('bootstrap_admin', $branch, $role);
+            // after the migrations and the seeders
+            $this->assertGreaterThan(strpos($branch, 'db:seed'), strpos($branch, 'bootstrap_admin'), $role);
+        }
+        foreach (['api', 'migrate-only'] as $role) {
+            $this->assertStringNotContainsString('bootstrap_admin', $this->roleBranch($role), $role);
+        }
+    }
+
+    /** The Ticket module is on unless TICKET_ENABLED says otherwise — the Helm and Compose default, too. */
+    public function test_ticket_module_defaults_to_enabled(): void
+    {
+        $this->assertStringContainsString('if [ "${TICKET_ENABLED:-true}" = "true" ]; then', $this->entrypoint());
+    }
+
     public function test_every_migrating_role_runs_the_module_migrations(): void
     {
         foreach (['api', 'migrate-only', 'migrator', 'migrator-fresh'] as $role) {
             $this->assertStringContainsString('run_module_migrations', $this->roleBranch($role), $role);
         }
+    }
+
+    /**
+     * Runs the server start of the entrypoint (from "# Ports the servers listen on" to the end) for
+     * the reverb role with a stub `php` that prints its arguments instead of starting Reverb.
+     *
+     * @param  array<string, string>  $env
+     */
+    private function reverbStart(array $env): string
+    {
+        $this->assertSame(1, preg_match('/^# Ports the servers listen on.*\z/ms', $this->entrypoint(), $m), 'no server start section');
+
+        $dir = sys_get_temp_dir().'/runr-entrypoint-'.bin2hex(random_bytes(4));
+        mkdir("{$dir}/bin", 0777, true);
+        file_put_contents("{$dir}/bin/php", "#!/bin/sh\necho \"\$@\"\n");
+        chmod("{$dir}/bin/php", 0755);
+        file_put_contents("{$dir}/run.sh", "ROLE=reverb\n".$m[0]);
+
+        try {
+            $vars = '';
+            foreach ($env as $key => $value) {
+                $vars .= $key.'='.escapeshellarg($value).' ';
+            }
+            exec('cd '.escapeshellarg($dir).' && unset APP_DEBUG APP_ENV REVERB_SERVER_PORT; '.$vars.'PATH='.escapeshellarg("{$dir}/bin").':"$PATH" sh run.sh 2>&1', $out, $code);
+            $this->assertSame(0, $code, implode("\n", $out));
+
+            return implode("\n", $out);
+        } finally {
+            exec('rm -rf '.escapeshellarg($dir));
+        }
+    }
+
+    /**
+     * Reverb logs every connection and message with --debug: only while debugging (APP_DEBUG=true
+     * or APP_ENV=local), never in production. It listens on REVERB_SERVER_PORT (Helm: reverb.port).
+     */
+    public function test_reverb_debug_output_and_port(): void
+    {
+        if (DIRECTORY_SEPARATOR !== '/' || ! is_executable('/bin/sh')) {
+            $this->markTestSkipped('needs a POSIX shell');
+        }
+
+        $this->assertSame('artisan reverb:start-shell --host=0.0.0.0 --port=8080', $this->reverbStart(['APP_ENV' => 'production', 'APP_DEBUG' => 'false']));
+        $this->assertSame('artisan reverb:start-shell --host=0.0.0.0 --port=8080', $this->reverbStart([]));
+        $this->assertSame('artisan reverb:start-shell --host=0.0.0.0 --port=9090', $this->reverbStart(['REVERB_SERVER_PORT' => '9090']));
+        $this->assertSame('artisan reverb:start-shell --host=0.0.0.0 --port=8080 --debug', $this->reverbStart(['APP_DEBUG' => 'true']));
+        $this->assertSame('artisan reverb:start-shell --host=0.0.0.0 --port=8080 --debug', $this->reverbStart(['APP_ENV' => 'local']));
+    }
+
+    /** Octane listens on RUNR_API_PORT (Helm: api.port), 80 when unset — also in its state file */
+    public function test_the_api_listens_on_its_configured_port(): void
+    {
+        $script = $this->entrypoint();
+
+        $this->assertStringContainsString('API_LISTEN_PORT="${RUNR_API_PORT:-80}"', $script);
+        $this->assertStringContainsString('octane:start --server=frankenphp --host=0.0.0.0 --port="$API_LISTEN_PORT"', $script);
+        $this->assertSame(2, substr_count($script, '"port":%s,'), 'the Octane state file carries the port');
+        $this->assertStringNotContainsString('--port=80 ', $script);
     }
 
     public function test_entrypoint_is_valid_sh(): void

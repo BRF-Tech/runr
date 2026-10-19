@@ -545,9 +545,9 @@ and the upload receiver (`receive --root …`).
 `models:meter` (every minute) adds, for every running pod of a model service, the time since the
 previous sample (at most two minutes, so a missed run does not over-count; a pod started since
 then counts from its start) to the service's day: replica, GPU-unit, CPU (millicore) and memory
-(MiB) milliseconds of the engine container's requests. In the multi-tenant edition the usage
-aggregation prices them with the region's cost config and records them as usage of source
-`model` ([billing](ai.md#billing)).
+(MiB) milliseconds of the engine container's requests. The usage aggregation records them as
+usage of source `model`; with the Billing module on they are billed on the account bill of the
+service's creator ([billing](ai.md#billing)).
 
 ## CLI
 

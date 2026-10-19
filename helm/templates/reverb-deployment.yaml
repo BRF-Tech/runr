@@ -34,6 +34,12 @@ spec:
           env:
             - name: CONTAINER_ROLE
               value: "reverb"
+            # More than one replica: the replicas share broadcasts over Redis publish/subscribe, so
+            # a console event reaches every browser whichever replica holds its connection. A shell,
+            # sandbox exec or region agent session is one WebSocket that stays on the replica it
+            # reached; the replica reads the session from Redis (no sticky routing needed).
+            - name: REVERB_SCALING_ENABLED
+              value: {{ ternary "true" "false" (gt (int .Values.reverb.replicas) 1) | quote }}
             {{- include "runr.secret-env" . | nindent 12 }}
           resources:
             {{- toYaml .Values.reverb.resources | nindent 12 }}

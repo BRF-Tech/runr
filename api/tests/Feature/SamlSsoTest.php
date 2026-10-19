@@ -313,6 +313,8 @@ class SamlSsoTest extends TestCase
         $this->assertSame('jane', $user->username);
         // One-time code in the URL, the token only through POST /api/oauth/exchange
         $this->assertArrayNotHasKey('token', $query);
+        // The installation's own provider: the code names no tenant
+        $this->assertNull(DB::table('sign_in_handoffs')->value('tenant_id'));
         $handoff = $this->postJson('/api/oauth/exchange', ['code' => $query['code']])->assertOk();
         $this->assertSame((string) $user->id, (string) $handoff->json('user_id'));
         $session = PersonalAccessToken::findToken($handoff->json('token'));

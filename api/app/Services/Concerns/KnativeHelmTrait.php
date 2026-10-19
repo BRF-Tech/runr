@@ -97,9 +97,13 @@ trait KnativeHelmTrait
     }
 
     /**
-     * Cleanup operator: Helm uninstall + namespace delete.
+     * Cleanup operator: Helm uninstall + namespace delete, and the Knative Serving CRDs.
+     *
+     * $keepCrdsInUse (before an install): the CRDs stay while Knative Services exist on the
+     * cluster — deleting a CRD deletes every resource of it, and the install applies the CRDs
+     * of its version anyway. The uninstall of the operator removes them (documented).
      */
-    private function cleanupOperator(KnativeRegion $region): void
+    private function cleanupOperator(KnativeRegion $region, bool $keepCrdsInUse = false): void
     {
         $k8s = new KubernetesClient($region->kubeconfig);
         $helm = app(HelmService::class);
@@ -112,8 +116,24 @@ trait KnativeHelmTrait
             Log::debug('Cleanup: Helm uninstall skipped', ['error' => $e->getMessage()]);
         }
 
-        $this->removeKnativeCrds($k8s);
+        if ($keepCrdsInUse && self::knativeServicesExist($k8s)) {
+            Log::info('Cleanup: Knative Serving CRDs kept, Knative Services exist on the cluster', ['region' => $region->name]);
+        } else {
+            $this->removeKnativeCrds($k8s);
+        }
         $this->deleteNamespaceIfManaged($k8s, $ns);
+    }
+
+    /** Any Knative Service on the cluster (all namespaces); an unreadable list counts as yes. */
+    public static function knativeServicesExist(KubernetesClient $k8s): bool
+    {
+        if ($k8s->getClusterResource('apiextensions.k8s.io/v1', 'CustomResourceDefinition', 'services.serving.knative.dev') === null) {
+            return false;
+        }
+
+        $list = $k8s->listClusterResources('serving.knative.dev/v1', 'Service');
+
+        return $list === null || ! empty($list['items']);
     }
 
     /**

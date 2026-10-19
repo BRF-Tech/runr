@@ -6,6 +6,7 @@ use App\Jobs\InstallTracingJob;
 use App\Models\Observability\RegionTracingConfig;
 use App\Services\KubernetesClient;
 use App\Services\Observability\TracingInstallService;
+use App\Services\RegionReconcile\Steps\TracingBackendStep;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Bus;
 use Tests\Concerns\ActsWithRoles;
@@ -215,5 +216,23 @@ class TracingBackendTest extends TestCase
         $this->assertNull($config->status);
         $this->assertSame(['otel-collector', 'tempo'], $this->helm->uninstalls);
         $this->assertNotEmpty($this->k8sCallsTo('DELETE', '/api/v1/namespaces/observability/secrets/otel-collector-export'));
+
+        // a removed backend stays removed: the mode is off, region:reconcile installs nothing
+        $stored = RegionTracingConfig::forRegion($region->fresh());
+        $this->assertTrue($stored->exists);
+        $this->assertSame('off', $stored->mode);
+        $this->assertNull(TracingBackendStep::enabledBy($stored));
+    }
+
+    public function test_uninstall_of_a_region_without_a_setting_stores_mode_off(): void
+    {
+        config(['observability.tracing.default_mode' => 'managed', 'observability.tracing.install_with_serving' => true]);
+        $region = $this->obsRegion();
+
+        app(TracingInstallService::class)->uninstall($region);
+
+        $stored = RegionTracingConfig::forRegion($region->fresh());
+        $this->assertTrue($stored->exists, 'the platform default would bring the backend back');
+        $this->assertNull(TracingBackendStep::enabledBy($stored));
     }
 }

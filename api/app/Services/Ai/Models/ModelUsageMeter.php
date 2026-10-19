@@ -17,8 +17,8 @@ use Illuminate\Support\Facades\Log;
  * time since the previous sample (at most two intervals, so a missed run does not over-count) is
  * added to the service's day — replica ms, GPU-unit ms (GPUs × ms), CPU millicore ms and memory
  * MiB ms of the engine container's requests. A pod that started since the last sample counts
- * from its start. The usage aggregation of the Tenancy module prices the day with the region's
- * cost config (GPU: gpu_price_per_unit_ms).
+ * from its start. The usage aggregation adds the day to usage_records (quantities); the Billing
+ * module prices it (docs/billing.md).
  *
  * This implementation meters the current schema (single organization); the Tenancy module runs
  * it in every tenant (TenantModelUsageMeter).

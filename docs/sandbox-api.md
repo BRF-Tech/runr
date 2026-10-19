@@ -33,7 +33,7 @@ unprivileged user with its own CPU, memory, disk and process limits.
 |---|---|
 | **Sandbox** | one pod (`sbx-<id>`, a plain Pod with `restartPolicy: Never`, not a Knative Service) running a runtime image — `python`, `nodejs`, any runtime of the [catalog](runtimes.md) — or any image you name. PID 1 is a `/bin/sh` sleep loop; everything else runs through the API. |
 | **Sandbox class** | the RuntimeClass the pod runs with: `kata-fc`, `kata-clh`, `kata-dragonball`, `kata-qemu` (a VM per sandbox with its own kernel), `gvisor` (a user-space kernel), or `runc` (the host kernel; only where a region allows it). |
-| **Region** | a cluster RunR manages. The sandbox classes a region offers are the sandbox runtimes (gVisor, Kata Containers) installed on it in Settings → Regions → (region) → Isolation — an infrastructure task that needs `sandbox.manage`, not a Sandbox API permission; its Sandbox API settings narrow them. |
+| **Region** | a cluster RunR manages. The sandbox classes a region offers are the sandbox runtimes (gVisor, Kata Containers) installed on it in Administration → Platform → Knative Regions → (region) → Isolation — an infrastructure task that needs `sandbox.manage`, not a Sandbox API permission; its Sandbox API settings narrow them. |
 | **Organization** | a tenant on a multi-tenant installation, the whole installation otherwise. Every organization's sandboxes live in a namespace of their own per region: `runr-sbx-<organization>` (`runr-sbx-default` on a single-tenant installation). |
 | **TTL** | how long a sandbox may live (`ttl_seconds`, default 900). Extending it sets a new expiry from now, up to the region's maximum lifetime counted from the start. |
 | **Idle timeout** | a running sandbox without activity (commands, files, terminal, keepalive) for `idle_timeout` seconds (default 600; 0 = off) is removed. |
@@ -354,7 +354,7 @@ Uploads and downloads are limited to 50 MiB each (`sandbox.files.max_upload_byte
 | `DELETE /sandbox-quotas/{tenantId \| default}` | `sandboxes.manage` (platform) | back to the defaults |
 | `GET /sandbox-metrics` | `sandboxes.view` | `window=1h\|24h\|7d\|30d`, `region` → `{window, active, warm, pool: {hits, misses, hit_rate}, starts: {pool_hit, cold}, start_time: {pool_hit, cold}}`, each start-time histogram `{count, sum_ms, buckets: [{le_ms, count}]}` (cumulative; `le_ms` 100, 250, 500, 1000, 2500, 5000, 10000, 30000, 60000, `null` = +Inf) |
 | `GET /sandbox-metrics/prometheus` | `sandboxes.manage` (platform) | Prometheus text format: `runr_sandbox_start_seconds` (histogram, labels `region`, `pool_hit`), `runr_sandbox_pool_claims_total` (`region`, `pool`, `runtime`, `result` hit / miss), `runr_sandboxes` (gauge, `region`, `status`) |
-| `GET /sandbox-usage` | `sandboxes.view` | `from`, `to` (dates; default this month) → daily records `{record_date, region_id, sandbox_count, sandbox_seconds, cpu_mc_ms, memory_mib_ms, raw_cost, final_cost, currency}` |
+| `GET /sandbox-usage` | `sandboxes.view` | `from`, `to` (dates; default this month) → daily records `{record_date, region_id, sandbox_count, sandbox_seconds, cpu_mc_ms, memory_mib_ms}` — quantities only; what they cost is on the account bills of the [Billing module](billing.md#account-bills) |
 
 "Platform" means every user of a single-tenant installation, platform administrators otherwise.
 
@@ -549,13 +549,13 @@ from a warm pod is not checked again (the warm pod holds its share already), and
 starting warm pods at the limit (`last_error` says why).
 
 **Usage metering**: every five minutes the usage of today (and of yesterday during the first hour
-of a day) is aggregated per organization × region × day into `sandbox_usage_records`: number of
-sandboxes, sandbox seconds, and reserved resources × time in the units of the project usage records
-(millicore·ms, MiB·ms). With the Tenancy module the records are priced with the region's cost
-config (the same per-millicore-ms and per-MiB-ms prices, multiplier 1), they add to the
-organization's usage cost in the billing summary, and the usage charge gets one line per region
-("Sandboxes (eu-1)", quantity in hours; [Billing](billing.md#charges)). Warm pods are metered from their claim on: idle pool
-capacity is not charged.
+of a day) is aggregated per organization × region × creator × day into `sandbox_usage_records`:
+number of sandboxes, sandbox seconds, and reserved resources × time in the units of the project
+usage records (millicore·ms, MiB·ms). With the [Billing module](billing.md) on, they are priced
+with the region's vCPU-hour and GB-hour prices (multiplier 1) on the **account bill** of the user
+who created the sandboxes, one line per region ("Sandboxes (eu-1)"; [Account bills](billing.md#account-bills)).
+Warm pods are metered from their claim on: idle pool capacity is not charged. `GET /sandbox-usage`
+answers the quantities; the money is in the Billing module's bills and `GET /api/billing/usage`.
 
 ## Warm pool
 
@@ -596,7 +596,7 @@ permission. Platform administrators hold them everywhere.
 
 `sandboxes.manage` is not `sandbox.manage`: the latter (group *Infrastructure*) installs and
 removes the sandbox runtimes of a region — gVisor, Kata Containers, WebAssembly shims — and maps
-project types to them (Settings → Regions → (region) → Isolation). The Sandbox API uses whatever
+project types to them (Administration → Platform → Knative Regions → (region) → Isolation). The Sandbox API uses whatever
 a region has installed and never needs `sandbox.manage`. Every sandbox
 route has its rule in `config/route_permissions.php`; changing a region's sandbox settings also needs
 the region's ownership (`region.mutable`: platform regions are the platform administrators', an

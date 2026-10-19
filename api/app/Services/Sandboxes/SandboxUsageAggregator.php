@@ -2,26 +2,28 @@
 
 namespace App\Services\Sandboxes;
 
-use App\Models\KnativeRegion;
 use App\Models\Sandbox;
 use App\Models\SandboxUsageRecord;
+use App\Services\Metering\UsageAggregator;
 use Illuminate\Support\Carbon;
-use Modules\Tenancy\Services\CostCalculationService;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 
 /**
- * Usage metering of sandboxes into sandbox_usage_records: per organization × region × day, the
- * run time of every sandbox in that day (started_at → ended_at, or now) as sandbox seconds and as
- * reserved resources × time — cpu_m × ms and memory MiB × ms, the units of the project usage
- * records — priced with the region's cost config (Tenancy module's CostConfig, entry point
- * "sandbox" → multiplier 1) when the module is installed, at zero cost otherwise. Warm pods are
- * metered from their claim on (started_at); idle pool capacity is not charged.
+ * Usage metering of sandboxes into sandbox_usage_records: per organization × region × creator ×
+ * day, the run time of every sandbox in that day (started_at → ended_at, or now) as sandbox seconds
+ * and as reserved resources × time — cpu_m × ms and memory MiB × ms, the units of the project usage
+ * records. Quantities only: the Billing module prices them (docs/billing.md) and bills them to the
+ * creator — a sandbox belongs to no project. Warm pods are metered from their claim on
+ * (started_at); idle pool capacity is not charged.
  *
  * Runs every five minutes (MeterSandboxUsageJob) for today, and for yesterday during the first hour
- * of a day so the last minutes of a day are not lost. Usage charges of the Tenancy module get one
- * line per region (chargeItems()).
+ * of a day so the last minutes of a day are not lost.
  */
 final class SandboxUsageAggregator
 {
+    private ?bool $creatorColumn = null;
+
     /** Re-aggregate a day (UTC). Returns the number of records written. */
     public function aggregateDay(Carbon $day, ?Carbon $now = null): int
     {
@@ -38,7 +40,9 @@ final class SandboxUsageAggregator
             ->whereNotNull('started_at')
             ->where('started_at', '<', $until)
             ->where(fn ($q) => $q->whereNull('ended_at')->orWhere('ended_at', '>', $start))
-            ->get(['id', 'tenant_id', 'knative_region_id', 'cpu_m', 'memory_mb', 'started_at', 'ended_at']);
+            ->get(['id', 'tenant_id', 'created_by', 'knative_region_id', 'cpu_m', 'memory_mb', 'started_at', 'ended_at']);
+
+        $byCreator = $this->recordsCreator();
 
         $groups = [];
         foreach ($rows as $row) {
@@ -48,9 +52,10 @@ final class SandboxUsageAggregator
                 continue;
             }
 
-            $key = ($row->tenant_id ?? '').'|'.$row->knative_region_id;
+            $creator = $byCreator && $row->created_by !== null && $row->created_by !== '' ? (string) $row->created_by : null;
+            $key = ($row->tenant_id ?? '').'|'.$row->knative_region_id.'|'.($creator ?? '');
             $groups[$key] ??= [
-                'tenant_id' => $row->tenant_id, 'region' => $row->knative_region_id,
+                'tenant_id' => $row->tenant_id, 'region' => $row->knative_region_id, 'creator' => $creator,
                 'count' => 0, 'seconds' => 0, 'cpu' => 0, 'mem' => 0,
             ];
             $groups[$key]['count']++;
@@ -59,31 +64,35 @@ final class SandboxUsageAggregator
             $groups[$key]['mem'] += $row->memory_mb * $ms;
         }
 
+        // The day is recomputed from every sandbox that ran in it: its rows are replaced as a whole
+        // (also the per-organization rows of earlier releases, now split per creator)
         $date = $start->toDateString();
-        foreach ($groups as $g) {
-            $cost = $this->cost((int) $g['cpu'], (int) $g['mem'], $g['region']);
+        $model = new SandboxUsageRecord;
+        DB::connection($model->getConnectionName())->transaction(function () use ($groups, $date, $byCreator) {
+            SandboxUsageRecord::query()->whereDate('record_date', $date)->delete();
 
-            $record = SandboxUsageRecord::query()
-                ->when($g['tenant_id'] === null, fn ($q) => $q->whereNull('tenant_id'), fn ($q) => $q->where('tenant_id', $g['tenant_id']))
-                ->where('knative_region_id', $g['region'])
-                ->whereDate('record_date', $date)
-                ->first() ?? new SandboxUsageRecord([
+            foreach ($groups as $g) {
+                $attributes = [
                     'tenant_id' => $g['tenant_id'],
                     'knative_region_id' => $g['region'],
                     'record_date' => $date,
-                ]);
+                    'sandbox_count' => $g['count'],
+                    'sandbox_seconds' => $g['seconds'],
+                    'cpu_mc_ms' => (int) $g['cpu'],
+                    'memory_mib_ms' => (int) $g['mem'],
+                    // Quantities only — prices are applied when bills are calculated (docs/billing.md)
+                    'raw_cost' => 0,
+                    'multiplier' => 1,
+                    'final_cost' => 0,
+                    'currency' => UsageAggregator::currency(),
+                ];
+                if ($byCreator) {
+                    $attributes['created_by'] = $g['creator'];
+                }
 
-            $record->fill([
-                'sandbox_count' => $g['count'],
-                'sandbox_seconds' => $g['seconds'],
-                'cpu_mc_ms' => (int) $g['cpu'],
-                'memory_mib_ms' => (int) $g['mem'],
-                'raw_cost' => $cost['raw_cost'],
-                'multiplier' => $cost['multiplier'],
-                'final_cost' => $cost['final_cost'],
-                'currency' => $cost['currency'],
-            ])->save();
-        }
+                SandboxUsageRecord::query()->create($attributes);
+            }
+        });
 
         return count($groups);
     }
@@ -101,24 +110,11 @@ final class SandboxUsageAggregator
         return $written;
     }
 
-    /** @return array{raw_cost: float, multiplier: float, final_cost: float, currency: string} */
-    private function cost(int $cpuMcMs, int $memoryMibMs, string $regionId): array
+    /** sandbox_usage_records.created_by exists (database/migrations/2026_10_19_100002). */
+    private function recordsCreator(): bool
     {
-        if (class_exists(CostCalculationService::class) && config('tenancy.enabled')) {
-            try {
-                return app(CostCalculationService::class)
-                    ->calculateSessionCost($cpuMcMs, $memoryMibMs, 'sandbox', $regionId);
-            } catch (\Throwable $e) {
-                report($e);
-            }
-        }
-
-        return [
-            'raw_cost' => 0.0,
-            'multiplier' => 1.0,
-            'final_cost' => 0.0,
-            'currency' => strtoupper((string) config('tenancy.billing.default_currency', 'USD')) ?: 'USD',
-        ];
+        return $this->creatorColumn ??= Schema::connection((new SandboxUsageRecord)->getConnectionName())
+            ->hasColumn((new SandboxUsageRecord)->getTable(), 'created_by');
     }
 
     public static function overlapSeconds(Carbon $from, Carbon $to, Carbon $windowStart, Carbon $windowEnd): int
@@ -132,78 +128,5 @@ final class SandboxUsageAggregator
         $b = min($to->getTimestampMs(), $windowEnd->getTimestampMs());
 
         return max(0, $b - $a);
-    }
-
-    /**
-     * Usage-charge lines (Tenancy billing, docs/billing.md) for an organization's sandbox usage in
-     * a period and currency: one line per region, quantity = sandbox hours.
-     *
-     * @return list<array{description: string, quantity: float, unit: string, unit_price: float, total: float, metadata: array}>
-     */
-    public static function chargeItems(string $tenantId, string $from, string $to, string $currency): array
-    {
-        $records = SandboxUsageRecord::query()
-            ->where('tenant_id', $tenantId)
-            ->whereDate('record_date', '>=', $from)
-            ->whereDate('record_date', '<=', $to)
-            ->get()
-            ->filter(fn ($r) => strtoupper((string) $r->currency) === strtoupper($currency));
-
-        $items = [];
-        foreach ($records->groupBy('knative_region_id') as $regionId => $group) {
-            $total = round((float) $group->sum(fn ($r) => (float) $r->final_cost), 2);
-            if ($total <= 0) {
-                continue;
-            }
-            $hours = round($group->sum('sandbox_seconds') / 3600, 2);
-
-            $regionName = KnativeRegion::query()->whereKey($regionId)->value('name') ?? $regionId;
-
-            $items[] = [
-                'description' => sprintf('Sandboxes (%s)', $regionName),
-                'quantity' => $hours,
-                'unit' => 'hours',
-                'unit_price' => $hours > 0 ? round($total / $hours, 6) : $total,
-                'total' => $total,
-                'metadata' => [
-                    'source' => 'sandbox',
-                    'region_id' => $regionId,
-                    'sandbox_count' => (int) $group->sum('sandbox_count'),
-                    'sandbox_seconds' => (int) $group->sum('sandbox_seconds'),
-                    'cpu_mc_ms' => (int) $group->sum('cpu_mc_ms'),
-                    'memory_mib_ms' => (int) $group->sum('memory_mib_ms'),
-                    'raw_cost' => round((float) $group->sum(fn ($r) => (float) $r->raw_cost), 6),
-                ],
-            ];
-        }
-
-        return $items;
-    }
-
-    /**
-     * Currencies of an organization's sandbox usage in a period (upper case).
-     *
-     * @return list<string>
-     */
-    public static function currencies(string $tenantId, string $from, string $to): array
-    {
-        return SandboxUsageRecord::query()
-            ->where('tenant_id', $tenantId)
-            ->whereDate('record_date', '>=', $from)
-            ->whereDate('record_date', '<=', $to)
-            ->pluck('currency')
-            ->map(fn ($c) => strtoupper((string) $c))
-            ->unique()
-            ->values()
-            ->all();
-    }
-
-    /** Sandbox cost of an organization since $from (billing summary). */
-    public static function costSince(?string $tenantId, string $from): float
-    {
-        return (float) SandboxUsageRecord::query()
-            ->when($tenantId === null, fn ($q) => $q->whereNull('tenant_id'), fn ($q) => $q->where('tenant_id', $tenantId))
-            ->whereDate('record_date', '>=', $from)
-            ->sum('final_cost');
     }
 }

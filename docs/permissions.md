@@ -28,10 +28,10 @@ Built-in roles are read-only and exist in every organization.
 | Admin | `admin` | administrators | every permission of the edition (`*`) |
 | Developer | `developer` | building, deploying and operating projects | `projects.view`, `projects.create`, `projects.update`, `projects.delete`, `projects.deploy`, `code.edit`, `env.view`, `env.edit`, `domains.manage`, `connections.manage`, `git.pull`, `git.push`, `git.manage`, `previews.manage`, `shell.exec`, `logs.view`, `metrics.view`, `traces.view`, `replay.manage`, `uptime.manage`, `workflows.view`, `workflows.run`, `workflows.manage`, `events.send`, `sandboxes.view`, `sandboxes.create`, `sandboxes.exec`, `security.view`, `regions.view`, `runtimes.use_custom`, `images.view`, `images.upload`, `images.delete`, `models.view`, `models.deploy`, `bindings.view`, `bindings.manage`, `mcp.servers.manage`, `mcp.servers.call`, `members.view`, `tokens.manage`, `tickets.view`, `tickets.create` |
 | Viewer | `viewer` | read-only users | `projects.view`, `git.pull`, `logs.view`, `metrics.view`, `traces.view`, `workflows.view`, `sandboxes.view`, `security.view`, `regions.view`, `images.view`, `models.view`, `bindings.view`, `mcp.servers.call`, `members.view`, `tokens.manage`, `tickets.view`, `tickets.create` |
-| Billing | `billing` | finance (multi-tenant only) | `billing.view`, `billing.manage`, `regions.view`, `bindings.view`, `members.view`, `tokens.manage`, `tickets.view`, `tickets.create` |
+| Billing | `billing` | finance: bills, prices, fixed resource approvals, stopping projects ([Billing](billing.md)) | `billing.view`, `billing.manage`, `billing.approve`, `projects.stop`, `regions.view`, `bindings.view`, `members.view`, `tokens.manage`, `tickets.view`, `tickets.create` |
 
-"Every permission of the edition": a single-tenant install has no `tenants.residency.manage`,
-`billing.view` and `billing.manage`; a multi-tenant install has no `git_providers.manage`,
+"Every permission of the edition": a single-tenant install has no `tenants.residency.manage`;
+a multi-tenant install has no `git_providers.manage`,
 `runtimes.manage`, `signup.manage` and `tickets.manage` (the platform administrators do that work
 there). Roles hold the permissions they list plus the ones those include (see the **Includes**
 column of the catalog).
@@ -60,7 +60,8 @@ single-tenant or multi-tenant exists in that edition only.
 | `projects.update` | project | `projects.view` | change description, region, resources, scaling and triggers |
 | `projects.delete` | project | `projects.view` | delete projects with their workloads |
 | `projects.deploy` | project | `projects.view` | deploy versions, stop and delete deployments |
-| `projects.manage_access` | project | `projects.view` | give users and groups a role on the project |
+| `projects.manage_access` | project | `projects.view` | give users and groups a role on the project; transfer the project to another owner |
+| `projects.stop` | organization | — | stop a project with a reason (its workloads stop, deploys are refused) and resume it ([Project stop and resume](billing.md#project-stop-and-resume)) |
 | `code.edit` | project | `projects.view` | save code and files (creates versions) |
 
 ### Git & previews
@@ -196,7 +197,7 @@ do what its token can do; approving an OAuth client needs `tokens.manage`.
 | `roles.manage` | organization | `members.view` | create custom roles, assign roles to members and groups, set the default role |
 | `groups.manage` | organization | `members.view` | create groups and manage their members |
 | `tokens.manage` | organization | — | create and revoke own API tokens |
-| `settings.manage` | organization | — | base domain, registration, demo data; single-tenant: the audit log retention; multi-tenant: complete the onboarding wizard of a self-service tenant |
+| `settings.manage` | organization | — | base domain, registration, demo data; single-tenant: the audit log retention; multi-tenant: the tenant's own domain ([Organization domain](tenancy.md#organization-domain)), complete the onboarding wizard of a self-service tenant |
 | `branding.manage` | organization | — | the brand ([White-label](white-label.md#1-branding)) — single-tenant the install's, multi-tenant the tenant's own (the platform brand is the platform administrators') |
 | `signup.manage` | organization (single-tenant) | — | self-service signup settings (single-tenant; multi-tenant: platform administrators) |
 | `sso.manage` | organization | — | sign-in providers and SSO group mapping |
@@ -204,12 +205,20 @@ do what its token can do; approving an OAuth client needs `tokens.manage`.
 | `audit.export` | organization | `audit.view` | export the audit log |
 | `tenants.residency.manage` | organization (multi-tenant) | — | data residency of the organization: allowed regions and data locations, default region ([Data residency](supply-chain.md#data-residency)) |
 
-### Billing (multi-tenant)
+### Billing
+
+The Billing module ([Billing](billing.md)), both editions. In each organization — the installation,
+the platform (no active tenant) or a tenant — these permissions reach that organization's billing.
 
 | Permission | Scope | Includes | Allows |
 | --- | --- | --- | --- |
-| `billing.view` | organization (multi-tenant) | — | see the tenant's charges, credit and purchases (Settings → Charges); on a platform administrator's API token: read the [billing API](billing.md#billing-api) |
-| `billing.manage` | organization (multi-tenant) | `billing.view` | the link to the operator's store in Settings → Subscription; on a platform administrator's API token: write through the billing API — plan changes, purchases, charges, event redelivery ([Billing](billing.md#permissions)) |
+| `billing.view` | organization | — | bills, usage, the rollup per owner, prices, region billing types, fixed resource requests, billing events and settings (without the webhook secret); in a tenant also region offers, markups and the tenant's bills from the platform |
+| `billing.manage` | organization | `billing.view` | prices with effective dates, region billing types, markups, accepting region offers, payment links and paid status, the billing webhook, test events and redelivery |
+| `billing.approve` | organization | `billing.view` | approve or reject fixed resource requests — the seller of a fixed region |
+| `projects.billing` | project | `projects.view` | the project's own bills and its fixed resource requests (the project's owner has this by ownership) |
+
+The platform's bills to tenants and the 0.5.7 billing records need a platform administrator: the
+routes are marked `@platform:billing.view` / `@platform:billing.manage`.
 
 ### Support
 
@@ -276,8 +285,10 @@ permissions:
 - a token created inside a tenant works in that tenant only;
 - a token of a platform administrator with a selection of permissions is limited to them: it
   reaches the routes marked `@platform:<permission>` when it carries that permission (the
-  [billing API](billing.md) — a token with only `billing.view` or `billing.manage` is the way to
-  connect a billing system), never the routes marked `@platform`;
+  platform's tenant bills of the [billing API](billing.md#api-reference)), never the routes marked
+  `@platform`;
+- a token with only `billing.view` and `billing.manage` is the way to connect an invoicing system
+  to the [billing API](billing.md#api-tokens) of its organization;
 - tokens RunR issues to MCP clients through OAuth ([AI agents](mcp.md#oauth-21)) are API tokens
   as well — named `<client> (MCP)`, with the permissions and lifetime approved on the consent
   page, revocable here like any other.
@@ -286,9 +297,11 @@ permissions:
 
 ## SSO group mapping
 
-Sign-in providers (Settings → Auth Providers, OIDC and SAML) can manage groups and roles:
+Sign-in providers (Settings → Auth Providers: OAuth, OpenID Connect and SAML) can manage groups
+and roles:
 
-- **Groups claim / attribute** — the OIDC claim (from the userinfo response) or SAML attribute that
+- **Groups claim / attribute** — the claim (OpenID Connect: of the verified ID token or the userinfo
+  response; the other OAuth drivers: of the user data the provider returns) or SAML attribute that
   carries the user's groups. When empty, RunR reads `groups`, the Entra ID group claim
   (`http://schemas.microsoft.com/ws/2008/06/identity/claims/groups`) and `memberOf`.
 - **Role for new users** — the role users created just in time by this provider get; empty = the
@@ -311,12 +324,24 @@ On every SSO sign-in:
 
 ## Platform administrators
 
-`users.is_admin` marks the operators of a multi-tenant installation: tenants, quotas, cost
-configuration, charges and plans, platform regions, impersonation and support across tenants. They
-pass every permission check (`Gate::before`) in every tenant, unless they use an API token with a
-selection of permissions. Routes for them only are marked `@platform` in the route map; routes
-marked `@platform:<permission>` (the billing API) also accept their tokens that carry the
-permission. Other users have no permissions in the central context (no active tenant).
+`users.is_admin` marks the operators of a multi-tenant installation: tenants, quotas, platform
+regions and their region mode, platform prices and the bills to tenants, impersonation and
+support across tenants. They pass every permission check (`Gate::before`) in every tenant, unless
+they use an API token with a selection of permissions. Routes for them only are marked `@platform`
+in the route map; routes marked `@platform:<permission>` (the tenant bills of the billing API) also
+accept their tokens that carry the permission. Other users have no permissions in the central context (no
+active tenant).
+
+Who becomes one — the first administrator account of a Helm or Compose install, the owners and
+admins of an installation switched to the multi-tenant edition, accounts promoted in Settings →
+Users — is in [Platform administrators](tenancy.md#platform-administrators). They open any tenant
+as its administrator, also one they are not a member of; opening and leaving are audit-logged
+(`impersonation.start`, `impersonation.stop`) and the changes made meanwhile name them as
+impersonator
+([Opening a tenant as platform administrator](tenancy.md#opening-a-tenant-as-platform-administrator)).
+In the single-tenant edition, platform administrators and Owners open the
+[Horizon dashboard](install.md#horizon-dashboard); in the multi-tenant edition, platform
+administrators only.
 
 ## Enforcement
 
@@ -345,8 +370,8 @@ whose route no longer exists. Add the route, then one line to `config/route_perm
 'GET things'            => 'regions.manage|registry.manage', // any of them
 'POST things'           => ['regions.manage', 'registry.manage'], // all of them
 'GET status'            => '@authenticated',               // any signed-in user
-'GET admin/plans'       => '@platform',                    // platform administrators only
-'GET billing/charges'   => '@platform:billing.view',       // platform administrators; a token must carry billing.view
+'GET tenants/{tenant}'  => '@platform',                    // platform administrators only
+'GET billing/tenant-bills' => '@platform:billing.view',    // platform administrators; a token must carry billing.view
 'PATCH gateways/{gateway}' => '@policy',                   // the controller authorizes (Policy)
 ```
 

@@ -5,6 +5,7 @@ namespace App\Jobs;
 use App\Events\PlatformEvent;
 use App\Http\Resources\KnativeRegionResource;
 use App\Models\KnativeRegion;
+use App\Services\Dns\RegionDnsCheck;
 use App\Services\DomainMigrateService;
 use App\Services\KnativeStatusService;
 use Illuminate\Bus\Queueable;
@@ -67,29 +68,26 @@ class CheckKnativeStatusJob implements ShouldQueue
         if ($this->region->migration_status === 'dns_check') {
             CheckMigrationDnsJob::dispatch($this->region);
         }
+
+        // A base-domain migration completes once DNS of the new function domain answers
+        if ($this->region->is_domain_migrating) {
+            app(DomainMigrateService::class)->completeIfResolved($this->region->fresh());
+        }
     }
 
+    /**
+     * The function domain's wildcard record points at the external address (an IP address or a
+     * load balancer's host name, RegionDnsCheck); null when there is nothing to check yet.
+     */
     private function checkDns(): ?bool
     {
         if (! $this->region->has_serving) {
             return null;
         }
 
-        $domain = $this->region->effective_settings['knative_domain'] ?? null;
-        $ip = $this->region->external_ip;
-
-        if (! $domain || ! $ip) {
-            return null;
-        }
-
-        $testHost = 'dns-check.'.$domain;
-        $resolved = @gethostbyname($testHost);
-
-        // gethostbyname returns the hostname itself if it can't resolve
-        if ($resolved === $testHost) {
-            return false;
-        }
-
-        return $resolved === $ip;
+        return app(RegionDnsCheck::class)->pointsAt(
+            $this->region->effective_settings['knative_domain'] ?? null,
+            $this->region->external_ip,
+        );
     }
 }

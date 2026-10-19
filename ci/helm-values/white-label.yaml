@@ -1,5 +1,5 @@
 # ci/check-helm-chart.sh: a white-label installation (docs/white-label.md) — data: URI logos,
-# a ConfigMap reference and an explicit primary scale 300–900
+# a ConfigMap reference and an explicit primary scale 300–900, with the Billing module on
 domain: console.acme-cloud.example
 branding:
   productName: Acme Cloud
@@ -41,10 +41,8 @@ signup:
     siteKey: 0x4AAAAAAAexample
   termsUrl: https://acme-cloud.example/terms
   privacyUrl: https://acme-cloud.example/privacy
-plans:
-  enabled: true
 billing:
+  enabled: true
+  currency: EUR
   webhookUrl: https://billing.acme-cloud.example/hooks/runr
   webhookSecret: whsec-acme-example-0123456789
-  usageThresholds: "100,500"
-  storeUrl: https://shop.acme-cloud.example

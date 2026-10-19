@@ -410,85 +410,14 @@ func runRegionCreate(cmd *cobra.Command, app *App, name string, f *regionCreateF
 
 // runRegistrySetup creates a region with an image registry (POST /registry-setup/start).
 func runRegistrySetup(ctx context.Context, cmd *cobra.Command, app *App, c *runr.Client, base runr.RegionCreateInput, f *regionCreateFlags) error {
-	in := runr.RegistrySetupInput{RegionCreateInput: base, RegistryMode: f.registry}
-	switch f.registry {
-	case "internal":
-		if f.registryAddress != "" || f.credFile != "" {
-			return usageErrorf("--registry-address and --registry-credentials apply to --registry external")
-		}
-		switch f.storage {
-		case "", "pvc":
-			if f.s3File != "" {
-				return usageErrorf("--registry-s3 applies to --registry-storage s3")
-			}
-			in.StorageType = "pvc"
-			pvc := &runr.RegistryPVC{StorageClass: f.storageClass, Size: f.size}
-			if pvc.Size == "" {
-				pvc.Size = "10Gi"
-			} else if !radmSize(pvc.Size) {
-				return usageErrorf("--registry-size is a size such as 10Gi or 1Ti")
-			}
-			if pvc.StorageClass == "" {
-				classes, err := c.PreviewStorageClasses(ctx, base.Kubeconfig)
-				if err != nil {
-					return err
-				}
-				for _, sc := range classes {
-					if sc.IsDefault {
-						pvc.StorageClass = sc.Name
-					}
-				}
-				if pvc.StorageClass == "" {
-					return usageErrorf("the cluster has no default StorageClass: choose one with --storage-class")
-				}
-				app.Progress("Registry volume: StorageClass %s (the cluster's default).", pvc.StorageClass)
-			}
-			in.PVCConfig = pvc
-		case "s3":
-			if f.storageClass != "" || f.size != "" {
-				return usageErrorf("--storage-class and --registry-size apply to --registry-storage pvc")
-			}
-			if f.s3File == "" {
-				return usageErrorf("--registry-storage s3 needs --registry-s3 FILE")
-			}
-			kv, err := rlcReadKeyValues(app, "registry-s3", f.s3File, registryS3Keys)
-			if err != nil {
-				return err
-			}
-			s3 := &runr.RegistryS3{Endpoint: kv["endpoint"], Bucket: kv["bucket"], Region: kv["region"], AccessKey: kv["access_key"],
-				SecretKey: kv["secret_key"]}
-			for k, v := range map[string]string{"ENDPOINT": s3.Endpoint, "BUCKET": s3.Bucket, "REGION": s3.Region,
-				"ACCESS_KEY": s3.AccessKey, "SECRET_KEY": s3.SecretKey} {
-				if v == "" {
-					return usageErrorf("--registry-s3 has no %s", k)
-				}
-			}
-			in.StorageType, in.S3Config = "s3", s3
-		default:
-			return usageErrorf("--registry-storage must be pvc or s3")
-		}
-	case "external":
-		for _, fl := range []string{"registry-storage", "storage-class", "registry-size", "registry-s3"} {
-			if cmd.Flags().Changed(fl) {
-				return usageErrorf("--%s applies to --registry internal", fl)
-			}
-		}
-		if f.registryAddress == "" {
-			return usageErrorf("--registry external needs --registry-address")
-		}
-		in.ExternalAddress = f.registryAddress
-		if f.credFile != "" {
-			kv, err := rlcReadKeyValues(app, "registry-credentials", f.credFile, registryCredentialKeys)
-			if err != nil {
-				return err
-			}
-			in.ExternalUsername, in.ExternalPassword = kv["username"], kv["password"]
-		}
-	default:
-		return usageErrorf("--registry must be internal or external")
+	cfg, err := readRegistryConfig(cmd, app, f.registryFlags(), func() (string, error) {
+		return clusterDefaultStorageClass(ctx, c, base.Kubeconfig)
+	})
+	if err != nil {
+		return err
 	}
+	in := runr.RegistrySetupInput{RegionCreateInput: base, RegistryConfig: cfg}
 	var setup *runr.RegistrySetup
-	var err error
 	if f.retry != "" {
 		setup, err = c.RetryRegistrySetup(ctx, f.retry, in)
 	} else {
@@ -628,7 +557,8 @@ func regionNodeRows(t *output.TableWriter, nodes []runr.RegionNode) {
 
 // regionSetKeys are the keys of `runr regions set`: status goes to the region, the rest to its
 // settings.
-var regionSetKeys = []string{"status", "request_timeout", "agent_ws_url", "cert_manager_cluster_issuer", "ingress_trusted_ips"}
+var regionSetKeys = []string{"status", "request_timeout", "agent_ws_url", "cert_manager_cluster_issuer", "ingress_trusted_ips",
+	"prometheus_url", "loki_url", "loki_org_id"}
 
 func newRegionSetCmd(app *App) *cobra.Command {
 	var sets []string
@@ -638,13 +568,19 @@ func newRegionSetCmd(app *App) *cobra.Command {
 		Short: "Change a region's status, settings or kubeconfig (regions.manage)",
 		Long: "Change a region with --set KEY=VALUE (repeatable); settings left out are kept:\n" +
 			"  status                        active, inactive (no new deploys) or maintenance\n" +
-			"  request_timeout               the longest request of a function, in seconds (1-3600)\n" +
+			"  request_timeout               the longest request of a function, in seconds (1-3600); the\n" +
+			"                                region's Traefik and Knative follow it\n" +
 			"  agent_ws_url                  RunR's address as the region's agents reach it (wss://…;\n" +
-			"                                empty: the console URL)\n" +
+			"                                empty: the console URL); the agent is deployed again\n" +
 			"  cert_manager_cluster_issuer   ClusterIssuer of custom-domain certificates (empty: none)\n" +
 			"  ingress_trusted_ips           comma-separated addresses / CIDRs of a load balancer in front\n" +
 			"                                of the region's Traefik (empty: trust nobody)\n" +
-			"--kubeconfig FILE (or - for stdin) replaces the kubeconfig RunR uses for the cluster.",
+			"  prometheus_url, loki_url      an existing in-cluster Prometheus / Loki\n" +
+			"                                (http://<service>.<namespace>.svc:<port>); empty: RunR's own\n" +
+			"                                again, installed when the region's Serving is ready\n" +
+			"  loki_org_id                   tenant (X-Scope-OrgID) of an existing multi-tenant Loki\n" +
+			"--kubeconfig FILE (or - for stdin) replaces the kubeconfig RunR uses for the cluster (after a\n" +
+			"credential rotation; it has to reach the same cluster).",
 		Example: "  runr regions set eu-1 --set status=maintenance\n" +
 			"  runr regions set eu-1 --set request_timeout=900 --set ingress_trusted_ips=10.0.0.0/8,192.0.2.10\n" +
 			"  runr regions set eu-1 --kubeconfig rotated.yaml",
@@ -656,6 +592,7 @@ func newRegionSetCmd(app *App) *cobra.Command {
 			}
 			var update runr.RegionUpdateInput
 			settings := map[string]any{}
+			monitoring := runr.RegionMonitoringInput{}
 			for k, v := range pairs {
 				key := strings.ReplaceAll(strings.ToLower(k), "-", "_")
 				v = strings.TrimSpace(v)
@@ -689,6 +626,12 @@ func newRegionSetCmd(app *App) *cobra.Command {
 						}
 					}
 					settings[key] = list
+				case "prometheus_url", "loki_url", "loki_org_id":
+					if v == "" {
+						monitoring[key] = nil
+					} else {
+						monitoring[key] = v
+					}
 				default:
 					return usageErrorf("--set takes KEY=VALUE with one of: %s", strings.Join(regionSetKeys, ", "))
 				}
@@ -700,7 +643,7 @@ func newRegionSetCmd(app *App) *cobra.Command {
 				}
 				update.Kubeconfig = &kc
 			}
-			if update.RegionStatus == nil && update.Kubeconfig == nil && len(settings) == 0 {
+			if update.RegionStatus == nil && update.Kubeconfig == nil && len(settings) == 0 && len(monitoring) == 0 {
 				return usageErrorf("give at least one --set KEY=VALUE or --kubeconfig FILE")
 			}
 			ctx := cmd.Context()
@@ -716,6 +659,13 @@ func newRegionSetCmd(app *App) *cobra.Command {
 			}
 			if len(settings) > 0 {
 				res, err := c.UpdateRegionSettings(ctx, reg.ID, settings)
+				if err != nil {
+					return err
+				}
+				d = res.Region
+			}
+			if len(monitoring) > 0 {
+				res, err := c.UpdateRegionMonitoring(ctx, reg.ID, monitoring)
 				if err != nil {
 					return err
 				}

@@ -29,12 +29,14 @@ use App\Support\TenantAccess;
 use Illuminate\Broadcasting\PrivateChannel;
 use Illuminate\Http\Request;
 use Modules\AuthProvider\Controllers\AuthProviderController;
+use Modules\AuthProvider\Controllers\OAuthController;
 use Modules\Tenancy\Http\Controllers\TenancyAdminSupportTicketController;
 use Modules\Tenancy\Http\Controllers\TenancyApiTokenController;
 use Modules\Tenancy\Http\Controllers\TenancyAuthController;
 use Modules\Tenancy\Http\Controllers\TenancyAuthProviderController;
 use Modules\Tenancy\Http\Controllers\TenancyDemoController;
 use Modules\Tenancy\Http\Controllers\TenancyNotificationController;
+use Modules\Tenancy\Http\Controllers\TenancyOAuthController;
 use Modules\Tenancy\Http\Controllers\TenancySettingsController;
 use Modules\Tenancy\Http\Controllers\TenancySupportTicketController;
 use Modules\Tenancy\Http\Controllers\TenancyUserController;
@@ -158,6 +160,8 @@ trait TenancyServiceOverridesTrait
             SupportTicketController::class => TenancySupportTicketController::class,
             AdminSupportTicketController::class => TenancyAdminSupportTicketController::class,
             AuthProviderController::class => TenancyAuthProviderController::class,
+            // SSO sign-in handoff: the console starts in the tenant whose sign-in page it came from
+            OAuthController::class => TenancyOAuthController::class,
             AgentMessageHandler::class => TenantAwareAgentMessageHandler::class,
             // region.mutable: platform regions read-only for tenant users
             EnsureRegionMutable::class => EnsureTenantRegionMutable::class,

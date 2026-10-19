@@ -39,20 +39,15 @@ class ProcessTeardown implements ShouldQueue
         // Replaced by a newer deploy of the same project: that deploy applies the same Knative
         // Service / CronJob / queue consumer by name — deleting them here removed the new
         // deployment's service (or raced with it). Only what the new deployment does not use goes.
-        $superseded = $project->deployments()
-            ->whereKeyNot($deployment->id)
-            ->whereIn('status', ['pending', 'running', 'active'])
-            ->exists();
-
-        $complete = $superseded
-            ? $this->deployer->teardownSuperseded($project, $deployment)
-            : $this->deployer->teardown($project, $deployment);
+        // A stopped project has no newer deployment that may serve: a deploy that raced the stop
+        // does not keep the Knative Service alive (KnativeDeployService::teardownEnded)
+        $complete = $this->deployer->teardownEnded($project, $deployment);
 
         if (! $complete) {
             throw new \RuntimeException("Teardown of deployment {$deployment->id} ({$project->slug}) incomplete — see the log");
         }
 
-        $deployment->update(['status' => 'shut_down']);
+        $deployment->transition(['shutting_down'], ['status' => 'shut_down']);
     }
 
     public function failed(DeploymentStatusChanged $event, ?\Throwable $e): void
@@ -66,10 +61,12 @@ class ProcessTeardown implements ShouldQueue
             return;
         }
 
-        $deployment->update([
+        if (! $deployment->transition(['shutting_down'], [
             'status' => 'failed',
             'knative_message' => mb_substr('Teardown did not complete, resources may remain: '.($e?->getMessage() ?? 'unknown error'), 0, 255),
-        ]);
+        ])) {
+            return;
+        }
 
         Log::error('Teardown job failed', ['deployment' => $deployment->id, 'error' => $e?->getMessage()]);
 

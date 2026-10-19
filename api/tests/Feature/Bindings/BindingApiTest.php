@@ -234,10 +234,12 @@ class BindingApiTest extends TestCase
             'record_date' => now()->toDateString(), 'storage_gb_hours' => 1.5, 'instance_hours' => 0, 'final_cost' => 0.25, 'currency' => 'EUR',
         ]);
 
+        // Quantities only: a cost of an earlier release is not answered (the Billing module prices usage)
         $this->signedIn($this->owner)->getJson("/api/bindings/{$binding->id}/usage")
             ->assertOk()
             ->assertJsonPath('data.0.storage_gb_hours', 1.5)
-            ->assertJsonPath('data.0.currency', 'EUR');
+            ->assertJsonMissingPath('data.0.final_cost')
+            ->assertJsonMissingPath('data.0.currency');
     }
 
     public function test_credentials_are_revealed_only_with_the_permission_and_audited(): void

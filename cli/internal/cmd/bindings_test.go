@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/brf-tech/runr/cli/pkg/runr"
@@ -42,6 +43,9 @@ func TestBindingsCreateListGet(t *testing.T) {
 	contains(t, r.out, "Health:")
 	contains(t, r.out, "REDIS_URL, KV_PREFIX")
 	contains(t, r.out, "STORAGE GB-H")
+	if strings.Contains(r.out, "COST") {
+		t.Fatalf("usage shows a cost column: %q", r.out)
+	}
 	var got struct {
 		Binding runr.Binding        `json:"binding"`
 		Health  *runr.BindingHealth `json:"health"`

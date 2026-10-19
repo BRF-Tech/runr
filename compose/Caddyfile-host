@@ -1,25 +1,28 @@
-# ── RunR Host Caddy Config (SSL Reverse Proxy) ───────────────────────────────
-# Example config for a Caddy on the host in front of Docker Compose.
-# Setup:
-#   sudo cp Caddyfile-host /etc/caddy/Caddyfile
+# ── RunR over HTTPS: Caddy on the host in front of Docker Compose ─────────────
+# Terminates TLS for the console domain and forwards to the gateway, which publishes
+# 127.0.0.1:8080 (PORT in .env). Setup: compose/README.md, section 7.
+#
+#   sudo cp Caddyfile-host /etc/caddy/Caddyfile                                        # console
+#   cat Caddyfile-host Caddyfile-wildcard | sudo tee /etc/caddy/Caddyfile >/dev/null   # console + function domain
 #   sudo systemctl reload caddy
 #
-# Certificates:
-#   Let's Encrypt (automatic): point the domain at this host and Caddy does the rest.
-#   Own certificate: uncomment the tls line below and set the paths:
-#     tls /etc/ssl/private/runr.example.com/fullchain.pem /etc/ssl/private/runr.example.com/privkey.pem
+# Certificate of the console domain:
+#   Let's Encrypt (automatic): the domain resolves to this host and ports 80 and 443 are reachable
+#   from the internet; nothing to configure.
+#   Own certificate (internal CA, air-gapped host): uncomment the tls line and set the paths of the
+#   certificate chain and its private key.
 
 runr.example.com {
     # tls /etc/ssl/private/runr.example.com/fullchain.pem /etc/ssl/private/runr.example.com/privkey.pem
 
+    # Largest request the API accepts (git pushes, code uploads)
     request_body {
         max_size 64MB
     }
 
-    reverse_proxy localhost:8080 {
-        header_up X-Forwarded-Proto {scheme}
-        header_up X-Real-IP {remote_host}
-        # SSE (MCP streams, docs/mcp.md) passes through without buffering
+    # Caddy adds X-Forwarded-For, X-Forwarded-Proto (https) and X-Forwarded-Host; the gateway keeps them
+    reverse_proxy 127.0.0.1:8080 {
+        # SSE (MCP streams, docs/mcp.md) and git transfers pass through without buffering
         flush_interval -1
     }
 }

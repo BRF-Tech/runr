@@ -1,20 +1,29 @@
 RunR v{{ .Chart.AppVersion }} deployed successfully!
-
-{{- if .Values.secret.create }}
+{{- $ns := include "runr.namespace" . }}
+{{ if .Values.secret.create }}
 --- Administrator ---
 
   Username: {{ .Values.admin.username }}
   Password: {{ if .Values.admin.password }}(as entered at install){{ else }}generated, read it with:
-    kubectl get secret {{ .Values.secretName }} -n {{ include "runr.namespace" . }} -o jsonpath='{.data.ADMIN_PASSWORD}' | base64 -d{{ end }}
+    kubectl get secret {{ .Values.secretName }} -n {{ $ns }} -o jsonpath='{.data.ADMIN_PASSWORD}' | base64 -d{{ end }}
 {{- else }}
 --- Required Secret (create before helm install) ---
 
   kubectl create secret generic {{ .Values.secretName }} \
-    --namespace {{ include "runr.namespace" . }} \
+    --namespace {{ $ns }} \
     --from-literal=APP_KEY=base64:$(openssl rand -base64 32) \
     --from-literal=REVERB_APP_SECRET=$(openssl rand -hex 16)
-{{- if eq .Values.database.driver "pgsql" }} \
+{{- if not .Values.database.existingSecret }} \
     --from-literal=DB_PASSWORD=<YOUR_DB_PASSWORD>
+{{- end }}
+{{- if .Values.bootstrap.enabled }}
+
+--- Administrator ---
+
+  Username: {{ .Values.admin.username }}
+  Password: ADMIN_PASSWORD of the Secret {{ .Values.secretName }}; without that key the bootstrap Job
+  generates one into the Secret runr-admin:
+    kubectl get secret runr-admin -n {{ $ns }} -o jsonpath='{.data.password}' | base64 -d
 {{- end }}
 {{- end }}
 
@@ -23,13 +32,13 @@ RunR v{{ .Chart.AppVersion }} deployed successfully!
   Service: runr-gateway ({{ .Values.gateway.serviceType }})
 {{- if eq .Values.gateway.serviceType "LoadBalancer" }}
   External IP:
-    kubectl get svc runr-gateway -n {{ include "runr.namespace" . }} -o jsonpath='{.status.loadBalancer.ingress[0].ip}'
+    kubectl get svc runr-gateway -n {{ $ns }} -o jsonpath='{.status.loadBalancer.ingress[0].ip}'
 {{- else if eq .Values.gateway.serviceType "NodePort" }}
   Node port:
-    kubectl get svc runr-gateway -n {{ include "runr.namespace" . }} -o jsonpath='{.spec.ports[0].nodePort}'
+    kubectl get svc runr-gateway -n {{ $ns }} -o jsonpath='{.spec.ports[0].nodePort}'
 {{- else }}
   Port-forward:
-    kubectl port-forward svc/runr-gateway -n {{ include "runr.namespace" . }} 8080:80
+    kubectl port-forward svc/runr-gateway -n {{ $ns }} 8080:{{ .Values.gateway.port }}
 {{- end }}
 {{- if .Values.domain }}
 
@@ -42,10 +51,12 @@ RunR v{{ .Chart.AppVersion }} deployed successfully!
        the ingress controller serves its default certificate.
 {{- else }}
   TLS: automatic — cert-manager (ClusterIssuer {{ $t.issuer }}) issues the certificate into Secret {{ $t.secret }}.
-       kubectl get certificate -n {{ include "runr.namespace" . }}
+       kubectl get certificate -n {{ $ns }}
 {{- end }}
 {{- else if eq $t.mode "custom" }}
   TLS: uploaded certificate, Secret {{ $t.secret }} (kubernetes.io/tls).
+{{- else if eq $t.mode "secret" }}
+  TLS: your Secret {{ $t.secret }} (kubernetes.io/tls).
 {{- else if $t.secret }}
   TLS: Secret {{ $t.secret }}{{ if $t.issuer }} (cert-manager ClusterIssuer {{ $t.issuer }}){{ end }}.
 {{- else }}
@@ -57,17 +68,29 @@ RunR v{{ .Chart.AppVersion }} deployed successfully!
 --- Services ---
 
   Redis: {{ .Values.redis.host | default "runr-redis (internal)" }}
-  Database: {{ .Values.database.driver }}
-{{- if eq .Values.database.driver "pgsql" }} — {{ .Values.database.host | default "runr-postgres (internal)" }}
-{{- end }}
+  Database: PostgreSQL — {{ .Values.database.host | default "runr-postgres (internal)" }}
   Mail: {{ .Values.mail.host | default "runr-mailpit (internal)" }}
 {{- if not .Values.mail.host }}
-  Mailpit UI: kubectl port-forward svc/runr-mailpit -n {{ include "runr.namespace" . }} {{ .Values.mailpit.uiPort }}:{{ .Values.mailpit.uiPort }}
+  Mailpit UI: kubectl port-forward svc/runr-mailpit -n {{ $ns }} {{ .Values.mailpit.uiPort }}:{{ .Values.mailpit.uiPort }}
 {{- end }}
-  Reverb: runr-reverb (port {{ .Values.reverb.port }})
+  Reverb: runr-reverb (port {{ .Values.reverb.port }}, {{ .Values.reverb.replicas }} replica{{ if gt (int .Values.reverb.replicas) 1 }}s sharing broadcasts over Redis{{ end }})
+  Horizon dashboard: a single-use sign-in link (valid 5 minutes) for a platform administrator{{ if not (include "runr.tenancyEnabled" . | eq "true") }} or an Owner{{ end }}:
+    kubectl exec -n {{ $ns }} deploy/runr-api -- php artisan runr:horizon-link
 
 --- Storage ---
+{{- $modes := include "runr.apiStorageAccessModes" . | fromJsonArray }}
 
-  API PVC ({{ include "runr.apiStorageSize" . }}) uses ReadWriteOnce.
-  All API/Horizon/Scheduler/Reverb pods must be on the same node.
-  For multi-node: set api.storage.storageClassName to a RWX-capable class.
+  API volume runr-api-storage ({{ include "runr.apiStorageSize" . }}, {{ join ", " $modes }}).
+{{- if include "runr.apiStorageShared" . }}
+  ReadWriteMany: the API, Horizon, scheduler and Reverb pods run on any node.
+{{- else if include "runr.colocate" . }}
+  ReadWriteOnce: the API, Horizon, scheduler and Reverb pods run on the volume's node (podColocation).
+  For pods on several nodes: api.storage.accessModes=[ReadWriteMany] with a ReadWriteMany StorageClass
+  (api.storage.storageClassName) — docs/install.md (Storage).
+{{- else }}
+  ReadWriteOnce with podColocation off: every pod that mounts the volume must reach its node.
+{{- end }}
+{{- if and .Values.api.pdb.enabled (not (include "runr.apiStorageShared" .)) }}
+  api.pdb: no PodDisruptionBudget for runr-api — with a ReadWriteOnce volume its pods cannot move to
+  another node, and a budget would hold a drain of that node forever.
+{{- end }}

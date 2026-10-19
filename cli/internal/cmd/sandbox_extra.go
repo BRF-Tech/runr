@@ -920,20 +920,22 @@ func newSandboxUsageCmd(app *App) *cobra.Command {
 				return err
 			}
 			return app.Printer().Print(rows, func(t *output.TableWriter) {
-				t.Header("DATE", "REGION", "SANDBOXES", "TIME", "CPU CORE-HOURS", "MEMORY GIB-HOURS", "COST")
-				var total float64
-				currency := ""
+				t.Header("DATE", "REGION", "SANDBOXES", "TIME", "CPU CORE-HOURS", "MEMORY GIB-HOURS")
+				var seconds, cpu, memory int64
 				for _, r := range rows {
 					t.Row(r.RecordDate, output.Dash(r.RegionID), strconv.Itoa(r.SandboxCount),
 						output.Duration(time.Duration(r.SandboxSeconds)*time.Second),
 						strconv.FormatFloat(float64(r.CPUmcMS)/1000/3600/1000, 'f', 2, 64),
-						strconv.FormatFloat(float64(r.MemoryMiBMS)/1024/3600/1000, 'f', 2, 64),
-						strings.TrimSpace(strconv.FormatFloat(r.FinalCost, 'f', 2, 64)+" "+r.Currency))
-					total += r.FinalCost
-					currency = r.Currency
+						strconv.FormatFloat(float64(r.MemoryMiBMS)/1024/3600/1000, 'f', 2, 64))
+					seconds += r.SandboxSeconds
+					cpu += r.CPUmcMS
+					memory += r.MemoryMiBMS
 				}
 				if len(rows) > 0 {
-					t.Note("Total: %s %s", strconv.FormatFloat(total, 'f', 2, 64), currency)
+					t.Note("Total: %s, %s CPU core-hours, %s memory GiB-hours",
+						output.Duration(time.Duration(seconds)*time.Second),
+						strconv.FormatFloat(float64(cpu)/1000/3600/1000, 'f', 2, 64),
+						strconv.FormatFloat(float64(memory)/1024/3600/1000, 'f', 2, 64))
 				}
 			})
 		},

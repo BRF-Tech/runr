@@ -55,7 +55,7 @@ var projectFields = []string{
 	"id", "name", "slug", "service_type", "runtime", "runtime_version", "description",
 	"knative_region_id", "region.id", "region.name", "endpoint_type", "endpoint_url",
 	"latest_version.id", "latest_version.label", "latest_deployment.status", "runtime_eol",
-	"created_at",
+	"created_at", "stopped.at", "stopped.by.id", "stopped.by.name", "stopped.reason", "stopped.level",
 	"config.filename", "config.handler", "config.image", "config.command", "config.args",
 	"config.ports", "config.env_vars", "config.memory_mb", "config.cpu", "config.timeout_seconds",
 	"config.image_pull_policy", "config.trigger_type", "config.schedule", "config.queue_stream",

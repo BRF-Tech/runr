@@ -37,7 +37,7 @@ scales Wasm functions to zero and back exactly like every other RunR function.
 ## How it works
 
 ```text
-Settings → Regions → (region) → Isolation → WebAssembly → Install (shims, nodes)
+Administration → Platform → Knative Regions → (region) → Isolation → WebAssembly → Install (shims, nodes)
   └─ wasm-installer DaemonSet (runr-sandbox) on the selected nodes
        ├─ /usr/local/bin/containerd-shim-spin-v2 (from ghcr.io/brf-tech/runr/containerd-shim-spin, sha256-checked)
        ├─ runtime handler spin-runr → io.containerd.spin.v2 in containerd's configuration
@@ -162,7 +162,7 @@ policy gate never requires a scan of it — see [Supply chain → WebAssembly](s
 
 ## Install WebAssembly support
 
-**Settings → Regions → (region) → Isolation → WebAssembly**: choose the shims (Spin is always
+**Administration → Platform → Knative Regions → (region) → Isolation → WebAssembly**: choose the shims (Spin is always
 included; Wasmtime optional) and the nodes (all eligible nodes, or a selection), then **Install**.
 The card shows every node with its architecture, container runtime and the shims it has, the
 install log while it runs, and the Knative features the install still enables. The region needs

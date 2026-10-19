@@ -347,8 +347,8 @@ func TestSandboxUsageAndMetricsClient(t *testing.T) {
 	c := client(t, srv)
 	ctx := context.Background()
 	srv.SeedSandboxUsage(
-		runr.SandboxUsageRecord{RecordDate: "2026-10-01", SandboxCount: 4, SandboxSeconds: 3600, FinalCost: 0.5, Currency: "EUR"},
-		runr.SandboxUsageRecord{RecordDate: "2026-10-02", SandboxCount: 2, SandboxSeconds: 600, FinalCost: 0.1, Currency: "EUR"},
+		runr.SandboxUsageRecord{RecordDate: "2026-10-01", SandboxCount: 4, SandboxSeconds: 3600},
+		runr.SandboxUsageRecord{RecordDate: "2026-10-02", SandboxCount: 2, SandboxSeconds: 600},
 	)
 	rows, err := c.SandboxUsage(ctx, "2026-10-02", "")
 	if err != nil || len(rows) != 1 || rows[0].SandboxCount != 2 {

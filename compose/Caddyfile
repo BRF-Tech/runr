@@ -1,3 +1,14 @@
+{
+    # A proxy in front of the gateway (the TLS proxy on the host, README section 7) connects from a
+    # private address: its X-Forwarded-For and X-Forwarded-Proto are kept and the gateway appends
+    # the proxy's address; for any other client the gateway sets them itself. The API takes the
+    # request scheme from X-Forwarded-Proto and the client address from X-Forwarded-For
+    # (TRUSTED_PROXY_HOPS in api.env).
+    servers {
+        trusted_proxies static private_ranges
+    }
+}
+
 :80 {
     # MCP responses may be SSE streams: never compressed (encode would buffer them)
     @compressible not path /mcp /mcp/* /oauth2/* /.well-known/oauth-*
@@ -14,7 +25,7 @@
     @mcp path /mcp /mcp/* /oauth2/* /.well-known/oauth-*
     handle @mcp {
         reverse_proxy api:80 {
-            header_up X-Forwarded-Proto {scheme}
+            header_up X-Forwarded-Host {host}
             header_up X-Real-IP {remote_host}
             flush_interval -1
         }
@@ -23,15 +34,16 @@
     # API
     handle /api/* {
         reverse_proxy api:80 {
-            header_up X-Forwarded-Proto {scheme}
+            header_up X-Forwarded-Host {host}
             header_up X-Real-IP {remote_host}
         }
     }
 
-    # OAuth callback (web route on API)
-    handle /oauth/* {
+    # SSO sign-in callback of an OAuth / OIDC provider (web route of the API:
+    # /oauth/{provider}/callback). The console's own /oauth/callback page stays with the SPA.
+    handle /oauth/*/callback {
         reverse_proxy api:80 {
-            header_up X-Forwarded-Proto {scheme}
+            header_up X-Forwarded-Host {host}
             header_up X-Real-IP {remote_host}
         }
     }
@@ -39,9 +51,19 @@
     # Project git remotes (smart HTTP, served by the API; responses streamed)
     handle /git/* {
         reverse_proxy api:80 {
-            header_up X-Forwarded-Proto {scheme}
+            header_up X-Forwarded-Host {host}
             header_up X-Real-IP {remote_host}
             flush_interval -1
+        }
+    }
+
+    # Horizon dashboard — the installation's administrators only, signed in with a single-use link
+    # (php artisan runr:horizon-link, POST /api/horizon/link; README → Horizon dashboard)
+    @horizon path /horizon /horizon/*
+    handle @horizon {
+        reverse_proxy api:80 {
+            header_up X-Forwarded-Host {host}
+            header_up X-Real-IP {remote_host}
         }
     }
 

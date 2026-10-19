@@ -45,7 +45,7 @@ return [
 
         'template_tenant_connection' => null,
 
-        // Schema naming: tenant_{slug}
+        // Schema naming: tenant_{tenant id} — the tenant's UUID, not its slug
         'prefix' => 'tenant_',
         'suffix' => '',
 
@@ -83,6 +83,8 @@ return [
 
     'routes' => false,
 
+    // Tenant schema migrations: TenancyServiceProvider replaces this with every module's tenant
+    // migration folders (Modules\Tenancy\Services\TenantSchema)
     'migration_parameters' => [
         '--force' => true,
         '--path' => [base_path('Modules/Tenancy/Database/TenantMigrations')],
@@ -91,48 +93,6 @@ return [
 
     'seeder_parameters' => [
         '--class' => 'DatabaseSeeder',
-    ],
-
-    /**
-     * Billing (docs/billing.md): RunR meters and rates usage and calculates what each tenant owes
-     * per month (charges); the operator's billing system reads them through the billing API,
-     * invoices, and records purchases back. Without an active cost config (per region or global)
-     * usage is still recorded — at zero cost, in default_currency (ISO 4217, 3 letters).
-     */
-    'billing' => [
-        'default_currency' => env('BILLING_DEFAULT_CURRENCY', 'USD'),
-
-        /**
-         * Billing events are POSTed to this URL (empty: kept for GET /api/billing/events only),
-         * signed with the secret: X-RunR-Signature = "sha256=" + HMAC-SHA256(secret,
-         * "<X-RunR-Timestamp>.<raw body>"). Platform admins override both in Settings → Plans & Billing.
-         */
-        'webhook' => [
-            'url' => env('BILLING_WEBHOOK_URL', ''),
-            'secret' => env('BILLING_WEBHOOK_SECRET', ''),
-            'timeout' => (int) env('BILLING_WEBHOOK_TIMEOUT', 10),
-            // Attempts per event (backoff 1 min … 24 h), then delivery_status "failed"
-            'max_attempts' => (int) env('BILLING_WEBHOOK_MAX_ATTEMPTS', 10),
-        ],
-
-        'events' => [
-            'retention_days' => (int) env('BILLING_EVENTS_RETENTION_DAYS', 90),
-            // Month-to-date usage amounts that raise billing.usage.threshold, e.g. "100,500,1000"
-            'usage_thresholds' => env('BILLING_USAGE_THRESHOLDS', ''),
-            // Plan limit invocations_per_month: events at these percentages
-            'limit_percentages' => [80, 100],
-        ],
-
-        // The operator's store where tenants buy plans and credits (a link in the console)
-        'store_url' => env('BILLING_STORE_URL', ''),
-    ],
-
-    /**
-     * Plans (docs/billing.md) — optional, off by default. Off: no plan appears anywhere and
-     * tenant quotas are managed per region by the platform admin as before.
-     */
-    'plans' => [
-        'enabled' => env('PLANS_ENABLED', false),
     ],
 
     /**

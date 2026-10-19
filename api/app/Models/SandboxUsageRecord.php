@@ -8,12 +8,14 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Carbon;
 
 /**
- * Metered sandbox usage of an organization in a region on a day (SandboxUsageAggregator): sandbox
- * seconds and reserved resources × time in the units of usage_records (millicore·ms, MiB·ms),
- * priced with the region's cost config.
+ * Metered sandbox usage of an organization in a region on a day, per creator
+ * (SandboxUsageAggregator): sandbox seconds and reserved resources × time in the units of
+ * usage_records (millicore·ms, MiB·ms). Quantities only — the Billing module prices them
+ * (docs/billing.md); raw_cost / final_cost are kept for the rows of earlier releases.
  *
  * @property string $id
  * @property string|null $tenant_id
+ * @property string|null $created_by the user who created the sandboxes (billed to them, docs/billing.md)
  * @property string $knative_region_id
  * @property Carbon $record_date
  * @property int $sandbox_count
@@ -30,7 +32,7 @@ class SandboxUsageRecord extends Model
     use HasUlids, UsesCentralConnection;
 
     protected $fillable = [
-        'tenant_id', 'knative_region_id', 'record_date', 'sandbox_count', 'sandbox_seconds',
+        'tenant_id', 'created_by', 'knative_region_id', 'record_date', 'sandbox_count', 'sandbox_seconds',
         'cpu_mc_ms', 'memory_mib_ms', 'raw_cost', 'multiplier', 'final_cost', 'currency',
     ];
 

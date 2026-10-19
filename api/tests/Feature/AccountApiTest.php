@@ -220,7 +220,7 @@ class AccountApiTest extends TestCase
         $this->as($this->token());
 
         $defaults = $this->getJson('/api/account/notification-preferences')->assertOk()->json('preferences');
-        $this->assertCount(10, $defaults, 'five types × in-app and email');
+        $this->assertCount(12, $defaults, 'six types (billing too) × in-app and email');
         $this->assertSame([true], array_values(array_unique(array_column($defaults, 'enabled'))));
 
         $this->putJson('/api/account/notification-preferences', ['preferences' => [
@@ -236,7 +236,7 @@ class AccountApiTest extends TestCase
         $this->assertTrue($saved->first(fn ($p) => $p['type'] === 'demo' && $p['channel'] === 'in_app')['enabled']);
         $this->assertTrue($saved->first(fn ($p) => $p['type'] === 'build' && $p['channel'] === 'in_app')['enabled']);
 
-        $this->putJson('/api/account/notification-preferences', ['preferences' => [['type' => 'billing', 'channel' => 'sms', 'enabled' => 'yes']]])
+        $this->putJson('/api/account/notification-preferences', ['preferences' => [['type' => 'unknown', 'channel' => 'sms', 'enabled' => 'yes']]])
             ->assertStatus(422)->assertJsonValidationErrors(['preferences.0.type', 'preferences.0.channel', 'preferences.0.enabled']);
     }
 }

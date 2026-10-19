@@ -4,6 +4,7 @@ namespace App\Services\Concerns;
 
 use App\Services\HelmService;
 use App\Services\Helpers\IngressTrust;
+use App\Services\Helpers\RequestTimeout;
 use App\Services\Helpers\TraefikImage;
 use App\Services\KubernetesClient;
 use Illuminate\Support\Facades\Log;
@@ -17,14 +18,16 @@ trait KnativeTraefikTrait
      *
      * @param  list<string>  $trustedIps  region setting ingress_trusted_ips (IngressTrust): who may
      *                                    send PROXY protocol / X-Forwarded-*; empty = nobody
+     * @param  int  $requestTimeout  region setting request_timeout (RequestTimeout): the entry
+     *                               points wait that long for a request and its response
      */
-    private function installTraefik(KubernetesClient $k8s, HelmService $helm, string $namespace, string $kubeconfig, array $trustedIps = []): void
+    private function installTraefik(KubernetesClient $k8s, HelmService $helm, string $namespace, string $kubeconfig, array $trustedIps = [], int $requestTimeout = RequestTimeout::DEFAULT): void
     {
         $helm->repoAdd(self::TRAEFIK_REPO_NAME, self::TRAEFIK_REPO_URL);
         $helm->repoUpdate();
 
         $values = array_replace_recursive(
-            $this->traefikHelmValues($namespace, $trustedIps),
+            $this->traefikHelmValues($namespace, $trustedIps, $requestTimeout),
             $this->traefikIngressClassValues($k8s, $namespace),
             // the chart's own image from the reqs mirror instead of Docker Hub (TraefikImage)
             ['image' => TraefikImage::helmValues(TraefikImage::ref())],
@@ -261,8 +264,9 @@ trait KnativeTraefikTrait
      * Traefik Helm chart values for production Knative ingress.
      *
      * @param  list<string>  $trustedIps  see installTraefik()
+     * @param  int  $requestTimeout  see installTraefik()
      */
-    private function traefikHelmValues(string $namespace, array $trustedIps = []): array
+    private function traefikHelmValues(string $namespace, array $trustedIps = [], int $requestTimeout = RequestTimeout::DEFAULT): array
     {
         return [
             'deployment' => [
@@ -292,12 +296,12 @@ trait KnativeTraefikTrait
                     'port' => 9000, 'expose' => ['default' => false], 'exposedPort' => 9000, 'protocol' => 'TCP',
                 ],
                 'web' => $this->traefikPortConfig(8000, 80, true, [
-                    'respondingTimeouts' => ['readTimeout' => '120s', 'writeTimeout' => '120s', 'idleTimeout' => '300s'],
+                    'respondingTimeouts' => RequestTimeout::traefikTransport($requestTimeout),
                     'lifeCycle' => ['requestAcceptGraceTimeout' => '10s', 'graceTimeOut' => '10s'],
                 ], $trustedIps),
                 'websecure' => array_merge(
                     $this->traefikPortConfig(8443, 443, true, [
-                        'respondingTimeouts' => ['readTimeout' => '120s', 'writeTimeout' => '120s', 'idleTimeout' => '300s'],
+                        'respondingTimeouts' => RequestTimeout::traefikTransport($requestTimeout),
                         'lifeCycle' => ['requestAcceptGraceTimeout' => '10s', 'graceTimeOut' => '10s'],
                     ], $trustedIps),
                     [

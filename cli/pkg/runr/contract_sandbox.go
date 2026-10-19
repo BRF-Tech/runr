@@ -227,7 +227,7 @@ func init() {
 		Endpoint{Method: "GET", Path: "/sandbox-usage", Status: 200, Permission: "sandboxes.view",
 			Query: []string{"from", "to"},
 			Response: prefix("data[].", []string{"record_date", "region_id", "sandbox_count", "sandbox_seconds", "cpu_mc_ms",
-				"memory_mib_ms", "raw_cost", "final_cost", "currency"}),
+				"memory_mib_ms"}),
 			Sources: sandboxAdminSources},
 		Endpoint{Method: "GET", Path: "/sandbox-metrics", Status: 200, Permission: "sandboxes.view",
 			Query: []string{"window", "region", "all_tenants"},

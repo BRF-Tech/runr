@@ -12,17 +12,12 @@ use App\Services\Bindings\BindingUsageMeter;
 use App\Services\Bindings\Kv\RedisScripts;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
-use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Str;
-use Modules\Tenancy\Models\CostConfig;
-use Modules\Tenancy\Services\Billing\ChargeLineItemBuilder;
-use Modules\Tenancy\Services\Bindings\BindingUsagePricing;
 use Tests\Concerns\FakesBindingOps;
 use Tests\TestCase;
 
 /**
  * Usage of bindings: hourly measurement into GB-hours / instance hours, size limits enforced
- * from the measurement, organization quotas, pricing with the CostConfig and charge lines.
+ * from the measurement, organization quotas and the creator the usage is billed to.
  */
 class BindingUsageTest extends TestCase
 {
@@ -249,78 +244,16 @@ class BindingUsageTest extends TestCase
 
     // ── Pricing / charges (Tenancy) ─────────────────────────────────────────────────────
 
-    private function costTables(): void
+    public function test_the_usage_record_names_the_creator_who_is_billed(): void
     {
-        config(['database.connections.central' => config('database.connections.'.config('database.default'))]);
-        DB::connection('central')->setPdo(DB::connection()->getPdo());
+        // A binding belongs to no project: the Billing module bills its usage to its creator (docs/billing.md)
+        $binding = $this->makeBinding('kv', $this->region, ['name' => 'cache']);
+        $binding->forceFill(['created_by' => 'user-7', 'usage_measured_at' => Carbon::parse('2026-10-11 07:00:00')])->save();
 
-        foreach ([
-            'Modules/Tenancy/Database/Migrations/2026_03_14_000001_create_cost_configs_table.php',
-            'Modules/Tenancy/Database/Migrations/2026_03_18_000001_add_monthly_prices_to_cost_configs.php',
-            'Modules/Tenancy/Database/Migrations/2026_10_10_500002_add_binding_prices_to_cost_configs.php',
-        ] as $migration) {
-            (require base_path($migration))->up();
-        }
-    }
+        app(BindingUsageMeter::class)->record($binding, self::GIB, 0, Carbon::parse('2026-10-11 08:00:00'));
 
-    private function usageRecord(array $attributes): BindingUsageRecord
-    {
-        return BindingUsageRecord::create(array_merge([
-            'binding_id' => (string) Str::ulid(), 'binding_name' => 'x', 'type' => 'kv', 'plan' => 'shared',
-            'region_id' => $this->region->id, 'record_date' => now()->toDateString(),
-        ], $attributes));
-    }
-
-    public function test_usage_is_priced_with_the_cost_config(): void
-    {
-        $this->costTables();
-        CostConfig::create([
-            'region_id' => null, 'currency' => 'EUR', 'is_active' => true,
-            'kv_price_per_gb_hour' => 0.1, 'object_price_per_gb_hour' => 0.002,
-            'postgres_price_per_gb_hour' => 0.01, 'postgres_instance_price_per_hour' => 0.5,
-        ]);
-        $other = $this->bindingRegion('other');
-        CostConfig::create(['region_id' => $other->id, 'currency' => 'TRY', 'is_active' => true, 'kv_price_per_gb_hour' => 2]);
-
-        $ledger = $this->usageRecord(['binding_name' => 'ledger', 'type' => 'postgres', 'plan' => 'dedicated', 'storage_gb_hours' => 10, 'instance_hours' => 2]);
-        $assets = $this->usageRecord(['type' => 'object', 'storage_gb_hours' => 5, 'record_date' => now()->subDay()->toDateString()]);
-        $cache = $this->usageRecord(['type' => 'kv', 'storage_gb_hours' => 1.5, 'region_id' => $other->id]);
-        $old = $this->usageRecord(['type' => 'kv', 'storage_gb_hours' => 1, 'record_date' => now()->subDays(3)->toDateString()]);
-
-        $priced = app(BindingUsagePricing::class)->priceDate(now()->toDateString());
-
-        $this->assertSame(3, $priced);
-        $this->assertEqualsWithDelta(1.1, (float) $ledger->fresh()->final_cost, 0.000001);
-        $this->assertEqualsWithDelta(1.1, (float) $ledger->fresh()->raw_cost, 0.000001);
-        $this->assertSame('EUR', $ledger->fresh()->currency);
-        $this->assertEqualsWithDelta(0.01, (float) $assets->fresh()->final_cost, 0.000001, 'yesterday is priced too');
-        $this->assertEqualsWithDelta(3.0, (float) $cache->fresh()->final_cost, 0.000001);
-        $this->assertSame('TRY', $cache->fresh()->currency, 'the region config wins');
-        $this->assertEquals(0, (float) $old->fresh()->final_cost);
-    }
-
-    public function test_usage_charges_get_one_line_per_binding(): void
-    {
-        $usage = collect([
-            new BindingUsageRecord(['binding_id' => 'b1', 'binding_name' => 'ledger', 'type' => 'postgres', 'plan' => 'dedicated', 'region_id' => 'r1', 'storage_gb_hours' => 10, 'instance_hours' => 2, 'final_cost' => 1.1, 'currency' => 'EUR']),
-            new BindingUsageRecord(['binding_id' => 'b1', 'binding_name' => 'ledger', 'type' => 'postgres', 'plan' => 'dedicated', 'region_id' => 'r1', 'storage_gb_hours' => 4, 'instance_hours' => 1, 'final_cost' => 0.54, 'currency' => 'EUR']),
-            new BindingUsageRecord(['binding_id' => 'b2', 'binding_name' => 'cache', 'type' => 'kv', 'plan' => 'shared', 'region_id' => 'r1', 'storage_gb_hours' => 0.01, 'final_cost' => 0.001, 'currency' => 'EUR']),
-            new BindingUsageRecord(['binding_id' => 'b3', 'binding_name' => 'pg-only', 'type' => 'postgres', 'plan' => 'dedicated', 'region_id' => 'r1', 'storage_gb_hours' => 0, 'instance_hours' => 24, 'final_cost' => 12, 'currency' => 'EUR']),
-            new BindingUsageRecord(['binding_id' => 'b4', 'binding_name' => 'foreign', 'type' => 'object', 'plan' => 'shared', 'region_id' => 'r1', 'storage_gb_hours' => 100, 'final_cost' => 5, 'currency' => 'USD']),
-        ]);
-
-        $items = (new ChargeLineItemBuilder)->usageItems('EUR', collect(), [], $usage);
-
-        $this->assertSame(['Binding: ledger (Postgres, dedicated)', 'Binding: pg-only (Postgres, dedicated)'], array_column($items, 'description'));
-
-        $ledger = $items[0];
-        $this->assertEquals(14.0, $ledger['quantity']);
-        $this->assertSame('GB-hours', $ledger['unit']);
-        $this->assertEquals(1.64, $ledger['total']);
-        $this->assertSame(['source' => 'binding', 'binding_id' => 'b1', 'type' => 'postgres', 'plan' => 'dedicated', 'region_id' => 'r1', 'storage_gb_hours' => 14.0, 'instance_hours' => 3.0], $ledger['metadata']);
-
-        $this->assertSame('instance-hours', $items[1]['unit']);
-        $this->assertEquals(24.0, $items[1]['quantity']);
-        $this->assertEquals(0.5, $items[1]['unit_price']);
+        $record = BindingUsageRecord::firstOrFail();
+        $this->assertSame('user-7', $record->created_by);
+        $this->assertEquals(0, (float) $record->final_cost, 'quantities only — the Billing module prices them');
     }
 }

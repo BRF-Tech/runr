@@ -97,6 +97,12 @@ class TenantQuotaService
             ->first();
 
         if (! $pivot) {
+            // The organization's own region (its cluster): no organization quota applies there,
+            // only the region's capacity
+            if ($this->ownsRegion($tenant, $region)) {
+                return ['allowed' => true];
+            }
+
             return [
                 'allowed' => false,
                 'message' => __('api.tenant.no_region_access'),
@@ -144,6 +150,36 @@ class TenantQuotaService
         }
 
         return ['allowed' => true] + $remaining;
+    }
+
+    /**
+     * Whether $region is one of the tenant's own regions: owner_tenant_id names the tenant, or —
+     * regions created before it was set — the tenant's schema holds it as an unsynced region
+     * (platform regions only ever appear there as synced copies). Callers pass the tenant's copy,
+     * its own region or the central row; the lookup does not depend on which.
+     */
+    public function ownsRegion(Tenant $tenant, KnativeRegion $region): bool
+    {
+        $tenantId = (string) $tenant->getTenantKey();
+        $owner = $region->getAttribute('owner_tenant_id');
+        if ($owner !== null && $owner !== '') {
+            return (string) $owner === $tenantId;
+        }
+
+        $lookup = fn () => KnativeRegion::whereKey($region->getKey())
+            ->where('is_synced', false)
+            ->exists();
+
+        $current = tenancy()->initialized ? tenancy()->tenant : null;
+
+        try {
+            return $current && (string) $current->getTenantKey() === $tenantId
+                ? $lookup()
+                : TenantSchema::inTenant($tenant, $lookup);
+        } catch (\Throwable) {
+            // No readable tenant database: nothing there is the tenant's own
+            return false;
+        }
     }
 
     /**

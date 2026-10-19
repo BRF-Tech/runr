@@ -343,7 +343,6 @@ func init() {
 		day := time.Now().UTC().AddDate(0, 0, -1).Format("2006-01-02")
 		return 200, map[string]any{"data": []map[string]any{{
 			"record_date": day, "storage_gb_hours": 1.5, "instance_hours": 0.0, "peak_bytes": 1048576,
-			"final_cost": 0.01, "currency": "EUR",
 		}}}, nil
 	})
 

@@ -11,7 +11,8 @@ use Illuminate\Support\Carbon;
 /**
  * Usage metering: run time of every sandbox per organization × region × day (sandboxes that
  * span midnight split between the days, warm pods only from their claim), reserved resources ×
- * time, re-aggregation, cost without the Tenancy module, invoice lines and the usage endpoint.
+ * time, re-aggregation, one record per creator (quantities only, billed to the creator) and the
+ * usage endpoint.
  */
 class SandboxUsageMeteringTest extends SandboxTestCase
 {
@@ -75,41 +76,50 @@ class SandboxUsageMeteringTest extends SandboxTestCase
         $this->assertSame(600, SandboxUsageRecord::whereDate('record_date', '2026-10-16')->sole()->sandbox_seconds);
     }
 
-    public function test_charge_items_currencies_and_cost_since(): void
+    public function test_each_creator_gets_a_record_of_their_own(): void
     {
-        SandboxUsageRecord::create(['tenant_id' => 't1', 'knative_region_id' => $this->region->id, 'record_date' => '2026-10-01', 'sandbox_count' => 3, 'sandbox_seconds' => 5400, 'final_cost' => 1.25, 'raw_cost' => 1.25, 'currency' => 'USD']);
-        SandboxUsageRecord::create(['tenant_id' => 't1', 'knative_region_id' => $this->region->id, 'record_date' => '2026-10-02', 'sandbox_count' => 1, 'sandbox_seconds' => 1800, 'final_cost' => 0.75, 'raw_cost' => 0.75, 'currency' => 'USD']);
-        SandboxUsageRecord::create(['tenant_id' => 't1', 'knative_region_id' => $this->region->id, 'record_date' => '2026-10-03', 'sandbox_seconds' => 100, 'final_cost' => 9, 'currency' => 'EUR']);
-        SandboxUsageRecord::create(['tenant_id' => 't2', 'knative_region_id' => $this->region->id, 'record_date' => '2026-10-02', 'sandbox_seconds' => 100, 'final_cost' => 5, 'currency' => 'USD']);
+        // Sandboxes belong to no project: the Billing module bills them to their creator (docs/billing.md)
+        $this->travelTo(Carbon::parse('2026-10-15 12:00:00', 'UTC'));
+        $this->runningSandbox(['started_at' => Carbon::parse('2026-10-15 10:00:00')]);
+        $this->runningSandbox(['created_by' => 'someone-else', 'started_at' => Carbon::parse('2026-10-15 11:00:00')]);
 
-        $items = SandboxUsageAggregator::chargeItems('t1', '2026-10-01', '2026-10-31', 'USD');
+        $this->assertSame(2, app(SandboxUsageAggregator::class)->aggregateDay(Carbon::parse('2026-10-15')));
 
-        $this->assertCount(1, $items);
-        $this->assertSame('Sandboxes (eu-1)', $items[0]['description']);
-        $this->assertSame(2.0, $items[0]['quantity']);
-        $this->assertSame('hours', $items[0]['unit']);
-        $this->assertSame(2.0, $items[0]['total']);
-        $this->assertSame(4, $items[0]['metadata']['sandbox_count']);
+        $this->assertSame(7200, SandboxUsageRecord::where('created_by', (string) $this->user->id)->sole()->sandbox_seconds);
+        $this->assertSame(3600, SandboxUsageRecord::where('created_by', 'someone-else')->sole()->sandbox_seconds);
+    }
 
-        $this->assertSame('sandbox', $items[0]['metadata']['source']);
+    public function test_the_day_is_replaced_including_rows_of_earlier_releases(): void
+    {
+        // A row of 0.5.7 (per organization and region, without creator) for the day being metered
+        $this->travelTo(Carbon::parse('2026-10-15 12:00:00', 'UTC'));
+        SandboxUsageRecord::create(['tenant_id' => null, 'knative_region_id' => $this->region->id, 'record_date' => '2026-10-15', 'sandbox_seconds' => 999, 'final_cost' => 1.5, 'currency' => 'USD']);
+        $this->runningSandbox(['started_at' => Carbon::parse('2026-10-15 11:00:00')]);
 
-        $this->assertSame([], SandboxUsageAggregator::chargeItems('t1', '2026-09-01', '2026-09-30', 'USD'));
-        $this->assertEqualsCanonicalizing(['USD', 'EUR'], SandboxUsageAggregator::currencies('t1', '2026-10-01', '2026-10-31'));
-        $this->assertSame([], SandboxUsageAggregator::currencies('t1', '2026-11-01', '2026-11-30'));
-        // Billing summary: every record of the organization since the date (0.75 USD + 9 EUR)
-        $this->assertEqualsWithDelta(9.75, SandboxUsageAggregator::costSince('t1', '2026-10-02'), 0.0001);
+        app(SandboxUsageAggregator::class)->aggregateDay(Carbon::parse('2026-10-15'));
+
+        $row = SandboxUsageRecord::whereDate('record_date', '2026-10-15')->sole();
+        $this->assertSame(3600, $row->sandbox_seconds);
+        $this->assertSame((string) $this->user->id, $row->created_by);
+        $this->assertSame(0.0, (float) $row->final_cost, 'quantities only — the Billing module prices them');
     }
 
     public function test_usage_endpoint(): void
     {
-        SandboxUsageRecord::create(['tenant_id' => null, 'knative_region_id' => $this->region->id, 'record_date' => now()->toDateString(), 'sandbox_count' => 2, 'sandbox_seconds' => 600, 'cpu_mc_ms' => 10, 'memory_mib_ms' => 20, 'currency' => 'USD']);
+        SandboxUsageRecord::create(['tenant_id' => null, 'knative_region_id' => $this->region->id, 'record_date' => now()->toDateString(), 'sandbox_count' => 2, 'sandbox_seconds' => 600, 'cpu_mc_ms' => 10, 'memory_mib_ms' => 20, 'final_cost' => 1.5, 'currency' => 'USD']);
         SandboxUsageRecord::create(['tenant_id' => 'someone-else', 'knative_region_id' => $this->region->id, 'record_date' => now()->toDateString(), 'sandbox_seconds' => 999, 'currency' => 'USD']);
 
         $this->getJson('/api/sandbox-usage')->assertOk()
             ->assertJsonCount(1, 'data')
             ->assertJsonPath('data.0.sandbox_seconds', 600)
             ->assertJsonPath('data.0.sandbox_count', 2)
-            ->assertJsonPath('data.0.region_id', $this->region->id);
+            ->assertJsonPath('data.0.region_id', $this->region->id)
+            ->assertJsonPath('data.0.cpu_mc_ms', 10)
+            ->assertJsonPath('data.0.memory_mib_ms', 20)
+            // Quantities only: a cost of an earlier release is not answered (the Billing module prices usage)
+            ->assertJsonMissingPath('data.0.final_cost')
+            ->assertJsonMissingPath('data.0.raw_cost')
+            ->assertJsonMissingPath('data.0.currency');
     }
 
     public function test_overlap(): void

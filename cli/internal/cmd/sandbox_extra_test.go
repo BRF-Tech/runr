@@ -236,11 +236,14 @@ func TestSandboxQuotasCmd(t *testing.T) {
 func TestSandboxUsageAndMetricsCmd(t *testing.T) {
 	h := newHarness(t).login()
 	h.srv.SeedSandboxUsage(runr.SandboxUsageRecord{RecordDate: "2026-10-01", SandboxCount: 3, SandboxSeconds: 7200,
-		CPUmcMS: 3600 * 1000 * 1000, MemoryMiBMS: 1024 * 3600 * 1000, FinalCost: 1.25, Currency: "EUR"})
+		CPUmcMS: 3600 * 1000 * 1000, MemoryMiBMS: 1024 * 3600 * 1000})
 	r := h.mustRun("sandbox", "usage", "--from", "2026-10-01")
 	contains(t, r.out, "2026-10-01")
 	contains(t, r.out, "1.00") // one CPU core-hour, one GiB-hour
-	contains(t, r.out, "Total: 1.25 EUR")
+	contains(t, r.out, "Total: 2h, 1.00 CPU core-hours, 1.00 memory GiB-hours")
+	if strings.Contains(r.out, "COST") {
+		t.Fatalf("usage shows a cost column: %q", r.out)
+	}
 	h.expectCode(ExitUsage, "sandbox", "usage", "--from", "yesterday")
 
 	h.srv.SeedSandbox("python")

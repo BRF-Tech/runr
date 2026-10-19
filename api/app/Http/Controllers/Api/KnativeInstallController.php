@@ -6,11 +6,14 @@ use App\Events\PlatformEvent;
 use App\Http\Requests\KnativeRegion\CheckNamespaceRequest;
 use App\Http\Requests\KnativeRegion\InstallOperatorRequest;
 use App\Http\Requests\KnativeRegion\InstallServingRequest;
+use App\Http\Requests\KnativeRegion\UpgradeServingRequest;
 use App\Http\Resources\KnativeRegionResource;
 use App\Jobs\InstallKnativeJob;
 use App\Jobs\UninstallKnativeJob;
+use App\Jobs\UpgradeKnativeServingJob;
 use App\Models\KnativeRegion;
 use App\Services\Concerns\KnativeValidationTrait;
+use App\Services\Helpers\KnativeVersionHelper;
 use App\Services\KnativeStatusService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -41,10 +44,19 @@ class KnativeInstallController extends Controller
 
         $status = $statusService->checkStatus($knativeRegion);
 
+        // An unreachable cluster is recorded the way the periodic status check records it
+        // (CheckKnativeStatusJob); the kubeconfig stays — a read never removes RunR's only access
+        // to the cluster, which may be back a minute later
         if ($status['status'] === 'error') {
-            $knativeRegion->update(['kubeconfig' => null, 'knative_status' => 'error', 'knative_status_message' => $status['message'], 'knative_status_checked_at' => now()]);
+            $knativeRegion->update([
+                'knative_status' => 'error',
+                'knative_status_message' => $status['message'],
+                'knative_status_checked_at' => now(),
+                'cluster_status' => $status['clusterStatus'] ?? 'unreachable',
+                'cluster_status_message' => $status['clusterMessage'] ?? $status['message'],
+            ]);
 
-            return response()->json(['status' => 'error', 'message' => $status['message'], 'kubeconfig_cleared' => true, 'region' => new KnativeRegionResource($knativeRegion->fresh())], 400);
+            return response()->json(['status' => 'error', 'message' => $status['message'], 'region' => new KnativeRegionResource($knativeRegion->fresh())], 400);
         }
 
         $oldStatus = $knativeRegion->knative_status;
@@ -227,6 +239,64 @@ class KnativeInstallController extends Controller
 
         return response()->json([
             'message' => 'Serving installation started.',
+            'region' => new KnativeRegionResource($knativeRegion->fresh()),
+        ]);
+    }
+
+    /**
+     * Upgrade Knative Serving to the next minor version (async job). Knative upgrades one minor
+     * at a time; the version has to be one the cluster's Kubernetes version supports
+     * (GET …/compatible-versions). Serving is shared by the regions of a cluster.
+     */
+    public function upgradeServing(UpgradeServingRequest $request, KnativeRegion $knativeRegion, KnativeStatusService $statusService): JsonResponse
+    {
+        if ($err = $this->validateRegion($knativeRegion)) {
+            return $err;
+        }
+        if ($err = $this->validateComponentNotInstalling($knativeRegion, 'serving')) {
+            return $err;
+        }
+        if ($knativeRegion->knative_serving_status !== 'ready') {
+            return response()->json(['message' => __('api.region.serving_upgrade_not_ready')], 422);
+        }
+
+        $target = KnativeVersionHelper::minorOf($request->validated('version'));
+        $current = KnativeVersionHelper::minorOf($knativeRegion->knative_serving_version);
+        if (! $current) {
+            return response()->json(['message' => __('api.region.serving_upgrade_unknown_version')], 422);
+        }
+
+        [, $currentMinor] = array_map('intval', explode('.', $current));
+        [, $targetMinor] = array_map('intval', explode('.', (string) $target));
+        $next = '1.'.($currentMinor + 1);
+        if ($targetMinor !== $currentMinor + 1) {
+            return response()->json([
+                'message' => __('api.region.serving_upgrade_next_minor', ['current' => $current, 'next' => $next]),
+                'errors' => ['version' => [__('api.region.serving_upgrade_next_minor', ['current' => $current, 'next' => $next])]],
+            ], 422);
+        }
+
+        try {
+            $supported = $statusService->listCompatibleVersions($knativeRegion);
+        } catch (\Throwable $e) {
+            return response()->json(['message' => __('api.region.versions_fetch_failed', ['message' => $e->getMessage()])], 422);
+        }
+        if (! in_array($target, $supported, true)) {
+            return response()->json([
+                'message' => __('api.region.serving_upgrade_unsupported', ['version' => $target]),
+                'errors' => ['version' => [__('api.region.serving_upgrade_unsupported', ['version' => $target])]],
+            ], 422);
+        }
+
+        $knativeRegion->update([
+            'knative_serving_status' => 'installing',
+            'knative_serving_status_message' => "Upgrade to {$target} queued...\n",
+        ]);
+
+        UpgradeKnativeServingJob::dispatch($knativeRegion, $target, auth()->id());
+
+        return response()->json([
+            'message' => __('api.region.serving_upgrade_started', ['version' => $target]),
             'region' => new KnativeRegionResource($knativeRegion->fresh()),
         ]);
     }

@@ -67,9 +67,10 @@
                 "",
                 "letsencrypt",
                 "custom",
+                "secret",
                 "none"
               ],
-              "description": "letsencrypt: cert-manager issues the certificate (annotation cert-manager.io/cluster-issuer; without cert-manager in the cluster it behaves like none). custom: the chart stores certificate + privateKey in a kubernetes.io/tls Secret. none: no tls section, the ingress controller serves its default certificate. Empty: enabled / clusterIssuer / secretName decide (values written before 0.3.6)."
+              "description": "letsencrypt: cert-manager issues the certificate (annotation cert-manager.io/cluster-issuer; without cert-manager in the cluster it behaves like none). custom: the chart stores certificate + privateKey in a kubernetes.io/tls Secret. secret: your own kubernetes.io/tls Secret named by secretName. none: no tls section, the ingress controller serves its default certificate. Empty: enabled / clusterIssuer / secretName decide (values written before 0.3.6)."
             },
             "enabled": {
               "type": "boolean",
@@ -84,7 +85,7 @@
             "secretName": {
               "type": "string",
               "title": "TLS Secret name",
-              "description": "Defaults to runr-tls (letsencrypt) or runr-tls-custom (custom)."
+              "description": "Defaults to runr-tls (letsencrypt) or runr-tls-custom (custom); required with mode secret."
             },
             "certificate": {
               "type": "string",
@@ -101,44 +102,67 @@
         }
       }
     },
-    "api": {
-      "type": "object",
-      "properties": {
-        "images": {
+    "images": {
       "type": "object",
       "title": "Uploaded images",
       "description": "Container images and WebAssembly modules uploaded into region registries (docs/images.md).",
       "properties": {
         "uploadImage": {"type": "string", "title": "Receiver image", "description": "Image of the upload receiver Job in the regions. Empty: ghcr.io/brf-tech/runr/image-upload:1.0.0."},
-        "quotaGb": {"type": ["string", "integer"], "title": "Storage per organization (GiB)", "description": "Uploaded images over every region. Empty: 50; 0: unlimited."},
-        "maxUploadGb": {"type": ["string", "integer"], "title": "Largest upload (GiB)", "description": "Empty: 20."},
-        "uploadTtlHours": {"type": ["string", "integer"], "title": "Upload time limit (hours)", "description": "Empty: 24."}
+        "quotaGb": {"type": ["string", "number"], "title": "Storage per organization (GiB)", "description": "Uploaded images over every region. Empty: 50; 0: unlimited."},
+        "maxUploadGb": {"type": ["string", "number"], "title": "Largest upload (GiB)", "description": "Empty: 20."},
+        "uploadTtlHours": {"type": ["string", "number"], "title": "Upload time limit (hours)", "description": "Empty: 24."}
       }
     },
-        "supplyChain": {
+    "supplyChain": {
       "type": "object",
       "title": "Software supply chain",
       "description": "SBOMs, vulnerability scans, image signatures and the admission policy per region (docs/supply-chain.md). Each region is configured in the UI (Region → Supply chain); these are the platform defaults.",
       "properties": {
-        "enabled": {"type": "boolean", "title": "Supply-chain runs after builds", "description": "Every image RunR builds gets an SBOM, a scan and a signature as its region's settings define."},
+        "enabled": {"type": ["boolean", "string"], "enum": [true, false, "true", "false"], "title": "Supply-chain runs after builds", "description": "Every image RunR builds gets an SBOM, a scan and a signature as its region's settings define."},
         "toolsImage": {"type": "string", "title": "Tools image", "description": "Image of the supply-chain Jobs (syft, trivy, cosign, oras). Empty: ghcr.io/brf-tech/runr/supply-chain:1.0.0."},
         "jobNamespace": {"type": "string", "title": "Job namespace", "description": "Namespace of the supply-chain Jobs and the signing key in each region. Empty: runr-supply-chain."},
-        "rescanHours": {"type": ["string", "integer"], "title": "Re-scan interval (hours)", "description": "Default for new regions. Empty: 24."},
+        "rescanHours": {"type": ["string", "number"], "title": "Re-scan interval (hours)", "description": "Default for new regions. Empty: 24."},
         "trivyDbSource": {"type": "string", "title": "Vulnerability DB source", "description": "Copied into the region registry in mirror mode. Empty: mirror.gcr.io/aquasec/trivy-db:2."},
         "trivyJavaDbSource": {"type": "string", "title": "Java DB source", "description": "Empty: mirror.gcr.io/aquasec/trivy-java-db:1."},
-        "trivyDbRefreshHours": {"type": ["string", "integer"], "title": "DB refresh interval (hours)", "description": "Empty: 12."},
+        "trivyDbRefreshHours": {"type": ["string", "number"], "title": "DB refresh interval (hours)", "description": "Empty: 12."},
         "policyController": {
           "type": "object",
           "title": "Admission policy (sigstore policy-controller)",
           "properties": {
             "helmRepo": {"type": "string", "title": "Helm repository"},
-            "chartVersion": {"type": "string", "title": "Chart version"},
+            "chartVersion": {"type": ["string", "number"], "title": "Chart version"},
             "extraArgs": {"type": "string", "title": "Webhook flags", "description": "Comma separated key=value, e.g. disable-tuf=true."}
           }
         }
       }
     },
-    "storage": {
+    "cors": {
+      "type": "object",
+      "title": "CORS",
+      "properties": {
+        "allowedOrigins": {
+          "title": "Further allowed origins",
+          "description": "Origins besides the console's own (https://<domain>) whose browser pages may call the API, e.g. https://portal.example.com. A list, or one comma-separated string.",
+          "oneOf": [
+            {"type": "array", "items": {"type": "string", "pattern": "^https?://[^/\\s,]+$"}},
+            {"type": "string", "pattern": "^(https?://[^/\\s,]+)?(,\\s*https?://[^/\\s,]+)*$"}
+          ]
+        }
+      }
+    },
+    "gateway": {
+      "type": "object",
+      "properties": {
+        "affinity": {"type": "object", "title": "Gateway affinity", "description": "Affinity of the gateway pods; empty: placement.affinity."}
+      }
+    },
+    "api": {
+      "type": "object",
+      "properties": {
+        "affinity": {"type": "object", "title": "API affinity", "description": "Affinity of the API pods; empty: placement.affinity."},
+        "images": {"type": "object", "description": "Not read by the chart: the uploaded-image settings are the top-level images.* values."},
+        "supplyChain": {"type": "object", "description": "Not read by the chart: the supply-chain settings are the top-level supplyChain.* values."},
+        "storage": {
           "type": "object",
           "properties": {
             "size": {
@@ -146,14 +170,37 @@
               "title": "Application storage",
               "pattern": "^[0-9]+Gi$",
               "description": "Git repositories of projects and logs, e.g. 10Gi. Can be grown later, never shrunk."
-            }
+            },
+            "accessModes": {
+              "type": "array",
+              "title": "Access modes",
+              "minItems": 1,
+              "uniqueItems": true,
+              "items": {"type": "string", "enum": ["ReadWriteOnce", "ReadWriteMany"]},
+              "description": "Access modes of the API volume, set when the claim is created. ReadWriteOnce: the API, Horizon, scheduler and Reverb pods run on the volume's node. ReadWriteMany (with a ReadWriteMany StorageClass): they run on any node."
+            },
+            "storageClassName": {"type": "string", "title": "StorageClass", "description": "Empty: the cluster's default StorageClass. Set when the claim is created."}
           }
         }
+      }
+    },
+    "ui": {
+      "type": "object",
+      "properties": {
+        "affinity": {"type": "object", "title": "UI affinity", "description": "Affinity of the UI pods; empty: placement.affinity."}
       }
     },
     "database": {
       "type": "object",
       "properties": {
+        "driver": {
+          "type": "string",
+          "title": "Database driver",
+          "description": "pgsql, the only driver the chart supports: the API, Horizon, scheduler and Reverb pods share one PostgreSQL server (the chart's or yours)."
+        },
+        "password": {"type": "string", "title": "Database password", "writeOnly": true, "description": "Password of database.user, written to the chart's Secret (secret.create=true). Empty: generated on the first install and kept."},
+        "existingSecret": {"type": "string", "title": "Database password Secret", "description": "A Secret of yours that holds the password (key existingSecretPasswordKey)."},
+        "existingSecretPasswordKey": {"type": "string", "title": "Key of the password"},
         "postgres": {
           "type": "object",
           "properties": {
@@ -162,9 +209,45 @@
               "title": "Database storage",
               "pattern": "^[0-9]+Gi$",
               "description": "Built-in PostgreSQL volume, e.g. 10Gi."
-            }
+            },
+            "storageClassName": {"type": "string", "title": "Database StorageClass", "description": "StorageClass of the built-in PostgreSQL volume; empty: the cluster's default. Set when the claim is created."}
           }
         }
+      }
+    },
+    "redis": {
+      "type": "object",
+      "properties": {
+        "username": {"type": "string", "title": "Redis user", "description": "ACL user name; empty: the default user."},
+        "password": {"type": "string", "title": "Redis password", "writeOnly": true, "description": "Written to the chart's Secret (secret.create=true); the chart's Redis then requires it."},
+        "existingSecret": {"type": "string", "title": "Redis password Secret", "description": "A Secret of yours that holds the password (key existingSecretPasswordKey)."},
+        "existingSecretPasswordKey": {"type": "string", "title": "Key of the password"}
+      }
+    },
+    "mail": {
+      "type": "object",
+      "properties": {
+        "username": {"type": "string", "title": "SMTP user"},
+        "password": {"type": "string", "title": "SMTP password", "writeOnly": true, "description": "Written to the chart's Secret (secret.create=true)."},
+        "existingSecret": {"type": "string", "title": "SMTP password Secret", "description": "A Secret of yours that holds the password (key existingSecretPasswordKey)."},
+        "existingSecretPasswordKey": {"type": "string", "title": "Key of the password"},
+        "encryption": {"type": "string", "title": "SMTP encryption", "enum": ["", "starttls", "tls"], "description": "Empty or starttls: STARTTLS when the server offers it (TLS from the first byte on port 465). tls: TLS from the first byte on any port."}
+      }
+    },
+    "networkPolicy": {
+      "type": "object",
+      "title": "Network policies",
+      "properties": {
+        "enabled": {"type": "boolean", "title": "NetworkPolicies", "description": "Allow exactly the connections docs/install.md lists, deny the rest (needs a CNI that enforces NetworkPolicy)."},
+        "gatewayFrom": {"type": "array", "items": {"type": "object"}, "description": "NetworkPolicy peers that may reach runr-gateway; empty: any source."},
+        "egress": {
+          "type": "object",
+          "properties": {
+            "to": {"type": "array", "items": {"type": "object"}, "description": "Peers of the outbound connections; empty: any destination."},
+            "ports": {"type": "array", "items": {"type": "integer", "minimum": 1, "maximum": 65535}, "description": "TCP ports of the outbound connections; empty: every port."}
+          }
+        },
+        "extraEgress": {"type": "array", "items": {"type": "object"}, "description": "Further egress rules of the API, Horizon, scheduler, Reverb and hook pods."}
       }
     },
     "clientIp": {
@@ -232,31 +315,30 @@
     "billing": {
       "type": "object",
       "title": "Billing",
-      "description": "Billing (multi-tenant, docs/billing.md): RunR calculates what each tenant owes; an external billing system reads the amounts through the billing API and receives billing events on the webhook. Leave the webhook URL empty to keep events for GET /api/billing/events only.",
+      "description": "Billing module (docs/billing.md): RunR calculates a monthly bill per project (payer: the project owner) and, with tenancy, per tenant for shared platform regions; an external invoicing system reads bills and usage through the billing API and receives signed events on the webhook. Leave the webhook URL empty to keep events for GET /api/billing/events only.",
       "properties": {
+        "enabled": {
+          "type": "boolean",
+          "title": "Billing module",
+          "description": "BILLING_ENABLED: turns the Billing module of the API on. Off: metering keeps running, no money is calculated."
+        },
+        "currency": {
+          "type": "string",
+          "title": "Billing currency",
+          "pattern": "^[A-Z]{3}$",
+          "description": "BILLING_CURRENCY: ISO 4217 code of every price and bill of the installation, e.g. USD or EUR."
+        },
         "webhookUrl": {
           "type": "string",
           "title": "Billing webhook URL",
           "pattern": "^(https?://.+)?$",
-          "description": "Billing events (billing.period.closed, billing.plan.changed, billing.usage.threshold, billing.charge.voided) are POSTed here. Empty: no delivery."
+          "description": "Billing events (bill.closed, bill.paid, bill.payment_url_set, fixed_request.approved, region_share.accepted, project.stopped, …) are POSTed here. Empty: no delivery. A webhook saved in Settings → Billing wins."
         },
         "webhookSecret": {
           "type": "string",
           "title": "Billing webhook signing secret",
           "writeOnly": true,
           "description": "HMAC-SHA256 key of the X-RunR-Signature header: sha256=HMAC(secret, \"<X-RunR-Timestamp>.<raw body>\"). Stored in the Secret runr-secret (key BILLING_WEBHOOK_SECRET). Empty: events are sent unsigned."
-        },
-        "usageThresholds": {
-          "type": "string",
-          "title": "Usage thresholds",
-          "pattern": "^[0-9.,\\s]*$",
-          "description": "Month-to-date usage amounts (in the usage currency) that raise billing.usage.threshold once per tenant and month, comma separated, e.g. 100,500,1000."
-        },
-        "storeUrl": {
-          "type": "string",
-          "title": "Store URL",
-          "pattern": "^(https?://.+)?$",
-          "description": "Where tenants buy plans and credits; the console links to it from Settings → Subscription."
         }
       }
     },
@@ -1049,7 +1131,7 @@
         "affinity": {
           "type": "object",
           "title": "Affinity",
-          "description": "Affinity of every RunR pod; podColocation and tolerateDedicatedWorkers add their terms to it."
+          "description": "Affinity of every RunR pod unless gateway.affinity, api.affinity or ui.affinity replaces it for that component; podColocation and tolerateDedicatedWorkers add their terms to it."
         },
         "nodeSelector": {
           "type": "object",

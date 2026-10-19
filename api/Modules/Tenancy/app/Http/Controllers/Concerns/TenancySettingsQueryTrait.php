@@ -5,8 +5,10 @@ namespace Modules\Tenancy\Http\Controllers\Concerns;
 use App\Http\Controllers\Api\Concerns\SettingsQueryTrait;
 use App\Models\KnativeRegion;
 use App\Models\Project;
+use App\Models\Setting;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\DB;
+use Modules\Tenancy\Services\TenantDomainService;
 use Modules\Tenancy\Services\TenantQuotaService;
 
 trait TenancySettingsQueryTrait
@@ -62,39 +64,24 @@ trait TenancySettingsQueryTrait
         $data = $this->baseBuildSettingsData();
         $data['tenancy_enabled'] = true;
 
-        // Platform regions available for assignment (managed + infinite)
-        $regions = KnativeRegion::on('central')
-            ->whereNull('owner_tenant_id')
-            ->where('is_demo', false)
-            ->orderBy('name')
-            ->get(['id', 'name', 'region_mode', 'total_cpu_m', 'total_memory_mb']);
-
-        $allocations = DB::connection('central')
-            ->table('tenant_regions')
-            ->selectRaw('knative_region_id, SUM(cpu_quota_m) as allocated_cpu_m, SUM(memory_quota_mb) as allocated_memory_mb')
-            ->groupBy('knative_region_id')
-            ->get()
-            ->keyBy('knative_region_id');
-
-        $data['assignable_regions'] = $regions->map(function ($r) use ($allocations) {
-            $alloc = $allocations->get($r->id);
-
-            return [
-                'id' => $r->id,
-                'name' => $r->name,
-                'region_mode' => $r->region_mode,
-                'total_cpu_m' => $r->total_cpu_m,
-                'total_memory_mb' => $r->total_memory_mb,
-                'allocated_cpu_m' => (int) ($alloc->allocated_cpu_m ?? 0),
-                'allocated_memory_mb' => (int) ($alloc->allocated_memory_mb ?? 0),
-            ];
-        })->toArray();
+        // Platform regions available for assignment (managed + infinite), with every region's
+        // capacity and what the tenants' quotas hold of it: the platform administrators' view
+        if (request()->user()?->getAttribute('is_admin')) {
+            $data['assignable_regions'] = $this->assignableRegions();
+        }
 
         $tenant = request()->attributes->get('tenant');
 
         if ($tenant) {
-            // base_domain now comes from Setting::get() with fallback.
-            // Tenant overrides via their own settings table; central value is the fallback.
+            // base_domain is the effective value (Setting::get(): the organization's own, else
+            // the platform's). The organization's own domain and the platform default apart, for
+            // the organization domain field of the console
+            $data['tenant_base_domain'] = self::ownBaseDomain();
+            $data['platform_base_domain'] = Setting::on(config('tenancy.database.central_connection', 'central'))
+                ->whereKey('base_domain')->value('value') ?: null;
+            // A move of the organization domain waiting for DNS of the new one: from (null = the
+            // platform's domain), to, started_at, the regions still answering on the old one too
+            $data['tenant_domain_migration'] = app(TenantDomainService::class)->summary($tenant);
 
             $quotaMap = $tenant->regions->keyBy('id');
 
@@ -136,5 +123,45 @@ trait TenancySettingsQueryTrait
         }
 
         return $data;
+    }
+
+    /**
+     * The organization's own base domain (call in tenant context): the tenant's settings row only —
+     * Setting::get() would fall back to the platform's.
+     */
+    protected static function ownBaseDomain(): ?string
+    {
+        return Setting::query()->whereKey('base_domain')->value('value') ?: null;
+    }
+
+    /** @return list<array<string, mixed>> */
+    private function assignableRegions(): array
+    {
+        $regions = KnativeRegion::on('central')
+            ->whereNull('owner_tenant_id')
+            ->where('is_demo', false)
+            ->orderBy('name')
+            ->get(['id', 'name', 'region_mode', 'total_cpu_m', 'total_memory_mb']);
+
+        $allocations = DB::connection('central')
+            ->table('tenant_regions')
+            ->selectRaw('knative_region_id, SUM(cpu_quota_m) as allocated_cpu_m, SUM(memory_quota_mb) as allocated_memory_mb')
+            ->groupBy('knative_region_id')
+            ->get()
+            ->keyBy('knative_region_id');
+
+        return $regions->map(function ($r) use ($allocations) {
+            $alloc = $allocations->get($r->id);
+
+            return [
+                'id' => $r->id,
+                'name' => $r->name,
+                'region_mode' => $r->region_mode,
+                'total_cpu_m' => $r->total_cpu_m,
+                'total_memory_mb' => $r->total_memory_mb,
+                'allocated_cpu_m' => (int) ($alloc->allocated_cpu_m ?? 0),
+                'allocated_memory_mb' => (int) ($alloc->allocated_memory_mb ?? 0),
+            ];
+        })->values()->all();
     }
 }

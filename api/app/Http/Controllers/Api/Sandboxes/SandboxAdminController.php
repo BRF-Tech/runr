@@ -304,6 +304,12 @@ class SandboxAdminController extends SandboxApiController
         return response($this->metrics->prometheus(), 200, ['Content-Type' => 'text/plain; version=0.0.4; charset=utf-8']);
     }
 
+    /**
+     * Daily sandbox usage of the organization (?from= &to=, default this month).
+     *
+     * Quantities only: what they cost is the Billing module's (GET /api/billing/usage, the account
+     * bills).
+     */
     public function usage(Request $request): JsonResponse
     {
         Gate::authorize('sandboxes.view');
@@ -328,9 +334,6 @@ class SandboxAdminController extends SandboxApiController
                 'sandbox_seconds' => $r->sandbox_seconds,
                 'cpu_mc_ms' => $r->cpu_mc_ms,
                 'memory_mib_ms' => $r->memory_mib_ms,
-                'raw_cost' => (float) $r->raw_cost,
-                'final_cost' => (float) $r->final_cost,
-                'currency' => $r->currency,
             ])->values();
 
         return response()->json(['data' => $rows]);

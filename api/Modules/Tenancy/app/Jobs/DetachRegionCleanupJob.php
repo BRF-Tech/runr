@@ -17,6 +17,8 @@ use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Facades\Log;
 use Modules\Tenancy\Models\Tenant;
+use Modules\Tenancy\Models\TenantLocalRegion;
+use Modules\Tenancy\Services\TenantSchema;
 
 class DetachRegionCleanupJob implements ShouldQueue
 {
@@ -37,23 +39,30 @@ class DetachRegionCleanupJob implements ShouldQueue
 
     public function handle(KnativeDeployService $deployer): void
     {
+        // Assigned again before the job ran: the organization keeps the region
+        if ($this->tenant->regions()->where('knative_region_id', $this->regionId)->exists()) {
+            return;
+        }
+
         // Load region from central (need kubeconfig)
         $region = KnativeRegion::on('central')->find($this->regionId);
         if (! $region || ! $region->kubeconfig) {
             Log::warning("DetachRegionCleanup: region {$this->regionId} not found or no kubeconfig");
+        } else {
+            TenantSchema::inTenant($this->tenant, function () use ($deployer, $region) {
+                $projects = Project::where('knative_region_id', $this->regionId)->get();
 
-            return;
+                foreach ($projects as $project) {
+                    $this->teardownProject($deployer, $project, $region);
+                }
+
+                $this->removeTenantDomain($region);
+            });
         }
 
-        $this->tenant->run(function () use ($deployer, $region) {
-            $projects = Project::where('knative_region_id', $this->regionId)->get();
-
-            foreach ($projects as $project) {
-                $this->teardownProject($deployer, $project, $region);
-            }
-
-            $this->removeTenantDomain($region);
-        });
+        // The organization's copy of the region goes once nothing of its own runs there (gateways
+        // are removed from the region with it)
+        TenantSchema::inTenant($this->tenant, fn () => TenantLocalRegion::removeCopy($this->regionId, detached: true));
 
         $this->broadcastSuccess('region.detached', [
             'tenant_id' => $this->tenant->id,
@@ -71,7 +80,10 @@ class DetachRegionCleanupJob implements ShouldQueue
             Log::warning("DetachRegionCleanup: teardown failed for {$project->slug}", ['error' => $e->getMessage()]);
         }
 
-        $project->deployments()->update(['status' => 'shut_down']);
+        // Each through the model: a deployment that stops running records when (metering)
+        foreach ($project->deployments()->where('status', '!=', 'shut_down')->get() as $deployment) {
+            $deployment->update(['status' => 'shut_down']);
+        }
         $project->update(['knative_region_id' => null]);
     }
 

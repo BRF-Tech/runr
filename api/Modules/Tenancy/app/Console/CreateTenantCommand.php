@@ -6,12 +6,13 @@ use App\Models\User;
 use Illuminate\Console\Command;
 use Modules\Tenancy\Models\Tenant;
 use Modules\Tenancy\Models\TenantUser;
+use Modules\Tenancy\Services\TenantSchema;
 
 class CreateTenantCommand extends Command
 {
     protected $signature = 'tenancy:create-tenant
         {name : Tenant name}
-        {slug : Unique slug for schema naming}
+        {slug : Unique slug (URLs, git paths; the schema is named after the tenant id)}
         {--owner-email= : Email of the owner user}';
 
     protected $description = 'Create a new tenant with its own PostgreSQL schema';
@@ -40,16 +41,8 @@ class CreateTenantCommand extends Command
             'slug' => $slug,
         ]);
 
-        // Create schema + run migrations
-        $tenant->database()->manager()->createDatabase($tenant);
-
-        $tenant->run(function () {
-            \Artisan::call('migrate', [
-                '--path' => module_path('Tenancy', 'Database/TenantMigrations'),
-                '--realpath' => true,
-                '--force' => true,
-            ]);
-        });
+        // Create schema + run every module's tenant migrations
+        TenantSchema::create($tenant);
 
         $this->info('Schema created and migrations applied.');
 

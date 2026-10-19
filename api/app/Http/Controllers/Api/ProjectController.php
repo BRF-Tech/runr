@@ -32,7 +32,7 @@ class ProjectController extends Controller
             'xaasConfig', 'faasConfig', 'containerConfig',
             'aaasConfig', 'agentFlowConfig', 'maasConfig',
             'knativeRegion', 'latestVersion', 'latestDeployment.version',
-            'gatewayRoute.gateway', 'creator:id,name', 'secrets:id,project_id,name',
+            'gatewayRoute.gateway', 'creator:id,name', 'owner:id,name,username', 'secrets:id,project_id,name',
         ]);
 
         // Only what the user may see: every project with an organization-wide role, else project access
@@ -91,7 +91,7 @@ class ProjectController extends Controller
         $fresh = $project->fresh([
             'containerConfig', 'xaasConfig', 'faasConfig',
             'aaasConfig', 'agentFlowConfig', 'maasConfig',
-            'latestVersion', 'knativeRegion', 'gatewayRoute.gateway', 'creator:id,name',
+            'latestVersion', 'knativeRegion', 'gatewayRoute.gateway', 'creator:id,name', 'owner:id,name,username',
         ]);
 
         try {
@@ -110,7 +110,7 @@ class ProjectController extends Controller
             'xaasConfig', 'faasConfig', 'containerConfig',
             'aaasConfig', 'agentFlowConfig', 'maasConfig',
             'knativeRegion', 'latestVersion', 'latestDeployment.version',
-            'gatewayRoute.gateway', 'creator:id,name',
+            'gatewayRoute.gateway', 'creator:id,name', 'owner:id,name,username',
         ]);
 
         return new ProjectResource($project);
@@ -169,7 +169,7 @@ class ProjectController extends Controller
             'xaasConfig', 'faasConfig', 'containerConfig',
             'aaasConfig', 'agentFlowConfig', 'maasConfig',
             'knativeRegion', 'latestVersion', 'latestDeployment.version',
-            'gatewayRoute.gateway', 'creator:id,name',
+            'gatewayRoute.gateway', 'creator:id,name', 'owner:id,name,username',
         ]);
 
         try {

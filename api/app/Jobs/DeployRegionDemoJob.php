@@ -7,6 +7,8 @@ use App\Jobs\Concerns\BroadcastsJobCompletion;
 use App\Models\Deployment;
 use App\Models\KnativeRegion;
 use App\Models\Project;
+use App\Services\Projects\LiveDeployments;
+use App\Support\Projects\ProjectAdmission;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
@@ -92,6 +94,15 @@ class DeployRegionDemoJob implements ShouldQueue
             if (! $version) {
                 continue;
             }
+
+            // The deploy guards decide as for any deploy (e.g. a fixed-price region's allocation)
+            if ($refusal = ProjectAdmission::refusal($project)) {
+                Log::warning('DeployRegionDemoJob: demo project not deployed', ['project' => $project->slug, 'reason' => $refusal]);
+
+                continue;
+            }
+
+            app(LiveDeployments::class)->supersede($project);
 
             $deployment = Deployment::create([
                 'project_id' => $project->id,

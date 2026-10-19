@@ -4,6 +4,7 @@ namespace App\Services\Concerns;
 
 use App\Models\KnativeRegion;
 use App\Services\Contracts\KnativeConstants;
+use App\Services\Helpers\RequestTimeout;
 use App\Services\KubernetesClient;
 
 trait KnativeCRTrait
@@ -65,6 +66,13 @@ trait KnativeCRTrait
 
         if (! empty($settings['knative_domain'])) {
             $cr['spec']['config']['domain'] = [$settings['knative_domain'] => ''];
+        }
+
+        // A request_timeout above Knative's default maximum revision timeout (600 s): revisions
+        // of that timeout are accepted (RequestTimeout)
+        $maxTimeout = RequestTimeout::knativeMax((int) ($settings[RequestTimeout::SETTING] ?? RequestTimeout::DEFAULT));
+        if ($maxTimeout > RequestTimeout::KNATIVE_DEFAULT_MAX) {
+            $cr['spec']['config']['defaults'] = [RequestTimeout::KNATIVE_KEY => (string) $maxTimeout];
         }
 
         $k8s->applyResource($cr, $namespace);

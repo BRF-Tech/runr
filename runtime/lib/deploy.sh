@@ -9,6 +9,7 @@ _deploy_namespace="runr"
 _deploy_tenancy="false"
 _deploy_auth_provider="false"
 _deploy_ticket="false"
+_deploy_billing="false"
 _deploy_admin_email=""
 _deploy_admin_pass=""
 _deploy_skip_build=""
@@ -40,6 +41,8 @@ _deploy_parse_args() {
       --no-auth-provider)   _deploy_auth_provider="false" ;;
       --ticket)             _deploy_ticket="true" ;;
       --no-ticket)          _deploy_ticket="false" ;;
+      --billing)            _deploy_billing="true" ;;
+      --no-billing)         _deploy_billing="false" ;;
       --admin-email=*)      _deploy_admin_email="${arg#*=}" ;;
       --admin-pass=*)       _deploy_admin_pass="${arg#*=}" ;;
       --skip-build)         _deploy_skip_build="1" ;;
@@ -188,6 +191,7 @@ _deploy_helm() {
     --set "tenancy.enabled=$_deploy_tenancy"
     --set "authProvider.enabled=$_deploy_auth_provider"
     --set "ticket.enabled=$_deploy_ticket"
+    --set "billing.enabled=$_deploy_billing"
     --set "database.postgres.fixPgdata=true"
     --set "api.storage.fixPermissions=true"
     --set "podColocation=true"
@@ -333,6 +337,7 @@ _deploy_summary() {
   [ "$_deploy_tenancy" = "true" ] && echo "  Tenancy:   enabled"
   [ "$_deploy_auth_provider" = "true" ] && echo "  AuthProv:  enabled"
   [ "$_deploy_ticket" = "true" ] && echo "  Ticket:    enabled"
+  [ "$_deploy_billing" = "true" ] && echo "  Billing:   enabled"
   [ "$_deploy_hpa" = "true" ] && echo "  HPA:       enabled"
   [ "$_deploy_pdb" = "true" ] && echo "  PDB:       enabled"
   echo ""
@@ -376,6 +381,9 @@ cmd_upgrade() {
   fi
   if ! printf '%s\n' "$@" | grep -q -- '--ticket\|--no-ticket'; then
     _deploy_ticket=$(echo "$current_values" | grep -o '"ticket":{[^}]*}' | grep -o '"enabled":[a-z]*' | grep -o 'true\|false' || echo "false")
+  fi
+  if ! printf '%s\n' "$@" | grep -q -- '--billing\|--no-billing'; then
+    _deploy_billing=$(echo "$current_values" | grep -o '"billing":{[^}]*}' | grep -o '"enabled":[a-z]*' | grep -o 'true\|false' || echo "false")
   fi
 
   _deploy_test_connectivity

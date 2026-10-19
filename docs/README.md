@@ -4,16 +4,25 @@ Every page of the RunR documentation, grouped by topic. The [repository README](
 gives the overview and the quick start; [CHANGELOG.md](../CHANGELOG.md) lists the changes per
 release.
 
-## Getting started
+## Install and operate
 
 | Page | What it covers |
 | --- | --- |
-| [Architecture](architecture.md) | Control plane, regions, project types, triggers, builds and how the components interact |
-| [Development setup](development.md) | Local stack with Docker Compose or Valet, kind regions, tests and CI checks |
-| [Single-host install](../compose/README.md) | Production install with Docker Compose on one machine, including air-gapped hosts |
-| Helm values | Every value of the control-plane chart: `helm show values brf-tech/runr` (chart from BRF's public Helm repository, see the [quick start](../README.md#kubernetes-helm)), validated by the chart's `values.schema.json` |
+| [Production install](install.md) | Installing the control plane on Kubernetes with Helm: requirements, editions and the multi-tenant console image, DNS and the base domain, ingress and TLS, database, Redis and mail with their passwords from Secrets, storage (ReadWriteOnce or ReadWriteMany), high availability, the first administrator and the bootstrap Job, the Horizon dashboard, network policies, a production checklist, backup and restore |
+| [Single-host install](../compose/README.md) | Production install with Docker Compose on one machine, including air-gapped hosts: modules, the first administrator, HTTPS through a Caddy on the host, the Horizon dashboard, updates |
+| [Helm values](helm-values.md) | Every value of the control-plane chart `brf-tech/runr`, its default and what it does, and what the chart validates |
+| [Regions](regions.md) | What a region is, cluster requirements, connecting a cluster, every region setting, status and its status block, moving a region to another cluster, changing the base domain, regions in multi-tenant installs, removal |
+| [Tenancy](tenancy.md) | Multi-tenant installs: what a tenant is, when to enable tenancy, Platform users and Tenant users, platform administrators, converting a single-tenant installation (`tenancy:setup`, also by the bootstrap Job), tenant lifecycle, opening a tenant as administrator, regions and quotas, organization domains and their moves, tenant schema migrations |
+| [Modules and feature toggles](modules.md) | Tenancy, single sign-on (AuthProvider: OAuth, OpenID Connect, SAML, linked accounts) and support tickets (staff view, assignment, tags, attachments), and every feature toggle with its environment variable and Helm value |
+| [Upgrading](upgrade.md) | `helm upgrade` of an existing installation, what runs during it and the changes per release |
 | [Versioning](versioning.md) | The `/api/version` endpoint and how Compose, `runtime/ci.sh` and Helm set the version |
-| [Upgrading](upgrade.md) | `helm upgrade` of an existing installation, what runs during it, the changes per release (0.4.x → 0.5.0, 0.5.0 → 0.5.1, 0.5.1 → 0.5.2) and the upgrade e2e |
+
+## Concepts and development
+
+| Page | What it covers |
+| --- | --- |
+| [Architecture](architecture.md) | Control plane and its gateway routes, hook Jobs, regions and domain moves, project types, triggers, builds, modules, editions and how the components interact |
+| [Development setup](development.md) | Local stack with Docker Compose or Valet, tests and CI checks |
 
 ## Functions and runtimes
 
@@ -64,8 +73,8 @@ release.
 
 | Page | What it covers |
 | --- | --- |
-| [Roles and permissions](permissions.md) | The permission catalog, built-in and custom roles, groups, project access, SSO group mapping, tokens |
-| [Secrets and audit log](security.md) | Encryption at rest, secret environment variables, key rotation, real-time channels, SSO handoff, audit log |
+| [Roles and permissions](permissions.md) | The permission catalog, built-in and custom roles, groups, project access, SSO group mapping, tokens, platform administrators |
+| [Secrets and audit log](security.md) | Encryption at rest, where secrets never appear, secret environment variables, key rotation, real-time channels, sign-in sessions and API tokens, SSO handoff, the audit log and its events |
 | [Supply chain and data residency](supply-chain.md) | SBOMs, vulnerability scans, signing, policy gate, admission, data residency |
 | [Security policy](../SECURITY.md) | Supported versions and how to report a vulnerability |
 
@@ -77,8 +86,8 @@ release.
 | [Monitoring and cost](monitoring.md) | Metric snapshots, pod sessions, threshold notifications and the cost system |
 | [Browser shell](web-shell.md) | Terminal access to the pods of a deployment |
 | [WebSocket events](websocket-events.md) | Every real-time topic: where it is broadcast and where the console handles it |
-| [White-label](white-label.md) | Branding, self-service signup, onboarding, plans |
-| [Billing](billing.md) | What RunR calculates (usage, plans, charges per month), the billing API and signed billing events for your invoicing system |
+| [White-label](white-label.md) | Branding, self-service signup, onboarding |
+| [Billing](billing.md) | The Billing module: monthly bills per project paid by its owner, region prices with effective dates, pay-as-you-go and fixed regions with approval, shared regions with markup, project stop and resume, the billing API and signed events for your invoicing system |
 
 ## Project
 

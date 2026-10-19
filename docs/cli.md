@@ -46,7 +46,7 @@ installs `runr` into `/usr/local/bin` when that is writable, else into `~/.local
 
 ```sh
 curl -fsSL https://runr.sh/install.sh | sh
-curl -fsSL https://runr.sh/install.sh | RUNR_VERSION=v0.5.7 sh             # a specific release
+curl -fsSL https://runr.sh/install.sh | RUNR_VERSION=v0.5.8 sh             # a specific release
 curl -fsSL https://runr.sh/install.sh | RUNR_INSTALL_DIR="$HOME/bin" sh    # another directory
 ```
 
@@ -110,7 +110,7 @@ Linux, `~/Library/Application Support/runr/` on macOS, `%AppData%\runr\` on Wind
 `0600` permissions. `RUNR_CONFIG` points to another file.
 
 ```sh
-runr whoami                  # user, API, context, the token's expiry, role and permissions
+runr whoami                  # user, API, context, organization, the token's expiry, role and permissions
 runr context ls              # all contexts, * marks the current one
 runr context use staging
 runr --context prod projects ls
@@ -501,13 +501,13 @@ Most groups without a subcommand run their `ls`, `get` or `status` command (`run
 |---|---|
 | `runr login [url]` | Save an API URL and token as a context (`--token-stdin`, `--with-password`, `--username`, `--password-stdin`, `--otp`, `--token-name`, `--token-ttl`, `--name`) |
 | `runr logout` | Remove the current context and revoke the token `login --with-password` created (`--keep-token`) |
-| `runr whoami` | User, API, context, role and token permissions; the expiry of the token `login --with-password` created |
+| `runr whoami` | User, API, context, the organization the session works in (multi-tenant installations), role and token permissions; the expiry of the token `login --with-password` created |
 | `runr context ls\|use\|rm\|current` | Manage contexts |
 | `runr tokens ls\|create\|rm` | API tokens (`--ability`, `--preset`, `--expires`) |
 | `runr init [dir]` | Scaffold a project (`--name`, `--type`, `--runtime`, `--runtime-version`, `--region`, `--image`, `--force`) |
 | `runr deploy [path]` | Create/sync, upload, build, deploy, wait (`--image`, `--version`, `--region`, `-m`, `--no-wait`, `--timeout`, `--output-env`, `-f`) |
-| `runr status` | Project, live deployment and URL |
-| `runr projects ls\|get\|delete` | List, show, delete projects (`delete --yes` without a prompt) |
+| `runr status` | Project, live deployment and URL; for a stopped project who stopped it (the platform or the organization), when and why |
+| `runr projects ls\|get\|delete` | List, show, delete projects (`delete --yes` without a prompt); `ls` lists a stopped project as `stopped`, `get` says who stopped it, when and why |
 | `runr versions ls` | Versions, newest first |
 | `runr rollback VERSION` | Deploy an earlier version (`v3`, `3` or an id; `--no-wait`, `--timeout`) |
 | `runr logs [-f]` | Logs of the live deployment (`--deployment`) |
@@ -608,7 +608,7 @@ Most groups without a subcommand run their `ls`, `get` or `status` command (`run
 | `runr sandbox regions [ls]\|get\|set` | Sandbox settings of the regions (`--enable`, `--disable`, `--allowed-class`, `--all-classes`, `--default-class`, `--allow-runc`, `--default-ttl`, `--max-ttl`, `--max-cpu`, `--max-memory`, `--max-disk`, `--unset`) |
 | `runr sandbox pools ls\|create\|update\|rm` | Warm pools (`--region`, `--runtime`, `--size`, `--memory`, `--class`, `--enable`, `--disable`) |
 | `runr sandbox quotas [get]\|ls\|set\|reset` | Sandbox limits and usage (`--max-concurrent`, `--max-cpu`, `--max-memory`, `--max-time`, `--max-pool-size`, `--allowed-class`, `--unset`) |
-| `runr sandbox usage\|metrics` | Daily usage and cost (`--from`, `--to`); active and warm sandboxes, pool hit rate, start times (`--window`, `--region`, `--all-organizations`; `--prometheus` prints the scrape format) |
+| `runr sandbox usage\|metrics` | Daily usage (`--from`, `--to`); active and warm sandboxes, pool hit rate, start times (`--window`, `--region`, `--all-organizations`; `--prometheus` prints the scrape format) |
 | `runr regions sandbox [status]\|shims [REGION]` | Kata Containers and gVisor on a region, the project type mapping; the Kata hypervisors the nodes can run and their `/dev/kvm` (`--recheck`) |
 | `runr regions sandbox install\|uninstall REGION kata\|gvisor` | Install or remove a sandbox runtime on the nodes (`--hypervisor`, `--devmapper-pool-gb`, `--wait`, `--timeout`, `--yes`) |
 | `runr regions sandbox map REGION` | The runtime class of each project type and of image builds (`--faas`, `--xaas`, `--caas`, `--build`) |
@@ -1522,7 +1522,7 @@ runr sandbox quotas set 01J… --allowed-class kata --allowed-class gvisor --max
 runr sandbox quotas set 01J… --unset concurrent     # back to the default
 runr sandbox quotas reset 01J… --yes
 
-runr sandbox usage --from 2026-10-01                # sandboxes, time, CPU and memory hours, cost per day
+runr sandbox usage --from 2026-10-01                # sandboxes, time, CPU and memory hours per day
 runr sandbox metrics --window 7d                    # active, warm, pool hit rate, start times
 runr sandbox metrics --prometheus                   # the Prometheus text format of the scrape endpoint
 ```
@@ -1543,7 +1543,8 @@ runr sandbox metrics --prometheus                   # the Prometheus text format
   `--all-classes`; `--unset concurrent|cpu|memory|time|pool-size|classes` puts one back to the
   default. `reset` removes an organization's own limits.
 - **`usage`** lists the organization's daily sandbox usage (`--from`, `--to`, default this month)
-  with its cost; **`metrics`** shows active and warm sandboxes, the warm pool hit rate and the
+  and its totals: sandbox time, CPU core-hours and memory GiB-hours. What it costs is on the
+  account bills of the [Billing module](billing.md#account-bills); **`metrics`** shows active and warm sandboxes, the warm pool hit rate and the
   average start time from a pool and cold (`--window 1h|24h|7d|30d`, `--region`,
   `--all-organizations` for platform administrators). `metrics --prometheus` prints the
   installation's sandbox metrics as the Prometheus scrape endpoint (`GET
@@ -2222,12 +2223,19 @@ state; `--refresh` checks anyway.
 `runr regions knative [REGION]` shows the Knative operator and Knative Serving. `install REGION`
 installs both with Helm; `install REGION operator` and then `install REGION serving` install them
 one by one (`--namespace`; `--version` picks a Knative minor version of
-`runr regions knative versions`, default the newest the cluster supports). An operator or Serving
-already running in the namespace is adopted instead, and `runr regions knative detect REGION`
-adopts what runs on the cluster. `uninstall REGION [all|operator|serving]` removes them (the
-operator after Serving; the region's Traefik stays while it serves other Ingresses, such as the
-console on the same cluster, unless `--remove-traefik`). Installs and removals run in the
-background: `--wait` waits, exit code 6 when one fails.
+`runr regions knative versions`, default the newest the cluster supports). What already runs on
+the cluster is adopted instead, with `install REGION` too: an operator whose Deployments run is
+never installed again (that would remove the Knative CRDs and with them every Knative Service on
+the cluster), a Ready Knative Serving is never applied again. `runr regions knative detect REGION`
+adopts what runs on the cluster without installing anything.
+`runr regions knative upgrade REGION --version 1.21` upgrades Knative Serving to the next minor
+version the cluster supports (Knative upgrades one minor at a time); the operator moves to that
+version first when it is older, and the region's Knative Services keep running while the operator
+rolls Serving's components. Regions on one cluster share Knative Serving.
+`uninstall REGION [all|operator|serving]` removes them (the operator after Serving; the region's
+Traefik stays while it serves other Ingresses, such as the console on the same cluster, unless
+`--remove-traefik`). Installs, upgrades and removals run in the background: `--wait` waits, exit
+code 6 when one fails.
 
 `runr regions nodes [REGION]` lists the worker nodes with their capacity and whether projects run
 on them; `runr regions nodes set REGION NODE…` reserves nodes for projects (a taint only projects
@@ -2246,7 +2254,10 @@ The kubeconfig RunR uses for a region is a credential. `runr regions kubeconfig`
 file only you can read (mode 0600; an existing file is kept unless `--force`, which also tightens
 its mode) and prints it only with `--stdout`; `-o json` prints the file name and size, never the
 content. `runr regions set REGION --kubeconfig FILE` replaces it, for example after a credential
-rotation.
+rotation: RunR checks it like a new region's (it connects, the Kubernetes version is supported)
+and that it reaches the same cluster — moving the region to another cluster is a
+[migration](#moving-a-region-to-another-cluster). When the old credentials no longer answer
+there is nothing to compare, and the new kubeconfig is taken.
 
 ### Settings, capacity and function TLS
 
@@ -2254,11 +2265,13 @@ rotation.
 
 | Key | Value |
 |---|---|
-| `status` | `active`, `inactive` (no new deploys) or `maintenance` |
-| `request_timeout` | the longest request of a function in seconds (1–3600, default 300) |
-| `agent_ws_url` | RunR's address as the region's agents reach it (`wss://…`); empty: the console URL |
+| `status` | `active`, `inactive` or `maintenance`: a region that is not active takes no new projects or deploys, and its function domain answers every request with 404 (`inactive`) or 503 (`maintenance`) ([region status](regions.md#region-status)) |
+| `request_timeout` | the longest request of a function in seconds (1–3600, default 300); the region's Traefik and Knative follow it right away ([regions](regions.md#request-timeout)) |
+| `agent_ws_url` | RunR's address as the region's agents reach it (`wss://…`); empty: the console URL. The agent is deployed again with it |
 | `cert_manager_cluster_issuer` | the ClusterIssuer of custom-domain certificates; empty: none |
 | `ingress_trusted_ips` | comma-separated addresses or CIDRs of a load balancer in front of the region's Traefik that sends PROXY protocol or `X-Forwarded-For`; empty: trust nobody |
+| `prometheus_url`, `loki_url` | an existing in-cluster Prometheus / Loki (`http://<service>.<namespace>.svc:<port>`); empty: RunR's own again, installed right away when the region's Serving is ready ([regions](regions.md#observability)) |
+| `loki_org_id` | the tenant (`X-Scope-OrgID`) of an existing multi-tenant Loki |
 
 `runr regions capacity [REGION]` shows the region's capacity budgets: the always-on budget (the
 capacity, without overcommit) and the FaaS overcommit budget of scale-to-zero projects and model
@@ -2270,6 +2283,8 @@ changes the factors (1–10, two decimals; 1 = no overcommit).
 domains with; `runr regions function-tls set REGION --mode console` uses the console's
 certificate, `--mode custom --cert FILE --key FILE` (PEM, `-` for stdin) your own.
 `--replace-existing` replaces a default TLS store of the region's Traefik that RunR did not create.
+`runr regions function-tls rm REGION` switches it off: the region's Traefik answers HTTPS with its
+own default certificate again.
 
 ### Redis, registry and Skupper
 
@@ -2278,9 +2293,18 @@ certificate, `--mode custom --cert FILE --key FILE` (PEM, `-` for stdin) your ow
 `runr regions redis set REGION --mode managed|in_cluster|external` installs or connects one
 (`--address`, `--password-file`, `--wait`), `runr regions redis rm REGION` removes it.
 
-`runr regions registry [REGION]` shows the region's image registry; `runr regions registry rm
-REGION` removes it (RunR's registry with its images). Builds in a region — runtime plugins with a
-build step, WebAssembly functions — push their images to it.
+`runr regions registry [REGION]` shows the region's image registry; `runr regions registry set
+REGION --registry internal|external` sets one up for a region created without one or whose
+registry was removed, with the registry flags of [`runr regions create`](#creating-a-region)
+(`--wait` follows it); an external registry is replaced, an internal one is removed first.
+`runr regions registry rm REGION` removes it (RunR's registry with its images). Builds in a
+region — runtime plugins with a build step, WebAssembly functions — push their images to it.
+
+```sh
+runr regions registry set eu-1 --registry internal --storage-class fast-ssd --wait
+runr regions registry set eu-1 --registry external --registry-address registry.example.com/team \
+    --registry-credentials registry.env
+```
 
 Private database connections of [bindings](bindings.md) run over Skupper v2, which the cluster's
 operators install: `runr regions skupper [REGION]` shows whether the cluster runs it and the site
@@ -2294,11 +2318,18 @@ runr regions migration eu-1                             # dns_check: point DNS a
 runr regions migration complete eu-1                    # or: runr regions migration rollback eu-1
 ```
 
-`start` installs the region's components on the new cluster and deploys its projects there again,
-in the background (`--wait` waits until the move reaches the DNS step; exit code 6 when it
-fails). Then point the region's DNS at the new address and `complete` the move, which releases the
-old cluster, or `rollback` to the old cluster (also after a failed move). A region with a data
-location moves only within it: `--data-location` names the new cluster's.
+`start` installs on the new cluster what the region had on the old one — Knative, Redis, the
+registry, the dedicated workers that exist there, sandbox runtimes, WebAssembly and GPU support,
+data services, the admission policy, function TLS, the Skupper site and the status block of a
+region that is not active ([regions](regions.md#moving-a-region-to-another-cluster))
+— and deploys its projects there again, in the background (`--wait` waits until the move reaches
+the DNS step; exit code 6 when it fails). Then point the region's DNS at the new address and
+`complete` the move, which releases the old cluster, or `rollback` to the old cluster (also after
+a failed move). A region with a data location moves only within it: `--data-location` names the
+new cluster's.
+
+`runr regions migration complete REGION --domain` completes the region's move to a new base
+domain without waiting for RunR to see its DNS record ([regions](regions.md#changing-the-base-domain)).
 
 ### WebAssembly and demo projects
 
@@ -2314,17 +2345,17 @@ selected node, so it asks for confirmation (`--yes`); `--wait` follows it.
 Serving, `runr regions demo rm REGION` removes them; `runr regions demo [REGION]` shows their state.
 
 Every command that removes something — `rm`, the `uninstall` commands, `redis rm`,
-`registry rm`, `migration rollback`, `demo rm`, `nodes set` when it releases nodes — asks for
-confirmation on a terminal and needs `--yes` elsewhere.
+`registry rm`, `function-tls rm`, `migration rollback`, `demo rm`, `nodes set` when it releases
+nodes — asks for confirmation on a terminal and needs `--yes` elsewhere.
 
 ### Permissions
 
 | Commands | Permission |
 |---|---|
 | `get`, `status`, `nodes`, `knative`, `knative versions\|namespace`, `redis`, `registry`, `registry setup-status`, `migration`, `function-tls`, `skupper`, `capacity`, `demo`, `wasm` | `regions.view` |
-| `create`, `check`, `set`, `rm`, `kubeconfig`, `nodes set`, `knative install\|uninstall\|detect`, `redis test\|set\|rm`, `migration start\|complete\|rollback`, `function-tls set`, `skupper site`, `capacity set`, `demo install\|rm` | `regions.manage` |
+| `create`, `check`, `set`, `rm`, `kubeconfig`, `nodes set`, `knative install\|upgrade\|uninstall\|detect`, `redis test\|set\|rm`, `migration start\|complete\|rollback`, `function-tls set\|rm`, `skupper site`, `capacity set`, `demo install\|rm` | `regions.manage` |
 | `create --registry` | `regions.manage` and `registry.manage` |
-| `registry rm`, `registry test` | `registry.manage` |
+| `registry set`, `registry rm`, `registry test` | `registry.manage` |
 | `wasm install\|uninstall` | `sandbox.manage` |
 
 On a multi-tenant installation the changes need a region your organization may change: the
@@ -2361,6 +2392,15 @@ WebSocket URLs are traced without the token.
 | 7 | timed out waiting for a build or deployment |
 | 8 | API unreachable or server error (5xx); safe requests are retried three times |
 
+An error the API answers with a code is printed with the code after the message:
+`(project_stopped)` when a [stopped project](billing.md#project-stop-and-resume) is deployed,
+`(fixed_allocation_exceeded)` when a deploy is above a fixed region's
+[allocation](billing.md#what-a-fixed-project-may-use) (both exit with 5).
+
+```text
+Error: POST /projects/01J…/deploy: 409 This project is stopped and cannot be deployed until it is resumed. Reason: October bill unpaid (project_stopped)
+```
+
 `runr sandbox exec` and `runr sandbox run` exit with the exit code of the command they ran
 (130 after Ctrl+C); runr's own codes apply when the call itself fails (for example 5 when the
 sandbox is not running, 6 when a new sandbox cannot start).
@@ -2381,7 +2421,7 @@ deploy:
   stage: deploy
   image: alpine:3.21
   variables:
-    RUNR_VERSION: v0.5.7
+    RUNR_VERSION: v0.5.8
   before_script:
     - apk add --no-cache curl tar
     - curl -fsSL https://runr.sh/install.sh | sh

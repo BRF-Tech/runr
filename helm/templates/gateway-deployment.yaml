@@ -7,7 +7,9 @@ metadata:
     app: runr-gateway
     {{- include "runr.labels" . | nindent 4 }}
 spec:
-  replicas: {{ .Values.gateway.replicas }}
+  {{- with include "runr.replicas" (dict "root" . "name" "runr-gateway" "replicas" .Values.gateway.replicas "hpa" .Values.gateway.hpa) }}
+  {{ . }}
+  {{- end }}
   selector:
     matchLabels:
       app: runr-gateway
@@ -23,7 +25,7 @@ spec:
     spec:
       automountServiceAccountToken: false
       {{- include "runr.imagePullSecrets" . | nindent 6 }}
-      {{- include "runr.placement" (dict "root" . "colocate" false) | nindent 6 }}
+      {{- include "runr.placement" (dict "root" . "colocate" false "affinity" .Values.gateway.affinity) | nindent 6 }}
       containers:
         - name: caddy
           image: {{ include "runr.image" (printf "%v:%v" .Values.gateway.image.repository .Values.gateway.image.tag) | quote }}

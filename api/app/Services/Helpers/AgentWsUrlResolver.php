@@ -14,6 +14,8 @@ use App\Models\KnativeRegion;
  * 4. region setting `app_url`, else APP_URL (http → ws, https → wss)
  *
  * `/ws/agent/<regionId>` is always appended (gateway strips /ws → Reverb /agent/{regionId}).
+ * The agent's HTTP calls (uptime checks) go to the same base; RunR accepts its host on
+ * /api/internal/… (RegionCallbackHosts, App\Http\Middleware\TrustHosts).
  */
 class AgentWsUrlResolver
 {

@@ -14,8 +14,12 @@ use App\Services\Concerns\BroadcastsModelEvents;
 use App\Services\KnativeDeployService;
 use App\Services\KnativeLogService;
 use App\Services\KnativeMetricsService;
+use App\Services\Projects\LiveDeployments;
 use App\Services\SupplyChain\DeployPolicyGate;
+use App\Support\Projects\DeployIntent;
+use App\Support\Projects\ProjectAdmission;
 use App\Support\Rbac\EnvVisibility;
+use Dedoc\Scramble\Attributes\Response as OpenApiResponse;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
@@ -32,6 +36,11 @@ class DeploymentController extends Controller
         return DeploymentResource::collection($deployments);
     }
 
+    // The deploy checks raise their refusals as exceptions (ProjectAdmission), which the OpenAPI
+    // generator does not see: 409 project_stopped, 422 a deploy guard's code (fixed_allocation_*,
+    // fixed_max_scale_required, docs/billing.md#errors) or a version / region / policy message
+    #[OpenApiResponse(409, 'The project is stopped', type: 'array{message: string, code: "project_stopped", reason: string|null, level: string|null}')]
+    #[OpenApiResponse(422, 'A deploy check or the validation refused the deploy', type: 'array{message: string, code?: string, errors?: array<string, string[]>}')]
     public function deploy(DeployProjectRequest $request, Project $project): JsonResponse
     {
         if ($project->isRuntimeEol()) {
@@ -39,6 +48,10 @@ class DeploymentController extends Controller
         }
 
         $data = $request->validated();
+
+        // Stopped projects (409 project_stopped) and module guards, e.g. billing's fixed
+        // allocations — with the deploy's overrides (deploy_config)
+        ProjectAdmission::assertDeployable($project, DeployIntent::production($data['deploy_config'] ?? null));
 
         $version = $project->versions()->findOrFail($data['version_id']);
 
@@ -61,12 +74,8 @@ class DeploymentController extends Controller
         // Data residency + supply-chain policy gate (docs/supply-chain.md); throws 422 when blocked
         $policy = app(DeployPolicyGate::class)->authorize($request, $project, $version);
 
-        // Set the active deployment to shutting_down
-        $previous = $project->deployments()->where('status', 'active')->first();
-        if ($previous) {
-            $previous->update(['status' => 'shutting_down']);
-            event(new DeploymentStatusChanged($previous, 'active', 'shutting_down'));
-        }
+        // Every live deployment (a pending one too) goes to shutting_down: only the new one goes live
+        app(LiveDeployments::class)->supersede($project);
 
         $deployment = $project->deployments()->create([
             'version_id' => $version->id,
@@ -149,11 +158,17 @@ class DeploymentController extends Controller
      * (useDeploymentLogs.js). DeploymentStatusChanged lets the listeners act on it, e.g.
      * ProcessTeardown removes the Knative resources of a deployment set to shutting_down.
      */
+    #[OpenApiResponse(409, 'A stopped project\'s deployment set live again', type: 'array{message: string, code: "project_stopped", reason: string|null, level: string|null}')]
     public function updateStatus(Request $request, Project $project, Deployment $deployment): JsonResponse
     {
         $data = $request->validate([
             'status' => ['required', Rule::in(Deployment::STATUSES)],
         ]);
+
+        // A stopped project's deployment cannot be set live again by hand
+        if (in_array($data['status'], Deployment::LIVE, true) && $project->isStopped()) {
+            ProjectAdmission::assertDeployable($project);
+        }
 
         $previous = $deployment->status;
         $deployment->update(['status' => $data['status']]);

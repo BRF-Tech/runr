@@ -67,6 +67,7 @@ services:
     environment:
       CONTAINER_ROLE: api
       TENANCY_ENABLED: ${TENANCY_ENABLED:-true}
+      BILLING_ENABLED: ${BILLING_ENABLED:-false}
       AUTH_PROVIDER_ENABLED: ${AUTH_PROVIDER_ENABLED:-false}
       SENTRY_LARAVEL_DSN: ${SENTRY_LARAVEL_DSN_DOCKER:-${SENTRY_LARAVEL_DSN:-}}
       # Hosted MCP servers (docs/mcp.md): a Kind region's Traefik answers with its default
@@ -96,6 +97,7 @@ services:
     environment:
       CONTAINER_ROLE: horizon
       TENANCY_ENABLED: ${TENANCY_ENABLED:-true}
+      BILLING_ENABLED: ${BILLING_ENABLED:-false}
       AUTH_PROVIDER_ENABLED: ${AUTH_PROVIDER_ENABLED:-false}
       SENTRY_LARAVEL_DSN: ${SENTRY_LARAVEL_DSN_DOCKER:-${SENTRY_LARAVEL_DSN:-}}
     networks:
@@ -121,6 +123,7 @@ services:
     environment:
       CONTAINER_ROLE: scheduler
       TENANCY_ENABLED: ${TENANCY_ENABLED:-true}
+      BILLING_ENABLED: ${BILLING_ENABLED:-false}
       AUTH_PROVIDER_ENABLED: ${AUTH_PROVIDER_ENABLED:-false}
       SENTRY_LARAVEL_DSN: ${SENTRY_LARAVEL_DSN_DOCKER:-${SENTRY_LARAVEL_DSN:-}}
     networks:
@@ -146,6 +149,7 @@ services:
     environment:
       CONTAINER_ROLE: migrator
       TENANCY_ENABLED: ${TENANCY_ENABLED:-true}
+      BILLING_ENABLED: ${BILLING_ENABLED:-false}
       AUTH_PROVIDER_ENABLED: ${AUTH_PROVIDER_ENABLED:-false}
     restart: "no"
 
@@ -158,6 +162,7 @@ services:
     environment:
       CONTAINER_ROLE: migrator-fresh
       TENANCY_ENABLED: ${TENANCY_ENABLED:-true}
+      BILLING_ENABLED: ${BILLING_ENABLED:-false}
       AUTH_PROVIDER_ENABLED: ${AUTH_PROVIDER_ENABLED:-false}
     profiles: ["migrate"]
 
@@ -170,6 +175,7 @@ services:
     environment:
       CONTAINER_ROLE: reverb
       TENANCY_ENABLED: ${TENANCY_ENABLED:-true}
+      BILLING_ENABLED: ${BILLING_ENABLED:-false}
       AUTH_PROVIDER_ENABLED: ${AUTH_PROVIDER_ENABLED:-false}
       SENTRY_LARAVEL_DSN: ${SENTRY_LARAVEL_DSN_DOCKER:-${SENTRY_LARAVEL_DSN:-}}
     ports:
@@ -213,6 +219,7 @@ services:
       VITE_TENANCY_ENABLED: ${TENANCY_ENABLED:-true}
       VITE_AUTH_PROVIDER_ENABLED: ${AUTH_PROVIDER_ENABLED:-false}
       VITE_TICKET_ENABLED: ${TICKET_ENABLED:-false}
+      VITE_BILLING_ENABLED: ${BILLING_ENABLED:-false}
       VITE_SENTRY_DSN: ${VITE_SENTRY_DSN:-}
       VITE_SENTRY_TUNNEL_TARGET: http://sentry-proxy:8080
 

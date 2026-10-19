@@ -4,39 +4,30 @@ namespace Modules\Ticket\Http\Concerns;
 
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
+use Modules\Ticket\Models\SupportTicket;
+use Modules\Ticket\Support\TicketAttachments;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
 trait HandlesTicketAttachments
 {
+    /** @return list<string> stored paths (support-attachments/[<tenant id>/]<ticket id>/…) */
     protected function storeAttachments(Request $request, int $ticketId): array
     {
-        $paths = [];
-        if (! $request->hasFile('attachments')) {
-            return $paths;
-        }
-
-        foreach ($request->file('attachments') as $file) {
-            $realMime = $file->getMimeType();
-            $allowed = ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'application/pdf'];
-            if (! in_array($realMime, $allowed, true)) {
-                continue;
-            }
-
-            $paths[] = $file->store("support-attachments/{$ticketId}");
-        }
-
-        return $paths;
+        return TicketAttachments::store($request, $ticketId);
     }
 
-    protected function serveAttachment(int $ticketId, string $filename): StreamedResponse
+    /**
+     * A file recorded on $ticket (its attachments or a reply's; internal notes only with
+     * $includeInternal) — 404 for any other name, whatever lies on the disk.
+     */
+    protected function serveAttachment(SupportTicket $ticket, string $filename, bool $includeInternal = false): StreamedResponse
     {
-        $filename = basename($filename);
-        $path = "support-attachments/{$ticketId}/{$filename}";
+        $path = TicketAttachments::resolve($ticket, $filename, $includeInternal);
 
-        if (! Storage::exists($path)) {
+        if ($path === null || ! Storage::exists($path)) {
             abort(404);
         }
 
-        return Storage::download($path, $filename);
+        return Storage::download($path, basename($path));
     }
 }

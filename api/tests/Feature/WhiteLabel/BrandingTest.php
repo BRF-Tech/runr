@@ -40,9 +40,25 @@ class BrandingTest extends TestCase
             'powered_by' => true,
             'is_default_brand' => true,
             'tenant' => null,
-            'features' => ['multi_tenant' => false, 'plans' => false, 'tenant_branding' => false],
+            'features' => ['multi_tenant' => false, 'tenant_branding' => false, 'billing' => false, 'tickets' => false],
         ]);
         $this->assertSame(BrandingService::RUNR_PALETTE, $response->json('palette'));
+        $this->assertNull($response->json('features.plans'), 'plans were removed');
+    }
+
+    public function test_the_features_name_the_optional_modules_the_api_runs(): void
+    {
+        // The console hides billing and support tickets when the API runs without them, also in
+        // images built with every module (a disabled module never merges its config)
+        config(['billing.enabled' => true, 'ticket.enabled' => true]);
+        $this->getJson('/api/branding')->assertOk()
+            ->assertJsonPath('features.billing', true)
+            ->assertJsonPath('features.tickets', true);
+
+        config(['billing.enabled' => 'false', 'ticket.enabled' => false]);
+        $this->getJson('/api/branding')->assertOk()
+            ->assertJsonPath('features.billing', false)
+            ->assertJsonPath('features.tickets', false);
     }
 
     public function test_the_install_brand_from_helm_values_replaces_the_defaults(): void

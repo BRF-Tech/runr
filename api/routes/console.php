@@ -8,6 +8,7 @@ use App\Console\Commands\SyncExecutorImagesCommand;
 use App\Jobs\CloseStaleSessionsJob;
 use App\Jobs\DownsampleMetricsJob;
 use App\Jobs\LogRetentionJob;
+use App\Jobs\Metering\UsageAggregationJob;
 use App\Jobs\PruneAuditEventsJob;
 use App\Jobs\PruneMetricSnapshotsJob;
 use App\Jobs\PruneRegistryRepositoriesJob;
@@ -44,7 +45,7 @@ Schedule::command(CheckResourceThresholdsCommand::class)
     ->name('resource-threshold-check')
     ->withoutOverlapping(10);
 
-Schedule::call(fn () => app(DomainMigrateService::class)->autoCompleteExpiredMigrations())
+Schedule::call(fn () => app(DomainMigrateService::class)->completeResolvedMigrations())
     ->hourly()
     ->name('domain-migration-auto-complete')
     ->withoutOverlapping(120);
@@ -65,6 +66,13 @@ Schedule::job(new PruneMetricSnapshotsJob)
     ->dailyAt('04:15')
     ->name('metric-snapshot-retention')
     ->withoutOverlapping(120);
+
+// Metering (docs/monitoring.md): the day's sessions and reservations into usage_records, in the
+// central context and in every tenant's — with or without billing (UsageAggregator)
+Schedule::job(new UsageAggregationJob)
+    ->everyFiveMinutes()
+    ->name('usage-aggregation')
+    ->withoutOverlapping(30);
 
 // Deployment sessions whose end the region agent never reported (central + tenant schemas)
 Schedule::job(new CloseStaleSessionsJob)

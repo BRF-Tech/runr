@@ -2,12 +2,9 @@
 
 namespace App\Jobs;
 
+use App\Jobs\Concerns\RunsClusterReconcileStep;
 use App\Models\KnativeRegion;
 use App\Services\Helpers\RunrClusterIdentity;
-use App\Services\KubernetesClient;
-use App\Services\RegionReconcile\ClusterGroup;
-use App\Services\RegionReconcile\ReconcileTarget;
-use App\Services\RegionReconcile\RegionReconciler;
 use App\Services\RegionReconcile\Steps\IngressTrustStep;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
@@ -22,7 +19,7 @@ use Illuminate\Support\Facades\Log;
  */
 class ApplyIngressTrustJob implements ShouldQueue
 {
-    use Queueable;
+    use Queueable, RunsClusterReconcileStep;
 
     public int $timeout = 300;
 
@@ -34,26 +31,8 @@ class ApplyIngressTrustJob implements ShouldQueue
 
     public function handle(RunrClusterIdentity $identity): void
     {
-        $region = $this->region->fresh();
-        if (! $region || ! RegionReconciler::reconcilable($region->newQuery())->whereKey($region->getKey())->exists()) {
-            return;
-        }
-
-        $uid = $identity->regionClusterUid($region);
-        $siblings = RegionReconciler::reconcilable($region->newQuery())
-            ->whereKeyNot($region->getKey())
-            ->get()
-            ->filter(fn (KnativeRegion $other) => $uid !== null && $identity->regionClusterUid($other) === $uid);
-
-        $targets = array_map(
-            fn (KnativeRegion $r) => new ReconcileTarget($r),
-            array_merge([$region], $siblings->values()->all()),
-        );
-
-        $cluster = new ClusterGroup('region:'.$region->id, $targets, new KubernetesClient($region->kubeconfig));
-
-        foreach ((new IngressTrustStep)->run($cluster, false) as $line) {
-            Log::info('Region ingress trust: '.$line, ['region' => $region->name]);
+        foreach ($this->runStepForRegion($this->region, new IngressTrustStep, $identity) ?? [] as $line) {
+            Log::info('Region ingress trust: '.$line, ['region' => $this->region->name]);
         }
     }
 

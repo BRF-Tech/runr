@@ -147,6 +147,9 @@ class TracingInstallService
 
     /**
      * Remove the collector (and RunR's Tempo, with its traces) and switch Knative tracing off.
+     * The region's mode becomes "off": a removed backend stays removed — region:reconcile
+     * (TracingBackendStep) installs a backend wherever the mode has a collector. Setting a
+     * mode again (PUT …/tracing) brings it back.
      */
     public function uninstall(KnativeRegion $region, ?KubernetesClient $k8s = null, ?HelmService $helm = null): RegionTracingConfig
     {
@@ -162,7 +165,8 @@ class TracingInstallService
         $k8s->deleteResource('v1', 'Secret', ManagedTracing::EXPORT_SECRET, ManagedTracing::NAMESPACE);
         $k8s->deleteResource('monitoring.coreos.com/v1', 'PodMonitor', 'otel-collector-spanmetrics', ManagedTracing::NAMESPACE);
 
-        $config->fill(['status' => null, 'status_message' => null, 'installed_at' => null])->save();
+        $config->tenant_id ??= $region->owner_tenant_id ?? null;
+        $config->fill(['mode' => 'off', 'status' => null, 'status_message' => null, 'installed_at' => null])->save();
 
         return $config;
     }

@@ -7,7 +7,9 @@ metadata:
     app: runr-ui
     {{- include "runr.labels" . | nindent 4 }}
 spec:
-  replicas: {{ .Values.ui.replicas }}
+  {{- with include "runr.replicas" (dict "root" . "name" "runr-ui" "replicas" .Values.ui.replicas "hpa" .Values.ui.hpa) }}
+  {{ . }}
+  {{- end }}
   selector:
     matchLabels:
       app: runr-ui
@@ -20,13 +22,17 @@ spec:
     spec:
       automountServiceAccountToken: false
       {{- include "runr.imagePullSecrets" . | nindent 6 }}
-      {{- include "runr.placement" (dict "root" . "colocate" false) | nindent 6 }}
+      {{- include "runr.placement" (dict "root" . "colocate" false "affinity" .Values.ui.affinity) | nindent 6 }}
       containers:
         - name: ui
           image: {{ include "runr.uiImage" . | quote }}
           imagePullPolicy: {{ .Values.ui.image.pullPolicy }}
           ports:
             - containerPort: {{ .Values.ui.port }}
+          env:
+            # Port Caddy listens on (vue/Caddyfile)
+            - name: RUNR_UI_PORT
+              value: {{ .Values.ui.port | quote }}
           resources:
             {{- toYaml .Values.ui.resources | nindent 12 }}
           readinessProbe:

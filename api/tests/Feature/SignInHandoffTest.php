@@ -51,9 +51,24 @@ class SignInHandoffTest extends TestCase
         $service = app(SignInHandoffService::class);
         $code = $service->issue($this->user, '42|plain-api-token');
 
-        $this->assertSame(['token' => '42|plain-api-token', 'user_id' => (string) $this->user->id], $service->redeem($code));
+        $this->assertSame(['token' => '42|plain-api-token', 'user_id' => (string) $this->user->id, 'tenant_id' => null], $service->redeem($code));
         $this->assertNull($service->redeem($code), 'second exchange');
         $this->assertSame(0, SignInHandoff::count());
+    }
+
+    public function test_a_code_names_the_tenant_the_sign_in_started_in(): void
+    {
+        $service = app(SignInHandoffService::class);
+
+        $code = $service->issue($this->user, '42|plain-api-token', 'tenant-acme');
+        $this->assertSame('tenant-acme', DB::table('sign_in_handoffs')->value('tenant_id'));
+        $this->assertSame('tenant-acme', $service->redeem($code)['tenant_id'] ?? null);
+
+        // The platform's sign-in page (and an empty value) names none
+        $redeemed = $service->redeem($service->issue($this->user, 'token', ''));
+        $this->assertIsArray($redeemed);
+        $this->assertArrayHasKey('tenant_id', $redeemed);
+        $this->assertNull($redeemed['tenant_id']);
     }
 
     public function test_an_expired_or_unknown_code_gives_nothing(): void
@@ -85,10 +100,14 @@ class SignInHandoffTest extends TestCase
         $this->registerExchangeRoute();
         $code = app(SignInHandoffService::class)->issue($this->user, '42|plain-api-token');
 
+        // Without the Tenancy module the answer is the token and the user, whatever the code names
         $response = $this->postJson('/api/oauth/exchange', ['code' => $code])
             ->assertOk()
             ->assertExactJson(['token' => '42|plain-api-token', 'user_id' => (string) $this->user->id]);
         $this->assertStringContainsString('no-store', (string) $response->headers->get('Cache-Control'));
+        $this->postJson('/api/oauth/exchange', ['code' => app(SignInHandoffService::class)->issue($this->user, '43|other', 'tenant-acme')])
+            ->assertOk()
+            ->assertExactJson(['token' => '43|other', 'user_id' => (string) $this->user->id]);
 
         $this->postJson('/api/oauth/exchange', ['code' => $code])->assertUnprocessable();
         $this->postJson('/api/oauth/exchange', [])->assertUnprocessable()->assertJsonValidationErrors('code');

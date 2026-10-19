@@ -16,9 +16,11 @@ use App\Services\RegionReconcile\Steps\NamespaceQuotaStep;
 use App\Services\RegionReconcile\Steps\PrometheusExposureStep;
 use App\Services\RegionReconcile\Steps\RegistryPrewarmStep;
 use App\Services\RegionReconcile\Steps\RegistrySyncConfigStep;
+use App\Services\RegionReconcile\Steps\RequestTimeoutStep;
 use App\Services\RegionReconcile\Steps\TracingBackendStep;
 use App\Services\RegionReconcile\Steps\TraefikImageStep;
 use App\Services\RegionReconcile\Steps\WasmSandboxStep;
+use App\Services\RegionStatusService;
 use Closure;
 use Illuminate\Support\Facades\Log;
 use Throwable;
@@ -31,12 +33,17 @@ use Throwable;
  * Regions: active central rows with a kubeconfig and a ready Knative Serving, plus whatever the
  * registered region sources add (the Tenancy module adds each tenant's own regions). Regions on
  * the same cluster are reconciled once, as a group. A failing step or cluster is logged and
- * counted; the rest still run.
+ * counted; the rest still run. Then the status block of every central region with a ready
+ * Knative Serving, whatever its status (blockable()), plus the regions the registered status-block
+ * sources add (the Tenancy module adds each tenant's own regions, inactive ones included).
  */
 class RegionReconciler
 {
     /** @var array<string, Closure(?string): iterable<ReconcileTarget>> */
     private static array $sources = [];
+
+    /** @var array<string, Closure(?string): iterable<ReconcileTarget>> */
+    private static array $blockSources = [];
 
     public function __construct(private readonly RunrClusterIdentity $clusterIdentity) {}
 
@@ -58,6 +65,8 @@ class RegionReconciler
             new RegistrySyncConfigStep,
             new IngressTrustStep,
             new TraefikImageStep,
+            // the Traefik read / write timeouts and Knative's maximum revision timeout
+            new RequestTimeoutStep,
             new LokiDeletionStep,
             // the tracing backend where tracing is enabled (the region's or the platform's mode)
             new TracingBackendStep,
@@ -86,9 +95,22 @@ class RegionReconciler
         self::$sources[$name] = $source;
     }
 
+    /**
+     * Extra regions outside the central table whose status block the reconcile keeps as their
+     * status wants it (blockable() rows, active or not — reconcilable() targets are active only).
+     * Same contract as addRegionSource(); keyed by $name.
+     *
+     * @param  Closure(?string): iterable<ReconcileTarget>  $source
+     */
+    public static function addStatusBlockSource(string $name, Closure $source): void
+    {
+        self::$blockSources[$name] = $source;
+    }
+
     public static function clearRegionSources(): void
     {
         self::$sources = [];
+        self::$blockSources = [];
     }
 
     /**
@@ -98,6 +120,19 @@ class RegionReconciler
     {
         return $query->where('is_active', true)
             ->where('is_demo', false)
+            ->whereNotNull('kubeconfig')
+            ->where('knative_serving_status', 'ready');
+    }
+
+    /**
+     * Base filter for a region whose status block (RegionStatusService::syncBlock) region:reconcile
+     * keeps as its status wants it — whatever the status: an inactive or maintenance region gets
+     * its block (one created inactive, or whose Serving came up after the status changed), an
+     * active one loses a leftover.
+     */
+    public static function blockable($query)
+    {
+        return $query->where('is_demo', false)
             ->whereNotNull('kubeconfig')
             ->where('knative_serving_status', 'ready');
     }
@@ -157,9 +192,71 @@ class RegionReconciler
         if (! $targets) {
             $out('info', 'No regions to reconcile.');
 
-            return 0;
+            return $this->reconcileStatusBlocks($regionId, $dryRun, $out);
         }
 
+        $failures = $this->reconcileClusters($targets, $dryRun, $out);
+
+        return $failures + $this->reconcileStatusBlocks($regionId, $dryRun, $out);
+    }
+
+    /**
+     * The status block of every region with Knative Serving ready, active or not (blockable()):
+     * the central rows, then those of the status-block sources, each in its own database context.
+     *
+     * @param  Closure(string $level, string $message): void  $out
+     * @return int failed regions
+     */
+    private function reconcileStatusBlocks(?string $regionId, bool $dryRun, Closure $out): int
+    {
+        $query = self::blockable(KnativeRegion::syncedQuery());
+        if ($regionId) {
+            $query->where('id', $regionId);
+        }
+
+        $failures = 0;
+        foreach ($query->get() as $region) {
+            $failures += $this->reportStatusBlock($region->name, app(RegionStatusService::class)->syncBlock($region, $dryRun), $out);
+        }
+
+        foreach (self::$blockSources as $source) {
+            foreach ($source($regionId) as $target) {
+                try {
+                    $lines = $target->run(fn () => app(RegionStatusService::class)->syncBlock($target->region, $dryRun));
+                } catch (Throwable $e) {
+                    $lines = ["failed: {$e->getMessage()}"];
+                }
+                $failures += $this->reportStatusBlock("{$target->region->name} ({$target->scope})", $lines, $out);
+            }
+        }
+
+        return $failures;
+    }
+
+    /**
+     * @param  list<string>  $lines  RegionStatusService::syncBlock()
+     * @param  Closure(string $level, string $message): void  $out
+     * @return int 1 when the block could not be synced
+     */
+    private function reportStatusBlock(string $label, array $lines, Closure $out): int
+    {
+        $failures = 0;
+        foreach ($lines as $line) {
+            $failed = str_starts_with($line, 'failed:');
+            $failures += $failed ? 1 : 0;
+            $level = $failed ? 'error' : (str_starts_with($line, 'skipped') ? 'warn' : 'info');
+            $out($level, "[status-block] region {$label}: {$line}");
+        }
+
+        return $failures;
+    }
+
+    /**
+     * @param  list<ReconcileTarget>  $targets
+     * @param  Closure(string $level, string $message): void  $out
+     */
+    private function reconcileClusters(array $targets, bool $dryRun, Closure $out): int
+    {
         $failures = 0;
 
         foreach ($this->groupByCluster($targets) as $key => $members) {

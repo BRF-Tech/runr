@@ -8,16 +8,15 @@ use App\Models\User;
 use App\Services\WhiteLabel\PlatformSettings;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\URL;
-use Modules\Tenancy\Models\Plan;
 use Modules\Tenancy\Models\Tenant;
 use Modules\Tenancy\Models\TenantUser;
 use Tests\Concerns\WiresTenancy;
 use Tests\Support\ActingTenant;
 
 /**
- * Multi-tenant white-label and billing parts on the test database (the suite runs with
- * TENANCY_ENABLED off): the central connection + Tenancy module migrations (WiresTenancy), tenancy
- * switched on in config, the white-label and billing route files of the Tenancy module. Tenant
+ * Multi-tenant white-label parts on the test database (the suite runs with TENANCY_ENABLED off):
+ * the central connection + Tenancy module migrations (WiresTenancy), tenancy switched on in
+ * config, the white-label route file of the Tenancy module (onboarding, tenant branding). Tenant
  * context comes from the X-Test-Tenant header (ActingTenant) instead of IdentifyTenant — such
  * tenants need a schema (createTenantWithSchema with WL_TENANT_MIGRATIONS): the tenant is the RBAC
  * organization.
@@ -44,16 +43,12 @@ trait WhiteLabelTenancy
 
     protected function setUpWhiteLabelTenancy(bool $routes = true): void
     {
-        // Central connection + every Tenancy module migration (tenants, tenant_regions, charges,
-        // plans, tenant_subscriptions, tenant_onboarding, billing_purchases, billing_events)
+        // Central connection + every Tenancy module migration (tenants, tenant_regions,
+        // tenant_onboarding, …)
         $this->setUpTenancy();
 
         config([
             'tenancy.enabled' => true,
-            'tenancy.plans.enabled' => false,
-            'tenancy.billing.webhook' => ['url' => '', 'secret' => '', 'timeout' => 5, 'max_attempts' => 3],
-            'tenancy.billing.events.usage_thresholds' => '',
-            'tenancy.billing.store_url' => '',
             'quota.cpu' => null,
             'quota.memory_gib' => null,
             'app.url' => 'https://console.example.com',
@@ -82,10 +77,6 @@ trait WhiteLabelTenancy
             Route::middleware(['api', 'auth:sanctum', ActingTenant::class])
                 ->prefix('api')
                 ->group(base_path('Modules/Tenancy/routes/white-label.php'));
-            Route::middleware(['api', 'auth:sanctum', ActingTenant::class])
-                ->prefix('api')
-                ->group(base_path('Modules/Tenancy/routes/billing.php'));
-            Route::middleware('api')->prefix('api')->group(base_path('Modules/Tenancy/routes/white-label-public.php'));
             Route::getRoutes()->refreshNameLookups();
             Route::getRoutes()->refreshActionLookups();
         }
@@ -134,29 +125,6 @@ trait WhiteLabelTenancy
     protected function attachRegion(Tenant $tenant, KnativeRegion $region, int $cpu = 1000, int $mem = 2048): void
     {
         $tenant->regions()->attach($region->id, ['cpu_quota_m' => $cpu, 'memory_quota_mb' => $mem]);
-    }
-
-    protected function plan(array $attrs = []): Plan
-    {
-        static $n = 0;
-        $n++;
-
-        return Plan::create(array_merge([
-            'slug' => 'plan-'.$n,
-            'name' => 'Plan '.$n,
-            'currency' => 'USD',
-            'price_monthly' => 10,
-            'price_yearly' => 100,
-            'cpu_quota_m' => 4000,
-            'memory_quota_mb' => 8192,
-            'is_public' => true,
-        ], $attrs));
-    }
-
-    protected function enablePlans(bool $on = true): void
-    {
-        config(['tenancy.plans.enabled' => $on]);
-        app(PlatformSettings::class)->flush();
     }
 
     protected function tenantHeaders(Tenant $tenant): array

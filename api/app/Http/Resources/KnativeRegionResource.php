@@ -7,6 +7,7 @@ use App\Models\Setting;
 use App\Services\Ai\Gpu\GpuInventory;
 use App\Services\Concerns\ResourceComputationTrait;
 use App\Services\Helpers\RegionCapacity;
+use App\Services\Helpers\RegionDomains;
 use App\Services\Helpers\ResourceReservation;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
@@ -87,6 +88,14 @@ class KnativeRegionResource extends JsonResource
             'has_redis' => $this->resource->has_redis,
             'external_ip' => $this->external_ip,
             'dns_instruction' => $this->buildDnsInstruction(),
+            // Prometheus and Loki: RunR's own (managed) or an existing in-cluster one (PUT …/monitoring)
+            'monitoring' => [
+                'prometheus_url' => $this->resource->prometheus_url,
+                'prometheus_managed' => $this->resource->isPrometheusManaged(),
+                'loki_url' => $this->resource->loki_url,
+                'loki_managed' => $this->resource->isLokiManaged(),
+                'loki_org_id' => $this->resource->loki_org_id,
+            ],
             // Function-domain TLS (region's own Traefik, separate from the console's Ingress)
             'gpu' => app(GpuInventory::class)->publicSummary($this->resource),
             'function_tls_mode' => $this->function_tls_mode,
@@ -136,6 +145,9 @@ class KnativeRegionResource extends JsonResource
             'domain_migration_status' => $this->domain_migration_status,
             'domain_migration_started_at' => $this->domain_migration_started_at?->toISOString(),
             'is_domain_migrating' => $this->resource->is_domain_migrating,
+            // The function domain a base-domain migration moves the region to (served next to the
+            // current one until DNS of *.<target> answers the external address)
+            'domain_migration_target' => RegionDomains::migrationTarget($this->resource),
         ];
     }
 

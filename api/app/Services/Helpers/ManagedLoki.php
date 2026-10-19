@@ -29,6 +29,9 @@ final class ManagedLoki
 
     public const CHART = 'grafana/loki-stack';
 
+    /** Pinned chart (Loki 2.9.3): the version installs resolved and were tested with */
+    public const CHART_VERSION = '2.10.3';
+
     public const REPO_NAME = 'grafana';
 
     public const REPO_URL = 'https://grafana.github.io/helm-charts';

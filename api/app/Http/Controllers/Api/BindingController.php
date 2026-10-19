@@ -220,7 +220,11 @@ class BindingController extends Controller
             ->header('Cache-Control', 'no-store, private');
     }
 
-    /** Daily usage records (storage GB-hours, instance hours, cost) of the last ?days= days. */
+    /**
+     * Daily usage records (storage GB-hours, instance hours, peak size) of the last ?days= days.
+     *
+     * Quantities only: what they cost is the Billing module's (GET /api/billing/usage, the bills).
+     */
     public function usage(Request $request, Binding $binding): JsonResponse
     {
         Gate::authorize('bindings.view');
@@ -237,8 +241,6 @@ class BindingController extends Controller
             'storage_gb_hours' => (float) $r->storage_gb_hours,
             'instance_hours' => (float) $r->instance_hours,
             'peak_bytes' => (int) $r->peak_bytes,
-            'final_cost' => (float) $r->final_cost,
-            'currency' => $r->currency,
         ])->values()->all()]);
     }
 

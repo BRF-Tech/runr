@@ -15,7 +15,10 @@ use App\Models\Version;
 use App\Services\GitService;
 use App\Services\ProjectService;
 use App\Services\Runtimes\RuntimeRegistry;
+use App\Support\Projects\ProjectAdmission;
+use App\Support\Rbac\SingleTenantOrganization;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\Exceptions\HttpResponseException;
 use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Gate;
@@ -161,5 +164,38 @@ class ProjectRuntimeTest extends TestCase
         (new RuntimeTestDeployJob($version, 'admin'))->handle();
         Event::assertDispatched(DeploymentCreated::class, fn ($e) => $e->project->is($project) && $e->deployment->deployed_by === 'admin');
         $this->assertSame('pending', $project->deployments()->sole()->status);
+    }
+
+    public function test_the_test_deploy_asks_the_deploy_guards(): void
+    {
+        Event::fake([DeploymentCreated::class]);
+        $this->registerRuntime($this->bashManifest());
+        [$project, $version] = $this->runtimeProject('bash');
+        // e.g. a fixed-price region without an approved allocation (Billing module)
+        $asked = [];
+        ProjectAdmission::guardDeploys(function (Project $p) use (&$asked) {
+            $asked[] = $p->knative_region_id;
+            throw new HttpResponseException(response()->json(['message' => 'Request resources first.', 'code' => 'fixed_allocation_required'], 422));
+        });
+
+        try {
+            // The job of a test deploy: nothing is deployed
+            (new RuntimeTestDeployJob($version, 'admin'))->handle();
+            $this->assertSame(0, $project->deployments()->count());
+            Event::assertNotDispatched(DeploymentCreated::class);
+
+            // The endpoint: refused before the test project is created
+            $admin = User::factory()->create();
+            (new SingleTenantOrganization)->setMemberRole($admin->id, 'owner');
+            $projects = Project::count();
+            $this->actingAs($admin, 'sanctum')->postJson('/api/runtimes/bash/test-deploy', ['knative_region_id' => $this->region->id])
+                ->assertStatus(422)
+                ->assertJsonPath('code', 'fixed_allocation_required')
+                ->assertJsonPath('message', 'Request resources first.');
+            $this->assertSame($projects, Project::count());
+            $this->assertSame([$project->knative_region_id, $this->region->id], $asked, 'the guard saw the target region of the new project');
+        } finally {
+            ProjectAdmission::reset();
+        }
     }
 }

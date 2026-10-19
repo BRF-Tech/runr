@@ -60,7 +60,7 @@ To use a build from this repository, build and install it into the local plugin 
 and run `terraform init` as usual:
 
 ```sh
-make -C terraform-provider-runr install VERSION=0.5.7   # ~/.terraform.d/plugins/runr.sh/brf-tech/runr/0.5.7/<os>_<arch>/
+make -C terraform-provider-runr install VERSION=0.5.8   # ~/.terraform.d/plugins/runr.sh/brf-tech/runr/0.5.8/<os>_<arch>/
 ```
 
 During provider development a `dev_overrides` block in `~/.terraformrc` points
@@ -439,7 +439,7 @@ resource "runr_branding" "brand" {
 ```
 
 - **`runr_role`** manages custom roles; the built-in roles (`owner`, `admin`, `developer`,
-  `viewer`, and `billing` in the multi-tenant edition) are part of RunR and refuse an import.
+  `viewer` and `billing`) are part of RunR and refuse an import.
   RunR stores a role with the permissions its permissions imply: `permissions` keeps what you
   wrote, `effective_permissions` lists the expanded set. The key defaults to the slug of
   `name`; a new `key` replaces the role.

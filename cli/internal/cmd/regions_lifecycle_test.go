@@ -112,6 +112,14 @@ func TestRegionCreateCheckSetRm(t *testing.T) {
 	if settings["request_timeout"] != float64(900) || len(settings["ingress_trusted_ips"].([]any)) != 2 || settings["agent_ws_url"] != nil {
 		t.Fatalf("settings body = %v", settings)
 	}
+	// monitoring keys: an existing Prometheus, RunR's own Loki again
+	h.mustRun("regions", "set", "eu-2", "--set", "prometheus_url=http://kps-prometheus.monitoring.svc:9090", "--set", "loki_url=")
+	monitoring := h.srv.CallsTo("PUT /knative-regions/{knativeRegion}/monitoring")[0].Body
+	if monitoring["prometheus_url"] != "http://kps-prometheus.monitoring.svc:9090" || monitoring["loki_url"] != nil || len(monitoring) != 2 {
+		t.Fatalf("monitoring body = %v", monitoring)
+	}
+	h.expectCode(ExitValidation, "regions", "set", "eu-2", "--set", "prometheus_url=http://prometheus.example.com:9090")
+
 	rotated := strings.Replace(testKubeconfig, "kc-s3cr3t-token", "r0tated", 1)
 	h.runStdin(rotated, "regions", "set", "eu-2", "--kubeconfig", "-")
 	if lc, _ := h.srv.RegionLifecycleOf("eu-2"); lc.Kubeconfig != rotated {

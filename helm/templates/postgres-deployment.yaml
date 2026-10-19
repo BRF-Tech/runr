@@ -33,11 +33,13 @@ spec:
               value: {{ .Values.database.name | quote }}
             - name: POSTGRES_USER
               value: {{ .Values.database.user | quote }}
+            {{- /* Applied when PostgreSQL initialises an empty volume; later changes need ALTER USER (docs/install.md) */}}
+            {{- $password := include "runr.passwordRef" (dict "root" . "values" .Values.database "key" "DB_PASSWORD" "required" true) | fromJson }}
             - name: POSTGRES_PASSWORD
               valueFrom:
                 secretKeyRef:
-                  name: {{ .Values.secretName }}
-                  key: DB_PASSWORD
+                  name: {{ $password.name | quote }}
+                  key: {{ $password.key | quote }}
             {{- if .Values.database.postgres.fixPgdata }}
             - name: PGDATA
               value: /var/lib/postgresql/data/pgdata
@@ -77,6 +79,8 @@ spec:
     - port: 5432
       targetPort: 5432
 ---
+{{- $class := (.Values.database.postgres | default dict).storageClassName }}
+{{- include "runr.pvcGuard" (dict "root" . "name" "runr-postgres-data" "class" $class "field" "database.postgres") }}
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
@@ -91,4 +95,7 @@ spec:
   resources:
     requests:
       storage: {{ include "runr.databaseStorageSize" . }}
+  {{- with $class }}
+  storageClassName: {{ . }}
+  {{- end }}
 {{- end }}

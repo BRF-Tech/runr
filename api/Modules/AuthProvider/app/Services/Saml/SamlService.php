@@ -7,6 +7,8 @@ use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 use Modules\AuthProvider\Models\AuthProvider;
 use Modules\AuthProvider\Services\OAuthService;
+use Modules\AuthProvider\Services\ProviderConfigService;
+use Modules\AuthProvider\Services\TenantContext;
 use OneLogin\Saml2\Auth;
 use OneLogin\Saml2\Constants;
 use OneLogin\Saml2\Response;
@@ -56,11 +58,7 @@ class SamlService
 
     public function currentTenantSlug(): ?string
     {
-        if (! function_exists('tenancy') || ! config('tenancy.enabled') || ! tenancy()->initialized) {
-            return null;
-        }
-
-        return tenancy()->tenant?->slug;
+        return app(TenantContext::class)->currentSlug();
     }
 
     /** onelogin/php-saml settings for one provider. */
@@ -247,9 +245,7 @@ class SamlService
     /** Social account key: the NameID scoped to this IdP configuration (fits the 255-char column). */
     public function subjectId(AuthProvider $provider, string $nameId): string
     {
-        $id = $provider->getKey().':'.$nameId;
-
-        return strlen($id) <= 255 ? $id : $provider->getKey().':sha256:'.hash('sha256', $nameId);
+        return ProviderConfigService::scoped((string) $provider->getKey(), $nameId);
     }
 
     /**

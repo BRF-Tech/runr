@@ -133,7 +133,6 @@ final class AuditCatalog
         SecurityPolicyOverride::class => 'policy_override',
         Setting::class => 'setting',
         Branding::class => 'branding',
-        'Modules\\Tenancy\\Models\\Plan' => 'plan',
         Runtime::class => 'runtime',
         // Uploaded images (docs/images.md)
         UploadedImage::class => 'uploaded_image',
@@ -161,10 +160,12 @@ final class AuditCatalog
         'Modules\\Tenancy\\Models\\Tenant' => 'tenant',
         'Modules\\Tenancy\\Models\\TenantUser' => 'member',
         'Modules\\Tenancy\\Models\\TenantInvitation' => 'invitation',
-        'Modules\\Tenancy\\Models\\CostConfig' => 'cost_config',
-        'Modules\\Tenancy\\Models\\CapacityDeal' => 'capacity_deal',
-        'Modules\\Tenancy\\Models\\Charge' => 'charge',
-        'Modules\\Tenancy\\Models\\Purchase' => 'purchase',
+        // Billing module (docs/billing.md)
+        'Modules\\Billing\\Models\\Price' => 'billing_price',
+        'Modules\\Billing\\Models\\RegionSetting' => 'billing_region',
+        'Modules\\Billing\\Models\\Markup' => 'billing_markup',
+        'Modules\\Billing\\Models\\FixedRequest' => 'fixed_request',
+        'Modules\\Billing\\Models\\Bill' => 'bill',
         'Modules\\AuthProvider\\Models\\AuthProvider' => 'auth_provider',
         'Modules\\Ticket\\Models\\SupportTicket' => 'ticket',
         // Observability (secret columns are hidden + encrypted: never part of a change record)
@@ -335,6 +336,7 @@ final class AuditCatalog
             'POST api/tokens' => $r('api_token.create', 'api_token', 'response:token.id', 'input:name',
                 meta: fn (Request $q) => ['abilities' => (array) $q->input('abilities', ['*']), 'expires_at' => $q->input('expires_at')]),
             'DELETE api/tokens/{token}' => $r('api_token.revoke', 'api_token', 'param:token'),
+            'POST api/oauth/link/complete' => $r('social_account.link', 'social_account', 'response:account.id', 'response:account.provider'),
             'DELETE api/social-accounts/{socialAccount}' => $r('social_account.unlink', 'social_account', 'param:socialAccount'),
 
             // ── Projects ─────────────────────────────────────────────────────────
@@ -342,6 +344,10 @@ final class AuditCatalog
                 meta: fn (Request $q) => ['service_type' => $q->input('service_type'), 'runtime' => $q->input('runtime'), 'knative_region_id' => $q->input('knative_region_id')]),
             'PUT|PATCH api/projects/{project}' => $r('project.update', 'project', $p),
             'DELETE api/projects/{project}' => $r('project.delete', 'project', $p),
+            'PUT api/projects/{project}/owner' => $r('project.owner.transfer', 'project', $p,
+                meta: fn (Request $q, ?array $j) => ['owner_id' => (string) $q->input('user_id'), 'previous_owner_id' => $j['previous_owner_id'] ?? null]),
+            'POST api/projects/{project}/stop' => $r('project.stop', 'project', $p, meta: fn (Request $q) => ['reason' => mb_substr((string) $q->input('reason'), 0, 1000)]),
+            'POST api/projects/{project}/resume' => $r('project.resume', 'project', $p, meta: fn (Request $q, ?array $j) => ['deployment_id' => $j['deployment_id'] ?? null]),
             'POST api/projects/{project}/code' => $r('project.code.save', 'project', $p,
                 meta: fn (Request $q, ?array $j) => ['version' => $j['number'] ?? $j['data']['number'] ?? null, 'message' => $q->input('message')]),
             'POST api/projects/{project}/files' => $r('project.code.save', 'project', $p,
@@ -451,12 +457,15 @@ final class AuditCatalog
             'GET api/knative-regions/{knativeRegion}/kubeconfig' => $r('region.kubeconfig.download', 'region', 'param:knativeRegion'),
             'PUT api/knative-regions/{knativeRegion}/settings' => $r('region.settings.update', 'region', 'param:knativeRegion', meta: fn (Request $q) => ['fields' => array_keys($q->all())]),
             'PUT api/knative-regions/{knativeRegion}/capacity' => $r('region.capacity.update', 'region', 'param:knativeRegion', meta: fn (Request $q) => $q->only(['faas_cpu_overcommit', 'faas_memory_overcommit'])),
+            'PUT api/knative-regions/{knativeRegion}/monitoring' => $r('region.monitoring.update', 'region', 'param:knativeRegion', meta: fn (Request $q) => ['fields' => array_keys($q->all())]),
             'PUT api/knative-regions/{knativeRegion}/function-tls' => $r('region.tls.update', 'region', 'param:knativeRegion', meta: fn (Request $q) => ['mode' => $q->input('mode')]),
+            'DELETE api/knative-regions/{knativeRegion}/function-tls' => $r('region.tls.remove', 'region', 'param:knativeRegion'),
             'POST api/knative-regions/{knativeRegion}/skupper/site' => $r('region.skupper.site.ensure', 'region', 'param:knativeRegion'),
             'POST api/knative-regions/{knativeRegion}/install-knative' => $r('region.knative.install', 'region', 'param:knativeRegion'),
             'POST api/knative-regions/{knativeRegion}/uninstall-knative' => $r('region.knative.uninstall', 'region', 'param:knativeRegion'),
             'POST api/knative-regions/{knativeRegion}/install-operator' => $r('region.knative.operator.install', 'region', 'param:knativeRegion'),
             'POST api/knative-regions/{knativeRegion}/install-serving' => $r('region.knative.serving.install', 'region', 'param:knativeRegion'),
+            'POST api/knative-regions/{knativeRegion}/upgrade-serving' => $r('region.knative.serving.upgrade', 'region', 'param:knativeRegion', meta: fn (Request $q) => ['version' => $q->input('version')]),
             'POST api/knative-regions/{knativeRegion}/uninstall-operator' => $r('region.knative.operator.uninstall', 'region', 'param:knativeRegion'),
             'POST api/knative-regions/{knativeRegion}/uninstall-serving' => $r('region.knative.serving.uninstall', 'region', 'param:knativeRegion'),
             'POST api/knative-regions/{knativeRegion}/detect-components' => $r('region.components.detect', 'region', 'param:knativeRegion'),
@@ -473,6 +482,8 @@ final class AuditCatalog
             'POST api/knative-regions/{knativeRegion}/migrate' => $r('region.migration.start', 'region', 'param:knativeRegion'),
             'POST api/knative-regions/{knativeRegion}/complete-migration' => $r('region.migration.complete', 'region', 'param:knativeRegion'),
             'POST api/knative-regions/{knativeRegion}/rollback-migration' => $r('region.migration.rollback', 'region', 'param:knativeRegion'),
+            'POST api/knative-regions/{knativeRegion}/complete-domain-migration' => $r('region.migration.domain.complete', 'region', 'param:knativeRegion'),
+            'POST api/knative-regions/{knativeRegion}/registry' => $r('region.registry.setup', 'region', 'param:knativeRegion', meta: fn (Request $q) => ['mode' => $q->input('registry_mode')]),
             'DELETE api/knative-regions/{knativeRegion}/registry' => $r('region.registry.remove', 'region', 'param:knativeRegion'),
             // Data services of bindings (no credentials in the metadata)
             'POST api/knative-regions/{knativeRegion}/data-services/{service}' => $r('region.data_service.install', 'region', 'param:knativeRegion',
@@ -625,6 +636,9 @@ final class AuditCatalog
             'GET api/audit-events/export' => $r('audit.export', meta: fn (Request $q) => ['format' => $q->query('format', 'csv'), 'filters' => Arr::except($q->query(), ['format'])]),
             'PUT api/audit-settings' => $r('audit.settings.update', meta: fn (Request $q) => ['retention_days' => $q->input('retention_days')]),
 
+            // ── Horizon dashboard: a single-use sign-in link (the link itself is never recorded) ──
+            'POST api/horizon/link' => $r('horizon.link.create', meta: fn (Request $q, ?array $j) => ['expires_at' => $j['expires_at'] ?? null]),
+
             // ── Tenants, members, impersonation (Tenancy module) ─────────────────
             'POST api/tenants' => $r('tenant.create', 'tenant', 'response:id', 'input:name'),
             'PATCH api/tenants/{tenant}' => $r('tenant.update', 'tenant', 'param:tenant'),
@@ -650,24 +664,32 @@ final class AuditCatalog
             'POST api/impersonate/{tenant}' => $r('impersonation.start', 'tenant', 'param:tenant'),
             'POST api/impersonate/stop' => $r('impersonation.stop', 'tenant', 'response:tenant_id'),
 
-            // ── Billing (Tenancy module) ─────────────────────────────────────────
-            'POST api/cost-configs' => $r('billing.cost_config.create', 'cost_config', 'response:id'),
-            'PATCH api/cost-configs/{id}' => $r('billing.cost_config.update', 'cost_config', 'param:id'),
-            'DELETE api/cost-configs/{id}' => $r('billing.cost_config.delete', 'cost_config', 'param:id'),
-            'POST api/tenants/{tenant}/capacity-deals' => $r('billing.capacity_deal.create', 'tenant', 'param:tenant'),
-            'PATCH api/tenants/{tenant}/capacity-deals/{deal}' => $r('billing.capacity_deal.update', 'tenant', 'param:tenant', meta: fn (Request $q) => ['deal_id' => self::routeKey($q, 'deal')]),
-            // Billing API (docs/billing.md): the operator's billing system
-            'PUT api/billing/tenants/{tenant}/subscription' => $r('billing.subscription.update', 'tenant', 'param:tenant', meta: fn (Request $q) => $q->only(['plan', 'interval', 'external_ref', 'cancel_at_period_end'])),
-            'POST api/billing/tenants/{tenant}/charges' => $r('billing.charge.create', 'charge', 'response:charge.id', meta: fn (Request $q) => ['tenant' => self::routeKey($q, 'tenant')] + $q->only(['amount', 'currency', 'period_start', 'period_end'])),
-            'PATCH api/billing/charges/{charge}' => $r('billing.charge.update', 'charge', 'param:charge', meta: fn (Request $q) => $q->only(['external_ref'])),
-            'POST api/billing/charges/{charge}/void' => $r('billing.charge.void', 'charge', 'param:charge', meta: fn (Request $q) => $q->only(['reason'])),
-            'POST api/billing/tenants/{tenant}/purchases' => $r('billing.purchase.record', 'purchase', 'response:purchase.id', meta: fn (Request $q) => ['tenant' => self::routeKey($q, 'tenant')] + $q->only(['kind', 'external_ref', 'amount', 'currency', 'plan', 'interval'])),
-            'POST api/billing/purchases/{purchase}/void' => $r('billing.purchase.void', 'purchase', 'param:purchase'),
+            // ── Billing (Billing module, docs/billing.md) ─────────────────────────
+            // Settings payloads carry the webhook secret: field names only
+            'PUT api/billing/settings' => $r('billing.settings.update', meta: fn (Request $q) => ['fields' => array_keys($q->all())]),
+            'POST api/billing/prices' => $r('billing.price.create', 'billing_price', 'response:data.id',
+                meta: fn (Request $q) => $q->only(['region_id', 'effective_from'])),
+            'DELETE api/billing/prices/{price}' => $r('billing.price.delete', 'billing_price', 'param:price'),
+            'PUT api/billing/regions/{region}' => $r('billing.region.update', 'region', 'param:region', meta: fn (Request $q) => $q->only(['billing_type'])),
+            'POST api/billing/markups' => $r('billing.markup.create', 'billing_markup', 'response:data.id',
+                meta: fn (Request $q) => $q->only(['region_id', 'percent', 'effective_from'])),
+            'DELETE api/billing/markups/{markup}' => $r('billing.markup.delete', 'billing_markup', 'param:markup'),
+            'POST api/billing/region-offers/{region}/accept' => $r('billing.region_offer.accept', 'region', 'param:region', meta: fn (Request $q) => $q->only(['markup_percent'])),
+            'PUT api/billing/bills/{bill}/payment-url' => $r('billing.bill.payment_url.update', 'bill', 'param:bill', meta: fn (Request $q) => ['payment_url' => $q->input('payment_url')]),
+            'PUT api/billing/bills/{bill}/paid' => $r('billing.bill.paid.update', 'bill', 'param:bill', meta: fn (Request $q) => $q->only(['paid', 'paid_at', 'payment_reference'])),
+            'PUT api/billing/tenant-bills/{bill}/payment-url' => $r('billing.tenant_bill.payment_url.update', 'bill', 'param:bill', meta: fn (Request $q) => ['payment_url' => $q->input('payment_url')]),
+            'PUT api/billing/tenant-bills/{bill}/paid' => $r('billing.tenant_bill.paid.update', 'bill', 'param:bill', meta: fn (Request $q) => $q->only(['paid', 'paid_at', 'payment_reference'])),
+            'POST api/billing/fixed-requests/{fixedRequest}/approve' => $r('billing.fixed_request.approve', 'fixed_request', 'param:fixedRequest', meta: fn (Request $q) => $q->only(['note'])),
+            'POST api/billing/fixed-requests/{fixedRequest}/reject' => $r('billing.fixed_request.reject', 'fixed_request', 'param:fixedRequest', meta: fn (Request $q) => $q->only(['reason'])),
+            'POST api/projects/{project}/billing/fixed-requests' => $r('billing.fixed_request.create', 'fixed_request', 'response:data.id',
+                meta: fn (Request $q) => ['project_id' => $q->route('project')?->id] + $q->only(['cpu_m', 'memory_mb', 'gpu_count'])),
+            'POST api/projects/{project}/billing/fixed-requests/{fixedRequest}/cancel' => $r('billing.fixed_request.cancel', 'fixed_request', 'param:fixedRequest',
+                meta: fn (Request $q) => ['project_id' => $q->route('project')?->id]),
             'POST api/billing/events/test' => $r('billing.event.test'),
             'POST api/billing/events/{event}/redeliver' => $r('billing.event.redeliver', meta: fn (Request $q) => ['event_id' => self::routeKey($q, 'event')]),
 
-            // ── White-label: branding, signup, plans ─────────────────────────────
-            // Settings payloads carry secrets (webhook secret, CAPTCHA secret): field names only
+            // ── White-label: branding, signup ────────────────────────────────────
+            // Settings payloads carry secrets (CAPTCHA secret): field names only
             'PUT api/admin/branding' => $r('branding.update', meta: fn (Request $q) => ['fields' => array_keys($q->all())]),
             'POST api/admin/branding/assets/{kind}' => $r('branding.asset.upload', meta: fn (Request $q) => ['kind' => $q->route('kind')]),
             'DELETE api/admin/branding/assets/{kind}' => $r('branding.asset.delete', meta: fn (Request $q) => ['kind' => $q->route('kind')]),
@@ -676,10 +698,6 @@ final class AuditCatalog
             'POST api/tenant/branding/assets/{kind}' => $r('tenant.branding.asset.upload', meta: fn (Request $q) => ['kind' => $q->route('kind')]),
             'DELETE api/tenant/branding/assets/{kind}' => $r('tenant.branding.asset.delete', meta: fn (Request $q) => ['kind' => $q->route('kind')]),
             'POST api/onboarding' => $r('tenant.onboarding.complete', meta: fn (Request $q) => $q->only(['region_id'])),
-            'POST api/admin/plans' => $r('plan.create', 'plan', 'response:id', 'response:name', meta: fn (Request $q) => $q->only(['slug'])),
-            'PATCH api/admin/plans/{plan}' => $r('plan.update', 'plan', 'param:plan', meta: fn (Request $q) => ['fields' => array_keys($q->all())]),
-            'DELETE api/admin/plans/{plan}' => $r('plan.delete', 'plan', 'param:plan'),
-            'PUT api/admin/billing-settings' => $r('billing.settings.update', meta: fn (Request $q) => ['fields' => array_keys($q->all())]),
 
             // ── SSO providers (AuthProvider module) ──────────────────────────────
             'POST api/auth-providers' => $r('auth_provider.create', 'auth_provider', 'response:id', 'input:name', meta: fn (Request $q) => ['driver' => $q->input('driver')]),

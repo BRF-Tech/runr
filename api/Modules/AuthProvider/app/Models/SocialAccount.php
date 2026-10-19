@@ -6,7 +6,22 @@ use App\Models\User;
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Support\Carbon;
 
+/**
+ * @property string $id
+ * @property int|string $user_id
+ * @property string $provider
+ * @property string $provider_user_id
+ * @property string $email
+ * @property string|null $name
+ * @property string|null $avatar_url
+ * @property string $access_token
+ * @property string|null $refresh_token
+ * @property Carbon|null $token_expires_at
+ * @property Carbon|null $created_at
+ * @property-read User|null $user
+ */
 class SocialAccount extends Model
 {
     use HasUlids;

@@ -15,11 +15,13 @@ use Modules\Ticket\Events\SupportTicketReplied;
 use Modules\Ticket\Events\SupportTicketStatusChanged;
 use Modules\Ticket\Http\Concerns\HandlesTicketAttachments;
 use Modules\Ticket\Models\SupportTicket;
+use Modules\Ticket\Support\TicketStaff;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
 /**
  * Cross-tenant admin support ticket controller.
- * Uses HandlesTicketAttachments trait for storeAttachments/serveAttachment helpers.
+ * Uses HandlesTicketAttachments trait for storeAttachments/serveAttachment helpers (files of a
+ * tenant's tickets live under support-attachments/<tenant id>/, TicketAttachments).
  * No route-model binding — uses plain {id} to avoid central-schema 404s.
  */
 class TenancyAdminSupportTicketController extends Controller
@@ -139,9 +141,18 @@ class TenancyAdminSupportTicketController extends Controller
 
     public function downloadAttachment(Request $request, int $id, string $filename): StreamedResponse
     {
-        $this->resolveTicket($id, $request->query('tenant_id'));
+        // The ticket of the tenant (its schema): only files recorded on it, internal notes' too
+        $ticket = $this->resolveTicket($id, $request->query('tenant_id'));
 
-        return $this->serveAttachment($id, $filename);
+        return $this->serveAttachment($ticket, $filename, includeInternal: true);
+    }
+
+    /** Assignee choices: the platform administrators work the support queue of every tenant. */
+    public function staff(): JsonResponse
+    {
+        $admins = User::on('central')->where('is_admin', true)->orderBy('name')->get(['id', 'name', 'email']);
+
+        return response()->json(['data' => TicketStaff::present($admins)]);
     }
 
     public function stats(): JsonResponse

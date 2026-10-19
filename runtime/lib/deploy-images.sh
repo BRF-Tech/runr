@@ -44,6 +44,7 @@ _deploy_build_images() {
     --build-arg "VITE_TENANCY_ENABLED=${_deploy_tenancy}" \
     --build-arg "VITE_AUTH_PROVIDER_ENABLED=${_deploy_auth_provider}" \
     --build-arg "VITE_TICKET_ENABLED=${_deploy_ticket}" \
+    --build-arg "VITE_BILLING_ENABLED=${_deploy_billing}" \
     -t "ghcr.io/brf-tech/runr/ui:latest" \
     "${root_dir}/vue" 2>&1
   echo -e "${GREEN}  UI OK${NC}"

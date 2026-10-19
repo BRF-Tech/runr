@@ -31,9 +31,9 @@ use Stancl\Tenancy\Database\TenantCollection;
  * @property-read Collection<int, PersonalAccessToken> $tokens
  * @property-read int|null $tokens_count
  *
- * @method static \Illuminate\Database\Eloquent\Builder<static>|TenantAwareUser newModelQuery()
- * @method static \Illuminate\Database\Eloquent\Builder<static>|TenantAwareUser newQuery()
- * @method static \Illuminate\Database\Eloquent\Builder<static>|TenantAwareUser query()
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|User newModelQuery()
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|User newQuery()
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|User query()
  *
  * @mixin Eloquent
  */

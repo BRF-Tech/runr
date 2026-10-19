@@ -2,6 +2,7 @@
 
 namespace App\Console\Commands;
 
+use App\Console\Commands\Concerns\E2eTestAdmissionTrait;
 use App\Console\Commands\Concerns\E2eTestAiTrait;
 use App\Console\Commands\Concerns\E2eTestBindingsTrait;
 use App\Console\Commands\Concerns\E2eTestGitDeployTrait;
@@ -27,6 +28,7 @@ use Illuminate\Support\Facades\Http;
 
 class E2eTestCommand extends Command
 {
+    use E2eTestAdmissionTrait;
     use E2eTestAiTrait;
     use E2eTestBindingsTrait;
     use E2eTestGitDeployTrait;
@@ -50,7 +52,7 @@ class E2eTestCommand extends Command
         {--kubeconfig= : Path to kubeconfig file for test region}
         {--timeout=300 : Deploy wait timeout in seconds}
         {--skip-sandbox : Skip sandbox runtime isolation tests}
-        {--suite=all : all = every phase incl. runtime plugins; runtimes = runtime plugin functions only; supply-chain = SBOM / scan / signing / admission; ai = model services, offline snapshots, bindings, GPU; bindings = bindings only (data services, KV / object / Postgres / external); sandbox-api = Sandbox API only; wasm = WebAssembly support + Wasm runtimes; observability = tracing backend, traces, replay; reconcile = region:reconcile tracing backend and registry pre-warm steps; git-deploy = git remote, Forgejo push and previews; images = uploaded images (tar + wasm), CaaS from an upload, wasm-exec in C and Q}
+        {--suite=all : all = every phase incl. runtime plugins; runtimes = runtime plugin functions only; supply-chain = SBOM / scan / signing / admission; ai = model services, offline snapshots, bindings, GPU; bindings = bindings only (data services, KV / object / Postgres / external); sandbox-api = Sandbox API only; wasm = WebAssembly support + Wasm runtimes; observability = tracing backend, traces, replay; reconcile = region:reconcile tracing backend and registry pre-warm steps; git-deploy = git remote, Forgejo push and previews; images = uploaded images (tar + wasm), CaaS from an upload, wasm-exec in C and Q; admission = project stop / resume, region status blocks, fixed-region allocations (Billing module on)}
         {--sandbox-kata : sandbox-api suite: also install Kata and run a Kata sandbox (nodes with /dev/kvm)}
         {--examples=/tmp/runr-examples : examples/runtimes copied into the container (runtime plugin suite)}
         {--hf-serve-image= : AI suite: hf-serve image of the CPU model services (default ghcr.io/brf-tech/runr/hf-serve:1.1.1, or RUNR_E2E_HF_SERVE_IMAGE)}
@@ -195,6 +197,15 @@ class E2eTestCommand extends Command
         // Sandbox API only: lifecycle, exec, files, processes, pools, quota (E2eTestSandboxApiTrait)
         if ($this->option('suite') === 'sandbox-api') {
             $tests = $this->runSandboxApiSuite($regionId);
+            $this->printResultsTable($tests, $startTime);
+            $this->saveResultsMarkdown($tests, $startTime);
+
+            return $this->countResults($tests)['failed'] > 0 ? 1 : 0;
+        }
+
+        // Project admission only: stop / resume, region status blocks, fixed-region allocations (E2eTestAdmissionTrait)
+        if ($this->option('suite') === 'admission') {
+            $tests = $this->runAdmissionSuite($regionId);
             $this->printResultsTable($tests, $startTime);
             $this->saveResultsMarkdown($tests, $startTime);
 

@@ -3,6 +3,7 @@
 namespace App\Services\Concerns;
 
 use App\Services\KubernetesClient;
+use Illuminate\Support\Facades\Http;
 use RuntimeException;
 use Symfony\Component\Yaml\Yaml;
 use Throwable;
@@ -30,7 +31,12 @@ trait KnativeCrdTrait
         $yaml = null;
         foreach ($candidates as $v) {
             $url = 'https://github.com/knative/serving/releases/download/knative-v'.$v.'/serving-crds.yaml';
-            $content = @file_get_contents($url);
+            try {
+                $response = Http::timeout(60)->get($url);
+                $content = $response->successful() ? $response->body() : null;
+            } catch (Throwable) {
+                $content = null;
+            }
             if ($content) {
                 $yaml = $content;
                 break;

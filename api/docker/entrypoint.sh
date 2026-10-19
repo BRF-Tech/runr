@@ -47,6 +47,13 @@ else
     php artisan module:disable Ticket 2>/dev/null || true
 fi
 
+# Toggle the Billing module based on the BILLING_ENABLED env (docs/billing.md; off by default)
+if [ "${BILLING_ENABLED:-false}" = "true" ]; then
+    php artisan module:enable Billing 2>/dev/null || true
+else
+    php artisan module:disable Billing 2>/dev/null || true
+fi
+
 # Refresh the package list from vendor (the host cache may be incompatible)
 php artisan package:discover --ansi
 
@@ -89,6 +96,16 @@ run_tenant_migrations() {
     php artisan tenancy:migrate
 }
 
+# First administrator: the account of ADMIN_USERNAME / ADMIN_EMAIL / ADMIN_PASSWORD, created while the
+# install has no administrator (runr:bootstrap-admin: the rules of the Helm chart's bootstrap job).
+# Only with BOOTSTRAP_ADMIN=true, which the Compose migrator sets; Helm installs get the account from
+# the chart's bootstrap job (bootstrap.enabled). Without ADMIN_PASSWORD the password is generated and
+# printed once. Idempotent.
+bootstrap_admin() {
+    [ "${BOOTSTRAP_ADMIN:-false}" = "true" ] || return 0
+    php artisan runr:bootstrap-admin
+}
+
 # Migrate: api only migrates, migrator migrates and seeds, migrate-only migrates without seeding
 if [ "$ROLE" = "api" ]; then
     php artisan migrate --force
@@ -102,6 +119,7 @@ elif [ "$ROLE" = "migrator" ]; then
     run_module_migrations
     run_tenant_migrations
     php artisan db:seed --force
+    bootstrap_admin
 elif [ "$ROLE" = "migrator-fresh" ]; then
     # Reset the contents of storage/git (except .git) and commit
     find storage/git -mindepth 1 -maxdepth 1 ! -name '.git' -exec rm -rf {} +
@@ -113,6 +131,7 @@ elif [ "$ROLE" = "migrator-fresh" ]; then
     php artisan migrate:fresh --force
     run_module_migrations
     php artisan db:seed --force
+    bootstrap_admin
     # The fresh database has no runtime versions; the running api container synced them into the
     # old one at its start (below). Offline the next api start syncs them.
     php artisan executor:sync || echo "executor:sync failed; the api container syncs the runtimes at its next start"
@@ -123,10 +142,19 @@ if [ "$ROLE" = "api" ]; then
     php artisan executor:sync &
 fi
 
+# Ports the servers listen on: Reverb REVERB_SERVER_PORT (also read by config/reverb.php), the API
+# RUNR_API_PORT — the Helm chart sets them from reverb.port / api.port; unset: 8080 and 80
+REVERB_LISTEN_PORT="${REVERB_SERVER_PORT:-8080}"
+API_LISTEN_PORT="${RUNR_API_PORT:-80}"
+
 if [ "$ROLE" = "migrator" ] || [ "$ROLE" = "migrator-fresh" ] || [ "$ROLE" = "migrate-only" ]; then
     exit 0
 elif [ "$ROLE" = "reverb" ]; then
-    exec php artisan reverb:start-shell --host=0.0.0.0 --port=8080 --debug
+    # Every connection and message in the log only while debugging (APP_DEBUG=true or APP_ENV=local)
+    if [ "${APP_DEBUG:-false}" = "true" ] || [ "${APP_ENV:-production}" = "local" ]; then
+        exec php artisan reverb:start-shell --host=0.0.0.0 --port="$REVERB_LISTEN_PORT" --debug
+    fi
+    exec php artisan reverb:start-shell --host=0.0.0.0 --port="$REVERB_LISTEN_PORT"
 elif [ "$ROLE" = "horizon" ]; then
     exec php artisan horizon
 elif [ "$ROLE" = "scheduler" ]; then
@@ -136,9 +164,9 @@ else
     # In embedded mode FrankenPHP may not create the state file, so we seed it.
     # In the background we write the FrankenPHP child PID (required by octane:reload).
     STATE_FILE="storage/logs/octane-server-state.json"
-    printf '{"state":{"server":"frankenphp","host":"0.0.0.0","port":80,"adminHost":"localhost","adminPort":2019},"masterProcessId":null}' > "$STATE_FILE"
+    printf '{"state":{"server":"frankenphp","host":"0.0.0.0","port":%s,"adminHost":"localhost","adminPort":2019},"masterProcessId":null}' "$API_LISTEN_PORT" > "$STATE_FILE"
     (sleep 5 && FPID=$(pgrep -f 'frankenphp run' | head -1) && \
      [ -n "$FPID" ] && \
-     printf '{"state":{"server":"frankenphp","host":"0.0.0.0","port":80,"adminHost":"localhost","adminPort":2019},"masterProcessId":%s}' "$FPID" > "$STATE_FILE") &
-    exec php artisan octane:start --server=frankenphp --host=0.0.0.0 --port=80 --admin-port=2019 --workers=auto
+     printf '{"state":{"server":"frankenphp","host":"0.0.0.0","port":%s,"adminHost":"localhost","adminPort":2019},"masterProcessId":%s}' "$API_LISTEN_PORT" "$FPID" > "$STATE_FILE") &
+    exec php artisan octane:start --server=frankenphp --host=0.0.0.0 --port="$API_LISTEN_PORT" --admin-port=2019 --workers=auto
 fi

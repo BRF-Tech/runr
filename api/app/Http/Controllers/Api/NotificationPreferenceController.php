@@ -8,7 +8,8 @@ use Illuminate\Http\Request;
 
 class NotificationPreferenceController extends Controller
 {
-    private const TYPES = ['resource_threshold', 'build', 'deployment', 'infrastructure', 'demo'];
+    // billing: region offers, fixed resource requests and their decisions (Billing module)
+    private const TYPES = ['resource_threshold', 'build', 'deployment', 'infrastructure', 'demo', 'billing'];
 
     private const CHANNELS = ['in_app', 'email'];
 

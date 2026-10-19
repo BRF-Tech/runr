@@ -136,6 +136,9 @@ type APIError struct {
 	Method     string
 	Path       string
 	Message    string
+	// Code is the API's code for a refusal, when it sends one (project_stopped,
+	// fixed_allocation_exceeded, …).
+	Code string
 	// Errors holds Laravel validation errors (422): field → messages.
 	Errors map[string][]string
 	// Permissions are the permissions a 403 answer names: the token or the user needs one
@@ -151,6 +154,9 @@ func (e *APIError) Error() string {
 	}
 	var b strings.Builder
 	fmt.Fprintf(&b, "%s %s: %d %s", e.Method, e.Path, e.StatusCode, msg)
+	if e.Code != "" {
+		fmt.Fprintf(&b, " (%s)", e.Code)
+	}
 	if len(e.Errors) > 0 {
 		keys := make([]string, 0, len(e.Errors))
 		for k := range e.Errors {
@@ -402,11 +408,14 @@ func parseAPIError(code int, method, path string, data []byte) *APIError {
 	var body struct {
 		Message     string          `json:"message"`
 		Error       string          `json:"error"`
+		Code        json.RawMessage `json:"code"`
 		Errors      json.RawMessage `json:"errors"`
 		Permissions []string        `json:"permissions"`
 	}
 	if json.Unmarshal(data, &body) == nil {
 		e.Message = body.Message
+		// Only a string code is a refusal code (some answers carry a numeric code of their own)
+		_ = json.Unmarshal(body.Code, &e.Code)
 		e.Permissions = body.Permissions
 		if e.Message == "" {
 			e.Message = body.Error

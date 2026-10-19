@@ -127,18 +127,6 @@ parameters:
 			path: Modules/AuthProvider/app/Services/OAuthService.php
 
 		-
-			message: '#^Call to method create\(\) on an unknown class App\\Models\\TenantAwareUser\.$#'
-			identifier: class.notFound
-			count: 1
-			path: Modules/AuthProvider/app/Services/OAuthService.php
-
-		-
-			message: '#^Call to method where\(\) on an unknown class App\\Models\\TenantAwareUser\.$#'
-			identifier: class.notFound
-			count: 1
-			path: Modules/AuthProvider/app/Services/OAuthService.php
-
-		-
 			message: '#^Parameter \#2 \$user of method Modules\\AuthProvider\\Services\\OAuthService\:\:signIn\(\) expects App\\Models\\User, Illuminate\\Database\\Eloquent\\Model\|null given\.$#'
 			identifier: argument.type
 			count: 1
@@ -457,12 +445,6 @@ parameters:
 			path: Modules/Tenancy/app/Http/Controllers/TenancyNotificationController.php
 
 		-
-			message: '#^Call to method whereNull\(\) on an unknown class App\\Models\\TenantAwareKnativeRegion\.$#'
-			identifier: class.notFound
-			count: 1
-			path: Modules/Tenancy/app/Http/Controllers/TenancySettingsController.php
-
-		-
 			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$user_id\.$#'
 			identifier: property.notFound
 			count: 2
@@ -676,12 +658,6 @@ parameters:
 			message: '#^Access to an undefined property App\\Models\\User\:\:\$is_admin\.$#'
 			identifier: property.notFound
 			count: 1
-			path: Modules/Tenancy/app/Http/Middleware/EnforcePlanLimits.php
-
-		-
-			message: '#^Access to an undefined property App\\Models\\User\:\:\$is_admin\.$#'
-			identifier: property.notFound
-			count: 1
 			path: Modules/Tenancy/app/Http/Middleware/EnsureTenantRegionMutable.php
 
 		-
@@ -745,24 +721,6 @@ parameters:
 			path: Modules/Tenancy/app/Jobs/SeedTenantDemoJob.php
 
 		-
-			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$slug\.$#'
-			identifier: property.notFound
-			count: 1
-			path: Modules/Tenancy/app/Jobs/UsageAggregationJob.php
-
-		-
-			message: '#^Parameter \#1 \$tenant of method Modules\\Tenancy\\Jobs\\UsageAggregationJob\:\:aggregateForTenant\(\) expects Modules\\Tenancy\\Models\\Tenant, Illuminate\\Database\\Eloquent\\Model given\.$#'
-			identifier: argument.type
-			count: 1
-			path: Modules/Tenancy/app/Jobs/UsageAggregationJob.php
-
-		-
-			message: '#^Using nullsafe property access "\?\-\>count" on left side of \?\? is unnecessary\. Use \-\> instead\.$#'
-			identifier: nullsafe.neverNull
-			count: 2
-			path: Modules/Tenancy/app/Jobs/UsageAggregationJob.php
-
-		-
 			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$name\.$#'
 			identifier: property.notFound
 			count: 1
@@ -775,76 +733,10 @@ parameters:
 			path: Modules/Tenancy/app/Mail/TenantInvitationMail.php
 
 		-
-			message: '#^Access to an undefined property Modules\\Tenancy\\Models\\CapacityDeal\:\:\$end_date\.$#'
-			identifier: property.notFound
-			count: 1
-			path: Modules/Tenancy/app/Models/CapacityDeal.php
-
-		-
 			message: '#^Constant Modules\\Tenancy\\Models\\CentralSyncableUser\:\:EXCLUDED_FROM_SYNC is unused\.$#'
 			identifier: classConstant.unused
 			count: 1
 			path: Modules/Tenancy/app/Models/CentralSyncableUser.php
-
-		-
-			message: '#^Access to an undefined property Modules\\Tenancy\\Models\\CostConfig\:\:\$currency\.$#'
-			identifier: property.notFound
-			count: 1
-			path: Modules/Tenancy/app/Models/CostConfig.php
-
-		-
-			message: '#^Access to an undefined property Modules\\Tenancy\\Models\\CostConfig\:\:\$kv_price_per_gb_hour\.$#'
-			identifier: property.notFound
-			count: 1
-			path: Modules/Tenancy/app/Models/CostConfig.php
-
-		-
-			message: '#^Access to an undefined property Modules\\Tenancy\\Models\\CostConfig\:\:\$multiplier_http\.$#'
-			identifier: property.notFound
-			count: 1
-			path: Modules/Tenancy/app/Models/CostConfig.php
-
-		-
-			message: '#^Access to an undefined property Modules\\Tenancy\\Models\\CostConfig\:\:\$multiplier_queue\.$#'
-			identifier: property.notFound
-			count: 1
-			path: Modules/Tenancy/app/Models/CostConfig.php
-
-		-
-			message: '#^Access to an undefined property Modules\\Tenancy\\Models\\CostConfig\:\:\$multiplier_schedule\.$#'
-			identifier: property.notFound
-			count: 1
-			path: Modules/Tenancy/app/Models/CostConfig.php
-
-		-
-			message: '#^Access to an undefined property Modules\\Tenancy\\Models\\CostConfig\:\:\$object_price_per_gb_hour\.$#'
-			identifier: property.notFound
-			count: 1
-			path: Modules/Tenancy/app/Models/CostConfig.php
-
-		-
-			message: '#^Access to an undefined property Modules\\Tenancy\\Models\\CostConfig\:\:\$postgres_price_per_gb_hour\.$#'
-			identifier: property.notFound
-			count: 1
-			path: Modules/Tenancy/app/Models/CostConfig.php
-
-		-
-			message: '#^Unsafe usage of new static\(\)\.$#'
-			identifier: new.static
-			count: 1
-			path: Modules/Tenancy/app/Models/CostConfig.php
-
-		-
-			message: '#^Access to an undefined property Modules\\Tenancy\\Models\\Plan\:\:\$created_at\.$#'
-			identifier: property.notFound
-			count: 1
-			path: Modules/Tenancy/app/Models/Plan.php
-
-		-
-			message: '#^Access to an undefined property Modules\\Tenancy\\Models\\Plan\:\:\$updated_at\.$#'
-			identifier: property.notFound
-			count: 1
-			path: Modules/Tenancy/app/Models/Plan.php
 
 		-
 			message: '#^Access to an undefined property Modules\\Tenancy\\Models\\TenantInvitation\:\:\$accepted_at\.$#'
@@ -871,18 +763,6 @@ parameters:
 			path: Modules/Tenancy/app/Models/TenantUser.php
 
 		-
-			message: '#^Access to an undefined property Modules\\Tenancy\\Models\\Tenant\:\:\$name\.$#'
-			identifier: property.notFound
-			count: 1
-			path: Modules/Tenancy/app/Providers/PlanServiceProvider.php
-
-		-
-			message: '#^Access to an undefined property Modules\\Tenancy\\Models\\Tenant\:\:\$slug\.$#'
-			identifier: property.notFound
-			count: 1
-			path: Modules/Tenancy/app/Providers/PlanServiceProvider.php
-
-		-
 			message: '#^Access to an undefined property App\\Models\\User\:\:\$is_admin\.$#'
 			identifier: property.notFound
 			count: 1
@@ -905,120 +785,6 @@ parameters:
 			identifier: varTag.nativeType
 			count: 1
 			path: Modules/Tenancy/app/Providers/TenancyServiceProvider.php
-
-		-
-			message: '#^Access to an undefined property Modules\\Tenancy\\Models\\CostConfig\:\:\$postgres_instance_price_per_hour\.$#'
-			identifier: property.notFound
-			count: 1
-			path: Modules/Tenancy/app/Services/Bindings/BindingUsagePricing.php
-
-		-
-			message: '#^Access to an undefined property Modules\\Tenancy\\Models\\CapacityDeal\:\:\$currency\.$#'
-			identifier: property.notFound
-			count: 1
-			path: Modules/Tenancy/app/Services/CapacityDealService.php
-
-		-
-			message: '#^Using nullsafe property access "\?\-\>currency" on left side of \?\? is unnecessary\. Use \-\> instead\.$#'
-			identifier: nullsafe.neverNull
-			count: 1
-			path: Modules/Tenancy/app/Services/CapacityDealService.php
-
-		-
-			message: '#^Access to an undefined property Modules\\Tenancy\\Models\\CostConfig\:\:\$cpu_price_per_mc_ms\.$#'
-			identifier: property.notFound
-			count: 2
-			path: Modules/Tenancy/app/Services/CostCalculationService.php
-
-		-
-			message: '#^Access to an undefined property Modules\\Tenancy\\Models\\CostConfig\:\:\$gpu_price_per_unit_ms\.$#'
-			identifier: property.notFound
-			count: 1
-			path: Modules/Tenancy/app/Services/CostCalculationService.php
-
-		-
-			message: '#^Access to an undefined property Modules\\Tenancy\\Models\\CostConfig\:\:\$memory_price_per_mib_ms\.$#'
-			identifier: property.notFound
-			count: 2
-			path: Modules/Tenancy/app/Services/CostCalculationService.php
-
-		-
-			message: '#^Access to an undefined property Modules\\Tenancy\\Models\\Tenant\:\:\$slug\.$#'
-			identifier: property.notFound
-			count: 1
-			path: Modules/Tenancy/app/Services/Plans/PlanLimitService.php
-
-		-
-			message: '#^Access to an undefined property Modules\\Tenancy\\Models\\Tenant\:\:\$slug\.$#'
-			identifier: property.notFound
-			count: 1
-			path: Modules/Tenancy/app/Services/Plans/PlanQuotaService.php
-
-		-
-			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$currency\.$#'
-			identifier: property.notFound
-			count: 1
-			path: Modules/Tenancy/app/Services/Plans/PlanService.php
-
-		-
-			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$name\.$#'
-			identifier: property.notFound
-			count: 1
-			path: Modules/Tenancy/app/Services/Plans/PlanService.php
-
-		-
-			message: '#^Call to an undefined method Illuminate\\Database\\Eloquent\\Model\:\:price\(\)\.$#'
-			identifier: method.notFound
-			count: 1
-			path: Modules/Tenancy/app/Services/Plans/PlanService.php
-
-		-
-			message: '#^Using nullsafe property access "\?\-\>id" on left side of \?\? is unnecessary\. Use \-\> instead\.$#'
-			identifier: nullsafe.neverNull
-			count: 1
-			path: Modules/Tenancy/app/Services/Plans/PlanService.php
-
-		-
-			message: '#^Using nullsafe property access "\?\-\>periodEnd" on left side of \?\? is unnecessary\. Use \-\> instead\.$#'
-			identifier: nullsafe.neverNull
-			count: 1
-			path: Modules/Tenancy/app/Services/Plans/PlanService.php
-
-		-
-			message: '#^Access to an undefined property Modules\\Tenancy\\Models\\Tenant\:\:\$regions\.$#'
-			identifier: property.notFound
-			count: 1
-			path: Modules/Tenancy/app/Services/Plans/RegionQuotaAllocator.php
-
-		-
-			message: '#^Access to an undefined property Modules\\Tenancy\\Models\\Tenant\:\:\$name\.$#'
-			identifier: property.notFound
-			count: 3
-			path: Modules/Tenancy/app/Services/Plans/SelfServiceOnboarding.php
-
-		-
-			message: '#^Access to an undefined property Modules\\Tenancy\\Models\\Tenant\:\:\$slug\.$#'
-			identifier: property.notFound
-			count: 3
-			path: Modules/Tenancy/app/Services/Plans/SelfServiceOnboarding.php
-
-		-
-			message: '#^Call to method where\(\) on an unknown class App\\Models\\TenantAwareKnativeRegion\.$#'
-			identifier: class.notFound
-			count: 1
-			path: Modules/Tenancy/app/Services/Plans/SelfServiceOnboarding.php
-
-		-
-			message: '#^Call to method whereNull\(\) on an unknown class App\\Models\\TenantAwareKnativeRegion\.$#'
-			identifier: class.notFound
-			count: 1
-			path: Modules/Tenancy/app/Services/Plans/SelfServiceOnboarding.php
-
-		-
-			message: '#^Using nullsafe property access "\?\-\>status" on left side of \?\? is unnecessary\. Use \-\> instead\.$#'
-			identifier: nullsafe.neverNull
-			count: 1
-			path: Modules/Tenancy/app/Services/Plans/SelfServiceOnboarding.php
 
 		-
 			message: '#^Access to an undefined property App\\Models\\User\:\:\$is_admin\.$#'
@@ -1051,45 +817,9 @@ parameters:
 			path: Modules/Tenancy/app/Services/TenancyLoginService.php
 
 		-
-			message: '#^Access to an undefined property Modules\\Tenancy\\Models\\CostConfig\:\:\$cpu_price_per_core_month\.$#'
-			identifier: property.notFound
-			count: 1
-			path: Modules/Tenancy/app/Services/TenantBillingService.php
-
-		-
-			message: '#^Access to an undefined property Modules\\Tenancy\\Models\\CostConfig\:\:\$memory_price_per_gb_month\.$#'
-			identifier: property.notFound
-			count: 1
-			path: Modules/Tenancy/app/Services/TenantBillingService.php
-
-		-
-			message: '#^Access to an undefined property Modules\\Tenancy\\Models\\Tenant\:\:\$name\.$#'
-			identifier: property.notFound
-			count: 1
-			path: Modules/Tenancy/app/Services/TenantBillingService.php
-
-		-
-			message: '#^Access to an undefined property Modules\\Tenancy\\Models\\UsageRecord\:\:\$project_id\.$#'
-			identifier: property.notFound
-			count: 2
-			path: Modules/Tenancy/app/Services/TenantBillingService.php
-
-		-
-			message: '#^Parameter \#1 \$callback of method Illuminate\\Database\\Eloquent\\Collection\<int,Modules\\Tenancy\\Models\\UsageRecord\>\:\:map\(\) contains unresolvable type\.$#'
-			identifier: argument.unresolvableType
-			count: 1
-			path: Modules/Tenancy/app/Services/TenantBillingService.php
-
-		-
 			message: '#^Access to an undefined property Modules\\Tenancy\\Models\\Tenant\:\:\$slug\.$#'
 			identifier: property.notFound
 			count: 6
-			path: Modules/Tenancy/app/Services/TenantDeletionService.php
-
-		-
-			message: '#^Call to method get\(\) on an unknown class App\\Models\\TenantAwareKnativeRegion\.$#'
-			identifier: class.notFound
-			count: 1
 			path: Modules/Tenancy/app/Services/TenantDeletionService.php
 
 		-
@@ -1321,12 +1051,6 @@ parameters:
 			path: app/Console/Commands/InstallTracingCommand.php
 
 		-
-			message: '#^Call to method find\(\) on an unknown class App\\Models\\TenantAwareKnativeRegion\.$#'
-			identifier: class.notFound
-			count: 1
-			path: app/Console/Commands/ObservabilityCommand.php
-
-		-
 			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$kubeconfig\.$#'
 			identifier: property.notFound
 			count: 4
@@ -1543,22 +1267,10 @@ parameters:
 			path: app/Http/Controllers/Api/NotificationPreferenceController.php
 
 		-
-			message: '#^Call to method whereKey\(\) on an unknown class App\\Models\\TenantAwareKnativeRegion\.$#'
-			identifier: class.notFound
-			count: 1
-			path: app/Http/Controllers/Api/Observability/AlertRuleController.php
-
-		-
 			message: '#^Call to function is_array\(\) with array\<string, mixed\> will always evaluate to true\.$#'
 			identifier: function.alreadyNarrowedType
 			count: 1
 			path: app/Http/Controllers/Api/Observability/ObservabilityIngestController.php
-
-		-
-			message: '#^Call to method whereKey\(\) on an unknown class App\\Models\\TenantAwareKnativeRegion\.$#'
-			identifier: class.notFound
-			count: 1
-			path: app/Http/Controllers/Api/Observability/UptimeCheckController.php
 
 		-
 			message: '#^Parameter \#1 \$callback of method Illuminate\\Database\\Eloquent\\Collection\<int,Illuminate\\Database\\Eloquent\\Model\>\:\:map\(\) expects callable\(Illuminate\\Database\\Eloquent\\Model, int\)\: array, Closure\(App\\Models\\Observability\\UptimeIncident\)\: array given\.$#'
@@ -1693,18 +1405,6 @@ parameters:
 			path: app/Http/Controllers/Api/ResidencyController.php
 
 		-
-			message: '#^Call to method get\(\) on an unknown class App\\Models\\TenantAwareKnativeRegion\.$#'
-			identifier: class.notFound
-			count: 2
-			path: app/Http/Controllers/Api/ResidencyController.php
-
-		-
-			message: '#^Call to method orderBy\(\) on an unknown class App\\Models\\TenantAwareKnativeRegion\.$#'
-			identifier: class.notFound
-			count: 2
-			path: app/Http/Controllers/Api/ResidencyController.php
-
-		-
 			message: '#^Using nullsafe property access "\?\-\>allowed_locations" on left side of \?\? is unnecessary\. Use \-\> instead\.$#'
 			identifier: nullsafe.neverNull
 			count: 2
@@ -1727,12 +1427,6 @@ parameters:
 			identifier: nullsafe.neverNull
 			count: 1
 			path: app/Http/Controllers/Api/ResidencyController.php
-
-		-
-			message: '#^Call to method pluck\(\) on an unknown class App\\Models\\TenantAwareKnativeRegion\.$#'
-			identifier: class.notFound
-			count: 1
-			path: app/Http/Controllers/Api/RuntimeController.php
 
 		-
 			message: '#^Access to an undefined property App\\Models\\User\:\:\$is_admin\.$#'
@@ -2611,12 +2305,6 @@ parameters:
 			path: app/Http/Resources/ProjectResource.php
 
 		-
-			message: '#^Call to method whereKey\(\) on an unknown class App\\Models\\TenantAwareKnativeRegion\.$#'
-			identifier: class.notFound
-			count: 1
-			path: app/Http/Resources/SandboxResource.php
-
-		-
 			message: '#^Access to an undefined property App\\Http\\Resources\\VersionResource\:\:\$build_error\.$#'
 			identifier: property.notFound
 			count: 1
@@ -2809,12 +2497,6 @@ parameters:
 			path: app/Jobs/Ai/InstallGpuSupportJob.php
 
 		-
-			message: '#^Call to method find\(\) on an unknown class App\\Models\\TenantAwareKnativeRegion\.$#'
-			identifier: class.notFound
-			count: 1
-			path: app/Jobs/Bindings/DataServiceJob.php
-
-		-
 			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$id\.$#'
 			identifier: property.notFound
 			count: 1
@@ -2867,12 +2549,6 @@ parameters:
 			identifier: match.unhandled
 			count: 1
 			path: app/Jobs/InstallSandboxJob.php
-
-		-
-			message: '#^Call to method find\(\) on an unknown class App\\Models\\TenantAwareKnativeRegion\.$#'
-			identifier: class.notFound
-			count: 1
-			path: app/Jobs/InstallTracingJob.php
 
 		-
 			message: '#^Using nullsafe method call on non\-nullable type Illuminate\\Database\\Eloquent\\Relations\\HasOne\. Use \-\> instead\.$#'
@@ -2949,12 +2625,6 @@ parameters:
 		-
 			message: '#^Access to an undefined property Modules\\Tenancy\\Models\\Tenant\:\:\$name\.$#'
 			identifier: property.notFound
-			count: 1
-			path: app/Mcp/OAuth/AuthorizationServer.php
-
-		-
-			message: '#^Call to method whereKey\(\) on an unknown class App\\Models\\TenantAwareUser\.$#'
-			identifier: class.notFound
 			count: 1
 			path: app/Mcp/OAuth/AuthorizationServer.php
 
@@ -3103,462 +2773,6 @@ parameters:
 			path: app/Models/ImageSecurityReport.php
 
 		-
-			message: '#^PHPDoc tag @method for method App\\Models\\KnativeRegion\:\:demo\(\) return type contains unknown class App\\Models\\TenantAwareKnativeRegion\.$#'
-			identifier: class.notFound
-			count: 1
-			path: app/Models/KnativeRegion.php
-
-		-
-			message: '#^PHPDoc tag @method for method App\\Models\\KnativeRegion\:\:newModelQuery\(\) return type contains unknown class App\\Models\\TenantAwareKnativeRegion\.$#'
-			identifier: class.notFound
-			count: 1
-			path: app/Models/KnativeRegion.php
-
-		-
-			message: '#^PHPDoc tag @method for method App\\Models\\KnativeRegion\:\:newQuery\(\) return type contains unknown class App\\Models\\TenantAwareKnativeRegion\.$#'
-			identifier: class.notFound
-			count: 1
-			path: app/Models/KnativeRegion.php
-
-		-
-			message: '#^PHPDoc tag @method for method App\\Models\\KnativeRegion\:\:query\(\) return type contains unknown class App\\Models\\TenantAwareKnativeRegion\.$#'
-			identifier: class.notFound
-			count: 1
-			path: app/Models/KnativeRegion.php
-
-		-
-			message: '#^PHPDoc tag @method for method App\\Models\\KnativeRegion\:\:real\(\) return type contains unknown class App\\Models\\TenantAwareKnativeRegion\.$#'
-			identifier: class.notFound
-			count: 1
-			path: app/Models/KnativeRegion.php
-
-		-
-			message: '#^PHPDoc tag @method for method App\\Models\\KnativeRegion\:\:whereClusterStatus\(\) return type contains unknown class App\\Models\\TenantAwareKnativeRegion\.$#'
-			identifier: class.notFound
-			count: 1
-			path: app/Models/KnativeRegion.php
-
-		-
-			message: '#^PHPDoc tag @method for method App\\Models\\KnativeRegion\:\:whereClusterStatusMessage\(\) return type contains unknown class App\\Models\\TenantAwareKnativeRegion\.$#'
-			identifier: class.notFound
-			count: 1
-			path: app/Models/KnativeRegion.php
-
-		-
-			message: '#^PHPDoc tag @method for method App\\Models\\KnativeRegion\:\:whereCreatedAt\(\) return type contains unknown class App\\Models\\TenantAwareKnativeRegion\.$#'
-			identifier: class.notFound
-			count: 1
-			path: app/Models/KnativeRegion.php
-
-		-
-			message: '#^PHPDoc tag @method for method App\\Models\\KnativeRegion\:\:whereDnsResolved\(\) return type contains unknown class App\\Models\\TenantAwareKnativeRegion\.$#'
-			identifier: class.notFound
-			count: 1
-			path: app/Models/KnativeRegion.php
-
-		-
-			message: '#^PHPDoc tag @method for method App\\Models\\KnativeRegion\:\:whereDomainMigrationOldDomain\(\) return type contains unknown class App\\Models\\TenantAwareKnativeRegion\.$#'
-			identifier: class.notFound
-			count: 1
-			path: app/Models/KnativeRegion.php
-
-		-
-			message: '#^PHPDoc tag @method for method App\\Models\\KnativeRegion\:\:whereDomainMigrationStartedAt\(\) return type contains unknown class App\\Models\\TenantAwareKnativeRegion\.$#'
-			identifier: class.notFound
-			count: 1
-			path: app/Models/KnativeRegion.php
-
-		-
-			message: '#^PHPDoc tag @method for method App\\Models\\KnativeRegion\:\:whereDomainMigrationStatus\(\) return type contains unknown class App\\Models\\TenantAwareKnativeRegion\.$#'
-			identifier: class.notFound
-			count: 1
-			path: app/Models/KnativeRegion.php
-
-		-
-			message: '#^PHPDoc tag @method for method App\\Models\\KnativeRegion\:\:whereExternalIp\(\) return type contains unknown class App\\Models\\TenantAwareKnativeRegion\.$#'
-			identifier: class.notFound
-			count: 1
-			path: app/Models/KnativeRegion.php
-
-		-
-			message: '#^PHPDoc tag @method for method App\\Models\\KnativeRegion\:\:whereId\(\) return type contains unknown class App\\Models\\TenantAwareKnativeRegion\.$#'
-			identifier: class.notFound
-			count: 1
-			path: app/Models/KnativeRegion.php
-
-		-
-			message: '#^PHPDoc tag @method for method App\\Models\\KnativeRegion\:\:whereIsActive\(\) return type contains unknown class App\\Models\\TenantAwareKnativeRegion\.$#'
-			identifier: class.notFound
-			count: 1
-			path: app/Models/KnativeRegion.php
-
-		-
-			message: '#^PHPDoc tag @method for method App\\Models\\KnativeRegion\:\:whereIsDemo\(\) return type contains unknown class App\\Models\\TenantAwareKnativeRegion\.$#'
-			identifier: class.notFound
-			count: 1
-			path: app/Models/KnativeRegion.php
-
-		-
-			message: '#^PHPDoc tag @method for method App\\Models\\KnativeRegion\:\:whereIsSynced\(\) return type contains unknown class App\\Models\\TenantAwareKnativeRegion\.$#'
-			identifier: class.notFound
-			count: 1
-			path: app/Models/KnativeRegion.php
-
-		-
-			message: '#^PHPDoc tag @method for method App\\Models\\KnativeRegion\:\:whereKnativeEventingNamespace\(\) return type contains unknown class App\\Models\\TenantAwareKnativeRegion\.$#'
-			identifier: class.notFound
-			count: 1
-			path: app/Models/KnativeRegion.php
-
-		-
-			message: '#^PHPDoc tag @method for method App\\Models\\KnativeRegion\:\:whereKnativeEventingStatus\(\) return type contains unknown class App\\Models\\TenantAwareKnativeRegion\.$#'
-			identifier: class.notFound
-			count: 1
-			path: app/Models/KnativeRegion.php
-
-		-
-			message: '#^PHPDoc tag @method for method App\\Models\\KnativeRegion\:\:whereKnativeEventingStatusMessage\(\) return type contains unknown class App\\Models\\TenantAwareKnativeRegion\.$#'
-			identifier: class.notFound
-			count: 1
-			path: app/Models/KnativeRegion.php
-
-		-
-			message: '#^PHPDoc tag @method for method App\\Models\\KnativeRegion\:\:whereKnativeEventingVersion\(\) return type contains unknown class App\\Models\\TenantAwareKnativeRegion\.$#'
-			identifier: class.notFound
-			count: 1
-			path: app/Models/KnativeRegion.php
-
-		-
-			message: '#^PHPDoc tag @method for method App\\Models\\KnativeRegion\:\:whereKnativeOperatorNamespace\(\) return type contains unknown class App\\Models\\TenantAwareKnativeRegion\.$#'
-			identifier: class.notFound
-			count: 1
-			path: app/Models/KnativeRegion.php
-
-		-
-			message: '#^PHPDoc tag @method for method App\\Models\\KnativeRegion\:\:whereKnativeOperatorStatus\(\) return type contains unknown class App\\Models\\TenantAwareKnativeRegion\.$#'
-			identifier: class.notFound
-			count: 1
-			path: app/Models/KnativeRegion.php
-
-		-
-			message: '#^PHPDoc tag @method for method App\\Models\\KnativeRegion\:\:whereKnativeOperatorStatusMessage\(\) return type contains unknown class App\\Models\\TenantAwareKnativeRegion\.$#'
-			identifier: class.notFound
-			count: 1
-			path: app/Models/KnativeRegion.php
-
-		-
-			message: '#^PHPDoc tag @method for method App\\Models\\KnativeRegion\:\:whereKnativeRedisStatus\(\) return type contains unknown class App\\Models\\TenantAwareKnativeRegion\.$#'
-			identifier: class.notFound
-			count: 1
-			path: app/Models/KnativeRegion.php
-
-		-
-			message: '#^PHPDoc tag @method for method App\\Models\\KnativeRegion\:\:whereKnativeRedisStatusMessage\(\) return type contains unknown class App\\Models\\TenantAwareKnativeRegion\.$#'
-			identifier: class.notFound
-			count: 1
-			path: app/Models/KnativeRegion.php
-
-		-
-			message: '#^PHPDoc tag @method for method App\\Models\\KnativeRegion\:\:whereKnativeServingIngressClass\(\) return type contains unknown class App\\Models\\TenantAwareKnativeRegion\.$#'
-			identifier: class.notFound
-			count: 1
-			path: app/Models/KnativeRegion.php
-
-		-
-			message: '#^PHPDoc tag @method for method App\\Models\\KnativeRegion\:\:whereKnativeServingNamespace\(\) return type contains unknown class App\\Models\\TenantAwareKnativeRegion\.$#'
-			identifier: class.notFound
-			count: 1
-			path: app/Models/KnativeRegion.php
-
-		-
-			message: '#^PHPDoc tag @method for method App\\Models\\KnativeRegion\:\:whereKnativeServingStatus\(\) return type contains unknown class App\\Models\\TenantAwareKnativeRegion\.$#'
-			identifier: class.notFound
-			count: 1
-			path: app/Models/KnativeRegion.php
-
-		-
-			message: '#^PHPDoc tag @method for method App\\Models\\KnativeRegion\:\:whereKnativeServingStatusMessage\(\) return type contains unknown class App\\Models\\TenantAwareKnativeRegion\.$#'
-			identifier: class.notFound
-			count: 1
-			path: app/Models/KnativeRegion.php
-
-		-
-			message: '#^PHPDoc tag @method for method App\\Models\\KnativeRegion\:\:whereKnativeServingVersion\(\) return type contains unknown class App\\Models\\TenantAwareKnativeRegion\.$#'
-			identifier: class.notFound
-			count: 1
-			path: app/Models/KnativeRegion.php
-
-		-
-			message: '#^PHPDoc tag @method for method App\\Models\\KnativeRegion\:\:whereKnativeSettings\(\) return type contains unknown class App\\Models\\TenantAwareKnativeRegion\.$#'
-			identifier: class.notFound
-			count: 1
-			path: app/Models/KnativeRegion.php
-
-		-
-			message: '#^PHPDoc tag @method for method App\\Models\\KnativeRegion\:\:whereKnativeStatus\(\) return type contains unknown class App\\Models\\TenantAwareKnativeRegion\.$#'
-			identifier: class.notFound
-			count: 1
-			path: app/Models/KnativeRegion.php
-
-		-
-			message: '#^PHPDoc tag @method for method App\\Models\\KnativeRegion\:\:whereKnativeStatusCheckedAt\(\) return type contains unknown class App\\Models\\TenantAwareKnativeRegion\.$#'
-			identifier: class.notFound
-			count: 1
-			path: app/Models/KnativeRegion.php
-
-		-
-			message: '#^PHPDoc tag @method for method App\\Models\\KnativeRegion\:\:whereKnativeStatusMessage\(\) return type contains unknown class App\\Models\\TenantAwareKnativeRegion\.$#'
-			identifier: class.notFound
-			count: 1
-			path: app/Models/KnativeRegion.php
-
-		-
-			message: '#^PHPDoc tag @method for method App\\Models\\KnativeRegion\:\:whereKubeconfig\(\) return type contains unknown class App\\Models\\TenantAwareKnativeRegion\.$#'
-			identifier: class.notFound
-			count: 1
-			path: app/Models/KnativeRegion.php
-
-		-
-			message: '#^PHPDoc tag @method for method App\\Models\\KnativeRegion\:\:whereLokiManaged\(\) return type contains unknown class App\\Models\\TenantAwareKnativeRegion\.$#'
-			identifier: class.notFound
-			count: 1
-			path: app/Models/KnativeRegion.php
-
-		-
-			message: '#^PHPDoc tag @method for method App\\Models\\KnativeRegion\:\:whereLokiStatus\(\) return type contains unknown class App\\Models\\TenantAwareKnativeRegion\.$#'
-			identifier: class.notFound
-			count: 1
-			path: app/Models/KnativeRegion.php
-
-		-
-			message: '#^PHPDoc tag @method for method App\\Models\\KnativeRegion\:\:whereLokiUrl\(\) return type contains unknown class App\\Models\\TenantAwareKnativeRegion\.$#'
-			identifier: class.notFound
-			count: 1
-			path: app/Models/KnativeRegion.php
-
-		-
-			message: '#^PHPDoc tag @method for method App\\Models\\KnativeRegion\:\:whereMigrationOldIp\(\) return type contains unknown class App\\Models\\TenantAwareKnativeRegion\.$#'
-			identifier: class.notFound
-			count: 1
-			path: app/Models/KnativeRegion.php
-
-		-
-			message: '#^PHPDoc tag @method for method App\\Models\\KnativeRegion\:\:whereMigrationOldKubeconfig\(\) return type contains unknown class App\\Models\\TenantAwareKnativeRegion\.$#'
-			identifier: class.notFound
-			count: 1
-			path: app/Models/KnativeRegion.php
-
-		-
-			message: '#^PHPDoc tag @method for method App\\Models\\KnativeRegion\:\:whereMigrationStartedAt\(\) return type contains unknown class App\\Models\\TenantAwareKnativeRegion\.$#'
-			identifier: class.notFound
-			count: 1
-			path: app/Models/KnativeRegion.php
-
-		-
-			message: '#^PHPDoc tag @method for method App\\Models\\KnativeRegion\:\:whereMigrationStatus\(\) return type contains unknown class App\\Models\\TenantAwareKnativeRegion\.$#'
-			identifier: class.notFound
-			count: 1
-			path: app/Models/KnativeRegion.php
-
-		-
-			message: '#^PHPDoc tag @method for method App\\Models\\KnativeRegion\:\:whereName\(\) return type contains unknown class App\\Models\\TenantAwareKnativeRegion\.$#'
-			identifier: class.notFound
-			count: 1
-			path: app/Models/KnativeRegion.php
-
-		-
-			message: '#^PHPDoc tag @method for method App\\Models\\KnativeRegion\:\:whereOwnerTenantId\(\) return type contains unknown class App\\Models\\TenantAwareKnativeRegion\.$#'
-			identifier: class.notFound
-			count: 1
-			path: app/Models/KnativeRegion.php
-
-		-
-			message: '#^PHPDoc tag @method for method App\\Models\\KnativeRegion\:\:whereProjectNamespace\(\) return type contains unknown class App\\Models\\TenantAwareKnativeRegion\.$#'
-			identifier: class.notFound
-			count: 1
-			path: app/Models/KnativeRegion.php
-
-		-
-			message: '#^PHPDoc tag @method for method App\\Models\\KnativeRegion\:\:wherePrometheusManaged\(\) return type contains unknown class App\\Models\\TenantAwareKnativeRegion\.$#'
-			identifier: class.notFound
-			count: 1
-			path: app/Models/KnativeRegion.php
-
-		-
-			message: '#^PHPDoc tag @method for method App\\Models\\KnativeRegion\:\:wherePrometheusUrl\(\) return type contains unknown class App\\Models\\TenantAwareKnativeRegion\.$#'
-			identifier: class.notFound
-			count: 1
-			path: app/Models/KnativeRegion.php
-
-		-
-			message: '#^PHPDoc tag @method for method App\\Models\\KnativeRegion\:\:whereRedisAddress\(\) return type contains unknown class App\\Models\\TenantAwareKnativeRegion\.$#'
-			identifier: class.notFound
-			count: 1
-			path: app/Models/KnativeRegion.php
-
-		-
-			message: '#^PHPDoc tag @method for method App\\Models\\KnativeRegion\:\:whereRedisMode\(\) return type contains unknown class App\\Models\\TenantAwareKnativeRegion\.$#'
-			identifier: class.notFound
-			count: 1
-			path: app/Models/KnativeRegion.php
-
-		-
-			message: '#^PHPDoc tag @method for method App\\Models\\KnativeRegion\:\:whereRedisPassword\(\) return type contains unknown class App\\Models\\TenantAwareKnativeRegion\.$#'
-			identifier: class.notFound
-			count: 1
-			path: app/Models/KnativeRegion.php
-
-		-
-			message: '#^PHPDoc tag @method for method App\\Models\\KnativeRegion\:\:whereRegionDemoStatus\(\) return type contains unknown class App\\Models\\TenantAwareKnativeRegion\.$#'
-			identifier: class.notFound
-			count: 1
-			path: app/Models/KnativeRegion.php
-
-		-
-			message: '#^PHPDoc tag @method for method App\\Models\\KnativeRegion\:\:whereRegionMode\(\) return type contains unknown class App\\Models\\TenantAwareKnativeRegion\.$#'
-			identifier: class.notFound
-			count: 1
-			path: app/Models/KnativeRegion.php
-
-		-
-			message: '#^PHPDoc tag @method for method App\\Models\\KnativeRegion\:\:whereRegionStatus\(\) return type contains unknown class App\\Models\\TenantAwareKnativeRegion\.$#'
-			identifier: class.notFound
-			count: 1
-			path: app/Models/KnativeRegion.php
-
-		-
-			message: '#^PHPDoc tag @method for method App\\Models\\KnativeRegion\:\:whereRegistryAddress\(\) return type contains unknown class App\\Models\\TenantAwareKnativeRegion\.$#'
-			identifier: class.notFound
-			count: 1
-			path: app/Models/KnativeRegion.php
-
-		-
-			message: '#^PHPDoc tag @method for method App\\Models\\KnativeRegion\:\:whereRegistryMode\(\) return type contains unknown class App\\Models\\TenantAwareKnativeRegion\.$#'
-			identifier: class.notFound
-			count: 1
-			path: app/Models/KnativeRegion.php
-
-		-
-			message: '#^PHPDoc tag @method for method App\\Models\\KnativeRegion\:\:whereRegistryNamespace\(\) return type contains unknown class App\\Models\\TenantAwareKnativeRegion\.$#'
-			identifier: class.notFound
-			count: 1
-			path: app/Models/KnativeRegion.php
-
-		-
-			message: '#^PHPDoc tag @method for method App\\Models\\KnativeRegion\:\:whereRegistryPassword\(\) return type contains unknown class App\\Models\\TenantAwareKnativeRegion\.$#'
-			identifier: class.notFound
-			count: 1
-			path: app/Models/KnativeRegion.php
-
-		-
-			message: '#^PHPDoc tag @method for method App\\Models\\KnativeRegion\:\:whereRegistryStatus\(\) return type contains unknown class App\\Models\\TenantAwareKnativeRegion\.$#'
-			identifier: class.notFound
-			count: 1
-			path: app/Models/KnativeRegion.php
-
-		-
-			message: '#^PHPDoc tag @method for method App\\Models\\KnativeRegion\:\:whereRegistryStatusMessage\(\) return type contains unknown class App\\Models\\TenantAwareKnativeRegion\.$#'
-			identifier: class.notFound
-			count: 1
-			path: app/Models/KnativeRegion.php
-
-		-
-			message: '#^PHPDoc tag @method for method App\\Models\\KnativeRegion\:\:whereRegistryStorageConfig\(\) return type contains unknown class App\\Models\\TenantAwareKnativeRegion\.$#'
-			identifier: class.notFound
-			count: 1
-			path: app/Models/KnativeRegion.php
-
-		-
-			message: '#^PHPDoc tag @method for method App\\Models\\KnativeRegion\:\:whereRegistryStorageType\(\) return type contains unknown class App\\Models\\TenantAwareKnativeRegion\.$#'
-			identifier: class.notFound
-			count: 1
-			path: app/Models/KnativeRegion.php
-
-		-
-			message: '#^PHPDoc tag @method for method App\\Models\\KnativeRegion\:\:whereRegistryUsername\(\) return type contains unknown class App\\Models\\TenantAwareKnativeRegion\.$#'
-			identifier: class.notFound
-			count: 1
-			path: app/Models/KnativeRegion.php
-
-		-
-			message: '#^PHPDoc tag @method for method App\\Models\\KnativeRegion\:\:whereSandboxBuildRuntime\(\) return type contains unknown class App\\Models\\TenantAwareKnativeRegion\.$#'
-			identifier: class.notFound
-			count: 1
-			path: app/Models/KnativeRegion.php
-
-		-
-			message: '#^PHPDoc tag @method for method App\\Models\\KnativeRegion\:\:whereSandboxCaasRuntime\(\) return type contains unknown class App\\Models\\TenantAwareKnativeRegion\.$#'
-			identifier: class.notFound
-			count: 1
-			path: app/Models/KnativeRegion.php
-
-		-
-			message: '#^PHPDoc tag @method for method App\\Models\\KnativeRegion\:\:whereSandboxFaasRuntime\(\) return type contains unknown class App\\Models\\TenantAwareKnativeRegion\.$#'
-			identifier: class.notFound
-			count: 1
-			path: app/Models/KnativeRegion.php
-
-		-
-			message: '#^PHPDoc tag @method for method App\\Models\\KnativeRegion\:\:whereSandboxGvisorStatus\(\) return type contains unknown class App\\Models\\TenantAwareKnativeRegion\.$#'
-			identifier: class.notFound
-			count: 1
-			path: app/Models/KnativeRegion.php
-
-		-
-			message: '#^PHPDoc tag @method for method App\\Models\\KnativeRegion\:\:whereSandboxGvisorStatusMessage\(\) return type contains unknown class App\\Models\\TenantAwareKnativeRegion\.$#'
-			identifier: class.notFound
-			count: 1
-			path: app/Models/KnativeRegion.php
-
-		-
-			message: '#^PHPDoc tag @method for method App\\Models\\KnativeRegion\:\:whereSandboxKataHypervisor\(\) return type contains unknown class App\\Models\\TenantAwareKnativeRegion\.$#'
-			identifier: class.notFound
-			count: 1
-			path: app/Models/KnativeRegion.php
-
-		-
-			message: '#^PHPDoc tag @method for method App\\Models\\KnativeRegion\:\:whereSandboxKataStatus\(\) return type contains unknown class App\\Models\\TenantAwareKnativeRegion\.$#'
-			identifier: class.notFound
-			count: 1
-			path: app/Models/KnativeRegion.php
-
-		-
-			message: '#^PHPDoc tag @method for method App\\Models\\KnativeRegion\:\:whereSandboxKataStatusMessage\(\) return type contains unknown class App\\Models\\TenantAwareKnativeRegion\.$#'
-			identifier: class.notFound
-			count: 1
-			path: app/Models/KnativeRegion.php
-
-		-
-			message: '#^PHPDoc tag @method for method App\\Models\\KnativeRegion\:\:whereSandboxXaasRuntime\(\) return type contains unknown class App\\Models\\TenantAwareKnativeRegion\.$#'
-			identifier: class.notFound
-			count: 1
-			path: app/Models/KnativeRegion.php
-
-		-
-			message: '#^PHPDoc tag @method for method App\\Models\\KnativeRegion\:\:whereSelectedWorkers\(\) return type contains unknown class App\\Models\\TenantAwareKnativeRegion\.$#'
-			identifier: class.notFound
-			count: 1
-			path: app/Models/KnativeRegion.php
-
-		-
-			message: '#^PHPDoc tag @method for method App\\Models\\KnativeRegion\:\:whereTotalCpuM\(\) return type contains unknown class App\\Models\\TenantAwareKnativeRegion\.$#'
-			identifier: class.notFound
-			count: 1
-			path: app/Models/KnativeRegion.php
-
-		-
-			message: '#^PHPDoc tag @method for method App\\Models\\KnativeRegion\:\:whereTotalMemoryMb\(\) return type contains unknown class App\\Models\\TenantAwareKnativeRegion\.$#'
-			identifier: class.notFound
-			count: 1
-			path: app/Models/KnativeRegion.php
-
-		-
-			message: '#^PHPDoc tag @method for method App\\Models\\KnativeRegion\:\:whereUpdatedAt\(\) return type contains unknown class App\\Models\\TenantAwareKnativeRegion\.$#'
-			identifier: class.notFound
-			count: 1
-			path: app/Models/KnativeRegion.php
-
-		-
 			message: '#^Access to an undefined property App\\Models\\Observability\\AlertChannel\:\:\$created_at\.$#'
 			identifier: property.notFound
 			count: 1
@@ -3647,24 +2861,6 @@ parameters:
 			identifier: new.static
 			count: 1
 			path: app/Models/SandboxRegionSetting.php
-
-		-
-			message: '#^PHPDoc tag @method for method App\\Models\\User\:\:newModelQuery\(\) return type contains unknown class App\\Models\\TenantAwareUser\.$#'
-			identifier: class.notFound
-			count: 1
-			path: app/Models/User.php
-
-		-
-			message: '#^PHPDoc tag @method for method App\\Models\\User\:\:newQuery\(\) return type contains unknown class App\\Models\\TenantAwareUser\.$#'
-			identifier: class.notFound
-			count: 1
-			path: app/Models/User.php
-
-		-
-			message: '#^PHPDoc tag @method for method App\\Models\\User\:\:query\(\) return type contains unknown class App\\Models\\TenantAwareUser\.$#'
-			identifier: class.notFound
-			count: 1
-			path: app/Models/User.php
 
 		-
 			message: '#^Call to function method_exists\(\) with ''Modules\\\\Tenancy\\\\Services\\\\TenantQuotaService'' and ''addUsageContributor'' will always evaluate to true\.$#'
@@ -3971,12 +3167,6 @@ parameters:
 			identifier: arrayValues.list
 			count: 1
 			path: app/Services/Bindings/BindingEnv.php
-
-		-
-			message: '#^Call to method find\(\) on an unknown class App\\Models\\TenantAwareKnativeRegion\.$#'
-			identifier: class.notFound
-			count: 1
-			path: app/Services/Bindings/BindingManager.php
 
 		-
 			message: '#^If condition is always true\.$#'
@@ -4465,18 +3655,6 @@ parameters:
 			path: app/Services/RegistryImageLifecycleService.php
 
 		-
-			message: '#^Call to method pluck\(\) on an unknown class App\\Models\\TenantAwareKnativeRegion\.$#'
-			identifier: class.notFound
-			count: 1
-			path: app/Services/Residency/RegionPolicy.php
-
-		-
-			message: '#^Call to method whereIn\(\) on an unknown class App\\Models\\TenantAwareKnativeRegion\.$#'
-			identifier: class.notFound
-			count: 1
-			path: app/Services/Residency/RegionPolicy.php
-
-		-
 			message: '#^Using nullsafe property access "\?\-\>name" on left side of \?\? is unnecessary\. Use \-\> instead\.$#'
 			identifier: nullsafe.neverNull
 			count: 1
@@ -4489,22 +3667,10 @@ parameters:
 			path: app/Services/Runtimes/RuntimeContainerSpec.php
 
 		-
-			message: '#^Call to method get\(\) on an unknown class App\\Models\\TenantAwareKnativeRegion\.$#'
-			identifier: class.notFound
-			count: 1
-			path: app/Services/Runtimes/RuntimeImageBuildService.php
-
-		-
 			message: '#^Parameter \#1 \$array \(non\-empty\-list\<non\-falsy\-string\>\) of array_values is already a list, call has no effect\.$#'
 			identifier: arrayValues.list
 			count: 1
 			path: app/Services/Runtimes/RuntimeImageBuildService.php
-
-		-
-			message: '#^Call to method get\(\) on an unknown class App\\Models\\TenantAwareKnativeRegion\.$#'
-			identifier: class.notFound
-			count: 1
-			path: app/Services/Runtimes/RuntimeRegistry.php
 
 		-
 			message: '#^Using nullsafe property access "\?\-\>name" on left side of \?\? is unnecessary\. Use \-\> instead\.$#'
@@ -4609,22 +3775,10 @@ parameters:
 			path: app/Services/Sandboxes/SandboxQuotaService.php
 
 		-
-			message: '#^Call to method where\(\) on an unknown class App\\Models\\TenantAwareKnativeRegion\.$#'
-			identifier: class.notFound
-			count: 1
-			path: app/Services/Sandboxes/SandboxRegions.php
-
-		-
 			message: '#^Dead catch \- RuntimeException is never thrown in the try block\.$#'
 			identifier: catch.neverThrown
 			count: 1
 			path: app/Services/Sandboxes/SandboxService.php
-
-		-
-			message: '#^Call to method whereKey\(\) on an unknown class App\\Models\\TenantAwareKnativeRegion\.$#'
-			identifier: class.notFound
-			count: 1
-			path: app/Services/Sandboxes/SandboxUsageAggregator.php
 
 		-
 			message: '#^Negated boolean expression is always true\.$#'
@@ -4771,12 +3925,6 @@ parameters:
 			path: app/Services/WhiteLabel/BrandingService.php
 
 		-
-			message: '#^Call to method where\(\) on an unknown class App\\Models\\TenantAwareUser\.$#'
-			identifier: class.notFound
-			count: 2
-			path: app/Services/WhiteLabel/SignupService.php
-
-		-
 			message: '#^Call to an undefined method App\\Services\\ZotRegistryService\:\:appendLog\(\)\.$#'
 			identifier: method.notFound
 			count: 3
@@ -4787,18 +3935,6 @@ parameters:
 			identifier: match.unhandled
 			count: 1
 			path: app/Services/ZotRegistryService.php
-
-		-
-			message: '#^Call to method find\(\) on an unknown class App\\Models\\TenantAwareUser\.$#'
-			identifier: class.notFound
-			count: 1
-			path: app/Support/Rbac/AccessManager.php
-
-		-
-			message: '#^Call to method whereKeyNot\(\) on an unknown class App\\Models\\TenantAwareUser\.$#'
-			identifier: class.notFound
-			count: 1
-			path: app/Support/Rbac/AccessManager.php
 
 		-
 			message: '#^Parameter \#1 \$tenant of class Modules\\Tenancy\\Support\\TenantOrganization constructor expects Modules\\Tenancy\\Models\\Tenant, Illuminate\\Database\\Eloquent\\Model\|Stancl\\Tenancy\\Contracts\\Tenant given\.$#'
@@ -4817,24 +3953,6 @@ parameters:
 			identifier: arrayValues.list
 			count: 1
 			path: app/Support/Rbac/RoutePermissions.php
-
-		-
-			message: '#^Call to method get\(\) on an unknown class App\\Models\\TenantAwareUser\.$#'
-			identifier: class.notFound
-			count: 1
-			path: app/Support/Rbac/SingleTenantOrganization.php
-
-		-
-			message: '#^Call to method orderBy\(\) on an unknown class App\\Models\\TenantAwareUser\.$#'
-			identifier: class.notFound
-			count: 1
-			path: app/Support/Rbac/SingleTenantOrganization.php
-
-		-
-			message: '#^Call to method whereKey\(\) on an unknown class App\\Models\\TenantAwareUser\.$#'
-			identifier: class.notFound
-			count: 1
-			path: app/Support/Rbac/SingleTenantOrganization.php
 
 		-
 			message: '#^Method App\\Support\\Rbac\\SingleTenantOrganization\:\:members\(\) should return Illuminate\\Support\\Collection\<int, object\{id\: int\|string, name\: string, email\: string, username\: string\|null, role\: string\|null\}\> but returns Illuminate\\Support\\Collection\<int, object\{id\: int\<0, max\>, name\: string, email\: string, username\: string, role\: mixed\}&stdClass\>\.$#'

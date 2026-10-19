@@ -15,12 +15,12 @@ This page describes the components and how they interact. Related documents:
 | Roles and permissions | [permissions.md](permissions.md) |
 | Secrets, encryption, audit log | [security.md](security.md) |
 | Metrics, logs, tracing, uptime checks, alerts | [observability.md](observability.md) |
-| Metric snapshots, sessions, cost | [monitoring.md](monitoring.md) |
+| Metric snapshots, sessions, usage metering | [monitoring.md](monitoring.md) |
 | WebSocket topics (`PlatformEvent`) | [websocket-events.md](websocket-events.md) |
 | Browser shell into pods | [web-shell.md](web-shell.md) |
 | Version endpoint and image tags | [versioning.md](versioning.md) |
 | Kata Containers hypervisors | [kata-hypervisors.md](kata-hypervisors.md) |
-| Billing: charges, billing API, billing events | [billing.md](billing.md) |
+| Billing module: bills per project, prices, fixed resources, billing API, events | [billing.md](billing.md) |
 
 ## Topology
 
@@ -31,6 +31,7 @@ This page describes the components and how they interact. Related documents:
                          │    /api/*    → runr-api     (Laravel 12, Octane on FrankenPHP)        │
                          │    /mcp, /mcp/*, /oauth2/*, /.well-known/oauth-* → runr-api (MCP)     │
                          │    /git/*    → runr-api     (git smart HTTP remotes)                  │
+                         │    /oauth/*/callback → runr-api (SSO sign-in callback of a provider)  │
                          │    /horizon/*→ runr-api     (Horizon dashboard)                       │
                          │    /storage/*→ runr-api     (public disk)                             │
                          │    /ws/*     → runr-reverb  (Laravel Reverb, /ws prefix stripped)     │
@@ -44,9 +45,9 @@ This page describes the components and how they interact. Related documents:
         │ knative-operator   Knative Operator (Helm)                                           │
         │ knative-serving    Knative Serving (KnativeServing CR) + Traefik (Knative provider)  │
         │ <project ns>       project Knative Services, CronJobs, queue consumers, build Jobs,  │
-        │                    model services, image upload receivers, the model volume          │
+        │                    model services, image upload receivers, the model volume, the     │
+        │                    managed Redis runr-redis (Redis Streams for the queue trigger)    │
         │ runr-registry      Zot registry (builds, runtime images, uploads; pull-through)      │
-        │ runr-system        Redis (Redis Streams for the queue trigger)                       │
         │ runr-sandbox       gVisor / Kata Containers / Wasm installers, RuntimeClasses        │
         │ observability      Prometheus, Loki, OpenTelemetry Collector, Tempo, runr-agent      │
         │ runr-data          binding data services: Redis (KV), Garage (S3), CloudNativePG     │
@@ -66,7 +67,7 @@ used there.
 
 | Component | Image / process | Role |
 |-----------|-----------------|------|
-| `runr-gateway` | `ghcr.io/brf-tech/runr/reqs/caddy` with the chart's Caddyfile (`helm/templates/gateway-configmap.yaml`) | Single entry point; routes `/`, `/api`, `/horizon`, `/storage`, `/ws`, `/git` (when `gitDeploy.enabled`, streamed) and `/mcp`, `/oauth2`, `/.well-known/oauth-*` (streamed, [mcp.md](mcp.md)); `/healthz` answers itself |
+| `runr-gateway` | `ghcr.io/brf-tech/runr/reqs/caddy` with the chart's Caddyfile (`helm/templates/gateway-configmap.yaml`) | Single entry point; routes `/` to the UI, `/api`, `/oauth/<provider>/callback` (SSO sign-in callbacks; the console's own `/oauth/callback` page stays with the UI), `/horizon` (the [Horizon dashboard](install.md#horizon-dashboard)), `/storage`, `/git` (when `gitDeploy.enabled`, streamed) and `/mcp`, `/oauth2`, `/.well-known/oauth-*` (streamed, [mcp.md](mcp.md)) to the API, `/ws` to Reverb; `/healthz` answers itself. The Compose gateway (`compose/Caddyfile`) routes the same paths to the API and Reverb and serves the console's files itself ([compose/README.md](../compose/README.md#service-architecture)) |
 | `runr-ui` | `ghcr.io/brf-tech/runr/ui` (`vue/Dockerfile`, Caddy) | Vue 3 + Vite SPA (the console): Pinia, vue-i18n (EN/TR), Tailwind CSS, Monaco editor, xterm.js, driver.js tours |
 | `runr-api` | `ghcr.io/brf-tech/runr/api`, `CONTAINER_ROLE=api` | REST API (`api/routes/*.php`), Sanctum token auth, OpenAPI docs via Scramble; also the MCP server and OAuth authorization server, the hosted MCP server gateway, the git remotes (`git http-backend`), the durable workflows engine API and the Sandbox API |
 | `runr-horizon` | same image, `CONTAINER_ROLE=horizon` | Queue workers: deploys, builds, region installs, supply-chain runs, workflow steps, binding operations, image uploads, demo data |
@@ -85,6 +86,14 @@ worker ([Dedicated workers](#dedicated-workers)); the pods still start there aft
 upgrade. `placement.tolerations`, `placement.affinity` and `placement.nodeSelector` apply to every
 pod as given; the dedicated-worker toleration and preference and the colocation of the pods that
 share the API storage (`podColocation`) are added to them.
+
+Hook Jobs of the chart (same API image): `runr-migrate-install-<revision>` (post-install) and
+`runr-migrate-upgrade-<revision>` (pre-upgrade, before any Deployment changes) run the database
+migrations, with the Tenancy module also `tenancy:migrate`. `runr-bootstrap` (post-install and
+post-upgrade, `bootstrap.enabled`) runs `agent:redeploy --missing`, `images:move-registry`,
+`region:reconcile` and `rbac:assign-missing`, in the multi-tenant edition
+`tenancy:setup --force` (`bootstrap.tenancySetup`), and creates the first administrator while
+the installation has none ([upgrade.md](upgrade.md#procedure)).
 
 The roles are selected in `api/docker/entrypoint.sh`. The API role runs
 `php artisan octane:start --server=frankenphp`. Reverb runs `php artisan reverb:start-shell`, a
@@ -111,6 +120,8 @@ re-scans, binding maintenance, preview cleanup and expired image uploads.
 
 ## Regions
 
+Requirements, connecting a cluster, every region setting, status, migration and removal: [regions.md](regions.md).
+
 A region (`App\Models\KnativeRegion`) is one Kubernetes cluster. Its kubeconfig is stored in the
 database and never serialized in API responses. The region also holds its settings: function
 domain, resource limits and timeouts, sandbox mapping, trusted ingress IPs and agent WebSocket
@@ -133,7 +144,9 @@ Setting up a region (each step is a queued job that reports progress over WebSoc
    `knative.traefikImage` / `KNATIVE_TRAEFIK_IMAGE` names another), the project namespace with an optional ResourceQuota/LimitRange,
    Prometheus and Loki (installed, or existing ones reused), the tracing backend
    (`observability.tracing.installWithServing`) and the runr-agent.
-5. **Redis** (optional, needed for the queue trigger): `InstallRedisJob`, internal or external.
+5. **Redis** (optional, needed for the queue trigger): `InstallRedisJob` — RunR's managed Redis
+   (Deployment and Service `runr-redis` in the project namespace), or the address of one already
+   running in the cluster or outside it.
 6. **Sandbox** (optional): gVisor and/or Kata Containers (see [Sandbox runtimes](#sandbox-runtimes)),
    and WebAssembly support.
 
@@ -152,24 +165,51 @@ Optional per-region features, each installed from the region's settings in the c
 `App\Services\RegionReconcile\Steps`, in this order: dedicated-worker toleration
 ([Dedicated workers](#dedicated-workers); first, as the steps after it restart the registry, Loki
 and Tempo), Knative Serving config, Prometheus exposure,
-namespace quota, registry sync, ingress trust, Traefik image, Loki deletion, tracing backend
-(where tracing is enabled), Kata sandbox, WebAssembly sandbox, admission policy, image registry
-(workloads onto RunR's image namespace `ghcr.io/brf-tech/runr`,
-[upgrade.md](upgrade.md#image-namespace-ghcriobrf-techrunr)) and registry pre-warm (the base
-images of function builds). The pre-warm comes last because registry sync and image registry
-restart the registry; its Job waits for the registry to answer, and a pre-warm Job that failed is
-started again by the next run.
+namespace quota, registry sync, ingress trust, Traefik image, request timeout (the region
+Traefik's read / write timeouts and Knative's maximum revision timeout follow the regions'
+`request_timeout`), Loki deletion, tracing backend (where tracing is enabled), Kata sandbox, WebAssembly
+sandbox, admission policy, image registry (workloads onto RunR's image namespace
+`ghcr.io/brf-tech/runr`, [upgrade.md](upgrade.md#image-namespace-ghcriobrf-techrunr)) and
+registry pre-warm (the base images of function builds). The pre-warm comes last because registry
+sync and image registry restart the registry; its Job waits for the registry to answer, and a
+pre-warm Job that failed is started again by the next run. The steps act on active regions — the
+platform's and, with the Tenancy module, every tenant's own; then the status block of every
+region with Knative Serving ready, platform regions and tenants' own regions alike, is brought to
+its status — applied for an inactive or maintenance region, removed from an active one
+([regions.md](regions.md#region-status)).
 
 **Region migration** (`RegionMigrateService`, `POST /api/knative-regions/{id}/migrate`) moves a
-region to a new cluster. It installs the infrastructure there, redeploys every project's latest
-version and waits for the region's DNS to point at the new ingress. The status goes through
-`pending → in_progress → dns_check → completed`; a migration in `dns_check` or `failed` can be
-rolled back to the previous kubeconfig. `DomainMigrateService` moves the regions to a new base
-domain with the same DNS check; the scheduler completes expired domain migrations hourly.
+region to a new cluster. It installs there what the region had on the old one (Knative, Redis,
+the registry, the dedicated workers that exist there, the sandbox runtimes, WebAssembly and GPU
+support, the data services, the admission policy, function TLS, the Skupper site and the status
+block), redeploys every project's latest version and waits for the region's DNS to point at the
+new ingress. The status goes through `pending → in_progress → dns_check → completed`; a
+migration in `dns_check` or `failed` can be rolled back to the previous kubeconfig
+([regions.md](regions.md#moving-a-region-to-another-cluster)).
+
+**Base-domain migration** (`DomainMigrateService`): a changed platform base domain moves the
+regions whose function domain is `<region>.<base domain>`. The region keeps its function domain
+and also answers on the new one through `runr-domain-alias` in its project namespace
+(`RegionDomainAliasService`: a small proxy that rewrites `<service>.<new domain>` to the Knative
+Service's cluster-local host on the region Traefik) until DNS of the new domain answers its
+external address — the status check every minute and the scheduler hourly check it
+(`RegionDnsCheck`) — or the migration is completed by hand; then Knative's config-domain, the
+KnativeServing resource and the region's `knative_domain` move to the new domain
+([regions.md](regions.md#changing-the-base-domain)).
+
+**Organization domain moves** (`TenantDomainService`, Tenancy module): a tenant's changed domain
+moves the same way. On the platform regions assigned to the tenant, an alias of the tenant's own
+(`runr-domain-alias-t<hash of the tenant id>`, serving only the tenant's Knative Services)
+answers on `<region>.<new domain>` next to the config-domain entry of the current domain; once
+DNS answers, the new entry is added, the old one and the alias removed. The tenant's own regions
+move through `DomainMigrateService` in the tenant's context. A scheduled check every five minutes
+completes both region by region; **Complete now** in the console (`PATCH /api/settings`
+`{"complete_domain_migration": true}`) completes the move by hand
+([tenancy.md](tenancy.md#organization-domain)).
 
 ### Dedicated workers
 
-Selecting worker nodes (region setup, or Settings → Regions → (region) → Workers;
+Selecting worker nodes (region setup, or Administration → Platform → Knative Regions → (region) → Workers;
 `KnativeNodeService::applyWorkerSelection()`) labels and taints them
 `runr.dev/dedicated=projects:NoSchedule`; deselected nodes lose both. Project workloads (Knative
 Services, queue consumers, CronJobs, model services, sandboxes) carry the matching nodeSelector and
@@ -304,7 +344,7 @@ the two resources behave when that happens:
 A factor of 1 turns overcommit off: every reservation then counts against the region capacity.
 New regions start with the defaults; the upgrade migration gives existing regions the defaults too.
 
-Settings → Regions → (region) → Workers shows both budgets and sets the factors. In the API:
+Administration → Platform → Knative Regions → (region) → Workers shows both budgets and sets the factors. In the API:
 
 ```bash
 curl -sS "$API/knative-regions/$REGION/capacity" -H "Authorization: Bearer $TOKEN"
@@ -356,12 +396,12 @@ CPU quota exceeded on the organization's always-on budget (no overcommit): this 
 In an organization, `GET /api/settings` gives each platform region with a quota the quota's
 budgets as its `capacity` (the shape above, `capacity_scope: "quota"`). The projects page shows
 both budgets per resource, of the regions or of the organization's quotas, summed and per region.
-Platform administrators see each organization's quota budgets in Tenants → (tenant) → Quotas
+Platform administrators see each organization's quota budgets in Tenants → (tenant) → Regions
 (`GET /api/tenants/{id}/regions`: `capacity` per region, `used_cpu_m` / `used_memory_mb` the sum
 of both budgets), counted from the organization's own schema whichever organization the
 administrator works in.
-The split decides admission only; billing calculates from measured usage, plans and deals as
-before ([billing.md](billing.md)).
+The split decides admission only; billing calculates from measured usage, or from the approved
+fixed resources of a fixed region ([billing.md](billing.md)).
 
 ## Project types
 
@@ -530,40 +570,51 @@ if needed and bridges a `kubectl exec` PTY to xterm.js. See [web-shell.md](web-s
 Optional features live in `api/Modules` (nwidart/laravel-modules) and `vue/src/modules`. The
 core application does not depend on them. A module overrides core classes through container
 bindings and registers UI slots, routes and locales through `moduleRegistry`
-(`vue/src/modules/index.js`).
+(`vue/src/modules/index.js`). Switching modules and feature toggles on and off, and setting up SSO
+and support tickets: [modules.md](modules.md).
 
 ### Tenancy (`api/Modules/Tenancy`)
 
-Multi-tenancy with stancl/tenancy v3 on PostgreSQL, one schema per tenant:
+Multi-tenancy with stancl/tenancy v3 on PostgreSQL, one schema per tenant. Operating a
+multi-tenant install — tenants, members, tenant selection, quotas, backups: [tenancy.md](tenancy.md).
 
-- The `public` schema holds central tables (tenants, tenant users, tenant regions, cost configs,
-  capacity deals, charges, purchases, billing events, plans). Tenant schemas hold projects, versions, deployments and
-  settings. `PostgreSQLSchemaManagerWithPublic` sets `search_path = tenant_<slug>, public`.
+- The `public` schema holds central tables (tenants, tenant users, tenant regions with their share
+  status, the platform's billing tables). Tenant schemas hold projects, versions, deployments,
+  settings and the tenant's billing tables. `PostgreSQLSchemaManagerWithPublic` sets `search_path = tenant_<tenant id>, public`.
+  `TenantSchema` creates and migrates tenant schemas with every module's tenant migrations
+  ([Tenant schema migrations](tenancy.md#tenant-schema-migrations)).
 - `IdentifyTenant` selects the tenant from the `X-Tenant-ID` header. `CheckTenantQuota` rejects
   mutations that would exceed the always-on or the FaaS overcommit budget of the tenant's
   CPU/memory quota on a region (HTTP 422, [Organization quotas](#region-capacity-and-admission)).
 - Users and regions sync one way, central → tenant (`CentralSyncableUser`,
   `CentralSyncableRegion`); a region's kubeconfig is never copied into tenant schemas.
 - Region mode `managed` (default): only assigned tenants see the region, within their quota.
-  Region mode `infinite`: visible to every tenant, no quota.
+  Region mode `infinite`: no CPU, memory or GPU quota; only assigned tenants see the region, as
+  with `managed`.
 - Roles per tenant: the built-in roles `owner`, `admin`, `developer`, `viewer` and `billing`, plus
   custom roles, groups and project access ([permissions.md](permissions.md)). Platform
-  administrators who hold the owner or admin role in their current tenant can switch into
-  another tenant's context (`POST /api/impersonate/{tenant}`).
+  administrators open any tenant as its administrator (`POST /api/impersonate/{tenant}`; the
+  console then sends the tenant's `X-Tenant-ID`). Opening and leaving are audit-logged
+  (`impersonation.start`, `impersonation.stop`), and the changes made meanwhile name the
+  administrator as impersonator
+  ([tenancy.md](tenancy.md#opening-a-tenant-as-platform-administrator)).
 - Tenant-aware overrides (`TenancyServiceOverridesTrait`), for example `TenantAwareGitService`,
   `TenancyAuthController` and `TenantAwareAgentMessageHandler`. Project slugs get the tenant slug
   as suffix, and queue streams are suffixed per tenant.
-- Usage and cost: `UsageAggregationJob` every 5 minutes, cost configs, capacity deals (the
-  hourly `capacity-deal-expiry` sets active deals whose end date has passed to `expired`; the end
-  date is the deal's last day), monthly charges per tenant, purchases and billing events for the
-  operator's billing system ([billing.md](billing.md)). Plans and self-service signup are
-  described in [white-label.md](white-label.md).
+- Shared regions: with the Billing module on, assigning a platform region is an offer; the
+  region is synced into the tenant once the tenant accepted it (`tenant_regions.status`,
+  `TenantRegionShares`, [tenancy.md](tenancy.md#shared-regions-with-billing)). Usage metering is
+  part of the core ([monitoring.md](monitoring.md#metering)); self-service signup and onboarding
+  are described in [white-label.md](white-label.md).
 
 ### AuthProvider (`api/Modules/AuthProvider`)
 
-External sign-in. Drivers (`authprovider.drivers`): `google`, `github`, `microsoft`, `gitlab`,
-`oidc` (with discovery URL) and `saml` (SAML 2.0 SP: metadata, login, ACS). Users can link
-social accounts. Built on Laravel Socialite.
+External sign-in. Drivers (`authprovider.drivers`): `google`, `github`, `microsoft`, `gitlab`
+(Laravel Socialite), `oidc` (OpenID Connect: discovery document, authorization code flow with
+PKCE, ID token verified against the identity provider's JWKS) and `saml` (SAML 2.0 SP: metadata,
+login, ACS). A sign-in uses one provider row of its organization from redirect to callback; an
+organization can enable several providers of one driver. Users link and unlink external accounts
+in User Settings ([modules.md](modules.md#authprovider)).
 
 ### Ticket (`api/Modules/Ticket`)
 
@@ -572,9 +623,21 @@ assignment and tags. User endpoints are under `/api/support-tickets` and admin e
 `/api/admin/support-tickets`. Events are broadcast in real time. With Tenancy enabled, tenant-aware
 controllers replace the base ones.
 
-Module toggles: `TENANCY_ENABLED`, `AUTH_PROVIDER_ENABLED`, `TICKET_ENABLED` (API, applied by
-the entrypoint with `module:enable/disable`) and `VITE_TENANCY_ENABLED`,
-`VITE_AUTH_PROVIDER_ENABLED`, `VITE_TICKET_ENABLED` (UI build).
+### Billing (`api/Modules/Billing`)
+
+Bills per project and month (payer: the project owner), account bills for resources outside
+projects and, with tenancy, tenant bills in the central schema. Prices and markups are versions
+with an effective date; each region is `payg` or `fixed`; fixed resource requests are approved by
+the region's seller and enforced through `App\Support\Projects\ProjectAdmission` (a deploy guard
+and a resource limiter the module registers). Routes under `/api/billing` and
+`/api/projects/{project}/billing`, the daily `billing-close` job, signed webhook events
+([billing.md](billing.md)). The core keeps what works without the module: usage metering, the
+project owner and project stop / resume.
+
+Module toggles: `TENANCY_ENABLED`, `AUTH_PROVIDER_ENABLED`, `TICKET_ENABLED`, `BILLING_ENABLED`
+(API, applied by the entrypoint with `module:enable/disable`) and `VITE_TENANCY_ENABLED`,
+`VITE_AUTH_PROVIDER_ENABLED`, `VITE_TICKET_ENABLED`, `VITE_BILLING_ENABLED` (UI build; the Ticket
+and Billing screens are also hidden while `GET /api/branding` reports the module off).
 
 ## Editions
 
@@ -585,8 +648,8 @@ The Helm value `edition` selects the installation type (`helm/templates/_helpers
 | Organizations | One | Many tenants, each with its own schema, users, roles and quotas |
 | Tenancy module | Off (unless `tenancy.enabled`) | On |
 | AuthProvider module | Off (unless `authProvider.enabled`) | On |
-| UI image | `runr/ui:<tag>` | `runr/ui:<tag><multiTenantSuffix>` (built with the modules) |
-| Database | PostgreSQL, or SQLite | PostgreSQL |
+| UI image | `runr/ui:<tag>` | `runr/ui:<tag>-mt`, built with the modules (`ui.image.multiTenantSuffix`; the tag `latest` runs `<appVersion>-mt`) |
+| Database | PostgreSQL | PostgreSQL, one schema per tenant |
 
 The optional organization ceiling (`quota.cpu`, `quota.memoryGiB`) is applied as a
 ResourceQuota/LimitRange in each region's project namespace. In the multi-tenant edition it is
@@ -626,6 +689,10 @@ also the default tenant quota.
   ([security.md](security.md)).
 - The runr-agent authenticates with a per-region token. Shell and exec sessions use one-time
   tokens stored in Redis.
+- The Horizon dashboard (`/horizon`, the queues of the whole installation) admits platform
+  administrators and, in the single-tenant edition, Owners, signed in with a single-use link
+  (`php artisan runr:horizon-link`, `POST /api/horizon/link`); the account is checked again on
+  every request ([install.md](install.md#horizon-dashboard)).
 - Client IPs come from `X-Forwarded-For` only as far as trusted proxies wrote it
   (Helm values `clientIp.trustedProxies`, `clientIp.proxyHops`).
 - Workload isolation: one project namespace per region, optional ResourceQuota, sandbox

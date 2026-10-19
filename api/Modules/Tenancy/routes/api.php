@@ -1,12 +1,9 @@
 <?php
 
 use Illuminate\Support\Facades\Route;
-use Modules\Tenancy\Http\Controllers\CapacityDealController;
-use Modules\Tenancy\Http\Controllers\CostConfigController;
 use Modules\Tenancy\Http\Controllers\ImpersonateController;
 use Modules\Tenancy\Http\Controllers\ResourceUsageController;
 use Modules\Tenancy\Http\Controllers\TenancyUserController;
-use Modules\Tenancy\Http\Controllers\TenantBillingController;
 use Modules\Tenancy\Http\Controllers\TenantBindingQuotaController;
 use Modules\Tenancy\Http\Controllers\TenantController;
 use Modules\Tenancy\Http\Controllers\TenantGpuQuotaController;
@@ -60,23 +57,9 @@ Route::middleware('tenancy.admin')->group(function () {
     Route::post('/impersonate/{tenant}', [ImpersonateController::class, 'start']);
 });
 
-// Usage pricing, capacity deals, binding limits (platform admin; charges: routes/billing.php)
+// Binding limits of a tenant (platform admin; billing is the Billing module, docs/billing.md)
 Route::middleware('tenancy.admin')->group(function () {
-    Route::get('/cost-configs', [CostConfigController::class, 'index']);
-    Route::post('/cost-configs', [CostConfigController::class, 'store']);
-    Route::patch('/cost-configs/{id}', [CostConfigController::class, 'update']);
-    Route::delete('/cost-configs/{id}', [CostConfigController::class, 'destroy']);
-
-    Route::get('/tenants/{tenant}/billing/summary', [TenantBillingController::class, 'summary']);
-    Route::get('/tenants/{tenant}/billing/usage', [TenantBillingController::class, 'usage']);
-
-    Route::get('/tenants/{tenant}/capacity-deals', [CapacityDealController::class, 'index']);
-    Route::post('/tenants/{tenant}/capacity-deals', [CapacityDealController::class, 'store']);
-    Route::patch('/tenants/{tenant}/capacity-deals/{deal}', [CapacityDealController::class, 'update']);
-
-    Route::get('/regions/{region}/profit-loss', [CapacityDealController::class, 'profitLoss']);
-
-    // Binding limits of a tenant (docs/bindings.md "Quotas")
+    // docs/bindings.md "Quotas"
     Route::get('/tenants/{tenant}/binding-quotas', [TenantBindingQuotaController::class, 'show']);
     Route::put('/tenants/{tenant}/binding-quotas', [TenantBindingQuotaController::class, 'update']);
 });

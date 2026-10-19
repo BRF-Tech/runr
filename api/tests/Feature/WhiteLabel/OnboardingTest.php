@@ -9,16 +9,16 @@ use Illuminate\Support\Facades\DB;
 use Modules\Tenancy\Listeners\CreateTenantOnRegistration;
 use Modules\Tenancy\Models\Tenant;
 use Modules\Tenancy\Models\TenantOnboarding;
-use Modules\Tenancy\Models\TenantSubscription;
 use Modules\Tenancy\Models\TenantUser;
+use Modules\Tenancy\Support\TenantRegionShares;
 use Tests\Feature\WhiteLabel\Concerns\WhiteLabelTenancy;
 use Tests\TestCase;
 
 /**
  * Multi-tenant self-service signup: the tenant is created automatically (form name or
- * "<name>'s workspace"), the owner attached, the onboarding wizard opened; with plans on, the
- * default plan is put in place. The wizard renames the tenant and assigns the offered region with
- * the default / plan quota (clamped to the free capacity).
+ * "<name>'s workspace"), the owner attached, the onboarding wizard opened. The wizard renames the
+ * tenant and assigns the offered region with the default quota (clamped to the free capacity) —
+ * accepted at once, the tenant chose it.
  */
 class OnboardingTest extends TestCase
 {
@@ -95,7 +95,6 @@ class OnboardingTest extends TestCase
         $this->assertSame('jane-does-workspace', $tenant->slug);
         $this->assertSame('owner', TenantUser::query()->where('tenant_id', $tenant->id)->value('role'));
         $this->assertSame('pending', TenantOnboarding::query()->find($tenant->id)->status);
-        $this->assertNull(TenantSubscription::findForTenant($tenant->id));   // plans off
     }
 
     public function test_the_form_name_is_used_and_slugs_stay_unique(): void
@@ -117,23 +116,6 @@ class OnboardingTest extends TestCase
         $this->assertFalse(TenantUser::query()->where('user_id', $user->id)->exists());
     }
 
-    public function test_with_plans_on_a_signup_starts_on_the_default_plan(): void
-    {
-        $this->enablePlans();
-        $default = $this->plan(['slug' => 'starter', 'price_monthly' => 0, 'is_default' => true]);
-        $this->plan(['slug' => 'pro', 'price_monthly' => 29]);
-
-        $tenant = $this->register();
-
-        $subscription = TenantSubscription::findForTenant($tenant->id);
-        $this->assertSame($default->id, $subscription->plan_id);
-        $this->assertFalse($subscription->prepaid);
-
-        // without a default plan the signup has no plan
-        $default->forceFill(['is_default' => false])->save();
-        $this->assertNull(TenantSubscription::findForTenant($this->register()->id));
-    }
-
     public function test_the_wizard_offers_regions_and_completes_with_the_default_quota(): void
     {
         $eu = $this->platformRegion('eu-1');
@@ -150,7 +132,7 @@ class OnboardingTest extends TestCase
             ->assertJsonPath('can_complete', true)
             ->assertJsonCount(2, 'regions')
             ->assertJsonPath('default_quota.cpu_quota_m', 1500)
-            ->assertJsonPath('plan', null);
+            ->assertJsonMissingPath('plan');
 
         // two regions offered → the region must be chosen; an unknown one is refused
         $this->actingAs($owner)->postJson('/api/onboarding', ['org_name' => 'Acme', 'region_id' => '01UNKNOWNREGION0000000000'], $this->tenantHeaders($tenant))
@@ -193,24 +175,30 @@ class OnboardingTest extends TestCase
         $this->actingAs($member)->postJson('/api/onboarding', ['org_name' => 'X'], $this->tenantHeaders($tenant))->assertForbidden();
     }
 
-    public function test_the_region_gets_the_plan_quota_and_a_tenant_created_by_an_admin_has_no_wizard(): void
+    public function test_the_wizard_region_is_accepted_at_once_while_shared_regions_wait_for_acceptance(): void
     {
-        $this->enablePlans();
-        $eu = $this->platformRegion('eu-1');
-        $plan = $this->plan(['slug' => 'free', 'price_monthly' => 0, 'cpu_quota_m' => 500, 'memory_quota_mb' => 1024, 'is_default' => true]);
+        // Billing on: regions the platform shares wait for the tenant's acceptance — the region the
+        // tenant chose in the wizard is accepted with that choice (docs/tenancy.md)
+        TenantRegionShares::requireAcceptanceWhen(fn () => true);
+        try {
+            $eu = $this->platformRegion('eu-1');
+            $tenant = $this->register();
+            $owner = TenantUser::query()->where('tenant_id', $tenant->id)->first()->user;
 
-        $tenant = $this->register();
-        $owner = TenantUser::query()->where('tenant_id', $tenant->id)->first()->user;
+            $this->actingAs($owner)->postJson('/api/onboarding', ['org_name' => 'Acme', 'region_id' => $eu->id], $this->tenantHeaders($tenant))
+                ->assertOk()->assertJsonPath('status', 'completed');
 
-        $this->actingAs($owner)->getJson('/api/onboarding', $this->tenantHeaders($tenant))
-            ->assertOk()->assertJsonPath('plan.slug', 'free');
-        $this->actingAs($owner)->postJson('/api/onboarding', ['org_name' => 'Acme', 'region_id' => $eu->id], $this->tenantHeaders($tenant))
-            ->assertOk()->assertJsonPath('status', 'completed');
+            $row = DB::connection('central')->table('tenant_regions')->where('tenant_id', $tenant->id)->first();
+            $this->assertSame(TenantRegionShares::ACTIVE, $row->status);
+            $this->assertNotNull($row->accepted_at);
+            $this->assertSame((string) $owner->id, (string) $row->accepted_by);
+        } finally {
+            TenantRegionShares::requireAcceptanceWhen(null);
+        }
+    }
 
-        $row = DB::connection('central')->table('tenant_regions')->where('tenant_id', $tenant->id)->first();
-        $this->assertSame([500, 1024], [(int) $row->cpu_quota_m, (int) $row->memory_quota_mb]);
-        $this->assertSame($plan->id, TenantSubscription::findForTenant($tenant->id)->plan_id);
-
+    public function test_a_tenant_created_by_an_admin_has_no_wizard(): void
+    {
         $byAdmin = $this->createTenantWithSchema('adminmade', self::WL_TENANT_MIGRATIONS);
         $this->actingAs($this->member($byAdmin))->getJson('/api/onboarding', $this->tenantHeaders($byAdmin))
             ->assertJsonPath('status', 'none');

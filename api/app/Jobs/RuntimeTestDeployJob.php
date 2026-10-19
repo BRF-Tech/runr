@@ -4,9 +4,12 @@ namespace App\Jobs;
 
 use App\Events\DeploymentCreated;
 use App\Models\Version;
+use App\Services\Projects\LiveDeployments;
+use App\Support\Projects\ProjectAdmission;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Foundation\Queue\Queueable;
+use Illuminate\Support\Facades\Log;
 
 /**
  * Deploys the version of a runtime test project (POST /runtimes/{id}/test-deploy) as soon as it is
@@ -51,6 +54,17 @@ class RuntimeTestDeployJob implements ShouldQueue
         }
 
         $project = $version->project;
+
+        // The deploy guards decide as for any deploy (stopped meanwhile, a fixed region's allocation)
+        if ($refusal = ProjectAdmission::refusal($project)) {
+            Log::warning('Runtime test deploy refused', ['project' => $project->slug, 'reason' => $refusal]);
+
+            return;
+        }
+
+        // A test deploy of a project that runs replaces what runs, like any deploy
+        app(LiveDeployments::class)->supersede($project);
+
         $deployment = $project->deployments()->create([
             'version_id' => $version->id,
             'status' => 'pending',

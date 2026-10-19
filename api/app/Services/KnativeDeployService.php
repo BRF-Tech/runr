@@ -10,9 +10,11 @@ use App\Models\Version;
 use App\Services\Concerns\KnativeManifestTrait;
 use App\Services\Concerns\KnativeQueueConsumerTrait;
 use App\Services\Helpers\ResourceReservation;
+use App\Services\Helpers\WorkloadSizing;
 use App\Services\Runtimes\ProjectEntrypoint;
 use App\Services\Runtimes\RuntimeRegistry;
 use App\Support\DeployGate;
+use App\Support\SchemaColumns;
 use App\Workflows\Deploy\KnativeWorkflowTrait;
 use Illuminate\Support\Facades\Log;
 
@@ -35,9 +37,35 @@ class KnativeDeployService
 
     /**
      * Deploy a project version to the cluster.
+     *
+     * A deploy queued before the project was stopped (or before the deployment was shut down or
+     * deleted) does nothing: the deployment is read back first, and every status this deploy writes
+     * is conditional on the deployment still being pending / running (Deployment::transition) — a
+     * stop in the middle of the apply wins, and what the apply created is removed again.
      */
     public function deploy(Project $project, Version $version, Deployment $deployment, ?string $initiatorId = null): void
     {
+        $current = Deployment::query()->find($deployment->getKey());
+        if (! $current || ! in_array($current->status, ['pending', 'running'], true)) {
+            Log::info('Deploy skipped: the deployment is no longer pending', [
+                'project' => $project->slug, 'deployment' => $deployment->id, 'status' => $current?->status,
+            ]);
+
+            return;
+        }
+        $deployment->setRawAttributes($current->getAttributes(), true);
+
+        if ($this->isStopped($project)) {
+            $this->fail($deployment, 'The project was stopped before this deploy ran');
+            // A stop that raced this deploy may have torn the previous deployment down as superseded
+            // by this one, keeping the shared Knative Service: with nothing else live it goes now
+            if (! $project->deployments()->whereKeyNot($deployment->id)->whereIn('status', Deployment::LIVE)->exists()) {
+                $this->teardown($project, $deployment);
+            }
+
+            return;
+        }
+
         $region = $project->knativeRegion;
 
         // Only xaas / faas / caas deploy; rows of the retired AI types are view-and-delete only
@@ -48,7 +76,8 @@ class KnativeDeployService
         }
 
         if ($region && $region->is_demo) {
-            $deployment->update(['status' => 'active']);
+            $this->recordSizing($project, $deployment);
+            $deployment->transition(['pending', 'running'], ['status' => 'active', 'knative_ready' => true, 'ready_at' => now()]);
 
             return;
         }
@@ -91,6 +120,8 @@ class KnativeDeployService
             $namespace = $this->getNamespace($region);
 
             $manifests = $this->buildManifests($project, $version, $deployment->deploy_config ?? []);
+            // Metering counts the deployment with the size it runs with (WorkloadSizing)
+            $this->recordSizing($project, $deployment);
 
             foreach ($manifests as $manifest) {
                 // Deployment selector is immutable — delete first to avoid conflict
@@ -117,15 +148,18 @@ class KnativeDeployService
 
             $triggerType = $this->getTriggerType($project);
 
-            if ($triggerType === 'schedule') {
+            // Stopped (or shut down) while the manifests were applied: remove them again
+            $stillWanted = $triggerType === 'schedule'
                 // CronJob has no Knative Service to check — mark active immediately
-                $deployment->update([
-                    'status' => 'active',
-                    'knative_ready' => true,
-                    'ready_at' => now(),
-                ]);
-            } else {
-                $deployment->update(['status' => 'pending']);
+                ? $deployment->transition(['pending', 'running'], ['status' => 'active', 'knative_ready' => true, 'ready_at' => now()])
+                : $deployment->transition(['pending', 'running'], ['status' => 'pending']);
+            if (! $stillWanted || $this->isStopped($project)) {
+                $this->withdraw($project, $deployment);
+
+                return;
+            }
+
+            if ($triggerType !== 'schedule') {
                 CheckDeploymentReadyJob::start($deployment, $project, $initiatorId);
             }
 
@@ -438,11 +472,68 @@ class KnativeDeployService
 
     private function fail(Deployment $deployment, string $reason): void
     {
-        $deployment->update([
+        $deployment->transition(['pending', 'running'], [
             'status' => 'failed',
             'knative_ready' => false,
             'knative_message' => mb_substr($reason, 0, 255),
         ]);
         Log::error('Deployment failed: '.$reason, ['deployment' => $deployment->id]);
+    }
+
+    /** The size the deployment is applied with (deployments.sizing; skipped before TenantMigrations/0062). */
+    private function recordSizing(Project $project, Deployment $deployment): void
+    {
+        if (! SchemaColumns::has($deployment, 'sizing')) {
+            return;
+        }
+
+        $sizing = WorkloadSizing::of($project, (array) ($deployment->deploy_config ?? []));
+        Deployment::query()->whereKey($deployment->getKey())->update(['sizing' => json_encode($sizing)]);
+        $deployment->setAttribute('sizing', $sizing);
+        $deployment->syncOriginalAttribute('sizing');
+    }
+
+    /**
+     * The deployment was stopped or shut down while its manifests were applied: whatever the apply
+     * created goes again (the teardown that the stop queued may already have run). A newer live
+     * deployment of the project keeps the resources it shares by name.
+     */
+    private function withdraw(Project $project, Deployment $deployment): void
+    {
+        Log::warning('Deploy withdrawn: the deployment was stopped while it was applied', [
+            'project' => $project->slug, 'deployment' => $deployment->id, 'status' => $deployment->status,
+        ]);
+
+        // Still live (the project was stopped, its deployments not yet marked — a CronJob deploy
+        // is already active): it ends here
+        $deployment->transition(Deployment::LIVE, [
+            'status' => 'failed',
+            'knative_ready' => false,
+            'knative_message' => 'The project was stopped while this deploy was applied',
+        ]);
+
+        $this->teardownEnded($project, $deployment);
+    }
+
+    /**
+     * Remove what a deployment that ended applied: only what a newer live deployment of the project
+     * does not apply again under the same names (teardownSuperseded), or everything when there is
+     * none — a stopped project has none: nothing of it may keep serving, whatever a deploy that
+     * raced the stop left live.
+     *
+     * @return bool true when every delete succeeded (404 = already gone)
+     */
+    public function teardownEnded(Project $project, Deployment $deployment): bool
+    {
+        $newer = ! $this->isStopped($project)
+            && $project->deployments()->whereKeyNot($deployment->id)->whereIn('status', Deployment::LIVE)->exists();
+
+        return $newer ? $this->teardownSuperseded($project, $deployment) : $this->teardown($project, $deployment);
+    }
+
+    /** Whether the project is stopped now (read from the database, not the copy in memory). */
+    private function isStopped(Project $project): bool
+    {
+        return Project::query()->whereKey($project->getKey())->whereNotNull('stopped_at')->exists();
     }
 }

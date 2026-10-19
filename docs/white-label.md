@@ -1,9 +1,9 @@
-# White-label: branding, self-service signup and plans
+# White-label: branding and self-service signup
 
 RunR can be offered as a branded "serverless cloud in a box": your company's name, logos and
-colours everywhere a user looks, self-service signup with e-mail verification, and optional plans
-with prices, limits and quotas. RunR calculates what each organization owes; your own billing
-system invoices and collects through the [billing API](billing.md).
+colours everywhere a user looks, and self-service signup with e-mail verification and an onboarding
+wizard. What projects cost is calculated by the optional [Billing module](billing.md); your own
+invoicing system invoices and collects.
 
 Everything on this page is configured at runtime (admin UI) on top of the install values (Helm).
 Nothing needs a rebuild of the console or the API.
@@ -14,8 +14,7 @@ Nothing needs a rebuild of the console or the API.
 | Branding per tenant | — | ✓ (when the platform allows it) |
 | Self-service signup, e-mail verification, allowlist, invite-only, CAPTCHA, terms | ✓ | ✓ |
 | Tenant per signup + onboarding wizard | — | ✓ |
-| Plans (optional, off by default) | — | ✓ |
-| Charges, billing API and billing events ([billing.md](billing.md)) | — | ✓ |
+| Bills per project and owner, billing API and events (Billing module, optional — [billing.md](billing.md)) | ✓ | ✓ |
 
 The default brand is **RunR by BRF Teknoloji** (RunR wordmark, RunR icon, RunR orange).
 
@@ -201,7 +200,7 @@ Signup). Settings → **Signup** adds:
 | CAPTCHA | none | Cloudflare Turnstile or hCaptcha |
 | Terms / privacy URLs | none | When set, signup requires accepting them; the time is stored (`users.terms_accepted_at`) |
 | Tenant per signup (multi-tenant) | on | Every signup gets its own organization |
-| Default quota (multi-tenant) | 2000 m CPU / 4096 MB | Quota on the first region (plans off) |
+| Default quota (multi-tenant) | 2000 m CPU / 4096 MB | Quota on the first region |
 | Self-service regions (multi-tenant) | all active platform regions | Regions the onboarding wizard offers |
 
 ### 2.1 E-mail verification
@@ -232,18 +231,18 @@ signup (fail closed) and is logged.
 ### 2.3 Tenant per signup and onboarding (multi-tenant)
 
 The signup's tenant is named from the form ("Workspace name") or `<name>'s workspace`; the user
-becomes its owner. With plans on, the tenant starts on the **default plan** (when one is marked
-default). On the first sign-in the owner sees the **onboarding wizard**:
+becomes its owner. On the first sign-in the owner sees the **onboarding wizard**:
 
 1. **Organization name** (renames the tenant)
 2. **Region** — asked only when several self-service regions are offered; with one region it is
-   assigned directly. The quota is the plan's (plans on) or the default signup quota, lowered to
+   assigned directly. The quota is the default signup quota, lowered to
    what is still free of the region capacity (the organizations' quotas on a region add up to at
    most its capacity; inside a quota, scale-to-zero projects overcommit by the region's factors,
    [Organization quotas](architecture.md#region-capacity-and-admission)).
 
-Tenants created by a platform administrator never see the wizard. Other plans are put into effect
-by the platform administrator or by your billing system ([billing.md](billing.md#plans-and-subscriptions)).
+Tenants created by a platform administrator never see the wizard. With the Billing module on, the
+region chosen in the wizard counts as an accepted [region offer](tenancy.md#shared-regions-with-billing)
+at the tenant's default markup (0 % until the tenant sets one).
 
 | Method | Path | Who |
 |---|---|---|
@@ -251,66 +250,20 @@ by the platform administrator or by your billing system ([billing.md](billing.md
 | POST | `/api/auth/register` | public (`captcha_token`, `accept_terms`, `tenant_name`) |
 | POST | `/api/auth/signup/verify`, `/api/auth/signup/resend` | public |
 | GET / PUT | `/api/admin/signup-settings` | `signup.manage` (single-tenant; multi-tenant: platform administrators) |
-| GET | `/api/onboarding` | every tenant member (status, offered regions, default quota, the tenant's plan) |
+| GET | `/api/onboarding` | every tenant member (status, offered regions, default quota) |
 | POST | `/api/onboarding` `{org_name, region_id?}` | `settings.manage` in the tenant |
 
 ---
 
-## 3. Plans
+## 3. Plans (removed)
 
-Plans are **off by default**. While off, no plan appears anywhere — not in the console, not in the
-API's public listing — and tenant quotas are managed per region by the platform administrator as
-before.
-
-Switch them on in Settings → **Plans & Billing** (or Helm `plans.enabled: true`). A plan is an
-input of RunR's calculation: its price is the plan fee per period, its limits and features apply
-to the tenants on it. How plans are put into effect, renewed and ended — and how your billing
-system changes them or sells prepaid terms and add-ons — is described in
-[billing.md](billing.md#plans-and-subscriptions).
-
-### 3.1 A plan
-
-| Field | Meaning |
-|---|---|
-| `slug`, `name`, `description` | Identity and the text of the plan card |
-| `currency`, `price_monthly`, `price_yearly` | The plan fee per period; a plan without a yearly price is monthly only; a 0 price is a free plan |
-| `limits.cpu_quota_m`, `limits.memory_quota_mb` | Written to the tenant's quota on **every region it uses** |
-| `limits.max_projects` | Projects in the tenant |
-| `limits.gpu_quota` | GPUs the tenant's workloads reserve over all regions: projects with `config.gpu` (or a GPU runtime version) and model services on device `gpu` that are not stopped, each `count × max(1, min_scale)`. Creating or changing a GPU project or model service beyond it is refused; the tenant's per-region [GPU quota](ai.md#gpu-quota) applies as well |
-| `limits.invocations_per_month` | Function sessions metered this calendar month; when used up, no new deploys until the next month or a larger limit |
-| `limits.storage_quota_mb` | Size of the tenant's code repository (projects + versions) on the API volume; when full, no new code |
-| `features` | `custom_domains`, `private_connections`, `gpu`, `api_tokens`, `sso`, `metered_usage`, `priority_support` — a flag set to `false` switches the feature off; an unset flag is allowed. `metered_usage` (on only when set) charges the tenant's metered usage on top of the plan fee |
-| `trial_days` | Free days at the start of a tenant's first plan (once per tenant) |
-| `is_public` | Listed for tenants (Settings → Subscription) and on the public plan list |
-| `is_default` | Given to new self-service tenants; the fallback when a plan ends |
-| `sort_order` | Order of the plan cards |
-
-Limits left empty are unlimited. Add-ons bought in your system raise a tenant's limits for their
-term ([billing.md](billing.md#purchases)). Refused requests answer `422 {code: "plan_limit", limit,
-max, used}` (`limit: "feature", feature: …` for a feature flag). Platform administrators are never
-limited.
-
-A plan whose CPU / memory limit changes is written to the quotas of all its tenants. A plan in use
-is archived instead of deleted (hidden, kept for its tenants).
-
-### 3.2 What tenants see
-
-Settings → **Subscription** (every member of the tenant): the plan, its status (`trialing`,
-`active`, `canceled`), period and trial end, the limits with their usage (add-ons included) and the
-public plans. Members with `billing.manage` (Owner, Admin, Billing) get a link to your store when
-`billing.storeUrl` is set — that is where plans and credits are bought; your billing system then
-records the purchase in RunR. Settings → **Charges** in the tenant (`billing.view`) lists the
-tenant's charges, credit and purchases.
-
-| Method | Path | Who |
-|---|---|---|
-| GET | `/api/plans/public` | public (plans on, otherwise `[]`) — e.g. for your pricing page |
-| GET / POST | `/api/admin/plans` | platform administrators |
-| PATCH / DELETE | `/api/admin/plans/{id}` | platform administrators |
-| GET / PUT | `/api/admin/billing-settings` | platform administrators — plans on/off, billing webhook URL and secret (write-only), usage thresholds, store URL |
-| GET | `/api/tenant/subscription` | every tenant member |
-| GET | `/api/tenant/billing` | `billing.view` in the tenant |
-| — | `/api/billing/…` | the billing API ([billing.md](billing.md#billing-api)) |
+Plans, plan limits, subscriptions, trials, credits, purchases and add-ons were removed in 0.5.8,
+together with Settings → Plans & Billing, Settings → Subscription and Settings → Charges. Branding,
+self-service signup and the onboarding wizard stay as they were. What a project costs is now
+calculated by the [Billing module](billing.md) from region prices — pay as you go or fixed
+resources —, one bill per project and month paid by the project's owner. The upgrade keeps the
+plans, subscriptions and purchases of 0.5.7 in `billing_legacy_archive`
+([Upgrading](upgrade.md#057--058)).
 
 ---
 
@@ -333,14 +286,11 @@ signup:
   defaultQuota: { cpuM: 2000, memoryMb: 4096 }
   regions: ""                 # region ids offered in the onboarding wizard
 
-plans:
+billing:                      # docs/billing.md — the Billing module
   enabled: false
-
-billing:                      # docs/billing.md
-  webhookUrl: ""              # billing events → your billing system
+  currency: USD
+  webhookUrl: ""              # billing events → your invoicing system
   webhookSecret: ""           # signs them; → Secret
-  usageThresholds: ""         # "100,500,1000"
-  storeUrl: ""                # where tenants buy plans and credits
 ```
 
 Every value is an install default: a value saved in the admin UI wins. Secrets go to the release
@@ -356,12 +306,10 @@ Roles and permissions (`docs/permissions.md`) authorize every route; the white-l
 | `branding.manage` | single-tenant: the install's brand (Settings → Branding); multi-tenant: the tenant's own brand (Settings → Organization Branding) | Owner, Admin |
 | `signup.manage` | the signup settings (single-tenant; Settings → Signup) | Owner, Admin |
 | `settings.manage` | completing the onboarding wizard of a self-service tenant | Owner, Admin |
-| `billing.view` | the tenant's charges, credit and purchases (Settings → Charges) | Owner, Admin, Billing |
-| `billing.manage` | the store link in Settings → Subscription | Owner, Admin, Billing |
-| platform administrators | multi-tenant: the install's brand and signup settings, plans, Plans & Billing settings, every tenant's plan; the billing API ([billing.md](billing.md#permissions)) | — |
+| platform administrators | multi-tenant: the install's brand and signup settings | — |
 
-Reading the tenant's plan (`GET /api/tenant/subscription`) and the onboarding status is open to
-every tenant member.
+The onboarding status is open to every tenant member. Billing permissions:
+[billing.md](billing.md#permissions).
 
 ## 6. Data
 
@@ -369,10 +317,8 @@ every tenant member.
 |---|---|
 | `brandings` | Platform branding (`tenant_id` null) and tenant overrides, uploaded asset paths |
 | `pending_signups` | Signups waiting for their e-mail verification (token stored as SHA-256) |
-| `secure_settings` | Secrets entered in the admin UI (CAPTCHA secret, billing webhook secret), encrypted (`encrypted` cast) |
-| `plans` | Plans with prices, limits and features |
-| `tenant_subscriptions` | Plan, interval, status, prepaid flag, external reference and period of each tenant |
+| `secure_settings` | Secrets entered in the admin UI (CAPTCHA secret), encrypted (`encrypted` cast) |
 | `tenant_onboarding` | Onboarding wizard state of self-service tenants |
 | `users.terms_accepted_at` | Terms / privacy acceptance at signup |
 
-Charges, purchases and billing events: [billing.md](billing.md#configuration-reference).
+Bills, prices and billing events: [billing.md](billing.md#scheduled-jobs-and-tables).

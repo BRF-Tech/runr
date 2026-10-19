@@ -87,8 +87,6 @@ class BrandingService
     /** Tenant whose branding the next mails use when sent outside its request (queued jobs) */
     private static ?string $mailTenantId = null;
 
-    public function __construct(private readonly PlatformSettings $settings) {}
-
     public static function resolveTenantsUsing(?\Closure $resolver): void
     {
         self::$tenantResolver = $resolver;
@@ -244,10 +242,13 @@ class BrandingService
 
         return $branding + [
             'tenant' => $tenant ? ['slug' => $tenant['slug'], 'name' => $tenant['name']] : null,
+            // What the console shows (also in images built with every module): an optional module
+            // disabled on the API (php artisan module:disable) never merges its config, so its flag is false
             'features' => [
                 'multi_tenant' => $multi,
-                'plans' => $multi && $this->settings->bool('plans_enabled', PlatformSettings::configBool(config('tenancy.plans.enabled', false))),
                 'tenant_branding' => $multi && $this->tenantOverridesEnabled(),
+                'billing' => PlatformSettings::configBool(config('billing.enabled'), false),
+                'tickets' => PlatformSettings::configBool(config('ticket.enabled'), false),
             ],
         ];
     }

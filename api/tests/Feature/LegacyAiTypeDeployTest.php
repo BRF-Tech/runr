@@ -82,12 +82,13 @@ class LegacyAiTypeDeployTest extends TestCase
     public function test_a_region_migration_redeploys_only_supported_types(): void
     {
         $legacy = $this->project('aaas');
+        $legacy->deployments()->create(['version_id' => $legacy->versions()->first()->id, 'status' => 'active']);
         $supported = $this->project('caas');
+        $supported->deployments()->create(['version_id' => $supported->versions()->first()->id, 'status' => 'active']);
 
         app(RegionMigrateService::class)->redeployProjects($this->region);
 
-        $this->assertSame(0, $legacy->deployments()->count());
-        $this->assertSame(1, $supported->deployments()->count());
-        $this->assertSame('active', $supported->deployments()->first()->status);
+        $this->assertSame(1, $legacy->deployments()->count());
+        $this->assertSame(['active', 'shut_down'], $supported->deployments()->orderBy('status')->pluck('status')->all());
     }
 }

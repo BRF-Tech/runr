@@ -47,6 +47,10 @@ trait WiresTenancy
         'Modules/Tenancy/Database/TenantMigrations/0035_add_wasm_sandbox_to_knative_regions.php',
         'Modules/Tenancy/Database/TenantMigrations/0045_add_gpu_columns.php',
         'Modules/Tenancy/Database/TenantMigrations/0052_add_capacity_admission_columns.php',
+        // projects.owner_id and the stop columns (core writes owner_id when it creates a project),
+        // usage_records.created_by
+        'Modules/Tenancy/Database/TenantMigrations/0058_add_owner_and_stop_to_projects.php',
+        'Modules/Tenancy/Database/TenantMigrations/0059_add_created_by_to_usage_records.php',
     ];
 
     protected function setUpTenancy(): void

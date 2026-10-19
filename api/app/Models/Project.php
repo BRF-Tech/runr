@@ -30,10 +30,16 @@ use Illuminate\Support\Str;
  * @property bool $is_region_demo
  * @property string $endpoint_type
  * @property string|null $created_by
+ * @property string|null $owner_id The payer of the project's bills (docs/billing.md); the creator unless transferred
+ * @property Carbon|null $stopped_at Stopped by an administrator: no workloads, no deploys until resumed
+ * @property string|null $stopped_by
+ * @property string|null $stop_reason
+ * @property string|null $stopped_version_id Version that ran when the project was stopped (redeployed on resume)
  * @property string|null $deployed_runtime_class RuntimeClass of the last deploy ("runc" for none; null: unknown, the region's mapping counts)
  * @property-read Deployment|null $activeDeployment
  * @property-read ContainerConfig|null $containerConfig
  * @property-read User|null $creator
+ * @property-read User|null $owner
  * @property-read Collection<int, Deployment> $deployments
  * @property-read int|null $deployments_count
  * @property-read FaasConfig|null $faasConfig
@@ -129,10 +135,12 @@ class Project extends Model
         'endpoint_type',
         'is_region_demo',
         'created_by',
+        'owner_id',
     ];
 
     protected $casts = [
         'is_region_demo' => 'boolean',
+        'stopped_at' => 'datetime',
     ];
 
     public function versions(): HasMany
@@ -197,6 +205,33 @@ class Project extends Model
     public function creator(): BelongsTo
     {
         return $this->belongsTo(User::class, 'created_by');
+    }
+
+    /** The payer of the project's bills (owner_id); see payerId() for the creator fallback. */
+    public function owner(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'owner_id');
+    }
+
+    /**
+     * Id of the user who pays the project's bills: the owner, else the creator (projects created
+     * before owners existed, or by an older client). Projects created by the system have none.
+     */
+    public function payerId(): ?string
+    {
+        if ($this->owner_id !== null && $this->owner_id !== '') {
+            return (string) $this->owner_id;
+        }
+
+        return $this->created_by !== null && $this->created_by !== '' && $this->created_by !== 'system'
+            ? (string) $this->created_by
+            : null;
+    }
+
+    /** Stopped by an administrator (ProjectStopService): no workloads, no deploys until resumed. */
+    public function isStopped(): bool
+    {
+        return $this->stopped_at !== null;
     }
 
     public function knativeRegion(): BelongsTo

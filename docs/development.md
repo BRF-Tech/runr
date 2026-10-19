@@ -72,6 +72,7 @@ TENANCY_ENABLED=true          # Multi-tenant mode (tenant management, isolation,
 TENANCY_ENABLED=false         # Single tenant (the Tenancy module is fully disabled)
 AUTH_PROVIDER_ENABLED=true    # External auth providers (AuthProvider module)
 TICKET_ENABLED=true           # Support tickets (Ticket module)
+BILLING_ENABLED=true          # Bills per project and month (Billing module, docs/billing.md)
 ```
 
 Restart the containers after changing them:
@@ -81,12 +82,12 @@ docker compose down && docker compose up -d --build
 ```
 
 **What they do:**
-- **API**: `docker/entrypoint.sh` runs `php artisan module:enable|disable Tenancy` (and `AuthProvider`, `Ticket`) based on the value
-- **Vue**: passed in as `VITE_TENANCY_ENABLED`, `VITE_AUTH_PROVIDER_ENABLED` and `VITE_TICKET_ENABLED`; a disabled module is left out of the build
-- `docker-compose.yml` passes `TENANCY_ENABLED` (default `true`) and `AUTH_PROVIDER_ENABLED` (default `false`)
-  to every API container (api, horizon, scheduler, reverb, migrator). `TICKET_ENABLED` reaches only the `vue`
-  service (`VITE_TICKET_ENABLED`, default `false`); the API containers keep the entrypoint default and enable the
-  Ticket module
+- **API**: `docker/entrypoint.sh` runs `php artisan module:enable|disable Tenancy` (and `AuthProvider`, `Ticket`, `Billing`) based on the value
+- **Vue**: passed in as `VITE_TENANCY_ENABLED`, `VITE_AUTH_PROVIDER_ENABLED`, `VITE_TICKET_ENABLED` and `VITE_BILLING_ENABLED`; a disabled module is left out of the build, and the Ticket and Billing screens are also hidden while the API reports the module off (`features` of `GET /api/branding`)
+- `docker-compose.yml` passes `TENANCY_ENABLED` (default `true`), `AUTH_PROVIDER_ENABLED` (default `false`) and
+  `BILLING_ENABLED` (default `false`) to every API container (api, horizon, scheduler, reverb, migrator).
+  `TICKET_ENABLED` reaches only the `vue` service (`VITE_TICKET_ENABLED`, default `false`); the API containers
+  keep the entrypoint default and enable the Ticket module
 
 ### Changing ports
 
@@ -380,7 +381,7 @@ Every suite runs locally with the commands below; CI runs the same commands
 | UI e2e (Playwright) | `vue/e2e/` | `cd vue && npm run test:e2e:mock` / `npm run test:e2e` |
 | Go | every `go.mod`: `cli`, `terraform-provider-runr`, `runtime/agent`, `runtime/queue-consumer`, `runtime/wrapper`, `runtime/image-upload`, `proxy`, `examples/runtimes/q/interpreter` | `gofmt -l . && go vet ./... && go test -race ./...` per module |
 | Helm chart | `helm/`, scenarios in `ci/helm-values/` | `bash ci/check-helm-chart.sh` (`helm lint --strict` + `helm template` per scenario, kubeconform against Kubernetes 1.30–1.35; needs helm and kubeconform or docker) |
-| Kubernetes e2e (Kind) | `runtime/lib/test*.sh` | `bash runtime/ci.sh test`, and one suite per feature: `test-runtimes`, `test-wasm`, `test-images`, `test-observability`, `test-reconcile`, `test-sandbox-api`, `test-supply-chain`, `test-ai`, `test-bindings`, `test-git-deploy`, `test-mcp` |
+| Kubernetes e2e (Kind) | `runtime/lib/test*.sh` | `bash runtime/ci.sh test`, and one suite per feature: `test-runtimes`, `test-wasm`, `test-images`, `test-observability`, `test-reconcile`, `test-sandbox-api`, `test-supply-chain`, `test-ai`, `test-bindings`, `test-git-deploy`, `test-mcp`, `test-admission` |
 
 ### API (PHPUnit)
 
@@ -552,7 +553,7 @@ test.describe('Widgets', () => {
 - Shared UI steps live in `e2e/helpers/` (`auth.ts`, `seed.ts`, `ui.ts` for
   labelled fields, confirm dialogs and the Monaco editor, `edit.ts`,
   `deploy.ts`); default fake data in `e2e/fixtures/data.ts`.
-- Specs that need the tenancy/ticket/auth-provider modules carry the tag:
+- Specs that need the tenancy/ticket/auth-provider/billing modules carry the tag:
   `test.describe('Billing', { tag: '@modules' }, () => { ... })`.
 - Select by role, label and visible text (or existing `data-tour`
   attributes), not by CSS classes.

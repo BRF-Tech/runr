@@ -10,9 +10,11 @@ data:
   Caddyfile: |
     {{- $trusted := include "runr.caddyTrustedProxies" . }}
     {{- if and $trusted (ge (int (include "runr.proxyHops" .)) 2) }}
-    # Client IP (values clientIp): X-Forwarded-For from the ingress controller in front of the
-    # gateway (a peer in these ranges) is kept and the peer appended; from any other peer it is
-    # replaced with the peer's address. runr-api takes the client from it (TRUSTED_PROXY_HOPS).
+    # The ingress controller in front of the gateway (a peer in these ranges, values clientIp):
+    # its X-Forwarded-For is kept and the peer appended, and its X-Forwarded-Proto is kept, so the
+    # API sees the client's address and https. From any other peer the gateway sets both itself.
+    # runr-api takes the client from X-Forwarded-For (TRUSTED_PROXY_HOPS) and builds its URLs
+    # (SSO callbacks, MCP metadata) with the scheme of X-Forwarded-Proto.
     {
         servers {
             trusted_proxies static {{ $trusted }}
@@ -31,7 +33,6 @@ data:
         # a client-chosen one through)
         handle /api/* {
             reverse_proxy runr-api:80 {
-                header_up X-Forwarded-Proto {scheme}
                 header_up X-Forwarded-Host {host}
                 header_up X-Real-IP {remote_host}
             }
@@ -42,10 +43,18 @@ data:
         @mcp path /mcp /mcp/* /oauth2/* /.well-known/oauth-*
         handle @mcp {
             reverse_proxy runr-api:80 {
-                header_up X-Forwarded-Proto {scheme}
                 header_up X-Forwarded-Host {host}
                 header_up X-Real-IP {remote_host}
                 flush_interval -1
+            }
+        }
+
+        # SSO sign-in callback of an OAuth / OIDC provider (web route of runr-api:
+        # /oauth/{provider}/callback). The console's own /oauth/callback page stays with the UI.
+        handle /oauth/*/callback {
+            reverse_proxy runr-api:80 {
+                header_up X-Forwarded-Host {host}
+                header_up X-Real-IP {remote_host}
             }
         }
 
@@ -54,7 +63,6 @@ data:
         {{- if or (not (hasKey $gitDeploy "enabled")) $gitDeploy.enabled }}
         handle /git/* {
             reverse_proxy runr-api:80 {
-                header_up X-Forwarded-Proto {scheme}
                 header_up X-Forwarded-Host {host}
                 header_up X-Real-IP {remote_host}
                 flush_interval -1
@@ -62,10 +70,11 @@ data:
         }
         {{- end }}
 
-        # Horizon dashboard
-        handle /horizon/* {
+        # Horizon dashboard — platform administrators only, signed in with a single-use link
+        # (php artisan runr:horizon-link, POST /api/horizon/link; docs/install.md)
+        @horizon path /horizon /horizon/*
+        handle @horizon {
             reverse_proxy runr-api:80 {
-                header_up X-Forwarded-Proto {scheme}
                 header_up X-Forwarded-Host {host}
                 header_up X-Real-IP {remote_host}
             }

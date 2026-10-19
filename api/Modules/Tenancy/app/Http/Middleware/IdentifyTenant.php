@@ -68,8 +68,9 @@ class IdentifyTenant
             return;
         }
 
-        // User-level actions stay possible: switch to another tenant, log out, own account
-        if ($request->is('api/tenant/switch', 'api/auth/logout', 'api/account', 'api/account/*')) {
+        // User-level actions stay possible: switch to another tenant, log out, own account, leave
+        // an organization opened as platform administrator
+        if ($request->is('api/tenant/switch', 'api/auth/logout', 'api/account', 'api/account/*', 'api/impersonate/stop')) {
             return;
         }
 

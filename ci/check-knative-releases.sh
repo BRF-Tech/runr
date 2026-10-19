@@ -79,15 +79,22 @@ if [ "$UPDATED" = false ]; then
     exit 0
 fi
 
-# ── 4. Update FALLBACK_CHART_VERSION ─────────────────────────────────────────
-# Use the latest patch of the highest available chart as the fallback
-LATEST_CHART=$(helm search repo "$HELM_REPO_NAME/knative-operator" --versions -o json \
-    | jq -r '.[0].version | ltrimstr("v")')
-
-if [ -n "$LATEST_CHART" ]; then
-    sed -i "s|public const FALLBACK_CHART_VERSION = '.*';|public const FALLBACK_CHART_VERSION = '${LATEST_CHART}';|" "$COMPAT_FILE"
-    echo "FALLBACK_CHART_VERSION → $LATEST_CHART"
-fi
+# ── 4. Pin a fallback chart for each newly released minor ───────────────────
+# FALLBACK_CHART_VERSIONS: the latest patch of each minor (used when the chart repository
+# cannot be read; the newest one the cluster's Kubernetes version supports is picked)
+LATEST_CHART=""
+for TARGET in "${NEWLY_RELEASED[@]}"; do
+    CHART=$(helm search repo "$HELM_REPO_NAME/knative-operator" --versions -o json \
+        | jq -r --arg m "$TARGET." '[.[].version | ltrimstr("v") | select(startswith($m))][0] // empty')
+    [ -n "$CHART" ] || continue
+    if grep -q "'${TARGET}' => '" "$COMPAT_FILE"; then
+        sed -i "s|'${TARGET}' => '[^']*',|'${TARGET}' => '${CHART}',|" "$COMPAT_FILE"
+    else
+        sed -i "s|public const FALLBACK_CHART_VERSIONS = \[|public const FALLBACK_CHART_VERSIONS = [\n        '${TARGET}' => '${CHART}',|" "$COMPAT_FILE"
+    fi
+    LATEST_CHART="${LATEST_CHART:+$LATEST_CHART, }${TARGET} → ${CHART}"
+    echo "FALLBACK_CHART_VERSIONS: ${TARGET} → ${CHART}"
+done
 
 # ── 5. Git commit + push + MR ───────────────────────────────────────────────
 VERSIONS_STR=$(printf ", %s" "${NEWLY_RELEASED[@]}")
@@ -121,7 +128,7 @@ $(printf "- **%s**\n" "${NEWLY_RELEASED[@]}")
 
 ### Changes
 - Removed the unreleased comment in the \`KNATIVE_K8S_COMPAT\` table
-- Updated \`FALLBACK_CHART_VERSION\` → \`${LATEST_CHART}\`
+- Pinned fallback charts (\`FALLBACK_CHART_VERSIONS\`): ${LATEST_CHART}
 
 ### To check
 - [ ] Is the min K8s version correct? ([Release Schedule](https://github.com/knative/community/blob/main/mechanics/RELEASE-SCHEDULE.md))

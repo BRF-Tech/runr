@@ -4,6 +4,7 @@ namespace Modules\Tenancy\Models;
 
 use App\Models\KnativeRegion;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
+use Modules\Tenancy\Support\TenantRegionShares;
 use Stancl\Tenancy\Contracts\SyncMaster;
 use Stancl\Tenancy\Database\Concerns\ResourceSyncing;
 use Stancl\Tenancy\Events\SyncedResourceSaved;
@@ -20,6 +21,11 @@ class CentralSyncableRegion extends KnativeRegion implements SyncMaster
         'kubeconfig',
     ];
 
+    /**
+     * Tenants the region is copied to — stancl's resource sync reads this relation: a share that
+     * waits for the tenant's acceptance (TenantRegionShares::PENDING) gets no copy, so nobody in
+     * the tenant can use the region before it is accepted.
+     */
     public function tenants(): BelongsToMany
     {
         return $this->belongsToMany(
@@ -27,7 +33,8 @@ class CentralSyncableRegion extends KnativeRegion implements SyncMaster
             'tenant_regions',
             'knative_region_id',
             'tenant_id',
-        )->withPivot('cpu_quota_m', 'memory_quota_mb', 'gpu_quota')
+        )->withPivot('cpu_quota_m', 'memory_quota_mb', 'gpu_quota', 'status')
+            ->wherePivot('status', TenantRegionShares::ACTIVE)
             ->withTimestamps();
     }
 

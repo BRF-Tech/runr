@@ -60,8 +60,29 @@ type Project struct {
 	LatestVersion    *Version          `json:"latest_version,omitempty"`
 	LatestDeployment *DeploymentStatus `json:"latest_deployment,omitempty"`
 	RuntimeEOL       string            `json:"runtime_eol,omitempty"`
-	CreatedAt        *time.Time        `json:"created_at,omitempty"`
+	// Stopped is set while an administrator has stopped the project (APIs of 0.5.7 and later).
+	Stopped   *ProjectStop `json:"stopped,omitempty"`
+	CreatedAt *time.Time   `json:"created_at,omitempty"`
 }
+
+// Stop levels (ProjectStop.Level).
+const (
+	StopLevelPlatform     = "platform"     // a platform administrator stopped it; only one resumes it
+	StopLevelOrganization = "organization" // an administrator of the organization stopped it
+)
+
+// ProjectStop is ProjectResource.stopped: the project serves nothing and cannot be deployed until
+// it is resumed. By is nil for a platform stop seen by a member (the platform administrator is not
+// named); Level is empty from APIs before 0.5.8, whose stops are the organization's.
+type ProjectStop struct {
+	At     *time.Time `json:"at,omitempty"`
+	By     *Ref       `json:"by,omitempty"`
+	Reason string     `json:"reason,omitempty"`
+	Level  string     `json:"level,omitempty"`
+}
+
+// ByPlatform reports whether a platform administrator stopped the project.
+func (s *ProjectStop) ByPlatform() bool { return s != nil && s.Level == StopLevelPlatform }
 
 // RegionName returns the project's region name, or its id when the name is not loaded.
 func (p *Project) RegionName() string {

@@ -26,8 +26,6 @@ use Modules\Tenancy\Database\Seeders\TenancyDatabaseSeeder;
 use Modules\Tenancy\Http\Middleware\CheckTenantQuota;
 use Modules\Tenancy\Http\Middleware\IdentifyTenant;
 use Modules\Tenancy\Http\Middleware\RequireAdmin;
-use Modules\Tenancy\Jobs\ChargeScheduleJob;
-use Modules\Tenancy\Jobs\UsageAggregationJob;
 use Modules\Tenancy\Listeners\CreateTenantOnRegistration;
 use Modules\Tenancy\Listeners\SetupTenantDomainsOnMigrate;
 use Modules\Tenancy\Models\CentralSyncableRegion;
@@ -35,11 +33,14 @@ use Modules\Tenancy\Models\CentralSyncableUser;
 use Modules\Tenancy\Models\Tenant;
 use Modules\Tenancy\Models\TenantAwareKnativeRegion;
 use Modules\Tenancy\Models\TenantAwareUser;
+use Modules\Tenancy\Models\TenantLocalRegion;
 use Modules\Tenancy\Providers\Concerns\TenancyServiceOverridesTrait;
-use Modules\Tenancy\Services\CapacityDealService;
 use Modules\Tenancy\Services\PostgreSQLSchemaManagerWithPublic;
+use Modules\Tenancy\Services\TenantDomainService;
 use Modules\Tenancy\Services\TenantRegionReconcileSource;
+use Modules\Tenancy\Services\TenantSchema;
 use Modules\Tenancy\Support\TenantMembers;
+use Modules\Tenancy\Support\TenantRegionShares;
 use Modules\Tenancy\Support\TenantTokens;
 use Stancl\Tenancy\Bootstrappers\CacheTenancyBootstrapper;
 use Stancl\Tenancy\Bootstrappers\DatabaseTenancyBootstrapper;
@@ -62,9 +63,8 @@ class TenancyServiceProvider extends ServiceProvider
             'tenancy'
         );
 
-        // White-label and billing: plans, charges, purchases, billing events, onboarding, tenant
-        // branding (docs/white-label.md, docs/billing.md)
-        $this->app->register(PlanServiceProvider::class);
+        // White-label: self-service onboarding, tenant branding (docs/white-label.md)
+        $this->app->register(TenantWhiteLabelServiceProvider::class);
     }
 
     public function boot(): void
@@ -114,12 +114,12 @@ class TenancyServiceProvider extends ServiceProvider
             ],
             'tenancy.filesystem.suffix_storage_path' => false,
             // Override migration path — mergeConfigFrom can't override stancl's defaults
-            'tenancy.migration_parameters' => [
-                '--force' => true,
-                '--path' => [module_path('Tenancy', 'Database/TenantMigrations')],
-                '--realpath' => true,
-            ],
+            'tenancy.migration_parameters' => TenantSchema::migrationParameters(),
         ]);
+
+        // Other modules register their tenant migrations while they boot (TenantMigrationRegistry):
+        // once every provider has booted the parameters name all of them (TenantSchema)
+        $this->app->booted(fn () => config(['tenancy.migration_parameters' => TenantSchema::migrationParameters()]));
     }
 
     /** Register Stancl event listeners (without these, tenancy()->initialize() won't switch DB). */
@@ -157,8 +157,8 @@ class TenancyServiceProvider extends ServiceProvider
 
         // When the main app saves a platform region in central context,
         // propagate changes to all tenant schemas via CentralSyncableRegion.
-        TenantAwareKnativeRegion::saved(function ($region) {
-            if ($region->owner_tenant_id !== null) {
+        $syncToCopies = function (KnativeRegion $region): void {
+            if ($region->getAttribute('owner_tenant_id') !== null) {
                 return;
             }
             if (tenancy()->tenant) {
@@ -167,7 +167,32 @@ class TenancyServiceProvider extends ServiceProvider
 
             $syncable = CentralSyncableRegion::find($region->getKey());
             $syncable?->triggerSyncEvent();
-        });
+        };
+        // The region API saves the route-bound TenantAwareKnativeRegion; status jobs and commands
+        // (CheckKnativeStatusJob, DiscoverExternalIpsCommand, …) save App\Models\KnativeRegion
+        // instances. Eloquent names a model event after the saved instance's own class, so each
+        // save reaches exactly one of these hooks.
+        TenantAwareKnativeRegion::saved($syncToCopies);
+        KnativeRegion::saved($syncToCopies);
+
+        // A region created in a tenant's context is the tenant's own (owner_tenant_id, not
+        // synced): the region API creates App\Models\KnativeRegion rows, which the
+        // TenantAwareKnativeRegion hook never sees
+        KnativeRegion::creating(fn (KnativeRegion $region) => TenantAwareKnativeRegion::markTenantOwned($region));
+
+        // A platform region deleted centrally takes every tenant's copy with it (projects on it
+        // stay without a region, like central ones). The assignments are read before the delete
+        // cascades over tenant_regions.
+        $removeCopies = function (KnativeRegion $region): void {
+            if (tenancy()->initialized || $region->getAttribute('owner_tenant_id')) {
+                return;
+            }
+
+            TenantLocalRegion::removeCopiesOf((string) $region->getKey());
+        };
+        KnativeRegion::deleting($removeCopies);
+        TenantAwareKnativeRegion::deleting($removeCopies);
+        CentralSyncableRegion::deleting($removeCopies);
     }
 
     protected function registerUserSyncEvents(): void
@@ -292,8 +317,6 @@ class TenancyServiceProvider extends ServiceProvider
             'Invitation' => 'Tenants > Invitations',
             'Impersonate' => 'Tenants > Impersonate',
             'ResourceUsage' => 'Tenants > Resources',
-            'CostConfig' => 'Tenants > Billing',
-            'CapacityDeal' => 'Tenants > Billing',
         ]);
     }
 
@@ -325,23 +348,22 @@ class TenancyServiceProvider extends ServiceProvider
         $this->app->booted(function () {
             $schedule = $this->app->make(Schedule::class);
 
-            $schedule->job(new UsageAggregationJob)
+            // Metering (usage-aggregation) is scheduled by the core for every organization
+            // context (routes/console.php); billing is the Billing module (docs/billing.md).
+
+            // A moved organization domain takes over once DNS of the new domain answers the
+            // region's external address (TenantDomainService)
+            $schedule->call(fn () => $this->app->make(TenantDomainService::class)->completeResolvedMigrations())
                 ->everyFiveMinutes()
-                ->name('usage-aggregation')
+                ->name('tenant-domain-migration-auto-complete')
                 ->withoutOverlapping(30);
 
-            // Charges (docs/billing.md): the month's deal / usage charges, months that ended are
-            // closed — after the usage aggregation of the last day
-            $schedule->job(new ChargeScheduleJob)
-                ->dailyAt('02:30')
-                ->name('charge-schedule')
-                ->withoutOverlapping(120);
-
-            // Capacity deals past their end date stop being active (charges, profit/loss)
-            $schedule->call(fn () => $this->app->make(CapacityDealService::class)->expireDeals())
-                ->hourly()
-                ->name('capacity-deal-expiry')
-                ->withoutOverlapping(60);
+            // Region offers wait for acceptance only while billing is on: with billing off they are
+            // active (TenantRegionShares::activatePending)
+            $schedule->call(fn () => TenantRegionShares::activatePending())
+                ->everyFiveMinutes()
+                ->name('tenant-region-shares-activate')
+                ->withoutOverlapping(10);
         });
     }
 }

@@ -31,6 +31,7 @@ trait KnativeLokiTrait
             namespace: $ns,
             setValues: [],
             kubeconfigYaml: $kubeconfig,
+            version: ManagedLoki::CHART_VERSION,
             valuesArray: self::lokiHelmValues($storageClass),
             wait: false,
         );

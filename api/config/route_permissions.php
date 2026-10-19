@@ -67,6 +67,11 @@ return [
     // PATCH carrying environment variables needs env.edit, other fields projects.update (UpdateProjectRequest)
     'PUT projects/{project}' => 'projects.update|env.edit',
     'DELETE projects/{project}' => 'projects.delete',
+    // The payer of the project's bills (ProjectOwnershipController: the owner or projects.manage_access)
+    'PUT projects/{project}/owner' => 'projects.view',
+    // Stop (workloads off, no deploys, reason shown to the members) and resume (ProjectStopController)
+    'POST projects/{project}/stop' => 'projects.stop',
+    'POST projects/{project}/resume' => 'projects.stop',
     'GET projects/{project}/code' => 'projects.view',
     'POST projects/{project}/code' => 'code.edit',
     'GET projects/{project}/files' => 'projects.view',
@@ -241,6 +246,10 @@ return [
     // tenancy AuditEventController also requires a platform admin outside any tenant
     'PUT audit-settings' => 'settings.manage',
 
+    // ── Horizon dashboard: single-use sign-in link. HorizonLinkController admits platform
+    // administrators and single-tenant Owners with an unscoped token (App\Support\HorizonAccess) ──
+    'POST horizon/link' => '@authenticated',
+
     // ── Organization settings ──
     'GET settings' => '@authenticated',
     'PATCH settings' => 'settings.manage',
@@ -259,9 +268,11 @@ return [
     'DELETE knative-regions/{knative_region}' => 'regions.manage',
     'GET knative-regions/{knativeRegion}/kubeconfig' => 'regions.manage',
     'PUT knative-regions/{knativeRegion}/settings' => 'regions.manage',
+    'PUT knative-regions/{knativeRegion}/monitoring' => 'regions.manage',
     'GET knative-regions/{knativeRegion}/capacity' => 'regions.view',
     'PUT knative-regions/{knativeRegion}/capacity' => 'regions.manage',
     'PUT knative-regions/{knativeRegion}/function-tls' => 'regions.manage',
+    'DELETE knative-regions/{knativeRegion}/function-tls' => 'regions.manage',
     'GET knative-regions/{knativeRegion}/skupper' => 'regions.view',
     'POST knative-regions/{knativeRegion}/skupper/site' => 'regions.manage',
     'GET knative-regions/{knativeRegion}/knative-status' => 'regions.view',
@@ -269,6 +280,7 @@ return [
     'POST knative-regions/{knativeRegion}/uninstall-knative' => 'regions.manage',
     'POST knative-regions/{knativeRegion}/install-operator' => 'regions.manage',
     'POST knative-regions/{knativeRegion}/install-serving' => 'regions.manage',
+    'POST knative-regions/{knativeRegion}/upgrade-serving' => 'regions.manage',
     'POST knative-regions/{knativeRegion}/uninstall-operator' => 'regions.manage',
     'POST knative-regions/{knativeRegion}/uninstall-serving' => 'regions.manage',
     'POST knative-regions/{knativeRegion}/detect-components' => 'regions.manage',
@@ -294,7 +306,9 @@ return [
     'GET knative-regions/{knativeRegion}/migration-status' => 'regions.view',
     'POST knative-regions/{knativeRegion}/complete-migration' => 'regions.manage',
     'POST knative-regions/{knativeRegion}/rollback-migration' => 'regions.manage',
+    'POST knative-regions/{knativeRegion}/complete-domain-migration' => 'regions.manage',
     'GET knative-regions/{knativeRegion}/registry-status' => 'regions.view',
+    'POST knative-regions/{knativeRegion}/registry' => 'registry.manage',
     'DELETE knative-regions/{knativeRegion}/registry' => 'registry.manage',
     'POST knative-regions/{knativeRegion}/demo-projects' => 'regions.manage',
     'DELETE knative-regions/{knativeRegion}/demo-projects' => 'regions.manage',
@@ -421,8 +435,10 @@ return [
     'PUT sso/group-mappings/{mapping}' => 'sso.manage',
     'DELETE sso/group-mappings/{mapping}' => 'sso.manage',
     'GET social-accounts' => '@authenticated',
+    'GET social-accounts/providers' => '@authenticated',
     'DELETE social-accounts/{socialAccount}' => '@authenticated',
     'GET oauth/{provider}/link' => '@authenticated',
+    'POST oauth/link/complete' => '@authenticated',
 
     // ── Support tickets (Ticket module) ──
     'GET support-tickets' => 'tickets.view',
@@ -435,6 +451,7 @@ return [
     'POST support-tickets/{supportTicket}/read' => 'tickets.view',
     'GET admin/support-tickets' => 'tickets.manage',
     'GET admin/support-tickets/stats' => 'tickets.manage',
+    'GET admin/support-tickets/staff' => 'tickets.manage',
     'GET admin/support-tickets/{id}' => 'tickets.manage',
     'PATCH admin/support-tickets/{id}/status' => 'tickets.manage',
     'PATCH admin/support-tickets/{id}/assign' => 'tickets.manage',
@@ -468,16 +485,6 @@ return [
     'GET resource-usage' => '@platform',
     'POST impersonate/stop' => '@platform',
     'POST impersonate/{tenant}' => '@platform',
-    'GET cost-configs' => '@platform',
-    'POST cost-configs' => '@platform',
-    'PATCH cost-configs/{id}' => '@platform',
-    'DELETE cost-configs/{id}' => '@platform',
-    'GET tenants/{tenant}/billing/summary' => '@platform',
-    'GET tenants/{tenant}/billing/usage' => '@platform',
-    'GET tenants/{tenant}/capacity-deals' => '@platform',
-    'POST tenants/{tenant}/capacity-deals' => '@platform',
-    'PATCH tenants/{tenant}/capacity-deals/{deal}' => '@platform',
-    'GET regions/{region}/profit-loss' => '@platform',
     'GET tenants/{tenant}/binding-quotas' => '@platform',
     'PUT tenants/{tenant}/binding-quotas' => '@platform',
 
@@ -519,8 +526,8 @@ return [
     'GET observability/alert-events' => 'alerts.manage',
     'GET observability/alert-deliveries' => 'alerts.manage',
     'POST observability/alert-deliveries/{delivery}/retry' => 'alerts.manage',
-    // ── White-label (docs/white-label.md; public: branding, brand images, signup verification
-    //    and the public plan list are outside auth:sanctum) ──
+    // ── White-label (docs/white-label.md; public: branding, brand images and signup verification
+    //    are outside auth:sanctum) ──
     // The install's brand / signup: single-tenant by permission; multi-tenant platform
     // administrators (BrandingController refines branding.manage; signup.manage is single-tenant only)
     'GET admin/branding' => 'branding.manage',
@@ -529,43 +536,62 @@ return [
     'DELETE admin/branding/assets/{kind}' => 'branding.manage',
     'GET admin/signup-settings' => 'signup.manage',
     'PUT admin/signup-settings' => 'signup.manage',
-    // Multi-tenant: the tenant's own brand, onboarding wizard, plan, charges
+    // Multi-tenant: the tenant's own brand, onboarding wizard
     'GET tenant/branding' => 'branding.manage',
     'PUT tenant/branding' => 'branding.manage',
     'POST tenant/branding/assets/{kind}' => 'branding.manage',
     'DELETE tenant/branding/assets/{kind}' => 'branding.manage',
     'GET onboarding' => '@authenticated',
     'POST onboarding' => 'settings.manage',
-    'GET tenant/subscription' => '@authenticated', // the plan page of every member
-    'GET tenant/billing' => 'billing.view',
-    // Plans and billing settings: platform administrators
-    'GET admin/plans' => '@platform',
-    'POST admin/plans' => '@platform',
-    'PATCH admin/plans/{plan}' => '@platform',
-    'DELETE admin/plans/{plan}' => '@platform',
-    'GET admin/billing-settings' => '@platform',
-    'PUT admin/billing-settings' => '@platform',
 
-    // ── Billing API (Tenancy routes/billing.php, docs/billing.md): the operator's billing
-    //    system — platform administrators, tokens with billing.view (reads) / billing.manage (writes) ──
-    'GET billing/plans' => '@platform:billing.view',
-    'GET billing/tenants' => '@platform:billing.view',
-    'GET billing/tenants/{tenant}' => '@platform:billing.view',
-    'GET billing/tenants/{tenant}/usage' => '@platform:billing.view',
-    'GET billing/tenants/{tenant}/subscription' => '@platform:billing.view',
-    'PUT billing/tenants/{tenant}/subscription' => '@platform:billing.manage',
-    'POST billing/tenants/{tenant}/charges' => '@platform:billing.manage',
-    'POST billing/tenants/{tenant}/purchases' => '@platform:billing.manage',
-    'GET billing/charges' => '@platform:billing.view',
-    'GET billing/charges/{charge}' => '@platform:billing.view',
-    'PATCH billing/charges/{charge}' => '@platform:billing.manage',
-    'POST billing/charges/{charge}/void' => '@platform:billing.manage',
-    'GET billing/purchases' => '@platform:billing.view',
-    'GET billing/purchases/{purchase}' => '@platform:billing.view',
-    'POST billing/purchases/{purchase}/void' => '@platform:billing.manage',
-    'GET billing/events' => '@platform:billing.view',
-    'POST billing/events/test' => '@platform:billing.manage',
-    'POST billing/events/{event}/redeliver' => '@platform:billing.manage',
+    // ── Billing (Billing module, Modules/Billing/routes/api.php, docs/billing.md). Every route
+    //    works in the request's organization: the install (single-tenant), the platform (multi-tenant,
+    //    no active tenant: platform administrators) or a tenant. API tokens of an external invoicing
+    //    system carry billing.view (reads) / billing.manage (writes) ──
+    'GET billing/settings' => 'billing.view',
+    'PUT billing/settings' => 'billing.manage',
+    'GET billing/prices' => 'billing.view',
+    'POST billing/prices' => 'billing.manage',
+    'DELETE billing/prices/{price}' => 'billing.manage',
+    'GET billing/regions' => 'billing.view',
+    'PUT billing/regions/{region}' => 'billing.manage',
+    'GET billing/markups' => 'billing.view',
+    'POST billing/markups' => 'billing.manage',
+    'DELETE billing/markups/{markup}' => 'billing.manage',
+    'GET billing/region-offers' => 'billing.view',
+    'POST billing/region-offers/{region}/accept' => 'billing.manage',
+    'GET billing/bills' => 'billing.view',
+    'GET billing/bills/{bill}' => 'billing.view',
+    'PUT billing/bills/{bill}/payment-url' => 'billing.manage',
+    'PUT billing/bills/{bill}/paid' => 'billing.manage',
+    'GET billing/usage' => 'billing.view',
+    'GET billing/rollup' => 'billing.view',
+    'GET billing/me' => '@authenticated', // the signed-in user's own bills
+    'GET billing/fixed-requests' => 'billing.view',
+    'POST billing/fixed-requests/{fixedRequest}/approve' => 'billing.approve',
+    'POST billing/fixed-requests/{fixedRequest}/reject' => 'billing.approve',
+    'GET billing/events' => 'billing.view',
+    'POST billing/events/test' => 'billing.manage',
+    'POST billing/events/{event}/redeliver' => 'billing.manage',
+    // A tenant's bills from the platform (tenant context)
+    'GET billing/platform-bills' => 'billing.view',
+    'GET billing/platform-bills/{bill}' => 'billing.view',
+    // Platform → tenant bills, the bills of deleted tenants and the 0.5.7 billing records:
+    // platform administrators
+    'GET billing/tenant-bills' => '@platform:billing.view',
+    'GET billing/tenant-bills/{bill}' => '@platform:billing.view',
+    'PUT billing/tenant-bills/{bill}/payment-url' => '@platform:billing.manage',
+    'PUT billing/tenant-bills/{bill}/paid' => '@platform:billing.manage',
+    'GET billing/legacy-records' => '@platform:billing.view',
+    'GET billing/archived-bills' => '@platform:billing.view',
+    'GET billing/archived-bills/{bill}' => '@platform:billing.view',
+    // A project's billing tab: ProjectBillingController additionally requires the project owner,
+    // projects.billing on the project or billing.view
+    'GET projects/{project}/billing' => 'projects.view',
+    'GET projects/{project}/billing/quote' => 'projects.view',
+    'GET projects/{project}/billing/bills/{bill}' => 'projects.view',
+    'POST projects/{project}/billing/fixed-requests' => 'projects.view',
+    'POST projects/{project}/billing/fixed-requests/{fixedRequest}/cancel' => 'projects.view',
 
     // ── Sandbox API (routes/sandboxes.php, docs/sandbox-api.md) ──
     // Lifecycle

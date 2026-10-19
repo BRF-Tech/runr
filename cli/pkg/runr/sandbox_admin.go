@@ -199,17 +199,15 @@ func (c *Client) ResetSandboxQuota(ctx context.Context, tenant string) error {
 	return c.do(ctx, request{method: http.MethodDelete, path: "/sandbox-quotas/" + seg(tenant)}, nil)
 }
 
-// SandboxUsageRecord is one day of sandbox usage in a region.
+// SandboxUsageRecord is one day of sandbox usage in a region: quantities only (what they cost is
+// on the bills of the Billing module, GET /billing/usage).
 type SandboxUsageRecord struct {
-	RecordDate     string  `json:"record_date"`
-	RegionID       string  `json:"region_id,omitempty"`
-	SandboxCount   int     `json:"sandbox_count"`
-	SandboxSeconds int64   `json:"sandbox_seconds"`
-	CPUmcMS        int64   `json:"cpu_mc_ms"`
-	MemoryMiBMS    int64   `json:"memory_mib_ms"`
-	RawCost        float64 `json:"raw_cost"`
-	FinalCost      float64 `json:"final_cost"`
-	Currency       string  `json:"currency,omitempty"`
+	RecordDate     string `json:"record_date"`
+	RegionID       string `json:"region_id,omitempty"`
+	SandboxCount   int    `json:"sandbox_count"`
+	SandboxSeconds int64  `json:"sandbox_seconds"`
+	CPUmcMS        int64  `json:"cpu_mc_ms"`
+	MemoryMiBMS    int64  `json:"memory_mib_ms"`
 }
 
 // SandboxUsage returns the daily usage of the organization between from and to (dates,

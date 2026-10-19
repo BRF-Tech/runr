@@ -18,16 +18,17 @@ class AdminSeeder extends Seeder
 
         $password = config('app.admin.password');
         if (! $password) {
-            // No ADMIN_PASSWORD was supplied (the Helm chart and the marketplace form always set
-            // one; this only happens on a bootstrap path that doesn't, e.g. secret.create=false).
-            // A hard-coded fallback would give every such install the same known password, so a
-            // random one is generated instead, the same way the chart's own `randAlphaNum 16`
-            // default works for secret.create=true. The value never goes to the log: the chart's
-            // log channel is stderr, which cluster log shipping collects. It is printed to the
-            // seeding process's own STDOUT only (the operator running the seeder sees it once).
+            // No ADMIN_PASSWORD was supplied. The installers always supply one: the Helm chart's
+            // Secret (or, with secret.create=false, the password its bootstrap Job stores in the
+            // Secret runr-admin) and the Compose migrator (runr:bootstrap-admin). A hard-coded
+            // fallback would give every other path the same known password, so a random one is
+            // generated instead. It never goes to a log — neither the application log (the chart's
+            // log channel is stderr, which cluster log shipping collects) nor the output of a
+            // process whose stdout is a log (a Kubernetes Job, `docker compose up`): it is shown
+            // only on an interactive terminal that ran the seeder, once.
             $password = Str::random(20);
-            Log::warning('No ADMIN_PASSWORD set — generated a random administrator password (shown only on the console that ran the seeder; set ADMIN_PASSWORD or reset it to choose your own).');
-            if (app()->runningInConsole() && ! app()->runningUnitTests()) {
+            Log::warning('No ADMIN_PASSWORD set — generated a random administrator password (shown only on the interactive terminal that ran the seeder; set ADMIN_PASSWORD or reset it to choose your own).');
+            if ($this->interactiveTerminal()) {
                 fwrite(STDOUT, "Generated admin password (ADMIN_PASSWORD was not set): {$password}\n");
             }
         }
@@ -38,5 +39,14 @@ class AdminSeeder extends Seeder
             'email' => config('app.admin.email'),
             'password' => Hash::make($password),
         ]);
+    }
+
+    /** STDOUT is a terminal a person reads (not a pipe or a file collected as a log). */
+    protected function interactiveTerminal(): bool
+    {
+        return app()->runningInConsole()
+            && ! app()->runningUnitTests()
+            && defined('STDOUT')
+            && stream_isatty(STDOUT);
     }
 }

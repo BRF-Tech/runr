@@ -4,8 +4,8 @@ set -euo pipefail
 # ── RunR Production Build Script ─────────────────────────────────────────────
 # Builds all images and packs them into a single tar file.
 # To move them into an air-gapped environment:
-#   1) Run this script on a machine with internet access
-#   2) Copy the generated tar file to the target
+#   1) Set the module toggles in compose/.env, run this script on a machine with internet access
+#   2) Copy the generated tar file (and compose/ with its .env) to the target
 #   3) On the target: docker load -i runr-images.tar
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -15,9 +15,18 @@ OUTPUT="${SCRIPT_DIR}/runr-images.tar"
 # Reverb key — baked into the Vue build
 REVERB_KEY="${REVERB_KEY:-runr-prod-key}"
 
+# Modules — baked into the Vue build: TENANCY_ENABLED, AUTH_PROVIDER_ENABLED, TICKET_ENABLED, BILLING_ENABLED from the
+# environment, else from compose/.env, else the defaults of docker-compose.yml — the values the API
+# containers get, so the UI shows the modules the API enables
+# shellcheck source-path=SCRIPTDIR source=modules.sh
+. "${SCRIPT_DIR}/modules.sh"
+runr_modules "${SCRIPT_DIR}/.env"
+
 echo "══════════════════════════════════════════════════════════"
 echo "  RunR Production Build"
 echo "══════════════════════════════════════════════════════════"
+echo ""
+echo "  Modules: tenancy=${TENANCY_ENABLED} auth-provider=${AUTH_PROVIDER_ENABLED} ticket=${TICKET_ENABLED} billing=${BILLING_ENABLED}"
 echo ""
 
 # ── 1. API image ─────────────────────────────────────────────────────────────
@@ -40,6 +49,10 @@ docker build \
     --pull \
     --build-arg VITE_WS_PROXY=true \
     --build-arg VITE_REVERB_KEY="${REVERB_KEY}" \
+    --build-arg VITE_TENANCY_ENABLED="${TENANCY_ENABLED}" \
+    --build-arg VITE_AUTH_PROVIDER_ENABLED="${AUTH_PROVIDER_ENABLED}" \
+    --build-arg VITE_TICKET_ENABLED="${TICKET_ENABLED}" \
+    --build-arg VITE_BILLING_ENABLED="${BILLING_ENABLED}" \
     -t runr-ui:latest \
     "${PROJECT_ROOT}/vue"
 
@@ -72,11 +85,11 @@ echo "  Build complete!"
 echo "  File: ${OUTPUT}"
 echo "  Size: ${SIZE}"
 echo ""
-echo "  On the target machine:"
+echo "  On the target machine (compose/README.md):"
 echo "    docker load -i runr-images.tar"
-echo "    cp .env.example .env"
 echo "    cp api.env.example api.env"
-echo "    # edit the .env and api.env files"
+echo "    # edit .env (the same module toggles as this build) and api.env"
 echo "    # generate APP_KEY: docker compose run --rm api php artisan key:generate --show"
 echo "    docker compose up -d"
+echo "    docker compose run --rm migrator   # migrations + the first administrator"
 echo "══════════════════════════════════════════════════════════"

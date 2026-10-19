@@ -224,6 +224,25 @@ trait KnativeRegionAccessorsTrait
         $this->attributes['is_active'] = ($value === 'active');
     }
 
+    /**
+     * is_active (the legacy flag, still accepted by POST/PUT /knative-regions) keeps
+     * region_status in step: a region created or switched inactive is "inactive" (an inactive
+     * flag next to an "active" status refused every deploy while the console showed the region
+     * active and no status block was applied); switched active, it is "active".
+     */
+    public function setIsActiveAttribute(mixed $value): void
+    {
+        $active = filter_var($value, FILTER_VALIDATE_BOOLEAN);
+        $this->attributes['is_active'] = $active;
+
+        $status = $this->attributes['region_status'] ?? 'active';
+        if (! $active && $status === 'active') {
+            $this->attributes['region_status'] = 'inactive';
+        } elseif ($active && $status !== 'active') {
+            $this->attributes['region_status'] = 'active';
+        }
+    }
+
     public function getIsMaintenanceAttribute(): bool
     {
         return ($this->attributes['region_status'] ?? 'active') === 'maintenance';

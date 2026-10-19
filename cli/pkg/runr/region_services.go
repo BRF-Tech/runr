@@ -164,6 +164,12 @@ type RegistryS3 struct {
 // registry, created in the background.
 type RegistrySetupInput struct {
 	RegionCreateInput
+	RegistryConfig
+}
+
+// RegistryConfig is the registry of a region: of a new one (RegistrySetupInput) or an existing
+// one (ConfigureRegionRegistry).
+type RegistryConfig struct {
 	// RegistryMode is internal (RunR installs Zot) or external.
 	RegistryMode string `json:"registry_mode"`
 	// StorageType of an internal registry: pvc (PVCConfig) or s3 (S3Config).
@@ -174,6 +180,20 @@ type RegistrySetupInput struct {
 	ExternalAddress  string `json:"external_address,omitempty"`
 	ExternalUsername string `json:"external_username,omitempty"`
 	ExternalPassword string `json:"external_password,omitempty"`
+}
+
+// ConfigureRegionRegistry sets up the registry of an existing region in the background
+// (registry.manage): one created without, or whose registry was removed; an external registry is
+// replaced, an internal one has to be removed first. WaitRegionRegistry follows it.
+func (c *Client) ConfigureRegionRegistry(ctx context.Context, regionID string, cfg RegistryConfig) (*RegionOperation, error) {
+	return c.regionOperation(ctx, http.MethodPost, regionPath(regionID, "/registry"), cfg)
+}
+
+// WaitRegionRegistry polls a region until its registry setup ends (a *FailedError for error).
+func (c *Client) WaitRegionRegistry(ctx context.Context, regionID, regionName string, opts WaitOptions) (*RegionDetail, error) {
+	return c.waitRegion(ctx, regionID, regionName, "Registry", opts,
+		func(d *RegionDetail) (string, string) { return d.RegistryStatus, d.RegistryStatusMessage },
+		[]string{KnativeInstalling})
 }
 
 // RegistrySetup is the answer of POST /registry-setup/start and …/retry: the token to poll.
@@ -466,6 +486,28 @@ type FunctionTLSInput struct {
 // (regions.manage).
 func (c *Client) SetRegionFunctionTLS(ctx context.Context, regionID string, in FunctionTLSInput) (*RegionOperation, error) {
 	return c.regionOperation(ctx, http.MethodPut, regionPath(regionID, "/function-tls"), in)
+}
+
+// RemoveRegionFunctionTLS switches function-domain TLS off (regions.manage): the region's
+// Traefik answers HTTPS with its own default certificate again.
+func (c *Client) RemoveRegionFunctionTLS(ctx context.Context, regionID string) (*RegionOperation, error) {
+	return c.regionOperation(ctx, http.MethodDelete, regionPath(regionID, "/function-tls"), nil)
+}
+
+// RegionMonitoringInput is PUT /knative-regions/{region}/monitoring: a key set to a URL points
+// the region at an existing in-cluster Prometheus / Loki, set to nil back at RunR's own; keys
+// left out are kept.
+type RegionMonitoringInput map[string]any
+
+// UpdateRegionMonitoring changes the region's Prometheus and Loki (regions.manage).
+func (c *Client) UpdateRegionMonitoring(ctx context.Context, regionID string, in RegionMonitoringInput) (*RegionOperation, error) {
+	return c.regionOperation(ctx, http.MethodPut, regionPath(regionID, "/monitoring"), in)
+}
+
+// CompleteRegionDomainMigration completes a base-domain migration of the region without waiting
+// for its DNS check (regions.manage): the new function domain becomes the region's.
+func (c *Client) CompleteRegionDomainMigration(ctx context.Context, regionID string) (*RegionOperation, error) {
+	return c.regionOperation(ctx, http.MethodPost, regionPath(regionID, "/complete-domain-migration"), nil)
 }
 
 // SkupperSite is the Skupper site of a region's project namespace.

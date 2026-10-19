@@ -614,7 +614,7 @@ required.
 ## Sandboxing, GPUs and RuntimeClasses
 
 Function pods of every runtime — built-in, platform or custom — run with the sandbox runtime
-(RuntimeClass) the region maps the project's type to (Settings → Regions → (region) → Isolation: runc, gVisor
+(RuntimeClass) the region maps the project's type to (Administration → Platform → Knative Regions → (region) → Isolation: runc, gVisor
 or a Kata hypervisor), and Kaniko builds with the region's build sandbox. A runtime cannot lower
 that isolation: the manifest's `sandbox` list only declares which sandboxes the runtime works
 under (default all three; every Kata hypervisor counts as `kata`). A deploy into a region whose

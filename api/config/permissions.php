@@ -27,6 +27,8 @@ return [
         'projects.delete' => ['group' => 'projects', 'scope' => 'project', 'implies' => ['projects.view']],
         'projects.deploy' => ['group' => 'projects', 'scope' => 'project', 'implies' => ['projects.view']],
         'projects.manage_access' => ['group' => 'projects', 'scope' => 'project', 'implies' => ['projects.view']],
+        // Stop a project (workloads off, no deploys) and resume it, with a reason (docs/billing.md#project-stop-and-resume)
+        'projects.stop' => ['group' => 'projects', 'scope' => 'org'],
         'code.edit' => ['group' => 'projects', 'scope' => 'project', 'implies' => ['projects.view']],
 
         // ── Git (docs/git-deploy.md) ──
@@ -139,9 +141,15 @@ return [
         // Data residency of the organization: allowed regions / data locations, default region
         'tenants.residency.manage' => ['group' => 'organization', 'scope' => 'org', 'edition' => 'multi'],
 
-        // ── Billing (multi-tenant) ──
-        'billing.view' => ['group' => 'billing', 'scope' => 'org', 'edition' => 'multi'],
-        'billing.manage' => ['group' => 'billing', 'scope' => 'org', 'edition' => 'multi', 'implies' => ['billing.view']],
+        // ── Billing (Billing module, docs/billing.md) ──
+        // Bills, usage, prices, region billing types and fixed resource requests of the organization
+        'billing.view' => ['group' => 'billing', 'scope' => 'org'],
+        // Prices, region billing types, markup, region offers, payment links and paid status, webhook
+        'billing.manage' => ['group' => 'billing', 'scope' => 'org', 'implies' => ['billing.view']],
+        // Approve or reject fixed resource requests (the seller of the region)
+        'billing.approve' => ['group' => 'billing', 'scope' => 'org', 'implies' => ['billing.view']],
+        // A project's own bills and its fixed resource requests (the project owner has it by ownership)
+        'projects.billing' => ['group' => 'billing', 'scope' => 'project', 'implies' => ['projects.view']],
 
         // ── Support ──
         'tickets.view' => ['group' => 'support', 'scope' => 'org'],
@@ -198,10 +206,9 @@ return [
         ],
         'billing' => [
             'name' => 'Billing',
-            'description' => 'Charges, credit, purchases and usage.',
-            'edition' => 'multi',
+            'description' => 'Bills, usage, prices, fixed resource approvals and stopping projects.',
             'permissions' => [
-                'billing.view', 'billing.manage',
+                'billing.view', 'billing.manage', 'billing.approve', 'projects.stop',
                 'regions.view', 'bindings.view', 'members.view', 'tokens.manage',
                 'tickets.view', 'tickets.create',
             ],

@@ -277,6 +277,28 @@ func (s *Server) SeedDomain(projectName, host string) runr.Domain {
 	return *s.addDomain(p, host)
 }
 
+// SeedStop stops a project as an administrator would (POST /projects/{project}/stop): level
+// runr.StopLevelPlatform or runr.StopLevelOrganization; by names who stopped it (empty: nobody
+// named, as a member sees a platform stop). Deploys of the project are refused until the stop is
+// lifted (by == "" and reason == "" lifts it).
+func (s *Server) SeedStop(projectName, reason, level, by string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	p := s.projectByName(projectName)
+	if p == nil {
+		s.t.Fatalf("runrtest: project %q does not exist", projectName)
+	}
+	if reason == "" && by == "" {
+		p.data.Stopped = nil
+		return
+	}
+	now := time.Now().UTC().Truncate(time.Second)
+	p.data.Stopped = &runr.ProjectStop{At: &now, Reason: reason, Level: level}
+	if by != "" {
+		p.data.Stopped.By = &runr.Ref{ID: s.newID(), Name: by}
+	}
+}
+
 // Project returns the current resource of a project by name.
 func (s *Server) Project(name string) (runr.Project, bool) {
 	s.mu.Lock()
@@ -368,6 +390,9 @@ type apiErr struct {
 	message     string
 	errors      map[string][]string
 	permissions []string
+	// code and extra are the refusal's code and further fields ({message, code, reason, level})
+	code  string
+	extra map[string]any
 }
 
 func (e *apiErr) Error() string { return e.message }
@@ -451,6 +476,12 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request) {
 		}
 		if err.permissions != nil {
 			payload["permissions"] = err.permissions
+		}
+		if err.code != "" {
+			payload["code"] = err.code
+		}
+		for k, v := range err.extra {
+			payload[k] = v
 		}
 		s.write(w, err.status, payload)
 		return
@@ -1230,6 +1261,12 @@ func (s *Server) needsBuild(p *project, files map[string]string) bool {
 }
 
 func (s *Server) deploy(p *project, body map[string]any) (int, any, *apiErr) {
+	if st := p.data.Stopped; st != nil {
+		// ProjectAdmission::assertDeployable
+		return 0, nil, &apiErr{status: 409, code: "project_stopped",
+			message: "This project is stopped and cannot be deployed until it is resumed. Reason: " + st.Reason,
+			extra:   map[string]any{"reason": st.Reason, "level": st.Level}}
+	}
 	vid, _ := body["version_id"].(string)
 	var v *version
 	for _, x := range p.versions {

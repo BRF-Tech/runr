@@ -2,51 +2,47 @@
 
 namespace Modules\AuthProvider\Services\Concerns;
 
-use Illuminate\Support\Facades\Crypt;
-use Laravel\Socialite\Facades\Socialite;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
+use Modules\AuthProvider\Models\AuthProvider;
+use Modules\AuthProvider\Services\OAuthFlowException;
 
 trait OAuthRedirectTrait
 {
-    protected function buildRedirectUrl(string $driver, array $statePayload): string
+    /**
+     * Authorization URL of $provider. The flow (mode, user, provider row, and for OIDC the PKCE
+     * verifier and nonce) is stored server-side under the state.
+     *
+     * @param  array<string, mixed>  $flow
+     *
+     * @throws OAuthFlowException
+     */
+    protected function buildRedirectUrl(AuthProvider $provider, array $flow, ?string $tenantSlug): string
     {
-        $statePayload['exp'] = now()->addMinutes(
-            config('authprovider.state_ttl_minutes', 5)
-        )->timestamp;
+        $flow['provider_id'] = (string) $provider->getKey();
+        $flow['driver'] = $provider->driver;
 
-        $encryptedState = Crypt::encryptString(json_encode($statePayload));
-
-        $socialiteDriver = Socialite::driver($driver);
-
-        $provider = $this->configService->getProvider($driver);
-        if ($provider && $provider->scopes) {
-            $socialiteDriver->scopes($provider->scopes);
+        if ($provider->driver === 'oidc') {
+            $flow['code_verifier'] = Str::random(64);
+            $flow['nonce'] = Str::random(40);
         }
 
-        return $socialiteDriver
-            ->stateless()
-            ->with(['state' => $encryptedState])
-            ->redirect()
-            ->getTargetUrl();
-    }
+        $state = $this->states->issue($flow, $tenantSlug);
 
-    protected function decryptState(string $encryptedState): ?array
-    {
         try {
-            $json = Crypt::decryptString($encryptedState);
-            $payload = json_decode($json, true);
+            return $this->drivers->make($provider, $flow)
+                ->with(['state' => $state])
+                ->redirect()
+                ->getTargetUrl();
+        } catch (\Throwable $e) {
+            // OIDC: discovery document unreachable or invalid
+            Log::warning('OAuth sign-in could not start', [
+                'provider' => $provider->getKey(),
+                'driver' => $provider->driver,
+                'reason' => $e->getMessage(),
+            ]);
 
-            if (! $payload || ! isset($payload['exp'])) {
-                return null;
-            }
-
-            // Check TTL
-            if (now()->timestamp > $payload['exp']) {
-                return null;
-            }
-
-            return $payload;
-        } catch (\Exception) {
-            return null;
+            throw new OAuthFlowException(__('api.oauth.provider_unavailable'), 502);
         }
     }
 }

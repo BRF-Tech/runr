@@ -39,6 +39,11 @@ var regionNodeFields = []string{"name", "status", "cpu_m", "memory_mb", "availab
 var regionCreateRequest = []string{"name", "kubeconfig", "nodes", "is_active", "redis_mode", "redis_address",
 	"redis_password", "prometheus_url", "loki_url", "loki_org_id"}
 
+// registryConfigRequest: the registry fields of a region (POST …/registry; part of registrySetupRequest).
+var registryConfigRequest = []string{"registry_mode", "storage_type", "pvc_config.storageClass", "pvc_config.size",
+	"s3_config.endpoint", "s3_config.bucket", "s3_config.region", "s3_config.access_key", "s3_config.secret_key",
+	"external_address", "external_username", "external_password"}
+
 var registrySetupRequest = []string{"name", "kubeconfig", "nodes", "registry_mode", "storage_type",
 	"pvc_config.storageClass", "pvc_config.size", "s3_config.endpoint", "s3_config.bucket", "s3_config.region",
 	"s3_config.access_key", "s3_config.secret_key", "external_address", "external_username", "external_password",
@@ -77,8 +82,10 @@ func init() {
 			Request: []string{"kubeconfig", "region_status"}, Response: regionDetailFields, Sources: regionDetailSources},
 		Endpoint{Method: "DELETE", Path: "/knative-regions/{region}", Status: 204, Permission: "regions.manage"},
 		Endpoint{Method: "GET", Path: "/knative-regions/{knativeRegion}/kubeconfig", Status: 200, Permission: "regions.manage"},
+		Endpoint{Method: "PUT", Path: "/knative-regions/{knativeRegion}/monitoring", Status: 200, Permission: "regions.manage",
+			Request: []string{"prometheus_url", "loki_url", "loki_org_id"}, Response: regionOperationFields, Sources: regionDetailSources},
 		Endpoint{Method: "PUT", Path: "/knative-regions/{knativeRegion}/settings", Status: 200, Permission: "regions.manage",
-			Request:  []string{"namespace", "request_timeout", "agent_ws_url", "cert_manager_cluster_issuer", "ingress_trusted_ips"},
+			Request:  []string{"request_timeout", "agent_ws_url", "cert_manager_cluster_issuer", "ingress_trusted_ips"},
 			Response: concat([]string{"message", "settings"}, prefix("region.", regionDetailFields)), Sources: regionDetailSources},
 
 		// Checks of a cluster before it becomes a region
@@ -109,6 +116,8 @@ func init() {
 		Endpoint{Method: "POST", Path: "/knative-regions/{knativeRegion}/install-serving", Status: 200, Permission: "regions.manage",
 			Request: []string{"namespace", "version"}, Response: concat([]string{"adopted"}, regionOperationFields),
 			Sources: regionDetailSources},
+		Endpoint{Method: "POST", Path: "/knative-regions/{knativeRegion}/upgrade-serving", Status: 200, Permission: "regions.manage",
+			Request: []string{"version"}, Response: regionOperationFields, Sources: regionDetailSources},
 		Endpoint{Method: "POST", Path: "/knative-regions/{knativeRegion}/uninstall-knative", Status: 200, Permission: "regions.manage",
 			Request: []string{"remove_traefik"}, Response: regionOperationFields, Sources: regionDetailSources},
 		Endpoint{Method: "POST", Path: "/knative-regions/{knativeRegion}/uninstall-operator", Status: 200, Permission: "regions.manage",
@@ -148,6 +157,9 @@ func init() {
 			Sources:  []string{"app/Http/Controllers/Api/RegistryController.php"}},
 		Endpoint{Method: "DELETE", Path: "/knative-regions/{knativeRegion}/registry", Status: 200, Permission: "registry.manage",
 			Response: regionDetailFields, Sources: regionDetailSources},
+		Endpoint{Method: "POST", Path: "/knative-regions/{knativeRegion}/registry", Status: 202, Permission: "registry.manage",
+			Request: registryConfigRequest, Response: regionOperationFields,
+			Sources: append([]string{"app/Http/Controllers/Api/RegistryController.php"}, regionDetailSources...)},
 		Endpoint{Method: "POST", Path: "/registry-setup/start", Status: 202, Permission: "regions.manage+registry.manage",
 			Request: registrySetupRequest, Response: []string{"setup_token", "setup_id"}},
 		Endpoint{Method: "POST", Path: "/registry-setup/{token}/retry", Status: 202, Permission: "regions.manage+registry.manage",
@@ -172,6 +184,9 @@ func init() {
 			Sources:  []string{"app/Http/Controllers/Api/RegionMigrateController.php"}},
 		Endpoint{Method: "POST", Path: "/knative-regions/{knativeRegion}/complete-migration", Status: 200, Permission: "regions.manage",
 			Response: []string{"message"}},
+		Endpoint{Method: "POST", Path: "/knative-regions/{knativeRegion}/complete-domain-migration", Status: 200, Permission: "regions.manage",
+			Response: regionOperationFields,
+			Sources:  append([]string{"app/Http/Controllers/Api/RegionMigrateController.php"}, regionDetailSources...)},
 		Endpoint{Method: "POST", Path: "/knative-regions/{knativeRegion}/rollback-migration", Status: 200, Permission: "regions.manage",
 			Response: []string{"message"}},
 
@@ -179,6 +194,8 @@ func init() {
 		Endpoint{Method: "PUT", Path: "/knative-regions/{knativeRegion}/function-tls", Status: 200, Permission: "regions.manage",
 			Request: []string{"mode", "certificate", "privateKey", "replace_existing"}, Response: regionOperationFields,
 			Sources: regionDetailSources},
+		Endpoint{Method: "DELETE", Path: "/knative-regions/{knativeRegion}/function-tls", Status: 200, Permission: "regions.manage",
+			Response: regionOperationFields, Sources: regionDetailSources},
 		Endpoint{Method: "GET", Path: "/knative-regions/{knativeRegion}/skupper", Status: 200, Permission: "regions.view",
 			Response: []string{"data.available", "data.api_version", "data.namespace", "data.site.name", "data.site.status",
 				"data.site.message"},

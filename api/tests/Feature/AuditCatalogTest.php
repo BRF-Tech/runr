@@ -23,8 +23,7 @@ class AuditCatalogTest extends TestCase
         Router::middleware(['api', 'auth:sanctum'])->prefix('api')->group(base_path('Modules/Tenancy/routes/api.php'));
         Router::middleware('api')->prefix('api')->group(base_path('Modules/Tenancy/routes/public.php'));
         Router::middleware(['api', 'auth:sanctum'])->prefix('api')->group(base_path('Modules/Tenancy/routes/white-label.php'));
-        Router::middleware(['api', 'auth:sanctum'])->prefix('api')->group(base_path('Modules/Tenancy/routes/billing.php'));
-        Router::middleware('api')->prefix('api')->group(base_path('Modules/Tenancy/routes/white-label-public.php'));
+        Router::prefix('api')->group(base_path('Modules/Billing/routes/api.php'));
         Router::middleware(['api', 'auth:sanctum'])->prefix('api')->group(base_path('Modules/AuthProvider/routes/api.php'));
         Router::middleware('api')->prefix('api')->group(base_path('Modules/AuthProvider/routes/public.php'));
         Router::prefix('api')->group(base_path('Modules/Ticket/routes/api.php'));

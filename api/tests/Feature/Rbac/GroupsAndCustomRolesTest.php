@@ -207,7 +207,9 @@ class GroupsAndCustomRolesTest extends TestCase
         $this->assertSame('single', $data['edition']);
         $keys = collect($data['permissions'])->pluck('key');
         $this->assertContains('runtimes.use_custom', $keys);
-        $this->assertNotContains('billing.view', $keys);
+        // Billing works without tenancy (docs/billing.md); the tenant-only permissions do not
+        $this->assertContains('billing.view', $keys);
+        $this->assertNotContains('tenants.residency.manage', $keys);
         $this->assertSame('project', collect($data['permissions'])->firstWhere('key', 'shell.exec')['scope']);
     }
 }

@@ -6,6 +6,7 @@ use App\Jobs\Concerns\BroadcastsJobCompletion;
 use App\Models\Deployment;
 use App\Models\Project;
 use App\Services\KubernetesClient;
+use App\Services\Projects\LiveDeployments;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Foundation\Bus\PendingDispatch;
@@ -92,12 +93,27 @@ class CheckDeploymentReadyJob implements ShouldQueue
             }
 
             if ($ready && $ready['status'] === 'True') {
-                $deployment->update([
+                // The Knative Service is the project's (by name): a newer deploy that replaced this
+                // one while it started owns what is ready now — this deployment ends without going
+                // live (a deploy supersedes every live deployment; this covers two deploys at once)
+                $live = app(LiveDeployments::class);
+                if ($live->hasNewer($deployment)) {
+                    $live->retire($deployment);
+                    Log::info('Deployment replaced while it started: not activated', ['deployment' => $deployment->id]);
+
+                    return;
+                }
+
+                // Only a deployment that is still pending becomes active: one stopped (or replaced)
+                // while it started stays shutting_down for its teardown (ProcessTeardown)
+                if (! $deployment->transition(['pending', 'running'], [
                     'status' => 'active',
                     'knative_ready' => true,
                     'knative_message' => $ready['message'] ?? null,
                     'ready_at' => now(),
-                ]);
+                ])) {
+                    return;
+                }
                 Log::info('Deployment ready', [
                     'deployment' => $deployment->id,
                     'attempt' => $this->attempt,
@@ -174,7 +190,10 @@ class CheckDeploymentReadyJob implements ShouldQueue
 
     private function retryOrTimeout(Deployment $deployment, string $message): void
     {
-        $deployment->update(['knative_message' => mb_substr($message, 0, 255)]);
+        // Stopped or shut down in the meantime: nothing left to wait for
+        if (! $deployment->transition(['pending', 'running'], ['knative_message' => mb_substr($message, 0, 255)])) {
+            return;
+        }
 
         if ($this->attempt >= self::maxAttempts()) {
             $this->markFailed($deployment, 'Readiness timeout after '.self::TIMEOUT_SECONDS.'s: '.$message);
@@ -188,11 +207,13 @@ class CheckDeploymentReadyJob implements ShouldQueue
 
     private function markFailed(Deployment $deployment, string $reason): void
     {
-        $deployment->update([
+        if (! $deployment->transition(['pending', 'running'], [
             'status' => 'failed',
             'knative_ready' => false,
             'knative_message' => mb_substr($reason, 0, 255),
-        ]);
+        ])) {
+            return;
+        }
 
         Log::error('Deployment readiness failed', [
             'deployment' => $deployment->id,

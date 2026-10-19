@@ -5,7 +5,9 @@ namespace App\Http\Resources;
 use App\Mcp\Hosting\HostedServerIndex;
 use App\Models\ExecutorImage;
 use App\Models\Setting;
+use App\Models\User;
 use App\Support\Rbac\EnvVisibility;
+use App\Support\Rbac\Rbac;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
@@ -49,9 +51,51 @@ class ProjectResource extends JsonResource
                 'id' => $this->creator->id,
                 'name' => $this->creator->name,
             ]),
+            // The payer of the project's bills (docs/billing.md): the creator unless transferred
+            'owner_id' => $this->resource->payerId(),
+            'owner' => $this->whenLoaded('owner', fn () => $this->resource->owner ? [
+                'id' => $this->resource->owner->id,
+                'name' => $this->resource->owner->name,
+                'username' => $this->resource->owner->username,
+            ] : null),
+            // Stopped by an administrator (POST /projects/{project}/stop): shown to every member;
+            // level "platform" (a platform administrator — only one can resume it) or "organization"
+            'stopped' => $this->resource->isStopped() ? $this->stopState($request) : null,
             'runtime_eol' => $this->resolveRuntimeEol(),
             'created_at' => $this->created_at,
         ];
+    }
+
+    /**
+     * When, why and at which level the project was stopped. A platform stop names the platform,
+     * not the platform administrator (only platform administrators see who it was).
+     *
+     * @return array{at: string|null, by: array{id: string, name: string|null}|null, reason: string|null, level: string}
+     */
+    private function stopState(Request $request): array
+    {
+        $level = $this->resource->getAttribute('stop_level') === 'platform' ? 'platform' : 'organization';
+        $showActor = $level !== 'platform' || app(Rbac::class)->isPlatformAdmin($request->user());
+
+        return [
+            'at' => $this->resource->stopped_at?->toIso8601String(),
+            'by' => $showActor ? $this->stoppedBy() : null,
+            'reason' => $this->resource->stop_reason,
+            'level' => $level,
+        ];
+    }
+
+    /** @return array{id: string, name: string|null}|null who stopped the project */
+    private function stoppedBy(): ?array
+    {
+        $id = $this->resource->stopped_by;
+        if ($id === null || $id === '') {
+            return null;
+        }
+
+        $user = User::query()->find($id, ['id', 'name']);
+
+        return ['id' => (string) $id, 'name' => $user?->name];
     }
 
     private function resolveRuntimeEol(): ?string

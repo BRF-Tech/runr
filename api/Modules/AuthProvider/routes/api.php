@@ -19,10 +19,13 @@ Route::post('/sso/group-mappings', [SsoGroupMappingController::class, 'store']);
 Route::put('/sso/group-mappings/{mapping}', [SsoGroupMappingController::class, 'update']);
 Route::delete('/sso/group-mappings/{mapping}', [SsoGroupMappingController::class, 'destroy']);
 
-// Protected — user social accounts
+// Protected — user social accounts (linked external identities)
 Route::get('/social-accounts', [SocialAccountController::class, 'index']);
+Route::get('/social-accounts/providers', [SocialAccountController::class, 'providers']);
 Route::delete('/social-accounts/{socialAccount}', [SocialAccountController::class, 'destroy']);
 
-// Protected — link new provider to current user
+// Protected — link a provider's identity to the current user: start (?provider=<id>), then confirm
+// the code the provider's callback hands to the console
 Route::get('/oauth/{provider}/link', [OAuthController::class, 'link'])
     ->whereIn('provider', array_values(array_diff(config('authprovider.drivers', []), ['saml'])));
+Route::post('/oauth/link/complete', [OAuthController::class, 'completeLink']);

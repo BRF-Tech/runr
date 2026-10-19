@@ -72,7 +72,8 @@ class Tenant extends BaseTenant implements TenantWithDatabase
     public function regions()
     {
         return $this->belongsToMany(CentralSyncableRegion::class, 'tenant_regions', 'tenant_id', 'knative_region_id')
-            ->withPivot('cpu_quota_m', 'memory_quota_mb', 'gpu_quota')
+            // status: active, or pending until the tenant accepts it (TenantRegionShares)
+            ->withPivot('cpu_quota_m', 'memory_quota_mb', 'gpu_quota', 'status', 'offered_at', 'accepted_at')
             ->withTimestamps();
     }
 }

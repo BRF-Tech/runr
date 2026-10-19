@@ -15,6 +15,7 @@ use App\Services\ProjectService;
 use App\Services\Runtimes\ProjectEntrypoint;
 use App\Services\Runtimes\RuntimeImageBuildService;
 use App\Services\Runtimes\RuntimeRegistry;
+use App\Support\Projects\ProjectAdmission;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
@@ -214,6 +215,12 @@ class RuntimeController extends Controller
         if ($reason = $this->runtimes->unavailableReason($runtime->id, $data['knative_region_id'], 'http')) {
             throw ValidationException::withMessages(['runtime' => [$reason]]);
         }
+
+        // The deploy guards of a new project in the region (ProjectAdmission), before anything is
+        // created — answered like a refused deploy (e.g. 422 fixed_allocation_required: a
+        // fixed-price region deploys nothing without an approved allocation)
+        $candidate = (new Project)->forceFill(['knative_region_id' => $data['knative_region_id'], 'service_type' => 'xaas', 'runtime' => $runtime->id]);
+        ProjectAdmission::assertDeployable($candidate);
 
         $project = $projects->create([
             'name' => Str::limit("rt-{$runtime->id}", 40, '').'-'.Str::lower(Str::random(5)),

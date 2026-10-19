@@ -2,6 +2,9 @@
 
 namespace App\Providers;
 
+use App\Models\User;
+use App\Support\HorizonAccess;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
 use Laravel\Horizon\Horizon;
 use Laravel\Horizon\HorizonApplicationServiceProvider;
@@ -21,14 +24,22 @@ class HorizonServiceProvider extends HorizonApplicationServiceProvider
     }
 
     /**
-     * Register the Horizon gate.
-     *
-     * This gate determines who can access Horizon in non-local environments.
+     * Who may open the dashboard: platform administrators, signed in to it with a single-use link
+     * (App\Support\HorizonAccess — the console itself uses API tokens, which a browser does not
+     * send to /horizon). APP_ENV=local lets everyone in.
+     */
+    protected function authorization(): void
+    {
+        $this->gate();
+
+        Horizon::auth(fn (Request $request): bool => app(HorizonAccess::class)->allows($request));
+    }
+
+    /**
+     * Register the Horizon gate: platform administrators only (users.is_admin, account enabled).
      */
     protected function gate(): void
     {
-        Gate::define('viewHorizon', function ($user) {
-            return true;
-        });
+        Gate::define('viewHorizon', fn (?User $user = null): bool => app(HorizonAccess::class)->isAdministrator($user));
     }
 }

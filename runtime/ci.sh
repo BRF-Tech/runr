@@ -22,6 +22,7 @@ source "${SCRIPT_DIR}/lib/test-bindings.sh"
 source "${SCRIPT_DIR}/lib/test-git-deploy.sh"
 source "${SCRIPT_DIR}/lib/test-images.sh"
 source "${SCRIPT_DIR}/lib/test-mcp.sh"
+source "${SCRIPT_DIR}/lib/test-admission.sh"
 source "${SCRIPT_DIR}/lib/test-helm-upgrade.sh"
 source "${SCRIPT_DIR}/lib/test-tenancy.sh"
 source "${SCRIPT_DIR}/lib/test-authprovider.sh"
@@ -75,11 +76,15 @@ Commands:
                                       (KIND_LOCK defaults to /tmp/runr-kind.lock)
   test-mcp [test flags]               Kind + Knative, MCP e2e: RunR MCP server, OAuth, hosted MCP servers through the
                                       gateway, driven by the official MCP Python SDK client (lib/test-mcp.sh)
+  test-admission [test flags]         Kind + Knative with billing on, admission e2e: project stop / resume, region
+                                      status blocks (503 / 404), fixed-region allocations (lib/test-admission.sh)
   test-helm-upgrade [flags]           Kind: install the released chart + images (--from, default main), create
                                       data, helm upgrade to this checkout, check users, roles, env vars at rest,
                                       secret env, tokens, the function during the upgrade, the agent and
-                                      white-label; --edition=multi-tenant: tenant roles (lib/test-helm-upgrade.sh;
-                                      KIND_LOCK defaults to /tmp/runr-kind.lock)
+                                      white-label; --edition=multi-tenant: tenant roles and 0.5.x billing data;
+                                      --billing: billing.enabled=true on the upgrade, Billing API on the imported
+                                      data and a region offer (lib/test-helm-upgrade.sh; KIND_LOCK defaults to
+                                      /tmp/runr-kind.lock)
   test-tenancy                        Tenancy e2e test (API-only, no K8s needed)
   test-authprovider                   AuthProvider e2e test (API-only, no K8s needed)
   test-ticket                         Ticket e2e test (API + WS mock, no K8s needed)
@@ -117,14 +122,14 @@ Examples:
   ci.sh test-upgrade --tenancy   Upgrade of a multi-tenant Compose install from main
 
   ci.sh deploy --kubeconfig=PATH --domain=DOMAIN \\
-               [--namespace=NS] [--tenancy] [--auth-provider] [--ticket] \\
+               [--namespace=NS] [--tenancy] [--auth-provider] [--ticket] [--billing] \\
                [--admin-email=X --admin-pass=Y] \\
                [--hpa] [--pdb] [--no-pdb] \\
                [--replicas-api=N] [--replicas-gateway=N] [--replicas-ui=N] \\
                [--skip-build] [--no-cache] [--reinstall]
   ci.sh build-deploy --no-cache --tenancy --auth-provider --ticket
   ci.sh upgrade --kubeconfig=PATH --skip-build [--domain=DOMAIN] \\
-               [--namespace=NS] [--tenancy] [--auth-provider] [--ticket] \\
+               [--namespace=NS] [--tenancy] [--auth-provider] [--ticket] [--billing] \\
                [--hpa] [--pdb] [--no-pdb] \\
                [--replicas-api=N] [--replicas-gateway=N] [--replicas-ui=N] \\
                [--no-cache] [--build-only]
@@ -163,6 +168,7 @@ case "$command" in
   test-git-deploy) cmd_test_git_deploy "$@" ;;
   test-images)     cmd_test_images "$@" ;;
   test-mcp)        cmd_test_mcp "$@" ;;
+  test-admission)  cmd_test_admission "$@" ;;
   test-helm-upgrade) cmd_test_helm_upgrade "$@" ;;
   test-tenancy)        cmd_test_tenancy "$@" ;;
   test-authprovider)   cmd_test_authprovider "$@" ;;

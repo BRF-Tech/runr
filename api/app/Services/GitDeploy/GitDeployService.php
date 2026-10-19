@@ -180,7 +180,7 @@ class GitDeployService
         $deploy = GitDeploy::query()
             ->where('deployment_id', $deployment->id)
             ->where('kind', GitDeploy::KIND_PRODUCTION)
-            ->whereNotIn('status', [GitDeploy::ACTIVE, GitDeploy::FAILED])
+            ->whereNotIn('status', GitDeploy::FINAL)
             ->first();
 
         if (! $deploy) {
@@ -190,6 +190,8 @@ class GitDeployService
         match ($deployment->status) {
             'active' => $deploy->mark(GitDeploy::ACTIVE),
             'failed' => $deploy->mark(GitDeploy::FAILED, $deployment->knative_message ?: 'The deployment failed'),
+            // Replaced by a newer deploy (or the project was stopped) before it went live
+            'shutting_down', 'shut_down' => $deploy->mark(GitDeploy::SKIPPED, 'Replaced by a newer deploy or stopped before it went live'),
             default => null,
         };
 

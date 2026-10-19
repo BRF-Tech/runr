@@ -6,6 +6,7 @@ use App\Http\Resources\KnativeRegionResource;
 use App\Models\KnativeRegion;
 use App\Models\Project;
 use App\Models\XaasConfig;
+use App\Services\Helpers\ResourceReservation;
 use App\Services\Sandboxes\SandboxClassResolver;
 use App\Services\Sandboxes\SandboxException;
 use App\Services\Sandboxes\SandboxQuotaService;
@@ -14,6 +15,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Route;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 use Modules\Tenancy\Http\Controllers\TenancySettingsController;
 use Modules\Tenancy\Http\Controllers\TenantController;
@@ -556,5 +558,52 @@ class TenantQuotaTest extends TestCase
 
         $burst = ['hard' => ['cpu_m' => 0, 'memory_mb' => 0], 'burst' => ['cpu_m' => 1200, 'memory_mb' => 0]];
         $this->assertTrue($quotas->checkReservation($acme, $this->region, $burst)['allowed']);
+    }
+
+    // ── The organization's own regions ──────────────────────────────────────
+
+    /** A region of the tenant's own (its schema, not synced), created the way the region API does. */
+    private function ownRegion(Tenant $tenant, string $name = 'own', array $attributes = []): KnativeRegion
+    {
+        return $tenant->run(function () use ($name, $attributes) {
+            $region = new KnativeRegion(['name' => $name, 'project_namespace' => $name, 'is_active' => true, 'total_cpu_m' => 4000, 'total_memory_mb' => 8192]);
+            $region->forceFill(['is_synced' => false] + $attributes)->save();
+
+            return $region;
+        });
+    }
+
+    public function test_projects_on_the_organizations_own_region_need_no_quota(): void
+    {
+        $acme = $this->createTenantWithSchema('acme');
+        $own = $this->ownRegion($acme);
+        $quotas = app(TenantQuotaService::class);
+        $demand = ['hard' => ['cpu_m' => 3000, 'memory_mb' => 4096], 'burst' => ResourceReservation::zero()];
+
+        // A new project on it, as the request runs: in the tenant's context, no tenant_regions row
+        $this->assertSame(200, $acme->run(fn () => $this->createProject($acme, ['cpu' => '2', 'min_scale' => 1], $own))->getStatusCode());
+        // The tenant's copy as well as a model read outside the tenant (sandboxes, previews)
+        $this->assertTrue($acme->run(fn () => $quotas->checkReservation($acme, KnativeRegion::find($own->id), $demand))['allowed']);
+        $this->assertTrue($quotas->checkReservation($acme, $own, $demand)['allowed']);
+
+        // A platform region the organization was not given stays closed — and so is another
+        // organization's own region
+        $refused = $quotas->checkReservation($acme, $this->region, $demand);
+        $this->assertFalse($refused['allowed']);
+        $this->assertSame(__('api.tenant.no_region_access'), $refused['message']);
+        $ops = $this->createTenantWithSchema('ops');
+        $this->assertFalse($quotas->checkReservation($ops, $own, $demand)['allowed']);
+    }
+
+    public function test_the_owner_of_a_region_decides_without_a_lookup(): void
+    {
+        $acme = $this->tenant('acme');
+        $ops = $this->tenant('ops');
+        $owned = new KnativeRegion(['name' => 'owned', 'project_namespace' => 'owned']);
+        $owned->forceFill(['id' => (string) Str::ulid(), 'owner_tenant_id' => $acme->id]);
+        $quotas = app(TenantQuotaService::class);
+
+        $this->assertTrue($quotas->ownsRegion($acme, $owned));
+        $this->assertFalse($quotas->ownsRegion($ops, $owned));
     }
 }

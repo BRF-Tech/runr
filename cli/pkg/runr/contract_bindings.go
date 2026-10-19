@@ -68,7 +68,7 @@ func init() {
 			Response: []string{"data.env"},
 			Sources:  []string{"app/Http/Controllers/Api/BindingController.php", "app/Services/Bindings/BindingManager.php"}},
 		Endpoint{Method: "GET", Path: "/bindings/{binding}/usage", Query: []string{"days"}, Status: 200, Permission: "bindings.view",
-			Response: prefix("data[].", []string{"record_date", "storage_gb_hours", "instance_hours", "peak_bytes", "final_cost", "currency"}),
+			Response: prefix("data[].", []string{"record_date", "storage_gb_hours", "instance_hours", "peak_bytes"}),
 			Sources:  []string{"app/Http/Controllers/Api/BindingController.php"}},
 
 		// Attachments of a project (route permission on the project; the controller also requires

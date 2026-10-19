@@ -1,0 +1,10 @@
+{
+  "name": "modules/billing",
+  "description": "Billing module for RunR",
+  "autoload": {
+    "psr-4": {
+      "Modules\\Billing\\": "app/",
+      "Modules\\Billing\\Database\\": "Database/"
+    }
+  }
+}

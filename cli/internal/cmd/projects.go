@@ -46,6 +46,9 @@ func newProjectsCmd(app *App) *cobra.Command {
 							ver = p.LatestDeployment.Version.Label
 						}
 					}
+					if p.Stopped != nil {
+						status = "stopped"
+					}
 					t.Row(p.Name, p.ServiceType, runtimeLabel(&p), output.Dash(p.RegionName()), status, ver, output.Dash(p.EndpointURL))
 				}
 				if len(list) == 0 {
@@ -121,6 +124,9 @@ func projectDetail(t *output.TableWriter, p *runr.Project) {
 	}
 	t.KV("Region", output.Dash(p.RegionName()))
 	t.KV("URL", output.Dash(p.EndpointURL))
+	if p.Stopped != nil {
+		t.KV("Stopped", stopLabel(p.Stopped))
+	}
 	t.KV("Trigger", triggerLabel(p.Config))
 	t.KV("Resources", resourcesLabel(p.Config))
 	t.KV("Scale", scaleLabel(p.Config))
@@ -138,6 +144,25 @@ func projectDetail(t *output.TableWriter, p *runr.Project) {
 		t.KV("Description", p.Description)
 	}
 	t.KV("Created", output.Age(p.CreatedAt)+" ago")
+}
+
+// stopLabel says who stopped a project, when and why: the platform (its administrator is not
+// named) or the organization; it serves nothing and cannot be deployed until it is resumed.
+func stopLabel(s *runr.ProjectStop) string {
+	who := "by the organization"
+	switch {
+	case s.ByPlatform():
+		who = "by the platform"
+	case s.By != nil && s.By.Name != "":
+		who = "by " + s.By.Name + " for the organization"
+	}
+	if s.At != nil {
+		who += " " + output.Age(s.At) + " ago"
+	}
+	if s.Reason != "" {
+		who += ": " + s.Reason
+	}
+	return who
 }
 
 func triggerLabel(c runr.ProjectConfig) string {
@@ -341,6 +366,9 @@ func newStatusCmd(app *App) *cobra.Command {
 				t.KV("Project", p.Name+" ("+p.ServiceType+", "+runtimeLabel(p)+")")
 				t.KV("Region", output.Dash(p.RegionName()))
 				t.KV("URL", output.Dash(p.EndpointURL))
+				if p.Stopped != nil {
+					t.KV("Stopped", stopLabel(p.Stopped))
+				}
 				t.KV("Trigger", triggerLabel(p.Config))
 				t.KV("Scale", scaleLabel(p.Config))
 				if p.LatestVersion != nil {

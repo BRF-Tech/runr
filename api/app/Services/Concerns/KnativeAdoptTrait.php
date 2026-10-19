@@ -4,6 +4,7 @@ namespace App\Services\Concerns;
 
 use App\Models\KnativeRegion;
 use App\Services\KubernetesClient;
+use App\Services\RegionStatusService;
 
 trait KnativeAdoptTrait
 {
@@ -47,6 +48,15 @@ trait KnativeAdoptTrait
     }
 
     /**
+     * Adopt the Ready KnativeServing that runs in $namespace (KnativeInstallService::install()
+     * found it with runningKnative()).
+     */
+    public function adoptRunningServing(KnativeRegion $region, string $namespace): void
+    {
+        $this->adoptServing($region, new KubernetesClient($region->kubeconfig), $namespace);
+    }
+
+    /**
      * Adopt an existing KnativeServing installation for a region.
      */
     private function adoptServing(KnativeRegion $region, KubernetesClient $k8s, string $namespace): void
@@ -87,6 +97,11 @@ trait KnativeAdoptTrait
 
         $region->update($updates);
         $this->discoverExternalIp($k8s, $region);
+
+        // A region that is not active gets its status block with its (adopted) Serving
+        if (! $region->is_active) {
+            app(RegionStatusService::class)->syncBlock($region->fresh());
+        }
     }
 
     /**

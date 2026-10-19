@@ -1,7 +1,7 @@
 <?php
 
 /*
-| White-label: branding, self-service signup, plans (docs/white-label.md, docs/billing.md)
+| White-label: branding, self-service signup (docs/white-label.md)
 */
 return [
     'tenant_required' => 'This action needs an active tenant.',
@@ -43,27 +43,5 @@ return [
         'default_tenant_name' => ":name's workspace",
         'region_not_offered' => 'This region is not available for new organizations.',
         'not_allowed' => 'Only the owner or an admin of the organization can complete the setup.',
-    ],
-
-    'plans' => [
-        'disabled' => 'Plans are not enabled on this platform.',
-        'not_available' => 'This plan is not available.',
-        'interval_not_available' => 'This plan has no price for the selected billing interval.',
-        'unknown_limit' => 'Unknown plan limit: :keys',
-        'unknown_feature' => 'Unknown plan feature: :keys',
-
-        'limit_max_projects' => 'Your plan allows :max projects (:used in use). Upgrade your plan to create more.',
-        'limit_gpu_quota' => 'Your plan allows :max GPUs (:used in use). Upgrade your plan for more.',
-        'limit_invocations_per_month' => 'Your plan\'s :max invocations for this month are used up (:used). New deployments are possible again next month or after an upgrade.',
-        'limit_storage_quota_mb' => 'Your plan\'s storage of :max MB is full (:used MB). Upgrade your plan or remove old projects.',
-        'feature_not_included' => ':feature is not included in your plan.',
-
-        'feature_custom_domains' => 'Custom domains',
-        'feature_private_connections' => 'Private database connections',
-        'feature_gpu' => 'GPU workloads',
-        'feature_api_tokens' => 'API tokens',
-        'feature_sso' => 'Single sign-on',
-        'feature_metered_usage' => 'Metered usage billing',
-        'feature_priority_support' => 'Priority support',
     ],
 ];

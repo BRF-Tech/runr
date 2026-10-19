@@ -15,12 +15,16 @@ use App\Services\Helpers\ResourceReservation;
 use App\Services\Images\UploadedImages;
 use App\Services\Runtimes\RuntimeManifest;
 use App\Services\Runtimes\RuntimeRegistry;
+use App\Support\Projects\ProjectAdmission;
 use App\Support\Rbac\ProjectChangeAuthorization;
 use App\Support\Secrets\ProjectSecretWriter;
 use Illuminate\Foundation\Http\FormRequest;
 
 class UpdateProjectRequest extends FormRequest
 {
+    /** Config fields that change what the project's workload can reserve. */
+    private const SIZING_FIELDS = ['cpu', 'memory_mb', 'trigger_type', 'min_scale', 'max_scale', 'scale_to_zero', 'gpu'];
+
     public function authorize(): bool
     {
         // env.edit for changed environment variables, projects.update for everything else
@@ -149,6 +153,16 @@ class UpdateProjectRequest extends FormRequest
                     $config,
                     $project->id,
                 );
+            }
+
+            // Limits beyond the region capacity (ProjectAdmission: a project in a fixed-price
+            // region stays within its approved resources at its worst case, docs/billing.md) —
+            // refused like a deploy: 422 with the code (fixed_allocation_exceeded, …), the message
+            // and the validation error on config
+            $sizing = array_intersect_key((array) $this->input('config', []), array_flip(self::SIZING_FIELDS));
+            if ($project instanceof Project && $project->isSupportedType() && $sizing !== [] && $validator->errors()->isEmpty()) {
+                $regionId = $this->input('knative_region_id', $project->knative_region_id);
+                ProjectAdmission::assertConfigFits($project, is_string($regionId) ? $regionId : null, $sizing);
             }
         });
     }

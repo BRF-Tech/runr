@@ -1,6 +1,8 @@
 {{/*
   post-install: migrate + seed on the first install (migrator)
   pre-upgrade:  migrate only on upgrade (migrate-only, no seed)
+  The module switches come as explicit env (runr.module-env): the pre-upgrade hook runs before the
+  new ConfigMap is applied, envFrom runr-config would still carry the previous release's switches.
 */}}
 
 # ── Post-install: migrate + seed ──────────────────────────────────────────────
@@ -41,6 +43,7 @@ spec:
           env:
             - name: CONTAINER_ROLE
               value: "migrator"
+            {{- include "runr.module-env" . | nindent 12 }}
             {{- include "runr.secret-env" . | nindent 12 }}
           volumeMounts:
             - name: api-storage
@@ -88,6 +91,7 @@ spec:
           env:
             - name: CONTAINER_ROLE
               value: "migrate-only"
+            {{- include "runr.module-env" . | nindent 12 }}
             {{- include "runr.secret-env" . | nindent 12 }}
           volumeMounts:
             - name: api-storage

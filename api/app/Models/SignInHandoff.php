@@ -15,6 +15,7 @@ use Illuminate\Support\Carbon;
  * @property string $code_hash
  * @property string $user_id
  * @property string $token
+ * @property string|null $tenant_id the tenant whose sign-in page the sign-in started from
  * @property Carbon $expires_at
  */
 class SignInHandoff extends Model
@@ -23,7 +24,7 @@ class SignInHandoff extends Model
 
     public const UPDATED_AT = null;
 
-    protected $fillable = ['code_hash', 'user_id', 'token', 'expires_at'];
+    protected $fillable = ['code_hash', 'user_id', 'token', 'tenant_id', 'expires_at'];
 
     protected $hidden = ['token', 'code_hash'];
 

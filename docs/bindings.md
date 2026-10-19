@@ -277,7 +277,7 @@ binding's keys, bucket size, database size — and shown next to the binding's l
 
 ## Region setup
 
-Region data services are installed per region in **Settings → Regions → (region) → Data
+Region data services are installed per region in **Administration → Platform → Knative Regions → (region) → Data
 services** by users with `regions.data_services.manage`. They run in the namespace
 `runr-data` (`bindings.namespace`) behind NetworkPolicies. A region runs no data service until
 one is installed there: creating a `kv`, `object` or `postgres` binding is refused until the
@@ -369,18 +369,21 @@ The hourly measurement books daily usage records per binding:
   2 hours, gaps are not billed backwards);
 - **instance hours** — running instances × hours, for dedicated Postgres clusters.
 
-In the multi-tenant edition the usage aggregation prices them with the region's cost
-configuration (Settings → Billing → Configuration):
+Each record also names the binding's creator. Metering records quantities only; with the
+[Billing module](billing.md) on, the region's prices turn them into money:
 
 | Price | Applies to |
 | --- | --- |
-| `kv_price_per_gb_hour` | KV storage GB-hours |
-| `object_price_per_gb_hour` | object storage GB-hours |
-| `postgres_price_per_gb_hour` | Postgres storage GB-hours |
-| `postgres_instance_price_per_hour` | dedicated Postgres instance hours |
+| `kv_gb_hour` | KV storage GB-hours |
+| `object_gb_hour` | object storage GB-hours |
+| `postgres_gb_hour` | Postgres storage GB-hours |
+| `postgres_instance_hour` | dedicated Postgres instance hours |
 
-Binding costs are part of the tenant's usage cost and appear on its usage charge as one line per
-binding ("Binding: orders-db (Postgres, dedicated)", [Billing](billing.md#charges)).
+A binding belongs to no single project, so its usage is billed on the **account bill** of the user
+who created it, one line per binding and price ("Binding: orders-db (Postgres, dedicated)"), by
+usage also in a fixed region ([Account bills](billing.md#account-bills)).
+`GET /api/bindings/{id}/usage` answers the daily quantities (`record_date`, `storage_gb_hours`,
+`instance_hours`, `peak_bytes`); what they cost is on those bills.
 
 ## Permissions
 
@@ -394,7 +397,7 @@ binding ("Binding: orders-db (Postgres, dedicated)", [Billing](billing.md#charge
 Attaching, re-prefixing and detaching on a project also needs `env.edit` on that project:
 an attached binding's credentials are readable by the project's code. Built-in roles: Owner
 and Admin hold all four; Developer holds `bindings.view` and `bindings.manage`; Viewer and
-Billing (multi-tenant edition) hold `bindings.view`. See [Permissions](permissions.md).
+Billing hold `bindings.view`. See [Permissions](permissions.md).
 
 Credentials are stored encrypted and are never part of API responses; the Secret in the region
 and `GET /api/bindings/{id}/credentials` are the only places they appear.
@@ -446,7 +449,7 @@ and `GET /api/bindings/{id}/credentials` are the only places they appear.
 | POST | `/api/bindings/{id}/rotate` | `bindings.manage` |
 | GET | `/api/bindings/{id}/status` | `bindings.view` |
 | GET | `/api/bindings/{id}/credentials` | `bindings.view_credentials` |
-| GET | `/api/bindings/{id}/usage` (`?days=30`) | `bindings.view` |
+| GET | `/api/bindings/{id}/usage` (`?days=30`; quantities, [Usage and billing](#usage-and-billing)) | `bindings.view` |
 | GET | `/api/projects/{project}/bindings` | `projects.view` |
 | POST | `/api/projects/{project}/bindings` | `env.edit` + `bindings.manage` |
 | PATCH | `/api/projects/{project}/bindings/{attachment}` | `env.edit` + `bindings.manage` |

@@ -220,12 +220,14 @@ func newRegionRedisRmCmd(app *App) *cobra.Command {
 func newRegionRegistryCmd(app *App) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "registry [REGION]",
-		Short: "The image registry of a region: status, removal, the setup of a new region with one",
+		Short: "The image registry of a region: status, setup, removal",
 		Long: "Builds push their images to the region's registry: RunR's Zot (internal) or yours\n" +
-			"(external). A region gets one when it is created with runr regions create --registry; its\n" +
-			"setup is followed with setup-status. test checks a volume, an S3 bucket or an external\n" +
-			"registry from a cluster before. Reading needs regions.view, the rest registry.manage.",
+			"(external). A region gets one when it is created with runr regions create --registry (its\n" +
+			"setup is followed with setup-status), or later with set. test checks a volume, an S3 bucket\n" +
+			"or an external registry from a cluster before. Reading needs regions.view, the rest\n" +
+			"registry.manage.",
 		Example: "  runr regions registry eu-1\n" +
+			"  runr regions registry set eu-1 --registry internal --storage-class fast-ssd --wait\n" +
 			"  runr regions registry setup-status 8c0f6a1e-… --wait\n" +
 			"  runr regions registry test pvc --kubeconfig eu-2.yaml --storage-class fast-ssd\n" +
 			"  runr regions registry rm eu-1 --yes",
@@ -312,7 +314,7 @@ func newRegionRegistryCmd(app *App) *cobra.Command {
 	}
 	setup.Flags().BoolVar(&wait, "wait", false, "wait until the region exists (exit code 6 when the setup fails)")
 	setup.Flags().DurationVar(&timeout, "timeout", 20*time.Minute, "how long --wait waits")
-	cmd.AddCommand(rm, setup, newRegionRegistryTestCmd(app))
+	cmd.AddCommand(rm, setup, newRegionRegistryTestCmd(app), newRegionRegistrySetCmd(app))
 	return cmd
 }
 
@@ -526,14 +528,26 @@ func newRegionMigrationCmd(app *App) *cobra.Command {
 	start.Flags().DurationVar(&timeout, "timeout", time.Hour, "how long --wait waits")
 	start.Flags().BoolVarP(&yes, "yes", "y", false, "do not ask for confirmation")
 
+	var domain bool
 	complete := &cobra.Command{
-		Use:   "complete REGION",
+		Use:   "complete REGION [--domain]",
 		Short: "Complete a migration once DNS points at the new cluster (regions.manage)",
-		Args:  cobra.ExactArgs(1),
+		Long: "Complete the region's move to another cluster (in its DNS step). With --domain, complete the\n" +
+			"region's move to a new base domain instead: the new function domain becomes the region's\n" +
+			"without waiting for RunR to see its DNS record, and the old one is no longer served.",
+		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			c, reg, err := radmRegion(cmd.Context(), app, args[0])
 			if err != nil {
 				return err
+			}
+			if domain {
+				op, err := c.CompleteRegionDomainMigration(cmd.Context(), reg.ID)
+				if err != nil {
+					return err
+				}
+				app.Progress("%s", op.Message)
+				return printRegionOperation(app, reg, op, "")
 			}
 			res, err := c.CompleteRegionMigration(cmd.Context(), reg.ID)
 			if err != nil {
@@ -543,6 +557,7 @@ func newRegionMigrationCmd(app *App) *cobra.Command {
 			return app.Printer().Print(map[string]any{"region": reg.Name, "message": res.Message}, func(*output.TableWriter) {})
 		},
 	}
+	complete.Flags().BoolVar(&domain, "domain", false, "complete the region's move to a new base domain")
 	var rollbackYes bool
 	rollback := &cobra.Command{
 		Use:   "rollback REGION",
@@ -553,7 +568,7 @@ func newRegionMigrationCmd(app *App) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if err := app.confirm("Return "+reg.Name+" to its old cluster (the new cluster's workloads are removed)", rollbackYes); err != nil {
+			if err := app.confirm("Return "+reg.Name+" to its old cluster (its projects are deployed there again)", rollbackYes); err != nil {
 				return err
 			}
 			res, err := c.RollbackRegionMigration(cmd.Context(), reg.ID)
@@ -673,7 +688,33 @@ func newRegionFunctionTLSCmd(app *App) *cobra.Command {
 	set.Flags().StringVar(&certFile, "cert", "", "custom: PEM certificate (chain) file, - for stdin")
 	set.Flags().StringVar(&keyFile, "key", "", "custom: PEM private key file, - for stdin")
 	set.Flags().BoolVar(&replace, "replace-existing", false, "replace a default TLS store RunR did not create")
-	cmd.AddCommand(set)
+
+	var yes bool
+	rm := &cobra.Command{
+		Use:     "rm REGION",
+		Aliases: []string{"remove", "off"},
+		Short:   "Switch function-domain TLS off: the region's Traefik default certificate (regions.manage)",
+		Long: "Remove the certificate RunR set for the region's function domains (its Secret and default TLS\n" +
+			"store): the region's Traefik answers HTTPS with its own default certificate again.",
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			c, reg, err := radmRegion(cmd.Context(), app, args[0])
+			if err != nil {
+				return err
+			}
+			if err := app.confirm("Remove the function-domain certificate of "+reg.Name, yes); err != nil {
+				return err
+			}
+			res, err := c.RemoveRegionFunctionTLS(cmd.Context(), reg.ID)
+			if err != nil {
+				return err
+			}
+			app.Progress("%s", res.Message)
+			return printRegionOperation(app, reg, res, "")
+		},
+	}
+	rm.Flags().BoolVarP(&yes, "yes", "y", false, "do not ask for confirmation")
+	cmd.AddCommand(set, rm)
 	return cmd
 }
 

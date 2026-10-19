@@ -2,7 +2,6 @@
 
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration
@@ -38,17 +37,22 @@ return new class extends Migration
         });
     }
 
+    /**
+     * The table of the tenant's own schema (the first one on the search path; the database file on
+     * SQLite) — Schema::getForeignKeys() looks there, on every driver.
+     */
     private function hasForeignKey(string $table, string $fkName): bool
     {
-        $schema = DB::connection()->getConfig('search_path') ?? 'public';
-        $schema = explode(',', $schema)[0];
-        $schema = trim($schema);
+        if (! Schema::hasTable($table)) {
+            return false;
+        }
 
-        return DB::table('information_schema.table_constraints')
-            ->where('constraint_name', $fkName)
-            ->where('table_name', $table)
-            ->where('table_schema', $schema)
-            ->where('constraint_type', 'FOREIGN KEY')
-            ->exists();
+        foreach (Schema::getForeignKeys($table) as $foreignKey) {
+            if ($foreignKey['name'] === $fkName || $foreignKey['columns'] === ['user_id']) {
+                return true;
+            }
+        }
+
+        return false;
     }
 };

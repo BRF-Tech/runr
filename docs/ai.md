@@ -99,7 +99,7 @@ A cluster whose nodes already advertise `nvidia.com/gpu` — a device plugin ins
 cluster administrator, a managed Kubernetes GPU node pool — counts as GPU support in mode
 **external**: projects can use the GPUs right away and RunR leaves that installation alone.
 
-**Settings → Regions → (region) → GPU** shows the summary (GPU nodes, total, allocatable,
+**Administration → Platform → Knative Regions → (region) → GPU** shows the summary (GPU nodes, total, allocatable,
 allocated, free), the GPU products, every GPU node with product, memory, count / allocatable /
 allocated, sharing replicas, driver and CUDA, whether the device plugin runs and whether NVIDIA
 hardware was found without it, the install status and log, and which project types can use GPUs
@@ -232,7 +232,7 @@ What the Knative Service revision gets (`GpuScheduling`):
 | `autoscaling.knative.dev/scale-to-zero-pod-retention-period` | `5m` (`ai.gpu.scaleToZeroRetention`): an idle GPU pod stays warm for the next request, then scales to zero |
 
 A new GPU project gets a default timeout of 300 s (`ai.gpu.defaultTimeout`) instead of 30 s,
-at most the region's request timeout (Settings → Regions → General).
+at most the region's request timeout (Administration → Platform → Knative Regions → (region) → General).
 Scale to zero stays available for GPU projects. The first request after scale to zero waits for
 the node to start the container — pulling a CUDA image the first time on a node and loading
 weights into GPU memory. For latency-sensitive services, set **min scale 1** to keep one
@@ -263,8 +263,8 @@ on a runtime version without a GPU is refused with a hint to pick a GPU version.
 
 ## Supported sandbox combinations
 
-GPU pods run under the RuntimeClass the region maps the project type to (Settings → Regions →
-Sandbox). Model services run under the region's CaaS mapping.
+GPU pods run under the RuntimeClass the region maps the project type to (Administration → Platform → Knative Regions → (region) →
+Isolation). Model services run under the region's CaaS mapping.
 
 | Sandbox of the project type | GPU workloads | RuntimeClass of the pod |
 |---|---|---|
@@ -323,7 +323,7 @@ Its Kata pod overhead follows the RuntimeClass it was deployed with. Stopped mod
 reserve nothing.
 
 Platform administrators are exempt, as with CPU and memory quotas; regions in mode *infinite*
-have no quota. Platform administrators set the quota in Tenants → (tenant) → Quotas or with
+have no quota. Platform administrators set the quota in Tenants → (tenant) → Regions or with
 
 ```bash
 curl -sS -X PUT "$API/tenants/$TENANT/regions/$REGION/gpu-quota" -H "Authorization: Bearer $TOKEN" \
@@ -335,9 +335,10 @@ use with `GET /api/models/gpu-quota?knative_region_id=<id>` → `{"quota": 4, "u
 
 ### Billing
 
-The region's cost config has a GPU price, `gpu_price_per_unit_ms` (price per GPU per
-millisecond; `POST /api/cost-configs` and `PATCH /api/cost-configs/{id}` accept it). The usage aggregation adds **GPU-unit milliseconds × gpu_price_per_unit_ms** to
-the raw cost:
+Metering records the GPU time of every workload (GPU-unit milliseconds, GPUs × ms); with the
+[Billing module](billing.md) on, it is billed at the region's `gpu_hour` price (pay as you go), or a
+fixed project requests GPUs with its other resources at the region's `gpu_month` price
+([Fixed resources](billing.md#fixed-resources)):
 
 | Workload | GPU-unit milliseconds per day |
 |---|---|
@@ -346,9 +347,9 @@ the raw cost:
 | model service | metered: every minute `models:meter` adds the time each running pod ran since the previous sample (at most two intervals) × its GPUs |
 
 `usage_records` carry `gpu_count`, `total_gpu_unit_ms` and `source` (`project` or `model`);
-GPU-seconds are `total_gpu_unit_ms / 1000`. Model services appear on the tenant's usage charge as
-`Model service: <name> (HTTP, …)`, per day. See [Billing](billing.md) for charges and the billing
-API.
+GPU-hours are `total_gpu_unit_ms / 3 600 000`. A project's GPU time is on the project's bill; a
+model service's on the account bill of the user who created it
+([Account bills](billing.md#account-bills)).
 
 ## Sizing guidance
 

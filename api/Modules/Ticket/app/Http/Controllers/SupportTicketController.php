@@ -6,17 +6,16 @@ use App\Events\NotificationCreated;
 use App\Http\Controllers\Controller;
 use App\Models\Notification;
 use App\Models\User;
-use App\Support\Rbac\Rbac;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
-use Illuminate\Support\Facades\Schema;
 use Modules\Ticket\Events\SupportTicketCreated;
 use Modules\Ticket\Events\SupportTicketRead;
 use Modules\Ticket\Events\SupportTicketReplied;
 use Modules\Ticket\Http\Concerns\HandlesTicketAttachments;
 use Modules\Ticket\Http\Requests\StoreSupportTicketRequest;
 use Modules\Ticket\Models\SupportTicket;
+use Modules\Ticket\Support\TicketStaff;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class SupportTicketController extends Controller
@@ -101,7 +100,7 @@ class SupportTicketController extends Controller
             abort(403);
         }
 
-        return $this->serveAttachment($supportTicket->id, $filename);
+        return $this->serveAttachment($supportTicket, $filename);
     }
 
     public function suggestions(Request $request): JsonResponse
@@ -143,22 +142,14 @@ class SupportTicketController extends Controller
     }
 
     /**
-     * Who works the support queue: the platform administrators (users.is_admin, a column the
-     * Tenancy module adds) — in a single-tenant install, without that column, the members whose
-     * role holds tickets.manage (opening a ticket answered 500 there).
+     * Who works the support queue: the members whose role holds tickets.manage, and the platform
+     * administrators where users have is_admin (TicketStaff).
      *
      * @return Collection<int, User>
      */
     protected function supportStaff(): Collection
     {
-        $users = new User;
-        if (Schema::connection($users->getConnectionName())->hasColumn($users->getTable(), 'is_admin')) {
-            return User::where('is_admin', true)->get();
-        }
-
-        $rbac = app(Rbac::class);
-
-        return User::all()->filter(fn (User $user) => $rbac->allows($user, 'tickets.manage'))->values();
+        return TicketStaff::users();
     }
 
     protected function notifyAdmins(SupportTicket $ticket): void

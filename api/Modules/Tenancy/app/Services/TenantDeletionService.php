@@ -2,18 +2,35 @@
 
 namespace Modules\Tenancy\Services;
 
+use App\Mcp\Hosting\HostedServerIndex;
+use App\Models\Branding;
+use App\Models\ImageUpload;
 use App\Models\KnativeRegion;
 use App\Models\Project;
+use App\Models\Sandbox;
 use App\Models\Setting;
+use App\Models\UploadedImage;
 use App\Services\Bindings\BindingManager;
 use App\Services\Concerns\ConfigDomainTrait;
 use App\Services\Concerns\KnativeAgentTrait;
+use App\Services\Images\ImageUploadService;
+use App\Services\Images\UploadedImages;
 use App\Services\KubernetesClient;
 use App\Services\ProjectCleanupService;
+use App\Services\RegistryImageLifecycleService;
+use App\Services\Runtimes\RuntimeRegistry;
+use App\Services\Sandboxes\SandboxService;
+use App\Services\WhiteLabel\BrandingService;
+use Illuminate\Database\Query\Builder;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Schema;
+use Modules\Billing\Services\BillArchive;
 use Modules\Tenancy\Models\Tenant;
+use Modules\Tenancy\Support\TenantCentralTables;
 use Modules\Tenancy\Support\TenantTokens;
+use Modules\Ticket\Support\TicketAttachments;
 
 /**
  * Tears a tenant down (DeleteTenantJob), in this order:
@@ -27,8 +44,18 @@ use Modules\Tenancy\Support\TenantTokens;
  *     namespace (Knative Services, CronJobs, Deployments, ConfigMaps, Jobs, Secrets) plus the projects'
  *     Kaniko build Jobs (labelled runr/project-id)
  *  3. tenant-owned regions only: the runr-agent (it would reconnect forever otherwise)
- *  4. only when nothing was left behind — or $force: drop the tenant database, delete
- *     storage/git/<slug>, delete the tenant row with the API tokens created in it
+ *  4. what the organization holds in central tables: the pods of its sandboxes and warm pools
+ *     (SandboxService::terminate), the receivers of uploads in progress, its uploaded images with
+ *     their registry manifests (UploadedImages::delete), the registry images of its custom runtimes
+ *  5. only when nothing was left behind — or $force: copy the organization's project and account
+ *     bills into the central archive (BillArchive; when that fails nothing is dropped, $force or
+ *     not: bills are financial records), then drop the tenant database, delete
+ *     storage/git/<slug>, the support ticket attachments and the branding assets, the
+ *     organization's central rows (TenantCentralTables::deleteTenantRows — sandboxes, pools,
+ *     quota override, git installations / repository links, MCP servers / calls / sessions,
+ *     uploads, status page routes, custom runtimes, the settings of its own regions, security
+ *     policy, branding override, notifications) and the tenant row with the API tokens created in
+ *     it. The audit trail and billing records stay (TenantCentralTables::RETAINED).
  *
  * Anything left behind without $force → status delete_failed with the reasons; row and database
  * stay so the delete can be retried.
@@ -65,9 +92,11 @@ class TenantDeletionService
         $owned = [];   // ids of tenant-owned regions
         $projectRegion = [];   // project id => region id
         $ownBaseDomain = false;
+        $ownRegionIds = [];   // every region of the tenant's own (demo ones too): central settings keyed by them go
 
-        $tenant->run(function () use (&$failures, &$regions, &$owned, &$projectRegion, &$ownBaseDomain) {
+        $tenant->run(function () use (&$failures, &$regions, &$owned, &$projectRegion, &$ownBaseDomain, &$ownRegionIds) {
             [$regions, $owned] = $this->tenantRegions();
+            $ownRegionIds = KnativeRegion::where('is_synced', false)->pluck('id')->map(fn ($id) => (string) $id)->all();
             // Tenant's own base_domain only (Setting::get() would fall back to the central one)
             $ownBaseDomain = (bool) Setting::query()->whereKey('base_domain')->value('value');
 
@@ -100,6 +129,10 @@ class TenantDeletionService
             }
         }
 
+        // What the organization runs or stores through central tables (sandbox pods, upload
+        // receivers, uploaded images, custom runtime images)
+        array_push($failures, ...$this->teardownCentralResources($tenant));
+
         if ($failures && ! $force) {
             $tenant->forceFill([
                 'status' => Tenant::STATUS_DELETE_FAILED,
@@ -115,13 +148,74 @@ class TenantDeletionService
             Log::warning('Tenant force-deleted with leftovers', ['tenant' => $tenant->slug, 'failures' => $failures]);
         }
 
+        // The bills the organization made for its projects and users live in its schema: copied to
+        // the central archive before the schema goes, or the tenant is kept
+        if (($archiveFailure = $this->archiveBills($tenant)) !== null) {
+            $failures[] = $archiveFailure;
+            $tenant->forceFill([
+                'status' => Tenant::STATUS_DELETE_FAILED,
+                'status_message' => mb_substr(implode('; ', array_unique($failures)), 0, 2000),
+            ])->save();
+
+            return ['deleted' => false, 'failures' => $failures];
+        }
+
+        $this->endFixedAllocations($tenant);
         $tenant->database()->manager()->deleteDatabase($tenant);
         $this->deleteGitRepository($tenant);
+        $this->deleteStoredFiles($tenant);
+        $this->deleteCentralRows($tenant, $ownRegionIds);
         // With the API tokens created in the tenant; tenant_users / tenant_regions rows cascade on
         // tenant_id at the DB level
         TenantTokens::deleteTenant($tenant);
 
         return ['deleted' => true, 'failures' => $failures];
+    }
+
+    /**
+     * The organization's bills into the central archive (Billing module, BillArchive). Returns the
+     * failure, null when they are archived or the schema has none.
+     */
+    private function archiveBills(Tenant $tenant): ?string
+    {
+        try {
+            app(BillArchive::class)->archiveTenant($tenant);
+        } catch (\Throwable $e) {
+            Log::error('Tenant deletion: the bills could not be archived — tenant kept', ['tenant' => $tenant->slug, 'error' => $e->getMessage()]);
+
+            return 'bills not archived: '.$e->getMessage();
+        }
+
+        return null;
+    }
+
+    /**
+     * Billing (docs/billing.md#fixed-resources): the tenant's fixed allocations end today — in its
+     * schema and their central copies, which the platform bills the tenant for (billing_fixed_requests
+     * stays, TenantCentralTables::RETAINED). Whether billing is on or not, with the tables only.
+     */
+    private function endFixedAllocations(Tenant $tenant): void
+    {
+        $today = now()->toDateString();
+        $end = function (Builder $query) use ($today): void {
+            $query->where('status', 'approved')->whereNull('active_until')
+                ->update(['status' => 'ended', 'active_until' => $today, 'updated_at' => now()]);
+        };
+
+        try {
+            $tenant->run(function () use ($end) {
+                if (Schema::hasTable('billing_fixed_requests')) {
+                    $end(DB::table('billing_fixed_requests'));
+                    DB::table('billing_fixed_requests')->where('status', 'pending')->update(['status' => 'cancelled', 'decided_at' => now(), 'updated_at' => now()]);
+                }
+            });
+            if (TenantCentralTables::has('central', 'billing_fixed_requests', 'tenant_id')) {
+                $end(DB::connection('central')->table('billing_fixed_requests')->where('tenant_id', (string) $tenant->getTenantKey()));
+            }
+        } catch (\Throwable $e) {
+            // The close job ends allocations of tenants that are gone (FixedRequests::endOrphanedCopies)
+            Log::warning('Tenant deletion: fixed allocations not ended', ['tenant' => $tenant->slug, 'error' => $e->getMessage()]);
+        }
     }
 
     /**
@@ -310,5 +404,158 @@ class TenantDeletionService
         if ($path && is_dir($path) && dirname($path) === $base) {
             File::deleteDirectory($path);
         }
+    }
+
+    /**
+     * What the organization runs or stores in the regions through central tables:
+     *  - its sandboxes, warm pool pods included: pod, egress policy and env Secret
+     *    (SandboxService::terminate resolves the region in the organization's context)
+     *  - uploads in progress: their receiver Job and Service (ImageUploadService::abort)
+     *  - its uploaded images: record and registry manifest (UploadedImages::delete)
+     *  - the images of its custom runtimes in the registries of the regions they were built in
+     * A pod or manifest that could not be deleted is a failure (the tenant is kept for a retry).
+     *
+     * @return list<string> failures
+     */
+    private function teardownCentralResources(Tenant $tenant): array
+    {
+        $tenantId = (string) $tenant->getTenantKey();
+        $central = self::centralConnection();
+        $failures = [];
+
+        if (TenantCentralTables::has($central, 'sandboxes', 'tenant_id')) {
+            $sandboxes = app(SandboxService::class);
+            foreach (Sandbox::query()->where('tenant_id', $tenantId)->whereNotIn('status', Sandbox::ENDED_STATUSES)->get() as $sandbox) {
+                try {
+                    $sandbox = $sandboxes->terminate($sandbox);
+                } catch (\Throwable $e) {
+                    $failures[] = "sandbox {$sandbox->id}: {$e->getMessage()}";
+
+                    continue;
+                }
+                if (! $sandbox->isEnded()) {
+                    $failures[] = "sandbox {$sandbox->id}: pod {$sandbox->pod_name} could not be deleted";
+                }
+            }
+        }
+
+        // Central rows read here; their regions are resolved in the organization's context below
+        $openUploads = TenantCentralTables::has($central, 'image_uploads', 'tenant_id')
+            ? ImageUpload::query()->where('tenant_id', $tenantId)->whereIn('status', ImageUpload::OPEN)->get()->all()
+            : [];
+        $images = TenantCentralTables::has($central, 'uploaded_images', 'tenant_id')
+            ? UploadedImage::query()->where('tenant_id', $tenantId)->get()->all()
+            : [];
+        $runtimeRegions = [];   // custom runtime id => regions it was built in
+        if (TenantCentralTables::has($central, 'runtimes', 'tenant_id') && TenantCentralTables::has($central, 'runtime_builds', 'runtime_id')) {
+            $db = DB::connection($central);
+            foreach ($db->table('runtimes')->where('tenant_id', $tenantId)->pluck('id') as $runtimeId) {
+                $regionIds = $db->table('runtime_builds')->where('runtime_id', $runtimeId)
+                    ->whereNotNull('image')->distinct()->pluck('knative_region_id')->map(fn ($id) => (string) $id)->all();
+                if ($regionIds !== []) {
+                    $runtimeRegions[(string) $runtimeId] = $regionIds;
+                }
+            }
+        }
+
+        if ($openUploads === [] && $images === [] && $runtimeRegions === []) {
+            return $failures;
+        }
+
+        // Regions as the organization sees them: its own regions exist in its schema only
+        TenantSchema::inTenant($tenant, function () use ($openUploads, $images, $runtimeRegions, &$failures) {
+            $uploads = app(ImageUploadService::class);
+            foreach ($openUploads as $upload) {
+                try {
+                    $uploads->abort($upload);
+                } catch (\Throwable $e) {
+                    $failures[] = "image upload {$upload->id}: {$e->getMessage()}";
+                }
+            }
+
+            $uploaded = app(UploadedImages::class);
+            foreach ($images as $image) {
+                $region = KnativeRegion::find($image->knative_region_id);
+                try {
+                    $removed = $uploaded->delete($image);
+                } catch (\Throwable $e) {
+                    $failures[] = "uploaded image {$image->repository}:{$image->tag}: {$e->getMessage()}";
+
+                    continue;
+                }
+                // Only an internal registry holds the manifest (UploadedImages::removeManifest)
+                if (! $removed && $region && $region->registry_mode === 'internal' && ! $region->is_demo) {
+                    $failures[] = "uploaded image {$image->repository}:{$image->tag}: manifest not removed from the registry of {$region->name}";
+                }
+            }
+
+            $registry = app(RegistryImageLifecycleService::class);
+            foreach ($runtimeRegions as $runtimeId => $regionIds) {
+                foreach (KnativeRegion::whereIn('id', $regionIds)->get() as $region) {
+                    try {
+                        $registry->deleteRuntimeImages($region, $runtimeId);
+                    } catch (\Throwable $e) {
+                        $failures[] = "runtime {$runtimeId}: images not removed from the registry of {$region->name}: {$e->getMessage()}";
+                    }
+                }
+            }
+        });
+
+        return $failures;
+    }
+
+    /**
+     * Files the organization stored outside its git repository: its branding assets
+     * (BrandingService) and support ticket attachments (Ticket module).
+     */
+    private function deleteStoredFiles(Tenant $tenant): void
+    {
+        $tenantId = (string) $tenant->getTenantKey();
+
+        try {
+            $branding = app(BrandingService::class);
+            foreach (array_keys(Branding::ASSETS) as $asset) {
+                $branding->deleteAsset($asset, $tenantId);
+            }
+        } catch (\Throwable $e) {
+            Log::warning('Tenant deletion: branding assets not removed', ['tenant' => $tenant->slug, 'error' => $e->getMessage()]);
+        }
+
+        // support-attachments/<tenant id>/ (nothing there when the Ticket module is off)
+        try {
+            TicketAttachments::deleteTenantFiles($tenantId);
+        } catch (\Throwable $e) {
+            Log::warning('Tenant deletion: ticket attachments not removed', ['tenant' => $tenant->slug, 'error' => $e->getMessage()]);
+        }
+    }
+
+    /**
+     * The organization's rows in the central tables (TenantCentralTables::deleteTenantRows), then
+     * the in-process caches that hold some of them.
+     *
+     * @param  list<string>  $ownRegionIds
+     */
+    private function deleteCentralRows(Tenant $tenant, array $ownRegionIds): void
+    {
+        $deleted = TenantCentralTables::deleteTenantRows(self::centralConnection(), (string) $tenant->getTenantKey(), $ownRegionIds);
+
+        if (app()->resolved(HostedServerIndex::class)) {
+            app(HostedServerIndex::class)->forget();
+        }
+        if (app()->resolved(RuntimeRegistry::class)) {
+            app(RuntimeRegistry::class)->forget();
+        }
+
+        if ($deleted !== []) {
+            Log::info('Tenant deletion: central rows removed', ['tenant' => $tenant->slug, 'rows' => $deleted]);
+        }
+    }
+
+    /** The central connection (the default one where the Tenancy module registered none). */
+    private static function centralConnection(): string
+    {
+        $central = (string) config('tenancy.database.central_connection', 'central');
+
+        return config("database.connections.{$central}") ? $central : (string) config('database.default');
     }
 }

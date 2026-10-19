@@ -366,6 +366,43 @@ func TestStatusAndOpen(t *testing.T) {
 	contains(t, r.out, "schedule */5 * * * *")
 }
 
+// A stopped project shows who stopped it and why; its deploy is refused with the API's code.
+func TestStoppedProject(t *testing.T) {
+	h := newHarness(t).login()
+	dir := h.deployHello()
+
+	h.srv.SeedStop("hello-api", "Unpaid since August", runr.StopLevelOrganization, "Bob")
+	r := h.mustRun("projects", "ls")
+	contains(t, r.out, "stopped")
+	r = h.mustRun("projects", "get", "hello-api")
+	contains(t, r.out, "Stopped:")
+	contains(t, r.out, "by Bob for the organization")
+	contains(t, r.out, "ago: Unpaid since August")
+	r = h.mustRun("status", "--dir", dir)
+	contains(t, r.out, "by Bob for the organization")
+
+	// A platform stop names the platform, not its administrator
+	h.srv.SeedStop("hello-api", "Terms of service", runr.StopLevelPlatform, "")
+	r = h.mustRun("status", "--dir", dir)
+	contains(t, r.out, "by the platform")
+	contains(t, r.out, "Terms of service")
+	notContains(t, r.out, "Bob")
+	var p runr.Project
+	decodeJSON(t, h.mustRun("projects", "get", "hello-api", "-o", "json").out, &p)
+	if !p.Stopped.ByPlatform() || p.Stopped.By != nil || p.Stopped.Reason != "Terms of service" {
+		t.Fatalf("stopped = %+v", p.Stopped)
+	}
+
+	r = h.expectCode(ExitValidation, "deploy", "--dir", dir)
+	contains(t, r.err, "409 This project is stopped and cannot be deployed until it is resumed. Reason: Terms of service (project_stopped)")
+
+	// Resumed: no stop line, deploys again
+	h.srv.SeedStop("hello-api", "", "", "")
+	r = h.mustRun("status", "--dir", dir)
+	notContains(t, r.out, "Stopped")
+	h.mustRun("deploy", "--dir", dir)
+}
+
 func TestProjectFromEnvironment(t *testing.T) {
 	h := newHarness(t).login()
 	h.deployHello()

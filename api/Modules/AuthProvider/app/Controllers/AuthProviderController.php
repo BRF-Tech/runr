@@ -8,6 +8,7 @@ use App\Support\Secrets\SecretRedactor;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Modules\AuthProvider\Models\AuthProvider;
+use Modules\AuthProvider\Services\ProviderConfigService;
 use Modules\AuthProvider\Services\Saml\SamlConfigValidator;
 use Modules\AuthProvider\Services\Saml\SamlService;
 
@@ -64,7 +65,8 @@ class AuthProviderController extends Controller
             'client_secret' => 'sometimes|string',
             'scopes' => 'nullable|array',
             'scopes.*' => 'string',
-            'oidc_discovery_url' => 'nullable|url',
+            // An OIDC provider cannot lose its discovery URL
+            'oidc_discovery_url' => $authProvider->driver === 'oidc' ? 'sometimes|required|url' : 'nullable|url',
             'oidc_issuer' => 'nullable|string',
             'google_hosted_domain' => 'nullable|string|max:255',
             'microsoft_tenant' => 'nullable|string|max:255',
@@ -131,6 +133,9 @@ class AuthProviderController extends Controller
         if ($provider->isSaml()) {
             $data['has_saml_sp_private_key'] = $provider->hasSamlSpPrivateKey();
             $data['saml_sp'] = app(SamlService::class)->spUrls($provider);
+        } else {
+            // Redirect URL to register with the OAuth client / at the OIDC identity provider
+            $data['callback_url'] = app(ProviderConfigService::class)->callbackUrl($provider->driver);
         }
 
         return $data;

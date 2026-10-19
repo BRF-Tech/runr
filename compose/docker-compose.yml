@@ -20,6 +20,7 @@ services:
       TENANCY_ENABLED: ${TENANCY_ENABLED:-false}
       AUTH_PROVIDER_ENABLED: ${AUTH_PROVIDER_ENABLED:-false}
       TICKET_ENABLED: ${TICKET_ENABLED:-true}
+      BILLING_ENABLED: ${BILLING_ENABLED:-false}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:
@@ -46,6 +47,7 @@ services:
       TENANCY_ENABLED: ${TENANCY_ENABLED:-false}
       AUTH_PROVIDER_ENABLED: ${AUTH_PROVIDER_ENABLED:-false}
       TICKET_ENABLED: ${TICKET_ENABLED:-true}
+      BILLING_ENABLED: ${BILLING_ENABLED:-false}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:
@@ -71,6 +73,7 @@ services:
       TENANCY_ENABLED: ${TENANCY_ENABLED:-false}
       AUTH_PROVIDER_ENABLED: ${AUTH_PROVIDER_ENABLED:-false}
       TICKET_ENABLED: ${TICKET_ENABLED:-true}
+      BILLING_ENABLED: ${BILLING_ENABLED:-false}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:
@@ -94,6 +97,7 @@ services:
       TENANCY_ENABLED: ${TENANCY_ENABLED:-false}
       AUTH_PROVIDER_ENABLED: ${AUTH_PROVIDER_ENABLED:-false}
       TICKET_ENABLED: ${TICKET_ENABLED:-true}
+      BILLING_ENABLED: ${BILLING_ENABLED:-false}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:
@@ -137,14 +141,17 @@ services:
     restart: unless-stopped
 
   # ── Migrator (one-shot, only when needed) ─────────────────────────────────
+  # Migrations, then the first administrator while the install has none (ADMIN_* in api.env)
   migrator:
     image: runr-api:latest
     env_file: ./api.env
     environment:
       CONTAINER_ROLE: migrator
+      BOOTSTRAP_ADMIN: "true"
       TENANCY_ENABLED: ${TENANCY_ENABLED:-false}
       AUTH_PROVIDER_ENABLED: ${AUTH_PROVIDER_ENABLED:-false}
       TICKET_ENABLED: ${TICKET_ENABLED:-true}
+      BILLING_ENABLED: ${BILLING_ENABLED:-false}
     depends_on:
       postgres:
         condition: service_healthy

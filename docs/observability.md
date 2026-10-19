@@ -353,7 +353,8 @@ php artisan cluster:install-tracing {regionId?} {--mode=managed|reuse|external|o
 
 installs (or reconfigures) the backend of one region or of every Knative region;
 `POST /api/observability/regions/{region}/tracing/install` queues the same install
-(`InstallTracingJob`), `DELETE /api/observability/regions/{region}/tracing` removes it.
+(`InstallTracingJob`), `DELETE /api/observability/regions/{region}/tracing` removes it and sets
+the region's mode to `off`, so `region:reconcile` does not install it again.
 
 `php artisan region:reconcile` (the Helm bootstrap job runs it after every install and upgrade)
 runs the same install where tracing is enabled — the region's mode, or for a region without its
@@ -527,8 +528,10 @@ appear on the status page.
 The control plane probes due checks every 30 seconds (`observability:run uptime`, parallel
 requests). Region agents fetch their checks (`GET /api/internal/observability/agent/{region}/uptime-checks`)
 and post results (`POST …/uptime-results`) with the agent token; the agent finds RunR's API
-through `RUNR_API_URL` or its WebSocket URL, and `RUNR_UPTIME_DISABLED=true` switches its prober
-off. The UI shows the uptime % of 24 h / 7 d / 30 d, the average response time, daily bars of
+through `RUNR_API_URL` or its WebSocket URL, whose host RunR accepts on these routes even when it
+is not the console's (the in-cluster gateway in RunR's own cluster,
+[regions.md](regions.md#network-reachability)), and `RUNR_UPTIME_DISABLED=true` switches its
+prober off. The UI shows the uptime % of 24 h / 7 d / 30 d, the average response time, daily bars of
 the last 30 days, the latest results and the incidents. Results are kept `resultsRetentionDays` (90).
 
 ---

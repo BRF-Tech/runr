@@ -17,7 +17,9 @@
 #      there) with --reuse-values (--values-mode=reset: --reset-then-reuse-values) plus
 #      white-label values (a neutral test brand: product and company name, logos as data: URIs,
 #      a primary 300–900 scale), while a prober calls the function every second.
-#   4. Checks: migrations ran and every deployment runs the new images, both users sign in and
+#   4. Checks: migrations ran, the bootstrap Job succeeded and every deployment runs the new
+#      images (multi-tenant: every tenant schema has the Billing tables and tenant migrations
+#      0060–0062, the bootstrap Job's tenancy:migrate finished), both users sign in and
 #      keep what they could do (Owner / Admin), env vars are encrypted at rest and still read and deploy,
 #      a secret env var lands in the project's Kubernetes Secret (never in the Knative Service),
 #      the tokens work with their scopes, the function answered during and after the upgrade,
@@ -34,12 +36,25 @@
 #                         with the -mt UI images; instead of the region and the function it
 #                         creates a tenant with an admin, a member (from 0.5.x: a developer) and
 #                         a viewer and checks that every one signs in and keeps the tenant role
-#                         (from 0.4.x: member → the custom role Member, viewer → read-only Viewer)
+#                         (from 0.4.x: member → the custom role Member, viewer → read-only Viewer).
+#                         From a 0.5.x installation it also leaves billing data of that version:
+#                         a platform region shared with the tenant, the global and a region cost
+#                         configuration, a closed charge of the previous month; after the upgrade
+#                         the share is active, the charge is a closed tenant bill (source legacy)
+#                         and the cost configurations are price versions
+#   --billing             the upgrade sets billing.enabled=true; multi-tenant: the Billing API
+#                         answers with the imported data (tenant bills, prices, region prices,
+#                         bills), the tenant sees the earlier share as active, a region shared
+#                         after the upgrade is a pending offer until the tenant administrator
+#                         accepts it with a markup, and the bootstrap Job ran tenancy:setup
+#   --upgrade-set=K=V     a further --set value of the helm upgrade (repeatable), e.g.
+#                         networkPolicy.enabled=true
 #   --dedicated-worker    single-tenant: a Kind cluster with a second worker; on the installed
 #                         version the worker the region registry's volume is on is selected as
 #                         the dedicated project worker (runr.dev/dedicated=projects:NoSchedule), as
 #                         an operator does after the registry was installed. After the upgrade:
-#                         region:reconcile (bootstrap job) gave Zot the toleration of the taint,
+#                         region:reconcile (bootstrap job) gave Zot the toleration of the taint
+#                         (from 0.5.4 on the selection gave it already: reconcile leaves it alone),
 #                         Zot runs on that node and comes back there after a restart, and no pod
 #                         waits Pending on the taint
 #   --skip-build          use the images UPGRADE_TO_API_IMAGE / UPGRADE_TO_UI_IMAGE (+ -mt) as they are
@@ -71,6 +86,14 @@ _upg_tenant=""
 # --dedicated-worker: the node of the region registry's volume, selected as the dedicated worker
 _upg_dedicated=0
 _upg_zot_node=""
+_upg_zot_tolerated_before=0
+# --billing: billing.enabled=true on the upgrade; billing data of the installed version
+# (multi-tenant): the shared region and the closed charge (empty: not created)
+_upg_billing=0
+_upg_billed_region=""
+_upg_billed_charge=""
+# --upgrade-set=KEY=VALUE (repeatable) and --billing: --set values of the helm upgrade
+_upg_upgrade_set=()
 
 _upg_ns="runr"
 _upg_region="upg"
@@ -118,8 +141,11 @@ _upg_absent() {
 _upg_kubectl() { kubectl --kubeconfig "$_upg_kubeconfig" "$@"; }
 
 _upg_artisan() { _upg_kubectl -n "$_upg_ns" exec deploy/runr-api -- php artisan "$@"; }
-_upg_no_pending_migrations() { ! _upg_artisan migrate:status 2>/dev/null | grep -q Pending; }
-_upg_nothing_left_to_encrypt() { _upg_artisan secrets:encrypt 2>/dev/null | grep -q 'Encrypted 0 plaintext'; }
+# A command's output is searched with `grep … >/dev/null`, never `grep -q`: under pipefail (ci.sh)
+# grep -q ends at the first match, the writer still writing gets SIGPIPE (141) and the pipeline
+# fails although the line is there — every time once the output is longer than one write
+_upg_no_pending_migrations() { ! _upg_artisan migrate:status 2>/dev/null | grep Pending >/dev/null; }
+_upg_nothing_left_to_encrypt() { _upg_artisan secrets:encrypt 2>/dev/null | grep 'Encrypted 0 plaintext' >/dev/null; }
 
 # _upg_call METHOD PATH [TOKEN] [JSON] → $_upg_code, $_upg_body
 _upg_call() {
@@ -198,7 +224,7 @@ _upg_build_ui() {
   [ "$_upg_mt" = "1" ] && modules=true
   docker build -q --pull --build-arg VITE_WS_PROXY=true --build-arg VITE_REVERB_KEY=runr-key \
     --build-arg "VITE_TENANCY_ENABLED=${modules}" --build-arg "VITE_AUTH_PROVIDER_ENABLED=${modules}" \
-    --build-arg VITE_TICKET_ENABLED=true -t "$image" "$context" >/dev/null
+    --build-arg VITE_TICKET_ENABLED=true --build-arg VITE_BILLING_ENABLED=true -t "$image" "$context" >/dev/null
 }
 
 # Images of this checkout (what the upgrade installs)
@@ -497,6 +523,9 @@ _upg_dedicate_registry_node() {
   _upg_call_ok POST "/api/knative-regions/${region_id}/workers" "$admin_token" "$(jq -nc --arg n "$_upg_zot_node" '{nodes: [$n]}')"
   echo "  ${_upg_zot_node} (the registry's volume) selected as the dedicated worker; Zot's tolerations on ${from_tag}:" \
     "$(_upg_kubectl -n runr-registry get statefulset runr-zot -o jsonpath='{.spec.template.spec.tolerations}' 2>/dev/null || true)"
+  # From 0.5.4 on the worker selection gives Zot the toleration itself: reconcile then has nothing to add
+  _upg_zot_tolerated_before=0
+  if _upg_zot_tolerates; then _upg_zot_tolerated_before=1; fi
 }
 
 # Zot's StatefulSet tolerates the dedicated-worker taint
@@ -522,8 +551,13 @@ _upg_pending_on_taint() {
 # --dedicated-worker checks after the upgrade
 _upg_dedicated_checks() {
   local pending
-  _upg_check "region:reconcile (bootstrap) gave Zot the toleration of runr.dev/dedicated=projects:NoSchedule" \
-    grep -qF "[dedicated-worker-toleration] added the toleration of runr.dev/dedicated=projects:NoSchedule to StatefulSet runr-registry/runr-zot" "${_upg_tmp}/bootstrap.log"
+  if [ "$_upg_zot_tolerated_before" = "1" ]; then
+    _upg_check "region:reconcile (bootstrap) leaves the toleration Zot had on ${from_tag} alone (up to date)" \
+      grep -qF "[dedicated-worker-toleration] up to date" "${_upg_tmp}/bootstrap.log"
+  else
+    _upg_check "region:reconcile (bootstrap) gave Zot the toleration of runr.dev/dedicated=projects:NoSchedule" \
+      grep -qF "[dedicated-worker-toleration] added the toleration of runr.dev/dedicated=projects:NoSchedule to StatefulSet runr-registry/runr-zot" "${_upg_tmp}/bootstrap.log"
+  fi
   _upg_check "Zot's StatefulSet tolerates the dedicated-worker taint" _upg_zot_tolerates
   _upg_check "Zot runs on its dedicated worker ${_upg_zot_node}" _upg_zot_runs_on_its_node
   _upg_kubectl -n runr-registry rollout restart statefulset/runr-zot >/dev/null
@@ -642,15 +676,25 @@ _upg_st_checks() {
   _upg_call GET "/api/knative-regions/${region_id}" "$admin_token"
   echo "  region: $(echo "$_upg_body" | jq -c '.data | {knative_status, is_active}' 2>/dev/null)"
 
-  # The region agent reconnected to the new reverb
+  # The region agent reconnected to the new reverb (its log grows by an agent message every few
+  # seconds: grep reads all of it, see _upg_no_pending_migrations)
   connected=0
   for i in $(seq 1 30); do
-    if _upg_kubectl -n "$_upg_ns" logs deploy/runr-reverb --since-time="$upgrade_started" 2>/dev/null | grep -q "Agent connected: region=${region_id}"; then
+    if _upg_kubectl -n "$_upg_ns" logs deploy/runr-reverb --since-time="$upgrade_started" 2>/dev/null \
+      | grep -F "Agent connected: region=${region_id}" >/dev/null; then
       connected=1; break
     fi
     sleep 5
   done
   _upg_check "region agent reconnected after the upgrade" test "$connected" = 1
+  if [ "$connected" != 1 ]; then
+    echo "  reverb pods and their agent lines, the agent's log:"
+    _upg_kubectl -n "$_upg_ns" get pods -l app=runr-reverb -o wide 2>&1 | sed 's/^/    /' || true
+    for i in $(_upg_kubectl -n "$_upg_ns" get pods -l app=runr-reverb -o name 2>/dev/null); do
+      _upg_kubectl -n "$_upg_ns" logs "$i" --timestamps 2>/dev/null | grep -E "Agent (connected|rejected|disconnected)" | tail -5 | sed "s#^#    ${i}: #" || true
+    done
+    _upg_kubectl -n observability logs deploy/runr-agent --timestamps --tail=40 2>/dev/null | grep -v "Prometheus query error" | tail -15 | sed 's/^/    agent: /' || true
+  fi
   if [ "$_upg_dedicated" = "1" ]; then _upg_dedicated_checks; fi
 }
 
@@ -704,6 +748,62 @@ _upg_mt_data() {
   _upg_call POST /api/projects "$viewer_token" '{}'
   _upg_tenant=""
   echo "  ${from_tag}: tenant viewer POST /api/projects → HTTP ${_upg_code}"
+  case "$from_tag" in 0.5.*) _upg_mt_billing_data ;; esac
+}
+
+# _upg_plain_region NAME — a platform region on the Kind cluster itself (no components installed):
+# its id in $_upg_new_region (empty when the API refused it: $_upg_code, $_upg_body)
+_upg_new_region=""
+_upg_plain_region() {
+  local kc
+  kc=$(sed -E 's#server: https://.*#server: https://kubernetes.default.svc#' "$_upg_kubeconfig")
+  _upg_call POST /api/knative-regions "$admin_token" "$(jq -nc --arg kc "$kc" --arg n "$1" '{name: $n, kubeconfig: $kc, nodes: [], redis_mode: "none"}')"
+  _upg_new_region=""
+  if [[ "$_upg_code" =~ ^2 ]]; then
+    _upg_new_region=$(echo "$_upg_body" | jq -r '.data.id // .id // empty' 2>/dev/null || true)
+  fi
+}
+
+# Billing data of a 0.5.x multi-tenant installation, through its API (best effort: what could not
+# be created is reported, and its checks after the upgrade are left out): a platform region shared
+# with the tenant, the global and a region cost configuration, a manual charge of the previous month
+# closed as the scheduler's charge job closes ended months
+_upg_mt_billing_data() {
+  local prev_start prev_end status
+  _upg_plain_region billed
+  _upg_billed_region="$_upg_new_region"
+  if [ -z "$_upg_billed_region" ]; then
+    echo -e "${YELLOW}  billing data: region not created (HTTP ${_upg_code}: ${_upg_body:0:300})${NC}"
+    return 0
+  fi
+  _upg_call POST "/api/tenants/${tenant_id}/regions" "$admin_token" \
+    "$(jq -nc --arg r "$_upg_billed_region" '{region_id: $r, cpu_quota_m: 500, memory_quota_mb: 512}')"
+  if [[ ! "$_upg_code" =~ ^2 ]]; then
+    echo -e "${YELLOW}  billing data: region not shared (HTTP ${_upg_code}: ${_upg_body:0:300})${NC}"
+    _upg_billed_region=""
+    return 0
+  fi
+  echo "  region billed (${_upg_billed_region}) shared with the tenant: $(_upg_psql "select status from tenant_regions where knative_region_id = '${_upg_billed_region}'" 2>/dev/null || echo 'no status column')"
+  # 1.2e-11 per millicore-ms = 0.0432 per vCPU-hour; the region: 2e-11 = 0.072 (0.5.x stores 12 decimals)
+  _upg_call POST /api/cost-configs "$admin_token" '{"cpu_price_per_mc_ms": 0.000000000012, "memory_price_per_mib_ms": 0.000000000001, "cpu_price_per_core_month": 21, "memory_price_per_gb_month": 3, "currency": "USD"}'
+  echo "  global cost configuration: HTTP ${_upg_code}"
+  _upg_call POST /api/cost-configs "$admin_token" "$(jq -nc --arg r "$_upg_billed_region" '{region_id: $r, cpu_price_per_mc_ms: 0.00000000002, currency: "USD"}')"
+  echo "  region cost configuration: HTTP ${_upg_code}"
+  prev_start=$(date -d "$(date +%Y-%m-01) -1 month" +%Y-%m-01)
+  prev_end=$(date -d "$(date +%Y-%m-01) -1 day" +%F)
+  _upg_call POST "/api/billing/tenants/${tenant_id}/charges" "$admin_token" \
+    "$(jq -nc --arg s "$prev_start" --arg e "$prev_end" '{description: "Upgrade test charge", amount: 42.5, currency: "USD", period_start: $s, period_end: $e}')"
+  _upg_billed_charge=$(echo "$_upg_body" | jq -r '.charge.id // empty' 2>/dev/null || true)
+  if [ -z "$_upg_billed_charge" ]; then
+    echo -e "${YELLOW}  billing data: charge not created (HTTP ${_upg_code}: ${_upg_body:0:300})${NC}"
+    return 0
+  fi
+  _upg_kubectl -n "$_upg_ns" exec deploy/runr-api -- php -r 'require "vendor/autoload.php"; $app = require "bootstrap/app.php"; $app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+    echo "closed " . app(Modules\Tenancy\Services\Billing\ChargeService::class)->closeEndedPeriods() . " charge(s)" . PHP_EOL;' 2>&1 | sed 's/^/  /' || true
+  _upg_call GET "/api/billing/charges/${_upg_billed_charge}" "$admin_token"
+  status=$(echo "$_upg_body" | jq -r '.charge.status // empty' 2>/dev/null || true)
+  echo "  charge ${_upg_billed_charge} (42.50 USD, ${prev_start} – ${prev_end}): ${status:-?}"
+  [ "$status" = "closed" ] || _upg_billed_charge=""
 }
 
 # Multi-tenant checks after the upgrade: everybody signs in, the tenant roles map to the 0.5.0 roles
@@ -753,6 +853,133 @@ _upg_mt_checks() {
   _upg_check "tenant admin still creates projects (validation, no 403)" _upg_eq "$_upg_code" 422
   _upg_tenant=""
   _upg_check "secrets:encrypt (central and tenant schemas) finds nothing left in plaintext" _upg_nothing_left_to_encrypt
+  _upg_mt_tenant_schema_checks
+  _upg_mt_billing_checks
+}
+
+# Tables of the Billing module in a tenant schema (Modules/Billing/Database/BillingSchema::create,
+# tenant: with billing_markups)
+_UPG_TENANT_BILLING_TABLES=(billing_prices billing_region_settings billing_markups billing_fixed_requests billing_bills billing_events billing_settings)
+# Tenant migrations every tenant schema has after the upgrade: the Billing module's (registered
+# whether or not billing is switched on) and Tenancy's newest (deployments.sizing / ended_at,
+# projects.stop_level)
+_UPG_TENANT_MIGRATIONS=(0060_create_billing_tables 0061_harden_billing_tables 0062_add_deployment_spans_and_stop_level)
+
+# _upg_tenant_schema_gaps SCHEMA — what the schema lacks of the above, as "table:<name>",
+# "migration:<name>" and "column:<table>.<column>" words on one line (nothing when complete;
+# "query-failed" when the schema could not be read, e.g. without a migrations table)
+_upg_tenant_schema_gaps() {
+  local schema="$1" tables migrations out
+  tables=$(printf "'%s'," "${_UPG_TENANT_BILLING_TABLES[@]}")
+  migrations=$(printf "'%s'," "${_UPG_TENANT_MIGRATIONS[@]}")
+  out=$(_upg_psql "select 'table:' || u.t from unnest(array[${tables%,}]) as u(t)
+      where not exists (select 1 from information_schema.tables where table_schema = '${schema}' and table_name = u.t)
+    union all
+    select 'migration:' || u.m from unnest(array[${migrations%,}]) as u(m)
+      where u.m not in (select migration from \"${schema}\".migrations)
+    union all
+    select 'column:' || u.c from unnest(array['deployments.sizing', 'deployments.ended_at', 'projects.stop_level']) as u(c)
+      where not exists (select 1 from information_schema.columns
+        where table_schema = '${schema}' and table_name = split_part(u.c, '.', 1) and column_name = split_part(u.c, '.', 2))") \
+    || out="query-failed"
+  echo "${out//$'\n'/ }"
+}
+
+# Every tenant schema after the upgrade: the Billing tables and tenant migrations 0060–0062 with the
+# columns of 0062; the bootstrap Job's tenancy:migrate (the safety net after the migration Job)
+# finished within its time limit
+_upg_mt_tenant_schema_checks() {
+  local schemas schema missing gaps="" count=0
+  schemas=$(_upg_psql "select nspname from pg_namespace where nspname ~ '^tenant_' order by nspname" || true)
+  for schema in $schemas; do
+    count=$((count + 1))
+    missing=$(_upg_tenant_schema_gaps "$schema")
+    [ -z "$missing" ] || gaps="${gaps}${schema}: ${missing}"$'\n'
+  done
+  gaps="${gaps%$'\n'}"
+  echo "  tenant schemas: ${count}${gaps:+, missing:}"
+  [ -z "$gaps" ] || echo "$gaps" | sed 's/^/    /'
+  _upg_check "every tenant schema (${count}) has the Billing tables, tenant migrations 0060–0062 and the columns of 0062" \
+    bash -c '[ "$1" -ge 1 ] && [ -z "$2" ]' _ "$count" "$gaps"
+  _upg_check "bootstrap Job: tenancy:migrate finished (no \"tenant migrations incomplete\")" \
+    bash -c '[ -s "$1" ] && ! grep -q "tenant migrations incomplete" "$1"' _ "${_upg_tmp}/bootstrap.log"
+}
+
+# The 0.5.x billing data after the upgrade (database), and with --billing the Billing API on it
+_upg_mt_billing_checks() {
+  local t_admin offered row
+  if [ -n "$_upg_billed_region" ]; then
+    _upg_log "Billing data of ${from_tag}"
+    _upg_check "the share made before billing stays active (tenant_regions.status)" \
+      _upg_eq "$(_upg_psql "select status from tenant_regions where knative_region_id = '${_upg_billed_region}'")" active
+    _upg_check "the 0.5.x billing tables are archived (billing_legacy_archive: cost_configs, charges)" \
+      _upg_eq "$(_upg_psql "select count(distinct source_table) from billing_legacy_archive where source_table in ('cost_configs', 'charges')")" 2
+    _upg_check "the global cost configuration is the platform price version (0.0432 per vCPU-hour)" \
+      _upg_eq "$(_upg_psql "select round(cpu_vcpu_hour::numeric, 6) from billing_prices where region_id is null and note like 'Imported from the 0.5.7 cost configuration%'")" 0.043200
+    _upg_check "the region cost configuration is the region's price version (0.072 per vCPU-hour)" \
+      _upg_eq "$(_upg_psql "select round(cpu_vcpu_hour::numeric, 6) from billing_prices where region_id = '${_upg_billed_region}'")" 0.072000
+    if [ -n "$_upg_billed_charge" ]; then
+      # a converted 0.5.7 charge is a tenant bill under its own subject (tenant-legacy:<tenant>), so
+      # it never stands in for the tenant's 0.5.8 bill of the same month (docs/billing.md)
+      row=$(_upg_psql "select subject_key || '|' || status || '|' || source || '|' || round(total::numeric, 2) from billing_bills where tenant_id = '${tenant_id}' and source = 'legacy'" || true)
+      echo "  legacy tenant bill: ${row:-none}"
+      _upg_check "the closed charge is a closed tenant bill of 42.50 (source legacy, subject tenant-legacy:<tenant>)" \
+        _upg_eq "$row" "tenant-legacy:${tenant_id}|closed|legacy|42.50"
+    fi
+  fi
+  [ "$_upg_billing" = "1" ] || return 0
+
+  _upg_log "Billing API (billing.enabled=true)"
+  _upg_check "bootstrap Job ran tenancy:setup (an installation with organizations: nothing to convert)" \
+    grep -q "already has organizations: nothing to convert" "${_upg_tmp}/bootstrap.log"
+  _upg_call GET /api/billing/settings "$admin_token"
+  _upg_check "GET /api/billing/settings answers (platform)" _upg_eq "$_upg_code" 200
+  _upg_call GET /api/billing/bills "$admin_token"
+  _upg_check "GET /api/billing/bills answers (platform)" _upg_eq "$_upg_code" 200
+  _upg_call GET /api/billing/prices "$admin_token"
+  echo "  platform prices: $(echo "$_upg_body" | jq -c '.defaults.current | {cpu_vcpu_hour, memory_gb_hour, cpu_vcpu_month, effective_from, note}' 2>/dev/null)"
+  _upg_check "GET /api/billing/prices answers" _upg_eq "$_upg_code" 200
+  [ -z "$_upg_billed_region" ] || _upg_check "the platform's current prices are the imported ones (0.0432 per vCPU-hour)" \
+    _upg_eq "$(echo "$_upg_body" | jq -r '.defaults.current.cpu_vcpu_hour' 2>/dev/null)" 0.0432
+  if [ -n "$_upg_billed_region" ]; then
+    _upg_call GET /api/billing/regions "$admin_token"
+    _upg_check "GET /api/billing/regions: the shared region's price is its imported one (0.072)" \
+      _upg_eq "$(echo "$_upg_body" | jq -r --arg r "$_upg_billed_region" '.data[] | select(.id == $r) | .prices.cpu_vcpu_hour' 2>/dev/null)" 0.072
+  fi
+  if [ -n "$_upg_billed_charge" ]; then
+    _upg_call GET "/api/billing/tenant-bills?tenant=upgrade-tenant" "$admin_token"
+    _upg_check "GET /api/billing/tenant-bills lists the tenant's legacy bill (closed, 42.50)" \
+      _upg_eq "$(echo "$_upg_body" | jq -r '[.data[] | select(.source == "legacy") | "\(.status)|\(.total)"] | first // empty' 2>/dev/null)" "closed|42.5"
+  fi
+
+  # The tenant administrator's view of the shares: the earlier one active, a new one pending
+  t_admin=$(_upg_mt_login t-admin || true)
+  _upg_tenant="$tenant_id"
+  _upg_call GET /api/billing/region-offers "$t_admin"
+  echo "  region offers (tenant): $(echo "$_upg_body" | jq -c '[.data[]? | {region: .region.name, status, billing_type}]' 2>/dev/null)"
+  _upg_check "GET /api/billing/region-offers answers the tenant administrator" _upg_eq "$_upg_code" 200
+  [ -z "$_upg_billed_region" ] || _upg_check "the earlier share is active for the tenant" \
+    _upg_eq "$(echo "$_upg_body" | jq -r --arg r "$_upg_billed_region" '.data[] | select(.region.id == $r) | .status' 2>/dev/null)" active
+  _upg_tenant=""
+  _upg_plain_region offered
+  offered="$_upg_new_region"
+  _upg_check "a platform region is created on this version" test -n "$offered"
+  [ -n "$offered" ] || return 0
+  _upg_call POST "/api/tenants/${tenant_id}/regions" "$admin_token" "$(jq -nc --arg r "$offered" '{region_id: $r, cpu_quota_m: 500, memory_quota_mb: 512}')"
+  _upg_check "the region is shared with the tenant" _upg_2xx "$_upg_code"
+  _upg_check "with billing on the new share waits for the tenant (tenant_regions.status pending)" \
+    _upg_eq "$(_upg_psql "select status from tenant_regions where knative_region_id = '${offered}'")" pending
+  _upg_tenant="$tenant_id"
+  _upg_call GET /api/billing/region-offers "$t_admin"
+  _upg_check "the tenant administrator sees the offer as pending" \
+    _upg_eq "$(echo "$_upg_body" | jq -r --arg r "$offered" '.data[] | select(.region.id == $r) | .status' 2>/dev/null)" pending
+  _upg_call POST "/api/billing/region-offers/${offered}/accept" "$t_admin" '{"markup_percent": 15}'
+  echo "  accept: HTTP ${_upg_code} $(echo "$_upg_body" | jq -c '.data | {status, markup_percent}' 2>/dev/null || echo "${_upg_body:0:200}")"
+  _upg_check "the tenant administrator accepts the offer with a 15 % markup" \
+    _upg_eq "$(echo "$_upg_body" | jq -r '"\(.data.status)|\(.data.markup_percent)"' 2>/dev/null)" "active|15"
+  _upg_tenant=""
+  _upg_check "the accepted share is active (tenant_regions.status)" \
+    _upg_eq "$(_upg_psql "select status from tenant_regions where knative_region_id = '${offered}'")" active
 }
 
 cmd_test_helm_upgrade() {
@@ -768,6 +995,8 @@ cmd_test_helm_upgrade() {
       --edition=single-tenant) _upg_mt=0; _upg_ui_suffix="" ;;
       --edition=multi-tenant) _upg_mt=1; _upg_ui_suffix="-mt" ;;
       --dedicated-worker) _upg_dedicated=1 ;;
+      --billing) _upg_billing=1 ;;
+      --upgrade-set=*) _upg_upgrade_set+=(--set "${arg#--upgrade-set=}") ;;
       --no-cleanup) _upg_cleanup=0 ;;
       --cleanup) _upg_cleanup=1 ;;
       *) echo "Unknown flag: ${arg}"; return 1 ;;
@@ -811,6 +1040,8 @@ cmd_test_helm_upgrade() {
   echo "  to       : this checkout (${to_api}, ${to_ui})"
   echo "  values   : ${mode} + white-label values"
   echo "  edition  : $([ "$_upg_mt" = "1" ] && echo multi-tenant || echo single-tenant)"
+  echo "  billing  : $([ "$_upg_billing" = "1" ] && echo "billing.enabled=true on the upgrade" || echo off)"
+  [ ${#_upg_upgrade_set[@]} -eq 0 ] || echo "  set      : ${_upg_upgrade_set[*]}"
   echo "  cluster  : ${_upg_cluster} (Kind v${k8s})"
 
   _upg_log "Images"
@@ -902,12 +1133,15 @@ EOF
   local upgrade_started
   upgrade_started=$(date -u +%FT%TZ)
   local helm_status=0
+  [ "$_upg_billing" = "1" ] && _upg_upgrade_set+=(--set billing.enabled=true)
   helm --kubeconfig "$_upg_kubeconfig" upgrade runr "${root}/helm" -n "$_upg_ns" "$mode" \
-    -f "${_upg_tmp}/brand.yaml" \
+    -f "${_upg_tmp}/brand.yaml" "${_upg_upgrade_set[@]}" \
     --set "api.image.repository=${to_api%:*}" --set "api.image.tag=${to_api##*:}" \
     --set "ui.image.repository=${to_ui%:*}" --set "ui.image.tag=${to_ui##*:}" \
     --wait --timeout 15m || helm_status=$?
-  _upg_kubectl -n "$_upg_ns" logs job/runr-bootstrap --tail=60 2>/dev/null | tee "${_upg_tmp}/bootstrap.log" | sed 's/^/  bootstrap: /' || true
+  # the whole log for the checks (a tenancy:migrate line may be further up), its end in the output
+  _upg_kubectl -n "$_upg_ns" logs job/runr-bootstrap > "${_upg_tmp}/bootstrap.log" 2>/dev/null || true
+  tail -n 60 "${_upg_tmp}/bootstrap.log" | sed 's/^/  bootstrap: /' || true
   if [ "$helm_status" != "0" ]; then
     echo -e "${RED}helm upgrade failed (${helm_status})${NC}"
     _upg_kubectl -n "$_upg_ns" get pods,jobs 2>/dev/null || true
@@ -932,6 +1166,17 @@ EOF
   _upg_check "pre-upgrade migration job succeeded" \
     test "$(_upg_kubectl -n "$_upg_ns" get jobs -l app=runr-migrate -o json | jq '[.items[] | select(.metadata.name | startswith("runr-migrate-upgrade")) | .status.succeeded // 0] | add')" -ge 1
   _upg_check "no pending migrations" _upg_no_pending_migrations
+  _upg_check "the bootstrap Job (post-upgrade hook) succeeded" \
+    test "$(_upg_kubectl -n "$_upg_ns" get job runr-bootstrap -o jsonpath='{.status.succeeded}' 2>/dev/null || echo 0)" -ge 1
+  # Horizon dashboard through runr-gateway: a single-use link of runr:horizon-link opens it
+  local hz_link hz_path
+  hz_link=$(_upg_artisan runr:horizon-link 2>/dev/null | head -1 || true)
+  hz_path="/${hz_link#*://*/}"
+  _upg_call GET "$hz_path"
+  _upg_check "Horizon: the link of runr:horizon-link opens the dashboard (${hz_link%%\?*})" \
+    bash -c '[[ "$1" == *"/horizon?"* ]] && [ "$2" = 200 ]' _ "$hz_link" "$_upg_code"
+  _upg_call GET "$hz_path"
+  _upg_check "Horizon: the link works once (second use 403)" _upg_eq "$_upg_code" 403
 
   if [ "$_upg_mt" = "1" ]; then _upg_mt_checks; else _upg_st_checks; fi
 

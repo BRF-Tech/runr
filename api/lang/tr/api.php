@@ -61,6 +61,14 @@ return [
         'function_tls_no_domain' => 'Bölgenin sertifikanın karşılaştırılacağı bir fonksiyon alan adı (knative_domain) yok.',
         'monitoring_url_invalid' => 'Bölge kümesinde bir Service adresi olmalı: http(s)://<servis>.<ad-alanı>.svc[.cluster.local]:<port>[/yol] (en çok 255 karakter).',
         'monitoring_endpoint_forbidden' => 'İzleme uç noktasını yalnız platform yöneticisi ya da kiracı sahibi ayarlayabilir.',
+        'kubeconfig_other_cluster' => 'Bu kubeconfig başka bir kümeye bağlanıyor. Bölgeyi başka bir kümeye taşımak için taşıma kullanın (POST /knative-regions/{id}/migrate).',
+        'serving_upgrade_not_ready' => 'Yükseltmek için Knative Serving kurulu ve hazır olmalı.',
+        'serving_upgrade_unknown_version' => 'Çalışan Knative Serving sürümü henüz bilinmiyor; önce bölge durumunu kontrol edin.',
+        'serving_upgrade_next_minor' => 'Knative her seferinde bir ara sürüm yükseltilir: :current sürümünden :next sürümüne.',
+        'serving_upgrade_unsupported' => 'Küme Knative :version sürümünü desteklemiyor (desteklenen sürümler: GET /knative-regions/{id}/compatible-versions).',
+        'serving_upgrade_started' => 'Knative Serving :version sürümüne yükseltiliyor.',
+        'function_tls_removed' => 'Fonksiyon alan adı TLS\'i kaldırıldı: bölge HTTPS\'e Traefik\'in varsayılan sertifikasıyla yanıt veriyor.',
+        'monitoring_updated' => 'İzleme güncellendi.',
     ],
 
     // ── Demo ──
@@ -100,6 +108,19 @@ return [
         'cpu_invalid' => 'CPU sıfırdan büyük bir Kubernetes miktarı olmalıdır, örn. "250m" ya da "0.5".',
         'timeout_too_long' => 'Zaman aşımı en fazla :max saniye olabilir (:region bölgesinin istek zaman aşımı).',
         'service_type_unsupported' => 'Yalnızca XaaS, FaaS ve CaaS projeleri oluşturulabilir, değiştirilebilir ve dağıtılabilir.',
+        // Durdurma / sürdürme (docs/billing.md#project-stop-and-resume) ve sahiplik
+        'stopped' => 'Bu proje durduruldu; sürdürülene kadar dağıtılamaz. Gerekçe: :reason',
+        'not_deployable' => 'Bu proje dağıtılamaz.',
+        'already_stopped' => 'Bu proje zaten durdurulmuş.',
+        'not_stopped' => 'Bu proje durdurulmuş değil.',
+        'stopped_title' => ':name projesi durduruldu',
+        'resumed_title' => ':name projesi sürdürüldü',
+        'owner_not_allowed' => 'Sahipliği yalnızca proje sahibi ya da proje erişimini yöneten biri devredebilir.',
+        'owner_cannot_see_project' => 'Yeni sahip bu organizasyonun bu projeyi görebilen bir üyesi olmalı.',
+        'owner_assigned_title' => 'Artık :name projesinin sahibisiniz',
+        'owner_assigned_body' => ':name projesinin faturalarını bundan sonra siz ödersiniz; içinde bulunulan ayın faturası da kapandığında size aittir.',
+        'stopped_by_platform' => 'Bu projeyi platform durdurdu: yalnızca bir platform yöneticisi sürdürebilir.',
+        'resume_version_gone' => 'Durdurmadan önce çalışan sürüm artık yok: projeyi yeniden çalıştırmak için bir sürüm dağıtın.',
     ],
 
     // ── Bölge kapasitesi (WithinResourceLimit) ──
@@ -157,6 +178,8 @@ return [
         'cannot_modify_demo' => 'Demo bölge değiştirilemez.',
         'token_expired' => 'Kurulum token\'ı bulunamadı veya süresi dolmuş.',
         'cannot_retry' => 'Yeniden denenemez: kurulum hata durumunda değil.',
+        'remove_internal_first' => 'Bölgede dahili bir kayıt defteri çalışıyor: önce onu kaldırın (DELETE /knative-regions/{id}/registry; imajları birimiyle birlikte silinir).',
+        'setup_started' => 'Kayıt defteri kurulumu başladı.',
     ],
 
     // ── Redis ──
@@ -173,6 +196,8 @@ return [
         'completed' => 'Taşıma tamamlandı.',
         'cannot_rollback' => 'Mevcut durumda taşıma geri alınamaz.',
         'rolled_back' => 'Taşıma geri alındı.',
+        'no_domain_migration' => 'Bölge başka bir temel alan adına taşınmıyor.',
+        'domain_completed' => 'Alan adı taşıması tamamlandı: bölge yeni fonksiyon alan adında yanıt veriyor.',
     ],
 
     // ── Tenant ──
@@ -183,8 +208,6 @@ return [
         'deleting' => 'Bu tenant siliniyor; değişiklik kabul edilmiyor.',
         'deletion_failed' => 'Tenant silme tamamlanamadı: :failures',
         'access_denied' => 'Erişim reddedildi.',
-        'no_context' => 'Aktif tenant bağlamı yok.',
-        'only_owners_admins' => 'Sadece sahipler ve yöneticiler tenant kimliğine bürünebilir.',
         'unauthorized' => 'Yetkisiz tenant erişimi.',
         'admin_required' => 'Yönetici erişimi gerekli.',
         'not_member' => 'Bu tenant\'ın üyesi değilsiniz.',
@@ -197,7 +220,6 @@ return [
             'always_on_exceeded' => ':resource kotası kuruluşun sürekli açık bütçesinde aşılıyor (overcommit yok): :needed gerekiyor, bu bölgedeki :total kotanın :available kadarı boş. Sürekli açık iş yükleri, Kata pod ek yükü, kuyruk tüketicileri ve sandbox\'lar tam sayılır.',
             'faas_exceeded' => ':resource kotası kuruluşun FaaS overcommit bütçesinde aşılıyor: :needed gerekiyor, bu bölgede :total içinden :available boş (kota :capacity × :factor, eksi :reserved sürekli açık).',
         ],
-        'already_impersonating' => 'Zaten kimliğe bürünme oturumu aktif. Önce mevcut oturumu durdurun.',
         'impersonation_started' => 'Kimliğe bürünme başlatıldı.',
         'no_impersonation' => 'Aktif kimliğe bürünme oturumu yok.',
         'impersonation_ended' => 'Kimliğe bürünme sonlandırıldı.',
@@ -241,6 +263,15 @@ return [
         'no_email' => 'Sağlayıcı bir e-posta adresi döndürmedi.',
         'account_not_found' => 'Hesap bulunamadı. Yöneticinize başvurun.',
         'invalid_state' => 'Geçersiz veya süresi dolmuş durum parametresi.',
+        'denied' => 'Giriş sağlayıcıda iptal edildi.',
+        'provider_error' => 'Sağlayıcı girişi tamamlayamadı. Yeniden deneyin ya da yöneticinize başvurun.',
+        'provider_unavailable' => 'Sağlayıcıya şu anda ulaşılamıyor. Daha sonra yeniden deneyin ya da yöneticinize başvurun.',
+        'hosted_domain_mismatch' => ':domain alan adına ait bir hesapla giriş yapın.',
+        'email_unverified' => 'Sağlayıcı bu hesabın e-posta adresini doğrulamamış.',
+        'identity_taken' => 'Bu sağlayıcı hesabı başka bir kullanıcıya bağlı.',
+        'link_invalid' => 'Bağlama isteğinin süresi dolmuş ya da istek zaten kullanılmış. Hesap ayarlarınızdan yeniden başlatın.',
+        'account_linked' => 'Hesap bağlandı.',
+        'already_linked' => 'Bu sağlayıcı hesabı zaten size bağlı.',
     ],
 
     // ── SAML 2.0 ──
@@ -374,17 +405,6 @@ return [
         'postgres_cluster_failed' => ':cluster Postgres kümesi oluşturulamadı.',
         'postgres_cluster_missing' => ':cluster Postgres kümesi yok.',
         'postgres_sql_failed' => 'Postgres işlemi başarısız: :error',
-    ],
-
-    // ── Faturalama ──
-    'billing' => [
-        'invalid_period' => 'Dönemi YYYY-MM biçiminde verin.',
-        'range_too_long' => 'Aralık en fazla :days gün olabilir.',
-        'purchase_ref_taken' => 'Bu external_ref başka bir tenant ya da başka bir satın alma türü için kayıtlı.',
-        'credit_amount_required' => 'Kredi için 0\'dan büyük bir tutar ve para birimi gerekir.',
-        'addon_limits_required' => 'Ek paket için 0\'dan büyük en az bir limit gerekir.',
-        'ends_at_past' => 'ends_at gelecekte bir zaman olmalı.',
-        'webhook_not_configured' => 'Faturalama webhook\'u yapılandırılmamış (Ayarlar → Planlar ve Faturalama ya da BILLING_WEBHOOK_URL).',
     ],
 
     // ── Rate limiting ──

@@ -47,7 +47,9 @@
             "Modules\\AuthProvider\\": "Modules/AuthProvider/app/",
             "Modules\\AuthProvider\\Database\\": "Modules/AuthProvider/Database/",
             "Modules\\Ticket\\": "Modules/Ticket/app/",
-            "Modules\\Ticket\\Database\\": "Modules/Ticket/Database/"
+            "Modules\\Ticket\\Database\\": "Modules/Ticket/Database/",
+            "Modules\\Billing\\": "Modules/Billing/app/",
+            "Modules\\Billing\\Database\\": "Modules/Billing/Database/"
         }
     },
     "autoload-dev": {

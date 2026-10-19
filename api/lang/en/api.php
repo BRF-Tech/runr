@@ -61,6 +61,14 @@ return [
         'function_tls_no_domain' => 'The region has no function domain (knative_domain) to check the certificate against.',
         'monitoring_url_invalid' => 'Must be an in-cluster Service URL of the region cluster: http(s)://<service>.<namespace>.svc[.cluster.local]:<port>[/path] (max. 255 characters).',
         'monitoring_endpoint_forbidden' => 'Only a platform administrator or the tenant owner can set a monitoring endpoint.',
+        'kubeconfig_other_cluster' => 'This kubeconfig reaches another cluster. Move the region to another cluster with a migration (POST /knative-regions/{id}/migrate).',
+        'serving_upgrade_not_ready' => 'Knative Serving has to be installed and ready to be upgraded.',
+        'serving_upgrade_unknown_version' => 'The running Knative Serving version is not known yet; check the region status first.',
+        'serving_upgrade_next_minor' => 'Knative upgrades one minor version at a time: from :current to :next.',
+        'serving_upgrade_unsupported' => 'The cluster does not support Knative :version (GET /knative-regions/{id}/compatible-versions lists what it supports).',
+        'serving_upgrade_started' => 'Knative Serving upgrade to :version started.',
+        'function_tls_removed' => 'Function-domain TLS removed: the region answers HTTPS with its Traefik default certificate.',
+        'monitoring_updated' => 'Monitoring updated.',
     ],
 
     // ── Demo ──
@@ -100,6 +108,19 @@ return [
         'cpu_invalid' => 'CPU must be a Kubernetes quantity greater than zero, e.g. "250m" or "0.5".',
         'timeout_too_long' => 'The timeout may be at most :max seconds (request timeout of region :region).',
         'service_type_unsupported' => 'Only XaaS, FaaS and CaaS projects can be created, changed or deployed.',
+        // Stop / resume (docs/billing.md#project-stop-and-resume) and ownership
+        'stopped' => 'This project is stopped and cannot be deployed until it is resumed. Reason: :reason',
+        'not_deployable' => 'This project cannot be deployed.',
+        'already_stopped' => 'This project is already stopped.',
+        'not_stopped' => 'This project is not stopped.',
+        'stopped_title' => 'Project :name was stopped',
+        'resumed_title' => 'Project :name was resumed',
+        'owner_not_allowed' => 'Only the project owner or someone who manages the project access can transfer the ownership.',
+        'owner_cannot_see_project' => 'The new owner must be a member of this organization who can see this project.',
+        'owner_assigned_title' => 'You are now the owner of :name',
+        'owner_assigned_body' => 'You pay the bills of :name from now on, including the bill of the current month when it closes.',
+        'stopped_by_platform' => 'This project was stopped by the platform: only a platform administrator can resume it.',
+        'resume_version_gone' => 'The version that ran before the stop no longer exists: deploy a version to run the project again.',
     ],
 
     // ── Region capacity (WithinResourceLimit) ──
@@ -157,6 +178,8 @@ return [
         'cannot_modify_demo' => 'Cannot modify demo region.',
         'token_expired' => 'Setup token not found or expired.',
         'cannot_retry' => 'Cannot retry: setup not in error state.',
+        'remove_internal_first' => 'The region runs an internal registry: remove it first (DELETE /knative-regions/{id}/registry; its images go with its volume).',
+        'setup_started' => 'Registry setup started.',
     ],
 
     // ── Redis ──
@@ -173,6 +196,8 @@ return [
         'completed' => 'Migration completed.',
         'cannot_rollback' => 'Migration cannot be rolled back in current state.',
         'rolled_back' => 'Migration rolled back.',
+        'no_domain_migration' => 'The region is not moving to another base domain.',
+        'domain_completed' => 'Domain migration completed: the region answers on its new function domain.',
     ],
 
     // ── Tenant ──
@@ -183,8 +208,6 @@ return [
         'deleting' => 'This tenant is being deleted; changes are not accepted.',
         'deletion_failed' => 'Tenant deletion incomplete: :failures',
         'access_denied' => 'Access denied.',
-        'no_context' => 'No active tenant context.',
-        'only_owners_admins' => 'Only owners and admins can impersonate tenants.',
         'unauthorized' => 'Unauthorized tenant access.',
         'admin_required' => 'Admin access required.',
         'not_member' => 'Not a member of this tenant.',
@@ -197,7 +220,6 @@ return [
             'always_on_exceeded' => ':resource quota exceeded on the organization\'s always-on budget (no overcommit): this needs :needed, :available of the quota :total on this region are free. Always-on workloads, Kata pod overhead, queue consumers and sandboxes count in full.',
             'faas_exceeded' => ':resource quota exceeded on the organization\'s FaaS overcommit budget: this needs :needed, :available of :total are free on this region (quota :capacity × :factor, minus :reserved always-on).',
         ],
-        'already_impersonating' => 'Already impersonating. Stop current session first.',
         'impersonation_started' => 'Impersonation started.',
         'no_impersonation' => 'No active impersonation session.',
         'impersonation_ended' => 'Impersonation ended.',
@@ -241,6 +263,15 @@ return [
         'no_email' => 'Provider did not return an email address.',
         'account_not_found' => 'Account not found. Contact your administrator.',
         'invalid_state' => 'Invalid or expired state parameter.',
+        'denied' => 'The sign-in was cancelled at the provider.',
+        'provider_error' => 'The provider could not complete the sign-in. Try again or contact your administrator.',
+        'provider_unavailable' => 'The provider cannot be reached right now. Try again later or contact your administrator.',
+        'hosted_domain_mismatch' => 'Sign in with an account of :domain.',
+        'email_unverified' => 'The provider has not verified the e-mail address of this account.',
+        'identity_taken' => 'This provider account is already linked to another user.',
+        'link_invalid' => 'The link request has expired or was already used. Start it again from your account settings.',
+        'account_linked' => 'Account linked.',
+        'already_linked' => 'This provider account is already linked to you.',
     ],
 
     // ── SAML 2.0 ──
@@ -374,17 +405,6 @@ return [
         'postgres_cluster_failed' => 'Postgres cluster :cluster could not be created.',
         'postgres_cluster_missing' => 'Postgres cluster :cluster does not exist.',
         'postgres_sql_failed' => 'Postgres operation failed: :error',
-    ],
-
-    // ── Billing ──
-    'billing' => [
-        'invalid_period' => 'Give the period as YYYY-MM.',
-        'range_too_long' => 'The range may span at most :days days.',
-        'purchase_ref_taken' => 'This external_ref is already recorded for another tenant or kind of purchase.',
-        'credit_amount_required' => 'A credit needs an amount above 0 and a currency.',
-        'addon_limits_required' => 'An add-on needs at least one limit above 0.',
-        'ends_at_past' => 'ends_at must lie in the future.',
-        'webhook_not_configured' => 'No billing webhook is configured (Settings → Plans & Billing or BILLING_WEBHOOK_URL).',
     ],
 
     // ── Rate limiting ──

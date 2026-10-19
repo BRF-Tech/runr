@@ -7,16 +7,14 @@ use App\Models\SecureSetting;
 use App\Support\Secrets\SecretColumns;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Route as Router;
-use Modules\Tenancy\Services\Billing\BillingSettings;
 use Tests\Concerns\ActsWithRoles;
 use Tests\Concerns\UsesEncryptionKeys;
 use Tests\TestCase;
 
 /**
- * White-label secrets and the audit log (docs/security.md): secure_settings (billing webhook
- * secret, CAPTCHA secret) are rotated with the other secret columns, settings changes are audited
- * with field names only.
+ * White-label secrets and the audit log (docs/security.md): secure_settings (CAPTCHA secret and
+ * any other platform secret) are rotated with the other secret columns, settings changes are
+ * audited with field names only.
  */
 class WhiteLabelSecretsAuditTest extends TestCase
 {
@@ -39,7 +37,7 @@ class WhiteLabelSecretsAuditTest extends TestCase
     {
         $old = self::newKey();
         $this->useKeys($old);
-        SecureSetting::setValue(BillingSettings::SECRET_WEBHOOK, 'whsec_do_not_leak');
+        SecureSetting::setValue('billing_webhook_secret', 'whsec_do_not_leak');
         SecureSetting::setValue('signup_captcha_secret', 'captcha-do-not-leak');
 
         $new = self::newKey();
@@ -47,12 +45,12 @@ class WhiteLabelSecretsAuditTest extends TestCase
 
         $this->artisan('secrets:encrypt', ['--rotate' => true])->assertSuccessful();
 
-        $this->assertSame('whsec_do_not_leak', $this->encrypterFor($new)->decryptString($this->raw(BillingSettings::SECRET_WEBHOOK)));
+        $this->assertSame('whsec_do_not_leak', $this->encrypterFor($new)->decryptString($this->raw('billing_webhook_secret')));
         $this->assertSame('captcha-do-not-leak', $this->encrypterFor($new)->decryptString($this->raw('signup_captcha_secret')));
 
         // Readable without the previous key now
         $this->useKeys($new);
-        $this->assertSame('whsec_do_not_leak', SecureSetting::getValue(BillingSettings::SECRET_WEBHOOK));
+        $this->assertSame('whsec_do_not_leak', SecureSetting::getValue('billing_webhook_secret'));
     }
 
     public function test_a_signup_settings_change_is_audited_with_field_names_only(): void
@@ -76,27 +74,5 @@ class WhiteLabelSecretsAuditTest extends TestCase
         foreach (AuditEvent::all() as $any) {
             $this->assertStringNotContainsString('captcha-do-not-leak', json_encode($any->getAttributes()));
         }
-    }
-
-    public function test_a_billing_settings_change_is_audited_with_field_names_only(): void
-    {
-        config(['tenancy.enabled' => true]);
-        Router::middleware(['api', 'auth:sanctum'])->prefix('api')->group(base_path('Modules/Tenancy/routes/white-label.php'));
-        $admin = $this->platformAdmin();
-
-        $this->signedIn($admin)->putJson('/api/admin/billing-settings', [
-            'webhook_url' => 'https://billing.example.com/runr',
-            'webhook_secret' => 'whsec-do-not-leak-0123456789',
-        ])->assertOk()
-            ->assertJsonPath('webhook.url', 'https://billing.example.com/runr')
-            ->assertJsonPath('webhook.secret_set', true)
-            ->assertDontSee('whsec-do-not-leak');
-
-        $this->assertSame('whsec-do-not-leak-0123456789', SecureSetting::getValue(BillingSettings::SECRET_WEBHOOK));
-        $this->assertNotSame('whsec-do-not-leak-0123456789', $this->raw(BillingSettings::SECRET_WEBHOOK), 'stored encrypted');
-
-        $event = AuditEvent::where('action', 'billing.settings.update')->sole();
-        $this->assertEqualsCanonicalizing(['webhook_url', 'webhook_secret'], $event->metadata['fields']);
-        $this->assertStringNotContainsString('whsec-do-not-leak', json_encode($event->getAttributes()));
     }
 }

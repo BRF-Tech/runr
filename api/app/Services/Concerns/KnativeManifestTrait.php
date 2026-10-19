@@ -86,7 +86,6 @@ trait KnativeManifestTrait
     private function buildKnativeService(Project $project, Version $version, string $namespace, array $deployConfig = []): array
     {
         $region = $project->knativeRegion;
-        $settings = $region?->effective_settings ?? [];
         $container = $this->withPrivateConnectionEnv($this->withResourceOverrides($this->buildContainer($project, $version, 'http'), $project, $deployConfig), $project);
         $container = $this->withSecretEnv($container, $project);
         // Durable workflows: signing key of a `workflow` trigger project (App\Workflows\Deploy\KnativeWorkflowTrait)
@@ -150,10 +149,9 @@ trait KnativeManifestTrait
             $annotations['autoscaling.knative.dev/max-scale'] = (string) $maxScale;
         }
 
-        $requestTimeout = $settings['request_timeout'] ?? null;
-        if ($requestTimeout) {
-            $annotations['autoscaling.knative.dev/request-timeout'] = (string) $requestTimeout;
-        }
+        // The project's timeout is the revision's timeoutSeconds (spec above), what Knative
+        // enforces; the region's request_timeout caps it (WithinRegionTimeout) and sets what
+        // Traefik and Knative allow (RequestTimeout)
 
         // queue-proxy may burst above its 100m request (every runtime): the pod starts faster —
         // a Kata VM boots inside the pod's CPU limit — and nothing more is reserved

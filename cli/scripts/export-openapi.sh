@@ -5,9 +5,9 @@
 #
 # With PHP and the API's vendor/ present it runs locally; otherwise it runs in the RunR API
 # image ($RUNR_API_IMAGE), which has PHP, its extensions and composer: the current api/ code is
-# copied into the container, its dependencies installed, the Tenancy, AuthProvider and Ticket
-# modules enabled (their routes are in the document, so the contract test checks the
-# multi-tenant endpoints too) and a throw-away SQLite database migrated (Scramble reads model
+# copied into the container, its dependencies installed, the Tenancy, AuthProvider, Ticket and
+# Billing modules enabled (their routes are in the document, so the contract test checks the
+# multi-tenant and billing endpoints too) and a throw-away SQLite database migrated (Scramble reads model
 # columns). A local run documents the modules the local api/ has enabled.
 set -euo pipefail
 
@@ -43,8 +43,9 @@ composer install --no-interaction --no-scripts --ignore-platform-reqs --quiet
 cp .env.example .env
 php artisan package:discover --quiet
 php artisan key:generate --quiet
-for m in Tenancy AuthProvider Ticket; do php artisan module:enable "$m" --quiet; done
+for m in Tenancy AuthProvider Ticket Billing; do php artisan module:enable "$m" --quiet; done
 sed -i "/^TENANCY_ENABLED=/d" .env && echo TENANCY_ENABLED=true >> .env
+sed -i "/^BILLING_ENABLED=/d" .env && echo BILLING_ENABLED=true >> .env
 touch database/database.sqlite
 php artisan migrate --force --quiet
 for d in Modules/*/Database/Migrations; do php artisan migrate --path="$d" --realpath --force --quiet; done

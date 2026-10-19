@@ -1,3 +1,11 @@
+{{- /*
+  The API volume: the code of every project (git/), the project git remotes (git-remotes/) and
+  /storage files, mounted by the API, Horizon, scheduler and Reverb pods and the hook Jobs.
+  ReadWriteOnce (default): attached to one node, so those pods are colocated (podColocation).
+  ReadWriteMany: they run on any node.
+*/}}
+{{- $modes := include "runr.apiStorageAccessModes" . | fromJsonArray }}
+{{- include "runr.pvcGuard" (dict "root" . "name" "runr-api-storage" "modes" $modes "class" .Values.api.storage.storageClassName "field" "api.storage") }}
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
@@ -8,7 +16,7 @@ metadata:
     {{- include "runr.labels" . | nindent 4 }}
 spec:
   accessModes:
-    - ReadWriteOnce
+    {{- toYaml $modes | nindent 4 }}
   resources:
     requests:
       storage: {{ include "runr.apiStorageSize" . }}

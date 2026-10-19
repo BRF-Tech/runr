@@ -1,0 +1,25 @@
+# ci/check-helm-chart.sh: NetworkPolicies on, with the bundled PostgreSQL, Redis and Mailpit — the
+# gateway reachable from the ingress controller's namespace only, outbound connections to the
+# regions plus a region registry's NodePort
+domain: console.acme-cloud.example
+networkPolicy:
+  enabled: true
+  gatewayFrom:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: ingress-nginx
+  egress:
+    to:
+      - ipBlock:
+          cidr: 0.0.0.0/0
+          except: [169.254.169.254/32]
+    ports: [443, 6443]
+  extraEgress:
+    - to:
+        - ipBlock:
+            cidr: 10.20.0.0/16
+      ports:
+        - port: 30500
+          protocol: TCP
+ingress:
+  className: nginx

@@ -15,6 +15,8 @@ class NormalizeApiTags
         'Auth' => 'Auth',
         // Projects
         'Project' => 'Projects',
+        'ProjectOwnership' => 'Projects',
+        'ProjectStop' => 'Projects',
         'Code' => 'Projects > Code',
         'Deployment' => 'Projects > Deployments',
         'Exec' => 'Projects > Exec',

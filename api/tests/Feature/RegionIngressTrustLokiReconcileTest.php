@@ -84,7 +84,14 @@ class RegionIngressTrustLokiReconcileTest extends TestCase
 
         $this->cluster = [
             'traefikRelease' => 'traefik',
-            'traefikArgs' => array_merge(['--entryPoints.web.address=:8000/tcp', '--providers.knative'], self::OLD_TRUST_ARGS),
+            // read / write timeouts already follow the default request_timeout (RequestTimeoutStep
+            // has nothing to do here: RegionRequestTimeoutTest)
+            'traefikArgs' => array_merge(['--entryPoints.web.address=:8000/tcp', '--providers.knative'], self::OLD_TRUST_ARGS, [
+                '--entryPoints.web.transport.respondingTimeouts.readTimeout=310s',
+                '--entryPoints.web.transport.respondingTimeouts.writeTimeout=310s',
+                '--entryPoints.websecure.transport.respondingTimeouts.readTimeout=310s',
+                '--entryPoints.websecure.transport.respondingTimeouts.writeTimeout=310s',
+            ]),
             'lokiConfig' => ['compactor' => ['working_directory' => '/data/loki/boltdb-shipper-compactor', 'shared_store' => 'filesystem'], 'limits_config' => ['reject_old_samples' => true]],
         ];
     }
@@ -327,7 +334,7 @@ class RegionIngressTrustLokiReconcileTest extends TestCase
 
     public function test_up_to_date_installs_are_left_alone(): void
     {
-        $this->cluster['traefikArgs'] = ['--entryPoints.web.address=:8000/tcp', '--providers.knative'];
+        $this->cluster['traefikArgs'] = ['--entryPoints.web.address=:8000/tcp', '--providers.knative', '--entryPoints.web.transport.respondingTimeouts.readTimeout=310s', '--entryPoints.web.transport.respondingTimeouts.writeTimeout=310s', '--entryPoints.websecure.transport.respondingTimeouts.readTimeout=310s', '--entryPoints.websecure.transport.respondingTimeouts.writeTimeout=310s'];
         $this->cluster['lokiConfig'] = array_replace_recursive($this->cluster['lokiConfig'], ManagedLoki::deletionConfig());
         $this->fakeCluster();
         $this->fakeHelm();

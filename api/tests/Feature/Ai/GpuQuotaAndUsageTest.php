@@ -10,18 +10,16 @@ use App\Models\Deployment;
 use App\Models\DeploymentSession;
 use App\Models\KnativeRegion;
 use App\Models\Project;
+use App\Models\UsageRecord;
 use App\Models\User;
 use App\Models\Version;
 use App\Services\Ai\Models\ModelServiceReservations;
 use App\Services\Ai\Models\ModelUsageMeter;
+use App\Services\Metering\UsageAggregator;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
-use Modules\Tenancy\Jobs\UsageAggregationJob;
-use Modules\Tenancy\Models\CostConfig;
 use Modules\Tenancy\Models\Tenant;
-use Modules\Tenancy\Models\UsageRecord;
-use Modules\Tenancy\Services\CostCalculationService;
 use Modules\Tenancy\Services\TenantGpuQuota;
 use Modules\Tenancy\Services\TenantQuotaService;
 use Tests\Concerns\BuildsAiFixtures;
@@ -218,10 +216,9 @@ class GpuQuotaAndUsageTest extends TestCase
         });
     }
 
-    public function test_usage_aggregation_prices_gpu_time(): void
+    public function test_usage_aggregation_meters_gpu_time(): void
     {
-        // multipliers of 1: the entry point surcharge (HTTP × 5 by default) is not what this test prices
-        CostConfig::create(['region_id' => null, 'currency' => 'USD', 'is_active' => true, 'gpu_price_per_unit_ms' => '0.000001', 'cpu_price_per_mc_ms' => 0, 'memory_price_per_mib_ms' => 0, 'multiplier_http' => 1, 'multiplier_queue' => 1, 'multiplier_schedule' => 1]);
+        // Quantities only: the Billing module prices GPU-hours (docs/billing.md)
         Carbon::setTestNow(Carbon::parse('2026-10-11 12:00:00'));
 
         $ids = $this->inTenant(function () {
@@ -237,10 +234,10 @@ class GpuQuotaAndUsageTest extends TestCase
                 ]);
             }
 
-            // custom scale: min_scale 2 × 1 GPU × a day
+            // custom scale: min_scale 2 × 1 GPU × the 12 hours it has run today (ready at midnight)
             $cs = $this->gpuProject('always-on', 1, 2, false);
             $v2 = Version::create(['project_id' => $cs->id, 'number' => 1, 'created_by' => 'dev', 'build_status' => 'ready']);
-            Deployment::create(['project_id' => $cs->id, 'version_id' => $v2->id, 'status' => 'active']);
+            Deployment::create(['project_id' => $cs->id, 'version_id' => $v2->id, 'status' => 'active', 'ready_at' => '2026-10-11 00:00:00']);
 
             // model service: 30 GPU-seconds metered today
             $service = $this->gpuService(1, 0);
@@ -252,7 +249,7 @@ class GpuQuotaAndUsageTest extends TestCase
             return [$stz->id, $cs->id, $service->id];
         });
 
-        (new UsageAggregationJob)->handle(app(CostCalculationService::class));
+        $this->inTenant(fn () => app(UsageAggregator::class)->aggregate('2026-10-11'));
 
         $this->inTenant(function () use ($ids) {
             [$stz, $cs, $service] = $ids;
@@ -260,16 +257,14 @@ class GpuQuotaAndUsageTest extends TestCase
             $stzRecord = UsageRecord::where('project_id', $stz)->first();
             $this->assertSame(180_000, (int) $stzRecord->total_gpu_unit_ms);
             $this->assertSame(1, (int) $stzRecord->gpu_count);
-            $this->assertEqualsWithDelta(0.18, (float) $stzRecord->final_cost, 0.000001);
+            $this->assertSame(0.0, (float) $stzRecord->final_cost, 'no money is calculated by the metering');
 
             $csRecord = UsageRecord::where('project_id', $cs)->first();
-            $this->assertSame(2 * 86_400_000, (int) $csRecord->total_gpu_unit_ms);
-            $this->assertEqualsWithDelta(172.8, (float) $csRecord->final_cost, 0.0001);
+            $this->assertSame(2 * 43_200_000, (int) $csRecord->total_gpu_unit_ms);
 
             $modelRecord = UsageRecord::where('project_id', $service)->first();
             $this->assertSame('model', $modelRecord->source);
             $this->assertSame(30_000, (int) $modelRecord->total_gpu_unit_ms);
-            $this->assertEqualsWithDelta(0.03, (float) $modelRecord->final_cost, 0.000001);
         });
 
         Carbon::setTestNow();

@@ -2,8 +2,10 @@
 
 namespace App\Http\Controllers\Api;
 
+use App\Http\Resources\KnativeRegionResource;
 use App\Jobs\MigrateRegionJob;
 use App\Models\KnativeRegion;
+use App\Services\DomainMigrateService;
 use App\Services\RegionMigrateService;
 use App\Services\Residency\RegionPolicy;
 use Illuminate\Http\JsonResponse;
@@ -49,6 +51,25 @@ class RegionMigrateController extends Controller
         $service->completeMigration($knativeRegion);
 
         return response()->json(['message' => __('api.migration.completed')]);
+    }
+
+    /**
+     * Complete a base-domain migration without waiting for its DNS check: the new function domain
+     * becomes the region's, the old one is no longer served (DomainMigrateService). For DNS the
+     * control plane resolves differently from the clients (split-horizon DNS).
+     */
+    public function completeDomainMigration(KnativeRegion $knativeRegion, DomainMigrateService $service): JsonResponse
+    {
+        if (! $knativeRegion->is_domain_migrating) {
+            return response()->json(['message' => __('api.migration.no_domain_migration')], 422);
+        }
+
+        $service->completeMigration($knativeRegion);
+
+        return response()->json([
+            'message' => __('api.migration.domain_completed'),
+            'region' => new KnativeRegionResource($knativeRegion->fresh()),
+        ]);
     }
 
     public function rollbackMigration(KnativeRegion $knativeRegion, RegionMigrateService $service): JsonResponse

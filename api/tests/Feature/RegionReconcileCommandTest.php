@@ -9,6 +9,7 @@ use App\Services\RegionReconcile\Steps\KnativeServingConfigStep;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Modules\Tenancy\Models\CentralSyncableRegion;
 use Modules\Tenancy\Models\TenantAwareKnativeRegion;
@@ -236,6 +237,61 @@ class RegionReconcileCommandTest extends TestCase
         ));
         $url = $tenant->run(fn () => KnativeRegion::find($ownId)->prometheus_url);
         $this->assertSame(KnativeInstallService::prometheusClusterIpUrl('observability'), $url);
+    }
+
+    public function test_the_status_block_pass_covers_inactive_tenant_owned_regions_in_their_context(): void
+    {
+        $this->setUpTenancy();
+        TenantRegionReconcileSource::register();
+
+        $this->cluster('tenant.test');
+        $this->cluster('copy.test');
+        $this->fakeClusters();
+
+        $tenant = $this->createTenantWithSchema('acme');
+        $tenant->run(function () {
+            $own = $this->region('own', 'tenant.test', ['is_active' => false, 'knative_settings' => ['knative_domain' => 'own.acme.test']]);
+            $this->assertSame('inactive', $own->region_status);
+
+            // A synced copy of a platform region: the central row's pass blocks it
+            $copy = new KnativeRegion([
+                'name' => 'copy', 'kubeconfig' => $this->kubeconfig('copy.test'), 'is_active' => false,
+                'knative_serving_status' => 'ready', 'knative_settings' => ['knative_domain' => 'copy.example.test'],
+            ]);
+            $copy->forceFill(['is_synced' => true])->save();
+        });
+
+        $route = '/apis/traefik.io/v1alpha1/namespaces/knative-serving/ingressroutes/runr-region-block-own';
+
+        $output = $this->reconcile(['--dry-run' => true]);
+        $this->assertStringContainsString('[status-block] region own (tenant acme): would apply the status block knative-serving/runr-region-block-own', $output);
+        $this->assertSame([], $this->writes('tenant.test'), 'dry run');
+
+        $output = $this->reconcile();
+        $this->assertStringContainsString('No regions to reconcile.', $output, 'an inactive region gets no cluster steps');
+        $this->assertStringContainsString('[status-block] region own (tenant acme): applied the status block', $output);
+        $this->assertTrue(collect($this->writes('tenant.test'))->contains(fn ($c) => $c['method'] === 'PATCH' && $c['path'] === $route));
+        $this->assertStringNotContainsString('region copy', $output);
+        $this->assertSame([], $this->writes('copy.test'));
+    }
+
+    public function test_the_tenant_migration_gives_inactive_rows_their_status(): void
+    {
+        $this->setUpTenancy();
+        $tenant = $this->createTenantWithSchema('acme');
+
+        $status = $tenant->run(function () {
+            $region = $this->region('own', 'tenant.test');
+            DB::table('knative_regions')->where('id', $region->id)->update(['is_active' => false, 'region_status' => 'active']);
+            $active = $this->region('live', 'tenant.test');
+
+            (require base_path('Modules/Tenancy/Database/TenantMigrations/0057_sync_inactive_region_status.php'))->up();
+            (require base_path('Modules/Tenancy/Database/TenantMigrations/0057_sync_inactive_region_status.php'))->up();
+
+            return DB::table('knative_regions')->orderBy('name')->pluck('region_status', 'name')->all();
+        });
+
+        $this->assertSame(['live' => 'active', 'own' => 'inactive'], $status);
     }
 
     // ── KnativeServing CR ────────────────────────────────────────────────────

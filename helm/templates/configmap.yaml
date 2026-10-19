@@ -1,3 +1,4 @@
+{{- include "runr.validate" . }}
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -13,7 +14,11 @@ data:
   {{- if .Values.domain }}
   APP_URL: {{ printf "https://%s" .Values.domain | quote }}
   FRONTEND_URL: {{ printf "https://%s" .Values.domain | quote }}
+  # The console is served over https: the session cookie (Horizon dashboard) is sent over https only
+  SESSION_SECURE_COOKIE: "true"
   {{- end }}
+  # CORS (api config/cors.php): the console's own origin (APP_URL / FRONTEND_URL) plus cors.allowedOrigins
+  CORS_ALLOWED_ORIGINS: {{ join "," ((.Values.cors | default dict).allowedOrigins | default list) | quote }}
   LOG_CHANNEL: {{ .Values.app.logChannel | quote }}
 
   # Queue & Cache
@@ -24,6 +29,10 @@ data:
   REDIS_CLIENT: "phpredis"
   REDIS_HOST: {{ .Values.redis.host | default "runr-redis" | quote }}
   REDIS_PORT: {{ .Values.redis.port | quote }}
+  {{- /* ACL user of an external Redis; the password comes from a Secret (runr.secret-env) */}}
+  {{- with .Values.redis.username }}
+  REDIS_USERNAME: {{ . | quote }}
+  {{- end }}
 
   # Reverb
   BROADCAST_CONNECTION: "reverb"
@@ -35,20 +44,30 @@ data:
   REVERB_PORT: {{ .Values.reverb.port | quote }}
   REVERB_SCHEME: "http"
 
-  # Database
-  DB_CONNECTION: {{ .Values.database.driver | quote }}
-  {{- if eq .Values.database.driver "pgsql" }}
+  # Database: PostgreSQL (runr.validate); the password comes from a Secret (runr.secret-env)
+  DB_CONNECTION: "pgsql"
   DB_HOST: {{ .Values.database.host | default "runr-postgres" | quote }}
   DB_PORT: {{ .Values.database.port | quote }}
   DB_DATABASE: {{ .Values.database.name | quote }}
   DB_USERNAME: {{ .Values.database.user | quote }}
-  {{- end }}
 
   # Mail
   MAIL_MAILER: "smtp"
   {{- if .Values.mail.host }}
   MAIL_HOST: {{ .Values.mail.host | quote }}
   MAIL_PORT: {{ .Values.mail.port | quote }}
+  {{- /* SMTP authentication: the user name here, the password from a Secret (runr.secret-env) */}}
+  {{- with .Values.mail.username }}
+  MAIL_USERNAME: {{ . | quote }}
+  {{- end }}
+  {{- /* mail.encryption: "" or starttls — STARTTLS when the server offers it (TLS from the first
+         byte on port 465); tls — TLS from the first byte on any port (smtps) */}}
+  {{- $encryption := toString (.Values.mail.encryption | default "") }}
+  {{- if has $encryption (list "tls" "ssl" "smtps") }}
+  MAIL_SCHEME: "smtps"
+  {{- else if not (has $encryption (list "" "starttls")) }}
+  {{- fail (printf "mail.encryption %q is not supported: use starttls (or empty: STARTTLS when the server offers it) or tls (TLS from the first byte)" $encryption) }}
+  {{- end }}
   {{- else }}
   MAIL_HOST: "runr-mailpit"
   MAIL_PORT: "1025"
@@ -62,6 +81,9 @@ data:
   # AuthProvider
   AUTH_PROVIDER_ENABLED: {{ include "runr.authProviderEnabled" . | quote }}
 
+  # Ticket (values ticket.enabled; helper runr.ticketEnabled, also the hook Jobs' env)
+  TICKET_ENABLED: {{ include "runr.ticketEnabled" . | quote }}
+
   # Audit log retention (0 = keep forever) + SIEM forwarding (values audit.*, api config/audit.php).
   # `--reuse-values` with older values has no audit key → defaults.
   {{- $audit := .Values.audit | default dict }}
@@ -73,13 +95,13 @@ data:
   {{- $auth := .Values.auth | default dict }}
   RUNR_LOGIN_TOKEN_TTL_DAYS: {{ if hasKey $auth "loginTokenTtlDays" }}{{ int $auth.loginTokenTtlDays | toString | quote }}{{ else }}"30"{{ end }}
 
-  # Billing (docs/billing.md): billing events webhook, usage thresholds, store link, plans — the
-  # webhook secret comes from the Secret
+  # Billing module (docs/billing.md, values billing.*): on/off, currency, events webhook — the
+  # webhook secret comes from the Secret (helpers runr.billingEnabled / runr.billingCurrency, also
+  # the hook Jobs' env)
   {{- $billing := .Values.billing | default dict }}
+  BILLING_ENABLED: {{ include "runr.billingEnabled" . | quote }}
+  BILLING_CURRENCY: {{ include "runr.billingCurrency" . | quote }}
   BILLING_WEBHOOK_URL: {{ $billing.webhookUrl | default "" | quote }}
-  BILLING_USAGE_THRESHOLDS: {{ $billing.usageThresholds | default "" | toString | quote }}
-  BILLING_STORE_URL: {{ $billing.storeUrl | default "" | quote }}
-  PLANS_ENABLED: {{ (.Values.plans | default dict).enabled | default false | quote }}
 
   # White-label branding (Settings → Branding overrides it per field). Logos given as a
   # ConfigMap / Secret reference are not here: runr.secret-env sets them with valueFrom.

@@ -13,6 +13,7 @@ use Modules\Ticket\Events\SupportTicketReplied;
 use Modules\Ticket\Events\SupportTicketStatusChanged;
 use Modules\Ticket\Http\Concerns\HandlesTicketAttachments;
 use Modules\Ticket\Models\SupportTicket;
+use Modules\Ticket\Support\TicketStaff;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class AdminSupportTicketController extends Controller
@@ -127,9 +128,14 @@ class AdminSupportTicketController extends Controller
 
     public function downloadAttachment(Request $request, int $id, string $filename): StreamedResponse
     {
-        SupportTicket::findOrFail($id); // Ensure ticket exists
+        // Staff see internal notes: their files too
+        return $this->serveAttachment(SupportTicket::findOrFail($id), $filename, includeInternal: true);
+    }
 
-        return $this->serveAttachment($id, $filename);
+    /** Assignee choices: the members who work the support queue (tickets.manage). */
+    public function staff(): JsonResponse
+    {
+        return response()->json(['data' => TicketStaff::present(TicketStaff::users())]);
     }
 
     public function stats(): JsonResponse

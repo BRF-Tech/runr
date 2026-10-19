@@ -216,7 +216,7 @@ func (c *Client) UpdateRegion(ctx context.Context, regionID string, in RegionUpd
 
 // RegionSettingsKeys are the settings PUT /knative-regions/{region}/settings takes
 // (UpdateRegionSettingsRequest).
-var RegionSettingsKeys = []string{"namespace", "request_timeout", "agent_ws_url", "cert_manager_cluster_issuer", "ingress_trusted_ips"}
+var RegionSettingsKeys = []string{"request_timeout", "agent_ws_url", "cert_manager_cluster_issuer", "ingress_trusted_ips"}
 
 // RegionSettingsAnswer is the answer of PUT /knative-regions/{region}/settings.
 type RegionSettingsAnswer struct {
@@ -225,7 +225,7 @@ type RegionSettingsAnswer struct {
 	Region   *RegionDetail  `json:"region"`
 }
 
-// UpdateRegionSettings merges settings into the region's settings (regions.manage): namespace,
+// UpdateRegionSettings merges settings into the region's settings (regions.manage):
 // request_timeout, agent_ws_url, cert_manager_cluster_issuer, ingress_trusted_ips.
 func (c *Client) UpdateRegionSettings(ctx context.Context, regionID string, settings map[string]any) (*RegionSettingsAnswer, error) {
 	var out RegionSettingsAnswer
@@ -456,6 +456,13 @@ func (c *Client) InstallKnative(ctx context.Context, regionID, component string,
 		return c.regionOperation(ctx, http.MethodPost, regionPath(regionID, "/install-serving"), body)
 	}
 	return nil, fmt.Errorf("unknown Knative component %q", component)
+}
+
+// UpgradeKnativeServing queues the upgrade of a region's Knative Serving to the next minor
+// version (regions.manage): version is one minor above the running one and supported by the
+// cluster (KnativeVersions). The operator follows when it is older.
+func (c *Client) UpgradeKnativeServing(ctx context.Context, regionID, version string) (*RegionOperation, error) {
+	return c.regionOperation(ctx, http.MethodPost, regionPath(regionID, "/upgrade-serving"), map[string]string{"version": version})
 }
 
 // UninstallKnative queues the removal of a Knative component (regions.manage): all, operator

@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net/url"
@@ -382,7 +383,13 @@ func newWhoamiCmd(app *App) *cobra.Command {
 			if err != nil && !errors.Is(err, runr.ErrUnsupported) {
 				app.Warn("could not read the permissions: %v", err)
 			}
-			out := map[string]any{"user": u, "api_url": c.ConsoleURL(), "context": ctxName}
+			// The organization the session works in (multi-tenant installations: the tenant an
+			// API token was created in, or none for a platform administrator outside any)
+			org, multiTenant, err := whoamiOrganization(cmd.Context(), c)
+			if err != nil {
+				app.Warn("could not read the organization: %v", err)
+			}
+			out := map[string]any{"user": u, "api_url": c.ConsoleURL(), "context": ctxName, "organization": org}
 			if perms != nil {
 				out["permissions"] = perms
 			}
@@ -395,6 +402,9 @@ func newWhoamiCmd(app *App) *cobra.Command {
 				t.KV("E-mail", output.Dash(u.Email))
 				t.KV("API", c.ConsoleURL())
 				t.KV("Context", output.Dash(ctxName))
+				if multiTenant {
+					t.KV("Organization", organizationLabel(org))
+				}
 				if login != nil {
 					t.KV("Token expires", tokenExpiryLabel(login.TokenExpiresAt, time.Now()))
 				}
@@ -417,6 +427,31 @@ func newWhoamiCmd(app *App) *cobra.Command {
 			})
 		},
 	}
+}
+
+// whoamiOrganization returns the tenant the session works in. multiTenant is false on a
+// single-tenant installation (no GET /tenant/current); org is nil outside any tenant.
+func whoamiOrganization(ctx context.Context, c *runr.Client) (org *runr.TenantRef, multiTenant bool, err error) {
+	org, err = c.CurrentTenant(ctx)
+	if errors.Is(err, runr.ErrUnsupported) {
+		return nil, false, nil
+	}
+	if err != nil {
+		return nil, false, err
+	}
+	return org, true, nil
+}
+
+// organizationLabel is the Organization line of whoami: "Acme (acme)", or the platform for a
+// platform administrator outside any organization.
+func organizationLabel(org *runr.TenantRef) string {
+	if org == nil {
+		return "platform (no organization)"
+	}
+	if org.Slug == "" || org.Slug == org.Name {
+		return output.Dash(org.Name)
+	}
+	return fmt.Sprintf("%s (%s)", org.Name, org.Slug)
 }
 
 func newContextCmd(app *App) *cobra.Command {

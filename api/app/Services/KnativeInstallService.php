@@ -17,6 +17,7 @@ use App\Services\Concerns\KnativePrometheusTrait;
 use App\Services\Concerns\KnativeTraefikTrait;
 use App\Services\Contracts\KnativeConstants;
 use App\Services\Helpers\IngressTrust;
+use App\Services\Helpers\RequestTimeout;
 use App\Services\Observability\TracingInstallService;
 use Illuminate\Support\Facades\Log;
 use RuntimeException;
@@ -35,7 +36,11 @@ class KnativeInstallService implements KnativeConstants
     // ── Install (legacy full) ────────────────────────────────────────────────
 
     /**
-     * Install Knative via official Helm chart (full pipeline).
+     * Install Knative via official Helm chart (full pipeline): the operator, then Serving. What
+     * already runs on the cluster — another region's Knative on the same cluster, or a Knative
+     * installed before — is adopted instead, as the component installs do: installing the
+     * operator again would first remove it and the Serving CRDs (every Knative Service on the
+     * cluster), applying the KnativeServing again would replace the other region's domain.
      */
     public function install(KnativeRegion $region): void
     {
@@ -45,11 +50,25 @@ class KnativeInstallService implements KnativeConstants
         ]);
 
         try {
-            $this->installOperator($region, $region->knative_operator_namespace ?? self::HELM_NAMESPACE);
-            $this->aggregateLog($region, 'operator');
+            $operatorNs = $region->knative_operator_namespace ?? self::HELM_NAMESPACE;
+            $servingNs = $region->knative_serving_namespace ?? 'knative-serving';
+            $running = $this->runningKnative($region);
 
-            $this->installServing($region, $region->knative_serving_namespace ?? 'knative-serving');
-            $this->aggregateLog($region, 'serving');
+            if ($running['operator']) {
+                $this->adoptOperator($region, $operatorNs);
+                $this->appendLog($region, "Knative Operator already runs in {$operatorNs}: adopted.");
+            } else {
+                $this->installOperator($region, $operatorNs);
+                $this->aggregateLog($region, 'operator');
+            }
+
+            if ($running['serving']) {
+                app(KnativeStatusService::class)->adoptRunningServing($region, $servingNs);
+                $this->appendLog($region, "A Ready KnativeServing already runs in {$servingNs}: adopted.");
+            } else {
+                $this->installServing($region, $servingNs, $region->knative_serving_version);
+                $this->aggregateLog($region, 'serving');
+            }
 
             $statusService = new KnativeStatusService;
             $status = $statusService->checkStatus($region);
@@ -128,7 +147,22 @@ class KnativeInstallService implements KnativeConstants
     }
 
     /**
-     * Install Knative Operator via Helm chart.
+     * The region takes over the Knative Operator that runs on its cluster (runningKnative()).
+     */
+    public function adoptOperator(KnativeRegion $region, string $namespace): void
+    {
+        $region->update([
+            'knative_operator_status' => 'ready',
+            'knative_operator_namespace' => $namespace,
+            'knative_operator_status_message' => 'Adopted from existing cluster installation',
+            'knative_status_checked_at' => now(),
+        ]);
+    }
+
+    /**
+     * Install Knative Operator via Helm chart. An operator that already runs in the namespace
+     * (its Deployments available, the KnativeServing CRD registered) is adopted: the install
+     * starts by removing the previous installation, which must never hit a working one.
      */
     public function installOperator(KnativeRegion $region, string $namespace = 'knative-operator'): void
     {
@@ -145,8 +179,15 @@ class KnativeInstallService implements KnativeConstants
             $k8s = new KubernetesClient($kubeconfig);
             $helm = app(HelmService::class);
 
+            if ($this->runningKnative($region)['operator']) {
+                $this->appendComponentLog($region, 'operator', "Knative Operator already runs in {$namespace}: adopted, nothing installed.");
+                $this->adoptOperator($region, $namespace);
+
+                return;
+            }
+
             $this->appendComponentLog($region, 'operator', 'Cleaning up previous operator installation...');
-            $this->cleanupOperator($region);
+            $this->cleanupOperator($region, keepCrdsInUse: true);
 
             $this->appendComponentLog($region, 'operator', 'Checking for orphaned Helm resources...');
             $this->adoptOrphanedHelmResources($k8s, self::HELM_RELEASE, $namespace);
@@ -215,6 +256,146 @@ class KnativeInstallService implements KnativeConstants
     }
 
     /**
+     * A region's monitoring changed after its Serving install (PUT …/monitoring): RunR's own
+     * Prometheus and / or Loki installed where the region uses them again ($managed: prometheus,
+     * loki — as the Serving install does), the scrape resources for an existing Prometheus
+     * applied ($externalPrometheus). A component switched to an existing instance keeps RunR's
+     * own release running: regions on the same cluster may still use it.
+     *
+     * @param  list<string>  $managed
+     * @return list<string> what was done
+     */
+    public function applyMonitoring(KnativeRegion $region, array $managed, bool $externalPrometheus): array
+    {
+        $k8s = new KubernetesClient($region->kubeconfig);
+        $helm = app(HelmService::class);
+        $servingNs = $region->knative_serving_namespace ?: 'knative-serving';
+        $storageClass = $region->registry_storage_config['storageClass'] ?? '';
+        $done = [];
+
+        if (in_array('prometheus', $managed, true)) {
+            $url = $this->installPrometheus($helm, $k8s, $region->kubeconfig, $servingNs, $storageClass);
+            $region->update(['prometheus_url' => $url, 'prometheus_managed' => true]);
+            $done[] = "RunR's Prometheus installed ({$url})";
+        }
+
+        if (in_array('loki', $managed, true)) {
+            $url = $this->installLoki($helm, $region->kubeconfig, $storageClass);
+            $region->update(['loki_url' => $url, 'loki_managed' => true, 'loki_status' => 'installing', 'loki_org_id' => null]);
+            $done[] = "RunR's Loki installed ({$url})";
+        }
+
+        if ($managed !== []) {
+            $this->applyObservabilityHA($k8s, 'observability');
+        }
+
+        if ($externalPrometheus) {
+            $done[] = $this->applyScrapeResourcesForExternalPrometheus($k8s, $servingNs)
+                ? 'cAdvisor, PodMonitors and runr:* recording rules applied for the existing Prometheus'
+                : 'no Prometheus Operator CRDs: scrape resources not applied';
+        }
+
+        return $done;
+    }
+
+    /**
+     * Upgrade Knative Serving to the next minor version ($version, "1.21"; the controller checks
+     * it is one minor above the running one and supported by the cluster — Knative upgrades one
+     * minor at a time). The operator Helm release moves to that minor's chart first when it is
+     * older (an operator installs the Serving versions up to its own), the Serving CRDs of the
+     * version are applied, then the KnativeServing resource's spec.version is set and the
+     * operator rolls Knative Serving's components; the region's Knative Services keep running.
+     * Regions on the same cluster share Knative Serving: it is upgraded for all of them.
+     */
+    public function upgradeServing(KnativeRegion $region, string $version): void
+    {
+        $version = ltrim($version, 'v');
+        $namespace = $region->knative_serving_namespace ?: 'knative-serving';
+        $operatorNs = $region->knative_operator_namespace ?: self::HELM_NAMESPACE;
+
+        $region->update([
+            'knative_serving_status' => 'installing',
+            'knative_serving_status_message' => '',
+        ]);
+
+        try {
+            $k8s = new KubernetesClient($region->kubeconfig);
+            $helm = app(HelmService::class);
+            $from = $region->knative_serving_version;
+            $this->appendComponentLog($region, 'serving', "Upgrading Knative Serving {$from} → {$version}...");
+
+            $helm->repoAdd(self::HELM_REPO_NAME, self::HELM_REPO_URL);
+            $helm->repoUpdate();
+            $chart = Helpers\KnativeVersionHelper::chartForMinor(Helpers\KnativeVersionHelper::minorOf($version) ?? $version, $helm);
+            if (! $chart) {
+                throw new RuntimeException("No Knative Operator chart for Knative {$version}");
+            }
+
+            $running = $helm->deployedChartVersion(self::HELM_RELEASE, $operatorNs, $region->kubeconfig, 'knative-operator');
+            if ($running === null || version_compare(ltrim($running, 'v'), $chart['chart'], '<')) {
+                $this->appendComponentLog($region, 'serving', 'Upgrading the Knative Operator to chart '.$chart['chart'].($running ? " (from {$running})" : '').'...');
+                $result = HelmService::retryTransient(
+                    fn () => $helm->install(
+                        release: self::HELM_RELEASE,
+                        chart: self::HELM_CHART,
+                        namespace: $operatorNs,
+                        setValues: [],
+                        kubeconfigYaml: $region->kubeconfig,
+                        version: $chart['chart'],
+                    ),
+                    fn (HelmResult $failed, int $next, int $wait) => $this->appendComponentLog(
+                        $region,
+                        'serving',
+                        "Helm upgrade hit a transient Kubernetes API error ({$failed->errorLine()}): try {$next} of ".HelmService::TRANSIENT_TRIES." in {$wait} s...",
+                    ),
+                );
+                if (! $result->success) {
+                    throw new RuntimeException('Knative Operator upgrade failed: '.$result->error);
+                }
+                $this->waitForOperatorReady($k8s, $region);
+            }
+
+            $this->appendComponentLog($region, 'serving', 'Applying the Knative Serving CRDs of '.$chart['app'].'...');
+            $this->installKnativeCrds($k8s, $chart['app']);
+
+            $this->appendComponentLog($region, 'serving', "Setting the KnativeServing version to {$version}...");
+            if (! $k8s->mergePatch('operator.knative.dev/v1beta1', 'KnativeServing', 'knative-serving', $namespace, ['spec' => ['version' => $version]])) {
+                throw new RuntimeException("KnativeServing {$namespace}/knative-serving did not take spec.version {$version}");
+            }
+
+            $ready = $this->waitFor(function () use ($k8s, $namespace, $version) {
+                $cr = $k8s->getResourceStatus('operator.knative.dev/v1beta1', 'KnativeServing', 'knative-serving', $namespace);
+                $running = KnativeStatusService::versionFromServingCr(['status' => $cr['status'] ?? []]);
+
+                return $running !== null
+                    && Helpers\KnativeVersionHelper::minorOf($running) === Helpers\KnativeVersionHelper::minorOf($version)
+                    && $this->isCrReady($k8s, 'KnativeServing', 'knative-serving', $namespace);
+            }, 600, 5);
+
+            if (! $ready) {
+                throw new RuntimeException("Knative Serving did not report {$version} ready within 10 minutes (the operator keeps rolling it out)");
+            }
+
+            $cr = $k8s->getResourceStatus('operator.knative.dev/v1beta1', 'KnativeServing', 'knative-serving', $namespace);
+            $region->update([
+                'knative_serving_version' => KnativeStatusService::versionFromServingCr($cr) ?? $version,
+                'knative_serving_status' => 'ready',
+                'knative_status_checked_at' => now(),
+            ]);
+            $this->appendComponentLog($region, 'serving', 'Knative Serving upgraded to '.$region->fresh()->knative_serving_version.'.');
+        } catch (Throwable $e) {
+            $this->appendComponentLog($region, 'serving', 'ERROR: '.$e->getMessage());
+            $region->update([
+                'knative_serving_status' => 'error',
+                'knative_status_checked_at' => now(),
+            ]);
+            Log::error('Knative Serving upgrade failed', ['region' => $region->name, 'error' => $e->getMessage()]);
+
+            throw $e;
+        }
+    }
+
+    /**
      * Install Knative Serving via Operator CR.
      */
     public function installServing(KnativeRegion $region, string $namespace = 'knative-serving', ?string $version = null): void
@@ -263,7 +444,8 @@ class KnativeInstallService implements KnativeConstants
 
             $this->appendComponentLog($region, 'serving', 'Installing Traefik ingress controller...');
             // PROXY protocol / X-Forwarded-* trusted only from the region's ingress_trusted_ips
-            $this->installTraefik($k8s, $helm, $namespace, $kubeconfig, IngressTrust::forRegion($region));
+            // read / write timeouts of its entry points follow the region's request_timeout
+            $this->installTraefik($k8s, $helm, $namespace, $kubeconfig, IngressTrust::forRegion($region), RequestTimeout::forRegion($region));
 
             if (! empty($region->selected_workers)) {
                 $settings['enable_podspec_features'] = true;
@@ -359,6 +541,13 @@ class KnativeInstallService implements KnativeConstants
                 'knative_serving_status' => 'ready',
                 'knative_status_checked_at' => now(),
             ]);
+
+            // A region created inactive (or set inactive / to maintenance before its Serving was
+            // ready) gets its status block now
+            if (! $region->is_active) {
+                $this->appendComponentLog($region, 'serving', 'Region is '.$region->region_status.': applying the status block...');
+                app(RegionStatusService::class)->syncBlock($region->fresh());
+            }
 
             Log::info('Knative Serving installed', ['region' => $region->name]);
 

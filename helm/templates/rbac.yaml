@@ -31,8 +31,12 @@ metadata:
 
   Hence a ClusterRole with `get` on the kube-system Namespace only and, when the console has a
   TLS Secret, a Role in the release namespace with `get` on that one Secret only. No list/watch,
-  no writes, nothing in any other namespace. Pods that never call the API (reverb, scheduler,
-  migration jobs, ui, gateway, redis, postgres, mailpit) mount no service account token at all.
+  nothing in any other namespace. Pods that never call the API (reverb, scheduler, migration jobs,
+  ui, gateway, redis, postgres, mailpit) mount no service account token at all.
+
+  One write, only with secret.create=false: the bootstrap Job (same ServiceAccount) stores the
+  first administrator's generated password in the Secret runr-admin when your Secret has no
+  ADMIN_PASSWORD — `get` and `patch` on that one Secret (3).
 */}}
 apiVersion: v1
 kind: ServiceAccount
@@ -101,6 +105,39 @@ roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role
   name: runr-api-role
+subjects:
+  - kind: ServiceAccount
+    name: runr-api
+    namespace: {{ include "runr.namespace" . }}
+{{- end }}
+{{- if and (not .Values.secret.create) .Values.bootstrap.enabled }}
+---
+# (3) secret.create=false: the bootstrap Job stores a generated administrator password in runr-admin
+# (secret.yaml) — read and patch that one Secret, nothing else.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: runr-bootstrap-admin
+  namespace: {{ include "runr.namespace" . }}
+  labels:
+    {{- include "runr.labels" . | nindent 4 }}
+rules:
+  - apiGroups: [""]
+    resources: ["secrets"]
+    resourceNames: ["runr-admin"]
+    verbs: ["get", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: runr-bootstrap-admin
+  namespace: {{ include "runr.namespace" . }}
+  labels:
+    {{- include "runr.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: runr-bootstrap-admin
 subjects:
   - kind: ServiceAccount
     name: runr-api

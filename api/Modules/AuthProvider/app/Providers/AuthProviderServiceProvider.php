@@ -4,14 +4,10 @@ namespace Modules\AuthProvider\Providers;
 
 use Dedoc\Scramble\Scramble;
 use Dedoc\Scramble\Support\Generator\Tag;
-use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\ServiceProvider;
 use Modules\AuthProvider\Console\AuthProviderE2eCommand;
 use Modules\AuthProvider\Services\ProviderConfigService;
-use SocialiteProviders\GitLab\GitLabExtendSocialite;
-use SocialiteProviders\Manager\SocialiteWasCalled;
-use SocialiteProviders\Microsoft\MicrosoftExtendSocialite;
 
 class AuthProviderServiceProvider extends ServiceProvider
 {
@@ -35,10 +31,10 @@ class AuthProviderServiceProvider extends ServiceProvider
             return;
         }
 
+        // OAuth / OIDC drivers are built per provider row (SocialiteDriverFactory): no
+        // application-wide `services.<driver>` configuration is involved
         $this->registerRoutes();
         $this->registerCommands();
-        $this->registerSocialiteProviders();
-        $this->registerSocialiteConfigResolver();
         $this->registerApiTags();
     }
 
@@ -64,40 +60,6 @@ class AuthProviderServiceProvider extends ServiceProvider
         if ($this->app->runningInConsole()) {
             $this->commands([AuthProviderE2eCommand::class]);
         }
-    }
-
-    protected function registerSocialiteProviders(): void
-    {
-        $event = SocialiteWasCalled::class;
-
-        if (class_exists(MicrosoftExtendSocialite::class)) {
-            Event::listen($event, MicrosoftExtendSocialite::class);
-        }
-
-        if (class_exists(GitLabExtendSocialite::class)) {
-            Event::listen($event, GitLabExtendSocialite::class);
-        }
-    }
-
-    protected function registerSocialiteConfigResolver(): void
-    {
-        // Dynamically resolve Socialite config from database
-        $configService = $this->app->make(ProviderConfigService::class);
-
-        foreach (config('authprovider.drivers', []) as $driver) {
-            $this->configureSocialiteDriver($driver, $configService);
-        }
-    }
-
-    protected function configureSocialiteDriver(string $driver, ProviderConfigService $configService): void
-    {
-        // Set config dynamically so Socialite can resolve it
-        $this->app->resolving('Laravel\Socialite\SocialiteManager', function ($socialite) use ($driver, $configService) {
-            $config = $configService->resolveConfig($driver);
-            if ($config) {
-                config(["services.{$driver}" => $config]);
-            }
-        });
     }
 
     protected function registerApiTags(): void

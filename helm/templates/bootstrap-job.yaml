@@ -1,4 +1,6 @@
 {{- if .Values.bootstrap.enabled }}
+{{- $bootstrap := .Values.bootstrap | default dict }}
+{{- $tenancySetup := and (eq (include "runr.tenancyEnabled" .) "true") (or (not (hasKey $bootstrap "tenancySetup")) $bootstrap.tenancySetup) }}
 {{/*
   post-install / post-upgrade: the first administrator account (after the migrate hooks)
   - if the admin.username account does NOT exist and there is no other administrator: AdminSeeder (admin.username /
@@ -10,6 +12,11 @@
   - first: reinstalls the region agents that have no token (agent:redeploy --missing, 0.3.3 token auth),
     then brings the existing regions up to this version (region:reconcile), then gives users the previous
     version created during the upgrade a role (rbac:assign-missing)
+  - with tenancy: the pending tenant migrations (tenancy:migrate) of the modules switched on, as a safety net
+  - multi-tenant edition (bootstrap.tenancySetup): converts a single-organization installation into its first
+    tenant (tenancy:setup) before the administrator check; fresh, converted and multi-tenant installations are left
+    alone, a conversion that stopped continues
+  The module switches come as explicit env (runr.module-env), like the migration Jobs'.
   The entrypoint.sh role logic does not run (command override): no migrate / executor:sync / server.
 */}}
 apiVersion: batch/v1
@@ -26,7 +33,8 @@ metadata:
     "helm.sh/hook-delete-policy": before-hook-creation
 spec:
   backoffLimit: 3
-  activeDeadlineSeconds: 600
+  # The steps' time limits add up to about 9 minutes; tenant migrations (tenancy) 2 more, a tenancy conversion 8 more
+  activeDeadlineSeconds: {{ if $tenancySetup }}1200{{ else if eq (include "runr.tenancyEnabled" .) "true" }}720{{ else }}600{{ end }}
   template:
     metadata:
       labels:
@@ -57,6 +65,7 @@ spec:
               toggle Tenancy "${TENANCY_ENABLED:-false}"
               toggle AuthProvider "${AUTH_PROVIDER_ENABLED:-false}"
               toggle Ticket "${TICKET_ENABLED:-true}"
+              toggle Billing "${BILLING_ENABLED:-false}"
 
               # The upgrade can restart the control plane's PostgreSQL (a new image, or the volume moving to another
               # node), and the hook starts without waiting for it: wait until the database accepts connections
@@ -88,6 +97,21 @@ spec:
               # kept serving until they were replaced and created users without one (sign-ups, Users page) — those
               # get the default role here, after the rollout above had time to finish (docs/upgrade.md)
               php artisan rbac:assign-missing || echo "runr-bootstrap: role check skipped (run php artisan rbac:assign-missing)"
+              {{- if eq (include "runr.tenancyEnabled" .) "true" }}
+
+              # Tenant schemas: the pending tenant migrations of the modules switched on above (e.g. the Billing
+              # tables when this upgrade turned billing on). The pre-upgrade migration Job ran them already; this
+              # is the safety net. Errors and the time limit must not block the upgrade (manually: php artisan tenancy:migrate)
+              timeout 120 php artisan tenancy:migrate || echo "runr-bootstrap: tenant migrations incomplete (run php artisan tenancy:migrate)"
+              {{- end }}
+              {{- if $tenancySetup }}
+
+              # Multi-tenant edition: an installation that ran single-tenant becomes its first tenant (docs/tenancy.md →
+              # Converting a single-organization installation). Before the administrator check: a fresh installation
+              # (nothing to convert), a converted one and one that has tenants are left as they are, a conversion that
+              # stopped continues. Errors and the time limit must not block the upgrade (the next run continues).
+              timeout 480 php artisan tenancy:setup --force || echo "runr-bootstrap: run php artisan tenancy:setup"
+              {{- end }}
 
               # 0 = create the administrator, 3 = not needed (the reason is printed), other = error (DB unreachable, etc.)
               set +e
@@ -107,10 +131,30 @@ spec:
                 exit "$rc"
               fi
 
+              {{- if not .Values.secret.create }}
+
+              # secret.create=false and no ADMIN_PASSWORD in {{ .Values.secretName }}: the password is generated here and
+              # stored only in the Secret runr-admin (key password) — never written to this log. A password an
+              # earlier attempt stored there is used again, so the account and the Secret always agree.
+              if [ -z "${ADMIN_PASSWORD:-}" ]; then
+                ADMIN_PASSWORD=$(kubectl -n {{ include "runr.namespace" . }} get secret runr-admin -o jsonpath='{.data.password}' | base64 -d)
+                if [ -z "$ADMIN_PASSWORD" ]; then
+                  ADMIN_PASSWORD=$(php -r 'echo bin2hex(random_bytes(16));')
+                  patch_file=$(mktemp)
+                  printf '{"data":{"password":"%s"}}' "$(printf '%s' "$ADMIN_PASSWORD" | base64 | tr -d '\n')" > "$patch_file"
+                  kubectl -n {{ include "runr.namespace" . }} patch secret runr-admin --type merge --patch-file "$patch_file" >/dev/null
+                  rm -f "$patch_file"
+                fi
+                export ADMIN_PASSWORD
+                echo "runr-bootstrap: the administrator's password is in the Secret runr-admin (key password)"
+              fi
+              {{- end }}
+
               php artisan db:seed --class='Database\Seeders\AdminSeeder' --force
               php -r 'require "vendor/autoload.php"; $app = require "bootstrap/app.php"; $app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap(); $u = App\Models\User::query()->where("username", config("app.admin.username"))->firstOrFail(); if (Illuminate\Support\Facades\Schema::hasColumn($u->getTable(), "is_admin")) { $u->forceFill(["is_admin" => true])->save(); } echo "runr-bootstrap: administrator account created: " . $u->username . PHP_EOL;'
           {{- include "runr.envFrom" . | nindent 10 }}
           env:
+            {{- include "runr.module-env" . | nindent 12 }}
             {{- include "runr.secret-env" . | nindent 12 }}
           volumeMounts:
             - name: api-storage

@@ -15,8 +15,9 @@ use Illuminate\Support\ServiceProvider;
 use Symfony\Component\Mime\Address;
 
 /**
- * White-label: branding, self-service signup (docs/white-label.md). Plans and billing are in the
- * Tenancy module (Modules\Tenancy\Providers\PlanServiceProvider, docs/billing.md).
+ * White-label: branding, self-service signup (docs/white-label.md); the multi-tenant part (tenant
+ * onboarding and branding) is Modules\Tenancy\Providers\TenantWhiteLabelServiceProvider. Billing is
+ * the Billing module (docs/billing.md).
  */
 class WhiteLabelServiceProvider extends ServiceProvider
 {
@@ -31,7 +32,7 @@ class WhiteLabelServiceProvider extends ServiceProvider
     }
 
     /**
-     * Permissions (branding.manage, signup.manage; billing.manage for plans) are catalog
+     * Permissions (branding.manage, signup.manage) are catalog
      * permissions (config/permissions.php) and the routes are authorized by
      * config/route_permissions.php — nothing is defined here.
      */

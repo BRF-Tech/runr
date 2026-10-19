@@ -75,6 +75,28 @@ func TestRegionRegistry(t *testing.T) {
 
 	// The setup token of an unknown setup has expired.
 	h.expectCode(ExitNotFound, "regions", "registry", "setup-status", "no-such-token")
+
+	// A registry for an existing region: external, then (after rm) internal on a named class
+	creds := filepath.Join(dir, "registry.env")
+	write(t, creds, "USERNAME=bot\nPASSWORD=reg-s3cr3t\n")
+	r = h.mustRun("--debug", "regions", "registry", "set", "eu-2", "--registry", "external", "--registry-address", "registry.example.com/team",
+		"--registry-credentials", creds, "--wait")
+	contains(t, r.err, "Registry setup started.")
+	notContains(t, r.err, "reg-s3cr3t")
+	if b := h.srv.CallsTo("POST /knative-regions/{knativeRegion}/registry")[0].Body; b["external_password"] != "reg-s3cr3t" || b["registry_mode"] != "external" {
+		t.Fatalf("registry body = %v", b)
+	}
+	if lc, _ := h.srv.RegionLifecycleOf("eu-2"); !lc.Detail.HasRegistry || lc.Detail.RegistryAddress != "registry.example.com/team" {
+		t.Fatalf("after set = %+v", lc.Detail)
+	}
+	h.mustRun("regions", "registry", "rm", "eu-2", "--yes")
+	h.mustRun("regions", "registry", "set", "eu-2", "--registry", "internal", "--storage-class", "fast-ssd", "--registry-size", "50Gi")
+	if b := h.srv.CallsTo("POST /knative-regions/{knativeRegion}/registry")[1].Body; b["storage_type"] != "pvc" ||
+		b["pvc_config"].(map[string]any)["size"] != "50Gi" {
+		t.Fatalf("internal registry body = %v", b)
+	}
+	h.expectCode(ExitUsage, "regions", "registry", "set", "eu-2", "--registry", "external")
+	h.expectCode(ExitUsage, "regions", "registry", "set", "eu-2", "--registry", "zot")
 }
 
 func TestRegionRegistryTests(t *testing.T) {
@@ -146,6 +168,12 @@ func TestRegionMigration(t *testing.T) {
 	h.expectCode(ExitUsage, "regions", "migration", "rollback", "eu-1")
 	r = h.mustRun("regions", "migration", "rollback", "eu-1", "--yes", "-o", "json")
 	contains(t, r.out, "Migration rolled back.")
+
+	// A move to a new base domain, completed by hand
+	h.expectCode(ExitValidation, "regions", "migration", "complete", "eu-1", "--domain")
+	h.srv.SetRegionDomainMigrating("eu-1", true)
+	r = h.mustRun("regions", "migration", "complete", "eu-1", "--domain")
+	contains(t, r.err, "the region answers on its new function domain")
 }
 
 func TestRegionFunctionTLS(t *testing.T) {
@@ -177,6 +205,14 @@ func TestRegionFunctionTLS(t *testing.T) {
 	h.expectCode(ExitUsage, "regions", "function-tls", "set", "eu-1", "--mode", "custom", "--cert", key, "--key", key)
 	h.expectCode(ExitUsage, "regions", "function-tls", "set", "eu-1", "--mode", "console", "--cert", cert)
 	h.expectCode(ExitUsage, "regions", "function-tls", "set", "eu-1", "--mode", "acme")
+
+	// Off again: the region's default certificate
+	h.expectCode(ExitUsage, "regions", "function-tls", "rm", "eu-1")
+	r = h.mustRun("regions", "function-tls", "rm", "eu-1", "--yes")
+	contains(t, r.err, "Function-domain TLS removed.")
+	if lc, _ := h.srv.RegionLifecycleOf("eu-1"); lc.Detail.FunctionTLSMode != "" {
+		t.Fatalf("after rm = %+v", lc.Detail)
+	}
 }
 
 func TestRegionSkupper(t *testing.T) {

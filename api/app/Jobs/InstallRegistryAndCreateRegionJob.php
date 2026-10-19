@@ -9,6 +9,7 @@ use App\Services\Helpers\MonitoringEndpointAccess;
 use App\Services\KnativeNodeService;
 use App\Services\KnativeRedisService;
 use App\Services\KnativeStatusService;
+use App\Services\RegionRegistrySetup;
 use App\Services\ZotRegistryService;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldBeEncrypted;
@@ -58,78 +59,23 @@ class InstallRegistryAndCreateRegionJob implements ShouldBeEncrypted, ShouldQueu
         $key = "registry_setup:{$this->token}";
 
         try {
-            $mode = $this->config['registry_mode'];
-            $kubeconfig = $this->config['kubeconfig'];
-            $ns = $this->config['registry_namespace'] ?? 'runr-registry';
+            // 1–3. Test the storage / the external registry, label the workers, install Zot
+            $setup = (new RegionRegistrySetup($zot, $nodeService))->run(
+                $this->config['kubeconfig'],
+                $this->config,
+                $this->config['nodes'] ?? [],
+                fn (string $phase) => $this->updateCache($key, $phase === 'zot_install' ? 'installing' : 'testing', $phase),
+            );
+            if (! $setup['ok']) {
+                $this->failCache($key, $setup['phase'], $setup['message']);
 
-            // 1. Test phase
-            if ($mode === 'internal') {
-                $storageType = $this->config['storage_type'];
-
-                // Detect existing Zot registry on cluster → skip install
-                $existing = $zot->detectExisting($kubeconfig, $ns);
-                if ($existing) {
-                    Log::info('Existing Zot registry detected, skipping install', ['address' => $existing['address']]);
-                    $registryAddress = $existing['address'];
-                } else {
-                    if ($storageType === 'pvc') {
-                        $this->updateCache($key, 'testing', 'pvc_test');
-                        $pvcConfig = $this->config['pvc_config'];
-                        $result = $zot->testPvcBound($kubeconfig, $pvcConfig['storageClass'], $pvcConfig['size'], $ns);
-                        if (! $result['success']) {
-                            $this->failCache($key, 'pvc_test', $result['message']);
-
-                            return;
-                        }
-                    }
-
-                    if ($storageType === 's3') {
-                        $this->updateCache($key, 'testing', 's3_test');
-                        $result = $zot->testS3FromPod($kubeconfig, $this->config['s3_config'], $ns);
-                        if (! $result['success']) {
-                            $this->failCache($key, 's3_test', $result['message']);
-
-                            return;
-                        }
-                    }
-
-                    // 2. Label worker nodes BEFORE Zot (DaemonSet needs nodeSelector)
-                    $hasWorkers = ! empty($this->config['nodes']);
-                    if ($hasWorkers) {
-                        $nodeService->labelWorkerNodesByKubeconfig($kubeconfig, $this->config['nodes']);
-                    }
-
-                    // 3. Install Zot
-                    $this->updateCache($key, 'installing', 'zot_install');
-                    $installResult = $zot->install($kubeconfig, [
-                        'namespace' => $ns,
-                        'storage_type' => $storageType,
-                        'storage_config' => $storageType === 'pvc' ? $this->config['pvc_config'] : $this->config['s3_config'],
-                        'workers_only' => $hasWorkers,
-                    ]);
-                    $registryAddress = $installResult['address'];
-                }
-
-            } elseif ($mode === 'external') {
-                $this->updateCache($key, 'testing', 'registry_test');
-                $result = $zot->testExternalRegistry(
-                    $kubeconfig,
-                    $this->config['external_address'],
-                    $this->config['external_username'] ?? null,
-                    $this->config['external_password'] ?? null,
-                    $ns,
-                );
-                if (! $result['success']) {
-                    $this->failCache($key, 'registry_test', $result['message']);
-
-                    return;
-                }
-                $registryAddress = $this->config['external_address'];
+                return;
             }
+            $registryAddress = $setup['address'];
 
             // 4. Create region
             $this->updateCache($key, 'installing', 'region_create');
-            $region = $this->createRegion($statusService, $nodeService, $registryAddress ?? null, $mode);
+            $region = $this->createRegion($statusService, $nodeService, $registryAddress);
 
             Cache::put($key, [
                 'status' => 'ready',
@@ -180,7 +126,7 @@ class InstallRegistryAndCreateRegionJob implements ShouldBeEncrypted, ShouldQueu
         ], $e ?? new \RuntimeException('unknown error'), 'Region creation failed');
     }
 
-    private function createRegion(KnativeStatusService $statusService, KnativeNodeService $nodeService, ?string $registryAddress, string $mode): KnativeRegion
+    private function createRegion(KnativeStatusService $statusService, KnativeNodeService $nodeService, ?string $registryAddress): KnativeRegion
     {
         $projectNs = $this->config['name'];
         $nodeNames = $this->config['nodes'] ?? [];
@@ -189,27 +135,16 @@ class InstallRegistryAndCreateRegionJob implements ShouldBeEncrypted, ShouldQueu
             'name' => $this->config['name'],
             'kubeconfig' => $this->config['kubeconfig'],
             'project_namespace' => $projectNs,
-            'registry_mode' => $mode,
-            'registry_address' => $registryAddress,
-            'registry_status' => 'ready',
-            'registry_namespace' => $this->config['registry_namespace'] ?? 'runr-registry',
-        ];
-
-        if ($mode === 'internal') {
-            $regionData['registry_storage_type'] = $this->config['storage_type'];
-            $regionData['registry_storage_config'] = $this->config['storage_type'] === 'pvc'
-                ? $this->config['pvc_config']
-                : $this->config['s3_config'];
-        }
-
-        if ($mode === 'external') {
-            $regionData['registry_username'] = $this->config['external_username'] ?? null;
-            $regionData['registry_password'] = $this->config['external_password'] ?? null;
-        }
+        ] + array_filter(RegionRegistrySetup::regionAttributes($this->config, $registryAddress), fn ($value) => $value !== null);
 
         // Optional operator-supplied Prometheus/Loki (validated by RegistrySetupRequest): stored
         // with the managed flag off so installServing() does not install RunR's own stack
         $regionData += MonitoringEndpointAccess::regionAttributes($this->config);
+
+        // Region mode chosen in the wizard (only where the table has the column, Tenancy module)
+        if (! empty($this->config['region_mode']) && KnativeRegion::hasRegionMode()) {
+            $regionData['region_mode'] = $this->config['region_mode'];
+        }
 
         $region = KnativeRegion::create($regionData);
 

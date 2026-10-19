@@ -437,6 +437,40 @@ func TestWhoamiShowsPermissions(t *testing.T) {
 	}
 }
 
+func TestWhoamiNamesTheOrganization(t *testing.T) {
+	h := newHarness(t).login()
+
+	// Single-tenant installation: no organization line, organization null
+	r := h.mustRun("whoami")
+	notContains(t, r.out, "Organization:")
+	var single struct {
+		Organization *runr.TenantRef `json:"organization"`
+	}
+	decodeJSON(t, h.mustRun("whoami", "-o", "json").out, &single)
+	if single.Organization != nil {
+		t.Fatalf("single-tenant organization = %+v", single.Organization)
+	}
+
+	// Multi-tenant: the tenant the session works in
+	h.srv.RBACMultiTenant()
+	r = h.mustRun("whoami")
+	contains(t, r.out, "Organization:")
+	contains(t, r.out, "Acme (acme)")
+	var multi struct {
+		Organization *runr.TenantRef `json:"organization"`
+	}
+	decodeJSON(t, h.mustRun("whoami", "-o", "json").out, &multi)
+	if multi.Organization == nil || multi.Organization.Slug != "acme" || multi.Organization.Name != "Acme" || multi.Organization.ID == "" {
+		t.Fatalf("multi-tenant organization = %+v", multi.Organization)
+	}
+
+	// A platform administrator outside any organization
+	h.srv.RBACOutsideTenant()
+	r = h.mustRun("whoami")
+	contains(t, r.out, "platform (no organization)")
+	contains(t, h.mustRun("whoami", "-o", "json").out, `"organization": null`)
+}
+
 func TestWhoamiWithoutRBAC(t *testing.T) {
 	h := newHarness(t).login()
 	h.srv.RBAC = false

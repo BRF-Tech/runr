@@ -42,6 +42,17 @@ type rlcRegion struct {
 	wasmShims                   []string
 	wasmNodes                   []string
 	wasmMessage                 string
+	// domainMigrating: the region moves to a new base domain (SetRegionDomainMigrating)
+	domainMigrating bool
+}
+
+// SetRegionDomainMigrating marks a region as moving to a new base domain.
+func (s *Server) SetRegionDomainMigrating(regionName string, migrating bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if reg := s.regionByName(regionName); reg != nil {
+		s.rlcRegionOf(reg).domainMigrating = migrating
+	}
 }
 
 type rlcSetup struct {
@@ -584,6 +595,34 @@ func init() {
 		})
 		return 200, s.rlcOperation(reg, r, "Serving installation started."), nil
 	})
+	handle("POST /knative-regions/{knativeRegion}/upgrade-serving", func(s *Server, q *featureReq) (int, any, *apiErr) {
+		reg, r, err := s.rlcFind(q)
+		if err != nil {
+			return 0, nil, err
+		}
+		if err := s.rlcMutable(reg, r); err != nil {
+			return 0, nil, err
+		}
+		version := q.str("version")
+		if version == "" {
+			return 0, nil, errValidation("version", "The version field is required.")
+		}
+		if r.d.ServingStatus == runr.KnativeInstalling {
+			return 0, nil, &apiErr{status: 409, message: "An installation is already in progress."}
+		}
+		if r.d.ServingStatus != runr.KnativeReady {
+			return 0, nil, &apiErr{status: 422, message: "Knative Serving has to be installed and ready to be upgraded."}
+		}
+		r.d.ServingStatus, r.d.ServingStatusMessage = runr.KnativeInstalling, "Upgrade to "+version+" queued..."
+		s.rlcStart(r, "serving", func(failed bool, message string) {
+			if failed {
+				r.d.ServingStatus, r.d.ServingStatusMessage = runr.KnativeError, message
+				return
+			}
+			r.d.ServingStatus, r.d.ServingStatusMessage = runr.KnativeReady, "Knative Serving upgraded to "+version+"."
+		})
+		return 200, s.rlcOperation(reg, r, "Knative Serving upgrade to "+version+" started."), nil
+	})
 	handle("POST /knative-regions/{knativeRegion}/uninstall-knative", func(s *Server, q *featureReq) (int, any, *apiErr) {
 		reg, r, err := s.rlcFind(q)
 		if err != nil {
@@ -819,6 +858,41 @@ func init() {
 		r.d.HasRegistry = false
 		return 200, s.rlcResource(reg, r), nil
 	})
+	handle("POST /knative-regions/{knativeRegion}/registry", func(s *Server, q *featureReq) (int, any, *apiErr) {
+		reg, r, err := s.rlcFind(q)
+		if err != nil {
+			return 0, nil, err
+		}
+		if err := s.rlcMutable(reg, r); err != nil {
+			return 0, nil, err
+		}
+		if r.d.RegistryMode == "internal" && r.d.RegistryStatus == runr.KnativeReady {
+			return 0, nil, &apiErr{status: 409, message: "The region runs an internal registry: remove it first."}
+		}
+		mode, address := q.str("registry_mode"), "10.0.0.5:5000"
+		switch mode {
+		case "internal":
+			if q.str("storage_type") != "pvc" && q.str("storage_type") != "s3" {
+				return 0, nil, errValidation("storage_type", "The storage type field is required when registry mode is internal.")
+			}
+		case "external":
+			if address = q.str("external_address"); address == "" {
+				return 0, nil, errValidation("external_address", "The external address field is required when registry mode is external.")
+			}
+		default:
+			return 0, nil, errValidation("registry_mode", "The selected registry mode is invalid.")
+		}
+		r.d.RegistryStatus, r.d.RegistryStatusMessage = runr.KnativeInstalling, "Registry setup queued..."
+		s.rlcStart(r, "registry", func(failed bool, message string) {
+			if failed {
+				r.d.RegistryStatus, r.d.RegistryStatusMessage = runr.KnativeError, message
+				return
+			}
+			r.d.RegistryMode, r.d.RegistryAddress, r.d.RegistryStatus, r.d.RegistryStatusMessage = mode, address, runr.KnativeReady, ""
+			r.d.HasRegistry = true
+		})
+		return 202, s.rlcOperation(reg, r, "Registry setup started."), nil
+	})
 	setup := func(s *Server, q *featureReq, token string) (int, any, *apiErr) {
 		if _, err := s.rlcCheckName(q.Body["name"]); err != nil {
 			return 0, nil, err
@@ -1027,6 +1101,40 @@ func init() {
 		}
 		r.d.FunctionTLSMode, r.d.FunctionTLSExpiresAt = q.str("mode"), "2027-01-14T00:00:00.000000Z"
 		return 200, s.rlcOperation(reg, r, "Function domain TLS updated."), nil
+	})
+	handle("DELETE /knative-regions/{knativeRegion}/function-tls", func(s *Server, q *featureReq) (int, any, *apiErr) {
+		reg, r, err := s.rlcFind(q)
+		if err != nil {
+			return 0, nil, err
+		}
+		if err := s.rlcMutable(reg, r); err != nil {
+			return 0, nil, err
+		}
+		r.d.FunctionTLSMode, r.d.FunctionTLSExpiresAt, r.tlsKey = "", "", ""
+		return 200, s.rlcOperation(reg, r, "Function-domain TLS removed."), nil
+	})
+	handle("PUT /knative-regions/{knativeRegion}/monitoring", func(s *Server, q *featureReq) (int, any, *apiErr) {
+		reg, r, err := s.rlcFind(q)
+		if err != nil {
+			return 0, nil, err
+		}
+		for _, k := range []string{"prometheus_url", "loki_url"} {
+			if v, ok := q.Body[k].(string); ok && !regexp.MustCompile(`^https?://[a-z0-9-]+\.[a-z0-9-]+\.svc(\.cluster\.local)?:\d+(/\S*)?$`).MatchString(v) {
+				return 0, nil, errValidation(k, "Must be an in-cluster Service URL of the region cluster.")
+			}
+		}
+		return 200, s.rlcOperation(reg, r, "Monitoring updated."), nil
+	})
+	handle("POST /knative-regions/{knativeRegion}/complete-domain-migration", func(s *Server, q *featureReq) (int, any, *apiErr) {
+		reg, r, err := s.rlcFind(q)
+		if err != nil {
+			return 0, nil, err
+		}
+		if !r.domainMigrating {
+			return 0, nil, &apiErr{status: 422, message: "The region is not moving to another base domain."}
+		}
+		r.domainMigrating = false
+		return 200, s.rlcOperation(reg, r, "Domain migration completed: the region answers on its new function domain."), nil
 	})
 	handle("GET /knative-regions/{knativeRegion}/skupper", func(s *Server, q *featureReq) (int, any, *apiErr) {
 		reg, r, err := s.rlcFind(q)

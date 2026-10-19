@@ -1,0 +1,27 @@
+# ci/check-helm-chart.sh: external PostgreSQL, SMTP server and Redis with their passwords from
+# Secrets — the database password from a Secret of the operator's, the SMTP and Redis passwords
+# written to the chart's Secret — and a further CORS origin
+domain: console.acme-cloud.example
+database:
+  host: postgres.acme-cloud.example
+  port: "5432"
+  name: runr
+  user: runr
+  existingSecret: acme-postgres
+  existingSecretPasswordKey: runr-password
+mail:
+  host: smtp.acme-cloud.example
+  port: "465"
+  from: runr@acme-cloud.example
+  username: runr@acme-cloud.example
+  password: smtp-example-password
+  encryption: tls
+redis:
+  host: redis.acme-cloud.example
+  port: "6380"
+  username: runr
+  password: redis-example-password
+cors:
+  allowedOrigins:
+    - https://portal.acme-cloud.example
+    - https://status.acme-cloud.example

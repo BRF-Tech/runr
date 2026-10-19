@@ -86,7 +86,8 @@ func TestRegionTraceRedactsKubeconfig(t *testing.T) {
 		t.Fatal(err)
 	}
 	setup := runr.RegistrySetupInput{RegionCreateInput: runr.RegionCreateInput{Name: "eu-3", Kubeconfig: in.Kubeconfig},
-		RegistryMode: "external", ExternalAddress: "registry.example.com", ExternalUsername: "bot", ExternalPassword: "reg-s3cr3t"}
+		RegistryConfig: runr.RegistryConfig{RegistryMode: "external", ExternalAddress: "registry.example.com", ExternalUsername: "bot",
+			ExternalPassword: "reg-s3cr3t"}}
 	if _, err := c.StartRegistrySetup(ctx, setup); err != nil {
 		t.Fatal(err)
 	}

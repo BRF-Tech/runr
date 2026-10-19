@@ -43,6 +43,9 @@ type rbacState struct {
 	edition     string
 	tenantID    string
 	invitations []string
+	// outsideTenant: GET /tenant/current answers without a tenant (a platform administrator
+	// outside any organization).
+	outsideTenant bool
 }
 
 func (s *Server) rbac() *rbacState {
@@ -68,6 +71,14 @@ func (s *Server) RBACMultiTenant() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.rbac().edition = "multi"
+}
+
+// RBACOutsideTenant makes the multi-tenant fake answer as for a platform administrator outside
+// any organization: GET /tenant/current has no tenant.
+func (s *Server) RBACOutsideTenant() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.rbac().outsideTenant = true
 }
 
 // RBACSeedMember adds a member with a role ("" = the default role) and returns it.
@@ -579,8 +590,13 @@ func init() {
 		if st.edition != "multi" {
 			return 0, nil, errNotFound()
 		}
+		if st.outsideTenant {
+			return 200, map[string]any{"tenant": nil, "role": "admin", "mode": "central", "impersonating": false,
+				"tenants": []any{map[string]any{"id": st.tenantID, "name": "Acme", "slug": "acme", "role": "admin", "member": false}}}, nil
+		}
 		return 200, map[string]any{"tenant": map[string]any{"id": st.tenantID, "name": "Acme", "slug": "acme"},
-			"role": runr.RoleOwner, "mode": "tenant", "tenants": []any{}}, nil
+			"role": runr.RoleOwner, "mode": "tenant", "impersonating": false,
+			"tenants": []any{map[string]any{"id": st.tenantID, "name": "Acme", "slug": "acme", "role": runr.RoleOwner, "member": true}}}, nil
 	})
 
 	handle("POST /tenants/{tenant}/users", func(s *Server, q *featureReq) (int, any, *apiErr) {

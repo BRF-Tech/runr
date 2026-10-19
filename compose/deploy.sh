@@ -13,6 +13,9 @@ set -euo pipefail
 #   DEPLOY_USER    SSH user (default: ubuntu)
 #   DEPLOY_DIR     directory of docker-compose.yml on the server (default: /home/$DEPLOY_USER/compose)
 #   REVERB_KEY     Reverb app key baked into the UI build (must equal REVERB_APP_KEY)
+#   TENANCY_ENABLED, AUTH_PROVIDER_ENABLED, TICKET_ENABLED, BILLING_ENABLED
+#                  modules baked into the UI build (default: the server's .env when
+#                  DEPLOY_SERVER is set, else compose/.env, then the docker-compose.yml defaults)
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
@@ -54,11 +57,26 @@ build_api() {
 }
 
 build_ui() {
-  info "Building runr-ui:latest ..."
+  # The modules of the server's API containers: TENANCY_ENABLED / AUTH_PROVIDER_ENABLED /
+  # TICKET_ENABLED / BILLING_ENABLED from the environment, else from the server's .env (DEPLOY_SERVER set) or
+  # compose/.env, else the docker-compose.yml defaults
+  local env_file="$SCRIPT_DIR/.env"
+  mkdir -p "$TAR_DIR"
+  if [ -n "$SERVER" ] && ssh "${SERVER_USER}@${SERVER}" "cat ${SERVER_DIR}/.env" > "$TAR_DIR/server.env" 2>/dev/null; then
+    env_file="$TAR_DIR/server.env"
+  fi
+  # shellcheck source-path=SCRIPTDIR source=modules.sh
+  . "$SCRIPT_DIR/modules.sh"
+  runr_modules "$env_file"
+  info "Building runr-ui:latest (tenancy=${TENANCY_ENABLED} auth-provider=${AUTH_PROVIDER_ENABLED} ticket=${TICKET_ENABLED} billing=${BILLING_ENABLED}) ..."
   docker build \
     --pull \
     --build-arg VITE_WS_PROXY=true \
     --build-arg VITE_REVERB_KEY="${REVERB_KEY}" \
+    --build-arg VITE_TENANCY_ENABLED="${TENANCY_ENABLED}" \
+    --build-arg VITE_AUTH_PROVIDER_ENABLED="${AUTH_PROVIDER_ENABLED}" \
+    --build-arg VITE_TICKET_ENABLED="${TICKET_ENABLED}" \
+    --build-arg VITE_BILLING_ENABLED="${BILLING_ENABLED}" \
     -t "runr-ui:latest" \
     "$PROJECT_ROOT/vue"
   ok "runr-ui:latest"

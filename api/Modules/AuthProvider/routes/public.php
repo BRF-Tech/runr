@@ -6,6 +6,9 @@ use Modules\AuthProvider\Controllers\SamlController;
 
 // Public — no auth required
 Route::get('/auth-providers/discover', [OAuthController::class, 'discover']);
+
+// OAuth / OIDC sign-in ({provider} = driver; ?provider=<auth provider ID> picks one of several
+// providers of the driver; optional ?tenant=<slug>)
 Route::get('/oauth/{provider}/redirect', [OAuthController::class, 'redirect'])
     ->whereIn('provider', array_values(array_diff(config('authprovider.drivers', []), ['saml'])))
     ->middleware('throttle:auth');
