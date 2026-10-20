@@ -10,27 +10,19 @@ use PHPUnit\Framework\TestCase;
  * The region Traefik runs the image of its pinned chart (the chart's appVersion), from the reqs
  * mirror of docker.io/traefik. The nodes pre-pull that image and the Kind e2e loads it into its
  * nodes — both must name what the chart runs, or the pre-pull fetches an image nothing uses and
- * every Traefik replica pulls its own; and the mirror list must copy it.
+ * every Traefik replica pulls its own; and the reqs mirror must hold it (ci/check-reqs-mirror.sh
+ * resolves every reqs reference anonymously; the mirror list is REQS_IMAGES of lib/mirror.sh in
+ * BRF-Tech/runr-runtimes).
  */
 class TraefikImageTest extends TestCase
 {
     public function test_the_image_belongs_to_the_pinned_chart(): void
     {
         // A chart bump changes the image: update TRAEFIK_IMAGE with it (appVersion of the chart)
-        // and its REQS_IMAGES entry (runtime/lib/mirror.sh)
+        // and mirror it first (REQS_IMAGES of lib/mirror.sh in BRF-Tech/runr-runtimes). The mirror
+        // list left this repository with the runtime images; ci/check-reqs-mirror.sh fails while
+        // the image does not resolve on ghcr.io.
         $this->assertSame(['40.3.0', 'ghcr.io/brf-tech/runr/reqs/traefik:v3.7.4'], [KnativeConstants::TRAEFIK_CHART_VERSION, KnativeConstants::TRAEFIK_IMAGE]);
-    }
-
-    public function test_the_mirror_copies_it_from_docker_hub(): void
-    {
-        $mirror = dirname(__DIR__, 3).'/runtime/lib/mirror.sh';
-        if (! is_file($mirror)) {
-            $this->markTestSkipped('runtime/lib/mirror.sh is not part of this checkout');
-        }
-
-        // target|source: ghcr.io/brf-tech/runr/reqs/traefik:<appVersion> from docker.io/traefik:<appVersion>
-        $tag = TraefikImage::version(KnativeConstants::TRAEFIK_IMAGE);
-        $this->assertStringContainsString("\"traefik:{$tag}|traefik:{$tag}\"", (string) file_get_contents($mirror));
     }
 
     public function test_the_nodes_pre_pull_it(): void

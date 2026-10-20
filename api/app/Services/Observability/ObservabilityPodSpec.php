@@ -30,7 +30,7 @@ use App\Services\Wasm\WasmRuntimes;
  */
 class ObservabilityPodSpec
 {
-    /** Image entrypoint of the built-in runtime images (runtime/<id>/Dockerfile, WORKDIR /app). */
+    /** Image entrypoint of the built-in runtime images (BRF-Tech/runr-runtimes, WORKDIR /app). */
     public const BUILTIN_ENTRYPOINT = ['/app/entrypoint.sh'];
 
     public function __construct(

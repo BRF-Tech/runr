@@ -46,7 +46,7 @@ installs `runr` into `/usr/local/bin` when that is writable, else into `~/.local
 
 ```sh
 curl -fsSL https://runr.sh/install.sh | sh
-curl -fsSL https://runr.sh/install.sh | RUNR_VERSION=v0.5.9 sh             # a specific release
+curl -fsSL https://runr.sh/install.sh | RUNR_VERSION=v0.5.10 sh             # a specific release
 curl -fsSL https://runr.sh/install.sh | RUNR_INSTALL_DIR="$HOME/bin" sh    # another directory
 ```
 
@@ -2334,8 +2334,10 @@ region that is not active ([regions](regions.md#moving-a-region-to-another-clust
 — and deploys its projects there again, in the background (`--wait` waits until the move reaches
 the DNS step; exit code 6 when it fails). Then point the region's DNS at the new address and
 `complete` the move, which releases the old cluster, or `rollback` to the old cluster (also after
-a failed move). A region with a data location moves only within it: `--data-location` names the
-new cluster's.
+a failed move), which then removes the projects' functions from the new cluster in the
+background and keeps its installs and data services there
+([regions](regions.md#what-the-rollback-removes-from-the-new-cluster)). A region with a data
+location moves only within it: `--data-location` names the new cluster's.
 
 `runr regions migration [status] REGION` shows the move and, as long as it can be rolled back,
 what it did with each project of the region (`projects` in `-o json`; projects that run nothing
@@ -2451,7 +2453,7 @@ deploy:
   stage: deploy
   image: alpine:3.21
   variables:
-    RUNR_VERSION: v0.5.9
+    RUNR_VERSION: v0.5.10
   before_script:
     - apk add --no-cache curl tar
     - curl -fsSL https://runr.sh/install.sh | sh

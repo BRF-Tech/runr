@@ -94,8 +94,9 @@ class RegionDemoFixesTest extends TestCase
 
     /**
      * Neither handler pre-encodes its own `body` return value. The FaaS runtime
-     * (runtime/php/server.php, runtime/nodejs/server.js) already json_encodes/JSON.stringifies a
-     * non-string body exactly once on the way out, so pre-encoding it in the handler double-
+     * (server.php / server.js of the php and nodejs runtimes, BRF-Tech/runr-runtimes) already
+     * json_encodes/JSON.stringifies a non-string body exactly once on the way out, so
+     * pre-encoding it in the handler double-
      * encoded it — the frontend's backendRes.json() (and, downstream, the browser's res.json())
      * decoded only one of the two layers and got a JSON string back instead of the object.
      */

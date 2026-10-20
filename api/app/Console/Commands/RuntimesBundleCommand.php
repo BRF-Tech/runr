@@ -8,20 +8,21 @@ use Illuminate\Console\Command;
 
 /**
  * Regenerates resources/runtimes/builtin.json — the built-in catalog the API image ships — from
- * runtime/<id>/runtime.yaml. Run it after changing a built-in manifest; --check only reports
- * whether the bundle is current (CI).
+ * runtimes/<id>/runtime.yaml of BRF-Tech/runr-runtimes (RUNR_RUNTIME_CATALOG=<checkout>/runtimes).
+ * Run it after a built-in manifest changes there; --check only reports whether the bundle is
+ * current.
  */
 class RuntimesBundleCommand extends Command
 {
     protected $signature = 'runtimes:bundle {--check : Fail when the bundle differs from the sources instead of writing it}';
 
-    protected $description = 'Bundle the built-in runtime catalog (runtime/*/runtime.yaml) into resources/runtimes/builtin.json';
+    protected $description = 'Bundle the built-in runtime catalog (runtimes/*/runtime.yaml of BRF-Tech/runr-runtimes) into resources/runtimes/builtin.json';
 
     public function handle(BuiltinCatalog $catalog): int
     {
         $dir = BuiltinCatalog::sourceDir();
         if (! $dir) {
-            $this->error('runtime/ with */runtime.yaml not found (set RUNR_RUNTIME_CATALOG to its path).');
+            $this->error('No catalog sources: set RUNR_RUNTIME_CATALOG to the runtimes/ directory of a BRF-Tech/runr-runtimes checkout.');
 
             return 1;
         }

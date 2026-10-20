@@ -197,6 +197,7 @@ return [
         'completed' => 'Migration completed.',
         'cannot_rollback' => 'Migration cannot be rolled back in current state.',
         'rolled_back' => 'Migration rolled back.',
+        'rolled_back_cleanup' => 'Migration rolled back. The project functions the move deployed on the new cluster are removed from it in the background (its installs and data services stay); a notification tells how it went.',
         'no_domain_migration' => 'The region is not moving to another base domain.',
         'domain_completed' => 'Domain migration completed: the region answers on its new function domain.',
     ],

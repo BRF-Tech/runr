@@ -105,7 +105,8 @@ encrypted columns cannot be read.
 - **Git**: the configuration snapshot RunR commits to a project's repository (and mounts into
   the workload as part of the code ConfigMap) lists environment variable names, not values.
 - **Queue payloads**: jobs that carry a kubeconfig, a Redis password or registry credentials
-  (region setup, region migration, Redis install) are encrypted on the queue.
+  (region setup, region migration and the removal of the projects from the cluster a migration
+  rollback leaves, Redis install) are encrypted on the queue.
 - **Shell sessions**: the one-time session configuration the API hands to the WebSocket shell
   through Redis is encrypted.
 - **Queue consumers**: the Redis address and password of a queue-triggered project reach its

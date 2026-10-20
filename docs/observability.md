@@ -708,7 +708,7 @@ Scheduled tasks (`ObservabilityServiceProvider`): `observability:run uptime` eve
 | `Services/Observability/Uptime/UptimeService.php` | Probes, incident state machine, agent checks, uptime statistics |
 | `Services/Observability/StatusPageService.php` | Status page settings, slug / domain lookup, public payload |
 | `Services/Observability/Alerts/*` | Alert manager (dedup, cooldown, delivery), rule evaluation, channels |
-| `runtime/wrapper/observe.go`, `otel*.go`, `proxy.go`, `replay.go` | Wrapper server span, OTLP export, observed http mode, failed-request capture |
+| `wrapper/observe.go`, `otel*.go`, `proxy.go`, `replay.go` (BRF-Tech/runr-runtimes) | Wrapper server span, OTLP export, observed http mode, failed-request capture |
 | `runtime/agent/internal/uptime/prober.go` | Uptime checks run by the region agent |
 | `vue/src/modules/observability/` | Traces, Replay and Uptime tabs; Alerts, Status page and Tracing settings; public status page |
 

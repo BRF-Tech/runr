@@ -45,95 +45,6 @@ do_build() {
   fi
 }
 
-# cmd_build — Discover + EOL check + build images
-
-cmd_build() {
-  local push=0
-  for arg in "$@"; do
-    case "$arg" in
-      --push) push=1 ;;
-    esac
-  done
-
-  echo "Fetching available versions from Docker Hub..."
-  echo ""
-
-  local total=0
-  declare -A DISCOVERED
-
-  for def in "${RUNTIME_DEFS[@]}"; do
-    IFS='|' read -r runtime repo suffix min_ver depth <<< "$def"
-
-    echo -e "${BOLD}── ${runtime} (>= ${min_ver}, ${depth}) ──${NC}"
-    versions=$(discover_versions "$repo" "$suffix" "$min_ver" "$depth")
-
-    if [ -z "$versions" ]; then
-      echo -e "  ${YELLOW}Warning: could not fetch versions from Docker Hub, skipping.${NC}"
-      echo ""
-      continue
-    fi
-
-    if [ "$runtime" = "nodejs" ]; then
-      versions=$(filter_nodejs_lts "$versions")
-    fi
-
-    local active_versions=""
-    for ver in $versions; do
-      local result
-      result=$(check_eol "$runtime" "$ver")
-      local status="${result%%|*}"
-
-      if [ "$status" = "eol" ]; then
-        echo -e "  ${RED}✗ ${ver} (EOL — skipping build)${NC}"
-      else
-        echo -e "  ${GREEN}✓ ${ver}${NC}"
-        active_versions="${active_versions} ${ver}"
-      fi
-    done
-
-    DISCOVERED[$runtime]="$active_versions"
-    echo ""
-  done
-
-  echo "========================================="
-  echo "Starting build..."
-  echo "========================================="
-  echo ""
-
-  for def in "${RUNTIME_DEFS[@]}"; do
-    IFS='|' read -r runtime repo suffix min_ver depth <<< "$def"
-    versions="${DISCOVERED[$runtime]:-}"
-    [ -z "$versions" ] && continue
-
-    for version in $versions; do
-      tag="${REGISTRY}/exec-${runtime}:${version}"
-
-      # Local check: do not skip in push mode (multi-arch rebuild is needed)
-      if [ "$push" = "0" ] && docker image inspect "${tag}" >/dev/null 2>&1; then
-        echo "==> Skipping ${tag} (already exists locally)"
-        echo ""
-        continue
-      fi
-
-      echo "==> Building ${tag}"
-      do_build "${tag}" "${SCRIPT_DIR}/${runtime}" "$push" \
-        --build-arg "VERSION=${version}"
-      total=$((total + 1))
-      echo ""
-    done
-  done
-
-  if [ "$push" = "1" ]; then
-    cleanup_buildx
-  fi
-
-  echo "========================================="
-  echo "Done. ${total} images built."
-  if [ "$push" = "0" ]; then
-    echo "To push: ci.sh build --push"
-  fi
-}
-
 # cmd_build_queue_consumer — Build queue-consumer sidecar image
 cmd_build_queue_consumer() {
   local push=0
@@ -164,39 +75,6 @@ cmd_build_queue_consumer() {
   echo -e "${GREEN}Done.${NC}"
   if [ "$push" = "0" ]; then
     echo "To push: ci.sh queue-consumer --push"
-  fi
-}
-
-# cmd_build_wrapper — Build the universal runtime wrapper image (runr-wrapper, FROM scratch)
-cmd_build_wrapper() {
-  local push=0
-  for arg in "$@"; do
-    case "$arg" in
-      --push) push=1 ;;
-    esac
-  done
-
-  local dir="${SCRIPT_DIR}/wrapper"
-  local tag="${REGISTRY}/wrapper:${WRAPPER_VERSION:-1.1.0}"
-
-  if [ ! -d "$dir" ]; then
-    echo -e "${RED}wrapper directory not found: ${dir}${NC}"
-    exit 1
-  fi
-
-  echo -e "${BOLD}── runr-wrapper (universal runtime wrapper, exec / persistent / http) ──${NC}"
-
-  echo "==> Building ${tag}"
-  do_build "${tag}" "${dir}" "$push"
-
-  if [ "$push" = "1" ]; then
-    cleanup_buildx
-  fi
-
-  echo ""
-  echo -e "${GREEN}Done.${NC}"
-  if [ "$push" = "0" ]; then
-    echo "To push: ci.sh wrapper --push"
   fi
 }
 

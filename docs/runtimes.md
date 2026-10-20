@@ -38,7 +38,7 @@ to — see [Sandboxing, GPUs and RuntimeClasses](#sandboxing-gpus-and-runtimecla
 
 | Source (`source` in the API) | Where it comes from | Who sees it |
 |---|---|---|
-| **Built-in** (`builtin`) | the catalog shipped in the repository, `runtime/<id>/runtime.yaml` (next to the image's Dockerfile and language wrapper) — see [Built-in catalog](#built-in-catalog) | everyone; enabled / disabled and region availability are editable, the manifest follows the release |
+| **Built-in** (`builtin`) | the catalog the API ships (`api/resources/runtimes/builtin.json`), bundled from `runtimes/<id>/runtime.yaml` of [BRF-Tech/runr-runtimes](https://github.com/BRF-Tech/runr-runtimes), next to the image's Dockerfile and language wrapper — see [Built-in catalog](#built-in-catalog) | everyone; enabled / disabled and region availability are editable, the manifest follows the release |
 | **Platform** (`platform`) | registered by a platform administrator in Settings → Runtimes, with `runr runtimes register` or with `POST /api/runtimes` | everyone, in the regions it is available in |
 | **Custom** (`custom`) | registered by a member of an organization when the platform allows custom runtimes | the organization (tenant) that registered it; outside tenant context every user |
 
@@ -253,7 +253,7 @@ program.
 
 ## The universal wrapper
 
-`runr-wrapper` lives in `runtime/wrapper` (Go, standard library only) and ships as the image
+`runr-wrapper` lives in `wrapper/` of [BRF-Tech/runr-runtimes](https://github.com/BRF-Tech/runr-runtimes) (Go, standard library only) and ships as the image
 `ghcr.io/brf-tech/runr/wrapper:<version>` (`FROM scratch`, the binary at `/runr-wrapper`). RunR
 configures it through the environment; an image that wants the wrapper as its own entrypoint
 sets the same variables.
@@ -841,29 +841,31 @@ registers them for hosted MCP servers ([AI agents](mcp.md#templates)).
 
 ## Built-in catalog
 
-The built-in runtimes are manifests in `runtime/<id>/runtime.yaml`, next to each image's
-Dockerfile and language wrapper; `runtime/ci.sh build` builds the python, nodejs, go and php
-images, skipping versions past their end of life, `runtime/ci.sh ml-runtimes` the PyTorch and
-TensorFlow images ([ML runtimes](#ml-runtimes)) and `runtime/ci.sh wasm` the build images of
-the WebAssembly runtimes. Built-in manifests may use `versionDiscovery`
-and `@path` references in `build.files` (a file next to the manifest, inlined when the catalog is
-bundled).
+The built-in runtimes are manifests in `runtimes/<id>/runtime.yaml` of [BRF-Tech/runr-runtimes](https://github.com/BRF-Tech/runr-runtimes), next to each
+image's Dockerfile and language wrapper. That repository builds, smoke-tests and publishes the
+images with GitHub Actions, under the names and tags below: `ci.sh build` the python, nodejs, go
+and php images (skipping versions past their end of life), `ci.sh ml-runtimes` the PyTorch and
+TensorFlow images ([ML runtimes](#ml-runtimes)) and `ci.sh wasm` the build images of the
+WebAssembly runtimes. Built-in manifests may use `versionDiscovery` and `@path` references in
+`build.files` (a file next to the manifest, inlined when the catalog is bundled).
 
-The API image does not contain `runtime/`, so the catalog also ships as
-`api/resources/runtimes/builtin.json`. The API reads `runtime/` directly when the checkout has it
-(`../runtime` from `api/`, which docker compose mounts, or `RUNR_RUNTIME_CATALOG`), else the
-bundle. After changing a built-in manifest, regenerate the bundle:
+The API ships the catalog as `api/resources/runtimes/builtin.json`. It reads the manifests
+directly when `RUNR_RUNTIME_CATALOG` names their directory (`runtimes/` of a runr-runtimes
+checkout), else the bundle. After a built-in manifest changes there, regenerate the bundle in
+this repository:
 
 ```bash
+cd api
+export RUNR_RUNTIME_CATALOG=../../runr-runtimes/runtimes   # a checkout next to this one
 php artisan runtimes:bundle          # writes api/resources/runtimes/builtin.json
-php artisan runtimes:bundle --check  # CI: exit 1 when the bundle differs from runtime/*/runtime.yaml
+php artisan runtimes:bundle --check  # exit 1 when the bundle differs from the manifests
 ```
 
 | Runtime | Mode | Notes |
 |---|---|---|
 | `python`, `nodejs`, `php` | `http`, `schedule: native` | the image's own server (`server.py`, `server.js`, `server.php`) loads `RUNR_FILENAME` from `/app/code` and calls `RUNR_HANDLER(event, context)`; `requirements.txt`, `package.json`, `composer.json` trigger a dependency build in FaaS projects (Composer in the composer image, pinned to the runtime's PHP version) |
 | `pytorch`, `tensorflow` | `http`, `schedule: native` | Python 3.12 images with the ML stack preinstalled (`category: ml`), the same handler server as `python`; a CPU and a `-gpu` version each ([ML runtimes](#ml-runtimes)) |
-| `go` | `http`, `schedule: native`, `build` | the project's `.go` files are compiled together with RunR's Go wrapper for the trigger (`runtime/go/wrapper_http.go` / `wrapper_schedule.go` as `build.files`) into a static binary, `/app/handler` on `ghcr.io/brf-tech/runr/reqs/alpine:3.20` |
+| `go` | `http`, `schedule: native`, `build` | the project's `.go` files are compiled together with RunR's Go wrapper for the trigger (`wrapper_http.go` / `wrapper_schedule.go` of the runtime, as `build.files`) into a static binary, `/app/handler` on `ghcr.io/brf-tech/runr/reqs/alpine:3.20` |
 | `wasm-rust`, `wasm-go`, `wasm-js`, `wasm-python` | `http`, `schedule: native`, `build`, `runtimeClass: wasmtime-spin-v2` | WebAssembly: built into a Spin OCI artifact and run on the Spin shim; offered in regions with WebAssembly support — [wasm.md](wasm.md) |
 | `wasm-exec` | `http`, `schedule: native`, `build`, `runtimeClass: wasmtime-spin-v2`, `wagi` | any WASI preview 1 command module — C / C++ (wasi-sdk), Zig, Go (TinyGo), a `build.sh`, an uploaded `.wasm` — on Spin's WAGI executor (CGI on stdin / stdout) — [wasm.md](wasm.md#wasm-exec) |
 
@@ -897,8 +899,9 @@ The images are built for `linux/amd64`. Being this large (the unpacked size of e
 filesystem above), they are left out of the node pre-pull (below) and pulled by the nodes their
 functions run on.
 
-`runtime/ci.sh ml-runtimes` builds them from `runtime/pytorch` and `runtime/tensorflow`
-(`Dockerfile`, `Dockerfile.gpu`; the handler server comes from `runtime/python`). A version is
+[BRF-Tech/runr-runtimes](https://github.com/BRF-Tech/runr-runtimes) builds them with `ci.sh ml-runtimes` from `runtimes/pytorch` and
+`runtimes/tensorflow` (`Dockerfile`, `Dockerfile.gpu`; the handler server comes from
+`runtimes/python`). A version is
 the major.minor of the framework pin (`torch==2.14.1` in `requirements-torch.txt`,
 `tensorflow-cpu==2.21.0` in `requirements-cpu.txt`); `executor:sync` picks up the published tags
 through `versionDiscovery`. Each build pulls its base image, installs the pinned packages, and
@@ -913,12 +916,16 @@ the output says that the GPU check was skipped. `ML_SMOKE_GPU=1` makes the GPU c
 (the smoke test fails without a GPU), `ML_SMOKE_GPU=0` leaves it out. `--push` builds and
 smoke-tests the images the same way and pushes them only once all of them passed, each one the
 image its smoke test ran (`docker push` of that image ID); `--no-smoke` is for local builds only.
+Its publish workflow pushes the CPU images when their sources change; the heavy-images workflow
+(by hand and weekly) builds and pushes the `-gpu` images on GitHub's runners, which have no GPU:
+there the smoke test checks the CUDA build.
 
 ```bash
-runtime/ci.sh ml-runtimes --list            # the image references
-runtime/ci.sh ml-runtimes pytorch cpu       # one image, built and smoke-tested locally
-ML_SMOKE_GPU=1 runtime/ci.sh ml-runtimes gpu  # the -gpu images, smoke-tested on this host's GPU
-runtime/ci.sh ml-runtimes --push            # build, smoke-test and push all four (linux/amd64)
+# in a checkout of BRF-Tech/runr-runtimes
+./ci.sh ml-runtimes --list            # the image references
+./ci.sh ml-runtimes pytorch cpu       # one image, built and smoke-tested locally
+ML_SMOKE_GPU=1 ./ci.sh ml-runtimes gpu  # the -gpu images, smoke-tested on this host's GPU
+./ci.sh ml-runtimes --push            # build, smoke-test and push all four (linux/amd64)
 ```
 
 **Upgrading.** A migration adds the `runtimes` and `runtime_builds` tables with a built-in row
@@ -933,7 +940,7 @@ until a holder of `runtimes.manage` switches **Custom Runtimes** on.
 | Variable | Default | Meaning |
 |---|---|---|
 | `EXECUTOR_RUNTIMES` | `python,nodejs,go,php,tensorflow,pytorch,wasm-rust,wasm-go,wasm-js,wasm-python,wasm-exec` | built-in runtimes offered on the platform; projects of a built-in left out keep deploying (the Wasm runtimes appear only in regions with WebAssembly support) |
-| `RUNR_RUNTIME_CATALOG` | `../runtime` when present | directory of the built-in catalog sources |
+| `RUNR_RUNTIME_CATALOG` | — (the bundle) | directory of the built-in catalog sources: `runtimes/` of a BRF-Tech/runr-runtimes checkout |
 | `RUNR_WRAPPER_IMAGE` | `ghcr.io/brf-tech/runr/wrapper:1.1.0` | the universal wrapper image for init containers and build Jobs |
 | `BUILD_DEADLINE_SECONDS` | `900` | deadline of a function build Job (Kaniko and WebAssembly toolchain builds; at least 60); the build checks give up a minute later, and a version still building two minutes after the deadline is marked failed |
 
@@ -954,16 +961,16 @@ and region builds are pulled on first use.
   (validation, the image in every region, owner scoping, resolution by digest).
 - **UI**: `cd vue && npx vitest run src/components/project/__tests__ src/components/settings/__tests__ src/utils/__tests__ src/components/__tests__`
   (runtime picker, Settings → Runtimes, helpers, editor language) and `npx playwright test e2e/runtimes.spec.ts`.
-- **Wrapper**: `cd runtime/wrapper && go vet ./... && go test -count=1 ./...` (Linux; the race
-  detector needs `CGO_ENABLED=1`).
+- **Wrapper and runtime images** (in [BRF-Tech/runr-runtimes](https://github.com/BRF-Tech/runr-runtimes)): `cd wrapper && go vet ./... && go test -count=1 ./...`
+  (Linux; the race detector needs `CGO_ENABLED=1`); `for t in test/*_test.sh; do bash "$t"; done`
+  checks `ci.sh` without Docker (the build, smoke-test and push flow of every image, the ML
+  runtimes' smoke tests with and without a GPU); `./ci.sh build python` builds and smoke-tests
+  one runtime locally.
 - **Q interpreter**: `cd examples/runtimes/q/interpreter && go test ./...`.
-- **ML runtime images**: `bash runtime/test/ml_runtimes_test.sh` checks `ci.sh ml-runtimes`
-  without Docker (image list and tags, build flags, smoke test with and without a GPU, the push of
-  exactly the tested images and nothing when one fails);
-  `runtime/ci.sh ml-runtimes` builds the images and smoke-tests each one.
 - **End to end**: `bash runtime/ci.sh test-runtimes` creates a Kind cluster, installs Knative,
-  Redis and the region registry through the API (docker compose), builds the wrapper image from
-  `runtime/wrapper` and loads it into the cluster, copies `examples/runtimes` into the API
+  Redis and the region registry through the API (docker compose), pulls the published wrapper
+  image (the tag pinned in `runtime/lib/runtime-images.sh`; `RUNTIME_IMAGES_LOCAL=1` takes a local
+  build of it) and loads it into the cluster, copies `examples/runtimes` into the API
   container and runs only the runtime plugin suite
   (`php artisan test:e2e --suite=runtimes --examples=/tmp/runr-examples`): the built-in Python
   echo function unchanged, the C example (compiled, exec mode), the Q example (persistent mode,

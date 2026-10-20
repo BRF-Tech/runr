@@ -415,14 +415,14 @@ retired in 0.4.0 (`aaas`, `agentflow`, `maas`) are read-only.
 | `caas` | A container image (a registry reference or an [uploaded image](images.md)), port, command/args | `ContainerConfig` | The image itself as a Knative Service |
 
 Runtimes for `xaas`/`faas` are plugins ([runtimes.md](runtimes.md)): a `runtime.yaml` manifest plus
-a runtime image, from the built-in catalog (`runtime/<id>/`), registered by a platform
+a runtime image, from the built-in catalog (`runtimes/<id>/` of BRF-Tech/runr-runtimes), registered by a platform
 administrator, or registered by an organization (custom). They are `Runtime` rows
 (`RuntimeRegistry`); each version is an `ExecutorImage` row with its runtime image.
 `executor:sync` discovers the versions of the built-in images (`ghcr.io/brf-tech/runr/exec-<runtime>:<version>`)
 and `runtimes:sync` brings the catalog rows and registered versions up to date. The built-in
 catalog holds Python, Node.js, Go, PHP, PyTorch and TensorFlow, and the WebAssembly runtimes
 `wasm-rust`, `wasm-go`, `wasm-js`, `wasm-python` and `wasm-exec` ([wasm.md](wasm.md)). Runtimes in
-`exec` and `persistent` mode run behind the universal wrapper (`runr-wrapper`, `runtime/wrapper`),
+`exec` and `persistent` mode run behind the universal wrapper (`runr-wrapper`, `wrapper/` of BRF-Tech/runr-runtimes),
 which an init container copies into code-mounted pods. A runtime version past its end-of-life
 date can no longer be deployed.
 

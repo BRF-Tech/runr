@@ -9,6 +9,7 @@ use App\Jobs\BuildVersionJob;
 use App\Jobs\GitDeploy\BuildPreviewJob;
 use App\Jobs\GitDeploy\DeployPreviewJob;
 use App\Jobs\ProcessQueuedDeployJob;
+use App\Jobs\RemoveLeftClusterWorkloadsJob;
 use App\Models\BindingRegionService;
 use App\Models\Deployment;
 use App\Models\Git\GitDeploy;
@@ -558,8 +559,15 @@ class RegionMigrateService
      * and its deploy that still waits is cancelled; a build still running on the new cluster is
      * cancelled (settleBuilds()). The runtime image builds come back as they were
      * (RUNTIME_BUILDS).
+     *
+     * The cluster the rollback leaves keeps the cluster installs and the data services the move put
+     * there, but not the projects' workloads: removed from it in the background
+     * (removeFromLeftCluster()), with its kubeconfig read here, before the old one replaces it.
+     *
+     * @param  string|null  $initiatorId  the user who rolled back: told how the removal went
+     * @return bool whether the removal from the cluster the rollback left was queued
      */
-    public function rollbackMigration(KnativeRegion $region): void
+    public function rollbackMigration(KnativeRegion $region, ?string $initiatorId = null): bool
     {
         $oldKubeconfig = $region->migration_old_kubeconfig;
         $oldIp = $region->migration_old_ip;
@@ -605,6 +613,58 @@ class RegionMigrateService
         $this->restoreProjectsNotMoved($region, $leftRegistry);
         $this->withCopies($region, fn (KnativeRegion $local) => $this->movePreviews($local, true, $otherCluster ? $leftCluster : null));
         $this->broadcast($region);
+
+        return $this->removeFromLeftCluster($region, $otherCluster ? $leftCluster : null, $initiatorId);
+    }
+
+    /**
+     * The project workloads the move deployed on the cluster the rollback leaves — the Knative
+     * Services of the projects and of their previews, CronJobs, queue consumers and what they read
+     * (LeftClusterCleanup) — would keep serving there on that cluster's own address, metered by
+     * nothing. They are removed by a queued job (RemoveLeftClusterWorkloadsJob, a few attempts, the
+     * kubeconfig encrypted on the queue): for every project on the region, in a multi-tenant
+     * install the organizations' on a platform region too (withCopies()), a project created while
+     * the region ran there included. The installs and the data services stay. Best effort: the
+     * rollback is done whether or not that cluster answers; the job reports the result.
+     *
+     * Not for a move to the same cluster ($leftCluster null: the same API server; the job compares
+     * the clusters' kube-system namespaces too) — the rollback's redeploys run there.
+     *
+     * @return bool whether the job was queued
+     */
+    private function removeFromLeftCluster(KnativeRegion $region, ?string $leftCluster, ?string $initiatorId): bool
+    {
+        if ($leftCluster === null || $leftCluster === '') {
+            Log::info("RegionMigrate: the rollback of {$region->name} leaves no other cluster (the same API server): nothing is removed there");
+
+            return false;
+        }
+
+        try {
+            $targets = [];
+            $this->withCopies($region, function (KnativeRegion $local) use (&$targets) {
+                $namespace = (string) ($local->project_namespace ?? $local->name);
+                foreach ($this->projectsOn($local) as $project) {
+                    $names = $this->deployer->workloadNames($project);
+                    $targets[$namespace][(string) $project->id] = [
+                        'slug' => (string) $project->slug,
+                        'secrets' => [$names['secretEnv'], $names['queueConsumerSecret']],
+                    ];
+                }
+            });
+            if ($targets === []) {
+                return false;
+            }
+
+            RemoveLeftClusterWorkloadsJob::dispatch($region, $leftCluster, $targets, $initiatorId);
+        } catch (\Throwable $e) {
+            // Queued: its own failure is reported by the job (a synchronous queue runs it here)
+            Log::warning("RegionMigrate: the project workloads on the cluster {$region->name} left are not removed", ['error' => $e->getMessage()]);
+
+            return false;
+        }
+
+        return true;
     }
 
     /**

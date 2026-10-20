@@ -5,16 +5,14 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # ── Load the lib files ──
 source "${SCRIPT_DIR}/lib/common.sh"
+source "${SCRIPT_DIR}/lib/runtime-images.sh"
 source "${SCRIPT_DIR}/lib/build.sh"
-source "${SCRIPT_DIR}/lib/mirror.sh"
-source "${SCRIPT_DIR}/lib/eol.sh"
 source "${SCRIPT_DIR}/lib/test.sh"
 source "${SCRIPT_DIR}/lib/test-runtimes.sh"
 source "${SCRIPT_DIR}/lib/test-observability.sh"
 source "${SCRIPT_DIR}/lib/test-reconcile.sh"
 source "${SCRIPT_DIR}/lib/test-wasm.sh"
 source "${SCRIPT_DIR}/lib/build-wasm.sh"
-source "${SCRIPT_DIR}/lib/build-ml.sh"
 source "${SCRIPT_DIR}/lib/test-sandbox-api.sh"
 source "${SCRIPT_DIR}/lib/test-supply-chain.sh"
 source "${SCRIPT_DIR}/lib/test-ai.sh"
@@ -37,22 +35,18 @@ cmd_help() {
   cat <<EOF
 Usage: ci.sh <command> [flags]
 
+The runtime images (exec-*, wrapper, hf-serve) and the reqs mirror are built and published by
+BRF-Tech/runr-runtimes (https://github.com/BRF-Tech/runr-runtimes): its ci.sh has the build,
+wrapper, wasm, ml-runtimes, mirror-reqs, mirror-bases and eol commands. The e2e suites here pull
+the runtime images at the tags pinned in lib/runtime-images.sh (RUNTIME_IMAGES_LOCAL=1: a local
+build of them).
+
 Commands:
-  build [--push]                      Discover + build images (skip EOL ones)
   queue-consumer [--push]             Build + push the queue-consumer image
-  wrapper [--push]                    Build + push the universal runtime wrapper image (runr-wrapper)
-  wasm [--push] [lang...]             WebAssembly runtime build images (exec-wasm-rust|go|js|python|exec) build + push
   wasm-shim [--push]                  The Spin shim RunR installs on region nodes (containerd-shim-spin, runtime/wasm-shim-spin)
-  ml-runtimes [--push] [--list] [--no-smoke] [pytorch|tensorflow] [cpu|gpu]
-                                      PyTorch / TensorFlow runtime images, CPU and -gpu (linux/amd64);
-                                      every image is smoke-tested (--push pushes them once all passed),
-                                      --list prints the image references
   supply-chain [--push]               Supply-chain tools image (runr-supply-chain: syft, trivy, cosign, oras)
   image-upload [--push]               Image upload receiver (runr-image-upload: chunks → region registry)
   build-agent [--push]                Build + push the RunR monitoring agent image
-  mirror-reqs [--dry-run] [image...]  Multi-arch mirror of the upstream reqs images (all, or the ones named)
-  mirror-bases [--dry-run]            Multi-arch mirror of the runtime base images
-  eol [--prune] [--yes]               EOL check of the GHCR exec-* images + optional cleanup
   test-image [--push]                 Build + push the CaaS test image (nginx-test)
   test [--k8s=X.Y.Z] [--no-cleanup]  Kind cluster + Knative + e2e test (runtime plugins included)
   test-runtimes [test flags]          Kind + Knative, runtime plugin e2e only (python, C, Q, schedule, queue)
@@ -101,18 +95,11 @@ Commands:
 
 Environment:
   PLATFORMS       Build platforms (default: linux/amd64,linux/arm64)
-  REQS_UPSTREAMS  Mirror sources in order (default: docker.io mirror.gcr.io public.ecr.aws/docker);
-                  a Docker Hub mirror is copied from only by Docker Hub's digest
+  RUNTIME_IMAGES_REGISTRY  Where the e2e suites pull the runtime images from (default: ghcr.io/brf-tech/runr)
+  RUNTIME_IMAGES_LOCAL     1: a runtime image this host has (a local build of BRF-Tech/runr-runtimes)
+                  is used as it is, not pulled
 
 Examples:
-  ci.sh build                    Build only (local, single platform)
-  ci.sh build --push             Build + push (multi-arch: amd64+arm64)
-  ci.sh mirror-reqs              Upstream reqs → ghcr multi-arch mirror
-  ci.sh mirror-reqs --dry-run    Show the mirror list (no push)
-  ci.sh mirror-bases             Mirror the runtime base images
-  ci.sh mirror-bases --dry-run   Show the base image list (no push)
-  ci.sh eol                      Show the EOL report
-  ci.sh eol --prune --yes        Delete EOL tags from GHCR (GHCR_TOKEN)
   ci.sh test-image --push        nginx-test build + push
   ci.sh test --k8s=1.32.0       e2e test with Kind
   ci.sh test-helm-upgrade        main's release → this checkout through helm upgrade
@@ -143,18 +130,12 @@ command="${1:-help}"
 shift || true
 
 case "$command" in
-  build)           cmd_build "$@" ;;
+  build|wrapper|wasm|ml-runtimes|mirror-reqs|mirror-bases|eol) cmd_moved_to_runtimes "$command" ;;
   queue-consumer)  cmd_build_queue_consumer "$@" ;;
-  wrapper)         cmd_build_wrapper "$@" ;;
-  wasm)            cmd_build_wasm "$@" ;;
   wasm-shim)       cmd_build_wasm_shim "$@" ;;
-  ml-runtimes)     cmd_build_ml_runtimes "$@" ;;
   supply-chain)    cmd_build_supply_chain "$@" ;;
   image-upload)    cmd_build_image_upload "$@" ;;
   build-agent)     cmd_build_agent "$@" ;;
-  mirror-reqs)     cmd_mirror_reqs "$@" ;;
-  mirror-bases)    cmd_mirror_bases "$@" ;;
-  eol)             cmd_eol "$@" ;;
   test-image)      cmd_test_image "$@" ;;
   test)            cmd_test "$@" ;;
   test-runtimes)   cmd_test_runtimes "$@" ;;
@@ -169,6 +150,7 @@ case "$command" in
   test-images)     cmd_test_images "$@" ;;
   test-mcp)        cmd_test_mcp "$@" ;;
   test-admission)  cmd_test_admission "$@" ;;
+  test-region-move) source "${SCRIPT_DIR}/lib/test-region-move.sh"; cmd_test_region_move "$@" ;;
   test-helm-upgrade) cmd_test_helm_upgrade "$@" ;;
   test-tenancy)        cmd_test_tenancy "$@" ;;
   test-authprovider)   cmd_test_authprovider "$@" ;;

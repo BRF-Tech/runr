@@ -67,9 +67,9 @@ class MlRuntimeVersionsTest extends TestCase
             ['tensorflow', '2.21-gpu', 'ghcr.io/brf-tech/runr/exec-tensorflow:2.21-gpu', false, true, 'ml'],
         ], $rows);
 
-        // the tags runtime/ci.sh ml-runtimes builds: the framework pins' major.minor
-        $this->assertMatchesRegularExpression('/^torch==2\.14\.\d+$/m', (string) file_get_contents(base_path('../runtime/pytorch/requirements-torch.txt')));
-        $this->assertMatchesRegularExpression('/^tensorflow-cpu==2\.21\.\d+$/m', (string) file_get_contents(base_path('../runtime/tensorflow/requirements-cpu.txt')));
+        // These are the tags BRF-Tech/runr-runtimes publishes (`ci.sh ml-runtimes --list` there: the
+        // framework pins' major.minor). The pins left this repository with the images; that
+        // repository's test/ml_runtimes_test.sh checks the tags against them.
     }
 
     public function test_ml_runtime_images_are_not_pre_pulled_but_stay_platform_images(): void

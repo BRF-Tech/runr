@@ -3,11 +3,12 @@
 namespace App\Services\Runtimes;
 
 /**
- * The built-in runtime catalog: runtime/<id>/runtime.yaml next to each runtime's Dockerfile and
- * wrapper. The API image does not contain runtime/, so the catalog is also shipped as
- * resources/runtimes/builtin.json (php artisan runtimes:bundle; a test keeps both identical).
- * Where runtime/ is present (repository checkout, docker compose mounts it at ../runtime) it is
- * read directly.
+ * The built-in runtime catalog. Its sources are runtimes/<id>/runtime.yaml of
+ * BRF-Tech/runr-runtimes, next to each runtime's Dockerfile; the API ships them as
+ * resources/runtimes/builtin.json (php artisan runtimes:bundle with RUNR_RUNTIME_CATALOG set to that
+ * directory; with it set, a test keeps both identical). The sources are read directly where
+ * executor.catalog_path (RUNR_RUNTIME_CATALOG) names them, or where ../runtime has
+ * <id>/runtime.yaml files; otherwise from the bundle.
  */
 class BuiltinCatalog
 {
@@ -68,7 +69,7 @@ class BuiltinCatalog
     }
 
     /**
-     * The catalog as raw manifests read from runtime/<id>/runtime.yaml, "@file" references of
+     * The catalog as raw manifests read from <dir>/<id>/runtime.yaml, "@file" references of
      * build.files inlined (paths relative to the manifest's directory).
      *
      * @return list<array>
@@ -113,7 +114,7 @@ class BuiltinCatalog
     public function bundleJson(string $dir): string
     {
         return json_encode([
-            '_comment' => 'Generated from runtime/*/runtime.yaml by `php artisan runtimes:bundle` — edit the YAML, then re-run it.',
+            '_comment' => 'Generated from runtimes/*/runtime.yaml of BRF-Tech/runr-runtimes by `php artisan runtimes:bundle` (RUNR_RUNTIME_CATALOG) — edit the YAML there, then re-run it.',
             'runtimes' => $this->readSources($dir),
         ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)."\n";
     }

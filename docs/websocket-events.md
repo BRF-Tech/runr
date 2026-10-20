@@ -76,6 +76,8 @@ Topics broadcast through `BroadcastsJobCompletion` also create a `Notification` 
 | `region.migrated` | `MigrateRegionJob` | `{ region_id, region_name }` | notification only |
 | `region.migrate_failed` | `MigrateRegionJob` | `{ region_id, region_name, error }` | notification only |
 | `region.migration_completed` | `CheckMigrationDnsJob` | `{ region_id, region_name }` | notification only |
+| `region.left_cluster_cleaned` | `RemoveLeftClusterWorkloadsJob` | `{ region_id, region_name, removed, message }` | notification only |
+| `region.left_cluster_cleanup_failed` | `RemoveLeftClusterWorkloadsJob` | `{ region_id, region_name, message, error }` | notification only |
 | `region.detached` | `DetachRegionCleanupJob` (Tenancy) | `{ tenant_id, region_id }` | notification only |
 | `region.detach_failed` | `DetachRegionCleanupJob` (Tenancy) | `{ tenant_id, region_id, error }` | notification only |
 

@@ -55,7 +55,7 @@ class BuiltinRuntimesTest extends TestCase
     {
         $dir = BuiltinCatalog::sourceDir();
         if (! $dir) {
-            $this->markTestSkipped('runtime/ is not part of this checkout');
+            $this->markTestSkipped('the catalog sources (runtimes/ of BRF-Tech/runr-runtimes) are not here: set RUNR_RUNTIME_CATALOG');
         }
 
         $this->assertSame(

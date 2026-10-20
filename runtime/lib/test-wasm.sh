@@ -9,9 +9,11 @@
 #                      prints the cold start after scale-to-zero (WASM_COLD_STARTS runs, default 3,
 #                      with the median), then deletes them and uninstalls WebAssembly support.
 # prepare_wasm_e2e   — D-Bus in the Kind nodes and the image of RunR's Spin shim loaded into them
-#                      (kind_load_wasm_shim), builds the wasm-rust and wasm-js build images
-#                      (runtime/wasm-*), loads them into the Kind cluster (the build Job's image) and
-#                      copies examples/wasm into the API container (/tmp/runr-examples/wasm).
+#                      (kind_load_wasm_shim), pulls the wasm-rust and wasm-js build images
+#                      BRF-Tech/runr-runtimes publishes (the tag pinned in runtime-images.sh, the
+#                      version of the built-in catalog), loads them into the Kind cluster (the build
+#                      Job's image) and copies examples/wasm into the API container
+#                      (/tmp/runr-examples/wasm).
 #
 # KIND_LOCK          — one Kind cluster at a time on a shared host: defaults to /tmp/runr-kind.lock here
 #                      (the lock test-runtimes uses; see acquire_kind_lock in test-runtimes.sh).
@@ -41,6 +43,8 @@ kind_nodes_dbus() {
 # ghcr.io/brf-tech/runr/containerd-shim-spin:<version>) into the Kind nodes, where the wasm-installer's init
 # container takes it from. A local image of that version is used as it is (its tag changes with
 # every change of the build); otherwise it is pulled, or built (ci.sh wasm-shim: a full Rust build).
+# The pulled image is the published multi-platform one: kind_load_image (test.sh) loads the nodes'
+# platform. When it cannot be loaded, the installer's node pulls it (the tag is not `latest`).
 kind_load_wasm_shim() {
   local cluster="$1" tag
   tag="$(wasm_shim_image)"
@@ -52,8 +56,11 @@ kind_load_wasm_shim() {
     echo "  Spin shim image: ${tag} — building it (Rust build of containerd-shim-spin)..."
     docker build -q --pull -t "$tag" "${SCRIPT_DIR}/wasm-shim-spin" >/dev/null
   fi
-  kind load docker-image "$tag" --name "$cluster" >/dev/null
-  echo "  ${tag} loaded into kind/${cluster}"
+  if kind_load_image "$tag" "$cluster"; then
+    echo "  ${tag} loaded into kind/${cluster}"
+  else
+    echo "  ${tag}: not loaded (the installer's node pulls it)"
+  fi
 }
 
 prepare_wasm_e2e() {
@@ -66,17 +73,18 @@ prepare_wasm_e2e() {
     kind_nodes_dbus "$cluster"
     kind_load_wasm_shim "$cluster"
   fi
+  local lang tag
   for lang in $langs; do
-    local version
-    version="$(wasm_runtime_version "$lang")"
-    local tag="${REGISTRY}/exec-wasm-${lang}:${version}"
-    echo "  build image: ${tag}"
-    # current bases, also a reqs mirror entry this checkout adds before a release copies it (test.sh)
-    pull_dockerfile_bases "${SCRIPT_DIR}/wasm-${lang}/Dockerfile"
-    docker build -q -t "${tag}" "${SCRIPT_DIR}/wasm-${lang}" >/dev/null
+    tag="$(wasm_runtime_image "$lang")"
+    echo "  build image:"
+    runtime_image_ready "$tag" || return 1
     if [ -n "$cluster" ]; then
-      kind load docker-image "${tag}" --name "$cluster" >/dev/null
-      echo "  ${tag} loaded into kind/${cluster}"
+      # a pulled multi-platform image: kind_load_image (test.sh) loads the nodes' platform
+      if kind_load_image "$tag" "$cluster"; then
+        echo "  ${tag} loaded into kind/${cluster}"
+      else
+        echo "  ${tag}: not loaded (the build Job's node pulls it)"
+      fi
     fi
   done
 

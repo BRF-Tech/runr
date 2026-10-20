@@ -16,12 +16,11 @@ fail() { echo "FAIL: $*" >&2; exit 1; }
 SCRIPT_DIR="$here"
 # shellcheck source=../lib/common.sh
 source "$here/lib/common.sh"
-# shellcheck source=../lib/mirror.sh
-source "$here/lib/mirror.sh"
 # shellcheck source=../lib/test.sh
 source "$here/lib/test.sh"
 
 kind_fails=0  # 1: `kind load` fails and the node does not have the image afterwards
+ctr_error=""  # what `kind load docker-image` prints when it fails on a multi-platform image
 docker() {
   echo "docker $*" >> "$calls"
   case "$1" in
@@ -31,6 +30,10 @@ docker() {
 }
 kind() {
   echo "kind $*" >> "$calls"
+  if [ -n "$ctr_error" ] && [ "$1 $2" = "load docker-image" ]; then
+    echo "$ctr_error" >&2
+    return 1
+  fi
   [ "$kind_fails" = 0 ]
 }
 
@@ -58,6 +61,22 @@ kind_fails=1
 out=$(preload_kind_images runr-e2e-1 2>&1) || fail "preload failed with kind load failing: $out"
 [ "$(echo "$out" | grep -c 'not loaded (the nodes pull it)')" = "$(echo "$listed" | wc -l)" ] || fail "failed loads: $out"
 kind_fails=0
+
+# --- a multi-platform image: the first load's error stays quiet when the per-platform archive loads -
+img=ghcr.io/brf-tech/runr/reqs/redis:7-alpine
+: > "$calls"
+ctr_error='ERROR: failed to load image: command "docker exec --privileged -i runr-e2e-1-control-plane ctr --namespace=k8s.io images import --all-platforms --digests --snapshotter=overlayfs -" failed with error: exit status 1: ctr: content digest sha256:0123abcd: not found'
+out=$(kind_load_image "$img" runr-e2e-1 2>&1) || fail "per-platform load failed: $out"
+[ -z "$out" ] || fail "a load that worked printed: $out"
+grep -qxF "docker save --platform linux/amd64 -o $(sed -n 's/^kind load image-archive \([^ ]*\) .*/\1/p' "$calls") ${img}" "$calls" \
+  || fail "not saved for the nodes' platform: $(cat "$calls")"
+grep -q '^kind load image-archive .* --name runr-e2e-1$' "$calls" || fail "archive not loaded: $(cat "$calls")"
+# …and shown when the archive does not get the image onto the nodes either
+kind_fails=1
+out=$(kind_load_image "$img" runr-e2e-1 2>&1) && fail "a failed load passed: $out"
+echo "$out" | grep -qF '    ERROR: failed to load image:' || fail "the first load's error not shown on a failed load: $out"
+echo "$out" | grep -qF 'ctr: content digest sha256:0123abcd: not found' || fail "the first load's error not shown on a failed load: $out"
+kind_fails=0 ctr_error=""
 
 # --- KIND_PRELOAD=0 -------------------------------------------------------------------------------
 : > "$calls"

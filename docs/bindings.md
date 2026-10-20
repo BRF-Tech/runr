@@ -538,7 +538,7 @@ The settings without a Helm value of their own are set via `extraEnv`: `BINDINGS
 operation pod), `BINDINGS_OPS_TOOLBOX_IMAGE`, `BINDINGS_OBJECT_CLIENT_IMAGE` and
 `BINDINGS_POLL_INTERVAL` (3 s).
 Images of the data services and their operations (`garage`, `rclone`, `python:3.12-slim`,
-`redis:7-alpine`) are mirrored under `ghcr.io/brf-tech/runr/reqs/` (`runtime/ci.sh mirror-reqs`);
+`redis:7-alpine`) are mirrored under `ghcr.io/brf-tech/runr/reqs/` (the mirror workflow of BRF-Tech/runr-runtimes);
 regions with a registry mirror pull Docker Hub names through it.
 
 ## Audit

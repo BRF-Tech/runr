@@ -490,7 +490,7 @@ Logs: the last lines of the engine container of up to five pods
 
 ## hf-serve reference
 
-`runtime/hf-serve` is RunR's server for the `transformers` and `diffusers` engines (PyTorch
+hf-serve (`hf-serve/` of [BRF-Tech/runr-runtimes](https://github.com/BRF-Tech/runr-runtimes)) is RunR's server for the `transformers` and `diffusers` engines (PyTorch
 2.14, transformers 5.20; the GPU image adds diffusers 0.41 on CUDA 12.6). It loads one pipeline at
 start in the background — `/healthz` answers 503 while loading and 200 when ready — and serves
 one request at a time per pod. When the model fails to load, hf-serve writes the reason

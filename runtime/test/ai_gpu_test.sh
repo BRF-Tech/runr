@@ -6,7 +6,7 @@
 # nvidia where it is configured, otherwise the driver's files as read-only extraMounts), that only
 # Kind nodes where the driver works become GPU nodes — every privileged Kind node sees the host's
 # /dev/nvidia* — and get the GPU image, the host's copy removed after that, `kind load`'s archive
-# in RUNR_E2E_TMPDIR, the disk check (the built images' sizes, every Kind node's own data, the
+# in RUNR_E2E_TMPDIR, the disk check (the images' sizes, every Kind node's own data, the
 # Compose stack, the preload) that keeps a GPU run from starting where it would fill the disk,
 # etcd in memory unless KIND_ETCD_IN_MEMORY=0, single cases (RUNR_E2E_AI_CASES, the GPU case on its
 # own without hf-serve) and the fail-fast of the GPU case when the host GPU needs a reset (nvidia-smi
@@ -24,6 +24,8 @@ fail() { echo "FAIL: $*" >&2; exit 1; }
 SCRIPT_DIR="$here"
 # shellcheck source=../lib/common.sh
 source "$here/lib/common.sh"
+# shellcheck source=../lib/runtime-images.sh
+source "$here/lib/runtime-images.sh"
 # shellcheck source=../lib/test-ai.sh
 source "$here/lib/test-ai.sh"
 
@@ -54,6 +56,8 @@ driver_nodes="ai-worker3"  # the Kind nodes where nvidia-smi works
 smi_pstate=P8              # nvidia-smi --query-gpu=pstate
 dmesg_readable=1           # dmesg works for this user
 dmesg_lines=""             # the kernel's log
+kind_ctr_error=""          # what `kind load docker-image` fails with (a multi-platform image)
+kind_archive_fails=0       # `kind load image-archive` fails too
 
 host() {
   absent="" smi_gpu=1 default_runtime=runc host_free_kb=$((60 * 1024 * 1024))
@@ -61,6 +65,7 @@ host() {
   img_hf_archive=$((GiB / 2)) img_hf_layers=("$GiB" 0 "$GiB")
   img_gpu_archive=$((45 * 1048576)) img_gpu_layers=($((126 * 1048576)) 0 $((8 * 1048576)))
   smi_pstate=P8 dmesg_readable=1 dmesg_lines="" _ai_hf_serve=1 _ai_gpu_mark="0 0" _ai_gpu_watch_pid=""
+  kind_ctr_error="" kind_archive_fails=0
   rm -f -- "$AI_NVIDIA_RUNTIME_CONFIG" "$tmp/etcd" "$tmp/abort" "$tmp/hooks"
   touch "$AI_NVIDIA_DEVICE"
   : > "$calls"
@@ -139,6 +144,9 @@ kind() {
   echo "kind $* TMPDIR=${TMPDIR:-}" >> "$calls"
   # shellcheck disable=SC2086  # the node names, one word each
   [ "$1 $2" = "get nodes" ] && printf '%s\n' $kind_nodes
+  # a multi-platform image: `kind load docker-image` fails with ctr's error, the archive may load
+  if [ "$1 $2" = "load docker-image" ] && [ -n "$kind_ctr_error" ]; then echo "$kind_ctr_error" >&2; return 1; fi
+  if [ "$1 $2" = "load image-archive" ] && [ "$kind_archive_fails" = 1 ]; then echo "ERROR: failed to load image: archive" >&2; return 1; fi
   return 0
 }
 kubectl() { echo "kubectl $*" >> "$calls"; }
@@ -420,7 +428,7 @@ host; _ai_gpu=""; unset KIND_EXTRA_NODES_YAML
 out=$(RUNR_E2E_AI_CASES=ai-gpu-caas cmd_test_ai 2>&1) || fail "the GPU case alone: $out"
 echo "$out" | grep -q 'cases: ai-gpu-caas (RUNR_E2E_AI_CASES' || fail "cases not shown: $out"
 echo "$out" | grep -q 'hf-serve image: not needed by the selected cases' || fail "hf-serve note: $out"
-grep -q '^docker build .*runtime/hf-serve' "$calls" && fail "hf-serve built for the GPU case alone"
+grep -q '^docker pull .*hf-serve' "$calls" && fail "hf-serve pulled for the GPU case alone"
 grep -q -- "--ai-cases=ai-gpu-caas" "$tmp/args" || fail "suite not told: $(cat "$tmp/args")"
 grep -q -- "--ai-gpu --gpu-image=${AI_GPU_IMAGE_TAG}" "$tmp/args" || fail "GPU case not on: $(cat "$tmp/args")"
 [ "$(cat "$tmp/hooks")" = "ai_before_e2e ai_after_e2e" ] || fail "hooks: $(cat "$tmp/hooks")"
@@ -455,7 +463,8 @@ host; unset KIND_EXTRA_NODES_YAML
 out=$(RUNR_E2E_AI_CASES=ai-online-cpu cmd_test_ai 2>&1) || fail "ai-online-cpu: $out"
 echo "$out" | grep -q 'GPU case: not selected (RUNR_E2E_AI_CASES)' || fail "GPU case not deselected: $out"
 grep -q 'gpu-caas' "$calls" && fail "GPU image built for ai-online-cpu"
-grep -q '^docker build -q --pull -t .*hf-serve' "$calls" || fail "hf-serve not built for ai-online-cpu"
+grep -qx "docker pull -q ${AI_HF_SERVE_TAG}" "$calls" || fail "hf-serve not pulled for ai-online-cpu: $(grep '^docker pull' "$calls")"
+grep -q '^docker build .*hf-serve' "$calls" && fail "hf-serve built: the harness pulls the published image"
 grep -q -- "--ai-cases=ai-online-cpu" "$tmp/args" || fail "suite args: $(cat "$tmp/args")"
 grep -q -- '--ai-gpu\|--ai-tei' "$tmp/args" && fail "optional cases on: $(cat "$tmp/args")"
 host; unset KIND_EXTRA_NODES_YAML
@@ -466,5 +475,26 @@ out=$( (RUNR_E2E_AI_CASES=ai-gpu cmd_test_ai) 2>&1) && fail "an unknown case sta
 echo "$out" | grep -q 'RUNR_E2E_AI_CASES names no case of the suite: ai-gpu' || fail "unknown case: $out"
 grep -q '^docker build' "$calls" && fail "built for an unknown case"
 echo "ok - single cases: RUNR_E2E_AI_CASES, the GPU case alone (no hf-serve, ends at once where it cannot run)"
+
+# ── ai_kind_load: a multi-platform image ─────────────────────────────────────────────────────────
+# `kind load docker-image` fails with ctr's error, the nodes' platform loads as an archive: the
+# error is not printed
+host; kind_ctr_error='ERROR: failed to load image: command "docker exec --privileged -i ai-control-plane ctr --namespace=k8s.io images import --all-platforms --digests --snapshotter=overlayfs -" failed with error: exit status 1: ctr: content digest sha256:0123abcd: not found'
+out=$(ai_kind_load ai "$AI_HF_SERVE_TAG" 2>&1) || fail "per-platform load failed: $out"
+[ "$out" = "  ${AI_HF_SERVE_TAG}: loading the nodes' platform as an archive" ] || fail "a load that worked printed more: $out"
+grep -q "^docker save --platform linux/amd64 -o ${RUNR_E2E_TMPDIR}/runr-kind-image\.[^ ]* ${AI_HF_SERVE_TAG}$" "$calls" || fail "not saved: $(cat "$calls")"
+grep -q "^kind load image-archive ${RUNR_E2E_TMPDIR}/runr-kind-image\.[^ ]* --name ai TMPDIR=${RUNR_E2E_TMPDIR}$" "$calls" || fail "archive not loaded: $(cat "$calls")"
+[ -z "$(find "$RUNR_E2E_TMPDIR" -name 'runr-kind-image.*')" ] || fail "archive left in ${RUNR_E2E_TMPDIR}"
+# …the archive fails too: the first error is shown with the archive's
+host; kind_ctr_error='ERROR: ctr: content digest sha256:0123abcd: not found' kind_archive_fails=1
+out=$(ai_kind_load ai "$AI_HF_SERVE_TAG" 2>&1) && fail "a failed load passed: $out"
+echo "$out" | grep -qxF "    ERROR: ctr: content digest sha256:0123abcd: not found" || fail "first error hidden on a failed load: $out"
+echo "$out" | grep -qF "ERROR: failed to load image: archive" || fail "the archive's error hidden: $out"
+# …a single-platform image loads at once, quietly
+host
+out=$(ai_kind_load ai "$AI_GPU_IMAGE_TAG" ai-worker3 2>&1) || fail "plain load failed: $out"
+[ -z "$out" ] || fail "a plain load printed: $out"
+grep -q '^kind load image-archive' "$calls" && fail "archive loaded for an image that loaded"
+echo "ok - ai_kind_load: the first load's error only when the per-platform archive fails too"
 
 echo "ok: ai-gpu"

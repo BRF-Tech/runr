@@ -6,8 +6,9 @@
 #                         schedule-triggered Bash function and a queue-triggered Q function. It
 #                         prints the cold start of every HTTP function (scaled to zero → first
 #                         response). `ci.sh test` runs the same suite after the other phases.
-# prepare_runtime_e2e   — builds the wrapper image (runtime/wrapper), loads it into the Kind
-#                         cluster and copies examples/runtimes into the API container.
+# prepare_runtime_e2e   — pulls the wrapper image BRF-Tech/runr-runtimes publishes (the tag pinned
+#                         in runtime-images.sh), loads it into the Kind cluster and copies
+#                         examples/runtimes into the API container.
 #
 # KIND_LOCK=/path       — optional: one Kind cluster at a time on a shared host. cmd_test takes
 #                         the lock (mkdir) before creating its cluster and releases it on cleanup.
@@ -15,17 +16,21 @@
 #                         (default runtimes-e2e), so the other users of the host see who waits on whom.
 
 prepare_runtime_e2e() {
-  local cluster="$1"
-  local tag="${REGISTRY}/wrapper:${WRAPPER_VERSION:-1.1.0}"
+  local cluster="$1" tag
+  tag="$(wrapper_image)"
 
   echo ""
   echo "Preparing the runtime plugin e2e..."
-  echo "  wrapper image: ${tag}"
-  docker build -q --pull -t "${tag}" "${SCRIPT_DIR}/wrapper" >/dev/null
+  echo "  wrapper image:"
+  runtime_image_ready "$tag" || return 1
 
   if [ -n "$cluster" ]; then
-    kind load docker-image "${tag}" --name "$cluster" >/dev/null
-    echo "  wrapper image loaded into kind/${cluster}"
+    # a pulled multi-platform image: kind_load_image (test.sh) loads the nodes' platform
+    if kind_load_image "$tag" "$cluster"; then
+      echo "  wrapper image loaded into kind/${cluster}"
+    else
+      echo "  wrapper image: not loaded (the nodes pull it)"
+    fi
 
     # The images of the example runtimes the suite deploys (docker.io/library/bash:5.2, …) go in
     # too: a node that pulls them itself depends on the registry's anonymous pull limit, which a

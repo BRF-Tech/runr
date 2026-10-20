@@ -379,9 +379,9 @@ Every suite runs locally with the commands below; CI runs the same commands
 | UI lint (ESLint) | `vue/eslint.config.js` | `cd vue && npm run lint` |
 | UI unit (Vitest) | `vue/tests/` | `cd vue && npm test` |
 | UI e2e (Playwright) | `vue/e2e/` | `cd vue && npm run test:e2e:mock` / `npm run test:e2e` |
-| Go | every `go.mod`: `cli`, `terraform-provider-runr`, `runtime/agent`, `runtime/queue-consumer`, `runtime/wrapper`, `runtime/image-upload`, `proxy`, `examples/runtimes/q/interpreter` | `gofmt -l . && go vet ./... && go test -race ./...` per module |
+| Go | every `go.mod`: `cli`, `terraform-provider-runr`, `runtime/agent`, `runtime/queue-consumer`, `runtime/image-upload`, `proxy`, `examples/runtimes/q/interpreter` | `gofmt -l . && go vet ./... && go test -race ./...` per module |
 | Helm chart | `helm/`, scenarios in `ci/helm-values/` | `bash ci/check-helm-chart.sh` (`helm lint --strict` + `helm template` per scenario, kubeconform against Kubernetes 1.30–1.35; needs helm and kubeconform or docker) |
-| Kubernetes e2e (Kind) | `runtime/lib/test*.sh` | `bash runtime/ci.sh test`, and one suite per feature: `test-runtimes`, `test-wasm`, `test-images`, `test-observability`, `test-reconcile`, `test-sandbox-api`, `test-supply-chain`, `test-ai`, `test-bindings`, `test-git-deploy`, `test-mcp`, `test-admission` |
+| Kubernetes e2e (Kind) | `runtime/lib/test*.sh` | `bash runtime/ci.sh test`, and one suite per feature: `test-runtimes`, `test-wasm`, `test-images`, `test-observability`, `test-reconcile`, `test-sandbox-api`, `test-supply-chain`, `test-ai`, `test-bindings`, `test-git-deploy`, `test-mcp`, `test-admission`, `test-region-move` |
 
 ### API (PHPUnit)
 
@@ -613,8 +613,8 @@ cd api && composer audit --locked                   # reported
 | Job | Runs | Blocking |
 |---|---|---|
 | `secrets:gitleaks` | MRs, default branch | yes |
-| `check:reqs-mirror` (`ci/check-reqs-mirror.sh`: every `ghcr.io/brf-tech/runr/reqs/*` reference is in the mirror list of `runtime/lib/mirror.sh`) | MRs, default branch | yes |
-| `check:build-scripts` (`ci/check-dockerfiles.sh`: no Docker Hub base image, `OTEL_SDK_DISABLED=true` before Spin runs in a build step; `runtime/test/*_test.sh`: `runtime/ci.sh` without Docker or a registry) | MRs, default branch | yes |
+| `check:reqs-mirror` (`ci/check-reqs-mirror.sh`: every `ghcr.io/brf-tech/runr/reqs/*` reference resolves anonymously on ghcr.io; BRF-Tech/runr-runtimes publishes the mirror) | MRs, default branch | yes |
+| `check:build-scripts` (`ci/check-dockerfiles.sh`: no Docker Hub base image, `OTEL_SDK_DISABLED=true` before Spin runs in a build step; `runtime/test/*_test.sh`: `runtime/ci.sh` without Docker or a registry, the pinned runtime images) | MRs, default branch | yes |
 | `test:api` (PHPUnit with the coverage floor) | MRs / default branch touching `api/**` | yes |
 | `lint:php` (Pint) | same as `test:api` | yes |
 | `analyse:php` | same as `test:api` | yes |
@@ -627,7 +627,7 @@ cd api && composer audit --locked                   # reported
 | `audit:composer` | default branch, schedules, MRs touching `api/composer.*` | no |
 | `e2e:kind` (`runtime/ci.sh test` in dind) | manual, schedule `SCHEDULED_JOB=e2e` | no |
 
-`.github/workflows/ci.yml` runs the core checks (reqs mirror list, Dockerfiles and build scripts,
+`.github/workflows/ci.yml` runs the core checks (reqs mirror, Dockerfiles and build scripts,
 API tests + Larastan, UI lint/unit/build, UI e2e in mocked mode, Go) on GitHub pull requests and
 pushes to `main`.
 
@@ -687,14 +687,14 @@ stack running (Compose project `runr-upgrade`, API on `127.0.0.1:18060`).
   built-in runtimes, measured in WSL 2). `KIND_WORKERS=1` runs one worker (the suites select it as
   the dedicated project worker) and a control-plane without its NoSchedule taint for the platform
   pods; `KIND_PRELOAD=0` leaves out loading images into the nodes, which then pull only what they
-  run. `test-ai` with the GPU case adds up what the run writes (the built images' sizes per Kind
+  run. `test-ai` with the GPU case adds up what the run writes (the suite's images' sizes per Kind
   node, each node's own data, the Compose stack, the preloaded images unless `KIND_PRELOAD=0`,
   `RUNR_E2E_GPU_RESERVE_GB` for the rest) and does not start when Docker's root has less free; its
   `kind load` archives go to `RUNR_E2E_TMPDIR` (default `/var/tmp`) instead of a RAM-backed `/tmp`
   ([docs/ai.md](ai.md#testing))
 - **Single AI cases, a GPU that needs a reset**: `RUNR_E2E_AI_CASES=ai-gpu-caas runtime/ci.sh test-ai`
   runs only the named cases (comma-separated, `test:e2e --ai-cases`) and what they need
-  (`ai-binding` → `ai-offline-cpu` → `ai-mirror` → `ai-model`); the GPU case alone builds and loads
+  (`ai-binding` → `ai-offline-cpu` → `ai-mirror` → `ai-model`); the GPU case alone pulls and loads
   no hf-serve image. The GPU case ends at once with "host GPU needs a reset (…)" when
   `nvidia-smi --query-gpu=pstate` reports "GPU requires reset" / ERR! or dmesg (where readable) has
   new Xid 119 / 154 lines: before the run (the GPU case alone does not start then) and, every
@@ -733,8 +733,9 @@ runr/
 │   └── Dockerfile.prod     Production image (FrankenPHP, PHP 8.3)
 ├── vue/                    Vue 3 + Vite frontend
 ├── helm/                   Helm chart
-├── runtime/                Runtime images and manifests, universal wrapper, runr-agent,
-│                           queue-consumer, image-upload, supply-chain tools, hf-serve, ci.sh
+├── runtime/                runr-agent, queue-consumer, image-upload, supply-chain tools,
+│                           Spin shim, nginx-test, ci.sh + the e2e harness (the runtime
+│                           images: BRF-Tech/runr-runtimes)
 ├── cli/                    runr CLI (Go)
 ├── terraform-provider-runr/ Terraform provider (Go)
 ├── actions/                GitHub Action (actions/deploy)

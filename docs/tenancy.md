@@ -144,7 +144,7 @@ edition: multi-tenant              # Tenancy + AuthProvider modules, the multi-t
 ```
 
 In the multi-tenant edition the chart appends `ui.image.multiTenantSuffix` (default `-mt`) to the
-UI tag: with `ui.image.tag: "0.5.9"` it runs `ghcr.io/brf-tech/runr/ui:0.5.9-mt`, with the default
+UI tag: with `ui.image.tag: "0.5.10"` it runs `ghcr.io/brf-tech/runr/ui:0.5.10-mt`, with the default
 (empty) tag the chart's release, `<appVersion>-mt`, as with the tag `latest`, which has no
 multi-tenant variant. A UI image of your own that carries the
 modules under its plain tag needs `ui.image.multiTenantSuffix: ""`

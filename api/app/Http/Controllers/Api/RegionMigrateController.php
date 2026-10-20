@@ -81,14 +81,20 @@ class RegionMigrateController extends Controller
         ]);
     }
 
+    /**
+     * The region goes back to its old cluster, its projects are deployed there again; what the move
+     * deployed for them on the cluster it leaves is removed from there in the background, and the
+     * operator gets a notification with the result (RegionMigrateService::rollbackMigration()).
+     */
     public function rollbackMigration(KnativeRegion $knativeRegion, RegionMigrateService $service): JsonResponse
     {
         if (! in_array($knativeRegion->migration_status, ['dns_check', 'failed'])) {
             return response()->json(['message' => __('api.migration.cannot_rollback')], 422);
         }
 
-        $service->rollbackMigration($knativeRegion);
+        $operator = auth()->id();
+        $cleanup = $service->rollbackMigration($knativeRegion, $operator === null ? null : (string) $operator);
 
-        return response()->json(['message' => __('api.migration.rolled_back')]);
+        return response()->json(['message' => __($cleanup ? 'api.migration.rolled_back_cleanup' : 'api.migration.rolled_back')]);
     }
 }

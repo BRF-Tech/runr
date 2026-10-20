@@ -1,3 +1,0 @@
-# exec-tensorflow GPU image (<version>-gpu): TensorFlow with the CUDA 12 libraries of its and-cuda
-# extra, the same version as requirements-cpu.txt.
-tensorflow[and-cuda]==2.21.0

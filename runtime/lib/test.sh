@@ -84,61 +84,33 @@ ensure_compose_app_key() {
   fi
 }
 
-# pull_image IMAGE — docker pull. An image of the reqs mirror that is not published yet (`ci.sh
-# mirror-reqs` copies REQS_IMAGES of lib/mirror.sh at release time) comes from its upstream source
-# in that list, tagged with the mirror name, so a checkout can test a mirror entry it adds: from
-# the upstreams of REQS_UPSTREAMS in order, a Docker Hub mirror only by Docker Hub's digest.
+# pull_image IMAGE — docker pull; an image this host already has counts (an offline host). The reqs
+# mirror (ghcr.io/brf-tech/runr/reqs/…) is published by BRF-Tech/runr-runtimes: an image this
+# checkout starts to use is mirrored there first, ci/check-reqs-mirror.sh fails until it resolves.
 pull_image() {
-  local img="$1" prefix="${REGISTRY}/reqs/" entry name path upstream src want=""
+  local img="$1"
   docker pull -q "$img" >/dev/null 2>&1 && return 0
-  docker image inspect "$img" >/dev/null 2>&1 && return 0
-  [[ "$img" == "$prefix"* ]] || return 1
-  name="${img#"$prefix"}"
-  for entry in "${REQS_IMAGES[@]}"; do
-    [ "${entry%%|*}" = "${name%@*}" ] || continue
-    path="$(dockerhub_path "${entry#*|}")"
-    for upstream in $REQS_UPSTREAMS; do
-      if [ "$upstream" = "docker.io" ]; then
-        src="docker.io/${path}"
-      elif [ -n "$want" ] || want=$(dockerhub_digest "$path"); then
-        src="${upstream}/${path%%[:@]*}@${want}"
-      else
-        break
-      fi
-      if docker pull -q "$src" >/dev/null 2>&1 && docker tag "$src" "${img%@*}"; then
-        echo "  ${img}: not in the mirror yet, ${src} tagged as it"
-        return 0
-      fi
-    done
-  done
-  return 1
-}
-
-# pull_dockerfile_bases DOCKERFILE [NAME=VALUE...] — the base images of a Dockerfile
-# (dockerfile_bases) through pull_image: a build without --pull then runs on current bases, also
-# on a reqs mirror entry this checkout adds before the release copies it
-pull_dockerfile_bases() {
-  local base
-  for base in $(dockerfile_bases "$@"); do
-    pull_image "$base" || echo "  ${base}: not pullable"
-  done
+  docker image inspect "$img" >/dev/null 2>&1
 }
 
 # kind_load_image IMAGE CLUSTER — a local image into every node of a Kind cluster. A pulled
 # multi-platform image in Docker's containerd image store does not go through `kind load
 # docker-image` (the saved index names the other platforms' blobs: "content digest … not found"):
-# then only the nodes' platform is saved and loaded as an archive.
+# then only the nodes' platform is saved and loaded as an archive. What the loads print shows
+# only when the image is not on the nodes in the end (stderr).
 kind_load_image() {
-  local img="$1" cluster="$2" node="${2}-control-plane" arch archive
-  kind load docker-image "$img" --name "$cluster" >/dev/null 2>&1 && return 0
+  local img="$1" cluster="$2" node="${2}-control-plane" arch archive out
+  out=$(kind load docker-image "$img" --name "$cluster" 2>&1) && return 0
   arch=$(docker exec "$node" uname -m 2>/dev/null || echo x86_64)
   case "$arch" in aarch64|arm64) arch=arm64 ;; *) arch=amd64 ;; esac
   archive=$(mktemp /tmp/runr-kind-image.XXXXXX)
   if docker save --platform "linux/${arch}" -o "$archive" "$img" >/dev/null 2>&1; then
-    kind load image-archive "$archive" --name "$cluster" >/dev/null 2>&1 || true
+    out+=$'\n'$(kind load image-archive "$archive" --name "$cluster" 2>&1) || true
   fi
   rm -f "$archive"
-  docker exec "$node" crictl inspecti -q "$img" >/dev/null 2>&1
+  docker exec "$node" crictl inspecti -q "$img" >/dev/null 2>&1 && return 0
+  printf '%s\n' "$out" | sed '/^$/d; s/^/    /' >&2
+  return 1
 }
 
 # preload_kind_images CLUSTER — the region's utility images (Redis, the queue consumer, Zot,
@@ -169,7 +141,6 @@ preload_kind_images() {
     "ghcr.io/project-zot/zot:v2.1.21"
     "ghcr.io/osscontainertools/kaniko:v1.28.5"
     # the region Traefik (KnativeConstants::TRAEFIK_IMAGE): three replicas that would each pull it
-    # (pull_image takes it from Docker Hub while the mirror lacks it)
     "ghcr.io/brf-tech/runr/reqs/traefik:v3.7.4"
     # the region tracing backend (ManagedTracing::COLLECTOR_IMAGE / TEMPO_IMAGE), installed with
     # Knative Serving
@@ -384,7 +355,7 @@ KINDEOF
     preload_kind_images "$_test_cluster_name"
   fi
 
-  # 4b. Runtime plugin suite: universal wrapper image + example runtimes (test-runtimes.sh);
+  # 4b. Runtime plugin suite: the published wrapper image + example runtimes (test-runtimes.sh);
   #     git deploy suite: a throwaway Forgejo next to the API (test-git-deploy.sh)
   if [ "$suite" = "git-deploy" ]; then
     prepare_git_deploy_e2e
@@ -398,9 +369,9 @@ KINDEOF
   fi
   # 4c. Supply-chain suite: tools image (test-supply-chain.sh)
   [ "$suite" = "supply-chain" ] && prepare_supply_chain_e2e "$_test_cluster_name"
-  # 4c. WebAssembly suite: Wasm build images + examples/wasm (test-wasm.sh)
+  # 4c. WebAssembly suite: the published Wasm build images + examples/wasm (test-wasm.sh)
   [ "$suite" = "wasm" ] && prepare_wasm_e2e "$_test_cluster_name"
-  # 4c. Uploaded images suite: receiver + wasm-exec images, echo.tar, q.wasm (test-images.sh)
+  # 4c. Uploaded images suite: receiver + published wasm-exec images, echo.tar, q.wasm (test-images.sh)
   [ "$suite" = "images" ] && prepare_images_e2e "$_test_cluster_name"
 
   # 5. Copy the kubeconfig into the container. The API services join the kind network

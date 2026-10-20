@@ -6,6 +6,7 @@ use App\Models\ExecutorImage;
 use App\Models\KnativeRegion;
 use App\Models\RegionSupplyChainSetting;
 use App\Models\Runtime;
+use App\Services\Runtimes\BuiltinCatalog;
 use App\Services\Runtimes\RuntimeRegistry;
 use App\Services\SupplyChain\AdmissionManifests;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -83,14 +84,14 @@ class BuildJobAdmissionTest extends TestCase
     {
         // a platform runtime like wasm-rust, registered by a platform administrator with its
         // toolchain image from the platform's own registry
-        $dir = base_path('../runtime/wasm-rust');
-        $manifest = Yaml::parseFile("{$dir}/runtime.yaml");
+        // the built-in wasm-rust manifest as the API ships it (its files inlined; the sources live
+        // in BRF-Tech/runr-runtimes)
+        $bundle = json_decode((string) file_get_contents(BuiltinCatalog::bundlePath()), true, 512, JSON_THROW_ON_ERROR);
+        $manifest = collect($bundle['runtimes'])->firstWhere('id', 'wasm-rust');
+        $this->assertIsArray($manifest);
         $manifest['id'] = 'acme-wasm';
         $manifest['name'] = 'Acme (Wasm)';
         $manifest['versions'] = [['version' => '2.0', 'image' => 'registry.acme.test/toolchains/wasm-rust:2.0', 'default' => true]];
-        foreach ($manifest['build']['files'] as $file => $ref) {
-            $manifest['build']['files'][$file] = (string) file_get_contents($dir.'/'.ltrim((string) $ref, '@'));
-        }
         app(RuntimeRegistry::class)->register(Runtime::SOURCE_PLATFORM, Yaml::dump($manifest, 10, 2), [], null, null);
         app(RuntimeRegistry::class)->forget();
 

@@ -414,9 +414,10 @@ class KnativeDeployService
     // ── Naming helpers ──────────────────────────────────────────────────────
 
     /**
-     * Names of the long-lived workloads a project runs in its region namespace.
+     * Names of the long-lived workloads a project runs in its region namespace, and of the
+     * Secrets they read: its secret environment variables and the queue consumer's Redis access.
      *
-     * @return array{service: string, cronJob: string, queueConsumer: string}
+     * @return array{service: string, cronJob: string, queueConsumer: string, secretEnv: string, queueConsumerSecret: string}
      */
     public function workloadNames(Project $project): array
     {
@@ -424,6 +425,8 @@ class KnativeDeployService
             'service' => $this->serviceName($project),
             'cronJob' => $this->cronJobName($project),
             'queueConsumer' => $this->queueConsumerName($project),
+            'secretEnv' => $this->secretEnvName($project),
+            'queueConsumerSecret' => $this->queueConsumerSecretName($project),
         ];
     }
 

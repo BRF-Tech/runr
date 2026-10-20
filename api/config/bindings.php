@@ -61,7 +61,7 @@ return [
 
     // ── Object storage: Garage (managed) or an external S3 endpoint ──────────────────────
     'object' => [
-        // Mirror of dxflrs/garage (runtime/lib/mirror.sh)
+        // Mirror of dxflrs/garage (lib/mirror.sh of BRF-Tech/runr-runtimes)
         'image' => RegistryMove::ref(env('BINDINGS_OBJECT_IMAGE', 'ghcr.io/brf-tech/runr/reqs/garage:v2.1.0')),
         'storage' => env('BINDINGS_OBJECT_STORAGE', '20Gi'),
         'meta_storage' => env('BINDINGS_OBJECT_META_STORAGE', '1Gi'),

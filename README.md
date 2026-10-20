@@ -219,7 +219,7 @@ To install a specific release, pin the chart version; the API and UI images foll
 default to the chart's `appVersion`):
 
 ```bash
-helm upgrade --install runr brf-tech/runr --version 0.5.9 \
+helm upgrade --install runr brf-tech/runr --version 0.5.10 \
   --namespace runr --create-namespace \
   --set domain=runr.example.com
 ```
@@ -260,7 +260,7 @@ for your platform from [runr.sh/dl](https://runr.sh/dl/); see [docs/cli.md](docs
 | [`api/`](api) | Laravel 12 API (PHP 8.3); optional modules in `api/Modules` (AuthProvider, Tenancy, Ticket) |
 | [`vue/`](vue) | Vue 3 + Vite console (Pinia, Tailwind CSS, Monaco, xterm.js) |
 | [`helm/`](helm) | Helm chart `runr` for the control plane |
-| [`runtime/`](runtime) | Runtime images and manifests, the universal wrapper, the region agent, the queue consumer, the image-upload receiver, supply-chain tools, `ci.sh` |
+| [`runtime/`](runtime) | The region agent, the queue consumer, the image-upload receiver, supply-chain tools, the Spin shim, `ci.sh` and the end-to-end harness. The language runtime images, the universal wrapper and hf-serve live in [BRF-Tech/runr-runtimes](https://github.com/BRF-Tech/runr-runtimes). |
 | [`cli/`](cli) | The `runr` CLI (Go) |
 | [`terraform-provider-runr/`](terraform-provider-runr) | Terraform provider (Go) and its reference docs |
 | [`actions/`](actions) | GitHub Action `actions/deploy` |

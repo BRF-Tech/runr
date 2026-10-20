@@ -10,11 +10,13 @@
 #                       a platform runtime whose version is the uploaded interpreter), calls the three,
 #                       then deletes projects, runtime and images (manifests leave the registry) and
 #                       uninstalls WebAssembly support.
-# prepare_images_e2e  — builds runr-image-upload (runtime/image-upload) and the wasm-exec build image
-#                       (runtime/wasm-exec) and loads both into the Kind cluster, builds the HTTP server
-#                       image (runtime/nginx-test) and saves it as echo.tar, compiles q.wasm with the
-#                       wasm-exec image's TinyGo, and copies both files and examples/wasm into the API container
-#                       (/tmp/runr-images, /tmp/runr-examples/wasm).
+# prepare_images_e2e  — builds runr-image-upload (runtime/image-upload), pulls the wasm-exec build image
+#                       BRF-Tech/runr-runtimes publishes (the tag pinned in runtime-images.sh; it carries
+#                       the runr-image-upload of the published image-upload image, which fetches the
+#                       uploaded modules of its builds) and loads both into the Kind cluster, builds the
+#                       HTTP server image (runtime/nginx-test) and saves it as echo.tar, compiles q.wasm
+#                       with the wasm-exec image's TinyGo, and copies both files and examples/wasm into
+#                       the API container (/tmp/runr-images, /tmp/runr-examples/wasm).
 #
 # KIND_LOCK           — one Kind cluster at a time on a shared host: defaults to /tmp/runr-kind.lock
 #                       here (see acquire_kind_lock in test-runtimes.sh).
@@ -24,7 +26,8 @@ prepare_images_e2e() {
   local cluster="$1"
   local work="${IMAGES_E2E_DIR:-/tmp/runr-images-e2e}"
   local upload_tag="${REGISTRY}/image-upload:${IMAGE_UPLOAD_VERSION:-1.0.0}"
-  local exec_tag="${REGISTRY}/exec-wasm-exec:$(wasm_runtime_version exec)"
+  local exec_tag
+  exec_tag="$(wasm_runtime_image exec)"
   local echo_tag="runr-e2e/echo:upload"
 
   echo ""
@@ -38,15 +41,16 @@ prepare_images_e2e() {
 
   echo "  receiver image: ${upload_tag}"
   docker build -q --pull -t "${upload_tag}" "${SCRIPT_DIR}/image-upload" >/dev/null
-  echo "  wasm-exec build image: ${exec_tag}"
-  # the receiver is the local image above, which --pull would look up in a registry: the other
-  # bases are pulled on their own instead (test.sh)
-  pull_dockerfile_bases "${SCRIPT_DIR}/wasm-exec/Dockerfile" "IMAGE_UPLOAD_IMAGE=${upload_tag}"
-  docker build -q --build-arg "IMAGE_UPLOAD_IMAGE=${upload_tag}" -t "${exec_tag}" "${SCRIPT_DIR}/wasm-exec" >/dev/null
+  echo "  wasm-exec build image:"
+  runtime_image_ready "$exec_tag" || return 1
   if [ -n "$cluster" ]; then
     kind load docker-image "${upload_tag}" --name "$cluster" >/dev/null
-    kind load docker-image "${exec_tag}" --name "$cluster" >/dev/null
-    echo "  both loaded into kind/${cluster}"
+    # a pulled multi-platform image: kind_load_image (test.sh) loads the nodes' platform
+    if kind_load_image "$exec_tag" "$cluster"; then
+      echo "  both loaded into kind/${cluster}"
+    else
+      echo "  ${upload_tag} loaded into kind/${cluster}; ${exec_tag}: not loaded (the build Job's node pulls it)"
+    fi
   fi
 
   # the file to upload: a docker save archive of a small HTTP server (answers {"status":"ok",...})

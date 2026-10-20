@@ -197,6 +197,7 @@ return [
         'completed' => 'Taşıma tamamlandı.',
         'cannot_rollback' => 'Mevcut durumda taşıma geri alınamaz.',
         'rolled_back' => 'Taşıma geri alındı.',
+        'rolled_back_cleanup' => 'Taşıma geri alındı. Taşımanın yeni kümeye dağıttığı proje fonksiyonları arka planda oradan kaldırılıyor (kümenin kurulumları ve veri servisleri kalır); sonucu bir bildirim bildirir.',
         'no_domain_migration' => 'Bölge başka bir temel alan adına taşınmıyor.',
         'domain_completed' => 'Alan adı taşıması tamamlandı: bölge yeni fonksiyon alan adında yanıt veriyor.',
     ],

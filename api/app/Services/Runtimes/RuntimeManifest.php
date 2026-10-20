@@ -5,8 +5,9 @@ namespace App\Services\Runtimes;
 /**
  * A validated, normalized runtime manifest (runtime.yaml, apiVersion runr.sh/v1) — every
  * optional field carries its default (ManifestValidator::normalize()). The single description
- * of a language runtime: built-ins (runtime/<id>/runtime.yaml), platform runtimes and tenant
- * custom runtimes all reach the build and deploy code through this class.
+ * of a language runtime: built-ins (runtimes/<id>/runtime.yaml of BRF-Tech/runr-runtimes),
+ * platform runtimes and tenant custom runtimes all reach the build and deploy code through this
+ * class.
  */
 final class RuntimeManifest
 {

@@ -8,6 +8,52 @@ did not change says so.
 
 ## [Unreleased]
 
+## [0.5.10] - 2026-10-21
+
+### Changed
+
+- **The runtime images have their own repository,
+  [BRF-Tech/runr-runtimes](https://github.com/BRF-Tech/runr-runtimes).** It holds the language and
+  ML runtimes (`exec-python`, `-nodejs`, `-go`, `-php`, `-pytorch`, `-tensorflow`), the WebAssembly
+  build images (`exec-wasm-*`), the universal wrapper, hf-serve, the manifests of the built-in
+  catalog and the reqs mirror (`ghcr.io/brf-tech/runr/reqs/`). Its GitHub Actions build,
+  smoke-test and publish them under the same names and tags, so installs and the API's runtime
+  discovery see no change.
+  - `runtime/` keeps RunR's own images (agent, queue consumer, image-upload, supply-chain tools,
+    the Spin shim, nginx-test) and the end-to-end harness.
+  - The API ships the catalog as before (`api/resources/runtimes/builtin.json`). After a manifest
+    changes in runr-runtimes, `RUNR_RUNTIME_CATALOG=<checkout>/runtimes php artisan
+    runtimes:bundle` regenerates it.
+  - `runtime/ci.sh build`, `wrapper`, `wasm`, `ml-runtimes`, `mirror-reqs`, `mirror-bases` and `eol`
+    moved there, and the GitLab jobs `build:runtime` and `build:ml-runtimes` are gone.
+- **The Kind e2e suites pull the published runtime images instead of building them.**
+  - `test-runtimes` pulls the wrapper, `test-wasm` the Rust and JavaScript build images,
+    `test-images` wasm-exec and `test-ai` hf-serve, at the tags pinned in
+    `runtime/lib/runtime-images.sh`.
+  - `runtime/test/runtime_images_test.sh` checks that these pins are the product's defaults.
+  - `RUNTIME_IMAGES_LOCAL=1` uses a local build from runr-runtimes instead.
+- **`ci/check-reqs-mirror.sh` resolves every referenced reqs image anonymously on ghcr.io**
+  instead of looking it up in a mirror list. Resolved references are cached for a day. A missing
+  image says where to add it in runr-runtimes, and a network error is reported apart from missing
+  images.
+
+### Fixed
+
+- **A region migration rollback left the projects running on the new cluster.** The rollback
+  deployed the projects on the old cluster again, but what the move had deployed for them on the
+  new cluster kept running there: their functions answered on that cluster's own address, and
+  nothing metered them. After a rollback RunR now removes them from the new cluster in the
+  background — the Knative Services of the projects and of their previews, their CronJobs and
+  queue consumers, and the ConfigMaps, Secrets and build Jobs these read or built — found by the
+  labels RunR sets, for the projects of every organization on a platform region and for a project
+  created while the region ran there. The cluster's installs and the data services with their
+  volumes, credentials and data stay: they may hold what was written during the move. Nothing is
+  removed when the new cluster is the restored one under another address (the same `kube-system`
+  namespace). The removal does not hold the rollback up and is tried three times; the operator who
+  rolled back gets a notification with what was removed, or with the reason and what to remove by
+  hand ([What the rollback removes from the new
+  cluster](docs/regions.md#what-the-rollback-removes-from-the-new-cluster)).
+
 ## [0.5.9] - 2026-10-20
 
 ### Upgrade notes
@@ -1955,7 +2001,8 @@ Initial tagged release.
 - API gateways with routes, in-app notifications and support tickets.
 - Helm chart with a single-tenant / multi-tenant edition, an install form (`values.schema.json`), generated secrets and a Traefik ingress; a Docker Compose setup for development.
 
-[Unreleased]: https://github.com/brf-tech/runr/compare/v0.5.9...main
+[Unreleased]: https://github.com/brf-tech/runr/compare/v0.5.10...main
+[0.5.10]: https://github.com/brf-tech/runr/releases/tag/v0.5.10
 [0.5.9]: https://github.com/brf-tech/runr/releases/tag/v0.5.9
 [0.5.8]: https://github.com/brf-tech/runr/releases/tag/v0.5.8
 [0.5.7]: https://github.com/brf-tech/runr/releases/tag/v0.5.7

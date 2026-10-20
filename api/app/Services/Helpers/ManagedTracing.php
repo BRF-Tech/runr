@@ -38,8 +38,8 @@ final class ManagedTracing
 
     // Pinned chart versions (the e2e of runtime/ci.sh test-observability runs them) and the images
     // they run (their appVersion), from the reqs mirror of docker.io/otel/opentelemetry-collector-
-    // contrib and docker.io/grafana/tempo like RunR's other third-party images (runtime/lib/mirror.sh):
-    // set as the charts' image values (collectorValues(), tempoValues()) and loaded into Kind by the
+    // contrib and docker.io/grafana/tempo like RunR's other third-party images (lib/mirror.sh of
+    // BRF-Tech/runr-runtimes): set as the charts' image values (collectorValues(), tempoValues()) and loaded into Kind by the
     // e2e. OBS_OTEL_COLLECTOR_IMAGE / OBS_TEMPO_IMAGE override them (Helm values
     // observability.tracing.collectorImage / tempoImage); region:reconcile (TracingBackendStep)
     // brings installed backends to them. A chart version changes together with its image here and

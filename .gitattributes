@@ -47,7 +47,6 @@ Caddyfile*    text eol=lf
 api/artisan                    text eol=lf
 **/pre-receive                 text eol=lf
 **/post-receive                text eol=lf
-runtime/**/runr-wasm-exec      text eol=lf
 
 # Binaries
 *.png    binary

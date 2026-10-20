@@ -877,7 +877,9 @@ In a multi-tenant install the copies of a platform region in the organizations i
 get the restored values with the same sync as the move's ([Regions in multi-tenant
 installs](#regions-in-multi-tenant-installs)). Then every project that runs is deployed there
 again, the same way as in step 6 — the organizations' projects on a platform region too. What
-the move installed on the new cluster stays there.
+the move deployed for the projects on the new cluster is removed from there; its installs and
+data services stay ([What the rollback removes from the new
+cluster](#what-the-rollback-removes-from-the-new-cluster)).
 
 A version built while the region was on the new cluster (a runtime with a build step, a
 WebAssembly function) was pushed to the new cluster's registry only, and the old cluster's nodes
@@ -889,7 +891,8 @@ cluster the migration rollback restored: v5 was built into the registry of the c
 rollback left; v4 runs instead" (the console shows it with the project's deployments; the log has
 the same line). To run that code on the restored cluster, deploy that version again: it is
 [built again](#older-versions) there first. A project with no such deployment (created on the
-new cluster) is removed from the old cluster like a refused one.
+new cluster) is removed from the old cluster like a refused one, and from the new cluster with
+the other projects; its data services stay there like theirs.
 
 What the move [built again](#images-the-new-cluster-cannot-pull) goes back to the old cluster's
 images, which its registry still has: a version built again gets its old image back, and the
@@ -932,6 +935,57 @@ The live [preview environments](#preview-environments) are deployed on the old c
 same way: a preview version built into the new cluster's registry, or whose build still runs
 there (its Kaniko Job is deleted from the new cluster), is built again on the old one first ("Built
 again on the cluster the migration rollback restored: …").
+
+#### What the rollback removes from the new cluster
+
+The functions the move deployed on the new cluster would keep answering there, on that cluster's
+own address, with nothing metering them. After the rollback RunR removes from the new cluster:
+
+- the Knative Services of the projects (a WebAssembly function is one too) and of their preview
+  environments;
+- their CronJobs and queue consumers (and workflow queue bridges), with the Jobs and pods these
+  started;
+- what they read or built: the code ConfigMaps, the Secrets of the projects' secret environment
+  variables and of their queue consumers, and the build Jobs with their source ConfigMaps.
+
+It finds them in the region's project namespace by the labels RunR sets on them
+(`runr/project-id`, `runr/preview-of`), for the region's projects only: in a multi-tenant install
+those of every organization on a platform region too, and a project created while the region ran
+on the new cluster. Another region's projects in a namespace of the same name are left alone.
+
+What stays on the new cluster:
+
+- what the move installed there: Knative with Traefik, Prometheus and Loki, the runr-agent and the
+  tracing backend, the managed Redis, the registry with its images, Kata Containers, gVisor,
+  WebAssembly and GPU support, the admission policy;
+- the data services with their volumes, credentials and data: they may hold what was written while
+  the region ran there. Copy what you need back to the old cluster's services, then remove them
+  yourself;
+- the projects' `<project>-bindings` Secrets (the data services' credentials), private database
+  connections, custom domain routes and certificates, and the project namespace, which holds them.
+
+Nothing is removed when the cluster the rollback leaves is the restored one: the same API server
+(a move to another kubeconfig of the same cluster, or a move that failed before it switched), or
+another address of it — RunR compares the UIDs of the two clusters' `kube-system` namespaces. Nor
+when the region is being moved again by the time the removal runs.
+
+The removal runs in the background (`RemoveLeftClusterWorkloadsJob`: three attempts, at once, a
+minute later and five minutes after that; it carries the new cluster's kubeconfig, which the
+region no longer holds, encrypted on the queue): the rollback does not wait for the new cluster
+and is done when that cluster does not answer. The rollback's answer says so — "Migration rolled back. The project functions the move
+deployed on the new cluster are removed from it in the background (its installs and data services
+stay); a notification tells how it went." — and the operator who rolled back gets a notification:
+
+- "Left cluster cleanup of eu: removed 3 project workloads", with what was removed under it
+  ("Removed from the cluster the rollback left: 3 project workloads (Knative Services orders,
+  orders-pr-4; CronJob reports-trigger) and 2 objects they read or built (ConfigMaps, Secrets).
+  Its installs and data services stay."), or "… nothing removed" with the reason;
+- "Left cluster cleanup of eu failed", with the reason — e.g. "the cluster the rollback left does
+  not answer: …" — and what to remove yourself: the Knative Services, CronJobs and queue consumers
+  labelled `runr/project-id` or `runr/preview-of` with the region's projects in the project
+  namespace of that cluster.
+
+The API log has the same lines (`RegionMigrate: Left cluster cleanup of eu …`).
 
 ## Changing the base domain
 
@@ -1111,7 +1165,7 @@ mutability check ([Regions in multi-tenant installs](#regions-in-multi-tenant-in
 | `POST /knative-regions/{id}/migrate` | `regions.manage` | Start a migration to another cluster |
 | `GET /knative-regions/{id}/migration-status` | `regions.view` | Migration status and, while the move can be rolled back, what it did with each project (`projects`, [Images the new cluster cannot pull](#images-the-new-cluster-cannot-pull)) |
 | `POST /knative-regions/{id}/complete-migration` | `regions.manage` | Complete a migration in `dns_check` |
-| `POST /knative-regions/{id}/rollback-migration` | `regions.manage` | Roll back a migration in `dns_check` or `failed` |
+| `POST /knative-regions/{id}/rollback-migration` | `regions.manage` | Roll back a migration in `dns_check` or `failed`; the projects' workloads leave the new cluster in the background ([what is removed](#what-the-rollback-removes-from-the-new-cluster)) |
 | `POST /knative-regions/{id}/complete-domain-migration` | `regions.manage` | Complete a base-domain migration ([Changing the base domain](#changing-the-base-domain)) |
 | `POST /knative-regions/{id}/demo-projects` | `regions.manage` | Deploy the demo projects |
 | `DELETE /knative-regions/{id}/demo-projects` | `regions.manage` | Remove the demo projects |

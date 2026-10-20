@@ -1,7 +1,7 @@
 # AI e2e: model services (online / offline), offline snapshots, bindings and — when the host can
 # give Kind a GPU — GPU support and a GPU CaaS project.
 #
-# cmd_test_ai — `ci.sh test-ai [cmd_test flags]`: builds the hf-serve CPU image (runtime/hf-serve)
+# cmd_test_ai — `ci.sh test-ai [cmd_test flags]`: pulls the hf-serve CPU image (BRF-Tech/runr-runtimes)
 #               and loads it into the Kind cluster, then runs `cmd_test --suite=ai`
 #               (api: php artisan test:e2e --suite=ai, E2eTestAiTrait):
 #                 ai-model, ai-online-cpu, ai-mirror, ai-offline-cpu, ai-binding
@@ -10,7 +10,7 @@
 #               RUNR_E2E_AI_CASES=<case>[,<case>…] runs only these cases (test:e2e --ai-cases) and
 #               what they need (ai-binding → ai-offline-cpu → ai-mirror → ai-model, ai-online-cpu →
 #               ai-model); naming ai-tei-cpu turns it on. RUNR_E2E_AI_CASES=ai-gpu-caas runs the GPU
-#               case on its own: no hf-serve image is built or loaded, and the run ends right away
+#               case on its own: no hf-serve image is pulled or loaded, and the run ends right away
 #               when the GPU case cannot run.
 #
 # Prerequisites: what `ci.sh test` needs (docker, kind, kubectl, the compose stack) plus internet
@@ -40,7 +40,7 @@
 # not fit the disk (ai_gpu_disk_problem): under Docker's root dir it needs RUNR_E2E_GPU_RESERVE_GB
 # (default 12) for the images the Kind nodes pull for the region (registry, Knative, Redis,
 # tracing, GPU support) and the rest of the run, the Compose stack, every Kind node's own data,
-# the built images per Kind node that gets them (hf-serve: every node; the GPU image: the GPU
+# the suite's images per Kind node that gets them (hf-serve: every node; the GPU image: the GPU
 # worker only), the preloaded images on every node and the host unless KIND_PRELOAD=0, plus
 # `kind load`'s temporary archive. RUNR_E2E_GPU=0 runs the CPU cases without the GPU worker.
 # The Kind cluster gets a third worker with the host's GPU. runtime: an extraMount
@@ -68,9 +68,10 @@
 # while the suite runs, every RUNR_E2E_GPU_WATCH_SECONDS (default 10) (ai_before_e2e): the reason
 # then goes into the API container (AI_GPU_ABORT_FILE), where the GPU case reads it and stops.
 
-AI_HF_SERVE_VERSION="${HF_SERVE_VERSION:-1.1.1}"
-AI_HF_SERVE_TAG="${REGISTRY}/hf-serve:${AI_HF_SERVE_VERSION}"
-AI_HF_SERVE_DEFAULT_TAG="ghcr.io/brf-tech/runr/hf-serve:${AI_HF_SERVE_VERSION}"
+# hf-serve: the published image of the version runtime-images.sh pins (HF_SERVE_VERSION); the
+# product's default name, which mirror Jobs and receivers use, when it comes from another registry
+AI_HF_SERVE_TAG="$(hf_serve_image)"
+AI_HF_SERVE_DEFAULT_TAG="ghcr.io/brf-tech/runr/hf-serve:${HF_SERVE_VERSION}"
 AI_GPU_IMAGE_TAG="${REGISTRY}/ai-gpu-caas:e2e"
 # The NVIDIA runtime's configuration and the device node the driver-mounts route needs on the host
 AI_NVIDIA_RUNTIME_CONFIG="${AI_NVIDIA_RUNTIME_CONFIG:-/etc/nvidia-container-runtime/config.toml}"
@@ -244,11 +245,29 @@ ai_kind_tmpdir() {
 # ai_kind_load <cluster> <image> [node,...] — the image into the Kind nodes (all of them, or the
 # ones named), kind's archive in ai_kind_tmpdir
 ai_kind_load() {
-  local cluster="$1" image="$2" nodes="${3:-}" tmpdir args
+  local cluster="$1" image="$2" nodes="${3:-}" tmpdir args arch archive first rc=0
   tmpdir=$(ai_kind_tmpdir) || return 1
   args=(docker-image "$image" --name "$cluster")
   [ -z "$nodes" ] || args+=(--nodes "$nodes")
-  TMPDIR="$tmpdir" kind load "${args[@]}" >/dev/null
+  # Quiet unless the archive below fails too: for a multi-platform image it prints an ERROR
+  # ("ctr: content digest … not found") that the archive then makes good
+  first=$(TMPDIR="$tmpdir" kind load "${args[@]}" 2>&1) && return 0
+  # A pulled multi-platform image (hf-serve, published by BRF-Tech/runr-runtimes) in Docker's
+  # containerd image store does not go through `kind load docker-image` (kind_load_image of
+  # test.sh): only the nodes' platform, saved and loaded as an archive
+  echo "  ${image}: loading the nodes' platform as an archive"
+  arch=$(docker exec "${cluster}-control-plane" uname -m 2>/dev/null || echo x86_64)
+  case "$arch" in aarch64|arm64) arch=arm64 ;; *) arch=amd64 ;; esac
+  archive=$(mktemp "${tmpdir}/runr-kind-image.XXXXXX") || return 1
+  args=(image-archive "$archive" --name "$cluster")
+  [ -z "$nodes" ] || args+=(--nodes "$nodes")
+  docker save --platform "linux/${arch}" -o "$archive" "$image" && TMPDIR="$tmpdir" kind load "${args[@]}" >/dev/null || rc=1
+  rm -f -- "$archive"
+  if [ "$rc" != 0 ] && [ -n "$first" ]; then
+    echo "  ${image}: kind load docker-image said:" >&2
+    printf '%s\n' "$first" | sed 's/^/    /' >&2
+  fi
+  return "$rc"
 }
 
 # ai_image_sizes <image> — "<archive> <unpacked>" in bytes: what `docker save` writes for the
@@ -282,7 +301,7 @@ AI_DISK_PRELOAD_MIB=1400
 # Empty when the GPU run fits the disk, otherwise why not. Under Docker's root dir:
 # RUNR_E2E_GPU_RESERVE_GB (default 12) for the images the Kind nodes pull for the region and the
 # rest of the run, the Compose stack, and on every Kind node (control-plane, KIND_WORKERS, the GPU
-# worker) its own data and hf-serve's archive + unpacked layers (from the built image's sizes),
+# worker) its own data and hf-serve's archive + unpacked layers (from the image's sizes),
 # the GPU image on the GPU worker, and unless KIND_PRELOAD=0 the preloaded images on every node
 # and the host. `kind load`'s temporary archive (the larger image's) adds to that on the same
 # filesystem, or needs that much free in ai_kind_tmpdir on another one.
@@ -292,7 +311,7 @@ ai_gpu_disk_problem() {
   local node=$((AI_DISK_NODE_MIB * mib)) compose=$((AI_DISK_COMPOSE_MIB * mib)) preload=$((AI_DISK_PRELOAD_MIB * mib))
   local root_free="" root_mount="" root_source="" tmp_free="" tmp_mount="" tmp_source="" detail
   read -r hf_archive hf_unpacked < <(ai_image_sizes "$AI_HF_SERVE_TAG")
-  # no selected case uses hf-serve (RUNR_E2E_AI_CASES): not built, not loaded
+  # no selected case uses hf-serve (RUNR_E2E_AI_CASES): not pulled, not loaded
   [ "$_ai_hf_serve" = "1" ] || { hf_archive=0; hf_unpacked=0; }
   read -r gpu_archive gpu_unpacked < <(ai_image_sizes "$AI_GPU_IMAGE_TAG")
   hf=$((hf_archive + hf_unpacked))
@@ -449,8 +468,8 @@ cmd_test_ai() {
     if ai_case_selected "$case"; then _ai_hf_serve=1; fi
   done
   if [ "$_ai_hf_serve" = "1" ]; then
-    echo "  hf-serve image: ${AI_HF_SERVE_TAG} (building runtime/hf-serve, CPU)"
-    docker build -q --pull -t "$AI_HF_SERVE_TAG" "${SCRIPT_DIR}/hf-serve" >/dev/null
+    echo "  hf-serve image (CPU):"
+    runtime_image_ready "$AI_HF_SERVE_TAG" || return 1
     if [ "$AI_HF_SERVE_TAG" != "$AI_HF_SERVE_DEFAULT_TAG" ]; then
       docker tag "$AI_HF_SERVE_TAG" "$AI_HF_SERVE_DEFAULT_TAG"
     fi

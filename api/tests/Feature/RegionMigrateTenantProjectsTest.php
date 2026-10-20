@@ -170,6 +170,25 @@ class RegionMigrateTenantProjectsTest extends TestCase
         $this->assertContains('PATCH old.cluster.test /apis/serving.knative.dev/v1/namespaces/fn/services/acme-fixed', $this->calls);
     }
 
+    public function test_a_rollback_removes_the_organizations_projects_from_the_cluster_it_left(): void
+    {
+        $this->runningProject('shop');
+        [$orders] = $this->acme->run(fn () => $this->runningProject('acme-orders'));
+        $this->migrateRegion($this->region->fresh(), '10.96.2.2:5000');
+        // The organization's database credentials on the new cluster
+        $this->seedObject('new.cluster.test', '/api/v1/namespaces/fn/secrets', 'acme-orders-bindings',
+            ['runr/project-id' => $orders->id, 'runr.dev/bindings' => 'true', 'runr/tenant' => 'acme']);
+
+        app(RegionMigrateService::class)->rollbackMigration(TenantAwareKnativeRegion::findOrFail($this->region->id));
+
+        foreach (['shop', 'acme-orders'] as $slug) {
+            $this->assertContains("DELETE new.cluster.test /apis/serving.knative.dev/v1/namespaces/fn/services/{$slug}", $this->calls, "{$slug} leaves the new cluster");
+            $this->assertNotContains("DELETE old.cluster.test /apis/serving.knative.dev/v1/namespaces/fn/services/{$slug}", $this->calls, "{$slug} runs on the old one");
+        }
+        $this->assertTrue($this->hasObject('new.cluster.test', '/api/v1/namespaces/fn/secrets', 'acme-orders-bindings'), 'its data service credentials stay');
+        $this->assertFalse(tenancy()->initialized, 'the central context comes back');
+    }
+
     public function test_a_tenants_own_region_moves_its_projects_inside_the_tenant(): void
     {
         $own = $this->acme->run(fn () => KnativeRegion::create([

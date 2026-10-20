@@ -648,7 +648,7 @@ deployTimestamp: ""
 
 # ─── Init Container Image ───────────────────────
 # initContainer image (fix-permissions / fix-pgdata)
-# ghcr.io/brf-tech/runr/reqs/busybox mirrors docker.io/library/busybox (runtime/lib/mirror.sh); only the "latest" tag exists
+# ghcr.io/brf-tech/runr/reqs/busybox mirrors docker.io/library/busybox (lib/mirror.sh of BRF-Tech/runr-runtimes); only the "latest" tag exists
 initImage:
   repository: ghcr.io/brf-tech/runr/reqs/busybox
   tag: "latest"

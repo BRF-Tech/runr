@@ -13,6 +13,7 @@ use App\Services\RegionMigrateService;
 use App\Services\SandboxInstallService;
 use App\Services\Wasm\WasmInstallService;
 use App\Services\ZotRegistryService;
+use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Bus;
@@ -24,8 +25,11 @@ use Symfony\Component\Yaml\Yaml;
 /**
  * The old and the new cluster of a region migration, faked over HTTP with state: a Knative
  * Service exists once applied and until deleted, and reads back ready on its current revision;
- * lists are empty, other reads find nothing, writes succeed. Every call is recorded, and the
- * last body applied to each Knative Service.
+ * a namespaced object applied (or seeded with seedObject()) is listed by its collection until it
+ * is deleted; lists by label selector are empty, other reads find nothing, writes succeed. Each
+ * cluster's kube-system namespace has its own UID ($clusterIds: another address of one cluster),
+ * and a host in $down does not answer at all. Every call is recorded, and the last body applied
+ * to each Knative Service.
  */
 trait FakesRegionMigrationClusters
 {
@@ -41,6 +45,15 @@ trait FakesRegionMigrationClusters
 
     /** @var array<string, array<string, mixed>> "host service" => the Knative Service last applied */
     private array $applied = [];
+
+    /** @var array<string, array<string, array<string, array<string, mixed>>>> host => collection path => name => the object there */
+    private array $objects = [];
+
+    /** @var array<string, string> host => the UID of its kube-system namespace, when not "uid-<host>" */
+    private array $clusterIds = [];
+
+    /** @var list<string> hosts that do not answer */
+    private array $down = [];
 
     private function kubeconfig(string $server): string
     {
@@ -100,12 +113,54 @@ trait FakesRegionMigrationClusters
         return $this->applied["{$host} {$service}"]['spec']['template']['spec']['containers'][0]['image'] ?? null;
     }
 
+    /**
+     * An object on the cluster at $host, listed by its collection ($collection: the API path, e.g.
+     * /api/v1/namespaces/fn/secrets) until it is deleted.
+     *
+     * @param  array<string, string>  $labels
+     */
+    private function seedObject(string $host, string $collection, string $name, array $labels = []): void
+    {
+        $this->objects[$host][$collection][$name] = ['metadata' => ['name' => $name, 'labels' => $labels]];
+    }
+
+    /** Whether the object $name of $collection is on the cluster at $host. */
+    private function hasObject(string $host, string $collection, string $name): bool
+    {
+        return isset($this->objects[$host][$collection][$name]);
+    }
+
     private function fakeClusters(): void
     {
         Http::fake(function (Request $request) {
             $host = (string) parse_url($request->url(), PHP_URL_HOST);
             $path = (string) parse_url($request->url(), PHP_URL_PATH);
             $this->calls[] = $request->method().' '.$host.' '.$path;
+            if (in_array($host, $this->down, true)) {
+                throw new ConnectionException("cURL error 7: Failed to connect to {$host} port 6443: Connection refused");
+            }
+
+            // Namespaced objects: applied or created, listed by their collection, deleted
+            if (preg_match('#^(?:/api/v1|/apis/[^/]+/[^/]+)/namespaces/[^/]+/[^/]+(?:/([^/]+))?$#', $path, $o)) {
+                $name = $o[1] ?? null;
+                $collection = $name !== null ? substr($path, 0, -strlen('/'.$name)) : $path;
+                if (in_array($request->method(), ['PATCH', 'POST', 'PUT'], true)) {
+                    $body = (array) json_decode($request->body(), true);
+                    $name ??= $body['metadata']['name'] ?? null;
+                    if (is_string($name)) {
+                        $this->objects[$host][$collection][$name] = $body;
+                    }
+                }
+                if ($name !== null && $request->method() === 'DELETE') {
+                    unset($this->objects[$host][$collection][$name]);
+                }
+                if ($name === null && $request->method() === 'GET' && ! str_contains($request->url(), 'labelSelector')) {
+                    return Http::response(['items' => array_values($this->objects[$host][$collection] ?? [])]);
+                }
+            }
+            if ($path === '/api/v1/namespaces/kube-system') {
+                return Http::response(['metadata' => ['name' => 'kube-system', 'uid' => $this->clusterIds[$host] ?? "uid-{$host}"]]);
+            }
 
             $service = preg_match('#^/apis/serving\.knative\.dev/v1/namespaces/[^/]+/services/([^/]+)$#', $path, $m) ? $m[1] : null;
             if ($service !== null && in_array($request->method(), ['PATCH', 'POST', 'PUT'], true)) {

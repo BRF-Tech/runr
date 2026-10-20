@@ -36,7 +36,7 @@ Repository layout:
 | `api/` | Laravel 12 API (PHP 8.3), modules in `api/Modules` (AuthProvider, Tenancy, Ticket) |
 | `vue/` | Vue 3 + Vite console |
 | `helm/` | Helm chart of the control plane |
-| `runtime/` | Runtime images and manifests, the universal wrapper, the region agent, the queue consumer, the image-upload receiver, `ci.sh` |
+| `runtime/` | The region agent, the queue consumer, the image-upload receiver, supply-chain tools, the Spin shim, `ci.sh` and the end-to-end harness |
 | `cli/` | The `runr` CLI (Go) |
 | `terraform-provider-runr/` | Terraform provider (Go) |
 | `actions/` | GitHub Action `actions/deploy` |
@@ -74,7 +74,7 @@ helm lint helm/
 ```
 
 Go modules (`cli/`, `terraform-provider-runr/`, `runtime/agent`, `runtime/queue-consumer`,
-`runtime/wrapper`, `runtime/image-upload`, `proxy/`) are checked in their directory with
+`runtime/image-upload`, `proxy/`) are checked in their directory with
 `gofmt -l . && go vet ./... && go test -race ./...`. Every suite, including Pint, Larastan,
 ESLint, Vitest, Playwright and the end-to-end suites on kind, is described in
 [docs/development.md](docs/development.md#testing); CI runs the same commands.

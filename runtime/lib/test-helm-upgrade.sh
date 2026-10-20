@@ -260,8 +260,7 @@ KINDEOF
   start_cloud_provider_kind
 }
 
-# Images the nodes would otherwise pull (an image kind cannot load is pulled by the nodes); a reqs
-# image the mirror lacks yet comes from its source in REQS_IMAGES (pull_image, test.sh)
+# Images the nodes would otherwise pull (an image kind cannot load is pulled by the nodes)
 _upg_load_images() {
   local img
   for img in "$@"; do

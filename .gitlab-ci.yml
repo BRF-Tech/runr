@@ -92,15 +92,22 @@ secrets:gitleaks:
     - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
 
 # ─── Reqs mirror ─────────────────────────────────────────────────────────────
-# Every ghcr.io/brf-tech/runr/reqs/* image the repository references is in the mirror list (REQS_IMAGES
-# of runtime/lib/mirror.sh, or a runtime base image of mirror-bases), so build:runtime's
-# `ci.sh mirror-reqs` copies it to ghcr.io (ci/check-reqs-mirror.sh).
+# Every ghcr.io/brf-tech/runr/reqs/* image the repository references resolves anonymously on ghcr.io
+# (ci/check-reqs-mirror.sh). BRF-Tech/runr-runtimes publishes the mirror: an image this repository
+# starts to use is added to REQS_IMAGES of its lib/mirror.sh and mirrored by its workflow first.
+# Resolved references are cached for a day (REQS_MIRROR_CACHE).
 
 check:reqs-mirror:
   stage: check
   image: ghcr.io/brf-tech/runr/reqs/alpine:3.21
+  variables:
+    REQS_MIRROR_CACHE: "$CI_PROJECT_DIR/.reqs-mirror-cache/resolved"
+  cache:
+    key: reqs-mirror
+    paths:
+      - .reqs-mirror-cache/
   before_script:
-    - apk add --no-cache bash git grep coreutils
+    - apk add --no-cache bash git grep coreutils curl
   script:
     - bash ci/check-reqs-mirror.sh
   rules:
@@ -111,7 +118,8 @@ check:reqs-mirror:
 # No Docker Hub base image, and OTEL_SDK_DISABLED=true in Spin RUN steps — a docker-container
 # BuildKit builder (this pipeline's, `ci.sh … --push`) breaks them otherwise
 # (ci/check-dockerfiles.sh); runtime/ci.sh without Docker or a registry: build/push exit codes and
-# --pull, the mirror's Docker Hub fallback, the EOL report, the shared Kind helpers (runtime/test/).
+# --pull, the pinned runtime images the e2e suites pull, the reqs mirror check, the shared Kind
+# helpers (runtime/test/).
 
 check:build-scripts:
   stage: check
@@ -410,7 +418,7 @@ test:ui-e2e:stack:
       allow_failure: true
 
 # go vet + race-enabled tests for every Go module in the tree (each go.mod). The WebAssembly
-# modules (runtime/wasm-go, examples/wasm/go) are TinyGo / wasip1 programs, built by the wasm-go
+# modules (examples/wasm/go) are TinyGo / wasip1 programs, built by the wasm-go
 # build image, not by the host Go toolchain.
 test:go:
   stage: test
@@ -439,7 +447,7 @@ test:go:
     - unzip -q -o /tmp/terraform.zip terraform -d /usr/local/bin && terraform version
   script:
     - |
-      modules=$(find . -name go.mod -not -path './.go/*' -not -path '*/node_modules/*' -not -path '*/vendor/*' -not -path './runtime/wasm-go/*' -not -path './examples/wasm/*' | sort)
+      modules=$(find . -name go.mod -not -path './.go/*' -not -path '*/node_modules/*' -not -path '*/vendor/*' -not -path './examples/wasm/*' | sort)
       for mod in $modules; do
         dir=$(dirname "$mod")
         echo "── $dir"
@@ -596,65 +604,6 @@ build:ui:
         - vue/**/*
       exists:
         - vue/Dockerfile
-
-# ─── Runtime Images (ghcr.io) ─────────────────────────────────────────────────
-# build.sh discovers versions dynamically and builds + pushes them under ghcr.io/brf-tech/runr/.
-# Runs when something under runtime/ changes, or manually.
-# Secrets: GHCR_USERNAME, GHCR_TOKEN (write:packages scope)
-
-build:runtime:
-  extends: .docker_build
-  stage: build
-  before_script:
-    - echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USERNAME" --password-stdin
-    - apk add --no-cache bash curl
-    - docker run --rm --privileged ghcr.io/brf-tech/runr/reqs/binfmt:latest --install all
-  script:
-    # The reqs mirror first (ghcr.io/brf-tech/runr/reqs/*): every REQS_IMAGES entry of
-    # runtime/lib/mirror.sh (an entry added to the list is copied here, not by hand), then the
-    # runtime base images — a new upstream patch version (e.g. node:24.21-slim) must be mirrored
-    # before build discovers and uses it
-    - curl -fsSL https://github.com/google/go-containerregistry/releases/download/v0.21.2/go-containerregistry_Linux_x86_64.tar.gz | tar xz -C /usr/local/bin crane
-    - bash runtime/ci.sh mirror-reqs
-    - bash runtime/ci.sh mirror-bases
-    - bash runtime/ci.sh build --push
-    - bash runtime/ci.sh wrapper --push
-  timeout: 30m
-  rules:
-    - if: $CI_PIPELINE_SOURCE == "schedule" && $SCHEDULED_JOB == "runtime"
-    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
-      changes:
-        - runtime/**/*
-    - when: manual
-      allow_failure: true
-
-# The PyTorch and TensorFlow runtime images, CPU and -gpu, linux/amd64 only: ci.sh ml-runtimes
-# builds, smoke-tests and then pushes exactly the images `ci.sh ml-runtimes --list` prints (several
-# GB each, so a job of their own); nothing is pushed unless every smoke test passed. Runs when
-# their sources change on the default branch, on the "ml-runtimes" schedule, or manually.
-# Secrets: GHCR_USERNAME, GHCR_TOKEN (write:packages scope)
-build:ml-runtimes:
-  extends: .docker_build
-  stage: build
-  before_script:
-    - echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USERNAME" --password-stdin
-    - apk add --no-cache bash curl
-  script:
-    - bash runtime/ci.sh ml-runtimes --list
-    - bash runtime/ci.sh ml-runtimes --push
-  timeout: 90m
-  rules:
-    - if: $CI_PIPELINE_SOURCE == "schedule" && $SCHEDULED_JOB == "ml-runtimes"
-    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
-      changes:
-        - runtime/pytorch/**/*
-        - runtime/tensorflow/**/*
-        - runtime/python/server.py
-        - runtime/python/runner.py
-        - runtime/python/entrypoint.sh
-        - runtime/lib/build-ml.sh
-    - when: manual
-      allow_failure: true
 
 # ─── Export ───────────────────────────────────────────────────────────────────
 # Produces the OpenAPI JSON as a static artifact.

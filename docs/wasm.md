@@ -148,7 +148,7 @@ image `FROM scratch` with `spin.toml`: the shim reads such an image from its fil
 compiles it again on every start.
 
 The build images are pulled by the nodes like any image (`ghcr.io/brf-tech/runr/exec-wasm-<lang>:4.1`,
-built from `runtime/wasm-<lang>/Dockerfile` with `runtime/ci.sh wasm` on base images from the reqs
+built from `runtimes/wasm-<lang>/Dockerfile` of [BRF-Tech/runr-runtimes](https://github.com/BRF-Tech/runr-runtimes) with its `ci.sh wasm` on base images from the reqs
 mirror; their build steps run Spin with `OTEL_SDK_DISABLED=true`, as a docker-container BuildKit
 builder hands every build step an OTLP endpoint Spin rejects) and come with the
 dependencies of the default project already fetched and compiled — Rust's `CARGO_TARGET_DIR`,
@@ -347,7 +347,7 @@ which WAGI modules do not read.
 ### Building
 
 The build Job runs `runr-wasm-exec build` in `ghcr.io/brf-tech/runr/exec-wasm-exec:4.1` (wasi-sdk 34, Zig
-0.16, TinyGo 0.42 with wasm-tools 1.240, the Spin CLI 4.1, `runtime/wasm-exec`); the first match
+0.16, TinyGo 0.42 with wasm-tools 1.240, the Spin CLI 4.1, `runtimes/wasm-exec` of BRF-Tech/runr-runtimes); the first match
 makes `main.wasm`:
 
 | The project has | Build |
@@ -590,10 +590,12 @@ that file; installing WebAssembly support again applies it, and on existing regi
   installer queues the install), the Knative feature patch, the endpoints and
   their permissions, the Wasm runtime manifests, the build Job of every language, the deploy manifests
   (runtimeClassName, nodeSelector, schedule sidecar) and the picker / catalog filtering.
-  `php artisan runtimes:validate ../runtime/wasm-*/runtime.yaml` and `php artisan runtimes:bundle --check`
-  check the manifests and the bundled catalog.
-- **Wrapper**: `cd runtime/wrapper && go test -count=1 -run Tick ./...` (Linux) — the `tick`
-  subcommand.
+  With a BRF-Tech/runr-runtimes checkout next to this one,
+  `php artisan runtimes:validate ../../runr-runtimes/runtimes/wasm-*/runtime.yaml` and
+  `RUNR_RUNTIME_CATALOG=../../runr-runtimes/runtimes php artisan runtimes:bundle --check` check the
+  manifests and the bundled catalog.
+- **Wrapper** (BRF-Tech/runr-runtimes): `cd wrapper && go test -count=1 -run Tick ./...` (Linux) —
+  the `tick` subcommand.
 - **UI**: `cd vue && npx vitest run tests/components/wasm tests/utils/wasm.spec.js` (the WebAssembly
   card: status, shims, node selection, install / change / uninstall, progress events, read-only;
   the runtime picker's filtering and Wasm badge) and
@@ -605,8 +607,8 @@ that file; installing WebAssembly support again applies it, and on existing regi
   `examples/wasm/c-exec` and Q (Wasm) on Kind and calls them.
 - **End to end**: `bash runtime/ci.sh test-wasm [--k8s=X.Y.Z] [--no-cleanup]` creates a Kind
   cluster (`KIND_LOCK=/tmp/runr-kind.lock` by default), loads the Spin shim image (the local
-  image of that version, else pulled, else built) and the Rust and JavaScript build images into
-  it, installs WebAssembly support through the API, puts the upstream Spin shim back on the nodes
+  image of that version, else pulled, else built) and the published Rust and JavaScript build
+  images (the tag pinned in `runtime/lib/runtime-images.sh`) into it, installs WebAssembly support through the API, puts the upstream Spin shim back on the nodes
   through an installer of an earlier build and checks that region:reconcile's step replaces it
   with RunR's build without a runtime restart, deploys the Rust and JavaScript examples, checks
   their answers and pod specs, prints the cold start of each after it scaled to zero

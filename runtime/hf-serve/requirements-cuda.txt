@@ -1,3 +1,0 @@
-# GPU image only: text-to-image and device placement of large checkpoints
-diffusers==0.41.0
-accelerate==1.15.0

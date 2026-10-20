@@ -10,6 +10,7 @@ use App\Console\Commands\Concerns\E2eTestImagesTrait;
 use App\Console\Commands\Concerns\E2eTestMigrationTrait;
 use App\Console\Commands\Concerns\E2eTestObservabilityTrait;
 use App\Console\Commands\Concerns\E2eTestReconcileTrait;
+use App\Console\Commands\Concerns\E2eTestRegionMoveTrait;
 use App\Console\Commands\Concerns\E2eTestResultTrait;
 use App\Console\Commands\Concerns\E2eTestRunnerTrait;
 use App\Console\Commands\Concerns\E2eTestRuntimesTrait;
@@ -36,6 +37,7 @@ class E2eTestCommand extends Command
     use E2eTestMigrationTrait;
     use E2eTestObservabilityTrait;
     use E2eTestReconcileTrait;
+    use E2eTestRegionMoveTrait;
     use E2eTestResultTrait;
     use E2eTestRunnerTrait;
     use E2eTestRuntimesTrait;
@@ -52,7 +54,7 @@ class E2eTestCommand extends Command
         {--kubeconfig= : Path to kubeconfig file for test region}
         {--timeout=300 : Deploy wait timeout in seconds}
         {--skip-sandbox : Skip sandbox runtime isolation tests}
-        {--suite=all : all = every phase incl. runtime plugins; runtimes = runtime plugin functions only; supply-chain = SBOM / scan / signing / admission; ai = model services, offline snapshots, bindings, GPU; bindings = bindings only (data services, KV / object / Postgres / external); sandbox-api = Sandbox API only; wasm = WebAssembly support + Wasm runtimes; observability = tracing backend, traces, replay; reconcile = region:reconcile tracing backend and registry pre-warm steps; git-deploy = git remote, Forgejo push and previews; images = uploaded images (tar + wasm), CaaS from an upload, wasm-exec in C and Q; admission = project stop / resume, region status blocks, fixed-region allocations (Billing module on)}
+        {--suite=all : all = every phase incl. runtime plugins; runtimes = runtime plugin functions only; supply-chain = SBOM / scan / signing / admission; ai = model services, offline snapshots, bindings, GPU; bindings = bindings only (data services, KV / object / Postgres / external); sandbox-api = Sandbox API only; wasm = WebAssembly support + Wasm runtimes; observability = tracing backend, traces, replay; reconcile = region:reconcile tracing backend and registry pre-warm steps; git-deploy = git remote, Forgejo push and previews; images = uploaded images (tar + wasm), CaaS from an upload, wasm-exec in C and Q; admission = project stop / resume, region status blocks, fixed-region allocations (Billing module on); region-move = the region moved to the cluster of --move-kubeconfig and rolled back (rebuilds, report, restored state)}
         {--sandbox-kata : sandbox-api suite: also install Kata and run a Kata sandbox (nodes with /dev/kvm)}
         {--examples=/tmp/runr-examples : examples/runtimes copied into the container (runtime plugin suite)}
         {--hf-serve-image= : AI suite: hf-serve image of the CPU model services (default ghcr.io/brf-tech/runr/hf-serve:1.1.1, or RUNR_E2E_HF_SERVE_IMAGE)}
@@ -62,7 +64,8 @@ class E2eTestCommand extends Command
         {--gpu-node=* : AI suite: the GPU nodes GPU support is restricted to (repeatable; default: detected)}
         {--ai-cases= : AI suite: only these cases, comma-separated, plus what they need (e.g. ai-gpu-caas; or RUNR_E2E_AI_CASES)}
         {--gpu-abort-file=/tmp/runr-e2e-gpu-abort : AI suite: the GPU case stops with the text of this file once it exists (runtime/lib/test-ai.sh writes it when the host GPU needs a reset)}
-        {--forgejo=/tmp/runr-forgejo.json : git-deploy suite: address and token of the throwaway Forgejo}';
+        {--forgejo=/tmp/runr-forgejo.json : git-deploy suite: address and token of the throwaway Forgejo}
+        {--move-kubeconfig= : region-move suite: kubeconfig of the cluster the region moves to (runtime/lib/test-region-move.sh)}';
 
     protected $description = 'Run end-to-end tests against a running API + Knative cluster';
 
@@ -206,6 +209,15 @@ class E2eTestCommand extends Command
         // Project admission only: stop / resume, region status blocks, fixed-region allocations (E2eTestAdmissionTrait)
         if ($this->option('suite') === 'admission') {
             $tests = $this->runAdmissionSuite($regionId);
+            $this->printResultsTable($tests, $startTime);
+            $this->saveResultsMarkdown($tests, $startTime);
+
+            return $this->countResults($tests)['failed'] > 0 ? 1 : 0;
+        }
+
+        // Region move only: to the cluster of --move-kubeconfig and back (E2eTestRegionMoveTrait)
+        if ($this->option('suite') === 'region-move') {
+            $tests = $this->runRegionMoveSuite($regionId);
             $this->printResultsTable($tests, $startTime);
             $this->saveResultsMarkdown($tests, $startTime);
 

@@ -29,7 +29,8 @@ interface KnativeConstants
     const TRAEFIK_CHART_VERSION = '40.3.0';
 
     // The image that chart version runs (its appVersion), from the reqs mirror of
-    // docker.io/traefik like RunR's other third-party images (runtime/lib/mirror.sh): set as the
+    // docker.io/traefik like RunR's other third-party images (lib/mirror.sh of
+    // BRF-Tech/runr-runtimes): set as the
     // chart's image (KnativeTraefikTrait), pre-pulled by the nodes (config knative.prepull_images)
     // and loaded into Kind by the e2e. KNATIVE_TRAEFIK_IMAGE overrides it (TraefikImage).
     // Changes with TRAEFIK_CHART_VERSION, together with its REQS_IMAGES entry.

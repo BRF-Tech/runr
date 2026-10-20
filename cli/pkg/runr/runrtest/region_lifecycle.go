@@ -1095,7 +1095,7 @@ func init() {
 			r.d.ExternalIP = r.d.MigrationOldIP
 		}
 		r.d.MigrationStatus, r.d.IsMigrating, r.d.MigrationOldIP, r.d.MigrationStartedAt = "", false, "", ""
-		return 200, map[string]any{"message": "Migration rolled back."}, nil
+		return 200, map[string]any{"message": "Migration rolled back. The project functions the move deployed on the new cluster are removed from it in the background (its installs and data services stay); a notification tells how it went."}, nil
 	})
 
 	// Function-domain TLS, Skupper, capacity, demo projects

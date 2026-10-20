@@ -484,8 +484,8 @@ Operator charts are fetched by the RunR API, their images by the nodes (`nvcr.io
 # Hub proxy, engines, model service manifests, mirror / import Jobs, uploads, bindings)
 cd api && php artisan test tests/Unit/Ai tests/Feature/Ai
 
-# hf-serve (fake pipelines, no torch needed)
-cd runtime/hf-serve && pip install -r requirements-test.txt && python -m pytest tests
+# hf-serve (fake pipelines, no torch needed), in a checkout of BRF-Tech/runr-runtimes
+cd hf-serve && pip install -r requirements-test.txt && python -m pytest tests
 
 # UI: component specs and the Playwright flows against a fake API
 cd vue && npx vitest run src/components/region src/components/project src/components/models src/views src/api src/utils
@@ -498,7 +498,8 @@ RUNR_E2E_TEI=1 runtime/ci.sh test-ai          # + TEI CPU embeddings
 RUNR_E2E_GPU=0 runtime/ci.sh test-ai          # never the GPU case
 ```
 
-`test-ai` builds the hf-serve CPU image and loads it into Kind; the CPU cases download
+`test-ai` pulls the hf-serve CPU image that BRF-Tech/runr-runtimes publishes (the tag pinned in
+`runtime/lib/runtime-images.sh`) and loads it into Kind; the CPU cases download
 `hf-internal-testing/tiny-random-bert` from the Hub, so the Kind nodes need internet access.
 `KIND_LOCK` (default `/tmp/runr-kind.lock` for this suite) keeps one Kind cluster at a time on a
 shared host. `KIND_ETCD_IN_MEMORY` defaults to `1` for this suite: etcd keeps its data on the Kind

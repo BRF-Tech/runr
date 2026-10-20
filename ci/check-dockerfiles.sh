@@ -6,7 +6,7 @@ set -euo pipefail
 #
 #  1. No base image from Docker Hub: its anonymous pull limit stops a build host or a CI runner
 #     after a few pulls. A third-party base comes from the reqs mirror (ghcr.io/brf-tech/runr/reqs/…,
-#     REQS_IMAGES of runtime/lib/mirror.sh, which ci/check-reqs-mirror.sh checks) or from another
+#     published by BRF-Tech/runr-runtimes, which ci/check-reqs-mirror.sh checks) or from another
 #     registry. FROM references are resolved with the defaults of their ARGs.
 #  2. A stage whose RUN steps run the Spin CLI sets OTEL_SDK_DISABLED=true (ARG or ENV) before
 #     them. A docker-container BuildKit builder (buildx --driver docker-container: `ci.sh … --push`,
@@ -78,7 +78,7 @@ for file in "${dockerfiles[@]}"; do
     [ -n "$base" ] || continue
     bases=$((bases + 1))
     if on_docker_hub "$base"; then
-      echo "✗ ${file}: base image ${base} comes from Docker Hub — mirror it (REQS_IMAGES of runtime/lib/mirror.sh) and use ghcr.io/brf-tech/runr/reqs/…"
+      echo "✗ ${file}: base image ${base} comes from Docker Hub — mirror it (REQS_IMAGES of lib/mirror.sh in BRF-Tech/runr-runtimes) and use ghcr.io/brf-tech/runr/reqs/…"
       failed=$((failed + 1))
     fi
   done < <(dockerfile_bases "$file")

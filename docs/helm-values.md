@@ -1,8 +1,8 @@
 # Helm values reference
 
-Every value of the Helm chart `runr` 0.5.9 from BRF's public Helm repository, grouped by top-level
+Every value of the Helm chart `runr` 0.5.10 from BRF's public Helm repository, grouped by top-level
 key, with its default from the chart's `values.yaml` and what the templates do with it.
-`helm show values brf-tech/runr --version 0.5.9` prints the file with its comments. How these
+`helm show values brf-tech/runr --version 0.5.10` prints the file with its comments. How these
 values fit together in a production install is described in [Installing RunR in
 production](install.md).
 

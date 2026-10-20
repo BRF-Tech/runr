@@ -21,22 +21,23 @@ trait BroadcastsJobCompletion
     public ?string $initiatorId = null;
 
     /**
-     * Broadcast a success event and create a notification for the initiator.
+     * Broadcast a success event and create a notification for the initiator ($body: the line the
+     * console shows under the title).
      */
-    protected function broadcastSuccess(string $topic, array $payload, string $title): void
+    protected function broadcastSuccess(string $topic, array $payload, string $title, ?string $body = null): void
     {
         $this->broadcastSafely($topic, $payload);
-        $this->createJobNotification($topic, 'info', $title, $payload);
+        $this->createJobNotification($topic, 'info', $title, $payload, $body);
     }
 
     /**
      * Broadcast a failure event and create a critical notification for the initiator.
      */
-    protected function broadcastFailure(string $topic, array $payload, \Throwable $e, string $title): void
+    protected function broadcastFailure(string $topic, array $payload, \Throwable $e, string $title, ?string $body = null): void
     {
         $payload['error'] = mb_substr($e->getMessage(), 0, 500);
         $this->broadcastSafely($topic, $payload);
-        $this->createJobNotification($topic, 'critical', $title, $payload);
+        $this->createJobNotification($topic, 'critical', $title, $payload, $body);
     }
 
     /**
@@ -55,7 +56,7 @@ trait BroadcastsJobCompletion
     /**
      * Create a Notification record and broadcast it if we have an initiator.
      */
-    private function createJobNotification(string $type, string $level, string $title, array $data): void
+    private function createJobNotification(string $type, string $level, string $title, array $data, ?string $body = null): void
     {
         if (! $this->initiatorId) {
             return;
@@ -66,6 +67,7 @@ trait BroadcastsJobCompletion
             'type' => $type,
             'level' => $level,
             'title' => $title,
+            'body' => $body,
             'data' => $data,
         ]);
 

@@ -15,11 +15,12 @@ concurrency:
 
 jobs:
   reqs-mirror:
-    name: Reqs mirror list
+    name: Reqs mirror (anonymous pulls)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      # Every ghcr.io/brf-tech/runr/reqs/* image the repository references is mirrored by runtime/ci.sh
+      # Every ghcr.io/brf-tech/runr/reqs/* image the repository references resolves anonymously (the
+      # mirror of BRF-Tech/runr-runtimes)
       - run: bash ci/check-reqs-mirror.sh
 
   build-scripts:
@@ -29,8 +30,8 @@ jobs:
       - uses: actions/checkout@v4
       # No Docker Hub base image; Spin RUN steps with OTEL_SDK_DISABLED=true (docker-container builders)
       - run: bash ci/check-dockerfiles.sh
-      # runtime/ci.sh without Docker or a registry: build/push exit codes and --pull, the mirror's
-      # Docker Hub fallback, the EOL report, the shared Kind helpers
+      # runtime/ci.sh without Docker or a registry: build/push exit codes and --pull, the pinned
+      # runtime images the e2e suites pull, the reqs mirror check, the shared Kind helpers
       - run: for t in runtime/test/*_test.sh; do echo "── $t"; bash "$t"; done
 
   api:
@@ -146,8 +147,8 @@ jobs:
           GOFLAGS: -mod=readonly
           CHECKPOINT_DISABLE: '1'
         run: |
-          # runtime/wasm-go, examples/wasm/go: TinyGo / wasip1 modules (wasm-go build image)
-          for mod in $(find . -name go.mod -not -path '*/node_modules/*' -not -path '*/vendor/*' -not -path './runtime/wasm-go/*' -not -path './examples/wasm/*' | sort); do
+          # examples/wasm/go: TinyGo / wasip1 modules (wasm-go build image)
+          for mod in $(find . -name go.mod -not -path '*/node_modules/*' -not -path '*/vendor/*' -not -path './examples/wasm/*' | sort); do
             dir=$(dirname "$mod")
             echo "::group::$dir"
             unformatted=$(cd "$dir" && gofmt -l .)

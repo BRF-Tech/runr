@@ -6,8 +6,8 @@ use App\Models\ExecutorImage;
 use Illuminate\Database\Seeder;
 
 /**
- * The ML runtime versions RunR publishes (runtime/ci.sh ml-runtimes --list), for local and demo
- * installs that do not run executor:sync against the image registry.
+ * The ML runtime versions RunR publishes (`ci.sh ml-runtimes --list` of BRF-Tech/runr-runtimes),
+ * for local and demo installs that do not run executor:sync against the image registry.
  */
 class MlRuntimeSeeder extends Seeder
 {

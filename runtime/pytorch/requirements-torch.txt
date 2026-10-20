@@ -1,5 +1,0 @@
-# exec-pytorch: torch and torchvision, installed from PyTorch's wheel index (CPU wheels for the
-# <version> image, CUDA 12.6 wheels for <version>-gpu). The image tag is torch's major.minor
-# (runtime/ci.sh ml-runtimes reads it from this pin); hf-serve runs the same torch.
-torch==2.14.1
-torchvision==0.29.1

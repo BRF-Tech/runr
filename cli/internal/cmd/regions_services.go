@@ -579,7 +579,7 @@ func newRegionMigrationCmd(app *App) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if err := app.confirm("Return "+reg.Name+" to its old cluster (its projects are deployed there again)", rollbackYes); err != nil {
+			if err := app.confirm("Return "+reg.Name+" to its old cluster (its projects are deployed there again and removed from the new one)", rollbackYes); err != nil {
 				return err
 			}
 			res, err := c.RollbackRegionMigration(cmd.Context(), reg.ID)
