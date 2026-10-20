@@ -356,7 +356,7 @@ export default {
         rollbackMigration:     'Rollback Migration',
         confirmStart:          'Are you sure you want to start the cluster migration? All services will be redeployed on the new cluster.',
         confirmComplete:       'Are you sure you want to complete the migration? The old cluster will be disconnected.',
-        confirmRollback:       'Are you sure you want to rollback? Services will be redeployed on the old cluster.',
+        confirmRollback:       'Are you sure you want to rollback? Services will be redeployed on the old cluster, and the project functions the move deployed on the new cluster are removed from it (its installs and data services stay).',
         newIp:                 'New IP',
         oldIp:                 'Old IP',
         hoursRemaining:        '{hours}h remaining',

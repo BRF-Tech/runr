@@ -356,7 +356,7 @@ export default {
         rollbackMigration:     'Taşımayı Geri Al',
         confirmStart:          'Küme taşımasını başlatmak istediğinize emin misiniz? Tüm servisler yeni kümede yeniden dağıtılacak.',
         confirmComplete:       'Taşımayı tamamlamak istediğinize emin misiniz? Eski küme bağlantısı kesilecek.',
-        confirmRollback:       'Geri almak istediğinize emin misiniz? Servisler eski kümede yeniden dağıtılacak.',
+        confirmRollback:       'Geri almak istediğinize emin misiniz? Servisler eski kümede yeniden dağıtılacak; taşımanın yeni kümeye dağıttığı proje fonksiyonları oradan kaldırılacak (kurulumları ve veri servisleri kalır).',
         newIp:                 'Yeni IP',
         oldIp:                 'Eski IP',
         hoursRemaining:        '{hours} saat kaldı',
