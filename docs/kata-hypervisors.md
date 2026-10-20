@@ -125,7 +125,12 @@ install that re-runs kata-deploy applies `RollingUpdate` again.
 For Firecracker, RunR applies a `kata-devmapper` DaemonSet to the nodes before the kata-installer:
 
 - a sparse data file (default 20 GiB, 10–1024 via `devmapper_pool_gb`) + a 1 GiB metadata file under
-  `/var/lib/runr/devmapper`
+  `/var/lib/runr/devmapper`. The files are created once and never resized: the region records the
+  size (`sandbox_kata_devmapper_pool_gb` of `GET /knative-regions/{id}`, `devmapper.pool_gb` of
+  `GET /knative-regions/{id}/kata-shims`) and later installs — **Add hypervisors**, `region:reconcile`,
+  a [move to another cluster](regions.md#moving-a-region-to-another-cluster) — use it, whatever
+  `devmapper_pool_gb` they send. Uninstalling Kata clears it; a pool set up before the size was
+  recorded keeps the size of its `kata-devmapper` DaemonSet
 - the `runr-thinpool` thin-pool on loop devices
 - `runr-devmapper.service`, which activates the pool at boot before containerd / k3s / rke2
 - `[plugins."io.containerd.snapshotter.v1.devmapper"]` in containerd (k3s/rke2:

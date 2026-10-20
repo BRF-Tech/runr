@@ -5,6 +5,7 @@ namespace App\Mcp\Tools\Concerns;
 use App\Mcp\Server\InternalApi;
 use App\Mcp\Tools\ToolContext;
 use App\Mcp\Tools\ToolError;
+use App\Mcp\Tools\ToolResult;
 
 /**
  * Versions and deployments of long-running tools (deploy, rollback, code_write_files with
@@ -83,18 +84,72 @@ trait WaitsForDeployments
     }
 
     /**
-     * Starts a deployment of $versionId.
+     * Starts a deployment of $versionId. A version whose image is not in the region's registry
+     * (built before the region moved to another cluster) is built again first and its deploy
+     * queued — the answer's queued_deploy: until $deadline it is followed to the deployment it
+     * starts, which is returned; without a deadline, or when it passes first, the queued deploy
+     * is returned as ['queued_deploy' => …, 'message' => …].
      *
-     * @return array the deployment (DeploymentResource)
+     * @return array the deployment (DeploymentResource), or the queued deploy
+     *
+     * @throws ToolError the deploy was refused, or the queued deploy failed or was cancelled
      */
-    protected function startDeployment(ToolContext $context, string $projectId, string $versionId, array $extra = []): array
+    protected function startDeployment(ToolContext $context, string $projectId, string $versionId, array $extra = [], ?int $deadline = null): array
     {
         $result = $context->api()->post(InternalApi::path('projects', $projectId, 'deploy'), ['version_id' => $versionId] + $extra);
         if (! $result->ok()) {
             throw ToolError::fromApi($result, 'Deploy refused');
         }
 
-        return (array) $result->data();
+        $answer = (array) $result->data();
+        if (! is_array($answer['queued_deploy'] ?? null)) {
+            return $answer;
+        }
+
+        $queued = $answer['queued_deploy'];
+        $step = 0;
+        while ($deadline !== null) {
+            if (($queued['status'] ?? null) === 'deployed' && ! empty($queued['deployment_id'])) {
+                $deployment = $context->api()->get(InternalApi::path('projects', $projectId, 'deployments', (string) $queued['deployment_id']));
+                if (! $deployment->ok()) {
+                    throw ToolError::fromApi($deployment, 'Reading the deployment');
+                }
+
+                return (array) $deployment->data();
+            }
+            if (in_array($queued['status'] ?? null, ['failed', 'cancelled'], true)) {
+                throw new ToolError('The deploy of version '.($queued['version'] ?? '?').' did not start: '.($queued['message'] ?? $queued['status']));
+            }
+
+            $context->progress(++$step, null, (string) ($queued['message'] ?? 'Building the version again…'));
+            if (time() >= $deadline || ! $context->pause()) {
+                break;
+            }
+            $fresh = $context->api()->get(InternalApi::path('projects', $projectId, 'queued-deploys', (string) $queued['id']));
+            if (! $fresh->ok()) {
+                throw ToolError::fromApi($fresh, 'Reading the queued deploy');
+            }
+            $queued = (array) $fresh->data();
+        }
+
+        return ['queued_deploy' => $queued, 'message' => $answer['message'] ?? $queued['message'] ?? null];
+    }
+
+    /** The answer of startDeployment() for a deploy that still waits for its version's build. */
+    protected static function queuedResult(array $started, array $version): ToolResult
+    {
+        $queued = (array) $started['queued_deploy'];
+
+        return ToolResult::ok([
+            'status' => 'building',
+            'queued_deploy' => array_filter([
+                'id' => $queued['id'] ?? null,
+                'status' => $queued['status'] ?? null,
+                'message' => $queued['message'] ?? null,
+            ], fn ($v) => $v !== null && $v !== ''),
+            'version' => self::versionSummary($version),
+        ], (string) ($started['message'] ?? 'Version '.($version['number'] ?? '?').' is built again for this region\'s registry; it deploys when the build is ready.')
+            .' deployment_status shows the deployment once it has started.');
     }
 
     /** Polls a deployment until it reaches a final state or the deadline. */

@@ -40,13 +40,21 @@ use Illuminate\Support\Facades\Log;
  *          was stopped, with that deployment's overrides (deploy_config), through the guarded
  *          deploy path (DeploymentStarter: version, region, data residency and supply-chain checks,
  *          ProjectAdmission). When the redeploy is refused the project stays resumed without a
- *          deployment and the answer says why.
+ *          deployment and the answer says why. A version built into a registry the region's
+ *          cluster does not pull from (the region moved while the project was stopped) is built
+ *          again and deployed when ready (VersionRebuilds; code VERSION_REBUILDING).
  */
 class ProjectStopService
 {
     public const LEVEL_PLATFORM = 'platform';
 
     public const LEVEL_ORGANIZATION = 'organization';
+
+    /**
+     * redeploy_code of a resume whose version is built again for the region's registry first
+     * (VersionRebuilds): not a refusal — it deploys when the build is ready.
+     */
+    public const VERSION_REBUILDING = 'version_rebuilding';
 
     /** Deployment states that hold cluster resources */
     private const LIVE = Deployment::LIVE;
@@ -194,6 +202,29 @@ class ProjectStopService
         $overrides = is_array($ran?->deploy_config) && $ran->deploy_config !== [] ? $ran->deploy_config : null;
 
         $deployedBy = $actor instanceof User && $actor->username ? (string) $actor->username : (string) $actor->getAuthIdentifier();
+
+        // Built into a registry the region's cluster does not pull from (the region moved to
+        // another cluster while the project was stopped): built again, deployed when ready
+        if (VersionRebuilds::needed($project->loadMissing('knativeRegion'), $version)) {
+            try {
+                app(DeploymentStarter::class)->assertBeforeBuild($project, $overrides);
+            } catch (ImportException $e) {
+                $refusal = $e->getMessage();
+                $refusalCode = $e->errorCode;
+                Log::info('Resumed project not redeployed', ['project' => $project->slug, 'version' => $version->number, 'reason' => $refusal]);
+
+                return null;
+            }
+            app(VersionRebuilds::class)->queue($project, $version, $deployedBy, [
+                'deploy_config' => $overrides,
+                'initiator_id' => (string) $actor->getAuthIdentifier(),
+            ]);
+            $refusal = VersionRebuilds::message($version);
+            $refusalCode = self::VERSION_REBUILDING;
+            Log::info('Resumed project deploys when its version is built again for the region\'s registry', ['project' => $project->slug, 'version' => $version->number]);
+
+            return null;
+        }
 
         try {
             return app(DeploymentStarter::class)->start($project, $version, $deployedBy, (string) $actor->getAuthIdentifier(), $overrides);

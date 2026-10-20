@@ -93,25 +93,18 @@ class CheckDeploymentReadyJob implements ShouldQueue
             }
 
             if ($ready && $ready['status'] === 'True') {
-                // The Knative Service is the project's (by name): a newer deploy that replaced this
-                // one while it started owns what is ready now — this deployment ends without going
-                // live (a deploy supersedes every live deployment; this covers two deploys at once)
-                $live = app(LiveDeployments::class);
-                if ($live->hasNewer($deployment)) {
-                    $live->retire($deployment);
-                    Log::info('Deployment replaced while it started: not activated', ['deployment' => $deployment->id]);
-
-                    return;
-                }
-
-                // Only a deployment that is still pending becomes active: one stopped (or replaced)
-                // while it started stays shutting_down for its teardown (ProcessTeardown)
-                if (! $deployment->transition(['pending', 'running'], [
-                    'status' => 'active',
+                // Only a deployment that is still pending, and that no newer deployment of the
+                // project replaced, becomes active (the Knative Service is the project's, by name: a
+                // newer deploy owns what is ready now); activating it replaces the older live ones.
+                // One stopped or replaced while it started stays shutting_down for its teardown
+                // (ProcessTeardown)
+                if (! app(LiveDeployments::class)->activate($deployment, [
                     'knative_ready' => true,
                     'knative_message' => $ready['message'] ?? null,
                     'ready_at' => now(),
                 ])) {
+                    Log::info('Deployment not activated: replaced or stopped while it started', ['deployment' => $deployment->id, 'status' => $deployment->status]);
+
                     return;
                 }
                 Log::info('Deployment ready', [

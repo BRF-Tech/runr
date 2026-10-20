@@ -51,6 +51,10 @@ trait WiresTenancy
         // usage_records.created_by
         'Modules/Tenancy/Database/TenantMigrations/0058_add_owner_and_stop_to_projects.php',
         'Modules/Tenancy/Database/TenantMigrations/0059_add_created_by_to_usage_records.php',
+        // knative_regions.migration_old_state (a tenant's own region moved to another cluster)
+        'Modules/Tenancy/Database/TenantMigrations/0063_add_migration_old_state_to_knative_regions.php',
+        // knative_regions.sandbox_kata_devmapper_pool_gb (a tenant's own region with Kata Firecracker)
+        'Modules/Tenancy/Database/TenantMigrations/0064_add_sandbox_kata_devmapper_pool_gb_to_knative_regions.php',
     ];
 
     protected function setUpTenancy(): void

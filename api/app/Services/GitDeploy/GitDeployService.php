@@ -2,6 +2,7 @@
 
 namespace App\Services\GitDeploy;
 
+use App\Jobs\BuildVersionJob;
 use App\Jobs\GitDeploy\DeployPreviewJob;
 use App\Jobs\GitDeploy\ReportGitStatusJob;
 use App\Models\Deployment;
@@ -14,6 +15,7 @@ use App\Models\Version;
 use App\Services\GitDeploy\Providers\GitEvent;
 use App\Services\GitDeploy\Providers\ProviderClients;
 use App\Services\GitDeploy\Providers\TarGz;
+use App\Services\Projects\VersionRebuilds;
 use Closure;
 use Illuminate\Support\Facades\Log;
 
@@ -26,6 +28,9 @@ use Illuminate\Support\Facades\Log;
  */
 class GitDeployService
 {
+    /** status_message of a deploy whose version's build RunR cancelled (Version::STATUS_CANCELLED) */
+    public const BUILD_CANCELLED = 'Build cancelled: ';
+
     public function __construct(
         private ProjectRemote $remote,
         private VersionImporter $importer,
@@ -139,15 +144,29 @@ class GitDeployService
     }
 
     /**
-     * Continue a deploy with its version: wait for the build, start the deployment, or fail.
+     * Continue a deploy with its version: wait for the build, start the deployment, or fail. A
+     * version whose image is in a registry the region's cluster does not pull from (an earlier
+     * version the commit's tree equals, built before the region moved to another cluster) is
+     * built again into the region's first, and the deploy waits for that build like for any other
+     * (VersionRebuilds).
      */
     public function continue(GitDeploy $deploy, Version $version, string $deployedBy = 'git'): void
     {
         $project = $deploy->project;
 
+        if ($version->build_status === 'ready' && VersionRebuilds::needed($project, $version)) {
+            $this->rebuild($deploy, $project, $version);
+            $this->report($deploy);
+
+            return;
+        }
+
         match ($version->build_status) {
-            'pending', 'building' => $deploy->mark(GitDeploy::BUILDING),
+            // A deploy that waits already keeps what it says (a version built again: why)
+            'pending', 'building' => $deploy->status === GitDeploy::BUILDING ? $deploy : $deploy->mark(GitDeploy::BUILDING),
             'failed' => $deploy->mark(GitDeploy::FAILED, 'Build failed: '.($version->build_error ?? 'unknown error')),
+            // Stopped by RunR (a region migration rollback), not a failure of the commit
+            Version::STATUS_CANCELLED => $deploy->mark(GitDeploy::SKIPPED, self::BUILD_CANCELLED.($version->build_error ?? 'the build was stopped')),
             'ready' => $this->startDeployment($deploy, $project, $version, $deployedBy),
             default => $deploy->mark(GitDeploy::FAILED, "Version {$version->label} cannot be deployed ({$version->build_status})"),
         };
@@ -277,6 +296,26 @@ class GitDeployService
         $this->continue($deploy, $version->fresh() ?? $version, $deployedBy);
 
         return $deploy;
+    }
+
+    /**
+     * Build the version again into the region's registry (BuildVersionJob): the deploy waits for
+     * it (BUILDING, versionUpdated() goes on when the build ends). Of two deploys at once one
+     * submits the build.
+     */
+    private function rebuild(GitDeploy $deploy, Project $project, Version $version): void
+    {
+        $claimed = Version::query()->whereKey($version->getKey())
+            ->where('build_status', 'ready')
+            ->where('build_image', $version->build_image)
+            ->update(['build_status' => 'pending', 'build_error' => null, 'build_token' => null, 'updated_at' => now()]);
+        $version->refresh();
+        if ($claimed === 1) {
+            BuildVersionJob::dispatch($version);
+            Log::info("Git deploy of {$project->slug}: {$version->label} is built again for the registry of its region", ['git_deploy' => $deploy->id]);
+        }
+
+        $deploy->mark(GitDeploy::BUILDING, VersionRebuilds::message($version));
     }
 
     private function startDeployment(GitDeploy $deploy, Project $project, Version $version, string $deployedBy): void

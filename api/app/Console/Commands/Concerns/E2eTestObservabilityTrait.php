@@ -12,9 +12,17 @@ namespace App\Console\Commands\Concerns;
  *  - obs-error-trace a failing call (HTTP 500) is found with the status=error filter
  *  - obs-trace-logs  the project's log lines of the trace carry its trace id (wrapper access line)
  *  - obs-replay      the failed call is captured without its Authorization header and replayed
+ *  - obs-uptime-region an uptime check with location "regions" is fetched and run by the region's
+ *                    agent, which calls RunR on the address it was given (the API container's on
+ *                    the Kind network): its results arrive with the region's name as location and
+ *                    the agent's log has no "RunR answered 400" (0.5.7 refused such a host on
+ *                    /api/internal/; TrustHosts + RegionCallbackHosts since 0.5.8)
  */
 trait E2eTestObservabilityTrait
 {
+    /** When pointIngestAtApiContainer() set the region's app_url (RegionCallbackHosts reads it at most once a minute) */
+    private ?int $obsAppUrlSetAt = null;
+
     private const OBS_PYTHON = <<<'PY'
 def handler(event, context):
     path = context.get("path", "/")
@@ -84,12 +92,100 @@ PY;
         $replayEntry = $this->makeTestEntry('obs-replay', $test['config'], $regionId);
         $replayEntry['steps'] = ['version' => true, 'deploy' => true, 'ready' => true, 'verify' => $this->verifyReplay($test)];
 
-        foreach ([$test, $errorTrace, $logs, $replayEntry] as $entry) {
+        $uptime = $this->makeTestEntry('obs-uptime-region', $test['config'], $regionId);
+        $uptime['steps'] = ['version' => true, 'deploy' => true, 'ready' => true, 'verify' => $this->verifyRegionUptime($test, $regionId)];
+
+        foreach ([$test, $errorTrace, $logs, $replayEntry, $uptime] as $entry) {
             $state = $entry['steps']['verify'] === true ? '<fg=green>✓</>' : '<fg=red>✗</>';
             $this->line("  {$state} {$entry['name']}: ".($entry['steps']['verify'] === true ? 'verified' : $entry['steps']['verify']));
         }
 
-        return [$backend, $test, $errorTrace, $logs, $replayEntry];
+        return [$backend, $test, $errorTrace, $logs, $replayEntry, $uptime];
+    }
+
+    /**
+     * An uptime check run from the regions: the region's agent fetches it from RunR
+     * (GET /api/internal/observability/agent/{region}/uptime-checks, at its start and every 60 s),
+     * runs it and posts the results (every 10 s) — on the address it was given, here the API
+     * container's (pointIngestAtApiContainer; agent:redeploy hands it to the agent). Verified: a
+     * result with the region's name as location, and no "RunR answered 400" in the agent's log.
+     */
+    private function verifyRegionUptime(array $test, string $regionId): bool|string
+    {
+        // RegionCallbackHosts reads the regions' app_url at most once a minute: the address the
+        // agent gets must be one RunR already accepts
+        if ($this->obsAppUrlSetAt !== null && ($wait = 65 - (time() - $this->obsAppUrlSetAt)) > 0) {
+            sleep($wait);
+        }
+
+        // The agent takes RunR's address when it is deployed
+        if ($this->callSilently('agent:redeploy', ['regionId' => $regionId]) !== 0) {
+            return 'agent:redeploy failed';
+        }
+
+        $create = $this->api()->post("/api/projects/{$test['projectId']}/uptime-checks", [
+            'name' => 'e2e region check',
+            'path' => '/',
+            'locations' => 'regions',
+            'interval_seconds' => 30,
+        ]);
+        if ($create->status() !== 201) {
+            return 'creating the uptime check answered '.$create->status().': '.mb_substr($create->body(), 0, 200);
+        }
+        $checkId = (string) $create->json('data.id');
+        $location = (string) $this->getE2eRegion()?->name;
+
+        // The redeployed agent syncs when it starts, the next sync 60 s later
+        $deadline = time() + 240;
+        $results = [];
+        while (time() < $deadline && ! $results) {
+            sleep(10);
+            $results = $this->api()->get("/api/projects/{$test['projectId']}/uptime-checks/{$checkId}/results", ['location' => $location, 'hours' => 1])
+                ->json('data.results') ?? [];
+        }
+
+        return self::regionUptimeVerdict($results, $this->agentLog(), $location);
+    }
+
+    /**
+     * obs-uptime-region from the results read with the region's location and the agent's log:
+     * true with a result of that location and no "RunR answered 400" in the log.
+     *
+     * @param  list<array<string, mixed>>  $results
+     */
+    private static function regionUptimeVerdict(array $results, string $log, string $location): bool|string
+    {
+        $lines = explode("\n", $log);
+        foreach ($lines as $line) {
+            if (str_contains($line, 'RunR answered 400')) {
+                return 'the agent was refused by RunR: '.mb_substr(trim($line), 0, 200);
+            }
+        }
+
+        foreach ($results as $result) {
+            if (($result['location'] ?? null) === $location) {
+                return true;
+            }
+        }
+
+        $tail = implode(' | ', array_slice(array_values(array_filter($lines, fn (string $l): bool => str_contains($l, 'uptime'))), -3));
+
+        return "no result with location {$location} within 240s".($tail !== '' ? " (agent: {$tail})" : '');
+    }
+
+    /** The log of the region's runr-agent (observability/runr-agent), every pod of it. */
+    private function agentLog(): string
+    {
+        $k8s = $this->getE2eKubernetesClient();
+        $log = '';
+        foreach ($k8s->listResources('v1', 'Pod', 'observability', ['app.kubernetes.io/name' => 'runr-agent'])['items'] ?? [] as $pod) {
+            $name = (string) ($pod['metadata']['name'] ?? '');
+            if ($name !== '') {
+                $log .= (string) $k8s->getPodLogs($name, 'observability', 'agent', 1000)."\n";
+            }
+        }
+
+        return $log;
     }
 
     /** true once the region's tracing backend is ready (installed through the API when needed). */
@@ -268,6 +364,7 @@ PY;
                 $ip = (string) ($unicast['address'] ?? '');
                 if ($ip !== $nodeIp && str_starts_with($ip, $prefix) && filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4)) {
                     $region->forceFill(['knative_settings' => array_merge($settings, ['app_url' => "http://{$ip}"])])->saveQuietly();
+                    $this->obsAppUrlSetAt = time();
                     $this->line("  replay ingest: http://{$ip} (API container on the Kind network)");
 
                     return;

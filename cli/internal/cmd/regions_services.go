@@ -436,6 +436,17 @@ func printRegionMigration(app *App, reg *runr.Region, st *runr.RegionMigration) 
 		t.KV("Started", output.Dash(st.StartedAt))
 		t.KV("Old IP", output.Dash(st.OldIP))
 		t.KV("Current IP", output.Dash(st.CurrentIP))
+		// What the move did with each project, while it can be rolled back
+		if len(st.Projects) > 0 {
+			t.Header("PROJECT", "ORGANIZATION", "OUTCOME", "VERSION", "DEPLOYMENT", "MESSAGE")
+			for _, p := range st.Projects {
+				version := "-"
+				if p.Version > 0 {
+					version = "v" + strconv.Itoa(p.Version)
+				}
+				t.Row(p.Project, output.Dash(p.Organization), p.Outcome, version, output.Dash(p.DeploymentStatus), output.Dash(p.Message))
+			}
+		}
 		switch st.Status {
 		case runr.MigrationDNSCheck:
 			t.Note("Point the region's DNS at %s, then: runr regions migration complete %s (or rollback).", output.Dash(st.CurrentIP), reg.Name)

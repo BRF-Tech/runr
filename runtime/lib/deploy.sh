@@ -196,6 +196,10 @@ _deploy_helm() {
     --set "api.storage.fixPermissions=true"
     --set "podColocation=true"
     --set "bootstrap.enabled=false"
+    # the images built and imported on the nodes above carry the tag latest (deploy-images.sh); the
+    # chart's own default is its appVersion, the published release
+    --set "api.image.tag=latest"
+    --set "ui.image.tag=latest"
     --set "api.image.pullPolicy=IfNotPresent"
     --set "ui.image.pullPolicy=IfNotPresent"
     --set "gateway.image.pullPolicy=IfNotPresent"

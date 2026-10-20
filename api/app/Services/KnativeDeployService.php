@@ -11,6 +11,7 @@ use App\Services\Concerns\KnativeManifestTrait;
 use App\Services\Concerns\KnativeQueueConsumerTrait;
 use App\Services\Helpers\ResourceReservation;
 use App\Services\Helpers\WorkloadSizing;
+use App\Services\Projects\LiveDeployments;
 use App\Services\Runtimes\ProjectEntrypoint;
 use App\Services\Runtimes\RuntimeRegistry;
 use App\Support\DeployGate;
@@ -77,7 +78,7 @@ class KnativeDeployService
 
         if ($region && $region->is_demo) {
             $this->recordSizing($project, $deployment);
-            $deployment->transition(['pending', 'running'], ['status' => 'active', 'knative_ready' => true, 'ready_at' => now()]);
+            app(LiveDeployments::class)->activate($deployment, ['knative_ready' => true, 'ready_at' => now()]);
 
             return;
         }
@@ -150,8 +151,8 @@ class KnativeDeployService
 
             // Stopped (or shut down) while the manifests were applied: remove them again
             $stillWanted = $triggerType === 'schedule'
-                // CronJob has no Knative Service to check — mark active immediately
-                ? $deployment->transition(['pending', 'running'], ['status' => 'active', 'knative_ready' => true, 'ready_at' => now()])
+                // CronJob has no Knative Service to check — active right away (unless replaced)
+                ? app(LiveDeployments::class)->activate($deployment, ['knative_ready' => true, 'ready_at' => now()])
                 : $deployment->transition(['pending', 'running'], ['status' => 'pending']);
             if (! $stillWanted || $this->isStopped($project)) {
                 $this->withdraw($project, $deployment);

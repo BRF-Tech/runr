@@ -81,6 +81,8 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/projects/{project}/deployments', [DeploymentController::class, 'index']);
     Route::post('/projects/{project}/deploy', [DeploymentController::class, 'deploy']);
     Route::get('/projects/{project}/deployments/{deployment}', [DeploymentController::class, 'show']);
+    // A deploy that waits for its version's build (a version built again for the region's registry)
+    Route::get('/projects/{project}/queued-deploys/{queuedDeploy}', [DeploymentController::class, 'queued']);
     Route::get('/projects/{project}/deployments/{deployment}/logs', [DeploymentController::class, 'logs']);
     Route::get('/projects/{project}/deployments/{deployment}/metrics', [DeploymentController::class, 'metrics']);
     Route::delete('/projects/{project}/deployments/{deployment}', [DeploymentController::class, 'destroy']);

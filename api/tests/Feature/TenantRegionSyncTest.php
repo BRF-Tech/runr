@@ -7,14 +7,20 @@ use App\Models\KnativeRegion;
 use App\Models\Project;
 use App\Services\DomainMigrateService;
 use App\Services\KnativeDeployService;
+use App\Services\KnativeInstallService;
+use App\Services\KnativeRedisService;
 use App\Services\KnativeStatusService;
+use App\Services\RegionMigrateService;
 use App\Services\RegionStatusService;
+use App\Services\SandboxInstallService;
+use App\Services\ZotRegistryService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request as HttpRequest;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
+use Mockery;
 use Modules\Tenancy\Http\Controllers\TenantController;
 use Modules\Tenancy\Jobs\DetachRegionCleanupJob;
 use Modules\Tenancy\Models\CentralSyncableRegion;
@@ -29,7 +35,9 @@ use Tests\TestCase;
 /**
  * Platform regions reach a tenant as synced copies in its schema (central → tenant, one way):
  *  - the region status (active / inactive / maintenance) and the migration state are synced, the
- *    old kubeconfig of a cluster migration is not
+ *    old kubeconfig and the pre-move state of a cluster migration are not; the registry address a
+ *    move sets and its rollback restores reaches the copies (a tenant's own region keeps its
+ *    pre-move state in the tenant's schema)
  *  - ending an assignment removes the copy once the tenant's projects there are torn down (and
  *    its gateways removed from the region); deleting a platform region removes every copy —
  *    projects on it stay without a region, like central ones
@@ -66,14 +74,39 @@ class TenantRegionSyncTest extends TestCase
         parent::tearDown();
     }
 
-    /** Region tables + settings (detach removes the tenant's domain) + the region_id cascades. */
-    private function tenantSchema(string $slug): Tenant
+    /**
+     * Region tables + settings (detach removes the tenant's domain) + the region_id cascades.
+     *
+     * @param  list<string>  $more  further tenant migrations
+     */
+    private function tenantSchema(string $slug, array $more = []): Tenant
     {
         return $this->createTenantWithSchema($slug, array_merge(self::TENANT_REGION_MIGRATIONS, [
             'Modules/Tenancy/Database/TenantMigrations/0004_create_settings_table.php',
             'Modules/Tenancy/Database/TenantMigrations/0013_create_metric_snapshots_table.php',
             'Modules/Tenancy/Database/TenantMigrations/0014_create_deployment_sessions_table.php',
-        ]));
+        ], $more));
+    }
+
+    /**
+     * RegionMigrateService for a move to a cluster where Knative already runs and the region's Zot
+     * serves at $newRegistry; Redis and the sandbox runtimes have nothing to install.
+     */
+    private function migrateService(string $newRegistry): RegionMigrateService
+    {
+        $installer = Mockery::mock(KnativeInstallService::class);
+        $installer->shouldReceive('runningKnative')->andReturn(['operator' => true, 'serving' => true]);
+        $zot = Mockery::mock(ZotRegistryService::class);
+        $zot->shouldReceive('detectExisting')->andReturn(null);
+        $zot->shouldReceive('install')->andReturn(['address' => $newRegistry]);
+
+        return new RegionMigrateService(
+            $installer,
+            app(KnativeDeployService::class),
+            $zot,
+            Mockery::mock(KnativeRedisService::class)->shouldIgnoreMissing(),
+            Mockery::mock(SandboxInstallService::class)->shouldIgnoreMissing(),
+        );
     }
 
     private function kubeconfig(string $host): string
@@ -150,6 +183,62 @@ class TenantRegionSyncTest extends TestCase
         $this->assertSame('dns_check', $copy->migration_status);
         $this->assertSame('10.0.0.1', $copy->migration_old_ip);
         $this->assertNull($copy->migration_old_kubeconfig, 'the old kubeconfig stays central');
+    }
+
+    public function test_a_migration_rollback_gives_the_copies_the_old_registry_address_back(): void
+    {
+        $region = $this->platformRegion();
+        $region->update(['registry_mode' => 'internal', 'registry_status' => 'ready', 'registry_address' => '10.96.1.1:5000', 'registry_namespace' => 'runr-registry']);
+        $acme = $this->tenantSchema('acme');
+        $ops = $this->tenantSchema('ops');
+        $this->assign($acme, $region);
+        $this->assign($ops, $region);
+        $service = $this->migrateService('10.96.2.2:5000');
+
+        // MigrateRegionJob carries the route-bound model of the region API
+        $service->migrate(TenantAwareKnativeRegion::findOrFail($region->id), $this->kubeconfig('new.test'));
+
+        foreach ([$acme, $ops] as $tenant) {
+            $copy = $this->rowIn($tenant, $region->id);
+            $this->assertSame('10.96.2.2:5000', $copy->registry_address, "the move reached the copy in {$tenant->slug}");
+            $this->assertNull($copy->migration_old_state, 'the pre-move state stays central');
+        }
+
+        $service->rollbackMigration(TenantAwareKnativeRegion::findOrFail($region->id));
+
+        $this->assertSame('10.96.1.1:5000', $region->fresh()->registry_address);
+        foreach ([$acme, $ops] as $tenant) {
+            $copy = $this->rowIn($tenant, $region->id);
+            $this->assertSame('10.96.1.1:5000', $copy->registry_address, "tenant deploys and builds in {$tenant->slug} read the old cluster's registry again");
+            $this->assertNull($copy->migration_status);
+        }
+    }
+
+    public function test_a_tenants_own_region_keeps_its_pre_move_state_in_the_tenant_schema(): void
+    {
+        config(['tenancy.enabled' => true]);
+        $acme = $this->tenantSchema('acme', [
+            'Modules/Tenancy/Database/TenantMigrations/0034_create_private_db_bindings_table.php',
+            'Modules/Tenancy/Database/TenantMigrations/0035_create_bindings_tables.php',
+        ]);
+        $own = $acme->run(fn () => KnativeRegion::create([
+            'name' => 'own', 'project_namespace' => 'own', 'is_active' => true, 'kubeconfig' => $this->kubeconfig('own.test'),
+            'registry_mode' => 'internal', 'registry_status' => 'ready', 'registry_address' => '10.96.1.1:5000', 'registry_namespace' => 'runr-registry',
+        ]));
+        $service = $this->migrateService('10.96.2.2:5000');
+
+        $acme->run(fn () => $service->migrate(KnativeRegion::findOrFail($own->id), $this->kubeconfig('new.test')));
+
+        $row = $this->rowIn($acme, $own->id);
+        $this->assertSame('10.96.2.2:5000', $row->registry_address);
+        $this->assertSame('10.96.1.1:5000', json_decode((string) $row->migration_old_state, true)['registry_address'] ?? null);
+
+        $acme->run(fn () => $service->rollbackMigration(KnativeRegion::findOrFail($own->id)));
+
+        $row = $this->rowIn($acme, $own->id);
+        $this->assertSame('10.96.1.1:5000', $row->registry_address);
+        $this->assertNull($row->migration_old_state);
+        $this->assertNull(KnativeRegion::find($own->id), 'never in the central schema');
     }
 
     public function test_a_status_job_saving_the_plain_region_model_reaches_the_tenant_copies(): void

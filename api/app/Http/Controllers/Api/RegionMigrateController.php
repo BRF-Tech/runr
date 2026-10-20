@@ -8,6 +8,7 @@ use App\Models\KnativeRegion;
 use App\Services\DomainMigrateService;
 use App\Services\RegionMigrateService;
 use App\Services\Residency\RegionPolicy;
+use Dedoc\Scramble\Attributes\Response as OpenApiResponse;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -31,7 +32,14 @@ class RegionMigrateController extends Controller
         return response()->json(['message' => __('api.migration.started'), 'status' => 'pending']);
     }
 
-    public function migrationStatus(KnativeRegion $knativeRegion): JsonResponse
+    /**
+     * The move's state and, while it can still be rolled back, what it did with each project of the
+     * region (RegionMigrateService::migrationReport(): moved, building, deployed, not_moved,
+     * cancelled — with the reason). Never answered from the response cache: the builds and
+     * deploys it follows change no region setting.
+     */
+    #[OpenApiResponse(200, 'The move\'s state and what it did with each project (projects: empty once the move is completed or rolled back)', type: 'array{migration_status: string|null, migration_started_at: string|null, migration_old_ip: string|null, current_ip: string|null, is_migrating: bool, projects: list<array{organization: string|null, project_id: string, project: string, outcome: "moved"|"building"|"deployed"|"not_moved"|"cancelled", version: int|null, deployment_status: string|null, message: string|null}>}')]
+    public function migrationStatus(KnativeRegion $knativeRegion, RegionMigrateService $service): JsonResponse
     {
         return response()->json([
             'migration_status' => $knativeRegion->migration_status,
@@ -39,7 +47,8 @@ class RegionMigrateController extends Controller
             'migration_old_ip' => $knativeRegion->migration_old_ip,
             'current_ip' => $knativeRegion->external_ip,
             'is_migrating' => $knativeRegion->is_migrating,
-        ]);
+            'projects' => $service->migrationReport($knativeRegion),
+        ])->header('Cache-Control', 'no-store, private');
     }
 
     public function completeMigration(KnativeRegion $knativeRegion, RegionMigrateService $service): JsonResponse

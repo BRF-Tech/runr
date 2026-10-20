@@ -27,7 +27,7 @@ spec:
       {{- include "runr.placement" (dict "root" . "colocate" true "affinity" .Values.api.affinity) | nindent 6 }}
       containers:
         - name: api
-          image: {{ include "runr.image" (printf "%v:%v" .Values.api.image.repository .Values.api.image.tag) | quote }}
+          image: {{ include "runr.apiImage" . | quote }}
           imagePullPolicy: {{ .Values.api.image.pullPolicy }}
           ports:
             - containerPort: {{ .Values.api.port }}

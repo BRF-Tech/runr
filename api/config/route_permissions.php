@@ -81,6 +81,7 @@ return [
     'GET projects/{project}/deployments' => 'projects.view',
     'POST projects/{project}/deploy' => 'projects.deploy',
     'GET projects/{project}/deployments/{deployment}' => 'projects.view',
+    'GET projects/{project}/queued-deploys/{queuedDeploy}' => 'projects.view',
     'GET projects/{project}/deployments/{deployment}/logs' => 'logs.view',
     'GET projects/{project}/deployments/{deployment}/metrics' => 'metrics.view',
     'DELETE projects/{project}/deployments/{deployment}' => 'projects.deploy',

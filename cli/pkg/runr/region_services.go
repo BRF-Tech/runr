@@ -377,6 +377,38 @@ type RegionMigration struct {
 	OldIP       string `json:"migration_old_ip,omitempty"`
 	CurrentIP   string `json:"current_ip,omitempty"`
 	IsMigrating bool   `json:"is_migrating"`
+	// Projects is what the move did with each project of the region (projects that run
+	// nothing are not listed), as long as the move can be rolled back; empty otherwise and on
+	// APIs that do not report it.
+	Projects []MigrationProject `json:"projects,omitempty"`
+}
+
+// Outcomes of a project in a region migration (MigrationProject.Outcome).
+const (
+	MigrationMoved     = "moved"
+	MigrationBuilding  = "building"
+	MigrationDeployed  = "deployed"
+	MigrationNotMoved  = "not_moved"
+	MigrationCancelled = "cancelled"
+)
+
+// MigrationProject is what a region migration did with one project.
+type MigrationProject struct {
+	// Organization is the slug of the organization a platform region's project belongs to in
+	// a multi-tenant install; empty otherwise.
+	Organization string `json:"organization,omitempty"`
+	ProjectID    string `json:"project_id"`
+	Project      string `json:"project"`
+	// Outcome is moved (deployed on the new cluster), building (built again there; it runs on
+	// the old cluster until it is deployed), deployed (built again and deployed), not_moved
+	// (refused, or its build or deploy failed: Message says why) or cancelled (its waiting
+	// deploy was replaced by a newer deploy of the project).
+	Outcome string `json:"outcome"`
+	// Version is the version's number (0 when unknown).
+	Version int `json:"version,omitempty"`
+	// DeploymentStatus is the status of its deployment on the new cluster, if any.
+	DeploymentStatus string `json:"deployment_status,omitempty"`
+	Message          string `json:"message,omitempty"`
 }
 
 // RegionMigrationState returns the migration state of a region (regions.view).

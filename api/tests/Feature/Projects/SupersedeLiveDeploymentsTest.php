@@ -3,6 +3,7 @@
 namespace Tests\Feature\Projects;
 
 use App\Events\DeploymentCreated;
+use App\Events\DeploymentStatusChanged;
 use App\Jobs\CheckDeploymentReadyJob;
 use App\Jobs\RuntimeTestDeployJob;
 use App\Models\ContainerConfig;
@@ -13,6 +14,8 @@ use App\Models\KnativeRegion;
 use App\Models\Project;
 use App\Models\Version;
 use App\Services\GitDeploy\DeploymentStarter;
+use App\Services\KnativeDeployService;
+use App\Services\Projects\LiveDeployments;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Carbon;
@@ -104,6 +107,87 @@ class SupersedeLiveDeploymentsTest extends TestCase
         $this->assertFalse($older->fresh()->isLive(), 'the older one is not activated next to the newer one');
         $this->assertNull($older->fresh()->ready_at);
         $this->assertSame('active', $newer->fresh()->status);
+    }
+
+    public function test_two_deploys_created_at_the_same_instant_never_both_stay_active(): void
+    {
+        $project = $this->project('race', withCluster: true);
+        $version = $this->version($project);
+        $this->readyService();
+
+        // The race: the newer deploy superseded before the older deployment existed, and the older
+        // one went live before the newer one was created — both at 06:00:00
+        Carbon::setTestNow('2026-10-11 06:00:00');
+        $older = $this->deployment($project, $version, 'pending');
+        (new CheckDeploymentReadyJob($older, $project))->handle();
+        $this->assertSame('active', $older->fresh()->status, 'no newer deployment existed yet');
+
+        $newer = $this->deployment($project, $version, 'pending');
+        $this->assertEquals($older->created_at, $newer->created_at, 'created at the same instant');
+        (new CheckDeploymentReadyJob($newer, $project))->handle();
+
+        $this->assertSame('active', $newer->fresh()->status);
+        $this->assertFalse($older->fresh()->isLive(), 'the activation replaced the older one (and its teardown ran)');
+        $this->assertSame('2026-10-11 06:00:00', $older->fresh()->ended_at?->toDateTimeString());
+        $this->assertSame([$newer->id], Deployment::query()->where('status', 'active')->pluck('id')->all(), 'at most one active');
+
+        // A readiness check of the older one that comes late changes nothing
+        (new CheckDeploymentReadyJob($older->fresh(), $project))->handle();
+        $this->assertSame([$newer->id], Deployment::query()->where('status', 'active')->pluck('id')->all());
+    }
+
+    public function test_an_older_deployment_ready_after_a_newer_one_was_created_is_not_activated(): void
+    {
+        $project = $this->project('order', withCluster: true);
+        $version = $this->version($project);
+        $this->readyService();
+
+        Carbon::setTestNow('2026-10-11 06:00:00');
+        $older = $this->deployment($project, $version, 'pending');
+        $newer = $this->deployment($project, $version, 'pending');
+
+        $this->assertFalse(app(LiveDeployments::class)->activate($older->fresh(), ['ready_at' => now()]));
+        $this->assertFalse($older->fresh()->isLive());
+        $this->assertNull($older->fresh()->ready_at, 'never went live');
+
+        $this->assertTrue(app(LiveDeployments::class)->activate($newer->fresh(), ['ready_at' => now()]));
+        $this->assertSame('active', $newer->fresh()->status);
+    }
+
+    public function test_activating_queues_the_teardown_of_the_replaced_deployment_after_the_commit(): void
+    {
+        Event::fake([DeploymentCreated::class, DeploymentStatusChanged::class]);
+        $project = $this->project('teardown');
+        $version = $this->version($project);
+
+        Carbon::setTestNow('2026-10-11 06:00:00');
+        $older = $this->deployment($project, $version, 'active');
+        $newer = $this->deployment($project, $version, 'pending');
+
+        $this->assertTrue(app(LiveDeployments::class)->activate($newer, ['ready_at' => now()]));
+
+        Event::assertDispatched(DeploymentStatusChanged::class, fn (DeploymentStatusChanged $e) => $e->deployment->id === $older->id
+            && $e->previousStatus === 'active' && $e->newStatus === 'shutting_down');
+        Event::assertDispatchedTimes(DeploymentStatusChanged::class, 1);
+    }
+
+    public function test_a_deployment_activated_without_a_readiness_check_replaces_the_older_one(): void
+    {
+        // A demo region (and a CronJob) goes active right after the apply, through the same activation
+        $region = KnativeRegion::create(['name' => 'demo-fn', 'is_active' => true, 'is_demo' => true]);
+        $project = Project::create(['name' => 'demo', 'service_type' => 'caas']);
+        $project->forceFill(['knative_region_id' => $region->id])->saveQuietly();
+        ContainerConfig::create(['project_id' => $project->id, 'image' => 'nginx:1.27-alpine', 'cpu' => '250m', 'memory_mb' => 128,
+            'trigger_type' => 'http', 'timeout_seconds' => 30, 'scale_to_zero' => false, 'min_scale' => 1, 'max_scale' => 1]);
+        $version = $this->version($project);
+
+        Carbon::setTestNow('2026-10-11 06:00:00');
+        $older = $this->deployment($project, $version, 'active');
+        $newer = $this->deployment($project, $version, 'pending');
+        app(KnativeDeployService::class)->deploy($project->fresh(), $version, $newer);
+
+        $this->assertSame('active', $newer->fresh()->status);
+        $this->assertFalse($older->fresh()->isLive());
     }
 
     public function test_a_replaced_git_deploy_ends_instead_of_deploying_forever(): void

@@ -97,7 +97,10 @@ class Deploy extends Tool
         }
 
         $context->progress(0, null, 'Deploying version '.($version['number'] ?? '?').'…');
-        $deployment = $this->startDeployment($context, $projectId, (string) $version['id'], $extra);
+        $deployment = $this->startDeployment($context, $projectId, (string) $version['id'], $extra, $wait ? $deadline : null);
+        if (isset($deployment['queued_deploy'])) {
+            return self::queuedResult($deployment, $version);
+        }
         if ($wait) {
             $deployment = $this->waitForDeployment($context, $projectId, $deployment, $deadline);
         }

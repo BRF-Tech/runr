@@ -75,7 +75,12 @@ class GitHubClient extends ProviderClient
     {
         $this->ensure($this->linkApi($link)->post("/repos/{$link->repo_full_name}/statuses/{$sha}", array_filter([
             'state' => match ($state) {
-                self::SUCCESS => 'success',
+                // Commit statuses have no canceled state (error, failure, pending, success): error
+                // and failure mark the commit red as broken and fail a required "runr" check,
+                // although nothing in it failed — success with the description ("Replaced by a newer
+                // deploy") ends it without blaming the commit, and a late report of a replaced
+                // deploy cannot paint a live commit of the same sha red
+                self::SUCCESS, self::CANCELED => 'success',
                 self::FAILURE => 'failure',
                 default => 'pending',
             },

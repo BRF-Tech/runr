@@ -276,7 +276,7 @@ func newRollbackCmd(app *App) *cobra.Command {
 			}
 			res := &DeployResult{Project: p, Version: v}
 			res, err = finishDeploy(ctx, app, c, res, v, noWait, timeout)
-			if res != nil && res.Deployment != nil {
+			if res != nil && (res.Deployment != nil || res.Queued != nil) {
 				if perr := printDeployResult(app, res); perr != nil && err == nil {
 					err = perr
 				}

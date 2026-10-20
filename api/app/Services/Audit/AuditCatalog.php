@@ -410,7 +410,9 @@ final class AuditCatalog
             // ── Deployments & shell ──────────────────────────────────────────────
             'POST api/projects/{project}/deploy' => $r($deployAction, 'project', $p,
                 meta: fn (Request $q, ?array $j) => ['version_id' => $q->input('version_id'), 'deployment_id' => $j['id'] ?? null, 'overrides' => array_keys((array) $q->input('deploy_config', []))]
-                    + ($q->boolean('override_policy') ? ['policy_override' => true] : [])),
+                    + ($q->boolean('override_policy') ? ['policy_override' => true] : [])
+                    // The version is built again for the region's registry first (VersionRebuilds)
+                    + (isset($j['queued_deploy']['id']) ? ['queued_deploy_id' => $j['queued_deploy']['id']] : [])),
             'POST api/projects/{project}/versions/{version}/security/scan' => $r('security.scan.request', 'project', $p, meta: fn (Request $q) => ['version_id' => self::routeKey($q, 'version')]),
             'DELETE api/projects/{project}/deployments/{deployment}' => $r('deployment.delete', 'deployment', 'param:deployment', meta: fn (Request $q) => ['project_id' => $q->route('project')?->id]),
             'PATCH api/projects/{project}/deployments/{deployment}/status' => $r('deployment.status.update', 'deployment', 'param:deployment', meta: fn (Request $q) => ['status' => $q->input('status'), 'project_id' => $q->route('project')?->id]),

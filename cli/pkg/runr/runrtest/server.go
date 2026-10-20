@@ -1280,6 +1280,10 @@ func (s *Server) deploy(p *project, body map[string]any) (int, any, *apiErr) {
 	if v.data.BuildStatus != runr.BuildReady {
 		return 0, nil, &apiErr{status: 422, message: "Version is not ready (status: " + v.data.BuildStatus + ")."}
 	}
+	// Built into a registry the region no longer pulls from: built again, deployed when ready
+	if s.queuedSt().rebuild[v.data.ID] {
+		return s.queueRebuild(p, v, body)
+	}
 	d := s.startDeployment(p, v)
 	if dc, ok := body["deploy_config"].(map[string]any); ok {
 		d.data.DeployConfig = dc

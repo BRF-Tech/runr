@@ -18,7 +18,8 @@ use Throwable;
  *    WORKFLOWS_PUBLIC_API_URL (QueueBridge)
  *  - the regions' own `agent_ws_url` and `app_url` settings, read at most once a minute
  *
- * APP_URL's host is trusted on every route already.
+ * The first two come from the configuration and the pod alone, never from the database or the
+ * cache. APP_URL's host is trusted on every route already.
  */
 class RegionCallbackHosts
 {
@@ -66,30 +67,47 @@ class RegionCallbackHosts
     }
 
     /**
-     * `agent_ws_url` and `app_url` of every region; none when the database cannot be read.
+     * `agent_ws_url` and `app_url` of every region; none when the database cannot be read. Only a
+     * list that names hosts is cached: after an empty or failed read the next callback reads again.
      *
      * @return list<string>
      */
     private function regionSettingUrls(): array
     {
         try {
-            return Cache::remember(self::CACHE_KEY, self::CACHE_TTL, function (): array {
-                $urls = [];
-                foreach (KnativeRegion::query()->whereNotNull('knative_settings')->pluck('knative_settings') as $settings) {
-                    if (is_string($settings)) {
-                        $settings = json_decode($settings, true);
-                    }
-                    if (is_array($settings)) {
-                        $urls[] = $settings['agent_ws_url'] ?? null;
-                        $urls[] = $settings['app_url'] ?? null;
-                    }
-                }
+            $cached = Cache::get(self::CACHE_KEY);
+            if (is_array($cached) && $cached !== []) {
+                return array_values(array_filter($cached, 'is_string'));
+            }
+        } catch (Throwable) {
+            // no cache: read the database
+        }
 
-                return array_values(array_unique(array_filter($urls, fn ($url): bool => is_string($url) && $url !== '')));
-            });
+        try {
+            $urls = [];
+            foreach (KnativeRegion::query()->whereNotNull('knative_settings')->pluck('knative_settings') as $settings) {
+                if (is_string($settings)) {
+                    $settings = json_decode($settings, true);
+                }
+                if (is_array($settings)) {
+                    $urls[] = $settings['agent_ws_url'] ?? null;
+                    $urls[] = $settings['app_url'] ?? null;
+                }
+            }
+            $urls = array_values(array_unique(array_filter($urls, fn ($url): bool => is_string($url) && $url !== '')));
         } catch (Throwable) {
             return [];
         }
+
+        if ($urls !== []) {
+            try {
+                Cache::put(self::CACHE_KEY, $urls, self::CACHE_TTL);
+            } catch (Throwable) {
+                // not cached: the next callback reads the database again
+            }
+        }
+
+        return $urls;
     }
 
     /**

@@ -81,6 +81,9 @@ class ForgejoClient extends ProviderClient
             'state' => match ($state) {
                 self::SUCCESS => 'success',
                 self::FAILURE => 'failure',
+                // No canceled state (pending, success, error, failure, warning): warning ends the
+                // status without marking the commit failed or live
+                self::CANCELED => 'warning',
                 default => 'pending',
             },
             'context' => (string) config('git-deploy.status_context', 'runr'),

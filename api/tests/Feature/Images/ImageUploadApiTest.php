@@ -143,6 +143,7 @@ class ImageUploadApiTest extends TestCase
         $this->assertSame(['linux/amd64', 'linux/arm64'], $image->platforms);
         $this->assertSame([7000, 8, 'oci', 'app.tar'], [$image->size_bytes, $image->archive_bytes, $image->source_format, $image->source_filename]);
         $this->assertSame(self::IMG_ZOT.'/runr-uploads/platform/app@sha256:'.str_repeat('c', 64), $image->imageRef());
+        $this->assertSame(self::IMG_ZOT, $image->registry_address, 'the registry it was pushed into');
 
         $this->assertNotEmpty($this->imgCallsTo('DELETE', '/jobs/image-recv-'), 'receiver Job removed');
         $this->assertNotEmpty($this->imgCallsTo('DELETE', '/services/image-recv-'), 'receiver Service removed');
@@ -180,6 +181,27 @@ class ImageUploadApiTest extends TestCase
         $this->assertSame('sha256:'.str_repeat('c', 64), $old->fresh()->digest);
         $delete = $this->imgCallsTo('DELETE', '/proxy/v2/runr-uploads/platform/app/manifests/sha256:'.str_repeat('1', 64));
         $this->assertCount(1, $delete, 'the replaced manifest is removed from the registry');
+    }
+
+    public function test_uploading_again_after_a_move_of_the_region_puts_the_image_into_its_registry(): void
+    {
+        Queue::fake();
+        $this->fakeImageCluster();
+        // Uploaded before the region moved to a cluster with another registry
+        $old = $this->uploadedImage($this->region, ['digest' => 'sha256:'.str_repeat('1', 64), 'registry_address' => '10.96.9.9:5000']);
+        $this->assertFalse($old->inRegistryOf($this->region));
+
+        $upload = $this->start();
+        $this->putChunk($upload['id'], 0, 'abcd');
+        $this->putChunk($upload['id'], 4, 'efgh');
+        $this->postJson("/api/images/uploads/{$upload['id']}/complete")->assertStatus(202);
+        $this->receiverStatus = $this->pushedStatus();
+        (new CheckImageUploadJob($upload['id']))->handle(app(ImageUploadService::class));
+
+        $old->refresh();
+        $this->assertSame([self::IMG_ZOT, 'sha256:'.str_repeat('c', 64)], [$old->registry_address, $old->digest]);
+        $this->assertTrue($old->inRegistryOf($this->region));
+        $this->assertSame([], $this->imgCallsTo('DELETE', '/manifests/'), 'the image it replaced is not in this registry');
     }
 
     public function test_a_sha256_mismatch_reopens_the_upload(): void

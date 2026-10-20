@@ -76,6 +76,7 @@ class GitLabClient extends ProviderClient
             'state' => match ($state) {
                 self::SUCCESS => 'success',
                 self::FAILURE => 'failed',
+                self::CANCELED => 'canceled',
                 default => 'running',
             },
             'name' => (string) config('git-deploy.status_context', 'runr'),

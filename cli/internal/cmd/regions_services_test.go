@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/brf-tech/runr/cli/pkg/runr"
@@ -174,6 +175,59 @@ func TestRegionMigration(t *testing.T) {
 	h.srv.SetRegionDomainMigrating("eu-1", true)
 	r = h.mustRun("regions", "migration", "complete", "eu-1", "--domain")
 	contains(t, r.err, "the region answers on its new function domain")
+}
+
+// While a move can be rolled back, migration status lists what it did with each project.
+func TestRegionMigrationStatusListsProjects(t *testing.T) {
+	h := newHarness(t).login()
+	kc := filepath.Join(t.TempDir(), "new.yaml")
+	write(t, kc, testKubeconfig)
+	h.srv.SetRegionMigrationProjects("eu-1", []runr.MigrationProject{
+		{ProjectID: "p1", Project: "orders", Outcome: runr.MigrationBuilding, Version: 3,
+			Message: "Moving to the new cluster of the region: v3 is built again there; deployed there when it is ready."},
+		{Organization: "acme", ProjectID: "p2", Project: "shop", Outcome: runr.MigrationMoved, Version: 1, DeploymentStatus: "active"},
+		{ProjectID: "p3", Project: "upload", Outcome: runr.MigrationNotMoved,
+			Message: "its image myapp:1.0 was uploaded into the registry of the cluster the region left"},
+	})
+
+	// No move: no list
+	r := h.mustRun("regions", "migration", "status", "eu-1")
+	notContains(t, r.out, "PROJECT")
+
+	h.mustRun("regions", "migration", "start", "eu-1", "--kubeconfig", kc, "--yes", "--wait")
+	r = h.mustRun("regions", "migration", "status", "eu-1")
+	contains(t, r.out, "dns_check")
+	contains(t, r.out, "PROJECT")
+	contains(t, r.out, "ORGANIZATION")
+	contains(t, r.out, "OUTCOME")
+	contains(t, r.out, "DEPLOYMENT")
+	lines := strings.Split(r.out, "\n")
+	var rows []string
+	for _, l := range lines {
+		if strings.HasPrefix(l, "orders") || strings.HasPrefix(l, "shop") || strings.HasPrefix(l, "upload") {
+			rows = append(rows, strings.Join(strings.Fields(l), " "))
+		}
+	}
+	want := []string{
+		"orders - building v3 - Moving to the new cluster of the region: v3 is built again there; deployed there when it is ready.",
+		"shop acme moved v1 active -",
+		"upload - not_moved - - its image myapp:1.0 was uploaded into the registry of the cluster the region left",
+	}
+	if strings.Join(rows, "\n") != strings.Join(want, "\n") {
+		t.Fatalf("rows:\n%s\nwant:\n%s\nout:\n%s", strings.Join(rows, "\n"), strings.Join(want, "\n"), r.out)
+	}
+
+	r = h.mustRun("regions", "migration", "eu-1", "-o", "json")
+	var st runr.RegionMigration
+	decodeJSON(t, r.out, &st)
+	if len(st.Projects) != 3 || st.Projects[1].Organization != "acme" || st.Projects[0].Version != 3 || st.Projects[2].Outcome != runr.MigrationNotMoved {
+		t.Fatalf("json projects = %+v", st.Projects)
+	}
+
+	// Completed: the move can no longer be rolled back, nothing is listed
+	h.mustRun("regions", "migration", "complete", "eu-1")
+	r = h.mustRun("regions", "migration", "eu-1", "-o", "json")
+	notContains(t, r.out, "projects")
 }
 
 func TestRegionFunctionTLS(t *testing.T) {

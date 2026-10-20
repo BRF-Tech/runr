@@ -8,6 +8,206 @@ did not change says so.
 
 ## [Unreleased]
 
+## [0.5.9] - 2026-10-20
+
+### Upgrade notes
+
+- **The chart's API and UI images follow the chart version.** An upgrade from 0.5.8 with
+  `--reuse-values` keeps the image tags stored in the release — `latest`, the default of the charts
+  up to 0.5.8, or the version an install set with `--set api.image.tag=…` — and with them the old
+  images. Add `--set api.image.tag= --set ui.image.tag=` to that upgrade once, so both tags follow
+  the chart from then on, or set them explicitly on every upgrade
+  ([Procedure](docs/upgrade.md#procedure)).
+
+### Added
+
+- **e2e: uptime checks from a region** (`runtime/ci.sh test-observability`, `obs-uptime-region`).
+  An uptime check with location "regions" is fetched and run by the region's agent, which calls
+  RunR at the API container's address on the Kind network; its results must arrive with the
+  region's name as location and the agent's log must have no `RunR answered 400` — the 0.5.7
+  refusal of the agent's host that 0.5.8 fixed.
+- **Queued deploys in the API.** A deploy of a version that is built again for its region's
+  registry answers `202` with `message` and `queued_deploy` instead of a deployment;
+  `GET /api/projects/{id}/queued-deploys/{queued_deploy}` (`projects.view`) follows it to
+  `deployed` with its `deployment_id`, or to `failed` / `cancelled` with the reason. The MCP
+  `deploy` and `rollback` tools follow it until the deployment starts
+  ([Older versions](docs/regions.md#older-versions)).
+- **`runr deploy` and `runr rollback` follow a queued deploy** — the build, then the deployment it
+  starts — within `--timeout` (`--no-wait`: `queued_deploy` in `-o json`, `queued_deploy_id=` and
+  `status=building` in `--output-env`); the Go client's `Deploy` does so too, and `StartDeploy`
+  returns either ([cli.md](docs/cli.md#deploying)).
+- **`runr regions migration status` lists what the move did with each project** — project,
+  organization, outcome, version, deployment status and message — while the move can be rolled
+  back (`projects` in `-o json`; [cli.md](docs/cli.md#moving-a-region-to-another-cluster)).
+
+### Changed
+
+- **Helm: `api.image.tag` and `ui.image.tag` default to the chart's `appVersion`** instead of
+  `latest`. `helm install --version X` runs the images of RunR X and `helm rollback` rolls them back
+  with the chart; a tag that is set, `latest` included, is used as it is. The multi-tenant edition
+  runs `<appVersion>-mt` by default, and for the tag `latest`, which has no multi-tenant variant, as
+  before. The install and upgrade instructions no longer pin the image tags next to `--version`.
+  `runtime/ci.sh deploy` sets the tag `latest` of the images it builds explicitly.
+
+### Fixed
+
+- **A refused deploy of an older version during a region move left the project running on the old
+  cluster.** While the move's deploy of a project waits for its build on the new cluster, a deploy
+  of an older version replaces it. When that deploy's build failed or a deploy check refused it,
+  nothing shut down the project's deployment on the cluster the region left: it stayed live and
+  metered, and `migration-status` showed the project as `cancelled`. Such a deploy now takes the
+  move's place (`queued_deploys.replaces_reason`, in the tenant schemas too): when it fails, that
+  deployment is shut down with "Not moved to the new cluster of the region: …" and the reason, as
+  for a project the move refused, and the report shows `not_moved` with the reason; when it
+  starts, the report shows `deployed` with its version
+  ([Older versions](docs/regions.md#older-versions)).
+- **Helm: the agent of RunR's own cluster got 400 after each token rotation.** About every 48
+  minutes Kubernetes renews the API pod's service account volume with a new token: it points the
+  volume at a new directory and deletes the old one. PHP's realpath cache kept resolving the
+  volume's files into the deleted directory for up to two minutes, so the API lost its namespace,
+  the in-cluster gateway (`runr-gateway.<namespace>.svc.cluster.local`) dropped out of the hosts the
+  region callbacks accept, and the agent's fetch of its uptime checks got 400 once or twice
+  (`uptime: fetching checks: RunR answered 400`). RunR's own token failed to read in that window
+  too, and a check whether a region is RunR's own cluster made then answered "no" for five minutes.
+  A failed read of the service account volume is now retried with that cache cleared. The in-cluster
+  gateway and the configured addresses never depend on the database or the cache, and the lookup of
+  the regions' `agent_ws_url` and `app_url` keeps no empty or failed result. Upgrading the API is
+  enough ([regions](docs/regions.md#network-reachability)).
+- **A git deploy replaced before it went live stayed "pending" on the provider.** Such a deploy
+  ends as skipped, but no commit status followed. It now ends the commit status "runr" as
+  "Replaced by a newer deploy" ("Stopped before it went live" when the project was stopped):
+  `canceled` on GitLab, `warning` on Forgejo and Gitea, `success` on GitHub, whose commit statuses
+  have no canceled state (`error` would mark a commit as broken that nothing failed in, and a late
+  report could paint a live commit of the same SHA red); the GitHub deployment it started becomes
+  `inactive` ([Status on the provider](docs/git-deploy.md#status-on-the-provider)).
+- **A region migration rollback left projects serving without metering.** A project the move did
+  not move (its redeploy refused, its deployments shut down) still had its Knative Service on the
+  old cluster, which the rollback made the region's cluster again: it served with no live
+  deployment. The rollback now deploys such a project again with the version and overrides it ran
+  with, metered from when it is ready; when the deploy checks still refuse it, or the project was
+  stopped while the region was on the new cluster, its workloads are removed from the restored
+  cluster. A project whose redeploy the rollback itself refuses is removed from there too, its
+  deployments shut down with "Not deployed again on the cluster the migration rollback restored"
+  ([Moving a region to another cluster](docs/regions.md#moving-a-region-to-another-cluster)).
+- **A region migration rollback kept the new cluster's registry address.** The move points the
+  region at the Zot it installs on the new cluster; the rollback gave back only the kubeconfig and
+  the external address, so every redeploy and build of the region's projects on the restored
+  cluster used the new cluster's registry. A move now keeps what the region held for its old
+  cluster (`knative_regions.migration_old_state`, in the tenant schemas too) and the rollback
+  restores it before the projects are deployed again: the registry address, the dedicated workers
+  and capacity, the runr-agent's token (the old cluster's agent was refused after a rollback), and
+  the install state of Knative, Redis, the sandbox runtimes, WebAssembly, GPU support and function
+  TLS. The copies of a platform region in its organizations get the restored values. A move
+  started before the upgrade has no kept state: its rollback restores the kubeconfig and the
+  external address only
+  ([Moving a region to another cluster](docs/regions.md#moving-a-region-to-another-cluster)).
+- **Moving a platform region left the organizations' projects on it behind.** In a multi-tenant
+  install the move and its rollback deployed only the projects of the platform's own schema; the
+  projects the organizations run on the region, in their own schemas, kept their old deployments
+  and were deployed on neither cluster. Both now deploy them too, each organization's in its own
+  context through its copy of the region, with the same stop and admission checks; the rollback
+  also deploys again or removes an organization's project the move did not move. An
+  organization's own region still moves inside that organization
+  ([Moving a region to another cluster](docs/regions.md#moving-a-region-to-another-cluster)).
+- **A region migration installed Kata Containers with Cloud Hypervisor only.** A region on
+  QEMU, Dragonball or Firecracker got `clh` on the new cluster. The move now installs the region's
+  hypervisors. A Kata install that fails on the new cluster leaves Kata in `error` there instead
+  of `ready` with the old cluster's hypervisors, and no longer keeps gVisor from being installed.
+- **A region migration redeployed built versions the new cluster cannot pull.** A version built
+  for the region (dependencies, a compile step, WebAssembly) has its image in the old cluster's
+  registry, which the new cluster's nodes are not set up for, and the move deployed it there all
+  the same. When the move gives the region another registry, such a version is now built again
+  on the new cluster and deployed there once the build is done, through the deploy checks of
+  every deploy; until then the project keeps running on the old cluster, and a build or deploy that
+  fails leaves it not moved, with the reason as its deployment's message. A version without a build
+  of its own on a runtime image RunR built in the region waits for that image to be built again
+  there; a build running when the region switches is submitted again on the new cluster. The new
+  deploy-after-build step (`queued_deploys`, in the tenant schemas too) deploys a version once its
+  build, its runtime image and its supply-chain checks are ready, and is replaced by any newer
+  deploy of the project. `GET /api/knative-regions/{id}/migration-status` now lists what the move
+  did with each project (`projects`: moved, building, deployed, not moved — with the reason —, or
+  cancelled), and the console's Migration tab shows it
+  ([Images the new cluster cannot pull](docs/regions.md#images-the-new-cluster-cannot-pull)).
+- **Uploaded images of a moved region were offered and deployed as if they were there.** An upload
+  is in the registry of the cluster it was pushed to only, and RunR keeps no copy of it, so a move
+  cannot bring it along. Each uploaded image now records that registry (`registry_address`; the
+  upgrade fills it in): one the region left shows `in_registry: false`, a CaaS project on it is not
+  moved (and, after a rollback, one switched to an image uploaded on the new cluster is not deployed
+  again on the old one), with a message that says to upload the image to the region again;
+  choosing such an image for a CaaS project, a runtime version or a wasm-exec function finds it
+  not uploaded in the region. Uploading the same name again puts it into the region's registry
+  ([Moving a region to another cluster](docs/images.md#moving-a-region-to-another-cluster)).
+- **Builds running on the new cluster at a migration rollback ended as failed builds.** Their
+  check looked for the Kaniko Job on the restored cluster and failed them with "Build Job not
+  found", announced as a build failure. They now end with the new build status `cancelled` and
+  "Cancelled by the migration rollback: …", without a failure notification; a git push waiting for
+  one ends as skipped, and the Job is deleted from the cluster the region left. A version the move
+  built again gets the image back that the old cluster's registry has, and the runtime image
+  builds come back as they were
+  ([Completing and rolling back the move](docs/regions.md#completing-and-rolling-back-the-move)).
+- **A region migration set Firecracker's thin-pool up with the default 20 GiB.** The size chosen
+  at the Kata install was not stored, so the move reinstalled `fc` on the new cluster with the
+  default, and adding hypervisors to a working install sent the default along too. The region now
+  records the size its nodes were set up with (`sandbox_kata_devmapper_pool_gb`, in the tenant
+  schemas too) and every later install uses it: adding hypervisors, `region:reconcile`, the move
+  (for a pool set up before this release, the size in the old cluster's `kata-devmapper`
+  DaemonSet), and the rollback restores it with the region's other state. Uninstalling Kata clears
+  it ([Firecracker and devmapper](docs/kata-hypervisors.md#firecracker-and-devmapper)).
+- **A migration rollback deployed versions the old cluster cannot pull.** A version built while
+  the region was on the new cluster has its image in the new cluster's registry only; the rollback
+  deployed it on the old cluster, where its pods could not start. The rollback now deploys the
+  project's last deployment whose version is in the restored registry again (usually what ran
+  before the move), with its overrides, and shuts the deployments of the other version down with
+  "… was built into the registry of the cluster the rollback left; vN runs instead". A project
+  with no such deployment is removed from the restored cluster.
+- **A failed region migration started again lost the old cluster.** A move in `failed` could be
+  started again without a rollback, and the new attempt saved the half-moved region — the new
+  cluster's kubeconfig included — as the state to roll back to. A move started again now keeps
+  what its first attempt saved.
+- **A migration rollback kept the new cluster's status for data services, the admission policy
+  and tracing.** The move now also keeps the status of the region's data services, admission
+  policy and tracing backend, and the rollback restores them; a data service or tracing backend
+  installed on the new cluster only is not installed after the rollback.
+- **Two deploys created at the same instant could both stay active.** When the older one went
+  live before the newer one was created, nothing replaced it (metering already counted it only up
+  to the newer one's start). A deployment now becomes active under its project's row lock, only
+  while no newer deployment of the project is live, and its activation replaces every older live
+  deployment of the project in the same transaction: the readiness check, a CronJob project and
+  a demo region alike. At most one deployment of a project is active.
+- **Older versions of a moved region failed at the image pull.** A region migration builds again
+  only the version each project runs; a version built before the move still names the old
+  cluster's registry, so deploying it later — a deploy or rollback in the console, the CLI or the
+  MCP tools, `POST /api/projects/{id}/deploy`, a git push or **Deploy again** whose tree equals
+  it, the resume of a project stopped before the move — started pods that could not pull their
+  image. Such a version is now built again into the region's registry first and deployed when the
+  build is ready, through the deploy checks of every deploy, with "vN is built again for this
+  region's registry: … It deploys when the build is ready." (the deploy answers with a queued
+  deploy, a git deploy waits in `building`, a resume answers `redeploy_code: version_rebuilding`).
+  A deploy the checks refuse once the version is built notifies the user who asked for it; a
+  migration rollback gives a version built again this way its old image back
+  ([Older versions](docs/regions.md#older-versions)).
+- **A region migration left the preview environments on the old cluster.** The previews of
+  pull/merge requests kept running on the cluster the region left, and their next deploy went to
+  the new cluster with images it cannot pull. The move now deploys every live preview again on the
+  new cluster through the preview path (as **Redeploy** does), building a preview version again
+  first when its image is in the old cluster's registry or its build ran there, and marks a preview
+  whose build had failed as failed with the reason; a rollback does the same on the old cluster
+  and deletes the preview builds still running on the new one. A preview on a runtime image RunR
+  builds in the region now waits for that image instead of failing
+  ([Preview environments](docs/regions.md#preview-environments)).
+- **A migration rollback did not cancel a queued deploy that was starting.** A deploy waiting for
+  its build that a worker had just claimed (status `starting`) was left alone, and could create a
+  deployment on the cluster the rollback left. The worker now claims the deployment it creates
+  first: the rollback cancels every deploy queued since the move that has not created its
+  deployment yet — the worker then starts nothing — and one that has is replaced by the rollback's
+  redeploy like any other deployment
+  ([Completing and rolling back the move](docs/regions.md#completing-and-rolling-back-the-move)).
+- **A build submitted again by a region migration could be failed by the old build's checks.** The
+  checks of the build that ran on the old cluster kept polling the version and failed it with
+  "Build timeout" at the old build's deadline, while the build submitted on the new cluster still
+  ran. The checks of a build (a version's and a preview's) now follow their own submission
+  (`versions.build_token`) and stop when the version is submitted again.
+
 ## [0.5.8] - 2026-10-19
 
 ### Upgrade notes
@@ -1755,7 +1955,8 @@ Initial tagged release.
 - API gateways with routes, in-app notifications and support tickets.
 - Helm chart with a single-tenant / multi-tenant edition, an install form (`values.schema.json`), generated secrets and a Traefik ingress; a Docker Compose setup for development.
 
-[Unreleased]: https://github.com/brf-tech/runr/compare/v0.5.8...main
+[Unreleased]: https://github.com/brf-tech/runr/compare/v0.5.9...main
+[0.5.9]: https://github.com/brf-tech/runr/releases/tag/v0.5.9
 [0.5.8]: https://github.com/brf-tech/runr/releases/tag/v0.5.8
 [0.5.7]: https://github.com/brf-tech/runr/releases/tag/v0.5.7
 [0.5.6]: https://github.com/brf-tech/runr/releases/tag/v0.5.6

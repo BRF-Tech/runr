@@ -316,7 +316,8 @@ class ImageUploadService
         $repository = ImageName::registryRepository($upload->owner_key, $upload->repository);
         $previous = null;
 
-        $image = DB::connection((new UploadedImage)->getConnectionName())->transaction(function () use ($upload, $result, $sha256, $repository, &$previous) {
+        $previousHere = false;
+        $image = DB::connection((new UploadedImage)->getConnectionName())->transaction(function () use ($upload, $result, $sha256, $repository, $region, &$previous, &$previousHere) {
             $image = UploadedImage::query()->firstOrNew([
                 'owner_key' => $upload->owner_key,
                 'knative_region_id' => $upload->knative_region_id,
@@ -324,6 +325,8 @@ class ImageUploadService
                 'tag' => $upload->tag,
             ]);
             $previous = $image->exists ? $image->digest : null;
+            // the manifest it replaces is in the registry the push went to (not one the region left)
+            $previousHere = $image->exists && $image->inRegistryOf($region);
 
             $image->fill([
                 'tenant_id' => $upload->tenant_id,
@@ -341,6 +344,7 @@ class ImageUploadService
                 'source_filename' => $upload->filename,
                 'uploaded_by' => $upload->created_by,
                 'note' => isset($result['note']) ? mb_substr((string) $result['note'], 0, 1000) : null,
+                'registry_address' => $region?->registry_address,
             ])->save();
 
             $upload->update([
@@ -356,7 +360,7 @@ class ImageUploadService
         $this->removeReceiver($upload);
 
         // The image this upload replaced: its manifest goes unless something still uses it
-        if ($previous !== null && $previous !== $image->digest) {
+        if ($previous !== null && $previousHere && $previous !== $image->digest) {
             $this->images->removeManifest($region, $repository, $previous);
         }
 

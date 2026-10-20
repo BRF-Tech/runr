@@ -37,6 +37,12 @@ class BuildVersionJob implements ShouldQueue
 
     public function handle(FunctionBuildService $builder): void
     {
+        // Built or cancelled in the meantime (e.g. a region migration rollback gave the version
+        // its image back): nothing to submit
+        if (in_array($this->version->fresh()?->build_status, ['ready', Version::STATUS_CANCELLED, Version::STATUS_PRUNED], true)) {
+            return;
+        }
+
         $region = $this->version->project->knativeRegion;
 
         if ($region?->is_demo) {

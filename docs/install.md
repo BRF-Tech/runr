@@ -51,10 +51,11 @@ examples below).
 | `multi-tenant` | Tenancy and Auth Provider modules on: several tenants share the installation, each with its own PostgreSQL schema, users, roles and quota per region; SSO providers (OAuth, OpenID Connect, SAML) can be added. |
 
 The modules of the console are built into its image, so the multi-tenant console is a separate UI
-image: with `edition: multi-tenant` the UI runs `ghcr.io/brf-tech/runr/ui:<tag>-mt` (for example
-`0.5.8-mt`; `ui.image.multiTenantSuffix`, default `-mt`). With the default tag `latest`, which has
-no multi-tenant variant, it runs the chart's release, `<appVersion>-mt`. A UI image of your own that
-carries the modules under its plain tag needs `ui.image.multiTenantSuffix: ""`.
+image: with `edition: multi-tenant` the UI runs `ghcr.io/brf-tech/runr/ui:<tag>-mt`
+(`ui.image.multiTenantSuffix`, default `-mt`). The tag defaults to the chart's release, its
+`appVersion`, so chart 0.5.9 runs `0.5.9-mt`; the moving tag `latest` has no multi-tenant variant
+and runs `<appVersion>-mt` as well. A UI image of your own that carries the modules under its plain
+tag needs `ui.image.multiTenantSuffix: ""`.
 
 The Ticket module (support tickets) is on by default in both editions: `ticket.enabled: false`
 switches it off in the API (`TICKET_ENABLED`). The console shows the ticket pages when its UI image
@@ -167,7 +168,7 @@ A custom certificate is easiest to pass from files, and renewed by running the s
 the new files:
 
 ```sh
-helm upgrade runr brf-tech/runr --version 0.5.8 -n runr --reuse-values \
+helm upgrade runr brf-tech/runr --version 0.5.9 -n runr --reuse-values \
   --set ingress.tls.mode=custom \
   --set-file ingress.tls.certificate=fullchain.pem \
   --set-file ingress.tls.privateKey=privkey.pem
@@ -602,13 +603,13 @@ The chart generates `APP_KEY`, `REVERB_APP_SECRET` and the administrator's passw
      --from-literal=smtp-password='<password of the SMTP user>'
    ```
 
-3. **Install the release**, pinned to one version of the chart and of the API and UI images:
+3. **Install the release**, pinned to one version of the chart. The API and UI images follow it:
+   `api.image.tag` and `ui.image.tag` default to the chart's `appVersion`.
 
    ```sh
-   helm upgrade --install runr brf-tech/runr --version 0.5.8 \
+   helm upgrade --install runr brf-tech/runr --version 0.5.9 \
      --namespace runr --create-namespace \
-     -f values-production.yaml \
-     --set api.image.tag=0.5.8 --set ui.image.tag=0.5.8
+     -f values-production.yaml
    ```
 
    The install runs two hook Jobs: `runr-migrate-install-<revision>` (database migrations, 300-second
@@ -627,8 +628,10 @@ The chart generates `APP_KEY`, `REVERB_APP_SECRET` and the administrator's passw
 
 ## Production checklist
 
-- **Pinned versions.** `api.image.tag` and `ui.image.tag` default to `latest`; install and upgrade
-  with `--version` and both image tags set to the same release.
+- **Pinned versions.** Install and upgrade with `--version`. `api.image.tag` and `ui.image.tag`
+  are empty by default and follow the chart's `appVersion`, so `helm rollback` returns to the
+  images of that revision as well. Do not set them to `latest`: that tag moves with every
+  release.
 - **TLS.** `ingress.tls.mode` set to `letsencrypt`, `custom` or `secret`, HTTP redirected to HTTPS
   by the ingress controller.
 - **Self-service registration.** Registration is on by default, so anyone who reaches the console

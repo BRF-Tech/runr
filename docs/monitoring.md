@@ -84,7 +84,10 @@ size. A recalculated day replaces the rows of the project's existing deployments
 tenant, their central copies); the rows of a deployment that was deleted since stay as they were
 metered — except a 0.5.7 always-on row (billed as 24 hours) on a day other deployments of the
 project ran in its region: it keeps only the part of the day none of them ran, so a redeploy's
-deleted old deployment is not counted twice. Deployments applied before 0.5.8 have no recorded size: a day counts each of them with
+deleted old deployment is not counted twice. A 0.5.7 scale-to-zero row of a deleted deployment
+stays as it was metered, with its sessions: in the rare case of three deploys of a project on one
+day whose middle deployment was deleted, sessions of that row can be counted again in the
+recalculated rows of the other two. RunR leaves these rows as they are. Deployments applied before 0.5.8 have no recorded size: a day counts each of them with
 the scale mode and size of its own record of that day (what 0.5.7 metered it with); without one, on
 today and yesterday with its project's current configuration, on an earlier day with its sessions
 only — a recalculation never makes up an always-on reservation from today's configuration.

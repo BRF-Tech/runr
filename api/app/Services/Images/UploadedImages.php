@@ -32,8 +32,17 @@ class UploadedImages
     /**
      * The image a reference names for an owner in a region: an id (its repository:tag is looked up
      * in $regionId when the id belongs to another region), repository:tag or repository@digest.
+     * An image that is not in the registry the region uses now (the region moved to another
+     * cluster since the upload, UploadedImage::inRegistryOf()) is not uploaded there: null.
      */
     public function resolve(string $reference, string $ownerKey, string $regionId): ?UploadedImage
+    {
+        $image = $this->lookup($reference, $ownerKey, $regionId);
+
+        return $image && ! $image->inRegistryOf() ? null : $image;
+    }
+
+    private function lookup(string $reference, string $ownerKey, string $regionId): ?UploadedImage
     {
         $ref = ImageName::reference($reference);
         if ($ref === null) {
@@ -77,13 +86,17 @@ class UploadedImages
 
     /**
      * The uploaded image an image reference of a CaaS project points at: a reference into the
-     * uploads repositories of the region's registry. Null for any other image.
+     * uploads repositories of the region's registry (image null: no such upload, or one that is not
+     * in that registry — the region moved to another cluster since). Null for any other image.
+     * $registry: look into the uploads repositories of that registry address instead — e.g. the one
+     * a region migration left (the image is then the record, wherever it is now).
      *
      * @return array{image: ?UploadedImage, owner: string}|null
      */
-    public function forImageRef(?KnativeRegion $region, string $imageRef): ?array
+    public function forImageRef(?KnativeRegion $region, string $imageRef, ?string $registry = null): ?array
     {
-        $registry = rtrim((string) $region?->registry_address, '/');
+        $current = $registry === null;
+        $registry = rtrim((string) ($registry ?? $region?->registry_address), '/');
         $prefix = trim((string) config('images.repository_prefix', 'runr-uploads'), '/').'/';
         if ($registry === '' || ! str_starts_with($imageRef, "{$registry}/{$prefix}")) {
             return null;
@@ -94,16 +107,36 @@ class UploadedImages
             return ['image' => null, 'owner' => ''];
         }
 
-        $query = UploadedImage::query()->where('knative_region_id', $region->id)->where('owner_key', $m[1])->where('repository', $m[2]);
+        $query = UploadedImage::query()->where('knative_region_id', $region?->id)->where('owner_key', $m[1])->where('repository', $m[2]);
         $image = ! empty($m[3]) ? $query->where('digest', $m[3])->first() : $query->where('tag', $m[4] ?? '')->first();
+        if ($current && $image && ! $image->inRegistryOf($region)) {
+            $image = null;
+        }
 
         return ['image' => $image, 'owner' => $m[1]];
     }
 
     /**
+     * What a reference into the uploads repositories of the registry at $registry names: the
+     * uploaded image's repository:tag, or the reference's own path without a record. Null for a
+     * reference that is not into those repositories.
+     */
+    public function nameOfRef(?KnativeRegion $region, string $imageRef, string $registry): ?string
+    {
+        $found = $this->forImageRef($region, $imageRef, $registry);
+        if ($found === null) {
+            return null;
+        }
+
+        return $found['image']?->name()
+            ?? substr($imageRef, strlen(rtrim($registry, '/').'/'.trim((string) config('images.repository_prefix', 'runr-uploads'), '/').'/'));
+    }
+
+    /**
      * Why a CaaS project in $region may not run $imageRef: a reference into the uploads
      * repositories of the region registry must name an uploaded image of the current owner in
-     * that region (an organization never runs another one's uploads). Null when it may — also
+     * that region (an organization never runs another one's uploads) that is in the region's
+     * registry (not one the region left with a move to another cluster). Null when it may — also
      * for every image outside the uploads repositories.
      */
     public function caasImageProblem(?KnativeRegion $region, ?string $imageRef): ?string
@@ -117,8 +150,16 @@ class UploadedImages
             return null;
         }
 
-        return $found['image'] !== null && $found['owner'] === strtolower(ImageOwner::currentKey())
-            ? null
+        $own = $found['owner'] === strtolower(ImageOwner::currentKey());
+        if ($found['image'] !== null && $own) {
+            return null;
+        }
+
+        // The upload exists, but in the registry of a cluster the region left
+        $record = $own ? $this->forImageRef($region, $imageRef, (string) $region->registry_address)['image'] ?? null : null;
+
+        return $record !== null
+            ? __('images.caas_not_in_registry', ['name' => $record->name(), 'region' => $region->name])
             : __('images.caas_not_found', ['image' => $imageRef]);
     }
 
@@ -167,9 +208,11 @@ class UploadedImages
     public function delete(UploadedImage $image): bool
     {
         $region = KnativeRegion::find($image->knative_region_id);
+        $inRegistry = $image->inRegistryOf($region);
         $image->delete();
 
-        return $this->removeManifest($region, $image->registry_repository, $image->digest);
+        // An image of a registry the region left (a move to another cluster) has nothing in the region's registry
+        return ! $inRegistry || $this->removeManifest($region, $image->registry_repository, $image->digest);
     }
 
     /** Remove a manifest from the region registry when no uploaded image record still has it. */

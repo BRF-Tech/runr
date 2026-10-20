@@ -46,7 +46,7 @@ installs `runr` into `/usr/local/bin` when that is writable, else into `~/.local
 
 ```sh
 curl -fsSL https://runr.sh/install.sh | sh
-curl -fsSL https://runr.sh/install.sh | RUNR_VERSION=v0.5.8 sh             # a specific release
+curl -fsSL https://runr.sh/install.sh | RUNR_VERSION=v0.5.9 sh             # a specific release
 curl -fsSL https://runr.sh/install.sh | RUNR_INSTALL_DIR="$HOME/bin" sh    # another directory
 ```
 
@@ -329,6 +329,15 @@ runr scale --min 1 --max 20 # change the scale range and redeploy
 `runr rollback` runs the earlier version's code with the current config (variables,
 resources, scale). For caas projects the image is part of the config, so rollback writes the
 version's image, command and arguments back as a new version and deploys that.
+
+A version built before its region moved to another cluster has its image in a registry the
+region no longer pulls from ([regions](regions.md#older-versions)): the API builds it again
+first and answers with a queued deploy instead of a deployment. `runr deploy --version` and
+`runr rollback` then print the API's message ("v3 is built again for this region's registry:
+…"), wait for the build (`Building v3: waiting`) and then for the deployment it starts, within
+the same `--timeout`. A build that fails or a deploy check that refuses the version ends with
+exit code 6 and the reason. With `--no-wait` they return the queued deploy: `queued_deploy` in
+`-o json`, `queued_deploy_id=` and `status=building` in `--output-env`.
 
 `runr shell` opens a shell in a pod of the live deployment (`--deployment ID`: another active
 one) through RunR's [web shell](web-shell.md), the console's Shell tab: a service scaled to zero
@@ -2328,6 +2337,27 @@ the DNS step; exit code 6 when it fails). Then point the region's DNS at the new
 a failed move). A region with a data location moves only within it: `--data-location` names the
 new cluster's.
 
+`runr regions migration [status] REGION` shows the move and, as long as it can be rolled back,
+what it did with each project of the region (`projects` in `-o json`; projects that run nothing
+are not listed):
+
+```text
+Region:       eu-1
+Status:       dns_check
+Started:      2026-10-19T10:00:00.000000Z
+Old IP:       203.0.113.10
+Current IP:   203.0.113.20
+
+PROJECT   ORGANIZATION   OUTCOME     VERSION   DEPLOYMENT   MESSAGE
+orders    -              building    v3        -            Moving to the new cluster of the region: v3 is built again there; deployed there when it is ready.
+shop      acme           moved       v1        active       -
+upload    -              not_moved   v1        -            its image myapp:1.0 was uploaded into the registry of the cluster the region left; upload it to the region again, select it as the project's image and deploy
+```
+
+ORGANIZATION is the organization a platform region's project belongs to in a multi-tenant
+install, DEPLOYMENT the status of its deployment on the new cluster; the outcomes are described
+in [regions](regions.md#images-the-new-cluster-cannot-pull).
+
 `runr regions migration complete REGION --domain` completes the region's move to a new base
 domain without waiting for RunR to see its DNS record ([regions](regions.md#changing-the-base-domain)).
 
@@ -2421,7 +2451,7 @@ deploy:
   stage: deploy
   image: alpine:3.21
   variables:
-    RUNR_VERSION: v0.5.8
+    RUNR_VERSION: v0.5.9
   before_script:
     - apk add --no-cache curl tar
     - curl -fsSL https://runr.sh/install.sh | sh

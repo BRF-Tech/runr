@@ -83,6 +83,25 @@ class KataSandboxApiTest extends TestCase
             && $job->options === ['previous_status' => 'not_installed', 'devmapper_pool_gb' => 40]);
     }
 
+    public function test_a_region_with_a_thin_pool_keeps_its_size_and_kata_shims_shows_it(): void
+    {
+        $this->addNode('runr-test', ['runr.dev/devmapper-snapshotter' => 'true']);
+        $this->fakeKataCluster();
+        Queue::fake();
+        $this->region = $this->kataRegion(['sandbox_kata_hypervisor' => ['fc'], 'sandbox_kata_devmapper_pool_gb' => 64]);
+
+        // The console's form for more hypervisors sends the default size along
+        $response = $this->install(['runtime' => 'kata', 'hypervisors' => ['qemu', 'fc'], 'devmapper_pool_gb' => 20])->assertStatus(202);
+
+        $this->assertStringContainsString('64 GiB', $response->json('warning'));
+        $this->assertSame(64, $response->json('region.sandbox_kata_devmapper_pool_gb'));
+        Queue::assertPushed(InstallSandboxJob::class, fn (InstallSandboxJob $job) => $job->options['devmapper_pool_gb'] === 64);
+
+        $devmapper = $this->actingAs($this->installer, 'sanctum')->getJson("/api/knative-regions/{$this->region->id}/kata-shims")->json('devmapper');
+        $this->assertSame(64, $devmapper['pool_gb']);
+        $this->assertSame(20, $devmapper['default_pool_gb']);
+    }
+
     public function test_kata_install_response_warns_about_the_runtime_restart(): void
     {
         $this->addNode('n1');

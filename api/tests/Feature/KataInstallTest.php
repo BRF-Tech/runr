@@ -281,6 +281,60 @@ class KataInstallTest extends TestCase
         $this->assertStringContainsString('devmapper snapshotter loaded on n1', $log);
     }
 
+    public function test_the_thin_pool_size_is_recorded_and_an_install_that_adds_hypervisors_keeps_it(): void
+    {
+        $this->addNode('n1');
+        $this->firecrackerSetsUpOnApply('n1');
+        $this->fakeKataCluster();
+
+        $region = $this->kataRegion();
+        $this->service()->installKata($region, ['clh', 'fc'], ['devmapper_pool_gb' => 30]);
+        $this->assertSame(30, $region->fresh()->sandbox_kata_devmapper_pool_gb, 'the size the nodes got');
+
+        // Adding QEMU later: the console sends the default size, the pool on the nodes stays 30 GiB
+        $this->service()->installKata($region->fresh(), ['clh', 'qemu', 'fc'], ['previous_status' => 'ready', 'devmapper_pool_gb' => 20]);
+
+        $region->refresh();
+        $this->assertSame('ready', $region->sandbox_kata_status, $region->sandbox_kata_status_message);
+        $this->assertSame(30, $region->sandbox_kata_devmapper_pool_gb);
+        $env = array_column($this->daemonSets['kata-devmapper']['spec']['template']['spec']['containers'][0]['env'], 'value', 'name');
+        $this->assertSame('30', $env['POOL_GB']);
+    }
+
+    public function test_a_pool_set_up_before_the_size_was_recorded_keeps_the_size_of_its_daemon_set(): void
+    {
+        $this->addNode('n1', ['runr.dev/devmapper-snapshotter' => 'true']);
+        // Set up by an earlier release with 50 GiB: the region has no size recorded
+        $this->daemonSets['kata-devmapper'] = ['metadata' => ['name' => 'kata-devmapper', 'generation' => 1], 'spec' => ['template' => [
+            'metadata' => [], 'spec' => ['containers' => [['name' => 'devmapper', 'env' => [['name' => 'POOL_GB', 'value' => '50']]]]],
+        ]]];
+        $this->firecrackerSetsUpOnApply('n1');
+        $this->fakeKataCluster();
+
+        $region = $this->kataRegion(['sandbox_kata_status' => 'ready', 'sandbox_kata_hypervisor' => ['fc']]);
+        $this->assertNull($region->sandbox_kata_devmapper_pool_gb);
+        $this->assertSame(50, $this->service()->installedDevmapperPoolGb($region->kubeconfig));
+
+        $this->service()->installKata($region, ['clh', 'fc'], ['previous_status' => 'ready', 'devmapper_pool_gb' => 20]);
+
+        $this->assertSame(50, $region->fresh()->sandbox_kata_devmapper_pool_gb);
+        $env = array_column($this->daemonSets['kata-devmapper']['spec']['template']['spec']['containers'][0]['env'], 'value', 'name');
+        $this->assertSame('50', $env['POOL_GB']);
+    }
+
+    /** The devmapper setup and kata-deploy succeed on $node as soon as their DaemonSets are applied. */
+    private function firecrackerSetsUpOnApply(string $node): void
+    {
+        $this->onApply['kata-devmapper'] = function () use ($node) {
+            $this->podLogs["kata-devmapper-{$node}"] = "thin-pool runr-thinpool active\nrunr: devmapper configured\n";
+        };
+        $this->onApply['kata-installer'] = function () use ($node) {
+            $this->labelNode($node, 'katacontainers.io/kata-runtime', 'true');
+            $this->podLogs["kata-installer-{$node}"] = self::DONE_LOG;
+            $this->podLogs["kata-devmapper-{$node}"] .= "devmapper plugin: ok\nrunr: devmapper snapshotter ready\n";
+        };
+    }
+
     public function test_devmapper_setup_failure_is_reported_and_kata_deploy_is_not_started(): void
     {
         $this->addNode('n1');
@@ -641,11 +695,12 @@ class KataInstallTest extends TestCase
             $this->podLogs['kata-devmapper-cleanup-n2'] = "runr: devmapper kept: 0 Firecracker VM(s) and 2 container snapshot(s) still use it on this node\n";
         };
         $this->fakeKataCluster();
-        $region = $this->kataRegion(['sandbox_kata_status' => 'ready', 'sandbox_kata_hypervisor' => ['fc']]);
+        $region = $this->kataRegion(['sandbox_kata_status' => 'ready', 'sandbox_kata_hypervisor' => ['fc'], 'sandbox_kata_devmapper_pool_gb' => 30]);
 
         $this->service()->uninstallKata($region);
 
         $this->assertSame('not_installed', $region->fresh()->sandbox_kata_status);
+        $this->assertNull($region->fresh()->sandbox_kata_devmapper_pool_gb, 'a new Firecracker install chooses its size again');
         // the pool goes only after kata-deploy took the kata-fc handler away
         $this->assertLessThan(
             $this->callIndex('PATCH /apis/apps/v1/namespaces/runr-sandbox/daemonsets/kata-devmapper-cleanup'),

@@ -215,21 +215,20 @@ helm upgrade --install runr brf-tech/runr \
   --set domain=runr.example.com
 ```
 
-To install a specific release, pin the chart version and the API and UI image tags to it:
+To install a specific release, pin the chart version; the API and UI images follow it (their tags
+default to the chart's `appVersion`):
 
 ```bash
-helm upgrade --install runr brf-tech/runr --version 0.5.8 \
+helm upgrade --install runr brf-tech/runr --version 0.5.9 \
   --namespace runr --create-namespace \
-  --set domain=runr.example.com \
-  --set api.image.tag=0.5.8 --set ui.image.tag=0.5.8
+  --set domain=runr.example.com
 ```
 
 The chart installs the gateway, UI, API, Horizon, scheduler, Reverb and — unless you point it at
 external services — PostgreSQL, Redis and Mailpit, plus migration and bootstrap hooks that create
 the first administrator. `helm status runr -n runr` prints how to read the generated password.
 Set `edition=multi-tenant` for the Tenancy and Auth Provider modules; the UI then runs the
-multi-tenant console image (`ui:<tag>-mt`, with the default tag `latest` the chart's release
-`<appVersion>-mt`). The values are documented in the chart's `values.yaml` (`helm show values brf-tech/runr`)
+multi-tenant console image (`ui:<tag>-mt`, by default the chart's release `<appVersion>-mt`). The values are documented in the chart's `values.yaml` (`helm show values brf-tech/runr`)
 and in [docs/helm-values.md](docs/helm-values.md); the chart's `values.schema.json` checks the
 types and allowed values of part of them ([which ones](docs/helm-values.md#validation)).
 For a production install — external PostgreSQL and Redis, TLS, replicas, backups — follow

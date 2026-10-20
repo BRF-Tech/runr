@@ -10,8 +10,8 @@ use Illuminate\Support\Facades\Http;
 use RuntimeException;
 
 /**
- * REST client of one provider type. Commit states are RunR's own (pending | success | failure),
- * every client maps them to its API. Methods that report back (statuses, comments,
+ * REST client of one provider type. Commit states are RunR's own (pending | success | failure |
+ * canceled), every client maps them to its API. Methods that report back (statuses, comments,
  * deployments) are best effort for the caller: they throw on HTTP errors and the reporter logs.
  */
 abstract class ProviderClient
@@ -21,6 +21,9 @@ abstract class ProviderClient
     public const SUCCESS = 'success';
 
     public const FAILURE = 'failure';
+
+    /** Ended without going live, through no fault of the commit: replaced by a newer deploy (or stopped) */
+    public const CANCELED = 'canceled';
 
     /**
      * Repositories the credentials can deploy from.

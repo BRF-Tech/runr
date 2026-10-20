@@ -287,6 +287,75 @@ func TestRollbackCodeProject(t *testing.T) {
 	h.expectCode(ExitNotFound, "rollback", "v9", "--dir", dir)
 }
 
+// A version built into a registry its region no longer pulls from (the region moved to another
+// cluster since) is built again: deploy and rollback wait for the build, then for the
+// deployment it starts.
+func TestRollbackAndDeployOfAVersionBuiltAgainForTheRegion(t *testing.T) {
+	h := newHarness(t).login()
+	dir := h.deployHello()
+	write(t, filepath.Join(dir, "main.py"), pythonHandler+"# v2\n")
+	h.mustRun("deploy", "--dir", dir)
+
+	h.srv.RebuildVersion("hello-api", 1)
+	r := h.mustRun("rollback", "v1", "--dir", dir, "-o", "json")
+	contains(t, r.err, "v1 is built again for this region's registry")
+	contains(t, r.err, "Building v1: waiting")
+	var res DeployResult
+	decodeJSON(t, r.out, &res)
+	if res.Queued == nil || res.Queued.Status != runr.QueuedDeployed || res.Deployment == nil || res.Queued.DeploymentID != res.Deployment.ID {
+		t.Fatalf("rollback result = %+v / %+v", res.Queued, res.Deployment)
+	}
+	if res.Deployment.Status != runr.DeploymentActive || !res.Waited {
+		t.Fatalf("rollback deployment = %+v", res.Deployment)
+	}
+	if d := h.srv.Deployments("hello-api")[0]; d.VersionLabel != "v1" || d.Status != runr.DeploymentActive {
+		t.Fatalf("live deployment = %+v", d)
+	}
+
+	// The build fails: the deploy did not start, with the reason
+	h.srv.RebuildVersion("hello-api", 2)
+	h.srv.Queued().Fail = true
+	r = h.expectCode(ExitFailed, "deploy", "--dir", dir, "--version", "v2")
+	contains(t, r.err, "queued deploy v2 failed: v2 could not be built: pip")
+	if d := h.srv.Deployments("hello-api")[0]; d.VersionLabel != "v1" {
+		t.Fatalf("a failed rebuild started a deployment: %+v", d)
+	}
+}
+
+func TestDeployNoWaitOfAVersionBuiltAgainForTheRegion(t *testing.T) {
+	h := newHarness(t).login()
+	dir := h.deployHello()
+	h.srv.RebuildVersion("hello-api", 1)
+	envFile := filepath.Join(t.TempDir(), "github_output")
+
+	r := h.mustRun("deploy", "--dir", dir, "--version", "v1", "--no-wait", "--output-env", envFile, "-o", "json")
+	var res DeployResult
+	decodeJSON(t, r.out, &res)
+	if res.Queued == nil || res.Queued.Status != runr.QueuedWaiting || res.Deployment != nil || res.Waited {
+		t.Fatalf("--no-wait result = %+v / %+v", res.Queued, res.Deployment)
+	}
+	if len(h.srv.CallsTo("GET /projects/{project}/queued-deploys/{queuedDeploy}")) != 0 {
+		t.Fatal("--no-wait followed the queued deploy")
+	}
+	data, _ := os.ReadFile(envFile)
+	got := string(data)
+	for _, want := range []string{"version=v1\n", "queued_deploy_id=" + res.Queued.ID + "\n", "status=building\n"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("output env lacks %q:\n%s", want, got)
+		}
+	}
+	notContains(t, got, "deployment_id=")
+
+	// Text: what happens next
+	h = newHarness(t).login()
+	dir = h.deployHello()
+	h.srv.RebuildVersion("hello-api", 1)
+	r = h.mustRun("rollback", "v1", "--dir", dir, "--no-wait")
+	contains(t, r.out, "Queued deploy ")
+	contains(t, r.out, "(waiting): v1 is built again for this region's registry")
+	contains(t, r.out, "`runr versions` shows the build")
+}
+
 func TestVersionsLs(t *testing.T) {
 	h := newHarness(t).login()
 	dir := h.deployHello()

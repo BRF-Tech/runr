@@ -27,10 +27,18 @@ class CheckPreviewBuildJob implements ShouldQueue
 
     public int $timeout = 30;
 
+    /**
+     * @param  string|null  $token  the submission these checks follow (BuildPreviewJob): the
+     *                              version's build_token. A build submitted again (a region
+     *                              migration builds a preview on the new cluster) has its own, and
+     *                              the earlier checks stop instead of timing it out; null for
+     *                              checks queued before tokens existed
+     */
     public function __construct(
         public string $previewId,
         public string $versionId,
         public int $attempt = 1,
+        public ?string $token = null,
     ) {}
 
     /** Checks until the build Job's deadline (BuildManifests::deadlineSeconds()) and a minute have passed. */
@@ -46,6 +54,9 @@ class CheckPreviewBuildJob implements ShouldQueue
 
         if (! $preview || ! $version || $version->build_status !== 'building' || $preview->version_id !== $version->id || ! $preview->isLive()) {
             return;
+        }
+        if ($this->token !== null && $version->getAttribute('build_token') !== $this->token) {
+            return; // checks of an earlier submission
         }
 
         $project = $version->project;
@@ -87,6 +98,6 @@ class CheckPreviewBuildJob implements ShouldQueue
             return;
         }
 
-        self::dispatch($this->previewId, $this->versionId, $this->attempt + 1)->delay(now()->addSeconds(self::POLL));
+        self::dispatch($this->previewId, $this->versionId, $this->attempt + 1, $this->token)->delay(now()->addSeconds(self::POLL));
     }
 }

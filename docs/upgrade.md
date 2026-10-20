@@ -22,19 +22,32 @@ generated `runr-secret`, whose `APP_KEY` encrypts the secrets in the database.
 
 3. **Upgrade the release** with the new chart and its images. The chart comes from BRF's
    public Helm repository, added as `brf-tech` at install
-   ([Kubernetes (Helm)](../README.md#kubernetes-helm)); `--version` and the two image tags pin
-   the release:
+   ([Kubernetes (Helm)](../README.md#kubernetes-helm)); `--version` pins the release, and the API
+   and UI images follow it (`api.image.tag` and `ui.image.tag` are empty by default: the chart's
+   `appVersion`):
 
    ```sh
    helm repo update brf-tech
-   helm upgrade runr brf-tech/runr --version <version> -n runr --reuse-values \
-     --set api.image.tag=<version> --set ui.image.tag=<version>
+   helm upgrade runr brf-tech/runr --version <version> -n runr --reuse-values
    ```
 
    `--reuse-values` keeps the values of the running release; keys the new chart added take their
    defaults. `--reset-then-reuse-values` does the same but starts from the new chart's
    `values.yaml`. Values files work as before (`-f values.yaml`); new settings such as
    `branding.*` can be added in the same upgrade.
+
+   **Image tags stored in the release stay.** A release installed with a chart up to 0.5.8 carries
+   that chart's default tag `latest` (`--reuse-values` keeps it), and one installed with
+   `--set api.image.tag=<version>` keeps that version: the upgrade would change the chart but not
+   the images. `helm get values runr -n runr --all` shows the tags. Empty them once, so they
+   follow the chart from then on (`helm rollback` included):
+
+   ```sh
+   helm upgrade runr brf-tech/runr --version <version> -n runr --reuse-values \
+     --set api.image.tag= --set ui.image.tag=
+   ```
+
+   or set both to `<version>` on every upgrade.
 
 4. **Check** `GET /api/version` and `kubectl -n runr logs job/runr-bootstrap`.
 

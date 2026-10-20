@@ -11,7 +11,9 @@ use Illuminate\Http\Resources\Json\JsonResource;
 /**
  * An uploaded image (docs/images.md). image_ref pins the digest in the region registry — what a
  * CaaS project or a runtime version runs; tag_ref is the tag (moves when the name is uploaded
- * again). security: the supply-chain report of container images (SBOM, scan, signature).
+ * again). in_registry: the image is in the registry the region uses now (false after a move of the
+ * region to another cluster). security: the supply-chain report of container images (SBOM, scan,
+ * signature).
  *
  * @mixin UploadedImage
  */
@@ -33,6 +35,9 @@ class UploadedImageResource extends JsonResource
             'region_name' => $region?->name,
             'image_ref' => $image->imageRef($region),
             'tag_ref' => $image->tagRef($region),
+            // false: the region moved to another cluster since the upload, whose registry does
+            // not have it — upload it to the region again (docs/images.md)
+            'in_registry' => $image->inRegistryOf($region),
             'digest' => $image->digest,
             'media_type' => $image->media_type,
             'config_media_type' => $image->config_media_type,

@@ -37,6 +37,7 @@ use Illuminate\Support\Carbon;
  * @property string|null $source_filename
  * @property string|null $uploaded_by
  * @property string|null $note
+ * @property string|null $registry_address the region registry it was pushed into (null: before RunR recorded it)
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  */
@@ -59,6 +60,7 @@ class UploadedImage extends Model
         'owner_key', 'tenant_id', 'knative_region_id', 'repository', 'tag', 'registry_repository',
         'digest', 'media_type', 'config_media_type', 'kind', 'source_format', 'size_bytes',
         'archive_bytes', 'archive_sha256', 'platforms', 'layers', 'source_filename', 'uploaded_by', 'note',
+        'registry_address',
     ];
 
     protected $casts = [
@@ -95,6 +97,23 @@ class UploadedImage extends Model
         $registry = rtrim((string) $region?->registry_address, '/');
 
         return ($registry !== '' ? "{$registry}/" : '')."{$this->registry_repository}:{$this->tag}";
+    }
+
+    /**
+     * Whether the image is in the registry the region uses now: a region moved to another cluster
+     * has that cluster's registry, which never got the upload (a migration rollback gives the old
+     * one back). An image recorded before RunR kept the address counts as there.
+     */
+    public function inRegistryOf(?KnativeRegion $region = null): bool
+    {
+        $pushedTo = rtrim((string) $this->registry_address, '/');
+        if ($pushedTo === '') {
+            return true;
+        }
+
+        $region ??= KnativeRegion::find($this->knative_region_id);
+
+        return $pushedTo === rtrim((string) $region?->registry_address, '/');
     }
 
     public function isWasm(): bool

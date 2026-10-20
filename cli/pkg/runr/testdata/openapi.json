@@ -10260,7 +10260,26 @@
                         "content": {
                             "application/json": {
                                 "schema": {
-                                    "$ref": "#/components/schemas/DeploymentResource"
+                                    "anyOf": [
+                                        {
+                                            "$ref": "#/components/schemas/DeploymentResource"
+                                        },
+                                        {
+                                            "type": "object",
+                                            "properties": {
+                                                "message": {
+                                                    "type": "string"
+                                                },
+                                                "queued_deploy": {
+                                                    "$ref": "#/components/schemas/QueuedDeployResource"
+                                                }
+                                            },
+                                            "required": [
+                                                "message",
+                                                "queued_deploy"
+                                            ]
+                                        }
+                                    ]
                                 }
                             }
                         }
@@ -10434,6 +10453,134 @@
                 "responses": {
                     "204": {
                         "description": "No content"
+                    },
+                    "404": {
+                        "$ref": "#/components/responses/ModelNotFoundException"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/AuthenticationException"
+                    }
+                },
+                "security": [
+                    {
+                        "http": []
+                    }
+                ]
+            }
+        },
+        "/projects/{project}/queued-deploys/{queuedDeploy}": {
+            "get": {
+                "operationId": "deployment.queued",
+                "summary": "A deploy that waits for its version's build \u2014 the answer of a deploy whose version is built\nagain for the region's registry: status waiting, starting, deployed (deployment_id),\nfailed or cancelled, with what happened in message. Never answered from the response cache:\na build and a deploy change it, not the project",
+                "tags": [
+                    "Projects > Deployments"
+                ],
+                "parameters": [
+                    {
+                        "name": "project",
+                        "in": "path",
+                        "required": true,
+                        "description": "The project ID",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "queuedDeploy",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "The queued deploy",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "id": {
+                                                    "type": "string"
+                                                },
+                                                "project_id": {
+                                                    "type": "string"
+                                                },
+                                                "version_id": {
+                                                    "type": "string"
+                                                },
+                                                "version": {
+                                                    "type": [
+                                                        "integer",
+                                                        "null"
+                                                    ]
+                                                },
+                                                "status": {
+                                                    "type": "string",
+                                                    "enum": [
+                                                        "waiting",
+                                                        "starting",
+                                                        "deployed",
+                                                        "failed",
+                                                        "cancelled"
+                                                    ]
+                                                },
+                                                "reason": {
+                                                    "type": [
+                                                        "string",
+                                                        "null"
+                                                    ]
+                                                },
+                                                "message": {
+                                                    "type": [
+                                                        "string",
+                                                        "null"
+                                                    ]
+                                                },
+                                                "deployment_id": {
+                                                    "type": [
+                                                        "string",
+                                                        "null"
+                                                    ]
+                                                },
+                                                "created_at": {
+                                                    "type": [
+                                                        "string",
+                                                        "null"
+                                                    ]
+                                                },
+                                                "updated_at": {
+                                                    "type": [
+                                                        "string",
+                                                        "null"
+                                                    ]
+                                                }
+                                            },
+                                            "required": [
+                                                "id",
+                                                "project_id",
+                                                "version_id",
+                                                "version",
+                                                "status",
+                                                "reason",
+                                                "message",
+                                                "deployment_id",
+                                                "created_at",
+                                                "updated_at"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "data"
+                                    ]
+                                }
+                            }
+                        }
                     },
                     "404": {
                         "$ref": "#/components/responses/ModelNotFoundException"
@@ -16203,14 +16350,7 @@
                                             "type": "boolean"
                                         },
                                         "registry_removed": {
-                                            "anyOf": [
-                                                {
-                                                    "type": "boolean"
-                                                },
-                                                {
-                                                    "type": "string"
-                                                }
-                                            ]
+                                            "type": "boolean"
                                         },
                                         "id": {
                                             "type": "string"
@@ -29586,6 +29726,7 @@
         "/knative-regions/{knativeRegion}/migration-status": {
             "get": {
                 "operationId": "regionMigrate.migrationStatus",
+                "summary": "The move's state and, while it can still be rolled back, what it did with each project of the\nregion (RegionMigrateService::migrationReport(): moved, building, deployed, not_moved,\ncancelled \u2014 with the reason). Never answered from the response cache: the builds and\ndeploys it follows change no region setting",
                 "tags": [
                     "RegionMigrate"
                 ],
@@ -29602,7 +29743,7 @@
                 ],
                 "responses": {
                     "200": {
-                        "description": "",
+                        "description": "The move's state and what it did with each project (projects: empty once the move is completed or rolled back)",
                         "content": {
                             "application/json": {
                                 "schema": {
@@ -29615,7 +29756,10 @@
                                             ]
                                         },
                                         "migration_started_at": {
-                                            "type": "string"
+                                            "type": [
+                                                "string",
+                                                "null"
+                                            ]
                                         },
                                         "migration_old_ip": {
                                             "type": [
@@ -29630,7 +29774,64 @@
                                             ]
                                         },
                                         "is_migrating": {
-                                            "type": "string"
+                                            "type": "boolean"
+                                        },
+                                        "projects": {
+                                            "type": "array",
+                                            "items": {
+                                                "type": "object",
+                                                "properties": {
+                                                    "organization": {
+                                                        "type": [
+                                                            "string",
+                                                            "null"
+                                                        ]
+                                                    },
+                                                    "project_id": {
+                                                        "type": "string"
+                                                    },
+                                                    "project": {
+                                                        "type": "string"
+                                                    },
+                                                    "outcome": {
+                                                        "type": "string",
+                                                        "enum": [
+                                                            "moved",
+                                                            "building",
+                                                            "deployed",
+                                                            "not_moved",
+                                                            "cancelled"
+                                                        ]
+                                                    },
+                                                    "version": {
+                                                        "type": [
+                                                            "integer",
+                                                            "null"
+                                                        ]
+                                                    },
+                                                    "deployment_status": {
+                                                        "type": [
+                                                            "string",
+                                                            "null"
+                                                        ]
+                                                    },
+                                                    "message": {
+                                                        "type": [
+                                                            "string",
+                                                            "null"
+                                                        ]
+                                                    }
+                                                },
+                                                "required": [
+                                                    "organization",
+                                                    "project_id",
+                                                    "project",
+                                                    "outcome",
+                                                    "version",
+                                                    "deployment_status",
+                                                    "message"
+                                                ]
+                                            }
                                         }
                                     },
                                     "required": [
@@ -29638,7 +29839,8 @@
                                         "migration_started_at",
                                         "migration_old_ip",
                                         "current_ip",
-                                        "is_migrating"
+                                        "is_migrating",
+                                        "projects"
                                     ]
                                 }
                             }
@@ -34552,6 +34754,13 @@
                                         "devmapper": {
                                             "type": "object",
                                             "properties": {
+                                                "pool_gb": {
+                                                    "type": [
+                                                        "integer",
+                                                        "null"
+                                                    ],
+                                                    "description": "the size the region's thin-pool was set up with (null: none yet), kept by later installs"
+                                                },
                                                 "default_pool_gb": {
                                                     "type": "integer",
                                                     "enum": [
@@ -34572,6 +34781,7 @@
                                                 }
                                             },
                                             "required": [
+                                                "pool_gb",
                                                 "default_pool_gb",
                                                 "min_pool_gb",
                                                 "max_pool_gb"
@@ -47116,6 +47326,66 @@
                     "created_at"
                 ],
                 "title": "ProjectResource"
+            },
+            "QueuedDeployResource": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "string"
+                    },
+                    "project_id": {
+                        "type": "string"
+                    },
+                    "version_id": {
+                        "type": "string"
+                    },
+                    "version": {
+                        "type": [
+                            "integer",
+                            "null"
+                        ]
+                    },
+                    "status": {
+                        "type": "string"
+                    },
+                    "reason": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "message": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "deployment_id": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "created_at": {
+                        "type": "string"
+                    },
+                    "updated_at": {
+                        "type": "string"
+                    }
+                },
+                "required": [
+                    "id",
+                    "project_id",
+                    "version_id",
+                    "version",
+                    "status",
+                    "reason",
+                    "message",
+                    "deployment_id",
+                    "created_at",
+                    "updated_at"
+                ],
+                "title": "QueuedDeployResource"
             },
             "RegisterRequest": {
                 "type": "object",

@@ -76,6 +76,7 @@ use Modules\Tenancy\Models\Tenant;
  * @property Carbon|null $migration_started_at
  * @property string|null $migration_old_ip
  * @property string|null $migration_old_kubeconfig
+ * @property array<string, mixed>|null $migration_old_state
  * @property string|null $domain_migration_status
  * @property Carbon|null $domain_migration_started_at
  * @property string|null $domain_migration_old_domain
@@ -85,6 +86,7 @@ use Modules\Tenancy\Models\Tenant;
  * @property string $sandbox_kata_status
  * @property string|null $sandbox_kata_status_message
  * @property array<array-key, mixed>|null $sandbox_kata_hypervisor
+ * @property int|null $sandbox_kata_devmapper_pool_gb Firecracker's devmapper thin-pool size in GiB, as set up on the nodes
  * @property string $sandbox_gvisor_status
  * @property string|null $sandbox_gvisor_status_message
  * @property string $sandbox_xaas_runtime
@@ -269,6 +271,8 @@ class KnativeRegion extends Model
         'sandbox_kata_status',
         'sandbox_kata_status_message',
         'sandbox_kata_hypervisor',
+        // Firecracker's devmapper thin-pool size (GiB), as SandboxInstallService set it up
+        'sandbox_kata_devmapper_pool_gb',
         'sandbox_gvisor_status',
         'sandbox_gvisor_status_message',
         'sandbox_xaas_runtime',
@@ -304,8 +308,9 @@ class KnativeRegion extends Model
     ];
 
     // Secrets never appear in API responses (registry_storage_config holds S3 credentials)
-    // agent_token_hash is not fillable: only the agent deploy writes it (forceFill)
-    protected $hidden = ['kubeconfig', 'redis_password', 'registry_password', 'registry_storage_config', 'migration_old_kubeconfig', 'agent_token_hash'];
+    // agent_token_hash is not fillable: only the agent deploy writes it (forceFill); neither is
+    // migration_old_state, the pre-move state only RegionMigrateService writes (forceFill)
+    protected $hidden = ['kubeconfig', 'redis_password', 'registry_password', 'registry_storage_config', 'migration_old_kubeconfig', 'migration_old_state', 'agent_token_hash'];
 
     // Secret columns are encrypted at rest (App\Casts\Encrypted, docs/security.md)
     protected $casts = [
@@ -327,6 +332,7 @@ class KnativeRegion extends Model
         'prometheus_managed' => 'boolean',
         'loki_managed' => 'boolean',
         'sandbox_kata_hypervisor' => 'array',
+        'sandbox_kata_devmapper_pool_gb' => 'integer',
         'sandbox_wasm_shims' => 'array',
         'sandbox_wasm_nodes' => 'array',
         'gpu_available' => 'array',
@@ -334,6 +340,7 @@ class KnativeRegion extends Model
         'gpu_settings' => 'array',
         'model_storage' => 'array',
         'migration_started_at' => 'datetime',
+        'migration_old_state' => 'array',
         'domain_migration_started_at' => 'datetime',
         'function_tls_expires_at' => 'datetime',
     ];

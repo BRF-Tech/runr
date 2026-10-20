@@ -496,9 +496,22 @@ sequenceDiagram
     Q-->>UI: PlatformEvent over Reverb (deployment.*)
 ```
 
-- `Version::BUILD_STATUSES`: `pending`, `building`, `ready`, `failed`, `pruned`. Only `ready`
-  versions can be deployed. `pruned` versions had their build image removed by the registry
-  retention (`RetainRegistryImagesJob`).
+- `Version::BUILD_STATUSES`: `pending`, `building`, `ready`, `failed`, `pruned`, `cancelled`.
+  Only `ready` versions can be deployed. `pruned` versions had their build image removed by the
+  registry retention (`RetainRegistryImagesJob`). `cancelled` builds were stopped by RunR, not
+  failed: a [region migration rollback](regions.md#completing-and-rolling-back-the-move) took the
+  region off the cluster they ran on (`build_error` says so).
+- A deploy can wait for its version's build (`QueuedDeploys`, table `queued_deploys`): once the
+  build, a runtime image RunR builds in the region and the version's supply-chain checks are
+  ready, it starts on the guarded deploy path of a git push (`DeploymentStarter`: the deploy
+  checks and `ProjectAdmission`), unless a newer deploy of the project came first. A region
+  migration queues one for every project whose image it builds again on the new cluster, and a
+  deploy of a version whose image is not in its region's registry (`VersionRebuilds`: built
+  before the region moved) builds the version again and queues one —
+  `POST /projects/{id}/deploy` then answers with the queued deploy
+  (`GET /projects/{id}/queued-deploys/{id}`). The step that starts it claims the deployment id
+  first, so a region migration rollback cancels a queued deploy exactly when it has not created
+  its deployment yet.
 - `Deployment::STATUSES`: `pending`, `running`, `active`, `shutting_down`, `shut_down`, `failed`.
   Teardown of the previous deployment runs in `ProcessTeardown` on `DeploymentStatusChanged`.
 - Build Jobs run in the project namespace with the `build` sandbox mapping. Base images are
@@ -648,7 +661,7 @@ The Helm value `edition` selects the installation type (`helm/templates/_helpers
 | Organizations | One | Many tenants, each with its own schema, users, roles and quotas |
 | Tenancy module | Off (unless `tenancy.enabled`) | On |
 | AuthProvider module | Off (unless `authProvider.enabled`) | On |
-| UI image | `runr/ui:<tag>` | `runr/ui:<tag>-mt`, built with the modules (`ui.image.multiTenantSuffix`; the tag `latest` runs `<appVersion>-mt`) |
+| UI image | `runr/ui:<tag>` | `runr/ui:<tag>-mt`, built with the modules (`ui.image.multiTenantSuffix`; `<appVersion>-mt` by default and for the tag `latest`) |
 | Database | PostgreSQL | PostgreSQL, one schema per tenant |
 
 The optional organization ceiling (`quota.cpu`, `quota.memoryGiB`) is applied as a

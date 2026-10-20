@@ -90,7 +90,11 @@ A push to the **deploy branch** (default `main`, set on the Git tab):
 A push whose tree equals the latest version creates nothing and deploys nothing ("No changes"),
 unless that version is not live — then it is deployed. Pushes to other branches are stored on
 the remote and deploy nothing. **Deploy again** on the Git tab deploys the head of the deploy
-branch once more.
+branch once more. A version found this way that was built before the region moved to another
+cluster has its image in a registry the region no longer pulls from: it is built again into the
+region's registry first — the deploy shows `building` with "v3 is built again for this region's
+registry: …" — and deployed when the build is ready
+([regions](regions.md#older-versions)).
 
 Code saved in the browser editor is committed on top of the deploy branch of the remote
 ("Saved in the RunR editor as v8"), so `git pull` brings it down and your next push stays a
@@ -257,6 +261,13 @@ preview; a preview without a new commit for **Delete after** hours (default 72, 
 cleanup; **Delete** on the Git tab removes it at once (a new commit creates it again). Turning
 previews off deletes every live preview of the project.
 
+When the project's region moves to another cluster, its live previews move with it: each is
+deployed on the new cluster the way **Redeploy** deploys it, a preview whose image is in the old
+cluster's registry (or whose build ran on the old cluster) is built again there first, and a
+preview whose build had failed is marked failed with the reason; a rollback of the move does the
+same on the old cluster ([regions](regions.md#preview-environments)). A preview on a runtime
+image RunR builds in the region waits for that image before it deploys.
+
 Rules:
 
 - **Limit**: at most **Live previews at most** previews per project (default 3, Helm value
@@ -283,10 +294,16 @@ RunR reports every deploy back:
 - a **commit status** `runr` (context name: `GIT_STATUS_CONTEXT`) on the commit — pending while
   the version is created, built and deployed, success when it is live (or nothing changed, or
   the version was created with auto-deploy off), failure with the reason; the link opens the
-  project's Git tab (a ready preview links its URL);
+  project's Git tab (a ready preview links its URL). A deploy that a newer one replaced before it
+  went live ends as "Replaced by a newer deploy" ("Stopped before it went live" when the project
+  was stopped, "Build cancelled by a region migration rollback" when its build ran on the cluster
+  a [rollback](regions.md#completing-and-rolling-back-the-move) took the region off — push again
+  to build it): `canceled` on GitLab, `warning` on Forgejo and Gitea, and `success` with that
+  description on GitHub, whose commit statuses have no canceled state — `error` or `failure` would
+  mark a commit as broken that nothing failed in;
 - on GitHub, a **deployment** (Deployments API) per production deploy (`production`) and per
-  preview (`preview/pr-<n>`, transient) with the URL as environment URL; a deleted preview's
-  deployment becomes inactive;
+  preview (`preview/pr-<n>`, transient) with the URL as environment URL; the deployment of a
+  replaced deploy and a deleted preview's become inactive;
 - for previews, the **comment** on the pull/merge request.
 
 ## Deploy history

@@ -14,6 +14,7 @@ use App\Support\DeployGate;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Foundation\Queue\Queueable;
+use Illuminate\Support\Str;
 
 /**
  * Build a preview version with the regular function build (Kaniko Job in the region, image in
@@ -74,6 +75,9 @@ class BuildPreviewJob implements ShouldQueue
             return;
         }
 
-        CheckPreviewBuildJob::dispatch($this->previewId, $this->versionId)->delay(now()->addSeconds(5));
+        // The checks of this submission (CheckPreviewBuildJob $token): an earlier submission's stop
+        $token = Str::random(32);
+        PreviewVersionScope::query()->whereKey($version->getKey())->update(['build_token' => $token]);
+        CheckPreviewBuildJob::dispatch($this->previewId, $this->versionId, 1, $token)->delay(now()->addSeconds(5));
     }
 }

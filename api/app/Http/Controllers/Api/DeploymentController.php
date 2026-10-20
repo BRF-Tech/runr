@@ -6,15 +6,19 @@ use App\Events\DeploymentCreated;
 use App\Events\DeploymentStatusChanged;
 use App\Http\Requests\Project\DeployProjectRequest;
 use App\Http\Resources\DeploymentResource;
+use App\Http\Resources\QueuedDeployResource;
 use App\Mcp\Hosting\CallLogLines;
 use App\Models\Deployment;
 use App\Models\Project;
+use App\Models\QueuedDeploy;
 use App\Models\Version;
 use App\Services\Concerns\BroadcastsModelEvents;
 use App\Services\KnativeDeployService;
 use App\Services\KnativeLogService;
 use App\Services\KnativeMetricsService;
 use App\Services\Projects\LiveDeployments;
+use App\Services\Projects\VersionRebuilds;
+use App\Services\Residency\RegionPolicy;
 use App\Services\SupplyChain\DeployPolicyGate;
 use App\Support\Projects\DeployIntent;
 use App\Support\Projects\ProjectAdmission;
@@ -53,6 +57,7 @@ class DeploymentController extends Controller
         // allocations — with the deploy's overrides (deploy_config)
         ProjectAdmission::assertDeployable($project, DeployIntent::production($data['deploy_config'] ?? null));
 
+        /** @var Version $version */
         $version = $project->versions()->findOrFail($data['version_id']);
 
         if ($version->build_status === Version::STATUS_PRUNED) {
@@ -69,6 +74,15 @@ class DeploymentController extends Controller
                 ? __('api.project.region_maintenance')
                 : __('api.project.region_inactive');
             abort(422, __('api.project.region_status', ['status' => $statusMsg]));
+        }
+
+        // A version built into a registry the region's cluster does not pull from (built before
+        // the region moved to another cluster): built again into the region's and deployed when
+        // ready — through every deploy check then, the policy gate on the new image's scan
+        if (VersionRebuilds::needed($project, $version)) {
+            app(RegionPolicy::class)->authorize($region, RegionPolicy::DEPLOY);
+
+            return $this->deployWhenRebuilt($request, $project, $version, $data['deploy_config'] ?? null);
         }
 
         // Data residency + supply-chain policy gate (docs/supply-chain.md); throws 422 when blocked
@@ -98,9 +112,40 @@ class DeploymentController extends Controller
         return response()->json($resource, 202);
     }
 
+    /**
+     * The deploy of a version that is built again first (VersionRebuilds): 202 with the queued
+     * deploy instead of a deployment — GET queued-deploys/{id} follows it to its deployment.
+     */
+    private function deployWhenRebuilt(Request $request, Project $project, Version $version, ?array $deployConfig): JsonResponse
+    {
+        $queued = app(VersionRebuilds::class)->queue($project, $version, (string) $request->user()->username, [
+            'deploy_config' => $deployConfig,
+            'initiator_id' => auth()->id() !== null ? (string) auth()->id() : null,
+        ]);
+
+        return response()->json([
+            'message' => VersionRebuilds::message($version),
+            'queued_deploy' => new QueuedDeployResource($queued),
+        ], 202);
+    }
+
     public function show(Project $project, Deployment $deployment): DeploymentResource
     {
         return new DeploymentResource($deployment->load('version'));
+    }
+
+    /**
+     * A deploy that waits for its version's build — the answer of a deploy whose version is built
+     * again for the region's registry: status waiting, starting, deployed (deployment_id),
+     * failed or cancelled, with what happened in message. Never answered from the response cache:
+     * a build and a deploy change it, not the project.
+     */
+    #[OpenApiResponse(200, 'The queued deploy', type: 'array{data: array{id: string, project_id: string, version_id: string, version: int|null, status: "waiting"|"starting"|"deployed"|"failed"|"cancelled", reason: string|null, message: string|null, deployment_id: string|null, created_at: string|null, updated_at: string|null}}')]
+    public function queued(Request $request, Project $project, string $queuedDeploy): JsonResponse
+    {
+        $queued = QueuedDeploy::query()->where('project_id', $project->id)->findOrFail($queuedDeploy);
+
+        return (new QueuedDeployResource($queued))->response($request)->header('Cache-Control', 'no-store, private');
     }
 
     public function logs(Project $project, Deployment $deployment): JsonResponse

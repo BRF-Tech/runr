@@ -44,6 +44,19 @@ type rlcRegion struct {
 	wasmMessage                 string
 	// domainMigrating: the region moves to a new base domain (SetRegionDomainMigrating)
 	domainMigrating bool
+	// migrationProjects: what the move did with each project (SetRegionMigrationProjects),
+	// reported while the move can be rolled back
+	migrationProjects []runr.MigrationProject
+}
+
+// SetRegionMigrationProjects sets what the region's move did with each project: GET
+// migration-status reports it while the move can be rolled back (dns_check or failed).
+func (s *Server) SetRegionMigrationProjects(regionName string, rows []runr.MigrationProject) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if reg := s.regionByName(regionName); reg != nil {
+		s.rlcRegionOf(reg).migrationProjects = rows
+	}
 }
 
 // SetRegionDomainMigrating marks a region as moving to a new base domain.
@@ -1046,8 +1059,17 @@ func init() {
 			return 0, nil, err
 		}
 		s.rlcAdvance(r)
+		projects := []map[string]any{}
+		if r.d.MigrationStatus == runr.MigrationDNSCheck || r.d.MigrationStatus == runr.MigrationFailed {
+			for _, row := range r.migrationProjects {
+				projects = append(projects, map[string]any{"organization": nullStr(row.Organization), "project_id": row.ProjectID,
+					"project": row.Project, "outcome": row.Outcome, "version": nullInt(row.Version),
+					"deployment_status": nullStr(row.DeploymentStatus), "message": nullStr(row.Message)})
+			}
+		}
 		return 200, map[string]any{"migration_status": nullStr(r.d.MigrationStatus), "migration_started_at": nullStr(r.d.MigrationStartedAt),
-			"migration_old_ip": nullStr(r.d.MigrationOldIP), "current_ip": nullStr(r.d.ExternalIP), "is_migrating": r.d.IsMigrating}, nil
+			"migration_old_ip": nullStr(r.d.MigrationOldIP), "current_ip": nullStr(r.d.ExternalIP), "is_migrating": r.d.IsMigrating,
+			"projects": projects}, nil
 	})
 	handle("POST /knative-regions/{knativeRegion}/complete-migration", func(s *Server, q *featureReq) (int, any, *apiErr) {
 		_, r, err := s.rlcFind(q)
@@ -1260,4 +1282,12 @@ func nullStr(s string) any {
 		return nil
 	}
 	return s
+}
+
+// nullInt encodes 0 as null.
+func nullInt(n int) any {
+	if n == 0 {
+		return nil
+	}
+	return n
 }

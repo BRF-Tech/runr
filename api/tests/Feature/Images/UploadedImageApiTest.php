@@ -8,6 +8,7 @@ use App\Models\ImageSecurityReport;
 use App\Models\Project;
 use App\Models\Runtime;
 use App\Models\UploadedImage;
+use App\Services\Images\UploadedImages;
 use App\Services\SupplyChain\SupplyChainPipeline;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Queue;
@@ -130,6 +131,54 @@ class UploadedImageApiTest extends TestCase
         // any other registry stays as it was
         $this->assertArrayNotHasKey('config.image', $errors('docker.io/library/nginx:1.27'));
         $this->assertArrayNotHasKey('config.image', $errors(self::IMG_ZOT.'/runr-builds/web:v3'));
+    }
+
+    public function test_an_image_of_a_registry_the_region_left_is_not_uploaded_there_any_more(): void
+    {
+        $this->fakeImageCluster();
+        $region = $this->imageRegion();
+        // Pushed into the registry of the cluster the region was moved away from
+        $left = $this->uploadedImage($region, ['registry_address' => '10.96.9.9:5000']);
+        $this->uploadedImage($region, ['repository' => 'web', 'registry_address' => self::IMG_ZOT]);
+
+        $listed = collect($this->getJson('/api/images')->assertOk()->json('data'))->keyBy('name');
+        $this->assertFalse($listed['app:1.0']['in_registry'], 'upload it to the region again');
+        $this->assertTrue($listed['web:1.0']['in_registry']);
+
+        $images = app(UploadedImages::class);
+        $this->assertNull($images->resolve('app:1.0', UploadedImage::PLATFORM_OWNER, $region->id));
+        $this->assertNotNull($images->resolve('web:1.0', UploadedImage::PLATFORM_OWNER, $region->id));
+        $this->assertSame([$region->name], $images->missingRegions('app:1.0', UploadedImage::PLATFORM_OWNER, [$region->id]));
+        $this->assertSame(__('images.caas_not_in_registry', ['name' => 'app:1.0', 'region' => $region->name]), $images->caasImageProblem($region, $left->imageRef($region)));
+        $this->assertSame(__('images.caas_not_found', ['image' => self::IMG_ZOT.'/runr-uploads/platform/ghost:1']), $images->caasImageProblem($region, self::IMG_ZOT.'/runr-uploads/platform/ghost:1'));
+        $this->assertSame('app:1.0', $images->nameOfRef($region, '10.96.9.9:5000/runr-uploads/platform/app@sha256:'.str_repeat('a', 64), '10.96.9.9:5000'));
+        $this->assertSame('platform/gone:2', $images->nameOfRef($region, '10.96.9.9:5000/runr-uploads/platform/gone:2', '10.96.9.9:5000'));
+        $this->assertNull($images->nameOfRef($region, 'nginx:1.27', '10.96.9.9:5000'));
+
+        // Deleting it touches no registry: the one it is in belongs to a cluster the region left
+        $this->deleteJson("/api/images/{$left->id}")->assertOk()->assertJsonPath('registry_removed', true);
+        $this->assertSame([], $this->imgCallsTo('DELETE', '/manifests/'));
+    }
+
+    public function test_the_upgrade_records_the_registry_of_each_upload(): void
+    {
+        $region = $this->imageRegion();
+        // A region moved at 10:00 and not completed: its registry before the move is kept
+        $moving = $this->imageRegion(['registry_address' => '10.96.2.2:5000']);
+        $moving->forceFill(['migration_status' => 'dns_check', 'migration_started_at' => '2026-10-19 10:05:00',
+            'migration_old_state' => ['registry_address' => '10.96.1.1:5000', 'moved_at' => '2026-10-19T10:00:00+00:00']])->save();
+        $plain = $this->uploadedImage($region);
+        $before = $this->uploadedImage($moving);
+        $before->forceFill(['created_at' => '2026-10-18 08:00:00'])->save();
+        $after = $this->uploadedImage($moving, ['repository' => 'web']);
+        $after->forceFill(['created_at' => '2026-10-19 10:30:00'])->save();
+        UploadedImage::query()->update(['registry_address' => null]);
+
+        (require base_path('database/migrations/2026_10_20_100003_add_registry_address_to_uploaded_images.php'))->up();
+
+        $this->assertSame(self::IMG_ZOT, $plain->fresh()->registry_address);
+        $this->assertSame('10.96.1.1:5000', $before->fresh()->registry_address, 'pushed into the old cluster\'s registry');
+        $this->assertSame('10.96.2.2:5000', $after->fresh()->registry_address);
     }
 
     public function test_a_caas_version_of_an_upload_is_scanned_like_a_build(): void

@@ -36,7 +36,9 @@ gateway:
 api:
   image:
     repository: ghcr.io/brf-tech/runr/api
-    tag: latest
+    # "" = the chart's appVersion: `helm install --version X` runs RunR X and `helm rollback` rolls
+    # the images back with the chart. A tag set here (latest included) is used as it is
+    tag: ""
     pullPolicy: IfNotPresent
   replicas: 2               # ignored while hpa.enabled: the HPA owns the count
   port: 80                  # port Octane listens on in the API container
@@ -68,10 +70,11 @@ api:
 ui:
   image:
     repository: ghcr.io/brf-tech/runr/ui
-    tag: latest
+    tag: ""                 # "" = the chart's appVersion, as api.image.tag
     # Appended to the tag when edition=multi-tenant: the UI variant built with the Tenancy and Auth
-    # Provider modules (published as <version>-mt). With tag latest the multi-tenant image is the
-    # chart's release, <appVersion>-mt. "" = the tag as it is (a UI image of your own with the modules)
+    # Provider modules (published as <version>-mt), <appVersion>-mt by default. The moving tag latest
+    # has no such variant: it runs <appVersion>-mt too. "" = the tag as it is (a UI image of your own
+    # with the modules)
     multiTenantSuffix: "-mt"
     pullPolicy: IfNotPresent
   replicas: 2               # ignored while hpa.enabled: the HPA owns the count

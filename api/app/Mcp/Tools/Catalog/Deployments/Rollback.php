@@ -76,8 +76,12 @@ class Rollback extends Tool
         }
 
         $context->progress(0, null, 'Rolling back to version '.($target['number'] ?? '?').'…');
-        $deployment = $this->startDeployment($context, $projectId, (string) $target['id']);
-        if ($arguments['wait'] ?? true) {
+        $wait = (bool) ($arguments['wait'] ?? true);
+        $deployment = $this->startDeployment($context, $projectId, (string) $target['id'], [], $wait ? $deadline : null);
+        if (isset($deployment['queued_deploy'])) {
+            return self::queuedResult($deployment, $target);
+        }
+        if ($wait) {
             $deployment = $this->waitForDeployment($context, $projectId, $deployment, $deadline);
         }
 

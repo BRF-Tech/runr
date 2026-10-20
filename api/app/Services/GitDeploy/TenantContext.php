@@ -4,6 +4,7 @@ namespace App\Services\GitDeploy;
 
 use App\Models\User;
 use Closure;
+use Illuminate\Support\Facades\DB;
 use Modules\Tenancy\Models\Tenant;
 use Modules\Tenancy\Models\TenantUser;
 
@@ -108,6 +109,43 @@ class TenantContext
                 $tenant->run(fn () => $callback((string) $tenant->getTenantKey()));
             } catch (\Throwable $e) {
                 report($e);
+            }
+        }
+    }
+
+    /**
+     * Run $callback in the context of each organization platform region $regionId is assigned to
+     * (tenant_regions; an accepted assignment has a copy of the region, with the organization's
+     * projects on it, in the organization's schema). Nothing without tenancy. An organization
+     * whose run throws is reported and skipped; the caller's context comes back afterwards.
+     *
+     * @param  Closure(string $tenantId): void  $callback
+     */
+    public static function eachAssigned(string $regionId, Closure $callback): void
+    {
+        if (! self::enabled()) {
+            return;
+        }
+
+        $central = (string) config('tenancy.database.central_connection', 'central');
+        $ids = DB::connection($central)->table('tenant_regions')->where('knative_region_id', $regionId)->pluck('tenant_id');
+        $previous = tenancy()->initialized ? tenancy()->tenant : null;
+
+        try {
+            foreach (Tenant::query()->whereKey($ids->all())->get() as $tenant) {
+                /** @var Tenant $tenant */
+                try {
+                    tenancy()->initialize($tenant);
+                    $callback((string) $tenant->getTenantKey());
+                } catch (\Throwable $e) {
+                    report($e);
+                }
+            }
+        } finally {
+            if ($previous) {
+                tenancy()->initialize($previous);
+            } elseif (tenancy()->initialized) {
+                tenancy()->end();
             }
         }
     }

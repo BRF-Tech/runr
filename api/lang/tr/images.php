@@ -19,6 +19,7 @@ return [
     'expired' => 'Yükleme süresi içinde tamamlanmadığı için iptal edildi.',
     'in_use' => ':name hâlâ şunlar tarafından kullanılıyor: :used. Önce onları başka bir imaja yönlendirin.',
     'caas_not_found' => 'Yüklenen imaj :image bu bölgede yok (ya da başka bir kuruluşa ait). Bölgenin yüklenen imajlarından birini seçin.',
+    'caas_not_in_registry' => 'Yüklenen :name imajı :region bölgesinin registry\'sinde yok: bölge, imaj yüklendikten sonra başka bir cluster\'a taşındı. İmajı bölgeye yeniden yükleyin, sonra seçin.',
     'runtime_upload_missing' => ':runtime runtime\'ının :version sürümü yüklenen :reference imajını kullanıyor; bu imaj :region bölgesine yüklenmemiş. Oraya yükleyin (Ayarlar → İmajlar ya da runr images push --region :region).',
     'runtime_upload_regions' => ':reference imajını adlandırıyor; bu imaj şu bölge(ler)e yüklenmemiş: :regions',
     'runtime_upload_unknown' => ':reference imajını adlandırıyor; bu, runtime sahibinin yüklediği bir imaj değil',

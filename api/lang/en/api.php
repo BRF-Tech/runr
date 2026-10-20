@@ -94,6 +94,7 @@ return [
         'region_inactive' => 'inactive',
         'version_not_ready' => 'This version is not ready for deployment. Build status: :status.',
         'version_pruned' => 'The build image of v:version was removed by registry retention and can no longer be deployed. Save the code again to build a new version.',
+        'version_rebuilding' => "v:version is built again for this region's registry: its image is in a registry the region's cluster does not pull from (built before the region moved to another cluster). It deploys when the build is ready.",
         'queue_requires_redis' => 'Queue trigger requires Redis configured on the selected region.',
         'slug_invalid' => 'The name must give a Kubernetes name that starts with a letter and contains only letters, digits and dashes (it gives ":slug").',
         'slug_too_long' => 'The name is too long: its Kubernetes name ":slug" has :length characters, at most :max are allowed.',

@@ -168,33 +168,66 @@ else
   fail=1
 fi
 
-# UI image per edition (template helper runr.uiImage): single-tenant keeps the tag; multi-tenant gets
-# the published multi-tenant variant <tag>-mt, <appVersion>-mt for the moving tag latest (which has
-# no -mt variant); an explicit suffix — "" included, the default before the -mt default and what
-# `--reuse-values` keeps from those releases — is used as it is
+# Image tags of the API and UI (template helpers runr.imageTag, runr.apiImage, runr.uiImage): by
+# default the chart's appVersion on every container of the API image (runr-api, Horizon, the
+# scheduler, Reverb, the hook Jobs) and on the UI, so `helm install --version X` runs RunR X and
+# `helm rollback` rolls the images back with the chart; a tag that is set wins, latest included (the
+# default of the charts up to 0.5.8, which `--reuse-values` keeps), and an emptied one
+# (`--set api.image.tag=`) is the default again
 app_version=$(sed -n -E 's/^appVersion: *"?([^"]+)"?$/\1/p' "$ROOT/helm/Chart.yaml")
-ui_image() {
-  helm template runr "$ROOT/helm" --namespace runr --set domain=console.acme-cloud.example "$@" \
-    --show-only templates/ui-deployment.yaml 2>&1 | sed -n -E 's/^ *image: "?([^"]+)"?$/\1/p' | head -1
+images() { # <api|ui> args...: the image references of that component's containers, one per line
+  local component=$1
+  shift
+  helm template runr "$ROOT/helm" --namespace runr --set domain=console.acme-cloud.example "$@" 2>&1 \
+    | sed -n -E 's/^ *image: "?([^"]+)"?$/\1/p' | grep -E "/(runr-)?${component}:" || true
 }
+problems=()
+check_api() { # want args...: every container of the API image runs want (6 or more of them)
+  local want=$1 got n
+  shift
+  got=$(images api "$@" | sort -u | paste -sd ' ' -)
+  n=$(images api "$@" | grep -c . || true)
+  [ "$got" = "$want" ] && [ "$n" -ge 6 ] || problems+=("api ${*:-defaults}: ${got:-no image} in $n containers (want $want)")
+}
+check_api "ghcr.io/brf-tech/runr/api:${app_version}"
+check_api "ghcr.io/brf-tech/runr/api:latest" --set api.image.tag=latest
+check_api "ghcr.io/brf-tech/runr/api:0.5.6" --set api.image.tag=0.5.6
+check_api "ghcr.io/brf-tech/runr/api:${app_version}" --set api.image.tag=latest --set api.image.tag=
+check_api "registry.example.com/runr-api:2.0" --set api.image.repository=registry.example.com/runr-api --set-string api.image.tag=2.0
+if [ ${#problems[@]} -eq 0 ]; then
+  echo "✓ api-image: ${app_version} (appVersion) by default on every API container, a tag that is set wins (latest included)"
+else
+  printf '✗ api-image: %s\n' "${problems[@]}"
+  fail=1
+fi
+
+# UI image per edition (template helper runr.uiImage): the tag as above, appVersion by default;
+# single-tenant keeps it; multi-tenant gets the published multi-tenant variant <tag>-mt,
+# <appVersion>-mt by default and for the moving tag latest (which has no -mt variant); an explicit
+# suffix — "" included, the default before the -mt default and what `--reuse-values` keeps from
+# those releases — is used as it is
 problems=()
 check_ui() { # want args...
   local want=$1 got
   shift
-  got=$(ui_image "$@")
+  got=$(images ui "$@" | head -1)
   [ "$got" = "$want" ] || problems+=("${*:-defaults}: $got (want $want)")
 }
-check_ui "ghcr.io/brf-tech/runr/ui:latest"
+check_ui "ghcr.io/brf-tech/runr/ui:${app_version}"
+check_ui "ghcr.io/brf-tech/runr/ui:latest" --set ui.image.tag=latest
 check_ui "ghcr.io/brf-tech/runr/ui:0.5.6" --set ui.image.tag=0.5.6
+check_ui "ghcr.io/brf-tech/runr/ui:${app_version}" --set ui.image.tag=latest --set ui.image.tag=
 check_ui "ghcr.io/brf-tech/runr/ui:${app_version}-mt" --set edition=multi-tenant
+check_ui "ghcr.io/brf-tech/runr/ui:${app_version}-mt" --set edition=multi-tenant --set ui.image.tag=latest
 check_ui "ghcr.io/brf-tech/runr/ui:0.5.6-mt" --set edition=multi-tenant --set ui.image.tag=0.5.6
-check_ui "ghcr.io/brf-tech/runr/ui:latest" --set edition=multi-tenant --set ui.image.multiTenantSuffix=
+check_ui "ghcr.io/brf-tech/runr/ui:${app_version}" --set edition=multi-tenant --set ui.image.multiTenantSuffix=
+check_ui "ghcr.io/brf-tech/runr/ui:latest" --set edition=multi-tenant --set ui.image.tag=latest --set ui.image.multiTenantSuffix=
 check_ui "ghcr.io/brf-tech/runr/ui:0.5.6" --set edition=multi-tenant --set ui.image.tag=0.5.6 --set ui.image.multiTenantSuffix=
 check_ui "registry.example.com/runr-ui:2.0-modules" --set edition=multi-tenant --set ui.image.repository=registry.example.com/runr-ui \
   --set-string ui.image.tag=2.0 --set ui.image.multiTenantSuffix=-modules
 check_ui "ghcr.io/brf-tech/runr/ui:${app_version}-mt" -f "$ROOT/ci/helm-values/tenancy.yaml"
 if [ ${#problems[@]} -eq 0 ]; then
-  echo "✓ ui-image: single-tenant <tag>, multi-tenant <tag>-mt (${app_version}-mt for latest), explicit suffix kept"
+  echo "✓ ui-image: ${app_version} by default, a tag that is set wins; multi-tenant <tag>-mt (${app_version}-mt by default and for latest), explicit suffix kept"
 else
   printf '✗ ui-image: %s\n' "${problems[@]}"
   fail=1

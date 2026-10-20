@@ -14,6 +14,7 @@ use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Foundation\Bus\PendingDispatch;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
 
 class CheckBuildReadyJob implements ShouldQueue
 {
@@ -43,20 +44,38 @@ class CheckBuildReadyJob implements ShouldQueue
     /**
      * @param  bool  $retried  the build was submitted again after it ran out of time while the
      *                         registry fetched its base image (once per build)
+     * @param  string|null  $token  the submission these checks follow (start()): the version's
+     *                              build_token; null for checks queued before tokens existed
      */
     public function __construct(
         public Version $version,
         public int $attempt = 1,
         ?string $initiatorId = null,
         public bool $retried = false,
+        public ?string $token = null,
     ) {
         $this->initiatorId = $initiatorId;
     }
 
-    /** The first check of a submitted build. */
+    /**
+     * The first check of a submitted build. The checks carry a token of this submission (the
+     * version's build_token): when the version is submitted again — a region migration does that
+     * for a build that ran on the cluster the region left — the earlier checks stop at their next
+     * turn instead of timing the new build out from the old one's start.
+     */
     public static function start(Version $version, ?string $initiatorId = null, bool $retried = false): PendingDispatch
     {
-        return self::dispatch($version, 1, $initiatorId, $retried)->delay(now()->addSeconds(self::FIRST_CHECK_DELAY));
+        $token = Str::random(32);
+        Version::query()->whereKey($version->getKey())->update(['build_token' => $token]);
+        $version->setAttribute('build_token', $token)->syncOriginalAttribute('build_token');
+
+        return self::dispatch($version, 1, $initiatorId, $retried, $token)->delay(now()->addSeconds(self::FIRST_CHECK_DELAY));
+    }
+
+    /** Checks of an earlier submission of the version: a newer one has its own (start()). */
+    private function stale(Version $version): bool
+    {
+        return $this->token !== null && $version->build_token !== $this->token;
     }
 
     /** Overall timeout of the checks: the build Job's deadline plus a margin. */
@@ -75,7 +94,7 @@ class CheckBuildReadyJob implements ShouldQueue
     {
         $version = $this->version->fresh();
 
-        if (! $version || $version->build_status !== 'building') {
+        if (! $version || $version->build_status !== 'building' || $this->stale($version)) {
             return;
         }
 
@@ -258,7 +277,7 @@ class CheckBuildReadyJob implements ShouldQueue
     {
         $version = $this->version->fresh();
 
-        if (! $version || $version->build_status !== 'building') {
+        if (! $version || $version->build_status !== 'building' || $this->stale($version)) {
             return;
         }
 
@@ -268,7 +287,7 @@ class CheckBuildReadyJob implements ShouldQueue
                 'attempt' => $this->attempt,
                 'error' => $e?->getMessage(),
             ]);
-            self::dispatch($version, $this->attempt + 1, $this->initiatorId, $this->retried)
+            self::dispatch($version, $this->attempt + 1, $this->initiatorId, $this->retried, $this->token)
                 ->delay(now()->addSeconds(self::POLL_INTERVAL));
 
             return;
@@ -285,7 +304,7 @@ class CheckBuildReadyJob implements ShouldQueue
             return;
         }
 
-        self::dispatch($version, $this->attempt + 1, $this->initiatorId, $this->retried)
+        self::dispatch($version, $this->attempt + 1, $this->initiatorId, $this->retried, $this->token)
             ->delay(now()->addSeconds(self::POLL_INTERVAL));
     }
 

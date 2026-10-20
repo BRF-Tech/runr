@@ -37,7 +37,7 @@ spec:
       {{- include "runr.placement" (dict "root" . "colocate" true) | nindent 6 }}
       containers:
         - name: migrate
-          image: {{ include "runr.image" (printf "%v:%v" .Values.api.image.repository .Values.api.image.tag) | quote }}
+          image: {{ include "runr.apiImage" . | quote }}
           imagePullPolicy: {{ .Values.api.image.pullPolicy }}
           {{- include "runr.envFrom" . | nindent 10 }}
           env:
@@ -85,7 +85,7 @@ spec:
       {{- include "runr.placement" (dict "root" . "colocate" true) | nindent 6 }}
       containers:
         - name: migrate
-          image: {{ include "runr.image" (printf "%v:%v" .Values.api.image.repository .Values.api.image.tag) | quote }}
+          image: {{ include "runr.apiImage" . | quote }}
           imagePullPolicy: {{ .Values.api.image.pullPolicy }}
           {{- include "runr.envFrom" . | nindent 10 }}
           env:

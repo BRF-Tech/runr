@@ -21,6 +21,7 @@ use App\Services\KubernetesClient;
 use App\Services\Manifests\RegistryImageManifests;
 use App\Services\RegistryImageLifecycleService;
 use App\Services\Residency\RegionPolicy;
+use App\Services\Runtimes\RuntimeImagePendingException;
 use App\Support\DeployGate;
 use App\Support\Projects\DeployIntent;
 use App\Support\Projects\ProjectAdmission;
@@ -51,6 +52,11 @@ use Modules\Tenancy\Services\TenantQuotaService;
 class PreviewService
 {
     use RuntimeConfigTrait;
+
+    /** A runtime image still building in the region: the deploy is tried again every DEPLOY_WAIT_SECONDS, DEPLOY_WAIT_ATTEMPTS times (15 minutes) */
+    public const DEPLOY_WAIT_SECONDS = 10;
+
+    public const DEPLOY_WAIT_ATTEMPTS = 90;
 
     public function __construct(
         private ProjectRemote $remote,
@@ -151,9 +157,13 @@ class PreviewService
     }
 
     /**
-     * Apply the preview's version to the region (DeployPreviewJob).
+     * Apply the preview's version to the region (DeployPreviewJob). A version without a build of
+     * its own whose runtime image RunR is still building in the region (after a region migration,
+     * say) waits for it: the job comes back every DEPLOY_WAIT_SECONDS, DEPLOY_WAIT_ATTEMPTS times.
+     *
+     * @param  int  $waited  checks so far while the runtime image builds
      */
-    public function deploy(PreviewEnvironment $preview): void
+    public function deploy(PreviewEnvironment $preview, int $waited = 0): void
     {
         $project = $preview->project?->load(['knativeRegion', 'xaasConfig', 'faasConfig', 'containerConfig', 'privateDatabaseBindings']);
         $version = $preview->version;
@@ -243,6 +253,16 @@ class PreviewService
             if (! collect($manifests)->contains(fn (array $m) => ($m['kind'] ?? null) === 'Secret')) {
                 $k8s->deleteResource('v1', 'Secret', PreviewManifests::secretEnvName($preview->service_name), $namespace);
             }
+        } catch (RuntimeImagePendingException $e) {
+            if ($waited >= self::DEPLOY_WAIT_ATTEMPTS) {
+                $this->fail($preview, $deploy, $e->getMessage());
+
+                return;
+            }
+            $preview->mark(PreviewEnvironment::DEPLOYING, $e->getMessage());
+            DeployPreviewJob::dispatch($preview->id, $waited + 1)->delay(now()->addSeconds(self::DEPLOY_WAIT_SECONDS));
+
+            return;
         } catch (\Throwable $e) {
             Log::warning('Preview deploy failed', ['preview' => $preview->id, 'error' => $e->getMessage()]);
             $this->fail($preview, $deploy, $e->getMessage());

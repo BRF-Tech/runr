@@ -89,6 +89,11 @@ var deploymentFields = []string{
 	"knative_message", "ready_at", "version.id", "version.label", "created_at",
 }
 
+var queuedDeployFields = []string{
+	"id", "project_id", "version_id", "version", "status", "reason", "message", "deployment_id",
+	"created_at", "updated_at",
+}
+
 var domainFields = []string{
 	"id", "project_id", "domain", "status", "status_message", "tls_mode", "tls_expires_at",
 	"https_certificate", "tls_note", "url", "verification.type", "verification.name",
@@ -183,12 +188,17 @@ var Contract = []Endpoint{
 	// Deployments
 	{Method: "GET", Path: "/projects/{project}/deployments", Status: 200, Permission: "projects.view",
 		Response: prefix("data[].", deploymentFields)},
+	// A version whose image is not in the region's registry is built again first: the answer is
+	// then a queued deploy instead of a deployment (StartDeploy).
 	{Method: "POST", Path: "/projects/{project}/deploy", Status: 202, Permission: "projects.deploy",
 		Request: []string{"version_id", "deploy_config.cpu", "deploy_config.memory_mb", "deploy_config.timeout_seconds",
 			"deploy_config.scale_to_zero", "deploy_config.min_scale", "deploy_config.max_scale"},
-		Response: deploymentFields},
+		Response:     deploymentFields,
+		Capabilities: concat([]string{"message"}, prefix("queued_deploy.", queuedDeployFields))},
 	{Method: "GET", Path: "/projects/{project}/deployments/{deployment}", Status: 200, Permission: "projects.view",
 		Response: prefix("data.", deploymentFields)},
+	{Method: "GET", Path: "/projects/{project}/queued-deploys/{queuedDeploy}", Status: 200, Permission: "projects.view",
+		Response: prefix("data.", queuedDeployFields), Sources: []string{"app/Http/Resources/QueuedDeployResource.php"}},
 	{Method: "DELETE", Path: "/projects/{project}/deployments/{deployment}", Status: 204, Permission: "projects.deploy"},
 	// A web shell session in a pod of the deployment (runr shell; /ws/shell?token=…).
 	{Method: "POST", Path: "/projects/{project}/deployments/{deployment}/exec", Status: 200, Permission: "shell.exec",

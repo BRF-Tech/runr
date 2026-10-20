@@ -123,6 +123,8 @@ class KnativeRegionResource extends JsonResource
             'sandbox_kata_status' => $this->sandbox_kata_status ?? 'not_installed',
             'sandbox_kata_status_message' => $this->sandbox_kata_status_message,
             'sandbox_kata_hypervisor' => $this->sandbox_kata_hypervisor,
+            // Firecracker's devmapper thin-pool size in GiB, as set up on the nodes (null: none)
+            'sandbox_kata_devmapper_pool_gb' => $this->resource->getAttribute('sandbox_kata_devmapper_pool_gb'),
             'sandbox_gvisor_status' => $this->sandbox_gvisor_status ?? 'not_installed',
             'sandbox_gvisor_status_message' => $this->sandbox_gvisor_status_message,
             'sandbox_xaas_runtime' => $this->sandbox_xaas_runtime ?? 'runc',

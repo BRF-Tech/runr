@@ -18,6 +18,7 @@ use App\Services\Helpers\KataRuntime;
 use App\Services\RegionReconcile\Steps\ImageRegistryStep;
 use App\Services\RegionReconcile\Steps\NamespaceQuotaStep;
 use App\Support\Images\RegistryMove;
+use App\Support\SchemaColumns;
 use Illuminate\Support\Facades\Log;
 
 class SandboxInstallService
@@ -141,7 +142,9 @@ class SandboxInstallService
             // Firecracker: devmapper snapshotter on the nodes before kata-deploy restarts the runtime,
             // so that one restart loads both
             if (array_filter($hypervisors, [KataRuntime::class, 'needsDevmapper'])) {
-                $this->prepareKataDevmapper($k8s, $region, $runtime, $hasDedicated, (int) ($options['devmapper_pool_gb'] ?? KataRuntime::DEVMAPPER_POOL_DEFAULT_GB), $rerun);
+                $poolGb = $this->devmapperPoolGb($k8s, $region, $options);
+                $this->prepareKataDevmapper($k8s, $region, $runtime, $hasDedicated, $poolGb, $rerun);
+                $this->recordDevmapperPool($region, $poolGb);
             } elseif ($k8s->getResourceStatus('apps/v1', 'DaemonSet', self::KATA_DEVMAPPER_DS, self::SANDBOX_NAMESPACE)
                 && $this->devmapperLabelledNodes($k8s) === []) {
                 // An unfinished Firecracker setup (a devmapper snapshotter that never ran on any
@@ -149,6 +152,7 @@ class SandboxInstallService
                 $log('Removing an unfinished Firecracker devmapper setup (kata-devmapper DaemonSet, thin-pool files, runr-devmapper.service)...');
                 $this->deleteNodeDaemonSet($k8s, self::KATA_DEVMAPPER_DS);
                 $this->runDevmapperCleanup($k8s, $region, $runtime, $hasDedicated);
+                $this->recordDevmapperPool($region, null);
             }
 
             // From here on kata-deploy, the nodes' Kata configuration and the RuntimeClasses change
@@ -343,6 +347,7 @@ class SandboxInstallService
                 'sandbox_kata_status' => 'not_installed',
                 'sandbox_kata_status_message' => null,
             ]);
+            $this->recordDevmapperPool($region, null);
 
             Log::info('Kata Containers uninstalled', ['region' => $region->name]);
         } catch (SandboxInUseException $e) {
@@ -728,6 +733,77 @@ class SandboxInstallService
             throw new \RuntimeException($this->abandonKataDevmapper($k8s, $region, $runtime, $hasDedicated, ! $wasSetUp, $e->getMessage()), 0, $e);
         }
         $log('devmapper snapshotter set up on '.count($nodes).' node(s)');
+    }
+
+    /**
+     * The size in GiB of the thin-pool a Firecracker setup gives the nodes: the region's
+     * (sandbox_kata_devmapper_pool_gb — the pool files on its nodes are never resized, so an
+     * install that adds hypervisors, a reconcile and a migration to another cluster keep it), else
+     * the size a setup made before the region recorded it left in the cluster's kata-devmapper
+     * DaemonSet, else the size the install asks for (devmapper_pool_gb), else the default.
+     *
+     * @param  array{devmapper_pool_gb?: int}  $options
+     */
+    private function devmapperPoolGb(KubernetesClient $k8s, KnativeRegion $region, array $options): int
+    {
+        $stored = $region->getAttribute('sandbox_kata_devmapper_pool_gb');
+        if (is_numeric($stored) && (int) $stored > 0) {
+            return (int) $stored;
+        }
+
+        return self::poolGbOf($this->readDevmapperDaemonSet($k8s))
+            ?? (int) ($options['devmapper_pool_gb'] ?? KataRuntime::DEVMAPPER_POOL_DEFAULT_GB);
+    }
+
+    /**
+     * The thin-pool size the kata-devmapper DaemonSet on the cluster at $kubeconfig sets up (its
+     * POOL_GB): the size of a Firecracker setup made before the region recorded it. Null when
+     * there is none, or the cluster cannot be read.
+     */
+    public function installedDevmapperPoolGb(string $kubeconfig): ?int
+    {
+        return self::poolGbOf($this->readDevmapperDaemonSet(new KubernetesClient($kubeconfig)));
+    }
+
+    /** @return array<string, mixed>|null */
+    private function readDevmapperDaemonSet(KubernetesClient $k8s): ?array
+    {
+        try {
+            return $k8s->getResourceStatus('apps/v1', 'DaemonSet', self::KATA_DEVMAPPER_DS, self::SANDBOX_NAMESPACE);
+        } catch (\Throwable) {
+            return null;
+        }
+    }
+
+    /** POOL_GB of a kata-devmapper DaemonSet, when it is a size RunR sets up. */
+    private static function poolGbOf(?array $daemonSet): ?int
+    {
+        foreach ($daemonSet['spec']['template']['spec']['containers'] ?? [] as $container) {
+            foreach ($container['env'] ?? [] as $env) {
+                $value = (string) ($env['value'] ?? '');
+                if (($env['name'] ?? null) === 'POOL_GB' && ctype_digit($value)) {
+                    $gb = (int) $value;
+
+                    return $gb >= KataRuntime::DEVMAPPER_POOL_MIN_GB && $gb <= KataRuntime::DEVMAPPER_POOL_MAX_GB ? $gb : null;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * The region's Firecracker thin-pool size, as set up on its nodes (null: none). A schema
+     * whose tenant migration has not run yet has no column for it and is left as it is.
+     */
+    private function recordDevmapperPool(KnativeRegion $region, ?int $poolGb): void
+    {
+        if (! SchemaColumns::has($region, 'sandbox_kata_devmapper_pool_gb')
+            || $region->getAttribute('sandbox_kata_devmapper_pool_gb') === $poolGb) {
+            return;
+        }
+
+        $region->forceFill(['sandbox_kata_devmapper_pool_gb' => $poolGb])->save();
     }
 
     /**

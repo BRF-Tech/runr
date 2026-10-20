@@ -2,8 +2,8 @@ apiVersion: v2
 name: runr
 description: RunR — serverless application platform on Kubernetes / Knative (functions, multi-file projects and containers with scale-to-zero)
 type: application
-version: 0.5.8
-appVersion: "0.5.8"
+version: 0.5.9
+appVersion: "0.5.9"
 # The newest API the templates use is autoscaling/v2 (HorizontalPodAutoscaler, GA in 1.23); the
 # others (apps/v1, batch/v1, policy/v1, networking.k8s.io/v1 Ingress and NetworkPolicy, rbac/v1)
 # are older. "-0" admits the pre-release suffixes of managed distributions (v1.30.4-eks-…).

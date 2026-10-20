@@ -35,12 +35,9 @@ class RunrClusterIdentity
             return $configured;
         }
 
-        $file = $this->serviceAccountDir().'/namespace';
-        if (! is_readable($file)) {
-            return null;
-        }
+        $namespace = $this->serviceAccountFile('namespace');
 
-        return trim((string) file_get_contents($file)) ?: null;
+        return $namespace === null ? null : trim($namespace);
     }
 
     public function isRunrCluster(KnativeRegion $region): bool
@@ -112,21 +109,16 @@ class RunrClusterIdentity
      */
     public function inClusterClient(): ?KubernetesClient
     {
-        $dir = $this->serviceAccountDir();
-        $tokenFile = $dir.'/token';
-        if (! is_readable($tokenFile)) {
+        $token = $this->serviceAccountFile('token');
+        if ($token === null) {
             return null;
         }
-
-        $token = trim((string) file_get_contents($tokenFile));
-        if ($token === '') {
-            return null;
-        }
+        $token = trim($token);
 
         $cluster = ['server' => $this->inClusterServer()];
-        $caFile = $dir.'/ca.crt';
-        if (is_readable($caFile)) {
-            $cluster['certificate-authority-data'] = base64_encode((string) file_get_contents($caFile));
+        $ca = $this->serviceAccountFile('ca.crt');
+        if ($ca !== null) {
+            $cluster['certificate-authority-data'] = base64_encode($ca);
         }
 
         return new KubernetesClient(Yaml::dump([
@@ -154,6 +146,35 @@ class RunrClusterIdentity
     private function serviceAccountDir(): string
     {
         return rtrim((string) config('knative.agent.serviceaccount_dir', '/var/run/secrets/kubernetes.io/serviceaccount'), '/');
+    }
+
+    /**
+     * Content of a file of the pod's service account volume; null when it is missing or blank.
+     *
+     * Kubernetes renews that volume with every token rotation (about every 48 minutes for the
+     * default one-hour token): it points the volume's `..data` link at a new directory and deletes
+     * the old one. PHP's realpath cache (per worker, realpath_cache_ttl: 120 s) may still resolve the
+     * file into the deleted directory, where it reads as missing, so a failed read of a linked file
+     * is retried once with that cache cleared.
+     */
+    private function serviceAccountFile(string $name): ?string
+    {
+        $file = $this->serviceAccountDir().'/'.$name;
+
+        $content = self::readFile($file);
+        if ($content === null && is_link($file)) {
+            clearstatcache(true);
+            $content = self::readFile($file);
+        }
+
+        return $content;
+    }
+
+    private static function readFile(string $file): ?string
+    {
+        $content = is_readable($file) ? @file_get_contents($file) : false;
+
+        return is_string($content) && trim($content) !== '' ? $content : null;
     }
 
     /**

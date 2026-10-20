@@ -491,7 +491,7 @@ The console's Isolation tab (wizard step 6); `sandbox.manage`.
 
 | Setting | Values (default) | Change with | What it does |
 |---|---|---|---|
-| Kata Containers | hypervisors `clh` (default), `qemu`, `dragonball`, `fc`, one to four; `devmapper_pool_gb` 10–1024 (20) for `fc` | **Install Kata**, and **Add hypervisors** on a working install (the installed ones stay); `POST /knative-regions/{id}/install-sandbox` with `{"runtime": "kata", "hypervisors": [...]}` — the complete list | kata-deploy in `runr-sandbox` and a RuntimeClass `kata-<hypervisor>` per hypervisor; the container runtime of the nodes restarts once ([kata-hypervisors.md](kata-hypervisors.md)) |
+| Kata Containers | hypervisors `clh` (default), `qemu`, `dragonball`, `fc`, one to four; `devmapper_pool_gb` 10–1024 (20) for `fc`, chosen with the first Firecracker install and kept by the later ones ([Firecracker and devmapper](kata-hypervisors.md#firecracker-and-devmapper)) | **Install Kata**, and **Add hypervisors** on a working install (the installed ones stay); `POST /knative-regions/{id}/install-sandbox` with `{"runtime": "kata", "hypervisors": [...]}` — the complete list | kata-deploy in `runr-sandbox` and a RuntimeClass `kata-<hypervisor>` per hypervisor; the container runtime of the nodes restarts once ([kata-hypervisors.md](kata-hypervisors.md)) |
 | gVisor | — | **Install gVisor**; `install-sandbox` with `{"runtime": "gvisor"}` | the gVisor installer and RuntimeClass `gvisor` |
 | Mapping | `runc` (default), `kata-<hypervisor>` of an installed hypervisor, `gvisor` | **Project Type Mapping**; `PUT /knative-regions/{id}/sandbox-mapping` with all four of `sandbox_xaas_runtime`, `sandbox_faas_runtime`, `sandbox_caas_runtime`, `sandbox_build_runtime` | the RuntimeClass of each project type and of build Jobs, from each project's next deploy ([Sandbox runtimes](architecture.md#sandbox-runtimes)) |
 | WebAssembly | shims `spin` (required) and `wasmtime`; nodes: every eligible node | the WebAssembly card; `runr regions wasm install`; `POST /knative-regions/{id}/wasm` with `shims`, `nodes` | the Spin shim (and Wasmtime) on the nodes, RuntimeClass `wasmtime-spin-v2` ([wasm.md](wasm.md#install-webassembly-support)) |
@@ -672,8 +672,12 @@ the region's.
 The move runs as a queued job (`MigrateRegionJob`, at most 30 minutes) and sets
 `migration_status` as it goes:
 
-1. `pending`: RunR saves the current kubeconfig and external address, checks that the new cluster
-   answers and switches the region to the new kubeconfig (`in_progress`).
+1. `pending`: RunR saves the current kubeconfig and external address, and what else the region
+   holds for its current cluster (the list is under the rollback below), checks that the new
+   cluster answers and switches the region to the new kubeconfig (`in_progress`). A move that
+   `failed` can be started again without a rollback; it keeps what the first attempt saved, so a
+   rollback still goes back to the cluster the region was on before that attempt, not to the
+   half-moved state the failure left.
 2. The dedicated workers: the selected nodes that exist on the new cluster get the label and the
    taint; when none of them exists there the selection is cleared (projects run on every
    schedulable node) and is made again in the Workers tab.
@@ -682,7 +686,11 @@ The move runs as a queued job (`MigrateRegionJob`, at most 30 minutes) and sets
    operator or a Ready KnativeServing already running there is kept. Then the managed Redis (an
    `in_cluster` or `external` Redis keeps its address), the internal registry (a Zot already
    serving in the registry namespace is kept; the region's registry address follows the new
-   cluster) and Kata Containers and gVisor where the region had them ready.
+   cluster) and Kata Containers and gVisor where the region had them ready. Kata gets the
+   region's hypervisors, Firecracker with the thin-pool size its nodes have on the old cluster (for
+   a pool set up before RunR recorded the size, the size in the old cluster's `kata-devmapper`
+   DaemonSet; the default 20 GiB when that cannot be read); when its install fails on the new
+   cluster, Kata is in `error` there, and gVisor is installed all the same.
 4. What else the region had: WebAssembly support (on the selected nodes that exist there, else on
    every eligible node), GPU support with its settings, the data services RunR runs (`managed`,
    and KV on the region's Redis; an external object store needs nothing on the cluster), the
@@ -698,10 +706,131 @@ The move runs as a queued job (`MigrateRegionJob`, at most 30 minutes) and sets
    reason is logged, and the refused project's deployments are shut down with the reason as their
    message — nothing of it runs on the new cluster, so nothing is metered for it until it is
    deployed again). A stopped project moves with the region and stays stopped — it is deployed
-   on the new cluster when it is resumed — and a project that runs nothing is not deployed.
+   on the new cluster when it is resumed — and a project that runs nothing is not deployed. In a
+   multi-tenant install this covers the projects the organizations run on a platform region too:
+   each organization's projects are deployed in its own context, through its copy of the region,
+   with the organization's deploy checks. An organization's own region moves inside that
+   organization. The live [preview environments](#preview-environments) of the projects are
+   deployed on the new cluster too.
 7. `dns_check`: point the wildcard DNS record of the function domain at the new cluster's
    external address (`external_ip` and `dns_instruction` of the region,
    `GET /api/knative-regions/{id}`).
+
+### Images the new cluster cannot pull
+
+When the move gives the region another registry — the Zot it installs on the new cluster — the
+images in the old cluster's registry stay there, and the new cluster's nodes do not pull from it:
+RunR reaches the clusters' API servers only, never one registry from the other. (An external
+registry, or a Zot that already served the region on the target cluster, stays, and nothing of
+this applies.) Step 6 deals with these images per project:
+
+- **A built version** — a FaaS function with its dependency file, a compiled runtime, a
+  WebAssembly function — is built again on the new cluster, into its registry, from the version's
+  code: the same Kaniko or WebAssembly build as a save in the editor, so dependencies that are not
+  pinned can resolve to newer releases. When the build is done, the project is deployed on the new
+  cluster with the version and overrides it ran, through the deploy checks of every deploy (a stop,
+  a fixed allocation, data residency, the supply-chain policy gate, which waits for the new
+  image's scan when the region's policy asks for one). Until then its deployment keeps running on
+  the old cluster, which answers the function domain until DNS points at the new one, with the
+  message "Runs on the cluster the region left until it is deployed on the new one: v5 is built
+  again there". When the build fails, or a deploy check refuses the project, that deployment is
+  shut down like a refused project's, with "Not moved to the new cluster of the region: v5 could
+  not be built: …" (or the refusal) as its message.
+- **A version without a build of its own on a runtime image RunR built in the region** (a runtime
+  version with a `dockerfile` or `git` source, [runtimes.md](runtimes.md#versions)) waits for that
+  runtime image: the region's runtime image builds are marked `pending` ("The region moved to
+  another cluster: built again into its registry when a project needs it."), the first project
+  that needs one starts its build on the new cluster, and the project is deployed the same way
+  once the image is ready — or not moved when it is not built within about 17 minutes.
+- **A build that was running when the region switched** ran its Kaniko Job on the old cluster: it
+  is submitted again on the new cluster, and a git push waiting for it goes on with it. The new
+  submission is checked on its own; the checks of the old one stop, so they cannot time the new
+  build out from the old one's start.
+- **An uploaded image** cannot be built again: RunR keeps no copy of an upload
+  ([images.md](images.md#moving-a-region-to-another-cluster)). A CaaS project on one, and a code
+  project whose runtime version is an uploaded image, is not moved; its deployment is shut down
+  with, e.g., "Not moved to the new cluster of the region: its image myapp:1.0 was uploaded into
+  the registry of the cluster the region left; upload it to the region again, select it as the
+  project's image and deploy".
+
+A move that completes (DNS, the 48 hours or **Complete Migration**) while a project is still being
+built does not wait for it: the project is deployed on the new cluster when its build is done, and
+once DNS points at the new cluster it answers there only from then on. Check the projects below
+before you point DNS at the new cluster.
+
+`GET /api/knative-regions/{id}/migration-status` says what the move did with each project of the
+region, as long as the move can be rolled back (`projects`, never cached; the console's Migration
+tab and `runr regions migration status REGION` list it). Projects that run nothing are not
+listed. Each row has `project_id`, `project`, `version`, `deployment_status`, `message`,
+`organization` — the slug of the organization a platform region's project belongs to in a
+multi-tenant install, else `null` — and `outcome`:
+
+| `outcome` | Meaning |
+|---|---|
+| `moved` | deployed on the new cluster; `deployment_status` is that deployment's |
+| `building` | its image is built again on the new cluster; it runs on the old one until it is deployed |
+| `deployed` | built again and deployed on the new cluster |
+| `not_moved` | refused, or its build or deploy on the new cluster failed; `message` says why |
+| `cancelled` | its waiting deploy was replaced by a newer deploy of the project; a deploy of an [older version](#older-versions) while the project still runs on the old cluster takes its place instead |
+
+#### Older versions
+
+The move builds again only what runs. A version built before the move that is deployed later
+still names the old cluster's registry, so RunR builds it again into the region's registry first
+and deploys it when the build is ready, through the deploy checks of every deploy, instead of a
+deployment that fails at the image pull. This applies to every way a version is deployed — the
+console's deploy and rollback, `runr deploy --version` and `runr rollback`, the MCP `deploy` and
+`rollback` tools, `POST /api/projects/{id}/deploy`, a git push or **Deploy again** whose tree
+equals that version, and the resume of a project stopped before the move — during the move and
+after it is completed (and to a project moved to another region since its version was built):
+
+- `POST /api/projects/{id}/deploy` answers `202` with `message` and `queued_deploy` instead of a
+  deployment: `status` `waiting`, `reason` `registry-rebuild` and the message "v3 is built again
+  for this region's registry: its image is in a registry the region's cluster does not pull from
+  (built before the region moved to another cluster). It deploys when the build is ready."
+  `GET /api/projects/{id}/queued-deploys/{queued_deploy}` follows it: `deployed` with the
+  `deployment_id` it started, or `failed` / `cancelled` with the reason in `message`. Data
+  residency, a stopped project and a fixed allocation are checked before the build, as for any
+  deploy (`409` / `422`).
+- The console shows that message, and the version list shows the build; the deployment appears
+  when the build is ready. `runr deploy` and `runr rollback` wait for the build and then for the
+  deployment ([cli.md](cli.md#deploying)); the MCP tools follow it the same way.
+- A git deploy waits in `building` with that message and deploys when the build is ready.
+- A resume answers `redeploy_code: version_rebuilding` with the message as `redeploy_error`, and
+  the version that ran is deployed with its overrides when the build is ready.
+
+The supply-chain [policy gate](supply-chain.md#policy-gate) runs on the new image when the deploy
+starts (it waits for the image's scan when the region's policy asks for one). A deploy that the
+deploy checks refuse at that point ends as `failed` with the reason, and the user who asked for
+it gets a notification ("Deploy of orders v3 did not start"); a failed build has the usual "Build
+failed" notification. A version the policy blocks then is deployed with a policy override, like
+any blocked version, once its build is ready.
+
+A deploy of an older version from the console, the CLI, the MCP tools or
+`POST /api/projects/{id}/deploy` while the move's own deploy of the project still waits for its
+build (`building` in `migration-status`) takes that deploy's place. The project keeps running on
+the old cluster until the new deploy starts, and the report follows the new deploy, with its
+version: `deployed` once it started — the deployment on the old cluster is replaced like by any
+deploy — or, when its build fails or a deploy check refuses it, `not_moved` with the reason. The
+deployment on the old cluster is then shut down as a project the move refused, with "Not moved to
+the new cluster of the region: …" and the reason, and is neither metered nor counted as running
+from then on; a rollback deploys it there again like any project the move did not move.
+
+#### Preview environments
+
+The live [preview environments](git-deploy.md#preview-environments) of the region's projects move
+with them: each one is deployed again on the new cluster through the preview path, as its
+**Redeploy** does — the stop, a fixed allocation, data residency and the policy gate apply. A
+preview version built into the old cluster's registry, or whose build was running on the old
+cluster, is built again on the new cluster first (status `building`, "Built again on the new
+cluster of the region: its image is in a registry that cluster does not pull from; deployed there
+when it is ready."). A preview whose version could not be built is marked `failed` with "Not
+moved to the new cluster of the region: the build of its version failed (failed); push a new
+commit to the request to build and deploy it there". A preview on a runtime image RunR builds in
+the region waits for that image (up to 15 minutes). The old cluster keeps the preview Services
+it ran, like the projects'.
+
+### Completing and rolling back the move
 
 The data of the data services stays on the old cluster: the new cluster's are empty, and their
 content is moved with the services' own tools (a dump of the Postgres databases, a copy of the
@@ -713,8 +842,8 @@ and DNS](#ingress-external-address-and-dns)); once it reaches the new address th
 `completed`. It also completes 48 hours after it reached `dns_check`, or when you complete it
 (Migration → **Complete Migration**, `runr regions migration complete`,
 `POST /api/knative-regions/{id}/complete-migration`; only in `dns_check`). Completing forgets the
-old kubeconfig and address; RunR removes nothing from the old cluster. While a move runs, a
-banner in the console counts down the 48 hours.
+old kubeconfig, address and the rest of the saved state; RunR removes nothing from the old
+cluster. While a move runs, a banner in the console counts down the 48 hours.
 
 A region whose cluster no longer answers opens in the console on its Migration tab, so it can be
 moved to a new cluster from there. The tab asks for the new cluster's data location when the
@@ -722,8 +851,87 @@ region has one.
 
 A move in `dns_check` or `failed` can be rolled back (Migration → **Rollback Migration**,
 `runr regions migration rollback`, `POST /api/knative-regions/{id}/rollback-migration`): the
-region gets its old kubeconfig and external address back and every project that runs is deployed
-there again, the same way as in step 6. What the move installed on the new cluster stays there.
+region gets its old kubeconfig and external address back, and with them everything else the move
+set from the new cluster, as it was before the move — the old cluster is still the way the move
+found it:
+
+- the registry address: the old cluster's Zot again, which every redeploy and build of the
+  region's projects uses for its images;
+- the dedicated workers and the capacity they give;
+- the install state of the Knative Operator and Serving, the Prometheus and Loki addresses and the
+  runr-agent's token (a Serving install on the new cluster gave its agent a new one; the old
+  cluster's agent is accepted again);
+- the install state of the managed Redis, Kata Containers (with its hypervisors and Firecracker's
+  thin-pool size) and gVisor;
+- WebAssembly support with its shims and nodes, GPU support with its settings, nodes and GPU
+  inventory, and function TLS;
+- the status of the data services RunR runs, of the admission policy and of the tracing backend
+  (their settings and credentials are the region's and do not change). A data service or a
+  tracing backend that was installed on the new cluster only is not installed after the
+  rollback.
+
+A move that was already running when RunR was upgraded to a release that keeps this state has
+none of it saved: its rollback gives back the kubeconfig and the external address only.
+
+In a multi-tenant install the copies of a platform region in the organizations it is assigned to
+get the restored values with the same sync as the move's ([Regions in multi-tenant
+installs](#regions-in-multi-tenant-installs)). Then every project that runs is deployed there
+again, the same way as in step 6 — the organizations' projects on a platform region too. What
+the move installed on the new cluster stays there.
+
+A version built while the region was on the new cluster (a runtime with a build step, a
+WebAssembly function) was pushed to the new cluster's registry only, and the old cluster's nodes
+cannot pull it. The rollback does not deploy such a version: it deploys the project's last
+deployment whose version is in the restored registry again, with its overrides — usually what
+the project ran before the move, whose image the old cluster's registry still has — and shuts
+the deployments of the version left behind down with the message "Not deployed again on the
+cluster the migration rollback restored: v5 was built into the registry of the cluster the
+rollback left; v4 runs instead" (the console shows it with the project's deployments; the log has
+the same line). To run that code on the restored cluster, deploy that version again: it is
+[built again](#older-versions) there first. A project with no such deployment (created on the
+new cluster) is removed from the old cluster like a refused one.
+
+What the move [built again](#images-the-new-cluster-cannot-pull) goes back to the old cluster's
+images, which its registry still has: a version built again gets its old image back, and the
+rollback deploys it on the old cluster like every other project — also when its build on the new
+cluster failed and the move did not move it. So does a version that a deploy during the move
+built again ([older versions](#older-versions)). The region's runtime image builds come back as
+they were; one made on the new cluster only is built again on the old one when a project needs
+it.
+
+A deploy queued since the move started that has not created its deployment yet is cancelled
+("Cancelled by the migration rollback: …"): one that still waits for its build, and one that a
+worker has claimed and is still checking — that worker then starts nothing. One that has created
+its deployment is a deploy like any other: the rollback's redeploy replaces that deployment.
+
+A build still running on the new cluster when the rollback comes — a version saved or pushed
+there — would be looked for on the old cluster, which never had its Kaniko Job. It ends with the
+build status `cancelled` and "Cancelled by the migration rollback: the build ran on the cluster
+the region left. Save a change or push the commit again to build it on the restored cluster." It
+is not a failed build: no "Build failed" notification goes out, a git push that waited for it
+ends as skipped ("Build cancelled by a region migration rollback" on the provider), and a queued
+deploy of it as cancelled. Its Kaniko Job is deleted from the new cluster. A move to another
+kubeconfig of the same cluster runs its builds where the region is again, and they go on.
+
+A CaaS project switched to an image uploaded while the region was on the new cluster is not
+deployed again on the old cluster, whose registry does not have that image: its deployments are
+shut down with "Not deployed again on the cluster the migration rollback restored: its image
+myapp:1.0 was uploaded into the registry of the cluster the rollback left; upload it to the
+region again, select it as the project's image and deploy", and what it runs on the old cluster
+is removed. The uploads made before the move are in the region's registry again.
+
+The old cluster still has the Knative Service of every project that ran before the move, so the
+rollback also takes care of the projects with no live deployment that run there: a project the
+move did not move (step 6 refused it) is deployed again with the version and overrides it ran
+with — metered from when it is ready, the time on the new cluster stays unmetered — and when the
+deploy checks still refuse it, or the project was stopped while the region was on the new cluster,
+what it runs on the old cluster is removed. A project whose redeploy the rollback itself refuses
+is removed from the old cluster the same way; its deployments are shut down with the reason.
+
+The live [preview environments](#preview-environments) are deployed on the old cluster again the
+same way: a preview version built into the new cluster's registry, or whose build still runs
+there (its Kaniko Job is deleted from the new cluster), is built again on the old one first ("Built
+again on the cluster the migration rollback restored: …").
 
 ## Changing the base domain
 
@@ -901,7 +1109,7 @@ mutability check ([Regions in multi-tenant installs](#regions-in-multi-tenant-in
 | `GET /knative-regions/{id}/nodes` | `regions.view` | Worker nodes with capacity and selection |
 | `POST /knative-regions/{id}/workers` | `regions.manage` | Select the dedicated workers |
 | `POST /knative-regions/{id}/migrate` | `regions.manage` | Start a migration to another cluster |
-| `GET /knative-regions/{id}/migration-status` | `regions.view` | Migration status |
+| `GET /knative-regions/{id}/migration-status` | `regions.view` | Migration status and, while the move can be rolled back, what it did with each project (`projects`, [Images the new cluster cannot pull](#images-the-new-cluster-cannot-pull)) |
 | `POST /knative-regions/{id}/complete-migration` | `regions.manage` | Complete a migration in `dns_check` |
 | `POST /knative-regions/{id}/rollback-migration` | `regions.manage` | Roll back a migration in `dns_check` or `failed` |
 | `POST /knative-regions/{id}/complete-domain-migration` | `regions.manage` | Complete a base-domain migration ([Changing the base domain](#changing-the-base-domain)) |

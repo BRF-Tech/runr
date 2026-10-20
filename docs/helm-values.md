@@ -1,8 +1,8 @@
 # Helm values reference
 
-Every value of the Helm chart `runr` 0.5.8 from BRF's public Helm repository, grouped by top-level
+Every value of the Helm chart `runr` 0.5.9 from BRF's public Helm repository, grouped by top-level
 key, with its default from the chart's `values.yaml` and what the templates do with it.
-`helm show values brf-tech/runr --version 0.5.8` prints the file with its comments. How these
+`helm show values brf-tech/runr --version 0.5.9` prints the file with its comments. How these
 values fit together in a production install is described in [Installing RunR in
 production](install.md).
 
@@ -173,7 +173,7 @@ The API image also runs Horizon, the scheduler, Reverb and the hook Jobs.
 | Key | Default | What it does |
 | --- | --- | --- |
 | `api.image.repository` | `ghcr.io/brf-tech/runr/api` | API image |
-| `api.image.tag` | `latest` | Pin it to the release, e.g. `0.5.8` |
+| `api.image.tag` | `""` | Empty: the chart's `appVersion`, so `--version` pins the image and `helm rollback` rolls it back. A tag that is set (`latest` included) is used as it is ([Upgrading](upgrade.md#procedure)) |
 | `api.image.pullPolicy` | `IfNotPresent` | |
 | `api.replicas` | `2` | Replicas of `runr-api`; while `api.hpa.enabled`, the HPA owns the count |
 | `api.port` | `80` | Port Octane listens on in the API container (`RUNR_API_PORT`), the container port, its probes and the Service's target port (the Service itself stays on 80) |
@@ -192,8 +192,8 @@ The API image also runs Horizon, the scheduler, Reverb and the hook Jobs.
 | Key | Default | What it does |
 | --- | --- | --- |
 | `ui.image.repository` | `ghcr.io/brf-tech/runr/ui` | UI image |
-| `ui.image.tag` | `latest` | Pin it to the release, e.g. `0.5.8` |
-| `ui.image.multiTenantSuffix` | `-mt` | Appended to the tag with `edition: multi-tenant`: the multi-tenant UI, built with the Tenancy and Auth Provider modules, is published as `<version>-mt`. With the tag `latest`, which has no multi-tenant variant, the multi-tenant edition runs `<appVersion>-mt`. `""`: the tag as it is (a UI image of your own that carries the modules) |
+| `ui.image.tag` | `""` | Empty: the chart's `appVersion`, as `api.image.tag`. A tag that is set (`latest` included) is used as it is |
+| `ui.image.multiTenantSuffix` | `-mt` | Appended to the tag with `edition: multi-tenant`: the multi-tenant UI, built with the Tenancy and Auth Provider modules, is published as `<version>-mt`, so the default is `<appVersion>-mt`. The tag `latest` has no multi-tenant variant: the multi-tenant edition runs `<appVersion>-mt` for it too. `""`: the tag as it is (a UI image of your own that carries the modules) |
 | `ui.image.pullPolicy` | `IfNotPresent` | |
 | `ui.replicas` | `2` | Replicas of `runr-ui`; while `ui.hpa.enabled`, the HPA owns the count |
 | `ui.port` | `80` | Port Caddy listens on in the UI container (`RUNR_UI_PORT`), the container port, its probe and the Service's target port (the Service itself stays on 80) |

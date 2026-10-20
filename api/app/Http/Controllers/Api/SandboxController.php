@@ -88,7 +88,10 @@ class SandboxController extends Controller
             // kata-deploy restarts the container runtime on the nodes (fc: devmapper setup on top)
             $warning = SandboxInstallService::KATA_INSTALL_WARNING;
             if (array_filter($hypervisors, [KataRuntime::class, 'needsDevmapper'])) {
-                $options['devmapper_pool_gb'] = (int) ($request->validated('devmapper_pool_gb') ?? KataRuntime::DEVMAPPER_POOL_DEFAULT_GB);
+                // The pool on the region's nodes is never resized: the size it was set up with
+                // stays (SandboxInstallService::devmapperPoolGb())
+                $options['devmapper_pool_gb'] = (int) ($knativeRegion->sandbox_kata_devmapper_pool_gb
+                    ?? $request->validated('devmapper_pool_gb') ?? KataRuntime::DEVMAPPER_POOL_DEFAULT_GB);
                 $warning .= ' '.SandboxInstallService::KATA_FC_WARNING
                     ." Thin-pool data size: {$options['devmapper_pool_gb']} GiB (sparse).";
             }
@@ -196,6 +199,8 @@ class SandboxController extends Controller
             'warning' => SandboxInstallService::KATA_INSTALL_WARNING,
             'fc_warning' => SandboxInstallService::KATA_FC_WARNING,
             'devmapper' => [
+                // the size the region's thin-pool was set up with (null: none yet), kept by later installs
+                'pool_gb' => $knativeRegion->sandbox_kata_devmapper_pool_gb,
                 'default_pool_gb' => KataRuntime::DEVMAPPER_POOL_DEFAULT_GB,
                 'min_pool_gb' => KataRuntime::DEVMAPPER_POOL_MIN_GB,
                 'max_pool_gb' => KataRuntime::DEVMAPPER_POOL_MAX_GB,

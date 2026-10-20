@@ -19,6 +19,7 @@ return [
     'expired' => 'The upload was not completed within its time and was aborted.',
     'in_use' => ':name is still used by :used. Point them at another image first.',
     'caas_not_found' => 'The uploaded image :image does not exist in this region (or belongs to another organization). Pick one from the uploaded images of the region.',
+    'caas_not_in_registry' => 'The uploaded image :name is not in the registry of region :region: the region moved to another cluster after it was uploaded. Upload it to the region again, then select it.',
     'runtime_upload_missing' => 'Runtime :runtime version :version uses the uploaded image :reference, which is not uploaded in region :region. Upload it there (Settings → Images, or runr images push --region :region).',
     'runtime_upload_regions' => 'names :reference, which is not uploaded in region(s) :regions',
     'runtime_upload_unknown' => 'names :reference, which is not an uploaded image of the runtime\'s owner',

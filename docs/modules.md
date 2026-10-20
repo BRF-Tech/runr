@@ -62,7 +62,7 @@ published UI images (both editions) are therefore built with `VITE_TICKET_ENABLE
 Build the UI image with the flags of your modules (`vue/Dockerfile`):
 
 ```bash
-docker build -t registry.example.com/runr/ui:0.5.8-mt \
+docker build -t registry.example.com/runr/ui:0.5.9-mt \
   --build-arg VITE_WS_PROXY=true \
   --build-arg VITE_REVERB_KEY=runr-key \
   --build-arg VITE_TENANCY_ENABLED=true \
@@ -73,10 +73,11 @@ docker build -t registry.example.com/runr/ui:0.5.8-mt \
 ```
 
 `VITE_REVERB_KEY` must equal the API's `REVERB_APP_KEY` (`runr-key` in the Helm chart). With
-Helm, `ui.image.repository` and `ui.image.tag` select the UI image. `edition: multi-tenant` appends
-`ui.image.multiTenantSuffix` (default `-mt`) to the tag and runs the published multi-tenant UI,
-`<version>-mt`, built with the Tenancy and AuthProvider screens; with
-`repository: registry.example.com/runr/ui` and `tag: "0.5.8"` it runs the image built above. A
+Helm, `ui.image.repository` and `ui.image.tag` select the UI image; the tag defaults to the
+chart's `appVersion`. `edition: multi-tenant` appends `ui.image.multiTenantSuffix` (default `-mt`)
+to the tag and runs the published multi-tenant UI, `<version>-mt`, built with the Tenancy and
+AuthProvider screens; with
+`repository: registry.example.com/runr/ui` and `tag: "0.5.9"` it runs the image built above. A
 multi-tenant UI of your own under its plain tag needs `multiTenantSuffix: ""`. In the
 single-tenant edition the tag is used as it is — with `authProvider.enabled: true` or the Ticket
 screens, point `ui.image.tag` at a build with those flags

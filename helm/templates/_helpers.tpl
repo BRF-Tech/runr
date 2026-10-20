@@ -419,14 +419,32 @@ release's switches — an upgrade that turns billing on would migrate without th
 {{- end -}}
 
 {{/*
+Image tag of the API and UI: api.image.tag / ui.image.tag, "" (the default) → the chart's
+appVersion, so `helm install --version X` runs RunR X and `helm rollback` rolls the images back with
+the chart. A tag that is set (latest included) is used as it is; values of charts up to 0.5.8 that
+`helm upgrade --reuse-values` reuses carry their default latest (docs/upgrade.md, Procedure).
+Takes (dict "root" . "tag" <the value>).
+*/}}
+{{- define "runr.imageTag" -}}
+{{- toString (.tag | default .root.Chart.AppVersion) -}}
+{{- end -}}
+
+{{/*
+API image: runr-api, Horizon, the scheduler, Reverb and the hook Jobs
+*/}}
+{{- define "runr.apiImage" -}}
+{{- include "runr.image" (printf "%v:%v" .Values.api.image.repository (include "runr.imageTag" (dict "root" . "tag" .Values.api.image.tag))) -}}
+{{- end -}}
+
+{{/*
 UI image: modules are selected at build time, so a multi-tenant install uses a separate UI variant:
-<tag><multiTenantSuffix> (published as <version>-mt). The moving tag latest has no such variant: a
-multi-tenant install with tag latest gets the chart's release, <appVersion><multiTenantSuffix>.
-An empty suffix keeps the tag as it is (values of earlier chart versions reused by `--reuse-values`
-carry "", their default).
+<tag><multiTenantSuffix>, <appVersion>-mt by default (published as <version>-mt). The moving tag
+latest has no such variant: a multi-tenant install with tag latest runs <appVersion><multiTenantSuffix>
+as well. An empty suffix keeps the tag as it is (values of chart versions before 0.5.8 reused by
+`--reuse-values` carry "", their default).
 */}}
 {{- define "runr.uiImage" -}}
-{{- $tag := toString .Values.ui.image.tag -}}
+{{- $tag := include "runr.imageTag" (dict "root" . "tag" .Values.ui.image.tag) -}}
 {{- if eq .Values.edition "multi-tenant" -}}
 {{- $suffix := toString (.Values.ui.image.multiTenantSuffix | default "") -}}
 {{- if and $suffix (eq $tag "latest") -}}{{- $tag = .Chart.AppVersion -}}{{- end -}}

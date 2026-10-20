@@ -8,6 +8,7 @@ use App\Models\ContainerConfig;
 use App\Models\Deployment;
 use App\Models\ExecutorImage;
 use App\Models\FaasConfig;
+use App\Models\ImageSecurityReport;
 use App\Models\KnativeRegion;
 use App\Models\Project;
 use App\Models\ProjectDomain;
@@ -15,12 +16,15 @@ use App\Models\Setting;
 use App\Models\Version;
 use App\Models\XaasConfig;
 use App\Observers\CacheInvalidationObserver;
+use App\Services\GitDeploy\GitTables;
+use App\Services\Projects\QueuedDeploys;
 use App\Support\ApiRateLimits;
 use App\Support\Auth\LoginTokens;
 use Dedoc\Scramble\Scramble;
 use Dedoc\Scramble\Support\Generator\OpenApi;
 use Dedoc\Scramble\Support\Generator\SecurityScheme;
 use Illuminate\Routing\Route;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\ServiceProvider;
 use Laravel\Sanctum\PersonalAccessToken;
 use Laravel\Sanctum\Sanctum;
@@ -40,6 +44,7 @@ class AppServiceProvider extends ServiceProvider
         // hints). Registering them here again ran every deploy twice (two Knative revisions).
 
         $this->registerCacheObservers();
+        $this->registerQueuedDeployHooks();
 
         ApiRateLimits::register();
 
@@ -81,6 +86,37 @@ class AppServiceProvider extends ServiceProvider
                 }
             });
         }
+    }
+
+    /**
+     * Deploys that wait for their version (QueuedDeploys) go on when its build ends and when its
+     * supply-chain checks are final. A schema without the table (a tenant schema not migrated
+     * yet) is left alone; a failing hook never fails the build or the scan that triggered it.
+     */
+    private function registerQueuedDeployHooks(): void
+    {
+        $quietly = function (\Closure $callback): void {
+            if (! GitTables::present('queued_deploys')) {
+                return;
+            }
+            try {
+                $callback();
+            } catch (\Throwable $e) {
+                Log::warning('Queued deploy hook failed', ['error' => $e->getMessage()]);
+            }
+        };
+
+        Version::updated(function (Version $version) use ($quietly) {
+            if ($version->wasChanged('build_status')) {
+                $quietly(fn () => app(QueuedDeploys::class)->versionBuilt($version));
+            }
+        });
+
+        ImageSecurityReport::updated(function (ImageSecurityReport $report) use ($quietly) {
+            if ($report->wasChanged('status') && in_array($report->status, ['completed', 'failed'], true) && $report->version_id) {
+                $quietly(fn () => app(QueuedDeploys::class)->scanFinished((string) $report->version_id));
+            }
+        });
     }
 
     private function registerCacheObservers(): void

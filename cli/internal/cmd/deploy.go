@@ -121,9 +121,12 @@ type DeployResult struct {
 	Project    *runr.Project    `json:"project"`
 	Version    *runr.Version    `json:"version"`
 	Deployment *runr.Deployment `json:"deployment"`
-	URL        string           `json:"url,omitempty"`
-	Created    bool             `json:"created"`
-	Waited     bool             `json:"waited"`
+	// Queued is the deploy that waited for the version to be built again for the region's
+	// registry (its image was in a registry the region no longer pulls from).
+	Queued  *runr.QueuedDeploy `json:"queued_deploy,omitempty"`
+	URL     string             `json:"url,omitempty"`
+	Created bool               `json:"created"`
+	Waited  bool               `json:"waited"`
 }
 
 func newDeployCmd(app *App) *cobra.Command {
@@ -242,20 +245,40 @@ func runDeploy(ctx context.Context, app *App, o deployOptions) (*DeployResult, e
 	return finishDeploy(ctx, app, c, res, version, o.noWait, o.timeout)
 }
 
-// finishDeploy starts a deployment of version and waits for it.
+// finishDeploy starts a deployment of version and waits for it. A version whose image is not in
+// the region's registry (built before the region moved to another cluster) is built again
+// first: the API queues its deploy, which is followed until the deployment starts.
 func finishDeploy(ctx context.Context, app *App, c *runr.Client, res *DeployResult, version *runr.Version, noWait bool, timeout time.Duration) (*DeployResult, error) {
 	project := res.Project
 	app.Progress("Deploying %s of %s", version.Label, project.Name)
-	d, err := c.Deploy(ctx, project.ID, version.ID, nil)
+	started, err := c.StartDeploy(ctx, project.ID, version.ID, nil)
 	if err != nil {
 		return res, err
 	}
-	res.Deployment = d
 	res.URL = project.EndpointURL
+	start := time.Now()
+	d := started.Deployment
+	if started.Queued != nil {
+		res.Queued = started.Queued
+		app.Progress("%s", started.Message)
+		if noWait {
+			return res, nil
+		}
+		q, err := c.WaitQueuedDeploy(ctx, project.ID, started.Queued, app.waitOptions(timeout, "Building "+version.Label))
+		if q != nil {
+			res.Queued = q
+		}
+		if err != nil {
+			return res, err
+		}
+		if d, err = c.GetDeployment(ctx, project.ID, q.DeploymentID); err != nil {
+			return res, err
+		}
+	}
+	res.Deployment = d
 	if noWait {
 		return res, nil
 	}
-	start := time.Now()
 	d, err = c.WaitDeployment(ctx, project.ID, d.ID, app.waitOptions(timeout, "Deployment"))
 	if d != nil {
 		res.Deployment = d
@@ -461,6 +484,10 @@ func mainFileOf(p *runr.Project, pf *projectfile.File) string {
 func printDeployResult(app *App, res *DeployResult) error {
 	return app.Printer().Print(res, func(t *output.TableWriter) {
 		if res.Deployment == nil {
+			if q := res.Queued; q != nil {
+				t.Note("Queued deploy %s (%s): %s", q.ID, q.Status, q.Message)
+				t.Note("`runr versions` shows the build; `runr status` the deployment once it has started.")
+			}
 			return
 		}
 		switch {
@@ -490,9 +517,14 @@ func writeOutputEnv(path string, res *DeployResult) error {
 		add("version", res.Version.Label)
 		add("version_id", res.Version.ID)
 	}
+	if res.Queued != nil {
+		add("queued_deploy_id", res.Queued.ID)
+	}
 	if res.Deployment != nil {
 		add("deployment_id", res.Deployment.ID)
 		add("status", res.Deployment.Status)
+	} else if res.Queued != nil {
+		add("status", "building")
 	}
 	add("url", res.URL)
 	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)

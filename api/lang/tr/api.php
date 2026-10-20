@@ -94,6 +94,7 @@ return [
         'region_inactive' => 'pasif',
         'version_not_ready' => 'Bu sürüm dağıtıma hazır değil. Build durumu: :status.',
         'version_pruned' => 'v:version sürümünün build imajı registry saklama kuralıyla silindi, artık dağıtılamaz. Yeni bir sürüm için kodu yeniden kaydedin.',
+        'version_rebuilding' => "v:version bu bölgenin registry'si için yeniden build ediliyor: imajı, bölgenin kümesinin çekmediği bir registry'de (bölge başka bir kümeye taşınmadan önce build edildi). Build hazır olunca dağıtılır.",
         'queue_requires_redis' => 'Kuyruk tetikleyicisi seçili bölgede yapılandırılmış Redis gerektirir.',
         'slug_invalid' => 'Ad, harfle başlayan ve yalnızca harf, rakam ve tire içeren bir Kubernetes adı vermelidir (şu an ":slug").',
         'slug_too_long' => 'Ad çok uzun: Kubernetes adı ":slug" :length karakter, en fazla :max olabilir.',

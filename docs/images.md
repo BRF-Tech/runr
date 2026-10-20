@@ -23,6 +23,7 @@ builds: SBOM, vulnerability scan, signature.
 - [Supply chain and data residency](#supply-chain-and-data-residency)
 - [Quota, replacing and deleting](#quota-replacing-and-deleting)
 - [Air-gapped regions](#air-gapped-regions)
+- [Moving a region to another cluster](#moving-a-region-to-another-cluster)
 - [Permissions](#permissions)
 - [Audit](#audit)
 - [API](#api)
@@ -187,6 +188,39 @@ without the image fails with a message naming the region.
    mirror and set `RUNR_IMAGE_UPLOAD_IMAGE` (Helm `images.uploadImage`).
 4. Run it: a CaaS project on the uploaded image, or a runtime version / wasm-exec function on it.
 
+## Moving a region to another cluster
+
+An uploaded image lives in the registry of the region's cluster only: the file streams through
+RunR into the receiver there, and nothing of it is kept on RunR's side. A
+[region migration](regions.md#moving-a-region-to-another-cluster) that gives the region another
+registry (the new cluster's Zot) can therefore neither build nor copy the region's uploads — RunR
+reaches the clusters' API servers only, and the old cluster may not answer at all. Each uploaded
+image records the registry it was pushed into (`registry_address`); while that is not the
+region's registry any more:
+
+- the image shows `in_registry: false` (Settings → Images marks it); it still counts against the
+  quota;
+- a CaaS project on it is not moved: its deployment is shut down with "Not moved to the new
+  cluster of the region: its image myapp:1.0 was uploaded into the registry of the cluster the
+  region left; upload it to the region again, select it as the project's image and deploy". The
+  migration's status lists it as `not_moved`. Choosing the image for a CaaS project answers 422
+  "The uploaded image myapp:1.0 is not in the registry of region eu: the region moved to another
+  cluster after it was uploaded. Upload it to the region again, then select it.";
+- a runtime version and a wasm-exec function that name it find it not uploaded in the region
+  (`upload:` versions are refused in the region, builds that fetch it fail with the region's name),
+  and a code project on such a runtime version is not moved either;
+- deleting it removes the record only (the registry it is in belongs to the cluster the region
+  left).
+
+Upload the same `repository:tag` to the region again (console, `runr images push`, API): the upload
+replaces the record, now in the region's registry, and its new image reference — the same digest
+when the file is the same — is what the CaaS form offers. Then select it for the project and
+deploy. A [rollback](regions.md#completing-and-rolling-back-the-move) of the move makes the
+uploads made before it usable again; an image uploaded while the region was on the new cluster is
+then the one not in the region's registry, and a CaaS project switched to it is not deployed
+again on the old cluster (its deployments are shut down with the reason, what it ran there is
+removed).
+
 ## Permissions
 
 | Permission | Grants | Built-in roles |
@@ -236,7 +270,7 @@ An uploaded image:
   "id": "01JB…", "name": "myapp:1.0", "repository": "myapp", "tag": "1.0",
   "knative_region_id": "01JA…", "region_name": "eu-1",
   "image_ref": "10.43.0.5:5000/runr-uploads/platform/myapp@sha256:…",
-  "tag_ref": "10.43.0.5:5000/runr-uploads/platform/myapp:1.0",
+  "tag_ref": "10.43.0.5:5000/runr-uploads/platform/myapp:1.0", "in_registry": true,
   "digest": "sha256:…", "media_type": "application/vnd.oci.image.index.v1+json",
   "kind": "image", "source_format": "oci", "size_bytes": 52428800, "archive_bytes": 60000000,
   "platforms": ["linux/amd64", "linux/arm64"], "layers": 4, "source_filename": "myapp.tar",
@@ -268,7 +302,7 @@ need the region's internal registry (`registry_mode: internal`, status ready).
 
 | Table | Schema | Holds |
 |---|---|---|
-| `uploaded_images` | central | owner (`owner_key`: tenant id or `platform`), region, repository, tag, registry repository, digest, media type, kind, format, sizes, platforms, layers, source file, uploader; unique per owner, region, repository and tag |
+| `uploaded_images` | central | owner (`owner_key`: tenant id or `platform`), region, repository, tag, registry repository, digest, media type, kind, format, sizes, platforms, layers, source file, uploader, the address of the registry it was pushed into (`registry_address`); unique per owner, region, repository and tag |
 | `image_uploads` | central | one upload: owner, region, name, file, declared size and SHA-256, bytes received, chunk size, status, receiver, message, the resulting image |
 
 The supply-chain reports of uploaded images are in `image_security_reports` of the central schema.
@@ -283,7 +317,9 @@ The supply-chain reports of uploaded images are in `image_security_reports` of t
   — the receiver Job and Service, chunk forwarding and resume, complete → push → uploaded image,
   replacing a name, SHA-256 mismatch, failed pushes, abort / expiry, registry / quota / residency
   checks, permissions; listing, deletion with the manifest and the in-use refusal, owner scoping,
-  CaaS validation and the supply-chain kind; the runtime `upload` source; wasm-exec builds.
+  CaaS validation and the supply-chain kind; the runtime `upload` source; wasm-exec builds; the
+  registry an upload is in after a region migration (`tests/Feature/RegionMigrateBuildsTest.php`:
+  projects on uploads not moved, and not deployed again by a rollback).
 - **CLI**: `cd cli && go test ./internal/cmd ./pkg/runr -run 'Images|NameFromFilename|FindImage|PushImage'`
   against the fake API.
 - **UI**: `cd vue && npx vitest run tests/modules/images` and `npx playwright test e2e/images.spec.ts --project=mock`.

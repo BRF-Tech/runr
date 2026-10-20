@@ -3,10 +3,14 @@
 namespace Tests\Feature\Mcp\Tools;
 
 use App\Events\DeploymentCreated;
+use App\Jobs\BuildVersionJob;
 use App\Models\AuditEvent;
 use App\Models\Deployment;
+use App\Models\KnativeRegion;
+use App\Models\QueuedDeploy;
 use App\Models\Version;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\Event;
 use Tests\TestCase;
 
@@ -171,6 +175,75 @@ class DeploymentToolsTest extends TestCase
         $result = $this->structured($this->callTool('rollback', ['project' => 'shop', 'version' => '1']));
 
         $this->assertSame($v1->id, $result['version']['id']);
+    }
+
+    /**
+     * The region moved to a cluster with a registry of its own after v1 was built: the rollback
+     * builds v1 again for the region's registry, follows its queued deploy to the deployment and
+     * waits for that like for any other.
+     */
+    public function test_rollback_to_a_version_built_before_the_region_moved_waits_for_its_build_again(): void
+    {
+        Bus::fake([BuildVersionJob::class]);
+        $moved = KnativeRegion::create(['name' => 'eu', 'project_namespace' => 'eu', 'is_active' => true, 'registry_address' => '10.96.2.2:5000']);
+        $project = $this->faasProject('orders');
+        $project->forceFill(['knative_region_id' => $moved->id])->saveQuietly();
+        $v1 = $this->version($project, 1, 'ready', ['build_image' => '10.96.1.1:5000/runr-builds/orders:v1']);
+        $v2 = $this->version($project, 2, 'ready', ['build_image' => '10.96.2.2:5000/runr-builds/orders:v2']);
+        $this->deployment($project, $v2, 'active');
+        $this->onPoll = function () use ($v1) {
+            $version = $v1->fresh();
+            if ($version->build_status === 'pending') {
+                // The build for the region's registry ends: the queued deploy starts the deployment
+                $version->forceFill(['build_status' => 'building', 'build_image' => '10.96.2.2:5000/runr-builds/orders:v1'])->save();
+                $version->forceFill(['build_status' => 'ready'])->save();
+
+                return;
+            }
+            // Through the model: the deployment was read once already, its cached answer goes
+            Deployment::query()->whereIn('status', ['pending', 'running'])->get()->each->update(['status' => 'active']);
+        };
+
+        $result = $this->structured($this->callTool('rollback', ['project' => 'orders']));
+
+        $this->assertSame($v1->id, $result['version']['id']);
+        $this->assertSame('active', $result['deployment']['status']);
+        Bus::assertDispatched(BuildVersionJob::class, fn (BuildVersionJob $job) => $job->version->is($v1));
+        $this->assertSame(QueuedDeploy::DEPLOYED, QueuedDeploy::query()->sole()->status);
+        $this->assertSame($result['deployment']['id'], QueuedDeploy::query()->sole()->deployment_id);
+    }
+
+    public function test_rollback_without_waiting_answers_with_the_queued_deploy(): void
+    {
+        Bus::fake([BuildVersionJob::class]);
+        $moved = KnativeRegion::create(['name' => 'eu', 'project_namespace' => 'eu', 'is_active' => true, 'registry_address' => '10.96.2.2:5000']);
+        $project = $this->faasProject('orders');
+        $project->forceFill(['knative_region_id' => $moved->id])->saveQuietly();
+        $this->version($project, 1, 'ready', ['build_image' => '10.96.1.1:5000/runr-builds/orders:v1']);
+        $v2 = $this->version($project, 2, 'ready', ['build_image' => '10.96.2.2:5000/runr-builds/orders:v2']);
+        $this->deployment($project, $v2, 'active');
+
+        $result = $this->structured($this->callTool('rollback', ['project' => 'orders', 'wait' => false]));
+
+        $this->assertSame('building', $result['status']);
+        $this->assertSame([QueuedDeploy::query()->sole()->id, QueuedDeploy::WAITING], [$result['queued_deploy']['id'], $result['queued_deploy']['status']]);
+        $this->assertSame(1, Deployment::query()->count(), 'nothing is deployed before the build');
+    }
+
+    public function test_deploy_reports_a_queued_deploy_that_did_not_start(): void
+    {
+        Bus::fake([BuildVersionJob::class]);
+        $moved = KnativeRegion::create(['name' => 'eu', 'project_namespace' => 'eu', 'is_active' => true, 'registry_address' => '10.96.2.2:5000']);
+        $project = $this->faasProject('orders');
+        $project->forceFill(['knative_region_id' => $moved->id])->saveQuietly();
+        $v1 = $this->version($project, 1, 'ready', ['build_image' => '10.96.1.1:5000/runr-builds/orders:v1']);
+        // Its build for the region's registry fails
+        $this->onPoll = fn () => $v1->fresh()->forceFill(['build_status' => 'failed', 'build_error' => 'pip: no matching distribution'])->save();
+
+        $error = $this->mcpToolError($this->callTool('deploy', ['project' => 'orders', 'version' => '1']));
+
+        $this->assertStringContainsString('The deploy of version 1 did not start: V1 could not be built: pip: no matching distribution', $error['message']);
+        $this->assertSame(QueuedDeploy::FAILED, QueuedDeploy::query()->sole()->status);
     }
 
     public function test_rollback_errors_and_permissions(): void

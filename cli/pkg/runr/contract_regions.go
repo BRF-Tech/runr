@@ -180,8 +180,11 @@ func init() {
 		Endpoint{Method: "POST", Path: "/knative-regions/{knativeRegion}/migrate", Status: 200, Permission: "regions.manage",
 			Request: []string{"kubeconfig", "data_location"}, Response: []string{"message", "status"}},
 		Endpoint{Method: "GET", Path: "/knative-regions/{knativeRegion}/migration-status", Status: 200, Permission: "regions.view",
-			Response: []string{"migration_status", "migration_started_at", "migration_old_ip", "current_ip", "is_migrating"},
-			Sources:  []string{"app/Http/Controllers/Api/RegionMigrateController.php"}},
+			Response: []string{"migration_status", "migration_started_at", "migration_old_ip", "current_ip", "is_migrating",
+				"projects[].organization", "projects[].project_id", "projects[].project", "projects[].outcome",
+				"projects[].version", "projects[].deployment_status", "projects[].message"},
+			// migrationReport() builds the rows of projects
+			Sources: []string{"app/Http/Controllers/Api/RegionMigrateController.php", "app/Services/RegionMigrateService.php"}},
 		Endpoint{Method: "POST", Path: "/knative-regions/{knativeRegion}/complete-migration", Status: 200, Permission: "regions.manage",
 			Response: []string{"message"}},
 		Endpoint{Method: "POST", Path: "/knative-regions/{knativeRegion}/complete-domain-migration", Status: 200, Permission: "regions.manage",

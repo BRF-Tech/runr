@@ -60,7 +60,13 @@ class Version extends Model
     /** The build image was deleted by registry retention: the version can no longer be deployed */
     const STATUS_PRUNED = 'pruned';
 
-    const BUILD_STATUSES = ['pending', 'building', 'ready', 'failed', self::STATUS_PRUNED];
+    /**
+     * The build was stopped by RunR, not failed: a region migration rollback took the region off
+     * the cluster it ran on (build_error says why). Saving a change or pushing again builds anew.
+     */
+    const STATUS_CANCELLED = 'cancelled';
+
+    const BUILD_STATUSES = ['pending', 'building', 'ready', 'failed', self::STATUS_PRUNED, self::STATUS_CANCELLED];
 
     protected $fillable = [
         'project_id',

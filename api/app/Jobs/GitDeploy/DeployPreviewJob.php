@@ -18,7 +18,8 @@ class DeployPreviewJob implements ShouldQueue
 
     public int $timeout = 120;
 
-    public function __construct(public string $previewId) {}
+    /** @param  int  $waited  checks so far while the preview's runtime image builds in the region */
+    public function __construct(public string $previewId, public int $waited = 0) {}
 
     public function middleware(): array
     {
@@ -28,7 +29,7 @@ class DeployPreviewJob implements ShouldQueue
     public function handle(PreviewService $previews): void
     {
         if ($preview = PreviewEnvironment::find($this->previewId)) {
-            $previews->deploy($preview);
+            $previews->deploy($preview, $this->waited);
         }
     }
 }

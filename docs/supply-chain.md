@@ -400,7 +400,10 @@ All under `/api`, authenticated; the rules are in `api/config/route_permissions.
 `PUT /tenants/{tenant}/security-policy` drops repeated entries of `allowed_region_ids` and
 `allowed_locations` instead of refusing them.
 
-`POST /projects/{project}/deploy` accepts `override_policy` and `override_reason`.
+`POST /projects/{project}/deploy` accepts `override_policy` and `override_reason`. A deploy whose
+version is built again for its region's registry first ([regions](regions.md#older-versions))
+passes the gate when the build is ready, on the new image, without the override: a version the
+gate blocks then is deployed with an override once it is built.
 
 ## UI
 

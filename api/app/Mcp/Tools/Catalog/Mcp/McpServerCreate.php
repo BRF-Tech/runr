@@ -160,7 +160,11 @@ class McpServerCreate extends Tool
                 return ToolResult::ok($result, 'Created; the version is still building. Call deploy once it is ready.');
             }
 
-            $deployment = $this->waitForDeployment($context, $projectId, $this->startDeployment($context, $projectId, (string) $version['id']), $deadline);
+            $deployment = $this->startDeployment($context, $projectId, (string) $version['id'], [], $deadline);
+            if (isset($deployment['queued_deploy'])) {
+                return ToolResult::ok($result, 'Created; '.($deployment['message'] ?? 'the version is built again before it deploys').' Call deployment_status later.');
+            }
+            $deployment = $this->waitForDeployment($context, $projectId, $deployment, $deadline);
             $result['deployment'] = self::deploymentSummary($deployment);
 
             if (($deployment['status'] ?? null) === 'failed') {

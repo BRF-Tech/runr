@@ -15,10 +15,12 @@ use Illuminate\Support\Facades\Log;
  * Reports git deploys back to the provider (ReportGitStatusJob):
  *  - commit status "runr" on the commit (GitHub / GitLab / Forgejo): pending while importing,
  *    building and deploying; success when live (or nothing changed / auto-deploy is off);
- *    failure with the reason;
+ *    failure with the reason; canceled when a newer deploy replaced it (or the project was
+ *    stopped) before it went live — GitLab canceled, Forgejo/Gitea warning, GitHub success with
+ *    that description (its commit statuses have no canceled state);
  *  - GitHub Deployments API: a "production" deployment per production deploy, a transient
- *    "preview/pr-<n>" one per preview, with the function URL as environment URL; a deleted
- *    preview's deployment becomes inactive;
+ *    "preview/pr-<n>" one per preview, with the function URL as environment URL; the deployment
+ *    of a replaced deploy and a deleted preview's become inactive;
  *  - previews: one RunR comment per pull/merge request (status, commit, URL), updated on every
  *    new commit and when the preview is deleted.
  * Pushes to the RunR remote have nothing to report to.
@@ -92,6 +94,7 @@ class StatusReporter
             GitDeploy::QUEUED, GitDeploy::IMPORTING, GitDeploy::BUILDING, GitDeploy::DEPLOYING => ProviderClient::PENDING,
             GitDeploy::ACTIVE, GitDeploy::UNCHANGED, GitDeploy::IMPORTED => ProviderClient::SUCCESS,
             GitDeploy::FAILED => ProviderClient::FAILURE,
+            GitDeploy::SKIPPED => ProviderClient::CANCELED,
             default => null,
         };
     }
@@ -108,20 +111,39 @@ class StatusReporter
             GitDeploy::UNCHANGED => 'No changes to deploy',
             GitDeploy::IMPORTED => 'Version created; auto-deploy is off',
             GitDeploy::FAILED => "{$what} failed: ".mb_substr((string) $deploy->status_message, 0, 100),
+            GitDeploy::SKIPPED => match (true) {
+                str_starts_with((string) $deploy->status_message, GitDeployService::BUILD_CANCELLED) => 'Build cancelled by a region migration rollback',
+                $this->stopped($deploy) => 'Stopped before it went live',
+                default => 'Replaced by a newer deploy',
+            },
             default => $what,
         };
+    }
+
+    /**
+     * A skipped deploy of a project that is stopped: the stop took its deployment down while it
+     * started (ProjectStopService writes stopped_at before it does). Otherwise a newer deploy
+     * replaced it.
+     */
+    private function stopped(GitDeploy $deploy): bool
+    {
+        return Project::query()->whereKey($deploy->project_id)->whereNotNull('stopped_at')->exists();
     }
 
     private function githubDeployment(ProviderClient $client, GitRepoLink $link, Project $project, GitDeploy $deploy, string $description): void
     {
         $preview = $deploy->kind === GitDeploy::KIND_PREVIEW ? $deploy->preview : null;
 
-        // Only a deploy that actually goes live gets a deployment record
-        if (! in_array($deploy->status, [GitDeploy::BUILDING, GitDeploy::DEPLOYING, GitDeploy::ACTIVE, GitDeploy::FAILED], true)) {
+        // Only a deploy that actually goes live gets a deployment record; one replaced before it
+        // went live ends the record it started (inactive: GitHub's state of a superseded deployment)
+        if (! in_array($deploy->status, [GitDeploy::BUILDING, GitDeploy::DEPLOYING, GitDeploy::ACTIVE, GitDeploy::FAILED, GitDeploy::SKIPPED], true)) {
             return;
         }
 
         $id = $deploy->provider_deployment_id;
+        if (! $id && $deploy->status === GitDeploy::SKIPPED) {
+            return;
+        }
         if (! $id) {
             $environment = $preview ? "preview/pr-{$deploy->pr_number}" : 'production';
             $id = $this->attempt(fn () => $client->startDeployment($link, $deploy->sha, $environment, $preview !== null, $preview === null), $deploy, 'deployment');
@@ -135,6 +157,7 @@ class StatusReporter
         $state = match ($deploy->status) {
             GitDeploy::ACTIVE => 'success',
             GitDeploy::FAILED => 'failure',
+            GitDeploy::SKIPPED => 'inactive',
             default => 'in_progress',
         };
         $url = $deploy->status === GitDeploy::ACTIVE

@@ -27,13 +27,14 @@ use Tests\TestCase;
  * Moving a region to another cluster installs there what the region had on its old one, not only
  * Knative, Redis, the registry and the sandbox runtimes: its dedicated workers (the selected nodes
  * that exist on the new cluster), WebAssembly and GPU support, the data services RunR runs, the
- * admission policy, function TLS and the status block of a region that is not active.
+ * admission policy, function TLS and the status block of a region that is not active. Kata
+ * Containers comes with the region's hypervisors.
  */
 class RegionMigrateReapplyTest extends TestCase
 {
     use BuildsAiFixtures, RefreshDatabase;
 
-    private function service(): RegionMigrateService
+    private function service(?SandboxInstallService $sandbox = null): RegionMigrateService
     {
         $installer = Mockery::mock(KnativeInstallService::class);
         $installer->shouldReceive('runningKnative')->andReturn(['operator' => true, 'serving' => true]);
@@ -43,7 +44,7 @@ class RegionMigrateReapplyTest extends TestCase
             Mockery::mock(KnativeDeployService::class),
             Mockery::mock(ZotRegistryService::class),
             Mockery::mock(KnativeRedisService::class),
-            Mockery::mock(SandboxInstallService::class),
+            $sandbox ?? Mockery::mock(SandboxInstallService::class),
         );
     }
 
@@ -102,6 +103,82 @@ class RegionMigrateReapplyTest extends TestCase
         $this->bound(RegionStatusService::class)->shouldReceive('syncBlock')->once()->andReturn([]);
 
         $this->service()->installInfrastructure($region);
+        $this->addToAssertionCount(1);
+    }
+
+    public function test_kata_is_installed_with_the_regions_hypervisors_and_gvisor_even_when_kata_fails(): void
+    {
+        $this->fakeCluster();
+        $region = $this->region([
+            'sandbox_kata_status' => 'ready', 'sandbox_kata_hypervisor' => ['qemu', 'fc'],
+            'sandbox_gvisor_status' => 'ready',
+        ]);
+
+        $sandbox = Mockery::mock(SandboxInstallService::class);
+        // A thin-pool set up before its size was recorded: the old cluster has none either
+        $sandbox->shouldReceive('installedDevmapperPoolGb')->once()->with('old-cluster')->andReturn(null);
+        // Nothing of Kata is on the new cluster yet: a failure there is not "ready" with the old hypervisors
+        $sandbox->shouldReceive('installKata')->once()
+            ->with(Mockery::on(fn ($r) => $r->is($region)), ['qemu', 'fc'], ['previous_status' => 'not_installed'])
+            ->andThrow(new \RuntimeException('Kata Containers needs hardware virtualization (/dev/kvm)'));
+        $sandbox->shouldReceive('installGvisor')->once();
+
+        $this->service($sandbox)->installInfrastructure($region);
+        $this->addToAssertionCount(1);
+    }
+
+    public function test_firecracker_gets_the_thin_pool_size_of_the_old_cluster(): void
+    {
+        $this->fakeCluster();
+        $region = $this->region(['sandbox_kata_status' => 'ready', 'sandbox_kata_hypervisor' => ['clh', 'fc'], 'sandbox_kata_devmapper_pool_gb' => 80]);
+
+        $sandbox = Mockery::mock(SandboxInstallService::class);
+        $sandbox->shouldNotReceive('installedDevmapperPoolGb');
+        $sandbox->shouldReceive('installKata')->once()
+            ->with(Mockery::any(), ['clh', 'fc'], ['previous_status' => 'not_installed', 'devmapper_pool_gb' => 80]);
+
+        $this->service($sandbox)->installInfrastructure($region);
+        $this->addToAssertionCount(1);
+    }
+
+    public function test_a_thin_pool_set_up_before_its_size_was_recorded_gets_the_size_the_old_cluster_has(): void
+    {
+        $this->fakeCluster();
+        $region = $this->region(['sandbox_kata_status' => 'ready', 'sandbox_kata_hypervisor' => ['fc']]);
+
+        $sandbox = Mockery::mock(SandboxInstallService::class);
+        // The old cluster's kata-devmapper DaemonSet sets up 50 GiB
+        $sandbox->shouldReceive('installedDevmapperPoolGb')->once()->with('old-cluster')->andReturn(50);
+        $sandbox->shouldReceive('installKata')->once()
+            ->with(Mockery::any(), ['fc'], ['previous_status' => 'not_installed', 'devmapper_pool_gb' => 50]);
+
+        $this->service($sandbox)->installInfrastructure($region);
+        $this->addToAssertionCount(1);
+    }
+
+    public function test_an_old_cluster_that_does_not_answer_leaves_the_default_size(): void
+    {
+        $this->fakeCluster();
+        $region = $this->region(['sandbox_kata_status' => 'ready', 'sandbox_kata_hypervisor' => ['fc']]);
+
+        $sandbox = Mockery::mock(SandboxInstallService::class);
+        $sandbox->shouldReceive('installedDevmapperPoolGb')->once()->andThrow(new \RuntimeException('connection refused'));
+        $sandbox->shouldReceive('installKata')->once()->with(Mockery::any(), ['fc'], ['previous_status' => 'not_installed']);
+
+        $this->service($sandbox)->installInfrastructure($region);
+        $this->addToAssertionCount(1);
+    }
+
+    public function test_a_kata_region_without_listed_hypervisors_gets_the_default_one(): void
+    {
+        $this->fakeCluster();
+        $region = $this->region(['sandbox_kata_status' => 'ready', 'sandbox_kata_hypervisor' => null]);
+
+        $sandbox = Mockery::mock(SandboxInstallService::class);
+        $sandbox->shouldReceive('installKata')->once()->with(Mockery::any(), ['clh'], ['previous_status' => 'not_installed']);
+        $sandbox->shouldNotReceive('installGvisor');
+
+        $this->service($sandbox)->installInfrastructure($region);
         $this->addToAssertionCount(1);
     }
 
