@@ -3,7 +3,7 @@
 #
 #   curl -fsSL https://runr.sh/install.sh | sh
 #
-# RUNR_VERSION=v0.5.8     install this release instead of the latest one
+# RUNR_VERSION=v0.5.9     install this release instead of the latest one
 # RUNR_INSTALL_DIR=DIR    install into DIR (default: /usr/local/bin when writable, else ~/.local/bin)
 # RUNR_DOWNLOAD_URL=URL   download base (a mirror of https://runr.sh/dl/cli)
 #

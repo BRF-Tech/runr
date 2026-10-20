@@ -43,7 +43,7 @@
     "description": "Open source serverless platform built on Kubernetes and Knative. Deploy functions, projects, containers and WebAssembly on your own clusters with scale-to-zero, sandboxes, durable workflows, GPUs and MCP.",
     "applicationCategory": "DeveloperApplication",
     "operatingSystem": "Linux, Kubernetes",
-    "softwareVersion": "0.5.8",
+    "softwareVersion": "0.5.9",
     "license": "https://opensource.org/licenses/MIT",
     "url": "https://runr.sh",
     "downloadUrl": "https://runr.sh/dl/",
@@ -1424,7 +1424,7 @@ helm upgrade --install runr brf-tech/runr \
       <p data-tr="Tek makinede üretim kurulumu: <code>compose/build.sh</code> imajları sürüm etiketinden derler; internetsiz (air-gapped) sunucuya <code>runr-images.tar</code> olarak taşınır."
          data-en="A production install on one machine: <code>compose/build.sh</code> builds the images from the release tag; air-gapped hosts get them as <code>runr-images.tar</code>.">
          Tek makinede üretim kurulumu: <code>compose/build.sh</code> imajları sürüm etiketinden derler; internetsiz (air-gapped) sunucuya <code>runr-images.tar</code> olarak taşınır.</p>
-      <pre><code>git clone -b v0.5.8 \
+      <pre><code>git clone -b v0.5.9 \
   https://github.com/BRF-Tech/runr.git
 cd runr &amp;&amp; bash compose/build.sh
 cd compose &amp;&amp; cp .env.example .env
@@ -1473,7 +1473,7 @@ runr deploy</code></pre>
          data-en="Deploy on every push and run preview environments for pull / merge requests: the ready-made Action on GitHub, a job that installs the CLI and runs <code>runr deploy</code> on GitLab CI/CD.">
          Her push'ta deploy edin, pull / merge request'ler için preview ortamları açın: GitHub'da hazır Action, GitLab CI/CD'de CLI'ı kurup <code>runr deploy</code> çalıştıran bir job.</p>
       <pre><code># GitHub Actions: secrets RUNR_API_URL, RUNR_TOKEN
-- uses: brf-tech/runr/actions/deploy@v0.5.8
+- uses: brf-tech/runr/actions/deploy@v0.5.9
   with:
     api-url: ${{ secrets.RUNR_API_URL }}
     token: ${{ secrets.RUNR_TOKEN }}
@@ -1689,7 +1689,7 @@ deploy:
     </div>
     <div class="footer-bottom">
       <span>© 2026 BRF Teknoloji and RunR contributors. <span data-tr="MIT lisansıyla yayımlanır." data-en="Released under the MIT License.">MIT lisansıyla yayımlanır.</span></span>
-      <span class="mono">runr.sh · <a href="/dl/">v0.5.8</a></span>
+      <span class="mono">runr.sh · <a href="/dl/">v0.5.9</a></span>
     </div>
   </div>
 </footer>
