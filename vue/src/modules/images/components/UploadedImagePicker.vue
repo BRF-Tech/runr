@@ -33,7 +33,8 @@ async function load() {
   loading.value = true
   try {
     const { data } = await imagesApi.list({ knative_region_id: props.regionId, kind: 'image' })
-    images.value = data.data ?? []
+    // An image of a registry the region left (a move to another cluster) cannot run there
+    images.value = (data.data ?? []).filter(i => i.in_registry !== false)
     if (images.value.some(i => i.image_ref === props.modelValue)) source.value = 'uploaded'
   } catch {
     images.value = []

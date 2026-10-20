@@ -31,6 +31,7 @@ export default {
     buildFailed:          '{project}: Build failed (v{version})',
     deploymentReady:      '{project}: Deployment ready',
     deploymentFailed:     '{project}: Deployment failed',
+    queuedDeployFailed:   '{project}: Deploy of v{version} did not start',
     regionMigrated:       '{region}: Migration completed',
     regionMigrateFailed:  '{region}: Migration failed',
     regionDetached:       '{region}: Region detached',

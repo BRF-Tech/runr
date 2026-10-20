@@ -14,6 +14,9 @@ export function useMigration(regionId, emit) {
   const migrationLoading = ref(false)
   const migrationError = ref(null)
   const migrationStatus = ref(null)
+  // What the move did with each project of the region (GET migration-status → projects), while
+  // it can be rolled back: moved, building, deployed, not_moved, cancelled
+  const migrationProjects = ref([])
 
   const statusLabel = computed(() => {
     if (!migrationStatus.value) return ''   // no migration: no label (and no lookup of a missing key)
@@ -62,6 +65,7 @@ export function useMigration(regionId, emit) {
     try {
       await knativeRegionsApi.completeMigration(regionId.value)
       migrationStatus.value = 'completed'
+      migrationProjects.value = []
       emit('saved')
     } catch (e) {
       migrationError.value = e.response?.data?.message ?? t('common.error')
@@ -82,6 +86,7 @@ export function useMigration(regionId, emit) {
     try {
       await knativeRegionsApi.rollbackMigration(regionId.value)
       migrationStatus.value = null
+      migrationProjects.value = []
       emit('saved')
     } catch (e) {
       migrationError.value = e.response?.data?.message ?? t('common.error')
@@ -110,9 +115,23 @@ export function useMigration(regionId, emit) {
     }
   }
 
+  async function loadMigrationReport() {
+    if (!['pending', 'in_progress', 'dns_check', 'failed'].includes(migrationStatus.value)) {
+      migrationProjects.value = []
+      return
+    }
+    try {
+      const { data } = await knativeRegionsApi.migrationStatus(regionId.value)
+      migrationProjects.value = Array.isArray(data?.projects) ? data.projects : []
+    } catch {
+      // informational: the tab works without it
+    }
+  }
+
   function initMigrationState(region) {
     if (region) {
       migrationStatus.value = region.migration_status || null
+      loadMigrationReport()
     }
   }
 
@@ -123,8 +142,8 @@ export function useMigration(regionId, emit) {
 
   return {
     migrationKubeconfig, migrationKubeconfigName, migrationDataLocation,
-    migrationLoading, migrationError, migrationStatus, statusLabel,
+    migrationLoading, migrationError, migrationStatus, statusLabel, migrationProjects,
     onMigrationKubeconfigChange, startMigration, completeMigration,
-    rollbackMigration, initMigrationState, completeDomainMigration,
+    rollbackMigration, initMigrationState, completeDomainMigration, loadMigrationReport,
   }
 }

@@ -21,6 +21,7 @@ vi.mock('@/api/projects', () => {
 
 import { projectsApi as api } from '@/api/projects'
 import { useProjectDetail } from '@/composables/useProjectDetail'
+import { useToast } from '@/composables/useToast'
 import { withPlugins } from '../helpers'
 
 function harness() {
@@ -71,5 +72,25 @@ describe('confirmDeploy', () => {
     expect(d.activeTab.value).toBe('deployments')
     expect(api.deployments).toHaveBeenCalledTimes(1)
     expect(d.deployments.value.map(x => x.id)).toEqual(['d-new'])
+  })
+
+  it('a version built again for the region\'s registry says it deploys when the build is ready', async () => {
+    useToast().toasts.value = []
+    const d = harness()
+    d.project.value = { id: 'p-1', service_type: 'faas' }
+    d.activeTab.value = 'versions'
+    await flushPromises()
+
+    api.deploy.mockResolvedValueOnce({ data: { message: 'v1 is built again…', queued_deploy: { id: 'q-1', version: 1, status: 'waiting' } } })
+    api.versions.mockResolvedValueOnce({ data: { data: [{ id: 'v-1', number: 1, build_status: 'pending' }] } })
+    await d.confirmDeploy({ versionId: 'v-1' })
+    await flushPromises()
+
+    const toast = useToast().toasts.value.at(-1)
+    expect(toast.type).toBe('success')
+    expect(toast.message).toBe("v1 is built again for this region's registry (it was built before the region moved to another cluster); it deploys when the build is ready.")
+    expect(d.versions.value.map(v => v.build_status)).toEqual(['pending'])
+    expect(d.showDeployModal.value).toBe(false)
+    expect(d.activeTab.value).toBe('deployments')
   })
 })

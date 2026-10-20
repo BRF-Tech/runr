@@ -108,6 +108,11 @@ describe('Region → Sandbox (useSandboxTab)', () => {
     expect(s.devmapperPoolGb.value).toBe(40)
     expect(s.devmapperLimits.value.max_pool_gb).toBe(200)
 
+    // A region whose thin-pool is set up keeps its size
+    api.kataShims.mockResolvedValue({ data: { shims: [{ name: 'fc' }], kvm: { state: 'yes' }, devmapper: { pool_gb: 64, default_pool_gb: 40, min_pool_gb: 10, max_pool_gb: 200 } } })
+    await s.loadShims()
+    expect(s.devmapperPoolGb.value).toBe(64)
+
     // An unreachable cluster leaves the last answer and ends loading
     api.kataShims.mockRejectedValue(httpError(502))
     await s.loadShims()

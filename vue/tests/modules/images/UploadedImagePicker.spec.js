@@ -55,6 +55,16 @@ describe('UploadedImagePicker', () => {
     expect(w.emitted('update:modelValue').at(-1)).toEqual(['nginx:1.27'])
   })
 
+  it('does not offer an image the region\'s registry does not have since the region moved', async () => {
+    withPermissions(['images.view'])
+    imagesApi.list.mockResolvedValue({ data: { data: [image({ in_registry: false }), image({ id: 'img2', name: 'api:2', image_ref: `10.43.0.5:5000/runr-uploads/platform/api@${DIGEST}`, in_registry: true })] } })
+    const w = await mountPicker()
+
+    await w.find('[data-testid="image-source-uploaded"]').trigger('click')
+    expect(w.findAll('[data-testid="uploaded-image-select"] option').map(o => o.text())).toEqual([expect.any(String), expect.stringContaining('api:2')])
+    expect(w.emitted('update:modelValue').at(-1)).toEqual([`10.43.0.5:5000/runr-uploads/platform/api@${DIGEST}`])
+  })
+
   it('opens on the uploaded image a project already uses', async () => {
     withPermissions(['images.view'])
     const w = await mountPicker({ modelValue: image().image_ref })

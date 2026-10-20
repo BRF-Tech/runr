@@ -243,4 +243,58 @@ describe('Region → Migration', () => {
     await m.completeDomainMigration()
     expect(api.completeDomainMigration).toHaveBeenCalledWith('r1')
   })
+
+  it('loads what the move did with each project while it can be rolled back', async () => {
+    const projects = [
+      { organization: null, project_id: 'p1', project: 'orders', outcome: 'building', version: 5, deployment_status: null, message: 'Moving to the new cluster of the region: v5 is built again there; deployed there when it is ready.' },
+      { organization: 'acme', project_id: 'p2', project: 'shop', outcome: 'not_moved', version: 1, deployment_status: 'shut_down', message: 'its image myapp:1.0 was uploaded into the registry of the cluster the region left' },
+    ]
+    api.migrationStatus.mockResolvedValue({ data: { migration_status: 'dns_check', projects } })
+    const m = harness(emit => useMigration(ref('r1'), emit))
+
+    m.initMigrationState({ id: 'r1', migration_status: 'dns_check' })
+    await flushPromises()
+    expect(api.migrationStatus).toHaveBeenCalledWith('r1')
+    expect(m.migrationProjects.value).toEqual(projects)
+
+    // No move to roll back: nothing to ask for
+    api.migrationStatus.mockClear()
+    m.initMigrationState({ id: 'r1', migration_status: 'completed' })
+    await flushPromises()
+    expect(api.migrationStatus).not.toHaveBeenCalled()
+    expect(m.migrationProjects.value).toEqual([])
+
+    // A report that cannot be read leaves the tab working
+    m.migrationStatus.value = 'failed'
+    api.migrationStatus.mockRejectedValue(new Error('502'))
+    await m.loadMigrationReport()
+    expect(m.migrationProjects.value).toEqual([])
+
+    // A rollback ends the report
+    m.migrationProjects.value = projects
+    await m.rollbackMigration()
+    expect(m.migrationProjects.value).toEqual([])
+  })
+
+  it('lists the projects of the move with their outcome and reason', async () => {
+    const w = mountIt(MigrationTab, {
+      region: { id: 'r1' }, migrationStatus: 'dns_check',
+      migrationProjects: [
+        { organization: null, project_id: 'p1', project: 'orders', outcome: 'deployed', version: 5, message: 'v5 was built and its deploy started.' },
+        { organization: 'acme', project_id: 'p2', project: 'shop', outcome: 'not_moved', version: 1, message: 'its image myapp:1.0 was uploaded into the registry of the cluster the region left' },
+        { organization: 'acme', project_id: 'p3', project: 'idle', outcome: 'cancelled', version: null, message: null },
+      ],
+    })
+
+    const rows = w.findAll('[data-testid="migration-projects"] li')
+    expect(rows).toHaveLength(3)
+    expect(rows[0].text()).toContain('Built and moved')
+    expect(rows[0].text()).toContain('orders v5')
+    expect(rows[1].text()).toContain('Not moved')
+    expect(rows[1].text()).toContain('shop v1 · acme')
+    expect(rows[1].text()).toContain('uploaded into the registry of the cluster the region left')
+
+    await w.find('[data-testid="migration-projects-refresh"]').trigger('click')
+    expect(w.emitted('refresh-projects')).toHaveLength(1)
+  })
 })

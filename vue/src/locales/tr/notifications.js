@@ -31,6 +31,7 @@ export default {
     buildFailed:          '{project}: Build başarısız (v{version})',
     deploymentReady:      '{project}: Deployment hazır',
     deploymentFailed:     '{project}: Deployment başarısız',
+    queuedDeployFailed:   '{project}: v{version} dağıtımı başlamadı',
     regionMigrated:       '{region}: Taşıma tamamlandı',
     regionMigrateFailed:  '{region}: Taşıma başarısız',
     regionDetached:       '{region}: Bölge ayrıldı',

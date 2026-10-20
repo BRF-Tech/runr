@@ -29,6 +29,7 @@ export default {
       failed: 'scan failed',
       counts: 'C {critical} · H {high}',
     },
+    notInRegistry: 'Not in the region\'s registry: the region moved to another cluster after this upload. Upload it to the region again to use it.',
     copyRef: 'Copy the image reference',
     copied: 'Reference copied.',
     copyFailed: 'Could not copy the reference.',

@@ -81,6 +81,8 @@ export default {
     clone:          'Clone',
     deploy:         'Deploy',
     deploying:      'Deploying…',
+    // POST deploy answered with a queued deploy: the version is built again first (docs/regions.md)
+    deployRebuilding: "v{version} is built again for this region's registry (it was built before the region moved to another cluster); it deploys when the build is ready.",
     eolBlocked:     'This project uses an end-of-life runtime. Update the runtime version to save or deploy.',
     selectVersion:  'Which version do you want to deploy?',
     deployConfig:   'Deploy Configuration',
@@ -303,6 +305,7 @@ export default {
     resumed:          'Project resumed.',
     resumedDeploying: 'Project resumed; the version that ran is being deployed again.',
     resumedNotDeployed: 'Project resumed, but the version that ran was not deployed: {reason}',
+    resumedRebuilding: "Project resumed; the version that ran is built again for this region's registry and deploys when the build is ready.",
     banner:           'This project is stopped',
     bannerPlatform:   'This project was stopped by the platform',
     bannerReason:     'Reason: {reason}',

@@ -29,6 +29,7 @@ export default {
       failed: 'tarama başarısız',
       counts: 'K {critical} · Y {high}',
     },
+    notInRegistry: 'Bölgenin registry\'sinde yok: bölge bu yüklemeden sonra başka bir kümeye taşındı. Kullanmak için bölgeye yeniden yükleyin.',
     copyRef: 'İmaj referansını kopyala',
     copied: 'Referans kopyalandı.',
     copyFailed: 'Referans kopyalanamadı.',

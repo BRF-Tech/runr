@@ -62,6 +62,14 @@ describe('ImagesManager', () => {
     expect(w.find('tbody tr').text()).toContain('q-interpreter:1.0')
   })
 
+  it('marks an image the region\'s registry does not have since the region moved', async () => {
+    const w = await mountManager({ images: [image(), image({ id: 'img2', name: 'old:1.0', in_registry: false })] })
+
+    const rows = w.findAll('tbody tr')
+    expect(rows[0].find('[data-testid="image-not-in-registry"]').exists()).toBe(false)
+    expect(rows[1].find('[data-testid="image-not-in-registry"]').text()).toContain('Upload it to the region again')
+  })
+
   it('deletes after confirming and refreshes the quota', async () => {
     imagesApi.remove.mockResolvedValue({ data: { deleted: true } })
     imagesApi.quota.mockResolvedValue({ data: { limit_bytes: 1024 ** 3, used_bytes: 0, images: 0 } })

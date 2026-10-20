@@ -7,6 +7,7 @@ import ProjectStopModal from '@/components/project/ProjectStopModal.vue'
 import ProjectStopBanner from '@/components/project/ProjectStopBanner.vue'
 import ProjectOwnerModal from '@/components/project/ProjectOwnerModal.vue'
 import ProjectHeader from '@/components/ProjectHeader.vue'
+import { useToast } from '@/composables/useToast'
 import { withPlugins } from '../../helpers'
 
 vi.mock('vue-router', async (orig) => ({ ...(await orig()), useRouter: () => ({ push: vi.fn() }), useRoute: () => ({ query: {} }) }))
@@ -117,6 +118,21 @@ describe('ProjectStopBanner', () => {
     await find(w, 'project-resume').trigger('click')
     await flush()
     expect(resume).toHaveBeenCalledWith('p1')
+    expect(w.emitted('resumed')).toHaveLength(1)
+  })
+
+  it('a resume whose version is built again for the region\'s registry says it deploys when ready', async () => {
+    useToast().toasts.value = []
+    grant(['projects.view', 'projects.stop'])
+    const stopped = project({ stopped: { at: '2026-10-19T10:00:00Z', by: { id: 'u2', name: 'Bob' }, reason: 'Unpaid', level: 'organization' } })
+    const w = mount(ProjectStopBanner, { props: { project: stopped }, global: withPlugins().global })
+    vi.spyOn(projectsApi, 'resume').mockReturnValue(ok({ data: project(), deployment_id: null, redeploy_error: 'v1 is built again…', redeploy_code: 'version_rebuilding' }))
+
+    await w.vm.resume()
+    await flush()
+
+    const toast = useToast().toasts.value.at(-1)
+    expect([toast.type, toast.message]).toEqual(['success', "Project resumed; the version that ran is built again for this region's registry and deploys when the build is ready."])
     expect(w.emitted('resumed')).toHaveLength(1)
   })
 

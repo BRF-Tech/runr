@@ -72,6 +72,8 @@ export function notificationTitle(n, t) {
   // ── Deployment ──────────────────────────────────────────────────────────────
   if (type === 'deployment.ready')  return t('notifications.deploymentReady',  { project: d.project_name })
   if (type === 'deployment.failed') return t('notifications.deploymentFailed', { project: d.project_name })
+  // A deploy that waited for its version to be built again for the region's registry was refused
+  if (type === 'deployment.queued_failed') return t('notifications.queuedDeployFailed', { project: d.project_name, version: ver })
 
   // ── Demo ────────────────────────────────────────────────────────────────────
   if (type === 'demo.seeded'  || type === 'demo.deployed')      return t('notifications.demoSeeded')

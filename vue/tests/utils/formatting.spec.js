@@ -75,6 +75,7 @@ describe('notificationTitle', () => {
     [{ type: 'region.migration_completed', data: { region_name: 'eu' } }, 'notifications.regionMigrated {"region":"eu"}'],
     [{ type: 'build.failed', data: { project_name: 'api' } }, 'notifications.buildFailed {"project":"api","version":""}'],
     [{ type: 'deployment.ready', data: { project_name: 'api' } }, 'notifications.deploymentReady {"project":"api"}'],
+    [{ type: 'deployment.queued_failed', data: { project_name: 'api', version: 3 } }, 'notifications.queuedDeployFailed {"project":"api","version":3}'],
     [{ type: 'demo.deploy_failed' }, 'notifications.demoSeedFailed'],
     [{ type: 'ticket.reply', data: { ticket_subject: 'Help' } }, 'notifications.ticketReply {"subject":"Help"}'],
   ])('%j', (n, out) => {
@@ -97,7 +98,7 @@ describe('notificationTitle', () => {
       'sandbox.x.installed', 'sandbox.x.install_failed', 'sandbox.x.uninstalled', 'sandbox.x.uninstall_failed',
       'redis.installed', 'redis.install_failed', 'redis.removed', 'redis.remove_failed',
       'region.created', 'region.create_failed', 'region.migrated', 'region.migrate_failed', 'region.detached', 'region.detach_failed',
-      'build.completed', 'build.failed', 'deployment.ready', 'deployment.failed',
+      'build.completed', 'build.failed', 'deployment.ready', 'deployment.failed', 'deployment.queued_failed',
       'demo.seeded', 'demo.seed_failed', 'demo.removed', 'demo.remove_failed', 'ticket.created', 'ticket.reply',
     ]
     for (const type of samples) notificationTitle({ type, data: { resource_type: 'cpu' } }, capture)

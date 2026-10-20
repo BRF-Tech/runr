@@ -39,7 +39,9 @@ async function resume() {
   busy.value = true
   try {
     const { data } = await projectsApi.resume(props.project.id)
-    if (data?.redeploy_error) toast.error(t('projectLifecycle.resumedNotDeployed', { reason: data.redeploy_error }))
+    // version_rebuilding: built again for the region's registry first, deployed when ready
+    if (data?.redeploy_code === 'version_rebuilding') toast.success(t('projectLifecycle.resumedRebuilding'), 8000)
+    else if (data?.redeploy_error) toast.error(t('projectLifecycle.resumedNotDeployed', { reason: data.redeploy_error }))
     else toast.success(data?.deployment_id ? t('projectLifecycle.resumedDeploying') : t('projectLifecycle.resumed'))
     emit('resumed', data?.data ?? null)
   } catch (e) {

@@ -172,7 +172,8 @@ function handleConfirmSkip({ step, warning }) {
               :migration-status="migration.migrationStatus.value" :migration-loading="migration.migrationLoading.value"
               :migration-error="migration.migrationError.value" :migration-kubeconfig-name="migration.migrationKubeconfigName.value"
               :migration-data-location="migration.migrationDataLocation.value"
-              :status-label="migration.statusLabel.value" @kubeconfig-change="migration.onMigrationKubeconfigChange"
+              :status-label="migration.statusLabel.value" :migration-projects="migration.migrationProjects.value"
+              @refresh-projects="migration.loadMigrationReport" @kubeconfig-change="migration.onMigrationKubeconfigChange"
               @update:data-location="migration.migrationDataLocation.value = $event"
               @start="migration.startMigration" @complete="migration.completeMigration" @rollback="migration.rollbackMigration"
               @complete-domain="migration.completeDomainMigration" />

@@ -61,7 +61,8 @@ export function useSandboxTab(regionId, emit, t, confirm) {
       kvm.value = data.kvm || null
       if (data.devmapper) {
         devmapperLimits.value = data.devmapper
-        devmapperPoolGb.value = data.devmapper.default_pool_gb
+        // the size the region's thin-pool was set up with stays (the pool is never resized)
+        devmapperPoolGb.value = data.devmapper.pool_gb ?? data.devmapper.default_pool_gb
       }
     } catch { /* silent */ }
     finally { shimsLoading.value = false }

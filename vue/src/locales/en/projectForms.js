@@ -173,6 +173,8 @@ export default {
     notReady: 'Not ready for deploy',
     pruned:   'Image removed',
     prunedHint: 'Registry retention removed this build image; it can no longer be deployed.',
+    cancelled: 'Build cancelled',
+    cancelledHint: 'RunR stopped this build: a region migration rollback took the region off the cluster it ran on. Save a change or push again to build it.',
   },
 
   deployment: {

@@ -81,6 +81,13 @@ function fmt(dateTime) {
             class="text-[9px] px-1.5 py-0.5 rounded-sm font-medium leading-none bg-gray-500/15 text-gray-400"
             :title="t('build.prunedHint')"
           >{{ t('build.pruned') }}</span>
+          <!-- Stopped by RunR (a region migration rollback), not a failure -->
+          <span
+            v-else-if="v.build_status === 'cancelled'"
+            class="text-[9px] px-1.5 py-0.5 rounded-sm font-medium leading-none bg-gray-500/15 text-gray-400"
+            :title="v.build_error || t('build.cancelledHint')"
+            data-testid="build-cancelled"
+          >{{ t('build.cancelled') }}</span>
         </div>
 
         <!-- Commit message -->

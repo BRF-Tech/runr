@@ -5,6 +5,7 @@ import { projectsApi } from '@/api/projects'
 import { useSettingsStore } from '@/stores/settings'
 import { useRuntimesStore } from '@/stores/runtimes'
 import { useConfirm } from '@/composables/useConfirm'
+import { useToast } from '@/composables/useToast'
 import { useProjectEditor } from '@/composables/useProjectEditor'
 import { moduleRegistry } from '@/modules/index'
 
@@ -15,6 +16,7 @@ export function useProjectDetail() {
   const settingsStore = useSettingsStore()
   const runtimesStore = useRuntimesStore()
   const { confirm } = useConfirm()
+  const toast = useToast()
 
   // ── State ──────────────────────────────────────────────────────────────────
   const project   = ref(null)
@@ -130,7 +132,15 @@ export function useProjectDetail() {
       const payload = { version_id: versionId }
       // Supply-chain policy override (docs/supply-chain.md)
       if (overrideReason) Object.assign(payload, { override_policy: true, override_reason: overrideReason })
-      await projectsApi.deploy(project.value.id, payload)
+      const data = (await projectsApi.deploy(project.value.id, payload))?.data
+      // A version built before the region moved to another cluster is built again for the
+      // region's registry first: no deployment yet, it starts when the build is ready
+      if (data?.queued_deploy) {
+        const version = data.queued_deploy.version ?? versions.value.find(v => v.id === versionId)?.number ?? '?'
+        toast.success(t('project.deployRebuilding', { version }), 8000)
+        versionsLoaded.value = false
+        await loadVersions()
+      }
       // The new deployment must show up: drop the cached list and load it again
       deploymentsLoaded.value = false
       showDeployModal.value   = false

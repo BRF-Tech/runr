@@ -173,6 +173,8 @@ export default {
     notReady: 'Deploy için hazır değil',
     pruned:   'İmaj silindi',
     prunedHint: 'Registry saklama kuralı bu build imajını sildi; bu sürüm artık dağıtılamaz.',
+    cancelled: 'Build iptal edildi',
+    cancelledHint: 'Bu build\'i RunR durdurdu: bölge taşımasının geri alınması, bölgeyi build\'in çalıştığı kümeden çıkardı. Yeniden build için bir değişiklik kaydedin ya da yeniden push edin.',
   },
 
   deployment: {

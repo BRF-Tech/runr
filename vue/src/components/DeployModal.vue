@@ -66,6 +66,11 @@ function fmt(dateTime) {
               class="text-[10px] ml-1 px-1 rounded-sm bg-gray-500/20 text-gray-400"
               :title="t('build.prunedHint')"
             >{{ t('build.pruned') }}</span>
+            <span
+              v-else-if="v.build_status === 'cancelled'"
+              class="text-[10px] ml-1 px-1 rounded-sm bg-gray-500/20 text-gray-400"
+              :title="v.build_error || t('build.cancelledHint')"
+            >{{ t('build.cancelled') }}</span>
           </div>
           <span class="text-xs text-gray-400 shrink-0">{{ fmt(v.created_at) }}</span>
         </label>

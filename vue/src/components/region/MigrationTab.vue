@@ -13,9 +13,20 @@ defineProps({
   // the wizard's new region has no data location yet
   showDataLocation:     { type: Boolean, default: true },
   statusLabel:          { type: String, default: '' },
+  // What the move did with each project (GET migration-status → projects)
+  migrationProjects:    { type: Array, default: () => [] },
 })
 
-defineEmits(['kubeconfig-change', 'update:data-location', 'start', 'complete', 'rollback', 'complete-domain'])
+defineEmits(['kubeconfig-change', 'update:data-location', 'start', 'complete', 'rollback', 'complete-domain', 'refresh-projects'])
+
+const OUTCOME_CLASS = {
+  moved:     'bg-green-900/50 text-green-400',
+  deployed:  'bg-green-900/50 text-green-400',
+  building:  'bg-yellow-900/50 text-yellow-400',
+  not_moved: 'bg-red-900/50 text-red-400',
+  cancelled: 'bg-gray-800 text-gray-400',
+}
+const outcomeClass = (outcome) => OUTCOME_CLASS[outcome] ?? OUTCOME_CLASS.cancelled
 </script>
 
 <template>
@@ -60,6 +71,29 @@ defineEmits(['kubeconfig-change', 'update:data-location', 'start', 'complete', '
     <p v-if="migrationStatus === 'in_progress'" class="text-xs text-yellow-400">
       {{ t('settings.regionDetail.migration.migrationInProgress') }}
     </p>
+
+    <!-- Per project: moved, built again on the new cluster, not moved (with the reason) -->
+    <div v-if="migrationProjects.length" class="space-y-2" data-testid="migration-projects">
+      <div class="flex items-center justify-between">
+        <h4 class="text-xs font-semibold text-gray-100">{{ t('settings.regionDetail.migration.projects') }}</h4>
+        <button type="button" class="text-xs text-gray-400 hover:text-gray-200" data-testid="migration-projects-refresh"
+          @click="$emit('refresh-projects')">{{ t('settings.regionDetail.migration.refreshProjects') }}</button>
+      </div>
+      <ul class="divide-y divide-gray-800/60 text-xs">
+        <li v-for="p in migrationProjects" :key="`${p.organization ?? ''}/${p.project_id}`" class="py-1.5 flex items-start gap-2"
+          :data-project="p.project">
+          <span class="px-1.5 py-0.5 rounded-sm font-medium shrink-0" :class="outcomeClass(p.outcome)">
+            {{ t(`settings.regionDetail.migration.outcome.${p.outcome}`) }}
+          </span>
+          <div class="min-w-0">
+            <span class="text-gray-100">{{ p.project }}</span>
+            <span v-if="p.version" class="text-gray-400 font-mono"> v{{ p.version }}</span>
+            <span v-if="p.organization" class="text-gray-400"> · {{ p.organization }}</span>
+            <p v-if="p.message" class="text-gray-400 break-words">{{ p.message }}</p>
+          </div>
+        </li>
+      </ul>
+    </div>
 
     <!-- Kubeconfig upload (only when idle or completed/failed) -->
     <div v-if="!migrationStatus || ['completed', 'failed'].includes(migrationStatus)" class="space-y-3">

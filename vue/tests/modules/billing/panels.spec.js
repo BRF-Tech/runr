@@ -11,6 +11,7 @@ import ProjectStopPanel from '@/modules/billing/components/ProjectStopPanel.vue'
 import BillingAdmin from '@/modules/billing/components/BillingAdmin.vue'
 import RegionBillingTypeField from '@/modules/billing/components/RegionBillingTypeField.vue'
 import BillRow from '@/modules/billing/components/BillRow.vue'
+import { useToast } from '@/composables/useToast'
 import { LINES, bill, billingOn, fail, flush, globalOptions, grant, ok, signIn } from './helpers'
 
 vi.mock('@/api/client', () => ({ default: { get: vi.fn(), post: vi.fn(), put: vi.fn(), delete: vi.fn() } }))
@@ -272,6 +273,21 @@ describe('ProjectStopPanel', () => {
     grant(['projects.stop'], { platformAdmin: true })
     await flush()
     expect(find(w, 'stop-project-resume-p1').exists()).toBe(true)
+  })
+
+  it('a resume whose version is built again for the region\'s registry is no error', async () => {
+    useToast().toasts.value = []
+    vi.spyOn(projectsApi, 'list').mockReturnValue(ok({ data: [{ id: 'p2', name: 'legacy', owner: null, stopped: { reason: 'Unpaid', level: 'organization' } }] }))
+    vi.spyOn(projectsApi, 'resume').mockReturnValue(ok({ data: { id: 'p2', stopped: null }, deployment_id: null, redeploy_error: 'v1 is built again…', redeploy_code: 'version_rebuilding' }))
+    const w = mountWith(ProjectStopPanel, ['projects.stop'])
+    await flush()
+
+    await find(w, 'stop-project-resume-p2').trigger('click')
+    await flush()
+
+    const toast = useToast().toasts.value.at(-1)
+    expect(toast.type).toBe('success')
+    expect(toast.message).toContain('built again for this region')
   })
 })
 

@@ -179,6 +179,10 @@ onMounted(() => {
               <p class="font-mono text-gray-100">{{ image.name }}</p>
               <p class="font-mono text-[10px] text-gray-500 truncate max-w-[16rem]" :title="image.digest">{{ image.digest }}</p>
               <p v-if="image.note" class="text-[10px] text-amber-400 max-w-[20rem]">{{ image.note }}</p>
+              <!-- The region moved to another cluster since the upload: its registry does not have it -->
+              <p v-if="image.in_registry === false" class="text-[10px] text-amber-400 max-w-[20rem]" data-testid="image-not-in-registry">
+                {{ t('images.notInRegistry') }}
+              </p>
             </td>
             <td class="py-2 pr-3 text-gray-300">{{ image.region_name ?? image.knative_region_id }}</td>
             <td class="py-2 pr-3 text-gray-300">{{ t(`images.kind.${image.kind}`) }}</td>
