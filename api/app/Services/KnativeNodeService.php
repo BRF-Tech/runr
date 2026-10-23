@@ -6,6 +6,7 @@ use App\Models\AiModelService;
 use App\Models\KnativeRegion;
 use App\Services\Ai\Gpu\GpuInstallService;
 use App\Services\Concerns\KnativeNodeTaintTrait;
+use App\Services\Environments\EnvironmentScope;
 use App\Services\Helpers\KubeQuantity;
 use App\Services\Sandboxes\SandboxManifests;
 use App\Services\Wasm\WasmKnativeFeatures;
@@ -279,10 +280,16 @@ class KnativeNodeService
         return $byNode;
     }
 
-    /** A RunR project workload: the pod carries runr/project-id. */
+    /**
+     * A RunR project workload: the pod carries runr/project-id — or, the workload of one of a
+     * project's environments (docs/environments.md), runr/environment-of.
+     */
     public static function isProjectWorkload(array $pod): bool
     {
-        return (string) ($pod['metadata']['labels'][self::PROJECT_POD_LABEL] ?? '') !== '';
+        $labels = $pod['metadata']['labels'] ?? [];
+
+        return (string) ($labels[self::PROJECT_POD_LABEL] ?? '') !== ''
+            || (string) ($labels[EnvironmentScope::LABEL_ENVIRONMENT_OF] ?? '') !== '';
     }
 
     /**

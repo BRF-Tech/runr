@@ -3,6 +3,8 @@
 namespace Tests\Feature;
 
 use App\Models\KnativeRegion;
+use App\Models\Observability\LoadTest;
+use App\Models\Project;
 use App\Services\HelmResult;
 use App\Services\HelmService;
 use App\Services\KnativeUninstallService;
@@ -123,12 +125,16 @@ class RegionKubeconfigReplaceAndUninstallTest extends TestCase
                 return new HelmResult(true, '', '', 0);
             }
         });
-        $this->fakeCluster();
+        // RunR's load-test namespace on the cluster (docs/load-test.md)
+        $this->fakeCluster(['GET /api/v1/namespaces/runr-loadtest' => ['metadata' => ['name' => 'runr-loadtest', 'labels' => [
+            'app.kubernetes.io/managed-by' => 'runr', 'app.kubernetes.io/component' => 'load-test',
+        ]]]]);
         $region = KnativeRegion::create([
             'name' => 'eu-1', 'project_namespace' => 'eu-1', 'is_active' => true, 'kubeconfig' => $this->fakeKubeconfig(),
             'knative_operator_status' => 'ready', 'knative_serving_status' => 'ready', 'knative_serving_version' => '1.20.0',
         ]);
         $this->assertSame('ready', $region->knative_status);
+        $test = $this->runningLoadTest($region);
 
         app(KnativeUninstallService::class)->uninstall($region);
 
@@ -137,5 +143,47 @@ class RegionKubeconfigReplaceAndUninstallTest extends TestCase
         $this->assertSame('not_installed', $region->knative_serving_status);
         $this->assertNull($region->knative_serving_version);
         $this->assertSame('not_installed', $region->knative_status);
+
+        // the load tests' namespace went with the ingress they target, the region's tests ended
+        $this->assertCount(1, $this->k8sCallsTo('DELETE', '/api/v1/namespaces/runr-loadtest'));
+        $this->assertSame(LoadTest::FAILED, $test->fresh()->status);
+        $this->assertStringContainsString('Removed the load-test namespace (1 running test(s) stopped).', (string) $region->knative_status_message);
+    }
+
+    public function test_uninstalling_serving_removes_the_load_test_namespace(): void
+    {
+        $this->app->instance(HelmService::class, new class extends HelmService
+        {
+            public function uninstall(string $release, string $namespace, string $kubeconfigYaml): HelmResult
+            {
+                return new HelmResult(true, '', '', 0);
+            }
+        });
+        $this->fakeCluster(['GET /api/v1/namespaces/runr-loadtest' => ['metadata' => ['name' => 'runr-loadtest', 'labels' => [
+            'app.kubernetes.io/managed-by' => 'runr', 'app.kubernetes.io/component' => 'load-test',
+        ]]]]);
+        $region = KnativeRegion::create([
+            'name' => 'eu-1', 'project_namespace' => 'eu-1', 'is_active' => true, 'kubeconfig' => $this->fakeKubeconfig(),
+            'knative_operator_status' => 'ready', 'knative_serving_status' => 'ready', 'knative_serving_version' => '1.20.0',
+        ]);
+        $test = $this->runningLoadTest($region);
+
+        app(KnativeUninstallService::class)->uninstallServing($region);
+
+        $this->assertSame('not_installed', $region->refresh()->knative_serving_status);
+        $this->assertCount(1, $this->k8sCallsTo('DELETE', '/api/v1/namespaces/runr-loadtest'));
+        $this->assertSame(LoadTest::FAILED, $test->fresh()->status);
+        $this->assertSame(__('observability.load_test.region_uninstalled'), $test->fresh()->error);
+    }
+
+    private function runningLoadTest(KnativeRegion $region): LoadTest
+    {
+        $project = Project::create(['name' => 'orders', 'service_type' => 'caas']);
+        $project->forceFill(['knative_region_id' => $region->id])->saveQuietly();
+
+        return tap((new LoadTest)->forceFill([
+            'project_id' => $project->id, 'region_id' => $region->id, 'status' => LoadTest::RUNNING, 'host' => 'orders.eu.runr.test',
+            'path' => '/', 'users' => 10, 'duration_seconds' => 30, 'job_name' => 'lt-x', 'namespace' => 'runr-loadtest', 'started_at' => now(),
+        ]))->save();
     }
 }

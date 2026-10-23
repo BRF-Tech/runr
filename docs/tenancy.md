@@ -45,7 +45,11 @@ tenant gets:
 On the clusters, tenants share each region's project namespace. Project names carry the tenant
 slug as a suffix (`checkout-acme`), every workload of a tenant is labelled `runr/tenant: <tenant
 slug>`, and Redis queue streams get the same suffix (`<stream>-<tenant slug>`). Sandbox API sandboxes run in a namespace per
-organization ([Sandbox API](sandbox-api.md)).
+organization ([Sandbox API](sandbox-api.md)). On a region's internal network a tenant's project is
+`<project>.<tenant slug>` (`checkout.acme.runr.internal`), and it admits calls from projects of its
+own tenant or of another one only when its allow list says so; the slug `platform`, the
+organization name of the projects outside any tenant, is reserved
+([internal-network.md](internal-network.md)).
 
 ## When to use tenancy
 
@@ -96,7 +100,9 @@ The sign-in page of a multi-tenant console offers two choices:
   tenant, [SSO sign-in handoff](security.md#sso-sign-in-handoff)).
 
 Both choices use the same accounts; they decide where the session starts and which brand and
-providers the sign-in page shows. The terms appear only in a UI built with the Tenancy screens.
+providers the sign-in page shows. On both, an account signs in with its user name or its e-mail
+address ([Password sign-in](security.md#password-sign-in)). The terms appear only in a UI built
+with the Tenancy screens.
 
 Who does what:
 
@@ -105,7 +111,7 @@ Who does what:
 | Tenants | create, rename, delete every tenant; open any tenant as its administrator ([Opening a tenant as platform administrator](#opening-a-tenant-as-platform-administrator)); manage the members of any tenant | — |
 | Regions | platform regions, their mode (managed or infinite), assignment to tenants, quotas | regions of the tenant's own clusters (`regions.manage`) |
 | Shared configuration | runtimes and git providers every tenant uses, signup settings, the platform brand, platform prices and the tenants' bills ([Billing](billing.md)) | the tenant's own prices, markup on shared regions, accepting region offers, its projects' bills (`billing.manage`) |
-| Members | every account (Settings → Users in the central context), the platform administrator flag | the tenant's members, invitations, roles, groups, project access |
+| Members | every account (Administration → Users in the central context), the platform administrator flag | the tenant's members, invitations, roles, groups, project access |
 | Sign-in | the platform's providers (Platform user sign-in) | the tenant's providers and SSO group mapping (`sso.manage`) |
 | Branding, domain | whether tenants may brand their console (`branding.tenantOverrides`), the platform's base domain | the tenant's brand (`branding.manage`) and its own domain (`settings.manage`) |
 | Support tickets | answer every tenant's tickets | open tickets and reply ([Ticket](modules.md#ticket)) |
@@ -129,7 +135,7 @@ every tenant in it, and the support queue of every tenant ([Ticket](modules.md#t
   administrators: the upgrade's Tenancy migrations promote them when the installation has no
   platform administrator yet, and `tenancy:setup` promotes them as well
   ([Converting a single-organization installation](#converting-a-single-organization-installation)).
-- Platform administrators make further accounts platform administrators in Settings → Users
+- Platform administrators make further accounts platform administrators in Administration → Users
   (central context) or with `POST /api/users/{user}/toggle-admin`. `php artisan tenancy:setup
   --admin=<username or e-mail>` does it from the API container, also when no platform
   administrator is left.
@@ -144,14 +150,14 @@ edition: multi-tenant              # Tenancy + AuthProvider modules, the multi-t
 ```
 
 In the multi-tenant edition the chart appends `ui.image.multiTenantSuffix` (default `-mt`) to the
-UI tag: with `ui.image.tag: "0.5.10"` it runs `ghcr.io/brf-tech/runr/ui:0.5.10-mt`, with the default
+UI tag: with `ui.image.tag: "0.6.0"` it runs `ghcr.io/brf-tech/runr/ui:0.6.0-mt`, with the default
 (empty) tag the chart's release, `<appVersion>-mt`, as with the tag `latest`, which has no
 multi-tenant variant. A UI image of your own that carries the
 modules under its plain tag needs `ui.image.multiTenantSuffix: ""`
 ([Edition and modules](install.md#edition-and-modules)).
 
 The API reads `TENANCY_ENABLED` and `AUTH_PROVIDER_ENABLED` from the chart; the UI shows the
-tenant switcher, the sign-in choices and the Tenants, Users and Resource Usage settings only when it
+tenant switcher, the sign-in choices and the Tenants, Users and Resource Usage pages only when it
 was built with `VITE_TENANCY_ENABLED=true` ([UI build flags](modules.md#ui-build-flags)). Every
 value of the chart: [Helm values](helm-values.md).
 
@@ -164,7 +170,7 @@ What the install does:
 2. The bootstrap job runs `tenancy:setup --force`, which finds nothing to convert on a fresh
    installation, and creates the administrator account (`admin.username`, `admin.email`) as a
    platform administrator.
-3. Sign in as a **Platform user**, open Settings → Tenants and create the first tenant, then
+3. Sign in as a **Platform user**, open Administration → Tenants and create the first tenant, then
    assign it a region (Tenants → (tenant) → Regions).
 
 Other installs set `TENANCY_ENABLED=true` and `AUTH_PROVIDER_ENABLED=true` for every API
@@ -238,7 +244,7 @@ single day any more goes, [Billing after the conversion](#billing-after-the-conv
    stream names (`<stream>-<tenant slug>`).
 6. CaaS projects the command lists as running an image uploaded as the platform keep running and
    redeploying with it. To change such a project's image settings, upload the image in the tenant
-   (Settings → Images, [Uploaded images](images.md)) and select it.
+   (Build & Run → Images, [Uploaded images](images.md)) and select it.
 
 With Docker Compose run the commands as `docker compose exec api php artisan tenancy:setup …`.
 
@@ -281,7 +287,7 @@ the day it runs (the conversion day):
 | Central bills | the open bills of the copied projects end the day before the conversion day and close with the next run of `billing-close`; a bill that would start on the conversion day is removed. No new central bill is made for them. Usage the copied model services and bindings had before the conversion day stays on the central account bills, later usage is the tenant's |
 | Fixed allocations | the central ones end the day before; the tenant has the copies and bills them from the conversion day. The platform bills the tenant for allocations in its regions from the conversion day, like for any tenant ([Billing with tenancy](billing.md#billing-with-tenancy)) |
 | Tenant bills | the tenant bills from the conversion day (`bills_from`); the copied open bills are replaced by the tenant's own (with ids of their own), closed bills are copied as history |
-| Webhook | the platform's webhook settings and event log stay central and are not copied: set the tenant's own webhook (inside the tenant: Settings → Billing → Webhook) for the bills of its projects. An API token of the installation now works in the tenant and reads the tenant's bills; the closing central bills of the conversion month are read with a platform administrator's token |
+| Webhook | the platform's webhook settings and event log stay central and are not copied: set the tenant's own webhook (inside the tenant: Administration → Billing → Webhook) for the bills of its projects. An API token of the installation now works in the tenant and reads the tenant's bills; the closing central bills of the conversion month are read with a platform administrator's token |
 
 This step runs whether billing is on or off; on an installation that never used billing it only
 records what was converted. A conversion that an earlier release finished gets this step once, on
@@ -308,7 +314,7 @@ chart's bootstrap Job runs it on every install and upgrade of the multi-tenant e
 
 **Create.** Three ways:
 
-- Settings → Tenants (platform administrators): a name and a slug — letters, digits, `-` and `_`,
+- Administration → Tenants (platform administrators): a name and a slug — letters, digits, `-` and `_`,
   at most 100 characters, unique (`POST /api/tenants`). RunR creates the schema, runs every
   module's tenant migrations ([Tenant schema migrations](#tenant-schema-migrations)) and makes
   the creator the tenant's Owner. Give the customer's account the Owner role
@@ -327,7 +333,7 @@ billing](#shared-regions-with-billing)).
 
 **Rename.** `PATCH /api/tenants/{tenant}` changes the name. The slug stays.
 
-**Delete.** Settings → Tenants → Delete (`DELETE /api/tenants/{tenant}`, answers 202) sets the
+**Delete.** Administration → Tenants → Delete (`DELETE /api/tenants/{tenant}`, answers 202) sets the
 status to `deleting` and queues `DeleteTenantJob`, which:
 
 1. removes every project with its workloads — Knative Service, CronJob, queue consumer, code
@@ -345,7 +351,8 @@ status to `deleting` and queues `DeleteTenantJob`, which:
    the tenant's schema, deletes `storage/git/<tenant slug>/`, its support ticket attachments (`support-attachments/<tenant id>/`), its branding
    override and assets, its rows in the central tables — sandboxes, warm pools and sandbox quota,
    custom runtimes, git installations and repository links, MCP servers with their calls and
-   sessions, uploaded images and uploads, status page lookups, the settings of its own regions, its
+   sessions, uploaded images and uploads, status page lookups, the settings of its own regions, the
+   platform's queue consumer choices for it ([Billing](billing.md#queue-consumers)), its
    security policy and notifications — and the tenant with its memberships, quotas and the API
    tokens created in it.
 
@@ -364,13 +371,20 @@ there ([Fixed resources](billing.md#what-a-fixed-project-may-use)).
 
 ## Members, roles and invitations
 
-Inside a tenant, Settings → Users lists the members and the open invitations.
+Inside a tenant, Administration → Users lists the members and the open invitations.
 
 - **Add** (`members.invite`): enter an e-mail address and a role. An existing account becomes a
-  member at once. For any other address RunR e-mails an invitation; its link
-  (`<console>/invitations/<token>/accept`, built from `FRONTEND_URL`) is valid for 7 days.
-  Accepting it creates the account (name, password of at least 8 characters) or asks for the
-  existing account's password, adds the membership and signs the user in. **Resend** issues a new
+  member at once — the address names it in any letter case, as the
+  [sign-in](security.md#password-sign-in) does. For any other address RunR e-mails an invitation
+  (to the address trimmed and in lower case); its link (`<console>/invitations/<token>/accept`,
+  built from `FRONTEND_URL`) is valid for 7 days. Accepting it creates the account (name, password
+  of at least 8 characters) or asks for the existing account's password, adds the membership and
+  signs the user in. A new account gets a user name of letters, digits, `-` and `_` from the
+  address's local part (`Ömer.O'Brien@…` → `omer-o-brien`) that no account has in any letter case
+  and no waiting signup holds, with `-2`, `-3`, … appended when it is taken. An address that
+  several accounts of an earlier release share in different letter case names none of them: the
+  invitation is refused (`409`, `code: email_ambiguous`) until an administrator gives one of them
+  another address. **Resend** issues a new
   link (the previous one stops working), **Cancel** withdraws the invitation. Invitations are sent
   through the installation's mail settings.
 - **Role**: any role of the tenant except Owner that the inviting member could grant; without one
@@ -382,7 +396,7 @@ Inside a tenant, Settings → Users lists the members and the open invitations.
   owner; a member whose role the remover could not grant (an owner, for an admin) stays.
 - **Reset two-factor authentication** (`members.update`).
 
-Platform administrators manage the members of every tenant (Settings → Tenants → (tenant)).
+Platform administrators manage the members of every tenant (Administration → Tenants → (tenant)).
 Custom roles, groups, project access and SSO group mapping are kept per tenant
 ([Roles and permissions](permissions.md)). The CLI does the same with `runr members add EMAIL
 --role ROLE`, `runr members set-role` and `runr members rm` in the tenant of its token
@@ -403,7 +417,7 @@ The CLI works in the organization of its API token: a token created in a tenant 
 tenant only.
 
 ```sh
-# Console: select the tenant, then Settings → API Tokens → create a token
+# Console: select the tenant, then Administration → API Tokens → create a token
 echo "$TOKEN" | runr login https://runr.example.com --token-stdin --name acme
 runr --context acme projects ls
 ```
@@ -443,7 +457,7 @@ curl -sS "$API/projects" -H "Authorization: Bearer $TOKEN" -H "X-Tenant-ID: $TEN
 ## Opening a tenant as platform administrator
 
 Platform administrators work inside any tenant, also one they are not a member of: they pick it in
-the tenant switcher, or **Open as administrator** in Settings → Tenants. The console then sends the
+the tenant switcher, or **Open as administrator** in Administration → Tenants. The console then sends the
 tenant's `X-Tenant-ID` with every request and shows a bar — "You are viewing &lt;tenant&gt; as
 platform administrator" — with a button that stops and returns to the platform.
 
@@ -462,7 +476,7 @@ administrator in a tenant they are not a member of), and `GET /api/tenant/curren
 
 ## Regions and quotas
 
-Platform administrators assign platform regions to tenants in Settings → Tenants → (tenant) →
+Platform administrators assign platform regions to tenants in Administration → Tenants → (tenant) →
 Regions (`POST /api/tenants/{tenant}/regions` with `region_id`, `cpu_quota_m`, `memory_quota_mb`).
 Of the platform regions, a tenant sees and deploys to its assigned ones only.
 
@@ -492,6 +506,10 @@ Of the platform regions, a tenant sees and deploys to its assigned ones only.
 - **Removing a region** from a tenant tears down the tenant's projects there in the background:
   their workloads are removed, their deployments shut down and their API gateways removed from the
   region; the projects stay, without a region, and the region disappears from the tenant's list.
+  The [environments](environments.md#region-moves-and-detached-regions) that run there — also of
+  projects in other regions — stop first: their workloads, gateway routes and private database
+  connections leave the region, their custom domains wait for a new verification, and one that had
+  the region as its own follows its project's region from then on.
   Assigning the region again before the cleanup has run keeps everything.
 - **Deleting a platform region** removes it from every tenant it was assigned to; their projects
   stay, without a region.
@@ -514,7 +532,7 @@ consent, because the tenant pays the platform for what its projects use there:
    do not see it and cannot create projects in it. The quotas of the assignment are already set.
 2. **Notification.** The tenant's members whose role grants `billing.manage` get an in-app
    notification and an e-mail; the platform's billing webhook gets `region_share.offered`.
-3. **Acceptance.** A tenant administrator opens Settings → Billing → Region offers: the region, its
+3. **Acceptance.** A tenant administrator opens Administration → Billing → Region offers: the region, its
    billing type (`payg` or `fixed`, chosen by the platform), the platform's prices with their
    scheduled changes, and the **markup** — prefilled with the tenant's default markup. They may
    change it and accept (`POST /api/billing/region-offers/{region}/accept`). The region is copied
@@ -524,7 +542,7 @@ consent, because the tenant pays the platform for what its projects use there:
    projects at the platform price × (1 + markup %) and approves its users' fixed resource requests
    itself.
 
-**Markup.** The tenant's default markup (Settings → Billing → Region offers, or
+**Markup.** The tenant's default markup (Administration → Billing → Region offers, or
 `POST /api/billing/markups` with `region_id: null`) prefills new offers; each accepted region has its
 own markup. A change is a new version with an effective date: the old percentage applies until that
 day ([Effective dates](billing.md#effective-dates)).
@@ -537,7 +555,7 @@ can use them. When billing is switched on again they stay active and are billed 
 default markup until it sets one for the region. Removing the assignment works as for any region.
 The tenant's own regions need no offer: the tenant sets their type and prices itself.
 
-Settings → Resource Usage (`GET /api/resource-usage`) shows platform administrators every
+Administration → Resource Usage (`GET /api/resource-usage`) shows platform administrators every
 region's capacity, the quotas allocated on it and what each tenant uses. The platform regions
 available for assignment, with their capacity and the quotas allocated on them, reach platform
 administrators only (`assignable_regions` of `GET /api/settings`). Regions themselves:
@@ -549,10 +567,10 @@ administrators only (`assignable_regions` of `GET /api/settings`). Regions thems
 
 By default a tenant's functions answer under the platform's base domain (`<project>.<region
 name>.<platform domain>`). Members with `settings.manage` give the tenant a domain of its own in
-the **Organization domain** card of Settings (inside the tenant), or with `PATCH /api/settings`
-`{"base_domain": "apps.acme.example"}` in the tenant; its functions then answer at
-`<project>.<region name>.apps.acme.example`. The domain is a host name with at least two labels,
-and the platform's own base domain cannot be a tenant's domain.
+the **Organization domain** card of Administration → Regions & domain (inside the tenant), or
+with `PATCH /api/settings` `{"base_domain": "apps.acme.example"}` in the tenant; its functions
+then answer at `<project>.<region name>.apps.acme.example`. The domain is a host name with at
+least two labels, and the platform's own base domain cannot be a tenant's domain.
 
 RunR adds `<region name>.<domain>` to the Knative domain configuration of every platform region
 assigned to the tenant, for the workloads labelled `runr/tenant: <tenant slug>`. The tenant's own
@@ -569,15 +587,18 @@ changed platform base domain moves a region ([Regions: changing the base domain]
    the tenant's services), on an own region through the region's alias (`runr-domain-alias`).
 2. Once DNS of `<region name>.<new domain>` answers the region's external address, the new domain
    takes over on that region: the Knative domain entry of the new domain is added, the old entry
-   removed, the alias removed. The function URLs change to the new domain. RunR checks DNS every
+   removed, the alias removed. The function URLs change to the new domain. The tenant's custom
+   domains and gateway routes point at the new hosts at once — before the switch, while the alias
+   still answers there — and the tenant's gateways in the region are rebuilt. RunR checks DNS every
    five minutes, on the platform regions and on the tenant's own.
 3. Where DNS cannot be checked from RunR (a proxy in front), complete the move by hand: **Complete
    now** in the Organization domain card, which shows the move and the regions still waiting for
    DNS, or `PATCH /api/settings` `{"complete_domain_migration": true}` in the tenant.
 
-Setting the previous domain back before the move completed rolls it back (the alias goes, nothing
-else changes). Clearing the domain returns the functions to the platform domain at once — it
-answers already — and removes the tenant's entries. A region whose Knative Serving is not ready
+Setting the previous domain back before the move completed rolls it back (the alias goes, and the
+tenant's custom domains and gateway routes point at the functions' current hosts at once).
+Clearing the domain returns the functions to the platform domain at once — it answers already —
+removes the tenant's entries and points the tenant's custom domains and gateway routes there. A region whose Knative Serving is not ready
 yet gets the current domain when Serving comes up. The platform's own entries
 (`<region name>.<platform domain>`) are never touched by a tenant's domain.
 
@@ -589,7 +610,7 @@ and the `regions` still answering on the previous domain too).
 ### Branding
 
 When the platform allows it (Helm `branding.tenantOverrides`, default on), members with
-`branding.manage` set the tenant's own brand in Settings → Organization Branding; the Tenant user
+`branding.manage` set the tenant's own brand in Administration → Organization Branding; the Tenant user
 sign-in page and the tenant's console use it
 ([White-label: precedence](white-label.md#12-precedence)).
 
@@ -614,7 +635,7 @@ Back up:
 
 A tenant's schema is migrated with the Tenancy module's tenant migrations and those other modules
 register — the Ticket module's, when it is on. Every path that creates or migrates a tenant uses
-the same set: Settings → Tenants, self-service signup, `tenancy:create-tenant`, `tenancy:migrate`
+the same set: Administration → Tenants, self-service signup, `tenancy:create-tenant`, `tenancy:migrate`
 and `tenancy:setup`.
 
 ```bash

@@ -23,12 +23,15 @@ class WorkflowsList extends Tool
 
     public function description(): string
     {
-        return 'Lists the durable workflows of a project (a project with the "workflow" trigger): name, triggers (events, cron, queue), retries, whether active, run counts by status, and the sync state of the definitions. Start a run with workflow_run_start or send an event with event_send.';
+        return 'Lists the durable workflows of a project (a project with the "workflow" trigger): name, triggers (events, cron, queue), retries, whether active, run counts by status, and the sync state of the definitions. Every environment of the project has workflows of its own: environment picks one (default production). Start a run with workflow_run_start or send an event with event_send.';
     }
 
     public function inputSchema(): array
     {
-        return Schema::object(['project' => Schema::project()], ['project']);
+        return Schema::object([
+            'project' => Schema::project(),
+            'environment' => Schema::string('Environment name or id (default: production, the project\'s own workload).', ['maxLength' => 64]),
+        ], ['project']);
     }
 
     public function permissions(): array
@@ -50,7 +53,8 @@ class WorkflowsList extends Tool
     {
         $projectId = $context->projectId((string) $arguments['project']);
 
-        $result = $context->api()->get(InternalApi::path('projects', $projectId, 'workflows'));
+        $query = isset($arguments['environment']) && $arguments['environment'] !== '' ? ['environment' => (string) $arguments['environment']] : [];
+        $result = $context->api()->get(InternalApi::path('projects', $projectId, 'workflows'), $query);
         if (! $result->ok()) {
             throw ToolError::fromApi($result, 'Reading the workflows');
         }
@@ -73,6 +77,7 @@ class WorkflowsList extends Tool
             'workflows' => $workflows,
             'app' => array_filter([
                 'workflow_project' => $app['is_workflow_project'] ?? null,
+                'environment' => $app['environment'] ?? null,
                 'endpoint_url' => $app['endpoint_url'] ?? null,
                 'sync_status' => $app['sync_status'] ?? null,
                 'sync_error' => $app['sync_error'] ?? null,

@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Models\Deployment;
 use App\Models\Project;
 use App\Services\Audit\AuditLogger;
+use App\Services\Environments\DeployTarget;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Crypt;
@@ -25,7 +26,10 @@ class ExecController extends Controller
             abort(422, __('api.shell.requires_active'));
         }
 
-        $region = $project->knativeRegion;
+        // An environment's deployment runs its own workload <slug>-<env>, maybe in another region
+        // (docs/environments.md); its pods have no runr/project-id, shell:wake finds them by service
+        $target = DeployTarget::project($project, $deployment);
+        $region = $target->knativeRegion;
 
         if (! $region || ! $region->kubeconfig) {
             abort(422, __('api.shell.no_kubeconfig'));
@@ -51,14 +55,16 @@ class ExecController extends Controller
             ],
             'kubeconfig' => $region->kubeconfig,
             'namespace' => $namespace,
-            'project_slug' => $project->slug,
+            'project_slug' => $target->slug,
             'project_id' => $project->id,
             'version_number' => $deployment->version?->number,
             'serving_namespace' => $region->knative_serving_namespace ?? 'knative-serving',
+            // RunR signs its wake-up and keep-alive calls on the region's internal network
+            'region_id' => $region->id,
             'cols' => $cols,
             'rows' => $rows,
             'keep_alive' => [
-                'service_name' => $project->slug,
+                'service_name' => $target->slug,
                 'namespace' => $namespace,
             ],
         ])));

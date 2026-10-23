@@ -24,6 +24,8 @@ to — see [Sandboxing, GPUs and RuntimeClasses](#sandboxing-gpus-and-runtimecla
 - [Compiled languages](#compiled-languages)
 - [Dependencies](#dependencies)
 - [Sandboxing, GPUs and RuntimeClasses](#sandboxing-gpus-and-runtimeclasses)
+- [Runtime patches](#runtime-patches): patch tags, levels, apply / pin, deadlines, notifications,
+  end-of-life reminders, the Patches page
 - [Permissions](#permissions)
 - [API](#api)
 - [CLI](#cli)
@@ -39,7 +41,7 @@ to — see [Sandboxing, GPUs and RuntimeClasses](#sandboxing-gpus-and-runtimecla
 | Source (`source` in the API) | Where it comes from | Who sees it |
 |---|---|---|
 | **Built-in** (`builtin`) | the catalog the API ships (`api/resources/runtimes/builtin.json`), bundled from `runtimes/<id>/runtime.yaml` of [BRF-Tech/runr-runtimes](https://github.com/BRF-Tech/runr-runtimes), next to the image's Dockerfile and language wrapper — see [Built-in catalog](#built-in-catalog) | everyone; enabled / disabled and region availability are editable, the manifest follows the release |
-| **Platform** (`platform`) | registered by a platform administrator in Settings → Runtimes, with `runr runtimes register` or with `POST /api/runtimes` | everyone, in the regions it is available in |
+| **Platform** (`platform`) | registered by a platform administrator in Build & Run → Runtimes, with `runr runtimes register` or with `POST /api/runtimes` | everyone, in the regions it is available in |
 | **Custom** (`custom`) | registered by a member of an organization when the platform allows custom runtimes | the organization (tenant) that registered it; outside tenant context every user |
 
 Each version of a runtime names where its runtime image comes from — `image`, `dockerfile`,
@@ -89,7 +91,7 @@ Every function container of a code runtime gets:
 | Variable | Value |
 |---|---|
 | `RUNR_MODE` | `http` (http and queue triggers) or `schedule` |
-| `RUNR_TRIGGER` | `http`, `schedule` or `queue` |
+| `RUNR_TRIGGER` | `http`, `schedule` or `queue` — the trigger the workload runs as ([triggers.md](triggers.md#what-a-project-runs)): `http` next to an HTTP trigger, `queue` for a project only the event gateway calls (webhooks, topics, platform events …), `schedule` for a schedule alone |
 | `RUNR_HANDLER` | the handler function name (`handler`) |
 | `RUNR_FILENAME` | the handler file (`main.py`, `main.c`, `main.q`) |
 | `RUNR_CODE_DIR` | `/app/code` |
@@ -519,7 +521,7 @@ its images (`runr-runtimes/<id>`, every version and earlier source) from the reg
 regions it was built in.
 
 Builds start when a runtime is registered, changed or re-enabled (in every active region with a
-registry it is available in), from **Settings → Runtimes → Builds** or
+registry it is available in), from **Build & Run → Runtimes → Builds** or
 `POST /api/runtimes/{id}/builds` (which rebuilds), and when a deploy or function build needs the
 image in a region that has none for the current source:
 
@@ -533,7 +535,7 @@ are listed per region and version (`GET /api/runtimes/{id}/builds`).
 
 A version with `upload` runs the uploaded image (`<registry>/runr-uploads/<owner>/<repository>@sha256:…`)
 like an `image` version: as the image of code-mounted functions and as the `FROM` of function
-builds — nothing is built for it. Settings → Runtimes → **Version from an uploaded image** adds such
+builds — nothing is built for it. Build & Run → Runtimes → **Version from an uploaded image** adds such
 a version to the manifest.
 
 Uploaded files are part of the runtime: up to 50 files with ConfigMap-key names (letters,
@@ -614,7 +616,7 @@ required.
 ## Sandboxing, GPUs and RuntimeClasses
 
 Function pods of every runtime — built-in, platform or custom — run with the sandbox runtime
-(RuntimeClass) the region maps the project's type to (Administration → Platform → Knative Regions → (region) → Isolation: runc, gVisor
+(RuntimeClass) the region maps the project's type to (Administration → Regions & settings → Knative Regions → (region) → Isolation: runc, gVisor
 or a Kata hypervisor), and Kaniko builds with the region's build sandbox. A runtime cannot lower
 that isolation: the manifest's `sandbox` list only declares which sandboxes the runtime works
 under (default all three; every Kata hypervisor counts as `kata`). A deploy into a region whose
@@ -634,6 +636,219 @@ never choose their own isolation. RunR's own WebAssembly runtimes (`wasm-rust`, 
 one of the WebAssembly RuntimeClasses (`wasmtime-spin-v2`, `wasmtime-v1`) is offered only in
 regions whose WebAssembly support is ready with that shim.
 
+## Runtime patches
+
+The images of the built-in runtimes get **immutable patch tags**: `exec-php:8.3.36-r1` is PHP
+8.3.36, RunR's first image of it (`-r2` would rebuild the same upstream release, e.g. for a fix
+of the base image). The floating tag of the version (`exec-php:8.3`) always points to the newest
+patch, and the registry keeps the last five patch tags of every minor version. `executor:sync`
+does not mistake patch tags for versions (only `X.Y`, `X.Y.Z` and their `-gpu` builds are).
+
+One signed feed tells every RunR installation which patches exist and why each came: its level,
+a reason (English and Turkish), the CVEs it fixes, a link, the upstream release, when it was
+published and — for critical and zero-day patches — until when projects may stay on an older one.
+RunR reads it every five minutes and verifies its signature before it trusts a word of it
+([Runtime patch feed](security.md#runtime-patch-feed)). Each project then shows why a patch came,
+and its members decide: apply it now, pin one of the last five patches, or wait — until a
+critical or zero-day patch's deadline, when RunR moves the project on itself.
+
+- [What runs on which patch](#what-runs-on-which-patch)
+- [Levels](#levels)
+- [Patch state of a project](#patch-state-of-a-project)
+- [Apply, pin or wait](#apply-pin-or-wait)
+- [Deadlines](#deadlines)
+- [Patch notifications](#patch-notifications)
+- [End of life](#end-of-life)
+- [The Patches page](#the-patches-page)
+- [Runtime patch API, MCP and CLI](#runtime-patch-api-mcp-and-cli)
+
+### What runs on which patch
+
+Workloads run a patch **by digest**, never by the floating tag, as soon as the feed lists patches
+for their runtime version:
+
+| Workload | Image |
+|---|---|
+| A version that runs on the runtime image (code mounted from a ConfigMap): Knative Service, the CronJob of a schedule trigger | `<image>@sha256:…` of the project's pin, else of the newest patch, resolved when the deployment is applied and recorded on it (`runtime_image`, `runtime_digest`, `runtime_patch_id`) |
+| A version RunR builds into an image (a dependency file, a compiled runtime) | built `FROM` the patch's image by digest (through the region registry's ghcr.io pull-through when it has one); the version records the base it was built from |
+| Sandboxes and warm pools of the [Sandbox API](sandbox-api.md) | the newest patch by digest |
+
+A deployment that becomes active writes its patch onto the project: that is what the project
+"runs". The deployments of the API show it as `runtime` (`image`, `digest`, `patch_id`). Moving a version that was built into an image to another patch builds it again from that
+patch first (a queued deploy, as a rebuild for the region's registry: the live deployment keeps
+running until the new one starts) and deploys it when the build is ready.
+
+Without a known patch — the feed is off, the feed does not list the runtime version, a version
+RunR builds in the region from a Dockerfile or Git repository, an uploaded image, a custom
+runtime, a CaaS project — workloads run the version image as before (the floating tag).
+
+### Levels
+
+| Level | Console | Notifications | Deadline |
+|---|---|---|---|
+| `routine` | a badge on the project | none | none |
+| `security` | a colored badge | in-app: the owner and the last deployer of each project behind, the organization's owners and admins | none |
+| `critical` | a colored badge; a banner while a project of the user runs behind | the same plus the platform administrators, in-app **and by mail** | the feed's `deadline_at`, else 14 days after publication |
+| `zero-day` | a red badge; a banner that stays until no project of the user runs behind | everyone above, **whatever their notification preferences**, in-app, by mail and on the organization's [alert channels](observability.md) (Slack, Teams, Telegram, webhook, e-mail) | the feed's `deadline_at`, else 3 days after publication |
+
+Details of the audiences: [Patch notifications](#patch-notifications).
+
+### Patch state of a project
+
+`runtime_patch` of a project (API, `project_get`, `runr projects get`) is one of:
+
+| State | Meaning |
+|---|---|
+| `up_to_date` | the live deployment runs the newest patch (or nothing is deployed: the next deploy uses it) |
+| `patch_available` | newer patches exist; `level` is the most urgent of them |
+| `pinned` | the project is pinned to a patch (`pin`; `pin.available` false when it is no longer one of the last five) |
+| `overdue` | a critical or zero-day patch the project runs behind is past its deadline (it wins over `pinned`) |
+
+A project runs **behind** a patch when its live deployment runs an older one. A deployment made
+before patches were known has no recorded patch: every patch published after it went live counts
+as newer. A project without an active deployment, or a stopped one, runs behind nothing. The
+state also names the patch the project runs (`current`), the newest one (`latest`), the patches it
+runs behind (`pending`) and the earliest deadline among them (`deadline_at`).
+
+### Apply, pin or wait
+
+- **Apply** redeploys the live version — with the overrides it was deployed with — onto the
+  newest patch of its runtime version and removes a pin. It is refused (409) when nothing is
+  deployed, the project is stopped, it runs the newest patch already, or a patch migration of it
+  is still running; it goes through every deploy check (an end-of-life runtime, the region's
+  status, the supply-chain policy, [admission](billing.md#project-stop-and-resume)).
+- **Pin** fixes a project on one of the **last five** patches of its runtime version and, by
+  default, redeploys the live version onto it (`deploy: false`: the next deploy uses it). When the
+  pinned patch leaves the last five, the next deploy uses the newest patch instead, the pin is
+  removed and the project's owner and last deployer get a notice. **Unpin** lets the next deploy
+  use the newest patch again.
+- **Wait**: nothing happens until the next deploy, which uses the newest patch (or the pin) — or,
+  for a critical or zero-day patch, until its deadline.
+
+Apply and pin need `projects.deploy` on the project; the state is visible with `projects.view`.
+
+### Deadlines
+
+Every five minutes RunR looks at the critical and zero-day patches whose deadline — the feed's, or
+the one a platform administrator set — has passed. While the platform policy allows it
+(**Migrate at deadlines** on the Patches page; default from the Helm value
+`runtimePatches.autoMigrate`), it redeploys every project that still runs behind such a patch onto
+the newest patch of its runtime version, in every organization:
+
+- A **pin gives way** at the deadline: it is removed, the project moves to the newest patch.
+- A migration whose new revision does not become ready — the deployment fails its readiness
+  check, the build onto the patch fails, or it is not live within 60 minutes — is **rolled back**:
+  a new deployment of the same version on the digest the project ran before (a version built into
+  an image is built again from that digest), and the project is **pinned there** (pinned by RunR)
+  so later deploys stay on what worked. Owners, the last deployer and the organization's owners
+  and admins get a critical notification (in-app and by mail; for a zero-day patch whatever their
+  preferences). A project deployed before patches were known goes back to the newest patch older
+  than the failed one, or stays on the revision Knative keeps serving when there is none.
+- RunR tries a patch once per project: after a rollback the project stays overdue until someone
+  unpins and deploys it (or applies the patch), or a newer patch's deadline passes.
+- A migration a user started (apply, pin) that fails is not rolled back: the failed deployment
+  shows why, and Knative keeps serving the last ready revision.
+
+With the policy off, projects past a deadline stay `overdue`: the notifications and the banner
+remain until they are moved. A platform administrator can also move a deadline (**Extend
+deadline**) or migrate every project behind a patch at once (**Force now**). RunR's own migrations
+and rollbacks are in the [audit log](security.md#audited-events) as `runtime_patch.migrate` and
+`runtime_patch.rollback`.
+
+### Patch notifications
+
+| Who | `security` | `critical` | `zero-day` |
+|---|---|---|---|
+| Owner (payer) of each project behind, and whoever deployed it last | in-app | in-app, mail | in-app, mail |
+| The organization's owners and admins (in a multi-tenant installation: the tenant's) | in-app | in-app, mail | in-app, mail |
+| Platform administrators (`users.is_admin`), with the number of projects behind | — | in-app, mail | in-app, mail |
+| The organization's enabled alert channels | — | — | one alert each, resolved when no project runs behind |
+
+- A notice goes out **once** per patch: one in-app notification per user and organization, one
+  mail per user, one alert per channel. **Remind** on the Patches page sends it again.
+- The notification preference of runtime patches (Account → Notifications, type
+  `runtime_patch`) turns the in-app and mail notices off — zero-day patches ignore it.
+- Notifications have the type `runtime_patch` (`data.event`: `patch`, `migrated`,
+  `migration_failed`, `pin_dropped`), `runtime_eol` for [end-of-life reminders](#end-of-life) and
+  `runtime_patch_feed` for a refused feed (platform administrators); `data` carries the patch, its
+  reasons in both languages, the CVEs, the deadline, the projects and the console path.
+- The console keeps a **banner** on screen for every critical or zero-day patch a project the user
+  can see runs behind (`GET /api/runtime-patches/banners`) until none does; platform
+  administrators also see a newer RunR release the feed announces ("RunR 0.5.11 available
+  (zero-day): …"), and a feed that is off or was refused.
+- Routine patches only change the badge.
+
+### End of life
+
+Thirteen, four and one week(s) before a runtime version's end of life (`eol_at`, from
+endoflife.date or the manifest), the owners of its projects and the organization's owners and
+admins hear about it — in-app, and by mail a week ahead (daily at 09:00). Only the nearest
+threshold that has been reached is sent, once per user. After the date the version leaves the
+picker and its projects can no longer be saved or deployed until they move to a newer version.
+
+### The Patches page
+
+**Build & Run → Patches**, for platform administrators:
+
+- the feed: reference, whether a public key is configured, the last check and the last good read,
+  the signature, `status` (`ok`, `invalid_signature`, `invalid_schema`, `unreachable`,
+  `disabled`) and the error; **Check now** reads it at once;
+- **Migrate at deadlines**: the platform policy of [deadlines](#deadlines);
+- every patch of the feed (and those it dropped in the last 30 days) with its level, deadline,
+  the projects behind it per organization and the state of its migrations — **Remind**,
+  **Force now**, **Extend deadline**;
+- the RunR releases the feed announces, the ones newer than the running version marked.
+
+### Runtime patch API, MCP and CLI
+
+| Method & path | Needs | Purpose |
+|---|---|---|
+| `GET /runtime-patches` | a login | the feed's patches (`?runtime=`, `?version=`), newest first: `{data: Patch[], feed: {enabled, status, fetched_at}, keep}` |
+| `GET /runtime-patches/banners` | a login | what the console keeps on screen: `{data: [{kind: runtime_patch \| platform_advisory \| feed_disabled \| feed_invalid, level, …}]}` |
+| `GET /projects/{project}/runtime-patches` | `projects.view` | `{data: {state, patches (the last five), keep, auto_migrate, migrations}}` |
+| `POST /projects/{project}/runtime-patches/apply` | `projects.deploy` | redeploy onto the newest patch → 202 `{data: migration, message}` |
+| `PUT /projects/{project}/runtime-patches/pin` | `projects.deploy` | `{patch_id, deploy?}` → 200 `{data: state}`, 202 with `migration` when it redeploys |
+| `DELETE /projects/{project}/runtime-patches/pin` | `projects.deploy` | unpin → `{data: state}` |
+| `GET /admin/runtime-patches` | platform administrator | the Patches page: `{data: {feed, key_configured, running_version, patches (with organizations), advisories}}` |
+| `POST /admin/runtime-patches/check` | platform administrator | read the feed now → `{data: feed}` (502 when it was refused or is unreachable) |
+| `PUT /admin/runtime-patches/policy` | platform administrator | `{auto_migrate}` |
+| `POST /admin/runtime-patches/{patch}/remind` | platform administrator | notify everyone again → `{data: {told}}` |
+| `POST /admin/runtime-patches/{patch}/force` | platform administrator | migrate every project behind it now → 202 `{data: {started}}` |
+| `PUT /admin/runtime-patches/{patch}/deadline` | platform administrator | `{deadline_at}` (in the future) |
+
+A patch:
+
+```json
+{
+  "id": "php-8.3-8.3.36-r1", "runtime": "php", "version": "8.3", "tag": "8.3.36-r1",
+  "image": "ghcr.io/brf-tech/runr/exec-php", "digest": "sha256:…", "level": "zero-day",
+  "reason": "Remote code execution in …", "reasons": {"en": "Remote code execution in …", "tr": "…"},
+  "cves": ["CVE-2026-…"], "url": "https://…", "upstream": "PHP 8.3.36",
+  "published_at": "2026-10-21T08:00:00+00:00", "deadline_at": "2026-10-24T08:00:00+00:00",
+  "deadline_extended": false, "in_feed": true
+}
+```
+
+`reason` is in the request's language (`Accept-Language`, English or Turkish). A refusal answers
+409 / 422 `{message, code}` with the code `not_applicable`, `no_patch`, `not_pinnable`,
+`not_deployed`, `project_stopped`, `already_running`, `migration_running` or `deploy_refused`.
+
+MCP ([mcp.md](mcp.md)): `runtime_patches_get` (state, the last five patches with why each came,
+migrations), `runtime_patch_apply` (waits for the redeploy), `runtime_patch_pin` (`patch` by id or
+tag, `unpin`, `deploy`); `project_get` has `runtime_patch`, `runtimes_list` the newest patch of
+each version.
+
+CLI ([cli.md](cli.md#runtime-patches)):
+
+```bash
+runr projects get orders                        # Runtime patch: patch available (security): 8.3.35-r1 → 8.3.36-r1
+runr projects patches orders                    # state, the last five patches: level, CVEs, reason, link; migrations
+runr projects patch apply orders --wait         # onto the newest patch
+runr projects patch pin orders 8.3.35-r2        # pin (and redeploy; --no-deploy: the next deploy)
+runr projects patch unpin orders
+runr runtimes patches --runtime php --version 8.3
+```
+
 ## Permissions
 
 | Ability | Grants |
@@ -646,7 +861,7 @@ Both are permissions of the role model ([Roles and permissions](permissions.md))
 so runtimes registered there are platform runtimes; in a multi-tenant installation platform
 runtimes are shared by every tenant and only platform administrators manage them.
 `runtimes.use_custom` belongs to the Owner, Admin and Developer roles (and custom roles that
-include it) and takes effect while the platform setting **Custom Runtimes** (Settings → Platform,
+include it) and takes effect while the platform setting **Custom Runtimes** (Administration → Regions & settings,
 `custom_runtimes_enabled`, off by default) is on; holders of `runtimes.manage` always have it.
 Creating a project on a built-in or platform runtime needs no permission beyond
 `projects.create`.
@@ -740,13 +955,13 @@ a region's shim only: `runr dev` names the shim and points to `runr deploy`.
   collapsible preview shows the starter template. The editor opens with the manifest's starter
   template, checks the entry file against `handler.pattern`, and highlights files with the
   runtime's extensions in the manifest's Monaco `language`.
-- **Settings → Runtimes** (holders of `runtimes.manage` or `runtimes.use_custom`): every runtime
+- **Build & Run → Runtimes** (holders of `runtimes.manage` or `runtimes.use_custom`): every runtime
   with its icon, source, run mode, versions, regions, project count and an enabled toggle;
   **Add runtime** with a manifest editor that validates as you type and lists each problem with
   its path, file uploads for Dockerfile builds, and region availability; **Edit**, **View
   manifest**, **Builds** per region (with rebuild), **Delete**, and **Test deploy**, which
   creates a project from the starter template in a region, deploys it and opens it.
-- **Settings → Platform → Custom Runtimes** (holders of `runtimes.manage`) switches
+- **Administration → Regions & settings → Custom Runtimes** (holders of `runtimes.manage`) switches
   `runtimes.use_custom` on for members.
 
 ## Write your own runtime
@@ -791,7 +1006,7 @@ run:
   command: ["bash", "/app/code/{file}"]
 ```
 
-**3. Validate and register it** (Settings → Runtimes → Add runtime,
+**3. Validate and register it** (Build & Run → Runtimes → Add runtime,
 `runr runtimes validate -f runtime.yaml` and `runr runtimes register -f runtime.yaml`, or):
 
 ```bash
@@ -947,6 +1162,22 @@ until a holder of `runtimes.manage` switches **Custom Runtimes** on.
 These are environment variables of the API (`api/config/executor.php`); the Helm chart has no
 dedicated values for them, so a Helm installation sets them via `extraEnv`.
 
+[Runtime patches](#runtime-patches) (`api/config/runtime_patches.php`; the Helm values
+[`runtimePatches.*`](helm-values.md#runtimepatches) set the first four):
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `RUNR_PATCH_FEED` | `ghcr.io/brf-tech/runr/runtime-patches:feed` | OCI reference of the [patch feed](security.md#runtime-patch-feed) |
+| `RUNR_PATCH_FEED_PUBLIC_KEY` | the key of BRF-Tech/runr-runtimes (`keys/patch-feed.pub`) | cosign public key (PEM) the feed must be signed with; another key for a feed of your own; empty switches the feed off and platform administrators see a warning |
+| `RUNR_PATCH_FEED_VIA_REGION` | — | read the feed through this region's registry (id or name) instead of from its registry: an API without a way out |
+| `RUNR_PATCH_AUTO_MIGRATE` | `true` | migrate the projects behind a critical / zero-day patch at its deadline — the default of the platform policy, which the Patches page overrides |
+| `RUNR_PATCH_FEED_TIMEOUT` | `15` | seconds of one request to the feed's registry |
+
+The feed is checked every five minutes (`php artisan runtime-patches:sync`, `--force` reads it even
+when its digest did not change), deadlines and migrations as well, end-of-life reminders daily at
+09:00 (scheduler). The number of pinnable patches (5), the default deadlines (14 days for critical,
+3 for zero-day patches) and the reminder weeks (13, 4, 1; mail at 1) are in the config file.
+
 RunR's image pre-pull on region nodes covers the wrapper image and the active versions of the
 built-in and platform runtimes that have a plain image, except the WebAssembly runtimes (their
 image is the build toolchain) and the ML runtimes (`category: ml`); those, custom runtime images
@@ -960,7 +1191,7 @@ and region builds are pulled on first use.
   `executor:sync`; `tests/Feature/Runtimes/RuntimeUploadSourceTest.php` covers the `upload` source
   (validation, the image in every region, owner scoping, resolution by digest).
 - **UI**: `cd vue && npx vitest run src/components/project/__tests__ src/components/settings/__tests__ src/utils/__tests__ src/components/__tests__`
-  (runtime picker, Settings → Runtimes, helpers, editor language) and `npx playwright test e2e/runtimes.spec.ts`.
+  (runtime picker, Build & Run → Runtimes, helpers, editor language) and `npx playwright test e2e/runtimes.spec.ts`.
 - **Wrapper and runtime images** (in [BRF-Tech/runr-runtimes](https://github.com/BRF-Tech/runr-runtimes)): `cd wrapper && go vet ./... && go test -count=1 ./...`
   (Linux; the race detector needs `CGO_ENABLED=1`); `for t in test/*_test.sh; do bash "$t"; done`
   checks `ci.sh` without Docker (the build, smoke-test and push flow of every image, the ML

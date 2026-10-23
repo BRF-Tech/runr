@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Casts\Encrypted;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Model;
@@ -21,6 +22,7 @@ use Illuminate\Support\Carbon;
  * @property string $deployed_by
  * @property string|null $initiator_id
  * @property array<string, mixed>|null $deploy_config the deploy's overrides of the project config
+ * @property array<string, mixed>|null $config_snapshot the config a rollback restores (docs/versioning.md#rollback), encrypted
  * @property string|null $replaces_deployment_id the live deployment it takes over from
  * @property string|null $replaces_reason the reason of the waiting deploy whose place it took, when that one ends the deployment it replaces on a failure (QueuedDeploys::REASON_REGION_MIGRATION)
  * @property string|null $previous_build_image the version's build image before the build it waits for
@@ -54,6 +56,7 @@ class QueuedDeploy extends Model
     protected $fillable = [
         'project_id', 'version_id', 'status', 'reason', 'deployed_by', 'initiator_id', 'deploy_config',
         'replaces_deployment_id', 'replaces_reason', 'previous_build_image', 'deployment_id', 'message', 'attempts',
+        'config_snapshot',
     ];
 
     protected $attributes = [
@@ -64,6 +67,7 @@ class QueuedDeploy extends Model
     protected $casts = [
         'deploy_config' => 'array',
         'attempts' => 'integer',
+        'config_snapshot' => Encrypted::class.':array', // env var values (docs/security.md)
     ];
 
     public function project(): BelongsTo

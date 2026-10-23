@@ -56,6 +56,19 @@ class Setting extends Model
         return $default;
     }
 
+    /**
+     * A platform-wide setting: the central value, also inside a tenant (Tenancy module), where
+     * get() would read the tenant's own row first.
+     */
+    public static function platform(string $key, mixed $default = null): mixed
+    {
+        if (static::$fallbackConnection) {
+            return static::on(static::$fallbackConnection)->where('key', $key)->value('value') ?? $default;
+        }
+
+        return static::get($key, $default);
+    }
+
     public static function set(string $key, mixed $value): void
     {
         static::updateOrCreate(['key' => $key], ['value' => $value]);

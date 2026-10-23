@@ -11,6 +11,7 @@ use App\Services\Ai\Engines\EngineCatalog;
 use App\Services\Ai\Gpu\GpuInstallService;
 use App\Services\Ai\Hub\HubToken;
 use App\Services\Helpers\ResourceReservation;
+use App\Services\InternalNetwork\InternalNetwork;
 use App\Services\KubernetesClient;
 use App\Support\DeployGate;
 use Illuminate\Support\Facades\Log;
@@ -366,8 +367,9 @@ class ModelServiceDeployer
     }
 
     /**
-     * Playground call: through the Kubernetes API server to the Knative activator (wakes a service
-     * scaled to zero), with the revision headers the activator routes by.
+     * Playground call: through the Kubernetes API server to the service's cluster-local host on the
+     * region Traefik's private entry point (KubernetesClient::knativePrivateRequest) — the route its
+     * bound projects take, which wakes a service scaled to zero.
      *
      * @return array{status: int, duration_ms: int, content_type: string, body: mixed}
      */
@@ -386,30 +388,26 @@ class ModelServiceDeployer
         $k8s = new KubernetesClient($region->kubeconfig);
         $namespace = $service->namespace();
         $servingNs = $region->knative_serving_namespace ?? 'knative-serving';
-        $revision = self::latestReadyRevision($k8s, $namespace, $service->service_name);
-
-        if (! $revision) {
+        if (! self::latestReadyRevision($k8s, $namespace, $service->service_name)) {
             throw new \RuntimeException(__('ai.models.not_ready'));
         }
 
         $payload = is_string($body) ? $body : json_encode($body ?? new \stdClass, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
         $started = microtime(true);
 
-        $response = $k8s->serviceProxySend(
+        $response = $k8s->knativePrivateRequest(
             $method,
             $servingNs,
-            'activator-service',
-            80,
+            $namespace,
+            $service->service_name,
             ltrim($path, '/'),
             [
-                'Host' => $service->service_name.'.'.$namespace.'.svc.cluster.local',
-                'Knative-Serving-Namespace' => $namespace,
-                'Knative-Serving-Revision' => $revision,
                 'Content-Type' => 'application/json',
                 'Accept' => 'application/json, text/plain, */*',
             ],
             $method === 'GET' ? null : $payload,
             (int) config('ai.models.invoke_timeout', 120),
+            InternalNetwork::systemToken((string) $region->id),
         );
 
         $contentType = (string) ($response->header('Content-Type') ?: 'text/plain');

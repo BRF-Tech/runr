@@ -199,6 +199,8 @@ return [
         'config.min_scale' => 'Minimum replika',
         'config.max_scale' => 'Maksimum replika',
         'config.scale_to_zero' => 'Sıfıra ölçekle',
+        'config.scale_schedule' => 'Zamanlı ısıtıcı',
+        'timezone' => 'Saat dilimi',
         'config.image' => 'İmaj',
         'config.command' => 'Komut',
         'config.args' => 'Argümanlar',

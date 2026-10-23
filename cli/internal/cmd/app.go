@@ -66,6 +66,8 @@ type App struct {
 	cfg    *config.File
 	client *runr.Client
 	stdin  *bufio.Reader
+	// warned: project files whose warnings were printed (a command loads runr.yaml more than once)
+	warned map[string]bool
 }
 
 // NewApp returns an App wired to the process's stdio.
@@ -182,7 +184,26 @@ func (a *App) ProjectFile() (*projectfile.File, error) {
 	if err != nil {
 		return nil, err
 	}
-	return projectfile.Load(p)
+	return a.LoadProjectFile(p)
+}
+
+// LoadProjectFile loads a project file and prints its warnings (what the API ignores, e.g. a
+// trigger config key the type does not have) once per file and command.
+func (a *App) LoadProjectFile(path string) (*projectfile.File, error) {
+	pf, err := projectfile.Load(path)
+	if err != nil {
+		return nil, err
+	}
+	if a.warned == nil {
+		a.warned = map[string]bool{}
+	}
+	if !a.warned[path] {
+		a.warned[path] = true
+		for _, w := range pf.Warnings() {
+			a.Warn("%s: %s", filepath.Base(path), w)
+		}
+	}
+	return pf, nil
 }
 
 // ProjectName returns the project named by --project, RUNR_PROJECT or runr.yaml.
@@ -309,6 +330,8 @@ func ExitCode(err error) int {
 		fe  *runr.FailedError
 		te  *runr.TimeoutError
 		dve *runr.DomainVerifyError
+		gde *runr.GatewayDomainError
+		pbe *runr.PlanBlockedError
 	)
 	switch {
 	case errors.As(err, &ue):
@@ -321,7 +344,7 @@ func ExitCode(err error) int {
 		return ExitTimeout
 	case errors.As(err, &nf), errors.Is(err, projectfile.ErrNotFound):
 		return ExitNotFound
-	case errors.As(err, &ve), errors.As(err, &dve):
+	case errors.As(err, &ve), errors.As(err, &dve), errors.As(err, &gde), errors.As(err, &pbe):
 		return ExitValidation
 	case errors.As(err, &ne):
 		return ExitUnreachable
@@ -443,7 +466,7 @@ func NewRoot(app *App) *cobra.Command {
 	root.AddCommand(
 		newLoginCmd(app), newLogoutCmd(app), newWhoamiCmd(app), newContextCmd(app),
 		newInitCmd(app), newDeployCmd(app), newProjectsCmd(app), newVersionsCmd(app),
-		newRollbackCmd(app), newLogsCmd(app), newEnvCmd(app), newDomainsCmd(app),
+		newRollbackCmd(app), newLogsCmd(app), newEnvCmd(app), newDomainsCmd(app), newNetworkCmd(app),
 		newScaleCmd(app), newOpenCmd(app), newRegionsCmd(app), newStatusCmd(app),
 		newDevCmd(app), newTokensCmd(app), newRuntimesCmd(app), newVersionCmd(app),
 		newImagesCmd(app),

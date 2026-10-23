@@ -9,9 +9,14 @@ use App\Models\Deployment;
 use App\Models\DeploymentSession;
 use App\Models\KnativeRegion;
 use App\Models\Project;
+use App\Models\ProjectEnvironment;
+use App\Models\ProjectRegion;
 use App\Models\UsageRecord;
 use App\Services\Ai\Gpu\GpuRequest;
+use App\Services\Contracts\KnativeConstants;
+use App\Services\GlobalProjects\GlobalProjectRegions;
 use App\Services\Helpers\WorkloadSizing;
+use App\Services\Projects\WarmScaleService;
 use App\Support\ConvertedOrganization;
 use App\Support\PlatformConnection;
 use App\Support\SchemaColumns;
@@ -37,12 +42,30 @@ use Illuminate\Support\Facades\Schema;
  *    today until now, never past the start of a newer deployment of the project in the same
  *    region — as reserved_cpu_m / reserved_memory_mb / min_scale and as millicore·ms /
  *    MiB·ms / GPU-unit·ms; their sessions are covered by the reservation
- *  - every other deployment: its sessions that started on the day and ended (CPU millicore·ms,
- *    memory MiB·ms, duration, cold starts; GPU-unit ms = session pod time × the deployment's GPUs)
+ *  - every other deployment (scale to zero, a CronJob's runs): its sessions that ran on the day,
+ *    each at the size the deployment was applied with for the session's pod time on the day
+ *    (millicore·ms, MiB·ms and GPU-unit·ms = size × time × pods; a session over midnight on each
+ *    day for its part, a running one until now; addSessions, SessionUsage), with their duration,
+ *    sessions and cold starts (on the day they started), under the session's trigger type
+ *  - a queue-triggered deployment's consumer (source "queue_consumer"): its reserved size for the
+ *    time the deployment was active on the day (addQueueConsumer)
+ *  - its preview environments (source "preview", one record per preview): their sessions, booked
+ *    like the project's own at the size the preview ran with (addPreviewSessions)
+ *  - deployments the timed warmer ran (deployments.sizing.warm_log, docs/scaling.md): the
+ *    containers it kept warm in each stretch of their active time, as it applied them
+ *    (WarmScaleService::appliedSegments), as a reservation; the sessions that started while it
+ *    kept none as sessions
  *  - model services (source "model"): the metered pod time of models:meter, with the creator of
  *    the service (created_by: usage of no project is billed to its creator)
  *
- * One record per project, deployment, region, scale mode, trigger type and day: every session and
+ * Environments (docs/environments.md): a project's day covers the deployments of all its
+ * environments; each record carries the environment of its deployment (environment_id, null: the
+ * project's own workload) and its name (environment_name), so bills can show it — also once the
+ * environment is deleted. A deployment is replaced only by a newer one of
+ * the same environment.
+ *
+ * One record per project, deployment (or preview), region, scale mode, trigger type, source and
+ * day: every session and
  * every second of a reservation is counted once, however often the project is redeployed. A day is
  * recalculated from scratch on every run and the records of the project's existing deployments are
  * replaced (a re-run gives the same totals; a deployment that did not run on the day has no record
@@ -175,8 +198,8 @@ class UsageAggregator
     }
 
     /**
-     * Projects with something to meter on the day: sessions that started on it, deployments that
-     * ran on it, or records of it (recalculated, possibly to nothing). Existing projects only — the
+     * Projects with something to meter on the day: sessions that ran on it, deployments that ran
+     * on it, or records of it (recalculated, possibly to nothing). Existing projects only — the
      * records of a deleted project stay as they were.
      *
      * @return list<string>
@@ -185,16 +208,31 @@ class UsageAggregator
     {
         $date = $day->toDateString();
 
-        $ids = DeploymentSession::query()->whereDate('started_at', $date)->whereNotNull('ended_at')->distinct()->pluck('project_id')
+        $ids = $this->sessionsOn($day)->distinct()->pluck('project_id')
             ->merge($this->deploymentsOn($day)->distinct()->pluck('project_id'))
-            ->merge(UsageRecord::query()->whereDate('record_date', $date)->where(fn ($q) => $q->whereNull('source')->orWhere('source', 'project'))->distinct()->pluck('project_id'));
+            ->merge(UsageRecord::query()->whereDate('record_date', $date)->where(fn ($q) => self::projectSources($q))->distinct()->pluck('project_id'));
 
         return $ids->map(fn ($id) => (string) $id)->unique()->values()->all();
     }
 
     /**
+     * Sessions that ran on the day: started before its end, and still running or ended after its
+     * start (ended_at is stored to the second, so one that ended in the day's first second is in).
+     *
+     * @return Builder<DeploymentSession>
+     */
+    private function sessionsOn(Carbon $day, ?string $projectId = null): Builder
+    {
+        return DeploymentSession::query()
+            ->when($projectId !== null, fn ($q) => $q->where('project_id', $projectId))
+            ->where('started_at', '<', $day->copy()->addDay())
+            ->where(fn ($q) => $q->whereNull('ended_at')->orWhere('ended_at', '>=', $day));
+    }
+
+    /**
      * Deployments that may have run on the day: created before its end, and live, or ended after
-     * its start (deployments of earlier releases without ended_at: changed after its start).
+     * its start (deployments of earlier releases without ended_at: changed after its start). Not
+     * the history an organization import brought (imported_at): it ran in another organization.
      *
      * @return Builder<Deployment>
      */
@@ -204,7 +242,8 @@ class UsageAggregator
         $end = $day->copy()->addDay();
         $tracked = SchemaColumns::has(new Deployment, 'ended_at');
 
-        return Deployment::query()
+        // A deployment an organization import brought along ran elsewhere: never metered here
+        return Deployment::ranHere(Deployment::query())
             ->when($projectId !== null, fn ($q) => $q->where('project_id', $projectId))
             ->where('created_at', '<', $end)
             ->where(function ($q) use ($start, $tracked) {
@@ -224,14 +263,10 @@ class UsageAggregator
         $dayEnd = $day->copy()->addDay();
         $until = now()->lt($dayEnd) ? now() : $dayEnd;
 
-        $sessions = DeploymentSession::query()
-            ->where('project_id', $project->id)
-            ->whereDate('started_at', $date)
-            ->whereNotNull('ended_at')
-            ->get();
+        $sessions = $this->sessionsOn($day, (string) $project->id)->get();
 
         $deployments = $this->deploymentsOn($day, (string) $project->id)->get()->keyBy(fn (Deployment $d) => (string) $d->id);
-        $missing = $sessions->pluck('deployment_id')->map(fn ($id) => (string) $id)->unique()
+        $missing = $sessions->pluck('deployment_id')->filter()->map(fn ($id) => (string) $id)->unique()
             ->reject(fn (string $id) => $deployments->has($id))->values();
         if ($missing->isNotEmpty()) {
             foreach (Deployment::query()->whereIn('id', $missing->all())->get() as $deployment) {
@@ -248,17 +283,33 @@ class UsageAggregator
         $ran = [];
         foreach ($deployments as $id => $deployment) {
             [$sizing, $alwaysOn] = $this->sizingOn($deployment, $project, $day, $existing);
-            if ($alwaysOn) {
+            $warmLog = WarmScaleService::logOf($deployment);
+            if ($warmLog !== null) {
+                $this->addWarmed($rows, $project, $deployment, $sizing, $warmLog, $day, $until, $replacedAt[$id] ?? null, $sessions->where('deployment_id', $deployment->id));
+            } elseif ($alwaysOn) {
                 $this->addReservation($rows, $project, $deployment, $sizing, $day, $until, $replacedAt[$id] ?? null);
+                // a global project reserves the same size in every region whose copy follows the
+                // deployment (docs/global-projects.md): one record per region
+                foreach ($this->replicaRegions($project, $deployment) as $replicaRegion) {
+                    $this->addReservation($rows, $project, $deployment, ['region_id' => $replicaRegion] + $sizing, $day, $until, $replacedAt[$id] ?? null);
+                }
             } else {
-                $this->addSessions($rows, $project, $deployment, $sizing, $sessions->where('deployment_id', $deployment->id));
+                $this->addSessions($rows, $project, $deployment, $sizing, $sessions->where('deployment_id', $deployment->id), $day, $until);
+            }
+            if ($sizing['trigger_type'] === 'queue') {
+                $this->addQueueConsumer($rows, $project, $deployment, $sizing, $day, $until, $replacedAt[$id] ?? null);
             }
 
             $region = (string) ($sizing['region_id'] ?? $project->knative_region_id);
             $ran[$region] = ($ran[$region] ?? 0) + $this->activeMs($deployment, $day, $until, $replacedAt[$id] ?? null);
         }
 
-        $written = $this->replaceRecords($project, $date, $rows, $deployments->keys()->all(), $existing);
+        // Preview environments: their own records, one per preview (all of the day calculated again)
+        $previews = $this->addPreviewSessions($rows, $project, $sessions->filter(fn (DeploymentSession $s) => $s->preview_environment_id !== null), $day, $until);
+        $previews = array_merge($previews, $existing->filter(fn (UsageRecord $r) => UsageRecord::sourceOf($r) === UsageRecord::SOURCE_PREVIEW)
+            ->map(fn (UsageRecord $r) => (string) $r->deployment_id)->all());
+
+        $written = $this->replaceRecords($project, $date, $rows, array_values(array_unique([...$deployments->keys()->all(), ...$previews])), $existing);
         $this->trimDeletedFullDays($existing, $deployments->keys()->all(), $ran, (int) $day->diffInMilliseconds($until));
 
         return $written;
@@ -278,7 +329,7 @@ class UsageAggregator
      */
     private function trimDeletedFullDays(Collection $existing, array $calculated, array $ran, int $dayMs): void
     {
-        $fullDays = $existing->filter(fn (UsageRecord $r) => $r->scale_mode === 'custom_scale'
+        $fullDays = $existing->filter(fn (UsageRecord $r) => $r->scale_mode === 'custom_scale' && UsageRecord::sourceOf($r) === UsageRecord::SOURCE_PROJECT
             && (int) $r->total_duration_ms <= 0 && (int) $r->total_cpu_mc_ms <= 0 && (int) $r->total_memory_mib_ms <= 0
             && ! in_array((string) $r->deployment_id, $calculated, true));
         if ($fullDays->isEmpty()) {
@@ -337,7 +388,8 @@ class UsageAggregator
             return [$sizing, WorkloadSizing::isAlwaysOn($sizing)];
         }
 
-        $own = $existing->filter(fn (UsageRecord $r) => (string) $r->deployment_id === (string) $deployment->id);
+        // Its own workload's records (not its queue consumer's)
+        $own = $existing->filter(fn (UsageRecord $r) => (string) $r->deployment_id === (string) $deployment->id && UsageRecord::sourceOf($r) === UsageRecord::SOURCE_PROJECT);
         /** @var UsageRecord|null $record */
         $record = $own->firstWhere('scale_mode', 'custom_scale') ?? $own->first();
         if ($record !== null) {
@@ -370,8 +422,31 @@ class UsageAggregator
         return UsageRecord::query()
             ->where('project_id', $project->id)
             ->whereDate('record_date', $date)
-            ->where(fn ($q) => $q->whereNull('source')->orWhere('source', 'project'))
+            ->where(fn ($q) => self::projectSources($q))
             ->get();
+    }
+
+    /**
+     * The other regions of a global project whose copy follows $deployment (they run its version,
+     * built in their own registry, with its size). Sessions need no such list: the region agent of
+     * each region reports its own (DeploymentSession::region_id).
+     *
+     * @return list<string>
+     */
+    private function replicaRegions(Project $project, Deployment $deployment): array
+    {
+        if (! $project->isGlobal() || ! GlobalProjectRegions::tableReady()) {
+            return [];
+        }
+
+        return ProjectRegion::query()
+            ->where('project_id', $project->getKey())
+            ->where('deployment_id', $deployment->getKey())
+            ->where('knative_region_id', '!=', (string) $project->knative_region_id)
+            ->whereNotNull('served_version_id')
+            ->pluck('knative_region_id')
+            ->map(fn ($id) => (string) $id)
+            ->all();
     }
 
     /**
@@ -395,9 +470,10 @@ class UsageAggregator
             'region_id' => (string) $regionId,
             'scale_mode' => 'custom_scale',
             'entry_point' => self::entryPoint($sizing['trigger_type']),
+            'source' => UsageRecord::SOURCE_PROJECT,
         ];
 
-        $rows[implode('|', $keys)] = ['keys' => $keys, 'values' => [
+        $rows[implode('|', $keys)] = ['keys' => $keys, 'values' => $this->withEnvironment($deployment, [
             'session_count' => 0,
             'cold_start_count' => 0,
             'reserved_cpu_m' => $sizing['cpu_m'],
@@ -409,50 +485,213 @@ class UsageAggregator
             'total_memory_mib_ms' => $pods * $sizing['memory_mb'] * $ms,
             'gpu_count' => $sizing['gpu_count'],
             'total_gpu_unit_ms' => $pods * $sizing['gpu_count'] * $ms,
-        ]];
+        ])];
     }
 
     /**
-     * A deployment that scales with its traffic: its sessions of the day, per region and trigger.
+     * A deployment that scales with its traffic (or a CronJob's runs): its sessions that ran on the
+     * day, per region and trigger. A session is the time one pod held the deployment's size, so it
+     * counts that size — CPU millicores, memory MiB and GPUs, as an always-on deployment reserves
+     * them — for its pod time on the day (SessionUsage): the part of [start, end) within the day,
+     * a running session until $until (now, or the day's end). A session over midnight or a month's
+     * end counts on each day for the time it ran there; it counts as a session (and a cold start)
+     * on the day it started. Figures the session row may carry (cpu_used_ms, memory_used_mb_ms)
+     * are not used: no agent reports them, and every session, of any agent version and also one
+     * closeStale() ended, is metered the same way.
      *
      * @param  array<string, array{keys: array<string, mixed>, values: array<string, mixed>}>  $rows
      * @param  array{region_id: string|null, cpu_m: int, memory_mb: int, trigger_type: string, min_scale: int, max_scale: int, scale_to_zero: bool, gpu_count: int}  $sizing
      * @param  Collection<int, DeploymentSession>  $sessions
      */
-    private function addSessions(array &$rows, Project $project, Deployment $deployment, array $sizing, Collection $sessions): void
+    private function addSessions(array &$rows, Project $project, Deployment $deployment, array $sizing, Collection $sessions, Carbon $day, Carbon $until): void
     {
-        $gpuCount = $sizing['gpu_count'];
-
         foreach ($sessions as $session) {
-            $regionId = $session->region_id ?: ($sizing['region_id'] ?? $project->knative_region_id);
-            if (! $regionId) {
-                continue;
-            }
+            $this->addSession($rows, $session, [
+                'project_id' => (string) $project->id,
+                'deployment_id' => (string) $deployment->id,
+                'region_id' => (string) ($session->region_id ?: ($sizing['region_id'] ?? $project->knative_region_id)),
+                'scale_mode' => 'scale_to_zero',
+                'entry_point' => self::entryPoint($session->entry_point),
+                'source' => UsageRecord::SOURCE_PROJECT,
+            ], $sizing, $day, $until, $deployment);
+        }
+    }
 
+    /**
+     * A deployment the timed warmer ran (deployments.sizing.warm_log): the containers it kept warm
+     * in each stretch of the deployment's active time on the day, as the warmer applied them to the
+     * PodAutoscaler — one reservation record (custom_scale, min_scale = the most it kept) — and the
+     * sessions that started while it kept none, as a scale-to-zero deployment's.
+     *
+     * @param  array<string, array{keys: array<string, mixed>, values: array<string, mixed>}>  $rows
+     * @param  array{region_id: string|null, cpu_m: int, memory_mb: int, trigger_type: string, min_scale: int, max_scale: int, scale_to_zero: bool, gpu_count: int}  $sizing
+     * @param  list<array{0: int, 1: int}>  $warmLog
+     * @param  Collection<int, DeploymentSession>  $sessions
+     */
+    private function addWarmed(array &$rows, Project $project, Deployment $deployment, array $sizing, array $warmLog, Carbon $day, Carbon $until, ?Carbon $replacedAt, Collection $sessions): void
+    {
+        $window = $this->activeWindow($deployment, $day, $until, $replacedAt);
+
+        $podMs = 0;
+        $most = 0;
+        foreach ($window ? WarmScaleService::appliedSegments($warmLog, $deployment, $window[0], $window[1]) : [] as [$start, $end, $count]) {
+            $podMs += ($end - $start) * 1000 * $count;
+            $most = max($most, $count);
+        }
+
+        $regionId = $sizing['region_id'] ?? $project->knative_region_id;
+        if ($regionId && $podMs > 0) {
             $keys = [
                 'project_id' => (string) $project->id,
                 'deployment_id' => (string) $deployment->id,
                 'region_id' => (string) $regionId,
-                'scale_mode' => 'scale_to_zero',
-                'entry_point' => self::entryPoint($session->entry_point),
+                'scale_mode' => 'custom_scale',
+                'entry_point' => self::entryPoint($sizing['trigger_type']),
+                'source' => UsageRecord::SOURCE_PROJECT,
             ];
-            $key = implode('|', $keys);
-            $values = $rows[$key]['values'] ?? [
-                'session_count' => 0, 'total_duration_ms' => 0, 'total_cpu_mc_ms' => 0, 'total_memory_mib_ms' => 0,
-                'cold_start_count' => 0, 'reserved_cpu_m' => 0, 'reserved_memory_mb' => 0, 'min_scale' => 0,
-                'gpu_count' => $gpuCount, 'total_gpu_unit_ms' => 0,
-            ];
-
-            $values['session_count']++;
-            $values['total_duration_ms'] += (int) $session->duration_ms;
-            $values['total_cpu_mc_ms'] += (int) $session->cpu_used_ms;
-            $values['total_memory_mib_ms'] += (int) $session->memory_used_mb_ms;
-            $values['cold_start_count'] += $session->cold_start ? 1 : 0;
-            // GPU projects: every session's pods hold the deployment's GPUs for the session
-            $values['total_gpu_unit_ms'] += (int) $session->duration_ms * max(1, (int) ($session->pod_count ?? 1)) * $gpuCount;
-
-            $rows[$key] = ['keys' => $keys, 'values' => $values];
+            $rows[implode('|', $keys)] = ['keys' => $keys, 'values' => $this->withEnvironment($deployment, [
+                'session_count' => 0,
+                'cold_start_count' => 0,
+                'reserved_cpu_m' => $sizing['cpu_m'],
+                'reserved_memory_mb' => $sizing['memory_mb'],
+                'min_scale' => $most,
+                // The warm containers of the active time, in the units of the session records
+                'total_duration_ms' => $podMs,
+                'total_cpu_mc_ms' => $podMs * $sizing['cpu_m'],
+                'total_memory_mib_ms' => $podMs * $sizing['memory_mb'],
+                'gpu_count' => $sizing['gpu_count'],
+                'total_gpu_unit_ms' => $podMs * $sizing['gpu_count'],
+            ])];
         }
+
+        // Sessions are covered while containers were kept warm
+        $cold = $sessions->filter(
+            fn (DeploymentSession $session) => WarmScaleService::appliedAt($warmLog, $deployment, $session->started_at) < 1
+        );
+        $this->addSessions($rows, $project, $deployment, $sizing, $cold, $day, $until);
+    }
+
+    /**
+     * A project's preview environments (PreviewManifests: scale to zero, at most 3 pods): their
+     * sessions that ran on the day, booked like the project's own (addSessions) at the size the
+     * preview ran with — the project's, kept with the session (metadata.size; without it, the
+     * project's current size) — as records of their own (source preview, one per preview:
+     * deployment_id carries the preview's id), billed on the project's bill as their own line.
+     *
+     * @param  array<string, array{keys: array<string, mixed>, values: array<string, mixed>}>  $rows
+     * @param  Collection<int, DeploymentSession>  $sessions
+     * @return list<string> the previews calculated
+     */
+    private function addPreviewSessions(array &$rows, Project $project, Collection $sessions, Carbon $day, Carbon $until): array
+    {
+        $fallback = null;
+        $previews = [];
+
+        foreach ($sessions as $session) {
+            $size = $session->metadata['size'] ?? null;
+            $sizing = is_array($size) && isset($size['cpu_m'], $size['memory_mb'])
+                ? ['cpu_m' => (int) $size['cpu_m'], 'memory_mb' => (int) $size['memory_mb'], 'gpu_count' => (int) ($size['gpu_count'] ?? 0)]
+                : ($fallback ??= WorkloadSizing::of($project, ['scale_to_zero' => true, 'min_scale' => 0]));
+
+            $preview = (string) $session->preview_environment_id;
+            $previews[] = $preview;
+            $this->addSession($rows, $session, [
+                'project_id' => (string) $project->id,
+                'deployment_id' => $preview,
+                'region_id' => (string) ($session->region_id ?: $project->knative_region_id),
+                'scale_mode' => 'scale_to_zero',
+                'entry_point' => 'http',
+                'source' => UsageRecord::SOURCE_PREVIEW,
+            ], $sizing, $day, $until);
+        }
+
+        return array_values(array_unique($previews));
+    }
+
+    /**
+     * Book one session's part of the day into the record of $keys: its time in the day (a running
+     * one until $until) × its pods at $sizing; a session and a cold start on the day it started.
+     *
+     * @param  array<string, array{keys: array<string, mixed>, values: array<string, mixed>}>  $rows
+     * @param  array<string, string>  $keys
+     * @param  array{cpu_m: int, memory_mb: int, gpu_count: int}  $sizing
+     * @param  Deployment|null  $deployment  the deployment the session ran (its environment goes on the record); null: a preview
+     */
+    private function addSession(array &$rows, DeploymentSession $session, array $keys, array $sizing, Carbon $day, Carbon $until, ?Deployment $deployment = null): void
+    {
+        if ($keys['region_id'] === '') {
+            return;
+        }
+
+        $dayEnd = $day->copy()->addDay();
+        $ms = SessionUsage::msWithin($session, $day, $dayEnd, runningUntil: $until);
+        $startedOnDay = $session->started_at->gte($day) && $session->started_at->lt($dayEnd);
+        if ($ms <= 0 && ! $startedOnDay) {
+            return;
+        }
+
+        $key = implode('|', $keys);
+        $empty = [
+            'session_count' => 0, 'total_duration_ms' => 0, 'total_cpu_mc_ms' => 0, 'total_memory_mib_ms' => 0,
+            'cold_start_count' => 0, 'reserved_cpu_m' => 0, 'reserved_memory_mb' => 0, 'min_scale' => 0,
+            'gpu_count' => $sizing['gpu_count'], 'total_gpu_unit_ms' => 0,
+        ];
+        $values = $rows[$key]['values'] ?? ($deployment !== null ? $this->withEnvironment($deployment, $empty) : $empty);
+
+        $usage = SessionUsage::at($ms * SessionUsage::pods($session), $sizing);
+
+        $values['session_count'] += $startedOnDay ? 1 : 0;
+        $values['total_duration_ms'] += $ms;
+        $values['total_cpu_mc_ms'] += $usage['cpu_mc_ms'];
+        $values['total_memory_mib_ms'] += $usage['memory_mib_ms'];
+        $values['cold_start_count'] += $startedOnDay && $session->cold_start ? 1 : 0;
+        $values['total_gpu_unit_ms'] += $usage['gpu_unit_ms'];
+
+        $rows[$key] = ['keys' => $keys, 'values' => $values];
+    }
+
+    /**
+     * The consumer of a queue-triggered deployment (QueueConsumerManifests: one pod of
+     * KnativeConstants::QUEUE_CONSUMER_CPU_M / QUEUE_CONSUMER_MEMORY_MB that runs as long as the
+     * deployment, scale to zero or not): its reserved size for the time the deployment was active
+     * on the day, as a record of its own (source queue_consumer). Metered always; the Billing
+     * module bills it only where the region charges queue consumers (docs/billing.md#queue-consumers).
+     *
+     * @param  array<string, array{keys: array<string, mixed>, values: array<string, mixed>}>  $rows
+     * @param  array{region_id: string|null, cpu_m: int, memory_mb: int, trigger_type: string, min_scale: int, max_scale: int, scale_to_zero: bool, gpu_count: int}  $sizing
+     */
+    private function addQueueConsumer(array &$rows, Project $project, Deployment $deployment, array $sizing, Carbon $day, Carbon $until, ?Carbon $replacedAt): void
+    {
+        $regionId = $sizing['region_id'] ?? $project->knative_region_id;
+        $ms = $this->activeMs($deployment, $day, $until, $replacedAt);
+        if (! $regionId || $ms <= 0) {
+            return;
+        }
+
+        $keys = [
+            'project_id' => (string) $project->id,
+            'deployment_id' => (string) $deployment->id,
+            'region_id' => (string) $regionId,
+            'scale_mode' => 'custom_scale',
+            'entry_point' => 'queue',
+            'source' => UsageRecord::SOURCE_QUEUE_CONSUMER,
+        ];
+        $cpuM = KnativeConstants::QUEUE_CONSUMER_CPU_M;
+        $memoryMb = KnativeConstants::QUEUE_CONSUMER_MEMORY_MB;
+
+        // the consumer of an environment's deployment is that environment's
+        $rows[implode('|', $keys)] = ['keys' => $keys, 'values' => $this->withEnvironment($deployment, [
+            'session_count' => 0,
+            'cold_start_count' => 0,
+            'reserved_cpu_m' => $cpuM,
+            'reserved_memory_mb' => $memoryMb,
+            'min_scale' => 1,
+            'total_duration_ms' => $ms,
+            'total_cpu_mc_ms' => $cpuM * $ms,
+            'total_memory_mib_ms' => $memoryMb * $ms,
+            'gpu_count' => 0,
+            'total_gpu_unit_ms' => 0,
+        ])];
     }
 
     /**
@@ -463,9 +702,21 @@ class UsageAggregator
      */
     private function activeMs(Deployment $deployment, Carbon $day, Carbon $until, ?Carbon $replacedAt = null): int
     {
+        $window = $this->activeWindow($deployment, $day, $until, $replacedAt);
+
+        return $window ? (int) $window[0]->diffInMilliseconds($window[1]) : 0;
+    }
+
+    /**
+     * The stretch of [$day, $until) a deployment was active (see activeMs()), null when none.
+     *
+     * @return array{0: Carbon, 1: Carbon}|null
+     */
+    private function activeWindow(Deployment $deployment, Carbon $day, Carbon $until, ?Carbon $replacedAt = null): ?array
+    {
         $start = self::startOf($deployment);
         if ($start === null) {
-            return 0;
+            return null;
         }
 
         $end = $deployment->isLive() ? null : ($deployment->ended_at ?? $deployment->updated_at);
@@ -476,7 +727,7 @@ class UsageAggregator
         $from = $start->gt($day) ? $start : $day;
         $to = ($end !== null && $end->lt($until)) ? $end : $until;
 
-        return $to->gt($from) ? (int) $from->diffInMilliseconds($to) : 0;
+        return $to->gt($from) ? [$from, $to] : null;
     }
 
     /** When a deployment started running: ready_at, or the creation of one marked active without it. */
@@ -509,7 +760,7 @@ class UsageAggregator
 
             return $region !== null ? (string) $region : null;
         };
-        $started = Deployment::query()
+        $started = Deployment::ranHere(Deployment::query())
             ->where('project_id', $project->id)
             ->where('created_at', '>=', $oldest)
             ->where('created_at', '<', $dayEnd)
@@ -522,7 +773,9 @@ class UsageAggregator
             foreach ($started as $newer) {
                 $later = $newer->created_at?->gt($deployment->created_at)
                     || ($newer->created_at?->eq($deployment->created_at) && (string) $newer->id > (string) $deployment->id);
-                if ((string) $newer->id === (string) $id || ! $later || $regionOf($newer) !== $region) {
+                // Another environment's deployment never replaces this one
+                if ((string) $newer->id === (string) $id || ! $later || $regionOf($newer) !== $region
+                    || (string) $newer->getAttribute('environment_id') !== (string) $deployment->getAttribute('environment_id')) {
                     continue;
                 }
                 $start = self::startOf($newer);
@@ -551,7 +804,7 @@ class UsageAggregator
             ->pluck('id')->map(fn ($id) => (string) $id)->flip();
         $calculated = array_flip($deploymentIds);
 
-        $byKey = $existing->groupBy(fn (UsageRecord $r) => implode('|', [$r->project_id, $r->deployment_id, $r->region_id, $r->scale_mode, $r->entry_point]));
+        $byKey = $existing->groupBy(fn (UsageRecord $r) => implode('|', [$r->project_id, $r->deployment_id, $r->region_id, $r->scale_mode, $r->entry_point, UsageRecord::sourceOf($r)]));
 
         foreach ($rows as $key => $row) {
             /** @var Collection<int, UsageRecord> $matches */
@@ -660,6 +913,64 @@ class UsageAggregator
         $key = tenancy()->tenant?->getTenantKey();
 
         return $key === null ? null : (string) $key;
+    }
+
+    /**
+     * Records of projects — their own workload, previews and queue consumers — not of model
+     * services (rows of earlier releases may have no source).
+     *
+     * @param  Builder<UsageRecord>  $query
+     */
+    public static function projectSources(Builder $query): void
+    {
+        $query->whereNull('source')->orWhere('source', '!=', UsageRecord::SOURCE_MODEL);
+    }
+
+    /**
+     * A record's values with the environment of its deployment (skipped on a schema without the
+     * column: TenantMigrations/0080 pending).
+     *
+     * @param  array<string, mixed>  $values
+     * @return array<string, mixed>
+     */
+    private function withEnvironment(Deployment $deployment, array $values): array
+    {
+        if (! SchemaColumns::has(new UsageRecord, 'environment_id')) {
+            return $values;
+        }
+
+        $environmentId = $deployment->getAttribute('environment_id');
+        $values['environment_id'] = $environmentId;
+
+        // Its name too, so a bill names the environment after it was deleted (UsageEnvironmentSchema);
+        // a name that cannot be read is not written over the one the record has
+        if (SchemaColumns::has(new UsageRecord, 'environment_name')) {
+            $name = $environmentId !== null && $environmentId !== '' ? $this->environmentName((string) $environmentId) : null;
+            if ($name !== null || $environmentId === null || $environmentId === '') {
+                $values['environment_name'] = $name;
+            }
+        }
+
+        return $values;
+    }
+
+    /** @var array<string, string|null> context|environment id => its name */
+    private array $environmentNames = [];
+
+    private function environmentName(string $environmentId): ?string
+    {
+        $key = (self::tenantKey() ?? 'central').'|'.$environmentId;
+        if (! array_key_exists($key, $this->environmentNames)) {
+            try {
+                $this->environmentNames[$key] = ProjectEnvironment::tablesReady()
+                    ? ProjectEnvironment::query()->whereKey($environmentId)->value('name')
+                    : null;
+            } catch (QueryException) {
+                $this->environmentNames[$key] = null;
+            }
+        }
+
+        return $this->environmentNames[$key];
     }
 
     /** usage_records.entry_point is http | schedule | queue: a `workflow` project runs a Knative Service like http. */

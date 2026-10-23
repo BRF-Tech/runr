@@ -3,7 +3,9 @@
 namespace App\Workflows\Models;
 
 use App\Models\Project;
+use App\Models\ProjectEnvironment;
 use App\Workflows\Engine\Duration;
+use App\Workflows\Support\WorkflowEnvironments;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Model;
@@ -12,7 +14,8 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Carbon;
 
 /**
- * A workflow definition of a project.
+ * A workflow definition of a project in one of its environments (environment_id null: production;
+ * docs/workflows.md#environments). Names are unique per project and environment.
  *
  * config (normalized by App\Workflows\Engine\Definition):
  *  - retries: int                       attempts per step = retries + 1
@@ -23,6 +26,7 @@ use Illuminate\Support\Carbon;
  *
  * @property string $id
  * @property string $project_id
+ * @property string|null $environment_id null: production
  * @property string $name
  * @property string|null $description
  * @property array|null $triggers
@@ -33,6 +37,7 @@ use Illuminate\Support\Carbon;
  * @property Carbon|null $synced_at
  * @property Carbon|null $archived_at
  * @property-read Project|null $project
+ * @property-read ProjectEnvironment|null $environment
  */
 class Workflow extends Model
 {
@@ -42,6 +47,7 @@ class Workflow extends Model
 
     protected $fillable = [
         'project_id',
+        'environment_id',
         'name',
         'description',
         'triggers',
@@ -64,6 +70,32 @@ class Workflow extends Model
     public function project(): BelongsTo
     {
         return $this->belongsTo(Project::class);
+    }
+
+    /**
+     * The environment the workflow belongs to (null: production).
+     *
+     * @return BelongsTo<ProjectEnvironment, $this>
+     */
+    public function environment(): BelongsTo
+    {
+        return $this->belongsTo(ProjectEnvironment::class, 'environment_id');
+    }
+
+    /** The environment's name (null: production): the name its events are matched by. */
+    public function environmentName(): ?string
+    {
+        if ($this->environment_id === null || $this->environment_id === '') {
+            return null;
+        }
+
+        return $this->environment?->name;
+    }
+
+    /** @param  Builder<self>  $query */
+    public function scopeInEnvironment(Builder $query, ?string $environmentId): Builder
+    {
+        return WorkflowEnvironments::constrain($query, $environmentId);
     }
 
     public function runs(): HasMany

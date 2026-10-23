@@ -21,9 +21,10 @@ use App\Support\Images\ImageReference;
  *    platform's, observability.tracing.defaultMode while observability.tracing.installWithServing
  *    is on — what a region installed now gets with its Serving.
  *
- * A missing backend is installed, one whose chart version, image, CPU / memory requests or init
- * containers differ from this release's (the pinned charts, their images from the reqs mirror,
- * ManagedTracing's requests, Tempo's fix-permissions) is updated: TracingInstallService::install(),
+ * A missing backend is installed, one whose chart version, image, CPU / memory requests, init
+ * containers or collector configuration revision differ from this release's (the pinned charts,
+ * their images from the reqs mirror, ManagedTracing's requests, Tempo's fix-permissions, the
+ * collector pods' runr.dev/collector-config) is updated: TracingInstallService::install(),
  * as `php artisan cluster:install-tracing` does — Helm upgrade --install of the releases with their
  * values rendered anew, the span-metrics PodMonitor and Knative's tracing configuration. The
  * collector and Tempo pods roll once; Tempo keeps its traces on its volume. A Tempo pod that is
@@ -135,7 +136,7 @@ final class TracingBackendStep implements ReconcileStep
      * The workloads of the backend in the region's mode, with this release's chart version, image,
      * requests of the chart's container and init containers (name => what it does).
      *
-     * @return array<string, array{kind: string, release: string, chart: string, version: string, image: string, requests: array<string, string>, init: array<string, string>}>
+     * @return array<string, array{kind: string, release: string, chart: string, version: string, image: string, requests: array<string, string>, init: array<string, string>, annotations: array<string, string>}>
      */
     private static function components(RegionTracingConfig $config): array
     {
@@ -148,6 +149,7 @@ final class TracingBackendStep implements ReconcileStep
                 'image' => ManagedTracing::collectorImage(),
                 'requests' => ManagedTracing::COLLECTOR_REQUESTS,
                 'init' => [],
+                'annotations' => [ManagedTracing::CONFIG_ANNOTATION => ManagedTracing::COLLECTOR_CONFIG_REVISION],
             ],
         ];
 
@@ -160,6 +162,7 @@ final class TracingBackendStep implements ReconcileStep
                 'image' => ManagedTracing::tempoImage(),
                 'requests' => ManagedTracing::TEMPO_REQUESTS,
                 'init' => [ManagedTracing::TEMPO_FIX_PERMISSIONS => 'chown of '.ManagedTracing::TEMPO_DATA_PATH],
+                'annotations' => [],
             ];
         }
 
@@ -170,7 +173,7 @@ final class TracingBackendStep implements ReconcileStep
      * What a running workload has of another chart version, image or requests (its helm.sh/chart
      * label, the image and requests of the chart's container), and the init containers it lacks.
      *
-     * @param  array{kind: string, release: string, chart: string, version: string, image: string, requests: array<string, string>, init: array<string, string>}  $component
+     * @param  array{kind: string, release: string, chart: string, version: string, image: string, requests: array<string, string>, init: array<string, string>, annotations: array<string, string>}  $component
      * @return list<string>
      */
     private static function diff(array $live, array $component): array
@@ -206,6 +209,15 @@ final class TracingBackendStep implements ReconcileStep
         foreach ($component['init'] as $name => $what) {
             if (! in_array($name, $init, true)) {
                 $diff[] = "init container {$name} ({$what}) added";
+            }
+        }
+
+        // the collector's configuration of an earlier release (span metrics without the revision)
+        $annotations = (array) ($live['spec']['template']['metadata']['annotations'] ?? []);
+        foreach ($component['annotations'] as $key => $wanted) {
+            $current = $annotations[$key] ?? null;
+            if ($current !== $wanted) {
+                $diff[] = 'configuration '.($current !== null ? "revision {$current}" : 'of an earlier release')." → revision {$wanted} (span metrics per Knative revision)";
             }
         }
 

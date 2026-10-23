@@ -28,6 +28,21 @@ var regionDetailSources = []string{
 	"app/Http/Controllers/Api/KnativeRedisController.php",
 	"app/Http/Controllers/Api/KnativeFunctionTlsController.php",
 	"app/Http/Controllers/Api/WasmController.php",
+	"app/Http/Controllers/Api/CertManagerController.php",
+}
+
+// regionCertManagerFields: GET /knative-regions/{region}/cert-manager (CertManagerController::show).
+var regionCertManagerFields = []string{"status", "message", "managed", "version", "namespace", "chart_version",
+	"install_enabled", "issuer.name", "issuer.kind", "issuer.source", "issuer_mode", "plan.kind", "plan.reason",
+	"acme.email", "acme.email_source", "acme.server", "acme.public", "acme.public_reason",
+	"domains.available", "domains.status", "domains.issuer", "domains.kind", "domains.reason", "domains.ca",
+	"can_manage", "cluster.present", "cluster.runr", "cluster.namespace", "cluster.version", "cluster.available",
+	"cluster.drift", "cluster.issuer_exists", "cluster.issuer_ready", "cluster.issuer_message", "cluster.ca_available",
+	"cluster.domain_certificates", "cluster_error"}
+
+var regionCertManagerSources = []string{
+	"app/Http/Controllers/Api/CertManagerController.php",
+	"app/Services/CertManager/CertManagerService.php",
 }
 
 // regionOperationFields: {message, region} of a queued region operation.
@@ -85,7 +100,8 @@ func init() {
 		Endpoint{Method: "PUT", Path: "/knative-regions/{knativeRegion}/monitoring", Status: 200, Permission: "regions.manage",
 			Request: []string{"prometheus_url", "loki_url", "loki_org_id"}, Response: regionOperationFields, Sources: regionDetailSources},
 		Endpoint{Method: "PUT", Path: "/knative-regions/{knativeRegion}/settings", Status: 200, Permission: "regions.manage",
-			Request:  []string{"request_timeout", "agent_ws_url", "cert_manager_cluster_issuer", "ingress_trusted_ips"},
+			Request: []string{"request_timeout", "agent_ws_url", "cert_manager_cluster_issuer", "cert_manager_issuer_mode",
+				"cert_manager_acme_email", "ingress_trusted_ips", "internal_auth"},
 			Response: concat([]string{"message", "settings"}, prefix("region.", regionDetailFields)), Sources: regionDetailSources},
 
 		// Checks of a cluster before it becomes a region
@@ -183,6 +199,8 @@ func init() {
 			Response: []string{"migration_status", "migration_started_at", "migration_old_ip", "current_ip", "is_migrating",
 				"projects[].organization", "projects[].project_id", "projects[].project", "projects[].outcome",
 				"projects[].version", "projects[].deployment_status", "projects[].message"},
+			// the environments of the region's projects are rows of their own (docs/environments.md)
+			Capabilities: []string{"projects[].environment"},
 			// migrationReport() builds the rows of projects
 			Sources: []string{"app/Http/Controllers/Api/RegionMigrateController.php", "app/Services/RegionMigrateService.php"}},
 		Endpoint{Method: "POST", Path: "/knative-regions/{knativeRegion}/complete-migration", Status: 200, Permission: "regions.manage",
@@ -223,5 +241,16 @@ func init() {
 			Sources: regionDetailSources},
 		Endpoint{Method: "DELETE", Path: "/knative-regions/{knativeRegion}/wasm", Status: 202, Permission: "sandbox.manage",
 			Response: regionOperationFields, Sources: regionDetailSources},
+
+		// cert-manager and the ClusterIssuer of custom domains (docs/regions.md#cert-manager); an API
+		// without it answers 404 (runr regions cert-manager says so)
+		Endpoint{Method: "GET", Path: "/knative-regions/{knativeRegion}/cert-manager", Query: []string{"cluster"}, Status: 200,
+			Permission: "regions.view", Response: regionCertManagerFields, Sources: regionCertManagerSources, Optional: true},
+		Endpoint{Method: "POST", Path: "/knative-regions/{knativeRegion}/cert-manager", Status: 202, Permission: "regions.manage",
+			Response: regionOperationFields, Sources: regionDetailSources, Optional: true},
+		Endpoint{Method: "DELETE", Path: "/knative-regions/{knativeRegion}/cert-manager", Status: 202, Permission: "regions.manage",
+			Response: regionOperationFields, Sources: regionDetailSources, Optional: true},
+		Endpoint{Method: "GET", Path: "/knative-regions/{knativeRegion}/cert-manager/ca-certificate", Status: 200,
+			Permission: "regions.view", Optional: true},
 	)
 }

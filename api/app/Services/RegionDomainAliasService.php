@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\KnativeRegion;
 use App\Services\Contracts\KnativeConstants;
 use App\Services\Helpers\DedicatedWorkers;
+use App\Services\Helpers\RegionDomains;
 use App\Services\Manifests\ProjectDomainManifests;
 use Illuminate\Support\Facades\Log;
 use RuntimeException;
@@ -15,15 +16,16 @@ use RuntimeException;
  * <service>.<alias domain> is answered by the same service.
  *
  * Knative gives a Knative Service one public domain, so the alias is routed the way project
- * custom domains are (ProjectDomainManifests): the request re-enters the region Traefik with the
- * Knative Service's cluster-local host <service>.<namespace>.svc on its private Knative
- * entrypoint. A custom domain names one service; the alias covers every service of the region,
- * new ones included, so a small proxy in the project namespace (runr-domain-alias) rewrites the
- * host instead of one Middleware per service:
+ * custom domains are (ProjectDomainManifests): the request re-enters the region Traefik on web
+ * with the Knative Service's public host <service>.<public domain> — the domain its URL is on
+ * now, so only a public service answers (a cluster-local one has no route there, PrivateIngress).
+ * A custom domain names one service; the alias covers every service of the region, new ones
+ * included, so a small proxy in the project namespace (runr-domain-alias) rewrites the host
+ * instead of one Middleware per service:
  *
  *   IngressRoute runr-domain-alias      web       HostRegexp(^[^.]+\.<alias>$) → Service runr-domain-alias:8080
  *   IngressRoute runr-domain-alias-tls  websecure (the region's default certificate)
- *   Deployment   runr-domain-alias      Host <service>.<alias> → <service>.<namespace>.svc, K-Original-Host kept,
+ *   Deployment   runr-domain-alias      Host <service>.<alias> → <service>.<public domain>, K-Original-Host kept,
  *                                       → Service traefik:80 of the Knative Serving namespace
  *
  * An organization's own base domain moves the same way on the platform regions it uses
@@ -42,13 +44,19 @@ class RegionDomainAliasService
 
     /**
      * @param  string|null  $tenantSlug  an organization's alias: only its services, labelled runr/tenant
+     * @param  string|null  $publicDomain  the domain the services answer on now (their URLs); the
+     *                                     region's function domain when null
      */
-    public function apply(KnativeRegion $region, string $aliasDomain, string $name = self::NAME, ?string $tenantSlug = null): void
+    public function apply(KnativeRegion $region, string $aliasDomain, string $name = self::NAME, ?string $tenantSlug = null, ?string $publicDomain = null): void
     {
         $k8s = new KubernetesClient($region->kubeconfig);
         $ns = self::namespace($region);
+        $publicDomain ??= RegionDomains::functionDomain($region);
+        if (! $publicDomain) {
+            throw new RuntimeException("region {$region->name} has no function domain to send the alias {$aliasDomain} to");
+        }
 
-        foreach (self::manifests($region, $aliasDomain, $name, $tenantSlug) as $manifest) {
+        foreach (self::manifests($region, $aliasDomain, $name, $tenantSlug, $publicDomain) as $manifest) {
             if (! $k8s->applyResource($manifest, $ns)) {
                 throw new RuntimeException("{$manifest['kind']}/{$manifest['metadata']['name']} was rejected in {$ns}");
             }
@@ -74,6 +82,44 @@ class RegionDomainAliasService
         }
     }
 
+    /**
+     * The region's function domain moved from $from to $to: every alias of the region that sends
+     * its calls to <service>.$from (an organization's alias whose services answer on the
+     * platform's domain) sends them to <service>.$to now — applied again, its pods roll.
+     *
+     * @return list<string> the aliases moved
+     */
+    public function retarget(KnativeRegion $region, string $from, string $to): array
+    {
+        $k8s = new KubernetesClient($region->kubeconfig);
+        $ns = self::namespace($region);
+        $moved = [];
+
+        $deployments = $k8s->listResources('apps/v1', 'Deployment', $ns, ['app.kubernetes.io/managed-by' => 'runr', 'app.kubernetes.io/part-of' => 'runr'])['items'] ?? [];
+        foreach ($deployments as $deployment) {
+            $name = (string) ($deployment['metadata']['name'] ?? '');
+            $aliasDomain = $deployment['metadata']['annotations'][self::ANNOTATION_ALIAS] ?? null;
+            if (! str_starts_with($name, self::NAME) || ! is_string($aliasDomain)) {
+                continue;
+            }
+
+            $env = collect($deployment['spec']['template']['spec']['containers'][0]['env'] ?? [])->pluck('value', 'name');
+            if (($env['SERVICE_SUFFIX'] ?? null) !== ".{$from}") {
+                continue;
+            }
+
+            $tenantSlug = $deployment['metadata']['labels']['runr/tenant'] ?? null;
+            $this->apply($region, $aliasDomain, $name, is_string($tenantSlug) ? $tenantSlug : null, $to);
+            $moved[] = $name;
+        }
+
+        if ($moved !== []) {
+            Log::info("Domain aliases of region {$region->name} follow its domain {$from} → {$to}", ['aliases' => $moved]);
+        }
+
+        return $moved;
+    }
+
     public static function namespace(KnativeRegion $region): string
     {
         return $region->project_namespace ?: $region->name;
@@ -83,9 +129,10 @@ class RegionDomainAliasService
      * ConfigMap, Deployment, Service and the two IngressRoutes of the alias.
      *
      * @param  string|null  $tenantSlug  an organization's alias: only its services, labelled runr/tenant
+     * @param  string  $publicDomain  the domain the services answer on now (their URLs)
      * @return list<array<string, mixed>>
      */
-    public static function manifests(KnativeRegion $region, string $aliasDomain, string $name = self::NAME, ?string $tenantSlug = null): array
+    public static function manifests(KnativeRegion $region, string $aliasDomain, string $name, ?string $tenantSlug, string $publicDomain): array
     {
         $ns = self::namespace($region);
         $servingNs = $region->knative_serving_namespace ?: 'knative-serving';
@@ -131,7 +178,7 @@ class RegionDomainAliasService
                                 'command' => ['node', '/app/proxy.js'],
                                 'env' => array_merge([
                                     ['name' => 'ALIAS_DOMAIN', 'value' => $aliasDomain],
-                                    ['name' => 'SERVICE_SUFFIX', 'value' => ".{$ns}.svc"],
+                                    ['name' => 'SERVICE_SUFFIX', 'value' => ".{$publicDomain}"],
                                     ['name' => 'TARGET_HOST', 'value' => KnativeConstants::TRAEFIK_RELEASE.".{$servingNs}.svc.cluster.local"],
                                     ['name' => 'TARGET_PORT', 'value' => '80'],
                                 ], $tenantSlug !== null ? [['name' => 'SERVICE_NAME_SUFFIX', 'value' => '-'.$tenantSlug]] : []),
@@ -163,7 +210,7 @@ class RegionDomainAliasService
     }
 
     /**
-     * Node.js proxy: <service>.<alias> → <service>.<namespace>.svc on the region Traefik, the
+     * Node.js proxy: <service>.<alias> → <service>.<public domain> on the region Traefik, the
      * request and response streamed (long requests and WebSockets included). With
      * SERVICE_NAME_SUFFIX (an organization's alias) only services named <…><suffix> or
      * <…><suffix>-pr-<n> are answered.

@@ -6,11 +6,17 @@ use App\Models\KnativeRegion;
 use App\Models\Project;
 use App\Models\ProjectDomain;
 use App\Models\Setting;
+use App\Services\CertManager\CertManagerService;
 use App\Services\Contracts\KnativeConstants;
 use App\Services\Dns\DnsResolver;
+use App\Services\Environments\EnvironmentScope;
+use App\Services\GlobalProjects\GlobalDomains;
+use App\Services\GlobalProjects\GlobalProjectRegions;
 use App\Services\Helpers\DomainName;
 use App\Services\Helpers\PemHelper;
+use App\Services\InternalNetwork\InternalNetworkManifests;
 use App\Services\Manifests\ProjectDomainManifests as M;
+use App\Triggers\ProjectTriggers;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\ValidationException;
@@ -24,12 +30,17 @@ use Throwable;
  * Flow: add (pending, random TXT token) → verify (TXT _runr-challenge.<domain> =
  * runr-verify=<token>, and the domain points at the project: CNAME to its default host /
  * the region's external host name, or an address of the region's external IP) → activate
- * (Traefik IngressRoutes + host-rewrite Middleware in the region's project namespace,
- * see ProjectDomainManifests). TLS per domain: none, an uploaded certificate (only ever
+ * (Traefik IngressRoutes + a Middleware rewriting the host to the project's public host in the
+ * region's project namespace, see ProjectDomainManifests). TLS per domain: none, an uploaded certificate (only ever
  * stored in a Secret on the region), or a cert-manager Certificate from the region's
  * ClusterIssuer.
  *
  * Every Kubernetes call goes through the region's stored kubeconfig.
+ *
+ * Environments (docs/environments.md#domains): a domain belongs to the project's own workload or
+ * to one environment (project_domains.environment_id). Given an environment's view
+ * (EnvironmentProject, also as the domain's project relation) the default host, DNS targets,
+ * routing and region are the environment's: <workload>.<function domain> in its region.
  */
 class ProjectDomainService
 {
@@ -68,9 +79,18 @@ class ProjectDomainService
             return __('api.domain.no_knative_service');
         }
 
-        $trigger = $this->triggerType($project);
-        if ($trigger !== 'http') {
-            return __('api.domain.not_http', ['trigger' => $trigger]);
+        // An enabled HTTP trigger: the public Knative Service (docs/triggers.md)
+        if (! app(ProjectTriggers::class)->plan($project)->has('http')) {
+            return __('api.domain.not_http', ['trigger' => $this->triggerType($project)]);
+        }
+        // access mode internal: no public route to hand requests on to (docs/internal-network.md)
+        if ($project->accessMode() === Project::ACCESS_INTERNAL) {
+            return __('api.domain.internal_only');
+        }
+
+        // "Only through the gateway": a domain of its own would get around the route's keys
+        if ($project->gatewayRoute?->gateway_only) {
+            return __('api_product.gateway_only.no_domains');
         }
 
         $region = $project->knativeRegion;
@@ -120,6 +140,11 @@ class ProjectDomainService
      */
     public function dnsTargets(Project $project): array
     {
+        // a global project's domain is a CNAME of its global host name (docs/global-projects.md)
+        if (self::globalWorkload($project)) {
+            return app(GlobalDomains::class)->dnsTargets($project);
+        }
+
         $targets = [];
 
         if ($host = $this->defaultHost($project)) {
@@ -172,17 +197,35 @@ class ProjectDomainService
         return false;
     }
 
-    /** ClusterIssuer for cert-manager mode: region setting, else config. */
+    /**
+     * ClusterIssuer for cert-manager mode: the region setting, else the issuer recorded for the
+     * region (RunR's default issuer, or the operator's — what the tenants' copies carry), else
+     * RUNR_CERT_MANAGER_CLUSTER_ISSUER (CertManagerService::effectiveIssuer()).
+     */
     public function clusterIssuer(?KnativeRegion $region): ?string
     {
-        $issuer = $region?->effective_settings['cert_manager_cluster_issuer'] ?? null;
-        $issuer = trim((string) ($issuer ?: config('knative.domains.cert_manager_cluster_issuer')));
+        return app(CertManagerService::class)->effectiveIssuer($region);
+    }
 
-        return $issuer !== '' ? $issuer : null;
+    /**
+     * Whether the project's region offers TLS mode cert-manager, and if not why and what to do
+     * (CertManagerService::forDomains()).
+     *
+     * @return array{available: bool, status: string, issuer: ?string, kind: ?string, reason: ?string, ca: bool}
+     */
+    public function certManager(?KnativeRegion $region): array
+    {
+        return app(CertManagerService::class)->forDomains($region);
     }
 
     // ── Add / verify / activate ─────────────────────────────────────────────
 
+    /**
+     * A new domain is pending until DNS proves it. Its TLS mode is cert-manager where the region's
+     * cert-manager is ready with an issuer — a certificate for exactly this host, publicly trusted
+     * from ACME or from the region CA, is never worse than the region's default certificate, which
+     * does not name the domain at all — and none elsewhere (CertManagerService::defaultTlsMode()).
+     */
     public function add(Project $project, string $domain): ProjectDomain
     {
         /** @var ProjectDomain $record */
@@ -190,8 +233,8 @@ class ProjectDomainService
             'domain' => $domain,
             'status' => ProjectDomain::STATUS_PENDING,
             'verification_token' => bin2hex(random_bytes(16)),
-            'tls_mode' => ProjectDomain::TLS_NONE,
-        ]);
+            'tls_mode' => app(CertManagerService::class)->defaultTlsMode($project->knativeRegion),
+        ] + (EnvironmentScope::idOf($project) !== null ? ['environment_id' => EnvironmentScope::idOf($project)] : []));
 
         return $record->setRelation('project', $project);
     }
@@ -307,6 +350,11 @@ class ProjectDomainService
             return false;
         }
 
+        // a global project: every region that serves routes and certifies the domain
+        if (self::globalWorkload($project)) {
+            return app(GlobalDomains::class)->activate($domain);
+        }
+
         $region = $project->knativeRegion;
         $name = M::resourceName($project->id, $domain->domain);
 
@@ -322,12 +370,13 @@ class ProjectDomainService
             if ($domain->tls_mode === ProjectDomain::TLS_CERT_MANAGER) {
                 $issuer = $this->clusterIssuer($region);
                 if (! $issuer) {
-                    throw new RuntimeException(__('api.domain.cert_manager_not_configured'));
+                    throw new RuntimeException($this->certManager($region)['reason'] ?? __('api.domain.cert_manager_not_configured'));
                 }
                 $this->applyOrFail($k8s, M::certificate($name, $ns, $project->id, $domain->domain, $issuer), $ns);
             }
 
-            foreach ($this->routeManifests($region, $project, $domain, $ns, $name) as $manifest) {
+            $publicHost = PublicHostRewrites::lookup($k8s, $ns, $project->slug, $this->defaultHost($project));
+            foreach ($this->routeManifests($region, $project, $domain, $ns, $name, $publicHost) as $manifest) {
                 $this->applyOrFail($k8s, $manifest, $ns);
             }
 
@@ -359,25 +408,37 @@ class ProjectDomainService
     }
 
     /**
+     * @param  string  $publicHost  the Knative Service's public host (PublicHostRewrites::lookup)
      * @return array<int, array> Middleware + HTTP IngressRoute + HTTPS IngressRoute
      */
-    public function routeManifests(KnativeRegion $region, Project $project, ProjectDomain $domain, string $ns, string $name): array
+    public function routeManifests(KnativeRegion $region, Project $project, ProjectDomain $domain, string $ns, string $name, string $publicHost): array
     {
         $traefikNs = $region->knative_serving_namespace ?? 'knative-serving';
         $secret = $domain->tls_mode === ProjectDomain::TLS_NONE ? null : ($domain->tls_secret_name ?: $name);
 
-        return [
-            M::hostRewriteMiddleware($name, $ns, $project->id, $domain->domain, M::serviceHost($project->slug, $ns)),
+        $manifests = [
+            M::hostRewriteMiddleware($name, $ns, $project->id, $domain->domain, $project->slug, $publicHost),
             M::ingressRoute($name, $ns, $project->id, $domain->domain, false, null, KnativeConstants::TRAEFIK_RELEASE, $traefikNs),
             M::ingressRoute($name, $ns, $project->id, $domain->domain, true, $secret, KnativeConstants::TRAEFIK_RELEASE, $traefikNs),
         ];
+
+        // Access mode allowlist: the client's address is checked here, on the first hop — handed on
+        // to web, the request would come from Traefik itself — and the route goes straight to the
+        // Knative Service's own (InternalNetworkManifests)
+        if ($project->accessMode() === Project::ACCESS_ALLOWLIST) {
+            foreach ([1, 2] as $i) {
+                $manifests[$i] = InternalNetworkManifests::restrictRoute($manifests[$i], $ns, $project->slug);
+            }
+        }
+
+        return $manifests;
     }
 
     /**
      * Two projects sharing a region namespace (e.g. two tenants) must never both route one
      * host: refuse when an IngressRoute for this host belongs to another project.
      */
-    private function assertNotRoutedByAnotherProject(KubernetesClient $k8s, string $ns, ProjectDomain $domain, Project $project): void
+    public function assertNotRoutedByAnotherProject(KubernetesClient $k8s, string $ns, ProjectDomain $domain, Project $project): void
     {
         $routes = $k8s->listResources(M::TRAEFIK_API, 'IngressRoute', $ns, [M::LABEL_DOMAIN_HASH => M::domainHash($domain->domain)]);
 
@@ -451,9 +512,11 @@ class ProjectDomainService
                 'tls_expires_at' => PemHelper::certificateExpiresAt($certificate),
             ]);
         } elseif ($mode === ProjectDomain::TLS_CERT_MANAGER) {
-            $issuer = $this->clusterIssuer($region);
-            if (! $issuer) {
-                throw ValidationException::withMessages(['mode' => __('api.domain.cert_manager_not_configured')]);
+            // Not offered: the region says why and what to do (installing, failed, not installed, no issuer)
+            $certManager = $this->certManager($region);
+            $issuer = $certManager['issuer'];
+            if (! $certManager['available'] || ! $issuer) {
+                throw ValidationException::withMessages(['mode' => $certManager['reason'] ?? __('api.domain.cert_manager_not_configured')]);
             }
 
             $available = $this->onCluster(fn () => $k8s->hasApiVersion(M::CERT_MANAGER_API)
@@ -480,16 +543,27 @@ class ProjectDomainService
             ]);
         }
 
+        // a global project: the uploaded certificate in every region (activate() copies it too)
+        if (self::globalWorkload($project) && $mode === ProjectDomain::TLS_CUSTOM) {
+            $this->onCluster(fn () => app(GlobalDomains::class)->copyCustomTls($domain));
+        }
+
         if ($domain->status === ProjectDomain::STATUS_ACTIVE || $domain->status === ProjectDomain::STATUS_ERROR) {
             $this->activate($domain);
         }
 
         if ($mode === ProjectDomain::TLS_NONE && $previous !== ProjectDomain::TLS_NONE) {
-            // After the routes stopped referencing the Secret
-            $this->onCluster(function () use ($k8s, $ns, $name) {
-                $k8s->deleteResource(M::CERT_MANAGER_API, 'Certificate', $name, $ns);
-                $k8s->deleteResource('v1', 'Secret', $name, $ns);
-            });
+            // After the routes stopped referencing the Secret (every region of a global project)
+            foreach (self::globalWorkload($project) ? GlobalProjectRegions::of($project) : [$project->knativeRegion] as $tlsRegion) {
+                if ($tlsRegion->is_demo || ! $tlsRegion->kubeconfig) {
+                    continue;
+                }
+                $this->onCluster(function () use ($tlsRegion, $name) {
+                    $client = new KubernetesClient((string) $tlsRegion->kubeconfig);
+                    $client->deleteResource(M::CERT_MANAGER_API, 'Certificate', $name, $this->namespace($tlsRegion));
+                    $client->deleteResource('v1', 'Secret', $name, $this->namespace($tlsRegion));
+                });
+            }
         }
 
         return $domain;
@@ -537,6 +611,10 @@ class ProjectDomainService
     public function removeFromRegion(ProjectDomain $domain, ?KnativeRegion $region = null): array
     {
         $project = $domain->project;
+        // a global project's domain is in every region of it
+        if ($region === null && self::globalWorkload($project)) {
+            return app(GlobalDomains::class)->removeEverywhere($domain);
+        }
         $region ??= $project?->knativeRegion;
 
         if (! $region || $region->is_demo || ! $region->kubeconfig) {
@@ -593,6 +671,12 @@ class ProjectDomainService
      */
     public function regionChanged(Project $project, ?string $oldRegionId): void
     {
+        // a global project's primary moved (switchover, failover): its domains are served by every
+        // region of it and point at its global host name — nothing changes for them
+        if (self::globalWorkload($project)) {
+            return;
+        }
+
         $domains = $project->domains()->get();
         if ($domains->isEmpty()) {
             return;
@@ -646,11 +730,15 @@ class ProjectDomainService
             if ($reason !== null) {
                 if ($domain->status === ProjectDomain::STATUS_ACTIVE || $domain->status === ProjectDomain::STATUS_ERROR) {
                     $name = M::resourceName($project->id, $domain->domain);
-                    $failed = $project->knativeRegion ? $this->deleteAll($project->knativeRegion, [
-                        [M::TRAEFIK_API, 'IngressRoute', M::secureRouteName($name)],
-                        [M::TRAEFIK_API, 'IngressRoute', $name],
-                        [M::TRAEFIK_API, 'Middleware', $name],
-                    ]) : [];
+                    $failed = [];
+                    // every region of a global project, the project's region otherwise
+                    foreach (self::globalWorkload($project) ? GlobalProjectRegions::of($project) : array_filter([$project->knativeRegion]) as $region) {
+                        array_push($failed, ...$this->deleteAll($region, [
+                            [M::TRAEFIK_API, 'IngressRoute', M::secureRouteName($name)],
+                            [M::TRAEFIK_API, 'IngressRoute', $name],
+                            [M::TRAEFIK_API, 'Middleware', $name],
+                        ]));
+                    }
 
                     $domain->update([
                         'status' => $failed ? ProjectDomain::STATUS_ERROR : ProjectDomain::STATUS_VERIFIED,
@@ -670,6 +758,16 @@ class ProjectDomainService
     }
 
     // ── Helpers ─────────────────────────────────────────────────────────────
+
+    /**
+     * The domain's workload is a global project's own (served by every region of it,
+     * docs/global-projects.md#custom-domains); an environment of a global project runs in one
+     * region like any other.
+     */
+    public static function globalWorkload(Project $project): bool
+    {
+        return $project->isGlobal() && EnvironmentScope::idOf($project) === null;
+    }
 
     public function namespace(KnativeRegion $region): string
     {

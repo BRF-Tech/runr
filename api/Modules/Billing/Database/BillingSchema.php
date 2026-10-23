@@ -11,7 +11,11 @@ use Illuminate\Database\Schema\Builder;
  * structure in both places, so the same models and services work in every organization.
  *
  *  billing_prices           price versions: region prices or the organization's default prices
- *  billing_region_settings  the billing type of a region (payg | fixed)
+ *  billing_region_settings  the billing type of a region (payg | fixed) and whether its queue
+ *                           consumers are charged
+ *  billing_region_overrides the organization's own choice for a region (queue consumers)
+ *  billing_tenant_region_overrides  the platform's choice per tenant and platform region (queue
+ *                           consumers; central schema only)
  *  billing_markups          a tenant's markup on shared platform regions (tenant schema only)
  *  billing_fixed_requests   fixed resource requests and approved allocations of projects
  *  billing_bills            monthly bills (project, account, tenant)
@@ -19,6 +23,8 @@ use Illuminate\Database\Schema\Builder;
  *  billing_settings         webhook settings of the organization, the day billing started (and
  *                           centrally the days billing was on and off, BillingActivity)
  *  billing_archived_bills   bills of deleted tenants (central schema only, BillArchive)
+ *  billing_cost_limits      the monthly cost limit of pay-as-you-go projects and this month's state
+ *                           of its notifications (CostLimits)
  *
  * The migrations cannot be rolled back (NO_ROLLBACK): going back from 0.5.8 is restoring the backup.
  */
@@ -199,9 +205,92 @@ final class BillingSchema
 
         if (! $tenant) {
             self::createArchivedBills($schema);
+            self::createTenantRegionOverrides($schema);
         }
 
+        self::createCostLimits($schema);
+
+        self::addQueueConsumerCharging($schema);
         self::harden($schema, $tenant);
+    }
+
+    /**
+     * The monthly cost limit of a project (docs/billing.md#monthly-cost-limit): one row per project
+     * that has one — the amount in the billing currency, what happens at 100 % (notify | stop) and
+     * the month its state belongs to: when the 80 % warning and the 100 % notice went out (once per
+     * month and limit), and the month-to-date cost of the last check.
+     */
+    public static function createCostLimits(Builder $schema): void
+    {
+        if ($schema->hasTable('billing_cost_limits')) {
+            return;
+        }
+
+        $schema->create('billing_cost_limits', function (Blueprint $table) {
+            $table->string('project_id', 26)->primary();
+            $table->decimal('amount', ...self::AMOUNT);
+            $table->string('currency', 3);
+            $table->string('action', 8)->default('notify');
+            $table->string('period', 7)->nullable();
+            $table->timestamp('warned_at')->nullable();
+            $table->timestamp('reached_at')->nullable();
+            $table->decimal('month_cost', ...self::AMOUNT)->nullable();
+            $table->timestamp('checked_at')->nullable();
+            $table->string('updated_by')->nullable();
+            $table->timestamps();
+        });
+    }
+
+    /**
+     * The platform's choice per tenant and platform region (docs/billing.md#queue-consumers),
+     * central only: charge_queue_consumers false — the region's queue consumers are not charged to
+     * that tenant (nor to its projects); null — as the region. Idempotent: the central migration
+     * of the table calls it, and create() too.
+     */
+    public static function createTenantRegionOverrides(Builder $schema): void
+    {
+        if ($schema->hasTable('billing_tenant_region_overrides')) {
+            return;
+        }
+
+        $schema->create('billing_tenant_region_overrides', function (Blueprint $table) {
+            $table->ulid('id')->primary();
+            $table->string('tenant_id');
+            $table->string('region_id', 26);
+            $table->boolean('charge_queue_consumers')->nullable();
+            $table->string('changed_by')->nullable();
+            $table->timestamps();
+
+            $table->unique(['tenant_id', 'region_id']);
+            $table->index('region_id');
+        });
+    }
+
+    /**
+     * Whether queue consumers are charged (docs/billing.md#queue-consumers), off by default:
+     *
+     *  - billing_region_settings.charge_queue_consumers — the region owner's setting;
+     *  - billing_region_overrides — the organization's own choice for a region (null: as the
+     *    region; false: not charged for the organization's projects there), in every organization.
+     *
+     * Idempotent: the central and the tenant migration of the setting call it, and create() too.
+     */
+    public static function addQueueConsumerCharging(Builder $schema): void
+    {
+        if ($schema->hasTable('billing_region_settings') && ! $schema->hasColumn('billing_region_settings', 'charge_queue_consumers')) {
+            $schema->table('billing_region_settings', function (Blueprint $table) {
+                $table->boolean('charge_queue_consumers')->default(false);
+            });
+        }
+
+        if (! $schema->hasTable('billing_region_overrides')) {
+            $schema->create('billing_region_overrides', function (Blueprint $table) {
+                $table->string('region_id', 26)->primary();
+                $table->boolean('charge_queue_consumers')->nullable();
+                $table->string('changed_by')->nullable();
+                $table->timestamps();
+            });
+        }
     }
 
     /**

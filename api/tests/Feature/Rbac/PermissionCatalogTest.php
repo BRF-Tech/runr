@@ -14,7 +14,7 @@ class PermissionCatalogTest extends TestCase
     /** Names other parts of RunR authorize with (audit log, runtimes, secrets …) */
     private const REQUIRED = [
         'projects.view', 'projects.create', 'projects.update', 'projects.delete', 'projects.deploy',
-        'code.edit', 'env.view', 'env.edit', 'secrets.view_values', 'domains.manage', 'shell.exec',
+        'code.edit', 'env.view', 'env.edit', 'secrets.view_values', 'domains.manage', 'network.manage', 'shell.exec',
         'logs.view', 'metrics.view', 'regions.view', 'regions.manage', 'sandbox.manage',
         'registry.manage', 'members.view', 'members.invite', 'members.remove', 'roles.manage',
         'tokens.manage', 'billing.view', 'billing.manage', 'billing.approve', 'settings.manage',
@@ -22,11 +22,15 @@ class PermissionCatalogTest extends TestCase
         'projects.billing', 'projects.stop',
         'tickets.view', 'tickets.create',
         'audit.view', 'audit.export', 'runtimes.manage', 'runtimes.use_custom',
+        // organization export / import (docs/org-export.md)
+        'org.transfer',
         'models.view', 'models.deploy', 'models.manage', 'regions.gpu.manage',
         // white-label (docs/white-label.md)
         'branding.manage', 'signup.manage',
         // Sandbox API (docs/sandbox-api.md)
         'sandboxes.view', 'sandboxes.create', 'sandboxes.exec', 'sandboxes.manage',
+        // API product (docs/api-product.md)
+        'api_products.manage',
     ];
 
     public function test_the_catalog_has_every_permission_other_features_use(): void
@@ -62,6 +66,25 @@ class PermissionCatalogTest extends TestCase
         }
         foreach (config('permissions.legacy_member_role.permissions') as $permission) {
             $this->assertContains($permission, PermissionCatalog::allKeys());
+        }
+    }
+
+    public function test_the_upgrade_member_role_keeps_step_with_developer(): void
+    {
+        // A fresh tenant's members get Developer; the Member role upgrades created holds what
+        // 0.4.x members could do. They differ only here: 0.4.x members managed the settings and
+        // SSO, and never deployed models or ran MCP servers. A permission a release adds to
+        // Developer goes to the Member role too — in config/permissions.php and, for the roles
+        // upgrades created before, in a tenant migration (0108 for 0.6.0).
+        $developer = config('permissions.roles.developer.permissions');
+        $member = config('permissions.legacy_member_role.permissions');
+
+        $this->assertEqualsCanonicalizing(['models.deploy', 'mcp.servers.manage', 'mcp.servers.call'], array_values(array_diff($developer, $member)));
+        $this->assertEqualsCanonicalizing(['settings.manage', 'sso.manage'], array_values(array_diff($member, $developer)));
+
+        $added = (require base_path('Modules/Tenancy/Database/TenantMigrations/0108_grant_060_permissions_to_legacy_member_role.php'))::ADDED;
+        foreach ($added as $permission) {
+            $this->assertContains($permission, $member, "{$permission}: a 0.6.0 Developer permission the Member role gets");
         }
     }
 
@@ -120,6 +143,11 @@ class PermissionCatalogTest extends TestCase
             $this->assertContains($p, $viewer);
         }
         $this->assertNotContains('env.view', $viewer, 'environment variables often carry credentials');
+
+        // Secret stores (docs/secret-stores.md): developers refer to them, owners and admins register them
+        $this->assertContains('secret_stores.view', $developer);
+        $this->assertNotContains('secret_stores.manage', $developer);
+        $this->assertNotContains('secret_stores.view', $viewer);
     }
 
     public function test_implied_permissions_are_added(): void

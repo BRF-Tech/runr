@@ -12,7 +12,10 @@
 #                          region's agent (redeployed to call RunR at the API container's address
 #                          on the Kind network) fetches and runs it, its results arrive with the
 #                          region's name as location and the agent's log has no
-#                          "RunR answered 400" (obs-uptime-region).
+#                          "RunR answered 400" (obs-uptime-region). Then a load test of the
+#                          function (10 users, 30 s): a k6 Job in the region's runr-loadtest
+#                          namespace that completes with its latency percentiles, requests per
+#                          second and no errors (obs-load-test).
 #
 # KIND_LOCK              — one Kind cluster at a time on a shared host; this suite defaults it to
 #                          /tmp/runr-kind.lock (the lock test-runtimes.sh takes when KIND_LOCK is set).

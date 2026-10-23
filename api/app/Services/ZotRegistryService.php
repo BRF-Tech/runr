@@ -11,6 +11,8 @@ use App\Services\Helpers\RunrClusterIdentity;
 use App\Services\Manifests\ZotManifests;
 use App\Services\Runtimes\RuntimeRegistry;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Sleep;
+use Illuminate\Support\Str;
 
 class ZotRegistryService
 {
@@ -36,6 +38,9 @@ class ZotRegistryService
 
     // Pod template annotation that restarts Zot after RunR changed its config.json
     public const CONFIG_HASH_ANNOTATION = 'runr.sh/zot-config-sha256';
+
+    // Seconds between two looks at the test PVC of testPvcBound()
+    private const PVC_TEST_POLL_SECONDS = 3;
 
     /**
      * Install Zot registry in mirror (pull-through cache) mode.
@@ -118,7 +123,11 @@ class ZotRegistryService
     }
 
     /**
-     * Test PVC provisioning by creating a test PVC and checking it becomes Bound.
+     * Test PVC provisioning by creating a test PVC and checking it becomes Bound: a consumer pod
+     * mounts it (a WaitForFirstConsumer class binds only once that pod is scheduled), and the claim
+     * gets knative.registry_pvc_test_seconds to bind — the pod's image pull and the provisioner
+     * (often a helper pod of its own) take minutes on a busy cluster or slow storage. A claim that
+     * does not bind is reported with what the test saw (pvcTestSeen()).
      *
      * @return array{success: bool, message: string}
      */
@@ -131,16 +140,14 @@ class ZotRegistryService
         $pvcName = $pvcManifest['metadata']['name'];
         $podManifest = $this->buildPvcConsumerPodManifest($pvcName, $ns);
         $podName = $podManifest['metadata']['name'];
+        $seconds = max(0, (int) config('knative.registry_pvc_test_seconds', 180));
 
         try {
             $k8s->applyResource($pvcManifest, $ns);
             $k8s->applyResource($podManifest, $ns);
 
-            $bound = $this->waitFor(function () use ($k8s, $ns, $pvcName) {
-                $pvc = $k8s->getResourceStatus('v1', 'PersistentVolumeClaim', $pvcName, $ns);
-
-                return $pvc && ($pvc['status']['phase'] ?? '') === 'Bound';
-            }, 60);
+            $bound = $this->waitPvcBound($k8s, $pvcName, $ns, $seconds);
+            $seen = $bound ? '' : $this->pvcTestSeen($k8s, $pvcName, $podName, $ns);
 
             try {
                 $k8s->deleteResource('v1', 'Pod', $podName, $ns);
@@ -149,7 +156,7 @@ class ZotRegistryService
             $this->cleanupPvc($k8s, $pvcName, $ns);
 
             if (! $bound) {
-                return ['success' => false, 'message' => "PVC provisioning failed: StorageClass '{$storageClass}' did not provision a volume within 60s"];
+                return ['success' => false, 'message' => "PVC provisioning failed: StorageClass '{$storageClass}' did not provision a volume within {$seconds}s ({$seen})"];
             }
 
             return ['success' => true, 'message' => 'PVC provisioning successful'];
@@ -595,6 +602,85 @@ class ZotRegistryService
                 ]],
             ]]],
         ]);
+    }
+
+    /** Whether the test PVC is Bound within $seconds, looked at every PVC_TEST_POLL_SECONDS. */
+    private function waitPvcBound(KubernetesClient $k8s, string $pvcName, string $ns, int $seconds): bool
+    {
+        $waited = 0;
+        while (true) {
+            try {
+                $pvc = $k8s->getResourceStatus('v1', 'PersistentVolumeClaim', $pvcName, $ns);
+                if (($pvc['status']['phase'] ?? '') === 'Bound') {
+                    return true;
+                }
+            } catch (\Throwable) {
+                // a busy API server may not answer one look: the next one asks again
+            }
+            if ($waited >= $seconds) {
+                return false;
+            }
+            $step = min(self::PVC_TEST_POLL_SECONDS, $seconds - $waited);
+            Sleep::for($step)->seconds();
+            $waited += $step;
+        }
+    }
+
+    /**
+     * What the PVC test saw of a claim that did not bind, e.g. "PVC Pending, consumer pod Pending
+     * (ImagePullBackOff), last event ProvisioningFailed: …": the claim's phase, the consumer pod's
+     * phase with why it waits (its container's waiting reason, else why it is not scheduled), and
+     * the claim's newest Warning event, else its newest event (WaitForFirstConsumer,
+     * ExternalProvisioning, …).
+     */
+    private function pvcTestSeen(KubernetesClient $k8s, string $pvcName, string $podName, string $ns): string
+    {
+        $get = function (string $kind, string $name) use ($k8s, $ns): ?array {
+            try {
+                return $k8s->getResourceStatus('v1', $kind, $name, $ns);
+            } catch (\Throwable) {
+                return null;
+            }
+        };
+        $pvc = $get('PersistentVolumeClaim', $pvcName);
+        $pod = $get('Pod', $podName);
+        try {
+            $events = $k8s->listEvents($ns, 'PersistentVolumeClaim', $pvcName);
+        } catch (\Throwable) {
+            $events = [];
+        }
+
+        $podState = 'not found';
+        if ($pod) {
+            $waiting = self::podWaitingReason($pod);
+            $podState = ($pod['status']['phase'] ?? 'Pending').($waiting !== null ? " ({$waiting})" : '');
+        }
+
+        $at = fn (array $e): string => (string) ($e['lastTimestamp'] ?? $e['eventTime'] ?? $e['firstTimestamp'] ?? $e['metadata']['creationTimestamp'] ?? '');
+        $newest = collect($events)->sortByDesc($at)->values();
+        $event = $newest->first(fn (array $e) => ($e['type'] ?? '') === 'Warning') ?? $newest->first();
+        $eventText = $event
+            ? 'last event '.($event['reason'] ?? '?').(($event['message'] ?? '') !== '' ? ': '.Str::limit(trim((string) $event['message']), 160) : '')
+            : 'no event of the PVC';
+
+        return 'PVC '.($pvc ? ($pvc['status']['phase'] ?? 'Pending') : 'not found').", consumer pod {$podState}, {$eventText}";
+    }
+
+    /** Why a pod waits: a container's waiting reason (ContainerCreating, ImagePullBackOff, …), else why it is not scheduled. */
+    private static function podWaitingReason(array $pod): ?string
+    {
+        foreach ($pod['status']['containerStatuses'] ?? [] as $container) {
+            if (($container['state']['waiting']['reason'] ?? '') !== '') {
+                return (string) $container['state']['waiting']['reason'];
+            }
+        }
+        foreach ($pod['status']['conditions'] ?? [] as $condition) {
+            if (($condition['type'] ?? '') === 'PodScheduled' && ($condition['status'] ?? '') === 'False') {
+                return ($condition['reason'] ?? '') !== '' ? (string) $condition['reason'] : 'not scheduled';
+            }
+        }
+
+        return null;
     }
 
     private function cleanupPvc(KubernetesClient $k8s, string $name, string $ns): void

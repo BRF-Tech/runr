@@ -35,11 +35,11 @@ func newWfAppCmd(app *App) *cobra.Command {
 		Short: "Show the workflow app of the project",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			c, p, err := app.Project(cmd.Context())
+			c, p, err := app.Project(wfContext(cmd))
 			if err != nil {
 				return err
 			}
-			wa, err := c.WorkflowApp(cmd.Context(), p.ID)
+			wa, err := c.WorkflowApp(wfContext(cmd), p.ID)
 			if err != nil {
 				return err
 			}
@@ -102,11 +102,11 @@ func newWfAppSetCmd(app *App) *cobra.Command {
 			if !reset && endpoint == "" {
 				return usageErrorf("--endpoint needs a URL (--reset-endpoint goes back to the project's function)")
 			}
-			c, p, err := app.Project(cmd.Context())
+			c, p, err := app.Project(wfContext(cmd))
 			if err != nil {
 				return err
 			}
-			wa, err := c.SetWorkflowEndpoint(cmd.Context(), p.ID, endpoint)
+			wa, err := c.SetWorkflowEndpoint(wfContext(cmd), p.ID, endpoint)
 			if err != nil {
 				return err
 			}
@@ -132,7 +132,7 @@ func newWfAppRotateKeyCmd(app *App) *cobra.Command {
 			"endpoint override needs the new key from runr workflows app signing-key.",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			ctx := cmd.Context()
+			ctx := wfContext(cmd)
 			c, p, err := app.Project(ctx)
 			if err != nil {
 				return err
@@ -170,23 +170,24 @@ func newWfAppRotateKeyCmd(app *App) *cobra.Command {
 }
 
 func newWfAppSigningKeyCmd(app *App) *cobra.Command {
-	var env bool
+	var dotenv bool
 	cmd := &cobra.Command{
 		Use:   "signing-key",
 		Short: "Print the signing key, for a function served outside RunR (workflows.manage)",
 		Long: "Print the key the engine signs its requests with: the function verifies them with it, read\n" +
 			"from RUNR_WORKFLOW_SIGNING_KEY. Functions on RunR get it with their deployment; this is for a\n" +
-			"function served at an endpoint override. The key is secret; --env prints it as\n" +
-			"RUNR_WORKFLOW_SIGNING_KEY=… for an env file.",
+			"function served at an endpoint override. The key is secret; --dotenv prints it as\n" +
+			"RUNR_WORKFLOW_SIGNING_KEY=… for an env file. Every environment has a key of its own\n" +
+			"(--env).",
 		Example: "  runr workflows app signing-key\n" +
-			"  runr workflows app signing-key --env >> .env",
+			"  runr workflows app signing-key --env staging --dotenv >> .env.staging",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			c, p, err := app.Project(cmd.Context())
+			c, p, err := app.Project(wfContext(cmd))
 			if err != nil {
 				return err
 			}
-			k, err := c.WorkflowSigningKey(cmd.Context(), p.ID)
+			k, err := c.WorkflowSigningKey(wfContext(cmd), p.ID)
 			if err != nil {
 				return err
 			}
@@ -194,7 +195,7 @@ func newWfAppSigningKeyCmd(app *App) *cobra.Command {
 			if app.Printer().Machine() {
 				return app.Printer().Print(k, nil)
 			}
-			if env {
+			if dotenv {
 				name := k.Env
 				if name == "" {
 					name = "RUNR_WORKFLOW_SIGNING_KEY"
@@ -206,7 +207,7 @@ func newWfAppSigningKeyCmd(app *App) *cobra.Command {
 			return err
 		},
 	}
-	cmd.Flags().BoolVar(&env, "env", false, "print RUNR_WORKFLOW_SIGNING_KEY=<key>")
+	cmd.Flags().BoolVar(&dotenv, "dotenv", false, "print RUNR_WORKFLOW_SIGNING_KEY=<key>")
 	return cmd
 }
 
@@ -237,14 +238,14 @@ func newWfUsageCmd(app *App) *cobra.Command {
 			projectID := ""
 			names := map[string]string{}
 			if app.ProjectRef != "" {
-				p, err := c.FindProject(cmd.Context(), app.ProjectRef)
+				p, err := c.FindProject(wfContext(cmd), app.ProjectRef)
 				if err != nil {
 					return err
 				}
 				projectID = p.ID
 				names[p.ID] = p.Name
 			}
-			u, err := c.WorkflowUsage(cmd.Context(), projectID, from, to)
+			u, err := c.WorkflowUsage(wfContext(cmd), projectID, from, to)
 			if err != nil {
 				return err
 			}
@@ -289,7 +290,7 @@ func redeployLive(ctx context.Context, app *App, c *runr.Client, p *runr.Project
 	if err != nil {
 		return nil, err
 	}
-	res, err := finishDeploy(ctx, app, c, &DeployResult{Project: p, Version: v}, v, false, timeout)
+	res, err := finishDeploy(ctx, app, c, &DeployResult{Project: p, Version: v}, v, deployWait{timeout: timeout})
 	if res != nil {
 		return res.Deployment, err
 	}

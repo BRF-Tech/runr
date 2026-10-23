@@ -156,16 +156,22 @@ LUA;
         ]);
     }
 
-    /** ACL support of an endpoint: "ACL_SUPPORTED yes|no" */
+    /**
+     * ACL support and server version of an endpoint: "ACL_SUPPORTED yes|no", "REDIS_VERSION x.y.z"
+     * (the version an organization import compares KV dumps with, docs/org-export.md#binding-data).
+     */
     public static function probe(RedisEndpoint $endpoint, string $image): OpsTask
     {
+        $args = (new RedisEndpoint($endpoint->host, $endpoint->port, $endpoint->adminPassword, false, false, $endpoint->mode))->cliArgs();
         $script = implode("\n", [
             'export REDISCLI_AUTH="$(cat /ops/auth)"',
-            'pong=$(redis-cli '.(new RedisEndpoint($endpoint->host, $endpoint->port, $endpoint->adminPassword, false, false, $endpoint->mode))->cliArgs().' PING 2>&1)',
+            'pong=$(redis-cli '.$args.' PING 2>&1)',
             'echo "PING $pong"',
             'case "$pong" in *PONG*) ;; *) exit 1 ;; esac',
-            'who=$(redis-cli '.(new RedisEndpoint($endpoint->host, $endpoint->port, $endpoint->adminPassword, false, false, $endpoint->mode))->cliArgs().' ACL WHOAMI 2>&1)',
+            'who=$(redis-cli '.$args.' ACL WHOAMI 2>&1)',
             'case "$who" in *default*) echo "ACL_SUPPORTED yes" ;; *) echo "ACL_SUPPORTED no" ;; esac',
+            'ver=$(redis-cli '.$args.' INFO server 2>/dev/null | tr -d \'\r\' | sed -n \'s/^redis_version://p\' | head -n 1)',
+            'echo "REDIS_VERSION ${ver:-unknown}"',
             'echo RUNR_OK',
             '',
         ]);

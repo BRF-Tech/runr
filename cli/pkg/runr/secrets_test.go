@@ -185,3 +185,94 @@ func TestSecretOnlyUpdateSavesNoVersion(t *testing.T) {
 		t.Fatalf("reserved name: %v", err)
 	}
 }
+
+// Pass-through and secret stores: a value's metadata (source, version, fingerprint), a
+// reference to a store with its sync status, the on-demand sync and the trust of a store.
+func TestSecretReferencesAndStores(t *testing.T) {
+	srv := runrtest.New(t)
+	c := client(t, srv)
+	ctx := context.Background()
+	p := srv.SeedProject("svc", runr.TypeFaaS, "python", "eu-1", nil)
+	storeID := srv.SeedSecretStore("vault-prod", "vault", "kubernetes")
+
+	if _, err := c.SetSecret(ctx, p.ID, "API_TOKEN", "placeholder-value"); err != nil {
+		t.Fatal(err)
+	}
+	ref, err := c.SetSecretReference(ctx, p.ID, "DB_PASSWORD", runr.SecretReferenceInput{StoreID: storeID, Path: "apps/svc", Key: "db"})
+	if err != nil || !ref.External() || ref.Reference == nil || ref.Reference.StoreName != "vault-prod" || ref.Sync == nil || ref.Sync.Status != "pending" {
+		t.Fatalf("reference = %+v, %v", ref, err)
+	}
+	if got := ref.Reference.String(); got != "vault-prod:apps/svc#db" {
+		t.Fatalf("reference string = %q", got)
+	}
+	if _, err := c.SetSecretReference(ctx, p.ID, "OTHER", runr.SecretReferenceInput{StoreID: "01NOPE", Path: "x"}); !runr.IsValidation(err) {
+		t.Fatalf("unknown store: %v", err)
+	}
+
+	list, err := c.ListSecrets(ctx, p.ID)
+	if err != nil || len(list.Secrets) != 2 || list.Storage != "region" {
+		t.Fatalf("list = %+v, %v", list, err)
+	}
+	byName := map[string]runr.Secret{}
+	for _, s := range list.Secrets {
+		byName[s.Name] = s
+	}
+	if v := byName["API_TOKEN"]; v.Source != runr.SecretSourceRegion || v.StoredIn != "region" || v.Fingerprint == "" || v.Version != 1 {
+		t.Fatalf("value metadata = %+v", v)
+	}
+	if v := byName["DB_PASSWORD"]; !v.External() || v.Reference.Path != "apps/svc" {
+		t.Fatalf("reference metadata = %+v", v)
+	}
+	if got := srv.SecretReferences("svc")["DB_PASSWORD"]; got.StoreID != storeID || got.Key != "db" {
+		t.Fatalf("stored reference = %+v", got)
+	}
+
+	// A reference has no value RunR could read back
+	var ae *runr.APIError
+	if _, err := c.SecretValue(ctx, p.ID, "DB_PASSWORD"); !errors.As(err, &ae) || ae.StatusCode != 422 {
+		t.Fatalf("reveal of a reference: %v", err)
+	}
+	got, err := c.RevealSecret(ctx, p.ID, "API_TOKEN")
+	if err != nil || got.MatchesFingerprint == nil || !*got.MatchesFingerprint {
+		t.Fatalf("reveal = %+v, %v", got, err)
+	}
+
+	refreshed, err := c.RefreshSecrets(ctx, p.ID)
+	if err != nil || len(refreshed.Secrets) != 2 || srv.SecretRefreshes() != 1 {
+		t.Fatalf("refresh = %+v, %v", refreshed, err)
+	}
+
+	stores, err := c.ListSecretStores(ctx)
+	if err != nil || len(stores) != 1 || stores[0].Name != "vault-prod" || stores[0].References != 1 || stores[0].KubernetesName == "" {
+		t.Fatalf("stores = %+v, %v", stores, err)
+	}
+	if _, err := c.FindSecretStore(ctx, "VAULT-PROD"); err != nil {
+		t.Fatalf("find by name: %v", err)
+	}
+	if _, err := c.FindSecretStore(ctx, "nope"); err == nil || !strings.Contains(err.Error(), "vault-prod") {
+		t.Fatalf("unknown store: %v", err)
+	}
+	trust, err := c.SecretStoreTrust(ctx, storeID, "eu-1")
+	if err != nil || trust.Issuer == "" || trust.ServiceAccount != stores[0].KubernetesName ||
+		!strings.HasSuffix(trust.Subject, ":"+trust.ServiceAccount) || len(trust.PEMKeys) == 0 {
+		t.Fatalf("trust = %+v, %v", trust, err)
+	}
+}
+
+func TestParseSecretReference(t *testing.T) {
+	for in, want := range map[string][3]string{
+		"vault:apps/orders#db": {"vault", "apps/orders", "db"},
+		"vault:apps/orders":    {"vault", "apps/orders", ""},
+		"aws:arn:aws:secretsmanager:eu-central-1:111122223333:secret:x#k": {"aws", "arn:aws:secretsmanager:eu-central-1:111122223333:secret:x", "k"},
+	} {
+		store, path, key, ok := runr.ParseSecretReference(in)
+		if !ok || [3]string{store, path, key} != want {
+			t.Errorf("%q → %q %q %q %v", in, store, path, key, ok)
+		}
+	}
+	for _, bad := range []string{"", "vault", "vault:", ":path", "vault:#k", "vault:a b"} {
+		if _, _, _, ok := runr.ParseSecretReference(bad); ok {
+			t.Errorf("%q accepted", bad)
+		}
+	}
+}

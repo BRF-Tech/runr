@@ -11,6 +11,7 @@ use App\Services\KnativeStatusService;
 use App\Services\ZotRegistryService;
 use App\Support\Secrets\SecretRedactor;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Event;
 use Mockery;
 use Tests\TestCase;
@@ -108,6 +109,27 @@ class RegistrySetupEventsTest extends TestCase
         $this->assertCount(1, $failed);
         $this->assertSame(InstallRegistryAndCreateRegionJob::setupId('setup-token-2'), $failed[0]['setup_id']);
         $this->assertArrayNotHasKey('token', $failed[0]);
+        $this->assertSame(0, KnativeRegion::where('name', 'eu-1')->count());
+    }
+
+    /**
+     * A registry test that reports a failure (no exception) once only wrote the status cache: the
+     * wizard follows the setup by its events, so it kept waiting with no error.
+     */
+    public function test_a_failed_registry_test_is_broadcast(): void
+    {
+        Event::fake([PlatformEvent::class]);
+        $zot = Mockery::mock(ZotRegistryService::class);
+        $zot->shouldReceive('testExternalRegistry')->andReturn(['success' => false, 'message' => 'registry answered 401']);
+
+        $this->runJob('setup-token-3', $zot);
+
+        $failed = $this->broadcasts()['region.create_failed'] ?? [];
+        $this->assertCount(1, $failed);
+        $this->assertSame(InstallRegistryAndCreateRegionJob::setupId('setup-token-3'), $failed[0]['setup_id']);
+        $this->assertSame('registry_test', $failed[0]['phase']);
+        $this->assertStringContainsString('registry answered 401', $failed[0]['error']);
+        $this->assertSame('error', Cache::get('registry_setup:setup-token-3')['status']);
         $this->assertSame(0, KnativeRegion::where('name', 'eu-1')->count());
     }
 }

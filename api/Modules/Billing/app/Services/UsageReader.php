@@ -7,6 +7,7 @@ use App\Models\Binding;
 use App\Models\BindingUsageRecord;
 use App\Models\SandboxUsageRecord;
 use App\Models\UsageRecord;
+use App\Services\Metering\UsageAggregator;
 use App\Support\ConvertedOrganization;
 use Brick\Math\BigRational;
 use Illuminate\Database\Eloquent\Builder;
@@ -21,8 +22,11 @@ use Modules\Billing\Support\Period;
  * The metered usage a bill is calculated from (docs/billing.md#metering-and-bills), read from the
  * usage tables the core metering writes and turned into plain quantities:
  *
- *  - usage_records (source project / model): vCPU-hours, GB-hours, GPU-hours per day, region and
- *    trigger; 0.5.7 custom-scale rows without CPU·time are derived from their reservation
+ *  - usage_records (source project / preview / queue_consumer / model): vCPU-hours, GB-hours,
+ *    GPU-hours per day, region and trigger — a project's previews and queue consumers as their own
+ *    component, a queue consumer only where it is charged (QueueConsumerCharging); 0.5.7
+ *    custom-scale rows without CPU·time are derived from their reservation; a project's records
+ *    carry the environment they came from (environment_id / environment_name, null: production)
  *  - binding_usage_records: storage GB-hours and dedicated Postgres instance-hours per binding
  *  - sandbox_usage_records (central): vCPU-hours and GB-hours per organization, region and creator
  *
@@ -31,7 +35,8 @@ use Modules\Billing\Support\Period;
  *
  * @phpstan-type Entry array{date: string, kind: string, region_id: string|null, project_id: string|null,
  *     resource_id: string|null, resource_name: string|null, resource_type: string|null, owner: string|null,
- *     entry_point: string|null, vcpu_hours: float, memory_gb_hours: float, gpu_hours: float,
+ *     entry_point: string|null, component?: string|null, environment_id?: string|null, environment_name?: string|null,
+ *     vcpu_hours: float, memory_gb_hours: float, gpu_hours: float,
  *     storage_gb_hours: float, instance_hours: float, sessions: int, exact: array<string, BigRational>}
  *
  * The float quantities are for display; exact holds them as exact fractions (milliseconds per hour,
@@ -48,6 +53,8 @@ class UsageReader
 
     private ?ConvertedOrganization $converted = null;
 
+    public function __construct(private readonly QueueConsumerCharging $consumers) {}
+
     /**
      * Usage of one project's workloads in the organization.
      *
@@ -55,7 +62,7 @@ class UsageReader
      */
     public function projectUsage(string $projectId, Period $period): array
     {
-        return $this->withoutConverted($this->usageRows($period, fn (Builder $q) => $q->where('project_id', $projectId)->where(fn ($w) => $w->whereNull('source')->orWhere('source', 'project'))));
+        return $this->withoutConverted($this->usageRows($period, fn (Builder $q) => $q->where('project_id', $projectId)->where(fn (Builder $w) => UsageAggregator::projectSources($w))));
     }
 
     /**
@@ -66,7 +73,7 @@ class UsageReader
     public function projectsUsage(Period $period): array
     {
         $byProject = [];
-        foreach ($this->withoutConverted($this->usageRows($period, fn (Builder $q) => $q->where(fn ($w) => $w->whereNull('source')->orWhere('source', 'project')))) as $entry) {
+        foreach ($this->withoutConverted($this->usageRows($period, fn (Builder $q) => $q->where(fn (Builder $w) => UsageAggregator::projectSources($w)))) as $entry) {
             $byProject[(string) $entry['project_id']][] = $entry;
         }
 
@@ -119,7 +126,7 @@ class UsageReader
         $central = BillingContext::central();
 
         $records = $this->hasColumn('usage_records', 'tenant_id', $central)
-            ? $this->usageRows($period, fn (Builder $q) => $q->where('tenant_id', $tenantId), $central, false)
+            ? $this->usageRows($period, fn (Builder $q) => $q->where('tenant_id', $tenantId), $central, false, fn (?string $region) => $this->consumers->chargedForTenant($tenantId, $region))
             : [];
 
         return array_merge(
@@ -155,11 +162,20 @@ class UsageReader
     }
 
     /**
+     * Usage records of the period as entries. A project's records are its own workload, its
+     * previews and its queue consumers (component preview / queue_consumer, each its own bill
+     * line); a queue consumer's only where it is charged ($consumersCharged: by default whether the
+     * organization charges them in the region, QueueConsumerCharging::charged) — otherwise it is
+     * neither billed nor part of the metered cost.
+     *
      * @param  callable(Builder): mixed  $scope
+     * @param  (callable(string|null): bool)|null  $consumersCharged
      * @return list<array<string, mixed>>
      */
-    private function usageRows(Period $period, callable $scope, ?string $connection = null, bool $ownOnly = true): array
+    private function usageRows(Period $period, callable $scope, ?string $connection = null, bool $ownOnly = true, ?callable $consumersCharged = null): array
     {
+        $consumersCharged ??= fn (?string $region) => $this->consumers->charged($region);
+
         try {
             $query = UsageRecord::on($connection)
                 ->whereDate('record_date', '>=', $period->startDate())
@@ -175,8 +191,15 @@ class UsageReader
         }
 
         $hasOwner = $this->hasColumn('usage_records', 'created_by', $connection);
+        $hasEnvironment = $this->hasColumn('usage_records', 'environment_id', $connection);
+        $hasEnvironmentName = $hasEnvironment && $this->hasColumn('usage_records', 'environment_name', $connection);
         $entries = [];
         foreach ($rows as $row) {
+            $source = UsageRecord::sourceOf($row);
+            if ($source === UsageRecord::SOURCE_QUEUE_CONSUMER && ! $consumersCharged((string) $row->region_id)) {
+                continue;
+            }
+
             $cpu = (int) $row->total_cpu_mc_ms;
             $memory = (int) $row->total_memory_mib_ms;
             $gpu = (int) $row->total_gpu_unit_ms;
@@ -196,7 +219,10 @@ class UsageReader
                 'gpu_hours' => Money::fraction($gpu, self::MS_PER_HOUR),
             ];
 
-            $model = ($row->source ?? 'project') === 'model';
+            $model = $source === UsageRecord::SOURCE_MODEL;
+            // The project environment the usage came from (docs/environments.md; null: production)
+            $environmentId = ! $model && $hasEnvironment ? $row->getAttribute('environment_id') : null;
+            $environmentId = $environmentId !== null && $environmentId !== '' ? (string) $environmentId : null;
             $entries[] = [
                 'date' => $this->date($row->record_date),
                 'kind' => $model ? 'model' : 'project',
@@ -207,6 +233,9 @@ class UsageReader
                 'resource_type' => $model ? 'model_service' : null,
                 'owner' => $hasOwner ? ($row->getAttribute('created_by') !== null ? (string) $row->getAttribute('created_by') : null) : null,
                 'entry_point' => $row->entry_point ?: 'http',
+                'component' => in_array($source, [UsageRecord::SOURCE_PREVIEW, UsageRecord::SOURCE_QUEUE_CONSUMER], true) ? $source : null,
+                'environment_id' => $environmentId,
+                'environment_name' => $environmentId !== null && $hasEnvironmentName ? ($row->getAttribute('environment_name') ?: null) : null,
                 'vcpu_hours' => $cpu / (1000 * self::MS_PER_HOUR),
                 'memory_gb_hours' => $memory / (1024 * self::MS_PER_HOUR),
                 'gpu_hours' => $gpu / self::MS_PER_HOUR,

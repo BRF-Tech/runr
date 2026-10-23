@@ -51,6 +51,12 @@ trait FakesSandboxCluster
     /** @var array<string, int> "ns/name" → GETs of a pod */
     protected array $podReads = [];
 
+    /** @var array<string, list<array>> pod name → its events (core/v1 Event) */
+    protected array $k8sPodEvents = [];
+
+    /** @var list<array> events every pod created from now on gets */
+    protected array $newPodEvents = [];
+
     protected FakeSandboxExecTransport $exec;
 
     /** @var array<string, list<string>> host → addresses */
@@ -170,6 +176,9 @@ trait FakesSandboxCluster
             $pod['metadata']['creationTimestamp'] = now()->subMinute()->toIso8601String();
             $pod['status'] = $this->startStatus();
             $this->k8sPods[$m[1].'/'.$pod['metadata']['name']] = $pod;
+            if ($this->newPodEvents !== []) {
+                $this->k8sPodEvents[$pod['metadata']['name']] = $this->newPodEvents;
+            }
 
             return $json($pod, 201);
         }
@@ -270,7 +279,10 @@ trait FakesSandboxCluster
         }
 
         if (preg_match('#^/api/v1/namespaces/([^/]+)/events$#', $path)) {
-            return $json(['items' => []]);
+            parse_str((string) parse_url($request->url(), PHP_URL_QUERY), $query);
+            $pod = preg_match('/involvedObject\.name=([^,]+)/', (string) ($query['fieldSelector'] ?? ''), $f) ? $f[1] : null;
+
+            return $json(['items' => $pod !== null ? ($this->k8sPodEvents[$pod] ?? []) : array_merge([], ...array_values($this->k8sPodEvents))]);
         }
 
         if ($path === '/api/v1/pods') {

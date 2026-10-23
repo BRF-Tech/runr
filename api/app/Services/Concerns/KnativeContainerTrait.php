@@ -5,6 +5,8 @@ namespace App\Services\Concerns;
 use App\Models\Project;
 use App\Models\Version;
 use App\Services\Manifests\ContainerManifests;
+use App\Services\Runtimes\Patches\ResolvedRuntimeImage;
+use App\Services\Runtimes\Patches\RuntimePatches;
 use App\Services\Runtimes\RuntimeRegistry;
 
 /**
@@ -17,7 +19,12 @@ use App\Services\Runtimes\RuntimeRegistry;
  */
 trait KnativeContainerTrait
 {
-    private function buildContainer(Project $project, $version, string $mode): array
+    /**
+     * $runtimeImage: the runtime image the deployment recorded (RuntimePatches::forDeployment());
+     * without one the version image is resolved here — by digest of the project's pinned or the
+     * newest runtime patch when one is known (docs/runtimes.md#runtime-patches).
+     */
+    private function buildContainer(Project $project, $version, string $mode, ?ResolvedRuntimeImage $runtimeImage = null): array
     {
         $config = $this->getConfig($project);
 
@@ -37,7 +44,11 @@ trait KnativeContainerTrait
         // The runtime version's image (a region build for dockerfile / git versions)
         $runtimes = app(RuntimeRegistry::class);
         $region = $project->knativeRegion;
-        $image = $runtimes->versionImage($runtimes->forProject($project), $runtimes->executorFor($project), $region);
+        $image = $runtimeImage?->image;
+        if ($image === null) {
+            $executor = $runtimes->executorFor($project);
+            $image = app(RuntimePatches::class)->resolve($project, $executor, $runtimes->versionImage($runtimes->forProject($project), $executor, $region))->image;
+        }
 
         if ($region) {
             $image = $region->registryImageRef($image);

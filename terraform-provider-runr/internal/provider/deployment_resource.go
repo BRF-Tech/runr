@@ -33,6 +33,7 @@ type deploymentResource struct{ client *Client }
 type deploymentModel struct {
 	ID           types.String `tfsdk:"id"`
 	ProjectID    types.String `tfsdk:"project_id"`
+	Environment  types.String `tfsdk:"environment"`
 	VersionID    types.String `tfsdk:"version_id"`
 	Image        types.String `tfsdk:"image"`
 	Triggers     types.Map    `tfsdk:"triggers"`
@@ -52,13 +53,22 @@ func (r *deploymentResource) Schema(_ context.Context, _ resource.SchemaRequest,
 	resp.Schema = schema.Schema{
 		MarkdownDescription: "The running deployment of a project. Creating it deploys a version (default: the latest) or, " +
 			"for `caas` projects, an image; changing `version_id`, `image` or `triggers` deploys again in place " +
-			"(the previous deployment is shut down by RunR once the new one is ready). Destroying it tears the deployment down.\n\n" +
+			"(the previous deployment is shut down by RunR once the new one is ready). Destroying it tears the deployment down. " +
+			"With `environment` it is the running deployment of one of the project's environments.\n\n" +
 			"Code of `faas`/`xaas` projects is uploaded as versions with `runr deploy`; put a value that changes with the code " +
-			"or config (a commit SHA, `runr_env_var` values) into `triggers` to redeploy.",
+			"or config (a commit SHA, `runr_env_var` values) into `triggers` to redeploy.\n\n" +
+			"A deploy of a project with a blue-green or canary deploy strategy (`runr_project.deploy_strategy`) opens a rollout while another " +
+			"deployment serves: the new deployment is `running` next to it until the rollout promotes it (`active`). Promoting, aborting and " +
+			"rolling back stay with `runr rollout`, the console or the API; a deployment whose rollout was aborted or rolled back " +
+			"drops out of the state, and the next apply deploys again.",
 		Attributes: map[string]schema.Attribute{
 			"id": schema.StringAttribute{Computed: true, MarkdownDescription: "Id of the current deployment (changes on every redeploy)."},
 			"project_id": schema.StringAttribute{Required: true, MarkdownDescription: "Project id.",
 				PlanModifiers: []planmodifier.String{stringplanmodifier.RequiresReplace()}},
+			"environment": schema.StringAttribute{Optional: true, PlanModifiers: []planmodifier.String{environmentRequiresReplace()},
+				MarkdownDescription: "Environment of the project to deploy into, by name or id (`runr_environment.<x>.name`); left out or " +
+					"`production`: the project's own workload. It deploys with the environment's configuration; moving it replaces " +
+					"the deployment. Promoting a version from one environment to the next stays an action (`runr promote`)."},
 			"version_id": schema.StringAttribute{Optional: true, Computed: true,
 				MarkdownDescription: "Version to deploy (default: the latest version when the deployment is created).",
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown()}},
@@ -67,10 +77,12 @@ func (r *deploymentResource) Schema(_ context.Context, _ resource.SchemaRequest,
 			"triggers": schema.MapAttribute{Optional: true, ElementType: types.StringType,
 				MarkdownDescription: "Arbitrary values; any change deploys again."},
 			"wait": schema.BoolAttribute{Optional: true, Computed: true, Default: booldefault.StaticBool(true),
-				MarkdownDescription: "Wait until the deployment serves."},
+				MarkdownDescription: "Wait until the deployment serves (default `true`); with a deploy strategy, until the new revision is " +
+					"ready and its rollout under way."},
 			"timeout": schema.StringAttribute{Optional: true, Computed: true, Default: stringdefault.StaticString("10m"),
-				MarkdownDescription: "How long to wait for the build and the deployment (Go duration)."},
-			"status":        schema.StringAttribute{Computed: true, MarkdownDescription: "Deployment status (`active`, `pending`, …)."},
+				MarkdownDescription: "How long to wait for the build and the deployment (Go duration, default `10m`)."},
+			"status": schema.StringAttribute{Computed: true,
+				MarkdownDescription: "Deployment status (`active`, `pending`, …; `running` while a rollout of the deploy strategy is under way)."},
 			"version_label": schema.StringAttribute{Computed: true, MarkdownDescription: "Deployed version label (`v7`)."},
 			"url":           schema.StringAttribute{Computed: true, MarkdownDescription: "Project URL (HTTP trigger)."},
 			"ready_at":      schema.StringAttribute{Computed: true, MarkdownDescription: "When the deployment became ready (RFC 3339)."},
@@ -162,9 +174,31 @@ func (r *deploymentResource) deploy(ctx context.Context, plan *deploymentModel) 
 			return err
 		}
 	}
-	d, err := api.Deploy(ctx, pid, version.ID, nil)
-	if err != nil {
-		return err
+	env := environmentRef(plan.Environment)
+	var d *runr.Deployment
+	if env == "" {
+		if d, err = api.Deploy(ctx, pid, version.ID, nil); err != nil {
+			return err
+		}
+	} else {
+		// An API before environments ignores the field: the environment is looked up first
+		if _, err := api.GetEnvironment(ctx, pid, env); err != nil {
+			return err
+		}
+		start, err := api.StartDeployWith(ctx, pid, version.ID, runr.DeployOptions{Environment: env})
+		if err != nil {
+			return err
+		}
+		d = start.Deployment
+		if start.Queued != nil {
+			q, err := api.WaitQueuedDeploy(ctx, pid, start.Queued, r.client.wait(timeout))
+			if err != nil {
+				return err
+			}
+			if d, err = api.GetDeployment(ctx, pid, q.DeploymentID); err != nil {
+				return err
+			}
+		}
 	}
 	plan.ID = types.StringValue(d.ID)
 	plan.VersionID = types.StringValue(version.ID)
@@ -184,7 +218,11 @@ func (r *deploymentResource) deploy(ctx context.Context, plan *deploymentModel) 
 		}
 	}
 	plan.URL = types.StringNull()
-	if p, err := api.GetProject(ctx, pid); err == nil {
+	if env != "" {
+		if e, err := api.GetEnvironment(ctx, pid, env); err == nil {
+			plan.URL = strOrNull(e.URL)
+		}
+	} else if p, err := api.GetProject(ctx, pid); err == nil {
 		plan.URL = strOrNull(p.EndpointURL)
 	}
 	return nil
@@ -234,6 +272,17 @@ func (r *deploymentResource) Read(ctx context.Context, req resource.ReadRequest,
 		return
 	}
 	state.Status = types.StringValue(d.Status)
+	state.Environment = environmentState(state.Environment, d.EnvironmentID, d.Environment)
+	// an imported deployment learns its URL here
+	if state.URL.IsNull() {
+		if env := environmentRef(state.Environment); env != "" {
+			if e, err := r.client.API.GetEnvironment(ctx, state.ProjectID.ValueString(), env); err == nil {
+				state.URL = strOrNull(e.URL)
+			}
+		} else if p, err := r.client.API.GetProject(ctx, state.ProjectID.ValueString()); err == nil {
+			state.URL = strOrNull(p.EndpointURL)
+		}
+	}
 	if d.Version != nil {
 		state.VersionID = types.StringValue(d.Version.ID)
 		state.VersionLabel = types.StringValue(d.VersionLabel)

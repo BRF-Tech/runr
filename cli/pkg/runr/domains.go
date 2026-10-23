@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 	"strings"
 )
 
@@ -15,27 +16,57 @@ const (
 	TLSCertManager = "cert-manager"
 )
 
-// ListDomains returns a project's custom domains and the meta object (eligibility, DNS targets).
+// ListDomains returns a project's custom domains (of its own workload) and the meta object
+// (eligibility, DNS targets).
 func (c *Client) ListDomains(ctx context.Context, projectID string) ([]Domain, *DomainsMeta, error) {
+	return c.ListEnvironmentDomains(ctx, projectID, "")
+}
+
+// ListEnvironmentDomains returns the custom domains of one environment of the project (name or
+// id; "" the project's own workload) and the meta object of that environment: its eligibility and
+// the DNS targets of the region it runs in (docs/environments.md#domains).
+func (c *Client) ListEnvironmentDomains(ctx context.Context, projectID, environment string) ([]Domain, *DomainsMeta, error) {
 	var out struct {
 		Data []Domain    `json:"data"`
 		Meta DomainsMeta `json:"meta"`
 	}
-	if err := c.do(ctx, request{method: http.MethodGet, path: "/projects/" + projectID + "/domains"}, &out); err != nil {
+	if err := c.do(ctx, request{method: http.MethodGet, path: "/projects/" + projectID + "/domains", query: environmentQuery(environment)}, &out); err != nil {
+		if environment != "" {
+			return nil, nil, environmentErr(err, environment)
+		}
 		return nil, nil, err
 	}
 	return out.Data, &out.Meta, nil
 }
 
+// environmentQuery is ?environment= of an environment-scoped request ("": none, the project's own
+// workload).
+func environmentQuery(environment string) url.Values {
+	if environment == "" {
+		return nil
+	}
+	return url.Values{"environment": {environment}}
+}
+
 // AddDomain adds a custom domain; it stays pending until VerifyDomain finds the TXT record.
 func (c *Client) AddDomain(ctx context.Context, projectID, domain string) (*Domain, error) {
+	return c.AddEnvironmentDomain(ctx, projectID, "", domain)
+}
+
+// AddEnvironmentDomain adds a custom domain to one environment of the project ("" its own
+// workload): the domain routes to that environment's workload.
+func (c *Client) AddEnvironmentDomain(ctx context.Context, projectID, environment, domain string) (*Domain, error) {
 	body := struct {
-		Domain string `json:"domain"`
-	}{Domain: domain}
+		Domain      string `json:"domain"`
+		Environment string `json:"environment,omitempty"`
+	}{Domain: domain, Environment: environment}
 	var out struct {
 		Data Domain `json:"data"`
 	}
 	if err := c.do(ctx, request{method: http.MethodPost, path: "/projects/" + projectID + "/domains", body: body}, &out); err != nil {
+		if environment != "" {
+			return nil, environmentErr(err, environment)
+		}
 		return nil, err
 	}
 	return &out.Data, nil
@@ -44,6 +75,11 @@ func (c *Client) AddDomain(ctx context.Context, projectID, domain string) (*Doma
 // VerifyDomain checks the domain's DNS records. The domain is returned in both cases; err is
 // a *DomainVerifyError when the API answered 422 (not verified yet).
 func (c *Client) VerifyDomain(ctx context.Context, projectID, domainID string) (*Domain, error) {
+	return c.VerifyEnvironmentDomain(ctx, projectID, "", domainID)
+}
+
+// VerifyEnvironmentDomain is VerifyDomain for a domain of one environment of the project.
+func (c *Client) VerifyEnvironmentDomain(ctx context.Context, projectID, environment, domainID string) (*Domain, error) {
 	var out struct {
 		Message string `json:"message"`
 		Data    Domain `json:"data"`
@@ -54,7 +90,7 @@ func (c *Client) VerifyDomain(ctx context.Context, projectID, domainID string) (
 	}
 	var ae *APIError
 	if errors.As(err, &ae) && ae.StatusCode == http.StatusUnprocessableEntity {
-		d, derr := c.GetDomain(ctx, projectID, domainID)
+		d, derr := c.GetEnvironmentDomain(ctx, projectID, environment, domainID)
 		if derr != nil {
 			return nil, err
 		}
@@ -97,7 +133,12 @@ func (c *Client) DeleteDomain(ctx context.Context, projectID, domainID string) e
 
 // GetDomain returns one domain of a project by id.
 func (c *Client) GetDomain(ctx context.Context, projectID, domainID string) (*Domain, error) {
-	list, _, err := c.ListDomains(ctx, projectID)
+	return c.GetEnvironmentDomain(ctx, projectID, "", domainID)
+}
+
+// GetEnvironmentDomain returns one domain of an environment of the project by id.
+func (c *Client) GetEnvironmentDomain(ctx context.Context, projectID, environment, domainID string) (*Domain, error) {
+	list, _, err := c.ListEnvironmentDomains(ctx, projectID, environment)
 	if err != nil {
 		return nil, err
 	}
@@ -111,7 +152,13 @@ func (c *Client) GetDomain(ctx context.Context, projectID, domainID string) (*Do
 
 // FindDomain resolves a domain of a project by id or host name.
 func (c *Client) FindDomain(ctx context.Context, projectID, ref string) (*Domain, error) {
-	list, _, err := c.ListDomains(ctx, projectID)
+	return c.FindEnvironmentDomain(ctx, projectID, "", ref)
+}
+
+// FindEnvironmentDomain resolves a domain of one environment of the project ("" its own workload)
+// by id or host name.
+func (c *Client) FindEnvironmentDomain(ctx context.Context, projectID, environment, ref string) (*Domain, error) {
+	list, _, err := c.ListEnvironmentDomains(ctx, projectID, environment)
 	if err != nil {
 		return nil, err
 	}

@@ -3,15 +3,18 @@
 page_title: "runr_deployment Resource - runr"
 subcategory: ""
 description: |-
-  The running deployment of a project. Creating it deploys a version (default: the latest) or, for caas projects, an image; changing version_id, image or triggers deploys again in place (the previous deployment is shut down by RunR once the new one is ready). Destroying it tears the deployment down.
+  The running deployment of a project. Creating it deploys a version (default: the latest) or, for caas projects, an image; changing version_id, image or triggers deploys again in place (the previous deployment is shut down by RunR once the new one is ready). Destroying it tears the deployment down. With environment it is the running deployment of one of the project's environments.
   Code of faas/xaas projects is uploaded as versions with runr deploy; put a value that changes with the code or config (a commit SHA, runr_env_var values) into triggers to redeploy.
+  A deploy of a project with a blue-green or canary deploy strategy (runr_project.deploy_strategy) opens a rollout while another deployment serves: the new deployment is running next to it until the rollout promotes it (active). Promoting, aborting and rolling back stay with runr rollout, the console or the API; a deployment whose rollout was aborted or rolled back drops out of the state, and the next apply deploys again.
 ---
 
 # runr_deployment (Resource)
 
-The running deployment of a project. Creating it deploys a version (default: the latest) or, for `caas` projects, an image; changing `version_id`, `image` or `triggers` deploys again in place (the previous deployment is shut down by RunR once the new one is ready). Destroying it tears the deployment down.
+The running deployment of a project. Creating it deploys a version (default: the latest) or, for `caas` projects, an image; changing `version_id`, `image` or `triggers` deploys again in place (the previous deployment is shut down by RunR once the new one is ready). Destroying it tears the deployment down. With `environment` it is the running deployment of one of the project's environments.
 
 Code of `faas`/`xaas` projects is uploaded as versions with `runr deploy`; put a value that changes with the code or config (a commit SHA, `runr_env_var` values) into `triggers` to redeploy.
+
+A deploy of a project with a blue-green or canary deploy strategy (`runr_project.deploy_strategy`) opens a rollout while another deployment serves: the new deployment is `running` next to it until the rollout promotes it (`active`). Promoting, aborting and rolling back stay with `runr rollout`, the console or the API; a deployment whose rollout was aborted or rolled back drops out of the state, and the next apply deploys again.
 
 ## Example Usage
 
@@ -52,17 +55,18 @@ output "web_url" {
 
 ### Optional
 
+- `environment` (String) Environment of the project to deploy into, by name or id (`runr_environment.<x>.name`); left out or `production`: the project's own workload. It deploys with the environment's configuration; moving it replaces the deployment. Promoting a version from one environment to the next stays an action (`runr promote`).
 - `image` (String) `caas`: image to deploy; it is written to the project config (a new version) first.
-- `timeout` (String) How long to wait for the build and the deployment (Go duration).
+- `timeout` (String) How long to wait for the build and the deployment (Go duration, default `10m`).
 - `triggers` (Map of String) Arbitrary values; any change deploys again.
 - `version_id` (String) Version to deploy (default: the latest version when the deployment is created).
-- `wait` (Boolean) Wait until the deployment serves.
+- `wait` (Boolean) Wait until the deployment serves (default `true`); with a deploy strategy, until the new revision is ready and its rollout under way.
 
 ### Read-Only
 
 - `id` (String) Id of the current deployment (changes on every redeploy).
 - `ready_at` (String) When the deployment became ready (RFC 3339).
-- `status` (String) Deployment status (`active`, `pending`, …).
+- `status` (String) Deployment status (`active`, `pending`, …; `running` while a rollout of the deploy strategy is under way).
 - `url` (String) Project URL (HTTP trigger).
 - `version_label` (String) Deployed version label (`v7`).
 

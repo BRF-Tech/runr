@@ -9,6 +9,7 @@ use App\Models\Observability\AlertEvent;
 use App\Models\Observability\AlertRule;
 use App\Services\Observability\Alerts\Channels\ChannelRegistry;
 use App\Services\Observability\TenantScope;
+use App\Triggers\PlatformEvents;
 use Illuminate\Support\Collection;
 
 /**
@@ -115,16 +116,32 @@ class AlertManager
             ->get();
     }
 
-    /** One delivery per enabled channel of the rule, sent in the background. */
+    /**
+     * One delivery per enabled channel of the rule, sent in the background; functions with a
+     * platform_event trigger get alert.fired / alert.resolved (docs/triggers.md#platform-events).
+     */
     public function deliver(AlertEvent $event, AlertRule $rule, string $kind): void
     {
+        $this->raisePlatformEvent($event, $rule, $kind);
+
         $ids = array_values(array_filter((array) ($rule->channel_ids ?? []), 'is_string'));
         if (! $ids) {
             return;
         }
 
+        $this->deliverToChannels($event, AlertChannel::query()->whereIn('id', $ids)->where('is_enabled', true)->get(), $kind);
+    }
+
+    /**
+     * One delivery per channel, sent in the background — also for events without a rule (a
+     * zero-day runtime patch goes to every channel of the organization, RuntimePatchNotifier).
+     *
+     * @param  iterable<AlertChannel>  $channels
+     */
+    public function deliverToChannels(AlertEvent $event, iterable $channels, string $kind): void
+    {
         $tenant = TenantScope::current();
-        foreach (AlertChannel::query()->whereIn('id', $ids)->where('is_enabled', true)->get() as $channel) {
+        foreach ($channels as $channel) {
             $delivery = AlertDelivery::query()->create([
                 'alert_event_id' => $event->id,
                 'alert_channel_id' => $channel->id,
@@ -134,6 +151,23 @@ class AlertManager
 
             DeliverAlertJob::dispatch($delivery->id, $tenant);
         }
+    }
+
+    private function raisePlatformEvent(AlertEvent $event, AlertRule $rule, string $kind): void
+    {
+        $resolved = $kind === AlertDelivery::KIND_RESOLVE;
+        app(PlatformEvents::class)->dispatch($resolved ? PlatformEvents::ALERT_RESOLVED : PlatformEvents::ALERT_FIRED, [
+            'alert_event_id' => $event->id,
+            'rule_id' => $rule->id,
+            'rule_name' => $rule->name ?? null,
+            'type' => $event->type,
+            'severity' => $event->severity,
+            'title' => $event->title,
+            'message' => $event->message,
+            'fired_at' => $event->fired_at->toIso8601String(),
+            'resolved_at' => $event->resolved_at?->toIso8601String(),
+            'data' => $event->data ?? [],
+        ], $event->project_id, $event->id.':'.($resolved ? 'resolved' : 'fired:'.($event->last_notified_at?->getTimestamp() ?? 0)));
     }
 
     /**

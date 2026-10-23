@@ -36,6 +36,9 @@ Route::middleware(['api', 'auth:sanctum'])->group(function () {
 
         Route::get('/regions', [RegionController::class, 'index']);
         Route::put('/regions/{region}', [RegionController::class, 'update']);
+        Route::put('/regions/{region}/queue-consumers', [RegionController::class, 'queueConsumers']);
+        Route::get('/regions/{region}/organizations', [RegionController::class, 'organizations']);
+        Route::put('/regions/{region}/organizations/{tenant}', [RegionController::class, 'organization']);
 
         Route::get('/markups', [MarkupController::class, 'index']);
         Route::post('/markups', [MarkupController::class, 'store']);
@@ -80,4 +83,8 @@ Route::middleware(['api', 'auth:sanctum'])->group(function () {
     Route::get('/projects/{project}/billing/bills/{bill}', [ProjectBillingController::class, 'bill']);
     Route::post('/projects/{project}/billing/fixed-requests', [ProjectBillingController::class, 'storeRequest']);
     Route::post('/projects/{project}/billing/fixed-requests/{fixedRequest}/cancel', [ProjectBillingController::class, 'cancel']);
+    Route::get('/projects/{project}/billing/cost-limit', [ProjectBillingController::class, 'costLimit']);
+    Route::put('/projects/{project}/billing/cost-limit', [ProjectBillingController::class, 'setCostLimit']);
+    Route::delete('/projects/{project}/billing/cost-limit', [ProjectBillingController::class, 'clearCostLimit']);
+    Route::post('/projects/{project}/billing/cost-limit/resume', [ProjectBillingController::class, 'resumeCostLimit']);
 });

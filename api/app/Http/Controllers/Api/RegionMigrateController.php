@@ -34,11 +34,12 @@ class RegionMigrateController extends Controller
 
     /**
      * The move's state and, while it can still be rolled back, what it did with each project of the
-     * region (RegionMigrateService::migrationReport(): moved, building, deployed, not_moved,
-     * cancelled — with the reason). Never answered from the response cache: the builds and
+     * region and each environment that runs there (`environment`: its name, none for a project's
+     * own workload) — RegionMigrateService::migrationReport(): moved, building, deployed,
+     * not_moved, cancelled, with the reason. Never answered from the response cache: the builds and
      * deploys it follows change no region setting.
      */
-    #[OpenApiResponse(200, 'The move\'s state and what it did with each project (projects: empty once the move is completed or rolled back)', type: 'array{migration_status: string|null, migration_started_at: string|null, migration_old_ip: string|null, current_ip: string|null, is_migrating: bool, projects: list<array{organization: string|null, project_id: string, project: string, outcome: "moved"|"building"|"deployed"|"not_moved"|"cancelled", version: int|null, deployment_status: string|null, message: string|null}>}')]
+    #[OpenApiResponse(200, 'The move\'s state and what it did with each project (projects: empty once the move is completed or rolled back)', type: 'array{migration_status: string|null, migration_started_at: string|null, migration_old_ip: string|null, current_ip: string|null, is_migrating: bool, projects: list<array{organization: string|null, project_id: string, project: string, environment?: string, outcome: "moved"|"building"|"deployed"|"not_moved"|"cancelled", version: int|null, deployment_status: string|null, message: string|null}>}')]
     public function migrationStatus(KnativeRegion $knativeRegion, RegionMigrateService $service): JsonResponse
     {
         return response()->json([

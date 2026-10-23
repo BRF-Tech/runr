@@ -59,6 +59,22 @@ class TenantRegionSyncTest extends TestCase
         $this->assertTrue($tenant->is_synced);
     }
 
+    /**
+     * The custom domains of tenant projects on a platform region read whether TLS mode
+     * cert-manager is offered and the ClusterIssuer from the tenant copy (TenantMigrations/0081):
+     * the copy carries no region settings.
+     */
+    public function test_cert_manager_status_and_issuer_reach_the_tenant_region_copy(): void
+    {
+        $central = (new CentralSyncableRegion)->getSyncedAttributeNames();
+        $tenant = new TenantLocalRegion;
+
+        foreach (['cert_manager_status', 'cert_manager_issuer'] as $field) {
+            $this->assertContains($field, $central, "central region does not sync {$field}");
+            $this->assertTrue($tenant->isFillable($field), "tenant region copy drops {$field}");
+        }
+    }
+
     public function test_kubeconfig_is_never_synced(): void
     {
         $this->assertNotContains('kubeconfig', (new CentralSyncableRegion)->getSyncedAttributeNames());

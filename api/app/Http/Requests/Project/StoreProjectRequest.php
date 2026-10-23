@@ -14,8 +14,10 @@ use App\Rules\ProjectSlug;
 use App\Rules\WithinRegionTimeout;
 use App\Rules\WithinResourceLimit;
 use App\Services\Ai\Gpu\GpuValidation;
+use App\Services\GlobalProjects\GlobalProjectService;
 use App\Services\Images\UploadedImages;
 use App\Services\Runtimes\RuntimeRegistry;
+use App\Support\Projects\ScaleRules;
 use App\Support\Rbac\ProjectChangeAuthorization;
 use App\Support\Secrets\ProjectSecretWriter;
 use Illuminate\Foundation\Http\FormRequest;
@@ -40,6 +42,8 @@ class StoreProjectRequest extends FormRequest
         $serviceType = is_string($s = $this->input('service_type')) ? $s : null;
         // scale to zero off keeps a pod running: the always-on budget, not the FaaS overcommit one
         $scaleToZero = $this->input('config.scale_to_zero') ?? true;
+        // A timed warmer reserves its peak in place of min_scale (ScaleSchedule::reservedMinScale)
+        $scaleSchedule = $this->input('config.scale_schedule');
 
         return [
             'name' => ['required', 'string', 'max:255', 'unique:projects,name', new ProjectSlug],
@@ -107,8 +111,8 @@ class StoreProjectRequest extends FormRequest
             // Secret variables, name => value; checked in withValidator
             'config.secret_env_vars' => 'nullable|array',
             'config.ports' => 'nullable|array',
-            'config.memory_mb' => ['nullable', 'integer', 'min:64', new WithinResourceLimit('memory', null, $knativeRegionId, $triggerType, $minScale, $serviceType, $scaleToZero)],
-            'config.cpu' => ['bail', 'nullable', 'string', new KubernetesCpu, new WithinResourceLimit('cpu', null, $knativeRegionId, $triggerType, $minScale, $serviceType, $scaleToZero)],
+            'config.memory_mb' => ['nullable', 'integer', 'min:64', new WithinResourceLimit('memory', null, $knativeRegionId, $triggerType, $minScale, $serviceType, $scaleToZero, $scaleSchedule)],
+            'config.cpu' => ['bail', 'nullable', 'string', new KubernetesCpu, new WithinResourceLimit('cpu', null, $knativeRegionId, $triggerType, $minScale, $serviceType, $scaleToZero, $scaleSchedule)],
             'config.timeout_seconds' => ['nullable', 'integer', 'min:1', new WithinRegionTimeout($knativeRegionId)],
             'config.image_pull_policy' => 'nullable|string|in:Always,IfNotPresent,Never',
             'config.image_pull_secret' => 'nullable|string',
@@ -116,6 +120,8 @@ class StoreProjectRequest extends FormRequest
             'config.handler' => 'nullable|string',
             'config.trigger_type' => ['nullable', 'string', Rule::in(Project::TRIGGER_TYPES)],
             'config.schedule' => ['nullable', 'required_if:config.trigger_type,schedule', 'string', new CronSchedule],
+            // the schedule trigger's IANA zone; null / "" = the organization's (ProjectTriggers::setScheduleTimezone)
+            'config.schedule_timezone' => ['nullable', 'string', 'max:64', 'timezone:all_with_bc'],
             'config.queue_stream' => 'nullable|required_if:config.trigger_type,queue|string|max:255|regex:/^[a-zA-Z0-9._-]+$/',
             'config.scale_to_zero' => 'nullable|boolean',
             'config.min_scale' => 'nullable|integer|min:0|max:10',
@@ -124,12 +130,38 @@ class StoreProjectRequest extends FormRequest
             'gateway_path' => 'nullable|required_if:endpoint_type,gateway|string|max:255|regex:/^\/[a-zA-Z0-9\/_-]*$/',
             'gateway_methods' => 'nullable|array',
             'gateway_methods.*' => 'string|in:GET,POST,PUT,PATCH,DELETE',
-        ] + GpuValidation::rules('config');
+            // Global project (docs/global-projects.md): its regions (knative_region_id is the primary)
+            'placement' => ['nullable', 'string', Rule::in([Project::PLACEMENT_REGIONAL, Project::PLACEMENT_GLOBAL])],
+            'global_mode' => ['nullable', 'string', Rule::in(Project::GLOBAL_MODES)],
+            'region_ids' => ['nullable', 'array', 'required_if:placement,'.Project::PLACEMENT_GLOBAL],
+            'region_ids.*' => ['string', 'max:26'],
+        ] + ScaleRules::schedule(
+            'config.scale_schedule',
+            fn () => is_numeric($m = $this->input('config.max_scale')) ? (int) $m : 1,
+            fn () => $triggerType,
+        ) + GpuValidation::rules('config');
     }
 
     public function withValidator($validator): void
     {
         $validator->after(function ($validator) {
+            // min_scale ≤ max_scale (a new project's max_scale is 1 unless it sends one)
+            ScaleRules::checkMinMax(
+                $validator,
+                $this->input('config.min_scale') ?? 0,
+                $this->input('config.max_scale') ?? 1,
+                'config.min_scale',
+                'config.max_scale',
+                $this->filled('config.min_scale'),
+            );
+
+            // Global project: eligible regions, data residency in each, what it may run (GlobalProjectService)
+            if ($this->input('placement') === Project::PLACEMENT_GLOBAL) {
+                foreach (app(GlobalProjectService::class)->creationErrors($this->all()) as $field => $message) {
+                    $validator->errors()->add($field, $message);
+                }
+            }
+
             if ($this->input('config.trigger_type') === 'queue' || ($this->input('config.trigger_type') === 'workflow' && $this->filled('config.queue_stream'))) {
                 $regionId = $this->input('knative_region_id');
                 $region = $regionId ? KnativeRegion::find($regionId) : null;
@@ -143,6 +175,11 @@ class StoreProjectRequest extends FormRequest
                 $env = $this->input('config.env_vars');
                 foreach (ProjectSecretWriter::errors(null, $secrets, is_array($env) ? $env : []) as $field => $message) {
                     $validator->errors()->add($field, $message);
+                }
+                // Pass-through: the values live in the region's cluster
+                $region = is_string($this->input('knative_region_id')) ? KnativeRegion::find($this->input('knative_region_id')) : null;
+                if ($error = ProjectSecretWriter::clusterError($region, $secrets)) {
+                    $validator->errors()->add('config.secret_env_vars', $error);
                 }
             }
 

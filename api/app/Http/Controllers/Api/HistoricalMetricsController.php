@@ -48,6 +48,10 @@ class HistoricalMetricsController extends Controller
     /**
      * GET /api/projects/{project}/metrics/summary
      *
+     * sessions: the sessions that started in the period and ended. Their total_cpu_ms (CPU
+     * milliseconds, 1 vCPU for 1 s = 1000) and total_memory_mb_ms (MiB × ms) are what metering
+     * counts for them: the deployment's size × the sessions' pod time (SessionTrackingService::getStats).
+     *
      * @queryParam period string 7d|30d|90d (default: 7d)
      */
     public function summary(Request $request, Project $project): JsonResponse

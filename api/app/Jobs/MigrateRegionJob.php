@@ -13,7 +13,15 @@ use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Facades\Log;
 
-/** Encrypted queue payload: carries the new kubeconfig (docs/security.md) */
+/**
+ * The first part of a region move (RegionMigrateService::migrateInfrastructure(): the region on
+ * the new cluster and everything it runs there besides the projects), then the second part as its
+ * own job (MigrateRegionProjectsJob): each part has the queue's longest timeout (30 minutes, under
+ * retry_after), which the whole move on a slow cluster can outgrow — Knative, the registry with its
+ * image pre-pull, External Secrets Operator and OpenBao install and wait for their pods.
+ *
+ * Encrypted queue payload: carries the new kubeconfig (docs/security.md)
+ */
 class MigrateRegionJob implements ShouldBeEncrypted, ShouldQueue
 {
     use BroadcastsJobCompletion, Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
@@ -32,12 +40,9 @@ class MigrateRegionJob implements ShouldBeEncrypted, ShouldQueue
 
     public function handle(RegionMigrateService $service): void
     {
-        $service->migrate($this->region, $this->newKubeconfig);
+        $service->migrateInfrastructure($this->region, $this->newKubeconfig);
 
-        $this->broadcastSuccess('region.migrated', [
-            'region_id' => $this->region->id,
-            'region_name' => $this->region->name,
-        ], "Migration completed for {$this->region->name}");
+        MigrateRegionProjectsJob::dispatch($this->region, $this->initiatorId);
     }
 
     public function failed(?\Throwable $e): void

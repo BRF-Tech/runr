@@ -10,6 +10,7 @@ use App\Models\Sandbox;
 use App\Models\SandboxPool;
 use App\Models\SandboxRegionSetting;
 use App\Services\Residency\RegionPolicy;
+use App\Services\Runtimes\Patches\RuntimePatches;
 use App\Services\Runtimes\RuntimeRegistry;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Sleep;
@@ -172,6 +173,10 @@ class SandboxPoolService
 
             if ($member->status === Sandbox::STATUS_WARMING) {
                 $state = SandboxService::podState($k8s->getResourceStatus('v1', 'Pod', $member->pod_name, $member->namespace));
+                if ($state === null) {
+                    // the runtime keeps failing to create the pod sandbox: the pod will not start
+                    $state = $service->startFailure($k8s, $member->namespace, $member->pod_name);
+                }
                 if ($state === true) {
                     $member->update(['status' => Sandbox::STATUS_WARM]);
                 } elseif (is_string($state) || $member->created_at->lt(now()->subSeconds($startTimeout))) {
@@ -348,7 +353,7 @@ class SandboxPoolService
             throw new SandboxException(__('sandboxes.version_unknown', ['runtime' => $pool->runtime, 'version' => (string) $pool->runtime_version]), 422, 'runtime_unavailable');
         }
 
-        return $runtimes->versionImage($manifest, $executor, $region);
+        return app(RuntimePatches::class)->forSandbox($executor, $runtimes->versionImage($manifest, $executor, $region));
     }
 
     /** API shape of a pool. */

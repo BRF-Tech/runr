@@ -15,7 +15,7 @@ The e2e suites here pull the published images (see [Runtime images](#runtime-ima
 |------|----------|
 | `agent/` | The region agent `runr-agent` (Go): metrics, pod sessions, events, uptime checks |
 | `queue-consumer/` | The queue trigger's Redis Streams consumer (Go) |
-| `image-upload/` | The receiver Job of [uploaded images](../docs/images.md) (Go, go-containerregistry) |
+| `image-upload/` | The receiver Job of [uploaded images](../docs/images.md) and the transfer agent of [organization exports and imports](../docs/org-export.md) (`transfer`: data dumps and images in and out of a region) (Go, go-containerregistry) |
 | `supply-chain/` | The tools image of the [supply-chain](../docs/supply-chain.md) Jobs (syft, trivy, cosign, oras) |
 | `wasm-shim-spin/` | RunR's build of the Spin shim that WebAssembly regions install ([docs/wasm.md](../docs/wasm.md)) |
 | `nginx-test/` | A small CaaS test image |
@@ -44,6 +44,20 @@ Every image build of `ci.sh` (local `docker build`, `--push` through buildx, and
 of `build-deploy`) runs with `--pull`: base images come from their registry, never from an older
 copy the build host's Docker holds. Each build command exits 0 once its images are built (and
 pushed). `runtime/test/build_push_test.sh` checks both without Docker.
+
+The region agent and the queue consumer are tagged with the release's version (`appVersion` of
+`helm/Chart.yaml`) and `latest`: the API runs them at its own version. A release publishes every
+image of the regions it references by version:
+
+```bash
+bash runtime/ci.sh release-images            # the list: agent and queue-consumer at appVersion,
+                                             # gateway-auth, image-upload, supply-chain, the Spin shim
+bash runtime/ci.sh release-images --push     # builds and pushes each one the registry does not have yet
+```
+
+`runtime/test/release_images_test.sh` keeps that list equal to the images the API references
+(`api/config`, the Spin shim) and checks that no default of RunR's own images is `:latest`. The
+API and UI images (`api`, `ui`, `ui-mt` at `appVersion`) come from the console's release build.
 
 #### Test image — CaaS test image (nginx-test)
 
@@ -75,12 +89,14 @@ installs Knative through the API. See [docs/development.md](../docs/development.
 
 | Command | Purpose |
 |---------|---------|
-| `queue-consumer [--push]` | Build the queue-consumer image |
-| `build-agent [--push]` | Build the runr-agent image |
+| `queue-consumer [--push]` | Build the queue-consumer image (`<appVersion>` and `latest`) |
+| `build-agent [--push]` | Build the runr-agent image (`<appVersion>` and `latest`) |
+| `release-images [--push [--force]]` | The images of the regions a release references by version; `--push` builds and pushes the missing ones |
 | `wasm-shim [--push]` | Build the Spin shim image (`containerd-shim-spin`) |
 | `supply-chain [--push]` | Build the supply-chain tools image |
-| `image-upload [--push]` | Build the image-upload receiver |
-| `test-runtimes`, `test-wasm`, `test-images`, `test-observability`, `test-reconcile`, `test-sandbox-api`, `test-supply-chain`, `test-ai`, `test-bindings`, `test-git-deploy`, `test-mcp`, `test-admission` | End-to-end suite of one feature on Kind + Knative (same flags as `test`) |
+| `image-upload [--push]` | Build the image-upload receiver / org transfer agent |
+| `gateway-auth [--push]` | Build the API product's gateway-auth image |
+| `test-runtimes`, `test-wasm`, `test-images`, `test-org-transfer`, `test-observability`, `test-triggers`, `test-trigger-sources`, `test-reconcile`, `test-network`, `test-internal-network`, `test-cert-manager`, `test-sandbox-api`, `test-supply-chain`, `test-ai`, `test-bindings`, `test-git-deploy`, `test-mcp`, `test-admission`, `test-runtime-patches`, `test-warmer`, `test-deploy-strategies`, `test-secrets`, `test-environments`, `test-api-product`, `test-region-move`, `test-global-projects` | End-to-end suite of one feature on Kind + Knative (same flags as `test`) |
 | `test-tenancy` / `test-authprovider` / `test-ticket` | Module E2E tests on Docker Compose (no Kubernetes) |
 | `build-deploy`, `deploy`, `upgrade`, `registry-push`, `deploy-status` | Build the API/UI images and install or upgrade RunR with Helm |
 

@@ -18,14 +18,40 @@ type DeployConfig struct {
 	ScaleToZero    *bool   `json:"scale_to_zero,omitempty"`
 	MinScale       *int    `json:"min_scale,omitempty"`
 	MaxScale       *int    `json:"max_scale,omitempty"`
+	// Strategy overrides the project's deploy strategy for this deploy (StrategyDirect,
+	// StrategyBlueGreen or StrategyCanary; "" keeps the project's), e.g. direct for an
+	// emergency fix. It is sent as the deploy's strategy field, not in deploy_config; the
+	// strategy's options always come from the project.
+	Strategy string `json:"-"`
 }
 
-// ListDeployments returns a project's deployments, newest first.
+// configEmpty reports whether no config field is overridden (Strategy aside).
+func (d *DeployConfig) configEmpty() bool {
+	c := *d
+	c.Strategy = ""
+	return c == DeployConfig{}
+}
+
+// ListDeployments returns a project's deployments, newest first: those of its own workload
+// (the primary environment).
 func (c *Client) ListDeployments(ctx context.Context, projectID string) ([]Deployment, error) {
+	return c.ListEnvironmentDeployments(ctx, projectID, "")
+}
+
+// ListEnvironmentDeployments returns the deployments of one environment of the project (name or
+// id; "" the project's own workload, "all" every environment's), newest first.
+func (c *Client) ListEnvironmentDeployments(ctx context.Context, projectID, environment string) ([]Deployment, error) {
+	q := url.Values{}
+	if environment != "" {
+		q.Set("environment", environment)
+	}
 	var out struct {
 		Data []Deployment `json:"data"`
 	}
-	if err := c.do(ctx, request{method: http.MethodGet, path: "/projects/" + projectID + "/deployments"}, &out); err != nil {
+	if err := c.do(ctx, request{method: http.MethodGet, path: "/projects/" + projectID + "/deployments", query: q}, &out); err != nil {
+		if environment != "" {
+			return nil, environmentErr(err, environment)
+		}
 		return nil, err
 	}
 	return out.Data, nil
@@ -80,16 +106,72 @@ type DeployStart struct {
 // StartDeploy starts a deployment of a version. The API answers 202 with a pending deployment,
 // or, when the version's image is not in the region's registry (built before the region moved
 // to another cluster), with a queued deploy: the version is built again and deploys when the
-// build is ready (WaitQueuedDeploy follows it).
+// build is ready (WaitQueuedDeploy follows it). A deploy of a project with the blue-green or
+// canary strategy while a deployment serves it opens a rollout: the deployment's Rollout is set.
 func (c *Client) StartDeploy(ctx context.Context, projectID, versionID string, override *DeployConfig) (*DeployStart, error) {
+	return c.StartDeployWith(ctx, projectID, versionID, DeployOptions{Override: override})
+}
+
+// DeployOptions are what a deploy may name besides its version.
+type DeployOptions struct {
+	// Override changes the project config for this deployment only.
+	Override *DeployConfig
+	// Environment deploys to one of the project's environments (name or id) instead of its
+	// own workload (docs/environments.md). An API before environments ignores the field:
+	// resolve the environment first (GetEnvironment) to refuse such a deploy.
+	Environment string
+	// RestoreConfig runs the config an earlier deployment of the version ran with — what a
+	// rollback does (docs/versioning.md#rollback) — instead of the current config;
+	// RestoreFromDeployment names that deployment (default: the newest of the version in the
+	// environment). An API before config snapshots deploys with the current config.
+	RestoreConfig         bool
+	RestoreFromDeployment string
+}
+
+// StartDeployWith is StartDeploy with an environment and a restored config.
+func (c *Client) StartDeployWith(ctx context.Context, projectID, versionID string, opts DeployOptions) (*DeployStart, error) {
 	body := struct {
-		VersionID    string        `json:"version_id"`
-		DeployConfig *DeployConfig `json:"deploy_config,omitempty"`
-	}{VersionID: versionID, DeployConfig: override}
+		VersionID               string        `json:"version_id"`
+		DeployConfig            *DeployConfig `json:"deploy_config,omitempty"`
+		Strategy                string        `json:"strategy,omitempty"`
+		Environment             string        `json:"environment,omitempty"`
+		RestoreConfig           bool          `json:"restore_config,omitempty"`
+		RestoreFromDeploymentID string        `json:"restore_from_deployment_id,omitempty"`
+	}{VersionID: versionID, Environment: opts.Environment, RestoreConfig: opts.RestoreConfig,
+		RestoreFromDeploymentID: opts.RestoreFromDeployment}
+	if override := opts.Override; override != nil {
+		body.Strategy = override.Strategy
+		if !override.configEmpty() {
+			body.DeployConfig = override
+		}
+	}
 	var raw []byte
 	if err := c.do(ctx, request{method: http.MethodPost, path: "/projects/" + projectID + "/deploy", body: body}, &raw); err != nil {
+		if opts.Environment != "" {
+			return nil, environmentErr(err, opts.Environment)
+		}
 		return nil, err
 	}
+	return decodeDeployStart(raw)
+}
+
+// RollbackDeployment deploys a deployment's version again in its environment with the config
+// it ran with (its recorded snapshot and overrides), or with the current config when
+// keepCurrentConfig (docs/versioning.md#rollback). ErrUnsupported on APIs without it.
+func (c *Client) RollbackDeployment(ctx context.Context, projectID, deploymentID string, keepCurrentConfig bool) (*DeployStart, error) {
+	body := map[string]bool{"keep_current_config": keepCurrentConfig}
+	var raw []byte
+	if err := c.do(ctx, request{method: http.MethodPost, path: "/projects/" + projectID + "/deployments/" + seg(deploymentID) + "/rollback", body: body}, &raw); err != nil {
+		if IsNotFound(err) {
+			return nil, ErrUnsupported
+		}
+		return nil, err
+	}
+	return decodeDeployStart(raw)
+}
+
+// decodeDeployStart reads the answer of a deploy: a deployment, or a queued deploy.
+func decodeDeployStart(raw []byte) (*DeployStart, error) {
 	var queued struct {
 		Message string        `json:"message"`
 		Queued  *QueuedDeploy `json:"queued_deploy"`
@@ -257,7 +339,10 @@ func (e *DeploymentFailedError) Error() string {
 	return fmt.Sprintf("deployment %s failed: %s", e.Deployment.ID, msg)
 }
 
-// WaitDeployment polls a deployment until it is active (ready) or failed.
+// WaitDeployment polls a deployment until it is active (ready) or failed. The new deployment
+// of a rollout is ready once the rollout is no longer pending: it serves its test URL (and its
+// first canary share) while the previous deployment stays active, so WaitDeployment returns it
+// then, "running" with its Rollout, instead of waiting for the promotion.
 func (c *Client) WaitDeployment(ctx context.Context, projectID, deploymentID string, opts WaitOptions) (*Deployment, error) {
 	opts = opts.withDefaults()
 	ctx, cancel := context.WithTimeout(ctx, opts.Timeout)
@@ -286,6 +371,12 @@ func (c *Client) WaitDeployment(ctx context.Context, projectID, deploymentID str
 			return d, nil
 		case DeploymentFailed, DeploymentShutDown, DeploymentShuttingDown:
 			return d, &DeploymentFailedError{Deployment: d}
+		}
+		if d.Rollout != nil && d.Rollout.Status != RolloutPending {
+			if d.Rollout.Ended() {
+				return d, rolloutEndedError(d.Rollout)
+			}
+			return d, nil
 		}
 		select {
 		case <-ctx.Done():

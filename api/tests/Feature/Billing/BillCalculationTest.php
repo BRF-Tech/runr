@@ -2,6 +2,12 @@
 
 namespace Tests\Feature\Billing;
 
+use App\Models\ContainerConfig;
+use App\Models\Deployment;
+use App\Models\DeploymentSession;
+use App\Models\Git\PreviewEnvironment;
+use App\Models\Version;
+use App\Services\Metering\UsageAggregator;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -69,6 +75,71 @@ class BillCalculationTest extends TestCase
         $this->assertSame('2026-10-05', $http->firstWhere('total', 0.2)['from']);
         $this->assertEqualsWithDelta(2.0, $http->firstWhere('total', 0.4)['multiplier'], 1e-9);
         $this->assertEqualsWithDelta(3.0, $lines->where('entry_point', 'queue')->first()['quantity'], 1e-9);
+    }
+
+    public function test_scale_to_zero_sessions_are_billed_at_the_size_their_deployment_ran_with(): void
+    {
+        // docs/billing.md, Billing without tenancy: orders-api scales to zero; its pods of 0.5 vCPU
+        // and 1 GB ran 300 hours in October → 150 vCPU-hours and 300 GB-hours = 6.00 + 1.50
+        $owner = $this->userWithRole('owner');
+        $region = $this->billingRegion();
+        $project = $this->billedProject('orders-api', $region, $owner);
+        $this->priceVersion($region->id, '2026-01-01', ['cpu_vcpu_hour' => 0.04, 'memory_gb_hour' => 0.005, 'multiplier_http' => 1]);
+        ContainerConfig::query()->create(['project_id' => $project->id, 'image' => 'nginx:1.27-alpine', 'cpu' => '500m', 'memory_mb' => 1024, 'trigger_type' => 'http', 'scale_to_zero' => true]);
+        $version = Version::query()->create(['project_id' => $project->id, 'number' => 1, 'created_by' => 'dev', 'build_status' => 'ready']);
+        $deployment = Deployment::query()->create([
+            'project_id' => $project->id, 'version_id' => $version->id, 'status' => 'active',
+            'sizing' => ['region_id' => $region->id, 'cpu_m' => 500, 'memory_mb' => 1024, 'trigger_type' => 'http', 'min_scale' => 0, 'max_scale' => 3, 'scale_to_zero' => true, 'gpu_count' => 0],
+        ]);
+        $deployment->forceFill(['ready_at' => '2026-10-01 00:00:00', 'created_at' => '2026-10-01 00:00:00'])->saveQuietly();
+
+        // 30 days with 10 hours of pod time each, as the region agent reports sessions: without
+        // CPU or memory figures
+        for ($day = 1; $day <= 30; $day++) {
+            $start = Carbon::parse(sprintf('2026-10-%02d 08:00:00', $day));
+            DeploymentSession::query()->create([
+                'project_id' => $project->id, 'deployment_id' => $deployment->id, 'region_id' => $region->id, 'entry_point' => 'http',
+                'started_at' => $start, 'ended_at' => $start->copy()->addHours(10), 'duration_ms' => 10 * 3_600_000, 'cold_start' => true,
+            ]);
+            app(UsageAggregator::class)->aggregate($start->toDateString());
+        }
+
+        $result = $this->calculator()->forProject((string) $project->id, Period::fromKey('2026-10'));
+        $lines = collect($result['line_items']);
+
+        $this->assertEqualsWithDelta(150.0, $lines->where('metric', 'vcpu_hours')->sum('quantity'), 1e-9);
+        $this->assertEqualsWithDelta(300.0, $lines->where('metric', 'memory_gb_hours')->sum('quantity'), 1e-9);
+        $this->assertEqualsWithDelta(7.50, $result['total'], 0.001);
+    }
+
+    public function test_preview_environments_are_billed_on_the_projects_bill_as_their_own_line(): void
+    {
+        $owner = $this->userWithRole('owner');
+        $region = $this->billingRegion();
+        $project = $this->billedProject('shop', $region, $owner);
+        $this->priceVersion($region->id, '2026-01-01', ['cpu_vcpu_hour' => 1.00, 'memory_gb_hour' => 0.10, 'multiplier_http' => 1]);
+        $preview = PreviewEnvironment::query()->create(['project_id' => $project->id, 'number' => 12, 'provider' => 'github',
+            'status' => PreviewEnvironment::READY, 'service_name' => 'shop-pr-12']);
+
+        // Two hours of one preview pod of 0.5 vCPU / 1 GiB (its size kept with the session)
+        $start = Carbon::parse('2026-10-05 10:00:00');
+        DeploymentSession::query()->create([
+            'project_id' => $project->id, 'deployment_id' => null, 'preview_environment_id' => $preview->id, 'region_id' => $region->id,
+            'entry_point' => 'http', 'started_at' => $start, 'ended_at' => $start->copy()->addHours(2), 'duration_ms' => 2 * 3_600_000,
+            'metadata' => ['pod' => 'shop-pr-12-00001-deployment-a-b', 'size' => ['cpu_m' => 500, 'memory_mb' => 1024, 'gpu_count' => 0]],
+        ]);
+        app(UsageAggregator::class)->aggregate('2026-10-05');
+
+        $result = $this->calculator()->forProject((string) $project->id, Period::fromKey('2026-10'));
+        $lines = collect($result['line_items'])->where('component', 'preview')->values();
+
+        $this->assertCount(2, $lines);
+        $vcpu = $lines->firstWhere('metric', 'vcpu_hours');
+        $this->assertEqualsWithDelta(1.0, $vcpu['quantity'], 1e-9);
+        $this->assertStringContainsString('preview environments', $vcpu['description']);
+        $this->assertSame('http', $vcpu['entry_point']);
+        $this->assertEqualsWithDelta(2.0, $lines->firstWhere('metric', 'memory_gb_hours')['quantity'], 1e-9);
+        $this->assertEqualsWithDelta(1.00 + 0.20, $result['total'], 0.001);
     }
 
     public function test_fixed_allocations_are_prorated_by_day_from_their_approval(): void

@@ -90,10 +90,12 @@ share the API storage (`podColocation`) are added to them.
 Hook Jobs of the chart (same API image): `runr-migrate-install-<revision>` (post-install) and
 `runr-migrate-upgrade-<revision>` (pre-upgrade, before any Deployment changes) run the database
 migrations, with the Tenancy module also `tenancy:migrate`. `runr-bootstrap` (post-install and
-post-upgrade, `bootstrap.enabled`) runs `agent:redeploy --missing`, `images:move-registry`,
-`region:reconcile` and `rbac:assign-missing`, in the multi-tenant edition
-`tenancy:setup --force` (`bootstrap.tenancySetup`), and creates the first administrator while
-the installation has none ([upgrade.md](upgrade.md#procedure)).
+post-upgrade, `bootstrap.enabled`) runs the database steps of an upgrade — `images:move-registry`,
+`rbac:assign-missing`, in the multi-tenant edition `tenancy:setup --force`
+(`bootstrap.tenancySetup`) — and creates the first administrator while the installation has none.
+What talks to the regions runs in the Job `runr-region-reconcile-<revision>`, no hook, which helm
+does not wait for: `agent:redeploy --missing`, `region:reconcile` and `secrets:move-to-region`
+([upgrade.md](upgrade.md#procedure)).
 
 The roles are selected in `api/docker/entrypoint.sh`. The API role runs
 `php artisan octane:start --server=frankenphp`. Reverb runs `php artisan reverb:start-shell`, a
@@ -112,8 +114,10 @@ ones kept, in the central schema and in every tenant schema),
 registries go to Zot's garbage collection),
 `close-stale-sessions` (every ten minutes: deployment sessions open for more than 30 minutes
 without a reported end are closed, in the central schema and in every tenant schema; when the pod
-was still running, its real end later corrects the session), the GPU inventory (`gpu:refresh`,
-every two minutes) and the model service meter. The feature
+was still running, its real end later corrects the session), `rightsizing` (daily at 02:10: the
+day's per-pod peaks of every running project from its region's Prometheus, then the
+[rightsizing recommendations](monitoring.md#rightsizing), in the central schema and in every tenant
+schema), the GPU inventory (`gpu:refresh`, every two minutes) and the model service meter. The feature
 service providers add their own: `workflows:tick` (every minute), the Sandbox API reaper, warm
 pools and meter, uptime checks, alerts and tracing status (`observability:run`), supply-chain
 re-scans, binding maintenance, preview cleanup and expired image uploads.
@@ -141,9 +145,15 @@ Setting up a region (each step is a queued job that reports progress over WebSoc
 4. **Knative Serving** (`KnativeInstallService::installServing`): the KnativeServing resource, Traefik
    as Knative ingress (`KnativeTraefikTrait`, chart `traefik/traefik` pinned in
    `KnativeConstants`, its image from the `ghcr.io/brf-tech/runr/reqs` mirror; Helm value
-   `knative.traefikImage` / `KNATIVE_TRAEFIK_IMAGE` names another), the project namespace with an optional ResourceQuota/LimitRange,
+   `knative.traefikImage` / `KNATIVE_TRAEFIK_IMAGE` names another) with public routes on `web` /
+   `websecure` (the LoadBalancer) and cluster-local ones on the private entry point `internal`
+   (ClusterIP Service `traefik-internal`, `PrivateIngress`), the NetworkPolicies that admit only
+   Traefik and Knative to revision pods and the activator (`RegionNetworkPolicyManifests`,
+   [regions.md](regions.md#cluster-local-services-and-network-isolation)), the project namespace with an optional ResourceQuota/LimitRange,
    Prometheus and Loki (installed, or existing ones reused), the tracing backend
-   (`observability.tracing.installWithServing`) and the runr-agent.
+   (`observability.tracing.installWithServing`), the runr-agent and cert-manager with the
+   ClusterIssuer of custom domains (`CertManagerService`: the cluster's own reused, RunR's
+   `jetstack/cert-manager` release where there is none; [regions.md](regions.md#cert-manager)).
 5. **Redis** (optional, needed for the queue trigger): `InstallRedisJob` — RunR's managed Redis
    (Deployment and Service `runr-redis` in the project namespace), or the address of one already
    running in the cluster or outside it.
@@ -167,8 +177,17 @@ Optional per-region features, each installed from the region's settings in the c
 and Tempo), Knative Serving config, Prometheus exposure,
 namespace quota, registry sync, ingress trust, Traefik image, request timeout (the region
 Traefik's read / write timeouts and Knative's maximum revision timeout follow the regions'
-`request_timeout`), Loki deletion, tracing backend (where tracing is enabled), Kata sandbox, WebAssembly
-sandbox, admission policy, image registry (workloads onto RunR's image namespace
+`request_timeout`), private ingress (cluster-local routes off the LoadBalancer: RunR's host
+rewrites to public hosts, two Traefik upgrades with the KIngresses moved to `traefik-internal` in
+between), network policy, internal network (the authz, the `runr.internal` DNS rewrite and the
+policies of the Knative Services, [internal-network.md](internal-network.md#regions)), Loki
+deletion, tracing backend (where tracing is enabled), cert-manager
+(installed or the cluster's own reused, RunR's release brought to this release's chart, the
+ClusterIssuer of custom domains), Kata sandbox, WebAssembly
+sandbox, External Secrets Operator and OpenBao (where a region runs them: the pinned chart and
+image, OpenBao's certificate), gateway-auth (where a region runs it), gateway routes (every
+gateway's routes as this release builds them), global DNS (the PowerDNS server where a region runs
+one), admission policy, image registry (workloads onto RunR's image namespace
 `ghcr.io/brf-tech/runr`, [upgrade.md](upgrade.md#image-namespace-ghcriobrf-techrunr)) and
 registry pre-warm (the base images of function builds). The pre-warm comes last because registry
 sync and image registry restart the registry; its Job waits for the registry to answer, and a
@@ -191,7 +210,7 @@ migration in `dns_check` or `failed` can be rolled back to the previous kubeconf
 regions whose function domain is `<region>.<base domain>`. The region keeps its function domain
 and also answers on the new one through `runr-domain-alias` in its project namespace
 (`RegionDomainAliasService`: a small proxy that rewrites `<service>.<new domain>` to the Knative
-Service's cluster-local host on the region Traefik) until DNS of the new domain answers its
+Service's public host on the current domain, on the region Traefik) until DNS of the new domain answers its
 external address — the status check every minute and the scheduler hourly check it
 (`RegionDnsCheck`) — or the migration is completed by hand; then Knative's config-domain, the
 KnativeServing resource and the region's `knative_domain` move to the new domain
@@ -209,7 +228,7 @@ completes both region by region; **Complete now** in the console (`PATCH /api/se
 
 ### Dedicated workers
 
-Selecting worker nodes (region setup, or Administration → Platform → Knative Regions → (region) → Workers;
+Selecting worker nodes (region setup, or Administration → Regions & settings → Knative Regions → (region) → Workers;
 `KnativeNodeService::applyWorkerSelection()`) labels and taints them
 `runr.dev/dedicated=projects:NoSchedule`; deselected nodes lose both. Project workloads (Knative
 Services, queue consumers, CronJobs, model services, sandboxes) carry the matching nodeSelector and
@@ -275,8 +294,9 @@ k3s and rke2 read the mirror's `hosts.toml` without a restart.
 
 The **region capacity** (`total_cpu_m` / `total_memory_mb`) is what the nodes RunR workloads run
 on leave for them: per node the allocatable minus the requests of the platform pods on it
-(Kubernetes, Knative, the ingress, the registry, observability, DaemonSets and anything else the
-cluster runs). With dedicated workers only those nodes count. Pods of projects (label
+(Kubernetes, Knative, the ingress, the registry, observability, DaemonSets, RunR's region
+components — the topic publisher `runr-topics`, gateway-auth, the internal-network authz — and
+anything else the cluster runs). With dedicated workers only those nodes count. Pods of projects (label
 `runr/project-id`, build Jobs included), model services (`runr.sh/model-service`) and the Sandbox
 API (`runr.dev/sandbox=true`, warm pool pods included) are not platform pods: admission counts them
 from their own records, once. The region status check refreshes the capacity
@@ -291,9 +311,10 @@ budgets per resource:
 | **FaaS overcommit** | capacity × the region's overcommit factor, minus what the always-on budget holds | one pod of every scale-to-zero project and model service: size + queue-proxy (a `schedule` project: its size, the CronJob has no queue-proxy) |
 
 The queue-proxy counts with its requests (100m CPU, 100 MiB); a schedule project counts as
-scale-to-zero whatever its `min_scale`, as its CronJob runs only while a run lasts. A workload is
-admitted when its always-on part fits what the always-on budget has free and its whole reservation
-fits what the FaaS budget has free. Admission runs on project create, on update (size,
+scale-to-zero whatever its `min_scale`, as its CronJob runs only while a run lasts. A project with
+a [timed warmer](scaling.md#timed-warmer) counts the schedule's peak as its `min_scale`. A
+workload is admitted when its always-on part fits what the always-on budget has free and its
+whole reservation fits what the FaaS budget has free. Admission runs on project create, on update (size,
 `min_scale`, `scale_to_zero`, trigger or region), on deploy, for model services on create, start
 and change, and for every new sandbox and warm pool pod. A project or model service whose
 reservation does not grow always passes, even on a region that is over capacity. A sandbox
@@ -344,7 +365,7 @@ the two resources behave when that happens:
 A factor of 1 turns overcommit off: every reservation then counts against the region capacity.
 New regions start with the defaults; the upgrade migration gives existing regions the defaults too.
 
-Administration → Platform → Knative Regions → (region) → Workers shows both budgets and sets the factors. In the API:
+Administration → Regions & settings → Knative Regions → (region) → Workers shows both budgets and sets the factors. In the API:
 
 ```bash
 curl -sS "$API/knative-regions/$REGION/capacity" -H "Authorization: Bearer $TOKEN"
@@ -396,7 +417,7 @@ CPU quota exceeded on the organization's always-on budget (no overcommit): this 
 In an organization, `GET /api/settings` gives each platform region with a quota the quota's
 budgets as its `capacity` (the shape above, `capacity_scope: "quota"`). The projects page shows
 both budgets per resource, of the regions or of the organization's quotas, summed and per region.
-Platform administrators see each organization's quota budgets in Tenants → (tenant) → Regions
+Platform administrators see each organization's quota budgets in Administration → Tenants → (tenant) → Regions
 (`GET /api/tenants/{id}/regions`: `capacity` per region, `used_cpu_m` / `used_memory_mb` the sum
 of both budgets), counted from the organization's own schema whichever organization the
 administrator works in.
@@ -430,33 +451,66 @@ Common per-project settings: CPU and memory (checked against the region's capaci
 the same budgets of the organization quota, [Region capacity and admission](#region-capacity-and-admission)),
 GPUs ([ai.md](ai.md)), timeout, environment variables and secrets, scale-to-zero and min/max
 scale. A project can also have custom domains (`ProjectDomain`, Traefik IngressRoute with an
-uploaded or cert-manager certificate), [bindings](bindings.md) to data services and model
+uploaded or cert-manager certificate, handing the request on to the project's public host),
+[bindings](bindings.md) to data services and model
 services, and private PostgreSQL connections through Skupper (`PrivateDatabaseBinding`, used when
-Skupper is present on the cluster). Models from the Hugging Face Hub run as model services
+Skupper is present on the cluster) — of its own workload or of one of its
+[environments](environments.md#private-database-connections), in the namespace of the region that
+workload runs in. Models from the Hugging Face Hub run as model services
 (`hf-serve` or another engine per task) that functions call inside the cluster
 ([huggingface.md](huggingface.md)).
 
 ## Triggers
 
-`App\Models\Project::TRIGGER_TYPES = ['http', 'schedule', 'queue', 'workflow']`. The manifests come
-from `KnativeManifestTrait::buildManifests()`.
+A project has a list of triggers (`project_triggers`, [triggers.md](triggers.md)); the types are
+registered in `App\Triggers\TriggerTypes`, and `App\Triggers\TriggerPlan` turns the enabled ones
+into what `KnativeManifestTrait::buildManifests()` renders. The config row's `trigger_type`
+(`App\Models\Project::TRIGGER_TYPES` for the single-trigger API) mirrors the primary trigger.
 
 | Trigger | Kubernetes resources | Behaviour |
 |---------|----------------------|-----------|
 | `http` (default) | Knative Service | Request-driven autoscaling, scale-to-zero |
-| `schedule` | CronJob `<slug>-trigger` | Runs the code on a cron expression; no Knative Service |
-| `queue` | Knative Service + Deployment `<slug>-qc` | `runtime/queue-consumer` (Go) reads a Redis Stream via a consumer group and POSTs each message as a CloudEvent to the service; retries with backoff, then a dead-letter stream. Requires Redis on the region |
+| `schedule` | CronJob `<slug>-trigger` when alone; else an event gateway source | Runs the code on a cron expression; next to other triggers each tick is a CloudEvent to the service |
+| `queue` | Knative Service + Deployment `<slug>-qc` | the event gateway (`runtime/queue-consumer`, Go) reads a Redis Stream via a consumer group and POSTs each message as a CloudEvent to the service; retries with backoff, then a dead-letter stream. Requires Redis on the region |
+| `topic` | Knative Service + `<slug>-qc` | one consumer group per subscribing trigger on the topic's stream (fan-out); the region's publisher `runr-topics` takes events from functions and the API |
+| `webhook`, `platform_event` | Knative Service + `<slug>-qc` | the API stores the event (webhook inbox `/api/hooks/…`, RunR's own events), the gateway claims it from the API's inbox and delivers it; replayable |
 | `workflow` | Knative Service (optional queue consumer) | Serves [durable workflows](workflows.md): the engine (`api/app/Workflows`, Horizon jobs, `workflows:tick`) sends signed execute requests and persists every step |
+
+The Knative Service is public when an `http` or `workflow` trigger is enabled and cluster-local
+otherwise; the event gateway runs every other trigger with one delivery core (CloudEvents, retries,
+dead letters, per-trigger concurrency, metrics) and pluggable sources (`runtime/queue-consumer/sources`).
 
 ## Endpoints
 
 A project is reachable at `<slug>.<function domain>`, where the function domain is the region's
 `knative_domain` or `<region>.<base domain>`. With `endpoint_type=gateway` it is served under a
 path of a user **gateway** instead (`Gateway`, `GatewayRoute`: Traefik IngressRoute with
-optional prefix stripping and method filters). TLS for the function domain is a region-level
-setting: an uploaded certificate or one from cert-manager (`KnativeFunctionTlsService`). A project
+optional prefix stripping and method filters) at `<subdomain>.<function domain>`, the same
+function domain as the project URL. A gateway with a custom domain (`gateways.custom_domain`) also
+answers on that host: its own IngressRoute `gw-<id>-domain` with the same routes, with A gateway route can ask for an API key or a JWT:
+the region's gateway-auth service checks it, applies the consumer's plan and counts the call
+([api-product.md](api-product.md)). TLS as a
+project custom domain gets it (a cert-manager Certificate from the region's ClusterIssuer when one
+is configured, else the region's default certificate), and the project URL uses it. TLS for the
+function domain is a region-level setting: an uploaded certificate or one from cert-manager
+(`KnativeFunctionTlsService`). A project
 that serves an MCP server can also be published at `https://<console>/mcp/servers/<slug>` behind
 the RunR gateway, which handles authentication and records every call ([mcp.md](mcp.md)).
+
+A gateway route leads to the project's own workload or to one of its
+[environments](environments.md#gateway-routes) (`gateway_routes.environment_id`): the rule hands
+the request to the environment's Knative Service `<slug>-<name>` the same way, and the gateway has
+to be in the region the environment runs in. `endpoint_type` stays the project's own workload's.
+
+A project's **access mode** (`projects.access_mode`) decides who reaches these from outside the
+cluster: everyone, the addresses of an IP allow list (an `ipAllowList` Middleware on its public
+host, custom domains and gateway route) or nobody (a cluster-local Knative Service). Inside the
+region every project also answers at `<project>.<organization>.runr.internal` on the region
+Traefik's private entry point, whose ForwardAuth — the region agent in authz mode — admits a call
+when the caller is on the callee's allow list (`project_internal_callers`;
+`App\Services\InternalNetwork`, [internal-network.md](internal-network.md)). The caller is the
+project whose pod the call comes from (the authz watches the pods labelled `runr/project-id`) or
+the project a valid `RUNR_INTERNAL_TOKEN` names.
 
 ## Versions, builds and deployments
 
@@ -514,6 +568,13 @@ sequenceDiagram
   its deployment yet.
 - `Deployment::STATUSES`: `pending`, `running`, `active`, `shutting_down`, `shut_down`, `failed`.
   Teardown of the previous deployment runs in `ProcessTeardown` on `DeploymentStatusChanged`.
+- With a blue-green or canary [deploy strategy](deploy-strategies.md) the deployment that serves
+  stays `active` while the new one rolls out (`RolloutService`, table `deployment_rollouts`): the
+  new revision is ready as a `running` deployment next to it, the Knative Service's
+  `spec.traffic` splits the traffic, and a promotion swaps the two (`LiveDeployments::swap`; a
+  blue-green previous deployment stays `running`, warm, until it is released). `AdvanceRolloutJob`
+  moves a rollout at its next check (health checks, canary steps and thresholds, the release),
+  the scheduled `deploy-rollouts` job catches lost checks.
 - Build Jobs run in the project namespace with the `build` sandbox mapping. Base images are
   pulled through the region Zot's ghcr.io pull-through cache.
 - [Uploaded images](images.md) (`docker save` / OCI tars and `.wasm` modules) travel in chunks
@@ -586,6 +647,16 @@ bindings and registers UI slots, routes and locales through `moduleRegistry`
 (`vue/src/modules/index.js`). Switching modules and feature toggles on and off, and setting up SSO
 and support tickets: [modules.md](modules.md).
 
+The console's menus are rendered from one navigation definition (`vue/src/navigation/menu.js`):
+Projects as the first main-menu item, then the groups Build & Run, Data & Integrations,
+Observability and Administration, each a mega menu of labelled sections, and the user menu
+(group `account`). The same tree drives the mega menus, the drawer of narrow screens and the
+section tabs of the settings page. A module places its pages with keys, not with code in the
+menus: a settings-page tab (`settingsTabs`, served at `/settings?tab=<key>`) or a page with its
+own route (`navLinks`) declares `group`, `section`, `descKey` (a one-line description), `icon`,
+`order` and `visibleIf()`. An entry without a known group lands in Administration → More. Links
+the user may not open are left out, and a section or group left empty disappears.
+
 ### Tenancy (`api/Modules/Tenancy`)
 
 Multi-tenancy with stancl/tenancy v3 on PostgreSQL, one schema per tenant. Operating a
@@ -627,7 +698,7 @@ External sign-in. Drivers (`authprovider.drivers`): `google`, `github`, `microso
 PKCE, ID token verified against the identity provider's JWKS) and `saml` (SAML 2.0 SP: metadata,
 login, ACS). A sign-in uses one provider row of its organization from redirect to callback; an
 organization can enable several providers of one driver. Users link and unlink external accounts
-in User Settings ([modules.md](modules.md#authprovider)).
+in the user menu → Account settings → Linked accounts ([modules.md](modules.md#authprovider)).
 
 ### Ticket (`api/Modules/Ticket`)
 
@@ -710,7 +781,9 @@ also the default tenant quota.
   (Helm values `clientIp.trustedProxies`, `clientIp.proxyHops`).
 - Workload isolation: one project namespace per region, optional ResourceQuota, sandbox
   RuntimeClasses per workload kind; supply-chain checks and an optional admission policy for
-  images ([supply-chain.md](supply-chain.md)).
+  images ([supply-chain.md](supply-chain.md)). Cluster-local Knative services are served only on
+  the region Traefik's private entry point, and NetworkPolicies admit only Traefik and Knative to
+  revision pods and the activator ([security.md](security.md#region-network-isolation)).
 
 ## Error reporting
 

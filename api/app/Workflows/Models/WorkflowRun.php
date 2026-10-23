@@ -23,6 +23,8 @@ use Illuminate\Support\Carbon;
  * @property string $id
  * @property string $workflow_id
  * @property string $project_id
+ * @property string|null $environment_id the workflow's environment (null: production)
+ * @property string|null $environment its name (null: production)
  * @property string $status
  * @property string $trigger_source
  * @property string|null $event_id
@@ -86,6 +88,8 @@ class WorkflowRun extends Model
     protected $fillable = [
         'workflow_id',
         'project_id',
+        'environment_id',
+        'environment',
         'status',
         'trigger_source',
         'event_id',

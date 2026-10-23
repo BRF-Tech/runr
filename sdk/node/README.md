@@ -59,5 +59,26 @@ Steps passed to `Promise.all` run one per invocation, in call order.
 (`sendMany(events)` for several); without options it reads `RUNR_API_URL`, `RUNR_API_TOKEN`
 and, on multi-tenant installations, `RUNR_TENANT_ID` (sent as `X-Tenant-ID`).
 
+## Publishing to topics
+
+A [topic](../../docs/triggers.md#topics) delivers each event to every project with a topic
+trigger on it. Any function (not only workflows) publishes with `publish`:
+
+```ts
+import { publish, PublishError } from '@runr/workflows'
+
+const { id, stream_id } = await publish('orders', { orderId: 'o-1' }, { type: 'order.created', subject: 'o-1' })
+await publish('logs', 'plain text', { contentType: 'text/plain' }) // a string or bytes, sent as is
+```
+
+`publish(topic, data, options?)` POSTs to `${RUNR_TOPICS_URL}/v1/topics/{topic}/events` with
+`Authorization: Bearer ${RUNR_TOPICS_TOKEN}`; RunR sets both for functions in a region where
+the organization has a topic. Data is sent as JSON; with `contentType` a string, `Uint8Array`,
+`Buffer` or `ArrayBuffer` goes as is. `type`, `subject` and `id` become the CloudEvents headers
+`ce-type`, `ce-subject` and `ce-id`. It resolves with `{ id, stream_id }` and rejects with
+`PublishError` (`status`, `body`, `topic`) on an answer that is not 2xx: 401 a bad token, 403 a
+topic the token does not allow, 413 an event that is too large (256 KiB by default).
+`new Topics({ url, token, fetch })` takes the settings explicitly.
+
 Development needs Node.js 20+ and npm 11 (`devEngines`): the SDK keeps no lockfile, and npm 10
 fails to resolve Vitest 4. Scripts: `npm run build`, `npm run typecheck`, `npm test`.

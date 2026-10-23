@@ -3,6 +3,7 @@
 namespace App\Providers;
 
 use App\Models\Deployment;
+use App\Models\ProjectEnvironment;
 use App\Services\Helpers\ResourceReservation;
 use App\Workflows\Console\WorkflowsPruneCommand;
 use App\Workflows\Console\WorkflowsTickCommand;
@@ -10,10 +11,12 @@ use App\Workflows\Dispatch\QueueWorkflowDispatcher;
 use App\Workflows\Dispatch\WorkflowDispatcher;
 use App\Workflows\Engine\WorkflowException;
 use App\Workflows\Jobs\SyncWorkflowsJob;
+use App\Workflows\Support\WorkflowEnvironments;
 use App\Workflows\Transport\HttpWorkflowTransport;
 use App\Workflows\Transport\WorkflowTransport;
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Contracts\Debug\ExceptionHandler;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\ServiceProvider;
 
@@ -46,6 +49,7 @@ class WorkflowServiceProvider extends ServiceProvider
         $this->registerErrorRendering();
         $this->registerSchedule();
         $this->registerDeploySync();
+        $this->registerEnvironmentCleanup();
 
         if ($this->app->runningInConsole()) {
             $this->commands([WorkflowsTickCommand::class, WorkflowsPruneCommand::class]);
@@ -93,7 +97,11 @@ class WorkflowServiceProvider extends ServiceProvider
         });
     }
 
-    /** A workflow-trigger project's deployment became active: sync its definitions. */
+    /**
+     * A workflow-trigger project's deployment became active: sync the definitions of its
+     * environment — production's for the project's own workload, an environment's for its
+     * deployment (docs/workflows.md#environments).
+     */
     protected function registerDeploySync(): void
     {
         Deployment::updated(function (Deployment $deployment) {
@@ -106,7 +114,19 @@ class WorkflowServiceProvider extends ServiceProvider
                 return;
             }
 
-            SyncWorkflowsJob::dispatch($project->id)->delay(now()->addSeconds(5));
+            SyncWorkflowsJob::dispatch($project->id, $deployment->isPrimary() ? null : (string) $deployment->environment_id)->delay(now()->addSeconds(5));
+        });
+    }
+
+    /** An environment was deleted: its workflow app, definitions and runs go with it. */
+    protected function registerEnvironmentCleanup(): void
+    {
+        ProjectEnvironment::deleted(function (ProjectEnvironment $environment) {
+            try {
+                WorkflowEnvironments::forget($environment);
+            } catch (\Throwable $e) {
+                Log::warning('Workflows of a deleted environment not removed', ['environment' => $environment->id, 'error' => $e->getMessage()]);
+            }
         });
     }
 }

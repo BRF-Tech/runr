@@ -4,6 +4,7 @@ namespace Modules\Billing\Services;
 
 use App\Models\AiModelService;
 use App\Models\Project;
+use App\Models\ProjectEnvironment;
 use App\Support\ConvertedOrganization;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\QueryException;
@@ -346,6 +347,13 @@ class TenantBillService
                 $names = Project::query()->pluck('name', 'id')->all();
                 try {
                     $names += AiModelService::query()->pluck('name', 'id')->all();
+                } catch (QueryException) {
+                }
+                // The environments the usage came from (docs/environments.md), by their ids
+                try {
+                    if (ProjectEnvironment::tablesReady()) {
+                        $names += ProjectEnvironment::query()->where('is_primary', false)->pluck('name', 'id')->all();
+                    }
                 } catch (QueryException) {
                 }
 

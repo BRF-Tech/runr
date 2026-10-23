@@ -4,6 +4,7 @@ namespace App\Services\SupplyChain;
 
 use App\Models\KnativeRegion;
 use App\Models\RegionSupplyChainSetting;
+use App\Services\CertManager\CertManager;
 use App\Services\Manifests\BuildManifests;
 use App\Services\Runtimes\RuntimeRegistry;
 
@@ -164,7 +165,7 @@ class AdmissionManifests
                 (string) config('executor.wrapper_image'),
                 BuildManifests::KANIKO_IMAGE,
                 BuildManifests::INIT_IMAGE,
-                'ghcr.io/brf-tech/runr/queue-consumer:latest',
+                (string) config('knative.queue_consumer_image'),
             ],
             self::runtimeImages(),
         );
@@ -189,6 +190,10 @@ class AdmissionManifests
 
         // Skupper routers of private database connections run in the project namespace
         $globs[] = 'quay.io/skupper/**';
+
+        // cert-manager's ACME HTTP-01 solver pods run in the project namespace (a custom domain's
+        // Certificate is there): its image, also when knative.certManager.imagePrefix moves it
+        array_push($globs, ...ImageRef::parse(CertManager::image('acmesolver'))->policyGlobs());
 
         foreach ($settings->admission_exempt_images ?? [] as $glob) {
             if (is_string($glob) && trim($glob) !== '') {

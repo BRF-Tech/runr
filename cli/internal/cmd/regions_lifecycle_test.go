@@ -1,9 +1,11 @@
 package cmd
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
 
@@ -119,6 +121,22 @@ func TestRegionCreateCheckSetRm(t *testing.T) {
 		t.Fatalf("monitoring body = %v", monitoring)
 	}
 	h.expectCode(ExitValidation, "regions", "set", "eu-2", "--set", "prometheus_url=http://prometheus.example.com:9090")
+
+	// internal_auth: the internal network audits (or enforces again); only the API's two values
+	r = h.mustRun("regions", "set", "eu-2", "--set", "internal_auth=audit")
+	contains(t, r.out, "internal_auth=audit")
+	if body := h.srv.CallsTo("PUT /knative-regions/{knativeRegion}/settings")[1].Body; body["internal_auth"] != "audit" || len(body) != 1 {
+		t.Fatalf("settings body = %v", body)
+	}
+	h.mustRun("regions", "set", "eu-2", "--set", "Internal-Auth=enforce")
+	if body := h.srv.CallsTo("PUT /knative-regions/{knativeRegion}/settings")[2].Body; body["internal_auth"] != "enforce" {
+		t.Fatalf("settings body = %v", body)
+	}
+	h.expectCode(ExitUsage, "regions", "set", "eu-2", "--set", "internal_auth=off")
+	h.expectCode(ExitUsage, "regions", "set", "eu-2", "--set", "internal_auth=")
+	if n := len(h.srv.CallsTo("PUT /knative-regions/{knativeRegion}/settings")); n != 3 {
+		t.Fatalf("settings calls = %d, a refused value reached the API", n)
+	}
 
 	rotated := strings.Replace(testKubeconfig, "kc-s3cr3t-token", "r0tated", 1)
 	h.runStdin(rotated, "regions", "set", "eu-2", "--kubeconfig", "-")
@@ -312,4 +330,82 @@ func TestRegionLifecyclePermissions(t *testing.T) {
 	h.expectCode(ExitAuth, "regions", "create", "eu-2", "--kubeconfig", kc)
 	r = h.expectCode(ExitAuth, "regions", "create", "eu-2", "--kubeconfig", kc, "--registry", "internal", "--storage-class", "x")
 	contains(t, r.err, "registry.manage")
+}
+
+// TestRegionSetKeysMatchTheAPI keeps `runr regions set` equal to the API: every field of the
+// settings and monitoring requests (pkg/runr/testdata/openapi.json, `make openapi`) is a key, with
+// the values the API takes, and every key reaches its request. A field the API adds (as
+// internal_auth in 0.6.0) fails here until the CLI sets it too.
+func TestRegionSetKeysMatchTheAPI(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("..", "..", "pkg", "runr", "testdata", "openapi.json"))
+	if err != nil {
+		t.Fatalf("read openapi.json: %v", err)
+	}
+	var spec struct {
+		Components struct {
+			Schemas map[string]struct {
+				Properties map[string]struct {
+					Enum []string `json:"enum"`
+				} `json:"properties"`
+			} `json:"schemas"`
+		} `json:"components"`
+	}
+	if err := json.Unmarshal(data, &spec); err != nil {
+		t.Fatalf("parse openapi.json: %v", err)
+	}
+	fields := func(name string) []string {
+		props := spec.Components.Schemas[name].Properties
+		if len(props) == 0 {
+			t.Fatalf("schema %s has no fields in openapi.json", name)
+		}
+		keys := make([]string, 0, len(props))
+		for k := range props {
+			keys = append(keys, k)
+		}
+		return keys
+	}
+	sameSet := func(what string, got, want []string) {
+		t.Helper()
+		g, w := slices.Sorted(slices.Values(got)), slices.Sorted(slices.Values(want))
+		if !slices.Equal(g, w) {
+			t.Errorf("%s: CLI %v, API %v", what, g, w)
+		}
+	}
+	sameSet("settings keys (UpdateRegionSettingsRequest)", regionSettingKeys, fields("UpdateRegionSettingsRequest"))
+	sameSet("monitoring keys (UpdateRegionMonitoringRequest)", regionMonitoringKeys, fields("UpdateRegionMonitoringRequest"))
+	settings := spec.Components.Schemas["UpdateRegionSettingsRequest"].Properties
+	sameSet("internal_auth values", runr.InternalAuthModes, settings["internal_auth"].Enum)
+	sameSet("cert_manager_issuer_mode values", runr.CertManagerIssuerModes, settings["cert_manager_issuer_mode"].Enum)
+	sameSet("region_status values", runr.RegionStatuses, spec.Components.Schemas["UpdateKnativeRegionRequest"].Properties["region_status"].Enum)
+
+	// every key reaches its request
+	h := newHarness(t).login()
+	samples := map[string]string{
+		"request_timeout": "600", "agent_ws_url": "wss://runr.example.com", "cert_manager_cluster_issuer": "my-issuer",
+		"cert_manager_issuer_mode": "ca", "cert_manager_acme_email": "ops@example.com", "ingress_trusted_ips": "10.0.0.0/8",
+		"internal_auth": "audit", "prometheus_url": "http://kps-prometheus.monitoring.svc:9090",
+		"loki_url": "http://loki.monitoring.svc:3100", "loki_org_id": "runr",
+	}
+	for _, group := range []struct {
+		keys []string
+		call string
+	}{{regionSettingKeys, "PUT /knative-regions/{knativeRegion}/settings"}, {regionMonitoringKeys, "PUT /knative-regions/{knativeRegion}/monitoring"}} {
+		for _, key := range group.keys {
+			value, ok := samples[key]
+			if !ok {
+				t.Errorf("no sample value for %s", key)
+				continue
+			}
+			before := len(h.srv.CallsTo(group.call))
+			h.mustRun("regions", "set", "eu-1", "--set", key+"="+value)
+			calls := h.srv.CallsTo(group.call)
+			if len(calls) != before+1 {
+				t.Errorf("--set %s did not call %s", key, group.call)
+				continue
+			}
+			if _, sent := calls[len(calls)-1].Body[key]; !sent {
+				t.Errorf("--set %s: body %v", key, calls[len(calls)-1].Body)
+			}
+		}
+	}
 }

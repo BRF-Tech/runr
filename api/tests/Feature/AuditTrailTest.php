@@ -16,6 +16,7 @@ use App\Support\TenantAccess;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Event;
 use Tests\Concerns\ActsWithRoles;
+use Tests\Concerns\FakesRegionSecrets;
 use Tests\TestCase;
 
 /**
@@ -24,7 +25,7 @@ use Tests\TestCase;
  */
 class AuditTrailTest extends TestCase
 {
-    use ActsWithRoles, RefreshDatabase;
+    use ActsWithRoles, FakesRegionSecrets, RefreshDatabase;
 
     private User $user;
 
@@ -149,6 +150,9 @@ class AuditTrailTest extends TestCase
     {
         $project = Project::create(['name' => 'orders', 'service_type' => 'faas']);
         FaasConfig::create(['project_id' => $project->id, 'handler' => 'main.handler']);
+        // secret values live in the project's region (docs/secret-stores.md): one with a cluster
+        $this->fakeRegionSecrets();
+        $project->forceFill(['knative_region_id' => $this->regionWithCluster('audit')->id])->saveQuietly();
 
         $this->actingAs($this->user, 'sanctum')
             ->putJson("/api/projects/{$project->id}/secrets/DB_PASSWORD", ['value' => 'secret-value-xyz'])

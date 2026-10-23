@@ -84,6 +84,8 @@ data:
   # Ticket (values ticket.enabled; helper runr.ticketEnabled, also the hook Jobs' env)
   TICKET_ENABLED: {{ include "runr.ticketEnabled" . | quote }}
 
+  # Project secret values: region (pass-through) or database (values projectSecrets.storage, api config/secrets.php)
+  RUNR_SECRET_STORAGE: {{ (.Values.projectSecrets | default dict).storage | default "region" | quote }}
   # Audit log retention (0 = keep forever) + SIEM forwarding (values audit.*, api config/audit.php).
   # `--reuse-values` with older values has no audit key → defaults.
   {{- $audit := .Values.audit | default dict }}
@@ -195,6 +197,21 @@ data:
   {{- with .Values.knative.traefikImage }}
   KNATIVE_TRAEFIK_IMAGE: {{ include "runr.image" . | quote }}
   {{- end }}
+  # cert-manager in the regions (values knative.certManager, api config/knative.php cert_manager)
+  {{- $cm := .Values.knative.certManager | default dict }}
+  RUNR_CERT_MANAGER_INSTALL: {{ ne (toString (dig "install" true $cm)) "false" | ternary "true" "false" | quote }}
+  {{- with $cm.acmeEmail }}
+  RUNR_CERT_MANAGER_ACME_EMAIL: {{ . | quote }}
+  {{- end }}
+  {{- with $cm.acmeServer }}
+  RUNR_CERT_MANAGER_ACME_SERVER: {{ . | quote }}
+  {{- end }}
+  {{- with $cm.chartVersion }}
+  RUNR_CERT_MANAGER_CHART_VERSION: {{ . | quote }}
+  {{- end }}
+  {{- with $cm.imagePrefix }}
+  RUNR_CERT_MANAGER_IMAGE_PREFIX: {{ . | quote }}
+  {{- end }}
 
   # Observability (values observability.*, api config/observability.php)
   {{- $obs := .Values.observability | default dict }}
@@ -226,6 +243,14 @@ data:
   OBS_UPTIME_MIN_INTERVAL: {{ dig "uptime" "minIntervalSeconds" 30 $obs | toString | quote }}
   OBS_UPTIME_RETENTION_DAYS: {{ dig "uptime" "resultsRetentionDays" 90 $obs | toString | quote }}
   OBS_UPTIME_ALLOW_PRIVATE: {{ dig "uptime" "allowPrivateTargets" false $obs | ternary "true" "false" | quote }}
+  OBS_LOADTEST_ENABLED: {{ dig "loadTest" "enabled" true $obs | ternary "true" "false" | quote }}
+  OBS_LOADTEST_DAILY_LIMIT: {{ dig "loadTest" "dailyLimit" 20 $obs | toString | quote }}
+  OBS_LOADTEST_MAX_USERS: {{ dig "loadTest" "maxUsers" 100 $obs | toString | quote }}
+  OBS_LOADTEST_MAX_DURATION: {{ dig "loadTest" "maxDurationSeconds" 300 $obs | toString | quote }}
+  OBS_LOADTEST_MAX_CONCURRENT_PER_REGION: {{ dig "loadTest" "maxConcurrentPerRegion" 5 $obs | toString | quote }}
+  {{- with dig "loadTest" "image" "" $obs }}
+  OBS_LOADTEST_IMAGE: {{ include "runr.image" . | quote }}
+  {{- end }}
   OBS_STATUS_PAGE_ENABLED: {{ dig "statusPage" "enabled" true $obs | ternary "true" "false" | quote }}
   OBS_ALERT_DELIVERY_TRIES: {{ dig "alerts" "deliveryTries" 4 $obs | toString | quote }}
   OBS_ALERT_ALLOW_PRIVATE: {{ dig "alerts" "allowPrivateTargets" false $obs | ternary "true" "false" | quote }}
@@ -305,6 +330,53 @@ data:
   BINDINGS_POSTGRES_SHARED_INSTANCES: {{ $bpg.sharedInstances | default 1 | quote }}
   BINDINGS_POSTGRES_SHARED_STORAGE: {{ $bpg.sharedStorage | default "10Gi" | quote }}
   BINDINGS_POSTGRES_BACKUP_RETENTION: {{ $bpg.backupRetention | default "7d" | quote }}
+  # Global projects and global DNS (docs/global-projects.md) — empty values keep the application defaults
+  {{- $gd := .Values.globalDns | default dict }}
+  {{- $gdTls := $gd.tls | default dict }}
+  {{- with $gd.zone }}
+  RUNR_GLOBAL_DNS_ZONE: {{ . | quote }}
+  {{- end }}
+  {{- with $gd.namespace }}
+  RUNR_GLOBAL_DNS_NAMESPACE: {{ . | quote }}
+  {{- end }}
+  {{- with $gd.image }}
+  RUNR_GLOBAL_DNS_IMAGE: {{ include "runr.image" . | quote }}
+  {{- end }}
+  {{- with $gd.storageClass }}
+  RUNR_GLOBAL_DNS_STORAGE_CLASS: {{ . | quote }}
+  {{- end }}
+  {{- with $gd.serviceAnnotations }}
+  RUNR_GLOBAL_DNS_SERVICE_ANNOTATIONS: {{ toJson . | quote }}
+  {{- end }}
+  {{- with $gd.ttl }}
+  RUNR_GLOBAL_DNS_TTL: {{ . | quote }}
+  {{- end }}
+  {{- with $gd.maxRegions }}
+  RUNR_GLOBAL_DNS_MAX_REGIONS: {{ . | quote }}
+  {{- end }}
+  {{- with $gd.geoipUrl }}
+  RUNR_GLOBAL_DNS_GEOIP_URL: {{ ternary "" . (eq . "-") | quote }}
+  {{- end }}
+  {{- with $gdTls.mode }}
+  RUNR_GLOBAL_DNS_TLS: {{ . | quote }}
+  {{- end }}
+  {{- with $gdTls.acmeServer }}
+  RUNR_GLOBAL_DNS_ACME_SERVER: {{ . | quote }}
+  {{- end }}
+  {{- with $gdTls.acmeEmail }}
+  RUNR_GLOBAL_DNS_ACME_EMAIL: {{ . | quote }}
+  {{- end }}
+  {{- $gdFailover := $gd.failover | default dict }}
+  {{- with $gdFailover.afterSeconds }}
+  RUNR_GLOBAL_FAILOVER_AFTER_SECONDS: {{ . | quote }}
+  {{- end }}
+  {{- $gdLink := $gd.dataLink | default dict }}
+  {{- with $gdLink.image }}
+  RUNR_GLOBAL_DATA_LINK_IMAGE: {{ include "runr.image" . | quote }}
+  {{- end }}
+  {{- with $gdLink.port }}
+  RUNR_GLOBAL_DATA_LINK_PORT: {{ . | quote }}
+  {{- end }}
   # Software supply chain (docs/supply-chain.md) — empty values keep the application defaults
   {{- $sc := .Values.supplyChain | default dict }}
   {{- $pc := $sc.policyController | default dict }}
@@ -350,6 +422,52 @@ data:
   {{- end }}
   {{- with $img.uploadTtlHours }}
   RUNR_IMAGE_UPLOAD_TTL_HOURS: {{ . | quote }}
+  {{- end }}
+
+  # Runtime patches (docs/runtimes.md#runtime-patches) — empty values keep the application
+  # defaults; the public key's line breaks survive the quoting (\n in a double-quoted string)
+  {{- $rp := .Values.runtimePatches | default dict }}
+  {{- with $rp.feed }}
+  RUNR_PATCH_FEED: {{ . | quote }}
+  {{- end }}
+  {{- if hasKey $rp "publicKey" }}
+  {{- /* rendered also when empty: "" switches the feed off (the application default is the
+         runr-runtimes key) */}}
+  RUNR_PATCH_FEED_PUBLIC_KEY: {{ $rp.publicKey | default "" | trim | quote }}
+  {{- end }}
+  {{- with $rp.viaRegion }}
+  RUNR_PATCH_FEED_VIA_REGION: {{ . | quote }}
+  {{- end }}
+  RUNR_PATCH_AUTO_MIGRATE: {{ ternary "true" "false" (ne (toString $rp.autoMigrate) "false") | quote }}
+
+  # API product (docs/api-product.md) — empty values keep the application defaults
+  {{- $ap := .Values.apiProduct | default dict }}
+  {{- with $ap.gatewayAuthImage }}
+  RUNR_GATEWAY_AUTH_IMAGE: {{ include "runr.image" . | quote }}
+  {{- end }}
+  {{- with $ap.callbackUrl }}
+  RUNR_GATEWAY_AUTH_CALLBACK_URL: {{ . | quote }}
+  {{- end }}
+  {{- with $ap.syncSeconds }}
+  RUNR_GATEWAY_AUTH_SYNC_SECONDS: {{ . | quote }}
+  {{- end }}
+  {{- with $ap.usageRetentionDays }}
+  RUNR_API_USAGE_RETENTION_DAYS: {{ . | quote }}
+  {{- end }}
+
+  # Organization export / import (docs/org-export.md) — empty values keep the application defaults
+  {{- $ot := .Values.orgTransfer | default dict }}
+  {{- with $ot.transferImage }}
+  RUNR_TRANSFER_IMAGE: {{ include "runr.image" . | quote }}
+  {{- end }}
+  {{- with $ot.maxPackageGb }}
+  RUNR_ORG_TRANSFER_MAX_GB: {{ . | quote }}
+  {{- end }}
+  {{- with $ot.retentionHours }}
+  RUNR_ORG_TRANSFER_RETENTION_HOURS: {{ . | quote }}
+  {{- end }}
+  {{- with $ot.podDiskGb }}
+  RUNR_ORG_TRANSFER_POD_DISK_GB: {{ . | quote }}
   {{- end }}
 
   # Extra env overrides

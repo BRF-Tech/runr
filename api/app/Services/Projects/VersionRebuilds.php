@@ -60,7 +60,10 @@ final class VersionRebuilds
      * fails, the deployment still running on the cluster the region left is not moved
      * (QueuedDeploys::queue()).
      *
-     * @param  array{deploy_config?: array<string, mixed>|null, initiator_id?: string|null}  $options
+     * A runtime patch migration of a prebuilt version builds it again the same way, FROM the
+     * patch's image (reason QueuedDeploys::REASON_RUNTIME_PATCH, RuntimePatchDeployer).
+     *
+     * @param  array{deploy_config?: array<string, mixed>|null, initiator_id?: string|null, reason?: string, message?: string, config_snapshot?: array<string, mixed>|null}  $options
      */
     public function queue(Project $project, Version $version, string $deployedBy, array $options = []): QueuedDeploy
     {
@@ -68,9 +71,10 @@ final class VersionRebuilds
         $queued = $this->deploys->queue($project, $version, $deployedBy, [
             'deploy_config' => $options['deploy_config'] ?? null,
             'initiator_id' => $options['initiator_id'] ?? null,
-            'reason' => QueuedDeploys::REASON_REBUILD,
+            'reason' => $options['reason'] ?? QueuedDeploys::REASON_REBUILD,
             'previous_build_image' => $previous,
-            'message' => self::message($version),
+            'message' => $options['message'] ?? self::message($version),
+            'config_snapshot' => $options['config_snapshot'] ?? null,
         ]);
 
         // The build is claimed by one deploy: the version leaves "ready" once

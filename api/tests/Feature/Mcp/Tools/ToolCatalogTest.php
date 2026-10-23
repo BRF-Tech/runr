@@ -20,7 +20,9 @@ class ToolCatalogTest extends TestCase
     private const CONFIRMED = [
         'project_delete' => 'confirm_name',
         'deployment_stop' => 'confirm',
+        'deployment_abort' => 'confirm',
         'domain_remove' => 'confirm',
+        'network_caller_remove' => 'confirm',
         // Sandboxes and WebAssembly support
         'sandbox_destroy' => 'confirm',
         'sandbox_file_delete' => 'confirm',
@@ -32,11 +34,28 @@ class ToolCatalogTest extends TestCase
         'uptime_check_delete' => 'confirm',
         'alert_channel_delete' => 'confirm',
         'alert_rule_delete' => 'confirm',
+        // Triggers: removing one drops its stored events; a replay delivers events again
+        'trigger_remove' => 'confirm',
+        'webhook_event_replay' => 'confirm',
+        // Environments (docs/environments.md)
+        'environment_delete' => 'confirm',
+        // API product: a revoked key cannot come back
+        'api_key_revoke' => 'confirm',
+        // Global projects: a region left out loses its copy; a failover loses what the replicas
+        // did not receive (docs/global-projects.md)
+        'project_global_update' => 'confirm',
+        'project_global_failover' => 'confirm',
     ];
 
     /** Destructive tools that need no extra confirmation (reversible or field-level). */
     private const DESTRUCTIVE_WITHOUT_CONFIRMATION = [
         'rollback', 'env_unset',
+        // the access mode is set back the same way
+        'network_set',
+        // a rollout's promotion: the previous revision stays kept, deployment_abort switches back
+        'deployment_promote',
+        // a promotion replaces the target's deployment like a deploy; into production it waits for an approver
+        'promote', 'promotion_approve',
         // a process the agent started, the egress rule of its own sandbox, an install it asked for
         'sandbox_process_stop', 'sandbox_network', 'wasm_install',
     ];
@@ -47,34 +66,48 @@ class ToolCatalogTest extends TestCase
         'projects_list', 'project_get', 'project_create', 'project_update', 'project_delete',
         'code_list_files', 'code_read_file', 'code_write_files', 'versions_list', 'version_get',
         'deploy', 'rollback', 'deployments_list', 'deployment_status', 'deployment_stop',
-        'logs_tail', 'metrics_summary',
-        'env_list', 'env_set', 'env_unset', 'secret_reveal',
+        'deployment_promote', 'deployment_abort',
+        'environments_list', 'environment_create', 'environment_update', 'environment_delete', 'promote', 'promotion_approve',
+        'logs_tail', 'metrics_summary', 'rightsizing_list', 'rightsizing_apply',
+        'env_list', 'env_set', 'env_unset', 'secret_reveal', 'secret_ref_set', 'secret_stores_list',
+        'network_get', 'network_set', 'network_caller_add', 'network_caller_remove',
         'domains_list', 'domain_add', 'domain_verify', 'domain_remove',
         'regions_list', 'region_status',
         'runtimes_list', 'runtime_get', 'runtime_register',
+        'runtime_patches_get', 'runtime_patch_apply', 'runtime_patch_pin',
         'workflows_list', 'workflow_run_start', 'workflow_runs_list', 'workflow_run_status', 'event_send',
         'bindings_list', 'binding_create', 'binding_attach',
         'models_search', 'model_services_list', 'model_service_deploy', 'model_invoke', 'model_bind',
         'security_report',
         'audit_search',
+        // organization export / import (docs/org-export.md)
+        'org_export_start', 'org_export_status', 'org_import_start', 'org_import_plan', 'org_import_apply',
         'mcp_servers_list', 'mcp_server_create', 'mcp_server_configure', 'mcp_server_calls',
         'sandboxes_list', 'sandbox_get', 'sandbox_create', 'sandbox_exec', 'sandbox_run_code',
         'sandbox_files_list', 'sandbox_file_read', 'sandbox_file_write', 'sandbox_file_delete',
         'sandbox_process_start', 'sandbox_processes_list', 'sandbox_process_logs', 'sandbox_process_stop',
         'sandbox_logs', 'sandbox_lifecycle', 'sandbox_network', 'sandbox_destroy', 'sandbox_quota',
         'wasm_status', 'wasm_install', 'wasm_uninstall',
+        'cert_manager_status', 'cert_manager_install',
         'git_status', 'git_settings_update', 'git_deploys_list', 'git_redeploy', 'git_repositories_list',
         'git_repo_connect', 'git_repo_disconnect', 'previews_list', 'preview_redeploy', 'preview_delete',
         'observability_get', 'observability_update', 'traces_search', 'trace_get',
         'replays_list', 'replay_get', 'replay_run',
         'uptime_checks_list', 'uptime_check_create', 'uptime_check_update', 'uptime_check_delete',
         'uptime_check_run', 'uptime_check_results', 'uptime_incidents_list',
+        'load_test_run', 'load_test_get',
         'alert_rules_list', 'alert_events_list',
         'sandbox_archive_download', 'sandbox_archive_upload',
         'alert_channels_list', 'alert_channel_create', 'alert_channel_update', 'alert_channel_delete', 'alert_channel_test',
         'alert_rule_create', 'alert_rule_update', 'alert_rule_delete',
         'status_page_get', 'status_page_update',
         'git_providers_list',
+        'triggers_list', 'trigger_add', 'trigger_update', 'trigger_remove',
+        'webhook_events_list', 'webhook_event_replay', 'topics_list', 'topic_publish',
+        'gateways_list', 'gateway_route_update', 'api_consumers_list', 'api_consumer_create',
+        'api_plans_list', 'api_plan_create', 'api_key_create', 'api_key_rotate', 'api_key_revoke', 'api_usage',
+        // global projects (docs/global-projects.md)
+        'project_global_get', 'project_global_update', 'project_global_failover', 'global_dns_status',
     ];
 
     /** @return array<string, Tool> */
@@ -133,6 +166,8 @@ class ToolCatalogTest extends TestCase
     {
         foreach ($this->tools() as $name => $tool) {
             foreach ($tool->permissions() as $requirement) {
+                // "@platform:a|b": a platform administrator with a or b (ToolRegistry::permits)
+                $requirement = str_starts_with($requirement, ToolRegistry::PLATFORM_PREFIX) ? substr($requirement, strlen(ToolRegistry::PLATFORM_PREFIX)) : $requirement;
                 foreach (explode('|', $requirement) as $permission) {
                     $this->assertContains($permission, PermissionCatalog::allKeys(), "{$name}: unknown permission {$permission}");
                 }
@@ -153,7 +188,7 @@ class ToolCatalogTest extends TestCase
             }
         }
 
-        foreach (['projects_list', 'project_get', 'code_read_file', 'logs_tail', 'env_list', 'secret_reveal', 'audit_search', 'security_report'] as $readOnly) {
+        foreach (['projects_list', 'project_get', 'runtime_patches_get', 'code_read_file', 'logs_tail', 'env_list', 'secret_reveal', 'audit_search', 'security_report', 'rightsizing_list'] as $readOnly) {
             $this->assertTrue($this->tools()[$readOnly]->annotations()['readOnlyHint'], "{$readOnly} is read-only");
         }
     }
@@ -183,7 +218,7 @@ class ToolCatalogTest extends TestCase
 
     public function test_long_running_tools_stream(): void
     {
-        foreach (['deploy', 'rollback', 'code_write_files', 'model_service_deploy', 'mcp_server_create', 'sandbox_create', 'wasm_install', 'wasm_uninstall', 'git_redeploy'] as $name) {
+        foreach (['deploy', 'rollback', 'promote', 'runtime_patch_apply', 'code_write_files', 'model_service_deploy', 'mcp_server_create', 'sandbox_create', 'wasm_install', 'wasm_uninstall', 'git_redeploy', 'load_test_run'] as $name) {
             $this->assertTrue($this->tools()[$name]->streams(), "{$name} reports progress");
         }
     }

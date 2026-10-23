@@ -11,7 +11,8 @@ use Illuminate\Contracts\Auth\Authenticatable;
  * Gateways belong to the user who created them (one per user and region). Others see them with
  * organization-wide projects.view; changing someone else's gateway (its rate limit, its routes)
  * is region administration (regions.manage). Routing a project through a gateway also needs
- * projects.update on that project.
+ * projects.update on that project. Anyone who may change projects gets a gateway of their own in a
+ * region (create).
  */
 class GatewayPolicy
 {
@@ -21,6 +22,12 @@ class GatewayPolicy
     {
         return ($this->owns($user, $gateway) && $this->rbac->allowsAnywhere($user, 'projects.view'))
             || $this->rbac->allows($user, 'projects.view');
+    }
+
+    /** One's own gateway in a region (POST /gateways): someone who may change projects. */
+    public function create(Authenticatable $user): bool
+    {
+        return $this->rbac->allowsAnywhere($user, 'projects.update');
     }
 
     public function update(Authenticatable $user, Gateway $gateway): bool

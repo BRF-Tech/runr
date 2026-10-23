@@ -24,6 +24,10 @@ const (
 	TriggerQueue    = "queue"
 )
 
+// ProjectTriggerTypes are the trigger types the project config sets (config.trigger_type,
+// Project::TRIGGER_TYPES); the other types of the trigger list (triggers.go) are set with it.
+var ProjectTriggerTypes = []string{TriggerHTTP, TriggerSchedule, TriggerQueue, TriggerWorkflow}
+
 // Deployment statuses.
 const (
 	DeploymentPending      = "pending"
@@ -60,9 +64,29 @@ type Project struct {
 	LatestVersion    *Version          `json:"latest_version,omitempty"`
 	LatestDeployment *DeploymentStatus `json:"latest_deployment,omitempty"`
 	RuntimeEOL       string            `json:"runtime_eol,omitempty"`
+	// RuntimePatch is the project's runtime patch state (runtime_patches.go); nil when no patch
+	// concerns it or the API has no runtime patches.
+	RuntimePatch *RuntimePatchState `json:"runtime_patch,omitempty"`
 	// Stopped is set while an administrator has stopped the project (APIs of 0.5.7 and later).
-	Stopped   *ProjectStop `json:"stopped,omitempty"`
-	CreatedAt *time.Time   `json:"created_at,omitempty"`
+	Stopped *ProjectStop `json:"stopped,omitempty"`
+	// WarmScale is what the timed warmer (Config.ScaleSchedule) last applied to the running
+	// workload; nil when it never ran for the project (or on APIs without the timed warmer).
+	WarmScale *WarmScale `json:"warm_scale,omitempty"`
+	// DeployStrategy is StrategyDirect, StrategyBlueGreen or StrategyCanary (empty from APIs
+	// without deploy strategies).
+	DeployStrategy string `json:"deploy_strategy,omitempty"`
+	// Placement is regional or global; Global the regions of a global project (global.go). Both
+	// are empty from APIs without global projects.
+	Placement string         `json:"placement,omitempty"`
+	Global    *ProjectGlobal `json:"global,omitempty"`
+	CreatedAt *time.Time     `json:"created_at,omitempty"`
+}
+
+// WarmScale is ProjectResource.warm_scale: the warm container count the timed warmer last set on
+// the project's running revision, and when.
+type WarmScale struct {
+	Applied   *int       `json:"applied"`
+	AppliedAt *time.Time `json:"applied_at"`
 }
 
 // Stop levels (ProjectStop.Level).
@@ -120,11 +144,18 @@ type ProjectConfig struct {
 	ImagePullPolicy string   `json:"image_pull_policy,omitempty"`
 	TriggerType     string   `json:"trigger_type,omitempty"`
 	Schedule        string   `json:"schedule,omitempty"`
-	QueueStream     string   `json:"queue_stream,omitempty"`
-	ScaleToZero     *bool    `json:"scale_to_zero,omitempty"`
-	MinScale        *int     `json:"min_scale,omitempty"`
-	MaxScale        *int     `json:"max_scale,omitempty"`
-	SecretEnvKeys   []string `json:"secret_env_keys,omitempty"`
+	// ScheduleTimezone is the schedule trigger's own IANA zone ("": it follows the organization's
+	// time zone); ScheduleEffectiveTimezone the zone it runs in ("" without a schedule, or from an
+	// API without schedule time zones).
+	ScheduleTimezone          string `json:"schedule_timezone,omitempty"`
+	ScheduleEffectiveTimezone string `json:"schedule_effective_timezone,omitempty"`
+	QueueStream               string `json:"queue_stream,omitempty"`
+	ScaleToZero               *bool  `json:"scale_to_zero,omitempty"`
+	MinScale                  *int   `json:"min_scale,omitempty"`
+	MaxScale                  *int   `json:"max_scale,omitempty"`
+	// ScaleSchedule is the timed warmer; empty when it is off (APIs without it never send it).
+	ScaleSchedule []ScaleScheduleRow `json:"scale_schedule,omitempty"`
+	SecretEnvKeys []string           `json:"secret_env_keys,omitempty"`
 	// EnvVarsHidden is set when the caller may not read the variables (no env.view):
 	// EnvVars is then empty and must not be written back.
 	EnvVarsHidden bool      `json:"env_vars_hidden,omitempty"`
@@ -320,6 +351,18 @@ type Deployment struct {
 	Version        *Ref           `json:"version,omitempty"`
 	VersionLabel   string         `json:"-"`
 	CreatedAt      *time.Time     `json:"created_at,omitempty"`
+	// Rollout is set when the deployment is the new deployment of a blue-green or canary
+	// rollout; it is "running" (live, not the primary) until promotion.
+	Rollout *Rollout `json:"rollout,omitempty"`
+	// RolloutRole is the deployment's part in the project's current rollout: candidate,
+	// stable or previous ("" when it has none).
+	RolloutRole string `json:"rollout_role,omitempty"`
+	// Environment is the environment it runs in ("production": the project's own workload;
+	// empty from APIs before environments), EnvironmentID its id (empty for the primary).
+	Environment   string `json:"environment,omitempty"`
+	EnvironmentID string `json:"environment_id,omitempty"`
+	// ConfigSource is "current" or "restored" (a rollback brought back an earlier config).
+	ConfigSource string `json:"config_source,omitempty"`
 }
 
 // UnmarshalJSON tolerates deploy_config encoded as [] and reads version.label.
@@ -337,7 +380,12 @@ func (d *Deployment) UnmarshalJSON(b []byte) error {
 			ID    string `json:"id"`
 			Label string `json:"label"`
 		} `json:"version"`
-		CreatedAt *time.Time `json:"created_at"`
+		CreatedAt     *time.Time `json:"created_at"`
+		Rollout       *Rollout   `json:"rollout"`
+		RolloutRole   string     `json:"rollout_role"`
+		Environment   string     `json:"environment"`
+		EnvironmentID string     `json:"environment_id"`
+		ConfigSource  string     `json:"config_source"`
 	}
 	var p plain
 	if err := json.Unmarshal(b, &p); err != nil {
@@ -346,7 +394,8 @@ func (d *Deployment) UnmarshalJSON(b []byte) error {
 	*d = Deployment{
 		ID: p.ID, Status: p.Status, K8sJobName: p.K8sJobName, DeployedBy: p.DeployedBy,
 		KnativeReady: p.KnativeReady, KnativeMessage: p.KnativeMessage, ReadyAt: p.ReadyAt,
-		CreatedAt: p.CreatedAt,
+		CreatedAt: p.CreatedAt, Rollout: p.Rollout, RolloutRole: p.RolloutRole,
+		Environment: p.Environment, EnvironmentID: p.EnvironmentID, ConfigSource: p.ConfigSource,
 	}
 	if len(p.DeployConfig) > 0 && p.DeployConfig[0] == '{' {
 		_ = json.Unmarshal(p.DeployConfig, &d.DeployConfig)
@@ -371,11 +420,17 @@ func (d Deployment) MarshalJSON() ([]byte, error) {
 		ReadyAt        *time.Time     `json:"ready_at,omitempty"`
 		Version        map[string]any `json:"version,omitempty"`
 		CreatedAt      *time.Time     `json:"created_at,omitempty"`
+		Rollout        *Rollout       `json:"rollout,omitempty"`
+		RolloutRole    string         `json:"rollout_role,omitempty"`
+		Environment    string         `json:"environment,omitempty"`
+		EnvironmentID  string         `json:"environment_id,omitempty"`
+		ConfigSource   string         `json:"config_source,omitempty"`
 	}
 	o := out{
 		ID: d.ID, Status: d.Status, K8sJobName: d.K8sJobName, DeployedBy: d.DeployedBy,
 		DeployConfig: d.DeployConfig, KnativeReady: d.KnativeReady, KnativeMessage: d.KnativeMessage,
-		ReadyAt: d.ReadyAt, CreatedAt: d.CreatedAt,
+		ReadyAt: d.ReadyAt, CreatedAt: d.CreatedAt, Rollout: d.Rollout, RolloutRole: d.RolloutRole,
+		Environment: d.Environment, EnvironmentID: d.EnvironmentID, ConfigSource: d.ConfigSource,
 	}
 	if d.Version != nil {
 		o.Version = map[string]any{"id": d.Version.ID, "label": d.Version.Name}
@@ -424,6 +479,8 @@ type DomainsMeta struct {
 	CertManagerIssuer string      `json:"cert_manager_issuer,omitempty"`
 	DefaultHost       string      `json:"default_host,omitempty"`
 	DNSTargets        []DNSRecord `json:"dns_targets,omitempty"`
+	// CertManager says whether the region offers TLS mode cert-manager, and if not why (newer APIs).
+	CertManager *CertManagerDomains `json:"cert_manager,omitempty"`
 }
 
 // Region is KnativeRegionResource (the fields every caller sees, synced regions included).

@@ -19,6 +19,7 @@ class MigrationOrderTest extends TestCase
     private const HELPERS = [
         'WorkflowSchema::' => 'app/Workflows/Database/WorkflowSchema.php',
         'ObservabilitySchema::' => 'app/Services/Observability/ObservabilitySchema.php',
+        'EnvironmentSchema::' => 'app/Services/Environments/EnvironmentSchema.php',
     ];
 
     private function api(string $path): string

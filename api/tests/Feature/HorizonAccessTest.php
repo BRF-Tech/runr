@@ -170,6 +170,21 @@ class HorizonAccessTest extends TestCase
         $this->assertStringNotContainsString('?access=', Artisan::output());
     }
 
+    /** --user names an account the way the sign-in does (App\Support\Auth\LoginIdentifier). */
+    public function test_the_command_takes_the_user_name_or_the_e_mail_address_in_any_letter_case(): void
+    {
+        $owner = $this->userWithRole('owner', ['username' => 'olga', 'email' => 'Olga@Example.test']);
+        $this->userWithRole('developer', ['username' => 'dev', 'email' => 'dev@example.test']);
+
+        foreach (['olga', 'OLGA', 'olga@example.test', 'OLGA@EXAMPLE.TEST'] as $name) {
+            $this->assertSame(0, Artisan::call('runr:horizon-link', ['--user' => $name]), $name);
+            $this->assertStringContainsString("for {$owner->username}", Artisan::output());
+        }
+
+        $this->assertSame(1, Artisan::call('runr:horizon-link', ['--user' => 'DEV@example.test']));
+        $this->assertStringNotContainsString('?access=', Artisan::output());
+    }
+
     public function test_local_development_lets_everyone_in(): void
     {
         $this->app['env'] = 'local';

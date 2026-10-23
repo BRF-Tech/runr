@@ -8,6 +8,8 @@ use App\Models\BindingRegionService;
 use App\Models\KnativeRegion;
 use App\Models\User;
 use App\Services\Bindings\DataServiceManager;
+use App\Services\Bindings\DataServices\KvService;
+use App\Services\Bindings\Ops\OpsResult;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -101,7 +103,7 @@ class DataServiceTest extends TestCase
         $row = $this->row('kv');
         $this->assertSame(BindingRegionService::STATUS_READY, $row->status, (string) $row->status_message);
         $this->assertSame('managed', $row->mode);
-        $this->assertSame(['maxmemory_mb' => 256, 'storage' => '1Gi', 'acl' => true], $row->config);
+        $this->assertSame(['maxmemory_mb' => 256, 'storage' => '1Gi', 'acl' => true, 'redis_version' => '7.4.1'], $row->config);
         $password = $row->secret('password');
         $this->assertSame(40, strlen($password));
 
@@ -118,6 +120,30 @@ class DataServiceTest extends TestCase
         $this->assertStringContainsString("-h 'runr-kv.runr-data.svc.cluster.local'", $probe->script);
 
         Event::assertDispatched(BindingAudited::class, fn (BindingAudited $e) => $e->action === 'data_service.installed' && $e->subject['service'] === 'kv');
+    }
+
+    public function test_the_kv_redis_version_is_recorded_and_read_again_on_request(): void
+    {
+        $this->readyService($this->region, 'kv', 'managed', ['acl' => true], ['password' => 'pw']);
+        $kv = app(KvService::class);
+
+        // None recorded (installed by an earlier release): probed once, then kept
+        $this->redisVersion = '7.2.4';
+        $this->assertSame('7.2.4', $kv->serverVersion($this->region));
+        $this->assertSame('7.2.4', $this->row('kv')->configValue('redis_version'));
+        $probes = count(array_filter($this->opsTasks, fn ($t) => $t->purpose === 'kv-probe'));
+        $this->redisVersion = '7.4.1';
+        $this->assertSame('7.2.4', $kv->serverVersion($this->region), 'the recorded version, no probe');
+        $this->assertSame($probes, count(array_filter($this->opsTasks, fn ($t) => $t->purpose === 'kv-probe')));
+
+        $this->assertSame('7.4.1', $kv->serverVersion($this->region, true));
+        $this->assertSame('7.4.1', $this->row('kv')->configValue('redis_version'));
+
+        // A probe that fails keeps what was recorded; no service: unknown
+        $this->opsResponses['kv-probe'] = new OpsResult(false, 'connection refused');
+        $this->assertSame('7.4.1', $kv->serverVersion($this->region, true));
+        $this->row('kv')->delete();
+        $this->assertNull($kv->serverVersion($this->region));
     }
 
     public function test_a_reinstall_keeps_the_admin_password(): void

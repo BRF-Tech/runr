@@ -7,6 +7,7 @@ use App\Models\Project;
 use App\Services\Helpers\InstanceSizes;
 use App\Services\Helpers\RegionCapacity;
 use App\Services\Helpers\ResourceReservation;
+use App\Support\Projects\ScaleSchedule;
 use Closure;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Support\Collection;
@@ -25,8 +26,10 @@ use Illuminate\Support\Collection;
  * missing field too: a create or deploy without config.cpu / config.memory_mb is admitted like
  * one that sends the default (0.4.1 skipped the check — a test region reached 9100m used of 4505m).
  * A min_scale / scale_to_zero / trigger change or a region move without a size is checked the
- * same way. The Kata overhead of the incoming size is the region's mapping for the service type
- * (the RuntimeClass the next deploy gets).
+ * same way. A timed warmer (config.scale_schedule) counts its peak in place of min_scale
+ * (ScaleSchedule::reservedMinScale): the most containers it keeps warm at any time. The Kata
+ * overhead of the incoming size is the region's mapping for the service type (the RuntimeClass
+ * the next deploy gets).
  *
  * An existing project (update / deploy) that does not raise its own reservation always
  * passes, even when the region is already over capacity.
@@ -49,6 +52,7 @@ class WithinResourceLimit implements ValidationRule
      * @param  mixed  $minScale  Requested min_scale; null = the project's stored one, else 0
      * @param  string|null  $serviceType  New project's service type; null = the project's (Kata pod overhead)
      * @param  mixed  $scaleToZero  Requested scale_to_zero; null = the project's stored one, else true
+     * @param  mixed  $scaleSchedule  Requested timed warmer rows (null / [] = off); false = not in the request (the stored one)
      */
     public function __construct(
         private readonly string $resource,
@@ -58,6 +62,7 @@ class WithinResourceLimit implements ValidationRule
         private readonly mixed $minScale = null,
         private readonly ?string $serviceType = null,
         private readonly mixed $scaleToZero = null,
+        private readonly mixed $scaleSchedule = false,
     ) {}
 
     public function validate(string $attribute, mixed $value, Closure $fail): void
@@ -83,7 +88,7 @@ class WithinResourceLimit implements ValidationRule
             $this->resource === 'cpu' ? ResourceReservation::parseCpu($value) : 0,
             $this->resource === 'memory' ? (int) $value : 0,
             $this->triggerType ?? $config?->trigger_type ?? 'http',
-            $this->minScale ?? $config?->min_scale ?? 0,
+            $this->effectiveMinScale($config),
             $this->scaleToZero ?? ($config ? $config->scale_to_zero : null) ?? true,
             ResourceReservation::podOverhead($region, $serviceType),
         );
@@ -121,6 +126,23 @@ class WithinResourceLimit implements ValidationRule
         $stored = $config?->{$field};
 
         return ($stored === null || $stored === '') ? InstanceSizes::defaultFor($serviceType)[$field] : $stored;
+    }
+
+    /**
+     * The min_scale the project reserves with this change: the peak of the timed warmer it will
+     * have (the requested one, else the stored one), else the requested min_scale, else the
+     * stored one.
+     */
+    private function effectiveMinScale(?object $config): int
+    {
+        $schedule = $this->scaleSchedule === false
+            ? ScaleSchedule::rows($config)
+            : ScaleSchedule::normalize($this->scaleSchedule);
+        if ($schedule !== null) {
+            return ScaleSchedule::peak($schedule);
+        }
+
+        return max(0, (int) ($this->minScale ?? $config?->min_scale ?? 0));
     }
 
     /**

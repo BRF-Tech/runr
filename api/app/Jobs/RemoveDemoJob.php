@@ -30,7 +30,7 @@ class RemoveDemoJob implements ShouldQueue
 
         foreach ($demoRegions as $region) {
             foreach ($region->projects as $project) {
-                $project->deployments()->delete();
+                $project->allDeployments()->delete();
                 $project->versions()->delete();
                 $project->xaasConfig()?->delete();
                 $project->faasConfig()?->delete();

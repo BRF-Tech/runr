@@ -13,6 +13,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
+use Tests\Concerns\FakesRegionSecrets;
 use Tests\Concerns\RunsWorkflows;
 use Tests\TestCase;
 
@@ -23,6 +24,7 @@ use Tests\TestCase;
  */
 class WorkflowHmacTest extends TestCase
 {
+    use FakesRegionSecrets;
     use RefreshDatabase;
     use RunsWorkflows;
 
@@ -145,10 +147,17 @@ class WorkflowHmacTest extends TestCase
             ['name' => $project->slug.'-secret-env', 'key' => 'RUNR_WORKFLOW_SIGNING_KEY'],
             $env['RUNR_WORKFLOW_SIGNING_KEY']['valueFrom']['secretKeyRef'],
         );
-        $secret = collect($manifests)->first(fn ($m) => $m['kind'] === 'Secret' && $m['metadata']['name'] === $project->slug.'-secret-env');
-        $this->assertNotNull($secret);
-        $this->assertSame(WorkflowApp::forProject($project)->signing_key, base64_decode($secret['data']['RUNR_WORKFLOW_SIGNING_KEY']));
-        $this->assertStringNotContainsString(WorkflowApp::forProject($project)->signing_key, json_encode($service));
+        // RunR's own key: written into the region's values Secret by the deploy, never in a manifest
+        $this->assertNull(collect($manifests)->first(fn ($m) => $m['kind'] === 'Secret' && $m['metadata']['name'] === $project->slug.'-secret-env'));
+        $this->assertStringNotContainsString(WorkflowApp::forProject($project)->signing_key, json_encode($manifests));
+        $this->fakeRegionSecrets();
+        $project->knativeRegion->forceFill(['kubeconfig' => self::kubeconfigFor('https://k8s.test')])->saveQuietly();
+        $project = $project->fresh();
+        app(KnativeDeployService::class)->prepareSecrets($project);
+        $this->assertSame(
+            WorkflowApp::forProject($project)->signing_key,
+            $this->regionSecrets->values($project->knativeRegion, $project->slug.'-secret-env')['RUNR_WORKFLOW_SIGNING_KEY'] ?? null,
+        );
         $this->assertSame('v1', $env['RUNR_WORKFLOW_PROTOCOL']['value']);
         $this->assertArrayNotHasKey('networking.knative.dev/visibility', $service['metadata']['labels'], 'the engine reaches the function over its public URL');
     }

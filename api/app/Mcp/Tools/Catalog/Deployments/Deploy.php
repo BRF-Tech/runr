@@ -3,6 +3,7 @@
 namespace App\Mcp\Tools\Catalog\Deployments;
 
 use App\Mcp\Server\InternalApi;
+use App\Mcp\Tools\Concerns\ReadsRollouts;
 use App\Mcp\Tools\Concerns\WaitsForDeployments;
 use App\Mcp\Tools\Schema;
 use App\Mcp\Tools\Tool;
@@ -11,7 +12,7 @@ use App\Mcp\Tools\ToolResult;
 
 class Deploy extends Tool
 {
-    use WaitsForDeployments;
+    use ReadsRollouts, WaitsForDeployments;
 
     public function name(): string
     {
@@ -25,7 +26,7 @@ class Deploy extends Tool
 
     public function description(): string
     {
-        return 'Deploys a version of a project (default: the newest) and waits until the deployment is active or failed, reporting progress. A version that is still building is waited for first. The previous active deployment is replaced. Returns the deployment and the project URL; on failure call logs_tail for the reason.';
+        return 'Deploys a version of a project (default: the newest) and waits until the deployment is active or failed, reporting progress. A version that is still building is waited for first. The previous active deployment is replaced. environment deploys to one of the project\'s environments (environments_list) instead of its own workload. With a blue-green or canary deploy strategy (with environment the environment\'s: the project\'s unless it sets its own; or strategy for this deploy) the new revision rolls out next to the one that serves: the wait ends once it is ready, and the answer has the rollout (test URL, traffic) — deployment_promote / deployment_abort decide, deployment_status follows it. Returns the deployment and the URL; on failure call logs_tail for the reason.';
     }
 
     public function inputSchema(): array
@@ -33,6 +34,7 @@ class Deploy extends Tool
         return Schema::object([
             'project' => Schema::project(),
             'version' => Schema::string('Version number (3 or "v3"), version id, or "latest" (default).', ['maxLength' => 64]),
+            'environment' => Schema::string('Environment name or id (default: production, the project\'s own workload).', ['maxLength' => 64]),
             'wait' => Schema::boolean('Wait for the build and the rollout to finish (default true).', true),
             'timeout_seconds' => Schema::integer('Longest wait in seconds (default and cap: the server maximum).', 1, 3600),
             'overrides' => Schema::object([
@@ -43,6 +45,7 @@ class Deploy extends Tool
                 'min_scale' => Schema::integer('Minimum replicas.', 0, 10),
                 'max_scale' => Schema::integer('Maximum replicas.', 1, 1000),
             ]),
+            'strategy' => Schema::enum(['direct', 'blue_green', 'canary'], 'How this deploy rolls out; default the project\'s deploy strategy (direct deploys at once).'),
             'override_policy' => Schema::boolean('Deploy although the supply-chain policy gate blocks the version (needs security.override_policy and a reason).'),
             'override_reason' => Schema::string('Why the policy gate is overridden (recorded).', ['maxLength' => 500]),
         ], ['project']);
@@ -91,9 +94,16 @@ class Deploy extends Tool
         if (! empty($arguments['overrides'])) {
             $extra['deploy_config'] = $arguments['overrides'];
         }
+        if (! empty($arguments['strategy'])) {
+            $extra['strategy'] = (string) $arguments['strategy'];
+        }
         if (! empty($arguments['override_policy'])) {
             $extra['override_policy'] = true;
             $extra['override_reason'] = (string) ($arguments['override_reason'] ?? '');
+        }
+        $environment = isset($arguments['environment']) && $arguments['environment'] !== '' ? (string) $arguments['environment'] : null;
+        if ($environment !== null) {
+            $extra['environment'] = $environment;
         }
 
         $context->progress(0, null, 'Deploying version '.($version['number'] ?? '?').'…');
@@ -105,9 +115,20 @@ class Deploy extends Tool
             $deployment = $this->waitForDeployment($context, $projectId, $deployment, $deadline);
         }
 
-        $project = $context->api()->get(InternalApi::path('projects', $projectId));
-        $url = $project->ok() ? $project->get('endpoint_url') : null;
+        // The environment's URL, or the project's
+        $url = null;
+        if ($environment !== null) {
+            $env = $context->api()->get(InternalApi::path('projects', $projectId, 'environments', $environment));
+            $url = $env->ok() ? $env->get('data.url') : null;
+        } else {
+            $project = $context->api()->get(InternalApi::path('projects', $projectId));
+            $url = $project->ok() ? $project->get('endpoint_url') : null;
+        }
         $summary = ['deployment' => self::deploymentSummary($deployment), 'version' => self::versionSummary($version), 'url' => $url];
+
+        if (is_array($deployment['rollout'] ?? null) && ! in_array($deployment['status'] ?? null, ['active', 'failed'], true)) {
+            return ToolResult::ok($summary, 'Version '.($version['number'] ?? '?').': '.self::rolloutLine($deployment['rollout']));
+        }
 
         return match ($deployment['status'] ?? null) {
             'active' => ToolResult::ok($summary, 'Version '.($version['number'] ?? '?').' is live'.($url ? " at {$url}" : '').'.'),

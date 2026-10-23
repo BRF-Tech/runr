@@ -25,6 +25,8 @@ use App\Services\Runtimes\RuntimeImagePendingException;
 use App\Support\DeployGate;
 use App\Support\Projects\DeployIntent;
 use App\Support\Projects\ProjectAdmission;
+use App\Support\TenantAccess;
+use App\Triggers\ProjectTriggers;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Log;
 use Modules\Tenancy\Services\TenantQuotaService;
@@ -97,7 +99,9 @@ class PreviewService
             'author' => $event->prAuthor,
             'pr_url' => $event->prUrl,
             'is_fork' => $event->isFork,
-            'service_name' => PreviewManifests::serviceName($project->slug, $event->number),
+            // the name it was created with stays (its Knative Service); a new one keeps the
+            // organization's end of a long slug
+            'service_name' => $preview->service_name ?: PreviewManifests::serviceName($project->slug, $event->number, TenantAccess::current()['slug'] ?? null),
             'closed_at' => null,
             'expires_at' => now()->addHours(max(1, $settings->preview_ttl_hours)),
         ]);
@@ -228,7 +232,8 @@ class PreviewService
 
         try {
             $builder = new KnativeDeployService(new RemoteRepoFiles($this->remote));
-            $manifests = $builder->buildManifests($project, $version, ['scale_to_zero' => true, 'min_scale' => 0]);
+            // A preview scales to zero: no min_scale, no timed warmer
+            $manifests = $builder->buildManifests($project, $version, ['scale_to_zero' => true, 'min_scale' => 0, 'scale_schedule' => null]);
             $manifests = PreviewManifests::transform(
                 $manifests,
                 $project->id,
@@ -242,17 +247,20 @@ class PreviewService
             $k8s = new KubernetesClient($region->kubeconfig);
             $namespace = $region->project_namespace ?? $region->name;
 
+            // The preview reads the project's secret Secrets (PreviewManifests): they hold what the
+            // project's variables need, even before the project's first deploy
+            if (PreviewManifests::referencesSecrets($manifests)) {
+                $builder->prepareSecrets($project);
+            }
+
             foreach ($manifests as $manifest) {
                 if (! $k8s->applyResource($manifest, $namespace)) {
                     throw new \RuntimeException("Failed to apply {$manifest['kind']}: {$manifest['metadata']['name']}");
                 }
             }
 
-            // No secret env vars for this preview (none left, or a fork without them): drop the
-            // Secret an earlier deploy of the preview created
-            if (! collect($manifests)->contains(fn (array $m) => ($m['kind'] ?? null) === 'Secret')) {
-                $k8s->deleteResource('v1', 'Secret', PreviewManifests::secretEnvName($preview->service_name), $namespace);
-            }
+            // The preview's own copy of the secret env vars that earlier releases made goes
+            $k8s->deleteResource('v1', 'Secret', PreviewManifests::secretEnvName($preview->service_name), $namespace);
         } catch (RuntimeImagePendingException $e) {
             if ($waited >= self::DEPLOY_WAIT_ATTEMPTS) {
                 $this->fail($preview, $deploy, $e->getMessage());
@@ -412,8 +420,10 @@ class PreviewService
             return $reason;
         }
 
-        $trigger = ResourceReservation::configOf($project)?->trigger_type ?? 'http';
-        if ($trigger !== 'http') {
+        // A preview is the project's HTTP service on its own URL (its other triggers do not run)
+        if (! app(ProjectTriggers::class)->plan($project)->has('http')) {
+            $trigger = ResourceReservation::configOf($project)?->trigger_type ?? 'http';
+
             return "Previews need an HTTP-triggered project (this one is triggered by {$trigger})";
         }
 

@@ -220,7 +220,8 @@ class AccountApiTest extends TestCase
         $this->as($this->token());
 
         $defaults = $this->getJson('/api/account/notification-preferences')->assertOk()->json('preferences');
-        $this->assertCount(12, $defaults, 'six types (billing too) × in-app and email');
+        $this->assertCount(16, $defaults, 'eight types (billing, runtime patches and promotions too) × in-app and email');
+        $this->assertContains('promotion', array_column($defaults, 'type'));
         $this->assertSame([true], array_values(array_unique(array_column($defaults, 'enabled'))));
 
         $this->putJson('/api/account/notification-preferences', ['preferences' => [

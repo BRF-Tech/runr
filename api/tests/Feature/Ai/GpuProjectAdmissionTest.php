@@ -145,7 +145,7 @@ class GpuProjectAdmissionTest extends TestCase
 
         $this->assertSame([], $this->errors(StoreProjectRequest::class, $this->caas($region, ['count' => 2])));
 
-        $errors = $this->errors(StoreProjectRequest::class, $this->caas($region, ['count' => 1], ['min_scale' => 3]));
+        $errors = $this->errors(StoreProjectRequest::class, $this->caas($region, ['count' => 1], ['min_scale' => 3, 'max_scale' => 3]));
         $this->assertSame(__('ai.gpu.quota_exceeded', ['requested' => 3, 'remaining' => 2, 'quota' => 2]), $errors['config.gpu'][0]);
     }
 

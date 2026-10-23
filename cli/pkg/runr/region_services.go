@@ -312,14 +312,15 @@ type RegistryTest struct {
 }
 
 // TestRegistryPVC checks on a cluster that a StorageClass provisions a volume of size
-// (registry.manage).
+// (registry.manage). The API waits up to its PVC test time (RUNR_REGISTRY_PVC_TEST_SECONDS,
+// 180 s by default) for the volume, so the call has no overall HTTP timeout (bounded by ctx).
 func (c *Client) TestRegistryPVC(ctx context.Context, kubeconfig string, pvc RegistryPVC, namespace string) (*RegistryTest, error) {
 	body := map[string]any{"kubeconfig": kubeconfig, "storageClass": pvc.StorageClass, "size": pvc.Size}
 	if namespace != "" {
 		body["namespace"] = namespace
 	}
 	var out RegistryTest
-	if err := c.do(ctx, request{method: http.MethodPost, path: "/registry-setup/test-pvc", body: body}, &out); err != nil {
+	if err := c.long().do(ctx, request{method: http.MethodPost, path: "/registry-setup/test-pvc", body: body}, &out); err != nil {
 		return nil, err
 	}
 	return &out, nil
@@ -399,6 +400,9 @@ type MigrationProject struct {
 	Organization string `json:"organization,omitempty"`
 	ProjectID    string `json:"project_id"`
 	Project      string `json:"project"`
+	// Environment names the environment of the project the row is about (docs/environments.md);
+	// empty for the project's own workload.
+	Environment string `json:"environment,omitempty"`
 	// Outcome is moved (deployed on the new cluster), building (built again there; it runs on
 	// the old cluster until it is deployed), deployed (built again and deployed), not_moved
 	// (refused, or its build or deploy failed: Message says why) or cancelled (its waiting

@@ -3,6 +3,8 @@
 namespace App\Services\Bindings;
 
 use App\Models\Binding;
+use App\Models\BindingReplica;
+use App\Services\GlobalProjects\Data\RegionalData;
 
 /**
  * Organization limits of bindings (docs/bindings.md "Quotas"), counted from the declared sizes —
@@ -48,8 +50,14 @@ class BindingQuotas
             $query->whereKeyNot($exceptId);
         }
 
+        // a dedicated binding of a global project holds a copy of its data in every region (its
+        // replica clusters, docs/global-projects.md)
+        $replicas = RegionalData::tableReady()
+            ? BindingReplica::query()->where('kind', BindingReplica::KIND_REPLICA)->selectRaw('binding_id, count(*) as copies')->groupBy('binding_id')->pluck('copies', 'binding_id')->all()
+            : [];
+
         foreach ($query->get() as $binding) {
-            foreach (self::claim($binding->type, $binding->plan, (array) $binding->settings) as $key => $value) {
+            foreach (self::claim($binding->type, $binding->plan, (array) $binding->settings, 1 + (int) ($replicas[$binding->id] ?? 0)) as $key => $value) {
                 $used[$key] += $value;
             }
         }
@@ -62,7 +70,7 @@ class BindingQuotas
      *
      * @return array<string, int>
      */
-    public static function claim(string $type, string $plan, array $settings): array
+    public static function claim(string $type, string $plan, array $settings, int $copies = 1): array
     {
         $claim = ['max_bindings' => 1];
 
@@ -76,7 +84,7 @@ class BindingQuotas
             case 'postgres':
                 if ($plan === Binding::PLAN_DEDICATED) {
                     $instances = max(1, (int) ($settings['instances'] ?? config('bindings.postgres.dedicated.default_instances')));
-                    $claim['postgres_gb'] = $instances * (int) ($settings['storage_gb'] ?? config('bindings.postgres.dedicated.default_storage_gb'));
+                    $claim['postgres_gb'] = max(1, $copies) * $instances * (int) ($settings['storage_gb'] ?? config('bindings.postgres.dedicated.default_storage_gb'));
                     $claim['dedicated_postgres'] = 1;
                 } else {
                     $claim['postgres_gb'] = (int) ($settings['storage_gb'] ?? config('bindings.postgres.default_storage_gb'));
@@ -92,11 +100,11 @@ class BindingQuotas
      *
      * @return array{key: string, limit: int, used: int, requested: int}|null the first exceeded limit
      */
-    public function exceeded(string $type, string $plan, array $settings, ?string $exceptId = null): ?array
+    public function exceeded(string $type, string $plan, array $settings, ?string $exceptId = null, int $copies = 1): ?array
     {
         $limits = $this->limits();
         $used = $this->used($exceptId);
-        $claim = self::claim($type, $plan, $settings);
+        $claim = self::claim($type, $plan, $settings, $copies);
 
         foreach ($claim as $key => $requested) {
             $limit = $limits[$key] ?? 0;

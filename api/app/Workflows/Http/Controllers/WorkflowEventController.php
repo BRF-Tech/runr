@@ -8,6 +8,7 @@ use App\Workflows\Http\Resources\WorkflowEventResource;
 use App\Workflows\Http\Resources\WorkflowRunResource;
 use App\Workflows\Models\WorkflowEvent;
 use App\Workflows\Models\WorkflowRun;
+use App\Workflows\Support\WorkflowEnvironments;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
@@ -17,8 +18,10 @@ use Illuminate\Validation\Rule;
 /**
  * Events API of the current tenant (docs/workflows.md § Events API).
  *
- * POST /api/events accepts one event {"name", "data", "id"?, "ts"?}, a list of events or
- * {"events": [...]}; `?test=1` marks them as test events (UI "send test event").
+ * POST /api/events accepts one event {"name", "data", "id"?, "ts"?, "environment"?}, a list of
+ * events or {"events": [...], "environment"?}; `?test=1` marks them as test events (UI "send test
+ * event"). `environment` (a name; `?environment=` too) is the environment the events belong to —
+ * production when none (docs/workflows.md#environments); an event's own wins.
  */
 class WorkflowEventController
 {
@@ -48,8 +51,13 @@ class WorkflowEventController
             throw WorkflowException::invalid(__('workflows.event_invalid', ['index' => 0]), 'event_invalid');
         }
 
+        // The environment of every event of the request: ?environment=, or the envelope's
+        $environment = WorkflowEnvironments::eventEnvironment(
+            $request->query('environment') ?? (is_object($body) && isset($body->events) ? ($body->environment ?? null) : null),
+        );
+
         $source = $request->boolean('test') ? 'test' : 'api';
-        $results = $this->ingestor->ingest($events, $source, null, (string) $request->user()?->getAuthIdentifier());
+        $results = $this->ingestor->ingest($events, $source, null, (string) $request->user()?->getAuthIdentifier(), $environment);
 
         return response()->json([
             'ids' => array_column($results, 'id'),
@@ -57,7 +65,7 @@ class WorkflowEventController
         ]);
     }
 
-    /** GET /events  Filters: name (prefix), source, project_id, from, to, per_page */
+    /** GET /events  Filters: name (prefix), source, project_id, environment (a name, production), from, to, per_page */
     public function index(Request $request): AnonymousResourceCollection
     {
         Gate::authorize('workflows.view');
@@ -66,6 +74,7 @@ class WorkflowEventController
             'name' => 'nullable|string|max:200',
             'source' => ['nullable', 'string', Rule::in(WorkflowEvent::SOURCES)],
             'project_id' => 'nullable|string|max:26',
+            'environment' => 'nullable|string|max:64',
             'from' => 'nullable|date',
             'to' => 'nullable|date',
             'per_page' => 'nullable|integer|min:1|max:100',
@@ -81,6 +90,9 @@ class WorkflowEventController
         }
         if (! empty($filters['project_id'])) {
             $query->where('project_id', $filters['project_id']);
+        }
+        if (! empty($filters['environment'])) {
+            WorkflowEnvironments::constrainName($query, WorkflowEnvironments::eventEnvironment($filters['environment']));
         }
         if (! empty($filters['from'])) {
             $query->where('created_at', '>=', $filters['from']);

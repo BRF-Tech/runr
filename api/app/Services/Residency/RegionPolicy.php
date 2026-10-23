@@ -21,7 +21,8 @@ use App\Services\SupplyChain\SupplyChainAudit;
  * .data_location) is listed in allowed_locations. Outside tenant context (single-tenant install,
  * platform admin in the central console) nothing is restricted.
  *
- * Entry points: project create, project move to another region, deploy, preview, sandbox and
+ * Entry points: project create, project move to another region, the regions of a global project,
+ * deploy, preview, sandbox and
  * binding creation (private databases, model bindings), AI model services and model snapshots,
  * and — for a region with a data location — region migration
  * (authorizeRegionMigration: the new cluster must be confirmed to be in the same location).
@@ -36,6 +37,8 @@ class RegionPolicy
 
     public const PREVIEW = 'preview';
 
+    public const ENVIRONMENT = 'environment';     // a project environment in a region of its own (docs/environments.md)
+
     public const SANDBOX_CREATE = 'sandbox.create';
 
     public const BINDING_CREATE = 'binding.create';
@@ -47,6 +50,8 @@ class RegionPolicy
     public const IMAGE_UPLOAD = 'image.upload';           // an uploaded image pushed into a region registry (docs/images.md)
 
     public const REGION_MIGRATION = 'region.migration';
+
+    public const GLOBAL_REGION = 'project.global_region';  // a region of a global project (docs/global-projects.md)
 
     private static ?\Closure $tenantResolver = null;
 

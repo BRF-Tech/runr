@@ -9,20 +9,24 @@ use App\Models\Project;
 use App\Models\ProjectSecret;
 use App\Models\User;
 use App\Models\Version;
-use App\Support\Secrets\SecretCipher;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Tests\Concerns\ActsWithRoles;
+use Tests\Concerns\FakesRegionSecrets;
 use Tests\TestCase;
 
 /**
  * Secret variables through the project config (docs/security.md, "Secret environment variables"):
  * config.secret_env_keys names them (never values), config.secret_env_vars of POST /projects and
- * PUT /projects/{project} writes them — the form the CLI uses. An empty value removes one.
+ * PUT /projects/{project} writes them — the form the CLI uses — straight into the region
+ * (pass-through), never into RunR's database. An empty value removes one; moving the project to
+ * another region copies its values there.
  */
 class ProjectSecretEnvConfigTest extends TestCase
 {
-    use ActsWithRoles, RefreshDatabase;
+    use ActsWithRoles, FakesRegionSecrets, RefreshDatabase;
+
+    private KnativeRegion $region;
 
     private Project $project;
 
@@ -34,7 +38,11 @@ class ProjectSecretEnvConfigTest extends TestCase
     {
         parent::setUp();
 
+        $this->fakeRegionSecrets();
+        $this->region = $this->regionWithCluster();
+
         $this->project = Project::create(['name' => 'orders', 'service_type' => 'faas']);
+        $this->project->forceFill(['knative_region_id' => $this->region->id])->saveQuietly();
         FaasConfig::create(['project_id' => $this->project->id, 'handler' => 'main.handler', 'env_vars' => ['PLAIN' => 'visible']]);
 
         $this->owner = $this->userWithRole('owner');
@@ -100,9 +108,10 @@ class ProjectSecretEnvConfigTest extends TestCase
 
         $secret = ProjectSecret::sole();
         $this->assertSame('API_TOKEN', $secret->name);
-        $this->assertSame('tok-do-not-leak', $secret->value);
         $this->assertEquals($this->member->id, $secret->updated_by);
-        $this->assertTrue(SecretCipher::isEncrypted(DB::table('project_secrets')->value('value')));
+        // In the region only: RunR's database has the metadata and a fingerprint
+        $this->assertNull(DB::table('project_secrets')->value('value'));
+        $this->assertSame(['API_TOKEN' => 'tok-do-not-leak'], $this->regionSecrets->values($this->region, "{$this->project->slug}-secret-env"));
 
         // Never a plain variable, a version snapshot or an audit record
         $this->assertSame(['PLAIN' => 'visible'], $this->project->faasConfig()->first()->env_vars);
@@ -204,12 +213,10 @@ class ProjectSecretEnvConfigTest extends TestCase
 
     public function test_a_new_project_takes_secret_env_vars(): void
     {
-        $region = KnativeRegion::create(['name' => 'op', 'is_active' => true, 'is_demo' => true]);
-
         $this->signedIn($this->member)->postJson('/api/projects', [
             'name' => 'with-secrets',
             'service_type' => 'caas',
-            'knative_region_id' => $region->id,
+            'knative_region_id' => $this->region->id,
             'config' => [
                 'image' => 'nginx:1.27-alpine',
                 'trigger_type' => 'http',
@@ -219,17 +226,88 @@ class ProjectSecretEnvConfigTest extends TestCase
         ])
             ->assertCreated()
             ->assertJsonPath('config.secret_env_keys', ['API_TOKEN'])
+            ->assertJsonMissingPath('secret_env_error')
             ->assertDontSee('tok-do-not-leak');
 
         $project = Project::where('name', 'with-secrets')->sole();
-        $this->assertSame('tok-do-not-leak', $project->secrets()->sole()->value);
+        $this->assertNull($project->secrets()->sole()->getRawOriginal('value'));
+        $this->assertSame(['API_TOKEN' => 'tok-do-not-leak'], $this->regionSecrets->values($this->region, "{$project->slug}-secret-env"));
         $this->assertSame(['MODE' => 'prod'], $project->containerConfig()->first()->env_vars);
 
         // Creating with secrets takes env.edit, like plain variables
         $this->customRole('maker', ['projects.create']);
         $this->signedIn($this->userWithRole('maker'))->postJson('/api/projects', [
-            'name' => 'maker-secrets', 'service_type' => 'caas', 'knative_region_id' => $region->id,
+            'name' => 'maker-secrets', 'service_type' => 'caas', 'knative_region_id' => $this->region->id,
             'config' => ['image' => 'nginx', 'secret_env_vars' => ['A' => '1']],
         ])->assertForbidden();
+    }
+
+    public function test_a_demo_region_has_no_cluster_for_secret_values(): void
+    {
+        $demo = KnativeRegion::create(['name' => 'demo', 'is_active' => true, 'is_demo' => true]);
+
+        $this->signedIn($this->member)->postJson('/api/projects', [
+            'name' => 'demo-secrets', 'service_type' => 'caas', 'knative_region_id' => $demo->id,
+            'config' => ['image' => 'nginx:1.27-alpine', 'trigger_type' => 'http', 'secret_env_vars' => ['API_TOKEN' => 'x']],
+        ])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors('config.secret_env_vars');
+
+        $this->assertFalse(Project::where('name', 'demo-secrets')->exists());
+    }
+
+    public function test_a_new_project_whose_region_does_not_answer_is_created_and_says_so(): void
+    {
+        $this->regionSecrets->unreachable = true;
+
+        $this->signedIn($this->member)->postJson('/api/projects', [
+            'name' => 'late-secrets', 'service_type' => 'caas', 'knative_region_id' => $this->region->id,
+            'config' => ['image' => 'nginx:1.27-alpine', 'trigger_type' => 'http', 'secret_env_vars' => ['API_TOKEN' => 'x']],
+        ])
+            ->assertCreated()
+            ->assertJsonPath('config.secret_env_keys', [])
+            ->assertJsonPath('secret_env_error', __('api.secret.region_unreachable', ['region' => 'op']));
+    }
+
+    public function test_an_update_whose_region_does_not_answer_changes_nothing(): void
+    {
+        $this->regionSecrets->unreachable = true;
+
+        $this->signedIn($this->member)->putJson($this->url(), [
+            'description' => 'changed',
+            'config' => ['secret_env_vars' => ['API_TOKEN' => 'x']],
+        ])->assertStatus(503)->assertJsonPath('reason', 'region_unreachable');
+
+        $this->assertSame(0, ProjectSecret::count());
+        $this->assertNotSame('changed', $this->project->fresh()->description);
+    }
+
+    public function test_moving_the_project_to_another_region_copies_its_values_there(): void
+    {
+        $this->signedIn($this->member)->putJson($this->url(), ['config' => ['secret_env_vars' => ['API_TOKEN' => 'tok', 'DB_PASS' => 'pw']]])->assertOk();
+        $other = $this->regionWithCluster('eu', 'https://k8s-eu.test');
+
+        $this->signedIn($this->member)->putJson($this->url(), [
+            'knative_region_id' => $other->id,
+            'config' => ['secret_env_vars' => ['NEW_ONE' => 'n']],
+        ])->assertOk();
+
+        $slug = $this->project->slug;
+        $this->assertSame(['API_TOKEN' => 'tok', 'DB_PASS' => 'pw', 'NEW_ONE' => 'n'], $this->regionSecrets->values($other, "{$slug}-secret-env"));
+        // The region it left keeps its copy while workloads there may read it
+        $this->assertSame(['API_TOKEN' => 'tok', 'DB_PASS' => 'pw'], $this->regionSecrets->values($this->region, "{$slug}-secret-env"));
+        $this->assertSame($other->id, $this->project->fresh()->knative_region_id);
+    }
+
+    public function test_a_move_is_refused_while_the_region_it_leaves_does_not_answer(): void
+    {
+        $this->signedIn($this->member)->putJson($this->url(), ['config' => ['secret_env_vars' => ['API_TOKEN' => 'tok']]])->assertOk();
+        $other = $this->regionWithCluster('eu', 'https://k8s-eu.test');
+        $this->regionSecrets->unreachable = true;
+
+        $this->signedIn($this->member)->putJson($this->url(), ['knative_region_id' => $other->id])
+            ->assertStatus(503);
+
+        $this->assertSame($this->region->id, $this->project->fresh()->knative_region_id);
     }
 }

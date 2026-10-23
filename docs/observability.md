@@ -15,8 +15,9 @@ On top of metrics and logs, RunR provides:
 | [Traces tab and API](#traces-tab-and-api) — search, waterfall, logs of a trace | project → Traces | — |
 | [Request replay](#request-replay) — capture of failed requests, replay with a response diff | project switch "Request replay" | off |
 | [Uptime checks](#uptime-checks) — synthetic HTTP checks with incidents | project → Uptime | — |
-| [Status page](#status-page) — public page per organization | Settings → Status page | private |
-| [Alerting](#alerting) — channels, rules, delivery log | Settings → Alerts | — |
+| [Load tests](#load-tests) — k6 from inside the region against the project's own URL | project → Load test | — |
+| [Status page](#status-page) — public page per organization | Observability → Status page | private |
+| [Alerting](#alerting) — channels, rules, delivery log | Observability → Alerts | — |
 
 ---
 
@@ -290,7 +291,7 @@ Inside `KnativeInstallService::installServing()`, in order:
 
 ## Tracing backend
 
-Every region has a tracing mode (Settings → Tracing, `PUT /api/observability/regions/{region}/tracing`).
+Every region has a tracing mode (Observability → Tracing, `PUT /api/observability/regions/{region}/tracing`).
 Regions without their own setting use `observability.tracing.defaultMode` (Helm).
 
 | Mode | Collector | Tempo | Trace search in RunR |
@@ -314,7 +315,7 @@ Projects can switch tracing on only in a region whose backend is `ready`.
 | Component | Release / chart | Details |
 |-----------|-----------------|---------|
 | OpenTelemetry Collector | `otel-collector` / `open-telemetry/opentelemetry-collector` chart 0.176.0 (collector 0.162.0, contrib image `ghcr.io/brf-tech/runr/reqs/opentelemetry-collector-contrib:0.162.0`, RunR's mirror of `docker.io/otel/opentelemetry-collector-contrib`), Deployment, 1 replica | receivers OTLP gRPC 4317, OTLP HTTP 4318, Zipkin 9411; `memory_limiter`, `batch`, `resource/runr` (adds `runr.region`), Kubernetes attributes preset; requests 50m / 128Mi, limits 500m / 512Mi; PriorityClass `observability-critical` |
-| Span metrics | collector `spanmetrics` connector → Prometheus exporter on 8889 | histogram buckets 5 ms – 30 s, dimension `runr.cold_start`, flushed every 15 s; scraped through `PodMonitor/otel-collector-spanmetrics` when the Prometheus Operator CRDs exist |
+| Span metrics | collector `spanmetrics` connector → Prometheus exporter on 8889 | histogram buckets 5 ms – 30 s, dimensions `runr.cold_start` and `runr.revision` (the Knative revision: a canary is judged by its own series, [deploy strategies](deploy-strategies.md#canary-thresholds)), flushed every 15 s; scraped through `PodMonitor/otel-collector-spanmetrics` when the Prometheus Operator CRDs exist |
 | Grafana Tempo | `tempo` / `grafana-community/tempo` chart 3.2.0 (Tempo 3.1.0, single binary, image `ghcr.io/brf-tech/runr/reqs/tempo:3.1.0`, RunR's mirror of `docker.io/grafana/tempo`; repository `https://grafana-community.github.io/helm-charts`, where the chart moved from `grafana/helm-charts`) | OTLP 4317 / 4318, HTTP API 3200, filesystem PVC (`tempoStorage`, default 10Gi, region registry StorageClass when set), retention `tempoRetentionHours` (default 72 h, per region `retention_hours`); init container `fix-permissions` (`ghcr.io/brf-tech/runr/reqs/busybox`, as Loki's) hands `/var/tempo` to Tempo's user 10001, also where the storage driver does not apply the pod's `fsGroup`; requests 50m / 256Mi, limits 1 CPU / 1Gi; tolerates `runr.dev/dedicated=projects:NoSchedule` and prefers nodes that are not dedicated workers ([Dedicated workers](#7-dedicated-workers)) |
 
 The collector and Tempo request about as much as the other region add-ons; the region capacity
@@ -356,7 +357,7 @@ installs (or reconfigures) the backend of one region or of every Knative region;
 (`InstallTracingJob`), `DELETE /api/observability/regions/{region}/tracing` removes it and sets
 the region's mode to `off`, so `region:reconcile` does not install it again.
 
-`php artisan region:reconcile` (the Helm bootstrap job runs it after every install and upgrade)
+`php artisan region:reconcile` (the Helm chart's Job `runr-region-reconcile-<revision>` runs it after every install and upgrade)
 runs the same install where tracing is enabled — the region's mode, or for a region without its
 own setting `defaultMode` while `installWithServing` is on — and the backend is missing or runs
 another chart version or image than the pinned ones (step `tracing`, `TracingBackendStep`;
@@ -536,9 +537,23 @@ the last 30 days, the latest results and the incidents. Results are kept `result
 
 ---
 
+## Load tests
+
+Project → **Load test** (`projects.deploy` to run, `metrics.view` to read), HTTP projects only:
+10, 50 or 100 concurrent users send a GET or a POST with a small body to a path of the project's
+own URL — its function host or an active custom domain — for 30 s, 1 min or 5 min. k6 runs as a
+Job in the region's `runr-loadtest` namespace, pinned to the region's ingress, and reports p50 /
+p95 / p99 latency, the error rate and the requests per second; RunR adds the pods the project
+scaled to and its cold starts in the window. The last five runs are shown side by side. One test
+per project at a time, a daily limit per organization; the test traffic is metered like any other
+traffic. Everything else — the guard, the namespace and its policies, the results, the API and
+the configuration — is in [load-test.md](load-test.md).
+
+---
+
 ## Status page
 
-One public page per organization (Settings → **Status page**, `status_page.manage`): slug, title,
+One public page per organization (Observability → **Status page**, `status_page.manage`): slug, title,
 description, logo, optional custom domain, incident history on / off and its length (≤ 90 days).
 Components are the uptime checks with "show on status page" (own display name and order). The
 page shows the overall state, each component's state and daily uptime bars, and the incident
@@ -557,7 +572,7 @@ history. It uses the organization's brand (product name, colours, logo) when
 
 ## Alerting
 
-Settings → **Alerts** (`alerts.manage`).
+Observability → **Alerts** (`alerts.manage`).
 
 ### Channels
 
@@ -600,6 +615,9 @@ has a severity (`info`, `warning`, `critical`), a cooldown (default 15 minutes) 
 it routes to. Alerts are deduplicated by rule and subject (project, region + resource, uptime
 check): a still-firing alert is sent again only after the cooldown; a resolve is always sent.
 
+A canary rollout reads the same series for its thresholds (error rate, p95 latency): with
+tracing on, a step above them rolls back by itself ([deploy strategies](deploy-strategies.md)).
+
 ### Delivery
 
 Every alert creates one delivery per channel, sent by a queued job with up to 4 tries
@@ -617,7 +635,8 @@ The RunR MCP server ([AI agents](mcp.md)) gives agents traces, request replay an
 checks: `observability_get` / `observability_update`, `traces_search`, `trace_get` (span tree
 and correlated logs), `replays_list`, `replay_get`, `replay_run`, `uptime_checks_list`,
 `uptime_check_create`, `uptime_check_update`, `uptime_check_delete`, `uptime_check_run`,
-`uptime_check_results`, `uptime_incidents_list`, alert channels (`alert_channels_list`,
+`uptime_check_results`, `uptime_incidents_list`, load tests (`load_test_run`, `load_test_get`),
+alert channels (`alert_channels_list`,
 `alert_channel_create`, `alert_channel_update`, `alert_channel_delete`, `alert_channel_test`),
 alert rules (`alert_rules_list`, `alert_rule_create`, `alert_rule_update`, `alert_rule_delete`),
 `alert_events_list`, and the status page (`status_page_get`, `status_page_update`) — through the
@@ -630,6 +649,7 @@ routes above, with the same permissions.
 | `traces.view` | project | Traces tab, trace search and detail (trace logs also need `logs.view`) |
 | `replay.manage` | project | captured requests: list, read, replay, delete |
 | `uptime.manage` | project | create, change, run and delete uptime checks, edit incidents (includes `metrics.view`) |
+| `projects.deploy` | project | run and stop [load tests](load-test.md#permissions) (reading them is `metrics.view`) |
 | `alerts.manage` | organization | alert channels, rules, events, delivery log |
 | `status_page.manage` | organization | the public status page |
 | `regions.observability.manage` | organization | region tracing mode, install, uninstall (includes `regions.view`) |
@@ -645,7 +665,8 @@ Recorded actions (never with secret values; channel changes record the changed f
 `region.tracing.update`, `region.tracing.install`, `region.tracing.uninstall`,
 `project.tracing.update`, `project.replay.update`, `replay.replay`, `replay.delete`,
 `replay.delete_all`, `uptime_check.create`, `uptime_check.update`, `uptime_check.delete`,
-`uptime_check.run`, `uptime_incident.update`, `status_page.update`, `alert_channel.create`,
+`uptime_check.run`, `uptime_incident.update`, `load_test.start`, `load_test.cancel`,
+`status_page.update`, `alert_channel.create`,
 `alert_channel.update`, `alert_channel.delete`, `alert_channel.test`, `alert_rule.create`,
 `alert_rule.update`, `alert_rule.delete`, `alert_delivery.retry`. The internal ingest routes
 (replay captures from function pods, uptime results from region agents) are machine traffic and
@@ -668,6 +689,7 @@ Helm values (`observability.*`, rendered into the API's `OBS_*` variables):
 | `replay.ingestUrl` | `""` | RunR's base URL as seen from region pods; empty: derived from the region's agent URL |
 | `uptime.minIntervalSeconds`, `uptime.resultsRetentionDays` | `30`, `90` | |
 | `uptime.allowPrivateTargets`, `alerts.allowPrivateTargets` | `false` | allow private addresses for absolute check URLs / alert URLs |
+| `loadTest.enabled`, `loadTest.dailyLimit`, `loadTest.maxUsers`, `loadTest.maxDurationSeconds`, `loadTest.maxConcurrentPerRegion`, `loadTest.image` | `true`, `20`, `100`, `300`, `5`, `""` | [load tests](load-test.md#configuration) |
 | `statusPage.enabled` | `true` | |
 | `alerts.deliveryTries` | `4` | |
 
@@ -706,10 +728,11 @@ Scheduled tasks (`ObservabilityServiceProvider`): `observability:run uptime` eve
 | `Services/Observability/Tracing/*` | Tempo client, TraceQL search, trace normalization, trace logs |
 | `Services/Observability/Replay/*` | Capture ingest and redaction, replay, response diff |
 | `Services/Observability/Uptime/UptimeService.php` | Probes, incident state machine, agent checks, uptime statistics |
+| `Services/Observability/LoadTest/*`, `Jobs/LoadTests/*` | Load tests: guard, k6 Job, results ([load-test.md](load-test.md#related-files)) |
 | `Services/Observability/StatusPageService.php` | Status page settings, slug / domain lookup, public payload |
 | `Services/Observability/Alerts/*` | Alert manager (dedup, cooldown, delivery), rule evaluation, channels |
 | `wrapper/observe.go`, `otel*.go`, `proxy.go`, `replay.go` (BRF-Tech/runr-runtimes) | Wrapper server span, OTLP export, observed http mode, failed-request capture |
 | `runtime/agent/internal/uptime/prober.go` | Uptime checks run by the region agent |
-| `vue/src/modules/observability/` | Traces, Replay and Uptime tabs; Alerts, Status page and Tracing settings; public status page |
+| `vue/src/modules/observability/` | Traces, Replay, Uptime and Load test tabs; Alerts, Status page and Tracing settings; public status page |
 
 See also: [monitoring.md](monitoring.md) (runr-agent, metric snapshots, cost), [kata-hypervisors.md](kata-hypervisors.md).

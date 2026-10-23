@@ -9,6 +9,7 @@ use App\Models\XaasConfig;
 use App\Services\Ai\Gpu\GpuValidation;
 use App\Services\Helpers\InstanceSizes;
 use App\Services\Runtimes\ProjectEntrypoint;
+use App\Support\Projects\ScaleSchedule;
 
 trait ProjectConfigTrait
 {
@@ -35,6 +36,7 @@ trait ProjectConfigTrait
             'min_scale' => $config['min_scale'] ?? 0,
             'max_scale' => $config['max_scale'] ?? 1,
             'gpu' => GpuValidation::normalize($config['gpu'] ?? null),
+            'scale_schedule' => ScaleSchedule::normalize($config['scale_schedule'] ?? null),
         ]);
     }
 
@@ -57,6 +59,7 @@ trait ProjectConfigTrait
             'min_scale' => $config['min_scale'] ?? 0,
             'max_scale' => $config['max_scale'] ?? 1,
             'gpu' => GpuValidation::normalize($config['gpu'] ?? null),
+            'scale_schedule' => ScaleSchedule::normalize($config['scale_schedule'] ?? null),
         ]);
     }
 
@@ -78,6 +81,7 @@ trait ProjectConfigTrait
             'min_scale' => $config['min_scale'] ?? 0,
             'max_scale' => $config['max_scale'] ?? 1,
             'gpu' => GpuValidation::normalize($config['gpu'] ?? null),
+            'scale_schedule' => ScaleSchedule::normalize($config['scale_schedule'] ?? null),
         ]);
     }
 
@@ -98,11 +102,17 @@ trait ProjectConfigTrait
         return $max > 0 ? min($gpu, $max) : $gpu;
     }
 
-    /** config.gpu of an update in its stored shape ({count: 0} removes the GPU). */
+    /**
+     * config.gpu and config.scale_schedule of an update in their stored shape ({count: 0} removes
+     * the GPU, null or [] turns the timed warmer off).
+     */
     private static function withNormalizedGpu(array $config): array
     {
         if (array_key_exists('gpu', $config)) {
             $config['gpu'] = GpuValidation::normalize($config['gpu']);
+        }
+        if (array_key_exists('scale_schedule', $config)) {
+            $config['scale_schedule'] = ScaleSchedule::normalize($config['scale_schedule']);
         }
 
         return $config;

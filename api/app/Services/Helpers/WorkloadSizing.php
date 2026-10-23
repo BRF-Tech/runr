@@ -7,6 +7,7 @@ use App\Models\Project;
 use App\Services\Ai\Gpu\GpuRequest;
 use App\Services\Contracts\KnativeConstants;
 use App\Services\GitDeploy\PreviewManifests;
+use App\Support\Projects\ScaleSchedule;
 
 /**
  * The effective size of a project's workload — its config with a deploy's overrides
@@ -20,10 +21,14 @@ use App\Services\GitDeploy\PreviewManifests;
  *                    the size of their 0.5.7 record of the day instead, UsageAggregator)
  *  - peak()          the worst case: every pod up to max(1, min_scale, max_scale) with the
  *                    queue-proxy and RuntimeClass overhead (a CronJob runs one pod at a time; a
- *                    queue trigger adds its consumer), GPUs × pods — what a fixed-region project
- *                    must fit into its approved allocation (Billing module)
+ *                    queue trigger adds its consumer where it is charged), GPUs × pods — what a
+ *                    fixed-region project must fit into its approved allocation (Billing module)
  *  - previewPeak()   the same for a preview environment: one scale-to-zero Knative Service of the
  *                    project's size, at most PreviewManifests::MAX_SCALE pods
+ *
+ * A timed warmer (scale_schedule) sizes the workload with its peak as min_scale
+ * (ScaleSchedule::reservedMinScale): what admission counts and the fixed-region allocation must
+ * hold; metering counts the warm containers of each stretch of time instead (UsageAggregator).
  *
  * @phpstan-type Sizing array{region_id: string|null, cpu_m: int, memory_mb: int, trigger_type: string,
  *     min_scale: int, max_scale: int, scale_to_zero: bool, gpu_count: int}
@@ -31,13 +36,14 @@ use App\Services\GitDeploy\PreviewManifests;
  */
 final class WorkloadSizing
 {
-    /** Config fields that size a workload (gpu: the GPU request of one pod). */
-    private const FIELDS = ['cpu', 'memory_mb', 'trigger_type', 'min_scale', 'max_scale', 'scale_to_zero', 'gpu'];
+    /** Config fields that size a workload (gpu: the GPU request of one pod; scale_schedule: the timed warmer). */
+    private const FIELDS = ['cpu', 'memory_mb', 'trigger_type', 'min_scale', 'max_scale', 'scale_to_zero', 'gpu', 'scale_schedule'];
 
     /**
      * The size of the project's workload: its stored config, then each layer on top (a requested
      * config change, a deploy's overrides). A null or empty value in a layer keeps the value below
-     * it, except gpu (null removes the GPU request).
+     * it, except gpu (null removes the GPU request) and scale_schedule (null or [] turns the timed
+     * warmer off).
      *
      * @param  array<string, mixed>  ...$layers
      * @return Sizing
@@ -49,13 +55,19 @@ final class WorkloadSizing
         foreach (self::FIELDS as $field) {
             $merged[$field] = $stored->{$field} ?? null;
         }
+        // What the trigger list deploys (schedule | queue | http, docs/triggers.md); a layer that
+        // sets trigger_type (a single-trigger config change) still wins
+        $planned = ResourceReservation::capacityTriggerOf($project);
+        if ($planned !== null && $planned !== ResourceReservation::capacityClass(is_string($merged['trigger_type']) ? $merged['trigger_type'] : null)) {
+            $merged['trigger_type'] = $planned;
+        }
         foreach ($layers as $layer) {
             foreach (self::FIELDS as $field) {
                 if (! array_key_exists($field, $layer)) {
                     continue;
                 }
                 $value = $layer[$field];
-                if ($field === 'gpu' || ($value !== null && $value !== '')) {
+                if ($field === 'gpu' || $field === 'scale_schedule' || ($value !== null && $value !== '')) {
                     $merged[$field] = $value;
                 }
             }
@@ -76,7 +88,7 @@ final class WorkloadSizing
             'cpu_m' => max(0, ResourceReservation::parseCpu(($cpu === null || $cpu === '') ? $defaults['cpu'] : $cpu)),
             'memory_mb' => max(0, (int) (($memory === null || $memory === '') ? $defaults['memory_mb'] : $memory)),
             'trigger_type' => is_string($merged['trigger_type']) && $merged['trigger_type'] !== '' ? $merged['trigger_type'] : 'http',
-            'min_scale' => max(0, (int) $merged['min_scale']),
+            'min_scale' => ScaleSchedule::reservedMinScale(['min_scale' => $merged['min_scale'], 'scale_schedule' => $merged['scale_schedule']]),
             'max_scale' => max(0, (int) $merged['max_scale']),
             'scale_to_zero' => self::truthy($merged['scale_to_zero']),
             'gpu_count' => max(0, (int) $gpus),
@@ -142,13 +154,15 @@ final class WorkloadSizing
 
     /**
      * The most the workload can reserve: (size + queue-proxy + RuntimeClass overhead) × every pod
-     * up to max(1, min_scale, max_scale); a CronJob 1 pod; a queue trigger adds its consumer.
+     * up to max(1, min_scale, max_scale); a CronJob 1 pod; a queue trigger adds its consumer
+     * unless $consumer is false (a fixed allocation holds it only where queue consumers are
+     * charged, Billing module QueueConsumerCharging).
      *
      * @param  Sizing  $sizing
      * @param  array{cpu_m?: int, memory_mb?: int}  $podOverhead  RuntimeClass overhead per pod
      * @return Peak
      */
-    public static function peak(array $sizing, array $podOverhead = []): array
+    public static function peak(array $sizing, array $podOverhead = [], bool $consumer = true): array
     {
         $trigger = $sizing['trigger_type'];
         $pods = ResourceReservation::runsKnativeService($trigger)
@@ -158,7 +172,7 @@ final class WorkloadSizing
 
         $cpu = $pod['cpu_m'] * $pods;
         $memory = $pod['memory_mb'] * $pods;
-        if ($trigger === 'queue') {
+        if ($trigger === 'queue' && $consumer) {
             $cpu += KnativeConstants::QUEUE_CONSUMER_CPU_M;
             $memory += KnativeConstants::QUEUE_CONSUMER_MEMORY_MB;
         }

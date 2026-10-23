@@ -58,7 +58,10 @@ overhead is not part of the guest.
   `region:reconcile` updates the drop-in on the nodes.
 
 `ci.sh test-sandbox-api` (with `/dev/kvm`) checks `nproc` inside a 1-CPU and a 2-CPU sandbox on
-each of clh, qemu and dragonball.
+each of clh, qemu and dragonball. It gives the Kind nodes a host-like `/dev/shm` first (`KIND_NODE_SHM`,
+default 4g; see [/dev/shm (QEMU)](#devshm-qemu)) and D-Bus (`KIND_NODE_DBUS`, see
+[D-Bus (Dragonball)](#d-bus-dragonball)) first; a hypervisor the install reports unavailable is
+skipped with the install's reason.
 
 ### Cold start
 
@@ -148,6 +151,29 @@ The plugin is loaded by the same runtime restart kata-deploy performs.
 - **Check**: `/dev/kvm` must exist on the node
 - **Cloud VMs**: the provider must expose nested virtualization to the VM
 
+### D-Bus (Dragonball)
+- Kata's Rust runtime (runtime-rs) moves each sandbox into its systemd cgroup over the D-Bus system
+  bus (the go runtime, like runc, uses systemd's private socket). On a node that runs systemd
+  without D-Bus every Dragonball pod sandbox fails: `add runtime to sandbox cgroup: systemd dbus
+  error: … No such file or directory`
+- A regular node runs D-Bus; Kind's node image does not. RunR's node check records it (`dbus=` in the
+  `runr.dev/kvm-probe` annotation: `yes`, `missing`, `n/a` without systemd), and where every Kata
+  node is `missing` Dragonball is not offered (`no_dbus`); the install API's 422 lists it under
+  `unavailable`
+
+### /dev/shm (QEMU)
+- With virtio-fs the guest's memory is shared with virtiofsd. Kata's Go runtime gives QEMU a
+  `memory-backend-file` in `/dev/shm` for it (`file_mem_backend` unset); Cloud Hypervisor and
+  Dragonball use anonymous shared memory and do not need `/dev/shm`
+- The file is as large as the guest (256 MiB + the pod's memory limits), and every page the guest
+  touches lives in that tmpfs: when `/dev/shm` is full, QEMU dies of SIGBUS while the guest boots and
+  the kubelet keeps retrying the pod sandbox
+- A host's `/dev/shm` is half its memory. A node that runs in a container (Kind, k3d) gets Docker's
+  64 MiB: RunR's node check records the size (`shm_mb` in the `runr.dev/kvm-probe` annotation), and
+  where every Kata node has less than 1 GiB (`KataRuntime::QEMU_MIN_SHM_MB`) QEMU is not offered
+  (`small_shm`); the install API's 422 lists it under `unavailable`, so the other hypervisors can be
+  installed
+
 ### devmapper snapshotter (Firecracker)
 - Firecracker works with block devices and does not support overlayfs
 - containerd needs the `devmapper` snapshotter backed by a thin-provisioning pool
@@ -177,6 +203,8 @@ compatibility state per shim (`KataShimDetectionTrait`):
 | KVM | RunR's check (0.4.4+): a short-lived, unprivileged `kata-kvm-probe` DaemonSet on every Kata target node looks for the CPU's `vmx`/`svm` flag and `/dev/kvm` or a loaded `kvm_intel`/`kvm_amd`; the result is the node label `runr.dev/kvm=true/false` (+ the `runr.dev/kvm-probe` annotation). Nodes without that label use NFD's `cpu-cpuid.VMX`/`SVM` labels as a fast path. If no node has KVM, every Kata hypervisor is `no_kvm`; in a mixed cluster Kata pods land only on `runr.dev/kvm=true` nodes |
 | Container runtime | `node.status.nodeInfo.containerRuntimeVersion` (containerd or not) |
 | devmapper | Node label `runr.dev/devmapper-snapshotter=true` (set by RunR's setup, or by hand for a snapshotter configured manually); otherwise RunR sets it up if every node runs containerd, and reports `no_devmapper` if not (CRI-O) |
+| D-Bus (Dragonball) | The same check looks for the node's `/run/dbus/system_bus_socket` where systemd runs (`dbus=` in `runr.dev/kvm-probe`). If every Kata node with KVM runs systemd without it, Dragonball is `no_dbus` (see [D-Bus (Dragonball)](#d-bus-dragonball)) |
+| /dev/shm (QEMU) | The same check reads the size of the node's `/dev/shm` (`shm_mb=` in `runr.dev/kvm-probe`). If every Kata node with KVM and a known size has less than 1 GiB, QEMU is `small_shm` (see [/dev/shm (QEMU)](#devshm-qemu)); nodes checked by a release without the size keep QEMU offered |
 
 New nodes (without the `runr.dev/kvm` label) are checked when the console asks (`ProbeKvmJob`), before an install,
 and at `region:reconcile`.

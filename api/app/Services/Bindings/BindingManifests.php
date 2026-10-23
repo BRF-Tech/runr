@@ -6,6 +6,7 @@ use App\Models\Binding;
 use App\Models\Project;
 use App\Services\Helpers\DedicatedWorkers;
 use App\Services\Manifests\KnativeManifests;
+use App\Services\Secrets\OpenBao\OpenBaoClient;
 
 /**
  * Kubernetes resources of bindings, built as plain arrays — no cluster access here:
@@ -81,8 +82,9 @@ class BindingManifests
 
     /**
      * Policies every data namespace has: nothing gets in unless allowed — pods of the namespace
-     * (ops pods, replication between instances) and the CNPG operator to its instances.
-     * Per-binding policies add the attached projects.
+     * (ops pods, replication between instances), the CNPG operator to its instances and the
+     * region's own OpenBao to them (it creates and drops the users of dynamic credentials,
+     * docs/bindings.md#dynamic-credentials). Per-binding policies add the attached projects.
      *
      * @return list<array>
      */
@@ -112,6 +114,17 @@ class BindingManifests
                     'namespaceSelector' => ['matchLabels' => ['kubernetes.io/metadata.name' => $operatorNamespace]],
                 ]]]],
             ]),
+            $policy('runr-data-openbao', [
+                'podSelector' => ['matchExpressions' => [['key' => 'cnpg.io/cluster', 'operator' => 'Exists']]],
+                'policyTypes' => ['Ingress'],
+                'ingress' => [[
+                    'from' => [[
+                        'namespaceSelector' => ['matchLabels' => ['kubernetes.io/metadata.name' => OpenBaoClient::NAMESPACE]],
+                        'podSelector' => ['matchLabels' => ['app.kubernetes.io/name' => 'openbao']],
+                    ]],
+                    'ports' => [['protocol' => 'TCP', 'port' => self::PG_PORT]],
+                ]],
+            ]),
         ];
     }
 
@@ -121,14 +134,39 @@ class BindingManifests
     }
 
     /**
-     * Pods of the attached projects (project namespace, runr/project-id) → the binding's service
+     * Pods of the attached projects (project namespace, runr/project-id) and of the attached
+     * environments (runr/environment-id, docs/environments.md#bindings) → the binding's service
      * port. $target: {labels: pod labels of the service, port}.
      *
      * @param  list<string>  $projectIds
+     * @param  list<string>  $environmentIds
      */
-    public static function bindingPolicy(Binding $binding, string $namespace, string $projectNamespace, array $projectIds, array $target): array
+    public static function bindingPolicy(Binding $binding, string $namespace, string $projectNamespace, array $projectIds, array $target, array $environmentIds = []): array
     {
         sort($projectIds);
+        sort($environmentIds);
+        $namespaceSelector = ['matchLabels' => ['kubernetes.io/metadata.name' => $projectNamespace]];
+        $from = [];
+        if ($projectIds) {
+            $from[] = [
+                'namespaceSelector' => $namespaceSelector,
+                'podSelector' => ['matchExpressions' => [[
+                    'key' => 'runr/project-id',
+                    'operator' => 'In',
+                    'values' => array_values(array_unique($projectIds)),
+                ]]],
+            ];
+        }
+        if ($environmentIds) {
+            $from[] = [
+                'namespaceSelector' => $namespaceSelector,
+                'podSelector' => ['matchExpressions' => [[
+                    'key' => 'runr/environment-id',
+                    'operator' => 'In',
+                    'values' => array_values(array_unique($environmentIds)),
+                ]]],
+            ];
+        }
 
         return [
             'apiVersion' => 'networking.k8s.io/v1',
@@ -142,14 +180,7 @@ class BindingManifests
                 'podSelector' => ['matchLabels' => $target['labels']],
                 'policyTypes' => ['Ingress'],
                 'ingress' => [[
-                    'from' => [[
-                        'namespaceSelector' => ['matchLabels' => ['kubernetes.io/metadata.name' => $projectNamespace]],
-                        'podSelector' => ['matchExpressions' => [[
-                            'key' => 'runr/project-id',
-                            'operator' => 'In',
-                            'values' => array_values(array_unique($projectIds)),
-                        ]]],
-                    ]],
+                    'from' => $from,
                     'ports' => [['protocol' => 'TCP', 'port' => (int) $target['port']]],
                 ]],
             ],

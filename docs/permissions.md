@@ -26,7 +26,7 @@ Built-in roles are read-only and exist in every organization.
 | --- | --- | --- | --- |
 | Owner | `owner` | the people responsible for the organization | every permission of the edition (`*`), plus ownership |
 | Admin | `admin` | administrators | every permission of the edition (`*`) |
-| Developer | `developer` | building, deploying and operating projects | `projects.view`, `projects.create`, `projects.update`, `projects.delete`, `projects.deploy`, `code.edit`, `env.view`, `env.edit`, `domains.manage`, `connections.manage`, `git.pull`, `git.push`, `git.manage`, `previews.manage`, `shell.exec`, `logs.view`, `metrics.view`, `traces.view`, `replay.manage`, `uptime.manage`, `workflows.view`, `workflows.run`, `workflows.manage`, `events.send`, `sandboxes.view`, `sandboxes.create`, `sandboxes.exec`, `security.view`, `regions.view`, `runtimes.use_custom`, `images.view`, `images.upload`, `images.delete`, `models.view`, `models.deploy`, `bindings.view`, `bindings.manage`, `mcp.servers.manage`, `mcp.servers.call`, `members.view`, `tokens.manage`, `tickets.view`, `tickets.create` |
+| Developer | `developer` | building, deploying and operating projects | `projects.view`, `projects.create`, `projects.update`, `projects.delete`, `projects.deploy`, `environments.manage`, `environments.promote`, `code.edit`, `env.view`, `env.edit`, `secret_stores.view`, `domains.manage`, `network.manage`, `connections.manage`, `git.pull`, `git.push`, `git.manage`, `previews.manage`, `shell.exec`, `logs.view`, `metrics.view`, `traces.view`, `replay.manage`, `uptime.manage`, `workflows.view`, `workflows.run`, `workflows.manage`, `events.send`, `topics.manage`, `sandboxes.view`, `sandboxes.create`, `sandboxes.exec`, `security.view`, `regions.view`, `runtimes.use_custom`, `images.view`, `images.upload`, `images.delete`, `models.view`, `models.deploy`, `bindings.view`, `bindings.manage`, `mcp.servers.manage`, `mcp.servers.call`, `members.view`, `tokens.manage`, `tickets.view`, `tickets.create` |
 | Viewer | `viewer` | read-only users | `projects.view`, `git.pull`, `logs.view`, `metrics.view`, `traces.view`, `workflows.view`, `sandboxes.view`, `security.view`, `regions.view`, `images.view`, `models.view`, `bindings.view`, `mcp.servers.call`, `members.view`, `tokens.manage`, `tickets.view`, `tickets.create` |
 | Billing | `billing` | finance: bills, prices, fixed resource approvals, stopping projects ([Billing](billing.md)) | `billing.view`, `billing.manage`, `billing.approve`, `projects.stop`, `regions.view`, `bindings.view`, `members.view`, `tokens.manage`, `tickets.view`, `tickets.create` |
 
@@ -57,12 +57,15 @@ single-tenant or multi-tenant exists in that edition only.
 | --- | --- | --- | --- |
 | `projects.view` | project | — | see projects, code, versions, deployments and gateway routes |
 | `projects.create` | organization | — | create projects, clone them, load demo projects |
-| `projects.update` | project | `projects.view` | change description, region, resources, scaling and triggers |
+| `projects.update` | project | `projects.view` | change description, region, resources, scaling and triggers; apply, dismiss or snooze a [rightsizing recommendation](monitoring.md#rightsizing) |
 | `projects.delete` | project | `projects.view` | delete projects with their workloads |
-| `projects.deploy` | project | `projects.view` | deploy versions, stop and delete deployments |
+| `projects.deploy` | project | `projects.view` | deploy versions, stop and delete deployments, apply and pin [runtime patches](runtimes.md#runtime-patches), run and stop [load tests](load-test.md) |
 | `projects.manage_access` | project | `projects.view` | give users and groups a role on the project; transfer the project to another owner |
 | `projects.stop` | organization | — | stop a project with a reason (its workloads stop, deploys are refused) and resume it ([Project stop and resume](billing.md#project-stop-and-resume)) |
 | `code.edit` | project | `projects.view` | save code and files (creates versions) |
+| `environments.manage` | project | `projects.view` | create, change and delete the project's environments ([Environments](environments.md)); env var overrides and environment secrets also need `env.edit` |
+| `environments.promote` | project | `projects.view` | request a promotion of an environment's version to another environment, cancel one's own |
+| `environments.approve` | project | `projects.view` | approve or reject promotions into an environment that requires approval (production by default) — never one's own |
 
 ### Git & previews
 
@@ -72,7 +75,7 @@ single-tenant or multi-tenant exists in that edition only.
 | `git.push` | project | `git.pull` | push to the project's git remote (a push to the deploy branch creates a version, and deploys it with auto-deploy on); redeploy the deploy branch head |
 | `git.manage` | project | `git.pull` | deploy branch, root directory, auto-deploy and force pushes; connect and disconnect a GitHub, GitLab or Forgejo/Gitea repository |
 | `previews.manage` | project | `git.pull` | preview settings (on/off, limit, lifetime, overrides, forks); redeploy and delete previews |
-| `git_providers.manage` | organization (single-tenant) | — | Settings → Git providers: the GitHub App, GitLab and Forgejo/Gitea instances; in multi-tenant installs platform administrators configure the providers every tenant shares |
+| `git_providers.manage` | organization (single-tenant) | — | Data & Integrations → Git providers: the GitHub App, GitLab and Forgejo/Gitea instances; in multi-tenant installs platform administrators configure the providers every tenant shares |
 
 See [Git deploy](git-deploy.md).
 
@@ -81,10 +84,14 @@ See [Git deploy](git-deploy.md).
 | Permission | Scope | Includes | Allows |
 | --- | --- | --- | --- |
 | `env.view` | project | `projects.view` | see environment variables (others get `env_vars: null`, `env_vars_hidden: true`) |
-| `env.edit` | project | `env.view` | add, change and remove environment variables |
-| `secrets.view_values` | project | `env.view` | reveal the values of secret variables |
+| `env.edit` | project | `env.view` | add, change and remove environment variables, secret values and references to secret stores |
+| `secrets.view_values` | project | `env.view` | reveal the values of secret variables (read from the project's region) |
+| `secret_stores.view` | organization | — | see the organization's secret stores and the trust they need; choose a store for a reference ([secret stores](secret-stores.md)) |
+| `secret_stores.manage` | organization | `secret_stores.view` | register, change, verify and remove secret stores |
 | `domains.manage` | project | `projects.view` | add, verify and remove custom domains and their TLS |
+| `network.manage` | project | `projects.view` | set the access mode (public, IP allow list, internal only) and the projects allowed to call the project on the region's internal network, other organizations' included ([Internal network](internal-network.md)); reading them needs `projects.view` |
 | `connections.manage` | project | `projects.view` | private connections to managed databases |
+| `api_products.manage` | organization | — | the organization's API consumers and plans, accepted on every gateway, and the usage of every gateway ([API product](api-product.md#permissions)); a gateway's own consumers, keys and plans belong to its owner |
 
 ### Operations
 
@@ -92,7 +99,7 @@ See [Git deploy](git-deploy.md).
 | --- | --- | --- | --- |
 | `shell.exec` | project | `projects.view` | open a shell in a running deployment |
 | `logs.view` | project | `projects.view` | read deployment logs |
-| `metrics.view` | project | `projects.view` | read live and historical metrics |
+| `metrics.view` | project | `projects.view` | read live and historical metrics, load tests and their results and [rightsizing recommendations](monitoring.md#rightsizing) |
 | `traces.view` | project | `projects.view` | search and read the project's traces ([Observability](observability.md#traces-tab-and-api)); the logs of a trace also need `logs.view` |
 | `replay.manage` | project | `projects.view` | see, replay and delete captured failed requests ([request replay](observability.md#request-replay)) |
 | `uptime.manage` | project | `metrics.view` | create, change, run and delete uptime checks, update incidents; reading them is `metrics.view` |
@@ -108,7 +115,8 @@ See [Git deploy](git-deploy.md).
 | `workflows.view` | project | `projects.view` | see workflow definitions, runs, steps and usage; organization-wide also the tenant's events and usage |
 | `workflows.run` | project | `workflows.view` | start, cancel, retry and replay runs |
 | `workflows.manage` | project | `workflows.view` | sync / declare definitions, pause and resume workflows, set the endpoint override, rotate and reveal the signing key |
-| `events.send` | organization | — | send events (`POST /api/events`) |
+| `events.send` | organization | — | send events (`POST /api/events`) and publish to topics (`POST /api/topics/{topic}/publish`, [triggers.md](triggers.md#topics)) |
+| `topics.manage` | organization | — | create, change and delete the organization's topics |
 
 ### Sandboxes
 
@@ -135,7 +143,7 @@ See [Git deploy](git-deploy.md).
 | Permission | Scope | Includes | Allows |
 | --- | --- | --- | --- |
 | `regions.view` | organization | — | see regions, their components and status |
-| `regions.manage` | organization | `regions.view` | create, configure, upgrade, migrate and delete regions; Knative, Redis, workers, capacity overcommit factors, function TLS, demo projects, kubeconfig download |
+| `regions.manage` | organization | `regions.view` | create, configure, upgrade, migrate and delete regions; Knative, Redis, workers, capacity overcommit factors, function TLS, demo projects, External Secrets Operator and the region's OpenBao ([secret stores](secret-stores.md#openbao-in-the-region)), kubeconfig download |
 | `sandbox.manage` | organization | `regions.view` | install and configure the region's sandbox runtimes (gVisor, Kata Containers) and WebAssembly support ([WebAssembly](wasm.md)) |
 | `registry.manage` | organization | `regions.view` | set up and remove region registries |
 | `regions.data_services.manage` | organization | `regions.view` | install, configure and remove the data services of a region: KV Redis, object store, CloudNativePG ([Bindings](bindings.md#region-setup)) |
@@ -204,6 +212,7 @@ do what its token can do; approving an OAuth client needs `tokens.manage`.
 | `audit.view` | organization | — | see the audit log |
 | `audit.export` | organization | `audit.view` | export the audit log |
 | `tenants.residency.manage` | organization (multi-tenant) | — | data residency of the organization: allowed regions and data locations, default region ([Data residency](supply-chain.md#data-residency)) |
+| `org.transfer` | organization | — | export the organization into a package and import one ([Organization export and import](org-export.md)); the API also requires the Owner role |
 
 ### Billing
 
@@ -213,9 +222,9 @@ the platform (no active tenant) or a tenant — these permissions reach that org
 | Permission | Scope | Includes | Allows |
 | --- | --- | --- | --- |
 | `billing.view` | organization | — | bills, usage, the rollup per owner, prices, region billing types, fixed resource requests, billing events and settings (without the webhook secret); in a tenant also region offers, markups and the tenant's bills from the platform |
-| `billing.manage` | organization | `billing.view` | prices with effective dates, region billing types, markups, accepting region offers, payment links and paid status, the billing webhook, test events and redelivery |
+| `billing.manage` | organization | `billing.view` | prices with effective dates, region billing types, markups, accepting region offers, payment links and paid status, the billing webhook, test events and redelivery, the monthly cost limit of every pay-as-you-go project |
 | `billing.approve` | organization | `billing.view` | approve or reject fixed resource requests — the seller of a fixed region |
-| `projects.billing` | project | `projects.view` | the project's own bills and its fixed resource requests (the project's owner has this by ownership) |
+| `projects.billing` | project | `projects.view` | the project's own bills, its fixed resource requests and its [monthly cost limit](billing.md#monthly-cost-limit) (the project's owner has this by ownership) |
 
 The platform's bills to tenants and the 0.5.7 billing records need a platform administrator: the
 routes are marked `@platform:billing.view` / `@platform:billing.manage`.
@@ -233,7 +242,7 @@ Permissions are also Laravel Gate abilities: `$user->can('projects.deploy', $pro
 
 ## Custom roles
 
-Users with `roles.manage` create roles of their own in **Settings → Roles**: a name, a
+Users with `roles.manage` create roles of their own in **Administration → Roles**: a name, a
 description and a selection in the permission matrix. Rules:
 
 - a custom role holds only permissions its editor holds — nobody hands out more than they have;
@@ -251,7 +260,7 @@ Owner.
 
 ## Groups
 
-Groups (Settings → Groups) bundle members. A group can have an organization-wide role — every
+Groups (Administration → Groups) bundle members. A group can have an organization-wide role — every
 member gets it in addition to their own role — and access to single projects. Effective
 permissions are the union of all roles. Adding someone to a group requires being able to grant the
 group's roles.
@@ -274,7 +283,7 @@ everything else.
 
 ## API tokens
 
-Personal API tokens (Settings → API Tokens) carry either full access (`*`) or a selection of
+Personal API tokens (Administration → API Tokens) carry either full access (`*`) or a selection of
 permissions:
 
 - a token can only be created with permissions its owner holds (organization-wide or on some
@@ -297,7 +306,7 @@ permissions:
 
 ## SSO group mapping
 
-Sign-in providers (Settings → Auth Providers: OAuth, OpenID Connect and SAML) can manage groups
+Sign-in providers (Administration → Auth Providers: OAuth, OpenID Connect and SAML) can manage groups
 and roles:
 
 - **Groups claim / attribute** — the claim (OpenID Connect: of the verified ID token or the userinfo
@@ -319,7 +328,7 @@ On every SSO sign-in:
    for new users, else the organization's default role. Owners keep their role.
 3. Just-in-time provisioning (`auto_register`): a new account becomes a member with the role for
    new users (or a mapped role). In multi-tenant installs the account is a platform account that
-   joins the tenant; an existing account with the same e-mail joins the tenant instead of being
+   joins the tenant; an existing account with the same e-mail (in any letter case) joins the tenant instead of being
    created again.
 
 ## Platform administrators
@@ -333,7 +342,7 @@ accept their tokens that carry the permission. Other users have no permissions i
 active tenant).
 
 Who becomes one — the first administrator account of a Helm or Compose install, the owners and
-admins of an installation switched to the multi-tenant edition, accounts promoted in Settings →
+admins of an installation switched to the multi-tenant edition, accounts promoted in Administration →
 Users — is in [Platform administrators](tenancy.md#platform-administrators). They open any tenant
 as its administrator, also one they are not a member of; opening and leaving are audit-logged
 (`impersonation.start`, `impersonation.stop`) and the changes made meanwhile name them as
@@ -437,7 +446,7 @@ scope that allows it ([upgrade.md](upgrade.md#roles-and-api-tokens)).
 | Single-tenant: every other user (all users could do everything) | Admin |
 | Multi-tenant: tenant `owner` | Owner |
 | Multi-tenant: tenant `admin` | Admin |
-| Multi-tenant: tenant `member` | the custom role **Member** (key `member`), created in every tenant that has members or open invitations with that role — exactly what members could do: the Developer permissions without `models.deploy`, `mcp.servers.manage` and `mcp.servers.call`, plus `settings.manage` and `sso.manage`. A tenant schema the upgrade has not migrated yet resolves `member` as Developer. Move members to Developer to drop the settings and SSO permissions. |
+| Multi-tenant: tenant `member` | the custom role **Member** (key `member`), created in every tenant that has members or open invitations with that role — exactly what members could do: the Developer permissions without `models.deploy`, `mcp.servers.manage` and `mcp.servers.call`, plus `settings.manage` and `sso.manage`. Later upgrades keep it so: a permission a release adds to Developer reaches a Member role that is still as an upgrade left it (0.6.0: `environments.manage`, `environments.promote`, `network.manage`, `secret_stores.view`, `topics.manage`, tenant migration `0108`); a Member role the organization changed is left alone. A tenant schema the upgrade has not migrated yet resolves `member` as Developer. Move members to Developer to drop the settings and SSO permissions. |
 | Multi-tenant: tenant `viewer` | Viewer (read-only — enforced from 0.5.0 on) |
 | `users.is_admin` | platform administrator (unchanged) |
 | Users created after the upgrade | the organization's default role (`RBAC_DEFAULT_ROLE`, default `developer`) |

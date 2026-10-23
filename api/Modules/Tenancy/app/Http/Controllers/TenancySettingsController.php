@@ -31,7 +31,13 @@ class TenancySettingsController extends SettingsController
             // Complete a move of the organization domain now, whatever DNS answers
             'complete_domain_migration' => 'sometimes|boolean',
             'registration_enabled' => 'prohibited',
+            // The organization's time zone (OrgTimezone); unset, the platform's applies
+            'timezone' => self::timezoneRules(),
         ]);
+
+        if ($request->has('timezone')) {
+            self::updateTimezone($request->input('timezone'));
+        }
 
         // The organization domain (docs/tenancy.md): its functions answer at
         // <project>.<region>.<domain>; empty = the platform's base domain again

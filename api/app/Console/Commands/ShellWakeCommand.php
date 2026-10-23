@@ -2,6 +2,7 @@
 
 namespace App\Console\Commands;
 
+use App\Services\InternalNetwork\InternalNetwork;
 use App\Services\KubernetesClient;
 use Illuminate\Console\Command;
 
@@ -71,7 +72,9 @@ class ShellWakeCommand extends Command
         $this->out(['status' => 'waking_up']);
 
         $servingNs = $config['serving_namespace'] ?? 'knative-serving';
-        $k8s->wakeUpKnativeService($servingNs, $namespace, $slug);
+        // RunR's own call on the region's internal network (InternalNetwork::systemToken)
+        $token = ! empty($config['region_id']) ? InternalNetwork::systemToken((string) $config['region_id']) : null;
+        $k8s->wakeUpKnativeService($servingNs, $namespace, $slug, 15, $token);
 
         // Phase 3: Poll for running pods (up to 30s)
         $this->out(['status' => 'waiting']);

@@ -5,7 +5,10 @@ usage RunR meters anyway, prices it with the prices you set per region, and clos
 project and calendar month. The payer of a project's bill is the project's **owner**.
 
 RunR **only calculates**. It takes no payments, issues no invoices, sends no reminders and never
-restricts anything because a bill is unpaid. Your invoicing system — an accounting package, an ERP,
+restricts anything because a bill is unpaid. (A project's owner can set a
+[monthly cost limit](#monthly-cost-limit) that notifies or stops the project at an amount the owner
+chose — the owner's own guardrail against a runaway month, not a consequence of a bill.) Your
+invoicing system — an accounting package, an ERP,
 a shop — reads the bills and the usage through the [billing API](#api-reference), receives
 [signed events](#webhook-events) when something happens, and writes two things back on each bill:
 a **payment link** and the **paid** status.
@@ -32,9 +35,11 @@ each tenant bills its own projects, with a markup of its choice.
 - [Region billing types](#region-billing-types)
 - [Fixed resources](#fixed-resources)
 - [Metering and the fixed bill](#metering-and-the-fixed-bill)
+- [Queue consumers](#queue-consumers)
 - [Billing without tenancy](#billing-without-tenancy)
 - [Billing with tenancy](#billing-with-tenancy)
 - [Project stop and resume](#project-stop-and-resume)
+- [Monthly cost limit](#monthly-cost-limit)
 - [API reference](#api-reference)
 - [Webhook events](#webhook-events)
 - [Example: invoicing a closed month](#example-invoicing-a-closed-month)
@@ -98,7 +103,7 @@ On the first start with billing on:
 - every region is `payg` until you set another type;
 - every project gets an open bill for the current month.
 
-Then set the prices of your regions (Settings → Billing → Regions & prices), choose the billing type
+Then set the prices of your regions (Administration → Billing → Regions & prices), choose the billing type
 of each region, and give your invoicing system an [API token](#api-tokens).
 
 ### Turning billing off and on
@@ -181,6 +186,27 @@ A bill has **line items**. Each line names what it is for (metric, region, proje
 (`total`). The bill's `total` is the sum of its line totals. When a price changes in the middle of
 the month, the usage before and after the change are separate lines.
 
+### Environments
+
+A project that runs in [environments](environments.md) is billed on its one bill: production and
+every environment together. Each usage line says which **environment** its usage came from —
+`environment_id` (`null`: production, the project's own workload) and `environment_name`
+(`production`, `staging`, …) — and the usage of one project splits into one line per environment,
+metric, region and trigger type. When the project ran in an environment besides production that
+month, every description names the environment too: `vCPU hours (staging, eu-1, HTTP)`,
+`vCPU hours (production, eu-1, HTTP)`. The totals are what the usage costs, whatever the split.
+
+- An environment deleted during the month keeps its lines under the name its usage was metered
+  with (metering records the name next to the id); usage metered before that name was recorded,
+  of an environment deleted since, is `deleted environment`.
+- Preview environments are not environments: their lines stay `component: preview` with no
+  environment. A queue consumer's line carries the environment of the deployment it consumes for.
+- Fixed lines (`type: fixed`) belong to the project's allocation, which covers every environment
+  in its region ([What a fixed project may use](#what-a-fixed-project-may-use)): they name no
+  environment.
+- Closed bills keep the lines they were closed with; bills closed before this release have no
+  environment on their lines.
+
 Amounts are calculated exactly — decimal arithmetic on the stored prices and the metered quantities,
 never floating point — and each line is rounded once, half up, to the minor unit of the currency: 2
 decimals, none for currencies without a minor unit (`JPY`, `KRW`, `CLP`, …), 3 for `BHD`, `IQD`,
@@ -201,7 +227,7 @@ are always billed by usage (`payg` prices of their region), also in a fixed regi
 
 `GET /api/billing/rollup?period=2026-10` adds up every bill of a month per owner: how many projects
 and bills, the total, and how much of it is paid and unpaid. Each user sees their own bills in
-Settings → My bills (`GET /api/billing/me`).
+the user menu → My bills (`GET /api/billing/me`).
 
 ### Payment link and paid status
 
@@ -214,7 +240,9 @@ Two things on a **closed** bill are written by your invoicing system, never by R
 
 RunR shows these values and sends events when they change (`bill.payment_url_set`, `bill.paid`,
 `bill.unpaid`). It never stops, limits or warns a project because of an unpaid bill; stopping a
-project is a separate, manual action ([Project stop and resume](#project-stop-and-resume)).
+project is a separate, manual action ([Project stop and resume](#project-stop-and-resume)) — or the
+project owner's own choice, made in advance with a [monthly cost limit](#monthly-cost-limit), which
+looks at this month's cost and never at whether a bill is paid.
 
 ---
 
@@ -286,14 +314,14 @@ new percentage with an effective date.
 ## Region billing types
 
 Every region has exactly **one** billing type, chosen when the region is opened (the region wizard
-asks for it when billing is on; Settings → Billing → Regions & prices, the region's Billing tab, or
+asks for it when billing is on; Administration → Billing → Regions & prices, the region's Billing tab, or
 `PUT /api/billing/regions/{region}` later). A region without a choice is `payg`. When the platform
 shares a region with a tenant, the region keeps its type: the tenant sells it to its projects the
 same way.
 
 | Type | How projects get resources | What the project's bill contains |
 |---|---|---|
-| `payg` | Projects deploy at once, within the region's capacity and their organization's quota. | The metered usage of the month: vCPU-hours, GB-hours and GPU-hours of the project's workloads, by trigger type, at the region's hourly prices. |
+| `payg` | Projects deploy at once, within the region's capacity and their organization's quota. | The metered usage of the month: vCPU-hours, GB-hours and GPU-hours of the project's workloads, by trigger type, at the region's hourly prices — its preview environments and, where [charged](#queue-consumers), its queue consumer as lines of their own. |
 | `fixed` | A project **requests** resources (vCPU, memory, GPUs); the region's seller approves; the project is active and billed from the approval day. It cannot use more than it was approved for: its largest size (every pod up to `max_scale`, its previews) must fit ([What a fixed project may use](#what-a-fixed-project-may-use)). | The monthly price of the approved resources, prorated by day. |
 
 The type of a region cannot change while projects hold approved fixed resources there: the request
@@ -340,7 +368,7 @@ answers `422 fixed_max_scale_required` until `max_scale` is set and the project 
 
 ### Approving
 
-The **seller** of the region approves or rejects (Settings → Billing → Approvals,
+The **seller** of the region approves or rejects (Administration → Billing → Approvals,
 `POST /api/billing/fixed-requests/{id}/approve` or `/reject` with a reason):
 
 | Project | Seller (holds `billing.approve`) |
@@ -367,12 +395,15 @@ allocation, and everything it can run there must fit it **at its worst case**:
 
 | Counted | How |
 |---|---|
-| The production workload | every pod up to `max(1, min_scale, max_scale)` — the size with the queue-proxy and sandbox (Kata) overheads, as the region's capacity admission counts them; a schedule trigger runs one pod, a queue trigger adds its consumer. A deploy's overrides (`deploy_config`: `cpu`, `memory_mb`, `min_scale`, `max_scale`, `scale_to_zero`) are part of it |
+| The production workload | every pod up to `max(1, min_scale, max_scale)` — the size with the queue-proxy and sandbox (Kata) overheads, as the region's capacity admission counts them; a schedule trigger runs one pod, a queue trigger adds its consumer where [queue consumers are charged](#queue-consumers). A deploy's overrides (`deploy_config`: `cpu`, `memory_mb`, `min_scale`, `max_scale`, `scale_to_zero`) are part of it |
+| Its environments ([Environments](environments.md)) | every other environment of the project that runs in the region, at the worst case of its live deployment; a deploy to an environment is checked with the environment's size. An environment in another fixed region needs the project's allocation there |
 | Its preview environments | every live preview at its maximum (the project's size, at most 3 pods or `max_scale` when lower) |
 | GPUs | the GPUs of one pod × the pods above |
 
 A Knative Service (HTTP, queue, workflow trigger) needs a `max_scale` there — without one its worst
-case is unbounded (`422 fixed_max_scale_required`).
+case is unbounded (`422 fixed_max_scale_required`). A [timed warmer](scaling.md#timed-warmer)'s
+rows never keep more than `max_scale` containers warm, so its peak always fits the worst case; in a
+pay-as-you-go region the console estimates the warmer's monthly vCPU-hours and GB-hours.
 
 It is checked at every way a project gets to run or grow: a deploy from the console, the CLI, the
 API or a git push, a preview, a [resume](#project-stop-and-resume), a region migration, a runtime
@@ -419,12 +450,35 @@ Price changes and markup changes during an allocation are applied from their eff
 
 [Metering](monitoring.md#metering) runs whether billing is on or not. Every 5 minutes it records
 each project's usage per day: CPU (millicore × milliseconds), memory (MiB × milliseconds), GPU time,
-sessions; always-on workloads count their reserved size for the time they were running that day,
-with the size they were deployed with (deployed before 0.5.8: the size their 0.5.7 record of the
-day shows, [Upgrade](upgrade.md#057--058)). Bindings are measured
-hourly (GB-hours of storage, instance hours), sandboxes every 5 minutes. Billing turns these
-quantities into money: 1 vCPU-hour = 3.6 × 10⁹ millicore-milliseconds, 1 GB-hour = 1024 × 3.6 × 10⁶
-MiB-milliseconds, 1 GPU-hour = 3.6 × 10⁶ GPU-milliseconds.
+sessions. A project's workload counts the size it was deployed with — the CPU, memory and GPUs of
+one pod — for the time its pods ran:
+
+- **Always-on workloads** (scale to zero off or `min_scale` ≥ 1) count `min_scale` pods for the
+  time they were running that day (deployed before 0.5.8: the size their 0.5.7 record of the day
+  shows, [Upgrade](upgrade.md#057--058)); their sessions are covered by that.
+- **Scale-to-zero workloads and the runs of a schedule trigger** count their sessions. A session is
+  one pod, from its start until it is removed (a scheduled run: until it finishes), and counts the
+  size the deployment was deployed with for that time, whether the pod was busy or idle: a
+  10-minute session of a 0.5 vCPU / 1 GB pod is 1/12 vCPU-hour and 1/6 GB-hour. Each day counts
+  the part of a session that ran on it — a pod that runs from 22:00 on 31 October until 05:00 on
+  1 November counts 2 hours on the October bill and 5 hours on the November one — under the
+  deployment's trigger type (HTTP, queue or schedule). A session still running counts until now.
+  The region agent reports the running sessions every minute; when those reports stop for
+  10 minutes (the agent or the region is gone), the session ends when its pod was last seen.
+- **Preview environments** (Git deploy, [Preview environments](git-deploy.md#preview-environments))
+  count their sessions the same way, at the size the preview runs with (the project's), as a line
+  of their own on the project's bill ("vCPU hours — preview environments"). In a fixed region they
+  are part of the allocation like the project's own workload.
+- **Queue consumers**: a queue trigger's consumer counts its reserved size (50m CPU, 64 MiB) for
+  the time the deployment runs — metered always, billed only where queue consumers are charged
+  ([Queue consumers](#queue-consumers)).
+- **Environments** ([Environments](environments.md)): every record carries the environment of its
+  deployment (`environment_id`, `environment_name`; `null`: production), and the bill shows it per
+  line ([Environments](#environments)).
+
+Bindings are measured hourly (GB-hours of storage, instance hours), sandboxes every 5 minutes.
+Billing turns these quantities into money: 1 vCPU-hour = 3.6 × 10⁹ millicore-milliseconds,
+1 GB-hour = 1024 × 3.6 × 10⁶ MiB-milliseconds, 1 GPU-hour = 3.6 × 10⁶ GPU-milliseconds.
 
 Fixed projects are metered too. The project's owner always sees the fixed bill. Users with
 `billing.view` see on every project bill also:
@@ -439,6 +493,72 @@ On a day with an active allocation, the project's own usage in that region is co
 price and appears only in `metered_lines`. It cannot go above the allocation
 ([What a fixed project may use](#what-a-fixed-project-may-use)), so a fixed bill has no overage.
 
+## Rightsizing
+
+[Rightsizing recommendations](monitoring.md#rightsizing) are made with or without billing. While
+billing is on, the Billing module prices what a recommended size changes per month
+(`savings`, positive: saved, negative: costs more), with the prices in effect today:
+
+| Project | `basis` | Monthly difference |
+|---|---|---|
+| Always-on, pay-as-you-go region | `reserved` | the size difference × the pods it keeps running (`max(1, min_scale)`) × 730 hours at the region's vCPU-hour and GB-hour prices × the trigger's multiplier × (1 + markup) — what its reservation is metered and billed at |
+| Scale-to-zero, pay-as-you-go region | `usage` | 0: its sessions are billed for what they use, not for the size; the smaller size frees capacity and quota |
+| Fixed-price region | `fixed` | the change of its worst case (every pod up to `max_scale`, [What a fixed project may use](#what-a-fixed-project-may-use)) at the region's monthly vCPU and GB prices — what the allocation could be lowered by (`freed_allocation`), saved only once a smaller allocation is requested and approved; a larger size shows what the allocation must grow by |
+
+Example: an always-on API of 512 MB / 500m with `min_scale: 2` used 140 MB and 80m at most; 256 MB
+/ 125m are recommended. At $0.04 per vCPU-hour and $0.01 per GB-hour it saves (0.375 × 0.04 +
+0.25 × 0.01) × 2 × 730 = $25.55 a month. The organization's list sorts by this amount and sums it
+(`GET /api/rightsizing` → `summary.monthly_savings`). Without billing `savings` is `null` and the
+recommendation shows the resources it frees.
+
+---
+
+## Queue consumers
+
+A queue trigger runs a **consumer** next to the function: a small Deployment (50m CPU, 64 MiB)
+that reads the stream and calls the function, running as long as the project is deployed, whether
+the function scales to zero or not. Whether it is charged is set first for the region, then per
+organization:
+
+1. **The region** — `charge_queue_consumers`, set by the region's owner: the platform for a
+   platform region (a shared region carries the platform's setting, like its billing type), a
+   tenant for its own regions. Region settings → Billing, Administration → Billing → Regions & prices,
+   or `PUT /api/billing/regions/{region}` with `{"charge_queue_consumers": true}`.
+2. **The region's owner, per organization** — on a platform region the platform can switch it off
+   for one tenant: Region settings → Billing → Organizations, or
+   `PUT /api/billing/regions/{region}/organizations/{tenant}` with `{"charge": false}` (`null`
+   follows the region again; platform administrators). The platform's bill to that tenant and the
+   tenant's own bills follow it.
+3. **The organization itself** — its own choice for a region, its own or a shared one, for the
+   bills it makes for its projects: Administration → Billing → Regions & prices, or
+   `PUT /api/billing/regions/{region}/queue-consumers` with `{"charge": false}` (`null` follows
+   the region again).
+
+Consumers are charged only when every level that applies lets them; a level can switch charging
+off, never on where the level above leaves it off:
+
+| Bill | Charged when |
+|---|---|
+| a project's bill in a region its organization owns (single-tenant install, the platform's own projects, a tenant's own region) | region on **and** the organization's own choice not off |
+| a tenant project's bill in a shared platform region | region on **and** the platform's choice for the tenant not off **and** the tenant's own choice not off |
+| the platform's bill to a tenant | region on **and** the platform's choice for the tenant not off |
+
+Off at any level, the consumers are neither billed nor counted against a fixed allocation. **The
+region setting defaults to off** and nothing is switched off per organization: an upgrade does not
+raise any bill — an operator who wants consumers charged switches it on.
+
+Where they are charged:
+
+| Region type | What the consumer costs |
+|---|---|
+| `payg` | its reserved size × the time the deployment ran, at the region's hourly prices and the queue multiplier, as a line of its own on the project's bill (`component: queue_consumer`, "vCPU hours — queue consumer") |
+| `fixed` | it counts against the project's allocation: the worst case that must fit ([What a fixed project may use](#what-a-fixed-project-may-use)) includes the consumer, so a deploy, update or request that no longer fits with it is refused |
+
+Metering records the consumer's usage either way, so switching a setting applies to open bills at
+once. `GET /api/billing/regions` shows the region's setting (`charge_queue_consumers`), the
+platform's choice for the tenant on a shared region (`queue_consumers_owner_override`), the
+organization's own choice (`queue_consumers_override`) and what applies (`queue_consumers_charged`).
+
 ---
 
 ## Billing without tenancy
@@ -450,8 +570,8 @@ Everything lives in the central database.
 **Example.** Two regions: `eu-1` (`payg`, vCPU-hour 0.04, GB-hour 0.005, HTTP multiplier 1) and
 `eu-2` (`fixed`, vCPU-month 20.00, GB-month 2.50; hourly prices as `eu-1`). Ada owns two projects.
 
-1. `orders-api` runs in `eu-1`, scale-to-zero. In October it is metered at 150 vCPU-hours and
-   300 GB-hours:
+1. `orders-api` runs in `eu-1`, scale-to-zero, with pods of 0.5 vCPU and 1 GB. In October its
+   pods ran 300 hours in all, so it is metered at 150 vCPU-hours and 300 GB-hours:
 
    | Line | Quantity | Unit price | Total |
    |---|---|---|---|
@@ -489,13 +609,13 @@ the platform's bills never depend on reading a tenant's schema.
 
 ### Sharing a region: offer and acceptance
 
-1. A platform administrator assigns a platform region to a tenant (Settings → Tenants → the tenant
+1. A platform administrator assigns a platform region to a tenant (Administration → Tenants → the tenant
    → Regions, `POST /api/tenants/{tenant}/regions`). With billing on, the assignment is an **offer**:
    its status is `pending`.
 2. The tenant's administrators (members whose role grants `billing.manage`) get an in-app
    notification and an e-mail (notification type `billing`; each user can switch either channel
    off with `PUT /api/account/notification-preferences`).
-3. The tenant administrator opens Settings → Billing → Region offers: the region, its billing type,
+3. The tenant administrator opens Administration → Billing → Region offers: the region, its billing type,
    the platform's prices (current and scheduled), and a markup field prefilled with the tenant's
    **default markup**. They may change it and **accept**
    (`POST /api/billing/region-offers/{region}/accept`).
@@ -540,7 +660,7 @@ not by the platform. If Acme sets the `eu-1` markup to 25 % effective 15 Novembe
 
 Each side reads its own bills: the platform's invoicing system uses
 `GET /api/billing/tenant-bills` (a platform administrator's token); Acme's administrators see the
-bills from the platform in Settings → Billing → Platform bills (`GET /api/billing/platform-bills`) and
+bills from the platform in Administration → Billing → Platform bills (`GET /api/billing/platform-bills`) and
 use their own invoicing system, with a token created inside the tenant, for their projects' bills.
 
 The 0.5.7 charges the upgrade converted are closed tenant bills of their own (`source: legacy`):
@@ -602,10 +722,10 @@ curl -sS -X POST "$RUNR/api/projects/$PROJECT/resume" -H "Authorization: Bearer 
 | Workloads | the running deployment is shut down: its Knative Service, CronJob and queue consumer are removed, and its [preview environments](git-deploy.md) are deleted — nothing serves. A deploy that was queued before the stop does nothing when it runs, and one that was being applied at that moment removes what it applied |
 | Deploys | refused until it is resumed: `409` with `code: project_stopped`, the reason and the `level` — console, CLI, git pushes, previews (new pull requests and redeploys), region migrations |
 | Level | `platform` when a platform administrator stopped it, else `organization` (an administrator of the installation or the tenant). Only the same level or a higher one resumes: an organization cannot lift the platform's stop (`403`, `code: project_stopped_by_platform`). A platform administrator stopping a project its organization stopped takes the stop over (level `platform`, the new reason) |
-| Members | see a banner with the reason, when, and who stopped it: "stopped by the platform" (the administrator is not named) or the organization's administrator; the owner gets a notification |
+| Members | see a banner with the reason, when, and who stopped it: "stopped by the platform" (the administrator is not named), the organization's administrator, or the project's own [monthly cost limit](#monthly-cost-limit) (`stopped.system: "cost_limit"`, no one named); the owner gets a notification |
 | Resume | deploys the version that was running when the project was stopped again, with that deployment's overrides, through every check of a deploy (the version must still be built, the region active, residency and supply-chain policies, a fixed region's [allocation](#what-a-fixed-project-may-use)), and answers with its `deployment_id`. When the redeploy is refused, the project is resumed without a deployment, `redeploy_error` says why and `redeploy_code` carries the code of a deploy guard (e.g. `fixed_allocation_exceeded`) — deploy a version that fits |
 | Audit | `project.stop` (with the reason) and `project.resume` |
-| Billing | `project.stopped` (with the `level`) / `project.resumed` events; a stopped project uses nothing, a fixed allocation stays billed until it is changed or ended |
+| Billing | `project.stopped` (with the `level`, and `system: "cost_limit"` for a stop by the cost limit) / `project.resumed` events; a stopped project uses nothing, a fixed allocation stays billed until it is changed or ended |
 
 The reason is required (3–1000 characters). Stopping a stopped project answers `409`
 (`project_already_stopped`, with the `level` and `reason` of the stop) — also when two stops arrive
@@ -616,7 +736,60 @@ In the console a platform administrator takes an organization's stop over on the
 on a project its organization stopped, the page header offers **Stop for the platform**, and its
 dialog says that the stop becomes a platform stop — the new reason replaces the organization's,
 the members see that the platform stopped the project, and only a platform administrator resumes
-it. Settings → Billing → Stop projects resumes stopped projects but does not take a stop over.
+it. Administration → Billing → Stop projects resumes stopped projects but does not take a stop over.
+
+---
+
+## Monthly cost limit
+
+The owner of a **pay-as-you-go** project can give it a monthly cost limit: one amount in the
+billing currency. It is a guardrail the owner sets against a month that runs away — a loop that
+never ends, a traffic spike, a forgotten GPU — not a billing rule. RunR still calculates the bill as
+always, and it still never stops a project because a bill is unpaid: the limit looks at what this
+month costs so far, never at whether a bill is paid, and only the owner (or billing staff) sets it.
+
+| | |
+|---|---|
+| Where | Project → Billing, under the billing type: the limit, **this month so far** and a **month-end forecast**, a progress bar and the state. Projects in a [fixed region](#fixed-resources) show nothing of it — they pay their approved resources, and their usage cannot exceed them. A region whose pay-as-you-go prices are all `0` has no limit either |
+| Amount | greater than `0`, at most three decimals, in the billing currency (`BILLING_CURRENCY`; a `currency` sent with it must be that one) |
+| This month so far | the project's bill of the month as the Billing tab shows it (the same calculation, [estimate](#one-bill-per-project-and-month) of the open bill); a bill of earlier days of the month that already closed — billing was turned off and on — counts too |
+| Forecast | this month so far ÷ elapsed days (today included) × days in the month. On 20 October with 50.00 so far: 50.00 ÷ 20 × 31 = 77.50. A project created during the month counts the days before it as days without cost |
+| 80 % | the owner — and whoever set the limit, if that was someone else — is notified (in-app and mail, the **billing** notification type), event `project.cost_limit.warning` |
+| 100 % | the owner chose one of two actions: **notify** — notified again, the project keeps running; **stop** — notified and the project is [stopped](#project-stop-and-resume) like an administrator would stop it, with the reason, at the organization's level, `stopped_by` `system:cost_limit`. Event `project.cost_limit.reached` (`stopped: true` when the limit stopped it) |
+| Once | each of the two goes out once per month and limit. A new month starts them over; so does a new amount, and a switch to **stop** starts the 100 % step over (a month already above the limit stops the project then). A limit reached at once sends the 100 % notice without a late warning |
+| When | every 15 minutes (`billing-cost-limits`), shortly after metering (every 5 minutes) brought the usage up to date — so a project can run a little past the limit before it is stopped — and right when the limit is saved: a **stop** limit below this month so far stops the project at once (the console warns before saving; the MCP tool needs `stop_now: true`) |
+| New month | the budget starts over, and so does the project: the first check of a new month (within 15 minutes of midnight, application time zone) resumes a project its limit stopped in an earlier month and redeploys the version that ran, like any [resume](#project-stop-and-resume), deployed by `cost-limit`. Not when the new month already reached a **stop** limit. The owner and whoever set the limit are notified (`billing.cost_limit_resumed`); audit `project.resume` by the system, event `project.resumed` with `resumed_by` `system:cost_limit` and `system: "cost_limit"`. A redeploy that is refused (the version is gone, the region is inactive, …) leaves the project resumed without a deployment, and the notice says why. Retried on every check until it succeeds |
+| Resume | to run it again sooner, its owner (or `projects.billing` / `billing.manage`) resumes it on the Billing tab — **Resume**, `POST /api/projects/{project}/billing/cost-limit/resume` — once the limit no longer stops it: raised above this month so far, removed, or switched to **notify**. It redeploys the version that ran, like any [resume](#project-stop-and-resume). Holders of `projects.stop` can resume it the usual way as well; the limit does not stop it again in the same month |
+| Not stopped twice | a project an administrator stopped stays the administrator's stop (the limit only notifies), and the new month does not resume it — neither a stop a platform administrator took over. Removing the limit does not resume a project it stopped, and without a limit nothing resumes it in the new month: its owner resumes it |
+| Who | sees it: the owner, `projects.billing` on the project, `billing.view`. Sets, changes, removes it and resumes the project: the owner, `projects.billing`, `billing.manage` |
+
+```bash
+# 150.00 a month; stop the project when it is reached
+curl -sS -X PUT "$RUNR/api/projects/$PROJECT/billing/cost-limit" -H "Authorization: Bearer $TOKEN" \
+  -H 'Content-Type: application/json' -d '{"amount": 150, "action": "stop"}'
+```
+
+```json
+{
+  "data": {
+    "available": true, "currency": "USD", "period": "2026-10",
+    "limit": {"amount": 150.0, "action": "stop", "updated_by": {"id": "7", "name": "Ada"}, "updated_at": "2026-10-20T09:12:40+00:00"},
+    "month_to_date": 50.0, "forecast": 77.5, "days_elapsed": 20, "days_in_month": 31,
+    "percent": 33.3, "warning_percent": 80, "state": "ok",
+    "warned_at": null, "reached_at": null,
+    "stopped": false, "can_manage": true, "can_resume": false,
+    "checked_at": "2026-10-20T09:12:40+00:00"
+  }
+}
+```
+
+`state` is `none` (no limit), `ok`, `warning` (at least 80 %) or `reached`; `warned_at` and
+`reached_at` say when this month's notifications at the current limit went out; `stopped` is true
+while the limit keeps the project stopped. `available: false` — a fixed-price project — leaves the
+figures `null`. `GET /api/projects/{project}/billing` carries the same object as `cost_limit`.
+Saving a limit is refused for a fixed-price project (`422`, `code: cost_limit_not_available`);
+resuming one the limit did not stop answers `409` `cost_limit_not_stopped`, and one the limit still
+stops `409` `cost_limit_still_reached`.
 
 ---
 
@@ -631,9 +804,15 @@ Base path `/api`, JSON, `Authorization: Bearer <token>`. Every billing route wor
 | multi-tenant, no active tenant (platform administrators) | the platform | the platform's own project and account bills; tenant bills under `/billing/tenant-bills` |
 | multi-tenant, inside a tenant | the tenant | the tenant's project and account bills; its bills from the platform under `/billing/platform-bills` |
 
+AI agents reach the same reads and settings through the RunR MCP server's billing tools —
+bills and their lines, usage, prices and price versions, regions and queue consumer charging at
+the region, organization and platform level, a project's billing (its preview environments and
+queue consumer apart), quotes and fixed requests and their approval — with the permissions of
+these routes ([MCP tools](mcp.md#tools)).
+
 ### API tokens
 
-Create a token for your invoicing system in Settings → API Tokens with only the permissions it
+Create a token for your invoicing system in Administration → API Tokens with only the permissions it
 needs: `billing.view` to read, `billing.manage` to write payment links and paid status (and, if it
 should approve fixed resources, `billing.approve`). A token belongs to the organization it was
 created in: on a multi-tenant installation, a platform administrator creates the platform's token
@@ -659,8 +838,11 @@ curl -sS -X POST "$RUNR/api/tokens" -H "Authorization: Bearer $ADMIN_SESSION_TOK
 | GET | `/billing/fixed-requests` | `billing.view` | fixed resource requests: `?status=pending\|approved\|rejected\|cancelled\|superseded\|ended` `?project=` `?region=` `?per_page=` |
 | POST | `/billing/fixed-requests/{id}/approve` | `billing.approve` | `{"note"?}` — starts the allocation today |
 | POST | `/billing/fixed-requests/{id}/reject` | `billing.approve` | `{"reason": "…"}` (required) |
-| GET | `/billing/regions` | `billing.view` | regions with billing type, current and scheduled prices, active allocations, pending requests |
-| PUT | `/billing/regions/{region}` | `billing.manage` | `{"billing_type": "payg"\|"fixed"}` |
+| GET | `/billing/regions` | `billing.view` | regions with billing type, current and scheduled prices, active allocations, pending requests, and [queue consumer charging](#queue-consumers): `charge_queue_consumers` (the region's setting), `queue_consumers_owner_override` (a tenant's shared region: the platform's choice for it), `queue_consumers_override` (the organization's choice: `false` or `null`), `queue_consumers_charged` (what applies) |
+| PUT | `/billing/regions/{region}` | `billing.manage` | the region owner's settings: `{"billing_type"?: "payg"\|"fixed", "charge_queue_consumers"?: true\|false}` (at least one) |
+| PUT | `/billing/regions/{region}/queue-consumers` | `billing.manage` | the organization's own choice for a region (its own or a shared one): `{"charge": false}` switches queue consumer charging off for its projects there, `{"charge": null}` follows the region again |
+| GET | `/billing/regions/{region}/organizations` | `@platform:billing.view` | platform: the tenants a platform region is shared with (`tenant`, `share_status`), the platform's choice for each (`queue_consumers_override`) and whether the platform charges it for the region's queue consumers (`queue_consumers_charged`) |
+| PUT | `/billing/regions/{region}/organizations/{tenant}` | `@platform:billing.manage` | platform: `{"charge": false}` — the region's queue consumers are not charged to that tenant (its bill from the platform and its own bills); `{"charge": null}` — as the region. `{tenant}` is the id or slug |
 | GET | `/billing/prices` | `billing.view` | the default prices (current, scheduled, history) and, in a tenant, the platform defaults it falls back to |
 | POST | `/billing/prices` | `billing.manage` | a new price version: `{"region_id": null\|"<id>", "effective_from": "YYYY-MM-DD", …every price field}` |
 | DELETE | `/billing/prices/{price}` | `billing.manage` | a version that has not taken effect yet |
@@ -688,6 +870,10 @@ curl -sS -X POST "$RUNR/api/tokens" -H "Authorization: Bearer $ADMIN_SESSION_TOK
 | GET | `/projects/{project}/billing/bills/{bill}` | same | one bill of the project |
 | POST | `/projects/{project}/billing/fixed-requests` | same | `{"cpu_m", "memory_mb", "gpu_count"?, "note"?}` |
 | POST | `/projects/{project}/billing/fixed-requests/{id}/cancel` | same | a pending request |
+| GET | `/projects/{project}/billing/cost-limit` | owner, `projects.billing` or `billing.view` | the [monthly cost limit](#monthly-cost-limit), this month so far, the forecast |
+| PUT | `/projects/{project}/billing/cost-limit` | owner, `projects.billing` or `billing.manage` | `{"amount": > 0, "action": "notify"\|"stop", "currency"?: the billing currency}` — pay-as-you-go projects |
+| DELETE | `/projects/{project}/billing/cost-limit` | same | remove the limit (a project it stopped stays stopped) |
+| POST | `/projects/{project}/billing/cost-limit/resume` | same | resume a project its limit stopped, once the limit no longer stops it; answers like `/projects/{project}/resume` plus `data` (the limit) and `project` |
 | PUT | `/projects/{project}/owner` | the owner or `projects.manage_access` | `{"user_id": "…"}` — transfer the project |
 | POST | `/projects/{project}/stop` | `projects.stop` | `{"reason": "…"}` |
 | POST | `/projects/{project}/resume` | `projects.stop` | resume |
@@ -714,6 +900,8 @@ Lists answer `{"data": [...], "meta": {"current_page", "last_page", "per_page", 
 | `project_stopped` | 409 | a deploy of a stopped project |
 | `project_already_stopped`, `project_not_stopped` | 409 | stop / resume in the wrong state |
 | `project_stopped_by_platform` | 403 | an organization resuming a project the platform stopped |
+| `cost_limit_not_available` | 422 | a cost limit for a fixed-price project (or a region that charges nothing for usage) |
+| `cost_limit_not_stopped`, `cost_limit_still_reached` | 409 | resuming from the cost limit a project the limit did not stop, or still stops (this month so far at or above a **stop** limit) |
 | `webhook_not_configured` | 409 | test event or redelivery without a webhook |
 
 ### The bill
@@ -783,8 +971,11 @@ Line item `type` is `usage`, `fixed` or `credit` (converted 0.5.7 bills); `metri
 `vcpu_hours`, `memory_gb_hours`, `gpu_hours`, `fixed_resources`, `binding_storage_gb_hours`,
 `binding_instance_hours`, `sandbox_vcpu_hours`, `sandbox_memory_gb_hours`, `legacy`; `unit` one of
 `vCPU-hours`, `GB-hours`, `GPU-hours`, `days`, `item`. Usage lines carry `entry_point` (trigger type)
-for projects and `resource_type` / `resource_id` / `resource_name` for bindings, sandboxes and model
-services. Tenant bills carry `project_id` / `project_name` on every line.
+for projects — and `component`: `preview` for the project's preview environments, `queue_consumer`
+for its queue consumer, `null` for its own workload —, `environment_id` / `environment_name` (the
+environment the usage came from: `null` / `production` for the project's own workload,
+[Environments](#environments)) and `resource_type` / `resource_id` / `resource_name` for bindings,
+sandboxes and model services. Tenant bills carry `project_id` / `project_name` on every line.
 
 ### A fixed resource request
 
@@ -828,12 +1019,18 @@ request time; the bill always uses the prices in effect on each day.
     "project": {"id": "01JA9F…", "name": "ledger"}, "owner": {"id": "7", "name": "Ada Example", "email": "ada@example.com"},
     "region_ids": ["01JC0…"],
     "quantities": {"vcpu_hours": 300.0, "memory_gb_hours": 600.0, "gpu_hours": 0.0, "sessions": 0},
-    "cost": 15.0
+    "cost": 15.0,
+    "environments": [
+      {"id": null, "name": "production", "quantities": {"vcpu_hours": 250.0, "memory_gb_hours": 500.0, "gpu_hours": 0.0, "sessions": 0}, "cost": 12.5},
+      {"id": "01JC…", "name": "staging", "quantities": {"vcpu_hours": 50.0, "memory_gb_hours": 100.0, "gpu_hours": 0.0, "sessions": 0}, "cost": 2.5}
+    ]
   }]
 }
 ```
 
-`cost` is the pay-as-you-go cost of all the usage (the `metered_cost` of the bill).
+`cost` is the pay-as-you-go cost of all the usage (the `metered_cost` of the bill); `environments`
+splits the quantities and the cost per environment the usage came from (production first)
+([Environments](#environments)).
 
 This is where usage turns into money. The usage endpoints of the core —
 `GET /api/bindings/{id}/usage`, `GET /api/sandbox-usage` — answer quantities only; what bindings
@@ -845,7 +1042,7 @@ and sandboxes cost is on the account bills (`GET /api/billing/bills?kind=account
 
 Events are recorded in the organization's event log and, when a webhook URL is set, POSTed to it.
 The platform (or the installation) and every tenant have their own log and their own webhook
-(Settings → Billing → Webhook, `PUT /api/billing/settings`); the Helm / environment values
+(Administration → Billing → Webhook, `PUT /api/billing/settings`); the Helm / environment values
 `BILLING_WEBHOOK_URL` and `BILLING_WEBHOOK_SECRET` are the default of the installation and the
 platform only — a tenant never falls back to the platform's webhook.
 
@@ -872,9 +1069,14 @@ addresses involved.
 | `fixed_request.rejected` | a request was rejected | `fixed_request` |
 | `region_share.offered` | the platform shared a region with a tenant (platform log) | `tenant`, `region`, `billing_type` |
 | `region_share.accepted` | the tenant accepted it (platform log) | `tenant`, `region`, `billing_type`, `markup_percent` |
-| `project.stopped` | a project was stopped (or the platform took an organization's stop over) | `project`, `owner_id`, `reason`, `stopped_by`, `level` (`platform` / `organization`) |
+| `project.stopped` | a project was stopped (or the platform took an organization's stop over) | `project`, `owner_id`, `reason`, `stopped_by` (`system:cost_limit` for its cost limit), `level` (`platform` / `organization`), `system` (`cost_limit` or `null`) |
 | `project.resumed` | a project was resumed | `project`, `deployment_id` |
 | `project.owner_changed` | a project got a new owner | `project`, `previous_owner_id`, `owner_id` |
+| `project.cost_limit.warning` | this month so far reached 80 % of the project's [monthly cost limit](#monthly-cost-limit) (once per month and limit) | `project`, `owner_id`, `period`, `currency`, `limit`, `action`, `month_to_date`, `forecast`, `percent` |
+| `project.cost_limit.reached` | this month so far reached the limit (once per month and limit) | the same, and `stopped` (the limit stopped the project) |
+| `api.usage.hourly` | an hour of a gateway's API usage ended ([API product](api-product.md#usage-events)) | `gateway`, `period`, `from`, `to`, `totals`, `consumers` (with `external_id` and per-route totals); every total with the calls let through and refused and the function's status classes, errors, latency percentiles and bytes ([Usage](api-product.md#usage)) |
+| `api.usage.monthly` | a month of a gateway's API usage ended | as `api.usage.hourly` |
+| `api.usage.quota_exceeded` | a consumer's quota refused calls (once per consumer and day) | `gateway`, `consumer`, `key_id`, `route_id`, `plan`, `hour`, `refused` |
 | `billing.test` | Send test event | `message` |
 
 Every event has the same envelope — exactly the body the webhook receives:
@@ -978,7 +1180,8 @@ Your invoicing system holds a token with `billing.view` and `billing.manage` and
 
    The `?paid=false` filter of step 2 skips it from now on. If you decide to stop a project of an owner
    who does not pay, an administrator does so with a reason ([Project stop and resume](#project-stop-and-resume)) —
-   RunR never does it by itself.
+   RunR never does it because of a bill. (A stop by a project's [monthly cost limit](#monthly-cost-limit)
+   is the owner's own setting; `project.stopped` says `system: "cost_limit"`.)
 
 6. **Multi-tenant platform:** the same for tenant bills with `GET /api/billing/tenant-bills?period=2026-10`
    and `PUT /api/billing/tenant-bills/{bill}/payment-url` / `/paid` with a platform administrator's token.
@@ -989,18 +1192,18 @@ Your invoicing system holds a token with `billing.view` and `billing.manage` and
 
 | Where | Who | What |
 |---|---|---|
-| Settings → Billing → Bills | `billing.view` | every bill of the organization with filters; fixed price, metered cost and the difference; payment link and paid status (`billing.manage`) |
-| Settings → Billing → Approvals | `billing.approve` | pending fixed resource requests with their monthly price; approve, reject with a reason |
-| Settings → Billing → Regions & prices | `billing.view`, edits `billing.manage` | billing type per region, default prices, price versions with effective dates |
-| Settings → Billing → Owners | `billing.view` | the rollup per owner |
-| Settings → Billing → Stop projects | `projects.stop` | stop and resume projects with a reason; who stopped each one (the platform or the organization) — a platform stop is resumed by a platform administrator only |
-| Settings → Billing → Region offers | tenant, `billing.manage` | shared platform regions waiting for acceptance with type and platform prices; accept with markup; default markup with effective date |
-| Settings → Billing → Platform bills (tenant) / Tenant bills (platform) | tenant `billing.view`; platform administrators | a tenant's bills from the platform; for platform administrators every tenant bill with payment link and paid status |
-| Settings → Billing → Webhook | `billing.manage` | webhook URL and secret, test event, recent events, redelivery |
-| Settings → My bills | every user | the bills the user owns, with payment links and paid status |
-| Project → Billing | the owner, `projects.billing`, `billing.view` | this month's estimate, past bills with payment link and paid status, fixed resource request with the monthly price before submitting, the active allocation |
-| Region wizard, region → Billing | `billing.manage` | the billing type of a new region; the type and prices of a region |
-| Project page | every member | a banner when the project is stopped (reason, when, and "stopped by the platform" or the organization's administrator); Stop / Resume for `projects.stop` (Resume of a platform stop for platform administrators; on a project its organization stopped, platform administrators get **Stop for the platform**, which [takes the stop over](#project-stop-and-resume)); owner and transfer |
+| Administration → Billing → Bills | `billing.view` | every bill of the organization with filters; fixed price, metered cost and the difference; payment link and paid status (`billing.manage`); a project that ran in environments shows the environment of every line ([Environments](#environments)) |
+| Administration → Billing → Approvals | `billing.approve` | pending fixed resource requests with their monthly price; approve, reject with a reason |
+| Administration → Billing → Regions & prices | `billing.view`, edits `billing.manage` | billing type and [queue consumer charging](#queue-consumers) per region (of its own regions), the organization's own choice for queue consumers per region (own and shared), default prices, price versions with effective dates |
+| Administration → Billing → Owners | `billing.view` | the rollup per owner |
+| Administration → Billing → Stop projects | `projects.stop` | stop and resume projects with a reason; who stopped each one (the platform or the organization) — a platform stop is resumed by a platform administrator only |
+| Administration → Billing → Region offers | tenant, `billing.manage` | shared platform regions waiting for acceptance with type and platform prices; accept with markup; default markup with effective date |
+| Administration → Billing → Platform bills (tenant) / Tenant bills (platform) | tenant `billing.view`; platform administrators | a tenant's bills from the platform; for platform administrators every tenant bill with payment link and paid status |
+| Administration → Billing → Webhook | `billing.manage` | webhook URL and secret, test event, recent events, redelivery |
+| User menu → My bills | every user | the bills the user owns, with payment links and paid status |
+| Project → Billing | the owner, `projects.billing`, `billing.view` | this month's estimate, past bills with payment link and paid status, fixed resource request with the monthly price before submitting, the active allocation; for a pay-as-you-go project the [monthly cost limit](#monthly-cost-limit) (edited by the owner, `projects.billing`, `billing.manage`) with this month so far, the forecast, its state and **Resume** of a project the limit stopped |
+| Region wizard, region → Billing | `billing.manage` | the billing type of a new region; the type, queue consumer charging and prices of a region; on a platform region, platform administrators also see the tenants it is shared with and can switch queue consumer charging off per tenant |
+| Project page | every member | a banner when the project is stopped (reason, when, and "stopped by the platform", the organization's administrator or the project's monthly cost limit — then resumed on the Billing tab); Stop / Resume for `projects.stop` (Resume of a platform stop for platform administrators; on a project its organization stopped, platform administrators get **Stop for the platform**, which [takes the stop over](#project-stop-and-resume)); owner and transfer |
 
 ---
 
@@ -1009,9 +1212,9 @@ Your invoicing system holds a token with `billing.view` and `billing.manage` and
 | Permission | Scope | Grants |
 |---|---|---|
 | `billing.view` | organization | bills, usage, rollup, prices, region billing types, fixed requests, events, the webhook settings (without the secret); in a tenant also region offers, markups and the bills from the platform |
-| `billing.manage` (includes `billing.view`) | organization | prices, region billing types, markups, accepting region offers, payment links and paid status, the webhook, test events and redelivery |
+| `billing.manage` (includes `billing.view`) | organization | prices, region billing types, markups, accepting region offers, payment links and paid status, the webhook, test events and redelivery, the monthly cost limit of every pay-as-you-go project |
 | `billing.approve` (includes `billing.view`) | organization | approve or reject fixed resource requests |
-| `projects.billing` (includes `projects.view`) | project | the project's own bills and its fixed resource requests — the project's owner has this by ownership |
+| `projects.billing` (includes `projects.view`) | project | the project's own bills, its fixed resource requests and its monthly cost limit — the project's owner has this by ownership |
 | `projects.stop` | organization | stop and resume projects |
 
 The built-in **Billing** role (both editions) has `billing.view`, `billing.manage`, `billing.approve`,
@@ -1023,11 +1226,16 @@ platform administrator (`@platform:billing.view` / `@platform:billing.manage` in
 [Roles and permissions](permissions.md#billing).
 
 Every write is in the [audit log](security.md#audited-events): `billing.settings.update`,
-`billing.price.create` / `.delete`, `billing.region.update`, `billing.markup.create` / `.delete`,
+`billing.price.create` / `.delete`, `billing.region.update`, `billing.region.queue_consumers.update`,
+`billing.region.organization.update`,
+`billing.markup.create` / `.delete`,
 `billing.region_offer.accept`, `billing.bill.payment_url.update`, `billing.bill.paid.update`,
 `billing.tenant_bill.payment_url.update`, `billing.tenant_bill.paid.update`,
-`billing.fixed_request.create` / `.cancel` / `.approve` / `.reject`, `billing.event.test`,
-`billing.event.redeliver`, `project.owner.transfer`, `project.stop`, `project.resume`.
+`billing.fixed_request.create` / `.cancel` / `.approve` / `.reject`, `billing.cost_limit.update` /
+`.delete` / `.resume`, `billing.event.test`, `billing.event.redeliver`, `project.owner.transfer`,
+`project.stop`, `project.resume`. What the [monthly cost limit](#monthly-cost-limit) does by itself
+is recorded with the system as the actor: `billing.cost_limit.reached` and, when it stops the
+project, `project.stop` (`system: cost_limit`).
 
 ---
 
@@ -1044,7 +1252,7 @@ Every write is in the [audit log](security.md#audited-events): `billing.settings
 | `BILLING_EVENTS_RETENTION_DAYS` | `extraEnv` | `90` | days events are kept |
 | `VITE_BILLING_ENABLED` | — (UI image build flag) | published images: `true` | the console contains the billing screens; they are shown only while the API reports billing on |
 
-A webhook URL saved in Settings → Billing → Webhook wins over `BILLING_WEBHOOK_URL`; clearing it there
+A webhook URL saved in Administration → Billing → Webhook wins over `BILLING_WEBHOOK_URL`; clearing it there
 brings the environment value back. The secret is stored encrypted (`billing_settings`) and never
 returned by the API — the settings show only whether one is set.
 
@@ -1056,6 +1264,7 @@ returned by the API — the settings show only whether one is set.
 |---|---|---|
 | `usage-aggregation` | every 5 minutes, always (also with billing off) | the day's usage of every project and model service into `usage_records` (central database and every tenant schema; the first hour of a day also the day before), copies of tenant usage in platform regions to the central database |
 | `billing-close` | daily 02:30 | closes every bill whose days have ended (organization by organization, then the tenant bills), opens the current month's bills, ends allocations of projects that are gone; one run at a time |
+| `billing-cost-limits` | every 15 minutes | compares each pay-as-you-go project's [monthly cost limit](#monthly-cost-limit) with this month so far: the 80 % warning, the 100 % notice or stop (organization by organization); one run at a time |
 | `billing-event-delivery` | every minute | webhook deliveries and retries |
 | `billing-event-retention` | daily 03:10 | removes events older than the retention |
 | `billing-heartbeat` | hourly, billing on | records the day as billed ([Turning billing off and on](#turning-billing-off-and-on)) |
@@ -1068,13 +1277,16 @@ Bindings are measured hourly and sandboxes every 5 minutes by their own jobs
 | Table | Where | Content |
 |---|---|---|
 | `billing_prices` | central and tenant schemas | price versions per region and the default prices |
-| `billing_region_settings` | central and tenant schemas | billing type per region |
+| `billing_region_settings` | central and tenant schemas | billing type and queue consumer charging per region (the region owner's) |
+| `billing_region_overrides` | central and tenant schemas | the organization's own choice per region (queue consumers); a row goes with its region — deleted, or no longer shared with the tenant — and with the tenant's schema |
+| `billing_tenant_region_overrides` | central schema | the platform's choice per tenant and platform region (queue consumers); a row goes with its region, with the end of the region's share and with the tenant |
 | `billing_markups` | tenant schemas | default markup and markup per shared region (versions) |
 | `billing_fixed_requests` | central and tenant schemas | fixed resource requests and allocations; central also copies of tenants' allocations in platform regions |
 | `billing_bills` | central and tenant schemas | project and account bills; central also tenant bills |
 | `billing_events` | central and tenant schemas | event log and delivery state |
 | `billing_settings` | central and tenant schemas | webhook URL and encrypted secret of the organization, the day billing started (`started_on`; a converted tenant also `bills_from`); centrally the days billing was on and off (`active_on`, `off_seen_on`, `off_periods`) and the currencies of the imported 0.5.7 prices (`legacy_currencies`) |
 | `billing_archived_bills` | central | the project and account bills of deleted tenants ([Bills of deleted tenants](#bills-of-deleted-tenants)) |
+| `billing_cost_limits` | central and tenant schemas | the [monthly cost limit](#monthly-cost-limit) of a project (amount, currency, action) and the state of its month: when the warning and the notice went out, the month so far of the last check |
 | `billing_legacy_archive` | central | the 0.5.7 billing records ([upgrade](upgrade.md#057--058)) |
 | `usage_records`, `binding_usage_records` | central and tenant schemas | metered usage (core) |
 | `sandbox_usage_records` | central | metered sandbox usage of every organization (core) |
@@ -1093,5 +1305,5 @@ The imported prices are plain numbers: 0.5.8 reads them in `BILLING_CURRENCY`. S
 currency of your 0.5.7 cost configuration in the upgrade to 0.5.8 — the upgrade imports the prices,
 also while billing stays off. When the 0.5.7 currency differs, the import logs a warning and
 `GET /api/billing/settings` reports `warnings: [{"code": "legacy_currency_mismatch", …}]` (shown on
-top of Settings → Billing) until `BILLING_CURRENCY` matches it. Going back to 0.5.7 means restoring
+top of Administration → Billing) until `BILLING_CURRENCY` matches it. Going back to 0.5.7 means restoring
 the database backup taken before the upgrade ([Rolling back](upgrade.md#rolling-back)).

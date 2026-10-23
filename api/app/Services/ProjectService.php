@@ -8,8 +8,11 @@ use App\Models\Version;
 use App\Rules\WithinResourceLimit;
 use App\Services\Concerns\ProjectConfigTrait;
 use App\Services\Concerns\RuntimeConfigTrait;
+use App\Services\GlobalProjects\GlobalProjectService;
 use App\Services\Runtimes\ProjectEntrypoint;
 use App\Support\Secrets\SecretRedactor;
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\ValidationException;
 
@@ -50,6 +53,11 @@ class ProjectService
         }
 
         $project = Project::create($attributes);
+
+        // Global project (docs/global-projects.md): its regions, the primary first
+        if (($data['placement'] ?? Project::PLACEMENT_REGIONAL) === Project::PLACEMENT_GLOBAL) {
+            app(GlobalProjectService::class)->attach($project, array_map('strval', (array) ($data['region_ids'] ?? [])), (string) ($data['global_mode'] ?? 'ha'));
+        }
 
         $this->git->initRepo();
         $project->update(['git_path' => $this->git->projectDir($project)]);
@@ -103,16 +111,24 @@ class ProjectService
     private function admitRegionCapacity(array $data): void
     {
         $config = is_array($data['config'] ?? null) ? $data['config'] : [];
-        $regionId = $data['knative_region_id'] ?? null;
         $trigger = is_string($t = $config['trigger_type'] ?? null) && $t !== '' ? $t : 'http';
         $minScale = is_numeric($m = $config['min_scale'] ?? null) ? (int) $m : 0;
         $type = $data['service_type'] ?? null;
         $scaleToZero = array_key_exists('scale_to_zero', $config) && $config['scale_to_zero'] !== null ? $config['scale_to_zero'] : true;
+        $schedule = $config['scale_schedule'] ?? null;
 
-        Validator::make(['config' => $config], [
-            'config.cpu' => [new WithinResourceLimit('cpu', null, $regionId, $trigger, $minScale, $type, $scaleToZero)],
-            'config.memory_mb' => [new WithinResourceLimit('memory', null, $regionId, $trigger, $minScale, $type, $scaleToZero)],
-        ])->validate();
+        // a global project runs a copy in each of its regions: each has to fit
+        $regionIds = [$data['knative_region_id'] ?? null];
+        if (($data['placement'] ?? Project::PLACEMENT_REGIONAL) === Project::PLACEMENT_GLOBAL) {
+            $regionIds = array_values(array_unique(array_merge($regionIds, array_map('strval', (array) ($data['region_ids'] ?? [])))));
+        }
+
+        foreach ($regionIds as $regionId) {
+            Validator::make(['config' => $config], [
+                'config.cpu' => [new WithinResourceLimit('cpu', null, $regionId, $trigger, $minScale, $type, $scaleToZero, $schedule)],
+                'config.memory_mb' => [new WithinResourceLimit('memory', null, $regionId, $trigger, $minScale, $type, $scaleToZero, $schedule)],
+            ])->validate();
+        }
     }
 
     /** XaaS: commit the code to git and create a version record */
@@ -157,10 +173,28 @@ class ProjectService
         return $version;
     }
 
+    /**
+     * CaaS: a version that runs $image with the project's config otherwise as it is — the project's
+     * own config (and so its workload) keeps its image. An environment branch's push
+     * (docs/environments.md#git-branches): the image is the version's code.
+     */
+    public function createCaaSImageVersion(Project $project, string $image, string $userId, ?string $message = null): Version
+    {
+        $config = $project->containerConfig ?? throw $project->notFound();
+        $copy = (clone $config)->forceFill(['image' => $image]);
+        $project->setRelation('containerConfig', $copy);
+
+        try {
+            return $this->createCaaSVersion($project, $message ?? 'Image '.$image, $userId);
+        } finally {
+            $project->setRelation('containerConfig', $config);
+        }
+    }
+
     /** CaaS: update the config and create a new version snapshot */
     public function updateCaaSConfig(Project $project, array $config, string $userId, ?string $message = null): Version
     {
-        $project->containerConfig->update(self::withNormalizedGpu($config));
+        $this->updateConfigRow($project, 'containerConfig', $config);
 
         return $this->createCaaSVersion($project, $message ?? 'Config updated', $userId);
     }
@@ -168,17 +202,36 @@ class ProjectService
     /** XaaS: update the config and create a new version snapshot */
     public function updateXaaSConfig(Project $project, array $config, string $userId, ?string $message = null): Version
     {
-        $project->xaasConfig->update(self::withNormalizedGpu($config));
+        $stored = $this->updateConfigRow($project, 'xaasConfig', $config);
 
-        return $this->createCodeConfigVersion($project, $project->xaasConfig->fresh()->toArray(), $message ?? 'Config updated', $userId);
+        return $this->createCodeConfigVersion($project, $stored->toArray(), $message ?? 'Config updated', $userId);
     }
 
     /** FaaS: update the config and create a new version snapshot */
     public function updateFaaSConfig(Project $project, array $config, string $userId, ?string $message = null): Version
     {
-        $project->faasConfig->update(self::withNormalizedGpu($config));
+        $stored = $this->updateConfigRow($project, 'faasConfig', $config);
 
-        return $this->createCodeConfigVersion($project, $project->faasConfig->fresh()->toArray(), $message ?? 'Config updated', $userId);
+        return $this->createCodeConfigVersion($project, $stored->toArray(), $message ?? 'Config updated', $userId);
+    }
+
+    /**
+     * Writes a config change to the project's config row ($relation) and returns the row as
+     * stored. A project deleted while the request ran takes its config row with it — before the
+     * row is loaded or between its load and the write (Eloquent's update does not tell) — and
+     * answers 404 (Project::notFound()), not a server error.
+     *
+     * @throws ModelNotFoundException
+     */
+    private function updateConfigRow(Project $project, string $relation, array $config): Model
+    {
+        $row = $project->getRelationValue($relation);
+        if (! $row instanceof Model) {
+            throw $project->notFound();
+        }
+        $row->update(self::withNormalizedGpu($config));
+
+        return $row->fresh() ?? throw $project->notFound();
     }
 
     // ── Public helpers ────────────────────────────────────────────────────────
@@ -281,6 +334,7 @@ class ProjectService
             'min_scale' => $cc->min_scale,
             'max_scale' => $cc->max_scale,
             'gpu' => $cc->gpu,
+            'scale_schedule' => $cc->scale_schedule,
         ]);
         $json = json_encode(SecretRedactor::envNamesOnly($config), JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
         $nextNumber = ($project->versions()->max('number') ?? 0) + 1;

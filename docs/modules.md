@@ -44,10 +44,10 @@ in the build only when the UI was built with its flag set to `true`:
 
 | Module | UI build flag | Screens |
 |---|---|---|
-| Tenancy | `VITE_TENANCY_ENABLED` | tenant switcher, Platform user / Tenant user sign-in, Settings → Tenants, Users, Resource Usage, the Organization domain card, the bar of **Open as administrator**, invitation page |
-| AuthProvider | `VITE_AUTH_PROVIDER_ENABLED` | Settings → Auth Providers with SSO group mapping, Linked accounts in User Settings, the page that completes an SSO sign-in (`/oauth/callback`) |
-| Ticket | `VITE_TICKET_ENABLED` | Settings → Support Tickets |
-| Billing | `VITE_BILLING_ENABLED` | Settings → Billing and My bills, the project's Billing tab, the billing type in the region wizard and the region's Billing tab, region offers and markup of a tenant |
+| Tenancy | `VITE_TENANCY_ENABLED` | tenant switcher, Platform user / Tenant user sign-in, Administration → Tenants, Users, Resource Usage, the Organization domain card (Administration → Regions & domain), the bar of **Open as administrator**, invitation page |
+| AuthProvider | `VITE_AUTH_PROVIDER_ENABLED` | Administration → Auth Providers with SSO group mapping, Linked accounts in the user menu → Account settings, the page that completes an SSO sign-in (`/oauth/callback`) |
+| Ticket | `VITE_TICKET_ENABLED` | Support Tickets in the user menu |
+| Billing | `VITE_BILLING_ENABLED` | Administration → Billing, My bills in the user menu, the project's Billing tab, the billing type in the region wizard and the region's Billing tab, region offers and markup of a tenant |
 
 The screens of the core features (sandboxes, MCP, git deploy, supply chain, observability,
 bindings, images, workflows, white-label, roles, audit log) are always part of the build. A module
@@ -62,7 +62,7 @@ published UI images (both editions) are therefore built with `VITE_TICKET_ENABLE
 Build the UI image with the flags of your modules (`vue/Dockerfile`):
 
 ```bash
-docker build -t registry.example.com/runr/ui:0.5.10-mt \
+docker build -t registry.example.com/runr/ui:0.6.0-mt \
   --build-arg VITE_WS_PROXY=true \
   --build-arg VITE_REVERB_KEY=runr-key \
   --build-arg VITE_TENANCY_ENABLED=true \
@@ -77,7 +77,7 @@ Helm, `ui.image.repository` and `ui.image.tag` select the UI image; the tag defa
 chart's `appVersion`. `edition: multi-tenant` appends `ui.image.multiTenantSuffix` (default `-mt`)
 to the tag and runs the published multi-tenant UI, `<version>-mt`, built with the Tenancy and
 AuthProvider screens; with
-`repository: registry.example.com/runr/ui` and `tag: "0.5.10"` it runs the image built above. A
+`repository: registry.example.com/runr/ui` and `tag: "0.6.0"` it runs the image built above. A
 multi-tenant UI of your own under its plain tag needs `multiTenantSuffix: ""`. In the
 single-tenant edition the tag is used as it is — with `authProvider.enabled: true` or the Ticket
 screens, point `ui.image.tag` at a build with those flags
@@ -100,8 +100,9 @@ screens, point `ui.image.tag` at a build with those flags
 | Audit log recording | `AUDIT_ENABLED` | set with `extraEnv` | — | on | [Audit log](security.md#audit-log) |
 | SIEM forwarding of audit events | `AUDIT_FORWARD_ENABLED` | `audit.siemForwarding` | — | off | [SIEM forwarding](security.md#siem-forwarding) |
 | Public status pages | `OBS_STATUS_PAGE_ENABLED` | `observability.statusPage.enabled` | — | on | [Status page](observability.md#status-page) |
-| Self-service registration | setting `registration_enabled` | — (Settings → Platform or Signup) | — | on | [Self-service signup](white-label.md#2-self-service-signup) |
-| Custom runtimes of organizations | setting `custom_runtimes_enabled` | — (Settings → Platform) | — | off | [Runtimes](runtimes.md#permissions) |
+| Load tests of HTTP projects | `OBS_LOADTEST_ENABLED` | `observability.loadTest.enabled` | — | on | [Load tests](load-test.md#configuration) |
+| Self-service registration | setting `registration_enabled` | — (Administration → Regions & settings or Signup) | — | on | [Self-service signup](white-label.md#2-self-service-signup) |
+| Custom runtimes of organizations | setting `custom_runtimes_enabled` | — (Administration → Regions & settings) | — | off | [Runtimes](runtimes.md#permissions) |
 
 "Set with `extraEnv`": the chart has no value of its own; add the variable to `extraEnv`, which
 puts it into the ConfigMap every API container and the hook jobs read:
@@ -133,11 +134,11 @@ accounts to their account themselves ([Linked accounts](#linked-accounts)).
 
 - **Single-tenant**: Helm `authProvider.enabled: true` (or `AUTH_PROVIDER_ENABLED=true` for every
   API container) and a UI built with `VITE_AUTH_PROVIDER_ENABLED=true`. Members with `sso.manage`
-  (Owner and Admin) add providers in Settings → Auth Providers.
+  (Owner and Admin) add providers in Administration → Auth Providers.
 - **Multi-tenant**: on with the edition. Every organization has its own providers:
-  - the platform's providers — Settings → Auth Providers in the central context (platform
+  - the platform's providers — Administration → Auth Providers in the central context (platform
     administrators) — appear on the **Platform user** sign-in;
-  - a tenant's providers — Settings → Auth Providers inside the tenant (`sso.manage`, Owner and
+  - a tenant's providers — Administration → Auth Providers inside the tenant (`sso.manage`, Owner and
     Admin) — appear on the **Tenant user** sign-in page of that tenant's slug and are stored in the
     tenant's schema.
 
@@ -258,10 +259,13 @@ For every OAuth, OpenID Connect and SAML sign-in RunR resolves the account in th
 1. an account already linked to this external user: that account. Google, GitHub and Microsoft
    users are identified across the provider; OpenID Connect and SAML users per provider, GitLab
    users per self-managed instance (users of gitlab.com across it);
-2. an account with the e-mail address the provider returns: RunR links it and signs it in (a
-   provider that returns no e-mail address is refused, and so is an address the provider marks as
-   not verified, `email_verified: false`);
-3. with **Auto Register**: a new account (username from the address, a random password) that
+2. an account with the e-mail address the provider returns, in any letter case (as the
+   password sign-in names it): RunR links it and signs it in (a provider that returns no e-mail
+   address is refused, and so is an address the provider marks as not verified,
+   `email_verified: false`, or one that several accounts of an earlier release share in different
+   letter case);
+3. with **Auto Register**: a new account (the address in lower case, a user name of letters,
+   digits, `-` and `_` from it that no account has in any letter case, a random password) that
    becomes a member with the provider's role for new users or the organization's default role. In
    a multi-tenant install the account is a platform account that joins the tenant, and an existing
    account with the same e-mail joins the tenant instead of being created again;
@@ -275,9 +279,9 @@ Google account outside the hosted domain) returns to the sign-in page with the r
 
 ### Linked accounts
 
-**User Settings → Linked accounts** lists the external accounts a user signs in with and offers
+**User menu → Account settings → Linked accounts** lists the external accounts a user signs in with and offers
 the organization's enabled OAuth and OpenID Connect providers: **Link <provider>** opens the
-provider's sign-in, which returns to User Settings, where the console confirms the link. Only
+provider's sign-in, which returns to Account settings, where the console confirms the link. Only
 the user who started the link can confirm it — in the same organization, within five minutes — so
 a link URL that reaches someone else links nothing. The external account may have another e-mail
 address than the user; one already linked to another user is refused. A SAML identity is linked by
@@ -296,7 +300,7 @@ e-mail address is the user's. Links and unlinks are audited (`social_account.lin
 | `GET /api/social-accounts`, `DELETE /api/social-accounts/{id}` | signed in | own linked accounts (OpenID Connect and SAML accounts name their provider: `auth_provider_id`, `provider_name`) |
 | `GET /api/social-accounts/providers` | signed in | providers the user can link |
 | `GET /api/oauth/{driver}/link` | signed in | `{redirect_url}` of a link to the signed-in user (`?provider=<id>`) |
-| `POST /api/oauth/link/complete` | signed in | confirms a link with the `code` the provider's callback hands to User Settings (`?sso_link=<code>`): `201` linked, `200` already linked to this user, `409` linked to another user, `422` unknown, used or expired code |
+| `POST /api/oauth/link/complete` | signed in | confirms a link with the `code` the provider's callback hands to Account settings (`?sso_link=<code>`): `201` linked, `200` already linked to this user, `409` linked to another user, `422` unknown, used or expired code |
 | `GET /api/auth-providers/discover` | public | enabled providers (`?tenant=<slug>`; an unknown tenant has none) |
 | `GET /api/oauth/{driver}/redirect` | public | `{redirect_url}` of the provider (`?provider=<id>`, `?tenant=<slug>`); `404` for an unknown, disabled or other organization's provider |
 | `GET /oauth/{driver}/callback` | public (the provider's redirect) | completes the OAuth / OpenID Connect sign-in or link |
@@ -314,7 +318,7 @@ notes, an assignee and tags for the support staff.
 ### Enabling it
 
 The API enables the module unless `TICKET_ENABLED=false` (Helm: `ticket.enabled: false`). The
-console shows it as Settings → **Support Tickets** when the UI was built with
+console shows it as **Support Tickets** in the user menu when the UI was built with
 `VITE_TICKET_ENABLED=true` and the API reports the module on (`features.tickets` of
 `GET /api/branding`; [UI build flags](#ui-build-flags)).
 
@@ -333,7 +337,7 @@ status; the author gets a notification when it changes.
 
 ### Using it
 
-- **Users** open Settings → Support Tickets → *New ticket*: category, priority, subject,
+- **Users** open the user menu → Support Tickets → *New ticket*: category, priority, subject,
   description and up to three attachments. While they type the subject, open tickets with a
   similar subject are suggested. A ticket's conversation shows the staff's replies and whether
   the other side has read the latest message; users reply with text and attachments.
@@ -426,9 +430,9 @@ API, receives signed events and writes back a payment link and the paid status o
 
 `BILLING_ENABLED=true` (Helm `billing.enabled: true`, Compose `BILLING_ENABLED=true` in
 `compose/.env`), the currency with `BILLING_CURRENCY` (`billing.currency`, default `USD`). The
-console shows Settings → **Billing** and **My bills** and the project's **Billing** tab while the
-API reports billing on. With the module off, metering keeps recording usage and no money is
-calculated.
+console shows Administration → **Billing**, **My bills** in the user menu and the project's
+**Billing** tab while the API reports billing on. With the module off, metering keeps recording
+usage and no money is calculated.
 
 Everything else — bills, prices and their effective dates, fixed resources, region offers and
 markup, project stop and resume, the API, the events and the permissions — is in

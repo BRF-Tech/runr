@@ -123,8 +123,12 @@ PHP,
         if (($config['trigger_type'] ?? 'http') === 'queue') {
             $configPayload['queue_stream'] = "test-stream-{$name}";
         }
+        if (! empty($config['env_vars'])) {
+            $configPayload['env_vars'] = $config['env_vars'];
+        }
 
-        $payload['config'] = $configPayload;
+        // A suite's own config fields (e.g. the warmer suite's scale settings)
+        $payload['config'] = array_merge($configPayload, $config['project_config'] ?? []);
 
         return $payload;
     }

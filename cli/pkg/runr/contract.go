@@ -56,7 +56,7 @@ var projectFields = []string{
 	"knative_region_id", "region.id", "region.name", "endpoint_type", "endpoint_url",
 	"latest_version.id", "latest_version.label", "latest_deployment.status", "runtime_eol",
 	"created_at", "stopped.at", "stopped.by.id", "stopped.by.name", "stopped.reason", "stopped.level",
-	"config.filename", "config.handler", "config.image", "config.command", "config.args",
+	"deploy_strategy", "config.filename", "config.handler", "config.image", "config.command", "config.args",
 	"config.ports", "config.env_vars", "config.memory_mb", "config.cpu", "config.timeout_seconds",
 	"config.image_pull_policy", "config.trigger_type", "config.schedule", "config.queue_stream",
 	"config.scale_to_zero", "config.min_scale", "config.max_scale",
@@ -69,6 +69,9 @@ var configSources = []string{
 	"app/Http/Resources/XaasConfigResource.php",
 	"app/Http/Resources/ContainerConfigResource.php",
 	"app/Http/Resources/ProjectResource.php", // secret_env_keys
+	"app/Triggers/ProjectTriggers.php",       // schedule_timezone, schedule_effective_timezone
+	// latest_version: POST /projects answers the resolved resource as a plain array
+	"app/Http/Resources/VersionResource.php",
 }
 
 var configRequestFields = []string{
@@ -79,15 +82,35 @@ var configRequestFields = []string{
 	"config.max_scale",
 }
 
+// The timed warmer (scale_schedule.go): sent only when the user sets a schedule, read when the
+// API has it.
+var warmerRequestFields = []string{
+	"config.scale_schedule", "config.scale_schedule[].cron", "config.scale_schedule[].min_scale",
+	// sent only when the user sets a schedule's zone
+	"config.schedule_timezone",
+}
+
+var warmerResponseFields = []string{
+	"config.scale_schedule", "warm_scale.applied", "warm_scale.applied_at",
+	// the schedule trigger's time zone (APIs with schedule time zones)
+	"config.schedule_timezone", "config.schedule_effective_timezone",
+}
+
 var versionFields = []string{
 	"id", "number", "label", "commit_id", "commit_message", "changed_files", "config_snapshot",
 	"build_status", "build_error", "created_by.id", "created_by.name", "created_at",
 }
 
-var deploymentFields = []string{
+// deploymentFields include the rollout a deployment is the new deployment of
+// (contract_rollouts.go).
+var deploymentFields = concat([]string{
 	"id", "status", "k8s_job_name", "deployed_by", "deploy_config", "knative_ready",
-	"knative_message", "ready_at", "version.id", "version.label", "created_at",
-}
+	"knative_message", "ready_at", "version.id", "version.label", "created_at", "rollout_role",
+}, prefix("rollout.", rolloutFields))
+
+// deploymentEnvironmentFields are the fields of a deployment that come with environments and
+// config snapshots (DeploymentResource).
+var deploymentEnvironmentFields = []string{"environment", "environment_id", "config_source"}
 
 var queuedDeployFields = []string{
 	"id", "project_id", "version_id", "version", "status", "reason", "message", "deployment_id",
@@ -155,18 +178,24 @@ var Contract = []Endpoint{
 
 	// Projects
 	{Method: "GET", Path: "/projects", Status: 200, Permission: "projects.view", Response: prefix("data[].", projectFields),
-		Sources: configSources, Capabilities: []string{"data[].config.secret_env_keys", "data[].config.env_vars_hidden"}},
+		Sources: configSources,
+		Capabilities: concat([]string{"data[].config.secret_env_keys", "data[].config.env_vars_hidden", "data[].runtime_patch.state"},
+			prefix("data[].", warmerResponseFields), prefix("data[].", projectGlobalCapabilities))},
+	// placement / global_mode / region_ids: sent only for a global project (contract_global.go)
 	{Method: "POST", Path: "/projects", Status: 201, Permission: "projects.create",
 		Request: concat([]string{"name", "service_type", "runtime", "runtime_version", "description",
 			"knative_region_id", "endpoint_type"}, configRequestFields),
 		Response: projectFields, Sources: configSources,
-		Capabilities: []string{"config.secret_env_vars"}},
+		Capabilities: concat([]string{"config.secret_env_vars"}, warmerRequestFields, globalCreateRequest, projectGlobalCapabilities)},
+	// runtime_patch: APIs with runtime patches (contract_runtime_patches.go)
 	{Method: "GET", Path: "/projects/{project}", Status: 200, Permission: "projects.view", Response: prefix("data.", projectFields),
-		Sources: configSources, Capabilities: []string{"data.config.secret_env_keys", "data.config.env_vars_hidden"}},
+		Sources: configSources, Capabilities: concat([]string{"data.config.secret_env_keys", "data.config.env_vars_hidden"},
+			prefix("data.runtime_patch.", runtimePatchStateFields), prefix("data.", warmerResponseFields), prefix("data.", projectGlobalCapabilities))},
 	{Method: "PUT", Path: "/projects/{project}", Status: 200, Permission: "projects.update|env.edit",
 		Request:  concat([]string{"description", "knative_region_id", "config_message"}, configRequestFields),
 		Response: prefix("data.", projectFields), Sources: configSources,
-		Capabilities: []string{"config.secret_env_vars", "data.config.secret_env_keys"}},
+		Capabilities: concat([]string{"config.secret_env_vars", "data.config.secret_env_keys"}, warmerRequestFields,
+			prefix("data.", warmerResponseFields))},
 	{Method: "DELETE", Path: "/projects/{project}", Status: 204, Permission: "projects.delete"},
 
 	// Code and versions
@@ -185,18 +214,26 @@ var Contract = []Endpoint{
 	{Method: "GET", Path: "/projects/{project}/versions/{version}/files", Status: 200, Permission: "projects.view",
 		Response: []string{"files"}},
 
-	// Deployments
-	{Method: "GET", Path: "/projects/{project}/deployments", Status: 200, Permission: "projects.view",
-		Response: prefix("data[].", deploymentFields)},
+	// Deployments. ?environment= lists one environment's (docs/environments.md); environment,
+	// environment_id and config_source come with environments (deploymentEnvironmentFields).
+	{Method: "GET", Path: "/projects/{project}/deployments", Query: []string{"environment"}, Status: 200, Permission: "projects.view",
+		Response: prefix("data[].", deploymentFields), Capabilities: prefix("data[].", deploymentEnvironmentFields),
+		Sources: concat([]string{"app/Http/Controllers/Api/DeploymentController.php"}, rolloutSources)},
 	// A version whose image is not in the region's registry is built again first: the answer is
-	// then a queued deploy instead of a deployment (StartDeploy).
+	// then a queued deploy instead of a deployment (StartDeploy). strategy overrides the
+	// project's deploy strategy for this deploy; environment deploys to one of the project's
+	// environments, restore_config restores an earlier deployment's config (a rollback); APIs
+	// before them ignore the fields (StartDeployWith).
 	{Method: "POST", Path: "/projects/{project}/deploy", Status: 202, Permission: "projects.deploy",
 		Request: []string{"version_id", "deploy_config.cpu", "deploy_config.memory_mb", "deploy_config.timeout_seconds",
-			"deploy_config.scale_to_zero", "deploy_config.min_scale", "deploy_config.max_scale"},
-		Response:     deploymentFields,
-		Capabilities: concat([]string{"message"}, prefix("queued_deploy.", queuedDeployFields))},
+			"deploy_config.scale_to_zero", "deploy_config.min_scale", "deploy_config.max_scale", "strategy"},
+		Response: deploymentFields,
+		Capabilities: concat([]string{"message", "environment", "restore_config", "restore_from_deployment_id"},
+			prefix("queued_deploy.", queuedDeployFields), deploymentEnvironmentFields),
+		Sources: rolloutSources},
 	{Method: "GET", Path: "/projects/{project}/deployments/{deployment}", Status: 200, Permission: "projects.view",
-		Response: prefix("data.", deploymentFields)},
+		Response: prefix("data.", deploymentFields), Capabilities: prefix("data.", deploymentEnvironmentFields),
+		Sources: rolloutSources},
 	{Method: "GET", Path: "/projects/{project}/queued-deploys/{queuedDeploy}", Status: 200, Permission: "projects.view",
 		Response: prefix("data.", queuedDeployFields), Sources: []string{"app/Http/Resources/QueuedDeployResource.php"}},
 	{Method: "DELETE", Path: "/projects/{project}/deployments/{deployment}", Status: 204, Permission: "projects.deploy"},
@@ -210,11 +247,16 @@ var Contract = []Endpoint{
 		Sources:    []string{"app/Services/KnativeLogService.php", "app/Http/Controllers/Api/DeploymentController.php"}},
 
 	// Custom domains
-	{Method: "GET", Path: "/projects/{project}/domains", Status: 200, Permission: "projects.view",
+	// ?environment=: one environment's domains (docs/environments.md#domains)
+	{Method: "GET", Path: "/projects/{project}/domains", Query: []string{"environment"}, Status: 200, Permission: "projects.view",
 		Response: concat(prefix("data[].", domainFields), []string{"meta.eligible", "meta.reason",
 			"meta.cert_manager_issuer", "meta.default_host", "meta.dns_targets"}),
-		Sources: []string{"app/Http/Resources/ProjectDomainResource.php"}},
-	{Method: "POST", Path: "/projects/{project}/domains", Status: 201, Request: []string{"domain"}, Permission: "domains.manage",
+		// newer APIs: whether the region offers TLS mode cert-manager, and if not why
+		Capabilities: []string{"meta.cert_manager.available", "meta.cert_manager.reason", "meta.cert_manager.kind"},
+		Sources:      []string{"app/Http/Resources/ProjectDomainResource.php", "app/Http/Controllers/Api/ProjectDomainController.php"}},
+	// The CA of the project's region when its custom-domain certificates come from it (PEM)
+	{Method: "GET", Path: "/projects/{project}/domains/ca-certificate", Query: []string{"environment"}, Status: 200, Permission: "projects.view", Optional: true},
+	{Method: "POST", Path: "/projects/{project}/domains", Status: 201, Request: []string{"domain", "environment"}, Permission: "domains.manage",
 		Response: prefix("data.", domainFields), Sources: []string{"app/Http/Resources/ProjectDomainResource.php"}},
 	{Method: "POST", Path: "/projects/{project}/domains/{domain}/verify", Status: 200, Permission: "domains.manage",
 		Response: concat([]string{"message"}, prefix("data.", domainFields)),

@@ -5,6 +5,9 @@ namespace App\Http\Controllers\Api;
 use App\Models\KnativeRegion;
 use App\Models\PrivateDatabaseBinding;
 use App\Models\Project;
+use App\Models\ProjectEnvironment;
+use App\Services\Environments\DeployTarget;
+use App\Services\Environments\EnvironmentResolver;
 use App\Services\Residency\RegionPolicy;
 use App\Services\Skupper\SkupperLinkParser;
 use App\Services\Skupper\SkupperService;
@@ -15,8 +18,9 @@ use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 
 /**
- * Private connections of a project to Managed PostgreSQL through Skupper v2,
- * plus the region-level Skupper capability (detection, site).
+ * Private connections of a project to Managed PostgreSQL through Skupper v2 — of its own workload
+ * or of one of its environments (docs/environments.md) — plus the region-level Skupper capability
+ * (detection, site).
  */
 class PrivateDatabaseBindingController extends Controller
 {
@@ -27,16 +31,31 @@ class PrivateDatabaseBindingController extends Controller
         private readonly SkupperLinkParser $parser,
     ) {}
 
-    public function index(Project $project): JsonResponse
+    /** The connections of the project's own workload, or of one environment with ?environment= (docs/environments.md). */
+    public function index(Request $request, Project $project): JsonResponse
     {
-        return response()->json(['data' => $project->privateDatabaseBindings()->get()]);
+        $target = DeployTarget::environment($project, EnvironmentResolver::resolve($project, $request->query('environment')));
+
+        $connections = [];
+        foreach ($target->privateDatabaseBindings()->get() as $binding) {
+            /** @var PrivateDatabaseBinding $binding */
+            $connections[] = $this->present($binding, $project);
+        }
+
+        return response()->json(['data' => $connections]);
     }
 
+    /**
+     * A connection of the project's own workload, or with `environment` (a name or id) of one of
+     * its environments: it lives in the namespace of the region the environment runs in, and only
+     * the environment's workloads get its env vars. Names and env var prefixes are unique per
+     * project environment.
+     */
     public function store(Request $request, Project $project): JsonResponse
     {
         $data = $request->validate([
-            'name' => ['required', 'string', 'max:30', 'regex:/^[a-z]([-a-z0-9]*[a-z0-9])?$/',
-                Rule::unique('private_db_bindings', 'name')->where('project_id', $project->id)],
+            'environment' => ['nullable', 'string', 'max:64'],
+            'name' => ['required', 'string', 'max:30', 'regex:/^[a-z]([-a-z0-9]*[a-z0-9])?$/'],
             'env_prefix' => ['nullable', 'string', 'max:32', 'regex:/^[A-Z][A-Z0-9_]*_$/'],
             'routing_key' => ['required', 'string', 'max:253', 'regex:/^[A-Za-z0-9][A-Za-z0-9._:\/-]*$/'],
             'port' => ['nullable', 'integer', 'min:1', 'max:65535'],
@@ -47,14 +66,26 @@ class PrivateDatabaseBindingController extends Controller
             'password' => ['required', 'string', 'max:1024'],
         ]);
 
+        $environment = EnvironmentResolver::resolve($project, $data['environment'] ?? null);
+        $target = DeployTarget::environment($project, $environment);
+
+        if ($target->privateDatabaseBindings()->where('name', $data['name'])->exists()) {
+            return $this->invalid('name', __('validation.unique', ['attribute' => 'name']));
+        }
         $prefix = $data['env_prefix'] ?? '';
-        if ($project->privateDatabaseBindings()->where('env_prefix', $prefix)->exists()) {
+        if ($target->privateDatabaseBindings()->where('env_prefix', $prefix)->exists()) {
             return $this->invalid('env_prefix', __('api.private_connection.env_prefix_taken'));
         }
 
-        $region = $project->knativeRegion;
+        // The region the workload runs in: the project's, or the environment's own
+        $region = $target->knativeRegion;
         if (! $region || ! $region->kubeconfig || $region->is_demo) {
-            return $this->invalid('project', __('api.private_connection.no_region'));
+            return $this->invalid($environment ? 'environment' : 'project', __('api.private_connection.no_region'));
+        }
+
+        // The Skupper link reaches the database from the primary region only (docs/global-projects.md)
+        if ($project->isGlobal()) {
+            return $this->invalid('project', __('api.global.private_connection_refused'));
         }
 
         // Data residency (docs/supply-chain.md)
@@ -70,7 +101,7 @@ class PrivateDatabaseBindingController extends Controller
             if (! $this->skupper->available($region)) {
                 return $this->invalid('project', __('api.private_connection.skupper_unavailable', ['region' => $region->name]));
             }
-            if ($this->skupper->routingKeyInUse($region, $project, $data['routing_key'])) {
+            if ($this->skupper->routingKeyInUse($region, $target, $data['routing_key'])) {
                 return $this->invalid('routing_key', __('api.private_connection.routing_key_in_use'));
             }
         } catch (\Throwable $e) {
@@ -88,11 +119,14 @@ class PrivateDatabaseBindingController extends Controller
             'sslmode' => $data['sslmode'] ?? 'require',
             'link_kind' => $link['kind'] === 'AccessToken' ? 'access_token' : 'link',
         ]);
+        if ($environment !== null) {
+            $binding->setAttribute('environment_id', $environment->getKey());
+        }
         $binding->id = $id;
         $binding->save();
 
         try {
-            $this->skupper->apply($binding, $project, $link, [
+            $this->skupper->apply($binding, $target, $link, [
                 'database' => $data['database'],
                 'username' => $data['username'],
                 'password' => $data['password'],
@@ -106,18 +140,18 @@ class PrivateDatabaseBindingController extends Controller
             }
             $binding->delete();
 
-            Log::warning('Private connection apply failed', ['project' => $project->slug, 'error' => $e->getMessage()]);
+            Log::warning('Private connection apply failed', ['project' => $project->slug, 'workload' => $target->slug, 'error' => $e->getMessage()]);
 
             return response()->json(['message' => __('api.private_connection.apply_failed', ['error' => $e->getMessage()])], 502);
         }
 
-        return response()->json(['data' => $binding->fresh(), 'env_synced' => $this->syncEnv($project)], 201);
+        return response()->json(['data' => $this->present($binding->fresh(), $project), 'env_synced' => $this->syncEnv($target)], 201);
     }
 
     public function status(Project $project, string $privateConnection): JsonResponse
     {
-        $binding = $project->privateDatabaseBindings()->findOrFail($privateConnection);
-        $region = $project->knativeRegion;
+        $binding = $this->bindingOf($project, $privateConnection);
+        $region = $binding->target($project)?->knativeRegion;
 
         try {
             $status = $region ? $this->skupper->status($binding, $region) : ['state' => 'error'];
@@ -125,13 +159,14 @@ class PrivateDatabaseBindingController extends Controller
             return response()->json(['message' => __('api.private_connection.region_unreachable', ['error' => $e->getMessage()])], 502);
         }
 
-        return response()->json(['data' => $binding, 'status' => $status]);
+        return response()->json(['data' => $this->present($binding, $project), 'status' => $status]);
     }
 
     public function destroy(Project $project, string $privateConnection): JsonResponse
     {
-        $binding = $project->privateDatabaseBindings()->findOrFail($privateConnection);
-        $region = $project->knativeRegion;
+        $binding = $this->bindingOf($project, $privateConnection);
+        $target = $binding->target($project);
+        $region = $target?->knativeRegion;
 
         if ($region?->kubeconfig) {
             try {
@@ -147,7 +182,7 @@ class PrivateDatabaseBindingController extends Controller
 
         $binding->delete();
 
-        return response()->json(['message' => __('api.private_connection.deleted'), 'env_synced' => $this->syncEnv($project)]);
+        return response()->json(['message' => __('api.private_connection.deleted'), 'env_synced' => $target !== null && $this->syncEnv($target)]);
     }
 
     // ── Region capability ────────────────────────────────────────────────────
@@ -184,17 +219,39 @@ class PrivateDatabaseBindingController extends Controller
 
     // ── helpers ──────────────────────────────────────────────────────────────
 
-    private function syncEnv(Project $project): bool
+    /** The env of the workload the connection belongs to (the project's own, or an environment's). */
+    private function syncEnv(Project $target): bool
     {
         try {
-            $this->skupper->syncProjectEnv($project->fresh());
+            $this->skupper->syncProjectEnv($target->fresh() ?? $target);
 
             return true;
         } catch (\Throwable $e) {
-            Log::warning('Private connection env sync failed', ['project' => $project->slug, 'error' => $e->getMessage()]);
+            Log::warning('Private connection env sync failed', ['project' => $target->slug, 'error' => $e->getMessage()]);
 
             return false;
         }
+    }
+
+    /** A connection of the project — of its own workload or of any of its environments. */
+    private function bindingOf(Project $project, string $id): PrivateDatabaseBinding
+    {
+        /** @var PrivateDatabaseBinding */
+        return PrivateDatabaseBinding::query()->where('project_id', $project->getKey())->findOrFail($id);
+    }
+
+    /**
+     * A connection as the API shows it, with the environment it belongs to (`environment`: a
+     * name, null for the project's own workload).
+     *
+     * @return array<string, mixed>
+     */
+    private function present(PrivateDatabaseBinding $binding, Project $project): array
+    {
+        $environmentId = $binding->getAttribute('environment_id');
+        $name = $environmentId ? ProjectEnvironment::query()->where('project_id', $project->getKey())->whereKey($environmentId)->value('name') : null;
+
+        return $binding->toArray() + ['environment_id' => $environmentId ?: null, 'environment' => $name];
     }
 
     private function invalid(string $field, string $message): JsonResponse

@@ -56,13 +56,12 @@ class PreviewManifestsTest extends TestCase
     {
         $out = PreviewManifests::transform($this->manifests(), 'P1', 'orders', 'orders-pr-12', 12, ['API_URL' => 'https://staging.example.com']);
 
-        $this->assertSame(['ConfigMap', 'Secret', 'Service'], array_column($out, 'kind'));
-        [$cm, $secret, $svc] = $out;
-
-        // The preview's own copy of the secret env vars: values only in the Secret
-        $this->assertSame('orders-pr-12-secret-env', $secret['metadata']['name']);
-        $this->assertSame('orders-pr-12', $secret['metadata']['labels']['runr.dev/preview']);
-        $this->assertSame(['API_KEY' => base64_encode('k-123')], $secret['data']);
+        // No copy of the secret env vars: the preview reads the project's Secret (same namespace),
+        // and a Secret among the manifests (an earlier release's) is not taken over
+        $this->assertSame(['ConfigMap', 'Service'], array_column($out, 'kind'));
+        [$cm, $svc] = $out;
+        $this->assertStringNotContainsString('k-123', json_encode($out));
+        $this->assertStringNotContainsString(base64_encode('k-123'), json_encode($out));
 
         $this->assertSame('orders-pr-12-v1000000001', $cm['metadata']['name']);
         $this->assertSame('P1', $cm['metadata']['labels']['runr/project-id']); // project delete sweeps it
@@ -76,6 +75,9 @@ class PreviewManifestsTest extends TestCase
 
         $template = $svc['spec']['template'];
         $this->assertArrayNotHasKey('runr/project-id', $template['metadata']['labels']);
+        // the pods name their project and organization: the agent's session events carry both
+        $this->assertSame('P1', $template['metadata']['labels']['runr/preview-of']);
+        $this->assertSame('acme', $template['metadata']['labels']['runr/tenant']);
         $this->assertArrayNotHasKey('autoscaling.knative.dev/min-scale', $template['metadata']['annotations']);
         $this->assertSame('3', $template['metadata']['annotations']['autoscaling.knative.dev/max-scale']);
         $this->assertSame('orders-pr-12-v1000000001', $template['spec']['volumes'][0]['configMap']['name']);
@@ -85,7 +87,7 @@ class PreviewManifestsTest extends TestCase
         $this->assertSame('hello', $env['GREETING']['value']);
         $this->assertSame('12', $env['RUNR_PREVIEW_PR']['value']);
         $this->assertArrayHasKey('DATABASE_URL', $env); // same-repository request: secrets stay
-        $this->assertSame(['name' => 'orders-pr-12-secret-env', 'key' => 'API_KEY'], $env['API_KEY']['valueFrom']['secretKeyRef']);
+        $this->assertSame(['name' => 'orders-secret-env', 'key' => 'API_KEY'], $env['API_KEY']['valueFrom']['secretKeyRef']);
         $this->assertStringNotContainsString('k-123', json_encode($svc));
         $this->assertTrue(PreviewManifests::referencesSecrets($out));
     }
@@ -106,6 +108,19 @@ class PreviewManifestsTest extends TestCase
         $slug = str_repeat('a', 44);
 
         $this->assertSame("{$slug}-pr-12", PreviewManifests::serviceName($slug, 12));
+        $this->assertSame("{$slug}-pr-12", PreviewManifests::serviceName($slug, 12, 'acme'), 'a name that fits is never cut');
         $this->assertLessThanOrEqual(63, strlen(PreviewManifests::serviceName(str_repeat('b', 63), 123456)));
+
+        // A long slug of an earlier release: cut at its end, as before, without an organization
+        $long = 'orders-of-the-very-long-department-of-reconciliations-acme-eu';
+        $this->assertSame(substr($long, 0, 58).'-pr-7', PreviewManifests::serviceName($long, 7));
+        // a tenant's keeps its organization's end: its domain alias answers only names ending in it
+        $kept = PreviewManifests::serviceName($long, 7, 'acme-eu');
+        $this->assertSame(63, strlen($kept));
+        $this->assertStringEndsWith('-acme-eu-pr-7', $kept);
+        $this->assertSame('orders-of-the-very-long-department-of-reconciliati-acme-eu-pr-7', $kept);
+        $this->assertMatchesRegularExpression('/^[a-z]([-a-z0-9]*[a-z0-9])?$/', $kept);
+        // a slug that does not end with the organization is cut at its end
+        $this->assertSame(substr($long, 0, 58).'-pr-7', PreviewManifests::serviceName($long, 7, 'globex'));
     }
 }

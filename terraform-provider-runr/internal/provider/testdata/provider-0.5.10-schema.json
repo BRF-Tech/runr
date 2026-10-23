@@ -1,0 +1,247 @@
+{
+ "data_sources": {
+  "runr_project": {
+   "deployment_status": true,
+   "endpoint_url": true,
+   "handler": true,
+   "id": true,
+   "image": true,
+   "latest_version_id": true,
+   "latest_version_label": true,
+   "name": true,
+   "region_id": true,
+   "region_name": true,
+   "runtime": true,
+   "runtime_version": true,
+   "slug": true,
+   "trigger_type": true,
+   "type": true
+  },
+  "runr_region": {
+   "has_redis": true,
+   "id": true,
+   "is_active": true,
+   "is_demo": true,
+   "name": true,
+   "status": true
+  }
+ },
+ "resources": {
+  "runr_binding": {
+   "backups": true,
+   "connection_limit": true,
+   "env_keys": true,
+   "id": true,
+   "instances": true,
+   "memory_mb": true,
+   "name": true,
+   "over_quota": true,
+   "plan": true,
+   "quota_gb": true,
+   "region_id": true,
+   "resource_name": true,
+   "statement_timeout": true,
+   "status": true,
+   "status_message": true,
+   "storage_gb": true,
+   "timeout": true,
+   "type": true,
+   "values": true,
+   "wait": true
+  },
+  "runr_binding_attachment": {
+   "binding_id": true,
+   "env_names": true,
+   "env_prefix": true,
+   "id": true,
+   "project_id": true
+  },
+  "runr_branding": {
+   "accent_color": true,
+   "company_name": true,
+   "email_from_name": true,
+   "email_logo_url": true,
+   "favicon_url": true,
+   "footer_links": {
+    "label": true,
+    "url": true
+   },
+   "id": true,
+   "login_headline": true,
+   "login_text": true,
+   "logo_dark_url": true,
+   "logo_light_url": true,
+   "logo_mark_url": true,
+   "powered_by": true,
+   "primary_color": true,
+   "product_name": true,
+   "scope": true,
+   "support_email": true,
+   "support_url": true,
+   "tenant_branding_enabled": true
+  },
+  "runr_deployment": {
+   "id": true,
+   "image": true,
+   "project_id": true,
+   "ready_at": true,
+   "status": true,
+   "timeout": true,
+   "triggers": true,
+   "url": true,
+   "version_id": true,
+   "version_label": true,
+   "wait": true
+  },
+  "runr_domain": {
+   "certificate": true,
+   "dns_targets": true,
+   "domain": true,
+   "id": true,
+   "private_key": true,
+   "project_id": true,
+   "status": true,
+   "tls_mode": true,
+   "url": true,
+   "verification_name": true,
+   "verification_type": true,
+   "verification_value": true,
+   "verify": true,
+   "verify_timeout": true
+  },
+  "runr_env_var": {
+   "id": true,
+   "name": true,
+   "project_id": true,
+   "secret": true,
+   "value": true,
+   "value_wo": true,
+   "value_wo_version": true
+  },
+  "runr_group": {
+   "description": true,
+   "id": true,
+   "members": true,
+   "name": true,
+   "role": true
+  },
+  "runr_mcp_server": {
+   "access_mode": true,
+   "audit_calls": true,
+   "handle": true,
+   "id": true,
+   "path": true,
+   "project_id": true,
+   "resource_metadata": true,
+   "url": true
+  },
+  "runr_model_service": {
+   "api": true,
+   "args": true,
+   "cpu": true,
+   "device": true,
+   "engine": true,
+   "env_vars": true,
+   "gpu": {
+    "count": true,
+    "memory_min": true,
+    "type": true
+   },
+   "health_path": true,
+   "hub_id": true,
+   "id": true,
+   "image": true,
+   "max_scale": true,
+   "memory_mb": true,
+   "min_scale": true,
+   "mode": true,
+   "model_id": true,
+   "name": true,
+   "openai_base": true,
+   "port": true,
+   "region_id": true,
+   "revision": true,
+   "running": true,
+   "scale_to_zero": true,
+   "served_name": true,
+   "service_name": true,
+   "status": true,
+   "status_message": true,
+   "timeout": true,
+   "timeout_seconds": true,
+   "url": true,
+   "wait": true
+  },
+  "runr_project": {
+   "args": true,
+   "command": true,
+   "description": true,
+   "endpoint_url": true,
+   "filename": true,
+   "handler": true,
+   "id": true,
+   "image": true,
+   "latest_version_id": true,
+   "name": true,
+   "ports": true,
+   "region_id": true,
+   "resources": {
+    "cpu": true,
+    "memory_mb": true,
+    "timeout_seconds": true
+   },
+   "runtime": true,
+   "runtime_version": true,
+   "scale": {
+    "max": true,
+    "min": true,
+    "to_zero": true
+   },
+   "slug": true,
+   "trigger": {
+    "queue": true,
+    "schedule": true,
+    "type": true
+   },
+   "type": true
+  },
+  "runr_project_access": {
+   "group_id": true,
+   "id": true,
+   "project_id": true,
+   "role": true,
+   "subject_id": true,
+   "subject_type": true,
+   "user": true
+  },
+  "runr_role": {
+   "description": true,
+   "effective_permissions": true,
+   "id": true,
+   "key": true,
+   "name": true,
+   "permissions": true
+  },
+  "runr_runtime": {
+   "enabled": true,
+   "files": true,
+   "id": true,
+   "manifest": true,
+   "name": true,
+   "regions": true,
+   "run_mode": true,
+   "source": true,
+   "versions": true
+  },
+  "runr_workflow_trigger": {
+   "condition": true,
+   "cron": true,
+   "event": true,
+   "id": true,
+   "project_id": true,
+   "queue": true,
+   "timezone": true,
+   "workflow": true
+  }
+ }
+}

@@ -118,6 +118,11 @@ class KataKvmTest extends TestCase
         $this->assertSame('false', $this->nodes['n2']['metadata']['labels']['runr.dev/kvm']);
         $this->assertStringStartsWith('kvm=no dev_kvm=no cpu=none module=none at=', $this->nodes['n2']['metadata']['annotations']['runr.dev/kvm-probe']);
         $this->assertArrayNotHasKey('kata-kvm-probe', $this->daemonSets, 'the check DaemonSet is removed');
+        // the check may be the first of RunR's sandbox runtimes on the cluster: it creates its namespace
+        $ns = array_search('PATCH /api/v1/namespaces/runr-sandbox', $this->calls, true);
+        $ds = array_search('PATCH /apis/apps/v1/namespaces/runr-sandbox/daemonsets/kata-kvm-probe', $this->calls, true);
+        $this->assertIsInt($ns, implode("\n", $this->calls));
+        $this->assertTrue($ds === false || $ns < $ds, 'the namespace comes before the DaemonSet');
         $this->assertContains(['sandbox.kvm.probed', ['region_id' => $region->id, 'kvm' => 'mixed']], $events);
     }
 
@@ -150,6 +155,110 @@ class KataKvmTest extends TestCase
             ->postJson("/api/knative-regions/{$region->id}/install-sandbox", ['runtime' => 'gvisor'])
             ->assertStatus(202);
         Queue::assertPushed(InstallSandboxJob::class, fn (InstallSandboxJob $job) => $job->runtime === 'gvisor');
+    }
+
+    /**
+     * QEMU keeps each guest's memory in a file in /dev/shm (virtio-fs): on nodes that run in a
+     * container (Kind, k3d) /dev/shm is Docker's 64 MiB and QEMU dies of SIGBUS while the guest
+     * boots. The check reads the size; the install and the console do not offer QEMU there, and the
+     * install API says which hypervisors cannot run so the others can be installed.
+     */
+    public function test_qemu_is_not_offered_where_dev_shm_holds_no_guest(): void
+    {
+        $this->addNode('kind-worker');
+        $this->addNode('kind-worker2');
+        $this->nodeShmMb = ['kind-worker' => 64, 'kind-worker2' => 64];
+        $this->fakeKataCluster();
+        $this->service();
+        Queue::fake();
+        $region = $this->kataRegion();
+        $owner = $this->user();
+
+        $response = $this->actingAs($owner, 'sanctum')
+            ->postJson("/api/knative-regions/{$region->id}/install-sandbox", ['runtime' => 'kata', 'hypervisors' => ['clh', 'qemu', 'dragonball']])
+            ->assertStatus(422);
+
+        $this->assertSame(['qemu'], array_keys($response->json('unavailable')));
+        $this->assertStringContainsString('/dev/shm is smaller than 1024 MiB', $response->json('unavailable.qemu'));
+        $this->assertStringContainsString('kind-worker: 64 MiB, kind-worker2: 64 MiB', $response->json('unavailable.qemu'));
+        $this->assertStringStartsWith("Kata hypervisor 'qemu' cannot run on this cluster: the nodes' /dev/shm", $response->json('message'));
+        $this->assertStringContainsString(' shm_mb=64 at=', $this->nodes['kind-worker']['metadata']['annotations']['runr.dev/kvm-probe']);
+        Queue::assertNothingPushed();
+
+        // the console's selector says the same
+        $shims = $this->shims($region)['shims'];
+        $this->assertFalse($shims['qemu']['available']);
+        $this->assertSame('small_shm', $shims['qemu']['reason']);
+        $this->assertSame('kind-worker: 64 MiB, kind-worker2: 64 MiB', $shims['qemu']['detail']);
+        $this->assertTrue($shims['clh']['available']);
+        $this->assertTrue($shims['dragonball']['available']);
+
+        // the others install
+        $this->actingAs($owner, 'sanctum')
+            ->postJson("/api/knative-regions/{$region->id}/install-sandbox", ['runtime' => 'kata', 'hypervisors' => ['clh', 'dragonball']])
+            ->assertStatus(202);
+        Queue::assertPushed(InstallSandboxJob::class, fn (InstallSandboxJob $job) => $job->hypervisors === ['clh', 'dragonball']);
+    }
+
+    /**
+     * Kata's Rust runtime (Dragonball) puts each sandbox into its systemd cgroup over the D-Bus
+     * system bus; Kind's node image runs systemd without D-Bus and every Dragonball pod sandbox
+     * failed ("add runtime to sandbox cgroup: systemd dbus error: … No such file or directory").
+     */
+    public function test_dragonball_is_not_offered_where_systemd_runs_without_d_bus(): void
+    {
+        $this->addNode('kind-worker');
+        $this->nodeDbus = ['kind-worker' => 'missing'];
+        $this->fakeKataCluster();
+        $this->service();
+        Queue::fake();
+        $region = $this->kataRegion();
+        $owner = $this->user();
+
+        $response = $this->actingAs($owner, 'sanctum')
+            ->postJson("/api/knative-regions/{$region->id}/install-sandbox", ['runtime' => 'kata', 'hypervisors' => ['clh', 'qemu', 'dragonball']])
+            ->assertStatus(422);
+
+        $this->assertSame(['dragonball'], array_keys($response->json('unavailable')));
+        $this->assertStringContainsString('without the D-Bus system bus', $response->json('unavailable.dragonball'));
+        $this->assertStringContainsString('(no D-Bus on kind-worker)', $response->json('unavailable.dragonball'));
+        $this->assertStringContainsString(' dbus=missing at=', $this->nodes['kind-worker']['metadata']['annotations']['runr.dev/kvm-probe']);
+
+        $shims = $this->shims($region)['shims'];
+        $this->assertSame('no_dbus', $shims['dragonball']['reason']);
+        $this->assertTrue($shims['clh']['available']);
+        $this->assertTrue($shims['qemu']['available']);
+    }
+
+    public function test_dragonball_stays_offered_with_d_bus_or_without_systemd(): void
+    {
+        $this->addNode('host-1');
+        $this->addNode('talos-1');
+        $this->nodeDbus = ['host-1' => 'yes', 'talos-1' => 'n/a'];
+        $this->fakeKataCluster();
+        $this->service();
+        Queue::fake();
+        $region = $this->kataRegion();
+
+        $this->actingAs($this->user(), 'sanctum')
+            ->postJson("/api/knative-regions/{$region->id}/install-sandbox", ['runtime' => 'kata', 'hypervisors' => ['dragonball']])
+            ->assertStatus(202);
+    }
+
+    public function test_qemu_stays_offered_where_dev_shm_is_large_or_not_known(): void
+    {
+        $this->addNode('host-1');
+        $this->addNode('host-2', ['runr.dev/kvm' => 'true']); // checked by a release without the size
+        $this->nodeShmMb = ['host-1' => 7826];
+        $this->fakeKataCluster();
+        $this->service();
+        Queue::fake();
+        $region = $this->kataRegion();
+
+        $this->actingAs($this->user(), 'sanctum')
+            ->postJson("/api/knative-regions/{$region->id}/install-sandbox", ['runtime' => 'kata', 'hypervisors' => ['qemu']])
+            ->assertStatus(202);
+        $this->assertTrue($this->shims($region)['shims']['qemu']['available']);
     }
 
     public function test_mixed_cluster_runs_kata_pods_only_on_nodes_with_kvm(): void

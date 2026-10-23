@@ -77,8 +77,13 @@ class McpSettingsApiTest extends TestCase
         $this->assertNotContains('deploy', $scoped);
         $this->assertNotContains('logs_tail', $scoped);
 
+        // every tool but the platform administrators' (permissions '@platform:…')
+        $organizationTools = array_keys(array_filter(
+            app(ToolRegistry::class)->all(),
+            fn ($tool) => ! collect($tool->permissions())->contains(fn ($p) => str_starts_with($p, ToolRegistry::PLATFORM_PREFIX)),
+        ));
         [$token, $session] = $this->connect($this->owner);
-        $this->assertSame(array_keys(app(ToolRegistry::class)->all()), $this->mcpToolNames($token, $session), 'an owner with a full token sees every tool');
+        $this->assertSame($organizationTools, $this->mcpToolNames($token, $session), 'an owner with a full token sees every tool of the organization');
     }
 
     public function test_a_role_change_limits_the_token_at_once(): void

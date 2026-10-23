@@ -21,7 +21,8 @@ func TestMetricsSummary(t *testing.T) {
 	h.srv.SeedMetricSnapshot("orders", runrtest.MetricSnapshot{At: now.Add(-time.Hour), CPUCores: 0.25, MemoryMB: 128, RPS: 2, ColdStarts: 1})
 	h.srv.SeedMetricSnapshot("orders", runrtest.MetricSnapshot{At: now.Add(-2 * time.Hour), CPUCores: 0.75, MemoryMB: 256, RPS: 6, ColdStarts: 2})
 	h.srv.SeedMetricSnapshot("orders", runrtest.MetricSnapshot{At: now.AddDate(0, 0, -20), CPUCores: 4, MemoryMB: 4096, RPS: 100})
-	h.srv.SetSessionStats("orders", runrtest.SessionStats{Total: 40, ColdStarts: 3, DurationMS: 120000, CPUMS: 30000, AvgDuration: 3000})
+	// 0.25 vCPU and 512 MiB for 2 minutes of pod time; 3 GiB for an hour reads in GiB-hours
+	h.srv.SetSessionStats("orders", runrtest.SessionStats{Total: 40, ColdStarts: 3, DurationMS: 120000, CPUMS: 30000, MemoryMBMS: 512 * 120000, AvgDuration: 3000})
 
 	r = h.mustRun("metrics", "-p", "orders")
 	contains(t, r.out, "the last 7 days (2 samples)")
@@ -29,6 +30,11 @@ func TestMetricsSummary(t *testing.T) {
 	contains(t, r.out, "192 MiB on average, 256 MiB at most")
 	contains(t, r.out, "4.00/s on average, 6.00/s at most")
 	contains(t, r.out, "40 (3 cold)")
+	contains(t, r.out, "40 (3 cold), 3s on average, 2m in total")
+	contains(t, r.out, "30s of vCPU time, 17.1 MiB-hours of memory (the deployment's size for the sessions' pod time)")
+	if got := memoryTimeText(3 * 1024 * 3_600_000); got != "3.00 GiB-hours" {
+		t.Fatalf("memoryTimeText = %q", got)
+	}
 	notContains(t, r.out, "No metrics")
 
 	var sum runr.MetricsSummary

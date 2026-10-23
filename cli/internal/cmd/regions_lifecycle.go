@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -557,8 +558,16 @@ func regionNodeRows(t *output.TableWriter, nodes []runr.RegionNode) {
 
 // regionSetKeys are the keys of `runr regions set`: status goes to the region, the rest to its
 // settings.
-var regionSetKeys = []string{"status", "request_timeout", "agent_ws_url", "cert_manager_cluster_issuer", "ingress_trusted_ips",
-	"prometheus_url", "loki_url", "loki_org_id"}
+var regionSetKeys = slices.Concat([]string{"status"}, regionSettingKeys, regionMonitoringKeys)
+
+// regionSettingKeys go to PUT /knative-regions/{id}/settings (UpdateRegionSettingsRequest),
+// regionMonitoringKeys to PUT /knative-regions/{id}/monitoring (UpdateRegionMonitoringRequest).
+// TestRegionSetKeysMatchTheAPI keeps them equal to the fields of those requests.
+var (
+	regionSettingKeys = []string{"request_timeout", "agent_ws_url", "cert_manager_cluster_issuer", "cert_manager_issuer_mode",
+		"cert_manager_acme_email", "ingress_trusted_ips", "internal_auth"}
+	regionMonitoringKeys = []string{"prometheus_url", "loki_url", "loki_org_id"}
+)
 
 func newRegionSetCmd(app *App) *cobra.Command {
 	var sets []string
@@ -572,9 +581,16 @@ func newRegionSetCmd(app *App) *cobra.Command {
 			"                                region's Traefik and Knative follow it\n" +
 			"  agent_ws_url                  RunR's address as the region's agents reach it (wss://…;\n" +
 			"                                empty: the console URL); the agent is deployed again\n" +
-			"  cert_manager_cluster_issuer   ClusterIssuer of custom-domain certificates (empty: none)\n" +
+			"  cert_manager_cluster_issuer   a ClusterIssuer of yours for custom-domain certificates (empty:\n" +
+			"                                RunR's default issuer, runr regions cert-manager)\n" +
+			"  cert_manager_issuer_mode      RunR's default issuer: auto (Let's Encrypt where the region is\n" +
+			"                                reachable from the internet, else the region CA), acme or ca\n" +
+			"  cert_manager_acme_email       ACME account e-mail of that issuer (empty: the platform's)\n" +
 			"  ingress_trusted_ips           comma-separated addresses / CIDRs of a load balancer in front\n" +
 			"                                of the region's Traefik (empty: trust nobody)\n" +
+			"  internal_auth                 enforce (the default, also for a region upgraded from an\n" +
+			"                                earlier release): the internal network refuses calls the\n" +
+			"                                callee's allow list does not admit; audit admits and logs them\n" +
 			"  prometheus_url, loki_url      an existing in-cluster Prometheus / Loki\n" +
 			"                                (http://<service>.<namespace>.svc:<port>); empty: RunR's own\n" +
 			"                                again, installed when the region's Serving is ready\n" +
@@ -583,6 +599,7 @@ func newRegionSetCmd(app *App) *cobra.Command {
 			"credential rotation; it has to reach the same cluster).",
 		Example: "  runr regions set eu-1 --set status=maintenance\n" +
 			"  runr regions set eu-1 --set request_timeout=900 --set ingress_trusted_ips=10.0.0.0/8,192.0.2.10\n" +
+			"  runr regions set eu-1 --set internal_auth=audit\n" +
 			"  runr regions set eu-1 --kubeconfig rotated.yaml",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -612,12 +629,27 @@ func newRegionSetCmd(app *App) *cobra.Command {
 						return usageErrorf("--set request_timeout must be a number of seconds between 1 and 3600")
 					}
 					settings[key] = n
-				case "agent_ws_url", "cert_manager_cluster_issuer":
+				case "agent_ws_url", "cert_manager_cluster_issuer", "cert_manager_acme_email":
 					if v == "" {
 						settings[key] = nil
 					} else {
 						settings[key] = v
 					}
+				case "cert_manager_issuer_mode":
+					ok := false
+					for _, m := range runr.CertManagerIssuerModes {
+						ok = ok || m == v
+					}
+					if !ok {
+						return usageErrorf("--set cert_manager_issuer_mode must be auto, acme or ca")
+					}
+					settings[key] = v
+				case "internal_auth":
+					// the API takes enforce or audit, never empty: an unset region enforces already
+					if !slices.Contains(runr.InternalAuthModes, v) {
+						return usageErrorf("--set internal_auth must be enforce or audit")
+					}
+					settings[key] = v
 				case "ingress_trusted_ips":
 					list := []string{}
 					for _, item := range strings.Split(v, ",") {

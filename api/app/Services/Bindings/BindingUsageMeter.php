@@ -3,7 +3,10 @@
 namespace App\Services\Bindings;
 
 use App\Models\Binding;
+use App\Models\BindingReplica;
 use App\Models\BindingUsageRecord;
+use App\Services\Bindings\DataServices\PostgresService;
+use App\Services\GlobalProjects\Data\RegionalData;
 use App\Services\Metering\UsageAggregator;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Log;
@@ -63,7 +66,16 @@ class BindingUsageMeter
                     continue;
                 }
 
-                $this->record($binding, (int) $usage[$binding->id]['bytes'], (int) ($usage[$binding->id]['instances'] ?? 0));
+                // a global project's replica clusters (docs/global-projects.md, "Data"): their
+                // instances and copies of the data count with the binding
+                [$replicaInstances, $replicaCopies] = $this->replicas($binding);
+                $this->record(
+                    $binding,
+                    (int) $usage[$binding->id]['bytes'],
+                    (int) ($usage[$binding->id]['instances'] ?? 0) + $replicaInstances,
+                    null,
+                    (int) $usage[$binding->id]['bytes'] * $replicaCopies,
+                );
 
                 try {
                     $driver->enforce($binding, (int) $usage[$binding->id]['bytes']);
@@ -82,7 +94,7 @@ class BindingUsageMeter
     /**
      * Book one measurement (changes $binding in memory, saves the record).
      */
-    public function record(Binding $binding, int $bytes, int $instances, ?Carbon $now = null): BindingUsageRecord
+    public function record(Binding $binding, int $bytes, int $instances, ?Carbon $now = null, int $replicaBytes = 0): BindingUsageRecord
     {
         $now ??= now();
         $since = $binding->usage_measured_at ?? $binding->created_at ?? $now;
@@ -105,7 +117,7 @@ class BindingUsageMeter
         if ($this->recordsCreator()) {
             $record->created_by = $binding->created_by;
         }
-        $record->storage_gb_hours = round((float) $record->storage_gb_hours + ($bytes / 1024 ** 3) * $hours, 6);
+        $record->storage_gb_hours = round((float) $record->storage_gb_hours + (($bytes + $replicaBytes) / 1024 ** 3) * $hours, 6);
         $record->instance_hours = round((float) $record->instance_hours + $instances * $hours, 4);
         $record->peak_bytes = max((int) $record->peak_bytes, $bytes);
         $record->save();
@@ -114,6 +126,37 @@ class BindingUsageMeter
         $binding->usage_measured_at = $now;
 
         return $record;
+    }
+
+    /**
+     * The ready replica clusters of a dedicated binding of a global project: [running instances,
+     * copies of the data]. Each copy is as large as the binding's database (physical replication).
+     *
+     * @return array{0: int, 1: int}
+     */
+    private function replicas(Binding $binding): array
+    {
+        if (! $binding->isDedicated() || ! RegionalData::replicated($binding) || $binding->status === Binding::STATUS_DELETING) {
+            return [0, 0];
+        }
+
+        $instances = 0;
+        $copies = 0;
+        foreach (BindingReplica::query()->where('binding_id', $binding->id)->where('kind', BindingReplica::KIND_REPLICA)->with('knativeRegion')->get() as $row) {
+            if (! $row->knativeRegion) {
+                continue;
+            }
+            try {
+                $ready = (int) (app(PostgresService::class)->clusterStatus($row->knativeRegion, $binding->dedicatedClusterName())['readyInstances'] ?? 0);
+            } catch (\Throwable $e) {
+                Log::info('Bindings: replica cluster not measured', ['binding' => $binding->resource_name, 'region' => $row->knativeRegion->name, 'error' => $e->getMessage()]);
+                $ready = 0;
+            }
+            $instances += $ready;
+            $copies += $ready > 0 ? 1 : 0;
+        }
+
+        return [$instances, $copies];
     }
 
     /** binding_usage_records.created_by exists (a tenant schema may still miss TenantMigrations/0059). */

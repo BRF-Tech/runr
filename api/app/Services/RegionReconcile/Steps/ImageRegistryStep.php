@@ -9,6 +9,7 @@ use App\Services\RegionReconcile\ReconcileStep;
 use App\Services\SandboxInstallService;
 use App\Services\Wasm\WasmManifests;
 use App\Support\Images\RegistryMove;
+use App\Support\Images\ReleaseImages;
 
 /**
  * RunR's image namespace (App\Support\Images\RegistryMove): workloads RunR deployed into the
@@ -17,7 +18,10 @@ use App\Support\Images\RegistryMove;
  * move to the same images under ghcr.io/brf-tech/runr/ — every container and init container
  * image, and every env value, that RegistryMove::ref() moves (it starts with such a reference;
  * images of other registries, also the region registry's pull-through path {registry}/ghcr.io/…,
- * stay):
+ * stay). The region agent's and the event gateway's images (the internal network's authz, queue
+ * consumers, topic publishers) also move to this release's version (ReleaseImages: :latest of a
+ * release before 0.6.0, the previous release's tag → the configured reference, behind the same
+ * registry prefix — the pull-through path included):
  *
  *  - Knative Services (functions with the wrapper init container or a runtime image, CaaS
  *    projects, model services, hosted MCP servers): a new revision; Knative moves the traffic
@@ -121,7 +125,7 @@ final class ImageRegistryStep implements ReconcileStep
                 $ns = (string) ($object['metadata']['namespace'] ?? '');
                 $name = (string) ($object['metadata']['name'] ?? '');
                 $what = "{$kind} {$ns}/{$name}";
-                $moves = implode(', ', array_map(fn ($i) => $i.' → '.RegistryMove::ref($i), self::movedImages($ops)));
+                $moves = implode(', ', self::moves($ops));
 
                 if ($how === self::KEEP_POD) {
                     [$ok, $line] = $this->moveKeepingPod($k8s, $object, $ops, $what, $moves, $dryRun);
@@ -202,13 +206,22 @@ final class ImageRegistryStep implements ReconcileStep
         return $ops;
     }
 
-    /** A pod spec as patch() leaves it: every image and env value through RegistryMove::ref(). */
+    /**
+     * A container image as this step leaves it: RunR's image namespace (RegistryMove), then the
+     * release's version of the region agent and the event gateway (ReleaseImages).
+     */
+    public static function movedImage(string $image): string
+    {
+        return ReleaseImages::moved((string) RegistryMove::ref($image));
+    }
+
+    /** A pod spec as patch() leaves it: every image through movedImage(), every env value through RegistryMove::ref(). */
     private static function movedSpec(array $spec): array
     {
         foreach (['initContainers', 'containers'] as $list) {
             foreach ((array) ($spec[$list] ?? []) as $i => $container) {
                 if (is_string($container['image'] ?? null)) {
-                    $spec[$list][$i]['image'] = RegistryMove::ref($container['image']);
+                    $spec[$list][$i]['image'] = self::movedImage($container['image']);
                 }
                 foreach ((array) ($container['env'] ?? []) as $j => $env) {
                     if (is_string($env['value'] ?? null)) {
@@ -411,6 +424,20 @@ final class ImageRegistryStep implements ReconcileStep
         }
 
         return array_keys($images);
+    }
+
+    /** @return list<string> "old → new" of every value a patch replaces (patch(): a test before each replace), unique */
+    private static function moves(array $ops): array
+    {
+        $moves = [];
+        foreach ($ops as $i => $op) {
+            $next = $ops[$i + 1] ?? null;
+            if ($op['op'] === 'test' && $next && $next['op'] === 'replace' && $next['path'] === $op['path']) {
+                $moves[$op['value'].' → '.$next['value']] = true;
+            }
+        }
+
+        return array_keys($moves);
     }
 
     /** Does the cluster serve $kind of $apiVersion (its CRD installed)? */

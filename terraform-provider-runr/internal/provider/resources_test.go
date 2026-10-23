@@ -218,6 +218,85 @@ resource "runr_domain" "www" {
 	})
 }
 
+// A domain without tls_mode gets RunR's choice: cert-manager where the region issues
+// certificates. Left out later, the mode the domain has stays (no change, no replacement).
+func TestDomainTLSModeDefault(t *testing.T) {
+	srv := fake(t)
+	srv.SetRegionCertManagerReady("eu-1")
+	domain := func(extra string) string {
+		return providerBlock(srv) + appProject + `
+resource "runr_domain" "api" {
+  project_id = runr_project.app.id
+  domain     = "api.example.com"` + extra + `
+}
+`
+	}
+	resource.UnitTest(t, resource.TestCase{
+		ProtoV6ProviderFactories: providerFactories(),
+		CheckDestroy:             projectGone(srv, "app"),
+		Steps: []resource.TestStep{
+			{
+				Config: domain(""),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttr("runr_domain.api", "tls_mode", "cert-manager"),
+					resource.TestCheckResourceAttr("runr_domain.api", "url", "https://api.example.com"),
+					check(func() error {
+						if n := len(srv.CallsTo("PUT /projects/{project}/domains/{domain}/tls")); n != 0 {
+							return fmt.Errorf("%d TLS calls for a domain without tls_mode", n)
+						}
+						return nil
+					}),
+				),
+			},
+			{
+				Config: domain("\n  tls_mode = \"none\""),
+				ConfigPlanChecks: resource.ConfigPlanChecks{PreApply: []plancheck.PlanCheck{
+					plancheck.ExpectResourceAction("runr_domain.api", plancheck.ResourceActionUpdate),
+				}},
+				Check: resource.TestCheckResourceAttr("runr_domain.api", "tls_mode", "none"),
+			},
+			{
+				// tls_mode left out again: the domain keeps none
+				Config: domain(""),
+				ConfigPlanChecks: resource.ConfigPlanChecks{PreApply: []plancheck.PlanCheck{
+					plancheck.ExpectEmptyPlan(),
+				}},
+				Check: resource.TestCheckResourceAttr("runr_domain.api", "tls_mode", "none"),
+			},
+			{
+				ResourceName:      "runr_domain.api",
+				ImportState:       true,
+				ImportStateId:     "app/api.example.com",
+				ImportStateVerify: true,
+			},
+			{
+				// a mode set at create is the domain's, also where RunR would choose another
+				Config: domain("") + `
+resource "runr_domain" "www" {
+  project_id = runr_project.app.id
+  domain     = "www.example.com"
+  tls_mode   = "none"
+}
+`,
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttr("runr_domain.www", "tls_mode", "none"),
+					check(func() error {
+						p, _ := srv.Project("app")
+						d, err := client(t, srv).FindDomain(t.Context(), p.ID, "www.example.com")
+						if err != nil {
+							return err
+						}
+						if d.TLSMode != runr.TLSNone {
+							return fmt.Errorf("server TLS mode %q", d.TLSMode)
+						}
+						return nil
+					}),
+				),
+			},
+		},
+	})
+}
+
 func TestDomainValidation(t *testing.T) {
 	srv := fake(t)
 	for body, want := range map[string]string{
@@ -302,6 +381,82 @@ resource "runr_deployment" "app" {
 				Check: check(func() error {
 					if n := len(srv.Deployments("app")); n != 1 {
 						return fmt.Errorf("%d deployments after destroying runr_deployment, want the shut-down one only", n)
+					}
+					return nil
+				}),
+			},
+		},
+	})
+}
+
+// A deployment of an environment runs the version in the environment's workload; the project's
+// own deployment stays as it is.
+func TestDeploymentOfAnEnvironment(t *testing.T) {
+	srv := fake(t)
+	cfg := func(extra string) string {
+		return providerBlock(srv) + appProject + `
+resource "runr_environment" "staging" {
+  project_id = runr_project.app.id
+  name       = "staging"
+}
+
+resource "runr_deployment" "staging" {
+  project_id  = runr_project.app.id
+  environment = runr_environment.staging.name
+  ` + extra + `
+}
+`
+	}
+	envDeployments := func(env string) []runr.Deployment {
+		p, _ := srv.Project("app")
+		list, err := client(t, srv).ListEnvironmentDeployments(t.Context(), p.ID, env)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return list
+	}
+	resource.UnitTest(t, resource.TestCase{
+		ProtoV6ProviderFactories: providerFactories(),
+		CheckDestroy:             projectGone(srv, "app"),
+		Steps: []resource.TestStep{
+			{Config: providerBlock(srv) + appProject},
+			{
+				PreConfig: func() {
+					srv.SeedFiles("app", map[string]string{"main.py": "def handler(event, context):\n    return 1\n"})
+				},
+				Config: cfg(""),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttr("runr_deployment.staging", "environment", "staging"),
+					resource.TestCheckResourceAttr("runr_deployment.staging", "status", "active"),
+					resource.TestCheckResourceAttrPair("runr_deployment.staging", "url", "runr_environment.staging", "url"),
+					check(func() error {
+						if n := len(envDeployments("staging")); n != 1 {
+							return fmt.Errorf("%d deployments of staging", n)
+						}
+						if n := len(srv.Deployments("app")); n != 1 {
+							return fmt.Errorf("%d deployments in all, want staging's only", n)
+						}
+						return nil
+					}),
+				),
+			},
+			{
+				ResourceName: "runr_deployment.staging",
+				ImportState:  true,
+				ImportStateIdFunc: func(s *terraform.State) (string, error) {
+					return "app/" + s.RootModule().Resources["runr_deployment.staging"].Primary.ID, nil
+				},
+				ImportStateVerify:       true,
+				ImportStateVerifyIgnore: []string{"triggers"},
+			},
+			{
+				Config: cfg(`triggers = { revision = "2" }`),
+				ConfigPlanChecks: resource.ConfigPlanChecks{PreApply: []plancheck.PlanCheck{
+					plancheck.ExpectResourceAction("runr_deployment.staging", plancheck.ResourceActionUpdate),
+				}},
+				Check: check(func() error {
+					if n := len(envDeployments("staging")); n != 2 {
+						return fmt.Errorf("%d deployments of staging, want 2", n)
 					}
 					return nil
 				}),

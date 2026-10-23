@@ -8,6 +8,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/brf-tech/runr/cli/pkg/runr"
 )
 
 // The workflow app of a project (WorkflowController::app / updateApp / rotateKey / signingKey)
@@ -34,14 +36,16 @@ func (s *Server) wfApps() *wfAppState {
 	return featureState(s, "workflow-apps", func() *wfAppState { return &wfAppState{apps: map[string]*wfApp{}} })
 }
 
-func (s *Server) wfAppOf(projectID string) *wfApp {
+// wfAppOf returns the workflow app of a project in an environment ("": its own workload).
+func (s *Server) wfAppOf(projectID, env string) *wfApp {
 	st := s.wfApps()
-	if a, ok := st.apps[projectID]; ok {
+	key := wfKey(projectID, env)
+	if a, ok := st.apps[key]; ok {
 		return a
 	}
 	st.seq++
 	a := &wfApp{key: fmt.Sprintf("rwk_fake_signing_key_%d_%s", st.seq, strings.ToLower(projectID))}
-	st.apps[projectID] = a
+	st.apps[key] = a
 	return a
 }
 
@@ -59,18 +63,27 @@ func (s *Server) WorkflowSigningKeyOf(projectName string) string {
 	if p == nil {
 		return ""
 	}
-	return s.wfAppOf(p.data.ID).key
+	return s.wfAppOf(p.data.ID, "").key
 }
 
 // WorkflowEndpointOverride returns the endpoint override of a project's workflow app.
 func (s *Server) WorkflowEndpointOverride(projectName string) string {
+	return s.WorkflowEndpointOverrideIn(projectName, "")
+}
+
+// WorkflowEndpointOverrideIn returns the endpoint override of the workflow app of one
+// environment of a project ("" or production: the project's own workload).
+func (s *Server) WorkflowEndpointOverrideIn(projectName, environment string) string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	p := s.projectByName(projectName)
 	if p == nil {
 		return ""
 	}
-	return s.wfAppOf(p.data.ID).override
+	if environment == runr.PrimaryEnvironment {
+		environment = ""
+	}
+	return s.wfAppOf(p.data.ID, environment).override
 }
 
 // SeedWorkflowUsage records step executions and started runs of a workflow on a day
@@ -87,9 +100,9 @@ func (s *Server) SeedWorkflowUsage(projectName, workflow, date string, steps, ru
 		workflow: workflow, steps: steps, runs: runs})
 }
 
-func (s *Server) wfAppDetail(p *project) map[string]any {
-	out := s.wfAppJSON(p)
-	a := s.wfAppOf(p.data.ID)
+func (s *Server) wfAppDetail(p *project, env string) map[string]any {
+	out := s.wfAppJSON(p, env)
+	a := s.wfAppOf(p.data.ID, env)
 	out["key_fingerprint"] = a.fingerprint()
 	if a.override != "" {
 		out["endpoint_url"], out["endpoint_override"] = a.override, a.override
@@ -169,14 +182,14 @@ func (s *Server) wfUsageReport(q *featureReq, projectID string) (int, any, *apiE
 
 func init() {
 	handle("GET /projects/{project}/workflows/app", func(s *Server, q *featureReq) (int, any, *apiErr) {
-		p, err := s.projectOf(q)
+		p, env, err := s.wfProject(q)
 		if err != nil {
 			return 0, nil, err
 		}
-		return 200, map[string]any{"data": s.wfAppDetail(p)}, nil
+		return 200, map[string]any{"data": s.wfAppDetail(p, env)}, nil
 	})
 	handle("PATCH /projects/{project}/workflows/app", func(s *Server, q *featureReq) (int, any, *apiErr) {
-		p, err := s.projectOf(q)
+		p, env, err := s.wfProject(q)
 		if err != nil {
 			return 0, nil, err
 		}
@@ -185,6 +198,9 @@ func init() {
 			return 0, nil, errValidation("endpoint_url", "The endpoint url field must be present.")
 		}
 		v, _ := raw.(string)
+		if len(v) > 2048 {
+			return 0, nil, errValidation("endpoint_url", "The endpoint url field must not be greater than 2048 characters.")
+		}
 		v = strings.TrimSpace(v)
 		if v != "" {
 			u, perr := url.Parse(v)
@@ -195,15 +211,15 @@ func init() {
 				return 0, nil, errValidation("endpoint_url", "The endpoint may not point at a private or loopback address.")
 			}
 		}
-		s.wfAppOf(p.data.ID).override = v
-		return 200, map[string]any{"data": s.wfAppDetail(p)}, nil
+		s.wfAppOf(p.data.ID, env).override = v
+		return 200, map[string]any{"data": s.wfAppDetail(p, env)}, nil
 	})
 	handle("POST /projects/{project}/workflows/app/rotate-key", func(s *Server, q *featureReq) (int, any, *apiErr) {
-		p, err := s.projectOf(q)
+		p, env, err := s.wfProject(q)
 		if err != nil {
 			return 0, nil, err
 		}
-		a := s.wfAppOf(p.data.ID)
+		a := s.wfAppOf(p.data.ID, env)
 		st := s.wfApps()
 		st.seq++
 		a.key = fmt.Sprintf("rwk_fake_signing_key_%d_%s", st.seq, strings.ToLower(p.data.ID))
@@ -211,15 +227,15 @@ func init() {
 		a.previousExpires = until.Format(time.RFC3339)
 		return 200, map[string]any{
 			"message": "New signing key created. The previous key keeps signing until " + until.Format("Mon, Jan 2, 2006 3:04 PM") + ".",
-			"data":    s.wfAppDetail(p),
+			"data":    s.wfAppDetail(p, env),
 		}, nil
 	})
 	handle("GET /projects/{project}/workflows/app/signing-key", func(s *Server, q *featureReq) (int, any, *apiErr) {
-		p, err := s.projectOf(q)
+		p, env, err := s.wfProject(q)
 		if err != nil {
 			return 0, nil, err
 		}
-		a := s.wfAppOf(p.data.ID)
+		a := s.wfAppOf(p.data.ID, env)
 		return 200, map[string]any{"signing_key": a.key, "env": "RUNR_WORKFLOW_SIGNING_KEY", "fingerprint": a.fingerprint()}, nil
 	})
 	handle("GET /workflow-usage", func(s *Server, q *featureReq) (int, any, *apiErr) {

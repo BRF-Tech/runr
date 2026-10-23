@@ -6,6 +6,8 @@ use App\Models\KnativeRegion;
 use App\Models\Project;
 use App\Models\Sandbox;
 use App\Services\Ai\Models\ModelServiceReservations;
+use App\Services\Environments\EnvironmentReservations;
+use App\Services\GlobalProjects\GlobalProjectRegions;
 use App\Services\Sandboxes\SandboxContext;
 use Illuminate\Database\QueryException;
 
@@ -123,8 +125,9 @@ final class RegionCapacity
 
     /**
      * What holds a region (every region when $regionId is null), split by budget: its projects
-     * (without $excludeProjectId), its model services that are not stopped (without
-     * $excludeModelServiceId) and its live sandboxes and warm pool pods.
+     * (without $excludeProjectId), the environments of projects that run there
+     * (EnvironmentReservations, docs/environments.md), its model services that are not stopped
+     * (without $excludeModelServiceId) and its live sandboxes and warm pool pods.
      *
      * @return array{hard: array{cpu_m: int, memory_mb: int}, burst: array{cpu_m: int, memory_mb: int}}
      */
@@ -132,13 +135,15 @@ final class RegionCapacity
     {
         $projects = Project::with('xaasConfig', 'faasConfig', 'containerConfig')
             ->when($excludeProjectId, fn ($q) => $q->where('id', '!=', $excludeProjectId))
-            ->when($regionId, fn ($q) => $q->where('knative_region_id', $regionId))
+            // a global project's copy counts in every region it runs in (docs/global-projects.md)
+            ->when($regionId, fn ($q) => GlobalProjectRegions::whereRunsIn($q, $regionId))
             ->get();
 
         $usage = ResourceReservation::addDemand(
             ResourceReservation::sumDemand($projects),
             ModelServiceReservations::demandIn($regionId, $excludeModelServiceId),
         );
+        $usage = ResourceReservation::addDemand($usage, EnvironmentReservations::demandIn($regionId));
 
         return ResourceReservation::addDemand($usage, ['hard' => self::sandboxUsage($regionId), 'burst' => ResourceReservation::zero()]);
     }

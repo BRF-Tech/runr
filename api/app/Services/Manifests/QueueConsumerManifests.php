@@ -5,6 +5,13 @@ namespace App\Services\Manifests;
 use App\Models\Project;
 use App\Services\Contracts\KnativeConstants;
 
+/**
+ * Manifests of a project's event gateway (runtime/queue-consumer, Deployment <slug>-qc): the queue
+ * trigger's Redis Streams consumer of earlier versions, now the gateway that runs every trigger
+ * whose events reach the function as CloudEvents (docs/triggers.md). It calls the function on the
+ * region's internal network as the project itself: RUNR_INTERNAL_TOKEN from the project's Secret
+ * (KnativeQueueConsumerTrait), and its pods carry the project's labels (InternalNetwork::podLabels).
+ */
 class QueueConsumerManifests
 {
     protected static ?\Closure $streamNameResolver = null;
@@ -50,6 +57,8 @@ class QueueConsumerManifests
         string $image,
         array $env,
         bool $dedicatedWorkers = false,
+        array $volumes = [],
+        array $volumeMounts = [],
     ): array {
         $deployment = [
             'apiVersion' => 'apps/v1',
@@ -103,6 +112,17 @@ class QueueConsumerManifests
             ],
         ];
 
+        if ($volumes !== []) {
+            $deployment['spec']['template']['spec']['volumes'] = $volumes;
+            $deployment['spec']['template']['spec']['containers'][0]['volumeMounts'] = $volumeMounts;
+            // GET /metrics: per-trigger delivery series (runtime/queue-consumer/gateway)
+            $deployment['spec']['template']['metadata']['annotations'] = [
+                'prometheus.io/scrape' => 'true',
+                'prometheus.io/port' => '8081',
+                'prometheus.io/path' => '/metrics',
+            ];
+        }
+
         if ($dedicatedWorkers) {
             $deployment['spec']['template']['spec']['tolerations'] = [[
                 'key' => 'runr.dev/dedicated',
@@ -114,5 +134,35 @@ class QueueConsumerManifests
         }
 
         return $deployment;
+    }
+
+    /**
+     * ClusterIP Service <slug>-qc in front of the gateway's port 8081: the API nudges the gateway
+     * through it (POST /v1/nudge, via the region's Kubernetes API service proxy) when its inbox
+     * has new events.
+     */
+    public static function service(Project $project, string $namespace, string $name): array
+    {
+        return [
+            'apiVersion' => 'v1',
+            'kind' => 'Service',
+            'metadata' => [
+                'name' => $name,
+                'namespace' => $namespace,
+                'labels' => array_merge([
+                    'app.kubernetes.io/managed-by' => 'runr',
+                    'runr/project-id' => $project->id,
+                    'runr/component' => 'queue-consumer',
+                ], KnativeManifests::extraLabels($project)),
+            ],
+            'spec' => [
+                'type' => 'ClusterIP',
+                'selector' => [
+                    'runr/project-id' => $project->id,
+                    'runr/component' => 'queue-consumer',
+                ],
+                'ports' => [['name' => 'http', 'port' => 8081, 'targetPort' => 8081, 'protocol' => 'TCP']],
+            ],
+        ];
     }
 }

@@ -13,6 +13,7 @@ use App\Services\Ai\Gpu\GpuRequest;
 use App\Services\Ai\Gpu\GpuScheduling;
 use App\Services\Contracts\KnativeConstants;
 use App\Services\Helpers\ResourceReservation;
+use App\Services\InternalNetwork\InternalNetworkService;
 use App\Services\Manifests\KnativeManifests;
 
 /**
@@ -127,6 +128,8 @@ class ModelServiceManifests
         }
 
         $labels = $this->labels($service);
+        // the internal network: the projects bound to the service may call it (InternalNetworkService)
+        $network = InternalNetworkService::modelMetadata($service);
 
         return [
             'apiVersion' => 'serving.knative.dev/v1',
@@ -134,8 +137,8 @@ class ModelServiceManifests
             'metadata' => [
                 'name' => $service->service_name,
                 'namespace' => $namespace,
-                'labels' => $labels + ['networking.knative.dev/visibility' => 'cluster-local'],
-                'annotations' => ['runr.sh/model-service-id' => $service->id, 'runr.sh/model' => (string) ($model->hub_id ?? $model->name)],
+                'labels' => $labels + $network['labels'] + ['networking.knative.dev/visibility' => 'cluster-local'],
+                'annotations' => ['runr.sh/model-service-id' => $service->id, 'runr.sh/model' => (string) ($model->hub_id ?? $model->name)] + $network['annotations'],
             ],
             'spec' => [
                 'template' => [

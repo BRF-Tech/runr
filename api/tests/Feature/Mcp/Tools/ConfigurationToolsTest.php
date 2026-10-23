@@ -3,9 +3,12 @@
 namespace Tests\Feature\Mcp\Tools;
 
 use App\Models\AuditEvent;
+use App\Models\KnativeRegion;
 use App\Models\Project;
 use App\Models\ProjectSecret;
+use App\Models\SecretStore;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Tests\Concerns\FakesRegionSecrets;
 use Tests\TestCase;
 
 /**
@@ -15,17 +18,28 @@ use Tests\TestCase;
  */
 class ConfigurationToolsTest extends TestCase
 {
-    use McpToolFixtures, RefreshDatabase;
+    use FakesRegionSecrets, McpToolFixtures, RefreshDatabase;
 
     private Project $project;
+
+    private KnativeRegion $cluster;
 
     protected function setUp(): void
     {
         parent::setUp();
         $this->setUpMcpTools();
 
-        $this->project = $this->containerProject('shop', ['MODE' => 'prod', 'LOG_LEVEL' => 'info']);
-        ProjectSecret::create(['project_id' => $this->project->id, 'name' => 'API_TOKEN', 'value' => 'tok-do-not-leak']);
+        // Secret values live in the region (pass-through): a region with a cluster
+        $this->fakeRegionSecrets();
+        $this->cluster = $this->regionWithCluster('cl');
+        $this->project = $this->containerProject('shop', ['MODE' => 'prod', 'LOG_LEVEL' => 'info'], $this->cluster);
+        ProjectSecret::create(['project_id' => $this->project->id, 'name' => 'API_TOKEN']);
+        $this->regionSecrets->seed($this->cluster, "{$this->project->slug}-secret-env", ['API_TOKEN' => 'tok-do-not-leak']);
+    }
+
+    private function inRegion(): array
+    {
+        return $this->regionSecrets->values($this->cluster, "{$this->project->slug}-secret-env") ?? [];
     }
 
     private function plain(): array
@@ -65,7 +79,7 @@ class ConfigurationToolsTest extends TestCase
 
         $this->assertTrue($result['requires_deploy']);
         $this->assertSame(['MODE' => 'staging', 'LOG_LEVEL' => 'info', 'REGION' => 'eu'], $this->plain());
-        $this->assertSame('tok-do-not-leak', ProjectSecret::where('name', 'API_TOKEN')->value('value'), 'secrets untouched');
+        $this->assertSame('tok-do-not-leak', $this->inRegion()['API_TOKEN'] ?? null, 'secrets untouched');
 
         $event = AuditEvent::where('action', 'project.update')->latest('occurred_at')->firstOrFail();
         $this->assertStringNotContainsString('staging', json_encode($event->metadata));
@@ -77,14 +91,63 @@ class ConfigurationToolsTest extends TestCase
 
         $this->structured($result);
         $this->assertStringNotContainsString('pw-do-not-leak', json_encode($result));
-        $this->assertSame('pw-do-not-leak', ProjectSecret::where('name', 'DB_PASSWORD')->value('value'));
-        $this->assertSame('m', ProjectSecret::where('name', 'MODE')->value('value'));
+        // Into the region, not RunR's database
+        $this->assertNull(ProjectSecret::where('name', 'DB_PASSWORD')->value('value'));
+        $this->assertSame('pw-do-not-leak', $this->inRegion()['DB_PASSWORD'] ?? null);
+        $this->assertSame('m', $this->inRegion()['MODE'] ?? null);
         $this->assertSame(['LOG_LEVEL' => 'info'], $this->plain(), 'MODE moved from plain to secret');
 
         // and back: plain again, the secret is removed
         $this->structured($this->callTool('env_set', ['project' => 'shop', 'vars' => ['MODE' => 'plain-again']]));
         $this->assertNull(ProjectSecret::where('name', 'MODE')->first());
+        $this->assertArrayNotHasKey('MODE', $this->inRegion(), 'nothing runs: the value leaves the region at once');
         $this->assertSame('plain-again', $this->plain()['MODE']);
+    }
+
+    public function test_env_list_says_where_each_secret_lives(): void
+    {
+        $store = SecretStore::create(['name' => 'vault', 'provider' => 'vault', 'auth' => 'kubernetes', 'settings' => ['server' => 'https://vault.test', 'role' => 'runr']]);
+        ProjectSecret::create([
+            'project_id' => $this->project->id, 'name' => 'DB_URL', 'source' => 'external',
+            'secret_store_id' => $store->id, 'remote_path' => 'apps/shop', 'remote_key' => 'url', 'sync_status' => 'synced',
+        ]);
+
+        $data = $this->structured($this->callTool('env_list', ['project' => 'shop']));
+        $details = collect($data['secret_details'])->keyBy('name');
+
+        $this->assertSame('region', $details['API_TOKEN']['source']);
+        $this->assertSame('region', $details['API_TOKEN']['stored_in']);
+        $this->assertSame('external', $details['DB_URL']['source']);
+        $this->assertSame('vault', $details['DB_URL']['reference']['store_name']);
+        $this->assertSame('synced', $details['DB_URL']['sync']['status']);
+        $this->assertStringNotContainsString('tok-do-not-leak', json_encode($data));
+    }
+
+    // ── secret stores ──────────────────────────────────────────────────────────
+
+    public function test_a_secret_becomes_a_reference_to_a_store(): void
+    {
+        SecretStore::create(['name' => 'vault', 'provider' => 'vault', 'auth' => 'kubernetes', 'settings' => ['server' => 'https://vault.test', 'role' => 'runr']]);
+
+        $stores = $this->structured($this->callTool('secret_stores_list', []));
+        $this->assertSame('vault', $stores['stores'][0]['name']);
+
+        $result = $this->structured($this->callTool('secret_ref_set', ['project' => 'shop', 'name' => 'DB_URL', 'store' => 'vault', 'path' => 'apps/shop', 'key' => 'url']));
+        $this->assertTrue($result['requires_deploy']);
+
+        $row = ProjectSecret::where('name', 'DB_URL')->sole();
+        $this->assertSame('external', $row->source);
+        $this->assertSame(['apps/shop', 'url'], [$row->remote_path, $row->remote_key]);
+
+        // An unknown store is the tool's error, nothing changes
+        $this->mcpToolError($this->callTool('secret_ref_set', ['project' => 'shop', 'name' => 'OTHER', 'store' => 'nope', 'path' => 'p']));
+        $this->assertNull(ProjectSecret::where('name', 'OTHER')->first());
+    }
+
+    public function test_secret_store_tools_follow_the_permissions(): void
+    {
+        $this->assertToolHidden('secret_stores_list', ['projects.view', 'env.view']);
+        $this->assertToolHidden('secret_ref_set', ['projects.view', 'env.view', 'env.edit']);
     }
 
     public function test_setting_the_same_values_changes_nothing(): void

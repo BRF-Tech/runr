@@ -3,6 +3,7 @@ package cmd
 import (
 	"bufio"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -21,10 +22,12 @@ func newEnvCmd(app *App) *cobra.Command {
 		Use:   "env",
 		Short: "List and change environment variables and secrets",
 		Long: "A project has plain variables (part of the project config: a change saves a new version)\n" +
-			"and secret variables (--secret: stored write-only, listed by name, never shown again\n" +
-			"unless you hold secrets.view_values and pass --reveal). Either kind reaches the running\n" +
-			"function with the next deploy: unless --no-deploy is given, a change redeploys the live\n" +
-			"version so it takes effect. A name is plain or secret, never both.",
+			"and secret variables (--secret: written straight into the project's region, listed by\n" +
+			"name, never shown again unless you hold secrets.view_values and pass --reveal). A secret\n" +
+			"can also be a reference to a value in one of the organization's secret stores\n" +
+			"(`runr env ref`; RunR never sees that value). Either kind reaches the running function\n" +
+			"with the next deploy: unless --no-deploy is given, a change redeploys the live version so\n" +
+			"it takes effect. A name is plain or secret, never both.",
 	}
 	var showValues, reveal bool
 	ls := &cobra.Command{
@@ -46,11 +49,13 @@ func newEnvCmd(app *App) *cobra.Command {
 			}
 			show := showValues || reveal
 			return app.Printer().Print(vars, func(t *output.TableWriter) {
-				t.Header("NAME", "VALUE", "SECRET", "UPDATED")
-				masked := false
+				t.Header("NAME", "VALUE", "SECRET", "SOURCE", "UPDATED")
+				masked, inDatabase, inOpenBao, failed := false, false, false, false
 				for _, v := range vars {
 					val := v.Value
 					switch {
+					case v.Source == runr.SecretSourceExternal:
+						val = "(in the store)"
 					case v.Secret && !v.Revealed:
 						val = "(write-only)"
 					case !v.Secret && !show:
@@ -64,10 +69,22 @@ func newEnvCmd(app *App) *cobra.Command {
 					if !v.Secret {
 						updated = "-"
 					}
-					t.Row(v.Name, val, yesNo(v.Secret), updated)
+					inDatabase = inDatabase || v.StoredIn == "database"
+					inOpenBao = inOpenBao || v.StoredIn == runr.SecretSourceOpenBao
+					failed = failed || (v.Sync != nil && v.Sync.Status == "failed")
+					t.Row(v.Name, val, yesNo(v.Secret), envSource(v), updated)
 				}
 				if masked {
 					t.Note("Values are masked; --show-values prints them.")
+				}
+				if inDatabase {
+					t.Note("\"database\": a value written before pass-through, still in RunR's database until `php artisan secrets:move-to-region` moves it.")
+				}
+				if inOpenBao {
+					t.Note("\"openbao\": a value in the region's own OpenBao; `runr regions openbao` shows it.")
+				}
+				if failed {
+					t.Note("A reference did not sync: `runr env ls -o json` shows the store's message; `runr env sync` tries again.")
 				}
 			})
 		},
@@ -146,9 +163,115 @@ func newEnvCmd(app *App) *cobra.Command {
 	}
 	unset.Flags().BoolVar(&unsetNoDeploy, "no-deploy", false, "only save; the next deployment picks the change up")
 	unset.Flags().DurationVar(&unsetTimeout, "timeout", 10*time.Minute, "how long to wait for the redeploy")
-	cmd.AddCommand(unset)
+	cmd.AddCommand(unset, newEnvRefCmd(app), newEnvSyncCmd(app))
 	cmd.RunE = ls.RunE
 	return cmd
+}
+
+// envSource is the SOURCE column: where a secret's value lives.
+func envSource(v runr.EnvVar) string {
+	switch {
+	case !v.Secret:
+		return "-"
+	case v.Source == runr.SecretSourceExternal:
+		s := v.Reference.String()
+		if v.Sync != nil && v.Sync.Status != "" {
+			s += " (" + v.Sync.Status + ")"
+		}
+		return s
+	case v.StoredIn != "":
+		return v.StoredIn
+	default:
+		return "-"
+	}
+}
+
+// runr env ref NAME STORE:PATH[#KEY] — a secret that refers to a value in a secret store.
+func newEnvRefCmd(app *App) *cobra.Command {
+	var noDeploy bool
+	var timeout time.Duration
+	c := &cobra.Command{
+		Use:   "ref NAME STORE:PATH[#KEY]",
+		Short: "Make a secret a reference to a value in a secret store",
+		Long: "The secret NAME reads its value from one of the organization's secret stores\n" +
+			"(`runr secret-stores ls`): STORE is its name or ID, PATH the secret in it (Vault / OpenBao:\n" +
+			"the path under the KV mount; AWS, GCP, Azure: the secret's name or ARN), KEY an optional\n" +
+			"field inside it. External Secrets Operator in the project's region reads it with the\n" +
+			"region's identity — RunR never sees the value, and `runr env ls --reveal` does not\n" +
+			"show it. A value NAME had in the region is replaced with the next deploy.",
+		Example: "  runr env ref DATABASE_PASSWORD vault-prod:apps/orders#db_password\n" +
+			"  runr env ref STRIPE_KEY aws-eu:arn:aws:secretsmanager:eu-central-1:111122223333:secret:stripe#key",
+		Args: cobra.ExactArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			name := strings.TrimSpace(args[0])
+			if err := runr.ValidateEnvName(name); err != nil {
+				return usageErrorf("%v", err)
+			}
+			storeRef, path, key, ok := runr.ParseSecretReference(args[1])
+			if !ok {
+				return usageErrorf("%q is not STORE:PATH[#KEY]", args[1])
+			}
+			ctx := cmd.Context()
+			c, p, err := app.Project(ctx)
+			if err != nil {
+				return err
+			}
+			store, err := c.FindSecretStore(ctx, storeRef)
+			if err != nil {
+				return err
+			}
+			s, err := c.SetSecretReference(ctx, p.ID, name, runr.SecretReferenceInput{StoreID: store.ID, Path: path, Key: key})
+			if err != nil {
+				return err
+			}
+			app.Progress("%s refers to %s", s.Name, s.Reference.String())
+			return redeployIfLive(ctx, app, c, p, noDeploy, timeout)
+		},
+	}
+	c.Flags().BoolVar(&noDeploy, "no-deploy", false, "only save; the next deployment applies the reference")
+	c.Flags().DurationVar(&timeout, "timeout", 10*time.Minute, "how long to wait for the redeploy")
+	return c
+}
+
+// runr env sync — the project's references synced now, with their status.
+func newEnvSyncCmd(app *App) *cobra.Command {
+	return &cobra.Command{
+		Use:   "sync",
+		Short: "Sync the secret store references now and show their status",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			c, p, err := app.Project(cmd.Context())
+			if err != nil {
+				return err
+			}
+			list, err := c.RefreshSecrets(cmd.Context(), p.ID)
+			if errors.Is(err, runr.ErrUnsupported) {
+				return fmt.Errorf("this RunR API has no secret stores")
+			}
+			if err != nil {
+				return err
+			}
+			var refs []runr.Secret
+			for _, s := range list.Secrets {
+				if s.External() {
+					refs = append(refs, s)
+				}
+			}
+			return app.Printer().Print(refs, func(t *output.TableWriter) {
+				t.Header("NAME", "REFERENCE", "STATUS", "LAST SYNC", "MESSAGE")
+				for _, s := range refs {
+					status, at, msg := "pending", "", ""
+					if s.Sync != nil {
+						status, at, msg = s.Sync.Status, s.Sync.SyncedAt, s.Sync.Message
+					}
+					t.Row(s.Name, s.Reference.String(), status, output.Dash(at), output.Dash(msg))
+				}
+				if len(refs) == 0 {
+					t.Note("The project has no secret store references.")
+				}
+			})
+		},
+	}
 }
 
 // readSecretValue reads the value of one secret: a hidden prompt on a terminal, else stdin

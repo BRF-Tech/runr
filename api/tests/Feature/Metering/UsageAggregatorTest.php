@@ -12,6 +12,7 @@ use App\Models\Deployment;
 use App\Models\DeploymentSession;
 use App\Models\KnativeRegion;
 use App\Models\Project;
+use App\Models\ProjectEnvironment;
 use App\Models\UsageRecord;
 use App\Models\Version;
 use App\Services\Bindings\BindingTenancy;
@@ -73,8 +74,8 @@ class UsageAggregatorTest extends TestCase
         $this->assertSame($deployment->id, $record->deployment_id);
         $this->assertSame(2, (int) $record->session_count);
         $this->assertSame(90_000, (int) $record->total_duration_ms);
-        $this->assertSame(2_000, (int) $record->total_cpu_mc_ms);
-        $this->assertSame(4_000, (int) $record->total_memory_mib_ms);
+        $this->assertSame(250 * 90_000, (int) $record->total_cpu_mc_ms, 'the size (250m) for the 90 s the pods ran');
+        $this->assertSame(128 * 90_000, (int) $record->total_memory_mib_ms, '128 MiB for the 90 s');
         $this->assertSame(1, (int) $record->cold_start_count);
         $this->assertSame(0.0, (float) $record->final_cost, 'no money is calculated by the metering');
         $this->assertSame('USD', $record->currency);
@@ -109,6 +110,45 @@ class UsageAggregatorTest extends TestCase
         $this->assertSame(2 * 250 * self::DAY_MS, (int) UsageRecord::sole()->total_cpu_mc_ms);
     }
 
+    public function test_a_timed_warmer_counts_the_containers_it_kept_warm_and_the_sessions_of_cold_stretches(): void
+    {
+        [$project, $deployment] = $this->project('warmed', scaleToZero: true, readyAt: '2026-10-11 00:00:00');
+        // What the warmer applied to the PodAutoscaler (WarmScaleService's warm_log): nothing warm
+        // from midnight, 3 from 02:00, 1 from 06:00, none again from 10:00
+        $at = fn (string $time) => Carbon::parse("2026-10-11 {$time}")->getTimestamp();
+        $deployment->forceFill(['sizing' => [
+            'region_id' => $this->region->id, 'cpu_m' => 250, 'memory_mb' => 128, 'trigger_type' => 'http',
+            'min_scale' => 3, 'max_scale' => 5, 'scale_to_zero' => true, 'gpu_count' => 0,
+            'warm_log' => [[$at('00:00:00'), 0], [$at('02:00:00'), 3], [$at('06:00:00'), 1], [$at('10:00:00'), 0]],
+        ]])->save();
+
+        // 01:00 and 11:00: nothing was warm, the sessions count; 03:00: covered by the warm containers
+        $this->endedSession($project, $deployment, 60_000, cold: true, startedAt: Carbon::parse('2026-10-11 01:00:00'));
+        $this->endedSession($project, $deployment, 30_000, startedAt: Carbon::parse('2026-10-11 03:00:00'));
+        $this->endedSession($project, $deployment, 15_000, cold: true, startedAt: Carbon::parse('2026-10-11 11:00:00'));
+
+        // Today until now (12:00)
+        app(UsageAggregator::class)->aggregate('2026-10-11');
+
+        $hourMs = 3_600_000;
+        $podMs = 4 * $hourMs * 3 + 4 * $hourMs * 1;
+        $warm = UsageRecord::query()->where('scale_mode', 'custom_scale')->sole();
+        $this->assertSame(3, (int) $warm->min_scale, 'the most it kept warm');
+        $this->assertSame($podMs, (int) $warm->total_duration_ms);
+        $this->assertSame($podMs * 250, (int) $warm->total_cpu_mc_ms);
+        $this->assertSame($podMs * 128, (int) $warm->total_memory_mib_ms);
+        $this->assertSame(0, (int) $warm->session_count);
+
+        $cold = UsageRecord::query()->where('scale_mode', 'scale_to_zero')->sole();
+        $this->assertSame(2, (int) $cold->session_count);
+        $this->assertSame(75_000, (int) $cold->total_duration_ms);
+        $this->assertSame(2, (int) $cold->cold_start_count);
+
+        // A re-run gives the same totals
+        app(UsageAggregator::class)->aggregate('2026-10-11');
+        $this->assertSame($podMs, (int) UsageRecord::query()->where('scale_mode', 'custom_scale')->sole()->total_duration_ms);
+    }
+
     public function test_a_redeploy_counts_the_sessions_of_the_day_once(): void
     {
         [$project, $first] = $this->project('redeployed', scaleToZero: true);
@@ -131,7 +171,7 @@ class UsageAggregatorTest extends TestCase
         app(UsageAggregator::class)->aggregate('2026-10-11');
         app(UsageAggregator::class)->aggregate('2026-10-11');
 
-        $this->assertSame(1000 + 1000, (int) UsageRecord::sum('total_cpu_mc_ms'), 'each session once');
+        $this->assertSame(250 * (60_000 + 30_000), (int) UsageRecord::sum('total_cpu_mc_ms'), 'each session once');
         $this->assertSame(2, (int) UsageRecord::sum('session_count'));
         $this->assertSame(2, UsageRecord::count());
         $this->assertFalse(UsageRecord::query()->where('deployment_id', $third->id)->exists(), 'the new deployment ran no session yet');
@@ -265,7 +305,7 @@ class UsageAggregatorTest extends TestCase
         app(UsageAggregator::class)->aggregate('2026-10-11');
 
         $this->assertSame([$deleted->id], UsageRecord::query()->whereKeyNot(UsageRecord::query()->where('deployment_id', $deployment->id)->value('id'))->pluck('id')->all());
-        $this->assertSame(1000 + 5000, (int) UsageRecord::sum('total_cpu_mc_ms'));
+        $this->assertSame(250 * 60_000 + 5000, (int) UsageRecord::sum('total_cpu_mc_ms'), 'the session at 250m, the deleted deployment\'s row as metered');
     }
 
     public function test_earlier_days_are_recalculated_on_demand(): void
@@ -279,7 +319,7 @@ class UsageAggregatorTest extends TestCase
 
         $this->artisan('usage:recalculate', ['from' => '2026-10-09', 'to' => '2026-10-10'])->assertSuccessful();
 
-        $this->assertSame(1000, (int) UsageRecord::query()->whereDate('record_date', '2026-10-09')->sum('total_cpu_mc_ms'));
+        $this->assertSame(250 * 60_000, (int) UsageRecord::query()->whereDate('record_date', '2026-10-09')->sum('total_cpu_mc_ms'));
         $this->artisan('usage:recalculate', ['from' => '2026-10-12'])->assertExitCode(2);
         $this->artisan('usage:recalculate', ['from' => 'yesterday-ish'])->assertExitCode(2);
     }
@@ -298,7 +338,8 @@ class UsageAggregatorTest extends TestCase
         $row = UsageRecord::query()->whereDate('record_date', '2026-10-05')->sole();
         $this->assertSame('scale_to_zero', $row->scale_mode, 'not an always-on reservation of today\'s config');
         $this->assertSame(1, (int) $row->session_count);
-        $this->assertSame(1000, (int) $row->total_cpu_mc_ms, 'the day\'s session, not 2 × 1 vCPU × 24 h');
+        // The deployment recorded no size: its session counts with its project's (1 vCPU)
+        $this->assertSame(1000 * 60_000, (int) $row->total_cpu_mc_ms, 'the day\'s session, not 2 × 1 vCPU × 24 h');
     }
 
     public function test_a_pre_upgrade_always_on_day_keeps_its_recorded_size_for_the_time_it_ran(): void
@@ -462,6 +503,37 @@ class UsageAggregatorTest extends TestCase
         $this->assertSame(1, UsageRecord::count());
     }
 
+    /**
+     * Environments (docs/environments.md): a project's day covers every environment's deployment,
+     * each record names its environment, and one environment's deployment never ends another's
+     * time in the same region.
+     */
+    public function test_environments_are_metered_side_by_side_and_named(): void
+    {
+        [$project, $production] = $this->project('envs', scaleToZero: false, minScale: 1, readyAt: '2026-10-11 06:00:00');
+        $production->forceFill(['sizing' => $this->sizing(250, 128, minScale: 1)])->saveQuietly();
+        $staging = ProjectEnvironment::query()->create(['project_id' => $project->id, 'name' => 'staging', 'workload_name' => 'envs-staging']);
+        $stagingDeployment = $this->deploy($project, 'active', readyAt: '2026-10-11 08:00:00');
+        $stagingDeployment->forceFill(['environment_id' => $staging->id, 'sizing' => $this->sizing(500, 128, minScale: 1)])->saveQuietly();
+
+        app(UsageAggregator::class)->aggregate('2026-10-11');
+
+        $day = UsageRecord::query()->get()->keyBy('deployment_id');
+        $hour = 3_600_000;
+        $this->assertSame(250 * 6 * $hour, (int) $day[$production->id]->total_cpu_mc_ms, '06:00–12:00: staging does not replace production');
+        $this->assertSame(500 * 4 * $hour, (int) $day[$stagingDeployment->id]->total_cpu_mc_ms, '08:00–12:00');
+        $this->assertNull($day[$production->id]->environment_id);
+        $this->assertSame($staging->id, $day[$stagingDeployment->id]->environment_id);
+        // The name too, so a bill names the environment after it is deleted
+        $this->assertNull($day[$production->id]->environment_name);
+        $this->assertSame('staging', $day[$stagingDeployment->id]->environment_name);
+
+        // Deleted since (its deployments with it): a recalculation keeps the record and its name
+        $staging->delete();
+        app(UsageAggregator::class)->aggregate('2026-10-11');
+        $this->assertSame('staging', UsageRecord::query()->where('environment_id', $staging->id)->value('environment_name'));
+    }
+
     /** @return array{Project, Deployment} */
     private function project(string $name, bool $scaleToZero, int $minScale = 0, ?string $readyAt = null, string $cpu = '250m', int $memoryMb = 128): array
     {
@@ -524,6 +596,7 @@ class UsageAggregatorTest extends TestCase
         return UsageRecord::query()->findOrFail($id);
     }
 
+    /** An ended session as the agent reports it: no CPU or memory figures (metering counts the size). */
     private function endedSession(Project $project, Deployment $deployment, int $ms, bool $cold = false, ?Carbon $startedAt = null): void
     {
         $startedAt ??= now()->subMinutes(2);
@@ -531,7 +604,7 @@ class UsageAggregatorTest extends TestCase
         DeploymentSession::create([
             'project_id' => $project->id, 'deployment_id' => $deployment->id, 'region_id' => $this->region->id,
             'entry_point' => 'http', 'started_at' => $startedAt, 'ended_at' => $startedAt->copy()->addMilliseconds($ms),
-            'duration_ms' => $ms, 'cpu_used_ms' => 1000, 'memory_used_mb_ms' => 2000, 'cold_start' => $cold,
+            'duration_ms' => $ms, 'cold_start' => $cold,
         ]);
     }
 }

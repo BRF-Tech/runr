@@ -34,11 +34,16 @@ class VersionImporter
     ) {}
 
     /**
+     * $applyConfig false — a push to a branch mapped to an environment (docs/environments.md#git-branches):
+     * the tree's runr.yaml is not applied to the project's config (production's), only the code
+     * becomes a version; of a CaaS project the runr.yaml's image becomes a version with the
+     * project's config otherwise unchanged.
+     *
      * @return array{version: ?Version, created: bool, warnings: list<string>, applied: array<string, mixed>, skipped: list<array{path: string, reason: string}>}
      *
      * @throws ImportException
      */
-    public function import(Project $project, SourceTree $tree, CommitMeta $meta): array
+    public function import(Project $project, SourceTree $tree, CommitMeta $meta, bool $applyConfig = true): array
     {
         $project->loadMissing(['xaasConfig', 'faasConfig', 'containerConfig', 'knativeRegion']);
 
@@ -50,7 +55,10 @@ class VersionImporter
         }
 
         $parsed = RunrYaml::parse($tree->runrYaml);
-        $result = $this->applier->apply($project, $parsed['settings']);
+        if (! $applyConfig) {
+            return $this->importCode($project, $tree, $meta, $parsed);
+        }
+        $result = $this->applier->apply($project, $parsed['settings'], $meta->pushedBy);
         $warnings = array_merge($parsed['warnings'], $result['warnings']);
         $skipped = $tree->skipped;
 
@@ -96,6 +104,68 @@ class VersionImporter
             'applied' => $result['applied'],
             'skipped' => $skipped,
         ];
+    }
+
+    /**
+     * An environment branch's push: the code (a CaaS project: the runr.yaml's image) becomes a
+     * version, the project's config stays as it is.
+     *
+     * @param  array{settings: array<string, mixed>, warnings: list<string>}  $parsed
+     * @return array{version: ?Version, created: bool, warnings: list<string>, applied: array<string, mixed>, skipped: list<array{path: string, reason: string}>}
+     */
+    private function importCode(Project $project, SourceTree $tree, CommitMeta $meta, array $parsed): array
+    {
+        $before = Version::where('project_id', $project->id)->max('number');
+        $message = mb_substr($meta->subject(), 0, 240);
+        $userId = $meta->pushedBy ?? 'git';
+        $skipped = $tree->skipped;
+        $warnings = $parsed['warnings'];
+        if ($parsed['settings'] !== [] && $project->service_type !== 'caas') {
+            $warnings[] = 'runr.yaml settings are not applied by a push to an environment branch: the environment runs the project\'s config with its own overrides';
+        }
+
+        $version = $this->locked(function () use ($project, $tree, $message, $userId, $parsed, &$skipped) {
+            return match ($project->service_type) {
+                'caas' => $this->importImage($project, (string) ($parsed['settings']['image'] ?? ''), $message, $userId),
+                'xaas' => $this->importSnippet($project, $tree, $message, $userId, $skipped),
+                'faas' => $this->importFunction($project, $tree, $message, $userId),
+                default => throw new ImportException("Projects of type {$project->service_type} cannot be changed"),
+            };
+        });
+
+        $created = $version !== null && (int) $version->number > (int) ($before ?? 0);
+        if ($created) {
+            VersionGitSource::create([
+                'version_id' => $version->id,
+                'project_id' => $project->id,
+                'provider' => $meta->provider,
+                'sha' => $meta->sha,
+                'ref' => $meta->branch,
+                'author_name' => $meta->authorName ? mb_substr($meta->authorName, 0, 250) : null,
+                'author_email' => $meta->authorEmail ? mb_substr($meta->authorEmail, 0, 250) : null,
+                'message' => $meta->message,
+                'url' => $meta->url,
+                'pr_number' => $meta->prNumber,
+                'pushed_by' => $meta->pushedBy,
+            ]);
+        }
+
+        return ['version' => $version, 'created' => $created, 'warnings' => $warnings, 'applied' => [], 'skipped' => $skipped];
+    }
+
+    /**
+     * A CaaS image pushed to an environment branch: a version of the project's config with that
+     * image (the project's own config keeps its image); the latest version when the image is the
+     * same or none is named.
+     */
+    private function importImage(Project $project, string $image, string $message, string $userId): ?Version
+    {
+        $latest = Version::where('project_id', $project->id)->orderByDesc('number')->first();
+        if ($image === '' || ($latest !== null && ($latest->config_snapshot['image'] ?? null) === $image)) {
+            return $latest;
+        }
+
+        return $this->withImportFlag(fn () => $this->projects->createCaaSImageVersion($project, $image, $userId, $message));
     }
 
     /** The handler file of a code project (ProjectEntrypoint). */

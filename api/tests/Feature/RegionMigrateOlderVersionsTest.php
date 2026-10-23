@@ -358,7 +358,8 @@ class RegionMigrateOlderVersionsTest extends TestCase
     {
         $project = Project::create(['name' => $name, 'service_type' => 'faas', 'runtime' => 'python']);
         $project->forceFill(['knative_region_id' => $this->region->id])->saveQuietly();
-        FaasConfig::create(['project_id' => $project->id, 'handler' => 'main.handler', 'trigger_type' => 'http']);
+        // room for the min_scale overrides of the deploys below (min_scale may not pass max_scale)
+        FaasConfig::create(['project_id' => $project->id, 'handler' => 'main.handler', 'trigger_type' => 'http', 'max_scale' => 5]);
         [$v1, $v2] = array_map(fn (int $n) => Version::create(['project_id' => $project->id, 'number' => $n, 'commit_id' => "c{$n}", 'created_by' => 'dev',
             'build_status' => 'ready', 'build_image' => self::OLD_ZOT."/runr-builds/{$project->slug}:v{$n}"]), [1, 2]);
 

@@ -112,6 +112,26 @@ class BindingsCluster
         return (bool) $check();
     }
 
+    /**
+     * Apply a CloudNativePG Cluster, retried for $timeout seconds (the operator's webhook can answer
+     * a moment after its Deployment is ready). A refusal fails with the API server's reason (the
+     * webhook's validation message), not only the cluster's name.
+     *
+     * @throws BindingException
+     */
+    public function applyPostgresCluster(KubernetesClient $k8s, array $manifest, string $namespace, int $timeout): void
+    {
+        if ($this->wait(fn () => $k8s->applyResource($manifest, $namespace), $timeout)) {
+            return;
+        }
+        $cluster = (string) ($manifest['metadata']['name'] ?? '');
+        $reason = $k8s->lastApplyError();
+
+        throw new BindingException($reason !== null && $reason !== ''
+            ? __('api.bindings.postgres_cluster_refused', ['cluster' => $cluster, 'error' => mb_substr($reason, 0, 1000)])
+            : __('api.bindings.postgres_cluster_failed', ['cluster' => $cluster]));
+    }
+
     /** Every pod of a list is Running and Ready (false for an empty / failed list). */
     public static function podsReady(?array $pods): bool
     {

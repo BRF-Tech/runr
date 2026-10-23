@@ -3,6 +3,7 @@
 namespace Modules\AuthProvider\Services\Concerns;
 
 use App\Models\User;
+use App\Support\Auth\AccountLookup;
 use App\Support\Auth\LoginTokens;
 use App\Support\Rbac\AccessManager;
 use App\Support\Rbac\PermissionCatalog;
@@ -84,12 +85,21 @@ trait OAuthCallbackTrait
             return ['error' => __('api.oauth.email_unverified')];
         }
 
-        $user = User::where('email', $email)->first();
+        // In any letter case, as the sign-in names an account: "Ada@Example.com" from the provider
+        // is the account ada@example.com
+        $connection = (new User)->getConnection()->getName();
+        $user = AccountLookup::byEmail($email, $connection);
 
         if ($user) {
             $this->createSocialAccount($user, $driver, $subject, $socialiteUser);
 
             return $this->signIn($provider, $user, $socialiteUser, false);
+        }
+
+        // Accounts whose addresses differ from it in letter case only: none of them is it, and a
+        // new one would be a third
+        if (AccountLookup::emailTaken($email, $connection)) {
+            return ['error' => __('api.oauth.email_ambiguous')];
         }
 
         // 3. Auto-register if enabled
@@ -98,6 +108,9 @@ trait OAuthCallbackTrait
         }
 
         $user = $this->provisionUser($provider, $socialiteUser);
+        if (! $user) {
+            return ['error' => __('api.oauth.email_ambiguous')];
+        }
         $this->createSocialAccount($user, $driver, $subject, $socialiteUser);
 
         return $this->signIn($provider, $user, $socialiteUser, true);
@@ -134,9 +147,10 @@ trait OAuthCallbackTrait
     /**
      * Just-in-time provisioning: the account (central in multi-tenant installs — an existing
      * account joins the tenant) becomes a member with the provider's default role, else the
-     * organization's default role. Group mappings may change it right after (signIn).
+     * organization's default role. Group mappings may change it right after (signIn). The
+     * account is found in any letter case; null when several differ from the address in case only.
      */
-    protected function provisionUser(AuthProvider $provider, $socialiteUser): User
+    protected function provisionUser(AuthProvider $provider, $socialiteUser): ?User
     {
         $org = app(Rbac::class)->organization();
         $connection = $org->userConnection();
@@ -144,9 +158,13 @@ trait OAuthCallbackTrait
             ? $provider->default_role
             : app(AccessManager::class)->defaultRole();
 
-        $user = $connection
-            ? (User::on($connection)->where('email', $socialiteUser->getEmail())->first() ?? $this->createUserFromSocialite($socialiteUser, $connection))
-            : $this->createUserFromSocialite($socialiteUser);
+        $user = AccountLookup::byEmail($socialiteUser->getEmail(), $connection);
+        if (! $user) {
+            if (AccountLookup::emailTaken($socialiteUser->getEmail(), $connection)) {
+                return null;
+            }
+            $user = $this->createUserFromSocialite($socialiteUser, $connection);
+        }
 
         if ($org->exists()) {
             $current = $org->memberRole($user->getKey());
@@ -175,24 +193,21 @@ trait OAuthCallbackTrait
         return $this->issueToken($user);
     }
 
+    /**
+     * A new account of the provider's user: the address as a self-service signup stores it
+     * (trimmed, lower-cased) and a user name of letters, digits, "-" and "_" from its local part
+     * that no account has in any letter case (AccountLookup::usernameFor).
+     */
     protected function createUserFromSocialite($socialiteUser, ?string $connection = null): User
     {
-        $email = $socialiteUser->getEmail();
+        $email = (string) $socialiteUser->getEmail();
         $name = $socialiteUser->getName() ?? Str::before($email, '@');
         $query = fn () => $connection ? User::on($connection) : User::query();
 
-        // Generate unique username from email prefix
-        $baseUsername = Str::slug(Str::before($email, '@'), '_');
-        $username = $baseUsername;
-        $counter = 1;
-        while ($query()->where('username', $username)->exists()) {
-            $username = $baseUsername.'_'.$counter++;
-        }
-
         return $query()->create([
             'name' => $name,
-            'username' => $username,
-            'email' => $email,
+            'username' => AccountLookup::usernameFor($email, $connection ?? $query()->getModel()->getConnection()->getName()),
+            'email' => AccountLookup::normalizeEmail($email),
             'password' => Str::random(32), // Random password, user logs in via OAuth
         ]);
     }

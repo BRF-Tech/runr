@@ -30,6 +30,11 @@ BINDINGS_E2E_IMAGES=(
 preload_bindings_images() {
   local cluster="$1"
   [ -z "$cluster" ] && return 0
+  # KIND_PRELOAD=0 (test.sh): the nodes pull what they run
+  if [ "${KIND_PRELOAD:-1}" = "0" ]; then
+    echo "Bindings e2e: data service images not loaded (KIND_PRELOAD=0): the nodes pull them"
+    return 0
+  fi
 
   echo ""
   echo "Bindings e2e: data service images → kind/${cluster}"

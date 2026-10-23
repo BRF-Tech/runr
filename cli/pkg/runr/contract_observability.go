@@ -125,6 +125,27 @@ var obsDeliveryFields = []string{
 
 var obsPageMeta = []string{"meta.current_page", "meta.last_page", "meta.total"}
 
+var obsLoadTestSources = []string{
+	"app/Http/Controllers/Api/Observability/LoadTestController.php",
+	"app/Models/Observability/LoadTest.php",
+	"app/Services/Observability/LoadTest/LoadTestService.php",
+	"app/Services/Observability/LoadTest/LoadTestResults.php",
+}
+
+var obsLoadTestFields = []string{
+	"id", "project_id", "deployment_id", "status", "method", "host", "path", "url", "has_body", "body",
+	"content_type", "users", "duration_seconds", "error", "started_at", "finished_at", "created_at",
+	"results.requests", "results.failed_requests", "results.rps", "results.error_rate", "results.latency_ms.avg",
+	"results.latency_ms.min", "results.latency_ms.p50", "results.latency_ms.p95", "results.latency_ms.p99",
+	"results.latency_ms.max", "results.data_received", "results.data_sent", "results.pods_peak",
+	"results.pods_source", "results.cold_starts",
+}
+
+var obsLoadTestMeta = []string{
+	"meta.enabled", "meta.users", "meta.durations", "meta.methods", "meta.targets", "meta.daily_limit",
+	"meta.used_today", "meta.max_body_bytes", "meta.metered",
+}
+
 func init() {
 	Contract = append(Contract,
 		// Project switches: tracing (applies with the next deployment) and request replay.
@@ -201,6 +222,18 @@ func init() {
 			Response: prefix("data[].", obsIncidentFields), Sources: obsUptimeSources},
 		Endpoint{Method: "PATCH", Path: "/projects/{project}/uptime-incidents/{incident}", Status: 200, Permission: "uptime.manage",
 			Request: []string{"title", "message"}, Response: prefix("data.", obsIncidentFields), Sources: obsUptimeSources},
+
+		// Load tests: a k6 Job in the project's region (reading is metrics.view, running a test
+		// projects.deploy; 409 a test runs, 429 the organization's daily limit).
+		Endpoint{Method: "GET", Path: "/projects/{project}/load-tests", Query: []string{"limit"}, Status: 200, Permission: "metrics.view",
+			Response: concat(prefix("data[].", obsLoadTestFields), obsLoadTestMeta), Sources: obsLoadTestSources},
+		Endpoint{Method: "POST", Path: "/projects/{project}/load-tests", Status: 202, Permission: "projects.deploy",
+			Request:  []string{"host", "path", "method", "body", "content_type", "users", "duration_seconds"},
+			Response: prefix("data.", obsLoadTestFields), Sources: obsLoadTestSources},
+		Endpoint{Method: "GET", Path: "/projects/{project}/load-tests/{loadTest}", Status: 200, Permission: "metrics.view",
+			Response: prefix("data.", obsLoadTestFields), Sources: obsLoadTestSources},
+		Endpoint{Method: "POST", Path: "/projects/{project}/load-tests/{loadTest}/cancel", Status: 200, Permission: "projects.deploy",
+			Response: prefix("data.", obsLoadTestFields), Sources: obsLoadTestSources},
 
 		// Recorded metrics (HistoricalMetricsController). The document leaves out the summary's
 		// period parameter; the MCP tool metrics_summary sends it as well.

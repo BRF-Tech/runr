@@ -118,8 +118,9 @@ class TenantBrandingTest extends TestCase
         $this->actingAs($owner)->post('/api/tenant/branding/assets/logo_dark', ['file' => FakeImages::png('logo.png')], $this->tenantHeaders($this->tenant))
             ->assertOk()->assertJsonPath('stored.logo_dark_uploaded', true);
 
-        $url = $this->getJson('/api/branding?tenant=acme')->json('logo_dark_url');
-        $this->assertStringContainsString('branding/tenant-', $url);
+        $url = (string) $this->getJson('/api/branding?tenant=acme')->json('logo_dark_url');
+        $this->assertStringStartsWith('/api/branding/assets/logo_dark?tenant_id='.$this->tenant->id.'&v=', $url);
+        $this->get($url)->assertOk();
 
         $this->get('/api/branding/assets/logo_dark?tenant=acme')->assertOk();
         $this->get('/api/branding/assets/logo_dark')->assertNotFound();   // the platform has none

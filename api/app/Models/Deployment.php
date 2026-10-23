@@ -2,12 +2,15 @@
 
 namespace App\Models;
 
+use App\Casts\Encrypted;
 use App\Support\SchemaColumns;
 use Eloquent;
+use Illuminate\Contracts\Database\Eloquent\Builder as BuilderContract;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Support\Carbon;
 
 /**
@@ -25,8 +28,18 @@ use Illuminate\Support\Carbon;
  * @property Carbon|null $ready_at
  * @property Carbon|null $ended_at When the deployment stopped running (left pending / running / active)
  * @property array<string, mixed>|null $sizing The size it was applied with (App\Services\Helpers\WorkloadSizing)
+ * @property string|null $runtime_image Runtime image the deployment applied (by digest when a patch is known)
+ * @property string|null $runtime_digest Its digest; set before the apply, the deployment runs exactly this one (a patch rollback)
+ * @property string|null $runtime_patch_id The runtime patch of that digest (docs/runtimes.md#runtime-patches)
+ * @property string|null $environment_id The environment it runs in; null: the project's own (primary) environment
+ * @property array<string, mixed>|null $config_snapshot The effective config it was applied with (encrypted: env var values)
+ * @property string|null $config_source current | restored (a rollback that restores the config a deployment ran with)
+ * @property Carbon|null $imported_at Brought by an organization import from another organization: history only, never live or metered (docs/org-export.md#run-history)
  * @property-read Project $project
+ * @property-read ProjectEnvironment|null $environment
  * @property-read Version $version
+ * @property-read DeploymentRollout|null $rollout the blue-green / canary rollout that brought this deployment
+ * @property-read DeploymentRollout|null $stableRollout the newest rollout that started from this deployment
  *
  * @method static Builder<static>|Deployment newModelQuery()
  * @method static Builder<static>|Deployment newQuery()
@@ -55,6 +68,12 @@ class Deployment extends Model
     /** States in which a deployment runs (or is about to run) workloads in its region. */
     const LIVE = ['pending', 'running', 'active'];
 
+    /** config_source: the project's (environment's) config at deploy time */
+    public const CONFIG_CURRENT = 'current';
+
+    /** config_source: the config snapshot of an earlier deployment (a rollback, docs/versioning.md) */
+    public const CONFIG_RESTORED = 'restored';
+
     protected $fillable = [
         'project_id',
         'version_id',
@@ -67,6 +86,12 @@ class Deployment extends Model
         'ready_at',
         'ended_at',
         'sizing',
+        'runtime_image',
+        'runtime_digest',
+        'runtime_patch_id',
+        'environment_id',
+        'config_snapshot',
+        'config_source',
     ];
 
     protected $casts = [
@@ -75,7 +100,21 @@ class Deployment extends Model
         'ready_at' => 'datetime',
         'ended_at' => 'datetime',
         'sizing' => 'array',
+        'config_snapshot' => Encrypted::class.':array', // env var values (docs/security.md)
+        'imported_at' => 'datetime',
     ];
+
+    /**
+     * Deployments RunR ran itself — not the history an organization import brought along
+     * (imported_at, docs/org-export.md#run-history). Skipped on a schema without the column.
+     *
+     * @param  Builder<Deployment>  $query
+     * @return Builder<Deployment>
+     */
+    public static function ranHere(Builder $query): Builder
+    {
+        return SchemaColumns::has(new self, 'imported_at') ? $query->whereNull('imported_at') : $query;
+    }
 
     /**
      * ended_at follows the status (metering counts a deployment while it runs, UsageAggregator):
@@ -212,8 +251,83 @@ class Deployment extends Model
         return $this->belongsTo(Project::class);
     }
 
+    /** @return BelongsTo<ProjectEnvironment, $this> */
+    public function environment(): BelongsTo
+    {
+        return $this->belongsTo(ProjectEnvironment::class, 'environment_id');
+    }
+
+    /** Whether it runs in the project's own (primary) environment. */
+    public function isPrimary(): bool
+    {
+        return $this->getAttribute('environment_id') === null || $this->getAttribute('environment_id') === '';
+    }
+
+    /**
+     * Limit a deployments query to one environment of a project: $environmentId, or the primary
+     * environment (environment_id null) — on a schema without environments every deployment is
+     * the primary's.
+     *
+     * @template TQuery of BuilderContract
+     *
+     * @param  TQuery  $query
+     * @return TQuery
+     */
+    public static function forEnvironment(BuilderContract $query, ?string $environmentId): BuilderContract
+    {
+        if (! SchemaColumns::has(new self, 'environment_id')) {
+            return $environmentId === null ? $query : $query->whereRaw('1 = 0');
+        }
+
+        return $environmentId === null
+            ? $query->whereNull('environment_id')
+            : $query->where('environment_id', $environmentId);
+    }
+
+    /** The deployments of the same environment of the same project (this one included). */
+    public function siblings(): Builder
+    {
+        return self::forEnvironment(self::query()->where('project_id', $this->project_id), $this->isPrimary() ? null : (string) $this->environment_id);
+    }
+
     public function version(): BelongsTo
     {
         return $this->belongsTo(Version::class);
+    }
+
+    /** The blue-green / canary rollout that brought this deployment (docs/deploy-strategies.md). */
+    public function rollout(): HasOne
+    {
+        return $this->hasOne(DeploymentRollout::class, 'deployment_id')->latestOfMany();
+    }
+
+    /** The newest rollout that started from this deployment (it served while the new one rolled out). */
+    public function stableRollout(): HasOne
+    {
+        return $this->hasOne(DeploymentRollout::class, 'stable_deployment_id')->latestOfMany();
+    }
+
+    /**
+     * This deployment's part in a rollout that still pins the project's traffic: candidate (the
+     * new one), stable (served while the new one rolls out) or previous (kept warm after the
+     * promotion); null outside of one. Reads the relations, loaded by the caller.
+     */
+    public function rolloutRole(): ?string
+    {
+        if (! DeploymentRollout::available()) {
+            return null;
+        }
+
+        $own = $this->rollout;
+        if ($own instanceof DeploymentRollout && $own->holdsTraffic()) {
+            return 'candidate';
+        }
+
+        $from = $this->stableRollout;
+        if ($from instanceof DeploymentRollout && $from->holdsTraffic()) {
+            return $from->status === DeploymentRollout::PROMOTED ? 'previous' : 'stable';
+        }
+
+        return null;
     }
 }

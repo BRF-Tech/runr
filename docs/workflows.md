@@ -17,6 +17,8 @@ def process_order(ctx, step):
     return {"shipped": shipped is not None}
 ```
 
+- A `workflow` trigger is the project's only trigger ([triggers.md](triggers.md)); webhooks,
+  topics and platform events reach workflows through `POST /api/events` from a function.
 - SDKs: [`sdk/python`](../sdk/python) (`runr-workflows`), [`sdk/node`](../sdk/node)
   (`@runr/workflows`, TypeScript). Any runtime can implement the language-neutral
   [workflow protocol v1](workflows-protocol.md).
@@ -75,11 +77,21 @@ Definitions come from the code (the SDK registry). The engine learns them by **s
 - from `runr.workflows.json` in the project's latest code version when the function cannot be
   reached during a sync (same format as the introspection answer: a list, or
   `{"workflows": [...]}`),
-- declared through the API: `PUT /api/projects/{project}/workflows {"workflows": [...]}` (CLI, IaC).
+- declared through the API: the whole set with `PUT /api/projects/{project}/workflows
+  {"workflows": [...]}` (`runr workflows declare -f runr.workflows.json`), or one definition with
+  `PUT /api/projects/{project}/workflows/{name}` (its fields as below, without `name` or with the
+  same; Terraform's `runr_workflow` and `runr_workflow_trigger`), which leaves the others as they
+  are. `DELETE /api/projects/{project}/workflows/{name}` archives one.
 
 A workflow that is no longer declared is **archived**: its runs stay visible, it starts no new
 runs. A workflow can be **paused** (`PATCH …/workflows/{name} {"is_active": false}`): triggers
 and the API start nothing; runs in progress continue. Pausing survives syncs.
+
+Every definition names where it comes from (`source`): `sdk` (the function reported it), `manifest`
+(`runr.workflows.json`), `api` (declared through the API) or `import`. A definition the API
+declares **unchanged keeps its source**: declaring the set again with what the SDK reported in it
+leaves those definitions `sdk`; only a new or changed definition becomes `api` — until the next sync,
+which always takes the code's source again.
 
 ### Options
 
@@ -231,7 +243,7 @@ Part of the role catalog ([permissions.md](permissions.md), group *Workflows*):
 |------------|-------|--------|
 | `workflows.view` | project | workflows, runs, steps and usage of the project; organization-wide also `GET /api/events` and `GET /api/workflow-usage` |
 | `workflows.run` | project | start, cancel, retry, replay runs |
-| `workflows.manage` | project | sync / declare definitions, pause / resume, endpoint override, rotate / reveal the signing key |
+| `workflows.manage` | project | sync / declare definitions (the set or one), archive one, pause / resume, endpoint override, rotate / reveal the signing key |
 | `events.send` | organization | `POST /api/events` |
 
 Built-in roles: Owner and Admin hold all four, Developer all four, Viewer `workflows.view`.
@@ -265,7 +277,7 @@ central migration `2026_10_10_000001_create_workflow_tables`, tenant migration
 | Table | Rows |
 |-------|------|
 | `workflow_apps` | one per project: encrypted signing key (+ previous key in grace), endpoint override, last sync (status, error, SDK) |
-| `workflows` | definitions (name unique per project, triggers, config, active / archived, source `sdk` / `manifest` / `api`) |
+| `workflows` | definitions (name unique per project, triggers, config, active / archived, source `sdk` / `manifest` / `api` / `import`, the content's hash a declaration compares to keep the source) |
 | `workflow_triggers` | denormalized `event`, `cron` (with last tick) and `cancel` triggers for lookups |
 | `workflow_runs` | status, trigger event, output, error, function attempt, idempotency / concurrency keys, parent / replay links, lease, next attempt, timeout |
 | `workflow_steps` | per run and step id: type, status, position, attempts and history, input, output, error, wake-up / timeout, waited event + compiled match expression, child run |
@@ -320,6 +332,42 @@ its next deployment.
   the SDK themselves (`wf.serve()`, WSGI, `node:http`, fetch handler) on the container port;
   any path works.
 
+## Environments
+
+Every [environment](environments.md) of a workflow project — `dev`, `staging`, … next to
+production, the project's own workload — is a workflow app of its own: staging's code runs
+staging's workflows, with staging's data, and never drives production's.
+
+| | Production | An environment |
+|---|---|---|
+| Definitions | synced from the project's function | synced from the environment's function when its deployment becomes active (or from `runr.workflows.json` of the version it runs); `sync`, `declare` and pause / resume take the environment |
+| Runs | executed against `https://<slug>.<function domain>` | executed against the environment's workload `https://<workload>.<function domain of its region>` (or its app's endpoint override) |
+| Signing key | `RUNR_WORKFLOW_SIGNING_KEY` from `<slug>-secret-env` | the environment app's own key, from `<workload>-secret-env` — staging's code cannot sign requests to production's function |
+| Events | `environment` none or `production` | `environment: staging` |
+| Queue bridge | `/api/internal/workflows/queue/{context}/{project}/{token}` | `/api/internal/workflows/queue/{context}/{project}/{environment}/{token}`, with the environment's own stream |
+
+- **Events belong to an environment by its name.** `POST /api/events` takes `environment` per
+  event, for the whole request (`?environment=` or `{"events": [...], "environment": "staging"}`;
+  an event's own wins); without one an event is production's. Events a run sends
+  (`step.sendEvent`) and those a queue bridge delivers belong to the run's / the bridge's
+  environment. Event triggers, `waitForEvent` and `cancel_on` match only workflows and runs of
+  the event's environment — of every project of the organization, as before: a `staging` event
+  starts the `staging` workflows of every project that has a `staging` environment.
+- **Cron triggers** of an environment's workflows fire for that environment; pause them there
+  (`PATCH …/workflows/{name} {"is_active": false, "environment": "staging"}`) if staging should not
+  run its schedules.
+- **`step.invoke`** calls a workflow of the same environment.
+- **API**: every project endpoint of the engine takes `environment` (a name or id, in the query or
+  the body; none or `production`: the project's own workload) — definitions, sync, declare,
+  pause / resume, the app (endpoint override, key rotation and reveal), runs (`?environment=all`:
+  every environment's), starting a run and usage. A run is addressed by its id whatever its
+  environment; resources carry `environment`. `GET /api/events?environment=` filters events.
+- **Deleting an environment** removes its workflow app, definitions, runs and their steps; events
+  and usage rows stay. A run whose environment is gone fails with `EnvironmentMissing`.
+- **Console**: the project's Workflows tab follows the environment switcher of the project page.
+  CLI: `runr workflows … --env staging` ([CLI](cli.md#durable-workflows)); the MCP workflow tools
+  take `environment` ([AI agents](mcp.md#tools)).
+
 ## UI
 
 - **Project → Workflows**: definitions with triggers and limits (pause / resume, start run with
@@ -329,5 +377,5 @@ its next deployment.
   run detail: summary, error, trigger event, output and the step timeline with inputs,
   outputs, errors, attempt history, durations, wake-up and wait times, child runs — with
   cancel, retry, replay and replay-from-step.
-- **Settings → Events** (tenant level): events with filters, effects and detail (data, started
+- **Build & Run → Events** (tenant level): events with filters, effects and detail (data, started
   runs), usage of the last 30 days, **Send test event**.

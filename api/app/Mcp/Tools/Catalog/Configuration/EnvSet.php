@@ -24,7 +24,7 @@ class EnvSet extends Tool
 
     public function description(): string
     {
-        return 'Sets environment variables of a project. With secret true the values are stored write-only (encrypted, delivered through a Kubernetes Secret, never shown again); use it for passwords, tokens and keys. A name moves between plain and secret when set the other way. Changes reach the workload with the next deploy.';
+        return 'Sets environment variables of a project. With secret true the values are write-only: they go straight into the Kubernetes Secret of the project\'s region, RunR keeps no copy and never shows them again; use it for passwords, tokens and keys. A name moves between plain and secret when set the other way. Changes reach the workload with the next deploy.';
     }
 
     public function inputSchema(): array

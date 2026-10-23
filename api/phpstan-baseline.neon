@@ -3579,7 +3579,7 @@ parameters:
 		-
 			message: '#^Call to an undefined method Illuminate\\Database\\Eloquent\\Model\:\:deployments\(\)\.$#'
 			identifier: method.notFound
-			count: 2
+			count: 1
 			path: app/Services/RegionDemoService.php
 
 		-
@@ -3723,13 +3723,13 @@ parameters:
 		-
 			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$namespace\.$#'
 			identifier: property.notFound
-			count: 1
+			count: 2
 			path: app/Services/Sandboxes/SandboxPoolService.php
 
 		-
 			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$pod_name\.$#'
 			identifier: property.notFound
-			count: 1
+			count: 2
 			path: app/Services/Sandboxes/SandboxPoolService.php
 
 		-

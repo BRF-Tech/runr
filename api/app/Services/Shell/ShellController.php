@@ -192,19 +192,18 @@ class ShellController
             $conn->send(json_encode(['output' => base64_encode($data)]));
         });
 
-        // Keep-alive: prevent Knative scale-to-zero while shell is active.
-        // Target the revision's private service (ClusterIP with queue-proxy),
-        // NOT the main service (ExternalName → can't be proxied by K8s API).
+        // Keep-alive: prevent Knative scale-to-zero while shell is active — a request to the
+        // service's cluster-local host on the region Traefik's private entry point
+        // (shell:keep-alive); the revision's pods admit only Traefik and Knative
         $ka = $ctx->config['keep_alive'] ?? [];
         $kcfg = $ctx->pty->getKubeconfigPath();
-        if ($kcfg && $revision && ! empty($ka['namespace'])) {
-            $proxyPath = sprintf(
-                '/api/v1/namespaces/%s/services/http:%s-private:80/proxy/',
-                $ka['namespace'], $revision
-            );
+        if ($kcfg && $revision && ! empty($ka['namespace']) && ! empty($ka['service_name'])) {
             $kaCmd = sprintf(
-                'kubectl --kubeconfig=%s get --raw %s > /dev/null 2>&1 &',
-                escapeshellarg($kcfg), escapeshellarg($proxyPath)
+                'php %s shell:keep-alive --kubeconfig=%s --serving-namespace=%s --namespace=%s --service=%s --region=%s > /dev/null 2>&1 &',
+                escapeshellarg(base_path('artisan')), escapeshellarg($kcfg),
+                escapeshellarg((string) ($ctx->config['serving_namespace'] ?? 'knative-serving')),
+                escapeshellarg((string) $ka['namespace']), escapeshellarg((string) $ka['service_name']),
+                escapeshellarg((string) ($ctx->config['region_id'] ?? ''))
             );
             // Fire immediately, then repeat every 20s
             @pclose(@popen($kaCmd, 'r'));

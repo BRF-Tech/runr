@@ -69,10 +69,14 @@ func (p *runrProvider) Metadata(_ context.Context, _ provider.MetadataRequest, r
 
 func (p *runrProvider) Schema(_ context.Context, _ provider.SchemaRequest, resp *provider.SchemaResponse) {
 	resp.Schema = schema.Schema{
-		Description: "Manage RunR projects, environment variables, custom domains, deployments, bindings, runtime plugins, " +
-			"workflow triggers, model services, hosted MCP servers, access control and branding.",
-		MarkdownDescription: "Manage [RunR](https://runr.sh) projects, environment variables, custom domains, deployments, " +
-			"bindings, runtime plugins, workflow triggers, model services, hosted MCP servers, access control and branding.\n\n" +
+		Description: "Manage RunR projects with their triggers, network, deploy strategy and global placement, environments, " +
+			"environment variables and secret store references, custom domains, deployments, bindings, private connections, " +
+			"topics, runtime plugins, durable workflows, model services, hosted MCP servers, the API product of the gateways, " +
+			"secret stores, cost limits, access control and branding.",
+		MarkdownDescription: "Manage [RunR](https://runr.sh) projects with their triggers, network, deploy strategy and global " +
+			"placement, environments, environment variables and secret store references, custom domains, deployments, bindings, " +
+			"private connections, topics, runtime plugins, durable workflows, model services, hosted MCP servers, the API product " +
+			"of the gateways, secret stores, cost limits, access control and branding.\n\n" +
 			"Credentials come from the provider block, else `RUNR_API_URL` / `RUNR_TOKEN`, else the current context of the `runr` CLI (`runr login`).",
 		Attributes: map[string]schema.Attribute{
 			"api_url": schema.StringAttribute{
@@ -177,10 +181,18 @@ func registerResource(newResource func() resource.Resource) {
 }
 
 func (p *runrProvider) DataSources(context.Context) []func() datasource.DataSource {
-	return []func() datasource.DataSource{
+	return append([]func() datasource.DataSource{
 		NewRegionDataSource,
 		NewProjectDataSource,
-	}
+	}, featureDataSources...)
+}
+
+// featureDataSources are the data sources of the feature files (rightsizing, runtime patches,
+// …); each registers its constructor in init with registerDataSource.
+var featureDataSources []func() datasource.DataSource
+
+func registerDataSource(newDataSource func() datasource.DataSource) {
+	featureDataSources = append(featureDataSources, newDataSource)
 }
 
 // clientFrom extracts the Client handed out by Configure.

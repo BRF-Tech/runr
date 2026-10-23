@@ -2,9 +2,12 @@
 
 namespace App\Http\Resources;
 
+use App\Models\FaasConfig;
+use App\Triggers\ProjectTriggers;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
+/** @mixin FaasConfig */
 class FaasConfigResource extends JsonResource
 {
     public function toArray(Request $request): array
@@ -13,6 +16,8 @@ class FaasConfigResource extends JsonResource
             'handler' => $this->handler,
             'trigger_type' => $this->trigger_type,
             'schedule' => $this->schedule,
+            // the schedule trigger's zone (null: the organization's) and the zone it runs in
+            ...ProjectTriggers::scheduleTimezoneFields($this->project_id, $this->trigger_type),
             'queue_stream' => $this->queue_stream,
             'env_vars' => $this->env_vars,
             'memory_mb' => $this->memory_mb,
@@ -21,6 +26,8 @@ class FaasConfigResource extends JsonResource
             'scale_to_zero' => $this->scale_to_zero,
             'min_scale' => $this->min_scale,
             'max_scale' => $this->max_scale,
+            // Timed warmer rows [{cron, min_scale}] in the organization's time zone; null = off
+            'scale_schedule' => $this->scale_schedule ?: null,
             'gpu' => $this->gpu,
         ];
     }

@@ -80,7 +80,7 @@ pushed() {
 # --- every build command, local and --push ------------------------------------------------------
 # (the runtime images — ci.sh build, wrapper, wasm, ml-runtimes — are BRF-Tech/runr-runtimes', with
 # their own build tests there)
-for cmd in cmd_build_queue_consumer cmd_build_image_upload cmd_build_agent \
+for cmd in cmd_build_queue_consumer cmd_build_image_upload cmd_build_gateway_auth cmd_build_agent \
            cmd_build_supply_chain cmd_test_image cmd_build_wasm_shim; do
   run "$cmd"
   builds_pull "$cmd" > /dev/null

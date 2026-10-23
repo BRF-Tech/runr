@@ -23,7 +23,8 @@ class InstallRegionRegistryJob implements ShouldBeEncrypted, ShouldQueue
 {
     use BroadcastsJobCompletion, Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
-    public int $timeout = 600;
+    /** The PVC test and 720 s for the rest of the setup, as InstallRegistryAndCreateRegionJob's */
+    public int $timeout;
 
     public int $tries = 1;
 
@@ -36,6 +37,7 @@ class InstallRegionRegistryJob implements ShouldBeEncrypted, ShouldQueue
         ?string $initiatorId = null,
     ) {
         $this->initiatorId = $initiatorId;
+        $this->timeout = (int) config('knative.registry_pvc_test_seconds', 180) + 720;
     }
 
     public function handle(RegionRegistrySetup $setup): void

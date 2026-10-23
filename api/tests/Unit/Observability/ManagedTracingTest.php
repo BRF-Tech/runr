@@ -36,7 +36,9 @@ class ManagedTracingTest extends TestCase
         $this->assertSame(['otlp/tempo', 'spanmetrics'], $config['service']['pipelines']['traces']['exporters']);
         $this->assertSame(['spanmetrics'], $config['service']['pipelines']['metrics']['receivers']);
         $this->assertSame(['prometheus/spanmetrics'], $config['service']['pipelines']['metrics']['exporters']);
-        $this->assertSame([['name' => 'runr.cold_start']], $config['connectors']['spanmetrics']['dimensions']);
+        // the Knative revision a span came from: a canary is judged by its own series (RolloutMetrics)
+        $this->assertSame([['name' => 'runr.cold_start'], ['name' => 'runr.revision']], $config['connectors']['spanmetrics']['dimensions']);
+        $this->assertSame(['runr.dev/collector-config' => ManagedTracing::COLLECTOR_CONFIG_REVISION], $values['podAnnotations']);
         $this->assertSame('${env:MY_POD_IP}:8889', $config['exporters']['prometheus/spanmetrics']['endpoint']);
         $this->assertSame([['key' => 'runr.region', 'value' => 'eu-1', 'action' => 'upsert']], $config['processors']['resource/runr']['attributes']);
         $this->assertNull($config['receivers']['jaeger'], 'the chart default jaeger receiver is removed');

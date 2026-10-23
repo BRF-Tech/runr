@@ -35,7 +35,8 @@ services:
       POSTGRES_USER: ${DB_USER:-runr}
       POSTGRES_PASSWORD: ${DB_PASS:-runr}
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-runr}"]
+      # over TCP: during its first start the image runs a temporary server on the socket only
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U ${DB_USER:-runr}"]
       interval: 5s
       timeout: 3s
       retries: 5
@@ -67,6 +68,10 @@ services:
     environment:
       CONTAINER_ROLE: api
       TENANCY_ENABLED: ${TENANCY_ENABLED:-true}
+      # images built from the checkout (runtime/lib/test.sh: build_e2e_runr_images); empty: the release's
+      RUNR_INTERNAL_AUTHZ_IMAGE: ${RUNR_INTERNAL_AUTHZ_IMAGE:-}
+      RUNR_QUEUE_CONSUMER_IMAGE: ${RUNR_QUEUE_CONSUMER_IMAGE:-}
+      RUNR_AGENT_IMAGE: ${RUNR_AGENT_IMAGE:-}
       BILLING_ENABLED: ${BILLING_ENABLED:-false}
       AUTH_PROVIDER_ENABLED: ${AUTH_PROVIDER_ENABLED:-false}
       SENTRY_LARAVEL_DSN: ${SENTRY_LARAVEL_DSN_DOCKER:-${SENTRY_LARAVEL_DSN:-}}
@@ -97,6 +102,10 @@ services:
     environment:
       CONTAINER_ROLE: horizon
       TENANCY_ENABLED: ${TENANCY_ENABLED:-true}
+      # images built from the checkout (runtime/lib/test.sh: build_e2e_runr_images); empty: the release's
+      RUNR_INTERNAL_AUTHZ_IMAGE: ${RUNR_INTERNAL_AUTHZ_IMAGE:-}
+      RUNR_QUEUE_CONSUMER_IMAGE: ${RUNR_QUEUE_CONSUMER_IMAGE:-}
+      RUNR_AGENT_IMAGE: ${RUNR_AGENT_IMAGE:-}
       BILLING_ENABLED: ${BILLING_ENABLED:-false}
       AUTH_PROVIDER_ENABLED: ${AUTH_PROVIDER_ENABLED:-false}
       SENTRY_LARAVEL_DSN: ${SENTRY_LARAVEL_DSN_DOCKER:-${SENTRY_LARAVEL_DSN:-}}
@@ -123,6 +132,10 @@ services:
     environment:
       CONTAINER_ROLE: scheduler
       TENANCY_ENABLED: ${TENANCY_ENABLED:-true}
+      # images built from the checkout (runtime/lib/test.sh: build_e2e_runr_images); empty: the release's
+      RUNR_INTERNAL_AUTHZ_IMAGE: ${RUNR_INTERNAL_AUTHZ_IMAGE:-}
+      RUNR_QUEUE_CONSUMER_IMAGE: ${RUNR_QUEUE_CONSUMER_IMAGE:-}
+      RUNR_AGENT_IMAGE: ${RUNR_AGENT_IMAGE:-}
       BILLING_ENABLED: ${BILLING_ENABLED:-false}
       AUTH_PROVIDER_ENABLED: ${AUTH_PROVIDER_ENABLED:-false}
       SENTRY_LARAVEL_DSN: ${SENTRY_LARAVEL_DSN_DOCKER:-${SENTRY_LARAVEL_DSN:-}}
@@ -216,6 +229,8 @@ services:
       VITE_API_PROXY_TARGET: http://api
       VITE_REVERB_TARGET: http://reverb:8080
       VITE_REVERB_KEY: runr-local-key
+      # the browser reaches Reverb on its published port (REVERB_PORT)
+      VITE_REVERB_PORT: ${REVERB_PORT:-8064}
       VITE_TENANCY_ENABLED: ${TENANCY_ENABLED:-true}
       VITE_AUTH_PROVIDER_ENABLED: ${AUTH_PROVIDER_ENABLED:-false}
       VITE_TICKET_ENABLED: ${TICKET_ENABLED:-false}

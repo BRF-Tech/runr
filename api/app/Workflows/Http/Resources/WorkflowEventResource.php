@@ -21,6 +21,7 @@ class WorkflowEventResource extends JsonResource
             'external_id' => $e->external_id,
             'source' => $e->source,
             'project_id' => $e->project_id,
+            'environment' => $e->getAttribute('environment') ?? 'production',
             'sent_by' => $e->sent_by,
             'ts' => $e->ts,
             'runs_started' => $e->runs_started,

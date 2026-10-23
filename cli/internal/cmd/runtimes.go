@@ -33,7 +33,7 @@ func newRuntimesCmd(app *App) *cobra.Command {
 	ls := runtimesLsCmd(app)
 	cmd.AddCommand(ls, runtimesGetCmd(app), runtimesRegisterCmd(app), runtimesUpdateCmd(app), runtimesRmCmd(app),
 		runtimesValidateCmd(app), runtimesTemplateCmd(app), runtimesBuildsCmd(app), runtimesBuildCmd(app),
-		runtimesTestDeployCmd(app))
+		runtimesTestDeployCmd(app), runtimesPatchesCmd(app))
 	cmd.RunE = ls.RunE
 	cmd.Args = cobra.NoArgs
 	cmd.Flags().AddFlagSet(ls.Flags())

@@ -29,6 +29,8 @@ class StoreProjectDomainRequest extends FormRequest
     {
         return [
             'domain' => ['bail', 'required', 'string', 'max:253', new CustomDomain, 'unique:project_domains,domain'],
+            // An environment of the project (docs/environments.md#domains): the domain routes to its workload
+            'environment' => ['nullable', 'string', 'max:64'],
         ];
     }
 

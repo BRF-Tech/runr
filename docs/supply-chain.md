@@ -178,7 +178,7 @@ Every deploy (`POST /api/projects/{project}/deploy`) passes the gate of the proj
 | Count only fixable findings | count only findings with a fixed version |
 | Require a finished scan | no deploy without a scan (only where the region scans that kind of image; never for a Spin app, see [WebAssembly](#overview)) |
 
-A tenant can have its own, stricter gate (Tenants → Residency): for each field the stricter value
+A tenant can have its own, stricter gate (Administration → Tenants → (tenant) → Residency): for each field the stricter value
 of region and tenant wins.
 
 Signature verification is separate from the mode: with signing and *Verify the signature on
@@ -276,7 +276,7 @@ regions without internet; key-based verification needs no TUF root). The release
 
 ## Data residency
 
-A tenant can be pinned to **regions** and/or **data locations** (Tenants → Residency):
+A tenant can be pinned to **regions** and/or **data locations** (Administration → Tenants → (tenant) → Residency):
 
 - *Allowed regions* — region ids;
 - *Allowed data locations* — labels such as `TR` or `EU-DE`; a region carries its location in
@@ -416,7 +416,7 @@ gate blocks then is deployed with an override once it is built.
 - **Region → Supply chain**: pipeline switches, vulnerability DB mode and refresh, policy gate,
   signing key (generate / rotate / public key / retired keys), admission policy (install, update,
   remove, preview), CaaS policy, data location, runtime images built in the region.
-- **Tenants → Residency**: allowed regions and locations, default region, organization gate.
+- **Administration → Tenants → (tenant) → Residency**: allowed regions and locations, default region, organization gate.
 
 ## Configuration
 

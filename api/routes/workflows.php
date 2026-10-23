@@ -29,6 +29,9 @@ Route::middleware('auth:sanctum')->group(function () use ($workflowName) {
 
     Route::get('/projects/{project}/workflows/{workflow}', [WorkflowController::class, 'show'])->where('workflow', $workflowName);
     Route::patch('/projects/{project}/workflows/{workflow}', [WorkflowController::class, 'update'])->where('workflow', $workflowName);
+    // One definition: declared (added or replaced) or archived, the others as they are
+    Route::put('/projects/{project}/workflows/{workflow}', [WorkflowController::class, 'declareOne'])->where('workflow', $workflowName);
+    Route::delete('/projects/{project}/workflows/{workflow}', [WorkflowController::class, 'archive'])->where('workflow', $workflowName);
     Route::get('/projects/{project}/workflows/{workflow}/runs', [WorkflowRunController::class, 'index'])->where('workflow', $workflowName);
     Route::post('/projects/{project}/workflows/{workflow}/runs', [WorkflowRunController::class, 'start'])->where('workflow', $workflowName);
 
@@ -49,6 +52,9 @@ Route::middleware('auth:sanctum')->group(function () use ($workflowName) {
     Route::get('/events/{event}', [WorkflowEventController::class, 'show']);
 });
 
-// Queue bridge sink (signed path token; api/internal/* is outside the `api` rate limiter)
+// Queue bridge sink (signed path token; api/internal/* is outside the `api` rate limiter); an
+// environment's bridge names the environment (docs/workflows.md#environments)
 Route::post('/internal/workflows/queue/{context}/{projectId}/{token}', [WorkflowQueueHookController::class, 'store'])
     ->where(['context' => '[A-Za-z0-9_-]{1,64}', 'projectId' => '[0-9A-Za-z]{26}', 'token' => '[0-9a-f]{40}']);
+Route::post('/internal/workflows/queue/{context}/{projectId}/{environmentId}/{token}', [WorkflowQueueHookController::class, 'storeForEnvironment'])
+    ->where(['context' => '[A-Za-z0-9_-]{1,64}', 'projectId' => '[0-9A-Za-z]{26}', 'environmentId' => '[0-9A-Za-z]{26}', 'token' => '[0-9a-f]{40}']);

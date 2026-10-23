@@ -59,6 +59,8 @@ final class SecretColumns
         'bindings' => [
             'credentials' => self::JSON,
             'previous_credentials' => self::JSON,
+            // the data link of a binding of a global project (docs/global-projects.md, "Data")
+            'replication' => self::JSON,
         ],
         'binding_region_services' => ['secrets' => self::JSON],
         // Durable workflows: HMAC signing keys (Laravel's `encrypted` cast)
@@ -79,6 +81,12 @@ final class SecretColumns
         ],
         // Git deploy: env overrides of preview environments (docs/git-deploy.md)
         'project_git_settings' => ['preview_env' => self::JSON],
+        // Environments (docs/environments.md): config overrides (env var values), the effective
+        // config a deployment ran with (a rollback restores it). An environment's secret env vars
+        // are not here: their values live in its region (environment_secrets holds metadata only)
+        'project_environments' => ['overrides' => self::JSON],
+        'deployments' => ['config_snapshot' => self::JSON],
+        'queued_deploys' => ['config_snapshot' => self::JSON],
     ];
 
     /** Columns of central-only tables. */
@@ -115,11 +123,14 @@ final class SecretColumns
             'signing_key' => self::TEXT,
             'signing_key_previous' => self::TEXT,
         ],
+        // Global DNS (docs/global-projects.md): the API key of a region's PowerDNS server
+        'region_global_dns' => ['api_key' => self::TEXT],
     ];
 
     /** Primary key of tables that do not use `id`. */
     private const KEY_COLUMNS = [
         'secure_settings' => 'key',
+        'region_global_dns' => 'knative_region_id',
     ];
 
     public static function keyColumn(string $table): string

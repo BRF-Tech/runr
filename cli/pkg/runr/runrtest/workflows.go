@@ -38,32 +38,38 @@ func (s *Server) wf() *wfState {
 }
 
 var (
-	wfNamePattern  = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$`)
-	wfEventPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:/-]{0,199}$`)
+	wfNamePattern   = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$`)
+	wfEventPattern  = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:/-]{0,199}$`)
+	wfStreamPattern = regexp.MustCompile(`^[a-zA-Z0-9._-]{1,255}$`)
+	// Duration::milliseconds: "30s", "1h30m", a number of seconds or an ISO 8601 duration
+	wfDurationPattern = regexp.MustCompile(`^((\d+(\.\d+)?(ms|s|m|h|d|w))+|\d+(\.\d+)?|p[0-9a-z.]+)$`)
 )
 
 func init() {
 	handle("GET /projects/{project}/workflows", func(s *Server, q *featureReq) (int, any, *apiErr) {
-		p, err := s.projectOf(q)
+		p, env, err := s.wfProject(q)
 		if err != nil {
 			return 0, nil, err
 		}
-		return 200, s.wfListing(p), nil
+		return 200, s.wfListing(p, env), nil
 	})
 	handle("PUT /projects/{project}/workflows", (*Server).wfDeclare)
+	handle("PUT /projects/{project}/workflows/{workflow}", (*Server).wfDeclareOne)
+	handle("DELETE /projects/{project}/workflows/{workflow}", (*Server).wfArchive)
 	handle("POST /projects/{project}/workflows/sync", func(s *Server, q *featureReq) (int, any, *apiErr) {
-		p, err := s.projectOf(q)
+		p, env, err := s.wfProject(q)
 		if err != nil {
 			return 0, nil, err
 		}
 		st := s.wf()
-		st.synced[p.data.ID] = nowRFC3339()
+		key := wfKey(p.data.ID, env)
+		st.synced[key] = nowRFC3339()
 		for _, w := range st.defs[p.data.ID] {
-			if !w.Archived {
-				w.SyncedAt = st.synced[p.data.ID]
+			if !w.Archived && w.Environment == env {
+				w.SyncedAt = st.synced[key]
 			}
 		}
-		out := s.wfListing(p)
+		out := s.wfListing(p, env)
 		out["message"] = "Workflow definitions synced."
 		out["source"] = "sdk"
 		return 200, out, nil
@@ -216,17 +222,35 @@ func (s *Server) SeedDeclaredWorkflow(projectName, name string, triggers ...runr
 	return s.seedWorkflow(projectName, name, "api", triggers)
 }
 
+// SeedWorkflowIn adds an active workflow the SDK of an environment's deployment reported
+// (docs/workflows.md#environments); the environment must exist (SeedEnvironment).
+func (s *Server) SeedWorkflowIn(projectName, environment, name string, triggers ...runr.WorkflowTrigger) runr.Workflow {
+	return s.seedWorkflowIn(projectName, environment, name, "sdk", triggers)
+}
+
 func (s *Server) seedWorkflow(projectName, name, source string, triggers []runr.WorkflowTrigger) runr.Workflow {
+	return s.seedWorkflowIn(projectName, "", name, source, triggers)
+}
+
+func (s *Server) seedWorkflowIn(projectName, environment, name, source string, triggers []runr.WorkflowTrigger) runr.Workflow {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	p := s.projectByName(projectName)
 	if p == nil {
 		s.t.Fatalf("runrtest: project %q does not exist", projectName)
 	}
+	if environment == runr.PrimaryEnvironment {
+		environment = ""
+	}
+	if environment != "" {
+		if _, err := s.environmentRef(p, environment); err != nil {
+			s.t.Fatalf("runrtest: project %q has no environment %q", projectName, environment)
+		}
+	}
 	if triggers == nil {
 		triggers = []runr.WorkflowTrigger{}
 	}
-	w := &runr.Workflow{ID: s.newID(), ProjectID: p.data.ID, Name: name, Triggers: triggers, Retries: 3,
+	w := &runr.Workflow{ID: s.newID(), ProjectID: p.data.ID, Environment: environment, Name: name, Triggers: triggers, Retries: 3,
 		IsActive: true, Source: source, SyncedAt: nowRFC3339(), CreatedAt: nowRFC3339()}
 	st := s.wf()
 	st.defs[p.data.ID] = append(st.defs[p.data.ID], w)
@@ -286,19 +310,30 @@ func (s *Server) SetWorkflowRunOutcome(final string, polls int) {
 	st.final, st.polls = final, polls
 }
 
-// Workflow returns a project's workflow definition by name.
+// Workflow returns a project's workflow definition by name (the project's own workload).
 func (s *Server) Workflow(projectName, name string) (runr.Workflow, bool) {
+	return s.WorkflowIn(projectName, "", name)
+}
+
+// WorkflowIn returns a workflow definition of one environment of a project by name ("" or
+// production: the project's own workload).
+func (s *Server) WorkflowIn(projectName, environment, name string) (runr.Workflow, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	p := s.projectByName(projectName)
 	if p == nil {
 		return runr.Workflow{}, false
 	}
-	w := s.wfByName(p.data.ID, name)
+	if environment == runr.PrimaryEnvironment {
+		environment = ""
+	}
+	w := s.wfByNameIn(p.data.ID, environment, name)
 	if w == nil {
 		return runr.Workflow{}, false
 	}
-	return *w, true
+	out := *w
+	out.Environment = wfEnvName(w.Environment)
+	return out, true
 }
 
 // WorkflowRuns returns a project's runs, newest first.
@@ -333,9 +368,55 @@ func (s *Server) WorkflowEvents() []runr.WorkflowEvent {
 // ---------------------------------------------------------------------------------------
 // Behaviour
 
+// Every environment of a project has workflows of its own (docs/workflows.md#environments): a
+// definition's Environment is the environment's name, "" for the project's own workload
+// (production); the workflow app and the sync state are kept per project and environment.
+
+func wfKey(projectID, env string) string { return projectID + "/" + env }
+
+// wfEnvName is the environment as the API names it ("production" for the project's own).
+func wfEnvName(env string) string {
+	if env == "" {
+		return runr.PrimaryEnvironment
+	}
+	return env
+}
+
+// wfProject resolves the project and the environment a workflow request names (environment: in
+// the query of a GET, in the body otherwise; a name or id; none or production: "").
+func (s *Server) wfProject(q *featureReq) (*project, string, *apiErr) {
+	p, err := s.projectOf(q)
+	if err != nil {
+		return nil, "", err
+	}
+	var ref string
+	if q.R.Method == "GET" || q.R.Method == "DELETE" {
+		ref = q.query("environment")
+	} else {
+		ref, _ = q.Body["environment"].(string)
+	}
+	ref = strings.TrimSpace(ref)
+	if ref == "" || strings.EqualFold(ref, runr.PrimaryEnvironment) {
+		return p, "", nil
+	}
+	e, err := s.environmentRef(p, ref)
+	if err != nil {
+		return nil, "", err
+	}
+	if e.data.IsPrimary {
+		return p, "", nil
+	}
+	return p, e.data.Name, nil
+}
+
+// wfByName returns a workflow of the project's own workload.
 func (s *Server) wfByName(projectID, name string) *runr.Workflow {
+	return s.wfByNameIn(projectID, "", name)
+}
+
+func (s *Server) wfByNameIn(projectID, env, name string) *runr.Workflow {
 	for _, w := range s.wf().defs[projectID] {
-		if w.Name == name {
+		if w.Name == name && w.Environment == env {
 			return w
 		}
 	}
@@ -343,11 +424,11 @@ func (s *Server) wfByName(projectID, name string) *runr.Workflow {
 }
 
 func (s *Server) wfFind(q *featureReq) (*project, *runr.Workflow, *apiErr) {
-	p, err := s.projectOf(q)
+	p, env, err := s.wfProject(q)
 	if err != nil {
 		return nil, nil, err
 	}
-	w := s.wfByName(p.data.ID, q.Segs[3])
+	w := s.wfByNameIn(p.data.ID, env, q.Segs[3])
 	if w == nil {
 		return nil, nil, &apiErr{status: 404, message: "Workflow not found."}
 	}
@@ -367,8 +448,13 @@ func (s *Server) wfFindRun(q *featureReq) (*project, *wfRun, *apiErr) {
 	return nil, nil, &apiErr{status: 404, message: "Workflow run not found."}
 }
 
-func (s *Server) wfListing(p *project) map[string]any {
-	defs := append([]*runr.Workflow{}, s.wf().defs[p.data.ID]...)
+func (s *Server) wfListing(p *project, env string) map[string]any {
+	var defs []*runr.Workflow
+	for _, w := range s.wf().defs[p.data.ID] {
+		if w.Environment == env {
+			defs = append(defs, w)
+		}
+	}
 	sort.SliceStable(defs, func(i, j int) bool {
 		if defs[i].Archived != defs[j].Archived {
 			return !defs[i].Archived
@@ -379,16 +465,22 @@ func (s *Server) wfListing(p *project) map[string]any {
 	for _, w := range defs {
 		list = append(list, s.wfJSON(p, w))
 	}
-	return map[string]any{"data": list, "app": s.wfAppDetail(p)}
+	return map[string]any{"data": list, "app": s.wfAppDetail(p, env)}
 }
 
-func (s *Server) wfAppJSON(p *project) map[string]any {
+func (s *Server) wfAppJSON(p *project, env string) map[string]any {
 	trigger, _ := p.config["trigger_type"].(string)
 	if trigger == "" {
 		trigger = runr.TriggerHTTP
 	}
 	stream, _ := p.config["queue_stream"].(string)
-	synced := s.wf().synced[p.data.ID]
+	synced := s.wf().synced[wfKey(p.data.ID, env)]
+	workload := p.data.Slug
+	if env != "" {
+		if e, err := s.environmentRef(p, env); err == nil {
+			workload = e.data.WorkloadName
+		}
+	}
 	var status, last any
 	if synced != "" {
 		status, last = "ok", synced
@@ -398,8 +490,8 @@ func (s *Server) wfAppJSON(p *project) map[string]any {
 		event = runr.QueuePrefix + stream
 	}
 	return map[string]any{
-		"project_id": p.data.ID, "trigger_type": trigger, "is_workflow_project": trigger == "workflow",
-		"endpoint_url":      "https://" + p.data.Slug + "." + s.regionName(p) + ".runr.test",
+		"project_id": p.data.ID, "environment": wfEnvName(env), "trigger_type": trigger, "is_workflow_project": trigger == "workflow",
+		"endpoint_url":      "https://" + workload + "." + s.regionName(p) + ".runr.test",
 		"endpoint_override": nil, "key_fingerprint": "sha256:" + strings.ToLower(p.data.ID[len(p.data.ID)-8:]),
 		"previous_key_expires_at": nil, "sync_status": status, "sync_error": nil, "sdk": nil, "last_synced_at": last,
 		"queue_bridge": map[string]any{"enabled": trigger == "workflow" && stream != "", "stream": wfNil(stream),
@@ -463,7 +555,7 @@ func (s *Server) wfJSON(p *project, w *runr.Workflow) map[string]any {
 		archivedAt = w.ArchivedAt
 	}
 	return map[string]any{
-		"id": w.ID, "project_id": p.data.ID, "name": w.Name, "description": wfNil(w.Description),
+		"id": w.ID, "project_id": p.data.ID, "environment": wfEnvName(w.Environment), "name": w.Name, "description": wfNil(w.Description),
 		"triggers": triggers, "retries": w.Retries, "timeout": wfNil(w.Timeout), "concurrency": concurrency,
 		"idempotency": wfNil(w.Idempotency), "cancel_on": cancel, "is_active": w.IsActive,
 		"archived": w.Archived, "archived_at": archivedAt, "source": w.Source, "synced_at": wfNil(w.SyncedAt),
@@ -473,7 +565,7 @@ func (s *Server) wfJSON(p *project, w *runr.Workflow) map[string]any {
 
 // wfDeclare is PUT /projects/{project}/workflows (WorkflowRegistry::declare).
 func (s *Server) wfDeclare(q *featureReq) (int, any, *apiErr) {
-	p, err := s.projectOf(q)
+	p, env, err := s.wfProject(q)
 	if err != nil {
 		return 0, nil, err
 	}
@@ -499,27 +591,101 @@ func (s *Server) wfDeclare(q *featureReq) (int, any, *apiErr) {
 		defs = append(defs, w)
 	}
 	st := s.wf()
-	now := nowRFC3339()
 	for _, d := range defs {
-		w := s.wfByName(p.data.ID, d.Name)
-		if w == nil {
-			w = &runr.Workflow{ID: s.newID(), ProjectID: p.data.ID, Name: d.Name, IsActive: true, CreatedAt: now}
-			st.defs[p.data.ID] = append(st.defs[p.data.ID], w)
-		}
-		active := w.IsActive
-		id, created := w.ID, w.CreatedAt
-		*w = *d
-		w.ID, w.ProjectID, w.CreatedAt, w.IsActive = id, p.data.ID, created, active
-		w.Source, w.SyncedAt, w.Archived, w.ArchivedAt = "api", now, false, ""
+		s.wfStore(p, env, d)
 	}
+	now := nowRFC3339()
 	for _, w := range st.defs[p.data.ID] {
-		if !seen[w.Name] && !w.Archived {
+		if w.Environment == env && !seen[w.Name] && !w.Archived {
 			w.Archived, w.ArchivedAt = true, now
 		}
 	}
-	out := s.wfListing(p)
+	out := s.wfListing(p, env)
 	out["message"] = "Workflow definitions saved."
 	return 200, out, nil
+}
+
+// wfStore adds or replaces the definition d in the project's environment (WorkflowRegistry::
+// apply): a live definition declared unchanged keeps its source and sync time; otherwise it is
+// the API's now.
+func (s *Server) wfStore(p *project, env string, d *runr.Workflow) *runr.Workflow {
+	st := s.wf()
+	now := nowRFC3339()
+	w := s.wfByNameIn(p.data.ID, env, d.Name)
+	if w == nil {
+		w = &runr.Workflow{ID: s.newID(), ProjectID: p.data.ID, Name: d.Name, IsActive: true, CreatedAt: now}
+		st.defs[p.data.ID] = append(st.defs[p.data.ID], w)
+	}
+	unchanged := w.Source != "" && !w.Archived && wfSameDefinition(w, d)
+	source, synced := "api", now
+	if unchanged {
+		source, synced = w.Source, w.SyncedAt
+	}
+	active := w.IsActive
+	id, created := w.ID, w.CreatedAt
+	*w = *d
+	w.ID, w.ProjectID, w.CreatedAt, w.IsActive, w.Environment = id, p.data.ID, created, active, env
+	w.Source, w.SyncedAt, w.Archived, w.ArchivedAt = source, synced, false, ""
+	return w
+}
+
+// wfSameDefinition reports whether a and b define the same workflow (Definition::hash()).
+func wfSameDefinition(a, b *runr.Workflow) bool {
+	content := func(w *runr.Workflow) string {
+		triggers, limits, cancel := w.Triggers, w.Concurrency, w.CancelOn
+		if triggers == nil {
+			triggers = []runr.WorkflowTrigger{}
+		}
+		if limits == nil {
+			limits = []runr.WorkflowConcurrency{}
+		}
+		if cancel == nil {
+			cancel = []runr.WorkflowCancelOn{}
+		}
+		out, _ := json.Marshal([]any{w.Name, w.Description, triggers, w.Retries, w.Timeout, limits, w.Idempotency, cancel})
+		return string(out)
+	}
+	return content(a) == content(b)
+}
+
+// wfDeclareOne is PUT /projects/{project}/workflows/{workflow} (WorkflowRegistry::declareOne): one
+// definition added or replaced, the others as they are.
+func (s *Server) wfDeclareOne(q *featureReq) (int, any, *apiErr) {
+	p, env, err := s.wfProject(q)
+	if err != nil {
+		return 0, nil, err
+	}
+	name := q.Segs[3]
+	raw := map[string]any{}
+	for k, v := range q.Body {
+		if k != "environment" {
+			raw[k] = v
+		}
+	}
+	if given, ok := raw["name"]; ok && given != name {
+		return 0, nil, &apiErr{status: 422, code: "definition_invalid", message: fmt.Sprintf(`The definition is named "%v"; the address names workflow "%s".`, given, name)}
+	}
+	raw["name"] = name
+	d, derr := wfParseDefinition(raw)
+	if derr != nil {
+		derr.code = "definition_invalid"
+		return 0, nil, derr
+	}
+	w := s.wfStore(p, env, d)
+	return 200, map[string]any{"message": `Workflow "` + name + `" saved.`, "data": s.wfJSON(p, w)}, nil
+}
+
+// wfArchive is DELETE /projects/{project}/workflows/{workflow}: one definition archived.
+func (s *Server) wfArchive(q *featureReq) (int, any, *apiErr) {
+	p, w, err := s.wfFind(q)
+	if err != nil {
+		err.code = "workflow_not_found"
+		return 0, nil, err
+	}
+	if !w.Archived {
+		w.Archived, w.ArchivedAt = true, nowRFC3339()
+	}
+	return 200, map[string]any{"message": `Workflow "` + w.Name + `" archived: it starts no new runs.`, "data": s.wfJSON(p, w)}, nil
 }
 
 // wfParseDefinition validates one definition like App\Workflows\Engine\Definition::fromArray.
@@ -566,13 +732,17 @@ func wfParseDefinition(raw any) (*runr.Workflow, *apiErr) {
 				w.Triggers = append(w.Triggers, runr.WorkflowTrigger{Cron: strings.TrimSpace(cron), Timezone: tz})
 			case t["queue"] != nil || t["event"] != nil:
 				ev, _ := t["event"].(string)
-				if qs, ok := t["queue"].(string); ok {
+				if t["queue"] != nil {
+					qs, _ := t["queue"].(string)
+					if !wfStreamPattern.MatchString(qs) {
+						return nil, &apiErr{status: 422, message: fmt.Sprintf("%s: triggers[%d]: invalid queue stream name", name, i)}
+					}
 					ev = runr.QueuePrefix + qs
 				}
 				if !wfEventPattern.MatchString(ev) {
 					return nil, &apiErr{status: 422, message: fmt.Sprintf("%s: triggers[%d]: invalid event name", name, i)}
 				}
-				w.Triggers = append(w.Triggers, runr.WorkflowTrigger{Event: ev, If: cond})
+				w.Triggers = append(w.Triggers, runr.WorkflowTrigger{Event: ev, If: strings.TrimSpace(cond)})
 			default:
 				return nil, &apiErr{status: 422, message: fmt.Sprintf(`%s: triggers[%d] needs "event", "cron" or "queue"`, name, i)}
 			}
@@ -586,6 +756,9 @@ func wfParseDefinition(raw any) (*runr.Workflow, *apiErr) {
 	}
 	switch t := m["timeout"].(type) {
 	case string:
+		if !wfDurationPattern.MatchString(strings.ToLower(strings.TrimSpace(t))) {
+			return nil, &apiErr{status: 422, message: name + `: invalid "timeout"`}
+		}
 		w.Timeout = t
 	case float64:
 		w.Timeout = strconv.Itoa(int(t)) + "s"
@@ -596,6 +769,9 @@ func wfParseDefinition(raw any) (*runr.Workflow, *apiErr) {
 	case map[string]any:
 		w.Concurrency = []runr.WorkflowConcurrency{wfLimit(c)}
 	case []any:
+		if len(c) > 2 {
+			return nil, &apiErr{status: 422, message: name + `: "concurrency" takes a limit, an object or a list of at most 2`}
+		}
 		for _, it := range c {
 			switch l := it.(type) {
 			case float64:
@@ -605,24 +781,40 @@ func wfParseDefinition(raw any) (*runr.Workflow, *apiErr) {
 			}
 		}
 	}
-	w.Idempotency, _ = m["idempotency"].(string)
+	keyed := 0
+	for _, l := range w.Concurrency {
+		if l.Limit < 1 || l.Limit > 1000 {
+			return nil, &apiErr{status: 422, message: name + ": concurrency limit must be an integer between 1 and 1000"}
+		}
+		if l.Key != "" {
+			if keyed++; keyed > 1 {
+				return nil, &apiErr{status: 422, message: name + ": only one keyed concurrency limit"}
+			}
+		}
+	}
+	idem, _ := m["idempotency"].(string)
+	w.Idempotency = strings.TrimSpace(idem)
 	if list, ok := m["cancel_on"].([]any); ok {
+		if len(list) > 10 {
+			return nil, &apiErr{status: 422, message: name + `: "cancel_on" must be a list of at most 10`}
+		}
 		for i, it := range list {
 			c, _ := it.(map[string]any)
 			ev, _ := c["event"].(string)
 			if !wfEventPattern.MatchString(ev) {
 				return nil, &apiErr{status: 422, message: fmt.Sprintf("%s: cancel_on[%d]: invalid event name", name, i)}
 			}
+			// Expression::combine: each part in parentheses, joined with &&
 			match, _ := c["match"].(string)
 			cond, _ := c["if"].(string)
-			expr := cond
-			if match != "" {
-				expr = "event." + match + " == async." + match
-				if cond != "" {
-					expr = "(" + expr + ") && (" + cond + ")"
-				}
+			var parts []string
+			if match = strings.TrimSpace(match); match != "" {
+				parts = append(parts, "(event."+match+" == async."+match+")")
 			}
-			w.CancelOn = append(w.CancelOn, runr.WorkflowCancelOn{Event: ev, Expression: expr})
+			if cond = strings.TrimSpace(cond); cond != "" {
+				parts = append(parts, "("+cond+")")
+			}
+			w.CancelOn = append(w.CancelOn, runr.WorkflowCancelOn{Event: ev, Expression: strings.Join(parts, " && ")})
 		}
 	}
 	return w, nil
@@ -631,7 +823,7 @@ func wfParseDefinition(raw any) (*runr.Workflow, *apiErr) {
 func wfLimit(m map[string]any) runr.WorkflowConcurrency {
 	l, _ := m["limit"].(float64)
 	k, _ := m["key"].(string)
-	return runr.WorkflowConcurrency{Limit: int(l), Key: k}
+	return runr.WorkflowConcurrency{Limit: int(l), Key: strings.TrimSpace(k)}
 }
 
 func (s *Server) wfStart(q *featureReq) (int, any, *apiErr) {
@@ -924,7 +1116,8 @@ func (s *Server) wfSendEvents(q *featureReq) (int, any, *apiErr) {
 		eventJSON, _ := json.Marshal(map[string]any{"id": e.ID, "name": name, "data": data, "ts": ts})
 		for _, pid := range wfSortedKeys(st.defs) {
 			for _, w := range st.defs[pid] {
-				if !w.IsActive || w.Archived {
+				// an event without an environment is production's
+				if !w.IsActive || w.Archived || w.Environment != "" {
 					continue
 				}
 				for _, t := range w.Triggers {

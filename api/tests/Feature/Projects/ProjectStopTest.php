@@ -290,4 +290,51 @@ class ProjectStopTest extends TestCase
         $this->signedIn($billing)->postJson("/api/projects/{$this->project->id}/stop", ['reason' => 'Unpaid invoices'])->assertOk();
         $this->signedIn($billing)->postJson("/api/projects/{$this->project->id}/resume")->assertOk();
     }
+
+    public function test_a_stop_runr_makes_by_itself_names_no_one_and_the_organization_resumes_it(): void
+    {
+        $stops = app(ProjectStopService::class);
+        $stops->stopBySystem($this->project, 'cost_limit', 'Monthly cost limit reached');
+
+        $project = $this->project->fresh();
+        $this->assertTrue($project->isStopped());
+        $this->assertSame('system:cost_limit', $project->stopped_by);
+        $this->assertSame('cost_limit', ProjectStopService::systemOf($project));
+        $this->assertSame(ProjectStopService::LEVEL_ORGANIZATION, $stops->levelOfStop($project));
+        $this->assertSame($this->version->id, $project->stopped_version_id);
+        $this->assertSame('shutting_down', $this->live->fresh()->status);
+        Event::assertDispatched(ProjectStopped::class, fn ($e) => $e->project->is($this->project) && $e->actorId === 'system:cost_limit');
+
+        // Audited as the system's stop; the owner is told
+        $audit = AuditEvent::query()->where('action', 'project.stop')->sole();
+        $this->assertSame(AuditEvent::ACTOR_SYSTEM, $audit->actor_type);
+        $this->assertSame('cost_limit', $audit->metadata['system']);
+        $this->assertSame('Monthly cost limit reached', $audit->metadata['reason']);
+        $this->assertSame('project.stopped', Notification::query()->where('user_id', (string) $this->developer->id)->sole()->type);
+
+        // The members see what stopped it, no user named
+        $this->signedIn($this->developer)->getJson("/api/projects/{$this->project->id}")->assertOk()
+            ->assertJsonPath('data.stopped.system', 'cost_limit')
+            ->assertJsonPath('data.stopped.by', null)
+            ->assertJsonPath('data.stopped.level', 'organization')
+            ->assertJsonPath('data.stopped.reason', 'Monthly cost limit reached');
+
+        // Stopped already: a second stop changes nothing
+        try {
+            $stops->stopBySystem($project, 'cost_limit', 'Again');
+            $this->fail('a stopped project must not be stopped again');
+        } catch (ProjectStopConflict $e) {
+            $this->assertSame('project_already_stopped', $e->errorCode);
+        }
+        $this->assertSame('Monthly cost limit reached', $this->project->fresh()->stop_reason);
+
+        // An administrator's stop of a project is never a system stop
+        $this->assertNull(ProjectStopService::systemOf($this->caasProject('other')));
+
+        // The organization's stop level: an organization administrator resumes it
+        $this->live->update(['status' => 'shut_down']);
+        $this->signedIn($this->admin)->postJson("/api/projects/{$this->project->id}/resume")->assertOk()
+            ->assertJsonPath('data.stopped', null);
+        $this->assertNull(ProjectStopService::systemOf($this->project->fresh()));
+    }
 }

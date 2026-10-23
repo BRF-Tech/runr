@@ -12,6 +12,7 @@
 
 use App\Http\Controllers\Api\Observability\AlertChannelController;
 use App\Http\Controllers\Api\Observability\AlertRuleController;
+use App\Http\Controllers\Api\Observability\LoadTestController;
 use App\Http\Controllers\Api\Observability\ObservabilityIngestController;
 use App\Http\Controllers\Api\Observability\ProjectObservabilityController;
 use App\Http\Controllers\Api\Observability\PublicStatusPageController;
@@ -58,6 +59,12 @@ Route::middleware(['api', 'auth:sanctum'])->prefix('api')->group(function () {
     Route::post('/projects/{project}/uptime-checks/{check}/run', [UptimeCheckController::class, 'run']);
     Route::get('/projects/{project}/uptime-incidents', [UptimeCheckController::class, 'incidents']);
     Route::patch('/projects/{project}/uptime-incidents/{incident}', [UptimeCheckController::class, 'updateIncident']);
+
+    // Load tests (docs/load-test.md)
+    Route::get('/projects/{project}/load-tests', [LoadTestController::class, 'index']);
+    Route::post('/projects/{project}/load-tests', [LoadTestController::class, 'store']);
+    Route::get('/projects/{project}/load-tests/{loadTest}', [LoadTestController::class, 'show']);
+    Route::post('/projects/{project}/load-tests/{loadTest}/cancel', [LoadTestController::class, 'cancel']);
 
     // Status page of the organization
     Route::get('/observability/status-page', [StatusPageController::class, 'show']);

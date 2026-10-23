@@ -107,10 +107,82 @@
       "title": "Uploaded images",
       "description": "Container images and WebAssembly modules uploaded into region registries (docs/images.md).",
       "properties": {
-        "uploadImage": {"type": "string", "title": "Receiver image", "description": "Image of the upload receiver Job in the regions. Empty: ghcr.io/brf-tech/runr/image-upload:1.0.0."},
+        "uploadImage": {"type": "string", "title": "Receiver image", "description": "Image of the upload receiver Job in the regions. Empty: ghcr.io/brf-tech/runr/image-upload:1.1.0."},
         "quotaGb": {"type": ["string", "number"], "title": "Storage per organization (GiB)", "description": "Uploaded images over every region. Empty: 50; 0: unlimited."},
         "maxUploadGb": {"type": ["string", "number"], "title": "Largest upload (GiB)", "description": "Empty: 20."},
         "uploadTtlHours": {"type": ["string", "number"], "title": "Upload time limit (hours)", "description": "Empty: 24."}
+      }
+    },
+    "runtimePatches": {
+      "type": "object",
+      "title": "Runtime patches",
+      "description": "The signed feed that announces runtime image patches: level, reason, CVEs and deadlines (docs/runtimes.md#runtime-patches, docs/security.md#runtime-patch-feed).",
+      "properties": {
+        "feed": {"type": "string", "title": "Feed", "description": "OCI reference of the patch feed. Empty: ghcr.io/brf-tech/runr/runtime-patches:feed."},
+        "publicKey": {"type": "string", "title": "Feed public key", "description": "cosign public key (PEM) the feed's signature must verify with. Default: the key BRF-Tech/runr-runtimes signs the feed with. Empty: the feed is off and platform administrators see a warning."},
+        "viaRegion": {"type": "string", "title": "Read through a region", "description": "Region id or name whose internal registry (its ghcr.io pull-through) the feed is read through, for an API without a way out. Empty: read directly."},
+        "autoMigrate": {"type": ["boolean", "string"], "enum": [true, false, "true", "false"], "title": "Migrate at deadlines", "description": "At a critical or zero-day patch's deadline, redeploy the projects still behind onto it (rolled back when the new revision does not become ready). The default; platform administrators switch it on the Patches page."}
+      }
+    },
+    "globalDns": {
+      "type": "object",
+      "title": "Global projects and global DNS",
+      "description": "The zone of the global projects and the PowerDNS server every taking-part platform region runs for it (docs/global-projects.md). Each region is enabled in the UI (Region → General → Global DNS); these are the platform defaults.",
+      "properties": {
+        "zone": {"type": "string", "title": "Global zone", "description": "Empty: g.<base domain>."},
+        "namespace": {"type": "string", "title": "Namespace of the DNS server", "description": "Empty: runr-global-dns."},
+        "image": {"type": "string", "title": "PowerDNS image", "description": "Empty: ghcr.io/brf-tech/runr/reqs/pdns-auth:5.0.8 (RunR's mirror)"},
+        "storageClass": {"type": "string", "title": "Storage class of the server's volume", "description": "Empty: the cluster default."},
+        "serviceAnnotations": {"type": "object", "title": "Annotations of the DNS LoadBalancer Service", "additionalProperties": {"type": "string"}},
+        "ttl": {"type": ["string", "integer"], "title": "TTL of the project records (seconds)", "description": "Empty: 30."},
+        "maxRegions": {"type": ["string", "integer"], "title": "Regions of one global project", "description": "Empty: 8."},
+        "geoipUrl": {"type": "string", "title": "GeoIP database of proximity mode", "description": "Gzipped MaxMind-format city database, {yyyy}/{mm} the current month. Empty: DB-IP IP to City Lite (CC BY 4.0); \"-\": none."},
+        "tls": {
+          "type": "object",
+          "title": "Wildcard certificate of the zone",
+          "properties": {
+            "mode": {"type": "string", "enum": ["", "acme", "none"], "title": "Mode", "description": "acme: cert-manager DNS-01 for *.<zone> in every region (default); none: the region's default certificate."},
+            "acmeServer": {"type": "string", "title": "ACME directory", "description": "Empty: Let's Encrypt production."},
+            "acmeEmail": {"type": "string", "title": "ACME account e-mail"}
+          }
+        },
+        "failover": {
+          "type": "object",
+          "title": "Failover of a global project's primary",
+          "properties": {
+            "afterSeconds": {"type": ["string", "integer"], "title": "Seconds of failed health checks before an automatic failover", "description": "Empty: 180."}
+          }
+        },
+        "dataLink": {
+          "type": "object",
+          "title": "Data link of the bindings of global projects",
+          "properties": {
+            "image": {"type": "string", "title": "Forwarder image", "description": "Empty: ghcr.io/brf-tech/runr/reqs/nginx:1.27-alpine (nginx stream)."},
+            "port": {"type": ["string", "integer"], "title": "Port of the home region's Traefik", "description": "TLS with SNI on websecure. Empty: 443."}
+          }
+        }
+      }
+    },
+    "apiProduct": {
+      "type": "object",
+      "title": "API product",
+      "description": "API keys, JWT routes, plans and usage of the gateways (docs/api-product.md).",
+      "properties": {
+        "gatewayAuthImage": {"type": "string", "title": "gateway-auth image", "description": "Image of the gateway-auth service in the regions. Empty: ghcr.io/brf-tech/runr/gateway-auth:1.0.0."},
+        "callbackUrl": {"type": "string", "title": "Callback URL", "description": "RunR's base URL as the regions reach it. Empty: the region agent's URL."},
+        "syncSeconds": {"type": ["string", "number"], "title": "Sync interval (seconds)", "description": "Empty: 10."},
+        "usageRetentionDays": {"type": ["string", "number"], "title": "Usage retention (days)", "description": "Hourly usage rows kept. Empty: 400."}
+      }
+    },
+    "orgTransfer": {
+      "type": "object",
+      "title": "Organization export / import",
+      "description": "Packages of an organization exported and imported again (docs/org-export.md).",
+      "properties": {
+        "transferImage": {"type": "string", "title": "Transfer agent image", "description": "Image of the transfer pods in the regions (binding data, images). Empty: ghcr.io/brf-tech/runr/image-upload:1.1.0."},
+        "maxPackageGb": {"type": ["string", "number"], "title": "Largest package (GiB)", "description": "Empty: 50."},
+        "retentionHours": {"type": ["string", "number"], "title": "Package retention (hours)", "description": "Empty: 168."},
+        "podDiskGb": {"type": ["string", "number"], "title": "Transfer pod disk (GiB)", "description": "One binding's dump or one image. Empty: 20."}
       }
     },
     "supplyChain": {
@@ -866,6 +938,26 @@
         }
       }
     },
+    "projectSecrets": {
+      "type": "object",
+      "title": "Project secrets",
+      "description": "Where RunR writes the values of the projects' secret variables (docs/security.md).",
+      "properties": {
+        "storage": {
+          "type": "string",
+          "title": "Secret value storage",
+          "enum": ["region", "database"],
+          "default": "region",
+          "description": "region: straight into the Kubernetes Secret of the project's region, RunR's database keeps metadata only. database: encrypted in RunR's database (the behaviour up to 0.5.10, deprecated)."
+        },
+        "finalize": {
+          "type": "boolean",
+          "title": "Finalize the upgrade from 0.5.10",
+          "default": false,
+          "description": "Once the upgrade from 0.5.10 is confirmed: the bootstrap Job runs secrets:move-to-region --finalize, which drops the encrypted copies of secret values RunR keeps for a rollback and allows secret store references. RunR 0.5.10 cannot be installed again afterwards without losing secret values (docs/upgrade.md)."
+        }
+      }
+    },
     "quota": {
       "type": "object",
       "title": "Resource ceiling",
@@ -884,6 +976,54 @@
           "minimum": 0,
           "pattern": "^([0-9]+(\\.[0-9]+)?)?$",
           "description": "Total memory in GiB, e.g. 16. 0 or empty: no memory ceiling."
+        }
+      }
+    },
+    "knative": {
+      "type": "object",
+      "title": "Regions",
+      "description": "What RunR installs in its Regions (docs/regions.md).",
+      "properties": {
+        "minK8sMinor": {
+          "type": ["string", "integer"],
+          "title": "Minimum Kubernetes minor version of a Region"
+        },
+        "traefikImage": {
+          "type": "string",
+          "title": "Region Traefik image",
+          "description": "Empty: RunR's mirror of the pinned Traefik version."
+        },
+        "certManager": {
+          "type": "object",
+          "title": "cert-manager in the Regions",
+          "description": "Certificates of project custom domains (docs/regions.md#cert-manager).",
+          "properties": {
+            "install": {
+              "type": "boolean",
+              "title": "Install cert-manager in Regions without one",
+              "description": "A cert-manager the cluster already runs is reused either way, and never removed by RunR."
+            },
+            "acmeEmail": {
+              "type": "string",
+              "title": "ACME e-mail (Let's Encrypt)",
+              "description": "Account e-mail of the Let's Encrypt issuer RunR creates in Regions reachable from the internet; setting it accepts the ACME server's terms. Empty: those Regions use their own CA too. A Region can set its own (cert_manager_acme_email)."
+            },
+            "acmeServer": {
+              "type": "string",
+              "title": "ACME server",
+              "description": "Empty: Let's Encrypt (https://acme-v02.api.letsencrypt.org/directory)."
+            },
+            "chartVersion": {
+              "type": "string",
+              "title": "cert-manager chart version",
+              "description": "Empty: the version this release pins."
+            },
+            "imagePrefix": {
+              "type": "string",
+              "title": "cert-manager image prefix",
+              "description": "Registry path of the cert-manager-<component> images. Empty: RunR's mirror (ghcr.io/brf-tech/runr/reqs)."
+            }
+          }
         }
       }
     },
@@ -967,6 +1107,19 @@
             "minIntervalSeconds": { "type": ["integer", "string"], "title": "Shortest check interval (seconds)", "minimum": 10 },
             "resultsRetentionDays": { "type": ["integer", "string"], "title": "Result retention (days)", "minimum": 1 },
             "allowPrivateTargets": { "type": "boolean", "title": "Allow checks of private addresses" }
+          }
+        },
+        "loadTest": {
+          "type": "object",
+          "title": "Load tests",
+          "description": "k6 load tests of HTTP projects, run in the project's Region against the project's own URL (docs/load-test.md). The test traffic is metered like any other traffic.",
+          "properties": {
+            "enabled": { "type": "boolean", "title": "Load tests" },
+            "dailyLimit": { "type": ["integer", "string"], "title": "Tests per organization and day", "minimum": 0 },
+            "maxUsers": { "type": ["integer", "string"], "title": "Most concurrent users offered", "minimum": 10 },
+            "maxDurationSeconds": { "type": ["integer", "string"], "title": "Longest duration offered (seconds)", "minimum": 30 },
+            "maxConcurrentPerRegion": { "type": ["integer", "string"], "title": "Load tests at once per Region", "minimum": 1 },
+            "image": { "type": "string", "title": "k6 image", "description": "Empty: ghcr.io/brf-tech/runr/reqs/k6 at the version the API pins." }
           }
         },
         "statusPage": {
@@ -1106,6 +1259,20 @@
               "default": 20
             }
           }
+        }
+      }
+    },
+    "bootstrap": {
+      "type": "object",
+      "title": "Bootstrap Job",
+      "description": "The post-install / post-upgrade hook Job runr-bootstrap and the Job runr-region-reconcile-<revision> (docs/helm-values.md).",
+      "properties": {
+        "regionReconcileSeconds": {
+          "type": "integer",
+          "title": "region:reconcile deadline (seconds)",
+          "minimum": 300,
+          "default": 3600,
+          "description": "The Job runr-region-reconcile-<revision> brings the regions to the release after helm upgrade returned (not a hook). Seconds each of its three attempts may start region:reconcile steps for; the step running then runs to its end (up to 30 minutes more), and the Job's activeDeadlineSeconds follows. 3600 covers one region cluster's worst case on an upgrade from 0.5.10; steps the deadline leaves are done by the next attempt; raise it for many region clusters."
         }
       }
     },

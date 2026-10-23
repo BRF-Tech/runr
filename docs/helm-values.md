@@ -1,23 +1,24 @@
 # Helm values reference
 
-Every value of the Helm chart `runr` 0.5.10 from BRF's public Helm repository, grouped by top-level
+Every value of the Helm chart `runr` 0.6.0 from BRF's public Helm repository, grouped by top-level
 key, with its default from the chart's `values.yaml` and what the templates do with it.
-`helm show values brf-tech/runr --version 0.5.10` prints the file with its comments. How these
+`helm show values brf-tech/runr --version 0.6.0` prints the file with its comments. How these
 values fit together in a production install is described in [Installing RunR in
 production](install.md).
 
 - [Validation](#validation)
 - [Console and gateway](#console-and-gateway): `domain`, `cors`, `gateway`, `ingress`, `clientIp`
 - [Application pods](#application-pods): `api`, `ui`, `reverb`, `horizon`, `scheduler`, `app`,
-  `queue`, `cache`, `extraEnv`
+  `appVersion`, `queue`, `cache`, `extraEnv`
 - [Data services](#data-services): `database`, `redis`, `storage`, `mail`, `mailpit`
 - [Secret and first administrator](#secret-and-first-administrator): `secretName`, `secret`,
   `admin`, `bootstrap`
 - [Edition](#edition): `edition`, `tenancy`, `authProvider`, `ticket`
-- [Platform settings](#platform-settings): `quota`, `audit`, `auth`, `billing`, `branding`,
-  `signup`
+- [Platform settings](#platform-settings): `quota`, `audit`, `projectSecrets`, `auth`, `billing`,
+  `branding`, `signup`
 - [Regions and features](#regions-and-features): `knative`, `observability`, `sandboxApi`,
-  `gitDeploy`, `supplyChain`, `images`, `ai`, `bindings`
+  `gitDeploy`, `supplyChain`, `globalDns`, `images`, `runtimePatches`, `apiProduct`, `orgTransfer`,
+  `ai`, `bindings`
 - [Scheduling and cluster](#scheduling-and-cluster): `podColocation`, `placement`,
   `networkPolicy`, `imagePullSecrets`, `imagePullSecretsFromDefaultServiceAccount`, `initImage`,
   `namespace`, `createNamespace`, `projectNamespace`, `deployTimestamp`
@@ -44,16 +45,22 @@ Helm checks the values against the chart's `values.schema.json` on `install`, `u
 | `mail.encryption` | `""`, `starttls` or `tls` |
 | `storage.application`, `storage.database` | `<number>Gi` or empty |
 | `quota.cpu`, `quota.memoryGiB` | A number of at least 0, a numeric string or empty |
+| `projectSecrets.*` | `storage` `region` or `database`; `finalize` a boolean |
+| `knative.*` | `minK8sMinor` a string or an integer; `traefikImage` a string; `certManager.install` a boolean, `certManager.acmeEmail`, `acmeServer`, `chartVersion`, `imagePrefix` strings |
 | `clientIp.trustedProxies`, `clientIp.proxyHops` | A string; an integer of at least 0 |
 | `ai.*` | `huggingface.endpoint` an http(s) URL; `gpu.defaultTimeout` 1–3600; `gpu.progressDeadline` seconds or minutes (`1800s`); `gpu.scaleToZeroRetention` seconds, minutes or hours (`5m`); `modelStorage.sizeGi` at least 1; `modelStorage.accessMode` `ReadWriteMany` or `ReadWriteOnce`; the image and chart version keys are strings |
 | `billing.*` | `enabled` a boolean; `currency` three capital letters (ISO 4217); `webhookUrl` an http(s) URL or empty |
 | `branding.*` | `productName` up to 80 and `companyName` up to 120 characters; logos and favicon empty, an https URL, a path, a `data:image/…;base64,…` URI (up to 750000 characters) or a ConfigMap / Secret key reference; colours `#rgb` / `#rrggbb` (`primary` also as the `300`–`900` scale); `supportUrl` an http(s) URL, `supportEmail` an address; up to 8 `footerLinks` with a label and an http(s) or `mailto:` URL |
-| `observability.*` | `tracing.defaultMode` `managed`, `reuse`, `external` or `off`; `tracing.knativeSampleRate` 0–1; `tracing.tempoStorage` `<number>Mi`, `Gi` or `Ti`; lower bounds of the retention, interval and count keys (`uptime.minIntervalSeconds` at least 10); `replay.ingestUrl` an http(s) URL or empty |
+| `observability.*` | `tracing.defaultMode` `managed`, `reuse`, `external` or `off`; `tracing.knativeSampleRate` 0–1; `tracing.tempoStorage` `<number>Mi`, `Gi` or `Ti`; lower bounds of the retention, interval and count keys (`uptime.minIntervalSeconds` at least 10, `loadTest.maxUsers` at least 10, `loadTest.maxDurationSeconds` at least 30); `replay.ingestUrl` an http(s) URL or empty |
 | `sandboxApi.enabled`, `sandboxApi.namespacePrefix`, `sandboxApi.allowCustomImages` | Booleans; `namespacePrefix` a DNS label of up to 22 characters |
 | `bindings.namespace`, `bindings.retentionDays`, `bindings.storageClass`, `bindings.quotas.*` | A DNS label; at least 1; a string; integers of at least 0 |
 | `gitDeploy.*` | `maxPushMb` 1–60; `remoteOwner` letters, digits, `.`, `_`, `-`; `webhookBaseUrl` an http(s) URL or empty; `previews.limit` 0–20, `previews.ttlHours` 1–720, `previews.maxLimit` 0–100 |
 | `supplyChain.*` | `enabled` a boolean (or `"true"` / `"false"`); the image, namespace, source and repository keys strings; the hour keys and `policyController.chartVersion` strings or numbers |
+| `globalDns.*` | `zone`, `namespace`, `image`, `storageClass`, `geoipUrl`, `tls.acmeServer`, `tls.acmeEmail`, `dataLink.image` strings; `serviceAnnotations` an object of strings; `ttl`, `maxRegions`, `failover.afterSeconds`, `dataLink.port` strings or integers; `tls.mode` `""`, `acme` or `none` |
 | `images.*` | `uploadImage` a string; `quotaGb`, `maxUploadGb`, `uploadTtlHours` strings or numbers |
+| `runtimePatches.*` | `feed`, `publicKey`, `viaRegion` strings; `autoMigrate` a boolean (or `"true"` / `"false"`) |
+| `apiProduct.*` | `gatewayAuthImage`, `callbackUrl` strings; `syncSeconds`, `usageRetentionDays` strings or numbers |
+| `orgTransfer.*` | `transferImage` a string; `maxPackageGb`, `retentionHours`, `podDiskGb` strings or numbers |
 | `placement.*` | `tolerateDedicatedWorkers` a boolean, `tolerations` a list, `affinity` an object, `nodeSelector` string values |
 | `networkPolicy.*` | `enabled` a boolean; `gatewayFrom`, `egress.to` and `extraEgress` lists of objects; `egress.ports` port numbers |
 
@@ -66,7 +73,10 @@ The templates stop an install with a message when:
 | --- | --- |
 | `database.driver` other than `pgsql` | RunR's pods share one PostgreSQL server |
 | `secret.create: false` with `database.password`, `redis.password` or `mail.password` | there is no chart Secret to write it to: use `*.existingSecret` |
+| `ingress.tls.mode` other than `""`, `letsencrypt`, `custom`, `secret` or `none` | the supported modes |
 | `ingress.tls.mode: secret` without `ingress.tls.secretName` | name your TLS Secret |
+| `ingress.tls.mode: custom` with an empty `certificate` or `privateKey`, or one that is not PEM | PEM required |
+| `mail.encryption` other than `""`, `starttls` or `tls` (with `mail.host` set) | the supported values |
 | `reverb.replicas` below 1 | Reverb is required |
 | `api.storage.accessModes` / `storageClassName` or `database.postgres.storageClassName` other than those of the existing claim | Kubernetes does not change them ([moving the API volume](install.md#moving-the-api-volume-to-readwritemany)) |
 | a cluster older than Kubernetes 1.23 (the chart's `kubeVersion`) | the chart's minimum version |
@@ -235,6 +245,7 @@ Reverb, the WebSocket server, is always installed.
 | `app.env` | `production` | `APP_ENV`. Keep `production`: with `local` the Horizon dashboard admits every request, the API skips its configuration cache, Reverb logs every message and the install seeds development data |
 | `app.debug` | `"false"` | `APP_DEBUG`; `"true"` also makes Reverb log every connection and message |
 | `app.logChannel` | `stderr` | `LOG_CHANNEL` |
+| `appVersion` | not set | `APP_VERSION`, the version `GET /api/version` reports; unset: `v` and the chart's `appVersion`. Not in `values.yaml`: `runtime/ci.sh` deploys set it to the build's version ([versioning.md](versioning.md#helm)) |
 | `queue.connection` | `redis` | `QUEUE_CONNECTION` |
 | `cache.store` | `redis` | `CACHE_STORE` |
 
@@ -243,6 +254,16 @@ Reverb, the WebSocket server, is always installed.
 | Key | Default | What it does |
 | --- | --- | --- |
 | `extraEnv` | `{}` | Additional environment variables (`NAME: value`) for the API, Horizon, scheduler and Reverb pods and the hook Jobs, written to the ConfigMap `runr-config` — no secrets. For settings the chart has no value of its own for, e.g. `DB_SSLMODE`; passwords come from `database.*`, `redis.*` and `mail.*` |
+
+Settings without a Helm value are described with their features: the load tests' Job
+(`OBS_LOADTEST_*`, [load-test.md](load-test.md)), rightsizing (`RIGHTSIZING_*`,
+[monitoring.md](monitoring.md#rightsizing)), the rollouts of deploy strategies (`RUNR_ROLLOUT_*`,
+[deploy-strategies.md](deploy-strategies.md)), triggers, the webhook inbox and topics
+(`TRIGGERS_*`, [triggers.md](triggers.md)), organization export / import
+(`RUNR_ORG_TRANSFER_*`, [org-export.md](org-export.md)), External Secrets Operator
+(`RUNR_ESO_*`, [secret-stores.md](secret-stores.md)), and on this page OpenBao
+([projectSecrets](#projectsecrets)), the region components' images ([knative](#knative)),
+global DNS ([globalDns](#globaldns)) and gateway-auth ([apiProduct](#apiproduct)).
 
 ## Data services
 
@@ -336,7 +357,7 @@ the values `secret.appKey`, `secret.previousAppKeys`, `admin.password`, `billing
 
 | Key | Default | What it does |
 | --- | --- | --- |
-| `admin.username` | `admin` | User name of the first administrator (`ADMIN_USERNAME`) |
+| `admin.username` | `admin` | User name of the first administrator (`ADMIN_USERNAME`); it signs in with this or `admin.email` |
 | `admin.email` | `admin@example.com` | Its e-mail address (`ADMIN_EMAIL`) |
 | `admin.password` | `""` | Its password, written to `ADMIN_PASSWORD` with `secret.create: true`; empty: generated by the chart. With `secret.create: false` the password is `ADMIN_PASSWORD` of your Secret; without that key the bootstrap Job generates one into the Secret `runr-admin` (key `password`; the Job may read and patch that one Secret). Never written to a log |
 
@@ -344,8 +365,9 @@ the values `secret.appKey`, `secret.previousAppKeys`, `admin.password`, `billing
 
 | Key | Default | What it does |
 | --- | --- | --- |
-| `bootstrap.enabled` | `true` | Renders the Job `runr-bootstrap`, a post-install and post-upgrade hook after the migration hooks. It deploys the agent again on regions whose agent has no token (`agent:redeploy --missing`), moves stored image references to the current image namespace (`images:move-registry`), brings the existing regions to the installed version (`region:reconcile`), gives accounts without a role the default role (`rbac:assign-missing`), in the multi-tenant edition converts an installation that ran single-tenant (`bootstrap.tenancySetup`), and creates the administrator above as a platform administrator when that account does not exist, no other platform administrator exists and the e-mail address is free. Existing accounts are left alone. `false`: the Job is not rendered |
-| `bootstrap.tenancySetup` | `true` | Multi-tenant edition: before the administrator check the Job converts an installation that ran single-tenant into its first tenant (`php artisan tenancy:setup --force`: name `Default`, the slug of the git remote owner; up to 8 minutes, `activeDeadlineSeconds` 1200 instead of 720). Fresh, converted and multi-tenant installations are left alone, a conversion that stopped continues. `false`: run `tenancy:setup` yourself, e.g. to review the plan with `--dry-run` or choose `--name` / `--slug` ([Converting a single-organization installation](tenancy.md#converting-a-single-organization-installation)) |
+| `bootstrap.enabled` | `true` | Renders two Jobs. `runr-bootstrap`, a post-install and post-upgrade hook after the migration hooks — the database only, so helm waits seconds for it: it moves stored image references to the current image namespace (`images:move-registry`), gives accounts without a role the default role (`rbac:assign-missing`), with tenancy runs the pending tenant migrations (`tenancy:migrate`), in the multi-tenant edition converts an installation that ran single-tenant (`bootstrap.tenancySetup`), and creates the administrator above as a platform administrator when that account does not exist, no other platform administrator exists, the e-mail address is free in any letter case and the user name contains no `@`. Existing accounts are left alone. A step that fails or runs out of its time limit prints the command to run by hand and does not stop the upgrade (`activeDeadlineSeconds` 420 s; 540 with tenancy, 1020 with a conversion). And `runr-region-reconcile-<revision>`, no hook — helm does not wait for it: after the bootstrap hook it deploys the agent again on regions whose agent has no token (`agent:redeploy --missing`), brings the existing regions to the installed version (`region:reconcile`), moves the project secret values an earlier release kept in the database into their regions (`secrets:move-to-region`, with `--finalize` while `projectSecrets.finalize` is set; not with `projectSecrets.storage: database`) and runs `images:move-registry` and `rbac:assign-missing` again. Up to three attempts: one that does not finish (a step failed or still waits, or its deadline left steps) fails, and the next continues where it stopped; a region cluster that does not answer is only a warning. The console's region status, the region API (`reconcile`), `/api/version` (`region_reconcile`) and a notification of the platform administrators show a run that left regions behind ([upgrade.md](upgrade.md#order-of-operations)). Kept a week (`ttlSecondsAfterFinished`); `activeDeadlineSeconds` 420 s (the wait for the hook) + 3 × (`region:reconcile`'s time limit, 5400 s by default, + 1380 s) = 20760 s. `false`: neither Job is rendered |
+| `bootstrap.regionReconcileSeconds` | `3600` | Seconds `region:reconcile` may start steps for in each attempt of `runr-region-reconcile-<revision>` (`--deadline`); the step running then runs to its end, within a time limit 1800 s longer (the longest step: the private-ingress move with two Traefik rollouts), so no change is cut in the middle. 3600 covers the worst case of one region cluster on an upgrade from 0.5.10 (every wait of every step at its limit, about 3400 s); a cluster typically takes 5–10 minutes. Steps the deadline leaves are done by the next attempt; raise it for installations with many region clusters (`activeDeadlineSeconds` follows). At least 300 |
+| `bootstrap.tenancySetup` | `true` | Multi-tenant edition: before the administrator check the Job converts an installation that ran single-tenant into its first tenant (`php artisan tenancy:setup --force`: name `Default`, the slug of the git remote owner; up to 8 minutes, `activeDeadlineSeconds` 480 s longer: 6720 s). Fresh, converted and multi-tenant installations are left alone, a conversion that stopped continues. `false`: run `tenancy:setup` yourself, e.g. to review the plan with `--dry-run` or choose `--name` / `--slug` ([Converting a single-organization installation](tenancy.md#converting-a-single-organization-installation)) |
 
 ## Edition
 
@@ -375,10 +397,33 @@ upper bound of the sum of tenant quotas on a region.
 
 | Key | Default | What it does |
 | --- | --- | --- |
-| `audit.retentionDays` | `365` | Audit events older than this are deleted daily; `0` keeps them (`AUDIT_RETENTION_DAYS`). The setting in Settings → Audit log overrides it |
+| `audit.retentionDays` | `365` | Audit events older than this are deleted daily; `0` keeps them (`AUDIT_RETENTION_DAYS`). The setting in Administration → Audit log overrides it |
 | `audit.siemForwarding` | `false` | Every audit event also goes to the API, Horizon and Reverb container log as one JSON line for a log collector (`AUDIT_FORWARD_ENABLED`) |
 
 Details: [security.md](security.md#audit-log).
+
+### projectSecrets
+
+| Key | Default | What it does |
+| --- | --- | --- |
+| `projectSecrets.storage` | `region` | Where the values of project secret variables go (`RUNR_SECRET_STORAGE`): `region` straight into the project's Kubernetes Secret in its region, RunR's database keeps metadata only; `database` the behaviour up to 0.5.10, values encrypted in the database (deprecated) |
+| `projectSecrets.finalize` | `false` | `true` once the upgrade from 0.5.10 is confirmed: the region Job of the upgrade (`runr-region-reconcile-<revision>`) runs `secrets:move-to-region --finalize`, which drops the encrypted copies RunR keeps so that 0.5.10 can be installed again, and lets secret store references be set. Do not install 0.5.10 again afterwards ([Rolling back to 0.5.10](upgrade.md#rolling-back-to-0510)). A fresh installation is finalized from the start. No effect with `projectSecrets.storage: database`, where the region Job skips the step |
+
+Values written before the upgrade move with `php artisan secrets:move-to-region`, which the
+Job `runr-region-reconcile-<revision>` runs after every upgrade (with `projectSecrets.storage: region`). The fingerprint
+key (`RUNR_SECRET_FINGERPRINT_KEY`, default: derived from `APP_KEY`), the settings of External
+Secrets Operator (`RUNR_ESO_*`) and those of the regions' OpenBao are set through `extraEnv`:
+
+| Env | Default | |
+| --- | --- | --- |
+| `RUNR_OPENBAO_IMAGE` | `ghcr.io/brf-tech/runr/reqs/openbao:2.4.1` | the image of the regions' OpenBao |
+| `RUNR_OPENBAO_STORAGE_SIZE` | `2Gi` | its volume |
+| `RUNR_OPENBAO_STORAGE_CLASS` | empty (the cluster's default) | the StorageClass of its volume |
+| `RUNR_OPENBAO_DB_TTL` / `RUNR_OPENBAO_DB_MAX_TTL` | `168h` / `720h` | how long a dynamic Postgres user lives / at most |
+| `RUNR_OPENBAO_DB_REFRESH` | `24h` | how often the region asks for a new dynamic user |
+
+Details: [security.md](security.md#secret-environment-variables), [secret-stores.md](secret-stores.md),
+[bindings.md](bindings.md#dynamic-credentials).
 
 ### auth
 
@@ -389,7 +434,7 @@ Details: [security.md](security.md#audit-log).
 ### billing
 
 The Billing module ([billing.md](billing.md)): a monthly bill per project and, with tenancy, per
-tenant, for an external invoicing system. Off by default. A webhook saved in Settings → Billing →
+tenant, for an external invoicing system. Off by default. A webhook saved in Administration → Billing →
 Webhook wins over the two webhook values.
 
 | Key | Default | What it does |
@@ -402,7 +447,7 @@ Webhook wins over the two webhook values.
 ### branding
 
 The installation's brand, applied when the pods start ([white-label.md](white-label.md)). Per
-field, a value saved in Settings → Branding wins over these values, which win over the RunR
+field, a value saved in Administration → Branding wins over these values, which win over the RunR
 default. Logos and the favicon take an https URL, a `data:image/…;base64,…` URI or a reference to a
 key of a ConfigMap or Secret in the release namespace (`{configMapKeyRef: {name, key}}` or
 `{secretKeyRef: {name, key}}`).
@@ -428,8 +473,8 @@ key of a ConfigMap or Secret in the release namespace (`{configMapKeyRef: {name,
 ### signup
 
 Defaults of the self-service signup ([white-label.md](white-label.md#2-self-service-signup)); the
-values saved in Settings → Signup override them. Whether registration is open at all is the
-console setting `registration_enabled` (on by default, Settings → Platform → User Registration).
+values saved in Administration → Signup override them. Whether registration is open at all is the
+console setting `registration_enabled` (on by default, Administration → Regions & settings → User Registration).
 
 | Key | Default | What it does |
 | --- | --- | --- |
@@ -454,11 +499,28 @@ console setting `registration_enabled` (on by default, Settings → Platform →
 | --- | --- | --- |
 | `knative.minK8sMinor` | `"30"` | Lowest Kubernetes minor version accepted for a region (`KNATIVE_MIN_K8S_MINOR`) |
 | `knative.traefikImage` | `""` | Image of the region Traefik (Knative ingress); empty: `ghcr.io/brf-tech/runr/reqs/traefik` at the version of the pinned chart. Point it at a registry the regions reach, with the same Traefik version; `region:reconcile` moves existing regions to it |
+| `knative.certManager.install` | `true` | Install cert-manager in regions whose cluster runs none (`RUNR_CERT_MANAGER_INSTALL`); a cluster's own cert-manager is reused either way and never removed by RunR ([cert-manager](regions.md#cert-manager)) |
+| `knative.certManager.acmeEmail` | `""` | ACME account e-mail of the Let's Encrypt issuer RunR creates in regions reachable from the internet (`RUNR_CERT_MANAGER_ACME_EMAIL`); setting it accepts the ACME server's terms. Empty: every region issues from its own CA. A region's setting `cert_manager_acme_email` overrides it |
+| `knative.certManager.acmeServer` | `""` | ACME directory (`RUNR_CERT_MANAGER_ACME_SERVER`); empty: Let's Encrypt production. `https://acme-staging-v02.api.letsencrypt.org/directory` for tests |
+| `knative.certManager.chartVersion` | `""` | Chart `jetstack/cert-manager` (`RUNR_CERT_MANAGER_CHART_VERSION`); empty: `v1.21.2`. Its images take the same tag |
+| `knative.certManager.imagePrefix` | `""` | Where the cert-manager images come from: `<prefix>/cert-manager-controller`, `-webhook`, `-cainjector`, `-acmesolver` (`RUNR_CERT_MANAGER_IMAGE_PREFIX`); empty: `ghcr.io/brf-tech/runr/reqs`, the mirror of `quay.io/jetstack` |
+
+The images of RunR's own region components have no value of their own; set them through
+[`extraEnv`](#extraenv) to pull them from a registry the regions reach:
+
+| Env | Default | |
+| --- | --- | --- |
+| `RUNR_AGENT_IMAGE` | `ghcr.io/brf-tech/runr/agent:<version>` (the installed version: `APP_VERSION`, which the chart sets from its `appVersion`; `latest` for a build that is no release) | the region agent (`runr-agent`: metrics, pod sessions, the global-health listener); `region:reconcile` moves the regions' agents to it |
+| `RUNR_INTERNAL_AUTHZ_IMAGE` | `RUNR_AGENT_IMAGE` | the agent in authz mode that checks the calls of the [internal network](internal-network.md) (`runr-internal-auth`) |
+| `RUNR_QUEUE_CONSUMER_IMAGE` | `ghcr.io/brf-tech/runr/queue-consumer:<version>` (the installed version, as the agent) | the projects' event gateway (`<slug>-qc`) and the topic publisher (`runr-topics`) ([triggers.md](triggers.md#the-event-gateway)); `region:reconcile` moves the regions' gateways to it |
+| `RUNR_INTERNAL_AUTHZ_READY_TIMEOUT` | `180` | seconds an install and `region:reconcile` wait for the authz before the private entry point refers to it |
+| `RUNR_REGISTRY_PVC_TEST_SECONDS` | `180` | seconds the internal registry's setup waits for its test volume of the chosen StorageClass to bind (30 to 900); raise it for slow storage or busy clusters ([regions.md](regions.md#storage)) |
+| `RUNR_PRIVATE_INGRESS_DNS_GRACE_SECONDS`, `RUNR_PRIVATE_INGRESS_REGENERATE_TIMEOUT` | `35`, `180` | `region:reconcile`'s move of cluster-local routes to the private entry point: how long they stay on the public one too after the move (DNS caches), and how long the KIngresses get to name `traefik-internal` before the step fails and the next run goes on ([regions.md](regions.md#cluster-local-services-and-network-isolation)) |
 
 ### observability
 
-Tracing, request replay, uptime checks, the status page and alert delivery
-([observability.md](observability.md)).
+Tracing, request replay, uptime checks, load tests, the status page and alert delivery
+([observability.md](observability.md), [load-test.md](load-test.md)).
 
 | Key | Default | What it does |
 | --- | --- | --- |
@@ -478,6 +540,12 @@ Tracing, request replay, uptime checks, the status page and alert delivery
 | `observability.uptime.minIntervalSeconds` | `30` | Shortest interval of an uptime check |
 | `observability.uptime.resultsRetentionDays` | `90` | Retention of check results |
 | `observability.uptime.allowPrivateTargets` | `false` | `true`: checks of an absolute URL may target private addresses |
+| `observability.loadTest.enabled` | `true` | Load tests of HTTP projects ([load-test.md](load-test.md)) |
+| `observability.loadTest.dailyLimit` | `20` | Load tests an organization may start per day; `0`: none |
+| `observability.loadTest.maxUsers` | `100` | The largest of the 10 / 50 / 100 concurrent-user choices offered |
+| `observability.loadTest.maxDurationSeconds` | `300` | The longest of the 30 / 60 / 300 s duration choices offered |
+| `observability.loadTest.maxConcurrentPerRegion` | `5` | k6 pods at once in a region (ResourceQuota of the `runr-loadtest` namespace) |
+| `observability.loadTest.image` | `""` | k6 image; empty: `ghcr.io/brf-tech/runr/reqs/k6` at the pinned version |
 | `observability.statusPage.enabled` | `true` | The public status page |
 | `observability.alerts.deliveryTries` | `4` | Delivery attempts of an alert |
 | `observability.alerts.allowPrivateTargets` | `false` | `true`: webhook, Slack and Teams URLs may be private addresses |
@@ -485,7 +553,7 @@ Tracing, request replay, uptime checks, the status page and alert delivery
 ### sandboxApi
 
 Isolated execution of untrusted code ([sandbox-api.md](sandbox-api.md)). Region settings, warm
-pools and organization quotas are set in Settings → Sandboxes; these are the platform defaults and
+pools and organization quotas are set in Build & Run → Sandbox settings; these are the platform defaults and
 ceilings.
 
 | Key | Default | What it does |
@@ -497,7 +565,7 @@ ceilings.
 | `sandboxApi.defaults.cpuM`, `memoryMb`, `diskMb` | `500`, `512`, `1024` | Default size of a sandbox |
 | `sandboxApi.defaults.ttlSeconds`, `idleTimeoutSeconds` | `900`, `600` | Default lifetime and idle timeout |
 | `sandboxApi.limits.maxCpuM`, `maxMemoryMb`, `maxDiskMb`, `maxTtlSeconds` | `4000`, `8192`, `10240`, `86400` | Ceilings per sandbox; a region may lower them |
-| `sandboxApi.quota.maxConcurrent`, `maxCpuM`, `maxMemoryMb` | `20`, `8000`, `16384` | Per organization unless set in Settings → Sandboxes; `0` = unlimited |
+| `sandboxApi.quota.maxConcurrent`, `maxCpuM`, `maxMemoryMb` | `20`, `8000`, `16384` | Per organization unless set in Build & Run → Sandbox settings; `0` = unlimited |
 | `sandboxApi.quota.maxSandboxSecondsMonth`, `maxPoolSize` | `0`, `10` | Sandbox seconds per month and warm pool size per organization; `0` = unlimited |
 | `sandboxApi.exec.defaultTimeout`, `maxTimeout` | `60`, `3600` | Timeouts of a command, in seconds |
 | `sandboxApi.files.maxUploadBytes`, `maxDownloadBytes` | `52428800`, `52428800` | Largest file upload and download |
@@ -508,7 +576,7 @@ ceilings.
 
 Every project gets a git remote `https://<domain>/git/<organization>/<project>.git`, served by the
 API behind the gateway's `/git` route; the bare repositories live on the API volume
-(`git-remotes/`). Providers are added in Settings → Git providers ([git-deploy.md](git-deploy.md)).
+(`git-remotes/`). Providers are added in Data & Integrations → Git providers ([git-deploy.md](git-deploy.md)).
 
 | Key | Default | What it does |
 | --- | --- | --- |
@@ -539,6 +607,38 @@ chain); these are the platform-wide defaults. Empty values keep the application 
 | `supplyChain.policyController.chartVersion` | `""` | Its chart version; empty: the version the release pins |
 | `supplyChain.policyController.extraArgs` | `""` | Webhook flags, e.g. `"disable-tuf=true"` for regions without internet access |
 
+### globalDns
+
+[Global projects](global-projects.md): the global zone and the PowerDNS server each taking-part
+region runs for it. Which regions run one is set in the console (Region → General → Global DNS);
+these are the platform-wide defaults. Empty values keep the application defaults.
+
+| Key | Default | What it does |
+| --- | --- | --- |
+| `globalDns.zone` | `""` | The global zone; empty: `g.<base domain>` |
+| `globalDns.namespace` | `""` | Namespace of the server in a region; empty: `runr-global-dns` |
+| `globalDns.image` | `""` | PowerDNS Authoritative; empty: `ghcr.io/brf-tech/runr/reqs/pdns-auth:5.0.8` |
+| `globalDns.storageClass` | `""` | StorageClass of the server's 1 GiB volume; empty: the cluster default |
+| `globalDns.serviceAnnotations` | `{}` | Annotations of the DNS LoadBalancer Service (UDP and TCP 53) |
+| `globalDns.ttl` | `""` | TTL of the project records in seconds; empty: 30 |
+| `globalDns.maxRegions` | `""` | Regions of one global project; empty: 8 |
+| `globalDns.geoipUrl` | `""` | GeoIP database of proximity mode (gzipped MaxMind-format city database, `{yyyy}` / `{mm}`: the current month); empty: DB-IP IP to City Lite (CC BY 4.0); `-`: none ([licensing](global-projects.md#geoip-licensing)) |
+| `globalDns.tls.mode` | `""` | `acme` (empty: the default) — cert-manager issues `*.<zone>` in every region with DNS-01; `none` — the region's default certificate |
+| `globalDns.tls.acmeServer` | `""` | ACME directory; empty: Let's Encrypt production |
+| `globalDns.tls.acmeEmail` | `""` | Contact address of the ACME account; empty: the region's cert-manager ACME e-mail (the region setting `cert_manager_acme_email`, else `knative.certManager.acmeEmail`) |
+| `globalDns.failover.afterSeconds` | `""` | Seconds a global project's primary may fail its health check before an automatic failover; empty: 180 ([failover](global-projects.md#failover)) |
+| `globalDns.dataLink.image` | `""` | Forwarder of a binding's data link in the other regions of a global project (nginx stream); empty: `ghcr.io/brf-tech/runr/reqs/nginx:1.27-alpine` ([data link](global-projects.md#the-data-link)) |
+| `globalDns.dataLink.port` | `""` | Port of the binding region's Traefik the data link reaches (TLS with SNI on websecure); empty: 443 |
+
+Settings without a value of their own, set through [`extraEnv`](#extraenv): `RUNR_GLOBAL_DNS_ZONE_LABEL`
+(the label in front of the base domain when `zone` is empty, default `g`),
+`RUNR_GLOBAL_DNS_STORAGE_SIZE` (the server's volume, default `1Gi`), the health checks of the
+regions' copies `RUNR_GLOBAL_DNS_HEALTH_INTERVAL` / `_TIMEOUT` (seconds, default 5 / 2) and
+`RUNR_GLOBAL_DNS_HEALTH_MINIMUM_FAILURES` (failed checks in a row before a region leaves the
+answers, default 2), and `RUNR_GLOBAL_IMAGE_COPY_TIMEOUT` (seconds the copy of an uploaded CaaS
+image into another region's registry may take, default 3600; the copy runs on the long queue, whose
+limits follow the longer of it and `RUNR_ORG_TRANSFER_JOB_TIMEOUT`).
+
 ### images
 
 Container images and `.wasm` modules uploaded into a region's registry ([images.md](images.md)).
@@ -546,10 +646,61 @@ Empty values keep the application defaults.
 
 | Key | Default | What it does |
 | --- | --- | --- |
-| `images.uploadImage` | `""` | Image of the upload receiver the regions pull; empty: `ghcr.io/brf-tech/runr/image-upload:1.0.0` |
+| `images.uploadImage` | `""` | Image of the upload receiver the regions pull; empty: `ghcr.io/brf-tech/runr/image-upload:1.1.0` (the image of the transfer agent too) |
 | `images.quotaGb` | `""` | Storage of uploaded images per organization over every region; empty: 50, `0` = unlimited |
 | `images.maxUploadGb` | `""` | Largest file of one upload; empty: 20 |
 | `images.uploadTtlHours` | `""` | An upload not completed within this time is aborted; empty: 24 |
+
+### runtimePatches
+
+The signed feed that announces the patch tags of the runtime images — level, reason, CVEs and,
+for critical and zero-day patches, a deadline ([runtimes.md](runtimes.md#runtime-patches),
+[security.md](security.md#runtime-patch-feed)). RunR checks the feed's digest every five minutes
+and uses a feed only once its cosign signature verified with `publicKey`. Empty values keep the
+application defaults.
+
+| Key | Default | What it does |
+| --- | --- | --- |
+| `runtimePatches.feed` | `""` | OCI reference of the feed (`RUNR_PATCH_FEED`); empty: `ghcr.io/brf-tech/runr/runtime-patches:feed` |
+| `runtimePatches.publicKey` | the key of BRF-Tech/runr-runtimes (`keys/patch-feed.pub`, DER SHA-256 `24d79a49…c0df`) | cosign public key (PEM) the feed must be signed with (`RUNR_PATCH_FEED_PUBLIC_KEY`); another key for a feed of your own; `""`: the feed is off and platform administrators see a warning. Set it as a block: `publicKey: \|` followed by the key's lines — the line breaks reach the API |
+| `runtimePatches.viaRegion` | `""` | Read the feed through this region's internal registry (id or name; its ghcr.io pull-through) instead of from the feed's registry, for an API without a way out (`RUNR_PATCH_FEED_VIA_REGION`) |
+| `runtimePatches.autoMigrate` | `true` | At a critical or zero-day patch's deadline, redeploy the projects still behind onto the newest patch, rolled back when the new revision does not become ready (`RUNR_PATCH_AUTO_MIGRATE`). The default of the platform policy: platform administrators switch it on the Patches page, which wins |
+
+`RUNR_PATCH_FEED_TIMEOUT` (seconds of one registry request, default 15) has no value of its own:
+set it through [`extraEnv`](#extraenv).
+
+### apiProduct
+
+API keys, JWT routes, plans and usage of the gateways ([api-product.md](api-product.md)). The
+regions run gateway-auth, which the region Traefik asks before every call of a key or JWT route.
+Empty values keep the application defaults.
+
+| Key | Default | What it does |
+| --- | --- | --- |
+| `apiProduct.gatewayAuthImage` | `""` | Image of gateway-auth the regions pull; empty: `ghcr.io/brf-tech/runr/gateway-auth:1.0.0` |
+| `apiProduct.callbackUrl` | `""` | RunR's base URL as the regions reach it (config sync, usage reports); empty: the URL the region agent connects to |
+| `apiProduct.syncSeconds` | `""` | How often gateway-auth fetches changed keys and plans — the longest a revoked key keeps working; empty: 10 |
+| `apiProduct.usageRetentionDays` | `""` | Hourly usage rows kept; empty: 400 |
+
+Settings without a value of their own, set through [`extraEnv`](#extraenv):
+`RUNR_GATEWAY_AUTH_REPLICAS` (gateway-auth pods per region with Redis, default 2; a region without
+Redis runs one pod), `RUNR_GATEWAY_AUTH_FLUSH_SECONDS` (how often gateway-auth reports the calls it
+counted, default 30) and `RUNR_API_KEY_ROTATION_OVERLAP_MINUTES` (how long the old key of a
+rotation keeps working unless the rotation says otherwise, default 1440).
+
+### orgTransfer
+
+Organization export / import ([org-export.md](org-export.md)). Packages live on the API volume
+`runr-api-storage` (`api.storage.size`, or `storage.application`): size it for what you export, or
+write exports to an object binding / S3. Empty values keep the application defaults; the further
+settings (`RUNR_ORG_TRANSFER_*`) are in [org-export.md](org-export.md).
+
+| Key | Default | What it does |
+| --- | --- | --- |
+| `orgTransfer.transferImage` | `""` | Image of the transfer pods the regions pull (binding data, images); empty: `ghcr.io/brf-tech/runr/image-upload:1.1.0` |
+| `orgTransfer.maxPackageGb` | `""` | Largest package an import takes; empty: 50 |
+| `orgTransfer.retentionHours` | `""` | Packages are removed after this many hours; empty: 168 |
+| `orgTransfer.podDiskGb` | `""` | emptyDir of a transfer pod (one binding's dump or one image); empty: 20 |
 
 ### ai
 

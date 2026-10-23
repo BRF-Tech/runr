@@ -9,7 +9,10 @@ use Illuminate\Http\Request;
 class NotificationPreferenceController extends Controller
 {
     // billing: region offers, fixed resource requests and their decisions (Billing module)
-    private const TYPES = ['resource_threshold', 'build', 'deployment', 'infrastructure', 'demo', 'billing'];
+    // runtime_patch: runtime patches, end-of-life reminders (zero-day patches ignore it)
+    // promotion: promotions between environments — one waits for your approval, yours was
+    //            approved, rejected, deployed or failed (PromotionNotifier)
+    private const TYPES = ['resource_threshold', 'build', 'deployment', 'infrastructure', 'demo', 'billing', 'runtime_patch', 'promotion'];
 
     private const CHANNELS = ['in_app', 'email'];
 

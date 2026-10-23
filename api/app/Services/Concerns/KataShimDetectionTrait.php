@@ -17,9 +17,11 @@ trait KataShimDetectionTrait
             // General
             'clh' => ['label' => 'Cloud Hypervisor', 'runtime' => 'go',   'arches' => ['amd64', 'arm64'], 'category' => 'general',      'requires' => ['kvm'], 'recommended' => true],
             'cloud-hypervisor' => ['label' => 'Cloud Hypervisor (Rust)', 'runtime' => 'rs',   'arches' => ['amd64', 'arm64'], 'category' => 'general',      'requires' => ['kvm']],
-            'qemu' => ['label' => 'QEMU', 'runtime' => 'go',   'arches' => ['amd64', 'arm64', 's390x', 'ppc64le'], 'category' => 'general', 'requires' => ['kvm']],
+            // QEMU keeps each guest's memory in /dev/shm (KataRuntime::QEMU_MIN_SHM_MB)
+            'qemu' => ['label' => 'QEMU', 'runtime' => 'go',   'arches' => ['amd64', 'arm64', 's390x', 'ppc64le'], 'category' => 'general', 'requires' => ['kvm', 'shm']],
             'qemu-runtime-rs' => ['label' => 'QEMU (Rust)', 'runtime' => 'rs',   'arches' => ['amd64', 'arm64', 's390x'], 'category' => 'general',      'requires' => ['kvm']],
-            'dragonball' => ['label' => 'Dragonball', 'runtime' => 'rs',   'arches' => ['amd64', 'arm64'], 'category' => 'general',      'requires' => ['kvm']],
+            // runtime-rs reaches systemd over the D-Bus system bus (KataRuntime::NEEDS_SYSTEM_DBUS)
+            'dragonball' => ['label' => 'Dragonball', 'runtime' => 'rs',   'arches' => ['amd64', 'arm64'], 'category' => 'general',      'requires' => ['kvm', 'dbus']],
             'fc' => ['label' => 'Firecracker', 'runtime' => 'go',   'arches' => ['amd64', 'arm64'], 'category' => 'general',      'requires' => ['kvm', 'devmapper']],
             // GPU
             'qemu-nvidia-gpu' => ['label' => 'QEMU NVIDIA GPU', 'runtime' => 'go',   'arches' => ['amd64', 'arm64'], 'category' => 'gpu',          'requires' => ['kvm', 'gpu', 'iommu']],
@@ -65,7 +67,7 @@ trait KataShimDetectionTrait
             if ($shim === null) {
                 $problems[$hv] = 'not a hypervisor RunR installs ('.implode(', ', KataRuntime::HYPERVISORS).')';
             } elseif (! $shim['available']) {
-                $problems[$hv] = self::shimReasonText((string) $shim['reason']);
+                $problems[$hv] = self::shimReasonText((string) $shim['reason']).(! empty($shim['detail']) ? " ({$shim['detail']})" : '');
             }
         }
 
@@ -78,6 +80,10 @@ trait KataShimDetectionTrait
             'arch_mismatch' => 'the node architecture is not supported',
             'no_kvm' => 'hardware virtualization (/dev/kvm) is not available on the nodes',
             'no_devmapper' => "it needs containerd's devmapper snapshotter, which RunR sets up only on containerd nodes (plain, k3s, rke2)",
+            'small_shm' => 'the nodes\' /dev/shm is smaller than '.KataRuntime::QEMU_MIN_SHM_MB.' MiB: QEMU keeps each guest\'s whole memory there '
+                .'(shared with virtiofsd) and dies of SIGBUS when it is full — nodes that run in a container (Kind, k3d) get 64 MiB',
+            'no_dbus' => 'the nodes run systemd without the D-Bus system bus: Kata\'s Rust runtime puts each sandbox into its systemd cgroup '
+                .'over D-Bus and fails without it — Kind\'s node image has none',
             'no_gpu' => 'no NVIDIA GPU was detected',
             'no_iommu' => 'IOMMU is not available (bare metal required)',
             'no_snp' => 'AMD SEV-SNP was not detected',
@@ -104,6 +110,12 @@ trait KataShimDetectionTrait
             'tdx' => false,
             'nfd' => false,
             'containerd_version' => null,
+            // /dev/shm of the Kata target nodes for QEMU guests: ok | small | unknown (qemuShmSummary())
+            'shm' => 'unknown',
+            'shm_nodes' => [],
+            // D-Bus system bus on the Kata target nodes that run systemd: ok | missing | unknown (systemDbusSummary())
+            'dbus' => 'unknown',
+            'dbus_nodes' => [],
         ];
 
         try {
@@ -197,6 +209,14 @@ trait KataShimDetectionTrait
         };
         $capabilities['kvm_summary'] = $kvm;
 
+        $shm = self::qemuShmSummary($nodes['items']);
+        $capabilities['shm'] = $shm['state'];
+        $capabilities['shm_nodes'] = $shm['nodes'];
+
+        $dbus = self::systemDbusSummary($nodes['items']);
+        $capabilities['dbus'] = $dbus['state'];
+        $capabilities['dbus_nodes'] = $dbus['nodes'];
+
         return $capabilities;
     }
 
@@ -228,6 +248,8 @@ trait KataShimDetectionTrait
         foreach ($def['requires'] as $req) {
             $check = match ($req) {
                 'kvm' => $this->checkKvm($caps),
+                'shm' => $this->checkShm($caps),
+                'dbus' => ($caps['dbus'] ?? 'unknown') === 'missing' ? 'no_dbus' : null,
                 'devmapper' => $this->checkDevmapper($caps),
                 'gpu' => $this->checkGpu($caps),
                 'iommu' => $this->checkIommu($caps),
@@ -239,6 +261,11 @@ trait KataShimDetectionTrait
             if ($check !== null) {
                 $entry['available'] = false;
                 $entry['reason'] = $check;
+                if ($check === 'small_shm') {
+                    $entry['detail'] = implode(', ', array_map(fn ($node, $mb) => "{$node}: {$mb} MiB", array_keys($caps['shm_nodes']), $caps['shm_nodes']));
+                } elseif ($check === 'no_dbus') {
+                    $entry['detail'] = 'no D-Bus on '.implode(', ', $caps['dbus_nodes']);
+                }
 
                 return $entry;
             }
@@ -259,6 +286,12 @@ trait KataShimDetectionTrait
         }
 
         return null; // true or unknown → allow
+    }
+
+    /** Every Kata target node with a known /dev/shm is too small for QEMU guests; unknown → allow. */
+    private function checkShm(array $caps): ?string
+    {
+        return ($caps['shm'] ?? 'unknown') === 'small' ? 'small_shm' : null;
     }
 
     /**

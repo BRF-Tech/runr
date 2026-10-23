@@ -45,7 +45,11 @@ var workflowEventFields = []string{
 
 var workflowPageFields = []string{"meta.current_page", "meta.last_page", "meta.per_page", "meta.total"}
 
-var workflowRunFilterQuery = []string{"status", "source", "q", "from", "to", "per_page"}
+var workflowRunFilterQuery = []string{"status", "source", "q", "from", "to", "per_page", "environment"}
+
+// workflowEnvironment is the environment a workflow call addresses (docs/workflows.md#environments):
+// a query parameter of a GET, a body field otherwise.
+var workflowEnvironment = []string{"environment"}
 
 // workflowListingSources define the listing answered by sync and declare (an array the
 // generator types as a string).
@@ -59,41 +63,50 @@ func init() {
 	Contract = append(Contract,
 		// Definitions
 		Endpoint{Method: "GET", Path: "/projects/{project}/workflows", Status: 200, Permission: "workflows.view", Optional: true,
-			Response: concat(prefix("data[].", workflowFields), prefix("app.", workflowAppFields))},
+			Query: workflowEnvironment, Response: concat(prefix("data[].", workflowFields), prefix("app.", workflowAppFields))},
 		Endpoint{Method: "PUT", Path: "/projects/{project}/workflows", Status: 200, Permission: "workflows.manage", Optional: true,
-			Request: []string{"workflows"}, FreeForm: []string{"workflows"},
+			Request: []string{"workflows", "environment"}, FreeForm: []string{"workflows"},
 			Response: concat([]string{"message"}, prefix("data[].", workflowFields), prefix("app.", workflowAppFields)),
 			Sources:  workflowListingSources},
 		Endpoint{Method: "POST", Path: "/projects/{project}/workflows/sync", Status: 200, Permission: "workflows.manage", Optional: true,
+			Request:  workflowEnvironment,
 			Response: concat([]string{"message", "source"}, prefix("data[].", workflowFields), prefix("app.", workflowAppFields)),
 			Sources:  workflowListingSources},
 		Endpoint{Method: "GET", Path: "/projects/{project}/workflows/{workflow}", Status: 200, Permission: "workflows.view", Optional: true,
-			Response: prefix("data.", workflowFields)},
+			Query: workflowEnvironment, Response: prefix("data.", workflowFields)},
 		Endpoint{Method: "PATCH", Path: "/projects/{project}/workflows/{workflow}", Status: 200, Permission: "workflows.manage", Optional: true,
-			Request: []string{"is_active"}, Response: prefix("data.", workflowFields)},
+			Request: []string{"is_active", "environment"}, Response: prefix("data.", workflowFields)},
+		// One definition, declared (added or replaced) or archived; the others stay as they are
+		// (runr_workflow, runr_workflow_trigger). Newer than the set: an earlier API answers 405.
+		Endpoint{Method: "PUT", Path: "/projects/{project}/workflows/{workflow}", Status: 200, Permission: "workflows.manage", Optional: true,
+			Request:  []string{"name", "description", "triggers", "retries", "timeout", "concurrency", "idempotency", "cancel_on", "environment"},
+			FreeForm: []string{"triggers", "concurrency", "cancel_on"},
+			Response: concat([]string{"message"}, prefix("data.", workflowFields)), Sources: workflowListingSources},
+		Endpoint{Method: "DELETE", Path: "/projects/{project}/workflows/{workflow}", Status: 200, Permission: "workflows.manage", Optional: true,
+			Query: workflowEnvironment, Response: concat([]string{"message"}, prefix("data.", workflowFields)), Sources: workflowListingSources},
 
 		// The workflow app: endpoint override and signing key (the key itself only from
 		// signing-key, whose bodies stay out of --debug traces).
 		Endpoint{Method: "GET", Path: "/projects/{project}/workflows/app", Status: 200, Permission: "workflows.view", Optional: true,
-			Response: prefix("data.", workflowAppDetailFields)},
+			Query: workflowEnvironment, Response: prefix("data.", workflowAppDetailFields)},
 		Endpoint{Method: "PATCH", Path: "/projects/{project}/workflows/app", Status: 200, Permission: "workflows.manage", Optional: true,
-			Request: []string{"endpoint_url"}, Response: prefix("data.", workflowAppDetailFields)},
+			Request: []string{"endpoint_url", "environment"}, Response: prefix("data.", workflowAppDetailFields)},
 		Endpoint{Method: "POST", Path: "/projects/{project}/workflows/app/rotate-key", Status: 200, Permission: "workflows.manage",
-			Optional: true, Response: concat([]string{"message"}, prefix("data.", workflowAppDetailFields))},
+			Optional: true, Request: workflowEnvironment, Response: concat([]string{"message"}, prefix("data.", workflowAppDetailFields))},
 		Endpoint{Method: "GET", Path: "/projects/{project}/workflows/app/signing-key", Status: 200, Permission: "workflows.manage",
-			Optional: true, Response: []string{"signing_key", "env", "fingerprint"}},
+			Optional: true, Query: workflowEnvironment, Response: []string{"signing_key", "env", "fingerprint"}},
 
 		// Metering: step executions and started runs per day and per workflow.
 		Endpoint{Method: "GET", Path: "/workflow-usage", Status: 200, Permission: "workflows.view", Optional: true,
 			Query: []string{"from", "to"}, Response: workflowUsageFields, Sources: workflowUsageSources},
 		Endpoint{Method: "GET", Path: "/projects/{project}/workflow-usage", Status: 200, Permission: "workflows.view", Optional: true,
-			Query: []string{"from", "to"}, Response: workflowUsageFields, Sources: workflowUsageSources},
+			Query: []string{"from", "to", "environment"}, Response: workflowUsageFields, Sources: workflowUsageSources},
 
 		// Runs
 		Endpoint{Method: "GET", Path: "/projects/{project}/workflows/{workflow}/runs", Status: 200, Permission: "workflows.view", Optional: true,
 			Query: workflowRunFilterQuery, Response: concat(prefix("data[].", workflowRunFields), workflowPageFields)},
 		Endpoint{Method: "POST", Path: "/projects/{project}/workflows/{workflow}/runs", Status: 200, Permission: "workflows.run", Optional: true,
-			Request: []string{"data", "idempotency_key", "test"}, FreeForm: []string{"data"},
+			Request: []string{"data", "idempotency_key", "test", "environment"}, FreeForm: []string{"data"},
 			// 201 for a new run, 200 for the run an idempotency key matched; the generator
 			// documents the answer as untyped.
 			Response: concat([]string{"created"}, prefix("data.", workflowRunFields)),
@@ -112,15 +125,16 @@ func init() {
 
 		// Events (organization level). POST reads the raw body: one event, or {"events": […]}.
 		Endpoint{Method: "POST", Path: "/events", Status: 200, Permission: "events.send", Optional: true,
-			Query:    []string{"test"},
-			Request:  []string{"name", "data", "id", "ts", "events[].name", "events[].data", "events[].id", "events[].ts"},
+			Query: []string{"test"},
+			Request: []string{"name", "data", "id", "ts", "environment", "events[].name", "events[].data", "events[].id", "events[].ts",
+				"events[].environment"},
 			FreeForm: []string{"data", "events[].data"},
 			Response: []string{"ids", "events[].id", "events[].name", "events[].duplicate", "events[].runs",
 				"events[].resumed", "events[].cancelled"},
 			Sources: []string{"app/Workflows/Http/Controllers/WorkflowEventController.php",
 				"app/Workflows/Engine/EventIngestor.php"}},
 		Endpoint{Method: "GET", Path: "/events", Status: 200, Permission: "workflows.view", Optional: true,
-			Query:    []string{"name", "source", "project_id", "from", "to", "per_page"},
+			Query:    []string{"name", "source", "project_id", "environment", "from", "to", "per_page"},
 			Response: concat(prefix("data[].", workflowEventFields), workflowPageFields)},
 		Endpoint{Method: "GET", Path: "/events/{event}", Status: 200, Permission: "workflows.view", Optional: true,
 			Response: concat(prefix("data.", workflowEventFields), prefix("runs[].", workflowRunFields))},

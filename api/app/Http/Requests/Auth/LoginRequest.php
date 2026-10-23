@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests\Auth;
 
+use App\Support\Auth\LoginIdentifier;
 use Illuminate\Foundation\Http\FormRequest;
 
 class LoginRequest extends FormRequest
@@ -14,7 +15,8 @@ class LoginRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'login' => 'required|string',   // username or email
+            /** The user name or the e-mail address of the account, in any letter case. */
+            'login' => ['required', 'string', 'max:'.LoginIdentifier::MAX_LENGTH],
             'password' => 'required|string',
         ];
     }

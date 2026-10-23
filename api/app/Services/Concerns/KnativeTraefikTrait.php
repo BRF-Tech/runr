@@ -4,8 +4,10 @@ namespace App\Services\Concerns;
 
 use App\Services\HelmService;
 use App\Services\Helpers\IngressTrust;
+use App\Services\Helpers\PrivateIngress;
 use App\Services\Helpers\RequestTimeout;
 use App\Services\Helpers\TraefikImage;
+use App\Services\InternalNetwork\InternalNetworkManifests;
 use App\Services\KubernetesClient;
 use Illuminate\Support\Facades\Log;
 use RuntimeException;
@@ -321,6 +323,11 @@ trait KnativeTraefikTrait
                 'metrics' => [
                     'port' => 9100, 'expose' => ['default' => false], 'exposedPort' => 9100, 'protocol' => 'TCP',
                 ],
+                // cluster-local Knative routes (queue-trigger sinks, model services): not on the
+                // LoadBalancer, only on the ClusterIP Service traefik-internal (PrivateIngress),
+                // every call through the internal network's ForwardAuth (InternalNetworkManifests)
+                PrivateIngress::ENTRYPOINT => PrivateIngress::portValues($requestTimeout)
+                    + ['http' => ['middlewares' => InternalNetworkManifests::entryPointMiddlewares($namespace)]],
             ],
             'logs' => [
                 'general' => ['level' => 'INFO', 'format' => 'json'],
@@ -341,7 +348,10 @@ trait KnativeTraefikTrait
                     'addRoutersLabels' => true, 'addServicesLabels' => true, 'buckets' => '0.1,0.3,1.2,5.0',
                 ],
             ],
-            'service' => ['enabled' => true, 'single' => true, 'type' => 'LoadBalancer'],
+            'service' => [
+                'enabled' => true, 'single' => true, 'type' => 'LoadBalancer',
+                'additionalServices' => [PrivateIngress::SERVICE_KEY => PrivateIngress::serviceValues()],
+            ],
             'autoscaling' => [
                 'enabled' => true, 'minReplicas' => 3, 'maxReplicas' => 10,
                 'metrics' => [[
@@ -382,15 +392,9 @@ trait KnativeTraefikTrait
                     ]],
                 ],
             ],
-            'additionalArguments' => [
-                '--ping=true', '--ping.entrypoint=traefik',
-                '--serversTransport.insecureSkipVerify=false',
-                '--entrypoints.websecure.http.tls.options=default',
-                // Cluster-local Knative ingress support (queue services etc.)
-                '--providers.knative.privateservice.name='.self::TRAEFIK_RELEASE,
-                '--providers.knative.privateservice.namespace='.$namespace,
-                '--providers.knative.privateentrypoints=web',
-            ],
+            // public Knative routes on web / websecure, cluster-local ones on internal, whose
+            // Service traefik-internal the KIngresses name as their private load balancer
+            'additionalArguments' => PrivateIngress::additionalArguments($namespace),
             'tlsOptions' => [
                 'default' => [
                     'minVersion' => 'VersionTLS12', 'maxVersion' => 'VersionTLS13',

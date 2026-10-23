@@ -8,6 +8,7 @@ use App\Http\Middleware\RecordAuditTrail;
 use App\Http\Middleware\ResponseCache;
 use App\Http\Middleware\SetLocale;
 use App\Http\Middleware\TrackTokenSession;
+use App\Support\Projects\DeletedProject;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
@@ -79,4 +80,7 @@ return Application::configure(basePath: dirname(__DIR__))
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         $exceptions->shouldRenderJsonWhen(fn (Request $request) => true);
+        // A request on a project deleted while it ran: 404 as for an unknown project, not a
+        // server error, and nothing to report (DeletedProject)
+        $exceptions->map(fn (Throwable $e) => DeletedProject::map($e));
     })->create();

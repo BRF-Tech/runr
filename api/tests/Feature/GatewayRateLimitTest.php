@@ -6,7 +6,9 @@ use App\Models\Gateway;
 use App\Models\GatewayRoute;
 use App\Models\KnativeRegion;
 use App\Models\Project;
+use App\Models\Setting;
 use App\Models\User;
+use App\Services\GatewayService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
@@ -35,6 +37,7 @@ class GatewayRateLimitTest extends TestCase
         parent::setUp();
 
         $this->owner = User::factory()->create(['username' => 'jane']);
+        Setting::set('base_domain', 'example.test');
 
         $region = KnativeRegion::create([
             'name' => 'fn',
@@ -107,9 +110,30 @@ class GatewayRateLimitTest extends TestCase
         $this->assertSame([
             ['name' => "gw-ratelimit-{$id}", 'namespace' => 'fn'],
             ['name' => "gw-strip-{$this->route->id}", 'namespace' => 'fn'],
+            ['name' => "gw-host-{$this->route->id}", 'namespace' => 'fn'],
         ], $ingress['body']['spec']['routes'][0]['middlewares']);
 
         $this->assertSame(50, $this->gateway->fresh()->rate_limit_average);
+    }
+
+    public function test_a_route_hands_the_request_on_to_the_projects_public_route(): void
+    {
+        $this->app->make(GatewayService::class)->syncToCluster($this->gateway->fresh(['routes.project']));
+
+        $ingress = $this->k8sCall('PATCH', "/ingressroutes/gw-{$this->gateway->id}");
+        $rule = $ingress['body']['spec']['routes'][0];
+        $this->assertSame('Host(`jane.fn.example.test`) && PathPrefix(`/hello`)', $rule['match']);
+        // the region Traefik on web, never the project's ExternalName placeholder (the private entry point)
+        $this->assertSame([['name' => 'traefik', 'namespace' => 'knative-serving', 'port' => 80]], $rule['services']);
+
+        $host = $this->k8sCall('PATCH', "/middlewares/gw-host-{$this->route->id}");
+        $project = $this->route->project;
+        $this->assertSame([
+            'Host' => "{$project->slug}.fn.example.test",
+            'K-Original-Host' => 'jane.fn.example.test',
+        ], $host['body']['spec']['headers']['customRequestHeaders']);
+        $this->assertSame($project->slug, $host['body']['metadata']['annotations']['runr.dev/service']);
+        $this->assertSame('public', $host['body']['metadata']['labels']['runr.dev/host-rewrite']);
     }
 
     public function test_burst_defaults_to_average(): void
@@ -135,7 +159,7 @@ class GatewayRateLimitTest extends TestCase
 
         $ingress = $this->k8sCall('PATCH', "/ingressroutes/gw-{$id}");
         $this->assertSame(
-            [['name' => "gw-strip-{$this->route->id}", 'namespace' => 'fn']],
+            [['name' => "gw-strip-{$this->route->id}", 'namespace' => 'fn'], ['name' => "gw-host-{$this->route->id}", 'namespace' => 'fn']],
             $ingress['body']['spec']['routes'][0]['middlewares'],
         );
         $this->assertNotNull($this->k8sCall('DELETE', "/middlewares/gw-ratelimit-{$id}"));

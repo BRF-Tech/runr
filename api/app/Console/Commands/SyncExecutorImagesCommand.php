@@ -9,6 +9,7 @@ use App\Services\Runtimes\Placeholders;
 use App\Services\Runtimes\RuntimeManifest;
 use App\Services\Runtimes\RuntimeRegistry;
 use App\Services\SupplyChain\ImageRef;
+use App\Support\Images\OciRegistryClient;
 use App\Support\Images\RegistryMove;
 use Illuminate\Console\Command;
 use Illuminate\Http\Client\Response;
@@ -249,7 +250,7 @@ class SyncExecutorImagesCommand extends Command
                 $response = $this->registryGet($url, $token);
 
                 if ($response->status() === 401 && $token === null) {
-                    $token = $this->registryToken((string) $response->header('WWW-Authenticate'), $ref->repository);
+                    $token = OciRegistryClient::bearerToken((string) $response->header('WWW-Authenticate'), $ref->repository);
                     if ($token !== null) {
                         $response = $this->registryGet($url, $token);
                     }
@@ -287,36 +288,6 @@ class SyncExecutorImagesCommand extends Command
             ->accept('application/json')
             ->withHeaders($token === null ? [] : ['Authorization' => "Bearer {$token}"])
             ->get($url);
-    }
-
-    /**
-     * An anonymous pull token from the token service a 401 names (WWW-Authenticate: Bearer
-     * realm="…",service="…",scope="…"); null without a Bearer challenge or when the service
-     * gives none.
-     */
-    private function registryToken(string $challenge, string $name): ?string
-    {
-        if (! preg_match('/^Bearer\s+(.+)$/i', trim($challenge), $m)) {
-            return null;
-        }
-
-        preg_match_all('/(\w+)="([^"]*)"/', $m[1], $pairs, PREG_SET_ORDER);
-        $params = [];
-        foreach ($pairs as $pair) {
-            $params[strtolower($pair[1])] = $pair[2];
-        }
-        if (empty($params['realm'])) {
-            return null;
-        }
-
-        $query = http_build_query(array_filter([
-            'service' => $params['service'] ?? null,
-            'scope' => $params['scope'] ?? "repository:{$name}:pull",
-        ]));
-        $response = Http::timeout(10)->get($params['realm'].(str_contains($params['realm'], '?') ? '&' : '?').$query);
-        $token = $response->successful() ? ($response->json('token') ?? $response->json('access_token')) : null;
-
-        return is_string($token) && $token !== '' ? $token : null;
     }
 
     /** The next page a tags/list answer links (Link: </v2/…/tags/list?last=…&n=…>; rel="next"), null on the last. */

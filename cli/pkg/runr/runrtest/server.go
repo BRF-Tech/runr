@@ -47,8 +47,8 @@ type Server struct {
 	Token string
 	// User is the authenticated user.
 	User runr.User
-	// Password is accepted by POST /auth/login for User.Username; TwoFactorCode, when set,
-	// is required as well.
+	// Password is accepted by POST /auth/login for User.Username or User.Email (any letter
+	// case); TwoFactorCode, when set, is required as well.
 	Password      string
 	TwoFactorCode string
 	// Version is returned by GET /version.
@@ -64,6 +64,9 @@ type Server struct {
 	FailBuild bool
 	// VerifyDomains makes POST …/verify succeed.
 	VerifyDomains bool
+	// OrgTimezone is the organization's time zone a schedule without its own runs in
+	// (config.schedule_effective_timezone); default Europe/Istanbul.
+	OrgTimezone string
 	// SecretEnv makes the fake report and store secret variables (config.secret_env_keys,
 	// config.secret_env_vars and the /projects/{project}/secrets endpoints). Default on; off,
 	// the fake behaves like an API without secret variables.
@@ -75,6 +78,15 @@ type Server struct {
 	// Catalog enables the runtime catalog (GET /runtimes, templates); off, the fake answers
 	// 404 like an API without runtime plugins. Default on.
 	Catalog bool
+	// Environments enables project environments and promotion (environments.go): the
+	// endpoints, environment / restore_config on deploys and the deployment fields that come
+	// with them. Off, the fake behaves like an API before environments. Default on.
+	Environments bool
+	// RouteSettings: a new gateway route takes its API product settings (auth_mode, jwt,
+	// gateway_only) and the answers of adding and changing a route are the route as the gateway
+	// shows it (url, jwt). Off, the fake behaves like an API before 0.6.0: it creates every route
+	// public, ignoring the settings, and answers the stored route. Default on.
+	RouteSettings bool
 	// LogLines is returned by the logs endpoint, one batch per call (then empty answers).
 	LogLines []string
 
@@ -104,6 +116,8 @@ type project struct {
 	versions    []*version
 	deployments []*deployment
 	domains     []*runr.Domain
+	// domainEnv: domain id → the environment it routes to ("" or absent: the project's own)
+	domainEnv map[string]string
 }
 
 type version struct {
@@ -130,21 +144,23 @@ type token struct {
 func New(t testing.TB) *Server {
 	t.Helper()
 	s := &Server{
-		t:           t,
-		Token:       DefaultToken,
-		User:        runr.User{ID: "1", Name: "Ada Lovelace", Username: "ada", Email: "ada@example.com"},
-		Password:    "secret-password",
-		Version:     "v0.5.0",
-		BuildPolls:  1,
-		DeployPolls: 1,
-		FailMessage: "RevisionFailed: container exited with code 1",
-		LogLines:    []string{"RunR Python runtime listening on :8080\n"},
-		valid:       map[string]bool{},
-		expires:     map[string]time.Time{},
-		scopes:      map[string][]string{},
-		RBAC:        true,
-		Catalog:     true,
-		SecretEnv:   true,
+		t:             t,
+		Token:         DefaultToken,
+		User:          runr.User{ID: "1", Name: "Ada Lovelace", Username: "ada", Email: "ada@example.com"},
+		Password:      "secret-password",
+		Version:       "v0.5.0",
+		BuildPolls:    1,
+		DeployPolls:   1,
+		FailMessage:   "RevisionFailed: container exited with code 1",
+		LogLines:      []string{"RunR Python runtime listening on :8080\n"},
+		valid:         map[string]bool{},
+		expires:       map[string]time.Time{},
+		scopes:        map[string][]string{},
+		RBAC:          true,
+		Catalog:       true,
+		SecretEnv:     true,
+		Environments:  true,
+		RouteSettings: true,
 	}
 	s.images = []runr.ExecutorImage{
 		{ID: s.newID(), Runtime: "go", Version: "1.26", IsDefault: true, SortOrder: 1},
@@ -277,6 +293,22 @@ func (s *Server) SeedDomain(projectName, host string) runr.Domain {
 	return *s.addDomain(p, host)
 }
 
+// Domains returns the custom domains of a project, of its own workload and of every environment
+// (DomainEnvironment names the environment of one).
+func (s *Server) Domains(projectName string) []runr.Domain {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	p := s.projectByName(projectName)
+	if p == nil {
+		return nil
+	}
+	out := []runr.Domain{}
+	for _, d := range p.domains {
+		out = append(out, *d)
+	}
+	return out
+}
+
 // SeedStop stops a project as an administrator would (POST /projects/{project}/stop): level
 // runr.StopLevelPlatform or runr.StopLevelOrganization; by names who stopped it (empty: nobody
 // named, as a member sees a platform stop). Deploys of the project are refused until the stop is
@@ -309,6 +341,19 @@ func (s *Server) Project(name string) (runr.Project, bool) {
 		return runr.Project{}, false
 	}
 	return s.projectResource(p), true
+}
+
+// SetWarmScale records what the timed warmer last applied to a project (ProjectResource.warm_scale).
+func (s *Server) SetWarmScale(name string, applied int, at time.Time) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	p := s.projectByName(name)
+	if p == nil {
+		return false
+	}
+	at = at.UTC()
+	p.data.WarmScale = &runr.WarmScale{Applied: &applied, AppliedAt: &at}
+	return true
 }
 
 // Files returns a project's latest files.
@@ -351,7 +396,7 @@ func (s *Server) Deployments(name string) []runr.Deployment {
 	}
 	out := make([]runr.Deployment, 0, len(p.deployments))
 	for i := len(p.deployments) - 1; i >= 0; i-- {
-		out = append(out, p.deployments[i].data)
+		out = append(out, s.deploymentResource(p, p.deployments[i]))
 	}
 	return out
 }
@@ -446,8 +491,13 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request) {
 	}
 	plainPath := "/" + strings.Join(segs, "/")
 
+	// The call keeps the body as sent: handlers normalize theirs in place
+	var sent map[string]any
+	if body != nil {
+		_ = json.Unmarshal(raw, &sent)
+	}
 	s.mu.Lock()
-	s.calls = append(s.calls, Call{Method: r.Method, Path: plainPath, Query: r.URL.RawQuery, Body: body, Endpoint: ep.Path, Raw: raw})
+	s.calls = append(s.calls, Call{Method: r.Method, Path: plainPath, Query: r.URL.RawQuery, Body: sent, Endpoint: ep.Path, Raw: raw})
 	s.mu.Unlock()
 
 	s.mu.Lock()
@@ -461,6 +511,9 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request) {
 	var status int
 	var out any
 	err := s.forbidden(ep, bearer, body)
+	if err == nil && s.absent(ep) {
+		err = &apiErr{status: 404, message: "The route " + strings.TrimPrefix(path, "/") + " could not be found."}
+	}
 	if err == nil {
 		if h, ok := featureRoutes[r.Method+" "+ep.Path]; ok {
 			status, out, err = h(s, &featureReq{R: r, Segs: segs, Body: body, Raw: raw})
@@ -724,6 +777,13 @@ func (s *Server) route(ep string, r *http.Request, segs []string, body map[strin
 				s.projects = append(s.projects[:i], s.projects[i+1:]...)
 			}
 		}
+		// its triggers go with it (a topic it subscribed to can be deleted then)
+		if st, ok := s.features["triggers"].(*trigState); ok {
+			for _, t := range st.lists[p.data.ID] {
+				delete(st.events, t.id)
+			}
+			delete(st.lists, p.data.ID)
+		}
 		return 204, nil, nil
 	case "GET /projects/{project}/files", "GET /projects/{project}/code":
 		return s.getCode(p, r.URL.Query().Get("version_id"), strings.HasSuffix(ep, "/code"))
@@ -747,9 +807,24 @@ func (s *Server) route(ep string, r *http.Request, segs []string, body map[strin
 		}
 		return 0, nil, errNotFound()
 	case "GET /projects/{project}/deployments":
+		// ?environment=: one environment's (default the project's own), "all" every one's
+		envID, all := "", false
+		if ref := r.URL.Query().Get("environment"); ref != "" && s.Environments {
+			if ref == "all" {
+				all = true
+			} else {
+				e, err := s.environmentRef(p, ref)
+				if err != nil {
+					return 0, nil, err
+				}
+				envID = envKey(e)
+			}
+		}
 		list := []runr.Deployment{}
 		for i := len(p.deployments) - 1; i >= 0; i-- {
-			list = append(list, p.deployments[i].data)
+			if all || p.deployments[i].data.EnvironmentID == envID {
+				list = append(list, s.deploymentResource(p, p.deployments[i]))
+			}
 		}
 		return 200, map[string]any{"data": list}, nil
 	case "POST /projects/{project}/deploy":
@@ -759,12 +834,8 @@ func (s *Server) route(ep string, r *http.Request, segs []string, body map[strin
 		if d == nil {
 			return 0, nil, errNotFound()
 		}
-		if d.pollsLeft > 0 {
-			d.pollsLeft--
-		} else if d.data.Status == runr.DeploymentPending {
-			s.finishDeployment(p, d)
-		}
-		return 200, map[string]any{"data": d.data}, nil
+		s.pollDeployment(p, d)
+		return 200, map[string]any{"data": s.deploymentResource(p, d)}, nil
 	case "DELETE /projects/{project}/deployments/{deployment}":
 		for i, d := range p.deployments {
 			if d.data.ID == segs[3] {
@@ -792,9 +863,16 @@ func (s *Server) route(ep string, r *http.Request, segs []string, body map[strin
 			"source":     "loki",
 		}, nil
 	case "GET /projects/{project}/domains":
+		// ?environment=: one environment's domains (default the project's own)
+		envID, aerr := s.domainEnvironment(p, r.URL.Query().Get("environment"))
+		if aerr != nil {
+			return 0, nil, aerr
+		}
 		list := []runr.Domain{}
 		for _, d := range p.domains {
-			list = append(list, *d)
+			if p.domainEnv[d.ID] == envID {
+				list = append(list, *d)
+			}
 		}
 		return 200, map[string]any{"data": list, "meta": map[string]any{
 			"eligible": true, "reason": nil, "cert_manager_issuer": "letsencrypt",
@@ -814,7 +892,23 @@ func (s *Server) route(ep string, r *http.Request, segs []string, body map[strin
 				}
 			}
 		}
-		return 201, map[string]any{"data": s.addDomain(p, host)}, nil
+		envRef, _ := body["environment"].(string)
+		envID, aerr := s.domainEnvironment(p, envRef)
+		if aerr != nil {
+			return 0, nil, aerr
+		}
+		d := s.addDomain(p, host)
+		if envID != "" {
+			if p.domainEnv == nil {
+				p.domainEnv = map[string]string{}
+			}
+			p.domainEnv[d.ID] = envID
+			// it routes to the environment's workload, with the DNS target of the region it runs in
+			if e, err := s.environmentRef(p, envID); err == nil {
+				d.DNSTargets = []runr.DNSRecord{{Type: "CNAME", Name: host, Value: e.data.WorkloadName + "." + s.regionNameOf(e.data.RegionID) + ".runr.test"}}
+			}
+		}
+		return 201, map[string]any{"data": d}, nil
 	case "POST /projects/{project}/domains/{domain}/verify":
 		d := s.domainByID(p, segs[3])
 		if d == nil {
@@ -853,6 +947,7 @@ func (s *Server) route(ep string, r *http.Request, segs []string, body map[strin
 		for i, d := range p.domains {
 			if d.ID == segs[3] {
 				p.domains = append(p.domains[:i], p.domains[i+1:]...)
+				delete(p.domainEnv, d.ID)
 				return 204, nil, nil
 			}
 		}
@@ -872,7 +967,9 @@ func (s *Server) userJSON() map[string]any {
 func (s *Server) login(body map[string]any) (int, any, *apiErr) {
 	login, _ := body["login"].(string)
 	pw, _ := body["password"].(string)
-	if (login != s.User.Username && login != s.User.Email) || pw != s.Password {
+	// The user name or the e-mail address, in any letter case (as the API)
+	login = strings.TrimSpace(login)
+	if (!strings.EqualFold(login, s.User.Username) && !strings.EqualFold(login, s.User.Email)) || pw != s.Password {
 		return 0, nil, &apiErr{status: 401, message: "These credentials do not match our records."}
 	}
 	if s.TwoFactorCode != "" {
@@ -963,7 +1060,82 @@ func (s *Server) validateCreate(body map[string]any) *apiErr {
 			return err
 		}
 	}
-	return s.validateConfig(cfg)
+	// placement / global_mode / region_ids of a global project (global.go)
+	if err := s.validateGlobalCreate(body); err != nil {
+		return err
+	}
+	if err := s.validateConfig(cfg); err != nil {
+		return err
+	}
+	return scaleErrors(cfg, map[string]any{"max_scale": float64(defaultMaxScale)})
+}
+
+// defaultMaxScale is the fake's max_scale of a new project.
+const defaultMaxScale = 5
+
+// scaleErrors validates the scale fields like Store/UpdateProjectRequest: min_scale ≤ max_scale
+// (the stored value counts for a field the request leaves out) and the timed warmer's rows —
+// at most 10, five-field cron expressions, a count of 0-10 that is not above max_scale.
+func scaleErrors(cfg, stored map[string]any) *apiErr {
+	num := func(key string) (float64, bool) {
+		if v, ok := cfg[key].(float64); ok {
+			return v, true
+		}
+		v, ok := stored[key].(float64)
+		return v, ok
+	}
+	maxScale, hasMax := num("max_scale")
+	if minScale, ok := num("min_scale"); ok && hasMax && minScale > maxScale {
+		return errValidation("config.min_scale", fmt.Sprintf("The config.min scale field must be less than or equal to %d.", int(maxScale)))
+	}
+	raw, ok := cfg["scale_schedule"]
+	if !ok || raw == nil {
+		return nil
+	}
+	rows, ok := raw.([]any)
+	if !ok {
+		return errValidation("config.scale_schedule", "The config.scale schedule field must be an array.")
+	}
+	if len(rows) > runr.MaxScaleScheduleRows {
+		return errValidation("config.scale_schedule", fmt.Sprintf("The config.scale schedule field must not have more than %d items.", runr.MaxScaleScheduleRows))
+	}
+	for i, r := range rows {
+		row, _ := r.(map[string]any)
+		cron, _ := row["cron"].(string)
+		fields := strings.Fields(cron)
+		if len(fields) != 5 {
+			return errValidation(fmt.Sprintf("config.scale_schedule.%d.cron", i), "The cron expression is not valid.")
+		}
+		n, ok := row["min_scale"].(float64)
+		if !ok || n < 0 || n > runr.MaxWarmScale || n != float64(int(n)) {
+			return errValidation(fmt.Sprintf("config.scale_schedule.%d.min_scale", i), "The container count must be between 0 and 10.")
+		}
+		if hasMax && n > maxScale {
+			return errValidation(fmt.Sprintf("config.scale_schedule.%d.min_scale", i), fmt.Sprintf("The container count must not be above the maximum scale (%d).", int(maxScale)))
+		}
+	}
+	return nil
+}
+
+// normalizeScaleSchedule stores the timed warmer like the API: no rows (null or []) is no
+// schedule, expressions single-spaced.
+func normalizeScaleSchedule(cfg map[string]any) {
+	raw, ok := cfg["scale_schedule"]
+	if !ok {
+		return
+	}
+	rows, _ := raw.([]any)
+	if len(rows) == 0 {
+		cfg["scale_schedule"] = nil
+		return
+	}
+	out := make([]any, 0, len(rows))
+	for _, r := range rows {
+		row, _ := r.(map[string]any)
+		cron, _ := row["cron"].(string)
+		out = append(out, map[string]any{"cron": runr.NormalizeCron(cron), "min_scale": row["min_scale"]})
+	}
+	cfg["scale_schedule"] = out
 }
 
 func (s *Server) validateConfig(cfg map[string]any) *apiErr {
@@ -976,7 +1148,7 @@ func (s *Server) validateConfig(cfg map[string]any) *apiErr {
 	}
 	if tt, _ := cfg["trigger_type"].(string); tt != "" {
 		switch tt {
-		case runr.TriggerHTTP, runr.TriggerQueue, runr.TriggerSchedule:
+		case runr.TriggerHTTP, runr.TriggerQueue, runr.TriggerSchedule, runr.TriggerWorkflow:
 		default:
 			return errValidation("config.trigger_type", "The selected config.trigger type is invalid.")
 		}
@@ -994,7 +1166,34 @@ func (s *Server) validateConfig(cfg map[string]any) *apiErr {
 	if m, ok := cfg["memory_mb"].(float64); ok && m < 64 {
 		return errValidation("config.memory_mb", "The config.memory mb field must be at least 64.")
 	}
+	if tz, _ := cfg["schedule_timezone"].(string); tz != "" {
+		if _, err := time.LoadLocation(tz); err != nil || tz == "Local" {
+			return errValidation("config.schedule_timezone", "The config.schedule timezone field must be a valid timezone.")
+		}
+	}
 	return nil
+}
+
+// applyScheduleZone keeps config.schedule_timezone as the API presents it — the zone of the
+// project's schedule trigger, null when it follows the organization's ("" clears it), null
+// without a schedule — and config.schedule_effective_timezone, the zone it runs in.
+func (s *Server) applyScheduleZone(cfg map[string]any) {
+	if tz, _ := cfg["schedule_timezone"].(string); tz == "" {
+		cfg["schedule_timezone"] = nil
+	}
+	if tt, _ := cfg["trigger_type"].(string); tt != runr.TriggerSchedule {
+		cfg["schedule_timezone"], cfg["schedule_effective_timezone"] = nil, nil
+		return
+	}
+	if tz, _ := cfg["schedule_timezone"].(string); tz != "" {
+		cfg["schedule_effective_timezone"] = tz
+		return
+	}
+	org := s.OrgTimezone
+	if org == "" {
+		org = "Europe/Istanbul"
+	}
+	cfg["schedule_effective_timezone"] = org
 }
 
 func (s *Server) createProject(body map[string]any) *project {
@@ -1019,8 +1218,10 @@ func (s *Server) createProject(body map[string]any) *project {
 			cfg[k] = v
 		}
 	}
+	normalizeScaleSchedule(cfg)
 	defaults := map[string]any{"memory_mb": float64(128), "cpu": "100m", "timeout_seconds": float64(30),
-		"trigger_type": "http", "scale_to_zero": true, "min_scale": float64(0), "max_scale": float64(5)}
+		"trigger_type": "http", "scale_to_zero": true, "min_scale": float64(0), "max_scale": float64(defaultMaxScale),
+		"scale_schedule": nil}
 	switch st {
 	case runr.TypeFaaS:
 		defaults["handler"] = "main.handler"
@@ -1040,6 +1241,7 @@ func (s *Server) createProject(body map[string]any) *project {
 	if _, ok := cfg["env_vars"]; !ok {
 		cfg["env_vars"] = map[string]any{}
 	}
+	s.applyScheduleZone(cfg)
 	p := &project{
 		data: runr.Project{ID: s.newID(), Name: name, Slug: slugify(name), ServiceType: st, Runtime: rt,
 			RuntimeVersion: rv, Description: desc, RegionID: rid, EndpointType: "subdomain"},
@@ -1053,6 +1255,7 @@ func (s *Server) createProject(body map[string]any) *project {
 	if len(secrets) > 0 && s.SecretEnv {
 		s.applySecretEnv(p, secrets)
 	}
+	s.createGlobal(p, body)
 	if st == runr.TypeCaaS {
 		s.saveVersion(p, nil, "Initial config", true)
 	}
@@ -1073,9 +1276,24 @@ func (s *Server) updateProject(p *project, body map[string]any) *apiErr {
 	if !ok || len(cfg) == 0 {
 		return nil
 	}
-	if err := s.validateConfig(cfg); err != nil {
+	// A single-trigger type, or the stored one unchanged (a client that sends the whole config
+	// back keeps working when the primary trigger is a newer type: UpdateProjectRequest)
+	check := cfg
+	if tt, _ := cfg["trigger_type"].(string); tt != "" && tt == p.config["trigger_type"] && !trigOneOf(tt, runr.ProjectTriggerTypes) {
+		check = map[string]any{}
+		for k, v := range cfg {
+			if k != "trigger_type" {
+				check[k] = v
+			}
+		}
+	}
+	if err := s.validateConfig(check); err != nil {
 		return err
 	}
+	if err := scaleErrors(cfg, p.config); err != nil {
+		return err
+	}
+	normalizeScaleSchedule(cfg)
 	// Secret variables go to the project's secrets, never into the config or a version
 	// (ProjectController::takeSecretEnv); an API without them ignores the field.
 	cfg, secrets, hasSecrets := splitSecretEnv(cfg)
@@ -1087,6 +1305,8 @@ func (s *Server) updateProject(p *project, body map[string]any) *apiErr {
 	for k, v := range cfg {
 		p.config[k] = v
 	}
+	s.applyScheduleZone(p.config)
+	s.trigSyncFromConfig(p, cfg)
 	if hasSecrets && s.SecretEnv {
 		s.applySecretEnv(p, secrets)
 	}
@@ -1280,39 +1500,96 @@ func (s *Server) deploy(p *project, body map[string]any) (int, any, *apiErr) {
 	if v.data.BuildStatus != runr.BuildReady {
 		return 0, nil, &apiErr{status: 422, message: "Version is not ready (status: " + v.data.BuildStatus + ")."}
 	}
+	// An environment of the project (environments.go); an API before environments ignores it
+	var env *fakeEnvironment
+	if ref, _ := body["environment"].(string); ref != "" && s.Environments {
+		e, err := s.environmentRef(p, ref)
+		if err != nil {
+			return 0, nil, err
+		}
+		env = e
+	}
 	// Built into a registry the region no longer pulls from: built again, deployed when ready
-	if s.queuedSt().rebuild[v.data.ID] {
+	if s.queuedSt().rebuild[v.data.ID] && envKey(env) == "" {
 		return s.queueRebuild(p, v, body)
 	}
-	d := s.startDeployment(p, v)
+	// A blue-green or canary workload that is served opens a rollout (rollouts.go): the project's
+	// own, or an environment's with the environment's strategy
+	d, aerr := s.rolloutDeploy(p, v, body, env)
+	if aerr != nil {
+		return 0, nil, aerr
+	}
+	if d == nil {
+		d = s.startDeploymentIn(p, v, env)
+	}
 	if dc, ok := body["deploy_config"].(map[string]any); ok {
 		d.data.DeployConfig = dc
 	}
-	return 202, d.data, nil
+	if restore, _ := body["restore_config"].(bool); restore && s.Environments {
+		d.data.ConfigSource = runr.ConfigRestored
+	}
+	return 202, s.deploymentResource(p, d), nil
+}
+
+// pollDeployment takes a deployment one read further: it stays pending for DeployPolls reads,
+// then it is ready (or failed).
+func (s *Server) pollDeployment(p *project, d *deployment) {
+	if d.pollsLeft > 0 {
+		d.pollsLeft--
+	} else if d.data.Status == runr.DeploymentPending {
+		s.finishDeployment(p, d)
+	}
 }
 
 func (s *Server) startDeployment(p *project, v *version) *deployment {
+	return s.startDeploymentIn(p, v, nil)
+}
+
+// startDeploymentIn starts a deployment in an environment (nil: the project's own workload):
+// only that environment's active deployment is replaced.
+func (s *Server) startDeploymentIn(p *project, v *version, env *fakeEnvironment) *deployment {
+	envID := envKey(env)
 	for _, d := range p.deployments {
-		if d.data.Status == runr.DeploymentActive {
+		if d.data.Status == runr.DeploymentActive && d.data.EnvironmentID == envID {
 			d.data.Status = runr.DeploymentShuttingDown
 		}
 	}
+	return s.newDeployment(p, v, env)
+}
+
+// newDeployment adds a pending deployment of v in an environment (nil: the project's own
+// workload); the deployments that serve stay as they are.
+func (s *Server) newDeployment(p *project, v *version, env *fakeEnvironment) *deployment {
+	envID := envKey(env)
 	now := time.Now().UTC()
 	d := &deployment{pollsLeft: s.DeployPolls, fails: s.FailDeploy, failMsg: s.FailMessage}
-	d.data = runr.Deployment{ID: s.newID(), Status: runr.DeploymentPending, K8sJobName: "run-" + p.data.Slug + "-" + v.data.Label,
+	slug := p.data.Slug
+	if env != nil && !env.data.IsPrimary {
+		slug = env.data.WorkloadName
+	}
+	d.data = runr.Deployment{ID: s.newID(), Status: runr.DeploymentPending, K8sJobName: "run-" + slug + "-" + v.data.Label,
 		DeployedBy: s.User.Username, Version: &runr.Ref{ID: v.data.ID, Name: v.data.Label}, VersionLabel: v.data.Label, CreatedAt: &now}
+	if s.Environments {
+		d.data.Environment, d.data.EnvironmentID, d.data.ConfigSource = runr.PrimaryEnvironment, envID, ""
+		if env != nil && !env.data.IsPrimary {
+			d.data.Environment = env.data.Name
+		}
+	}
 	p.deployments = append(p.deployments, d)
 	return d
 }
 
 func (s *Server) finishDeployment(p *project, d *deployment) {
+	if s.finishCandidate(p, d) {
+		return // the new deployment of a rollout (rollouts.go)
+	}
 	if d.fails {
 		f := false
 		d.data.Status = runr.DeploymentFailed
 		d.data.KnativeReady = &f
 		d.data.KnativeMessage = d.failMsg
 		for _, x := range p.deployments {
-			if x.data.Status == runr.DeploymentShuttingDown {
+			if x.data.Status == runr.DeploymentShuttingDown && x.data.EnvironmentID == d.data.EnvironmentID {
 				x.data.Status = runr.DeploymentActive
 			}
 		}
@@ -1323,20 +1600,34 @@ func (s *Server) finishDeployment(p *project, d *deployment) {
 	d.data.Status = runr.DeploymentActive
 	d.data.KnativeReady = &t
 	d.data.ReadyAt = &now
+	if s.Environments && d.data.ConfigSource == "" {
+		d.data.ConfigSource = runr.ConfigCurrent
+	}
 	for _, x := range p.deployments {
-		if x != d && (x.data.Status == runr.DeploymentShuttingDown || x.data.Status == runr.DeploymentActive) {
+		if x != d && x.data.EnvironmentID == d.data.EnvironmentID && (x.data.Status == runr.DeploymentShuttingDown || x.data.Status == runr.DeploymentActive) {
 			x.data.Status = runr.DeploymentShutDown
+		}
+	}
+	// A promotion follows its deployment
+	if s.Environments {
+		for _, pr := range s.environmentsState().promotions[p.data.ID] {
+			if pr.data.DeploymentID == d.data.ID && pr.data.Status == runr.PromotionDeploying {
+				pr.data.Status = runr.PromotionDeployed
+			}
 		}
 	}
 }
 
 func (s *Server) addDomain(p *project, host string) *runr.Domain {
 	now := time.Now().UTC().Format(time.RFC3339)
-	d := &runr.Domain{ID: s.newID(), ProjectID: p.data.ID, Domain: host, Status: "pending", TLSMode: runr.TLSNone,
-		HTTPSCertificate: "region-default", URL: "http://" + host,
-		Verification: runr.DNSRecord{Type: "TXT", Name: "_runr-challenge." + host, Value: "runr-verify=" + p.data.ID},
-		DNSTargets:   []runr.DNSRecord{{Type: "CNAME", Name: host, Value: p.data.Slug + "." + s.regionName(p) + ".runr.test"}},
-		CreatedAt:    now, UpdatedAt: now}
+	// a new domain starts in the region's default mode (ProjectDomainService::add)
+	mode := s.defaultTLSMode(s.regionByID(p.data.RegionID))
+	d := &runr.Domain{ID: s.newID(), ProjectID: p.data.ID, Domain: host, Status: "pending", TLSMode: mode,
+		HTTPSCertificate: map[string]string{runr.TLSNone: "region-default", runr.TLSCertManager: "cert-manager"}[mode],
+		URL:              map[string]string{runr.TLSNone: "http://", runr.TLSCertManager: "https://"}[mode] + host,
+		Verification:     runr.DNSRecord{Type: "TXT", Name: "_runr-challenge." + host, Value: "runr-verify=" + p.data.ID},
+		DNSTargets:       []runr.DNSRecord{{Type: "CNAME", Name: host, Value: p.data.Slug + "." + s.regionName(p) + ".runr.test"}},
+		CreatedAt:        now, UpdatedAt: now}
 	p.domains = append(p.domains, d)
 	return d
 }
@@ -1381,6 +1672,7 @@ func (s *Server) projectResource(p *project) runr.Project {
 	} else {
 		out.EndpointURL = ""
 	}
+	out.DeployStrategy = s.strategyOf(p).Strategy
 	if n := len(p.versions); n > 0 {
 		v := p.versions[n-1].data
 		out.LatestVersion = &v
@@ -1400,6 +1692,10 @@ func (s *Server) projectResource(p *project) runr.Project {
 	} else {
 		out.LatestDeployment = nil
 	}
+	// Runtime patches (runtime_patches.go)
+	out.RuntimePatch = s.patchState(p)
+	// placement, global and the global host name (global.go)
+	s.withGlobal(p, &out)
 	return out
 }
 
@@ -1428,6 +1724,27 @@ func (s *Server) deploymentByID(p *project, id string) *deployment {
 		}
 	}
 	return nil
+}
+
+// domainEnvironment resolves the environment of a domain request (name or id; "" and the primary:
+// the project's own, ""). An API without environments ignores it.
+func (s *Server) domainEnvironment(p *project, ref string) (string, *apiErr) {
+	if ref == "" || !s.Environments {
+		return "", nil
+	}
+	e, err := s.environmentRef(p, ref)
+	if err != nil {
+		return "", err
+	}
+	return envKey(e), nil
+}
+
+// DomainEnvironment is the id of the environment a domain routes to ("" the project's own).
+func (s *Server) DomainEnvironment(projectID, domainID string) string {
+	if p := s.projectByID(projectID); p != nil {
+		return p.domainEnv[domainID]
+	}
+	return ""
 }
 
 func (s *Server) domainByID(p *project, id string) *runr.Domain {

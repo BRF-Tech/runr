@@ -15,9 +15,16 @@ final class ToolRegistry
     /** Order of the groups in tools/list and the catalog page. */
     public const GROUPS = [
         'account', 'projects', 'code', 'git', 'deployments', 'operations', 'observability',
-        'configuration', 'domains', 'regions', 'runtimes', 'sandboxes', 'workflows', 'bindings',
-        'models', 'security', 'audit', 'mcp',
+        'configuration', 'domains', 'gateways', 'regions', 'runtimes', 'sandboxes', 'workflows', 'bindings',
+        'models', 'security', 'audit', 'billing', 'organization', 'mcp',
     ];
+
+    /**
+     * A requirement "@platform:billing.view" (or "@platform:a|b"): a platform administrator whose
+     * token carries one of the permissions — the rule of the API routes of the same name
+     * (App\Support\Rbac\RoutePermissions::PLATFORM_SCOPED).
+     */
+    public const PLATFORM_PREFIX = '@platform:';
 
     /** @var list<class-string<Tool>> */
     private static array $extra = [];
@@ -80,6 +87,15 @@ final class ToolRegistry
         $rbac = app(Rbac::class);
 
         foreach ($tool->permissions() as $requirement) {
+            if (str_starts_with($requirement, self::PLATFORM_PREFIX)) {
+                $any = array_filter(explode('|', substr($requirement, strlen(self::PLATFORM_PREFIX))));
+                if (! $rbac->isPlatformAdmin($user) || ! collect($any)->contains(fn ($p) => $rbac->tokenAllows($user, $p))) {
+                    return false;
+                }
+
+                continue;
+            }
+
             $any = array_filter(explode('|', $requirement));
             $held = false;
             foreach ($any as $permission) {

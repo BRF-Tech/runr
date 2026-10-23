@@ -97,6 +97,12 @@ use Modules\Tenancy\Models\Tenant;
  * @property string|null $sandbox_wasm_status_message
  * @property array<array-key, mixed>|null $sandbox_wasm_shims
  * @property array<array-key, mixed>|null $sandbox_wasm_nodes
+ * @property string $cert_manager_status
+ * @property string|null $cert_manager_status_message
+ * @property bool|null $cert_manager_managed
+ * @property string|null $cert_manager_version
+ * @property string|null $cert_manager_namespace
+ * @property string|null $cert_manager_issuer
  * @property string $region_status
  * @property-read array $effective_settings
  * @property-read bool $has_redis
@@ -284,6 +290,13 @@ class KnativeRegion extends Model
         'sandbox_wasm_status_message',
         'sandbox_wasm_shims',
         'sandbox_wasm_nodes',
+        // cert-manager and the ClusterIssuer of custom domains (App\Services\CertManager\CertManagerService)
+        'cert_manager_status',
+        'cert_manager_status_message',
+        'cert_manager_managed',
+        'cert_manager_version',
+        'cert_manager_namespace',
+        'cert_manager_issuer',
         // GPU
         'gpu_mode',
         'gpu_available',
@@ -335,6 +348,7 @@ class KnativeRegion extends Model
         'sandbox_kata_devmapper_pool_gb' => 'integer',
         'sandbox_wasm_shims' => 'array',
         'sandbox_wasm_nodes' => 'array',
+        'cert_manager_managed' => 'boolean',
         'gpu_available' => 'array',
         'gpu_allocated' => 'array',
         'gpu_settings' => 'array',

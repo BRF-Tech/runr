@@ -86,6 +86,16 @@ final class ManagedTracing
      */
     public const COLLECTOR_REQUESTS = ['cpu' => '50m', 'memory' => '128Mi'];
 
+    /**
+     * The revision of the collector configuration RunR renders (collectorValues()), on its pods as
+     * CONFIG_ANNOTATION: region:reconcile (TracingBackendStep) updates a collector of another one.
+     * 2: the span metrics carry the Knative revision (dimension runr.revision) — a canary is
+     * judged by its own requests (RolloutMetrics).
+     */
+    public const COLLECTOR_CONFIG_REVISION = '2';
+
+    public const CONFIG_ANNOTATION = 'runr.dev/collector-config';
+
     public const TEMPO_REQUESTS = ['cpu' => '50m', 'memory' => '256Mi'];
 
     /**
@@ -227,6 +237,7 @@ final class ManagedTracing
             'presets' => ['kubernetesAttributes' => ['enabled' => true]],
             'extraEnvs' => $extraEnvs ?: null,
             'podLabels' => ['app.kubernetes.io/part-of' => 'runr'],
+            'podAnnotations' => [self::CONFIG_ANNOTATION => self::COLLECTOR_CONFIG_REVISION],
             'ports' => [
                 'otlp' => ['enabled' => true],
                 'otlp-http' => ['enabled' => true],
@@ -252,7 +263,9 @@ final class ManagedTracing
                 'connectors' => [
                     'spanmetrics' => [
                         'histogram' => ['explicit' => ['buckets' => ['5ms', '10ms', '25ms', '50ms', '100ms', '250ms', '500ms', '1s', '2500ms', '5s', '10s', '30s']]],
-                        'dimensions' => [['name' => 'runr.cold_start']],
+                        // runr.revision: the Knative revision (a rollout's revision names it,
+                        // RolloutTraffic::withRevisionAttribute) — a canary's own series
+                        'dimensions' => [['name' => 'runr.cold_start'], ['name' => 'runr.revision']],
                         'metrics_flush_interval' => '15s',
                     ],
                 ],

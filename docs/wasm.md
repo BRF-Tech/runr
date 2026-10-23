@@ -37,7 +37,7 @@ scales Wasm functions to zero and back exactly like every other RunR function.
 ## How it works
 
 ```text
-Administration → Platform → Knative Regions → (region) → Isolation → WebAssembly → Install (shims, nodes)
+Administration → Regions & settings → Knative Regions → (region) → Isolation → WebAssembly → Install (shims, nodes)
   └─ wasm-installer DaemonSet (runr-sandbox) on the selected nodes
        ├─ /usr/local/bin/containerd-shim-spin-v2 (from ghcr.io/brf-tech/runr/containerd-shim-spin, sha256-checked)
        ├─ runtime handler spin-runr → io.containerd.spin.v2 in containerd's configuration
@@ -162,7 +162,7 @@ policy gate never requires a scan of it — see [Supply chain → WebAssembly](s
 
 ## Install WebAssembly support
 
-**Administration → Platform → Knative Regions → (region) → Isolation → WebAssembly**: choose the shims (Spin is always
+**Administration → Regions & settings → Knative Regions → (region) → Isolation → WebAssembly**: choose the shims (Spin is always
 included; Wasmtime optional) and the nodes (all eligible nodes, or a selection), then **Install**.
 The card shows every node with its architecture, container runtime and the shims it has, the
 install log while it runs, and the Knative features the install still enables. The region needs
@@ -232,7 +232,7 @@ block from containerd's configuration (checked with `config dump`), restarts the
 RunR handler is still loaded, and removes the binaries and `/var/lib/runr/wasm`. A node that still
 runs a shim process refuses its cleanup.
 
-**Upgrading RunR.** `region:reconcile` (the Helm bootstrap job runs it after every upgrade)
+**Upgrading RunR.** `region:reconcile` (the Helm chart's Job `runr-region-reconcile-<revision>` runs it after every upgrade)
 compares the `wasm-installer` of every region whose WebAssembly support is ready with the shims of
 the new release. When they differ, or the installer is missing (a failed change removes it), it
 queues that region's WebAssembly install with the same shims and nodes: the installer replaces the binaries in place, one node at a time, and restarts the
@@ -417,6 +417,10 @@ command component — is compiled where its toolchain is and uploaded: `runr ima
 
 All three RunR triggers reach a Wasm function as HTTP requests on its Spin HTTP trigger, with the
 [CloudEvent contract](runtimes.md#http-mode) of every http-mode runtime:
+
+A WebAssembly function may be a [global project](global-projects.md#what-each-region-needs) when
+every region of it offers the runtime's shim: each region builds the module itself, into its own
+registry, from the same runtime base.
 
 | Trigger | What arrives | How |
 |---|---|---|

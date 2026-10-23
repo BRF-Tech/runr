@@ -86,18 +86,60 @@ return [
     'GET projects/{project}/deployments/{deployment}/metrics' => 'metrics.view',
     'DELETE projects/{project}/deployments/{deployment}' => 'projects.deploy',
     'PATCH projects/{project}/deployments/{deployment}/status' => 'projects.deploy',
+    // Deploy strategies (blue-green / canary): the settings with the project's, the rollout with deploys
+    'GET projects/{project}/deploy-strategy' => 'projects.view',
+    'PUT projects/{project}/deploy-strategy' => 'projects.update',
+    'GET projects/{project}/rollout' => 'projects.view',
+    'GET projects/{project}/deployments/{deployment}/rollout' => 'projects.view',
+    'POST projects/{project}/deployments/{deployment}/rollout/promote' => 'projects.deploy',
+    'POST projects/{project}/deployments/{deployment}/rollout/abort' => 'projects.deploy',
+    'POST projects/{project}/deployments/{deployment}/rollout/rollback' => 'projects.deploy',
+    // Rollback: an earlier deployment's version, with the config it ran with (docs/versioning.md#rollback)
+    'POST projects/{project}/deployments/{deployment}/rollback' => 'projects.deploy',
+    // Environments and promotion (docs/environments.md, routes/environments.php)
+    'GET projects/{project}/environments' => 'projects.view',
+    'POST projects/{project}/environments' => 'environments.manage',
+    'GET projects/{project}/environments/{environment}' => 'projects.view',
+    'PATCH projects/{project}/environments/{environment}' => 'environments.manage',
+    'DELETE projects/{project}/environments/{environment}' => 'environments.manage',
+    'GET projects/{project}/environments/{environment}/secrets' => 'env.view',
+    'PUT projects/{project}/environments/{environment}/secrets/{name}' => 'env.edit',
+    'DELETE projects/{project}/environments/{environment}/secrets/{name}' => 'env.edit',
+    'GET projects/{project}/environments/{environment}/promote' => 'projects.view',
+    'POST projects/{project}/environments/{environment}/promote' => 'environments.promote',
+    'GET projects/{project}/promotions' => 'projects.view',
+    'POST projects/{project}/promotions/{promotion}/approve' => 'environments.approve',
+    'POST projects/{project}/promotions/{promotion}/reject' => 'environments.approve',
+    'POST projects/{project}/promotions/{promotion}/cancel' => 'environments.promote|environments.approve',
+    'GET environment-promotions' => 'projects.view:any',
     'POST projects/{project}/deployments/{deployment}/exec' => 'shell.exec',
     'GET projects/{project}/metrics/history' => 'metrics.view',
     'GET projects/{project}/metrics/summary' => 'metrics.view',
+    // Rightsizing (RightsizingController): the organization's list filters rows by metrics.view;
+    // applying changes the config like PUT projects/{project}
+    'GET rightsizing' => 'metrics.view:any',
+    'GET projects/{project}/rightsizing' => 'metrics.view',
+    'POST projects/{project}/rightsizing/apply' => 'projects.update',
+    'POST projects/{project}/rightsizing/dismiss' => 'projects.update',
     'GET projects/{project}/private-connections' => 'projects.view',
     'POST projects/{project}/private-connections' => 'connections.manage',
     'GET projects/{project}/private-connections/{privateConnection}/status' => 'projects.view',
     'DELETE projects/{project}/private-connections/{privateConnection}' => 'connections.manage',
+    // Global projects (GlobalProjectController): the regions of a global project
+    'GET projects/{project}/global' => 'projects.view',
+    'PUT projects/{project}/global' => 'projects.update',
+    'POST projects/{project}/global/sync' => 'projects.deploy',
+    'POST projects/{project}/global/failover' => 'projects.update',
     'GET projects/{project}/domains' => 'projects.view',
+    'GET projects/{project}/domains/ca-certificate' => 'projects.view',
     'POST projects/{project}/domains' => 'domains.manage',
     'POST projects/{project}/domains/{domain}/verify' => 'domains.manage',
     'PUT projects/{project}/domains/{domain}/tls' => 'domains.manage',
     'DELETE projects/{project}/domains/{domain}' => 'domains.manage',
+    'GET projects/{project}/network' => 'projects.view',
+    'PUT projects/{project}/network' => 'network.manage',
+    'POST projects/{project}/network/callers' => 'network.manage',
+    'DELETE projects/{project}/network/callers/{caller}' => 'network.manage',
     'GET projects/{project}/access' => 'projects.view',
     'POST projects/{project}/access' => 'projects.manage_access',
     'DELETE projects/{project}/access/{assignment}' => 'projects.manage_access',
@@ -157,6 +199,8 @@ return [
     'GET projects/{project}/workflows/app/signing-key' => 'workflows.manage',
     'GET projects/{project}/workflows/{workflow}' => 'workflows.view',
     'PATCH projects/{project}/workflows/{workflow}' => 'workflows.manage',
+    'PUT projects/{project}/workflows/{workflow}' => 'workflows.manage',
+    'DELETE projects/{project}/workflows/{workflow}' => 'workflows.manage',
     'GET projects/{project}/workflows/{workflow}/runs' => 'workflows.view',
     'POST projects/{project}/workflows/{workflow}/runs' => 'workflows.run',
     'GET projects/{project}/workflow-runs' => 'workflows.view',
@@ -170,6 +214,26 @@ return [
     'POST events' => 'events.send',
     'GET events' => 'workflows.view',
     'GET events/{event}' => 'workflows.view',
+
+    // ── Triggers (routes/triggers.php, docs/triggers.md) ──
+    'GET trigger-types' => '@authenticated',
+    'GET projects/{project}/triggers' => 'projects.view',
+    'POST projects/{project}/triggers' => 'projects.update',
+    'PUT projects/{project}/triggers' => 'projects.update',
+    'PATCH projects/{project}/triggers/{trigger}' => 'projects.update',
+    'DELETE projects/{project}/triggers/{trigger}' => 'projects.update',
+    // Stored webhook / platform events carry the senders' request bodies: like request replay
+    'GET projects/{project}/triggers/{trigger}/events' => 'replay.manage',
+    'POST projects/{project}/triggers/{trigger}/events/replay' => 'replay.manage',
+    'GET projects/{project}/triggers/{trigger}/events/{event}' => 'replay.manage',
+    'POST projects/{project}/triggers/{trigger}/events/{event}/replay' => 'replay.manage',
+    // The organization's topics; publishing is sending an event
+    'GET topics' => 'projects.view:any',
+    'POST topics' => 'topics.manage',
+    'GET topics/{topic}' => 'projects.view:any',
+    'PATCH topics/{topic}' => 'topics.manage',
+    'DELETE topics/{topic}' => 'topics.manage',
+    'POST topics/{topic}/publish' => 'events.send',
 
     // ── Software supply chain + data residency (routes/supply-chain.php, docs/supply-chain.md) ──
     'GET projects/{project}/security' => 'security.view',
@@ -221,6 +285,7 @@ return [
 
     // ── Gateways (per user; GatewayPolicy) ──
     'GET gateways' => '@authenticated',
+    'POST gateways' => '@policy',
     'GET gateways/{gateway}' => '@policy',
     'PATCH gateways/{gateway}' => '@policy',
     'GET gateways/{gateway}/routes' => '@policy',
@@ -228,15 +293,46 @@ return [
     'PATCH gateways/{gateway}/routes/{route}' => '@policy',
     'DELETE gateways/{gateway}/routes/{route}' => '@policy',
 
+    // ── API product (routes/api-product.php, docs/api-product.md): a gateway's consumers / plans
+    //    follow GatewayPolicy, the organization's need api_products.manage (ApiProductPolicy) ──
+    'PUT gateways/{gateway}/custom-domain' => '@policy',
+    'POST gateways/{gateway}/custom-domain/verify' => '@policy',
+    'DELETE gateways/{gateway}/custom-domain' => '@policy',
+    'GET api-consumers' => '@authenticated',
+    'POST api-consumers' => '@policy',
+    'GET api-consumers/{apiConsumer}' => '@policy',
+    'PATCH api-consumers/{apiConsumer}' => '@policy',
+    'DELETE api-consumers/{apiConsumer}' => '@policy',
+    'GET api-consumers/{apiConsumer}/keys' => '@policy',
+    'POST api-consumers/{apiConsumer}/keys' => '@policy',
+    'PATCH api-keys/{apiKey}' => '@policy',
+    'POST api-keys/{apiKey}/rotate' => '@policy',
+    'POST api-keys/{apiKey}/revoke' => '@policy',
+    'GET api-plans' => '@authenticated',
+    'POST api-plans' => '@policy',
+    'PATCH api-plans/{apiPlan}' => '@policy',
+    'DELETE api-plans/{apiPlan}' => '@policy',
+    'GET api-usage' => '@authenticated',
+
     // ── Private broadcast channels: each channel decides (routes/channels.php, ChannelAccess) ──
     'GET broadcasting/auth' => '@authenticated',
     'POST broadcasting/auth' => '@authenticated',
 
     // ── Secret env vars (docs/security.md): names for env.view, values write-only ──
     'GET projects/{project}/secrets' => 'env.view',
+    'POST projects/{project}/secrets/refresh' => 'env.edit',
     'PUT projects/{project}/secrets/{name}' => 'env.edit',
     'DELETE projects/{project}/secrets/{name}' => 'env.edit',
     'GET projects/{project}/secrets/{name}/value' => 'secrets.view_values',
+
+    // ── Secret stores of the organization (docs/secret-stores.md) ──
+    'GET secret-stores' => 'secret_stores.view',
+    'POST secret-stores' => 'secret_stores.manage',
+    'GET secret-stores/{secretStore}' => 'secret_stores.view',
+    'PUT secret-stores/{secretStore}' => 'secret_stores.manage',
+    'DELETE secret-stores/{secretStore}' => 'secret_stores.manage',
+    'GET secret-stores/{secretStore}/trust' => 'secret_stores.view',
+    'POST secret-stores/{secretStore}/verify' => 'secret_stores.manage',
 
     // ── Audit log (docs/security.md) ──
     'GET audit-events' => 'audit.view',
@@ -257,6 +353,9 @@ return [
     'POST demo' => 'settings.manage',
     'DELETE demo' => 'settings.manage',
 
+    // ── Timed warmer preview: computes a schedule's week and estimate, stores nothing (ScaleScheduleController) ──
+    'POST scale-schedule/preview' => 'projects.view:any',
+
     // ── Regions ──
     'POST knative-regions/validate-kubeconfig' => 'regions.manage',
     'POST knative-regions/preview-nodes' => 'regions.manage',
@@ -274,6 +373,14 @@ return [
     'PUT knative-regions/{knativeRegion}/capacity' => 'regions.manage',
     'PUT knative-regions/{knativeRegion}/function-tls' => 'regions.manage',
     'DELETE knative-regions/{knativeRegion}/function-tls' => 'regions.manage',
+    // Global DNS (GlobalDnsController): the zone, the regions' PowerDNS servers
+    'GET global-dns' => 'regions.view',
+    'POST global-dns/sync' => 'regions.manage',
+    'GET knative-regions/{knativeRegion}/global-dns' => 'regions.view',
+    'POST knative-regions/{knativeRegion}/global-dns' => 'regions.manage',
+    'DELETE knative-regions/{knativeRegion}/global-dns' => 'regions.manage',
+    'PUT knative-regions/{knativeRegion}/global-dns/geoip' => 'regions.manage',
+    'POST knative-regions/{knativeRegion}/global-dns/geoip/reload' => 'regions.manage',
     'GET knative-regions/{knativeRegion}/skupper' => 'regions.view',
     'POST knative-regions/{knativeRegion}/skupper/site' => 'regions.manage',
     'GET knative-regions/{knativeRegion}/knative-status' => 'regions.view',
@@ -303,6 +410,20 @@ return [
     'GET knative-regions/{knativeRegion}/wasm' => 'regions.view',
     'POST knative-regions/{knativeRegion}/wasm' => 'sandbox.manage',
     'DELETE knative-regions/{knativeRegion}/wasm' => 'sandbox.manage',
+    // External Secrets Operator (references to secret stores, docs/secret-stores.md)
+    'GET knative-regions/{knativeRegion}/external-secrets' => 'regions.view',
+    'POST knative-regions/{knativeRegion}/external-secrets' => 'regions.manage',
+    'DELETE knative-regions/{knativeRegion}/external-secrets' => 'regions.manage',
+    // The region's own OpenBao (project secret values, dynamic Postgres credentials)
+    'GET knative-regions/{knativeRegion}/openbao' => 'regions.view',
+    'POST knative-regions/{knativeRegion}/openbao' => 'regions.manage',
+    'PATCH knative-regions/{knativeRegion}/openbao' => 'regions.manage',
+    'DELETE knative-regions/{knativeRegion}/openbao' => 'regions.manage',
+    // cert-manager and the ClusterIssuer of custom domains (docs/regions.md#cert-manager)
+    'GET knative-regions/{knativeRegion}/cert-manager' => 'regions.view',
+    'POST knative-regions/{knativeRegion}/cert-manager' => 'regions.manage',
+    'DELETE knative-regions/{knativeRegion}/cert-manager' => 'regions.manage',
+    'GET knative-regions/{knativeRegion}/cert-manager/ca-certificate' => 'regions.view',
     'POST knative-regions/{knativeRegion}/migrate' => 'regions.manage',
     'GET knative-regions/{knativeRegion}/migration-status' => 'regions.view',
     'POST knative-regions/{knativeRegion}/complete-migration' => 'regions.manage',
@@ -333,6 +454,22 @@ return [
     'PUT images/uploads/{upload}/chunk' => 'images.upload',
     'POST images/uploads/{upload}/complete' => 'images.upload',
     'DELETE images/uploads/{upload}' => 'images.upload',
+
+    // ── Organization export / import (routes/org-transfer.php, docs/org-export.md); the
+    // controller also requires the Owner role ──
+    'GET org-transfers' => 'org.transfer',
+    'POST org-transfers/export/estimate' => 'org.transfer',
+    'POST org-transfers/export' => 'org.transfer',
+    'POST org-transfers/import' => 'org.transfer',
+    'GET org-transfers/{transfer}' => 'org.transfer',
+    'GET org-transfers/{transfer}/download' => 'org.transfer',
+    'DELETE org-transfers/{transfer}' => 'org.transfer',
+    'PUT org-transfers/{transfer}/chunk' => 'org.transfer',
+    'POST org-transfers/{transfer}/complete' => 'org.transfer',
+    'POST org-transfers/{transfer}/fetch' => 'org.transfer',
+    'GET org-transfers/{transfer}/history' => 'org.transfer',
+    'POST org-transfers/{transfer}/plan' => 'org.transfer',
+    'POST org-transfers/{transfer}/apply' => 'org.transfer',
 
     // ── Models (routes/ai.php, docs/huggingface.md); the controllers refine POST models and
     //    POST models/{model}/snapshots: imports (model volume, OCI artifact) need models.manage ──
@@ -376,6 +513,21 @@ return [
 
     // ── Runtimes (RuntimeController refines: platform runtimes need runtimes.manage, the
     //    organization's custom runtimes runtimes.use_custom while custom runtimes are enabled) ──
+    // ── Runtime patches (docs/runtimes.md#runtime-patches; routes/runtime-patches.php) ──
+    'GET runtime-patches' => '@authenticated',
+    // Banners: the user's own visible projects; platform administrators also see the feed's state
+    'GET runtime-patches/banners' => '@authenticated',
+    'GET projects/{project}/runtime-patches' => 'projects.view',
+    'POST projects/{project}/runtime-patches/apply' => 'projects.deploy',
+    'PUT projects/{project}/runtime-patches/pin' => 'projects.deploy',
+    'DELETE projects/{project}/runtime-patches/pin' => 'projects.deploy',
+    'GET admin/runtime-patches' => '@platform',
+    'POST admin/runtime-patches/check' => '@platform',
+    'PUT admin/runtime-patches/policy' => '@platform',
+    'POST admin/runtime-patches/{patch}/remind' => '@platform',
+    'POST admin/runtime-patches/{patch}/force' => '@platform',
+    'PUT admin/runtime-patches/{patch}/deadline' => '@platform',
+
     'GET runtimes' => '@authenticated', // the catalog project forms pick from
     'GET runtimes/{runtime}' => '@authenticated',
     'GET runtimes/{runtime}/template' => '@authenticated',
@@ -513,6 +665,12 @@ return [
     'POST projects/{project}/uptime-checks/{check}/run' => 'uptime.manage',
     'GET projects/{project}/uptime-incidents' => 'metrics.view',
     'PATCH projects/{project}/uptime-incidents/{incident}' => 'uptime.manage',
+    // Load tests: reading them is the project's metrics, running one sends metered traffic
+    // to its deployment (docs/load-test.md#permissions)
+    'GET projects/{project}/load-tests' => 'metrics.view',
+    'GET projects/{project}/load-tests/{loadTest}' => 'metrics.view',
+    'POST projects/{project}/load-tests' => 'projects.deploy',
+    'POST projects/{project}/load-tests/{loadTest}/cancel' => 'projects.deploy',
     'GET observability/status-page' => 'status_page.manage',
     'PUT observability/status-page' => 'status_page.manage',
     'GET observability/alert-channels' => 'alerts.manage',
@@ -556,6 +714,10 @@ return [
     'DELETE billing/prices/{price}' => 'billing.manage',
     'GET billing/regions' => 'billing.view',
     'PUT billing/regions/{region}' => 'billing.manage',
+    'PUT billing/regions/{region}/queue-consumers' => 'billing.manage',
+    // The platform's queue consumer choice per tenant of a platform region (docs/billing.md#queue-consumers)
+    'GET billing/regions/{region}/organizations' => '@platform:billing.view',
+    'PUT billing/regions/{region}/organizations/{tenant}' => '@platform:billing.manage',
     'GET billing/markups' => 'billing.view',
     'POST billing/markups' => 'billing.manage',
     'DELETE billing/markups/{markup}' => 'billing.manage',
@@ -587,12 +749,16 @@ return [
     'GET billing/archived-bills' => '@platform:billing.view',
     'GET billing/archived-bills/{bill}' => '@platform:billing.view',
     // A project's billing tab: ProjectBillingController additionally requires the project owner,
-    // projects.billing on the project or billing.view
+    // projects.billing on the project or billing.view (writes: billing.manage)
     'GET projects/{project}/billing' => 'projects.view',
     'GET projects/{project}/billing/quote' => 'projects.view',
     'GET projects/{project}/billing/bills/{bill}' => 'projects.view',
     'POST projects/{project}/billing/fixed-requests' => 'projects.view',
     'POST projects/{project}/billing/fixed-requests/{fixedRequest}/cancel' => 'projects.view',
+    'GET projects/{project}/billing/cost-limit' => 'projects.view',
+    'PUT projects/{project}/billing/cost-limit' => 'projects.view',
+    'DELETE projects/{project}/billing/cost-limit' => 'projects.view',
+    'POST projects/{project}/billing/cost-limit/resume' => 'projects.view',
 
     // ── Sandbox API (routes/sandboxes.php, docs/sandbox-api.md) ──
     // Lifecycle

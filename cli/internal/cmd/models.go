@@ -921,7 +921,7 @@ func newModelsDeployCmd(app *App) *cobra.Command {
 	f.StringVar(&name, "name", "", "service name (default: from the model's name)")
 	f.StringVar(&region, "region", "", "region (name or id; default: the only active region)")
 	f.StringVar(&revision, "revision", "", "Hub branch, tag or commit of a Hub model (default main)")
-	f.BoolVar(&noStart, "no-start", false, "create the service stopped (start it with `runr models services start`)")
+	f.BoolVar(&noStart, "no-start", false, "create the service stopped (start it with runr models services start)")
 	flags.register(f)
 	w.register(f, "the service is ready", 30*time.Minute)
 	return cmd

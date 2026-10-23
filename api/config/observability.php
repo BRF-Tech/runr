@@ -1,6 +1,8 @@
 <?php
 
 use App\Services\Helpers\ManagedTracing;
+use App\Services\Observability\LoadTest\LoadTestManifests;
+use App\Support\Images\RegistryMove;
 
 /*
 |--------------------------------------------------------------------------
@@ -91,6 +93,39 @@ return [
         'allow_private_targets' => (bool) env('OBS_UPTIME_ALLOW_PRIVATE', false),
     ],
 
+    /*
+    | Load tests (docs/load-test.md): a short k6 Job in the project's region against the project's
+    | own URL. Test traffic is metered like any other traffic of the project.
+    */
+    'load_test' => [
+        'enabled' => (bool) env('OBS_LOADTEST_ENABLED', true),
+        // The k6 runner (the reqs mirror of docker.io/grafana/k6, LoadTestManifests::IMAGE)
+        'image' => RegistryMove::ref(env('OBS_LOADTEST_IMAGE') ?: LoadTestManifests::IMAGE),
+        // Namespace of the k6 Jobs in every region (created on the first test)
+        'namespace' => env('OBS_LOADTEST_NAMESPACE', 'runr-loadtest'),
+        // The choices offered; OBS_LOADTEST_MAX_USERS / _MAX_DURATION drop the larger ones
+        'users' => LoadTestManifests::USERS,
+        'durations' => LoadTestManifests::DURATIONS,
+        'max_users' => (int) env('OBS_LOADTEST_MAX_USERS', 100),
+        'max_duration' => (int) env('OBS_LOADTEST_MAX_DURATION', 300),
+        // Tests an organization may start per day (0 = none)
+        'daily_limit' => (int) env('OBS_LOADTEST_DAILY_LIMIT', 20),
+        // Request body of a POST test
+        'max_body_bytes' => (int) env('OBS_LOADTEST_MAX_BODY_BYTES', 4096),
+        // Pods of load tests at once in a region (ResourceQuota of the namespace)
+        'max_concurrent_per_region' => (int) env('OBS_LOADTEST_MAX_CONCURRENT_PER_REGION', 5),
+        // Time the Job has to start (image pull, scheduling) on top of the test's duration
+        'start_grace_seconds' => (int) env('OBS_LOADTEST_START_GRACE_SECONDS', 180),
+        'ttl_seconds_after_finished' => (int) env('OBS_LOADTEST_TTL_SECONDS', 600),
+        'request_timeout_seconds' => 30,
+        // Scheme of the requests (the region's ingress serves both; http for a region without TLS)
+        'target_scheme' => env('OBS_LOADTEST_TARGET_SCHEME', 'https'),
+        'resources' => [
+            'requests' => ['cpu' => env('OBS_LOADTEST_CPU_REQUEST', '250m'), 'memory' => env('OBS_LOADTEST_MEMORY_REQUEST', '256Mi')],
+            'limits' => ['cpu' => env('OBS_LOADTEST_CPU_LIMIT', '1'), 'memory' => env('OBS_LOADTEST_MEMORY_LIMIT', '512Mi')],
+        ],
+    ],
+
     'status_page' => [
         'enabled' => (bool) env('OBS_STATUS_PAGE_ENABLED', true),
         'history_days' => (int) env('OBS_STATUS_PAGE_HISTORY_DAYS', 90),
@@ -115,6 +150,9 @@ return [
             'duration' => env('OBS_SPANMETRICS_DURATION', 'traces_span_metrics_duration_milliseconds_bucket'),
             'service' => env('OBS_SPANMETRICS_SERVICE_LABEL', 'service_name'),
             'cold' => env('OBS_SPANMETRICS_COLD_LABEL', 'runr_cold_start'),
+            // The Knative revision a span came from (resource attribute runr.revision, a dimension of
+            // the spanmetrics connector): a canary's new revision is judged by its own series
+            'revision' => env('OBS_SPANMETRICS_REVISION_LABEL', 'runr_revision'),
         ],
     ],
 ];

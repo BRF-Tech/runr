@@ -215,6 +215,79 @@ class ProjectToolsTest extends TestCase
         $this->assertSchemaRejects('project_update', ['project' => 'shop', 'env' => ['A' => 'b']], '/env');
     }
 
+    // ── Timed warmer (config.scale_schedule) ───────────────────────────────────
+
+    public function test_a_project_is_created_with_a_timed_warmer(): void
+    {
+        $this->structured($this->callTool('project_create', [
+            'name' => 'office-api',
+            'service_type' => 'caas',
+            'image' => 'ghcr.io/acme/api:1.2',
+            'max_scale' => 5,
+            'scale_schedule' => [
+                ['cron' => '0 9 * * 1-5', 'min_scale' => 3],
+                ['cron' => ' 0 18 * * 1-5 ', 'min_scale' => 0],
+            ],
+        ]));
+
+        $config = Project::where('name', 'office-api')->sole()->containerConfig;
+        $this->assertSame([
+            ['cron' => '0 9 * * 1-5', 'min_scale' => 3],
+            ['cron' => '0 18 * * 1-5', 'min_scale' => 0],
+        ], $config->scale_schedule);
+        $this->assertSame(5, $config->max_scale);
+    }
+
+    public function test_the_timed_warmer_is_set_shown_and_turned_off(): void
+    {
+        $project = $this->containerProject('shop');
+        $project->containerConfig->update(['max_scale' => 4]);
+
+        $rows = [['cron' => '30 8 * * 1-5', 'min_scale' => 2], ['cron' => '0 20 * * *', 'min_scale' => 0]];
+        $result = $this->callTool('project_update', ['project' => 'shop', 'scale_schedule' => $rows]);
+        $changed = $this->structured($result);
+
+        $this->assertSame(['scale_schedule'], $changed['changed']);
+        $this->assertStringContainsString('within a minute', json_encode($result), 'a schedule alone needs no deploy');
+        $this->assertSame($rows, $project->fresh()->containerConfig->scale_schedule);
+
+        $shown = $this->structured($this->callTool('project_get', ['project' => 'shop']));
+        $this->assertSame($rows, $shown['config']['scale_schedule']);
+
+        // [] and null both turn it off
+        $this->structured($this->callTool('project_update', ['project' => 'shop', 'scale_schedule' => []]));
+        $this->assertNull($project->fresh()->containerConfig->scale_schedule);
+
+        $this->structured($this->callTool('project_update', ['project' => 'shop', 'scale_schedule' => $rows]));
+        $this->structured($this->callTool('project_update', ['project' => 'shop', 'scale_schedule' => null]));
+        $this->assertNull($project->fresh()->containerConfig->scale_schedule);
+        $this->assertArrayNotHasKey('scale_schedule', $this->structured($this->callTool('project_get', ['project' => 'shop']))['config']);
+    }
+
+    public function test_timed_warmer_rows_are_checked_by_the_schema_and_the_api(): void
+    {
+        $project = $this->containerProject('shop');
+        $project->containerConfig->update(['max_scale' => 2]);
+
+        // The tool's schema: both fields, a count of 0-10, at most 10 rows
+        $this->assertSchemaRejects('project_update', ['project' => 'shop', 'scale_schedule' => [['cron' => '0 9 * * *']]], '/scale_schedule/0/min_scale');
+        $this->assertSchemaRejects('project_update', ['project' => 'shop', 'scale_schedule' => [['cron' => '0 9 * * *', 'min_scale' => 11]]], '/scale_schedule/0/min_scale');
+        $this->assertSchemaRejects('project_update', ['project' => 'shop', 'scale_schedule' => array_fill(0, 11, ['cron' => '0 9 * * *', 'min_scale' => 1])], '/scale_schedule');
+
+        // The API's rules: a five-field cron expression, a count within max_scale
+        foreach ([
+            [['cron' => 'every morning', 'min_scale' => 1]],
+            [['cron' => '0 0 9 * * 1-5', 'min_scale' => 1]],   // six fields (seconds)
+            [['cron' => '@midnight', 'min_scale' => 1]],       // macros are not schedule rows (a shorter one fails the schema's minLength)
+            [['cron' => '0 9 * * 1-5', 'min_scale' => 3]],     // above max_scale 2
+        ] as $rows) {
+            $error = $this->mcpToolError($this->callTool('project_update', ['project' => 'shop', 'scale_schedule' => $rows]));
+            $this->assertSame(422, $error['status'], json_encode($rows));
+            $this->assertNotEmpty(array_filter(array_keys($error['errors'] ?? []), fn ($k) => str_starts_with((string) $k, 'config.scale_schedule')), json_encode($error));
+        }
+        $this->assertNull($project->fresh()->containerConfig->scale_schedule);
+    }
+
     public function test_project_update_is_refused_without_projects_update_on_the_project(): void
     {
         $this->containerProject('shop');

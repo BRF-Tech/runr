@@ -9,6 +9,7 @@ use App\Models\Setting;
 use App\Models\User;
 use App\Services\Dns\DnsResolver;
 use App\Services\KubernetesClient;
+use App\Services\PublicHostRewrites;
 use App\Services\RegionDomainAliasService;
 use App\Services\RegionStatusService;
 use Illuminate\Database\Eloquent\Collection;
@@ -103,7 +104,67 @@ class TenantDomainMigrationTest extends TestCase
                 return ['data' => $this->configDomain];
             },
             'GET /apis/traefik.io/v1alpha1/namespaces/eu/ingressroutes' => fn () => ['items' => $this->euRoutes],
+            'GET /apis/traefik.io/v1alpha1/namespaces/eu/middlewares' => fn () => ['items' => array_values($this->euMiddlewares)],
+            'PATCH /apis/traefik.io/v1alpha1/namespaces/eu/middlewares/*' => function ($request) {
+                $name = basename((string) parse_url($request->url(), PHP_URL_PATH));
+                $host = json_decode($request->body(), true)['spec']['headers']['customRequestHeaders']['Host'] ?? null;
+                if (isset($this->euMiddlewares[$name]) && is_string($host)) {
+                    $this->euMiddlewares[$name]['spec']['headers']['customRequestHeaders']['Host'] = $host;
+                }
+
+                return ['kind' => 'Middleware'];
+            },
         ]);
+    }
+
+    /** @var array<string, array> rewrite Middlewares of the eu project namespace by name */
+    private array $euMiddlewares = [];
+
+    private function rewrite(string $name, string $service, string $host): void
+    {
+        $this->euMiddlewares[$name] = [
+            'metadata' => ['name' => $name, 'labels' => [PublicHostRewrites::LABEL => PublicHostRewrites::LABEL_VALUE], 'annotations' => [PublicHostRewrites::ANNOTATION_SERVICE => $service]],
+            'spec' => ['headers' => ['customRequestHeaders' => ['Host' => $host]]],
+        ];
+    }
+
+    private function rewrittenTo(string $name): ?string
+    {
+        return $this->euMiddlewares[$name]['spec']['headers']['customRequestHeaders']['Host'] ?? null;
+    }
+
+    public function test_the_organizations_rewrites_follow_a_completed_move_at_once_and_only_its_own(): void
+    {
+        $this->platformRegion();
+        $this->configDomain['eu.acme.example'] = self::SELECTOR;
+        $this->acme->run(fn () => Setting::set('base_domain', 'acme.example'));
+        $this->rewrite('orders-domain', 'orders-acme', 'orders-acme.eu.acme.example');
+        $this->rewrite('orders-pr-domain', 'orders-acme-pr-3', 'orders-acme-pr-3.eu.acme.example');
+        // another organization's service on a domain with the same suffix, and the platform's own
+        $this->rewrite('shop-domain', 'shop-other', 'shop-other.eu.acme.example');
+        $this->rewrite('docs-domain', 'docs', 'docs.eu.platform.example');
+
+        $this->send(['base_domain' => 'acme.dev'])->assertOk();
+        $this->assertSame('orders-acme.eu.acme.example', $this->rewrittenTo('orders-domain'), 'nothing moves before the move completes');
+
+        $this->send(['complete_domain_migration' => true])->assertOk();
+
+        $this->assertSame('orders-acme.eu.acme.dev', $this->rewrittenTo('orders-domain'));
+        $this->assertSame('orders-acme-pr-3.eu.acme.dev', $this->rewrittenTo('orders-pr-domain'));
+        $this->assertSame('shop-other.eu.acme.example', $this->rewrittenTo('shop-domain'));
+        $this->assertSame('docs.eu.platform.example', $this->rewrittenTo('docs-domain'));
+    }
+
+    public function test_a_cleared_domain_sends_the_organizations_rewrites_to_the_platform_domain_at_once(): void
+    {
+        $this->platformRegion();
+        $this->configDomain['eu.acme.example'] = self::SELECTOR;
+        $this->acme->run(fn () => Setting::set('base_domain', 'acme.example'));
+        $this->rewrite('orders-domain', 'orders-acme', 'orders-acme.eu.acme.example');
+
+        $this->send(['base_domain' => null])->assertOk();
+
+        $this->assertSame('orders-acme.eu.platform.example', $this->rewrittenTo('orders-domain'));
     }
 
     protected function tearDown(): void

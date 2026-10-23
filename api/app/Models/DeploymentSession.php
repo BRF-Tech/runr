@@ -10,20 +10,22 @@ use Illuminate\Support\Carbon;
 /**
  * @property string $id
  * @property string $project_id
- * @property string $deployment_id
+ * @property string|null $deployment_id null for a session of a preview environment (preview_environment_id)
  * @property string $region_id
  * @property string $entry_point
  * @property Carbon $started_at
  * @property Carbon|null $ended_at
  * @property int|null $duration_ms
- * @property int|null $cpu_used_ms
- * @property int|null $memory_used_mb_ms
+ * @property int|null $cpu_used_ms not reported by the agent; metering counts the deployment's size × pod time (UsageAggregator)
+ * @property int|null $memory_used_mb_ms not reported by the agent (as cpu_used_ms)
  * @property int $pod_count
  * @property bool $cold_start
  * @property int|null $cold_start_ms
  * @property array<array-key, mixed>|null $metadata
+ * @property string|null $preview_environment_id the preview environment of a preview pod's session
+ * @property Carbon|null $last_seen_at the region agent's last heartbeat for the pod; null: none (agents before heartbeats)
  * @property Carbon $created_at
- * @property-read Deployment $deployment
+ * @property-read Deployment|null $deployment
  * @property-read Project $project
  * @property-read KnativeRegion $region
  *
@@ -68,11 +70,14 @@ class DeploymentSession extends Model
         'cold_start',
         'cold_start_ms',
         'metadata',
+        'last_seen_at',
+        'preview_environment_id',
     ];
 
     protected $casts = [
         'started_at' => 'datetime',
         'ended_at' => 'datetime',
+        'last_seen_at' => 'datetime',
         'created_at' => 'datetime',
         'cold_start' => 'boolean',
         'duration_ms' => 'integer',

@@ -57,6 +57,7 @@ class ProjectDomain extends Model
     public const CHALLENGE_VALUE_PREFIX = 'runr-verify=';
 
     protected $fillable = [
+        'environment_id',
         'project_id',
         'domain',
         'status',
@@ -65,12 +66,15 @@ class ProjectDomain extends Model
         'tls_secret_name',
         'tls_expires_at',
         'status_message',
+        'region_states',
     ];
 
     protected $hidden = ['verification_token'];
 
     protected $casts = [
         'tls_expires_at' => 'datetime',
+        // a global project's domain in each region: region id => {status, message, tls_expires_at}
+        'region_states' => 'array',
     ];
 
     public function project(): BelongsTo

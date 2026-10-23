@@ -25,8 +25,9 @@ abstract class Tool
 
     /**
      * Permissions the caller must hold (organization-wide or on at least one project) for the
-     * tool to be listed: every entry is required; an entry "a|b" is satisfied by either.
-     * An empty list: every signed-in caller.
+     * tool to be listed: every entry is required; an entry "a|b" is satisfied by either; an entry
+     * "@platform:a" needs a platform administrator whose token carries a (the rule of API routes
+     * marked so in config/route_permissions.php). An empty list: every signed-in caller.
      *
      * @return list<string>
      */

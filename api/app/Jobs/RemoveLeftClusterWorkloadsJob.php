@@ -36,7 +36,7 @@ class RemoveLeftClusterWorkloadsJob implements ShouldBeEncrypted, ShouldQueue
 
     /**
      * @param  string  $kubeconfig  the cluster the rollback left
-     * @param  array<string, array<string, array{slug: string, secrets: list<string>}>>  $targets  namespace => project id => its slug and the names of its Secrets
+     * @param  array<string, array<string, array{slug: string, secrets: list<string>, openbao?: bool, environments_only?: bool}>>  $targets  namespace => project id => its slug, the names of its Secrets (its environments' too) and whether only its environments ran there
      */
     public function __construct(
         public KnativeRegion $region,
@@ -95,7 +95,7 @@ class RemoveLeftClusterWorkloadsJob implements ShouldBeEncrypted, ShouldQueue
         $e ??= new \RuntimeException('unknown error');
         $title = "Left cluster cleanup of {$this->region->name} failed";
         $body = rtrim($e->getMessage(), '.').'; remove them yourself: the Knative Services, CronJobs and queue consumers'
-            .' labelled runr/project-id or runr/preview-of with the region\'s projects in the namespace '
+            .' labelled runr/project-id, runr/preview-of or runr/environment-of with the region\'s projects in the namespace '
             .implode(', ', array_keys($this->targets)).' of the cluster the rollback left. Its installs and data services stay.';
 
         Log::warning("RegionMigrate: {$title}: {$body}");

@@ -17,6 +17,11 @@ use App\Workflows\Models\WorkflowApp;
  *    delivers to the engine's queue bridge (QueueBridge) instead of to the function. The sink URL
  *    carries the hook token, so it comes from the consumer's Secret as well.
  *
+ * An environment of the project (an EnvironmentProject view, docs/workflows.md#environments) is a
+ * workflow app of its own: its workload gets its own key (WorkflowApp::forProject() of the view) in
+ * its own Secret <workload>-secret-env — never production's — and its queue consumer the sink URL
+ * of its own bridge.
+ *
  * Requires the consuming class to provide getTriggerType(), getConfig(), secretEnvName(),
  * buildQueueConsumerDeployment(), buildQueueConsumerSecret() and queueConsumerSecretName().
  */
@@ -49,7 +54,8 @@ trait KnativeWorkflowTrait
     }
 
     /**
-     * Entries of the project's secret env Secret for a `workflow` trigger project.
+     * Entries of the project's secret env Secret for a `workflow` trigger project: the signing key
+     * of the app of the environment $project stands for.
      *
      * @return array<string, string>
      */

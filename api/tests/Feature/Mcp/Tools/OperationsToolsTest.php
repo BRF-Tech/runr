@@ -119,6 +119,9 @@ class OperationsToolsTest extends TestCase
         $result = $this->structured($this->callTool('metrics_summary', ['project' => 'shop', 'period' => '30d']));
 
         $this->assertSame('30d', $result['period']);
+        // the units of the numbers: the sessions' totals are size × time, not use
+        $this->assertStringContainsString('the deployment\'s size × the sessions\' pod time', $result['units']['sessions']['total_cpu_ms']);
+        $this->assertSame('MiB the pods used, average of the samples', $result['units']['metrics']['avg_memory']);
         $this->assertSame(120, $result['metrics']['avg_cpu_m']);
         $this->assertSame(4, $result['sessions']['sessions']);
     }

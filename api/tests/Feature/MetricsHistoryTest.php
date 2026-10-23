@@ -248,6 +248,11 @@ class MetricsHistoryTest extends TestCase
     {
         $project = $this->project('orders');
         $deployment = $project->activeDeployment;
+        // Applied at 500m / 1 GiB: what metering counts for the sessions' pod time
+        $deployment->forceFill(['sizing' => [
+            'region_id' => $this->region->id, 'cpu_m' => 500, 'memory_mb' => 1024, 'trigger_type' => 'http',
+            'min_scale' => 0, 'max_scale' => 3, 'scale_to_zero' => true, 'gpu_count' => 0,
+        ]])->saveQuietly();
         $this->sample($project, '2026-10-14 10:00:00', '5m', ['cpu_cores' => 0.2, 'memory_mb' => 100, 'rps' => 2, 'cold_starts' => 1]);
         $this->sample($project, '2026-10-01 10:00:00', '1h', ['cpu_cores' => 0.6, 'memory_mb' => 300, 'rps' => 4, 'cold_starts' => 2]);
         $this->sample($project, '2026-08-01 10:00:00', '1d', ['cpu_cores' => 5, 'memory_mb' => 900, 'rps' => 50, 'cold_starts' => 9]); // outside 30 days
@@ -276,8 +281,9 @@ class MetricsHistoryTest extends TestCase
             ->assertJsonPath('metrics.sample_count', 2)
             ->assertJsonPath('sessions.total_sessions', 2)
             ->assertJsonPath('sessions.total_duration_ms', 4000)
-            ->assertJsonPath('sessions.total_cpu_ms', 20)
-            ->assertJsonPath('sessions.total_memory_mb_ms', 2000)
+            // 4 s of pod time at 0.5 vCPU / 1 GiB, not the figures on the session rows
+            ->assertJsonPath('sessions.total_cpu_ms', 2000)
+            ->assertJsonPath('sessions.total_memory_mb_ms', 1024 * 4000)
             ->assertJsonPath('sessions.cold_starts', 1)
             ->assertJsonPath('sessions.avg_duration_ms', 2000);
 

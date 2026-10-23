@@ -41,7 +41,7 @@ trait E2eTestMigrationTrait
 
         // Poll migration status. The migration installs the region's registry, Redis and sandbox
         // runtimes on the target (Helm upgrades that wait for their pods, up to 10 min each) and
-        // redeploys every project: minutes, not seconds (MigrateRegionJob allows 30 min)
+        // redeploys every project: minutes, not seconds (MigrateRegionJob and MigrateRegionProjectsJob allow 30 min each)
         $started = time();
         $deadline = $started + 900;
         $status = null;

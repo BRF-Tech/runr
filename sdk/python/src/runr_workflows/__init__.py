@@ -15,9 +15,10 @@
 """
 
 from .client import EventsClient
-from .errors import NonRetriableError, RetryAfterError, SignatureError, StepError
+from .errors import NonRetriableError, PublishError, RetryAfterError, SignatureError, StepError
 from .protocol import sign, verify
 from .step import AsyncStep, Step
+from .topics import Topics, publish
 from .workflows import Context, Workflows, __version__, verify_request
 
 __all__ = [
@@ -25,12 +26,15 @@ __all__ = [
     "Context",
     "EventsClient",
     "NonRetriableError",
+    "PublishError",
     "RetryAfterError",
     "SignatureError",
     "Step",
     "StepError",
+    "Topics",
     "Workflows",
     "__version__",
+    "publish",
     "sign",
     "verify",
     "verify_request",

@@ -24,6 +24,9 @@ use Illuminate\Support\Facades\Log;
  *   becomes the function domain: Knative's config-domain and the KnativeServing resource, the
  *   region's knative_domain (project URLs, function TLS, the status block, request replay), and
  *   the old domain is no longer served. Setting the base domain back before that rolls it back.
+ *   Completion and rollback carry the custom domains, gateway routes and global routes that hand
+ *   calls to the region's services, its other domain aliases and its gateways along at once
+ *   (DomainMoveFollower) — not on the next status check.
  * - Cleared base domain: the regions that follow it lose their function domain.
  *
  * $regions (optional, on the public entry points): the regions to consider instead of every ready
@@ -111,10 +114,17 @@ class DomainMigrateService
     {
         $target = RegionDomains::migrationTarget($region);
         $current = RegionDomains::functionDomain($region);
+        $move = $target && $current && $target !== $current ? new PublicHostMove($current, $target) : null;
 
         if ($target && $current && $region->kubeconfig) {
             $k8s = new KubernetesClient($region->kubeconfig);
             $servingNs = $region->knative_serving_namespace ?: 'knative-serving';
+
+            // custom domains and gateway routes point at the new hosts first: the alias answers
+            // there until Knative serves them (DomainMoveFollower)
+            if ($move) {
+                $this->follower()->beforeSwitch($region, $move);
+            }
 
             $this->addConfigDomain($k8s, $servingNs, $target);
             $this->removeConfigDomain($k8s, $servingNs, $current);
@@ -133,10 +143,17 @@ class DomainMigrateService
             'domain_migration_old_domain' => null,
         ]);
         $this->syncStatusBlock($region->fresh());
+
+        // the region's other aliases and its gateways (default host, Host rewrites) follow now
+        if ($move && $region->kubeconfig) {
+            $this->follower()->afterSwitch($region->fresh() ?? $region, $move);
+        }
     }
 
     /**
      * Stop a migration: the region keeps its function domain, the new one is no longer served.
+     * The rewrites and gateways follow the services' hosts at once (a completion that broke off
+     * half way may have moved some).
      */
     public function rollback(KnativeRegion $region): void
     {
@@ -148,6 +165,15 @@ class DomainMigrateService
             'domain_migration_old_domain' => null,
         ]);
         $this->syncStatusBlock($region->fresh());
+
+        if ($region->kubeconfig && $region->has_serving) {
+            $this->follower()->afterRollback($region->fresh() ?? $region);
+        }
+    }
+
+    private function follower(): DomainMoveFollower
+    {
+        return app(DomainMoveFollower::class);
     }
 
     /**

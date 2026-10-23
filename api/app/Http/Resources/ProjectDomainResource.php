@@ -3,6 +3,8 @@
 namespace App\Http\Resources;
 
 use App\Models\ProjectDomain;
+use App\Services\CertManager\CertManager;
+use App\Services\GlobalProjects\GlobalDomains;
 use App\Services\ProjectDomainService;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
@@ -42,6 +44,13 @@ class ProjectDomainResource extends JsonResource
             'dns_targets' => $project
                 ? array_map(fn ($t) => ['type' => $t['type'], 'name' => $domain->domain, 'value' => $t['value']], $service->dnsTargets($project))
                 : [],
+            // a global project (docs/global-projects.md, "Custom domains"): the CNAME every region's
+            // certificate follows, and the domain's state in each region
+            'acme_challenge' => ProjectDomainService::globalWorkload($project) && $domain->tls_mode === ProjectDomain::TLS_CERT_MANAGER
+                && ($target = app(GlobalDomains::class)->challengeTarget($domain->domain))
+                ? ['type' => 'CNAME', 'name' => '_acme-challenge.'.$domain->domain, 'value' => $target]
+                : null,
+            'regions' => ProjectDomainService::globalWorkload($project) ? (object) ((array) ($domain->region_states ?? [])) : null,
             'created_at' => $domain->created_at?->toISOString(),
             'updated_at' => $domain->updated_at?->toISOString(),
         ];
@@ -53,9 +62,12 @@ class ProjectDomainResource extends JsonResource
             ProjectDomain::TLS_CUSTOM => __('api.domain.tls_note_custom', [
                 'date' => $domain->tls_expires_at?->toDateString() ?? '-',
             ]),
-            ProjectDomain::TLS_CERT_MANAGER => __('api.domain.tls_note_cert_manager', [
-                'issuer' => $service->clusterIssuer($domain->project?->knativeRegion) ?? '-',
-            ]),
+            ProjectDomain::TLS_CERT_MANAGER => match (CertManager::issuerKind($issuer = $service->clusterIssuer($domain->project?->knativeRegion))) {
+                // the region CA: browsers trust it only once it is installed
+                'ca' => __('api.domain.tls_note_cert_manager_ca', ['issuer' => $issuer]),
+                'acme' => __('api.domain.tls_note_cert_manager_acme', ['issuer' => $issuer]),
+                default => __('api.domain.tls_note_cert_manager', ['issuer' => $issuer ?? '-']),
+            },
             default => __('api.domain.tls_note_none'),
         };
     }

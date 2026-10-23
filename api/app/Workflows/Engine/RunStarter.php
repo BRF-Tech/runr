@@ -8,6 +8,7 @@ use App\Workflows\Models\WorkflowRun;
 use App\Workflows\Models\WorkflowStep;
 use App\Workflows\Models\WorkflowUsage;
 use App\Workflows\Support\JsonValue;
+use App\Workflows\Support\WorkflowEnvironments;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -16,7 +17,8 @@ use Illuminate\Support\Str;
 /**
  * Creates runs: API starts, event / cron / queue triggers, step.invoke children and replays.
  * Applies the idempotency key (explicit, or the definition's `idempotency` expression of the
- * trigger event) and the keyed concurrency key, then schedules the first execution.
+ * trigger event) and the keyed concurrency key, then schedules the first execution. A run belongs
+ * to its workflow's environment (docs/workflows.md#environments).
  */
 class RunStarter
 {
@@ -60,7 +62,7 @@ class RunStarter
 
         try {
             $run = DB::transaction(function () use ($workflow, $payload, $options, $key, $concurrencyKey, $copySteps) {
-                $run = WorkflowRun::create([
+                $run = WorkflowRun::create(self::environmentColumns($workflow) + [
                     'workflow_id' => $workflow->id,
                     'project_id' => $workflow->project_id,
                     'status' => WorkflowRun::QUEUED,
@@ -112,10 +114,29 @@ class RunStarter
             throw $e;
         }
 
-        DB::afterCommit(fn () => WorkflowUsage::record($workflow->project_id, $workflow->id, runs: 1));
+        $environmentId = $workflow->environment_id !== null ? (string) $workflow->environment_id : null;
+        DB::afterCommit(fn () => WorkflowUsage::record($workflow->project_id, $workflow->id, runs: 1, environmentId: $environmentId));
         $this->dispatcher->dispatch($run->id);
 
         return new StartResult($run, true);
+    }
+
+    /**
+     * The environment of a run: its workflow's (docs/workflows.md#environments) — the id, and the
+     * name the run's waits match events by.
+     *
+     * @return array<string, string|null>
+     */
+    public static function environmentColumns(Workflow $workflow): array
+    {
+        if (! WorkflowEnvironments::ready()) {
+            return [];
+        }
+
+        return [
+            'environment_id' => $workflow->environment_id,
+            'environment' => $workflow->environmentName(),
+        ];
     }
 
     /** {id, name, data, ts} with defaults; validates the size limit. */

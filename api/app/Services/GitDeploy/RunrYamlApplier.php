@@ -4,25 +4,41 @@ namespace App\Services\GitDeploy;
 
 use App\Models\ExecutorImage;
 use App\Models\Project;
+use App\Models\User;
 use App\Rules\ConfigMapKey;
 use App\Rules\CronSchedule;
 use App\Rules\EnvVars;
+use App\Rules\IpOrCidr;
 use App\Rules\KubernetesCpu;
 use App\Rules\WithinRegionTimeout;
 use App\Rules\WithinResourceLimit;
 use App\Services\Helpers\ResourceReservation;
+use App\Services\InternalNetwork\InternalNetwork;
+use App\Services\InternalNetwork\InternalNetworkService;
+use App\Services\Rollouts\DeployStrategies;
+use App\Services\Rollouts\DeployStrategy;
 use App\Services\Runtimes\RuntimeRegistry;
 use App\Support\Projects\ProjectAdmission;
+use App\Support\Projects\ScaleRules;
+use App\Support\Projects\ScaleSchedule;
+use App\Support\Rbac\Rbac;
+use App\Triggers\TriggerService;
+use Illuminate\Http\Exceptions\HttpResponseException;
 use Illuminate\Support\Facades\Validator;
+use Illuminate\Validation\ValidationException;
 use Modules\Tenancy\Services\TenantQuotaService;
 
 /**
  * Applies the settings of a pushed runr.yaml (RunrYaml::parse) to the project before its new
  * version is created — what `runr deploy` and the Edit dialog would change, with the same
  * validation:
- *  - runtime_version, description, handler, file (xaas), resources, scale, trigger, env
+ *  - runtime_version, description, handler, file (xaas), resources, scale (with the timed
+ *    warmer, scale.schedule), trigger / triggers, env
  *    (merged: keys in runr.yaml are set, others stay) and image / command / args / ports (caas)
  *    are applied when valid;
+ *  - deploy (the deploy strategy) is applied with the rules of PUT
+ *    /projects/{project}/deploy-strategy — without creating a version; an invalid key is left
+ *    out with a warning;
  *  - name, type, runtime and region are only compared: a push never renames, retypes or moves
  *    a project; a difference is a warning;
  *  - an invalid value (or a size above the region capacity / organization quota) is left out
@@ -34,15 +50,22 @@ class RunrYamlApplier
 
     /**
      * @param  array<string, mixed>  $settings  RunrYaml::parse()['settings']
+     * @param  string|null  $pushedBy  the pushing user: the network settings need network.manage
      * @return array{applied: array<string, mixed>, warnings: list<string>}
      */
-    public function apply(Project $project, array $settings): array
+    public function apply(Project $project, array $settings, ?string $pushedBy = null): array
     {
         $warnings = [];
         $applied = [];
 
         if (! $settings) {
             return ['applied' => [], 'warnings' => []];
+        }
+
+        if (isset($settings['network'])) {
+            [$network, $networkWarnings] = $this->applyNetwork($project, (array) $settings['network'], $pushedBy);
+            $applied += $network;
+            $warnings = array_merge($warnings, $networkWarnings);
         }
 
         foreach (['name' => $project->name, 'type' => $project->service_type, 'runtime' => $project->runtime] as $key => $current) {
@@ -102,6 +125,12 @@ class RunrYamlApplier
                 $changes[$key] = $settings[$key];
             }
         }
+        // The timed warmer: the rows replace the schedule, [] turns it off (stored as null)
+        if (array_key_exists('scale_schedule', $settings)) {
+            $changes['scale_schedule'] = is_array($settings['scale_schedule']) && $settings['scale_schedule'] !== []
+                ? $settings['scale_schedule']
+                : null;
+        }
 
         foreach (['image', 'command', 'args', 'ports'] as $key) {
             if (array_key_exists($key, $settings)) {
@@ -115,8 +144,10 @@ class RunrYamlApplier
             $changes['env_vars'] = array_merge((array) ($config->env_vars ?? []), $settings['env']);
         }
 
-        // Unchanged values need no validation
-        $changes = array_filter($changes, fn ($value, $key) => $config->{$key} != $value, ARRAY_FILTER_USE_BOTH);
+        // Unchanged values need no validation (a schedule compared in its stored shape)
+        $changes = array_filter($changes, fn ($value, $key) => $key === 'scale_schedule'
+            ? ScaleSchedule::rows($config) != ScaleSchedule::normalize($value)
+            : $config->{$key} != $value, ARRAY_FILTER_USE_BOTH);
 
         foreach ($this->validate($project, $config, $changes) as $key => $message) {
             unset($changes[$key]);
@@ -126,6 +157,28 @@ class RunrYamlApplier
         if ($manifest && isset($changes['trigger_type']) && ! $manifest->supportsTrigger((string) $changes['trigger_type'])) {
             $warnings[] = "runr.yaml trigger \"{$changes['trigger_type']}\" is not supported by the {$manifest->name()} runtime";
             unset($changes['trigger_type'], $changes['schedule'], $changes['queue_stream']);
+        }
+
+        if (array_key_exists('scale_schedule', $changes)) {
+            $changes['scale_schedule'] = ScaleSchedule::normalize($changes['scale_schedule']);
+        }
+
+        // triggers: the whole list (docs/triggers.md); a list the validation refuses stays as it
+        // was, with the reason as a warning
+        if (isset($settings['triggers']) && is_array($settings['triggers'])) {
+            try {
+                app(TriggerService::class)->replace($project, $settings['triggers']);
+                $applied['triggers'] = array_map(fn ($t) => ($t['name'] ?? $t['type']).':'.$t['type'], $settings['triggers']);
+            } catch (ValidationException $e) {
+                foreach ($e->errors() as $key => $messages) {
+                    $warnings[] = "runr.yaml {$key}: ".($messages[0] ?? 'invalid');
+                }
+            } catch (HttpResponseException $e) {
+                $response = $e->getResponse();
+                $data = method_exists($response, 'getData') ? (array) $response->getData(true) : [];
+                $warnings[] = 'runr.yaml triggers: '.($data['message'] ?? 'refused');
+            }
+            $config->refresh();
         }
 
         if ($changes) {
@@ -138,7 +191,122 @@ class RunrYamlApplier
             $applied += $changes;
         }
 
+        // The deploy strategy: written apart from the config (DeployStrategies) and after it —
+        // the trigger set above decides whether the function may use one
+        if (is_array($settings['deploy_strategy'] ?? null)) {
+            [$strategyApplied, $strategyWarnings] = $this->applyDeployStrategy($project, $settings['deploy_strategy']);
+            $warnings = array_merge($warnings, $strategyWarnings);
+            if ($strategyApplied !== null) {
+                $applied['deploy_strategy'] = $strategyApplied;
+            }
+        }
+
         return ['applied' => $applied, 'warnings' => $warnings];
+    }
+
+    /**
+     * The network section: access mode (and its ranges) and the allow list, which the listed
+     * callers replace. Only for a pusher who may change the project's network.
+     *
+     * @param  array{access_mode?: string, allowed_cidrs?: list<string>, callers?: list<string>}  $network
+     * @return array{0: array<string, mixed>, 1: list<string>}
+     */
+    private function applyNetwork(Project $project, array $network, ?string $pushedBy): array
+    {
+        $user = $pushedBy ? User::find($pushedBy) : null;
+        if (! $user || ! app(Rbac::class)->allows($user, 'network.manage', $project)) {
+            return [[], ['runr.yaml network: not applied, the pusher may not change the project\'s network (network.manage)']];
+        }
+
+        $service = app(InternalNetworkService::class);
+        $applied = [];
+        $warnings = [];
+
+        try {
+            if (isset($network['access_mode']) || isset($network['allowed_cidrs'])) {
+                $mode = $network['access_mode'] ?? $project->accessMode();
+                $cidrs = $network['allowed_cidrs'] ?? (array) ($project->allowed_cidrs ?? []);
+                $validator = Validator::make(['access_mode' => $mode, 'allowed_cidrs' => $cidrs], [
+                    'access_mode' => ['required', 'in:'.implode(',', Project::ACCESS_MODES)],
+                    'allowed_cidrs' => ['array', 'max:64'],
+                    'allowed_cidrs.*' => ['string', new IpOrCidr],
+                ]);
+                if ($validator->fails()) {
+                    $warnings[] = 'runr.yaml network: '.$validator->errors()->first();
+                } elseif ($mode !== $project->accessMode() || $cidrs != (array) ($project->allowed_cidrs ?? [])) {
+                    $service->setAccess($project, $mode, $cidrs);
+                    $applied['access_mode'] = $mode;
+                }
+            }
+
+            if (isset($network['callers'])) {
+                // the project itself needs no entry; one refused caller leaves the others alone
+                $own = InternalNetwork::nameOf($project);
+                $wanted = [];
+                foreach ($network['callers'] as $caller) {
+                    try {
+                        $name = $service->resolveCaller($caller);
+                        if ($name !== $own && ! in_array($name, $wanted, true)) {
+                            $wanted[] = $name;
+                        }
+                    } catch (ValidationException $e) {
+                        $warnings[] = 'runr.yaml network.callers: '.collect($e->errors())->flatten()->first();
+                    }
+                }
+                $current = $service->callers($project);
+                $changed = false;
+                foreach (array_diff($wanted, $current) as $caller) {
+                    try {
+                        $service->addCaller($project, $caller, $pushedBy);
+                        $changed = true;
+                    } catch (ValidationException $e) {
+                        $wanted = array_values(array_diff($wanted, [$caller]));
+                        $warnings[] = "runr.yaml network.callers {$caller}: ".collect($e->errors())->flatten()->first();
+                    }
+                }
+                foreach (array_diff($current, $wanted) as $caller) {
+                    $changed = $service->removeCaller($project, $caller) || $changed;
+                }
+                if ($changed) {
+                    $applied['callers'] = $wanted;
+                }
+            }
+        } catch (ValidationException $e) {
+            $warnings[] = 'runr.yaml network: '.collect($e->errors())->flatten()->first();
+        }
+
+        return [$applied, $warnings];
+    }
+
+    /**
+     * runr.yaml deploy: — what is valid is stored, each invalid key is left out with a warning.
+     *
+     * @param  array<string, mixed>  $input
+     * @return array{0: array<string, mixed>|null, 1: list<string>} [the stored strategy settings when they changed, warnings]
+     */
+    private function applyDeployStrategy(Project $project, array $input): array
+    {
+        $strategies = app(DeployStrategies::class);
+        $warnings = [];
+
+        foreach ($strategies->errors($project, $input) as $field => $message) {
+            $warnings[] = "runr.yaml deploy.{$field}: {$message}";
+            $path = explode('.', $field);
+            if (count($path) === 1) {
+                unset($input[$path[0]]);
+            } elseif (isset($input[$path[0]]) && is_array($input[$path[0]])) {
+                unset($input[$path[0]][$path[1]]);
+            }
+        }
+
+        if ($input === [] || $strategies->errors($project, $input) !== []) {
+            return [null, $warnings];
+        }
+
+        $before = DeployStrategy::forProject($project)->toArray();
+        $after = $strategies->update($project, $input)->toArray();
+
+        return [$after !== $before ? $after : null, $warnings];
     }
 
     /**
@@ -156,10 +324,11 @@ class RunrYamlApplier
         $trigger = $changes['trigger_type'] ?? null;
         $minScale = $changes['min_scale'] ?? null;
         $scaleToZero = $changes['scale_to_zero'] ?? null;
+        $schedule = array_key_exists('scale_schedule', $changes) ? $changes['scale_schedule'] : false;
 
         $rules = [
-            'memory_mb' => ['integer', 'min:64', new WithinResourceLimit('memory', $project->id, $regionId, $trigger, $minScale, null, $scaleToZero)],
-            'cpu' => ['bail', 'string', new KubernetesCpu, new WithinResourceLimit('cpu', $project->id, $regionId, $trigger, $minScale, null, $scaleToZero)],
+            'memory_mb' => ['integer', 'min:64', new WithinResourceLimit('memory', $project->id, $regionId, $trigger, $minScale, null, $scaleToZero, $schedule)],
+            'cpu' => ['bail', 'string', new KubernetesCpu, new WithinResourceLimit('cpu', $project->id, $regionId, $trigger, $minScale, null, $scaleToZero, $schedule)],
             'timeout_seconds' => ['integer', 'min:1', new WithinRegionTimeout($regionId)],
             'trigger_type' => ['string', 'in:'.implode(',', Project::TRIGGER_TYPES)],
             'schedule' => ['string', new CronSchedule],
@@ -175,7 +344,11 @@ class RunrYamlApplier
             'ports' => ['array', 'min:1', 'max:10'],
             'ports.*' => ['integer', 'min:1', 'max:65535'],
             'env_vars' => ['array', new EnvVars],
-        ];
+        ] + ScaleRules::schedule(
+            'scale_schedule',
+            fn () => (int) ($changes['max_scale'] ?? $config->max_scale ?? 1),
+            fn () => $changes['trigger_type'] ?? $config->trigger_type ?? 'http',
+        );
 
         $errors = [];
         foreach ($changes as $key => $value) {
@@ -206,11 +379,15 @@ class RunrYamlApplier
         if ($max !== null && (int) $max > 0 && (int) $min > (int) $max) {
             $errors['min_scale'] = 'scale.min is above scale.max';
         }
+        $warmer = array_key_exists('scale_schedule', $valid) ? ScaleSchedule::normalize($valid['scale_schedule']) : ScaleSchedule::rows($config);
+        if ($warmer !== null && $max !== null && (int) $max > 0 && ScaleSchedule::peak($warmer) > (int) $max) {
+            $errors[array_key_exists('scale_schedule', $valid) ? 'scale_schedule' : 'max_scale'] = 'scale.schedule keeps more containers warm than scale.max';
+        }
 
         // Organization quota (multi-tenant): a larger reservation must fit what is left
-        if (! isset($errors['cpu']) && ! isset($errors['memory_mb']) && array_intersect_key($changes, array_flip(['cpu', 'memory_mb', 'min_scale', 'scale_to_zero', 'trigger_type']))) {
+        if (! isset($errors['cpu']) && ! isset($errors['memory_mb']) && array_intersect_key($changes, array_flip(['cpu', 'memory_mb', 'min_scale', 'scale_to_zero', 'trigger_type', 'scale_schedule']))) {
             if ($message = $this->quotaError($project, $config, $changes)) {
-                foreach (['cpu', 'memory_mb', 'min_scale', 'scale_to_zero'] as $key) {
+                foreach (['cpu', 'memory_mb', 'min_scale', 'scale_to_zero', 'scale_schedule'] as $key) {
                     if (array_key_exists($key, $changes)) {
                         $errors[$key] = $message;
                     }
@@ -220,7 +397,7 @@ class RunrYamlApplier
 
         // Fixed-price region (ProjectAdmission config limiters, docs/billing.md): the changed
         // project must fit its approved resources at its worst case (max_scale)
-        $sizing = array_intersect_key(array_diff_key($changes, $errors), array_flip(['cpu', 'memory_mb', 'trigger_type', 'min_scale', 'max_scale', 'scale_to_zero']));
+        $sizing = array_intersect_key(array_diff_key($changes, $errors), array_flip(['cpu', 'memory_mb', 'trigger_type', 'min_scale', 'max_scale', 'scale_to_zero', 'scale_schedule']));
         if ($sizing !== [] && ($message = ProjectAdmission::configProblem($project, $project->knative_region_id, $sizing))) {
             foreach (array_keys($sizing) as $key) {
                 $errors[$key] = $message;
@@ -246,6 +423,7 @@ class RunrYamlApplier
         $next = ResourceReservation::demandForConfig([
             'cpu' => $pick('cpu'), 'memory_mb' => $pick('memory_mb'), 'trigger_type' => $pick('trigger_type'),
             'min_scale' => $pick('min_scale'), 'scale_to_zero' => $pick('scale_to_zero'),
+            'scale_schedule' => array_key_exists('scale_schedule', $changes) ? $changes['scale_schedule'] : $config->scale_schedule,
         ], $project->service_type, $region);
         $current = ResourceReservation::demandForConfig($config, $project->service_type, $region, ResourceReservation::deployedClassOf($project));
 

@@ -9,6 +9,7 @@ use App\Workflows\Engine\WorkflowException;
 use App\Workflows\Http\Resources\WorkflowRunResource;
 use App\Workflows\Models\Workflow;
 use App\Workflows\Models\WorkflowRun;
+use App\Workflows\Support\WorkflowEnvironments;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
@@ -16,7 +17,10 @@ use Illuminate\Support\Facades\Gate;
 use Illuminate\Validation\Rule;
 
 /**
- * Runs of a project's workflows: list / detail, start, cancel, retry, replay.
+ * Runs of a project's workflows: list / detail, start, cancel, retry, replay. Listing and starting
+ * take the environment (`environment`: a name or id, `all` for every environment's runs when
+ * listing; none or `production`: the project's own workload — docs/workflows.md#environments); a
+ * run is addressed by its id whatever its environment.
  */
 class WorkflowRunController
 {
@@ -42,12 +46,17 @@ class WorkflowRunController
             'from' => 'nullable|date',
             'to' => 'nullable|date',
             'per_page' => 'nullable|integer|min:1|max:100',
+            'environment' => 'nullable|string|max:64',
         ]);
 
         $query = WorkflowRun::with('workflow:id,name')->where('project_id', $project->id);
+        if (($filters['environment'] ?? null) !== 'all') {
+            WorkflowEnvironments::constrain($query, WorkflowEnvironments::idOf(WorkflowEnvironments::fromRequest($request, $project)));
+        }
 
         $name = $workflow ?? ($filters['workflow'] ?? null);
         if ($name !== null) {
+            // the name of a workflow of the listed environment(s)
             $query->whereHas('workflow', fn ($q) => $q->where('name', $name));
         }
 
@@ -97,9 +106,13 @@ class WorkflowRunController
             'data' => 'nullable|array',
             'idempotency_key' => 'nullable|string|max:200',
             'test' => 'nullable|boolean',
+            'environment' => 'nullable|string|max:64',
         ]);
 
-        $model = Workflow::where('project_id', $project->id)->where('name', $workflow)->first();
+        $model = Workflow::where('project_id', $project->id)
+            ->inEnvironment(WorkflowEnvironments::idOf(WorkflowEnvironments::fromRequest($request, $project)))
+            ->where('name', $workflow)
+            ->first();
         abort_if(! $model, 404, __('workflows.not_found'));
 
         $result = $this->starter->start($model, [

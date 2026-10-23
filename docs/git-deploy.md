@@ -47,7 +47,7 @@ git push runr main
 ```
 
 Git asks for credentials: the user name can be anything, the password is an
-[API token](permissions.md#api-tokens) (Settings → API Tokens) that carries `git.push` — or
+[API token](permissions.md#api-tokens) (Administration → API Tokens) that carries `git.push` — or
 `git.pull` for clone and fetch only. A token without scopes (full access) works within its owner's
 permissions. Use a credential helper to keep it:
 
@@ -118,6 +118,7 @@ the keys present are applied — a key left out keeps the value the project has:
 | `image`, `command`, `args`, `ports` | caas projects |
 | `resources.cpu`, `.memory_mb`, `.timeout_seconds` | checked against the region's capacity (and the organization quota) |
 | `scale.min`, `.max`, `.to_zero` | scaling |
+| `scale.schedule` | the [timed warmer](scaling.md#timed-warmer): rows of `cron` and `min`; `[]` turns it off. A row with no cron or no whole-number `min` leaves the schedule unchanged, with a warning |
 | `trigger.type`, `.schedule`, `.queue` | the project's trigger |
 | `env` | merged into the project's variables: listed keys are set, others stay; non-secret values only |
 | `ignore` | [files](#which-files-become-the-version) that are not part of the version |
@@ -162,7 +163,7 @@ branch it updates.
 
 ## Connecting a provider repository
 
-The providers are added once in **Settings → Git providers**: in the single-tenant edition by
+The providers are added once in **Data & Integrations → Git providers**: in the single-tenant edition by
 whoever holds `git_providers.manage`, in the multi-tenant edition by the platform administrators
 (every organization shares the providers; `git_providers.manage` exists in the single-tenant
 edition only). Then, on a project's Git tab, **Provider repository**:
@@ -182,7 +183,7 @@ removes the webhook, the previews and the connection — the project keeps its v
 
 1. On GitHub: Settings → Developer settings → GitHub Apps → **New GitHub App** (for an
    organization: the organization's settings).
-2. In RunR: Settings → Git providers → **Add provider** → GitHub. Enter a name, generate the
+2. In RunR: Data & Integrations → Git providers → **Add provider** → GitHub. Enter a name, generate the
    **webhook secret**, and save once to see the URLs to enter at GitHub (or fill in everything
    at once and copy the URLs afterwards).
 3. In the GitHub App settings:
@@ -208,7 +209,7 @@ installation id in a URL is never trusted on its own.
 
 ## GitLab
 
-Settings → Git providers → **Add provider** → GitLab: `https://gitlab.com` or a self-managed
+Data & Integrations → Git providers → **Add provider** → GitLab: `https://gitlab.com` or a self-managed
 instance's address.
 
 - **Access token**: a personal, group or project access token with the `api` scope and the
@@ -223,7 +224,7 @@ RunR registers a project hook for push and merge request events with a random se
 
 ## Forgejo and Gitea
 
-Settings → Git providers → **Add provider** → Forgejo / Gitea with the instance's address. A
+Data & Integrations → Git providers → **Add provider** → Forgejo / Gitea with the instance's address. A
 project connects with a personal access token with read and write access to repositories (the
 webhook, commit statuses and source archives) and read access to the user; the preview comment
 goes through the issue comments API, which a scoped token reaches with write access to issues.
@@ -235,6 +236,7 @@ RunR registers a webhook (push, pull request, pull request sync) signed with HMA
 | Event | Result |
 | --- | --- |
 | push to the deploy branch | production deploy (as [above](#what-a-push-does)) |
+| push to a branch mapped to an environment | deploy of that environment ([Environments](environments.md#git-branches)): the code becomes a version, the branch's `runr.yaml` is not applied to the project's configuration |
 | push to another branch, branch deleted | nothing (a request from that branch gets a preview) |
 | pull/merge request opened, reopened, new commits | preview, when previews are on |
 | pull/merge request closed or merged | the preview is deleted |
@@ -245,7 +247,11 @@ RunR registers a webhook (push, pull request, pull request sync) signed with HMA
 Turn on **Previews of pull requests** on the Git tab. Every open pull/merge request then gets:
 
 - its own Knative Service `<project>-pr-<number>` in the project's region (`<project>` is the
-  project's slug, shortened so the name stays within 63 characters), with its own URL
+  project's slug, shortened so the name stays within 63 characters — only slugs of earlier
+  releases, longer than today's 44, need that: a tenant's slug keeps its `-<organization>` end
+  and loses part of the rest, another loses its end; a preview keeps the name it was created
+  with. The preview's pods carry the project's id and organization in `runr/preview-of` and
+  `runr/tenant`, so its usage is metered for the project whatever the name kept), with its own URL
   `https://<project>-pr-<number>.<function domain>` — the same domain scheme as the project
   (a project on a gateway route gets its preview on the function domain);
 - the request's head commit, built like a version of the project (preview versions are kept
@@ -286,6 +292,20 @@ Rules:
   that scales to zero) counts against the FaaS overcommit budget of the organization quota on the
   region, next to the projects ([Organization quotas](architecture.md#region-capacity-and-admission));
   a preview that does not fit is not deployed.
+- **Fixed allocation**: in a region with fixed resources ([Billing](billing.md#what-a-fixed-project-may-use))
+  every live preview counts at its maximum (the project's size, at most three pods) against the
+  project's approved resources, next to what production can reach; a preview that does not fit
+  is not deployed and says why ("At its maximum scale … the project needs … its approved
+  resources are …").
+
+A preview that is not deployed shows the reason on the Git tab, in its comment on the request and
+in the commit status ("Preview #12 not deployed: …", [Status on the provider](#status-on-the-provider)).
+
+**Billing.** A preview is billed: with billing on, its pods are metered like the project's own
+scale-to-zero sessions — the project's size for the time each pod runs — and appear on the
+project's bill as a line of their own ("vCPU hours — preview environments", `component: preview`;
+[Metering and the fixed bill](billing.md#metering-and-the-fixed-bill)). An idle preview has no
+pods and costs nothing. In a fixed region the allocation covers the previews it holds.
 
 ## Status on the provider
 
@@ -300,7 +320,9 @@ RunR reports every deploy back:
   a [rollback](regions.md#completing-and-rolling-back-the-move) took the region off — push again
   to build it): `canceled` on GitLab, `warning` on Forgejo and Gitea, and `success` with that
   description on GitHub, whose commit statuses have no canceled state — `error` or `failure` would
-  mark a commit as broken that nothing failed in;
+  mark a commit as broken that nothing failed in. A preview that was not allowed to start ends the
+  same way with the reason: "Preview #12 not deployed: …" (the fixed allocation or the
+  organization quota leaves no room, the preview limit is reached, forks are off, …);
 - on GitHub, a **deployment** (Deployments API) per production deploy (`production`) and per
   preview (`preview/pr-<n>`, transient) with the URL as environment URL; the deployment of a
   replaced deploy and a deleted preview's become inactive;
@@ -322,7 +344,7 @@ is available from `GET /api/projects/{project}/git/versions`.
 | `git.push` | push to the remote; Deploy again |
 | `git.manage` | deploy branch, root directory, auto-deploy, force pushes; connect and disconnect repositories |
 | `previews.manage` | preview settings (together with `git.manage`, which every change of the Git tab settings needs); redeploy and delete previews |
-| `git_providers.manage` | Settings → Git providers; single-tenant edition only (in multi-tenant installs the platform administrators configure the providers) |
+| `git_providers.manage` | Data & Integrations → Git providers; single-tenant edition only (in multi-tenant installs the platform administrators configure the providers) |
 
 `git.push`, `git.manage` and `previews.manage` imply `git.pull`. The Developer role holds the
 four project permissions, the Viewer role `git.pull`; see
@@ -352,11 +374,15 @@ four project permissions, the Viewer role `git.pull`; see
   is encrypted, bound to the user, organization, project and provider, and valid 15 minutes.
 - **Code from forks** runs in its own preview service, scaled to zero, without secrets by
   default and only when the project allows fork previews at all.
-- **Secrets of previews**: a preview gets the project's secret env vars in its own Kubernetes
-  Secret `<project>-pr-<number>-secret-env`, referenced with `secretKeyRef` — never as values in
-  the service spec — and deleted with the preview. A preview of a fork gets no Secret unless
-  the project allows it (`fork_secrets`). The preview env overrides are stored encrypted, like
-  every env var.
+- **Secrets of previews**: a preview runs in the project's namespace and reads the project's own
+  Secrets with `secretKeyRef` — the values RunR wrote (`<project>-secret-env`) and the references
+  External Secrets Operator syncs (`<project>-ext-env`) — never values in the service spec, and no
+  copy is made ([pass-through](security.md#pass-through)). A preview deploy prepares them the way
+  a deploy of the project does, also before the project's first deploy. A preview of a fork reads
+  none of them unless the project allows it (`fork_secrets`). The copy
+  `<project>-pr-<number>-secret-env` that previews of releases up to 0.5.10 had is removed by the
+  preview's next deploy and with the preview. The preview env overrides are stored encrypted,
+  like every env var.
 - **No caching**: the Git tab, deploy history and preview responses are sent with
   `Cache-Control: no-store` (live state, env override values).
 - **Audit**: every change is in the audit log ([audited events](security.md#audited-events)), with field
@@ -370,7 +396,7 @@ four project permissions, the Viewer role `git.pull`; see
   | `git.repo.connect`, `git.repo.disconnect` | connecting / disconnecting a provider repository |
   | `git.installation.link` | a GitHub App installation linked to the organization |
   | `git.preview.redeploy`, `git.preview.delete` | previews redeployed / deleted by hand |
-  | `git_provider.create`, `git_provider.update`, `git_provider.delete` | Settings → Git providers |
+  | `git_provider.create`, `git_provider.update`, `git_provider.delete` | Data & Integrations → Git providers |
   | `git.webhook.rejected` | a webhook with a bad signature or token |
 
   The same actions are raised as `GitDeployAudited` events for integrations.

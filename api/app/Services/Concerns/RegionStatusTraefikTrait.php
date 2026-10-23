@@ -24,6 +24,10 @@ use Illuminate\Support\Facades\Log;
  * The objects are per region (runr-region-block-<region>): regions on one cluster share its
  * Knative Serving namespace, and one region's status must not block or unblock another.
  * Traefik v3 rule syntax (HostRegexp takes a regular expression).
+ *
+ * The responder also answers /auth-unavailable (503): the forwardAuth of a gateway's key / JWT
+ * route asks it while the region's gateway-auth is not installed or not ready, so the route
+ * refuses its calls instead of serving them unauthenticated (ensureAuthResponder(), API product).
  */
 trait RegionStatusTraefikTrait
 {
@@ -33,6 +37,8 @@ trait RegionStatusTraefikTrait
     private const LEGACY_BLOCK_ROUTE_NAME = 'runr-region-block';
 
     private const RESPONDER_PORT = 8080;
+
+    private const RESPONDER_REVISION = 'runr.sh/server-js';
 
     private const TRAEFIK_API = 'traefik.io/v1alpha1';
 
@@ -187,6 +193,29 @@ trait RegionStatusTraefikTrait
         return $rules === [] ? null : implode(' || ', $rules);
     }
 
+    /**
+     * The responder in the region's Knative Serving namespace, with the current server.js (its
+     * Deployment rolls when server.js changed); the URL of its /auth-unavailable answer (503).
+     * Outside the project namespace and its quota: it answers when gateway-auth cannot run.
+     */
+    public function ensureAuthResponder(KnativeRegion $region, KubernetesClient $k8s): string
+    {
+        $ns = $region->knative_serving_namespace ?: 'knative-serving';
+        $deployment = $k8s->getResourceStatus('apps/v1', 'Deployment', self::STATUS_RESPONDER_NAME, $ns);
+        $revision = $deployment['spec']['template']['metadata']['annotations'][self::RESPONDER_REVISION] ?? null;
+        if ($revision !== self::responderRevision()) {
+            $this->ensureStatusResponder($k8s, $ns, $region);
+        }
+
+        return 'http://'.self::STATUS_RESPONDER_NAME.'.'.$ns.'.svc.cluster.local:'.self::RESPONDER_PORT.'/auth-unavailable';
+    }
+
+    /** Changes with server.js: a responder of an earlier release is rolled onto it. */
+    private static function responderRevision(): string
+    {
+        return substr(hash('sha256', self::responderScript()), 0, 16);
+    }
+
     private function ensureStatusResponder(KubernetesClient $k8s, string $ns, KnativeRegion $region): void
     {
         // ConfigMap with status responder server.js
@@ -235,9 +264,9 @@ trait RegionStatusTraefikTrait
         $k8s->deleteResource(self::TRAEFIK_API, 'Middleware', $name, $ns);
     }
 
-    private function buildResponderConfigMap(string $ns): array
+    private static function responderScript(): string
     {
-        $serverJs = <<<'JS'
+        return <<<'JS'
 const http = require('http');
 const server = http.createServer((req, res) => {
   res.setHeader('Content-Type', 'application/json');
@@ -247,6 +276,11 @@ const server = http.createServer((req, res) => {
   } else if (req.url === '/inactive') {
     res.writeHead(404);
     res.end(JSON.stringify({ error: 'region_inactive', message: 'Region is inactive.' }));
+  } else if (req.url.startsWith('/auth-unavailable')) {
+    res.setHeader('Retry-After', '30');
+    res.setHeader('Cache-Control', 'no-store');
+    res.writeHead(503);
+    res.end(JSON.stringify({ error: 'auth_unavailable', message: 'This API checks keys or tokens, and that check is not available right now. Try again shortly.' }));
   } else {
     res.writeHead(200);
     res.end(JSON.stringify({ status: 'ok' }));
@@ -254,6 +288,11 @@ const server = http.createServer((req, res) => {
 });
 server.listen(8080, () => console.log('Status responder listening on :8080'));
 JS;
+    }
+
+    private function buildResponderConfigMap(string $ns): array
+    {
+        $serverJs = self::responderScript();
 
         return [
             'apiVersion' => 'v1',
@@ -273,7 +312,11 @@ JS;
                 'replicas' => 1,
                 'selector' => ['matchLabels' => ['app' => self::STATUS_RESPONDER_NAME]],
                 'template' => [
-                    'metadata' => ['labels' => ['app' => self::STATUS_RESPONDER_NAME]],
+                    'metadata' => [
+                        'labels' => ['app' => self::STATUS_RESPONDER_NAME],
+                        // a new server.js rolls the pod (the file is read at start)
+                        'annotations' => [self::RESPONDER_REVISION => self::responderRevision()],
+                    ],
                     'spec' => [
                         'containers' => [[
                             'name' => 'responder',

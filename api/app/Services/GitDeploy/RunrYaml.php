@@ -17,9 +17,18 @@ use Symfony\Component\Yaml\Yaml;
  *   file                            xaas: the script
  *   image, command, args, ports     caas
  *   resources: { cpu, memory_mb, timeout_seconds }
- *   scale:     { min, max, to_zero }
+ *   scale:     { min, max, to_zero, schedule: [{ cron, min }] }   schedule: the timed warmer, [] = off
  *   trigger:   { type: http | schedule | queue, schedule: "<cron>", queue: <stream> }
+ *   triggers:  [ { type, name?, enabled?, delivery?, …config } ]   the whole trigger list
+ *                                   (docs/triggers.md); wins over `trigger:`. Secrets (a
+ *                                   webhook's signing secret, broker passwords) are set in RunR
  *   env:       { KEY: value }       non-secret; merged (listed keys set, others stay)
+ *   network:   { access: public | allowlist | internal, allow_cidrs: [ranges], callers: [names] }
+ *                                   the project's network (docs/internal-network.md); callers
+ *                                   replace its allow list; applied for a pusher with network.manage
+ *   deploy:    { strategy: direct | blue-green | canary, blue_green: {…}, canary: {…} }
+ *                                   the deploy strategy (App\Services\Rollouts\DeployStrategy;
+ *                                   only the keys present change)
  *   ignore:    [patterns]           files that are not part of the version (SourceTree)
  *   dev:                            local only (runr dev), ignored
  */
@@ -95,6 +104,13 @@ final class RunrYaml
                     ? $settings['scale_to_zero'] = $scale['to_zero']
                     : $warnings[] = 'runr.yaml: scale.to_zero must be true or false';
             }
+            if (array_key_exists('schedule', $scale)) {
+                [$schedule, $scheduleWarnings] = self::scaleSchedule($scale['schedule'], $str);
+                $warnings = array_merge($warnings, $scheduleWarnings);
+                if ($schedule !== null) {
+                    $settings['scale_schedule'] = $schedule;
+                }
+            }
         }
 
         $trigger = $doc['trigger'] ?? null;
@@ -108,6 +124,18 @@ final class RunrYaml
                 }
                 if (($queue = $str($trigger['queue'] ?? null)) !== null) {
                     $settings['queue_stream'] = $queue;
+                }
+            }
+        }
+
+        if (array_key_exists('triggers', $doc)) {
+            [$triggers, $triggerWarnings] = self::triggers($doc['triggers']);
+            array_push($warnings, ...$triggerWarnings);
+            if ($triggers !== null) {
+                $settings['triggers'] = $triggers;
+                if (isset($settings['trigger_type'])) {
+                    $warnings[] = 'runr.yaml: triggers and trigger are both set; triggers is used';
+                    unset($settings['trigger_type'], $settings['schedule'], $settings['queue_stream']);
                 }
             }
         }
@@ -129,7 +157,136 @@ final class RunrYaml
             }
         }
 
+        $network = $doc['network'] ?? null;
+        if ($network !== null && ! is_array($network)) {
+            $warnings[] = 'runr.yaml: network must be a mapping';
+        } elseif (is_array($network)) {
+            $out = [];
+            if (($access = $str($network['access'] ?? null)) !== null) {
+                $out['access_mode'] = strtolower($access);
+            }
+            foreach (['allow_cidrs' => 'allowed_cidrs', 'callers' => 'callers'] as $from => $to) {
+                if (array_key_exists($from, $network)) {
+                    is_array($network[$from]) && array_is_list($network[$from]) && count(array_filter($network[$from], 'is_scalar')) === count($network[$from])
+                        ? $out[$to] = array_map(fn ($v) => trim((string) $v), $network[$from])
+                        : $warnings[] = "runr.yaml: network.{$from} must be a list of strings";
+                }
+            }
+            if ($out) {
+                $settings['network'] = $out;
+            }
+        }
+
+        $deploy = $doc['deploy'] ?? null;
+        if ($deploy !== null) {
+            if (! is_array($deploy) || ($deploy !== [] && array_is_list($deploy))) {
+                $warnings[] = 'runr.yaml: deploy must be a mapping (strategy, blue_green, canary)';
+            } else {
+                $strategy = [];
+                if (array_key_exists('strategy', $deploy)) {
+                    $strategy['strategy'] = is_scalar($deploy['strategy']) ? trim((string) $deploy['strategy']) : $deploy['strategy'];
+                }
+                foreach (['blue_green' => ['blue_green', 'blue-green', 'bluegreen'], 'canary' => ['canary']] as $group => $keys) {
+                    foreach ($keys as $key) {
+                        if (! array_key_exists($key, $deploy)) {
+                            continue;
+                        }
+                        is_array($deploy[$key]) && ($deploy[$key] === [] || ! array_is_list($deploy[$key]))
+                            ? $strategy[$group] = $deploy[$key]
+                            : $warnings[] = "runr.yaml: deploy.{$key} must be a mapping";
+                        break;
+                    }
+                }
+                if ($strategy !== []) {
+                    $settings['deploy_strategy'] = $strategy;
+                }
+            }
+        }
+
         return ['settings' => $settings, 'warnings' => $warnings];
+    }
+
+    /**
+     * scale.schedule — the timed warmer (docs/scaling.md#timed-warmer): a list of {cron, min} rows
+     * ([] / null turns it off). Applied only when every row has a cron and a whole-number min;
+     * RunrYamlApplier validates the rows as the API does.
+     *
+     * @param  callable(mixed): ?string  $str
+     * @return array{0: list<array{cron: string, min_scale: int}>|null, 1: list<string>} the rows (null: leave the schedule as it is), warnings
+     */
+    private static function scaleSchedule(mixed $schedule, callable $str): array
+    {
+        if ($schedule === null || $schedule === []) {
+            return [[], []];
+        }
+        if (! is_array($schedule) || ! array_is_list($schedule)) {
+            return [null, ['runr.yaml: scale.schedule must be a list of {cron, min} rows']];
+        }
+
+        $rows = [];
+        $warnings = [];
+        foreach ($schedule as $i => $row) {
+            $cron = is_array($row) ? $str($row['cron'] ?? null) : null;
+            $min = is_array($row) ? ($row['min'] ?? null) : null;
+            if ($cron === null || ! ((is_int($min) && $min >= 0) || (is_string($min) && ctype_digit($min)))) {
+                $warnings[] = "runr.yaml: scale.schedule[{$i}] needs a cron and a whole-number min";
+
+                continue;
+            }
+            $rows[] = ['cron' => $cron, 'min_scale' => (int) $min];
+        }
+
+        return [$warnings === [] ? $rows : null, $warnings];
+    }
+
+    /**
+     * `triggers:` — a list of mappings: type (required), name, enabled and delivery are trigger
+     * fields, every other key goes into the trigger's config. Shorthands of the single `trigger:`
+     * block: schedule → cron (schedule type), queue → stream (queue type).
+     *
+     * @return array{0: list<array<string, mixed>>|null, 1: list<string>}
+     */
+    private static function triggers(mixed $raw): array
+    {
+        if (! is_array($raw) || ! array_is_list($raw) || $raw === []) {
+            return [null, ['runr.yaml: triggers must be a non-empty list of mappings']];
+        }
+
+        $list = [];
+        $warnings = [];
+        foreach ($raw as $i => $item) {
+            $type = is_array($item) && is_scalar($item['type'] ?? null) ? strtolower(trim((string) $item['type'])) : '';
+            if ($type === '') {
+                $warnings[] = "runr.yaml: triggers[{$i}] needs a type";
+
+                continue;
+            }
+
+            $trigger = ['type' => $type];
+            if (is_scalar($item['name'] ?? null) && trim((string) $item['name']) !== '') {
+                $trigger['name'] = trim((string) $item['name']);
+            }
+            if (array_key_exists('enabled', $item)) {
+                $trigger['enabled'] = (bool) $item['enabled'];
+            }
+
+            $config = array_diff_key($item, array_flip(['type', 'name', 'enabled', 'secrets']));
+            if ($type === 'schedule' && isset($config['schedule']) && ! isset($config['cron'])) {
+                $config['cron'] = $config['schedule'];
+                unset($config['schedule']);
+            }
+            if ($type === 'queue' && isset($config['queue']) && ! isset($config['stream'])) {
+                $config['stream'] = $config['queue'];
+                unset($config['queue']);
+            }
+            if (array_key_exists('secrets', $item)) {
+                $warnings[] = "runr.yaml: triggers[{$i}].secrets is ignored (secrets are set in RunR, not in runr.yaml)";
+            }
+            $trigger['config'] = $config;
+            $list[] = $trigger;
+        }
+
+        return [$list === [] ? null : $list, $warnings];
     }
 
     /**

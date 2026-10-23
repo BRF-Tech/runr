@@ -2,6 +2,7 @@
 
 namespace App\Workflows\Models;
 
+use App\Workflows\Support\WorkflowEnvironments;
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\QueryException;
@@ -15,6 +16,7 @@ use Illuminate\Support\Facades\DB;
  * @property string $id
  * @property Carbon $date
  * @property string $project_id
+ * @property string|null $environment_id the workflow's environment (null: production)
  * @property string $workflow_id
  * @property int $step_executions
  * @property int $runs_started
@@ -25,7 +27,7 @@ class WorkflowUsage extends Model
 
     protected $table = 'workflow_usage';
 
-    protected $fillable = ['date', 'project_id', 'workflow_id', 'step_executions', 'runs_started'];
+    protected $fillable = ['date', 'project_id', 'environment_id', 'workflow_id', 'step_executions', 'runs_started'];
 
     protected $casts = [
         'date' => 'date',
@@ -33,7 +35,7 @@ class WorkflowUsage extends Model
         'runs_started' => 'integer',
     ];
 
-    public static function record(string $projectId, string $workflowId, int $steps = 0, int $runs = 0): void
+    public static function record(string $projectId, string $workflowId, int $steps = 0, int $runs = 0, ?string $environmentId = null): void
     {
         if ($steps === 0 && $runs === 0) {
             return;
@@ -63,7 +65,7 @@ class WorkflowUsage extends Model
                     'workflow_id' => $workflowId,
                     'step_executions' => $steps,
                     'runs_started' => $runs,
-                ]);
+                ] + ($environmentId !== null && WorkflowEnvironments::ready() ? ['environment_id' => $environmentId] : []));
 
                 return;
             } catch (QueryException) {

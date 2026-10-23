@@ -16,7 +16,7 @@ func (c *Client) WorkflowApp(ctx context.Context, projectID string) (*WorkflowAp
 	var out struct {
 		Data WorkflowApp `json:"data"`
 	}
-	if err := c.do(ctx, request{method: http.MethodGet, path: workflowsPath(projectID) + "/app"}, &out); err != nil {
+	if err := c.do(ctx, request{method: http.MethodGet, path: workflowsPath(projectID) + "/app", query: wfQuery(ctx, nil)}, &out); err != nil {
 		return nil, err
 	}
 	return &out.Data, nil
@@ -33,7 +33,7 @@ func (c *Client) SetWorkflowEndpoint(ctx context.Context, projectID, endpoint st
 		Data WorkflowApp `json:"data"`
 	}
 	err := c.do(ctx, request{method: http.MethodPatch, path: workflowsPath(projectID) + "/app",
-		body: map[string]any{"endpoint_url": value}}, &out)
+		body: wfBody(ctx, map[string]any{"endpoint_url": value})}, &out)
 	if err != nil {
 		return nil, err
 	}
@@ -47,7 +47,7 @@ func (c *Client) RotateWorkflowKey(ctx context.Context, projectID string) (*Work
 		Message string      `json:"message"`
 		Data    WorkflowApp `json:"data"`
 	}
-	if err := c.do(ctx, request{method: http.MethodPost, path: workflowsPath(projectID) + "/app/rotate-key"}, &out); err != nil {
+	if err := c.do(ctx, request{method: http.MethodPost, path: workflowsPath(projectID) + "/app/rotate-key", body: wfBody(ctx, nil)}, &out); err != nil {
 		return nil, "", err
 	}
 	return &out.Data, out.Message, nil
@@ -64,7 +64,7 @@ type WorkflowSigningKey struct {
 // WorkflowSigningKey returns the signing key of a project's workflow app (workflows.manage).
 func (c *Client) WorkflowSigningKey(ctx context.Context, projectID string) (*WorkflowSigningKey, error) {
 	var out WorkflowSigningKey
-	if err := c.do(ctx, request{method: http.MethodGet, path: workflowsPath(projectID) + "/app/signing-key"}, &out); err != nil {
+	if err := c.do(ctx, request{method: http.MethodGet, path: workflowsPath(projectID) + "/app/signing-key", query: wfQuery(ctx, nil)}, &out); err != nil {
 		return nil, err
 	}
 	if out.SigningKey == "" {
@@ -98,6 +98,7 @@ type WorkflowUsageWorkflow struct {
 	WorkflowID     string `json:"workflow_id"`
 	Workflow       string `json:"workflow,omitempty"`
 	ProjectID      string `json:"project_id"`
+	Environment    string `json:"environment,omitempty"`
 	StepExecutions int    `json:"step_executions"`
 	RunsStarted    int    `json:"runs_started"`
 }
@@ -115,6 +116,9 @@ func (c *Client) WorkflowUsage(ctx context.Context, projectID, from, to string) 
 	path := "/workflow-usage"
 	if projectID != "" {
 		path = "/projects/" + seg(projectID) + "/workflow-usage"
+	}
+	if projectID != "" {
+		q = wfQuery(ctx, q)
 	}
 	var out WorkflowUsage
 	if err := c.do(ctx, request{method: http.MethodGet, path: path, query: q}, &out); err != nil {

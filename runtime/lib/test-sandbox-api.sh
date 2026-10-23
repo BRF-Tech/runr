@@ -26,6 +26,22 @@
 #                         api container's network (as the MCP client of test-mcp.sh does).
 #                         SANDBOX_CLI_E2E=0 leaves it out.
 #
+#                         After the e2e (Kata runs only) the Kata runtime's errors from containerd's
+#                         log on each Kind node are printed: what the shim and the hypervisor said
+#                         when a Kata sandbox did not start.
+#
+#                         Kata runs give the Kind nodes a host-like /dev/shm first (KIND_NODE_SHM,
+#                         default 4g): Docker gives a node container 64 MiB, and QEMU keeps each
+#                         guest's memory in /dev/shm — RunR's install does not offer QEMU below
+#                         1 GiB (KataRuntime::QEMU_MIN_SHM_MB). KIND_NODE_SHM=0 keeps the 64 MiB:
+#                         the install then reports QEMU unavailable and the suite skips its cases.
+#                         They also get D-Bus (kind_nodes_dbus, test-wasm.sh): Kata's Rust runtime
+#                         (Dragonball) reaches systemd over the D-Bus system bus, which Kind's node
+#                         image lacks — RunR's install does not offer Dragonball there.
+#                         KIND_NODE_DBUS=0 leaves it out: the suite then skips Dragonball.
+#
+# RUNR_E2E_SANDBOX_CASES=kata — only the Kata install and cases, then the quota case (no gVisor,
+#                         runc, TTL or warm pool cases; test:e2e --sandbox-cases=kata).
 # KIND_LOCK=/path       — one Kind cluster at a time on a shared host (see test-runtimes.sh).
 
 SANDBOX_CLI_E2E_IMAGE="${SANDBOX_CLI_E2E_IMAGE:-runr-sandbox-cli-e2e:latest}"
@@ -65,10 +81,75 @@ cmd_test_sandbox_api() {
     echo "  no hardware virtualization (no vmx / svm, or /dev/kvm does not open): Kata sandboxes skipped (gVisor and runc only)"
   fi
 
-  if [ "${SANDBOX_CLI_E2E:-1}" != "0" ]; then
-    export TEST_AFTER_E2E=sandbox_cli_after_e2e
+  local cases=""
+  if [ -n "${RUNR_E2E_SANDBOX_CASES:-}" ]; then
+    echo "  cases: ${RUNR_E2E_SANDBOX_CASES} (RUNR_E2E_SANDBOX_CASES)"
+    cases="--sandbox-cases=${RUNR_E2E_SANDBOX_CASES// /,}"
   fi
-  TEST_E2E_EXTRA_ARGS="${TEST_E2E_EXTRA_ARGS:-} ${kata}" cmd_test --suite=sandbox-api "$@"
+
+  _sandbox_api_kata="$kata"
+  export TEST_BEFORE_E2E=sandbox_api_before_e2e
+  export TEST_AFTER_E2E=sandbox_api_after_e2e
+  TEST_E2E_EXTRA_ARGS="${TEST_E2E_EXTRA_ARGS:-} ${kata} ${cases}" cmd_test --suite=sandbox-api "$@"
+}
+
+_sandbox_api_kata=""
+
+# TEST_BEFORE_E2E of the suite (Kata runs on Kind): each node's /dev/shm resized to KIND_NODE_SHM
+# (see above). The node is a privileged container with its own mount namespace: containerd, the
+# Kata shim and QEMU see the new size; the host's /dev/shm is not touched.
+sandbox_api_before_e2e() {
+  local size="${KIND_NODE_SHM:-4g}" node
+  if [ -z "$_sandbox_api_kata" ] || [ -z "${_test_cluster_name:-}" ] || [ "$size" = "0" ]; then
+    return 0
+  fi
+  echo ""
+  echo "Kind nodes: /dev/shm ${size} (Docker's 64 MiB holds no QEMU guest; KIND_NODE_SHM=0 keeps it)"
+  for node in $(kind get nodes --name "$_test_cluster_name" 2>/dev/null); do
+    if docker exec "$node" mount -o "remount,size=${size}" /dev/shm; then
+      echo "  ${node}: /dev/shm $(docker exec "$node" df -h /dev/shm | awk 'NR == 2 { print $2 }')"
+    else
+      echo "  ${node}: /dev/shm could not be resized — the install will report QEMU unavailable"
+    fi
+  done
+  if [ "${KIND_NODE_DBUS:-1}" != "0" ]; then
+    echo "Kind nodes: D-Bus (Kata's Rust runtime reaches systemd over it; KIND_NODE_DBUS=0 leaves it out)"
+    kind_nodes_dbus "$_test_cluster_name"
+  fi
+  return 0
+}
+
+# TEST_AFTER_E2E of the suite: the Kata runtime's log lines (Kata runs only), then the CLI e2e.
+sandbox_api_after_e2e() {
+  if [ -n "$_sandbox_api_kata" ] && [ -n "${_test_cluster_name:-}" ]; then
+    sandbox_api_kata_node_log "$_test_cluster_name"
+  fi
+  if [ "${SANDBOX_CLI_E2E:-1}" != "0" ]; then
+    sandbox_cli_after_e2e "$@"
+  fi
+}
+
+# containerd's log on each Kind node, Kata lines with an error or a warning (the shim, the
+# hypervisor, virtiofsd): why a Kata sandbox did not start. Diagnostics only.
+sandbox_api_kata_node_log() {
+  local cluster="$1" node lines
+  echo ""
+  echo -e "${BOLD}Kata runtime log on the nodes (containerd, errors and warnings)${NC}"
+  for node in $(kind get nodes --name "$cluster" 2>/dev/null); do
+    # containerd's own log and the Kata runtime's (syslog tag "kata"); a shim's exit lines say nothing
+    lines=$({ docker exec "$node" journalctl -u containerd --no-pager -o cat; docker exec "$node" journalctl -t kata --no-pager -o cat; } 2>/dev/null \
+      | grep -iE 'kata|qemu|dragonball|cloud-hypervisor|virtiofsd|shim|vmm|sandbox' \
+      | grep -iE 'level=(error|fatal)|"level":"(error|crit)|error|fail|panic|bus error|sigbus' \
+      | grep -vE 'cleaning up after shim disconnected|failed to delete shim|cleaning up dead shim' \
+      | tail -n 60 | cut -c1-1500)
+    if [ -n "$lines" ]; then
+      echo "  ── ${node} ──"
+      printf '%s\n' "$lines" | sed 's/^/    /'
+    else
+      echo "  ${node}: no Kata errors in containerd's log"
+    fi
+  done
+  return 0
 }
 
 # runr sandbox exec -it / -t of this checkout's CLI against the stack the suite ran on (see above).

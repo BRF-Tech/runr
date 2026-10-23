@@ -4,7 +4,9 @@ namespace Modules\Billing\Services;
 
 use App\Models\Deployment;
 use App\Models\Git\PreviewEnvironment;
+use App\Models\KnativeRegion;
 use App\Models\Project;
+use App\Services\Environments\EnvironmentScope;
 use App\Services\Helpers\ResourceReservation;
 use App\Services\Helpers\WorkloadSizing;
 use App\Support\Projects\DeployIntent;
@@ -18,9 +20,13 @@ use Modules\Billing\Support\BillingPolicy;
  * BillingPolicy::FIXED_HARD_LIMIT), registered with App\Support\Projects\ProjectAdmission. In a
  * fixed region the allocation is a real limit: everything the project can run there must fit it at
  * its worst case — the production workload at max(1, min_scale, max_scale) pods with the queue-proxy
- * and RuntimeClass overhead (WorkloadSizing::peak, a deploy's overrides included) plus every live
- * preview environment at its maximum (WorkloadSizing::previewPeak), CPU, memory and GPUs. A Knative
- * Service needs a max_scale there (without one its worst case is unbounded).
+ * and RuntimeClass overhead (WorkloadSizing::peak, a deploy's overrides included; a queue trigger's
+ * consumer where queue consumers are charged, QueueConsumerCharging), every other
+ * environment of the project that runs in the region (docs/environments.md: dev, staging, … each
+ * with its live deployment's size) plus every live preview environment at its maximum
+ * (WorkloadSizing::previewPeak), CPU, memory and GPUs. A Knative Service needs a max_scale there
+ * (without one its worst case is unbounded). An environment's deploy is checked with the
+ * environment's view (its region, its config): the allocation of the project in that region.
  *
  *  - deploy guard: production deploys, resumes, region migrations, runtime test deploys and
  *    previews need an approved allocation and must fit it;
@@ -34,6 +40,7 @@ class Admission
     public function __construct(
         private readonly RegionTypes $types,
         private readonly FixedRequests $requests,
+        private readonly QueueConsumerCharging $consumers,
     ) {}
 
     /** @throws HttpResponseException */
@@ -47,6 +54,7 @@ class Admission
         if (! $regionId || ! $this->types->isFixed($regionId)) {
             return;
         }
+        $regionId = (string) $regionId;
 
         $allocation = $this->requests->active((string) $project->id, $regionId);
         if (! $allocation) {
@@ -58,11 +66,17 @@ class Admission
             $this->refuse('fixed_max_scale_required', __('billing.fixed_max_scale_required'));
         }
 
-        // Previews run with the project's config — a production deploy's overrides are not theirs
-        $previewSizing = $intent->overrides === [] ? $sizing : WorkloadSizing::of($project);
+        // Previews run with the project's config — a deploy's overrides (or an environment's) are not theirs
+        $base = EnvironmentScope::base($project);
+        $previewSizing = $intent->overrides === [] && ! $intent->isEnvironment() ? $sizing : WorkloadSizing::of($base);
+        $previews = $this->previewsIn($base, $regionId, $previewSizing, $intent->isPreview() ? $intent->previewId : null);
         $footprint = $intent->isPreview()
-            ? WorkloadSizing::add($this->runningProduction($project), $this->previews($project, $previewSizing, $intent->previewId))
-            : WorkloadSizing::add(WorkloadSizing::peak($sizing, $this->plannedOverhead($project)), $this->previews($project, $previewSizing));
+            ? WorkloadSizing::add($this->runningIn($base, $regionId), $previews)
+            // The environment being deployed at its new size, every other one of the project in the region as it runs
+            : WorkloadSizing::add(
+                WorkloadSizing::add(WorkloadSizing::peak($sizing, $this->plannedOverhead($project), $this->consumers->charged($regionId)), $this->runningIn($base, $regionId, $intent->environmentId ?? self::PRIMARY)),
+                $previews,
+            );
 
         if ($message = $this->exceeded($footprint, $allocation)) {
             $this->refuse('fixed_allocation_exceeded', $message);
@@ -95,7 +109,10 @@ class Admission
         }
 
         $message = $this->exceeded(
-            WorkloadSizing::add(WorkloadSizing::peak($sizing, $this->plannedOverhead($project)), $this->previews($project, $sizing)),
+            WorkloadSizing::add(
+                WorkloadSizing::add(WorkloadSizing::peak($sizing, $this->plannedOverhead($project), $this->consumers->charged($regionId)), $this->runningIn($project, $regionId, self::PRIMARY)),
+                $this->previews($project, $sizing),
+            ),
             $allocation,
         );
 
@@ -103,14 +120,19 @@ class Admission
     }
 
     /**
-     * The worst case of what the project runs now: its live production deployment (with the size
-     * it was applied with) and its live previews.
+     * The worst case of what the project runs now in its region: the live deployment of each of its
+     * environments there (with the size it was applied with) and its live previews.
      *
      * @return array{cpu_m: int, memory_mb: int, gpus: int, pods: int}
      */
     public function running(Project $project): array
     {
-        return WorkloadSizing::add($this->runningProduction($project), $this->previews($project, WorkloadSizing::of($project)));
+        $regionId = $project->knative_region_id !== null ? (string) $project->knative_region_id : null;
+
+        return WorkloadSizing::add(
+            $regionId !== null ? $this->runningIn($project, $regionId) : WorkloadSizing::none(),
+            $this->previews($project, WorkloadSizing::of($project)),
+        );
     }
 
     /**
@@ -151,17 +173,54 @@ class Admission
         return null;
     }
 
-    /** @return array{cpu_m: int, memory_mb: int, gpus: int, pods: int} */
-    private function runningProduction(Project $project): array
+    /** Key of the project's own workload among its environments (runningIn's $except). */
+    private const PRIMARY = 'primary';
+
+    /**
+     * The worst case of what the project's environments run in a region: per environment (the
+     * project's own workload one of them) its newest live deployment whose region it is, at its
+     * peak with the region's overhead. $except: the environment being deployed (its id, or
+     * PRIMARY) — its new size is counted by the caller.
+     *
+     * @return array{cpu_m: int, memory_mb: int, gpus: int, pods: int}
+     */
+    private function runningIn(Project $project, string $regionId, ?string $except = null): array
     {
-        $live = Deployment::query()->where('project_id', $project->id)->whereIn('status', Deployment::LIVE)->latest('created_at')->first();
-        if (! $live) {
-            return WorkloadSizing::none();
+        $live = Deployment::query()->where('project_id', $project->id)->whereIn('status', Deployment::LIVE)
+            ->orderByDesc('created_at')->orderByDesc('id')->get();
+
+        $total = WorkloadSizing::none();
+        $seen = [];
+        $region = (string) $project->knative_region_id === $regionId ? $project->knativeRegion : KnativeRegion::query()->find($regionId);
+        foreach ($live as $deployment) {
+            $key = $deployment->isPrimary() ? self::PRIMARY : (string) $deployment->environment_id;
+            if (isset($seen[$key]) || $key === $except) {
+                continue;
+            }
+            $seen[$key] = true;
+
+            $sizing = WorkloadSizing::ofDeployment($deployment, $project);
+            if ((string) ($sizing['region_id'] ?? $project->knative_region_id) !== $regionId) {
+                continue;
+            }
+            $class = $key === self::PRIMARY ? ResourceReservation::deployedClassOf($project) : null;
+            // a queue-triggered environment's consumer, where the region charges queue consumers
+            $total = WorkloadSizing::add($total, WorkloadSizing::peak($sizing, ResourceReservation::overheadFor($region, $project->service_type, $class), $this->consumers->charged($regionId)));
         }
 
-        $overhead = ResourceReservation::overheadFor($project->knativeRegion, $project->service_type, ResourceReservation::deployedClassOf($project));
+        return $total;
+    }
 
-        return WorkloadSizing::peak(WorkloadSizing::ofDeployment($live, $project), $overhead);
+    /**
+     * Previews of the project when $regionId is the project's region (previews run there),
+     * nothing elsewhere.
+     *
+     * @param  array{region_id: string|null, cpu_m: int, memory_mb: int, trigger_type: string, min_scale: int, max_scale: int, scale_to_zero: bool, gpu_count: int}  $sizing
+     * @return array{cpu_m: int, memory_mb: int, gpus: int, pods: int}
+     */
+    private function previewsIn(Project $project, string $regionId, array $sizing, ?string $deploying = null): array
+    {
+        return (string) $project->knative_region_id === $regionId ? $this->previews($project, $sizing, $deploying) : WorkloadSizing::none();
     }
 
     /**

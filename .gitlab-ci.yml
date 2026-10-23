@@ -55,6 +55,10 @@ variables:
       - .composer-cache/
   # No .env, key or migrate: Pint and Larastan need neither.
   before_script:
+    # The job image's PHP is 8.2.35 or a later 8.2 release, the one that fixes CVE-2026-109618 and
+    # CVE-2026-109619 (test:api runs the same check; the API image has its own floor,
+    # PHP_MIN_VERSION of api/Dockerfile.prod)
+    - &php_floor php -r 'exit((int) !(str_starts_with(PHP_VERSION, "8.2.") && version_compare(PHP_VERSION, "8.2.35", ">=")));' || { echo "PHP $(php -r 'echo PHP_VERSION;') of the job image is not 8.2.35 or a later 8.2 release"; exit 1; }
     - apk add --no-cache git unzip
     - docker-php-ext-install pcntl
     - curl -sS https://getcomposer.org/installer | php -- --install-dir=/usr/local/bin --filename=composer
@@ -203,6 +207,8 @@ test:api:
   stage: test
   image: ghcr.io/brf-tech/runr/reqs/php:8.2-cli-alpine
   before_script:
+    # PHP 8.2.35 or later (.php_composer)
+    - *php_floor
     # git-daemon: git-http-backend, as in the API image (the git deploy tests serve the project remotes)
     - apk add --no-cache git git-daemon sqlite-dev unzip
     - docker-php-ext-install pdo pdo_sqlite pcntl

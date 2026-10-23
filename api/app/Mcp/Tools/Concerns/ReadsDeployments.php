@@ -13,10 +13,14 @@ use App\Mcp\Tools\ToolError;
  */
 trait ReadsDeployments
 {
-    /** @return list<array> newest first */
-    protected function deployments(ToolContext $context, string $projectId): array
+    /**
+     * @param  string|null  $environment  one of the project's environments (a name or id; null: its own workload)
+     * @return list<array> newest first
+     */
+    protected function deployments(ToolContext $context, string $projectId, ?string $environment = null): array
     {
-        $result = $context->api()->get(InternalApi::path('projects', $projectId, 'deployments'));
+        $query = $environment !== null && trim($environment) !== '' ? ['environment' => trim($environment)] : [];
+        $result = $context->api()->get(InternalApi::path('projects', $projectId, 'deployments'), $query);
         if (! $result->ok()) {
             throw ToolError::fromApi($result, 'Reading the deployments');
         }
@@ -29,7 +33,7 @@ trait ReadsDeployments
      *
      * @throws ToolError
      */
-    protected function deployment(ToolContext $context, string $projectId, ?string $reference = null): array
+    protected function deployment(ToolContext $context, string $projectId, ?string $reference = null, ?string $environment = null): array
     {
         if ($reference !== null && trim($reference) !== '' && $reference !== 'current') {
             $result = $context->api()->get(InternalApi::path('projects', $projectId, 'deployments', strtolower(trim($reference))));
@@ -40,7 +44,7 @@ trait ReadsDeployments
             return (array) $result->data();
         }
 
-        $current = CurrentDeployment::pick($this->deployments($context, $projectId));
+        $current = CurrentDeployment::pick($this->deployments($context, $projectId, $environment));
         if ($current === null) {
             throw new ToolError('The project has not been deployed yet. Deploy it with deploy.');
         }

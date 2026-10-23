@@ -444,7 +444,11 @@ func printRegionMigration(app *App, reg *runr.Region, st *runr.RegionMigration) 
 				if p.Version > 0 {
 					version = "v" + strconv.Itoa(p.Version)
 				}
-				t.Row(p.Project, output.Dash(p.Organization), p.Outcome, version, output.Dash(p.DeploymentStatus), output.Dash(p.Message))
+				project := p.Project
+				if p.Environment != "" {
+					project += " (" + p.Environment + ")"
+				}
+				t.Row(project, output.Dash(p.Organization), p.Outcome, version, output.Dash(p.DeploymentStatus), output.Dash(p.Message))
 			}
 		}
 		switch st.Status {

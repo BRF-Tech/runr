@@ -30,7 +30,12 @@ return [
     'manifest_invalid' => 'runr.workflows.json is invalid: :error',
     'synced' => 'Workflow definitions synced.',
     'declared' => 'Workflow definitions saved.',
+    'declared_one' => 'Workflow ":name" saved.',
+    'archived' => 'Workflow ":name" archived: it starts no new runs.',
+    'name_mismatch' => 'The definition is named ":name"; the address names workflow ":workflow".',
     'key_rotated' => 'Signing key rotated. Redeploy the project; the previous key keeps working until :until.',
     'cancelled_by' => 'Cancelled by :user',
     'queue_hook_invalid' => 'Unknown queue bridge.',
+    'event_environment_invalid' => 'Event #:index: "environment" must be the name of an environment (a lowercase DNS label) or "production".',
+    'environment_missing' => 'The environment of this workflow no longer exists.',
 ];

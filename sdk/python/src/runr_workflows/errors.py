@@ -40,6 +40,17 @@ class SignatureError(Exception):
     """The request was not signed by the RunR engine."""
 
 
+class PublishError(Exception):
+    """The topic publisher refused an event (401 bad token, 403 topic not allowed, 413 too large, …)."""
+
+    def __init__(self, topic: str, status: int, body: str = ""):
+        detail = f": {body[:500]}" if body else ""
+        super().__init__(f"publishing to topic {topic} failed: HTTP {status}{detail}")
+        self.topic = topic
+        self.status = status
+        self.body = body
+
+
 def error_payload(exc: BaseException) -> Dict[str, Any]:
     import traceback
 

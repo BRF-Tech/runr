@@ -45,6 +45,12 @@ trait FakesKataCluster
     /** @var array<string, ?bool> what the /dev/kvm check finds per node (missing: KVM; null: no answer) */
     protected array $nodeKvm = [];
 
+    /** @var array<string, int> node → its /dev/shm in MiB as the /dev/kvm check reports it (default: not reported) */
+    protected array $nodeShmMb = [];
+
+    /** @var array<string, string> node → dbus=yes|missing|n/a as the /dev/kvm check reports it (default: not reported) */
+    protected array $nodeDbus = [];
+
     /**
      * @var array<string, list<array>> pods of an earlier DaemonSet object per component, listed
      *                                 next to the current ones until the DaemonSet is deleted (e.g. RunR 0.4.1's crash-looping
@@ -200,9 +206,11 @@ trait FakesKataCluster
                         foreach (array_keys($this->nodes) as $node) {
                             $kvm = array_key_exists($node, $this->nodeKvm) ? $this->nodeKvm[$node] : true;
                             if ($kvm !== null) {
+                                $shm = (isset($this->nodeShmMb[$node]) ? " shm_mb={$this->nodeShmMb[$node]}" : '')
+                                    .(isset($this->nodeDbus[$node]) ? " dbus={$this->nodeDbus[$node]}" : '');
                                 $this->podLogs[$this->podName($name, $node)] = $kvm
-                                    ? "runr: kvm probe: kvm=yes dev_kvm=yes cpu=vmx module=kvm_intel node={$node}\n"
-                                    : "runr: kvm probe: kvm=no dev_kvm=no cpu=none module=none node={$node}\n";
+                                    ? "runr: kvm probe: kvm=yes dev_kvm=yes cpu=vmx module=kvm_intel{$shm} node={$node}\n"
+                                    : "runr: kvm probe: kvm=no dev_kvm=no cpu=none module=none{$shm} node={$node}\n";
                             }
                         }
                     }

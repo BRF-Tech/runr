@@ -36,13 +36,14 @@ func newLoginCmd(app *App) *cobra.Command {
 		Long: "Log in to a RunR API and save the API URL and token as a context in the config file\n" +
 			"(0600 permissions). The token is an API token from the console (Account → API tokens):\n" +
 			"paste it at the prompt or pipe it with --token-stdin. With --with-password the CLI logs in\n" +
-			"with your username and password and creates a dedicated API token for this machine, which\n" +
-			"expires after 90 days (--token-ttl; 0: no expiry); log in again then.\n\n" +
+			"with your user name or e-mail address (--username, any letter case) and password and\n" +
+			"creates a dedicated API token for this machine, which expires after 90 days (--token-ttl;\n" +
+			"0: no expiry); log in again then.\n\n" +
 			"In CI, skip login and set RUNR_API_URL and RUNR_TOKEN instead.",
 		Example: "  runr login https://runr.example.com\n" +
 			"  echo \"$RUNR_TOKEN\" | runr login https://runr.example.com --token-stdin\n" +
 			"  runr login https://runr.example.com --with-password --username ada\n" +
-			"  runr login https://runr.example.com --with-password --username ada --token-ttl 30d",
+			"  runr login https://runr.example.com --with-password --username ada@example.com --token-ttl 30d",
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
@@ -152,8 +153,8 @@ func newLoginCmd(app *App) *cobra.Command {
 	f := cmd.Flags()
 	f.StringVar(&name, "name", "", "context name (default: the API host)")
 	f.BoolVar(&tokenStdin, "token-stdin", false, "read the API token from stdin")
-	f.BoolVar(&withPassword, "with-password", false, "log in with username and password and create an API token")
-	f.StringVar(&username, "username", "", "username or e-mail for --with-password")
+	f.BoolVar(&withPassword, "with-password", false, "log in with user name or e-mail address and password and create an API token")
+	f.StringVar(&username, "username", "", "user name or e-mail address for --with-password")
 	f.BoolVar(&passwordStdin, "password-stdin", false, "read the password from stdin (--with-password)")
 	f.StringVar(&otp, "otp", "", "two-factor code (--with-password)")
 	f.StringVar(&tokenName, "token-name", "", "name of the API token --with-password creates (default: runr-cli@<host>)")
@@ -244,9 +245,13 @@ func loginWithPassword(cmd *cobra.Command, app *App, anon *runr.Client, username
 		if !app.interactive() {
 			return nil, usageErrorf("pass --username")
 		}
-		if username, err = app.readLine("Username or e-mail: "); err != nil {
+		if username, err = app.readLine("User name or e-mail: "); err != nil {
 			return nil, err
 		}
+	}
+	// The API ignores white space around the identifier as well; an empty one is no account
+	if username = strings.TrimSpace(username); username == "" {
+		return nil, usageErrorf("give the user name or e-mail address (--username)")
 	}
 	var password string
 	switch {

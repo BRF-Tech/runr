@@ -2,9 +2,12 @@
 
 namespace Tests\Feature\Ai;
 
+use App\Models\AiModelBinding;
 use App\Models\AiModelSnapshot;
 use App\Models\AiModelUpload;
+use App\Models\Project;
 use App\Services\Ai\Models\ModelServiceManifests;
+use App\Services\InternalNetwork\InternalNetworkManifests;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\Concerns\BuildsAiFixtures;
 use Tests\TestCase;
@@ -71,6 +74,26 @@ class ModelServiceManifestTest extends TestCase
         $this->assertSame('hf/default', $spec['initContainers'][0]['volumeMounts'][0]['subPath']);
 
         $this->assertSame('1800s', $ksvc['spec']['template']['metadata']['annotations']['serving.knative.dev/progress-deadline']);
+    }
+
+    /** The internal network (docs/internal-network.md): the projects bound to a model service may call it */
+    public function test_the_bound_projects_may_call_the_service(): void
+    {
+        $region = $this->gpuRegion();
+        $model = $this->hubModel();
+        $service = $this->modelService($model, $region, ['engine' => 'tei', 'device' => 'cpu', 'mode' => 'online']);
+        foreach (['chat', 'search'] as $name) {
+            $project = Project::create(['name' => $name, 'service_type' => 'caas']);
+            AiModelBinding::create(['project_id' => $project->id, 'ai_model_service_id' => $service->id, 'alias' => "embed-{$name}"]);
+        }
+
+        $ksvc = $this->manifests()->knativeService($service, $model, null, $region, 'fn', 'runr-hf-token');
+
+        $this->assertSame('managed', $ksvc['metadata']['labels'][InternalNetworkManifests::LABEL_MANAGED]);
+        $this->assertSame('model', $ksvc['metadata']['annotations'][InternalNetworkManifests::ANNOTATION_KIND]);
+        $this->assertSame('chat.platform,search.platform', $ksvc['metadata']['annotations'][InternalNetworkManifests::ANNOTATION_CALLERS]);
+        $this->assertSame("{$service->service_name}.platform", $ksvc['metadata']['annotations'][InternalNetworkManifests::ANNOTATION_NAME]);
+        $this->assertSame('cluster-local', $ksvc['metadata']['labels']['networking.knative.dev/visibility'], 'never public');
     }
 
     public function test_an_offline_service_mounts_its_snapshot_read_only_without_network(): void

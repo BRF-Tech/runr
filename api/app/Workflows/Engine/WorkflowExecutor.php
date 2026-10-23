@@ -8,6 +8,7 @@ use App\Workflows\Models\WorkflowApp;
 use App\Workflows\Models\WorkflowRun;
 use App\Workflows\Models\WorkflowStep;
 use App\Workflows\Models\WorkflowUsage;
+use App\Workflows\Support\WorkflowEnvironments;
 use App\Workflows\Transport\TransportException;
 use App\Workflows\Transport\WorkflowTransport;
 use Carbon\CarbonImmutable;
@@ -23,7 +24,8 @@ use InvalidArgumentException;
  *   1. claim  — queued → running under a lease token, if the run is due and its workflow's
  *               concurrency limits leave a slot;
  *   2. invoke — POST the signed execute request (trigger event + memoized steps) to the
- *               project's function;
+ *               function of the workflow's environment (production: the project's own workload,
+ *               docs/workflows.md#environments) with that environment's signing key;
  *   3. apply  — persist the single op the SDK answers (step completed / failed, sleep, wait,
  *               invoke, send event, run completed / failed) if the lease still holds, and
  *               schedule what comes next.
@@ -139,10 +141,14 @@ class WorkflowExecutor
     private function invoke(WorkflowRun $run, string $token): string
     {
         $workflow = $run->workflow;
-        $project = $workflow->project;
-
-        if (! $project) {
+        if (! $workflow->project) {
             return $this->runError($run, $token, ['name' => 'ProjectMissing', 'message' => 'The project of this workflow no longer exists'], false);
+        }
+
+        // The workload of the workflow's environment: its URL, its key
+        $project = WorkflowEnvironments::projectOf($workflow);
+        if (! $project) {
+            return $this->runError($run, $token, ['name' => 'EnvironmentMissing', 'message' => __('workflows.environment_missing')], false);
         }
 
         $app = WorkflowApp::forProject($project);
@@ -419,7 +425,10 @@ class WorkflowExecutor
             'input' => ['workflow' => $op['workflow'], 'data' => $op['data'] ?? null, 'timeout' => $op['timeout'] ?? null],
         ]);
 
-        $target = Workflow::where('project_id', $run->project_id)->where('name', $op['workflow'])->first();
+        // A workflow of the same project and environment
+        $target = Workflow::where('project_id', $run->project_id)
+            ->inEnvironment($run->workflow?->environment_id !== null ? (string) $run->workflow->environment_id : null)
+            ->where('name', $op['workflow'])->first();
         if (! $target) {
             return $this->failStep($run, $step, $new, ['name' => 'WorkflowNotFound', 'message' => __('workflows.invoke_not_found', ['name' => $op['workflow']])], 0);
         }
@@ -463,7 +472,9 @@ class WorkflowExecutor
         $step->attempt = $step->attempt + 1;
 
         try {
-            $results = $this->events->ingest(array_values((array) $op['events']), 'workflow', $run->project_id, 'run:'.$run->id);
+            // Events of the run's environment
+            $environment = $run->getAttribute('environment');
+            $results = $this->events->ingest(array_values((array) $op['events']), 'workflow', $run->project_id, 'run:'.$run->id, is_string($environment) && $environment !== '' ? $environment : null);
         } catch (WorkflowException $e) {
             return $this->failStep($run, $step, $new, ['name' => 'SendEventFailed', 'message' => $e->getMessage()], 0);
         }
@@ -692,8 +703,10 @@ class WorkflowExecutor
     {
         $projectId = $run->project_id;
         $workflowId = $run->workflow_id;
+        $environmentId = $run->getAttribute('environment_id');
+        $environmentId = is_string($environmentId) && $environmentId !== '' ? $environmentId : null;
 
-        DB::afterCommit(fn () => WorkflowUsage::record($projectId, $workflowId, steps: 1));
+        DB::afterCommit(fn () => WorkflowUsage::record($projectId, $workflowId, steps: 1, environmentId: $environmentId));
     }
 
     private function opDuration(array $op, int $fallback): int

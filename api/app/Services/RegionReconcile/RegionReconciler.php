@@ -6,13 +6,22 @@ use App\Models\KnativeRegion;
 use App\Services\Helpers\RunrClusterIdentity;
 use App\Services\KubernetesClient;
 use App\Services\RegionReconcile\Steps\AdmissionPolicyStep;
+use App\Services\RegionReconcile\Steps\CertManagerStep;
 use App\Services\RegionReconcile\Steps\DedicatedWorkerTolerationStep;
+use App\Services\RegionReconcile\Steps\ExternalSecretsStep;
+use App\Services\RegionReconcile\Steps\GatewayAuthStep;
+use App\Services\RegionReconcile\Steps\GatewayRoutesStep;
+use App\Services\RegionReconcile\Steps\GlobalDnsStep;
 use App\Services\RegionReconcile\Steps\ImageRegistryStep;
 use App\Services\RegionReconcile\Steps\IngressTrustStep;
+use App\Services\RegionReconcile\Steps\InternalNetworkStep;
 use App\Services\RegionReconcile\Steps\KataSandboxStep;
 use App\Services\RegionReconcile\Steps\KnativeServingConfigStep;
 use App\Services\RegionReconcile\Steps\LokiDeletionStep;
 use App\Services\RegionReconcile\Steps\NamespaceQuotaStep;
+use App\Services\RegionReconcile\Steps\NetworkPolicyStep;
+use App\Services\RegionReconcile\Steps\OpenBaoStep;
+use App\Services\RegionReconcile\Steps\PrivateIngressStep;
 use App\Services\RegionReconcile\Steps\PrometheusExposureStep;
 use App\Services\RegionReconcile\Steps\RegistryPrewarmStep;
 use App\Services\RegionReconcile\Steps\RegistrySyncConfigStep;
@@ -36,6 +45,11 @@ use Throwable;
  * counted; the rest still run. Then the status block of every central region with a ready
  * Knative Serving, whatever its status (blockable()), plus the regions the registered status-block
  * sources add (the Tenancy module adds each tenant's own regions, inactive ones included).
+ *
+ * With a deadline no step starts after it: the step running then runs to its end, so a run that
+ * stops on time leaves no change half-done; what is left is reported (ReconcileOutcome::notRun)
+ * and the next run does it — every step is idempotent. The Helm bootstrap job sets the deadline
+ * and a time limit above it (helm/templates/bootstrap-job.yaml).
  */
 class RegionReconciler
 {
@@ -44,6 +58,9 @@ class RegionReconciler
 
     /** @var array<string, Closure(?string): iterable<ReconcileTarget>> */
     private static array $blockSources = [];
+
+    /** @var array<string, bool> whether a cluster answers, by kubeconfig (reachabilityKey()) */
+    private array $reachability = [];
 
     public function __construct(private readonly RunrClusterIdentity $clusterIdentity) {}
 
@@ -67,11 +84,32 @@ class RegionReconciler
             new TraefikImageStep,
             // the Traefik read / write timeouts and Knative's maximum revision timeout
             new RequestTimeoutStep,
+            // cluster-local Knative routes off the LoadBalancer (the KIngresses follow), then the
+            // NetworkPolicies that leave Traefik and Knative the only way to the project pods
+            new PrivateIngressStep,
+            new NetworkPolicyStep,
+            // the internal network's authz, runr.internal DNS and routes, policies of the services
+            // (after private-ingress: its ForwardAuth is on the private entry point)
+            new InternalNetworkStep,
             new LokiDeletionStep,
             // the tracing backend where tracing is enabled (the region's or the platform's mode)
             new TracingBackendStep,
+            // cert-manager (installed, or the cluster's own reused) and the ClusterIssuer of custom
+            // domains; after the Traefik steps: the ACME issuer's HTTP-01 solver goes through Traefik
+            new CertManagerStep,
             new KataSandboxStep,
             new WasmSandboxStep,
+            // the pinned chart of External Secrets Operator where a region has it (secret store references)
+            new ExternalSecretsStep,
+            // the region's OpenBao: pinned image, TLS certificate (after the operator it needs)
+            new OpenBaoStep,
+            // the API product's gateway-auth where a region runs it: a new image of the release
+            new GatewayAuthStep,
+            // every gateway's routes as this release builds them (after gateway-auth: its metering
+            // proxy; after the Traefik and internal-network steps: the routes they serve)
+            new GatewayRoutesStep,
+            // the PowerDNS server of the global zone where the region runs one (docs/global-projects.md)
+            new GlobalDnsStep,
             // RunR's image namespace (ghcr.io/brf-tech/runr): the admission policy admits it before
             // image-registry rolls the region's workloads onto it
             new AdmissionPolicyStep,
@@ -184,20 +222,26 @@ class RegionReconciler
 
     /**
      * @param  Closure(string $level, string $message): void  $out  level: info|warn|error
-     * @return int number of failed cluster steps (0 = everything reconciled or already current)
+     * @param  int|null  $deadline  Unix time after which no step starts (the one running then
+     *                              runs to its end); what is left is reported in notRun
      */
-    public function reconcile(?string $regionId, bool $dryRun, Closure $out): int
+    public function reconcile(?string $regionId, bool $dryRun, Closure $out, ?int $deadline = null): ReconcileOutcome
     {
+        $outcome = new ReconcileOutcome;
         $targets = $this->targets($regionId);
         if (! $targets) {
             $out('info', 'No regions to reconcile.');
-
-            return $this->reconcileStatusBlocks($regionId, $dryRun, $out);
+        } else {
+            $this->reconcileClusters($targets, $dryRun, $out, $deadline, $outcome);
         }
 
-        $failures = $this->reconcileClusters($targets, $dryRun, $out);
+        if ($deadline !== null && time() >= $deadline) {
+            $outcome->notRun[] = 'the status blocks of the regions';
+        } else {
+            $this->reconcileStatusBlocks($regionId, $dryRun, $out, $outcome);
+        }
 
-        return $failures + $this->reconcileStatusBlocks($regionId, $dryRun, $out);
+        return $outcome;
     }
 
     /**
@@ -205,18 +249,16 @@ class RegionReconciler
      * the central rows, then those of the status-block sources, each in its own database context.
      *
      * @param  Closure(string $level, string $message): void  $out
-     * @return int failed regions
      */
-    private function reconcileStatusBlocks(?string $regionId, bool $dryRun, Closure $out): int
+    private function reconcileStatusBlocks(?string $regionId, bool $dryRun, Closure $out, ReconcileOutcome $outcome): void
     {
         $query = self::blockable(KnativeRegion::syncedQuery());
         if ($regionId) {
             $query->where('id', $regionId);
         }
 
-        $failures = 0;
         foreach ($query->get() as $region) {
-            $failures += $this->reportStatusBlock($region->name, app(RegionStatusService::class)->syncBlock($region, $dryRun), $out);
+            $this->reportStatusBlock($region, $region->name, app(RegionStatusService::class)->syncBlock($region, $dryRun), $out, $outcome);
         }
 
         foreach (self::$blockSources as $source) {
@@ -226,45 +268,63 @@ class RegionReconciler
                 } catch (Throwable $e) {
                     $lines = ["failed: {$e->getMessage()}"];
                 }
-                $failures += $this->reportStatusBlock("{$target->region->name} ({$target->scope})", $lines, $out);
+                $this->reportStatusBlock($target->region, "{$target->region->name} ({$target->scope})", $lines, $out, $outcome);
             }
         }
-
-        return $failures;
     }
 
     /**
+     * A block that could not be synced is a failure — or, when the region's cluster does not
+     * answer, an unreachable region (as an unreachable cluster in the steps).
+     *
      * @param  list<string>  $lines  RegionStatusService::syncBlock()
      * @param  Closure(string $level, string $message): void  $out
-     * @return int 1 when the block could not be synced
      */
-    private function reportStatusBlock(string $label, array $lines, Closure $out): int
+    private function reportStatusBlock(KnativeRegion $region, string $label, array $lines, Closure $out, ReconcileOutcome $outcome): void
     {
-        $failures = 0;
         foreach ($lines as $line) {
             $failed = str_starts_with($line, 'failed:');
-            $failures += $failed ? 1 : 0;
+            if ($failed && ! $this->regionReachable($region)) {
+                $outcome->unreachable[] = "region {$label}";
+                $outcome->regions[(string) $region->getKey()][] = 'unreachable';
+                $out('warn', "[status-block] region {$label}: unreachable — not synced ({$line})");
+
+                continue;
+            }
+            $outcome->failures += $failed ? 1 : 0;
+            if ($failed) {
+                $outcome->regions[(string) $region->getKey()][] = "[status-block] {$line}";
+            }
             $level = $failed ? 'error' : (str_starts_with($line, 'skipped') ? 'warn' : 'info');
             $out($level, "[status-block] region {$label}: {$line}");
         }
-
-        return $failures;
     }
 
     /**
      * @param  list<ReconcileTarget>  $targets
      * @param  Closure(string $level, string $message): void  $out
      */
-    private function reconcileClusters(array $targets, bool $dryRun, Closure $out): int
+    private function reconcileClusters(array $targets, bool $dryRun, Closure $out, ?int $deadline, ReconcileOutcome $outcome): void
     {
-        $failures = 0;
+        $steps = $this->steps();
+        $past = fn () => $deadline !== null && time() >= $deadline;
 
         foreach ($this->groupByCluster($targets) as $key => $members) {
+            $label = $members[0]->label();
+            if ($past()) {
+                $outcome->notRun[] = "cluster {$key} ({$label}): every step";
+                $outcome->region($members, 'not run: every step (the deadline passed)');
+                $out('error', "Cluster {$key}: {$label} — not reconciled: the deadline passed");
+
+                continue;
+            }
+
             try {
                 $cluster = new ClusterGroup($key, $members, new KubernetesClient($members[0]->region->kubeconfig));
             } catch (Throwable $e) {
-                $failures++;
-                $out('error', "Cluster {$key}: invalid kubeconfig of {$members[0]->label()} — skipped ({$e->getMessage()})");
+                $outcome->unreachable[] = "cluster {$key} ({$label})";
+                $outcome->region($members, 'unreachable');
+                $out('error', "Cluster {$key}: invalid kubeconfig of {$label} — skipped ({$e->getMessage()})");
 
                 continue;
             }
@@ -272,23 +332,46 @@ class RegionReconciler
             $out('info', "Cluster {$cluster->key}: {$cluster->label()}");
 
             if (! $this->reachable($cluster)) {
-                $failures++;
+                $outcome->unreachable[] = "cluster {$cluster->key} ({$cluster->label()})";
+                $outcome->region($members, 'unreachable');
+                $this->reachability[$this->reachabilityKey($members[0]->region)] = false;
                 $out('error', '  unreachable — skipped');
 
                 continue;
             }
 
-            foreach ($this->steps() as $step) {
+            foreach ($steps as $i => $step) {
+                if ($past()) {
+                    $left = array_map(fn (ReconcileStep $s) => $s->name(), array_slice($steps, $i));
+                    $outcome->notRun[] = "cluster {$cluster->key} ({$cluster->label()}): ".implode(', ', $left);
+                    $outcome->region($members, 'not run: '.implode(', ', $left).' (the deadline passed)');
+                    $out('error', '  the deadline passed — not run: '.implode(', ', $left));
+
+                    break;
+                }
                 try {
                     $lines = $step->run($cluster, $dryRun);
                     foreach ($lines ?: ['up to date'] as $line) {
+                        // "waiting: …" — the step could not finish its change yet (e.g. the internal
+                        // network's authz has no ready pod): the region is not at this release yet
+                        $waiting = ! $dryRun && str_starts_with($line, 'waiting:');
+                        if ($waiting) {
+                            $outcome->failures++;
+                            $outcome->region($members, "[{$step->name()}] {$line}");
+                        }
                         // "restart: …" — a step that restarts (or would restart) something on the nodes;
                         // "warning: …" — something the operator has to act on (e.g. Kata without /dev/kvm)
-                        $level = str_starts_with($line, 'skipped') || str_starts_with($line, 'restart:') || str_starts_with($line, 'warning:') ? 'warn' : 'info';
+                        $level = match (true) {
+                            $waiting => 'error',
+                            str_starts_with($line, 'skipped'), str_starts_with($line, 'restart:'), str_starts_with($line, 'warning:'),
+                            str_starts_with($line, 'waiting:') => 'warn',
+                            default => 'info',
+                        };
                         $out($level, "  [{$step->name()}] {$line}");
                     }
                 } catch (Throwable $e) {
-                    $failures++;
+                    $outcome->failures++;
+                    $outcome->region($members, "[{$step->name()}] failed: {$e->getMessage()}");
                     $out('error', "  [{$step->name()}] failed: {$e->getMessage()}");
                     Log::warning('Region reconcile step failed', [
                         'cluster' => $cluster->key,
@@ -299,8 +382,6 @@ class RegionReconciler
                 }
             }
         }
-
-        return $failures;
     }
 
     private function reachable(ClusterGroup $cluster): bool
@@ -310,5 +391,25 @@ class RegionReconciler
         } catch (Throwable) {
             return false;
         }
+    }
+
+    /** Whether the region's cluster answers (status blocks of regions the steps did not reach) */
+    private function regionReachable(KnativeRegion $region): bool
+    {
+        $key = $this->reachabilityKey($region);
+        if (! array_key_exists($key, $this->reachability)) {
+            try {
+                $this->reachability[$key] = (new KubernetesClient((string) $region->kubeconfig))->getServerVersion() !== null;
+            } catch (Throwable) {
+                $this->reachability[$key] = false;
+            }
+        }
+
+        return $this->reachability[$key];
+    }
+
+    private function reachabilityKey(KnativeRegion $region): string
+    {
+        return sha1((string) $region->kubeconfig);
     }
 }

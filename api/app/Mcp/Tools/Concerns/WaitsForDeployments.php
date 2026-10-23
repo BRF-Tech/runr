@@ -152,11 +152,15 @@ trait WaitsForDeployments
             .' deployment_status shows the deployment once it has started.');
     }
 
-    /** Polls a deployment until it reaches a final state or the deadline. */
+    /**
+     * Polls a deployment until it reaches a final state or the deadline — or, for a blue-green /
+     * canary deploy, until its new revision is ready and its rollout under way (a promotion or a
+     * canary's steps can take far longer than a tool call; deployment_status follows them).
+     */
     protected function waitForDeployment(ToolContext $context, string $projectId, array $deployment, int $deadline): array
     {
         $step = 0;
-        while (! in_array($deployment['status'] ?? null, self::$finalDeploymentStates, true)) {
+        while (! in_array($deployment['status'] ?? null, self::$finalDeploymentStates, true) && ! self::rolloutUnderWay($deployment)) {
             $message = $deployment['knative_message'] ?? null;
             $context->progress(++$step, null, 'Deployment '.($deployment['status'] ?? 'pending').($message ? ': '.$message : '').'…');
             if (time() >= $deadline || ! $context->pause()) {
@@ -173,9 +177,19 @@ trait WaitsForDeployments
         return $deployment;
     }
 
+    /** A blue-green / canary deployment whose rollout has begun (its new revision is ready) or ended. */
+    protected static function rolloutUnderWay(array $deployment): bool
+    {
+        $rollout = $deployment['rollout'] ?? null;
+
+        return is_array($rollout) && ($rollout['status'] ?? 'pending') !== 'pending';
+    }
+
     /** The concise form of a deployment. */
     protected static function deploymentSummary(array $deployment): array
     {
+        $rollout = is_array($deployment['rollout'] ?? null) ? $deployment['rollout'] : null;
+
         return array_filter([
             'id' => $deployment['id'] ?? null,
             'status' => $deployment['status'] ?? null,
@@ -186,7 +200,14 @@ trait WaitsForDeployments
             'deployed_by' => $deployment['deployed_by'] ?? null,
             'ready_at' => $deployment['ready_at'] ?? null,
             'created_at' => $deployment['created_at'] ?? null,
-        ], fn ($v) => $v !== null && $v !== '');
+            'rollout' => $rollout ? array_filter([
+                'strategy' => $rollout['strategy'] ?? null,
+                'status' => $rollout['status'] ?? null,
+                'traffic' => $rollout['traffic'] ?? null,
+                'test_url' => $rollout['test_url'] ?? null,
+            ], fn ($v) => $v !== null && $v !== '') : null,
+            'rollout_role' => $deployment['rollout_role'] ?? null,
+        ], fn ($v) => $v !== null && $v !== '' && $v !== []);
     }
 
     /** The concise form of a version. */

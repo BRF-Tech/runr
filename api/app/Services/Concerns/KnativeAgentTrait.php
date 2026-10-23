@@ -3,6 +3,7 @@
 namespace App\Services\Concerns;
 
 use App\Models\KnativeRegion;
+use App\Services\GlobalProjects\GlobalRouteManifests;
 use App\Services\Helpers\AgentToken;
 use App\Services\Helpers\AgentWsUrlResolver;
 use App\Services\KubernetesClient;
@@ -81,6 +82,7 @@ trait KnativeAgentTrait
     private function removeAgent(KubernetesClient $k8s, string $ns = 'observability'): void
     {
         $k8s->deleteResource('apps/v1', 'Deployment', 'runr-agent', $ns);
+        $k8s->deleteResource('v1', 'Service', GlobalRouteManifests::AGENT_HEALTH_SERVICE, $ns);
         $k8s->deleteResource('v1', 'ServiceAccount', 'runr-agent', $ns);
         $k8s->deleteClusterResource('rbac.authorization.k8s.io/v1', 'ClusterRole', 'runr-agent');
         $k8s->deleteClusterResource('rbac.authorization.k8s.io/v1', 'ClusterRoleBinding', 'runr-agent');
@@ -98,6 +100,32 @@ trait KnativeAgentTrait
             $this->agentClusterRoleBinding($ns),
             $this->agentSecret($ns, $token),
             $this->agentDeployment($ns, $region->id, $projectNs, $wsUrl, $region, AgentToken::revision(AgentToken::hash($token))),
+            $this->agentHealthServiceManifest($ns),
+        ];
+    }
+
+    /**
+     * Service of the agent's global-health listener (docs/global-projects.md): the route every
+     * global-DNS region has for runr-health.<zone> leads here; PowerDNS' ifurlup() checks of the
+     * regions' copies of a global project end at GET /global-health/<slug>.
+     */
+    private function agentHealthServiceManifest(string $ns): array
+    {
+        $port = (int) config('global_dns.health.agent_port', 8086);
+
+        return [
+            'apiVersion' => 'v1',
+            'kind' => 'Service',
+            'metadata' => [
+                'name' => GlobalRouteManifests::AGENT_HEALTH_SERVICE,
+                'namespace' => $ns,
+                'labels' => ['app.kubernetes.io/name' => 'runr-agent', 'app.kubernetes.io/managed-by' => 'runr'],
+            ],
+            'spec' => [
+                'type' => 'ClusterIP',
+                'selector' => ['app.kubernetes.io/name' => 'runr-agent', 'app.kubernetes.io/managed-by' => 'runr'],
+                'ports' => [['name' => 'global-health', 'port' => $port, 'targetPort' => $port, 'protocol' => 'TCP']],
+            ],
         ];
     }
 
@@ -126,6 +154,12 @@ trait KnativeAgentTrait
                     'apiGroups' => ['apps'],
                     'resources' => ['deployments', 'replicasets'],
                     'verbs' => ['get', 'list', 'watch'],
+                ],
+                // global-health: is a global project's Knative Service ready here
+                [
+                    'apiGroups' => ['serving.knative.dev'],
+                    'resources' => ['services'],
+                    'verbs' => ['get'],
                 ],
             ],
         ];
@@ -180,17 +214,24 @@ trait KnativeAgentTrait
                         'serviceAccountName' => 'runr-agent',
                         'containers' => [[
                             'name' => 'agent',
-                            'image' => 'ghcr.io/brf-tech/runr/agent:latest',
+                            'image' => (string) config('knative.agent_image'),
                             'env' => [
                                 ['name' => 'RUNR_WS_URL',      'value' => $wsUrl],
                                 ['name' => 'RUNR_REGION_ID',   'value' => $regionId],
                                 ['name' => 'PROMETHEUS_URL',   'value' => $promUrl],
                                 ['name' => 'PROJECT_NAMESPACE', 'value' => $projectNs],
+                                // global-health listener (docs/global-projects.md)
+                                ['name' => 'RUNR_GLOBAL_HEALTH_ADDR', 'value' => ':'.(int) config('global_dns.health.agent_port', 8086)],
                                 [
                                     'name' => 'RUNR_AGENT_TOKEN',
                                     'valueFrom' => ['secretKeyRef' => ['name' => 'runr-agent-token', 'key' => 'token']],
                                 ],
                             ],
+                            'ports' => [[
+                                'name' => 'global-health',
+                                'containerPort' => (int) config('global_dns.health.agent_port', 8086),
+                                'protocol' => 'TCP',
+                            ]],
                             'resources' => [
                                 'requests' => ['cpu' => '100m', 'memory' => '128Mi'],
                                 'limits' => ['cpu' => '200m', 'memory' => '256Mi'],

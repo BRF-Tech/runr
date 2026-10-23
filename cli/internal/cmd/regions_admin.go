@@ -23,12 +23,15 @@ import (
 // GPU support and model storage (runr regions gpu, runr regions model-storage, regions_gpu.go),
 // the lifecycle of a region (create, get, set, rm, status, kubeconfig, nodes:
 // regions_lifecycle.go), Knative (regions_knative.go), its services (redis, registry, migration,
-// function-tls, skupper, capacity, demo: regions_services.go) and WebAssembly support
-// (regions_webassembly.go). They hang under `runr regions`.
+// function-tls, skupper, capacity, demo: regions_services.go), WebAssembly support
+// (regions_webassembly.go) and the region's OpenBao (regions_openbao.go). They hang under
+// `runr regions`.
 
 func addRegionAdminCommands(app *App, regions *cobra.Command) {
 	regions.AddCommand(newRegionTracingCmd(app), newRegionDataServicesCmd(app), newRegionSandboxCmd(app), newRegionSupplyChainCmd(app),
-		newRegionGPUCmd(app), newRegionModelStorageCmd(app), newRegionKnativeCmd(app), newRegionWasmCmd(app))
+		newRegionGPUCmd(app), newRegionModelStorageCmd(app), newRegionKnativeCmd(app), newRegionWasmCmd(app), newRegionOpenBaoCmd(app),
+		newRegionCertManagerCmd(app), // regions_cert_manager.go
+		newRegionGlobalDNSCmd(app))   // regions_global_dns.go
 	regions.AddCommand(newRegionLifecycleCommands(app)...) // regions_lifecycle.go
 	regions.AddCommand(newRegionServiceCommands(app)...)   // regions_services.go
 }

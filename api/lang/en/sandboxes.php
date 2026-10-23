@@ -50,6 +50,8 @@ return [
     'pod_failed' => 'The sandbox pod could not be created.',
     'pod_gone' => 'The sandbox pod is gone.',
     'start_timeout' => 'The sandbox did not start in time.',
+    'start_timeout_event' => 'Last pod event: :reason: :message',
+    'sandbox_create_failed' => 'The container runtime could not create the sandbox (:count attempts): :error',
     'start_failed' => 'The sandbox could not start: :error',
 
     'exec_cmd_required' => 'cmd must be a non-empty string or a list of arguments.',

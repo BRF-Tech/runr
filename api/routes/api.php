@@ -4,12 +4,18 @@ use App\Http\Controllers\Api\AccountController;
 use App\Http\Controllers\Api\ApiTokenController;
 use App\Http\Controllers\Api\AuditEventController;
 use App\Http\Controllers\Api\AuthController;
+use App\Http\Controllers\Api\CertManagerController;
 use App\Http\Controllers\Api\CodeController;
 use App\Http\Controllers\Api\ContactController;
 use App\Http\Controllers\Api\DemoController;
 use App\Http\Controllers\Api\DeploymentController;
+use App\Http\Controllers\Api\DeploymentRolloutController;
+use App\Http\Controllers\Api\DeployStrategyController;
 use App\Http\Controllers\Api\ExecController;
+use App\Http\Controllers\Api\ExternalSecretsController;
 use App\Http\Controllers\Api\GatewayController;
+use App\Http\Controllers\Api\GlobalDnsController;
+use App\Http\Controllers\Api\GlobalProjectController;
 use App\Http\Controllers\Api\HistoricalMetricsController;
 use App\Http\Controllers\Api\HorizonLinkController;
 use App\Http\Controllers\Api\KnativeFunctionTlsController;
@@ -20,9 +26,11 @@ use App\Http\Controllers\Api\KnativeRegionController;
 use App\Http\Controllers\Api\KnativeUninstallController;
 use App\Http\Controllers\Api\NotificationController;
 use App\Http\Controllers\Api\NotificationPreferenceController;
+use App\Http\Controllers\Api\OpenBaoController;
 use App\Http\Controllers\Api\PrivateDatabaseBindingController;
 use App\Http\Controllers\Api\ProjectController;
 use App\Http\Controllers\Api\ProjectDomainController;
+use App\Http\Controllers\Api\ProjectNetworkController;
 use App\Http\Controllers\Api\ProjectOwnershipController;
 use App\Http\Controllers\Api\ProjectSecretController;
 use App\Http\Controllers\Api\ProjectStopController;
@@ -31,13 +39,17 @@ use App\Http\Controllers\Api\RegionDemoController;
 use App\Http\Controllers\Api\RegionMigrateController;
 use App\Http\Controllers\Api\RegistryController;
 use App\Http\Controllers\Api\RegistrySetupController;
+use App\Http\Controllers\Api\RightsizingController;
 use App\Http\Controllers\Api\RuntimeController;
 use App\Http\Controllers\Api\SandboxController;
+use App\Http\Controllers\Api\ScaleScheduleController;
+use App\Http\Controllers\Api\SecretStoreController;
 use App\Http\Controllers\Api\SessionController;
 use App\Http\Controllers\Api\SettingsController;
 use App\Http\Controllers\Api\TwoFactorController;
 use App\Http\Controllers\Api\UserController;
 use App\Http\Controllers\Api\WasmController;
+use App\Services\RegionReconcile\ReconcileRecord;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
@@ -48,7 +60,9 @@ Route::get('/version', function () {
         $v = 'main-'.$v;
     }
 
-    return response()->json(['version' => $v]);
+    // region_reconcile: the last run of region:reconcile over the regions — the upgrade's Job
+    // runr-region-reconcile-<revision> — running, done, unfinished or unreachable (null: none yet)
+    return response()->json(['version' => $v, 'region_reconcile' => app(ReconcileRecord::class)->status()]);
 });
 
 Route::post('/auth/register', [AuthController::class, 'register'])->middleware('throttle:auth');
@@ -87,6 +101,23 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/projects/{project}/deployments/{deployment}/metrics', [DeploymentController::class, 'metrics']);
     Route::delete('/projects/{project}/deployments/{deployment}', [DeploymentController::class, 'destroy']);
     Route::patch('/projects/{project}/deployments/{deployment}/status', [DeploymentController::class, 'updateStatus']);
+    // Rollback to a deployment: its version with the config it ran with (docs/versioning.md#rollback)
+    Route::post('/projects/{project}/deployments/{deployment}/rollback', [DeploymentController::class, 'rollback']);
+
+    // Deploy strategies: blue-green / canary rollouts (docs/deploy-strategies.md)
+    Route::get('/projects/{project}/deploy-strategy', [DeployStrategyController::class, 'show']);
+    Route::put('/projects/{project}/deploy-strategy', [DeployStrategyController::class, 'update']);
+    Route::get('/projects/{project}/rollout', [DeploymentRolloutController::class, 'current']);
+    Route::get('/projects/{project}/deployments/{deployment}/rollout', [DeploymentRolloutController::class, 'show']);
+    Route::post('/projects/{project}/deployments/{deployment}/rollout/promote', [DeploymentRolloutController::class, 'promote']);
+    Route::post('/projects/{project}/deployments/{deployment}/rollout/abort', [DeploymentRolloutController::class, 'abort']);
+    Route::post('/projects/{project}/deployments/{deployment}/rollout/rollback', [DeploymentRolloutController::class, 'rollback']);
+
+    // Global projects (docs/global-projects.md): the regions of a global project and their copies
+    Route::get('/projects/{project}/global', [GlobalProjectController::class, 'show']);
+    Route::put('/projects/{project}/global', [GlobalProjectController::class, 'update']);
+    Route::post('/projects/{project}/global/sync', [GlobalProjectController::class, 'sync']);
+    Route::post('/projects/{project}/global/failover', [GlobalProjectController::class, 'failover']);
 
     // Private connections to Managed PostgreSQL through Skupper
     Route::get('/projects/{project}/private-connections', [PrivateDatabaseBindingController::class, 'index']);
@@ -103,14 +134,26 @@ Route::middleware('auth:sanctum')->group(function () {
     // Custom domains per project — {domain} is scoped to {project}
     Route::scopeBindings()->group(function () {
         Route::get('/projects/{project}/domains', [ProjectDomainController::class, 'index']);
+        // the CA of the project's region when its custom-domain certificates come from it
+        Route::get('/projects/{project}/domains/ca-certificate', [ProjectDomainController::class, 'caCertificate']);
         Route::post('/projects/{project}/domains', [ProjectDomainController::class, 'store']);
         Route::post('/projects/{project}/domains/{domain}/verify', [ProjectDomainController::class, 'verify']);
         Route::put('/projects/{project}/domains/{domain}/tls', [ProjectDomainController::class, 'updateTls']);
         Route::delete('/projects/{project}/domains/{domain}', [ProjectDomainController::class, 'destroy']);
     });
 
+    // Network of a project: access mode and the allow list of its internal callers (docs/internal-network.md)
+    Route::get('/projects/{project}/network', [ProjectNetworkController::class, 'show']);
+    Route::put('/projects/{project}/network', [ProjectNetworkController::class, 'update']);
+    Route::post('/projects/{project}/network/callers', [ProjectNetworkController::class, 'addCaller']);
+    Route::delete('/projects/{project}/network/callers/{caller}', [ProjectNetworkController::class, 'removeCaller'])
+        ->where('caller', '[A-Za-z0-9.-]+');
+
     Route::get('/settings', [SettingsController::class, 'index']);
     Route::patch('/settings', [SettingsController::class, 'update']);
+
+    // Timed warmer: a schedule's week, value now and monthly estimate before it is saved (docs/scaling.md)
+    Route::post('/scale-schedule/preview', [ScaleScheduleController::class, 'preview']);
 
     // Runtime plugins: the catalog for everyone; registration needs runtimes.manage (platform)
     // or runtimes.use_custom (organization), checked in the controller
@@ -124,6 +167,9 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/runtimes/{runtime}/builds', [RuntimeController::class, 'builds']);
     Route::post('/runtimes/{runtime}/builds', [RuntimeController::class, 'build']);
     Route::post('/runtimes/{runtime}/test-deploy', [RuntimeController::class, 'testDeploy']);
+
+    // Runtime patches: the signed patch feed, project patch state, apply / pin, the Patches page
+    require __DIR__.'/runtime-patches.php';
 
     // Region-less preview endpoints (must be before apiResource to avoid ID collision)
     Route::post('/knative-regions/validate-kubeconfig', [KnativeRegionController::class, 'validateKubeconfig']);
@@ -190,6 +236,31 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/knative-regions/{knativeRegion}/wasm', [WasmController::class, 'show']);
     Route::post('/knative-regions/{knativeRegion}/wasm', [WasmController::class, 'install'])->middleware('region.mutable');
     Route::delete('/knative-regions/{knativeRegion}/wasm', [WasmController::class, 'uninstall'])->middleware('region.mutable');
+    // External Secrets Operator (secret store references, docs/secret-stores.md); POST / DELETE: regions.manage
+    Route::get('/knative-regions/{knativeRegion}/external-secrets', [ExternalSecretsController::class, 'show']);
+    Route::post('/knative-regions/{knativeRegion}/external-secrets', [ExternalSecretsController::class, 'install'])->middleware('region.mutable');
+    Route::delete('/knative-regions/{knativeRegion}/external-secrets', [ExternalSecretsController::class, 'uninstall'])->middleware('region.mutable');
+    // The region's own OpenBao (docs/secret-stores.md); POST / PATCH / DELETE: regions.manage
+    Route::get('/knative-regions/{knativeRegion}/openbao', [OpenBaoController::class, 'show']);
+    Route::post('/knative-regions/{knativeRegion}/openbao', [OpenBaoController::class, 'install'])->middleware('region.mutable');
+    Route::patch('/knative-regions/{knativeRegion}/openbao', [OpenBaoController::class, 'update'])->middleware('region.mutable');
+    Route::delete('/knative-regions/{knativeRegion}/openbao', [OpenBaoController::class, 'uninstall'])->middleware('region.mutable');
+
+    // cert-manager and the ClusterIssuer of custom domains → CertManagerController
+    Route::get('/knative-regions/{knativeRegion}/cert-manager', [CertManagerController::class, 'show']);
+    Route::post('/knative-regions/{knativeRegion}/cert-manager', [CertManagerController::class, 'install'])->middleware('region.mutable');
+    Route::delete('/knative-regions/{knativeRegion}/cert-manager', [CertManagerController::class, 'uninstall'])->middleware('region.mutable');
+    Route::get('/knative-regions/{knativeRegion}/cert-manager/ca-certificate', [CertManagerController::class, 'caCertificate']);
+
+    // Global DNS (docs/global-projects.md): the zone of the global projects and the PowerDNS
+    // server a region runs for it
+    Route::get('/global-dns', [GlobalDnsController::class, 'index']);
+    Route::post('/global-dns/sync', [GlobalDnsController::class, 'sync']);
+    Route::get('/knative-regions/{knativeRegion}/global-dns', [GlobalDnsController::class, 'show']);
+    Route::post('/knative-regions/{knativeRegion}/global-dns', [GlobalDnsController::class, 'enable'])->middleware('region.mutable');
+    Route::delete('/knative-regions/{knativeRegion}/global-dns', [GlobalDnsController::class, 'disable'])->middleware('region.mutable');
+    Route::put('/knative-regions/{knativeRegion}/global-dns/geoip', [GlobalDnsController::class, 'geoip'])->middleware('region.mutable');
+    Route::post('/knative-regions/{knativeRegion}/global-dns/geoip/reload', [GlobalDnsController::class, 'reloadGeoip'])->middleware('region.mutable');
 
     // Region migration
     Route::post('/knative-regions/{knativeRegion}/migrate', [RegionMigrateController::class, 'startMigration'])->middleware('region.mutable');
@@ -217,6 +288,7 @@ Route::middleware('auth:sanctum')->group(function () {
 
     // Gateways
     Route::get('/gateways', [GatewayController::class, 'index']);
+    Route::post('/gateways', [GatewayController::class, 'store']);
     Route::get('/gateways/{gateway}', [GatewayController::class, 'show']);
     Route::patch('/gateways/{gateway}', [GatewayController::class, 'update']);
     Route::get('/gateways/{gateway}/routes', [GatewayController::class, 'routes']);
@@ -230,6 +302,12 @@ Route::middleware('auth:sanctum')->group(function () {
     // Historical metrics
     Route::get('/projects/{project}/metrics/history', [HistoricalMetricsController::class, 'history']);
     Route::get('/projects/{project}/metrics/summary', [HistoricalMetricsController::class, 'summary']);
+
+    // Rightsizing recommendations from the projects' daily peaks (docs/monitoring.md#rightsizing)
+    Route::get('/rightsizing', [RightsizingController::class, 'index']);
+    Route::get('/projects/{project}/rightsizing', [RightsizingController::class, 'show']);
+    Route::post('/projects/{project}/rightsizing/apply', [RightsizingController::class, 'apply']);
+    Route::post('/projects/{project}/rightsizing/dismiss', [RightsizingController::class, 'dismiss']);
 
     // Notifications
     Route::get('/notifications', [NotificationController::class, 'index']);
@@ -280,9 +358,19 @@ Route::middleware('auth:sanctum')->group(function () {
 
     // Secret env vars of a project: write-only values (docs/security.md)
     Route::get('/projects/{project}/secrets', [ProjectSecretController::class, 'index']);
+    Route::post('/projects/{project}/secrets/refresh', [ProjectSecretController::class, 'refresh']);
     Route::put('/projects/{project}/secrets/{name}', [ProjectSecretController::class, 'upsert']);
     Route::delete('/projects/{project}/secrets/{name}', [ProjectSecretController::class, 'destroy']);
     Route::get('/projects/{project}/secrets/{name}/value', [ProjectSecretController::class, 'reveal']);
+
+    // Secret stores of the organization: references without credentials (docs/secret-stores.md)
+    Route::get('/secret-stores', [SecretStoreController::class, 'index']);
+    Route::post('/secret-stores', [SecretStoreController::class, 'store']);
+    Route::get('/secret-stores/{secretStore}', [SecretStoreController::class, 'show']);
+    Route::put('/secret-stores/{secretStore}', [SecretStoreController::class, 'update']);
+    Route::delete('/secret-stores/{secretStore}', [SecretStoreController::class, 'destroy']);
+    Route::get('/secret-stores/{secretStore}/trust', [SecretStoreController::class, 'trust']);
+    Route::post('/secret-stores/{secretStore}/verify', [SecretStoreController::class, 'verify']);
 
     // Audit log (docs/security.md) — export before {id}
     Route::get('/audit-events', [AuditEventController::class, 'index']);

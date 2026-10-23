@@ -4,6 +4,7 @@ namespace App\Models\Git;
 
 use App\Models\Deployment;
 use App\Models\Project;
+use App\Models\ProjectEnvironment;
 use App\Models\Version;
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Model;
@@ -37,6 +38,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property array|null $details
  * @property string|null $provider_deployment_id
  * @property string|null $reported_state
+ * @property string|null $environment_id the environment a push to its mapped branch deploys (kind environment, docs/environments.md)
  * @property-read Project $project
  */
 class GitDeploy extends Model
@@ -46,6 +48,12 @@ class GitDeploy extends Model
     public const KIND_PRODUCTION = 'production';
 
     public const KIND_PREVIEW = 'preview';
+
+    /** A push to a branch mapped to one of the project's environments (docs/environments.md#git-branches) */
+    public const KIND_ENVIRONMENT = 'environment';
+
+    /** Kinds that deploy through a Deployment row (previews have their own lifecycle) */
+    public const DEPLOYMENT_KINDS = [self::KIND_PRODUCTION, self::KIND_ENVIRONMENT];
 
     public const QUEUED = 'queued';
 
@@ -73,7 +81,7 @@ class GitDeploy extends Model
     protected $fillable = [
         'project_id', 'version_id', 'deployment_id', 'preview_environment_id', 'kind', 'trigger',
         'provider', 'sha', 'branch', 'author_name', 'message', 'url', 'pr_number', 'status',
-        'status_message', 'details', 'provider_deployment_id', 'reported_state',
+        'status_message', 'details', 'provider_deployment_id', 'reported_state', 'environment_id',
     ];
 
     protected $casts = [
@@ -99,6 +107,12 @@ class GitDeploy extends Model
     public function preview(): BelongsTo
     {
         return $this->belongsTo(PreviewEnvironment::class, 'preview_environment_id');
+    }
+
+    /** @return BelongsTo<ProjectEnvironment, $this> */
+    public function environment(): BelongsTo
+    {
+        return $this->belongsTo(ProjectEnvironment::class, 'environment_id');
     }
 
     public function mark(string $status, ?string $message = null): self
@@ -135,6 +149,7 @@ class GitDeploy extends Model
                 : null,
             'deployment_id' => $this->deployment_id,
             'preview_id' => $this->preview_environment_id,
+            'environment_id' => $this->getAttribute('environment_id'),
             'created_at' => $this->created_at?->toIso8601String(),
             'updated_at' => $this->updated_at?->toIso8601String(),
         ];

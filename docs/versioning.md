@@ -1,6 +1,8 @@
 # Versioning
 
-The RunR API reports its version through the `/api/version` endpoint.
+The RunR API reports its version through the `/api/version` endpoint. The versions of a
+*project* — every code or configuration change is a version — and rolling a project back are
+described under [Rollback](#rollback).
 
 ## Endpoint
 
@@ -69,3 +71,49 @@ ENV APP_VERSION=...              |                                          |
 Routes and controllers **never** call `env()`. `env()` is used only in `config/*.php`. Once
 `config:cache` has run, `.env` is not loaded and `env()` calls return `null`, so always use the `config()`
 helper.
+
+## Rollback
+
+Every code save, upload, push and configuration change of a project is a version (`v1`, `v2`, …),
+and every deploy of a version is a deployment in one of the project's environments
+([Environments](environments.md)). A deployment records the **effective configuration** it was
+applied with — the project's configuration with the environment's and the deploy's overrides:
+image, command and ports of a CaaS project, handler, env vars, CPU, memory, scale, trigger,
+schedule, queue stream, timeout — as `config_snapshot` (encrypted at rest; the API shows env var
+values only with `env.view`). `config_source` says where it came from: `current` (the
+configuration of its time) or `restored` (a rollback).
+
+A rollback deploys an earlier version **with the configuration it ran with**:
+
+```bash
+# Roll back to a deployment: its version and its configuration
+curl -X POST https://runr.example.com/api/projects/$PROJECT/deployments/$DEPLOYMENT/rollback \
+  -H "Authorization: Bearer $TOKEN"
+
+# … keeping the configuration of now (only the code goes back)
+curl -X POST https://runr.example.com/api/projects/$PROJECT/deployments/$DEPLOYMENT/rollback \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" -d '{"keep_current_config": true}'
+
+# Deploy an older version with the newest configuration recorded for it in that environment
+curl -X POST https://runr.example.com/api/projects/$PROJECT/deploy \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"version_id": "01J…", "restore_config": true}'
+```
+
+- **Which configuration**: the deployment rolled back to; with `restore_config` on the deploy
+  endpoint, `restore_from_deployment_id`, else the newest deployment of the version in that
+  environment; for versions deployed before deployments recorded their configuration, the
+  configuration of the version's time (the newest configuration version up to it) with the
+  environment's overrides. Nothing recorded at all: the current configuration (`config_source`
+  `current` says so).
+- **Not restored**: secret variables and bindings stay the current ones — credentials are rotated
+  forward, never back — and the project's stored configuration is not changed: the next deploy
+  with the current configuration runs it again.
+- **The image of a CaaS project is code**: a deploy of an older version runs that version's image,
+  also with `keep_current_config` (before, every deploy ran the image configured now).
+- A rollback replaces only the live deployment of its environment, goes through every deploy
+  check, and is audited as `deployment.rollback`.
+
+Console: **Roll back** on a deployment, with **Keep the current configuration**. CLI:
+`runr rollback v3` (`--keep-config`, `--env`). MCP: `rollback` (`keep_current_config`,
+`environment`).

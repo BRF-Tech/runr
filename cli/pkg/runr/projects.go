@@ -24,10 +24,16 @@ type ConfigInput struct {
 	ImagePullSecret *string            `json:"image_pull_secret,omitempty"`
 	TriggerType     *string            `json:"trigger_type,omitempty"`
 	Schedule        *string            `json:"schedule,omitempty"`
-	QueueStream     *string            `json:"queue_stream,omitempty"`
-	ScaleToZero     *bool              `json:"scale_to_zero,omitempty"`
-	MinScale        *int               `json:"min_scale,omitempty"`
-	MaxScale        *int               `json:"max_scale,omitempty"`
+	// ScheduleTimezone sets the schedule trigger's IANA zone; a pointer to "" lets the schedule
+	// follow the organization's time zone.
+	ScheduleTimezone *string `json:"schedule_timezone,omitempty"`
+	QueueStream      *string `json:"queue_stream,omitempty"`
+	ScaleToZero      *bool   `json:"scale_to_zero,omitempty"`
+	MinScale         *int    `json:"min_scale,omitempty"`
+	MaxScale         *int    `json:"max_scale,omitempty"`
+	// ScaleSchedule sets the timed warmer: the rows replace the whole schedule, a pointer to an
+	// empty list turns it off (scale_schedule.go).
+	ScaleSchedule *[]ScaleScheduleRow `json:"scale_schedule,omitempty"`
 	// SecretEnvVars are write-only environment variables (see env.go). Sent only when the
 	// API reports secret support.
 	SecretEnvVars *map[string]string `json:"secret_env_vars,omitempty"`
@@ -51,6 +57,12 @@ type CreateProjectInput struct {
 	RegionID       string      `json:"knative_region_id"`
 	Config         ConfigInput `json:"config"`
 	EndpointType   string      `json:"endpoint_type,omitempty"`
+	// Placement "global" creates a global project (global.go): RegionIDs are all its regions,
+	// RegionID among them the primary; GlobalMode is ha (default) or proximity. Sent only for a
+	// global project.
+	Placement  string   `json:"placement,omitempty"`
+	GlobalMode string   `json:"global_mode,omitempty"`
+	RegionIDs  []string `json:"region_ids,omitempty"`
 }
 
 // UpdateProjectInput is the body of PUT /projects/{project}.

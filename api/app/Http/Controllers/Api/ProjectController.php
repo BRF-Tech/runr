@@ -5,14 +5,20 @@ namespace App\Http\Controllers\Api;
 use App\Http\Requests\Project\StoreProjectRequest;
 use App\Http\Requests\Project\UpdateProjectRequest;
 use App\Http\Resources\ProjectResource;
+use App\Models\KnativeRegion;
 use App\Models\Project;
 use App\Services\Concerns\BroadcastsModelEvents;
+use App\Services\Environments\EnvironmentSecrets;
 use App\Services\GatewayService;
 use App\Services\ProjectService;
 use App\Services\Residency\RegionPolicy;
+use App\Services\Secrets\ProjectSecrets;
+use App\Services\Secrets\SecretBackendException;
 use App\Support\Rbac\EnvVisibility;
 use App\Support\Rbac\Rbac;
 use App\Support\Secrets\ProjectSecretWriter;
+use App\Triggers\ProjectTriggers;
+use Illuminate\Http\Exceptions\HttpResponseException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
@@ -34,6 +40,10 @@ class ProjectController extends Controller
             'knativeRegion', 'latestVersion', 'latestDeployment.version',
             'gatewayRoute.gateway', 'creator:id,name', 'owner:id,name,username', 'secrets:id,project_id,name',
         ]);
+        // Each project's trigger list (ProjectResource) in one query
+        if (app(ProjectTriggers::class)->tableExists(new Project)) {
+            $query->with('triggers');
+        }
 
         // Only what the user may see: every project with an organization-wide role, else project access
         $visible = app(Rbac::class)->visibleProjectIds($request->user());
@@ -68,6 +78,7 @@ class ProjectController extends Controller
         $validated['created_by'] = $request->user()->id;
         // Secret variables go to project_secrets, never into the config or a version snapshot
         $secretEnv = $this->takeSecretEnv($validated);
+        $scheduleZone = self::takeScheduleTimezone($validated);
 
         // Data residency (docs/supply-chain.md): the tenant may only use its allowed regions
         app(RegionPolicy::class)->authorize($validated['knative_region_id'] ?? null, RegionPolicy::PROJECT_CREATE);
@@ -77,9 +88,20 @@ class ProjectController extends Controller
         }
 
         $project = $this->projectService->create($validated);
+        if ($scheduleZone !== false) {
+            app(ProjectTriggers::class)->setScheduleTimezone($project, $scheduleZone);
+        }
 
+        // Pass-through (docs/security.md): the values go straight into the region. A region that
+        // does not answer leaves the project without them — the answer says so, they are set again
+        // from the project's environment
+        $secretEnvError = null;
         if ($secretEnv) {
-            ProjectSecretWriter::apply($project, $secretEnv, $request->user()->id);
+            try {
+                ProjectSecretWriter::apply($project, $secretEnv, $request->user()->id);
+            } catch (SecretBackendException $e) {
+                $secretEnvError = $e->getMessage();
+            }
         }
 
         if ($project->endpoint_type === 'gateway' && ! empty($validated['gateway_path'])) {
@@ -101,7 +123,12 @@ class ProjectController extends Controller
             report($e);
         }
 
-        return response()->json(new ProjectResource($fresh), 201);
+        $payload = (new ProjectResource($fresh))->resolve($request);
+        if ($secretEnvError !== null) {
+            $payload['secret_env_error'] = $secretEnvError;
+        }
+
+        return response()->json($payload, 201);
     }
 
     public function show(Project $project): ProjectResource
@@ -120,10 +147,32 @@ class ProjectController extends Controller
     {
         $data = $request->validated();
         $secretEnv = $this->takeSecretEnv($data);
+        $scheduleZone = self::takeScheduleTimezone($data);
 
         // Data residency (docs/supply-chain.md): moving the project to another region
         if (! empty($data['knative_region_id']) && $data['knative_region_id'] !== $project->knative_region_id) {
             app(RegionPolicy::class)->authorize($data['knative_region_id'], RegionPolicy::PROJECT_MOVE);
+        }
+
+        // Secret variables first (docs/security.md, pass-through): their values live in the region
+        // only, so a move to another region copies them there, and new values go to the region the
+        // project is in afterwards. A region that does not answer fails the request before
+        // anything changed.
+        $targetRegion = ! empty($data['knative_region_id']) && $data['knative_region_id'] !== $project->knative_region_id
+            ? KnativeRegion::find($data['knative_region_id'])
+            : null;
+        try {
+            if ($targetRegion && $project->knativeRegion && $project->isSupportedType()) {
+                app(ProjectSecrets::class)->copyToRegion($project, $project->knativeRegion, $targetRegion);
+                // the environments that follow the project's region and run nothing go with it
+                app(EnvironmentSecrets::class)->followProject($project, $project->knativeRegion, $targetRegion);
+            }
+            if ($secretEnv && $project->isSupportedType()) {
+                ProjectSecretWriter::apply($project, $secretEnv, $request->user()->id, $targetRegion);
+                $secretEnv = [];
+            }
+        } catch (SecretBackendException $e) {
+            throw new HttpResponseException(response()->json(['message' => $e->getMessage(), 'reason' => $e->reason], $e->status()));
         }
 
         // Project meta
@@ -159,10 +208,9 @@ class ProjectController extends Controller
                 default => null,
             };
         }
-
-        // Write-only secret variables (docs/security.md); they reach the workload with the next deploy
-        if ($secretEnv && $project->isSupportedType()) {
-            ProjectSecretWriter::apply($project, $secretEnv, $request->user()->id);
+        // after the config: a trigger_type schedule set with it made the schedule trigger
+        if ($scheduleZone !== false && $project->isSupportedType()) {
+            app(ProjectTriggers::class)->setScheduleTimezone($project, $scheduleZone);
         }
 
         $project->load([
@@ -180,6 +228,24 @@ class ProjectController extends Controller
         }
 
         return new ProjectResource($project);
+    }
+
+    /**
+     * Remove config.schedule_timezone from validated input: it is no column of the config row but
+     * the zone of the project's schedule trigger (ProjectTriggers::setScheduleTimezone).
+     *
+     * @param  array<string, mixed>  $data
+     * @return string|null|false the zone, null for the organization's, false when not sent
+     */
+    private static function takeScheduleTimezone(array &$data): string|null|false
+    {
+        if (! is_array($data['config'] ?? null) || ! array_key_exists('schedule_timezone', $data['config'])) {
+            return false;
+        }
+        $zone = $data['config']['schedule_timezone'];
+        unset($data['config']['schedule_timezone']);
+
+        return is_string($zone) && trim($zone) !== '' ? trim($zone) : null;
     }
 
     /**

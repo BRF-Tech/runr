@@ -97,10 +97,39 @@ type BindingAttachment struct {
 	// EnvPrefix is put in front of every variable name (ORDERS_ → ORDERS_DATABASE_URL).
 	EnvPrefix string `json:"env_prefix"`
 	// EnvNames are the variables the project gets from this attachment.
-	EnvNames  []string `json:"env_names,omitempty"`
-	CreatedAt string   `json:"created_at,omitempty"`
-	Binding   *Binding `json:"binding,omitempty"`
+	EnvNames []string `json:"env_names,omitempty"`
+	// CredentialMode is "static" (the binding's own user) or "dynamic" (a Postgres user of the
+	// attachment's own from the region's OpenBao); empty on APIs before dynamic credentials.
+	CredentialMode string `json:"credential_mode,omitempty"`
+	// EnvironmentID and Environment name the environment of the project the binding is attached
+	// to (docs/environments.md#bindings); empty: the project's own workload (production).
+	EnvironmentID string   `json:"environment_id,omitempty"`
+	Environment   string   `json:"environment,omitempty"`
+	CreatedAt     string   `json:"created_at,omitempty"`
+	Binding       *Binding `json:"binding,omitempty"`
 }
+
+// EnvironmentName is the name of the environment the attachment belongs to: PrimaryEnvironment
+// for the project's own workload, the environment's id when the API sent no name.
+func (a *BindingAttachment) EnvironmentName() string {
+	switch {
+	case a.EnvironmentID == "":
+		return PrimaryEnvironment
+	case a.Environment != "":
+		return a.Environment
+	default:
+		return a.EnvironmentID
+	}
+}
+
+// Credentials of an attachment (docs/bindings.md, "Dynamic credentials").
+const (
+	CredentialsStatic  = "static"
+	CredentialsDynamic = "dynamic"
+)
+
+// Dynamic reports whether the attachment gets dynamic Postgres credentials.
+func (a *BindingAttachment) Dynamic() bool { return a != nil && a.CredentialMode == CredentialsDynamic }
 
 // ProjectName returns the attached project's name, else its id.
 func (a *BindingAttachment) ProjectName() string {
@@ -475,14 +504,25 @@ func (c *Client) WaitBinding(ctx context.Context, b *Binding, opts WaitOptions) 
 	}
 }
 
-// ProjectBindings returns the bindings attached to a project and those that can be attached.
+// ProjectBindings returns the bindings attached to a project — to its own workload and to each of
+// its environments — and those that can be attached.
 func (c *Client) ProjectBindings(ctx context.Context, projectID string) (*ProjectBindings, error) {
+	return c.ProjectEnvironmentBindings(ctx, projectID, "")
+}
+
+// ProjectEnvironmentBindings returns the bindings attached to one environment of the project (name
+// or id; "" every attachment of the project) and those that can still be attached to it (in the
+// region it runs in). Secret is the environment's bindings Secret.
+func (c *Client) ProjectEnvironmentBindings(ctx context.Context, projectID, environment string) (*ProjectBindings, error) {
 	var out struct {
 		Data      []BindingAttachment `json:"data"`
 		Available json.RawMessage     `json:"available"`
 		Secret    string              `json:"secret"`
 	}
-	if err := c.do(ctx, request{method: http.MethodGet, path: "/projects/" + projectID + "/bindings"}, &out); err != nil {
+	if err := c.do(ctx, request{method: http.MethodGet, path: "/projects/" + projectID + "/bindings", query: environmentQuery(environment)}, &out); err != nil {
+		if environment != "" {
+			return nil, environmentErr(err, environment)
+		}
 		return nil, err
 	}
 	res := &ProjectBindings{Attachments: out.Data, Secret: out.Secret}
@@ -503,7 +543,13 @@ func (c *Client) ProjectBindings(ctx context.Context, projectID string) (*Projec
 // FindAttachment returns the attachment of a binding (id or name) to a project, or the
 // attachment with that id.
 func (c *Client) FindAttachment(ctx context.Context, projectID, ref string) (*BindingAttachment, error) {
-	pb, err := c.ProjectBindings(ctx, projectID)
+	return c.FindEnvironmentAttachment(ctx, projectID, "", ref)
+}
+
+// FindEnvironmentAttachment is FindAttachment among the attachments of one environment of the
+// project ("" every attachment of the project).
+func (c *Client) FindEnvironmentAttachment(ctx context.Context, projectID, environment, ref string) (*BindingAttachment, error) {
+	pb, err := c.ProjectEnvironmentBindings(ctx, projectID, environment)
 	if err != nil {
 		return nil, err
 	}
@@ -537,6 +583,13 @@ type AttachBindingInput struct {
 	Binding   *CreateBindingInput `json:"binding,omitempty"`
 	// EnvPrefix (upper case, ends with _) is put in front of every variable name.
 	EnvPrefix string `json:"env_prefix,omitempty"`
+	// Credentials is "dynamic" for a Postgres user of the attachment's own from the region's
+	// OpenBao (the binding must be ready, the region must run OpenBao); empty or "static": the
+	// binding's own user.
+	Credentials string `json:"credentials,omitempty"`
+	// Environment (name or id) attaches the binding to that environment of the project instead
+	// of its own workload; a new binding is created in the region the environment runs in.
+	Environment string `json:"environment,omitempty"`
 }
 
 // AttachBinding attaches a binding to a project (or creates and attaches one). The project's
@@ -551,6 +604,9 @@ func (c *Client) AttachBinding(ctx context.Context, projectID string, in AttachB
 		Data BindingAttachment `json:"data"`
 	}
 	if err := c.do(ctx, request{method: http.MethodPost, path: "/projects/" + projectID + "/bindings", body: in}, &out); err != nil {
+		if in.Environment != "" {
+			return nil, environmentErr(err, in.Environment)
+		}
 		return nil, err
 	}
 	return &out.Data, nil
@@ -563,6 +619,20 @@ func (c *Client) UpdateAttachment(ctx context.Context, projectID, attachmentID, 
 	}
 	err := c.do(ctx, request{method: http.MethodPatch, path: "/projects/" + projectID + "/bindings/" + seg(attachmentID),
 		body: map[string]string{"env_prefix": envPrefix}}, &out)
+	if err != nil {
+		return nil, err
+	}
+	return &out.Data, nil
+}
+
+// SetAttachmentCredentials switches an attachment between the binding's own user ("static") and a
+// Postgres user of its own from the region's OpenBao ("dynamic"); its env prefix stays.
+func (c *Client) SetAttachmentCredentials(ctx context.Context, projectID, attachmentID, mode string) (*BindingAttachment, error) {
+	var out struct {
+		Data BindingAttachment `json:"data"`
+	}
+	err := c.do(ctx, request{method: http.MethodPatch, path: "/projects/" + projectID + "/bindings/" + seg(attachmentID),
+		body: map[string]string{"credentials": mode}}, &out)
 	if err != nil {
 		return nil, err
 	}

@@ -84,6 +84,7 @@ class Binding extends Model
         'delete_requested_at',
         'purge_at',
         'created_by',
+        'replication',
     ];
 
     protected $casts = [
@@ -91,6 +92,8 @@ class Binding extends Model
         // Secret columns (App\Support\Secrets\SecretColumns, docs/security.md)
         'credentials' => Encrypted::class.':array',
         'previous_credentials' => Encrypted::class.':array',
+        // the data link of a binding of a global project (docs/global-projects.md, "Data")
+        'replication' => Encrypted::class.':array',
         'usage_bytes' => 'integer',
         'usage_measured_at' => 'datetime',
         'rotated_at' => 'datetime',
@@ -98,7 +101,7 @@ class Binding extends Model
         'purge_at' => 'datetime',
     ];
 
-    protected $hidden = ['credentials', 'previous_credentials'];
+    protected $hidden = ['credentials', 'previous_credentials', 'replication'];
 
     protected $attributes = [
         'plan' => self::PLAN_SHARED,
@@ -113,6 +116,17 @@ class Binding extends Model
     public function region(): BelongsTo
     {
         return $this->belongsTo(KnativeRegion::class, 'knative_region_id');
+    }
+
+    /**
+     * The regions a binding of a global project is reached from besides its own (docs/
+     * global-projects.md, "Data"): replica clusters and data links.
+     *
+     * @return HasMany<BindingReplica, $this>
+     */
+    public function replicas(): HasMany
+    {
+        return $this->hasMany(BindingReplica::class)->orderBy('created_at');
     }
 
     public function setting(string $key, mixed $default = null): mixed

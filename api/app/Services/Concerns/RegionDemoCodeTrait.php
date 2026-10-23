@@ -84,7 +84,8 @@ exports.handler = async (event, context) => {
       const payload = event;
       const backendRes = await fetch(BACKEND, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        // the backend admits the frontend on the region's internal network by this token
+        headers: { 'Content-Type': 'application/json', 'X-Runr-Internal-Token': process.env.RUNR_INTERNAL_TOKEN || '' },
         body: JSON.stringify(payload),
       });
       const result = await backendRes.json();

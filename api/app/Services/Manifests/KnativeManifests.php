@@ -20,7 +20,10 @@ class KnativeManifests
             'app.kubernetes.io/managed-by' => 'runr',
             'runr/project-id' => $project->id,
             'runr/version' => (string) $version->number,
-        ], self::extraLabels($project));
+        ], $project->isGlobal() ? [
+            // the region agent answers the global health checks for these only (docs/global-projects.md)
+            'runr/global-project' => 'true',
+        ] : [], self::extraLabels($project));
     }
 
     /**
@@ -90,6 +93,10 @@ class KnativeManifests
         ];
     }
 
+    /**
+     * @param  string|null  $timeZone  IANA zone of the schedule (spec.timeZone); null: the
+     *                                 controller's zone (what a CronJob without one runs in)
+     */
     public static function cronJob(
         string $cronJobName,
         string $namespace,
@@ -99,6 +106,7 @@ class KnativeManifests
         array $podSpec,
         Project $project,
         Version $version,
+        ?string $timeZone = null,
     ): array {
         return [
             'apiVersion' => 'batch/v1',
@@ -109,8 +117,10 @@ class KnativeManifests
                 'labels' => $labels,
                 'annotations' => $annotations,
             ],
-            'spec' => [
+            'spec' => array_filter([
                 'schedule' => $schedule,
+                'timeZone' => $timeZone,
+            ], fn ($v) => $v !== null) + [
                 'concurrencyPolicy' => 'Forbid',
                 'jobTemplate' => [
                     'spec' => [

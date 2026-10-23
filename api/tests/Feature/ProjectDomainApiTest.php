@@ -350,13 +350,34 @@ class ProjectDomainApiTest extends TestCase
             "PATCH /apis/traefik.io/v1alpha1/namespaces/fn/ingressroutes/{$name}-tls",
         ], $this->writes());
 
+        // not deployed yet: the project's default host; the public route on web serves it
         $mw = $this->bodies["PATCH /apis/traefik.io/v1alpha1/namespaces/fn/middlewares/{$name}"];
-        $this->assertSame('shop.fn.svc', $mw['spec']['headers']['customRequestHeaders']['Host']);
+        $this->assertSame('shop.eu.runr.test', $mw['spec']['headers']['customRequestHeaders']['Host']);
+        $this->assertSame('shop', $mw['metadata']['annotations']['runr.dev/service']);
 
         $tlsRoute = $this->bodies["PATCH /apis/traefik.io/v1alpha1/namespaces/fn/ingressroutes/{$name}-tls"];
         $this->assertSame(['websecure'], $tlsRoute['spec']['entryPoints']);
         $this->assertSame([], $tlsRoute['spec']['tls'], 'No certificate: region default');
         $this->assertSame('knative-serving', $tlsRoute['spec']['routes'][0]['services'][0]['namespace']);
+        $this->assertSame('traefik', $tlsRoute['spec']['routes'][0]['services'][0]['name']);
+    }
+
+    public function test_the_route_follows_the_public_url_of_the_deployed_service(): void
+    {
+        $project = $this->project();
+        $domain = $this->addDomain($project);
+        $this->publishDns($domain);
+        $name = $this->resName($project);
+        // e.g. an organization's own domain (config-domain selects its services)
+        $this->responses['GET /apis/serving.knative.dev/v1/namespaces/fn/services/shop'] = [200, ['status' => ['url' => 'https://shop.eu.acme.test']]];
+
+        $this->actingAs($this->user(), 'sanctum')
+            ->postJson($this->url($project, "/{$domain->id}/verify"))
+            ->assertOk()
+            ->assertJsonPath('data.status', 'active');
+
+        $mw = $this->bodies["PATCH /apis/traefik.io/v1alpha1/namespaces/fn/middlewares/{$name}"];
+        $this->assertSame('shop.eu.acme.test', $mw['spec']['headers']['customRequestHeaders']['Host']);
     }
 
     public function test_an_a_record_to_the_region_external_ip_also_verifies(): void

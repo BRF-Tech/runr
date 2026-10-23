@@ -2,12 +2,14 @@ package provider
 
 import (
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
 	"github.com/hashicorp/terraform-plugin-testing/plancheck"
 	"github.com/hashicorp/terraform-plugin-testing/terraform"
 
+	"github.com/brf-tech/runr/cli/pkg/runr"
 	"github.com/brf-tech/runr/cli/pkg/runr/runrtest"
 )
 
@@ -193,6 +195,113 @@ resource "runr_project" "bad" {
   ` + body + `
 }
 `,
+				ExpectError: phrase(want),
+			}},
+		})
+	}
+}
+
+func warmProject(srv *runrtest.Server, schedule string) string {
+	return providerBlock(srv) + fmt.Sprintf(`
+resource "runr_project" "office" {
+  name      = "office"
+  type      = "faas"
+  runtime   = "python"
+  region_id = data.runr_region.eu.id
+
+  scale = {
+    max = 5
+  }
+  %s
+}
+`, schedule)
+}
+
+// serverSchedule checks the timed warmer the fake API holds for a project.
+func serverSchedule(srv *runrtest.Server, name, want string) resource.TestCheckFunc {
+	return func(*terraform.State) error {
+		p, ok := srv.Project(name)
+		if !ok {
+			return fmt.Errorf("project %s not on the API", name)
+		}
+		if got := runr.ScaleScheduleLabel(p.Config.ScaleSchedule); got != want {
+			return fmt.Errorf("server schedule %q, want %q", got, want)
+		}
+		return nil
+	}
+}
+
+func TestProjectTimedWarmer(t *testing.T) {
+	srv := fake(t)
+	resource.UnitTest(t, resource.TestCase{
+		ProtoV6ProviderFactories: providerFactories(),
+		CheckDestroy:             projectGone(srv, "office"),
+		Steps: []resource.TestStep{
+			{
+				Config: warmProject(srv, `scale_schedule = [
+    { cron = "0 9 * * 1-5", min_scale = 3 },
+    { cron = "0 18 * * 1-5", min_scale = 0 },
+  ]`),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttr("runr_project.office", "scale_schedule.#", "2"),
+					resource.TestCheckResourceAttr("runr_project.office", "scale_schedule.0.cron", "0 9 * * 1-5"),
+					resource.TestCheckResourceAttr("runr_project.office", "scale_schedule.0.min_scale", "3"),
+					serverSchedule(srv, "office", "0 9 * * 1-5 → 3, 0 18 * * 1-5 → 0"),
+				),
+			},
+			{
+				// Another row set: changed in place
+				Config: warmProject(srv, `scale_schedule = [{ cron = "30 8 * * *", min_scale = 2 }]`),
+				ConfigPlanChecks: resource.ConfigPlanChecks{PreApply: []plancheck.PlanCheck{
+					plancheck.ExpectResourceAction("runr_project.office", plancheck.ResourceActionUpdate),
+				}},
+				Check: serverSchedule(srv, "office", "30 8 * * * → 2"),
+			},
+			{
+				ResourceName:      "runr_project.office",
+				ImportState:       true,
+				ImportStateId:     "office",
+				ImportStateVerify: true,
+			},
+			{
+				// Left out: the project's schedule stays as it is
+				Config: warmProject(srv, ""),
+				ConfigPlanChecks: resource.ConfigPlanChecks{PreApply: []plancheck.PlanCheck{
+					plancheck.ExpectEmptyPlan(),
+				}},
+				Check: serverSchedule(srv, "office", "30 8 * * * → 2"),
+			},
+			{
+				// []: the warmer is off
+				Config: warmProject(srv, `scale_schedule = []`),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttr("runr_project.office", "scale_schedule.#", "0"),
+					serverSchedule(srv, "office", ""),
+				),
+			},
+			{
+				Config:   warmProject(srv, `scale_schedule = []`),
+				PlanOnly: true,
+			},
+		},
+	})
+}
+
+func TestProjectTimedWarmerValidation(t *testing.T) {
+	srv := fake(t)
+	cases := map[string]string{
+		`scale_schedule = [{ cron = "0 9 * * 1-5", min_scale = 6 }]`:                              "scale.max is 5",
+		`scale_schedule = [{ cron = "0 9 * * 1-5", min_scale = 11 }]`:                             "must be between 0 and 10",
+		`scale_schedule = [{ cron = "0  9 * * 1-5", min_scale = 1 }]`:                             "five cron fields",
+		`scale_schedule = [{ cron = "0 0 9 * * 1-5", min_scale = 1 }]`:                            "five cron fields",
+		`scale_schedule = [{ cron = "@daily", min_scale = 1 }]`:                                   "five cron fields",
+		`scale_schedule = [` + strings.Repeat(`{ cron = "0 9 * * *", min_scale = 1 },`, 11) + `]`: "at most 10",
+	}
+	for body, want := range cases {
+		resource.UnitTest(t, resource.TestCase{
+			ProtoV6ProviderFactories: providerFactories(),
+			Steps: []resource.TestStep{{
+				Config:      warmProject(srv, body),
 				ExpectError: phrase(want),
 			}},
 		})

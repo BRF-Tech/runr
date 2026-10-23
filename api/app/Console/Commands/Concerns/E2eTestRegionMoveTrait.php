@@ -9,6 +9,8 @@ use App\Models\Observability\RegionTracingConfig;
 use App\Models\Project;
 use App\Models\QueuedDeploy;
 use App\Models\Version;
+use App\Services\Helpers\KubeQuantity;
+use App\Services\KnativeNodeService;
 use App\Services\KubernetesClient;
 use App\Services\Projects\QueuedDeploys;
 use App\Services\RegionMigrateService;
@@ -50,8 +52,12 @@ use Symfony\Component\Yaml\Yaml;
  *                         credentials — is put on B first): kubeconfig, external address, registry
  *                         address and every other RegionMigrateService::CLUSTER_STATE column
  *                         (dedicated workers, Knative / Redis install state, the agent's token, …)
- *                         and the tracing backend's status are what they were before the move; the
- *                         answer says the projects leave B in the background
+ *                         and the tracing backend's status are what they were right before the move
+ *                         (after rm-sec-setup); the region capacity, which is live (A's nodes minus
+ *                         the platform pods' requests, the region's OpenBao and External Secrets
+ *                         Operator included), is the one measured then, and A's nodes still leave
+ *                         as much for projects (nothing the move or the rollback put on A counts);
+ *                         the answer says the projects leave B in the background
  *  - rm-rollback-builds   the build still running on B ends cancelled with BUILD_CANCELLED and its
  *                         Kaniko Job and source ConfigMap leave B; v1 of rm-built runs from its image
  *                         in A's registry again
@@ -65,6 +71,12 @@ use Symfony\Component\Yaml\Yaml;
  *                         the move installed (Knative Serving, the Zot registry); the operator's
  *                         notification says the two workloads were removed
  *  - rm-rollback-report   migration-status: no move, A's address, no project rows
+ *
+ * The projects' secret values (E2eTestRegionMoveSecretsTrait), on a fourth project rm-secrets:
+ * rm-sec-setup before the move (a value in the region's Secret, a reference to a store, a value in
+ * the region's OpenBao), rm-move-secrets and rm-secrets-on-b while the region runs on B (copied
+ * there; values set meanwhile are on B only), rm-rollback-secrets and rm-rollback-secrets-left after
+ * the rollback (copied back to A, gone from B and its OpenBao).
  *
  * Not on Kind: the DNS cut-over. The status check resolves dns-check.<function domain>, which no
  * record points at B here; as the base suite's Cluster Migration step, the move is taken out of
@@ -123,8 +135,10 @@ PY;
         }
         unset($test);
 
-        $names = ['rm-move', 'rm-move-rebuilt', 'rm-move-report', 'rm-move-serves', 'rm-stop-on-b', 'rm-build-on-b',
-            'rm-rollback', 'rm-rollback-builds', 'rm-rollback-serves', 'rm-rollback-metered', 'rm-rollback-left', 'rm-rollback-report'];
+        $names = ['rm-sec-setup', 'rm-move', 'rm-move-rebuilt', 'rm-move-report', 'rm-move-serves', 'rm-move-secrets', 'rm-secrets-on-b',
+            'rm-stop-on-b', 'rm-build-on-b', 'rm-rollback', 'rm-rollback-builds', 'rm-rollback-serves', 'rm-rollback-secrets',
+            'rm-rollback-metered', 'rm-rollback-left', 'rm-rollback-secrets-left', 'rm-rollback-report'];
+        $after = fn (string $name): array => array_slice($names, (int) array_search($name, $names, true) + 1);
         $built = Version::query()->find($tests[0]['versionId']);
         $registryA = rtrim((string) $region->registry_address, '/');
         if (array_filter($tests, fn (array $t) => $t['steps']['verify'] !== true) || ! $built) {
@@ -136,7 +150,8 @@ PY;
             return array_merge($tests, array_map(fn (string $name) => $this->rmSkip($name), $names));
         }
 
-        // What the region holds for A, right before the move; the checks add what they learn
+        // What the region holds for A; the checks add what they learn (stateA: rmStateA(), right
+        // before the move)
         /** @var array<string, mixed> $c */
         $c = [
             'regionId' => $regionId,
@@ -148,7 +163,6 @@ PY;
             'ipA' => (string) $region->external_ip,
             'registryA' => $registryA,
             'imageA' => (string) $built->build_image,
-            'stateA' => $this->rmClusterState($region),
             'built' => $tests[0],
             'caas' => $tests[1],
             'stopped' => $tests[2],
@@ -162,30 +176,50 @@ PY;
                 return $this->{$method}($c);
             });
         };
+        // The secret cases (E2eTestRegionMoveSecretsTrait) run once rm-sec-setup made rm-secrets
+        // ready on A; otherwise they are skipped and the rest of the suite goes on without it
+        $secretCheck = function (string $name, string $method) use (&$c, $check): array {
+            return empty($c['secretsReady']) ? $this->rmSkip($name) : $check($name, $method);
+        };
 
-        $tests[] = $move = $check('rm-move', 'rmMove');
-        if ($move['steps']['verify'] !== true) {
-            return array_merge($tests, array_map(fn (string $name) => $this->rmSkip($name), array_slice($names, 1)));
+        try {
+            $tests[] = $check('rm-sec-setup', 'rmSecSetup');
+            if (empty($c['secretsReady'])) {
+                $this->rmSecretsAside($c);
+            }
+
+            $this->rmStateA($c);
+            $tests[] = $move = $check('rm-move', 'rmMove');
+            if ($move['steps']['verify'] !== true) {
+                return array_merge($tests, array_map(fn (string $name) => $this->rmSkip($name), $after('rm-move')));
+            }
+            $tests[] = $check('rm-move-rebuilt', 'rmMoveRebuilt');
+            $tests[] = $check('rm-move-report', 'rmMoveReport');
+            $tests[] = $check('rm-move-serves', 'rmMoveServes');
+            // before rm-build-on-b cordons B: the function may need a new pod there
+            $tests[] = $secretCheck('rm-move-secrets', 'rmMoveSecrets');
+            $tests[] = $secretCheck('rm-secrets-on-b', 'rmSecretsOnB');
+            $tests[] = $check('rm-stop-on-b', 'rmStopOnB');
+            $tests[] = $check('rm-build-on-b', 'rmBuildOnB');
+
+            $tests[] = $check('rm-rollback', 'rmRollback');
+            if (! isset($c['rolledBackAt'])) {
+                $this->rmUncordon($c);
+
+                return array_merge($tests, array_map(fn (string $name) => $this->rmSkip($name), $after('rm-rollback')));
+            }
+            $tests[] = $check('rm-rollback-builds', 'rmRollbackBuilds');
+            $tests[] = $check('rm-rollback-serves', 'rmRollbackServes');
+            $tests[] = $secretCheck('rm-rollback-secrets', 'rmRollbackSecrets');
+            $tests[] = $check('rm-rollback-metered', 'rmRollbackMetered');
+            $tests[] = $check('rm-rollback-left', 'rmRollbackLeft');
+            $tests[] = $secretCheck('rm-rollback-secrets-left', 'rmRollbackSecretsLeft');
+            $tests[] = $check('rm-rollback-report', 'rmRollbackReport');
+
+            return $tests;
+        } finally {
+            $this->rmSecretsCleanup($c);
         }
-        $tests[] = $check('rm-move-rebuilt', 'rmMoveRebuilt');
-        $tests[] = $check('rm-move-report', 'rmMoveReport');
-        $tests[] = $check('rm-move-serves', 'rmMoveServes');
-        $tests[] = $check('rm-stop-on-b', 'rmStopOnB');
-        $tests[] = $check('rm-build-on-b', 'rmBuildOnB');
-
-        $tests[] = $check('rm-rollback', 'rmRollback');
-        if (! isset($c['rolledBackAt'])) {
-            $this->rmUncordon($c);
-
-            return array_merge($tests, array_map(fn (string $name) => $this->rmSkip($name), array_slice($names, 7)));
-        }
-        $tests[] = $check('rm-rollback-builds', 'rmRollbackBuilds');
-        $tests[] = $check('rm-rollback-serves', 'rmRollbackServes');
-        $tests[] = $check('rm-rollback-metered', 'rmRollbackMetered');
-        $tests[] = $check('rm-rollback-left', 'rmRollbackLeft');
-        $tests[] = $check('rm-rollback-report', 'rmRollbackReport');
-
-        return $tests;
     }
 
     /** @return list<array{name: string, content: string}> */
@@ -199,6 +233,62 @@ PY;
 
     // ── The move ──
 
+    /**
+     * What a move that did not reach dns_check did: the API's log lines since it started (the
+     * RegionMigrate steps, the installs on B, the jobs' errors and timeouts — the log is in this
+     * container) and the pods on B that are not running or not ready.
+     */
+    private function rmMoveDiagnostics(array $c, int $started): void
+    {
+        $this->line('    ── the move\'s log since it started (RegionMigrate, installs, errors) ──');
+        $files = glob(storage_path('logs/laravel*.log')) ?: [];
+        usort($files, fn ($a, $b) => filemtime($a) <=> filemtime($b));
+        $since = date('Y-m-d H:i:s', $started - 5); // the log's time: the app's time zone
+        $lines = [];
+        foreach ($files as $file) {
+            foreach (file($file, FILE_IGNORE_NEW_LINES) ?: [] as $line) {
+                if (! preg_match('/^\[(\d{4}-\d\d-\d\d \d\d:\d\d:\d\d)\]/', $line, $m) || $m[1] < $since) {
+                    continue;
+                }
+                if (preg_match('/RegionMigrate|MigrateRegion|\.ERROR|\.WARNING|Zot|registry|pre-pull|Knative|OpenBao|External Secrets|cert-manager|timed out/i', $line)) {
+                    $lines[] = mb_substr($line, 0, 400);
+                }
+            }
+        }
+        foreach (array_slice($lines, -60) ?: ['(no log lines since the move started)'] as $line) {
+            $this->line('      '.$line);
+        }
+
+        $this->line('    ── pods on B that are not running or not ready ──');
+        try {
+            $k8s = new KubernetesClient((string) $c['target']);
+            $shown = 0;
+            foreach ($k8s->listClusterResources('v1', 'Pod')['items'] ?? [] as $pod) {
+                $phase = (string) ($pod['status']['phase'] ?? '?');
+                $statuses = (array) ($pod['status']['containerStatuses'] ?? []);
+                $ready = $statuses !== [] && ! array_filter($statuses, fn ($s) => ! ($s['ready'] ?? false));
+                if ($phase === 'Succeeded' || ($phase === 'Running' && $ready)) {
+                    continue;
+                }
+                $why = [];
+                foreach ($statuses as $s) {
+                    $state = (array) ($s['state'] ?? []);
+                    $why[] = ($s['name'] ?? '?').' '.($state['waiting']['reason'] ?? $state['terminated']['reason'] ?? (isset($state['running']) ? 'running, not ready' : '?'))
+                        .' restarts '.(int) ($s['restartCount'] ?? 0);
+                }
+                $this->line('      '.($pod['metadata']['namespace'] ?? '?').'/'.($pod['metadata']['name'] ?? '?').' '.$phase.' ['.implode('; ', $why).']');
+                if (++$shown >= 40) {
+                    break;
+                }
+            }
+            if ($shown === 0) {
+                $this->line('      (every pod on B runs and is ready)');
+            }
+        } catch (\Throwable $e) {
+            $this->line('      B not read: '.mb_substr($e->getMessage(), 0, 300));
+        }
+    }
+
     private function rmMove(array &$c): bool|string
     {
         $start = $this->api()->timeout(60)->post("/api/knative-regions/{$c['regionId']}/migrate", ['kubeconfig' => $c['target']]);
@@ -207,13 +297,14 @@ PY;
         }
 
         // MigrateRegionJob: Knative Operator + Serving (with Traefik, Prometheus / Loki, the
-        // agent, the tracing backend), Redis and Zot with its image pre-pull on B, then the
-        // redeploys — minutes; the job may run 30
+        // agent, the tracing backend), Redis and Zot with its image pre-pull on B, External Secrets
+        // Operator and OpenBao; then MigrateRegionProjectsJob: the secret values, rebuilds and
+        // redeploys — minutes; each job may run 30 (and wait in the queue)
         $started = time();
         $status = null;
         $outcomes = [];
         $response = null;
-        while (time() < $started + 1920) {
+        while (time() < $started + 2 * 1800 + 300) {
             $response = $this->api()->get("/api/knative-regions/{$c['regionId']}/migration-status");
             if ($response->json('migration_status') !== $status) {
                 $status = $response->json('migration_status');
@@ -226,8 +317,10 @@ PY;
             sleep(10);
         }
         if ($status !== 'dns_check') {
+            $this->rmMoveDiagnostics($c, $started);
+
             return 'the move ended in '.($status ?? 'no status').' after '.(time() - $started).' s (want dns_check): '
-                .mb_substr((string) $response?->body(), 0, 600).'; the API log (api/storage/logs/laravel.log) has the "RegionMigrate" lines';
+                .mb_substr((string) $response?->body(), 0, 600).'; its log lines and B\'s pods are printed above';
         }
         $c['movedAt'] = time();
 
@@ -327,6 +420,10 @@ PY;
             $c['caas']['projectId'] => ['rm-caas', 'moved'],
             $c['stopped']['projectId'] => ['rm-stopped', 'moved'],
         ];
+        // rm-secrets runs on A unless rm-sec-setup put it aside (stopped: the move does not deploy it)
+        if (isset($c['secrets'])) {
+            $want[$c['secrets']['projectId']] = ['rm-secrets', 'moved'];
+        }
 
         // A moved deployment starts pending: every row final
         $deadline = time() + 300;
@@ -465,6 +562,10 @@ PY;
         if (! $planted) {
             unset($c['bindingsSecret']);
         }
+        // The project workloads the rollback removes from B: rm-built's and rm-caas's Knative
+        // Services (rm-stopped's left B with its stop), and rm-secrets' when the move deployed it
+        $c['leftWorkloads'] = 2 + (isset($c['secrets'])
+            && $c['b']->getResourceStatus('serving.knative.dev/v1', 'Service', $c['secrets']['slug'], $c['namespace']) !== null ? 1 : 0);
 
         $at = now()->subSecond();
         $began = microtime(true);
@@ -493,6 +594,22 @@ PY;
         foreach ($c['stateA'] as $column => $before) {
             if (($now[$column] ?? null) !== $before) {
                 $problems[] = "{$column} is ".mb_substr((string) ($now[$column] ?? 'null'), 0, 120).' (before the move: '.mb_substr((string) $before, 0, 120).')';
+            }
+        }
+
+        // The capacity is live: A's nodes must still leave as much for projects as before the
+        // move — less is a pod the move or the rollback put on A (RunR workloads do not count)
+        if (! empty($c['capacityA'])) {
+            $k8s = new KubernetesClient((string) $region->kubeconfig);
+            $live = app(KnativeNodeService::class)->regionCapacity($region, $k8s);
+            $before = $c['capacityA'];
+            if ($live === null) {
+                $problems[] = 'A\'s capacity could not be measured after the rollback (nodes or pods not listed)';
+            } elseif ($live['total_cpu_m'] < $before['total_cpu_m'] || $live['total_memory_mb'] < $before['total_memory_mb']) {
+                $added = array_diff_key(self::rmPlatformPods($k8s), (array) ($c['platformPodsA'] ?? []));
+                $problems[] = "A's nodes leave {$live['total_cpu_m']} m CPU / {$live['total_memory_mb']} MiB for projects after the rollback"
+                    ." (before the move: {$before['total_cpu_m']} m / {$before['total_memory_mb']} MiB); platform pods on A that were not there before the move: "
+                    .($added === [] ? 'none' : mb_substr(implode(', ', array_map(fn ($pod, $requests) => "{$pod} ({$requests})", array_keys($added), $added)), 0, 600));
             }
         }
 
@@ -638,7 +755,8 @@ PY;
             $problems[] = "B's registry namespace {$registryNs} runs no pod";
         }
 
-        // The operator who rolled back is told what left B (two Knative Services: rm-built, rm-caas)
+        // The operator who rolled back is told what left B (the Knative Services of rm-built,
+        // rm-caas and rm-secrets: leftWorkloads, counted by rm-rollback)
         $notice = null;
         $deadline = time() + 60;
         do {
@@ -649,7 +767,7 @@ PY;
             }
             sleep(5);
         } while (time() < $deadline);
-        $want = "Left cluster cleanup of {$region->name}: removed 2 project workloads";
+        $want = "Left cluster cleanup of {$region->name}: removed ".($c['leftWorkloads'] ?? 2).' project workloads';
         if (! $notice || $notice->title !== $want) {
             $problems[] = 'notification: '.($notice ? json_encode($notice->only(['type', 'title', 'body'])) : 'none')." (want \"{$want}\")";
         } else {
@@ -729,6 +847,53 @@ PY;
     {
         return Deployment::query()->where('project_id', $projectId)->whereIn('status', Deployment::LIVE)
             ->latest('created_at')->get()->toBase();
+    }
+
+    /**
+     * What the region holds for A right before the move, which the move saves for the rollback
+     * (stateA) — after rm-sec-setup: the region's External Secrets Operator and OpenBao run on A
+     * by then. The region capacity is live (A's nodes minus the requests of the platform pods,
+     * those installs' included; the status check refreshes it every minute): it is measured now,
+     * as that check does, so the value the move saves is A as the move finds it, not one from
+     * before the installs. A's platform pods are kept to name what the move or the rollback adds.
+     */
+    private function rmStateA(array &$c): void
+    {
+        $region = KnativeRegion::query()->findOrFail($c['regionId']);
+        try {
+            $k8s = new KubernetesClient((string) $region->kubeconfig);
+            $c['capacityA'] = app(KnativeNodeService::class)->refreshSchedulableCapacity($region, $k8s);
+            $c['platformPodsA'] = self::rmPlatformPods($k8s);
+        } catch (\Throwable $e) {
+            $this->line('    A\'s capacity not measured before the move: '.mb_substr($e->getMessage(), 0, 200));
+        }
+        $region->refresh();
+        $c['stateA'] = $this->rmClusterState($region);
+        $this->line("    A before the move: {$region->total_cpu_m} m CPU / {$region->total_memory_mb} MiB for projects"
+            .(empty($c['capacityA']) ? ' (stored; not measured)' : ', '.count((array) ($c['platformPodsA'] ?? [])).' platform pods with requests'));
+    }
+
+    /**
+     * The pods of a cluster that count against the region capacity (KnativeNodeService: not
+     * finished, on a node, not a RunR workload) and request something: namespace/name => requests.
+     *
+     * @return array<string, string>
+     */
+    private static function rmPlatformPods(KubernetesClient $k8s): array
+    {
+        $pods = [];
+        foreach ($k8s->listActivePods() ?? [] as $pod) {
+            if (($pod['spec']['nodeName'] ?? '') === '' || KnativeNodeService::isRunrWorkload($pod)) {
+                continue;
+            }
+            $requests = KnativeNodeService::podRequests($pod);
+            if ($requests['cpu_m'] > 0 || $requests['memory_bytes'] > 0) {
+                $pods[($pod['metadata']['namespace'] ?? '?').'/'.($pod['metadata']['name'] ?? '?')]
+                    = $requests['cpu_m'].' m, '.KubeQuantity::toMib($requests['memory_bytes']).' MiB';
+            }
+        }
+
+        return $pods;
     }
 
     /**

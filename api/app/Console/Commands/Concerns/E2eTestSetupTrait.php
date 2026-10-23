@@ -2,6 +2,7 @@
 
 namespace App\Console\Commands\Concerns;
 
+use App\Jobs\InstallRegistryAndCreateRegionJob;
 use App\Services\KubernetesClient;
 use App\Services\SupplyChain\ImageRef;
 
@@ -97,7 +98,9 @@ trait E2eTestSetupTrait
 
     private function pollRegistrySetup(string $token): ?string
     {
-        $deadline = time() + 600;
+        // as long as the setup job may run (its PVC test follows knative.registry_pvc_test_seconds)
+        $seconds = (new InstallRegistryAndCreateRegionJob($token, []))->timeout + 60;
+        $deadline = time() + $seconds;
 
         while (time() < $deadline) {
             $res = $this->api()->get("/api/registry-setup/{$token}/status");
@@ -122,7 +125,7 @@ trait E2eTestSetupTrait
             sleep(10);
         }
 
-        $this->error('  Registry setup timeout (10m)');
+        $this->error("  Registry setup timeout ({$seconds}s)");
 
         return null;
     }

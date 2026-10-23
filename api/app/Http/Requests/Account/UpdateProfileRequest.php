@@ -2,8 +2,8 @@
 
 namespace App\Http\Requests\Account;
 
+use App\Rules\UniqueIgnoringCase;
 use Illuminate\Foundation\Http\FormRequest;
-use Illuminate\Validation\Rule;
 
 class UpdateProfileRequest extends FormRequest
 {
@@ -18,8 +18,9 @@ class UpdateProfileRequest extends FormRequest
 
         return [
             'name' => 'sometimes|string|max:255',
-            'username' => ['sometimes', 'string', 'max:64', 'alpha_dash', Rule::unique('users', 'username')->ignore($userId)],
-            'email' => ['sometimes', 'email', Rule::unique('users', 'email')->ignore($userId)],
+            // alpha_dash: never "@"; unique in any letter case, as the sign-in matches (LoginIdentifier)
+            'username' => ['sometimes', 'string', 'max:64', 'alpha_dash', new UniqueIgnoringCase('users', 'username', $userId)],
+            'email' => ['sometimes', 'email', new UniqueIgnoringCase('users', 'email', $userId)],
             'bio' => 'nullable|string|max:500',
             'phone' => 'nullable|string|max:32',
         ];

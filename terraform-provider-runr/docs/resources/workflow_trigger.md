@@ -4,14 +4,14 @@ page_title: "runr_workflow_trigger Resource - runr"
 subcategory: ""
 description: |-
   One trigger of a durable workflow: an event (with an optional condition), a cron schedule or a queue stream. Exactly one of event, cron and queue is set.
-  The workflow must exist and be declared through the API (runr workflows declare, PUT /api/projects/{project}/workflows) or by runr.workflows.json; the resource adds its trigger to the definition and leaves the definition's other triggers and options as they are. Workflows whose definitions the function's SDK reports get their triggers from the code: change them there.
+  The workflow must exist and be declared through the API (runr_workflow without triggers, runr workflows declare, PUT /api/projects/{project}/workflows) or by runr.workflows.json; the resource adds its trigger to the definition and leaves the definition's other triggers and options as they are (PUT /api/projects/{project}/workflows/{workflow}: the project's other definitions are not touched). Workflows whose definitions the function's SDK reports get their triggers from the code: change them there.
 ---
 
 # runr_workflow_trigger (Resource)
 
 One trigger of a durable workflow: an event (with an optional condition), a cron schedule or a queue stream. Exactly one of `event`, `cron` and `queue` is set.
 
-The workflow must exist and be declared through the API (`runr workflows declare`, `PUT /api/projects/{project}/workflows`) or by `runr.workflows.json`; the resource adds its trigger to the definition and leaves the definition's other triggers and options as they are. Workflows whose definitions the function's SDK reports get their triggers from the code: change them there.
+The workflow must exist and be declared through the API (`runr_workflow` without `triggers`, `runr workflows declare`, `PUT /api/projects/{project}/workflows`) or by `runr.workflows.json`; the resource adds its trigger to the definition and leaves the definition's other triggers and options as they are (`PUT /api/projects/{project}/workflows/{workflow}`: the project's other definitions are not touched). Workflows whose definitions the function's SDK reports get their triggers from the code: change them there.
 
 ## Example Usage
 

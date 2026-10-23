@@ -129,7 +129,9 @@ class SandboxExecSocket
             'stdinOpen' => true,
             'config' => $config,
             'tty' => $tty,
-            'pid' => proc_get_status($process)['pid'],
+            'pid' => ($started = proc_get_status($process))['pid'],
+            // PHP 8.2 reports an exit code once: a command that ended before this read keeps it here
+            'exitCode' => $started['running'] ? null : (int) $started['exitcode'],
             // TTY: input waits until the wrapper reported the terminal ready
             'ready' => false,
             'markerSeen' => false,
@@ -182,7 +184,8 @@ class SandboxExecSocket
         $ctx->timer = $loop->addPeriodicTimer(0.1, function () use ($connection, $ctx, $loop) {
             $status = proc_get_status($ctx->process);
             if (! $status['running']) {
-                $this->finish($connection, $ctx, $loop, (int) $status['exitcode']);
+                $code = (int) $status['exitcode'];
+                $this->finish($connection, $ctx, $loop, $code === -1 && $ctx->exitCode !== null ? $ctx->exitCode : $code);
 
                 return;
             }

@@ -24,7 +24,7 @@ class ProjectGet extends Tool
 
     public function description(): string
     {
-        return 'Shows one project: type, runtime, region, URL, trigger, size and scaling, the names of its environment variables (values with env_list), its latest version and deployment status, and whether it is a hosted MCP server.';
+        return 'Shows one project: type, runtime, region, URL, trigger, size and scaling (with the timed warmer\'s schedule and the warm container count it last applied), the names of its environment variables (values with env_list), its latest version and deployment status, its runtime patch state (runtime_patches_get has the details) and whether it is a hosted MCP server.';
     }
 
     public function inputSchema(): array
@@ -68,14 +68,27 @@ class ProjectGet extends Tool
                 'scale_to_zero' => $config['scale_to_zero'] ?? null,
                 'min_scale' => $config['min_scale'] ?? null,
                 'max_scale' => $config['max_scale'] ?? null,
+                // Timed warmer: [{cron, min_scale}] in the organization's time zone
+                'scale_schedule' => $config['scale_schedule'] ?? null,
                 'gpu' => $config['gpu'] ?? null,
             ]),
+            // What the timed warmer last applied to the running workload: {applied, applied_at}
+            'warm_scale' => $project['warm_scale'] ?? null,
             'env_names' => is_array($env) ? array_values(array_map('strval', array_keys($env))) : null,
             'env_hidden' => ! empty($config['env_vars_hidden']) ? true : null,
             'secret_env_names' => is_array($config['secret_env_keys'] ?? null) ? $config['secret_env_keys'] : null,
             'endpoint_type' => $project['endpoint_type'] ?? null,
             'gateway_route' => $project['gateway_route'] ?? null,
             'runtime_eol' => $project['runtime_eol'] ?? null,
+            // up_to_date | patch_available | pinned | overdue, level, deadline, current / latest tag (runtime_patches_get has the details)
+            'runtime_patch' => is_array($project['runtime_patch'] ?? null) ? array_filter([
+                'state' => $project['runtime_patch']['state'] ?? null,
+                'level' => $project['runtime_patch']['level'] ?? null,
+                'deadline_at' => $project['runtime_patch']['deadline_at'] ?? null,
+                'current' => $project['runtime_patch']['current']['tag'] ?? null,
+                'latest' => $project['runtime_patch']['latest']['tag'] ?? null,
+                'pinned' => $project['runtime_patch']['pin']['tag'] ?? $project['runtime_patch']['pin']['id'] ?? null,
+            ], fn ($v) => $v !== null) : null,
             'created_by' => $project['created_by']['name'] ?? null,
             'created_at' => $project['created_at'] ?? null,
         ]);

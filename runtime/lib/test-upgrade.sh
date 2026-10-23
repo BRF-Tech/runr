@@ -11,8 +11,14 @@
 #
 #   --from=REF     git ref of the old release (default main)
 #   --from-dir=DIR a checkout or unpacked release of the old version instead of --from
-#   --tenancy      multi-tenant install: a tenant with an owner, a "member" and a "viewer", the
-#                  projects in the tenant; the upgrade also runs the tenant migrations
+#   --tenancy      multi-tenant install: a tenant with an owner, a "member" (from 0.5.x: a
+#                  "developer") and a "viewer", the projects in the tenant; the upgrade also runs
+#                  the tenant migrations
+#
+# From a release with roles (0.5.0 and later) everybody keeps the role they had, a secret variable
+# of that release stays listed, and the region keeps its supply chain settings; from 0.4.x the
+# users become Admin (single-tenant) and the region gets the supply chain off. A new secret value
+# needs the region's cluster (pass-through), which this install does not have: 503.
 #   --keep         leave the stack and the images for a look afterwards
 #   --skip-build   reuse runr-upgrade-api:from / :to from an earlier run
 #
@@ -145,7 +151,12 @@ cmd_test_upgrade() {
     git -C "$root" archive "$from_ref" | tar -x -C "$from_tree" \
       || { echo -e "${RED}git archive ${from_ref} failed${NC}"; return 1; }
   fi
-  echo -e "${BOLD}Compose upgrade test: ${from_ref} → this checkout (tenancy: ${tenancy})${NC}"
+  # Its version: 0.5.0 and later have roles (RBAC), the secrets API and the supply chain; 0.4.x
+  # has none of them, and the upgrade turns its users and regions into what 0.5 starts from
+  local from_tag from_roles=true
+  from_tag="$(sed -n 's/^appVersion: *"\{0,1\}\([^"]*\)"\{0,1\}$/\1/p' "${from_tree}/helm/Chart.yaml" 2>/dev/null)"
+  case "$from_tag" in 0.4.*|0.3.*|"") from_roles=false ;; esac
+  echo -e "${BOLD}Compose upgrade test: ${from_ref} (${from_tag:-unknown version}) → this checkout (tenancy: ${tenancy})${NC}"
 
   if [ "$skip_build" = false ]; then
     echo "Building ${img_from} (${from_ref}) and ${img_to} (this checkout)..."
@@ -216,13 +227,24 @@ EOF
     [ -n "$tenant" ] || { echo -e "${RED}Tenant on ${from_ref}: $(_up_status) $(cat "${_UP_WORK}/body")${NC}"; return 1; }
     _up_api POST "/api/tenants/${tenant}/regions" "$admin_token" "{\"region_id\":\"${region}\",\"cpu_quota_m\":4000,\"memory_quota_mb\":8192}" >/dev/null
     _up_2xx || { echo -e "${RED}Tenant region on ${from_ref}: $(_up_status)${NC}"; return 1; }
-    _up_api POST "/api/tenants/${tenant}/users" "$admin_token" '{"email":"dana@acme-cloud.example","role":"member"}' >/dev/null
-    _up_api POST "/api/tenants/${tenant}/users" "$admin_token" '{"email":"vic@acme-cloud.example","role":"viewer"}' >/dev/null
+    # 0.4.x: the roles member and viewer, the tenant in the path; from 0.5.0 the RBAC roles
+    # developer and viewer, added in the tenant's context (its roles decide the permission)
+    local member_role=member member_tenant=""
+    [ "$from_roles" = true ] && { member_role=developer; member_tenant="$tenant"; }
+    _up_api POST "/api/tenants/${tenant}/users" "$admin_token" "{\"email\":\"dana@acme-cloud.example\",\"role\":\"${member_role}\"}" "$member_tenant" >/dev/null
+    _up_2xx || { echo -e "${RED}Tenant member dana on ${from_ref}: $(_up_status) $(cat "${_UP_WORK}/body")${NC}"; return 1; }
+    _up_api POST "/api/tenants/${tenant}/users" "$admin_token" '{"email":"vic@acme-cloud.example","role":"viewer"}' "$member_tenant" >/dev/null
+    _up_2xx || { echo -e "${RED}Tenant viewer vic on ${from_ref}: $(_up_status) $(cat "${_UP_WORK}/body")${NC}"; return 1; }
   fi
 
   dana_token="$(_up_login dana Pass-dana-12345)"
   vic_token="$(_up_login vic Pass-vic-12345)"
   [ -n "$dana_token" ] && [ -n "$vic_token" ] || { echo -e "${RED}Member logins on ${from_ref} failed${NC}"; return 1; }
+  # The role dana has on a release with roles (the upgrade must keep it)
+  local dana_role_before=""
+  if [ "$from_roles" = true ]; then
+    dana_role_before="$(_up_api GET /api/auth/permissions "$dana_token" "" "$tenant" | jq -r '.role // empty' 2>/dev/null)"
+  fi
 
   local secret="pg-$(head -c 12 /dev/urandom | base64 | tr -dc 'A-Za-z0-9' | head -c 16)"
   local snippet caas
@@ -232,6 +254,14 @@ EOF
   [ -n "$caas" ] || { echo -e "${RED}Container project on ${from_ref}: $(_up_status) $(cat "${_UP_WORK}/body")${NC}"; return 1; }
   _up_api POST "/api/projects/${snippet}/code" "$dana_token" '{"code":"def handler(event, context):\n    return {\"orders\": []}\n","message":"orders v1"}' "$tenant" >/dev/null
   _up_2xx || { echo -e "${RED}Code version on ${from_ref}: $(_up_status) $(cat "${_UP_WORK}/body")${NC}"; return 1; }
+  # A release with the secrets API keeps a secret variable's value in its database; the region's
+  # supply chain settings as that release left them
+  local supply_rows_before=""
+  if [ "$from_roles" = true ]; then
+    _up_api PUT "/api/projects/${snippet}/secrets/OLD_SECRET" "$dana_token" "{\"value\":\"${secret}-old\"}" "$tenant" >/dev/null
+    _up_2xx || { echo -e "${RED}Secret variable on ${from_ref}: $(_up_status) $(cat "${_UP_WORK}/body")${NC}"; return 1; }
+    supply_rows_before="$(_up_psql "SELECT count(*) FROM region_supply_chain_settings WHERE knative_region_id = '${region}'" 2>/dev/null || echo err)"
+  fi
 
   ci_token="$(_up_api POST /api/tokens "$admin_token" '{"name":"ci"}' | jq -r '.plain_token // empty')"
   reader_token="$(_up_api POST /api/tokens "$dana_token" '{"name":"dashboard","abilities":["projects:read"]}' "$tenant" | jq -r '.plain_token // empty')"
@@ -297,7 +327,11 @@ EOF
   perms="$(_up_api GET /api/auth/permissions "$admin2")"
   _up_check "administrator keeps full access" _up_jq "$perms" '.platform_admin == true or .role == "owner"'
   perms="$(_up_api GET /api/auth/permissions "$dana2" "" "$tenant")"
-  if [ "$tenancy" = true ]; then
+  if [ "$from_roles" = true ]; then
+    # a release with roles: everybody keeps the role they had
+    _up_check "member keeps the role ${dana_role_before:-?} ($(jq -r .role <<<"$perms" 2>/dev/null))" \
+      _up_jq "$perms" --arg r "${dana_role_before:-none}" '.role == $r'
+  elif [ "$tenancy" = true ]; then
     _up_check "tenant member keeps the member role ($(jq -r .role <<<"$perms" 2>/dev/null))" _up_jq "$perms" '.role == "member"'
   else
     _up_check "existing user becomes Admin ($(jq -r .role <<<"$perms" 2>/dev/null))" _up_jq "$perms" '.role == "admin"'
@@ -313,12 +347,18 @@ EOF
   _up_check "container env var reads back unchanged" _up_jq "$project" --arg s "${secret}-pay" '[.. | objects | select(has("PAYMENT_TOKEN")) | .PAYMENT_TOKEN] | index($s)'
   _up_api PUT "/api/projects/${snippet}" "$dana2" "{\"config\":{\"env_vars\":{\"LOG_LEVEL\":\"info\",\"DATABASE_PASSWORD\":\"${secret}\"}}}" "$tenant" >/dev/null
   _up_check "member edits env vars ($(_up_status))" _up_2xx
+  # Pass-through (docs/security.md): a new value goes into the project's region, whose cluster this
+  # install does not have (a dummy kubeconfig) — refused, nothing changes
   _up_api PUT "/api/projects/${snippet}/secrets/API_SECRET" "$dana2" "{\"value\":\"${secret}-api\"}" "$tenant" >/dev/null
-  _up_check "member adds a secret env var ($(_up_status))" _up_2xx
+  _up_check "a new secret value needs the region's cluster ($(_up_status) $(jq -r '.reason // empty' "${_UP_WORK}/body" 2>/dev/null))" \
+    bash -c '[ "$1" = 503 ] && grep -q region_unreachable "$2"' _ "$(_up_status)" "${_UP_WORK}/body"
   local secrets_list
   secrets_list="$(_up_api GET "/api/projects/${snippet}/secrets" "$dana2" "" "$tenant")"
-  _up_check "secret env vars are listed without their value" _up_absent "${secret}-api" <(printf '%s' "$secrets_list")
-  _up_check "the secret env var is listed" grep -q API_SECRET <<<"$secrets_list"
+  _up_check "secret env vars are listed without their value" _up_absent "$secret" <(printf '%s' "$secrets_list")
+  if [ "$from_roles" = true ]; then
+    # the value of the old release stays in the database until secrets:move-to-region (docs/upgrade.md)
+    _up_check "the secret variable of ${from_tag} is listed" grep -q OLD_SECRET <<<"$secrets_list"
+  fi
   _up_api GET /api/projects "$vic2" "" "$tenant" >/dev/null
   _up_check "second user still lists projects ($(_up_status))" _up_status_is 200
   if [ "$tenancy" = true ]; then
@@ -336,8 +376,14 @@ EOF
   settings="$(_up_api GET /api/settings "$admin2")"
   _up_check "base domain kept ($(jq -r .base_domain <<<"$settings" 2>/dev/null))" _up_jq "$settings" '.base_domain == "apps.acme-cloud.example"'
   _up_check "registration stays off" _up_jq "$settings" '.registration_enabled == false'
-  _up_check "existing region keeps the supply chain off" \
-    [ "$(_up_psql "SELECT count(*) FROM region_supply_chain_settings WHERE knative_region_id = '${region}' AND NOT sbom_enabled AND NOT scan_enabled" 2>/dev/null || echo err)" = 1 ]
+  if [ "$from_roles" = true ]; then
+    # a release with the supply chain: the upgrade leaves the region's settings as they were
+    _up_check "existing region keeps its supply chain settings (${supply_rows_before} row(s))" \
+      [ "$(_up_psql "SELECT count(*) FROM region_supply_chain_settings WHERE knative_region_id = '${region}'" 2>/dev/null || echo err)" = "$supply_rows_before" ]
+  else
+    _up_check "existing region keeps the supply chain off" \
+      [ "$(_up_psql "SELECT count(*) FROM region_supply_chain_settings WHERE knative_region_id = '${region}' AND NOT sbom_enabled AND NOT scan_enabled" 2>/dev/null || echo err)" = 1 ]
+  fi
 
   # compose/README.md: every service of the new release reports healthy
   local svc unhealthy=""

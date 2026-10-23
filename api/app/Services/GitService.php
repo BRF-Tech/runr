@@ -218,6 +218,72 @@ class GitService
         return $results;
     }
 
+    /**
+     * The project's files at $commitId as a tar written to $target (git archive of the project's
+     * directory at that commit) — an organization export's copy of a version (docs/org-export.md).
+     * False when the commit or the directory does not exist.
+     */
+    public function archiveVersion(Project $project, string $commitId, string $target): bool
+    {
+        $path = $this->repoPath();
+        if (! is_dir($path.'/.git') || ! preg_match('/^[0-9a-f]{7,64}$/', $commitId)) {
+            return false;
+        }
+
+        try {
+            $this->run(['archive', '--format=tar', '-o', $target, $commitId.':'.$this->projectDir($project)], $path);
+
+            return is_file($target);
+        } catch (\Throwable $e) {
+            Log::warning('Version not archived', ['project' => $project->id, 'commit' => $commitId, 'error' => $e->getMessage()]);
+
+            return false;
+        }
+    }
+
+    /**
+     * Make $files the project's whole directory and commit it — also when nothing changed, so an
+     * imported version keeps its own commit and number (docs/org-export.md). Does NOT create a
+     * Version record; returns the commit SHA.
+     *
+     * @param  array<string, string>  $files  relative path => content
+     */
+    public function commitSnapshot(Project $project, array $files, string $message): string
+    {
+        return $this->exclusive(function () use ($project, $files, $message) {
+            $this->initRepo();
+            $repoPath = $this->repoPath();
+            $projectDir = $this->projectDir($project);
+            $projectPath = $repoPath.'/'.$projectDir;
+
+            // The directory holds exactly $files afterwards: what the previous version had goes
+            $this->run(['rm', '-r', '-q', '--cached', '--ignore-unmatch', '--', $projectDir], $repoPath);
+            if (is_dir($projectPath)) {
+                $items = new \RecursiveIteratorIterator(
+                    new \RecursiveDirectoryIterator($projectPath, \FilesystemIterator::SKIP_DOTS),
+                    \RecursiveIteratorIterator::CHILD_FIRST,
+                );
+                foreach ($items as $item) {
+                    /** @var \SplFileInfo $item */
+                    $item->isDir() && ! $item->isLink() ? @rmdir($item->getPathname()) : @unlink($item->getPathname());
+                }
+            }
+
+            foreach ($files as $filename => $content) {
+                $relPath = $projectDir.'/'.$filename;
+                $filePath = $repoPath.'/'.$relPath;
+                $this->ensureDir(dirname($filePath));
+                file_put_contents($filePath, $content);
+            }
+            if ($files !== []) {
+                $this->run(['add', '-A', '--', $projectDir], $repoPath);
+            }
+            $this->run(['commit', '--allow-empty', '-q', '-m', $message], $repoPath);
+
+            return $this->getLatestCommitId($repoPath);
+        });
+    }
+
     public function repoPath(): string
     {
         return storage_path('git');

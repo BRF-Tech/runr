@@ -7,6 +7,25 @@ use App\Services\KubernetesClient;
 trait E2eTestPodsTrait
 {
     /**
+     * How long a test server pod (a dev store, …) may take to run. On a busy host its image pull
+     * alone took more than three minutes.
+     */
+    private const E2E_SERVER_POD_START_SECONDS = 600;
+
+    /**
+     * Waiting reasons of a container that waiting will not cure, and how long one may last before
+     * the wait for its pod gives up early: the kubelet retries a failed pull (a registry or a pull
+     * that stalled may recover), a configuration error (a missing secret or key) only once the
+     * kubelet's secret cache has the object, an invalid image name never.
+     */
+    private const E2E_POD_START_BLOCKERS = [
+        'ErrImagePull' => 180,
+        'ImagePullBackOff' => 180,
+        'CreateContainerConfigError' => 30,
+        'InvalidImageName' => 0,
+    ];
+
+    /**
      * The pod spec of a CronJob's Job template (as read from the cluster), ready to apply as a
      * Job of its own. Read back as PHP arrays, empty objects ({}) come out as [] — `emptyDir: {}`
      * of the universal wrapper's volume, an init container's `resources: {}`, an empty
@@ -168,6 +187,152 @@ trait E2eTestPodsTrait
         }
 
         return $detail;
+    }
+
+    /**
+     * Waits for a test server pod (it runs, it does not end — waitForPods waits for pods that end)
+     * to be Running. It stops early when the pod ended, or when a container waits for a reason
+     * waiting will not cure (E2E_POD_START_BLOCKERS) for longer than that reason's grace. Not
+     * running: why, from the pod and its events.
+     */
+    private function waitForServerPod(KubernetesClient $k8s, string $ns, string $name, int $timeout = self::E2E_SERVER_POD_START_SECONDS): bool|string
+    {
+        $started = time();
+        $blockedSince = null;
+        while (true) {
+            try {
+                $pod = $k8s->getResourceStatus('v1', 'Pod', $name, $ns);
+            } catch (\Throwable) {
+                $pod = null; // a busy API server: the next poll
+            }
+            $phase = $pod['status']['phase'] ?? null;
+            if ($phase === 'Running') {
+                return true;
+            }
+            if ($phase === 'Succeeded' || $phase === 'Failed') {
+                return "pod {$ns}/{$name} ended ({$phase}) — ".$this->podDiagnosisOf($k8s, $ns, $name);
+            }
+
+            $blocker = $pod ? self::podStartBlocker($pod) : null;
+            $blockedSince = $blocker ? ($blockedSince ?? time()) : null;
+            $waited = time() - $started;
+            if ($blocker && time() - $blockedSince >= $blocker['grace']) {
+                return "pod {$ns}/{$name} cannot start: {$blocker['container']} {$blocker['reason']} for ".(time() - $blockedSince)." s ({$waited} s in all) — "
+                    .$this->podDiagnosisOf($k8s, $ns, $name);
+            }
+            if ($waited >= $timeout) {
+                return "pod {$ns}/{$name} not running after {$timeout} s — ".$this->podDiagnosisOf($k8s, $ns, $name);
+            }
+            sleep(3);
+        }
+    }
+
+    /** podDiagnosis of a pod read now with its events; a failed read is part of the answer. */
+    private function podDiagnosisOf(KubernetesClient $k8s, string $ns, string $name, int $messageChars = 200): string
+    {
+        try {
+            $pod = $k8s->getResourceStatus('v1', 'Pod', $name, $ns);
+        } catch (\Throwable $e) {
+            return 'pod not read: '.mb_substr($e->getMessage(), 0, 200);
+        }
+        try {
+            $events = $k8s->listEvents($ns, 'Pod', $name);
+        } catch (\Throwable) {
+            $events = []; // diagnostics only
+        }
+
+        return self::podDiagnosis($pod, $events, 6, $messageChars);
+    }
+
+    /**
+     * The first (init or app) container waiting for a reason waiting will not cure, with the grace
+     * that reason gets (E2E_POD_START_BLOCKERS); null while the pod may still start.
+     *
+     * @return array{container: string, reason: string, message: string, grace: int}|null
+     */
+    public static function podStartBlocker(array $pod): ?array
+    {
+        foreach (['initContainerStatuses', 'containerStatuses'] as $key) {
+            foreach ($pod['status'][$key] ?? [] as $status) {
+                $reason = (string) ($status['state']['waiting']['reason'] ?? '');
+                if (isset(self::E2E_POD_START_BLOCKERS[$reason])) {
+                    return [
+                        'container' => (string) ($status['name'] ?? '?'),
+                        'reason' => $reason,
+                        'message' => (string) ($status['state']['waiting']['message'] ?? ''),
+                        'grace' => self::E2E_POD_START_BLOCKERS[$reason],
+                    ];
+                }
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * What a pod that does not run is doing: its phase and node, its conditions (an unscheduled
+     * pod's PodScheduled reason and message), each container's waiting / running / terminated
+     * state with reason, message and restarts, and the pod's last events (the image pull, the
+     * scheduler, the kubelet), oldest first.
+     *
+     * @param  list<array>  $events  the pod's events (involvedObject.name = the pod)
+     * @param  int  $messageChars  of each event message (a sandbox runtime's error is long)
+     */
+    public static function podDiagnosis(?array $pod, array $events, int $lastEvents = 6, int $messageChars = 200): string
+    {
+        $parts = [];
+        if ($pod === null) {
+            $parts[] = 'no pod';
+        } else {
+            $parts[] = ($pod['status']['phase'] ?? 'Unknown').' on node '.($pod['spec']['nodeName'] ?? '(none)');
+
+            $conditions = [];
+            foreach ($pod['status']['conditions'] ?? [] as $condition) {
+                $why = trim(($condition['reason'] ?? '').(isset($condition['message']) ? ': '.mb_substr((string) $condition['message'], 0, 200) : ''));
+                $conditions[] = ($condition['type'] ?? '?').'='.($condition['status'] ?? '?').($why !== '' ? " ({$why})" : '');
+            }
+            $parts[] = 'conditions: '.($conditions ? implode(', ', $conditions) : '(none)');
+
+            $containers = [];
+            foreach (['initContainerStatuses' => 'init ', 'containerStatuses' => ''] as $key => $prefix) {
+                foreach ($pod['status'][$key] ?? [] as $status) {
+                    $containers[] = $prefix.($status['name'] ?? '?').' '.self::containerStateDetail((array) ($status['state'] ?? []))
+                        .(isset($status['lastState']['terminated']) ? ', before: '.self::containerStateDetail((array) $status['lastState']) : '')
+                        .', restarts '.(int) ($status['restartCount'] ?? 0);
+                }
+            }
+            $parts[] = 'containers: '.($containers ? implode('; ', $containers) : '(no status yet)');
+        }
+
+        $at = fn (array $e): string => (string) ($e['lastTimestamp'] ?? $e['eventTime'] ?? $e['firstTimestamp'] ?? $e['metadata']['creationTimestamp'] ?? '');
+        usort($events, fn (array $a, array $b): int => strcmp(substr($at($a), 0, 19), substr($at($b), 0, 19)));
+        $lines = [];
+        foreach (array_slice($events, -$lastEvents) as $e) {
+            $count = (int) ($e['count'] ?? $e['series']['count'] ?? 1);
+            $lines[] = trim(substr($at($e), 11, 8).' '.($e['type'] ?? '').' '.($e['reason'] ?? '?')).': '
+                .mb_substr((string) ($e['message'] ?? ''), 0, $messageChars).($count > 1 ? " (x{$count})" : '');
+        }
+        $parts[] = 'events: '.($lines ? implode(' | ', $lines) : '(none)');
+
+        return implode(' — ', $parts);
+    }
+
+    /** One container state: waiting / terminated with reason (exit code) and message, or running. */
+    private static function containerStateDetail(array $state): string
+    {
+        if (isset($state['running'])) {
+            return 'running';
+        }
+        foreach (['waiting', 'terminated'] as $kind) {
+            if (isset($state[$kind])) {
+                $s = (array) $state[$kind];
+
+                return $kind.' '.($s['reason'] ?? '?').(isset($s['exitCode']) ? " (exit {$s['exitCode']})" : '')
+                    .(isset($s['message']) ? ': '.mb_substr((string) $s['message'], 0, 200) : '');
+            }
+        }
+
+        return 'no state';
     }
 
     // ── WebSocket frame helpers (used by E2eTestShellTrait) ────────────────

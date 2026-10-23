@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Models\User;
+use App\Rules\UniqueIgnoringCase;
 use App\Support\Auth\UserTokens;
 use App\Support\Rbac\AccessManager;
 use App\Support\Rbac\Rbac;
@@ -15,8 +16,10 @@ class UserController extends Controller
     {
         $data = $request->validate([
             'name' => 'required|string|max:255',
-            'username' => 'required|string|max:64|alpha_dash|unique:users,username',
-            'email' => 'required|email|unique:users,email',
+            // alpha_dash: never "@" (an identifier with "@" signs in as an e-mail address first);
+            // unique in any letter case, as the sign-in matches (LoginIdentifier)
+            'username' => ['required', 'string', 'max:64', 'alpha_dash', new UniqueIgnoringCase('users', 'username')],
+            'email' => ['required', 'email', new UniqueIgnoringCase('users', 'email')],
             'password' => 'required|string|min:8',
             'role' => 'sometimes|nullable|string|max:64',
         ]);
@@ -65,7 +68,7 @@ class UserController extends Controller
         app(AccessManager::class)->assertCanManageMember($request->user(), $user->id);
         $data = $request->validate([
             'name' => 'sometimes|string|max:255',
-            'email' => "sometimes|email|unique:users,email,{$user->id}",
+            'email' => ['sometimes', 'email', new UniqueIgnoringCase('users', 'email', $user->id)],
         ]);
         $user->update($data);
 

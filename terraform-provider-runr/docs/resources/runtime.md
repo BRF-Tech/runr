@@ -59,7 +59,7 @@ resource "runr_project" "script" {
 
 ### Optional
 
-- `enabled` (Boolean) Whether new projects can pick the runtime and its projects deploy.
+- `enabled` (Boolean) Whether new projects can pick the runtime and its projects deploy (default `true`).
 - `files` (Map of String) Files uploaded with the runtime, name → content: the Dockerfile and build context of `dockerfile` versions (flat names, at most 900 KB together).
 - `regions` (List of String) Ids of the regions the runtime is offered in; unset offers it in every region.
 

@@ -6,6 +6,7 @@ use App\Http\Middleware\GroupApiSchemas;
 use App\Http\Middleware\NormalizeApiTags;
 use App\Models\ContainerConfig;
 use App\Models\Deployment;
+use App\Models\DeploymentRollout;
 use App\Models\ExecutorImage;
 use App\Models\FaasConfig;
 use App\Models\ImageSecurityReport;
@@ -125,6 +126,7 @@ class AppServiceProvider extends ServiceProvider
             Project::class,
             Version::class,
             Deployment::class,
+            DeploymentRollout::class,
             KnativeRegion::class,
             Setting::class,
             ExecutorImage::class,

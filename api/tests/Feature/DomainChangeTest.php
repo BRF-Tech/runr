@@ -2,11 +2,16 @@
 
 namespace Tests\Feature;
 
+use App\Models\Gateway;
+use App\Models\GatewayRoute;
 use App\Models\KnativeRegion;
+use App\Models\Project;
 use App\Models\Setting;
 use App\Services\Dns\DnsResolver;
 use App\Services\DomainMigrateService;
 use App\Services\Helpers\RegionDomains;
+use App\Services\KubernetesClient;
+use App\Services\PublicHostRewrites;
 use App\Services\RegionDomainAliasService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
@@ -40,6 +45,15 @@ class DomainChangeTest extends TestCase
     /** @var array<string, list<string>> host => A records */
     private array $addresses = [];
 
+    /** @var array<string, array> rewrite Middlewares of the fake cluster by name */
+    private array $middlewares = [];
+
+    /** @var array<string, array> Knative Services of the fake cluster by name */
+    private array $ksvcs = [];
+
+    /** @var list<array> Deployments of the project namespace */
+    private array $aliasDeployments = [];
+
     private KnativeRegion $eu;
 
     protected function setUp(): void
@@ -66,6 +80,24 @@ class DomainChangeTest extends TestCase
 
         $cr = '/apis/operator.knative.dev/v1beta1/namespaces/knative-serving/knativeservings/knative-serving';
         $this->fakeCluster([
+            // what follows a domain move: the rewrite Middlewares, the aliases, the services' URLs
+            'GET /apis/traefik.io/v1alpha1/namespaces/fn/middlewares' => fn () => ['items' => array_values($this->middlewares)],
+            'PATCH /apis/traefik.io/v1alpha1/namespaces/fn/middlewares/*' => function ($request) {
+                $name = basename((string) parse_url($request->url(), PHP_URL_PATH));
+                $host = json_decode($request->body(), true)['spec']['headers']['customRequestHeaders']['Host'] ?? null;
+                if (isset($this->middlewares[$name]) && is_string($host)) {
+                    $this->middlewares[$name]['spec']['headers']['customRequestHeaders']['Host'] = $host;
+                }
+
+                return ['kind' => 'Middleware'];
+            },
+            'GET /apis/apps/v1/namespaces/fn/deployments' => fn () => ['items' => $this->aliasDeployments],
+            'GET /apis/serving.knative.dev/v1/namespaces/fn/services' => fn () => ['items' => array_values($this->ksvcs)],
+            'GET /apis/serving.knative.dev/v1/namespaces/fn/services/*' => function ($request) {
+                $name = basename((string) parse_url($request->url(), PHP_URL_PATH));
+
+                return isset($this->ksvcs[$name]) ? $this->ksvcs[$name] : [['kind' => 'Status'], 404];
+            },
             'GET /api/v1/namespaces/knative-serving/configmaps/config-domain' => fn () => ['data' => $this->configDomain],
             'PATCH /api/v1/namespaces/knative-serving/configmaps/config-domain' => function ($request) {
                 $this->configDomain = json_decode($request->body(), true)['data'];
@@ -167,6 +199,10 @@ class DomainChangeTest extends TestCase
         $this->assertSame('eu.old.test', $eu->effective_settings['knative_domain']);
         $this->assertSame(['eu.old.test' => '', 'acme.tenant.test' => "selector:\n  runr/tenant: acme\n"], $this->configDomain);
         $this->assertTrue($this->aliasApplied('eu.new.test'), 'every host under eu.new.test is answered');
+        // by the public host on the domain the services answer on now
+        $proxy = $this->k8sCallsTo('PATCH', '/namespaces/fn/deployments/'.RegionDomainAliasService::NAME)[0]['body'];
+        $env = collect($proxy['spec']['template']['spec']['containers'][0]['env'])->pluck('value', 'name')->all();
+        $this->assertSame('.eu.old.test', $env['SERVICE_SUFFIX']);
         $this->getJson("/api/knative-regions/{$eu->id}")->assertJsonPath('data.domain_migration_target', 'eu.new.test');
 
         // 48 hours and more without DNS: nothing is removed
@@ -293,9 +329,92 @@ class DomainChangeTest extends TestCase
         $this->assertFalse(app(DomainMigrateService::class)->repairDomainForRegion($this->region('cold', ['knative_serving_status' => 'not_installed'])));
     }
 
-    public function test_the_alias_routes_every_service_of_the_region_through_its_cluster_local_host(): void
+    /** A rewrite Middleware of the fake cluster (a custom domain's or a gateway route's) */
+    private function rewrite(string $name, string $service, string $host): void
     {
-        $manifests = RegionDomainAliasService::manifests($this->eu, 'eu.new.test');
+        $this->middlewares[$name] = [
+            'metadata' => ['name' => $name, 'labels' => [PublicHostRewrites::LABEL => PublicHostRewrites::LABEL_VALUE, 'app.kubernetes.io/managed-by' => 'runr'], 'annotations' => [PublicHostRewrites::ANNOTATION_SERVICE => $service]],
+            'spec' => ['headers' => ['customRequestHeaders' => ['Host' => $host]]],
+        ];
+    }
+
+    private function ksvc(string $name, string $host): void
+    {
+        $this->ksvcs[$name] = ['metadata' => ['name' => $name, 'namespace' => 'fn'], 'status' => ['url' => "https://{$host}"]];
+    }
+
+    /** Index of the first recorded call of $method on $needle */
+    private function callIndex(string $method, string $needle): ?int
+    {
+        foreach ($this->k8sCalls as $i => $call) {
+            if ($call['method'] === $method && str_contains($call['path'], $needle)) {
+                return $i;
+            }
+        }
+
+        return null;
+    }
+
+    public function test_completion_moves_custom_domains_gateway_routes_and_aliases_at_once(): void
+    {
+        $this->onOldDomain();
+        $this->patchJson('/api/settings', ['base_domain' => 'new.test'])->assertOk();
+        // Knative has not reconciled yet: the services' status still names the old domain
+        $this->ksvc('orders', 'orders.eu.old.test');
+        $this->rewrite('orders-domain', 'orders', 'orders.eu.old.test');
+        $this->rewrite('acme-shop-domain', 'shop-acme', 'shop-acme.eu.acme.tenant.test');
+        // an organization's alias that sends to the platform's function domain
+        $this->aliasDeployments = [[
+            'metadata' => ['name' => RegionDomainAliasService::NAME.'-tabc', 'labels' => ['runr/tenant' => 'acme'], 'annotations' => [RegionDomainAliasService::ANNOTATION_ALIAS => 'eu.acme.test']],
+            'spec' => ['template' => ['spec' => ['containers' => [['env' => [['name' => 'SERVICE_SUFFIX', 'value' => '.eu.old.test']]]]]]],
+        ]];
+        $owner = $this->userWithRole('owner', ['username' => 'jane']);
+        $project = Project::query()->create(['name' => 'orders-api', 'service_type' => 'caas']);
+        $project->forceFill(['knative_region_id' => $this->eu->id, 'slug' => 'orders'])->saveQuietly();
+        $gateway = Gateway::query()->create(['user_id' => $owner->id, 'knative_region_id' => $this->eu->id, 'subdomain' => 'jane', 'status' => 'active']);
+        GatewayRoute::query()->create(['gateway_id' => $gateway->id, 'project_id' => $project->id, 'path' => '/orders', 'strip_prefix' => true, 'sort_order' => 1]);
+
+        $this->postJson("/api/knative-regions/{$this->eu->id}/complete-domain-migration")->assertOk();
+
+        // the custom domain points at the new host before the switch (the alias answers there)
+        $this->assertSame('orders.eu.new.test', $this->middlewares['orders-domain']['spec']['headers']['customRequestHeaders']['Host']);
+        $this->assertLessThan($this->callIndex('PATCH', '/configmaps/config-domain'), $this->callIndex('PATCH', '/middlewares/orders-domain'));
+        // another organization's domain is not the region's: left alone
+        $this->assertSame('shop-acme.eu.acme.tenant.test', $this->middlewares['acme-shop-domain']['spec']['headers']['customRequestHeaders']['Host']);
+        // the organization's alias sends to the new function domain
+        $alias = collect($this->k8sCallsTo('PATCH', '/deployments/'.RegionDomainAliasService::NAME.'-tabc'))->last();
+        $env = collect($alias['body']['spec']['template']['spec']['containers'][0]['env'])->pluck('value', 'name');
+        $this->assertSame('.eu.new.test', $env['SERVICE_SUFFIX']);
+        $this->assertSame('eu.acme.test', $env['ALIAS_DOMAIN']);
+        // the gateway: its host on the new domain, its route's rewrite to the new host
+        $ingress = collect($this->k8sCallsTo('PATCH', "/ingressroutes/gw-{$gateway->id}"))->last();
+        $this->assertStringStartsWith('Host(`jane.eu.new.test`)', $ingress['body']['spec']['routes'][0]['match']);
+        $hostRewrite = collect($this->k8sCallsTo('PATCH', '/middlewares/gw-host-'))->last();
+        $this->assertSame('orders.eu.new.test', $hostRewrite['body']['spec']['headers']['customRequestHeaders']['Host']);
+        $this->assertSame('jane.eu.new.test', $hostRewrite['body']['spec']['headers']['customRequestHeaders']['K-Original-Host']);
+
+        // the status check that runs before Knative caught up does not move them back
+        PublicHostRewrites::sync(new KubernetesClient($this->eu->kubeconfig), 'fn', servingNamespace: 'knative-serving');
+        $this->assertSame('orders.eu.new.test', $this->middlewares['orders-domain']['spec']['headers']['customRequestHeaders']['Host']);
+    }
+
+    public function test_a_rollback_points_the_rewrites_at_the_services_hosts_at_once(): void
+    {
+        $this->onOldDomain();
+        $this->patchJson('/api/settings', ['base_domain' => 'new.test'])->assertOk();
+        $this->ksvc('orders', 'orders.eu.old.test');
+        // a completion that broke off after moving the custom domain
+        $this->rewrite('orders-domain', 'orders', 'orders.eu.new.test');
+
+        $this->patchJson('/api/settings', ['base_domain' => 'old.test'])->assertOk();
+
+        $this->assertNull($this->eu->fresh()->domain_migration_status);
+        $this->assertSame('orders.eu.old.test', $this->middlewares['orders-domain']['spec']['headers']['customRequestHeaders']['Host']);
+    }
+
+    public function test_the_alias_routes_every_public_service_of_the_region_through_its_public_host(): void
+    {
+        $manifests = RegionDomainAliasService::manifests($this->eu, 'eu.new.test', RegionDomainAliasService::NAME, null, 'eu.old.test');
         $byKind = [];
         foreach ($manifests as $m) {
             $byKind[$m['kind'].'/'.$m['metadata']['name']] = $m;
@@ -307,7 +426,8 @@ class DomainChangeTest extends TestCase
         $this->assertSame(['websecure'], $byKind['IngressRoute/runr-domain-alias-tls']['spec']['entryPoints']);
         $this->assertArrayHasKey('tls', $byKind['IngressRoute/runr-domain-alias-tls']['spec']);
         $env = collect($byKind['Deployment/runr-domain-alias']['spec']['template']['spec']['containers'][0]['env'])->pluck('value', 'name')->all();
-        $this->assertSame(['ALIAS_DOMAIN' => 'eu.new.test', 'SERVICE_SUFFIX' => '.fn.svc', 'TARGET_HOST' => 'traefik.knative-serving.svc.cluster.local', 'TARGET_PORT' => '80'], $env);
+        // <service>.eu.new.test → <service>.eu.old.test on web: a cluster-local service has no route there
+        $this->assertSame(['ALIAS_DOMAIN' => 'eu.new.test', 'SERVICE_SUFFIX' => '.eu.old.test', 'TARGET_HOST' => 'traefik.knative-serving.svc.cluster.local', 'TARGET_PORT' => '80'], $env);
         $this->assertSame('fn', $byKind['Deployment/runr-domain-alias']['metadata']['namespace']);
     }
 }

@@ -47,6 +47,31 @@ type fakeAttachment struct {
 	projectID string
 	envPrefix string
 	createdAt string
+	// credentialMode: static, or dynamic (a Postgres user from the region's OpenBao)
+	credentialMode string
+	// environmentID: the environment of the project it is attached to ("" its own workload)
+	environmentID string
+}
+
+// bindingCredentials checks the credentials of an attachment: static, or dynamic for a ready
+// Postgres binding in a region that runs OpenBao and External Secrets Operator.
+func (s *Server) bindingCredentials(mode string, b *fakeBinding, regionID string) *apiErr {
+	switch mode {
+	case "", runr.CredentialsStatic:
+		return nil
+	case runr.CredentialsDynamic:
+	default:
+		return errValidation("credentials", "The selected credentials is invalid.")
+	}
+	switch {
+	case b.data.Type != runr.BindingPostgres:
+		return errValidation("binding", "Dynamic credentials are for Postgres bindings.")
+	case b.data.Status != runr.BindingReady:
+		return errValidation("binding", "Binding "+b.data.Name+" is not ready yet: attach it with dynamic credentials once it is.")
+	case !s.openBaoReadyIn(regionID):
+		return errValidation("binding", "Dynamic credentials come from the OpenBao of the project's region: install External Secrets Operator and OpenBao there first.")
+	}
+	return nil
 }
 
 func (s *Server) bindSt() *bindingState {
@@ -351,16 +376,26 @@ func init() {
 		if err != nil {
 			return 0, nil, err
 		}
+		// ?environment=: one environment's attachments; without it every attachment of the project
+		ref := q.query("environment")
+		env, regionID, aerr := s.bindingEnvironment(p, ref)
+		if aerr != nil {
+			return 0, nil, aerr
+		}
+		scoped := ref != "" && s.Environments
 		st := s.bindSt()
 		data := []runr.BindingAttachment{}
 		attached := map[string]bool{}
 		for _, a := range st.attachments {
 			if a.projectID == p.data.ID {
+				attached[a.bindingID] = true
+				if scoped && a.environmentID != envKey(env) {
+					continue
+				}
 				if b := s.bindingByID(a.bindingID); b != nil {
 					s.advanceBinding(st, b)
 				}
 				data = append(data, s.bindingAttachmentResource(a, true))
-				attached[a.bindingID] = true
 			}
 		}
 		available := []runr.Binding{}
@@ -369,7 +404,7 @@ func init() {
 				if attached[b.data.ID] || b.data.Deleted() {
 					continue
 				}
-				if b.data.RegionID == p.data.RegionID || b.data.Type == runr.BindingExternal {
+				if b.data.RegionID == regionID || b.data.Type == runr.BindingExternal {
 					available = append(available, s.bindingResource(b, false))
 				}
 			}
@@ -384,6 +419,10 @@ func init() {
 		}
 		if err := s.needBindingsManage(); err != nil {
 			return 0, nil, err
+		}
+		env, regionID, aerr := s.bindingEnvironment(p, q.str("environment"))
+		if aerr != nil {
+			return 0, nil, aerr
 		}
 		bindingID := q.str("binding_id")
 		nested, hasNested := q.Body["binding"].(map[string]any)
@@ -400,10 +439,10 @@ func init() {
 				return 0, nil, bindingNotFound()
 			}
 		} else {
-			if p.data.RegionID == "" {
+			if regionID == "" {
 				return 0, nil, errValidation("binding", "The project needs a region before a binding can be created for it.")
 			}
-			in, err := s.validateBinding(nested, "binding.", p.data.RegionID)
+			in, err := s.validateBinding(nested, "binding.", regionID)
 			if err != nil {
 				return 0, nil, err
 			}
@@ -411,9 +450,16 @@ func init() {
 				return 0, nil, err
 			}
 		}
-		a, aerr := s.attachBinding(b, p, prefix)
+		credentials := q.str("credentials")
+		if err := s.bindingCredentials(credentials, b, regionID); err != nil {
+			return 0, nil, err
+		}
+		a, aerr := s.attachBindingTo(b, p, prefix, env)
 		if aerr != nil {
 			return 0, nil, aerr
+		}
+		if credentials == runr.CredentialsDynamic {
+			a.credentialMode = credentials
 		}
 		return 201, map[string]any{"data": s.bindingAttachmentResource(a, true)}, nil
 	})
@@ -425,19 +471,41 @@ func init() {
 		if err := s.needBindingsManage(); err != nil {
 			return 0, nil, err
 		}
-		prefix := q.str("env_prefix")
-		if prefix != "" && (!bindingPrefixRe.MatchString(prefix) || len(prefix) > 32) {
-			return 0, nil, errValidation("env_prefix", "The env prefix field format is invalid.")
-		}
 		a := s.bindingAttachmentByID(p, q.Segs[3])
 		if a == nil {
 			return 0, nil, &apiErr{status: 404, message: "No query results for model [App\\Models\\BindingAttachment]."}
 		}
+		// Without env_prefix the prefix stays (a change of the credentials only)
+		prefix := a.envPrefix
+		if _, given := q.Body["env_prefix"]; given {
+			prefix = q.str("env_prefix")
+		}
+		if prefix != "" && (!bindingPrefixRe.MatchString(prefix) || len(prefix) > 32) {
+			return 0, nil, errValidation("env_prefix", "The env prefix field format is invalid.")
+		}
 		b := s.bindingByID(a.bindingID)
 		if b != nil {
-			if err := s.bindingEnvConflict(b, p, prefix, a.id); err != nil {
+			if err := s.bindingEnvConflict(b, p, prefix, a.id, a.environmentID); err != nil {
 				return 0, nil, errValidation("env_prefix", err.message)
 			}
+		}
+		credentials := q.str("credentials")
+		current := a.credentialMode
+		if current == "" {
+			current = runr.CredentialsStatic
+		}
+		if credentials != "" && b != nil && credentials != current {
+			// dynamic credentials come from the OpenBao of the region the attachment's workload runs in
+			region := p.data.RegionID
+			if a.environmentID != "" {
+				if e, err := s.environmentRef(p, a.environmentID); err == nil {
+					region = e.data.RegionID
+				}
+			}
+			if err := s.bindingCredentials(credentials, b, region); err != nil {
+				return 0, nil, err
+			}
+			a.credentialMode = credentials
 		}
 		a.envPrefix = prefix
 		return 200, map[string]any{"data": s.bindingAttachmentResource(a, true)}, nil
@@ -830,9 +898,18 @@ func (s *Server) bindingResource(b *fakeBinding, withAttachments bool) runr.Bind
 
 // attachmentResource is BindingResource::attachment.
 func (s *Server) bindingAttachmentResource(a *fakeAttachment, withBinding bool) runr.BindingAttachment {
+	mode := a.credentialMode
+	if mode == "" {
+		mode = runr.CredentialsStatic
+	}
 	out := runr.BindingAttachment{ID: a.id, BindingID: a.bindingID, ProjectID: a.projectID, EnvPrefix: a.envPrefix, CreatedAt: a.createdAt,
-		EnvNames: []string{}}
+		EnvNames: []string{}, CredentialMode: mode, EnvironmentID: a.environmentID}
 	if p := s.projectByID(a.projectID); p != nil {
+		if a.environmentID != "" {
+			if e, err := s.environmentRef(p, a.environmentID); err == nil {
+				out.Environment = e.data.Name
+			}
+		}
 		out.Project = &struct {
 			ID   string `json:"id"`
 			Name string `json:"name"`
@@ -851,15 +928,16 @@ func (s *Server) bindingAttachmentResource(a *fakeAttachment, withBinding bool) 
 	return out
 }
 
-// bindingEnvConflict refuses two attachments of a project that produce the same variable.
-func (s *Server) bindingEnvConflict(b *fakeBinding, p *project, prefix, exceptID string) *apiErr {
+// bindingEnvConflict refuses two attachments of a project that produce the same variable in one
+// workload: the project's own (envID "") or one environment's.
+func (s *Server) bindingEnvConflict(b *fakeBinding, p *project, prefix, exceptID, envID string) *apiErr {
 	mine := map[string]bool{}
 	for _, k := range s.bindingEnvKeysOf(b) {
 		mine[prefix+k] = true
 	}
 	var clash []string
 	for _, a := range s.bindSt().attachments {
-		if a.projectID != p.data.ID || a.id == exceptID {
+		if a.projectID != p.data.ID || a.id == exceptID || a.environmentID != envID {
 			continue
 		}
 		other := s.bindingByID(a.bindingID)
@@ -881,11 +959,45 @@ func (s *Server) bindingEnvConflict(b *fakeBinding, p *project, prefix, exceptID
 }
 
 func (s *Server) attachBinding(b *fakeBinding, p *project, prefix string) (*fakeAttachment, *apiErr) {
+	return s.attachBindingTo(b, p, prefix, nil)
+}
+
+// bindingEnvironment resolves the environment of a binding request (name or id; "" none) and the
+// region a binding attached there must live in. The primary environment is the project's own
+// workload (nil). An API without environments ignores it.
+func (s *Server) bindingEnvironment(p *project, ref string) (*fakeEnvironment, string, *apiErr) {
+	if ref == "" || !s.Environments {
+		return nil, p.data.RegionID, nil
+	}
+	e, err := s.environmentRef(p, ref)
+	if err != nil {
+		return nil, "", err
+	}
+	if e.data.IsPrimary {
+		return nil, p.data.RegionID, nil
+	}
+	region := e.data.RegionID
+	if region == "" {
+		region = p.data.RegionID
+	}
+	return e, region, nil
+}
+
+// attachBindingTo attaches to an environment of the project (nil: its own workload); the binding
+// must live in the region the environment runs in.
+func (s *Server) attachBindingTo(b *fakeBinding, p *project, prefix string, env *fakeEnvironment) (*fakeAttachment, *apiErr) {
 	if b.data.Deleted() {
 		return nil, errValidation("binding", "Binding "+b.data.Name+" is being deleted.")
 	}
-	if b.data.Type != runr.BindingExternal && b.data.RegionID != p.data.RegionID {
-		return nil, errValidation("binding", "Binding "+b.data.Name+" lives in another region than project "+p.data.Name+".")
+	regionID, where := p.data.RegionID, "project "+p.data.Name
+	if env != nil {
+		if env.data.RegionID != "" {
+			regionID = env.data.RegionID
+		}
+		where = "environment " + env.data.Name + " of " + p.data.Name
+	}
+	if b.data.Type != runr.BindingExternal && b.data.RegionID != regionID {
+		return nil, errValidation("binding", "Binding "+b.data.Name+" lives in another region than "+where+".")
 	}
 	st := s.bindSt()
 	for _, a := range st.attachments {
@@ -896,10 +1008,13 @@ func (s *Server) attachBinding(b *fakeBinding, p *project, prefix string) (*fake
 	if err := s.bindingResidency(b.data.RegionID, "binding_id"); err != nil {
 		return nil, err
 	}
-	if err := s.bindingEnvConflict(b, p, prefix, ""); err != nil {
+	if err := s.bindingEnvConflict(b, p, prefix, "", envKey(env)); err != nil {
 		return nil, err
 	}
 	a := &fakeAttachment{id: strings.ToLower(s.newID()), bindingID: b.data.ID, projectID: p.data.ID, envPrefix: prefix, createdAt: nowRFC3339()}
+	if env != nil {
+		a.environmentID = envKey(env)
+	}
 	st.attachments = append(st.attachments, a)
 	return a, nil
 }

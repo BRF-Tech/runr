@@ -3,9 +3,16 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Api\Concerns\SettingsQueryTrait;
+use App\Jobs\ApplyInternalNetworkJob;
+use App\Jobs\ApplyScheduleTimezonesJob;
 use App\Models\Setting;
 use App\Services\Concerns\BroadcastsModelEvents;
 use App\Services\DomainMigrateService;
+use App\Services\InternalNetwork\InternalNetwork;
+use App\Support\OrgTimezone;
+use App\Support\Rbac\Rbac;
+use App\Support\TenantAccess;
+use Dedoc\Scramble\Attributes\BodyParameter;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
@@ -19,6 +26,7 @@ class SettingsController extends Controller
         return response()->json($this->buildSettingsData());
     }
 
+    #[BodyParameter('timezone', 'The organization\'s time zone (IANA); null or "" goes back to the default (the platform\'s zone in an organization, else Europe/Istanbul)', type: 'string|null')]
     public function update(Request $request): JsonResponse
     {
         $request->validate([
@@ -26,7 +34,21 @@ class SettingsController extends Controller
             'registration_enabled' => 'sometimes|boolean',
             'gpu_demo_enabled' => 'sometimes|boolean',
             'custom_runtimes_enabled' => 'sometimes|boolean',
+            'internal_cross_tenant_grants' => 'sometimes|boolean',
+            'timezone' => self::timezoneRules(),
         ]);
+
+        if ($request->has('internal_cross_tenant_grants')) {
+            // May projects allow callers of other organizations on the internal network: the
+            // platform's call (docs/internal-network.md), outside any organization
+            abort_unless(app(Rbac::class)->isPlatformAdmin($request->user()) && TenantAccess::current() === null, 403);
+            Setting::set(InternalNetwork::CROSS_TENANT_SETTING, $request->boolean('internal_cross_tenant_grants') ? 'true' : 'false');
+            ApplyInternalNetworkJob::dispatchForAllRegions();
+        }
+
+        if ($request->has('timezone')) {
+            self::updateTimezone($request->input('timezone'));
+        }
 
         if ($request->has('custom_runtimes_enabled')) {
             // Whether organizations may register their own runtimes (runtimes.use_custom)
@@ -73,10 +95,48 @@ class SettingsController extends Controller
             'registration_enabled',
             'gpu_demo_enabled',
             'custom_runtimes_enabled',
+            'internal_cross_tenant_grants',
+            'timezone',
             'total_cpu_m',
             'total_memory_mb',
             'demo_status',
         ]));
+    }
+
+    /**
+     * The organization's time zone (OrgTimezone): an IANA zone; null or "" goes back to the
+     * default (the platform's zone in a tenant, else Europe/Istanbul).
+     *
+     * @return array<int, mixed>
+     */
+    protected static function timezoneRules(): array
+    {
+        return ['sometimes', 'nullable', 'string', 'max:64', function (string $attribute, mixed $value, \Closure $fail) {
+            if ($value !== null && $value !== '' && ! OrgTimezone::isValid($value)) {
+                $fail(__('validation.timezone', ['attribute' => $attribute]));
+            }
+        }];
+    }
+
+    /**
+     * Store the organization's time zone in its own settings (the timed warmer reads it on its
+     * next run); deployed schedule triggers that follow it get the new zone at once
+     * (ApplyScheduleTimezonesJob).
+     */
+    protected static function updateTimezone(mixed $zone): void
+    {
+        $zone = is_string($zone) ? trim($zone) : '';
+        $before = OrgTimezone::get();
+
+        if ($zone === '') {
+            Setting::query()->whereKey(OrgTimezone::SETTING)->delete();
+        } else {
+            Setting::set(OrgTimezone::SETTING, $zone);
+        }
+
+        if (OrgTimezone::get() !== $before) {
+            ApplyScheduleTimezonesJob::dispatchForCurrent();
+        }
     }
 
     protected function handleDomainChange(?string $old, ?string $new): void

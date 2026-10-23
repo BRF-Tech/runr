@@ -7,6 +7,7 @@ use App\Workflows\Models\WorkflowRun;
 use App\Workflows\Models\WorkflowStep;
 use App\Workflows\Models\WorkflowTrigger;
 use App\Workflows\Support\JsonValue;
+use App\Workflows\Support\WorkflowEnvironments;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\Log;
 
@@ -18,6 +19,11 @@ use Illuminate\Support\Facades\Log;
  *      resolved with the event and their runs resume;
  *   3. triggers: workflows with an event trigger for this name (and a true `if`) start a run.
  * An event with an `id` that was already received is not processed again (deduplication).
+ *
+ * Every event belongs to an environment by its name (null: production; docs/workflows.md#environments):
+ * it cancels, resumes and starts runs of workflows in environments of that name only. An event of
+ * the events API names it (`environment`, default production); one a run sends (step.sendEvent) or
+ * a queue bridge delivers is always of the run's / the bridge's environment.
  */
 class EventIngestor
 {
@@ -35,11 +41,13 @@ class EventIngestor
 
     /**
      * @param  list<mixed>  $events
-     * @return list<array{id: string, name: string, duplicate: bool, runs: list<string>, resumed: int, cancelled: int}>
+     * @param  string|null  $environment  the environment name of the events (null: production); an
+     *                                    event of the events API may name its own
+     * @return list<array{id: string, name: string, environment: string|null, duplicate: bool, runs: list<string>, resumed: int, cancelled: int}>
      *
      * @throws WorkflowException before anything is stored when one event is invalid
      */
-    public function ingest(array $events, string $source = 'api', ?string $projectId = null, ?string $sentBy = null): array
+    public function ingest(array $events, string $source = 'api', ?string $projectId = null, ?string $sentBy = null, ?string $environment = null): array
     {
         $max = (int) config('workflows.limits.max_events_per_request', 100);
         if ($events === []) {
@@ -51,7 +59,7 @@ class EventIngestor
 
         $normalized = [];
         foreach ($events as $i => $raw) {
-            $normalized[] = $this->normalize($raw, $i, $source);
+            $normalized[] = $this->normalize($raw, $i, $source, $environment);
         }
 
         $results = [];
@@ -63,11 +71,11 @@ class EventIngestor
     }
 
     /**
-     * @return array{name: string, data: mixed, external_id: string|null, ts: int}
+     * @return array{name: string, data: mixed, external_id: string|null, ts: int, environment: string|null}
      *
      * @throws WorkflowException
      */
-    public function normalize(mixed $raw, int $index = 0, string $source = 'api'): array
+    public function normalize(mixed $raw, int $index = 0, string $source = 'api', ?string $environment = null): array
     {
         if (is_object($raw)) {
             $raw = (array) $raw;
@@ -105,7 +113,13 @@ class EventIngestor
             throw WorkflowException::tooLarge(__('workflows.event_too_large', ['max' => config('workflows.limits.max_event_bytes')]));
         }
 
-        return ['name' => $name, 'data' => $data, 'external_id' => $externalId, 'ts' => $ts];
+        // The events API (and a test event) may name the environment per event; a run's and a
+        // queue bridge's events stay in their environment
+        if (in_array($source, ['api', 'test'], true) && array_key_exists('environment', $raw)) {
+            $environment = WorkflowEnvironments::eventEnvironment($raw['environment'], $index);
+        }
+
+        return ['name' => $name, 'data' => $data, 'external_id' => $externalId, 'ts' => $ts, 'environment' => $environment];
     }
 
     private function ingestOne(array $e, string $source, ?string $projectId, ?string $sentBy): array
@@ -115,7 +129,7 @@ class EventIngestor
         }
 
         try {
-            $event = WorkflowEvent::create([
+            $event = WorkflowEvent::create((WorkflowEnvironments::ready() ? ['environment' => $e['environment'] ?? null] : []) + [
                 'name' => $e['name'],
                 'data' => $e['data'],
                 'external_id' => $e['external_id'],
@@ -151,8 +165,8 @@ class EventIngestor
     {
         $count = 0;
 
-        $triggers = WorkflowTrigger::where('type', WorkflowTrigger::TYPE_CANCEL)
-            ->where('event', $event->name)
+        $triggers = WorkflowEnvironments::constrainName(WorkflowTrigger::where('type', WorkflowTrigger::TYPE_CANCEL)
+            ->where('event', $event->name), $this->environmentOf($event))
             ->get();
 
         foreach ($triggers as $trigger) {
@@ -183,9 +197,13 @@ class EventIngestor
     {
         $count = 0;
 
+        // Waits of runs in the event's environment only
+        $environmentRuns = WorkflowEnvironments::constrainName(WorkflowRun::query()->select('id')->whereIn('status', WorkflowRun::ACTIVE), $this->environmentOf($event));
+
         $steps = WorkflowStep::where('status', WorkflowStep::WAITING)
             ->where('type', WorkflowStep::TYPE_WAIT)
             ->where('wait_event', $event->name)
+            ->whereIn('run_id', $environmentRuns)
             ->orderBy('created_at')
             ->limit(self::WAIT_SCAN_LIMIT)
             ->get();
@@ -215,8 +233,8 @@ class EventIngestor
         $runs = [];
         $started = [];
 
-        $triggers = WorkflowTrigger::where('type', WorkflowTrigger::TYPE_EVENT)
-            ->where('event', $event->name)
+        $triggers = WorkflowEnvironments::constrainName(WorkflowTrigger::where('type', WorkflowTrigger::TYPE_EVENT)
+            ->where('event', $event->name), $this->environmentOf($event))
             ->with('workflow')
             ->get();
 
@@ -252,11 +270,20 @@ class EventIngestor
         return $runs;
     }
 
+    /** The environment name of an event (null: production). */
+    private function environmentOf(WorkflowEvent $event): ?string
+    {
+        $name = $event->getAttribute('environment');
+
+        return is_string($name) && $name !== '' ? $name : null;
+    }
+
     private function result(WorkflowEvent $event, bool $duplicate, array $runs, int $resumed, int $cancelled): array
     {
         return [
             'id' => $event->id,
             'name' => $event->name,
+            'environment' => $this->environmentOf($event),
             'duplicate' => $duplicate,
             'runs' => $runs,
             'resumed' => $resumed,

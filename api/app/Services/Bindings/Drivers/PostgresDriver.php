@@ -9,7 +9,9 @@ use App\Services\Bindings\BindingException;
 use App\Services\Bindings\BindingManifests;
 use App\Services\Bindings\BindingsCluster;
 use App\Services\Bindings\DataServices\PostgresService;
+use App\Services\Bindings\DynamicDbCredentials;
 use App\Services\Bindings\Postgres\PostgresSql;
+use App\Services\GlobalProjects\Data\RegionalData;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Str;
 
@@ -57,10 +59,9 @@ class PostgresDriver implements BindingDriver
         $this->cluster->apply($region, [BindingManifests::ownerSecret($binding, $ns, $password)]);
 
         $manifest = BindingManifests::dedicatedCluster($binding, $ns, (string) config('bindings.postgres.image'), (string) config('bindings.postgres.storage_class'), $backup);
+        $manifest = app(RegionalData::class)->dedicatedManifest($binding, $region, $manifest);
         $k8s = $this->cluster->client($region);
-        if (! $this->cluster->wait(fn () => $k8s->applyResource($manifest, $ns), 60)) {
-            throw new BindingException(__('api.bindings.postgres_cluster_failed', ['cluster' => $cluster]));
-        }
+        $this->cluster->applyPostgresCluster($k8s, $manifest, $ns, 60);
         if ($backup) {
             $this->cluster->apply($region, [BindingManifests::scheduledBackup($cluster, $ns, (string) config('bindings.postgres.backup.schedule'))]);
         }
@@ -78,8 +79,10 @@ class PostgresDriver implements BindingDriver
         $password = Str::random(32);
 
         if ($binding->isDedicated()) {
-            // The operator applies the owner Secret's new password to the managed role
+            // The operator applies the owner Secret's new password to the managed role; the
+            // replica clusters of a global project keep a copy for after a promotion
             $this->cluster->apply($this->region($binding), [BindingManifests::ownerSecret($binding, BindingsCluster::dataNamespace(), $password)]);
+            app(RegionalData::class)->afterRotation($binding);
         } else {
             $this->sql($binding, 'postgres-rotate', PostgresSql::password($binding, $password));
         }
@@ -97,6 +100,7 @@ class PostgresDriver implements BindingDriver
     {
         if ($binding->isDedicated()) {
             $this->hibernate($binding, true);
+            app(RegionalData::class)->hibernate($binding, true);
 
             return;
         }
@@ -108,6 +112,7 @@ class PostgresDriver implements BindingDriver
     {
         if ($binding->isDedicated()) {
             $this->hibernate($binding, false);
+            app(RegionalData::class)->hibernate($binding, false);
 
             return;
         }
@@ -118,6 +123,11 @@ class PostgresDriver implements BindingDriver
     public function purge(Binding $binding): void
     {
         $region = $this->region($binding);
+
+        // Dynamic credentials: the binding's connection in the region's OpenBao, its users with it
+        app(DynamicDbCredentials::class)->forgetBinding($binding);
+        // A global project's replica clusters and data links in its other regions
+        app(RegionalData::class)->forget($binding);
 
         if ($binding->isDedicated()) {
             $k8s = $this->cluster->client($region);
@@ -143,7 +153,11 @@ class PostgresDriver implements BindingDriver
             $region = $this->region($binding);
             $ns = BindingsCluster::dataNamespace();
             $backup = $binding->setting('backups') ? $this->pg->backupTarget($region, $this->row($binding)) : null;
-            $this->cluster->apply($region, [BindingManifests::dedicatedCluster($binding, $ns, (string) config('bindings.postgres.image'), (string) config('bindings.postgres.storage_class'), $backup)]);
+            // a global project's binding keeps its place in the replica topology; its replica
+            // clusters get the new settings too
+            $manifest = BindingManifests::dedicatedCluster($binding, $ns, (string) config('bindings.postgres.image'), (string) config('bindings.postgres.storage_class'), $backup);
+            $this->cluster->apply($region, [app(RegionalData::class)->dedicatedManifest($binding, $region, $manifest)]);
+            app(RegionalData::class)->afterSettings($binding);
 
             if (($old['statement_timeout'] ?? null) !== $binding->setting('statement_timeout')) {
                 $this->sql($binding, 'postgres-settings', 'ALTER ROLE '.PostgresSql::ident($binding->pgName()).' SET statement_timeout = '

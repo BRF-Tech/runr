@@ -2,6 +2,7 @@
 
 namespace Modules\Tenancy\Console;
 
+use App\Support\Auth\LoginIdentifier;
 use Illuminate\Console\Command;
 use Illuminate\Console\ConfirmableTrait;
 use Illuminate\Support\Facades\DB;
@@ -145,8 +146,10 @@ class TenancySetupCommand extends Command
 
         $ok = true;
         foreach ($names as $name) {
-            $updated = $central->table('users')->where(fn ($q) => $q->where('username', $name)->orWhere('email', $name))->update(['is_admin' => true]);
-            if ($updated > 0) {
+            // The one account the sign-in would take for this user name or e-mail address
+            $user = LoginIdentifier::resolve((string) $name, $central->getName());
+            if ($user) {
+                $central->table('users')->where('id', $user->getKey())->update(['is_admin' => true]);
                 $this->info("Platform administrator: {$name}");
             } else {
                 $this->error("No account {$name}.");

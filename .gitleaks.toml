@@ -19,3 +19,14 @@ paths = [
   '''(^|/)vue/e2e/''',
   '''(^|/)vue/tests/''',
 ]
+
+[[allowlists]]
+description = "The CLI reference names the flag --secret-stdin=KEY (a key name, not a value)"
+condition = "AND"
+paths = [
+  '''(^|/)docs/cli\.md$''',
+]
+regexTarget = "line"
+regexes = [
+  '''`--secret-stdin=KEY`''',
+]

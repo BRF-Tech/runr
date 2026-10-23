@@ -2,13 +2,22 @@
 
 namespace App\Services;
 
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Sleep;
+use RuntimeException;
 use Symfony\Component\Process\Process;
 use Symfony\Component\Yaml\Yaml;
 
 class HelmService
 {
+    /**
+     * Age after which a pending revision belongs to no running helm process (recoverInterrupted):
+     * helm's own --timeout 10m of a waiting upgrade, the 660 s RunR gives a helm process, and two
+     * minutes.
+     */
+    public const INTERRUPTED_AFTER_SECONDS = 780;
+
     /** Tries of a Helm call that keeps failing on transient API server errors (retryTransient) */
     public const TRANSIENT_TRIES = 5;
 
@@ -83,6 +92,37 @@ class HelmService
         array $valuesArray = [],
         array $setJsonValues = [],
         bool $wait = true,
+    ): HelmResult {
+        $result = $this->runInstall($release, $chart, $namespace, $setValues, $kubeconfigYaml, $version, $valuesArray, $setJsonValues, $wait);
+
+        // the release's last operation was interrupted (a killed helm process): rolled back once
+        // it is old enough, then the install runs again, once (recoverInterrupted)
+        if (self::operationInProgress($result)) {
+            try {
+                $recovered = $this->recoverInterrupted($release, $namespace, $kubeconfigYaml);
+            } catch (RuntimeException $e) {
+                return new HelmResult(false, $result->output, trim($result->error).' — '.$e->getMessage(), $result->exitCode);
+            }
+            if ($recovered !== null) {
+                Log::warning('Helm: '.$recovered);
+
+                return $this->runInstall($release, $chart, $namespace, $setValues, $kubeconfigYaml, $version, $valuesArray, $setJsonValues, $wait);
+            }
+        }
+
+        return $result;
+    }
+
+    private function runInstall(
+        string $release,
+        string $chart,
+        string $namespace,
+        array $setValues,
+        string $kubeconfigYaml,
+        ?string $version,
+        array $valuesArray,
+        array $setJsonValues,
+        bool $wait,
     ): HelmResult {
         $args = [
             'helm', 'upgrade', '--install', $release, $chart,
@@ -263,6 +303,107 @@ class HelmService
         }
 
         return json_decode($result->output, true);
+    }
+
+    /**
+     * The last revisions of a release (`helm history -o json`), oldest first: revision, updated,
+     * status (deployed, superseded, failed, pending-install, pending-upgrade, pending-rollback,
+     * uninstalling, …), chart. Null when the release does not exist or helm fails.
+     *
+     * @return list<array{revision: int, updated: string, status: string, chart: string}>|null
+     */
+    public function history(string $release, string $namespace, string $kubeconfigYaml, int $max = 10): ?array
+    {
+        $result = $this->run([
+            'helm', 'history', $release,
+            '-n', $namespace,
+            '--kubeconfig', $this->writeKubeconfig($kubeconfigYaml),
+            '--max', (string) $max,
+            '-o', 'json',
+        ]);
+        $rows = $result->success ? json_decode($result->output, true) : null;
+        if (! is_array($rows) || $rows === []) {
+            return null;
+        }
+
+        return array_values(array_map(fn ($row) => [
+            'revision' => (int) ($row['revision'] ?? 0),
+            'updated' => (string) ($row['updated'] ?? ''),
+            'status' => (string) ($row['status'] ?? ''),
+            'chart' => (string) ($row['chart'] ?? ''),
+        ], array_filter($rows, 'is_array')));
+    }
+
+    /**
+     * A release whose last operation was interrupted: its newest revision is pending-upgrade or
+     * pending-rollback (the helm process that ran it was killed — a region:reconcile cut off in
+     * a `helm upgrade --wait`, a pod that stopped), and every later operation fails with "another
+     * operation (install/upgrade/rollback) is in progress" while `helm list` no longer shows it.
+     * Rolled back to the revision that was deployed before, so the next upgrade can run.
+     *
+     * Only once the pending revision is older than INTERRUPTED_AFTER_SECONDS: a younger one may
+     * still belong to a helm process that runs (RunR's wait at most 10 minutes, the process 11).
+     *
+     * @return string|null what was done; null when nothing is pending
+     *
+     * @throws RuntimeException pending but too young to be interrupted, pending-install, or the
+     *                          rollback failed — the operator's call (helm -n NS history RELEASE)
+     */
+    public function recoverInterrupted(string $release, string $namespace, string $kubeconfigYaml): ?string
+    {
+        $history = $this->history($release, $namespace, $kubeconfigYaml);
+        $last = $history ? $history[array_key_last($history)] : null;
+        if (! $last || ! str_starts_with($last['status'], 'pending-')) {
+            return null;
+        }
+
+        $name = "Helm release {$namespace}/{$release}";
+        $since = $last['updated'] !== '' ? " since {$last['updated']}" : '';
+        try {
+            $age = $last['updated'] !== '' ? now()->getTimestamp() - Carbon::parse($last['updated'])->getTimestamp() : null;
+        } catch (\Throwable) {
+            $age = null;
+        }
+        if ($age === null || $age < self::INTERRUPTED_AFTER_SECONDS) {
+            throw new RuntimeException("{$name} is {$last['status']}{$since}: another helm operation may still run on it — "
+                .'it is rolled back once it is '.intdiv(self::INTERRUPTED_AFTER_SECONDS, 60).' minutes old (run php artisan region:reconcile again then)');
+        }
+
+        $deployed = array_values(array_filter(
+            array_slice($history, 0, -1),
+            fn (array $row) => $row['status'] === 'deployed',
+        ));
+        $target = $deployed ? $deployed[array_key_last($deployed)]['revision'] : null;
+        if ($last['status'] === 'pending-install' || $target === null) {
+            throw new RuntimeException("{$name} is {$last['status']}{$since} and was never deployed before: "
+                ."check it with helm -n {$namespace} history {$release} and roll it back or uninstall it by hand");
+        }
+
+        $result = $this->rollback($release, $namespace, $kubeconfigYaml, $target);
+        if (! $result->success) {
+            throw new RuntimeException("{$name} is {$last['status']}{$since}; rolling it back to revision {$target} failed: ".trim($result->error));
+        }
+
+        return "rolled back the interrupted {$last['status']} of {$name}{$since} to revision {$target}";
+    }
+
+    /** helm's answer to an operation on a release whose last operation has not ended (or was interrupted) */
+    public static function operationInProgress(HelmResult $result): bool
+    {
+        return ! $result->success && str_contains($result->error, 'another operation (install/upgrade/rollback) is in progress');
+    }
+
+    /**
+     * Roll a release back to an earlier revision (`helm rollback`, without --wait: the next
+     * upgrade waits). Also takes a release whose last operation was interrupted (pending-upgrade).
+     */
+    public function rollback(string $release, string $namespace, string $kubeconfigYaml, int $revision): HelmResult
+    {
+        return $this->run([
+            'helm', 'rollback', $release, (string) $revision,
+            '-n', $namespace,
+            '--kubeconfig', $this->writeKubeconfig($kubeconfigYaml),
+        ]);
     }
 
     /**

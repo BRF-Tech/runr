@@ -47,7 +47,7 @@ output "mcp_url" {
 ### Optional
 
 - `access_mode` (String) Who gets in: `public` (anyone), `token` (a RunR API token of a user with `mcp.servers.call` on the project; default) or `oauth` (as `token`, plus OAuth sign-in for clients that only have the URL).
-- `audit_calls` (Boolean) Also record every call in the audit log (`mcp.server.call`).
+- `audit_calls` (Boolean) Also record every call in the audit log (`mcp.server.call`; default `false`).
 - `path` (String) Path of the MCP endpoint in the function (default `/mcp`).
 
 ### Read-Only

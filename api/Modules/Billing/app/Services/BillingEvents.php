@@ -52,13 +52,30 @@ class BillingEvents
 
     public const PROJECT_OWNER_CHANGED = 'project.owner_changed';
 
+    /** A project's month to date reached the warning share of its monthly cost limit (CostLimits). */
+    public const PROJECT_COST_LIMIT_WARNING = 'project.cost_limit.warning';
+
+    /** A project's month to date reached its monthly cost limit; data.stopped: the limit stopped it. */
+    public const PROJECT_COST_LIMIT_REACHED = 'project.cost_limit.reached';
+
+    // API product (docs/api-product.md#usage-events): usage of a gateway's consumers, for the
+    // system that invoices them — RunR measures, it does not bill
+    public const API_USAGE_HOURLY = 'api.usage.hourly';
+
+    public const API_USAGE_MONTHLY = 'api.usage.monthly';
+
+    public const API_USAGE_QUOTA_EXCEEDED = 'api.usage.quota_exceeded';
+
     public const TEST = 'billing.test';
 
     public const TYPES = [
         self::BILL_CLOSED, self::BILL_PAID, self::BILL_UNPAID, self::BILL_PAYMENT_URL_SET,
         self::FIXED_REQUEST_CREATED, self::FIXED_REQUEST_APPROVED, self::FIXED_REQUEST_REJECTED,
         self::REGION_SHARE_OFFERED, self::REGION_SHARE_ACCEPTED,
-        self::PROJECT_STOPPED, self::PROJECT_RESUMED, self::PROJECT_OWNER_CHANGED, self::TEST,
+        self::PROJECT_STOPPED, self::PROJECT_RESUMED, self::PROJECT_OWNER_CHANGED,
+        self::PROJECT_COST_LIMIT_WARNING, self::PROJECT_COST_LIMIT_REACHED,
+        self::API_USAGE_HOURLY, self::API_USAGE_MONTHLY, self::API_USAGE_QUOTA_EXCEEDED,
+        self::TEST,
     ];
 
     /** Minutes to wait after the n-th failed attempt */

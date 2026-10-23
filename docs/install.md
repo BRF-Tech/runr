@@ -32,7 +32,7 @@ Every value mentioned here is described in the [Helm values reference](helm-valu
 | Helm | Helm 3 (the chart's API version is `v2`). |
 | Ingress controller | An ingress controller with an IngressClass for the console (`ingress.className`, default `traefik`). What it has to pass through is listed under [Ingress and TLS](#ingress-and-tls). |
 | Storage | A StorageClass that provisions ReadWriteOnce volumes: the API volume `runr-api-storage` and, with the chart's PostgreSQL, `runr-postgres-data` (chart defaults: 10Gi each). For API, Horizon, scheduler and Reverb pods on several nodes, a StorageClass with ReadWriteMany volumes for the API volume. See [Storage](#storage). |
-| cert-manager | Only for `ingress.tls.mode: letsencrypt`: cert-manager and a ClusterIssuer (default name `letsencrypt-prod`). |
+| cert-manager | Only for the console's `ingress.tls.mode: letsencrypt`: cert-manager and a ClusterIssuer (default name `letsencrypt-prod`). The regions need none of their own: RunR installs cert-manager there, or reuses one a region's cluster already runs, for the certificates of custom domains ([cert-manager](regions.md#cert-manager)); a cluster that is both uses the same cert-manager. |
 | Metrics API | Only for the HorizontalPodAutoscalers (`gateway.hpa`, `api.hpa`, `ui.hpa`), which scale on CPU utilization: metrics-server or another provider of the resource metrics API. |
 | Network policy | Only for `networkPolicy.enabled`: a CNI that enforces NetworkPolicy ([Network policies](#network-policies)). |
 | Outbound access | The nodes pull RunR's images from `ghcr.io/brf-tech/runr/` (public, no credentials). The API, Horizon and scheduler pods connect to the Kubernetes API server of every region, to the public Helm repositories of the region components (region installs run Helm in these pods) and to `ghcr.io` (the API reads the versions of the built-in runtimes from their image repositories). |
@@ -53,7 +53,7 @@ examples below).
 The modules of the console are built into its image, so the multi-tenant console is a separate UI
 image: with `edition: multi-tenant` the UI runs `ghcr.io/brf-tech/runr/ui:<tag>-mt`
 (`ui.image.multiTenantSuffix`, default `-mt`). The tag defaults to the chart's release, its
-`appVersion`, so chart 0.5.10 runs `0.5.10-mt`; the moving tag `latest` has no multi-tenant variant
+`appVersion`, so chart 0.6.0 runs `0.6.0-mt`; the moving tag `latest` has no multi-tenant variant
 and runs `<appVersion>-mt` as well. A UI image of your own that carries the modules under its plain
 tag needs `ui.image.multiTenantSuffix: ""`.
 
@@ -84,7 +84,7 @@ With Docker Compose set `BILLING_ENABLED=true` in `compose/.env` before building
 ([Compose README](../compose/README.md#1-choose-the-modules)). The published UI images contain the
 billing pages and show them as soon as the API reports billing on; a UI image of your own needs
 `VITE_BILLING_ENABLED=true`. After the first start, set the prices and the billing type of every
-region in Settings → Billing → Regions & prices — until then the
+region in Administration → Billing → Regions & prices — until then the
 [default prices](billing.md#price-fields) apply.
 
 ## DNS
@@ -93,14 +93,16 @@ region in Settings → Billing → Regions & prices — until then the
 | --- | --- | --- |
 | The console domain (`domain`, e.g. `runr.example.com`) | The external address of the ingress controller | The console, the API (`/api`), WebSockets (`/ws`), project git remotes (`/git`), the MCP server (`/mcp`) |
 | A wildcard record per region, `*.<function domain>` | The external address of that region | Project URLs `<project>.<function domain>` |
+| With [global projects](global-projects.md): the global zone `g.<base domain>`, NS records to `ns-<region>.g.<base domain>` and their address records | The PowerDNS server of each region that runs global DNS (its public address on UDP and TCP 53) | Global host names `<project>.g.<base domain>`, answered by RunR's servers |
 
 Regions on other clusters connect back to the console domain (by default their agents open a
 WebSocket to `wss://<domain>/ws`), so it must be reachable from them as well.
 
 A region's function domain is `<region name>.<base domain>`, unless the region has a function
-domain of its own. The base domain is a console setting: **Settings → Platform → Base Domain** (or
-`PATCH /api/settings` with `base_domain`, permission `settings.manage`). Setting it the first time
-gives every region with Knative Serving ready and without a function domain the function domain
+domain of its own. The base domain is a console setting:
+**Administration → Regions & settings → Base Domain** (or `PATCH /api/settings` with
+`base_domain`, permission `settings.manage`). Setting it the first time gives every region with
+Knative Serving ready and without a function domain the function domain
 `<region name>.<base domain>`, and a region connected later gets it when its Knative Serving is
 installed. Set the base domain before you connect the first region. A changed base domain moves
 the regions that follow it: they answer on the old and the new domain until DNS of the new
@@ -168,7 +170,7 @@ A custom certificate is easiest to pass from files, and renewed by running the s
 the new files:
 
 ```sh
-helm upgrade runr brf-tech/runr --version 0.5.10 -n runr --reuse-values \
+helm upgrade runr brf-tech/runr --version 0.6.0 -n runr --reuse-values \
   --set ingress.tls.mode=custom \
   --set-file ingress.tls.certificate=fullchain.pem \
   --set-file ingress.tls.privateKey=privkey.pem
@@ -417,20 +419,21 @@ affinity as well.
 | `admin.username` | `admin` | User name: a lower-case letter, then 2–31 of `a-z`, `0-9`, `_`, `.`, `-` |
 | `admin.email` | `admin@example.com` | E-mail address of the account; set a real one |
 | `admin.password` | empty | Empty: generated |
-| `bootstrap.enabled` | `true` | Renders the Job `runr-bootstrap` |
+| `bootstrap.enabled` | `true` | Renders the Jobs `runr-bootstrap` and `runr-region-reconcile-<revision>` |
 | `bootstrap.tenancySetup` | `true` | Multi-tenant edition: the Job first converts an installation that ran single-tenant into its first tenant ([Converting a single-organization installation](tenancy.md#converting-a-single-organization-installation)) |
 
 `runr-bootstrap` is a post-install and post-upgrade hook that runs after the database migrations.
 It creates the account as a platform administrator when no account with `admin.username` exists,
 no other platform administrator exists and `admin.email` belongs to no other account. Existing
 accounts are left alone, so changing `admin.*` later changes no account. Before the administrator
-check the same Job deploys the agent again on regions whose agent has no token
-(`agent:redeploy --missing`), moves stored image references (`images:move-registry`), brings the
-existing regions to the installed version (`region:reconcile`) and gives accounts without a role
-the default role (`rbac:assign-missing`) — on every upgrade too ([upgrade.md](upgrade.md#procedure)):
-keep it on. In the multi-tenant edition it then runs `php artisan tenancy:setup --force`, which
-converts an installation that ran single-tenant into its first tenant and leaves fresh, converted
-and multi-tenant installations alone.
+check the same Job moves stored image references (`images:move-registry`) and gives accounts
+without a role the default role (`rbac:assign-missing`) — on every upgrade too
+([upgrade.md](upgrade.md#procedure)): keep it on. In the multi-tenant edition it then runs
+`php artisan tenancy:setup --force`, which converts an installation that ran single-tenant into its
+first tenant and leaves fresh, converted and multi-tenant installations alone. The hook touches the
+database only; the Job `runr-region-reconcile-<revision>`, which helm does not wait for, then
+deploys the agent again on regions whose agent has no token (`agent:redeploy --missing`) and
+brings the existing regions to the installed version (`region:reconcile`).
 
 Reading the password:
 
@@ -444,8 +447,19 @@ The password is never written to a log. With `secret.create: false` the bootstra
 patch the one Secret `runr-admin` (a Role for the `runr-api` ServiceAccount); an attempt that is
 repeated uses the password stored before, so the account and the Secret always agree.
 
-After the first sign-in, change the password and turn on two-factor authentication in **User
-Settings**.
+The administrator signs in with the user name (`admin.username`, default `admin`) or the e-mail
+address (`admin.email`) in the console's **E-mail or user name** field or with
+`runr login --with-password --username <either>`; letter case does not matter
+([Password sign-in](security.md#password-sign-in)). After the first sign-in, change the password
+and turn on two-factor authentication in the user menu (the avatar at the right of the header) →
+**Account settings**.
+
+The console's main menu is in the header: **Projects**, **Build & Run** (sandboxes, models,
+runtimes, images, events), **Data & Integrations** (data, Git providers, AI agents),
+**Observability** (alerts, tracing, status page) and **Administration** (members, access and
+security, the organization, and the platform: regions, tenants, branding, signup). The user menu
+holds Account settings, My bills, Support Tickets, theme and language. Each menu shows only what
+the user's permissions allow; on small screens the menus collapse into a drawer.
 
 ## Horizon dashboard
 
@@ -574,6 +588,12 @@ networkPolicy:
 signup:
   inviteOnly: true
 
+# Let's Encrypt certificates for the custom domains of regions reachable from the internet
+# (the e-mail registers the ACME account and accepts its terms); other regions use their own CA
+knative:
+  certManager:
+    acmeEmail: certificates@example.com
+
 # Written to the ConfigMap runr-config
 extraEnv:
   DB_SSLMODE: require
@@ -607,7 +627,7 @@ The chart generates `APP_KEY`, `REVERB_APP_SECRET` and the administrator's passw
    `api.image.tag` and `ui.image.tag` default to the chart's `appVersion`.
 
    ```sh
-   helm upgrade --install runr brf-tech/runr --version 0.5.10 \
+   helm upgrade --install runr brf-tech/runr --version 0.6.0 \
      --namespace runr --create-namespace \
      -f values-production.yaml
    ```
@@ -634,13 +654,17 @@ The chart generates `APP_KEY`, `REVERB_APP_SECRET` and the administrator's passw
   release.
 - **TLS.** `ingress.tls.mode` set to `letsencrypt`, `custom` or `secret`, HTTP redirected to HTTPS
   by the ingress controller.
+- **Custom-domain certificates.** `knative.certManager.acmeEmail` set, so regions reachable from
+  the internet issue publicly trusted Let's Encrypt certificates for custom domains; without it
+  every region issues them from its own CA, which clients have to trust first
+  ([cert-manager](regions.md#cert-manager)).
 - **Self-service registration.** Registration is on by default, so anyone who reaches the console
   can create an account; in the multi-tenant edition each signup also gets its own tenant
   (`signup.tenantAutoCreate`) with the default quota `signup.defaultQuota`. Registration is a
-  console setting: switch it off in **Settings → Platform → User Registration** or **Settings →
-  Signup**, or through the API (`PATCH /api/settings` with `{"registration_enabled": false}`,
-  permission `settings.manage`). To have public signup closed from the first start, install with
-  `signup.inviteOnly: true`. To keep it open but controlled, use `signup.allowedDomains`,
+  console setting: switch it off in **Administration → Regions & settings → User Registration** or
+  **Administration → Signup**, or through the API (`PATCH /api/settings` with
+  `{"registration_enabled": false}`, permission `settings.manage`). To have public signup closed
+  from the first start, install with `signup.inviteOnly: true`. To keep it open but controlled, use `signup.allowedDomains`,
   `signup.emailVerification` and `signup.captcha` — [white-label.md](white-label.md#2-self-service-signup).
 - **Mail server.** `mail.host` set to your SMTP server and `mail.from` to an address of your
   domain. Mailpit, the default, holds every message — sign-up verification links included — and
@@ -748,6 +772,7 @@ the changes per release are in [upgrade.md](upgrade.md).
 
 ## Connecting the first region
 
-Set the base domain ([DNS](#dns)), then add a region in **Settings → Add Region** with the
-kubeconfig of its cluster; RunR installs Knative Serving and the region components through it.
+Set the base domain ([DNS](#dns)), then add a region in
+**Administration → Regions & settings → Knative Regions → + Add Region** with the kubeconfig of
+its cluster; RunR installs Knative Serving and the region components through it.
 Region requirements, settings and domains: [regions.md](regions.md).

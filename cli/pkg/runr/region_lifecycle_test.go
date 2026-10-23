@@ -31,6 +31,11 @@ func TestRegionDetailDecodesLooseFields(t *testing.T) {
 	if d.KnativeSettings["request_timeout"] != float64(300) || d.SelectedWorkers[0] != "w1" || d.DNSInstruction.Type != "A" {
 		t.Fatalf("detail = %+v", d)
 	}
+	// 0.6.0 answers a region without settings with {} (the API document types it as an object)
+	var empty runr.RegionDetail
+	if err := json.Unmarshal([]byte(`{"id":"r1","name":"eu-1","knative_settings":{}}`), &empty); err != nil || len(empty.KnativeSettings) != 0 {
+		t.Fatalf("detail = %+v, %v", empty, err)
+	}
 
 	var n runr.RegionNode
 	if err := json.Unmarshal([]byte(`{"name":"w1","labels":[],"cpu_m":4000}`), &n); err != nil || n.Labels != nil || n.CPUm != 4000 {

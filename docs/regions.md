@@ -34,7 +34,7 @@ project can be moved to another region later. The region decides:
 - **where the project's workloads run**: in the region's project namespace, which is named like
   the region (a region `eu-2` runs its projects in the namespace `eu-2`);
 - **its address**: an HTTP project answers at `https://<project slug>.<region>.<base domain>`.
-  The base domain is the platform's (Administration → Platform, **Base Domain**;
+  The base domain is the platform's (Administration → Regions & settings, **Base Domain**;
   `PATCH /api/settings` with `base_domain`); `<region>.<base domain>` is the region's
   **function domain**;
 - **what the project can use**: queue triggers need the region's Redis, builds (runtime plugins
@@ -44,10 +44,11 @@ project can be moved to another region later. The region decides:
 - **whether the project is admitted**: the region's [status](#region-status) and
   [capacity](#capacity-overcommit-and-dedicated-workers).
 
-In the console, regions are under **Administration → Platform → Knative Regions**; the pencil of a
-region opens its tabs (General, Workers, Registry, Operator, Serving, Redis, Data services,
-Isolation, GPU, Migration, Supply chain). Changing a region needs `regions.manage` or the
-permission of the area ([API reference](#api-reference)).
+In the console, regions are under **Administration → Regions & settings → Knative Regions**
+(inside a tenant: **Administration → Regions & domain**); the pencil of a region opens its tabs
+(General, Workers, Registry, Operator, Serving, Redis, Data services, Isolation, GPU, Migration,
+Supply chain). Changing a region needs `regions.manage` or the permission of the area
+([API reference](#api-reference)).
 
 ## Before you connect a cluster
 
@@ -114,9 +115,13 @@ class is used, so the cluster needs a default StorageClass unless every class is
 | Model volume `runr-models`, for model services ([huggingface.md](huggingface.md#model-storage)) | `100` GiB, ReadWriteMany (Helm `ai.modelStorage.*`, per region in the GPU tab) | the default class unless set |
 | Data services (`runr-data`, when installed) | KV `2Gi`, object storage `20Gi` and `1Gi` of metadata, Postgres `10Gi` | Helm `bindings.storageClass`; empty: the default class |
 
-Before it installs the registry on a PVC, RunR creates a test volume of the chosen class and waits
-60 seconds for it to bind. A registry on S3 needs the bucket instead (endpoint, bucket, region,
-access key, secret key).
+Before it installs the registry on a PVC, RunR creates a test volume of the chosen class, mounts it
+in a pod (a `WaitForFirstConsumer` class binds only then) and waits 180 seconds for it to bind
+(`RUNR_REGISTRY_PVC_TEST_SECONDS`, 30 to 900, set through the Helm value
+[`extraEnv`](helm-values.md#extraenv)). A volume that does not bind fails the setup with what the
+test saw: the volume's phase, the pod's phase and why it waits, and the volume's last event (e.g.
+`ProvisioningFailed` with its message). A registry on S3 needs the bucket instead (endpoint,
+bucket, region, access key, secret key).
 
 ### Ingress, external address and DNS
 
@@ -148,6 +153,67 @@ region has a certificate of its own ([Function TLS](#function-tls)). A load bala
 Traefik that sends PROXY protocol or `X-Forwarded-For` has to be named in
 `ingress_trusted_ips` ([General](#general)).
 
+### Cluster-local services and network isolation
+
+Every Knative Service is reachable inside the cluster at `http://<service>.<project namespace>.svc.cluster.local`
+(also `<service>.<namespace>.svc` and `<service>.<namespace>`); queue-trigger sinks and model
+services are reachable only there (they are cluster-local). The region Traefik serves these hosts
+on its **private entry point** `internal` (container port 8081), which only the ClusterIP Service
+`traefik-internal` in the Serving namespace publishes (port 80). The LoadBalancer Service
+publishes ports 80 and 443, the public routes, and a request through the external address with a
+cluster-local `Host` header gets `404`. Knative's placeholder Service of each Knative Service (type
+`ExternalName`) points at `traefik-internal.<serving namespace>.svc.cluster.local`, so in-cluster
+callers — queue consumers, bound projects, your own pods — reach the service through Traefik and,
+at zero, through the activator that starts it.
+
+RunR's own routes that hand a request on to a project — custom domains, gateway routes and the
+second address of a [base-domain migration](#changing-the-base-domain) — rewrite the host to the
+project's public host `<project>.<function domain>` and enter Traefik through the public entry
+point: only a public (HTTP) project is reached through them. A base-domain or organization-domain
+migration that completes or rolls back points them at the new hosts at once (the region's gateways
+are rebuilt with them); the status check (every minute) points them at the Knative Service's
+current URL when its domain changes otherwise.
+
+Every call on the private entry point passes the **internal network's** ForwardAuth: the
+callee's allow list decides which projects may call it — a call between two projects needs an
+entry there — and a project also answers at `<project>.<organization>.runr.internal`
+([internal-network.md](internal-network.md)). A caller is known by its pod's address or by the
+`RUNR_INTERNAL_TOKEN` it sends. The authz runs as `runr-internal-auth` in the Serving namespace;
+every region enforces, one upgraded from an earlier release too (`audit` only where an operator
+sets `internal_auth`).
+
+Two NetworkPolicies keep the Knative data path the only way to a project's pods. All projects of a
+region share its project namespace, so without them any pod of the cluster could call another
+project's pods directly or through the activator, past the route and its visibility.
+
+| NetworkPolicy | Selects | Admits |
+|---|---|---|
+| `runr-knative-revisions` in the project namespace | the pods of Knative revisions (label `serving.knative.dev/revision`) | the Serving namespace's Traefik, activator and autoscaler pods (the autoscaler reads queue-proxy's metrics port) |
+| `runr-activator` in the Serving namespace | the activator | Traefik and the autoscaler on every port (the autoscaler probes it before a revision scales to zero); any client on its `metrics` port |
+
+The other pods of the project namespace — CronJob runs, queue consumers, builds, uploads, the
+domain-alias proxy — are not selected. RunR itself calls a service the way in-cluster callers
+do: the web shell's wake-up and keep-alive and the model playground go through the Kubernetes API
+server to `traefik-internal` with the service's cluster-local host. Tools of your own that reach
+project pods directly (a Prometheus scraping their ports, a service mesh) need a NetworkPolicy of
+their own next to these; NetworkPolicies add up.
+
+The policies are enforced by the cluster's network plugin. Plugins with NetworkPolicy support
+(Calico, Cilium, the policy controller k3s and rke2 ship, kindnet in current Kind releases) enforce
+them; one without support (plain flannel, for example) ignores them, and only the routes keep
+cluster-local services from outside callers. Kubelet's health checks come from the node itself,
+which these plugins admit.
+
+Regions installed by earlier releases get both with `region:reconcile` (run by the Helm bootstrap
+job after every upgrade; steps `private-ingress` and `network-policy`): RunR's own host rewrites
+move to public hosts, Traefik is upgraded to serve cluster-local hosts on web and `internal`, the
+KIngresses are made to name `traefik-internal` (their status is written again; routes and
+placeholders keep answering meanwhile), and after DNS caches of the old name expire (35 s) a second
+upgrade leaves cluster-local hosts on `internal` only. The Traefik pods roll twice. Measured on
+Kind (`runtime/ci.sh test-network`): the move took 154 s, and of the calls made every half second
+meanwhile to a cluster-local URL, a public host, a custom domain and a domain alias (about 370
+each) none failed, nor any of the 95 queue messages sent every two seconds.
+
 ### Images and Helm charts
 
 RunR runs Helm in the control plane: for every install the control plane fetches the chart from
@@ -161,11 +227,15 @@ its repository and applies it through the cluster's API.
 | kube-prometheus-stack | `https://prometheus-community.github.io/helm-charts` |
 | loki-stack | `https://grafana.github.io/helm-charts` |
 | OpenTelemetry Collector, Tempo | `https://open-telemetry.github.io/opentelemetry-helm-charts`, `https://grafana-community.github.io/helm-charts` |
+| cert-manager (where the cluster runs none, [cert-manager](#cert-manager)) | `https://charts.jetstack.io` |
 | CloudNativePG, sigstore policy-controller, NVIDIA device plugin and GPU Operator (when installed) | their projects' repositories ([bindings.md](bindings.md#configuration-helm), [supply-chain.md](supply-chain.md#configuration), [ai.md](ai.md#helm-values)) |
+| External Secrets Operator (when installed; its image from `ghcr.io/brf-tech/runr/reqs`) | `https://charts.external-secrets.io` (`RUNR_ESO_CHART_REPO`, [secret-stores.md](secret-stores.md#external-secrets-operator-in-a-region)) |
 
 The control plane also fetches the Knative Serving CRDs from the Knative release on `github.com`.
 The nodes pull the images: RunR's from `ghcr.io/brf-tech/runr` (the agent, the mirrors of
-Traefik, Redis, the Collector and Tempo, the function wrapper and the runtimes), the Kaniko build
+Traefik, Redis, the Collector, Tempo and cert-manager — and of OpenBao when a region runs its own
+([secret stores](secret-stores.md#openbao-in-the-region)), applied without a chart —, the function
+wrapper and the runtimes), the Kaniko build
 image, cAdvisor from `gcr.io`, and the images of the charts above from their own registries. The
 internal registry is a pull-through cache of `ghcr.io` and Docker Hub, and its node mirror sends
 the nodes' Docker Hub pulls through it.
@@ -233,7 +303,7 @@ DaemonSets and Helm releases in several namespaces, and RunR uses the service pr
 
 ### In the console
 
-**Administration → Platform → Knative Regions → + Add Region** opens a wizard of seven steps. It
+**Administration → Regions & settings → Knative Regions → + Add Region** opens a wizard of seven steps. It
 needs `regions.manage` and, for the registry step, `registry.manage`. Once a step is done, the
 steps before it are read-only.
 
@@ -334,8 +404,8 @@ below the minimum Kubernetes version and a name whose namespace exists on the cl
 
 ## Region settings reference
 
-One table per area. "Console" names the region's tab (Administration → Platform → Knative
-Regions → the region's pencil); the API paths are under `/api`.
+One table per area. "Console" names the region's tab (Administration → Regions & settings →
+Knative Regions → the region's pencil); the API paths are under `/api`.
 
 ### General
 
@@ -346,7 +416,10 @@ Regions → the region's pencil); the API paths are under `/api`.
 | Status | `active` | console General → **Region Status**; `runr regions set REGION --set status=…`; `PUT /knative-regions/{id}` with `region_status` | `active`, `inactive` or `maintenance` ([Region status](#region-status)) |
 | `request_timeout` | `300` | console General → **Settings**; CLI or API (below) | the longest timeout a project in the region may have, in seconds (1–3600): a project timeout above it is refused (422), and the console's project form stops there. The region's Traefik and Knative follow it ([Request timeout](#request-timeout)) |
 | `agent_ws_url` | empty | console General → **Settings**; CLI or API | RunR's address as the region's runr-agent reaches it (`wss://`, `ws://`, `https://` or `http://`; `/ws/agent/<region id>` is appended); also the base of request replay captures. Empty: the order in [Network reachability](#network-reachability). A change deploys the region's runr-agent again with the new address. One agent runs per cluster: on a cluster with several regions it is the agent of the region that deployed it, and that region's setting applies |
-| `cert_manager_cluster_issuer` | empty: the environment variable `RUNR_CERT_MANAGER_CLUSTER_ISSUER` (Helm `extraEnv`), else none | console General → **Settings**; CLI or API | the cert-manager ClusterIssuer that issues the certificates of project custom domains in TLS mode `cert-manager`. That mode is offered when the cluster serves `cert-manager.io/v1` and has the issuer; RunR does not install cert-manager |
+| `cert_manager_cluster_issuer` | RunR's default issuer (`runr-acme` or `runr-ca`), unless the environment variable `RUNR_CERT_MANAGER_CLUSTER_ISSUER` (Helm `extraEnv`) names one | console General → **Settings**; CLI or API | the cert-manager ClusterIssuer that issues the certificates of project custom domains in TLS mode `cert-manager`. Naming one of yours makes RunR create none; empty, `runr-acme` or `runr-ca` leave the choice to RunR ([cert-manager](#cert-manager)) |
+| `cert_manager_issuer_mode` | `auto` | console General → **cert-manager**; CLI or API | RunR's default issuer: `auto` (Let's Encrypt where the region is reachable from the internet and an ACME e-mail is set, else the region CA), `acme` or `ca` |
+| `cert_manager_acme_email` | empty: Helm `knative.certManager.acmeEmail` | console General → **cert-manager**; CLI or API | the ACME account e-mail of RunR's Let's Encrypt issuer; setting it accepts the ACME server's terms |
+| `internal_auth` | unset: enforce, for every region (also one upgraded from an earlier release) | console General → **Settings**; CLI or API | `enforce`: the [internal network](internal-network.md#enforce-and-audit) refuses calls the callee's allow list does not admit (`401` / `403`) — a call between two projects needs an allow-list entry; `audit`, an operator's explicit choice to look first: it admits them and logs what it would refuse. A change reaches the region's authz at once. Regions on one cluster share the authz; each region's mode applies to its project namespace |
 | `ingress_trusted_ips` | empty: trust nobody | console General → **Settings** (comma-separated); CLI (comma-separated) or API (a list, up to 32) | IP addresses or CIDRs of a load balancer or proxy in front of the region's Traefik that sends PROXY protocol or `X-Forwarded-For`. Without them Traefik records the connecting address as the client and drops client-sent `X-Forwarded-*`. A change reaches Traefik right away (a Helm upgrade in the background); regions on one cluster share its Traefik, which trusts all their addresses |
 
 Set them in the console (General → **Settings**), with `runr regions set REGION --set KEY=VALUE`
@@ -437,8 +510,9 @@ Knative Serving, so it is upgraded for all of them.
 **Uninstall Serving** (`POST /knative-regions/{id}/uninstall-serving`) deletes the KnativeServing
 resource, Traefik — which stays while it serves other Ingresses, such as the console on the same
 cluster, unless `remove_traefik` is set — and, once Traefik is gone, the Serving namespace when
-RunR created it.
-Prometheus, Loki, the runr-agent and the tracing backend stay. **Uninstall Operator**
+RunR created it. The [load tests'](load-test.md#when-the-region-goes) namespace `runr-loadtest`
+goes too, with the tests still running in it.
+Prometheus, Loki, the runr-agent, the tracing backend and cert-manager stay. **Uninstall Operator**
 (`POST /knative-regions/{id}/uninstall-operator`, once Serving is gone) removes the operator and
 the Knative Serving CRDs, and with them every Knative Service left on the cluster.
 `POST /knative-regions/{id}/uninstall-knative` (`runr regions knative uninstall REGION`) removes
@@ -542,6 +616,105 @@ not create is replaced only with `replace_existing: true`.
 switches function TLS off: RunR deletes its Secret and its `default` TLSStore (a TLSStore it did
 not create stays), and the region's Traefik answers HTTPS with its own default certificate again.
 
+### cert-manager
+
+cert-manager issues the certificates of project custom domains in TLS mode `cert-manager`: one
+Certificate per domain, renewed before it expires. Console: General → **cert-manager** (once
+Serving is ready); `runr regions cert-manager`; `GET`/`POST`/`DELETE /knative-regions/{id}/cert-manager`
+(`regions.view` to read, `regions.manage` to change); MCP `cert_manager_status`, `cert_manager_install`.
+
+**What is installed, and when.** The Serving install sets cert-manager up, and `region:reconcile`
+does it for regions that exist:
+
+| The cluster runs | RunR |
+|---|---|
+| no cert-manager | installs `jetstack/cert-manager` v1.21.2 as Helm release `cert-manager` in namespace `cert-manager`, with its CRDs, every image from `ghcr.io/brf-tech/runr/reqs/cert-manager-{controller,webhook,cainjector,acmesolver}` (the mirror of `quay.io/jetstack`), requests of 10m CPU and 32–64 MiB per component, the label `app.kubernetes.io/part-of=runr` on everything the chart renders, tolerating the dedicated-worker taint |
+| RunR's cert-manager of another version or other images | upgrades it to this release's (the three Deployments roll once; certificates and issuers stay) |
+| a cert-manager of its own (any namespace; its controller Deployment labelled `app.kubernetes.io/name=cert-manager`, `app.kubernetes.io/component=controller`) | reuses it as it is: no second cert-manager, never changed or removed by RunR |
+| cert-manager's CRDs without a controller | nothing: the region's status says so (start that cert-manager or remove its CRDs) |
+
+Helm `knative.certManager.install: false` stops RunR from installing one; a cluster's own is still
+used. `knative.certManager.chartVersion` and `knative.certManager.imagePrefix` point it at another
+chart version or registry ([Helm values](helm-values.md#knative)). Regions on one cluster share
+cert-manager and its ClusterIssuers.
+
+The status is `not_installed`, `installing`, `ready`, `uninstalling` or `error`, with the step log.
+The Serving install does not wait for cert-manager to start: the region stays `installing` until
+its Deployments run (the region's status check every minute, and every read of the status, finish
+it), then the issuer is created and the region is `ready`. **Install** (again) repairs a failed
+install or a missing issuer.
+
+**The issuer.** When the region setting `cert_manager_cluster_issuer` (or
+`RUNR_CERT_MANAGER_CLUSTER_ISSUER`) names a ClusterIssuer of yours, RunR uses it and creates none;
+the region is `error` while that issuer does not exist. Otherwise RunR creates its default issuer
+and writes its name into `cert_manager_cluster_issuer`:
+
+| Issuer | When (`cert_manager_issuer_mode`) | What it is |
+|---|---|---|
+| `runr-acme` | `auto`: the region is reachable from the internet — its external address is a public IP address, or a host name resolving to one — and an ACME e-mail is set; or `acme` | ACME, Let's Encrypt production (Helm `knative.certManager.acmeServer` for another server), HTTP-01 through the region's Traefik: cert-manager's solver Ingress takes the IngressClass that Traefik serves (`traefik`, or `traefik-knative` when another controller owns `traefik`). The domain must reach the region on port 80. Publicly trusted certificates |
+| `runr-ca` | `auto` otherwise; or `ca` | A region CA: `runr-selfsigned` (selfSigned) signs the CA certificate `runr-region-ca` (ECDSA P-256, ten years, Secret `runr-region-ca` in cert-manager's namespace), and the CA ClusterIssuer `runr-ca` signs the domains' certificates. Clients trust them once the region CA is installed on them |
+
+The ACME e-mail is the region setting `cert_manager_acme_email`, else the Helm value
+`knative.certManager.acmeEmail`. RunR never takes one on its own — not the administrator's
+address: the e-mail registers the ACME account and accepts the ACME server's terms, which is the
+operator's decision. In `auto`, an ACME account the server refuses (an invalid e-mail, no route to
+the server) makes the region CA the issuer, and the step log says why; in `acme` the region is
+`error` instead. A changed mode, e-mail or issuer name chooses the issuer again in the background.
+Domains already in TLS mode `cert-manager` keep their certificate and get one from the new issuer
+when their routes are applied again (**Check again**, `runr domains verify`, the next deploy).
+
+**The region CA.** Download it under General → **cert-manager** → **Download CA**, on a project's
+Domains tab, with `runr regions cert-manager ca REGION` / `runr domains ca`, or with
+`GET /knative-regions/{id}/cert-manager/ca-certificate` (`regions.view`) and
+`GET /projects/{id}/domains/ca-certificate` (`projects.view`): the PEM certificate, never its key.
+
+**Custom domains.** TLS mode `cert-manager` is offered where the region's cert-manager is `ready`
+with an issuer; otherwise the console, the CLI and the API (`meta.cert_manager` of
+`GET /projects/{id}/domains`, the 422 of the TLS change) say why — installing, failed, not
+installed, no issuer — and what to do. A new domain starts in TLS mode `cert-manager` where the
+region is `ready` with an issuer, and in `none` elsewhere: a certificate for exactly that host —
+publicly trusted from Let's Encrypt, or from the region CA — is never worse than the region's
+default certificate, which does not name the domain at all. Choose another mode at any time.
+
+**Removing.** **Remove** (`runr regions cert-manager rm`, `DELETE /knative-regions/{id}/cert-manager`)
+is refused while the region's custom domains have cert-manager certificates. RunR's issuers, the
+region CA and RunR's cert-manager release (and its namespace) go only when nothing else on the
+cluster uses cert-manager — no other region there, no other Certificate (another organization's
+domains, the console's own certificate, yours); a cert-manager RunR did not install always stays.
+cert-manager's CRDs stay (`kubectl delete crd -l app.kubernetes.io/part-of=runr` removes them, and
+with them every certificate resource of the cluster). Removing a region, uninstalling Knative or
+deleting the region record leaves cert-manager as it is.
+
+Other features that use cert-manager in a region rely on the same installation: they check that the
+region's cert-manager is `ready` and create their own (namespaced) issuers next to RunR's.
+
+### Global DNS
+
+The region's PowerDNS server of the global zone, for [global projects](global-projects.md): a
+region takes part in global projects once it runs one. Console: General → **Global DNS**;
+`runr regions global-dns enable | disable <region>`; `POST` / `DELETE
+/knative-regions/{id}/global-dns` (`regions.manage`, platform regions only).
+
+| What RunR installs | Where |
+|---|---|
+| PowerDNS Authoritative (`reqs/pdns-auth:5.0.8`), a 1 GiB volume | namespace `runr-global-dns`, one server per cluster |
+| Service `runr-pdns`, type LoadBalancer, UDP and TCP 53 | the region needs a public address for it |
+| Service `runr-pdns-api` (ClusterIP 8081) | the server's HTTP API, reached by RunR through the API server's proxy only |
+| The agent's Service `runr-agent-health` (8086) and the IngressRoute `runr-global-health` | the health checks of the global projects' copies |
+| Issuer `runr-global-dns`, Certificate `runr-global-wildcard` (with cert-manager) | the wildcard `*.<zone>` |
+
+The card shows the server's status, its address and name server (`ns-<region>.<zone>`), whether
+the address answered the zone from the control plane, the last zone sync and the certificate. The
+records the operator creates in the parent zone are under Administration → Regions & settings → Global DNS
+([Delegation](global-projects.md#delegation)). Disabling is refused while global projects run in
+the region.
+
+**GeoIP database** (proximity mode): default (the platform's URL), an operator-provided URL the
+cluster reaches (an internal mirror, a file in the region's object store), a file the operator
+copies onto the server's volume (`file`, for a cluster without internet access), or none; the
+status shows whether the server loaded it, from where, or why not
+([global-projects.md](global-projects.md#geoip-database)).
+
 ### Data services
 
 The console's Data services tab; `regions.data_services.manage`;
@@ -556,6 +729,23 @@ The console's Data services tab; `regions.data_services.manage`;
 
 Removing a service is refused while bindings use it, and deletes its data.
 
+### Secret stores
+
+External Secrets Operator, which reads the projects' references to the organizations' secret
+stores in the region; `regions.manage`; `GET`/`POST`/`DELETE /knative-regions/{id}/external-secrets`.
+Optional: install it when projects on the region refer to a secret store. Removing it is refused
+while they do ([secret-stores.md](secret-stores.md#external-secrets-operator-in-a-region)). Each
+store logs in as a service account of the project namespace that the store trusts through the
+cluster's service account issuer; the store's trust page shows the issuer and keys per region.
+
+The region's own OpenBao — `GET`/`POST`/`PATCH`/`DELETE /knative-regions/{id}/openbao`,
+`regions.manage` — is the third place a project secret value can live and the issuer of dynamic
+Postgres credentials of bindings. It needs the operator; while it runs, new secret values of the
+region's projects go into it (`default_for_values`). Removing it is refused while values live in
+it, and the operator cannot be removed while it is installed
+([secret-stores.md](secret-stores.md#openbao-in-the-region)). Regions on the same cluster share
+one operator and one OpenBao.
+
 ### Supply chain and data location
 
 The console's Supply chain tab; `regions.supply_chain.manage`;
@@ -569,7 +759,7 @@ match ([supply-chain.md](supply-chain.md#data-residency)), and the place a
 ### Billing
 
 With the [Billing module](billing.md) on, the region's **Billing** tab (`billing.view`; changes
-`billing.manage`) and Settings → Billing → Regions & prices show and set:
+`billing.manage`) and Administration → Billing → Regions & prices show and set:
 
 | Setting | Default | Change with | What it does |
 |---|---|---|---|
@@ -584,7 +774,12 @@ its markup when it accepts the offer ([Billing with tenancy](billing.md#billing-
 - **Skupper.** Private database connections of [bindings](bindings.md) run over Skupper v2, which
   the cluster's operators install. `GET /knative-regions/{id}/skupper` shows whether the cluster
   runs it, `POST /knative-regions/{id}/skupper/site` creates the site `runr` in the project
-  namespace ([cli.md](cli.md#redis-registry-and-skupper)).
+  namespace ([cli.md](cli.md#redis-registry-and-skupper)). A connection belongs to a project's own
+  workload or to one of its environments (`POST /projects/{project}/private-connections` with
+  `environment`, the project's **Private connections** tab on that environment): it lives in the
+  namespace of the region that workload runs in, and only that workload gets its variables
+  ([Environments](environments.md#private-database-connections)). A region move installs the site
+  again on the new cluster when a project or an environment there has a connection.
 - **Demo projects.** General → **Demo Projects** (`POST`/`DELETE /knative-regions/{id}/demo-projects`,
   `runr regions demo install|rm`) deploys four demo projects — a frontend, a backend, a
   queue-triggered e-mail sender and a scheduled statistics job — once Serving, Redis and the
@@ -669,7 +864,10 @@ A region that is already moving answers 422. A region with a data location
 cluster's location (`data_location` in the API, `--data-location` in the CLI), and it has to be
 the region's.
 
-The move runs as a queued job (`MigrateRegionJob`, at most 30 minutes) and sets
+The move runs as two queued jobs, each at most 30 minutes: `MigrateRegionJob` moves the region and
+what it runs besides the projects (steps 1–3 below and the region's other features),
+`MigrateRegionProjectsJob` then the projects (their secret values, builds, deploys, custom domains
+and previews). A part that fails or runs out of time leaves the move `failed`. The move sets
 `migration_status` as it goes:
 
 1. `pending`: RunR saves the current kubeconfig and external address, and what else the region
@@ -696,8 +894,18 @@ The move runs as a queued job (`MigrateRegionJob`, at most 30 minutes) and sets
    and KV on the region's Redis; an external object store needs nothing on the cluster), the
    admission policy, function TLS (the console's certificate, or the uploaded one copied from the
    old cluster's Secret), the Skupper site of the project namespace when projects use private
-   database connections, and the status block of a region that is not active. A step that fails
-   is logged and the move goes on.
+   database connections, External Secrets Operator ([secret stores](secret-stores.md)), the
+   region's OpenBao (a new instance with its own unseal key, installed once the operator is ready
+   on the new cluster), and the status block of a region that is not active. A step that fails is
+   logged and the move goes on.
+   The values of the projects' secret variables live on the old cluster only
+   ([pass-through](security.md#pass-through)): before the projects are deployed, RunR copies each
+   project's values from the old cluster to the new one, in memory — from its values Secret into
+   the new values Secret, from the old OpenBao into the new one. A project whose values
+   do not make it (the old cluster does not answer) is logged, and its deploy on the new cluster
+   names the missing values. References to secret stores need no copy, but the new cluster has its
+   own service account issuer: the stores have to trust it too
+   ([cluster issuer requirements](secret-stores.md#cluster-issuer-requirements)).
 5. It adds the region's function domain to Knative's domain configuration on the new cluster.
 6. It deploys again what ran on the old cluster: for every project with a live deployment, the
    version that deployment runs, with its deploy overrides. The deploy checks of every deploy
@@ -711,7 +919,12 @@ The move runs as a queued job (`MigrateRegionJob`, at most 30 minutes) and sets
    each organization's projects are deployed in its own context, through its copy of the region,
    with the organization's deploy checks. An organization's own region moves inside that
    organization. The live [preview environments](#preview-environments) of the projects are
-   deployed on the new cluster too.
+   deployed on the new cluster too, and so is every [environment](environments.md) that runs on
+   the region — of its projects, and an environment of a project in another region that has the
+   region as its own — through the environment's deploy checks
+   ([Environments](environments.md#region-moves-and-detached-regions)). The custom domains of the
+   projects and environments are routed on the new cluster (an uploaded certificate is copied from
+   the old one).
 7. `dns_check`: point the wildcard DNS record of the function domain at the new cluster's
    external address (`external_ip` and `dns_instruction` of the region,
    `GET /api/knative-regions/{id}`).
@@ -763,7 +976,10 @@ region, as long as the move can be rolled back (`projects`, never cached; the co
 tab and `runr regions migration status REGION` list it). Projects that run nothing are not
 listed. Each row has `project_id`, `project`, `version`, `deployment_status`, `message`,
 `organization` — the slug of the organization a platform region's project belongs to in a
-multi-tenant install, else `null` — and `outcome`:
+multi-tenant install, else `null` — and `outcome`; an environment of a project is a row of its own
+with `environment` (its name). A built version an environment runs is built into the new registry
+for it (or waited for while the move builds it again for its project): the row says `building`
+until its deployment starts there.
 
 | `outcome` | Meaning |
 |---|---|
@@ -865,10 +1081,15 @@ found it:
   thin-pool size) and gVisor;
 - WebAssembly support with its shims and nodes, GPU support with its settings, nodes and GPU
   inventory, and function TLS;
-- the status of the data services RunR runs, of the admission policy and of the tracing backend
-  (their settings and credentials are the region's and do not change). A data service or a
-  tracing backend that was installed on the new cluster only is not installed after the
-  rollback.
+- the status of the data services RunR runs, of the admission policy, of the tracing backend and
+  of External Secrets Operator and of the region's OpenBao (their settings and credentials are the
+  region's and do not change). A data service, a tracing backend or the operator that was installed on the new
+  cluster only is not installed after the rollback;
+- the projects' secret values: values set while the region ran on the new cluster are there only,
+  so the rollback copies them from the new cluster back to the old one (values Secrets and OpenBao),
+  in memory,
+  before the projects are deployed there again and their workloads leave the new cluster (not for
+  two kubeconfigs of the same API server).
 
 A move that was already running when RunR was upgraded to a release that keeps this state has
 none of it saved: its rollback gives back the kubeconfig and the external address only.
@@ -946,10 +1167,16 @@ own address, with nothing metering them. After the rollback RunR removes from th
 - their CronJobs and queue consumers (and workflow queue bridges), with the Jobs and pods these
   started;
 - what they read or built: the code ConfigMaps, the Secrets of the projects' secret environment
-  variables and of their queue consumers, and the build Jobs with their source ConfigMaps.
+  variables (after their values were copied back to the restored cluster) and the ExternalSecrets
+  of their references and of their OpenBao values, the Secrets of their queue consumers, and the
+  build Jobs with their source ConfigMaps;
+- the projects' values in the new cluster's OpenBao, with their policies and roles there (after the
+  values were copied back).
 
 It finds them in the region's project namespace by the labels RunR sets on them
-(`runr/project-id`, `runr/preview-of`), for the region's projects only: in a multi-tenant install
+(`runr/project-id`, `runr/preview-of`, `runr/environment-of`), for the region's projects and the
+environments that ran there only (of a project whose own workload runs in another region, only its
+environments' objects): in a multi-tenant install
 those of every organization on a platform region too, and a project created while the region ran
 on the new cluster. Another region's projects in a namespace of the same name are left alone.
 
@@ -957,7 +1184,9 @@ What stays on the new cluster:
 
 - what the move installed there: Knative with Traefik, Prometheus and Loki, the runr-agent and the
   tracing backend, the managed Redis, the registry with its images, Kata Containers, gVisor,
-  WebAssembly and GPU support, the admission policy;
+  WebAssembly and GPU support, the admission policy, External Secrets Operator with the
+  organizations' SecretStores and their service accounts, and OpenBao (with nothing of the
+  projects in it);
 - the data services with their volumes, credentials and data: they may hold what was written while
   the region ran there. Copy what you need back to the old cluster's services, then remove them
   yourself;
@@ -982,14 +1211,14 @@ stay); a notification tells how it went." — and the operator who rolled back g
   Its installs and data services stay."), or "… nothing removed" with the reason;
 - "Left cluster cleanup of eu failed", with the reason — e.g. "the cluster the rollback left does
   not answer: …" — and what to remove yourself: the Knative Services, CronJobs and queue consumers
-  labelled `runr/project-id` or `runr/preview-of` with the region's projects in the project
+  labelled `runr/project-id`, `runr/preview-of` or `runr/environment-of` with the region's projects in the project
   namespace of that cluster.
 
 The API log has the same lines (`RegionMigrate: Left cluster cleanup of eu …`).
 
 ## Changing the base domain
 
-The platform's base domain (Administration → Platform, **Base Domain**; `PATCH /api/settings`
+The platform's base domain (Administration → Regions & settings, **Base Domain**; `PATCH /api/settings`
 with `base_domain`) gives every region that follows it its function domain
 `<region>.<base domain>`. A region follows the base domain while its function domain
 (`knative_domain` of its settings) is `<region>.<base domain>` or not set yet; a region with a
@@ -1003,8 +1232,9 @@ function domain of its own keeps it whatever the base domain is.
   (`domain_migration_target` of `GET /api/knative-regions/{id}`): a small proxy in the project
   namespace (Deployment, Service and IngressRoutes `runr-domain-alias`, 10m CPU / 32 MiB
   requested per pod, two pods) sends every `<project>.<region>.<new base domain>` to the project's
-  Knative Service. Create the wildcard DNS record of the new domain, pointing at the same external
-  address.
+  Knative Service, as a request for its public host on the current domain (a cluster-local service
+  is not served there). Create the wildcard DNS record of the new domain, pointing at the same
+  external address.
 - **Completion.** The status check (every minute) and the scheduler (hourly) check
   `dns-check.<region>.<new base domain>`; once it reaches the region's external address the new
   domain becomes the function domain: Knative's domain configuration and the KnativeServing
@@ -1013,9 +1243,15 @@ function domain of its own keeps it whatever the base domain is.
   answer both stay served. Migration → **Complete domain migration**,
   `runr regions migration complete REGION --domain` or
   `POST /api/knative-regions/{id}/complete-domain-migration` completes it at once (for DNS the
-  control plane resolves differently from the clients).
+  control plane resolves differently from the clients). The completion carries everything that
+  hands calls to the region's projects along at once, not on the next status check: custom
+  domains, gateway routes and global routes point at the projects' hosts on the new domain before
+  Knative switches over (the second address answers there until then), an organization's alias
+  that sends to the old domain sends to the new one, and the region's gateways are rebuilt on the
+  new domain (`<user>.<region>.<new base domain>`).
 - **Rollback.** Setting the base domain back to the old one during the migration ends it: the
-  region keeps its function domain and the new one is no longer served. A third base domain moves
+  region keeps its function domain and the new one is no longer served; custom domains, gateway
+  routes and global routes point at the projects' current hosts at once. A third base domain moves
   the second address to `<region>.<third base domain>`; the function domain stays.
 - **A cleared base domain** removes the function domain from the regions that follow it.
 
@@ -1117,6 +1353,7 @@ To take a cluster out of service completely:
    | WebAssembly, Kata Containers, gVisor | Isolation | `DELETE /knative-regions/{id}/wasm`, `POST /knative-regions/{id}/uninstall-sandbox` |
    | Admission policy | Supply chain | `DELETE /knative-regions/{id}/supply-chain/admission` |
    | Function TLS | General → **Remove certificate** | `DELETE /knative-regions/{id}/function-tls` |
+   | cert-manager (after the custom domains' certificates; a cluster's own cert-manager stays) | General → **cert-manager** → **Remove** | `DELETE /knative-regions/{id}/cert-manager` |
    | Tracing backend | Tracing tab | `DELETE /observability/regions/{id}/tracing` |
    | Redis | Redis → **Remove Redis** | `DELETE /knative-regions/{id}/redis` |
    | Knative Serving and Traefik, then the operator | Serving → **Uninstall Serving**, Operator → **Uninstall Operator** | `POST /knative-regions/{id}/uninstall-serving` (`remove_traefik`), then `…/uninstall-operator` |
@@ -1127,7 +1364,8 @@ To take a cluster out of service completely:
    `knative` and `loki-stack`, cAdvisor, the runr-agent and its Secret `runr-agent-token`), the
    project namespace (the region name), whichever of `runr-registry`, `runr-sandbox`,
    `runr-sbx-*`, `runr-data`, `cnpg-system`, `runr-supply-chain`, `cosign-system` and `runr-gpu`
-   remain, the ClusterRoles and ClusterRoleBindings `runr-agent` and `cadvisor-runr`, the
+   remain, cert-manager's CRDs when RunR installed it (label `app.kubernetes.io/part-of=runr`;
+   deleting them deletes every certificate resource of the cluster), the ClusterRoles and ClusterRoleBindings `runr-agent` and `cadvisor-runr`, the
    PriorityClass `observability-critical`, and on the nodes the labels `runr.dev/dedicated`,
    `node-role.kubernetes.io/knative-worker`, `runr.dev/kvm` and `runr.dev/wasm*`, the taint
    `runr.dev/dedicated` and the `hosts.toml` files the registry's node mirror wrote into
@@ -1188,6 +1426,13 @@ mutability check ([Regions in multi-tenant installs](#regions-in-multi-tenant-in
 | `POST /knative-regions/{id}/detect-components` | `regions.manage` | Adopt an operator and Serving already running on the cluster |
 | `PUT /knative-regions/{id}/function-tls` | `regions.manage` | [Function TLS](#function-tls) |
 | `DELETE /knative-regions/{id}/function-tls` | `regions.manage` | Switch function TLS off |
+| `GET /knative-regions/{id}/cert-manager` | `regions.view` | [cert-manager](#cert-manager): status, step log, the issuer and why RunR chose it, whether custom domains can use it (`?cluster=0`: without asking the cluster) |
+| `POST /knative-regions/{id}/cert-manager` | `regions.manage` | Install it (or reuse the cluster's own) and create the default issuer; again: repair |
+| `DELETE /knative-regions/{id}/cert-manager` | `regions.manage` | Stop using it (refused while custom domains have its certificates) |
+| `GET /knative-regions/{id}/cert-manager/ca-certificate` | `regions.view` | The region CA's certificate (PEM) |
+| `GET /knative-regions/{id}/global-dns` | `regions.view` | The region's [global DNS](#global-dns) server and whether the region can run one |
+| `POST /knative-regions/{id}/global-dns` | `regions.manage` | Install it |
+| `DELETE /knative-regions/{id}/global-dns` | `regions.manage` | Remove it (refused while global projects run in the region) |
 
 **Redis, registry, Skupper**
 
@@ -1260,7 +1505,7 @@ Run them in the API container (`php artisan …`; with Compose `docker compose e
 
 | Command | What it does |
 |---|---|
-| `region:reconcile [--region=ID] [--dry-run]` | Brings existing regions up to date with the running release — the active platform regions and, with the Tenancy module, every tenant's own active regions; the steps are listed in [architecture.md](architecture.md#regions). Then the status block of every region with Knative Serving ready, platform regions and tenants' own regions alike ([Region status](#region-status)). The Helm chart's bootstrap Job runs it after every install and upgrade ([upgrade.md](upgrade.md#procedure)) |
+| `region:reconcile [--region=ID] [--dry-run] [--deadline=SECONDS] [--run=NAME] [--attempts=N]` | Brings existing regions up to date with the running release — the active platform regions and, with the Tenancy module, every tenant's own active regions; the steps are listed in [architecture.md](architecture.md#regions). Then the status block of every region with Knative Serving ready, platform regions and tenants' own regions alike ([Region status](#region-status)). Every step is idempotent: a run that stopped is finished by the next one. `--deadline`: no step starts after that many seconds, the one running then runs to its end. Exit code 0: everything done; 1: a step failed or still waits (e.g. the internal network's authz without a ready pod); 3: the deadline left steps (listed); 4: everything reachable is done, some region clusters did not answer. A run over every region is recorded: the console's region status (General tab), the region API (`reconcile`: `running`, `done`, `unfinished` or `unreachable`, with the steps the region was left with) and `/api/version` (`region_reconcile`) show it. The Helm chart runs it after every install and upgrade in the Job `runr-region-reconcile-<revision>` — no hook, helm does not wait for it — with `--deadline` (`bootstrap.regionReconcileSeconds`), `--run=helm-<revision>` and `--attempts=3`: 1 and 3 start the next attempt, the last one that does not end done notifies the platform administrators ([upgrade.md](upgrade.md#order-of-operations)) |
 | `knative:check-status` | Queues the status check of every region with a kubeconfig that is not installing or uninstalling: cluster reachability, the Knative components, the external address, the region capacity, the DNS check, the DNS step of a migration and of a base-domain migration. The scheduler runs it every minute |
 | `regions:discover-ips` | Reads the external address of the Traefik of every region with Knative Serving ready again |
 | `agent:redeploy [REGION-ID] [--missing] [--force]` | Deploys the runr-agent again with a new token, on every active region with Knative Serving ready or on one; it resolves the agent URL again. `--missing`: only regions without a token; a cluster that runs no agent, or the agent of another region, is skipped unless `--force` ([monitoring.md](monitoring.md#go-agent-runtimeagent)) |

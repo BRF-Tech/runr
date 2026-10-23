@@ -4,8 +4,8 @@ page_title: "runr_env_var Resource - runr"
 subcategory: ""
 description: |-
   One environment variable of a project. Either kind reaches the running deployment with the next deploy: redeploy (runr_deployment.triggers) to apply a change.
-  Plain variables (secret = false) are part of the project config; each change saves a new project version.Secret variables (secret = true) are stored write-only through the project's secrets API: RunR lists their names, never their values, and they never appear in a version. Terraform keeps the value it set (value, sensitive) and notices when the variable is removed outside Terraform. With value_wo (Terraform 1.11 and later) the value is not stored in the state either; change value_wo_version to write a new value.
-  A name is plain or secret, never both; switching secret recreates the variable.
+  Plain variables (secret = false) are part of the project config; each change saves a new project version.Secret variables (secret = true) are stored write-only through the project's secrets API: RunR lists their names, never their values, and they never appear in a version. Terraform keeps the value it set (value, sensitive) and notices when the variable is removed outside Terraform. With value_wo (Terraform 1.11 and later) the value is not stored in the state either; change value_wo_version to write a new value.References (reference) are secret variables whose value lives in a secret store of the organization (runr_secret_store): RunR never sees it, External Secrets Operator reads it in the project's region. A reference changed into a value outside Terraform (or the other way round) shows as a change.
+  A name is plain or secret, never both; switching secret recreates the variable. Switching a secret variable between a value and a reference changes it in place. Import with <project name or id>/<NAME>: a secret variable without its value, a reference with it.
 ---
 
 # runr_env_var (Resource)
@@ -14,8 +14,9 @@ One environment variable of a project. Either kind reaches the running deploymen
 
 - **Plain** variables (`secret = false`) are part of the project config; each change saves a new project version.
 - **Secret** variables (`secret = true`) are stored write-only through the project's secrets API: RunR lists their names, never their values, and they never appear in a version. Terraform keeps the value it set (`value`, sensitive) and notices when the variable is removed outside Terraform. With `value_wo` (Terraform 1.11 and later) the value is not stored in the state either; change `value_wo_version` to write a new value.
+- **References** (`reference`) are secret variables whose value lives in a secret store of the organization (`runr_secret_store`): RunR never sees it, External Secrets Operator reads it in the project's region. A reference changed into a value outside Terraform (or the other way round) shows as a change.
 
-A name is plain or secret, never both; switching `secret` recreates the variable.
+A name is plain or secret, never both; switching `secret` recreates the variable. Switching a secret variable between a value and a reference changes it in place. Import with `<project name or id>/<NAME>`: a secret variable without its value, a reference with it.
 
 ## Example Usage
 
@@ -45,6 +46,18 @@ resource "runr_env_var" "signing_key" {
   secret           = true
 }
 
+# A secret variable whose value lives in a secret store: RunR never sees it, External Secrets
+# Operator reads it in the project's region (secret = true is implied).
+resource "runr_env_var" "db_password" {
+  project_id = runr_project.api.id
+  name       = "DB_PASSWORD"
+  reference = {
+    store = runr_secret_store.vault.id
+    path  = "apps/orders"
+    key   = "db_password"
+  }
+}
+
 variable "database_url" {
   type      = string
   sensitive = true
@@ -69,14 +82,27 @@ variable "signing_key" {
 
 > **NOTE**: [Write-only arguments](https://developer.hashicorp.com/terraform/language/resources/ephemeral#write-only-arguments) are supported in Terraform 1.11 and later.
 
-- `secret` (Boolean) Store the value as a write-only secret variable. Changing it recreates the variable.
-- `value` (String, Sensitive) Value (sensitive). One of `value` and `value_wo` is required.
+- `reference` (Attributes) The value lives in a secret store of the organization: a secret variable that refers to it instead of a `value` ([secret stores](https://runr.sh/docs/secret-stores/)). The variable reaches the workload with the next deploy, as External Secrets Operator syncs it in the project's region. (see [below for nested schema](#nestedatt--reference))
+- `secret` (Boolean) Store the value as a write-only secret variable (default `false`; a `reference` is always a secret variable, so it defaults to `true` with one and cannot be `false`). Changing it recreates the variable.
+- `value` (String, Sensitive) Value (sensitive). Exactly one of `value`, `value_wo` and `reference` is required.
 - `value_wo` (String, Sensitive, [Write-only](https://developer.hashicorp.com/terraform/language/resources/ephemeral#write-only-arguments)) Value of a secret variable that Terraform never stores (write-only attribute, Terraform 1.11 and later; needs `secret = true`). Terraform cannot compare it, so change `value_wo_version` to write a new value.
 - `value_wo_version` (String) Any string; a change writes `value_wo` again (for example a rotation date).
 
 ### Read-Only
 
 - `id` (String) `<project_id>/<name>`.
+
+<a id="nestedatt--reference"></a>
+### Nested Schema for `reference`
+
+Required:
+
+- `path` (String) Path of the secret in the store: a Vault / OpenBao KV path (`apps/orders`), an AWS secret name or ARN, a GCP secret name, an Azure Key Vault secret name.
+- `store` (String) The store: its id or name. Use `runr_secret_store.<name>.id`, so Terraform creates the store before the variable and deletes it after (a store a variable refers to cannot be deleted).
+
+Optional:
+
+- `key` (String) Key inside the secret (a field of a JSON or KV secret); left out: the whole secret.
 
 ## Import
 
@@ -91,4 +117,7 @@ terraform import runr_env_var.log_level orders-api/LOG_LEVEL
 # A secret variable is imported with secret = true and without its value (RunR never returns
 # it); the next apply writes the value of the configuration.
 terraform import runr_env_var.database_url orders-api/DATABASE_URL
+
+# A reference to a secret store is imported with its store, path and key.
+terraform import runr_env_var.db_password orders-api/DB_PASSWORD
 ```

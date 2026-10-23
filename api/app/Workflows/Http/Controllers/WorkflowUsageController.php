@@ -5,13 +5,15 @@ namespace App\Workflows\Http\Controllers;
 use App\Models\Project;
 use App\Workflows\Models\Workflow;
 use App\Workflows\Models\WorkflowUsage;
+use App\Workflows\Support\WorkflowEnvironments;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
 
 /**
  * Workflow metering (docs/workflows.md § Usage): step executions and started runs per day,
- * for the current tenant or one project.
+ * for the current tenant or one project — every environment of it, or the one `environment`
+ * names (docs/workflows.md#environments).
  */
 class WorkflowUsageController
 {
@@ -36,6 +38,7 @@ class WorkflowUsageController
         $data = $request->validate([
             'from' => 'nullable|date',
             'to' => 'nullable|date',
+            'environment' => 'nullable|string|max:64',
         ]);
 
         $from = isset($data['from']) ? now()->parse($data['from'])->toDateString() : now()->subDays(29)->toDateString();
@@ -44,10 +47,14 @@ class WorkflowUsageController
         $query = WorkflowUsage::whereDate('date', '>=', $from)->whereDate('date', '<=', $to);
         if ($project) {
             $query->where('project_id', $project->id);
+            if (! empty($data['environment']) && $data['environment'] !== 'all') {
+                WorkflowEnvironments::constrain($query, WorkflowEnvironments::idOf(WorkflowEnvironments::fromRequest($request, $project)));
+            }
         }
 
         $rows = $query->orderBy('date')->get();
-        $names = Workflow::whereIn('id', $rows->pluck('workflow_id')->unique())->pluck('name', 'id');
+        $workflows = Workflow::with('environment:id,name')->whereIn('id', $rows->pluck('workflow_id')->unique())->get()->keyBy('id');
+        $names = $workflows->map(fn (Workflow $w) => $w->name);
 
         $daily = $rows->groupBy(fn ($r) => $r->date->toDateString())->map(fn ($day, $date) => [
             'date' => $date,
@@ -59,6 +66,7 @@ class WorkflowUsageController
             'workflow_id' => $id,
             'workflow' => $names[$id] ?? null,
             'project_id' => $wf->first()->project_id,
+            'environment' => isset($workflows[$id]) ? ($workflows[$id]->environmentName() ?? 'production') : null,
             'step_executions' => (int) $wf->sum('step_executions'),
             'runs_started' => (int) $wf->sum('runs_started'),
         ])->values();

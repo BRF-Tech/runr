@@ -88,7 +88,7 @@ func (r *runtimeResource) Schema(_ context.Context, _ resource.SchemaRequest, re
 			"regions": schema.ListAttribute{Optional: true, ElementType: types.StringType,
 				MarkdownDescription: "Ids of the regions the runtime is offered in; unset offers it in every region."},
 			"enabled": schema.BoolAttribute{Optional: true, Computed: true, Default: booldefault.StaticBool(true),
-				MarkdownDescription: "Whether new projects can pick the runtime and its projects deploy."},
+				MarkdownDescription: "Whether new projects can pick the runtime and its projects deploy (default `true`)."},
 			"name":     schema.StringAttribute{Computed: true, MarkdownDescription: "Display name."},
 			"source":   schema.StringAttribute{Computed: true, MarkdownDescription: "`platform` or `custom`."},
 			"run_mode": schema.StringAttribute{Computed: true, MarkdownDescription: "`http`, `exec` or `persistent`."},

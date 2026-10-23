@@ -108,7 +108,7 @@ func newBindingsLsCmd(app *App) *cobra.Command {
 				for _, b := range list {
 					projects := make([]string, 0, len(b.Attachments))
 					for _, a := range b.Attachments {
-						projects = append(projects, a.ProjectName())
+						projects = append(projects, attachedTo(&a))
 					}
 					t.Row(b.Name, bindingTypeLabel(&b), output.Dash(b.RegionName()), b.Status, joinOrDash(projects),
 						output.Dash(b.Settings.String()))
@@ -531,7 +531,7 @@ func bindingSettingValue(v string) any {
 }
 
 func newBindingsCreateCmd(app *App) *cobra.Command {
-	var typ, plan, region, envPrefix string
+	var typ, plan, region, envPrefix, envName string
 	var attach, wait bool
 	var timeout time.Duration
 	var sf bindingSettingsFlags
@@ -560,6 +560,9 @@ func newBindingsCreateCmd(app *App) *cobra.Command {
 			}
 			if envPrefix != "" && !attach {
 				return usageErrorf("--env-prefix needs --attach (or set it later with `runr bindings attach`)")
+			}
+			if envName != "" && !attach {
+				return usageErrorf("--env needs --attach (or attach it later with `runr bindings attach --env`)")
 			}
 			if plan != "" && plan != runr.BindingPlanShared && plan != runr.BindingPlanDedicated {
 				return usageErrorf("--plan must be shared or dedicated")
@@ -593,9 +596,13 @@ func newBindingsCreateCmd(app *App) *cobra.Command {
 					return err
 				}
 				if region != "" {
-					return usageErrorf("--attach creates the binding in the project's region; drop --region")
+					return usageErrorf("--attach creates the binding in the region of the project (or of --env); drop --region")
 				}
-				att, err = c.AttachBinding(ctx, p.ID, runr.AttachBindingInput{Binding: &in, EnvPrefix: envPrefix})
+				env, err := environmentScope(ctx, c, p, envName)
+				if err != nil {
+					return err
+				}
+				att, err = c.AttachBinding(ctx, p.ID, runr.AttachBindingInput{Binding: &in, EnvPrefix: envPrefix, Environment: env})
 				if err != nil {
 					return err
 				}
@@ -605,7 +612,7 @@ func newBindingsCreateCmd(app *App) *cobra.Command {
 						return err
 					}
 				}
-				app.Progress("Created binding %s and attached it to %s.", b.Name, p.Name)
+				app.Progress("Created binding %s and attached it to %s.", b.Name, projectIn(p, env))
 			} else {
 				if c, err = app.Client(); err != nil {
 					return err
@@ -654,6 +661,7 @@ func newBindingsCreateCmd(app *App) *cobra.Command {
 	f.StringVar(&region, "region", "", "region name or id (default: the only active region)")
 	f.BoolVar(&attach, "attach", false, "attach the new binding to the project (-p, $RUNR_PROJECT or runr.yaml), in its region")
 	f.StringVar(&envPrefix, "env-prefix", "", "with --attach: prefix of the project's variables, e.g. ORDERS_")
+	f.StringVar(&envName, "env", "", "with --attach: "+envFlagUsage+" (the binding is created in the region it runs in)")
 	f.BoolVar(&wait, "wait", false, "wait until the binding is ready")
 	f.DurationVar(&timeout, "timeout", 10*time.Minute, "how long --wait waits")
 	sf.register(cmd)
@@ -707,41 +715,65 @@ func newBindingsUpdateCmd(app *App) *cobra.Command {
 }
 
 func newBindingsAttachCmd(app *App) *cobra.Command {
-	var envPrefix string
+	var envPrefix, credentials, envName string
 	cmd := &cobra.Command{
 		Use:   "attach BINDING",
 		Short: "Attach a binding to the project; its variables reach the running functions",
 		Long: "Attach a binding to the project (-p, $RUNR_PROJECT or runr.yaml). --env-prefix puts a prefix in\n" +
 			"front of every variable (ORDERS_ → ORDERS_DATABASE_URL), so a project can use two bindings of the\n" +
-			"same type. On a binding that is already attached, attach changes the prefix. The project's\n" +
-			"service rolls onto the new variables; nothing needs to be redeployed.",
+			"same type. --credentials dynamic gives a ready Postgres binding a user of the project's own,\n" +
+			"issued and renewed by the region's OpenBao (docs/bindings.md, \"Dynamic credentials\"). On a\n" +
+			"binding that is already attached, attach changes the prefix or the credentials. The project's\n" +
+			"service rolls onto the new variables; nothing needs to be redeployed. --env attaches it to one\n" +
+			"environment of the project instead (runr environments): only that environment's pods get the\n" +
+			"variables and reach the binding; the binding must be in the region the environment runs in, and\n" +
+			"a binding is attached to at most one environment of a project.",
 		Example: "  runr bindings attach orders-db\n" +
-			"  runr bindings attach orders-db -p reports --env-prefix ORDERS_",
+			"  runr bindings attach orders-db-staging --env staging\n" +
+			"  runr bindings attach orders-db -p reports --env-prefix ORDERS_\n" +
+			"  runr bindings attach orders-db --credentials dynamic\n" +
+			"  runr bindings attach orders-db --credentials static",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
 			if !runr.ValidEnvPrefix(envPrefix) {
 				return usageErrorf("--env-prefix %q: use upper case letters, digits and _, start with a letter and end with _ (e.g. ORDERS_)", envPrefix)
 			}
+			if credentials != "" && credentials != runr.CredentialsStatic && credentials != runr.CredentialsDynamic {
+				return usageErrorf("--credentials %q: static or dynamic", credentials)
+			}
 			c, p, err := app.Project(ctx)
 			if err != nil {
 				return err
 			}
-			pb, err := c.ProjectBindings(ctx, p.ID)
+			env, err := environmentScope(ctx, c, p, envName)
+			if err != nil {
+				return err
+			}
+			// With --env: the attachments of that environment (and what its region offers)
+			pb, err := c.ProjectEnvironmentBindings(ctx, p.ID, env)
 			if err != nil {
 				return err
 			}
 			var att *runr.BindingAttachment
 			if cur := runr.PickAttachment(pb.Attachments, args[0]); cur != nil {
 				prefixGiven := cmd.Flags().Changed("env-prefix") || cmd.Flags().Changed("prefix")
-				if !prefixGiven || cur.EnvPrefix == envPrefix {
-					app.Progress("%s is already attached to %s.", bindingAttachmentName(cur, args[0]), p.Name)
-					att = cur
-				} else {
+				att = cur
+				where := attachedTo(cur)
+				if prefixGiven && cur.EnvPrefix != envPrefix {
 					if att, err = c.UpdateAttachment(ctx, p.ID, cur.ID, envPrefix); err != nil {
 						return err
 					}
-					app.Progress("Changed the prefix of %s on %s to %s.", bindingAttachmentName(att, args[0]), p.Name, output.Dash(envPrefix))
+					app.Progress("Changed the prefix of %s on %s to %s.", bindingAttachmentName(att, args[0]), where, output.Dash(envPrefix))
+				}
+				if credentials != "" && attachmentCredentials(att) != credentials {
+					if att, err = c.SetAttachmentCredentials(ctx, p.ID, cur.ID, credentials); err != nil {
+						return err
+					}
+					app.Progress("%s on %s now uses %s credentials.", bindingAttachmentName(att, args[0]), where, credentials)
+				}
+				if att == cur {
+					app.Progress("%s is already attached to %s.", bindingAttachmentName(cur, args[0]), where)
 				}
 			} else {
 				b := runr.PickBinding(pb.Available, args[0])
@@ -750,10 +782,14 @@ func newBindingsAttachCmd(app *App) *cobra.Command {
 						return err
 					}
 				}
-				if att, err = c.AttachBinding(ctx, p.ID, runr.AttachBindingInput{BindingID: b.ID, EnvPrefix: envPrefix}); err != nil {
+				in := runr.AttachBindingInput{BindingID: b.ID, EnvPrefix: envPrefix, Environment: env}
+				if credentials == runr.CredentialsDynamic {
+					in.Credentials = credentials
+				}
+				if att, err = c.AttachBinding(ctx, p.ID, in); err != nil {
 					return err
 				}
-				app.Progress("Attached %s to %s; the running service rolls onto the new variables.", b.Name, p.Name)
+				app.Progress("Attached %s to %s; the running service rolls onto the new variables.", b.Name, projectIn(p, env))
 			}
 			return app.Printer().Print(att, func(t *output.TableWriter) { bindingAttachmentDetail(t, att) })
 		},
@@ -761,7 +797,26 @@ func newBindingsAttachCmd(app *App) *cobra.Command {
 	cmd.Flags().StringVar(&envPrefix, "env-prefix", "", "prefix of the project's variables, e.g. ORDERS_ (upper case, ends with _)")
 	cmd.Flags().StringVar(&envPrefix, "prefix", "", "alias of --env-prefix")
 	_ = cmd.Flags().MarkHidden("prefix")
+	cmd.Flags().StringVar(&credentials, "credentials", "", "static (the binding's own user) or dynamic (Postgres: a user of the project's own from the region's OpenBao)")
+	addEnvFlag(cmd, &envName)
 	return cmd
+}
+
+// attachedTo names the project of an attachment and its environment: "shop", "shop (staging)".
+func attachedTo(a *runr.BindingAttachment) string {
+	if a.EnvironmentID == "" {
+		return a.ProjectName()
+	}
+	return a.ProjectName() + " (" + a.EnvironmentName() + ")"
+}
+
+// attachmentCredentials is the attachment's credential mode; "static" on APIs before dynamic
+// credentials.
+func attachmentCredentials(a *runr.BindingAttachment) string {
+	if a == nil || a.CredentialMode == "" {
+		return runr.CredentialsStatic
+	}
+	return a.CredentialMode
 }
 
 func bindingAttachmentName(a *runr.BindingAttachment, fallback string) string {
@@ -780,22 +835,35 @@ func bindingAttachmentDetail(t *output.TableWriter, a *runr.BindingAttachment) {
 		t.KV("Binding", a.BindingID)
 	}
 	t.KV("Project", a.ProjectName())
+	t.KV("Environment", a.EnvironmentName())
 	t.KV("Prefix", output.Dash(a.EnvPrefix))
+	t.KV("Credentials", attachmentCredentials(a))
 	t.KV("Variables", joinOrDash(a.EnvNames))
+	if a.Dynamic() {
+		t.Note("PGUSER, PGPASSWORD and DATABASE_URL come from a user the region's OpenBao issues and renews.")
+	}
 }
 
 func newBindingsDetachCmd(app *App) *cobra.Command {
-	return &cobra.Command{
+	var envName string
+	cmd := &cobra.Command{
 		Use:   "detach BINDING",
-		Short: "Detach a binding from the project (the binding and its data stay)",
-		Args:  cobra.ExactArgs(1),
+		Short: "Detach a binding from the project or one of its environments (the binding and its data stay)",
+		Example: "  runr bindings detach orders-db\n" +
+			"  runr bindings detach orders-db-staging --env staging",
+		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
 			c, p, err := app.Project(ctx)
 			if err != nil {
 				return err
 			}
-			a, err := c.FindAttachment(ctx, p.ID, args[0])
+			env, err := environmentScope(ctx, c, p, envName)
+			if err != nil {
+				return err
+			}
+			// Without --env: wherever the binding is attached in the project (at most one place)
+			a, err := c.FindEnvironmentAttachment(ctx, p.ID, env, args[0])
 			if err != nil {
 				return err
 			}
@@ -803,38 +871,47 @@ func newBindingsDetachCmd(app *App) *cobra.Command {
 				return err
 			}
 			name := bindingAttachmentName(a, args[0])
-			app.Progress("Detached %s from %s; its variables leave the running service.", name, p.Name)
-			return app.Printer().Print(map[string]any{"detached": true, "binding": name, "project": p.Name},
+			app.Progress("Detached %s from %s; its variables leave the running service.", name, attachedTo(a))
+			return app.Printer().Print(map[string]any{"detached": true, "binding": name, "project": p.Name, "environment": a.EnvironmentName()},
 				func(*output.TableWriter) {})
 		},
 	}
+	addEnvFlag(cmd, &envName)
+	return cmd
 }
 
 func newBindingsAttachmentsCmd(app *App) *cobra.Command {
-	return &cobra.Command{
+	var envName string
+	cmd := &cobra.Command{
 		Use:     "attachments",
 		Aliases: []string{"attached"},
-		Short:   "List the bindings attached to the project and those that can be attached",
-		Args:    cobra.NoArgs,
+		Short:   "List the bindings attached to the project (each with its environment) and those that can be attached",
+		Example: "  runr bindings attachments\n" +
+			"  runr bindings attachments --env staging",
+		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
 			c, p, err := app.Project(ctx)
 			if err != nil {
 				return err
 			}
-			pb, err := c.ProjectBindings(ctx, p.ID)
+			env, err := environmentScope(ctx, c, p, envName)
+			if err != nil {
+				return err
+			}
+			pb, err := c.ProjectEnvironmentBindings(ctx, p.ID, env)
 			if err != nil {
 				return err
 			}
 			return app.Printer().Print(pb, func(t *output.TableWriter) {
-				t.Header("BINDING", "TYPE", "STATUS", "PREFIX", "VARIABLES")
+				t.Header("BINDING", "ENVIRONMENT", "TYPE", "STATUS", "PREFIX", "CREDENTIALS", "VARIABLES")
 				for i := range pb.Attachments {
 					a := &pb.Attachments[i]
 					typ, status := "-", "-"
 					if a.Binding != nil {
 						typ, status = bindingTypeLabel(a.Binding), a.Binding.Status
 					}
-					t.Row(bindingAttachmentName(a, a.BindingID), typ, status, output.Dash(a.EnvPrefix), joinOrDash(a.EnvNames))
+					t.Row(bindingAttachmentName(a, a.BindingID), a.EnvironmentName(), typ, status, output.Dash(a.EnvPrefix), attachmentCredentials(a), joinOrDash(a.EnvNames))
 				}
 				if len(pb.Available) > 0 {
 					names := make([]string, 0, len(pb.Available))
@@ -849,6 +926,8 @@ func newBindingsAttachmentsCmd(app *App) *cobra.Command {
 			})
 		},
 	}
+	addEnvFlag(cmd, &envName)
+	return cmd
 }
 
 func newBindingsRotateCmd(app *App) *cobra.Command {

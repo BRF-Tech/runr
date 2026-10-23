@@ -8,8 +8,10 @@ use App\Models\ContainerConfig;
 use App\Models\Deployment;
 use App\Models\Git\PreviewEnvironment;
 use App\Models\Project;
+use App\Models\ProjectEnvironment;
 use App\Models\Setting;
 use App\Models\Version;
+use App\Services\Environments\DeployTarget;
 use App\Services\GitService;
 use App\Services\Projects\ProjectStopService;
 use App\Support\Projects\DeployIntent;
@@ -151,8 +153,9 @@ class FixedAdmissionTest extends TestCase
         $version = Version::create(['project_id' => $project->id, 'number' => 1, 'created_by' => 'dev', 'build_status' => 'ready']);
 
         // min_scale alone (10 × 600m) used to pass: only a deploy_config with cpu reached the limiter
+        // (with a max_scale that holds it: min_scale may not pass max_scale)
         $this->signedIn($owner)->postJson("/api/projects/{$project->id}/deploy", [
-            'version_id' => $version->id, 'deploy_config' => ['min_scale' => 10, 'scale_to_zero' => false],
+            'version_id' => $version->id, 'deploy_config' => ['min_scale' => 10, 'max_scale' => 10, 'scale_to_zero' => false],
         ])->assertStatus(422)->assertJsonPath('code', 'fixed_allocation_exceeded');
         $this->signedIn($owner)->postJson("/api/projects/{$project->id}/deploy", [
             'version_id' => $version->id, 'deploy_config' => ['max_scale' => 4],
@@ -271,6 +274,29 @@ class FixedAdmissionTest extends TestCase
 
         // A second preview does not fit 1500m
         $this->assertSame('fixed_allocation_exceeded', $this->refusal($project->fresh(), DeployIntent::preview(''))['code'] ?? null);
+    }
+
+    /** Every environment of the project in the fixed region counts (docs/environments.md). */
+    public function test_environments_count_against_the_allocation(): void
+    {
+        $owner = $this->userWithRole('owner');
+        $project = $this->sized($this->billedProject('api', $this->billingRegion('fx', 'fixed'), $owner), '500m', 512);
+        $project->containerConfig->update(['max_scale' => 1]);
+        $this->allocation($project, 1500, 2048, '2026-10-01');
+        $version = Version::create(['project_id' => $project->id, 'number' => 1, 'created_by' => 'dev', 'build_status' => 'ready']);
+        $project->deployments()->create(['version_id' => $version->id, 'status' => 'active', 'k8s_job_name' => 'run-api-v1']);
+
+        // Staging runs 600m (500m + queue-proxy, one pod) next to production's 600m
+        $staging = ProjectEnvironment::query()->create(['project_id' => $project->id, 'name' => 'staging', 'workload_name' => 'api-staging']);
+        Deployment::query()->create(['project_id' => $project->id, 'environment_id' => $staging->id, 'version_id' => $version->id, 'status' => 'active', 'k8s_job_name' => 'run-api-staging-v1']);
+        $this->assertNull($this->refusal($project->fresh()), 'production 600m + staging 600m fit 1500m');
+        $this->assertNull($this->refusal(DeployTarget::environment($project->fresh(), $staging), DeployIntent::production(null, $staging->id)), 'staging is counted once');
+
+        // A third workload does not fit
+        $qa = ProjectEnvironment::query()->create(['project_id' => $project->id, 'name' => 'qa', 'workload_name' => 'api-qa']);
+        $refusal = $this->refusal(DeployTarget::environment($project->fresh(), $qa), DeployIntent::production(null, $qa->id));
+        $this->assertSame('fixed_allocation_exceeded', $refusal['code'] ?? null);
+        $this->assertStringContainsString('1800', (string) ($refusal['message'] ?? ''));
     }
 
     public function test_previews_count_with_the_project_config_not_a_production_deploys_overrides(): void

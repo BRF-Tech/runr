@@ -21,8 +21,9 @@ func newMetricsCmd(app *App) *cobra.Command {
 		Use:   "metrics",
 		Short: "Recorded metrics of the project: CPU, memory, requests, cold starts, sessions",
 		Long: "A summary of the project's recorded metrics over the last 7, 30 or 90 days (--period):\n" +
-			"average and peak CPU, memory and requests per second, cold starts, and the deployment\n" +
-			"sessions (how long the workload ran and what it used). `runr metrics history` lists the\n" +
+			"average and peak CPU (cores), memory (MiB) and requests per second, cold starts, and the\n" +
+			"deployment sessions: how long the workload ran and its size for that time (vCPU time and\n" +
+			"memory MiB- or GiB-hours, as metering counts it). `runr metrics history` lists the\n" +
 			"recorded snapshots, `runr metrics live` reads what the live deployment uses right now.",
 		Example: "  runr metrics\n" +
 			"  runr metrics --period 30d -p orders\n" +
@@ -168,15 +169,28 @@ func metricsSummaryDetail(t *output.TableWriter, p *runr.Project, s *runr.Metric
 	}
 	sessions := strconv.Itoa(ss.TotalSessions)
 	if ss.TotalSessions > 0 {
-		sessions += fmt.Sprintf(" (%d cold), %s on average, %s in total, %s of CPU", ss.ColdStarts,
+		sessions += fmt.Sprintf(" (%d cold), %s on average, %s in total", ss.ColdStarts,
 			output.Duration(time.Duration(ss.AvgDurationMS)*time.Millisecond),
-			output.Duration(time.Duration(ss.TotalDurationMS)*time.Millisecond),
-			output.Duration(time.Duration(ss.TotalCPUMS)*time.Millisecond))
+			output.Duration(time.Duration(ss.TotalDurationMS)*time.Millisecond))
 	}
 	t.KV("Sessions", sessions)
+	if ss.TotalSessions > 0 {
+		// size × time, as metering counts it: not what the pods used
+		t.KV("Session size × time", fmt.Sprintf("%s of vCPU time, %s of memory (the deployment's size for the sessions' pod time)",
+			output.Duration(time.Duration(ss.TotalCPUMS)*time.Millisecond), memoryTimeText(ss.TotalMemoryMBMS)))
+	}
 	if m.SampleCount == 0 {
 		t.Note("No metrics were recorded in this period.")
 	}
+}
+
+// memoryTimeText renders MiB × milliseconds as MiB-hours, or GiB-hours from 1 GiB-hour on.
+func memoryTimeText(mibMs int64) string {
+	mibHours := float64(mibMs) / float64(time.Hour/time.Millisecond)
+	if mibHours >= 1024 {
+		return strconv.FormatFloat(mibHours/1024, 'f', 2, 64) + " GiB-hours"
+	}
+	return strconv.FormatFloat(mibHours, 'f', 1, 64) + " MiB-hours"
 }
 
 // metricsTime parses --from / --to: RFC 3339 or a day (YYYY-MM-DD, its start in UTC).
@@ -259,7 +273,7 @@ func newMetricsHistoryCmd(app *App) *cobra.Command {
 				return err
 			}
 			return app.Printer().Print(h, func(t *output.TableWriter) {
-				t.Header("TIME", "CPU", "MEMORY MIB", "REQ/S", "CONCURRENCY", "PODS", "COLD STARTS")
+				t.Header("TIME", "CPU CORES", "MEMORY MIB", "REQ/S", "CONCURRENCY", "PODS", "COLD STARTS")
 				for _, m := range h.Data {
 					pods, cold := "-", "-"
 					if m.PodCount != nil {

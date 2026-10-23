@@ -488,4 +488,75 @@ class ImageRegistryReconcileStepTest extends TestCase
         $this->assertLessThan(array_search('image-registry', $steps), array_search('wasm-sandbox', $steps));
         $this->assertLessThan(array_search('image-registry', $steps), array_search('kata-sandbox', $steps));
     }
+
+    /** The cluster after 0.5.10: the agent and gateways RunR ran at :latest or an older version */
+    private function releaseImagesCluster(string $agent, string $consumer, string $topics): void
+    {
+        $this->collections = [
+            '/apis/serving.knative.dev/v1/services' => [],
+            '/apis/apps/v1/deployments' => [
+                $this->workload('runr-agent', 'observability', ['containers' => [['name' => 'agent', 'image' => $agent]]]),
+                // the internal network's authz: installed by its step at the configured image
+                $this->workload('runr-internal-auth', 'knative-serving', ['containers' => [['name' => 'authz', 'image' => 'ghcr.io/brf-tech/runr/agent:0.6.0']]]),
+                // a project's event gateway through the region registry's pull-through path
+                $this->workload('shop-qc', 'eu-1', ['containers' => [['name' => 'consumer', 'image' => $consumer]]]),
+                $this->workload('runr-topics', 'eu-1', ['containers' => [['name' => 'publisher', 'image' => $topics]]]),
+                $this->workload('proxy', 'eu-1', ['containers' => [['image' => 'ghcr.io/brf-tech/runr/agent-proxy:1'], ['image' => 'registry.example.com/runr/agent:1']]]),
+            ],
+            '/apis/apps/v1/statefulsets' => [],
+            '/apis/apps/v1/daemonsets' => [],
+            '/apis/batch/v1/cronjobs' => [],
+        ];
+    }
+
+    public function test_the_region_agent_and_the_event_gateway_move_to_this_releases_version(): void
+    {
+        // ReleaseImages: the API at 0.6.0 runs the agent and the gateway at 0.6.0
+        config([
+            'knative.agent_image' => 'ghcr.io/brf-tech/runr/agent:0.6.0',
+            'knative.internal_network.authz_image' => 'ghcr.io/brf-tech/runr/agent:0.6.0',
+            'knative.queue_consumer_image' => 'ghcr.io/brf-tech/runr/queue-consumer:0.6.0',
+        ]);
+        $this->releaseImagesCluster(
+            'ghcr.io/brf-tech/runr/agent:latest',
+            '10.43.0.5:5000/ghcr.io/brf-tech/runr/queue-consumer:0.5.10',
+            'ghcr.io/brf-tech/runr/queue-consumer@sha256:'.str_repeat('a', 64),
+        );
+
+        $lines = (new ImageRegistryStep)->run($this->cluster(), false);
+
+        $this->assertSame([
+            'moved Deployment observability/runr-agent: ghcr.io/brf-tech/runr/agent:latest → ghcr.io/brf-tech/runr/agent:0.6.0 — its pods roll once',
+            'moved Deployment eu-1/shop-qc: 10.43.0.5:5000/ghcr.io/brf-tech/runr/queue-consumer:0.5.10 → 10.43.0.5:5000/ghcr.io/brf-tech/runr/queue-consumer:0.6.0 — its pods roll once',
+            'moved Deployment eu-1/runr-topics: ghcr.io/brf-tech/runr/queue-consumer@sha256:'.str_repeat('a', 64).' → ghcr.io/brf-tech/runr/queue-consumer:0.6.0 — its pods roll once',
+        ], $lines);
+        $this->assertSame([
+            ['op' => 'test', 'path' => '/spec/template/spec/containers/0/image', 'value' => 'ghcr.io/brf-tech/runr/agent:latest'],
+            ['op' => 'replace', 'path' => '/spec/template/spec/containers/0/image', 'value' => 'ghcr.io/brf-tech/runr/agent:0.6.0'],
+        ], $this->patches[0]['ops']);
+
+        // moved: nothing left (the next release moves them again)
+        $this->patches = [];
+        $this->releaseImagesCluster(
+            'ghcr.io/brf-tech/runr/agent:0.6.0',
+            '10.43.0.5:5000/ghcr.io/brf-tech/runr/queue-consumer:0.6.0',
+            'ghcr.io/brf-tech/runr/queue-consumer:0.6.0',
+        );
+        $this->assertSame([], (new ImageRegistryStep)->run($this->cluster(), false));
+        $this->assertSame([], $this->patches);
+    }
+
+    public function test_an_agent_of_an_operators_registry_moves_nothing(): void
+    {
+        // RUNR_AGENT_IMAGE / RUNR_QUEUE_CONSUMER_IMAGE in a registry of the operator's: RunR's
+        // images there are the operator's to move
+        config([
+            'knative.agent_image' => 'registry.example.com/runr/agent:7',
+            'knative.internal_network.authz_image' => 'registry.example.com/runr/agent:7',
+            'knative.queue_consumer_image' => 'registry.example.com/runr/queue-consumer:7',
+        ]);
+        $this->releaseImagesCluster('ghcr.io/brf-tech/runr/agent:latest', 'ghcr.io/brf-tech/runr/queue-consumer:latest', 'ghcr.io/brf-tech/runr/queue-consumer:latest');
+
+        $this->assertSame([], (new ImageRegistryStep)->run($this->cluster(), false));
+    }
 }

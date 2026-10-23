@@ -3,18 +3,22 @@
 namespace App\Workflows\Models;
 
 use App\Models\Project;
+use App\Workflows\Support\WorkflowEnvironments;
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Support\Carbon;
 
 /**
- * The workflow side of a project: the HMAC signing key the engine signs every request to the
- * project's function with (injected into the Knative Service as RUNR_WORKFLOW_SIGNING_KEY), an
- * optional endpoint override and the result of the last definition sync.
+ * The workflow side of a project in one environment (docs/workflows.md#environments): the HMAC
+ * signing key the engine signs every request to the environment's function with (injected into its
+ * Knative Service as RUNR_WORKFLOW_SIGNING_KEY), an optional endpoint override and the result of
+ * the last definition sync. Production's app has environment_id null; every other environment has
+ * an app — and a key — of its own, so an environment's code never holds production's key.
  *
  * @property string $id
  * @property string $project_id
+ * @property string|null $environment_id null: production
  * @property string $signing_key
  * @property string|null $signing_key_previous
  * @property Carbon|null $previous_key_expires_at
@@ -35,6 +39,7 @@ class WorkflowApp extends Model
 
     protected $fillable = [
         'project_id',
+        'environment_id',
         'signing_key',
         'signing_key_previous',
         'previous_key_expires_at',
@@ -60,13 +65,30 @@ class WorkflowApp extends Model
         return $this->belongsTo(Project::class);
     }
 
-    /** The app of a project, created (with a fresh signing key) on first use. */
+    /**
+     * The app of a project in the environment $project stands for (an EnvironmentProject view, or
+     * the project itself: production), created (with a fresh signing key) on first use.
+     */
     public static function forProject(Project $project): self
     {
-        return static::firstOrCreate(
-            ['project_id' => $project->id],
-            ['signing_key' => self::generateKey(), 'sync_status' => 'never'],
-        );
+        return self::forEnvironment((string) $project->getKey(), WorkflowEnvironments::idOf($project));
+    }
+
+    /** The app of a project in one environment (null: production), created on first use. */
+    public static function forEnvironment(string $projectId, ?string $environmentId): self
+    {
+        $key = ['project_id' => $projectId];
+        if (WorkflowEnvironments::ready()) {
+            $key['environment_id'] = $environmentId;
+        }
+
+        return static::firstOrCreate($key, ['signing_key' => self::generateKey(), 'sync_status' => 'never']);
+    }
+
+    /** The existing app of a project in one environment (null: production). */
+    public static function findFor(string $projectId, ?string $environmentId): ?self
+    {
+        return WorkflowEnvironments::constrain(static::query()->where('project_id', $projectId), $environmentId)->first();
     }
 
     public static function generateKey(): string
@@ -105,9 +127,14 @@ class WorkflowApp extends Model
         return substr(hash('sha256', (string) $this->signing_key), 0, 12);
     }
 
-    /** Secret path token of the queue bridge sink URL (derived from the signing key). */
+    /**
+     * Secret path token of the queue bridge sink URL (derived from the signing key; an
+     * environment's names the environment too).
+     */
     public function queueHookToken(): string
     {
-        return substr(hash_hmac('sha256', 'queue-bridge:'.$this->project_id, (string) $this->signing_key), 0, 40);
+        $scope = 'queue-bridge:'.$this->project_id.($this->environment_id ? ':'.$this->environment_id : '');
+
+        return substr(hash_hmac('sha256', $scope, (string) $this->signing_key), 0, 40);
     }
 }

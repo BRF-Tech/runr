@@ -37,6 +37,7 @@ use Modules\Tenancy\Models\TenantLocalRegion;
 use Modules\Tenancy\Providers\Concerns\TenancyServiceOverridesTrait;
 use Modules\Tenancy\Services\PostgreSQLSchemaManagerWithPublic;
 use Modules\Tenancy\Services\TenantDomainService;
+use Modules\Tenancy\Services\TenantGlobalZoneSource;
 use Modules\Tenancy\Services\TenantRegionReconcileSource;
 use Modules\Tenancy\Services\TenantSchema;
 use Modules\Tenancy\Support\TenantMembers;
@@ -94,6 +95,8 @@ class TenancyServiceProvider extends ServiceProvider
         self::registerAccountCleanup();
         // region:reconcile also reconciles each tenant's own regions
         TenantRegionReconcileSource::register();
+        // every organization's global projects in the global zone (docs/global-projects.md)
+        TenantGlobalZoneSource::register();
     }
 
     /**

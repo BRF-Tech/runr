@@ -16,6 +16,7 @@ use App\Support\Rbac\PermissionCatalog;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Route as Router;
 use Illuminate\Support\Str;
 use Laravel\Sanctum\PersonalAccessToken;
@@ -23,6 +24,7 @@ use Modules\Tenancy\Http\Controllers\TenancyUserController;
 use Modules\Tenancy\Http\Middleware\IdentifyTenant;
 use Modules\Tenancy\Http\Middleware\RequireAdmin;
 use Modules\Tenancy\Models\Tenant;
+use Modules\Tenancy\Models\TenantInvitation;
 use Modules\Tenancy\Models\TenantLocalUser;
 use Modules\Tenancy\Models\TenantUser;
 use Modules\Tenancy\Support\TenantOrganization;
@@ -176,6 +178,78 @@ class TenantRolesTest extends TestCase
         }
     }
 
+    private const GRANT_060 = 'Modules/Tenancy/Database/TenantMigrations/0108_grant_060_permissions_to_legacy_member_role.php';
+
+    /** The Member role as 0.5.0 to 0.5.10 created it: today's list without what 0.6.0 added. */
+    private function memberRoleOf050(): array
+    {
+        $added = (require base_path(self::GRANT_060))::ADDED;
+
+        return array_values(array_diff(config('permissions.legacy_member_role.permissions'), $added));
+    }
+
+    private function storedMemberPermissions(): array
+    {
+        return $this->acme->run(fn () => Role::query()->where('key', 'member')->sole()->permissions);
+    }
+
+    public function test_the_060_upgrade_gives_an_unchanged_member_role_what_developer_got(): void
+    {
+        $member = $this->member($this->acme, 'member');
+        $this->acme->run(fn () => Role::query()->create(['key' => 'member', 'name' => 'Member', 'permissions' => $this->memberRoleOf050()]));
+        $this->inTenant($this->acme);
+        $this->assertFalse($this->can($member, 'network.manage'), 'before: the 0.5.x role');
+
+        $this->acme->run(fn () => (require base_path(self::GRANT_060))->up());
+        $this->flushRbac();
+
+        // the same role an upgrade from 0.4.x creates now (0041 with today's config)
+        $this->assertEqualsCanonicalizing(config('permissions.legacy_member_role.permissions'), $this->storedMemberPermissions());
+        // every permission new in 0.6.0 that a fresh tenant's default role (Developer) has
+        $developer = PermissionCatalog::builtinRoles()['developer']['permissions'];
+        foreach ((require base_path(self::GRANT_060))::ADDED as $permission) {
+            $this->assertContains($permission, $developer, "{$permission} is a Developer permission");
+            $this->assertTrue($this->can($member, $permission), "member gets {$permission}");
+        }
+        $this->assertTrue($this->can($member, 'settings.manage'), 'and keeps what it had');
+
+        // run again: nothing changes; down() takes the additions back
+        $this->acme->run(fn () => (require base_path(self::GRANT_060))->up());
+        $this->assertEqualsCanonicalizing(config('permissions.legacy_member_role.permissions'), $this->storedMemberPermissions());
+        $this->acme->run(fn () => (require base_path(self::GRANT_060))->down());
+        $this->assertEqualsCanonicalizing($this->memberRoleOf050(), $this->storedMemberPermissions());
+    }
+
+    public function test_the_060_upgrade_completes_a_member_role_that_has_some_of_the_new_permissions(): void
+    {
+        $this->acme->run(fn () => Role::query()->create(['key' => 'member', 'name' => 'Member', 'permissions' => [...$this->memberRoleOf050(), 'network.manage']]));
+
+        $this->acme->run(fn () => (require base_path(self::GRANT_060))->up());
+
+        $this->assertEqualsCanonicalizing(config('permissions.legacy_member_role.permissions'), $this->storedMemberPermissions());
+    }
+
+    public function test_the_060_upgrade_leaves_a_member_role_the_organization_changed_alone(): void
+    {
+        $removed = array_values(array_diff($this->memberRoleOf050(), ['shell.exec']));
+        $added = [...$this->memberRoleOf050(), 'members.invite'];
+
+        foreach ([$removed, $added] as $permissions) {
+            $this->acme->run(fn () => Role::query()->updateOrCreate(['key' => 'member'], ['name' => 'Member', 'permissions' => $permissions]));
+
+            $this->acme->run(fn () => (require base_path(self::GRANT_060))->up());
+
+            $this->assertEqualsCanonicalizing($permissions, $this->storedMemberPermissions());
+        }
+    }
+
+    public function test_the_060_upgrade_does_nothing_without_a_member_role(): void
+    {
+        $this->acme->run(fn () => (require base_path(self::GRANT_060))->up());
+
+        $this->acme->run(fn () => $this->assertNull(Role::query()->where('key', 'member')->first()));
+    }
+
     public function test_tenants_without_members_get_no_member_role(): void
     {
         $this->member($this->acme, 'owner');
@@ -229,6 +303,42 @@ class TenantRolesTest extends TestCase
 
         $this->signedIn($viewer)->getJson("/api/tenants/{$this->acme->id}/users")->assertOk();
         $this->signedIn($viewer)->postJson("/api/tenants/{$this->acme->id}/users", ['email' => 'new@example.test'])->assertForbidden();
+    }
+
+    public function test_an_invited_address_names_its_account_in_any_letter_case(): void
+    {
+        Mail::fake();
+        $this->tenantRoutes();
+        $owner = $this->member($this->acme, 'owner');
+        $existing = User::factory()->create(['username' => 'dana', 'email' => 'dana@example.test']);
+        // Accounts of an earlier release that differ in case only
+        User::factory()->create(['username' => 'lee1', 'email' => 'Lee@example.test']);
+        User::factory()->create(['username' => 'lee2', 'email' => 'LEE@example.test']);
+        $this->inTenant($this->acme);
+        $url = "/api/tenants/{$this->acme->id}/users";
+
+        // The account of the address in other letters joins at once; no invitation, no new account
+        $this->signedIn($owner)->postJson("{$url}/search", ['email' => 'DANA@Example.test'])->assertOk()
+            ->assertJsonPath('found', true)->assertJsonPath('user.id', $existing->id);
+        $this->signedIn($owner)->postJson($url, ['email' => 'DANA@Example.test', 'role' => 'developer'])->assertCreated()
+            ->assertJsonPath('action', 'added');
+        $this->assertSame('developer', DB::connection('central')->table('tenant_users')->where('user_id', $existing->id)->value('role'));
+        $this->assertSame(0, TenantInvitation::query()->count());
+
+        // A new address is invited as a new account stores it; the same address in other letters
+        // is the invitation already pending
+        $this->signedIn($owner)->postJson($url, ['email' => ' New.Person@Example.test', 'role' => 'developer'])->assertCreated()
+            ->assertJsonPath('action', 'invited');
+        $this->assertSame('new.person@example.test', TenantInvitation::query()->sole()->email);
+        $this->signedIn($owner)->postJson($url, ['email' => 'NEW.PERSON@example.test', 'role' => 'developer'])->assertUnprocessable();
+        $this->signedIn($owner)->postJson("{$url}/search", ['email' => 'new.person@EXAMPLE.test'])->assertOk()
+            ->assertJsonPath('found', false)->assertJsonPath('pending_invitation', true);
+
+        // Accounts that differ in case only: none of them is the address
+        $this->signedIn($owner)->postJson($url, ['email' => 'lee@example.test', 'role' => 'developer'])->assertStatus(409)
+            ->assertJsonPath('code', 'email_ambiguous');
+        $this->signedIn($owner)->postJson("{$url}/search", ['email' => 'lee@example.test'])->assertOk()
+            ->assertJsonPath('found', false)->assertJsonPath('ambiguous', true);
     }
 
     public function test_the_path_tenant_must_be_the_active_tenant(): void

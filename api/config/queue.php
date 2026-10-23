@@ -81,6 +81,21 @@ return [
             'after_commit' => false,
         ],
 
+        // Jobs that may run longer than `redis` allows (App\Jobs\Concerns\RunsOnLongQueue): an
+        // organization export or import (org_transfer.job_timeout, RUNR_ORG_TRANSFER_JOB_TIMEOUT, 4 h
+        // by default) and an uploaded image copied between the regions of a global project
+        // (global_dns.image_copy_timeout, RUNR_GLOBAL_IMAGE_COPY_TIMEOUT, 1 h).
+        // retry_after above the longest of them, Horizon's supervisor-long (timeout: the same limit
+        // + 60 s) between the two — the same expression in config/horizon.php.
+        'redis-long' => [
+            'driver' => 'redis',
+            'connection' => env('REDIS_QUEUE_CONNECTION', 'default'),
+            'queue' => 'long',
+            'retry_after' => max((int) env('RUNR_GLOBAL_IMAGE_COPY_TIMEOUT', 3600), (int) env('RUNR_ORG_TRANSFER_JOB_TIMEOUT', 4 * 3600)) + 300,
+            'block_for' => max(1, (int) env('REDIS_QUEUE_BLOCK_FOR', 1)),
+            'after_commit' => false,
+        ],
+
         'deferred' => [
             'driver' => 'deferred',
         ],

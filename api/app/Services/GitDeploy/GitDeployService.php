@@ -10,6 +10,7 @@ use App\Models\Git\GitDeploy;
 use App\Models\Git\GitRepoLink;
 use App\Models\Git\ProjectGitSettings;
 use App\Models\Project;
+use App\Models\ProjectEnvironment;
 use App\Models\User;
 use App\Models\Version;
 use App\Services\GitDeploy\Providers\GitEvent;
@@ -25,6 +26,11 @@ use Illuminate\Support\Facades\Log;
  * a deployment once the version is built. Each run is a GitDeploy row (the Git tab's history)
  * that follows the version's build and the deployment's status (model observers in
  * GitDeployServiceProvider) and is reported back to the provider (StatusReporter).
+ *
+ * A push to a branch mapped to one of the project's environments (docs/environments.md#git-branches,
+ * e.g. develop → staging) deploys that environment the same way: its code becomes a version (the
+ * runr.yaml is not applied — the environment runs the project's config with its overrides) and,
+ * with the environment's auto-deploy on, is deployed there (GitDeploy kind "environment").
  */
 class GitDeployService
 {
@@ -42,16 +48,22 @@ class GitDeployService
     public function remotePush(Project $project, string $ref, string $before, string $after, ?User $pusher = null): ?GitDeploy
     {
         $settings = ProjectGitSettings::for($project);
+        $environment = null;
 
         if ($ref !== $settings->deployRef() || self::isZero($after)) {
-            return null; // other branches are stored, not deployed; deletions are refused by the hook
+            // A branch mapped to an environment deploys it; other branches are stored, not
+            // deployed; deletions are refused by the hook
+            $environment = self::isZero($after) ? null : $this->environmentFor($project, $ref);
+            if ($environment === null) {
+                return null;
+            }
         }
 
         $commit = $this->remote->commit($project, $after);
         $meta = new CommitMeta(
             provider: 'runr',
             sha: $after,
-            branch: $settings->deploy_branch,
+            branch: $environment !== null ? (string) $environment->git_branch : $settings->deploy_branch,
             authorName: $commit['author_name'] ?: null,
             authorEmail: $commit['author_email'] ?: null,
             message: $commit['message'] ?: $commit['subject'],
@@ -65,6 +77,7 @@ class GitDeployService
             fn () => $this->remote->tree($project, $after, $settings->rootDir()),
             'push',
             $pusher?->username ?? 'git',
+            $environment,
         );
     }
 
@@ -73,7 +86,12 @@ class GitDeployService
     {
         $settings = ProjectGitSettings::for($project);
 
-        if (! $event->isPush() || $event->deleted || ! $event->after || $event->branch !== $settings->deploy_branch) {
+        if (! $event->isPush() || $event->deleted || ! $event->after) {
+            return null;
+        }
+        // The deploy branch deploys production; a branch mapped to an environment deploys it
+        $environment = $event->branch !== $settings->deploy_branch ? $this->environmentFor($project, (string) $event->branch) : null;
+        if ($event->branch !== $settings->deploy_branch && $environment === null) {
             return null;
         }
 
@@ -94,7 +112,28 @@ class GitDeployService
             fn () => $this->providerTree($link, $event->after, $settings->rootDir()),
             'push',
             $event->authorName ?? $link->provider_type,
+            $environment,
         );
+    }
+
+    /**
+     * The environment a push to $branch deploys (its git_branch, auto-deploy on), null for none.
+     */
+    public function environmentFor(Project $project, string $branch): ?ProjectEnvironment
+    {
+        if (! ProjectEnvironment::tablesReady()) {
+            return null;
+        }
+        if (str_starts_with($branch, 'refs/heads/')) {
+            $branch = substr($branch, strlen('refs/heads/'));
+        }
+
+        return ProjectEnvironment::query()
+            ->where('project_id', $project->id)
+            ->where('is_primary', false)
+            ->where('git_branch', $branch)
+            ->where('auto_deploy', true)
+            ->first();
     }
 
     /** Deploy the current head of the deploy branch again (Git tab "Redeploy"). */
@@ -154,7 +193,9 @@ class GitDeployService
     {
         $project = $deploy->project;
 
-        if ($version->build_status === 'ready' && VersionRebuilds::needed($project, $version)) {
+        // An environment runs the version's image as it is (DeploymentStarter refuses one its
+        // region does not pull): only the project's own workload builds a version again
+        if ($version->build_status === 'ready' && $deploy->kind === GitDeploy::KIND_PRODUCTION && VersionRebuilds::needed($project, $version)) {
             $this->rebuild($deploy, $project, $version);
             $this->report($deploy);
 
@@ -183,7 +224,7 @@ class GitDeployService
 
         GitDeploy::query()
             ->where('version_id', $version->id)
-            ->where('kind', GitDeploy::KIND_PRODUCTION)
+            ->whereIn('kind', GitDeploy::DEPLOYMENT_KINDS)
             ->where('status', GitDeploy::BUILDING)
             ->get()
             ->each(fn (GitDeploy $deploy) => $this->continue($deploy, $version, $deploy->author_name ?? 'git'));
@@ -198,7 +239,7 @@ class GitDeployService
 
         $deploy = GitDeploy::query()
             ->where('deployment_id', $deployment->id)
-            ->where('kind', GitDeploy::KIND_PRODUCTION)
+            ->whereIn('kind', GitDeploy::DEPLOYMENT_KINDS)
             ->whereNotIn('status', GitDeploy::FINAL)
             ->first();
 
@@ -225,13 +266,16 @@ class GitDeployService
     }
 
     /**
+     * A push that deploys: production, or the environment its branch is mapped to.
+     *
      * @param  Closure(): SourceTree  $loadTree
      */
-    private function production(Project $project, ProjectGitSettings $settings, CommitMeta $meta, Closure $loadTree, string $trigger, string $deployedBy): GitDeploy
+    private function production(Project $project, ProjectGitSettings $settings, CommitMeta $meta, Closure $loadTree, string $trigger, string $deployedBy, ?ProjectEnvironment $environment = null): GitDeploy
     {
         $deploy = GitDeploy::create([
             'project_id' => $project->id,
-            'kind' => GitDeploy::KIND_PRODUCTION,
+            'kind' => $environment !== null ? GitDeploy::KIND_ENVIRONMENT : GitDeploy::KIND_PRODUCTION,
+            'environment_id' => $environment?->id,
             'trigger' => $trigger,
             'provider' => $meta->provider,
             'sha' => $meta->sha,
@@ -244,7 +288,8 @@ class GitDeployService
         $this->report($deploy);
 
         try {
-            $result = $this->importer->import($project, $loadTree(), $meta);
+            // An environment branch's runr.yaml does not change the project's (production's) config
+            $result = $this->importer->import($project, $loadTree(), $meta, $environment === null);
         } catch (ImportException|GitCommandException $e) {
             $deploy->mark(GitDeploy::FAILED, $e->getMessage());
             $this->report($deploy);
@@ -277,8 +322,8 @@ class GitDeployService
         }
 
         if (! $result['created']) {
-            $live = $project->deployments()->where('status', 'active')->value('version_id');
-            if (! $settings->auto_deploy || $live === $version->id) {
+            $live = ($environment !== null ? $environment->deployments() : $project->deployments())->where('status', 'active')->value('version_id');
+            if (! ($environment->auto_deploy ?? $settings->auto_deploy) || $live === $version->id) {
                 $deploy->mark(GitDeploy::UNCHANGED, "The tree equals {$version->label}");
                 $this->report($deploy);
 
@@ -286,7 +331,7 @@ class GitDeployService
             }
         }
 
-        if (! $settings->auto_deploy) {
+        if (! ($environment->auto_deploy ?? $settings->auto_deploy)) {
             $deploy->mark(GitDeploy::IMPORTED, "Auto-deploy is off: {$version->label} waits for a deploy");
             $this->report($deploy);
 
@@ -320,8 +365,18 @@ class GitDeployService
 
     private function startDeployment(GitDeploy $deploy, Project $project, Version $version, string $deployedBy): void
     {
+        $environment = null;
+        if ($deploy->kind === GitDeploy::KIND_ENVIRONMENT) {
+            $environment = $deploy->getAttribute('environment_id') ? ProjectEnvironment::query()->find($deploy->environment_id) : null;
+            if ($environment === null) {
+                $deploy->mark(GitDeploy::SKIPPED, 'The environment was deleted');
+
+                return;
+            }
+        }
+
         try {
-            $deployment = $this->starter->start($project->loadMissing('knativeRegion'), $version, $deployedBy);
+            $deployment = $this->starter->start($project->loadMissing('knativeRegion'), $version, $deployedBy, environment: $environment);
             $deploy->update([
                 'deployment_id' => $deployment->id,
                 'status' => GitDeploy::DEPLOYING,

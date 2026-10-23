@@ -3,7 +3,14 @@
 namespace Tests\Feature;
 
 use App\Models\KnativeRegion;
+use App\Models\Notification;
+use App\Services\Helpers\RunrClusterIdentity;
 use App\Services\KnativeInstallService;
+use App\Services\RegionReconcile\ClusterGroup;
+use App\Services\RegionReconcile\ReconcileOutcome;
+use App\Services\RegionReconcile\ReconcileRecord;
+use App\Services\RegionReconcile\ReconcileStep;
+use App\Services\RegionReconcile\ReconcileTarget;
 use App\Services\RegionReconcile\RegionReconciler;
 use App\Services\RegionReconcile\Steps\KnativeServingConfigStep;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -434,11 +441,188 @@ class RegionReconcileCommandTest extends TestCase
         $this->region('down', 'down.test');
         $this->region('up', 'up.test');
 
+        Artisan::call('region:reconcile');
+        $output = Artisan::output();
+
+        $this->assertStringContainsString('unreachable', $output);
+        $this->assertStringContainsString('Not reached, left as they were: cluster server:https://down.test:6443 (down (', $output);
+        $this->assertCount(1, $this->crPatches('up.test'));
+    }
+
+    public function test_unreachable_clusters_alone_end_the_run_with_exit_4(): void
+    {
+        $this->cluster('down.test', ['reachable' => false]);
+        $this->cluster('up.test');
+        $this->fakeClusters();
+        $this->region('down', 'down.test');
+        $this->region('up', 'up.test');
+        $ran = new \ArrayObject;
+        $this->withSteps([$this->step('ok', $ran)]);
+        // a status block that cannot be synced (a tenant's region, say) on the unreachable cluster
+        $gone = new KnativeRegion(['name' => 'gone', 'kubeconfig' => $this->kubeconfig('down.test')]);
+        RegionReconciler::addStatusBlockSource('test', fn () => [new ReconcileTarget($gone, 'tenant-a', fn () => throw new \RuntimeException('connection refused'))]);
+
         $exit = Artisan::call('region:reconcile');
         $output = Artisan::output();
 
-        $this->assertSame(1, $exit);
-        $this->assertStringContainsString('unreachable', $output);
-        $this->assertCount(1, $this->crPatches('up.test'));
+        // everything RunR reaches is done; the unreachable regions keep what they had (exit 4: the
+        // bootstrap Job warns, an unreachable region does not block the upgrade)
+        $this->assertSame(ReconcileOutcome::EXIT_UNREACHABLE, $exit, $output);
+        $this->assertSame(['ok@up'], $ran->getArrayCopy());
+        $this->assertStringContainsString('[status-block] region gone (tenant-a): unreachable — not synced (failed: connection refused)', $output);
+        $this->assertStringContainsString('Not reached, left as they were: cluster server:https://down.test:6443 (down (', $output);
+        $this->assertStringContainsString(', region gone (tenant-a)', $output);
+
+        // the same failure on a cluster that answers is a failure
+        $failing = new KnativeRegion(['name' => 'broken', 'kubeconfig' => $this->kubeconfig('up.test')]);
+        RegionReconciler::addStatusBlockSource('test', fn () => [new ReconcileTarget($failing, 'tenant-b', fn () => throw new \RuntimeException('forbidden'))]);
+        $this->assertSame(ReconcileOutcome::EXIT_FAILED, Artisan::call('region:reconcile'));
+        $this->assertStringContainsString('[status-block] region broken (tenant-b): failed: forbidden', Artisan::output());
+    }
+
+    // ── Deadline, waiting steps, exit codes ──────────────────────────────────
+
+    /**
+     * RegionReconciler with these steps instead of the release's.
+     *
+     * @param  list<ReconcileStep>  $steps
+     */
+    private function withSteps(array $steps): void
+    {
+        $this->app->instance(RegionReconciler::class, new class(app(RunrClusterIdentity::class), $steps) extends RegionReconciler
+        {
+            public function __construct(RunrClusterIdentity $identity, private array $fakeSteps)
+            {
+                parent::__construct($identity);
+            }
+
+            public function steps(): array
+            {
+                return $this->fakeSteps;
+            }
+        });
+    }
+
+    /** A step that records its runs, takes $seconds and answers $lines (or throws $error) */
+    private function step(string $name, \ArrayObject $ran, int $seconds = 0, array $lines = [], ?string $error = null): ReconcileStep
+    {
+        return new class($name, $ran, $seconds, $lines, $error) implements ReconcileStep
+        {
+            public function __construct(private string $stepName, private \ArrayObject $ran, private int $seconds, private array $lines, private ?string $error) {}
+
+            public function name(): string
+            {
+                return $this->stepName;
+            }
+
+            public function run(ClusterGroup $cluster, bool $dryRun): array
+            {
+                $this->ran[] = $this->stepName.'@'.$cluster->primary()->region->name;
+                if ($this->seconds > 0) {
+                    sleep($this->seconds);
+                }
+                if ($this->error !== null) {
+                    throw new \RuntimeException($this->error);
+                }
+
+                return $this->lines;
+            }
+        };
+    }
+
+    public function test_no_step_starts_after_the_deadline_and_the_one_running_then_runs_to_its_end(): void
+    {
+        $this->cluster('c1.test');
+        $this->cluster('c2.test');
+        $this->fakeClusters();
+        $this->region('first', 'c1.test');
+        $this->region('second', 'c2.test');
+        $ran = new \ArrayObject;
+        $this->withSteps([$this->step('slow', $ran, 5, ['changed']), $this->step('next', $ran)]);
+
+        $exit = Artisan::call('region:reconcile', ['--deadline' => 4]);
+        $output = Artisan::output();
+
+        $this->assertSame(ReconcileOutcome::EXIT_CUT_OFF, $exit);
+        $this->assertSame(['slow@first'], $ran->getArrayCopy(), 'the step running at the deadline ran to its end, no other started');
+        $this->assertStringContainsString('[slow] changed', $output);
+        $this->assertStringContainsString('the deadline passed — not run: next', $output);
+        $this->assertStringContainsString('The deadline (4 s) passed before these steps could start', $output);
+        $this->assertStringContainsString('cluster uid:uid-c2.test (second (', $output);
+        $this->assertStringContainsString(', central)): every step', $output);
+        $this->assertStringContainsString('the status blocks of the regions', $output);
+
+        // the next run does the rest (every step idempotent; quick this time)
+        $ran->exchangeArray([]);
+        $this->withSteps([$this->step('slow', $ran), $this->step('next', $ran)]);
+        $this->assertSame(0, Artisan::call('region:reconcile'));
+        $this->assertSame(['slow@first', 'next@first', 'slow@second', 'next@second'], $ran->getArrayCopy());
+    }
+
+    public function test_a_step_that_still_waits_or_fails_makes_the_run_unfinished(): void
+    {
+        $this->cluster('c1.test');
+        $this->fakeClusters();
+        $this->region('fn', 'c1.test');
+        $ran = new \ArrayObject;
+        $this->withSteps([$this->step('wait', $ran, 0, ['waiting: the authz has no ready pod yet'])]);
+
+        $this->assertSame(ReconcileOutcome::EXIT_FAILED, Artisan::call('region:reconcile'));
+        $this->assertStringContainsString('1 step(s) failed or still wait', Artisan::output());
+        // a dry run only says what it would wait for
+        $this->assertSame(0, Artisan::call('region:reconcile', ['--dry-run' => true]));
+
+        $ran->exchangeArray([]);
+        $this->withSteps([$this->step('boom', $ran, 0, [], 'helm upgrade failed'), $this->step('after', $ran)]);
+        $this->assertSame(ReconcileOutcome::EXIT_FAILED, Artisan::call('region:reconcile'));
+        $this->assertStringContainsString('[boom] failed: helm upgrade failed', Artisan::output());
+        $this->assertSame(['boom@fn', 'after@fn'], $ran->getArrayCopy(), 'a failed step does not stop the others');
+    }
+
+    public function test_a_run_over_every_region_is_recorded_for_the_region_status(): void
+    {
+        $this->cluster('c1.test');
+        $this->cluster('c2.test');
+        $this->fakeClusters();
+        $first = $this->region('first', 'c1.test');
+        $second = $this->region('second', 'c2.test');
+        $ran = new \ArrayObject;
+        $this->withSteps([new class implements ReconcileStep
+        {
+            public function name(): string
+            {
+                return 'flaky';
+            }
+
+            public function run(ClusterGroup $cluster, bool $dryRun): array
+            {
+                return $cluster->primary()->region->name === 'first' ? ['waiting: the authz has no ready pod yet'] : ['changed'];
+            }
+        }]);
+
+        // a dry run and a run of one region change nothing in the record
+        Artisan::call('region:reconcile', ['--dry-run' => true]);
+        Artisan::call('region:reconcile', ['--region' => $second->id]);
+        $this->assertNull(app(ReconcileRecord::class)->current());
+
+        $this->assertSame(ReconcileOutcome::EXIT_FAILED, Artisan::call('region:reconcile', ['--run' => 'helm-5', '--attempts' => 3, '--deadline' => 600]));
+
+        $record = app(ReconcileRecord::class);
+        $this->assertSame(['helm-5', 'unfinished', 1], [$record->current()['run'], $record->status(), $record->current()['attempt']]);
+        $this->assertSame(['[flaky] waiting: the authz has no ready pod yet'], $record->forRegion((string) $first->id)['problems']);
+        $this->assertSame('done', $record->forRegion((string) $second->id)['status']);
+        $this->assertSame(0, Notification::query()->count(), 'attempt 1 of 3');
+
+        // by hand, without a deadline
+        $this->assertSame(2, Artisan::call('region:reconcile', ['--attempts' => '0']));
+        $this->withSteps([$this->step('ok', $ran)]);
+        $this->assertSame(0, Artisan::call('region:reconcile'));
+        $this->assertSame(['manual', 'done'], [$record->current()['run'], $record->status()]);
+    }
+
+    public function test_the_deadline_takes_seconds(): void
+    {
+        $this->assertSame(2, Artisan::call('region:reconcile', ['--deadline' => '10m']));
+        $this->assertSame(2, Artisan::call('region:reconcile', ['--deadline' => '0']));
     }
 }

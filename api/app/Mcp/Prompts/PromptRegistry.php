@@ -92,7 +92,7 @@ final class PromptRegistry
                     '1. deployment_status for its state and the Knative message.',
                     '2. version_get for the deployed version: a failed build shows build_error.',
                     '3. logs_tail with errors_only, then without it around the first error.',
-                    '4. metrics_summary for restarts, memory or CPU pressure; project_get for the configured size, timeout and scaling.',
+                    '4. metrics_summary for restarts, memory or CPU pressure (rightsizing_list: OOM kills and CPU throttling of the last days); project_get for the configured size, timeout and scaling.',
                     '5. When the deploy was refused by the supply-chain policy gate, security_report shows the findings.',
                     '6. Explain the cause. If the fix is in the code or the configuration and you may change it, apply it (code_write_files / env_set / project_update), deploy again and confirm with deployment_status and logs_tail.',
                 ]),

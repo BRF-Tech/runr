@@ -6,8 +6,9 @@ directions:
 - **The RunR MCP server** at `https://<console>/mcp` lets AI agents — Claude Code, Claude's
   custom connectors, Cursor, VS Code and any other MCP client — operate RunR: create projects,
   write code, deploy and roll back, read logs, metrics and traces, set environment variables,
-  run code in isolated sandboxes, manage domains, git deploys and previews, uptime checks,
-  workflows, bindings and models. What an agent can do is exactly what its token may do.
+  run code in isolated sandboxes, manage domains, git deploys and previews, environments and
+  promotions, triggers, uptime checks, workflows, bindings and models. What an agent can do is
+  exactly what its token may do.
 - **Hosted MCP servers**: deploy your own MCP server as a RunR project — from a Python or
   TypeScript starter or as your own image — and RunR serves it at
   `https://<console>/mcp/servers/<name>` behind a gateway that handles authentication (public,
@@ -36,7 +37,7 @@ directions:
 
 ## Connect a client
 
-The console shows everything below under **Settings → AI agents (MCP)**: the endpoint URL,
+The console shows everything below under **Data & Integrations → AI agents (MCP)**: the endpoint URL,
 copyable snippets for common clients, a form for a scoped MCP token, the OAuth-connected clients
 and the tool catalog with the permission each tool needs.
 
@@ -48,8 +49,9 @@ browser:
 claude mcp add --transport http runr https://runr.example.com/mcp
 ```
 
-**With an API token.** Create a token in **Settings → AI agents (MCP)** (or **Settings → API
-tokens**) with the permissions the agent should have, and send it as a bearer token:
+**With an API token.** Create a token in **Data & Integrations → AI agents (MCP)** (or
+**Administration → API Tokens**) with the permissions the agent should have, and send it as a
+bearer token:
 
 ```bash
 claude mcp add --transport http runr https://runr.example.com/mcp \
@@ -164,8 +166,8 @@ Rules:
 - **Cleanup.** `php artisan mcp:prune` (scheduled daily) removes idle sessions, old
   authorization requests, registered clients nobody connected with for 30 days (clients that
   still hold a token stay) and hosted-server calls past their retention.
-- **Revoking.** Issued tokens appear in **Settings → API tokens** and, grouped by client, in
-  **Settings → AI agents (MCP) → Connected clients**; revoking there (or through
+- **Revoking.** Issued tokens appear in **Administration → API Tokens** and, grouped by client, in
+  **Data & Integrations → AI agents (MCP) → Connected clients**; revoking there (or through
   `/oauth2/revoke`) ends the client's access at once.
 
 ## Tools
@@ -174,47 +176,106 @@ Tools are thin wrappers over RunR API routes. Long-running tools (marked ⏱) an
 stream when the client sends `Accept: text/event-stream` — with `notifications/progress` when the
 call carries a `progressToken` — and wait at most `MCP_TOOL_MAX_WAIT_SECONDS` (default 600) before returning the
 current state. Annotations: **R** `readOnlyHint`, **D** `destructiveHint`, **I**
-`idempotentHint`, **O** `openWorldHint`. "a | b" means either permission; an empty cell means every
-signed-in caller.
+`idempotentHint`, **O** `openWorldHint`. "a | b" means either permission; "platform administrator
+with a" a platform administrator whose token carries a (the API's `@platform:` routes); an empty
+cell means every signed-in caller. The billing tools exist while the [Billing
+module](billing.md) is on; each calls the billing API with the caller's permissions, so a tool
+answers what the console's billing pages would.
 
 | Tool | Does | Permissions | Hints |
 |---|---|---|---|
 | `whoami` | the user, the organization and the permissions of the connection | | R I |
 | `projects_list` | projects with type, runtime, region, trigger, URL and deployment status | `projects.view` | R I |
-| `project_get` | one project in detail | `projects.view` | R I |
-| `project_create` | create an XaaS / FaaS / CaaS project | `projects.create` | |
-| `project_update` | description, region, resources, scaling, trigger | `projects.update` \| `env.edit` | I |
+| `project_get` | one project in detail, with its runtime patch state (`runtime_patch`: state, level, deadline, current and newest tag, pin), the timed warmer's schedule and what it last applied (`warm_scale`) | `projects.view` | R I |
+| `project_create` | create an XaaS / FaaS / CaaS project; with `regions` (and `mode`) a [global project](global-projects.md) (optionally with a timed warmer, `scale_schedule`; a schedule's zone with `schedule_timezone`) | `projects.create` | |
+| `project_update` | description, region, resources, scaling, timed warmer (`scale_schedule`: `[{cron, min_scale}]`, `[]` or `null` = off), trigger (`schedule_timezone`: an IANA zone, `""` = the organization's) | `projects.update` \| `env.edit` | I |
+| `project_global_get` | a global project's regions: host name, mode, failover setting and a move in progress, each copy's status (fenced included), version, health, DNS, triggers, data status; its bindings and how each region reaches them | `projects.view` | R I |
+| `project_global_update` | mode, failover, primary (a switchover), regions of a global project (`confirm: true`) | `projects.update` | D I |
+| `project_global_failover` | fail a global project over to another region when its primary does not answer: replicas promoted at once, the old primary fenced (`confirm: true`) | `projects.update` | D I |
 | `project_delete` | delete a project with its workloads (`confirm_name` = its name or slug) | `projects.delete` | D I |
+| `project_cost_limit_get` | billing on: a pay-as-you-go project's [monthly cost limit](billing.md#monthly-cost-limit), this month so far and the month-end forecast; the API also requires the owner, `projects.billing` or `billing.view` | `projects.view` | R I |
+| `project_cost_limit_set` | billing on: set (`amount`, `action` notify \| stop), change or remove (`remove: true`) the limit, and `resume: true` a project the limit stopped; a stop limit below this month so far needs `stop_now: true`; the API also requires the owner, `projects.billing` or `billing.manage` | `projects.view` | I |
+| `project_billing_get` | billing on: a project's billing as its Billing tab shows it — billing type, payer, fixed allocation and pending request, this month's bill so far split into the project's own usage, its **preview environments** and its queue consumer, the last closed bills and the cost limit; the API also requires the owner, `projects.billing` or `billing.view` | `projects.view` | R I |
+| `project_billing_quote` | billing on: the monthly price of fixed resources (`cpu_m`, `memory_mb`, `gpu_count`) in the project's region and what an approval today bills this month | `projects.view` | R I |
+| `project_fixed_request` | billing on: request fixed resources for a project in a fixed region (`cpu_m`, `memory_mb`, `gpu_count`, `note`), or withdraw a pending request (`cancel: <id>`); the API also requires the owner, `projects.billing` or `billing.manage` | `projects.view` | |
+| `billing_bills_list` | billing on: bills with kind, month, open (estimate) or closed, project, payer, total and paid status — the organization's (`scope: projects`, filters `period`, `status`, `paid`, `project`, `owner`, `kind`), the platform's to the tenant (`from_platform`) or the platform's to its tenants (`to_tenants`, platform administrators; `tenant`) | `billing.view` | R I |
+| `billing_bill_get` | billing on: one bill with its line items and their split (`by_component`: the project, `preview` environments, `queue_consumer`, other resources); with `project` through the project's billing, else `scope` as in `billing_bills_list` | `billing.view` \| `projects.view` | R I |
+| `billing_usage_get` | billing on: metered usage per project in a month (`period`, `project`): vCPU-, GB- and GPU-hours, sessions and the pay-as-you-go cost | `billing.view` | R I |
+| `billing_prices_get` | billing on: the default prices (current, scheduled, past versions); with `region` that region's type, prices and their source, scheduled versions and markup | `billing.view` | R I |
+| `billing_price_set` | billing on: a price version of the defaults or an own `region` from `effective_from` (today or later); `prices` lists only what changes, the rest is copied from the version before; a version of the same date is replaced | `billing.manage` | I |
+| `billing_regions_list` | billing on: the regions with billing type, allocations, prices and queue consumer charging at every level (region setting, the platform's choice for the tenant, the organization's own, what applies) | `billing.view` | R I |
+| `billing_queue_consumers_set` | billing on: [queue consumer charging](billing.md#queue-consumers) — `level: region` (the region owner's setting, `charge` true \| false) or `level: organization` (the organization's own choice, `charge` false \| null) | `billing.manage` | I |
+| `billing_region_organizations` | billing on, platform administrators: the tenants a platform region is shared with and the platform's queue consumer choice for each | platform administrator with `billing.view` | R I |
+| `billing_region_organization_set` | billing on, platform administrators: the platform's queue consumer choice for one tenant in a platform region (`charge` false \| null), which the platform's bill to it and its own bills follow | platform administrator with `billing.manage` | I |
+| `billing_fixed_requests_list` | billing on: fixed resource requests and allocations, pending first (`status`, `project`, `region`) | `billing.view` | R I |
+| `billing_fixed_request_decide` | billing on: approve (`note`) or reject (`reason`) a pending fixed resource request | `billing.approve` | |
+| `triggers_list` | the project's [triggers](triggers.md) in order: type, config, enabled, primary, where each runs, a schedule's time zone (`effective_timezone`, `timezone_source`), a webhook's inbox URL, which secrets are set (names only), and what the list deploys | `projects.view` | R I |
+| `trigger_add` | add a schedule (`cron`, `timezone`: default the organization's), queue, webhook, topic, platform_event, … trigger (`config`, write-only `secrets`, `primary`); effective with the next deploy | `projects.update` | |
+| `trigger_update` | rename, enable / disable, make primary, change config keys (merged; `null` removes one) or replace a secret | `projects.update` | I |
+| `trigger_remove` | remove a trigger and its stored events; not the last one (`confirm: true`). Both tools return `cleanup` when a cdc trigger's replication slots are left ([CDC cleanup](triggers.md#cdc-cleanup)) | `projects.update` | D I |
 | `code_list_files` | files of the latest or a given version, with sizes | `projects.view` | R I |
 | `code_read_file` | one file | `projects.view` | R I |
 | `code_write_files` ⏱ | write and delete files → a new version; optionally wait for its build | `code.edit` | |
 | `versions_list` | versions with build status | `projects.view` | R I |
 | `version_get` | one version, its build status and error | `projects.view` | R I |
-| `deploy` ⏱ | deploy a version (default the newest), waiting for its build and the rollout | `projects.deploy` | |
-| `rollback` ⏱ | deploy an older version (number, id or `steps_back`) | `projects.deploy` | D |
+| `deploy` ⏱ | deploy a version (default the newest), waiting for its build and the rollout; `environment` deploys one of the project's environments; `strategy` for this deploy (default the environment's: the project's unless it sets its own) — a blue-green / canary rollout is answered once its new revision is ready | `projects.deploy` | |
+| `rollback` ⏱ | deploy an older version (number, id or `steps_back`) with the configuration it ran with (`keep_current_config`: the configuration of now); `environment`, `strategy` | `projects.deploy` | D |
+| `runtime_patch_apply` ⏱ | redeploy the live version onto the newest [runtime patch](runtimes.md#runtime-patches) (a pin is removed) and wait for the rollout | `projects.deploy` | |
+| `environments_list` | the project's environments in pipeline order: region, URL, live version, approval, branch | `projects.view` | R I |
+| `environment_create` | add an environment (name, region, git branch, approval, overrides — `scale_schedule` its own timed warmer) | `environments.manage` | |
+| `environment_update` | change an environment: git branch, approval, auto deploy, overrides merged over its current ones (env vars by name), `scale_schedule` its own timed warmer (`[]` none there, `null` the project's again) | `environments.manage` | I |
+| `environment_delete` | delete an environment with its workload (`confirm: true`) | `environments.manage` | D I |
+| `promote` ⏱ | promote the version an environment runs (`from`) to the next one or to `to`, `dry_run` shows what changes; waits for approval into production | `environments.promote` | D |
+| `promotion_approve` | approve or reject a waiting promotion (`decision`); without an id the waiting ones | `environments.approve` | D |
 | `deployments_list` | deployments of a project | `projects.view` | R I |
-| `deployment_status` | a deployment (default the current one) with readiness | `projects.view` | R I |
+| `deployment_status` | a deployment (default the current one; `environment`: of that environment) with readiness, and its rollout (status, traffic, step / health / metrics, test URL) | `projects.view` | R I |
 | `deployment_stop` | stop and delete a deployment (`confirm: true`) | `projects.deploy` | D I |
+| `deployment_promote` | promote a blue-green / canary rollout now: all traffic to the new revision ([deploy strategies](deploy-strategies.md)); default the project's current rollout, `environment` that environment's | `projects.deploy` | D |
+| `deployment_abort` | abort an open rollout (the traffic stays), or roll back a promoted one to its kept previous revision (`confirm: true`, `reason`; `environment` that environment's current rollout) | `projects.deploy` | D |
 | `logs_tail` | log lines of the current or a given deployment: `lines`, `since`, `contains`, `errors_only` | `logs.view` | R I |
-| `metrics_summary` | CPU, memory and request metrics of a project | `metrics.view` | R I |
-| `env_list` | names of the plain and secret variables (plain values on request) | `env.view` | R I |
-| `env_set` | set plain or secret variables (effective with the next deploy) | `env.edit` | I |
+| `metrics_summary` | CPU (cores), memory (MiB) and request metrics of a project, and its sessions with the deployment's size × their pod time (vCPU ms, MiB × ms); `units` names each field's unit | `metrics.view` | R I |
+| `rightsizing_list` | rightsizing recommendations: the organization's open ones (largest monthly saving first) or one project's, with the evidence and why there is none ([Rightsizing](monitoring.md#rightsizing)) | `metrics.view` | R I |
+| `rightsizing_apply` | the project's recommended CPU and memory into its config as a new version (deploy to run it) | `projects.update` | |
+| `env_list` | names of the plain and secret variables (plain values on request); `secret_details`: where each secret lives — a value in the region (`stored_in`) or a reference to a secret store with its sync status | `env.view` | R I |
+| `env_set` | set plain or secret variables (effective with the next deploy; secret values go straight into the project's region) | `env.edit` | I |
 | `env_unset` | remove variables | `env.edit` | D I |
-| `secret_reveal` | the value of one secret variable (audited) | `secrets.view_values` | R I |
+| `secret_reveal` | the value of one secret variable, read from the region (audited) | `secrets.view_values` | R I |
+| `secret_ref_set` | make a secret variable a reference to a value in a secret store: `store` (name or id), `path`, `key` ([secret stores](secret-stores.md)) | `env.edit` + `secret_stores.view` | I |
+| `secret_stores_list` | the organization's secret stores: provider, authentication, references, status per region | `secret_stores.view` | R I |
+| `network_get` | access mode, internal name and URL, allowed internal callers ([internal-network.md](internal-network.md)) | `projects.view` | R I |
+| `network_set` | access mode: `public`, `allowlist` (with `allowed_cidrs`) or `internal` | `network.manage` | D I |
+| `network_caller_add` | allow a project (or, by grant, another organization's) to call this one | `network.manage` | I |
+| `network_caller_remove` | remove a caller (`confirm: true`) | `network.manage` | D I |
 | `domains_list` | custom domains of a project | `projects.view` | R I |
 | `domain_add` | add a custom domain | `domains.manage` | |
 | `domain_verify` | verify a domain's DNS | `domains.manage` | I |
 | `domain_remove` | remove a domain (`confirm: true`) | `domains.manage` | D I |
+| `gateways_list` | the caller's API gateways with their routes and authentication ([API product](api-product.md)) | `projects.view` | R I |
+| `gateway_route_add` | a route of a gateway to a project or one of its environments, created with its authentication (public, key, jwt with JWKS) and gateway-only in one call — never public for a moment; the answer has its URL | `projects.update` | |
+| `gateway_route_update` | a route's authentication (public, key, jwt with JWKS) and gateway-only | `projects.update` | I |
+| `api_consumers_list` | consumers of a gateway / the organization | `projects.view` | R I |
+| `api_consumer_create` | create a consumer with plan and external id | `projects.update` \| `api_products.manage` | |
+| `api_plans_list` | plans (rate limits, quotas) | `projects.view` | R I |
+| `api_plan_create` | create a plan | `projects.update` \| `api_products.manage` | |
+| `api_key_create` | create a key of a consumer; the key is in the answer once | `projects.update` \| `api_products.manage` | |
+| `api_key_rotate` | replace a key, the old one works on for `overlap_minutes` | `projects.update` \| `api_products.manage` | |
+| `api_key_revoke` | revoke a key (`confirm: true`) | `projects.update` \| `api_products.manage` | D I |
+| `api_usage` | usage per hour / day / month / consumer / key / route: calls let through and refused, and the function's status classes, errors, latency p50 / p95 / p99 and bytes | `projects.view` | R I |
 | `regions_list` | regions | `regions.view` | R I |
 | `region_status` | one region and its components | `regions.view` | R I |
-| `runtimes_list` | the runtime catalog | | R I |
+| `global_dns_status` | the global zone, its servers (with their GeoIP database: source, status) and the delegation records | `regions.view` | R I |
+| `runtimes_list` | the runtime catalog; each version with its end of life and newest runtime patch (`latest_patch`: tag, level, published, deadline) | | R I |
 | `runtime_get` | a runtime's manifest and starter template | | R I |
 | `runtime_register` | register a runtime from a manifest | `runtimes.manage` \| `runtimes.use_custom` | |
-| `workflows_list` | workflow definitions of a project | `workflows.view` | R I |
-| `workflow_run_start` | start a run | `workflows.run` | |
-| `workflow_runs_list` | runs, filtered by status | `workflows.view` | R I |
+| `runtime_patches_get` | a project's runtime patch state and the last five patches of its runtime version with why each came: level, reason, CVEs, link, deadline; its patch migrations | `projects.view` | R I |
+| `runtime_patch_pin` | pin a project to one of those patches (`patch` by id or tag; redeploys unless `deploy: false`) or `unpin` it | `projects.deploy` | I |
+| `workflows_list` | workflow definitions of a project (`environment`: one environment's workflow app) | `workflows.view` | R I |
+| `workflow_run_start` | start a run (`environment`: a workflow of that environment) | `workflows.run` | |
+| `workflow_runs_list` | runs, filtered by status (`environment`, `all`) | `workflows.view` | R I |
 | `workflow_run_status` | one run with its steps | `workflows.view` | R I |
-| `event_send` | send an event to workflows | `events.send` | |
+| `event_send` | send an event to workflows (`environment`: the workflows of that environment; default production) | `events.send` | |
+| `topics_list` | the organization's topics with their subscriptions (`topic`: one topic with the subscribing projects) | `projects.view` | R I |
+| `topic_publish` | publish an event (any JSON, or text with `content_type`) to a topic: every subscribed project receives it | `events.send` | |
 | `bindings_list` | bindings of the organization | `bindings.view` | R I |
 | `binding_create` | create a KV, object, Postgres or external binding | `bindings.manage` | |
 | `binding_attach` | attach a binding to a project | `bindings.manage` + `env.edit` | |
@@ -225,6 +286,11 @@ signed-in caller.
 | `model_bind` | bind a model service to a project | `models.deploy` + `projects.update` | |
 | `security_report` | SBOM, vulnerability counts, signature and policy decision of a version | `security.view` | R I |
 | `audit_search` | search the audit log | `audit.view` | R I |
+| `org_export_start` | export the organization into a package (download or object binding; members, images, binding data, encrypted secrets optional) — [Organization export](org-export.md) | `org.transfer` (Owner) | |
+| `org_export_status` | an export's or import's status, package and report; the latest transfers without an id | `org.transfer` (Owner) | R I |
+| `org_import_start` | import a package that lies in an object binding of the organization (RunR reads it, resumable; `resume` continues a read that failed); S3 buckets and files need the CLI or the console | `org.transfer` (Owner) | |
+| `org_import_plan` | the dry-run plan of an uploaded or read package: region mapping, renames, admission, KV Redis versions (`skip_binding_data`), run history (`history`), manual steps | `org.transfer` (Owner) | I |
+| `org_import_apply` | apply a planned import (`confirm`); applying a failed import again resumes it | `org.transfer` (Owner) | I |
 | `mcp_servers_list` | hosted MCP servers | `projects.view` | R I |
 | `mcp_server_create` ⏱ | create a hosted MCP server from a template (Python, TypeScript, image) and deploy it | `projects.create` + `mcp.servers.manage` | |
 | `mcp_server_configure` | access mode, path, audit flag; rotate the gateway key | `mcp.servers.manage` | I |
@@ -252,6 +318,8 @@ signed-in caller.
 | `wasm_status` | WebAssembly support of a region ([WebAssembly](wasm.md)) | `regions.view` | R I |
 | `wasm_install` ⏱ | install or change WebAssembly support on a region's nodes and follow the install | `sandbox.manage` | D I |
 | `wasm_uninstall` ⏱ | remove WebAssembly support (`confirm: true`) | `sandbox.manage` | D I |
+| `cert_manager_status` | cert-manager of a region: status, the ClusterIssuer of custom domains (ACME, the region CA or the operator's) and why TLS mode cert-manager is not offered ([cert-manager](regions.md#cert-manager)) | `regions.view` | R I |
+| `cert_manager_install` ⏱ | set cert-manager up in a region (or reuse the cluster's own), create the default ClusterIssuer and follow the install | `regions.manage` | I |
 | `git_status` | the project's git remote (push with an API token), branch, auto-deploy, connected repository, recent push deploys ([Git deploy](git-deploy.md)) | `git.pull` | R I |
 | `git_settings_update` | branch, auto-deploy, preview settings (override values never returned) | `git.manage` | I |
 | `git_deploys_list` | deployments that came from pushes | `git.pull` | R I |
@@ -262,18 +330,22 @@ signed-in caller.
 | `previews_list` | pull request preview environments | `git.pull` | R I |
 | `preview_redeploy` | redeploy a preview | `previews.manage` | I |
 | `preview_delete` | delete a preview (`confirm: true`) | `previews.manage` | D I |
-| `git_providers_list` | the GitHub Apps, GitLab and Forgejo / Gitea instances of Settings → Git providers (secrets as `has_*` flags) | `git_providers.manage` | R I |
+| `git_providers_list` | the GitHub Apps, GitLab and Forgejo / Gitea instances of Data & Integrations → Git providers (secrets as `has_*` flags) | `git_providers.manage` | R I |
 | `observability_get` | the project's tracing and request replay switches ([Observability](observability.md)) | `projects.view` | R I |
 | `observability_update` | switch tracing or request replay | `projects.update` \| `replay.manage` | I |
 | `traces_search` | traces of a project: time range (`since`, `until`), status, duration, route | `traces.view` | R I |
 | `trace_get` | one trace as a span tree, with its logs | `traces.view` | R I |
 | `replays_list`, `replay_get` | captured requests | `replay.manage` | R I |
 | `replay_run` | send a captured request to the function again (`confirm: true`) | `replay.manage` | D O |
+| `webhook_events_list` | events a webhook or platform_event trigger stored, by `status`; `event`: one with the sender's headers and the body | `replay.manage` | R I |
+| `webhook_event_replay` | deliver one stored event, or every `failed` (`delivered`, `all`) one, to the function again (`confirm: true`) | `replay.manage` | D |
 | `uptime_checks_list`, `uptime_check_results`, `uptime_incidents_list` | uptime checks, their results and incidents | `metrics.view` | R I |
 | `uptime_check_create` | create an uptime check | `uptime.manage` | |
 | `uptime_check_update` | change an uptime check | `uptime.manage` | I |
 | `uptime_check_delete` | delete an uptime check (`confirm: true`) | `uptime.manage` | D I |
 | `uptime_check_run` | run an uptime check now | `uptime.manage` | O |
+| `load_test_run` ⏱ | run a [load test](load-test.md) of an HTTP project (10 / 50 / 100 users, 30 / 60 / 300 s, GET or POST to a path of its own URL) and wait for p50 / p95 / p99, errors, requests per second, pods and cold starts; the test traffic is metered | `projects.deploy` | O |
+| `load_test_get` | a load test (default: the latest) with the last five runs side by side and the day's limit | `metrics.view` | R I |
 | `alert_rules_list`, `alert_events_list` | alert rules and fired alerts | `alerts.manage` | R I |
 | `alert_channels_list` | alert channels (masked configuration) | `alerts.manage` | R I |
 | `alert_channel_create` | email, Slack, Teams, Telegram or webhook channel; secrets go in write-only | `alerts.manage` | |
@@ -287,7 +359,7 @@ signed-in caller.
 | `status_page_update` | create or change the status page; fields left out keep their value | `status_page.manage` | I |
 
 Some things stay in the console because they are browser flows or one-time platform setup:
-registering a GitHub App or a GitLab application (Settings → Git providers; agents read them with
+registering a GitHub App or a GitLab application (Data & Integrations → Git providers; agents read them with
 `git_providers_list`), the GitHub App installation and GitLab sign-in of a repository connection,
 the interactive sandbox terminal, and a region's tracing backend.
 

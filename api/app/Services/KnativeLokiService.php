@@ -48,7 +48,10 @@ class KnativeLokiService
         $this->userContainer = $project->service_type === 'caas' ? 'app' : 'handler';
         $ns = $region->project_namespace ?? $region->name ?? 'runr';
         $slug = $project->slug;
-        $query = "{namespace=\"{$ns}\",pod=~\"{$slug}-.*\"}";
+        // The workload's own pods — Knative revisions (<slug>-<n>-deployment-…), CronJob runs
+        // (<slug>-trigger-…) and the queue consumer (<slug>-qc-…) — never those of an environment
+        // (<slug>-<env>-…, docs/environments.md) or a preview (<slug>-pr-<n>-…)
+        $query = "{namespace=\"{$ns}\",pod=~\"{$slug}-([0-9]+-deployment|trigger|qc)-.*\"}";
 
         // +1ms to exclude the last already-seen log entry
         $startNs = $sinceMs

@@ -27,6 +27,8 @@ use Illuminate\Support\Carbon;
  * @property bool $scale_to_zero
  * @property int $min_scale
  * @property int $max_scale
+ * @property list<array{cron: string, min_scale: int}>|null $scale_schedule Timed warmer rows (App\Support\Projects\ScaleSchedule); null = off
+ * @property array<string, mixed>|null $deploy_strategy blue-green / canary settings (App\Services\Rollouts\DeployStrategy), null = direct
  * @property-read Project $project
  *
  * @method static Builder<static>|XaasConfig newModelQuery()
@@ -61,12 +63,17 @@ class XaasConfig extends Model
         'trigger_type', 'schedule', 'queue_stream',
         'scale_to_zero', 'min_scale', 'max_scale',
         'gpu',
+        'scale_schedule',
     ];
 
     protected $casts = [
         'env_vars' => Encrypted::class.':array', // secret at rest (docs/security.md)
         'scale_to_zero' => 'boolean',
         'gpu' => 'array',
+        'scale_schedule' => 'array',
+        // written only through PUT /projects/{project}/deploy-strategy (DeployStrategies): not
+        // fillable, the config update creates a version
+        'deploy_strategy' => 'array',
     ];
 
     public function project(): BelongsTo

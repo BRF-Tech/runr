@@ -38,6 +38,7 @@ type domainResource struct{ client *Client }
 type domainModel struct {
 	ID                types.String `tfsdk:"id"`
 	ProjectID         types.String `tfsdk:"project_id"`
+	Environment       types.String `tfsdk:"environment"`
 	Domain            types.String `tfsdk:"domain"`
 	TLSMode           types.String `tfsdk:"tls_mode"`
 	Certificate       types.String `tfsdk:"certificate"`
@@ -65,24 +66,33 @@ func (r *domainResource) Schema(_ context.Context, _ resource.SchemaRequest, res
 	resp.Schema = schema.Schema{
 		MarkdownDescription: "A custom domain of a project. Create the TXT record (`verification_name` / `verification_value`) " +
 			"and the record in `dns_targets` at your DNS provider; the domain serves once it is verified " +
-			"(`verify = true` waits for that, or run `runr domains verify`).",
+			"(`verify = true` waits for that, or run `runr domains verify`).\n\n" +
+			"With `environment` the domain routes to one environment of the project, with the DNS targets and certificates of the " +
+			"region the environment runs in. Import with `<project name or id>/<domain>` or " +
+			"`<project name or id>/<environment>/<domain>`.",
 		Attributes: map[string]schema.Attribute{
 			"id": schema.StringAttribute{Computed: true, PlanModifiers: keep, MarkdownDescription: "Domain id."},
 			"project_id": schema.StringAttribute{Required: true, MarkdownDescription: "Project id.",
 				PlanModifiers: []planmodifier.String{stringplanmodifier.RequiresReplace()}},
+			"environment": schema.StringAttribute{Optional: true, PlanModifiers: []planmodifier.String{environmentRequiresReplace()},
+				MarkdownDescription: "Environment the domain routes to (`runr_environment.<name>.name` or its id). Left out (or " +
+					"`production`): the project's own workload. Changing it adds the domain anew."},
 			"domain": schema.StringAttribute{Required: true, MarkdownDescription: "Host name, e.g. `api.example.com`.",
 				PlanModifiers: []planmodifier.String{stringplanmodifier.RequiresReplace()},
 				Validators: []validator.String{stringvalidator.LengthBetween(3, 253), stringvalidator.RegexMatches(
 					regexp.MustCompile(`^[a-z0-9]([a-z0-9.-]*[a-z0-9])?$`), "must be a lower-case host name without a trailing dot")}},
-			"tls_mode": schema.StringAttribute{Optional: true, Computed: true, Default: stringdefault.StaticString(runr.TLSNone),
-				MarkdownDescription: "HTTPS certificate: `none` (the region's default), `cert-manager` or `custom`.",
-				Validators:          []validator.String{stringvalidator.OneOf(runr.TLSNone, runr.TLSCertManager, runr.TLSCustom)}},
+			"tls_mode": schema.StringAttribute{Optional: true, Computed: true, PlanModifiers: keep,
+				MarkdownDescription: "HTTPS certificate: `none` (the region's default certificate, which does not name the domain), " +
+					"`cert-manager` (a certificate for the domain from the region's cert-manager issuer) or `custom`. Left out, " +
+					"RunR chooses when the domain is created — `cert-manager` where the region issues certificates, `none` elsewhere — " +
+					"and the mode the domain has is kept (also one set in the console or with `runr domains tls`).",
+				Validators: []validator.String{stringvalidator.OneOf(runr.TLSNone, runr.TLSCertManager, runr.TLSCustom)}},
 			"certificate": schema.StringAttribute{Optional: true, MarkdownDescription: "PEM certificate chain (`tls_mode = \"custom\"`)."},
 			"private_key": schema.StringAttribute{Optional: true, Sensitive: true, MarkdownDescription: "PEM private key (`tls_mode = \"custom\"`)."},
 			"verify": schema.BoolAttribute{Optional: true, Computed: true, Default: booldefault.StaticBool(false),
-				MarkdownDescription: "Wait at create until the DNS records are found and the domain is active."},
+				MarkdownDescription: "Wait at create until the DNS records are found and the domain is active (default `false`)."},
 			"verify_timeout": schema.StringAttribute{Optional: true, Computed: true, Default: stringdefault.StaticString("10m"),
-				MarkdownDescription: "How long `verify` waits (Go duration)."},
+				MarkdownDescription: "How long `verify` waits (Go duration, default `10m`)."},
 			"status":             schema.StringAttribute{Computed: true, MarkdownDescription: "`pending`, `verified`, `active` or `error`."},
 			"url":                schema.StringAttribute{Computed: true, MarkdownDescription: "URL of the domain."},
 			"verification_type":  schema.StringAttribute{Computed: true, PlanModifiers: keep, MarkdownDescription: "Ownership record type (`TXT`)."},
@@ -104,7 +114,7 @@ func (r *domainResource) ValidateConfig(ctx context.Context, req resource.Valida
 	if resp.Diagnostics.HasError() || m.TLSMode.IsUnknown() {
 		return
 	}
-	custom := m.TLSMode.ValueString() == runr.TLSCustom // null = the default, none
+	custom := m.TLSMode.ValueString() == runr.TLSCustom // null = RunR's choice, never custom
 	if custom && (m.Certificate.IsNull() || m.PrivateKey.IsNull()) {
 		resp.Diagnostics.AddAttributeError(path.Root("certificate"), "certificate and private_key required", "tls_mode custom needs both.")
 	}
@@ -127,17 +137,19 @@ func (r *domainResource) Create(ctx context.Context, req resource.CreateRequest,
 	if resp.Diagnostics.HasError() {
 		return
 	}
-	pid := plan.ProjectID.ValueString()
-	d, err := r.client.API.AddDomain(ctx, pid, plan.Domain.ValueString())
+	pid, env := plan.ProjectID.ValueString(), environmentRef(plan.Environment)
+	// tls_mode left out (unknown): the mode RunR gives the new domain stays
+	wantTLS := plan.TLSMode
+	d, err := r.client.API.AddEnvironmentDomain(ctx, pid, env, plan.Domain.ValueString())
 	if err != nil {
-		apiError(&resp.Diagnostics, "Add domain failed", err)
+		environmentError(&resp.Diagnostics, "Add domain failed", err)
 		return
 	}
 	// Keep the domain in the state even if a later step fails, so it is not orphaned.
 	plan.fromAPI(ctx, d, &resp.Diagnostics)
 	resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
 
-	if mode := plan.TLSMode.ValueString(); mode != "" && mode != d.TLSMode {
+	if mode := wantTLS.ValueString(); known(wantTLS) && mode != d.TLSMode {
 		d, err = r.client.API.SetDomainTLS(ctx, pid, d.ID, mode, plan.Certificate.ValueString(), plan.PrivateKey.ValueString())
 		if err != nil {
 			apiError(&resp.Diagnostics, "Set domain TLS failed", err)
@@ -146,7 +158,7 @@ func (r *domainResource) Create(ctx context.Context, req resource.CreateRequest,
 	}
 	if plan.Verify.ValueBool() {
 		timeout, _ := time.ParseDuration(plan.VerifyTimeout.ValueString())
-		if d, err = r.waitVerified(ctx, pid, d.ID, timeout); err != nil {
+		if d, err = r.waitVerified(ctx, pid, env, d.ID, timeout); err != nil {
 			apiError(&resp.Diagnostics, "Domain verification failed", err)
 			if d != nil {
 				plan.fromAPI(ctx, d, &resp.Diagnostics)
@@ -159,13 +171,13 @@ func (r *domainResource) Create(ctx context.Context, req resource.CreateRequest,
 	resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
 }
 
-func (r *domainResource) waitVerified(ctx context.Context, projectID, domainID string, timeout time.Duration) (*runr.Domain, error) {
+func (r *domainResource) waitVerified(ctx context.Context, projectID, environment, domainID string, timeout time.Duration) (*runr.Domain, error) {
 	if timeout <= 0 {
 		timeout = 10 * time.Minute
 	}
 	deadline := time.Now().Add(timeout)
 	for {
-		d, err := r.client.API.VerifyDomain(ctx, projectID, domainID)
+		d, err := r.client.API.VerifyEnvironmentDomain(ctx, projectID, environment, domainID)
 		var ve *runr.DomainVerifyError
 		if err == nil {
 			return d, nil
@@ -193,14 +205,14 @@ func (r *domainResource) Read(ctx context.Context, req resource.ReadRequest, res
 	if resp.Diagnostics.HasError() {
 		return
 	}
-	d, err := r.client.API.GetDomain(ctx, state.ProjectID.ValueString(), state.ID.ValueString())
-	var nf *runr.NotFoundError
-	if errors.As(err, &nf) || runr.IsNotFound(err) {
+	pid := state.ProjectID.ValueString()
+	d, err := r.client.API.GetEnvironmentDomain(ctx, pid, environmentRef(state.Environment), state.ID.ValueString())
+	if err != nil && environmentGone(ctx, r.client, pid, err) {
 		resp.State.RemoveResource(ctx)
 		return
 	}
 	if err != nil {
-		apiError(&resp.Diagnostics, "Read domain failed", err)
+		environmentError(&resp.Diagnostics, "Read domain failed", err)
 		return
 	}
 	state.fromAPI(ctx, d, &resp.Diagnostics)
@@ -218,12 +230,16 @@ func (r *domainResource) Update(ctx context.Context, req resource.UpdateRequest,
 		return
 	}
 	plan.ID = state.ID
-	d, err := r.client.API.GetDomain(ctx, state.ProjectID.ValueString(), state.ID.ValueString())
+	d, err := r.client.API.GetEnvironmentDomain(ctx, state.ProjectID.ValueString(), environmentRef(state.Environment), state.ID.ValueString())
 	if err != nil {
-		apiError(&resp.Diagnostics, "Read domain failed", err)
+		environmentError(&resp.Diagnostics, "Read domain failed", err)
 		return
 	}
-	tlsChanged := !plan.TLSMode.Equal(state.TLSMode) || !plan.Certificate.Equal(state.Certificate) || !plan.PrivateKey.Equal(state.PrivateKey)
+	tlsChanged := (known(plan.TLSMode) && !plan.TLSMode.Equal(state.TLSMode)) ||
+		!plan.Certificate.Equal(state.Certificate) || !plan.PrivateKey.Equal(state.PrivateKey)
+	if tlsChanged && !known(plan.TLSMode) {
+		plan.TLSMode = types.StringValue(d.TLSMode)
+	}
 	if tlsChanged {
 		d, err = r.client.API.SetDomainTLS(ctx, state.ProjectID.ValueString(), d.ID, plan.TLSMode.ValueString(),
 			plan.Certificate.ValueString(), plan.PrivateKey.ValueString())
@@ -251,28 +267,36 @@ func (r *domainResource) Delete(ctx context.Context, req resource.DeleteRequest,
 	}
 }
 
-// ImportState accepts "<project id or name>/<domain or domain id>".
+// ImportState accepts "<project id or name>/<domain or domain id>" (a domain of the project's own
+// workload) or "<project id or name>/<environment>/<domain or domain id>".
 func (r *domainResource) ImportState(ctx context.Context, req resource.ImportStateRequest, resp *resource.ImportStateResponse) {
 	if notConfigured(r.client, &resp.Diagnostics) {
 		return
 	}
-	proj, host, ok := strings.Cut(req.ID, "/")
-	if !ok || proj == "" || host == "" {
-		resp.Diagnostics.AddError("Invalid import id", "Use <project id or name>/<domain>.")
+	parts := strings.Split(req.ID, "/")
+	if (len(parts) != 2 && len(parts) != 3) || parts[0] == "" || parts[len(parts)-1] == "" {
+		resp.Diagnostics.AddError("Invalid import id", "Use <project id or name>/<domain> or <project id or name>/<environment>/<domain>.")
 		return
 	}
-	p, err := r.client.API.FindProject(ctx, proj)
+	p, err := r.client.API.FindProject(ctx, parts[0])
 	if err != nil {
 		apiError(&resp.Diagnostics, "Import domain failed", err)
 		return
 	}
-	d, err := r.client.API.FindDomain(ctx, p.ID, host)
+	env := ""
+	if len(parts) == 3 {
+		env = parts[1]
+	}
+	d, err := r.client.API.FindEnvironmentDomain(ctx, p.ID, environmentRef(types.StringValue(env)), parts[len(parts)-1])
 	if err != nil {
-		apiError(&resp.Diagnostics, "Import domain failed", err)
+		environmentError(&resp.Diagnostics, "Import domain failed", err)
 		return
 	}
 	resp.Diagnostics.Append(resp.State.SetAttribute(ctx, path.Root("id"), d.ID)...)
 	resp.Diagnostics.Append(resp.State.SetAttribute(ctx, path.Root("project_id"), p.ID)...)
+	if env != "" {
+		resp.Diagnostics.Append(resp.State.SetAttribute(ctx, path.Root("environment"), env)...)
+	}
 	resp.Diagnostics.Append(resp.State.SetAttribute(ctx, path.Root("verify"), false)...)
 	resp.Diagnostics.Append(resp.State.SetAttribute(ctx, path.Root("verify_timeout"), "10m")...)
 }

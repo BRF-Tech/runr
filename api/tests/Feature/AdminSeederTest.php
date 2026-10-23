@@ -76,4 +76,19 @@ class AdminSeederTest extends TestCase
         $admin->refresh();
         $this->assertSame($originalHash, $admin->password);
     }
+
+    /** The sign-in reads an identifier with "@" as an e-mail address first: a user name has none. */
+    public function test_refuses_a_user_name_with_at(): void
+    {
+        config(['app.admin.username' => 'admin@corp', 'app.admin.password' => 'a-strong-configured-password']);
+
+        try {
+            (new AdminSeeder)->run();
+            $this->fail('the seeder created an administrator whose user name contains "@"');
+        } catch (\InvalidArgumentException $e) {
+            $this->assertStringContainsString('ADMIN_USERNAME cannot contain "@"', $e->getMessage());
+        }
+
+        $this->assertSame(0, User::query()->count());
+    }
 }

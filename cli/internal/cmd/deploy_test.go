@@ -243,8 +243,49 @@ func TestDeployXaas(t *testing.T) {
 	}
 }
 
+// The API records the config of every deployment and restores it on a rollback (and runs a
+// caas version's own image): the CLI asks for it, the project's config stays as it is.
+func TestDeployCaasAndRollbackRestoresTheConfigOnTheServer(t *testing.T) {
+	h := newHarness(t).login()
+	dir := h.project("name: web\ntype: caas\nimage: nginx:1.26\nports: [80]\n", nil)
+	h.mustRun("deploy", "--dir", dir)
+	h.mustRun("deploy", "--dir", dir, "--image", "nginx:1.27")
+
+	r := h.mustRun("rollback", "v1", "--project", "web")
+	if strings.Contains(r.err, "Restoring the container config") {
+		t.Fatalf("the CLI rewrote the config although the API restores it:\n%s", r.err)
+	}
+	calls := h.srv.CallsTo("POST /projects/{project}/deploy")
+	if body := calls[len(calls)-1].Body; body["restore_config"] != true {
+		t.Fatalf("rollback deploy body = %v, want restore_config true", body)
+	}
+	if len(h.srv.CallsTo("PUT /projects/{project}")) != 1 {
+		t.Fatal("the rollback changed the project's config (only the --image deploy may)")
+	}
+	p, _ := h.srv.Project("web")
+	if p.Config.Image != "nginx:1.27" || p.LatestVersion.Number != 2 {
+		t.Fatalf("after rollback image=%q version=%d, want the config of now", p.Config.Image, p.LatestVersion.Number)
+	}
+	if d := h.srv.Deployments("web")[0]; d.VersionLabel != "v1" || d.Status != runr.DeploymentActive || d.ConfigSource != runr.ConfigRestored {
+		t.Fatalf("rollback deployment = %+v", d)
+	}
+
+	// --keep-config: the older code with the configuration of now
+	h.mustRun("rollback", "v1", "--project", "web", "--keep-config")
+	calls = h.srv.CallsTo("POST /projects/{project}/deploy")
+	if _, sent := calls[len(calls)-1].Body["restore_config"]; sent {
+		t.Fatalf("--keep-config sent restore_config: %v", calls[len(calls)-1].Body)
+	}
+	if d := h.srv.Deployments("web")[0]; d.ConfigSource != runr.ConfigCurrent {
+		t.Fatalf("--keep-config deployment = %+v", d)
+	}
+}
+
+// An API before config snapshots: the CLI brings a caas version's image settings back itself,
+// as a new version.
 func TestDeployCaasAndRollbackRestoresImage(t *testing.T) {
 	h := newHarness(t).login()
+	h.srv.Environments = false
 	dir := h.project("name: web\ntype: caas\nimage: nginx:1.26\nports: [80]\n", nil)
 	h.mustRun("deploy", "--dir", dir)
 	h.mustRun("deploy", "--dir", dir, "--image", "nginx:1.27")

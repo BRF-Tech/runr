@@ -199,6 +199,8 @@ type request struct {
 	contentType string
 	// accept overrides the Accept header (downloads of SBOMs and exports).
 	accept string
+	// headers are further request headers (Range of a resumed download).
+	headers map[string]string
 	// retry marks a request that is safe to repeat although it is not a GET (an upload chunk
 	// written at a fixed offset).
 	retry bool
@@ -255,6 +257,9 @@ func (c *Client) do(ctx context.Context, r request, out any) error {
 		}
 		req.Header.Set("Accept", accept)
 		req.Header.Set("User-Agent", c.userAgent)
+		for k, v := range r.headers {
+			req.Header.Set(k, v)
+		}
 		if payload != nil {
 			ct := "application/json"
 			if r.raw != nil {
@@ -289,6 +294,14 @@ func (c *Client) do(ctx context.Context, r request, out any) error {
 			return lastErr
 		}
 		if w, ok := out.(*Download); ok && resp.StatusCode >= 200 && resp.StatusCode < 300 {
+			w.StatusCode = resp.StatusCode
+			if w.Begin != nil {
+				// e.g. a resumed download the API answers in full (200, not 206): start over
+				if err := w.Begin(resp.StatusCode, resp.Header); err != nil {
+					resp.Body.Close()
+					return err
+				}
+			}
 			// Stream the answer (SBOMs, exports) instead of holding it in memory.
 			n, err := io.Copy(w.W, resp.Body)
 			resp.Body.Close()
@@ -344,6 +357,11 @@ type Download struct {
 	// Filename is the name of the Content-Disposition header, if any.
 	Filename string
 	Bytes    int64
+	// StatusCode is the success status (206 for a partial answer to a Range request).
+	StatusCode int
+	// Begin, when set, is called with the answer's status and headers before the body is
+	// copied to W (it may replace W).
+	Begin func(status int, header http.Header) error
 }
 
 // attachmentName returns the filename of a Content-Disposition header.

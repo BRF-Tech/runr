@@ -23,7 +23,7 @@ class WorkflowRunStart extends Tool
 
     public function description(): string
     {
-        return 'Starts a run of a durable workflow with an input object (the event data the workflow reads). With an idempotency key a repeated call returns the existing run instead of starting another. Follow it with workflow_run_status.';
+        return 'Starts a run of a durable workflow with an input object (the event data the workflow reads). With an idempotency key a repeated call returns the existing run instead of starting another. environment runs the workflow of that environment (default production). Follow it with workflow_run_status.';
     }
 
     public function inputSchema(): array
@@ -34,6 +34,7 @@ class WorkflowRunStart extends Tool
             'data' => ['type' => 'object', 'description' => 'Input of the run (JSON object).'],
             'idempotency_key' => Schema::string('Starts at most one run per key.', ['maxLength' => 200]),
             'test' => Schema::boolean('Mark the run as a test run.'),
+            'environment' => Schema::string('Environment name or id (default: production, the project\'s own workload).', ['maxLength' => 64]),
         ], ['project', 'workflow']);
     }
 
@@ -63,6 +64,9 @@ class WorkflowRunStart extends Tool
         }
         if (! empty($arguments['test'])) {
             $payload['test'] = true;
+        }
+        if (isset($arguments['environment']) && $arguments['environment'] !== '') {
+            $payload['environment'] = (string) $arguments['environment'];
         }
 
         $result = $context->api()->post(InternalApi::path('projects', $projectId, 'workflows', $workflow, 'runs'), $payload);

@@ -244,8 +244,8 @@ ticket:
 # signed events on webhookUrl (empty: events are only kept for GET /api/billing/events). webhookSecret
 # signs them (X-RunR-Signature: sha256=HMAC-SHA256(secret, "<X-RunR-Timestamp>.<raw body>")); it goes
 # into the chart's Secret (secretName) — with secret.create=false add the key BILLING_WEBHOOK_SECRET to
-# that Secret yourself (optional). A webhook saved in the console (Settings → Billing → Webhook) wins
-# over these two values. The console shows the billing pages when the API reports billing on (the
+# that Secret yourself (optional). A webhook saved in the console (Administration → Billing → Webhook)
+# wins over these two values. The console shows the billing pages when the API reports billing on (the
 # published UI images are built with VITE_BILLING_ENABLED=true).
 billing:
   enabled: false
@@ -256,7 +256,7 @@ billing:
 
 # ─── Branding (white-label, docs/white-label.md) ─
 # The installation's brand — no rebuild, applied when the pods start. Precedence (per field):
-# value saved in Settings → Branding > this value > the RunR default (RunR by BRF Teknoloji).
+# value saved in Administration → Branding > this value > the RunR default (RunR by BRF Teknoloji).
 # "Reset to default" in the console brings a field back to this value.
 # Logo / favicon: an https URL, a data:image/...;base64,... URI or a reference to a key of an
 # existing ConfigMap / Secret in the release namespace (content: URL, data: URI or raw <svg>; ≤ ~700 KB):
@@ -289,7 +289,8 @@ branding:
   tenantOverrides: true    # multi-tenant: tenant owners may brand what their users see
 
 # ─── Self-service signup (docs/white-label.md) ─
-# registration_enabled is a separate runtime setting and stays on by default (Settings → Platform).
+# registration_enabled is a separate runtime setting and stays on by default (Administration →
+# Regions & settings → User Registration).
 signup:
   emailVerification: false # on: the account is created when the e-mail link is opened
   verificationTtlHours: 48
@@ -315,6 +316,18 @@ knative:
   # of the pinned chart (the mirror of docker.io/traefik). Point it at a registry the regions reach,
   # with the same Traefik version; `region:reconcile` moves existing regions to it.
   traefikImage: ""
+  # cert-manager in the regions: the certificates of project custom domains (TLS mode cert-manager,
+  # docs/regions.md#cert-manager). A cluster that runs cert-manager keeps it (reused, never removed
+  # by RunR); RunR installs jetstack/cert-manager v1.21.2 (images from ghcr.io/brf-tech/runr/reqs)
+  # where there is none, then a default ClusterIssuer: ACME (Let's Encrypt, HTTP-01 through the
+  # region Traefik) in regions reachable from the internet once an ACME e-mail is set, else a
+  # region CA the operator can trust. `region:reconcile` brings existing regions there.
+  certManager:
+    install: true          # false: only a cluster's own cert-manager is used
+    acmeEmail: ""          # ACME account e-mail (accepts the ACME server's terms); empty: the region CA everywhere
+    acmeServer: ""         # empty: Let's Encrypt production
+    chartVersion: ""       # empty: the pinned chart
+    imagePrefix: ""        # <prefix>/cert-manager-<component>:<version>; empty: the reqs mirror
 
 # ─── Observability (docs/observability.md) ───
 # Tracing backend per region (OpenTelemetry Collector + Grafana Tempo, installed with Knative
@@ -350,6 +363,17 @@ observability:
     minIntervalSeconds: 30
     resultsRetentionDays: 90
     allowPrivateTargets: false    # true: checks of an absolute URL may target private addresses
+  # Load tests of HTTP projects (docs/load-test.md): a k6 Job in the project's region against the
+  # project's own URL; the test traffic is metered like any other traffic
+  loadTest:
+    enabled: true
+    dailyLimit: 20                # tests an organization may start per day (0: none)
+    maxUsers: 100                 # the largest of the 10 / 50 / 100 user choices offered
+    maxDurationSeconds: 300       # the longest of the 30 / 60 / 300 s choices offered
+    maxConcurrentPerRegion: 5     # k6 pods at once in a region (ResourceQuota of runr-loadtest)
+    # The k6 image; empty: ghcr.io/brf-tech/runr/reqs/k6 at the pinned version (the mirror of
+    # docker.io/grafana/k6). Point it at a registry the regions reach, with the same version
+    image: ""
   statusPage:
     enabled: true
   alerts:
@@ -359,8 +383,8 @@ observability:
 # ─── Sandbox API (docs/sandbox-api.md) ───────
 # Isolated execution of untrusted code (AI agents, code interpreters): plain pods in a namespace per
 # organization under each region's strongest sandbox class (Kata > gVisor; runc only where a region
-# allows it). Region settings, warm pools and organization quotas are set in Settings → Sandboxes;
-# the values below are the platform defaults and ceilings.
+# allows it). Region settings, warm pools and organization quotas are set in Build & Run → Sandbox
+# settings; the values below are the platform defaults and ceilings.
 sandboxApi:
   enabled: true
   namespacePrefix: runr-sbx       # namespace "<prefix>-<organization>" per region
@@ -377,7 +401,7 @@ sandboxApi:
     maxMemoryMb: 8192
     maxDiskMb: 10240
     maxTtlSeconds: 86400
-  quota:                          # per organization unless set in Settings → Sandboxes; 0 = unlimited
+  quota:                          # per organization unless set in Sandbox settings; 0 = unlimited
     maxConcurrent: 20
     maxCpuM: 8000
     maxMemoryMb: 16384
@@ -395,7 +419,7 @@ sandboxApi:
 # ─── Git deploy (docs/git-deploy.md) ─────────
 # Every project gets a git remote https://<domain>/git/<organization>/<project>.git (served by
 # runr-api behind runr-gateway's /git route); GitHub / GitLab / Forgejo providers are added in
-# Settings → Git providers. Remotes live on the api-storage volume (git-remotes/).
+# Data & Integrations → Git providers. Remotes live on the api-storage volume (git-remotes/).
 gitDeploy:
   enabled: true
   maxPushMb: 50           # largest pack one push may send (stay below the API's 64 MB body limit)
@@ -425,14 +449,76 @@ supplyChain:
     chartVersion: ""            # default pinned in config/supply_chain.php
     extraArgs: ""               # webhook flags, e.g. "disable-tuf=true" for regions without internet
 
+# ─── Global projects and global DNS (docs/global-projects.md) ─
+# A global project runs in several regions behind <slug>.<zone>. Every platform region that takes
+# part runs a small PowerDNS server for the zone (enabled per region: Region → General → Global
+# DNS); the operator delegates the zone to them once. Empty values keep the application defaults.
+globalDns:
+  zone: ""                      # default g.<base domain> (Administration → Regions & settings → Base Domain)
+  namespace: ""                 # namespace of the PowerDNS server in a region (default runr-global-dns)
+  image: ""                     # default ghcr.io/brf-tech/runr/reqs/pdns-auth:5.0.8
+  storageClass: ""              # the server's 1Gi volume; empty: the cluster default
+  serviceAnnotations: {}        # annotations of the DNS LoadBalancer Service (UDP + TCP 53)
+  ttl: ""                       # TTL of the project records in seconds (default 30)
+  maxRegions: ""                # regions of one global project (default 8)
+  # GeoIP database of proximity mode: a gzipped MaxMind-format city database, {yyyy}/{mm} = the
+  # current month. Default DB-IP "IP to City Lite" (CC BY 4.0); "-" = none (proximity answers
+  # without a preferred region); a MaxMind GeoLite2 download URL with your license key works too.
+  geoipUrl: ""
+  tls:
+    mode: ""                    # acme (default: the region's cert-manager, DNS-01 for *.<zone> in every region) | none
+    acmeServer: ""              # default Let's Encrypt production
+    acmeEmail: ""               # contact address of the ACME account; empty: knative.certManager.acmeEmail
+  failover:
+    afterSeconds: ""            # a primary whose health check failed this long fails over (automatic projects); default 180
+  dataLink:
+    image: ""                   # forwarder of a binding's data link in the other regions; default ghcr.io/brf-tech/runr/reqs/nginx:1.27-alpine
+    port: ""                    # port of the home region's Traefik the link reaches (TLS, SNI); default 443
+
 # ─── Uploaded images (docs/images.md) ─
 # Container images (docker save / OCI layout tars) and .wasm modules uploaded through the console,
 # the API or `runr images push` into a region's internal registry. Empty values keep the defaults.
 images:
-  uploadImage: ""              # receiver image the regions pull (default ghcr.io/brf-tech/runr/image-upload:1.0.0, ci.sh image-upload)
+  uploadImage: ""              # receiver image the regions pull (default ghcr.io/brf-tech/runr/image-upload:1.1.0, ci.sh image-upload)
   quotaGb: ""                  # storage of uploaded images per organization over every region (default 50, 0 = unlimited)
   maxUploadGb: ""              # largest file of one upload (default 20)
   uploadTtlHours: ""           # an upload not completed within this time is aborted (default 24)
+
+# ─── Runtime patches (docs/runtimes.md#runtime-patches, docs/security.md#runtime-patch-feed) ─
+# One signed feed (an OCI artifact signed with cosign) announces the patch tags of the runtime
+# images: level, reason, CVEs and — for critical and zero-day patches — a deadline. RunR checks the
+# feed's digest every five minutes and verifies its signature with publicKey; without a key the
+# feed is off and platform administrators see a warning. Empty values keep the application defaults.
+runtimePatches:
+  feed: ""                     # OCI reference of the feed (default ghcr.io/brf-tech/runr/runtime-patches:feed)
+  # cosign public key (PEM) the feed is signed with: runr-runtimes' feed key (keys/patch-feed.pub
+  # there). Another key for a feed of your own; "" switches the feed off
+  publicKey: |
+    -----BEGIN PUBLIC KEY-----
+    MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEGdKhMmbBAKxXJUxpxtBRgGQstN8y
+    sa4lqGU1wKXXWEQ3hEPCdQNbBoDmTDgC4XRxI6sXfxJ9V6eslYxKgITcRw==
+    -----END PUBLIC KEY-----
+  viaRegion: ""                # read the feed through this region's registry (id or name): an API without a way out
+  autoMigrate: true            # at a critical / zero-day deadline, redeploy the projects still behind onto the patch
+                               # (the default; platform administrators switch it on the Patches page)
+
+# ─── API product of the gateways (docs/api-product.md) ─
+# API keys, JWT routes, plans and usage per consumer: the regions run gateway-auth, which the
+# region Traefik asks before every call of a key / JWT route. Empty values keep the defaults.
+apiProduct:
+  gatewayAuthImage: ""         # gateway-auth image the regions pull (default ghcr.io/brf-tech/runr/gateway-auth:1.0.0, ci.sh gateway-auth)
+  callbackUrl: ""              # RunR's base URL as the regions reach it (default: the region agent's URL)
+  syncSeconds: ""              # how often gateway-auth fetches changed keys / plans (default 10)
+  usageRetentionDays: ""       # hourly usage rows kept (default 400)
+
+# ─── Organization export / import (docs/org-export.md) ─
+# Packages live on the API volume (api.storage.size / storage.application): size it for what you
+# export, or write exports to an object binding / S3. Empty values keep the defaults.
+orgTransfer:
+  transferImage: ""            # transfer agent the regions pull for binding data and images (default ghcr.io/brf-tech/runr/image-upload:1.1.0)
+  maxPackageGb: ""             # largest package an import takes (default 50)
+  retentionHours: ""           # packages are removed after (default 168)
+  podDiskGb: ""                # emptyDir of a transfer pod: one binding's dump or one image (default 20)
 
 # ─── AI: GPU support and Hugging Face models (docs/ai.md, docs/huggingface.md) ─
 # Images and charts the regions pull. Point them at a registry the regions reach for
@@ -514,10 +600,27 @@ secret:
   # Present only while set here. With secret.create=false add APP_PREVIOUS_KEYS to your Secret.
   previousAppKeys: ""
 
+# ─── Project secrets (docs/security.md, docs/secret-stores.md) ──
+projectSecrets:
+  # Where RunR writes the value of a project's secret variable (env RUNR_SECRET_STORAGE):
+  #   region   (default) straight into the Kubernetes Secret of the project's region; RunR's
+  #            database keeps the name, version and a keyed fingerprint, never the value
+  #   database the behaviour up to 0.5.10, values encrypted in RunR's database (deprecated)
+  # Values written by 0.5.10 or earlier keep working; the bootstrap Job moves them into the
+  # regions after every upgrade (`php artisan secrets:move-to-region`, docs/upgrade.md).
+  storage: region
+  # An install upgraded from 0.5.10 keeps an encrypted copy of every secret value in its database,
+  # so that the 0.5.10 chart can be installed again (helm rollback, or the previous package) without
+  # its deploys writing empty values; secret store references wait for it. Once the upgrade is
+  # confirmed, set true: the bootstrap Job runs `secrets:move-to-region --finalize`, which checks
+  # every value in its region and drops the copies. After that, do NOT install 0.5.10 again.
+  # Fresh installs start finalized; the value changes nothing there.
+  finalize: false
+
 # ─── Audit log (docs/security.md) ────────────
 audit:
   # Events older than this are deleted daily (0 = keep forever); the platform setting in
-  # Settings → Audit log overrides it
+  # Administration → Audit log overrides it
   retentionDays: 365
   # SIEM forwarding: every audit event also goes to the api / horizon / reverb container log
   # (stdout) as one JSON line ({"log_type":"runr.audit", …}) for a log collector to ship
@@ -550,6 +653,13 @@ bootstrap:
   # and multi-tenant installations are left alone. false → run tenancy:setup yourself (to review
   # the plan with --dry-run first or choose --name / --slug; docs/tenancy.md)
   tenancySetup: true
+  # The Job runr-region-reconcile-<revision> brings the regions to the release after helm upgrade
+  # returned (not a hook: helm does not wait for it). Seconds each of its three attempts may start
+  # region:reconcile steps for (--deadline; the step running then runs to its end, up to 30 minutes
+  # more). 3600 covers the worst case of one region cluster on an upgrade from 0.5.10; a typical
+  # cluster takes 5-10 minutes. Steps the deadline leaves are done by the next attempt; raise it for
+  # installations with many region clusters (the Job's activeDeadlineSeconds follows; docs/upgrade.md)
+  regionReconcileSeconds: 3600
 
 # ─── Ingress ─────────────────────────────────
 # domain → runr-gateway. className: the cluster's ingress class (traefik on k3s)

@@ -3,6 +3,7 @@
 namespace App\Http\Requests\Auth;
 
 use App\Rules\AllowedSignupDomain;
+use App\Rules\UniqueIgnoringCase;
 use App\Services\WhiteLabel\CaptchaVerifier;
 use App\Services\WhiteLabel\SignupSettings;
 use Illuminate\Contracts\Validation\Validator;
@@ -49,17 +50,20 @@ class RegisterRequest extends FormRequest
     {
         $signup = app(SignupSettings::class);
 
+        // The user name: letters, digits, "-" and "_" (alpha_dash; never "@", which makes the sign-in
+        // read an identifier as an e-mail address first). User name and e-mail address are unique
+        // in any letter case: the sign-in matches both case-insensitively (LoginIdentifier)
         $rules = [
             'name' => 'required|string|max:255',
-            'username' => 'required|string|max:64|alpha_dash|unique:users,username',
-            'email' => ['required', 'email', 'max:190', 'unique:users,email', new AllowedSignupDomain],
+            'username' => ['required', 'string', 'max:64', 'alpha_dash', new UniqueIgnoringCase('users', 'username')],
+            'email' => ['required', 'email', 'max:190', new UniqueIgnoringCase('users', 'email'), new AllowedSignupDomain],
             'password' => 'required|string|min:8|confirmed',
         ];
 
         // A username held by another address's signup that still waits for its verification
         if ($signup->emailVerification()) {
             $rules['username'] = [
-                'required', 'string', 'max:64', 'alpha_dash', 'unique:users,username',
+                'required', 'string', 'max:64', 'alpha_dash', new UniqueIgnoringCase('users', 'username'),
                 Rule::unique('pending_signups', 'username')->where(fn ($q) => $q
                     ->where('email', '!=', strtolower(trim((string) $this->input('email'))))
                     ->where('expires_at', '>', now())),

@@ -2,6 +2,8 @@
 
 namespace App\Services\Manifests;
 
+use App\Services\PublicHostRewrites;
+
 /**
  * Pure manifest builders for project custom domains.
  *
@@ -10,16 +12,18 @@ namespace App\Services\Manifests;
  *
  *   IngressRoute  <name>      entryPoint web       Host(`<domain>`)  → Middleware → Service traefik:80
  *   IngressRoute  <name>-tls  entryPoint websecure Host(`<domain>`)  → Middleware → Service traefik:80
- *   Middleware    <name>      headers: Host = <ksvc>.<namespace>.svc, K-Original-Host = <domain>
+ *   Middleware    <name>      headers: Host = <ksvc>.<function domain>, K-Original-Host = <domain>
  *
- * The request re-enters the same Traefik on its private Knative entrypoint (web, set by
- * --providers.knative.privateentrypoints) with the Knative Service's cluster-local host,
- * which the Knative provider routes to the current revision (activator on scale-to-zero).
- * This is the same Host rewrite a Knative DomainMapping asks its ingress for; Traefik's
- * Knative provider does not apply DomainMapping KIngresses (it has no RewriteHost support
- * and needs a ClusterIP backend, while DomainMapping points at the Service's ExternalName
- * placeholder), so RunR builds the equivalent route itself. The route references the
- * Knative Service by name, so redeploys keep it.
+ * The request re-enters the same Traefik on web with the Knative Service's public host, which
+ * the Knative provider's public route sends to the current revision (activator on
+ * scale-to-zero). Only a public service has that route: a cluster-local one (a queue trigger)
+ * is never reached this way (PrivateIngress). The public host follows the service's URL
+ * (PublicHostRewrites: the Middleware names its Knative Service). This is the Host rewrite a
+ * Knative DomainMapping asks its ingress for; Traefik's Knative provider does not apply
+ * DomainMapping KIngresses (it has no RewriteHost support and needs a ClusterIP backend, while
+ * DomainMapping points at the Service's ExternalName placeholder), so RunR builds the
+ * equivalent route itself. The route references the Knative Service by name, so redeploys
+ * keep it.
  *
  * TLS: a kubernetes.io/tls Secret <name> in the project namespace — uploaded by the
  * customer, or written by a cert-manager Certificate <name>. Without one the websecure
@@ -57,12 +61,6 @@ class ProjectDomainManifests
         return sha1($domain);
     }
 
-    /** Cluster-local host of a Knative Service: <ksvc>.<namespace>.svc */
-    public static function serviceHost(string $serviceName, string $namespace): string
-    {
-        return "{$serviceName}.{$namespace}.svc";
-    }
-
     /**
      * @return array<string, string>
      */
@@ -86,7 +84,7 @@ class ProjectDomainManifests
     }
 
     /**
-     * Traefik headers Middleware: rewrites Host to the Knative Service's cluster-local host
+     * Traefik headers Middleware: rewrites Host to Knative Service $serviceName's public host
      * and keeps the original host in K-Original-Host (the header DomainMapping sets too).
      */
     public static function hostRewriteMiddleware(
@@ -94,16 +92,17 @@ class ProjectDomainManifests
         string $namespace,
         string $projectId,
         string $domain,
-        string $serviceHost,
+        string $serviceName,
+        string $publicHost,
     ): array {
         return [
             'apiVersion' => self::TRAEFIK_API,
             'kind' => 'Middleware',
-            'metadata' => self::metadata($name, $namespace, $projectId, $domain),
+            'metadata' => array_merge_recursive(self::metadata($name, $namespace, $projectId, $domain), PublicHostRewrites::metadata($serviceName)),
             'spec' => [
                 'headers' => [
                     'customRequestHeaders' => [
-                        'Host' => $serviceHost,
+                        'Host' => $publicHost,
                         'K-Original-Host' => $domain,
                     ],
                 ],

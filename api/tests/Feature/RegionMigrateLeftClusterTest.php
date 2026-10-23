@@ -184,7 +184,7 @@ class RegionMigrateLeftClusterTest extends TestCase
         $notice = Notification::query()->where('user_id', $this->operator->id)->sole();
         $this->assertSame(['region.left_cluster_cleanup_failed', 'critical', 'Left cluster cleanup of eu failed'], [$notice->type, $notice->level, $notice->title]);
         $this->assertStringStartsWith('the cluster the rollback left does not answer: cURL error 7', (string) $notice->body);
-        $this->assertStringContainsString('remove them yourself: the Knative Services, CronJobs and queue consumers labelled runr/project-id or runr/preview-of'
+        $this->assertStringContainsString('remove them yourself: the Knative Services, CronJobs and queue consumers labelled runr/project-id, runr/preview-of or runr/environment-of'
             .' with the region\'s projects in the namespace fn of the cluster the rollback left', (string) $notice->body);
     }
 

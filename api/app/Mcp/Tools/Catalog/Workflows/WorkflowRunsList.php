@@ -25,7 +25,7 @@ class WorkflowRunsList extends Tool
 
     public function description(): string
     {
-        return 'Lists the runs of a project\'s workflows, newest first, optionally of one workflow and in some statuses (e.g. failed). workflow_run_status shows one run with its steps.';
+        return 'Lists the runs of a project\'s workflows, newest first, optionally of one workflow and in some statuses (e.g. failed), of one environment (default production; "all" for every environment). workflow_run_status shows one run with its steps.';
     }
 
     public function inputSchema(): array
@@ -36,6 +36,7 @@ class WorkflowRunsList extends Tool
             'status' => Schema::array(Schema::enum(self::STATUSES, 'Run status.'), 'Only runs in these statuses.', 8),
             'search' => Schema::string('Run id, event id, idempotency key or text in the event.', ['maxLength' => 200]),
             'limit' => Schema::integer('At most this many runs (default 25).', 1, 100),
+            'environment' => Schema::string('Environment name or id, or "all" (default: production, the project\'s own workload).', ['maxLength' => 64]),
         ], ['project']);
     }
 
@@ -63,6 +64,7 @@ class WorkflowRunsList extends Tool
             'status' => ! empty($arguments['status']) ? implode(',', (array) $arguments['status']) : null,
             'q' => $arguments['search'] ?? null,
             'per_page' => (int) ($arguments['limit'] ?? 25),
+            'environment' => isset($arguments['environment']) && $arguments['environment'] !== '' ? (string) $arguments['environment'] : null,
         ]);
         if (! $result->ok()) {
             throw ToolError::fromApi($result, 'Reading the runs');

@@ -390,6 +390,23 @@ class TenancySetupTest extends TestCase
         $this->assertDirectoryExists(storage_path('git/.git'));
     }
 
+    /** --admin names accounts the way the sign-in does (App\Support\Auth\LoginIdentifier): one each. */
+    public function test_admin_promotes_the_one_account_a_name_signs_in_as(): void
+    {
+        $this->singleOrganization();
+        Tenant::create(['name' => 'Globex', 'slug' => 'globex']);
+        User::factory()->create(['username' => 'mira', 'email' => 'Mira@Example.test']);
+        // An account of an earlier release whose user name is that address: the address names Mira
+        User::factory()->create(['username' => 'mira@example.test', 'email' => 'other@example.test']);
+
+        $this->artisan('tenancy:setup', ['--force' => true, '--admin' => ['MIRA@example.test', 'DORA']])
+            ->expectsOutputToContain('Platform administrator: MIRA@example.test')
+            ->expectsOutputToContain('Platform administrator: DORA')
+            ->assertSuccessful();
+
+        $this->assertEqualsCanonicalizing(['dora', 'mira'], User::query()->where('is_admin', true)->pluck('username')->all());
+    }
+
     public function test_switching_tenancy_on_makes_the_owners_and_admins_platform_administrators(): void
     {
         $this->singleOrganization();

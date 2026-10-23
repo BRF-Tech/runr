@@ -43,6 +43,65 @@ func TestWorkflowsList(t *testing.T) {
 	}
 }
 
+// --env addresses the workflows of one environment of the project (docs/workflows.md#environments):
+// a query parameter of every read, a body field of every change, the environment of the events sent.
+func TestWorkflowsEnvironment(t *testing.T) {
+	h := wfHarness(t)
+	h.srv.SeedEnvironment("flows", "staging", false)
+	h.srv.SeedWorkflowIn("flows", "staging", "process-order", runr.WorkflowTrigger{Event: "order.created"})
+
+	h.mustRun("workflows", "ls", "-p", "flows", "--env", "staging")
+	if q := h.srv.CallsTo("GET /projects/{project}/workflows")[0].Query; !strings.Contains(q, "environment=staging") {
+		t.Fatalf("ls query = %q", q)
+	}
+	h.mustRun("workflows", "get", "process-order", "-p", "flows", "--env", "staging")
+	if q := h.srv.CallsTo("GET /projects/{project}/workflows/{workflow}")[0].Query; !strings.Contains(q, "environment=staging") {
+		t.Fatalf("get query = %q", q)
+	}
+	h.mustRun("workflows", "runs", "-p", "flows", "--env", "staging")
+	if q := h.srv.CallsTo("GET /projects/{project}/workflow-runs")[0].Query; !strings.Contains(q, "environment=staging") {
+		t.Fatalf("runs query = %q", q)
+	}
+
+	h.mustRun("workflows", "sync", "-p", "flows", "--env", "staging")
+	if body := h.srv.CallsTo("POST /projects/{project}/workflows/sync")[0].Body; body["environment"] != "staging" {
+		t.Fatalf("sync body = %v", body)
+	}
+	h.mustRun("workflows", "run", "process-order", "-p", "flows", "--env", "staging")
+	if body := h.srv.CallsTo("POST /projects/{project}/workflows/{workflow}/runs")[0].Body; body["environment"] != "staging" {
+		t.Fatalf("run body = %v", body)
+	}
+	h.mustRun("workflows", "disable", "process-order", "-p", "flows", "--env", "staging")
+	if body := h.srv.CallsTo("PATCH /projects/{project}/workflows/{workflow}")[0].Body; body["environment"] != "staging" || body["is_active"] != false {
+		t.Fatalf("disable body = %v", body)
+	}
+	if staging, _ := h.srv.WorkflowIn("flows", "staging", "process-order"); staging.IsActive {
+		t.Fatal("disable --env staging did not pause staging's workflow")
+	}
+	if own, _ := h.srv.Workflow("flows", "process-order"); !own.IsActive {
+		t.Fatal("disable --env staging paused production's workflow")
+	}
+	h.mustRun("workflows", "events", "send", "order.created", "--env", "staging")
+	if body := h.srv.CallsTo("POST /events")[0].Body; body["environment"] != "staging" || body["name"] != "order.created" {
+		t.Fatalf("event body = %v", body)
+	}
+	h.mustRun("workflows", "app", "-p", "flows", "--env", "staging")
+	if q := h.srv.CallsTo("GET /projects/{project}/workflows/app")[0].Query; !strings.Contains(q, "environment=staging") {
+		t.Fatalf("app query = %q", q)
+	}
+
+	// Without --env: production, nothing sent
+	h.srv.ResetCalls()
+	h.mustRun("workflows", "sync", "-p", "flows")
+	if body := h.srv.CallsTo("POST /projects/{project}/workflows/sync")[0].Body; body["environment"] != nil {
+		t.Fatalf("production sync body = %v", body)
+	}
+	h.mustRun("workflows", "ls", "-p", "flows")
+	if q := h.srv.CallsTo("GET /projects/{project}/workflows")[0].Query; strings.Contains(q, "environment") {
+		t.Fatalf("production ls query = %q", q)
+	}
+}
+
 func TestWorkflowsGetPauseResume(t *testing.T) {
 	h := wfHarness(t)
 	r := h.mustRun("workflows", "get", "process-order", "-p", "flows")
@@ -280,6 +339,37 @@ func TestWorkflowEvents(t *testing.T) {
 	h.expectCode(ExitValidation, "workflows", "events", "send", "runr/internal")
 	h.expectCode(ExitUsage, "workflows", "events", "send", "order.created", "--data", `"text"`)
 	h.expectCode(ExitNotFound, "workflows", "events", "get", "01J00000000000000000000999")
+}
+
+// Declaring the set again keeps the source of a definition whose content does not change: what
+// the function's SDK reported stays sdk; a changed or new one is the API's.
+func TestWorkflowsDeclareKeepsTheSourceOfUnchangedDefinitions(t *testing.T) {
+	h := wfHarness(t) // process-order: reported by the SDK, triggered by order.created
+	file := filepath.Join(t.TempDir(), "runr.workflows.json")
+	write(t, file, `{"workflows": [
+  {"name": "process-order", "triggers": [{"event": "order.created"}], "retries": 3},
+  {"name": "nightly", "triggers": [{"cron": "0 3 * * *"}]}
+]}`)
+	h.mustRun("workflows", "declare", "-f", file, "-p", "flows")
+	if w, _ := h.srv.Workflow("flows", "process-order"); w.Source != "sdk" || w.Archived {
+		t.Fatalf("process-order = %+v, want it still the SDK's", w)
+	}
+	if w, _ := h.srv.Workflow("flows", "nightly"); w.Source != "api" {
+		t.Fatalf("nightly = %+v", w)
+	}
+
+	// changed in the file: the API's from now on (until the next sync)
+	write(t, file, `{"workflows": [
+  {"name": "process-order", "triggers": [{"event": "order.created"}, {"event": "order.updated"}]},
+  {"name": "nightly", "triggers": [{"cron": "0 3 * * *"}]}
+]}`)
+	h.mustRun("workflows", "declare", "-f", file, "-p", "flows")
+	if w, _ := h.srv.Workflow("flows", "process-order"); w.Source != "api" {
+		t.Fatalf("process-order = %+v", w)
+	}
+	if n := len(h.srv.CallsTo("PUT /projects/{project}/workflows")); n != 2 {
+		t.Fatalf("PUT calls = %d", n)
+	}
 }
 
 func TestWorkflowsDeclareAndSync(t *testing.T) {

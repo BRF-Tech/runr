@@ -10,6 +10,7 @@ use App\Models\SandboxProcess;
 use App\Models\SandboxRegionSetting;
 use App\Services\KubernetesClient;
 use App\Services\Residency\RegionPolicy;
+use App\Services\Runtimes\Patches\RuntimePatches;
 use App\Services\Runtimes\RuntimeImagePendingException;
 use App\Services\Runtimes\RuntimeManifest;
 use App\Services\Runtimes\RuntimeRegistry;
@@ -33,6 +34,14 @@ use Illuminate\Support\Str;
  */
 class SandboxService
 {
+    /**
+     * A starting pod whose sandbox the container runtime failed to create this many times
+     * (kubelet events FailedCreatePodSandBox, counted with their repeats) ends the start: the
+     * kubelet would retry for ever — a Kata VM that does not boot, a runtime handler the node
+     * lacks. One or two failures can be passing (the CNI restarting) and are retried.
+     */
+    public const SANDBOX_CREATE_FAILURES = 3;
+
     public function __construct(
         protected RuntimeRegistry $runtimes,
         protected SandboxRegions $regions,
@@ -270,19 +279,28 @@ class SandboxService
 
     /**
      * Wait for the pod: true when it runs, null when $timeout passed while it is still starting,
-     * or the reason it cannot start (image pull error, …). The pod is read on the start-poll
-     * schedule (startPollDelayUs()), so a running pod is seen within one short interval.
+     * or the reason it cannot start (image pull error, the runtime failing to create the pod
+     * sandbox, …). The pod is read on the start-poll schedule (startPollDelayUs()), so a running
+     * pod is seen within one short interval; its events every sandbox.start_events_seconds (5).
      */
     public function waitRunning(Sandbox $sandbox, KnativeRegion $region, int $timeout): bool|string|null
     {
         $k8s = $this->k8s($region);
         $deadline = microtime(true) + $timeout;
+        $eventsEvery = max(0, (int) config('sandbox.start_events_seconds', 5));
+        $nextEvents = microtime(true) + $eventsEvery;
         $polls = 0;
 
         do {
             $state = self::podState($k8s->getResourceStatus('v1', 'Pod', $sandbox->pod_name, $sandbox->namespace));
             if ($state === true || is_string($state)) {
                 return $state;
+            }
+            if (microtime(true) >= $nextEvents) {
+                $nextEvents = microtime(true) + $eventsEvery;
+                if (($failure = $this->startFailure($k8s, $sandbox->namespace, $sandbox->pod_name)) !== null) {
+                    return $failure;
+                }
             }
             $left = (int) (($deadline - microtime(true)) * 1_000_000);
             if ($left > 0) {
@@ -305,6 +323,80 @@ class SandboxService
         $fastPolls = intdiv(max(0, (int) config('sandbox.start_poll_fast_seconds', 30)) * 1000, $ms);
 
         return ($polls < $fastPolls ? $ms : 1000) * 1000;
+    }
+
+    /**
+     * Why a starting pod will not start, from its events: the container runtime failed to create
+     * its sandbox SANDBOX_CREATE_FAILURES times (the latest error) — null while it may still start
+     * or the events cannot be read.
+     */
+    public function startFailure(KubernetesClient $k8s, string $namespace, string $podName): ?string
+    {
+        try {
+            $events = $k8s->listEvents($namespace, 'Pod', $podName);
+        } catch (\Throwable) {
+            return null;
+        }
+
+        return self::sandboxCreateFailure($events);
+    }
+
+    /**
+     * The error of a start that ran out of time: start_timeout and, when the pod has one, its
+     * latest warning event (what the kubelet was waiting on).
+     */
+    public function startTimeoutError(Sandbox $sandbox, KnativeRegion $region): string
+    {
+        $error = __('sandboxes.start_timeout');
+        try {
+            $events = $this->k8s($region)->listEvents($sandbox->namespace, 'Pod', $sandbox->pod_name);
+        } catch (\Throwable) {
+            return $error;
+        }
+
+        $at = fn (array $e): string => substr((string) ($e['lastTimestamp'] ?? $e['eventTime'] ?? $e['firstTimestamp'] ?? $e['metadata']['creationTimestamp'] ?? ''), 0, 19);
+        $warnings = array_values(array_filter($events, fn (array $e) => ($e['type'] ?? null) === 'Warning'));
+        usort($warnings, fn (array $a, array $b): int => strcmp($at($a), $at($b)));
+        $last = end($warnings);
+        if (! $last) {
+            return $error;
+        }
+
+        return $error.' '.__('sandboxes.start_timeout_event', [
+            'reason' => (string) ($last['reason'] ?? '?'),
+            'message' => mb_substr(trim((string) ($last['message'] ?? '')), 0, 1000),
+        ]);
+    }
+
+    /**
+     * The FailedCreatePodSandBox events of a pod, counted with their repeats (count / series.count):
+     * the latest message once there were SANDBOX_CREATE_FAILURES, else null.
+     *
+     * @param  list<array>  $events
+     */
+    public static function sandboxCreateFailure(array $events): ?string
+    {
+        $at = fn (array $e): string => (string) ($e['lastTimestamp'] ?? $e['eventTime'] ?? $e['firstTimestamp'] ?? $e['metadata']['creationTimestamp'] ?? '');
+        $failures = 0;
+        $latest = null;
+        foreach ($events as $event) {
+            if (($event['reason'] ?? null) !== 'FailedCreatePodSandBox') {
+                continue;
+            }
+            $failures += max(1, (int) ($event['count'] ?? $event['series']['count'] ?? 1));
+            if ($latest === null || strcmp(substr($at($event), 0, 19), substr($at($latest), 0, 19)) >= 0) {
+                $latest = $event;
+            }
+        }
+
+        if ($latest === null || $failures < self::SANDBOX_CREATE_FAILURES) {
+            return null;
+        }
+
+        return __('sandboxes.sandbox_create_failed', [
+            'count' => $failures,
+            'error' => mb_substr(trim((string) ($latest['message'] ?? '')), 0, 1500),
+        ]);
     }
 
     /**
@@ -663,7 +755,8 @@ class SandboxService
         }
 
         try {
-            $image = $this->runtimes->versionImage($manifest, $executor, $region);
+            // The newest runtime patch by digest, when one is known (docs/runtimes.md#runtime-patches)
+            $image = app(RuntimePatches::class)->forSandbox($executor, $this->runtimes->versionImage($manifest, $executor, $region));
         } catch (RuntimeImagePendingException $e) {
             throw new SandboxException($e->getMessage(), 409, 'runtime_image_building');
         } catch (\RuntimeException $e) {

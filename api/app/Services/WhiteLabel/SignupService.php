@@ -88,13 +88,14 @@ class SignupService
             return response()->json(['message' => __('whitelabel.signup.verification_expired'), 'code' => 'expired', 'email' => $pending->email], 410);
         }
 
-        // Someone took the address / username meanwhile (admin-created user, invitation, other signup)
-        if (User::query()->where('email', $pending->email)->exists()) {
+        // Someone took the address / username meanwhile (admin-created user, invitation, other signup),
+        // in any letter case: the sign-in matches both case-insensitively (LoginIdentifier)
+        if (User::query()->whereRaw('lower(email) = lower(?)', [$pending->email])->exists()) {
             $pending->delete();
 
             return response()->json(['message' => __('whitelabel.signup.email_taken'), 'errors' => ['email' => [__('whitelabel.signup.email_taken')]]], 422);
         }
-        if (User::query()->where('username', $pending->username)->exists()) {
+        if (User::query()->whereRaw('lower(username) = lower(?)', [$pending->username])->exists()) {
             $pending->delete();
 
             return response()->json(['message' => __('whitelabel.signup.username_taken'), 'errors' => ['username' => [__('whitelabel.signup.username_taken')]]], 422);

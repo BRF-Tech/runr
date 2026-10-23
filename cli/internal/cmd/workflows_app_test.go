@@ -56,9 +56,9 @@ func TestWorkflowsAppKeys(t *testing.T) {
 		t.Fatalf("signing-key = %q, want %q", r.out, key)
 	}
 	contains(t, r.err, "is secret")
-	r = h.mustRun("workflows", "app", "signing-key", "--env", "-p", "flows")
+	r = h.mustRun("workflows", "app", "signing-key", "--dotenv", "-p", "flows")
 	if r.out != "RUNR_WORKFLOW_SIGNING_KEY="+key+"\n" {
-		t.Fatalf("--env = %q", r.out)
+		t.Fatalf("--dotenv = %q", r.out)
 	}
 	var k runr.WorkflowSigningKey
 	decodeJSON(t, h.mustRun("workflows", "app", "signing-key", "-p", "flows", "-o", "json").out, &k)

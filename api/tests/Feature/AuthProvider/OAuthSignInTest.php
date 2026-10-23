@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\AuthProvider;
 
+use App\Models\PendingSignup;
 use App\Models\User;
 use GuzzleHttp\Handler\MockHandler;
 use GuzzleHttp\HandlerStack;
@@ -226,6 +227,47 @@ class OAuthSignInTest extends TestCase
 
         $this->queueGoogle(['email' => 'jane@gmail.com']);
         $this->assertSignedIn($this->providerCallback('google', $query['state']));
+    }
+
+    // ── The account of the address ──────────────────────────────────────────
+
+    public function test_the_providers_address_names_an_account_in_any_letter_case(): void
+    {
+        $this->provider('google');
+        $jane = User::factory()->create(['username' => 'jane', 'email' => 'jane.doe@gmail.com']);
+
+        $this->queueGoogle(['email' => 'Jane.Doe@GMAIL.com']);
+        $this->assertSignedIn($this->providerCallback('google', $this->redirectQuery('google')['state']));
+
+        $this->assertSame(2, User::query()->count(), 'no second account');
+        $this->assertSame($jane->id, SocialAccount::query()->sole()->user_id);
+    }
+
+    public function test_a_new_account_gets_a_free_user_name_and_the_address_in_lower_case(): void
+    {
+        $this->provider('google');
+        // Its user name in other letters, and a waiting signup's
+        User::factory()->create(['username' => 'Jane-Doe', 'email' => 'someone@example.test']);
+        PendingSignup::query()->create(['email' => 'other@example.test', 'username' => 'jane-doe-2', 'name' => 'O', 'password' => 'x',
+            'token_hash' => 'h', 'expires_at' => now()->addHour(), 'send_count' => 1]);
+
+        $this->queueGoogle(['email' => ' Jane.Doe@Gmail.com ', 'sub' => '77']);
+        $this->assertSignedIn($this->providerCallback('google', $this->redirectQuery('google')['state']));
+
+        $user = User::query()->where('email', 'jane.doe@gmail.com')->sole();
+        $this->assertSame('jane-doe-3', $user->username);
+    }
+
+    public function test_an_address_several_accounts_share_in_other_letter_case_signs_in_nobody(): void
+    {
+        $this->provider('google');
+        // Accounts of an earlier release that differ in case only
+        User::factory()->create(['username' => 'jane1', 'email' => 'Jane@gmail.com']);
+        User::factory()->create(['username' => 'jane2', 'email' => 'JANE@gmail.com']);
+
+        $this->queueGoogle(['email' => 'jane@gmail.com']);
+        $this->assertRefused($this->providerCallback('google', $this->redirectQuery('google')['state']), __('api.oauth.email_ambiguous'));
+        $this->assertSame(3, User::query()->count(), 'no third account');
     }
 
     public function test_a_provider_error_is_shown_not_thrown(): void

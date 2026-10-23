@@ -92,9 +92,9 @@ variable "payments_token" {
 - `region_id` (String) Region of a `kv`, `object` or `postgres` binding (required for those; external bindings have none). It can be attached to projects of that region.
 - `statement_timeout` (String) `postgres`: `statement_timeout` of the role (default `30s`).
 - `storage_gb` (Number) `postgres`: size limit (shared, default 1) or volume size per instance (dedicated, default 5; it can only grow).
-- `timeout` (String) How long `wait` waits (Go duration); a dedicated Postgres cluster takes a few minutes.
+- `timeout` (String) How long `wait` waits (Go duration, default `10m`); a dedicated Postgres cluster takes a few minutes.
 - `values` (Map of String, Sensitive) `external`: the variables to inject (names upper case, digits and `_`). Write-only: Terraform keeps what it set; changing them updates the attached projects.
-- `wait` (Boolean) Wait at create until the binding is provisioned (`ready`).
+- `wait` (Boolean) Wait at create until the binding is provisioned (`ready`; default `true`).
 
 ### Read-Only
 

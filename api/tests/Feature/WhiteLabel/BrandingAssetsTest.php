@@ -44,15 +44,19 @@ class BrandingAssetsTest extends TestCase
 
         $first = Branding::platform()->logo_dark_path;
         Storage::disk('public')->assertExists($first);
-        $this->assertStringContainsString($first, $this->getJson('/api/branding')->json('logo_dark_url'));
+        // the console loads it from the asset route (no install serves the public disk's /storage)
+        $url = (string) $this->getJson('/api/branding')->json('logo_dark_url');
+        $this->assertStringStartsWith('/api/branding/assets/logo_dark?v=', $url);
+        $this->get($url)->assertOk()->assertHeader('Content-Type', 'image/png');
 
         $this->get('/api/branding/assets/logo_dark')->assertOk()->assertHeader('Content-Type', 'image/png');
 
-        // a new upload replaces the file
+        // a new upload replaces the file, and its URL changes (browsers fetch the new one)
         $this->actingAs($admin)->post('/api/admin/branding/assets/logo_dark', [
             'file' => FakeImages::png('logo2.png'),
         ], ['Accept' => 'application/json'])->assertOk();
         Storage::disk('public')->assertMissing($first);
+        $this->assertNotSame($url, $this->getJson('/api/branding')->json('logo_dark_url'));
 
         // delete → back to the default (RunR wordmark in the UI)
         $this->actingAs($admin)->deleteJson('/api/admin/branding/assets/logo_dark')->assertOk();

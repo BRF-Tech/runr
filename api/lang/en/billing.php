@@ -14,7 +14,7 @@ return [
     'tenant_not_found' => 'Organization not found.',
     'region_not_found' => 'Region not found in this organization.',
     'region_prices_owned_by_platform' => 'A shared platform region carries the platform\'s prices. Set your markup instead.',
-    'region_type_owned_by_platform' => 'A shared platform region carries the platform\'s billing type.',
+    'region_type_owned_by_platform' => 'A shared platform region carries the platform\'s billing type and queue consumer setting; your organization can only switch queue consumer charging off for itself.',
     'region_type_locked' => 'The billing type cannot change while :count fixed allocation(s) are active in this region. End or move those projects first.',
     'region_now_payg' => 'The region was switched to pay as you go.',
     'price_in_effect' => 'This price version is already in effect and part of the bills. Add a new version with a later date instead.',
@@ -45,6 +45,14 @@ return [
     'project_moved_to_tenant' => 'The project is billed by the organization it was converted into.',
     'legacy_currency_mismatch' => 'The prices imported from RunR 0.5.7 were in :legacy, but BILLING_CURRENCY is :currency: they are read as :currency amounts. Set BILLING_CURRENCY to :legacy, or review every price in Regions & prices.',
 
+    'cost_limit' => [
+        'not_available' => 'A monthly cost limit is for projects in pay-as-you-go regions: a fixed-price project pays for its approved resources.',
+        'currency' => 'The limit is in the billing currency, :currency.',
+        'not_stopped' => 'The project was not stopped by its cost limit.',
+        'still_reached' => 'This month\'s cost (:cost) is still at or above the limit (:limit). Raise or remove the limit or switch it to notify, then resume the project — or wait: it starts again by itself when the next month begins.',
+        'stop_reason' => 'Monthly cost limit reached: :cost of :limit in :period. It starts again by itself when the next month begins; to resume it sooner, raise or remove the limit in the project\'s Billing tab and resume it there.',
+    ],
+
     'notify' => [
         'open' => 'Open in RunR',
         'offer_title' => 'Region :region was shared with your organization',
@@ -55,5 +63,15 @@ return [
         'approved_body' => ':resources for :price per month were approved for :project and are billed from today.',
         'rejected_title' => 'Fixed resources rejected for :project',
         'rejected_body' => 'The request for :resources (:price per month) for :project was rejected: :reason',
+        'cost_limit_warning_title' => ':project reached :percent % of its monthly cost limit',
+        'cost_limit_warning_body' => ':project has cost :cost this month; its limit is :limit. At this rate the month ends at about :forecast.',
+        'cost_limit_reached_title' => ':project reached its monthly cost limit',
+        'cost_limit_reached_body' => ':project has cost :cost this month and reached its limit of :limit. The limit only notifies: the project keeps running.',
+        'cost_limit_reached_already_stopped_body' => ':project has cost :cost this month and reached its limit of :limit. The project is stopped already.',
+        'cost_limit_stopped_title' => ':project was stopped by its monthly cost limit',
+        'cost_limit_stopped_body' => ':project has cost :cost this month and reached its limit of :limit, so it was stopped. It starts again by itself when the next month begins; to resume it sooner, raise or remove the limit in the project\'s Billing tab and resume it there.',
+        'cost_limit_resumed_title' => ':project runs again: a new month began',
+        'cost_limit_resumed_body' => 'Its monthly cost limit stopped :project last month. :period began, so RunR resumed it and deployed the version that ran again. The limit still applies.',
+        'cost_limit_resumed_not_deployed_body' => 'Its monthly cost limit stopped :project last month. :period began, so RunR resumed it, but the version that ran was not deployed: :reason Deploy a version to run it again. The limit still applies.',
     ],
 ];

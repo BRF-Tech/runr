@@ -37,11 +37,17 @@
 #                         creates a tenant with an admin, a member (from 0.5.x: a developer) and
 #                         a viewer and checks that every one signs in and keeps the tenant role
 #                         (from 0.4.x: member → the custom role Member, viewer → read-only Viewer).
-#                         From a 0.5.x installation it also leaves billing data of that version:
-#                         a platform region shared with the tenant, the global and a region cost
-#                         configuration, a closed charge of the previous month; after the upgrade
-#                         the share is active, the charge is a closed tenant bill (source legacy)
-#                         and the cost configurations are price versions
+#                         From a 0.5.x installation the tenant also has the custom role Member
+#                         that tenants upgraded from 0.4.x carry (tenant migration 0041: the
+#                         0.5.x config permissions.legacy_member_role) with a member t-member;
+#                         after the upgrade that role and its member have the permissions 0.6.0
+#                         gives the Developer role (tenant migration 0108). From a 0.5.x
+#                         installation it also leaves billing data of that version: a platform
+#                         region shared with the tenant and, where that version still has them
+#                         (up to 0.5.7), the global and a region cost configuration and a closed
+#                         charge of the previous month; after the upgrade the share is active,
+#                         the charge is a closed tenant bill (source legacy) and the cost
+#                         configurations are price versions
 #   --billing             the upgrade sets billing.enabled=true; multi-tenant: the Billing API
 #                         answers with the imported data (tenant bills, prices, region prices,
 #                         bills), the tenant sees the earlier share as active, a region shared
@@ -53,7 +59,7 @@
 #                         version the worker the region registry's volume is on is selected as
 #                         the dedicated project worker (runr.dev/dedicated=projects:NoSchedule), as
 #                         an operator does after the registry was installed. After the upgrade:
-#                         region:reconcile (bootstrap job) gave Zot the toleration of the taint
+#                         region:reconcile (the region Job) gave Zot the toleration of the taint
 #                         (from 0.5.4 on the selection gave it already: reconcile leaves it alone),
 #                         Zot runs on that node and comes back there after a restart, and no pod
 #                         waits Pending on the taint
@@ -63,8 +69,12 @@
 #
 # Environment: KIND_LOCK (default /tmp/runr-kind.lock — one Kind cluster at a time on a shared
 # host), UPGRADE_CLUSTER (default runr-upgrade-helm), UPGRADE_TO_API_IMAGE / UPGRADE_TO_UI_IMAGE
-# (default runr-upgrade-helm-api:to / runr-upgrade-helm-ui:to). Needs docker, kind, kubectl, helm, jq,
-# curl and internet access from the Kind nodes (Knative, Traefik and runtime images).
+# (default runr-upgrade-helm-api:to / runr-upgrade-helm-ui:to). On a host short of disk, as in the
+# other Kind suites (docs/development.md): KIND_WORKERS=0 runs the control-plane alone (not with
+# --dedicated-worker), E2E_EXECUTOR_RUNTIMES (e.g. python) installs the release with only those
+# built-in runtimes (extraEnv.EXECUTOR_RUNTIMES, kept by the upgrade), so the region pre-pulls only
+# their images. Needs docker, kind, kubectl, helm, jq, curl and internet access from the Kind nodes
+# (Knative, Traefik and runtime images).
 
 _upg_cluster=""
 _upg_kubeconfig=""
@@ -79,6 +89,8 @@ _upg_code=""
 _upg_body=""
 _upg_fn_host=""
 _upg_lb_ip=""
+# this checkout's appVersion: the tag of its region agent and event gateway images
+_upg_to_version=""
 # Multi-tenant variant (--edition=multi-tenant): UI image suffix, tenant of the next requests (X-Tenant-ID)
 _upg_mt=0
 _upg_ui_suffix=""
@@ -88,10 +100,15 @@ _upg_dedicated=0
 _upg_zot_node=""
 _upg_zot_tolerated_before=0
 # --billing: billing.enabled=true on the upgrade; billing data of the installed version
-# (multi-tenant): the shared region and the closed charge (empty: not created)
+# (multi-tenant): the shared region, the cost configurations of 0.5.7 and earlier (1: both
+# created; later versions have no such API) and the closed charge (empty: not created)
 _upg_billing=0
 _upg_billed_region=""
+_upg_billed_costs=0
 _upg_billed_charge=""
+# Multi-tenant from 0.5.x: the custom role Member of a tenant upgraded from 0.4.x was put into the
+# tenant (1), with the member t-member
+_upg_legacy_member=0
 # --upgrade-set=KEY=VALUE (repeatable) and --billing: --set values of the helm upgrade
 _upg_upgrade_set=()
 
@@ -135,6 +152,12 @@ _upg_2xx() { [[ "$1" =~ ^2 ]]; }
 _upg_absent() {
   local text="$1" needle; shift
   for needle in "$@"; do [[ "$text" == *"$needle"* ]] && return 1; done
+  return 0
+}
+# _upg_words " A B C " WORD... — every word is one of the space-separated words of the text
+_upg_words() {
+  local text="$1" word; shift
+  for word in "$@"; do [[ "$text" == *" ${word} "* ]] || return 1; done
   return 0
 }
 
@@ -236,10 +259,14 @@ _upg_to_images() {
   echo "  ${api}, ${ui}${_upg_ui_suffix}: built from this checkout"
 }
 
-_upg_kind_cluster() {
-  local k8s="$1"
-  local config="${_upg_tmp}/kind.yaml"
-  cat > "$config" <<KINDEOF
+# The Kind cluster's configuration: a control-plane and a worker; --dedicated-worker a second
+# worker; KIND_WORKERS=0 (a host short of disk; not with --dedicated-worker) the control-plane
+# alone, which Kind leaves without its NoSchedule taint for every pod
+_upg_kind_config() {
+  local workers=1 i
+  [ "${KIND_WORKERS:-1}" = "0" ] && workers=0
+  [ "$_upg_dedicated" = "1" ] && workers=2
+  cat <<KINDEOF
 kind: Cluster
 apiVersion: kind.x-k8s.io/v1alpha4
 containerdConfigPatches:
@@ -248,9 +275,23 @@ containerdConfigPatches:
       config_path = "/etc/containerd/certs.d"
 nodes:
   - role: control-plane
-  - role: worker
-$([ "$_upg_dedicated" = "1" ] && echo "  - role: worker")
 KINDEOF
+  for i in $(seq 1 "$workers"); do echo "  - role: worker"; done
+}
+
+# Install values of a host short of disk: E2E_EXECUTOR_RUNTIMES (e.g. "python") → the API's
+# EXECUTOR_RUNTIMES through the chart's extraEnv (in every chart since 0.4), which --reuse-values
+# keeps on the upgrade. Nothing when it is not set (the chart's defaults, as a marketplace install)
+_upg_install_env_values() {
+  [ -n "${E2E_EXECUTOR_RUNTIMES:-}" ] || return 0
+  printf 'extraEnv:\n  EXECUTOR_RUNTIMES: "%s"\n' "$E2E_EXECUTOR_RUNTIMES"
+}
+
+_upg_kind_cluster() {
+  local k8s="$1"
+  local config="${_upg_tmp}/kind.yaml"
+  [ "${KIND_WORKERS:-1}" = "0" ] && [ "$_upg_dedicated" = "1" ] && echo "  KIND_WORKERS=0 left out: --dedicated-worker needs two workers"
+  _upg_kind_config > "$config"
   kind create cluster --name "$_upg_cluster" --image "${REGISTRY}/reqs/kindest-node:v${k8s}" --config "$config"
   kind get kubeconfig --name "$_upg_cluster" > "$_upg_kubeconfig"
 
@@ -551,11 +592,11 @@ _upg_pending_on_taint() {
 _upg_dedicated_checks() {
   local pending
   if [ "$_upg_zot_tolerated_before" = "1" ]; then
-    _upg_check "region:reconcile (bootstrap) leaves the toleration Zot had on ${from_tag} alone (up to date)" \
-      grep -qF "[dedicated-worker-toleration] up to date" "${_upg_tmp}/bootstrap.log"
+    _upg_check "region:reconcile (region Job) leaves the toleration Zot had on ${from_tag} alone (up to date)" \
+      grep -qF "[dedicated-worker-toleration] up to date" "${_upg_tmp}/reconcile-all.log"
   else
-    _upg_check "region:reconcile (bootstrap) gave Zot the toleration of runr.dev/dedicated=projects:NoSchedule" \
-      grep -qF "[dedicated-worker-toleration] added the toleration of runr.dev/dedicated=projects:NoSchedule to StatefulSet runr-registry/runr-zot" "${_upg_tmp}/bootstrap.log"
+    _upg_check "region:reconcile (region Job) gave Zot the toleration of runr.dev/dedicated=projects:NoSchedule" \
+      grep -qF "[dedicated-worker-toleration] added the toleration of runr.dev/dedicated=projects:NoSchedule to StatefulSet runr-registry/runr-zot" "${_upg_tmp}/reconcile-all.log"
   fi
   _upg_check "Zot's StatefulSet tolerates the dedicated-worker taint" _upg_zot_tolerates
   _upg_check "Zot runs on its dedicated worker ${_upg_zot_node}" _upg_zot_runs_on_its_node
@@ -591,6 +632,9 @@ _upg_st_checks() {
   _upg_check "dev reads the region" _upg_eq "$_upg_code" 200
   _upg_call GET /api/users "$dev_token"
   _upg_check "dev manages users as before (GET /api/users)" _upg_eq "$_upg_code" 200
+  # One gateway route per project's own workload (central migration 2026_10_23_100001)
+  _upg_check "gateway_routes has the index ${_UPG_ROUTE_INDEX}" \
+    _upg_eq "$(_upg_psql "select count(*) from pg_indexes where schemaname = 'public' and tablename = 'gateway_routes' and indexname = '${_UPG_ROUTE_INDEX}'")" 1
 
   # Env vars: encrypted at rest, readable through the API
   stored=$(_upg_psql "select env_vars from xaas_configs where project_id = '${project}'")
@@ -667,7 +711,7 @@ _upg_st_checks() {
     sleep 10
   done
   _upg_check "region reports Knative Serving ready after the upgrade" _upg_eq "$serving" ready
-  # region:reconcile of the bootstrap job (traefik-image) moved the region Traefik to the reqs
+  # region:reconcile of the region Job (traefik-image) moved the region Traefik to the reqs
   # mirror — unless it runs another Traefik version (an older release's chart), which stays
   traefik_image=$(_upg_kubectl -n knative-serving get deploy traefik -o jsonpath='{.spec.template.spec.containers[0].image}' 2>/dev/null)
   _upg_check "region Traefik runs ${_UPG_TRAEFIK_IMAGE} (runs ${traefik_image:-nothing})" \
@@ -747,8 +791,37 @@ _upg_mt_data() {
   _upg_call POST /api/projects "$viewer_token" '{}'
   _upg_tenant=""
   echo "  ${from_tag}: tenant viewer POST /api/projects → HTTP ${_upg_code}"
-  case "$from_tag" in 0.5.*) _upg_mt_billing_data ;; esac
+  case "$from_tag" in 0.5.*) _upg_mt_legacy_member || return 1; _upg_mt_billing_data ;; esac
 }
+
+# 0.5.x: the custom role Member a tenant upgraded from 0.4.x has (tenant migration 0041 stored that
+# version's config permissions.legacy_member_role as it is) and a member t-member holding it —
+# tenant migration 0108 of 0.6.0 gives that role the new Developer permissions
+_upg_mt_legacy_member() {
+  local legacy schema stored
+  legacy=$(_upg_kubectl -n "$_upg_ns" exec deploy/runr-api -- php -r 'require "vendor/autoload.php"; $app = require "bootstrap/app.php"; $app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+    echo json_encode(config("permissions.legacy_member_role"));' 2>/dev/null | tail -n 1)
+  if [ "$(echo "$legacy" | jq -r '.key // empty' 2>/dev/null)" != "member" ]; then
+    echo -e "${RED}${from_tag} has no config permissions.legacy_member_role: ${legacy:0:300}${NC}"
+    return 1
+  fi
+  schema=$(_upg_psql "select nspname from pg_namespace where nspname like 'tenant%' order by nspname limit 1")
+  _upg_psql "insert into \"${schema}\".rbac_roles (id, key, name, description, permissions, created_at, updated_at)
+    values ('01UPGRADELEGACYMEMBERROLE0', 'member', $(_upg_sql_literal "$(echo "$legacy" | jq -r .name)"),
+      $(_upg_sql_literal "$(echo "$legacy" | jq -r .description)"), $(_upg_sql_literal "$(echo "$legacy" | jq -c .permissions)"), now(), now())" >/dev/null
+  stored=$(_upg_psql "select permissions from \"${schema}\".rbac_roles where key = 'member'")
+  [ "$(echo "$stored" | jq -c 'sort' 2>/dev/null)" = "$(echo "$legacy" | jq -c '.permissions | sort')" ] \
+    || { echo -e "${RED}the role Member was not stored: ${stored:0:300}${NC}"; return 1; }
+  _upg_call_ok POST /api/users "$admin_token" "$(jq -nc --arg p "$member_pw" \
+    '{name: "Tenant member", username: "t-member", email: "t-member@example.test", password: $p}')"
+  _upg_call_ok POST "/api/tenants/${tenant_id}/users" "$admin_token" '{"email": "t-member@example.test", "role": "member"}'
+  [ -n "$(_upg_mt_login t-member)" ] || { echo -e "${RED}t-member cannot sign in: ${_upg_body}${NC}"; return 1; }
+  _upg_legacy_member=1
+  echo "  tenant role Member of a 0.4.x upgrade ($(echo "$legacy" | jq '.permissions | length') permissions of ${from_tag}): t-member"
+}
+
+# _upg_sql_literal TEXT — TEXT as a PostgreSQL string literal
+_upg_sql_literal() { printf "'%s'" "${1//\'/\'\'}"; }
 
 # _upg_plain_region NAME — a platform region on the Kind cluster itself (no components installed):
 # its id in $_upg_new_region (empty when the API refused it: $_upg_code, $_upg_body)
@@ -783,11 +856,22 @@ _upg_mt_billing_data() {
     return 0
   fi
   echo "  region billed (${_upg_billed_region}) shared with the tenant: $(_upg_psql "select status from tenant_regions where knative_region_id = '${_upg_billed_region}'" 2>/dev/null || echo 'no status column')"
-  # 1.2e-11 per millicore-ms = 0.0432 per vCPU-hour; the region: 2e-11 = 0.072 (0.5.x stores 12 decimals)
+  # 1.2e-11 per millicore-ms = 0.0432 per vCPU-hour; the region: 2e-11 = 0.072 (0.5.x stores 12
+  # decimals). Only up to 0.5.7: 0.5.8 replaced the cost configurations and charges with the
+  # Billing module (the upgrade to 0.5.8 converted them), so a later version answers 404 and has no
+  # such data for this upgrade to convert
+  local global_code
   _upg_call POST /api/cost-configs "$admin_token" '{"cpu_price_per_mc_ms": 0.000000000012, "memory_price_per_mib_ms": 0.000000000001, "cpu_price_per_core_month": 21, "memory_price_per_gb_month": 3, "currency": "USD"}'
+  global_code="$_upg_code"
   echo "  global cost configuration: HTTP ${_upg_code}"
   _upg_call POST /api/cost-configs "$admin_token" "$(jq -nc --arg r "$_upg_billed_region" '{region_id: $r, cpu_price_per_mc_ms: 0.00000000002, currency: "USD"}')"
   echo "  region cost configuration: HTTP ${_upg_code}"
+  if [[ "$global_code" =~ ^2 ]] && [[ "$_upg_code" =~ ^2 ]]; then
+    _upg_billed_costs=1
+  else
+    echo "  billing data: no cost configurations of 0.5.7 or earlier on ${from_tag}: their conversion is not checked"
+    return 0
+  fi
   prev_start=$(date -d "$(date +%Y-%m-01) -1 month" +%Y-%m-01)
   prev_end=$(date -d "$(date +%Y-%m-01) -1 day" +%F)
   _upg_call POST "/api/billing/tenants/${tenant_id}/charges" "$admin_token" \
@@ -822,6 +906,10 @@ _upg_mt_checks() {
     tokens[$role]=$(_upg_mt_login "t-${role}")
     _upg_check "tenant ${role} signs in to the tenant" test -n "${tokens[$role]}"
   done
+  if [ "$_upg_legacy_member" = "1" ]; then
+    tokens[legacy]=$(_upg_mt_login t-member)
+    _upg_check "t-member (the custom role Member of a 0.4.x upgrade) signs in to the tenant" test -n "${tokens[legacy]}"
+  fi
 
   _upg_tenant="$tenant_id"
   _upg_call GET /api/members "$admin_token"
@@ -838,8 +926,31 @@ _upg_mt_checks() {
       _upg_eq "$(echo "$_upg_body" | jq -r '[.roles[] | select(.key == "member" and .builtin == false)] | length')" 1
     _upg_check "member keeps what 0.4.x members could do (settings.manage, sso.manage, projects.deploy)" \
       bash -c '[[ "$1" == *" settings.manage "* && "$1" == *" sso.manage "* && "$1" == *" projects.deploy "* ]]' _ "$perms"
+    # the Developer permissions of 0.6.0 reach the Member role an earlier upgrade stored (tenant
+    # migration 0108; a Member role an organization changed is left alone)
+    if [ "$(printf '%s\n' "$from_tag" "0.6.0" | sort -V | head -n1)" != "0.6.0" ]; then
+      _upg_check "member gets the 0.6.0 Developer permissions (network.manage, environments, secret stores, topics)" \
+        bash -c '[[ "$1" == *" network.manage "* && "$1" == *" environments.manage "* && "$1" == *" environments.promote "* && "$1" == *" secret_stores.view "* && "$1" == *" topics.manage "* ]]' _ "$perms"
+    fi
   else
     _upg_check "developer keeps projects.deploy" bash -c '[[ "$1" == *" projects.deploy "* ]]' _ "$perms"
+  fi
+  # From 0.5.x: the Member role a tenant upgraded from 0.4.x carries gets the 0.6.0 Developer
+  # permissions (tenant migration 0108) and keeps the rest; its member holds them
+  if [ "$_upg_legacy_member" = "1" ]; then
+    local schema stored legacy_perms
+    schema=$(_upg_psql "select nspname from pg_namespace where nspname like 'tenant%' order by nspname limit 1")
+    stored=" $(_upg_psql "select permissions from \"${schema}\".rbac_roles where key = 'member'" | jq -r 'join(" ")' 2>/dev/null) "
+    echo "  role Member (stored): $(echo "$stored" | wc -w) permissions"
+    _upg_check "the role Member gets the 0.6.0 Developer permissions (environments.manage, environments.promote, secret_stores.view, network.manage, topics.manage)" \
+      _upg_words "$stored" environments.manage environments.promote secret_stores.view network.manage topics.manage
+    _upg_check "the role Member keeps its 0.5.x permissions (settings.manage, sso.manage, projects.deploy, tickets.create)" \
+      _upg_words "$stored" settings.manage sso.manage projects.deploy tickets.create
+    _upg_call GET /api/auth/permissions "${tokens[legacy]}"
+    legacy_perms=" $(echo "$_upg_body" | jq -r '.permissions | join(" ")' 2>/dev/null) "
+    _upg_check "t-member holds the 0.6.0 Developer permissions" \
+      _upg_words "$legacy_perms" environments.manage environments.promote secret_stores.view network.manage topics.manage
+    _upg_check "t-member does not manage roles or members" _upg_absent "$legacy_perms" " roles.manage " " members.invite "
   fi
   _upg_check "${mid} does not manage roles or members" _upg_absent "$perms" " roles.manage " " members.invite "
   _upg_call GET /api/projects "${tokens[viewer]}"
@@ -860,9 +971,12 @@ _upg_mt_checks() {
 # tenant: with billing_markups)
 _UPG_TENANT_BILLING_TABLES=(billing_prices billing_region_settings billing_markups billing_fixed_requests billing_bills billing_events billing_settings)
 # Tenant migrations every tenant schema has after the upgrade: the Billing module's (registered
-# whether or not billing is switched on) and Tenancy's newest (deployments.sizing / ended_at,
-# projects.stop_level)
-_UPG_TENANT_MIGRATIONS=(0060_create_billing_tables 0061_harden_billing_tables 0062_add_deployment_spans_and_stop_level)
+# whether or not billing is switched on), Tenancy's of 0.5.x (deployments.sizing / ended_at,
+# projects.stop_level) and of 0.6.0 (the Member role's new permissions; one gateway route per
+# project's own workload: the index gateway_routes_project_production_unique)
+_UPG_TENANT_MIGRATIONS=(0060_create_billing_tables 0061_harden_billing_tables 0062_add_deployment_spans_and_stop_level
+  0108_grant_060_permissions_to_legacy_member_role 0109_add_production_route_unique_index)
+_UPG_ROUTE_INDEX="gateway_routes_project_production_unique"
 
 # _upg_tenant_schema_gaps SCHEMA — what the schema lacks of the above, as "table:<name>",
 # "migration:<name>" and "column:<table>.<column>" words on one line (nothing when complete;
@@ -879,14 +993,17 @@ _upg_tenant_schema_gaps() {
     union all
     select 'column:' || u.c from unnest(array['deployments.sizing', 'deployments.ended_at', 'projects.stop_level']) as u(c)
       where not exists (select 1 from information_schema.columns
-        where table_schema = '${schema}' and table_name = split_part(u.c, '.', 1) and column_name = split_part(u.c, '.', 2))") \
+        where table_schema = '${schema}' and table_name = split_part(u.c, '.', 1) and column_name = split_part(u.c, '.', 2))
+    union all
+    select 'index:${_UPG_ROUTE_INDEX}' where not exists (select 1 from pg_indexes
+      where schemaname = '${schema}' and tablename = 'gateway_routes' and indexname = '${_UPG_ROUTE_INDEX}')") \
     || out="query-failed"
   echo "${out//$'\n'/ }"
 }
 
-# Every tenant schema after the upgrade: the Billing tables and tenant migrations 0060–0062 with the
-# columns of 0062; the bootstrap Job's tenancy:migrate (the safety net after the migration Job)
-# finished within its time limit
+# Every tenant schema after the upgrade: the Billing tables, tenant migrations 0060–0062 with the
+# columns of 0062, 0108 and 0109 with its index; the bootstrap Job's tenancy:migrate (the safety
+# net after the migration Job) finished within its time limit
 _upg_mt_tenant_schema_checks() {
   local schemas schema missing gaps="" count=0
   schemas=$(_upg_psql "select nspname from pg_namespace where nspname ~ '^tenant_' order by nspname" || true)
@@ -898,7 +1015,7 @@ _upg_mt_tenant_schema_checks() {
   gaps="${gaps%$'\n'}"
   echo "  tenant schemas: ${count}${gaps:+, missing:}"
   [ -z "$gaps" ] || echo "$gaps" | sed 's/^/    /'
-  _upg_check "every tenant schema (${count}) has the Billing tables, tenant migrations 0060–0062 and the columns of 0062" \
+  _upg_check "every tenant schema (${count}) has the Billing tables, tenant migrations 0060–0062, 0108 and 0109, the columns of 0062 and the index of 0109" \
     bash -c '[ "$1" -ge 1 ] && [ -z "$2" ]' _ "$count" "$gaps"
   _upg_check "bootstrap Job: tenancy:migrate finished (no \"tenant migrations incomplete\")" \
     bash -c '[ -s "$1" ] && ! grep -q "tenant migrations incomplete" "$1"' _ "${_upg_tmp}/bootstrap.log"
@@ -911,6 +1028,8 @@ _upg_mt_billing_checks() {
     _upg_log "Billing data of ${from_tag}"
     _upg_check "the share made before billing stays active (tenant_regions.status)" \
       _upg_eq "$(_upg_psql "select status from tenant_regions where knative_region_id = '${_upg_billed_region}'")" active
+  fi
+  if [ "$_upg_billed_costs" = "1" ]; then
     _upg_check "the 0.5.x billing tables are archived (billing_legacy_archive: cost_configs, charges)" \
       _upg_eq "$(_upg_psql "select count(distinct source_table) from billing_legacy_archive where source_table in ('cost_configs', 'charges')")" 2
     _upg_check "the global cost configuration is the platform price version (0.0432 per vCPU-hour)" \
@@ -938,9 +1057,9 @@ _upg_mt_billing_checks() {
   _upg_call GET /api/billing/prices "$admin_token"
   echo "  platform prices: $(echo "$_upg_body" | jq -c '.defaults.current | {cpu_vcpu_hour, memory_gb_hour, cpu_vcpu_month, effective_from, note}' 2>/dev/null)"
   _upg_check "GET /api/billing/prices answers" _upg_eq "$_upg_code" 200
-  [ -z "$_upg_billed_region" ] || _upg_check "the platform's current prices are the imported ones (0.0432 per vCPU-hour)" \
+  [ "$_upg_billed_costs" != "1" ] || _upg_check "the platform's current prices are the imported ones (0.0432 per vCPU-hour)" \
     _upg_eq "$(echo "$_upg_body" | jq -r '.defaults.current.cpu_vcpu_hour' 2>/dev/null)" 0.0432
-  if [ -n "$_upg_billed_region" ]; then
+  if [ "$_upg_billed_costs" = "1" ]; then
     _upg_call GET /api/billing/regions "$admin_token"
     _upg_check "GET /api/billing/regions: the shared region's price is its imported one (0.072)" \
       _upg_eq "$(echo "$_upg_body" | jq -r --arg r "$_upg_billed_region" '.data[] | select(.id == $r) | .prices.cpu_vcpu_hour' 2>/dev/null)" 0.072
@@ -1052,6 +1171,19 @@ cmd_test_helm_upgrade() {
   else
     _upg_to_images "$root" "$to_api" "$to_ui"
   fi
+  # This checkout's region agent and event gateway at its version: the API runs them at the
+  # chart's appVersion (ReleaseImages) and region:reconcile moves the region's agent and queue
+  # consumers to them — before a release they are on no registry, so they are built and loaded
+  _upg_to_version=$(sed -n 's/^appVersion: *"\{0,1\}\([^"]*\)"\{0,1\}$/\1/p' "${root}/helm/Chart.yaml")
+  local region_imgs=() name
+  for name in agent queue-consumer; do
+    region_imgs+=("${REGISTRY}/${name}:${_upg_to_version}")
+    if [ "$skip_build" != "1" ]; then
+      docker build -q -t "${REGISTRY}/${name}:${_upg_to_version}" "${SCRIPT_DIR}/${name}" >/dev/null \
+        || { echo -e "${RED}${name}: build failed${NC}"; return 1; }
+      echo "  ${REGISTRY}/${name}:${_upg_to_version}: built from this checkout"
+    fi
+  done
 
   # also when the run is stopped from outside (as in cmd_test, lib/test.sh)
   trap _upg_cleanup_all EXIT
@@ -1066,7 +1198,7 @@ cmd_test_helm_upgrade() {
     [ "$from_ns" = "${REGISTRY}" ] || reqs+=("${REGISTRY}/reqs/${img}")
   done
   _upg_load_images "${_upg_from_api_repo}:${from_tag}" "${_upg_from_ui_repo}:${from_tag}${_upg_ui_suffix}" \
-    "$to_api" "${to_ui}${_upg_ui_suffix}" "${reqs[@]}" docker.io/traefik:v3.7.4 "$_UPG_TRAEFIK_IMAGE"
+    "$to_api" "${to_ui}${_upg_ui_suffix}" "${region_imgs[@]}" "${reqs[@]}" docker.io/traefik:v3.7.4 "$_UPG_TRAEFIK_IMAGE"
 
   # ── 1. Install the released version ──
   _upg_log "Install ${from} (${from_tag})"
@@ -1101,8 +1233,10 @@ EOF
   else
     : > "${_upg_tmp}/install-mt.yaml"
   fi
+  _upg_install_env_values > "${_upg_tmp}/install-env.yaml"
+  [ ! -s "${_upg_tmp}/install-env.yaml" ] || echo "  built-in runtimes: ${E2E_EXECUTOR_RUNTIMES} (E2E_EXECUTOR_RUNTIMES → extraEnv.EXECUTOR_RUNTIMES)"
   helm --kubeconfig "$_upg_kubeconfig" install runr "${_upg_tmp}/from/helm" -n "$_upg_ns" --create-namespace \
-    -f "${_upg_tmp}/install.yaml" -f "${_upg_tmp}/install-mt.yaml" --wait --timeout 15m
+    -f "${_upg_tmp}/install.yaml" -f "${_upg_tmp}/install-mt.yaml" -f "${_upg_tmp}/install-env.yaml" --wait --timeout 15m
   _upg_api=$(_upg_gateway_url)
   echo "  console: ${_upg_api}"
   _upg_wait_api || return 1
@@ -1131,13 +1265,15 @@ EOF
   fi
   local upgrade_started
   upgrade_started=$(date -u +%FT%TZ)
-  local helm_status=0
+  local helm_status=0 helm_started helm_seconds
   [ "$_upg_billing" = "1" ] && _upg_upgrade_set+=(--set billing.enabled=true)
+  helm_started=$(date +%s)
   helm --kubeconfig "$_upg_kubeconfig" upgrade runr "${root}/helm" -n "$_upg_ns" "$mode" \
     -f "${_upg_tmp}/brand.yaml" "${_upg_upgrade_set[@]}" \
     --set "api.image.repository=${to_api%:*}" --set "api.image.tag=${to_api##*:}" \
     --set "ui.image.repository=${to_ui%:*}" --set "ui.image.tag=${to_ui##*:}" \
     --wait --timeout 15m || helm_status=$?
+  helm_seconds=$(( $(date +%s) - helm_started ))
   # the whole log for the checks (a tenancy:migrate line may be further up), its end in the output
   _upg_kubectl -n "$_upg_ns" logs job/runr-bootstrap > "${_upg_tmp}/bootstrap.log" 2>/dev/null || true
   tail -n 60 "${_upg_tmp}/bootstrap.log" | sed 's/^/  bootstrap: /' || true
@@ -1147,6 +1283,25 @@ EOF
     _upg_kubectl -n "$_upg_ns" logs -l app=runr-migrate --tail=80 2>/dev/null || true
     return 1
   fi
+  echo "  helm upgrade returned after ${helm_seconds} s"
+  # The regions are brought to this version by the Job runr-region-reconcile-<revision>, which helm
+  # does not wait for (not a hook): wait for it here, before the checks of the regions
+  local revision reconcile_job reconcile_status="" last_pod=""
+  revision=$(helm --kubeconfig "$_upg_kubeconfig" status runr -n "$_upg_ns" -o json | jq -r .version)
+  reconcile_job="runr-region-reconcile-${revision}"
+  echo "  waiting for job/${reconcile_job} (region:reconcile)"
+  for i in $(seq 1 360); do
+    reconcile_status=$(_upg_kubectl -n "$_upg_ns" get job "$reconcile_job" \
+      -o jsonpath='{range .status.conditions[?(@.status=="True")]}{.type}{" "}{end}' 2>/dev/null || true)
+    case "$reconcile_status" in *Complete*|*Failed*) break ;; esac
+    sleep 10
+  done
+  # the last attempt's log: the one that ended the Job
+  last_pod=$(_upg_kubectl -n "$_upg_ns" get pods -l "job-name=${reconcile_job}" --sort-by=.metadata.creationTimestamp -o name 2>/dev/null | tail -n 1)
+  [ -n "$last_pod" ] && _upg_kubectl -n "$_upg_ns" logs "$last_pod" > "${_upg_tmp}/reconcile.log" 2>/dev/null || : > "${_upg_tmp}/reconcile.log"
+  tail -n 80 "${_upg_tmp}/reconcile.log" | sed 's/^/  reconcile: /' || true
+  # every attempt's log (a change the first attempt made is "up to date" in the next)
+  _upg_kubectl -n "$_upg_ns" logs -l "job-name=${reconcile_job}" --tail=-1 > "${_upg_tmp}/reconcile-all.log" 2>/dev/null || true
   # the prober keeps going while the checks run
   _upg_wait_api || return 1
 
@@ -1167,6 +1322,17 @@ EOF
   _upg_check "no pending migrations" _upg_no_pending_migrations
   _upg_check "the bootstrap Job (post-upgrade hook) succeeded" \
     test "$(_upg_kubectl -n "$_upg_ns" get job runr-bootstrap -o jsonpath='{.status.succeeded}' 2>/dev/null || echo 0)" -ge 1
+ # the hook is short (the database only) and helm upgrade does not wait for the regions
+  _upg_check "helm upgrade returned within 5 minutes (${helm_seconds} s): it does not wait for the regions" test "$helm_seconds" -le 300
+  _upg_check "the bootstrap hook ran no step of the regions" \
+    bash -c '[ -s "$1" ] && ! grep -q -E "runr-bootstrap: ERROR|region reconcile|\[private-ingress\]" "$1"' _ "${_upg_tmp}/bootstrap.log"
+  # region:reconcile finished in the Job runr-region-reconcile-<revision>: its last attempt has no
+  # ERROR, no step that failed or still waits — the regions are at this version without a run by hand
+  _upg_check "the region Job ${reconcile_job} completed (${reconcile_status:-no condition})" bash -c '[[ "$1" == *Complete* ]]' _ "$reconcile_status"
+  _upg_check "region:reconcile finished in the region Job (no ERROR, failed or waiting line)" \
+    bash -c 'grep -q "runr-region-reconcile: the regions are at this version" "$1" && ! grep -q -E "runr-region-reconcile: ERROR|\] failed: |\] waiting: " "$1"' _ "${_upg_tmp}/reconcile.log"
+  _upg_call GET /api/version
+  _upg_check "/api/version says region_reconcile done" _upg_eq "$(echo "$_upg_body" | jq -r .region_reconcile)" done
   # Horizon dashboard through runr-gateway: a single-use link of runr:horizon-link opens it
   local hz_link hz_path
   hz_link=$(_upg_artisan runr:horizon-link 2>/dev/null | head -1 || true)
@@ -1199,9 +1365,11 @@ EOF
   left_rows=$(_upg_old_rows)
   _upg_check "no database row (central and tenant schemas) references ${_UPG_OLD_NS}/" test -z "$left_rows"
   [ -z "$left_rows" ] || echo "$left_rows" | sed 's/^/    /'
-  _upg_check "the region agent runs ghcr.io/brf-tech/runr/agent" \
-    bash -c '[ "$1" = 1 ] || [[ "$2" == ghcr.io/brf-tech/runr/agent:* ]]' _ "$_upg_mt" \
-    "$(_upg_kubectl -n observability get deploy runr-agent -o jsonpath='{.spec.template.spec.containers[0].image}' 2>/dev/null)"
+  # region:reconcile (image-registry) moved the agent from the :latest an earlier release ran to
+  # this version's tag (ReleaseImages)
+  _upg_check "the region agent runs ghcr.io/brf-tech/runr/agent:${_upg_to_version}" \
+    bash -c '[ "$1" = 1 ] || [ "$2" = "ghcr.io/brf-tech/runr/agent:$3" ]' _ "$_upg_mt" \
+    "$(_upg_kubectl -n observability get deploy runr-agent -o jsonpath='{.spec.template.spec.containers[0].image}' 2>/dev/null)" "$_upg_to_version"
 
   # White-label
   _upg_call GET /api/branding

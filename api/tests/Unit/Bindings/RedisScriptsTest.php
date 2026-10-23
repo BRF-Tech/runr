@@ -138,6 +138,9 @@ class RedisScriptsTest extends TestCase
         $this->assertStringContainsString('ACL WHOAMI', $task->script);
         $this->assertStringContainsString('ACL_SUPPORTED yes', $task->script);
         $this->assertStringNotContainsString('--user', $task->script);
+        // The server version an organization import compares KV dumps with
+        $this->assertStringContainsString('INFO server', $task->script);
+        $this->assertStringContainsString('REDIS_VERSION', $task->script);
     }
 
     public function test_region_redis_addresses_are_parsed(): void

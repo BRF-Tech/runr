@@ -50,6 +50,8 @@ return [
     'pod_failed' => 'Sandbox pod\'u oluşturulamadı.',
     'pod_gone' => 'Sandbox pod\'u artık yok.',
     'start_timeout' => 'Sandbox zamanında başlamadı.',
+    'start_timeout_event' => 'Pod\'un son olayı: :reason: :message',
+    'sandbox_create_failed' => 'Container runtime sandbox\'ı oluşturamadı (:count deneme): :error',
     'start_failed' => 'Sandbox başlatılamadı: :error',
 
     'exec_cmd_required' => 'cmd boş olmayan bir metin ya da argüman listesi olmalı.',

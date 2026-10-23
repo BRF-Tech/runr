@@ -118,6 +118,10 @@ class TenantLocalRegion extends KnativeRegion implements Syncable
         'sandbox_wasm_status_message',
         'sandbox_wasm_shims',
         'sandbox_wasm_nodes',
+        // cert-manager (TenantMigrations/0081): the custom domains of tenant projects read whether
+        // TLS mode cert-manager is offered, and the ClusterIssuer, from this copy
+        'cert_manager_status',
+        'cert_manager_issuer',
         // GPU inventory / support and the model volume (TenantMigrations/0045): tenant deploys read
         // the GPU RuntimeClass, gVisor nvproxy and the model PVC settings from this copy
         'gpu_mode',
@@ -169,7 +173,8 @@ class TenantLocalRegion extends KnativeRegion implements Syncable
      * $detached: the assignment ended and the region keeps serving other organizations — the
      * gateways' IngressRoutes / Middlewares are deleted in the region first (GatewayService) and
      * bindings keep their region (their data stays where it is). Otherwise the region itself was
-     * deleted: bindings lose it like central ones (nullOnDelete).
+     * deleted: bindings lose it like central ones (nullOnDelete). Either way the organization's
+     * queue consumer choice for the region goes (billing_region_overrides).
      *
      * @return bool whether a copy was removed
      */
@@ -197,6 +202,12 @@ class TenantLocalRegion extends KnativeRegion implements Syncable
 
         if (! $detached && $schema->hasTable('bindings') && $schema->hasColumn('bindings', 'knative_region_id')) {
             $copy->getConnection()->table('bindings')->where('knative_region_id', $regionId)->update(['knative_region_id' => null]);
+        }
+
+        // The organization's own queue consumer choice for the region (Billing module,
+        // docs/billing.md#queue-consumers): a region it no longer has is no longer chosen for
+        if ($schema->hasTable('billing_region_overrides')) {
+            $copy->getConnection()->table('billing_region_overrides')->where('region_id', $regionId)->delete();
         }
 
         static::withoutEvents(fn () => $copy->delete());

@@ -48,6 +48,9 @@ var redactedFields = map[string]bool{
 	"redis_password":    true,
 	"registry_password": true,
 	"external_password": true,
+	// The write-only secrets of a trigger (a webhook's signing secret: POST / PATCH of
+	// /projects/{project}/triggers).
+	"secrets": true,
 }
 
 // secretBodyPaths are endpoints whose whole request and answer bodies stay out of the trace:

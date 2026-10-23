@@ -8,10 +8,13 @@ use Illuminate\Support\Carbon;
 
 /**
  * Daily metered usage of one project or model service (App\Services\Metering\UsageAggregator):
- * function sessions (CPU millicore·ms, memory MiB·ms, duration, cold starts), the reserved
+ * sessions of scale-to-zero workloads and CronJob runs (the deployment's size × each session's pod
+ * time as CPU millicore·ms and memory MiB·ms, duration, cold starts), the reserved
  * resources of always-on (custom-scale) workloads — whose day also counts as reserved × 24 h in
- * total_cpu_mc_ms / total_memory_mib_ms — and GPU-unit milliseconds. Model services have
- * source "model" and carry their service id in project_id / deployment_id.
+ * total_cpu_mc_ms / total_memory_mib_ms — and GPU-unit milliseconds. A project's preview
+ * environments (source "preview", one record per preview: deployment_id carries its id) and the
+ * consumer of a queue trigger (source "queue_consumer") are records of the project of their own.
+ * Model services have source "model" and carry their service id in project_id / deployment_id.
  *
  * In the current organization's database; the central table additionally holds copies of every
  * tenant's usage in platform regions (tenant_id set). Quantities only: the Billing module prices
@@ -28,6 +31,8 @@ use Illuminate\Support\Carbon;
  * @property string $entry_point http | schedule | queue
  * @property string|null $source project | model
  * @property string|null $created_by creator of a model service
+ * @property string|null $environment_id the project environment its deployment ran in (docs/environments.md); null: the project's own workload
+ * @property string|null $environment_name that environment's name, kept for the bills after the environment is deleted
  * @property int $session_count
  * @property int $total_duration_ms
  * @property int $total_cpu_mc_ms
@@ -46,6 +51,24 @@ use Illuminate\Support\Carbon;
 class UsageRecord extends Model
 {
     use HasUlids;
+
+    /** A project's own workload: its sessions or the reservation of an always-on deployment. */
+    public const SOURCE_PROJECT = 'project';
+
+    /** A project's preview environments: their sessions (deployment_id carries the preview's id). */
+    public const SOURCE_PREVIEW = 'preview';
+
+    /** The consumer of a queue-triggered deployment: its reserved size while the deployment ran. */
+    public const SOURCE_QUEUE_CONSUMER = 'queue_consumer';
+
+    /** A model service (project_id / deployment_id carry the service's id). */
+    public const SOURCE_MODEL = 'model';
+
+    /** The source of a record: rows of earlier releases without one are a project's own. */
+    public static function sourceOf(self $record): string
+    {
+        return (string) ($record->source ?? '') !== '' ? (string) $record->source : self::SOURCE_PROJECT;
+    }
 
     protected $fillable = [
         'tenant_id',
@@ -72,6 +95,8 @@ class UsageRecord extends Model
         'gpu_count',
         'total_gpu_unit_ms',
         'created_by',
+        'environment_id',
+        'environment_name',
     ];
 
     protected $casts = [

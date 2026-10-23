@@ -43,7 +43,7 @@ class StartSandboxJob implements ShouldQueue
             $state = $service->waitRunning($sandbox, $region, (int) config('sandbox.start_timeout_seconds', 120) * 3);
 
             if ($state !== true) {
-                $service->markFailed($sandbox, $region, is_string($state) ? $state : __('sandboxes.start_timeout'));
+                $service->markFailed($sandbox, $region, is_string($state) ? $state : $service->startTimeoutError($sandbox, $region));
 
                 return;
             }

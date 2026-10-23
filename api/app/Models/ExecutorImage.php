@@ -28,6 +28,8 @@ class ExecutorImage extends Model
         'sort_order',
         'category',
         'gpu_required',
+        // Digest of the version's newest runtime patch (the patch feed, docs/runtimes.md#runtime-patches)
+        'digest',
     ];
 
     protected $casts = [

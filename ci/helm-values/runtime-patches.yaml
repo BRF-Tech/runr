@@ -1,0 +1,12 @@
+# ci/check-helm-chart.sh: the runtime patch feed from a mirror, read through a region's registry,
+# with its public key and automatic migration off (docs/runtimes.md#runtime-patches)
+domain: console.acme-cloud.example
+runtimePatches:
+  feed: registry.acme-cloud.example/runr/runtime-patches:feed
+  viaRegion: eu-1
+  autoMigrate: false
+  publicKey: |
+    -----BEGIN PUBLIC KEY-----
+    MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAE2bEu6vDvOkObSAj1H6fN0xTfVTUs
+    l2XJ6O5NW1d7TQ8kIBhXRlqNzeYgqTE/9yzJm8xhuUzh5mcqdA3lNnGQ3A==
+    -----END PUBLIC KEY-----

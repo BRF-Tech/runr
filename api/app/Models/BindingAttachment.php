@@ -15,6 +15,8 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property string $binding_id
  * @property string $project_id
  * @property string $env_prefix
+ * @property string $credential_mode static | dynamic (Postgres credentials issued by the region's OpenBao, DynamicDbCredentials)
+ * @property string|null $environment_id null: the project's own workload; else one environment's (docs/environments.md#bindings)
  * @property-read Binding $binding
  * @property-read Project $project
  */
@@ -24,7 +26,7 @@ class BindingAttachment extends Model
 
     public const PREFIX_PATTERN = '/^[A-Z][A-Z0-9_]*_$/';
 
-    protected $fillable = ['binding_id', 'project_id', 'env_prefix'];
+    protected $fillable = ['binding_id', 'project_id', 'env_prefix', 'credential_mode', 'environment_id'];
 
     protected $attributes = ['env_prefix' => ''];
 
@@ -36,6 +38,12 @@ class BindingAttachment extends Model
     public function project(): BelongsTo
     {
         return $this->belongsTo(Project::class);
+    }
+
+    /** @return BelongsTo<ProjectEnvironment, $this> */
+    public function environment(): BelongsTo
+    {
+        return $this->belongsTo(ProjectEnvironment::class, 'environment_id');
     }
 
     /** @return list<string> env var names this attachment adds to the project */

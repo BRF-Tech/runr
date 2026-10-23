@@ -59,6 +59,11 @@ class BindingResource extends JsonResource
             'project_id' => $attachment->project_id,
             'project' => $project ? ['id' => $project->id, 'name' => $project->name, 'slug' => $project->slug] : null,
             'env_prefix' => $attachment->env_prefix,
+            'credential_mode' => $attachment->getAttribute('credential_mode') ?? 'static',
+            // The environment the binding is attached to (docs/environments.md#bindings); null:
+            // the project's own workload
+            'environment_id' => $attachment->getAttribute('environment_id'),
+            'environment' => $attachment->getAttribute('environment_id') && $attachment->relationLoaded('environment') ? $attachment->environment?->name : null,
             'env_names' => $attachment->binding ? $attachment->envNames() : [],
             'created_at' => $attachment->created_at?->toIso8601String(),
             'binding' => $withBinding && $attachment->binding ? (new self($attachment->binding))->resolve() : null,

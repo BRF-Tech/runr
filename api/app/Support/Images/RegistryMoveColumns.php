@@ -31,7 +31,9 @@ final class RegistryMoveColumns
         // CaaS projects (also hosted MCP servers of an image) and their version snapshots
         'container_configs' => ['image' => self::REF],
         'versions' => ['config_snapshot' => self::ENCRYPTED],
-        'deployments' => ['deploy_config' => self::JSON],
+        'deployments' => ['deploy_config' => self::JSON, 'config_snapshot' => self::ENCRYPTED],
+        // A rollback waiting for its build: the CaaS image of the config it restores
+        'queued_deploys' => ['config_snapshot' => self::ENCRYPTED],
         // Region settings (also tenant-owned regions): Knative, GPU and model storage settings
         'knative_regions' => [
             'knative_settings' => self::JSON,

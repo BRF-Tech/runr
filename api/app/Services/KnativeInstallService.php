@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\KnativeRegion;
 use App\Models\Setting;
 use App\Services\Ai\Gpu\GpuInstallService;
+use App\Services\CertManager\CertManagerService;
 use App\Services\Concerns\KnativeAgentTrait;
 use App\Services\Concerns\KnativeClusterTrait;
 use App\Services\Concerns\KnativeCrdTrait;
@@ -18,6 +19,7 @@ use App\Services\Concerns\KnativeTraefikTrait;
 use App\Services\Contracts\KnativeConstants;
 use App\Services\Helpers\IngressTrust;
 use App\Services\Helpers\RequestTimeout;
+use App\Services\InternalNetwork\RegionInternalNetwork;
 use App\Services\Observability\TracingInstallService;
 use Illuminate\Support\Facades\Log;
 use RuntimeException;
@@ -447,6 +449,16 @@ class KnativeInstallService implements KnativeConstants
             // read / write timeouts of its entry points follow the region's request_timeout
             $this->installTraefik($k8s, $helm, $namespace, $kubeconfig, IngressTrust::forRegion($region), RequestTimeout::forRegion($region));
 
+            // Revision pods admit only Traefik and Knative, the activator only Traefik and the
+            // autoscaler (RegionNetworkPolicyManifests); region:reconcile applies them later too
+            try {
+                foreach (RegionNetworkPolicyService::ensure($k8s, $projectNs, $namespace) as $line) {
+                    $this->appendComponentLog($region, 'serving', ucfirst($line).'.');
+                }
+            } catch (Throwable $e) {
+                $this->appendComponentLog($region, 'serving', 'WARNING: NetworkPolicies not applied ('.$e->getMessage().'); region:reconcile applies them.');
+            }
+
             if (! empty($region->selected_workers)) {
                 $settings['enable_podspec_features'] = true;
             }
@@ -454,6 +466,19 @@ class KnativeInstallService implements KnativeConstants
             $this->applyKnativeServingCR($k8s, $settings, $namespace, $version);
 
             $this->waitForCrReady($k8s, $region, 'KnativeServing', 'knative-serving', 'knative_serving_namespace', 'knative-serving');
+
+            // The internal network (docs/internal-network.md): the authz, its keys and CoreDNS's
+            // runr.internal rewrite. The region enforces the projects' allow lists (internal_auth
+            // unset: InternalNetwork::modeOf) unless an operator sets audit
+            $this->appendComponentLog($region, 'serving', 'Installing the internal network (authz, runr.internal DNS)...');
+            try {
+                // no Knative Service calls it yet: the authz becomes ready on its own
+                foreach (RegionInternalNetwork::ensure($k8s, $namespace, [$region->fresh()], false, false) as $line) {
+                    $this->appendComponentLog($region, 'serving', ucfirst($line).'.');
+                }
+            } catch (Throwable $e) {
+                $this->appendComponentLog($region, 'serving', 'WARNING: internal network not installed ('.$e->getMessage().'); region:reconcile installs it.');
+            }
 
             if (! empty($region->selected_workers)) {
                 $this->appendComponentLog($region, 'serving', 'Enabling pod spec features...');
@@ -533,6 +558,14 @@ class KnativeInstallService implements KnativeConstants
             // Never fails the Serving install.
             app(TracingInstallService::class)
                 ->installWithServing($region, $k8s, $helm, fn (string $m) => $this->appendComponentLog($region, 'serving', $m));
+
+            // cert-manager and the default ClusterIssuer of custom domains (docs/regions.md#cert-manager):
+            // the cluster's own cert-manager is reused, RunR installs one where there is none.
+            // Never fails the Serving install; a cert-manager still starting finishes on its own
+            // (CertManagerService::refresh(), region:reconcile)
+            $this->appendComponentLog($region, 'serving', 'Setting up cert-manager (custom-domain certificates)...');
+            app(CertManagerService::class)
+                ->installWithServing($region, $k8s, fn (string $m) => $this->appendComponentLog($region, 'serving', 'cert-manager: '.$m));
 
             $region->update([
                 'prometheus_url' => $prometheusUrl,

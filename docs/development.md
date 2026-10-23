@@ -381,7 +381,7 @@ Every suite runs locally with the commands below; CI runs the same commands
 | UI e2e (Playwright) | `vue/e2e/` | `cd vue && npm run test:e2e:mock` / `npm run test:e2e` |
 | Go | every `go.mod`: `cli`, `terraform-provider-runr`, `runtime/agent`, `runtime/queue-consumer`, `runtime/image-upload`, `proxy`, `examples/runtimes/q/interpreter` | `gofmt -l . && go vet ./... && go test -race ./...` per module |
 | Helm chart | `helm/`, scenarios in `ci/helm-values/` | `bash ci/check-helm-chart.sh` (`helm lint --strict` + `helm template` per scenario, kubeconform against Kubernetes 1.30–1.35; needs helm and kubeconform or docker) |
-| Kubernetes e2e (Kind) | `runtime/lib/test*.sh` | `bash runtime/ci.sh test`, and one suite per feature: `test-runtimes`, `test-wasm`, `test-images`, `test-observability`, `test-reconcile`, `test-sandbox-api`, `test-supply-chain`, `test-ai`, `test-bindings`, `test-git-deploy`, `test-mcp`, `test-admission`, `test-region-move` |
+| Kubernetes e2e (Kind) | `runtime/lib/test*.sh` | `bash runtime/ci.sh test`, and one suite per feature: `test-runtimes`, `test-wasm`, `test-images`, `test-org-transfer`, `test-observability`, `test-triggers`, `test-trigger-sources`, `test-reconcile`, `test-network`, `test-internal-network`, `test-cert-manager`, `test-sandbox-api`, `test-supply-chain`, `test-ai`, `test-bindings`, `test-git-deploy`, `test-mcp`, `test-admission`, `test-runtime-patches`, `test-warmer`, `test-deploy-strategies`, `test-secrets`, `test-environments`, `test-api-product`, `test-region-move`, `test-global-projects` |
 
 ### API (PHPUnit)
 
@@ -503,7 +503,8 @@ Two modes:
   `E2E_BASE_URL` (default `http://localhost:8061`, the compose `vue`
   service), `E2E_LOGIN` / `E2E_PASSWORD` (defaults `admin@example.com` / `admin123`, the
   administrator the development seed creates with the `ADMIN_PASSWORD` of `api/.env.docker`),
-  `E2E_TENANCY=true` to include the
+  `E2E_USERNAME` (the user name of that account for the user name sign-in spec; default `admin`,
+  and with another `E2E_LOGIN` that spec is skipped unless it is set), `E2E_TENANCY=true` to include the
   `@modules` specs when the stack runs with the modules on (`TENANCY_ENABLED`,
   `AUTH_PROVIDER_ENABLED` and `TICKET_ENABLED` true, as in the root `.env.example`; the ticket
   spec opens a ticket in the console, which shows Support Tickets only with `TICKET_ENABLED`). Specs
@@ -512,18 +513,74 @@ Two modes:
   removed after it.
   - The `stack-setup` project (`e2e/stack.setup.ts`, a dependency of `stack`) signs the account
     in once per run and marks its welcome tour as seen; the workers share that session (the
-    login route allows `AUTH_RATE_LIMIT_PER_MINUTE` attempts per IP and login).
+    login route allows `AUTH_RATE_LIMIT_PER_MINUTE` attempts per IP and account, whether it is
+    named by its user name or its e-mail address).
   - All workers use the one account: start the stack with a higher per-user API limit, e.g.
     `API_USER_RATE_LIMIT_PER_MINUTE=3000` in the root `.env` (passed to the `api` service; the
     default 300 is sized for a person's console tabs).
   - The project specs (code versions, environment variables, secrets, triggers, create project)
-    need a ready region; without a cluster, load the demo data first (Settings → Demo Data →
-    Load Demo Data), or set `E2E_SEED_DEMO=true`: the setup then loads it when no region is ready
-    (a queued job: Horizon must run). Without a ready region they skip.
+    need a ready region; without a cluster, load the demo data first
+    (Administration → Regions & settings → Demo Data → Load Demo Data), or set
+    `E2E_SEED_DEMO=true`: the setup then loads it when no region is ready (a queued job: Horizon
+    must run). Without a ready region they skip.
   - Run it once against a single-tenant stack (`TENANCY_ENABLED=false`) and once against a
     multi-tenant stack with the modules on and `E2E_TENANCY=true`: on the multi-tenant stack the single-tenant user
-    management spec skips (the tenancy module replaces Settings → Users), and the roles specs work
+    management spec skips (the tenancy module replaces Administration → Users), and the roles specs work
     in the first tenant of the account (the central context has no roles).
+
+The main create flows against the real stack (real API, real database, real websocket):
+
+```bash
+docker compose up -d                      # the stack with its reverb service
+cd vue
+E2E_SEED_DEMO=true npm run test:e2e:create-flows
+npx playwright test --project=mock create-flows mcp   # the same flows on the mocked API
+```
+
+`e2e/create-flows.spec.ts` creates a project with the wizard, a hosted MCP server from an image, a
+clone from a project page, and switches between code versions. It also checks that a project
+created elsewhere while the projects list loads stays in the list, and that deleting a project
+keeps its page until the projects list opens. It holds API answers back
+(`network.hold()`) so that the orderings a slow API produces happen on every run. For example, the
+`project.created` broadcast arrives before the answer that created the project. On the stack the
+broadcasts come from the API over Reverb, so the stack must run the `reverb` service. It needs a
+ready region, as the other project specs do. The projects it creates are removed after each test.
+
+Late and out-of-order answers: a fast local run never shows them, so the specs force them.
+
+- **E2E, both modes:** `network.hold(method, path)` (fixture `network`, `e2e/fixtures/network.ts`)
+  holds the answers to matching requests until `release()`:
+
+  ```ts
+  const saved = await network.hold('PUT', '/projects/:id/mcp-server')
+  await page.getByTestId('mcp-create-submit').click()
+  const { params } = await saved.arrived   // the API handled the request; the page has no answer yet
+  // ...a websocket event, a second click, a filter change, then assert the state in between
+  saved.release()
+  ```
+
+  In mock mode the fake API handles the request at once and holds its answer
+  (`mockApi.hold()`; `mockApi.delay(method, path, ms)` answers late). In stack mode the real API
+  answers, and the browser gets the answer at `release()`.
+- **Negative checks after a late answer:** `settle(page)` (`e2e/helpers/timing.ts`) lets the page
+  process what already arrived. `expect()` retries until a check passes, so a "not shown" check
+  could otherwise pass before the late answer is processed.
+- **Waiting for a real broadcast (stack mode):** `recordBroadcasts(page)` (same file, called
+  before `page.goto`) records the websocket messages the page receives;
+  `broadcasts.waitFor('project.deleted')` resolves once one has arrived. Release a held answer
+  only after that.
+- **Unit specs:** `deferred()` (`tests/helpers.js`) is a promise the spec settles by hand. Return it
+  from a mocked API call, act (change a prop, click, emit an event), then resolve it.
+- **In the console:** loaders that can be overtaken use `useLatest()`
+  (`src/composables/useLatest.js`):
+  - `begin()` returns a check that is false once a newer call started or the component is gone;
+  - `cancel()` drops the calls in flight after an action's own answer.
+- **Lists that broadcasts or actions change in place** use a change journal
+  (`src/utils/changeJournal.js`). Examples: the projects list, a project's versions and
+  deployments, the models page lists.
+  - Each change (insert, update, removal) is applied to the list and recorded.
+  - A reload takes `mark()` before its request and stores `replay(answer, mark)`. The changes
+    made while it was in flight are applied to its answer, which may have been read before them.
 
 Writing a spec — one feature per file, `vue/e2e/<feature>.spec.ts`:
 
@@ -548,8 +605,9 @@ test.describe('Widgets', () => {
   endpoints with `on()`, assert payloads with `waitFor()` / `calls()`, edit
   data through `db`), `realtime` (`platform(topic, payload)`,
   `notification()`), `auth` (`signIn()`, `loginViaUi()` incl. 2FA,
-  `credentials`) and `seed` (`project(type)`, `readyRegion()`, `call()`,
-  cleanup in stack mode). Every page starts with the English locale.
+  `credentials`), `seed` (`project(type)`, `readyRegion()`, `call()`,
+  cleanup in stack mode) and `network` (`hold(method, path)`, late answers in
+  both modes, above). Every page starts with the English locale.
 - Shared UI steps live in `e2e/helpers/` (`auth.ts`, `seed.ts`, `ui.ts` for
   labelled fields, confirm dialogs and the Monaco editor, `edit.ts`,
   `deploy.ts`); default fake data in `e2e/fixtures/data.ts`.
@@ -595,6 +653,14 @@ server then listens on all interfaces and the kubeconfig points at that host.
 `bash runtime/ci.sh test-helm-upgrade` checks the Helm upgrade path instead: the chart and images of
 `main` in a Kind cluster, data created through that version's API, then `helm upgrade` to the
 checkout ([upgrade.md](upgrade.md#testing-the-upgrade-path)).
+
+`bash runtime/ci.sh test-region-move` runs on two Kind clusters: the e2e region moves from the
+first to the second and is rolled back ([Moving a region to another
+cluster](regions.md#moving-a-region-to-another-cluster)). Besides the rebuilds, the report and the
+restored cluster state, it checks the projects' secret values: a value in the region's Secret, one
+in the region's OpenBao and a reference to a secret store are copied to the second cluster, values
+set there come back with the rollback, and the rollback leaves nothing of them on the second
+cluster or in its OpenBao (`runtime/lib/test-region-move.sh` lists every case).
 
 ### Secret scan and dependency audits
 
@@ -686,12 +752,14 @@ stack running (Compose project `runr-upgrade`, API on `127.0.0.1:18060`).
 - **Little free disk**: every node holds the images the region pre-pulls (5–7 GB per node with the
   built-in runtimes, measured in WSL 2). `KIND_WORKERS=1` runs one worker (the suites select it as
   the dedicated project worker) and a control-plane without its NoSchedule taint for the platform
-  pods; `KIND_PRELOAD=0` leaves out loading images into the nodes, which then pull only what they
-  run. `test-ai` with the GPU case adds up what the run writes (the suite's images' sizes per Kind
-  node, each node's own data, the Compose stack, the preloaded images unless `KIND_PRELOAD=0`,
-  `RUNR_E2E_GPU_RESERVE_GB` for the rest) and does not start when Docker's root has less free; its
-  `kind load` archives go to `RUNR_E2E_TMPDIR` (default `/var/tmp`) instead of a RAM-backed `/tmp`
-  ([docs/ai.md](ai.md#testing))
+  pods; `KIND_WORKERS=0` runs the control-plane alone (no dedicated worker: the suites skip the
+  worker selection) — one node less, for a two-cluster suite such as `test-global-projects`, or
+  `test-ai`'s CPU cases (`RUNR_E2E_GPU=0`), on a host short of disk; `KIND_PRELOAD=0` leaves out
+  loading images into the nodes, which then pull only what they run. `test-ai` with the GPU case
+  adds up what the run writes (the suite's images' sizes per Kind node, each node's own data, the
+  Compose stack, the preloaded images unless `KIND_PRELOAD=0`, `RUNR_E2E_GPU_RESERVE_GB` for the
+  rest) and does not start when Docker's root has less free; its `kind load` archives go to
+  `RUNR_E2E_TMPDIR` (default `/var/tmp`) instead of a RAM-backed `/tmp` ([docs/ai.md](ai.md#testing))
 - **Single AI cases, a GPU that needs a reset**: `RUNR_E2E_AI_CASES=ai-gpu-caas runtime/ci.sh test-ai`
   runs only the named cases (comma-separated, `test:e2e --ai-cases`) and what they need
   (`ai-binding` → `ai-offline-cpu` → `ai-mirror` → `ai-model`); the GPU case alone pulls and loads
@@ -700,6 +768,11 @@ stack running (Compose project `runr-upgrade`, API on `127.0.0.1:18060`).
   new Xid 119 / 154 lines: before the run (the GPU case alone does not start then) and, every
   `RUNR_E2E_GPU_WATCH_SECONDS` (default 10), while the suite waits for an allocatable
   `nvidia.com/gpu` — instead of after 1200 s
+- **Single global-projects cases**: `RUNR_E2E_GLOBAL_CASES=gp-postgres-replica,gp-uploaded-image
+  runtime/ci.sh test-global-projects` runs only the named cases (comma-separated,
+  `test:e2e --global-cases`), the setup (zone, region B with its Zot registry, the DNS servers, the
+  first project and its rollout) and the cases they build on (`gp-data-failover` →
+  `gp-switchover` → `gp-postgres-replica` → `gp-p2-project`, `gp-data-services`)
 - **Kubeconfig**: for Kind, `kind get kubeconfig --internal` (the API services join the `kind` network and reach the control-plane container by name, on Linux hosts too); for an external cluster, `127.0.0.1` is rewritten to `host.docker.internal`. The file is copied into the container with `docker compose cp`
 - **Test command**: `docker compose exec api php artisan test:e2e --base-url=http://localhost --kubeconfig=/tmp/kubeconfig`
 - **Cleanup**: `docker compose down` + Kind cluster deletion (unless `--no-cleanup`); with `KIND_LOCK`,

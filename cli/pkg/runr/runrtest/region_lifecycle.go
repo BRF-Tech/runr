@@ -3,6 +3,7 @@ package runrtest
 import (
 	"fmt"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -42,6 +43,10 @@ type rlcRegion struct {
 	wasmShims                   []string
 	wasmNodes                   []string
 	wasmMessage                 string
+	// cert-manager of the region (region_cert_manager.go); certManagerInUse: custom-domain
+	// certificates that keep it (SetRegionCertManagerInUse)
+	certManagerStatus, certManagerMessage, certManagerIssuer string
+	certManagerInUse                                         int
 	// domainMigrating: the region moves to a new base domain (SetRegionDomainMigrating)
 	domainMigrating bool
 	// migrationProjects: what the move did with each project (SetRegionMigrationProjects),
@@ -450,6 +455,12 @@ func init() {
 		if v, ok := q.Body["ingress_trusted_ips"]; ok && v != nil {
 			if _, isList := v.([]any); !isList {
 				return 0, nil, errValidation("ingress_trusted_ips", "The ingress trusted ips field must be an array.")
+			}
+		}
+		// UpdateRegionSettingsRequest: sometimes|string|in:enforce,audit (null and "" refused)
+		if v, ok := q.Body["internal_auth"]; ok {
+			if s, isStr := v.(string); !isStr || !slices.Contains(runr.InternalAuthModes, s) {
+				return 0, nil, errValidation("internal_auth", "The selected internal auth is invalid.")
 			}
 		}
 		for k, v := range q.Body {
@@ -1063,7 +1074,7 @@ func init() {
 		if r.d.MigrationStatus == runr.MigrationDNSCheck || r.d.MigrationStatus == runr.MigrationFailed {
 			for _, row := range r.migrationProjects {
 				projects = append(projects, map[string]any{"organization": nullStr(row.Organization), "project_id": row.ProjectID,
-					"project": row.Project, "outcome": row.Outcome, "version": nullInt(row.Version),
+					"project": row.Project, "environment": nullStr(row.Environment), "outcome": row.Outcome, "version": nullInt(row.Version),
 					"deployment_status": nullStr(row.DeploymentStatus), "message": nullStr(row.Message)})
 			}
 		}

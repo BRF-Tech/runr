@@ -10,6 +10,7 @@ use App\Jobs\InstallRegistryAndCreateRegionJob;
 use App\Services\KnativeStatusService;
 use App\Services\KubernetesClient;
 use App\Services\ZotRegistryService;
+use App\Support\RequestTime;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Str;
@@ -96,6 +97,8 @@ class RegistrySetupController extends Controller
     {
         $v = $request->validated();
         $ns = $v['namespace'] ?? 'runr-registry';
+        // as long as the claim may take to bind, past the API's 30 s request limit
+        RequestTime::allow((int) config('knative.registry_pvc_test_seconds', 180));
         $result = $zot->testPvcBound($v['kubeconfig'], $v['storageClass'], $v['size'], $ns);
 
         return response()->json($result);

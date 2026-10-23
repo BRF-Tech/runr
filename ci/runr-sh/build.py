@@ -313,7 +313,7 @@ def page_html(title, desc, url, content, version, side=None, nav=None, crumb=Tru
 <meta name="theme-color" content="#0a0e1a">
 <link rel="icon" type="image/svg+xml" href="/assets/favicon.svg">
 <link rel="stylesheet" href="/css/docs.css">
-</head>
+{script}</head>
 <body>
 <header class="d-top"><div class="d-top-in">
 <a class="d-brand" href="/" aria-label="RunR home"><img class="icon" src="/assets/runr-icon.svg" alt=""><img class="wordmark" src="/assets/runr-wordmark.svg" alt="RunR"></a>
@@ -336,7 +336,8 @@ def page_html(title, desc, url, content, version, side=None, nav=None, crumb=Tru
 </body>
 </html>
 """.format(title=html.escape(title), desc=html.escape(desc, quote=True), site=SITE, repo=REPO, url=url, version=version,
-           nav=nav_html, wrap=wrap, side=side or "", crumb=crumb_html, content=content)
+           nav=nav_html, wrap=wrap, side=side or "", crumb=crumb_html, content=content,
+           script='<script src="/js/docs.js" defer></script>\n' if side else "")
 
 
 def describe(body, fallback):

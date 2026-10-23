@@ -36,6 +36,8 @@ use Illuminate\Support\Carbon;
  * @property Carbon|null $started_at
  * @property Carbon|null $ended_at
  * @property int|null $duration_ms
+ * @property Carbon|null $created_at
+ * @property Carbon|null $updated_at
  * @property-read WorkflowRun $run
  */
 class WorkflowStep extends Model

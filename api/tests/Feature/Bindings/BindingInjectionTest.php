@@ -11,6 +11,7 @@ use App\Models\User;
 use App\Models\Version;
 use App\Services\Bindings\BindingDrivers;
 use App\Services\Bindings\BindingEnv;
+use App\Services\Environments\EnvironmentManager;
 use App\Services\KnativeDeployService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\Concerns\ActsWithRoles;
@@ -109,6 +110,39 @@ class BindingInjectionTest extends TestCase
         $this->assertSame(['kubernetes.io/metadata.name' => 'fn'], $policy['spec']['ingress'][0]['from'][0]['namespaceSelector']['matchLabels']);
         $this->assertSame([['protocol' => 'TCP', 'port' => 5432]], $policy['spec']['ingress'][0]['ports']);
         $this->assertNotNull($this->applied('/apis/networking.k8s.io/v1/namespaces/runr-data/networkpolicies/runr-data-default-deny'));
+    }
+
+    /**
+     * Environments (docs/environments.md#bindings): a binding attached to staging goes into
+     * staging's Secret only, and its NetworkPolicy admits staging's pods (runr/environment-id) —
+     * production's pods cannot reach staging's data, nor the other way round.
+     */
+    public function test_a_binding_attached_to_an_environment_reaches_only_that_environment(): void
+    {
+        $project = $this->bindingProject($this->region);
+        $staging = app(EnvironmentManager::class)->create($project, ['name' => 'staging']);
+        $binding = $this->makeBinding('postgres', $this->region, ['name' => 'orders-staging']);
+
+        $this->signedIn($this->owner)->postJson("/api/projects/{$project->id}/bindings", ['binding_id' => $binding->id, 'env_prefix' => 'ORDERS_', 'environment' => 'staging'])
+            ->assertCreated()
+            ->assertJsonPath('data.environment_id', $staging->id);
+
+        $secret = $this->assertApplied('/api/v1/namespaces/fn/secrets/orders-api-staging-bindings');
+        $this->assertArrayHasKey('ORDERS_DATABASE_URL', $secret['data']);
+        $this->assertNull($this->applied(self::SECRET), 'production gets nothing');
+
+        $from = $this->assertApplied($this->policyPath($binding))['spec']['ingress'][0]['from'];
+        $this->assertCount(1, $from);
+        $this->assertSame(['key' => 'runr/environment-id', 'operator' => 'In', 'values' => [$staging->id]], $from[0]['podSelector']['matchExpressions'][0]);
+
+        // One environment of a project per binding: production cannot attach staging's database too
+        $this->attach($project, $binding)->assertUnprocessable();
+
+        $this->signedIn($this->owner)->getJson("/api/projects/{$project->id}/bindings?environment=staging")
+            ->assertJsonCount(1, 'data')
+            ->assertJsonPath('secret', 'orders-api-staging-bindings');
+        $this->signedIn($this->owner)->getJson("/api/projects/{$project->id}/bindings?environment=production")
+            ->assertJsonCount(0, 'data');
     }
 
     public function test_a_project_that_is_not_deployed_only_gets_the_secret(): void

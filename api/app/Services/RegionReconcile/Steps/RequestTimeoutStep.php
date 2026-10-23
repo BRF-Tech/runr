@@ -91,8 +91,10 @@ final class RequestTimeoutStep implements ReconcileStep
         $container = collect($containers)->firstWhere('name', 'traefik') ?? ($containers[0] ?? []);
         $current = RequestTimeout::currentTraefik($container['args'] ?? []);
         $wanted = RequestTimeout::traefikSeconds($longest);
+        // the private entry point once the release has one (PrivateIngressStep adds it)
+        $entryPoints = RequestTimeout::entryPoints($container['args'] ?? []);
 
-        if (RequestTimeout::traefikMatches($current, $wanted)) {
+        if (RequestTimeout::traefikMatches($current, $wanted, $entryPoints)) {
             return null;
         }
 
@@ -100,8 +102,8 @@ final class RequestTimeoutStep implements ReconcileStep
             $cluster, $dryRun,
             KnativeConstants::TRAEFIK_RELEASE, $namespace, KnativeConstants::TRAEFIK_CHART,
             KnativeConstants::TRAEFIK_REPO_NAME, KnativeConstants::TRAEFIK_REPO_URL,
-            RequestTimeout::helmSetJson($longest),
-            'read / write timeout of web, websecure '.RequestTimeout::describe($current)." → {$wanted} s (longest request_timeout {$longest} s)",
+            RequestTimeout::helmSetJson($longest, $entryPoints),
+            'read / write timeout of '.implode(', ', $entryPoints).' '.RequestTimeout::describe($current)." → {$wanted} s (longest request_timeout {$longest} s)",
             'the Traefik pods roll once',
         );
     }

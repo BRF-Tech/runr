@@ -16,9 +16,12 @@ use App\Services\KubernetesClient;
  *
  * The check (probeKvm()) is a short-lived DaemonSet on the kata-installer's nodes: no privileges,
  * the node's /dev mounted read-only to stat /dev/kvm, the CPU flags from /proc/cpuinfo and the
- * loaded KVM module from /sys/module. Its result is kept on the nodes — label runr.dev/kvm
- * (true | false, also what every Kata RuntimeClass selects) and annotation runr.dev/kvm-probe
- * (what was seen, when) — so the console's kata-shims call reads it with the node list. Nodes
+ * loaded KVM module from /sys/module, the size of the node's /dev/shm (QEMU keeps its guests'
+ * memory there: KataRuntime::QEMU_MIN_SHM_MB) and whether a node that runs systemd has the D-Bus
+ * system bus (KataRuntime::NEEDS_SYSTEM_DBUS; the node's /run mounted read-only). Its result is kept on the nodes — label
+ * runr.dev/kvm (true | false, also what every Kata RuntimeClass selects) and annotation
+ * runr.dev/kvm-probe (what was seen, when) — so the console's kata-shims call reads it with the
+ * node list. Nodes
  * without the label (new nodes) are checked when the console asks (ProbeKvmJob), before an
  * install, and at region:reconcile.
  */
@@ -162,6 +165,12 @@ trait KataKvmProbeTrait
         $this->deleteNodeDaemonSet($k8s, self::KVM_PROBE_DS);
         $results = [];
         try {
+            // The check runs before anything else of RunR's sandbox runtimes is on the cluster (a
+            // Kata install on a region without gVisor, the console's first look): its namespace too
+            $k8s->applyClusterResource(['apiVersion' => 'v1', 'kind' => 'Namespace', 'metadata' => [
+                'name' => self::SANDBOX_NAMESPACE,
+                'labels' => ['app.kubernetes.io/managed-by' => 'runr'],
+            ]]);
             if (! $k8s->applyResource($this->buildKvmProbeDaemonSet(self::SANDBOX_NAMESPACE, $hasDedicated), self::SANDBOX_NAMESPACE)) {
                 throw new \RuntimeException('cannot apply DaemonSet '.self::SANDBOX_NAMESPACE.'/'.self::KVM_PROBE_DS);
             }
@@ -198,8 +207,10 @@ trait KataKvmProbeTrait
             $k8s->strategicMergePatchCluster('v1', 'Node', $node, ['metadata' => [
                 'labels' => [KataRuntime::KVM_LABEL => $value],
                 'annotations' => [KataRuntime::KVM_PROBE_ANNOTATION => sprintf(
-                    'kvm=%s dev_kvm=%s cpu=%s module=%s at=%s',
-                    $probe['kvm'] ? 'yes' : 'no', $probe['dev_kvm'] ? 'yes' : 'no', $probe['cpu'], $probe['module'], $now,
+                    'kvm=%s dev_kvm=%s cpu=%s module=%s%s%s at=%s',
+                    $probe['kvm'] ? 'yes' : 'no', $probe['dev_kvm'] ? 'yes' : 'no', $probe['cpu'], $probe['module'],
+                    $probe['shm_mb'] !== null ? " shm_mb={$probe['shm_mb']}" : '',
+                    $probe['dbus'] !== null ? " dbus={$probe['dbus']}" : '', $now,
                 )],
             ]]);
         }
@@ -214,10 +225,12 @@ trait KataKvmProbeTrait
     }
 
     /**
-     * "runr: kvm probe: kvm=yes dev_kvm=yes cpu=vmx module=kvm_intel node=…" → fields; null when
-     * the line is not a result.
+     * "runr: kvm probe: kvm=yes dev_kvm=yes cpu=vmx module=kvm_intel shm_mb=7826 node=…" → fields;
+     * null when the line is not a result. shm_mb: the node's /dev/shm in MiB, null when the check
+     * could not read it (or is from a release without it). dbus: yes (the system bus is there),
+     * missing (the node runs systemd without it), n/a (no systemd), null (not reported).
      *
-     * @return array{kvm: bool, dev_kvm: bool, cpu: string, module: string}|null
+     * @return array{kvm: bool, dev_kvm: bool, cpu: string, module: string, shm_mb: ?int, dbus: ?string}|null
      */
     public static function parseKvmProbeLine(string $line): ?array
     {
@@ -241,7 +254,73 @@ trait KataKvmProbeTrait
             'dev_kvm' => $fields['dev_kvm'] === 'yes',
             'cpu' => preg_replace('/[^a-z]/', '', $fields['cpu'] ?? '') ?: 'none',
             'module' => preg_replace('/[^a-z_]/', '', $fields['module'] ?? '') ?: 'none',
+            'shm_mb' => ctype_digit($fields['shm_mb'] ?? '') ? (int) $fields['shm_mb'] : null,
+            'dbus' => in_array($fields['dbus'] ?? null, ['yes', 'missing', 'n/a'], true) ? $fields['dbus'] : null,
         ];
+    }
+
+    /**
+     * Whether runtime-rs hypervisors (KataRuntime::NEEDS_SYSTEM_DBUS) can reach systemd over D-Bus
+     * on the Kata target nodes that can run VMs: ok (a node has it, or runs no systemd), missing
+     * (every node with a known result runs systemd without the D-Bus system bus), unknown.
+     *
+     * @param  list<array>  $nodes  items of a v1 NodeList
+     * @return array{state: string, nodes: list<string>}
+     */
+    public static function systemDbusSummary(array $nodes): array
+    {
+        $known = [];
+        foreach (self::kataTargetNodes($nodes) as $node) {
+            $probe = (string) ($node['metadata']['annotations'][KataRuntime::KVM_PROBE_ANNOTATION] ?? '');
+            if (self::nodeKvm($node) !== false && preg_match('/(?:^|\s)dbus=(yes|missing|n\/a)(?:\s|$)/', $probe, $m)) {
+                $known[(string) ($node['metadata']['name'] ?? '?')] = $m[1];
+            }
+        }
+
+        $missing = array_keys(array_filter($known, fn ($v) => $v === 'missing'));
+        $state = match (true) {
+            $known === [] => 'unknown',
+            count($missing) === count($known) => 'missing',
+            default => 'ok',
+        };
+
+        return ['state' => $state, 'nodes' => $missing];
+    }
+
+    /** The node's /dev/shm in MiB as RunR's check recorded it (KVM_PROBE_ANNOTATION); null when not known. */
+    public static function nodeShmMb(array $node): ?int
+    {
+        $probe = (string) ($node['metadata']['annotations'][KataRuntime::KVM_PROBE_ANNOTATION] ?? '');
+
+        return preg_match('/(?:^|\s)shm_mb=(\d+)(?:\s|$)/', $probe, $m) ? (int) $m[1] : null;
+    }
+
+    /**
+     * Whether QEMU guests fit in the /dev/shm of the Kata target nodes that can run VMs
+     * (KataRuntime::QEMU_MIN_SHM_MB): ok (a node has enough), small (every node with a known size
+     * has too little — QEMU cannot run), unknown (no size known: not checked yet, or by a release
+     * without the check).
+     *
+     * @param  list<array>  $nodes  items of a v1 NodeList
+     * @return array{state: string, nodes: array<string, int>}
+     */
+    public static function qemuShmSummary(array $nodes): array
+    {
+        $sizes = [];
+        foreach (self::kataTargetNodes($nodes) as $node) {
+            $shm = self::nodeShmMb($node);
+            if ($shm !== null && self::nodeKvm($node) !== false) {
+                $sizes[(string) ($node['metadata']['name'] ?? '?')] = $shm;
+            }
+        }
+
+        $state = match (true) {
+            $sizes === [] => 'unknown',
+            max($sizes) >= KataRuntime::QEMU_MIN_SHM_MB => 'ok',
+            default => 'small',
+        };
+
+        return ['state' => $state, 'nodes' => $sizes];
     }
 
     /**
@@ -284,13 +363,20 @@ trait KataKvmProbeTrait
                                 'readOnlyRootFilesystem' => true,
                                 'capabilities' => ['drop' => ['ALL']],
                             ],
-                            'volumeMounts' => [['name' => 'host-dev', 'mountPath' => '/host-dev', 'readOnly' => true]],
+                            'volumeMounts' => [
+                                ['name' => 'host-dev', 'mountPath' => '/host-dev', 'readOnly' => true],
+                                ['name' => 'host-run', 'mountPath' => '/host-run', 'readOnly' => true],
+                            ],
                             'resources' => [
                                 'requests' => ['cpu' => '10m', 'memory' => '8Mi'],
                                 'limits' => ['cpu' => '50m', 'memory' => '16Mi'],
                             ],
                         ]],
-                        'volumes' => [['name' => 'host-dev', 'hostPath' => ['path' => '/dev', 'type' => 'Directory']]],
+                        'volumes' => [
+                            ['name' => 'host-dev', 'hostPath' => ['path' => '/dev', 'type' => 'Directory']],
+                            // read only: whether systemd runs and the D-Bus system bus socket exists
+                            ['name' => 'host-run', 'hostPath' => ['path' => '/run', 'type' => 'Directory']],
+                        ],
                     ],
                 ],
             ],
@@ -301,7 +387,8 @@ trait KataKvmProbeTrait
      * KVM needs the CPU's vmx / svm flag (absent on VMs without nested virtualization) and the
      * kernel side: the /dev/kvm device or a loaded kvm_intel / kvm_amd module. /dev/kvm alone does
      * not count (it can be a static device node without hardware support); the module counts where
-     * the host's SELinux policy hides the device from an unprivileged pod.
+     * the host's SELinux policy hides the device from an unprivileged pod. shm_mb: the size of the
+     * node's /dev/shm (the hostPath /dev carries its mounts), "?" when it cannot be read.
      */
     public static function kvmProbeScript(): string
     {
@@ -313,7 +400,10 @@ MOD=none
 if [ -d /sys/module/kvm_intel ]; then MOD=kvm_intel; elif [ -d /sys/module/kvm_amd ]; then MOD=kvm_amd; fi
 KVM=no
 if [ "$CPU" != none ] && { [ "$DEV" = yes ] || [ "$MOD" != none ]; }; then KVM=yes; fi
-echo "runr: kvm probe: kvm=$KVM dev_kvm=$DEV cpu=$CPU module=$MOD node=${NODE_NAME:-?}"
+SHM=$(df -Pk /host-dev/shm 2>/dev/null | awk 'NR == 2 { print int($2 / 1024) }')
+DBUS=n/a
+if [ -S /host-run/dbus/system_bus_socket ]; then DBUS=yes; elif [ -d /host-run/systemd/system ]; then DBUS=missing; fi
+echo "runr: kvm probe: kvm=$KVM dev_kvm=$DEV cpu=$CPU module=$MOD shm_mb=${SHM:-?} dbus=$DBUS node=${NODE_NAME:-?}"
 exec sleep infinity
 SH;
     }

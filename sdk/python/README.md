@@ -55,4 +55,26 @@ compensate. `async def` workflows get the same methods as coroutines.
 (`send_many(events)` for several); without arguments it reads `RUNR_API_URL`, `RUNR_API_TOKEN`
 and, on multi-tenant installations, `RUNR_TENANT_ID` (sent as `X-Tenant-ID`).
 
+## Publishing to topics
+
+A [topic](../../docs/triggers.md#topics) delivers each event to every project with a topic
+trigger on it. Any function (not only workflows) publishes with `publish`:
+
+```python
+from runr_workflows import publish, PublishError
+
+result = publish("orders", {"order_id": "o-1"}, type="order.created", subject="o-1")  # {"id", "stream_id"}
+publish("logs", "plain text", content_type="text/plain")  # a str or bytes, sent as is
+```
+
+`publish(topic, data, *, type=None, subject=None, id=None, content_type=None)` POSTs to
+`{RUNR_TOPICS_URL}/v1/topics/{topic}/events` with `Authorization: Bearer {RUNR_TOPICS_TOKEN}`;
+RunR sets both for functions in a region where the organization has a topic. Data is sent as
+JSON; with `content_type` a `str` (UTF-8) or bytes go as is. `type`, `subject` and `id` become
+the CloudEvents headers `ce-type`, `ce-subject` and `ce-id`. It returns `{"id", "stream_id"}`
+and raises `PublishError` (`status`, `body`, `topic`) on an answer that is not 2xx: 401 a bad
+token, 403 a topic the token does not allow, 413 an event that is too large (256 KiB by
+default). `Topics(url, token, timeout=10.0)` takes the settings explicitly. Only the standard
+library is used (`urllib`).
+
 Tests: `pip install -e .[test] && pytest`

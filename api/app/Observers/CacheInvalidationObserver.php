@@ -4,6 +4,7 @@ namespace App\Observers;
 
 use App\Models\ContainerConfig;
 use App\Models\Deployment;
+use App\Models\DeploymentRollout;
 use App\Models\ExecutorImage;
 use App\Models\FaasConfig;
 use App\Models\KnativeRegion;
@@ -53,7 +54,8 @@ class CacheInvalidationObserver
                 'projects',
                 CacheVersionService::projectScope((string) $model->project_id),
             ],
-            $model instanceof Deployment => [
+            $model instanceof Deployment,
+            $model instanceof DeploymentRollout => [
                 'projects',
                 CacheVersionService::projectScope((string) $model->project_id),
             ],

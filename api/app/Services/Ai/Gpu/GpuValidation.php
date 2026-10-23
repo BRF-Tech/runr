@@ -4,6 +4,8 @@ namespace App\Services\Ai\Gpu;
 
 use App\Models\KnativeRegion;
 use App\Models\Project;
+use App\Services\GlobalProjects\GlobalProjectRegions;
+use App\Support\Projects\ScaleSchedule;
 use Illuminate\Validation\Validator;
 
 /**
@@ -54,23 +56,46 @@ final class GpuValidation
             return;
         }
 
-        $request = $requested ?? ($runtimeGpu ? new GpuRequest($runtimeGpu['count'], null, null, $runtimeGpu['resource']) : null);
-        if (! $request) {
-            return;
-        }
-
-        foreach (app(GpuPolicy::class)->problems($region, $serviceType, $request) as $problem) {
+        foreach (self::regionProblems($region, $serviceType, $runtime, $runtimeVersion, $config, $excludeProjectId) as $problem) {
             $validator->errors()->add($attribute, $problem);
         }
-        if ($validator->errors()->isNotEmpty()) {
-            return;
+    }
+
+    /**
+     * Whether $region admits the GPUs of a project (GPU nodes, product, memory, sandbox — GpuPolicy —
+     * and the organization's GPU quota there): the problems, empty when it does or when the project
+     * asks for none. A request on a runtime version without GPUs is check()'s error, not one here.
+     * A global project asks every one of its regions (docs/global-projects.md).
+     *
+     * @return list<string>
+     */
+    public static function regionProblems(KnativeRegion $region, string $serviceType, ?string $runtime, ?string $runtimeVersion, array $config, ?string $excludeProjectId = null): array
+    {
+        if (! in_array($serviceType, Project::SERVICE_TYPES, true)) {
+            return [];
         }
 
-        $gpus = $request->count * max(1, (int) ($config['min_scale'] ?? 0));
-        $quota = app(GpuQuota::class)->check($region, $gpus, $excludeProjectId);
-        if (! $quota['allowed']) {
-            $validator->errors()->add($attribute, $quota['message']);
+        $requested = GpuRequest::fromArray($config['gpu'] ?? null);
+        $runtimeGpu = $serviceType === 'caas' ? null : GpuRequest::runtimeGpu($runtime, $runtimeVersion);
+        if ($requested && $serviceType !== 'caas' && ! $runtimeGpu) {
+            return [];
         }
+
+        $request = $requested ?? ($runtimeGpu ? new GpuRequest($runtimeGpu['count'], null, null, $runtimeGpu['resource']) : null);
+        if (! $request) {
+            return [];
+        }
+
+        $problems = app(GpuPolicy::class)->problems($region, $serviceType, $request);
+        if ($problems !== []) {
+            return $problems;
+        }
+
+        // A timed warmer holds GPUs for its peak (ScaleSchedule::reservedMinScale)
+        $gpus = $request->count * max(1, ScaleSchedule::reservedMinScale($config));
+        $quota = app(GpuQuota::class)->check($region, $gpus, $excludeProjectId);
+
+        return $quota['allowed'] ? [] : [(string) $quota['message']];
     }
 
     /**
@@ -81,7 +106,22 @@ final class GpuValidation
      */
     public static function deployProblems(Project $project, array $deployConfig = []): array
     {
-        $region = $project->knativeRegion;
+        // A global project runs a copy in every region: each one admits its GPUs
+        $problems = [];
+        foreach (GlobalProjectRegions::of($project, false) as $region) {
+            array_push($problems, ...self::deployProblemsIn($project, $region, $deployConfig));
+        }
+
+        return array_values(array_unique($problems));
+    }
+
+    /**
+     * deployProblems() of one region.
+     *
+     * @return list<string>
+     */
+    private static function deployProblemsIn(Project $project, ?KnativeRegion $region, array $deployConfig): array
+    {
         $config = match ($project->service_type) {
             'xaas' => $project->xaasConfig,
             'faas' => $project->faasConfig,
@@ -98,7 +138,9 @@ final class GpuValidation
             return $problems;
         }
 
-        $minScale = (int) ($deployConfig['min_scale'] ?? $config->min_scale ?? 0);
+        $minScale = ScaleSchedule::rows($config) !== null
+            ? ScaleSchedule::reservedMinScale($config)
+            : (int) ($deployConfig['min_scale'] ?? $config->min_scale ?? 0);
         $quota = app(GpuQuota::class)->check($region, $request->count * max(1, $minScale), $project->id);
 
         return $quota['allowed'] ? [] : [$quota['message']];

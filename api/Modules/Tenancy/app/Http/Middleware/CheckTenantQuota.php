@@ -114,6 +114,8 @@ class CheckTenantQuota
             'trigger_type' => $request->input('config.trigger_type') ?? $config->trigger_type,
             'min_scale' => $pick('min_scale'),
             'scale_to_zero' => $pick('scale_to_zero'),
+            // A timed warmer reserves its peak (ScaleSchedule::reservedMinScale); null / [] turns it off
+            'scale_schedule' => $request->has('config.scale_schedule') ? $request->input('config.scale_schedule') : $config->scale_schedule,
         ], $project->service_type, $region);
 
         if ($region->id === $project->knative_region_id

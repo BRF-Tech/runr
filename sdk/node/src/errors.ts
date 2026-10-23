@@ -33,6 +33,18 @@ export class StepError extends Error {
   }
 }
 
+/** The topic publisher refused an event (401 bad token, 403 topic not allowed, 413 too large, …). */
+export class PublishError extends Error {
+  constructor(
+    public readonly topic: string,
+    public readonly status: number,
+    public readonly body: string,
+  ) {
+    super(`publishing to topic ${topic} failed: HTTP ${status}${body ? `: ${body.slice(0, 500)}` : ''}`)
+    this.name = 'PublishError'
+  }
+}
+
 /** The request was not signed by the RunR engine. */
 export class SignatureError extends Error {
   constructor(message = 'invalid signature') {

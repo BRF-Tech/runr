@@ -7,15 +7,25 @@ use App\Models\Version;
 use App\Services\Ai\WorkloadAiSpec;
 use App\Services\Bindings\BindingEnv;
 use App\Services\Contracts\KnativeConstants;
+use App\Services\Environments\EnvironmentManifests;
+use App\Services\InternalNetwork\InternalNetwork;
+use App\Services\InternalNetwork\InternalNetworkService;
 use App\Services\Manifests\ContainerManifests;
 use App\Services\Manifests\KnativeManifests;
 use App\Services\Observability\ObservabilityPodSpec;
+use App\Services\Runtimes\Patches\ResolvedRuntimeImage;
 use App\Services\Runtimes\RuntimeContainerSpec;
 use App\Services\Skupper\SkupperManifests;
+use App\Support\OrgTimezone;
+use App\Support\Projects\ScaleSchedule;
+use App\Triggers\ProjectTriggers;
+use App\Triggers\ScheduleTimezones;
+use App\Triggers\TriggerPlan;
+use App\Triggers\Types\ScheduleTrigger;
 
 /**
- * Builds Kubernetes manifests (ConfigMap, Knative Service, CronJob)
- * for project deployment.
+ * Builds Kubernetes manifests (ConfigMap, Knative Service or CronJob, event gateway) for project
+ * deployment — what the project's enabled triggers need (App\Triggers\TriggerPlan).
  *
  * Requires the consuming class to provide:
  *  - getConfig(Project): object
@@ -39,37 +49,42 @@ trait KnativeManifestTrait
      *
      * @return array<int, array> List of K8s resource manifests
      */
-    public function buildManifests(Project $project, Version $version, array $deployConfig = []): array
+    /**
+     * @param  ResolvedRuntimeImage|null  $runtimeImage  the runtime image the deployment runs
+     *                                                   (RuntimePatches::forDeployment()); null: resolved for the workload
+     */
+    public function buildManifests(Project $project, Version $version, array $deployConfig = [], ?ResolvedRuntimeImage $runtimeImage = null): array
     {
         $manifests = [];
-        $triggerType = $this->getTriggerType($project);
+        // What the project's triggers deploy (docs/triggers.md): CronJob or Knative Service,
+        // public or cluster-local, with or without the event gateway
+        $plan = $this->triggerPlan($project);
         $namespace = $this->getNamespace($project->knativeRegion);
 
         if ($project->service_type !== 'caas' && ! $version->build_image) {
             $manifests[] = $this->buildConfigMap($project, $version, $namespace);
         }
 
-        // Secret env vars: the Secret the workload's secretKeyRef entries read (KnativeSecretEnvTrait)
-        if ($secretEnv = $this->buildSecretEnv($project, $namespace)) {
-            $manifests[] = $secretEnv;
-        }
+        // Secret env vars (KnativeSecretEnvTrait): the values are in the region already, the deploy
+        // applies what the secret backends need besides — an ExternalSecret and its SecretStores
+        array_push($manifests, ...$this->secretEnvManifests($project));
 
-        if ($triggerType === 'schedule') {
-            $manifests[] = $this->buildCronJob($project, $version, $namespace, $deployConfig);
+        if ($plan->cronJob()) {
+            $manifests[] = $this->buildCronJob($project, $version, $namespace, $deployConfig, $runtimeImage);
         } else {
-            $manifests[] = $this->buildKnativeService($project, $version, $namespace, $deployConfig);
+            $manifests[] = $this->buildKnativeService($project, $version, $namespace, $deployConfig, $runtimeImage);
         }
 
-        if ($triggerType === 'queue') {
-            $manifests[] = $this->buildQueueConsumerSecret($project, $namespace);
-            $manifests[] = $this->buildQueueConsumerDeployment($project, $namespace);
+        if ($plan->gateway()) {
+            array_push($manifests, ...$this->buildEventGateway($project, $namespace, $plan));
         } elseif ($this->workflowQueueBridgeEnabled($project)) {
             // Durable workflows: queue messages go to the engine (App\Workflows\Deploy\KnativeWorkflowTrait)
             $manifests[] = $this->buildWorkflowQueueBridgeSecret($project, $namespace);
             $manifests[] = $this->buildWorkflowQueueBridge($project, $namespace);
         }
 
-        return $manifests;
+        // An environment's workload (EnvironmentProject): its labels, no runr/project-id on its pods
+        return EnvironmentManifests::transform($manifests, $project);
     }
 
     private function buildConfigMap(Project $project, Version $version, string $namespace): array
@@ -83,15 +98,19 @@ trait KnativeManifestTrait
         );
     }
 
-    private function buildKnativeService(Project $project, Version $version, string $namespace, array $deployConfig = []): array
+    private function buildKnativeService(Project $project, Version $version, string $namespace, array $deployConfig = [], ?ResolvedRuntimeImage $runtimeImage = null): array
     {
         $region = $project->knativeRegion;
-        $container = $this->withPrivateConnectionEnv($this->withResourceOverrides($this->buildContainer($project, $version, 'http'), $project, $deployConfig), $project);
+        $container = $this->withPrivateConnectionEnv($this->withResourceOverrides($this->buildContainer($project, $version, 'http', $runtimeImage), $project, $deployConfig), $project);
         $container = $this->withSecretEnv($container, $project);
+        // Topics: the region's publisher URL and the project's publish token (docs/triggers.md)
+        $container = $this->withTopicsEnv($container, $project);
         // Durable workflows: signing key of a `workflow` trigger project (App\Workflows\Deploy\KnativeWorkflowTrait)
         $container = $this->withWorkflowEnv($container, $project);
         // Hosted MCP server: the gateway key (App\Mcp\Hosting\KnativeMcpServerTrait)
         $container = $this->withMcpGatewayEnv($container, $project);
+        // Internal network: RUNR_INTERNAL_TOKEN / RUNR_INTERNAL_NAME (KnativeSecretEnvTrait)
+        $container = $this->withInternalNetworkEnv($container, $project);
 
         $spec = [
             'timeoutSeconds' => (int) ($deployConfig['timeout_seconds'] ?? $this->getTimeout($project)),
@@ -125,17 +144,32 @@ trait KnativeManifestTrait
         }
 
         // Runtime plugin: contract env, run command / universal wrapper, sandbox + trigger checks
+        $plan = $this->triggerPlan($project);
         if ($project->service_type !== 'caas') {
-            $spec = app(RuntimeContainerSpec::class)->apply($spec, $project, $version, $this->getTriggerType($project), (int) $spec['timeoutSeconds']);
+            $spec = app(RuntimeContainerSpec::class)->apply($spec, $project, $version, $plan->runtimeTrigger(), (int) $spec['timeoutSeconds']);
         }
 
         // Tracing / replay capture when the project switched them on (docs/observability.md)
-        $spec = app(ObservabilityPodSpec::class)->apply($spec, $project, $version, $this->getTriggerType($project));
+        $spec = app(ObservabilityPodSpec::class)->apply($spec, $project, $version, $plan->runtimeTrigger());
 
         $config = $this->getConfig($project);
         $scaleToZero = $deployConfig['scale_to_zero'] ?? $config->scale_to_zero ?? true;
         $minScale = (int) ($deployConfig['min_scale'] ?? $config->min_scale ?? 0);
         $maxScale = (int) ($deployConfig['max_scale'] ?? $config->max_scale ?? 0);
+
+        // Timed warmer (docs/scaling.md#timed-warmer): the schedule replaces min_scale; the new
+        // revision starts with the value of this moment in the organization's zone, and the
+        // warmer moves it on its PodAutoscaler from then on (WarmScaleService). A deploy that
+        // sets scale_schedule (previews: null) overrides the project's
+        $schedule = array_key_exists('scale_schedule', $deployConfig)
+            ? ScaleSchedule::normalize($deployConfig['scale_schedule'])
+            : ScaleSchedule::rows($config);
+        if ($schedule !== null) {
+            $minScale = ScaleSchedule::valueAt($schedule, now(), OrgTimezone::get());
+            if ($maxScale > 0) {
+                $minScale = min($minScale, $maxScale);
+            }
+        }
 
         $annotations = [];
 
@@ -164,7 +198,7 @@ trait KnativeManifestTrait
             'labels' => [
                 'runr/project-id' => $project->id,
                 'runr/version' => (string) $version->number,
-            ],
+            ] + InternalNetwork::podLabels($project),
             'annotations' => $annotations,
         ];
 
@@ -173,10 +207,17 @@ trait KnativeManifestTrait
         // GPU scheduling (config.gpu, GPU runtime versions) and model bindings (docs/ai.md)
         $template = app(WorkloadAiSpec::class)->applyToTemplate($template, $project);
 
-        $labels = KnativeManifests::labels($project, $version);
-        $triggerType = $this->getTriggerType($project);
+        // The internal network: the service's policy for the authz (callers, organization)
+        $network = app(InternalNetworkService::class);
+        $networkMeta = $network->serviceMetadata($project);
+        $labels = array_merge(KnativeManifests::labels($project, $version), $networkMeta['labels']);
 
-        if ($triggerType === 'queue') {
+        // Only HTTP / workflow triggers are public; every other trigger reaches the function
+        // through the event gateway, inside the cluster. Access mode internal: no public route
+        // either (docs/internal-network.md). "Only through the gateway" (docs/api-product.md): the
+        // gateway route reaches the workload, its own URL does not — the project's own route for
+        // its workload, an environment's own route for the environment's (docs/environments.md)
+        if ($network->clusterLocal($project, $plan) || $project->gatewayRoute?->gateway_only) {
             $labels['networking.knative.dev/visibility'] = 'cluster-local';
         }
 
@@ -184,16 +225,18 @@ trait KnativeManifestTrait
             $this->serviceName($project),
             $namespace,
             $labels,
-            KnativeManifests::annotations($project),
+            array_merge(KnativeManifests::annotations($project), $networkMeta['annotations']),
             $template,
         );
     }
 
-    private function buildCronJob(Project $project, Version $version, string $namespace, array $deployConfig = []): array
+    private function buildCronJob(Project $project, Version $version, string $namespace, array $deployConfig = [], ?ResolvedRuntimeImage $runtimeImage = null): array
     {
         $region = $project->knativeRegion;
-        $container = $this->withPrivateConnectionEnv($this->withResourceOverrides($this->buildContainer($project, $version, 'schedule'), $project, $deployConfig), $project);
+        $container = $this->withPrivateConnectionEnv($this->withResourceOverrides($this->buildContainer($project, $version, 'schedule', $runtimeImage), $project, $deployConfig), $project);
         $container = $this->withSecretEnv($container, $project);
+        $container = $this->withInternalNetworkEnv($container, $project);
+        $container = $this->withTopicsEnv($container, $project);
         $schedule = $this->getSchedule($project);
 
         $podSpec = [
@@ -234,16 +277,37 @@ trait KnativeManifestTrait
         // GPU scheduling (config.gpu, GPU runtime versions) and model bindings (docs/ai.md)
         $podSpec = app(WorkloadAiSpec::class)->applyToPodSpec($podSpec, $project);
 
-        return KnativeManifests::cronJob(
+        // The schedule's time zone: its own, else the organization's (ScheduleTrigger); one that
+        // follows the organization is marked, so a change of that zone reaches it (ScheduleTimezones)
+        $annotations = KnativeManifests::annotations($project);
+        $trigger = $this->triggerPlan($project)->ofType('schedule')->first();
+        $timeZone = $trigger ? ScheduleTrigger::timezoneOf($trigger) : OrgTimezone::get();
+        if (! $trigger || ScheduleTrigger::followsOrganization($trigger)) {
+            $annotations[ScheduleTimezones::ANNOTATION] = ScheduleTrigger::FROM_ORGANIZATION;
+        }
+
+        $cronJob = KnativeManifests::cronJob(
             $this->cronJobName($project),
             $namespace,
             $schedule,
             KnativeManifests::labels($project, $version),
-            KnativeManifests::annotations($project),
+            $annotations,
             $podSpec,
             $project,
             $version,
+            $timeZone,
         );
+        // the runs' pods are their project's on the internal network (InternalNetwork)
+        $runLabels = &$cronJob['spec']['jobTemplate']['spec']['template']['metadata']['labels'];
+        $runLabels = (array) ($runLabels ?? []) + InternalNetwork::podLabels($project);
+
+        return $cronJob;
+    }
+
+    /** The project's trigger plan (App\Triggers\ProjectTriggers). */
+    private function triggerPlan(Project $project): TriggerPlan
+    {
+        return app(ProjectTriggers::class)->plan($project);
     }
 
     /**

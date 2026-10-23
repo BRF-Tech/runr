@@ -10,13 +10,15 @@ use Throwable;
 trait KnativeClusterTrait
 {
     /**
-     * Ensure a namespace exists.
+     * Ensure a namespace exists. Remembered per cluster for the process: a queue worker serves
+     * the jobs of every region, and a namespace created on one cluster is not on the next one.
      */
     private function ensureNamespace(KubernetesClient $k8s, string $name): void
     {
         static $ensured = [];
 
-        if (isset($ensured[$name])) {
+        $key = $k8s->server().'|'.$name;
+        if (isset($ensured[$key])) {
             return;
         }
 
@@ -29,7 +31,7 @@ trait KnativeClusterTrait
             ],
         ]);
 
-        $ensured[$name] = true;
+        $ensured[$key] = true;
     }
 
     /**

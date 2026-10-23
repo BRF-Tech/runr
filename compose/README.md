@@ -22,7 +22,7 @@ On a machine with internet access, check out the release you install and create 
 settings file `.env`:
 
 ```bash
-git clone --branch v0.5.10 https://github.com/BRF-Tech/runr.git
+git clone --branch v0.6.0 https://github.com/BRF-Tech/runr.git
 cd runr
 cp compose/.env.example compose/.env
 ```
@@ -116,7 +116,7 @@ The first administrator account (step 5):
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `ADMIN_USERNAME` | User name | `admin` |
+| `ADMIN_USERNAME` | User name, without `@` (the account signs in with it or with `ADMIN_EMAIL`) | `admin` |
 | `ADMIN_EMAIL` | E-mail address | `admin@example.com` |
 | `ADMIN_PASSWORD` | Password; empty: the migrator generates one and prints it once | empty |
 
@@ -188,7 +188,8 @@ All services should be `running (healthy)`.
 ## 6. Access
 
 Open `APP_URL` in a browser — with the example above `http://10.0.0.10` — and sign in with the
-administrator account.
+administrator account: its user name (`ADMIN_USERNAME`) or e-mail address (`ADMIN_EMAIL`) in the
+**E-mail or user name** field, and its password.
 
 ---
 
@@ -394,6 +395,18 @@ docker compose down -v         # stop + delete volumes (WARNING!)
    ```bash
    docker compose exec api php artisan region:reconcile
    ```
+   Exit code 0: every region is at the new release; 1: a step failed or still waits, 4: a region's
+   cluster did not answer — the output names them, run the command again once they are fixed (it
+   continues where it stopped). The console shows the result in the region's status (General tab)
+   and `/api/version` in `region_reconcile`.
+6. Move the values of project secret variables that are still in the database into their regions
+   (from 0.6.0 on; idempotent and resumable, `--dry-run` lists them). Once the new release is
+   confirmed, finalize the move, after which 0.5.10 must not be started again
+   ([upgrade notes](../docs/upgrade.md#project-secrets-move-into-the-regions)):
+   ```bash
+   docker compose exec api php artisan secrets:move-to-region
+   docker compose exec api php artisan secrets:move-to-region --finalize
+   ```
 
 ### Upgrading from 0.4.x
 
@@ -425,4 +438,4 @@ settings.
 | 502 Bad Gateway | The API container is still starting; wait 30 s or check the logs |
 | Port conflict | Change `PORT` in `.env` |
 | A module's pages are missing in the console | The UI was built with other module toggles: build and load the images again (step 2) |
-| The migrator prints no administrator password | An administrator already exists, or `ADMIN_EMAIL` belongs to another account (the migrator says which) |
+| The migrator prints no administrator password | An administrator already exists, `ADMIN_EMAIL` belongs to another account (in any letter case) or `ADMIN_USERNAME` contains `@` (the migrator says which) |

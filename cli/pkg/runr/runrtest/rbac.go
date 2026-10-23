@@ -18,13 +18,17 @@ var Catalog = []string{
 	"regions.data_services.manage", "regions.gpu.manage", "regions.manage", "regions.supply_chain.manage",
 	"regions.view", "registry.manage", "roles.manage", "runtimes.manage", "runtimes.use_custom",
 	"sandbox.manage", "secrets.view_values", "security.override_policy", "security.view",
-	"settings.manage", "shell.exec", "sso.manage", "tokens.manage", "workflows.manage",
+	"settings.manage", "shell.exec", "sso.manage", "tokens.manage", "topics.manage", "workflows.manage",
 	"workflows.run", "workflows.view",
 	"git.manage", "git.pull", "git.push", "git_providers.manage", "previews.manage",
 	"alerts.manage", "replay.manage", "status_page.manage", "traces.view", "uptime.manage",
 	"sandboxes.create", "sandboxes.exec", "sandboxes.manage", "sandboxes.view",
 	"mcp.servers.call", "mcp.servers.manage",
 	"regions.observability.manage",
+	"network.manage",
+	"secret_stores.manage", "secret_stores.view",
+	"api_products.manage",
+	"org.transfer",
 }
 
 // implies lists what a permission includes (permissions.php "implies").
@@ -35,7 +39,8 @@ var implies = map[string][]string{
 	"env.view":  {"projects.view"}, "env.edit": {"env.view", "projects.view"},
 	"secrets.view_values": {"env.view"},
 	"domains.manage":      {"projects.view"}, "connections.manage": {"projects.view"},
-	"shell.exec": {"projects.view"}, "logs.view": {"projects.view"}, "metrics.view": {"projects.view"},
+	"network.manage": {"projects.view"},
+	"shell.exec":     {"projects.view"}, "logs.view": {"projects.view"}, "metrics.view": {"projects.view"},
 	"workflows.view": {"projects.view"}, "workflows.run": {"workflows.view"}, "workflows.manage": {"workflows.view"},
 	"security.view": {"projects.view"}, "security.override_policy": {"security.view", "projects.deploy"},
 	"regions.manage": {"regions.view"}, "sandbox.manage": {"regions.view"}, "registry.manage": {"regions.view"},
@@ -54,6 +59,7 @@ var implies = map[string][]string{
 	"sandboxes.manage": {"sandboxes.view"},
 	"mcp.servers.call": {"projects.view"}, "mcp.servers.manage": {"projects.view"},
 	"regions.observability.manage": {"regions.view"},
+	"secret_stores.manage":         {"secret_stores.view"},
 }
 
 func expand(perms []string) []string {

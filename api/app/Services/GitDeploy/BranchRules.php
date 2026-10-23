@@ -4,11 +4,14 @@ namespace App\Services\GitDeploy;
 
 use App\Models\Git\ProjectGitSettings;
 use App\Models\Project;
+use App\Models\ProjectEnvironment;
 use App\Services\GitDeploy\Providers\GitEvent;
 
 /**
  * What a provider event does to a project:
  *  - push to the deploy branch                       → production (import + deploy)
+ *  - push to a branch mapped to an environment       → production's path, into that environment
+ *                                                      (GitDeployService, docs/environments.md#git-branches)
  *  - push to another branch, branch deletion         → nothing (a request from that branch gets a preview)
  *  - pull/merge request opened, reopened, new commits → preview, when previews are on
  *  - pull/merge request closed or merged             → preview (delete), whatever the setting
@@ -27,7 +30,11 @@ final class BranchRules
         $settings = ProjectGitSettings::for($project);
 
         if ($event->isPush()) {
-            return ! $event->deleted && $event->after && $event->branch === $settings->deploy_branch
+            if ($event->deleted || ! $event->after) {
+                return self::IGNORE;
+            }
+
+            return $event->branch === $settings->deploy_branch || self::mapsToEnvironment($project, (string) $event->branch)
                 ? self::PRODUCTION
                 : self::IGNORE;
         }
@@ -42,5 +49,16 @@ final class BranchRules
         }
 
         return self::IGNORE;
+    }
+
+    /** Whether a push to $branch deploys one of the project's environments. */
+    private static function mapsToEnvironment(Project $project, string $branch): bool
+    {
+        return $branch !== '' && ProjectEnvironment::tablesReady() && ProjectEnvironment::query()
+            ->where('project_id', $project->id)
+            ->where('is_primary', false)
+            ->where('git_branch', $branch)
+            ->where('auto_deploy', true)
+            ->exists();
     }
 }

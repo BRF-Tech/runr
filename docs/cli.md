@@ -32,6 +32,8 @@ runr deploy       # https://hello.<region>.<domain>
 - [Data residency: runr residency](#data-residency-runr-residency)
 - [Access control: members, roles, groups](#access-control-members-roles-groups)
 - [Audit log: runr audit](#audit-log-runr-audit)
+- [API gateways: runr gateway](#api-gateways-runr-gateway)
+- [Organization export and import: runr org](#organization-export-and-import-runr-org)
 - [Regions](#regions)
 - [Output, errors and exit codes](#output-errors-and-exit-codes)
 - [CI/CD](#cicd)
@@ -46,7 +48,7 @@ installs `runr` into `/usr/local/bin` when that is writable, else into `~/.local
 
 ```sh
 curl -fsSL https://runr.sh/install.sh | sh
-curl -fsSL https://runr.sh/install.sh | RUNR_VERSION=v0.5.10 sh             # a specific release
+curl -fsSL https://runr.sh/install.sh | RUNR_VERSION=v0.6.0 sh             # a specific release
 curl -fsSL https://runr.sh/install.sh | RUNR_INSTALL_DIR="$HOME/bin" sh    # another directory
 ```
 
@@ -87,13 +89,15 @@ Shell completion: `runr completion bash|zsh|fish|powershell`, e.g.
 runr login https://runr.example.com            # prompts for an API token
 echo "$TOKEN" | runr login https://runr.example.com --token-stdin
 runr login https://runr.example.com --with-password --username ada
-runr login https://runr.example.com --with-password --username ada --token-ttl 30d
+runr login https://runr.example.com --with-password --username ada@example.com --token-ttl 30d
 ```
 
-- **API token** (default): create one in the console (Settings → API Tokens) or with
+- **API token** (default): create one in the console (Administration → API Tokens) or with
   `runr tokens create`, then paste it at the prompt, pipe it with `--token-stdin` or set
   `RUNR_TOKEN`.
-- **Username and password** (`--with-password`): the CLI signs in with `--username` and the
+- **User name or e-mail address and password** (`--with-password`): the CLI signs in with
+  `--username` — the account's user name or e-mail address, in any letter case
+  ([Password sign-in](security.md#password-sign-in)) — and the
   password from a hidden prompt or `--password-stdin` (asking for a two-factor code when the
   account has one, or taking `--otp`), creates an API token named `runr-cli@<host>` (or
   `--token-name`) for this machine and ends the sign-in session. The token expires after 90 days:
@@ -156,9 +160,20 @@ runr tokens rm 42
 Other commands need: `runr logs` → `logs.view`; `runr env set|unset` → `env.edit` (or
 `projects.update`) and `projects.deploy` for the redeploy (or `--no-deploy`); `runr scale` →
 `projects.update` and `projects.deploy`; `runr domains add|verify|tls|rm` → `domains.manage`;
-`runr projects delete` → `projects.delete`; `runr tokens …` → `tokens.manage`. Reading
-(`projects ls|get`, `status`, `versions ls`) needs `projects.view`, `regions ls` needs
-`regions.view`. `runr env ls --reveal` needs `secrets.view_values`. The command groups for git
+`runr network set` and `runr network callers add|rm` → `network.manage`;
+`runr projects delete` → `projects.delete`; `runr projects patch apply|pin|unpin` →
+`projects.deploy`; `runr strategy set|reset` → `projects.update`; `runr rollout
+promote|abort|rollback` → `projects.deploy`; `runr projects global set|failover` →
+`projects.update`, `runr projects global sync` → `projects.deploy`; `runr tokens …` → `tokens.manage`;
+`runr environments create|update|delete` → `environments.manage` (`--env` also `env.edit`),
+`runr environments secrets` → `env.view` / `env.edit`, `runr promote` → `environments.promote`,
+`runr approvals approve|reject` → `environments.approve`. Reading (`projects ls|get|patches`, `status`,
+`versions ls`, `environments ls|show`, `strategy [show]`, `rollout [status]`, `projects global
+[show]`) needs `projects.view`, `regions ls` needs
+`regions.view`. `runr env ls --reveal` needs `secrets.view_values`, `runr env ref` `env.edit` and
+`secret_stores.view`, `runr env sync` `env.edit`, `runr secret-stores ls|trust`
+`secret_stores.view`, `runr regions openbao [status]` `regions.view` and its `install`,
+`uninstall` and `default` `regions.manage`. The command groups for git
 deploy, runtimes, images, workflows, bindings, models, sandboxes, observability, AI agents, the
 supply chain, access control and the audit log name the permissions they need at the end of
 their sections below.
@@ -212,7 +227,12 @@ type: faas                # faas | xaas | caas
 runtime: python           # faas/xaas: python, nodejs, go, php, tensorflow, pytorch, wasm-*, a runtime plugin
 runtime_version: "3.13"   # optional; default: the platform's default version
 region: eu-1              # region name or id; optional when one region is available
+                          # (a global project: its primary, default the first of global.regions)
 description: Order intake
+
+# global:                 # a global project (docs/global-projects.md): every region below,
+#   regions: [eu-1, us-1] # behind <slug>.<global zone>; schedules, queues, events run in the primary
+#   mode: ha              # ha (default) | proximity
 
 handler: main.handler     # faas: file.function (main.handler → main.py, def handler)
                           # xaas: the function name (default handler)
@@ -232,14 +252,40 @@ scale:
   min: 0                  # 0-10
   max: 10                 # 1-1000
   to_zero: true           # scale to zero instances when idle
+  schedule:               # timed warmer (optional): replaces min while set; [] turns it off
+    - cron: "0 9 * * 1-5" #   from 09:00 on weekdays (organization time zone) …
+      min: 3              #   … at least 3 containers stay warm
+    - cron: "0 18 * * 1-5"
+      min: 0
 
 trigger:
   type: http              # http (default) | schedule | queue
-  # schedule: "*/5 * * * *"  # schedule: five-field cron expression
+  # schedule: "*/5 * * * *"  # schedule: five-field cron expression or @hourly, @daily, …
   # queue: orders            # queue: Redis stream name (the region needs Redis)
+
+# triggers:               # the whole trigger list instead of trigger: (see Triggers and topics)
+#   - type: http
+#   - type: webhook
+#     name: github
+#     verify: github      # the signing secret lives in RunR (runr triggers add/update … --secret-stdin)
+#   - type: schedule
+#     name: nightly
+#     cron: "0 3 * * *"
+#     delivery:
+#       max_retries: 2
 
 env:                      # non-secret variables (secrets: runr env set --secret)
   LOG_LEVEL: info
+
+network:                  # docs/internal-network.md
+  access: public          # public | allowlist | internal
+  # allow_cidrs: [203.0.113.0/24]   # allowlist: the addresses the public URL answers
+  callers: [checkout]     # projects allowed to call it (another organization's: billing.globex)
+
+deploy:                   # deploy strategy (http / workflow functions); default direct
+  strategy: canary        # direct | blue-green | canary
+  canary: { steps: [10, 50, 100], interval_minutes: 5, error_rate_threshold: 5, p95_threshold_ms: 800 }
+  # blue_green: { auto_promote: true, health_path: /healthz, health_checks: 3, keep_previous_minutes: 15 }
 
 ignore: ["*.md", "tests"] # extra files that are not uploaded
 
@@ -255,15 +301,20 @@ dev:                      # runr dev
 | `type` | all | (required) | `faas`, `xaas`, `caas`; fixed after creation. |
 | `runtime` | faas, xaas | (required) | Fixed after creation. `runr runtimes ls` lists the platform's runtimes: the built-in ones and [runtime plugins](runtimes.md). |
 | `runtime_version` | faas, xaas | platform default | |
-| `region` | all | the only active region | Changing it moves the project. |
+| `region` | all | the only active region | Changing it moves the project. In a global project the primary region (default: the first of `global.regions`). |
+| `global.regions`, `.mode` | all | | A [global project](global-projects.md): 2 to 8 distinct regions (names or ids) with `region` among them; `mode` `ha` (default) or `proximity`. Created as such by the first deploy; a later deploy applies a changed list, primary or mode (`runr deploy --global-regions`, `--global-mode` override them). |
 | `description` | all | | |
 | `handler` | faas, xaas | `main.handler` / `handler` | |
 | `file` | xaas | `main.<ext>` | |
 | `image`, `command`, `args`, `ports` | caas | | `image` is required when the project is created. |
 | `resources.cpu`, `.memory_mb`, `.timeout_seconds` | all | platform defaults | Checked against the region's capacity. |
 | `scale.min`, `.max`, `.to_zero` | all | platform defaults | |
-| `trigger.type`, `.schedule`, `.queue` | all | `http` | `http`, `schedule` or `queue`; one trigger per project. The `workflow` trigger of [durable workflows](workflows.md) is set in the console or through the API. |
+| `scale.schedule` | all | none | The timed warmer: at most 10 rows of `cron` (five fields, in the organization's time zone, default Europe/Istanbul) and `min` (0-10, at most `scale.max`). From the moment a row's expression fires, at least `min` containers stay warm until the next row fires. While set it replaces `scale.min`. `[]` turns it off; left out, the project's schedule stays. |
+| `trigger.type`, `.schedule`, `.queue` | all | `http` | `http`, `schedule` or `queue`: a project with one trigger. `schedule` is a five-field cron expression or `@hourly`, `@daily`, `@weekly`, `@monthly`, `@yearly`. The `workflow` trigger of [durable workflows](workflows.md) is set in the console, through the API or with `triggers:`. |
+| `triggers[]` | all | | The whole [trigger list](#triggers-in-runryaml) (`type`, `name`, `enabled`, `delivery`, every other key is config — a schedule's `timezone` too); with `trigger:` as well, `triggers:` is used and `trigger:` ignored with a warning. |
 | `env` | all | | Merged into the project's variables: listed keys are set, others stay. |
+| `network.access`, `.allow_cidrs`, `.callers` | all | `public`, no callers | The [access mode and allow list](internal-network.md). `callers` replaces the allow list (a project name, or `<project>.<organization>` for another organization's); left out, the list stays. Needs `network.manage`. |
+| `deploy.strategy`, `deploy.blue_green.*` (or `blue-green`), `deploy.canary.*` | all with an `http` or `workflow` trigger | `direct` | The [deploy strategy](deploy-strategies.md) (`direct`, `blue-green`, `canary`) and its options: `blue_green.auto_promote`, `.health_path` (`null` or `""`: readiness alone), `.health_checks` (1–20), `.keep_previous_minutes` (0–1440); `canary.steps` (1–10 strictly increasing percentages of 1–100), `.interval_minutes` (1–1440), `.error_rate_threshold` (0–100 %), `.p95_threshold_ms` (1–600000; a threshold set to `null` is not checked). Only the keys written change, the options of the other strategy stay. Saved apart from the config: it creates no version. |
 | `ignore` | faas | | Glob patterns; see below. |
 | `dev.port`, `dev.env` | faas, xaas, caas | `8080` | Local only. |
 
@@ -295,6 +346,7 @@ runr deploy                         # project of ./runr.yaml
 runr deploy ./services/api -m "fix: timeout"
 runr deploy --project web --image ghcr.io/acme/web:1.4.3
 runr deploy --version v7            # deploy a saved version again
+runr deploy --env staging           # to the staging environment (runr environments)
 runr deploy --no-wait --output-env "$GITHUB_OUTPUT"
 ```
 
@@ -303,12 +355,15 @@ runr deploy --no-wait --output-env "$GITHUB_OUTPUT"
 1. finds the project by name (or `--project`); if it does not exist, creates it from
    `runr.yaml` in its region;
 2. applies config changes of `runr.yaml` (resources, scale, trigger, env, handler, image, …)
-   — only fields that differ are sent, as one new version;
+   — only fields that differ are sent, as one new version; a `triggers:` list replaces the
+   project's trigger list ([Triggers in runr.yaml](#triggers-in-runryaml));
 3. saves the code as a new version (unchanged code reuses the latest version); caas projects
    deploy their latest version, `--image` writes a new image first;
 4. waits for the build when the runtime compiles (Go) or dependencies are installed;
 5. deploys the version and waits until it is ready (`--no-wait` returns at once,
-   `--timeout` bounds the wait, default 10 minutes);
+   `--timeout` bounds the wait, default 10 minutes) — with a blue-green or canary
+   [deploy strategy](#deploy-strategies) until the new revision is ready next to the one that
+   serves, then it prints the rollout;
 6. prints the URL (HTTP trigger).
 
 The type and runtime of an existing project cannot change; `runr deploy` refuses a
@@ -319,16 +374,84 @@ Related commands:
 ```sh
 runr status                 # project, live deployment, URL
 runr versions ls            # * marks the deployed version
-runr rollback v6            # deploy an earlier version
+runr rollback v6            # an earlier version with the config it ran with
+runr rollback v6 --keep-config      # the earlier code with the config of now
 runr logs -f                # follow the live deployment's logs
 runr shell                  # a shell in a pod of the live deployment
 runr open                   # open the URL (--print prints it)
 runr scale --min 1 --max 20 # change the scale range and redeploy
+runr scale --warm "0 9 * * 1-5=3" --warm "0 18 * * 1-5=0"   # timed warmer
+runr scale --no-warm        # timed warmer off
 ```
 
-`runr rollback` runs the earlier version's code with the current config (variables,
-resources, scale). For caas projects the image is part of the config, so rollback writes the
-version's image, command and arguments back as a new version and deploys that.
+`runr scale --warm "<cron>=<count>"` (repeatable) sets the timed warmer: from the moment a row's
+five-field cron expression fires — in the organization's time zone, set in the console under
+Settings (default Europe/Istanbul) — at least `<count>` containers stay warm until the next row
+fires. The rows replace the whole schedule; `--no-warm` turns it off. While a schedule is set it
+replaces `--min`; `--max` still applies, and a count above it is refused. A schedule change alone
+is not redeployed: RunR sets the warm containers of the running revision within a minute.
+`runr projects get` shows the schedule and how many containers the warmer keeps warm now.
+
+### Deploy strategies
+
+A project can roll its deploys out [blue-green or canary](deploy-strategies.md) instead of
+replacing what serves at once (HTTP and workflow functions):
+
+```sh
+runr strategy                                   # show the settings (runr strategy show)
+runr strategy set blue-green --auto-promote --health-path /healthz --health-checks 3 --keep-previous 15m
+runr strategy set canary --steps 10,50,100 --interval 5m --max-error-rate 5 --max-p95 800ms
+runr strategy set direct                        # back to direct deploys (the options are kept)
+
+runr deploy                                     # opens a rollout: prints its test URL and traffic
+runr rollout                                    # where it stands (runr rollout status; -w follows it)
+runr rollout promote                            # all traffic to the new revision now
+runr rollout abort --reason "latency spike"     # drop the new revision, the traffic stays
+runr rollout rollback                           # after a promotion: back to the kept previous revision
+runr deploy --strategy direct                   # this deploy at once, whatever the project's strategy
+runr deploy --wait-rollout                      # follow the rollout until it is promoted (exit code 6 otherwise)
+
+runr strategy set canary --env staging --steps 25,100   # staging's own settings over the project's
+runr strategy show --env staging                # staging's settings: its own, or the project's
+runr strategy reset --env staging               # staging follows the project's settings again
+runr deploy --env staging                       # rolls out with staging's strategy
+runr rollout promote --env staging              # staging's rollout; production's is not touched
+```
+
+`runr strategy set` sends only the flags given (the strategy argument is optional):
+`--auto-promote`, `--health-path` (`off` clears it), `--health-checks`, `--keep-previous`
+(minutes or a duration), `--steps`, `--interval`, `--max-error-rate` (`off`), `--max-p95` (ms or
+a duration, `off`). The `deploy:` section of `runr.yaml` sets the same (see
+[runr.yaml](#runryaml)); `runr deploy` sends only what differs from the stored settings. Every
+`runr rollout` command takes `--deployment ID` for another rollout than the project's newest.
+
+Each [environment](#environments-and-promotion) rolls out with the project's settings unless it
+sets its own ([Environments](deploy-strategies.md#environments)): `runr strategy show|set --env
+NAME` shows or changes them (what `set` sends becomes the environment's own; it needs
+`environments.manage` too), `runr strategy reset --env NAME` drops them. `runr deploy --env NAME`,
+`runr promote` into it and `runr rollback --env NAME` roll out with them, and `runr rollout …
+--env NAME` follows and decides the environment's newest rollout. `runr environments show NAME`
+names the strategy the environment deploys with.
+`runr status` and `runr projects get` show the strategy and a rollout under way; `--output-env`
+of `runr deploy` adds `rollout_id`, `rollout_status` and `test_url`.
+
+`runr rollback` runs the earlier version with the configuration it ran with: the API records
+the effective config of every deployment (scale, resources, variables, trigger, timeout, a caas
+project's command and ports) and restores it, and a caas project runs the version's own image.
+The project's config is not changed — the next `runr deploy` runs the config of now again.
+`--keep-config` runs the earlier code with the configuration of now. Secret variables and
+bindings always stay the current ones (credentials are rotated forward, never back). `--env`
+rolls back one environment of the project. Against an API before config snapshots the earlier
+version runs with the current config, and for a caas project rollback writes the version's
+image, command and arguments back as a new version and deploys that.
+
+`runr deploy --env NAME` deploys to an [environment](#environments-and-promotion) of an
+existing project: the code becomes a version as usual, but the settings of `runr.yaml` are not
+applied (the environment runs the project's config with its own overrides; the command says so
+when they differ) and `--image` / `--region` are refused. Only that environment's live
+deployment is replaced — with the environment's deploy strategy (above); `--output-env` adds
+`environment=NAME` and the URL is the environment's.
+An API without environments is an error, never a deploy to the project's own workload.
 
 A version built before its region moved to another cluster has its image in a registry the
 region no longer pulls from ([regions](regions.md#older-versions)): the API builds it again
@@ -346,6 +469,49 @@ on a terminal every key goes to the shell and the size follows the window, piped
 input ending with Ctrl+D, `-o json` prints the one-time session instead of attaching. It needs
 `shell.exec` on the project.
 
+### Network: access mode and internal callers
+
+```sh
+runr network                                   # access mode, internal URL, allowed callers
+runr network set --access internal             # no public URL; other projects call it inside the region
+runr network set --access allowlist --allow-cidr 203.0.113.0/24 --allow-cidr 198.51.100.7
+runr network set --access public
+runr network callers add checkout              # a project of this organization may call it
+runr network callers add billing.globex        # another organization's project: a grant
+runr network callers rm billing.globex --yes
+```
+
+Projects of a region call each other at `http://<project>.<organization>.runr.internal`, and only
+the projects on the callee's allow list are admitted — every region enforces this, also one
+upgraded from an earlier release ([internal-network.md](internal-network.md)). A project's own pods
+are known by their address; a caller elsewhere sends the project's `RUNR_INTERNAL_TOKEN` in the
+`X-Runr-Internal-Token` header. `runr network` prints the project's internal URL and says when an
+operator set the region to audit (it admits what the list would refuse and logs it). `runr deploy` applies the `network` section of `runr.yaml`: the access mode
+and, when `callers` is given, the whole allow list. Exit code 4 when `runr network callers rm`
+names a caller that is not on the list, 5 when the API refuses a value (a grant while the platform
+switched cross-organization grants off).
+
+### Global projects
+
+A project with `global:` in `runr.yaml` (or `runr deploy --global-regions eu-1,us-1 [--region
+eu-1] [--global-mode proximity]`) is created as a [global project](global-projects.md) by its first
+deploy: it runs in every listed region behind `<slug>.<global zone>`. A later deploy applies a
+changed region list, primary or mode. The deploy goes to the primary; the other regions follow
+when it is ready. Any trigger works: HTTP and workflow triggers answer in every region, the others
+run in the primary only.
+
+```sh
+runr projects global shop                              # host name, mode, every region's copy
+runr projects global set shop --regions eu-1,us-1,ap-1 # add / remove regions (asks before a removal)
+runr projects global set shop --primary us-1 --mode proximity
+runr projects global sync shop                         # roll the active version out where not ready
+runr projects global set shop --failover manual        # automatic (default) | manual failover
+runr projects global failover shop --region us-1       # the primary does not answer: us-1 takes over
+runr regions global-dns enable eu-1 --wait             # the region's PowerDNS server (operators)
+runr regions global-dns geoip eu-1 --source url --url http://mirror.internal/geo.mmdb.gz
+runr global-dns                                        # zone, records for the parent zone, servers
+```
+
 ### Custom domains
 
 ```sh
@@ -353,8 +519,76 @@ runr domains add api.example.com     # prints the TXT and CNAME/A records to cre
 runr domains verify api.example.com  # checks DNS and activates the domain
 runr domains tls api.example.com --mode cert-manager
 runr domains tls api.example.com --mode custom --cert fullchain.pem --key privkey.pem
+runr domains ca -f region-ca.crt     # the region CA, when the certificates come from it
 runr domains rm api.example.com --yes
+runr domains add staging-api.example.com --env staging   # a domain of the staging environment
+runr domains ls --env staging
 ```
+
+Every `runr domains` command takes `--env NAME`: the custom domains of that
+[environment](#environments-and-promotion) of the project instead of its own workload — the
+domain routes to the environment's workload, its DNS targets and certificates are those of the
+region the environment runs in (`ca --env`: that region's CA). An environment the project does
+not have is an error before anything changes.
+
+## Environments and promotion
+
+```sh
+runr environments                               # the pipeline: dev → staging → production
+runr environments create staging --branch develop --min-scale 1 --env LOG_LEVEL=debug
+runr environments create eu --region eu-2 --requires-approval
+runr environments update staging --env FEATURE_X=on --env SENTRY_DSN=   # KEY= removes the project's variable
+runr environments update staging --warm "0 9 * * 1-5=2" --warm "0 18 * * 1-5=0"   # its own timed warmer
+runr environments update dev --no-warm          # no warm containers there; --project-warm: the project's again
+runr environments show staging                  # region, URL, live version, overrides, secrets
+runr environments secrets set staging STRIPE_KEY     # hidden prompt, or the value from stdin
+runr environments secrets ls staging            # its own and the inherited ones (names only)
+runr environments delete staging --yes
+
+runr deploy --env staging                       # the code as a new version, to staging
+runr promote staging --dry-run                  # what would change in production
+runr promote staging -m "release 1.4"           # waits for an approver: production requires approval
+runr promote dev --to staging                   # no approval: deployed and waited for
+runr approvals                                  # promotions waiting for you, every project
+runr approvals approve 01J… --comment "ok" --wait
+runr approvals reject 01J… --comment "not today"
+runr approvals cancel 01J…                      # withdraw your own request
+```
+
+An environment (`runr environments`, also `runr envs`) runs the project's versions as a workload
+of its own — `<slug>-<name>`, default URL `<slug>-<name>.<function domain>` — with the project's
+config and its own overrides (`--env`, `--cpu`, `--memory`, `--min-scale`, `--max-scale`,
+`--scale-to-zero`, `--timeout` in seconds, `--schedule`, `--queue-stream`), its own secret
+variables over the project's (`--no-inherit-secrets`: none of the project's; `update
+--inherit-secrets` brings them back), its own bindings and custom domains, in the project's region
+or another one (`--region`, subject to the organization's data residency). `production` is the
+project's own workload, last in the pipeline (`--position` reorders). There is no fixed number of
+environments: each one reserves its size in its region's capacity and the organization quota, and
+a create or update that does not fit is refused.
+`runr env` stays the command of the project's own environment variables.
+
+`runr environments update` changes only the flags given and merges the overrides over the current
+ones; they reach the workload with the next deploy. `--branch` maps a git branch to the
+environment: a push to it deploys there (`--auto-deploy=false` turns that off). An environment
+runs the project's [timed warmer](scaling.md#environments) unless it has its own: `--warm
+"<cron>=<count>"` rows replace it there, `--no-warm` keeps no containers warm there,
+`--project-warm` follows the project's again (on `create` too, without `--project-warm`); a
+warmer change reaches the running workload within a minute. `runr environments show` names the
+schedule it runs and what it keeps warm now.
+
+`runr promote FROM` moves the version FROM runs — the same version and image, never built
+again — to the next environment (or `--to`), which runs it with its own configuration.
+`--dry-run` prints what changes in the target: the code version and the config differences, env
+variables, secrets and bindings by name only. Into an environment that requires approval
+(production by default; `runr environments update production --requires-approval=false` turns it
+off) the promotion waits for someone with `environments.approve` other than its requester: they
+see it in `runr approvals` (or the console's approvals inbox) and approve or reject it. Without
+approval the promotion deploys at once and `runr promote` waits until it is live (`--no-wait`,
+`--timeout`). `runr approvals approve` takes the project from `--project` / `runr.yaml`, else
+from the inbox.
+
+A new domain starts in TLS mode `cert-manager` where the project's region issues certificates
+([cert-manager](regions.md#cert-manager)); `runr domains ls` says why when the region cannot yet.
 
 ## Environment variables and secrets
 
@@ -367,19 +601,22 @@ printf %s "$DATABASE_URL" | runr env set --secret DATABASE_URL
 runr env set --secret --from-file .env.secrets --no-deploy
 runr env ls --reveal                     # secret values too (secrets.view_values, audited)
 runr env unset LOG_LEVEL STRIPE_KEY      # plain and secret alike
+runr env ref DB_PASSWORD vault-prod:apps/orders#db_password   # a reference to a secret store
+runr env sync                            # sync the references now, show their status
 ```
 
 A project has two kinds of variables ([details](security.md#secret-environment-variables)):
 
 - **plain** variables are part of the project config: a change saves a new version;
-- **secret** variables (`--secret`) are stored write-only. RunR lists their names, when they
-  were last changed and by whom, never their values; they never appear in the config, a
-  version or the audit log. On deploy they reach the function through a Kubernetes Secret
-  (`secretKeyRef`), not as values in the service spec.
+- **secret** variables (`--secret`) are write-only. The value goes straight into the Kubernetes
+  Secret of the project's region and RunR keeps no copy; RunR lists their names, where the value
+  lives, when they were last changed and by whom, never their values; they never appear in the
+  config, a version or the audit log. The function reads them through `secretKeyRef` entries,
+  not as values in the service spec.
 
 Either kind takes effect with the next deploy, so `runr env set` and `runr env unset` redeploy
 the live version afterwards (`--no-deploy` only saves; the next deployment picks the change
-up). Names are shell identifiers; `PORT`, `K_SERVICE`, `K_CONFIGURATION`, `K_REVISION` and the
+up). A new secret value also reaches every container that starts before that. Names are shell identifiers; `PORT`, `K_SERVICE`, `K_CONFIGURATION`, `K_REVISION` and the
 `RUNR_*` variables of the runtime are set by RunR and refused.
 
 A name is plain or secret, never both. Setting a plain name with `--secret` (or a secret name
@@ -395,15 +632,207 @@ both before it sends anything. With `--secret` and a single `KEY` without `=VALU
 comes from a hidden prompt on a terminal or from stdin (one trailing newline removed), so it
 stays out of the shell history.
 
-`runr env ls` shows secret values as `(write-only)`. `--reveal` reads them back with
-`GET /projects/{project}/secrets/{name}/value`: that needs the `secrets.view_values`
-permission (of the built-in roles only Owner and Admin have it) and every read is recorded in
-the audit log as `project.secret.reveal`. Without the permission the command stops with exit
-code 3 before it reads anything. `--reveal` also prints plain values.
+`runr env ls` shows secret values as `(write-only)`, and in the `SOURCE` column where they live:
+`region` (the project's Kubernetes Secret), `openbao` (the region's own OpenBao, below), or
+`database` for a value written before pass-through that is not moved yet
+(`php artisan secrets:move-to-region`, [upgrade.md](upgrade.md)). Until an upgrade from 0.5.10 is
+finalized, a reference (`runr env ref`) is refused with `409`
+(`upgrade_not_finalized`) and the database keeps an encrypted copy of every value for a rollback
+([Rolling back to 0.5.10](security.md#rolling-back-to-0510)). `--reveal` reads them back
+with `GET /projects/{project}/secrets/{name}/value`, from the project's region: that needs the
+`secrets.view_values` permission (of the built-in roles only Owner and Admin have it) and every
+read is recorded in the audit log as `project.secret.reveal`. Without the permission the command
+stops with exit code 3 before it reads anything. `--reveal` also prints plain values.
+
+A secret can also be a **reference** to a value in one of the organization's secret stores
+([secret-stores.md](secret-stores.md)): `runr env ref NAME STORE:PATH[#KEY]` — `STORE` is the
+store's name or id (`runr secret-stores ls`), `PATH` the secret in it (Vault / OpenBao: the path
+under the KV mount; AWS, GCP, Azure: the secret's name or ARN; colons are fine), `KEY` an optional
+field inside it. External Secrets Operator in the project's region reads it with the region's
+identity; RunR never sees the value, so `--reveal` skips references and `runr env ls` shows them
+as `(in the store)` with `STORE:PATH#KEY (status)` as their source. Like `set`, `ref` redeploys
+the live version (`--no-deploy`, `--timeout`). `runr env sync` asks the region to read the
+references again now and prints their status (`pending`, `synced`, `failed`), the last sync and
+the store's message.
+
+A region can also run **its own OpenBao**, installed and operated by RunR
+([secret-stores.md](secret-stores.md#openbao-in-the-region)); it needs External Secrets Operator
+in the region:
+
+```sh
+runr regions openbao eu-1                   # status, version, where new values go, values in it
+runr regions openbao install eu-1 --wait    # install, or bring it to this release's version
+runr regions openbao default eu-1 off       # new values to the Kubernetes Secret again (on: OpenBao)
+runr regions openbao uninstall eu-1 --yes   # refused while values of the region's projects live in it
+```
+
+While it runs, `runr env set --secret` writes new values of the region's projects into it (unless
+`default … off`); values already written stay where they are until they are set again. Nothing
+changes for the commands: `runr env ls` shows `openbao` as the source, `--reveal` reads the value
+from OpenBao. `install` runs in the background: `--wait` polls until it is `ready` (exit code 6
+when it ends in `error`, 7 after `--timeout`, default 15 minutes); installing again keeps the data
+and the unseal key. `uninstall` asks for confirmation (`--yes`) and is refused (exit code 5) while
+secret values of the region's projects live in it. The same OpenBao issues
+[dynamic Postgres credentials](#bindings-data-services-for-projects) of bindings.
 
 On an API without secret variables the CLI stores a `--secret` value as a plain variable and
 prints a warning. `runr.yaml` holds plain variables only; keys set with the CLI and not listed
 in `runr.yaml` are kept by `runr deploy`.
+
+## Triggers and topics
+
+A project has a list of [triggers](triggers.md): what invokes its function. The first enabled
+trigger is the primary one (the project's `trigger_type` mirrors it for older clients).
+
+| Type | Config (`--set`, or keys of a `triggers:` entry) |
+|---|---|
+| `http` | — the public URL (at most one per project) |
+| `schedule` | `cron`: five fields or `@hourly`, `@daily`, …; `timezone`: an IANA zone (`Europe/Berlin`, `UTC`), default the organization's time zone (`runr triggers ls` shows the zone it runs in). Alone it runs as a CronJob; next to other triggers the event gateway sends a `dev.runr.schedule.tick` CloudEvent |
+| `queue` | `stream` (a Redis stream, not starting with `runr.`), `start_from` `earliest` (default) or `latest` |
+| `workflow` | [durable workflows](workflows.md); `queue_stream` optional; the project's only trigger |
+| `webhook` | `verify`: `none`, `stripe`, `github`, `slack` or `hmac`; `hmac.header` (default `X-Signature`), `hmac.algorithm` (`sha256`, `sha1`, `sha512`), `hmac.encoding` (`hex`, `base64`), `hmac.prefix` (e.g. `sha256=`); `delivery_id_header`, `tolerance_seconds` (stripe, slack), `max_body_kb` (up to 1024), `retention_days` (1–30, default 7). Secret: `signing_secret` (required unless `verify: none`) |
+| `topic` | `topic` (a topic of the organization in the same region), `start_from` `latest` (default) or `earliest` |
+| `platform_event` | `events`: `deployment.finished`, `deployment.failed`, `alert.fired`, `alert.resolved`, `runtime.patch_available`, `cost.limit_reached`, `environment.promotion.pending_approval`, `environment.promotion.approved`, `environment.promotion.rejected`, `environment.promotion.deployed`, `environment.promotion.failed` or `*`; `projects` (only events about these project ids); `retention_days` |
+| `kafka`, `nats`, `rabbitmq`, `mqtt`, `cdc`, `s3`, `email` | [broker and external sources](triggers.md#broker-and-external-sources) the event gateway reads. Required: `brokers` and `topic` (kafka), `url` and `subject` (nats), `queue` (rabbitmq), `broker` and `topic` (mqtt), `publication` (cdc), `endpoint` and `bucket` (s3), `host` and `username` (email); credentials are write-only secrets (`sasl_password`, `password`, `url` of rabbitmq, `dsn` of cdc, `access_key` / `secret_key`, …) |
+
+Every type except `http` and `workflow` runs on the project's event gateway, which delivers each
+event to the function as a CloudEvent (HTTP POST, binary mode) with retries and backoff; those
+types take `delivery.concurrency` (1–32, default 4), `delivery.max_retries` (0–20, default 5),
+`delivery.retry_backoff_seconds` (1–300, default 2) and `delivery.retry_backoff_max_seconds`
+(1–3600, default 300). `queue` and `topic` need Redis in the region.
+
+```sh
+runr triggers ls                                        # name, type, enabled, primary, where it runs, URL / schedule / stream
+printf %s "$GITHUB_SECRET" | runr triggers add --type webhook --name github --set verify=github --secret-stdin
+runr triggers add --type webhook --name billing --set verify=hmac --set hmac.header=X-Hub-Signature-256 \
+    --set hmac.prefix=sha256= --secret signing_secret=…
+runr triggers add --type schedule --name nightly --set cron="0 3 * * *"
+runr triggers add --type queue --name orders --set stream=orders --set delivery.concurrency=8 --primary
+runr triggers add --type platform_event --set events=deployment.failed,alert.fired
+runr triggers update github --set retention_days=14 --unset delivery_id_header
+runr triggers update nightly --rename nightly-report --primary
+runr triggers disable nightly-report                   # stays in the list; enable turns it on again
+runr triggers rm orders --yes
+```
+
+- **`--set KEY=VALUE`** sets a config key; dotted keys reach nested settings (`hmac.header`,
+  `delivery.concurrency`). A value that reads as JSON (`8`, `true`, `["a","b"]`, `{"a":1}`) is
+  sent as such, anything else as a string; quote a value to keep it a string
+  (`--set 'stream="123"'`). `events` and `projects` also take a comma list.
+- **`runr triggers update`** changes the keys you name and keeps the others (`--unset KEY`
+  removes one); the CLI reads the stored config and sends it back whole, since the API replaces
+  the config. The type of a trigger cannot change.
+- **Secrets** are write-only: `--secret KEY=VALUE` (repeatable; `KEY=` removes it) or
+  `--secret-stdin`, which reads `signing_secret` (or the key it names,
+  `--secret-stdin=KEY`) from a hidden prompt or stdin, so it stays out of the shell history.
+  The API lists which secrets are set, never their values, and `--debug` traces show
+  `"secrets":"[redacted]"`.
+- **`--primary`** puts the trigger first in the list; `--name` names a new trigger (default: the
+  type, then `-2`, `-3`, …). Names are lower-case letters, digits and dashes, at most 63.
+- A change reaches the cluster with the next deploy, so `add`, `update`, `rm`, `enable` and
+  `disable` redeploy the live version afterwards, like `runr env set` (`--no-deploy` only saves,
+  `--timeout` bounds the wait). A webhook's URL accepts and stores requests right away. The last
+  trigger cannot be removed (exit code 5): disable it or add another first.
+
+### Webhook inbox and replay
+
+A `webhook` trigger has a stable public URL (`runr triggers ls` shows it). RunR checks the
+sender's signature, drops a delivery id it already stored, stores the request and answers 200;
+the event gateway then delivers the stored event to the function. `platform_event` triggers
+store their events the same way. Stored events stay for `retention_days`.
+
+```sh
+runr triggers events github                    # newest first: type, status, attempts, replays, size, error
+runr triggers events github --status failed   # pending, delivering, delivered or failed (--limit up to 100)
+runr triggers events github 01J…               # one event with the sender's headers and the body
+runr triggers events github 01J… --body > payload.json
+runr triggers replay github 01J…               # deliver one event again
+runr triggers replay github --failed           # every failed event (--all: delivered ones too; at most 500)
+```
+
+An event that keeps failing (the function answers non-2xx after every retry) ends as `failed`.
+A replay sets it back to `pending` and the gateway delivers it again with the CloudEvents
+extension `runrreplay`. `-o json` of a single event has `body_base64` and, for UTF-8 bodies up
+to 64 KiB, `body_text`.
+
+### Topics
+
+A topic fans an event out to every project with a `topic` trigger on it. Topics belong to the
+organization and live in a region with Redis.
+
+```sh
+runr topics create orders --region eu-1 --description "Order lifecycle"
+runr triggers add --type topic --set topic=orders      # in each subscribing project
+runr topics publish orders --data '{"order_id":"o-1"}' --type order.created --subject o-1
+runr topics publish orders --file event.json           # or pipe the data to stdin
+runr topics publish audit --data 'plain text' --content-type text/plain
+runr topics ls                                         # region, subscriptions, stream
+runr topics rm orders --yes                            # refused (exit code 5) while triggers subscribe
+```
+
+`runr topics publish` sends JSON by default (`--data` inline, `@file` or `-`; `--file`; or
+stdin); with `--content-type` naming another type the data is sent as is (text, not binary).
+`--type`, `--subject` and `--id` become the event's CloudEvents `type`, `subject` and `id`.
+Functions publish with the SDKs' `publish(topic, data)` helper (`@runr/workflows`,
+`runr_workflows`).
+
+### Triggers in runr.yaml
+
+`triggers:` in `runr.yaml` holds the whole list; `runr deploy` sets it with
+`PUT /projects/{project}/triggers` before the deployment that applies it. Each entry has
+`type`, optional `name` and `enabled`; every other key goes into the trigger's config
+(`delivery` included). The shorthands of `trigger:` work too: `schedule` is `cron` of a
+`schedule` entry, `queue` is `stream` of a `queue` entry.
+
+```yaml
+triggers:
+  - type: http
+  - type: schedule
+    name: morning
+    cron: "0 9 * * MON-FRI"
+    timezone: Europe/Berlin    # default: the organization's time zone
+  - type: webhook
+    name: github
+    verify: github
+  - type: queue
+    name: orders
+    queue: orders
+    delivery:
+      concurrency: 8
+  - type: platform_event
+    name: deploy-alerts
+    events: [deployment.failed, alert.fired]
+```
+
+An entry whose name and type match an existing trigger updates it in place: its secrets, webhook
+URL and stored events stay. Entries without a name are matched by the default name (the type);
+triggers the list does not have are removed. Secrets never go in `runr.yaml`: a `secrets` key
+is ignored with a warning and not sent; set a webhook's signing secret first with
+`runr triggers add --type webhook --name github --set verify=github --secret-stdin` — the
+deploy then keeps it. With both `trigger:` and `triggers:`, `triggers:` is used and `trigger:`
+ignored (a warning), as the API does on `git push`.
+
+The CLI checks the list with the API's own rules before it sends anything: every entry against
+the trigger schema the API derives from its trigger types (`api/resources/triggers/triggers.schema.json`,
+written by `php artisan triggers:schema` and embedded in the CLI — required keys, types, ranges,
+patterns, enums, cron expressions, time zones, `delivery`), and the list as the API does (unique
+names, one `http`, `workflow` alone, at most 20 triggers). A key a type does not have is a
+warning (the API drops it), not an error. What only the platform knows — whether a topic exists,
+the region's Redis, a webhook's signing secret, `required_if`-style combinations — the API checks
+on deploy. An entry of a type this CLI does not know (a newer API) gets the list checks only.
+`runr dev` invokes a function with a trigger list over HTTP when the list has `http` or
+`workflow`, as a schedule tick for a `schedule` alone, and like a queue message otherwise.
+
+### Permissions
+
+| Command | Needs |
+|---|---|
+| `runr triggers ls` | `projects.view` |
+| `runr triggers add\|update\|rm\|enable\|disable`, `runr deploy` with `triggers:` | `projects.update` (the redeploy also `projects.deploy`) |
+| `runr triggers events\|replay` | `replay.manage` |
+| `runr topics ls` | `projects.view` on any project |
+| `runr topics create\|rm` | `topics.manage` (organization-wide) |
+| `runr topics publish` | `events.send` (organization-wide) |
 
 ## Local development: runr dev
 
@@ -514,21 +943,31 @@ Most groups without a subcommand run their `ls`, `get` or `status` command (`run
 | `runr context ls\|use\|rm\|current` | Manage contexts |
 | `runr tokens ls\|create\|rm` | API tokens (`--ability`, `--preset`, `--expires`) |
 | `runr init [dir]` | Scaffold a project (`--name`, `--type`, `--runtime`, `--runtime-version`, `--region`, `--image`, `--force`) |
-| `runr deploy [path]` | Create/sync, upload, build, deploy, wait (`--image`, `--version`, `--region`, `-m`, `--no-wait`, `--timeout`, `--output-env`, `-f`) |
+| `runr deploy [path]` | Create/sync, upload, build, deploy, wait (`--image`, `--version`, `--region`, `--global-regions`, `--global-mode`, `--env`, `-m`, `--no-wait`, `--timeout`, `--output-env`, `-f`, `--strategy`, `--wait-rollout`, `--rollout-timeout`) |
 | `runr status` | Project, live deployment and URL; for a stopped project who stopped it (the platform or the organization), when and why |
-| `runr projects ls\|get\|delete` | List, show, delete projects (`delete --yes` without a prompt); `ls` lists a stopped project as `stopped`, `get` says who stopped it, when and why |
+| `runr projects ls\|get\|delete` | List, show, delete projects (`delete --yes` without a prompt); `ls` lists a stopped project as `stopped`, `get` says who stopped it, when and why, its runtime patch state, and the timed warmer's schedule and warm containers |
+| `runr projects patches [PROJECT]` | [Runtime patches](#runtime-patches) of a project: its state, the last five patches of its runtime version (level, CVEs, reason, link, deadline), its patch migrations |
+| `runr projects patch apply\|pin\|unpin [PROJECT]` | Redeploy onto the newest patch (`--wait`, `--timeout`), pin one of the last five (`pin [PROJECT] PATCH`, `--no-deploy`), unpin |
+| `runr projects rightsizing [NAME]\|apply\|dismiss` | Size recommendations from what the pods used in the last days: the organization's open ones, largest monthly saving first, or one project's with its evidence; `apply` saves the size as a new version (`--yes`), `dismiss` hides it (`--snooze DAYS`) ([Rightsizing](#rightsizing)) |
 | `runr versions ls` | Versions, newest first |
-| `runr rollback VERSION` | Deploy an earlier version (`v3`, `3` or an id; `--no-wait`, `--timeout`) |
+| `runr rollback VERSION` | Deploy an earlier version with the config it ran with (`v3`, `3` or an id; `--keep-config`, `--env`, `--strategy`, `--no-wait`, `--timeout`) |
+| `runr environments [ls]\|show\|create\|update\|delete` | Environments of the project and the pipeline (`--region`, `--branch`, `--requires-approval`, `--env KEY=VALUE`, `--cpu`, `--memory`, `--min-scale`, `--max-scale`, `--scale-to-zero`, `--timeout`, `--schedule`, `--queue-stream`, `--warm`, `--no-warm`, `--position`, `create --no-inherit-secrets`, `update --inherit-secrets`, `update --auto-deploy`, `update --project-warm`, `delete --yes`); also `runr envs` |
+| `runr environments secrets ls\|set\|unset ENV` | Secret variables of an environment over the project's (`set ENV KEY` reads a hidden prompt or stdin) |
+| `runr promote FROM` | Promote FROM's live version to the next environment (`--to`, `-m`, `--dry-run`, `--no-wait`, `--timeout`); it rolls out with the target environment's deploy strategy |
+| `runr strategy [show]\|set [STRATEGY]\|reset` | The project's [deploy strategy](deploy-strategies.md): direct, blue-green or canary and their options (`--auto-promote`, `--health-path`, `--health-checks`, `--keep-previous`, `--steps`, `--interval`, `--max-error-rate`, `--max-p95`); `--env` an environment's own settings, `reset --env` back to the project's |
+| `runr rollout [status]\|promote\|abort\|rollback` | A blue-green / canary rollout: where it stands (`-w` follows it, `--timeout` bounds that), promote now, abort (`--reason`), roll back to the kept previous revision (`--deployment`; `--env` an environment's newest rollout); also `runr rollouts` |
+| `runr approvals [ls]\|approve\|reject\|cancel` | Promotions waiting for approval across projects (`--status`, `--comment`, `approve --wait`, `--timeout`) |
 | `runr logs [-f]` | Logs of the live deployment (`--deployment`) |
 | `runr shell` | A shell in a pod of the live deployment through the web shell (`--deployment`; `-o json` prints the one-time session) |
-| `runr scale` | `--min`, `--max`, `--to-zero`, then redeploy (`--no-deploy`, `--timeout`) |
+| `runr scale` | `--min`, `--max`, `--to-zero`, then redeploy (`--no-deploy`, `--timeout`); the timed warmer with `--warm "<cron>=<count>"` (repeatable) or `--no-warm`, applied without a redeploy |
 | `runr open` | Open the project URL (`--print`) |
-| `runr domains ls\|add\|verify\|tls\|rm` | Custom domains, their DNS records and certificates (`tls --mode none\|cert-manager\|custom`, `--cert`, `--key`; `rm --yes`) |
+| `runr domains ls\|add\|verify\|tls\|ca\|rm` | Custom domains, their DNS records and certificates (`tls --mode none\|cert-manager\|custom`, `--cert`, `--key`; `ca -f FILE`: the region CA; `rm --yes`; `--env NAME`: an environment's domains) |
+| `runr network [show]`, `network set`, `network callers [ls\|add\|rm]` | Access mode (`set --access public\|allowlist\|internal`, `--allow-cidr`), internal URL and the projects allowed to call the project ([internal-network.md](internal-network.md)) |
 | `runr regions ls` | Regions, their status and whether queues (Redis) are available |
 | `runr regions get [REGION]` | A region: cluster, Knative, Redis, registry, worker nodes, capacity, settings |
 | `runr regions create NAME --kubeconfig FILE` | Connect a cluster as a region (`--node`, `--inactive`, `--redis`, `--redis-address`, `--redis-password-file`, `--prometheus-url`, `--loki-url`, `--registry internal\|external`, `--registry-storage`, `--storage-class`, `--registry-size`, `--registry-s3`, `--registry-address`, `--registry-credentials`, `--retry`, `--wait`) |
 | `runr regions check [NAME] --kubeconfig FILE` | Kubeconfig, Kubernetes version, worker nodes, StorageClasses and the namespace of a cluster before `create` |
-| `runr regions set REGION` | Status, settings or kubeconfig of a region (`--set status\|request_timeout\|agent_ws_url\|cert_manager_cluster_issuer\|ingress_trusted_ips=…`, `--kubeconfig`) |
+| `runr regions set REGION` | Status, settings or kubeconfig of a region (`--set status\|request_timeout\|agent_ws_url\|cert_manager_cluster_issuer\|cert_manager_issuer_mode\|cert_manager_acme_email\|ingress_trusted_ips\|internal_auth\|prometheus_url\|loki_url\|loki_org_id=…`, `--kubeconfig`) |
 | `runr regions rm REGION` | Remove a region from RunR (`--yes`) |
 | `runr regions status [REGION]` | Check the cluster and its Knative installation now (`--refresh`) |
 | `runr regions kubeconfig REGION` | Save the region's kubeconfig with mode 0600 (`-f`, `--force`; `--stdout` prints it) |
@@ -541,8 +980,23 @@ Most groups without a subcommand run their `ls`, `get` or `status` command (`run
 | `runr regions skupper [status]\|site` | Skupper for private database connections; create the project namespace's site |
 | `runr regions capacity [get]\|set` | Capacity budgets and FaaS overcommit factors (`--set faas_cpu_overcommit=…`) |
 | `runr regions demo [status]\|install\|rm` | Demo projects of a region (`--wait`, `--yes`) |
+| `runr regions global-dns [status]\|enable\|disable` | The region's PowerDNS server of the global zone ([global projects](global-projects.md)): status, address, sync, certificate, GeoIP (`--wait`, `--timeout`, `--yes`) |
+| `runr regions global-dns geoip REGION` | The GeoIP database of the region's server: source, status (`loaded`, `missing`, `off`, `unknown`), message; `--source default\|url\|file\|none`, `--url URL` (alone means `--source url`; `{yyyy}` / `{mm}` the current month), `--reload` after copying the file onto the server's volume ([GeoIP database](global-projects.md#geoip-database), `regions.manage`) |
+| `runr global-dns [sync]` | The global zone: the NS and address records for the parent zone, the delegation status, the servers (with their GeoIP status); `sync` writes the zone to every server now |
+| `runr projects global [show]\|set\|sync\|failover PROJECT` | A global project's regions: show (`-o json`; the failover setting, a move in progress, where the triggers run, each region's data status, every binding's access and lag), `set` (`--mode ha\|proximity`, `--failover automatic\|manual`, `--primary` — a switchover, `--regions a,b,c`, `--yes`), `sync`, `failover` (`--region R`, default the first healthy region in HA order; the replicas there promoted at once, the old primary fenced until it rejoins; `--yes`) |
 | `runr regions wasm [status]\|install\|uninstall` | WebAssembly support: shims, nodes, eligibility (`--no-cluster`, `--shim`, `--node`, `--wait`, `--yes`) |
+| `runr regions openbao [status]\|install\|uninstall\|default` | The region's own OpenBao: secret values and dynamic Postgres credentials (`default REGION on\|off`, `--wait`, `--timeout`, `--yes`) |
+| `runr regions cert-manager [status]\|install\|ca\|rm` | cert-manager and the ClusterIssuer of custom domains, the region CA (`--no-cluster`, `--wait`, `--timeout`, `-f`, `--yes`) |
 | `runr env ls\|set\|unset` | Plain and secret environment variables (`--secret`, `--from-file`, `--no-deploy`, `--timeout`, `--show-values`, `--reveal`) |
+| `runr triggers [ls]` | The project's triggers: type, enabled, primary, where each runs, webhook URL / schedule with its time zone / stream / topic / events |
+| `runr triggers add\|update\|rm\|enable\|disable` | Change the trigger list (`--type`, `--name`, `--set KEY=VALUE`, `--unset KEY`, `--secret KEY=VALUE`, `--secret-stdin[=KEY]`, `--primary`, `--rename`, `--no-deploy`, `--timeout`; `rm --yes`); a change that leaves a cdc trigger's replication slots says which RunR drops ([CDC cleanup](triggers.md#cdc-cleanup)) |
+| `runr triggers events TRIGGER [EVENT]` | Stored events of a webhook / platform_event trigger, or one with headers and body (`--status`, `--limit`, `--body`) |
+| `runr triggers replay TRIGGER [EVENT]` | Deliver stored events again (`--failed`, `--all`) |
+| `runr topics [ls]\|create\|rm\|publish` | The organization's topics (`create --region`, `--description`; `rm --yes`; `publish --data`, `--file`, `--content-type`, `--type`, `--subject`, `--id`) |
+| `runr env ref NAME STORE:PATH[#KEY]` | Make a secret a reference to a value in a secret store (`--no-deploy`, `--timeout`) |
+| `runr env sync` | Sync the project's secret store references now and show their status |
+| `runr secret-stores [ls]` | The organization's secret stores: provider, authentication, references, status per region |
+| `runr secret-stores trust STORE` | What a store has to trust for a region: issuer, public keys (PEM; `-o json` adds the JWKS), service account, namespace, subject, audience (`--region`) |
 | `runr dev [path]` | Run locally in Docker with hot reload, built-in runtimes and runtime plugins (`--port`, `-e`, `--no-watch`, `--print`) |
 | `runr dev invoke` | Send an http, queue or schedule event to the dev server (`--trigger`, `--event`, `-X`, `--path`, `-H`, `--url`) |
 | `runr git [status]` | Remote, settings, connected repository and the last git deploys (`git status --deploys N`) |
@@ -557,6 +1011,7 @@ Most groups without a subcommand run their `ls`, `get` or `status` command (`run
 | `runr git providers [ls]\|get\|create\|update\|rm` | GitHub Apps, GitLab and Forgejo/Gitea instances of the installation (secrets from files or stdin) |
 | `runr runtimes [ls]` | Runtimes (built-in, plugins, Wasm) and versions: kind, run mode, end-of-life date, image (`--all`, `--region`) |
 | `runr runtimes get RUNTIME` | Run mode, handler, triggers, regions, versions and files of a runtime (`--manifest` prints the manifest) |
+| `runr runtimes patches` | The runtime patches of the feed: runtime, version, tag, level, deadline, CVEs, reason (`--runtime`, `--version`) |
 | `runr runtimes register -f FILE` | Register a runtime plugin from a manifest (`--files`, `--region`, `--wait`) |
 | `runr runtimes update RUNTIME` | Change manifest and files, regions, enabled (`-f`, `--files`, `--region`, `--all-regions`, `--enable`, `--disable`, `--wait`) |
 | `runr runtimes rm RUNTIME` | Delete a registered runtime (`--yes`) |
@@ -567,23 +1022,24 @@ Most groups without a subcommand run their `ls`, `get` or `status` command (`run
 | `runr images push FILE` | Upload a `docker save` / OCI layout tar or a `.wasm` into a region registry (`--region`, `--name repo:tag`, `--format`) |
 | `runr images ls\|get\|rm` | List uploads (`--region`, `--kind image\|wasm\|spin`); show one; delete one (`--region`, `--yes`) |
 | `runr images uploads [ls]\|rm` | Unfinished uploads; abort them (`--yes`) |
-| `runr workflows ls\|get` | Workflow definitions: triggers, options, state and run counts |
+| `runr workflows ls\|get` | Workflow definitions: triggers, options, state and run counts; every `runr workflows` command takes `--env` (an environment's workflow app) |
 | `runr workflows run NAME` | Start a run (`--event`, `--idempotency-key`, `--test`, `--wait`, `--timeout`) |
 | `runr workflows run get\|cancel\|retry\|replay RUN_ID` | Inspect and control a run (`--from-step`, `--wait`, `--yes`); also as `runr workflows runs …` |
 | `runr workflows runs [NAME]` | Newest runs (`--status`, `--source`, `--search`, `--since`, `--from`, `--to`, `--limit`) |
 | `runr workflows enable\|disable NAME` | Resume or pause a workflow (aliases `resume`, `pause`) |
 | `runr workflows sync` | Read the definitions from the deployed function |
-| `runr workflows declare -f FILE` | Declare the definitions through the API (JSON or YAML; `--yes`) |
+| `runr workflows declare -f FILE` | Declare the definitions through the API (JSON or YAML; `--yes`); unchanged ones keep their source (`sdk`) |
 | `runr workflows events send\|ls\|get` | Send events (`--data`, `--id`, `--ts`, `--test`), list them (`--name`, `--source`, `--since`, `--from`, `--to`, `--limit`), show one |
-| `runr workflows app [get]\|set\|rotate-key\|signing-key` | The function the engine drives: endpoint override (`--endpoint`, `--reset-endpoint`), key rotation with a redeploy (`--no-deploy`), the signing key (`--env`) |
+| `runr workflows app [get]\|set\|rotate-key\|signing-key` | The function the engine drives: endpoint override (`--endpoint`, `--reset-endpoint`), key rotation with a redeploy (`--no-deploy`), the signing key (`--dotenv`) |
 | `runr workflows usage` | Step executions and started runs per workflow (`--from`, `--to`; `-p` for one project) |
 | `runr bindings ls\|types\|quota` | Bindings of the organization (`--type`, `--region`, `--deleted`), binding types and limits (`quota --tenant`) |
 | `runr bindings quota set --tenant ID` | An organization's binding limits; platform administrators (`--max-bindings`, `--kv-mb`, `--object-gb`, `--postgres-gb`, `--dedicated-postgres`, `--unset`) |
 | `runr bindings get BINDING` | A binding, its live health and attached projects (`--usage`, `--days`) |
-| `runr bindings create NAME` | Create a binding (`--type kv\|s3\|postgres\|external`, `--plan`, `--region`, `--set`, `--config`, `--value`, `--from-file`, `--attach`, `--env-prefix`, `--wait`) |
+| `runr bindings create NAME` | Create a binding (`--type kv\|s3\|postgres\|external`, `--plan`, `--region`, `--set`, `--config`, `--value`, `--from-file`, `--attach`, `--env-prefix`, `--env` with `--attach`, `--wait`) |
 | `runr bindings update BINDING` | Change limits (`--set`, `--config`) or an external binding's variables (`--value`, `--from-file`) |
-| `runr bindings attach\|detach BINDING` | Attach a binding to the project (`--env-prefix`) or detach it |
-| `runr bindings attachments` | Bindings attached to the project and those that can be attached |
+| `runr bindings attach\|detach BINDING` | Attach a binding to the project or one of its environments (`--env-prefix`, `--credentials static\|dynamic`, `--env`) or detach it |
+| `runr bindings attachments` | Bindings attached to the project (with their environment) and those that can be attached (`--env`) |
+| `runr private-connections [ls]\|add\|status\|rm` | Private connections to a managed PostgreSQL database through Skupper, of the project or an environment (`--env`, `add --routing-key --link --database --username --password-stdin --env-prefix --port --sslmode`, `rm --yes`); also `runr pconn` |
 | `runr bindings rotate\|rm\|restore BINDING` | New credentials (`--wait`), delete with retention, restore (`--yes` for rotate and rm) |
 | `runr bindings credentials BINDING` | The binding's connection values (audited; `--env-prefix`) |
 | `runr regions data-services [ls]\|install\|uninstall REGION` | A region's data services kv, object, postgres (`--live`, settings flags, `--credentials`, `--wait`) |
@@ -628,6 +1084,7 @@ Most groups without a subcommand run their `ls`, `get` or `status` command (`run
 | `runr metrics [history\|live]` | Recorded metrics: a summary of the last `--period` (`7d`, `30d`, `90d`); the snapshots (`--since`, `--from`, `--to`, `--granularity`); the live deployment's usage (`--quick`, `--deployment`, `--watch`) |
 | `runr uptime ls\|create\|update\|rm\|results\|run` | Uptime checks (`--path`, `--url`, `--interval`, `--expect`, `--region`, `--status-page`) |
 | `runr uptime incidents [update]` | Incidents of the checks (`--open`, `--title`, `--message`) |
+| `runr loadtest [ls]\|run [PATH]\|get\|cancel` | Load tests of the project and the last runs side by side (`--users`, `--duration`, `--method`, `--body`, `--body-file`, `--content-type`, `--host`, `--no-wait`, `--timeout`, `--limit`); also `runr load-test` |
 | `runr alerts channels ls\|create\|update\|rm\|test` | Alert channels: email, slack, teams, telegram, webhook (secrets write-only) |
 | `runr alerts rules ls\|create\|update\|rm` | Alert rules (`--type`, `--param`, `--severity`, `--cooldown`, `--channel`) |
 | `runr alerts events\|deliveries [retry]` | Fired alerts and the delivery log (`--firing`, `--failed`, `--channel`) |
@@ -653,6 +1110,19 @@ Most groups without a subcommand run their `ls`, `get` or `status` command (`run
 | `runr access ls\|grant\|revoke` | Project access of a user or group (`--group`, `--role`) |
 | `runr audit ls\|get\|export` | Audit log: filters, one event, CSV / JSON export |
 | `runr audit settings [set]` | The audit log's retention and forwarding; change the retention (`--retention-days`) |
+| `runr gateway [ls]\|get\|page` | Your API gateways, one with its routes and authentication, the public developer page (`--description`, `--off`, `--metrics`: the routes' success rate and latency on it) |
+| `runr gateway create REGION` | Your gateway in a region, created when you have none there |
+| `runr gateway routes ls\|add\|rm` | Routes of a gateway: `add GATEWAY PATH` to the project or an environment (`-p`, `--env`, `--method`), with its authentication in one call (`--auth`, `--jwks-url`, `--issuer`, `--audience`, `--subject-claim`, `--require-consumer`, `--gateway-only`), prints its URL; `rm --yes` |
+| `runr gateway routes set` | A route's authentication: public, API key or JWT (`--auth`, `--jwks-url`, `--issuer`, `--audience`, `--subject-claim`, `--require-consumer`), `--gateway-only` |
+| `runr gateway consumers [ls]\|create\|update\|rm` | Consumers of a gateway or the organization (`--gateway`, `--email`, `--external-id`, `--jwt-subject`, `--plan`; `update --name`, `--status`; `rm --yes`) |
+| `runr gateway keys ls\|create\|rotate\|revoke` | API keys: shown once, scoped (`--route PATH[:METHODS]`, `--gateway`), `--plan`, `--expires`; rotation with `--overlap` |
+| `runr gateway plans [ls]\|create\|rm` | Rate limits and quotas (`--per-second`, `--burst`, `--per-minute`, `--per-day`, `--per-month`) |
+| `runr gateway usage` | Calls let through and refused, the function's errors and latency p50 / p95 / p99 (`--by hour\|day\|month\|consumer\|key\|route`, `--since`, `--until`, filters; `-o json`: status classes and bytes too) |
+| `runr gateway domain set\|verify\|rm` | The gateway's own domain, TXT verified |
+| `runr org export` | Export the organization into a package: wait, then download it (`-p/--project`, `--members`, `--images`, `--binding-data NAME\|all`, `--secrets`, `--passphrase-file`, `--history`, `--to download\|binding:NAME\|s3://bucket/prefix`, `--s3-endpoint`, `--s3-region`, `--s3-path-style`, `--prefix`, `-f`, `--estimate`, `--no-wait`, `--timeout`) |
+| `runr org import [FILE]` | Upload a package (resumable) — or let RunR read it with `--from binding:NAME --key KEY` / `--from s3://bucket/key --s3-endpoint URL` (`--resume ID` continues a read that failed) — print the plan, import it (`--region-map SRC=DST`, `--rename PROJECT=NAME`, `--passphrase-file`, `--plan-only`, `--deploy`, `--invite-members`, `--no-data`, `--skip-data BINDING`, `--no-images`, `--no-history`, `--sha256`, `--yes`, `--timeout`) |
+| `runr org transfers` | The organization's latest exports and imports |
+| `runr org transfer ID` | One export or import: status, package, source, plan or report; `transfer cancel ID` stops it and removes its files (`--yes`); `transfer history ID` lists the usage records and bills an import kept (`--kind usage\|bill`, `--page`, `--per-page` up to 500) |
 | `runr version` | CLI and API versions (`--client`, `--check-update`) |
 | `runr completion bash\|zsh\|fish\|powershell` | Shell completion script |
 
@@ -754,7 +1224,7 @@ request is closed or merged (or after `--preview-ttl` hours without a commit).
 ### Git providers
 
 Git providers are the GitHub Apps, GitLab instances and Forgejo / Gitea instances projects
-connect through (Settings → Git providers):
+connect through (Data & Integrations → Git providers):
 
 ```sh
 runr git providers                                         # name, type, URL, connect modes, projects
@@ -836,11 +1306,44 @@ and exits with code 5. `template` prints the starter files of a runtime (`--type
 `--handler`) or writes them with `--out DIR`. `test-deploy` creates an XaaS project
 `rt-<id>-<random>` from the starter template in a region and deploys it once its version is ready.
 
+### Runtime patches
+
+```sh
+runr projects get orders                     # … Runtime patch  patch available (security): 8.3.35-r1 → 8.3.36-r1
+runr projects patches orders                 # state, the last five patches: level, CVEs, reason, link
+runr projects patch apply orders --wait      # redeploy the live version onto the newest patch
+runr projects patch pin orders 8.3.35-r2     # pin (id or tag) and redeploy onto it
+runr projects patch pin 8.3.35-r2 --no-deploy  # the project of runr.yaml; the next deploy uses it
+runr projects patch unpin orders
+runr runtimes patches --runtime php --version 8.3
+```
+
+The images of the built-in runtimes get immutable patch tags (`exec-php:8.3.36-r1`), announced by a
+signed feed with why each came ([runtime patches](runtimes.md#runtime-patches)). `runr projects get`
+shows a project's state when a patch concerns it: `up to date`, `patch available` with the most
+urgent level (`routine`, `security`, `critical`, `zero-day`), `pinned` or `overdue` (a critical or
+zero-day patch's deadline passed), the patch it runs and the newest one, the deadline and the pin.
+`runr projects patches` lists the last five patches of the project's runtime version — `*` marks
+the one it runs, `p` its pin — with the links of their advisories and the project's patch
+migrations; `-o json` prints the API's answer.
+
+`patch apply` redeploys the live version onto the newest patch and removes a pin; it returns once
+the redeploy started, `--wait` follows it until it is live (a version built into an image is
+built again first; `--timeout`, default 15 minutes): exit code 6 when the deployment fails (the
+previous revision keeps serving), 7 after the timeout. The API refuses it (exit code 5) when
+nothing is deployed, the project is stopped, it runs the newest patch already or a migration of it
+is running. `patch pin` takes a patch id or tag of the last five (anything else: exit code 2 with
+the tags it can be), and redeploys onto it unless `--no-deploy`. A pin waits only until a critical
+or zero-day deadline: then RunR moves the project to the newest patch itself. `runr runtimes
+patches` lists the patches of the whole feed and says when the feed is off on the platform.
+
 ### Permissions
 
 | Command | Needs |
 |---|---|
-| `runr runtimes [ls]\|get\|template` | a login |
+| `runr runtimes [ls]\|get\|template\|patches` | a login |
+| `runr projects patches` | `projects.view` on the project |
+| `runr projects patch apply\|pin\|unpin` | `projects.deploy` on the project |
 | `runr runtimes register\|update\|rm\|validate\|builds\|build\|test-deploy` | `runtimes.manage` for platform runtimes (single-tenant installations; on a multi-tenant installation platform administrators), `runtimes.use_custom` for custom runtimes of your organization while the platform allows them |
 
 ## Images
@@ -918,8 +1421,10 @@ runr workflows declare -f runr.workflows.json
 - **`declare -f FILE`** sets the definitions through the API: JSON or YAML, a list of
   definitions or `{"workflows": [...]}` — the format of `runr.workflows.json`. Workflows the
   file does not list are archived (their runs stay); `runr` asks before archiving, `--yes`
-  confirms in scripts. A function that serves the SDK reports its definitions again at the next
-  sync, so declare definitions for functions that do not serve the SDK's introspection.
+  confirms in scripts. A definition the file holds unchanged keeps where it came from: what the
+  function's SDK reported stays `sdk`, only new and changed definitions become `api`. A function
+  that serves the SDK reports its definitions again at the next sync, so declare definitions for
+  functions that do not serve the SDK's introspection.
 
 ### Runs
 
@@ -947,8 +1452,9 @@ code 5).
 
 ### Events
 
-Events belong to the organization. Every workflow with a matching event trigger starts a run,
-waiting `waitForEvent` steps resume, and `cancel_on` cancels matching runs.
+Events belong to the organization and to an environment (`--env`, default production). Every
+workflow of that environment with a matching event trigger starts a run, waiting
+`waitForEvent` steps resume, and `cancel_on` cancels matching runs.
 
 ```sh
 runr workflows events send order.created --data @order.json --id order-o-1
@@ -968,7 +1474,7 @@ runr workflows app                                  # endpoint, key fingerprint,
 runr workflows app set --endpoint https://workflows.example.com/api/runr
 runr workflows app set --reset-endpoint             # back to the project's function
 runr workflows app rotate-key                       # new key; the live version is deployed again
-runr workflows app signing-key --env >> .env        # RUNR_WORKFLOW_SIGNING_KEY=… for a function outside RunR
+runr workflows app signing-key --dotenv >> .env     # RUNR_WORKFLOW_SIGNING_KEY=… for a function outside RunR
 ```
 
 The engine calls the project's function and signs every request with the project's signing
@@ -982,7 +1488,7 @@ installation allows them, no redirects); `--reset-endpoint` goes back to the pro
 default). A workflow project on RunR gets the new key with a deployment, so runr deploys the live
 version again (`--no-deploy` leaves that to you, `--timeout` bounds the wait); a function at an
 endpoint override needs the new key from `signing-key`. `signing-key` prints the key on stdout
-(`--env`: as `RUNR_WORKFLOW_SIGNING_KEY=…`, `-o json`: with the variable name and fingerprint);
+(`--dotenv`: as `RUNR_WORKFLOW_SIGNING_KEY=…`, `-o json`: with the variable name and fingerprint);
 it is secret, and `--debug` traces leave its body out.
 
 ### Usage
@@ -995,6 +1501,25 @@ runr workflows usage -p orders --from 2026-10-01 --to 2026-10-15
 `runr workflows usage` shows the step executions (each attempt, sleep, wait, invoke and send)
 and started runs between `--from` and `--to` (default: the last 30 days) per workflow, for the
 organization or, with `-p`, one project; `-o json` adds the daily series.
+
+### Environments
+
+Every subcommand of `runr workflows` takes `--env NAME` (an environment's name or id; default
+production, the project's own workload): every [environment](environments.md) is a workflow app
+of its own ([Environments](workflows.md#environments)) — its definitions, sync and declare, pause
+and resume, runs, its app with its own signing key, usage, and the events sent with `--env`
+belong to it.
+
+```sh
+runr workflows ls --env staging                     # staging's definitions
+runr workflows run process-order --env staging --event @order.json --wait
+runr workflows runs --env staging --status failed
+runr workflows events send order.created --env staging --data @order.json   # starts staging's workflows only
+runr workflows app signing-key --env staging --dotenv                       # staging's own key
+```
+
+`runr workflows app signing-key --dotenv` prints the key as an env file line; before 0.6.0 that
+was `--env`, which now names the environment.
 
 ### Permissions
 
@@ -1022,8 +1547,12 @@ runr bindings create payments --type external --value PAYMENTS_URL=https://pay.e
 
 runr bindings attach orders-db --env-prefix ORDERS_     # ORDERS_DATABASE_URL, ORDERS_PGHOST, …
 runr bindings attach cache -p reports
+runr bindings attach orders-db --credentials dynamic    # a Postgres user of the project's own
 runr bindings attachments                               # what the project of runr.yaml has attached
 runr bindings detach cache -p reports
+runr bindings attach orders-db-staging --env staging    # only the staging environment's pods get it
+runr bindings attachments --env staging
+runr bindings detach orders-db-staging --env staging
 
 runr bindings ls                                        # every binding, its region, status and projects
 runr bindings get orders-db --usage                     # health on the data service, daily usage
@@ -1048,11 +1577,28 @@ runr bindings restore orders-db
   (dotenv). `runr bindings update` with `--value`/`--from-file` replaces them; attached projects
   roll onto the new values.
 - **Create and attach in one step.** `--attach` creates the binding in the region of the
-  project (`-p`, `RUNR_PROJECT` or `runr.yaml`) and attaches it, optionally with `--env-prefix`.
+  project (`-p`, `RUNR_PROJECT` or `runr.yaml`) and attaches it, optionally with `--env-prefix`
+  (with `--env NAME`: in the region of that environment, attached to it).
+- **Environments.** `attach`, `detach` and `attachments` take `--env NAME`: the binding is
+  attached to that [environment](environments.md#bindings) of the project only — its variables
+  reach the environment's pods, and only they reach the binding. The binding must be in the
+  region the environment runs in, and a binding is attached to at most one environment of a
+  project. `runr bindings attachments` shows the environment of each attachment (`ENVIRONMENT`;
+  `production` is the project's own workload); `--env` lists one environment's and what can still
+  be attached to it. Without `--env`, `detach` takes the binding off wherever it is attached in
+  the project.
 - **Prefixes.** `--env-prefix ORDERS_` (upper case, ends with `_`) puts `ORDERS_` in front of
   every variable, so a project can use two bindings of the same type. `runr bindings attach` on
   a binding that is already attached changes its prefix; two attachments of a project cannot
   produce the same variable (exit code 5).
+- **Dynamic credentials.** `--credentials dynamic` gives a `ready` Postgres binding's attachment a
+  Postgres user of its own, issued for a limited time and renewed by the
+  [OpenBao of the region](secret-stores.md#openbao-in-the-region) (`runr regions openbao`), instead
+  of the binding's user; `<prefix>PGUSER`, `<prefix>PGPASSWORD` and `<prefix>DATABASE_URL` come
+  from it ([details](bindings.md#dynamic-credentials)). On a binding that is already attached,
+  `--credentials dynamic` or `--credentials static` switches the attachment. Another binding type,
+  a binding that is not `ready` or a region without OpenBao and External Secrets Operator is
+  refused (exit code 5). `runr bindings attachments` shows the mode in its `CREDENTIALS` column.
 - **Provisioning** runs in the background; `--wait` (create, rotate) polls until the binding is
   `ready` and exits with code 6 when it ends in `error`, code 7 after `--timeout` (default 10
   minutes).
@@ -1120,6 +1666,31 @@ connection runs no data services.
 | `runr bindings credentials` | `bindings.view_credentials` |
 | `runr regions data-services [ls]` | `regions.view` or `bindings.view` |
 | `runr regions data-services install\|uninstall` | `regions.data_services.manage` |
+
+### Private database connections: runr private-connections
+
+A private connection links the region of a workload to a managed PostgreSQL database through
+Skupper: the workload reaches the database at a local host and gets `<prefix>DATABASE_URL`,
+`<prefix>PGHOST`, … from a Secret in its region. Without `--env` the connections of the
+project's own workload; with `--env NAME` those of one of its
+[environments](environments.md#private-database-connections) — in the region that environment
+runs in, reaching only its pods.
+
+```sh
+runr private-connections                                  # the project's own workload's connections
+runr private-connections add orders-db --routing-key pg-orders --link @link.yaml \
+    --database orders --username app --password-stdin --env-prefix ORDERS_ < password.txt
+runr private-connections add orders-db --env staging --routing-key pg-orders-staging \
+    --link @staging-link.yaml --database orders --username app --password-stdin < staging.txt
+runr private-connections ls --env staging
+runr private-connections status orders-db --env staging   # the Skupper Link and Listener in the region
+runr private-connections rm orders-db --env staging --yes
+```
+
+`--link` is the Skupper Link or AccessToken (YAML) the database's site issued: inline, `@file` or
+`-` (stdin). The password comes from `--password-stdin` or a hidden prompt (`--password` for
+scripts); it goes into the connection's Secret in the region and never comes back. Listing and
+`status` need `projects.view`, `add` and `rm` `connections.manage`.
 
 ## Models and model services
 
@@ -1653,8 +2224,10 @@ runr metrics live --quick --watch 5s                # read again every 5 seconds
 RunR records the CPU, memory, requests per second, concurrency, pods and cold starts of a
 project's workload. `runr metrics` summarizes the last `--period` (`7d`, `30d` or `90d`):
 average and peak CPU (cores), memory (MiB) and requests per second, the cold starts and the
-deployment sessions (how many, how long, how much CPU). `runr metrics history` lists the
-snapshots of the last `--since` (default 24 hours) or between `--from` and `--to` (RFC 3339 or
+deployment sessions — how many, how long, and their size × time as metering counts it: vCPU time
+and memory in MiB- or GiB-hours (the deployment's size for the sessions' pod time, not what the
+pods used). `runr metrics history` lists the snapshots (CPU in cores, memory in MiB) of the last
+`--since` (default 24 hours) or between `--from` and `--to` (RFC 3339 or
 `YYYY-MM-DD`) at a `--granularity` of `1m`, `5m`, `1h` or `1d` — by default `5m` up to a day,
 `1h` up to two weeks and `1d` beyond. `-o json` prints the API's answers.
 
@@ -1666,6 +2239,29 @@ values only and answers faster. `--deployment ID` reads another deployment of th
 no reading for — no pod running (scaled to zero), or a region without Prometheus. `-o json`
 prints the API's answer (`cpu`, `memory`, `rps`, `cpuAvg1h`, `memAvg1h`), one document per
 reading.
+
+### Rightsizing
+
+```sh
+runr projects rightsizing                           # the organization's open recommendations
+runr projects rightsizing orders                    # one project's, with the evidence
+runr projects rightsizing apply orders --yes        # save the recommended size as a new version
+runr deploy -p orders                               # … and run it
+runr projects rightsizing dismiss orders --snooze 30
+```
+
+Every night RunR compares what a running project's pods used at most in the last 14 days with
+its size ([Rightsizing](monitoring.md#rightsizing)): memory from the highest working set × 1.3,
+CPU from the 95th percentile × 1.3, rounded up to the next size; a larger size after OOM kills,
+CPU throttling or memory close to its limit. `runr projects rightsizing` lists the open
+recommendations of the projects whose metrics you may read — now and recommended size, why,
+what the change frees and, with the Billing module, the monthly difference — largest saving first.
+With a project name (or `-p`) it shows that project's recommendation with the window, the highest
+and 95th percentile memory and CPU, OOM kills and throttling, or how much data it still needs.
+`apply` asks before it saves the recommended size into the config as a new version (`--yes` in
+scripts); the running deployment keeps its size until the next `runr deploy`. `dismiss` hides a
+recommendation while the recommended size stays the same, `--snooze DAYS` (1–365) for that many
+days. `-o json` prints the API's answers.
 
 ### Uptime checks
 
@@ -1691,6 +2287,29 @@ incident and fires the `uptime_down` alert rules; `--recovery-threshold` success
 resolve it. `--status-page`, `--status-page-name` and `--status-page-order` put the check on
 the status page. `runr uptime update` changes only the flags given. `runr uptime run` ends
 with exit code 6 when the probe fails.
+
+### Load tests
+
+```sh
+runr loadtest run /api/orders --users 50 --duration 1m       # waits and prints the results
+runr loadtest run /orders --method POST --body-file order.json --users 10 --duration 30s
+runr loadtest run /health --host shop.example.com --no-wait
+runr loadtest                                               # the last five runs side by side
+runr loadtest get 01J…
+runr loadtest cancel 01J…
+```
+
+`runr loadtest run` starts a [load test](load-test.md): k6 inside the project's region sends
+`--users` (10, 50 or 100) concurrent users' requests to the path of the project's own URL for
+`--duration` (`30s`, `1m` or `5m`) — its function host, or with `--host` one of its active custom
+domains. `--method POST` sends `--body` (or `--body-file`) with `--content-type` (default
+`application/json`). It waits for the results — p50 / p95 / p99 latency, requests per second, the
+error rate, the pods at peak and the cold starts — and ends with exit code 6 when the test fails,
+7 after `--timeout` (default: the duration plus 5 minutes); `--no-wait` returns at once. The test
+traffic is metered and billed like any other traffic of the project. One test runs per project at
+a time (a second one is refused, exit code 5) and the organization has a daily limit.
+`runr loadtest` (also `ls`) lists the last `--limit` runs (default 5) with one column per
+completed run, and the day's count.
 
 ### Alerts
 
@@ -1786,7 +2405,11 @@ fails, 7 after `--timeout` (default 15 minutes). A region without a cluster conn
 | `runr traces enable\|disable` | `projects.update` (and `projects.deploy` for the redeploy, or `--no-deploy`) |
 | `runr traces replay …` | `replay.manage` (`enable\|disable` redeploy like `traces enable`) |
 | `runr metrics [history\|live]`, `runr uptime ls\|results\|incidents` | `metrics.view` |
+| `runr projects rightsizing [NAME]` | `metrics.view` |
+| `runr projects rightsizing apply\|dismiss` | `projects.update` |
 | `runr uptime create\|update\|rm\|run`, `incidents update` | `uptime.manage` |
+| `runr loadtest [ls]\|get` | `metrics.view` |
+| `runr loadtest run\|cancel` | `projects.deploy` |
 | `runr alerts …` | `alerts.manage` |
 | `runr status-page …` | `status_page.manage` |
 | `runr regions tracing [get]` | `regions.view` |
@@ -2170,6 +2793,148 @@ longest retention the API allows, 3650 days). `runr audit settings` needs `audit
 `settings set` needs `settings.manage`, and on an installation with several organizations a
 platform administrator outside any organization (others get exit code 3).
 
+<a id="gateway"></a>
+## API gateways: runr gateway
+
+A gateway serves projects under paths of `https://<user>.<region>.<domain>`. Its routes can ask
+for an API key or a JWT; consumers get keys and plans, and RunR measures their calls for your
+invoicing system ([API product](api-product.md)). A `GATEWAY` argument is the gateway's id, its
+region's name or its host; a `ROUTE` is the route's id or path.
+
+```sh
+runr gateway                                           # your gateways
+runr gateway get eu-1                                  # routes with their authentication
+runr gateway create eu-2                               # your gateway in eu-2 (created when you have none)
+runr gateway routes add eu-1 /orders -p orders --auth key   # the project's own workload, keyed from the start
+runr gateway routes add eu-1 /orders-staging -p orders --env staging --method GET --method POST
+runr gateway routes ls eu-1                            # where every route leads
+runr gateway routes rm eu-1 /orders-staging --yes
+runr gateway routes set eu-1 /orders --auth key
+runr gateway routes set eu-1 /partners --auth jwt --jwks-url https://id.example.com/jwks --audience partners
+runr gateway routes set eu-1 /orders --gateway-only    # the project's own URL stops serving
+
+runr gateway plans create Pro --gateway eu-1 --per-second 20 --burst 50 --per-month 5000000
+runr gateway consumers create 'Acme Ltd' --gateway eu-1 --external-id CUST-1042 --plan 01JP…
+runr gateway keys create 01JC… --name production       # printed once: hand it to the consumer
+runr gateway keys create 01JC… --name reporting --gateway eu-1 --route /orders:GET --expires 90d
+runr gateway keys rotate 01JK… --overlap 24h           # the old key works for one more day
+runr gateway keys revoke 01JK… --yes
+
+runr gateway usage --gateway eu-1 --by consumer --since 30d
+runr gateway usage --consumer 01JC… --by day --since 2026-10-01 --until 2026-11-01 -o json
+
+runr gateway domain set eu-1 api.example.com           # prints the TXT and CNAME / A records
+runr gateway domain verify eu-1
+runr gateway page eu-1 --description 'Orders API of Jane Ltd.' --metrics
+```
+
+`routes add` routes a path to the project's own workload (`-p`, `RUNR_PROJECT` or `runr.yaml`)
+or, with `--env NAME`, to one of its [environments](environments.md#gateway-routes). The gateway
+must be in the region the workload runs in — `runr gateway create REGION` gives you a gateway in
+the region of an environment that runs elsewhere — and the project's own workload and each
+environment have one route. `--auth key` or `--auth jwt --jwks-url URL` (with `--issuer`,
+`--audience`, `--subject-claim`, `--require-consumer`) and `--gateway-only` create the route with
+its authentication in the same call, so a key or JWT route is never public, not even for a moment
+(an API before 0.6.0 creates it public and `runr` sets the authentication right after). The output
+has the route's URL; a path the gateway already has is refused (exit code 5). `routes rm` of the
+project's own route makes its own URL its endpoint again.
+
+`gateway usage` prints, next to the calls let through and refused, ERRORS (the function's 5xx
+answers and calls that got no answer) and P50 / P95 / P99 (milliseconds until the function's
+answer started) of every row, and a note with the totals; rows without a measured answer show
+`-`.
+
+A key is in the output of `keys create` and `keys rotate` only; `keys ls` shows its prefix.
+`consumers update --plan ""` removes a consumer's plan, `--status suspended` makes every key of
+it answer 403. `consumers` and `plans` without `--gateway` list those of every gateway you see
+(and the organization's with `api_products.manage`).
+
+A gateway's routes, consumers, keys, plans, domain and page belong to its owner (`projects.update`)
+and `regions.manage`; the organization's consumers and plans need `api_products.manage`; usage
+of every gateway also `billing.view`. An API without the API product answers
+"not supported by this RunR API".
+
+## Organization export and import: runr org
+
+`runr org` packages the organization into one file and imports such a file into another
+organization or installation — self-hosted to hosted, one site to another, or a backup for
+disaster recovery ([Organization export and import](org-export.md)). Both need the Owner role of
+the organization.
+
+```sh
+runr org export --estimate                                    # what an export holds and its size; starts nothing
+runr org export -f acme.tar.zst                               # export, wait, download (resumes a partial file)
+runr org export -p api -p web --binding-data db --images      # two projects, the data of db, prebuilt images
+RUNR_EXPORT_PASSPHRASE=… runr org export --secrets --members  # secrets encrypted with the passphrase; member e-mails
+runr org export --to binding:backups --no-wait                # into an object binding of the organization
+runr org export --to s3://backups/runr --s3-endpoint https://s3.example.com
+runr org export --history                                    # with the run history (deployments, runs, events, usage, bills)
+runr org import acme.tar.zst --plan-only                      # upload (resumable), verify, print the plan
+runr org import --from binding:backups --key runr-exports/runr-org-acme-20261021-120000.tar.zst
+runr org import --from s3://backups/dr/acme.tar.zst --s3-endpoint https://s3.example.com --plan-only
+runr org import --resume 01J… --yes                           # continue reading a package after a failure
+runr org import acme.tar.zst --region-map eu-1=fra-1 --rename api=api-copy --yes
+RUNR_IMPORT_PASSPHRASE=… runr org import acme.tar.zst --deploy --yes
+runr org transfers                                            # the latest exports and imports
+runr org transfer 01J…                                        # one of them: status, package, plan, report
+runr org transfer cancel 01J… --yes                           # stop it, remove its files
+runr org transfer history 01J… --kind bill                    # the bills of the source an import kept (read-only)
+```
+
+`export` starts the export job and prints its progress (every 10 %, every phase); a package for
+download is then saved to `-f` (default the package's own file name, `-` for stdout), resuming a
+partial file of that name and checking the package's SHA-256. Without options it holds the
+organization's settings, roles and groups, alert rules and channels (without their secrets), the
+status page, and every project with its config, env vars, every version's code, domains,
+gateways and routes, workflows, runtime pins and a deployment history summary, and the bindings'
+definitions. `-p/--project` (repeat) limits it to some projects, `--members` adds the members'
+e-mails and roles (for invitations; never passwords or tokens), `--images` the prebuilt image of
+each project's deployed or latest built version (can be large), `--binding-data NAME` (repeat, or
+`all`) the data of bindings — `--estimate` shows their sizes first. `--secrets` adds secret
+values (project secrets, external binding values, alert channel secrets, uptime check headers)
+encrypted with a passphrase of at least 12 characters, read from `--passphrase-file` or
+`$RUNR_EXPORT_PASSPHRASE` — never from the command line. `--history` adds the run history:
+every deployment, the workflow runs and trigger events RunR keeps, the usage records and the
+bills ([Run history](org-export.md#run-history)). `--to binding:NAME` puts the package into
+an object binding of the organization (under `--prefix`, default `runr-exports`), `--to
+s3://bucket/prefix` into an S3 bucket at `--s3-endpoint` (`--s3-region`, default `$AWS_REGION`;
+`--s3-path-style`) with the credentials in `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY`, which
+RunR uses for this job only and does not store. `--no-wait` prints the transfer and returns;
+`--timeout` (default 6h, 0 for none) bounds the wait.
+
+`import` hashes the file, resumes an unfinished upload of the same file, sends it in chunks and
+waits until RunR verified the package (checksums, schema version: packages of the same or an
+older RunR are accepted, newer ones refused) and planned the import. The plan is a dry run: where
+each project lands (`--region-map PACKAGE_REGION=REGION`, region names or ids), name collisions
+(`--rename PROJECT=NEW_NAME`), missing runtimes or versions, residency, capacity and quota checks,
+and what is left to do by hand — DNS of the domains (verified again in the new place), secrets to
+enter again when the package has none or no passphrase is given (`--passphrase-file` or
+`$RUNR_IMPORT_PASSPHRASE`). `--plan-only` stops after the plan; otherwise `import` asks for
+confirmation (`--yes`), applies it and prints the report: what was created, already there,
+skipped, failed, and the steps left. Binding data and images of the package are restored unless
+`--no-data` / `--no-images` (versions without an imported image are built again when deployed);
+`--deploy` deploys the imported projects. A plan with blocking issues exits with code 5 and
+imports nothing; a failed import exits with code 6 and continues where it stopped when `import`
+of the same file runs again. With `-o json` both print the transfer object (with its plan or
+report).
+
+Instead of a FILE, `--from` lets RunR read the package where an export wrote it:
+`--from binding:NAME --key KEY` (an object binding of the organization; a transfer pod copies the
+object in the binding's region) or `--from s3://bucket/key` with `--s3-endpoint` (`--s3-region`,
+`--s3-path-style`; `--key` is appended to a key prefix in the URL) and the credentials in
+`AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY`, used for this import only. `--sha256` checks the
+package once it is read. The read resumes after the bytes RunR has: `--resume ID` continues one
+that failed (an S3 source takes the credentials from the environment again). `--skip-data
+BINDING` (a binding of the package, repeat) leaves one binding's data out — e.g. KV data that a
+region with an older Redis cannot take — and `--no-history` the package's run history. `runr org
+transfer history ID` lists the usage records and bills an import kept as read-only history.
+
+### Permissions
+
+| Command | Needs |
+|---|---|
+| `runr org export\|import\|transfers\|transfer [cancel\|history]` | the Owner role of the organization and `org.transfer` (API tokens need the `org.transfer` ability) |
+
 ## Regions
 
 A region is a Kubernetes cluster (1.30 or newer) projects run in ([architecture](architecture.md#regions)).
@@ -2277,8 +3042,11 @@ there is nothing to compare, and the new kubeconfig is taken.
 | `status` | `active`, `inactive` or `maintenance`: a region that is not active takes no new projects or deploys, and its function domain answers every request with 404 (`inactive`) or 503 (`maintenance`) ([region status](regions.md#region-status)) |
 | `request_timeout` | the longest request of a function in seconds (1–3600, default 300); the region's Traefik and Knative follow it right away ([regions](regions.md#request-timeout)) |
 | `agent_ws_url` | RunR's address as the region's agents reach it (`wss://…`); empty: the console URL. The agent is deployed again with it |
-| `cert_manager_cluster_issuer` | the ClusterIssuer of custom-domain certificates; empty: none |
+| `cert_manager_cluster_issuer` | a ClusterIssuer of yours for custom-domain certificates; empty: RunR's default issuer ([cert-manager](regions.md#cert-manager)) |
+| `cert_manager_issuer_mode` | RunR's default issuer: `auto` (Let's Encrypt where the region is reachable from the internet and an ACME e-mail is set, else the region CA), `acme` or `ca` |
+| `cert_manager_acme_email` | the ACME account e-mail of that issuer; empty: the platform's (Helm `knative.certManager.acmeEmail`) |
 | `ingress_trusted_ips` | comma-separated addresses or CIDRs of a load balancer in front of the region's Traefik that sends PROXY protocol or `X-Forwarded-For`; empty: trust nobody |
+| `internal_auth` | `enforce` or `audit`: the [internal network](internal-network.md#enforce-and-audit) refuses the calls the callee's allow list does not admit, or admits them and logs what it would refuse. Every region enforces until it is set, one upgraded from an earlier release too; `audit` right after an upgrade looks first. The region's authz follows within ten seconds |
 | `prometheus_url`, `loki_url` | an existing in-cluster Prometheus / Loki (`http://<service>.<namespace>.svc:<port>`); empty: RunR's own again, installed right away when the region's Serving is ready ([regions](regions.md#observability)) |
 | `loki_org_id` | the tenant (`X-Scope-OrgID`) of an existing multi-tenant Loki |
 
@@ -2341,7 +3109,8 @@ location moves only within it: `--data-location` names the new cluster's.
 
 `runr regions migration [status] REGION` shows the move and, as long as it can be rolled back,
 what it did with each project of the region (`projects` in `-o json`; projects that run nothing
-are not listed):
+are not listed). An [environment](environments.md#region-moves-and-detached-regions) that runs on
+the region is a row of its own, `orders (staging)` (`environment` in `-o json`):
 
 ```text
 Region:       eu-1
@@ -2373,19 +3142,31 @@ installing again changes the shims or nodes. It restarts the container runtime o
 selected node, so it asks for confirmation (`--yes`); `--wait` follows it.
 `runr regions wasm uninstall REGION` removes it (refused while Wasm projects run).
 
+### cert-manager
+
+`runr regions cert-manager [REGION]` shows cert-manager of a region: its status, whether RunR
+installed it or reuses the cluster's own, the ClusterIssuer of custom domains (Let's Encrypt, the
+region CA or yours) and why RunR chose it, and why TLS mode `cert-manager` is not available when it
+is not (`--no-cluster` skips the issuer's state on the cluster). `runr regions cert-manager install
+REGION` sets it up and creates the issuer (again: repairs it; `--wait` follows it),
+`runr regions cert-manager ca REGION [-f FILE]` prints or saves the region CA's certificate, and
+`runr regions cert-manager rm REGION` stops using it (refused while custom domains use it)
+([regions](regions.md#cert-manager)).
+
 `runr regions demo install REGION` deploys a set of demo projects to a region with Knative
 Serving, `runr regions demo rm REGION` removes them; `runr regions demo [REGION]` shows their state.
 
 Every command that removes something — `rm`, the `uninstall` commands, `redis rm`,
-`registry rm`, `function-tls rm`, `migration rollback`, `demo rm`, `nodes set` when it releases
-nodes — asks for confirmation on a terminal and needs `--yes` elsewhere.
+`registry rm`, `function-tls rm`, `cert-manager rm`, `global-dns disable`, `migration rollback`,
+`demo rm`, `nodes set` when it releases nodes — asks for confirmation on a terminal and needs
+`--yes` elsewhere.
 
 ### Permissions
 
 | Commands | Permission |
 |---|---|
-| `get`, `status`, `nodes`, `knative`, `knative versions\|namespace`, `redis`, `registry`, `registry setup-status`, `migration`, `function-tls`, `skupper`, `capacity`, `demo`, `wasm` | `regions.view` |
-| `create`, `check`, `set`, `rm`, `kubeconfig`, `nodes set`, `knative install\|upgrade\|uninstall\|detect`, `redis test\|set\|rm`, `migration start\|complete\|rollback`, `function-tls set\|rm`, `skupper site`, `capacity set`, `demo install\|rm` | `regions.manage` |
+| `get`, `status`, `nodes`, `knative`, `knative versions\|namespace`, `redis`, `registry`, `registry setup-status`, `migration`, `function-tls`, `skupper`, `capacity`, `demo`, `wasm`, `cert-manager [status]\|ca`, `global-dns [status]`, `global-dns geoip` (reading), `openbao [status]`; `runr global-dns [status]` | `regions.view` |
+| `create`, `check`, `set`, `rm`, `kubeconfig`, `nodes set`, `knative install\|upgrade\|uninstall\|detect`, `redis test\|set\|rm`, `migration start\|complete\|rollback`, `function-tls set\|rm`, `skupper site`, `capacity set`, `demo install\|rm`, `cert-manager install\|rm`, `global-dns enable\|disable`, `global-dns geoip --source\|--url\|--reload`, `openbao install\|uninstall\|default`; `runr global-dns sync` | `regions.manage` |
 | `create --registry` | `regions.manage` and `registry.manage` |
 | `registry set`, `registry rm`, `registry test` | `registry.manage` |
 | `wasm install\|uninstall` | `sandbox.manage` |
@@ -2453,7 +3234,7 @@ deploy:
   stage: deploy
   image: alpine:3.21
   variables:
-    RUNR_VERSION: v0.5.10
+    RUNR_VERSION: v0.6.0
   before_script:
     - apk add --no-cache curl tar
     - curl -fsSL https://runr.sh/install.sh | sh

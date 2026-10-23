@@ -23,7 +23,7 @@ use Symfony\Component\Yaml\Yaml;
  *
  *  - in-cluster operations (BindingOpsRunner) are recorded and answered: ok + "RUNR_OK" by
  *    default, Garage admin calls with a RUNR_RESULT built from the call list, usage tasks with
- *    USAGE lines from $usageBytes, the KV probe with ACL_SUPPORTED $aclSupported;
+ *    USAGE lines from $usageBytes, the KV probe with ACL_SUPPORTED $aclSupported and REDIS_VERSION $redisVersion;
  *    $opsResponses[purpose] overrides (OpsResult or fn (OpsTask): OpsResult);
  *  - the Kubernetes API (Http::fake): every request recorded; pods Running + Ready, CNPG served,
  *    CNPG Clusters ready ($readyInstances), $k8sResources[path] for other GETs (null = 404),
@@ -59,6 +59,9 @@ trait FakesBindingOps
     protected array $usageBytes = [];
 
     protected bool $aclSupported = true;
+
+    /** REDIS_VERSION the KV probe reports */
+    protected string $redisVersion = '7.4.1';
 
     protected int $readyInstances = 1;
 
@@ -290,7 +293,7 @@ trait FakesBindingOps
         }
 
         return match ($task->purpose) {
-            'kv-probe' => new OpsResult(true, "PING PONG\nACL_SUPPORTED ".($this->aclSupported ? 'yes' : 'no')."\nRUNR_OK\n"),
+            'kv-probe' => new OpsResult(true, "PING PONG\nACL_SUPPORTED ".($this->aclSupported ? 'yes' : 'no')."\nREDIS_VERSION {$this->redisVersion}\nRUNR_OK\n"),
             'kv-usage' => new OpsResult(true, $this->usageLines($task->files['targets'] ?? '', fn ($id) => ($this->usageBytes[$id] ?? 0).' 3')."RUNR_OK\n"),
             'object-usage' => new OpsResult(true, $this->usageLines($task->files['targets'] ?? '', fn ($id) => (string) ($this->usageBytes[$id] ?? 0))."RUNR_OK\n"),
             'postgres-usage' => new OpsResult(true, $this->postgresUsage((string) ($task->files['script.sql'] ?? ''))."RUNR_OK\n"),

@@ -75,6 +75,24 @@ class DnsResolver
     }
 
     /**
+     * Name servers of $name (the delegation of a zone), lowercase, without a trailing dot.
+     *
+     * @return string[]
+     */
+    public function ns(string $name): array
+    {
+        $targets = [];
+
+        foreach ($this->lookup($name, DNS_NS) as $record) {
+            if (! empty($record['target'])) {
+                $targets[] = rtrim(strtolower((string) $record['target']), '.');
+            }
+        }
+
+        return $targets;
+    }
+
+    /**
      * @return array<int, array<string, mixed>>
      */
     protected function lookup(string $name, int $type): array

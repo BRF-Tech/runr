@@ -1,0 +1,169 @@
+{{- if .Values.bootstrap.enabled }}
+{{- $bootstrap := .Values.bootstrap | default dict }}
+{{- $tenancySetup := and (eq (include "runr.tenancyEnabled" .) "true") (or (not (hasKey $bootstrap "tenancySetup")) $bootstrap.tenancySetup) }}
+{{- /*
+  region:reconcile's time (docs/upgrade.md, Order of operations). No step starts after the deadline
+  (bootstrap.regionReconcileSeconds, 3600 by default): the worst case of one region cluster on an
+  upgrade from 0.5.10, every wait of every step at its limit — private-ingress 1715 s (two Traefik
+  rollouts with helm --wait 600 s each, the pods 300 s, the KIngresses 180 s, the DNS grace 35 s),
+  internal-network 780 s (the authz 180 s, helm --wait 600 s), cert-manager 700 s (Available 150 s,
+  the issuers 3 × 115 s and 30 s, the ACME account 145 s), a Kata KVM probe 150 s, the helm
+  processes — is about 3400 s. The step running at the deadline runs to its end: the time limit adds
+  the longest step (private-ingress, 1800 s), so no step is cut in the middle.
+  An attempt: the database 600 s (a fresh install starts it next to this Job), agent:redeploy 120 s,
+  images:move-registry 60 s, region:reconcile's time limit, secrets:move-to-region 240 s, the role
+  check 60 s, the pause before the next attempt 300 s. Three attempts, after the wait for the bootstrap
+  hook (at most as long as it may run).
+*/}}
+{{- $reconcileDeadline := int ($bootstrap.regionReconcileSeconds | default 3600) }}
+{{- $reconcileLimit := add $reconcileDeadline 1800 }}
+{{- $attempts := 3 }}
+{{- $attempt := add $reconcileLimit 1380 }}
+{{- $hookWait := 420 }}
+{{- if eq (include "runr.tenancyEnabled" .) "true" }}{{ $hookWait = 540 }}{{ end }}
+{{- if $tenancySetup }}{{ $hookWait = 1020 }}{{ end }}
+{{- $deadline := add $hookWait (mul $attempts $attempt) }}
+{{/*
+  Not a hook: the regions are brought to this version in the background, after helm upgrade
+  returned (helm waits for Jobs only with --wait-for-jobs). One Job per release revision
+  (runr-region-reconcile-<revision>), kept a week for its logs (ttlSecondsAfterFinished); the next
+  upgrade replaces it.
+  - waits for the database, then for the bootstrap hook of the same revision (setting
+    bootstrap_revision): the tenant schemas migrated, a tenancy conversion done
+  - agent:redeploy --missing: the region agents without a token (0.3.3 token auth) deployed again
+  - images:move-registry and, at the end, rbac:assign-missing again: what the previous version's pods
+    wrote during the rollout, now that it is over
+  - region:reconcile --deadline (ReconcileRecord: the console's region status, /api/version and, when
+    the last attempt does not end done, a notification of the platform administrators)
+  - secrets:move-to-region: the project secret values still in the database into their regions
+  Exit 0: done; 4 from region:reconcile (only unreachable clusters) counts as done, with a warning;
+  1 (a step failed or still waits), 3 (the deadline left steps) or the time limit: the attempt fails
+  and the next pod continues where it stopped (every step is idempotent), after 5 minutes when a step
+  failed or waits.
+*/}}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: runr-region-reconcile-{{ .Release.Revision }}
+  namespace: {{ include "runr.namespace" . }}
+  labels:
+    app: runr-region-reconcile
+    {{- include "runr.labels" . | nindent 4 }}
+spec:
+  backoffLimit: {{ sub $attempts 1 }}
+  # three attempts of the steps below and the wait for the bootstrap hook
+  activeDeadlineSeconds: {{ $deadline }}
+  # the Job and its pods (one per attempt, with their logs) stay a week after it ended
+  ttlSecondsAfterFinished: 604800
+  template:
+    metadata:
+      labels:
+        app: runr-region-reconcile
+        {{- include "runr.colocation-label" . | nindent 8 }}
+      annotations:
+        {{- include "runr.checksum" . | nindent 8 }}
+    spec:
+      serviceAccountName: runr-api
+      # every attempt is a pod of its own: the log of each stays
+      restartPolicy: Never
+      {{- include "runr.imagePullSecrets" . | nindent 6 }}
+      {{- include "runr.storage-init" . | nindent 6 }}
+      {{- include "runr.placement" (dict "root" . "colocate" true) | nindent 6 }}
+      containers:
+        - name: reconcile
+          image: {{ include "runr.apiImage" . | quote }}
+          imagePullPolicy: {{ .Values.api.image.pullPolicy }}
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              set -e
+              cd /var/www/html
+              # Same module selection as docker/entrypoint.sh (the Tenancy module adds the tenants' regions)
+              toggle() {
+                if [ "$2" = "true" ]; then php artisan module:enable "$1" >/dev/null 2>&1 || true
+                else php artisan module:disable "$1" >/dev/null 2>&1 || true; fi
+              }
+              toggle Tenancy "${TENANCY_ENABLED:-false}"
+              toggle AuthProvider "${AUTH_PROVIDER_ENABLED:-false}"
+              toggle Ticket "${TICKET_ENABLED:-true}"
+              toggle Billing "${BILLING_ENABLED:-false}"
+
+              i=0
+              until php -r 'require "vendor/autoload.php"; $app = require "bootstrap/app.php"; $app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap(); Illuminate\Support\Facades\DB::connection()->getPdo();' >/dev/null 2>&1; do
+                i=$((i + 1))
+                if [ "$i" -ge 120 ]; then
+                  echo "runr-region-reconcile: ERROR the database did not accept connections within 10 minutes" >&2
+                  exit 1
+                fi
+                echo "runr-region-reconcile: waiting for the database"
+                sleep 5
+              done
+
+              # The bootstrap hook of this revision first (tenant schemas, a tenancy conversion): it records
+              # the revision once those are done. A fresh install migrates in its post-install hooks
+              waited=0
+              until php -r 'require "vendor/autoload.php"; $app = require "bootstrap/app.php"; $app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap(); exit((string) App\Models\Setting::get("bootstrap_revision") === (string) getenv("RUNR_HELM_REVISION") ? 0 : 1);' >/dev/null 2>&1; do
+                if [ "$waited" -ge {{ $hookWait }} ]; then
+                  echo "runr-region-reconcile: the bootstrap hook of revision ${RUNR_HELM_REVISION} did not finish within {{ $hookWait }} s — going on"
+                  break
+                fi
+                [ "$waited" = 0 ] && echo "runr-region-reconcile: waiting for the bootstrap hook of revision ${RUNR_HELM_REVISION}"
+                sleep 10
+                waited=$((waited + 10))
+              done
+
+              # 0.3.3+: the agent connects with a per-region token; reinstall the (old) region agents that have
+              # no token. An unreachable region must not stop the rest (manually: php artisan agent:redeploy --missing)
+              timeout 120 php artisan agent:redeploy --missing || echo "runr-region-reconcile: agent redeploy incomplete (run php artisan agent:redeploy --missing)"
+
+              # Image references the previous version's pods wrote until the rollout ended (idempotent)
+              timeout 60 php artisan images:move-registry || echo "runr-region-reconcile: image references not moved (run php artisan images:move-registry)"
+
+              # The existing regions to this version. No step starts after the deadline and the one running then
+              # runs to its end, so nothing is left half-done; the time limit is only the last resort
+              reconcile_rc=0
+              timeout {{ $reconcileLimit }} php artisan region:reconcile --deadline={{ $reconcileDeadline }} --run=helm-{{ .Release.Revision }} --attempts={{ $attempts }} || reconcile_rc=$?
+              {{- $projectSecrets := .Values.projectSecrets | default dict }}
+              {{- $finalize := ternary " --finalize" "" (eq (toString $projectSecrets.finalize) "true") }}
+              {{- if ne (toString ($projectSecrets.storage | default "region")) "database" }}
+
+              # Pass-through (docs/upgrade.md): secret values an earlier release kept in the database go into their
+              # regions, verified there by fingerprint. Until the upgrade is finalized the database keeps an encrypted
+              # copy for a rollback to 0.5.10, so this step takes nothing away a rollback needs; projectSecrets.finalize
+              # adds --finalize, which drops the copies. Idempotent and resumable; it needs nothing of region:reconcile
+              # (manually: php artisan secrets:move-to-region{{ $finalize }})
+              timeout 240 php artisan secrets:move-to-region{{ $finalize }} || echo "runr-region-reconcile: secret values not all moved (run php artisan secrets:move-to-region{{ $finalize }})"
+              {{- end }}
+
+              # Users the previous version's pods created until the rollout ended get the default role
+              php artisan rbac:assign-missing || echo "runr-region-reconcile: role check skipped (run php artisan rbac:assign-missing)"
+
+              case "$reconcile_rc" in
+                0)
+                  echo "runr-region-reconcile: the regions are at this version"
+                  exit 0 ;;
+                4)
+                  echo "runr-region-reconcile: WARNING some region clusters did not answer (listed above); their regions keep what they had — run php artisan region:reconcile once they answer" >&2
+                  exit 0 ;;
+                3|124|143)
+                  echo "runr-region-reconcile: ERROR region:reconcile did not finish (exit ${reconcile_rc}: its deadline of {{ $reconcileDeadline }} s or time limit of {{ $reconcileLimit }} s left steps); the next attempt continues where it stopped" >&2
+                  exit 1 ;;
+                *)
+                  echo "runr-region-reconcile: ERROR region:reconcile did not finish (exit ${reconcile_rc}: a step failed or still waits, see above); the next attempt starts in 5 minutes" >&2
+                  sleep 300
+                  exit 1 ;;
+              esac
+          {{- include "runr.envFrom" . | nindent 10 }}
+          env:
+            {{- include "runr.module-env" . | nindent 12 }}
+            {{- include "runr.secret-env" . | nindent 12 }}
+            - name: RUNR_HELM_REVISION
+              value: {{ .Release.Revision | quote }}
+          volumeMounts:
+            - name: api-storage
+              mountPath: /var/www/html/storage
+      volumes:
+        - name: api-storage
+          persistentVolumeClaim:
+            claimName: runr-api-storage
+{{- end }}

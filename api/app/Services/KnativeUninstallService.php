@@ -9,6 +9,8 @@ use App\Services\Concerns\KnativeHelmTrait;
 use App\Services\Concerns\KnativeLogTrait;
 use App\Services\Concerns\KnativeTraefikTrait;
 use App\Services\Contracts\KnativeConstants;
+use App\Services\Observability\LoadTest\LoadTestRunner;
+use App\Services\Observability\LoadTest\LoadTestService;
 use Illuminate\Support\Facades\Log;
 use Throwable;
 
@@ -33,6 +35,7 @@ class KnativeUninstallService implements KnativeConstants
         try {
             $this->appendLog($region, 'Starting Knative uninstall...');
             $this->cleanup($region, $removeTraefik);
+            $this->removeLoadTests($region, fn (string $line) => $this->appendLog($region, $line));
             $this->appendLog($region, 'Knative uninstalled successfully.');
 
             $region->update([
@@ -123,6 +126,12 @@ class KnativeUninstallService implements KnativeConstants
                 Log::debug('Cleanup: KnativeServing CR removal skipped', ['error' => $e->getMessage()]);
             }
 
+            // 1b. The project namespace's NetworkPolicy (the activator's goes with the namespace)
+            RegionNetworkPolicyService::remove($k8s, $region->project_namespace ?: $region->name);
+
+            // 1c. Load tests target the region's ingress, which goes now: their namespace too
+            $this->removeLoadTests($region, fn (string $line) => $this->appendComponentLog($region, 'serving', $line));
+
             // 2. Uninstall Traefik + RBAC (kept while it serves non-Knative Ingresses)
             $this->appendComponentLog($region, 'serving', 'Uninstalling Traefik...');
             $traefikKeptFor = $this->uninstallTraefikIfUnused($k8s, new HelmService, $ns, $region->kubeconfig, $removeTraefik);
@@ -149,6 +158,26 @@ class KnativeUninstallService implements KnativeConstants
                 'knative_status_checked_at' => now(),
             ]);
             throw $e;
+        }
+    }
+
+    /**
+     * The load-test namespace of the cluster (docs/load-test.md) — its policies, its quota and the
+     * k6 Jobs still running — and the tests of the region in the current organization, which end
+     * as failed with the reason. Tests of other organizations end when their next check finds no
+     * Job. Best effort: the uninstall goes on without it.
+     *
+     * @param  callable(string): void  $log
+     */
+    private function removeLoadTests(KnativeRegion $region, callable $log): void
+    {
+        try {
+            $ended = app(LoadTestService::class)->endForRegion((string) $region->id, __('observability.load_test.region_uninstalled'));
+            if (app(LoadTestRunner::class)->removeNamespace(new KubernetesClient($region->kubeconfig))) {
+                $log('Removed the load-test namespace'.($ended ? " ({$ended} running test(s) stopped)" : '').'.');
+            }
+        } catch (Throwable $e) {
+            Log::warning('Cleanup: load-test namespace not removed', ['region' => $region->name, 'error' => $e->getMessage()]);
         }
     }
 }

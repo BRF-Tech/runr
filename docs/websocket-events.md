@@ -41,6 +41,8 @@ Topics broadcast through `BroadcastsJobCompletion` also create a `Notification` 
 | `deployment.deleted` | `DeploymentController::destroy()` | `{ project_id, deployment_id }` | `usePlatformSync` — remove from the list |
 | `deployment.ready` | `CheckDeploymentReadyJob` | `{ project_id, project_name, deployment_id, status: 'active' }` | `usePlatformSync` (`deployment.*` wildcard) — update status |
 | `deployment.failed` | `CheckDeploymentReadyJob` | `{ project_id, project_name, deployment_id, status: 'failed', error }` | (same wildcard handler) |
+| `deployment.rollout` | `RolloutService` (every change of a blue-green / canary rollout: opened, ready, step, health check, metrics, promote, abort, rollback, release, failure; [deploy strategies](deploy-strategies.md)) | `{ project_id, environment_id, deployment_id, status, rollout: DeploymentRolloutResource }` (`environment_id` null and `rollout.environment` `production` for the project's own workload; `rollout: null` when a deploy turned direct) | `usePlatformSync` — the deployment's `rollout` and `status`, for the environment shown |
+| `deployment.status` | `RolloutService` (the other deployment of a rollout: the one that served, kept warm or active again) | `{ project_id, deployment_id, status }` | `usePlatformSync` — update status |
 
 **View**: `ProjectDetailView` (filtered by `project_id`)
 
@@ -73,8 +75,8 @@ Topics broadcast through `BroadcastsJobCompletion` also create a `Notification` 
 | `region.updated` | `CheckKnativeStatusJob`, `RegionMigrateService`, `KnativeInstallController::knativeStatus()` | `{ region: KnativeRegionResource }` | `useRealtimeNotifications` — replace the region in `settingsStore.data.regions` |
 | `region.created` | `InstallRegistryAndCreateRegionJob` | `{ region_id, region_name }` | `useRegistrySetup` — `setupStatus = 'ready'`, sets `setupRegionId` |
 | `region.create_failed` | `InstallRegistryAndCreateRegionJob` | `{ token, error }` | `useRegistrySetup` — `setupStatus = 'error'` |
-| `region.migrated` | `MigrateRegionJob` | `{ region_id, region_name }` | notification only |
-| `region.migrate_failed` | `MigrateRegionJob` | `{ region_id, region_name, error }` | notification only |
+| `region.migrated` | `MigrateRegionProjectsJob` (the move's second part) | `{ region_id, region_name }` | notification only |
+| `region.migrate_failed` | `MigrateRegionJob`, `MigrateRegionProjectsJob` | `{ region_id, region_name, error }` | notification only |
 | `region.migration_completed` | `CheckMigrationDnsJob` | `{ region_id, region_name }` | notification only |
 | `region.left_cluster_cleaned` | `RemoveLeftClusterWorkloadsJob` | `{ region_id, region_name, removed, message }` | notification only |
 | `region.left_cluster_cleanup_failed` | `RemoveLeftClusterWorkloadsJob` | `{ region_id, region_name, message, error }` | notification only |
@@ -163,7 +165,7 @@ Topics broadcast through `BroadcastsJobCompletion` also create a `Notification` 
 | `demo.removed` | `RemoveDemoJob`, `RemoveRegionDemoJob`, `RemoveTenantDemoJob` | `{ demo_status: 'idle' }`, `{ region_id, region_name, region_demo_status: null }` or `{ tenant_id }` | `DemoManager` (no `region_id`), `RegionDemoSection` (filtered by `region_id`), `useRealtimeNotifications`, `usePlatformSync` (refetch) |
 | `demo.remove_failed` | `RemoveDemoJob`, `RemoveRegionDemoJob`, `RemoveTenantDemoJob` | `{ demo_status: 'error' }`, `{ region_id, region_name, region_demo_status: 'error' }` or `{ tenant_id }` (+ `error`) | (same handlers) |
 
-**Components**: `DemoManager` (global demo, Settings), `RegionDemoSection` (per-region demo)
+**Components**: `DemoManager` (global demo, Administration → Regions & settings), `RegionDemoSection` (per-region demo)
 
 ---
 
@@ -175,6 +177,40 @@ Topics broadcast through `BroadcastsJobCompletion` also create a `Notification` 
 | `tenant.delete_failed` | `DeleteTenantJob` | `{ tenant_id, slug, error }` | notification only |
 
 ---
+
+## 13a. Promotions between environments
+
+| Topic | Backend | Payload | Frontend handler |
+|-------|---------|---------|------------------|
+| `environment.promotion` | `PromotionNotifier` (a promotion waits for approval, was approved, rejected, deployed or failed; [environments](environments.md#notifications)) | `{ promotion_id, project_id, event, status }` | `useRealtimeNotifications` — the header's approvals count; `ApprovalsView` (`useJobEvents`) — reloads the inbox |
+
+The approvers and the requester also get a `NotificationCreated` of type
+`environment.promotion.<event>` on their own `notifications.{user_id}` channel (in-app, unless
+their "promotion" notification preference is off); it refreshes the approvals count too.
+
+---
+
+## 14. Load tests
+
+| Topic | Backend | Payload | Frontend handler |
+|-------|---------|---------|------------------|
+| `load_test.updated` | `LoadTestService` (start, running, completed, failed, cancelled) | `{ project_id, load_test }` (no request body) | `LoadTestTab` (`load_test.*`) — upsert the test |
+| `load_test.completed` | `CheckLoadTestJob` | `{ project_id, project_name, load_test }` | `LoadTestTab` (`load_test.*`); notification for the starter |
+| `load_test.failed` | `StartLoadTestJob`, `CheckLoadTestJob` | `{ project_id, project_name, load_test, error }` | `LoadTestTab` (`load_test.*`); notification for the starter |
+
+**Filter**: the tab ignores events of other projects (`payload.project_id`). See [load-test.md](load-test.md).
+
+---
+
+## 14. Organization export / import
+
+| Topic | Backend | Payload | Frontend handler |
+|-------|---------|---------|------------------|
+| `org_transfer.progress` | `OrgTransferProgress::update()` (every status / phase change, at most every 1.5 s in between) | `{ transfer_id, kind, status, phase, progress, message }` | `OrgTransferManager` — the transfer's progress bar; reloads the transfer when its status changes |
+| `org_transfer.completed` | `ExportOrganizationJob`, `ApplyImportJob` | `{ transfer_id, kind, status }` + a notification to the initiator | `OrgTransferManager` — reloads the transfer (package, report) |
+| `org_transfer.failed` | `ExportOrganizationJob`, `VerifyImportPackageJob`, `ApplyImportJob` | `{ transfer_id, kind, status, error, code? }` + a notification | `OrgTransferManager` — shows the error |
+
+See [Organization export and import](org-export.md). Payloads never carry the plan, the report or a secret.
 
 ## Architecture
 
@@ -243,6 +279,7 @@ When the WebSocket connection drops, only these views run a slow fallback poll (
 |----------------|----------|----------|
 | `ProjectsView` | 90s | `silentRefresh()` — project list + settings |
 | `ProjectDetailView` | 90s | `silentRefresh()` — project + versions + deployments |
+| `LoadTestTab` | 10s | the project's load tests |
 | `AppHeader` | 120s | `notificationStore.fetchUnreadCount()` |
 
 While the WebSocket is connected these timers skip their call (`wsConnected` ref from `useWsConnection`).
@@ -252,6 +289,7 @@ While the WebSocket is connected these timers skip their call (`wsConnected` ref
 These use polling for live data regardless of the WebSocket state:
 - `useDeploymentLogs` — logs every 1s, quick metrics every 2s, 1h averages every 60s
 - `LogMetricsBar` — 1s clock tick for elapsed time
+- `LoadTestTab` — 1s clock tick for the progress of a running load test
 - `useInstallPopup` — 5s component status poll while a Knative/Redis install or uninstall is running
 - `TenantSettings` (Tenancy module) — 5s tenant list poll while a tenant is being deleted
 - `LoginView` — slide rotation (UI animation)

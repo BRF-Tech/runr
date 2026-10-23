@@ -30,7 +30,9 @@ class TenantController extends Controller
     {
         $data = $request->validate([
             'name' => 'required|string|max:255',
-            'slug' => 'required|string|max:100|unique:tenants,slug|alpha_dash',
+            // "platform" names the projects outside any organization on the internal network
+            // (<project>.platform.runr.internal, docs/internal-network.md)
+            'slug' => 'required|string|max:100|unique:tenants,slug|alpha_dash|not_in:platform',
         ]);
 
         $tenant = Tenant::create($data);

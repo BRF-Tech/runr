@@ -21,6 +21,8 @@ class ScheduleOverlapLockTest extends TestCase
             'stale-build-check' => 10,
             'resource-threshold-check' => 10,
             'snapshot-metrics' => 10,
+            'timed-warmer' => 10,
+            'global-zone-sync' => 10,
             'executor-image-sync' => 60,
             'domain-migration-auto-complete' => 120,
             'downsample-metrics' => 120,

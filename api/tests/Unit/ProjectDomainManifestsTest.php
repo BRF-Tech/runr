@@ -121,21 +121,25 @@ class ProjectDomainManifestsTest extends TestCase
         $this->assertSame($name.'-tls', M::secureRouteName($name));
     }
 
-    public function test_middleware_rewrites_host_to_the_knative_service_cluster_local_host(): void
+    public function test_middleware_rewrites_host_to_the_knative_service_public_host(): void
     {
-        $mw = M::hostRewriteMiddleware('runr-domain-x', 'fn', self::PROJECT, 'api.example.com', M::serviceHost('shop', 'fn'));
+        $mw = M::hostRewriteMiddleware('runr-domain-x', 'fn', self::PROJECT, 'api.example.com', 'shop', 'shop.eu.runr.test');
 
         $this->assertSame('traefik.io/v1alpha1', $mw['apiVersion']);
         $this->assertSame('Middleware', $mw['kind']);
         $this->assertSame(['name' => 'runr-domain-x', 'namespace' => 'fn'], array_intersect_key($mw['metadata'], ['name' => 1, 'namespace' => 1]));
+        // the public route on web, never the cluster-local host (the LoadBalancer does not serve it)
         $this->assertSame([
-            'Host' => 'shop.fn.svc',
+            'Host' => 'shop.eu.runr.test',
             'K-Original-Host' => 'api.example.com',
         ], $mw['spec']['headers']['customRequestHeaders']);
         $this->assertSame(self::PROJECT, $mw['metadata']['labels']['runr/project-id']);
         $this->assertSame(sha1('api.example.com'), $mw['metadata']['labels']['runr/domain-hash']);
         $this->assertSame('runr', $mw['metadata']['labels']['app.kubernetes.io/managed-by']);
         $this->assertSame('api.example.com', $mw['metadata']['annotations']['runr.dev/domain']);
+        // PublicHostRewrites::sync keeps the host on the service's URL
+        $this->assertSame('public', $mw['metadata']['labels']['runr.dev/host-rewrite']);
+        $this->assertSame('shop', $mw['metadata']['annotations']['runr.dev/service']);
     }
 
     public function test_http_ingress_route_targets_the_region_traefik_on_web(): void

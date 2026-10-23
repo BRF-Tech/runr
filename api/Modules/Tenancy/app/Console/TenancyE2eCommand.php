@@ -7,6 +7,7 @@ use Illuminate\Support\Facades\Http;
 use Modules\Tenancy\Console\Concerns\TenancyE2eAppCasesTrait;
 use Modules\Tenancy\Console\Concerns\TenancyE2eHelperTrait;
 use Modules\Tenancy\Console\Concerns\TenancyE2eMigrationCasesTrait;
+use Modules\Tenancy\Console\Concerns\TenancyE2eOrgTransferCasesTrait;
 use Modules\Tenancy\Console\Concerns\TenancyE2eRegionCasesTrait;
 use Modules\Tenancy\Console\Concerns\TenancyE2eTenantCasesTrait;
 
@@ -15,6 +16,7 @@ class TenancyE2eCommand extends Command
     use TenancyE2eAppCasesTrait;
     use TenancyE2eHelperTrait;
     use TenancyE2eMigrationCasesTrait;
+    use TenancyE2eOrgTransferCasesTrait;
     use TenancyE2eRegionCasesTrait;
     use TenancyE2eTenantCasesTrait;
 
@@ -79,6 +81,7 @@ class TenancyE2eCommand extends Command
         $this->runRegionTests($results);
         $this->runAppTests($results);
         $this->runMigrationTests($results);
+        $this->runOrgTransferTests($results);
         $this->runCleanupTests($results);
 
         $this->printResults($results, $startTime);

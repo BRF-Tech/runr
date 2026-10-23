@@ -2,18 +2,22 @@ package provider
 
 import (
 	"context"
+	"regexp"
 	"strings"
 
 	"github.com/hashicorp/terraform-plugin-framework-validators/resourcevalidator"
+	"github.com/hashicorp/terraform-plugin-framework-validators/stringvalidator"
+	"github.com/hashicorp/terraform-plugin-framework/attr"
+	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
-	"github.com/hashicorp/terraform-plugin-framework/resource/schema/booldefault"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/boolplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	"github.com/hashicorp/terraform-plugin-framework/types"
+	"github.com/hashicorp/terraform-plugin-framework/types/basetypes"
 
 	"github.com/brf-tech/runr/cli/pkg/runr"
 )
@@ -39,6 +43,39 @@ type envVarModel struct {
 	ValueWO        types.String `tfsdk:"value_wo"`
 	ValueWOVersion types.String `tfsdk:"value_wo_version"`
 	Secret         types.Bool   `tfsdk:"secret"`
+	Reference      types.Object `tfsdk:"reference"`
+}
+
+// envVarReferenceModel is a secret variable's reference to a value in a secret store.
+type envVarReferenceModel struct {
+	Store types.String `tfsdk:"store"`
+	Path  types.String `tfsdk:"path"`
+	Key   types.String `tfsdk:"key"`
+}
+
+var envVarReferenceAttrTypes = map[string]attr.Type{"store": types.StringType, "path": types.StringType, "key": types.StringType}
+
+var noWhitespace = regexp.MustCompile(`^\S+$`)
+
+// secretDefault plans secret when the configuration leaves it out: true for a reference (a
+// reference is a secret variable), else false.
+type secretDefault struct{}
+
+func (secretDefault) Description(context.Context) string {
+	return "false, or true for a reference to a secret store"
+}
+func (m secretDefault) MarkdownDescription(ctx context.Context) string { return m.Description(ctx) }
+func (secretDefault) PlanModifyBool(ctx context.Context, req planmodifier.BoolRequest, resp *planmodifier.BoolResponse) {
+	if !req.ConfigValue.IsNull() {
+		return
+	}
+	var ref types.Object
+	resp.Diagnostics.Append(req.Config.GetAttribute(ctx, path.Root("reference"), &ref)...)
+	if ref.IsUnknown() {
+		resp.PlanValue = types.BoolUnknown()
+		return
+	}
+	resp.PlanValue = types.BoolValue(!ref.IsNull())
 }
 
 type envNameValidator struct{}
@@ -68,8 +105,13 @@ func (r *envVarResource) Schema(_ context.Context, _ resource.SchemaRequest, res
 			"- **Secret** variables (`secret = true`) are stored write-only through the project's secrets API: RunR lists their " +
 			"names, never their values, and they never appear in a version. Terraform keeps the value it set (`value`, sensitive) " +
 			"and notices when the variable is removed outside Terraform. With `value_wo` (Terraform 1.11 and later) the value is " +
-			"not stored in the state either; change `value_wo_version` to write a new value.\n\n" +
-			"A name is plain or secret, never both; switching `secret` recreates the variable.",
+			"not stored in the state either; change `value_wo_version` to write a new value.\n" +
+			"- **References** (`reference`) are secret variables whose value lives in a secret store of the organization " +
+			"(`runr_secret_store`): RunR never sees it, External Secrets Operator reads it in the project's region. A reference " +
+			"changed into a value outside Terraform (or the other way round) shows as a change.\n\n" +
+			"A name is plain or secret, never both; switching `secret` recreates the variable. Switching a secret variable " +
+			"between a value and a reference changes it in place. Import with `<project name or id>/<NAME>`: a secret " +
+			"variable without its value, a reference with it.",
 		Attributes: map[string]schema.Attribute{
 			"id": schema.StringAttribute{Computed: true, MarkdownDescription: "`<project_id>/<name>`.",
 				PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()}},
@@ -79,23 +121,40 @@ func (r *envVarResource) Schema(_ context.Context, _ resource.SchemaRequest, res
 				PlanModifiers: []planmodifier.String{stringplanmodifier.RequiresReplace()},
 				Validators:    []validator.String{envNameValidator{}}},
 			"value": schema.StringAttribute{Optional: true, Sensitive: true,
-				MarkdownDescription: "Value (sensitive). One of `value` and `value_wo` is required."},
+				MarkdownDescription: "Value (sensitive). Exactly one of `value`, `value_wo` and `reference` is required."},
 			"value_wo": schema.StringAttribute{Optional: true, Sensitive: true, WriteOnly: true,
 				MarkdownDescription: "Value of a secret variable that Terraform never stores (write-only attribute, " +
 					"Terraform 1.11 and later; needs `secret = true`). Terraform cannot compare it, so change " +
 					"`value_wo_version` to write a new value."},
 			"value_wo_version": schema.StringAttribute{Optional: true,
 				MarkdownDescription: "Any string; a change writes `value_wo` again (for example a rotation date)."},
-			"secret": schema.BoolAttribute{Optional: true, Computed: true, Default: booldefault.StaticBool(false),
-				MarkdownDescription: "Store the value as a write-only secret variable. Changing it recreates the variable.",
-				PlanModifiers:       []planmodifier.Bool{boolplanmodifier.RequiresReplace()}},
+			"secret": schema.BoolAttribute{Optional: true, Computed: true,
+				MarkdownDescription: "Store the value as a write-only secret variable (default `false`; a `reference` is always " +
+					"a secret variable, so it defaults to `true` with one and cannot be `false`). Changing it recreates the variable.",
+				PlanModifiers: []planmodifier.Bool{secretDefault{}, boolplanmodifier.RequiresReplace()}},
+			"reference": schema.SingleNestedAttribute{Optional: true,
+				MarkdownDescription: "The value lives in a secret store of the organization: a secret variable that refers to " +
+					"it instead of a `value` ([secret stores](https://runr.sh/docs/secret-stores/)). The variable reaches the " +
+					"workload with the next deploy, as External Secrets Operator syncs it in the project's region.",
+				Attributes: map[string]schema.Attribute{
+					"store": schema.StringAttribute{Required: true,
+						MarkdownDescription: "The store: its id or name. Use `runr_secret_store.<name>.id`, so Terraform creates the " +
+							"store before the variable and deletes it after (a store a variable refers to cannot be deleted)."},
+					"path": schema.StringAttribute{Required: true,
+						Validators: []validator.String{stringvalidator.LengthAtMost(512), stringvalidator.RegexMatches(noWhitespace, "must not contain whitespace")},
+						MarkdownDescription: "Path of the secret in the store: a Vault / OpenBao KV path (`apps/orders`), an AWS secret " +
+							"name or ARN, a GCP secret name, an Azure Key Vault secret name."},
+					"key": schema.StringAttribute{Optional: true,
+						Validators:          []validator.String{stringvalidator.LengthAtMost(255), stringvalidator.RegexMatches(noWhitespace, "must not contain whitespace")},
+						MarkdownDescription: "Key inside the secret (a field of a JSON or KV secret); left out: the whole secret."},
+				}},
 		},
 	}
 }
 
 func (r *envVarResource) ConfigValidators(context.Context) []resource.ConfigValidator {
 	return []resource.ConfigValidator{
-		resourcevalidator.ExactlyOneOf(path.MatchRoot("value"), path.MatchRoot("value_wo")),
+		resourcevalidator.ExactlyOneOf(path.MatchRoot("value"), path.MatchRoot("value_wo"), path.MatchRoot("reference")),
 	}
 }
 
@@ -114,6 +173,68 @@ func (r *envVarResource) ValidateConfig(ctx context.Context, req resource.Valida
 		resp.Diagnostics.AddAttributeWarning(path.Root("value_wo_version"), "value_wo_version without value_wo",
 			"value_wo_version only takes effect together with value_wo.")
 	}
+	if !m.Reference.IsNull() && known(m.Secret) && !m.Secret.ValueBool() {
+		resp.Diagnostics.AddAttributeError(path.Root("secret"), "A reference is a secret variable",
+			"A reference to a secret store is always a secret variable: leave secret out or set it to true.")
+	}
+}
+
+// reference returns the reference of m (nil without one).
+func (m *envVarModel) reference(ctx context.Context, diags *diag.Diagnostics) *envVarReferenceModel {
+	if !known(m.Reference) {
+		return nil
+	}
+	var ref envVarReferenceModel
+	diags.Append(m.Reference.As(ctx, &ref, basetypes.ObjectAsOptions{})...)
+	return &ref
+}
+
+// referenceObject is the API's reference in the state's terms: the store keeps the spelling of
+// prior (its id or its name) while it names the same store.
+func referenceObject(prior *envVarReferenceModel, ref *runr.SecretReference) types.Object {
+	store := ref.StoreID
+	if prior != nil && known(prior.Store) {
+		if p := prior.Store.ValueString(); p == ref.StoreID || (ref.StoreName != "" && strings.EqualFold(p, ref.StoreName)) {
+			store = p
+		}
+	}
+	return types.ObjectValueMust(envVarReferenceAttrTypes, map[string]attr.Value{
+		"store": types.StringValue(store), "path": types.StringValue(ref.Path), "key": strOrNull(ref.Key),
+	})
+}
+
+// setReference makes the variable a reference to a secret store; a store given by name is
+// looked up (secret_stores.view), an id is sent as it is.
+func (r *envVarResource) setReference(ctx context.Context, m *envVarModel, ref *envVarReferenceModel, diags *diag.Diagnostics) {
+	storeID := ref.Store.ValueString()
+	if !runr.LooksLikeULID(storeID) {
+		s, err := r.client.API.FindSecretStore(ctx, storeID)
+		if err != nil {
+			apiError(diags, "Set secret reference failed", err)
+			return
+		}
+		storeID = s.ID
+	}
+	projectID := m.ProjectID.ValueString()
+	unlock := r.client.lock(projectID)
+	defer unlock()
+	_, err := r.client.API.SetSecretReference(ctx, projectID, m.Name.ValueString(),
+		runr.SecretReferenceInput{StoreID: storeID, Path: ref.Path.ValueString(), Key: ref.Key.ValueString()})
+	if err != nil {
+		apiError(diags, "Set secret reference failed", err)
+		return
+	}
+	m.ID = types.StringValue(projectID + "/" + m.Name.ValueString())
+}
+
+// write sets the variable of the plan: its reference, else its value (the plan's value or, for
+// value_wo, the config's).
+func (r *envVarResource) write(ctx context.Context, plan, cfg *envVarModel, diags *diag.Diagnostics) {
+	if ref := plan.reference(ctx, diags); ref != nil {
+		r.setReference(ctx, plan, ref, diags)
+		return
+	}
+	r.set(ctx, plan, writeValue(*plan, *cfg), diags)
 }
 
 func (r *envVarResource) Configure(_ context.Context, req resource.ConfigureRequest, resp *resource.ConfigureResponse) {
@@ -162,7 +283,7 @@ func (r *envVarResource) Create(ctx context.Context, req resource.CreateRequest,
 	if resp.Diagnostics.HasError() {
 		return
 	}
-	r.set(ctx, &plan, writeValue(plan, cfg), &resp.Diagnostics)
+	r.write(ctx, &plan, &cfg, &resp.Diagnostics)
 	if resp.Diagnostics.HasError() {
 		return
 	}
@@ -207,6 +328,10 @@ func (r *envVarResource) Read(ctx context.Context, req resource.ReadRequest, res
 			// Write-only: the API names it but never returns the value; keep what Terraform set.
 			state.Secret = types.BoolValue(true)
 			state.ValueWO = types.StringNull()
+			r.readReference(ctx, p.ID, &state, &resp.Diagnostics)
+			if resp.Diagnostics.HasError() {
+				return
+			}
 			resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
 			return
 		}
@@ -225,7 +350,34 @@ func (r *envVarResource) Read(ctx context.Context, req resource.ReadRequest, res
 	}
 	state.Value = types.StringValue(v)
 	state.ValueWO = types.StringNull()
+	state.Reference = types.ObjectNull(envVarReferenceAttrTypes)
 	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
+}
+
+// readReference reads from the project's secret list whether the secret variable of m is a
+// reference and to what: a reference made a value outside Terraform (or the other way round)
+// then shows as a change. APIs without the secret list keep the state as it is.
+func (r *envVarResource) readReference(ctx context.Context, projectID string, m *envVarModel, diags *diag.Diagnostics) {
+	list, err := r.client.API.ListSecrets(ctx, projectID)
+	if runr.IsNotFound(err) {
+		return
+	}
+	if err != nil {
+		apiError(diags, "Read secret variables failed", err)
+		return
+	}
+	for _, s := range list.Secrets {
+		if s.Name != m.Name.ValueString() {
+			continue
+		}
+		if s.External() && s.Reference != nil {
+			m.Reference = referenceObject(m.reference(ctx, diags), s.Reference)
+			m.Value = types.StringNull()
+		} else {
+			m.Reference = types.ObjectNull(envVarReferenceAttrTypes)
+		}
+		return
+	}
 }
 
 func (r *envVarResource) Update(ctx context.Context, req resource.UpdateRequest, resp *resource.UpdateResponse) {
@@ -238,7 +390,7 @@ func (r *envVarResource) Update(ctx context.Context, req resource.UpdateRequest,
 	if resp.Diagnostics.HasError() {
 		return
 	}
-	r.set(ctx, &plan, writeValue(plan, cfg), &resp.Diagnostics)
+	r.write(ctx, &plan, &cfg, &resp.Diagnostics)
 	if resp.Diagnostics.HasError() {
 		return
 	}
@@ -263,7 +415,7 @@ func (r *envVarResource) Delete(ctx context.Context, req resource.DeleteRequest,
 
 // ImportState accepts "<project id or name>/<NAME>". A secret variable is imported with
 // secret = true and without its value (the API never returns it): the next apply writes the
-// configured value again.
+// configured value again. A reference is imported with its store, path and key.
 func (r *envVarResource) ImportState(ctx context.Context, req resource.ImportStateRequest, resp *resource.ImportStateResponse) {
 	if notConfigured(r.client, &resp.Diagnostics) {
 		return
@@ -284,9 +436,14 @@ func (r *envVarResource) ImportState(ctx context.Context, req resource.ImportSta
 		secret = secret || k == name
 	}
 	if secret {
-		resp.Diagnostics.AddWarning("Secret value not imported",
-			name+" is a secret variable: RunR never returns its value, so the state holds none. "+
-				"The next apply writes the value of the configuration again.")
+		// A reference is imported with it (Read); a value is not.
+		m := envVarModel{Name: types.StringValue(name), Reference: types.ObjectNull(envVarReferenceAttrTypes)}
+		r.readReference(ctx, p.ID, &m, &resp.Diagnostics)
+		if m.Reference.IsNull() {
+			resp.Diagnostics.AddWarning("Secret value not imported",
+				name+" is a secret variable: RunR never returns its value, so the state holds none. "+
+					"The next apply writes the value of the configuration again.")
+		}
 	}
 	resp.Diagnostics.Append(resp.State.SetAttribute(ctx, path.Root("id"), p.ID+"/"+name)...)
 	resp.Diagnostics.Append(resp.State.SetAttribute(ctx, path.Root("project_id"), p.ID)...)

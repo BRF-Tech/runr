@@ -15,6 +15,8 @@ project "reports"    ──attach (no prefix)──────▶ binding "orde
 - [Environment variables](#environment-variables)
 - [Examples](#examples)
 - [Lifecycle](#lifecycle)
+- [Global projects](#global-projects)
+- [Dynamic credentials](#dynamic-credentials)
 - [Region setup](#region-setup)
 - [Quotas](#quotas)
 - [Usage and billing](#usage-and-billing)
@@ -36,7 +38,10 @@ project "reports"    ──attach (no prefix)──────▶ binding "orde
 | `external` | the values you enter (URL, token, …), injected as they are | anywhere |
 
 A binding of type `kv`, `object` or `postgres` lives in one region; it can be attached to
-projects of that region. External bindings can be attached to any project.
+projects of that region. External bindings can be attached to any project. A
+[global project](global-projects.md#data) runs in several regions: a managed binding of one of its
+regions is reached from the others through the binding's data link, and a dedicated Postgres
+binding gets a replica cluster in every region of the project.
 
 ### Settings
 
@@ -68,6 +73,16 @@ the Bindings tab previews the names while you type the prefix.
 
 `DATABASE_URL` connects with `sslmode=require` (CloudNativePG serves TLS). `S3_FORCE_PATH_STYLE`
 is `true` for Garage — configure your S3 client for path-style addressing.
+
+A Postgres attachment with [dynamic credentials](#dynamic-credentials) gets `PGUSER`,
+`PGPASSWORD` and `DATABASE_URL` from a user of its own that the region's OpenBao issues, not the
+binding's.
+
+A dedicated Postgres binding of a [global project](global-projects.md#postgres-across-regions)
+adds `DATABASE_URL_RO` and `PGHOST_RO` in every region — the region's own replica, for reads —
+while `DATABASE_URL` and `PGHOST` name the primary (in the other regions through the data link).
+The other managed bindings of a global project name the data link's host
+(`runr-link-<binding>.runr-data.svc.cluster.local`) in the regions other than their own.
 
 Precedence: the project's own variables — plain ones and secret variables (Secret
 `<project>-secret-env`, `secretKeyRef` entries) — are explicit `env` entries of the container and
@@ -223,7 +238,7 @@ create ──▶ provisioning ──▶ ready ⇄ rotating
 - **Project → Bindings → Create binding**: creates a binding in the project's region and
   attaches it in one step (optionally with an env prefix).
 - **Project → Bindings → Attach existing**: attaches a binding the organization already has.
-- **Settings → Data**: every binding of the organization, its projects, status and usage.
+- **Data & Integrations → Data**: every binding of the organization, its projects, status and usage.
 
 Provisioning runs in the background (seconds; a dedicated Postgres cluster takes a few
 minutes). Attaching works right away: the variables arrive when the binding is ready.
@@ -238,10 +253,24 @@ attaches `kv`, `object` and `postgres` bindings only in its allowed regions and 
 anything else answers 422 (`region_not_allowed`) and is recorded as `residency.denied`.
 External bindings have no region and are not restricted.
 
+### Environments
+
+A binding is attached to the project's own workload (production) or to one of its environments
+([Environments](environments.md#bindings)): `POST /projects/{project}/bindings` with
+`environment` (a name or id). An environment gets only the bindings attached to it — nothing is
+inherited from production — in its own Secret `<workload>-bindings`, and the binding's
+NetworkPolicy admits the pods of that environment (`runr/environment-id`) next to those of the
+projects it is attached to (`runr/project-id`). A binding is attached to at most one environment of
+a project and must be in the region the environment runs in. `GET /projects/{project}/bindings`
+lists every attachment with its `environment`; `?environment=` one environment's, with what can
+still be attached in its region. CLI: `runr bindings attach|detach|attachments --env staging`
+([CLI](cli.md)); console: the environment's **Bindings** tab.
+
 ### Detach
 
 Detaching removes the variables from the project (rolling restart) and the project from the
-binding's NetworkPolicy. The binding and its data stay.
+binding's NetworkPolicy. The binding and its data stay. A dynamic attachment's users are revoked
+([Dynamic credentials](#dynamic-credentials)).
 
 ### Rotate credentials
 
@@ -253,7 +282,7 @@ binding's NetworkPolicy. The binding and its data stay.
 | `object` | a second key is created and allowed on the bucket; the old key is deleted after the grace period |
 | `postgres` shared | `ALTER ROLE … PASSWORD`; sessions already open stay open |
 | `postgres` dedicated | the owner Secret changes, CloudNativePG applies the new password to the role |
-| `external` | change the values (Settings → Data → Edit); attached projects roll onto them |
+| `external` | change the values (Data & Integrations → Data → Edit); attached projects roll onto them |
 
 On a region Redis without ACL support and on external S3 endpoints without an admin API the
 credentials are the region's own; rotation then re-reads them.
@@ -275,9 +304,104 @@ checks the binding on its data service: the Redis user, the bucket (objects, byt
 the Postgres cluster (ready instances, phase). Usage is measured hourly — KV memory of the
 binding's keys, bucket size, database size — and shown next to the binding's limit.
 
+## Global projects
+
+A [global project](global-projects.md#data) runs a copy in each of its regions; its bindings are
+reached from all of them:
+
+| Binding | Every region of the global project |
+| --- | --- |
+| `external`, `object` on an external S3 endpoint | as it is |
+| `kv`, `object` (managed store), `postgres` `shared` | the binding stays in its region; the other regions connect to the binding's **data link** (a forwarder in their data namespace, mutual TLS to the binding region's Traefik) with the same credentials — unavailable while that region is down |
+| `postgres` `dedicated` | a CloudNativePG **replica cluster** per region (reads: `DATABASE_URL_RO`), writes to the primary; a switchover or failover of the project promotes the replica of the new primary, which becomes the binding's region |
+
+Rules: the binding must be in one of the project's regions, a dedicated one in its primary; a
+dedicated binding replicated for a global project is attached to no other project; dynamic
+credentials are refused for global projects (OpenBao's connection and users live in one region).
+Detaching, deleting the binding, or a region leaving the project removes its replica clusters and
+link objects there. Details, status and failover: [global-projects.md](global-projects.md#data).
+
+## Dynamic credentials
+
+A Postgres attachment can get **a Postgres user of its own** instead of the binding's user and
+password: issued by the region's [OpenBao](secret-stores.md#openbao-in-the-region) for a limited
+time, renewed in the region, and revoked when the attachment goes. The binding's own password never
+reaches the project.
+
+```text
+binding "orders-db" (postgres) ── role b_orders_db_… (owns the database)
+   ▲ IN ROLE                                  ▲ GRANT … WITH ADMIN OPTION
+user v-…-runr-<binding>-<project>-… ◀── OpenBao database engine, connection runr-<binding id>
+   (a week, renewed every day)              (as role runr_bao_…, password known to OpenBao only)
+   ▼ ExternalSecret <slug>-pgdyn-<…> (VaultDynamicSecret generator, the project's identity)
+ORDERS_PGUSER, ORDERS_PGPASSWORD, ORDERS_DATABASE_URL ──envFrom──▶ workload
+ORDERS_PGHOST, ORDERS_PGPORT, ORDERS_PGDATABASE, ORDERS_PGSSLMODE  (Secret <slug>-bindings)
+```
+
+Requirements: a `postgres` binding (shared or dedicated) that is `ready`, and the project's region
+running External Secrets Operator and OpenBao. Otherwise the attach answers `422` with the reason.
+
+Attach with `"credentials": "dynamic"`, or switch an attachment either way with `PATCH` (the env
+prefix stays unless it is sent):
+
+```bash
+curl -X POST https://runr.example.com/api/projects/$PROJECT/bindings \
+  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -d '{"binding_id":"01J…","env_prefix":"ORDERS_","credentials":"dynamic"}'
+
+curl -X PATCH https://runr.example.com/api/projects/$PROJECT/bindings/$ATTACHMENT \
+  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' -d '{"credentials":"static"}'
+```
+
+The attachment shows `credential_mode` (`static` or `dynamic`); the CLI takes
+`runr bindings attach BINDING --credentials dynamic`; on a binding that is already attached the
+same command switches it (`--credentials static` back) ([CLI](cli.md#bindings-data-services-for-projects)).
+
+What RunR sets up:
+
+- **Per binding, once** — a Postgres role `runr_bao_<…>` with `LOGIN CREATEROLE` that may grant the
+  binding's role (`GRANT <binding role> TO runr_bao_<…> WITH ADMIN OPTION`), created by a short-lived
+  operations pod in the region with a random password, which RunR hands to OpenBao once as the
+  connection `runr-<binding id>` (plugin `postgresql-database-plugin`, `sslmode=require`) and
+  OpenBao replaces right away (`rotate-root`): afterwards only OpenBao knows it.
+- **Per attachment** — an OpenBao role `runr-<binding id>-<project id>`: each user it issues is
+  created `IN ROLE <binding role>` with `VALID UNTIL` its expiry, and its sessions switch to the
+  binding's role (`ALTER ROLE … SET role`), so the objects they create belong to the binding's role
+  like the static user's. Revoking a user reassigns what it still owns to the binding's role, drops
+  what is left and drops the user.
+- **The project's policy** in OpenBao (`runr-project-<project id>`) may read the credentials of its
+  dynamic attachments — no other project's.
+- **In the region**, for each dynamic attachment: a `VaultDynamicSecret` generator
+  (`runr-pgdyn-<attachment id>`) that logs in as the project's service account
+  (`runr-bao-<project id>`), and an ExternalSecret `<slug>-pgdyn-<…>` that fills the Secret of that
+  name with `<prefix>PGUSER`, `<prefix>PGPASSWORD` and `<prefix>DATABASE_URL`. The workload reads it
+  through `envFrom` after `<slug>-bindings`, which keeps `<prefix>PGHOST`, `<prefix>PGPORT`,
+  `<prefix>PGDATABASE` and `<prefix>PGSSLMODE` but no user, password or URL of a dynamic attachment.
+
+| Setting (env of the API, [Helm `extraEnv`](helm-values.md)) | Default | |
+|---|---|---|
+| `RUNR_OPENBAO_DB_TTL` | `168h` | how long an issued user lives |
+| `RUNR_OPENBAO_DB_MAX_TTL` | `720h` | the longest a user can live |
+| `RUNR_OPENBAO_DB_REFRESH` | `24h` | how often the region asks for a new user |
+
+**Renewals.** Every `RUNR_OPENBAO_DB_REFRESH` External Secrets Operator gets a new user and rewrites
+the Secret; a container reads it when it starts. `secrets:sync-status` (every two minutes) sees the
+renewal and rolls the project's Knative Service to a new revision (template annotation
+`runr.dev/pgdyn-version`), so the pods move to the new user; scheduled functions read the Secret on
+their next run. The previous user lives on until its own TTL ends, long enough for the old pods to
+drain.
+
+**Detach and switching back.** Detaching a dynamic attachment, or switching it to `static`, revokes
+every user OpenBao issued for it (they are dropped in Postgres), deletes its OpenBao role and takes
+it out of the project's policy; the next bindings sync removes its generator and ExternalSecret.
+Deleting the binding removes its OpenBao connection too (purge).
+
+The binding's own credentials stay as they are: [rotating](#rotate-credentials) them does not touch
+the dynamic users.
+
 ## Region setup
 
-Region data services are installed per region in **Administration → Platform → Knative Regions → (region) → Data
+Region data services are installed per region in **Administration → Regions & settings → Knative Regions → (region) → Data
 services** by users with `regions.data_services.manage`. They run in the namespace
 `runr-data` (`bindings.namespace`) behind NetworkPolicies. A region runs no data service until
 one is installed there: creating a `kv`, `object` or `postgres` binding is refused until the
@@ -349,11 +473,11 @@ grow to — their settings, not today's usage:
 | `max_bindings` | bindings of every type (deleted ones until they are purged) | 20 |
 | `kv_mb` | Σ `memory_mb` of KV bindings | 1024 |
 | `object_gb` | Σ `quota_gb` of object bindings | 100 |
-| `postgres_gb` | Σ `storage_gb` of Postgres bindings (dedicated: × instances) | 50 |
+| `postgres_gb` | Σ `storage_gb` of Postgres bindings (dedicated: × instances, × regions of a [global project](global-projects.md#postgres-across-regions) it replicates to) | 50 |
 | `dedicated_postgres` | dedicated Postgres clusters | 2 |
 
 `0` means unlimited. Defaults come from the Helm values (`bindings.quotas`); in the multi-tenant
-edition platform administrators set per-tenant limits in **Settings → Tenants → (tenant) →
+edition platform administrators set per-tenant limits in **Administration → Tenants → (tenant) →
 Regions → Binding limits** (`GET/PUT /api/tenants/{tenant}/binding-quotas`). `GET /api/bindings/quota`
 shows the organization's limits, claimed amounts and measured bytes.
 
@@ -368,6 +492,9 @@ The hourly measurement books daily usage records per binding:
 - **storage GB-hours** — measured size in GiB × hours since the previous measurement (at most
   2 hours, gaps are not billed backwards);
 - **instance hours** — running instances × hours, for dedicated Postgres clusters.
+
+A dedicated Postgres binding of a global project adds its replica clusters to its record: their
+running instances to the instance hours, their copies of the data to the storage GB-hours.
 
 Each record also names the binding's creator. Metering records quantities only; with the
 [Billing module](billing.md) on, the region's prices turn them into money:
@@ -422,7 +549,8 @@ and `GET /api/bindings/{id}/credentials` are the only places they appear.
 - **Rolling restart** — attach, detach, rotation: the Secret is rewritten and the Knative
   Service's template annotation `runr.dev/bindings-hash` changes, which is a new revision.
 - **NetworkPolicies** — the data namespace denies all ingress except from its own pods
-  (operations, replication) and the CloudNativePG operator. Each binding adds a policy that lets
+  (operations, replication), the CloudNativePG operator and the region's OpenBao to the Postgres
+  port (it creates the users of [dynamic credentials](#dynamic-credentials)). Each binding adds a policy that lets
   pods of its attached projects reach its service port (6379, 3900, 5432). Isolation between
   bindings on a shared service comes from their credentials (ACL users, bucket keys, roles). A
   CNI without NetworkPolicy support (for example plain Flannel) does not enforce the policies.
@@ -451,8 +579,8 @@ and `GET /api/bindings/{id}/credentials` are the only places they appear.
 | GET | `/api/bindings/{id}/credentials` | `bindings.view_credentials` |
 | GET | `/api/bindings/{id}/usage` (`?days=30`; quantities, [Usage and billing](#usage-and-billing)) | `bindings.view` |
 | GET | `/api/projects/{project}/bindings` | `projects.view` |
-| POST | `/api/projects/{project}/bindings` | `env.edit` + `bindings.manage` |
-| PATCH | `/api/projects/{project}/bindings/{attachment}` | `env.edit` + `bindings.manage` |
+| POST | `/api/projects/{project}/bindings` (`binding_id` or `binding`, `env_prefix`, `credentials`: `static` \| `dynamic`) | `env.edit` + `bindings.manage` |
+| PATCH | `/api/projects/{project}/bindings/{attachment}` (`env_prefix`, `credentials`) | `env.edit` + `bindings.manage` |
 | DELETE | `/api/projects/{project}/bindings/{attachment}` | `env.edit` + `bindings.manage` |
 | GET | `/api/knative-regions/{region}/data-services` (`?live=1`) | `regions.view` or `bindings.view` |
 | POST | `/api/knative-regions/{region}/data-services/{kv\|object\|postgres}` | `regions.data_services.manage` |
@@ -555,7 +683,7 @@ The audit log ([Security](security.md)) records every binding request — with i
 | `binding.credentials.rotate` | `POST /api/bindings/{id}/rotate` |
 | `binding.credentials.reveal` | `GET /api/bindings/{id}/credentials` (the response is `Cache-Control: no-store`) |
 | `binding.attach` | `POST /api/projects/{project}/bindings` (binding, env prefix, created in the same call) |
-| `binding.attachment.update` | `PATCH /api/projects/{project}/bindings/{attachment}` |
+| `binding.attachment.update` | `PATCH /api/projects/{project}/bindings/{attachment}` (a switch of `credential_mode` among the changed fields) |
 | `binding.detach` | `DELETE /api/projects/{project}/bindings/{attachment}` |
 | `region.data_service.install` | `POST /api/knative-regions/{region}/data-services/{service}` |
 | `region.data_service.uninstall` | `DELETE /api/knative-regions/{region}/data-services/{service}` |

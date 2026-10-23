@@ -73,20 +73,26 @@ func init() {
 
 		// Attachments of a project (route permission on the project; the controller also requires
 		// bindings.manage organization-wide for changes)
-		Endpoint{Method: "GET", Path: "/projects/{project}/bindings", Status: 200, Permission: "projects.view",
+		// ?environment=: one environment's attachments (docs/environments.md#bindings)
+		Endpoint{Method: "GET", Path: "/projects/{project}/bindings", Query: []string{"environment"}, Status: 200, Permission: "projects.view",
 			Response: concat(prefix("data[].", attachmentFields), []string{"available[].id", "available[].name",
 				"available[].type", "available[].status", "available[].knative_region_id", "secret",
 				"abilities.manage", "abilities.view_credentials"}),
-			Sources: concat(bindingSources, []string{"app/Http/Controllers/Api/ProjectBindingController.php"})},
+			Capabilities: []string{"data[].credential_mode", "data[].environment_id", "data[].environment"},
+			Sources:      concat(bindingSources, []string{"app/Http/Controllers/Api/ProjectBindingController.php"})},
+		// credentials: static, or dynamic (a Postgres user of the attachment's own from the
+		// region's OpenBao, docs/bindings.md "Dynamic credentials")
 		Endpoint{Method: "POST", Path: "/projects/{project}/bindings", Status: 201, Permission: "env.edit",
-			Request: []string{"binding_id", "env_prefix", "binding", "binding.name", "binding.type", "binding.plan",
+			Request: []string{"binding_id", "env_prefix", "credentials", "environment", "binding", "binding.name", "binding.type", "binding.plan",
 				"binding.settings", "binding.values"},
-			FreeForm: []string{"binding.settings", "binding.values"},
-			Response: prefix("data.", attachmentFields),
+			FreeForm:     []string{"binding.settings", "binding.values"},
+			Response:     prefix("data.", attachmentFields),
+			Capabilities: []string{"data.credential_mode", "data.environment_id", "data.environment"},
 			Sources: []string{"app/Http/Controllers/Api/ProjectBindingController.php",
 				"app/Http/Controllers/Api/BindingController.php", "app/Http/Resources/BindingResource.php"}},
 		Endpoint{Method: "PATCH", Path: "/projects/{project}/bindings/{attachment}", Status: 200, Permission: "env.edit",
-			Request: []string{"env_prefix"}, Response: prefix("data.", attachmentFields), Sources: bindingSources},
+			Request: []string{"env_prefix", "credentials"}, Response: prefix("data.", attachmentFields),
+			Capabilities: []string{"data.credential_mode"}, Sources: bindingSources},
 		Endpoint{Method: "DELETE", Path: "/projects/{project}/bindings/{attachment}", Status: 200, Permission: "env.edit",
 			Response: []string{"message"}},
 	)

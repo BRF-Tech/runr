@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Models\KnativeRegion;
 use App\Models\Observability\RegionTracingConfig;
+use App\Services\Helpers\ManagedTracing;
 use App\Services\KubernetesClient;
 use App\Services\RegionReconcile\ClusterGroup;
 use App\Services\RegionReconcile\ReconcileTarget;
@@ -41,6 +42,9 @@ class TracingBackendReconcileStepTest extends TestCase
 
     private array $tempoInit = ['fix-permissions'];
 
+    /** Annotations of the live collector's pods: this release's configuration unless a test changes them */
+    private array $collectorAnnotations = ['runr.dev/collector-config' => ManagedTracing::COLLECTOR_CONFIG_REVISION];
+
     /** Generation and status of the live Tempo StatefulSet, and its pods */
     private array $tempoState = [];
 
@@ -52,7 +56,7 @@ class TracingBackendReconcileStepTest extends TestCase
         $this->fakeObservabilityCluster();
 
         $this->k8sRoutes['GET /apis/apps/v1/namespaces/observability/deployments/otel-collector'] = fn () => $this->collector
-            ? [200, $this->workload('opentelemetry-collector', ...$this->collector, requests: $this->collectorRequests)]
+            ? [200, $this->workload('opentelemetry-collector', ...$this->collector, requests: $this->collectorRequests, annotations: $this->collectorAnnotations)]
             : [404, ['kind' => 'Status', 'code' => 404]];
         $this->k8sRoutes['GET /apis/apps/v1/namespaces/observability/statefulsets/tempo'] = fn () => $this->tempo
             ? [200, array_replace_recursive($this->workload('tempo', ...$this->tempo, requests: $this->tempoRequests, init: $this->tempoInit), $this->tempoState)]
@@ -64,14 +68,17 @@ class TracingBackendReconcileStepTest extends TestCase
     /**
      * @param  list<string>  $init  names of the init containers
      */
-    private function workload(string $container, string $chart, string $image, array $requests = [], array $init = []): array
+    private function workload(string $container, string $chart, string $image, array $requests = [], array $init = [], array $annotations = []): array
     {
         return [
             'metadata' => ['labels' => ['helm.sh/chart' => $chart, 'app.kubernetes.io/managed-by' => 'Helm']],
-            'spec' => ['template' => ['spec' => array_filter([
-                'initContainers' => array_map(fn (string $name) => ['name' => $name, 'image' => 'ghcr.io/brf-tech/runr/reqs/busybox:latest'], $init),
-                'containers' => [['name' => $container, 'image' => $image, 'resources' => ['requests' => $requests]]],
-            ])]],
+            'spec' => ['template' => array_filter([
+                'metadata' => $annotations !== [] ? ['annotations' => $annotations] : null,
+                'spec' => array_filter([
+                    'initContainers' => array_map(fn (string $name) => ['name' => $name, 'image' => 'ghcr.io/brf-tech/runr/reqs/busybox:latest'], $init),
+                    'containers' => [['name' => $container, 'image' => $image, 'resources' => ['requests' => $requests]]],
+                ]),
+            ])],
         ];
     }
 
@@ -330,6 +337,24 @@ class TracingBackendReconcileStepTest extends TestCase
      * Pending on "Insufficient cpu"): the collector and Tempo request what the other region
      * add-ons do, and installed backends move to that.
      */
+    public function test_a_collector_of_an_earlier_configuration_gets_the_span_metrics_per_revision(): void
+    {
+        $region = $this->region();
+        $this->tracingReady($region);
+        $this->collector = ['opentelemetry-collector-0.176.0', self::COLLECTOR];
+        $this->tempo = ['tempo-3.2.0', self::TEMPO];
+        $this->collectorAnnotations = [];
+
+        $lines = (new TracingBackendStep)->run($this->cluster($region), false);
+
+        $this->assertSame(["updated the tracing backend of region {$region->name} (mode managed, the region's setting): "
+            .'OpenTelemetry Collector configuration of an earlier release → revision '.ManagedTracing::COLLECTOR_CONFIG_REVISION.' (span metrics per Knative revision)'
+            .' — the collector and Tempo pods roll once, Tempo keeps its traces; tracing status "installing" until they run'], $lines);
+        $values = $this->helm->installs['otel-collector']['valuesArray'];
+        $this->assertContains(['name' => 'runr.revision'], $values['config']['connectors']['spanmetrics']['dimensions']);
+        $this->assertSame(ManagedTracing::COLLECTOR_CONFIG_REVISION, $values['podAnnotations']['runr.dev/collector-config']);
+    }
+
     public function test_requests_above_this_releases_are_lowered(): void
     {
         $region = $this->region();

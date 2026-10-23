@@ -37,5 +37,9 @@
         <env name="TELESCOPE_ENABLED" value="false"/>
         <env name="NIGHTWATCH_ENABLED" value="false"/>
         <env name="RUNR_SUPPLY_CHAIN_ENABLED" value="false"/>
+        <env name="RUNR_INTERNAL_AUTHZ_READY_TIMEOUT" value="0"/>
+        <!-- region:reconcile and the Serving install leave the fake clusters without cert-manager;
+             CertManagerTest turns it on (knative.cert_manager.install) -->
+        <env name="RUNR_CERT_MANAGER_INSTALL" value="false"/>
     </php>
 </phpunit>

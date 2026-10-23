@@ -17,6 +17,11 @@ namespace App\Console\Commands\Concerns;
  *                    the Kind network): its results arrive with the region's name as location and
  *                    the agent's log has no "RunR answered 400" (0.5.7 refused such a host on
  *                    /api/internal/; TrustHosts + RegionCallbackHosts since 0.5.8)
+ *  - obs-load-test   a load test of the function (10 users, 30 s) runs as a k6 Job in the region's
+ *                    runr-loadtest namespace behind its NetworkPolicies and completes with
+ *                    requests, latency percentiles, requests per second, no errors and the scaling
+ *                    fields; a host that is not the project's is refused (422) and a second test
+ *                    while one runs too (409)
  */
 trait E2eTestObservabilityTrait
 {
@@ -95,12 +100,100 @@ PY;
         $uptime = $this->makeTestEntry('obs-uptime-region', $test['config'], $regionId);
         $uptime['steps'] = ['version' => true, 'deploy' => true, 'ready' => true, 'verify' => $this->verifyRegionUptime($test, $regionId)];
 
-        foreach ([$test, $errorTrace, $logs, $replayEntry, $uptime] as $entry) {
+        $load = $this->makeTestEntry('obs-load-test', $test['config'], $regionId);
+        $load['steps'] = ['version' => true, 'deploy' => true, 'ready' => true, 'verify' => $this->verifyLoadTest($test)];
+
+        foreach ([$test, $errorTrace, $logs, $replayEntry, $uptime, $load] as $entry) {
             $state = $entry['steps']['verify'] === true ? '<fg=green>✓</>' : '<fg=red>✗</>';
             $this->line("  {$state} {$entry['name']}: ".($entry['steps']['verify'] === true ? 'verified' : $entry['steps']['verify']));
         }
 
-        return [$backend, $test, $errorTrace, $logs, $replayEntry, $uptime];
+        return [$backend, $test, $errorTrace, $logs, $replayEntry, $uptime, $load];
+    }
+
+    /**
+     * A load test of the deployed function through the API (POST /api/projects/{p}/load-tests):
+     * a foreign host is refused, the test starts (202), a second one while it runs is refused, and
+     * the k6 Job in the region's runr-loadtest namespace (pinned to the region's Traefik, its only
+     * way out) completes within its 30 s plus the image pull.
+     */
+    private function verifyLoadTest(array $test): bool|string
+    {
+        $base = "/api/projects/{$test['projectId']}/load-tests";
+
+        $foreign = $this->api()->post($base, ['host' => 'example.com', 'users' => 10, 'duration_seconds' => 30]);
+        if ($foreign->status() !== 422) {
+            return 'a test of example.com answered '.$foreign->status().': '.mb_substr($foreign->body(), 0, 200);
+        }
+
+        $start = $this->api()->post($base, ['path' => '/?name=load', 'users' => 10, 'duration_seconds' => 30]);
+        if ($start->status() !== 202) {
+            return 'starting the load test answered '.$start->status().': '.mb_substr($start->body(), 0, 200);
+        }
+        $id = (string) $start->json('data.id');
+
+        $second = $this->api()->post($base, ['users' => 10, 'duration_seconds' => 30]);
+        if ($second->status() !== 409) {
+            return 'a second test while one runs answered '.$second->status();
+        }
+
+        // 30 s of load, the k6 image's pull on a fresh node, the results
+        $deadline = time() + 30 + 300;
+        $run = [];
+        while (time() < $deadline) {
+            $run = $this->api()->get("{$base}/{$id}")->json('data') ?? [];
+            if (in_array($run['status'] ?? null, ['completed', 'failed', 'cancelled'], true)) {
+                break;
+            }
+            sleep(5);
+        }
+
+        $policies = array_map(
+            fn (array $p) => (string) ($p['metadata']['name'] ?? ''),
+            $this->getE2eKubernetesClient()->listResources('networking.k8s.io/v1', 'NetworkPolicy', 'runr-loadtest')['items'] ?? [],
+        );
+
+        return self::loadTestVerdict($run, $policies);
+    }
+
+    /**
+     * obs-load-test from the test as the API answers it and the NetworkPolicies of runr-loadtest:
+     * completed, requests sent and answered without errors, latency and throughput measured, the
+     * scaling fields present, and the namespace's default-deny and egress policies in place.
+     *
+     * @param  array<string, mixed>  $run
+     * @param  list<string>  $policies
+     */
+    private static function loadTestVerdict(array $run, array $policies): bool|string
+    {
+        if (($run['status'] ?? null) !== 'completed') {
+            return 'load test '.($run['status'] ?? 'not found').(! empty($run['error']) ? ': '.mb_substr((string) $run['error'], 0, 300) : '');
+        }
+
+        foreach (['runr-loadtest-default-deny', 'runr-loadtest-egress'] as $policy) {
+            if (! in_array($policy, $policies, true)) {
+                return "NetworkPolicy {$policy} missing in runr-loadtest (have: ".implode(', ', $policies).')';
+            }
+        }
+
+        $r = (array) ($run['results'] ?? []);
+        if ((int) ($r['requests'] ?? 0) < 1) {
+            return 'no requests sent: '.json_encode($r);
+        }
+        if (! is_numeric($r['latency_ms']['p95'] ?? null) || (float) $r['latency_ms']['p95'] <= 0) {
+            return 'no p95 latency: '.json_encode($r['latency_ms'] ?? null);
+        }
+        if ((float) ($r['rps'] ?? 0) <= 0) {
+            return 'no requests per second: '.json_encode($r);
+        }
+        if ((float) ($r['error_rate'] ?? 1) > 0.01) {
+            return 'error rate '.round(((float) $r['error_rate']) * 100, 2).' % ('.($r['failed_requests'] ?? '?').' of '.$r['requests'].' requests)';
+        }
+        if (! array_key_exists('pods_peak', $r) || ! is_int($r['cold_starts'] ?? null)) {
+            return 'scaling fields missing: '.json_encode($r);
+        }
+
+        return true;
     }
 
     /**

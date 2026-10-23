@@ -98,6 +98,7 @@ return [
 
     'waits' => [
         'redis:default' => 60,
+        'redis-long:long' => 300,
     ],
 
     /*
@@ -211,10 +212,32 @@ return [
             // applies to the rest (closures, framework jobs): one try, failures land in failed_jobs.
             'tries' => 1,
             'backoff' => 10,
-            // Worker default; long jobs set their own $timeout (queue retry_after is above the longest)
-            'timeout' => 600,
+            // The worker's limit for jobs without their own $timeout, and how long Horizon lets a worker
+            // it stops (autoscaling down, horizon:terminate) finish its job before it kills it — no
+            // failed() then, the job's status stays until retry_after. So above the longest job
+            // $timeout (MigrateRegionJob, InstallGpuSupportJob, … 1800 s: their own limit ends them,
+            // with failed()) and below the queue's retry_after (1900 s)
+            'timeout' => 1860,
             // No extra pause after an empty poll: the redis connection's block_for (1 s) already
             // waits for work, and a due delayed job is picked up within block_for + sleep
+            'sleep' => 0,
+            'nice' => 0,
+        ],
+        // The jobs that run longer than supervisor-1 allows (App\Jobs\Concerns\RunsOnLongQueue:
+        // an organization export or import, an image copied between the regions of a global
+        // project) on the redis-long connection: its timeout above the longest of them
+        // (org_transfer.job_timeout, 4 h by default; global_dns.image_copy_timeout, 1 h) and
+        // below redis-long's retry_after (the same limit + 300 s, config/queue.php)
+        'supervisor-long' => [
+            'connection' => 'redis-long',
+            'queue' => ['long'],
+            'balance' => 'simple',
+            'maxProcesses' => 2,
+            'maxTime' => 0,
+            'maxJobs' => 0,
+            'memory' => 128,
+            'tries' => 1,
+            'timeout' => max((int) env('RUNR_GLOBAL_IMAGE_COPY_TIMEOUT', 3600), (int) env('RUNR_ORG_TRANSFER_JOB_TIMEOUT', 4 * 3600)) + 60,
             'sleep' => 0,
             'nice' => 0,
         ],

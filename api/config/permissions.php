@@ -30,6 +30,12 @@ return [
         // Stop a project (workloads off, no deploys) and resume it, with a reason (docs/billing.md#project-stop-and-resume)
         'projects.stop' => ['group' => 'projects', 'scope' => 'org'],
         'code.edit' => ['group' => 'projects', 'scope' => 'project', 'implies' => ['projects.view']],
+        // Environments (docs/environments.md): create / change / delete a project's environments;
+        // request a promotion of an environment's version to the next one; approve (or reject)
+        // promotions into an environment that requires approval — production by default
+        'environments.manage' => ['group' => 'projects', 'scope' => 'project', 'implies' => ['projects.view']],
+        'environments.promote' => ['group' => 'projects', 'scope' => 'project', 'implies' => ['projects.view']],
+        'environments.approve' => ['group' => 'projects', 'scope' => 'project', 'implies' => ['projects.view']],
 
         // ── Git (docs/git-deploy.md) ──
         'git.pull' => ['group' => 'git', 'scope' => 'project', 'implies' => ['projects.view']],
@@ -44,7 +50,14 @@ return [
         'env.view' => ['group' => 'configuration', 'scope' => 'project', 'implies' => ['projects.view']],
         'env.edit' => ['group' => 'configuration', 'scope' => 'project', 'implies' => ['env.view']],
         'secrets.view_values' => ['group' => 'configuration', 'scope' => 'project', 'implies' => ['env.view']],
+        // The organization's secret stores (docs/secret-stores.md): seeing them (to refer to one from
+        // a project's secret variables) and registering them with the trust they need
+        'secret_stores.view' => ['group' => 'configuration', 'scope' => 'org'],
+        'secret_stores.manage' => ['group' => 'configuration', 'scope' => 'org', 'implies' => ['secret_stores.view']],
         'domains.manage' => ['group' => 'configuration', 'scope' => 'project', 'implies' => ['projects.view']],
+        // Access mode (public / IP allow list / internal only) and the internal callers a project
+        // accepts, other organizations' included (docs/internal-network.md)
+        'network.manage' => ['group' => 'configuration', 'scope' => 'project', 'implies' => ['projects.view']],
         'connections.manage' => ['group' => 'configuration', 'scope' => 'project', 'implies' => ['projects.view']],
 
         // ── Operations ──
@@ -64,6 +77,8 @@ return [
         'workflows.run' => ['group' => 'workflows', 'scope' => 'project', 'implies' => ['workflows.view']],
         'workflows.manage' => ['group' => 'workflows', 'scope' => 'project', 'implies' => ['workflows.view']],
         'events.send' => ['group' => 'workflows', 'scope' => 'org'],
+        // Fan-out topics of the organization (docs/triggers.md#topics); publishing is events.send
+        'topics.manage' => ['group' => 'workflows', 'scope' => 'org'],
 
         // ── Sandboxes (Sandbox API, docs/sandbox-api.md) ──
         'sandboxes.view' => ['group' => 'sandboxes', 'scope' => 'org'],
@@ -121,6 +136,11 @@ return [
         'mcp.servers.manage' => ['group' => 'mcp', 'scope' => 'project', 'implies' => ['projects.view']],
         'mcp.servers.call' => ['group' => 'mcp', 'scope' => 'project', 'implies' => ['projects.view']],
 
+        // ── API product (docs/api-product.md): consumers, keys, plans and usage of a gateway follow
+        //    the gateway (its owner); the organization's consumers and plans — accepted on every
+        //    gateway — and the usage of every gateway need this ──
+        'api_products.manage' => ['group' => 'configuration', 'scope' => 'org'],
+
         // ── Organization ──
         'members.view' => ['group' => 'organization', 'scope' => 'org'],
         'members.invite' => ['group' => 'organization', 'scope' => 'org', 'implies' => ['members.view']],
@@ -140,6 +160,9 @@ return [
         'audit.export' => ['group' => 'organization', 'scope' => 'org', 'implies' => ['audit.view']],
         // Data residency of the organization: allowed regions / data locations, default region
         'tenants.residency.manage' => ['group' => 'organization', 'scope' => 'org', 'edition' => 'multi'],
+        // Export the organization into a package / import one (docs/org-export.md); the API also
+        // requires the Owner role — the permission scopes API tokens and custom roles
+        'org.transfer' => ['group' => 'organization', 'scope' => 'org'],
 
         // ── Billing (Billing module, docs/billing.md) ──
         // Bills, usage, prices, region billing types and fixed resource requests of the organization
@@ -179,11 +202,12 @@ return [
             'description' => 'Builds, deploys and operates projects.',
             'permissions' => [
                 'projects.view', 'projects.create', 'projects.update', 'projects.delete', 'projects.deploy',
-                'code.edit', 'env.view', 'env.edit', 'domains.manage', 'connections.manage',
+                'environments.manage', 'environments.promote',
+                'code.edit', 'env.view', 'env.edit', 'secret_stores.view', 'domains.manage', 'network.manage', 'connections.manage',
                 'git.pull', 'git.push', 'git.manage', 'previews.manage',
                 'shell.exec', 'logs.view', 'metrics.view',
                 'traces.view', 'replay.manage', 'uptime.manage',
-                'workflows.view', 'workflows.run', 'workflows.manage', 'events.send',
+                'workflows.view', 'workflows.run', 'workflows.manage', 'events.send', 'topics.manage',
                 'sandboxes.view', 'sandboxes.create', 'sandboxes.exec',
                 'security.view',
                 'regions.view', 'runtimes.use_custom',
@@ -224,7 +248,10 @@ return [
 
     /*
     | Upgrade from 0.4.x (multi-tenant): tenant members ("member") keep exactly what they could
-    | do before — the upgrade creates this custom role in every tenant that has members.
+    | do before — the upgrade creates this custom role in every tenant that has members. A
+    | permission a release adds to the built-in Developer role (a fresh tenant's default role) is
+    | added here too, and a tenant migration adds it to the Member roles that upgrades created
+    | before (0108 for 0.6.0); PermissionCatalogTest keeps the two lists in step.
     */
     'legacy_member_role' => [
         'key' => 'member',
@@ -232,11 +259,12 @@ return [
         'description' => 'Created by the upgrade: what members could do before roles existed. Move members to Developer to drop the settings and SSO permissions.',
         'permissions' => [
             'projects.view', 'projects.create', 'projects.update', 'projects.delete', 'projects.deploy',
-            'code.edit', 'env.view', 'env.edit', 'domains.manage', 'connections.manage',
+            'environments.manage', 'environments.promote',
+            'code.edit', 'env.view', 'env.edit', 'secret_stores.view', 'domains.manage', 'network.manage', 'connections.manage',
             'git.pull', 'git.push', 'git.manage', 'previews.manage',
             'shell.exec', 'logs.view', 'metrics.view',
             'traces.view', 'replay.manage', 'uptime.manage',
-            'workflows.view', 'workflows.run', 'workflows.manage', 'events.send',
+            'workflows.view', 'workflows.run', 'workflows.manage', 'events.send', 'topics.manage',
             'sandboxes.view', 'sandboxes.create', 'sandboxes.exec',
             'security.view',
             'regions.view', 'runtimes.use_custom', 'models.view',

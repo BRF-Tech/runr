@@ -4,22 +4,36 @@ namespace App\Console\Commands;
 
 use App\Console\Commands\Concerns\E2eTestAdmissionTrait;
 use App\Console\Commands\Concerns\E2eTestAiTrait;
+use App\Console\Commands\Concerns\E2eTestApiProductTrait;
 use App\Console\Commands\Concerns\E2eTestBindingsTrait;
+use App\Console\Commands\Concerns\E2eTestCertManagerTrait;
+use App\Console\Commands\Concerns\E2eTestDeployStrategiesTrait;
+use App\Console\Commands\Concerns\E2eTestEnvironmentsTrait;
 use App\Console\Commands\Concerns\E2eTestGitDeployTrait;
+use App\Console\Commands\Concerns\E2eTestGlobalProjectsTrait;
 use App\Console\Commands\Concerns\E2eTestImagesTrait;
+use App\Console\Commands\Concerns\E2eTestInternalNetworkTrait;
 use App\Console\Commands\Concerns\E2eTestMigrationTrait;
+use App\Console\Commands\Concerns\E2eTestNetworkTrait;
 use App\Console\Commands\Concerns\E2eTestObservabilityTrait;
+use App\Console\Commands\Concerns\E2eTestOrgTransferTrait;
 use App\Console\Commands\Concerns\E2eTestReconcileTrait;
+use App\Console\Commands\Concerns\E2eTestRegionMoveSecretsTrait;
 use App\Console\Commands\Concerns\E2eTestRegionMoveTrait;
 use App\Console\Commands\Concerns\E2eTestResultTrait;
 use App\Console\Commands\Concerns\E2eTestRunnerTrait;
+use App\Console\Commands\Concerns\E2eTestRuntimePatchesTrait;
 use App\Console\Commands\Concerns\E2eTestRuntimesTrait;
 use App\Console\Commands\Concerns\E2eTestSandboxApiTrait;
 use App\Console\Commands\Concerns\E2eTestSandboxTrait;
+use App\Console\Commands\Concerns\E2eTestSecretsTrait;
 use App\Console\Commands\Concerns\E2eTestSetupTrait;
 use App\Console\Commands\Concerns\E2eTestShellTrait;
 use App\Console\Commands\Concerns\E2eTestSupplyChainTrait;
+use App\Console\Commands\Concerns\E2eTestTriggerSourcesTrait;
+use App\Console\Commands\Concerns\E2eTestTriggersTrait;
 use App\Console\Commands\Concerns\E2eTestVerifyTrait;
+use App\Console\Commands\Concerns\E2eTestWarmerTrait;
 use App\Console\Commands\Concerns\E2eTestWasmTrait;
 use App\Models\KnativeRegion;
 use App\Services\KubernetesClient;
@@ -31,22 +45,36 @@ class E2eTestCommand extends Command
 {
     use E2eTestAdmissionTrait;
     use E2eTestAiTrait;
+    use E2eTestApiProductTrait;
     use E2eTestBindingsTrait;
+    use E2eTestCertManagerTrait;
+    use E2eTestDeployStrategiesTrait;
+    use E2eTestEnvironmentsTrait;
     use E2eTestGitDeployTrait;
+    use E2eTestGlobalProjectsTrait;
     use E2eTestImagesTrait;
+    use E2eTestInternalNetworkTrait;
     use E2eTestMigrationTrait;
+    use E2eTestNetworkTrait;
     use E2eTestObservabilityTrait;
+    use E2eTestOrgTransferTrait;
     use E2eTestReconcileTrait;
+    use E2eTestRegionMoveSecretsTrait;
     use E2eTestRegionMoveTrait;
     use E2eTestResultTrait;
     use E2eTestRunnerTrait;
+    use E2eTestRuntimePatchesTrait;
     use E2eTestRuntimesTrait;
     use E2eTestSandboxApiTrait;
     use E2eTestSandboxTrait;
+    use E2eTestSecretsTrait;
     use E2eTestSetupTrait;
     use E2eTestShellTrait;
     use E2eTestSupplyChainTrait;
+    use E2eTestTriggerSourcesTrait;
+    use E2eTestTriggersTrait;
     use E2eTestVerifyTrait;
+    use E2eTestWarmerTrait;
     use E2eTestWasmTrait;
 
     protected $signature = 'test:e2e
@@ -54,8 +82,9 @@ class E2eTestCommand extends Command
         {--kubeconfig= : Path to kubeconfig file for test region}
         {--timeout=300 : Deploy wait timeout in seconds}
         {--skip-sandbox : Skip sandbox runtime isolation tests}
-        {--suite=all : all = every phase incl. runtime plugins; runtimes = runtime plugin functions only; supply-chain = SBOM / scan / signing / admission; ai = model services, offline snapshots, bindings, GPU; bindings = bindings only (data services, KV / object / Postgres / external); sandbox-api = Sandbox API only; wasm = WebAssembly support + Wasm runtimes; observability = tracing backend, traces, replay; reconcile = region:reconcile tracing backend and registry pre-warm steps; git-deploy = git remote, Forgejo push and previews; images = uploaded images (tar + wasm), CaaS from an upload, wasm-exec in C and Q; admission = project stop / resume, region status blocks, fixed-region allocations (Billing module on); region-move = the region moved to the cluster of --move-kubeconfig and rolled back (rebuilds, report, restored state)}
+        {--suite=all : all = every phase incl. runtime plugins; runtimes = runtime plugin functions only; supply-chain = SBOM / scan / signing / admission; ai = model services, offline snapshots, bindings, GPU; bindings = bindings only (data services, KV / object / Postgres / external); sandbox-api = Sandbox API only; wasm = WebAssembly support + Wasm runtimes; observability = tracing backend, traces, replay; reconcile = region:reconcile tracing backend and registry pre-warm steps; network = private ingress (cluster-local routes off the LoadBalancer), NetworkPolicies, an earlier release\'s region moved under load; internal-network = the authz, allow lists, cross-organization grants, access modes, audit mode, an earlier release\'s region moved under load; git-deploy = git remote, Forgejo push and previews; images = uploaded images (tar + wasm), CaaS from an upload, wasm-exec in C and Q; admission = project stop / resume, region status blocks, fixed-region allocations (Billing module on); deploy-strategies = blue-green (test URL, promote, warm previous, rollback) and canary (traffic split, automatic promotion, abort) rollouts; region-move = the region moved to the cluster of --move-kubeconfig and rolled back (rebuilds, report, restored state, secret values in the region\'s Secret and OpenBao copied there and back, references); runtime-patches = signed patch feed, workloads by digest, deadline migration with rollback, apply and pin; warmer = the timed warmer: schedule preview, min-scale rendered into the template, PodAutoscaler patches without a restart, schedule turned off and redeployed; triggers = trigger lists: webhook inbox, dead letter + replay, platform events, schedule and topics through the event gateway; trigger-sources = S3 object events on the region object store, Kafka, NATS JetStream, RabbitMQ, MQTT, Postgres CDC with the slot cleanup, IMAP and a schedule time zone through the event gateway; secrets = pass-through secret values, secrets:move-to-region, External Secrets Operator with an OpenBao reference; environments = staging next to production, promotion, rollback restoring the config; cert-manager = cert-manager installed with Serving, the region CA issuer, HTTPS of a custom domain, removal and reinstall; global-projects = a global project in the e2e region and a second region on the cluster of --global-kubeconfig (PowerDNS, rollout, HA failover); api-product = gateway API keys, plans, usage, JWT and gateway-only through the gateway-auth of the region; org-transfer = organization export with binding data and images, download, chunked import, plan, apply with data restore and deploy}
         {--sandbox-kata : sandbox-api suite: also install Kata and run a Kata sandbox (nodes with /dev/kvm)}
+        {--sandbox-cases= : sandbox-api suite: "kata" runs only the Kata cases, their setup and the quota case (or RUNR_E2E_SANDBOX_CASES)}
         {--examples=/tmp/runr-examples : examples/runtimes copied into the container (runtime plugin suite)}
         {--hf-serve-image= : AI suite: hf-serve image of the CPU model services (default ghcr.io/brf-tech/runr/hf-serve:1.1.1, or RUNR_E2E_HF_SERVE_IMAGE)}
         {--ai-tei : AI suite: also serve sentence-transformers/all-MiniLM-L6-v2 on TEI (CPU), or RUNR_E2E_TEI=1}
@@ -65,7 +94,12 @@ class E2eTestCommand extends Command
         {--ai-cases= : AI suite: only these cases, comma-separated, plus what they need (e.g. ai-gpu-caas; or RUNR_E2E_AI_CASES)}
         {--gpu-abort-file=/tmp/runr-e2e-gpu-abort : AI suite: the GPU case stops with the text of this file once it exists (runtime/lib/test-ai.sh writes it when the host GPU needs a reset)}
         {--forgejo=/tmp/runr-forgejo.json : git-deploy suite: address and token of the throwaway Forgejo}
-        {--move-kubeconfig= : region-move suite: kubeconfig of the cluster the region moves to (runtime/lib/test-region-move.sh)}';
+        {--move-kubeconfig= : region-move suite: kubeconfig of the cluster the region moves to (runtime/lib/test-region-move.sh)}
+        {--mqtt-image= : trigger-sources suite: another image with mosquitto and mosquitto_pub for the MQTT source check (or RUNR_E2E_MQTT_IMAGE; default the reqs mirror\'s eclipse-mosquitto)}
+        {--secrets-db : secrets suite: also dynamic Postgres credentials from OpenBao (installs the Postgres data service), or RUNR_E2E_SECRETS_DB=1}
+        {--global-kubeconfig= : global-projects suite: kubeconfig of the second cluster, the second region (runtime/lib/test-global-projects.sh)}
+        {--global-agent-image= : global-projects suite: region agent image built from this checkout and loaded into both clusters (empty: the published agent)}
+        {--global-cases= : global-projects suite: only these cases, comma-separated, plus the setup and what they need (e.g. gp-postgres-replica; or RUNR_E2E_GLOBAL_CASES)}';
 
     protected $description = 'Run end-to-end tests against a running API + Knative cluster';
 
@@ -153,6 +187,15 @@ class E2eTestCommand extends Command
             return $this->countResults($tests)['failed'] > 0 ? 1 : 0;
         }
 
+        // Organization export / import (E2eTestOrgTransferTrait, docs/org-export.md)
+        if ($this->option('suite') === 'org-transfer') {
+            $tests = $this->runOrgTransferSuite($regionId);
+            $this->printResultsTable($tests, $startTime);
+            $this->saveResultsMarkdown($tests, $startTime);
+
+            return $this->countResults($tests)['failed'] > 0 ? 1 : 0;
+        }
+
         if ($this->option('suite') === 'runtimes') {
             $tests = $this->runRuntimeSuite($regionId);
             $this->printResultsTable($tests, $startTime);
@@ -170,9 +213,36 @@ class E2eTestCommand extends Command
             return $this->countResults($tests)['failed'] > 0 ? 1 : 0;
         }
 
+        // Region network only: private ingress, NetworkPolicies, the move of an earlier release's region (E2eTestNetworkTrait)
+        if ($this->option('suite') === 'network') {
+            $tests = $this->runNetworkSuite($regionId);
+            $this->printResultsTable($tests, $startTime);
+            $this->saveResultsMarkdown($tests, $startTime);
+
+            return $this->countResults($tests)['failed'] > 0 ? 1 : 0;
+        }
+
+        // Internal network only: authz, allow lists, access modes, the move of an earlier release's region (E2eTestInternalNetworkTrait)
+        if ($this->option('suite') === 'internal-network') {
+            $tests = $this->runInternalNetworkSuite($regionId);
+            $this->printResultsTable($tests, $startTime);
+            $this->saveResultsMarkdown($tests, $startTime);
+
+            return $this->countResults($tests)['failed'] > 0 ? 1 : 0;
+        }
+
         // region:reconcile only: tracing backend update, registry pre-warm Job (E2eTestReconcileTrait)
         if ($this->option('suite') === 'reconcile') {
             $tests = $this->runReconcileSuite($regionId);
+            $this->printResultsTable($tests, $startTime);
+            $this->saveResultsMarkdown($tests, $startTime);
+
+            return $this->countResults($tests)['failed'] > 0 ? 1 : 0;
+        }
+
+        // cert-manager only: install with Serving, region CA issuer, custom-domain HTTPS, removal (E2eTestCertManagerTrait)
+        if ($this->option('suite') === 'cert-manager') {
+            $tests = $this->runCertManagerSuite($regionId);
             $this->printResultsTable($tests, $startTime);
             $this->saveResultsMarkdown($tests, $startTime);
 
@@ -215,9 +285,90 @@ class E2eTestCommand extends Command
             return $this->countResults($tests)['failed'] > 0 ? 1 : 0;
         }
 
+        // Timed warmer only: preview, template min-scale, PodAutoscaler patches (E2eTestWarmerTrait)
+        if ($this->option('suite') === 'warmer') {
+            $tests = $this->runWarmerSuite($regionId);
+            $this->printResultsTable($tests, $startTime);
+            $this->saveResultsMarkdown($tests, $startTime);
+
+            return $this->countResults($tests)['failed'] > 0 ? 1 : 0;
+        }
+
+        // Deploy strategies only: blue-green and canary rollouts of one function (E2eTestDeployStrategiesTrait)
+        if ($this->option('suite') === 'deploy-strategies') {
+            $tests = $this->runDeployStrategiesSuite($regionId);
+            $this->printResultsTable($tests, $startTime);
+            $this->saveResultsMarkdown($tests, $startTime);
+
+            return $this->countResults($tests)['failed'] > 0 ? 1 : 0;
+        }
+
+        // Environments only: staging next to production, promotion, rollback with the config (E2eTestEnvironmentsTrait)
+        if ($this->option('suite') === 'environments') {
+            $tests = $this->runEnvironmentsSuite($regionId);
+            $this->printResultsTable($tests, $startTime);
+            $this->saveResultsMarkdown($tests, $startTime);
+
+            return $this->countResults($tests)['failed'] > 0 ? 1 : 0;
+        }
+
         // Region move only: to the cluster of --move-kubeconfig and back (E2eTestRegionMoveTrait)
         if ($this->option('suite') === 'region-move') {
             $tests = $this->runRegionMoveSuite($regionId);
+            $this->printResultsTable($tests, $startTime);
+            $this->saveResultsMarkdown($tests, $startTime);
+
+            return $this->countResults($tests)['failed'] > 0 ? 1 : 0;
+        }
+
+        // Runtime patches only: signed feed, digests, deadline migration + rollback, apply, pin (E2eTestRuntimePatchesTrait)
+        if ($this->option('suite') === 'runtime-patches') {
+            $tests = $this->runRuntimePatchesSuite($regionId);
+            $this->printResultsTable($tests, $startTime);
+            $this->saveResultsMarkdown($tests, $startTime);
+
+            return $this->countResults($tests)['failed'] > 0 ? 1 : 0;
+        }
+
+        // Broker / external trigger sources: S3, Kafka, NATS, RabbitMQ, MQTT, CDC, IMAP (E2eTestTriggerSourcesTrait)
+        if ($this->option('suite') === 'trigger-sources') {
+            $tests = $this->runTriggerSourcesSuite($regionId);
+            $this->printResultsTable($tests, $startTime);
+            $this->saveResultsMarkdown($tests, $startTime);
+
+            return $this->countResults($tests)['failed'] > 0 ? 1 : 0;
+        }
+
+        // Triggers only: webhook inbox, dead letter + replay, platform events, schedule, topics (E2eTestTriggersTrait)
+        if ($this->option('suite') === 'triggers') {
+            $tests = $this->runTriggersSuite($regionId);
+            $this->printResultsTable($tests, $startTime);
+            $this->saveResultsMarkdown($tests, $startTime);
+
+            return $this->countResults($tests)['failed'] > 0 ? 1 : 0;
+        }
+
+        // Project secrets only: pass-through values, the database move, store references (E2eTestSecretsTrait)
+        if ($this->option('suite') === 'secrets') {
+            $tests = $this->runSecretsSuite($regionId);
+            $this->printResultsTable($tests, $startTime);
+            $this->saveResultsMarkdown($tests, $startTime);
+
+            return $this->countResults($tests)['failed'] > 0 ? 1 : 0;
+        }
+
+        // Global projects only: a second region, PowerDNS, rollout, failover (E2eTestGlobalProjectsTrait)
+        if ($this->option('suite') === 'global-projects') {
+            $tests = $this->runGlobalProjectsSuite($regionId);
+            $this->printResultsTable($tests, $startTime);
+            $this->saveResultsMarkdown($tests, $startTime);
+
+            return $this->countResults($tests)['failed'] > 0 ? 1 : 0;
+        }
+
+        // API product only: keys, plans, usage, JWT, gateway-only on the region's gateway-auth (E2eTestApiProductTrait)
+        if ($this->option('suite') === 'api-product') {
+            $tests = $this->runApiProductSuite($regionId);
             $this->printResultsTable($tests, $startTime);
             $this->saveResultsMarkdown($tests, $startTime);
 

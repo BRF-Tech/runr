@@ -17,6 +17,9 @@ class WorkflowResource extends JsonResource
         return [
             'id' => $w->id,
             'project_id' => $w->project_id,
+            // docs/workflows.md#environments: null / production — the project's own workload
+            'environment_id' => $w->getAttribute('environment_id'),
+            'environment' => $w->environmentName() ?? 'production',
             'name' => $w->name,
             'description' => $w->description,
             'triggers' => $w->triggers ?? [],

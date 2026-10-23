@@ -84,4 +84,31 @@ out=$(KIND_PRELOAD=0 preload_kind_images runr-e2e-1 2>&1) || fail "KIND_PRELOAD=
 [ -s "$calls" ] && fail "KIND_PRELOAD=0 ran: $(cat "$calls")"
 echo "$out" | grep -q 'Images not loaded into the Kind cluster (KIND_PRELOAD=0): the nodes pull them' || fail "KIND_PRELOAD=0: $out"
 
+# --- the checkout's region images (build_e2e_runr_images): built, exported, loaded -----------------
+: > "$calls"
+COMPOSE_PROJECT_NAME=runr-x build_e2e_runr_images >/dev/null 2>&1 || fail "build_e2e_runr_images failed"
+for name in agent queue-consumer; do
+  grep -qxF "docker build -q -t ghcr.io/brf-tech/runr/${name}:e2e-runr-x ${here}/${name}" "$calls" || fail "${name} not built: $(cat "$calls")"
+done
+[ "${RUNR_AGENT_IMAGE:-}" = "ghcr.io/brf-tech/runr/agent:e2e-runr-x" ] || fail "RUNR_AGENT_IMAGE=${RUNR_AGENT_IMAGE:-}"
+[ "${RUNR_INTERNAL_AUTHZ_IMAGE:-}" = "ghcr.io/brf-tech/runr/agent:e2e-runr-x" ] || fail "RUNR_INTERNAL_AUTHZ_IMAGE=${RUNR_INTERNAL_AUTHZ_IMAGE:-}"
+[ "${RUNR_QUEUE_CONSUMER_IMAGE:-}" = "ghcr.io/brf-tech/runr/queue-consumer:e2e-runr-x" ] || fail "RUNR_QUEUE_CONSUMER_IMAGE=${RUNR_QUEUE_CONSUMER_IMAGE:-}"
+: > "$calls"
+out=$(preload_kind_images runr-e2e-1 2>&1) || fail "preload with the checkout's images failed: $out"
+for img in "$RUNR_INTERNAL_AUTHZ_IMAGE" "$RUNR_QUEUE_CONSUMER_IMAGE"; do
+  grep -qxF "kind load docker-image ${img} --name runr-e2e-1" "$calls" || fail "${img} not loaded"
+  grep -qxF "docker pull -q ${img}" "$calls" && fail "${img} pulled: it is on no registry"
+done
+[ "$(grep -cxF "kind load docker-image ${RUNR_AGENT_IMAGE} --name runr-e2e-1" "$calls")" = "1" ] || fail "the agent image loaded more than once: $(cat "$calls")"
+# KIND_PRELOAD=0 still loads the checkout's builds (on no registry), nothing else
+: > "$calls"
+out=$(KIND_PRELOAD=0 preload_kind_images runr-e2e-1 2>&1) || fail "KIND_PRELOAD=0 with the checkout's images failed: $out"
+[ "$(grep -c '^kind load' "$calls")" = "2" ] || fail "KIND_PRELOAD=0 loaded: $(cat "$calls")"
+grep -qxF "kind load docker-image ${RUNR_AGENT_IMAGE} --name runr-e2e-1" "$calls" || fail "KIND_PRELOAD=0 left out the agent"
+unset RUNR_AGENT_IMAGE RUNR_INTERNAL_AUTHZ_IMAGE RUNR_QUEUE_CONSUMER_IMAGE
+: > "$calls"
+E2E_LOCAL_RUNR_IMAGES=0 build_e2e_runr_images >/dev/null 2>&1
+[ -s "$calls" ] && fail "E2E_LOCAL_RUNR_IMAGES=0 built: $(cat "$calls")"
+[ -z "${RUNR_INTERNAL_AUTHZ_IMAGE:-}" ] || fail "E2E_LOCAL_RUNR_IMAGES=0 exported ${RUNR_INTERNAL_AUTHZ_IMAGE}"
+
 echo "ok: kind preload"

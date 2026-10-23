@@ -23,6 +23,11 @@ use Modules\Billing\Support\BillingContext;
  *  billing.region_offer           a platform region was shared with the tenant (billing.manage holders)
  *  billing.fixed_request          a fixed resource request waits for approval (billing.approve holders)
  *  billing.fixed_request_decided  the request was approved or rejected (requester, project owner)
+ *  billing.cost_limit_warning     a project reached 80 % of its monthly cost limit (owner, who set it)
+ *  billing.cost_limit_reached     a project reached its monthly cost limit — notified or stopped
+ *                                 (owner, who set it)
+ *  billing.cost_limit_resumed     a new month began and RunR resumed a project its limit stopped
+ *                                 (owner, who set it)
  */
 class BillingNotifier
 {
@@ -31,6 +36,12 @@ class BillingNotifier
     public const FIXED_REQUEST = 'billing.fixed_request';
 
     public const FIXED_REQUEST_DECIDED = 'billing.fixed_request_decided';
+
+    public const COST_LIMIT_WARNING = 'billing.cost_limit_warning';
+
+    public const COST_LIMIT_REACHED = 'billing.cost_limit_reached';
+
+    public const COST_LIMIT_RESUMED = 'billing.cost_limit_resumed';
 
     public const PREFERENCE_TYPE = 'billing';
 

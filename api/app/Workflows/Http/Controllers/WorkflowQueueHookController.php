@@ -8,11 +8,15 @@ use App\Workflows\Deploy\QueueBridge;
 use App\Workflows\Engine\EventIngestor;
 use App\Workflows\Models\WorkflowApp;
 use App\Workflows\Support\WorkflowContexts;
+use App\Workflows\Support\WorkflowEnvironments;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
 /**
- * Queue bridge sink: POST /api/internal/workflows/queue/{context}/{projectId}/{token}
+ * Queue bridge sink: POST /api/internal/workflows/queue/{context}/{projectId}/{token}, and for an
+ * environment's queue consumer …/{context}/{projectId}/{environmentId}/{token}
+ * (docs/workflows.md#environments): the environment's stream, its app's token, events of that
+ * environment.
  *
  * The project's queue consumer delivers each Redis Stream message here as a CloudEvent (JSON
  * body = the message fields, ce-id = the stream entry id). The secret token in the path is
@@ -28,14 +32,26 @@ class WorkflowQueueHookController
 
     public function store(Request $request, string $context, string $projectId, string $token): JsonResponse
     {
-        $result = WorkflowContexts::runIn($context, function () use ($request, $projectId, $token) {
-            $project = Project::find($projectId);
-            $app = $project ? WorkflowApp::where('project_id', $project->id)->first() : null;
+        return $this->deliver($request, $context, $projectId, null, $token);
+    }
+
+    public function storeForEnvironment(Request $request, string $context, string $projectId, string $environmentId, string $token): JsonResponse
+    {
+        return $this->deliver($request, $context, $projectId, $environmentId, $token);
+    }
+
+    private function deliver(Request $request, string $context, string $projectId, ?string $environmentId, string $token): JsonResponse
+    {
+        $result = WorkflowContexts::runIn($context, function () use ($request, $projectId, $environmentId, $token) {
+            $stored = Project::find($projectId);
+            $project = $stored ? WorkflowEnvironments::view($stored, $environmentId) : null;
+            $app = $project ? WorkflowApp::findFor((string) $stored->id, $environmentId) : null;
 
             if (! $project || ! $app || ! hash_equals($app->queueHookToken(), $token)) {
                 return null;
             }
 
+            // The stream of the environment (its override, else <stream>-<name>)
             $config = ResourceReservation::configOf($project);
             $stream = $config?->queue_stream;
             if (($config->trigger_type ?? null) !== 'workflow' || ! is_string($stream) || $stream === '') {
@@ -48,10 +64,10 @@ class WorkflowQueueHookController
                 'data' => $this->messageData($request),
             ];
             if ($entryId !== '') {
-                $event['id'] = mb_substr("queue:{$project->id}:{$entryId}", 0, 200);
+                $event['id'] = mb_substr('queue:'.$project->id.':'.($environmentId !== null ? $environmentId.':' : '').$entryId, 0, 200);
             }
 
-            return $this->ingestor->ingest([$event], 'queue', $project->id, 'queue:'.$stream);
+            return $this->ingestor->ingest([$event], 'queue', (string) $project->id, 'queue:'.$stream, WorkflowEnvironments::nameOf($project));
         });
 
         if ($result === null) {

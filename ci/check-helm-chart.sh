@@ -378,6 +378,26 @@ refused schema-supply-chain 'supplyChain.enabled' --set-string supplyChain.enabl
 render schema-old-keys --set api.images.quotaGb=100 --set api.supplyChain.toolsImage=registry.example.com/x:1 || problems+=("api.images / api.supplyChain refused: $(cat "$OUT/schema-old-keys.err")")
 report schema "images.* and supplyChain.* validated at the top level, the old api.* keys accepted"
 
+# Runtime patches: the defaults leave the feed reference to the application and render the key
+# runr-runtimes signs the feed with (an empty key switches the feed off), automatic migration on;
+# a multi-line public key keeps its line breaks in the ConfigMap; autoMigrate is validated
+problems=()
+if render patches-default --show-only templates/configmap.yaml && render patches -f "$ROOT/ci/helm-values/runtime-patches.yaml" --show-only templates/configmap.yaml \
+  && render patches-off --set runtimePatches.publicKey= --show-only templates/configmap.yaml; then
+  [ "$(count 'RUNR_PATCH_FEED(_VIA_REGION)?:' "$OUT/patches-default.render")" = 0 ] || problems+=("defaults: a feed reference rendered")
+  grep -q -F 'RUNR_PATCH_FEED_PUBLIC_KEY: "-----BEGIN PUBLIC KEY-----\nMFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEGdKhMmbBAKxXJUxpxtBRgGQstN8y\nsa4lqGU1wKXXWEQ3hEPCdQNbBoDmTDgC4XRxI6sXfxJ9V6eslYxKgITcRw==\n-----END PUBLIC KEY-----"' "$OUT/patches-default.render" || problems+=("defaults: runr-runtimes' feed key not rendered")
+  grep -q -F 'RUNR_PATCH_FEED_PUBLIC_KEY: ""' "$OUT/patches-off.render" || problems+=("runtimePatches.publicKey=\"\" does not switch the feed off")
+  grep -q -F 'RUNR_PATCH_AUTO_MIGRATE: "true"' "$OUT/patches-default.render" || problems+=("defaults: automatic migration not on")
+  grep -q -F 'RUNR_PATCH_FEED: "registry.acme-cloud.example/runr/runtime-patches:feed"' "$OUT/patches.render" || problems+=("runtimePatches.feed not rendered")
+  grep -q -F 'RUNR_PATCH_FEED_PUBLIC_KEY: "-----BEGIN PUBLIC KEY-----\nMFkw' "$OUT/patches.render" || problems+=("runtimePatches.publicKey lost its line breaks")
+  grep -q -F 'RUNR_PATCH_FEED_VIA_REGION: "eu-1"' "$OUT/patches.render" || problems+=("runtimePatches.viaRegion not rendered")
+  grep -q -F 'RUNR_PATCH_AUTO_MIGRATE: "false"' "$OUT/patches.render" || problems+=("runtimePatches.autoMigrate=false not rendered")
+else
+  problems+=("helm template: $(cat "$OUT"/patches*.err)")
+fi
+refused schema-patches 'runtimePatches.autoMigrate' --set-string runtimePatches.autoMigrate=maybe || problems+=("runtimePatches.autoMigrate not validated")
+report runtime-patches "feed, public key (line breaks kept), region and automatic migration rendered; defaults left to the application"
+
 # Gateway: the ingress controller's X-Forwarded-Proto (https) reaches the API — no route overwrites
 # it with the gateway's own scheme, and the ingress controller is a trusted proxy; /horizon and
 # /horizon/* go to the API
@@ -485,6 +505,12 @@ boot() {
   shift
   render "$name" --show-only templates/bootstrap-job.yaml "$@" || problems+=("$name: $(cat "$OUT/$name.err")")
 }
+# rj NAME ARGS…: the Job that brings the regions to the release (region-reconcile-job.yaml)
+rj() {
+  local name=$1
+  shift
+  render "$name" --show-only templates/region-reconcile-job.yaml "$@" || problems+=("$name: $(cat "$OUT/$name.err")")
+}
 boot boot-single
 boot boot-tenancy --set edition=multi-tenant
 boot boot-tenancy-flag --set tenancy.enabled=true
@@ -494,7 +520,7 @@ setup='timeout 480 php artisan tenancy:setup --force || echo "runr-bootstrap: ru
 migrate='timeout 120 php artisan tenancy:migrate || echo "runr-bootstrap: tenant migrations incomplete (run php artisan tenancy:migrate)"'
 for n in boot-tenancy boot-tenancy-flag boot-tenancy-reused; do
   grep -q -F -- "$setup" "$OUT/$n.render" || { problems+=("$n: no tenancy:setup step"); continue; }
-  grep -q '^  activeDeadlineSeconds: 1200$' "$OUT/$n.render" || problems+=("$n: activeDeadlineSeconds not 1200")
+  grep -q '^  activeDeadlineSeconds: 1020$' "$OUT/$n.render" || problems+=("$n: activeDeadlineSeconds not 1020")
   at_setup=$(grep -n -F -- "$setup" "$OUT/$n.render" | head -1 | cut -d: -f1)
   at_admin=$(grep -n -F 'set +e' "$OUT/$n.render" | head -1 | cut -d: -f1)
   [ "$at_setup" -lt "$at_admin" ] || problems+=("$n: tenancy:setup after the administrator check")
@@ -509,9 +535,116 @@ for n in boot-single boot-tenancy-off; do
   grep -q -F 'tenancy:setup' "$OUT/$n.render" && problems+=("$n: tenancy:setup rendered")
 done
 grep -q -F 'tenancy:migrate' "$OUT/boot-single.render" && problems+=("boot-single: tenancy:migrate rendered")
-grep -q '^  activeDeadlineSeconds: 600$' "$OUT/boot-single.render" || problems+=("boot-single: activeDeadlineSeconds not 600")
-grep -q '^  activeDeadlineSeconds: 720$' "$OUT/boot-tenancy-off.render" || problems+=("boot-tenancy-off: activeDeadlineSeconds not 720")
-report bootstrap "multi-tenant: tenant migrations after the module toggles, tenancy:setup before the administrator check (also for values without bootstrap.tenancySetup), single-tenant and tenancySetup=false: no conversion"
+grep -q '^  activeDeadlineSeconds: 420$' "$OUT/boot-single.render" || problems+=("boot-single: activeDeadlineSeconds not 420")
+grep -q '^  activeDeadlineSeconds: 540$' "$OUT/boot-tenancy-off.render" || problems+=("boot-tenancy-off: activeDeadlineSeconds not 540")
+# Pass-through: the secret move after every upgrade (in the reconcile Job: it calls the regions),
+# --finalize with projectSecrets.finalize, none while the values stay in the database
+rj rj-single
+rj rj-secrets-finalize --set projectSecrets.finalize=true
+rj rj-secrets-database --set projectSecrets.storage=database
+move='timeout 240 php artisan secrets:move-to-region || echo'
+grep -q -F -- "$move" "$OUT/rj-single.render" || problems+=("rj-single: no secrets:move-to-region step")
+grep -q -F -- 'timeout 240 php artisan secrets:move-to-region --finalize ||' "$OUT/rj-secrets-finalize.render" || problems+=("rj-secrets-finalize: no --finalize")
+grep -q -F 'secrets:move-to-region' "$OUT/rj-secrets-database.render" && problems+=("rj-secrets-database: secrets:move-to-region rendered")
+report bootstrap "multi-tenant: tenant migrations after the module toggles, tenancy:setup before the administrator check (also for values without bootstrap.tenancySetup), single-tenant and tenancySetup=false: no conversion; the secret move in the reconcile Job (--finalize with projectSecrets.finalize, none with storage database)"
+
+# The bootstrap hook stays short (docs/upgrade.md, Order of operations): the database only — no
+# region:reconcile, no agent:redeploy, no secret move — activeDeadlineSeconds 420 / 540 / 1020,
+# restartPolicy OnFailure, no exit status that fails the release for the regions; it records its
+# revision (bootstrap_revision) after the tenant steps, before the administrator check.
+# The regions are brought to the release by the Job runr-region-reconcile-<revision>: no hook (helm
+# upgrade does not wait for it), one per revision, three attempts (backoffLimit 2), kept a week;
+# region:reconcile --deadline=bootstrap.regionReconcileSeconds (3600: one region cluster's worst
+# case on an upgrade from 0.5.10, about 3400 s) within a time limit 1800 s longer (the longest step);
+# activeDeadlineSeconds: the wait for the hook (420 / 540 / 1020) + 3 × (the time limit + 1380 s for
+# the other steps and the pause after a failed step).
+problems=()
+for n in boot-single boot-tenancy boot-tenancy-off; do
+  for step in 'region:reconcile' 'agent:redeploy' 'secrets:move-to-region' 'exit 42' 'podFailurePolicy'; do
+    grep -q -F -- "$step" "$OUT/$n.render" && problems+=("$n: the hook still has ${step}")
+  done
+  grep -q '^      restartPolicy: OnFailure$' "$OUT/$n.render" || problems+=("$n: restartPolicy is not OnFailure")
+  grep -q -F 'App\Models\Setting::set("bootstrap_revision"' "$OUT/$n.render" || problems+=("$n: the hook does not record its revision")
+  grep -A1 -F 'name: RUNR_HELM_REVISION' "$OUT/$n.render" | grep -q 'value: "1"' || problems+=("$n: no RUNR_HELM_REVISION")
+  at_mark=$(grep -n -F 'Setting::set("bootstrap_revision"' "$OUT/$n.render" | head -1 | cut -d: -f1)
+  at_admin=$(grep -n -F 'set +e' "$OUT/$n.render" | head -1 | cut -d: -f1)
+  [ -n "$at_mark" ] && [ "$at_mark" -lt "$at_admin" ] || problems+=("$n: the revision is recorded after the administrator check")
+done
+at_mark=$(grep -n -F 'Setting::set("bootstrap_revision"' "$OUT/boot-tenancy.render" | head -1 | cut -d: -f1)
+at_setup=$(grep -n -F -- "$setup" "$OUT/boot-tenancy.render" | head -1 | cut -d: -f1)
+[ "$at_setup" -lt "$at_mark" ] || problems+=("boot-tenancy: the revision is recorded before tenancy:setup")
+
+rj rj-tenancy --set edition=multi-tenant
+rj rj-tenancy-off --set edition=multi-tenant --set bootstrap.tenancySetup=false
+rj rj-long --set bootstrap.regionReconcileSeconds=7200
+rj rj-reused --set bootstrap.regionReconcileSeconds=null
+render rj-off --set bootstrap.enabled=false || problems+=("rj-off: $(cat "$OUT/rj-off.err")")
+grep -q 'runr-region-reconcile' "$OUT/rj-off.render" && problems+=("bootstrap.enabled=false: the reconcile Job is rendered")
+grep -q -F 'name: runr-region-reconcile-{{ .Release.Revision }}' "$ROOT/helm/templates/region-reconcile-job.yaml" \
+  || problems+=("the reconcile Job is not named per release revision")
+grep -q '^  name: runr-region-reconcile-1$' "$OUT/rj-single.render" || problems+=("rj-single: not named runr-region-reconcile-<revision>")
+grep -q 'helm.sh/hook' "$OUT/rj-single.render" && problems+=("rj-single: the reconcile Job is a hook (helm upgrade would wait for it)")
+for n in rj-single rj-tenancy rj-long; do
+  grep -q '^  backoffLimit: 2$' "$OUT/$n.render" || problems+=("$n: backoffLimit not 2")
+  grep -q '^  ttlSecondsAfterFinished: 604800$' "$OUT/$n.render" || problems+=("$n: ttlSecondsAfterFinished not 604800")
+  grep -q '^      restartPolicy: Never$' "$OUT/$n.render" || problems+=("$n: restartPolicy is not Never")
+  grep -A1 -F 'name: RUNR_HELM_REVISION' "$OUT/$n.render" | grep -q 'value: "1"' || problems+=("$n: no RUNR_HELM_REVISION")
+done
+reconcile_line() { grep -E '^ *timeout [0-9]+ php artisan region:reconcile' "$OUT/$1.render" | sed 's/^ *//'; }
+[ "$(reconcile_line rj-single)" = 'timeout 5400 php artisan region:reconcile --deadline=3600 --run=helm-1 --attempts=3 || reconcile_rc=$?' ] \
+  || problems+=("rj-single: region:reconcile line: $(reconcile_line rj-single)")
+[ "$(reconcile_line rj-long)" = 'timeout 9000 php artisan region:reconcile --deadline=7200 --run=helm-1 --attempts=3 || reconcile_rc=$?' ] \
+  || problems+=("rj-long: region:reconcile line: $(reconcile_line rj-long)")
+grep -q -F -- '--deadline=3600 ' "$OUT/rj-reused.render" || problems+=("rj-reused: values without the key (reused from 0.5.10) do not get 3600")
+for want in rj-single:20760 rj-tenancy:21360 rj-tenancy-off:20880 rj-long:31560; do
+  grep -q "^  activeDeadlineSeconds: ${want#*:}\$" "$OUT/${want%%:*}.render" || problems+=("${want%%:*}: activeDeadlineSeconds not ${want#*:}")
+done
+grep -q -F -- 'if [ "$waited" -ge 420 ]' "$OUT/rj-single.render" || problems+=("rj-single: the wait for the hook is not 420 s")
+grep -q -F -- 'if [ "$waited" -ge 1020 ]' "$OUT/rj-tenancy.render" || problems+=("rj-tenancy: the wait for the hook is not 1020 s")
+refused rj-short 'bootstrap.regionReconcileSeconds' --set bootstrap.regionReconcileSeconds=60 \
+  || problems+=("rj-short: a deadline under 300 s is not refused")
+
+# The scripts themselves, php and sleep stubbed: the hook ends 0 whatever the regions; the reconcile
+# Job's exit status for each exit code of region:reconcile, with the steps after it run
+extract() { sed -n '/^          args:$/,/^          [a-z]/p' "$OUT/$1.render" | sed '1,2d;$d' | sed 's/^              //' | sed 's#^cd /var/www/html$#cd "$STUB_DIR"#'; }
+extract boot-tenancy >"$OUT/bootstrap.sh"
+extract rj-tenancy >"$OUT/reconcile.sh"
+mkdir -p "$OUT/stub"
+cat >"$OUT/stub/php" <<'STUB'
+#!/bin/sh
+echo "php $*" >>"$STUB_DIR/calls"
+case "$*" in
+  *region:reconcile*) exit "$RECONCILE_RC" ;;
+  *app.admin.username*) exit 3 ;;
+esac
+exit 0
+STUB
+printf '#!/bin/sh\necho "sleep $*" >>"$STUB_DIR/calls"\n' >"$OUT/stub/sleep"
+chmod +x "$OUT/stub/php" "$OUT/stub/sleep"
+: >"$OUT/stub/calls"
+got=0
+STUB_DIR="$OUT/stub" RUNR_HELM_REVISION=7 PATH="$OUT/stub:$PATH" sh "$OUT/bootstrap.sh" >"$OUT/stub/out-hook" 2>&1 || got=$?
+[ "$got" = 0 ] || problems+=("bootstrap script: exit ${got}")
+grep -q 'region:reconcile\|agent:redeploy\|secrets:move-to-region' "$OUT/stub/calls" && problems+=("bootstrap script: calls a step of the regions")
+for case in 0:0 4:0 1:1 3:1 124:1; do
+  rc=${case%%:*} want=${case#*:}
+  : >"$OUT/stub/calls"
+  got=0
+  STUB_DIR="$OUT/stub" RECONCILE_RC=$rc RUNR_HELM_REVISION=7 PATH="$OUT/stub:$PATH" sh "$OUT/reconcile.sh" >"$OUT/stub/out-$rc" 2>&1 || got=$?
+  [ "$got" = "$want" ] || problems+=("reconcile script: region:reconcile exit $rc → Job exit $got, want $want")
+  cp "$OUT/stub/calls" "$OUT/stub/calls-$rc"
+  for step in 'agent:redeploy --missing' 'images:move-registry' 'secrets:move-to-region' 'rbac:assign-missing'; do
+    grep -q -F -- "$step" "$OUT/stub/calls" || problems+=("reconcile script: region:reconcile exit $rc → no ${step}")
+  done
+  grep -q -F 'bootstrap_revision' "$OUT/stub/calls" || problems+=("reconcile script: no wait for the bootstrap hook")
+  if [ "$want" = 1 ]; then
+    grep -q 'runr-region-reconcile: ERROR' "$OUT/stub/out-$rc" || problems+=("reconcile script: region:reconcile exit $rc → no ERROR line")
+  fi
+done
+grep -q -F 'sleep 300' "$OUT/stub/calls-1" || problems+=("reconcile script: no pause before the next attempt after a failed step")
+grep -q -F 'sleep 300' "$OUT/stub/calls-3" && problems+=("reconcile script: a pause after a deadline, which only needs the next attempt")
+grep -q 'WARNING some region clusters did not answer' "$OUT/stub/out-4" || problems+=("reconcile script: region:reconcile exit 4 → no warning")
+report region-reconcile "the hook: no step of the regions, 420 / 540 / 1020 s, OnFailure, records its revision after the tenant steps; the Job runr-region-reconcile-<revision>: no hook, backoffLimit 2, a week's TTL, region:reconcile --deadline 3600 within timeout 5400 (bootstrap.regionReconcileSeconds, values reused without it, under 300 refused), activeDeadlineSeconds 20760 / 20880 / 21360; exit 0 and 4 end it, 1, 3 and a time limit start the next attempt (after 5 minutes for a failed step), the steps after region:reconcile always run"
 
 # Hook Jobs (migrations, bootstrap) carry the module switches of the values as explicit env: a
 # pre-upgrade hook runs before the new ConfigMap is applied, so through envFrom runr-config an
@@ -574,7 +707,11 @@ grep -q -F "kubectl get secret runr-admin -n runr -o jsonpath='{.data.password}'
 grep -q -F 'DB_PASSWORD=' <<<"$text" && problems+=("operator-secret: DB_PASSWORD asked for although database.existingSecret is set")
 text=$(notes -f "$ROOT/ci/helm-values/shared-storage.yaml")
 grep -q -F 'TLS: your Secret acme-console-tls' <<<"$text" || problems+=("shared-storage: no TLS note")
-report notes "Horizon link, storage, skipped API budget, runr-admin, TLS Secret"
+# Pass-through: an upgrade says how to finalize the move of the secret values; an install says nothing
+grep -q -F 'projectSecrets.finalize' <<<"$(notes)" && problems+=("install: secret finalize note rendered")
+grep -q -F -- '--set projectSecrets.finalize=true' <<<"$(notes --is-upgrade)" || problems+=("upgrade: no secret finalize note")
+grep -q -F 'do NOT install 0.5.10 again' <<<"$(notes --is-upgrade --set projectSecrets.finalize=true)" || problems+=("upgrade, finalized: no rollback warning")
+report notes "Horizon link, storage, skipped API budget, runr-admin, TLS Secret, the secret finalize step of an upgrade"
 
 # kubeconform from the PATH, else in a container. The renderings go in on stdin: no bind mount,
 # so a remote Docker daemon (docker-in-docker) works too.

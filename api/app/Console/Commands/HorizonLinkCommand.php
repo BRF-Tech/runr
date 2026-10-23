@@ -3,6 +3,7 @@
 namespace App\Console\Commands;
 
 use App\Models\User;
+use App\Support\Auth\LoginIdentifier;
 use App\Support\HorizonAccess;
 use App\Support\PlatformConnection;
 use Illuminate\Console\Command;
@@ -27,14 +28,15 @@ class HorizonLinkCommand extends Command
     public function handle(HorizonAccess $access): int
     {
         // the platform's users: the central connection with tenancy, the default one otherwise
-        $query = User::on(PlatformConnection::name());
+        $connection = PlatformConnection::name();
         $name = (string) $this->option('user');
 
         $user = null;
         if ($name !== '') {
-            $user = $query->where(fn ($q) => $q->where('username', $name)->orWhere('email', $name))->first();
+            // The account the sign-in would take for this user name or e-mail address
+            $user = LoginIdentifier::resolve($name, $connection);
         } else {
-            foreach ($query->orderBy('id')->cursor() as $candidate) {
+            foreach (User::on($connection)->orderBy('id')->cursor() as $candidate) {
                 if ($access->isAdministrator($candidate)) {
                     $user = $candidate;
                     break;

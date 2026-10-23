@@ -59,9 +59,7 @@ class PostgresService implements DataService
 
         $k8s = $this->cluster->client($region);
         // The operator's webhook can answer a moment after its Deployment is ready
-        if (! $this->cluster->wait(fn () => $k8s->applyResource($cluster, $ns), 120)) {
-            throw new BindingException(__('api.bindings.postgres_cluster_failed', ['cluster' => BindingManifests::PG_SHARED]));
-        }
+        $this->cluster->applyPostgresCluster($k8s, $cluster, $ns, 120);
         if ($backup) {
             $this->cluster->apply($region, [BindingManifests::scheduledBackup(BindingManifests::PG_SHARED, $ns, (string) config('bindings.postgres.backup.schedule'))]);
         } else {

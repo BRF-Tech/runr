@@ -10,6 +10,7 @@ use App\Services\Bindings\BindingsCluster;
 use App\Services\Bindings\Kv\RedisEndpoint;
 use App\Services\Bindings\Kv\RedisScripts;
 use App\Services\Bindings\Ops\BindingOpsRunner;
+use App\Services\Bindings\Ops\OpsResult;
 use Illuminate\Support\Str;
 
 /**
@@ -69,6 +70,7 @@ class KvService implements DataService
         if (! $probe->ok) {
             throw new BindingException(__('api.bindings.kv_unreachable', ['error' => $probe->tail()]));
         }
+        $row->config = array_merge($row->config, self::versionOf($probe));
     }
 
     private function useRegionRedis(KnativeRegion $region, BindingRegionService $row): void
@@ -89,7 +91,48 @@ class KvService implements DataService
             throw new BindingException(__('api.bindings.kv_unreachable', ['error' => $probe->tail()]));
         }
 
-        $row->config = array_merge($row->config, ['acl' => in_array('yes', $probe->marked('ACL_SUPPORTED'), true)]);
+        $row->config = array_merge($row->config, ['acl' => in_array('yes', $probe->marked('ACL_SUPPORTED'), true)], self::versionOf($probe));
+    }
+
+    /**
+     * The Redis version of the region's KV service (redis_version of INFO server), as its last
+     * probe reported it — probed now when none is recorded or $refresh. Null when the service is
+     * not set up or does not answer. An organization import compares it with the version a KV dump
+     * was made with: DUMP payloads restore into the same or a newer Redis only
+     * (docs/org-export.md#binding-data).
+     */
+    public function serverVersion(KnativeRegion $region, bool $refresh = false): ?string
+    {
+        $row = BindingRegionService::forRegion($region, 'kv');
+        if (! $row || ! $row->isReady()) {
+            return null;
+        }
+        $known = $row->configValue('redis_version');
+        if (is_string($known) && $known !== '' && ! $refresh) {
+            return $known;
+        }
+
+        try {
+            $probe = $this->ops->run($region, RedisScripts::probe($this->endpoint($region, $row), (string) config('bindings.kv.image')));
+        } catch (\Throwable) {
+            return is_string($known) && $known !== '' ? $known : null;
+        }
+        $version = self::versionOf($probe)['redis_version'] ?? null;
+        if ($version === null) {
+            return is_string($known) && $known !== '' ? $known : null;
+        }
+        $row->config = array_merge((array) $row->config, ['redis_version' => $version]);
+        $row->save();
+
+        return $version;
+    }
+
+    /** @return array{redis_version?: string} the version a probe reported (none when it did not) */
+    private static function versionOf(OpsResult $probe): array
+    {
+        $version = trim((string) ($probe->marked('REDIS_VERSION')[0] ?? ''));
+
+        return $probe->ok && preg_match('/^\d+(\.\d+)*$/', $version) ? ['redis_version' => $version] : [];
     }
 
     public function uninstall(KnativeRegion $region, BindingRegionService $row): void

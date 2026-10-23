@@ -23,6 +23,18 @@ resource "runr_env_var" "signing_key" {
   secret           = true
 }
 
+# A secret variable whose value lives in a secret store: RunR never sees it, External Secrets
+# Operator reads it in the project's region (secret = true is implied).
+resource "runr_env_var" "db_password" {
+  project_id = runr_project.api.id
+  name       = "DB_PASSWORD"
+  reference = {
+    store = runr_secret_store.vault.id
+    path  = "apps/orders"
+    key   = "db_password"
+  }
+}
+
 variable "database_url" {
   type      = string
   sensitive = true

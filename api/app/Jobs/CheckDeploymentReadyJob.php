@@ -5,8 +5,12 @@ namespace App\Jobs;
 use App\Jobs\Concerns\BroadcastsJobCompletion;
 use App\Models\Deployment;
 use App\Models\Project;
+use App\Services\Environments\DeployTarget;
+use App\Services\GlobalProjects\GlobalReplicaDeployer;
 use App\Services\KubernetesClient;
 use App\Services\Projects\LiveDeployments;
+use App\Services\Projects\WarmScaleService;
+use App\Services\Rollouts\RolloutService;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Foundation\Bus\PendingDispatch;
@@ -61,7 +65,9 @@ class CheckDeploymentReadyJob implements ShouldQueue
             return;
         }
 
-        $region = $this->project->knativeRegion;
+        // An environment's deployment polls the environment's Knative Service in its region
+        $target = DeployTarget::project($this->project, $deployment);
+        $region = $target->knativeRegion;
         if (! $region || ! $region->kubeconfig) {
             $this->markFailed($deployment, 'Region kubeconfig not available');
 
@@ -71,7 +77,7 @@ class CheckDeploymentReadyJob implements ShouldQueue
         try {
             $k8s = new KubernetesClient($region->kubeconfig);
             $namespace = $region->project_namespace ?? $region->name;
-            $slug = $this->project->slug;
+            $slug = $target->slug;
 
             $svc = $k8s->getResourceStatus('serving.knative.dev/v1', 'Service', $slug, $namespace);
 
@@ -93,6 +99,24 @@ class CheckDeploymentReadyJob implements ShouldQueue
             }
 
             if ($ready && $ready['status'] === 'True') {
+                // A blue-green / canary deployment does not take the traffic now: its revision is
+                // ready next to the one that serves and its rollout begins (RolloutService)
+                $rollouts = app(RolloutService::class);
+                if ($rollout = $rollouts->pendingFor($deployment)) {
+                    $rollouts->candidateReady($rollout, $deployment, $ready['message'] ?? null);
+                    Log::info('Deployment ready, its rollout begins', ['deployment' => $deployment->id, 'rollout' => $rollout->id, 'strategy' => $rollout->strategy]);
+
+                    $this->broadcastSuccess('deployment.ready', [
+                        'project_id' => $this->project->id,
+                        'project_name' => $this->project->name,
+                        'deployment_id' => $deployment->id,
+                        'status' => $deployment->fresh()->status ?? 'running',
+                        'rollout_id' => $rollout->id,
+                    ], "Deployment ready: {$this->project->name}");
+
+                    return;
+                }
+
                 // Only a deployment that is still pending, and that no newer deployment of the
                 // project replaced, becomes active (the Knative Service is the project's, by name: a
                 // newer deploy owns what is ready now); activating it replaces the older live ones.
@@ -111,6 +135,17 @@ class CheckDeploymentReadyJob implements ShouldQueue
                     'deployment' => $deployment->id,
                     'attempt' => $this->attempt,
                 ]);
+
+                // Timed warmer: the new revision's PodAutoscaler gets the schedule's value of now
+                // (a fresh PodAutoscaler has the template's, rendered when the deploy started)
+                app(WarmScaleService::class)->afterReady($this->project, $deployment, $svc);
+
+                // Global project (docs/global-projects.md): the version goes to the other regions
+                try {
+                    app(GlobalReplicaDeployer::class)->afterPrimaryReady($this->project, $deployment);
+                } catch (\Throwable $e) {
+                    Log::warning('Global project rollout not started', ['project' => $this->project->slug, 'error' => $e->getMessage()]);
+                }
 
                 $this->broadcastSuccess('deployment.ready', [
                     'project_id' => $this->project->id,
@@ -212,6 +247,9 @@ class CheckDeploymentReadyJob implements ShouldQueue
             'deployment' => $deployment->id,
             'reason' => $reason,
         ]);
+
+        // A rollout's new revision: the rollout fails, the traffic stays where it was
+        app(RolloutService::class)->candidateFailed($deployment, $reason);
 
         $this->broadcastFailure('deployment.failed', [
             'project_id' => $this->project->id,

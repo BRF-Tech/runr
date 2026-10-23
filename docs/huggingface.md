@@ -28,7 +28,7 @@ GPU nodes, GPU scheduling, quotas and billing are in [ai.md](ai.md).
 
 ## One-click flow
 
-1. **Models → Browse Hub**: search the Hub by name, filter by task (pipeline tag) and library, sort
+1. **Build & Run → Models → Browse Hub**: search the Hub by name, filter by task (pipeline tag) and library, sort
    by downloads, likes, trending or last update. RunR's API calls the Hub for the console
    (`GET /api/models/hub/search`), with the organization's token when one is set.
 2. **Model card**: the summary of the README, size of the weights an engine loads, parameter
@@ -218,7 +218,8 @@ the disk and a slower cold start; multi-GB weights are the kind of blob registry
 trims; and every Knative version mounts PVCs. OCI artifacts are still supported as the transport
 into air-gapped regions: an [import](#import-from-an-oci-artifact) pulls one into the volume.
 
-Settings (region → GPU → Model storage, `PUT /api/knative-regions/{id}/model-storage`):
+Settings (Administration → Regions & settings → Knative Regions → (region) → GPU → Model storage,
+`PUT /api/knative-regions/{id}/model-storage`):
 
 | Setting | Default | Meaning |
 |---|---|---|
@@ -363,7 +364,7 @@ a tag or a `@sha256:` digest.
 ## Gated and private models
 
 1. Accept the model's terms on huggingface.co with the account the token belongs to.
-2. **Models → Settings → Hugging Face token** (`PUT /api/models/hub-token`, ability
+2. **Build & Run → Models → Settings → Hugging Face token** (`PUT /api/models/hub-token`, ability
    `models.manage`): a read token. `?validate=1` checks it with the Hub first.
 3. RunR stores the token encrypted (`APP_KEY`), never returns it (only its last characters),
    and writes it into every region where the organization runs model services or keeps
@@ -374,6 +375,14 @@ The Hub browser uses the token too, so private models of the account appear in s
 info.
 
 ## Binding models to functions
+
+A model service is on the region's [internal network](internal-network.md): it admits the projects
+bound to it — a bound project calls it at its URL as before, its pods are known by their address —
+and refuses every other caller. A binding added or removed reaches the service's allow list at
+once; the playground calls as RunR.
+
+A [global project](global-projects.md#what-a-global-project-cannot-use) cannot bind a model
+service: the service is cluster-local in one region and admits that cluster's callers only.
 
 Project → **Models** → bind a model service of the project's region under an alias. On the
 project's next deploy every container of the project gets, per binding `ALIAS`:
@@ -466,7 +475,8 @@ Complete examples: [`examples/ai/`](../examples/ai/) — `hf-python/`, `hf-node/
 ## Playground and logs
 
 The playground sends one request through the RunR API (`POST /api/model-services/{id}/invoke`)
-and the Kubernetes API server to the Knative activator, which wakes a service scaled to zero.
+and the Kubernetes API server to the service's cluster-local host on the region Traefik's private
+entry point, the way bound projects call it; a service scaled to zero is woken.
 Allowed paths per engine:
 
 | Engine | Paths |

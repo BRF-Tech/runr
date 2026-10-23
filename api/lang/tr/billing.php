@@ -14,7 +14,7 @@ return [
     'tenant_not_found' => 'Organizasyon bulunamadı.',
     'region_not_found' => 'Bölge bu organizasyonda bulunamadı.',
     'region_prices_owned_by_platform' => 'Paylaşılan bir platform bölgesi platformun fiyatlarıyla gelir. Bunun yerine kendi kar marjınızı belirleyin.',
-    'region_type_owned_by_platform' => 'Paylaşılan bir platform bölgesi platformun faturalandırma türüyle gelir.',
+    'region_type_owned_by_platform' => 'Paylaşılan bir platform bölgesi platformun faturalandırma türü ve kuyruk tüketicisi ayarıyla gelir; organizasyonunuz kuyruk tüketicisi ücretlendirmesini yalnızca kendisi için kapatabilir.',
     'region_type_locked' => 'Bu bölgede :count etkin sabit kaynak tahsisi varken faturalandırma türü değiştirilemez. Önce bu projeleri sonlandırın ya da taşıyın.',
     'region_now_payg' => 'Bölge kullandıkça öde türüne geçirildi.',
     'price_in_effect' => 'Bu fiyat sürümü yürürlükte ve faturalara yansıdı. Bunun yerine daha ileri tarihli yeni bir sürüm ekleyin.',
@@ -45,6 +45,14 @@ return [
     'project_moved_to_tenant' => 'Proje, dönüştürüldüğü organizasyon tarafından faturalandırılıyor.',
     'legacy_currency_mismatch' => 'RunR 0.5.7\'den aktarılan fiyatlar :legacy cinsindendi, ancak BILLING_CURRENCY :currency: fiyatlar :currency tutarı olarak okunuyor. BILLING_CURRENCY\'yi :legacy yapın ya da Bölgeler ve fiyatlar\'daki her fiyatı gözden geçirin.',
 
+    'cost_limit' => [
+        'not_available' => 'Aylık maliyet limiti kullandıkça öde bölgelerindeki projeler içindir: sabit fiyatlı bir proje onaylı kaynaklarının bedelini öder.',
+        'currency' => 'Limit faturalandırma para birimindedir: :currency.',
+        'not_stopped' => 'Proje maliyet limiti nedeniyle durdurulmadı.',
+        'still_reached' => 'Bu ayın maliyeti (:cost) hâlâ limitte ya da limitin üzerinde (:limit). Limiti yükseltin, kaldırın ya da yalnızca bildirime çevirin, sonra projeyi sürdürün — veya bekleyin: yeni ay başladığında proje kendiliğinden açılır.',
+        'stop_reason' => 'Aylık maliyet limitine ulaşıldı: :period döneminin maliyeti :cost, limit :limit. Yeni ay başladığında proje kendiliğinden açılır; daha önce sürdürmek için limiti projenin Faturalandırma sekmesinden yükseltin ya da kaldırın ve projeyi oradan sürdürün.',
+    ],
+
     'notify' => [
         'open' => 'RunR\'da aç',
         'offer_title' => ':region bölgesi organizasyonunuzla paylaşıldı',
@@ -55,5 +63,15 @@ return [
         'approved_body' => ':project için aylık :price karşılığında :resources onaylandı ve bugünden itibaren faturalandırılıyor.',
         'rejected_title' => ':project için sabit kaynak reddedildi',
         'rejected_body' => ':project için :resources talebi (aylık :price) reddedildi: :reason',
+        'cost_limit_warning_title' => ':project aylık maliyet limitinin %:percent\'ine ulaştı',
+        'cost_limit_warning_body' => ':project bu ay :cost tuttu; limiti :limit. Bu hızla ay yaklaşık :forecast ile kapanır.',
+        'cost_limit_reached_title' => ':project aylık maliyet limitine ulaştı',
+        'cost_limit_reached_body' => ':project bu ay :cost tuttu ve :limit limitine ulaştı. Limit yalnızca bildiriyor: proje çalışmaya devam ediyor.',
+        'cost_limit_reached_already_stopped_body' => ':project bu ay :cost tuttu ve :limit limitine ulaştı. Proje zaten durdurulmuş.',
+        'cost_limit_stopped_title' => ':project aylık maliyet limiti nedeniyle durduruldu',
+        'cost_limit_stopped_body' => ':project bu ay :cost tuttu ve :limit limitine ulaştığı için durduruldu. Yeni ay başladığında proje kendiliğinden açılır; daha önce sürdürmek için limiti projenin Faturalandırma sekmesinden yükseltin ya da kaldırın ve projeyi oradan sürdürün.',
+        'cost_limit_resumed_title' => ':project yeniden çalışıyor: yeni ay başladı',
+        'cost_limit_resumed_body' => ':project geçen ay aylık maliyet limiti yüzünden durdurulmuştu. :period başladığı için RunR projeyi sürdürdü ve çalışan sürümü yeniden dağıttı. Limit geçerli olmaya devam ediyor.',
+        'cost_limit_resumed_not_deployed_body' => ':project geçen ay aylık maliyet limiti yüzünden durdurulmuştu. :period başladığı için RunR projeyi sürdürdü, ancak çalışan sürüm dağıtılamadı: :reason Yeniden çalıştırmak için bir sürüm dağıtın. Limit geçerli olmaya devam ediyor.',
     ],
 ];

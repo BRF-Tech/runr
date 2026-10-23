@@ -1,6 +1,7 @@
 package projectfile
 
 import (
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -81,7 +82,8 @@ func TestParseRejects(t *testing.T) {
 		"schedule on http":   "name: a\ntype: faas\nruntime: python\ntrigger:\n  type: http\n  schedule: '* * * * *'\n",
 		"reserved env":       "name: a\ntype: faas\nruntime: python\nenv:\n  PORT: '1'\n",
 		"bad env name":       "name: a\ntype: faas\nruntime: python\nenv:\n  1X: y\n",
-		"unknown field":      "name: a\ntype: faas\nruntime: python\ntriggers: []\n",
+		"unknown field":      "name: a\ntype: faas\nruntime: python\nfunctions: []\n",
+		"empty triggers":     "name: a\ntype: faas\nruntime: python\ntriggers: []\n",
 		"port range":         "name: a\ntype: caas\nimage: x\nports: [70000]\n",
 		"yaml syntax":        "name: [a\n",
 	}
@@ -158,6 +160,84 @@ func TestDiff(t *testing.T) {
 	c, _ := Parse([]byte("name: a\ntype: caas\nimage: nginx\nports: [80]\n"))
 	if out, changed := Diff(c.Config(), runr.ProjectConfig{Image: "nginx", Ports: runr.FlexInts{80}}); !out.Empty() {
 		t.Fatalf("caas equal config differs: %v", changed)
+	}
+}
+
+func TestScaleSchedule(t *testing.T) {
+	f, err := Parse([]byte(`
+name: office-api
+type: faas
+runtime: python
+scale:
+  max: 5
+  schedule:
+    - cron: "0  9 * * 1-5"
+      min: 3
+    - cron: "0 18 * * 1-5"
+      min: 0
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := f.Config()
+	want := []runr.ScaleScheduleRow{{Cron: "0 9 * * 1-5", MinScale: 3}, {Cron: "0 18 * * 1-5", MinScale: 0}}
+	if c.ScaleSchedule == nil || !runr.EqualScaleSchedules(*c.ScaleSchedule, want) || (*c.ScaleSchedule)[0].Cron != "0 9 * * 1-5" {
+		t.Fatalf("scale_schedule = %+v", c.ScaleSchedule)
+	}
+
+	// Absent: the server's schedule is left alone; []: it is turned off
+	absent, _ := Parse([]byte("name: a\ntype: faas\nruntime: python\nscale:\n  min: 1\n"))
+	if absent.Config().ScaleSchedule != nil {
+		t.Fatal("an absent scale.schedule was sent")
+	}
+	off, err := Parse([]byte("name: a\ntype: faas\nruntime: python\nscale:\n  schedule: []\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s := off.Config().ScaleSchedule; s == nil || len(*s) != 0 {
+		t.Fatalf("scale.schedule [] = %+v, want an empty list", s)
+	}
+	body, _ := json.Marshal(off.Config())
+	if !strings.Contains(string(body), `"scale_schedule":[]`) {
+		t.Fatalf("[] must reach the API as an empty list: %s", body)
+	}
+
+	// Diff: the same rows are no change, other rows replace the schedule, [] clears one
+	five := 5
+	have := runr.ProjectConfig{MaxScale: &five, ScaleSchedule: want}
+	if out, changed := Diff(c, have); !out.Empty() || len(changed) != 0 {
+		t.Fatalf("equal schedule differs: %v", changed)
+	}
+	if out, changed := Diff(off.Config(), have); out.ScaleSchedule == nil || len(*out.ScaleSchedule) != 0 || strings.Join(changed, ",") != "scale_schedule" {
+		t.Fatalf("turning the warmer off: %v %+v", changed, out.ScaleSchedule)
+	}
+	if out, _ := Diff(off.Config(), runr.ProjectConfig{}); !out.Empty() {
+		t.Fatal("[] against no schedule is no change")
+	}
+	other, _ := Parse([]byte("name: a\ntype: faas\nruntime: python\nscale:\n  schedule:\n    - cron: '30 8 * * *'\n      min: 1\n"))
+	if out, changed := Diff(other.Config(), have); out.ScaleSchedule == nil || len(*out.ScaleSchedule) != 1 || len(changed) != 1 {
+		t.Fatalf("a changed schedule: %v %+v", changed, out.ScaleSchedule)
+	}
+}
+
+func TestScaleScheduleRejects(t *testing.T) {
+	base := "name: a\ntype: faas\nruntime: python\nscale:\n"
+	cases := map[string]string{
+		"six fields":     base + "  schedule:\n    - cron: '0 0 9 * * 1-5'\n      min: 1\n",
+		"macro":          base + "  schedule:\n    - cron: '@daily'\n      min: 1\n",
+		"count range":    base + "  schedule:\n    - cron: '0 9 * * *'\n      min: 11\n",
+		"negative count": base + "  schedule:\n    - cron: '0 9 * * *'\n      min: -1\n",
+		"above max":      base + "  max: 2\n  schedule:\n    - cron: '0 9 * * *'\n      min: 3\n",
+		"unknown field":  base + "  schedule:\n    - cron: '0 9 * * *'\n      count: 3\n",
+		"too many rows":  base + "  schedule:\n" + strings.Repeat("    - cron: '0 9 * * *'\n      min: 1\n", 11),
+		"not a list":     base + "  schedule: '0 9 * * *'\n",
+	}
+	for name, src := range cases {
+		_, err := Parse([]byte(src))
+		var ve *ValidationError
+		if !errors.As(err, &ve) {
+			t.Errorf("%s: err = %v, want a ValidationError", name, err)
+		}
 	}
 }
 
@@ -256,6 +336,55 @@ func TestIgnored(t *testing.T) {
 	for _, c := range cases {
 		if got := Ignored(c.path, c.patterns); got != c.want {
 			t.Errorf("Ignored(%q, %v) = %v", c.path, c.patterns, got)
+		}
+	}
+}
+
+func TestParseGlobal(t *testing.T) {
+	f, err := Parse([]byte(`
+name: shop
+type: faas
+runtime: python
+region: us-1
+global:
+  regions: [" eu-1", us-1, ap-1]
+  mode: Proximity
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if f.Global == nil || strings.Join(f.Global.Regions, ",") != "eu-1,us-1,ap-1" || f.Global.Mode != runr.GlobalModeProximity {
+		t.Fatalf("global = %+v", f.Global)
+	}
+	if f.Primary() != "us-1" {
+		t.Fatalf("primary = %q, want region", f.Primary())
+	}
+	f.Region = ""
+	if f.Primary() != "eu-1" {
+		t.Fatalf("primary without region = %q, want the first of global.regions", f.Primary())
+	}
+
+	// a regional file has no global block; its region is the primary
+	r, err := Parse([]byte("name: api\ntype: faas\nruntime: python\nregion: eu-1\n"))
+	if err != nil || r.Global != nil || r.Primary() != "eu-1" {
+		t.Fatalf("regional = %+v, %v", r, err)
+	}
+}
+
+func TestParseRejectsGlobal(t *testing.T) {
+	base := "name: shop\ntype: faas\nruntime: python\n"
+	cases := map[string]string{
+		"global:\n  regions: [eu-1]\n":                        "at least 2 regions",
+		"global:\n  regions: [eu-1, EU-1]\n":                  "lists \"EU-1\" twice",
+		"global:\n  regions: [eu-1, \"\"]\n":                  "empty entry",
+		"global:\n  regions: [eu-1, us-1]\n  mode: nearest\n": "unknown global.mode",
+		"global:\n  regions: [a, b, c, d, e, f, g, h, i]\n":   "at most 8",
+		"global:\n  regions: [eu-1, us-1]\n  weight: 3\n":     "field weight not found",
+	}
+	for extra, want := range cases {
+		_, err := Parse([]byte(base + extra))
+		if err == nil || !strings.Contains(err.Error(), want) {
+			t.Errorf("%q: error %v, want %q", extra, err, want)
 		}
 	}
 }

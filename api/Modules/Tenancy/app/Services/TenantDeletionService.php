@@ -71,7 +71,13 @@ class TenantDeletionService
         ['apps/v1', 'Deployment'],
         ['v1', 'ConfigMap'],
         ['batch/v1', 'Job'],
-        // Secret env vars of the tenant's projects (<slug>-secret-env, KnativeSecretEnvTrait)
+        // References to the tenant's secret stores (docs/secret-stores.md): the ExternalSecrets
+        // first — External Secrets Operator would fill their Secrets again —, the SecretStores and
+        // the service accounts they log in with (none listed when the operator is not installed)
+        ['external-secrets.io/v1', 'ExternalSecret'],
+        ['external-secrets.io/v1', 'SecretStore'],
+        ['v1', 'ServiceAccount'],
+        // Secret env vars of the tenant's projects (<slug>-secret-env, <slug>-ext-env, KnativeSecretEnvTrait)
         ['v1', 'Secret'],
     ];
 
@@ -359,6 +365,22 @@ class TenantDeletionService
             } catch (\Throwable $e) {
                 $failures[] = "{$region->name}: {$kind}/{$name}: {$e->getMessage()}";
             }
+        }
+
+        // Cluster-scoped: the TokenReview right of the tenant's Vault / OpenBao stores
+        // (ExternalSecretManifests::tokenReviewBinding())
+        try {
+            $bindings = $k8s->listClusterResources('rbac.authorization.k8s.io/v1', 'ClusterRoleBinding', [
+                'runr/tenant' => $tenant->slug, 'runr/secret-source' => 'store',
+            ]);
+            foreach ($bindings['items'] ?? [] as $binding) {
+                $name = (string) ($binding['metadata']['name'] ?? '');
+                if ($name !== '' && ! $k8s->deleteClusterResource('rbac.authorization.k8s.io/v1', 'ClusterRoleBinding', $name)) {
+                    $failures[] = "{$region->name}: ClusterRoleBinding/{$name} could not be deleted";
+                }
+            }
+        } catch (\Throwable $e) {
+            $failures[] = "{$region->name}: ClusterRoleBindings: {$e->getMessage()}";
         }
 
         return $failures;

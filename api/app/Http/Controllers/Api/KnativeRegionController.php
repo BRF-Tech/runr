@@ -10,14 +10,19 @@ use App\Http\Requests\KnativeRegion\UpdateRegionMonitoringRequest;
 use App\Http\Requests\KnativeRegion\UpdateRegionSettingsRequest;
 use App\Http\Resources\KnativeRegionResource;
 use App\Jobs\ApplyIngressTrustJob;
+use App\Jobs\ApplyInternalNetworkJob;
 use App\Jobs\ApplyRequestTimeoutJob;
 use App\Jobs\ConfigureRegionMonitoringJob;
+use App\Jobs\InstallCertManagerJob;
 use App\Jobs\InstallRegionRegistryJob;
 use App\Jobs\RedeployRegionAgentJob;
 use App\Models\KnativeRegion;
+use App\Models\RegionGlobalDns;
+use App\Services\CertManager\CertManagerService;
 use App\Services\Helpers\IngressTrust;
 use App\Services\Helpers\MonitoringEndpointAccess;
 use App\Services\Helpers\RequestTimeout;
+use App\Services\InternalNetwork\InternalNetwork;
 use App\Services\KnativeNodeService;
 use App\Services\KnativeRedisService;
 use App\Services\KnativeStatusService;
@@ -338,6 +343,12 @@ class KnativeRegionController extends Controller
 
     public function destroy(KnativeRegion $knativeRegion): JsonResponse
     {
+        // The region's PowerDNS server of the global zone goes first: its NS record and the global
+        // projects' copies there (docs/global-projects.md)
+        if (RegionGlobalDns::forRegion($knativeRegion) !== null) {
+            return response()->json(['message' => __('api.global_dns.disable_first')], 422);
+        }
+
         $knativeRegion->delete();
 
         return response()->json(null, 204);
@@ -411,11 +422,24 @@ class KnativeRegionController extends Controller
         $trustBefore = IngressTrust::forRegion($knativeRegion);
         $timeoutBefore = RequestTimeout::forRegion($knativeRegion);
         $agentUrlBefore = $knativeRegion->effective_settings['agent_ws_url'] ?? null;
+        $internalBefore = InternalNetwork::modeOf($knativeRegion);
+        $issuerKeys = ['cert_manager_cluster_issuer', 'cert_manager_issuer_mode', 'cert_manager_acme_email'];
+        $issuerBefore = array_map(fn ($key) => $knativeRegion->effective_settings[$key] ?? null, $issuerKeys);
         $current = $knativeRegion->knative_settings ?? [];
         $merged = array_merge($current, $validated);
 
         $knativeRegion->update(['knative_settings' => $merged]);
         $fresh = $knativeRegion->fresh();
+
+        // The ClusterIssuer of custom domains follows its settings: an operator's issuer is
+        // recorded at once (the tenants' copies read it), RunR's default is chosen again in the
+        // background where cert-manager runs (CertManagerService::applyIssuer())
+        if (array_map(fn ($key) => $fresh->effective_settings[$key] ?? null, $issuerKeys) !== $issuerBefore) {
+            $fresh = app(CertManagerService::class)->recordIssuer($fresh);
+            if ($fresh->cert_manager_status === CertManagerService::STATUS_READY) {
+                InstallCertManagerJob::dispatch($fresh, InstallCertManagerJob::ISSUER, auth()->id());
+            }
+        }
 
         // The region Traefik picks a changed ingress_trusted_ips up right away (Helm upgrade in
         // the background, the same step region:reconcile runs)
@@ -426,6 +450,11 @@ class KnativeRegionController extends Controller
         // Traefik's timeouts and Knative's maximum revision timeout follow request_timeout
         if (RequestTimeout::forRegion($fresh) !== $timeoutBefore) {
             ApplyRequestTimeoutJob::dispatch($fresh);
+        }
+
+        // The internal network's authz enforces or audits as the region says, right away
+        if (InternalNetwork::modeOf($fresh) !== $internalBefore) {
+            ApplyInternalNetworkJob::dispatch($fresh);
         }
 
         // The runr-agent connects to a changed agent_ws_url once it is deployed again

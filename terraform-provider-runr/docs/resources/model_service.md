@@ -75,9 +75,9 @@ output "chat_openai_base" {
 - `running` (Boolean) Deploy the service (`true`, default) or keep it stopped. A failed service is deployed again on the next apply.
 - `scale_to_zero` (Boolean) Scale to zero instances when idle (default true).
 - `served_name` (String) Model name of the OpenAI API (default: the model's name).
-- `timeout` (String) How long `wait` waits (Go duration; large models take a while the first time).
+- `timeout` (String) How long `wait` waits (Go duration, default `30m`; large models take a while the first time).
 - `timeout_seconds` (Number) Request timeout in seconds (default 300).
-- `wait` (Boolean) Wait until a deployed service is ready.
+- `wait` (Boolean) Wait until a deployed service is ready (default `true`).
 
 ### Read-Only
 

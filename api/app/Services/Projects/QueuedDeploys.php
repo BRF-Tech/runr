@@ -14,6 +14,7 @@ use App\Services\GitDeploy\DeploymentStarter;
 use App\Services\GitDeploy\DeployPendingException;
 use App\Services\GitDeploy\ImportException;
 use App\Services\RegionMigrateService;
+use App\Services\Rollouts\DeployStrategy;
 use App\Services\Runtimes\RuntimeImagePendingException;
 use App\Services\Runtimes\RuntimeRegistry;
 use App\Support\SchemaColumns;
@@ -58,6 +59,12 @@ final class QueuedDeploys
     /** Queued by a deploy of a version built again for its region's registry (VersionRebuilds). */
     public const REASON_REBUILD = 'registry-rebuild';
 
+    /**
+     * Queued by a runtime patch migration of a prebuilt version: built again FROM the patch's image
+     * (RuntimePatchDeployer, docs/runtimes.md#runtime-patches).
+     */
+    public const REASON_RUNTIME_PATCH = 'runtime-patch';
+
     /** A runtime image still building in the region: checked again every WAIT_SECONDS, WAIT_ATTEMPTS times (about 17 minutes) */
     public const WAIT_SECONDS = 10;
 
@@ -79,7 +86,7 @@ final class QueuedDeploys
      * deployment is still live, the new deploy takes its place (placeTakenOver()): it replaces that
      * deployment and ends it the same way when it fails.
      *
-     * @param  array{deploy_config?: array<string, mixed>|null, initiator_id?: string|null, reason?: string|null, replaces?: Deployment|null, previous_build_image?: string|null, message?: string|null}  $options
+     * @param  array{deploy_config?: array<string, mixed>|null, initiator_id?: string|null, reason?: string|null, replaces?: Deployment|null, previous_build_image?: string|null, message?: string|null, config_snapshot?: array<string, mixed>|null}  $options
      */
     public function queue(Project $project, Version $version, string $deployedBy, array $options = []): QueuedDeploy
     {
@@ -98,7 +105,9 @@ final class QueuedDeploys
             'replaces_deployment_id' => isset($options['replaces']) ? $options['replaces']->id : $place?->replaces_deployment_id,
             'previous_build_image' => $options['previous_build_image'] ?? null,
             'message' => $options['message'] ?? "Waits for the build of v{$version->number}.",
-        ] + ($place !== null ? ['replaces_reason' => self::endingReason($place)] : []));
+        ] + ($place !== null ? ['replaces_reason' => self::endingReason($place)] : [])
+            // A rollback that restores an earlier config (docs/versioning.md#rollback)
+            + (! empty($options['config_snapshot']) && SchemaColumns::has(new QueuedDeploy, 'config_snapshot') ? ['config_snapshot' => $options['config_snapshot']] : []));
 
         return $queued;
     }
@@ -194,6 +203,10 @@ final class QueuedDeploys
                     ->where('status', QueuedDeploy::STARTING)
                     ->whereNull('deployment_id')
                     ->update(['deployment_id' => $deploymentId, 'updated_at' => now()]) === 1,
+                // A version built again for the region's registry (a region move, a rebuild)
+                // deploys directly: what serves may run on the cluster the region left
+                strategy: DeployStrategy::DIRECT,
+                restoredConfig: is_array($queued->getAttribute('config_snapshot')) ? $queued->getAttribute('config_snapshot') : null,
             );
         } catch (DeployCancelledException) {
             Log::info("Queued deploy of {$project->slug} {$label} was cancelled before its deployment was created", ['queued_deploy' => $queued->id]);
@@ -315,7 +328,8 @@ final class QueuedDeploys
      */
     private function replacedByNewerDeploy(QueuedDeploy $queued): bool
     {
-        return Deployment::query()
+        // Queued deploys are the project's own workload's: an environment's deploy replaces nothing here
+        return Deployment::forEnvironment(Deployment::query(), null)
             ->where('project_id', $queued->project_id)
             ->where(fn ($q) => $q->where('created_at', '>', $queued->created_at)
                 ->orWhere(fn ($same) => $same->where('created_at', $queued->created_at)->where('id', '>', $queued->getKey())))
@@ -397,7 +411,7 @@ final class QueuedDeploys
      */
     private function notifyInitiator(QueuedDeploy $queued, string $reason): void
     {
-        if ($queued->reason !== self::REASON_REBUILD || ! $queued->initiator_id) {
+        if (! in_array($queued->reason, [self::REASON_REBUILD, self::REASON_RUNTIME_PATCH], true) || ! $queued->initiator_id) {
             return;
         }
 

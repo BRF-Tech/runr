@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\Deployment;
 use App\Models\Project;
+use App\Services\Environments\EnvironmentScope;
 use Illuminate\Support\Facades\Log;
 
 class KnativeLogService
@@ -106,10 +107,10 @@ class KnativeLogService
     ): array {
         $versionNumber = $deployment->version->number ?? null;
 
-        // 1. Version-specific AND selector (precise — no cross-version bleed)
+        // 1. Version-specific AND selector (precise — no cross-version bleed); an environment's pods
+        //    carry runr/environment-id instead of runr/project-id (docs/environments.md)
         if ($versionNumber !== null) {
-            $result = $k8s->listResources('v1', 'Pod', $namespace, [
-                'runr/project-id' => $project->id,
+            $result = $k8s->listResources('v1', 'Pod', $namespace, EnvironmentScope::podSelector($project) + [
                 'runr/version' => (string) $versionNumber,
             ]);
             if (! empty($result['items'] ?? [])) {

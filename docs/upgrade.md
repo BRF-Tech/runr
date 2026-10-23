@@ -31,6 +31,10 @@ generated `runr-secret`, whose `APP_KEY` encrypts the secrets in the database.
    helm upgrade runr brf-tech/runr --version <version> -n runr --reuse-values
    ```
 
+   helm returns once the migrations ran, the Deployments were applied and the short bootstrap hook
+   ended — about a minute. The regions are brought to the new version afterwards, by the Job
+   `runr-region-reconcile-<revision>`, which helm does not wait for (see below).
+
    `--reuse-values` keeps the values of the running release; keys the new chart added take their
    defaults. `--reset-then-reuse-values` does the same but starts from the new chart's
    `values.yaml`. Values files work as before (`-f values.yaml`); new settings such as
@@ -49,7 +53,19 @@ generated `runr-secret`, whose `APP_KEY` encrypts the secrets in the database.
 
    or set both to `<version>` on every upgrade.
 
-4. **Check** `GET /api/version` and `kubectl -n runr logs job/runr-bootstrap`.
+4. **Check** `GET /api/version` (`version`, and `region_reconcile`: `running` until the regions are
+   at the new version, then `done`) and the region Job:
+
+   ```sh
+   kubectl -n runr get jobs -l app=runr-region-reconcile
+   kubectl -n runr logs -l app=runr-region-reconcile --tail=-1 --prefix
+   ```
+
+   A region the Job did not bring to the new version says so in its status in the console (the
+   region's **General** tab: the steps that failed or were left), in the region API (`reconcile`)
+   and `/api/version` (`region_reconcile: unfinished`); the platform administrators get a
+   notification when the Job's last attempt ends so. Fix what it names, then run
+   `kubectl -n runr exec deploy/runr-api -- php artisan region:reconcile` (idempotent).
 
 What runs during the upgrade, in order:
 
@@ -57,7 +73,8 @@ What runs during the upgrade, in order:
 | --- | --- | --- |
 | `runr-migrate-upgrade-<revision>` Job | pre-upgrade hook, before any Deployment changes | `php artisan migrate` (and `tenancy:migrate`) with the **new** API image and the module switches of the new values (`TENANCY_ENABLED`, `AUTH_PROVIDER_ENABLED`, `TICKET_ENABLED`, `BILLING_ENABLED`, `BILLING_CURRENCY` as explicit env: the ConfigMap is applied after this hook); the previous version keeps serving meanwhile |
 | Deployments | after the hook | api, horizon, scheduler, reverb, ui and gateway roll to the new images |
-| `runr-bootstrap` Job | post-upgrade hook | `agent:redeploy --missing`, `images:move-registry` (stored image references, idempotent), `region:reconcile` (region-side changes of the new version, idempotent), `rbac:assign-missing`, with tenancy `tenancy:migrate` (the tenant migrations of the modules switched on, a safety net), in the multi-tenant edition `tenancy:setup --force` (converts an installation that ran single-tenant into its first tenant, otherwise does nothing; `bootstrap.tenancySetup`), the first administrator when none exists |
+| `runr-bootstrap` Job | post-upgrade hook — the last thing helm waits for, seconds | the database only: `images:move-registry` (stored image references, idempotent), `rbac:assign-missing`, with tenancy `tenancy:migrate` (the tenant migrations of the modules switched on, a safety net), in the multi-tenant edition `tenancy:setup --force` (converts an installation that ran single-tenant into its first tenant, otherwise does nothing; `bootstrap.tenancySetup`), the first administrator when none exists |
+| `runr-region-reconcile-<revision>` Job | after the hook, in the background: helm does not wait for it (not a hook) | `agent:redeploy --missing`, `images:move-registry` and `rbac:assign-missing` again (what the previous version's pods wrote until the rollout ended), `region:reconcile` (region-side changes of the new version, idempotent; `--deadline` `bootstrap.regionReconcileSeconds`), `secrets:move-to-region` (secret values still in the database into their regions, `--finalize` with `projectSecrets.finalize`; not with `projectSecrets.storage: database`). Up to three attempts — the next continues where one stopped; kept a week for its logs |
 
 Functions keep serving throughout: their traffic goes through each region's ingress, not through
 the console. Existing Knative Services, CronJobs and sandboxes are not redeployed by the upgrade;
@@ -69,6 +86,550 @@ console — 27 seconds in the e2e run below (migration job 9 s, then the new pod
 edit projects, deploy or change regions in that time: the previous version cannot read values the
 migration has just encrypted, shows env vars as empty and would save that. Its region status
 checks fail in that window and the new version's next check reports the region again.
+
+## 0.5.10 → 0.6.0
+
+0.6.0 adds environments, triggers beyond HTTP, schedules and queues, the internal network, secret
+stores, global projects, the API product, organization export and import, runtime patches, load
+tests and rightsizing ([CHANGELOG.md](../CHANGELOG.md)). Values of 0.5.10, `--reuse-values`
+included, keep working, and nothing has to be set for the upgrade itself. Some defaults change
+what running installations do, so read the list below before upgrading.
+
+### Before the upgrade
+
+1. **Back up the database** (step 1 of the [procedure](#procedure)) and keep the dump together with
+   a copy of `APP_KEY` until the upgrade is finalized. The values of project secret variables that
+   are still in the database, and their rollback copies, are encrypted with it
+   ([Project secrets move into the regions](#project-secrets-move-into-the-regions)).
+2. **List the projects that call each other inside a region** (their cluster-local URLs). After the
+   upgrade every region enforces the internal network, and such a call needs an entry on the
+   callee's allow list ([Internal network of the regions](#internal-network-of-the-regions)).
+3. **Decide on cert-manager in the regions.** `region:reconcile` installs cert-manager on every
+   region cluster that runs none. `--set knative.certManager.install=false` keeps it out, and
+   `--set knative.certManager.acmeEmail=<address>` lets regions that are reachable from the
+   internet get Let's Encrypt certificates ([cert-manager in the regions](#cert-manager-in-the-regions)).
+4. **Decide on the runtime patch feed.** It is on by default, and at the deadline of a critical
+   or zero-day patch RunR redeploys the projects still behind (`runtimePatches.autoMigrate: true`).
+   An API without access to `ghcr.io` reads the feed through a region (`runtimePatches.viaRegion`)
+   ([Runtime patches](#runtime-patches)).
+5. **Check that the regions' network plugin enforces NetworkPolicies** if you rely on the
+   isolation of project pods ([Private ingress and network policies](#private-ingress-and-network-policies)).
+6. **With the Billing module:** pay-as-you-go bills start to count previews, scheduled runs and the
+   CPU and memory of scale-to-zero sessions ([Metering and bills](#metering-and-bills)).
+
+### Order of operations
+
+1. **Upgrade the release** (step 3 of the [procedure](#procedure)) with the values you decided on:
+
+   ```sh
+   helm upgrade runr brf-tech/runr --version 0.6.0 -n runr --reuse-values
+   ```
+
+   The pre-upgrade Job runs the migrations of 0.6.0, central and per tenant schema (tenant
+   migrations `0067` to `0108`). Among other things, every project gets a trigger list built from
+   its configuration (`0077_create_trigger_tables`), and every schedule that exists is pinned to
+   UTC ([Schedule triggers get a time zone](#schedule-triggers-get-a-time-zone)). The Deployments
+   then roll to the 0.6.0 images.
+2. **helm returns** once the bootstrap hook ended (the database steps, seconds): the upgrade itself
+   takes about a minute, as before, whatever the regions need.
+3. **The Job `runr-region-reconcile-<revision>` brings the regions to 0.6.0 in the background;
+   nothing has to be run by hand.** It waits for the bootstrap hook, then runs
+   `agent:redeploy --missing`, `region:reconcile` with this release's steps (see below) and
+   `secrets:move-to-region`, which moves the secret values still in the database into their
+   regions. On a region of 0.5.10 this release's steps roll the region Traefik three times, wait
+   for the KIngresses and the internal network's authz and can install cert-manager: about
+   5 minutes per region cluster (2½ minutes for the private-ingress move on Kind), up to 10 on a
+   slow one. Each attempt lets the command start steps for an hour
+   (`bootstrap.regionReconcileSeconds`, 3600 — the worst case of one cluster, every wait of every
+   step at its limit, is about 57 minutes) and lets the step running then end, so no change is cut
+   in the middle. Raise the value for many region clusters. Watch it:
+
+   ```sh
+   kubectl -n runr get jobs -l app=runr-region-reconcile
+   kubectl -n runr logs -l app=runr-region-reconcile --tail=-1 --prefix -f
+   ```
+
+   An attempt that does not finish — a step failed, a step still waits for something (the authz
+   without a ready pod, …), or the deadline left steps — ends with
+   `runr-region-reconcile: ERROR region:reconcile did not finish`, and the Job starts the next
+   attempt (after 5 minutes when a step failed or waits), which continues where it stopped: every
+   step is idempotent. A Helm release of a region Traefik that a killed `helm upgrade` left
+   `pending-upgrade` is rolled back and upgraded again once the pending operation is 13 minutes
+   old. A region whose cluster does not answer is a warning (`WARNING some region clusters did not
+   answer`): the region keeps what it had, and `region:reconcile` brings it up once it answers.
+
+   While it runs and when its last attempt left regions behind, the console shows it in the
+   region's status (the region's **General** tab names the steps), the region API in `reconcile`
+   and `/api/version` in `region_reconcile`; the platform administrators get a notification. Fix
+   what it names and run the command (or `helm upgrade` again, which starts a new Job):
+
+   ```sh
+   kubectl -n runr exec deploy/runr-api -- php artisan region:reconcile
+   ```
+
+   The steps new in 0.6.0 run in this order: `private-ingress` and `network-policy`
+   ([Private ingress and network policies](#private-ingress-and-network-policies)),
+   `internal-network`, `tracing` (where tracing is on: the collector's span metrics per Knative
+   revision, which canary rollouts read; the collector restarts once), `cert-manager`,
+   `external-secrets` and `openbao` (only where a region runs them), `gateway-auth` and
+   `gateway-routes` ([Gateways and the API product](#gateways-and-the-api-product)), and
+   `global-dns` (only where a region runs a global DNS server).
+4. **Add the allow-list entries** of step 2 of [Before the upgrade](#before-the-upgrade), or switch
+   the regions you want to look at first to audit (`runr regions set REGION --set
+   internal_auth=audit`): the upgrade enforces on every region
+   ([Internal network of the regions](#internal-network-of-the-regions)).
+5. **The region agent and the queue consumers move to 0.6.0 by themselves.** Up to 0.5.10 RunR
+   ran them at `:latest`; from 0.6.0 on they run at the installed version
+   (`ghcr.io/brf-tech/runr/agent:0.6.0`, `queue-consumer:0.6.0`, like the API and UI images), and
+   `region:reconcile` (step `image-registry`) moves the region agent, the internal network's authz,
+   the queue consumers and topic publishers of existing regions to it: each rolls once. The agent
+   of 0.6.0 meters previews and the runs of schedule triggers. Regions that pull through a mirror
+   of your own need `ghcr.io/brf-tech/runr/agent:0.6.0` and `queue-consumer:0.6.0` there
+   (`RUNR_AGENT_IMAGE`, `RUNR_QUEUE_CONSUMER_IMAGE` name other references).
+
+6. **Check the secret values:**
+   `kubectl -n runr exec deploy/runr-api -- php artisan secrets:move-to-region --dry-run` lists
+   what is still in the database only.
+7. **Finalize** once 0.6.0 is confirmed: `--set projectSecrets.finalize=true`. After that, 0.5.10
+   cannot be installed again ([Project secrets move into the regions](#project-secrets-move-into-the-regions)).
+
+With Docker Compose, the [update](../compose/README.md#updating) runs the migrations and
+`region:reconcile` by hand. Run the secret move after it:
+
+```sh
+docker compose exec api php artisan secrets:move-to-region
+# once 0.6.0 is confirmed:
+docker compose exec api php artisan secrets:move-to-region --finalize
+```
+
+### New Helm values
+
+Every new value has a default that works without setting it
+([Helm values](helm-values.md)):
+
+| Values | Default | What they do |
+| --- | --- | --- |
+| `projectSecrets.storage`, `projectSecrets.finalize` | `region`, `false` | Where secret values go and when the upgrade from 0.5.10 is finalized ([projectSecrets](helm-values.md#projectsecrets)) |
+| `knative.certManager.install`, `.acmeEmail`, `.acmeServer`, `.chartVersion`, `.imagePrefix` | `true`, empty | cert-manager in the regions: installed where a cluster runs none; the ACME account e-mail (empty: the region CA); the ACME server (empty: Let's Encrypt production); the pinned chart and the reqs mirror's images ([knative](helm-values.md#knative)) |
+| `runtimePatches.feed`, `.publicKey`, `.viaRegion`, `.autoMigrate` | the feed `ghcr.io/brf-tech/runr/runtime-patches:feed`, the key it is signed with, empty, `true` | The signed runtime patch feed and what RunR does at a deadline ([runtimePatches](helm-values.md#runtimepatches)) |
+| `observability.loadTest.*` | `enabled: true`, `dailyLimit: 20`, `maxUsers: 100`, `maxDurationSeconds: 300`, `maxConcurrentPerRegion: 5` | Load tests of HTTP projects ([observability](helm-values.md#observability)) |
+| `globalDns.*` | empty (the defaults in [globalDns](helm-values.md#globaldns): zone `g.<base domain>`, `failover.afterSeconds` 180, `dataLink.port` 443) | Global DNS, the zone's certificate, failover and the data links of global projects |
+| `apiProduct.*` | empty (gateway-auth `1.0.0`, keys synced every 10 s, usage kept 400 days) | The API product's gateway-auth ([apiProduct](helm-values.md#apiproduct)) |
+| `orgTransfer.*` | empty (transfer image `image-upload:1.1.0`, packages up to 50 GB, kept 168 hours) | Organization export and import ([orgTransfer](helm-values.md#orgtransfer)) |
+
+The internal network, External Secrets Operator, OpenBao, the event gateway's broker sources,
+CloudNativePG replicas and the gateway-auth metering proxy have no Helm values: they are set per
+region or per project. The environment settings they read (`RUNR_ESO_CHART_REPO`,
+`RUNR_OPENBAO_STORAGE_CLASS`, `RUNR_OPENBAO_DB_TTL`, …) go into `extraEnv`
+([extraEnv](helm-values.md#extraenv)).
+
+Regions that pull through a mirror of their own need the new images: the reqs mirrors
+`ghcr.io/brf-tech/runr/reqs/cert-manager-controller`, `-webhook` and `-cainjector` (`v1.21.2`),
+`reqs/k6:1.8.2`, `reqs/external-secrets`, `reqs/openbao`, `reqs/pdns-auth:5.0.8` and
+`reqs/nginx:1.27-alpine`, plus `ghcr.io/brf-tech/runr/gateway-auth:1.0.0`,
+`ghcr.io/brf-tech/runr/image-upload:1.1.0`, and the agent and queue-consumer images of this release
+([Images and Helm charts](regions.md#images-and-helm-charts)).
+
+### Project secrets move into the regions
+
+**In short:** upgrade as usual. The region Job of the upgrade (`runr-region-reconcile-<revision>`)
+moves the secret values into the regions. Until
+you finalize the upgrade (`--set projectSecrets.finalize=true`), the database keeps an encrypted
+copy of every value, so 0.5.10 can be put back safely ([Rolling back to 0.5.10](#rolling-back-to-0510)).
+Secret store references can be set once the upgrade is finalized. After finalizing, 0.5.10 must
+not be installed again.
+
+RunR's database stops storing the values of project secret variables. From this release a value
+goes straight into the Kubernetes Secret `<project-slug>-secret-env` of the project's region and
+lives there only. The database keeps the name, a version, who changed it when, and a keyed
+fingerprint ([Secret environment variables](security.md#secret-environment-variables)). The Helm
+value `projectSecrets.storage` (env `RUNR_SECRET_STORAGE`) is `region` by default.
+
+Values written before the upgrade stay encrypted in `project_secrets` and keep working: every
+deploy writes them into the region as before, and the API lists them with `stored_in: database`
+(`runr env ls`: `database`). The chart's region Job (`runr-region-reconcile-<revision>`, which
+helm does not wait for) moves them after the rollout (`secrets:move-to-region`, time-limited; a
+region that does not answer does not hold up the upgrade). Check and repeat by hand:
+
+```sh
+kubectl -n runr exec deploy/runr-api -- php artisan secrets:move-to-region --dry-run
+kubectl -n runr exec deploy/runr-api -- php artisan secrets:move-to-region
+```
+
+For each project, the command writes every value into the project's region Secret (unless the
+same value is there already), reads the Secret back and compares each value by its fingerprint. It
+covers the central schema and every tenant schema (`--tenant=<slug>` and `--project=<id>` narrow
+it), never prints a value, and records a `secrets.moved_to_region` audit event. It is idempotent
+and resumable: a project whose region does not answer, or that has no region cluster, keeps its
+values and is reported. Run the command again once the region answers. It exits non-zero while
+values are left in the database only.
+
+**Until you finalize the upgrade, the database keeps an encrypted copy of every value**: the moved
+ones and every value set after the upgrade. That way 0.5.10 can be installed again without losing
+them. References to secret stores wait until then ([Rolling back to 0.5.10](#rolling-back-to-0510)).
+Finalize once this release is confirmed:
+
+```sh
+helm upgrade runr <chart> -n runr --reuse-values --set projectSecrets.finalize=true
+# or: kubectl -n runr exec deploy/runr-api -- php artisan secrets:move-to-region --finalize
+```
+
+Finalizing checks every value in its region against its fingerprint (and writes it from the copy
+when the region lost it), drops the copies and records `secrets.pass_through_finalized`. While a
+region does not answer, it exits non-zero and keeps the copies. A fresh installation of this
+release is finalized from the start.
+
+- **Postponing the move**: `--set projectSecrets.storage=database` keeps the behaviour of 0.5.10
+  for new values (encrypted in the database, written into the region by every deploy). The setting
+  is deprecated; switch back to `region` and run the command when you are ready.
+- **`APP_KEY`**: keep it, and a copy of it, until the upgrade is finalized. The values and copies
+  still in the database are encrypted with it. Database backups taken before finalizing hold the
+  values: handle them as secrets.
+- **The regions hold the only copy** once the upgrade is finalized. A cluster lost without a backup
+  of its Secrets loses the values; its projects' deploys then name the missing values, and you set
+  them again. If you need restores that do not depend on RunR, back up the project namespaces'
+  Secrets with the cluster, or keep values in a secret store of your own and refer to them
+  ([Secret stores](secret-stores.md)).
+
+What else changes for secret variables:
+
+- a new value reaches containers that start afterwards at once, and every container with the next
+  deploy (before, only with the next deploy);
+- stopping a project and deleting a deployment keep the values Secret; deleting the project, and
+  detaching a region from an organization, delete it;
+- a deploy fails with the names of values that are not in the region;
+- reading a value back reads the region: `503` when it does not answer;
+- a region migration copies the values to the new cluster and a rollback copies them back; moving a
+  project to another region copies them there;
+- previews read the project's Secrets; the copy `<service>-secret-env` a preview of an earlier
+  release has is removed by its next deploy.
+
+#### Secret stores
+
+New and optional: secret variables that refer to a value in the organization's own Vault /
+OpenBao, AWS Secrets Manager, GCP Secret Manager or Azure Key Vault, read in the region by External
+Secrets Operator with the region's identity ([Secret stores](secret-stores.md)). They can be set
+once the upgrade is finalized; until then they are refused with `409 upgrade_not_finalized`,
+because 0.5.10 could not read them after a rollback. Nothing is installed by the upgrade: the
+operator is installed per region when wanted (`regions.manage`), and `region:reconcile` keeps its
+chart at the pinned version afterwards. Regions without outside access need the chart repository
+(`RUNR_ESO_CHART_REPO`) and the image `ghcr.io/brf-tech/runr/reqs/external-secrets` reachable.
+
+Two permissions are new: `secret_stores.view` (the built-in Developer role has it) and
+`secret_stores.manage` (Owner and Admin) — who gets them is in [Permissions](#permissions).
+
+#### OpenBao in the region and dynamic Postgres credentials
+
+New and optional: a region can run an OpenBao that RunR installs and operates
+([OpenBao in the region](secret-stores.md#openbao-in-the-region)): `POST
+/api/knative-regions/{id}/openbao`, once External Secrets Operator runs there. While it runs, new
+secret values of the region's projects go into it (`stored_in: openbao`). Values written before
+stay where they are until they are set again, and `secrets:move-to-region` moves values still in
+the database into it. Postgres bindings can then be attached with dynamic credentials
+([bindings](bindings.md#dynamic-credentials)). Nothing is installed by the upgrade. The nodes pull
+`ghcr.io/brf-tech/runr/reqs/openbao`, and the instance needs a volume of the default StorageClass
+(`RUNR_OPENBAO_STORAGE_CLASS`, `RUNR_OPENBAO_STORAGE_SIZE`). Back up its volume together with the
+region's Secret `runr-openbao-unseal`: RunR keeps neither.
+
+The migration `2026_10_21_210002` (tenant schemas: `0079`) adds `binding_attachments.credential_mode`
+(`static` for every existing attachment); `2026_10_21_210001` adds the OpenBao columns of
+`region_secret_settings`; `2026_10_22_500001` (tenant schemas: `0105`) adds
+`project_secrets.rollback_copy` and marks a fresh installation finalized.
+
+### Internal network of the regions
+
+Projects of a region call each other on the [internal network](internal-network.md): under
+`<project>.<organization>.runr.internal`, admitted by the callee's allow list. **Existing regions
+enforce it after the upgrade, like new ones: a call between two projects needs an entry on the
+callee's allow list.** RunR's own traffic keeps working without a redeploy.
+
+- `region:reconcile` (step `internal-network`) installs the authz (`runr-internal-auth`, two pods in
+  the Serving namespace), adds its ForwardAuth to the region Traefik's private entry point (a Helm
+  upgrade with the release's values: the Traefik pods roll once), the `runr.internal` rewrite to
+  CoreDNS (it reloads its Corefile) and the policy annotations to the Knative Services RunR runs.
+  The step says so where CoreDNS is not RunR's to change.
+- From then on the region enforces: **enforced on upgrade; switch to audit right after if
+  needed.** The allow lists and the region setting `internal_auth` are new in this release, so
+  neither can be set on 0.5.10: list the projects that call each other before the upgrade, and
+  right after it add the callers to the callees' allow lists (`runr network callers add`, the
+  console's Network tab, `network.callers` in `runr.yaml`). An operator who wants to look first
+  switches the region to audit right after the upgrade instead (`runr regions set REGION --set
+  internal_auth=audit`, the region's General → **Settings**, or the API): calls are admitted,
+  and the ones the allow lists would refuse are logged
+  ([Enforce and audit](internal-network.md#enforce-and-audit)). Both take effect within ten
+  seconds of being saved; until then, calls between projects without an entry are refused.
+- RunR's own traffic needs nothing, and nothing is redeployed or restarted: the authz knows a
+  caller without a token by its pod's address, so queue consumers keep delivering to their
+  project, functions keep calling the model services they are bound to (without a header) and
+  the region demo's frontend its backend (the upgrade grants it). The web shell and the model
+  playground call with RunR's own token. Workloads get `RUNR_INTERNAL_TOKEN` on their next deploy.
+- A caller whose address is hidden — a client of your own behind a proxy, a cluster that rewrites
+  pod source addresses — needs the project's token in `X-Runr-Internal-Token`.
+- Every deployed project now has its Secret `<project>-secret-env` (it holds the token); before, a
+  project without secret variables had none.
+- New permission `network.manage` (access mode and allow list), part of the built-in Developer role
+  and of the Member role the upgrade to 0.5.0 created for tenant members, while that role is as the
+  upgrade left it ([Permissions](#permissions)).
+- New organizations cannot take the slug `platform`, the organization name of the projects outside
+  any organization. An existing organization with that slug keeps it; its projects and those
+  outside any organization then share the organization name, and grants between them are not
+  marked as cross-organization.
+- Rotating `APP_KEY` changes the regions' signing keys: run `php artisan region:reconcile` and
+  redeploy the projects afterwards.
+
+### Private ingress and network policies
+
+The region Traefik no longer serves the cluster-local hosts of Knative Services
+(`<service>.<namespace>`, `.svc`, `.svc.cluster.local`) on the entry point its LoadBalancer
+publishes: through the region's external address they answer `404`. In-cluster callers reach them
+on the private entry point (`traefik-internal`) as before. Two NetworkPolicies admit traffic to
+revision pods only from Knative Serving's Traefik, activator and autoscaler
+([Cluster-local services and network isolation](regions.md#cluster-local-services-and-network-isolation)).
+
+- `region:reconcile` (steps `private-ingress` and `network-policy`) moves existing regions. Traefik
+  is upgraded twice, and its pods roll twice; on Kind the move took 154 s without a failed request
+  or queue delivery.
+- The policies need a network plugin that enforces NetworkPolicies; a plugin without support
+  ignores them.
+- Tools of your own that reach project pods directly (a Prometheus scraping their ports, a service
+  mesh) need a NetworkPolicy of their own.
+- Custom domains, gateway routes and the second address of a base-domain migration hand requests
+  on to the project's public host, so they reach public HTTP projects only.
+
+### cert-manager in the regions
+
+Custom domains in TLS mode `cert-manager` no longer need a cert-manager and a ClusterIssuer that
+the operator installed by hand ([cert-manager](regions.md#cert-manager)).
+
+- `region:reconcile` (step `cert-manager`) installs `jetstack/cert-manager` v1.21.2 (namespace
+  `cert-manager`, images from the reqs mirror) on every region cluster that runs none, and reuses
+  a cert-manager the cluster already runs. It never installs a second one, and RunR never removes
+  one it did not install. `knative.certManager.install: false` stops the install.
+- RunR creates the default ClusterIssuer unless the region setting `cert_manager_cluster_issuer`
+  names one: `runr-acme` (Let's Encrypt, HTTP-01 through the region's Traefik) where the region is
+  reachable from the internet and an ACME e-mail is set (the region setting
+  `cert_manager_acme_email` or `knative.certManager.acmeEmail`), else `runr-ca`, a region CA.
+  `cert_manager_issuer_mode` (`auto`, `acme`, `ca`) chooses.
+- New custom domains start in TLS mode `cert-manager` where the region issues certificates (before:
+  `none`). Existing domains keep their mode.
+
+### Schedule triggers get a time zone
+
+A schedule trigger runs in its `timezone`, or in the organization's time zone when it has none
+([Schedules and time zones](triggers.md#schedules-and-time-zones)). **Schedules that exist before
+the upgrade keep running in UTC**: the migration sets `timezone: UTC` on them. A schedule created
+afterwards without a zone — through the API, runr.yaml, the CLI, MCP, the Terraform provider or
+the single-trigger fields (`config.schedule`) — runs in the organization's zone (`Europe/Istanbul`
+unless the organization or the platform set another). Name `UTC` where a new schedule must stay in
+UTC (`timezone` of the trigger, `config.schedule_timezone` of the project API, `trigger.timezone`
+of Terraform's `runr_project`). A CronJob gets `spec.timeZone` with its project's next deploy.
+
+### Triggers and the event gateway
+
+- Every project has a [trigger list](triggers.md). The upgrade builds each project's list from its
+  configuration; `config.trigger_type`, `schedule` and `queue_stream` keep working and mirror the
+  primary trigger.
+- The queue consumer becomes the project's event gateway (same image
+  `ghcr.io/brf-tech/runr/queue-consumer`, same Deployment `<slug>-qc`). A project whose only
+  gateway trigger is one queue keeps the manifests of earlier versions. A consumer that restarts on
+  the new image before its project's next deploy runs in the event gateway's
+  [legacy env mode](triggers.md#legacy-env-mode), with the queue consumer's guarantees.
+- A project with a schedule next to other triggers gets its ticks from the event gateway as
+  CloudEvents (`dev.runr.schedule.tick`) instead of a CronJob pod. A project whose only trigger is a
+  schedule keeps its CronJob.
+- New permission `topics.manage` (Developer and above).
+
+### Global projects
+
+[Global projects](global-projects.md) are new: nothing exists to migrate from 0.5.10.
+
+- Global DNS is off until an operator enables it per platform region; RunR then runs a PowerDNS
+  server there.
+- Two scheduled jobs run every minute: `global-projects-failover` (health of the regions,
+  automatic failover, rejoin) and `global-projects-data` (replica clusters and data links).
+- **Global projects fail over automatically by default**, after 180 s of a failed primary
+  (`globalDns.failover.afterSeconds`). Set a project's failover to `manual` (Regions tab,
+  `PUT /projects/{project}/global {"failover": "manual"}`, `runr projects global set <project>
+  --failover manual`) to keep the primary where it is until you move it.
+- An installation that ran a pre-release build of 0.6.0: the upgrade migrates the phase-2 columns
+  (central `2026_10_22_300001`, tenant `0095`) and moves the builds the regions' copies kept on
+  their own rows into the per-version, per-region image store (`version_region_images`; central
+  `2026_10_22_300002`, tenant `0096`). `GET /projects/{project}/global` lists the bindings across
+  the regions under `bindings`; those builds called the key `data`. `region:reconcile` (step
+  `global-dns`) applies each region's PowerDNS server again, and the server pod restarts once.
+
+### Gateways and the API product
+
+- `region:reconcile` (step `gateway-routes`) rebuilds the routes of every gateway that an earlier
+  release built: the Host rewrite per route, one `Method()` matcher per method (a route with
+  several methods was not served before) and the direct routes of allowlist and gateway-only
+  projects. No deploy is needed. `--dry-run` lists them.
+- A gateway is served on the region's function domain, like the project URLs (before: the base
+  domain). On a region with a function domain of its own, the gateway's host moves to it. A
+  gateway's `custom_domain` gets a route of its own (`gw-<id>-domain`) with a certificate from the
+  region's ClusterIssuer.
+- The [API product](api-product.md) is new. Routes stay `public` until set to `key` or `jwt`;
+  RunR installs gateway-auth in a region with the first such route. New permission
+  `api_products.manage`.
+- A completed or rolled back base-domain or organization-domain migration moves custom domains,
+  domain aliases and gateways at once instead of on the next status check
+  ([Changing the base domain](regions.md#changing-the-base-domain)).
+
+### Runtime patches
+
+- The [runtime patch feed](runtimes.md#runtime-patches) is on by default: the API checks
+  `ghcr.io/brf-tech/runr/runtime-patches:feed` every five minutes and verifies its signature with
+  `runtimePatches.publicKey` ([Runtime patch feed](security.md#runtime-patch-feed)). An API without
+  access to `ghcr.io` reads it through a region's registry (`runtimePatches.viaRegion`); an empty
+  `runtimePatches.publicKey` turns the feed off.
+- **At the deadline of a critical or zero-day patch, RunR redeploys every project still behind**
+  onto the newest patch, a pin included, and rolls one back when the new revision does not become
+  ready ([Deadlines](runtimes.md#deadlines)). `runtimePatches.autoMigrate: false` or the policy on
+  the Patches page (which wins) turns that off.
+- Deployments, versions and projects record the runtime image digest they run. Without a patch
+  the feed knows — the feed off, a runtime version it does not list, region builds, uploaded
+  images, custom runtimes, CaaS — workloads run the version image by its tag as before.
+- The PHP runtime images run PHP 8.2.35, 8.3.36, 8.4.27 and 8.5.12; a PHP function gets the fixed
+  release with its next deploy.
+
+### Metering and bills
+
+With the Billing module, pay-as-you-go bills count more of what runs after the upgrade:
+
+- **Scale-to-zero sessions** count the size their deployment was deployed with (CPU, memory and
+  GPUs) for the time the pod ran. Before, they counted 0 vCPU-hours and 0 GB-hours.
+- **Runs of schedule triggers** and **preview environments** are metered: previews as a bill line
+  of their own (`component: preview`), in a fixed region within the allocation. Both need the
+  agent of 0.6.0, which `region:reconcile` moves the regions to (step 5 of the
+  [order of operations](#order-of-operations)).
+- **Queue-trigger sessions** are filed under `queue`, with the queue multiplier.
+- **Queue consumers** can be charged per region and organization; this is **off by default**, so
+  the upgrade raises no bill for them ([Queue consumers](billing.md#queue-consumers)).
+- Days metered before the upgrade keep their values. `php artisan usage:recalculate FROM [TO]`
+  recalculates earlier days of existing deployments: open bills read the new values, closed bills
+  do not change.
+
+Without the Billing module the same usage is metered, but not billed.
+
+### Sign-in
+
+The console's sign-in field takes the user name or the e-mail address in any letter case, and
+so do `POST /api/auth/login` (`login`) and `runr login --with-password --username`
+([Password sign-in](security.md#password-sign-in)). Existing accounts sign in as before. Of
+accounts that differ in letter case only, the exactly spelled one signs in; invitations and SSO
+sign-ins refuse an address that several such accounts share (`email_ambiguous`) instead of
+creating another account. A migration adds (non-unique) indexes on `lower(username)` and
+`lower(email)`.
+
+### The API image
+
+The API image is built on PHP 8.3.36. The opcache JIT is off (opcache stays on): under the
+thread-safe PHP of the image, the tracing JIT crashed API workers. Session upload progress
+tracking is off, `session.use_strict_mode` is on, and the API no longer sends `X-Powered-By`.
+
+### Permissions
+
+New permissions ([Roles and permissions](permissions.md)): `environments.manage`,
+`environments.promote`, `network.manage`, `secret_stores.view` and `topics.manage` are part of the
+built-in Developer role; `environments.approve`, `secret_stores.manage`, `api_products.manage` and
+`org.transfer` are Owner and Admin only (exporting and importing an organization also needs the
+Owner role). The built-in roles (Owner, Admin, Developer, Viewer, Billing) have them from the
+upgrade on: their permissions come with the release.
+
+The **Member** role that the upgrade to 0.5.0 created for tenant members (multi-tenant) gets the
+five Developer permissions as well — a fresh tenant gives its members Developer, so upgraded
+members keep step with them. The tenant migration `0108_grant_060_permissions_to_legacy_member_role`
+adds them to every Member role that still holds what the upgrade gave it (with or without some of
+the five already added). **A Member role your organization changed is left as it is**: add the
+permissions it should have in **Administration → Roles** or with
+`runr roles update member --add network.manage …`. Other custom roles get new permissions only
+when an administrator adds them.
+
+### API changes in 0.6.0
+
+The new endpoints are in [CHANGELOG.md](../CHANGELOG.md). Endpoints that answer or act differently:
+
+- `POST /api/projects/{project}/deployments/{deployment}/rollback` deploys the older version with
+  the configuration it ran with; `keep_current_config: true` keeps the current one
+  ([Rollback](versioning.md#rollback)). `runr rollback` and the MCP tool `rollback` likewise.
+- `POST`, `PUT /api/projects` and deploys refuse a `min_scale` above `max_scale` (`422`).
+- `GET /api/projects/{id}/metrics/summary` answers `sessions.total_cpu_ms` and `total_memory_mb_ms`
+  as the deployment's size × the sessions' pod time; they were always `0`.
+- The project resource carries `triggers`, `runtime_patch`, `config.schedule_timezone` and
+  `config.schedule_effective_timezone`; a deployment carries `runtime` (image, digest and patch).
+- `POST /api/projects/{project}/domains`: a new domain's `tls_mode` is `cert-manager` where the
+  region issues certificates.
+- `project.stopped` webhooks and a project's `stopped` state carry `system: "cost_limit"` when the
+  cost limit stopped it.
+- `GET /api/projects/{project}/secrets` and the other secret endpoints: see
+  [the secret API changes](#secret-api-changes) below.
+
+#### Secret API changes
+
+- `GET /api/projects/{project}/secrets` adds `source`, `version`, `stored_in`, `fingerprint`,
+  `rollback_copy`, `reference` and `sync` per variable and `storage`; `PUT …/secrets/{name}` also
+  takes `{"reference": {…}}` (`409 upgrade_not_finalized` until the upgrade is finalized);
+  `POST …/secrets/refresh` is new.
+- `GET …/secrets/{name}/value` adds `matches_fingerprint` and can answer `503`
+  (`region_unreachable`), `409` (`value_missing`) and `422` (a reference).
+- `POST /api/projects` with `config.secret_env_vars` answers `secret_env_error` when the region did
+  not take the values (the project is created); `PUT /api/projects/{project}` fails as a whole when
+  it cannot write them, or cannot copy the values to the new region of a region change.
+- Setting a secret value for a project without a region cluster (no region, the demo region) is
+  refused (`422`).
+- `/api/secret-stores…`, `/api/knative-regions/{id}/external-secrets` and
+  `/api/knative-regions/{id}/openbao` are new; `source` and `stored_in` of a secret variable can be
+  `openbao`.
+- `POST /api/projects/{project}/bindings` and `PATCH …/bindings/{attachment}` take `credentials`
+  (`static`, `dynamic`); an attachment shows `credential_mode`.
+
+### CLI and console
+
+- `runr workflows app signing-key --env` is now `--dotenv`: `--env` names an
+  [environment](workflows.md#environments) in every `runr workflows` command. Scripts that wrote
+  `--env >> .env` write `--dotenv >> .env`.
+- The console's navigation is a main menu with mega menus; the administration pages moved out of
+  the avatar menu. The settings URLs did not change (`/settings?tab=<key>`).
+
+### Terraform provider
+
+- Upgrade the provider to 0.6 before or with the API ([Terraform](terraform.md#upgrading-from-05)).
+  Provider 0.5 cannot create a `runr_domain` against a 0.6.0 API in a region that issues
+  certificates unless the domain sets `tls_mode = "cert-manager"` (the API starts it in
+  `cert-manager`, provider 0.5 expects `none`: "inconsistent result after apply").
+- A configuration and state of provider 0.5.10 plan no change with provider 0.6: the new
+  attributes (`runr_project.triggers`, `network`, `deploy_strategy`, `global`, …) are optional and
+  keep RunR's values when left out. Domains created with `none` keep it.
+
+### Rolling back to 0.5.10
+
+0.5.10 builds a project's `<slug>-secret-env` from the database on every deploy: a value that lived
+in the region only would be written there as an empty string. That is why the database keeps an
+encrypted copy of every value until you finalize the upgrade
+([Rolling back to 0.5.10](security.md#rolling-back-to-0510)). **Before finalizing, going back to
+0.5.10 is safe**:
+
+1. Put the 0.5.10 chart on the release, on the same database: `helm rollback runr <revision of
+   0.5.10> -n runr`, or `helm upgrade runr <the 0.5.10 chart> -n runr --reuse-values`. Where only
+   one package version is kept (a marketplace that offers the latest release only), add the 0.5.10
+   package again and upgrade the release to it. **Never uninstall** to go back: `helm uninstall`
+   deletes the chart's database volume and `runr-secret` with its `APP_KEY`. 0.5.10's migrations
+   find nothing to do; the newer tables and columns stay and are ignored, and so are the values it
+   does not know (`projectSecrets.*`).
+2. 0.5.10 deploys every project from the copies: values that live in the region's Secret or its
+   OpenBao reach the workload through `<slug>-secret-env` again. Running workloads keep their
+   current pods until then.
+3. What 0.5.10 does not have stays where it is and comes back with the next upgrade: environments,
+   secret store settings, the region's OpenBao and External Secrets Operator (no reference exists
+   before finalizing).
+4. Upgrading again later is the normal upgrade: values changed or created on 0.5.10 no longer match
+   their fingerprints, count as values in the database and are moved again by the region Job (a
+   deploy before that writes them into the region as well).
+
+**After finalizing**, the copies are gone: do not install 0.5.10 again, because its deploys would
+write empty secret values. If you must, restore the database backup taken before the upgrade
+([Procedure](#procedure), step 1) and set every secret value changed since then again, or keep
+0.5.10 from deploying projects with secret variables until their values are set again.
 
 ## 0.5.7 → 0.5.8
 
@@ -327,11 +888,11 @@ and fixed regions, shared regions with markup, in both editions. The module is *
 
    A price of `0` in 0.5.7 was a column nobody had set (the columns defaulted to 0), so it becomes
    the default value, not "free" — a missing price is never zero in 0.5.8. Review the imported
-   prices in Settings → Billing → Regions & prices and set `0` again where you mean free. Each
+   prices in Administration → Billing → Regions & prices and set `0` again where you mean free. Each
    imported version notes the 0.5.7 currency. Prices carry no currency of their own: every number is
    read in `BILLING_CURRENCY`. When the 0.5.7 currency differs from it, the import logs a warning
    (`Billing: the 0.5.7 prices were in EUR, BILLING_CURRENCY is USD …` in the migration job's log),
-   and Settings → Billing shows it on top (`warnings` of `GET /api/billing/settings`, code
+   and Administration → Billing shows it on top (`warnings` of `GET /api/billing/settings`, code
    `legacy_currency_mismatch`) until `BILLING_CURRENCY` is set to that currency.
 4. **Charges.** Every **closed** charge becomes part of a closed **tenant bill** (`kind: tenant`,
    `source: legacy`), one per tenant, month and currency: its line items are the charges' line items
@@ -342,7 +903,7 @@ and fixed regions, shared regions with markup, in both editions. The module is *
    `PUT /api/billing/tenant-bills/{bill}/paid` if your system settled them. **Void** charges and
    charges that were still **open** are not converted; they stay in the archive.
 5. **Webhook.** The billing webhook URL and secret saved in Settings → Plans & Billing are copied to
-   the platform's billing settings (Settings → Billing → Webhook). The Helm values
+   the platform's billing settings (Administration → Billing → Webhook). The Helm values
    `billing.webhookUrl` and `billing.webhookSecret` keep working.
 6. **Removed values and variables.** `plans.enabled`, `billing.usageThresholds` and
    `billing.storeUrl` are no longer read (reused values that still carry them are ignored), nor are
@@ -419,8 +980,8 @@ and fixed regions, shared regions with markup, in both editions. The module is *
     ([Turning billing on](billing.md#turning-billing-on)).
 
 The console's Settings → Plans & Billing, Subscription, Charges and the old Billing page are gone;
-with the module on, Settings → Billing, Settings → My bills and the project's Billing tab replace
-them.
+with the module on, Administration → Billing, the user menu → My bills and the project's Billing
+tab replace them.
 
 ### Rolling back
 

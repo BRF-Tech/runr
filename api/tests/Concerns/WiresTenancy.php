@@ -55,6 +55,8 @@ trait WiresTenancy
         'Modules/Tenancy/Database/TenantMigrations/0063_add_migration_old_state_to_knative_regions.php',
         // knative_regions.sandbox_kata_devmapper_pool_gb (a tenant's own region with Kata Firecracker)
         'Modules/Tenancy/Database/TenantMigrations/0064_add_sandbox_kata_devmapper_pool_gb_to_knative_regions.php',
+        // knative_regions.cert_manager_status / cert_manager_issuer (synced from the platform region)
+        'Modules/Tenancy/Database/TenantMigrations/0081_add_cert_manager_to_knative_regions.php',
     ];
 
     protected function setUpTenancy(): void

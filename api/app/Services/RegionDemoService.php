@@ -2,12 +2,14 @@
 
 namespace App\Services;
 
+use App\Models\Deployment;
 use App\Models\ExecutorImage;
 use App\Models\KnativeRegion;
 use App\Models\Project;
 use App\Services\Concerns\RegionDemoCodeTrait;
 use App\Services\Helpers\RegionCapacity;
 use App\Services\Helpers\ResourceReservation;
+use App\Services\InternalNetwork\InternalNetwork;
 use App\Services\Manifests\QueueConsumerManifests;
 use Illuminate\Support\Facades\Log;
 use InvalidArgumentException;
@@ -121,6 +123,29 @@ class RegionDemoService
         ]);
         $projects['backend']->faasConfig->update(['env_vars' => $redis]);
         $projects['stats']->containerConfig->update(['env_vars' => $redis]);
+
+        // The frontend calls the backend on the internal network: the backend allows it
+        // (docs/internal-network.md); the deploy writes the allow list to the region
+        self::grantInternalCallers(collect([$projects['frontend'], $projects['backend']]));
+    }
+
+    /**
+     * The demo backend's allow list admits its frontend: for a new demo, and for one of a release
+     * before the internal network (InternalNetworkStep).
+     *
+     * @param  iterable<Project>  $projects  projects of a region (the demo's among them)
+     */
+    public static function grantInternalCallers(iterable $projects): void
+    {
+        $demo = [];
+        foreach ($projects as $project) {
+            if ($project->is_region_demo) {
+                $demo[$project->name] = $project;
+            }
+        }
+        if (isset($demo['contact-frontend'], $demo['contact-backend'])) {
+            $demo['contact-backend']->internalCallers()->firstOrCreate(['caller' => InternalNetwork::nameOf($demo['contact-frontend'])]);
+        }
     }
 
     /**
@@ -187,7 +212,7 @@ class RegionDemoService
             if ($deployment) {
                 $deploySvc->teardown($project, $deployment);
             }
-            $project->deployments()->delete();
+            Deployment::query()->where('project_id', $project->getKey())->delete();
             $project->versions()->delete();
             $project->xaasConfig?->delete();
             $project->faasConfig?->delete();

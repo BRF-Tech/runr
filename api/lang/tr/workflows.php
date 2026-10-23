@@ -30,7 +30,12 @@ return [
     'manifest_invalid' => 'runr.workflows.json geçersiz: :error',
     'synced' => 'İş akışı tanımları eşitlendi.',
     'declared' => 'İş akışı tanımları kaydedildi.',
+    'declared_one' => '":name" iş akışı kaydedildi.',
+    'archived' => '":name" iş akışı arşivlendi: yeni çalıştırma başlatmaz.',
+    'name_mismatch' => 'Tanımın adı ":name"; adres ":workflow" iş akışını gösteriyor.',
     'key_rotated' => 'İmza anahtarı yenilendi. Projeyi yeniden dağıtın; önceki anahtar :until tarihine kadar çalışmaya devam eder.',
     'cancelled_by' => ':user tarafından iptal edildi',
     'queue_hook_invalid' => 'Bilinmeyen kuyruk köprüsü.',
+    'event_environment_invalid' => 'Olay #:index: "environment" bir ortamın adı (küçük harfli bir DNS etiketi) ya da "production" olmalıdır.',
+    'environment_missing' => 'Bu iş akışının ortamı artık yok.',
 ];

@@ -7,12 +7,14 @@ use App\Services\Helpers\ResourceReservation;
 use App\Workflows\Deploy\QueueBridge;
 use App\Workflows\Engine\EndpointResolver;
 use App\Workflows\Models\WorkflowApp;
+use App\Workflows\Support\WorkflowEnvironments;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
 /**
- * The workflow app of a project (never the signing key itself; see
- * GET /projects/{project}/workflows/app/signing-key).
+ * The workflow app of a project in one environment (never the signing key itself; see
+ * GET /projects/{project}/workflows/app/signing-key). $project is the project, or the
+ * environment's view (its URL, its queue stream, its region; docs/workflows.md#environments).
  *
  * @mixin WorkflowApp
  */
@@ -33,6 +35,8 @@ class WorkflowAppResource extends JsonResource
 
         return [
             'project_id' => $this->project->id,
+            'environment_id' => WorkflowEnvironments::idOf($this->project),
+            'environment' => WorkflowEnvironments::nameOf($this->project) ?? 'production',
             'trigger_type' => $trigger,
             'is_workflow_project' => $trigger === 'workflow',
             'endpoint_url' => app(EndpointResolver::class)->resolve($this->project, $app),

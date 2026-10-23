@@ -45,19 +45,19 @@ The default brand is **RunR by BRF Teknoloji** (RunR wordmark, RunR icon, RunR o
 Logo and favicon values accept an `https://` URL, a path on the console host
 (`/brand/logo.svg`), or a `data:image/…;base64,…` URI (PNG, JPEG, WebP, GIF, SVG, ICO; up to
 about 700 KB). SVGs are refused when they contain scripts, event handlers or embedded documents.
-Logos can also be uploaded in the admin UI (stored on the API volume, served under `/storage`).
+Logos can also be uploaded in the admin UI (stored on the API volume, served by `GET /api/branding/assets/{kind}`).
 
 ### 1.2 Precedence
 
 Per field, the first value that is set wins:
 
-1. **Tenant override** (multi-tenant, Settings → Organization Branding — only when the platform
-   allows tenant branding; `powered_by` stays a platform decision)
-2. **Platform override** (Settings → Branding)
+1. **Tenant override** (multi-tenant, Administration → Organization Branding — only when the
+   platform allows tenant branding; `powered_by` stays a platform decision)
+2. **Platform override** (Administration → Branding)
 3. **Install brand** (Helm values `branding.*`, applied when the pods start)
 4. **RunR default**
 
-"Reset to default" on a field in Settings → Branding removes the stored override, so the Helm
+"Reset to default" on a field in Administration → Branding removes the stored override, so the Helm
 value applies again. Changing a Helm value later changes every field that was never overridden in
 the admin UI.
 
@@ -73,7 +73,7 @@ follows the brand.
 - Or give the **full scale** (`primary_scale`) when your design system defines its own shades;
   shades you leave out are derived from the base colour.
 
-Example preset **"Ocean"** (blue scale, also available as a preset button in Settings → Branding):
+Example preset **"Ocean"** (blue scale, also available as a preset button in Administration → Branding):
 
 | Shade | Value |
 |---|---|
@@ -168,9 +168,9 @@ Secret reference is passed with `valueFrom`.
 
 ### 1.6 Admin UI and API
 
-Settings → **Branding** (`branding.manage`; multi-tenant: platform administrators): every field,
+Administration → **Branding** (`branding.manage`; multi-tenant: platform administrators): every field,
 logo uploads, colour presets with live swatches, per-field reset, the tenant-branding switch.
-Settings → **Organization Branding** (multi-tenant, `branding.manage` in the tenant — owners and
+Administration → **Organization Branding** (multi-tenant, `branding.manage` in the tenant — owners and
 admins by default): the same fields for the tenant.
 
 | Method | Path | Who |
@@ -188,8 +188,8 @@ admins by default): the same fields for the tenant.
 
 ## 2. Self-service signup
 
-Registration stays **on by default** (`registration_enabled`, Settings → Platform or Settings →
-Signup). Settings → **Signup** adds:
+Registration stays **on by default** (`registration_enabled`, Administration → Regions & settings
+or Administration → Signup). Administration → **Signup** adds:
 
 | Setting | Default | Effect |
 |---|---|---|
@@ -220,7 +220,7 @@ refused. Expired waiting signups are removed after a week (scheduled daily).
 ### 2.2 CAPTCHA
 
 1. Create a site at Cloudflare Turnstile or hCaptcha for the console host name.
-2. Settings → Signup: provider, site key, secret key (write-only, stored encrypted) — or Helm
+2. Administration → Signup: provider, site key, secret key (write-only, stored encrypted) — or Helm
    `signup.captcha.{provider,siteKey,secret}`.
 3. The signup form renders the widget; the API verifies the token with the provider's
    `siteverify` endpoint once every other field is valid (a token is single-use).
@@ -303,8 +303,8 @@ Roles and permissions (`docs/permissions.md`) authorize every route; the white-l
 
 | Permission | Allows | Built-in roles |
 |---|---|---|
-| `branding.manage` | single-tenant: the install's brand (Settings → Branding); multi-tenant: the tenant's own brand (Settings → Organization Branding) | Owner, Admin |
-| `signup.manage` | the signup settings (single-tenant; Settings → Signup) | Owner, Admin |
+| `branding.manage` | single-tenant: the install's brand (Administration → Branding); multi-tenant: the tenant's own brand (Administration → Organization Branding) | Owner, Admin |
+| `signup.manage` | the signup settings (single-tenant; Administration → Signup) | Owner, Admin |
 | `settings.manage` | completing the onboarding wizard of a self-service tenant | Owner, Admin |
 | platform administrators | multi-tenant: the install's brand and signup settings | — |
 

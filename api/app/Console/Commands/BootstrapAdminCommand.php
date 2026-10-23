@@ -15,8 +15,11 @@ use Illuminate\Support\Str;
  * runs this command (BOOTSTRAP_ADMIN=true, docker/entrypoint.sh). Nothing happens when
  *   - the account ADMIN_USERNAME exists,
  *   - another administrator exists (a user with is_admin; without the is_admin column: any user),
- *   - ADMIN_EMAIL belongs to another account.
+ *   - ADMIN_EMAIL belongs to another account (in any letter case),
+ *   - ADMIN_USERNAME contains "@" (a user name never does: the sign-in reads such an identifier as
+ *     an e-mail address first, App\Support\Auth\LoginIdentifier).
  * Existing accounts, passwords and settings are never changed, so it can run on every migration.
+ * The administrator signs in with ADMIN_USERNAME or ADMIN_EMAIL.
  *
  * Without ADMIN_PASSWORD a random password is generated and printed once, on this console only:
  * it is never logged.
@@ -45,8 +48,16 @@ class BootstrapAdminCommand extends Command
             return self::SUCCESS;
         }
 
-        if (User::where('email', $email)->exists()) {
+        // In any letter case: the sign-in matches e-mail addresses case-insensitively (LoginIdentifier)
+        if (User::whereRaw('lower(email) = lower(?)', [$email])->exists()) {
             $this->warn("The e-mail address {$email} belongs to another account: administrator not created (set ADMIN_EMAIL to another address).");
+
+            return self::SUCCESS;
+        }
+
+        // The sign-in reads an identifier with "@" as an e-mail address first, so a user name never has one
+        if (str_contains($username, '@')) {
+            $this->warn("The user name {$username} contains \"@\": administrator not created (set ADMIN_USERNAME to a name without \"@\"; the account signs in with ADMIN_EMAIL as well).");
 
             return self::SUCCESS;
         }

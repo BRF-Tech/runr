@@ -7,6 +7,7 @@ use App\Models\KnativeRegion;
 use App\Models\Project;
 use App\Services\Helpers\MonitoringEndpoint;
 use App\Services\Helpers\RunrClusterIdentity;
+use App\Triggers\ProjectTriggers;
 use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
@@ -36,7 +37,8 @@ class KnativeMetricsService
         $cnt = $project->service_type === 'caas' ? 'app' : 'handler';
         $k8s = new KubernetesClient($region->kubeconfig);
 
-        $triggerType = $project->latestVersion?->config_snapshot['trigger_type'] ?? 'http';
+        // CronJob pods (a schedule alone) are named differently from the Knative Service's
+        $triggerType = app(ProjectTriggers::class)->plan($project)->cronJob() ? 'schedule' : 'http';
         $queries = $this->buildQueries($ns, $svc, $cnt, $quick, $deployment, $triggerType);
 
         // Quick metrics: SWR cache with 15s freshness (matches cAdvisor scrape interval).
@@ -83,13 +85,32 @@ class KnativeMetricsService
         return $this->parseResults($raw, false);
     }
 
+    /**
+     * Instant PromQL queries against the region's Prometheus (same path as the deployment
+     * metrics: direct from RunR's own cluster, else through the Kubernetes API proxy), uncached.
+     * A query without a result is null.
+     *
+     * @param  array<string, string>  $queries  key => PromQL
+     * @return array<string, float|null>
+     */
+    public function instant(KnativeRegion $region, array $queries): array
+    {
+        if (! $region->kubeconfig || $queries === []) {
+            return array_fill_keys(array_keys($queries), null);
+        }
+
+        return $this->runParallel(new KubernetesClient($region->kubeconfig), $region, $queries);
+    }
+
     // ── Query builders ────────────────────────────────────────────────────────
 
     private function buildQueries(string $ns, string $svc, string $cnt, bool $quick, Deployment $deployment, string $triggerType = 'http'): array
     {
-        // Schedule trigger: CronJob pods named {slug}-trigger-{id}-{hash}
+        // Schedule trigger: CronJob pods named {slug}-trigger-{id}-{hash}; otherwise the Knative
+        // revisions' pods {slug}-{n}-deployment-… — not an environment's ({slug}-{env}-…,
+        // docs/environments.md) nor a preview's
         $isSchedule = $triggerType === 'schedule';
-        $pod = $isSchedule ? $svc.'-trigger-.*' : $svc.'-.*';
+        $pod = $isSchedule ? $svc.'-trigger-.*' : $svc.'-[0-9]+-deployment-.*';
         $labels = "namespace=\"{$ns}\",pod=~\"{$pod}\",container=\"{$cnt}\"";
 
         // Schedule jobs are short-lived — use 6m window to capture metrics

@@ -2,14 +2,18 @@
 
 namespace App\Console\Commands\Concerns;
 
+use App\Jobs\InstallSandboxJob;
+use App\Services\SandboxInstallService;
+
 /**
  * Sandbox API end to end (`php artisan test:e2e --suite=sandbox-api`, `ci.sh test-sandbox-api`):
  * against the region's real cluster, through the HTTP API.
  *
  *  - classes: gVisor (installed through the API, as the sandbox suite does), runc (the region's
  *    opt-in), Kata only with --sandbox-kata where the nodes have /dev/kvm (else reported skipped):
- *    Cloud Hypervisor, QEMU and Dragonball installed, and per hypervisor the guest's vCPUs (nproc)
- *    for a 1 and a 2 CPU sandbox — 1 + the CPU limit
+ *    Cloud Hypervisor, QEMU and Dragonball installed (one the install reports unavailable on the
+ *    nodes is skipped with its reason), and per hypervisor the guest's vCPUs (nproc) for a 1 and a
+ *    2 CPU sandbox — 1 + the CPU limit; a sandbox that does not start prints its pod and events
  *  - lifecycle: create (pod spec checked in the cluster: RuntimeClass, security context, no
  *    service-account token), exec (stdout, stderr, exit code), SSE streaming, the exec WebSocket
  *    with a terminal (size, resize, typed input, exit code), timeout, code run
@@ -32,15 +36,32 @@ trait E2eTestSandboxApiTrait
         $this->info('');
         $this->info('── Sandbox API ──');
 
+        $kataOnly = self::sbxKataOnly((string) ($this->option('sandbox-cases') ?: (getenv('RUNR_E2E_SANDBOX_CASES') ?: '')));
+        if ($kataOnly) {
+            $this->line('  cases: Kata only (--sandbox-cases / RUNR_E2E_SANDBOX_CASES=kata): the Kata install and cases, then the quota case');
+        }
+
         $tests = [];
-        $gvisor = $this->setupSandboxRuntime($regionId);
-        $tests[] = $this->sbxEntry('sbx-gvisor-install', $gvisor ?: 'gVisor could not be installed');
+        if (! $kataOnly) {
+            $gvisor = $this->setupSandboxRuntime($regionId);
+            $tests[] = $this->sbxEntry('sbx-gvisor-install', $gvisor ?: 'gVisor could not be installed');
+        }
 
         // runc is opted in so the suite also runs where gVisor is the runc-handler fallback
         $settings = $this->api()->put("/api/sandbox-regions/{$regionId}", ['allow_runc' => true, 'max_ttl_seconds' => 3600]);
         $tests[] = $this->sbxEntry('sbx-region-settings', $settings->successful() ?: 'PUT sandbox-regions: '.$settings->status().' '.$settings->body());
 
         $create = fn (array $body) => $this->api()->timeout(300)->post('/api/sandboxes', $body + ['region' => $regionId]);
+
+        if ($kataOnly) {
+            $tests = array_merge($tests, $this->option('sandbox-kata')
+                ? $this->runSandboxKata($regionId, $create)
+                : [$this->sbxEntry('sbx-kata', 'Kata cases selected, but the host has no /dev/kvm (--sandbox-kata not given)')]);
+            $tests[] = $this->sbxEntry('sbx-quota', $this->checkSandboxQuota($create, 'kata'));
+            $this->printSandboxStarts();
+
+            return $tests;
+        }
 
         // ── Lifecycle on gVisor ──
         $res = $create(['runtime' => 'python', 'sandbox_class' => 'gvisor', 'ttl_seconds' => 900, 'env' => ['GREETING' => 'hello'],
@@ -132,46 +153,132 @@ trait E2eTestSandboxApiTrait
         $tests[] = $this->sbxEntry('sbx-warm-pool', $this->checkSandboxPool($regionId, $create));
 
         // ── Quota ──
-        $this->api()->put('/api/sandbox-quotas/default', ['max_concurrent' => 1]);
-        $first = $create(['runtime' => 'python', 'sandbox_class' => 'gvisor']);
-        $second = $create(['runtime' => 'python', 'sandbox_class' => 'gvisor']);
-        $tests[] = $this->sbxEntry('sbx-quota', ($first->status() === 201 && $second->status() === 422 && $second->json('reason') === 'quota_concurrent') ?: "first {$first->status()}, second {$second->status()} {$second->body()}");
-        if ($first->status() === 201) {
-            $this->api()->delete('/api/sandboxes/'.$first->json('data.id'));
-        }
-        $this->api()->delete('/api/sandbox-quotas/default');
+        $tests[] = $this->sbxEntry('sbx-quota', $this->checkSandboxQuota($create, 'gvisor'));
 
+        $this->printSandboxStarts();
+
+        return $tests;
+    }
+
+    /** --sandbox-cases / RUNR_E2E_SANDBOX_CASES: "kata" = only the Kata cases (with their setup and the quota case). */
+    public static function sbxKataOnly(string $cases): bool
+    {
+        $names = array_values(array_filter(array_map('trim', preg_split('/[\s,]+/', strtolower($cases)) ?: [])));
+
+        return $names !== [] && array_diff($names, ['kata']) === [];
+    }
+
+    private function printSandboxStarts(): void
+    {
         $this->info('');
         $this->info('── Sandbox start times (create request → running, start_ms) ──');
         foreach ($this->sandboxStarts as $label => $ms) {
             $this->line(sprintf('  %-22s %d ms', $label, $ms));
         }
+    }
 
-        return $tests;
+    /**
+     * The organization's concurrency quota: with max_concurrent 1 the first sandbox starts and the
+     * second is refused (422 quota_concurrent). Sandboxes earlier cases left alive (one whose start
+     * failed, one not deleted) are deleted first, so the case counts only its own.
+     */
+    private function checkSandboxQuota(callable $create, string $class): bool|string
+    {
+        $left = $this->sbxDeleteLiveSandboxes();
+        if ($left !== []) {
+            $this->line('  sbx-quota: deleted '.count($left).' sandbox(es) earlier cases left alive: '.implode(', ', $left));
+        }
+
+        $this->api()->put('/api/sandbox-quotas/default', ['max_concurrent' => 1]);
+        try {
+            $first = $create(['runtime' => 'python', 'sandbox_class' => $class]);
+            $second = $create(['runtime' => 'python', 'sandbox_class' => $class]);
+            foreach ([$first, $second] as $r) {
+                if (is_string($r->json('data.id'))) {
+                    $this->api()->delete('/api/sandboxes/'.$r->json('data.id'));
+                }
+            }
+        } finally {
+            $this->api()->delete('/api/sandbox-quotas/default');
+        }
+
+        return ($first->status() === 201 && $second->status() === 422 && $second->json('reason') === 'quota_concurrent')
+            ?: "first {$first->status()} ".mb_substr($first->body(), 0, 300).", second {$second->status()} {$second->body()}";
+    }
+
+    /**
+     * Deletes the organization's live sandboxes (pending, running, paused): what earlier cases left
+     * behind.
+     *
+     * @return list<string> each one's id, status and class before the delete
+     */
+    private function sbxDeleteLiveSandboxes(): array
+    {
+        $deleted = [];
+        foreach ((array) $this->api()->get('/api/sandboxes', ['status' => 'active', 'per_page' => 200])->json('data') as $sbx) {
+            if (! is_array($sbx) || ! is_string($sbx['id'] ?? null)) {
+                continue;
+            }
+            $this->api()->delete('/api/sandboxes/'.$sbx['id']);
+            $deleted[] = $sbx['id'].' ('.($sbx['status'] ?? '?').', '.($sbx['sandbox_class'] ?? '?').')';
+        }
+
+        return $deleted;
+    }
+
+    /**
+     * What a sandbox's pod is doing (phase, conditions, containers, the kubelet's last events with
+     * their whole message: a Kata runtime's error is in FailedCreatePodSandBox) and the sandbox's
+     * own status and error.
+     */
+    private function sbxDiagnosis(string $id): string
+    {
+        $sbx = (array) $this->api()->get("/api/sandboxes/{$id}")->json('data');
+        $state = 'sandbox '.($sbx['status'] ?? '?').(! empty($sbx['error']) ? ' ('.mb_substr((string) $sbx['error'], 0, 600).')' : '');
+
+        return $state.' — pod: '.$this->podDiagnosisOf($this->e2eK8s, 'runr-sbx-default', 'sbx-'.strtolower($id), 1500);
     }
 
     private function runSandboxKata(string $regionId, callable $create): array
     {
-        $install = $this->api()->timeout(60)->post("/api/knative-regions/{$regionId}/install-sandbox", ['runtime' => 'kata', 'hypervisors' => self::SANDBOX_KATA_HYPERVISORS]);
+        $hypervisors = self::SANDBOX_KATA_HYPERVISORS;
+        $install = $this->api()->timeout(120)->post("/api/knative-regions/{$regionId}/install-sandbox", ['runtime' => 'kata', 'hypervisors' => $hypervisors]);
+        $unavailable = $install->status() === 422 ? (array) $install->json('unavailable') : [];
+        if ($unavailable !== [] && array_diff($hypervisors, array_keys($unavailable)) !== []) {
+            // The region cannot run some of them (the install's node check): those are skipped
+            // with the install's reason, the others installed and checked
+            foreach ($unavailable as $hv => $reason) {
+                $this->line("  <fg=yellow>─</> sbx-kata-{$hv}-vcpus-*: skipped (the install reports kata-{$hv} unavailable: ".mb_substr((string) $reason, 0, 400).')');
+            }
+            $hypervisors = array_values(array_diff($hypervisors, array_keys($unavailable)));
+            $install = $this->api()->timeout(120)->post("/api/knative-regions/{$regionId}/install-sandbox", ['runtime' => 'kata', 'hypervisors' => $hypervisors]);
+        }
         if ($install->status() === 422) {
-            $this->line('  <fg=yellow>─</> sbx-kata: skipped ('.mb_substr((string) $install->json('message'), 0, 200).')');
+            $this->line('  <fg=yellow>─</> sbx-kata: skipped ('.mb_substr((string) $install->json('message'), 0, 400).')');
 
             return [];
         }
 
-        // As long as the install may take (SandboxInstallService::KATA_WAIT_SECONDS, 20 minutes for
-        // kata-deploy on the nodes) plus its checks: on a slow host the kata-deploy image pull alone
-        // took more than the 15 minutes the suite used to allow
-        $deadline = time() + 1500;
+        // As long as the install job may run (InstallSandboxJob::$timeout: kata-deploy on the nodes,
+        // SandboxInstallService::KATA_WAIT_SECONDS, and its checks) plus its time in the queue: the
+        // job ends ready or error (its own deadline, or the job's timeout through failed()) before
+        // this gives up. On a slow host the kata-deploy image pull alone took more than 15 minutes.
+        $jobTimeout = (int) ((new \ReflectionClass(InstallSandboxJob::class))->getDefaultProperties()['timeout'] ?? 1500);
+        $deadline = time() + $jobTimeout + 300;
+        $kata = [];
         while (time() < $deadline) {
-            $status = $this->api()->get("/api/knative-regions/{$regionId}/sandbox-status")->json('kata.status');
-            if ($status === 'ready' || $status === 'failed') {
+            $kata = (array) $this->api()->get("/api/knative-regions/{$regionId}/sandbox-status")->json('kata');
+            if (in_array($kata['status'] ?? null, ['ready', 'error', 'failed'], true)) {
                 break;
             }
             sleep(10);
         }
-        if (($status ?? null) !== 'ready') {
-            return [$this->sbxEntry('sbx-kata-install', 'Kata install: '.($status ?? 'timeout'))];
+        if (($kata['status'] ?? null) !== 'ready') {
+            // the install's own log (its last steps, kata-deploy's pending nodes) and the installer
+            // pods in the cluster: what the region and its nodes were doing
+            $log = implode(' | ', array_slice(array_filter(explode("\n", (string) ($kata['message'] ?? ''))), -4));
+
+            return [$this->sbxEntry('sbx-kata-install', 'Kata install: '.($kata['status'] ?? 'no status').' — '.$log.' — '.$this->sbxKataInstallerPods())];
         }
 
         $r = $create(['runtime' => 'python', 'sandbox_class' => 'kata']);
@@ -183,24 +290,67 @@ trait E2eTestSandboxApiTrait
             $this->api()->delete('/api/sandboxes/'.$r->json('data.id'));
         }
 
-        return array_merge($entries, $this->checkKataGuestVcpus($create));
+        return array_merge($entries, $this->checkKataGuestVcpus($create, $hypervisors));
+    }
+
+    /**
+     * The Kata installer's pods (runr-sandbox): node, phase, each container's waiting / terminated
+     * reason and restarts, and kata-deploy's last log lines — whether the install waited on the
+     * nodes (an image pull, a runtime restart) or RunR.
+     */
+    private function sbxKataInstallerPods(): string
+    {
+        try {
+            $ns = SandboxInstallService::SANDBOX_NAMESPACE;
+            $lines = [];
+            foreach ($this->e2eK8s->listResources('v1', 'Pod', $ns)['items'] ?? [] as $pod) {
+                $name = (string) ($pod['metadata']['name'] ?? '?');
+                $containers = [];
+                foreach ((array) ($pod['status']['containerStatuses'] ?? []) as $c) {
+                    $state = (array) ($c['state'] ?? []);
+                    $why = $state['waiting']['reason'] ?? $state['terminated']['reason'] ?? (isset($state['running']) ? 'running' : '?');
+                    $containers[] = ($c['name'] ?? '?').' '.$why.' restarts '.(int) ($c['restartCount'] ?? 0);
+                }
+                $line = $name.' on '.($pod['spec']['nodeName'] ?? '-').' '.($pod['status']['phase'] ?? '?').' ['.implode('; ', $containers).']';
+                if (str_starts_with($name, 'kata')) {
+                    $tail = array_slice(array_filter(explode("\n", (string) $this->e2eK8s->getPodLogs($name, $ns, 'kata-deploy', 5))), -2);
+                    $line .= $tail ? ' log: '.implode(' / ', $tail) : '';
+                }
+                $lines[] = $line;
+            }
+
+            return $lines ? 'pods: '.mb_substr(implode(' || ', $lines), 0, 1200) : 'no installer pods';
+        } catch (\Throwable $e) {
+            return 'pods not read: '.$e->getMessage();
+        }
     }
 
     /**
      * Guest size per hypervisor: a statically sized Kata guest has 1 vCPU + the pod's CPU limits
      * (KataRuntime::guestVcpus — the go runtime for clh / qemu, RunR's pod annotations for
      * Dragonball on runtime-rs). nproc inside the guest for two CPU limits; memory printed.
+     *
+     * @param  list<string>  $hypervisors  the ones installed
      */
-    private function checkKataGuestVcpus(callable $create): array
+    private function checkKataGuestVcpus(callable $create, array $hypervisors): array
     {
         $entries = [];
         $rows = [];
-        foreach (self::SANDBOX_KATA_HYPERVISORS as $hv) {
+        foreach ($hypervisors as $hv) {
             foreach ([1000, 2000] as $cpuM) {
                 $name = "sbx-kata-{$hv}-vcpus-{$cpuM}m";
                 $r = $create(self::kataSizeRequest($hv, $cpuM));
                 if ($r->status() !== 201) {
-                    $entries[] = $this->sbxEntry($name, 'create: HTTP '.$r->status().' '.mb_substr($r->body(), 0, 300));
+                    $why = 'create: HTTP '.$r->status().' '.mb_substr($r->body(), 0, 300);
+                    $failedId = $r->json('data.id');
+                    if (is_string($failedId)) {
+                        // the pod's state and the kubelet's events (a Kata runtime's error), then the
+                        // sandbox goes: a start that does not end must not hold the quota
+                        $why .= ' — '.$this->sbxDiagnosis($failedId);
+                        $this->api()->delete("/api/sandboxes/{$failedId}");
+                    }
+                    $this->line("  {$name}: {$why}");
+                    $entries[] = $this->sbxEntry($name, $why);
 
                     continue;
                 }

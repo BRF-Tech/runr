@@ -67,14 +67,23 @@ final class TenantCentralTables
         'image_uploads' => 'tenant_id',
         'uploaded_images' => 'tenant_id',
         'status_page_routes' => 'tenant_id',
+        // Organization exports / imports (their items go with them; the hourly expiry removes
+        // the package files left behind)
+        'org_transfers' => 'tenant_id',
         // Set for the organization's own regions only (region tracing: KEYED_BY_OWN_REGION, its
         // tenant_id may name an organization a platform region was configured from)
         'region_supply_chain_settings' => 'owner_tenant_id',
         'tenant_security_policies' => 'tenant_id',
         'brandings' => 'tenant_id',
         'notifications' => 'tenant_id',
+        // Runtime patch notices sent to the organization's users and alert channels (once per patch)
+        'runtime_patch_notices' => 'tenant_id',
         // Custom runtimes registered in the organization (their versions and builds below)
         'runtimes' => 'tenant_id',
+        // The platform's queue consumer choice for the organization per platform region (Billing
+        // module, docs/billing.md#queue-consumers): a setting, not a billing record. Its own
+        // choices (billing_region_overrides) are in its schema and go with it
+        'billing_tenant_region_overrides' => 'tenant_id',
     ];
 
     /**
@@ -96,6 +105,9 @@ final class TenantCentralTables
         'region_supply_chain_settings' => 'knative_region_id',
         'sandbox_region_settings' => 'knative_region_id',
         'runtime_builds' => 'knative_region_id',
+        // Queue consumer choices keyed by one of the organization's own regions (Billing module)
+        'billing_region_overrides' => 'region_id',
+        'billing_tenant_region_overrides' => 'region_id',
     ];
 
     /**

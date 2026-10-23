@@ -22,6 +22,8 @@ use App\Services\GitService;
 use App\Services\Helpers\MonitoringEndpointAccess;
 use App\Services\Manifests\KnativeManifests;
 use App\Services\Manifests\QueueConsumerManifests;
+use App\Services\OrgTransfer\Contracts\ImportAdmission;
+use App\Services\OrgTransfer\Contracts\MemberInvitations;
 use App\Services\ResourceThresholdService;
 use App\Support\BroadcastChannelResolver;
 use App\Support\DeployGate;
@@ -48,6 +50,8 @@ use Modules\Tenancy\Models\Tenant;
 use Modules\Tenancy\Models\TenantAwareKnativeRegion;
 use Modules\Tenancy\Models\TenantAwareUser;
 use Modules\Tenancy\Models\TenantUser;
+use Modules\Tenancy\Services\OrgTransfer\TenantImportAdmission;
+use Modules\Tenancy\Services\OrgTransfer\TenantMemberInvitations;
 use Modules\Tenancy\Services\TenantAwareAgentMessageHandler;
 use Modules\Tenancy\Services\TenantAwareGitService;
 use Modules\Tenancy\Services\TenantGpuQuota;
@@ -168,6 +172,10 @@ trait TenancyServiceOverridesTrait
             // GPU quota per tenant and region; model services metered per tenant (docs/ai.md)
             GpuQuota::class => TenantGpuQuota::class,
             ModelUsageMeter::class => TenantModelUsageMeter::class,
+            // Organization import (docs/org-export.md): invitations of the package's members,
+            // the tenant's region quota for the imported projects
+            MemberInvitations::class => TenantMemberInvitations::class,
+            ImportAdmission::class => TenantImportAdmission::class,
         ];
 
         foreach ($bindings as $abstract => $concrete) {

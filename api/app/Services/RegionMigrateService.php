@@ -18,30 +18,42 @@ use App\Models\KnativeRegion;
 use App\Models\Observability\RegionTracingConfig;
 use App\Models\PrivateDatabaseBinding;
 use App\Models\Project;
+use App\Models\ProjectDomain;
+use App\Models\ProjectEnvironment;
+use App\Models\ProjectSecret;
 use App\Models\QueuedDeploy;
+use App\Models\RegionSecretSetting;
 use App\Models\RegionSupplyChainSetting;
 use App\Models\RuntimeBuild;
 use App\Models\Version;
+use App\Models\VersionRegionImage;
 use App\Services\Ai\Gpu\GpuInstallService;
 use App\Services\Bindings\DataServiceManager;
 use App\Services\Concerns\ConfigDomainTrait;
 use App\Services\Concerns\KnativeClusterTrait;
 use App\Services\Dns\RegionDnsCheck;
+use App\Services\Environments\DeployTarget;
+use App\Services\Environments\RegionImages;
 use App\Services\GitDeploy\GitTables;
 use App\Services\GitDeploy\PreviewService;
 use App\Services\GitDeploy\PreviewVersionScope;
 use App\Services\GitDeploy\TenantContext;
 use App\Services\Helpers\KataRuntime;
 use App\Services\Images\UploadedImages;
+use App\Services\Manifests\ProjectDomainManifests;
 use App\Services\Projects\QueuedDeploys;
 use App\Services\Projects\VersionRebuilds;
+use App\Services\RegionMigrate\RegionSecretValues;
 use App\Services\Runtimes\RuntimeRegistry;
+use App\Services\Secrets\External\ExternalSecretsInstallService;
+use App\Services\Secrets\OpenBao\OpenBaoInstallService;
 use App\Services\Skupper\SkupperService;
 use App\Services\SupplyChain\AdmissionPolicyService;
 use App\Services\Wasm\WasmInstallService;
 use App\Support\Projects\DeployIntent;
 use App\Support\Projects\ProjectAdmission;
 use App\Support\SchemaColumns;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Log;
@@ -87,8 +99,9 @@ class RegionMigrateService
      * The status columns of the region's rows in other tables that the move's installs set from
      * the new cluster, kept with CLUSTER_STATE under this key of migration_old_state (table =>
      * what the rows held) and given back by the rollback: the data services RunR runs
-     * (binding_region_services, per service), the admission policy (region_supply_chain_settings)
-     * and the tracing backend a Serving install brings (region_tracing_configs). Their settings
+     * (binding_region_services, per service), the admission policy (region_supply_chain_settings),
+     * the tracing backend a Serving install brings (region_tracing_configs) and External Secrets
+     * Operator (region_secret_settings). Their settings
      * and credentials are the region's own and stay as they are.
      */
     public const OTHER_TABLES = 'other_tables';
@@ -121,7 +134,21 @@ class RegionMigrateService
         private SandboxInstallService $sandboxService,
     ) {}
 
+    /** The whole move in one call (both parts below; the API queues them as two jobs). */
     public function migrate(KnativeRegion $region, string $newKubeconfig): void
+    {
+        $this->migrateInfrastructure($region, $newKubeconfig);
+        $this->migrateProjects($region);
+    }
+
+    /**
+     * The first part of a move (MigrateRegionJob): the state saved for a rollback, the region on
+     * the new kubeconfig, and on the new cluster what the region runs besides the projects — the
+     * dedicated workers, Knative, Redis, the registry, the sandbox runtimes and the region's other
+     * features (data services, admission policy, External Secrets Operator, OpenBao, function
+     * TLS, …) — then the function domains.
+     */
+    public function migrateInfrastructure(KnativeRegion $region, string $newKubeconfig): void
     {
         $this->saveOldState($region);
         $this->validateNewKubeconfig($newKubeconfig);
@@ -134,6 +161,20 @@ class RegionMigrateService
 
         $this->installInfrastructure($region);
         $this->setupConfigDomains($region);
+    }
+
+    /**
+     * The second part of a move (MigrateRegionProjectsJob, after migrateInfrastructure()): the
+     * projects' secret values copied, their builds and deploys on the new cluster, their custom
+     * domains and previews; then dns_check.
+     */
+    public function migrateProjects(KnativeRegion $region): void
+    {
+        $region->refresh();
+
+        // The projects' secret values live on the cluster the region leaves only: copied to the
+        // new one before the projects are deployed there (RegionSecretValues)
+        $this->copySecretValues($region->refresh(), (string) $region->migration_old_kubeconfig, (string) $region->kubeconfig);
 
         // The images in the registry the region leaves stay with the old cluster
         $left = $this->registryLeft($region->refresh());
@@ -141,7 +182,13 @@ class RegionMigrateService
             $this->leaveRuntimeImages($region, $left);
         }
         $this->withCopies($region, fn (KnativeRegion $local) => $this->submitBuildsAgain($local));
+        // The builds of versions into the region's registry for its environments ran on the cluster
+        // it left: the environments' deploys below build there again (RegionImages)
+        $this->withCopies($region, fn (KnativeRegion $local) => $this->settleRegionBuilds($local, null, 'The region moved to another cluster before the build ended; built again there.'));
         $this->redeployProjects($region, leftRegistry: $left);
+        // The custom domains of the region's projects and environments are routed on the new cluster
+        $fromCluster = (string) $region->migration_old_kubeconfig;
+        $this->withCopies($region, fn (KnativeRegion $local) => $this->routeCustomDomains($local, $fromCluster));
         $this->withCopies($region, fn (KnativeRegion $local) => $this->movePreviews($local));
 
         $region->update([
@@ -281,6 +328,20 @@ class RegionMigrateService
             $this->step($region, 'admission policy', fn () => app(AdmissionPolicyService::class)->install($region));
         }
 
+        // External Secrets Operator: the projects' references are applied by their deploys
+        if (RegionSecretSetting::forRegion($region)->esoReady()) {
+            $this->step($region, 'External Secrets Operator', fn () => app(ExternalSecretsInstallService::class)->install($region));
+        }
+        // The region's OpenBao, before the projects' values are copied into it (copySecretValues():
+        // a new instance with its own unseal key; the old cluster's keeps running for a rollback).
+        // Its operator install above has to be ready first: waited for here
+        if (RegionSecretSetting::forRegion($region)->openbaoReady()) {
+            $this->step($region, 'OpenBao', function () use ($region) {
+                app(ExternalSecretsInstallService::class)->waitReady($region);
+                app(OpenBaoInstallService::class)->install($region);
+            });
+        }
+
         $this->step($region, 'function TLS', function () use ($region) {
             $line = app(KnativeFunctionTlsService::class)->reapply($region, $region->migration_old_kubeconfig);
             if ($line) {
@@ -288,9 +349,8 @@ class RegionMigrateService
             }
         });
 
-        $usesSkupper = PrivateDatabaseBinding::query()
-            ->whereIn('project_id', Project::where('knative_region_id', $region->id)->select('id'))
-            ->exists();
+        // the region's projects and the environments that run there (docs/environments.md)
+        $usesSkupper = PrivateDatabaseBinding::usedInRegion($region);
         if ($usesSkupper) {
             $this->step($region, 'Skupper site', function () use ($region) {
                 $skupper = app(SkupperService::class);
@@ -345,6 +405,30 @@ class RegionMigrateService
         return array_values(array_intersect($names, $present));
     }
 
+    /**
+     * The secret values of the region's projects — in a multi-tenant install the organizations'
+     * projects on a platform region too — from one cluster to the other (RegionSecretValues). Not
+     * for two kubeconfigs of the same API server: the values are already there. A project whose
+     * values do not make it is logged; its deploy names what is missing.
+     */
+    private function copySecretValues(KnativeRegion $region, string $fromKubeconfig, string $toKubeconfig): void
+    {
+        if ($fromKubeconfig === '' || $toKubeconfig === '') {
+            return;
+        }
+        $from = self::serverOf($fromKubeconfig);
+        if ($from !== null && $from === self::serverOf($toKubeconfig)) {
+            return;
+        }
+
+        $copier = app(RegionSecretValues::class);
+        $this->withCopies($region, fn (KnativeRegion $local) => $this->step(
+            $local,
+            'secret values',
+            fn () => $copier->copy($local, $fromKubeconfig, $toKubeconfig),
+        ));
+    }
+
     private function step(KnativeRegion $region, string $what, callable $run): void
     {
         try {
@@ -369,6 +453,11 @@ class RegionMigrateService
         $this->withCopies($region, function (KnativeRegion $local) use ($rollback, $leftRegistry) {
             foreach ($this->projectsOn($local) as $project) {
                 $this->redeployProject($project, $rollback, $leftRegistry);
+            }
+            // The environments that run on the region — of its projects, and those of projects
+            // elsewhere that run here (docs/environments.md#another-region)
+            foreach ($this->environmentsOn($local) as $environment) {
+                $this->redeployEnvironment($environment, $rollback, $leftRegistry);
             }
         });
     }
@@ -444,7 +533,12 @@ class RegionMigrateService
      *
      * Projects that run nothing (stopped, never deployed) are not listed.
      *
-     * @return list<array{organization: string|null, project_id: string, project: string, outcome: string, version: int|null, deployment_status: string|null, message: string|null}>
+     * The environments that run on the region (docs/environments.md) are rows of their own, with
+     * their `environment` (the project's own workload's rows have none): moved, building (its
+     * version is built into the region's registry first), not_moved (refused, or its build or
+     * deploy failed).
+     *
+     * @return list<array{organization: string|null, project_id: string, project: string, environment?: string, outcome: string, version: int|null, deployment_status: string|null, message: string|null}>
      */
     public function migrationReport(KnativeRegion $region): array
     {
@@ -466,6 +560,19 @@ class RegionMigrateService
                 }
                 if ($outcome !== null) {
                     $report[] = ['organization' => TenantContext::currentSlug(), 'project_id' => (string) $project->id, 'project' => (string) $project->name] + $outcome;
+                }
+            }
+            foreach ($this->environmentsOn($local) as $environment) {
+                try {
+                    $outcome = $this->environmentOutcome($environment, $since);
+                } catch (\Throwable $e) {
+                    Log::warning("RegionMigrate: what the move did with {$environment->workload_name} could not be read", ['error' => $e->getMessage()]);
+
+                    continue;
+                }
+                if ($outcome !== null) {
+                    $report[] = ['organization' => TenantContext::currentSlug(), 'project_id' => (string) $environment->project_id,
+                        'project' => (string) $environment->project->name, 'environment' => (string) $environment->name] + $outcome;
                 }
             }
         });
@@ -503,7 +610,7 @@ class RegionMigrateService
             ];
         }
 
-        $moved = Deployment::query()->where('project_id', $project->id)
+        $moved = self::ownDeployments($project)
             ->where('deployed_by', 'region-migration')
             ->where('created_at', '>=', $since)
             ->latest('created_at')->latest('id')->first();
@@ -516,7 +623,7 @@ class RegionMigrateService
             ];
         }
 
-        $notMoved = Deployment::query()->where('project_id', $project->id)
+        $notMoved = self::ownDeployments($project)
             ->where('status', 'shut_down')
             ->where('knative_message', 'like', self::NOT_MOVED.'%')
             ->where('updated_at', '>=', $since)
@@ -608,9 +715,19 @@ class RegionMigrateService
             $this->restoreRuntimeBuilds($region, $saved[self::RUNTIME_BUILDS], $leftRegistry);
         }
 
+        // Secret values set while the region ran on the cluster it leaves are only there: copied
+        // back before the projects are deployed again and that cluster's workloads are removed
+        if ($otherCluster) {
+            $this->copySecretValues($region, $leftCluster, (string) $oldKubeconfig);
+        }
+
         $this->withCopies($region, fn (KnativeRegion $local) => $this->settleBuilds($local, $otherCluster ? $leftCluster : null, $since));
+        $this->withCopies($region, fn (KnativeRegion $local) => $this->settleRegionBuilds($local, $otherCluster ? $leftCluster : null, 'Cancelled by the migration rollback: the build ran on the cluster the region left.'));
         $this->redeployProjects($region, rollback: true, leftRegistry: $leftRegistry);
         $this->restoreProjectsNotMoved($region, $leftRegistry);
+        // Custom domains (an uploaded certificate set while the region ran on the cluster it left
+        // is copied back from there)
+        $this->withCopies($region, fn (KnativeRegion $local) => $this->routeCustomDomains($local, $otherCluster ? $leftCluster : null));
         $this->withCopies($region, fn (KnativeRegion $local) => $this->movePreviews($local, true, $otherCluster ? $leftCluster : null));
         $this->broadcast($region);
 
@@ -648,8 +765,24 @@ class RegionMigrateService
                     $names = $this->deployer->workloadNames($project);
                     $targets[$namespace][(string) $project->id] = [
                         'slug' => (string) $project->slug,
-                        'secrets' => [$names['secretEnv'], $names['queueConsumerSecret']],
+                        'secrets' => [$names['secretEnv'], $names['externalEnv'], $names['openBaoEnv'], $names['queueConsumerSecret']],
+                        // Values in the left cluster's OpenBao (copied back by the rollback first)
+                        'openbao' => $project->secrets()->where('source', ProjectSecret::SOURCE_OPENBAO)->exists(),
                     ];
+                }
+                // The environments that ran there, also of projects in other regions: their
+                // workloads (runr/environment-of) and the Secrets they read, by name
+                foreach ($this->environmentsOn($local) as $environment) {
+                    $names = $this->deployer->workloadNames(DeployTarget::environment($environment->project, $environment));
+                    $key = (string) $environment->project_id;
+                    $targets[$namespace][$key] ??= [
+                        'slug' => (string) $environment->project->slug,
+                        'secrets' => [],
+                        'openbao' => false,
+                        // the project itself does not run in the region: only its environments' objects
+                        'environments_only' => true,
+                    ];
+                    array_push($targets[$namespace][$key]['secrets'], $names['secretEnv'], $names['externalEnv'], $names['openBaoEnv'], $names['queueConsumerSecret']);
                 }
             });
             if ($targets === []) {
@@ -829,17 +962,24 @@ class RegionMigrateService
                     Log::warning("RegionMigrate: rollback of {$project->slug} not checked", ['error' => $e->getMessage()]);
                 }
             }
+            foreach ($this->environmentsOn($local) as $environment) {
+                try {
+                    $this->restoreEnvironmentNotMoved($local, $environment, $leftRegistry);
+                } catch (\Throwable $e) {
+                    Log::warning("RegionMigrate: rollback of {$environment->workload_name} not checked", ['error' => $e->getMessage()]);
+                }
+            }
         });
     }
 
     private function restoreProjectNotMoved(KnativeRegion $region, Project $project, ?string $leftRegistry = null): void
     {
         // Deployed again by the rollback (redeployProjects)
-        if (Deployment::query()->where('project_id', $project->id)->whereIn('status', Deployment::LIVE)->exists()) {
+        if (self::ownDeployments($project)->whereIn('status', Deployment::LIVE)->exists()) {
             return;
         }
 
-        $last = Deployment::query()->where('project_id', $project->id)->latest('created_at')->latest('id')->first();
+        $last = self::ownDeployments($project)->latest('created_at')->latest('id')->first();
         $notMoved = $last && $last->status === 'shut_down' && str_starts_with((string) $last->knative_message, self::NOT_MOVED);
         if (! $notMoved && ! $project->isStopped()) {
             return;
@@ -1014,6 +1154,20 @@ class RegionMigrateService
                 'status_message' => $tracing->status_message,
                 'installed_at' => $tracing->installed_at?->toDateTimeString(),
             ] : null;
+        }) + $read('region_secret_settings', function () use ($region) {
+            $secrets = RegionSecretSetting::query()->find($region->getKey());
+
+            return $secrets ? [
+                'eso_status' => $secrets->eso_status,
+                'eso_message' => $secrets->eso_message,
+                'eso_chart_version' => $secrets->eso_chart_version,
+                'eso_installed_at' => $secrets->eso_installed_at?->toDateTimeString(),
+                'openbao_status' => $secrets->openbao_status,
+                'openbao_message' => $secrets->openbao_message,
+                'openbao_version' => $secrets->openbao_version,
+                'openbao_installed_at' => $secrets->openbao_installed_at?->toDateTimeString(),
+                'openbao_ca' => $secrets->openbao_ca,
+            ] : null;
         });
     }
 
@@ -1058,6 +1212,15 @@ class RegionMigrateService
             RegionTracingConfig::query()->where('region_id', $region->getKey())->first()?->forceFill(is_array($before)
                 ? $before
                 : ['status' => null, 'status_message' => null, 'installed_at' => null])->save();
+        });
+
+        $restore('region_secret_settings', function (mixed $before) use ($region) {
+            RegionSecretSetting::query()->find($region->getKey())?->forceFill(is_array($before)
+                ? $before
+                : [
+                    'eso_status' => RegionSecretSetting::ESO_NOT_INSTALLED, 'eso_message' => null, 'eso_chart_version' => null, 'eso_installed_at' => null,
+                    'openbao_status' => RegionSecretSetting::ESO_NOT_INSTALLED, 'openbao_message' => null, 'openbao_version' => null, 'openbao_installed_at' => null, 'openbao_ca' => null,
+                ])->save();
         });
     }
 
@@ -1126,7 +1289,7 @@ class RegionMigrateService
                 return;
             }
 
-            $live = Deployment::query()->where('project_id', $project->id)->whereIn('status', Deployment::LIVE)->latest('created_at')->first();
+            $live = self::ownDeployments($project)->whereIn('status', Deployment::LIVE)->latest('created_at')->first();
             $version = $live?->version;
             if (! $live || ! $version || $version->build_status !== 'ready') {
                 return;
@@ -1149,7 +1312,7 @@ class RegionMigrateService
             if ($source === null || $refusal !== null) {
                 // Nothing of it runs on the new cluster: its deployments end (the old cluster's
                 // resources stay with the old cluster), so it is neither metered nor counted as running
-                foreach (Deployment::query()->where('project_id', $project->id)->whereIn('status', Deployment::LIVE)->get() as $old) {
+                foreach (self::ownDeployments($project)->whereIn('status', Deployment::LIVE)->get() as $old) {
                     $old->transition(Deployment::LIVE, [
                         'status' => 'shut_down',
                         'knative_ready' => false,
@@ -1177,7 +1340,7 @@ class RegionMigrateService
             $replaced = $note === null ? [] : ['knative_message' => mb_substr(self::NOT_RESTORED."{$note}; v{$target->number} runs instead", 0, 255)];
 
             // The old cluster's resources are left behind with the old cluster
-            foreach (Deployment::query()->where('project_id', $project->id)->whereIn('status', Deployment::LIVE)->get() as $old) {
+            foreach (self::ownDeployments($project)->whereIn('status', Deployment::LIVE)->get() as $old) {
                 $old->update(['status' => 'shut_down'] + $replaced);
             }
 
@@ -1211,7 +1374,7 @@ class RegionMigrateService
      */
     private function lastDeploymentNotBuiltInto(Project $project, string $registry): ?Deployment
     {
-        $deployments = Deployment::query()->where('project_id', $project->id)
+        $deployments = self::ownDeployments($project)
             ->latest('created_at')->latest('id')->cursor();
 
         foreach ($deployments as $deployment) {
@@ -1311,7 +1474,7 @@ class RegionMigrateService
             'message' => 'Moving to the new cluster of the region: '.$what.'; deployed there when it is ready.',
         ]);
 
-        foreach (Deployment::query()->where('project_id', $project->id)->whereIn('status', Deployment::LIVE)->get() as $old) {
+        foreach (self::ownDeployments($project)->whereIn('status', Deployment::LIVE)->get() as $old) {
             $old->update(['knative_message' => mb_substr(self::MOVING.$what, 0, 255)]);
         }
 
@@ -1538,6 +1701,380 @@ class RegionMigrateService
             Log::warning("RegionMigrate: Firecracker thin-pool size of {$region->name} not read from the old cluster", ['error' => $e->getMessage()]);
 
             return null;
+        }
+    }
+
+    /**
+     * The project's own deployments (production): an environment's deployments are moved on their
+     * own (redeployEnvironment()).
+     *
+     * @return Builder<Deployment>
+     */
+    private static function ownDeployments(Project $project): Builder
+    {
+        /** @var Builder<Deployment> */
+        return Deployment::forEnvironment(Deployment::query()->where('project_id', $project->id), null);
+    }
+
+    /**
+     * The environments (docs/environments.md) that run on the region: those of its projects that
+     * follow their project's region, and those of any project that have the region as their own.
+     * Each comes with its project.
+     *
+     * @return \Illuminate\Support\Collection<int, ProjectEnvironment>
+     */
+    private function environmentsOn(KnativeRegion $region): \Illuminate\Support\Collection
+    {
+        if (! ProjectEnvironment::tablesReady()) {
+            return collect();
+        }
+
+        $regionId = (string) $region->getKey();
+        $projects = Project::query()->whereIn('service_type', Project::SERVICE_TYPES)
+            ->where(fn ($q) => $q->where('knative_region_id', $regionId)
+                ->orWhereIn('id', ProjectEnvironment::query()->where('is_primary', false)->where('knative_region_id', $regionId)->select('project_id')))
+            ->get()->keyBy('id');
+        if ($projects->isEmpty()) {
+            return collect();
+        }
+
+        return ProjectEnvironment::query()->where('is_primary', false)->whereIn('project_id', $projects->keys()->all())
+            ->orderBy('created_at')->get()
+            ->each(fn (ProjectEnvironment $environment) => $environment->setRelation('project', $projects[$environment->project_id]))
+            ->filter(fn (ProjectEnvironment $environment) => $environment->regionId() === $regionId)
+            ->values()
+            ->toBase();
+    }
+
+    /**
+     * Deploy what an environment ran on the cluster the region left onto the cluster it has now
+     * (the move, or after a rollback the old one), as redeployProject() does for its project: the
+     * version, the deploy overrides and the config (a restored config stays restored) of its live
+     * deployment, through the environment's view — its names, its region, its configuration. The
+     * environments of a stopped project stay stopped; an environment that runs nothing is left as
+     * it is. ProjectAdmission's guards decide as for any deploy of the environment; a refused
+     * environment's live deployments are shut down with NOT_MOVED / NOT_RESTORED and the reason
+     * (on a rollback what it ran on the restored cluster is removed too).
+     *
+     * A built version whose image the region's registry does not hold — the move gave the region
+     * another registry, or a version built there during the move is deployed after a rollback — is
+     * built into it first (RegionImages): the new deployment waits, pending, and the environment's
+     * active deployment keeps running on the cluster the region left (MOVING) until the new one is
+     * ready; when the build or the deploy fails it ends with NOT_MOVED / NOT_RESTORED
+     * (environmentDeploymentFailed()). A version that is built again for the project's own workload
+     * in the same region (deployWhenBuilt()) is waited for the same way.
+     */
+    private function redeployEnvironment(ProjectEnvironment $environment, bool $rollback, ?string $leftRegistry): void
+    {
+        $project = $environment->project;
+
+        try {
+            if ($project->isStopped()) {
+                return;
+            }
+
+            $live = Deployment::query()->where('environment_id', $environment->id)->whereIn('status', Deployment::LIVE)
+                ->latest('created_at')->latest('id')->get();
+            $source = $live->firstWhere('status', 'active') ?? $live->first();
+            $version = $source ? Version::query()->find($source->version_id) : null;
+            if (! $source || ! $version) {
+                return;
+            }
+
+            $view = DeployTarget::environment($project, $environment, $version);
+            $refusal = in_array($version->build_status, [Version::STATUS_PRUNED, Version::STATUS_CANCELLED, 'failed'], true)
+                ? "v{$version->number} can no longer be deployed ({$version->build_status})"
+                : (ProjectAdmission::refusal($view, DeployIntent::production($source->deploy_config, (string) $environment->id))
+                    ?? $this->imageLeftBehind($view, $leftRegistry, $rollback));
+
+            if ($refusal !== null) {
+                foreach ($live as $old) {
+                    $old->transition(Deployment::LIVE, [
+                        'status' => 'shut_down',
+                        'knative_ready' => false,
+                        'knative_message' => mb_substr(($rollback ? self::NOT_RESTORED : self::NOT_MOVED).$refusal, 0, 255),
+                    ]);
+                }
+                if ($rollback) {
+                    $this->deployer->teardownEnvironment($view);
+                }
+                Log::warning("RegionMigrate: environment {$environment->workload_name} not redeployed, its deployments are shut down", ['reason' => $refusal]);
+
+                return;
+            }
+
+            // Built into the region's registry first: the active deployment keeps running meanwhile
+            $waits = in_array($version->build_status, ['pending', 'building'], true) || app(RegionImages::class)->waits($view, $version);
+            $where = $rollback ? 'the cluster the migration rollback restored' : 'the new cluster of the region';
+            foreach ($live as $old) {
+                if ($waits && $old->status === 'active') {
+                    $old->update(['knative_message' => mb_substr(self::MOVING."v{$version->number} is built into the registry of {$where}", 0, 255)]);
+                } else {
+                    $old->update(['status' => 'shut_down']);
+                }
+            }
+
+            $deployment = $this->environmentDeployment($environment, $version, $source);
+            $this->deployer->deploy($project, $version, $deployment);
+            Log::info("RegionMigrate: environment {$environment->workload_name} deployed again on {$where}".($waits ? ' once its image is built there' : ''));
+        } catch (\Throwable $e) {
+            Log::warning("RegionMigrate: failed to redeploy environment {$environment->workload_name}", ['error' => $e->getMessage()]);
+        }
+    }
+
+    /** A deployment of the environment by the move: the version, overrides and config of $source. */
+    private function environmentDeployment(ProjectEnvironment $environment, Version $version, Deployment $source): Deployment
+    {
+        $deployment = new Deployment([
+            'project_id' => $environment->project_id,
+            'environment_id' => $environment->id,
+            'version_id' => $version->id,
+            'status' => 'pending',
+            'k8s_job_name' => 'run-'.$environment->workload_name.'-v'.$version->number,
+            'deployed_by' => 'region-migration',
+            'deploy_config' => $source->deploy_config,
+        ]);
+        if ($source->getAttribute('config_source') === Deployment::CONFIG_RESTORED && is_array($source->config_snapshot)) {
+            $deployment->forceFill(['config_snapshot' => $source->config_snapshot, 'config_source' => Deployment::CONFIG_RESTORED]);
+        }
+        $deployment->save();
+
+        return $deployment;
+    }
+
+    /**
+     * Deployment hook: a deployment the move created for an environment failed (its build into the
+     * region's registry, or its deploy) while the environment's earlier deployment kept running on
+     * the cluster the region left (MOVING): that one ends too — nothing of the environment runs
+     * where the region is now — with NOT_MOVED (a rollback's: NOT_RESTORED) and the reason.
+     */
+    public static function environmentDeploymentFailed(Deployment $deployment): void
+    {
+        if ($deployment->status !== 'failed' || $deployment->deployed_by !== 'region-migration' || $deployment->isPrimary()) {
+            return;
+        }
+
+        $environment = ProjectEnvironment::query()->find($deployment->environment_id);
+        $project = $environment ? Project::query()->find($environment->project_id) : null;
+        if (! $environment || ! $project) {
+            return;
+        }
+        $environment->setRelation('project', $project);
+        $moving = KnativeRegion::query()->whereKey($environment->regionId())->value('migration_status') !== null;
+
+        $older = Deployment::query()->where('environment_id', $environment->id)->whereKeyNot($deployment->id)
+            ->whereIn('status', Deployment::LIVE)->where('created_at', '<=', $deployment->created_at)
+            ->where('knative_message', 'like', self::MOVING.'%')
+            ->get();
+        foreach ($older as $old) {
+            $old->transition(Deployment::LIVE, [
+                'status' => 'shut_down',
+                'knative_ready' => false,
+                'knative_message' => mb_substr(($moving ? self::NOT_MOVED : self::NOT_RESTORED).($deployment->knative_message ?: 'the deploy failed'), 0, 255),
+            ]);
+        }
+    }
+
+    /**
+     * restoreProjectNotMoved() for an environment that runs on the restored cluster: one the move did
+     * not move (its deployments shut down with NOT_MOVED, nothing live), or one of a project stopped
+     * while the region ran on the new cluster, still runs there unmetered. It is deployed again —
+     * the version, overrides and config of the deployment the move shut down — or what it runs
+     * there is removed when that is not possible.
+     */
+    private function restoreEnvironmentNotMoved(KnativeRegion $region, ProjectEnvironment $environment, ?string $leftRegistry = null): void
+    {
+        if (Deployment::query()->where('environment_id', $environment->id)->whereIn('status', Deployment::LIVE)->exists()) {
+            return;
+        }
+
+        $project = $environment->project;
+        $last = Deployment::query()->where('environment_id', $environment->id)->latest('created_at')->latest('id')->first();
+        $notMoved = $last && $last->status === 'shut_down' && str_starts_with((string) $last->knative_message, self::NOT_MOVED);
+        if (! $notMoved && ! $project->isStopped()) {
+            return;
+        }
+
+        $view = DeployTarget::environment($project, $environment);
+        if (! $this->runsOn($region, $view)) {
+            return;
+        }
+
+        $version = $notMoved ? Version::query()->find($last->version_id) : null;
+        $refusal = match (true) {
+            ! $notMoved => 'the project was stopped',
+            ! $version || in_array($version->build_status, [Version::STATUS_PRUNED, Version::STATUS_CANCELLED, 'failed'], true) => 'its version can no longer be deployed',
+            default => ProjectAdmission::refusal($view, DeployIntent::production($last->deploy_config, (string) $environment->id))
+                ?? $this->imageLeftBehind(DeployTarget::environment($project, $environment, $version), $leftRegistry, true),
+        };
+
+        if ($refusal !== null) {
+            $this->deployer->teardownEnvironment($view);
+            Log::warning("RegionMigrate: environment {$environment->workload_name} not restored by the rollback, what it ran on the cluster is removed", ['reason' => $refusal]);
+
+            return;
+        }
+
+        $this->deployer->deploy($project, $version, $this->environmentDeployment($environment, $version, $last));
+        Log::info("RegionMigrate: environment {$environment->workload_name} deployed again by the rollback");
+    }
+
+    /**
+     * What the move did with an environment on the region (migrationReport()).
+     *
+     * @return array{outcome: string, version: int|null, deployment_status: string|null, message: string|null}|null
+     */
+    private function environmentOutcome(ProjectEnvironment $environment, Carbon $since): ?array
+    {
+        $moved = Deployment::query()->where('environment_id', $environment->id)
+            ->where('deployed_by', 'region-migration')
+            ->where('created_at', '>=', $since)
+            ->latest('created_at')->latest('id')->first();
+        if ($moved) {
+            $waiting = $moved->status === 'pending' && str_starts_with((string) $moved->knative_message, RegionImages::WAITING);
+
+            return [
+                'outcome' => match (true) {
+                    $waiting => 'building',
+                    $moved->status === 'failed' => 'not_moved',
+                    default => 'moved',
+                },
+                'version' => Version::query()->find($moved->version_id)?->number,
+                'deployment_status' => $moved->status,
+                'message' => $waiting || $moved->status === 'failed' ? $moved->knative_message : null,
+            ];
+        }
+
+        $notMoved = Deployment::query()->where('environment_id', $environment->id)
+            ->where('status', 'shut_down')
+            ->where('knative_message', 'like', self::NOT_MOVED.'%')
+            ->where('updated_at', '>=', $since)
+            ->latest('updated_at')->first();
+        if ($notMoved) {
+            return [
+                'outcome' => 'not_moved',
+                'version' => Version::query()->find($notMoved->version_id)?->number,
+                'deployment_status' => $notMoved->status,
+                'message' => substr((string) $notMoved->knative_message, strlen(self::NOT_MOVED)),
+            ];
+        }
+
+        return null;
+    }
+
+    /**
+     * The builds of versions into the region's registry for its environments (RegionImages) that
+     * were running when the region switched clusters: their Jobs ran on the cluster the region
+     * left, which the build checks no longer look at. They end as failed with $message — the
+     * environments' redeploys build again where the region is now — and their Jobs leave the
+     * cluster the region left ($leftCluster; null: it keeps them, the move leaves the old cluster
+     * as it is).
+     */
+    private function settleRegionBuilds(KnativeRegion $region, ?string $leftCluster, string $message): void
+    {
+        if (! RegionImages::tableReady()) {
+            return;
+        }
+
+        try {
+            $rows = VersionRegionImage::query()->where('knative_region_id', $region->getKey())
+                ->where('status', VersionRegionImage::BUILDING)->get();
+            $jobs = [];
+            foreach ($rows as $row) {
+                $row->forceFill(['status' => VersionRegionImage::FAILED, 'error' => $message, 'token' => null])->save();
+                if ($row->job_name) {
+                    $jobs[] = (string) $row->job_name;
+                }
+            }
+            if ($leftCluster !== null && $leftCluster !== '' && $jobs !== []) {
+                $k8s = new KubernetesClient($leftCluster);
+                $namespace = (string) ($region->project_namespace ?? $region->name);
+                foreach ($jobs as $name) {
+                    $k8s->deleteResource('batch/v1', 'Job', $name, $namespace, 'Background');
+                    $k8s->deleteResource('v1', 'ConfigMap', $name, $namespace);
+                }
+            }
+        } catch (\Throwable $e) {
+            Log::warning("RegionMigrate: builds of {$region->name} for its environments not settled", ['error' => $e->getMessage()]);
+        }
+    }
+
+    /**
+     * The custom domains of the region's projects and environments, routed on the cluster the
+     * region has now — the new one, or after a rollback the old one again: every domain that was
+     * active (or failed to apply) is applied there (ProjectDomainService::activate: its routes, its
+     * cert-manager Certificate). An uploaded certificate lives in a Secret of the cluster it was
+     * uploaded to only: copied from $fromKubeconfig (the cluster the region left) first. A domain
+     * that does not apply is marked error with the reason, as on any activation.
+     */
+    private function routeCustomDomains(KnativeRegion $region, ?string $fromKubeconfig): void
+    {
+        $region->refresh();
+        if ($region->is_demo || ! $region->kubeconfig) {
+            return;
+        }
+
+        // What runs on the region's cluster now is routed there; a project or environment the move
+        // did not move (or that runs nothing) gets its domains routed with its next deploy there
+        // (ProjectDomainService::syncAfterDeploy routes verified domains)
+        $targets = [];
+        foreach ($this->projectsOn($region) as $project) {
+            $targets[] = [$project, self::ownDeployments($project)->whereIn('status', Deployment::LIVE)->exists()];
+        }
+        foreach ($this->environmentsOn($region) as $environment) {
+            $targets[] = [DeployTarget::environment($environment->project, $environment),
+                Deployment::query()->where('environment_id', $environment->id)->whereIn('status', Deployment::LIVE)->exists()];
+        }
+
+        $domains = app(ProjectDomainService::class);
+        foreach ($targets as [$target, $runs]) {
+            try {
+                $active = $target->domains()->whereIn('status', [ProjectDomain::STATUS_ACTIVE, ProjectDomain::STATUS_ERROR])->get();
+                if (! $runs) {
+                    foreach ($active as $domain) {
+                        $domain->update(['status' => ProjectDomain::STATUS_VERIFIED, 'status_message' => 'Routed on the cluster of the region with the next deploy.']);
+                    }
+
+                    continue;
+                }
+                foreach ($active as $domain) {
+                    /** @var ProjectDomain $domain */
+                    $domain->setRelation('project', $target);
+                    if ($domain->tls_mode === ProjectDomain::TLS_CUSTOM && $fromKubeconfig) {
+                        $this->copyDomainCertificate($region, $fromKubeconfig, $domain);
+                    }
+                    $domains->activate($domain);
+                }
+            } catch (\Throwable $e) {
+                Log::warning("RegionMigrate: custom domains of {$target->slug} not routed on the cluster of {$region->name}", ['error' => $e->getMessage()]);
+            }
+        }
+    }
+
+    /** The Secret of a domain's uploaded certificate, from the cluster at $fromKubeconfig to the region's. */
+    private function copyDomainCertificate(KnativeRegion $region, string $fromKubeconfig, ProjectDomain $domain): void
+    {
+        $from = self::serverOf($fromKubeconfig);
+        if ($from !== null && $from === self::serverOf((string) $region->kubeconfig)) {
+            return;
+        }
+
+        $namespace = (string) ($region->project_namespace ?? $region->name);
+        $name = $domain->tls_secret_name ?: ProjectDomainManifests::resourceName((string) $domain->project_id, (string) $domain->domain);
+        try {
+            $secret = (new KubernetesClient($fromKubeconfig))->getResourceStatus('v1', 'Secret', $name, $namespace);
+            if (! is_array($secret) || empty($secret['data'])) {
+                return;
+            }
+            (new KubernetesClient((string) $region->kubeconfig))->applyResource([
+                'apiVersion' => 'v1',
+                'kind' => 'Secret',
+                'type' => $secret['type'] ?? 'kubernetes.io/tls',
+                'metadata' => ['name' => $name, 'namespace' => $namespace, 'labels' => (array) ($secret['metadata']['labels'] ?? [])],
+                'data' => $secret['data'],
+            ], $namespace);
+        } catch (\Throwable $e) {
+            Log::warning("RegionMigrate: the certificate of {$domain->domain} not copied to the cluster of {$region->name}", ['error' => $e->getMessage()]);
         }
     }
 

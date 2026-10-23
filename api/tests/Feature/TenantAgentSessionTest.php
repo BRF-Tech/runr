@@ -5,9 +5,11 @@ namespace Tests\Feature;
 use App\Models\Deployment;
 use App\Models\DeploymentSession;
 use App\Models\FaasConfig;
+use App\Models\Git\PreviewEnvironment;
 use App\Models\KnativeRegion;
 use App\Models\Project;
 use App\Models\Version;
+use App\Services\GitDeploy\PreviewManifests;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Cache;
 use Modules\Tenancy\Models\Tenant;
@@ -37,6 +39,9 @@ class TenantAgentSessionTest extends TestCase
         'Modules/Tenancy/Database/TenantMigrations/0022_add_agent_token_hash_to_knative_regions.php',
         'Modules/Tenancy/Database/TenantMigrations/0023_add_observability_managed_flags_to_knative_regions.php',
         'Modules/Tenancy/Database/TenantMigrations/0024_add_function_tls_to_knative_regions.php',
+        'Modules/Tenancy/Database/TenantMigrations/0035_create_git_deploy_tables.php',
+        'Modules/Tenancy/Database/TenantMigrations/0074_add_last_seen_at_to_deployment_sessions.php',
+        'Modules/Tenancy/Database/TenantMigrations/0075_add_preview_sessions_to_deployment_sessions.php',
     ];
 
     private KnativeRegion $region;
@@ -131,6 +136,21 @@ class TenantAgentSessionTest extends TestCase
         $this->assertSame(0, DeploymentSession::query()->count());
     }
 
+    public function test_a_heartbeat_marks_the_session_in_the_tenant_schema(): void
+    {
+        $this->tenant->run(fn () => $this->project('orders-acme-eu'));
+        $this->send('session_start', 'orders-acme-eu', 'orders-acme-eu-00001-deployment-abc');
+
+        $this->travel(1)->minutes();
+        $this->handler()->handle(['type' => 'session_heartbeat', 'sessions' => [
+            ['project_slug' => 'orders-acme-eu', 'pod' => 'orders-acme-eu-00001-deployment-abc', 'entry_point' => 'http'],
+        ]], $this->region->id);
+
+        $seen = $this->tenant->run(fn () => DeploymentSession::query()->sole()->last_seen_at?->toDateTimeString());
+        $this->assertSame(now()->toDateTimeString(), $seen);
+        $this->assertSame(0, DeploymentSession::query()->count(), 'nothing in the central schema');
+    }
+
     public function test_metrics_of_a_tenant_project_are_found_in_the_tenant_schema(): void
     {
         // Without the cache bootstrapper: every tenancy session would get a fresh array store
@@ -163,5 +183,66 @@ class TenantAgentSessionTest extends TestCase
 
         $this->assertSame([], $this->tenantSessions());
         $this->assertSame(0, DeploymentSession::query()->count());
+    }
+
+    /**
+     * A preview of a project with a slug of an earlier release, longer than <slug>-pr-<number>
+     * has room for: its Service name lost the end of the slug, the tenant's slug with it.
+     *
+     * @return array{0: string, 1: string, 2: string} project id, preview id, the preview's Service
+     */
+    private function longSlugPreview(): array
+    {
+        return $this->tenant->run(function () {
+            $project = $this->project('orders-of-the-very-long-department-of-reconciliations-acme-eu');
+            $service = PreviewManifests::serviceName($project->slug, 7);
+            $preview = PreviewEnvironment::query()->create(['project_id' => $project->id, 'number' => 7, 'provider' => 'github',
+                'status' => PreviewEnvironment::READY, 'service_name' => $service]);
+
+            return [(string) $project->id, (string) $preview->id, $service];
+        });
+    }
+
+    public function test_a_preview_that_lost_the_tenants_slug_is_found_by_its_labels(): void
+    {
+        [$projectId, $previewId, $service] = $this->longSlugPreview();
+        $this->assertStringEndsWith('-acme-pr-7', $service, 'the tenant slug "acme-eu" was cut');
+        $shortened = substr($service, 0, -strlen('-pr-7'));
+
+        // runr/tenant and runr/preview-of on the pod: the agent names the tenant and the project
+        $this->send('session_start', $shortened, "{$service}-00001-deployment-abc", ['project_id' => $projectId, 'preview' => $service, 'tenant' => 'acme-eu']);
+        $sessions = $this->tenant->run(fn () => DeploymentSession::query()->get()
+            ->map(fn (DeploymentSession $s) => [(string) $s->project_id, (string) $s->preview_environment_id])->all());
+        $this->assertSame([[$projectId, $previewId]], $sessions);
+        $this->assertSame(0, DeploymentSession::query()->count(), 'nothing in the central schema');
+
+        // A pod of a preview deployed before its pods carried runr/tenant: found by the project id,
+        // the tenant remembered for the next events
+        $this->send('session_start', $shortened, "{$service}-00002-deployment-def", ['project_id' => $projectId, 'preview' => $service]);
+        $this->assertSame(2, $this->tenant->run(fn () => DeploymentSession::query()->where('preview_environment_id', $previewId)->count()));
+        $this->assertSame((string) $this->tenant->id, Cache::get("agent-project-tenant:{$projectId}"));
+        Cache::forget("agent_session_{$service}-00002-deployment-def");
+        $this->send('session_end', $shortened, "{$service}-00002-deployment-def", ['project_id' => $projectId]);
+        $this->assertSame(1, $this->tenant->run(fn () => DeploymentSession::query()->whereNotNull('ended_at')->count()));
+
+        // A preview created now keeps the organization's end of the long slug: its tenant is found
+        // by the name again, the project by its id
+        $named = $this->tenant->run(function () use ($projectId) {
+            $service = PreviewManifests::serviceName(Project::query()->findOrFail($projectId)->slug, 8, 'acme-eu');
+            PreviewEnvironment::query()->create(['project_id' => $projectId, 'number' => 8, 'provider' => 'github',
+                'status' => PreviewEnvironment::READY, 'service_name' => $service]);
+
+            return $service;
+        });
+        $this->assertStringEndsWith('-acme-eu-pr-8', $named);
+        Cache::flush();
+        $this->send('session_start', substr($named, 0, -strlen('-pr-8')), "{$named}-00001-deployment-ghi", ['project_id' => $projectId, 'preview' => $named]);
+        $this->assertSame(1, $this->tenant->run(fn () => DeploymentSession::query()->where('metadata->pod', "{$named}-00001-deployment-ghi")->count()));
+        $this->assertNull(Cache::get("agent-project-tenant:{$projectId}"), 'found by the slug\'s end, no search');
+
+        // A project id no tenant has is remembered as unknown
+        $this->send('session_start', 'nobody', 'nobody-pr-1-00001-deployment-x', ['project_id' => '01JNOSUCHPROJECT0000000000', 'preview' => 'nobody-pr-1']);
+        $this->assertSame('', Cache::get('agent-project-tenant:01JNOSUCHPROJECT0000000000'));
+        $this->assertSame(3, $this->tenant->run(fn () => DeploymentSession::query()->count()));
     }
 }

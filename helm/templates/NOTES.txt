@@ -3,7 +3,9 @@ RunR v{{ .Chart.AppVersion }} deployed successfully!
 {{ if .Values.secret.create }}
 --- Administrator ---
 
+  Sign in with the user name or the e-mail address:
   Username: {{ .Values.admin.username }}
+  E-mail:   {{ .Values.admin.email }}
   Password: {{ if .Values.admin.password }}(as entered at install){{ else }}generated, read it with:
     kubectl get secret {{ .Values.secretName }} -n {{ $ns }} -o jsonpath='{.data.ADMIN_PASSWORD}' | base64 -d{{ end }}
 {{- else }}
@@ -20,7 +22,9 @@ RunR v{{ .Chart.AppVersion }} deployed successfully!
 
 --- Administrator ---
 
+  Sign in with the user name or the e-mail address:
   Username: {{ .Values.admin.username }}
+  E-mail:   {{ .Values.admin.email }}
   Password: ADMIN_PASSWORD of the Secret {{ .Values.secretName }}; without that key the bootstrap Job
   generates one into the Secret runr-admin:
     kubectl get secret runr-admin -n {{ $ns }} -o jsonpath='{.data.password}' | base64 -d
@@ -93,4 +97,26 @@ RunR v{{ .Chart.AppVersion }} deployed successfully!
 {{- if and .Values.api.pdb.enabled (not (include "runr.apiStorageShared" .)) }}
   api.pdb: no PodDisruptionBudget for runr-api — with a ReadWriteOnce volume its pods cannot move to
   another node, and a budget would hold a drain of that node forever.
+{{- end }}
+{{- if .Release.IsUpgrade }}
+{{- $projectSecrets := .Values.projectSecrets | default dict }}
+
+--- Project secrets (upgrade from 0.5.10, docs/upgrade.md) ---
+{{- if $projectSecrets.finalize }}
+
+  projectSecrets.finalize is set: the bootstrap Job finalized the move of the secret values into
+  the regions (secrets:move-to-region --finalize). RunR keeps no copy of them in its database any
+  more: do NOT install 0.5.10 again — its deploys would write empty secret values. Check:
+    kubectl exec -n {{ $ns }} deploy/runr-api -- php artisan secrets:move-to-region --finalize --dry-run
+{{- else }}
+
+  Until the upgrade is finalized RunR keeps an encrypted copy of every secret value in its database,
+  so that 0.5.10 can be installed again (helm rollback, or the previous package on the same
+  database) without empty values; secret store references wait for it. Once this release is
+  confirmed, finalize it:
+    helm upgrade <release> <chart> -n {{ $ns }} --reuse-values --set projectSecrets.finalize=true
+  or
+    kubectl exec -n {{ $ns }} deploy/runr-api -- php artisan secrets:move-to-region --finalize
+  An install that never ran 0.5.10 is finalized already; nothing to do there.
+{{- end }}
 {{- end }}

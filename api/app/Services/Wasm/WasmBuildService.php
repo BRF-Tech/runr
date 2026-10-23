@@ -3,6 +3,7 @@
 namespace App\Services\Wasm;
 
 use App\Models\ExecutorImage;
+use App\Models\KnativeRegion;
 use App\Models\Project;
 use App\Models\UploadedImage;
 use App\Models\Version;
@@ -47,6 +48,28 @@ class WasmBuildService
 
         $version->update(['build_status' => 'building']);
 
+        $imageRef = $this->submitJob($project, $version, $region, $manifest, $executor, $versionImage, "build-{$project->slug}-v{$version->number}");
+
+        $version->update(['build_image' => $imageRef]);
+
+        Log::info('WebAssembly build submitted', [
+            'project' => $project->slug,
+            'runtime' => $manifest->id(),
+            'version' => $version->number,
+            'image' => $imageRef,
+        ]);
+    }
+
+    /**
+     * The build Job of $version named $name in $region's project namespace, pushing to $region's
+     * registry; the version row is not touched. $project is the project as $region sees it (its
+     * region set to $region): the version's own build, or its build into another region's registry
+     * (FunctionBuildService::submitReplicaBuild, docs/environments.md#another-region).
+     *
+     * @return string the image reference the Job pushes
+     */
+    public function submitJob(Project $project, Version $version, KnativeRegion $region, RuntimeManifest $manifest, ExecutorImage $executor, string $versionImage, string $name): string
+    {
         $k8s = new KubernetesClient($region->kubeconfig);
         $namespace = $region->project_namespace ?? $region->name;
         $projectFiles = $this->git->getAllFilesAtVersion($project, $version->commit_id);
@@ -54,7 +77,6 @@ class WasmBuildService
         $module = $this->moduleRef($project, $manifest, $executor, $versionImage, $projectFiles);
         $files = $this->files($manifest, $projectFiles, $project, $executor);
         $imageRef = app(FunctionBuildService::class)->buildImageRef($region, $project, $version);
-        $name = "build-{$project->slug}-v{$version->number}";
 
         // Job spec.template is immutable: stale objects of an earlier attempt go first
         $k8s->deleteResource('batch/v1', 'Job', $name, $namespace);
@@ -68,14 +90,7 @@ class WasmBuildService
         $k8s->createResource($this->sourceConfigMap($name, $namespace, $project, $data), $namespace);
         $k8s->createResource($this->job($name, $namespace, $project, $manifest, $executor, $versionImage, array_keys($files), $imageRef, $module), $namespace);
 
-        $version->update(['build_image' => $imageRef]);
-
-        Log::info('WebAssembly build submitted', [
-            'project' => $project->slug,
-            'runtime' => $manifest->id(),
-            'version' => $version->number,
-            'image' => $imageRef,
-        ]);
+        return $imageRef;
     }
 
     /**

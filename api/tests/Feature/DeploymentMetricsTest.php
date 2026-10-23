@@ -106,7 +106,7 @@ class DeploymentMetricsTest extends TestCase
         $this->assertSame(['cpu' => 0.1235, 'memory' => 64.5, 'rps' => 2.346], $metrics);
         $this->assertCount(4, $this->queries, 'cpu, memory and both request counts in parallel');
         $this->assertSame(
-            'sum(last_over_time(rate(container_cpu_usage_seconds_total{namespace="fn",pod=~"orders-.*",container="handler"}[30s])[30s:5s]))',
+            'sum(last_over_time(rate(container_cpu_usage_seconds_total{namespace="fn",pod=~"orders-[0-9]+-deployment-.*",container="handler"}[30s])[30s:5s]))',
             $this->query('container_cpu_usage_seconds_total'),
         );
         $this->assertSame('sum(rate(kn_revision_request_count_total{namespace_name="fn",service_name="orders"}[1m]))', $this->query('kn_revision_request_count_total'));
@@ -157,7 +157,8 @@ class DeploymentMetricsTest extends TestCase
 
         $this->assertSame(['cpu' => 0.5, 'memory' => 256.79, 'rps' => 12.346, 'cpuAvg1h' => 0.25, 'memAvg1h' => 200.0], $metrics);
         $this->assertCount(6, $this->queries);
-        $this->assertSame('sum(last_over_time(runr:cpu_cores:avg1h{namespace="fn",pod=~"orders-.*",container="app"}[3m]))', $this->query('runr:cpu_cores:avg1h'));
+        // The revisions' pods only: an environment's (orders-staging-…) or a preview's are not the project's
+        $this->assertSame('sum(last_over_time(runr:cpu_cores:avg1h{namespace="fn",pod=~"orders-[0-9]+-deployment-.*",container="app"}[3m]))', $this->query('runr:cpu_cores:avg1h'));
 
         // cached for a minute
         $this->queries = [];

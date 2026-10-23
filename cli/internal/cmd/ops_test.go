@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/brf-tech/runr/cli/internal/dev"
 	"github.com/brf-tech/runr/cli/pkg/runr"
@@ -187,6 +188,59 @@ func TestScale(t *testing.T) {
 	h.srv.SeedProject("idle", runr.TypeFaaS, "python", "eu-1", nil)
 	r = h.mustRun("scale", "--max", "2", "--project", "idle")
 	contains(t, r.err, "No live deployment")
+}
+
+func TestScaleTimedWarmer(t *testing.T) {
+	h := newHarness(t).login()
+	dir := h.deployHello()
+
+	r := h.mustRun("scale", "--warm", "0 9 * * 1-5=3", "--warm", "0 18,22 * * 1-5=0", "--dir", dir)
+	contains(t, r.err, "Timed warmer of hello-api: 0 9 * * 1-5 → 3, 0 18,22 * * 1-5 → 0")
+	contains(t, r.err, "no redeploy needed")
+	cfg := h.srv.CallsTo("PUT /projects/{project}")[0].Body["config"].(map[string]any)
+	rows, _ := cfg["scale_schedule"].([]any)
+	if len(rows) != 2 || rows[1].(map[string]any)["cron"] != "0 18,22 * * 1-5" || rows[0].(map[string]any)["min_scale"] != float64(3) {
+		t.Fatalf("scale_schedule sent = %v", cfg["scale_schedule"])
+	}
+	if len(cfg) != 1 {
+		t.Fatalf("only the schedule is sent: %v", cfg)
+	}
+	if len(h.srv.Deployments("hello-api")) != 1 {
+		t.Fatal("a schedule change alone must not redeploy")
+	}
+
+	// Shown with the project, together with what the warmer applied
+	h.srv.SetWarmScale("hello-api", 3, time.Now().Add(-2*time.Minute))
+	r = h.mustRun("projects", "get", "hello-api")
+	contains(t, r.out, "0 9 * * 1-5 → 3")
+	contains(t, r.out, "3 kept warm now")
+
+	r = h.mustRun("scale", "--no-warm", "--dir", dir)
+	contains(t, r.err, "Timed warmer of hello-api: off")
+	off := h.srv.CallsTo("PUT /projects/{project}")[1].Body["config"].(map[string]any)
+	if list, ok := off["scale_schedule"].([]any); !ok || len(list) != 0 {
+		t.Fatalf("--no-warm sent %v, want []", off["scale_schedule"])
+	}
+	if p, _ := h.srv.Project("hello-api"); len(p.Config.ScaleSchedule) != 0 {
+		t.Fatalf("schedule after --no-warm = %v", p.Config.ScaleSchedule)
+	}
+
+	// Checked before anything is sent
+	h.expectCode(ExitUsage, "scale", "--warm", "0 9 * * 1-5", "--dir", dir)              // no count
+	h.expectCode(ExitUsage, "scale", "--warm", "0 0 9 * * 1-5=1", "--dir", dir)          // six fields
+	h.expectCode(ExitUsage, "scale", "--warm", "0 9 * * *=11", "--dir", dir)             // above 10
+	h.expectCode(ExitUsage, "scale", "--warm", "0 9 * * *=6", "--dir", dir)              // above max_scale 5
+	h.expectCode(ExitUsage, "scale", "--warm", "0 9 * * *=1", "--no-warm", "--dir", dir) // both
+	if n := len(h.srv.CallsTo("PUT /projects/{project}")); n != 2 {
+		t.Fatalf("refused flags reached the API: %d updates", n)
+	}
+
+	// With a new --max in the same call the count is checked against it, and the range change redeploys
+	r = h.mustRun("scale", "--max", "8", "--warm", "0 9 * * *=6", "--dir", dir)
+	contains(t, r.err, "0 9 * * * → 6")
+	if len(h.srv.Deployments("hello-api")) != 2 {
+		t.Fatal("a range change redeploys")
+	}
 }
 
 func TestDomains(t *testing.T) {
@@ -449,4 +503,38 @@ func TestDevInvokeFindsSession(t *testing.T) {
 	other := h.project(helloYAML, map[string]string{"main.py": pythonHandler})
 	r = h.expectCode(ExitError, "dev", "invoke", "--dir", other)
 	contains(t, r.err, "no `runr dev` session")
+}
+
+func TestDomainsOfEnvironment(t *testing.T) {
+	h := newHarness(t).login()
+	dir := h.deployHello()
+	h.srv.SeedEnvironment("hello-api", "staging", false)
+
+	r := h.mustRun("domains", "add", "staging.example.com", "--env", "staging", "--dir", dir)
+	contains(t, r.out, "_runr-challenge.staging.example.com")
+	if body := h.srv.CallsTo("POST /projects/{project}/domains")[0].Body; body["environment"] != "staging" {
+		t.Fatalf("add body = %v", body)
+	}
+	h.mustRun("domains", "add", "api.example.com", "--dir", dir)
+	if h.srv.CallsTo("POST /projects/{project}/domains")[1].Body["environment"] != nil {
+		t.Fatal("without --env the domain is the project's own")
+	}
+
+	// ls --env shows that environment's domains; ls the project's own
+	r = h.mustRun("domains", "ls", "--env", "staging", "--dir", dir)
+	contains(t, r.out, "staging.example.com")
+	notContains(t, r.out, "api.example.com")
+	r = h.mustRun("domains", "ls", "--dir", dir)
+	contains(t, r.out, "api.example.com")
+	notContains(t, r.out, "staging.example.com")
+
+	// The CA of the region the environment runs in
+	h.mustRun("domains", "ca", "--env", "staging", "--dir", dir)
+	if ca := h.srv.CallsTo("GET /projects/{project}/domains/ca-certificate"); !strings.Contains(ca[0].Query, "environment=staging") {
+		t.Fatalf("ca query = %q", ca[0].Query)
+	}
+
+	h.expectCode(ExitNotFound, "domains", "rm", "staging.example.com", "--yes", "--dir", dir)
+	h.mustRun("domains", "rm", "staging.example.com", "--env", "staging", "--yes", "--dir", dir)
+	h.expectCode(ExitNotFound, "domains", "ls", "--env", "nope", "--dir", dir)
 }

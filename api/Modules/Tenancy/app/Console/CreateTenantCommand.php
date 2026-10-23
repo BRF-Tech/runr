@@ -2,7 +2,7 @@
 
 namespace Modules\Tenancy\Console;
 
-use App\Models\User;
+use App\Support\Auth\AccountLookup;
 use Illuminate\Console\Command;
 use Modules\Tenancy\Models\Tenant;
 use Modules\Tenancy\Models\TenantUser;
@@ -48,7 +48,8 @@ class CreateTenantCommand extends Command
 
         // Assign owner if specified
         if ($email = $this->option('owner-email')) {
-            $user = User::on('central')->where('email', $email)->first();
+            // in any letter case, as the sign-in names an account (AccountLookup)
+            $user = AccountLookup::byEmail($email, 'central');
 
             if ($user) {
                 TenantUser::create([

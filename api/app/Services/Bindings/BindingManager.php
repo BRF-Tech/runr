@@ -9,6 +9,10 @@ use App\Models\BindingAttachment;
 use App\Models\BindingRegionService;
 use App\Models\KnativeRegion;
 use App\Models\Project;
+use App\Models\ProjectEnvironment;
+use App\Services\Environments\DeployTarget;
+use App\Services\Environments\EnvironmentScope;
+use App\Services\GlobalProjects\Data\RegionalData;
 use App\Services\Residency\RegionPolicy;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
@@ -90,12 +94,31 @@ class BindingManager
         return $binding;
     }
 
-    public function attach(Binding $binding, Project $project, string $envPrefix = ''): BindingAttachment
+    /**
+     * Attach a binding to the project's own workload, or to one of its environments
+     * (docs/environments.md#bindings): the binding must be in the region the environment runs in.
+     * A binding is attached to at most one environment of a project — staging and production
+     * never share a data store.
+     *
+     * @param  string  $credentialMode  static | dynamic — a Postgres user of its own from the
+     *                                  region's OpenBao (DynamicDbCredentials)
+     */
+    public function attach(Binding $binding, Project $project, string $envPrefix = '', string $credentialMode = DynamicDbCredentials::MODE_STATIC, ?ProjectEnvironment $environment = null): BindingAttachment
     {
         if (! $binding->isActive()) {
             throw new BindingException(__('api.bindings.not_active', ['name' => $binding->name]));
         }
-        if ($binding->type !== 'external' && (string) $binding->knative_region_id !== (string) $project->knative_region_id) {
+        // A global project runs in several regions: a managed binding is reached through its data
+        // link, a dedicated Postgres binding gets a replica in every region (docs/global-projects.md,
+        // "Data"); a binding replicated for a global project follows that project only
+        $regional = app(RegionalData::class);
+        $dynamic = $credentialMode === DynamicDbCredentials::MODE_DYNAMIC;
+        $global = $project->isGlobal() && $environment === null;
+        if ($reason = $global ? $regional->attachRefusal($binding, $project, $dynamic) : $regional->regionalAttachRefusal($binding, $project)) {
+            throw new BindingException($reason);
+        }
+        $target = DeployTarget::environment($project, $environment);
+        if ($binding->type !== 'external' && ! $global && (string) $binding->knative_region_id !== (string) $target->knative_region_id) {
             throw new BindingException(__('api.bindings.region_mismatch', ['binding' => $binding->name, 'project' => $project->name]));
         }
         if (BindingAttachment::query()->where('binding_id', $binding->id)->where('project_id', $project->id)->exists()) {
@@ -106,31 +129,63 @@ class BindingManager
             $this->residency->authorize((string) $binding->knative_region_id, RegionPolicy::BINDING_CREATE, field: 'binding_id');
         }
 
-        $this->assertNoEnvConflict($binding, $project, $envPrefix);
+        $this->assertNoEnvConflict($binding, $target, $envPrefix);
+        if ($dynamic && ($reason = DynamicDbCredentials::refusal($binding, $project))) {
+            throw new BindingException($reason);
+        }
 
-        $attachment = BindingAttachment::create([
+        $attachment = BindingAttachment::create(array_filter([
             'binding_id' => $binding->id,
             'project_id' => $project->id,
             'env_prefix' => $envPrefix,
-        ]);
+            'credential_mode' => $dynamic ? DynamicDbCredentials::MODE_DYNAMIC : null,
+            'environment_id' => EnvironmentScope::idOf($target),
+        ], fn ($v) => $v !== null));
+        $attachment->setRelation('binding', $binding)->setRelation('project', $project);
 
-        BindingAudit::binding('binding.attached', $binding, ['project_id' => $project->id, 'env_prefix' => $envPrefix]);
+        if ($dynamic) {
+            try {
+                app(DynamicDbCredentials::class)->enable($attachment);
+            } catch (BindingException $e) {
+                $attachment->delete();
+
+                throw $e;
+            }
+        }
+
+        BindingAudit::binding('binding.attached', $binding, ['project_id' => $project->id, 'env_prefix' => $envPrefix, 'credential_mode' => $dynamic ? 'dynamic' : 'static']
+            + (EnvironmentScope::idOf($target) !== null ? ['environment' => $environment?->name] : []));
         SyncProjectBindingsJob::dispatch($project->id, [$binding->id]);
 
         return $attachment->setRelation('binding', $binding);
     }
 
-    public function updateAttachment(BindingAttachment $attachment, string $envPrefix): BindingAttachment
+    public function updateAttachment(BindingAttachment $attachment, string $envPrefix, ?string $credentialMode = null): BindingAttachment
     {
         $binding = $attachment->binding;
         $project = $attachment->project;
 
-        $this->assertNoEnvConflict($binding, $project, $envPrefix, $attachment->id);
+        $this->assertNoEnvConflict($binding, self::targetOf($attachment), $envPrefix, $attachment->id);
+
+        $before = $attachment->getAttribute('credential_mode') ?? DynamicDbCredentials::MODE_STATIC;
+        $mode = $credentialMode ?? $before;
+        if ($mode !== $before && $mode === DynamicDbCredentials::MODE_DYNAMIC && ($reason = DynamicDbCredentials::refusal($binding, $project))) {
+            throw new BindingException($reason);
+        }
 
         $attachment->env_prefix = $envPrefix;
+        if ($mode !== $before) {
+            $attachment->credential_mode = $mode;
+        }
         $attachment->save();
 
-        BindingAudit::binding('binding.attachment_updated', $binding, ['project_id' => $project->id, 'env_prefix' => $envPrefix]);
+        if ($mode !== $before) {
+            $mode === DynamicDbCredentials::MODE_DYNAMIC
+                ? app(DynamicDbCredentials::class)->enable($attachment)
+                : app(DynamicDbCredentials::class)->disable($attachment, $project);
+        }
+
+        BindingAudit::binding('binding.attachment_updated', $binding, ['project_id' => $project->id, 'env_prefix' => $envPrefix, 'credential_mode' => $mode]);
         SyncProjectBindingsJob::dispatch($project->id, [$binding->id]);
 
         return $attachment;
@@ -140,7 +195,14 @@ class BindingManager
     {
         $binding = $attachment->binding;
         $projectId = $attachment->project_id;
+        $dynamic = ($attachment->getAttribute('credential_mode') ?? DynamicDbCredentials::MODE_STATIC) === DynamicDbCredentials::MODE_DYNAMIC;
+        $project = $dynamic ? $attachment->project : null;
         $attachment->delete();
+
+        // Its users in Postgres go with its OpenBao role (after the delete: the policy loses it)
+        if ($dynamic && $project) {
+            app(DynamicDbCredentials::class)->disable($attachment, $project);
+        }
 
         if ($binding) {
             BindingAudit::binding('binding.detached', $binding, ['project_id' => $projectId]);
@@ -373,6 +435,8 @@ class BindingManager
         try {
             $this->drivers->for($binding)->purge($binding);
             $this->policies->remove($binding);
+            // a global project's data links and replica clusters in its other regions
+            app(RegionalData::class)->forget($binding);
         } catch (\Throwable $e) {
             // Retried by the next purge run
             $binding->status = Binding::STATUS_DELETING;
@@ -451,6 +515,10 @@ class BindingManager
 
         try {
             $this->sync->forget($project);
+            // The environments' Secrets (<workload>-bindings), in their regions
+            foreach ($this->environmentViews($project) as $view) {
+                $this->sync->forget($view);
+            }
         } catch (\Throwable $e) {
             $failures[] = "{$project->slug}: bindings Secret: {$e->getMessage()}";
         }
@@ -458,6 +526,10 @@ class BindingManager
         foreach (Binding::query()->whereIn('id', $bindingIds)->with('region')->get() as $binding) {
             try {
                 $this->policies->sync($binding);
+                // a global project's data links and replica clusters leave its other regions
+                if ($project->isGlobal()) {
+                    app(RegionalData::class)->syncBinding($binding);
+                }
             } catch (\Throwable $e) {
                 $failures[] = "{$project->slug}: binding {$binding->name} NetworkPolicy: {$e->getMessage()}";
             }
@@ -469,7 +541,17 @@ class BindingManager
     /** Job body: a project's Secret + workloads, and the NetworkPolicies of the given / attached bindings. */
     public function syncProject(Project $project, array $bindingIds = []): void
     {
+        // A global project: its bindings' data links and replica clusters in every region first —
+        // the env of each region's copy names them (docs/global-projects.md, "Data")
+        if ($project->isGlobal()) {
+            app(RegionalData::class)->syncProject($project, $bindingIds);
+        }
+
         $this->sync->sync($project);
+        // Every environment of the project: its own attachments, Secret and workloads
+        foreach ($this->environmentViews($project) as $view) {
+            $this->sync->sync($view);
+        }
 
         $ids = array_unique(array_merge(
             $bindingIds,
@@ -490,14 +572,39 @@ class BindingManager
 
     // ── helpers ─────────────────────────────────────────────────────────────────────────
 
+    /**
+     * The environments of a project other than its own workload, as their views.
+     *
+     * @return list<Project>
+     */
+    private function environmentViews(Project $project): array
+    {
+        if (! ProjectEnvironment::tablesReady()) {
+            return [];
+        }
+
+        return ProjectEnvironment::query()->where('project_id', $project->id)->where('is_primary', false)->get()
+            ->map(fn (ProjectEnvironment $environment) => DeployTarget::environment($project, $environment))
+            ->all();
+    }
+
+    /** The project view an attachment belongs to (its environment's, else the project). */
+    public static function targetOf(BindingAttachment $attachment): Project
+    {
+        $environmentId = $attachment->getAttribute('environment_id');
+        $environment = $environmentId ? ProjectEnvironment::query()->find($environmentId) : null;
+
+        return DeployTarget::environment($attachment->project, $environment);
+    }
+
     /** Env names of $binding with $prefix must not collide with the project's other attachments. */
     private function assertNoEnvConflict(Binding $binding, Project $project, string $prefix, ?string $exceptAttachment = null): void
     {
         $names = array_map(fn ($k) => $prefix.$k, BindingEnv::keysFor($binding));
 
         $taken = [];
-        $others = BindingAttachment::query()
-            ->where('project_id', $project->id)
+        // Within the workload the env vars land in: the project's own, or the environment's
+        $others = EnvironmentScope::constrain(BindingAttachment::query(), $project)
             ->when($exceptAttachment, fn ($q) => $q->whereKeyNot($exceptAttachment))
             ->with('binding')
             ->get();

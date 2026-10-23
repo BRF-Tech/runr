@@ -4,6 +4,7 @@ namespace Modules\Tenancy\Http\Controllers;
 
 use App\Http\Controllers\Api\Controller;
 use App\Models\User;
+use App\Support\Auth\AccountLookup;
 use App\Support\Rbac\AccessManager;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -81,7 +82,8 @@ class TenantUserController extends Controller
         $tenant = Tenant::findOrFail($tenantId);
         $email = $data['email'];
 
-        $user = User::on('central')->where('email', $email)->first();
+        // An address names its account in any letter case, as the sign-in does
+        $user = AccountLookup::byEmail($email, 'central');
 
         if ($user) {
             $alreadyMember = TenantUser::where('tenant_id', $tenant->id)
@@ -95,7 +97,7 @@ class TenantUserController extends Controller
         }
 
         $pendingInvite = TenantInvitation::where('tenant_id', $tenant->id)
-            ->where('email', $email)
+            ->whereRaw('lower(email) = lower(?)', [trim($email)])
             ->whereNull('accepted_at')
             ->where('expires_at', '>', now())
             ->exists();
@@ -104,6 +106,8 @@ class TenantUserController extends Controller
             'found' => false,
             'already_member' => false,
             'pending_invitation' => $pendingInvite,
+            // accounts whose addresses differ from it in letter case only: none is it
+            'ambiguous' => AccountLookup::emailTaken($email, 'central'),
         ]);
     }
 
@@ -125,7 +129,7 @@ class TenantUserController extends Controller
 
             return $role;
         });
-        $user = User::on('central')->where('email', $data['email'])->first();
+        $user = AccountLookup::byEmail($data['email'], 'central');
 
         // Existing user → add directly
         if ($user) {
@@ -137,9 +141,16 @@ class TenantUserController extends Controller
             return response()->json(['message' => __('api.tenant_user.added'), 'action' => 'added'], 201);
         }
 
-        // Non-existing user → create invitation
+        // Accounts whose addresses differ from it in letter case only: neither is it, and an
+        // invitation would create a third
+        if (AccountLookup::emailTaken($data['email'], 'central')) {
+            return response()->json(['message' => __('api.invitation.email_ambiguous'), 'code' => 'email_ambiguous'], 409);
+        }
+
+        // Non-existing user → create invitation (the address as a new account stores it)
+        $email = AccountLookup::normalizeEmail($data['email']);
         $existing = TenantInvitation::where('tenant_id', $tenant->id)
-            ->where('email', $data['email'])
+            ->whereRaw('lower(email) = ?', [$email])
             ->whereNull('accepted_at')
             ->where('expires_at', '>', now())
             ->first();
@@ -151,14 +162,14 @@ class TenantUserController extends Controller
         [$plainToken, $tokenHash] = TenantInvitation::newToken();
         $invitation = TenantInvitation::create([
             'tenant_id' => $tenant->id,
-            'email' => $data['email'],
+            'email' => $email,
             'role' => $role,
             'token' => $tokenHash,
             'expires_at' => now()->addDays(7),
         ]);
 
         $acceptUrl = rtrim(config('tenancy.frontend_url', 'http://localhost:8061'), '/')."/invitations/{$plainToken}/accept";
-        Mail::to($data['email'])->queue(new TenantInvitationMail($invitation, $acceptUrl));
+        Mail::to($email)->queue(new TenantInvitationMail($invitation, $acceptUrl));
 
         return response()->json(['message' => __('api.tenant_user.invitation_sent'), 'action' => 'invited'], 201);
     }

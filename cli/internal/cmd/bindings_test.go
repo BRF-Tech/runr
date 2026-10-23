@@ -193,6 +193,48 @@ func TestBindingsAttachDetach(t *testing.T) {
 	h.expectCode(ExitNotFound, "bindings", "attach", "ghost", "-p", "svc")
 }
 
+func TestBindingsAttachDynamicCredentials(t *testing.T) {
+	h := newHarness(t).login()
+	h.srv.SeedProject("svc", runr.TypeFaaS, "python", "eu-1", nil)
+	h.srv.SeedBinding("orders-db", runr.BindingPostgres, "eu-1", nil, nil)
+	h.srv.SeedBinding("cache", runr.BindingKV, "eu-1", nil, nil)
+
+	// The region has no OpenBao yet: refused, nothing attached
+	r := h.expectCode(ExitValidation, "bindings", "attach", "orders-db", "-p", "svc", "--credentials", "dynamic")
+	contains(t, r.err, "OpenBao")
+	if att := h.srv.ProjectAttachments("svc"); len(att) != 0 {
+		t.Fatalf("attached anyway: %+v", att)
+	}
+
+	h.srv.SetRegionOpenBao("eu-1", runr.KnativeReady, runr.KnativeReady, 0)
+	r = h.mustRun("bindings", "attach", "orders-db", "-p", "svc", "--env-prefix", "ORDERS_", "--credentials", "dynamic")
+	contains(t, r.out, "dynamic")
+	contains(t, r.out, "issues and renews")
+	if body := h.srv.CallsTo("POST /projects/{project}/bindings")[0].Body; body["credentials"] != "dynamic" {
+		t.Fatalf("attach body = %v", body)
+	}
+	if att := h.srv.ProjectAttachments("svc"); len(att) != 1 || !att[0].Dynamic() {
+		t.Fatalf("attachments = %+v", att)
+	}
+	contains(t, h.mustRun("bindings", "attachments", "-p", "svc").out, "dynamic")
+
+	// Switching back keeps the prefix: only the credentials are sent
+	r = h.mustRun("bindings", "attach", "orders-db", "-p", "svc", "--credentials", "static")
+	contains(t, r.err, "now uses static credentials")
+	patch := h.srv.CallsTo("PATCH /projects/{project}/bindings/{attachment}")
+	if len(patch) != 1 || patch[0].Body["credentials"] != "static" || patch[0].Body["env_prefix"] != nil {
+		t.Fatalf("PATCH calls = %+v", patch)
+	}
+	if att := h.srv.ProjectAttachments("svc"); att[0].Dynamic() || att[0].EnvPrefix != "ORDERS_" {
+		t.Fatalf("attachment = %+v", att[0])
+	}
+
+	// Postgres only; an unknown mode is a usage error
+	r = h.expectCode(ExitValidation, "bindings", "attach", "cache", "-p", "svc", "--credentials", "dynamic")
+	contains(t, r.err, "Postgres")
+	h.expectCode(ExitUsage, "bindings", "attach", "orders-db", "-p", "svc", "--credentials", "rotating")
+}
+
 func TestBindingsCreateAndAttach(t *testing.T) {
 	h := newHarness(t).login()
 	dir := h.deployHello()
@@ -259,4 +301,47 @@ func TestBindingsTypesAndQuota(t *testing.T) {
 	r = h.mustRun("bindings", "quota")
 	contains(t, r.out, "max_bindings")
 	contains(t, r.out, "kv_mb")
+}
+
+func TestBindingsAttachToEnvironment(t *testing.T) {
+	h := newHarness(t).login()
+	h.srv.SeedProject("svc", runr.TypeFaaS, "python", "eu-1", nil)
+	h.srv.SeedEnvironment("svc", "staging", false)
+	h.srv.SeedBinding("orders-db", runr.BindingPostgres, "eu-1", nil, nil)
+	h.srv.SeedBinding("orders-db-staging", runr.BindingPostgres, "eu-1", nil, nil)
+
+	// --env attaches to that environment only: the API gets its name
+	r := h.mustRun("bindings", "attach", "orders-db-staging", "-p", "svc", "--env", "staging")
+	contains(t, r.err, "Attached orders-db-staging to svc (staging)")
+	if body := h.srv.CallsTo("POST /projects/{project}/bindings")[0].Body; body["environment"] != "staging" {
+		t.Fatalf("attach body = %v", body)
+	}
+	h.mustRun("bindings", "attach", "orders-db", "-p", "svc")
+	if body := h.srv.CallsTo("POST /projects/{project}/bindings")[1].Body; body["environment"] != nil {
+		t.Fatalf("without --env nothing names an environment: %v", body)
+	}
+
+	// The list names the environment of every attachment; --env lists one environment's
+	r = h.mustRun("bindings", "attachments", "-p", "svc")
+	contains(t, r.out, "ENVIRONMENT")
+	contains(t, r.out, "production")
+	contains(t, r.out, "staging")
+	r = h.mustRun("bindings", "attachments", "-p", "svc", "--env", "staging")
+	contains(t, r.out, "orders-db-staging")
+	notContains(t, r.out, "orders-db ")
+	if q := h.srv.CallsTo("GET /projects/{project}/bindings"); !strings.Contains(q[len(q)-1].Query, "environment=staging") {
+		t.Fatalf("list query = %q", q[len(q)-1].Query)
+	}
+
+	// An environment the project does not have: nothing is changed
+	h.expectCode(ExitNotFound, "bindings", "attach", "orders-db", "-p", "svc", "--env", "nope")
+
+	// Detach --env takes the binding off that environment only
+	r = h.mustRun("bindings", "detach", "orders-db-staging", "-p", "svc", "--env", "staging")
+	contains(t, r.err, "Detached orders-db-staging from svc (staging)")
+	att := h.srv.ProjectAttachments("svc")
+	if len(att) != 1 || att[0].EnvironmentID != "" {
+		t.Fatalf("attachments after detach = %+v", att)
+	}
+	h.expectCode(ExitNotFound, "bindings", "detach", "orders-db", "-p", "svc", "--env", "staging")
 }

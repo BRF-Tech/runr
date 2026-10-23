@@ -9,6 +9,7 @@ use App\Models\Setting;
 use App\Services\Observability\ReplayTokens;
 use App\Services\Observability\TenantScope;
 use App\Support\Secrets\SecretRedactor;
+use App\Triggers\ProjectTriggers;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Http;
@@ -253,9 +254,7 @@ class ReplayService
      */
     public function targetUrl(Project $project): ?string
     {
-        $config = $project->xaasConfig ?? $project->faasConfig ?? $project->containerConfig;
-        $trigger = $config?->trigger_type ?? 'http';
-        if ($trigger !== 'http') {
+        if (! app(ProjectTriggers::class)->plan($project)->has('http')) {
             return null;
         }
 

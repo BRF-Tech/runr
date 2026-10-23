@@ -15,6 +15,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request as HttpRequest;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\File;
@@ -469,6 +470,9 @@ class TenantTeardownTest extends TestCase
     {
         config(['tenancy.enabled' => true]); // sandboxes resolve their region in the organization's context
         Storage::fake('public');
+        // The Billing module's central tables exist whether billing is on or not (its migrations run
+        // with the install); the suite runs with the module off
+        Artisan::call('migrate', ['--path' => 'Modules/Billing/Database/Migrations', '--force' => true]);
 
         $tenant = $this->tenant([]);
         $other = Tenant::create(['name' => 'Globex', 'slug' => 'globex']);
@@ -515,6 +519,9 @@ class TenantTeardownTest extends TestCase
         $this->centralRow('region_tracing_configs', ['region_id' => $ownId, 'tenant_id' => $tenant->id]);
         $this->centralRow('region_tracing_configs', ['region_id' => 'platform-region', 'tenant_id' => $tenant->id]);
         $this->centralRow('sandbox_usage_records', ['tenant_id' => $tenant->id, 'knative_region_id' => $ownId]);
+        // Queue consumer choices (Billing module): the platform's own one for its region stays
+        $this->centralRow('billing_region_overrides', ['region_id' => $ownId, 'charge_queue_consumers' => false]);
+        $this->centralRow('billing_region_overrides', ['region_id' => 'platform-region', 'charge_queue_consumers' => false]);
 
         return [$tenant, $other, $ownId, $running];
     }
@@ -545,6 +552,10 @@ class TenantTeardownTest extends TestCase
         $this->assertSame(0, $this->rows('region_tracing_configs', 'region_id', $ownId));
         $this->assertSame(1, $this->rows('region_tracing_configs', 'region_id', 'platform-region'));
         $this->assertSame(1, $this->rows('sandbox_usage_records', 'tenant_id', $tenant->id), 'usage records outlive the organization');
+        // The platform's queue consumer choice for acme went with the DELETED_WITH_TENANT rows above
+        $this->assertSame(0, $this->rows('billing_tenant_region_overrides', 'tenant_id', $tenant->id));
+        $this->assertSame(0, $this->rows('billing_region_overrides', 'region_id', $ownId));
+        $this->assertSame(1, $this->rows('billing_region_overrides', 'region_id', 'platform-region'));
         Storage::disk('public')->assertMissing('branding/acme/logo.png');
     }
 

@@ -55,7 +55,8 @@ Browser (xterm.js, ShellTerminalModal.vue)
    ├── Redis GET "exec:config:{uuid}"  → config found
    ├── Redis DEL "exec:config:{uuid}"  → token can no longer be used
    ├── shell:wake: finds a Running pod of the deployed version, or wakes the
-   │   Knative service through the activator and waits for a pod
+   │   Knative service (a request to its cluster-local host on the region
+   │   Traefik's private entry point) and waits for a pod
    ├── ShellPtyProcess writes the kubeconfig and spawns kubectl exec
    └── Sends { connected: true, pod }
 

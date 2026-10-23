@@ -3,9 +3,11 @@
 namespace App\Services;
 
 use App\Models\ExecutorImage;
+use App\Models\KnativeRegion;
 use App\Models\Project;
 use App\Models\Version;
 use App\Services\Manifests\BuildManifests;
+use App\Services\Runtimes\Patches\RuntimePatches;
 use App\Services\Runtimes\Placeholders;
 use App\Services\Runtimes\ProjectEntrypoint;
 use App\Services\Runtimes\RuntimeContainerSpec;
@@ -13,6 +15,7 @@ use App\Services\Runtimes\RuntimeManifest;
 use App\Services\Runtimes\RuntimeRegistry;
 use App\Services\Wasm\WasmBuildService;
 use App\Services\Wasm\WasmRuntimes;
+use App\Triggers\ProjectTriggers;
 use Illuminate\Support\Facades\Log;
 
 /**
@@ -50,6 +53,9 @@ class FunctionBuildService
         $executor = $this->runtimes->executorFor($project);
         // Before anything is marked: a version image still building in the region throws here
         $versionImage = $this->runtimes->versionImage($manifest, $executor, $region);
+        // Built FROM a runtime patch by digest (the version's base pin, the project's pin or the
+        // newest patch), recorded on the version (docs/runtimes.md#runtime-patches)
+        $versionImage = app(RuntimePatches::class)->forBuild($project, $version, $executor, $versionImage)->image;
 
         // WebAssembly runtimes: toolchain Job → Spin OCI artifact in the region registry (docs/wasm.md)
         if (WasmRuntimes::isWasm($manifest)) {
@@ -60,6 +66,87 @@ class FunctionBuildService
 
         $version->update(['build_status' => 'building']);
 
+        $imageRef = $this->submitKanikoJob($project, $version, $region, $manifest, $executor, $versionImage);
+
+        $version->update(['build_image' => $imageRef]);
+
+        Log::info('Function build submitted', [
+            'project' => $project->slug,
+            'runtime' => $manifest->id(),
+            'version' => $version->number,
+            'image' => $imageRef,
+        ]);
+    }
+
+    /**
+     * The same build of a version in another region (docs/global-projects.md: a global project's
+     * other regions; docs/environments.md#another-region: an environment that runs in a region
+     * whose registry does not hold the version's image): the build Job in that region, into that
+     * region's registry, FROM the runtime base the version was built from (its runtime patch, by
+     * digest). The version row is not touched — its build image is its own region's; the region's
+     * is the returned reference. The Job is $jobName, default buildJobName().
+     */
+    public function submitReplicaBuild(Version $version, KnativeRegion $region, ?string $jobName = null): string
+    {
+        $project = $version->project;
+
+        if (! $region->kubeconfig) {
+            throw new \RuntimeException('Region kubeconfig not configured');
+        }
+        if (! $region->has_registry) {
+            throw new \RuntimeException("Builds require a container registry on the region {$region->name}");
+        }
+
+        // The project's manifests and runtime images as the region sees them
+        $regional = (clone $project)->setRelation('knativeRegion', $region);
+        $regional->setAttribute('knative_region_id', $region->getKey());
+
+        $manifest = $this->runtimes->forProject($regional);
+        $executor = $this->runtimes->executorFor($regional);
+        // Before anything is submitted: a version image still building in the region throws here
+        $versionImage = $this->runtimes->versionImage($manifest, $executor, $region);
+        $digest = $version->getAttribute('runtime_digest');
+        $versionImage = app(RuntimePatches::class)->resolve($regional, $executor, $versionImage, is_string($digest) && $digest !== '' ? $digest : null)->image;
+        $jobName ??= self::buildJobName($project, $version);
+
+        // WebAssembly: the toolchain Job pushes the Spin OCI artifact into the region's registry
+        $imageRef = WasmRuntimes::isWasm($manifest)
+            ? app(WasmBuildService::class)->submitJob($regional, $version, $region, $manifest, $executor, $versionImage, $jobName)
+            : $this->submitKanikoJob($regional, $version, $region, $manifest, $executor, $versionImage, $jobName);
+
+        Log::info('Function build submitted for another region', [
+            'project' => $project->slug,
+            'region' => $region->name,
+            'version' => $version->number,
+            'job' => $jobName,
+            'image' => $imageRef,
+        ]);
+
+        return $imageRef;
+    }
+
+    /** Name of the Kaniko Job (and of its source ConfigMap) of a version build. */
+    public static function buildJobName(Project $project, Version $version): string
+    {
+        return "build-{$project->slug}-v{$version->number}";
+    }
+
+    /**
+     * Name of the build Job of a version in the registry of an environment's region
+     * (RegionImages): never the version's own build Job, which may run in the same namespace when
+     * the region moved to another registry. At most 7 + 44 + 2 + digits characters.
+     */
+    public static function regionBuildJobName(Project $project, Version $version): string
+    {
+        return "rbuild-{$project->slug}-v{$version->number}";
+    }
+
+    /**
+     * The Kaniko Job of a version in a region (stale Job / ConfigMap of an earlier build of the same
+     * version removed first: a Job template is immutable). Returns the image reference it pushes.
+     */
+    private function submitKanikoJob(Project $project, Version $version, KnativeRegion $region, RuntimeManifest $manifest, ExecutorImage $executor, string $versionImage, ?string $jobName = null): string
+    {
         $k8s = new KubernetesClient($region->kubeconfig);
         $namespace = $region->project_namespace ?? $region->name;
         $mode = $this->resolveTrigger($project) === 'schedule' ? 'schedule' : 'http';
@@ -68,7 +155,7 @@ class FunctionBuildService
         $files = array_merge($files, $this->buildFiles($manifest, $mode));
         $imageRef = $this->buildImageRef($region, $project, $version);
 
-        $cmName = "build-{$project->slug}-v{$version->number}";
+        $cmName = $jobName ?? self::buildJobName($project, $version);
         $jobName = $cmName;
 
         // Clean up stale resources from previous builds (Job spec.template is immutable)
@@ -87,14 +174,7 @@ class FunctionBuildService
         $k8s->createResource($this->sourceConfigMap($cmName, $namespace, $project, $cmData), $namespace);
         $k8s->createResource($this->kanikoJob($jobName, $namespace, $cmName, $imageRef, $region, $project, array_keys($files), $manifest->usesWrapper()), $namespace);
 
-        $version->update(['build_image' => $imageRef]);
-
-        Log::info('Function build submitted', [
-            'project' => $project->slug,
-            'runtime' => $manifest->id(),
-            'version' => $version->number,
-            'image' => $imageRef,
-        ]);
+        return $imageRef;
     }
 
     public function buildImageRef($region, Project $project, Version $version): string
@@ -256,15 +336,10 @@ class FunctionBuildService
         return '"'.str_replace(['\\', '"', '$'], ['\\\\', '\\"', '\\$'], $value).'"';
     }
 
+    /** The trigger the built function runs as: what its trigger list deploys (TriggerPlan::runtimeTrigger()). */
     private function resolveTrigger(Project $project): string
     {
-        $config = match ($project->service_type) {
-            'xaas' => $project->xaasConfig,
-            'faas' => $project->faasConfig,
-            default => null,
-        };
-
-        return $config->trigger_type ?? 'http';
+        return app(ProjectTriggers::class)->plan($project)->runtimeTrigger();
     }
 
     private function buildRuntimeClassSpec($region): array

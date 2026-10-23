@@ -76,6 +76,8 @@ class SandboxController extends Controller
                 return response()->json([
                     'message' => implode(' ', $errors),
                     'errors' => ['hypervisors' => $errors],
+                    // hypervisor → why it cannot run here: an install of the others can follow
+                    'unavailable' => $problems,
                 ], 422);
             }
         }

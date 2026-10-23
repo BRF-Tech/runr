@@ -3,19 +3,38 @@
 namespace App\Services;
 
 use App\Jobs\CheckDeploymentReadyJob;
+use App\Jobs\Environments\ResumeEnvironmentDeployJob;
+use App\Jobs\GlobalDns\SyncGlobalZoneJob;
 use App\Mcp\Hosting\KnativeMcpServerTrait;
 use App\Models\Deployment;
+use App\Models\KnativeRegion;
 use App\Models\Project;
+use App\Models\ProjectRegion;
 use App\Models\Version;
 use App\Services\Concerns\KnativeManifestTrait;
 use App\Services\Concerns\KnativeQueueConsumerTrait;
+use App\Services\Environments\DeployTarget;
+use App\Services\Environments\EnvironmentConfig;
+use App\Services\Environments\EnvironmentScope;
+use App\Services\Environments\RegionImages;
+use App\Services\GlobalProjects\GlobalProjectRegions;
+use App\Services\GlobalProjects\GlobalReplicaDeployer;
 use App\Services\Helpers\ResourceReservation;
 use App\Services\Helpers\WorkloadSizing;
+use App\Services\InternalNetwork\InternalNetworkService;
 use App\Services\Projects\LiveDeployments;
+use App\Services\Projects\WarmScaleService;
+use App\Services\Rollouts\RolloutService;
+use App\Services\Runtimes\Patches\RuntimePatches;
 use App\Services\Runtimes\ProjectEntrypoint;
 use App\Services\Runtimes\RuntimeRegistry;
+use App\Services\Secrets\SecretBackendException;
+use App\Services\Secrets\SecretScope;
 use App\Support\DeployGate;
+use App\Support\OrgTimezone;
+use App\Support\Projects\ScaleSchedule;
 use App\Support\SchemaColumns;
+use App\Triggers\Topics\KnativeTopicsTrait;
 use App\Workflows\Deploy\KnativeWorkflowTrait;
 use Illuminate\Support\Facades\Log;
 
@@ -26,6 +45,9 @@ class KnativeDeployService
     // Hosted MCP servers: RUNR_MCP_GATEWAY_KEY (docs/mcp.md)
     use KnativeMcpServerTrait;
     use KnativeQueueConsumerTrait;
+
+    // Topics: RUNR_TOPICS_URL / RUNR_TOPICS_TOKEN and the region's publisher (docs/triggers.md)
+    use KnativeTopicsTrait;
     use KnativeWorkflowTrait;
 
     private GatewayService $gatewayService;
@@ -43,8 +65,18 @@ class KnativeDeployService
      * deleted) does nothing: the deployment is read back first, and every status this deploy writes
      * is conditional on the deployment still being pending / running (Deployment::transition) — a
      * stop in the middle of the apply wins, and what the apply created is removed again.
+     *
+     * The deployment decides what is built (DeployTarget): the project's own workload, or one of
+     * its environments (docs/environments.md) — names, region, config layers and secrets — with
+     * the config a rollback restored, and a CaaS project's version image. The effective config is
+     * recorded on the deployment (config_snapshot) for a later rollback.
+     *
+     * An environment runs a built version from its region's registry: a version built into another
+     * one is built there first (RegionImages, docs/environments.md#another-region) — the deployment
+     * waits, pending, and this deploy runs again when the build ends (ResumeEnvironmentDeployJob;
+     * $attempt counts the waits for a runtime image the region builds).
      */
-    public function deploy(Project $project, Version $version, Deployment $deployment, ?string $initiatorId = null): void
+    public function deploy(Project $project, Version $version, Deployment $deployment, ?string $initiatorId = null, int $attempt = 0): void
     {
         $current = Deployment::query()->find($deployment->getKey());
         if (! $current || ! in_array($current->status, ['pending', 'running'], true)) {
@@ -55,6 +87,7 @@ class KnativeDeployService
             return;
         }
         $deployment->setRawAttributes($current->getAttributes(), true);
+        $project = DeployTarget::project($project, $deployment->setRelation('version', $version));
 
         if ($this->isStopped($project)) {
             $this->fail($deployment, 'The project was stopped before this deploy ran');
@@ -109,20 +142,63 @@ class KnativeDeployService
             return;
         }
 
-        // Preflight: queue trigger requires Redis
-        if ($this->getTriggerType($project) === 'queue' && ! $region->has_redis) {
+        // Preflight: queue / topic triggers (and other Redis-backed ones) need the region's Redis
+        $plan = $this->triggerPlan($project);
+        if ($plan->requiresRedis() && ! $region->has_redis) {
             $this->fail($deployment, 'Queue trigger requires Redis on region: '.$region->name);
 
             return;
         }
 
         try {
+            // An environment's image in its region's registry: ready, or built first (the deploy waits)
+            if (EnvironmentScope::idOf($project) !== null) {
+                [$state, $detail] = app(RegionImages::class)->prepare($project, $version, $deployment, $attempt);
+                if ($state === 'waiting' || $state === 'retry') {
+                    $deployment->transition(['pending', 'running'], ['status' => 'pending', 'knative_message' => mb_substr((string) $detail, 0, 255)]);
+                    if ($state === 'retry') {
+                        ResumeEnvironmentDeployJob::dispatch((string) $deployment->id, $attempt + 1)->delay(now()->addSeconds(RegionImages::WAIT_SECONDS));
+                    }
+                    Log::info('Deploy waits for its image in the region', ['project' => $project->slug, 'deployment' => $deployment->id, 'reason' => $detail]);
+
+                    return;
+                }
+                if ($state === 'failed') {
+                    $this->fail($deployment, (string) $detail);
+
+                    return;
+                }
+                if ($state === 'ready') {
+                    // the same version, from the region's registry (never saved)
+                    $version = (clone $version)->forceFill(['build_image' => (string) $detail]);
+                    $deployment->setRelation('version', $version);
+                }
+            }
+
             $k8s = new KubernetesClient($region->kubeconfig);
             $namespace = $this->getNamespace($region);
 
-            $manifests = $this->buildManifests($project, $version, $deployment->deploy_config ?? []);
+            // The runtime image it runs, recorded on the deployment: by digest of the patch it
+            // was given (a migration's rollback), the project's pin or the newest patch
+            $runtimeImage = app(RuntimePatches::class)->forDeployment($project, $version, $deployment);
+            $manifests = $this->buildManifests($project, $version, $deployment->deploy_config ?? [], $runtimeImage);
+            // Blue-green / canary: the new revision is named and the traffic stays with the one
+            // that serves until the rollout moves it (docs/deploy-strategies.md)
+            $manifests = app(RolloutService::class)->manifestsFor($project, $version, $deployment, $manifests, $k8s, $namespace);
             // Metering counts the deployment with the size it runs with (WorkloadSizing)
             $this->recordSizing($project, $deployment);
+            // A rollback to this deployment restores the config it was applied with (docs/versioning.md)
+            $this->recordConfigSnapshot($project, $deployment);
+
+            // Secret variables (KnativeSecretEnvTrait): RunR's own keys next to the values in the
+            // region, removed variables dropped, every value there — or the deploy stops here
+            try {
+                $this->prepareSecretEnv($project);
+            } catch (SecretBackendException $e) {
+                $this->fail($deployment, $e->getMessage());
+
+                return;
+            }
 
             foreach ($manifests as $manifest) {
                 // Deployment selector is immutable — delete first to avoid conflict
@@ -142,15 +218,13 @@ class KnativeDeployService
             // with, not the region's mapping at the time of counting (ResourceReservation)
             $this->recordRuntimeClass($project, $manifests);
 
-            // The project's last secret env var was removed: its Secret goes too (404 = none)
-            if (! $this->secretEnvValues($project)) {
-                $k8s->deleteResource('v1', 'Secret', $this->secretEnvName($project), $namespace);
-            }
+            // The topic publisher behind the RUNR_TOPICS_URL the workload just got
+            $this->ensureTopicPublisher($project);
 
-            $triggerType = $this->getTriggerType($project);
+            $triggerType = $plan->runtimeTrigger();
 
             // Stopped (or shut down) while the manifests were applied: remove them again
-            $stillWanted = $triggerType === 'schedule'
+            $stillWanted = $plan->cronJob()
                 // CronJob has no Knative Service to check — active right away (unless replaced)
                 ? app(LiveDeployments::class)->activate($deployment, ['knative_ready' => true, 'ready_at' => now()])
                 : $deployment->transition(['pending', 'running'], ['status' => 'pending']);
@@ -160,12 +234,30 @@ class KnativeDeployService
                 return;
             }
 
-            if ($triggerType !== 'schedule') {
+            if (! $plan->cronJob()) {
                 CheckDeploymentReadyJob::start($deployment, $project, $initiatorId);
+            } elseif ($project->isGlobal()) {
+                // a global project's CronJob is active at once: the other regions hold it on standby
+                try {
+                    app(GlobalReplicaDeployer::class)->afterPrimaryReady($project, $deployment);
+                } catch (\Throwable $e) {
+                    Log::warning('Global project rollout not started', ['project' => $project->slug, 'error' => $e->getMessage()]);
+                }
             }
 
-            // Sync gateway IngressRoute if project uses gateway endpoint
-            if ($project->endpoint_type === 'gateway') {
+            // Internal network: the runr.internal route and the allowlist route of the public host
+            // (a schedule trigger has no Knative Service: its routes go)
+            try {
+                $plan->cronJob()
+                    ? app(InternalNetworkService::class)->removeRoutes($project, $k8s)
+                    : app(InternalNetworkService::class)->applyRoutes($project, $k8s);
+            } catch (\Throwable $e) {
+                Log::warning('Internal network routes after deploy failed', ['project' => $project->slug, 'error' => $e->getMessage()]);
+            }
+
+            // Sync the gateway IngressRoute of the workload's gateway route: the project's own when
+            // it uses the gateway endpoint, an environment's own route (docs/environments.md)
+            if ($project->endpoint_type === 'gateway' || EnvironmentScope::idOf($project) !== null) {
                 $gwRoute = $project->gatewayRoute;
                 if ($gwRoute) {
                     $this->gatewayService->syncToCluster($gwRoute->gateway->fresh(['routes.project']));
@@ -201,42 +293,91 @@ class KnativeDeployService
     }
 
     /**
+     * The region side of the project's secret variables before something else reads them — a
+     * preview deploy (PreviewService) reads the project's Secrets: what a deploy of the project
+     * prepares and applies for them (KnativeSecretEnvTrait), also before its first deploy.
+     *
+     * @throws SecretBackendException
+     * @throws \RuntimeException an object was not applied
+     */
+    public function prepareSecrets(Project $project): void
+    {
+        $this->prepareSecretEnv($project);
+
+        $manifests = $this->secretEnvManifests($project);
+        if ($manifests === []) {
+            return;
+        }
+        $region = $project->knativeRegion;
+        $k8s = new KubernetesClient((string) $region?->kubeconfig);
+        foreach ($manifests as $manifest) {
+            if (! $k8s->applyResource($manifest, $this->getNamespace($region))) {
+                throw new \RuntimeException("Failed to apply {$manifest['kind']}: {$manifest['metadata']['name']}");
+            }
+        }
+    }
+
+    /**
      * Tear down a deployment from the cluster: the project's Knative Service, the deployment's
-     * code ConfigMap, the CronJob (schedule trigger) and the queue consumer.
+     * code ConfigMap, the CronJob (a schedule alone), the event gateway and the ExternalSecret of
+     * its secret references. The values Secret stays (KnativeSecretEnvTrait): the region holds the
+     * only copy of the values, the next deploy reads them.
      *
      * @return bool true when every delete succeeded (404 = already gone)
      */
     public function teardown(Project $project, Deployment $deployment): bool
     {
+        $project = DeployTarget::project($project, $deployment);
         $targets = [
             ['serving.knative.dev/v1', 'Service', $this->serviceName($project)],
-            ['apps/v1', 'Deployment', $this->queueConsumerName($project)],
-            ['v1', 'Secret', $this->queueConsumerSecretName($project)],
-            ['v1', 'Secret', $this->secretEnvName($project)],
+            ...$this->eventGatewayTargets($project),
+            ...$this->secretEnvTeardownTargets($project, false),
+            ...InternalNetworkService::routeTargets($project),
         ];
 
         if ($project->service_type !== 'caas' && $deployment->version) {
             $targets[] = ['v1', 'ConfigMap', $this->configMapName($project, $deployment->version)];
         }
 
-        if ($this->getTriggerType($project) === 'schedule') {
+        if ($this->getTriggerType($project) === 'schedule' || $this->triggerPlan($project)->cronJob()) {
             $targets[] = ['batch/v1', 'CronJob', $this->cronJobName($project)];
         }
 
-        return $this->deleteFromRegion($project, $targets, ['deployment' => $deployment->id]);
+        // a global project's copies in its other regions go too (docs/global-projects.md)
+        return $this->deleteFromRegion($project, $targets, ['deployment' => $deployment->id], allRegions: true);
+    }
+
+    /**
+     * The event gateway's resources: Deployment <slug>-qc, its Redis Secret (env-only form), its
+     * gateway.json Secret and its Service (config form).
+     *
+     * @return list<array{0: string, 1: string, 2: string}>
+     */
+    private function eventGatewayTargets(Project $project): array
+    {
+        return [
+            ['apps/v1', 'Deployment', $this->queueConsumerName($project)],
+            ['v1', 'Secret', $this->queueConsumerSecretName($project)],
+            ['v1', 'Secret', $this->eventGatewayConfigName($project)],
+            ['v1', 'Service', $this->queueConsumerName($project)],
+        ];
     }
 
     /**
      * Tear down a deployment that a newer deploy of the same project replaced. The new deploy
-     * applies the Knative Service, CronJob and queue consumer under the same names, so only what
+     * applies the Knative Service, CronJob and event gateway under the same names, so only what
      * it does not use is removed: the old version's code ConfigMap (unless the new deployment
-     * runs the same version) and the resources of a trigger type the project no longer uses.
+     * runs the same version) and the resources of triggers the project no longer uses.
      *
      * @return bool true when every delete succeeded (404 = already gone)
      */
     public function teardownSuperseded(Project $project, Deployment $deployment): bool
     {
-        $trigger = $this->getTriggerType($project);
+        $project = DeployTarget::project($project, $deployment);
+        // The triggers the replacing deployment applies (a rollback may restore another config)
+        /** @var Deployment|null $replacement */
+        $replacement = $project->deployments()->whereKeyNot($deployment->id)->whereIn('status', Deployment::LIVE)->first();
+        $plan = $this->triggerPlan($replacement ? DeployTarget::project($project, $replacement) : $project);
         $targets = [];
 
         $versionStillLive = $project->deployments()
@@ -249,14 +390,22 @@ class KnativeDeployService
             $targets[] = ['v1', 'ConfigMap', $this->configMapName($project, $deployment->version)];
         }
 
-        $targets[] = $trigger === 'schedule'
+        $targets[] = $plan->cronJob()
             ? ['serving.knative.dev/v1', 'Service', $this->serviceName($project)]
             : ['batch/v1', 'CronJob', $this->cronJobName($project)];
+        if ($plan->cronJob()) {
+            array_push($targets, ...InternalNetworkService::routeTargets($project));
+        }
 
-        // The workflow queue bridge reuses the queue consumer's name (KnativeWorkflowTrait)
-        if ($trigger !== 'queue' && ! $this->workflowQueueBridgeEnabled($project)) {
-            $targets[] = ['apps/v1', 'Deployment', $this->queueConsumerName($project)];
+        // The workflow queue bridge reuses the queue consumer's name (KnativeWorkflowTrait); a
+        // gateway keeps what its form uses and loses the other form's leftovers
+        if ($plan->gateway() && $plan->legacyQueue() === null) {
             $targets[] = ['v1', 'Secret', $this->queueConsumerSecretName($project)];
+        } elseif ($plan->gateway() || $this->workflowQueueBridgeEnabled($project)) {
+            $targets[] = ['v1', 'Secret', $this->eventGatewayConfigName($project)];
+            $targets[] = ['v1', 'Service', $this->queueConsumerName($project)];
+        } else {
+            array_push($targets, ...$this->eventGatewayTargets($project));
         }
 
         return $this->deleteFromRegion($project, $targets, ['deployment' => $deployment->id, 'superseded' => true]);
@@ -265,33 +414,99 @@ class KnativeDeployService
     /**
      * Remove everything a project runs in its region, whatever the status of its deployments:
      * a pending or failed deployment (e.g. a revision that never became ready) still has a
-     * Knative Service and pods. Used when the project goes away (delete, region detach).
+     * Knative Service and pods. Used when the project goes away (delete, region detach) and when a
+     * migration rollback does not deploy it again.
+     *
+     * @param  bool  $withSecretValues  the values Secret of its secret variables goes too — only
+     *                                  when the project goes away: the region holds the only copy
+     * @return bool true when every delete succeeded (or there was nothing to delete)
+     */
+    public function teardownProject(Project $project, bool $withSecretValues = false): bool
+    {
+        $targets = [
+            ['serving.knative.dev/v1', 'Service', $this->serviceName($project)],
+            ['batch/v1', 'CronJob', $this->cronJobName($project)],
+            ...$this->eventGatewayTargets($project),
+            ...$this->secretEnvTeardownTargets($project, $withSecretValues),
+            ...InternalNetworkService::routeTargets($project),
+        ];
+
+        // Code ConfigMaps of every version (<slug>-v<N>) carry the project label; a global project's
+        // copies in its other regions go too
+        $removed = $this->deleteFromRegion($project, $targets, ['project_teardown' => true], true, allRegions: true);
+
+        // The project goes: its values in the region's OpenBao too (SecretBackend::purge())
+        if ($withSecretValues && $project->knativeRegion && ! $project->knativeRegion->is_demo && $project->knativeRegion->kubeconfig) {
+            $removed = $this->purgeSecretValues($project) && $removed;
+        }
+
+        return $removed;
+    }
+
+    /**
+     * Remove everything an environment of a project runs (docs/environments.md), whatever the
+     * status of its deployments — the environment is deleted, or its project. $project: the
+     * environment's view (EnvironmentProject): its names, its region. Its code ConfigMaps are found
+     * by runr/environment-id (the project's own carry runr/project-id too, and stay).
      *
      * @return bool true when every delete succeeded (or there was nothing to delete)
      */
-    public function teardownProject(Project $project): bool
+    public function teardownEnvironment(Project $project): bool
     {
+        $environmentId = EnvironmentScope::idOf($project);
+        if ($environmentId === null) {
+            return $this->teardownProject($project);
+        }
+
         $targets = [
             ['serving.knative.dev/v1', 'Service', $this->serviceName($project)],
             ['batch/v1', 'CronJob', $this->cronJobName($project)],
             ['apps/v1', 'Deployment', $this->queueConsumerName($project)],
             ['v1', 'Secret', $this->queueConsumerSecretName($project)],
-            ['v1', 'Secret', $this->secretEnvName($project)],
+            // its values Secret (its own values and the inherited copies) and the ExternalSecrets of
+            // its references; the project's values elsewhere (its Secret, its OpenBao path) stay
+            ...$this->secretEnvTeardownTargets($project, true),
         ];
 
-        // Code ConfigMaps of every version (<slug>-v<N>) carry the project label
-        return $this->deleteFromRegion($project, $targets, ['project_teardown' => true], true);
+        return $this->deleteFromRegion($project, $targets, ['environment_teardown' => $environmentId], false, [EnvironmentScope::LABEL_ENVIRONMENT_ID => $environmentId]);
     }
 
     /**
-     * Delete the given [apiVersion, kind, name] resources from the project's region namespace.
-     * Every delete is attempted even if one fails; demo regions and regions without a
-     * kubeconfig have nothing to delete.
+     * Delete the given [apiVersion, kind, name] resources from the project's region namespace —
+     * with $allRegions, from every region of a global project (GlobalProjectRegions), whose copies
+     * then serve nothing until the next rollout. Every delete is attempted even if one fails; demo
+     * regions and regions without a kubeconfig have nothing to delete.
      */
-    private function deleteFromRegion(Project $project, array $targets, array $context, bool $withProjectConfigMaps = false): bool
+    private function deleteFromRegion(Project $project, array $targets, array $context, bool $withProjectConfigMaps = false, array $configMapLabels = [], bool $allRegions = false): bool
     {
-        $region = $project->knativeRegion;
+        if ($withProjectConfigMaps) {
+            $configMapLabels = ['runr/project-id' => $project->id];
+        }
 
+        $regions = $allRegions ? GlobalProjectRegions::of($project) : array_filter([$project->knativeRegion]);
+        $ok = true;
+
+        foreach ($regions as $region) {
+            $ok = $this->deleteFromOneRegion($project, $region, $targets, $context, $configMapLabels) && $ok;
+        }
+
+        if ($allRegions && $project->isGlobal() && GlobalProjectRegions::tableReady()) {
+            ProjectRegion::query()->where('project_id', $project->getKey())->where('status', '!=', ProjectRegion::STATUS_REMOVING)->update([
+                'served_version_id' => null,
+                'target_version_id' => null,
+                'rollout_token' => null,
+                'status' => ProjectRegion::STATUS_PENDING,
+                'status_message' => null,
+            ]);
+            SyncGlobalZoneJob::dispatch();
+        }
+
+        return $ok;
+    }
+
+    /** @param  array<string, string>  $configMapLabels  ConfigMaps to delete too, by label (code of every version) */
+    private function deleteFromOneRegion(Project $project, ?KnativeRegion $region, array $targets, array $context, array $configMapLabels): bool
+    {
         if (! $region || $region->is_demo || ! $region->kubeconfig) {
             return true;
         }
@@ -302,8 +517,8 @@ class KnativeDeployService
         try {
             $k8s = new KubernetesClient($region->kubeconfig);
 
-            if ($withProjectConfigMaps) {
-                $configMaps = $k8s->listResources('v1', 'ConfigMap', $namespace, ['runr/project-id' => $project->id]);
+            if ($configMapLabels !== []) {
+                $configMaps = $k8s->listResources('v1', 'ConfigMap', $namespace, $configMapLabels);
                 foreach ($configMaps['items'] ?? [] as $cm) {
                     if (! empty($cm['metadata']['name'])) {
                         $targets[] = ['v1', 'ConfigMap', $cm['metadata']['name']];
@@ -325,6 +540,9 @@ class KnativeDeployService
         }
 
         $context += ['project' => $project->slug, 'namespace' => $namespace];
+        if ($project->isGlobal()) {
+            $context['region'] = $region->name;
+        }
 
         if ($failed) {
             Log::error('Teardown incomplete', $context + ['failed' => $failed]);
@@ -415,9 +633,11 @@ class KnativeDeployService
 
     /**
      * Names of the long-lived workloads a project runs in its region namespace, and of the
-     * Secrets they read: its secret environment variables and the queue consumer's Redis access.
+     * Secrets they read: its secret environment variables (the values RunR wrote; the references
+     * External Secrets Operator syncs — an ExternalSecret and the Secret it fills share the name)
+     * and the queue consumer's Redis access.
      *
-     * @return array{service: string, cronJob: string, queueConsumer: string, secretEnv: string, queueConsumerSecret: string}
+     * @return array{service: string, cronJob: string, queueConsumer: string, secretEnv: string, externalEnv: string, openBaoEnv: string, queueConsumerSecret: string, eventGatewayConfig: string}
      */
     public function workloadNames(Project $project): array
     {
@@ -426,7 +646,10 @@ class KnativeDeployService
             'cronJob' => $this->cronJobName($project),
             'queueConsumer' => $this->queueConsumerName($project),
             'secretEnv' => $this->secretEnvName($project),
+            'externalEnv' => $this->externalEnvName($project),
+            'openBaoEnv' => SecretScope::openBaoEnvName((string) $project->slug),
             'queueConsumerSecret' => $this->queueConsumerSecretName($project),
+            'eventGatewayConfig' => $this->eventGatewayConfigName($project),
         ];
     }
 
@@ -465,7 +688,12 @@ class KnativeDeployService
 
             $class = ResourceReservation::runtimeClassOfPodSpec($podSpec);
             if ($project->getAttribute('deployed_runtime_class') !== $class) {
-                Project::whereKey($project->id)->update(['deployed_runtime_class' => $class]);
+                // An environment's workload runs in its own region: it keeps its own record
+                $environment = EnvironmentScope::of($project);
+                $environment !== null
+                    ? $environment->newQuery()->whereKey($environment->getKey())->update(['deployed_runtime_class' => $class])
+                    : Project::whereKey($project->id)->update(['deployed_runtime_class' => $class]);
+                $environment?->setAttribute('deployed_runtime_class', $class);
                 $project->setAttribute('deployed_runtime_class', $class);
                 $project->syncOriginalAttribute('deployed_runtime_class');
             }
@@ -476,15 +704,24 @@ class KnativeDeployService
 
     private function fail(Deployment $deployment, string $reason): void
     {
-        $deployment->transition(['pending', 'running'], [
+        $failed = $deployment->transition(['pending', 'running'], [
             'status' => 'failed',
             'knative_ready' => false,
             'knative_message' => mb_substr($reason, 0, 255),
         ]);
         Log::error('Deployment failed: '.$reason, ['deployment' => $deployment->id]);
+
+        // A rollout's new deployment: its rollout fails, the traffic stays where it was
+        if ($failed) {
+            app(RolloutService::class)->candidateFailed($deployment, $reason);
+        }
     }
 
-    /** The size the deployment is applied with (deployments.sizing; skipped before TenantMigrations/0062). */
+    /**
+     * The size the deployment is applied with (deployments.sizing; skipped before
+     * TenantMigrations/0062). With a timed warmer the min-scale the template got starts its
+     * warm_log (WarmScaleService: metering counts the warm containers from it).
+     */
     private function recordSizing(Project $project, Deployment $deployment): void
     {
         if (! SchemaColumns::has($deployment, 'sizing')) {
@@ -492,9 +729,37 @@ class KnativeDeployService
         }
 
         $sizing = WorkloadSizing::of($project, (array) ($deployment->deploy_config ?? []));
+        $schedule = ScaleSchedule::rows(ResourceReservation::configOf($project));
+        if ($schedule !== null && ResourceReservation::runsKnativeService($sizing['trigger_type'])) {
+            $sizing['warm_log'] = [[now()->getTimestamp(), WarmScaleService::renderedValue($sizing, $schedule, now(), OrgTimezone::get())]];
+        }
         Deployment::query()->whereKey($deployment->getKey())->update(['sizing' => json_encode($sizing)]);
         $deployment->setAttribute('sizing', $sizing);
         $deployment->syncOriginalAttribute('sizing');
+    }
+
+    /**
+     * The effective config the deployment is applied with (deployments.config_snapshot, encrypted;
+     * skipped before TenantMigrations/0080). A restored deployment runs the snapshot it was created
+     * with (the view's config): it records the same fields, with the secret and binding names it
+     * gets now.
+     */
+    private function recordConfigSnapshot(Project $project, Deployment $deployment): void
+    {
+        if (! SchemaColumns::has($deployment, 'config_snapshot')) {
+            return;
+        }
+
+        $deployment->forceFill([
+            'config_snapshot' => EnvironmentConfig::snapshot($project),
+            'config_source' => $deployment->getAttribute('config_source') ?? Deployment::CONFIG_CURRENT,
+        ]);
+        $stored = $deployment->getAttributes();
+        Deployment::query()->whereKey($deployment->getKey())->update([
+            'config_snapshot' => $stored['config_snapshot'],
+            'config_source' => $stored['config_source'],
+        ]);
+        $deployment->syncOriginalAttributes(['config_snapshot', 'config_source']);
     }
 
     /**
@@ -529,6 +794,7 @@ class KnativeDeployService
      */
     public function teardownEnded(Project $project, Deployment $deployment): bool
     {
+        $project = DeployTarget::project($project, $deployment);
         $newer = ! $this->isStopped($project)
             && $project->deployments()->whereKeyNot($deployment->id)->whereIn('status', Deployment::LIVE)->exists();
 

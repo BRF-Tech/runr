@@ -66,7 +66,7 @@ class ImageUploadApiTest extends TestCase
         $this->assertFalse($pod['automountServiceAccountToken']);
         $this->assertTrue($pod['securityContext']['runAsNonRoot']);
         $c = $pod['containers'][0];
-        $this->assertSame('ghcr.io/brf-tech/runr/image-upload:1.0.0', $c['image']);
+        $this->assertSame('ghcr.io/brf-tech/runr/image-upload:1.1.0', $c['image']);
         $this->assertTrue($c['securityContext']['readOnlyRootFilesystem']);
         $this->assertSame(['ALL'], $c['securityContext']['capabilities']['drop']);
         $env = collect($c['env'])->pluck('value', 'name');

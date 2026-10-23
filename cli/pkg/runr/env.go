@@ -27,6 +27,13 @@ type EnvVar struct {
 	Revealed  bool       `json:"revealed,omitempty"`
 	UpdatedAt string     `json:"updated_at,omitempty"`
 	UpdatedBy *SecretRef `json:"updated_by,omitempty"`
+	// Source of a secret: SecretSourceRegion (a value RunR wrote into the region) or
+	// SecretSourceExternal (a reference to a secret store, Reference and Sync set). Empty for
+	// plain variables and on APIs that keep secret values in their database.
+	Source    string           `json:"source,omitempty"`
+	StoredIn  string           `json:"stored_in,omitempty"`
+	Reference *SecretReference `json:"reference,omitempty"`
+	Sync      *SecretSync      `json:"sync,omitempty"`
 }
 
 // SupportsSecretEnv reports whether the API stores secret variables write-only for p: its config

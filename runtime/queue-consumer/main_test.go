@@ -1,11 +1,18 @@
 package main
 
+// Legacy env mode end to end: the queue consumer's environment, the real redis-stream source and
+// the gateway's delivery core, against an in-process miniredis by default or a real Redis ≥ 6.2
+// with QC_TEST_REDIS=host:port go test ./...
+
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -13,49 +20,9 @@ import (
 
 	"github.com/alicebob/miniredis/v2"
 	"github.com/redis/go-redis/v9"
+
+	"github.com/brf-tech/runr/runtime/queue-consumer/gateway"
 )
-
-func TestParseDuration(t *testing.T) {
-	cases := map[string]time.Duration{
-		"2":     2 * time.Second,
-		"0.5":   500 * time.Millisecond,
-		"250ms": 250 * time.Millisecond,
-		"1m":    time.Minute,
-	}
-	for in, want := range cases {
-		got, err := parseDuration(in)
-		if err != nil || got != want {
-			t.Errorf("parseDuration(%q) = %v, %v; want %v", in, got, err, want)
-		}
-	}
-	for _, bad := range []string{"-1", "abc", "-2s"} {
-		if _, err := parseDuration(bad); err == nil {
-			t.Errorf("parseDuration(%q) accepted", bad)
-		}
-	}
-}
-
-func TestBackoffDoublesAndCaps(t *testing.T) {
-	c := newConsumer(config{RetryBackoff: 2 * time.Second, RetryBackoffMax: 10 * time.Second}, nil)
-	want := []time.Duration{2 * time.Second, 4 * time.Second, 8 * time.Second, 10 * time.Second, 10 * time.Second}
-	for i, w := range want {
-		if got := c.backoff(int64(i + 1)); got != w {
-			t.Errorf("backoff(%d) = %v, want %v", i+1, got, w)
-		}
-	}
-}
-
-func TestLoadConfigDefaults(t *testing.T) {
-	os.Setenv("STREAM", "orders")
-	defer os.Unsetenv("STREAM")
-	cfg := loadConfig()
-	if cfg.DLQStream != "orders-dlq" || cfg.MaxRetries != 5 || cfg.RetryBackoff != 2*time.Second || cfg.RetryBackoffMax != 5*time.Minute {
-		t.Fatalf("unexpected defaults: %+v", cfg)
-	}
-}
-
-// ── Stream tests: an in-process miniredis by default, a real Redis ≥ 6.2 with
-// QC_TEST_REDIS=host:port go test ./... ───────────────────────────────────────────
 
 type sink struct {
 	mu       sync.Mutex
@@ -85,7 +52,7 @@ func (s *sink) count(id string) int {
 	return len(s.attempts[id])
 }
 
-func testRedis(t *testing.T) (*redis.Client, string) {
+func testRedis(t *testing.T) (*redis.Client, string, string) {
 	addr := os.Getenv("QC_TEST_REDIS")
 	if addr == "" {
 		addr = miniredis.RunT(t).Addr()
@@ -99,32 +66,50 @@ func testRedis(t *testing.T) (*redis.Client, string) {
 		rdb.Del(context.Background(), stream, stream+"-dlq")
 		rdb.Close()
 	})
-	return rdb, stream
+	return rdb, addr, stream
 }
 
-func testConsumer(rdb *redis.Client, stream, sinkURL, name string, maxRetries int64) *consumer {
-	return newConsumer(config{
-		Stream:          stream,
-		Group:           "g",
-		Consumer:        name,
-		SinkURL:         sinkURL,
-		DLQStream:       stream + "-dlq",
-		DLQMaxLen:       1000,
-		MaxRetries:      maxRetries,
-		RetryBackoff:    40 * time.Millisecond,
-		RetryBackoffMax: 200 * time.Millisecond,
-		DeliveryTimeout: 2 * time.Second,
-		BatchSize:       10,
-		IdlePoll:        100 * time.Millisecond,
-	}, rdb)
+// legacyGateway is the gateway of legacy env mode for stream, group "g", with short backoffs.
+// Only the source's waits are shortened (XREADGROUP blocks 50ms, entries are claimed after
+// 100ms idle); legacy env mode has no variables for them.
+func legacyGateway(t *testing.T, addr, stream, sinkURL, consumer string, maxRetries int) *gateway.Gateway {
+	t.Helper()
+	env := map[string]string{
+		"REDIS_ADDRESS":     addr,
+		"STREAM":            stream,
+		"GROUP":             "g",
+		"CONSUMER":          consumer,
+		"SINK_URL":          sinkURL,
+		"DLQ_MAXLEN":        "1000",
+		"MAX_RETRIES":       fmt.Sprint(maxRetries),
+		"RETRY_BACKOFF":     "40ms",
+		"RETRY_BACKOFF_MAX": "200ms",
+		"DELIVERY_TIMEOUT":  "2s",
+	}
+	cfg, err := gateway.FromLegacyEnv(func(k string) string { return env[k] })
+	if err != nil {
+		t.Fatal(err)
+	}
+	var src map[string]any
+	json.Unmarshal(cfg.Triggers[0].Source, &src)
+	src["block"] = "50ms"
+	src["claim_min_idle"] = "100ms"
+	cfg.Triggers[0].Source, _ = json.Marshal(src)
+	g, err := gateway.New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return g
 }
 
-func runFor(c *consumer, d time.Duration, until func() bool) {
+func stats(g *gateway.Gateway) gateway.TriggerStats { return g.TriggerStats()[0] }
+
+// runFor runs g until until() holds or d passed, then shuts it down and waits.
+func runFor(g *gateway.Gateway, d time.Duration, until func() bool) {
 	ctx, cancel := context.WithTimeout(context.Background(), d)
 	defer cancel()
-	c.ensureGroup(ctx)
 	done := make(chan struct{})
-	go func() { c.run(ctx); close(done) }()
+	go func() { g.Run(ctx); close(done) }()
 	for ctx.Err() == nil && !until() {
 		time.Sleep(20 * time.Millisecond)
 	}
@@ -133,14 +118,14 @@ func runFor(c *consumer, d time.Duration, until func() bool) {
 }
 
 func TestDeliveredMessageIsAcked(t *testing.T) {
-	rdb, stream := testRedis(t)
+	rdb, addr, stream := testRedis(t)
 	s, srv := newSink()
 	defer srv.Close()
 
 	ctx := context.Background()
 	id := rdb.XAdd(ctx, &redis.XAddArgs{Stream: stream, Values: map[string]interface{}{"order": "1"}}).Val()
-	c := testConsumer(rdb, stream, srv.URL, "pod-a", 3)
-	runFor(c, 5*time.Second, func() bool { return c.stats.Delivered.Load() == 1 })
+	g := legacyGateway(t, addr, stream, srv.URL, "pod-a", 3)
+	runFor(g, 5*time.Second, func() bool { return stats(g).Delivered == 1 && rdb.XPending(ctx, stream, "g").Val().Count == 0 })
 
 	if s.count(id) != 1 {
 		t.Fatalf("sink got %d deliveries, want 1", s.count(id))
@@ -153,84 +138,91 @@ func TestDeliveredMessageIsAcked(t *testing.T) {
 	}
 }
 
-func TestFailingMessageIsRetriedThenDeadLettered(t *testing.T) {
-	rdb, stream := testRedis(t)
-	s, srv := newSink()
-	defer srv.Close()
-	s.fail.Store(true)
-
-	ctx := context.Background()
-	id := rdb.XAdd(ctx, &redis.XAddArgs{Stream: stream, Values: map[string]interface{}{"order": "2"}}).Val()
-	c := testConsumer(rdb, stream, srv.URL, "pod-a", 2)
-	runFor(c, 10*time.Second, func() bool { return c.stats.DeadLettered.Load() == 1 })
-
-	if got := s.count(id); got != 3 {
-		t.Fatalf("sink got %d attempts, want 3 (1 + MAX_RETRIES=2)", got)
-	}
-	s.mu.Lock()
-	attempts := fmt.Sprint(s.attempts[id])
-	s.mu.Unlock()
-	if attempts != "[1 2 3]" {
-		t.Fatalf("attempt headers %s, want [1 2 3]", attempts)
-	}
-	if p := rdb.XPending(ctx, stream, "g").Val(); p.Count != 0 {
-		t.Fatalf("%d messages still pending after dead-lettering", p.Count)
-	}
-	dlq := rdb.XRange(ctx, stream+"-dlq", "-", "+").Val()
-	if len(dlq) != 1 {
-		t.Fatalf("DLQ holds %d messages, want 1", len(dlq))
-	}
-	v := dlq[0].Values
-	if v["order"] != "2" || v["runr.dlq.original_id"] != id || v["runr.dlq.attempts"] != "3" || v["runr.dlq.stream"] != stream {
-		t.Fatalf("unexpected DLQ entry %v", v)
-	}
-}
-
-func TestPendingMessagesOfAStoppedConsumerAreRecovered(t *testing.T) {
-	rdb, stream := testRedis(t)
-	s, srv := newSink()
-	defer srv.Close()
-
+func TestHealthAndStatsEndpoints(t *testing.T) {
+	rdb, addr, stream := testRedis(t)
 	ctx := context.Background()
 	rdb.XGroupCreateMkStream(ctx, stream, "g", "0")
-	id := rdb.XAdd(ctx, &redis.XAddArgs{Stream: stream, Values: map[string]interface{}{"order": "3"}}).Val()
-	// A pod read the message and died before delivering / acking it
-	if err := rdb.XReadGroup(ctx, &redis.XReadGroupArgs{Group: "g", Consumer: "dead-pod", Streams: []string{stream, ">"}, Count: 1}).Err(); err != nil {
+	rdb.XAdd(ctx, &redis.XAddArgs{Stream: stream, Values: map[string]interface{}{"n": "1"}})
+	rdb.XReadGroup(ctx, &redis.XReadGroupArgs{Group: "g", Consumer: "pod-a", Streams: []string{stream, ">"}, Count: 1})
+	rdb.XAdd(ctx, &redis.XAddArgs{Stream: stream + "-dlq", Values: map[string]interface{}{"n": "0"}})
+
+	g := legacyGateway(t, addr, stream, "http://unused.invalid", "pod-a", 4)
+	srv := httptest.NewServer(g.Handler())
+	defer srv.Close()
+
+	resp, err := http.Get(srv.URL + "/healthz")
+	if err != nil {
 		t.Fatal(err)
 	}
-
-	c := testConsumer(rdb, stream, srv.URL, "pod-b", 3)
-	runFor(c, 5*time.Second, func() bool { return c.stats.Delivered.Load() == 1 })
-
-	if s.count(id) != 1 {
-		t.Fatalf("recovered message delivered %d times, want 1", s.count(id))
+	b, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK || string(b) != "ok" {
+		t.Fatalf("/healthz = %d %q", resp.StatusCode, b)
 	}
-	if p := rdb.XPending(ctx, stream, "g").Val(); p.Count != 0 {
-		t.Fatalf("%d messages still pending", p.Count)
+
+	resp, err = http.Get(srv.URL + "/stats")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if ct := resp.Header.Get("Content-Type"); ct != "application/json" {
+		t.Errorf("/stats Content-Type %q", ct)
+	}
+	var st map[string]interface{}
+	if err := json.NewDecoder(resp.Body).Decode(&st); err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]interface{}{
+		"stream": stream, "group": "g", "consumer": "pod-a", "dlq_stream": stream + "-dlq",
+		"max_retries": float64(4), "delivered": float64(0), "failed": float64(0),
+		"retried": float64(0), "dead_lettered": float64(0), "pending": float64(1), "dlq_length": float64(1),
+	}
+	for k, v := range want {
+		if st[k] != v {
+			t.Errorf("/stats %s = %v, want %v", k, st[k], v)
+		}
 	}
 }
 
-func TestSinkRecoveringBeforeRetriesRunOut(t *testing.T) {
-	rdb, stream := testRedis(t)
-	s, srv := newSink()
-	defer srv.Close()
-	s.fail.Store(true)
+func TestRunRejectsBadConfiguration(t *testing.T) {
+	dir := t.TempDir()
+	broken := filepath.Join(dir, "gateway.json")
+	os.WriteFile(broken, []byte(`{"version": 1, "triggers": []}`), 0o600)
 
-	ctx := context.Background()
-	id := rdb.XAdd(ctx, &redis.XAddArgs{Stream: stream, Values: map[string]interface{}{"order": "4"}}).Val()
-	c := testConsumer(rdb, stream, srv.URL, "pod-a", 5)
-	go func() {
-		for s.count(id) < 2 {
-			time.Sleep(10 * time.Millisecond)
-		}
-		s.fail.Store(false)
-	}()
-	runFor(c, 10*time.Second, func() bool { return c.stats.Delivered.Load() == 1 })
-
-	if c.stats.DeadLettered.Load() != 0 || rdb.XLen(ctx, stream+"-dlq").Val() != 0 {
-		t.Fatal("message was dead-lettered although the sink recovered")
+	cases := map[string]map[string]string{
+		"unknown mode":      {"GATEWAY_MODE": "relay"},
+		"publisher key":     {"GATEWAY_MODE": "publisher"},
+		"legacy dlq":        {"SINK_URL": "http://fn", "STREAM": "a", "DLQ_STREAM": "a"},
+		"missing file":      {"GATEWAY_CONFIG": filepath.Join(dir, "missing.json")},
+		"file w/o triggers": {"GATEWAY_CONFIG": broken},
 	}
-	if p := rdb.XPending(ctx, stream, "g").Val(); p.Count != 0 {
-		t.Fatalf("%d messages still pending", p.Count)
+	for name, env := range cases {
+		err := run(context.Background(), func(k string) string { return env[k] })
+		if err == nil {
+			t.Errorf("%s: run accepted %v", name, env)
+		}
+	}
+}
+
+func TestRunWithAConfigFile(t *testing.T) {
+	_, addr, stream := testRedis(t)
+	path := filepath.Join(t.TempDir(), "gateway.json")
+	cfg := fmt.Sprintf(`{"version": 1, "sink": "http://fn.invalid", "triggers": [
+		{"name": "orders", "type": "queue", "kind": "redis-stream", "source": {"address": %q, "stream": %q, "group": "g", "block": "100ms"}},
+		{"name": "nightly", "type": "schedule", "kind": "schedule", "source": {"cron": "@daily"}},
+		{"name": "hooks", "type": "webhook", "kind": "inbox", "source": {"url": "http://api.invalid/t/x", "poll_interval": "1h"}}
+	]}`, addr, stream)
+	os.WriteFile(path, []byte(cfg), 0o600)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
+	defer cancel()
+	err := run(ctx, func(k string) string {
+		if k == "GATEWAY_CONFIG" {
+			return path
+		}
+		return ""
+	})
+	if err != nil {
+		t.Fatalf("run = %v, want a clean shutdown", err)
 	}
 }

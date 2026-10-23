@@ -164,4 +164,44 @@ class BootstrapAdminCommandTest extends TestCase
         $this->assertStringContainsString('belongs to another account: administrator not created', $output);
         $this->assertFalse(User::query()->where('username', 'admin')->exists());
     }
+
+    /** The sign-in matches e-mail addresses in any letter case (LoginIdentifier). */
+    public function test_an_email_of_another_account_in_other_capitals_is_not_taken_over(): void
+    {
+        $this->withIsAdminColumn(true);
+        User::factory()->create(['username' => 'someone', 'email' => 'Admin@Example.com']);
+
+        [$code, $output] = $this->bootstrap();
+
+        $this->assertSame(0, $code);
+        $this->assertStringContainsString('belongs to another account: administrator not created', $output);
+        $this->assertFalse(User::query()->where('username', 'admin')->exists());
+    }
+
+    /** The sign-in reads an identifier with "@" as an e-mail address first: a user name has none. */
+    public function test_a_user_name_with_at_is_not_created(): void
+    {
+        $this->withIsAdminColumn(true);
+        config(['app.admin.username' => 'admin@corp']);
+
+        [$code, $output] = $this->bootstrap();
+
+        $this->assertSame(0, $code);
+        $this->assertStringContainsString('The user name admin@corp contains "@": administrator not created', $output);
+        $this->assertSame(0, User::query()->count());
+    }
+
+    /** An administrator an earlier release created with such a name is left as it is. */
+    public function test_an_existing_administrator_with_at_in_the_user_name_is_left_alone(): void
+    {
+        $this->withIsAdminColumn(true);
+        config(['app.admin.username' => 'admin@corp']);
+        $admin = User::factory()->create(['username' => 'admin@corp', 'email' => 'admin@example.com']);
+
+        [$code, $output] = $this->bootstrap();
+
+        $this->assertSame(0, $code);
+        $this->assertStringContainsString('Administrator account admin@corp exists, nothing to do.', $output);
+        $this->assertSame('admin@corp', $admin->refresh()->username);
+    }
 }

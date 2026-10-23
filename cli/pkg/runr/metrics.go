@@ -58,10 +58,14 @@ type MetricsSummary struct {
 		TotalColdStarts int        `json:"total_cold_starts"`
 		SampleCount     int        `json:"sample_count"`
 	} `json:"metrics"`
+	// Sessions: the sessions that started in the period and ended. CPU and memory are what
+	// metering counts for them, the deployment's size × the sessions' pod time.
 	Sessions struct {
 		TotalSessions   int   `json:"total_sessions"`
 		TotalDurationMS int64 `json:"total_duration_ms"`
-		TotalCPUMS      int64 `json:"total_cpu_ms"`
+		// TotalCPUMS is vCPU time in milliseconds (1 vCPU for 1 s = 1000).
+		TotalCPUMS int64 `json:"total_cpu_ms"`
+		// TotalMemoryMBMS is MiB × milliseconds.
 		TotalMemoryMBMS int64 `json:"total_memory_mb_ms"`
 		ColdStarts      int   `json:"cold_starts"`
 		AvgDurationMS   int64 `json:"avg_duration_ms"`

@@ -122,7 +122,8 @@ class ProjectAdmissionTest extends TestCase
         $developer = $this->userWithRole('developer');
 
         $this->signedIn($developer)->postJson("/api/projects/{$this->project->id}/deploy", [
-            'version_id' => $this->version->id, 'deploy_config' => ['min_scale' => 3, 'scale_to_zero' => false],
+            // (min_scale may not pass max_scale)
+            'version_id' => $this->version->id, 'deploy_config' => ['min_scale' => 3, 'max_scale' => 3, 'scale_to_zero' => false],
         ])->assertStatus(202);
 
         $this->assertInstanceOf(DeployIntent::class, $seen);

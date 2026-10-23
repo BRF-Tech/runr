@@ -5,6 +5,8 @@ namespace App\Services\Ai\Gpu;
 use App\Models\AiModelService;
 use App\Models\KnativeRegion;
 use App\Models\Project;
+use App\Services\GlobalProjects\GlobalProjectRegions;
+use App\Support\Projects\ScaleSchedule;
 
 /**
  * GPU admission of projects and model services. A workload reserves count × max(1, min_scale)
@@ -23,7 +25,8 @@ class GpuQuota
     {
         $total = 0;
 
-        $projects = Project::where('knative_region_id', $region->id)
+        // a global project reserves its GPUs in every region its copy runs in
+        $projects = GlobalProjectRegions::whereRunsIn(Project::query(), (string) $region->id)
             ->when($excludeProjectId, fn ($q) => $q->whereKeyNot($excludeProjectId))
             ->with('xaasConfig', 'faasConfig', 'containerConfig')
             ->get();
@@ -46,7 +49,7 @@ class GpuQuota
         return $total;
     }
 
-    /** GPUs a project reserves: its GPU request × max(1, min_scale). */
+    /** GPUs a project reserves: its GPU request × max(1, min_scale) (a timed warmer: its peak). */
     public static function projectReservation(Project $project, ?object $config = null): int
     {
         if (! $project->isSupportedType()) {
@@ -64,7 +67,7 @@ class GpuQuota
             return 0;
         }
 
-        return $request->count * max(1, (int) ($config->min_scale ?? 0));
+        return $request->count * max(1, ScaleSchedule::reservedMinScale($config));
     }
 
     /** The organization's GPU quota on the region; null = no limit. */

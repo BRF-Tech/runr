@@ -204,6 +204,11 @@ class PreviewLifecycleTest extends TestCase
         $this->assertSame([], $this->servicePatches('orders-pr-13'));
         $comment = $this->calls('POST', '/repos/acme/orders/issues/13/comments');
         $this->assertStringContainsString('Not deployed', $comment[0]['body']['body']);
+
+        // The commit status says why, not "Replaced by a newer deploy"
+        $statuses = $this->calls('POST', '/repos/acme/orders/statuses/');
+        $this->assertNotEmpty($statuses);
+        $this->assertSame('Preview #13 not deployed: Previews of requests from forks are turned off for this project', end($statuses)['body']['description']);
     }
 
     public function test_fork_previews_run_without_secrets(): void
@@ -221,17 +226,19 @@ class PreviewLifecycleTest extends TestCase
         $this->assertArrayNotHasKey('envFrom', $container);
     }
 
-    public function test_secret_env_vars_reach_a_preview_through_its_own_secret_and_never_a_fork(): void
+    public function test_secret_env_vars_reach_a_preview_through_the_projects_secret_and_never_a_fork(): void
     {
+        // A value not moved out of the database yet: written into the project's Secret first
         ProjectSecret::create(['project_id' => $this->project->id, 'name' => 'API_TOKEN', 'value' => 'tok-preview-31']);
         $this->gitSettings($this->project, ['fork_previews' => true, 'fork_secrets' => false]);
 
-        // Same-repository request: a Secret of the preview, referenced by secretKeyRef
+        // Same-repository request: the preview reads the project's own Secret (no copy of the values)
         $this->deliver('pull_request.opened');
-        $this->assertNotEmpty($this->calls('PATCH', '/api/v1/namespaces/fn/secrets/orders-pr-12-secret-env'));
+        $this->assertNotEmpty($this->calls('PATCH', '/api/v1/namespaces/fn/secrets/orders-secret-env'));
+        $this->assertSame([], $this->calls('PATCH', '/api/v1/namespaces/fn/secrets/orders-pr-12-secret-env'));
         $service = $this->servicePatches('orders-pr-12')[0]['body'];
         $env = array_column($service['spec']['template']['spec']['containers'][0]['env'], null, 'name');
-        $this->assertSame(['name' => 'orders-pr-12-secret-env', 'key' => 'API_TOKEN'], $env['API_TOKEN']['valueFrom']['secretKeyRef']);
+        $this->assertSame(['name' => 'orders-secret-env', 'key' => 'API_TOKEN'], $env['API_TOKEN']['valueFrom']['secretKeyRef']);
         $this->assertStringNotContainsString('tok-preview-31', json_encode($service));
 
         // Fork: no Secret, no reference, a stale one is removed

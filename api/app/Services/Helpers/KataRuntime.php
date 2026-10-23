@@ -154,8 +154,29 @@ final class KataRuntime
      */
     public const KVM_LABEL = 'runr.dev/kvm';
 
-    /** Node annotation with what the check saw and when ("kvm=yes dev_kvm=yes cpu=vmx module=kvm_intel at=…"). */
+    /** Node annotation with what the check saw and when ("kvm=yes dev_kvm=yes cpu=vmx module=kvm_intel shm_mb=7826 at=…"). */
     public const KVM_PROBE_ANNOTATION = 'runr.dev/kvm-probe';
+
+    /**
+     * Smallest /dev/shm (MiB) of a node QEMU guests run on. With virtio-fs the guest's memory must
+     * be shared with virtiofsd, and Kata's go runtime gives QEMU a memory-backend-file in /dev/shm
+     * (file_mem_backend unset; Cloud Hypervisor and Dragonball use anonymous shared memory
+     * instead). The file is as large as the guest — 256 MiB + the pod's memory limits — and every
+     * page the guest touches lives in that tmpfs: once /dev/shm is full, QEMU dies of SIGBUS. A
+     * host's /dev/shm is half its memory; a node that runs in a container (Kind, k3d) gets
+     * Docker's 64 MiB. Below 1 GiB not even one default sandbox's guest (256 + 512 MiB) and the
+     * next one fit, so the install does not offer QEMU there (KataShimDetectionTrait).
+     */
+    public const QEMU_MIN_SHM_MB = 1024;
+
+    /**
+     * Hypervisors whose runtime moves each sandbox into its systemd cgroup over the D-Bus system
+     * bus (runtime-rs; the go runtime uses systemd's private socket, as runc does). A node that
+     * runs systemd without D-Bus (Kind's node image) fails every such pod sandbox with "add
+     * runtime to sandbox cgroup: systemd dbus error: … No such file or directory": the install does
+     * not offer them there (KataShimDetectionTrait, the /dev/kvm check reads the node's /run).
+     */
+    public const NEEDS_SYSTEM_DBUS = ['dragonball'];
 
     /** kata-deploy's custom runtimes on the nodes (INSTALLATION_PREFIX ''): <handler>/config.d/50-overrides.toml. */
     public const CUSTOM_RUNTIMES_DIR = '/opt/kata/share/defaults/kata-containers/custom-runtimes';

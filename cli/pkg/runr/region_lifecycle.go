@@ -193,6 +193,11 @@ func (c *Client) CreateRegion(ctx context.Context, in RegionCreateInput) (*Regio
 // Region statuses a region can be set to.
 var RegionStatuses = []string{"active", "inactive", "maintenance"}
 
+// InternalAuthModes are the values of the region setting internal_auth: the internal network
+// refuses calls the callee's allow list does not admit (enforce, also when unset) or admits and
+// logs them (audit) — docs/internal-network.md#enforce-and-audit.
+var InternalAuthModes = []string{"enforce", "audit"}
+
 // RegionUpdateInput is the body of PUT /knative-regions/{region}.
 type RegionUpdateInput struct {
 	// Kubeconfig replaces the region's kubeconfig.
@@ -216,7 +221,8 @@ func (c *Client) UpdateRegion(ctx context.Context, regionID string, in RegionUpd
 
 // RegionSettingsKeys are the settings PUT /knative-regions/{region}/settings takes
 // (UpdateRegionSettingsRequest).
-var RegionSettingsKeys = []string{"request_timeout", "agent_ws_url", "cert_manager_cluster_issuer", "ingress_trusted_ips"}
+var RegionSettingsKeys = []string{"request_timeout", "agent_ws_url", "cert_manager_cluster_issuer", "cert_manager_issuer_mode",
+	"cert_manager_acme_email", "ingress_trusted_ips"}
 
 // RegionSettingsAnswer is the answer of PUT /knative-regions/{region}/settings.
 type RegionSettingsAnswer struct {
@@ -226,7 +232,8 @@ type RegionSettingsAnswer struct {
 }
 
 // UpdateRegionSettings merges settings into the region's settings (regions.manage):
-// request_timeout, agent_ws_url, cert_manager_cluster_issuer, ingress_trusted_ips.
+// request_timeout, agent_ws_url, cert_manager_cluster_issuer, cert_manager_issuer_mode,
+// cert_manager_acme_email, ingress_trusted_ips.
 func (c *Client) UpdateRegionSettings(ctx context.Context, regionID string, settings map[string]any) (*RegionSettingsAnswer, error) {
 	var out RegionSettingsAnswer
 	if err := c.do(ctx, request{method: http.MethodPut, path: regionPath(regionID, "/settings"), body: settings}, &out); err != nil {

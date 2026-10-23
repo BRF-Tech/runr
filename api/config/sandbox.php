@@ -67,6 +67,11 @@ return [
     'start_poll_ms' => (int) env('SANDBOX_START_POLL_MS', 150),
     'start_poll_fast_seconds' => 30,
 
+    // A starting pod's events are read every start_events_seconds: the container runtime failing
+    // to create its sandbox SandboxService::SANDBOX_CREATE_FAILURES times ends the start with the
+    // runtime's error (SandboxService::startFailure())
+    'start_events_seconds' => 5,
+
     'exec' => [
         'default_timeout' => (int) env('SANDBOX_EXEC_TIMEOUT', 60),
         'max_timeout' => (int) env('SANDBOX_EXEC_MAX_TIMEOUT', 3600),

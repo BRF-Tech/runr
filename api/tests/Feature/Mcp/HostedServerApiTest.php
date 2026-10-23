@@ -13,6 +13,7 @@ use App\Support\Secrets\SecretColumns;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
+use Tests\Concerns\FakesRegionSecrets;
 use Tests\Feature\Mcp\Tools\McpToolFixtures;
 use Tests\TestCase;
 
@@ -23,7 +24,7 @@ use Tests\TestCase;
  */
 class HostedServerApiTest extends TestCase
 {
-    use McpToolFixtures, RefreshDatabase;
+    use FakesRegionSecrets, McpToolFixtures, RefreshDatabase;
 
     protected function setUp(): void
     {
@@ -195,9 +196,13 @@ class HostedServerApiTest extends TestCase
 
         $manifests = collect(app(KnativeDeployService::class)->buildManifests($project->fresh(), $version));
 
-        $secret = $manifests->firstWhere('kind', 'Secret');
-        $this->assertSame("{$project->slug}-secret-env", $secret['metadata']['name']);
-        $this->assertSame(base64_encode($key), $secret['data']['RUNR_MCP_GATEWAY_KEY']);
+        // RunR's own key: written into the region's values Secret by the deploy, never in a manifest
+        $this->assertNull($manifests->first(fn ($m) => $m['kind'] === 'Secret' && $m['metadata']['name'] === "{$project->slug}-secret-env"));
+        $this->assertStringNotContainsString($key, json_encode($manifests->all()));
+        $this->fakeRegionSecrets();
+        $project->knativeRegion?->forceFill(['kubeconfig' => self::kubeconfigFor('https://k8s.test'), 'is_demo' => false])->saveQuietly();
+        app(KnativeDeployService::class)->prepareSecrets($project->fresh());
+        $this->assertSame($key, $this->regionSecrets->values($project->fresh()->knativeRegion, "{$project->slug}-secret-env")['RUNR_MCP_GATEWAY_KEY'] ?? null);
 
         $service = $manifests->firstWhere('kind', 'Service');
         $env = collect($service['spec']['template']['spec']['containers'][0]['env']);

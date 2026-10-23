@@ -25,7 +25,12 @@ class InstallRegistryAndCreateRegionJob implements ShouldBeEncrypted, ShouldQueu
 {
     use BroadcastsJobCompletion, Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
-    public int $timeout = 600;
+    /**
+     * The PVC test (knative.registry_pvc_test_seconds, 30 to 900 s) and 720 s for the rest of the
+     * setup: Zot's readiness (120 s), the node mirror (120 s), the image pre-pull (300 s), and 180 s
+     * for Helm and the API calls. Below Horizon's supervisor timeout even at the longest PVC test.
+     */
+    public int $timeout;
 
     /**
      * One try: the setup installs Zot and creates the region — the queue default of several
@@ -40,6 +45,7 @@ class InstallRegistryAndCreateRegionJob implements ShouldBeEncrypted, ShouldQueu
         ?string $initiatorId = null,
     ) {
         $this->initiatorId = $initiatorId;
+        $this->timeout = (int) config('knative.registry_pvc_test_seconds', 180) + 720;
     }
 
     /**
@@ -197,6 +203,11 @@ class InstallRegistryAndCreateRegionJob implements ShouldBeEncrypted, ShouldQueu
         ]));
     }
 
+    /**
+     * A storage / registry test that failed: recorded for the status endpoint and broadcast like
+     * every other failure, so the setup wizard (which follows the setup by its events) stops
+     * waiting and shows the error.
+     */
     private function failCache(string $key, string $phase, string $message): void
     {
         Cache::put($key, [
@@ -206,5 +217,10 @@ class InstallRegistryAndCreateRegionJob implements ShouldBeEncrypted, ShouldQueu
             'region_id' => null,
             'address' => null,
         ], now()->addMinutes(30));
+
+        $this->broadcastFailure('region.create_failed', [
+            'setup_id' => self::setupId($this->token),
+            'phase' => $phase,
+        ], new \RuntimeException($message), 'Region creation failed');
     }
 }

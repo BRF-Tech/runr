@@ -32,6 +32,10 @@ them, nothing in between.
 A GPU node is an ordinary worker of the region's cluster with an NVIDIA GPU. Two ways to prepare
 it:
 
+A [global project](global-projects.md#what-each-region-needs) with GPUs is admitted only where
+every region of it has GPU nodes for the request and the organization's GPU quota there; its
+GPUs count in each region's quota.
+
 | Node has | Install in RunR | What runs on the node |
 |---|---|---|
 | the NVIDIA driver and the [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html) | **Device plugin** (default) | the NVIDIA device plugin, GPU Feature Discovery and Node Feature Discovery |
@@ -60,9 +64,10 @@ RuntimeClass `nvidia` on k3s / RKE2 clusters and every GPU pod under runc uses i
 k3s agent after installing the toolkit (`sudo systemctl restart k3s-agent`, or `k3s` on a server
 node) so it picks the runtime up.
 
-Then join the node to the cluster as usual. If the region uses dedicated workers (Settings →
-Regions → Workers), select the GPU node there too: RunR taints and labels dedicated workers, and
-GPU pods carry the same toleration and node selector as every project pod.
+Then join the node to the cluster as usual. If the region uses dedicated workers
+(Administration → Regions & settings → Knative Regions → (region) → Workers), select the GPU node
+there too: RunR taints and labels dedicated workers, and GPU pods carry the same toleration and
+node selector as every project pod.
 
 ## How RunR detects GPU nodes
 
@@ -99,7 +104,7 @@ A cluster whose nodes already advertise `nvidia.com/gpu` — a device plugin ins
 cluster administrator, a managed Kubernetes GPU node pool — counts as GPU support in mode
 **external**: projects can use the GPUs right away and RunR leaves that installation alone.
 
-**Administration → Platform → Knative Regions → (region) → GPU** shows the summary (GPU nodes, total, allocatable,
+**Administration → Regions & settings → Knative Regions → (region) → GPU** shows the summary (GPU nodes, total, allocatable,
 allocated, free), the GPU products, every GPU node with product, memory, count / allocatable /
 allocated, sharing replicas, driver and CUDA, whether the device plugin runs and whether NVIDIA
 hardware was found without it, the install status and log, and which project types can use GPUs
@@ -232,7 +237,7 @@ What the Knative Service revision gets (`GpuScheduling`):
 | `autoscaling.knative.dev/scale-to-zero-pod-retention-period` | `5m` (`ai.gpu.scaleToZeroRetention`): an idle GPU pod stays warm for the next request, then scales to zero |
 
 A new GPU project gets a default timeout of 300 s (`ai.gpu.defaultTimeout`) instead of 30 s,
-at most the region's request timeout (Administration → Platform → Knative Regions → (region) → General).
+at most the region's request timeout (Administration → Regions & settings → Knative Regions → (region) → General).
 Scale to zero stays available for GPU projects. The first request after scale to zero waits for
 the node to start the container — pulling a CUDA image the first time on a node and loading
 weights into GPU memory. For latency-sensitive services, set **min scale 1** to keep one
@@ -263,7 +268,7 @@ on a runtime version without a GPU is refused with a hint to pick a GPU version.
 
 ## Supported sandbox combinations
 
-GPU pods run under the RuntimeClass the region maps the project type to (Administration → Platform → Knative Regions → (region) →
+GPU pods run under the RuntimeClass the region maps the project type to (Administration → Regions & settings → Knative Regions → (region) →
 Isolation). Model services run under the region's CaaS mapping.
 
 | Sandbox of the project type | GPU workloads | RuntimeClass of the pod |
@@ -323,7 +328,7 @@ Its Kata pod overhead follows the RuntimeClass it was deployed with. Stopped mod
 reserve nothing.
 
 Platform administrators are exempt, as with CPU and memory quotas; regions in mode *infinite*
-have no quota. Platform administrators set the quota in Tenants → (tenant) → Regions or with
+have no quota. Platform administrators set the quota in Administration → Tenants → (tenant) → Regions or with
 
 ```bash
 curl -sS -X PUT "$API/tenants/$TENANT/regions/$REGION/gpu-quota" -H "Authorization: Bearer $TOKEN" \

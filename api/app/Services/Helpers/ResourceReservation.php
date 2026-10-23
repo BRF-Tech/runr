@@ -5,6 +5,9 @@ namespace App\Services\Helpers;
 use App\Models\KnativeRegion;
 use App\Models\Project;
 use App\Services\Contracts\KnativeConstants;
+use App\Support\Projects\ScaleSchedule;
+use App\Triggers\ProjectTriggers;
+use Illuminate\Database\Eloquent\Collection as EloquentCollection;
 
 /**
  * The CPU / memory a project reserves — the one formula used by tenant quota admission
@@ -12,7 +15,9 @@ use App\Services\Contracts\KnativeConstants;
  * WithinResourceLimit) and usage reporting (ResourceComputationTrait, ResourceUsageController).
  * Quota model option C (Limits Decisions §4): the configured size × max(1, min_scale) is admitted;
  * max_scale is not — runtime use above that is bounded by the namespace ResourceQuota of the
- * organization ceiling (RegionNamespaceQuotaService).
+ * organization ceiling (RegionNamespaceQuotaService). A project with a timed warmer
+ * (config.scale_schedule) is admitted with the schedule's peak as its min_scale
+ * (ScaleSchedule::reservedMinScale): the containers it keeps warm at the busiest time of the week.
  *
  * Per trigger type (what KnativeManifestTrait::buildManifests() deploys):
  *  - http (and every other trigger that runs as a Knative Service):
@@ -237,20 +242,57 @@ final class ResourceReservation
             self::parseCpu(($cpu === null || $cpu === '') ? $defaults['cpu'] : $cpu),
             ($memory === null || $memory === '') ? $defaults['memory_mb'] : (int) $memory,
             $read('trigger_type') ?: 'http',
-            $read('min_scale') ?? 0,
+            ScaleSchedule::reservedMinScale($config),
             $read('scale_to_zero') ?? true,
             self::overheadFor($region, $serviceType, $deployedClass),
         );
     }
 
     /**
-     * Demand of a project: its config, with the RuntimeClass it was deployed with.
+     * Demand of a project: its config, with the RuntimeClass it was deployed with and the
+     * workload its trigger list deploys (capacityTriggerOf()).
      *
      * @return array{hard: array{cpu_m: int, memory_mb: int}, burst: array{cpu_m: int, memory_mb: int}}
      */
     public static function demandForProject(Project $project, ?KnativeRegion $region = null): array
     {
-        return self::demandForConfig(self::configOf($project), $project->service_type, $region ?? $project->knativeRegion, self::deployedClassOf($project));
+        $config = self::configOf($project);
+        $trigger = $config !== null ? self::capacityTriggerOf($project) : null;
+        if ($trigger !== null && $trigger !== self::capacityClass($config->trigger_type ?? null)) {
+            $config = [
+                'cpu' => $config->cpu ?? null,
+                'memory_mb' => $config->memory_mb ?? null,
+                'trigger_type' => $trigger,
+                'min_scale' => $config->min_scale ?? null,
+                'scale_to_zero' => $config->scale_to_zero ?? null,
+            ];
+        }
+
+        return self::demandForConfig($config, $project->service_type, $region ?? $project->knativeRegion, self::deployedClassOf($project));
+    }
+
+    /** The capacity class of a single-trigger trigger_type: schedule, queue or http (every other). */
+    public static function capacityClass(?string $triggerType): string
+    {
+        return in_array($triggerType, ['schedule', 'queue'], true) ? $triggerType : 'http';
+    }
+
+    /**
+     * The trigger the project's workload counts as (TriggerPlan::capacityTrigger(), docs/triggers.md):
+     * schedule (its CronJob), queue (Knative Service + event gateway pod) or http — what its
+     * trigger list deploys, whatever the config's trigger_type mirrors. Null when unknown.
+     */
+    public static function capacityTriggerOf(Project $project): ?string
+    {
+        if (! $project->isSupportedType()) {
+            return null;
+        }
+
+        try {
+            return app(ProjectTriggers::class)->plan($project)->capacityTrigger();
+        } catch (\Throwable) {
+            return null;
+        }
     }
 
     /**
@@ -261,6 +303,15 @@ final class ResourceReservation
     {
         $total = self::noDemand();
         $regions = [];
+
+        // capacityTriggerOf(): one query for every project's triggers
+        if ($projects instanceof EloquentCollection) {
+            try {
+                $projects->loadMissing('triggers');
+            } catch (\Throwable) {
+                // a schema without project_triggers: every project counts from its config
+            }
+        }
 
         foreach ($projects as $project) {
             // one region lookup per region, not per project
@@ -315,8 +366,9 @@ final class ResourceReservation
     /**
      * Reservation of a project config — a config model (XaasConfig / FaasConfig /
      * ContainerConfig) or an array / object with cpu, memory_mb, trigger_type, min_scale,
-     * scale_to_zero. $region: the region the project runs on (its sandbox mapping decides the pod
-     * overhead unless $deployedClass, the RuntimeClass the project was deployed with, is known).
+     * scale_to_zero, scale_schedule (its peak replaces min_scale). $region: the region the project
+     * runs on (its sandbox mapping decides the pod overhead unless $deployedClass, the RuntimeClass
+     * the project was deployed with, is known).
      *
      * @return array{cpu_m: int, memory_mb: int}
      */

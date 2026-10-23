@@ -7,7 +7,9 @@ use App\Models\ExecutorImage;
 use App\Models\KnativeRegion;
 use App\Models\Project;
 use App\Models\Setting;
+use App\Services\InternalNetwork\InternalNetwork;
 use App\Services\Runtimes\RuntimeRegistry;
+use App\Support\OrgTimezone;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
 
@@ -47,6 +49,10 @@ trait SettingsQueryTrait
             'demo_status' => $this->resolveDemoStatus(),
             'gpu_demo_enabled' => Setting::get('gpu_demo_enabled', 'false') === 'true',
             'custom_runtimes_enabled' => Setting::get('custom_runtimes_enabled', 'false') === 'true',
+            // may projects allow callers of other organizations (platform setting, docs/internal-network.md)
+            'internal_cross_tenant_grants' => InternalNetwork::crossTenantGrantsEnabled(),
+            // The organization's time zone: the timed warmers' crons run in it (OrgTimezone)
+            'timezone' => OrgTimezone::get(),
         ];
     }
 

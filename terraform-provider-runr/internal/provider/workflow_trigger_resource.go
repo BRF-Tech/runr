@@ -94,9 +94,10 @@ func (r *workflowTriggerResource) Schema(_ context.Context, _ resource.SchemaReq
 	resp.Schema = schema.Schema{
 		MarkdownDescription: "One trigger of a durable workflow: an event (with an optional condition), a cron schedule or " +
 			"a queue stream. Exactly one of `event`, `cron` and `queue` is set.\n\n" +
-			"The workflow must exist and be declared through the API (`runr workflows declare`, `PUT " +
-			"/api/projects/{project}/workflows`) or by `runr.workflows.json`; the resource adds its trigger to the " +
-			"definition and leaves the definition's other triggers and options as they are. Workflows whose " +
+			"The workflow must exist and be declared through the API (`runr_workflow` without `triggers`, " +
+			"`runr workflows declare`, `PUT /api/projects/{project}/workflows`) or by `runr.workflows.json`; the resource " +
+			"adds its trigger to the definition and leaves the definition's other triggers and options as they are " +
+			"(`PUT /api/projects/{project}/workflows/{workflow}`: the project's other definitions are not touched). Workflows whose " +
 			"definitions the function's SDK reports get their triggers from the code: change them there.",
 		Attributes: map[string]schema.Attribute{
 			"id": schema.StringAttribute{Computed: true,
@@ -151,9 +152,9 @@ func (r *workflowTriggerResource) ValidateConfig(ctx context.Context, req resour
 	}
 }
 
-// change adds (add) or removes the trigger of m from its workflow's definition and declares
-// the project's definitions again. The project's definitions are one document, so changes are
-// serialised per project.
+// change adds (add) or removes the trigger of m from its workflow's definition and declares that
+// definition again (PUT /projects/{project}/workflows/{workflow}; an API before 0.6.0: the set).
+// Changes are serialised per project (with runr_workflow): the definition is read first.
 func (r *workflowTriggerResource) change(ctx context.Context, m *workflowTriggerModel, add bool) error {
 	projectID, name := m.ProjectID.ValueString(), m.Workflow.ValueString()
 	unlock := r.client.lock("workflows/" + projectID)
@@ -200,6 +201,12 @@ func (r *workflowTriggerResource) change(ctx context.Context, m *workflowTrigger
 		triggers = append(triggers, want)
 	}
 	target.Triggers = triggers
+	// the workflow's definition alone: the others stay as they are, their sources too
+	_, err = r.client.API.DeclareWorkflow(ctx, projectID, name, target.Definition())
+	if !errors.Is(err, runr.ErrUnsupported) {
+		return err
+	}
+	// an API before 0.6.0: the set again, with this definition changed
 	defs := make([]map[string]any, 0, len(list))
 	for i := range list {
 		if !list[i].Archived {

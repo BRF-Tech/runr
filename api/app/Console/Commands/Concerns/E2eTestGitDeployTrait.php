@@ -12,7 +12,9 @@ use Symfony\Component\Process\Process;
  *  - git-remote-push    `git push runr main` to the project's RunR remote → version → deploy → HTTP body
  *  - git-forgejo-push   a push to a connected Forgejo repository (webhook) → production deploy → HTTP body
  *  - git-preview        a pull request → preview <slug>-pr-<n> ready → HTTP body of the request's code,
- *                       the RunR comment and the commit status on Forgejo
+ *                       the RunR comment and the commit status on Forgejo; the preview's pods are
+ *                       metered through the region agent (a session of the preview, today's usage
+ *                       record of source "preview" above zero)
  *  - git-preview-close  closing the request deletes the preview's Knative Service
  */
 trait E2eTestGitDeployTrait
@@ -182,6 +184,15 @@ trait E2eTestGitDeployTrait
                 ($status['status'] ?? $status['state'] ?? null) !== 'success' => 'commit status: '.json_encode($status),
                 default => true,
             };
+            if ($preview['steps']['verify'] === true && ($connected = $this->e2eConnectAgent($regionId)) !== true) {
+                $preview['steps']['verify'] = 'metering: '.$connected;
+            }
+            if ($preview['steps']['verify'] === true) {
+                $metered = $this->e2eMetered($project['id'], (string) $row['id'], ['preview_environment_id' => (string) $row['id']], fn ($records) => $records->every(fn ($r) => $r->source === 'preview')
+                    ? true
+                    : 'a preview record of another source: '.$records->pluck('source')->implode(', '));
+                $preview['steps']['verify'] = $metered === true ? true : 'metering: '.$metered;
+            }
         } else {
             $preview['steps']['verify'] = 'skipped';
         }

@@ -5,6 +5,7 @@ namespace App\Listeners;
 use App\Events\DeploymentCreated;
 use App\Events\DeploymentStatusChanged;
 use App\Services\KnativeDeployService;
+use App\Services\Rollouts\RolloutService;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Support\Facades\Log;
 
@@ -60,5 +61,8 @@ class ProcessDeployment implements ShouldQueue
         ]);
 
         event(new DeploymentStatusChanged($deployment, $previous, 'failed'));
+
+        // A rollout's new deployment: the rollout fails, the traffic stays where it was
+        app(RolloutService::class)->candidateFailed($deployment, (string) $deployment->knative_message);
     }
 }

@@ -400,8 +400,8 @@ func Run(ctx context.Context, o Options) error {
 	url := fmt.Sprintf("http://localhost:%d", plan.Port)
 	state := State{URL: url, Port: plan.Port, Container: plan.Container, Trigger: plan.Trigger, Dir: o.Dir,
 		StartedAt: time.Now().UTC().Format(time.RFC3339)}
-	if o.Project.Trigger != nil {
-		state.Queue = o.Project.Trigger.Queue
+	if o.Project != nil {
+		state.Queue = o.Project.QueueStream()
 	}
 	if pp := plan.Plugin; pp != nil {
 		state.Runtime, state.ScheduleExec, state.CloudEventSchedule = pp.Runtime, pp.ScheduleExec, pp.CloudEventSchedule

@@ -1,4 +1,4 @@
-# ci/check-helm-chart.sh: observability with every knob set (docs/observability.md)
+# ci/check-helm-chart.sh: observability with every knob set (docs/observability.md, docs/load-test.md)
 domain: console.acme-cloud.example
 observability:
   tracing:
@@ -20,6 +20,13 @@ observability:
     minIntervalSeconds: 60
     resultsRetentionDays: 30
     allowPrivateTargets: true
+  loadTest:
+    enabled: true
+    dailyLimit: 5
+    maxUsers: 50
+    maxDurationSeconds: 60
+    maxConcurrentPerRegion: 2
+    image: registry.acme-cloud.example/mirror/k6:1.8.2
   statusPage:
     enabled: false
   alerts:

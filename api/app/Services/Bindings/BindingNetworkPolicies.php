@@ -30,20 +30,28 @@ class BindingNetworkPolicies
         $ns = BindingsCluster::dataNamespace();
         $name = BindingManifests::bindingPolicyName($binding);
 
-        $projectIds = BindingAttachment::query()
-            ->where('binding_id', $binding->id)
-            ->pluck('project_id')
-            ->map(fn ($id) => (string) $id)
-            ->all();
+        // Attached to a project's own workload: its pods by runr/project-id; to an environment
+        // (docs/environments.md#bindings): that environment's pods by runr/environment-id
+        $attachments = BindingAttachment::query()->where('binding_id', $binding->id)->get();
+        $projectIds = [];
+        $environmentIds = [];
+        foreach ($attachments as $attachment) {
+            $environmentId = $attachment->getAttribute('environment_id');
+            if ($environmentId !== null && $environmentId !== '') {
+                $environmentIds[] = (string) $environmentId;
+            } else {
+                $projectIds[] = (string) $attachment->project_id;
+            }
+        }
 
-        if (! $target || ! $projectIds || ! $binding->isActive()) {
+        if (! $target || (! $projectIds && ! $environmentIds) || ! $binding->isActive()) {
             $k8s->deleteResource('networking.k8s.io/v1', 'NetworkPolicy', $name, $ns);
 
             return;
         }
 
         $this->cluster->ensureDataNamespace($region);
-        $policy = BindingManifests::bindingPolicy($binding, $ns, BindingsCluster::projectNamespace($region), $projectIds, $target);
+        $policy = BindingManifests::bindingPolicy($binding, $ns, BindingsCluster::projectNamespace($region), $projectIds, $target, $environmentIds);
 
         if (! $k8s->applyResource($policy, $ns)) {
             throw new BindingException("Could not apply NetworkPolicy {$name} in {$ns}.");

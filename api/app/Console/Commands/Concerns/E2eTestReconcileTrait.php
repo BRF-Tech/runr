@@ -787,6 +787,31 @@ trait E2eTestReconcileTrait
 
     // ── region:reconcile ────────────────────────────────────────────────────
 
+    /**
+     * Steps that must run before others (RegionReconciler::steps()): the private entry point before
+     * the internal network's ForwardAuth on it, the global DNS server before the admission policy,
+     * the admission policy before image-registry rolls the workloads onto RunR's image namespace.
+     *
+     * @param  list<string>  $tags  the step tags in the order region:reconcile printed them
+     */
+    private function recOrderProblem(array $tags): ?string
+    {
+        $first = [];
+        foreach ($tags as $i => $tag) {
+            $first[$tag] ??= $i;
+        }
+        foreach ([['private-ingress', 'internal-network'], ['global-dns', 'admission-policy'], ['admission-policy', 'image-registry']] as [$before, $after]) {
+            if (! isset($first[$before], $first[$after])) {
+                return "step {$before} or {$after} printed nothing: ".implode(', ', array_keys($first));
+            }
+            if ($first[$before] > $first[$after]) {
+                return "{$before} ran after {$after}: ".implode(', ', array_keys($first));
+            }
+        }
+
+        return null;
+    }
+
     private function recFullRun(string $regionId): bool|string
     {
         $steps = app(RegionReconciler::class)->steps();
@@ -816,6 +841,7 @@ trait E2eTestReconcileTrait
             ($tags[0] ?? null) !== 'dedicated-worker-toleration' => 'the first step run: '.($tags[0] ?? 'none'),
             ($lines['dedicated-worker-toleration'] ?? []) !== ['up to date'] => 'dedicated-worker-toleration: '.implode(' | ', $lines['dedicated-worker-toleration'] ?? ['(no line)']),
             end($tags) !== 'registry-prewarm' => 'the last step run: '.(end($tags) ?: 'none'),
+            ($order = $this->recOrderProblem($tags)) !== null => $order,
             ($lines['tracing'] ?? []) !== ['up to date'] => 'tracing: '.implode(' | ', $lines['tracing'] ?? ['(no line)']),
             $prewarm === ['up to date'] => null,
             // Zot restarted by an earlier step answers no tags/list for a moment: a Job is started,

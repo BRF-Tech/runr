@@ -136,9 +136,9 @@ func (r *bindingResource) Schema(_ context.Context, _ resource.SchemaRequest, re
 				MarkdownDescription: "`external`: the variables to inject (names upper case, digits and `_`). Write-only: " +
 					"Terraform keeps what it set; changing them updates the attached projects."},
 			"wait": schema.BoolAttribute{Optional: true, Computed: true, Default: booldefault.StaticBool(true),
-				MarkdownDescription: "Wait at create until the binding is provisioned (`ready`)."},
+				MarkdownDescription: "Wait at create until the binding is provisioned (`ready`; default `true`)."},
 			"timeout": schema.StringAttribute{Optional: true, Computed: true, Default: stringdefault.StaticString("10m"),
-				MarkdownDescription: "How long `wait` waits (Go duration); a dedicated Postgres cluster takes a few minutes."},
+				MarkdownDescription: "How long `wait` waits (Go duration, default `10m`); a dedicated Postgres cluster takes a few minutes."},
 			"status":         schema.StringAttribute{Computed: true, MarkdownDescription: "`provisioning`, `ready`, `rotating` or `error`."},
 			"status_message": schema.StringAttribute{Computed: true, MarkdownDescription: "Reason of an `error` status."},
 			"resource_name": schema.StringAttribute{Computed: true, PlanModifiers: keepStr,

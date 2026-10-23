@@ -2,20 +2,28 @@
 {{- $bootstrap := .Values.bootstrap | default dict }}
 {{- $tenancySetup := and (eq (include "runr.tenancyEnabled" .) "true") (or (not (hasKey $bootstrap "tenancySetup")) $bootstrap.tenancySetup) }}
 {{/*
-  post-install / post-upgrade: the first administrator account (after the migrate hooks)
-  - if the admin.username account does NOT exist and there is no other administrator: AdminSeeder (admin.username /
-    admin.email / ADMIN_PASSWORD) + is_admin
-  - "is the users table empty" is not enough: non-administrator accounts may exist (e.g. the test user an old
-    TenancySeeder created in production) → the administrator from the install form would never be created
-  - does nothing if the account exists, another administrator (is_admin) exists or admin.email belongs to another
-    account (existing accounts, passwords and settings are kept; without an is_admin column: if any user exists)
-  - first: reinstalls the region agents that have no token (agent:redeploy --missing, 0.3.3 token auth),
-    then brings the existing regions up to this version (region:reconcile), then gives users the previous
-    version created during the upgrade a role (rbac:assign-missing)
+  post-install / post-upgrade: the quick steps of an upgrade that must happen during it — the database
+  only, nothing waits for a region cluster, so helm upgrade finishes in seconds after the rollout
+  (docs/upgrade.md). What talks to the regions runs in the Job runr-region-reconcile-<revision>
+  (region-reconcile-job.yaml), which helm does not wait for: agent:redeploy --missing,
+  region:reconcile, secrets:move-to-region.
+  - the stored image references the previous version's pods wrote during the rollout (images:move-registry)
+  - users the previous version created during the upgrade get a role (rbac:assign-missing)
   - with tenancy: the pending tenant migrations (tenancy:migrate) of the modules switched on, as a safety net
   - multi-tenant edition (bootstrap.tenancySetup): converts a single-organization installation into its first
     tenant (tenancy:setup) before the administrator check; fresh, converted and multi-tenant installations are left
     alone, a conversion that stopped continues
+  - then it records the revision (setting bootstrap_revision): the reconcile Job starts its steps after
+    it, so they see the tenant schemas migrated and a conversion done
+  - the first administrator account (after the migrate hooks):
+    - if the admin.username account does NOT exist and there is no other administrator: AdminSeeder (admin.username /
+      admin.email / ADMIN_PASSWORD) + is_admin
+    - "is the users table empty" is not enough: non-administrator accounts may exist (e.g. the test user an old
+      TenancySeeder created in production) → the administrator from the install form would never be created
+    - does nothing if the account exists, another administrator (is_admin) exists, admin.email belongs to another
+      account (in any letter case) or admin.username contains "@" (values.schema.json refuses it; the sign-in reads
+      such an identifier as an e-mail address) — existing accounts, passwords and settings are kept; without an
+      is_admin column: if any user exists
   The module switches come as explicit env (runr.module-env), like the migration Jobs'.
   The entrypoint.sh role logic does not run (command override): no migrate / executor:sync / server.
 */}}
@@ -33,8 +41,10 @@ metadata:
     "helm.sh/hook-delete-policy": before-hook-creation
 spec:
   backoffLimit: 3
-  # The steps' time limits add up to about 9 minutes; tenant migrations (tenancy) 2 more, a tenancy conversion 8 more
-  activeDeadlineSeconds: {{ if $tenancySetup }}1200{{ else if eq (include "runr.tenancyEnabled" .) "true" }}720{{ else }}600{{ end }}
+  # The steps' time limits: the database wait 4 minutes, images:move-registry 1, the role check and the
+  # administrator 2; tenant migrations (tenancy) 2 more, a tenancy conversion 8 more. A normal run
+  # takes seconds
+  activeDeadlineSeconds: {{ if $tenancySetup }}1020{{ else if eq (include "runr.tenancyEnabled" .) "true" }}540{{ else }}420{{ end }}
   template:
     metadata:
       labels:
@@ -80,22 +90,14 @@ spec:
                 sleep 5
               done
 
-              # 0.3.3+: the agent connects with a per-region token; reinstall the (old) region agents that have no token.
-              # An unreachable region must not block the upgrade: time limit + errors swallowed (manually: php artisan agent:redeploy)
-              timeout 120 php artisan agent:redeploy --missing || echo "runr-bootstrap: agent redeploy skipped (run php artisan agent:redeploy --missing)"
-
               # Stored image references of RunR's earlier image namespaces move to ghcr.io/brf-tech/runr: the upgrade migration
-              # moved them, this catches rows the previous version's pods wrote during the rollout (idempotent)
+              # moved them, this catches rows the previous version's pods wrote during the rollout (idempotent; the
+              # reconcile Job runs it again once the rollout is over)
               timeout 60 php artisan images:move-registry || echo "runr-bootstrap: image references not moved (run php artisan images:move-registry)"
-
-              # Apply this version's region-side changes to existing regions (KnativeServing config merge-patch,
-              # Prometheus NodePort removal + agent PROMETHEUS_URL). Idempotent; an unreachable region must not
-              # block the upgrade: time limit + errors swallowed (manually: php artisan region:reconcile [--dry-run])
-              timeout 120 php artisan region:reconcile || echo "runr-bootstrap: region reconcile skipped (run php artisan region:reconcile)"
 
               # 0.5.0+ roles: the upgrade migration gave every existing user a role, but the previous version's pods
               # kept serving until they were replaced and created users without one (sign-ups, Users page) — those
-              # get the default role here, after the rollout above had time to finish (docs/upgrade.md)
+              # get the default role here and, once the rollout is over, in the reconcile Job again (docs/upgrade.md)
               php artisan rbac:assign-missing || echo "runr-bootstrap: role check skipped (run php artisan rbac:assign-missing)"
               {{- if eq (include "runr.tenancyEnabled" .) "true" }}
 
@@ -113,6 +115,11 @@ spec:
               timeout 480 php artisan tenancy:setup --force || echo "runr-bootstrap: run php artisan tenancy:setup"
               {{- end }}
 
+              # The steps the regions' Job depends on are done (tenant schemas, a conversion): it starts now
+              # (runr-region-reconcile-<revision> waits for this, at most as long as this Job may run)
+              php -r 'require "vendor/autoload.php"; $app = require "bootstrap/app.php"; $app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap(); App\Models\Setting::set("bootstrap_revision", (string) getenv("RUNR_HELM_REVISION"));' \
+                || echo "runr-bootstrap: the revision is not recorded (the reconcile Job starts after its wait)"
+
               # 0 = create the administrator, 3 = not needed (the reason is printed), other = error (DB unreachable, etc.)
               set +e
               php -r 'require "vendor/autoload.php"; $app = require "bootstrap/app.php"; $app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap();
@@ -120,7 +127,8 @@ spec:
                 if (App\Models\User::query()->where("username", $name)->exists()) { echo "runr-bootstrap: administrator account " . $name . " exists, nothing to do" . PHP_EOL; exit(3); }
                 $flag = Illuminate\Support\Facades\Schema::hasColumn((new App\Models\User)->getTable(), "is_admin");
                 if ($flag ? App\Models\User::query()->where("is_admin", true)->exists() : App\Models\User::query()->exists()) { echo "runr-bootstrap: another administrator account exists, nothing to do" . PHP_EOL; exit(3); }
-                if (App\Models\User::query()->where("email", $mail)->exists()) { echo "runr-bootstrap: WARNING e-mail " . $mail . " belongs to another account, administrator not created" . PHP_EOL; exit(3); }
+                if (App\Models\User::query()->whereRaw("lower(email) = lower(?)", [$mail])->exists()) { echo "runr-bootstrap: WARNING e-mail " . $mail . " belongs to another account, administrator not created" . PHP_EOL; exit(3); }
+                if (str_contains($name, "@")) { echo "runr-bootstrap: WARNING user name " . $name . " contains @, administrator not created (the sign-in reads it as an e-mail address)" . PHP_EOL; exit(3); }
                 exit(0);'
               rc=$?
               set -e
@@ -156,6 +164,8 @@ spec:
           env:
             {{- include "runr.module-env" . | nindent 12 }}
             {{- include "runr.secret-env" . | nindent 12 }}
+            - name: RUNR_HELM_REVISION
+              value: {{ .Release.Revision | quote }}
           volumeMounts:
             - name: api-storage
               mountPath: /var/www/html/storage

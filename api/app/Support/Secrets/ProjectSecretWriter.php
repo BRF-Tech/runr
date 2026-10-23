@@ -2,15 +2,18 @@
 
 namespace App\Support\Secrets;
 
+use App\Models\KnativeRegion;
 use App\Models\Project;
 use App\Models\ProjectSecret;
 use App\Rules\EnvVars;
+use App\Services\Secrets\ProjectSecrets;
+use App\Services\Secrets\SecretBackendException;
 
 /**
  * Secret environment variables given as a name → value map: `config.secret_env_vars` of
  * POST /projects and PUT /projects/{project} (the form the CLI uses), and the naming rules the
  * secrets endpoints share (ProjectSecretController). A null or empty value removes the variable.
- * Values never leave this class: results and errors carry names only.
+ * The values go through ProjectSecrets into the region; results and errors carry names only.
  */
 class ProjectSecretWriter
 {
@@ -81,38 +84,54 @@ class ProjectSecretWriter
     }
 
     /**
-     * Set and remove the variables of a validated change set.
+     * Set and remove the variables of a validated change set (ProjectSecrets: the values go
+     * straight into the region, RunR keeps the metadata).
      *
      * @param  array<array-key, mixed>  $changes
+     * @param  KnativeRegion|null  $region  the region the values go to when the same request moves
+     *                                      the project there
      * @return array{set: list<string>, removed: list<string>} names only
+     *
+     * @throws SecretBackendException the region did not take the values: nothing was set
      */
-    public static function apply(Project $project, array $changes, mixed $userId): array
+    public static function apply(Project $project, array $changes, mixed $userId, ?KnativeRegion $region = null): array
     {
-        $set = $removed = [];
-
-        $project->getConnection()->transaction(function () use ($project, $changes, $userId, &$set, &$removed) {
-            foreach ($changes as $name => $value) {
-                $name = (string) $name;
-
-                if (self::removes($value)) {
-                    // Model delete, so the audit trail records the removal (name only)
-                    $secret = $project->secrets()->where('name', $name)->first();
-                    if ($secret?->delete()) {
-                        $removed[] = $name;
-                    }
-
-                    continue;
-                }
-
-                ProjectSecret::updateOrCreate(
-                    ['project_id' => $project->id, 'name' => $name],
-                    ['value' => (string) $value, 'updated_by' => $userId],
-                );
-                $set[] = $name;
+        $values = [];
+        $removals = [];
+        foreach ($changes as $name => $value) {
+            if (self::removes($value)) {
+                $removals[] = (string) $name;
+            } else {
+                $values[(string) $name] = (string) $value;
             }
-        });
+        }
+
+        $secrets = app(ProjectSecrets::class);
+        $set = $secrets->setValues($project, $values, $userId, $region);
+        $removed = $secrets->remove($project, $removals);
 
         return ['set' => $set, 'removed' => $removed];
+    }
+
+    /**
+     * Why the values of a change set cannot be kept (null: they can): with pass-through they live
+     * in the region's cluster, which a project without a region or on a demo region does not have.
+     *
+     * @param  array<array-key, mixed>  $changes
+     */
+    public static function clusterError(?KnativeRegion $region, array $changes): ?string
+    {
+        if (ProjectSecrets::storage() !== ProjectSecrets::STORAGE_REGION) {
+            return null;
+        }
+        if (array_filter($changes, fn ($value) => ! self::removes($value)) === []) {
+            return null;
+        }
+        if ($region === null || $region->is_demo || (string) $region->kubeconfig === '') {
+            return __('api.secret.no_cluster', ['region' => $region->name ?? '—']);
+        }
+
+        return null;
     }
 
     /**

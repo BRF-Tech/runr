@@ -112,6 +112,50 @@ func TestLoginWithPasswordNeedsOTPWhenNotInteractive(t *testing.T) {
 	contains(t, r.err, "--otp")
 }
 
+// --username takes the e-mail address as well: the CLI sends it as `login`, without the white
+// space around it.
+func TestLoginWithPasswordTakesTheEmailAddress(t *testing.T) {
+	h := newHarness(t)
+	r := h.runStdin("secret-password\n", "login", h.srv.URL, "--with-password", "--username", " ADA@example.com ",
+		"--password-stdin")
+	if r.code != 0 {
+		t.Fatalf("exit %d: %s", r.code, r.err)
+	}
+	calls := h.srv.CallsTo("POST /auth/login")
+	if len(calls) != 1 {
+		t.Fatalf("POST /auth/login calls = %d, want 1", len(calls))
+	}
+	if login := calls[0].Body["login"]; login != "ADA@example.com" {
+		t.Fatalf("login = %q, want the e-mail address as typed", login)
+	}
+	contains(t, r.out, "as ada")
+}
+
+// The identifier comes from the prompt on a terminal.
+func TestLoginWithPasswordPromptsForTheUserNameOrEmail(t *testing.T) {
+	h := newHarness(t)
+	h.terminal = true
+	h.secrets = []string{"secret-password"}
+	r := h.runStdin("ada@example.com\n", "login", h.srv.URL, "--with-password")
+	if r.code != 0 {
+		t.Fatalf("exit %d: %s", r.code, r.err)
+	}
+	if login := h.srv.CallsTo("POST /auth/login")[0].Body["login"]; login != "ada@example.com" {
+		t.Fatalf("login = %q", login)
+	}
+}
+
+func TestLoginWithPasswordNeedsAnIdentifier(t *testing.T) {
+	h := newHarness(t)
+	r := h.runStdin("secret-password\n", "login", h.srv.URL, "--with-password", "--username", "  ", "--password-stdin")
+	if r.code != ExitUsage {
+		t.Fatalf("exit %d, want %d: %s", r.code, ExitUsage, r.err)
+	}
+	if n := len(h.srv.CallsTo("POST /auth/login")); n != 0 {
+		t.Fatalf("POST /auth/login calls = %d, want none", n)
+	}
+}
+
 func TestLoginWithWrongPassword(t *testing.T) {
 	h := newHarness(t)
 	r := h.runStdin("nope\n", "login", h.srv.URL, "--with-password", "--username", "ada", "--password-stdin")

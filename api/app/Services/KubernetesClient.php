@@ -4,6 +4,9 @@ namespace App\Services;
 
 use App\Services\Concerns\KubernetesClusterTrait;
 use App\Services\Concerns\KubernetesNamespacedTrait;
+use App\Services\Contracts\KnativeConstants;
+use App\Services\Helpers\PrivateIngress;
+use App\Services\InternalNetwork\InternalNetwork;
 use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Http;
@@ -32,6 +35,12 @@ class KubernetesClient
         $this->httpOptions = $this->buildHttpOptions($cluster, $user);
     }
 
+    /** The cluster's API server URL (from the kubeconfig). */
+    public function server(): string
+    {
+        return $this->server;
+    }
+
     // ── Cluster info ────────────────────────────────────────────────────────
 
     /**
@@ -42,6 +51,18 @@ class KubernetesClient
         $response = $this->request()->get($this->server.'/version');
 
         return $response->successful() ? $response->json() : null;
+    }
+
+    /**
+     * The JSON of a GET on an API server path that is not a resource — e.g. the service account
+     * issuer's discovery document (/.well-known/openid-configuration) and keys (/openid/v1/jwks).
+     * Null when the request fails.
+     */
+    public function getPath(string $path): ?array
+    {
+        $response = $this->request()->get($this->server.'/'.ltrim($path, '/'));
+
+        return $response->successful() && is_array($response->json()) ? $response->json() : null;
     }
 
     /**
@@ -193,6 +214,31 @@ class KubernetesClient
         }
 
         return $request->send(strtoupper($method), $url);
+    }
+
+    /**
+     * A request to a Knative Service on its cluster-local host <service>.<namespace>.svc.cluster.local,
+     * through the region Traefik's private entry point (PrivateIngress): the route its in-cluster
+     * callers take, scale from zero through the activator included. The API server's service proxy
+     * passes the Host header on. The revision pods and the activator admit only Traefik and
+     * Knative (RegionNetworkPolicyManifests), so neither is called directly. A region whose Traefik
+     * has no traefik-internal yet (region:reconcile has not run since the upgrade) is called on
+     * Traefik's main Service, where its cluster-local routes still are.
+     *
+     * $token: RunR's own token on the region's internal network (InternalNetwork::systemToken),
+     * which the ForwardAuth of the private entry point admits for every service.
+     */
+    public function knativePrivateRequest(string $method, string $servingNamespace, string $namespace, string $serviceName, string $path = '', array $headers = [], ?string $body = null, int $timeout = 30, ?string $token = null): Response
+    {
+        $headers = ['Host' => "{$serviceName}.{$namespace}.svc.cluster.local"] + ($token !== null ? [InternalNetwork::HEADER => $token] : []) + $headers;
+        $response = $this->serviceProxySend($method, $servingNamespace, PrivateIngress::SERVICE, 80, $path, $headers, $body, $timeout);
+
+        // the API server's own 404 for a Service it does not know (Traefik answers 404 as text)
+        if ($response->status() === 404 && $response->json('kind') === 'Status' && $response->json('details.kind') === 'services') {
+            return $this->serviceProxySend($method, $servingNamespace, KnativeConstants::TRAEFIK_RELEASE, 80, $path, $headers, $body, $timeout);
+        }
+
+        return $response;
     }
 
     /**

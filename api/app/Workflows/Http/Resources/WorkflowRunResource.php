@@ -27,6 +27,8 @@ class WorkflowRunResource extends JsonResource
                 ? ['id' => $r->workflow->id, 'name' => $r->workflow->name]
                 : ['id' => $r->workflow_id],
             'project_id' => $r->project_id,
+            'environment_id' => $r->getAttribute('environment_id'),
+            'environment' => $r->getAttribute('environment') ?? 'production',
             'status' => $r->status,
             'trigger_source' => $r->trigger_source,
             'event_id' => $r->event_id,

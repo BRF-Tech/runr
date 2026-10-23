@@ -183,7 +183,8 @@ class RegistryImageLifecycleService
 
         $versions = $project->versions()->get(['id', 'project_id', 'number', 'build_status', 'build_image']);
 
-        $protected = $project->deployments()
+        // Any environment's deployment keeps its version's image (docs/environments.md)
+        $protected = $project->allDeployments()
             ->whereNotIn('status', self::FINISHED_DEPLOYMENT_STATUSES)
             ->pluck('version_id')
             ->filter()
@@ -442,8 +443,9 @@ class RegistryImageLifecycleService
 
     /**
      * Images the project's live workloads reference: its Knative Service template and the
-     * revisions receiving traffic, its CronJob and its queue consumer. null when the cluster
-     * could not be read.
+     * revisions its routes name — with or without a share: a blue-green / canary rollout keeps the
+     * new and the previous revision routable (RolloutTraffic) — its CronJob and its queue
+     * consumer. null when the cluster could not be read.
      *
      * @return list<string>|null
      */
@@ -460,6 +462,7 @@ class RegistryImageLifecycleService
 
             $revisions = array_filter(array_merge(
                 array_column($service['status']['traffic'] ?? [], 'revisionName'),
+                array_column($service['spec']['traffic'] ?? [], 'revisionName'),
                 [$service['status']['latestReadyRevisionName'] ?? null],
             ));
             foreach (array_unique($revisions) as $revision) {

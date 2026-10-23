@@ -6,6 +6,10 @@ region's registry. The file travels through RunR to the region, chunk by chunk, 
 has no route to the internet (or to any registry outside it) gets its images this way. An uploaded
 image is then used like any other:
 
+A [global project](global-projects.md#uploaded-images) may run an uploaded image of its primary
+region: before another region runs it, RunR copies the image into that region's registry (same
+repository, tag and digest) and records the copy as the organization's uploaded image there.
+
 - as the image of a **CaaS project** (the CaaS form offers the region's uploaded images next to a
   registry reference);
 - as the image of a **runtime version** (`upload:` in the runtime manifest, [Runtimes](runtimes.md#versions));
@@ -85,7 +89,7 @@ the `RepoTags` of a classic archive); otherwise the upload fails asking for one 
 
 ## Upload
 
-**Console:** Settings → Images → **Upload image**: region, file, name (`repository[:tag]`, from the
+**Console:** Build & Run → Images → **Upload image**: region, file, name (`repository[:tag]`, from the
 file name by default) and format (detected). The dialog shows the progress, the verification and
 the push; unfinished uploads stay listed with **Resume** and **Abort**.
 
@@ -139,7 +143,7 @@ A WebAssembly module goes the same way: `runr images push q.wasm --name q-interp
 | Where | How | Reference |
 |---|---|---|
 | CaaS project | create form, step 3: **Uploaded image** — the region's container images; or `config.image` in `POST /api/projects` | `image_ref`: `<registry>/runr-uploads/<owner>/<repository>@sha256:…`, pinned by digest |
-| Runtime version | `versions: [{version: "5.2", upload: "bash-airgap:5.2"}]`; Settings → Runtimes → **Version from an uploaded image** | resolved per region to the owner's upload of that name, by digest ([Runtimes](runtimes.md#versions)) |
+| Runtime version | `versions: [{version: "5.2", upload: "bash-airgap:5.2"}]`; Build & Run → Runtimes → **Version from an uploaded image** | resolved per region to the owner's upload of that name, by digest ([Runtimes](runtimes.md#versions)) |
 | wasm-exec function | a FaaS file `wasm.upload` with one line, `q-interpreter:1.0` | the module is fetched into the build instead of compiling ([WebAssembly](wasm.md#wasm-exec)) |
 | WebAssembly runtime on an uploaded interpreter | a platform runtime whose version is `upload:`, built in `build.image` | the module arrives in the build as `RUNR_WASM_MODULE` |
 
@@ -154,7 +158,7 @@ without the image fails with a message naming the region.
 - **Scan and signature.** When an upload of a container image finishes, the region's supply-chain
   pipeline runs on it (report subject `uploaded_image`, kind `uploaded`): SBOM, SBOM referrers,
   vulnerability scan, signature and attestations as the region's settings define — the full
-  pipeline of a build, since the image is in RunR's own registry. Settings → Images shows the scan;
+  pipeline of a build, since the image is in RunR's own registry. Build & Run → Images shows the scan;
   re-scans follow the region's interval. A CaaS version that runs an uploaded image gets its own
   report of the same kind, so the policy gate (and *Verify the signature on deploy*) applies to it
   like to a build. The admission policy's `runr-signed-images` covers `<registry>/runr-uploads/**`.
@@ -167,12 +171,12 @@ without the image fails with a message naming the region.
 - **Quota.** An organization (the install, when single-tenant) stores up to `RUNR_IMAGES_QUOTA_GB`
   (50 GiB) of uploaded images over every region: the size of its images plus the declared size of
   uploads still running. An upload that does not fit is refused (`code: quota_exceeded`); replacing
-  an image of the same name gives its size back first. Settings → Images and `GET /api/images/quota`
+  an image of the same name gives its size back first. Build & Run → Images and `GET /api/images/quota`
   show the use.
 - **Replacing.** Uploading the same `repository:tag` into the same region again replaces the image;
   the manifest it replaced is removed from the registry unless another tag of the owner points at
   the same digest.
-- **Deleting.** `DELETE /api/images/{id}` (Settings → Images, `runr images rm`) removes the record
+- **Deleting.** `DELETE /api/images/{id}` (Build & Run → Images, `runr images rm`) removes the record
   and the manifest in the region registry (`RegistryImageLifecycleService`, as the build retention
   removes old builds; Zot frees the blobs with its garbage collection). It is refused (409,
   `code: image_in_use`) while a CaaS project or a runtime version still uses the image — the answer
@@ -184,7 +188,7 @@ without the image fails with a message naming the region.
    (or `skopeo copy --all docker://… oci-archive:myapp.tar` for every platform).
 2. Bring the file to a machine that reaches the RunR console, and upload it (console, CLI or API).
 3. The region pulls nothing from outside: the receiver image itself must be in a registry the
-   region reaches — mirror `ghcr.io/brf-tech/runr/image-upload:1.0.0` into the region registry or your own
+   region reaches — mirror `ghcr.io/brf-tech/runr/image-upload:1.1.0` into the region registry or your own
    mirror and set `RUNR_IMAGE_UPLOAD_IMAGE` (Helm `images.uploadImage`).
 4. Run it: a CaaS project on the uploaded image, or a runtime version / wasm-exec function on it.
 
@@ -198,7 +202,7 @@ reaches the clusters' API servers only, and the old cluster may not answer at al
 image records the registry it was pushed into (`registry_address`); while that is not the
 region's registry any more:
 
-- the image shows `in_registry: false` (Settings → Images marks it); it still counts against the
+- the image shows `in_registry: false` (Build & Run → Images marks it); it still counts against the
   quota;
 - a CaaS project on it is not moved: its deployment is shut down with "Not moved to the new
   cluster of the region: its image myapp:1.0 was uploaded into the registry of the cluster the
@@ -283,7 +287,7 @@ An uploaded image:
 
 | Variable (Helm value) | Default | Meaning |
 |---|---|---|
-| `RUNR_IMAGE_UPLOAD_IMAGE` (`images.uploadImage`) | `ghcr.io/brf-tech/runr/image-upload:1.0.0` | the receiver image (`runtime/ci.sh image-upload [--push]`) |
+| `RUNR_IMAGE_UPLOAD_IMAGE` (`images.uploadImage`) | `ghcr.io/brf-tech/runr/image-upload:1.1.0` | the receiver image (`runtime/ci.sh image-upload [--push]`) |
 | `RUNR_IMAGES_QUOTA_GB` (`images.quotaGb`) | `50` | storage per organization over every region, `0` = unlimited |
 | `RUNR_IMAGE_UPLOAD_MAX_GB` (`images.maxUploadGb`) | `20` | largest file of one upload, in GiB |
 | `RUNR_IMAGE_UPLOAD_TTL_HOURS` (`images.uploadTtlHours`) | `24` | an upload not completed within this time is aborted |

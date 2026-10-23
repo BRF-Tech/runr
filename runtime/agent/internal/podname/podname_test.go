@@ -30,3 +30,53 @@ func TestSlug(t *testing.T) {
 		}
 	}
 }
+
+func TestPreviewSlug(t *testing.T) {
+	cases := []struct {
+		service, number string
+		want            string
+	}{
+		{"shop-pr-12", "12", "shop"},
+		{"shop-front-pr-3", "", "shop-front"},
+		// a slug that has -pr- in it keeps it
+		{"my-pr-tool-pr-7", "7", "my-pr-tool"},
+		{"my-pr-tool-pr-7", "", "my-pr-tool"},
+		// not a preview Service
+		{"shop", "", ""},
+		{"shop-pr-12", "13", ""},
+		{"shop-pr-x", "", ""},
+		{"-pr-4", "4", ""},
+		{"", "", ""},
+	}
+	for _, tc := range cases {
+		if got := PreviewSlug(tc.service, tc.number); got != tc.want {
+			t.Errorf("PreviewSlug(%q, %q) = %q, want %q", tc.service, tc.number, got, tc.want)
+		}
+	}
+}
+
+func TestScheduleSlug(t *testing.T) {
+	cases := []struct {
+		job  string
+		want string
+	}{
+		{"nightly-trigger-29345678", "nightly"},
+		{"shop-front-end-trigger-29345678", "shop-front-end"},
+		// a slug that ends in -trigger itself keeps it
+		{"on-trigger-trigger-29345678", "on-trigger"},
+		{"v2-trigger-1", "v2"},
+		// not a run of a project's CronJob
+		{"build-nightly-v3", ""},
+		{"nightly-trigger", ""},
+		{"nightly-trigger-manual", ""},
+		{"nightly-29345678", ""},
+		{"-trigger-29345678", ""},
+		{"trigger-29345678", ""},
+		{"", ""},
+	}
+	for _, tc := range cases {
+		if got := ScheduleSlug(tc.job); got != tc.want {
+			t.Errorf("ScheduleSlug(%q) = %q, want %q", tc.job, got, tc.want)
+		}
+	}
+}

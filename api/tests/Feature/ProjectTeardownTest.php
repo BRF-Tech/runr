@@ -18,6 +18,7 @@ use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Http;
 use Symfony\Component\Yaml\Yaml;
+use Tests\Support\QueuedJobTimeouts;
 use Tests\TestCase;
 
 /**
@@ -118,7 +119,18 @@ class ProjectTeardownTest extends TestCase
             'DELETE /apis/batch/v1/namespaces/fn/cronjobs/orphan-check-trigger',
             'DELETE /apis/apps/v1/namespaces/fn/deployments/orphan-check-qc',
             'DELETE /api/v1/namespaces/fn/secrets/orphan-check-qc-redis',
+            'DELETE /api/v1/namespaces/fn/secrets/orphan-check-qc-config',
+            'DELETE /api/v1/namespaces/fn/services/orphan-check-qc',
+            // The project goes: the values of its secret variables (the region's only copy) and the
+            // ExternalSecret of its references go with it
             'DELETE /api/v1/namespaces/fn/secrets/orphan-check-secret-env',
+            // the internal network's routes (docs/internal-network.md)
+            'DELETE /apis/traefik.io/v1alpha1/namespaces/fn/ingressroutes/runr-internal-orphan-check',
+            'DELETE /apis/traefik.io/v1alpha1/namespaces/fn/ingressroutes/runr-access-orphan-check',
+            'DELETE /apis/traefik.io/v1alpha1/namespaces/fn/ingressroutes/runr-access-orphan-check-tls',
+            'DELETE /apis/traefik.io/v1alpha1/namespaces/fn/middlewares/runr-access-orphan-check',
+            'DELETE /apis/external-secrets.io/v1/namespaces/fn/externalsecrets/orphan-check-ext-env',
+            'DELETE /apis/external-secrets.io/v1/namespaces/fn/externalsecrets/orphan-check-bao-env',
             'DELETE /api/v1/namespaces/fn/configmaps/orphan-check-v1',
             'DELETE /api/v1/namespaces/fn/configmaps/orphan-check-v2',
         ], $this->deletes());
@@ -163,6 +175,8 @@ class ProjectTeardownTest extends TestCase
             'DELETE /apis/batch/v1/namespaces/fn/cronjobs/orphan-check-trigger',
             'DELETE /apis/apps/v1/namespaces/fn/deployments/orphan-check-qc',
             'DELETE /api/v1/namespaces/fn/secrets/orphan-check-qc-redis',
+            'DELETE /api/v1/namespaces/fn/secrets/orphan-check-qc-config',
+            'DELETE /api/v1/namespaces/fn/services/orphan-check-qc',
         ], $this->deletes());
         $this->assertSame('shut_down', $old->fresh()->status);
     }
@@ -260,20 +274,17 @@ class ProjectTeardownTest extends TestCase
 
     public function test_queue_retry_after_exceeds_every_job_timeout(): void
     {
-        $retryAfter = config('queue.connections.redis.retry_after');
-        $classes = [];
-        foreach (array_merge(glob(app_path('Jobs/*.php')), glob(app_path('Listeners/*.php')), glob(base_path('Modules/*/app/Jobs/*.php'))) as $file) {
-            $src = file_get_contents($file);
-            if (preg_match('/^namespace\s+([^;]+);/m', $src, $ns) && preg_match('/^class\s+(\w+)/m', $src, $cl)) {
-                $classes[] = $ns[1].'\\'.$cl[1];
+        // every queued class, subdirectories included, on the connection it runs on (redis, or
+        // redis-long for the jobs longer than redis allows); a job without a timeout of its own
+        // has its supervisor's
+        $jobs = QueuedJobTimeouts::jobs();
+        $this->assertGreaterThan(50, count($jobs));
+        foreach ($jobs as $class => ['timeout' => $timeout, 'connection' => $connection]) {
+            $this->assertIsNotString($timeout, (string) $timeout);
+            $retryAfter = QueuedJobTimeouts::retryAfter($connection);
+            foreach ($timeout === null ? QueuedJobTimeouts::supervisors($connection) : ['own' => $timeout] as $source => $limit) {
+                $this->assertGreaterThan($limit, $retryAfter, "{$class}: timeout {$limit}s ({$source}) must stay below the retry_after of {$connection} ({$retryAfter}s)");
             }
-        }
-
-        $this->assertNotEmpty($classes);
-        foreach ($classes as $class) {
-            $defaults = (new \ReflectionClass($class))->getDefaultProperties();
-            $timeout = $defaults['timeout'] ?? config('horizon.defaults.supervisor-1.timeout');
-            $this->assertGreaterThan($timeout, $retryAfter, "{$class}: timeout {$timeout}s must stay below the queue retry_after ({$retryAfter}s)");
         }
         $this->assertSame(1, config('horizon.defaults.supervisor-1.tries'), 'jobs retry only when they declare it');
     }

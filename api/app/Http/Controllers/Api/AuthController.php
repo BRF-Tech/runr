@@ -7,6 +7,7 @@ use App\Http\Requests\Auth\RegisterRequest;
 use App\Models\User;
 use App\Services\WhiteLabel\SignupService;
 use App\Services\WhiteLabel\SignupSettings;
+use App\Support\Auth\LoginIdentifier;
 use App\Support\Auth\LoginTokens;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -26,17 +27,28 @@ class AuthController extends Controller
         return app(SignupService::class)->register($request->validated(), $request->all());
     }
 
-    /** @unauthenticated */
+    /**
+     * Sign in with the user name or the e-mail address (`login`) and the password: 200 {user, token},
+     * 202 {requires_2fa} until `two_factor_code` is given. An unknown account and a wrong password
+     * get the same 401.
+     *
+     * @unauthenticated
+     */
     public function login(LoginRequest $request): JsonResponse
     {
-        $login = $request->input('login');
+        $password = (string) $request->input('password');
 
-        // Determine whether the login is an email or a username
-        $field = filter_var($login, FILTER_VALIDATE_EMAIL) ? 'email' : 'username';
+        // The one account the user name or e-mail address names (LoginIdentifier)
+        $user = LoginIdentifier::forRequest($request, $request->input('login'));
 
-        $user = User::where($field, $login)->first();
+        if (! $user) {
+            // As much work as checking a password: the answer time does not tell that the account is missing
+            Hash::make($password);
 
-        if (! $user || ! Hash::check($request->input('password'), $user->password)) {
+            return response()->json(['message' => __('api.auth.login_failed')], 401);
+        }
+
+        if (! Hash::check($password, $user->password)) {
             return response()->json(['message' => __('api.auth.login_failed')], 401);
         }
 

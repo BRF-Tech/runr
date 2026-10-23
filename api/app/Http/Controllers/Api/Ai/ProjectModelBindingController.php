@@ -8,6 +8,7 @@ use App\Models\AiModelBinding;
 use App\Models\AiModelService;
 use App\Models\Project;
 use App\Services\CacheVersionService;
+use App\Services\InternalNetwork\InternalNetworkService;
 use App\Services\Residency\RegionPolicy;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -42,6 +43,11 @@ class ProjectModelBindingController extends Controller
     {
         abort_unless(Gate::allows('models.deploy'), 403);
 
+        // A model service runs in one region: a global project's other copies could not reach it
+        if ($project->isGlobal()) {
+            return response()->json(['message' => __('api.global.model_binding_refused'), 'errors' => ['ai_model_service_id' => [__('api.global.model_binding_refused')]]], 422);
+        }
+
         $data = $request->validate([
             'ai_model_service_id' => [
                 'required', 'string', 'exists:ai_model_services,id',
@@ -74,6 +80,8 @@ class ProjectModelBindingController extends Controller
             'mount_weights' => (bool) ($data['mount_weights'] ?? false),
         ]);
         $this->bumpCache();
+        // the bound project may call the service on the internal network now
+        app(InternalNetworkService::class)->syncModelService($service);
 
         return response()->json(new AiModelBindingResource($binding->load('service.model', 'service.region')), 201);
     }
@@ -105,8 +113,10 @@ class ProjectModelBindingController extends Controller
     {
         abort_unless(Gate::allows('models.deploy'), 403);
 
+        $service = $modelBinding->service;
         $modelBinding->delete();
         $this->bumpCache();
+        app(InternalNetworkService::class)->syncModelService($service);
 
         return response()->json(null, 204);
     }

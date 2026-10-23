@@ -101,7 +101,11 @@ class StatusReporter
 
     public function description(GitDeploy $deploy): string
     {
-        $what = $deploy->kind === GitDeploy::KIND_PREVIEW ? "Preview #{$deploy->pr_number}" : 'Deploy';
+        $what = match ($deploy->kind) {
+            GitDeploy::KIND_PREVIEW => "Preview #{$deploy->pr_number}",
+            GitDeploy::KIND_ENVIRONMENT => 'Deploy to '.($deploy->environment->name ?? 'environment'),
+            default => 'Deploy',
+        };
 
         return match ($deploy->status) {
             GitDeploy::QUEUED, GitDeploy::IMPORTING => "{$what}: creating the version",
@@ -114,6 +118,9 @@ class StatusReporter
             GitDeploy::SKIPPED => match (true) {
                 str_starts_with((string) $deploy->status_message, GitDeployService::BUILD_CANCELLED) => 'Build cancelled by a region migration rollback',
                 $this->stopped($deploy) => 'Stopped before it went live',
+                // A preview that was not allowed to start says why (PreviewService::refusal: the
+                // fixed allocation or the organization quota leaves no room, the preview limit, …)
+                $deploy->kind === GitDeploy::KIND_PREVIEW && (string) $deploy->status_message !== '' => "{$what} not deployed: ".mb_substr((string) $deploy->status_message, 0, 100),
                 default => 'Replaced by a newer deploy',
             },
             default => $what,
@@ -145,8 +152,14 @@ class StatusReporter
             return;
         }
         if (! $id) {
-            $environment = $preview ? "preview/pr-{$deploy->pr_number}" : 'production';
-            $id = $this->attempt(fn () => $client->startDeployment($link, $deploy->sha, $environment, $preview !== null, $preview === null), $deploy, 'deployment');
+            // An environment's push reports to the provider environment of the same name
+            $environment = match (true) {
+                $preview !== null => "preview/pr-{$deploy->pr_number}",
+                $deploy->kind === GitDeploy::KIND_ENVIRONMENT => (string) ($deploy->environment->name ?? 'environment'),
+                default => 'production',
+            };
+            $production = $preview === null && $deploy->kind !== GitDeploy::KIND_ENVIRONMENT;
+            $id = $this->attempt(fn () => $client->startDeployment($link, $deploy->sha, $environment, $preview !== null, $production), $deploy, 'deployment');
             if (! $id) {
                 return;
             }
@@ -160,8 +173,12 @@ class StatusReporter
             GitDeploy::SKIPPED => 'inactive',
             default => 'in_progress',
         };
+        // An environment's deploy: the environment's URL (<workload>.<function domain>)
+        $service = $deploy->kind === GitDeploy::KIND_ENVIRONMENT && $deploy->environment !== null
+            ? $deploy->environment->workload_name
+            : $project->slug;
         $url = $deploy->status === GitDeploy::ACTIVE
-            ? ($preview?->url ?? GitUrls::function($project, $project->slug))
+            ? ($preview?->url ?? GitUrls::function($project, $service))
             : null;
 
         $this->attempt(fn () => $client->deploymentStatus($link, $id, $state, $url, GitUrls::project($project), $description), $deploy, 'deployment status');

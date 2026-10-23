@@ -1,3 +1,10 @@
+# The FrankenPHP base of the runtime stage, from the reqs mirror (REQS_IMAGES of lib/mirror.sh in
+# BRF-Tech/runr-runtimes); Dockerfile has the same. It is an exact upstream tag,
+# <FrankenPHP version>-php<PHP version>-alpine on PHP_MIN_VERSION or later, or the floating
+# 1-php8.3-alpine while upstream has none on it; the guard of the runtime stage refuses an older
+# PHP either way.
+ARG FRANKENPHP_TAG=1-php8.3-alpine
+
 # ─── Stage 1: Composer dependencies ──────────────────────────────────────────
 FROM ghcr.io/brf-tech/runr/reqs/composer:2.7 AS vendor
 
@@ -16,10 +23,21 @@ RUN composer install \
     --ignore-platform-req=ext-pcntl
 
 # ─── Stage 2: Runtime image ───────────────────────────────────────────────────
-FROM ghcr.io/brf-tech/runr/reqs/frankenphp:1-php8.3-alpine AS base
+FROM ghcr.io/brf-tech/runr/reqs/frankenphp:${FRANKENPHP_TAG} AS base
 
 LABEL org.opencontainers.image.source="https://github.com/brf-tech/runr"
 LABEL org.opencontainers.image.description="RunR API"
+
+# The oldest PHP the image may ship: the PHP 8.3 release that fixes CVE-2026-109618 and
+# CVE-2026-109619 (https://www.php.net/archive/2026.php#2026-10-21-5); Dockerfile has the same.
+# The build fails when the base image's PHP is older, or is on another branch than
+# PHP_MIN_VERSION (a base on a new PHP branch sets that branch's fixed release here).
+ARG PHP_MIN_VERSION=8.3.36
+RUN php -r '$min = $argv[1] ?? ""; \
+        $branch = implode(".", array_slice(explode(".", $min), 0, 2)) . "."; \
+        exit(str_starts_with(PHP_VERSION, $branch) && version_compare(PHP_VERSION, $min, ">=") ? 0 : 1);' \
+        "$PHP_MIN_VERSION" \
+    || { echo "PHP $(php -r 'echo PHP_VERSION;') of the base image is not PHP_MIN_VERSION=${PHP_MIN_VERSION} or a later release of its branch" >&2; exit 1; }
 
 # PHP extensions
 RUN install-php-extensions \
@@ -34,12 +52,13 @@ RUN install-php-extensions \
 
 # System packages + helm + kubectl
 # git-daemon: git-http-backend of the project git remotes (/git/<org>/<project>.git)
+# zstd: organization export packages (docs/org-export.md)
 # helm and kubectl are pinned and checked against their published SHA-256 (amd64 / arm64), so every
 # build of a release tag gets the same binaries; kubectl 1.35 is within one minor version of the
 # Kubernetes versions RunR supports
 ARG HELM_VERSION=v3.16.0
 ARG KUBECTL_VERSION=v1.35.9
-RUN apk add --no-cache git git-daemon sqlite curl libpq \
+RUN apk add --no-cache git git-daemon sqlite curl libpq zstd \
     && KUBE_ARCH="$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/')" \
     && case "$KUBE_ARCH" in \
          amd64) HELM_SHA=327cfbc7ddc5a3eb644039ceb0cff66394628654c4f5a76bf715ed15b893983b; \

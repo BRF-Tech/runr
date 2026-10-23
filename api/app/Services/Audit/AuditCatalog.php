@@ -9,6 +9,9 @@ use App\Models\AiModel;
 use App\Models\AiModelBinding;
 use App\Models\AiModelService;
 use App\Models\AiModelSnapshot;
+use App\Models\ApiProduct\ApiConsumer;
+use App\Models\ApiProduct\ApiKey;
+use App\Models\ApiProduct\ApiPlan;
 use App\Models\Binding;
 use App\Models\BindingAttachment;
 use App\Models\BindingRegionService;
@@ -34,11 +37,14 @@ use App\Models\Observability\UptimeCheck;
 use App\Models\PrivateDatabaseBinding;
 use App\Models\Project;
 use App\Models\ProjectDomain;
+use App\Models\ProjectRegion;
 use App\Models\ProjectSecret;
+use App\Models\RegionSecretSetting;
 use App\Models\RegionSupplyChainSetting;
 use App\Models\Role;
 use App\Models\RoleAssignment;
 use App\Models\Runtime;
+use App\Models\SecretStore;
 use App\Models\SecurityPolicyOverride;
 use App\Models\Setting;
 use App\Models\TenantSecurityPolicy;
@@ -71,6 +77,10 @@ final class AuditCatalog
         'authorization.denied',
         'audit.retention.pruned',
         'secrets.reencrypted',
+        // Pass-through upgrade: secret values moved from the database into the regions (secrets:move-to-region)
+        'secrets.moved_to_region',
+        // The upgrade from 0.5.10 finalized: the copies kept for a rollback dropped (secrets:move-to-region --finalize)
+        'secrets.pass_through_finalized',
         // Sandbox API: the reaper ending a sandbox at its TTL, idle timeout or quota (SandboxLog)
         'sandbox.expire',
         // Bindings: the hourly purge deletes a binding's data after its retention (BindingManager)
@@ -99,6 +109,15 @@ final class AuditCatalog
         // after the request that completed the upload
         'image.upload.pushed',
         'image.upload.failed',
+        // Organization export / import (App\Services\OrgTransfer, docs/org-export.md): the jobs'
+        // results, in the trail of the organization exported from / imported into
+        'org.export.completed',
+        'org.export.failed',
+        'org.import.rejected',
+        'org.import.fetched',
+        'org.import.fetch_failed',
+        'org.import.completed',
+        'org.import.failed',
         // AI agents (docs/mcp.md, McpAudit): MCP sessions, every tools/call, the OAuth server's
         // registrations and tokens, calls through the hosted-server gateway (when audited)
         'mcp.session.start',
@@ -108,6 +127,20 @@ final class AuditCatalog
         'oauth.client.register',
         'oauth.token.issue',
         'oauth.token.revoke',
+        // Runtime patches (RuntimePatchMigrations): RunR moving a project onto a patch at its
+        // deadline (or a platform administrator's force), the rollback of one that failed
+        'runtime_patch.migrate',
+        'runtime_patch.rollback',
+        // Deploy strategies (App\Services\Rollouts\RolloutService): what a blue-green / canary
+        // rollout does by itself — the user's promote / abort / rollback are audited by their route
+        'deployment.rollout.auto_promoted',
+        'deployment.rollout.auto_rolled_back',
+        'deployment.rollout.failed',
+        'deployment.rollout.released',
+        // Environments (App\Services\Environments\Promotions): the deployment of an approved
+        // promotion went live or failed, after the request that approved it
+        'environment.promotion.deployed',
+        'environment.promotion.failed',
     ];
 
     /** Models whose changes during an audited request are recorded (AuditChanges) => target type. */
@@ -117,11 +150,20 @@ final class AuditCatalog
         FaasConfig::class => 'project_config',
         ContainerConfig::class => 'project_config',
         ProjectSecret::class => 'project_secret',
+        // The organization's secret stores (settings only: addresses, roles — never a credential)
+        SecretStore::class => 'secret_store',
+        RegionSecretSetting::class => 'region_secrets',
         Workflow::class => 'workflow',
         WorkflowApp::class => 'workflow_app',
         ProjectDomain::class => 'domain',
+        // Global projects: the regions of a global project (docs/global-projects.md)
+        ProjectRegion::class => 'project_region',
         Gateway::class => 'gateway',
         GatewayRoute::class => 'gateway_route',
+        // API product (docs/api-product.md): a key's hash appears by name only (hidden)
+        ApiConsumer::class => 'api_consumer',
+        ApiKey::class => 'api_key',
+        ApiPlan::class => 'api_plan',
         PrivateDatabaseBinding::class => 'private_connection',
         Binding::class => 'binding',
         BindingAttachment::class => 'binding_attachment',
@@ -346,8 +388,24 @@ final class AuditCatalog
             'DELETE api/projects/{project}' => $r('project.delete', 'project', $p),
             'PUT api/projects/{project}/owner' => $r('project.owner.transfer', 'project', $p,
                 meta: fn (Request $q, ?array $j) => ['owner_id' => (string) $q->input('user_id'), 'previous_owner_id' => $j['previous_owner_id'] ?? null]),
+            // Global projects (docs/global-projects.md)
+            'PUT api/projects/{project}/global' => $r('project.global.update', 'project', $p, meta: fn (Request $q) => array_filter([
+                'mode' => $q->input('mode'),
+                'failover' => $q->input('failover'),
+                'primary_region_id' => $q->input('primary_region_id'),
+                'region_ids' => $q->input('region_ids'),
+            ], fn ($v) => $v !== null)),
+            'POST api/projects/{project}/global/sync' => $r('project.global.sync', 'project', $p),
+            'POST api/projects/{project}/global/failover' => $r('project.global.failover', 'project', $p, meta: fn (Request $q) => array_filter([
+                'region_id' => $q->input('region_id'),
+            ], fn ($v) => $v !== null)),
             'POST api/projects/{project}/stop' => $r('project.stop', 'project', $p, meta: fn (Request $q) => ['reason' => mb_substr((string) $q->input('reason'), 0, 1000)]),
             'POST api/projects/{project}/resume' => $r('project.resume', 'project', $p, meta: fn (Request $q, ?array $j) => ['deployment_id' => $j['deployment_id'] ?? null]),
+            // Rightsizing (docs/monitoring.md#rightsizing): the applied size saves a version
+            'POST api/projects/{project}/rightsizing/apply' => $r('project.rightsizing.apply', 'project', $p,
+                meta: fn (Request $q, ?array $j) => ['recommended' => $j['data']['recommended'] ?? null, 'previous' => $j['data']['current'] ?? null, 'version' => $j['version']['number'] ?? null]),
+            'POST api/projects/{project}/rightsizing/dismiss' => $r('project.rightsizing.dismiss', 'project', $p,
+                meta: fn (Request $q) => ['snooze_days' => $q->input('snooze_days')]),
             'POST api/projects/{project}/code' => $r('project.code.save', 'project', $p,
                 meta: fn (Request $q, ?array $j) => ['version' => $j['number'] ?? $j['data']['number'] ?? null, 'message' => $q->input('message')]),
             'POST api/projects/{project}/files' => $r('project.code.save', 'project', $p,
@@ -355,6 +413,26 @@ final class AuditCatalog
             'PUT api/projects/{project}/secrets/{name}' => $r('project.secret.set', 'project', $p, meta: fn (Request $q) => ['name' => $q->route('name')]),
             'DELETE api/projects/{project}/secrets/{name}' => $r('project.secret.delete', 'project', $p, meta: fn (Request $q) => ['name' => $q->route('name')]),
             'GET api/projects/{project}/secrets/{name}/value' => $r('project.secret.reveal', 'project', $p, meta: fn (Request $q) => ['name' => $q->route('name')]),
+            'POST api/projects/{project}/secrets/refresh' => $r('project.secret.refresh', 'project', $p),
+            // Secret stores (docs/secret-stores.md): settings only, never a credential
+            'POST api/secret-stores' => $r('secret_store.create', 'secret_store', 'response:data.id', 'input:name',
+                meta: fn (Request $q) => ['provider' => $q->input('provider'), 'auth' => $q->input('auth')]),
+            'PUT api/secret-stores/{secretStore}' => $r('secret_store.update', 'secret_store', 'param:secretStore'),
+            'DELETE api/secret-stores/{secretStore}' => $r('secret_store.delete', 'secret_store', 'param:secretStore'),
+            'POST api/secret-stores/{secretStore}/verify' => $r('secret_store.verify', 'secret_store', 'param:secretStore',
+                meta: fn (Request $q, ?array $j) => ['region_id' => $q->input('region_id'), 'status' => $j['data']['status'] ?? null]),
+
+            // ── Runtime patches (routes/runtime-patches.php) ─────────────────────
+            'POST api/projects/{project}/runtime-patches/apply' => $r('runtime_patch.apply', 'project', $p,
+                meta: fn (Request $q, ?array $j) => ['patch_id' => $j['data']['patch_id'] ?? null, 'migration_id' => $j['data']['id'] ?? null]),
+            'PUT api/projects/{project}/runtime-patches/pin' => $r('runtime_patch.pin', 'project', $p,
+                meta: fn (Request $q, ?array $j) => ['patch_id' => $q->input('patch_id'), 'deploy' => $q->boolean('deploy', true), 'migration_id' => $j['migration']['id'] ?? null]),
+            'DELETE api/projects/{project}/runtime-patches/pin' => $r('runtime_patch.unpin', 'project', $p),
+            'POST api/admin/runtime-patches/check' => $r('runtime_patch.feed.check', meta: fn (Request $q, ?array $j) => ['status' => $j['data']['status'] ?? null, 'digest' => $j['data']['manifest_digest'] ?? null]),
+            'PUT api/admin/runtime-patches/policy' => $r('runtime_patch.policy.update', meta: fn (Request $q) => ['auto_migrate' => $q->boolean('auto_migrate')]),
+            'POST api/admin/runtime-patches/{patch}/remind' => $r('runtime_patch.remind', 'runtime_patch', 'param:patch', meta: fn (Request $q, ?array $j) => ['told' => $j['data']['told'] ?? null]),
+            'POST api/admin/runtime-patches/{patch}/force' => $r('runtime_patch.force', 'runtime_patch', 'param:patch', meta: fn (Request $q, ?array $j) => ['started' => $j['data']['started'] ?? null]),
+            'PUT api/admin/runtime-patches/{patch}/deadline' => $r('runtime_patch.deadline.update', 'runtime_patch', 'param:patch', meta: fn (Request $q) => ['deadline_at' => $q->input('deadline_at')]),
 
             // ── Durable workflows (routes/workflows.php) ─────────────────────────
             'PUT api/projects/{project}/workflows' => $r('workflow.declare', 'project', $p),
@@ -364,6 +442,10 @@ final class AuditCatalog
             'GET api/projects/{project}/workflows/app/signing-key' => $r('workflow.signing_key.reveal', 'project', $p),
             'PATCH api/projects/{project}/workflows/{workflow}' => $r('workflow.update', 'project', $p,
                 meta: fn (Request $q) => ['workflow' => self::routeKey($q, 'workflow'), 'fields' => array_keys($q->all())]),
+            'PUT api/projects/{project}/workflows/{workflow}' => $r('workflow.declare', 'project', $p,
+                meta: fn (Request $q, ?array $j) => ['workflow' => self::routeKey($q, 'workflow'), 'source' => $j['data']['source'] ?? null]),
+            'DELETE api/projects/{project}/workflows/{workflow}' => $r('workflow.archive', 'project', $p,
+                meta: fn (Request $q) => ['workflow' => self::routeKey($q, 'workflow')]),
             'POST api/projects/{project}/workflows/{workflow}/runs' => $r('workflow.run.start', 'workflow_run', 'response:data.id',
                 meta: fn (Request $q) => ['project_id' => $q->route('project')?->id, 'workflow' => self::routeKey($q, 'workflow')]),
             'POST api/projects/{project}/workflow-runs/{run}/cancel' => $r('workflow.run.cancel', 'workflow_run', 'param:run', meta: fn (Request $q) => ['project_id' => $q->route('project')?->id]),
@@ -393,6 +475,11 @@ final class AuditCatalog
             'DELETE api/projects/{project}/uptime-checks/{check}' => $r('uptime_check.delete', 'uptime_check', 'param:check', meta: fn (Request $q) => ['project_id' => $q->route('project')?->id]),
             'POST api/projects/{project}/uptime-checks/{check}/run' => $r('uptime_check.run', 'uptime_check', 'param:check', meta: fn (Request $q) => ['project_id' => $q->route('project')?->id]),
             'PATCH api/projects/{project}/uptime-incidents/{incident}' => $r('uptime_incident.update', 'uptime_incident', 'param:incident', meta: fn (Request $q) => ['project_id' => $q->route('project')?->id, 'fields' => array_keys($q->all())]),
+            // Load tests (docs/load-test.md): the request body is named, not recorded
+            'POST api/projects/{project}/load-tests' => $r('load_test.start', 'load_test', 'response:data.id',
+                meta: fn (Request $q) => ['project_id' => $q->route('project')?->id, 'host' => $q->input('host'), 'method' => $q->input('method', 'GET'), 'path' => $q->input('path', '/'),
+                    'users' => $q->input('users'), 'duration_seconds' => $q->input('duration_seconds'), 'has_body' => $q->filled('body')]),
+            'POST api/projects/{project}/load-tests/{loadTest}/cancel' => $r('load_test.cancel', 'load_test', 'param:loadTest', meta: fn (Request $q) => ['project_id' => $q->route('project')?->id]),
             'PUT api/observability/status-page' => $r('status_page.update', 'status_page', 'response:data.page.id', 'input:slug',
                 meta: fn (Request $q) => $q->only(['slug', 'custom_domain', 'is_public', 'show_incident_history']) + ['components' => count((array) $q->input('components', []))]),
             'POST api/observability/alert-channels' => $r('alert_channel.create', 'alert_channel', 'response:data.id', 'input:name', meta: fn (Request $q) => ['type' => $q->input('type')]),
@@ -410,12 +497,74 @@ final class AuditCatalog
             // ── Deployments & shell ──────────────────────────────────────────────
             'POST api/projects/{project}/deploy' => $r($deployAction, 'project', $p,
                 meta: fn (Request $q, ?array $j) => ['version_id' => $q->input('version_id'), 'deployment_id' => $j['id'] ?? null, 'overrides' => array_keys((array) $q->input('deploy_config', []))]
+                    + ($q->filled('strategy') ? ['strategy' => $q->input('strategy')] : [])
+                    + (isset($j['rollout']['id']) ? ['rollout_id' => $j['rollout']['id'], 'rollout_strategy' => $j['rollout']['strategy'] ?? null] : [])
+                    // An environment of the project; a rollback that restores the config (docs/environments.md, docs/versioning.md)
+                    + ($q->filled('environment') ? ['environment' => mb_substr((string) $q->input('environment'), 0, 64)] : [])
+                    + ($q->boolean('restore_config') ? ['restore_config' => true] : [])
                     + ($q->boolean('override_policy') ? ['policy_override' => true] : [])
                     // The version is built again for the region's registry first (VersionRebuilds)
                     + (isset($j['queued_deploy']['id']) ? ['queued_deploy_id' => $j['queued_deploy']['id']] : [])),
             'POST api/projects/{project}/versions/{version}/security/scan' => $r('security.scan.request', 'project', $p, meta: fn (Request $q) => ['version_id' => self::routeKey($q, 'version')]),
             'DELETE api/projects/{project}/deployments/{deployment}' => $r('deployment.delete', 'deployment', 'param:deployment', meta: fn (Request $q) => ['project_id' => $q->route('project')?->id]),
+            'POST api/projects/{project}/deployments/{deployment}/rollback' => $r('deployment.rollback', 'deployment', 'param:deployment',
+                meta: fn (Request $q, ?array $j) => ['project_id' => $q->route('project')?->id, 'deployment_id' => $j['id'] ?? null, 'keep_current_config' => $q->boolean('keep_current_config')]),
+
+            // ── Triggers and topics (docs/triggers.md) ──────────────────────────
+            'POST api/projects/{project}/triggers' => $r('project.trigger.create', 'project', $p,
+                meta: fn (Request $q, ?array $j) => ['trigger' => $j['data']['name'] ?? $q->input('name'), 'type' => $q->input('type'), 'trigger_id' => $j['data']['id'] ?? null]),
+            'PUT api/projects/{project}/triggers' => $r('project.trigger.replace', 'project', $p,
+                meta: fn (Request $q) => ['triggers' => array_values(array_filter(array_map(fn ($t) => is_array($t) ? ($t['name'] ?? $t['type'] ?? null) : null, (array) $q->input('triggers', []))))]),
+            'PATCH api/projects/{project}/triggers/{trigger}' => $r('project.trigger.update', 'project', $p,
+                meta: fn (Request $q) => ['trigger' => $q->route('trigger'), 'fields' => array_keys($q->except(['secrets'])), 'secrets' => array_keys((array) $q->input('secrets', []))]),
+            'DELETE api/projects/{project}/triggers/{trigger}' => $r('project.trigger.delete', 'project', $p, meta: fn (Request $q) => ['trigger' => $q->route('trigger')]),
+            'POST api/projects/{project}/triggers/{trigger}/events/{event}/replay' => $r('project.trigger.event.replay', 'project', $p,
+                meta: fn (Request $q) => ['trigger' => $q->route('trigger'), 'event_id' => $q->route('event')]),
+            'POST api/projects/{project}/triggers/{trigger}/events/replay' => $r('project.trigger.events.replay', 'project', $p,
+                meta: fn (Request $q, ?array $j) => ['trigger' => $q->route('trigger'), 'status' => $q->input('status'), 'ids' => count((array) $q->input('ids', [])), 'replayed' => $j['replayed'] ?? null]),
+            'POST api/topics' => $r('topic.create', 'topic', 'response:data.id', 'response:data.name',
+                meta: fn (Request $q) => ['name' => $q->input('name'), 'region_id' => $q->input('knative_region_id')]),
+            'PATCH api/topics/{topic}' => $r('topic.update', 'topic', 'param:topic', meta: fn (Request $q) => ['fields' => array_keys($q->all())]),
+            'DELETE api/topics/{topic}' => $r('topic.delete', 'topic', 'param:topic'),
+            'POST api/topics/{topic}/publish' => $r('topic.publish', 'topic', 'param:topic',
+                meta: fn (Request $q, ?array $j) => ['type' => $q->input('type'), 'event_id' => $j['data']['id'] ?? null, 'stream_id' => $j['data']['stream_id'] ?? null]),
+
+            // ── Internal network (docs/internal-network.md) ──────────────────────
+            'PUT api/projects/{project}/network' => $r('project.network.update', 'project', $p,
+                meta: fn (Request $q) => ['access_mode' => $q->input('access_mode'), 'allowed_cidrs' => count((array) $q->input('allowed_cidrs', []))]),
+            'POST api/projects/{project}/network/callers' => $r('project.network.caller.add', 'project', $p,
+                meta: fn (Request $q) => ['caller' => mb_substr((string) $q->input('caller'), 0, 120)]),
+            'DELETE api/projects/{project}/network/callers/{caller}' => $r('project.network.caller.remove', 'project', $p,
+                meta: fn (Request $q) => ['caller' => $q->route('caller')]),
+
+            // ── Environments and promotion (routes/environments.php, docs/environments.md) ──
+            'POST api/projects/{project}/environments' => $r('environment.create', 'project', $p,
+                meta: fn (Request $q, ?array $j) => ['environment' => $q->input('name'), 'environment_id' => $j['data']['id'] ?? null, 'region_id' => $q->input('knative_region_id'), 'overrides' => array_keys((array) $q->input('overrides', []))]),
+            'PATCH api/projects/{project}/environments/{environment}' => $r('environment.update', 'project', $p,
+                meta: fn (Request $q) => ['environment' => $q->route('environment'), 'fields' => array_keys($q->except(['overrides'])), 'overrides' => array_keys((array) $q->input('overrides', []))]),
+            'DELETE api/projects/{project}/environments/{environment}' => $r('environment.delete', 'project', $p, meta: fn (Request $q) => ['environment' => $q->route('environment')]),
+            'PUT api/projects/{project}/environments/{environment}/secrets/{name}' => $r('environment.secret.set', 'project', $p,
+                meta: fn (Request $q) => ['environment' => $q->route('environment'), 'name' => $q->route('name')]),
+            'DELETE api/projects/{project}/environments/{environment}/secrets/{name}' => $r('environment.secret.delete', 'project', $p,
+                meta: fn (Request $q) => ['environment' => $q->route('environment'), 'name' => $q->route('name')]),
+            'POST api/projects/{project}/environments/{environment}/promote' => $r('environment.promotion.request', 'project', $p,
+                meta: fn (Request $q, ?array $j) => ['from' => $q->route('environment'), 'to' => $j['data']['target'] ?? $q->input('to'), 'promotion_id' => $j['data']['id'] ?? null, 'version' => $j['data']['version']['number'] ?? null, 'status' => $j['data']['status'] ?? null]),
+            'POST api/projects/{project}/promotions/{promotion}/approve' => $r('environment.promotion.approve', 'project', $p,
+                meta: fn (Request $q, ?array $j) => ['promotion_id' => self::routeKey($q, 'promotion'), 'to' => $j['data']['target'] ?? null, 'deployment_id' => $j['data']['deployment_id'] ?? null]),
+            'POST api/projects/{project}/promotions/{promotion}/reject' => $r('environment.promotion.reject', 'project', $p,
+                meta: fn (Request $q) => ['promotion_id' => self::routeKey($q, 'promotion')]),
+            'POST api/projects/{project}/promotions/{promotion}/cancel' => $r('environment.promotion.cancel', 'project', $p,
+                meta: fn (Request $q) => ['promotion_id' => self::routeKey($q, 'promotion')]),
             'PATCH api/projects/{project}/deployments/{deployment}/status' => $r('deployment.status.update', 'deployment', 'param:deployment', meta: fn (Request $q) => ['status' => $q->input('status'), 'project_id' => $q->route('project')?->id]),
+            // Deploy strategies (docs/deploy-strategies.md): the settings, and a user's rollout actions
+            'PUT api/projects/{project}/deploy-strategy' => $r('project.deploy_strategy.update', 'project', $p,
+                meta: fn (Request $q, ?array $j) => ['strategy' => $j['data']['strategy'] ?? $q->input('strategy'), 'fields' => array_keys($q->only(['strategy', 'blue_green', 'canary']))]),
+            'POST api/projects/{project}/deployments/{deployment}/rollout/promote' => $r('deployment.rollout.promote', 'deployment', 'param:deployment',
+                meta: fn (Request $q, ?array $j) => ['project_id' => $q->route('project')?->id, 'rollout_id' => $j['data']['id'] ?? null, 'strategy' => $j['data']['strategy'] ?? null]),
+            'POST api/projects/{project}/deployments/{deployment}/rollout/abort' => $r('deployment.rollout.abort', 'deployment', 'param:deployment',
+                meta: fn (Request $q, ?array $j) => ['project_id' => $q->route('project')?->id, 'rollout_id' => $j['data']['id'] ?? null, 'reason' => $q->input('reason')]),
+            'POST api/projects/{project}/deployments/{deployment}/rollout/rollback' => $r('deployment.rollout.rollback', 'deployment', 'param:deployment',
+                meta: fn (Request $q, ?array $j) => ['project_id' => $q->route('project')?->id, 'rollout_id' => $j['data']['id'] ?? null, 'reason' => $q->input('reason')]),
             'POST api/projects/{project}/deployments/{deployment}/exec' => $r('shell.session.request', 'deployment', 'param:deployment', meta: fn (Request $q, ?array $j) => ['project_id' => $q->route('project')?->id, 'session_id' => $j['session_id'] ?? null]),
 
             // ── Domains, private connections, gateways ───────────────────────────
@@ -424,7 +573,7 @@ final class AuditCatalog
             'PUT api/projects/{project}/domains/{domain}/tls' => $r('domain.tls.update', 'domain', 'param:domain', meta: fn (Request $q) => ['mode' => $q->input('mode')]),
             'DELETE api/projects/{project}/domains/{domain}' => $r('domain.delete', 'domain', 'param:domain'),
             'POST api/projects/{project}/private-connections' => $r('private_connection.create', 'project', $p,
-                meta: fn (Request $q) => ['name' => $q->input('name'), 'routing_key' => $q->input('routing_key'), 'env_prefix' => $q->input('env_prefix')]),
+                meta: fn (Request $q) => ['name' => $q->input('name'), 'routing_key' => $q->input('routing_key'), 'env_prefix' => $q->input('env_prefix'), 'environment' => $q->input('environment')]),
             'DELETE api/projects/{project}/private-connections/{privateConnection}' => $r('private_connection.delete', 'private_connection', 'param:privateConnection'),
             // Bindings (docs/bindings.md; routes/bindings.php) — never credential values
             'POST api/bindings' => $r('binding.create', 'binding', 'response:data.id', 'input:name',
@@ -441,15 +590,41 @@ final class AuditCatalog
                     'binding' => $j['data']['binding']['name'] ?? $q->input('binding.name'),
                     'created' => $q->has('binding'),
                     'env_prefix' => $q->input('env_prefix'),
+                    'credentials' => $j['data']['credential_mode'] ?? $q->input('credentials', 'static'),
                 ]),
             'PATCH api/projects/{project}/bindings/{attachment}' => $r('binding.attachment.update', 'project', $p,
-                meta: fn (Request $q) => ['attachment_id' => self::routeKey($q, 'attachment'), 'env_prefix' => $q->input('env_prefix')]),
+                meta: fn (Request $q) => ['attachment_id' => self::routeKey($q, 'attachment'), 'env_prefix' => $q->input('env_prefix')]
+                    + ($q->has('credentials') ? ['credentials' => $q->input('credentials')] : [])),
             'DELETE api/projects/{project}/bindings/{attachment}' => $r('binding.detach', 'project', $p,
                 meta: fn (Request $q) => ['attachment_id' => self::routeKey($q, 'attachment')]),
+            'POST api/gateways' => $r('gateway.create', 'gateway', 'response:data.id', meta: fn (Request $q) => ['knative_region_id' => $q->input('knative_region_id')]),
             'PATCH api/gateways/{gateway}' => $r('gateway.update', 'gateway', 'param:gateway'),
-            'POST api/gateways/{gateway}/routes' => $r('gateway.route.create', 'gateway', 'param:gateway', meta: fn (Request $q) => ['path' => $q->input('path'), 'project_id' => $q->input('project_id')]),
+            'POST api/gateways/{gateway}/routes' => $r('gateway.route.create', 'gateway', 'param:gateway', meta: fn (Request $q) => ['path' => $q->input('path'), 'project_id' => $q->input('project_id'), 'environment' => $q->input('environment'),
+                'auth_mode' => $q->input('auth_mode', 'public'), 'gateway_only' => $q->boolean('gateway_only')]),
             'PATCH api/gateways/{gateway}/routes/{route}' => $r('gateway.route.update', 'gateway_route', 'param:route'),
             'DELETE api/gateways/{gateway}/routes/{route}' => $r('gateway.route.delete', 'gateway_route', 'param:route'),
+            // API product (docs/api-product.md) — never a key: the audit keeps its id and prefix
+            'PUT api/gateways/{gateway}/custom-domain' => $r('gateway.domain.request', 'gateway', 'param:gateway', meta: fn (Request $q) => ['domain' => $q->input('domain')]),
+            'POST api/gateways/{gateway}/custom-domain/verify' => $r('gateway.domain.verify', 'gateway', 'param:gateway',
+                meta: fn (Request $q, ?array $j) => ['domain' => $j['data']['custom_domain'] ?? null]),
+            'DELETE api/gateways/{gateway}/custom-domain' => $r('gateway.domain.remove', 'gateway', 'param:gateway'),
+            'POST api/api-consumers' => $r('api_consumer.create', 'api_consumer', 'response:data.id', 'input:name',
+                meta: fn (Request $q) => $q->only(['gateway_id', 'plan_id', 'external_id', 'status'])),
+            'PATCH api/api-consumers/{apiConsumer}' => $r('api_consumer.update', 'api_consumer', 'param:apiConsumer',
+                meta: fn (Request $q) => ['fields' => array_keys($q->all())] + $q->only(['plan_id', 'status'])),
+            'DELETE api/api-consumers/{apiConsumer}' => $r('api_consumer.delete', 'api_consumer', 'param:apiConsumer'),
+            'POST api/api-consumers/{apiConsumer}/keys' => $r('api_key.create', 'api_key', 'response:data.id', 'input:name',
+                meta: fn (Request $q, ?array $j) => ['consumer_id' => self::routeKey($q, 'apiConsumer'), 'prefix' => $j['data']['prefix'] ?? null]
+                    + $q->only(['plan_id', 'expires_at']) + ['scoped' => is_array($q->input('scopes'))]),
+            'PATCH api/api-keys/{apiKey}' => $r('api_key.update', 'api_key', 'param:apiKey', meta: fn (Request $q) => ['fields' => array_keys($q->all())]),
+            'POST api/api-keys/{apiKey}/rotate' => $r('api_key.rotate', 'api_key', 'param:apiKey',
+                meta: fn (Request $q, ?array $j) => ['new_key_id' => $j['data']['id'] ?? null, 'prefix' => $j['data']['prefix'] ?? null, 'overlap_minutes' => $q->input('overlap_minutes')]),
+            'POST api/api-keys/{apiKey}/revoke' => $r('api_key.revoke', 'api_key', 'param:apiKey'),
+            'POST api/api-plans' => $r('api_plan.create', 'api_plan', 'response:data.id', 'input:name',
+                meta: fn (Request $q) => $q->only(['gateway_id', 'rate_per_second', 'burst', 'rate_per_minute', 'quota_per_day', 'quota_per_month'])),
+            'PATCH api/api-plans/{apiPlan}' => $r('api_plan.update', 'api_plan', 'param:apiPlan',
+                meta: fn (Request $q) => $q->only(['name', 'rate_per_second', 'burst', 'rate_per_minute', 'quota_per_day', 'quota_per_month'])),
+            'DELETE api/api-plans/{apiPlan}' => $r('api_plan.delete', 'api_plan', 'param:apiPlan'),
 
             // ── Regions ──────────────────────────────────────────────────────────
             'POST api/knative-regions' => $r('region.create', 'region', 'response:data.id', 'input:name'),
@@ -479,8 +654,23 @@ final class AuditCatalog
             'POST api/knative-regions/{knativeRegion}/uninstall-sandbox' => $r('region.sandbox.uninstall', 'region', 'param:knativeRegion', meta: fn (Request $q) => ['runtime' => $q->input('runtime')]),
             'PUT api/knative-regions/{knativeRegion}/sandbox-mapping' => $r('region.sandbox.mapping.update', 'region', 'param:knativeRegion'),
             // WebAssembly support (runwasi shims on the region's nodes)
+            // Global DNS: a region's PowerDNS server, the zone sync (docs/global-projects.md)
+            'POST api/knative-regions/{knativeRegion}/global-dns' => $r('region.global_dns.enable', 'region', 'param:knativeRegion'),
+            'DELETE api/knative-regions/{knativeRegion}/global-dns' => $r('region.global_dns.disable', 'region', 'param:knativeRegion'),
+            'PUT api/knative-regions/{knativeRegion}/global-dns/geoip' => $r('region.global_dns.geoip', 'region', 'param:knativeRegion', meta: fn (Request $q) => array_filter(['source' => $q->input('source'), 'url' => $q->input('url')], fn ($v) => $v !== null)),
+            'POST api/knative-regions/{knativeRegion}/global-dns/geoip/reload' => $r('region.global_dns.geoip_reload', 'region', 'param:knativeRegion'),
+            'POST api/global-dns/sync' => $r('global_dns.sync'),
             'POST api/knative-regions/{knativeRegion}/wasm' => $r('region.wasm.install', 'region', 'param:knativeRegion', meta: fn (Request $q) => ['shims' => $q->input('shims'), 'nodes' => $q->input('nodes')]),
             'DELETE api/knative-regions/{knativeRegion}/wasm' => $r('region.wasm.uninstall', 'region', 'param:knativeRegion'),
+            'POST api/knative-regions/{knativeRegion}/external-secrets' => $r('region.external_secrets.install', 'region', 'param:knativeRegion'),
+            'DELETE api/knative-regions/{knativeRegion}/external-secrets' => $r('region.external_secrets.uninstall', 'region', 'param:knativeRegion'),
+            'POST api/knative-regions/{knativeRegion}/openbao' => $r('region.openbao.install', 'region', 'param:knativeRegion'),
+            'PATCH api/knative-regions/{knativeRegion}/openbao' => $r('region.openbao.update', 'region', 'param:knativeRegion',
+                meta: fn (Request $q) => ['default_for_values' => (bool) $q->input('default_for_values')]),
+            'DELETE api/knative-regions/{knativeRegion}/openbao' => $r('region.openbao.uninstall', 'region', 'param:knativeRegion'),
+            // cert-manager and the ClusterIssuer of custom domains
+            'POST api/knative-regions/{knativeRegion}/cert-manager' => $r('region.cert_manager.install', 'region', 'param:knativeRegion'),
+            'DELETE api/knative-regions/{knativeRegion}/cert-manager' => $r('region.cert_manager.uninstall', 'region', 'param:knativeRegion'),
             'POST api/knative-regions/{knativeRegion}/migrate' => $r('region.migration.start', 'region', 'param:knativeRegion'),
             'POST api/knative-regions/{knativeRegion}/complete-migration' => $r('region.migration.complete', 'region', 'param:knativeRegion'),
             'POST api/knative-regions/{knativeRegion}/rollback-migration' => $r('region.migration.rollback', 'region', 'param:knativeRegion'),
@@ -590,6 +780,34 @@ final class AuditCatalog
                 meta: fn (Request $q, ?array $j) => ['knative_region_id' => $q->input('knative_region_id'), 'filename' => $q->input('filename'), 'size' => $q->input('size'), 'format' => $j['data']['format'] ?? $q->input('format'), 'sha256' => $q->filled('sha256')]),
             'POST api/images/uploads/{upload}/complete' => $r('image.upload.complete', 'image_upload', 'param:upload', 'response:data.name', meta: fn (Request $q, ?array $j) => ['status' => $j['data']['status'] ?? null, 'size' => $j['data']['size_bytes'] ?? null]),
             'DELETE api/images/uploads/{upload}' => $r('image.upload.abort', 'image_upload', 'param:upload'),
+            // ── Organization export / import (routes/org-transfer.php, docs/org-export.md); chunks
+            // are not audited, the jobs' results are (EXPLICIT_ACTIONS) — never a passphrase or
+            // S3 credentials ──
+            'POST api/org-transfers/export/estimate' => $r('org.export.estimate', 'organization', meta: fn (Request $q) => ['include_secrets' => $q->boolean('include_secrets'), 'include_images' => $q->boolean('include_images')]),
+            'POST api/org-transfers/export' => $r('org.export.start', 'org_transfer', 'response:data.id',
+                meta: fn (Request $q) => [
+                    'projects' => is_array($q->input('projects')) ? count($q->input('projects')) : 'all',
+                    'include_members' => $q->boolean('include_members'),
+                    'include_images' => $q->boolean('include_images'),
+                    'binding_data' => $q->input('binding_data') === 'all' ? 'all' : count((array) $q->input('binding_data', [])),
+                    'include_secrets' => $q->boolean('include_secrets'),
+                    'include_history' => $q->boolean('include_history'),
+                    'destination' => $q->input('destination.type', 'download'),
+                ]),
+            'POST api/org-transfers/import' => $r('org.import.start', 'org_transfer', 'response:data.id', 'response:data.package.filename',
+                meta: fn (Request $q) => array_filter([
+                    'source' => $q->input('source.type', 'upload'),
+                    'size' => $q->input('size'),
+                    'sha256' => $q->filled('sha256'),
+                    'binding_id' => $q->input('source.binding_id'),
+                    'bucket' => $q->input('source.bucket'),
+                    'key' => $q->input('source.key'),
+                ], fn ($v) => $v !== null)),
+            'POST api/org-transfers/{transfer}/complete' => $r('org.import.uploaded', 'org_transfer', 'param:transfer'),
+            'POST api/org-transfers/{transfer}/fetch' => $r('org.import.fetch', 'org_transfer', 'param:transfer', meta: fn (Request $q, ?array $j) => ['received_bytes' => $j['data']['upload']['uploaded_bytes'] ?? null]),
+            'POST api/org-transfers/{transfer}/plan' => $r('org.import.plan', 'org_transfer', 'param:transfer', meta: fn (Request $q, ?array $j) => ['blocking' => $j['data']['plan']['blocking'] ?? null, 'region_map' => $q->input('region_map'), 'renames' => $q->input('renames'), 'passphrase_given' => $q->filled('passphrase')]),
+            'POST api/org-transfers/{transfer}/apply' => $r('org.import.apply', 'org_transfer', 'param:transfer', meta: fn (Request $q) => ['region_map' => $q->input('region_map'), 'renames' => $q->input('renames'), 'restore_data' => $q->input('restore_data'), 'skip_binding_data' => $q->input('skip_binding_data'), 'history' => $q->input('history'), 'images' => $q->input('images'), 'invite_members' => $q->input('invite_members'), 'deploy' => $q->input('deploy'), 'passphrase_given' => $q->filled('passphrase')]),
+            'DELETE api/org-transfers/{transfer}' => $r('org.transfer.cancel', 'org_transfer', 'param:transfer'),
             'DELETE api/images/{image}' => $r('image.delete', 'uploaded_image', 'param:image', 'response:name', meta: fn (Request $q, ?array $j) => ['registry_removed' => $j['registry_removed'] ?? null, 'usages' => $j['usages'] ?? null]),
             // ── AI agents (docs/mcp.md; routes/mcp-api.php) — never token or key values ──
             'DELETE api/mcp/clients/{client}' => $r('mcp.client.revoke', 'oauth_client', 'param:client', 'response:client.name',
@@ -672,7 +890,10 @@ final class AuditCatalog
             'POST api/billing/prices' => $r('billing.price.create', 'billing_price', 'response:data.id',
                 meta: fn (Request $q) => $q->only(['region_id', 'effective_from'])),
             'DELETE api/billing/prices/{price}' => $r('billing.price.delete', 'billing_price', 'param:price'),
-            'PUT api/billing/regions/{region}' => $r('billing.region.update', 'region', 'param:region', meta: fn (Request $q) => $q->only(['billing_type'])),
+            'PUT api/billing/regions/{region}' => $r('billing.region.update', 'region', 'param:region', meta: fn (Request $q) => $q->only(['billing_type', 'charge_queue_consumers'])),
+            'PUT api/billing/regions/{region}/queue-consumers' => $r('billing.region.queue_consumers.update', 'region', 'param:region', meta: fn (Request $q) => $q->only(['charge'])),
+            'PUT api/billing/regions/{region}/organizations/{tenant}' => $r('billing.region.organization.update', 'region', 'param:region',
+                meta: fn (Request $q) => ['tenant' => $q->route('tenant'), 'charge' => $q->input('charge')]),
             'POST api/billing/markups' => $r('billing.markup.create', 'billing_markup', 'response:data.id',
                 meta: fn (Request $q) => $q->only(['region_id', 'percent', 'effective_from'])),
             'DELETE api/billing/markups/{markup}' => $r('billing.markup.delete', 'billing_markup', 'param:markup'),
@@ -687,6 +908,11 @@ final class AuditCatalog
                 meta: fn (Request $q) => ['project_id' => $q->route('project')?->id] + $q->only(['cpu_m', 'memory_mb', 'gpu_count'])),
             'POST api/projects/{project}/billing/fixed-requests/{fixedRequest}/cancel' => $r('billing.fixed_request.cancel', 'fixed_request', 'param:fixedRequest',
                 meta: fn (Request $q) => ['project_id' => $q->route('project')?->id]),
+            // The monthly cost limit of a project (its 100 % notice and stop: billing.cost_limit.reached, project.stop by the system)
+            'PUT api/projects/{project}/billing/cost-limit' => $r('billing.cost_limit.update', 'project', 'param:project', meta: fn (Request $q) => $q->only(['amount', 'action'])),
+            'DELETE api/projects/{project}/billing/cost-limit' => $r('billing.cost_limit.delete', 'project', 'param:project'),
+            'POST api/projects/{project}/billing/cost-limit/resume' => $r('billing.cost_limit.resume', 'project', 'param:project',
+                meta: fn (Request $q, ?array $j) => ['deployment_id' => $j['deployment_id'] ?? null]),
             'POST api/billing/events/test' => $r('billing.event.test'),
             'POST api/billing/events/{event}/redeliver' => $r('billing.event.redeliver', meta: fn (Request $q) => ['event_id' => self::routeKey($q, 'event')]),
 

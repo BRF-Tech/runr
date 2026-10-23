@@ -12,7 +12,8 @@
 |      per user     API_USER_RATE_LIMIT_PER_MINUTE   (authenticated calls, all tokens of a user)
 |      per IP       API_GUEST_RATE_LIMIT_PER_MINUTE  (unauthenticated calls)
 |  - `auth` (login, register, password change, invitation accept, OAuth/SAML sign-in)
-|      per IP + login  AUTH_RATE_LIMIT_PER_MINUTE
+|      per IP + account  AUTH_RATE_LIMIT_PER_MINUTE (the account the user name or e-mail
+|                        address names: all spellings of one account share the budget)
 |
 | The per-user default leaves room for the console's own polling (deployment log view polls
 | logs every second and metrics every two seconds) across a few open tabs.

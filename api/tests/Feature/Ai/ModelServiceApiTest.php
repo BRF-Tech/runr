@@ -186,13 +186,13 @@ class ModelServiceApiTest extends TestCase
         $this->assertNull(AiModelService::find($service->id));
     }
 
-    public function test_the_playground_calls_allowed_paths_through_the_activator(): void
+    public function test_the_playground_calls_allowed_paths_through_the_private_entry_point(): void
     {
         $region = $this->region();
         $service = $this->modelService($this->hubModel(), $region);
         $this->fakeCluster([
             "GET /apis/serving.knative.dev/v1/namespaces/fn/services/{$service->service_name}" => ['status' => ['latestReadyRevisionName' => "{$service->service_name}-00001"]],
-            'POST /api/v1/namespaces/knative-serving/services/http:activator-service:80/proxy/v1/embeddings' => ['object' => 'list', 'data' => [['embedding' => [0.1, 0.2]]]],
+            'POST /api/v1/namespaces/knative-serving/services/http:traefik-internal:80/proxy/v1/embeddings' => ['object' => 'list', 'data' => [['embedding' => [0.1, 0.2]]]],
         ]);
 
         $this->postJson("/api/model-services/{$service->id}/invoke", ['path' => '/v1/embeddings', 'body' => ['input' => 'hello']])
@@ -200,10 +200,12 @@ class ModelServiceApiTest extends TestCase
             ->assertJsonPath('status', 200)
             ->assertJsonPath('body.data.0.embedding', [0.1, 0.2]);
 
-        $call = $this->k8sCallsTo('POST', 'activator-service')[0];
+        // the service's cluster-local route (the activator and its pods admit only Traefik and Knative)
+        $call = $this->k8sCallsTo('POST', 'traefik-internal')[0];
         $this->assertSame(['input' => 'hello'], $call['body']);
-        $this->assertSame([$service->service_name.'-00001'], $call['headers']['Knative-Serving-Revision']);
-        $this->assertSame(['fn'], $call['headers']['Knative-Serving-Namespace']);
+        $this->assertSame([$service->service_name.'.fn.svc.cluster.local'], $call['headers']['Host']);
+        $this->assertArrayNotHasKey('Knative-Serving-Revision', $call['headers']);
+        $this->assertSame([], $this->k8sCallsTo('POST', 'activator-service'));
 
         $this->postJson("/api/model-services/{$service->id}/invoke", ['path' => '/admin/shutdown'])->assertStatus(422);
         $this->postJson("/api/model-services/{$service->id}/invoke", ['path' => '/v1/../secret'])->assertStatus(422);

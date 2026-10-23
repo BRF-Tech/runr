@@ -7,8 +7,10 @@ use App\Models\Setting;
 use App\Services\Concerns\ConfigDomainTrait;
 use App\Services\Dns\RegionDnsCheck;
 use App\Services\DomainMigrateService;
+use App\Services\DomainMoveFollower;
 use App\Services\Helpers\RegionDomains;
 use App\Services\KubernetesClient;
+use App\Services\PublicHostMove;
 use App\Services\RegionDomainAliasService;
 use App\Services\RegionStatusService;
 use Illuminate\Database\Eloquent\Builder;
@@ -53,6 +55,7 @@ class TenantDomainService
         private readonly RegionDomainAliasService $alias,
         private readonly RegionDnsCheck $dns,
         private readonly DomainMigrateService $migrate,
+        private readonly DomainMoveFollower $follower,
     ) {}
 
     /**
@@ -185,6 +188,16 @@ class TenantDomainService
         // move completed: the aliases go, a cleared domain takes the organization's entries along
         if ($new === null || $new === $from) {
             foreach ($regions as $region) {
+                $live = $region->kubeconfig && $region->has_serving;
+                $inTenant = fn (callable $rebuild) => $tenant->run($rebuild);
+                // cleared: the organization's services answer on the platform's domain from now on —
+                // its custom domains and gateway routes point there first (DomainMoveFollower)
+                $platform = RegionDomains::functionDomain($region);
+                $move = $new === null && $from && $platform ? new PublicHostMove(RegionDomains::forBase($region, $from), $platform, $tenant->slug) : null;
+                if ($move && $live) {
+                    $this->follower->beforeSwitch($region, $move);
+                }
+
                 if ($state) {
                     $this->alias->remove($region, self::aliasName($tenant));
                 }
@@ -192,6 +205,14 @@ class TenantDomainService
                     $this->safeRemoveDomain($tenant, $region, "{$region->name}.{$from}");
                 }
                 $this->syncStatusBlock($region);
+
+                if ($live && $move) {
+                    $this->follower->afterSwitch($region, $move, $inTenant);
+                } elseif ($live && $state) {
+                    // a move set back before it completed: the rewrites and the organization's
+                    // gateways follow the services' hosts at once
+                    $this->follower->afterRollback($region, $inTenant);
+                }
             }
 
             return [];
@@ -204,7 +225,10 @@ class TenantDomainService
             }
 
             try {
-                $this->alias->apply($region, RegionDomains::forBase($region, $new), self::aliasName($tenant), $tenant->slug);
+                // to the services' public hosts: <region>.<the organization's domain>, or the
+                // platform's function domain of the region without one of its own
+                $this->alias->apply($region, RegionDomains::forBase($region, $new), self::aliasName($tenant), $tenant->slug,
+                    $from ? RegionDomains::forBase($region, $from) : RegionDomains::functionDomain($region));
             } catch (Throwable $e) {
                 Log::warning("TenantDomainService: the new domain of {$tenant->slug} is not served on region {$region->name} yet", ['error' => $e->getMessage()]);
             }
@@ -262,12 +286,24 @@ class TenantDomainService
                 continue;
             }
 
+            // the organization's custom domains and gateway routes point at the new hosts first:
+            // its alias answers there until Knative serves them (DomainMoveFollower)
+            $current = $state['from'] ? RegionDomains::forBase($region, (string) $state['from']) : RegionDomains::functionDomain($region);
+            $move = $current && $current !== $target ? new PublicHostMove($current, $target, $tenant->slug) : null;
+            if ($move) {
+                $this->follower->beforeSwitch($region, $move);
+            }
+
             $this->addDomainToRegion($tenant, $region, (string) $state['to']);
             if ($state['from']) {
                 $this->safeRemoveDomain($tenant, $region, "{$region->name}.{$state['from']}");
             }
             $this->alias->remove($region, self::aliasName($tenant));
             $this->syncStatusBlock($region);
+            // the organization's gateways in the region (their routes' Host rewrites) follow now
+            if ($move) {
+                $this->follower->afterSwitch($region, $move, fn (callable $rebuild) => $tenant->run($rebuild));
+            }
             Log::info("Organization domain move completed for {$tenant->slug} on region {$region->name}");
         }
 

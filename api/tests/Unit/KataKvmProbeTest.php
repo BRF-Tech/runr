@@ -40,14 +40,17 @@ class KataKvmProbeTest extends TestCase
         $p = $this->probe();
 
         $this->assertSame(
-            ['kvm' => true, 'dev_kvm' => true, 'cpu' => 'vmx', 'module' => 'kvm_intel'],
-            $p::parseKvmProbeLine('runr: kvm probe: kvm=yes dev_kvm=yes cpu=vmx module=kvm_intel node=runr-test'),
+            ['kvm' => true, 'dev_kvm' => true, 'cpu' => 'vmx', 'module' => 'kvm_intel', 'shm_mb' => 7826, 'dbus' => 'yes'],
+            $p::parseKvmProbeLine('runr: kvm probe: kvm=yes dev_kvm=yes cpu=vmx module=kvm_intel shm_mb=7826 dbus=yes node=runr-test'),
         );
         // a cloud VM without nested virtualization; /dev/kvm can still be a static device node
         $this->assertSame(
-            ['kvm' => false, 'dev_kvm' => true, 'cpu' => 'none', 'module' => 'none'],
-            $p::parseKvmProbeLine('2026-10-01T12:00:00Z runr: kvm probe: kvm=no dev_kvm=yes cpu=none module=none node=cloud-worker-1'),
+            ['kvm' => false, 'dev_kvm' => true, 'cpu' => 'none', 'module' => 'none', 'shm_mb' => null, 'dbus' => 'missing'],
+            $p::parseKvmProbeLine('2026-10-01T12:00:00Z runr: kvm probe: kvm=no dev_kvm=yes cpu=none module=none shm_mb=? dbus=missing node=cloud-worker-1'),
         );
+        // a check of a release without the /dev/shm size
+        $this->assertNull($p::parseKvmProbeLine('runr: kvm probe: kvm=yes dev_kvm=yes cpu=vmx module=kvm_intel node=old')['shm_mb']);
+        $this->assertNull($p::parseKvmProbeLine('runr: kvm probe: kvm=yes dev_kvm=yes cpu=vmx module=kvm_intel node=old')['dbus']);
         $this->assertNull($p::parseKvmProbeLine('runr: kvm probe: something else'));
         $this->assertNull($p::parseKvmProbeLine('runr: kvm probe: kvm=maybe dev_kvm=yes'));
         $this->assertNull($p::parseKvmProbeLine('runr: devmapper configured'));
@@ -100,6 +103,64 @@ class KataKvmProbeTest extends TestCase
         $this->assertSame(['p1' => true], $dedicated['nodes']);
     }
 
+    private function probedNode(string $name, string $kvm, ?int $shmMb, array $labels = []): array
+    {
+        $node = $this->node($name, $labels + ['runr.dev/kvm' => $kvm]);
+        $node['metadata']['annotations']['runr.dev/kvm-probe'] = 'kvm=yes dev_kvm=yes cpu=vmx module=kvm_intel'
+            .($shmMb !== null ? " shm_mb={$shmMb}" : '').' at=2026-10-23T12:00:00Z';
+
+        return $node;
+    }
+
+    public function test_qemu_needs_a_dev_shm_that_holds_its_guests(): void
+    {
+        $p = $this->probe();
+
+        $this->assertSame(64, $p::nodeShmMb($this->probedNode('kind-worker', 'true', 64)));
+        $this->assertNull($p::nodeShmMb($this->probedNode('old', 'true', null)));
+        $this->assertNull($p::nodeShmMb($this->node('unchecked')));
+
+        // Kind / k3d: every node gets Docker's 64 MiB
+        $this->assertSame(
+            ['state' => 'small', 'nodes' => ['w1' => 64, 'w2' => 64]],
+            $p::qemuShmSummary([$this->probedNode('w1', 'true', 64), $this->probedNode('w2', 'true', 64)]),
+        );
+        // a host: half its memory
+        $this->assertSame('ok', $p::qemuShmSummary([$this->probedNode('w1', 'true', 7826)])['state']);
+        $this->assertSame('ok', $p::qemuShmSummary([$this->probedNode('w1', 'true', 64), $this->probedNode('w2', 'true', 1024)])['state']);
+        // not known (not checked yet, or by an older release): QEMU stays offered
+        $this->assertSame('unknown', $p::qemuShmSummary([$this->probedNode('w1', 'true', null), $this->node('w2')])['state']);
+        // nodes without KVM run no guest: their /dev/shm does not count
+        $this->assertSame(
+            ['state' => 'small', 'nodes' => ['w1' => 64]],
+            $p::qemuShmSummary([$this->probedNode('w1', 'true', 64), $this->probedNode('w2', 'false', 8000)]),
+        );
+    }
+
+    private function dbusNode(string $name, ?string $dbus, string $kvm = 'true'): array
+    {
+        $node = $this->node($name, ['runr.dev/kvm' => $kvm]);
+        $node['metadata']['annotations']['runr.dev/kvm-probe'] = 'kvm=yes dev_kvm=yes cpu=vmx module=kvm_intel shm_mb=64'
+            .($dbus !== null ? " dbus={$dbus}" : '').' at=2026-10-23T12:00:00Z';
+
+        return $node;
+    }
+
+    public function test_runtime_rs_needs_the_d_bus_system_bus_where_the_node_runs_systemd(): void
+    {
+        $p = $this->probe();
+
+        // Kind's node image: systemd, no D-Bus
+        $this->assertSame(['state' => 'missing', 'nodes' => ['w1', 'w2']], $p::systemDbusSummary([$this->dbusNode('w1', 'missing'), $this->dbusNode('w2', 'missing')]));
+        $this->assertSame('ok', $p::systemDbusSummary([$this->dbusNode('w1', 'missing'), $this->dbusNode('w2', 'yes')])['state']);
+        // no systemd: the runtime does not use it
+        $this->assertSame('ok', $p::systemDbusSummary([$this->dbusNode('w1', 'n/a')])['state']);
+        // not checked, or by a release without the check
+        $this->assertSame('unknown', $p::systemDbusSummary([$this->dbusNode('w1', null), $this->node('w2')])['state']);
+        // a node without KVM runs no Kata pod
+        $this->assertSame(['state' => 'missing', 'nodes' => ['w1']], $p::systemDbusSummary([$this->dbusNode('w1', 'missing'), $this->dbusNode('w2', 'yes', 'false')]));
+    }
+
     public function test_the_check_runs_unprivileged_on_the_kata_installer_nodes(): void
     {
         $ds = $this->probe()->buildKvmProbeDaemonSet('runr-sandbox', true);
@@ -116,15 +177,24 @@ class KataKvmProbeTest extends TestCase
         $this->assertTrue($spec['securityContext']['runAsNonRoot']);
         $this->assertSame(['path' => '/dev', 'type' => 'Directory'], $spec['volumes'][0]['hostPath']);
         $this->assertTrue($c['volumeMounts'][0]['readOnly']);
+        $this->assertSame(['path' => '/run', 'type' => 'Directory'], $spec['volumes'][1]['hostPath']);
+        $this->assertTrue($c['volumeMounts'][1]['readOnly']);
         $this->assertFalse($spec['automountServiceAccountToken']);
     }
 
     /** @return list<string> output of the check script against a fake /dev, /proc/cpuinfo, /sys/module */
-    private function runScript(bool $devKvm, string $flags, ?string $module): array
+    private function runScript(bool $devKvm, string $flags, ?string $module, bool $shm = false, ?string $dbus = null): array
     {
         $dir = sys_get_temp_dir().'/runr-kvm-'.bin2hex(random_bytes(4));
         mkdir("$dir/dev", 0777, true);
         mkdir("$dir/module", 0777, true);
+        mkdir("$dir/run", 0777, true);
+        if ($dbus === 'missing') {
+            mkdir("$dir/run/systemd/system", 0777, true); // systemd runs, no /run/dbus/system_bus_socket
+        }
+        if ($shm) {
+            mkdir("$dir/dev/shm"); // df reports the filesystem it is on
+        }
         if ($devKvm) {
             symlink('/dev/null', "$dir/dev/kvm"); // a character device
         }
@@ -134,8 +204,8 @@ class KataKvmProbeTest extends TestCase
         }
 
         $script = str_replace(
-            ['/host-dev/', '/proc/cpuinfo', '/sys/module/', 'exec sleep infinity'],
-            ["$dir/dev/", "$dir/cpuinfo", "$dir/module/", ':'],
+            ['/host-dev/', '/host-run/', '/proc/cpuinfo', '/sys/module/', 'exec sleep infinity'],
+            ["$dir/dev/", "$dir/run/", "$dir/cpuinfo", "$dir/module/", ':'],
             $this->probe()::kvmProbeScript(),
         );
         exec('NODE_NAME=n1 sh -c '.escapeshellarg($script).' 2>&1', $out, $code);
@@ -151,14 +221,18 @@ class KataKvmProbeTest extends TestCase
             $this->markTestSkipped('needs a POSIX shell');
         }
 
-        $this->assertSame(['runr: kvm probe: kvm=yes dev_kvm=yes cpu=vmx module=kvm_intel node=n1'], $this->runScript(true, 'vmx', 'kvm_intel'));
-        $this->assertSame(['runr: kvm probe: kvm=yes dev_kvm=yes cpu=svm module=kvm_amd node=n1'], $this->runScript(true, 'svm', 'kvm_amd'));
+        $this->assertSame(['runr: kvm probe: kvm=yes dev_kvm=yes cpu=vmx module=kvm_intel shm_mb=? dbus=n/a node=n1'], $this->runScript(true, 'vmx', 'kvm_intel'));
+        $this->assertSame(['runr: kvm probe: kvm=yes dev_kvm=yes cpu=svm module=kvm_amd shm_mb=? dbus=n/a node=n1'], $this->runScript(true, 'svm', 'kvm_amd'));
         // Cloud worker flavors without nested virtualization — no vmx flag (a static /dev/kvm node does not count)
-        $this->assertSame(['runr: kvm probe: kvm=no dev_kvm=yes cpu=none module=none node=n1'], $this->runScript(true, 'avx2', null));
-        $this->assertSame(['runr: kvm probe: kvm=no dev_kvm=no cpu=vmx module=none node=n1'], $this->runScript(false, 'vmx', null));
+        $this->assertSame(['runr: kvm probe: kvm=no dev_kvm=yes cpu=none module=none shm_mb=? dbus=n/a node=n1'], $this->runScript(true, 'avx2', null));
+        $this->assertSame(['runr: kvm probe: kvm=no dev_kvm=no cpu=vmx module=none shm_mb=? dbus=n/a node=n1'], $this->runScript(false, 'vmx', null));
         // the device hidden from the unprivileged pod (SELinux, Fedora CoreOS on MVP), the module loaded
-        $this->assertSame(['runr: kvm probe: kvm=yes dev_kvm=no cpu=vmx module=kvm_intel node=n1'], $this->runScript(false, 'vmx', 'kvm_intel'));
+        $this->assertSame(['runr: kvm probe: kvm=yes dev_kvm=no cpu=vmx module=kvm_intel shm_mb=? dbus=n/a node=n1'], $this->runScript(false, 'vmx', 'kvm_intel'));
         // "vmx" must be a whole flag
-        $this->assertSame(['runr: kvm probe: kvm=no dev_kvm=yes cpu=none module=none node=n1'], $this->runScript(true, 'vmxnotreally', null));
+        $this->assertSame(['runr: kvm probe: kvm=no dev_kvm=yes cpu=none module=none shm_mb=? dbus=n/a node=n1'], $this->runScript(true, 'vmxnotreally', null));
+        // the node's /dev/shm: its size in MiB
+        $this->assertMatchesRegularExpression('/^runr: kvm probe: kvm=yes dev_kvm=yes cpu=vmx module=kvm_intel shm_mb=\\d+ dbus=n\/a node=n1$/', $this->runScript(true, 'vmx', 'kvm_intel', true)[0]);
+        // systemd without D-Bus (Kind's node image)
+        $this->assertSame(['runr: kvm probe: kvm=yes dev_kvm=yes cpu=vmx module=kvm_intel shm_mb=? dbus=missing node=n1'], $this->runScript(true, 'vmx', 'kvm_intel', false, 'missing'));
     }
 }

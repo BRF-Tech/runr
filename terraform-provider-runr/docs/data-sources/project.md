@@ -32,16 +32,50 @@ output "api_url" {
 
 ### Read-Only
 
+- `access_mode` (String) Who reaches the project: `public`, `allowlist` or `internal` (null on APIs without network settings).
+- `deploy_strategy` (String) How deploys roll out: `direct`, `blue_green` or `canary`.
 - `deployment_status` (String) Status of the latest deployment.
 - `endpoint_url` (String) Public URL (HTTP trigger).
+- `global_regions` (List of String) Region ids of a global project in HA order; null for a regional project.
 - `handler` (String) Handler (code projects).
 - `image` (String) Container image (caas).
+- `internal_name` (String) Internal name `<project>.<organization>`, for another project's `network.callers`.
+- `internal_url` (String) The URL other projects of the region call it at on the internal network.
 - `latest_version_id` (String) Newest version id.
 - `latest_version_label` (String) Newest version label.
+- `placement` (String) `regional` or `global`.
 - `region_id` (String) Region id.
 - `region_name` (String) Region name.
 - `runtime` (String) Runtime (code projects).
 - `runtime_version` (String) Runtime version.
+- `scale_schedule` (Attributes List) Timed warmer: each row keeps at least `min_scale` containers warm from the moment its five-field `cron` expression fires until the next row fires. The expressions run in the organization's time zone (its Time zone setting, default Europe/Istanbul). While rows are set they replace `scale.min`; `scale.max` still applies. RunR applies a changed schedule to the running workload within a minute, without a redeploy. Empty when the warmer is off. (see [below for nested schema](#nestedatt--scale_schedule))
+- `schedule_effective_timezone` (String) The time zone the schedule trigger runs in; null without a schedule.
+- `schedule_timezone` (String) IANA time zone of the schedule trigger; null when it follows the organization's time zone.
 - `slug` (String) Slug.
-- `trigger_type` (String) `http`, `schedule` or `queue`.
+- `trigger_type` (String) Type of the primary trigger, the first enabled one of the project's trigger list: `http`, `schedule`, `queue`, `workflow` or another trigger type (`webhook`, `topic`, …).
+- `triggers` (Attributes List) The project's trigger list in order (null on APIs without one); secrets are never read. (see [below for nested schema](#nestedatt--triggers))
 - `type` (String) `faas`, `xaas` or `caas`.
+- `warm_scale_applied` (Number) Warm containers the timed warmer last set on the running workload; null when it never ran for the project.
+
+<a id="nestedatt--scale_schedule"></a>
+### Nested Schema for `scale_schedule`
+
+Read-Only:
+
+- `cron` (String) Five-field cron expression.
+- `min_scale` (Number) Containers kept warm from this moment on.
+
+
+<a id="nestedatt--triggers"></a>
+### Nested Schema for `triggers`
+
+Read-Only:
+
+- `config` (String) Its settings as RunR stores them (JSON).
+- `effective_timezone` (String) The time zone a `schedule` runs in.
+- `enabled` (Boolean) Whether it runs.
+- `name` (String) Trigger name.
+- `primary` (Boolean) Whether it is the primary trigger.
+- `runs_on` (String) `service`, `gateway`, `cronjob` or `disabled`.
+- `type` (String) Trigger type.
+- `url` (String) The inbox URL of a `webhook` trigger.

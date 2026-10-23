@@ -26,8 +26,13 @@ func newWorkflowsCmd(app *App) *cobra.Command {
 		Long: "Durable workflows of a project (docs/workflows.md): list the definitions the engine knows,\n" +
 			"start runs and follow them, cancel, retry and replay runs, pause and resume workflows,\n" +
 			"send events of the organization that trigger workflows, manage the function the engine\n" +
-			"drives (endpoint, signing key) and read the usage.",
+			"drives (endpoint, signing key) and read the usage.\n\n" +
+			"Every environment of the project (runr environments) has workflows of its own: --env picks\n" +
+			"one for every subcommand (default: production, the project's own workload); the events\n" +
+			"sent with --env belong to that environment and reach only the workflows of the\n" +
+			"environments of that name.",
 		Example: "  runr workflows ls\n" +
+			"  runr workflows ls --env staging\n" +
 			"  runr workflows run process-order --event @order.json --wait\n" +
 			"  runr workflows runs --status failed\n" +
 			"  runr workflows run replay 01J… --from-step ship\n" +
@@ -40,11 +45,11 @@ func newWorkflowsCmd(app *App) *cobra.Command {
 		Short:   "List the project's workflows with their triggers and runs",
 		Args:    cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			c, p, err := app.Project(cmd.Context())
+			c, p, err := app.Project(wfContext(cmd))
 			if err != nil {
 				return err
 			}
-			list, wa, err := c.ListWorkflows(cmd.Context(), p.ID)
+			list, wa, err := c.ListWorkflows(wfContext(cmd), p.ID)
 			if err != nil {
 				return err
 			}
@@ -52,10 +57,18 @@ func newWorkflowsCmd(app *App) *cobra.Command {
 		},
 	}
 	cmd.RunE = ls.RunE
+	cmd.PersistentFlags().String("env", "", "the environment of the project (runr environments); default production, the project's own workload")
 	cmd.AddCommand(ls, newWfGetCmd(app), newWfRunsCmd(app), newWfRunCmd(app),
 		newWfActiveCmd(app, true), newWfActiveCmd(app, false), newWfSyncCmd(app), newWfDeclareCmd(app),
 		newWfEventsCmd(app), newWfAppCmd(app), newWfUsageCmd(app))
 	return cmd
+}
+
+// wfContext is the command's context with the environment --env names
+// (docs/workflows.md#environments): every workflow call of the command addresses it.
+func wfContext(cmd *cobra.Command) context.Context {
+	env, _ := cmd.Flags().GetString("env")
+	return runr.WithWorkflowEnvironment(cmd.Context(), env)
 }
 
 func printWorkflowList(app *App, p *runr.Project, list []runr.Workflow, wa *runr.WorkflowApp, note string) error {
@@ -86,11 +99,11 @@ func newWfGetCmd(app *App) *cobra.Command {
 		Short: "Show a workflow definition (name or id)",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			c, p, err := app.Project(cmd.Context())
+			c, p, err := app.Project(wfContext(cmd))
 			if err != nil {
 				return err
 			}
-			w, err := c.FindWorkflow(cmd.Context(), p.ID, args[0])
+			w, err := c.FindWorkflow(wfContext(cmd), p.ID, args[0])
 			if err != nil {
 				return err
 			}
@@ -172,18 +185,18 @@ func newWfRunsCmd(app *App) *cobra.Command {
 			}
 			f.From = time.Now().Add(-d).UTC().Format(time.RFC3339)
 		}
-		c, p, err := app.Project(cmd.Context())
+		c, p, err := app.Project(wfContext(cmd))
 		if err != nil {
 			return err
 		}
 		if len(args) == 1 {
-			w, err := c.FindWorkflow(cmd.Context(), p.ID, args[0])
+			w, err := c.FindWorkflow(wfContext(cmd), p.ID, args[0])
 			if err != nil {
 				return err
 			}
 			f.Workflow = w.Name
 		}
-		runs, page, err := c.ListWorkflowRuns(cmd.Context(), p.ID, f)
+		runs, page, err := c.ListWorkflowRuns(wfContext(cmd), p.ID, f)
 		if err != nil {
 			return err
 		}
@@ -247,7 +260,7 @@ func newWfRunCmd(app *App) *cobra.Command {
 			if data != nil && !wfIsObject(data) {
 				return usageErrorf("--event must be a JSON object")
 			}
-			ctx := cmd.Context()
+			ctx := wfContext(cmd)
 			c, p, err := app.Project(ctx)
 			if err != nil {
 				return err
@@ -300,11 +313,11 @@ func newWfRunGetCmd(app *App) *cobra.Command {
 		Short: "Show a run with its event, output, error and steps",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			c, p, err := app.Project(cmd.Context())
+			c, p, err := app.Project(wfContext(cmd))
 			if err != nil {
 				return err
 			}
-			run, err := c.GetWorkflowRun(cmd.Context(), p.ID, args[0])
+			run, err := c.GetWorkflowRun(wfContext(cmd), p.ID, args[0])
 			if err != nil {
 				return err
 			}
@@ -320,14 +333,14 @@ func newWfRunCancelCmd(app *App) *cobra.Command {
 		Short: "Cancel an active run (open sleeps and waits, invoked child runs too)",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			c, p, err := app.Project(cmd.Context())
+			c, p, err := app.Project(wfContext(cmd))
 			if err != nil {
 				return err
 			}
 			if err := app.confirm("Cancel run "+args[0]+" of "+p.Name, yes); err != nil {
 				return err
 			}
-			run, err := c.CancelWorkflowRun(cmd.Context(), p.ID, args[0])
+			run, err := c.CancelWorkflowRun(wfContext(cmd), p.ID, args[0])
 			if err != nil {
 				return err
 			}
@@ -347,7 +360,7 @@ func newWfRunRetryCmd(app *App) *cobra.Command {
 		Short: "Run a failed, cancelled or timed-out run again in place (completed steps stay)",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			ctx := cmd.Context()
+			ctx := wfContext(cmd)
 			c, p, err := app.Project(ctx)
 			if err != nil {
 				return err
@@ -374,7 +387,7 @@ func newWfRunReplayCmd(app *App) *cobra.Command {
 		Short: "Start a new run with the event of a finished run (--from-step keeps the steps before it)",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			ctx := cmd.Context()
+			ctx := wfContext(cmd)
 			c, p, err := app.Project(ctx)
 			if err != nil {
 				return err
@@ -455,15 +468,15 @@ func newWfActiveCmd(app *App, active bool) *cobra.Command {
 		Short:   short,
 		Args:    cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			c, p, err := app.Project(cmd.Context())
+			c, p, err := app.Project(wfContext(cmd))
 			if err != nil {
 				return err
 			}
-			w, err := c.FindWorkflow(cmd.Context(), p.ID, args[0])
+			w, err := c.FindWorkflow(wfContext(cmd), p.ID, args[0])
 			if err != nil {
 				return err
 			}
-			w, err = c.SetWorkflowActive(cmd.Context(), p.ID, w.Name, active)
+			w, err = c.SetWorkflowActive(wfContext(cmd), p.ID, w.Name, active)
 			if err != nil {
 				return err
 			}
@@ -482,11 +495,11 @@ func newWfSyncCmd(app *App) *cobra.Command {
 			"deployment of a project with the workflow trigger becomes active.",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			c, p, err := app.Project(cmd.Context())
+			c, p, err := app.Project(wfContext(cmd))
 			if err != nil {
 				return err
 			}
-			res, err := c.SyncWorkflows(cmd.Context(), p.ID)
+			res, err := c.SyncWorkflows(wfContext(cmd), p.ID)
 			if err != nil {
 				return err
 			}
@@ -530,7 +543,7 @@ func newWfDeclareCmd(app *App) *cobra.Command {
 			if err != nil {
 				return &usageError{msg: file + ": " + err.Error()}
 			}
-			ctx := cmd.Context()
+			ctx := wfContext(cmd)
 			c, p, err := app.Project(ctx)
 			if err != nil {
 				return err
@@ -645,7 +658,7 @@ func newWfEventsCmd(app *App) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			res, err := c.SendEvents(cmd.Context(), []runr.EventInput{{Name: args[0], Data: raw, ID: id, TS: ts}}, test)
+			res, err := c.SendEvents(wfContext(cmd), []runr.EventInput{{Name: args[0], Data: raw, ID: id, TS: ts}}, test)
 			if err != nil {
 				return err
 			}
@@ -686,13 +699,13 @@ func newWfEventsCmd(app *App) *cobra.Command {
 				return err
 			}
 			if app.ProjectRef != "" {
-				p, err := c.FindProject(cmd.Context(), app.ProjectRef)
+				p, err := c.FindProject(wfContext(cmd), app.ProjectRef)
 				if err != nil {
 					return err
 				}
 				f.ProjectID = p.ID
 			}
-			events, page, err := c.ListEvents(cmd.Context(), f)
+			events, page, err := c.ListEvents(wfContext(cmd), f)
 			if err != nil {
 				return err
 			}
@@ -728,7 +741,7 @@ func newWfEventsCmd(app *App) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			e, runs, err := c.GetEvent(cmd.Context(), args[0])
+			e, runs, err := c.GetEvent(wfContext(cmd), args[0])
 			if err != nil {
 				return err
 			}

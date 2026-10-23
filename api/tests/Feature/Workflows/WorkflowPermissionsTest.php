@@ -75,7 +75,7 @@ class WorkflowPermissionsTest extends TestCase
             $this->assertNotNull(RoutePermissions::requirement($route), implode(' / ', RoutePermissions::keys($route)).' has no rule');
         }
 
-        $this->assertSame(21, $count);
+        $this->assertSame(23, $count);
     }
 
     public function test_a_viewer_sees_runs_but_cannot_start_cancel_or_manage(): void
@@ -92,6 +92,8 @@ class WorkflowPermissionsTest extends TestCase
         $this->signedIn($viewer)->postJson("{$base}/workflows/guarded/runs", [])->assertForbidden();
         $this->signedIn($viewer)->postJson("{$base}/workflow-runs/{$run->id}/cancel")->assertForbidden();
         $this->signedIn($viewer)->postJson("{$base}/workflows/sync")->assertForbidden();
+        $this->signedIn($viewer)->putJson("{$base}/workflows/guarded", ['triggers' => []])->assertForbidden();
+        $this->signedIn($viewer)->deleteJson("{$base}/workflows/guarded")->assertForbidden();
         $this->signedIn($viewer)->getJson("{$base}/workflows/app/signing-key")->assertForbidden();
         $this->signedIn($viewer)->postJson('/api/events', ['name' => 'a.b', 'data' => []])->assertForbidden();
 

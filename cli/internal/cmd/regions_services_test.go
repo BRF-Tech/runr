@@ -188,6 +188,8 @@ func TestRegionMigrationStatusListsProjects(t *testing.T) {
 		{Organization: "acme", ProjectID: "p2", Project: "shop", Outcome: runr.MigrationMoved, Version: 1, DeploymentStatus: "active"},
 		{ProjectID: "p3", Project: "upload", Outcome: runr.MigrationNotMoved,
 			Message: "its image myapp:1.0 was uploaded into the registry of the cluster the region left"},
+		// an environment of a project is a row of its own (docs/environments.md)
+		{ProjectID: "p1", Project: "orders", Environment: "staging", Outcome: runr.MigrationMoved, Version: 2, DeploymentStatus: "active"},
 	})
 
 	// No move: no list
@@ -212,6 +214,7 @@ func TestRegionMigrationStatusListsProjects(t *testing.T) {
 		"orders - building v3 - Moving to the new cluster of the region: v3 is built again there; deployed there when it is ready.",
 		"shop acme moved v1 active -",
 		"upload - not_moved - - its image myapp:1.0 was uploaded into the registry of the cluster the region left",
+		"orders (staging) - moved v2 active -",
 	}
 	if strings.Join(rows, "\n") != strings.Join(want, "\n") {
 		t.Fatalf("rows:\n%s\nwant:\n%s\nout:\n%s", strings.Join(rows, "\n"), strings.Join(want, "\n"), r.out)
@@ -220,7 +223,7 @@ func TestRegionMigrationStatusListsProjects(t *testing.T) {
 	r = h.mustRun("regions", "migration", "eu-1", "-o", "json")
 	var st runr.RegionMigration
 	decodeJSON(t, r.out, &st)
-	if len(st.Projects) != 3 || st.Projects[1].Organization != "acme" || st.Projects[0].Version != 3 || st.Projects[2].Outcome != runr.MigrationNotMoved {
+	if len(st.Projects) != 4 || st.Projects[3].Environment != "staging" || st.Projects[1].Organization != "acme" || st.Projects[0].Version != 3 || st.Projects[2].Outcome != runr.MigrationNotMoved {
 		t.Fatalf("json projects = %+v", st.Projects)
 	}
 

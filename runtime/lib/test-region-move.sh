@@ -21,9 +21,22 @@
 #                           Service is removed from A (nothing serves unmetered); the projects'
 #                           Knative Services leave B, a data service's Secret and B's installs stay
 #                           there, and the operator's notification says what left; the report is empty
+#                         - secret values (E2eTestRegionMoveSecretsTrait), on a Python function that
+#                           answers their SHA-256: before the move, on A, one in the region's Secret,
+#                           External Secrets Operator and a reference to a throwaway OpenBao dev
+#                           store (a copy on each cluster at the same address), the region's OpenBao
+#                           and one in it; the move copies the values to B (a new OpenBao there, its
+#                           own unseal key and CA) and the function on B sees all three; values set
+#                           while the region runs on B are there only; the rollback copies them back
+#                           to A (the function on A sees the new ones, the region has A's OpenBao CA
+#                           again) and removes the values Secret, the ExternalSecrets and the
+#                           project's values, policy and role in B's OpenBao from B
 #                        The DNS cut-over cannot happen on Kind: the functions are called through
 #                        the address the function domain's record would name. Kind only (no
-#                        --kubeconfig): the suite creates B next to A.
+#                        --kubeconfig): the suite creates B next to A. Both clusters pull the
+#                        External Secrets Operator and OpenBao images from ghcr.io (public reqs
+#                        mirror) and the operator's chart from charts.external-secrets.io, as
+#                        test-secrets does.
 #
 # KIND_LOCK            — one Kind run at a time on a shared host; this suite defaults it to
 #                        /tmp/runr-kind.lock (test-runtimes.sh: acquire_kind_lock). Both clusters

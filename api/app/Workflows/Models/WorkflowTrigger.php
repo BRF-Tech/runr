@@ -10,7 +10,9 @@ use Illuminate\Support\Carbon;
 /**
  * One trigger of a workflow, kept as rows for lookups: `event` (start on an event, optional
  * `expression` filter), `cron` (start on a schedule) and `cancel` (cancel running runs on an
- * event, `expression` compares the trigger event with the incoming one).
+ * event, `expression` compares the trigger event with the incoming one). `environment` is the name
+ * of the workflow's environment (null: production): event and cancel triggers match the events of
+ * that environment only (docs/workflows.md#environments).
  *
  * @property string $id
  * @property string $workflow_id
@@ -19,6 +21,7 @@ use Illuminate\Support\Carbon;
  * @property string|null $cron
  * @property string|null $timezone
  * @property string|null $expression
+ * @property string|null $environment
  * @property Carbon|null $last_fired_at
  * @property-read Workflow|null $workflow
  */
@@ -34,7 +37,7 @@ class WorkflowTrigger extends Model
 
     protected $table = 'workflow_triggers';
 
-    protected $fillable = ['workflow_id', 'type', 'event', 'cron', 'timezone', 'expression', 'last_fired_at'];
+    protected $fillable = ['workflow_id', 'type', 'event', 'cron', 'timezone', 'expression', 'environment', 'last_fired_at'];
 
     protected $casts = [
         'last_fired_at' => 'datetime',

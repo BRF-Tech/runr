@@ -27,6 +27,9 @@ use Illuminate\Support\Carbon;
  * @property string|null $build_error
  * @property string|null $build_token
  * @property string|null $build_image
+ * @property string|null $runtime_digest Runtime image digest a prebuilt version was built FROM
+ * @property string|null $runtime_patch_id The runtime patch of that digest
+ * @property string|null $runtime_base_pin The base digest the next build must use (a rolled-back patch migration)
  * @property-read User|null $creator
  * @property-read Collection<int, Deployment> $deployments
  * @property-read int|null $deployments_count
@@ -80,6 +83,9 @@ class Version extends Model
         'build_error',
         'build_token',
         'build_image',
+        'runtime_digest',
+        'runtime_patch_id',
+        'runtime_base_pin',
     ];
 
     protected $casts = [

@@ -16,6 +16,12 @@ class AdminSeeder extends Seeder
             return;
         }
 
+        // The sign-in reads an identifier with "@" as an e-mail address first (LoginIdentifier):
+        // a user name never has one
+        if (str_contains((string) config('app.admin.username'), '@')) {
+            throw new \InvalidArgumentException('ADMIN_USERNAME cannot contain "@": the administrator signs in with ADMIN_EMAIL as well.');
+        }
+
         $password = config('app.admin.password');
         if (! $password) {
             // No ADMIN_PASSWORD was supplied. The installers always supply one: the Helm chart's

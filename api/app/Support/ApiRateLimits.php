@@ -2,6 +2,7 @@
 
 namespace App\Support;
 
+use App\Support\Auth\LoginIdentifier;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -14,7 +15,10 @@ use Illuminate\Support\Facades\RateLimiter;
  *          after tenant identification (middleware priority), so the tenant bucket is keyed by
  *          the tenant the request was *resolved* to (membership already checked) — a raw
  *          X-Tenant-ID header on an unauthenticated call never selects a tenant bucket.
- * `auth` — login / register / password / invitation accept / OAuth + SAML sign-in, per IP + login.
+ * `auth` — login / register / password / invitation accept / OAuth + SAML sign-in, per IP + account:
+ *          the account the login, e-mail or user name of the request names (LoginIdentifier), so
+ *          the user name, the e-mail address and their spellings share one budget; the identifier
+ *          trimmed and lower-cased when it names no account.
  *
  * Over the limit: HTTP 429, JSON body, Retry-After + X-RateLimit-* headers.
  */
@@ -117,9 +121,7 @@ class ApiRateLimits
             ?? $request->input('username')
             ?? '';
 
-        $login = is_string($login) ? mb_strtolower(trim($login)) : '';
-
-        return 'auth:'.$request->ip().'|'.$login;
+        return 'auth:'.$request->ip().'|'.LoginIdentifier::throttleKey($request, $login);
     }
 
     public static function tooManyRequests(Request $request, array $headers): JsonResponse

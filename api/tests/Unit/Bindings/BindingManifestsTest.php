@@ -58,7 +58,11 @@ class BindingManifestsTest extends TestCase
     {
         $policies = collect(BindingManifests::basePolicies('runr-data', 'cnpg-system'))->keyBy('metadata.name');
 
-        $this->assertSame(['runr-data-default-deny', 'runr-data-same-namespace', 'runr-data-cnpg-operator'], $policies->keys()->all());
+        $this->assertSame(['runr-data-default-deny', 'runr-data-same-namespace', 'runr-data-cnpg-operator', 'runr-data-openbao'], $policies->keys()->all());
+        // the region's OpenBao reaches the Postgres instances (dynamic credentials), nothing else
+        $openbao = $policies['runr-data-openbao'];
+        $this->assertSame(['kubernetes.io/metadata.name' => 'runr-openbao'], $openbao['spec']['ingress'][0]['from'][0]['namespaceSelector']['matchLabels']);
+        $this->assertSame([['protocol' => 'TCP', 'port' => 5432]], $openbao['spec']['ingress'][0]['ports']);
 
         $deny = $policies['runr-data-default-deny'];
         $this->assertSame('NetworkPolicy', $deny['kind']);

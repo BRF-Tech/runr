@@ -113,6 +113,34 @@ kind_load_image() {
   return 1
 }
 
+# build_e2e_runr_images — the images of RunR's own the region runs whose code is part of this
+# checkout: the region agent (the region's runr-agent Deployment — sessions, heartbeats, the
+# global-health listener — and the internal network's authz, docs/internal-network.md) and the
+# queue consumer (the event gateway: queue consumers and the topic publisher), built under an e2e
+# tag of this Compose project. The API, Horizon and the scheduler get them through
+# RUNR_AGENT_IMAGE / RUNR_INTERNAL_AUTHZ_IMAGE / RUNR_QUEUE_CONSUMER_IMAGE (docker-compose.yml); a
+# tag other than latest is pulled IfNotPresent, so the nodes run the loaded build
+# (preload_kind_images). gateway-auth and image-upload are built by the suites that run them, under
+# the pinned tags the API names (test-api-product.sh, test-images.sh, test-org-transfer.sh).
+# E2E_LOCAL_RUNR_IMAGES=0: the published :latest images.
+build_e2e_runr_images() {
+  [ "${E2E_LOCAL_RUNR_IMAGES:-1}" = "0" ] && return 0
+  local tag="e2e-${COMPOSE_PROJECT_NAME:-runr}" name
+  echo ""
+  echo "Building RunR's region images from this checkout (tag ${tag})..."
+  for name in agent queue-consumer; do
+    if docker build -q -t "ghcr.io/brf-tech/runr/${name}:${tag}" "${SCRIPT_DIR}/${name}" >/dev/null; then
+      echo "  ghcr.io/brf-tech/runr/${name}:${tag}"
+    else
+      echo -e "  ${RED}${name}: build failed — the region runs the published :latest${NC}"
+      return 0
+    fi
+  done
+  export RUNR_AGENT_IMAGE="ghcr.io/brf-tech/runr/agent:${tag}"
+  export RUNR_INTERNAL_AUTHZ_IMAGE="ghcr.io/brf-tech/runr/agent:${tag}"
+  export RUNR_QUEUE_CONSUMER_IMAGE="ghcr.io/brf-tech/runr/queue-consumer:${tag}"
+}
+
 # preload_kind_images CLUSTER — the region's utility images (Redis, the queue consumer, Zot,
 # Kaniko, the region Traefik, the tracing backend, curl/busybox/nginx of the suites), pulled on
 # the host and loaded into every Kind node. The runtime images are not among them: the e2e run
@@ -127,6 +155,8 @@ preload_kind_images() {
   # discards the rest) on the nodes that run it: less disk on a shared host, more pulls
   if [ "${KIND_PRELOAD:-1}" = "0" ]; then
     echo "Images not loaded into the Kind cluster (KIND_PRELOAD=0): the nodes pull them"
+    # …except the checkout's builds, which are on no registry
+    load_e2e_runr_images "$cluster"
     return 0
   fi
   echo "Loading images into the Kind cluster..."
@@ -146,6 +176,13 @@ preload_kind_images() {
     # Knative Serving
     "ghcr.io/brf-tech/runr/reqs/opentelemetry-collector-contrib:0.162.0"
     "ghcr.io/brf-tech/runr/reqs/tempo:3.1.0"
+    # the k6 runner of load tests (LoadTestManifests::IMAGE, observability suite)
+    "ghcr.io/brf-tech/runr/reqs/k6:1.8.2"
+    # cert-manager (CertManager::images()), installed with Knative Serving; acmesolver runs only
+    # for an ACME issuer, which a Kind region does not get
+    "ghcr.io/brf-tech/runr/reqs/cert-manager-controller:v1.21.2"
+    "ghcr.io/brf-tech/runr/reqs/cert-manager-webhook:v1.21.2"
+    "ghcr.io/brf-tech/runr/reqs/cert-manager-cainjector:v1.21.2"
   )
 
   local img
@@ -154,8 +191,24 @@ preload_kind_images() {
     pull_image "$img" || true
     kind_load_image "$img" "$cluster" || echo "    not loaded (the nodes pull it)"
   done
+  load_e2e_runr_images "$cluster"
 
   echo -e "  ${GREEN}✓ Images loaded.${NC}"
+}
+
+# load_e2e_runr_images CLUSTER — the checkout's builds (build_e2e_runr_images) into every node:
+# they are on no registry, so a node that has not got them cannot start their pods
+load_e2e_runr_images() {
+  local cluster="$1" img own=() seen=" "
+  for img in ${RUNR_AGENT_IMAGE:-} ${RUNR_INTERNAL_AUTHZ_IMAGE:-} ${RUNR_QUEUE_CONSUMER_IMAGE:-}; do
+    case "$seen" in *" ${img} "*) continue ;; esac
+    seen="${seen}${img} "
+    own+=("$img")
+  done
+  for img in "${own[@]}"; do
+    echo "  ${img} (this checkout)"
+    kind_load_image "$img" "$cluster" || echo -e "    ${RED}not loaded: its pods cannot start${NC}"
+  done
 }
 
 cmd_test() {
@@ -226,12 +279,17 @@ cmd_test() {
     # 1. Kind cluster (1 control-plane + 2 workers). KIND_WORKERS=1 (a host short of disk: every
     #    node holds the region's pre-pulled images): one worker, which the suites select as the
     #    dedicated project worker, and a control-plane without its NoSchedule taint for the
-    #    platform pods (registry, Knative, observability) that run next to the workers otherwise
-    local workers="${KIND_WORKERS:-2}" worker_nodes="" cp_patch=""
+    #    platform pods (registry, Knative, observability) that run next to the workers otherwise.
+    #    KIND_WORKERS=0: the control-plane alone runs everything, no dedicated worker (Kind
+    #    untaints the node of a one-node cluster itself and fails when the taint is not there:
+    #    no taints patch then); with a node of KIND_EXTRA_NODES_YAML (test-ai's GPU worker) the
+    #    cluster has two nodes again and the control-plane loses its taint as with one worker
+    local workers="${KIND_WORKERS:-2}" worker_nodes="" cp_patch="" extra_nodes
     for _ in $(seq 1 "$workers"); do
       worker_nodes="${worker_nodes}  - role: worker"$'\n'
     done
-    if [ "$workers" -lt 2 ]; then
+    extra_nodes=$(printf '%s\n' "${KIND_EXTRA_NODES_YAML:-}" | grep -c 'role:' || true)
+    if [ "$workers" -lt 2 ] && [ $((workers + extra_nodes)) -ge 1 ]; then
       cp_patch='      - |
         kind: InitConfiguration
         nodeRegistration:
@@ -329,8 +387,13 @@ KINDEOF
   echo "Starting Docker Compose (api, horizon, scheduler, reverb, mailpit) [TENANCY_ENABLED=false]..."
   cd "${SCRIPT_DIR}/.."
   ensure_compose_app_key
+  build_e2e_runr_images
   _test_compose_up="1"
-  docker compose up -d --build api horizon scheduler reverb mailpit
+  if ! docker compose up -d --build api horizon scheduler reverb mailpit; then
+    # what the stack's services said before the cleanup removes them (a migrator or API that exited)
+    docker compose logs --no-color --tail 60 migrator api 2>&1 | sed 's/^/    /' || true
+    exit 1
+  fi
 
   # Wait for API to be ready (E2E_API_WAIT seconds, default 30 — build + startup)
   echo "Waiting for the API to be ready..."
@@ -363,16 +426,22 @@ KINDEOF
     prepare_runtime_e2e "$_test_cluster_name"
   fi
 
-  # 4c. Bindings suite: data service images (test-bindings.sh)
-  if [ "$suite" = "bindings" ]; then
+  # 4c. Bindings suite: data service images (test-bindings.sh); the trigger sources suite uses the
+  #     object store and rclone too (test-trigger-sources.sh)
+  if [ "$suite" = "bindings" ] || [ "$suite" = "trigger-sources" ]; then
     preload_bindings_images "$_test_cluster_name"
   fi
+  # 4c. Trigger sources suite: the brokers, Postgres and the mail server (test-trigger-sources.sh)
+  [ "$suite" = "trigger-sources" ] && preload_trigger_sources_images "$_test_cluster_name"
   # 4c. Supply-chain suite: tools image (test-supply-chain.sh)
   [ "$suite" = "supply-chain" ] && prepare_supply_chain_e2e "$_test_cluster_name"
   # 4c. WebAssembly suite: the published Wasm build images + examples/wasm (test-wasm.sh)
   [ "$suite" = "wasm" ] && prepare_wasm_e2e "$_test_cluster_name"
   # 4c. Uploaded images suite: receiver + published wasm-exec images, echo.tar, q.wasm (test-images.sh)
   [ "$suite" = "images" ] && prepare_images_e2e "$_test_cluster_name"
+  # 4c. Org export / import suite: the transfer agent (runtime/image-upload) + data service images
+  #     (test-org-transfer.sh)
+  [ "$suite" = "org-transfer" ] && prepare_org_transfer_e2e "$_test_cluster_name"
 
   # 5. Copy the kubeconfig into the container. The API services join the kind network
   #    (docker-compose.yml), so a Kind cluster is reached at its control-plane container

@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -17,7 +18,7 @@ func newProjectsCmd(app *App) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "projects",
 		Aliases: []string{"project", "ps"},
-		Short:   "List, show and delete projects",
+		Short:   "List, show and delete projects; size recommendations; the regions of global projects",
 	}
 	cmd.AddCommand(&cobra.Command{
 		Use:     "ls",
@@ -49,7 +50,7 @@ func newProjectsCmd(app *App) *cobra.Command {
 					if p.Stopped != nil {
 						status = "stopped"
 					}
-					t.Row(p.Name, p.ServiceType, runtimeLabel(&p), output.Dash(p.RegionName()), status, ver, output.Dash(p.EndpointURL))
+					t.Row(p.Name, p.ServiceType, runtimeLabel(&p), regionLabel(&p), status, ver, output.Dash(p.EndpointURL))
 				}
 				if len(list) == 0 {
 					t.Note("No projects yet: `runr init` and `runr deploy` create one.")
@@ -96,7 +97,42 @@ func newProjectsCmd(app *App) *cobra.Command {
 	}
 	del.Flags().BoolVarP(&yes, "yes", "y", false, "do not ask for confirmation")
 	cmd.AddCommand(del)
+	addProjectPatchCommands(app, cmd) // runtime_patches.go
+	cmd.AddCommand(newRightsizingCmd(app))
+	cmd.AddCommand(newProjectGlobalCmd(app)) // projects_global.go
 	return cmd
+}
+
+// regionLabel is the project's region; a global project's primary region with the number of
+// the other regions ("eu-1 +2").
+func regionLabel(p *runr.Project) string {
+	name := output.Dash(p.RegionName())
+	if p.Global != nil && len(p.Global.Regions) > 1 {
+		name += fmt.Sprintf(" +%d", len(p.Global.Regions)-1)
+	}
+	return name
+}
+
+// globalLabel describes a global project: its mode and regions, the primary first, with the
+// number of regions in DNS.
+func globalLabel(p *runr.Project) string {
+	g := p.Global
+	if g == nil {
+		return "yes (runr projects global " + p.Name + ")"
+	}
+	names := make([]string, 0, len(g.Regions))
+	inDNS := 0
+	for _, r := range g.Regions {
+		if r.InDNS {
+			inDNS++
+		}
+		if r.Role == runr.GlobalRolePrimary {
+			names = append([]string{r.RegionName + " (primary)"}, names...)
+			continue
+		}
+		names = append(names, r.RegionName)
+	}
+	return fmt.Sprintf("%s, %s; %d of %d in DNS", output.Dash(g.Mode), strings.Join(names, ", "), inDNS, len(g.Regions))
 }
 
 func runtimeLabel(p *runr.Project) string {
@@ -122,7 +158,13 @@ func projectDetail(t *output.TableWriter, p *runr.Project) {
 	if p.RuntimeEOL != "" {
 		t.KV("Runtime EOL", p.RuntimeEOL)
 	}
+	if p.RuntimePatch != nil {
+		t.KV("Runtime patch", patchStateLabel(p.RuntimePatch))
+	}
 	t.KV("Region", output.Dash(p.RegionName()))
+	if p.IsGlobal() {
+		t.KV("Global", globalLabel(p))
+	}
 	t.KV("URL", output.Dash(p.EndpointURL))
 	if p.Stopped != nil {
 		t.KV("Stopped", stopLabel(p.Stopped))
@@ -130,6 +172,12 @@ func projectDetail(t *output.TableWriter, p *runr.Project) {
 	t.KV("Trigger", triggerLabel(p.Config))
 	t.KV("Resources", resourcesLabel(p.Config))
 	t.KV("Scale", scaleLabel(p.Config))
+	if len(p.Config.ScaleSchedule) > 0 || p.WarmScale != nil {
+		t.KV("Timed warmer", warmLabel(p))
+	}
+	if p.DeployStrategy != "" && p.DeployStrategy != runr.StrategyDirect {
+		t.KV("Deploy strategy", runr.StrategyLabel(p.DeployStrategy))
+	}
 	if p.LatestVersion != nil {
 		t.KV("Latest version", p.LatestVersion.Label+" ("+buildLabel(p.LatestVersion)+")")
 	}
@@ -201,6 +249,25 @@ func scaleLabel(c runr.ProjectConfig) string {
 	if c.ScaleToZero != nil && *c.ScaleToZero {
 		s += ", scales to zero"
 	}
+	if len(c.ScaleSchedule) > 0 {
+		s += ", min set by the timed warmer"
+	}
+	return s
+}
+
+// warmLabel shows the timed warmer: its rows (cron → containers, in the organization's time zone)
+// and what it last applied to the running workload.
+func warmLabel(p *runr.Project) string {
+	s := "off"
+	if len(p.Config.ScaleSchedule) > 0 {
+		s = runr.ScaleScheduleLabel(p.Config.ScaleSchedule) + " (organization time zone)"
+	}
+	if w := p.WarmScale; w != nil && w.Applied != nil {
+		s += fmt.Sprintf("; %d kept warm now", *w.Applied)
+		if w.AppliedAt != nil {
+			s += " (set " + output.Age(w.AppliedAt) + " ago)"
+		}
+	}
 	return s
 }
 
@@ -250,16 +317,34 @@ func newVersionsCmd(app *App) *cobra.Command {
 }
 
 func newRollbackCmd(app *App) *cobra.Command {
-	var noWait bool
+	var noWait, keepConfig bool
 	var timeout time.Duration
+	var strategy string
+	var envName string
 	cmd := &cobra.Command{
 		Use:   "rollback VERSION",
-		Short: "Deploy an earlier version again (v3, 3 or a version id)",
-		Long: "Deploy an earlier version. Code projects run that version's code with the current\n" +
-			"config (env, resources, scale). caas projects get the version's image, command, args and\n" +
-			"ports back as a new version, since the image is part of the config.",
+		Short: "Deploy an earlier version again (v3, 3 or a version id), with the config it ran with",
+		Long: "Deploy an earlier version with the configuration it ran with: scale, resources, env vars,\n" +
+			"trigger and timeout come back with the code (the API records the config of every\n" +
+			"deployment), a caas project runs the version's image. The project's own config is not\n" +
+			"changed. --keep-config runs the older code with the configuration of now. Secret\n" +
+			"variables and bindings always stay the current ones.\n\n" +
+			"--env rolls back one environment of the project (runr environments).\n\n" +
+			"The deploy follows the project's deploy strategy; --strategy direct replaces the live\n" +
+			"revision at once. (`runr rollout rollback` instead gives a promoted rollout's previous\n" +
+			"revision the traffic back while it is kept.)\n\n" +
+			"An API before config snapshots runs the version with the current config; a caas project's\n" +
+			"image, command, args and ports then come back as a new version.",
+		Example: "  runr rollback v3\n" +
+			"  runr rollback v3 --keep-config\n" +
+			"  runr rollback v3 --strategy direct\n" +
+			"  runr rollback v7 --env staging",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			s, err := strategyFlag(strategy)
+			if err != nil {
+				return err
+			}
 			ctx := cmd.Context()
 			c, p, err := app.Project(ctx)
 			if err != nil {
@@ -269,13 +354,35 @@ func newRollbackCmd(app *App) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if p.ServiceType == runr.TypeCaaS {
+			// An API with environments records configs and restores them on the server (a
+			// token without projects.view gets 403 from it: the endpoint exists)
+			_, lerr := c.ListEnvironments(ctx, p.ID)
+			supported := lerr == nil || runr.IsUnauthorized(lerr)
+			if lerr != nil && !supported && !errors.Is(lerr, runr.ErrUnsupported) {
+				return lerr
+			}
+			opts := runr.DeployOptions{}
+			switch {
+			case supported:
+				opts.RestoreConfig = !keepConfig
+				if envName != "" {
+					e, err := resolveEnvironment(ctx, c, p, envName)
+					if err != nil {
+						return err
+					}
+					opts.Environment = e.Name
+				}
+			case envName != "":
+				return errNoEnvironments
+			case p.ServiceType == runr.TypeCaaS:
 				if v, err = restoreContainerConfig(ctx, app, c, p, v); err != nil {
 					return err
 				}
+			case !keepConfig:
+				app.Warn("this RunR API does not restore configs: %s runs with the current config", v.Label)
 			}
 			res := &DeployResult{Project: p, Version: v}
-			res, err = finishDeploy(ctx, app, c, res, v, noWait, timeout)
+			res, err = finishDeployWith(ctx, app, c, res, v, opts, deployWait{noWait: noWait, timeout: timeout, strategy: s})
 			if res != nil && (res.Deployment != nil || res.Queued != nil) {
 				if perr := printDeployResult(app, res); perr != nil && err == nil {
 					err = perr
@@ -286,6 +393,9 @@ func newRollbackCmd(app *App) *cobra.Command {
 	}
 	cmd.Flags().BoolVar(&noWait, "no-wait", false, "return once the deployment started")
 	cmd.Flags().DurationVar(&timeout, "timeout", 10*time.Minute, "how long to wait")
+	cmd.Flags().StringVar(&strategy, "strategy", "", "deploy strategy of this deploy: direct, blue-green or canary (default: the project's)")
+	cmd.Flags().BoolVar(&keepConfig, "keep-config", false, "run the older code with the configuration of now")
+	cmd.Flags().StringVar(&envName, "env", "", "roll back this environment of the project (runr environments)")
 	return cmd
 }
 
@@ -362,6 +472,14 @@ func newStatusCmd(app *App) *cobra.Command {
 				return err
 			}
 			out := map[string]any{"project": p, "deployment": d}
+			// The rollout under way, or the promoted one that keeps the previous revision.
+			var rollout *runr.Rollout
+			if (p.DeployStrategy != "" && p.DeployStrategy != runr.StrategyDirect) || (d != nil && d.RolloutRole != "") {
+				if r, err := c.ProjectRollout(cmd.Context(), p.ID); err == nil && r != nil && (r.Open || r.Can.Rollback) {
+					rollout = r
+					out["rollout"] = r
+				}
+			}
 			return app.Printer().Print(out, func(t *output.TableWriter) {
 				t.KV("Project", p.Name+" ("+p.ServiceType+", "+runtimeLabel(p)+")")
 				t.KV("Region", output.Dash(p.RegionName()))
@@ -371,6 +489,13 @@ func newStatusCmd(app *App) *cobra.Command {
 				}
 				t.KV("Trigger", triggerLabel(p.Config))
 				t.KV("Scale", scaleLabel(p.Config))
+				if p.DeployStrategy != "" && p.DeployStrategy != runr.StrategyDirect {
+					t.KV("Deploy strategy", runr.StrategyLabel(p.DeployStrategy))
+				}
+				if rollout != nil {
+					t.KV("Rollout", runr.StrategyLabel(rollout.Strategy)+", "+rolloutStatusLabel(rollout)+": "+
+						trafficLabel(rollout)+" (runr rollout status)")
+				}
 				if p.LatestVersion != nil {
 					t.KV("Latest version", p.LatestVersion.Label+" ("+buildLabel(p.LatestVersion)+")")
 				}

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -14,6 +15,54 @@ import (
 
 // Durable workflows (docs/workflows.md): the definitions of a project, their runs and the
 // organization's events. Workflow definitions are addressed by name.
+//
+// Every environment of a project has workflows of its own (docs/workflows.md#environments): a
+// context made by WithWorkflowEnvironment addresses one of them — definitions, the workflow app,
+// runs, usage — and the events sent or listed with it belong to that environment.
+
+type workflowEnvironmentKey struct{}
+
+// WithWorkflowEnvironment returns a context whose workflow calls address one environment of the
+// project: its name or id ("" or "production": the project's own workload). Events sent with it
+// belong to the environment of that name.
+func WithWorkflowEnvironment(ctx context.Context, environment string) context.Context {
+	return context.WithValue(ctx, workflowEnvironmentKey{}, strings.TrimSpace(environment))
+}
+
+// WorkflowEnvironment is the environment WithWorkflowEnvironment put into ctx ("" for none).
+func WorkflowEnvironment(ctx context.Context) string {
+	env, _ := ctx.Value(workflowEnvironmentKey{}).(string)
+	return env
+}
+
+// wfBody is the body of a workflow request that changes something (POST, PUT, PATCH): fields
+// with the context's workflow environment ("environment"); nil when there is nothing to send.
+func wfBody(ctx context.Context, fields map[string]any) any {
+	if env := WorkflowEnvironment(ctx); env != "" {
+		if fields == nil {
+			fields = map[string]any{}
+		}
+		fields["environment"] = env
+	}
+	if fields == nil {
+		return nil
+	}
+	return fields
+}
+
+// wfQuery is q with the context's workflow environment (environment=…) for a GET, q itself
+// when there is none.
+func wfQuery(ctx context.Context, q url.Values) url.Values {
+	env := WorkflowEnvironment(ctx)
+	if env == "" {
+		return q
+	}
+	if q == nil {
+		q = url.Values{}
+	}
+	q.Set("environment", env)
+	return q
+}
 
 // Statuses of a workflow run.
 const (
@@ -38,8 +87,11 @@ func RunTerminal(status string) bool {
 
 // Workflow is WorkflowResource: one definition of a project.
 type Workflow struct {
-	ID          string                `json:"id"`
-	ProjectID   string                `json:"project_id"`
+	ID        string `json:"id"`
+	ProjectID string `json:"project_id"`
+	// Environment is the environment the workflow belongs to ("production": the project's own
+	// workload).
+	Environment string                `json:"environment,omitempty"`
 	Name        string                `json:"name"`
 	Description string                `json:"description,omitempty"`
 	Triggers    []WorkflowTrigger     `json:"triggers"`
@@ -149,6 +201,47 @@ type WorkflowCancelOn struct {
 	Expression string `json:"expression,omitempty"`
 }
 
+// Condition is Expression as a definition's "if" gives it. The API keeps each part of a
+// cancel_on (match, if) in parentheses (Expression::combine), so an "if" comes back as
+// "(<if>)": Condition takes one pair of parentheses around the whole expression off again, and
+// declaring Condition() keeps Expression as it is.
+func (c WorkflowCancelOn) Condition() string { return unwrapParens(c.Expression) }
+
+// unwrapParens removes one pair of parentheses that encloses the whole expression ("(a == 1)"
+// → "a == 1"; "(a) && (b)" stays). Parentheses inside string literals do not count.
+func unwrapParens(expr string) string {
+	s := strings.TrimSpace(expr)
+	if len(s) < 2 || s[0] != '(' || s[len(s)-1] != ')' {
+		return s
+	}
+	depth := 0
+	var quote byte
+	for i := 0; i < len(s); i++ {
+		ch := s[i]
+		switch {
+		case quote != 0:
+			if ch == '\\' {
+				i++
+			} else if ch == quote {
+				quote = 0
+			}
+		case ch == '\'' || ch == '"':
+			quote = ch
+		case ch == '(':
+			depth++
+		case ch == ')':
+			depth--
+			if depth == 0 && i != len(s)-1 {
+				return s // the first parenthesis closes before the end
+			}
+		}
+	}
+	if depth != 0 {
+		return s
+	}
+	return strings.TrimSpace(s[1 : len(s)-1])
+}
+
 // RunCounts are the runs of a workflow per status. PHP sends {} or [] when there are none.
 type RunCounts map[string]int
 
@@ -171,6 +264,7 @@ func (r *RunCounts) UnmarshalJSON(b []byte) error {
 // (never the signing key).
 type WorkflowApp struct {
 	ProjectID         string `json:"project_id"`
+	Environment       string `json:"environment,omitempty"`
 	TriggerType       string `json:"trigger_type,omitempty"`
 	IsWorkflowProject bool   `json:"is_workflow_project"`
 	EndpointURL       string `json:"endpoint_url,omitempty"`
@@ -206,6 +300,7 @@ type WorkflowRun struct {
 	ID             string          `json:"id"`
 	Workflow       WorkflowRef     `json:"workflow"`
 	ProjectID      string          `json:"project_id"`
+	Environment    string          `json:"environment,omitempty"`
 	Status         string          `json:"status"`
 	TriggerSource  string          `json:"trigger_source,omitempty"`
 	EventID        string          `json:"event_id,omitempty"`
@@ -298,6 +393,7 @@ type WorkflowEvent struct {
 	ExternalID    string          `json:"external_id,omitempty"`
 	Source        string          `json:"source,omitempty"`
 	ProjectID     string          `json:"project_id,omitempty"`
+	Environment   string          `json:"environment,omitempty"`
 	SentBy        FlexID          `json:"sent_by,omitempty"`
 	TS            int64           `json:"ts,omitempty"`
 	RunsStarted   int             `json:"runs_started"`
@@ -318,7 +414,7 @@ func (c *Client) ListWorkflows(ctx context.Context, projectID string) ([]Workflo
 		Data []Workflow  `json:"data"`
 		App  WorkflowApp `json:"app"`
 	}
-	if err := c.do(ctx, request{method: http.MethodGet, path: workflowsPath(projectID)}, &out); err != nil {
+	if err := c.do(ctx, request{method: http.MethodGet, path: workflowsPath(projectID), query: wfQuery(ctx, nil)}, &out); err != nil {
 		return nil, nil, err
 	}
 	return out.Data, &out.App, nil
@@ -329,7 +425,7 @@ func (c *Client) GetWorkflow(ctx context.Context, projectID, name string) (*Work
 	var out struct {
 		Data Workflow `json:"data"`
 	}
-	err := c.do(ctx, request{method: http.MethodGet, path: workflowsPath(projectID) + "/" + seg(name)}, &out)
+	err := c.do(ctx, request{method: http.MethodGet, path: workflowsPath(projectID) + "/" + seg(name), query: wfQuery(ctx, nil)}, &out)
 	if IsNotFound(err) {
 		return nil, &NotFoundError{Kind: "workflow", Ref: name}
 	}
@@ -362,9 +458,7 @@ func (c *Client) FindWorkflow(ctx context.Context, projectID, ref string) (*Work
 // SetWorkflowActive pauses (false) or resumes (true) a workflow: a paused workflow starts no
 // runs from triggers or the API; runs in progress continue. Pausing survives syncs.
 func (c *Client) SetWorkflowActive(ctx context.Context, projectID, name string, active bool) (*Workflow, error) {
-	body := struct {
-		IsActive bool `json:"is_active"`
-	}{IsActive: active}
+	body := wfBody(ctx, map[string]any{"is_active": active})
 	var out struct {
 		Data Workflow `json:"data"`
 	}
@@ -390,26 +484,70 @@ type WorkflowsResult struct {
 // latest version when the function cannot answer).
 func (c *Client) SyncWorkflows(ctx context.Context, projectID string) (*WorkflowsResult, error) {
 	var out WorkflowsResult
-	if err := c.do(ctx, request{method: http.MethodPost, path: workflowsPath(projectID) + "/sync"}, &out); err != nil {
+	if err := c.do(ctx, request{method: http.MethodPost, path: workflowsPath(projectID) + "/sync", body: wfBody(ctx, nil)}, &out); err != nil {
 		return nil, err
 	}
 	return &out, nil
 }
 
 // DeclareWorkflows sets a project's definitions through the API. defs is the list of
-// definitions (docs/workflows.md § Options); workflows not in it are archived.
+// definitions (docs/workflows.md § Options); workflows not in it are archived. A definition
+// declared unchanged keeps its source (e.g. sdk: what the function's SDK reported).
 func (c *Client) DeclareWorkflows(ctx context.Context, projectID string, defs []map[string]any) (*WorkflowsResult, error) {
 	if defs == nil {
 		defs = []map[string]any{}
 	}
-	body := struct {
-		Workflows []map[string]any `json:"workflows"`
-	}{Workflows: defs}
+	body := wfBody(ctx, map[string]any{"workflows": defs})
 	var out WorkflowsResult
 	if err := c.do(ctx, request{method: http.MethodPut, path: workflowsPath(projectID), body: body}, &out); err != nil {
 		return nil, err
 	}
 	return &out, nil
+}
+
+// DeclareWorkflow declares one definition through the API (def: its fields, as
+// Workflow.Definition() gives them; its name, if any, must be name): added or replaced, the
+// project's other definitions stay as they are — their sources too. An API before 0.6.0 has no
+// such endpoint: ErrUnsupported (DeclareWorkflows declares the whole set there).
+func (c *Client) DeclareWorkflow(ctx context.Context, projectID, name string, def map[string]any) (*Workflow, error) {
+	fields := make(map[string]any, len(def)+1)
+	for k, v := range def {
+		fields[k] = v
+	}
+	var out struct {
+		Data Workflow `json:"data"`
+	}
+	err := c.do(ctx, request{method: http.MethodPut, path: workflowsPath(projectID) + "/" + seg(name), body: wfBody(ctx, fields)}, &out)
+	if err != nil {
+		// an earlier API: GET and PATCH of the path only (405), or none (404)
+		if IsNotFound(err) || statusIs(err, http.StatusMethodNotAllowed) {
+			return nil, &unsupportedError{err: err}
+		}
+		return nil, err
+	}
+	return &out.Data, nil
+}
+
+// ArchiveWorkflow archives one definition (its runs stay, it starts no new runs); the others
+// stay as they are. A definition that does not exist is a *NotFoundError; an API before 0.6.0
+// has no such endpoint: ErrUnsupported (DeclareWorkflows without it archives it there).
+func (c *Client) ArchiveWorkflow(ctx context.Context, projectID, name string) (*Workflow, error) {
+	var out struct {
+		Data Workflow `json:"data"`
+	}
+	err := c.do(ctx, request{method: http.MethodDelete, path: workflowsPath(projectID) + "/" + seg(name), query: wfQuery(ctx, nil)}, &out)
+	if err != nil {
+		var ae *APIError
+		switch {
+		case errors.As(err, &ae) && ae.StatusCode == http.StatusNotFound && ae.Code == "workflow_not_found":
+			return nil, &NotFoundError{Kind: "workflow", Ref: name}
+		case IsNotFound(err) || statusIs(err, http.StatusMethodNotAllowed):
+			// an earlier API (405: the path has GET and PATCH only), or the project is gone
+			return nil, &unsupportedError{err: err}
+		}
+		return nil, err
+	}
+	return &out.Data, nil
 }
 
 // Definition returns the definition of w in the form DeclareWorkflows sends: declaring it
@@ -446,9 +584,9 @@ func (w *Workflow) Definition() map[string]any {
 		cancel := make([]map[string]any, 0, len(w.CancelOn))
 		for _, co := range w.CancelOn {
 			m := map[string]any{"event": co.Event}
-			if co.Expression != "" {
+			if cond := co.Condition(); cond != "" {
 				// The API stores match / if as one expression; it accepts it back as "if".
-				m["if"] = co.Expression
+				m["if"] = cond
 			}
 			cancel = append(cancel, m)
 		}
@@ -528,7 +666,7 @@ func (c *Client) ListWorkflowRuns(ctx context.Context, projectID string, f RunFi
 		path = workflowsPath(projectID) + "/" + seg(f.Workflow) + "/runs"
 	}
 	var raw []byte
-	if err := c.do(ctx, request{method: http.MethodGet, path: path, query: f.values()}, &raw); err != nil {
+	if err := c.do(ctx, request{method: http.MethodGet, path: path, query: wfQuery(ctx, f.values())}, &raw); err != nil {
 		return nil, nil, err
 	}
 	var list []WorkflowRun
@@ -569,6 +707,9 @@ type StartRunInput struct {
 	IdempotencyKey string `json:"idempotency_key,omitempty"`
 	// Test marks the run as a test run.
 	Test bool `json:"test,omitempty"`
+	// Environment is the environment whose workflow runs (name or id; "" = the context's,
+	// WithWorkflowEnvironment, else production).
+	Environment string `json:"environment,omitempty"`
 }
 
 // StartWorkflowRun starts a run of a workflow. created is false when the idempotency key
@@ -577,6 +718,9 @@ func (c *Client) StartWorkflowRun(ctx context.Context, projectID, name string, i
 	var out struct {
 		Data    WorkflowRun `json:"data"`
 		Created bool        `json:"created"`
+	}
+	if in.Environment == "" {
+		in.Environment = WorkflowEnvironment(ctx)
 	}
 	err := c.do(ctx, request{method: http.MethodPost, path: workflowsPath(projectID) + "/" + seg(name) + "/runs", body: in}, &out)
 	if IsNotFound(err) {
@@ -676,6 +820,9 @@ type EventInput struct {
 	ID string `json:"id,omitempty"`
 	// TS is the event time in Unix milliseconds (0 = now).
 	TS int64 `json:"ts,omitempty"`
+	// Environment is the name of the environment the event belongs to ("" = the context's,
+	// WithWorkflowEnvironment, else production).
+	Environment string `json:"environment,omitempty"`
 }
 
 // SentEvent is the effect of one sent event.
@@ -700,6 +847,16 @@ type SendEventsResult struct {
 func (c *Client) SendEvents(ctx context.Context, events []EventInput, test bool) (*SendEventsResult, error) {
 	if len(events) == 0 {
 		return nil, fmt.Errorf("no event to send")
+	}
+	if env := WorkflowEnvironment(ctx); env != "" {
+		withEnv := make([]EventInput, len(events))
+		for i, e := range events {
+			if e.Environment == "" {
+				e.Environment = env
+			}
+			withEnv[i] = e
+		}
+		events = withEnv
 	}
 	var body any = events[0]
 	if len(events) > 1 {
@@ -741,7 +898,7 @@ func (c *Client) ListEvents(ctx context.Context, f EventFilter) ([]WorkflowEvent
 		q.Set("per_page", strconv.Itoa(f.PerPage))
 	}
 	var raw []byte
-	if err := c.do(ctx, request{method: http.MethodGet, path: "/events", query: q}, &raw); err != nil {
+	if err := c.do(ctx, request{method: http.MethodGet, path: "/events", query: wfQuery(ctx, q)}, &raw); err != nil {
 		return nil, nil, err
 	}
 	var list []WorkflowEvent

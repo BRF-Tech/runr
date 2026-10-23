@@ -4,6 +4,7 @@ namespace App\Services\Skupper;
 
 use App\Models\PrivateDatabaseBinding;
 use App\Models\Project;
+use App\Services\Environments\EnvironmentScope;
 use App\Services\Manifests\KnativeManifests;
 
 /**
@@ -22,6 +23,11 @@ class SkupperManifests
             'app.kubernetes.io/managed-by' => 'runr',
             'runr/project-id' => $project->id,
         ], KnativeManifests::extraLabels($project));
+
+        // An environment's connection (docs/environments.md): the environment's labels too
+        if ($environment = EnvironmentScope::of($project)) {
+            $labels += EnvironmentScope::labels(EnvironmentScope::base($project), $environment);
+        }
 
         if ($binding) {
             $labels['runr/private-connection'] = $binding->resource_name;

@@ -26,13 +26,22 @@ the [MIT License](LICENSE).
 - **Three project types**: XaaS (a single-file function edited in the built-in Monaco editor),
   FaaS (a multi-file project with dependencies, built in the cluster when needed) and CaaS (any
   container image with port, command, arguments and environment).
-- **Triggers**: HTTP (Knative Service), schedule (CronJob), queue (Redis Streams consumer with
-  retries and a dead-letter stream) and durable workflows.
+- **Triggers**: a list per project — HTTP, schedules in a time zone, queues (Redis Streams), a
+  webhook inbox with signature presets and replay, fan-out topics, platform events, and broker and
+  external sources (Kafka, NATS, RabbitMQ, MQTT, Postgres CDC, S3, e-mail over IMAP) — delivered by
+  the project's event gateway with retries and dead letters; and durable workflows
+  ([triggers](docs/triggers.md)).
+- **Scaling**: scale to zero, minimum and maximum scale, and a timed warmer that keeps containers
+  warm on a weekly schedule ([scaling](docs/scaling.md)).
 - **Pluggable runtimes**: every language is a plugin — a `runtime.yaml` manifest plus an image.
   Python, Node.js, Go, PHP, PyTorch and TensorFlow ship built in; platform administrators and
   organizations register their own (C, Rust, Bash and Q examples included), in `http`, `exec`
   or `persistent` mode behind RunR's universal wrapper. `runr dev` runs them locally on the same
   images ([runtimes](docs/runtimes.md)).
+- **Runtime patches**: runtime images get immutable patch tags, and a signed feed tells every
+  installation why a patch came (routine, security, critical, zero-day). Projects apply or pin a
+  patch; at the deadline of a critical or zero-day patch RunR redeploys the projects still behind
+  ([runtime patches](docs/runtimes.md#runtime-patches)).
 - **WebAssembly**: Rust, Go (TinyGo), JavaScript / TypeScript and Python components on the Spin
   shim of runwasi, installed per region from the console ([WebAssembly](docs/wasm.md)).
 - **wasm-exec**: any WASI preview 1 command module — C / C++, Zig, Go, a `build.sh` or an
@@ -44,7 +53,17 @@ the [MIT License](LICENSE).
 ### Deploy
 
 - **Versions and deployments**: every code or configuration change is a version backed by a
-  per-project git repository; deploy any ready version, watch the rollout live, roll back.
+  per-project git repository; deploy any ready version, watch the rollout live, roll back with the
+  configuration it ran with.
+- **Environments and promotion**: dev, staging and production of one project, with configuration
+  overrides, secrets, bindings, domains and regions of their own, a git branch per environment,
+  and promotion of the same image with approval ([environments](docs/environments.md)).
+- **Deploy strategies**: blue-green and canary rollouts per function, with test URLs, promotion
+  after health checks, an automatic rollback on the new revision's error rate or latency, and the
+  previous revision kept warm for an instant rollback ([deploy strategies](docs/deploy-strategies.md)).
+- **Global projects**: one project in several regions behind one host name, in HA or proximity
+  mode, with health checks, switchover and failover, and Postgres replicas across the regions
+  ([global projects](docs/global-projects.md)).
 - **Git push and providers**: every project has its own git remote (`git push runr main`), or
   connects to a repository on GitHub (GitHub App), GitLab or Forgejo / Gitea with push-to-deploy
   and commit statuses ([git deploy](docs/git-deploy.md)).
@@ -61,7 +80,14 @@ the [MIT License](LICENSE).
   registry in resumable chunks — also for regions without internet access
   ([uploaded images](docs/images.md)).
 - **Networking**: per-project subdomains, path-based API gateways, custom domains with uploaded
-  or cert-manager certificates, private PostgreSQL connections through Skupper.
+  certificates or certificates from the cert-manager RunR sets up in each region, private
+  PostgreSQL connections through Skupper.
+- **Internal network**: projects of a region call each other by name, admitted by the callee's
+  allow list; a project is public, public from an IP allow list, or internal only
+  ([internal network](docs/internal-network.md)).
+- **API product**: offer a gateway's API to others with consumers, API keys, JWT routes, plans
+  with rate limits and quotas, and measured usage for your own invoicing system
+  ([API product](docs/api-product.md)).
 
 ### Data
 
@@ -98,8 +124,12 @@ the [MIT License](LICENSE).
   mapping to roles; optional two-factor authentication.
 - **Audit log**: append-only record of sign-ins, changes, deploys, shell sessions and denials,
   with export and SIEM forwarding ([security](docs/security.md)).
-- **Secrets at rest**: every stored secret is encrypted with key rotation; secret environment
-  variables reach workloads only through Kubernetes Secrets.
+- **Secrets at rest**: every stored secret is encrypted with key rotation. The values of secret
+  environment variables are not stored by RunR at all: they go straight into the region's
+  Kubernetes Secrets or an OpenBao RunR runs in the region, or stay in your own Vault / OpenBao,
+  AWS, GCP or Azure secret store, read in the region with the region's identity
+  ([secret stores](docs/secret-stores.md)). Postgres bindings can get short-lived users of their
+  own from that OpenBao ([dynamic credentials](docs/bindings.md#dynamic-credentials)).
 - **Supply chain**: SBOMs, vulnerability scans (also offline), cosign signatures, a policy gate
   before deploy and signed-image admission in the region ([supply chain](docs/supply-chain.md)).
 - **Data residency**: organizations pinned to allowed regions and data locations.
@@ -111,14 +141,20 @@ the [MIT License](LICENSE).
   up to date with `region:reconcile` and migrates a region to a new cluster.
 - **Observability**: metrics and logs per project, OpenTelemetry tracing with Tempo, request
   replay, uptime checks, public status pages and alerting ([observability](docs/observability.md)).
+- **Load tests** of HTTP projects with k6 from inside their region: latency percentiles, errors,
+  throughput, the pods and cold starts of the test window ([load tests](docs/load-test.md)).
+- **Rightsizing**: size recommendations from what a project's pods really used, applied with one
+  click ([rightsizing](docs/monitoring.md#rightsizing)).
+- **Organization export and import**: an organization packed into one versioned file and imported
+  into another organization or installation ([export and import](docs/org-export.md)).
 - **Live console**: real-time updates over WebSockets, a browser shell into running pods, guided
   tours, English and Turkish.
 - **Multi-tenant edition**: one PostgreSQL schema per tenant, per-region quotas, platform regions
   shared with tenants that resell them with a markup ([tenancy](docs/tenancy.md)).
 - **Billing** (optional, both editions): usage metering with region prices — pay as you go, or
   fixed resources with approval and daily proration — and one bill per project and month for its
-  owner, read by your own invoicing system through the billing API and signed billing events
-  ([billing](docs/billing.md)).
+  owner, read by your own invoicing system through the billing API and signed billing events,
+  and a monthly cost limit per project ([billing](docs/billing.md)).
 - **Support tickets** with attachments, assignment and real-time updates.
 - **White-label**: your brand, self-service signup and onboarding
   ([white-label](docs/white-label.md)).
@@ -189,7 +225,7 @@ bash scripts/devready.sh docker
 
 The script creates `.env`, generates the application key, builds and starts the stack and runs
 the migrations and seeders. Open the console at <http://localhost:8061> (API on port 8060) and
-sign in as `admin` with the `ADMIN_PASSWORD` from `api/.env.docker`.
+sign in as `admin` (or `admin@example.com`) with the `ADMIN_PASSWORD` from `api/.env.docker`.
 
 ### A local region with kind
 
@@ -199,8 +235,10 @@ To deploy functions you need a Kubernetes cluster as a region. For local work:
 bash compose/kind-setup.sh          # kind cluster (1 control plane + 2 workers) + cloud-provider-kind
 ```
 
-Then add a region in the console (**Settings → Add Region**), upload the generated kubeconfig
-(`compose/runr-kubeconfig.yaml`) and let RunR install Knative Serving and the region components.
+Then add a region in the console
+(**Administration → Regions & settings → Knative Regions → + Add Region**), upload the generated
+kubeconfig (`compose/runr-kubeconfig.yaml`) and let RunR install Knative Serving and the region
+components.
 Details: [docs/development.md](docs/development.md).
 
 ### Kubernetes (Helm)
@@ -219,7 +257,7 @@ To install a specific release, pin the chart version; the API and UI images foll
 default to the chart's `appVersion`):
 
 ```bash
-helm upgrade --install runr brf-tech/runr --version 0.5.10 \
+helm upgrade --install runr brf-tech/runr --version 0.6.0 \
   --namespace runr --create-namespace \
   --set domain=runr.example.com
 ```

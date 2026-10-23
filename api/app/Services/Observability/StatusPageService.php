@@ -36,10 +36,14 @@ class StatusPageService
         $errors = [];
         $tenant = TenantScope::current();
 
+        // The organization's own route never conflicts: its page, or a page of it that is gone (a
+        // restore after its entries were lost keeps its slug — the central route outlived them)
+        $own = fn (StatusPageRoute $r) => $r->tenant_id === $tenant
+            && ($r->status_page_id === $ownPageId || ! StatusPage::query()->whereKey($r->status_page_id)->exists());
         $taken = fn (string $column, string $value) => StatusPageRoute::query()
             ->where($column, $value)
             ->get()
-            ->contains(fn (StatusPageRoute $r) => ! ($r->status_page_id === $ownPageId && $r->tenant_id === $tenant));
+            ->contains(fn (StatusPageRoute $r) => ! $own($r));
 
         if ($taken('slug', $slug)) {
             $errors['slug'] = __('observability.status_page.slug_taken');
@@ -56,6 +60,11 @@ class StatusPageService
         $page = $this->current();
         $page->fill($data);
         $page->save();
+
+        // Routes of the organization's pages that are gone (conflicts()) make way for this one
+        StatusPageRoute::query()->where('tenant_id', TenantScope::current())->where('status_page_id', '!=', $page->id)->get()
+            ->reject(fn (StatusPageRoute $r) => StatusPage::query()->whereKey($r->status_page_id)->exists())
+            ->each->delete();
 
         StatusPageRoute::query()->updateOrCreate(
             ['status_page_id' => $page->id, 'tenant_id' => TenantScope::current()],

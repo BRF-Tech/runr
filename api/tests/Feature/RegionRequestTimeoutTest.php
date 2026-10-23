@@ -146,6 +146,32 @@ class RegionRequestTimeoutTest extends TestCase
         $this->assertStringContainsString('read / write timeout of web, websecure 120 s → 1810 s (longest request_timeout 1800 s)', $output);
     }
 
+    public function test_the_private_entry_point_follows_the_setting_once_the_traefik_has_it(): void
+    {
+        $this->cluster();
+        $this->traefikArgs = [
+            '--entryPoints.internal.address=:8081/tcp',
+            '--entryPoints.web.transport.respondingTimeouts.readTimeout=310s',
+            '--entryPoints.web.transport.respondingTimeouts.writeTimeout=310s',
+            '--entryPoints.websecure.transport.respondingTimeouts.readTimeout=310s',
+            '--entryPoints.websecure.transport.respondingTimeouts.writeTimeout=310s',
+        ];
+        $this->crDefaults = ['max-revision-timeout-seconds' => '600'];
+        $region = $this->region('eu-1', 300);
+
+        dispatch_sync(new ApplyRequestTimeoutJob($region));
+
+        // queue-trigger sinks and model services are called through it
+        $this->assertSame([
+            'ports.web.transport.respondingTimeouts.readTimeout' => '"310s"',
+            'ports.web.transport.respondingTimeouts.writeTimeout' => '"310s"',
+            'ports.websecure.transport.respondingTimeouts.readTimeout' => '"310s"',
+            'ports.websecure.transport.respondingTimeouts.writeTimeout' => '"310s"',
+            'ports.internal.transport.respondingTimeouts.readTimeout' => '"310s"',
+            'ports.internal.transport.respondingTimeouts.writeTimeout' => '"310s"',
+        ], $this->upgradeSets());
+    }
+
     public function test_up_to_date_timeouts_change_nothing_and_knative_is_never_lowered(): void
     {
         $this->cluster();

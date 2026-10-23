@@ -3,6 +3,7 @@
 namespace App\Services\Concerns;
 
 use App\Services\Helpers\KataRuntime;
+use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Log;
 
 /**
@@ -18,12 +19,35 @@ use Illuminate\Support\Facades\Log;
  */
 trait KubernetesNamespacedTrait
 {
+    /** Why the last applyResource() / createResource() failed (the API server's message), null after a success. */
+    private ?string $lastApplyError = null;
+
+    /**
+     * The reason the last applyResource() or createResource() returned false: "HTTP <status>:
+     * <message>" of the API server's Status (an admission webhook's refusal, a validation error),
+     * null when it succeeded.
+     */
+    public function lastApplyError(): ?string
+    {
+        return $this->lastApplyError;
+    }
+
+    /** "HTTP 422: <message>" of a failed write (the Status message, else the body's start). */
+    private static function applyFailure(Response $response): string
+    {
+        $message = $response->json('message');
+        $message = is_string($message) && $message !== '' ? $message : trim(mb_substr($response->body(), 0, 500));
+
+        return 'HTTP '.$response->status().($message !== '' ? ': '.$message : '');
+    }
+
     /**
      * Apply (create or update) a Kubernetes resource.
      * Uses server-side apply (PATCH with application/apply-patch+yaml).
      */
     public function applyResource(array $manifest, string $namespace): bool
     {
+        $this->lastApplyError = null;
         $manifest = KataRuntime::withGuestSizing($manifest);
         $kind = $manifest['kind'];
         $apiVersion = $manifest['apiVersion'];
@@ -47,6 +71,7 @@ trait KubernetesNamespacedTrait
             return $this->createResource($manifest, $namespace);
         }
 
+        $this->lastApplyError = self::applyFailure($response);
         Log::error('K8s apply failed', [
             'kind' => $kind,
             'name' => $name,
@@ -62,6 +87,7 @@ trait KubernetesNamespacedTrait
      */
     public function createResource(array $manifest, string $namespace): bool
     {
+        $this->lastApplyError = null;
         $manifest = KataRuntime::withGuestSizing($manifest);
         $kind = $manifest['kind'];
         $apiVersion = $manifest['apiVersion'];
@@ -87,6 +113,7 @@ trait KubernetesNamespacedTrait
             if ($putResponse->successful()) {
                 return true;
             }
+            $this->lastApplyError = self::applyFailure($putResponse);
 
             Log::error('K8s update failed after conflict', [
                 'kind' => $kind,
@@ -98,6 +125,7 @@ trait KubernetesNamespacedTrait
             return false;
         }
 
+        $this->lastApplyError = self::applyFailure($response);
         Log::error('K8s create failed', [
             'kind' => $kind,
             'name' => $manifest['metadata']['name'] ?? 'unknown',
@@ -148,6 +176,100 @@ trait KubernetesNamespacedTrait
         }
 
         return null;
+    }
+
+    /**
+     * A namespaced resource; null when it does not exist (404). Any other failure throws, so a
+     * caller that must not lose data can tell "none" from "unknown" (project secret values,
+     * App\Services\Secrets\RegionSecrets). The exception carries the HTTP status and the API's
+     * message, never the object.
+     */
+    public function getResourceOrFail(string $apiVersion, string $kind, string $name, string $namespace): ?array
+    {
+        $response = $this->request()->get($this->resourceUrl($apiVersion, $kind, $namespace, $name));
+
+        if ($response->status() === 404) {
+            return null;
+        }
+        if (! $response->successful()) {
+            throw new \RuntimeException("Reading {$kind} {$namespace}/{$name} failed (HTTP {$response->status()}): ".self::statusMessage($response->json()));
+        }
+
+        return (array) $response->json();
+    }
+
+    /**
+     * Create a namespaced resource: true when created, false when it already exists (409). Any
+     * other failure throws with the status and the API's message — never the manifest, which may
+     * hold secret values.
+     */
+    public function createResourceOrFail(array $manifest, string $namespace): bool
+    {
+        $response = $this->request()
+            ->withBody(json_encode($manifest, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE), 'application/json')
+            ->post($this->collectionUrl($manifest['apiVersion'], $manifest['kind'], $namespace));
+
+        if ($response->status() === 409) {
+            return false;
+        }
+        if (! $response->successful()) {
+            throw new \RuntimeException("Creating {$manifest['kind']} {$namespace}/{$manifest['metadata']['name']} failed (HTTP {$response->status()}): ".self::statusMessage($response->json()));
+        }
+
+        return true;
+    }
+
+    /**
+     * JSON merge patch (RFC 7386) that throws on failure: true when patched, false when the object
+     * does not exist (404). The exception carries the status and the API's message, never the patch.
+     */
+    public function mergePatchOrFail(string $apiVersion, string $kind, string $name, string $namespace, array $patch): bool
+    {
+        $response = $this->request()
+            ->withBody(json_encode($patch, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE), 'application/merge-patch+json')
+            ->patch($this->resourceUrl($apiVersion, $kind, $namespace, $name));
+
+        if ($response->status() === 404) {
+            return false;
+        }
+        if (! $response->successful()) {
+            throw new \RuntimeException("Patching {$kind} {$namespace}/{$name} failed (HTTP {$response->status()}): ".self::statusMessage($response->json()));
+        }
+
+        return true;
+    }
+
+    /**
+     * A short-lived token of a service account (TokenRequest API), for a login with the account's
+     * identity — never stored. Throws when the cluster refuses.
+     *
+     * @param  list<string>  $audiences  empty: the API server's own audience
+     */
+    public function requestServiceAccountToken(string $namespace, string $serviceAccount, int $ttl = 600, array $audiences = []): string
+    {
+        $spec = ['expirationSeconds' => max(600, $ttl)];
+        if ($audiences !== []) {
+            $spec['audiences'] = $audiences;
+        }
+
+        $response = $this->request()
+            ->withBody(json_encode(['apiVersion' => 'authentication.k8s.io/v1', 'kind' => 'TokenRequest', 'spec' => $spec]), 'application/json')
+            ->post($this->resourceUrl('v1', 'ServiceAccount', $namespace, $serviceAccount).'/token');
+
+        $token = $response->json('status.token');
+        if (! $response->successful() || ! is_string($token) || $token === '') {
+            throw new \RuntimeException("A token of service account {$namespace}/{$serviceAccount} was refused (HTTP {$response->status()}): ".self::statusMessage($response->json()));
+        }
+
+        return $token;
+    }
+
+    /** The message of a Kubernetes Status answer, shortened. */
+    private static function statusMessage(mixed $json): string
+    {
+        $message = is_array($json) ? (string) ($json['message'] ?? $json['reason'] ?? '') : '';
+
+        return mb_substr($message !== '' ? $message : 'no message', 0, 300);
     }
 
     /**
@@ -285,31 +407,47 @@ trait KubernetesNamespacedTrait
     }
 
     /**
-     * Wake up a scaled-to-zero Knative service via the activator proxy.
+     * Wake up a scaled-to-zero Knative service: a request to its cluster-local host through the
+     * region Traefik's private entry point (knativePrivateRequest), which the activator holds
+     * until a pod is up.
      */
-    public function wakeUpKnativeService(string $servingNs, string $targetNs, string $serviceName, int $timeout = 15): bool
+    public function wakeUpKnativeService(string $servingNs, string $targetNs, string $serviceName, int $timeout = 15, ?string $token = null): bool
     {
-        $revision = $this->resolveLatestRevision($targetNs, $serviceName);
-        if (! $revision) {
+        if (! $this->resolveLatestRevision($targetNs, $serviceName)) {
             return false;
         }
 
-        $url = "{$this->server}/api/v1/namespaces/{$servingNs}/services/http:activator-service:80/proxy/";
-
         try {
-            $response = $this->request()
-                ->timeout($timeout)
-                ->withHeaders([
-                    'Host' => "{$serviceName}.{$targetNs}.svc.cluster.local",
-                    'Knative-Serving-Namespace' => $targetNs,
-                    'Knative-Serving-Revision' => $revision,
-                ])
-                ->get($url);
-
-            return $response->successful();
+            return $this->knativePrivateRequest('GET', $servingNs, $targetNs, $serviceName, '', [], null, $timeout, $token)->successful();
         } catch (\Throwable) {
             return true; // timeout = activation was triggered, pod starting
         }
+    }
+
+    /**
+     * JSON merge patch of a namespaced resource's status subresource (…/<name>/status).
+     */
+    public function mergePatchStatus(string $apiVersion, string $kind, string $name, string $namespace, array $patch): bool
+    {
+        $url = $this->resourceUrl($apiVersion, $kind, $namespace, $name).'/status';
+
+        $response = $this->request()
+            ->withHeaders(['Content-Type' => 'application/merge-patch+json'])
+            ->patch($url, $patch);
+
+        if ($response->successful()) {
+            return true;
+        }
+
+        Log::error('K8s status merge patch failed', [
+            'kind' => $kind,
+            'name' => $name,
+            'ns' => $namespace,
+            'status' => $response->status(),
+            'body' => $response->body(),
+        ]);
+
+        return false;
     }
 
     private function resolveLatestRevision(string $namespace, string $serviceName): ?string

@@ -9,8 +9,10 @@ use App\Services\Observability\InClusterHttp;
 /**
  * The span metrics of a traced project, from the region's Prometheus: the OpenTelemetry
  * Collector's spanmetrics connector counts every SERVER span (calls, duration histogram, the
- * runr.cold_start dimension) per service — the project's slug. Sampling keeps ratios and
- * percentiles representative; absolute counts scale with the sampling ratio.
+ * runr.cold_start and runr.revision dimensions) per service — the project's slug. Sampling keeps
+ * ratios and percentiles representative; absolute counts scale with the sampling ratio. $labels
+ * narrows the series further (a canary's revision: ['revision' => <name>], the label the config
+ * names observability.alerts.metrics.revision).
  */
 class SpanMetricsQuery
 {
@@ -21,7 +23,7 @@ class SpanMetricsQuery
      *
      * @return array{value: string, volume: string}
      */
-    public static function promql(string $type, string $service, int $window): array
+    public static function promql(string $type, string $service, int $window, array $labels = []): array
     {
         $m = (array) config('observability.alerts.metrics', []);
         $calls = $m['calls'] ?? 'traces_span_metrics_calls_total';
@@ -31,6 +33,10 @@ class SpanMetricsQuery
         $w = max(1, $window).'m';
         $service = addcslashes($service, '\\"');
         $sel = "{$svc}=\"{$service}\",span_kind=\"SPAN_KIND_SERVER\"";
+        foreach ($labels as $dimension => $value) {
+            $label = (string) ($m[$dimension] ?? $dimension);
+            $sel .= ','.$label.'="'.addcslashes((string) $value, '\\"').'"';
+        }
 
         $volume = "sum(increase({$calls}{{$sel}}[{$w}]))";
 
@@ -49,14 +55,15 @@ class SpanMetricsQuery
      *
      * @return array{0: float|null, 1: float}
      */
-    public function measure(KnativeRegion $region, string $type, string $service, int $window): array
+    public function measure(KnativeRegion $region, string $type, string $service, int $window, array $labels = []): array
     {
-        $q = self::promql($type, $service, $window);
+        $q = self::promql($type, $service, $window, $labels);
 
         return [$this->instant($region, $q['value']), (float) ($this->instant($region, $q['volume']) ?? 0.0)];
     }
 
-    private function instant(KnativeRegion $region, string $promql): ?float
+    /** One instant query of the region's Prometheus: the first sample's value, null when there is none. */
+    public function instant(KnativeRegion $region, string $promql): ?float
     {
         $response = $this->http->get($region, MonitoringEndpoint::prometheus($region), 'api/v1/query', ['query' => $promql]);
         if (! $response || ! $response->successful()) {

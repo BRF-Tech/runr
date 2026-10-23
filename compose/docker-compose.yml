@@ -122,7 +122,8 @@ services:
       POSTGRES_USER: ${DB_USER:-runr}
       POSTGRES_PASSWORD: ${DB_PASS}
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-runr}"]
+      # over TCP: during its first start the image runs a temporary server on the socket only
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U ${DB_USER:-runr}"]
       interval: 5s
       timeout: 3s
       retries: 5

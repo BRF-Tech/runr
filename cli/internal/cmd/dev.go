@@ -120,8 +120,8 @@ func newDevCmd(app *App) *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			pf, _ := app.ProjectFile()
 			queue := ""
-			if pf != nil && pf.Trigger != nil {
-				queue = pf.Trigger.Queue
+			if pf != nil {
+				queue = pf.QueueStream()
 			}
 			var st *dev.State
 			if url == "" {

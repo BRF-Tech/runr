@@ -130,6 +130,13 @@ class SandboxInstallService
             }
             $log('Hardware virtualization (/dev/kvm): '.self::describeKvmNodes($kvm)
                 .($kvm['state'] === 'mixed' ? ' — Kata pods run only on the nodes with it ('.KataRuntime::KVM_LABEL.'=true)' : ''));
+            if (in_array('qemu', $hypervisors, true)) {
+                $shm = self::qemuShmSummary($k8s->listClusterResources('v1', 'Node')['items'] ?? []);
+                if ($shm['nodes'] !== []) {
+                    $log('/dev/shm for QEMU guests (at least '.KataRuntime::QEMU_MIN_SHM_MB.' MiB): '
+                        .implode(', ', array_map(fn ($node, $mb) => "{$node}: {$mb} MiB", array_keys($shm['nodes']), $shm['nodes'])));
+                }
+            }
 
             $configMap = $this->buildKataConfigMap(self::SANDBOX_NAMESPACE, $hypervisors, $runtime['flavor']);
             $ds = $this->buildKataInstallerDaemonSet(self::SANDBOX_NAMESPACE, $hypervisors, $hasDedicated, $runtime['flavor']);

@@ -3,6 +3,7 @@
 namespace Modules\Billing\Services;
 
 use App\Models\Project;
+use App\Models\ProjectEnvironment;
 use Brick\Math\BigDecimal;
 use Brick\Math\BigRational;
 use Carbon\CarbonImmutable;
@@ -25,8 +26,11 @@ use Modules\Billing\Support\ResolvedPrice;
  *    are prorated by day from the approval (BillingPolicy decision 2); consecutive days at the same
  *    price form one line. An allocation still in effect counts to the end of the bill.
  *  - usage lines: metered usage at the pay-as-you-go prices of its day (× trigger multiplier ×
- *    (1 + markup)), grouped by region, metric, trigger, price version and markup version — a price
- *    change in the month splits a line.
+ *    (1 + markup)), grouped by environment, region, metric, trigger, price version and markup
+ *    version — a price change in the month splits a line. A project's line says which environment
+ *    its usage came from (environment_id / environment_name: production or one of its
+ *    environments, docs/environments.md); a project that ran in an environment besides production
+ *    names it in the description of each line too.
  *  - coverage: a project's own usage in a region on a day an allocation there is in effect is
  *    covered by the fixed price (metered_lines, not billed); metered_cost is the cost of all the
  *    project's usage at pay-as-you-go prices, difference = total − metered_cost.
@@ -43,6 +47,12 @@ class BillCalculator
     private const ENTRY_POINTS = ['http' => 'HTTP', 'queue' => 'Queue', 'schedule' => 'Schedule'];
 
     private const BINDING_TYPES = ['kv' => 'KV', 'object' => 'Object storage', 'postgres' => 'Postgres'];
+
+    /** Parts of a project billed as lines of their own (usage_records.source, UsageReader component). */
+    private const COMPONENTS = ['preview' => 'preview environments', 'queue_consumer' => 'queue consumer'];
+
+    /** environment_name of usage of an environment that was deleted before its name was recorded. */
+    public const DELETED_ENVIRONMENT = 'deleted environment';
 
     public function __construct(
         private readonly PriceBook $prices,
@@ -325,8 +335,8 @@ class BillCalculator
                 }
 
                 $key = implode('|', [
-                    $covered ? 'c' : 'b', $entry['kind'], $entry['project_id'] ?? '', $entry['resource_id'] ?? '',
-                    $entry['region_id'] ?? '', $entry['entry_point'] ?? '', $metric, $price->versionKey(),
+                    $covered ? 'c' : 'b', $entry['kind'], $entry['project_id'] ?? '', $entry['environment_id'] ?? '', $entry['resource_id'] ?? '',
+                    $entry['region_id'] ?? '', $entry['entry_point'] ?? '', $entry['component'] ?? '', $metric, $price->versionKey(),
                 ]);
 
                 $groups[$key] ??= [
@@ -347,10 +357,20 @@ class BillCalculator
             }
         }
 
+        // Projects that ran in an environment besides production: every line of theirs names its
+        // environment (docs/billing.md#environments)
+        $environmentNames = $this->environmentNames($entries, $names);
+        $withEnvironments = [];
+        foreach ($entries as $entry) {
+            if ($entry['kind'] === 'project' && ($entry['environment_id'] ?? null) !== null) {
+                $withEnvironments[(string) $entry['project_id']] = true;
+            }
+        }
+
         $billed = [];
         $covered = [];
         foreach ($groups as $group) {
-            $line = $this->usageLine($group, $names);
+            $line = $this->usageLine($group, $names, $environmentNames, isset($withEnvironments[(string) ($group['entry']['project_id'] ?? '')]));
             if ($group['covered']) {
                 $covered[] = $line;
             } else {
@@ -358,7 +378,10 @@ class BillCalculator
             }
         }
 
-        $sort = fn (array $a, array $b) => [$a['project_name'] ?? '', $a['region_name'] ?? '', $a['description'], $a['from']] <=> [$b['project_name'] ?? '', $b['region_name'] ?? '', $b['description'], $b['from']];
+        // Per project its production lines first, then each environment's
+        $environmentOrder = fn (array $line) => ($line['environment_id'] ?? null) === null ? '' : '~'.($line['environment_name'] ?? '');
+        $sort = fn (array $a, array $b) => [$a['project_name'] ?? '', $environmentOrder($a), $a['region_name'] ?? '', $a['description'], $a['from']]
+            <=> [$b['project_name'] ?? '', $environmentOrder($b), $b['region_name'] ?? '', $b['description'], $b['from']];
         usort($billed, $sort);
         usort($covered, $sort);
 
@@ -398,10 +421,57 @@ class BillCalculator
     }
 
     /**
+     * Names of the environments the entries' usage came from (environment id → name): the name
+     * recorded with the usage (usage_records.environment_name), else $names (a tenant's, read in its
+     * schema), else the environment as it is now; an environment deleted before its name was
+     * recorded is DELETED_ENVIRONMENT.
+     *
+     * @param  list<array<string, mixed>>  $entries
+     * @param  array<string, string>  $names
+     * @return array<string, string>
+     */
+    public function environmentNames(array $entries, array $names = []): array
+    {
+        $resolved = [];
+        $missing = [];
+        foreach ($entries as $entry) {
+            $id = $entry['environment_id'] ?? null;
+            if ($id === null || isset($resolved[$id])) {
+                continue;
+            }
+            $name = $entry['environment_name'] ?? null;
+            $name ??= $names[$id] ?? null;
+            if ($name !== null && $name !== '') {
+                $resolved[$id] = (string) $name;
+            } else {
+                $missing[$id] = true;
+            }
+        }
+
+        $missing = array_keys(array_diff_key($missing, $resolved));
+        if ($missing !== []) {
+            try {
+                if (ProjectEnvironment::tablesReady()) {
+                    $resolved += ProjectEnvironment::query()->whereIn('id', $missing)->pluck('name', 'id')->map(fn ($n) => (string) $n)->all();
+                }
+            } catch (QueryException) {
+            }
+            foreach ($missing as $id) {
+                $resolved[$id] ??= self::DELETED_ENVIRONMENT;
+            }
+        }
+
+        return $resolved;
+    }
+
+    /**
      * @param  array<string, mixed>  $group
      * @param  array<string, string>  $names
+     * @param  array<string, string>  $environmentNames  environmentNames()
+     * @param  bool  $namesEnvironment  the project ran in an environment besides production: the
+     *                                  description names the environment of every line of it
      */
-    private function usageLine(array $group, array $names): array
+    private function usageLine(array $group, array $names, array $environmentNames = [], bool $namesEnvironment = false): array
     {
         /** @var array<string, mixed> $entry */
         $entry = $group['entry'];
@@ -427,15 +497,29 @@ class BillCalculator
             'sandbox' => 'Sandboxes: ',
             default => $projectName !== null ? $projectName.': ' : '',
         };
+        // A project's previews and queue consumer are lines of their own
+        $component = $entry['kind'] === 'project' ? ($entry['component'] ?? null) : null;
+        if ($component !== null) {
+            $label .= ' — '.(self::COMPONENTS[$component] ?? $component);
+        }
         $trigger = in_array($entry['kind'], ['project', 'model'], true) && $entry['entry_point']
             ? ', '.(self::ENTRY_POINTS[$entry['entry_point']] ?? ucfirst((string) $entry['entry_point']))
             : '';
+        // The environment a project's usage came from (docs/environments.md): production — the
+        // project's own workload — or one of its environments; previews are none of them
+        $environmentId = $entry['kind'] === 'project' ? ($entry['environment_id'] ?? null) : null;
+        $environmentName = match (true) {
+            $entry['kind'] !== 'project' || $component === 'preview' => null,
+            $environmentId === null => ProjectEnvironment::PRIMARY_NAME,
+            default => $environmentNames[$environmentId] ?? self::DELETED_ENVIRONMENT,
+        };
+        $where = $namesEnvironment && $environmentName !== null ? $environmentName.', ' : '';
         $amount = $quantity->multipliedBy($group['unit_price'])->multipliedBy($group['multiplier'])->multipliedBy($price->markupFactorExact());
 
         return [
             'type' => 'usage',
             'metric' => $group['metric'],
-            'description' => $subject.$label.' ('.$region.$trigger.')',
+            'description' => $subject.$label.' ('.$where.$region.$trigger.')',
             'region_id' => $entry['region_id'],
             'region_name' => $region,
             'project_id' => $entry['project_id'],
@@ -444,6 +528,9 @@ class BillCalculator
             'resource_id' => $entry['resource_id'],
             'resource_name' => $resourceName,
             'entry_point' => in_array($entry['kind'], ['project', 'model'], true) ? $entry['entry_point'] : null,
+            'component' => $component,
+            'environment_id' => $environmentId,
+            'environment_name' => $environmentName,
             'quantity' => Money::roundedFloat($quantity, 4),
             'unit' => $group['unit'],
             'unit_price' => Money::roundedFloat($group['unit_price'], 8),

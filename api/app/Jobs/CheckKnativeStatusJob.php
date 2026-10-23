@@ -5,14 +5,19 @@ namespace App\Jobs;
 use App\Events\PlatformEvent;
 use App\Http\Resources\KnativeRegionResource;
 use App\Models\KnativeRegion;
+use App\Services\CertManager\CertManagerService;
 use App\Services\Dns\RegionDnsCheck;
 use App\Services\DomainMigrateService;
 use App\Services\KnativeStatusService;
+use App\Services\KubernetesClient;
+use App\Services\PublicHostRewrites;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
+use Illuminate\Support\Facades\Log;
+use Throwable;
 
 class CheckKnativeStatusJob implements ShouldQueue
 {
@@ -73,6 +78,36 @@ class CheckKnativeStatusJob implements ShouldQueue
         if ($this->region->is_domain_migrating) {
             app(DomainMigrateService::class)->completeIfResolved($this->region->fresh());
         }
+
+        $this->syncPublicHosts();
+    }
+
+    /**
+     * Custom domains and gateway routes follow their Knative Service's public host (a domain move
+     * changes it, PublicHostRewrites).
+     */
+    private function syncPublicHosts(): void
+    {
+        if (! $this->region->has_serving) {
+            return;
+        }
+
+        try {
+            $lines = array_filter(
+                PublicHostRewrites::sync(new KubernetesClient($this->region->kubeconfig), $this->region->project_namespace ?: $this->region->name,
+                    servingNamespace: $this->region->knative_serving_namespace ?: 'knative-serving'),
+                fn (string $line) => ! str_starts_with($line, 'left alone'),   // region:reconcile names those
+            );
+            if ($lines !== []) {
+                Log::info('Host rewrites of region '.$this->region->name.' updated', ['changes' => $lines]);
+            }
+        } catch (Throwable $e) {
+            Log::warning('Host rewrites of region '.$this->region->name.' not checked', ['error' => $e->getMessage()]);
+        }
+
+        // cert-manager installed with Serving gets its default ClusterIssuer once it runs (a job of
+        // its own: the issuer may take longer than this check)
+        app(CertManagerService::class)->queueRefresh($this->region->fresh() ?? $this->region);
     }
 
     /**

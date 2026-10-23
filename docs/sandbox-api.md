@@ -33,7 +33,7 @@ unprivileged user with its own CPU, memory, disk and process limits.
 |---|---|
 | **Sandbox** | one pod (`sbx-<id>`, a plain Pod with `restartPolicy: Never`, not a Knative Service) running a runtime image — `python`, `nodejs`, any runtime of the [catalog](runtimes.md) — or any image you name. PID 1 is a `/bin/sh` sleep loop; everything else runs through the API. |
 | **Sandbox class** | the RuntimeClass the pod runs with: `kata-fc`, `kata-clh`, `kata-dragonball`, `kata-qemu` (a VM per sandbox with its own kernel), `gvisor` (a user-space kernel), or `runc` (the host kernel; only where a region allows it). |
-| **Region** | a cluster RunR manages. The sandbox classes a region offers are the sandbox runtimes (gVisor, Kata Containers) installed on it in Administration → Platform → Knative Regions → (region) → Isolation — an infrastructure task that needs `sandbox.manage`, not a Sandbox API permission; its Sandbox API settings narrow them. |
+| **Region** | a cluster RunR manages. The sandbox classes a region offers are the sandbox runtimes (gVisor, Kata Containers) installed on it in Administration → Regions & settings → Knative Regions → (region) → Isolation — an infrastructure task that needs `sandbox.manage`, not a Sandbox API permission; its Sandbox API settings narrow them. |
 | **Organization** | a tenant on a multi-tenant installation, the whole installation otherwise. Every organization's sandboxes live in a namespace of their own per region: `runr-sbx-<organization>` (`runr-sbx-default` on a single-tenant installation). |
 | **TTL** | how long a sandbox may live (`ttl_seconds`, default 900). Extending it sets a new expiry from now, up to the region's maximum lifetime counted from the start. |
 | **Idle timeout** | a running sandbox without activity (commands, files, terminal, keepalive) for `idle_timeout` seconds (default 600; 0 = off) is removed. |
@@ -43,6 +43,14 @@ unprivileged user with its own CPU, memory, disk and process limits.
 States: `pending` (the pod is starting) → `running` ⇄ `paused` → `terminating` → `terminated`,
 or `failed` when the pod could not start or ended on its own. `end_reason` says why a sandbox
 ended: `deleted`, `ttl`, `idle`, `quota`, `failed` or `lost` (the pod disappeared).
+
+A start fails (`failed`, `error` says why) when the pod reports an error it does not recover from
+(an image pull error, a container that cannot be created), when the container runtime failed to
+create the pod sandbox three times (kubelet events `FailedCreatePodSandBox`, read every 5 s: a Kata
+VM that does not boot, a runtime handler the node lacks; the error is the runtime's), or when it
+is still not running `start_timeout` × 3 after the request (the background start; the error names
+the pod's last warning event). A failed sandbox no longer counts towards the organization's
+quota.
 
 ## Security model
 
@@ -69,7 +77,7 @@ other sandboxes and RunR.
 
 ```bash
 API=https://runr.example.com/api
-TOKEN=...   # Settings → API Tokens
+TOKEN=...   # Administration → API Tokens
 
 # Create a Python sandbox (waits until it runs)
 SBX=$(curl -sS -X POST "$API/sandboxes" -H "Authorization: Bearer $TOKEN" \
@@ -363,7 +371,7 @@ Uploads and downloads are limited to 50 MiB each (`sandbox.files.max_upload_byte
 Two clients cover the sandbox endpoints — lifecycle, exec and streaming, the exec WebSocket
 (with a terminal), code runs, files, background processes, activity logs and terminal sessions.
 Region settings, warm pools, quotas and metrics are managed through the API, the CLI or
-Settings → Sandboxes. Both clients read `RUNR_API_URL` (`https://runr.example.com`; `/api` is
+Build & Run → Sandbox settings. Both clients read `RUNR_API_URL` (`https://runr.example.com`; `/api` is
 appended), `RUNR_API_KEY` and, on multi-tenant installations, `RUNR_TENANT_ID`. The CLI is
 `runr sandbox` ([CLI](cli.md#sandboxes)); it uses the exec WebSocket for `-i` on a terminal,
 `--ws` and `-t`.
@@ -532,7 +540,7 @@ Each organization has (0 = unlimited):
 | `allowed_classes` | all | sandbox classes the organization may use, within what the region allows |
 
 The defaults come from `sandbox.quota.*` (Helm `sandboxApi.quota`) and can be overridden for every
-organization (the defaults row) and per organization (Settings → Sandboxes → Quotas, or
+organization (the defaults row) and per organization (Build & Run → Sandbox settings → Quotas, or
 `PUT /sandbox-quotas/{tenantId}`). Admission is serialized per organization, so parallel creates
 cannot both take the last slot. With tenancy, a sandbox's CPU and memory — the Kata RuntimeClass
 overhead and warm pods included — also count against the organization's region quota, the same
@@ -560,7 +568,7 @@ answers the quantities; the money is in the Billing module's bills and `GET /api
 ## Warm pool
 
 A pool keeps `size` generic sandboxes of one runtime/version, size and class started in its
-organization's namespace of a region (Settings → Sandboxes → Warm pools, or `POST /sandbox-pools`).
+organization's namespace of a region (Build & Run → Sandbox settings → Warm pools, or `POST /sandbox-pools`).
 A create request claims a warm pod when it asks for the same region, runtime, version, CPU, memory,
 disk and class, with no custom image, the default PID limit and a read-only root file system. The
 claim is an atomic `warm → claiming` update of the pod's row, so two requests never get the same pod;
@@ -596,7 +604,7 @@ permission. Platform administrators hold them everywhere.
 
 `sandboxes.manage` is not `sandbox.manage`: the latter (group *Infrastructure*) installs and
 removes the sandbox runtimes of a region — gVisor, Kata Containers, WebAssembly shims — and maps
-project types to them (Administration → Platform → Knative Regions → (region) → Isolation). The Sandbox API uses whatever
+project types to them (Administration → Regions & settings → Knative Regions → (region) → Isolation). The Sandbox API uses whatever
 a region has installed and never needs `sandbox.manage`. Every sandbox
 route has its rule in `config/route_permissions.php`; changing a region's sandbox settings also needs
 the region's ownership (`region.mutable`: platform regions are the platform administrators', an
@@ -604,12 +612,12 @@ organization's own regions its owners' and admins'), and the quotas of every org
 Prometheus metrics need a platform administrator on a multi-tenant installation.
 
 Every endpoint works with an API token (`Authorization: Bearer …`) — the way agents and CI use it.
-Tokens carry scopes (Settings → API Tokens): an agent's token with `sandboxes.view`, `sandboxes.create`
+Tokens carry scopes (Administration → API Tokens): an agent's token with `sandboxes.view`, `sandboxes.create`
 and `sandboxes.exec` can run code and nothing else.
 
 ## Audit
 
-The sandbox endpoints are part of the audit log (Settings → Audit log, [security](security.md)):
+The sandbox endpoints are part of the audit log (Administration → Audit log, [security](security.md)):
 every request below is recorded with actor, organization, result, target (`sandbox`, `sandbox_pool`,
 `region`, `tenant`) and non-secret details — command lines, paths and sizes, never command output,
 file contents or env values.
@@ -635,14 +643,14 @@ duration, file transfers), and `App\Events\SandboxActivity` (`action`, `sandboxI
 
 ## UI
 
-- **Sandboxes** (header → Sandboxes, `/sandboxes`): the organization's sandboxes with status,
+- **Sandboxes** (Build & Run → Sandboxes, `/sandboxes`): the organization's sandboxes with status,
   runtime, isolation, region, resources, age and time left; filters by region and status; extend,
   pause / resume, terminal and kill per row; **Create sandbox** (runtime or image, sizes, TTL, idle
   timeout, class, egress allowlist, env, metadata). The detail drawer has the overview, the terminal
   (the console's xterm shell), a file browser (navigate, preview, upload, new folder, delete,
   download a file or a folder as tar), processes, a code runner with image outputs, and the activity
   log with the pod's status and events.
-- **Settings → Sandboxes**: region settings (enabled, allowed classes, default class, runc opt-in,
+- **Build & Run → Sandbox settings**: region settings (enabled, allowed classes, default class, runc opt-in,
   default / maximum TTL, per-sandbox CPU / memory / disk limits) — read-only for regions the user
   cannot manage; warm pools (add, resize, enable, delete, warm / starting counts, hits / misses);
   quotas (the organization's limits and usage; for platform admins every organization, editable);
@@ -722,4 +730,12 @@ NetworkPolicies and ResourceQuotas — the access RunR uses for its own installs
   with the command's exit code and restores the terminal; `-t` with output to a pipe still runs on
   a terminal (`SANDBOX_CLI_E2E=0` leaves this out).
   `KIND_LOCK=/tmp/runr-kind.lock` serializes Kind clusters on a shared host, as for
-  `test-runtimes`.
+  `test-runtimes`. Kata runs install Cloud Hypervisor, QEMU and Dragonball and check each guest's
+  vCPUs; a hypervisor the install reports unavailable is skipped with the install's reason, a Kata
+  sandbox that does not start prints its pod and the kubelet's events, and after the e2e the Kata
+  errors in containerd's log on each Kind node are printed. The Kind nodes get a host-like
+  `/dev/shm` first (`KIND_NODE_SHM`, default 4g; Docker's 64 MiB holds no QEMU guest —
+  [Kata hypervisors → /dev/shm](kata-hypervisors.md#devshm-qemu)) and D-Bus (`KIND_NODE_DBUS`; Kind's
+  node image has none, which Dragonball needs — [Kata hypervisors → D-Bus](kata-hypervisors.md#d-bus-dragonball)).
+  `RUNR_E2E_SANDBOX_CASES=kata`
+  runs only the Kata install and cases, then the quota case.

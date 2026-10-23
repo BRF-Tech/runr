@@ -207,7 +207,7 @@ func (g *rbacGroup) removeMember(userID string) {
 
 var rbacDeveloperPermissions = []string{
 	"projects.view", "projects.create", "projects.update", "projects.delete", "projects.deploy",
-	"code.edit", "env.view", "env.edit", "domains.manage", "connections.manage", "shell.exec",
+	"code.edit", "env.view", "env.edit", "domains.manage", "network.manage", "connections.manage", "shell.exec",
 	"logs.view", "metrics.view", "workflows.view", "workflows.run", "workflows.manage", "events.send",
 	"regions.view", "runtimes.use_custom", "models.view", "models.deploy", "bindings.view",
 	"bindings.manage", "members.view", "tokens.manage",

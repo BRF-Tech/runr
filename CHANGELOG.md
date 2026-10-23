@@ -8,6 +8,1159 @@ did not change says so.
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-10-23
+
+### Upgrade notes
+
+The [0.5.10 → 0.6.0 section of upgrade.md](docs/upgrade.md#0510--060) lists what to decide before
+the upgrade, the order of operations and the new Helm values.
+
+- **Every region enforces the internal network after the upgrade.** A call between two projects
+  needs an entry on the callee's allow list. Enforced on upgrade; switch a region to audit right
+  after if needed (`runr regions set REGION --set internal_auth=audit`): both are new and cannot be
+  set before the upgrade ([upgrade.md](docs/upgrade.md#internal-network-of-the-regions)).
+- **The regions are brought to the release by a Job of their own, after `helm upgrade` returned.**
+  `region:reconcile` installs cert-manager on every region cluster that runs none
+  (`knative.certManager.install: false` keeps it out) and rolls the region Traefik three times:
+  about 5 minutes per region cluster, more than the bootstrap hook's two minutes (it was cut off and
+  logged `region reconcile skipped` while the hook succeeded). The hook now does the database steps
+  only, so `helm upgrade` takes about a minute as before; the Job `runr-region-reconcile-<revision>`
+  (no hook: helm does not wait for it) runs `agent:redeploy --missing`, `region:reconcile` and
+  `secrets:move-to-region` with up to three attempts, each starting steps for an hour
+  (`bootstrap.regionReconcileSeconds`) and continuing where the last stopped. Regions it left
+  behind show in the console's region status, the region API (`reconcile`), `/api/version`
+  (`region_reconcile`) and a notification of the platform administrators
+  ([upgrade.md](docs/upgrade.md#order-of-operations)).
+- **The region agent and the event gateway run at the installed version, not `:latest`.**
+  `ghcr.io/brf-tech/runr/agent` (also the internal network's authz) and `queue-consumer` (queue
+  consumers, the event gateway, topic publishers) default to the API's own version
+  (`APP_VERSION`, set by the chart from its `appVersion`: a 0.6.0 install pulls the 0.6.0 images,
+  `helm rollback` takes them back), and `region:reconcile` (step `image-registry`) moves the
+  regions' agents, queue consumers and topic publishers from `:latest` to it: each rolls once. The
+  manual restart of the region agent after the upgrade is gone. A region that pulls through a
+  mirror of your own needs `agent:0.6.0` and `queue-consumer:0.6.0` there. The upload receiver
+  defaults to `image-upload:1.1.0`, the transfer agent's image (the receiver is the same). A
+  release publishes the region images with `runtime/ci.sh release-images --push`
+  ([upgrade.md](docs/upgrade.md#order-of-operations)).
+- **Upgraded tenants' Member role gets the new Developer permissions.** `environments.manage`,
+  `environments.promote`, `network.manage`, `secret_stores.view` and `topics.manage` are part of
+  the built-in Developer role, a fresh tenant's default for members; the tenant migration `0108`
+  adds them to the custom role Member that the upgrade to 0.5.0 created, where that role is still
+  as the upgrade left it. A Member role the organization changed is left alone
+  ([upgrade.md](docs/upgrade.md#permissions)).
+- **Schedule triggers get a time zone; the ones that exist keep UTC.** A new schedule without a
+  zone runs in the organization's time zone (`Europe/Istanbul` unless set). Name `UTC` where a new
+  schedule must stay in UTC ([upgrade.md](docs/upgrade.md#schedule-triggers-get-a-time-zone)).
+- **Global projects fail over on their own.** A global project's primary that fails its health
+  check for 180 s (`globalDns.failover.afterSeconds`) moves to the next healthy region with its
+  triggers and data; set the project's failover to `manual` to keep it where it is
+  ([upgrade.md](docs/upgrade.md#global-projects)). `region:reconcile` restarts each region's
+  PowerDNS server once.
+- **Project secret values move out of the database — and 0.5.10 stays installable until you
+  finalize.** Values written before this release stay encrypted in `project_secrets` and keep
+  working; the region Job of the upgrade moves them into their regions after the rollout
+  (`secrets:move-to-region`, idempotent and resumable; run it by hand with `--dry-run` to check).
+  Until the upgrade is **finalized** the database keeps an encrypted copy of every value — the
+  moved ones and every value set afterwards — so that the 0.5.10 chart can be put back on the
+  release (`helm rollback`, or `helm upgrade` with the 0.5.10 chart where only one package version
+  is kept; never uninstall) without its deploys writing empty values; secret store references wait
+  until then (`409 upgrade_not_finalized`). Once this release is confirmed, finalize:
+  `helm upgrade … --reuse-values --set projectSecrets.finalize=true` (or `php artisan
+  secrets:move-to-region --finalize`); 0.5.10 must not be installed again afterwards. Keep
+  `APP_KEY` until then. Fresh installations are finalized from the start.
+  `projectSecrets.storage: database` postpones the change for new values
+  ([upgrade.md](docs/upgrade.md#rolling-back-to-0510)).
+
+### Added
+
+- **Projects call each other on the region's internal network**
+  ([internal-network.md](docs/internal-network.md)). Every project has an internal name
+  `<project>.<organization>` and answers at `<project>.<organization>.runr.internal`; its workloads
+  get `RUNR_INTERNAL_TOKEN`, which a call sends in `X-Runr-Internal-Token`.
+  - Projects are isolated from each other, also inside one organization: a project admits itself,
+    RunR and the projects on its allow list. Another organization's project needs a grant on that
+    list, which a platform administrator can switch off for the whole install.
+  - The region agent in authz mode (`runr-internal-auth`, two pods per Serving namespace) checks
+    every call on the region Traefik's private entry point and hands the callee the verified
+    caller in `X-Runr-Caller`. A caller is the project whose pod the call comes from (known by its
+    address) or the project its token names.
+  - **Every region enforces it, also an existing one after the upgrade (`region:reconcile`, step
+    `internal-network`): a call between two projects needs an entry on the callee's allow
+    list.** The region setting `internal_auth: audit` admits every call and logs what the allow
+    lists would refuse, for an operator who wants to look first.
+  - RunR's own traffic keeps working across the upgrade without a redeploy: queue consumers,
+    functions calling the model services they are bound to (no header needed), the region demo
+    (its frontend is granted on its backend); the web shell and the model playground sign a
+    short-lived token.
+  - **Access modes**: a project is public (the default), public from an IP allow list (its public
+    host, custom domains and gateway route answer the listed addresses only) or internal only (no
+    public URL; reached on the internal network).
+  - The project's **Network** tab, `runr network`, the API (`/projects/{project}/network`), the MCP
+    tools `network_get`, `network_set`, `network_caller_add` and `network_caller_remove`, and the
+    `network` section of `runr.yaml` set both; permission `network.manage`. The region setting
+    `internal_auth` (enforce / audit) and the platform setting `internal_cross_tenant_grants` are in
+    the console's region and platform settings.
+  - `runr regions set REGION --set internal_auth=enforce|audit` sets the region's mode from the CLI
+    (the API's two values; an unset region enforces). A CLI test keeps the keys of `runr regions
+    set` equal to the fields and values of the API's settings and monitoring requests.
+  - `runtime/ci.sh test-internal-network`: the Kind e2e suite of the internal network, with the
+    agent and queue consumer built from the checkout, and a small model service (the AI suite's tiny
+    CPU model on hf-serve) bound to one of its projects: the bound project's calls pass with and
+    without a token and another project's are refused — before and after `region:reconcile` moves a
+    region of an earlier release, while a pod keeps calling the model through the switch
+    (`RUNR_E2E_IN_MODEL=0` leaves the model out).
+- **Runtime patches: every project shows why a patch of its runtime came, and decides what to do
+  with it** ([Runtime patches](docs/runtimes.md#runtime-patches)). The runtime images get immutable
+  patch tags (`exec-php:8.3.36-r1`; the floating `exec-php:8.3` points to the newest, the last five
+  per minor version are kept), and one signed feed tells every RunR installation about them: level
+  (`routine`, `security`, `critical`, `zero-day`), reason in English and Turkish, CVEs, link,
+  upstream release and, for critical and zero-day patches, a deadline.
+  - Workloads run a patch by digest: Knative Services and CronJobs of code-mounted versions the
+    project's pin or the newest patch, recorded on the deployment; versions built into an image are
+    built `FROM` the patch by digest; sandboxes and warm pools the newest patch.
+  - Projects have a patch state — `up_to_date`, `patch_available` (with the most urgent level),
+    `pinned`, `overdue` — shown next to the end-of-life badges, in the API (`runtime_patch` of a
+    project), `project_get` and `runr projects get`.
+  - **Apply** redeploys the live version onto the newest patch; **pin** fixes a project on one of
+    the last five patches (and redeploys onto it); console dialog with level, reason, CVEs, link
+    and deadline, `POST /api/projects/{project}/runtime-patches/apply`,
+    `PUT|DELETE …/runtime-patches/pin`, the MCP tools `runtime_patches_get`, `runtime_patch_apply`
+    and `runtime_patch_pin`, and `runr projects patches`, `runr projects patch apply|pin|unpin`,
+    `runr runtimes patches`.
+  - **Deadlines** ([details](docs/runtimes.md#deadlines)): at a critical or zero-day patch's
+    deadline RunR redeploys every project still behind onto the newest patch — a pin gives way —
+    and rolls one back to the digest it ran before (pinned there) when the new revision does not
+    become ready, with a critical notification. Platform administrators switch this off or extend a
+    patch's deadline.
+  - **Notifications by level** ([details](docs/runtimes.md#patch-notifications)): security patches
+    in-app to the owner and last deployer of each project behind and the organization's owners and
+    admins; critical ones also to the platform administrators and by mail; zero-day ones to everyone
+    whatever their preferences, on the organization's alert channels too, with a console banner
+    until no project runs behind. Each goes out once per patch and user (notification preference
+    `runtime_patch`).
+  - **End-of-life reminders** 13, 4 and 1 week(s) before a runtime version's end of life to the
+    owners of its projects and the organization's owners and admins (in-app; by mail a week ahead)
+    — there were none before ([End of life](docs/runtimes.md#end-of-life)).
+  - **Settings → Patches** for platform administrators ([The Patches
+    page](docs/runtimes.md#the-patches-page)): the feed's status, last check and signature, **Check
+    now**, the policy, every patch with the projects behind it per organization, **Remind**, **Force
+    now**, **Extend deadline**; a banner announces a newer RunR release the feed names
+    ("RunR 0.5.11 available (zero-day): …").
+  - **The runtime patch feed is verified before it is used** ([Runtime patch
+    feed](docs/security.md#runtime-patch-feed)): an OCI artifact (`ghcr.io/brf-tech/runr/runtime-patches:feed`,
+    media type `application/vnd.runr.patch-feed.v1+json`), signed with cosign and checked against
+    the configured public key in the API. RunR checks its digest every five minutes; a feed with a
+    wrong signature or schema is ignored, the last good one stays and platform administrators are
+    told once. Installations without a way out read it through a region's registry.
+    - New Helm values `runtimePatches.feed`, `runtimePatches.publicKey` (by default the key
+      BRF-Tech/runr-runtimes signs the feed with, so the feed works out of the box; empty: the feed
+      is off and platform administrators see a warning), `runtimePatches.viaRegion` and
+      `runtimePatches.autoMigrate` ([runtimePatches](docs/helm-values.md#runtimepatches)).
+    - Audit events `runtime_patch.apply`, `.pin`, `.unpin`, `.feed.check`, `.policy.update`,
+      `.remind`, `.force`, `.deadline.update`, and `runtime_patch.migrate` / `runtime_patch.rollback`
+      for what RunR does at a deadline.
+- **Timed warmer: containers kept warm on a weekly schedule** ([Scaling](docs/scaling.md#timed-warmer)).
+  In the scale settings, **Advanced: timed warmer** takes up to 10 rows of a cron expression and a
+  container count. Each row means "from this moment on, at least N containers" until the next row
+  fires, for example 3 containers on weekdays from 09:00 and none from 18:00.
+  - The console explains each row in plain language (English or Turkish), shows a weekly timeline
+    of the warm containers and, in pay-as-you-go regions, an estimate of the next 30 days in
+    vCPU-hours, GB-hours and cost.
+  - The crons run in the organization's new **time zone** setting (Settings, `timezone` of
+    `/api/settings`; default Europe/Istanbul).
+  - While a schedule is set it replaces `min_scale`; `max_scale` still applies and no row may keep
+    more containers warm.
+  - The value is set on the Knative PodAutoscaler of the live revision every minute: no new
+    revision, no restart, no deploy needed for a changed schedule. Every deploy starts the new
+    revision with the value of the moment.
+  - Capacity, organization quota and GPU admission count the schedule's peak. Metering counts the
+    containers the warmer actually kept warm.
+  - Also in `runr.yaml` (`scale.schedule`), the CLI (`runr scale --warm "<cron>=<count>"`,
+    `--no-warm`), the MCP project tools and the Terraform provider (`runr_project.scale_schedule`).
+  - `POST /api/scale-schedule/preview` evaluates a schedule before it is saved.
+  - New e2e suite `runtime/ci.sh test-warmer` (`test:e2e --suite=warmer`).
+- **A monthly cost limit for pay-as-you-go projects** (Billing module,
+  [docs](docs/billing.md#monthly-cost-limit)). The project's owner sets one amount in the billing
+  currency on the project's Billing tab. Under it the tab shows this month so far and a month-end
+  forecast (so far ÷ elapsed days × days in the month). Fixed-price projects show nothing.
+  - At 80 % the owner is notified. At 100 % the owner chose either another notification or a stop
+    of the project. Each goes out once per month and limit.
+  - A project the limit stopped is resumed by its owner on the Billing tab once the limit no longer
+    stops it: raised, removed, switched to notify, or a new month began. With the limit still set,
+    the first check of a new month resumes it by itself and redeploys the version that ran
+    (event `project.resumed` with `system: "cost_limit"`), unless the new month already reached a
+    stop limit ([New month](docs/billing.md#monthly-cost-limit)).
+  - The limit is checked every 15 minutes (`billing-cost-limits`) and when it is saved, so a stop
+    limit below this month's cost stops the project right away (the console warns before saving).
+  - New webhook events `project.cost_limit.warning` and `project.cost_limit.reached`;
+    `project.stopped` carries `system: "cost_limit"`. A project's `stopped` state says
+    `system: "cost_limit"` and names no user.
+  - API: `GET` / `PUT` / `DELETE /api/projects/{project}/billing/cost-limit` and
+    `POST …/cost-limit/resume`. MCP: `project_cost_limit_get`, `project_cost_limit_set`.
+  - It is a guardrail the owner sets. RunR still never stops a project because a bill is unpaid.
+- **Billing tools for AI agents** (Billing module, [MCP tools](docs/mcp.md#tools)). While billing
+  is on, the RunR MCP server has tools for the billing reads and settings an agent needs, each
+  calling the billing API with its permissions:
+  - bills and their line items, split into the project's own usage, its **preview environments**
+    and its queue consumer: `billing_bills_list` (the organization's, the platform's to the tenant,
+    the platform's to its tenants), `billing_bill_get`; a project's Billing tab:
+    `project_billing_get`;
+  - `billing_usage_get` (metered usage per project and month), `billing_prices_get` and
+    `billing_price_set` (a price version that changes only the prices given);
+  - queue consumer charging at the region and organization level: `billing_regions_list`,
+    `billing_queue_consumers_set`; per tenant for platform administrators:
+    `billing_region_organizations`, `billing_region_organization_set`;
+  - fixed allocations: `project_billing_quote`, `project_fixed_request` (request or withdraw),
+    `billing_fixed_requests_list`, `billing_fixed_request_decide` (approve or reject).
+  - A tool's permissions may now name platform administrators (`@platform:billing.view`, the rule
+    of the API's platform routes); the console's tool catalog shows them so.
+- **Load tests of HTTP projects** ([load-test.md](docs/load-test.md)). Project → **Load test**,
+  `runr loadtest`, the MCP tools `load_test_run` / `load_test_get` and
+  `POST /api/projects/{project}/load-tests` run k6 inside the project's region: 10, 50 or 100
+  concurrent users send a GET, or a POST with a small body, to a path of the project's own URL for
+  30 s, 1 min or 5 min. The results are p50 / p95 / p99 latency, the error rate and the requests
+  per second, with the pods the project scaled to and its cold starts in the test window; the
+  last five runs are shown side by side, and the console follows a running test live.
+  - The target is only the project's function host or one of its active custom domains, resolved
+    to the region's own ingress: the test measures the function, not the internet. One test per
+    project at a time, a daily limit per organization (`observability.loadTest.dailyLimit`, 20).
+  - The k6 Job runs in the region's `runr-loadtest` namespace (created on the first test):
+    restricted pods without a service account token or secrets, CPU and memory limits, a pod quota,
+    egress only to the region's Traefik, removed after the test.
+  - Test traffic is metered and billed like any other traffic of the project.
+  - Running and stopping a test needs `projects.deploy`, reading the results `metrics.view`.
+  - New image `ghcr.io/brf-tech/runr/reqs/k6:1.8.2` (the reqs mirror of `grafana/k6`); new Helm
+    values `observability.loadTest.*`.
+  - **The load-test namespace goes with the region's Knative Serving**
+    ([Load tests](docs/load-test.md#when-the-region-goes)). Uninstalling Serving (or all of Knative)
+    left `runr-loadtest` with its policies, quota and running k6 Jobs on the cluster. It is now
+    removed with Serving (only when RunR created it), the region's running tests end as failed with
+    the reason, and the next test after a new install applies the namespace again. The end of a
+    tenant's share of a platform region removes that tenant's k6 Jobs and their ConfigMaps from the
+    shared namespace and ends its tests there.
+- **Deploy strategies: blue-green and canary rollouts per function**
+  ([deploy strategies](docs/deploy-strategies.md)). Direct deploys stay the default; an HTTP or
+  workflow function can switch on a strategy with its options.
+  - **Blue-green**: the new revision starts next to the one that serves with 0 % of the traffic and
+    a test URL of its own (`green-<slug>.<function domain>`). A promotion moves all traffic at once —
+    from the console, the API, the MCP tool `deployment_promote` or `runr rollout promote` — or by
+    itself once the revision is ready and an optional health path answered 2xx a number of times
+    in a row. The previous revision stays warm for a configurable window (15 minutes by default,
+    `previous-<slug>.<function domain>`), so a rollback is instant; then it is released. An abort
+    drops the new revision and the traffic stays.
+  - **Canary**: the new revision gets its share in steps (10 % → 50 % → 100 % by default, every 5
+    minutes) and is promoted after the last one. When **the new revision's** error rate or p95
+    latency exceeds its threshold during a step, the rollout rolls back by itself. The numbers are
+    the revision's own ([Canary thresholds](docs/deploy-strategies.md#canary-thresholds)): its span
+    metrics while tracing is on (the collector's span metrics carry the dimension `runr.revision`;
+    `region:reconcile` updates a collector installed before), else Knative's request metrics of
+    the revision where the region's Prometheus collects them; without either the canary
+    progresses on time only. The rollout's `metrics` say which (`source`, `revision`). Promote now
+    and abort work at any time.
+  - Settings in the project's console settings, `GET` / `PUT /api/projects/{project}/deploy-strategy`,
+    `runr strategy`, and `deploy:` in `runr.yaml` (CLI and git push); a change creates no version.
+    One deploy can override it (`strategy`, `runr deploy --strategy direct`).
+  - The rollout endpoints (`…/rollout`, `…/rollout/promote|abort|rollback`), the live rollout
+    panel of the console (traffic split, steps, health checks, metrics against the thresholds,
+    test URLs, history) updated over the `deployment.rollout` WebSocket topic, the MCP tools
+    `deployment_promote` and `deployment_abort`, `deployment_status` with the rollout, `runr rollout
+    status|promote|abort|rollback`, and audit events for the settings, the actions and what a
+    rollout does by itself.
+  - Queue and schedule functions, previews and the deploys of a region move stay direct. While a
+    rollout runs both revisions run and are metered. The revisions a rollout holds keep their
+    images through registry retention and are never collected by Knative's revision GC.
+  - New Kind suite `runtime/ci.sh test-deploy-strategies` (`test:e2e --suite=deploy-strategies`).
+- **Rightsizing recommendations.** RunR turns what a running project's pods really used into a size
+  recommendation: "requests 512 MB but used at most 140 MB in the last 14 days → 256 MB is enough",
+  with what it saves per month when billing is on, applied with one click
+  ([Rightsizing](docs/monitoring.md#rightsizing)).
+  - Every night the `rightsizing` job reads the day's peaks of every running project from its
+    region's Prometheus — the highest and the 95th percentile working-set memory and CPU of one
+    pod, OOM kills, throttled CPU periods, with the size that ran — and keeps them per project and
+    day (`resource_peaks`). The first night after the upgrade reads back the last 14 days.
+  - A project's last 14 days are compared with its size: memory from the highest working set ×
+    1.3, CPU from the 95th percentile × 1.3, rounded up to the next size step; a larger size after
+    an OOM kill, a memory peak near the limit or CPU throttling at the current size. Projects with
+    GPUs and projects with too little data (fewer than 3 days, a scale-to-zero function with fewer
+    than 20 sessions) get none. Thresholds, margins and steps are configurable
+    (`RIGHTSIZING_*`).
+  - Applying puts the size into the project's config through the checks of a manual edit (region
+    capacity, a fixed allocation) as a new version; the next deploy runs it. A recommendation can
+    be dismissed (until the recommended size changes) or snoozed. Both are audited.
+  - With the Billing module a recommendation shows what it saves per month: an always-on workload
+    its reservation at the hourly prices, a fixed project the allocation it could lower; a
+    scale-to-zero function is billed by use, so its smaller size frees capacity, not money
+    ([Billing](docs/billing.md#rightsizing)). Without billing the resources are shown.
+  - Console: a card on the project's page and **/rightsizing**, the organization's list sorted by
+    saving, linked from the projects page. API: `GET /api/rightsizing`,
+    `GET /api/projects/{id}/rightsizing`, `POST …/rightsizing/apply`, `POST …/rightsizing/dismiss`.
+    CLI: `runr projects rightsizing [NAME]|apply|dismiss`. MCP: `rightsizing_list`,
+    `rightsizing_apply`. `php artisan rightsizing:run` runs it on demand.
+- **A project has a list of triggers** ([triggers.md](docs/triggers.md)): any combination of HTTP,
+  schedules, queues, a webhook inbox, topics and platform events, each with its own name, settings,
+  write-only secrets and an enabled switch.
+  - The first enabled trigger is the primary one: `config.trigger_type` / `schedule` /
+    `queue_stream` mirror it, so clients of the single-trigger API, the Terraform provider and
+    runr.yaml's `trigger:` keep working; setting them changes the primary trigger.
+  - `GET|POST|PUT /api/projects/{project}/triggers`, `PATCH|DELETE …/triggers/{trigger}`,
+    `GET /api/trigger-types`; the project resource carries `triggers`. runr.yaml takes a
+    `triggers:` list. Console: the trigger editor of a project. CLI: `runr triggers`. MCP:
+    `triggers_list`, `trigger_add`, `trigger_update`, `trigger_remove`.
+  - Every existing project gets its trigger from its config with the upgrade (tenant migration
+    `0077_create_trigger_tables`).
+  - **Webhook inbox**: a stable public URL per trigger (`/api/hooks/<context>/<key>`) with signature
+    presets for Stripe, GitHub, Slack, a generic HMAC (header, algorithm, hex / base64, prefix) or
+    none; a delivery id the inbox already stored is not delivered again. The sender gets 200 once
+    the request is stored; the function gets it afterwards, retried. Stored events stay for the
+    trigger's retention (7 days by default) and can be replayed from the console's inbox viewer, the
+    API, `runr triggers replay` and MCP (`webhook_events_list`, `webhook_event_replay`). The inbox
+    takes `POST` and `PUT`; the API document (`/api/docs`) has an operation for each.
+  - **Topics**: fan-out topics of the organization on a region's Redis — every subscribed function
+    gets each event (one consumer group per subscribing trigger). Functions publish with
+    `RUNR_TOPICS_URL` / `RUNR_TOPICS_TOKEN` and the `publish` helper of the workflow SDKs; others with
+    `POST /api/topics/{topic}/publish`, `runr topics publish` or the MCP tool `topic_publish`. New
+    permission `topics.manage` (Developer and above) to create and delete topics. A topic's
+    `created_by` is the creator's id as a string in every answer — the `201` of the create was a
+    number — in the API, its document, the CLI and the MCP tools.
+  - **Broker and external sources**: `kafka` (consumer groups), `nats` (JetStream durable consumers
+    or core NATS), `rabbitmq` (manual acks), `mqtt` (QoS 1 / 2 with a persistent session), `cdc`
+    (Postgres logical replication, in commit order), `s3` (object created / updated / deleted on any
+    S3 API) and `email` (IMAP) triggers. The event gateway reads them and acknowledges an event only
+    once it is delivered or dead-lettered; credentials are write-only trigger secrets. The console
+    renders their settings from the type's fields (`GET /api/trigger-types`).
+  - **Platform events**: `deployment.finished`, `deployment.failed`, `alert.fired` and
+    `alert.resolved` reach functions with a `platform_event` trigger as CloudEvents
+    (`dev.runr.<event>`); `runtime.patch_available` and `cost.limit_reached` are defined for the
+    features that raise them.
+  - **Audit log: triggers, topics and the internal network.** `project.trigger.create`, `.update`,
+    `.replace`, `.delete`, `project.trigger.event.replay`, `project.trigger.events.replay`,
+    `topic.create`, `.update`, `.delete`, `.publish`, `project.network.update`,
+    `project.network.caller.add` and `.remove` — names and counts, never secret values or event
+    bodies ([Security](docs/security.md#audited-events)).
+  - **Schedule triggers run in a time zone** ([triggers.md](docs/triggers.md#schedules-and-time-zones)):
+    `config.timezone` (an IANA zone), else the organization's time zone, the timed warmer's, which
+    the schedule then follows — a change of the organization's zone reaches the deployed CronJobs
+    (`spec.timeZone`) and gateway schedules at once. The trigger API shows `effective_timezone` and
+    `timezone_source`; the console's trigger editor, `runr triggers ls`, runr.yaml
+    (`timezone:`) and the MCP trigger tools take and show the zone. A tick's data carries
+    `timezone` and `local_time`. The project API's single-trigger fields take
+    `config.schedule_timezone` (`""` = the organization's) and return it with
+    `config.schedule_effective_timezone`; Terraform's `runr_project` has `trigger.timezone` and the
+    computed `trigger.effective_timezone` (`data.runr_project`: `schedule_timezone`,
+    `schedule_effective_timezone`), the MCP tools `project_create` / `project_update`
+    `schedule_timezone`. Backward-compatible zone names (`Europe/Kiev`) are taken where the API's
+    PHP knows them — RunR's API image does; the API's tests take such a name from the PHP that
+    runs them, so they pass on a PHP built against a system tzdata without the legacy names
+    (Ubuntu 24.04 without `tzdata-legacy`) too.
+  - **A removed cdc trigger's replication slot is dropped** ([triggers.md](docs/triggers.md#cdc-cleanup)):
+    when a cdc trigger is removed, renamed or pointed at another slot or database, or its project or
+    an environment is deleted, RunR drops its slots and the publication it created from the database
+    once no deployed event gateway reads them — a one-shot pod of the gateway image
+    (`GATEWAY_MODE=cdc-cleanup`) in the region, as the gateway reaches the database. The API answer,
+    the CLI and the console say what is dropped; a notification reports the outcome, with the SQL to
+    run by hand when the database cannot be reached. The gateway marks the publications it creates,
+    so one that existed before is never dropped.
+  - **runr.yaml `triggers:` is checked by the CLI with the API's own rules**: `php artisan
+    triggers:schema` derives a schema of the trigger entries from the trigger types
+    (`api/resources/triggers/triggers.schema.json`) and the CLI embeds it (required keys, types,
+    ranges, patterns, cron, time zones, `delivery`). What the API only ignores is now a warning, not
+    an error: `trigger:` next to `triggers:`, a `secrets` key (not sent), keys a type does not have;
+    `enabled: 1` and `trigger.schedule: "@daily"` are accepted as by the API.
+  - `runtime/ci.sh test-trigger-sources` runs every broker source on Kind — Kafka, NATS JetStream,
+    RabbitMQ, MQTT (no longer opt-in), Postgres CDC with the slot cleanup, IMAP, next to S3 — and a
+    schedule time zone, with brokers from the reqs mirror.
+  - **The topic publisher counts in the region capacity on every cluster.** `runr-topics` is a
+    platform pod like gateway-auth; it now tolerates dedicated workers (and prefers the other nodes),
+    so it is scheduled — and counted — also where every node is a dedicated worker, where it stayed
+    Pending.
+- **Secret stores: references without credentials.** A project secret variable can refer to a
+  value in the organization's HashiCorp Vault or OpenBao (Kubernetes or JWT auth), AWS Secrets
+  Manager, GCP Secret Manager or Azure Key Vault (workload identity federation): store, path and
+  key. External Secrets Operator — an optional region feature installed from the region's page or
+  `POST /api/knative-regions/{id}/external-secrets`, with RunR's mirror of its image, kept at the
+  pinned chart by `region:reconcile` and installed again by a region migration — reads it in the
+  region as the service account `runr-ss-<store id>` and fills the Secret `<slug>-ext-env` the
+  workload reads. The store never gets a credential from RunR: it trusts the region cluster's
+  service account issuer, and a store has no setting for a token, password or key. The store's
+  trust page shows per region the issuer, its keys (JWKS and PEM), the service account, namespace,
+  subject and audience, and **Verify** applies and checks the store in a region
+  ([secret stores](docs/secret-stores.md)).
+  - **Secret store API, console, CLI and MCP.** `/api/secret-stores` with `trust` and `verify`
+    (permissions `secret_stores.view` — Developer has it — and `secret_stores.manage`);
+    `PUT /api/projects/{project}/secrets/{name}` takes `{"reference": {…}}`; Settings → Secret
+    stores and references in the project's secret variables; `runr env ref NAME STORE:PATH[#KEY]`,
+    `runr env sync`, `runr secret-stores ls|trust`; the MCP tools `secret_ref_set` and
+    `secret_stores_list`, and `env_list` shows where each secret lives.
+  - **Sync status of references.** `secrets:sync-status` reads every two minutes what External
+    Secrets Operator reports — `synced`, `failed` with the store's message, `pending` — onto each
+    reference and onto the stores per region; **Sync now** (`POST …/secrets/refresh`,
+    `runr env sync`) asks for a read right away.
+- **OpenBao in the region.** A region can run an OpenBao that RunR installs and operates — the
+  region's **Secrets** tab, `POST /api/knative-regions/{id}/openbao`, `runr regions openbao` —
+  next to External Secrets Operator, which it needs: one StatefulSet in `runr-openbao` with an
+  unsealer beside the server, file storage on a volume, TLS issued by RunR, the image from RunR's
+  mirror (`ghcr.io/brf-tech/runr/reqs/openbao`), kept at the pinned image and a fresh certificate
+  by `region:reconcile`, installed again by a region migration. While it runs, new secret values of
+  the region's projects go into it (`source` and `stored_in` `openbao`; `PATCH …/openbao` with
+  `default_for_values: false` turns that off): each project reads its own values through a service
+  account, an OpenBao role and policy of its own, its SecretStore and the ExternalSecret
+  `<slug>-bao-env` ([OpenBao in the region](docs/secret-stores.md#openbao-in-the-region)). The
+  Secrets tab offers OpenBao's install as soon as the operator installed there is ready, without
+  a reload.
+  - **The region's OpenBao keeps no credential in RunR.** Its unseal key goes into the region's
+    Secret `runr-openbao-unseal` only and its TLS key pair into `runr-openbao-tls`; the root token is
+    revoked once the first install configured it, and RunR logs in through the API server with a
+    ten-minute token of the service account `runr-control` that it never stores. The Postgres role
+    OpenBao issues dynamic users with gets a password RunR hands over once and OpenBao rotates at
+    once: afterwards only OpenBao knows it. OpenBao's audit log goes to the container's output.
+- **Dynamic Postgres credentials.** A Postgres attachment with `"credentials": "dynamic"` gets a
+  user of its own from the region's OpenBao instead of the binding's user and password: created
+  `IN ROLE` of the binding's role, living a week and renewed every day in the region
+  (`<prefix>PGUSER`, `<prefix>PGPASSWORD`, `<prefix>DATABASE_URL` from `<slug>-pgdyn-<…>`); a
+  renewal rolls the workload onto the new user, detaching or switching back revokes the users
+  (`RUNR_OPENBAO_DB_TTL`, `_MAX_TTL`, `_REFRESH`; `runr bindings attach --credentials dynamic|static`)
+  ([bindings](docs/bindings.md#dynamic-credentials)).
+- **Environments and promotion** ([Environments](docs/environments.md)). A project runs in several
+  environments: its own workload — `production` — and any others you add (`dev`, `staging`, …),
+  each with its own Knative Service `<slug>-<name>` and URL `<slug>-<name>.<function domain>`.
+  - Configuration layering: the project's configuration with the environment's overrides (env
+    vars merged by name, a `null` removes one; CPU, memory, scale, timeout, schedule, queue
+    stream); secret variables of its own over the project's (`inherit_secrets` off: only its own);
+    bindings and custom domains attached to the environment only — staging's pods cannot reach
+    production's data (binding NetworkPolicies admit them by `runr/environment-id`).
+  - An environment can run in another region than its project, within the organization's data
+    residency. A built version (dependencies, a compile step, WebAssembly) whose image that
+    region's registry does not hold is built there from its code, FROM the same runtime base: the
+    deploy, promotion or push waits for the build while the environment's running deployment keeps
+    serving, and every later deploy of the version into the region runs it at once
+    (`version_region_images`, central migration `2026_10_22_100001`, tenant migration `0084`).
+  - How many environments a project may have is decided by the quotas: each one reserves its size
+    in its region's capacity and the organization quota from its creation on. Preview environments
+    stay separate.
+  - A git branch maps to an environment (`develop` → `staging`): a push deploys it; its
+    `runr.yaml` does not change the project's configuration.
+  - Promotion moves the version an environment runs to the next one — the same version and image,
+    never built again (in another region: built into its registry) — with the target's
+    configuration, after a "what will change" preview (code
+    version and config differences, env var names only). Promotions into production wait for
+    someone else with the new permission `environments.approve` (the project can turn the
+    approval off); `environments.manage` and `environments.promote` are part of the Developer
+    role. Approvals inbox: `GET /environment-promotions`, the console's Approvals page (live),
+    `runr approvals`.
+  - Approvers hear of a promotion that waits for them, the requester of its approval, rejection,
+    deployment or failure: in-app and by mail through the new **Promotions** notification
+    preference, and as the platform events `environment.promotion.pending_approval`, `.approved`,
+    `.rejected`, `.deployed`, `.failed` for `platform_event` triggers.
+  - Gateway routes and private database connections per environment: a route leads to the
+    project's own workload or to one environment (`environment` on
+    `POST /gateways/{gateway}/routes`; `POST /gateways` gives you a gateway in another region), a
+    Skupper connection to a managed PostgreSQL database belongs to one environment and reaches only
+    its pods (central migration `2026_10_22_120001`, tenant migration `0086`).
+  - Durable workflows per environment: every environment is a workflow app of its own — its
+    definitions, its runs against its workload, its own signing key, its cron triggers and queue
+    bridge — and events belong to an environment by its name (`environment` on `POST /api/events`;
+    central migration `2026_10_22_110001`, tenant migration `0085`). The workflow API, the MCP
+    workflow tools and `runr workflows --env` take it; the console's Workflows tab follows the
+    environment switcher.
+  - Deploy strategies per environment ([Deploy strategies](docs/deploy-strategies.md#environments)):
+    each environment rolls out with the project's blue-green / canary settings unless it sets its
+    own strategy or options (kept in its overrides, `deploy_strategy`). Deploys, promotions into it
+    and rollbacks follow the environment's settings; its rollouts run on its own workload — test
+    URL on its host, traffic, canary thresholds on its own traces, the kept-warm previous revision
+    — and are promoted, aborted and rolled back there, next to production's.
+    `GET|PUT /projects/{project}/deploy-strategy` take `environment` (and `reset`), `GET
+    /projects/{project}/rollout?environment=`; rollouts carry `environment` (central migration
+    `2026_10_22_100002`, tenant migration `0088`: `deployment_rollouts.environment_id`). Console:
+    the strategy on each environment's card and in the Deployments tab of the selected
+    environment, the environment's rollout panel; CLI `runr strategy show|set|reset --env`,
+    `runr rollout … --env`; MCP `deployment_status`, `deployment_promote`, `deployment_abort`
+    take `environment`.
+  - The timed warmer per environment ([Scaling](docs/scaling.md#environments)): an environment
+    runs the project's schedule unless it has its own (`overrides.scale_schedule`; `[]` keeps no
+    containers warm there), on its own workload and every revision that takes traffic there (a
+    rollout of the environment: both), in the organization's time zone; what was applied is
+    recorded on the environment (`warm_scale`; central migration `2026_10_22_100003`, tenant
+    migration `0089`) and a schedule turned off there gives the workload its `min_scale` back.
+    Environments show `scale_schedule`, `scale_schedule_inherited` and `warm_scale`. Console: the
+    environment's settings → **Timed warmer** and its card; CLI `runr environments create|update
+    --warm … | --no-warm | --project-warm`; MCP `environment_create` takes `scale_schedule` and
+    the new `environment_update` changes an environment's settings and overrides.
+  - Saving an environment's overrides without its variables keeps them for a caller who cannot
+    see them (no `env.view`), and sending them back unchanged needs no `env.edit`; the console's
+    environment form keeps the overrides it does not show (schedule, queue stream, deploy
+    strategy).
+  - Console: environment switcher, environment settings, promote dialog, approvals inbox. CLI:
+    `runr environments`, `runr promote`, `runr approvals`, `runr deploy --env`,
+    `runr bindings attach|detach|attachments --env`, `runr domains … --env`,
+    `runr gateway routes add … --env`, `runr private-connections … --env`, `runr workflows … --env`.
+    MCP:
+    `environments_list`, `environment_create`, `environment_delete`, `promote`,
+    `promotion_approve`; `deploy` and `rollback` take an `environment`.
+  - Metering records the environment of every usage record (`environment_id`, and its name:
+    central migration `2026_10_22_130001`, tenant migration `0087`), and bills split a project's
+    lines per environment ("vCPU hours (staging, eu-1, HTTP)", same totals; `GET /billing/usage`
+    too); fixed-region allocations count every environment in the region; a project stop stops
+    every environment and a resume deploys each one again.
+  - A region move deploys the environments that run on the region again on the new cluster —
+    also of projects in other regions — like its projects (built into the new registry first when
+    needed; refused or failed ones are not moved), and its report lists them; a rollback deploys
+    them again on the restored cluster and removes what the move ran for them from the cluster it
+    left. A region detached from an organization takes its environments down with its projects.
+    Kind e2e suite: `runtime/ci.sh test-environments`.
+  - **CLI: gateway routes and private database connections.** `runr gateway create REGION` gives you
+    your gateway in a region, `runr gateway routes add GATEWAY PATH -p PROJECT [--env]`,
+    `runr gateway routes ls|rm` add, list and remove routes; `runr private-connections
+    ls|add|status|rm` (also `runr pconn`) manage a project's Skupper connections to a managed
+    PostgreSQL database, the password from stdin or a hidden prompt ([CLI](docs/cli.md)).
+- **Regions set up cert-manager for the certificates of custom domains.** Custom domains in TLS
+  mode `cert-manager` no longer depend on a cert-manager and a ClusterIssuer the operator installed
+  by hand ([cert-manager](docs/regions.md#cert-manager)).
+  - The Serving install installs `jetstack/cert-manager` v1.21.2 (namespace `cert-manager`, images
+    from the reqs mirror `ghcr.io/brf-tech/runr/reqs/cert-manager-*`) where the cluster runs none, and
+    reuses a cert-manager the cluster already runs — never a second one, never removed by RunR.
+    `region:reconcile` does the same for existing regions and brings RunR's release to this
+    release's chart. Helm `knative.certManager.install: false` stops RunR from installing it.
+  - RunR creates the default ClusterIssuer unless the region setting `cert_manager_cluster_issuer`
+    (or `RUNR_CERT_MANAGER_CLUSTER_ISSUER`) names one: `runr-acme` (Let's Encrypt, HTTP-01 through
+    the region's Traefik) where the region is reachable from the internet and an ACME e-mail is
+    set — the region setting `cert_manager_acme_email` or Helm `knative.certManager.acmeEmail`,
+    never an address RunR picks —, else `runr-ca`, a region CA whose certificate the console, the
+    CLI and the API download. `cert_manager_issuer_mode` (`auto`, `acme`, `ca`) chooses.
+  - New domains start in TLS mode `cert-manager` where the region issues certificates. Where it
+    cannot yet, the console, the CLI and the API say why (installing, failed, not installed, no
+    issuer) and what to do, instead of the raw "no ClusterIssuer" error.
+  - Console: General → **cert-manager** (status, issuer, the reason of RunR's choice, Download
+    CA, the issuer mode and ACME e-mail, Install / Remove); the Domains tab shows what new domains
+    get and offers the region CA. API: `GET`/`POST`/`DELETE /api/knative-regions/{id}/cert-manager`,
+    `…/cert-manager/ca-certificate`, `GET /api/projects/{id}/domains/ca-certificate`,
+    `meta.cert_manager` of the domain list. CLI: `runr regions cert-manager [install|ca|rm]`,
+    `runr domains ca`, the new `runr regions set` keys. MCP: `cert_manager_status`,
+    `cert_manager_install`.
+  - Removing cert-manager from a region is refused while custom domains use it; RunR's release and
+    issuers go only when nothing else on the cluster uses cert-manager.
+- **Global projects: one project in several regions behind one host name**
+  ([docs/global-projects.md](docs/global-projects.md)). A new project type runs in 2 to 8 regions
+  as `<slug>.g.<base domain>`.
+  - **Modes:** HA (the primary region while its copy is healthy, the others when it is not) or
+    proximity (the closest healthy region, by GeoIP).
+  - **GeoIP for clusters without internet access:** each region's server has a GeoIP source —
+    the platform URL, an operator-provided URL (an internal mirror, a file in the region's object
+    store), a file the operator copies onto the server's volume, or none — and the console shows
+    whether the server loaded it, from where, or why not.
+  - **Global DNS:** an operator enables it per platform region. RunR then runs a small PowerDNS
+    Authoritative server in that region (`reqs/pdns-auth:5.0.8`, a LoadBalancer on UDP and TCP 53)
+    and writes the same zone to every server through its HTTP API every minute, repairing drift.
+    The zone is delegated once with the NS and glue records that Settings → Platform → Global DNS
+    lists. A region without a public port 53 cannot take part.
+  - **Health checks:** the project records are PowerDNS LUA records whose `ifurlup()` checks of
+    every region's copy end at the region agent's new global-health listener. It answers from the
+    Knative Service's readiness, so scaled-to-zero copies stay at zero.
+  - **Deploys** go to the primary region first. When the deployment is ready, its version rolls out
+    to the other regions: built again into each region's own registry when it has a build image
+    (WebAssembly modules too, from the same runtime base by digest; one build per version and
+    region, shared with the project's environments there), an uploaded CaaS image copied into each
+    region's registry, then applied there and polled until ready.
+  - **Triggers:** any trigger list. HTTP and workflow triggers answer in every region; schedules,
+    queues, topics, webhooks, platform events and broker sources run in the primary only (the other
+    regions hold the CronJob suspended and the event gateway at zero) and move with the primary.
+  - **Failover:** a switchover (`PUT /global` with a new primary) or a failover (`POST
+    /global/failover`, or automatic after 180 s of a failed primary — per project `automatic` or
+    `manual`) moves the primary, its triggers, its data and the DNS answer; the old primary is
+    fenced and rejoins as a secondary once its cluster answers.
+  - **Gateways, GPUs, custom domains:** gateway routes from a gateway of any of the project's
+    regions; GPUs admitted per region (quota counted in every region); custom domains served and
+    certified by every region (DNS-01 through the global zone after one CNAME of the domain's
+    `_acme-challenge`).
+  - **TLS:** cert-manager issues the wildcard `*.<zone>` in every region with DNS-01 through RFC
+    2136 updates signed with RunR's TSIG key. This is RunR's first use of DNS-01.
+  - **Data across regions:** a dedicated Postgres binding becomes a CloudNativePG distributed
+    topology — a replica cluster in every region, streaming from the primary; `DATABASE_URL_RO`
+    reads the region's replica, `DATABASE_URL` writes to the primary; a switchover promotes with
+    the demotion token (nothing lost), a failover at once. KV, managed object storage and shared
+    Postgres stay in their region and are reached from the others through the binding's **data
+    link** (a forwarder in each region, mutual TLS by SNI to the binding region's Traefik).
+    External bindings work as before. A region whose data is not reachable yet stays out of the
+    DNS answers. Private database connections, model services and dynamic credentials are refused
+    for global projects, with the reason in the docs.
+  - **Billing and capacity:** usage is recorded and billed per region, and every copy counts in its
+    region's capacity.
+  - API, CLI (`runr deploy --global-regions`, `global:` in runr.yaml, `runr projects global`
+    with `set --failover` and `failover`, `runr regions global-dns` with `geoip`, `runr global-dns`),
+    MCP tools (`project_global_get`, `project_global_update`, `global_dns_status`), console
+    (project type, Regions tab with failover and the data across regions, Global DNS with the
+    GeoIP source in the region and platform settings, the custom domains' regions), Helm values
+    `globalDns.*` (`failover.afterSeconds`, `dataLink.*`), a `region:reconcile` step, and the Kind
+    suite `ci.sh test-global-projects` on two clusters.
+- **API product: a gateway's API can be offered to others** ([docs/api-product.md](docs/api-product.md)).
+  - Every gateway route is `public`, `key` or `jwt`. Key and JWT routes are checked by the region's
+    new **gateway-auth** service (`ghcr.io/brf-tech/runr/gateway-auth`, Traefik forwardAuth), which
+    RunR installs with the first such route. The gateway had no authentication before.
+  - **Consumers** of a gateway or of the organization, with an external customer number for the
+    invoicing system, a JWT subject and a status (suspended consumers get 403).
+  - **API keys** are shown once and stored as a SHA-256 hash with a visible prefix. A key can be
+    limited to some routes and methods, can expire, and can be rotated with an overlap or revoked;
+    a revocation reaches the region within about 10 seconds. The function sees `X-Runr-Consumer`,
+    never the key.
+  - **JWT routes** verify tokens with the issuer's JWKS (RS, PS and ES algorithms), issuer and
+    audience, and map a claim to a consumer.
+  - **Plans**: requests per second with burst, per minute (sliding window), per day and per month,
+    counted in the region's Redis. Over a limit the caller gets 429 with `RateLimit-*` and
+    `Retry-After` headers.
+  - **Fail closed**: while gateway-auth is not installed or not ready, key and JWT routes answer
+    503 `auth_unavailable` and never reach the function unchecked. The gateway shows `pending` or
+    `error` with the reason, and a job opens the routes once gateway-auth is ready.
+  - **Usage** per hour, consumer, key and route in `GET /api/api-usage`: the calls let through and
+    refused, and what the function answered to the calls let through — status classes, errors
+    (5xx and calls without an answer), latency p50 / p95 / p99 and average, request and answer
+    bytes (a WebSocket's traffic included, counted when it closes). gateway-auth's **metering proxy** (`runr-gateway-auth-proxy`) measures them after the
+    check, which stays in front so a route still fails closed; the check hands it a signed ticket,
+    without which it serves nothing. Percentiles come from a histogram per row, so any grouping adds
+    up. With the Billing module the usage is also sent as signed `api.usage.hourly`,
+    `api.usage.monthly` and `api.usage.quota_exceeded` events with the same fields. The console's
+    Usage tab, `runr gateway usage` and the MCP tool `api_usage` show them. RunR measures; billing
+    stays with an external system.
+  - **Only through the gateway**: a route can make its project's Knative Service cluster-local, so
+    its own address stops serving.
+  - **A route is created with its authentication**: `POST /api/gateways/{gateway}/routes` takes
+    `auth_mode`, `jwt` and `gateway_only`, validated as on a change, and the route reaches the
+    region with its forwardAuth Middleware applied before the IngressRoute that references it — a
+    key or JWT route is never public, not even between two requests. The console's route form,
+    `runr gateway routes add --auth …`, the MCP tool `gateway_route_add`, Terraform's
+    `runr_gateway_route` and the organization import create it in one call (the CLI and the
+    provider set it right after the creation against an earlier API). The Kind suite checks it
+    (`api-key-on-create`).
+  - **Route answers are the route as the gateway shows it**: `POST` and `PATCH` of a route and
+    `GET /api/gateways/{gateway}/routes` answer its `url`, `auth_mode`, `jwt`, `gateway_only`,
+    project and environment like `GET /api/gateways/{gateway}`, so `runr gateway routes add` prints
+    the URL. A path another route of the gateway has is a 422 on creation and on a change of the
+    path — also when two requests race for it (the unique index's refusal, on SQLite and
+    PostgreSQL) — not a 500; so is a second route to the project's own workload or to one
+    environment (a partial unique index for the project's own route: central migration
+    `2026_10_23_100001`, tenant migration `0109`).
+  - **The gateway's custom domain** is set through the API and served only after its TXT record
+    and CNAME / address are verified.
+  - **Developer page**: an optional public page per gateway with its routes and how to call them,
+    and, when the owner switches it on (`developer_page_metrics`, `runr gateway page --metrics`),
+    each key / JWT route's success rate and latency of the last 7 days — never counts or consumers.
+  - `region:reconcile` rebuilds the routes of every gateway an earlier release built (step
+    `gateway-routes`, by the routing revision on its IngressRoute) and applies gateway-auth again
+    when its Deployment changed, not only its image.
+  - Console (**Settings → API gateways**), `runr gateway …`, eleven MCP tools, the permission
+    `api_products.manage`, audit events, Helm values `apiProduct.*`, and the Kind suite
+    `runtime/ci.sh test-api-product`.
+- **Organization export and import** ([docs/org-export.md](docs/org-export.md)). An owner packs
+  the organization into one versioned file and imports it into another organization, another
+  RunR installation (self-hosted to hosted, one site to another) or the same one after a
+  disaster.
+  - **The package** is a tar compressed with zstd. Its first entry, `manifest.json`, records the
+    schema version, the RunR version and a SHA-256 for every entry. The importer reads its own
+    schema version and older ones, and refuses a newer one with a clear message.
+  - **Always in the package:** projects with every version and its code, service configs (every
+    column), env vars, custom domains, gateways and routes (with their authentication: a key or
+    JWT route is imported as one, never public), workflow definitions, binding
+    attachments, observability settings, uptime checks, project access, runtime pins and a
+    deployment history summary; custom roles, groups, the default role, alert channels and rules,
+    the status page.
+  - **Optional:** members (e-mails and roles for re-invitation), the prebuilt images of the
+    deployed and latest versions, and binding data: Postgres `pg_dump`, KV keys, object storage
+    objects. The export shows a size estimate first.
+  - **Run history (optional, `include_history`):** every deployment, the workflow runs RunR keeps
+    with their steps, the stored trigger events, the usage records and — with the Billing module —
+    the organization's bills. The import lands them as history that never acts: deployments in a
+    final state marked imported and never metered, workflow runs in a final state the engine
+    leaves alone, trigger events that are only delivered when replayed, usage and bills read-only
+    (`GET /api/org-transfers/{id}/history`), never charged or billed again. What the target's
+    retention would prune is left out and shown in the plan
+    ([Run history](docs/org-export.md#run-history)).
+  - **Secrets** are excluded by default. When included they are sealed with a passphrase
+    (Argon2id + XChaCha20-Poly1305) and never written in clear.
+  - **Destinations:** a streamed download (resumable with `Range`), an object binding of the
+    organization, or an external S3 bucket whose credentials are used for that one export only.
+  - **Import:**
+    - A resumable chunked upload — or RunR reads the package straight from an object binding of
+      the organization (a transfer pod in its region) or an S3 bucket (ranged reads with
+      `If-Match`), resumable after the bytes it has and checked by SHA-256; S3 credentials stay in
+      the encrypted job only. Then a dry-run plan: region mapping, slug and binding-name
+      collisions with suggested renames, capacity / quota / residency checks, missing runtimes,
+      and the manual steps (DNS of custom domains, secrets, alert channels, git links, members).
+    - KV data needs a Redis of the same or a newer version: each KV dump records its Redis
+      version, and the plan refuses a target region whose KV Redis is older (or does not tell its
+      version), naming both; one binding's data can be left out (`skip_binding_data`).
+    - Apply creates everything once per entry, so applying again after a failure resumes it. It
+      can also restore binding data, push images into the target registry, invite members and
+      deploy.
+  - **Permissions and limits:** owners only (new `org.transfer` permission for tokens and custom
+    roles). Both sides are audited. One export and one import run per organization at a time.
+  - **Clients and tools:** `/api/org-transfers`, the MCP tools `org_export_start`,
+    `org_export_status`, `org_import_start` (from an object binding), `org_import_plan` and
+    `org_import_apply`, `runr org export|import|transfers|transfer` (`import --from
+    binding:NAME|s3://bucket/key`, `--resume`, `--skip-data`, `--no-history`, `export --history`,
+    `transfer history`), and Settings → Export / Import in the console (upload or a bucket as the
+    source, live progress, plan and report).
+  - **Migrations:** central `2026_10_22_520001` (`org_transfers.import_source`) and
+    `2026_10_22_520002` / tenant `0107` (`deployments.imported_at`, `imported_history`).
+  - **Region side:** a new `transfer` mode of `runtime/image-upload` (image 1.1.0) serves dumps
+    and images through the Kubernetes API server and receives restores, so the region needs no
+    route to RunR. Its `push-when-ready` command pushes an imported image.
+  - **API image:** now includes `zstd`.
+  - **Kind e2e:** `ci.sh test-org-transfer`. The tenant-to-tenant case runs in `test:e2e-tenancy`.
+- **Queue consumers can be charged, per region and organization**
+  ([Queue consumers](docs/billing.md#queue-consumers)). A queue trigger's consumer (50m CPU,
+  64 MiB, running as long as the project is deployed) is now metered as a usage record of its own.
+  It is charged only where the region charges queue consumers (`charge_queue_consumers`, set by
+  the region's owner), the platform has not switched it off for the tenant on a platform region
+  (`PUT /api/billing/regions/{region}/organizations/{tenant}`, which the platform's bill to the
+  tenant follows too), and the organization has not switched it off for itself in that region
+  (`PUT /api/billing/regions/{region}/queue-consumers`). Then it is a line of its own on a
+  pay-as-you-go bill, and in a fixed region it counts against the project's allocation (until
+  now the allocation always held it). **Off by default**: the upgrade raises no bill. The console
+  sets both in Region settings → Billing and Settings → Billing → Regions & prices. Tenant
+  migration `0074`.
+  - **Queue consumer choices go with their tenant and region** (Billing module,
+    [Queue consumers](docs/billing.md#queue-consumers)). A deleted tenant left the platform's choices
+    for it in `billing_tenant_region_overrides`; they are now deleted with the tenant's other central
+    rows. The end of a region's share (detach) removes the platform's choice for that tenant and the
+    tenant's own choice for the region (`billing_region_overrides`), and a deleted region takes every
+    choice made for it along, centrally and in the tenants' copies.
+- **Terraform provider: every setting a project or an organization declares**
+  ([docs/terraform.md](docs/terraform.md)). Each new attribute is optional and keeps the server's
+  value when it is left out, so a configuration and state of provider 0.5.10 plan no change (a
+  test applies one, strips its state to the 0.5.10 schema and plans; another runs the 0.5.10
+  binary itself). What is left out of Terraform are actions and reports, listed with the CLI or
+  API way in [What the provider does not manage](docs/terraform.md#what-the-provider-does-not-manage).
+  - **`runr_project`:** `triggers` sets the whole trigger list — HTTP, schedules, the queue,
+    workflows, webhook inboxes, topics, platform events and the event sources kafka, nats,
+    rabbitmq, mqtt, cdc, email and s3 — with each trigger's JSON config and write-only secrets
+    (`url` of a webhook's inbox computed); `network` (access mode, IP allow list, internal callers
+    by internal name), `deploy_strategy` (blue-green and canary with their options) and `global`
+    (regions, mode, failover; a regional project that gets it is replaced). `trigger.type` takes
+    `workflow`.
+  - **Environments:** `runr_environment` (branch, approval, region, overrides, timed warmer,
+    deploy strategy; `name = "production"` adopts the project's own approval),
+    `runr_environment_secret`, and `environment` on `runr_deployment`, `runr_binding_attachment`,
+    `runr_domain`, `runr_gateway_route` and the new `runr_private_connection`. `runr_binding_attachment.credentials`
+    switches a Postgres attachment to dynamic credentials.
+  - **API product:** `runr_gateway` (rate limit, developer page, custom domain), `runr_gateway_route`
+    (public, API key or JWT authentication, gateway-only), `runr_api_plan`, `runr_api_consumer`,
+    `runr_api_key` (the key in the create answer; destroy revokes it).
+  - **Secrets, billing, workflows:** `runr_secret_store` and the `runr_secret_store_trust` data
+    source, `runr_env_var.reference` (a variable that refers to a value in a secret store),
+    `runr_cost_limit` (resource and data source), `runr_workflow` (a workflow declared through the
+    API, paused or active) and `runr_workflow_app` (the engine's endpoint override), `runr_topic`.
+  - **Workflow definitions keep their source:** one definition is declared or archived on its own
+    with the new `PUT` / `DELETE /api/projects/{project}/workflows/{name}` (`workflows.manage`,
+    audit `workflow.declare` / `workflow.archive`); `runr_workflow` and `runr_workflow_trigger` use
+    them, so the project's other definitions are never sent and what the function's SDK reported
+    stays `sdk` (against an earlier API they declare the set as before). Declaring the set
+    (`PUT …/workflows`, `runr workflows declare`) keeps the source of a definition whose content
+    does not change; only new and changed definitions become `api` until the next sync.
+  - **Reports as data sources:** `runr_runtime_patches` and `runr_rightsizing`; `data.runr_project`
+    reads the trigger list, the network, the deploy strategy and the placement.
+  - **Client and fake API:** the CLI client creates, changes and deletes secret stores, reads and
+    sets cost limits, changes plans, keys, gateway rate limits and routes, reads and changes a topic
+    and sends trigger secrets with a whole list; the fake reproduces the API for each of them
+    (trigger configs normalized per type, the event sources' required settings and secrets, the
+    stored list kept in step with `config.trigger_type`, a region's default TLS mode for new
+    domains).
+
+### Changed
+
+- **Terraform: `runr_domain.tls_mode` left out is RunR's choice.** A new domain without `tls_mode`
+  starts in the mode the API gives it — `cert-manager` where the region issues certificates — and
+  keeps the mode it has; the provider no longer forces `none`. A domain that provider 0.5 created
+  with `none` keeps it, and no change is planned. A configured mode other than the region's default
+  is now set at create (provider 0.5 compared the modes after reading the API's answer and failed
+  with "inconsistent result after apply"); provider 0.5 against this API therefore cannot create a
+  domain in a region that issues certificates unless `tls_mode = "cert-manager"`: upgrade the
+  provider first.
+- **The API document types a region.** `KnativeRegionResource` (`GET /api/knative-regions`, the
+  region in the answers of the region endpoints) is an object with its fields and their types
+  instead of `string`: the fields every region has, and — for a region of the request's own
+  context, not a tenant's synced copy of a platform region — the rest. The answers carry the
+  same fields as before; `knative_settings` is `{}` instead of `[]` when a region has no settings.
+- **`runr workflows app signing-key --env` is now `--dotenv`** (prints the key as an env file line):
+  `--env` names the [environment](docs/workflows.md#environments) in every `runr workflows`
+  command. Scripts that wrote `--env >> .env` write `--dotenv >> .env`.
+- **Deployments, versions and projects record the runtime image digest they run**
+  (`runtime_image`, `runtime_digest`, `runtime_patch_id`; migrations of the central and every
+  tenant schema). Without a known patch — the feed off, a runtime version it does not list, region
+  builds, uploaded images, custom runtimes, CaaS — workloads run the version image by its tag as
+  before.
+  - **`runr projects get` shows the runtime patch state** of a project (`Runtime patch`), and
+    `runtimes_list` the newest patch of each runtime version.
+- **Sign in with the user name or the e-mail address.** The console's sign-in field is
+  **E-mail or user name** (*E-posta veya kullanıcı adı*) and takes either, so the administrator an
+  install created signs in as `admin` (`admin.username`, `ADMIN_USERNAME`) without knowing the
+  e-mail address typed at install time. `POST /api/auth/login` (`login`) and
+  `runr login --with-password --username` take either as well, in any letter case
+  ([security.md](docs/security.md#password-sign-in)).
+  - An identifier with `@` is an e-mail address first, then a user name; without `@` it is a user
+    name. One identifier names one account at most: of accounts that differ in letter case only,
+    the exactly spelled one signs in.
+  - The sign-in rate limit counts per client address and account, so switching between the user
+    name and the e-mail address no longer starts a new budget.
+  - Registration, the user management and the profile refuse a user name or an e-mail address
+    that differs from another account's in letter case only. User names keep their characters
+    (letters, digits, `-`, `_`; never `@`), and the first-administrator bootstrap creates no
+    account whose `ADMIN_USERNAME` contains `@`. Existing accounts sign in as before.
+  - `php artisan runr:horizon-link --user` and `tenancy:setup --admin` find the account a user
+    name or e-mail address names the same way: one account, in any letter case.
+  - A migration adds indexes on `lower(username)` and `lower(email)` of the users table.
+- **The console's navigation is grouped into a main menu with mega menus.** The header no
+  longer hides the administration pages in the avatar menu and a settings page with ~25 tabs.
+  - **Projects** is the first main-menu item, on its own. **Build & Run** (Sandboxes, Sandbox
+    settings, Models, Runtimes, Images, Events), **Data & Integrations** (Data, Git providers,
+    AI agents (MCP)), **Observability** (Alerts, Tracing, Status page) and **Administration**
+    (Members: Users, Roles, Groups · Access & security: API Tokens, Auth Providers, Audit log ·
+    Organization: Regions & domain, Organization Branding, Billing · Platform: Regions &
+    settings, Tenants, Resource Usage, Branding, Signup) open mega menus of labelled sections,
+    each link with an icon and a one-line description.
+  - The header keeps the tenant switcher, the notifications and the **user menu**: Account
+    settings (formerly User Settings), My bills, Support Tickets, the theme, the language, the
+    tutorial and sign-out. The Models and Sandboxes header links and the theme, language and
+    tutorial buttons moved into the menus.
+  - The menus follow the user's permissions: a link the user may not open is left out, and a
+    section or group left empty disappears.
+  - Keyboard: ←/→ move along the main menu, ↓/↑ open a mega menu and move in it, Esc closes it;
+    the menus carry `aria-expanded` / `aria-controls` and mark the current page.
+  - Below 1024 px wide the menus collapse into a drawer opened with the menu button, the groups
+    as an accordion.
+  - The settings page shows its menu group as the title and the pages of the same section as
+    tabs instead of every tab at once. Its URLs did not change (`/settings?tab=<key>`).
+  - Console modules place their pages in the menus with `group`, `section` and `descKey` on
+    `settingsTabs` or the new `navLinks` registry list
+    ([Architecture](docs/architecture.md#modules)); the docs name the new locations.
+  - **The main menu fits a 1024 px window in every language.** In Turkish, with the tenant switcher
+    in the header, the group labels of the new main menu ran into the header's right side. When the
+    labels do not fit the free width, the groups now show their icons (the label stays the button's
+    name for screen readers and its tooltip); with room, the labels come back.
+  - **Console hints name the new menu locations.** Hints that still sent users to "Settings → …"
+    (adding a Git provider, a secret store or a topic, uploading an image, installing tracing,
+    enabling a runtime, revoking an MCP token, the queue consumer setting of a shared region, a
+    region without sandbox runtimes) now name the main menu's path, in English and Turkish.
+- **The queue consumer is the project's event gateway** (`runtime/queue-consumer`, same image
+  `ghcr.io/brf-tech/runr/queue-consumer`, same Deployment `<slug>-qc`). One delivery core —
+  CloudEvents over HTTP, retries with backoff, dead letters, per-trigger concurrency, Prometheus
+  metrics on `/metrics` — with pluggable sources: Redis Streams (queues, topics), the API's inbox
+  (webhooks, platform events) and schedules. A project whose only gateway trigger is one queue
+  keeps exactly the manifests of earlier versions; other gateways read `gateway.json` from the
+  Secret `<slug>-qc-config`.
+  - **A schedule next to other triggers** is delivered by the event gateway as a CloudEvent
+    (`dev.runr.schedule.tick`) to the project's service instead of running a CronJob pod. A project
+    whose only trigger is a schedule keeps its CronJob.
+  - The Knative Service of a project without an HTTP (or workflow) trigger is cluster-local, as for
+    queue projects before. Custom domains, previews and request replay need an enabled HTTP trigger.
+  - **The event gateway's legacy env mode keeps the queue consumer's guarantees**
+    ([triggers.md](docs/triggers.md#legacy-env-mode)). The dead-letter write and the acknowledgement
+    of a queue entry are one `MULTI` / `EXEC` again (also for queue and topic triggers in
+    `gateway.json`), so a gateway that stops in between no longer copies an entry to the dead letter
+    twice; without `SINK_URL` it delivers to `http://localhost:8080` as the queue consumer did instead
+    of not starting. `CLAIM_MIN_IDLE` (30s) sets when another consumer's pending entry is claimed.
+- **Preview environments are billed.** The region agent now tracks the pods of preview
+  environments (`runr/preview-of`), and metering counts them like the project's own scale-to-zero
+  sessions, at the project's size. They appear on the project's bill as a line of their own
+  (`component: preview`); in a fixed region the allocation covers them, as it already held them.
+  Until now previews were neither metered nor billed. Tenant migration `0073` lets a session belong
+  to a preview instead of a deployment. An agent takes this up when its pod restarts with the new
+  image.
+  - **Previews of projects with long slugs are metered.** A preview's Knative Service
+    `<slug>-pr-<number>` keeps to 63 characters, so the slug of a project from an earlier release
+    (longer than today's 44) lost its end — in a tenant, the tenant's slug with it — and RunR, which
+    matched the region agent's session events by slug, found no project for them: the preview was
+    not metered or billed. The agent now sends the pod's project id and organization (labels
+    `runr/preview-of`, `runr/project-id` and `runr/tenant`, which preview pods now carry) with every
+    session event, and RunR finds the project by its id; previews deployed before carry no
+    `runr/tenant` and are found by their project id among the tenants (remembered for an hour).
+    `region:reconcile`'s internal-network step gives such a preview its project's internal name
+    instead of one parsed from the shortened Service name. A new preview of a tenant's long slug
+    keeps the slug's `-<organization>` end in its name (the tenant's own domain alias answers only
+    names ending in it), and a preview keeps the name it was created with.
+- **Kata hypervisors the region's nodes cannot run are not offered.** RunR's node check (the
+  `kata-kvm-probe` DaemonSet) now also records each node's `/dev/shm` size and whether its systemd
+  has the D-Bus system bus (`shm_mb=` and `dbus=` in the `runr.dev/kvm-probe` annotation). QEMU
+  backs its guest's memory with a file in `/dev/shm` and needs at least 1 GiB there: a node that
+  runs in a container (Kind, k3d) has Docker's 64 MiB, where QEMU dies of SIGBUS while the guest
+  boots. Dragonball (Kata's Rust runtime) needs the D-Bus system bus on nodes that run systemd;
+  Kind's node image has none. Where every Kata node with KVM lacks it, the hypervisor is `small_shm`
+  or `no_dbus`: the console's hypervisor selector says why, and the install API refuses it and lists
+  it under `unavailable` in its 422, so the other hypervisors can still be installed. Nodes checked
+  by an earlier release, without the size, keep QEMU offered
+  ([/dev/shm (QEMU)](docs/kata-hypervisors.md#devshm-qemu),
+  [D-Bus (Dragonball)](docs/kata-hypervisors.md#d-bus-dragonball)).
+
+### Security
+
+- **The API image is built on PHP 8.3.36**, which fixes two remote code execution flaws in PHP
+  (CVE-2026-109618, CVE-2026-109619), and its build fails on an older PHP. The API also turns off
+  PHP's session upload progress tracking, turns on `session.use_strict_mode` and no longer sends
+  `X-Powered-By`. The opcache JIT is off (opcache stays on): under the image's thread-safe PHP
+  8.3.36 the tracing JIT crashed API workers ([upgrade.md](docs/upgrade.md#the-api-image)).
+- **The PHP runtime images run PHP 8.2.35, 8.3.36, 8.4.27 and 8.5.12** under their tags
+  (`exec-php` 8.2 to 8.5). A PHP function gets the fixed release with its next deploy.
+- **Cluster-local services were reachable from outside the cluster.** The region Traefik served the
+  cluster-local hosts of every Knative Service (`<service>.<namespace>`, `.svc`,
+  `.svc.cluster.local`) on the entry point its LoadBalancer publishes, so a request to the region's
+  external address with such a `Host` header reached queue-trigger sinks and model services. They
+  are now served only on a private entry point (`internal`, published by the ClusterIP Service
+  `traefik-internal`); through the external address they answer `404`, and Knative's placeholder
+  Services point in-cluster callers at `traefik-internal`.
+  - Custom domains, gateway routes and the second address of a base-domain migration hand requests
+    on to the project's public host instead of its cluster-local one, so they reach public HTTP
+    projects only. The status check keeps their host on the service's URL when its domain changes.
+    Gateway routes are served again: they pointed at the Knative Service's `ExternalName`
+    placeholder, which Traefik does not route to.
+  - NetworkPolicies in each region admit traffic to revision pods only from Knative Serving's
+    Traefik, activator and autoscaler, and to the activator only from Traefik and the autoscaler.
+    Before, any pod of the cluster could call another project's pods directly (`<revision>-private`,
+    the pod address) or through the activator, past the route and its visibility. They need a
+    network plugin that enforces NetworkPolicies
+    ([regions.md](docs/regions.md#cluster-local-services-and-network-isolation)).
+  - The web shell's wake-up and keep-alive and the model playground call the service's cluster-local
+    host through `traefik-internal` instead of the activator or the revision's pods.
+  - `region:reconcile` (after every upgrade) moves existing regions: steps `private-ingress` and
+    `network-policy`. Traefik is upgraded twice — cluster-local hosts on both entry points while
+    the KIngresses are made to name `traefik-internal`, then on the private one only — and its pods
+    roll twice. On Kind the move took 154 s without a failed request or queue delivery
+    (`runtime/ci.sh test-network`).
+- **An unknown account answers a password sign-in after the same work as a wrong password**, so
+  the answer time does not tell which user names and e-mail addresses exist. Both get the same
+  401 message.
+- **Pass-through: RunR's database no longer stores the values of project secret variables.** A
+  value goes straight into the Kubernetes Secret `<slug>-secret-env` of the project's region,
+  written key by key, and lives there only; RunR keeps the name, a version, who changed it when and
+  a keyed fingerprint (HMAC-SHA256 with `RUNR_SECRET_FINGERPRINT_KEY` or a key derived from
+  `APP_KEY`, never a plain hash). Reading a value back reads the region and says whether it is
+  still the value RunR wrote (`matches_fingerprint`); a region that does not answer fails the
+  request (`503`) and changes nothing. A deploy fails with the names of values that are not in the
+  region; stopping a project keeps them, deleting it removes them; a region migration copies them
+  to the new cluster and a rollback back, in memory; moving a project to another region copies
+  them; previews read the project's Secret instead of a copy of it. RunR's own keys
+  (`RUNR_WORKFLOW_SIGNING_KEY`, `RUNR_MCP_GATEWAY_KEY`) stay encrypted in its database — RunR signs
+  with them — and deploys write them next to the values
+  ([security.md](docs/security.md#pass-through)). The Kind suite `runtime/ci.sh test-region-move`
+  checks the copies both ways: values in the region's Secret and in its OpenBao, values set while
+  the region ran on the new cluster, references, and what the rollback leaves on the new cluster.
+  - **`php artisan secrets:move-to-region`** moves the values earlier releases stored into their
+    regions: written, read back and compared by fingerprint, then cleared from the database; per
+    tenant schema, idempotent and resumable, audited as `secrets.moved_to_region`. The Helm chart's
+    bootstrap Job runs it after every upgrade.
+  - **Downgrade guard for pass-through** ([Rolling back to 0.5.10](docs/security.md#rolling-back-to-0510)).
+    An installation upgraded from 0.5.10 keeps an encrypted copy of each value in
+    `project_secrets.value` (`rollback_copy`, shown by the API) until the upgrade is finalized, so a
+    rollback to 0.5.10 deploys the values instead of empty strings; RunR itself keeps reading the
+    region. A copy that 0.5.10 changed after a rollback is recognised by its fingerprint and moved
+    again as a new version (also into OpenBao). `secrets:move-to-region --finalize` (Helm value
+    `projectSecrets.finalize`) checks every value in its region, restores one the region lost from
+    its copy, drops the copies and records `secrets.pass_through_finalized`; until then references
+    to secret stores are refused, and an organization import lists them as a manual step. The Helm
+    notes of an upgrade say how to finalize. Migration `2026_10_22_500001` (tenant schemas: `0105`).
+
+### Fixed
+
+- **Long jobs run on their own queue.** An organization export or import (4 h by default) and the
+  copy of an uploaded image into another region of a global project (1 h) ran on the default
+  queue, whose `retry_after` (1900 s) handed a job still running to a second worker that failed
+  it. They now run on the `redis-long` connection (queue `long`, Horizon's `supervisor-long`),
+  whose limits follow `RUNR_ORG_TRANSFER_JOB_TIMEOUT` and `RUNR_GLOBAL_IMAGE_COPY_TIMEOUT`; the
+  copy's timeout is `RUNR_GLOBAL_IMAGE_COPY_TIMEOUT` itself.
+- **A region move routes the custom domains on the new cluster.** The move deployed the projects
+  there but applied only the domains that were waiting to be routed: an active custom domain had
+  no route on the new cluster and stopped answering once DNS pointed there. Every active custom
+  domain of the region's projects is now applied on the new cluster (an uploaded certificate is
+  copied from the old one), and on the restored cluster after a rollback
+  ([Regions](docs/regions.md#moving-a-region-to-another-cluster)).
+- **Gateways of upgraded regions get the current routes without a deploy.** Their IngressRoutes
+  were rebuilt only on the gateway's next sync (a deploy or a route change); `region:reconcile`
+  now rebuilds every gateway whose routes an earlier release built — the Host rewrite per route,
+  the forwardAuth Middlewares and the direct routes of allowlist and gateway-only projects.
+- **Custom domains, domain aliases and gateways follow a domain migration at once.** When a
+  base-domain or organization-domain migration completed or rolled back, custom domains and gateway
+  routes followed the new hosts only on the next status check (up to a minute of 404). They now
+  point at the new hosts before Knative switches over (the migration's alias answers there until
+  then), an organization's alias that sent to the old domain sends to the new one, the region's
+  gateways are rebuilt on the new domain, and the status check no longer moves a rewrite back to a
+  domain the region stopped serving while Knative catches up.
+- **A gateway route with several methods is served.** Its rule named them in one `Method()`
+  matcher, which the region Traefik's v3 rule syntax refuses; each method has its own matcher now.
+- **A scale-to-zero project keeps its maximum scale (#627).** The console's **Zero Scale** mode
+  always sent `max_scale: 1`, so such a project could never run more than one container under
+  load. It now has its own maximum (1-1000). The API checks that `min_scale` is not above
+  `max_scale` on create, update and deploy, instead of Knative refusing the revision.
+- **Gateways use their custom domain and the region's function domain (#628).** The gateway's
+  IngressRoute was built from the base domain, while the project URL came from the region's
+  function domain: on a region with its own function domain the two disagreed. Both now use the
+  function domain. A gateway's `custom_domain` was stored but never routed. It now gets its own
+  IngressRoute (`gw-<id>-domain`) with the gateway's routes and TLS as a project custom domain: a
+  cert-manager certificate from the region's ClusterIssuer, else the region's default certificate.
+- **A rollback restores the configuration with the code** (#626). Deployments record the effective
+  configuration they were applied with (`config_snapshot`); a rollback
+  (`POST /projects/{project}/deployments/{deployment}/rollback`, the console's **Roll back**,
+  `runr rollback`, MCP `rollback`) deploys the older version with the scale, env vars, resources,
+  trigger and timeout it ran with, unless **keep the current configuration** is chosen. A CaaS
+  project's image is its version's code: a deploy of an older version now runs that version's
+  image instead of the one configured now. Secret variables and bindings stay the current ones
+  ([Rollback](docs/versioning.md#rollback)).
+- **Scale-to-zero projects were metered with no CPU or memory.** Metering counted a session's
+  CPU and memory from figures the region agent never sends, so pay-as-you-go bills of
+  scale-to-zero projects showed 0 vCPU-hours and 0 GB-hours for them (GPU time was counted). A
+  session now counts the size its deployment was deployed with for the time its pod ran — CPU,
+  memory and GPUs alike, the way always-on projects count their reserved size
+  ([Metering and the fixed bill](docs/billing.md#metering-and-the-fixed-bill)). This needs nothing
+  from the agent, so the sessions of agents that are not updated yet are metered the same way.
+  - **Runs of a schedule trigger are metered.** The agent did not report the pods of a project's
+    CronJob, so scheduled runs were not metered at all. It now reports each run as a session, from
+    its pod's start until the run finishes (not when the finished pod is removed later). An agent
+    takes this up when its pod restarts and pulls the new image
+    (`kubectl -n observability rollout restart deployment/runr-agent` on the region's cluster).
+  - **Sessions of a queue trigger are metered under `queue`**, with the queue multiplier. The
+    agent reports every Knative pod as HTTP; RunR now files a session under the trigger its
+    deployment was deployed with.
+  - **Long-running pods are metered for the whole time they run.** A session counted on the day
+    it started, and every session open for 30 minutes was closed as stale. Its real end corrected
+    it later, but the metering job only recalculates today and yesterday, so a busy service's
+    pod that ran past the next day lost the rest of its time, and time past a month's end could
+    belong to a bill that was already closed. Each day now counts the part of a session that ran
+    on it, and a session still running counts until now.
+  - **Sessions are closed by the agent's heartbeat.** The agent reports the sessions it still
+    sees running every minute. A session is closed as stale only when these reports stop for 10
+    minutes (the agent or the region is gone), as of when its pod was last seen. A heartbeat
+    reopens a session closed too early and starts the session of a pod whose start was lost
+    while the agent was disconnected. Sessions of agents that send no heartbeat keep the
+    30-minute close. Tenant schemas get `deployment_sessions.last_seen_at` with tenant migration
+    `0072`.
+  - **The metrics summary reports what the sessions used.** `GET
+    /api/projects/{id}/metrics/summary` answered `sessions.total_cpu_ms` and
+    `total_memory_mb_ms` from figures nothing records, always 0; they are now the deployment's
+    size × the sessions' pod time, as metering counts them. `runr metrics` shows the CPU as
+    vCPU time.
+  - Days metered before the upgrade keep their values; today's usage (and yesterday's, in the first
+    hour of a day) is recalculated by the metering job as usual. `php artisan usage:recalculate
+    FROM [TO]` recalculates earlier days of existing deployments: open bills read the new values,
+    closed bills do not change.
+  - **Metrics name their units, and the sessions' size × time says what it is.** Since the summary
+    reports the sessions' CPU and memory as the deployment's size × their pod time, the console's
+    metrics history shows the averages in cores, MiB and requests per second and the sessions'
+    vCPU-hours and GiB-hours at the deployment's size; memory reads MiB / GiB (it said MB / GB for
+    the same numbers), and the live bar's last-hour averages are cores and MiB, no longer "per hour".
+    `runr metrics` prints the sessions' size × time on a line of its own (vCPU time and MiB- or
+    GiB-hours of memory) and `runr metrics history` heads its CPU column "CPU CORES". The MCP tool
+    `metrics_summary` adds `units` and a summary line in those units.
+- **A change to a project that is deleted meanwhile answers 404, not 500.** A config change whose
+  project another request deleted while it ran (an e2e cleanup did, while the console's save was on
+  its way) failed with a server error, "Call to a member function update() on null": the config
+  row had gone with the project. A project's config change (`PUT /projects/{project}`, also a
+  rightsizing apply), deploy strategy and network change now answer 404 as for an unknown project,
+  and so does any other request whose project is gone by the time it fails — such a request is not
+  reported as an error.
+- **A refused preview says why in the commit status.** A preview that was not allowed to start
+  (the fixed allocation or the organization quota leaves no room, the preview limit, forks off, …)
+  reported "Replaced by a newer deploy"; it now reports "Preview #12 not deployed: <reason>".
+- **New MCP server: the console showed "A project with this name already exists" before it opened
+  the new server.** The API broadcasts `project.created` as soon as the project exists, while the
+  modal still saves the starter files and the gateway settings. The projects list behind the modal
+  got the project, and the modal's name check counted it as taken. The check now leaves out the
+  project the modal created. A setup step that fails now stays in the modal: the project is
+  listed, and **Continue the setup** finishes that project instead of creating a second one. The
+  modal cannot be closed while the setup runs, and it no longer navigates when the page was left
+  meanwhile.
+- **Late and out-of-order answers in the console.** Pages that load again when a filter, a page,
+  a tab or a route parameter changes now show the answer of the newest request. Polls stop when the
+  page is left. An action's answer is not undone by a poll that was sent before it. Specifically:
+  - **Project pages:**
+    - Opening another project from a project page (a clone, a notification, a link) now loads that
+      project. Before, the page kept showing the old project. Leaving with unsaved code asks first
+      here too, and the clone's permissions are loaded.
+    - The editor shows the files of the version clicked last. Before, a slower answer for an older
+      version could fill the editor of the latest one, and saving it reverted the code.
+    - Code typed while a save runs stays as unsaved changes.
+    - A deploy whose follow-up reload fails closes the deploy modal; a deployments list read before
+      the deploy no longer hides the new deployment.
+    - The MCP tab and its call log, the history chart range and the starter preview show what was
+      picked last.
+  - **Polls that kept running after their page was left:**
+    - the deployment log panel, the shell terminal (socket and sandbox keepalive);
+    - the workflow runs and run detail;
+    - the project security tab and the region supply-chain tab;
+    - the bindings and data services pages, the runtime builds and the tenant deletion list.
+  - **Forms the background poll overwrote while being edited:** git deploy settings, the GPU
+    settings of a region, the scaling of a model service, the sandbox runtime mapping, other rows
+    of the sandbox quotas and pools, branding texts after a logo upload, and the billing webhook URL.
+  - **Double clicks that sent an action twice:** SSO provider toggle, platform admin toggle, tracing
+    install, supply-chain key generation and admission install, binding restore, demo data, billing
+    redelivery and markup removal, 2FA confirm (Enter) and recovery code regeneration, the runtime
+    enable toggle, notification mark-read, and the organization switcher.
+  - **An error shown after the action succeeded,** when only the follow-up reload failed: tenant
+    create/delete, region quota assignment (a retry now edits the assignment), SSO group mappings,
+    project access, tracing removal, git disconnect.
+  - **Broadcasts during a reload:**
+    - A deployment status, a new deployment or a finished build that is broadcast while the
+      project page reloads its lists (for example right after a deploy) is no longer lost.
+    - The projects list keeps a project created, changed or deleted while it loads, also from
+      another tab or by someone else.
+    - The models page's poll no longer undoes a deploy, stop or delete for a few seconds.
+    - Mirroring or deleting an offline copy no longer writes back the model as it was at the
+      click.
+  - **Deleting a project from its page** keeps the page until the projects list opens (the page
+    went blank in between). A project deleted elsewhere opens the projects list with a note.
+  - **Organization switch:** the onboarding wizard loads the new organization's onboarding once;
+    it loaded twice and could show the first answer.
+  - **Install status:** a job that finished before its install request answered (sandbox runtimes,
+    Wasm, Knative components, region demo data) no longer goes back to "installing". The region
+    setup wizard no longer misses a fast failure.
+  - **Shared state after an organization switch or sign-in:**
+    - the effective permissions, the settings and the runtime catalog drop answers read before
+      the change;
+    - the data residency of region pickers is read again for the new organization;
+    - notifications are no longer received twice after signing in.
+  - Search, filter and detail views (sandboxes, files, metrics, bills, events, audit log,
+    users, tickets, alert deliveries, uploaded images, Hub models, groups, SSO buttons on the
+    sign-in page, model upload abort) show the newest answer. Ticket replies no longer vanish or
+    show twice.
+- **Region setup wizard: a failed storage or registry test left the wizard waiting.** The setup job
+  recorded the failure but broadcast nothing, so the wizard (which follows the setup by its events)
+  never showed the error. It now broadcasts `region.create_failed` with the setup's id, like every
+  other failure.
+- **The registry setup gives the StorageClass time to bind its test volume.** The PVC test waited a
+  fixed 60 s, and a `WaitForFirstConsumer` class binds only once the consumer pod is scheduled, its
+  image pulled and the volume provisioned: on a busy cluster or slow storage the setup failed with
+  "did not provision a volume within 60s". It now waits `RUNR_REGISTRY_PVC_TEST_SECONDS` (180 s by
+  default, 30 to 900), and a volume that does not bind is reported with the real wait and what the
+  test saw: the claim's phase, the consumer pod's phase and why it waits, and the claim's last
+  event (e.g. `ProvisioningFailed` with its message). The registry setup jobs' timeout grows with
+  the wait; `POST /registry-setup/test-pvc` and `runr regions registry test pvc` wait as long
+  ([Regions](docs/regions.md#storage)).
+- **Invitations and SSO name accounts by their e-mail address in any letter case** (like the
+  [password sign-in](docs/security.md#password-sign-in)). Tenant invitations, their acceptance,
+  the member search, SSO sign-ins (OAuth, OIDC, SAML) with auto-registration, the organization
+  import's member grants and `tenancy:create --owner-email` matched addresses exactly, so
+  `Ada@Example.com` could get a second account next to `ada@example.com`. The address now names the
+  existing account; an invitation is stored, and a new account created, with the address trimmed
+  and in lower case. An address that several accounts of an earlier release share in different
+  letter case names none of them: the invitation or SSO sign-in is refused (`email_ambiguous`)
+  instead of creating a third.
+- **A new account from an invitation gets a free user name.** Accepting an invitation set the
+  user name to the part of the address before `@` without checking it, so a name another account
+  had failed with a database error, and characters such as `.` or `+` made a user name the
+  registration would refuse. It is now built from letters, digits, `-` and `_` of the local part,
+  free in any letter case and of waiting signups, with `-2`, `-3`, … when it is taken; SSO
+  auto-registration uses the same rule.
+- **A sandbox the container runtime cannot start fails with the runtime's error.** A pod whose
+  sandbox the runtime cannot create (a Kata VM that does not boot, a runtime handler the node lacks)
+  stays pending while the kubelet retries, and its status never says why: the create answered 202
+  `pending`, the sandbox failed as a plain start timeout up to 6 minutes later and counted towards
+  the organization's quota until then. The start now reads the pod's events every 5 s
+  (`sandbox.start_events_seconds`); after three `FailedCreatePodSandBox` events, in about 30 s, the
+  sandbox fails with the runtime's latest error — the create answers 502 `start_failed` — and no
+  longer counts towards the quota. A warm pool pod in that state is replaced with the same reason,
+  and a background start that times out names the pod's last warning event
+  ([Sandbox API](docs/sandbox-api.md#concepts)).
+- **A Kata install on a region without gVisor no longer fails with 422.** The `/dev/kvm` check runs
+  before anything else of RunR's sandbox runtimes is on the cluster, and its DaemonSet could not be
+  applied while the `runr-sandbox` namespace did not exist ("Cannot check the cluster for Kata");
+  the console's check failed the same way. The check creates the namespace now. A namespace RunR
+  created was also remembered by name for the whole process, so a queue worker that had created
+  `runr-sandbox` on one region's cluster skipped it on the next; it is remembered per cluster now.
+
 ## [0.5.10] - 2026-10-21
 
 ### Changed
@@ -2001,7 +3154,8 @@ Initial tagged release.
 - API gateways with routes, in-app notifications and support tickets.
 - Helm chart with a single-tenant / multi-tenant edition, an install form (`values.schema.json`), generated secrets and a Traefik ingress; a Docker Compose setup for development.
 
-[Unreleased]: https://github.com/brf-tech/runr/compare/v0.5.10...main
+[Unreleased]: https://github.com/brf-tech/runr/compare/v0.6.0...main
+[0.6.0]: https://github.com/brf-tech/runr/releases/tag/v0.6.0
 [0.5.10]: https://github.com/brf-tech/runr/releases/tag/v0.5.10
 [0.5.9]: https://github.com/brf-tech/runr/releases/tag/v0.5.9
 [0.5.8]: https://github.com/brf-tech/runr/releases/tag/v0.5.8

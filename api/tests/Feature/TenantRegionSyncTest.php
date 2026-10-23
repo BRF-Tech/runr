@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Jobs\CheckKnativeStatusJob;
 use App\Models\KnativeRegion;
+use App\Models\Observability\LoadTest;
 use App\Models\Project;
 use App\Services\DomainMigrateService;
 use App\Services\KnativeDeployService;
@@ -319,6 +320,26 @@ class TenantRegionSyncTest extends TestCase
         $this->assertSame(0, $acme->run(fn () => DB::table('gateways')->count() + DB::table('gateway_routes')->count()));
         $this->assertContains("DELETE platform.test/apis/traefik.io/v1alpha1/namespaces/platform/ingressroutes/gw-{$gatewayId}", $this->calls);
         $this->assertNotNull(KnativeRegion::find($region->id), 'the platform region itself stays');
+    }
+
+    public function test_ending_an_assignment_stops_the_tenants_load_tests_there(): void
+    {
+        $region = $this->platformRegion();
+        $acme = $this->tenantSchema('acme', ['Modules/Tenancy/Database/TenantMigrations/0071_create_load_tests_table.php']);
+        $this->assign($acme, $region);
+        [$projectId] = $this->projectWithGateway($acme, $region);
+        $testId = $acme->run(fn () => tap((new LoadTest)->forceFill([
+            'project_id' => $projectId, 'region_id' => $region->id, 'status' => LoadTest::RUNNING, 'host' => 'svc-acme.platform.test',
+            'path' => '/', 'users' => 10, 'duration_seconds' => 30, 'job_name' => 'lt-acme', 'namespace' => 'runr-loadtest', 'started_at' => now(),
+        ]))->save()->id);
+
+        app(TenantController::class)->removeRegion($acme->id, $region->id);
+
+        // the tenant's k6 Jobs leave the shared namespace, its tests end
+        $this->assertContains('GET platform.test/apis/batch/v1/namespaces/runr-loadtest/jobs', $this->calls);
+        [$status, $error] = $acme->run(fn () => [LoadTest::query()->findOrFail($testId)->status, LoadTest::query()->findOrFail($testId)->error]);
+        $this->assertSame(LoadTest::FAILED, $status);
+        $this->assertSame(__('observability.load_test.region_detached'), $error);
     }
 
     public function test_a_region_assigned_again_before_the_cleanup_keeps_its_copy(): void

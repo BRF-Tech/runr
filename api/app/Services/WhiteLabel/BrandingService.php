@@ -264,7 +264,7 @@ class BrandingService
         foreach (self::URL_FIELD_OF_ASSET as $asset => $field) {
             $column = Branding::ASSETS[$asset];
             if ($row?->{$column}) {
-                $stored[$field] = $this->assetUrl($row->{$column});
+                $stored[$field] = $this->assetUrl($asset, $row);
                 $stored[$asset.'_uploaded'] = true;
             }
         }
@@ -551,7 +551,7 @@ class BrandingService
         foreach (self::URL_FIELD_OF_ASSET as $asset => $field) {
             $column = Branding::ASSETS[$asset];
             if ($row->{$column}) {
-                $base[$field] = $this->assetUrl($row->{$column});
+                $base[$field] = $this->assetUrl($asset, $row);
             }
         }
 
@@ -697,9 +697,22 @@ class BrandingService
         $row->{$column} = null;
     }
 
-    public function assetUrl(string $path): string
+    /**
+     * Where the console loads an uploaded asset: GET /api/branding/assets/{kind} on its own host
+     * (the API answers it through the gateway, the Vite proxy and a custom API host alike), with
+     * the scope's tenant and a version of the file so a new upload is fetched at once. Not the
+     * public disk's URL: that is APP_URL/storage, which no install serves (the API has no
+     * public/storage link, and Laravel's /storage route is the signed one of the local disk).
+     */
+    public function assetUrl(string $asset, Branding $row): string
     {
-        return Storage::disk($this->disk())->url($path);
+        $path = (string) $row->{Branding::ASSETS[$asset]};
+        $query = array_filter([
+            'tenant_id' => $row->tenant_id ? (string) $row->tenant_id : null,
+            'v' => substr(sha1($path), 0, 12),
+        ]);
+
+        return '/api/branding/assets/'.$asset.'?'.http_build_query($query);
     }
 
     private function disk(): string
