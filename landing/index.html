@@ -4,8 +4,8 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>RunR — Açık Kaynak Serverless Mimari · Kubernetes Üzerinde</title>
-  <meta name="description" content="Fonksiyonlar, çoklu dosya projeleri, container'lar ve WebAssembly kendi Kubernetes cluster'larınızda, Knative ile scale-to-zero. Sandbox API, durable workflow, GPU ve MCP dahil. MIT lisanslı açık kaynak.">
-  <meta name="keywords" content="serverless, knative, kubernetes, open source, mit, self-hosted, faas, caas, webassembly, sandbox, gvisor, kata containers, durable workflows, gpu, hugging face, mcp, multi-tenant, scale-to-zero">
+  <meta name="description" content="Fonksiyonlar, çoklu dosya projeleri, container'lar ve WebAssembly kendi Kubernetes cluster'larınızda, Knative ile scale-to-zero. Olay tetikleyicileri, ortamlar, blue-green ve canary, Sandbox API, durable workflow, GPU ve MCP dahil. MIT lisanslı açık kaynak.">
+  <meta name="keywords" content="serverless, knative, kubernetes, open source, mit, self-hosted, faas, caas, webassembly, sandbox, gvisor, kata containers, durable workflows, event-driven, kafka, cloudevents, blue-green, canary, environments, multi-region, gpu, hugging face, mcp, multi-tenant, scale-to-zero">
   <meta name="theme-color" content="#0a0e1a">
   <meta name="author" content="BRF Teknoloji">
 
@@ -21,7 +21,7 @@
   <!-- Open Graph -->
   <meta property="og:type" content="website">
   <meta property="og:title" content="RunR — Open Source Serverless Architecture">
-  <meta property="og:description" content="Functions, multi-file projects, containers and WebAssembly on Knative — on your own Kubernetes clusters, with a Sandbox API, durable workflows, GPUs and MCP built in. Open source under the MIT license.">
+  <meta property="og:description" content="Functions, multi-file projects, containers and WebAssembly on Knative — on your own Kubernetes clusters, with event triggers, environments, blue-green and canary rollouts, a Sandbox API, durable workflows, GPUs and MCP built in. Open source under the MIT license.">
   <meta property="og:url" content="https://runr.sh/">
   <meta property="og:image" content="https://runr.sh/assets/og-image.png">
   <meta property="og:image:width" content="1200">
@@ -40,10 +40,10 @@
     "@context": "https://schema.org",
     "@type": "SoftwareApplication",
     "name": "RunR",
-    "description": "Open source serverless platform built on Kubernetes and Knative. Deploy functions, projects, containers and WebAssembly on your own clusters with scale-to-zero, sandboxes, durable workflows, GPUs and MCP.",
+    "description": "Open source serverless platform built on Kubernetes and Knative. Deploy functions, projects, containers and WebAssembly on your own clusters with scale-to-zero, event triggers, environments, sandboxes, durable workflows, GPUs and MCP.",
     "applicationCategory": "DeveloperApplication",
     "operatingSystem": "Linux, Kubernetes",
-    "softwareVersion": "0.5.10",
+    "softwareVersion": "0.6.0",
     "license": "https://opensource.org/licenses/MIT",
     "url": "https://runr.sh",
     "downloadUrl": "https://runr.sh/dl/",
@@ -183,10 +183,13 @@
     <span class="marquee-item">GVISOR + KATA</span>
     <span class="marquee-item hot">DURABLE WORKFLOWS</span>
     <span class="marquee-item">GIT PUSH DEPLOY</span>
+    <span class="marquee-item hot">EVENT TRIGGERS</span>
+    <span class="marquee-item">BLUE-GREEN · CANARY</span>
     <span class="marquee-item hot">GPU + HUGGING FACE</span>
     <span class="marquee-item">MCP</span>
     <span class="marquee-item hot">ZERO LOCK-IN</span>
-    <span class="marquee-item">MULTI-REGION</span>
+    <span class="marquee-item">GLOBAL PROJECTS</span>
+    <span class="marquee-item hot">MULTI-REGION</span>
     <!-- duplicate for seamless loop -->
     <span class="marquee-item hot">OPEN SOURCE · MIT</span>
     <span class="marquee-item">KNATIVE</span>
@@ -196,10 +199,13 @@
     <span class="marquee-item">GVISOR + KATA</span>
     <span class="marquee-item hot">DURABLE WORKFLOWS</span>
     <span class="marquee-item">GIT PUSH DEPLOY</span>
+    <span class="marquee-item hot">EVENT TRIGGERS</span>
+    <span class="marquee-item">BLUE-GREEN · CANARY</span>
     <span class="marquee-item hot">GPU + HUGGING FACE</span>
     <span class="marquee-item">MCP</span>
     <span class="marquee-item hot">ZERO LOCK-IN</span>
-    <span class="marquee-item">MULTI-REGION</span>
+    <span class="marquee-item">GLOBAL PROJECTS</span>
+    <span class="marquee-item hot">MULTI-REGION</span>
   </div>
 </div>
 
@@ -303,9 +309,9 @@
     <span class="eyebrow" data-tr="TEK KURULUMDA" data-en="IN ONE INSTALL">TEK KURULUMDA</span>
     <h2 data-tr="Sadece deploy değil — komple platform."
         data-en="More than deploy — a complete platform.">Sadece deploy değil — komple platform.</h2>
-    <p data-tr="Deploy, veri, erişim kontrolü, tedarik zinciri, gözlemlenebilirlik, multi-tenancy ve faturalama hesabı — hepsi aynı açık kaynak kurulumda. Paywall arkasında tek bir özellik yok."
-       data-en="Deploy, data, access control, supply chain, observability, multi-tenancy and billing calculation — all in the same open-source install. Not a single feature behind a paywall.">
-       Deploy, veri, erişim kontrolü, tedarik zinciri, gözlemlenebilirlik, multi-tenancy ve faturalama hesabı — hepsi aynı açık kaynak kurulumda. Paywall arkasında tek bir özellik yok.</p>
+    <p data-tr="Deploy, olaylar, ortamlar, veri, ağ, erişim kontrolü, tedarik zinciri, gözlemlenebilirlik, multi-tenancy ve faturalama hesabı — hepsi aynı açık kaynak kurulumda. Paywall arkasında tek bir özellik yok."
+       data-en="Deploy, events, environments, data, networking, access control, supply chain, observability, multi-tenancy and billing calculation — all in the same open-source install. Not a single feature behind a paywall.">
+       Deploy, olaylar, ortamlar, veri, ağ, erişim kontrolü, tedarik zinciri, gözlemlenebilirlik, multi-tenancy ve faturalama hesabı — hepsi aynı açık kaynak kurulumda. Paywall arkasında tek bir özellik yok.</p>
   </div>
 
   <div class="modules-grid reveal-stagger">
@@ -329,6 +335,64 @@
       </ul>
     </div>
 
+    <div class="module-card reveal" style="--mc:#2dd4bf">
+      <div class="mod-header">
+        <div class="mod-icon">E</div>
+        <div>
+          <h4 data-tr="Tetikleyiciler + Olaylar" data-en="Triggers + Events">Tetikleyiciler + Olaylar</h4>
+          <span class="mod-sub">Webhooks · Topics · Kafka · NATS · CDC</span>
+        </div>
+      </div>
+      <p data-tr="Her projenin bir tetikleyici listesi var: HTTP, saat dilimli zamanlamalar, kuyruklar, webhook gelen kutusu, fan-out topic'ler ve platform olayları. Projenin event gateway'i her olayı CloudEvent olarak, retry ve dead letter ile teslim eder."
+         data-en="Every project has a list of triggers: HTTP, schedules in a time zone, queues, a webhook inbox, fan-out topics and platform events. The project's event gateway delivers each event as a CloudEvent, with retries and dead letters.">
+         Her projenin bir tetikleyici listesi var: HTTP, saat dilimli zamanlamalar, kuyruklar, webhook gelen kutusu, fan-out topic'ler ve platform olayları. Projenin event gateway'i her olayı CloudEvent olarak, retry ve dead letter ile teslim eder.</p>
+      <ul class="mod-features">
+        <li data-tr="Broker ve dış kaynaklar: Kafka, NATS JetStream, RabbitMQ, MQTT, Postgres CDC, S3 ve IMAP ile e-posta" data-en="Broker and external sources: Kafka, NATS JetStream, RabbitMQ, MQTT, Postgres CDC, S3 and e-mail over IMAP">Broker ve dış kaynaklar: Kafka, NATS JetStream, RabbitMQ, MQTT, Postgres CDC, S3 ve IMAP ile e-posta</li>
+        <li data-tr="Bir olay ancak teslim edilince ya da dead letter'a düşünce onaylanır" data-en="An event is acknowledged only once it is delivered or dead-lettered">Bir olay ancak teslim edilince ya da dead letter'a düşünce onaylanır</li>
+        <li data-tr="Webhook imza ön ayarları ve genel HMAC; saklanan olaylar yeniden oynatılır" data-en="Webhook signature presets and a generic HMAC; stored events can be replayed">Webhook imza ön ayarları ve genel HMAC; saklanan olaylar yeniden oynatılır</li>
+        <li data-tr="Kimlik bilgileri yalnız yazılabilen tetikleyici secret'larıdır" data-en="Credentials are write-only trigger secrets">Kimlik bilgileri yalnız yazılabilen tetikleyici secret'larıdır</li>
+      </ul>
+    </div>
+
+    <div class="module-card reveal" style="--mc:#818cf8">
+      <div class="mod-header">
+        <div class="mod-icon">P</div>
+        <div>
+          <h4 data-tr="Ortamlar + Rollout" data-en="Environments + Rollouts">Ortamlar + Rollout</h4>
+          <span class="mod-sub">dev · staging · prod · blue-green · canary</span>
+        </div>
+      </div>
+      <p data-tr="Bir proje birden çok ortamda çalışır; her birinin kendi URL'i, yapılandırma override'ları, secret'ları, binding'leri ve region'ı olur. Terfi, neyin değişeceğinin önizlemesinden sonra aynı imajı bir sonraki ortama taşır; production'a terfi onay bekler."
+         data-en="A project runs in several environments, each with its own URL, configuration overrides, secrets, bindings and region. Promotion moves the same image to the next environment after a preview of what changes; promotions into production wait for approval.">
+         Bir proje birden çok ortamda çalışır; her birinin kendi URL'i, yapılandırma override'ları, secret'ları, binding'leri ve region'ı olur. Terfi, neyin değişeceğinin önizlemesinden sonra aynı imajı bir sonraki ortama taşır; production'a terfi onay bekler.</p>
+      <ul class="mod-features">
+        <li data-tr="Ortam başına bir git branch: push onu deploy eder" data-en="A git branch per environment: a push deploys it">Ortam başına bir git branch: push onu deploy eder</li>
+        <li data-tr="Test URL'li, sağlık kontrollü blue-green ve canary rollout'lar" data-en="Blue-green and canary rollouts with test URLs and health checks">Test URL'li, sağlık kontrollü blue-green ve canary rollout'lar</li>
+        <li data-tr="Yeni revizyonun hata oranı ya da p95 gecikmesi eşiği aşınca canary kendiliğinden geri döner" data-en="A canary rolls back by itself when the new revision's error rate or p95 latency crosses its threshold">Yeni revizyonun hata oranı ya da p95 gecikmesi eşiği aşınca canary kendiliğinden geri döner</li>
+        <li data-tr="Zamanlı ısıtıcı: haftalık plana göre sıcak tutulan container'lar" data-en="Timed warmer: containers kept warm on a weekly schedule">Zamanlı ısıtıcı: haftalık plana göre sıcak tutulan container'lar</li>
+        <li data-tr="Geri alma, sürümün çalıştığı yapılandırmayla" data-en="Rollback with the configuration a version ran with">Geri alma, sürümün çalıştığı yapılandırmayla</li>
+      </ul>
+    </div>
+
+    <div class="module-card reveal" style="--mc:#fb7185">
+      <div class="mod-header">
+        <div class="mod-icon">N</div>
+        <div>
+          <h4 data-tr="Ağ + Global" data-en="Network + Global">Ağ + Global</h4>
+          <span class="mod-sub">Internal network · Global DNS · API keys</span>
+        </div>
+      </div>
+      <p data-tr="Bir region'ın projeleri birbirini iç ağda adıyla çağırır; çağrıyı yalnız çağrılanın izin listesi kabul eder. Bir proje herkese açık, bir IP izin listesine açık ya da yalnız iç ağda olabilir."
+         data-en="Projects of a region call each other by name on an internal network, admitted only by the callee's allow list. A project is public, public to an IP allow list, or internal only.">
+         Bir region'ın projeleri birbirini iç ağda adıyla çağırır; çağrıyı yalnız çağrılanın izin listesi kabul eder. Bir proje herkese açık, bir IP izin listesine açık ya da yalnız iç ağda olabilir.</p>
+      <ul class="mod-features">
+        <li data-tr="Global projeler: birden çok region'da tek host adı, HA ya da yakınlık modu, failover" data-en="Global projects: one host name across several regions, HA or proximity mode, failover">Global projeler: birden çok region'da tek host adı, HA ya da yakınlık modu, failover</li>
+        <li data-tr="Global projede dedicated Postgres binding'i her region'a replike edilir; switchover veri kaybetmeden" data-en="A dedicated Postgres binding of a global project replicated to every region; switchover without data loss">Global projede dedicated Postgres binding'i her region'a replike edilir; switchover veri kaybetmeden</li>
+        <li data-tr="API ürünü: tüketiciler, API anahtarları, JWT route'ları, hız limiti planları ve ölçülen kullanım" data-en="API product: consumers, API keys, JWT routes, rate-limit plans and measured usage">API ürünü: tüketiciler, API anahtarları, JWT route'ları, hız limiti planları ve ölçülen kullanım</li>
+        <li data-tr="Özel domain sertifikaları için her region'a kurulan cert-manager" data-en="cert-manager set up in every region for custom-domain certificates">Özel domain sertifikaları için her region'a kurulan cert-manager</li>
+      </ul>
+    </div>
+
     <div class="module-card reveal" style="--mc:#4ade80">
       <div class="mod-header">
         <div class="mod-icon">B</div>
@@ -345,6 +409,7 @@
         <li data-tr="Adımlar, retry, timer, event, child workflow" data-en="Steps, retries, timers, events, child workflows">Adımlar, retry, timer, event, child workflow</li>
         <li data-tr="Python (<code>runr-workflows</code>) ve TypeScript (<code>@runr/workflows</code>) SDK'ları" data-en="Python (<code>runr-workflows</code>) and TypeScript (<code>@runr/workflows</code>) SDKs">Python (<code>runr-workflows</code>) ve TypeScript (<code>@runr/workflows</code>) SDK'ları</li>
         <li data-tr="Organizasyon başına kota ve kullanım ölçümü" data-en="Per-organization quotas and usage metering">Organizasyon başına kota ve kullanım ölçümü</li>
+        <li data-tr="Organizasyon dışa / içe aktarma: tek sürümlü dosya — başka bir kurulum ya da felaket kurtarma" data-en="Organization export and import: one versioned file — another installation or disaster recovery">Organizasyon dışa / içe aktarma: tek sürümlü dosya — başka bir kurulum ya da felaket kurtarma</li>
       </ul>
     </div>
 
@@ -362,7 +427,8 @@
       <ul class="mod-features">
         <li data-tr="SSO: Google, GitHub, Microsoft, GitLab, OIDC, SAML 2.0" data-en="SSO: Google, GitHub, Microsoft, GitLab, OIDC, SAML 2.0">SSO: Google, GitHub, Microsoft, GitLab, OIDC, SAML 2.0</li>
         <li data-tr="Saklanan her secret şifreli, anahtar rotasyonuyla" data-en="Every stored secret encrypted at rest, with key rotation">Saklanan her secret şifreli, anahtar rotasyonuyla</li>
-        <li data-tr="Secret ortam değişkenleri yalnız Kubernetes Secret ile iş yüküne ulaşır" data-en="Secret environment variables reach workloads only through Kubernetes Secrets">Secret ortam değişkenleri yalnız Kubernetes Secret ile iş yüküne ulaşır</li>
+        <li data-tr="Secret değişkenlerin değerleri RunR'ın veritabanında değil, region'da durur (Kubernetes Secret ya da OpenBao) ya da kendi secret store'unuzdan okunur" data-en="Secret variable values live in the region (Kubernetes Secret or OpenBao), not in RunR's database, or are read from your own secret store">Secret değişkenlerin değerleri RunR'ın veritabanında değil, region'da durur (Kubernetes Secret ya da OpenBao) ya da kendi secret store'unuzdan okunur</li>
+        <li data-tr="İmzalı runtime yama akışı: her yamanın seviyesi, nedeni, CVE'leri; kritik yamaların son tarihi" data-en="Signed runtime patch feed: the level, reason and CVEs of every runtime patch, and a deadline for critical ones">İmzalı runtime yama akışı: her yamanın seviyesi, nedeni, CVE'leri; kritik yamaların son tarihi</li>
         <li data-tr="Append-only audit log: CSV / JSON dışa aktarma, SIEM'e iletme" data-en="Append-only audit log: CSV / JSON export, SIEM forwarding">Append-only audit log: CSV / JSON dışa aktarma, SIEM'e iletme</li>
       </ul>
     </div>
@@ -402,6 +468,8 @@
         <li data-tr="Region agent'ının çalıştırdığı uptime kontrolleri" data-en="Uptime checks run by the region agent">Region agent'ının çalıştırdığı uptime kontrolleri</li>
         <li data-tr="Organizasyon başına herkese açık status sayfası" data-en="A public status page per organization">Organizasyon başına herkese açık status sayfası</li>
         <li data-tr="Alarm kanalları ve kuralları" data-en="Alert channels and rules">Alarm kanalları ve kuralları</li>
+        <li data-tr="Region içinden k6 yük testleri: p50 / p95 / p99 gecikme, hatalar, pod'lar ve cold start'lar" data-en="k6 load tests from inside the region: p50 / p95 / p99 latency, errors, pods and cold starts">Region içinden k6 yük testleri: p50 / p95 / p99 gecikme, hatalar, pod'lar ve cold start'lar</li>
+        <li data-tr="Rightsizing: pod'ların gerçekten kullandığına göre boyut önerisi, tek tıkla uygulanır" data-en="Rightsizing: size recommendations from what the pods really used, applied with one click">Rightsizing: pod'ların gerçekten kullandığına göre boyut önerisi, tek tıkla uygulanır</li>
       </ul>
     </div>
 
@@ -420,6 +488,7 @@
         <li data-tr="Billing modülü, tenancy açık olsun olmasın: her projeye aylık fatura, kullandıkça öde ya da sabit kaynaklı region'lar" data-en="Billing module, with or without tenancy: a monthly bill per project, pay-as-you-go or fixed-resource regions">Billing modülü, tenancy açık olsun olmasın: her projeye aylık fatura, kullandıkça öde ya da sabit kaynaklı region'lar</li>
         <li data-tr="Tenant'lar platformun paylaştığı region'ları kâr payı ekleyerek kendi projelerine satar" data-en="Tenants resell the regions the platform shares with them to their own projects, with a markup">Tenant'lar platformun paylaştığı region'ları kâr payı ekleyerek kendi projelerine satar</li>
         <li data-tr="Faturayı kendi sisteminiz keser: billing API + imzalı webhook'lar" data-en="Your own billing system invoices: billing API + signed webhooks">Faturayı kendi sisteminiz keser: billing API + imzalı webhook'lar</li>
+        <li data-tr="Proje başına aylık maliyet limiti: bildir ya da durdur" data-en="A monthly cost limit per project: notify or stop">Proje başına aylık maliyet limiti: bildir ya da durdur</li>
         <li data-tr="Ek dosyalı, atamalı, gerçek zamanlı destek ticket'ları" data-en="Support tickets with attachments, assignment and real-time updates">Ek dosyalı, atamalı, gerçek zamanlı destek ticket'ları</li>
         <li data-tr="Tek kiracılı ya da multi-tenant sürüm" data-en="Single-tenant or multi-tenant edition">Tek kiracılı ya da multi-tenant sürüm</li>
       </ul>
@@ -1424,7 +1493,7 @@ helm upgrade --install runr brf-tech/runr \
       <p data-tr="Tek makinede üretim kurulumu: <code>compose/build.sh</code> imajları sürüm etiketinden derler; internetsiz (air-gapped) sunucuya <code>runr-images.tar</code> olarak taşınır."
          data-en="A production install on one machine: <code>compose/build.sh</code> builds the images from the release tag; air-gapped hosts get them as <code>runr-images.tar</code>.">
          Tek makinede üretim kurulumu: <code>compose/build.sh</code> imajları sürüm etiketinden derler; internetsiz (air-gapped) sunucuya <code>runr-images.tar</code> olarak taşınır.</p>
-      <pre><code>git clone -b v0.5.10 \
+      <pre><code>git clone -b v0.6.0 \
   https://github.com/BRF-Tech/runr.git
 cd runr &amp;&amp; bash compose/build.sh
 cd compose &amp;&amp; cp .env.example .env
@@ -1473,7 +1542,7 @@ runr deploy</code></pre>
          data-en="Deploy on every push and run preview environments for pull / merge requests: the ready-made Action on GitHub, a job that installs the CLI and runs <code>runr deploy</code> on GitLab CI/CD.">
          Her push'ta deploy edin, pull / merge request'ler için preview ortamları açın: GitHub'da hazır Action, GitLab CI/CD'de CLI'ı kurup <code>runr deploy</code> çalıştıran bir job.</p>
       <pre><code># GitHub Actions: secrets RUNR_API_URL, RUNR_TOKEN
-- uses: brf-tech/runr/actions/deploy@v0.5.10
+- uses: brf-tech/runr/actions/deploy@v0.6.0
   with:
     api-url: ${{ secrets.RUNR_API_URL }}
     token: ${{ secrets.RUNR_TOKEN }}
@@ -1593,10 +1662,18 @@ deploy:
       </div>
     </details>
     <details class="faq-item reveal">
+      <summary data-tr="Bir proje birden çok region'da çalışabilir mi?" data-en="Can one project run in several regions?">Bir proje birden çok region'da çalışabilir mi?</summary>
+      <div class="faq-body"
+        data-tr="Evet. Global bir proje birden çok region'da tek bir host adının arkasında çalışır: HA modunda sağlıklı olduğu sürece birincil region, yakınlık modunda en yakın sağlıklı region yanıt verir. Birincil region düşerse tetikleyicileri ve verisiyle birlikte bir sonrakine geçer; dedicated Postgres binding'leri her region'da bir replika alır. Ayrıntılar: <a href='/docs/global-projects/'>global projeler</a>."
+        data-en="Yes. A global project runs in several regions behind one host name: in HA mode the primary region answers while it is healthy, in proximity mode the closest healthy region. A failed primary fails over to the next region with its triggers and data; dedicated Postgres bindings get a replica in every region. Details: <a href='/docs/global-projects/'>global projects</a>.">
+        Evet: global projeler.
+      </div>
+    </details>
+    <details class="faq-item reveal">
       <summary data-tr="Kod çalıştırma ne kadar güvenli?" data-en="How secure is code execution?">Kod çalıştırma ne kadar güvenli?</summary>
       <div class="faq-body"
-        data-tr="Her proje tipi, region'ın atadığı sandbox'ta çalışır: düz runc, gVisor (user-space kernel) ya da Kata Containers (donanım sanallaştırmalı node'larda pod başına mikro-VM). Üstüne: kapsamı sınırlı token'larla RBAC, şifreli saklanan secret'lar, append-only audit log, SBOM, tarama, imza ve region'da imzalı imaj admission'ı. Tenant'lara region başına CPU, bellek ve GPU kotası tanımlanır."
-        data-en="Every project type runs in the sandbox its region assigns: plain runc, gVisor (a user-space kernel) or Kata Containers (a micro-VM per pod, on nodes with hardware virtualization). On top: RBAC with scoped tokens, secrets encrypted at rest, an append-only audit log, SBOMs, scans, signatures and signed-image admission in the region. Tenants get CPU, memory and GPU quotas per region.">
+        data-tr="Her proje tipi, region'ın atadığı sandbox'ta çalışır: düz runc, gVisor (user-space kernel) ya da Kata Containers (donanım sanallaştırmalı node'larda pod başına mikro-VM). Üstüne: kapsamı sınırlı token'larla RBAC, şifreli saklanan secret'lar, append-only audit log, SBOM, tarama, imza ve region'da imzalı imaj admission'ı. Projeler iç ağda da birbirinden yalıtılır: bir proje diğerine yalnız onun izin listesinden ulaşır. Tenant'lara region başına CPU, bellek ve GPU kotası tanımlanır."
+        data-en="Every project type runs in the sandbox its region assigns: plain runc, gVisor (a user-space kernel) or Kata Containers (a micro-VM per pod, on nodes with hardware virtualization). On top: RBAC with scoped tokens, secrets encrypted at rest, an append-only audit log, SBOMs, scans, signatures and signed-image admission in the region. Projects are isolated from each other on the internal network too: one project reaches another only through its allow list. Tenants get CPU, memory and GPU quotas per region.">
         Region'ın atadığı sandbox: runc, gVisor ya da Kata.
       </div>
     </details>
@@ -1689,7 +1766,7 @@ deploy:
     </div>
     <div class="footer-bottom">
       <span>© 2026 BRF Teknoloji and RunR contributors. <span data-tr="MIT lisansıyla yayımlanır." data-en="Released under the MIT License.">MIT lisansıyla yayımlanır.</span></span>
-      <span class="mono">runr.sh · <a href="/dl/">v0.5.10</a></span>
+      <span class="mono">runr.sh · <a href="/dl/">v0.6.0</a></span>
     </div>
   </div>
 </footer>

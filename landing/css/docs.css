@@ -1,6 +1,7 @@
 /* ============================================================
    runr.sh — documentation, downloads and policy pages
-   Same palette as the landing (base.css), no JavaScript.
+   Same palette as the landing (base.css). The only script is
+   /js/docs.js, which keeps the sidebar's scroll position.
    ============================================================ */
 
 :root {
@@ -20,6 +21,14 @@
 }
 
 * { box-sizing: border-box; }
+
+/* Scrollbars in the site's colours (page, sidebar, code blocks, tables) */
+:root { color-scheme: dark; }
+* { scrollbar-width: thin; scrollbar-color: var(--border-strong) transparent; }
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track, ::-webkit-scrollbar-corner { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 8px; border: 2px solid transparent; background-clip: padding-box; }
+::-webkit-scrollbar-thumb:hover { background-color: #475569; }
 
 html {
   background: var(--bg);
