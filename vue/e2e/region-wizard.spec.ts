@@ -2,7 +2,7 @@ import { test, expect } from './fixtures/test'
 import type { Page } from '@playwright/test'
 import { continueButton } from './helpers/ui'
 
-// Settings → "+ Add Region" wizard (7 steps). Every cluster call is answered by the
+// Administration → Regions & settings → "+ Add Region" wizard (7 steps). Every cluster call is answered by the
 // mocked API; the registry/region creation result arrives as a platform event, sent
 // through the fake realtime socket. Never run against a real cluster from here.
 

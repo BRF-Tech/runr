@@ -7,6 +7,7 @@ vi.mock('@/api/rbac', () => ({ rbacApi: { myPermissions: vi.fn() } }))
 
 import { usePermissionsStore } from '@/stores/permissions'
 import { rbacApi } from '@/api/rbac'
+import { deferred } from '../helpers'
 
 const PAYLOAD = {
   edition: 'single', platform_admin: false, role: 'viewer', roles: ['viewer'],
@@ -59,11 +60,40 @@ describe('permissions store', () => {
 
   it('loads once at a time and not without a session', async () => {
     const perms = usePermissionsStore()
-    await Promise.all([perms.load(), perms.load()])
+    await perms.load()
     expect(rbacApi.myPermissions).toHaveBeenCalledTimes(1)
 
     localStorage.removeItem('token')
     await perms.load()
+    expect(perms.loaded).toBe(false)
+  })
+
+  // A load asked for while one is in flight (a project just created, an organization switch):
+  // the request in flight was sent before that change, so one more load follows it
+  it('loads once more after the request in flight, shared by every caller meanwhile', async () => {
+    const before = deferred()
+    rbacApi.myPermissions
+      .mockReturnValueOnce(before.promise)
+      .mockResolvedValueOnce({ data: { ...PAYLOAD, projects: { P1: ['projects.deploy'], NEW: ['code.edit'] } } })
+    const perms = usePermissionsStore()
+    const first = perms.load()
+    const second = Promise.all([perms.load(), perms.load()])
+
+    before.resolve({ data: PAYLOAD })   // read before the new project existed
+    await first
+    await second
+    expect(rbacApi.myPermissions).toHaveBeenCalledTimes(2)
+    expect(perms.can('code.edit', 'NEW')).toBe(true)
+  })
+
+  it('drops an answer that arrives after a reset (sign-out, other organization)', async () => {
+    const late = deferred()
+    rbacApi.myPermissions.mockReturnValueOnce(late.promise)
+    const perms = usePermissionsStore()
+    const loading = perms.load()
+    perms.reset()
+    late.resolve({ data: PAYLOAD })
+    await loading
     expect(perms.loaded).toBe(false)
   })
 })

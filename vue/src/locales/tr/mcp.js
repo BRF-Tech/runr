@@ -6,6 +6,7 @@ export default {
 
     settings: {
       tab:            'Yapay zeka ajanları (MCP)',
+      navDesc: 'Yapay zeka asistanlarını MCP ile RunR\'a bağlayın',
       title:          'Yapay zeka ajanları (MCP)',
       subtitle:       'Claude ve diğer MCP istemcileri RunR\'ı sizin yetkilerinizle kullansın.',
       connectTitle:   'Bir MCP istemcisi bağlayın',
@@ -68,6 +69,7 @@ export default {
       streams:     'ilerleme',
       everyone:    'oturum açmış her kullanıcı',
       or:          'veya',
+      platformAdmin: '{permissions} yetkili platform yöneticisi',
       group: {
         account:       'Hesap',
         projects:      'Projeler',
@@ -78,6 +80,7 @@ export default {
         observability: 'İzler, tekrar oynatma ve erişilebilirlik',
         configuration: 'Ortam değişkenleri',
         domains:       'Alan adları',
+        gateways:      'API gateway\'leri',
         regions:       'Bölgeler',
         runtimes:      'Çalışma ortamları',
         sandboxes:     "Sandbox'lar",
@@ -87,6 +90,8 @@ export default {
         security:      'Tedarik zinciri',
         audit:         'Denetim kaydı',
         mcp:           'Barındırılan MCP sunucuları',
+        billing:       'Faturalama',
+        organization:  'Organizasyonu dışa ve içe aktarma',
       },
     },
 
@@ -102,7 +107,7 @@ export default {
       requiredTenant: 'Bu MCP sunucusu {tenant} organizasyonuna ait. Onaylamak için üst çubuktan o organizasyona geçin.',
       scopes:         'Bağlantının yapabilecekleri',
       lifetime:       'Geçerlilik',
-      lifetimeHint:   'Token Ayarlar → API tokenları altında görünür ve orada her an iptal edilebilir.',
+      lifetimeHint:   'Token Yönetim → API Token altında görünür ve orada her an iptal edilebilir.',
       untilRevoked:   'İptal edilene kadar',
       days:           '{n} gün',
       cannotApprove:  'Onaylamak için kendi API tokenlarınızı yönetme yetkisi gerekir. Bir yöneticiye başvurun.',
@@ -220,7 +225,7 @@ export default {
       template:         'Başlangıç',
       runtimeMissing:   'Bu başlangıç şablonunun {runtime} çalışma ortamı bu organizasyonda etkin değil.',
       enableRuntime:    'Çalışma ortamını etkinleştir',
-      askAdmin:         'Bir yönetici Ayarlar → Çalışma ortamları altında etkinleştirir.',
+      askAdmin:         'Bir yönetici Geliştir ve Çalıştır → Çalışma Ortamları altında etkinleştirir.',
       image:            'Konteyner imajı',
       imagePlaceholder: 'ghcr.io/acme/mcp-server:1.0',
       port:             'Port',
@@ -228,6 +233,7 @@ export default {
       submit:           'MCP sunucusu oluştur',
       commitMessage:    'MCP sunucusu başlangıç kodu',
       partial:          '{name} projesi oluşturuldu ancak kurulum yarıda kaldı: {error}',
+      retry:            'Kuruluma devam et',
     },
   },
 }

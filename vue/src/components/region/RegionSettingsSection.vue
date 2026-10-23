@@ -4,7 +4,8 @@ import { useI18n } from 'vue-i18n'
 import { knativeRegionsApi } from '@/api/knativeRegions'
 
 // PUT /knative-regions/{id}/settings: request_timeout (Traefik and Knative follow it),
-// agent_ws_url (the agent is deployed again), cert_manager_cluster_issuer, ingress_trusted_ips
+// agent_ws_url (the agent is deployed again), cert_manager_cluster_issuer, ingress_trusted_ips,
+// internal_auth (the internal network's authz enforces or audits, docs/internal-network.md)
 const { t } = useI18n()
 
 const props = defineProps({
@@ -12,7 +13,7 @@ const props = defineProps({
 })
 const emit = defineEmits(['saved'])
 
-const form = ref({ request_timeout: 300, agent_ws_url: '', cert_manager_cluster_issuer: '', ingress_trusted_ips: '' })
+const form = ref({ request_timeout: 300, agent_ws_url: '', cert_manager_cluster_issuer: '', ingress_trusted_ips: '', internal_auth: 'enforce' })
 const saving = ref(false)
 const saved = ref(false)
 const error = ref(null)
@@ -25,6 +26,8 @@ function fromRegion(r) {
     agent_ws_url: s.agent_ws_url || '',
     cert_manager_cluster_issuer: s.cert_manager_cluster_issuer || '',
     ingress_trusted_ips: (s.ingress_trusted_ips || []).join(', '),
+    // every region enforces; audit only where an operator chose it
+    internal_auth: s.internal_auth === 'audit' ? 'audit' : 'enforce',
   }
 }
 watch(() => props.region, fromRegion, { immediate: true })
@@ -36,6 +39,7 @@ function payload() {
     agent_ws_url: f.agent_ws_url.trim() || null,
     cert_manager_cluster_issuer: f.cert_manager_cluster_issuer.trim() || null,
     ingress_trusted_ips: f.ingress_trusted_ips.split(/[\s,]+/).map(s => s.trim()).filter(Boolean),
+    internal_auth: f.internal_auth,
   }
 }
 
@@ -87,6 +91,15 @@ const fieldError = key => (fieldErrors.value[key] ?? Object.entries(fieldErrors.
       <input id="region-trusted-ips" v-model="form.ingress_trusted_ips" type="text" class="input font-mono text-xs" placeholder="10.0.0.0/24, 192.0.2.10" />
       <p class="text-[10px] text-gray-400 mt-1">{{ t('settings.regionDetail.config.trustedIpsHint') }}</p>
       <p v-if="fieldError('ingress_trusted_ips')" class="text-[11px] text-red-400 mt-1">{{ fieldError('ingress_trusted_ips') }}</p>
+    </div>
+    <div>
+      <label class="label" for="region-internal-auth">{{ t('network.region.label') }}</label>
+      <select id="region-internal-auth" v-model="form.internal_auth" class="input text-xs" data-testid="region-internal-auth">
+        <option value="enforce">{{ t('network.region.enforce') }}</option>
+        <option value="audit">{{ t('network.region.audit') }}</option>
+      </select>
+      <p class="text-[10px] text-gray-400 mt-1">{{ t('network.region.hint') }}</p>
+      <p v-if="fieldError('internal_auth')" class="text-[11px] text-red-400 mt-1">{{ fieldError('internal_auth') }}</p>
     </div>
     <div class="flex items-center gap-3">
       <button type="button" class="btn-primary text-xs" :disabled="saving" data-testid="save-region-settings" @click="save">

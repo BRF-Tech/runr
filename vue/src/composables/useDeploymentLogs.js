@@ -195,6 +195,9 @@ export function useDeploymentLogs(props, emit) {
   })
 
   // ── Lifecycle ───────────────────────────────────────────────────────────
+  // The panel can be closed while the first logs / metrics load: no timer may start after that
+  let unmounted = false
+
   onMounted(async () => {
     lines.value = loadStoredLines(props.deployment.id)
     const needsStatusCheck = props.deployment.status === 'shutting_down'
@@ -204,16 +207,17 @@ export function useDeploymentLogs(props, emit) {
     }
     uptimeTimer = setInterval(() => { now.value = Date.now() }, 1_000)
     await fetchLogs()
-    if (isLive.value) {
-      pollTimer    = setInterval(fetchLogs, 1000)
-      await fetchMetrics()
-      await fetchAvgMetrics()
-      metricsTimer   = setInterval(fetchMetrics,    2_000)
-      avgMeticsTimer = setInterval(fetchAvgMetrics, 60_000)
-    }
+    if (unmounted || !isLive.value) return
+    pollTimer    = setInterval(fetchLogs, 1000)
+    await fetchMetrics()
+    await fetchAvgMetrics()
+    if (unmounted) return
+    metricsTimer   = setInterval(fetchMetrics,    2_000)
+    avgMeticsTimer = setInterval(fetchAvgMetrics, 60_000)
   })
 
   onUnmounted(() => {
+    unmounted = true
     if (pollTimer)      clearInterval(pollTimer)
     if (metricsTimer)   clearInterval(metricsTimer)
     if (avgMeticsTimer) clearInterval(avgMeticsTimer)

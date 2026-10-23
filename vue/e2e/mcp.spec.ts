@@ -1,8 +1,9 @@
 import { test, expect } from './fixtures/test'
 import type { MockApi } from './fixtures/mock-api'
 import { confirmDialog } from './helpers/ui'
+import { settle } from './helpers/timing'
 
-// AI agents (docs/mcp.md): Settings → AI agents (connection instructions, MCP token, OAuth
+// AI agents (docs/mcp.md): Data & Integrations → AI agents (connection instructions, MCP token, OAuth
 // clients, tool catalog), the OAuth consent page, the project "MCP" tab with the inspector and
 // the one-click "New MCP server" modal. The MCP endpoints are answered by the handlers below.
 
@@ -168,20 +169,7 @@ test.describe('AI agents (MCP)', () => {
   })
 
   test('new MCP server: from the Python starter to the MCP tab', async ({ page, auth, mockApi }) => {
-    mockApi.on('GET', '/mcp-servers/templates', () => ({ body: { data: [
-      { id: 'python', name: 'Python (FastMCP)', description: 'Official MCP Python SDK', service_type: 'faas', runtime: 'mcp-python', runtime_available: true, can_register_runtime: true, runtime_manifest: '{}', files: { 'server.py': 'print("mcp")\n', 'requirements.txt': 'mcp\n' }, path: '/mcp' },
-      { id: 'image', name: 'Container image', description: 'Bring your own', service_type: 'caas', runtime: null, runtime_available: true, can_register_runtime: false, runtime_manifest: null, files: null, path: '/mcp', port: 8080 },
-    ] } }))
-    let saved: Json | null = null
-    mockApi.on('PUT', '/projects/:id/mcp-server', (req) => {
-      saved = {
-        id: 's2', project_id: req.params.id, handle: 'forecast-mcp', url: `${ORIGIN}/mcp/servers/forecast-mcp`, access_mode: req.body.access_mode,
-        path: req.body.path, audit_calls: false, function_url: null, key_rotated_at: null, needs_redeploy: false, created_at: '2026-10-11T10:00:00Z', updated_at: '2026-10-11T10:00:00Z',
-      }
-      return { status: 201, body: { data: saved } }
-    })
-    mockApi.on('GET', '/projects/:id/mcp-server', () => (saved ? { body: { data: saved } } : { status: 404, body: { message: 'Not found.' } }))
-    mockApi.on('GET', '/projects/:id/mcp-server/calls', () => ({ body: { data: [], meta: { current_page: 1, last_page: 1, total: 0, per_page: 25 } } }))
+    installNewServer(mockApi)
 
     await auth.signIn()
     await page.goto('/projects')
@@ -203,4 +191,116 @@ test.describe('AI agents (MCP)', () => {
     await expect(page).toHaveURL(/\/projects\/[^/#]+#mcp/)
     await expect(page.locator('[data-testid="mcp-server-panel"]')).toContainText(`${ORIGIN}/mcp/servers/forecast-mcp`)
   })
+
+  // The API broadcasts project.created as soon as the project exists, while the modal still saves
+  // the starter files and the gateway: the projects list behind the modal gets the project, and
+  // the modal's "name taken" check must not turn that into an error before the page opens.
+  test('new MCP server: the project.created broadcast during the setup shows no error', async ({ page, auth, mockApi, realtime, network }) => {
+    installNewServer(mockApi)
+    await auth.signIn()
+    await page.goto('/projects')
+    await page.locator('[data-testid="new-mcp-server-btn"]').click()
+
+    const modal = page.locator('[data-testid="create-mcp-server"]')
+    await modal.locator('[data-testid="mcp-create-name"]').fill('forecast-mcp')
+    await modal.getByRole('button', { name: /eu-1/ }).first().click()
+
+    const files = await network.hold('POST', '/projects/:id/files')
+    await modal.locator('[data-testid="mcp-create-submit"]').click()
+    const { params } = await files.arrived
+    const created = mockApi.db.projects.find(p => p.id === params.id)
+    await realtime.platform('project.created', { project: { ...created, created_by: { id: mockApi.db.user.id } } })
+
+    // The list has the project, the setup still runs: no error in the modal
+    await expect(page.locator('#p-forecast-mcp')).toBeAttached()
+    await expect(modal.getByText('A project with this name already exists.')).toHaveCount(0)
+    await expect(modal.locator('[data-testid="mcp-create-error"]')).toHaveCount(0)
+    await expect(modal.locator('[data-testid="mcp-create-submit"]')).toBeDisabled()
+
+    files.release()
+    await expect(page).toHaveURL(new RegExp(`/projects/${params.id}#mcp`))
+    await expect(page.locator('[data-testid="mcp-server-panel"]')).toContainText(`${ORIGIN}/mcp/servers/forecast-mcp`)
+  })
+
+  test('new MCP server: a failed setup step stays in the modal and continues on the same project', async ({ page, auth, mockApi }) => {
+    installNewServer(mockApi)
+    let failures = 1
+    mockApi.on('POST', '/projects/:id/files', () => (failures-- > 0
+      ? { status: 503, body: { message: 'The code store is busy, try again.' } }
+      : { status: 201, body: { message: 'Files saved.', version: { id: 'v-mcp' } } }))
+
+    await auth.signIn()
+    await page.goto('/projects')
+    await page.locator('[data-testid="new-mcp-server-btn"]').click()
+    const modal = page.locator('[data-testid="create-mcp-server"]')
+    await modal.locator('[data-testid="mcp-create-name"]').fill('forecast-mcp')
+    await modal.getByRole('button', { name: /eu-1/ }).first().click()
+    await modal.locator('[data-testid="mcp-create-submit"]').click()
+
+    await expect(modal.locator('[data-testid="mcp-create-error"]')).toContainText('The project forecast-mcp was created')
+    await expect(modal.locator('[data-testid="mcp-create-error"]')).toContainText('The code store is busy')
+    await expect(page.locator('#p-forecast-mcp')).toBeAttached()
+    await expect(modal.getByText('A project with this name already exists.')).toHaveCount(0)
+
+    await modal.getByRole('button', { name: 'Continue the setup' }).click()
+    await expect(page).toHaveURL(/\/projects\/[^/#]+#mcp/)
+    expect(mockApi.calls('POST', '/projects')).toHaveLength(1)
+    expect(mockApi.calls('POST', '/projects/:id/files')).toHaveLength(2)
+    expect(mockApi.calls('PUT', '/projects/:id/mcp-server')).toHaveLength(1)
+  })
+
+  // The call log's outcome filter answers out of order: the answer of the filter picked last wins
+  test('project MCP tab: a slow call-log answer does not overwrite the filtered list', async ({ page, auth, seed, mockApi, network }) => {
+    const project = await seed.project('faas', { name: 'weather-tools', mcp_server: { handle: 'weather-tools', url: `${ORIGIN}/mcp/servers/weather-tools`, access_mode: 'token' } })
+    const base = `/projects/${project.id}`
+    const call = (id: string, outcome: string, name: string) => ({
+      id, occurred_at: '2026-10-11T09:00:00Z', method: 'tools/call', name, jsonrpc_id: '2', status_code: outcome === 'ok' ? 200 : 500,
+      outcome, error: null, duration_ms: 31, actor: { type: 'user', id: '1', name: 'Ada Admin' }, auth: 'token', session_id: null,
+    })
+    mockApi
+      .on('GET', `${base}/mcp-server`, () => ({ body: { data: {
+        id: 's1', project_id: project.id, handle: 'weather-tools', url: `${ORIGIN}/mcp/servers/weather-tools`, access_mode: 'token',
+        path: '/mcp', audit_calls: true, function_url: null, key_rotated_at: null, needs_redeploy: false, created_at: '2026-10-10T10:00:00Z', updated_at: '2026-10-10T10:00:00Z',
+      } } }))
+      .on('GET', `${base}/mcp-server/calls`, (req) => {
+        const rows = [call('c-ok', 'ok', 'forecast'), call('c-err', 'error', 'broken')]
+        const outcome = req.query.get('outcome')
+        const data = outcome ? rows.filter(r => r.outcome === outcome) : rows
+        return { body: { data, meta: { current_page: 1, last_page: 1, total: data.length, per_page: 25 } } }
+      })
+
+    await auth.signIn()
+    // The first (unfiltered) answer is held until the filtered one is shown
+    const first = await network.hold('GET', `${base}/mcp-server/calls`)
+    await page.goto(`${base}#mcp`)
+    await first.arrived
+    await page.locator('[data-testid="mcp-calls-outcome"]').selectOption('error')
+    await expect(page.locator('[data-testid="mcp-call-c-err"]')).toBeVisible()
+    const late = page.waitForResponse(r => r.url().includes('/mcp-server/calls') && !r.url().includes('outcome='))
+    first.release()
+    await late
+    await settle(page)
+
+    // The late answer landed: the filtered list stays
+    await expect(page.locator('[data-testid="mcp-call-c-err"]')).toBeVisible()
+    await expect(page.locator('[data-testid="mcp-call-c-ok"]')).toHaveCount(0)
+  })
 })
+
+/** Templates and hosted-server endpoints of the one-click "New MCP server" flow. */
+function installNewServer(mockApi: MockApi) {
+  mockApi.on('GET', '/mcp-servers/templates', () => ({ body: { data: [
+    { id: 'python', name: 'Python (FastMCP)', description: 'Official MCP Python SDK', service_type: 'faas', runtime: 'mcp-python', runtime_available: true, can_register_runtime: true, runtime_manifest: '{}', files: { 'server.py': 'print("mcp")\n', 'requirements.txt': 'mcp\n' }, path: '/mcp' },
+    { id: 'image', name: 'Container image', description: 'Bring your own', service_type: 'caas', runtime: null, runtime_available: true, can_register_runtime: false, runtime_manifest: null, files: null, path: '/mcp', port: 8080 },
+  ] } }))
+  let saved: Json | null = null
+  mockApi.on('PUT', '/projects/:id/mcp-server', (req) => {
+    saved = {
+      id: 's2', project_id: req.params.id, handle: 'forecast-mcp', url: `${ORIGIN}/mcp/servers/forecast-mcp`, access_mode: req.body.access_mode,
+      path: req.body.path, audit_calls: false, function_url: null, key_rotated_at: null, needs_redeploy: false, created_at: '2026-10-11T10:00:00Z', updated_at: '2026-10-11T10:00:00Z',
+    }
+    return { status: 201, body: { data: saved } }
+  })
+  mockApi.on('GET', '/projects/:id/mcp-server', () => (saved ? { body: { data: saved } } : { status: 404, body: { message: 'Not found.' } }))
+  mockApi.on('GET', '/projects/:id/mcp-server/calls', () => ({ body: { data: [], meta: { current_page: 1, last_page: 1, total: 0, per_page: 25 } } }))
+}

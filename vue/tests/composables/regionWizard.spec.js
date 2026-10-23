@@ -135,6 +135,24 @@ describe('useRegistrySetup validation', () => {
     expect(r.setupRegionId.value).toBe('r-9')
   })
 
+  // A job that fails fast reports before the start request answers with the setup id: the event
+  // is kept until the id is known, or the wizard would wait forever
+  it('applies a failure broadcast before the start request answered', async () => {
+    let answer
+    api.registryStart.mockReturnValueOnce(new Promise((resolve) => { answer = resolve }))
+    const { api: r } = harness(() => useRegistrySetup())
+    const starting = r.startSetup({ name: 'eu-1', kubeconfig: 'kc', nodes: [] })
+
+    dispatchPlatformEvent('region.create_failed', { setup_id: 'sid-2', error: 'registry answered 401' })
+    dispatchPlatformEvent('region.create_failed', { setup_id: 'someone-else', error: 'not ours' })
+    answer({ data: { setup_token: 'tok-2', setup_id: 'sid-2' } })
+    await starting
+
+    expect(r.setupStatus.value).toBe('error')
+    expect(r.setupError.value).toBe('registry answered 401')
+    expect(r.setupLoading.value).toBe(false)
+  })
+
   it('reports the API validation message when setup cannot start', async () => {
     api.registryStart.mockRejectedValue({ response: { data: { errors: { kubeconfig: ['Cluster unreachable'] } } } })
     const { api: r } = harness(() => useRegistrySetup())

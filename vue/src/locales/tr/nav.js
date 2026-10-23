@@ -1,0 +1,63 @@
+// Konsolun gezinmesi (src/navigation/menu.js): ana menü, mega menüler, mobil çekmece ve
+// kullanıcı menüsü. Açıklamalar tek satırdır; modül girdileri kendi mesajlarında tutar.
+export default {
+  nav: {
+    main:        'Ana menü',
+    menu:        'Menü',
+    openMenu:    'Menüyü aç',
+    closeMenu:   'Menüyü kapat',
+    accountMenu: 'Hesap menüsü',
+    signedInAs:  'Giriş yapıldı',
+    userSettings: 'Hesap ayarları',
+    logout:      'Çıkış',
+    settings:    'Ayarlar',
+    preferences: 'Tercihler',
+    theme:       'Tema',
+    themeDark:     'Koyu',
+    themeFullDark: 'Tam Koyu',
+    themeLight:    'Açık',
+    language:    'Dil',
+    languageEn:  'English',
+    languageTr:  'Türkçe',
+
+    groups: {
+      build:             'Geliştir ve Çalıştır',
+      buildDesc:         'Sandbox\'lar, modeller, çalışma ortamları, imajlar ve iş akışı olayları.',
+      data:              'Veri ve Entegrasyonlar',
+      dataDesc:          'Veri depolarınız ve RunR\'ın bağlandığı servisler.',
+      observability:     'Gözlemlenebilirlik',
+      observabilityDesc: 'Alarmlar, izleme ve herkese açık durum sayfası.',
+      admin:             'Yönetim',
+      adminDesc:         'Üyeler, erişim, faturalama ve platform.',
+    },
+
+    sections: {
+      workloads:    'İş yükleri',
+      runtimes:     'Çalışma ortamları ve imajlar',
+      automation:   'Otomasyon',
+      data:         'Veri',
+      integrations: 'Entegrasyonlar',
+      monitoring:   'Takip',
+      members:      'Üyeler',
+      access:       'Erişim ve güvenlik',
+      organization: 'Organizasyon',
+      platform:     'Platform',
+      more:         'Diğer',
+    },
+
+    links: {
+      modelsDesc:           'Fonksiyonlarınızın çağırdığı servisler olarak Hugging Face modelleri',
+      runtimesDesc:         'Dil çalışma ortamları, sürümleri ve derlemeleri',
+      patchesDesc:          'Çalışma ortamı yama akışı, politikası ve son tarihleri',
+      usersDesc:            'Organizasyonun hesapları ve rolleri',
+      tokensDesc:           'CLI, CI ve yapay zeka ajanları için kişisel token\'lar',
+      platformSettings:     'Bölgeler ve ayarlar',
+      platformSettingsDesc: 'Bölgeler, temel alan adı, kayıt ve demo verisi',
+      orgSettings:          'Bölgeler ve alan adı',
+      orgSettingsDesc:      'Organizasyonun bölgeleri ve kendi alan adı',
+      approvalsDesc:        'Onayınızı bekleyen terfiler',
+      rightsizingDesc:      'Podların kullandıklarından boyut önerileri',
+      accountDesc:          'Profil, şifre, iki faktörlü doğrulama ve oturumlar',
+    },
+  },
+}

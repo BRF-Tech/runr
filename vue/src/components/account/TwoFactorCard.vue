@@ -65,7 +65,7 @@ async function submitDisable() {
     <!-- Enabled: show disable + regenerate -->
     <div v-else class="space-y-3">
       <div class="flex gap-2">
-        <button class="btn-secondary text-xs" @click="emit('regenerate')">
+        <button class="btn-secondary text-xs" :disabled="props.saving" @click="emit('regenerate')">
           {{ t('account.regenerateCodes') }}
         </button>
         <button class="btn-secondary text-xs text-red-400 hover:text-red-300" @click="showDisable = true">

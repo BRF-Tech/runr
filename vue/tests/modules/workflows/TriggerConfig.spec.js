@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { createI18n } from 'vue-i18n'
+import { createPinia } from 'pinia'
 import TriggerConfig from '@/components/project/TriggerConfig.vue'
 import en from '@/locales/en'
 
@@ -22,7 +23,14 @@ function i18n() {
   })
 }
 
-const mountConfig = (props) => mount(TriggerConfig, { props: { triggerType: 'http', ...props }, global: { plugins: [i18n()] } })
+const mountConfig = (props) => mount(TriggerConfig, { props: { triggerType: 'http', ...props }, global: { plugins: [i18n(), createPinia()] } })
+
+describe('TriggerConfig — schedule', () => {
+  it('says the schedule runs in the organization\'s time zone', () => {
+    const w = mountConfig({ triggerType: 'schedule', schedule: '0 9 * * *' })
+    expect(w.find('[data-test="cron-zone"]').text()).toContain('organization\'s time zone (Europe/Istanbul)')
+  })
+})
 
 describe('TriggerConfig — workflow trigger', () => {
   it('offers the workflow trigger and emits it', async () => {

@@ -2,8 +2,10 @@ import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useSettingsStore } from '@/stores/settings'
 import { useRuntimesStore } from '@/stores/runtimes'
-import { wasmRuntimeAvailableIn } from '@/utils/wasm'
+import { wasmRuntimeAvailableIn, isWasmRuntime } from '@/utils/wasm'
 import { gpuPayload } from '@/utils/ai'
+import { scaleSchedulePayload } from '@/utils/warmSchedule'
+import { globalCreateFields } from '@/utils/globalProjects'
 
 export function parseEnvVars(raw) {
   if (!raw?.trim()) return undefined
@@ -40,6 +42,11 @@ export function buildConfigPayload(formConfig, serviceType, extras = {}) {
   const scale = c.trigger_type === 'schedule'
     ? { scale_to_zero: true, min_scale: 0, max_scale: 1 }
     : { scale_to_zero: c.scale_to_zero, min_scale: c.min_scale, max_scale: c.max_scale }
+  // Timed warmer (config.scale_schedule): rows while it is on, null turns it off; a CronJob
+  // (schedule trigger) has no Knative Service to keep warm. Forms without the field send nothing.
+  if (c.scale_schedule !== undefined) {
+    scale.scale_schedule = c.trigger_type === 'schedule' ? null : scaleSchedulePayload(c.scale_schedule)
+  }
   // config.gpu: sent when on; null removes the GPU of a project that had one (GpuConfig)
   const gpu = c.gpu?.enabled ? { gpu: gpuPayload(c.gpu) } : (c.gpu?.stored ? { gpu: null } : {})
 
@@ -111,8 +118,9 @@ export function buildCreatePayload(form) {
     base.runtime = form.runtime
     base.runtime_version = form.runtime_version || undefined
   }
-  const payload = { ...base, config: buildConfigPayload(form.config, form.service_type) }
-  if (form.config.trigger_type === 'http' && form.endpoint_type === 'gateway') {
+  // Global project (docs/global-projects.md): placement, mode and the regions, the primary first
+  const payload = { ...base, config: buildConfigPayload(form.config, form.service_type), ...globalCreateFields(form) }
+  if (form.placement !== 'global' && form.config.trigger_type === 'http' && form.endpoint_type === 'gateway') {
     payload.endpoint_type = 'gateway'
     payload.gateway_path = form.gateway_path
     if (form.gateway_methods?.length) payload.gateway_methods = form.gateway_methods
@@ -153,10 +161,17 @@ export function useRuntimeData(form, { includeCurrent = false } = {}) {
   const runtimes = computed(() => {
     const regionId = form.knative_region_id
     const trigger  = form.config?.trigger_type
-    // WebAssembly runtimes only where the region's WebAssembly support has their shim
-    const region = (settingsStore.data.regions ?? []).find(r => r.id === regionId) ?? null
+    // WebAssembly runtimes only where the region's WebAssembly support has their shim — for a
+    // global project in every one of its regions (each builds it: docs/global-projects.md)
+    const all = settingsStore.data.regions ?? []
+    const region = all.find(r => r.id === regionId) ?? null
+    const others = form.placement === 'global'
+      ? (form.region_ids ?? []).filter(id => id !== regionId).map(id => all.find(r => r.id === id) ?? null)
+      : []
     const list = runtimesStore.runtimes
-      .filter(r => (runtimeAvailableIn(r, regionId) && wasmRuntimeAvailableIn(r, region)) || (includeCurrent && r.id === form.runtime))
+      .filter(r => (runtimeAvailableIn(r, regionId) && wasmRuntimeAvailableIn(r, region)
+        && others.every(o => !isWasmRuntime(r) || wasmRuntimeAvailableIn(r, o)))
+        || (includeCurrent && r.id === form.runtime))
     if (includeCurrent && form.runtime && !list.some(r => r.id === form.runtime)) {
       const current = runtimesStore.byId(form.runtime)
       list.push(current ?? { id: form.runtime, name: form.runtime, versions: [], triggers: null })

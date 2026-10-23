@@ -1,7 +1,7 @@
 import { test, expect, type Auth } from './fixtures/test'
 import { ALL_PERMISSIONS, effectivePermissions } from './fixtures/data'
 import { uniqueName, type Seeder } from './helpers/seed'
-import { openProjectTab } from './helpers/ui'
+import { openNavMenu, openProjectTab } from './helpers/ui'
 
 // Roles & permissions (docs/permissions.md): custom roles with the permission matrix, member
 // roles, groups, project access, scoped tokens and the permission-aware console.
@@ -137,13 +137,14 @@ test.describe('Roles and permissions', () => {
     await expect(page.locator('[data-tour="action-buttons"]').getByRole('button', { name: 'Delete' })).toHaveCount(0)
   })
 
-  test('the full catalog of an owner shows every settings tab', async ({ page, auth, mockApi, isStack }) => {
+  test('the full catalog of an owner shows every administration page', async ({ page, auth, mockApi, isStack }) => {
     test.skip(isStack, 'reads the mocked permissions')
     mockApi.db.permissions = effectivePermissions('owner', [...ALL_PERMISSIONS])
     await auth.signIn({ user: { ...mockApi.db.user, is_admin: false } })
-    await page.goto('/settings')
-    for (const tab of ['API Tokens', 'Roles', 'Groups']) {
-      await expect(page.getByRole('button', { name: tab })).toBeVisible()
+    await page.goto('/projects')
+    const admin = await openNavMenu(page, 'admin')
+    for (const link of ['tokens', 'roles', 'groups', 'users', 'audit-log']) {
+      await expect(admin.getByTestId(`nav-link-${link}`)).toBeVisible()
     }
   })
 })

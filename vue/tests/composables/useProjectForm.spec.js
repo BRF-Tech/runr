@@ -128,6 +128,43 @@ describe('buildConfigPayload', () => {
   it('lets extras override computed fields', () => {
     expect(buildConfigPayload(formConfig(), 'faas', { min_scale: 9 }).min_scale).toBe(9)
   })
+
+  // #627: scale to zero keeps its max — the form's max_scale is sent as it is
+  it('sends the max of a scale-to-zero project', () => {
+    const payload = buildConfigPayload(formConfig({ scale_to_zero: true, min_scale: 0, max_scale: 20 }), 'caas')
+    expect(payload).toMatchObject({ scale_to_zero: true, min_scale: 0, max_scale: 20 })
+  })
+
+  describe('timed warmer (scale_schedule)', () => {
+    const rows = [{ cron: ' 0  9 * * 1-5', min_scale: '3' }, { cron: '0 18 * * 1-5', min_scale: 0 }]
+
+    it('sends the rows trimmed, with whole counts', () => {
+      expect(buildConfigPayload(formConfig({ scale_schedule: rows }), 'faas').scale_schedule)
+        .toEqual([{ cron: '0 9 * * 1-5', min_scale: 3 }, { cron: '0 18 * * 1-5', min_scale: 0 }])
+    })
+
+    it('sends null when it is off or has no rows', () => {
+      expect(buildConfigPayload(formConfig({ scale_schedule: null }), 'xaas').scale_schedule).toBeNull()
+      expect(buildConfigPayload(formConfig({ scale_schedule: [] }), 'caas').scale_schedule).toBeNull()
+    })
+
+    it('turns it off for schedule triggers (a CronJob has nothing to keep warm)', () => {
+      const payload = buildConfigPayload(formConfig({ trigger_type: 'schedule', schedule: '0 * * * *', scale_schedule: rows }), 'faas')
+      expect(payload.scale_schedule).toBeNull()
+    })
+
+    it('leaves the field out for forms without it', () => {
+      expect(buildConfigPayload(formConfig(), 'faas')).not.toHaveProperty('scale_schedule')
+    })
+
+    it('reaches the create payload', () => {
+      const payload = buildCreatePayload({
+        name: 'warm', service_type: 'caas', description: '', knative_region_id: 'r1',
+        config: formConfig({ scale_schedule: rows }),
+      })
+      expect(payload.config.scale_schedule).toHaveLength(2)
+    })
+  })
 })
 
 describe('buildCreatePayload', () => {

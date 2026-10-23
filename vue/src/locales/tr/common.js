@@ -37,18 +37,6 @@ export default {
     daySaturday:    'Cumartesi',
   },
 
-  nav: {
-    logout:         'Çıkış',
-    signedInAs:     'Giriş yapıldı',
-    settings:       'Ayarlar',
-    administration: 'Yönetim',
-    userSettings:   'Kullanıcı Ayarları',
-    support:        'Destek',
-    themeDark:      'Koyu',
-    themeFullDark:  'Tam Koyu',
-    themeLight:     'Açık',
-  },
-
   auth: {
     appName:             'RunR',
     usernamePlaceholder: 'admin',
@@ -61,6 +49,7 @@ export default {
     tenantUser:          'Tenant Kullanıcısı',
     tenantUserDesc:      'Bir tenant üyesi; erişimi rollerine göre belirlenir',
     email:               'E-posta',
+    loginIdentifier:     'E-posta veya kullanıcı adı',
     tenancy:             'Tenancy',
     loginTitle:          'Hesabınıza Giriş Yapın',
     loginSubtitle:       'Kimlik bilgilerinizi girerek hesabınıza güvenli şekilde erişin.',

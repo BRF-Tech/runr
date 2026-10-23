@@ -67,3 +67,33 @@ describe('RegionSelector with data residency', () => {
     expect(button(w, 'frankfurt').attributes('disabled')).toBeUndefined()
   })
 })
+
+// The cached policy belongs to one sign-in and organization (an organization switch re-mounts the
+// views with a new moduleRegistry.viewKey); an answer for a cache reset meanwhile is dropped
+describe('data residency cache', () => {
+  it('reads the policy again for another organization', async () => {
+    const { moduleRegistry } = await import('@/modules/index')
+    supplyChainApi.residency.mockResolvedValueOnce({ data: { data: { restricted: true, allowed_region_ids: ['r-ist'] } } })
+    const residency = useResidency()
+    await residency.load()
+    expect(residency.isAllowed('r-fra')).toBe(false)
+
+    moduleRegistry.viewKey++
+    supplyChainApi.residency.mockResolvedValueOnce({ data: { data: { restricted: false } } })
+    await residency.load()
+    expect(supplyChainApi.residency).toHaveBeenCalledTimes(2)
+    expect(residency.isAllowed('r-fra')).toBe(true)
+  })
+
+  it('drops an answer that arrives after a reset', async () => {
+    let answer
+    supplyChainApi.residency.mockReturnValueOnce(new Promise((resolve) => { answer = resolve }))
+    const residency = useResidency()
+    const loading = residency.load()
+    residency.reset()
+    answer({ data: { data: { restricted: true, allowed_region_ids: [] } } })
+    await loading
+    expect(residency.residency.value).toBe(null)
+    expect(residency.isAllowed('r-ist')).toBe(true)
+  })
+})

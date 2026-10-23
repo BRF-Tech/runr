@@ -8,7 +8,8 @@ import { useConfirm } from '@/composables/useConfirm'
 import GitProviderModal from '@/components/git/GitProviderModal.vue'
 import TermText from '@/components/TermText.vue'
 
-// Settings → Git providers: the GitHub App, GitLab and Forgejo/Gitea instances projects deploy from
+// Data & Integrations → Git providers: the GitHub App, GitLab and Forgejo/Gitea instances projects
+// deploy from
 const { t } = useI18n()
 const toast = useToast()
 const { confirm } = useConfirm()

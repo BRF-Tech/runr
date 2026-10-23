@@ -6,6 +6,7 @@ import { rbacApi } from '@/api/rbac'
 import { useRbacLabels } from '@/composables/useRbac'
 import { useConfirm } from '@/composables/useConfirm'
 import { useToast } from '@/composables/useToast'
+import { useLatest } from '@/composables/useLatest'
 import { useTutorialStore } from '@/stores/tutorial'
 import { createTutorial } from '@/composables/useTutorial'
 import { UserPlus, X, RefreshCw, Mail, CheckCircle, AlertTriangle, Send, ShieldCheck, ShieldOff } from 'lucide-vue-next'
@@ -81,8 +82,13 @@ function openAddUser() {
   showForm.value = true
 }
 
+// The hint of the address typed last: a lookup of an earlier address is dropped
+const latestSearch = useLatest()
+
 function onEmailInput() {
   clearTimeout(searchTimer)
+  latestSearch.cancel()
+  searching.value = false
   searchResult.value = null
   formError.value = null
   const email = form.value.email.trim()
@@ -91,14 +97,15 @@ function onEmailInput() {
 }
 
 async function searchEmail(email) {
+  const current = latestSearch.begin()
   searching.value = true
   try {
     const { data } = await tenantsApi.searchEmail(props.tenantId, email)
-    searchResult.value = data
+    if (current()) searchResult.value = data
   } catch {
-    searchResult.value = null
+    if (current()) searchResult.value = null
   } finally {
-    searching.value = false
+    if (current()) searching.value = false
   }
 }
 

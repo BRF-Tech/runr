@@ -22,6 +22,8 @@ const loading = ref(false)
 const saving = ref(false)
 const testing = ref(false)
 const error = ref(null)
+// Events being redelivered: a double click would send the event to the invoicing system twice
+const redelivering = ref(new Set())
 
 const canManage = computed(() => can('billing.manage'))
 
@@ -42,6 +44,15 @@ async function load() {
   }
 }
 onMounted(load)
+
+// The event log alone: a test or a redelivery must not reset a webhook URL being edited
+async function loadEvents() {
+  try {
+    const { data } = await billingApi.events({ order: 'desc', limit: 20 })
+    events.value = data?.data ?? []
+    webhookConfigured.value = !!data?.meta?.webhook_configured
+  } catch { /* the log keeps what it showed */ }
+}
 
 async function save() {
   saving.value = true
@@ -67,7 +78,7 @@ async function test() {
     const { data } = await billingApi.testEvent()
     if (data?.delivered === false) toast.error(t('billing.webhook.testFailed'))
     else toast.success(t('billing.webhook.testSent'))
-    await load()
+    await loadEvents()
   } catch (e) {
     toast.error(apiMessage(e, t('common.error')))
   } finally {
@@ -76,12 +87,18 @@ async function test() {
 }
 
 async function redeliver(event) {
+  if (redelivering.value.has(event.id)) return
+  redelivering.value = new Set([...redelivering.value, event.id])
   try {
     await billingApi.redeliver(event.id)
     toast.success(t('billing.webhook.redelivered'))
-    await load()
+    await loadEvents()
   } catch (e) {
     toast.error(apiMessage(e, t('common.error')))
+  } finally {
+    const next = new Set(redelivering.value)
+    next.delete(event.id)
+    redelivering.value = next
   }
 }
 
@@ -149,7 +166,7 @@ defineExpose({ load, save, test, redeliver, url, secret })
                   <div v-if="e.delivery?.last_error" class="text-[10px] text-red-400 mt-0.5">{{ e.delivery.last_error }}</div>
                 </td>
                 <td class="px-3 py-2 text-right">
-                  <button v-if="canManage && webhookConfigured" type="button" class="btn-secondary text-xs" :data-test="`event-redeliver-${e.id}`" @click="redeliver(e)">{{ t('billing.webhook.redeliver') }}</button>
+                  <button v-if="canManage && webhookConfigured" type="button" class="btn-secondary text-xs" :data-test="`event-redeliver-${e.id}`" :disabled="redelivering.has(e.id)" @click="redeliver(e)">{{ t('billing.webhook.redeliver') }}</button>
                 </td>
               </tr>
             </tbody>

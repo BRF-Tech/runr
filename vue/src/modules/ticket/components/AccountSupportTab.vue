@@ -12,6 +12,7 @@ import { fetchTickets, fetchTicketStats, fetchAdminTickets, fetchAdminTicketStat
 import { useTicketListRealtime } from '../composables/useTicketRealtime'
 import CreateTicketModal from './CreateTicketModal.vue'
 import TicketDetailModal from './TicketDetailModal.vue'
+import { useLatest } from '@/composables/useLatest'
 
 const { t }  = useI18n()
 const auth   = useAuthStore()
@@ -62,30 +63,36 @@ function formatDate(iso) {
   return new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
 }
 
-async function load() {
-  loading.value = true
+// Filters, search, pages and the reloads a new ticket's broadcast starts overtake each other:
+// the list of the newest request is shown
+const latest = useLatest()
+
+async function fetchList() {
+  const current = latest.begin()
   const params = { page: page.value }
   if (filter.value) params.status = filter.value
   if (search.value.trim()) params.search = search.value.trim()
   const [ticketRes, statsRes] = isStaff.value
     ? await Promise.all([fetchAdminTickets(params), fetchAdminTicketStats()])
     : await Promise.all([fetchTickets(params), fetchTicketStats()])
+  if (!current()) return false
   tickets.value = ticketRes.data.data || []
   totalPages.value = ticketRes.data.last_page || 1
   stats.value = statsRes.data
-  loading.value = false
+  return true
+}
+
+async function load() {
+  loading.value = true
+  try {
+    await fetchList()
+  } catch { /* the list keeps what it showed */ } finally {
+    loading.value = false
+  }
 }
 
 async function silentLoad() {
-  const params = { page: page.value }
-  if (filter.value) params.status = filter.value
-  if (search.value.trim()) params.search = search.value.trim()
-  const [ticketRes, statsRes] = isStaff.value
-    ? await Promise.all([fetchAdminTickets(params), fetchAdminTicketStats()])
-    : await Promise.all([fetchTickets(params), fetchTicketStats()])
-  tickets.value = ticketRes.data.data || []
-  totalPages.value = ticketRes.data.last_page || 1
-  stats.value = statsRes.data
+  try { await fetchList() } catch { /* the next broadcast or reload tries again */ }
 }
 
 function onFilter(status) { filter.value = filter.value === status ? '' : status; page.value = 1; load() }

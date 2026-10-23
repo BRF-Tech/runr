@@ -1,7 +1,9 @@
 <script setup>
 import { useI18n } from 'vue-i18n'
-import { ArrowDownToLine, ArrowUpDown, Minus, Plus } from 'lucide-vue-next'
+import { ArrowDownToLine, ArrowUpDown, Clock, Minus, Plus } from 'lucide-vue-next'
 import TermText from '@/components/TermText.vue'
+import WarmerSchedule from '@/components/project/WarmerSchedule.vue'
+import { defaultWarmerRows } from '@/utils/warmSchedule'
 
 const { t } = useI18n()
 
@@ -9,14 +11,27 @@ const props = defineProps({
   scaleToZero: { type: Boolean, default: true },
   minScale:    { type: Number, default: 0 },
   maxScale:    { type: Number, default: 1 },
+  // Highest max_scale the API takes (projects 1000, model services 100)
+  maxLimit:    { type: Number, default: 1000 },
+  // Timed warmer (projects only): config.scale_schedule rows, null = off. Shown with `warmer`.
+  warmer:        { type: Boolean, default: false },
+  scaleSchedule: { type: Array, default: null },
+  // What the warmer's preview needs: the region, the size and the trigger of the project
+  regionId:    { type: String, default: null },
+  cpu:         { type: [Number, String], default: null },
+  memoryMb:    { type: Number, default: null },
+  triggerType: { type: String, default: 'http' },
+  warmScale:   { type: Object, default: null },
 })
 
-const emit = defineEmits(['update:scaleToZero', 'update:minScale', 'update:maxScale'])
+const emit = defineEmits(['update:scaleToZero', 'update:minScale', 'update:maxScale', 'update:scaleSchedule'])
 
+// Scale to zero keeps its max: a project with no traffic has no pod, one with traffic may burst
+// up to max_scale pods
 function selectZero() {
   emit('update:scaleToZero', true)
   emit('update:minScale', 0)
-  emit('update:maxScale', 1)
+  emit('update:maxScale', props.maxScale >= 1 ? props.maxScale : 1)
 }
 
 function selectCustom() {
@@ -32,9 +47,13 @@ function adjustMin(delta) {
 }
 
 function adjustMax(delta) {
-  const v = Math.max(1, Math.min(1000, props.maxScale + delta))
+  const v = Math.max(1, Math.min(props.maxLimit, props.maxScale + delta))
   emit('update:maxScale', v)
   if (v < props.minScale) emit('update:minScale', v)
+}
+
+function toggleWarmer() {
+  emit('update:scaleSchedule', props.scaleSchedule ? null : defaultWarmerRows(props.maxScale))
 }
 </script>
 
@@ -84,9 +103,9 @@ function adjustMax(delta) {
       </button>
     </div>
 
-    <!-- Min / Max inputs (Custom Scale only) -->
-    <div v-if="!scaleToZero" class="grid grid-cols-2 gap-3 mt-4">
-      <div>
+    <!-- Min (Custom Scale, unless the warmer replaces it) / Max (both modes) -->
+    <div class="grid grid-cols-2 gap-3 mt-4">
+      <div v-if="!scaleToZero && !scaleSchedule">
         <label class="label"><TermText path="create.fields.minScale" /></label>
         <div class="flex items-center gap-1">
           <button
@@ -101,6 +120,7 @@ function adjustMax(delta) {
             min="1"
             max="10"
             required
+            data-testid="scale-min"
             @input="$emit('update:minScale', +$event.target.value)"
           />
           <button
@@ -109,6 +129,9 @@ function adjustMax(delta) {
             @click="adjustMin(1)"
           ><Plus class="w-3.5 h-3.5" /></button>
         </div>
+      </div>
+      <div v-else-if="!scaleToZero" class="self-end">
+        <p class="text-[11px] text-gray-400 leading-snug" data-testid="scale-min-replaced">{{ t('warmer.replacesMin') }}</p>
       </div>
       <div>
         <label class="label">{{ t('create.fields.maxScale') }}</label>
@@ -123,8 +146,9 @@ function adjustMax(delta) {
             type="number"
             class="input font-mono text-center flex-1"
             min="1"
-            max="1000"
+            :max="maxLimit"
             required
+            data-testid="scale-max"
             @input="$emit('update:maxScale', +$event.target.value)"
           />
           <button
@@ -134,6 +158,45 @@ function adjustMax(delta) {
           ><Plus class="w-3.5 h-3.5" /></button>
         </div>
       </div>
+      <p v-if="scaleToZero" class="self-end text-[11px] text-gray-400 leading-snug" data-testid="scale-zero-burst">
+        {{ t('create.fields.scaleZeroBurst', { max: maxScale }, maxScale) }}
+      </p>
+    </div>
+
+    <!-- Advanced: timed warmer (config.scale_schedule) -->
+    <div v-if="warmer" class="mt-4 pt-4 border-t border-gray-800/60">
+      <div class="flex items-start gap-3">
+        <button
+          type="button"
+          role="switch"
+          :aria-checked="!!scaleSchedule"
+          :aria-label="t('warmer.toggle')"
+          class="relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors mt-0.5"
+          :class="scaleSchedule ? 'bg-brand-500' : 'bg-gray-700'"
+          data-testid="warmer-toggle"
+          @click="toggleWarmer"
+        >
+          <span class="pointer-events-none inline-block h-5 w-5 rounded-full bg-white shadow-sm transition" :class="scaleSchedule ? 'translate-x-5' : 'translate-x-0'" />
+        </button>
+        <div class="min-w-0">
+          <p class="text-sm text-gray-100 flex items-center gap-1.5"><Clock class="w-3.5 h-3.5 text-gray-400" />{{ t('warmer.toggle') }}</p>
+          <p class="text-[11px] text-gray-400 leading-snug">{{ t('warmer.toggleDesc') }}</p>
+        </div>
+      </div>
+
+      <WarmerSchedule
+        v-if="scaleSchedule"
+        class="mt-3"
+        :rows="scaleSchedule"
+        :max-scale="maxScale"
+        :scale-to-zero="scaleToZero"
+        :region-id="regionId"
+        :cpu="cpu"
+        :memory-mb="memoryMb"
+        :trigger-type="triggerType"
+        :warm-scale="warmScale"
+        @update:rows="$emit('update:scaleSchedule', $event)"
+      />
     </div>
   </section>
 </template>

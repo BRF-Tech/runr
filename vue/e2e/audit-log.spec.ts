@@ -1,8 +1,9 @@
 import { test, expect } from './fixtures/test'
 import type { MockApi } from './fixtures/mock-api'
 import { effectivePermissions } from './fixtures/data'
+import { openNavMenu } from './helpers/ui'
 
-// Settings → Audit log (docs/security.md): filters, detail drawer, export, retention.
+// Administration → Audit log (docs/security.md): filters, detail drawer, export, retention.
 
 const EVENTS = [
   {
@@ -110,10 +111,15 @@ test.describe('Audit log', () => {
 
   test('the tab follows the audit.view permission', async ({ page, auth, mockApi, isStack }) => {
     test.skip(isStack, 'needs a member without audit.view')
-    mockApi.on('GET', '/auth/permissions', () => ({ body: effectivePermissions('developer', ['projects.view', 'env.view', 'members.view']) }))
+    // a member with API tokens (tokens.manage) but without audit.view
+    mockApi.on('GET', '/auth/permissions', () => ({ body: effectivePermissions('developer', ['projects.view', 'env.view', 'members.view', 'tokens.manage']) }))
     await auth.signIn({ user: { id: 9, name: 'Dev', email: 'dev@example.test', username: 'dev', is_admin: false } })
     await page.goto('/settings')
-    await expect(page.getByRole('button', { name: 'Platform' })).toBeVisible()
-    await expect(page.getByRole('button', { name: 'Audit log' })).toHaveCount(0)
+    const admin = await openNavMenu(page, 'admin')
+    await expect(admin.getByTestId('nav-link-tokens')).toBeVisible()
+    await expect(admin.getByTestId('nav-link-audit-log')).toHaveCount(0)
+    // the page itself shows nothing without the permission
+    await page.goto('/settings?tab=audit-log')
+    await expect(page.getByTestId('audit-log')).toHaveCount(0)
   })
 })

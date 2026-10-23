@@ -1,4 +1,6 @@
 import { test, expect, type Page, type Route } from '@playwright/test'
+import { confirmDialog, navigateTo } from './helpers/ui'
+import { settle } from './helpers/timing'
 
 /**
  * AI on RunR in the UI — self-contained: every /api/* call is answered by an in-memory fake of
@@ -102,6 +104,24 @@ class FakeApi {
   gpuInstalls: Json[] = []
   projectCreates: Json[] = []
   bindCreates: Json[] = []
+  /** The next GET /model-services answer is held (read at once, delivered at release()). */
+  private servicesHold: { arrive: () => void, gate: Promise<void> } | null = null
+
+  holdNextServicesList(): { arrived: Promise<void>, release: () => void } {
+    let release!: () => void
+    let arrive!: () => void
+    const gate = new Promise<void>((resolve) => { release = resolve })
+    const arrived = new Promise<void>((resolve) => { arrive = resolve })
+    this.servicesHold = { arrive, gate }
+    return { arrived, release }
+  }
+
+  /** A model service in the fake (see service()), with `overrides`. */
+  addService(name: string, overrides: Json = {}): Json {
+    const s = { ...this.service({ name, knative_region_id: 'r1', device: 'cpu', mode: 'online', cpu: '1', memory_mb: 2048, min_scale: 0, max_scale: 1, scale_to_zero: true, timeout_seconds: 300 }), ...overrides }
+    this.services.push(s)
+    return s
+  }
 
   async install(page: Page) {
     await page.route((url) => url.pathname.startsWith('/api/'), (route) => this.handle(route))
@@ -169,7 +189,20 @@ class FakeApi {
     if (path === '/models/hub/info') return this.json(route, HUB_INFO)
     if (path === '/models' && method === 'GET') return this.json(route, { data: [], abilities: { view: true, deploy: true, manage: true } })
     if (path === '/model-services' && method === 'GET') {
-      return this.json(route, { data: this.services, abilities: { view: true, deploy: true, manage: true } })
+      const answer = { data: JSON.parse(JSON.stringify(this.services)), abilities: { view: true, deploy: true, manage: true } }
+      const hold = this.servicesHold
+      if (hold) {
+        this.servicesHold = null
+        hold.arrive()
+        await hold.gate
+      }
+      return this.json(route, answer)
+    }
+    if ((m = path.match(/^\/model-services\/([^/]+)\/stop$/)) && method === 'POST') {
+      const s = this.services.find(x => x.id === m![1])
+      if (!s) return this.json(route, { message: 'Not found' }, 404)
+      Object.assign(s, { status: 'stopped', status_message: null })
+      return this.json(route, { data: s })
     }
     if (path === '/model-services' && method === 'POST') {
       this.serviceCreates.push(body)
@@ -242,9 +275,9 @@ test('one-click Hugging Face model: browse, deploy, playground, bind to a projec
   const api = new FakeApi()
   await api.install(page)
 
-  // Browse the Hub from the header navigation
+  // Browse the Hub from the main menu (Build & Run → Models)
   await page.goto('/projects')
-  await page.getByTestId('nav-models').click()
+  await navigateTo(page, 'build', 'models')
   await expect(page.getByTestId('hub-browser')).toBeVisible()
   await page.getByTestId('hub-search').fill('minilm')
   await page.getByTestId('hub-search-submit').click()
@@ -356,4 +389,29 @@ test('a GPU CaaS project: count, GPU type and the longer default timeout', async
     name: 'gpu-infer', service_type: 'caas', knative_region_id: 'r1',
     config: { image: 'ghcr.io/acme/torch-infer:1.0', timeout_seconds: 300, gpu: { count: 1, type: PRODUCT } },
   })
+})
+
+// The models page polls the services every 5 s while one deploys. A poll that was read before a
+// stop answers after it: the stopped service must not show as ready again.
+test('model services: a poll read before a stop does not undo it', async ({ page }) => {
+  const api = new FakeApi()
+  api.addService('minilm', { id: 'ms1', status: 'ready', status_message: null })
+  api.addService('qwen-chat', { id: 'ms2', service_name: 'm-qwen-chat', status: 'deploying' }) // keeps the page polling
+  await api.install(page)
+
+  await page.goto('/models?tab=services&service=ms1')
+  const detail = page.getByTestId('service-detail')
+  await expect(detail.getByTestId('service-status')).toHaveText('Ready')
+
+  const poll = api.holdNextServicesList()
+  await poll.arrived                                   // read now: ms1 still ready
+  await detail.getByTestId('service-stop').click()
+  await confirmDialog(page, 'Stop')
+  await expect(detail.getByTestId('service-status')).toHaveText('Stopped')
+
+  const late = page.waitForResponse(r => new URL(r.url()).pathname === '/api/model-services' && r.request().method() === 'GET')
+  poll.release()
+  await late
+  await settle(page)
+  await expect(detail.getByTestId('service-status')).toHaveText('Stopped')
 })

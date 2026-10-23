@@ -1,9 +1,11 @@
 <script setup>
 // The project's Billing tab (GET /projects/{id}/billing): this month's estimate, past bills with the
 // payment link and paid status, and — in a fixed-price region — the approved resources, a pending
-// request and the request form with its monthly price. Open to the project owner (who pays),
+// request and the request form with its monthly price; in a pay-as-you-go region the monthly cost
+// limit (CostLimitCard: never for a fixed-price project). Open to the project owner (who pays),
 // projects.billing on the project and billing.view; the real usage cost next to a fixed price only
-// for billing.view holders.
+// for billing.view holders. A resume from the cost limit hands the project back to the page
+// (project-changed).
 import { computed, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Lock } from 'lucide-vue-next'
@@ -11,11 +13,13 @@ import { useToast } from '@/composables/useToast'
 import { billingApi } from '../api/billing'
 import { apiMessage, formatDate, formatMoney, gb, vcpu } from '../utils/billing'
 import BillRow from './BillRow.vue'
+import CostLimitCard from './CostLimitCard.vue'
 import FixedRequestForm from './FixedRequestForm.vue'
 
 const props = defineProps({
   project: { type: Object, required: true },
 })
+const emit = defineEmits(['project-changed'])
 const { t, locale } = useI18n()
 const toast = useToast()
 
@@ -29,6 +33,8 @@ const currency = computed(() => info.value?.currency || 'USD')
 const fixed = computed(() => info.value?.billing_type === 'fixed')
 const allocation = computed(() => info.value?.allocation ?? null)
 const pending = computed(() => info.value?.pending_request ?? null)
+// Pay-as-you-go projects only (the API reports available: false for a fixed-price project)
+const costLimit = computed(() => (!fixed.value && info.value?.cost_limit?.available ? info.value.cost_limit : null))
 
 async function load() {
   loading.value = true
@@ -63,6 +69,16 @@ async function cancel() {
   } finally {
     cancelling.value = false
   }
+}
+
+function onCostLimitChanged(status) {
+  if (info.value && status) info.value = { ...info.value, cost_limit: status }
+}
+
+// Resumed from its cost limit: the page's project (stop banner, header) follows
+function onCostLimitResumed(data) {
+  onCostLimitChanged(data?.data ?? null)
+  emit('project-changed', data?.project ?? null)
 }
 
 async function onSubmitted() {
@@ -123,6 +139,9 @@ defineExpose({ load, cancel })
         </div>
         <FixedRequestForm v-if="info.can_request" :project-id="project.id" :allocation="allocation" :currency="currency" @submitted="onSubmitted" />
       </template>
+
+      <!-- Pay as you go: the monthly cost limit -->
+      <CostLimitCard v-if="costLimit" :project-id="project.id" :status="costLimit" @changed="onCostLimitChanged" @resumed="onCostLimitResumed" />
 
       <!-- This month -->
       <section class="space-y-2">

@@ -12,7 +12,8 @@
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "test:e2e": "playwright test --project=stack",
-    "test:e2e:mock": "playwright test --project=mock --project=mock-modules"
+    "test:e2e:mock": "playwright test --project=mock --project=mock-modules",
+    "test:e2e:create-flows": "playwright test --project=stack create-flows"
   },
   "dependencies": {
     "@guolao/vue-monaco-editor": "^1.6.0",
@@ -20,6 +21,7 @@
     "@xterm/addon-fit": "^0.10.0",
     "@xterm/xterm": "^5.5.0",
     "axios": "^1.7",
+    "cronstrue": "3.30.0",
     "driver.js": "^1.4.0",
     "flag-icons": "^7.5.0",
     "laravel-echo": "^2.3.1",

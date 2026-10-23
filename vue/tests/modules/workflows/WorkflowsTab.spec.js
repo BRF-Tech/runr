@@ -38,8 +38,8 @@ const definitions = [
 ]
 
 let pinia
-function mountTab(project = { id: 'p1', service_type: 'caas', config: { trigger_type: 'workflow' } }) {
-  return mount(WorkflowsTab, { props: { project }, global: { plugins: [makeI18n(), pinia] } })
+function mountTab(project = { id: 'p1', service_type: 'caas', config: { trigger_type: 'workflow' } }, environment = null) {
+  return mount(WorkflowsTab, { props: { project, environment }, global: { plugins: [makeI18n(), pinia] } })
 }
 
 describe('WorkflowsTab', () => {
@@ -54,7 +54,7 @@ describe('WorkflowsTab', () => {
     const w = mountTab()
     await flushPromises()
 
-    expect(workflowsApi.list).toHaveBeenCalledWith('p1')
+    expect(workflowsApi.list).toHaveBeenCalledWith('p1', null)
     const cards = w.findAll('[data-workflow]')
     expect(cards.map((c) => c.attributes('data-workflow'))).toEqual(['orders', 'cleanup'])
     expect(cards[0].text()).toContain('order.created')
@@ -87,7 +87,7 @@ describe('WorkflowsTab', () => {
 
     await w.find('[data-test="toggle-orders"]').trigger('click')
     await flushPromises()
-    expect(workflowsApi.setActive).toHaveBeenCalledWith('p1', 'orders', false)
+    expect(workflowsApi.setActive).toHaveBeenCalledWith('p1', 'orders', false, null)
     expect(w.find('[data-workflow="orders"]').text()).toContain('Paused')
   })
 
@@ -105,7 +105,7 @@ describe('WorkflowsTab', () => {
     await w.find('[data-test="start-run-modal"] form').trigger('submit')
     await flushPromises()
 
-    expect(workflowsApi.startRun).toHaveBeenCalledWith('p1', 'orders', { data: { order_id: 9 }, test: true })
+    expect(workflowsApi.startRun).toHaveBeenCalledWith('p1', 'orders', { data: { order_id: 9 }, test: true }, null)
     expect(w.find('[data-test="start-run-modal"]').exists()).toBe(false)
     expect(w.find('[data-test="run-detail"]').exists()).toBe(true)
     expect(replace).toHaveBeenCalledWith(expect.objectContaining({ query: { run: '01JNEWRUN' } }))
@@ -135,7 +135,7 @@ describe('WorkflowsTab', () => {
     await w.find('[data-test="sync-button"]').trigger('click')
     await flushPromises()
 
-    expect(workflowsApi.sync).toHaveBeenCalledWith('p1')
+    expect(workflowsApi.sync).toHaveBeenCalledWith('p1', null)
     expect(w.findAll('[data-workflow]')).toHaveLength(2)
     expect(w.find('[data-test="sync-status"]').text()).toBe('Synced')
   })
@@ -162,6 +162,31 @@ describe('WorkflowsTab', () => {
 
     expect(w.find('[data-test="start-orders"]').exists()).toBe(true)
     expect(w.find('[data-test="toggle-orders"]').exists()).toBe(false)
+  })
+
+  it('works on the environment the project page selected', async () => {
+    workflowsApi.list.mockResolvedValue({ data: { data: definitions, app: app() } })
+    workflowsApi.setActive.mockResolvedValue({ data: { data: { ...definitions[0], is_active: false } } })
+    workflowsApi.sync.mockResolvedValue({ data: { data: definitions, app: app() } })
+    const w = mountTab(undefined, 'staging')
+    await flushPromises()
+
+    // definitions, runs, changes and the app of staging's own workflow app
+    expect(workflowsApi.list).toHaveBeenCalledWith('p1', 'staging')
+    expect(workflowsApi.runs).toHaveBeenCalledWith('p1', expect.any(Object), 'staging')
+    await w.find('[data-test="toggle-orders"]').trigger('click')
+    await flushPromises()
+    expect(workflowsApi.setActive).toHaveBeenCalledWith('p1', 'orders', false, 'staging')
+    await w.find('[data-test="sync-button"]').trigger('click')
+    await flushPromises()
+    expect(workflowsApi.sync).toHaveBeenCalledWith('p1', 'staging')
+
+    // the switcher goes back to production: production's workflows load
+    workflowsApi.list.mockClear()
+    await w.setProps({ environment: null })
+    await flushPromises()
+    expect(workflowsApi.list).toHaveBeenCalledWith('p1', null)
+    expect(workflowsApi.runs).toHaveBeenLastCalledWith('p1', expect.any(Object), null)
   })
 
   it('shows sync errors', async () => {

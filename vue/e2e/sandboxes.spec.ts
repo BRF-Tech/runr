@@ -291,7 +291,7 @@ test('creates a sandbox, works with its files and code, extends and kills it', a
   await expect(page.locator(`[data-sandbox-row="${id}"]`)).toContainText('deleted')
 })
 
-test('Settings → Sandboxes saves a region and adds a warm pool', async ({ page }) => {
+test('Build & Run → Sandbox settings saves a region and adds a warm pool', async ({ page }) => {
   const api = new FakeApi()
   await api.install(page)
 

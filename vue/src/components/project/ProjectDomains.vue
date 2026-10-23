@@ -2,10 +2,12 @@
 import { ref, computed, onMounted, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { projectsApi } from '@/api/projects'
+import { saveBlob } from '@/modules/supply-chain/api'
 import { useToast } from '@/composables/useToast'
 import { useConfirm } from '@/composables/useConfirm'
 import DomainTlsModal from '@/components/project/DomainTlsModal.vue'
 import { usePermissionsStore } from '@/stores/permissions'
+import { useSettingsStore } from '@/stores/settings'
 import {
   Globe, Copy, Check, ExternalLink, Lock, Trash2, RefreshCw,
   ChevronDown, ChevronRight, Plus, AlertTriangle, ShieldCheck,
@@ -20,6 +22,7 @@ const canManage = computed(() => usePermissionsStore().can('domains.manage', Str
 const { t } = useI18n()
 const toast = useToast()
 const { confirm } = useConfirm()
+const settingsStore = useSettingsStore()
 
 // ── State ────────────────────────────────────────────────────────────────────
 const domains    = ref([])
@@ -39,6 +42,27 @@ const tlsDomain = ref(null)
 const copiedKey = ref(null)
 
 const eligible = computed(() => !!meta.value && meta.value.eligible !== false)
+
+// meta.cert_manager: the certificate new domains get (cert-manager where the region issues them),
+// or why the region cannot issue them yet and what to do
+const certManagerNote = computed(() => {
+  const c = meta.value?.cert_manager
+  if (!c) return null
+  if (!c.available) return c.reason ? t('project.domains.certManagerMissing', { reason: c.reason }) : null
+  if (c.default_mode !== 'cert-manager') return null
+  const kind = c.kind === 'acme' ? t('project.domains.certManagerKindAcme')
+    : c.kind === 'ca' ? t('project.domains.certManagerKindCa')
+      : t('project.domains.certManagerKindOwn', { issuer: c.issuer })
+  return t('project.domains.certManagerDefault', { kind })
+})
+
+async function downloadCa() {
+  try {
+    saveBlob(await projectsApi.domainsCaCertificate(props.projectId), 'runr-region-ca.crt')
+  } catch (e) {
+    toast.error(e.response?.status === 404 ? t('project.domains.caMissing') : (e.response?.data?.message ?? e.message))
+  }
+}
 
 // ── Loading ──────────────────────────────────────────────────────────────────
 async function load({ silent = false } = {}) {
@@ -117,7 +141,7 @@ function expiryInfo(d) {
 }
 
 function dnsSections(d) {
-  return [
+  const sections = [
     {
       key:   'txt',
       title: t('project.domains.ownershipTitle'),
@@ -127,10 +151,34 @@ function dnsSections(d) {
     {
       key:   'route',
       title: t('project.domains.routingTitle'),
-      hint:  t('project.domains.routingHint'),
+      hint:  d.regions ? t('project.domains.globalRoutingHint') : t('project.domains.routingHint'),
       rows:  d.dns_targets ?? [],
     },
   ]
+  // A global project's domain (docs/global-projects.md, "Custom domains"): every region issues its
+  // certificate through the global zone, following this CNAME
+  if (d.acme_challenge) {
+    sections.push({
+      key:   'acme',
+      title: t('project.domains.acmeTitle'),
+      hint:  t('project.domains.acmeHint'),
+      rows:  [d.acme_challenge],
+    })
+  }
+  return sections
+}
+
+// A global project's domain in each region: region name, state, why it is not active / issued
+function regionStates(d) {
+  if (!d.regions || typeof d.regions !== 'object') return []
+  const names = Object.fromEntries((settingsStore.data.regions ?? []).map(r => [r.id, r.name]))
+  return Object.entries(d.regions).map(([id, state]) => ({
+    id,
+    name:    names[id] ?? id,
+    status:  state?.status ?? 'pending',
+    message: state?.message ?? null,
+    expires: state?.tls_expires_at ?? null,
+  }))
 }
 
 async function copy(text, key) {
@@ -297,6 +345,17 @@ function onTlsSaved({ domain, message }) {
         </div>
       </form>
 
+      <!-- Automatic certificates: what new domains get, or why the region cannot issue them -->
+      <div v-if="eligible && certManagerNote" class="flex items-center justify-between gap-3 max-w-xl" data-testid="domains-cert-manager">
+        <p class="flex items-start gap-1.5 text-xs text-gray-400 leading-relaxed">
+          <ShieldCheck class="w-3.5 h-3.5 mt-0.5 shrink-0" :class="meta.cert_manager.available ? 'text-emerald-400' : 'text-gray-500'" />
+          <span>{{ certManagerNote }}</span>
+        </p>
+        <button v-if="meta.cert_manager.ca_download" type="button" class="btn-secondary text-xs shrink-0" data-testid="domains-download-ca" @click="downloadCa">
+          {{ t('project.domains.tls.downloadCa') }}
+        </button>
+      </div>
+
       <p v-if="loadError" class="text-xs text-red-400">{{ loadError }}</p>
 
       <!-- Empty -->
@@ -362,6 +421,20 @@ function onTlsSaved({ domain, message }) {
             <div v-if="notices[d.id]" class="flex items-start gap-2 bg-red-900/20 border border-red-800/40 rounded-md px-3 py-2">
               <AlertTriangle class="w-3.5 h-3.5 text-red-400 mt-0.5 shrink-0" />
               <p class="text-xs text-red-400 leading-relaxed">{{ notices[d.id] }}</p>
+            </div>
+            <!-- a global project: the domain in each region -->
+            <div v-if="regionStates(d).length" class="flex flex-wrap gap-1.5" data-testid="domain-regions">
+              <span
+                v-for="r in regionStates(d)" :key="r.id"
+                class="inline-flex items-center gap-1 px-2 py-0.5 rounded-sm text-[10px] border"
+                :class="r.status === 'active' && !r.message ? 'bg-emerald-900/30 border-emerald-800/50 text-emerald-400'
+                  : r.status === 'error' ? 'bg-red-900/30 border-red-800/50 text-red-400' : 'bg-gray-800 border-gray-700 text-gray-400'"
+                :title="r.message ?? (r.expires ? t('project.domains.tlsExpires', { date: fmtDate(r.expires) }) : '')"
+                :data-domain-region="r.name"
+              >
+                <span class="font-mono">{{ r.name }}</span>
+                <span>{{ t(`project.domains.status.${r.status}`, r.status) }}</span>
+              </span>
             </div>
             <p class="flex items-start gap-1.5 text-xs text-gray-400 leading-relaxed">
               <Lock class="w-3 h-3 mt-0.5 shrink-0" />
@@ -435,6 +508,7 @@ function onTlsSaved({ domain, message }) {
       :project-id="projectId"
       :domain="tlsDomain"
       :cert-manager-issuer="meta?.cert_manager_issuer ?? null"
+      :cert-manager="meta?.cert_manager ?? null"
       @saved="onTlsSaved"
       @updated="upsert"
       @close="tlsDomain = null"

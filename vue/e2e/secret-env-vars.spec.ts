@@ -34,8 +34,12 @@ function mockSecrets(mockApi: MockApi, projectId: string, canViewValues = false)
 }
 
 test.describe('Secret environment variables', () => {
-  test.beforeEach(async ({ seed }) => {
-    test.skip(!(await seed.readyRegion()), 'the stack has no ready region to seed a project in')
+  test.beforeEach(async ({ seed, isStack }) => {
+    const region = await seed.readyRegion()
+    test.skip(!region, 'the stack has no ready region to seed a project in')
+    // pass-through (docs/security.md): the values live in the region's cluster, which the demo
+    // region has not — the console refuses them there
+    test.skip(isStack && !!region?.is_demo, 'the stack has only the demo region: secret values need a region with a cluster')
   })
 
   test('adds a secret write-only, replaces it and removes it', async ({ page, auth, seed, mockApi, isStack }) => {

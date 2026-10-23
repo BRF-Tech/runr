@@ -18,6 +18,9 @@ export function useSettingsPage() {
   const registrationEnabled  = ref(true)
   const gpuDemoEnabled       = ref(false)
   const customRuntimesEnabled = ref(false)
+  // projects may allow callers of other organizations (internal network; platform admins outside a tenant)
+  const internalCrossTenantGrants = ref(true)
+  const canSwitchCrossTenant = computed(() => moduleRegistry.isCentralAdminFn?.() === true)
   const totalCpuM            = ref(0)
   const totalMemoryMb        = ref(0)
   const regions              = ref([])
@@ -37,6 +40,7 @@ export function useSettingsPage() {
       registrationEnabled.value = data.registration_enabled ?? true
       gpuDemoEnabled.value      = data.gpu_demo_enabled     ?? false
       customRuntimesEnabled.value = data.custom_runtimes_enabled ?? false
+      internalCrossTenantGrants.value = data.internal_cross_tenant_grants ?? true
       totalCpuM.value           = data.total_cpu_m          ?? 0
       totalMemoryMb.value       = data.total_memory_mb      ?? 0
       regions.value             = data.regions              ?? []
@@ -63,11 +67,13 @@ export function useSettingsPage() {
       payload.gpu_demo_enabled = gpuDemoEnabled.value
       // Allowing custom runtimes is a runtime-management decision (runtimes.manage)
       if (runtimes.canManage) payload.custom_runtimes_enabled = customRuntimesEnabled.value
+      if (canSwitchCrossTenant.value) payload.internal_cross_tenant_grants = internalCrossTenantGrants.value
       const { data } = await settingsApi.update(payload)
       baseDomain.value          = data.base_domain          ?? ''
       registrationEnabled.value = data.registration_enabled ?? true
       gpuDemoEnabled.value      = data.gpu_demo_enabled     ?? false
       customRuntimesEnabled.value = data.custom_runtimes_enabled ?? false
+      internalCrossTenantGrants.value = data.internal_cross_tenant_grants ?? true
       totalCpuM.value           = data.total_cpu_m          ?? 0
       totalMemoryMb.value       = data.total_memory_mb      ?? 0
       regions.value             = data.regions              ?? []
@@ -156,6 +162,7 @@ export function useSettingsPage() {
 
   return {
     baseDomain, registrationEnabled, gpuDemoEnabled, customRuntimesEnabled, totalCpuM, totalMemoryMb, regions, demoStatus,
+    internalCrossTenantGrants, canSwitchCrossTenant,
     loading, saving, error, saved, usedCpuM, usedMemoryMb,
     submit, openAdd, openEdit, closeRegionDetail, onRegionSaved,
     deleteRegion, downloadKubeconfig, refreshRegions,

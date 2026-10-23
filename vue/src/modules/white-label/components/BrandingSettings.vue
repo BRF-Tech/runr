@@ -1,5 +1,5 @@
 <script setup>
-// Settings → Branding (platform admin): product name, logos, colours, login page, footer.
+// Administration → Branding (platform admin): product name, logos, colours, login page, footer.
 import { useI18n } from 'vue-i18n'
 import BrandingForm from './BrandingForm.vue'
 

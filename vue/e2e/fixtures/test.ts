@@ -1,7 +1,8 @@
 import { test as base, expect } from '@playwright/test'
 import { MockApi } from './mock-api'
 import { FakeRealtime } from './realtime'
-import { apiLogin, completeTutorial, loadStackSession, loginViaUi, STACK_LOGIN, STACK_PASSWORD, useSession, type Session, type UiLogin } from '../helpers/auth'
+import { Network } from './network'
+import { apiLogin, completeTutorial, loadStackSession, loginViaUi, STACK_LOGIN, STACK_PASSWORD, STACK_USERNAME, useSession, type Session, type UiLogin } from '../helpers/auth'
 import { MockSeeder, StackSeeder, type Seeder } from '../helpers/seed'
 
 /*
@@ -30,6 +31,8 @@ import { MockSeeder, StackSeeder, type Seeder } from '../helpers/seed'
  *   auth      signIn() fast path, loginViaUi(), credentials for the current mode
  *   seed      seed.project(type), seed.readyRegion(): mock rows or real API records,
  *             removed after the test in stack mode
+ *   network   network.hold(method, path): holds API answers until release(), in both modes, to
+ *             put a websocket event / click / navigation between a request and its answer
  * Specs that need the multi-tenant modules carry the @modules tag:
  *   test.describe('Billing', { tag: '@modules' }, () => { ... })
  * Every page starts with the English locale (the app defaults to Turkish).
@@ -43,8 +46,8 @@ export interface E2eOptions {
 }
 
 export interface Auth {
-  /** E-mail/password that the current mode accepts. */
-  credentials: { email: string; password: string }
+  /** E-mail address (login), user name and password of the account the current mode signs in as. */
+  credentials: { login: string; username: string; password: string }
   /** Puts a signed-in session into localStorage before the next navigation. */
   signIn(session?: Partial<Session>): Promise<Session>
   /** Drives the login form (and the 2FA step when `code` is given). */
@@ -54,6 +57,7 @@ export interface Auth {
 interface TestFixtures {
   mockApi: MockApi
   realtime: FakeRealtime
+  network: Network
   auth: Auth
   seed: Seeder
   isStack: boolean
@@ -104,10 +108,17 @@ export const test = base.extend<TestFixtures, WorkerFixtures>({
     const api = new MockApi({ modules })
     await api.install(page)
     await use(api)
+    api.releaseAll()
     if (api.unhandled.length) {
       await testInfo.attach('unhandled-api-calls.txt', { body: [...new Set(api.unhandled)].join('\n'), contentType: 'text/plain' })
     }
   }, { auto: true }],
+
+  network: async ({ page, e2eMode, mockApi }, use) => {
+    const network = new Network(page, e2eMode === 'mock' ? mockApi : null)
+    await use(network)
+    network.releaseAll()
+  },
 
   realtime: [async ({ page, e2eMode }, use) => {
     const rt = new FakeRealtime()
@@ -118,8 +129,8 @@ export const test = base.extend<TestFixtures, WorkerFixtures>({
   auth: async ({ page, e2eMode, mockApi, stackSession }, use) => {
     const isMock = e2eMode === 'mock'
     const credentials = isMock
-      ? { email: mockApi.db.user.email, password: mockApi.db.password }
-      : { email: STACK_LOGIN, password: STACK_PASSWORD }
+      ? { login: mockApi.db.user.email, username: mockApi.db.user.username, password: mockApi.db.password }
+      : { login: STACK_LOGIN, username: STACK_USERNAME, password: STACK_PASSWORD }
     await use({
       credentials,
       async signIn(overrides = {}) {

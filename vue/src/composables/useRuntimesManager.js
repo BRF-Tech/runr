@@ -74,7 +74,12 @@ export function useRuntimesManager() {
   /** After a change: the picker catalog (stores/runtimes) follows. */
   function syncCatalog() { store.refresh() }
 
+  // Runtimes being switched: a double click would send the same state twice (two toasts)
+  const toggling = new Set()
+
   async function toggleEnabled(r) {
+    if (toggling.has(r.id)) return
+    toggling.add(r.id)
     try {
       const { data } = await runtimesApi.update(r.id, { is_enabled: !r.is_enabled })
       replace(data.data ?? { ...r, is_enabled: !r.is_enabled })
@@ -82,6 +87,8 @@ export function useRuntimesManager() {
       syncCatalog()
     } catch (e) {
       toast.error(apiErrorMessage(e, t('common.error')), 5000)
+    } finally {
+      toggling.delete(r.id)
     }
   }
 

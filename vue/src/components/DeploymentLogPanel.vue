@@ -4,6 +4,7 @@ import StatusBadge from '@/components/StatusBadge.vue'
 import LogEpsChart from '@/components/LogEpsChart.vue'
 import LogMetricsBar from '@/components/LogMetricsBar.vue'
 import ShellTerminalModal from '@/components/ShellTerminalModal.vue'
+import RolloutPanel from '@/components/project/RolloutPanel.vue'
 import { useDeploymentLogs, LEVEL_COLORS, LINE_COLORS } from '@/composables/useDeploymentLogs'
 
 const { t, locale } = useI18n()
@@ -11,9 +12,11 @@ const { t, locale } = useI18n()
 const props = defineProps({
   project:    { type: Object, required: true },
   deployment: { type: Object, required: true },
+  // The blue-green / canary rollout this deployment is part of (null: none)
+  rollout:    { type: Object, default: null },
 })
 
-const emit = defineEmits(['close', 'status-changed'])
+const emit = defineEmits(['close', 'status-changed', 'rollout-updated'])
 
 const {
   loading, pods, lines, error, logAreaEl, showCal, calFrom, calTo,
@@ -61,6 +64,16 @@ const {
           </span>
           <button class="text-gray-400 hover:text-gray-100 transition-colors text-sm leading-none" @click="emit('close')">✕</button>
         </div>
+      </div>
+
+      <!-- Rollout (blue-green / canary) of this deployment -->
+      <div v-if="rollout" class="px-4 py-3 border-b border-gray-800 shrink-0 max-h-[45vh] overflow-y-auto">
+        <RolloutPanel
+          compact
+          :project="project"
+          :rollout="rollout"
+          @updated="(next, info) => emit('rollout-updated', next, info)"
+        />
       </div>
 
       <!-- Pod chips -->

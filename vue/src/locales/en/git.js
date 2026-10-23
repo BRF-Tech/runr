@@ -1,4 +1,4 @@
-// Git deploy: project Git tab and Settings → Git providers (docs/git-deploy.md)
+// Git deploy: project Git tab and Data & Integrations → Git providers (docs/git-deploy.md)
 export default {
   gitDeploy: {
     tab:        'Git',
@@ -45,7 +45,7 @@ export default {
       disconnectConfirm:  'Disconnect {repo}? Its webhook and every preview of the project are removed; the project keeps its versions.',
       disconnected:       'Repository disconnected.',
       noProviders:        'No git provider is configured yet.',
-      configureProviders: 'Add a provider in Settings → Git providers',
+      configureProviders: 'Add a provider in Data & Integrations → Git providers',
       notConnected:       'No repository is connected.',
       intro:              'Connect a repository on GitHub, GitLab or Forgejo/Gitea: pushes to the deploy branch deploy, pull requests can get previews.',
       provider:           'Provider',
@@ -161,6 +161,7 @@ export default {
     },
     providers: {
       tab:          'Git providers',
+      navDesc: 'GitHub App, GitLab and Forgejo / Gitea connections',
       title:        'Git providers',
       description:  'GitHub (a GitHub App), GitLab and Forgejo/Gitea instances projects can connect repositories from. Secrets are stored encrypted and never shown again.',
       add:          'Add provider',

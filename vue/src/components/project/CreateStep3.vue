@@ -48,12 +48,14 @@ defineEmits(['next', 'back'])
         <p class="section-title">{{ t('create.sections.container') }}</p>
         <div class="flex gap-3">
           <div class="flex-1">
-            <!-- a registry reference, or an uploaded image of the region (docs/images.md) -->
+            <!-- a registry reference, or an uploaded image of the region (docs/images.md); a global
+                 project's uploaded image is one of its primary's, copied into every region -->
             <UploadedImagePicker
               v-model="form.config.image"
               :region-id="selectedRegion?.id ?? null"
               :placeholder="t('create.placeholders.image')"
             />
+            <p v-if="form.placement === 'global'" class="text-[11px] text-gray-400 mt-1" data-testid="global-image-hint">{{ t('globalProjects.create.imageHint') }}</p>
           </div>
           <div v-if="form.config.trigger_type !== 'schedule'" class="w-28">
             <label class="label">{{ t('create.fields.port') }}</label>
@@ -73,6 +75,9 @@ defineEmits(['next', 'back'])
         v-model:queue-stream="form.config.queue_stream"
         :region="selectedRegion"
       />
+      <!-- A global project: HTTP answers in every region, the other triggers run in the primary
+           (docs/global-projects.md, "Triggers") -->
+      <p v-if="form.placement === 'global'" class="text-xs text-gray-400 leading-relaxed -mt-2" data-testid="global-trigger">{{ t('globalProjects.create.triggersHint') }}</p>
 
       <EndpointTypeSelector
         v-if="form.config.trigger_type === 'http'"

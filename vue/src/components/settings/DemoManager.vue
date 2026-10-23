@@ -21,7 +21,11 @@ const lastDemoAction = ref(
   props.status === 'removing' ? 'remove' : null,
 )
 
-const demoBusy   = computed(() => demoStatus.value === 'seeding' || demoStatus.value === 'removing')
+// A load / remove request in flight: busy at once, so a double click sends one request; demo
+// events while it ran are newer than its answer ("seeding" / "removing")
+const requesting = ref(false)
+let demoEvents = 0
+const demoBusy   = computed(() => requesting.value || demoStatus.value === 'seeding' || demoStatus.value === 'removing')
 const demoLoaded = computed(() => demoStatus.value === 'loaded')
 
 watch(() => props.status, (val) => {
@@ -46,26 +50,38 @@ watch(demoStatus, (val) => {
 // WS event handlers — replace polling
 useJobEvents({
   'demo.seeded': (payload) => {
+    demoEvents++
     demoStatus.value = payload.demo_status ?? 'loaded'
   },
   'demo.removed': (payload) => {
-    if (!payload.region_id) demoStatus.value = payload.demo_status ?? 'idle'
+    if (payload.region_id) return
+    demoEvents++
+    demoStatus.value = payload.demo_status ?? 'idle'
   },
   'demo.seed_failed': (payload) => {
-    if (!payload.region_id) demoStatus.value = payload.demo_status ?? 'error'
+    if (payload.region_id) return
+    demoEvents++
+    demoStatus.value = payload.demo_status ?? 'error'
   },
   'demo.remove_failed': (payload) => {
-    if (!payload.region_id) demoStatus.value = payload.demo_status ?? 'error'
+    if (payload.region_id) return
+    demoEvents++
+    demoStatus.value = payload.demo_status ?? 'error'
   },
 })
 
 async function seedDemo() {
+  if (requesting.value) return
+  requesting.value = true
+  const eventsBefore = demoEvents
   try {
     lastDemoAction.value = 'seed'
     const { data } = await settingsApi.seedDemo()
-    demoStatus.value = data.demo_status ?? 'seeding'
+    if (demoEvents === eventsBefore) demoStatus.value = data.demo_status ?? 'seeding'
   } catch {
     // silent
+  } finally {
+    requesting.value = false
   }
 }
 
@@ -75,13 +91,17 @@ async function removeDemo() {
     message:     t('settings.demo.removeConfirm'),
     destructive: true,
   })
-  if (!ok) return
+  if (!ok || requesting.value) return
+  requesting.value = true
+  const eventsBefore = demoEvents
   try {
     lastDemoAction.value = 'remove'
     const { data } = await settingsApi.removeDemo()
-    demoStatus.value = data.demo_status ?? 'removing'
+    if (demoEvents === eventsBefore) demoStatus.value = data.demo_status ?? 'removing'
   } catch {
     // silent
+  } finally {
+    requesting.value = false
   }
 }
 
@@ -121,6 +141,7 @@ defineExpose({ demoBusy })
         v-if="demoLoaded"
         type="button"
         class="text-xs text-red-500 hover:text-red-400 border border-red-800/50 hover:border-red-600/50 rounded-sm px-2.5 py-1 transition-colors shrink-0 ml-3"
+        :disabled="requesting"
         @click="removeDemo"
       >
         {{ t('settings.demo.removeBtn') }}

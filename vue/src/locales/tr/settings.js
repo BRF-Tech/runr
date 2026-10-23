@@ -12,6 +12,15 @@ export default {
       placeholder:  'runr.example.com',
       example:      'Örnek:',
     },
+    // Kuruluşun saat dilimi (TimezoneCard): zamanlı ön ısıtmanın cron satırları bu dilimde çalışır
+    timezone: {
+      section:     'Saat dilimi',
+      description: 'Kuruluşun saat dilimi. Zamanlı ön ısıtmanın cron satırları ve kendi dilimi olmayan zamanlama tetikleyicileri bu dilimde çalışır (değişikliği hemen izlerler); ayar yoksa {zone} geçerlidir.',
+      label:       'Saat dilimi (IANA adı)',
+      now:         'Oradaki yerel saat: {time}',
+      unknown:     'Bu tarayıcı bu saat dilimini tanımıyor; kaydettiğinizde sunucu kontrol eder.',
+      reset:       '{zone} değerine dön',
+    },
     resources: {
       section: 'Toplam Kaynaklar',
       cpu:     'İşlem Gücü',
@@ -38,6 +47,10 @@ export default {
       statusConfirm_inactive:    'Bu bölgeyi pasife almak istiyor musunuz? Tüm projeler 404 dönecek ve deploy engellenecek.',
       statusConfirm_maintenance: 'Bakım modunu etkinleştirmek istiyor musunuz? Tüm projeler 503 dönecek ve deploy engellenecek.',
       dnsNotConfigured:   'DNS kaydı yapılandırılmadı. Projelerinize erişilemez.',
+      reconcile_running:     'Bölge RunR {version} sürümüne getiriliyor (region:reconcile çalışıyor).',
+      reconcile_unfinished:  'Bölge henüz RunR {version} sürümünde değil: region:reconcile burada tamamlanmadı.',
+      reconcile_unreachable: "region:reconcile bu bölgenin cluster'ına ulaşamadı; bölge olduğu gibi kaldı.",
+      reconcileHint:         "Ayrıntılar runr-region-reconcile-* Job'unun logunda (her yükseltmede bir tane). Gösterilenleri düzeltip php artisan region:reconcile çalıştırın.",
       dnsChecking:        'DNS kontrol ediliyor...',
       dnsResolved:        'DNS kaydı doğrulandı',
       dnsNotResolved:     'DNS kaydı bulunamadı',

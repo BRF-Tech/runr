@@ -2,7 +2,7 @@ import { test, expect } from './fixtures/test'
 import type { Page } from '@playwright/test'
 import type { MockApi } from './fixtures/mock-api'
 import { ALL_PERMISSIONS, effectivePermissions, type Json } from './fixtures/data'
-import { openProjectTab } from './helpers/ui'
+import { openNavMenu, openProjectTab, openUserMenu } from './helpers/ui'
 
 // Billing module (docs/billing.md), mocked API: the operator's bills with payment link and paid
 // status, fixed resource approvals, region billing types and price versions, the project owner's
@@ -220,8 +220,12 @@ test.describe('Billing', { tag: '@modules' }, () => {
     mockApi.on('GET', '/branding', () => ({ body: { product_name: 'RunR', is_default_brand: true, features: { multi_tenant: true, billing: false, tickets: true } } }))
     await auth.signIn()
     await page.goto('/settings')
-    await expect(page.getByRole('heading', { name: 'Settings' })).toBeVisible()
-    await expect(page.getByRole('button', { name: 'Billing', exact: true })).toHaveCount(0)
-    await expect(page.getByRole('button', { name: 'My bills' })).toHaveCount(0)
+    await expect(page.getByTestId('settings-title')).toHaveText('Administration')
+    const admin = await openNavMenu(page, 'admin')
+    await expect(admin.getByTestId('nav-link-tokens')).toBeVisible()
+    await expect(admin.getByTestId('nav-link-billing')).toHaveCount(0)
+    const menu = await openUserMenu(page)
+    await expect(menu.getByTestId('nav-link-account')).toBeVisible()
+    await expect(menu.getByTestId('nav-link-my-bills')).toHaveCount(0)
   })
 })

@@ -1,15 +1,19 @@
 <script setup>
-import { ref, onMounted, onUnmounted, watch, nextTick } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import { useFallbackPolling } from '@/composables/useFallbackPolling'
 import { usePlatformSync } from '@/composables/usePlatformSync'
 import { useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { projectsApi } from '@/api/projects'
+import { rightsizingApi } from '@/api/rightsizing'
+import { money } from '@/utils/rightsizing'
 import { useTutorialStore } from '@/stores/tutorial'
 import { usePermissionsStore } from '@/stores/permissions'
 import { useRuntimesStore } from '@/stores/runtimes'
 import { useProjectsTutorial } from '@/composables/useTutorial'
 import { useProjectsList } from '@/composables/useProjectsList'
+import { useLatest } from '@/composables/useLatest'
+import { createChangeJournal, insertChange } from '@/utils/changeJournal'
 import { runtimeTag, endpointUrl } from '@/utils/projectHelpers'
 import AppHeader from '@/components/AppHeader.vue'
 import ResourceBars from '@/components/ResourceBars.vue'
@@ -19,10 +23,11 @@ import RuntimeFilterDropdown from '@/components/RuntimeFilterDropdown.vue'
 import ScalingFilterDropdown from '@/components/ScalingFilterDropdown.vue'
 import CreateProjectModal from '@/components/CreateProjectModal.vue'
 import EditProjectModal from '@/components/EditProjectModal.vue'
+import RuntimePatchDialog from '@/components/project/RuntimePatchDialog.vue'
 import { moduleRegistry } from '@/modules/index'
-import { Inbox, LayoutGrid } from 'lucide-vue-next'
+import { Gauge, Inbox, LayoutGrid } from 'lucide-vue-next'
 
-const { t }         = useI18n()
+const { t, locale } = useI18n()
 const route         = useRoute()
 const tutorialStore = useTutorialStore()
 const perms         = usePermissionsStore()
@@ -32,6 +37,13 @@ const projects      = ref([])
 const loading       = ref(true)
 const showCreate    = ref(false)
 const editTarget    = ref(null)
+// Runtime patches of a project (badge on its card)
+const patchTarget   = ref(null)
+
+function onPatchesChanged(state) {
+  const p = projects.value.find(x => x.id === patchTarget.value?.id)
+  if (p) p.runtime_patch = state
+}
 
 const {
   filter, searchQuery,
@@ -44,42 +56,80 @@ const {
   settingsStore,
 } = useProjectsList(projects)
 
+// ── Rightsizing: a link to the open recommendations (metrics.view on some project) ──
+const rightsizing = ref(null)
+
+async function loadRightsizing() {
+  if (!perms.canAnywhere('metrics.view')) return
+  try {
+    const { data } = await rightsizingApi.list()
+    rightsizing.value = data?.summary ?? null
+  } catch {
+    rightsizing.value = null   // an API without rightsizing: no link
+  }
+}
+
+const rightsizingCount = computed(() => Number(rightsizing.value?.count ?? 0))
+const rightsizingLabel = computed(() => {
+  const s = rightsizing.value
+  return s?.monthly_savings > 0 && s.currency
+    ? t('rightsizing.linkSaving', { count: s.count, amount: money(s.monthly_savings, s.currency, locale.value) })
+    : t('rightsizing.link', { count: rightsizingCount.value })
+})
+
 // ── Load ─────────────────────────────────────────────────────────────────────
+// The newest list wins. Changes made while a list request is in flight (a project created,
+// changed or deleted here, in another tab or by someone else: the broadcasts) are recorded and
+// applied to its answer, which may have been read before them (usePlatformSync records the
+// broadcasts in the same journal).
+const latest = useLatest()
+const journal = createChangeJournal()
+
+/** Applies a local change to the list and records it for a list request in flight. */
+function change(apply) {
+  projects.value = apply(projects.value)
+  journal.record(apply)
+}
+
 async function load() {
+  const current = latest.begin()
+  const since = journal.mark()
   loading.value = true
   // Runtime catalog: names and icons of custom runtimes on the cards and in the filter
   runtimesStore.fetch()
+  loadRightsizing()
   try {
     const [projectsRes] = await Promise.all([
       projectsApi.list(),
       settingsStore.loaded ? Promise.resolve() : settingsStore.fetch(),
     ])
-    projects.value = projectsRes.data.data ?? projectsRes.data
+    if (current()) projects.value = journal.replay(projectsRes.data.data ?? projectsRes.data, since)
   } finally {
-    loading.value = false
+    if (current()) loading.value = false
   }
 }
 
 async function silentRefresh() {
   if (tutorialStore.tutorialActive) return
+  const current = latest.begin()
+  const since = journal.mark()
   const [projectsRes] = await Promise.all([
     projectsApi.list(),
     settingsStore.fetch(),
   ])
-  projects.value = projectsRes.data.data ?? projectsRes.data
+  if (!current()) return
+  projects.value = journal.replay(projectsRes.data.data ?? projectsRes.data, since)
+  loading.value = false // it may have overtaken the first load
 }
 
 function onCreated(project) {
   showCreate.value = false
   perms.load() // a creator without organization-wide access gets the Admin role on the project
-  if (!projects.value.some(p => p.id === project.id)) {
-    projects.value.unshift(project)
-  }
+  change(insertChange(project))
 }
 
 function onUpdated(updated) {
-  const idx = projects.value.findIndex((p) => p.id === updated.id)
-  if (idx !== -1) projects.value[idx] = updated
+  change((list) => list.map(p => (p.id === updated.id ? updated : p)))
   editTarget.value = null
 }
 
@@ -87,10 +137,15 @@ function saveScroll() {
   sessionStorage.setItem('projects-scroll', String(window.scrollY))
 }
 
+// The page may be left while the first load runs: nothing below may start after that (listeners
+// that are never removed, the projects tour over another page)
+let unmounted = false
+
 onMounted(async () => {
-  await load()
   document.addEventListener('click', closeDropdowns)
   window.addEventListener('beforeunload', saveScroll)
+  await load()
+  if (unmounted) return
   if (route.hash) {
     nextTick(() => document.querySelector(route.hash)?.scrollIntoView({ behavior: 'smooth', block: 'center' }))
   } else {
@@ -106,6 +161,7 @@ onMounted(async () => {
 })
 
 onUnmounted(() => {
+  unmounted = true
   document.removeEventListener('click', closeDropdowns)
   window.removeEventListener('beforeunload', saveScroll)
 })
@@ -115,7 +171,7 @@ watch(() => tutorialStore.restartCounter, () => {
 })
 
 useFallbackPolling(silentRefresh, 90000)
-usePlatformSync({ projects, refetch: silentRefresh })
+usePlatformSync({ projects, refetch: silentRefresh, journals: { projects: journal } })
 </script>
 
 <template>
@@ -133,6 +189,12 @@ usePlatformSync({ projects, refetch: silentRefresh })
             class="ml-1 px-2 py-0.5 rounded-md text-xs font-mono font-medium text-white"
             style="background:rgb(var(--brand-600))"
           >{{ projects.length }}</span>
+          <RouterLink
+            v-if="rightsizingCount > 0"
+            to="/rightsizing"
+            class="ml-1 inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-xs text-sky-300 bg-sky-950/40 border border-sky-900/60 hover:text-sky-200"
+            data-testid="rightsizing-link"
+          ><Gauge class="w-3.5 h-3.5" />{{ rightsizingLabel }}</RouterLink>
         </div>
 
         <div class="flex items-center gap-3">
@@ -250,6 +312,7 @@ usePlatformSync({ projects, refetch: silentRefresh })
           :runtime-tag="runtimeTag(project)"
           :runtime-eol="project.runtime_eol"
           @edit="editTarget = $event"
+          @patches="patchTarget = $event"
         />
       </div>
     </main>
@@ -261,6 +324,13 @@ usePlatformSync({ projects, refetch: silentRefresh })
       :project="editTarget"
       @updated="onUpdated"
       @close="editTarget = null"
+    />
+
+    <RuntimePatchDialog
+      v-if="patchTarget"
+      :project="patchTarget"
+      @changed="onPatchesChanged"
+      @close="patchTarget = null"
     />
   </div>
 </template>

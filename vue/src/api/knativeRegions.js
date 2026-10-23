@@ -28,6 +28,12 @@ export const knativeRegionsApi = {
   updateCapacity:     (id, d)  => client.put(`/knative-regions/${id}/capacity`, d),
   updateFunctionTls:  (id, d)  => client.put(`/knative-regions/${id}/function-tls`, d),
 
+  // cert-manager and the ClusterIssuer of project custom domains (docs/regions.md#cert-manager)
+  certManager:          (id, params) => client.get(`/knative-regions/${id}/cert-manager`, { params }),
+  installCertManager:   (id)     => client.post(`/knative-regions/${id}/cert-manager`),
+  removeCertManager:    (id)     => client.delete(`/knative-regions/${id}/cert-manager`),
+  certManagerCa:        (id)     => client.get(`/knative-regions/${id}/cert-manager/ca-certificate`, { responseType: 'blob' }),
+
   // Redis management
   testRedis:          (id, d)  => client.post(`/knative-regions/${id}/test-redis`, d),
   configureRedis:     (id, d)  => client.post(`/knative-regions/${id}/redis`, d),

@@ -41,15 +41,18 @@ const priorityChipActive = {
   critical: 'bg-red-900/30 text-red-300 border-red-700/50',
 }
 
+// Suggestions for the subject typed last: an answer for an earlier subject is dropped
 watch(() => form.value.subject, (val) => {
   clearTimeout(suggestTimer)
-  if (val.trim().length < 5) { suggestions.value = []; showSuggestions.value = false; return }
+  const subject = val.trim()
+  if (subject.length < 5) { suggestions.value = []; showSuggestions.value = false; return }
   suggestTimer = setTimeout(async () => {
     try {
-      const { data } = await fetchTicketSuggestions(val.trim())
+      const { data } = await fetchTicketSuggestions(subject)
+      if (form.value.subject.trim() !== subject) return
       suggestions.value = data || []
       showSuggestions.value = suggestions.value.length > 0
-    } catch { suggestions.value = [] }
+    } catch { if (form.value.subject.trim() === subject) suggestions.value = [] }
   }, 500)
 })
 

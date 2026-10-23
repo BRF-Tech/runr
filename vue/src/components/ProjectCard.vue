@@ -8,9 +8,12 @@ import { moduleRegistry } from '@/modules/index'
 import TypeBadge from '@/components/TypeBadge.vue'
 import McpServerBadge from '@/components/McpServerBadge.vue'
 import RuntimeIcon from '@/components/RuntimeIcon.vue'
+import RuntimePatchBadge from '@/components/project/RuntimePatchBadge.vue'
 import { runtimeLabel } from '@/utils/runtimes'
 import { isLegacyServiceType } from '@/utils/projectHelpers'
-import { ExternalLink, Globe, Clock, Zap, Cpu, MemoryStick, Timer, ArrowUpDown, User2 } from 'lucide-vue-next'
+import { patchBadge } from '@/utils/runtimePatches'
+import { isGlobalProject } from '@/utils/globalProjects'
+import { ExternalLink, Globe, Earth, Clock, Zap, Cpu, MemoryStick, Timer, ArrowUpDown, User2 } from 'lucide-vue-next'
 
 const { t } = useI18n()
 const router = useRouter()
@@ -32,14 +35,22 @@ const eolWeeksLeft = computed(() => {
   return Math.ceil(diffDays / 7)
 })
 const isSunsetting = computed(() => eolWeeksLeft.value !== null && eolWeeksLeft.value <= 13)
+// Global project (docs/global-projects.md): served from several regions on its global host name
+const isGlobal = computed(() => isGlobalProject(props.project))
+const globalRegionNames = computed(() => (props.project.global?.regions ?? []).map(r => r.region_name).join(', '))
+
+// Runtime patch state (docs/runtimes.md#runtime-patches): a badge next to the EOL ones
+const hasPatchBadge = computed(() => !!patchBadge(props.project.runtime_patch))
+const patchOverdue = computed(() => props.project.runtime_patch?.state === 'overdue')
 
 const cardClass = computed(() => {
-  if (isEol.value) return 'border-red-900/50 bg-red-950/20'
+  if (isEol.value || patchOverdue.value) return 'border-red-900/50 bg-red-950/20'
   if (isSunsetting.value) return 'border-yellow-900/50 bg-yellow-950/20'
   return ''
 })
 
-defineEmits(['edit'])
+// patches: the runtime patch badge was clicked (the projects page opens the dialog)
+defineEmits(['edit', 'patches'])
 </script>
 
 <template>
@@ -49,16 +60,22 @@ defineEmits(['edit'])
     :class="cardClass"
     @click="router.push({ path: `/projects/${project.id}`, state: { fromSlug: project.slug } })"
   >
-    <!-- Header -->
-    <div class="flex items-start justify-between gap-2">
-      <div class="min-w-0">
+    <!-- Header: the badges go under the name and wrap when a narrow card has no room beside it -->
+    <div class="flex flex-wrap items-start justify-between gap-x-2 gap-y-1.5">
+      <div class="min-w-0 max-w-full">
         <h2 class="font-medium text-gray-100 truncate group-hover:text-brand-400 transition-colors">
           {{ project.name }}
         </h2>
       </div>
-      <div class="flex items-center gap-1.5 shrink-0">
+      <div class="flex flex-wrap items-center gap-1.5">
         <TypeBadge :type="project.service_type" />
         <McpServerBadge :server="project.mcp_server" />
+        <span
+          v-if="isGlobal"
+          class="inline-flex items-center gap-1 text-xs font-medium rounded-md border px-2.5 py-1 bg-sky-900/30 border-sky-800/50 text-sky-300"
+          :title="globalRegionNames"
+          data-test="project-card-global"
+        ><Earth class="w-3 h-3" />{{ t('globalProjects.badge') }}</span>
         <span
           v-if="regionName"
           class="inline-flex items-center text-xs font-mono font-medium rounded-md border px-2.5 py-1"
@@ -125,7 +142,7 @@ defineEmits(['edit'])
     </div>
 
     <!-- Runtime + EOL tags -->
-    <div v-if="project.runtime || runtimeTag || isEol || isSunsetting" class="flex items-center gap-1.5">
+    <div v-if="project.runtime || runtimeTag || isEol || isSunsetting || hasPatchBadge" class="flex items-center gap-1.5">
       <span
         v-if="project.runtime"
         class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md border border-gray-700/60 bg-gray-800/40 font-mono text-xs text-gray-100"
@@ -134,23 +151,26 @@ defineEmits(['edit'])
         v-if="runtimeTag && project.service_type === 'caas'"
         class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md border border-gray-700/60 bg-gray-800/40 font-mono text-xs text-gray-100"
       ><RuntimeIcon runtime="docker" :size="14" />{{ runtimeTag }}</span>
-      <span
-        v-if="isEol"
-        class="ml-auto text-[11px] font-medium px-2 py-0.5 rounded-md bg-red-900/40 border border-red-800/50 text-red-400 leading-none"
-      >{{ t('projects.eol') }}</span>
-      <span
-        v-else-if="isSunsetting"
-        class="ml-auto text-[11px] font-medium px-2 py-0.5 rounded-md bg-yellow-900/40 border border-yellow-800/50 text-yellow-400 leading-none"
-        :title="runtimeEol"
-      >{{ t('projects.eolWeeks', { weeks: eolWeeksLeft }) }}</span>
+      <span v-if="isEol || isSunsetting || hasPatchBadge" class="ml-auto flex items-center gap-1.5">
+        <RuntimePatchBadge :state="project.runtime_patch" size="sm" @open="$emit('patches', project)" />
+        <span
+          v-if="isEol"
+          class="text-[11px] font-medium px-2 py-0.5 rounded-md bg-red-900/40 border border-red-800/50 text-red-400 leading-none"
+        >{{ t('projects.eol') }}</span>
+        <span
+          v-else-if="isSunsetting"
+          class="text-[11px] font-medium px-2 py-0.5 rounded-md bg-yellow-900/40 border border-yellow-800/50 text-yellow-400 leading-none"
+          :title="`${t('projects.sunsetting')}: ${runtimeEol}`"
+        >{{ t('projects.eolWeeks', { weeks: eolWeeksLeft }) }}</span>
+      </span>
     </div>
 
     <!-- Resource chips + creator + version -->
-    <div class="flex items-center justify-between text-xs text-gray-400">
+    <div class="flex items-center justify-between gap-2 text-xs text-gray-400">
       <div class="flex items-center gap-2 min-w-0">
         <div
           v-if="project.config?.cpu || project.config?.memory_mb || project.config?.timeout_seconds"
-          class="inline-flex items-center gap-2 px-2.5 py-1 rounded-md border border-gray-700/60 bg-gray-800/40 font-mono text-gray-100"
+          class="inline-flex shrink-0 items-center gap-2 whitespace-nowrap px-2.5 py-1 rounded-md border border-gray-700/60 bg-gray-800/40 font-mono text-gray-100"
         >
           <span v-if="project.config?.cpu" class="flex items-center gap-0.5"><Cpu class="w-3 h-3 text-gray-400" />{{ project.config.cpu }}</span>
           <span v-if="project.config?.cpu && project.config?.memory_mb" class="text-gray-400">·</span>
@@ -158,12 +178,12 @@ defineEmits(['edit'])
           <span v-if="project.config?.timeout_seconds" class="text-gray-400">·</span>
           <span v-if="project.config?.timeout_seconds" class="flex items-center gap-0.5"><Timer class="w-3 h-3 text-gray-400" />{{ project.config.timeout_seconds }}s</span>
         </div>
-        <span v-if="project.created_by?.name" class="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-md border border-gray-700/60 bg-gray-800/40 text-gray-300 truncate">
-          <User2 class="w-3 h-3 shrink-0 text-gray-400" />{{ project.created_by.name }}
+        <span v-if="project.created_by?.name" :title="project.created_by.name" class="inline-flex min-w-0 items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-md border border-gray-700/60 bg-gray-800/40 text-gray-300">
+          <User2 class="w-3 h-3 shrink-0 text-gray-400" /><span class="truncate">{{ project.created_by.name }}</span>
         </span>
       </div>
       <!-- Version badges -->
-      <div v-if="project.latest_deployment || project.latest_version" class="flex items-center gap-1 font-mono">
+      <div v-if="project.latest_deployment || project.latest_version" class="flex shrink-0 items-center gap-1 font-mono">
         <template v-if="project.latest_deployment?.version">
           <span
             v-if="['pending','running'].includes(project.latest_deployment.status)"

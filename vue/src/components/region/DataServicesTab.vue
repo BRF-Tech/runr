@@ -12,6 +12,7 @@ import { useToast } from '@/composables/useToast'
 import { statusBadgeClass } from '@/utils/formatters'
 import { bindingStatusClass } from '@/utils/bindings'
 import { KeyRound, HardDrive, Database, RefreshCw, AlertTriangle, Activity } from 'lucide-vue-next'
+import { useLatest } from '@/composables/useLatest'
 
 const props = defineProps({
   regionId: { type: String, required: true },
@@ -76,21 +77,28 @@ function syncForms() {
   }
 }
 
+// The newest state wins (an action's reload, the poll, a live check); a load that ends after
+// the tab is gone arms no more polls
+const latest = useLatest()
 async function load(live = false) {
+  const current = latest.begin()
   if (!state.value) loading.value = true
   if (live) checking.value = true
   try {
     const { data } = await bindingsApi.dataServices(props.regionId, live)
+    if (!current()) return
     const first = !state.value
     state.value = data?.data ?? null
     apiManage.value = data?.abilities?.manage !== false
     if (first) syncForms()
   } catch {
+    if (!current()) return
     if (!state.value) state.value = null
   } finally {
-    loading.value = false
-    checking.value = false
+    if (current()) loading.value = false
+    if (current()) checking.value = false
   }
+  if (!current()) return
   clearTimeout(pollTimer)
   if (Object.values(services.value).some(s => ['installing', 'uninstalling'].includes(s?.status))) {
     pollTimer = setTimeout(() => load(), 3000)

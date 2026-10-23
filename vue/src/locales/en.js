@@ -13,13 +13,22 @@ import wasmLocale from './en/wasm'
 import rbac from './en/rbac'
 import bindingsLocale from './en/bindings'
 import workflowsLocale from './en/workflows'
+import triggersLocale from './en/triggers'
 import aiLocale from './en/ai'
 import gitDeploy from './en/git'
 import mcpLocale from './en/mcp'
+import networkLocale from './en/network'
+import runtimePatchesLocale from './en/runtimePatches'
+import deployStrategyLocale from './en/deployStrategy'
+import rightsizingLocale from './en/rightsizing'
+import navLocale from './en/nav'
+import environmentsLocale from './en/environments'
+import globalProjectsLocale from './en/globalProjects'
 
 export default {
   ...common,
   ...workflowsLocale,
+  ...triggersLocale,
   ...gitDeploy,
   ...projects,
   ...projectForms,
@@ -35,6 +44,15 @@ export default {
   ai: { ...aiProjects.ai, ...aiLocale.ai },
   ...bindingsLocale,
   ...mcpLocale,
+  ...networkLocale,
+  ...runtimePatchesLocale,
+  // deploy strategies (blue-green, canary) and their rollouts
+  ...deployStrategyLocale,
+  ...rightsizingLocale,
+  ...navLocale,
+  ...environmentsLocale,
+  // Global projects and their global DNS (docs/global-projects.md)
+  ...globalProjectsLocale,
   settings: {
     ...settings.settings,
     ...regionDetail.settings,
@@ -110,7 +128,9 @@ export default {
     avgRps:        'Avg RPS',
     totalSessions: 'Total Sessions',
     cpuCores:      'CPU (cores)',
-    memoryMb:      'Memory (MB)',
+    memoryMb:      'Memory (MiB)',
+    unitCores:     'cores',
+    sessionUsage:  '{cpu} vCPU·h, {memory} GiB·h at the deployment\'s size',
     rps:           'Requests/sec',
     noData:        'No metric data for this period',
     history:       'Metrics History',

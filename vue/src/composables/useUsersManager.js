@@ -4,6 +4,7 @@ import { usersApi } from '@/api/users'
 import { rbacApi } from '@/api/rbac'
 import { useConfirm } from '@/composables/useConfirm'
 import { useToast } from '@/composables/useToast'
+import { useLatest } from '@/composables/useLatest'
 
 export function useUsersManager() {
   const { t } = useI18n()
@@ -26,14 +27,18 @@ export function useUsersManager() {
   const currentUserId = JSON.parse(localStorage.getItem('user') || '{}')?.id
   let searchTimer = null
 
+  // The users of the search typed last; never throws (a failed reload after a saved change is
+  // not that change's error)
+  const latest = useLatest()
   async function loadUsers() {
+    const current = latest.begin()
     loading.value = true
     try {
       const params = search.value.trim() ? { search: search.value.trim() } : {}
       const { data } = await usersApi.list(params)
-      users.value = data.users ?? []
-    } finally {
-      loading.value = false
+      if (current()) users.value = data.users ?? []
+    } catch { /* the list keeps what it showed */ } finally {
+      if (current()) loading.value = false
     }
   }
 
@@ -89,11 +94,13 @@ export function useUsersManager() {
   async function submitEdit(user) {
     editSaving.value = true
     editError.value  = null
+    // What was sent: the form may hold another user's values when the answer arrives
+    const sent = { ...editForm.value }
     try {
-      await usersApi.update(user.id, editForm.value)
-      user.name  = editForm.value.name
-      user.email = editForm.value.email
-      editingId.value = null
+      await usersApi.update(user.id, sent)
+      user.name  = sent.name
+      user.email = sent.email
+      if (editingId.value === user.id) editingId.value = null
       toast.success(t('users.updated'))
     } catch (e) {
       editError.value = e.response?.data?.message

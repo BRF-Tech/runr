@@ -6,6 +6,7 @@ import { Search, Lock, Download, Heart } from 'lucide-vue-next'
 import { aiApi } from '@/api/ai'
 import { useAiStore } from '@/stores/ai'
 import { formatCount, HUB_LIBRARIES as LIBRARIES } from '@/utils/ai'
+import { useLatest } from '@/composables/useLatest'
 
 const { t } = useI18n()
 const ai = useAiStore()
@@ -22,7 +23,11 @@ const error     = ref(null)
 
 const taskOptions = computed(() => ai.tasks.map(tk => tk.task))
 
+// The results of the query sent last: an older query's results (or its next page) arriving
+// after a filter change are dropped
+const latest = useLatest()
 async function search({ more = false } = {}) {
+  const current = latest.begin()
   loading.value = true
   error.value   = null
   try {
@@ -32,17 +37,19 @@ async function search({ more = false } = {}) {
     if (filters.library) params.library = filters.library
     if (more && nextCursor.value) params.cursor = nextCursor.value
     const { data } = await aiApi.hubSearch(params)
+    if (!current()) return
     const items = data?.data ?? []
     results.value = more ? [...results.value, ...items] : items
     nextCursor.value = data?.next_cursor ?? null
     offline.value = null
   } catch (e) {
+    if (!current()) return
     if (e?.response?.status === 503) offline.value = e.response.data?.message ?? t('ai.hub.offline')
     else error.value = e?.response?.data?.message ?? t('common.error')
     if (!more) results.value = []
   } finally {
-    loading.value = false
-    searched.value = true
+    if (current()) loading.value = false
+    if (current()) searched.value = true
   }
 }
 

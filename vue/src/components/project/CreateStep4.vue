@@ -40,6 +40,7 @@ const plainEnvNames = computed(() => Object.keys(parseEnvVars(props.form.config.
         :max-timeout="maxTimeout"
       />
 
+      <!-- a global project's GPUs are admitted in every one of its regions (docs/global-projects.md) -->
       <GpuConfig
         v-model="form.config.gpu"
         v-model:timeout-seconds="form.config.timeout_seconds"
@@ -58,6 +59,12 @@ const plainEnvNames = computed(() => Object.keys(parseEnvVars(props.form.config.
         v-model:scale-to-zero="form.config.scale_to_zero"
         v-model:min-scale="form.config.min_scale"
         v-model:max-scale="form.config.max_scale"
+        v-model:scale-schedule="form.config.scale_schedule"
+        warmer
+        :region-id="form.knative_region_id"
+        :cpu="form.config.cpu"
+        :memory-mb="form.config.memory_mb"
+        :trigger-type="form.config.trigger_type"
       />
 
       <EnvVarsEditor v-model="form.config.env_vars" />

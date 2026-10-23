@@ -26,7 +26,7 @@ describe('observability module plugin', () => {
   it('registers the project tabs, settings tabs, public routes and messages', () => {
     const registry = install()
 
-    expect(registry.projectTabs.map((t) => t.id)).toEqual(['traces', 'replay', 'uptime'])
+    expect(registry.projectTabs.map((t) => t.id)).toEqual(['traces', 'replay', 'uptime', 'load-test'])
     expect(registry.settingsTabs.map((t) => t.key)).toEqual(['alerts', 'status-page', 'tracing'])
     expect(router.addRoute).toHaveBeenCalledWith(expect.objectContaining({ path: '/status/:slug', meta: { public: true } }))
     expect(router.addRoute).toHaveBeenCalledWith(expect.objectContaining({ path: '/status', meta: { public: true } }))
@@ -36,7 +36,7 @@ describe('observability module plugin', () => {
 
   it('shows tabs by permission and project type', () => {
     const registry = install()
-    const [traces, replay, uptime] = registry.projectTabs
+    const [traces, replay, uptime, loadTest] = registry.projectTabs
 
     expect(traces.visibleIf({ id: 'p1', service_type: 'maas' })).toBe(false)
 
@@ -45,6 +45,10 @@ describe('observability module plugin', () => {
     expect(traces.visibleIf({ id: 'p2', service_type: 'xaas' })).toBe(true)
     expect(replay.visibleIf({ id: 'p2', service_type: 'faas' })).toBe(true)
     expect(uptime.visibleIf({ id: 'p1', service_type: 'caas' })).toBe(true)
+    // load tests: HTTP projects only
+    expect(loadTest.visibleIf({ id: 'p1', service_type: 'xaas', config: { trigger_type: 'http' } })).toBe(true)
+    expect(loadTest.visibleIf({ id: 'p1', service_type: 'xaas', config: { trigger_type: 'queue' } })).toBe(false)
+    expect(loadTest.visibleIf({ id: 'p1', service_type: 'maas', config: { trigger_type: 'http' } })).toBe(false)
 
     const visible = registry.settingsTabs.filter((t) => t.visibleIf()).map((t) => t.key)
     expect(visible).toEqual([])

@@ -2,6 +2,7 @@ import { test, expect } from './fixtures/test'
 import type { Page } from '@playwright/test'
 import type { MockApi } from './fixtures/mock-api'
 import { ALL_PERMISSIONS, effectivePermissions, type Json } from './fixtures/data'
+import { openNavMenu } from './helpers/ui'
 
 // White-label console: branding (login page, header, admin editor), self-service signup with
 // e-mail verification, and — multi-tenant (@modules) — the onboarding wizard. Plans are gone
@@ -207,11 +208,11 @@ test.describe('White-label branding and signup', () => {
     mockApi.db.user = { ...mockApi.db.user, is_admin: false }
     mockApi.db.permissions = effectivePermissions('developer', ['projects.view', 'branding.manage'])
     await auth.signIn()
-    await page.goto('/settings')
+    await page.goto('/projects')
 
-    await expect(page.getByRole('heading', { name: 'Settings' })).toBeVisible()
-    await expect(page.getByRole('button', { name: 'Branding' })).toBeVisible()
-    await expect(page.getByRole('button', { name: 'Signup' })).toHaveCount(0)
+    const admin = await openNavMenu(page, 'admin')
+    await expect(admin.getByTestId('nav-link-branding')).toBeVisible()
+    await expect(admin.getByTestId('nav-link-signup')).toHaveCount(0)
   })
 })
 

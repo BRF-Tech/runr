@@ -5,7 +5,7 @@ import { ExternalLink, Globe } from 'lucide-vue-next'
 import { useToast } from '@/composables/useToast'
 import { observabilityApi } from '../api/observability'
 
-/** Settings → Status page: address, visibility, texts and which uptime checks it shows. */
+/** Observability → Status page: address, visibility, texts and which uptime checks it shows. */
 const { t } = useI18n()
 const toast = useToast()
 

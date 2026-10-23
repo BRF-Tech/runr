@@ -50,8 +50,12 @@ async function load() {
   loading.value = true
   try {
     const { data } = await sandboxAdminApi.pools()
+    // A size typed into another pool's row (not saved yet) stays: creating a pool reloads the list
+    const before = Object.fromEntries(pools.value.map(p => [p.id, p.size]))
+    const typed = sizes.value
     pools.value = data?.data ?? []
-    sizes.value = Object.fromEntries(pools.value.map(p => [p.id, p.size]))
+    sizes.value = Object.fromEntries(pools.value.map(p => [p.id,
+      p.id in before && typed[p.id] !== before[p.id] ? typed[p.id] : p.size]))
     error.value = null
   } catch (e) {
     error.value = apiError(e, t('sandboxes.settings.pools.failed'))

@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { makeI18n, run } from './fixtures'
+import { deferred } from '../../helpers'
 
 vi.mock('@/modules/workflows/api/workflows', () => ({ workflowsApi: { runs: vi.fn() } }))
 
@@ -27,7 +28,7 @@ describe('WorkflowRunsTable', () => {
     const w = mountTable()
     await flushPromises()
 
-    expect(workflowsApi.runs).toHaveBeenCalledWith('p1', { per_page: 25 })
+    expect(workflowsApi.runs).toHaveBeenCalledWith('p1', { per_page: 25 }, null)
     const rows = w.findAll('[data-run]')
     expect(rows).toHaveLength(2)
     expect(rows[1].text()).toContain('boom')
@@ -50,11 +51,11 @@ describe('WorkflowRunsTable', () => {
 
     await w.find('[data-test="status-filter"]').setValue('failed')
     await flushPromises()
-    expect(workflowsApi.runs).toHaveBeenLastCalledWith('p1', { status: 'failed', per_page: 25 })
+    expect(workflowsApi.runs).toHaveBeenLastCalledWith('p1', { status: 'failed', per_page: 25 }, null)
 
     await w.find('[data-test="workflow-filter"]').setValue('nightly')
     await flushPromises()
-    expect(workflowsApi.runs).toHaveBeenLastCalledWith('p1', { status: 'failed', workflow: 'nightly', per_page: 25 })
+    expect(workflowsApi.runs).toHaveBeenLastCalledWith('p1', { status: 'failed', workflow: 'nightly', per_page: 25 }, null)
     expect(w.emitted('update:workflow')).toEqual([['nightly']])
   })
 
@@ -69,7 +70,7 @@ describe('WorkflowRunsTable', () => {
     await new Promise((resolve) => setTimeout(resolve, 350))
     await flushPromises()
     expect(workflowsApi.runs).toHaveBeenCalledTimes(2)
-    expect(workflowsApi.runs).toHaveBeenLastCalledWith('p1', { q: '01JRUN', per_page: 25 })
+    expect(workflowsApi.runs).toHaveBeenLastCalledWith('p1', { q: '01JRUN', per_page: 25 }, null)
   })
 
   it('paginates', async () => {
@@ -80,13 +81,47 @@ describe('WorkflowRunsTable', () => {
     expect(w.text()).toContain('Page 1 of 3')
     await w.findAll('button').find((b) => b.text() === 'Next').trigger('click')
     await flushPromises()
-    expect(workflowsApi.runs).toHaveBeenLastCalledWith('p1', { page: 2, per_page: 25 })
+    expect(workflowsApi.runs).toHaveBeenLastCalledWith('p1', { page: 2, per_page: 25 }, null)
   })
 
   it('preselects the workflow filter from the prop', async () => {
     workflowsApi.runs.mockResolvedValue(page([]))
     mountTable({ workflow: 'orders' })
     await flushPromises()
-    expect(workflowsApi.runs).toHaveBeenCalledWith('p1', { workflow: 'orders', per_page: 25 })
+    expect(workflowsApi.runs).toHaveBeenCalledWith('p1', { workflow: 'orders', per_page: 25 }, null)
+  })
+})
+
+// Answers arriving late (deferred promises)
+describe('WorkflowRunsTable: answers arriving late', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    vi.useRealTimers()
+  })
+
+  it('a load that ends after the table is gone starts no poll', async () => {
+    vi.useFakeTimers()
+    const late = deferred()
+    workflowsApi.runs.mockReturnValueOnce(late.promise)
+    const w = mountTable({ pollInterval: 1000 })
+    w.unmount()                                     // a run opened: the table leaves
+    late.resolve(page([run({ status: 'running' })])) // an active run would arm the poll
+    await vi.advanceTimersByTimeAsync(5000)
+    expect(workflowsApi.runs).toHaveBeenCalledTimes(1)
+    vi.useRealTimers()
+  })
+
+  it('the runs of the filter picked last stay', async () => {
+    const unfiltered = deferred()
+    workflowsApi.runs.mockReturnValueOnce(unfiltered.promise)
+      .mockResolvedValueOnce(page([run({ id: '01JRUN0000000000000000000F', status: 'failed' })]))
+    const w = mountTable()
+    await w.find('[data-test="status-filter"]').setValue('failed')
+    await flushPromises()
+    expect(w.findAll('[data-run]')).toHaveLength(1)
+
+    unfiltered.resolve(page([run(), run({ id: '01JRUN0000000000000000000G' }), run({ id: '01JRUN0000000000000000000F', status: 'failed' })]))
+    await flushPromises()
+    expect(w.findAll('[data-run]')).toHaveLength(1)
   })
 })

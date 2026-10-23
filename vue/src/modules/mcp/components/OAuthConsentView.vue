@@ -2,7 +2,7 @@
 // OAuth consent (docs/mcp.md, "OAuth"): an MCP client asked to connect to RunR (or to a hosted
 // MCP server). The signed-in user picks what the connection may do and for how long; approving
 // issues a RunR API token with that scope, pinned to the current organization, revocable in
-// Settings → API tokens / AI agents.
+// Administration → API Tokens and Data & Integrations → AI agents (MCP).
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'

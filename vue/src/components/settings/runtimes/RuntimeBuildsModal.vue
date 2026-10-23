@@ -7,6 +7,7 @@ import { runtimesApi } from '@/api/runtimes'
 import { useSettingsStore } from '@/stores/settings'
 import { isRegionReady, runtimeAvailableIn } from '@/composables/useProjectForm'
 import { apiErrorMessage, builtVersions } from '@/composables/useRuntimesManager'
+import { useLatest } from '@/composables/useLatest'
 
 const props = defineProps({ runtime: { type: Object, required: true } })
 const emit  = defineEmits(['close'])
@@ -21,16 +22,22 @@ let timer = null
 
 const ACTIVE = ['pending', 'building']
 
+// The newest list wins (a poll sent before a build started must not drop it); a load that
+// ends after the modal closed arms no more polls
+const latest = useLatest()
 async function load() {
+  const current = latest.begin()
   try {
     const { data } = await runtimesApi.builds(props.runtime.id)
+    if (!current()) return
     builds.value = data.data ?? []
     error.value  = null
   } catch (e) {
+    if (!current()) return
     error.value = apiErrorMessage(e, t('common.error'))
   } finally {
-    loading.value = false
-    schedule()
+    if (current()) loading.value = false
+    if (current()) schedule()
   }
 }
 

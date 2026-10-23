@@ -52,20 +52,28 @@ export const useRuntimesStore = defineStore('runtimes', () => {
   const loaded        = ref(false)
   const failed        = ref(false)
   let pending = null
+  // A forced fetch (after a change) supersedes the ones in flight: their older catalogs are dropped
+  let generation = 0
 
   async function fetch({ force = false } = {}) {
     if (pending && !force) return pending
     if (loaded.value && !force) return
-    pending = runtimesApi.list()
+    const gen = ++generation
+    const request = runtimesApi.list()
       .then(({ data }) => {
+        if (gen !== generation) return
         list.value          = (data.data ?? []).map(normalizeRuntime)
         abilities.value     = { manage: !!data.abilities?.manage, use_custom: !!data.abilities?.use_custom }
         customEnabled.value = !!data.custom_enabled
         failed.value        = false
       })
-      .catch(() => { failed.value = true })
-      .finally(() => { loaded.value = true; pending = null })
-    return pending
+      .catch(() => { if (gen === generation) failed.value = true })
+      .finally(() => {
+        if (gen === generation) loaded.value = true
+        if (pending === request) pending = null
+      })
+    pending = request
+    return request
   }
 
   function refresh() { return fetch({ force: true }) }

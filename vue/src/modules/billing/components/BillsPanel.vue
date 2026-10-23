@@ -6,6 +6,7 @@
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Receipt } from 'lucide-vue-next'
+import { useLatest } from '@/composables/useLatest'
 import { billingApi } from '../api/billing'
 import { apiMessage, can, recentPeriods } from '../utils/billing'
 import BillRow from './BillRow.vue'
@@ -17,6 +18,7 @@ const meta = ref(null)
 const loading = ref(false)
 const error = ref(null)
 const filters = reactive({ period: '', status: '', paid: '', kind: '', owner: '', page: 1 })
+const latest = useLatest()
 const periods = recentPeriods(13)
 
 const payment = computed(() => (can('billing.manage')
@@ -31,18 +33,23 @@ function params() {
   return out
 }
 
+// Filters, the page and an owner picked in the per-owner view overtake each other: the bills of
+// the newest request are shown
 async function load() {
+  const current = latest.begin()
   loading.value = true
   error.value = null
   try {
     const { data } = await billingApi.bills(params())
+    if (!current()) return
     bills.value = data?.data ?? []
     meta.value = data?.meta ?? null
   } catch (e) {
+    if (!current()) return
     error.value = apiMessage(e, t('common.error'))
     bills.value = []
   } finally {
-    loading.value = false
+    if (current()) loading.value = false
   }
 }
 
@@ -61,9 +68,10 @@ function showOwner(ownerId) {
   filters.owner = ownerId ?? ''
 }
 
+// A new filter starts at page 1: one load (by the page watcher when the page changes)
 watch(() => [filters.period, filters.status, filters.paid, filters.kind, filters.owner], () => {
-  filters.page = 1
-  load()
+  if (filters.page !== 1) filters.page = 1
+  else load()
 })
 watch(() => filters.page, load)
 onMounted(load)

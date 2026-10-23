@@ -2,6 +2,7 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { projectsApi } from '@/api/projects'
+import { saveBlob } from '@/modules/supply-chain/api'
 import { Lock } from 'lucide-vue-next'
 
 const { t } = useI18n()
@@ -10,6 +11,9 @@ const props = defineProps({
   projectId:         { type: [String, Number], required: true },
   domain:            { type: Object, required: true },
   certManagerIssuer: { type: String, default: null },
+  // meta.cert_manager of GET /projects/{id}/domains: whether the region offers the mode, and if
+  // not why and what to do; the issuer and its kind (acme, ca — the region CA —, own)
+  certManager:       { type: Object, default: null },
 })
 
 const emit = defineEmits(['saved', 'updated', 'close'])
@@ -21,24 +25,43 @@ const saving      = ref(false)
 const errors      = ref({})
 const message     = ref(null)
 
+const cm = computed(() => props.certManager
+  ?? (props.certManagerIssuer ? { available: true, issuer: props.certManagerIssuer, kind: null } : { available: false, reason: null }))
+
+const certManagerHint = computed(() => {
+  const c = cm.value
+  if (!c.available) return c.reason || t('project.domains.tls.certManagerUnavailable')
+  if (c.kind === 'acme') return t('project.domains.tls.certManagerHintAcme', { issuer: c.issuer })
+  if (c.kind === 'ca')   return t('project.domains.tls.certManagerHintCa', { issuer: c.issuer })
+  return t('project.domains.tls.certManagerHint', { issuer: c.issuer })
+})
+
 const options = computed(() => [
   { value: 'none',         label: t('project.domains.tls.none'),        hint: t('project.domains.tls.noneHint'),   disabled: false },
   { value: 'custom',       label: t('project.domains.tls.custom'),      hint: t('project.domains.tls.customHint'), disabled: false },
   {
     value:    'cert-manager',
     label:    t('project.domains.tls.certManager'),
-    hint:     props.certManagerIssuer
-      ? t('project.domains.tls.certManagerHint', { issuer: props.certManagerIssuer })
-      : t('project.domains.tls.certManagerUnavailable'),
-    disabled: !props.certManagerIssuer,
+    hint:     certManagerHint.value,
+    disabled: !cm.value.available,
   },
 ])
 
 const canSave = computed(() => {
   if (mode.value === 'custom') return certificate.value.trim() !== '' && privateKey.value.trim() !== ''
-  if (mode.value === 'cert-manager') return !!props.certManagerIssuer
+  if (mode.value === 'cert-manager') return !!cm.value.available
   return true
 })
+
+const caError = ref(null)
+async function downloadCa() {
+  caError.value = null
+  try {
+    saveBlob(await projectsApi.domainsCaCertificate(props.projectId), 'runr-region-ca.crt')
+  } catch (e) {
+    caError.value = e.response?.status === 404 ? t('project.domains.caMissing') : (e.response?.data?.message ?? e.message)
+  }
+}
 
 function fieldError(key) {
   const v = errors.value?.[key]
@@ -124,6 +147,14 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
             </label>
           </div>
           <p v-if="fieldError('mode')" class="text-xs text-red-400 mt-1.5">{{ fieldError('mode') }}</p>
+        </div>
+
+        <!-- the region CA: what clients install to trust these certificates -->
+        <div v-if="mode === 'cert-manager' && cm.available && cm.kind === 'ca'" class="flex items-center gap-3">
+          <button type="button" class="btn-secondary text-xs" data-testid="domain-download-ca" @click="downloadCa">
+            {{ t('project.domains.tls.downloadCa') }}
+          </button>
+          <p v-if="caError" class="text-xs text-red-400">{{ caError }}</p>
         </div>
 
         <!-- Custom certificate -->

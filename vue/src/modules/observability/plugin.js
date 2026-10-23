@@ -6,12 +6,13 @@ import en from './locales/en.js'
 import tr from './locales/tr.js'
 
 /**
- * Observability (docs/observability.md): project tabs Traces / Replay / Uptime, the settings
- * tabs Alerts / Status page / Tracing (regions) and the public status page. Loaded
+ * Observability (docs/observability.md): project tabs Traces / Replay / Uptime / Load test, the
+ * pages Alerts / Tracing (regions) / Status page of the Observability menu and the public status page. Loaded
  * automatically (modules/index.js).
  */
 const lazy = (loader) => markRaw(defineAsyncComponent(loader))
 const CODE_TYPES = ['xaas', 'faas', 'caas']
+const isHttp = (project) => (project?.config?.trigger_type ?? 'http') === 'http'
 
 export default function (registry) {
   registry.projectTabs.push(
@@ -36,32 +37,49 @@ export default function (registry) {
       visibleIf: (project) => CODE_TYPES.includes(project?.service_type) && usePermissionsStore().can('metrics.view', project.id),
       order:     22,
     },
+    {
+      // HTTP projects only: the test targets the project's own URL (docs/load-test.md)
+      id:        'load-test',
+      labelKey:  'observability.tabs.loadTest',
+      component: lazy(() => import('./components/LoadTestTab.vue')),
+      visibleIf: (project) => CODE_TYPES.includes(project?.service_type) && isHttp(project) && usePermissionsStore().can('metrics.view', project.id),
+      order:     23,
+    },
   )
 
   registry.settingsTabs.push(
     {
       key:       'alerts',
       labelKey:  'observability.settingsTabs.alerts',
+      descKey:   'observability.settingsTabs.alertsDesc',
       icon:      markRaw(BellRing),
+      group:     'observability',
+      section:   'monitoring',
       component: lazy(() => import('./components/AlertsSettings.vue')),
       visibleIf: () => usePermissionsStore().can('alerts.manage'),
-      order:     60,
+      order:     10,
     },
     {
       key:       'status-page',
       labelKey:  'observability.settingsTabs.statusPage',
+      descKey:   'observability.settingsTabs.statusPageDesc',
       icon:      markRaw(Globe),
+      group:     'observability',
+      section:   'monitoring',
       component: lazy(() => import('./components/StatusPageSettings.vue')),
       visibleIf: () => usePermissionsStore().can('status_page.manage'),
-      order:     61,
+      order:     30,
     },
     {
       key:       'tracing',
       labelKey:  'observability.settingsTabs.tracing',
+      descKey:   'observability.settingsTabs.tracingDesc',
       icon:      markRaw(Network),
+      group:     'observability',
+      section:   'monitoring',
       component: lazy(() => import('./components/RegionTracingSettings.vue')),
       visibleIf: () => usePermissionsStore().can('regions.view'),
-      order:     62,
+      order:     20,
     },
   )
 

@@ -4,7 +4,7 @@ import router from '@/router'
 import { usePermissionsStore } from '@/stores/permissions'
 
 /**
- * AI agents (docs/mcp.md): Settings → AI agents (MCP), the OAuth consent page MCP clients send
+ * AI agents (docs/mcp.md): Data & Integrations → AI agents (MCP), the OAuth consent page MCP clients send
  * the user to, the project "MCP" tab of hosted MCP servers and the one-click "New MCP server"
  * action on the projects page. Loaded automatically (modules/index.js); messages:
  * locales/{en,tr}/mcp.js in the core catalog.
@@ -26,10 +26,13 @@ export default function (registry) {
   registry.settingsTabs.push({
     key:       'ai-agents',
     labelKey:  'mcp.settings.tab',
+    descKey:   'mcp.settings.navDesc',
     icon:      markRaw(Bot),
+    group:     'data',
+    section:   'integrations',
     component: lazy(() => import('./components/McpSettings.vue')),
     dataTour:  'settings-ai-agents-tab',
-    order:     45,
+    order:     20,
   })
 
   registry.projectTabs.push({

@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
-import { withPlugins } from '../../helpers'
+import { deferred, withPlugins } from '../../helpers'
 
 const mcpApi = vi.hoisted(() => ({
   server: vi.fn(), saveServer: vi.fn(), deleteServer: vi.fn(), rotateKey: vi.fn(), inspector: vi.fn(), calls: vi.fn(),
@@ -236,5 +236,57 @@ describe('project MCP tab', () => {
     expect(w.find('[data-testid="mcp-inspector"]').exists()).toBe(false)
     expect(w.find('[data-testid="mcp-calls"]').exists()).toBe(false)
     expect(w.find('[data-testid="mcp-save"]').exists()).toBe(false)
+  })
+})
+
+// Answers arriving late (deferred promises): the tab and its call log show the newest state
+describe('project MCP tab: answers arriving late', () => {
+  const call = (id, outcome) => ({
+    id, occurred_at: '2026-10-11T10:00:00Z', method: 'tools/call', name: id, jsonrpc_id: '1', status_code: 200,
+    outcome, error: null, duration_ms: 5, actor: { type: 'user', id: '1', name: 'Ada' }, auth: 'oauth', session_id: null,
+  })
+  const page = (rows, meta = {}) => ({ data: { data: rows, meta: { current_page: 1, last_page: 1, total: rows.length, per_page: 25, ...meta } } })
+
+  it('drops the server of the project the tab showed before', async () => {
+    const first = deferred()
+    mcpApi.server.mockReturnValueOnce(first.promise)
+      .mockResolvedValueOnce({ data: { data: server({ project_id: 'p2', handle: 'second', url: 'https://console.example.com/mcp/servers/second' }) } })
+    const { global } = withPlugins('en')
+    const w = mount(McpProjectTab, { props: { project: PROJECT }, global })
+    await w.setProps({ project: { ...PROJECT, id: 'p2', name: 'second' } })
+    await flushPromises()
+    expect(w.find('[data-testid="mcp-server-panel"]').text()).toContain('/mcp/servers/second')
+
+    first.resolve({ data: { data: server() } })
+    await flushPromises()
+    expect(w.find('[data-testid="mcp-server-panel"]').text()).toContain('/mcp/servers/second')
+  })
+
+  it('call log: the answer of the filter picked last wins', async () => {
+    const unfiltered = deferred()
+    mcpApi.calls.mockReturnValueOnce(unfiltered.promise)
+      .mockResolvedValueOnce(page([call('c-err', 'error')]))
+    const w = await mountTab()
+    await w.find('[data-testid="mcp-calls-outcome"]').setValue('error')
+    await flushPromises()
+    expect(w.find('[data-testid="mcp-call-c-err"]').exists()).toBe(true)
+
+    unfiltered.resolve(page([call('c-ok', 'ok'), call('c-err', 'error')]))
+    await flushPromises()
+    expect(w.find('[data-testid="mcp-call-c-ok"]').exists()).toBe(false)
+    expect(w.find('[data-testid="mcp-call-c-err"]').exists()).toBe(true)
+  })
+
+  it('call log: a new filter on page 2 loads once, page 1 of the filter', async () => {
+    mcpApi.calls.mockResolvedValue(page([call('c1', 'ok')], { last_page: 3 }))
+    const w = await mountTab()
+    await w.find('[data-testid="mcp-calls-next"]').trigger('click')
+    await flushPromises()
+    mcpApi.calls.mockClear()
+
+    await w.find('[data-testid="mcp-calls-outcome"]').setValue('error')
+    await flushPromises()
+    expect(mcpApi.calls).toHaveBeenCalledTimes(1)
+    expect(mcpApi.calls).toHaveBeenCalledWith('p1', { page: 1, per_page: 25, outcome: 'error' })
   })
 })

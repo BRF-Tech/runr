@@ -7,6 +7,7 @@ import { fetchVersion } from '@/api/version'
 import ToastContainer from '@/components/ToastContainer.vue'
 import ConfirmContainer from '@/components/ConfirmContainer.vue'
 import MigrationWarningBar from '@/components/MigrationWarningBar.vue'
+import RuntimePatchBanner from '@/components/RuntimePatchBanner.vue'
 import { useBrandingStore } from '@/modules/white-label/stores/branding'
 import { useAuthStore } from '@/stores/auth'
 
@@ -34,12 +35,23 @@ function syncLocale() {
 
 syncLocale()
 watch([locale, () => branding.productName], syncLocale)
+
+// One view instance per page: the same view with other route params (another project, opened
+// from a project page by a clone, a notification or a link) mounts afresh and loads that page,
+// instead of keeping the previous page's data and requests. viewKey: a tenant switch.
+function viewKey(route) {
+  return `${moduleRegistry.viewKey}:${JSON.stringify(route.params)}`
+}
 </script>
 
 <template>
   <component v-for="(comp, i) in moduleRegistry.appTopSlots" :key="'top-'+i" :is="comp" />
   <MigrationWarningBar />
-  <RouterView :key="moduleRegistry.viewKey" />
+  <!-- Zero-day / critical runtime patches, RunR releases, patch feed trouble (until resolved) -->
+  <RuntimePatchBanner />
+  <RouterView v-slot="{ Component, route }">
+    <component :is="Component" :key="viewKey(route)" />
+  </RouterView>
   <ToastContainer />
   <ConfirmContainer />
 </template>

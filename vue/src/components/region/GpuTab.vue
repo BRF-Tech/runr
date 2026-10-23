@@ -8,6 +8,7 @@ import { RefreshCw, Cpu, AlertTriangle, HardDrive, Info } from 'lucide-vue-next'
 import { aiApi } from '@/api/ai'
 import { useConfirm } from '@/composables/useConfirm'
 import { useToast } from '@/composables/useToast'
+import { useLatest } from '@/composables/useLatest'
 import { clearRegionGpuCache } from '@/composables/useRegionGpu'
 import { AI_STATUS_CLASSES, formatGpuMemory } from '@/utils/ai'
 import ComponentLogBox from './ComponentLogBox.vue'
@@ -69,31 +70,62 @@ function errMessage(e) {
   return e?.response?.data?.message ?? Object.values(e?.response?.data?.errors ?? {}).flat()[0] ?? t('common.error')
 }
 
-function apply(data) {
+/** The settings form as the server's settings fill it. */
+function settingsForm(s = {}) {
+  return {
+    time_slicing_replicas: s.time_slicing_replicas || 1,
+    gvisor_nvproxy:        !!s.gvisor_nvproxy,
+    restrict_to_gpu_nodes: s.restrict_to_gpu_nodes ?? true,
+    gpu_nodes:             (s.gpu_nodes ?? []).join(', '),
+    // runtime_class is the resolved class (nvidia / null), runtime_class_choice the admin's pick
+    runtime_class:         s.runtime_class_choice ?? (s.runtime_class ? 'nvidia' : 'auto'),
+  }
+}
+
+// keepEdits (the status poll during an install): settings being edited, not saved yet, stay
+function apply(data, { keepEdits = false } = {}) {
   if (!data) return
+  const edited = keepEdits && gpu.value
+    && JSON.stringify(settingsForm(gpu.value.settings ?? {})) !== JSON.stringify(pickSettings())
   gpu.value = data
   const s = data.settings ?? {}
-  settings.time_slicing_replicas = s.time_slicing_replicas || 1
-  settings.gvisor_nvproxy        = !!s.gvisor_nvproxy
-  settings.restrict_to_gpu_nodes = s.restrict_to_gpu_nodes ?? true
-  settings.gpu_nodes             = (s.gpu_nodes ?? []).join(', ')
-  // runtime_class is the resolved class (nvidia / null), runtime_class_choice the admin's pick
-  settings.runtime_class         = s.runtime_class_choice ?? (s.runtime_class ? 'nvidia' : 'auto')
+  if (!edited) Object.assign(settings, settingsForm(s))
   install.runtime_class          = s.runtime_class_choice ?? install.runtime_class
   clearRegionGpuCache()
 }
 
-async function load({ refresh = false } = {}) {
+function pickSettings() {
+  return {
+    time_slicing_replicas: settings.time_slicing_replicas,
+    gvisor_nvproxy:        settings.gvisor_nvproxy,
+    restrict_to_gpu_nodes: settings.restrict_to_gpu_nodes,
+    gpu_nodes:             settings.gpu_nodes,
+    runtime_class:         settings.runtime_class,
+  }
+}
+
+// The newest read wins: an action's answer supersedes a poll sent before it
+const latest = useLatest()
+function supersedeReads() {
+  latest.cancel()
+  loading.value = false
+  refreshing.value = false
+}
+
+async function load({ refresh = false, poll = false } = {}) {
   if (!props.regionId) return
-  if (refresh) refreshing.value = true; else loading.value = true
+  const current = latest.begin()
+  if (refresh) refreshing.value = true; else if (!poll) loading.value = true
   try {
     const { data } = await aiApi.gpu(props.regionId, refresh)
-    apply(data)
+    if (current()) apply(data, { keepEdits: poll })
   } catch (e) {
-    if (refresh) toast.error(errMessage(e))
+    if (current() && refresh) toast.error(errMessage(e))
   } finally {
-    loading.value = false
-    refreshing.value = false
+    if (current()) {
+      loading.value = false
+      refreshing.value = false
+    }
   }
 }
 
@@ -123,6 +155,7 @@ async function installGpu() {
       payload.operator_toolkit = install.operator_toolkit
     }
     const { data } = await aiApi.installGpu(props.regionId, payload)
+    supersedeReads()
     apply(data?.gpu)
     toast.success(data?.message ?? t('ai.gpu.region.installQueued'))
   } catch (e) {
@@ -143,6 +176,7 @@ async function uninstallGpu() {
   busy.value = true
   try {
     const { data } = await aiApi.uninstallGpu(props.regionId)
+    supersedeReads()
     apply(data?.gpu)
     toast.success(data?.message ?? t('ai.gpu.region.uninstallQueued'))
   } catch (e) {
@@ -162,6 +196,7 @@ async function saveSettings() {
       restrict_to_gpu_nodes: settings.restrict_to_gpu_nodes,
       gpu_nodes:             settings.restrict_to_gpu_nodes ? nodeList(settings.gpu_nodes) : null,
     })
+    supersedeReads()
     apply(data?.gpu ?? data)
     toast.success(t('ai.gpu.region.settingsSaved'))
   } catch (e) {
@@ -200,7 +235,7 @@ async function copyLog() {
 let timer = null
 watch(transient, (on) => {
   clearInterval(timer)
-  if (on) timer = setInterval(() => load(), 5000)
+  if (on) timer = setInterval(() => load({ poll: true }), 5000)
 }, { immediate: true })
 onUnmounted(() => clearInterval(timer))
 

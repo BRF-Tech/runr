@@ -53,12 +53,14 @@ async function add() {
       role:             form.value.role || null,
     })
     form.value = { external_group: '', auth_provider_id: form.value.auth_provider_id, group_id: '', role: null }
-    await load()
   } catch (e) {
     error.value = message(e)
+    return
   } finally {
     saving.value = false
   }
+  // The mapping is saved: a failed reload is not an error of the save
+  try { await load() } catch { /* the list keeps what it showed */ }
 }
 
 async function remove(mapping) {
@@ -66,10 +68,11 @@ async function remove(mapping) {
   if (!ok) return
   try {
     await rbacApi.deleteSsoMapping(mapping.id)
-    await load()
   } catch (e) {
     toast.error(message(e))
+    return
   }
+  try { await load() } catch { /* the list keeps what it showed */ }
 }
 
 onMounted(load)

@@ -26,7 +26,7 @@ function mountCard(settingsData) {
   return { w, settings }
 }
 
-describe('Settings → Organization domain', () => {
+describe('Administration → Regions & domain', () => {
   beforeEach(() => vi.clearAllMocks())
 
   it('is not shown outside an organization', () => {

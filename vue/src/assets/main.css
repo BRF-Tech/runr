@@ -259,12 +259,6 @@ html { scrollbar-gutter: stable; }
 .runr-tour-popover .driver-popover-arrow-side-bottom .driver-popover-arrow {
   border-color: rgb(var(--gray-700));
 }
-/* Lang toggle clickable during tutorial */
-.driver-active [data-tour="lang-toggle"] {
-  position: relative;
-  z-index: 10002;
-}
-
 /* ── Light theme: badge & accent color overrides ─────────────────────────── */
 /* Backgrounds: dark-900 tones → light-50 tones */
 [data-theme="light"] [class*="bg-emerald-900"] { background-color: rgb(236 253 245 / 0.8); }

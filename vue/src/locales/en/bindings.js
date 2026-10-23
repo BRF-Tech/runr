@@ -1,4 +1,4 @@
-// Bindings (docs/bindings.md): project tab, Settings → Data, Region → Data services
+// Bindings (docs/bindings.md): project tab, Data & Integrations → Data, Region → Data services
 export default {
   bindings: {
     tab:                      'Bindings',
@@ -49,6 +49,20 @@ export default {
     notAttached:              'Not attached',
     usage:                    'Usage',
     overQuota:                'Over its size limit: writes are refused.',
+    // Dynamic Postgres credentials from the region's OpenBao (docs/bindings.md)
+    dynamicCredentials:       'Dynamic credentials (OpenBao)',
+    dynamicHint:              'A Postgres user of its own for this project, issued by the region\'s OpenBao and renewed in the region; the binding\'s own user and password never reach the project. Needs External Secrets Operator and OpenBao in the region.',
+    dynamicNotReady:          'The binding is not ready yet: attach it with dynamic credentials once it is.',
+    dynamicNewHint:           'Dynamic credentials need the binding to exist: create it first, then switch the attachment to dynamic credentials once it is ready.',
+    dynamicBadge:             'Dynamic (OpenBao)',
+    switchToDynamic:          'Use dynamic credentials',
+    switchToStatic:           'Use the binding\'s own user',
+    switchDynamicTitle:       'Dynamic credentials',
+    switchDynamicConfirm:     'Give this project a Postgres user of its own from the region\'s OpenBao for {name}? The functions restart with it.',
+    switchStaticTitle:        'Back to the binding\'s own user',
+    switchStaticConfirm:      'Give this project the binding\'s own user for {name} again? The users OpenBao issued for it are revoked and the functions restart.',
+    switched:                 'Credentials changed. The functions restart.',
+    switchFailed:             'The credentials could not be changed.',
 
     types: {
       kv:       'KV (Redis)',
@@ -107,6 +121,7 @@ export default {
 
     data: {
       tab:            'Data',
+      navDesc: 'KV, object storage, Postgres and external bindings',
       title:          'Data',
       intro:          'Bindings of the organization: KV, object storage, Postgres and external credentials. Attach them to projects on a project\'s Bindings tab.',
       create:         'New binding',

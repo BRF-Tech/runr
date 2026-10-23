@@ -171,6 +171,7 @@ export default {
 
     events: {
       tab:           'Olaylar',
+      navDesc: 'İş akışlarının olayları ve etkileri',
       title:         'Olaylar',
       intro:         'Olay API\'si (POST /api/events) ile gelen, iş akışlarının gönderdiği ya da kuyruklardan aktarılan olaylar. Olaylar iş akışı başlatır, beklemeleri sürdürür ve çalıştırmaları iptal eder.',
       empty:         'Henüz olay yok.',

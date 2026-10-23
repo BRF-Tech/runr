@@ -1,5 +1,5 @@
 <script setup>
-// Settings → Billing (docs/billing.md): RunR calculates what every project owes per month;
+// Administration → Billing (docs/billing.md): RunR calculates what every project owes per month;
 // invoicing and payment happen in the external invoicing system, which reads the bills through the
 // API and the signed webhook. Sections follow the organization (install, platform, tenant) and the
 // permissions: billing.view reads, billing.manage edits prices / payment status, billing.approve

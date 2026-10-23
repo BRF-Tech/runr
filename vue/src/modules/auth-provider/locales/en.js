@@ -1,6 +1,7 @@
 export default {
   authProvider: {
     tab: 'Auth Providers',
+    navDesc: 'Single sign-on with OAuth, OpenID Connect and SAML',
     title: 'Authentication Providers',
     description: 'Manage OAuth/SSO providers for user authentication.',
     addBtn: 'Add Provider',

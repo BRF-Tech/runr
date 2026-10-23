@@ -1,6 +1,6 @@
 import { test, expect } from './fixtures/test'
 
-// Settings → Platform: base domain + registration toggle.
+// Administration → Regions & settings: base domain + registration toggle.
 
 test.describe('Platform settings', () => {
   test('saves the base domain', async ({ page, auth, seed, mockApi, isStack }) => {

@@ -3,6 +3,8 @@ import { mount } from '@vue/test-utils'
 import client from '@/api/client'
 import OnboardingWizard from '@/modules/white-label/components/OnboardingWizard.vue'
 import { flush, globalOptions, makeRouter, ok, signIn } from './helpers'
+import { moduleRegistry } from '@/modules/index'
+import { useTenantStore } from '@/modules/tenancy/stores/tenant'
 
 vi.mock('@/api/client', () => ({
   default: { get: vi.fn(), post: vi.fn(), put: vi.fn(), patch: vi.fn(), delete: vi.fn() },
@@ -11,9 +13,11 @@ vi.mock('@/modules/index', async () => {
   const { reactive } = await import('vue')
   return { moduleRegistry: reactive({ viewKey: 0, loginHooks: [], appTopSlots: [], settingsTabs: [] }) }
 })
-vi.mock('@/modules/tenancy/stores/tenant', () => ({
-  useTenantStore: () => ({ activeTenantId: 't1' }),
-}))
+vi.mock('@/modules/tenancy/stores/tenant', async () => {
+  const { reactive } = await import('vue')
+  const state = reactive({ activeTenantId: 't1' })
+  return { useTenantStore: () => state }
+})
 
 const tenant = { id: 't1', slug: 'acme', name: 'Acme', role: 'owner' }
 
@@ -31,9 +35,13 @@ async function mountWizard(data) {
   vi.mocked(client.get).mockImplementation((url) => url === '/onboarding' ? ok(data) : ok({}))
   const router = await makeRouter('/projects')
   const wrapper = mount(OnboardingWizard, { global: globalOptions({ router }) })
+  mounted.push(wrapper)
   await flush()
   return wrapper
 }
+
+// The wizard follows the tenant and the view key while mounted: one instance per test
+const mounted = []
 
 const steps = (wrapper) => wrapper.findAll('[data-test^="onboarding-step-"]').map(s => s.attributes('data-test').replace('onboarding-step-', ''))
 
@@ -43,9 +51,11 @@ describe('OnboardingWizard', () => {
     localStorage.clear()
     sessionStorage.clear()
     signIn({ tenant })
+    useTenantStore().activeTenantId = 't1'
     for (const fn of Object.values(client)) vi.mocked(fn).mockReset()
   })
   afterEach(() => {
+    mounted.splice(0).forEach(w => w.unmount())
     vi.unstubAllEnvs()
   })
 
@@ -126,5 +136,33 @@ describe('OnboardingWizard', () => {
     await wrapper.find('[data-test="onboarding-next"]').trigger('click')
     expect(wrapper.text()).toContain('Enter a name for your organization.')
     expect(client.post).not.toHaveBeenCalled()
+  })
+
+  // An organization switch changes the active tenant and then the view key, one after the other:
+  // one load of the new organization's onboarding, not two (the second one reset the wizard)
+  it('loads once when an organization switch changes the tenant and the view key', async () => {
+    await mountWizard(onboarding({ status: 'completed' }))
+    const loads = () => vi.mocked(client.get).mock.calls.filter(([url]) => url === '/onboarding').length
+    expect(loads()).toBe(1)
+
+    useTenantStore().activeTenantId = 't2'
+    await Promise.resolve()
+    moduleRegistry.viewKey++
+    await flush()
+    expect(loads()).toBe(2)
+  })
+
+  it('shows the answer of the newest load only', async () => {
+    let first
+    vi.mocked(client.get).mockImplementationOnce(() => new Promise((resolve) => { first = resolve }))
+      .mockImplementation(() => ok(onboarding({ status: 'completed' })))
+    const router = await makeRouter('/projects')
+    const wrapper = mount(OnboardingWizard, { global: globalOptions({ router }) })
+    mounted.push(wrapper)
+    moduleRegistry.viewKey++                       // a second load supersedes the first
+    await flush()
+    first({ data: onboarding() })                   // the older answer: pending, would open the wizard
+    await flush()
+    expect(wrapper.find('[data-test="onboarding-wizard"]').exists()).toBe(false)
   })
 })

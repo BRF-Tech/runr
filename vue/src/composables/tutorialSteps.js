@@ -63,10 +63,17 @@ export function projectsSteps(t) {
       },
     },
     {
-      element: '[data-tour="settings-btn"]',
+      element: '[data-tour="main-nav"]',
       popover: {
-        title: t('tutorial.projects.settings'),
-        description: t('tutorial.projects.settingsDesc'),
+        title: t('tutorial.projects.menus'),
+        description: t('tutorial.projects.menusDesc'),
+      },
+    },
+    {
+      element: '[data-tour="user-menu-btn"]',
+      popover: {
+        title: t('tutorial.projects.userMenu'),
+        description: t('tutorial.projects.userMenuDesc'),
       },
     },
   ]

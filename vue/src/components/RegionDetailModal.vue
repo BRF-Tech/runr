@@ -14,9 +14,12 @@ import RegionSettingsSection from './region/RegionSettingsSection.vue'
 import RegionMonitoringSection from './region/RegionMonitoringSection.vue'
 import RegionDemoSection from './region/RegionDemoSection.vue'
 import FunctionTlsSection from './region/FunctionTlsSection.vue'
+import CertManagerSection from './region/CertManagerSection.vue'
+import GlobalDnsSection from './region/GlobalDnsSection.vue'
 import SandboxTab from './region/SandboxTab.vue'
 import GpuTab from './region/GpuTab.vue'
 import DataServicesTab from './region/DataServicesTab.vue'
+import RegionSecretsTab from './region/RegionSecretsTab.vue'
 import MigrationTab from './region/MigrationTab.vue'
 import RegionSupplyChainTab from '@/modules/supply-chain/components/RegionSupplyChainTab.vue'
 import RegionWizard from './region/RegionWizard.vue'
@@ -137,6 +140,10 @@ function handleConfirmSkip({ step, warning }) {
                 :can-seed="servingStatus === 'ready' && redisMode != null && redisStatus === 'ready' && (region?.has_registry ?? false)" />
               <FunctionTlsSection v-if="!region?.is_demo && region?.has_serving" :region-id="region.id"
                 :mode="region?.function_tls_mode" :expires-at="region?.function_tls_expires_at" />
+              <CertManagerSection v-if="!region?.is_demo && region?.has_serving" :region-id="region.id"
+                @saved="(r) => emit('saved', r)" />
+              <!-- Global DNS server (global projects, docs/global-projects.md) -->
+              <GlobalDnsSection v-if="!region?.is_demo && region?.has_serving" :region="region" />
               <div v-if="!region?.is_demo" class="mt-6 space-y-4">
                 <RegionSettingsSection :region="region" @saved="(r) => emit('saved', r)" />
                 <RegionMonitoringSection :region="region" @saved="(r) => emit('saved', r)" />
@@ -166,6 +173,7 @@ function handleConfirmSkip({ step, warning }) {
                 @uninstall="confirmUninstallComponent('serving')" @copy-logs="copyLogs('serving', servingMessage)" />
             </div>
             <DataServicesTab v-if="activeTab === 'data' && region?.id" :region-id="region.id" :region="region" />
+            <RegionSecretsTab v-if="activeTab === 'secrets' && region?.id" :region="region" />
             <SandboxTab v-if="activeTab === 'sandbox'" :region-id="region?.id" :region="region" @saved="(r) => emit('saved', r)" />
             <GpuTab v-if="activeTab === 'gpu'" :region-id="region?.id" :region="region" />
             <MigrationTab v-if="activeTab === 'migration'" :region="region"

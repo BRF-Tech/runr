@@ -1,6 +1,6 @@
 <script setup>
-// A scoped API token for an MCP client (POST /api/tokens — the same tokens as Settings → API
-// tokens; the MCP server shows a client only the tools the token's permissions allow).
+// A scoped API token for an MCP client (POST /api/tokens — the same tokens as Administration →
+// API Tokens; the MCP server shows a client only the tools the token's permissions allow).
 import { onMounted, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useApiTokens } from '@/composables/useApiTokens'

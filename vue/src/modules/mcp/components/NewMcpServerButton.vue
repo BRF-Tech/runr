@@ -16,10 +16,8 @@ const { t } = useI18n()
 const perms = usePermissionsStore()
 const open = ref(false)
 
-function onCreated(project) {
-  open.value = false
-  emit('created', project)
-}
+// The modal reports the project as soon as it exists (the list shows it), and stays open until
+// the setup is done: a failed step is shown there and can be continued
 </script>
 
 <template>
@@ -30,6 +28,6 @@ function onCreated(project) {
       data-testid="new-mcp-server-btn"
       @click="hasReadyRegion && (open = true)"
     ><Bot class="w-4 h-4" />{{ t('mcp.create.button') }}</button>
-    <CreateMcpServerModal v-if="open" :existing-names="existingNames" @created="onCreated" @close="open = false" />
+    <CreateMcpServerModal v-if="open" :existing-names="existingNames" @created="emit('created', $event)" @done="open = false" @close="open = false" />
   </div>
 </template>

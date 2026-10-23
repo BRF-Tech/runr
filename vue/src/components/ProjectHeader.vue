@@ -7,10 +7,13 @@ import { moduleRegistry } from '@/modules/index'
 import TypeBadge from '@/components/TypeBadge.vue'
 import McpServerBadge from '@/components/McpServerBadge.vue'
 import RuntimeIcon from '@/components/RuntimeIcon.vue'
+import RuntimePatchBadge from '@/components/project/RuntimePatchBadge.vue'
 import { runtimeLabel } from '@/utils/runtimes'
 import { isLegacyServiceType } from '@/utils/projectHelpers'
+import { isGlobalProject } from '@/utils/globalProjects'
 import { usePermissionsStore } from '@/stores/permissions'
-import { MapPin, Cpu, MemoryStick, Timer, Pencil, Play, Clock, Zap, Globe, Copy, Check, ArrowUpDown, UserRound, OctagonPause } from 'lucide-vue-next'
+import { projectStrategy } from '@/utils/deployStrategy'
+import { MapPin, Cpu, MemoryStick, Timer, Pencil, Play, Clock, Zap, Globe, Earth, Copy, Check, ArrowUpDown, UserRound, OctagonPause, Bird, Columns2 } from 'lucide-vue-next'
 
 const { t } = useI18n()
 const router = useRouter()
@@ -33,12 +36,18 @@ const eolWeeksLeft = computed(() => {
   return Math.ceil(diffDays / 7)
 })
 const isSunsetting = computed(() => eolWeeksLeft.value !== null && eolWeeksLeft.value <= 13)
+// Global project: one host name, several regions (docs/global-projects.md)
+const isGlobal = computed(() => isGlobalProject(props.project))
+const globalRegionCount = computed(() => props.project.global?.regions?.length ?? 0)
+const globalRegionNames = computed(() => (props.project.global?.regions ?? []).map(r => r.region_name).join(', '))
 const isBlueprintMode = computed(() =>
   ['aaas', 'agentflow'].includes(props.project?.service_type) &&
   props.project?.config?.config_mode === 'blueprint'
 )
 // Former AI types: shown and deletable, not editable, clonable or deployable
 const isLegacy = computed(() => isLegacyServiceType(props.project?.service_type))
+// Blue-green / canary deploys (direct, the default, shows nothing)
+const deployStrategy = computed(() => projectStrategy(props.project))
 
 // Actions the user's role allows on this project (docs/permissions.md)
 const perms = usePermissionsStore()
@@ -49,6 +58,15 @@ const canDeploy = computed(() => perms.can('projects.deploy', props.project.id))
 // Stop / resume (projects.stop) and the owner — the payer of the project's bills. A platform
 // administrator also stops a project its organization stopped: the stop becomes the platform's.
 const isStopped = computed(() => !!props.project.stopped)
+
+// Timed warmer (config.scale_schedule): what the scheduler last kept warm (project.warm_scale)
+const warmerOn = computed(() => Array.isArray(props.project.config?.scale_schedule) && props.project.config.scale_schedule.length > 0)
+const warmerBadge = computed(() => {
+  const applied = props.project.warm_scale?.applied
+  return applied === null || applied === undefined
+    ? t('warmer.badge')
+    : t('warmer.badgeApplied', { count: applied }, Number(applied))
+})
 const canStop   = computed(() => perms.can('projects.stop'))
 const canTakeOver = computed(() => isStopped.value && props.project.stopped.level !== 'platform' && perms.platformAdmin)
 const currentUserId = (() => {
@@ -57,7 +75,8 @@ const currentUserId = (() => {
 const isOwner = computed(() => !!props.project.owner_id && String(props.project.owner_id) === currentUserId)
 const canTransfer = computed(() => isOwner.value || perms.can('projects.manage_access', props.project.id))
 
-defineEmits(['edit', 'clone', 'delete', 'deploy', 'stop', 'transfer-owner', 'update:activeTab'])
+// patches: the runtime patch badge was clicked (the project page opens the dialog)
+defineEmits(['edit', 'clone', 'delete', 'deploy', 'stop', 'transfer-owner', 'patches', 'update:activeTab'])
 
 const urlCopied = ref(false)
 
@@ -94,6 +113,8 @@ async function copyUrl() {
               <span v-if="isBlueprintMode" class="inline-flex items-center gap-1.5 text-xs font-mono font-medium px-2.5 py-1 rounded-md border" style="background:rgb(139 92 246/0.12);border-color:rgb(139 92 246/0.35);color:#8b5cf6">Blueprint</span>
               <span v-if="project.service_type === 'caas' && project.config?.image" class="inline-flex items-center gap-1.5 text-xs font-mono font-medium px-2.5 py-1 rounded-md border border-gray-700/60 bg-gray-800/40 text-gray-100"><RuntimeIcon runtime="docker" :size="14" />{{ project.config.image }}</span>
               <span v-if="regionLabel" class="inline-flex items-center gap-1 text-xs font-mono font-medium px-2.5 py-1 rounded-md border border-gray-700/60 bg-gray-800/40 text-gray-400"><MapPin class="w-3 h-3" />{{ regionLabel }}</span>
+              <!-- Global project (docs/global-projects.md): the primary above, every region on hover -->
+              <span v-if="isGlobal" class="inline-flex items-center gap-1 text-xs font-medium px-2.5 py-1 rounded-md border bg-sky-900/30 border-sky-800/50 text-sky-300" :title="globalRegionNames" data-test="project-global-badge"><Earth class="w-3 h-3" />{{ t('globalProjects.badge') }}<template v-if="globalRegionCount"> · {{ t('globalProjects.badgeRegions', { n: globalRegionCount }) }}</template></span>
               <span
                 v-if="project.config?.scale_to_zero != null"
                 class="inline-flex items-center gap-1 text-xs font-mono font-medium px-2.5 py-1 rounded-md border"
@@ -104,9 +125,25 @@ async function copyUrl() {
                 <ArrowUpDown class="w-3 h-3" />
                 {{ project.config.scale_to_zero ? t('projects.scalingS2z') : t('projects.scalingCustomLabel', { min: project.config.min_scale, max: project.config.max_scale }) }}
               </span>
+              <span
+                v-if="warmerOn"
+                class="inline-flex items-center gap-1 text-xs font-mono font-medium px-2.5 py-1 rounded-md border bg-amber-900/20 border-amber-800/50 text-amber-400"
+                :title="project.warm_scale?.applied_at || ''"
+                data-testid="warmer-badge"
+              ><Clock class="w-3 h-3" />{{ warmerBadge }}</span>
+              <span
+                v-if="deployStrategy !== 'direct'"
+                class="inline-flex items-center gap-1 text-xs font-mono font-medium px-2.5 py-1 rounded-md border"
+                :class="deployStrategy === 'canary' ? 'bg-amber-900/30 border-amber-800/50 text-amber-400' : 'bg-sky-900/30 border-sky-800/50 text-sky-400'"
+                :title="t('deployStrategy.badgeHint')"
+                data-test="project-strategy-badge"
+              >
+                <component :is="deployStrategy === 'canary' ? Bird : Columns2" class="w-3 h-3" />{{ t(`deployStrategy.names.${deployStrategy}`) }}
+              </span>
               <span v-if="isStopped" class="inline-flex items-center gap-1 text-xs font-medium px-2.5 py-1 rounded-md bg-red-900/40 border border-red-800/50 text-red-400" data-test="project-stopped-badge"><OctagonPause class="w-3 h-3" />{{ t('projectLifecycle.stoppedBadge') }}</span>
               <span v-if="isEol" class="inline-flex items-center text-xs font-medium px-2.5 py-1 rounded-md bg-red-900/40 border border-red-800/50 text-red-400">{{ t('projects.eol') }}</span>
-              <span v-else-if="isSunsetting" class="inline-flex items-center text-xs font-medium px-2.5 py-1 rounded-md bg-yellow-900/40 border border-yellow-800/50 text-yellow-400" :title="project.runtime_eol">{{ t('projects.eolWeeks', { weeks: eolWeeksLeft }) }}</span>
+              <span v-else-if="isSunsetting" class="inline-flex items-center text-xs font-medium px-2.5 py-1 rounded-md bg-yellow-900/40 border border-yellow-800/50 text-yellow-400" :title="`${t('projects.sunsetting')}: ${project.runtime_eol}`">{{ t('projects.eolWeeks', { weeks: eolWeeksLeft }) }}</span>
+              <RuntimePatchBadge :state="project.runtime_patch" @open="$emit('patches')" />
             </div>
           </div>
         </div>

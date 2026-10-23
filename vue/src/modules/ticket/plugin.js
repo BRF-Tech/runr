@@ -1,4 +1,5 @@
 import { defineAsyncComponent, markRaw } from 'vue'
+import { LifeBuoy } from 'lucide-vue-next'
 import { useBrandingStore } from '@/modules/white-label/stores/branding'
 import en from './locales/en.js'
 import tr from './locales/tr.js'
@@ -20,10 +21,14 @@ export default function (registry) {
   registry.settingsTabs.push({
     key:       'support-tickets',
     labelKey:  'account.ticketTitle',
+    descKey:   'account.ticketNavDesc',
+    icon:      markRaw(LifeBuoy),
+    // the user menu (every user asks for help there; staff answer on the same page)
+    group:     'account',
     component: markRaw(defineAsyncComponent(() => import('./components/AccountSupportTab.vue'))),
     visibleIf: ticketsEnabled,
     dataTour:  'settings-support-tab',
-    order:     999,
+    order:     30,
   })
 
   registry.localeMessages.push({ en, tr })

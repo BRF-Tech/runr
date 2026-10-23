@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import client from '@/api/client'
 import ProjectBilling from '@/modules/billing/components/ProjectBilling.vue'
-import { LINES, bill, fail, fixedRequest, flush, globalOptions, ok } from './helpers'
+import { LINES, bill, costLimit, fail, fixedRequest, flush, globalOptions, ok } from './helpers'
 
 vi.mock('@/api/client', () => ({ default: { get: vi.fn(), post: vi.fn(), put: vi.fn(), delete: vi.fn() } }))
 
@@ -29,6 +29,7 @@ describe('ProjectBilling', () => {
   beforeEach(() => {
     vi.mocked(client.get).mockReset()
     vi.mocked(client.post).mockReset()
+    vi.mocked(client.put).mockReset()
   })
 
   it('shows a pay-as-you-go project\'s estimate and its past bills', async () => {
@@ -76,6 +77,47 @@ describe('ProjectBilling', () => {
     const w = await mountTab()
     expect(find(w, 'project-allocation').text()).toContain('2 vCPU · 4 GB')
     expect(find(w, 'project-allocation').text()).toContain('$62.00 per month')
+  })
+
+  it('a pay-as-you-go project has a monthly cost limit; a fixed-price project shows none', async () => {
+    vi.mocked(client.get).mockImplementation((url) => (url === '/projects/p1/billing' ? ok(info({ cost_limit: costLimit() })) : ok({})))
+    const w = await mountTab()
+    expect(find(w, 'cost-limit').exists()).toBe(true)
+    expect(find(w, 'cost-limit-month-to-date').text()).toBe('This month so far: $42.00')
+
+    // the saved limit replaces the tab's status
+    vi.mocked(client.put).mockReturnValue(ok({ data: costLimit({ limit: { amount: 100, action: 'notify' }, percent: 42, state: 'ok' }) }))
+    await find(w, 'cost-limit-amount').setValue('100')
+    await w.find('[data-test="cost-limit"] form').trigger('submit')
+    await flush()
+    expect(client.put).toHaveBeenCalledWith('/projects/p1/billing/cost-limit', { amount: 100, action: 'notify' })
+    expect(find(w, 'cost-limit-month-to-date').text()).toBe('This month so far: $42.00 of $100.00')
+    w.unmount()
+
+    vi.mocked(client.get).mockImplementation((url) => (url === '/projects/p1/billing'
+      ? ok(info({ billing_type: 'fixed', cost_limit: costLimit({ available: false }) }))
+      : ok({ currency: 'USD', monthly_price: 31, breakdown: { cpu: 25, memory: 6, gpu: 0 }, markup_percent: 0 })))
+    const fixed = await mountTab()
+    expect(find(fixed, 'cost-limit').exists()).toBe(false)
+    fixed.unmount()
+
+    // no pay-as-you-go prices: nothing to limit
+    vi.mocked(client.get).mockImplementation(() => ok(info({ cost_limit: costLimit({ available: false }) })))
+    const free = await mountTab()
+    expect(find(free, 'cost-limit').exists()).toBe(false)
+  })
+
+  it('a resume from the cost limit hands the project back to the page', async () => {
+    vi.mocked(client.get).mockImplementation(() => ok(info({
+      cost_limit: costLimit({ limit: { amount: 100, action: 'stop' }, percent: 42, state: 'ok', stopped: true, can_resume: true }),
+    })))
+    vi.mocked(client.post).mockReturnValue(ok({ data: costLimit({ limit: { amount: 100, action: 'stop' }, percent: 42, state: 'ok' }), project: { id: 'p1', stopped: null }, deployment_id: 'd1' }))
+    const w = await mountTab()
+    await find(w, 'cost-limit-resume').trigger('click')
+    await flush()
+    expect(client.post).toHaveBeenCalledWith('/projects/p1/billing/cost-limit/resume')
+    expect(w.emitted('project-changed')[0][0]).toEqual({ id: 'p1', stopped: null })
+    expect(find(w, 'cost-limit-stopped').exists()).toBe(false)
   })
 
   it('tells members without billing access who sees the bills', async () => {

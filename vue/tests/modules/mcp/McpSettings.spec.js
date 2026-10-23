@@ -60,7 +60,7 @@ beforeEach(() => {
   tokensApi.create.mockResolvedValue({ data: { plain_token: '42|plain-mcp-token', token: { id: 42, name: 'laptop', abilities: ['projects.view'] } } })
 })
 
-describe('Settings → AI agents (MCP)', () => {
+describe('Data & Integrations → AI agents (MCP)', () => {
   it('shows the endpoint and the one-click Claude Code command', async () => {
     const w = await mountSettings()
 
@@ -129,6 +129,18 @@ describe('Settings → AI agents (MCP)', () => {
     await w.find('[data-testid="mcp-tools-filter"]').setValue('deploy')
     expect(w.find('[data-testid="mcp-tool-projects_list"]').exists()).toBe(false)
     expect(w.find('[data-testid="mcp-tool-deploy"]').exists()).toBe(true)
+  })
+
+  it('names the platform administrators a platform tool needs and groups the billing tools', async () => {
+    mcpApi.tools.mockResolvedValue({ data: { data: [...TOOLS,
+      { name: 'billing_region_organization_set', title: 'Queue consumer charging for a tenant', description: 'Platform', group: 'billing', permissions: ['@platform:billing.manage'], allowed: false, annotations: {}, streams: false, input_schema: {} },
+    ], groups: ['projects', 'deployments', 'runtimes', 'billing'] } })
+    const w = await mountSettings()
+
+    const tool = w.find('[data-testid="mcp-tool-billing_region_organization_set"]')
+    expect(tool.text()).toContain('platform administrator with')
+    expect(tool.text()).not.toContain('@platform:')
+    expect(w.find('[data-testid="mcp-tools"]').text()).toContain('Billing')
   })
 
   it('hides the token form and the clients without tokens.manage', async () => {

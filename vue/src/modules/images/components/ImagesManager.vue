@@ -1,5 +1,5 @@
 <script setup>
-// Settings → Images (docs/images.md): the organization's uploaded images per region — container
+// Build & Run → Images (docs/images.md): the organization's uploaded images per region — container
 // images and WebAssembly modules — with their scan, the storage quota, upload (with resume of
 // unfinished uploads) and delete.
 import { ref, computed, onMounted } from 'vue'

@@ -1,9 +1,11 @@
 import { defineAsyncComponent, markRaw } from 'vue'
+import { GitBranch } from 'lucide-vue-next'
 import { usePermissionsStore } from '@/stores/permissions'
 
 /**
  * Git deploy (core plugin, always loaded): the project "Git" tab (remote, provider repository,
- * previews, deploy history) and Settings → Git providers (GitHub App, GitLab, Forgejo/Gitea).
+ * previews, deploy history) and Data & Integrations → Git providers (GitHub App, GitLab,
+ * Forgejo/Gitea).
  * Strings: src/locales/{en,tr}/git.js.
  */
 export default function (registry) {
@@ -20,9 +22,13 @@ export default function (registry) {
   registry.settingsTabs.push({
     key:       'git-providers',
     labelKey:  'gitDeploy.providers.tab',
+    descKey:   'gitDeploy.providers.navDesc',
+    icon:      markRaw(GitBranch),
+    group:     'data',
+    section:   'integrations',
     component: markRaw(defineAsyncComponent(() => import('@/components/git/GitProvidersManager.vue'))),
     // Single-tenant: the organization's git_providers.manage; multi-tenant: platform admins
     visibleIf: () => usePermissionsStore().can('git_providers.manage'),
-    order:     60,
+    order:     10,
   })
 }

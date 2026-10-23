@@ -104,10 +104,11 @@ describe('ScaleConfig', () => {
     }
   }
 
-  it('scale to zero resets to 0..1 replicas', async () => {
+  // #627: scale to zero keeps its max, so a project that scales to zero can still burst
+  it('scale to zero drops min to 0 and keeps the max', async () => {
     const w = mountWith(ScaleConfig, { scaleToZero: false, minScale: 3, maxScale: 8 })
     await w.findAll('button')[0].trigger('click')
-    expect(lastEmits(w)).toEqual({ zero: true, min: 0, max: 1 })
+    expect(lastEmits(w)).toEqual({ zero: true, min: 0, max: 8 })
   })
 
   it('custom scale starts at 1..5 replicas, or keeps existing bounds', async () => {
@@ -120,9 +121,24 @@ describe('ScaleConfig', () => {
     expect(lastEmits(kept)).toEqual({ zero: false, min: 2, max: 9 })
   })
 
-  it('hides the replica inputs while scaling to zero', () => {
+  it('offers only the max while scaling to zero', async () => {
     const w = mountWith(ScaleConfig, { scaleToZero: true, minScale: 0, maxScale: 1 })
-    expect(w.findAll('input')).toHaveLength(0)
+    expect(w.findAll('input')).toHaveLength(1)
+    expect(w.find('[data-testid="scale-min"]').exists()).toBe(false)
+    expect(w.find('[data-testid="scale-zero-burst"]').text()).toContain('1')
+
+    // Buttons in zero mode: [zero, custom, max-, max+]
+    await w.findAll('button')[3].trigger('click')
+    expect(lastEmits(w).max).toBe(2)
+    await w.find('[data-testid="scale-max"]').setValue('40')
+    expect(lastEmits(w)).toMatchObject({ max: 40 })
+    expect(w.emitted('update:minScale')).toBeUndefined()
+  })
+
+  it('caps the max at maxLimit (model services: 100)', async () => {
+    const w = mountWith(ScaleConfig, { scaleToZero: true, minScale: 0, maxScale: 100, maxLimit: 100 })
+    await w.findAll('button')[3].trigger('click')
+    expect(lastEmits(w).max).toBe(100)
   })
 
   // Buttons in custom mode: [zero, custom, min-, min+, max-, max+]

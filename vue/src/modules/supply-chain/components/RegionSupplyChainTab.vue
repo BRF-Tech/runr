@@ -7,6 +7,7 @@ import { useI18n } from 'vue-i18n'
 import { KeyRound, RefreshCw, Download, ShieldCheck } from 'lucide-vue-next'
 import { useConfirm } from '@/composables/useConfirm'
 import { useToast } from '@/composables/useToast'
+import { useLatest } from '@/composables/useLatest'
 import { supplyChainApi, saveBlob } from '../api'
 import SeverityBadges from './SeverityBadges.vue'
 import StepChip from './StepChip.vue'
@@ -25,6 +26,12 @@ const errors    = ref({})
 const preview   = ref(null)
 const runtimes  = ref([])
 let timer = null
+// The newest load wins (an action's reload, the poll); a load that ends after the tab is gone
+// schedules no more polls
+const latest = useLatest()
+// One region action at a time: a double click must not generate a key and rotate it at once,
+// or queue an install twice
+const acting = ref(false)
 
 const FIELDS = [
   'sbom_enabled', 'scan_enabled', 'scan_external_images', 'rescan_interval_hours',
@@ -75,14 +82,17 @@ const changes = computed(() => {
 })
 
 async function load(silent = false) {
+  const current = latest.begin()
   if (!silent) loading.value = true
   try {
     const { data } = await supplyChainApi.region(props.region.id)
+    if (!current()) return
     settings.value = data?.data ?? null
     if (settings.value && !silent) fillForm(settings.value)
   } finally {
-    loading.value = false
+    if (current()) loading.value = false
   }
+  if (!current()) return
   clearTimeout(timer)
   if (busyState.value) timer = setTimeout(() => load(true), 4000)
 }
@@ -111,13 +121,18 @@ async function save() {
 }
 
 async function action(fn, confirmOptions = null) {
-  if (confirmOptions && !(await confirm(confirmOptions))) return
+  if (acting.value) return
+  acting.value = true
   try {
+    if (confirmOptions && !(await confirm(confirmOptions))) return
     const { data } = await fn()
+    latest.cancel() // a poll sent before the action must not put the old status back
     if (data?.data) settings.value = data.data
     load(true)
   } catch (e) {
     toast.error(e?.response?.data?.message ?? t('supplyChain.saveFailed'))
+  } finally {
+    acting.value = false
   }
 }
 
@@ -207,7 +222,7 @@ onUnmounted(() => clearTimeout(timer))
               <span>{{ t('supplyChain.region.dbStatus', { status: settings.scanner_db_status }) }}</span>
               <span v-if="settings.scanner_db_updated_at">{{ t('supplyChain.region.dbUpdated', { date: fmt(settings.scanner_db_updated_at) }) }}</span>
               <span v-if="settings.scanner_db_refreshed_at">{{ t('supplyChain.region.dbRefreshed', { date: fmt(settings.scanner_db_refreshed_at) }) }}</span>
-              <button type="button" class="btn btn-secondary text-[11px] py-1" :disabled="settings.scanner_db_status === 'refreshing'" data-db-refresh @click="refreshDb">
+              <button type="button" class="btn btn-secondary text-[11px] py-1" :disabled="acting || settings.scanner_db_status === 'refreshing'" data-db-refresh @click="refreshDb">
                 <RefreshCw class="w-3 h-3" :class="settings.scanner_db_status === 'refreshing' ? 'animate-spin' : ''" />
                 {{ settings.scanner_db_status === 'refreshing' ? t('supplyChain.region.dbRefreshing') : t('supplyChain.region.dbRefresh') }}
               </button>
@@ -251,7 +266,7 @@ onUnmounted(() => clearTimeout(timer))
           </div>
           <p v-if="settings.signing_message" class="text-[11px] text-red-400">{{ settings.signing_message }}</p>
           <div class="flex flex-wrap gap-2">
-            <button type="button" class="btn btn-secondary text-[11px] py-1" :disabled="settings.signing_status === 'generating'" data-generate-key @click="generateKey">
+            <button type="button" class="btn btn-secondary text-[11px] py-1" :disabled="acting || settings.signing_status === 'generating'" data-generate-key @click="generateKey">
               {{ keyReady ? t('supplyChain.region.rotateKey') : t('supplyChain.region.generateKey') }}
             </button>
             <button v-if="keyReady" type="button" class="btn btn-secondary text-[11px] py-1" @click="downloadPublicKey">
@@ -264,7 +279,7 @@ onUnmounted(() => clearTimeout(timer))
           <div v-if="settings.signing_retired_keys?.length" class="pt-1 space-y-1">
             <p class="text-[11px] text-gray-400">{{ t('supplyChain.region.retiredKeys') }}</p>
             <p v-for="k in settings.signing_retired_keys" :key="k.fingerprint" class="text-[10px] font-mono text-gray-500 break-all">{{ k.fingerprint }} · {{ fmt(k.retired_at) }}</p>
-            <button type="button" class="btn btn-secondary text-[11px] py-1" data-forget-retired @click="forgetRetired">{{ t('supplyChain.region.forgetRetired') }}</button>
+            <button type="button" class="btn btn-secondary text-[11px] py-1" :disabled="acting" data-forget-retired @click="forgetRetired">{{ t('supplyChain.region.forgetRetired') }}</button>
           </div>
         </section>
 
@@ -305,11 +320,11 @@ onUnmounted(() => clearTimeout(timer))
             <p v-if="fieldError('caas_trusted_keys')" class="text-xs text-red-400">{{ fieldError('caas_trusted_keys') }}</p>
           </div>
           <div class="flex flex-wrap gap-2">
-            <button type="button" class="btn btn-primary text-[11px] py-1" :disabled="!keyReady || ['installing', 'removing'].includes(settings.admission_status)"
+            <button type="button" class="btn btn-primary text-[11px] py-1" :disabled="acting || !keyReady || ['installing', 'removing'].includes(settings.admission_status)"
               :title="keyReady ? '' : t('supplyChain.region.keyRequired')" data-install-admission @click="installAdmission">
               {{ admissionInstalled ? t('supplyChain.region.update') : t('supplyChain.region.install') }}
             </button>
-            <button v-if="admissionInstalled" type="button" class="btn btn-secondary text-[11px] py-1" data-remove-admission @click="removeAdmission">{{ t('supplyChain.region.remove') }}</button>
+            <button v-if="admissionInstalled" type="button" class="btn btn-secondary text-[11px] py-1" :disabled="acting" data-remove-admission @click="removeAdmission">{{ t('supplyChain.region.remove') }}</button>
             <button type="button" class="btn btn-secondary text-[11px] py-1" data-preview @click="togglePreview">{{ preview ? t('supplyChain.region.hidePreview') : t('supplyChain.region.preview') }}</button>
           </div>
           <p v-if="!keyReady" class="text-[11px] text-gray-500">{{ t('supplyChain.region.keyRequired') }}</p>

@@ -1,6 +1,6 @@
 import client from './client'
 
-// Git deploy (docs/git-deploy.md): the project's Git tab and Settings → Git providers
+// Git deploy (docs/git-deploy.md): the project's Git tab and Data & Integrations → Git providers
 export const gitApi = {
   get: (projectId) =>
     client.get(`/projects/${projectId}/git`),
@@ -45,7 +45,7 @@ export const gitApi = {
   deletePreview: (projectId, previewId) =>
     client.delete(`/projects/${projectId}/previews/${previewId}`),
 
-  // Settings → Git providers
+  // Data & Integrations → Git providers
   providers: () =>
     client.get('/git-providers'),
 

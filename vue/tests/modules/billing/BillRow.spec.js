@@ -96,6 +96,28 @@ describe('BillRow', () => {
     expect(setUrl).toHaveBeenLastCalledWith('b-1', null)
   })
 
+  it('names the environment of every line once the project ran in more than production', async () => {
+    // Only production: no environment column
+    const plain = mountRow({ bill: bill({ line_items: LINES.map((l) => ({ ...l, environment_id: null, environment_name: 'production' })) }), expanded: true })
+    await flush()
+    expect(find(plain, 'bill-environment-head-b-1').exists()).toBe(false)
+
+    const lines = [
+      { ...LINES[0], description: 'vCPU hours (production, eu-1, HTTP)', environment_id: null, environment_name: 'production' },
+      { ...LINES[0], description: 'vCPU hours (staging, eu-1, HTTP)', environment_id: 'env-1', environment_name: 'staging' },
+      { ...LINES[0], description: 'vCPU hours (deleted environment, eu-1, HTTP)', environment_id: 'env-2', environment_name: 'deleted environment' },
+      { type: 'fixed', metric: 'fixed_resources', description: 'Fixed resources 1 vCPU · 1 GB memory (eu-1)', quantity: 30, unit: 'days', unit_price: 1, total: 30, environment_id: null, environment_name: null },
+    ]
+    const w = mountRow({ bill: bill({ line_items: lines }), expanded: true })
+    await flush()
+    expect(find(w, 'bill-environment-head-b-1').text()).toBe('Environment')
+    expect(find(w, 'bill-line-environment-b-1-0').text()).toBe('production')
+    expect(find(w, 'bill-line-environment-b-1-1').text()).toBe('staging')
+    expect(find(w, 'bill-line-environment-b-1-2').text()).toBe('deleted environment')
+    // a fixed allocation covers every environment of the project
+    expect(find(w, 'bill-line-environment-b-1-3').text()).toBe('—')
+  })
+
   it('keeps open bills read-only and reports a refused payment update', async () => {
     const open = mountRow({ bill: bill({ status: 'open', line_items: [] }), payment: { setUrl: vi.fn(), setPaid: vi.fn() }, expanded: true })
     await flush()

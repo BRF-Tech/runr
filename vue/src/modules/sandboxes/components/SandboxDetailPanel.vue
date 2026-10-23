@@ -9,6 +9,7 @@ import SandboxRunCode from './SandboxRunCode.vue'
 import SandboxLogs from './SandboxLogs.vue'
 import { sandboxesApi } from '../api/sandboxes'
 import { useSandboxActions } from '../composables/useSandboxActions'
+import { useLatest } from '@/composables/useLatest'
 import { formatDateTime, formatDuration, isAlive, secondsUntil } from '../utils'
 
 const props = defineProps({
@@ -29,10 +30,14 @@ const now      = ref(Date.now())
 
 watch(() => props.sandbox, (s) => { if (s) current.value = { ...current.value, ...s } })
 
+// An action's answer is newer than a refresh sent before it
+const latest = useLatest()
+
 async function refresh() {
+  const isCurrent = latest.begin()
   try {
     const { data } = await sandboxesApi.get(current.value.id)
-    if (data?.data) {
+    if (isCurrent() && data?.data) {
       current.value = data.data
       emit('changed', data.data)
     }
@@ -54,6 +59,7 @@ async function act(action, ...args) {
   try {
     const updated = await actions[action](current.value, ...args)
     if (updated) {
+      latest.cancel()
       current.value = { ...current.value, ...updated }
       emit(action === 'kill' ? 'killed' : 'changed', current.value)
     }

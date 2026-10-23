@@ -54,12 +54,21 @@ async function loadOwn() {
   }
 }
 
-async function loadTenants() {
+// saved: the row just saved or reset. The other rows keep what is typed into them: saving one
+// row reloads the table, which must not throw away the edits of the rows not saved yet.
+async function loadTenants(saved = null) {
   if (!mayManageTenants.value) return
   try {
     const { data } = await sandboxAdminApi.tenantQuotas()
-    tenants.value   = data?.data ?? []
-    forms.value     = Object.fromEntries(tenants.value.map(r => [rowKey(r), toForm(r)]))
+    const before = Object.fromEntries(tenants.value.map(r => [rowKey(r), r]))
+    const rows = data?.data ?? []
+    forms.value = Object.fromEntries(rows.map((r) => {
+      const key = rowKey(r)
+      const typed = forms.value[key]
+      const edited = key !== saved && typed && before[key] && JSON.stringify(typed) !== JSON.stringify(toForm(before[key]))
+      return [key, edited ? typed : toForm(r)]
+    }))
+    tenants.value   = rows
     showTable.value = true
   } catch {
     showTable.value = false
@@ -85,7 +94,7 @@ async function save(row) {
   try {
     await sandboxAdminApi.updateQuota(key, payloadOf(key))
     toast.success(t('sandboxes.settings.quotas.saved'))
-    await Promise.all([loadTenants(), loadOwn()])
+    await Promise.all([loadTenants(key), loadOwn()])
   } catch (e) {
     toast.error(apiError(e, t('sandboxes.settings.quotas.failed')))
   } finally {
@@ -104,7 +113,7 @@ async function reset(row) {
   try {
     await sandboxAdminApi.resetQuota(row.tenant.id)
     toast.success(t('sandboxes.settings.quotas.resetDone'))
-    await Promise.all([loadTenants(), loadOwn()])
+    await Promise.all([loadTenants(rowKey(row)), loadOwn()])
   } catch (e) {
     toast.error(apiError(e, t('sandboxes.settings.quotas.failed')))
   }

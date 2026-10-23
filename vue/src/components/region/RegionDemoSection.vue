@@ -22,7 +22,13 @@ const lastAction    = ref(
   props.status === 'removing' ? 'remove' : null,
 )
 
-const busy   = computed(() => demoStatus.value === 'seeding' || demoStatus.value === 'removing')
+// A seed / remove request in flight: the button is busy at once (the status changes only when it
+// answers), so a double click cannot send a second request ("already exists")
+const requesting = ref(false)
+// Demo events while the request ran: a fast job can finish before it answers, and that answer
+// ("seeding" / "removing") must not overwrite the status the event told
+let demoEvents = 0
+const busy   = computed(() => requesting.value || demoStatus.value === 'seeding' || demoStatus.value === 'removing')
 const loaded = computed(() => demoStatus.value === 'ready')
 const hasError = computed(() => demoStatus.value === 'error')
 
@@ -50,35 +56,45 @@ watch(demoStatus, (val) => {
 useJobEvents({
   'demo.deployed': (payload) => {
     if (payload.region_id !== props.regionId) return
+    demoEvents++
     demoStatus.value = payload.region_demo_status ?? 'ready'
   },
   'demo.removed': (payload) => {
     if (payload.region_id !== props.regionId) return
+    demoEvents++
     demoStatus.value = payload.region_demo_status ?? null
   },
   'demo.seed_failed': (payload) => {
     if (payload.region_id !== props.regionId) return
+    demoEvents++
     demoStatus.value = payload.region_demo_status ?? 'error'
   },
   'demo.deploy_failed': (payload) => {
     if (payload.region_id !== props.regionId) return
+    demoEvents++
     demoStatus.value = payload.region_demo_status ?? 'error'
   },
   'demo.remove_failed': (payload) => {
     if (payload.region_id !== props.regionId) return
+    demoEvents++
     demoStatus.value = payload.region_demo_status ?? 'error'
   },
 })
 
 async function seed() {
+  if (requesting.value) return
+  requesting.value = true
+  const eventsBefore = demoEvents
   try {
     lastAction.value = 'seed'
     const { data } = await knativeRegionsApi.seedDemoProjects(props.regionId)
-    demoStatus.value = data.region_demo_status ?? 'seeding'
+    if (demoEvents === eventsBefore) demoStatus.value = data.region_demo_status ?? 'seeding'
   } catch (err) {
     lastAction.value = null
     const msg = err.response?.data?.message ?? err.message
     toast.error(msg)
+  } finally {
+    requesting.value = false
   }
 }
 
@@ -88,15 +104,19 @@ async function remove() {
     message:     t('settings.regionDemo.removeConfirm'),
     destructive: true,
   })
-  if (!ok) return
+  if (!ok || requesting.value) return
+  requesting.value = true
+  const eventsBefore = demoEvents
   try {
     lastAction.value = 'remove'
     const { data } = await knativeRegionsApi.removeDemoProjects(props.regionId)
-    demoStatus.value = data.region_demo_status ?? 'removing'
+    if (demoEvents === eventsBefore) demoStatus.value = data.region_demo_status ?? 'removing'
   } catch (err) {
     lastAction.value = null
     const msg = err.response?.data?.message ?? err.message
     toast.error(msg)
+  } finally {
+    requesting.value = false
   }
 }
 </script>
@@ -140,6 +160,7 @@ async function remove() {
         v-if="loaded || hasError"
         type="button"
         class="text-xs text-red-500 hover:text-red-400 border border-red-800/50 hover:border-red-600/50 rounded-sm px-2.5 py-1 transition-colors shrink-0 ml-3"
+        :disabled="requesting"
         @click="remove"
       >
         {{ t('settings.regionDemo.removeBtn') }}

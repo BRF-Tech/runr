@@ -96,8 +96,9 @@ watch(() => form.knative_region_id, async (id) => {
   if (!id) return
   try {
     const { data } = await aiApi.gpuQuota(id)
-    quota.value = data
-  } catch { quota.value = null }
+    // Another region picked meanwhile: its quota line is not this one
+    if (form.knative_region_id === id) quota.value = data
+  } catch { if (form.knative_region_id === id) quota.value = null }
 })
 
 const isCustom = computed(() => form.engine === 'custom')
@@ -261,7 +262,7 @@ async function submit() {
           </div>
         </section>
 
-        <ScaleConfig v-model:scale-to-zero="form.scale_to_zero" v-model:min-scale="form.min_scale" v-model:max-scale="form.max_scale" />
+        <ScaleConfig v-model:scale-to-zero="form.scale_to_zero" v-model:min-scale="form.min_scale" v-model:max-scale="form.max_scale" :max-limit="100" />
         <div v-if="coldStartHint" class="flex items-start gap-2 rounded-lg border border-gray-700 bg-gray-800/40 px-3 py-2 text-[11px] text-gray-400" data-testid="deploy-cold-start">
           <Info class="w-3.5 h-3.5 shrink-0 mt-0.5" />
           <span>{{ t('ai.deploy.coldStart') }}<template v-if="form.scale_to_zero"> {{ t('ai.gpu.minScaleSuggestion') }}</template></span>

@@ -6,6 +6,7 @@ import { ref, computed, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { imagesApi } from '../api'
 import { usePermissionsStore } from '@/stores/permissions'
+import { useLatest } from '@/composables/useLatest'
 
 const { t } = useI18n()
 const perms = usePermissionsStore()
@@ -24,22 +25,27 @@ const images  = ref([])
 const loading = ref(false)
 
 const selected = computed(() => images.value.find(i => i.image_ref === props.modelValue) ?? null)
+// The images of the region picked last: a slower list of a region picked before is dropped
+const latest = useLatest()
 
 async function load() {
+  const current = latest.begin()
   if (!canView.value || !props.regionId) {
     images.value = []
+    loading.value = false
     return
   }
   loading.value = true
   try {
     const { data } = await imagesApi.list({ knative_region_id: props.regionId, kind: 'image' })
+    if (!current()) return
     // An image of a registry the region left (a move to another cluster) cannot run there
     images.value = (data.data ?? []).filter(i => i.in_registry !== false)
     if (images.value.some(i => i.image_ref === props.modelValue)) source.value = 'uploaded'
   } catch {
-    images.value = []
+    if (current()) images.value = []
   } finally {
-    loading.value = false
+    if (current()) loading.value = false
   }
 }
 

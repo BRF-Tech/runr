@@ -8,6 +8,7 @@ import { runtimesApi } from '@/api/runtimes'
 import { useSettingsStore } from '@/stores/settings'
 import { isRegionReady, runtimeAvailableIn } from '@/composables/useProjectForm'
 import { apiErrorMessage } from '@/composables/useRuntimesManager'
+import { useLatest } from '@/composables/useLatest'
 
 const props = defineProps({ runtime: { type: Object, required: true } })
 const emit  = defineEmits(['close'])
@@ -28,7 +29,12 @@ const version  = ref(versions.value.find(v => v.is_default)?.version ?? versions
 const running  = ref(false)
 const error    = ref(null)
 
+// Closed (cancel, backdrop) while the test project was being created: no navigation then, the
+// user has moved on
+const latest = useLatest()
+
 async function start() {
+  if (running.value) return
   error.value   = null
   running.value = true
   try {
@@ -36,6 +42,7 @@ async function start() {
       knative_region_id: regionId.value,
       version:           version.value || undefined,
     })
+    if (!latest.alive()) return
     const project = data.data ?? data
     emit('close')
     if (project?.id) router.push({ name: 'project-detail', params: { id: project.id } })

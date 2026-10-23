@@ -1,6 +1,6 @@
 <script setup>
 // Expiry of a new API token as duration presets (30 days … 1 year) or no expiry. Used by
-// Settings → API tokens and the MCP token form.
+// Administration → API Tokens and the MCP token form.
 import { ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Clock } from 'lucide-vue-next'

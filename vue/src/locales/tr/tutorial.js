@@ -22,8 +22,10 @@ export default {
       cardDesc:       'Her kart bir projenin türünü, runtime bilgisini, durumunu ve son versiyon bilgisini gösterir. Açmak için tıklayın.',
       notifications:     'Bildirimler',
       notificationsDesc: 'Kaynak eşik uyarıları ve sistem olayları burada görünür. Rozet okunmamış bildirim sayısını gösterir.',
-      settings:       'Ayarlar',
-      settingsDesc:   'Bölgeleri, base domain ve genel kaynak limitlerini yönetin. Demo verisini yükleyerek platformu hızlıca deneyebilirsiniz.',
+      menus:          'Menüler',
+      menusDesc:      'Projeler tek başına durur. Geliştir ve Çalıştır, Veri ve Entegrasyonlar, Gözlemlenebilirlik ve Yönetim diğer bütün sayfaları menülerde toplar: bölgeler ve platform ayarları, üyeler ve API token\'ları Yönetim altındadır.',
+      userMenu:       'Hesabınız',
+      userMenuDesc:   'Hesap ayarları, tema, dil, bu eğitim ve çıkış.',
     },
     create: {
       name:           'Proje Adı',

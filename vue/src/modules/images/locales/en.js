@@ -2,6 +2,7 @@
 export default {
   images: {
     tab: 'Images',
+    navDesc: 'Container images and WebAssembly modules you uploaded',
     title: 'Uploaded images',
     description: 'Container images (docker save or OCI image-layout tars) and WebAssembly modules (.wasm) uploaded into a region\'s registry — for CaaS projects, runtime versions and wasm-exec functions. The file goes through RunR to the region, so regions without internet access get their images this way.',
     upload: 'Upload image',
@@ -80,7 +81,7 @@ export default {
       select: 'Select an uploaded image',
       none: 'No container images uploaded in this region.',
       pickRegion: 'Choose the region first.',
-      manage: 'Upload one in Settings → Images.',
+      manage: 'Upload one in Build & Run → Images.',
       pinned: 'Pinned by digest: {digest}',
     },
 

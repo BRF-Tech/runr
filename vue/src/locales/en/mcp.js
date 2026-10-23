@@ -6,6 +6,7 @@ export default {
 
     settings: {
       tab:            'AI agents (MCP)',
+      navDesc: 'Connect AI assistants to RunR over MCP',
       title:          'AI agents (MCP)',
       subtitle:       'Let Claude and other MCP clients operate RunR with your permissions.',
       connectTitle:   'Connect an MCP client',
@@ -68,6 +69,7 @@ export default {
       streams:     'progress',
       everyone:    'every signed-in user',
       or:          'or',
+      platformAdmin: 'platform administrator with {permissions}',
       group: {
         account:       'Account',
         projects:      'Projects',
@@ -78,6 +80,7 @@ export default {
         observability: 'Traces, replay and uptime',
         configuration: 'Environment variables',
         domains:       'Domains',
+        gateways:      'API gateways',
         regions:       'Regions',
         runtimes:      'Runtimes',
         sandboxes:     'Sandboxes',
@@ -87,6 +90,8 @@ export default {
         security:      'Supply chain',
         audit:         'Audit log',
         mcp:           'Hosted MCP servers',
+        billing:       'Billing',
+        organization:  'Organization export and import',
       },
     },
 
@@ -102,7 +107,7 @@ export default {
       requiredTenant: 'This MCP server belongs to {tenant}. Switch to that organization in the header to approve.',
       scopes:         'What the connection may do',
       lifetime:       'Valid for',
-      lifetimeHint:   'The token appears under Settings → API tokens and can be revoked there at any time.',
+      lifetimeHint:   'The token appears under Administration → API Tokens and can be revoked there at any time.',
       untilRevoked:   'Until revoked',
       days:           '{n} days',
       cannotApprove:  'Approving needs the permission to manage your own API tokens. Ask an administrator.',
@@ -220,7 +225,7 @@ export default {
       template:         'Start from',
       runtimeMissing:   'The runtime {runtime} of this starter is not enabled in this organization.',
       enableRuntime:    'Enable the runtime',
-      askAdmin:         'An administrator enables it in Settings → Runtimes.',
+      askAdmin:         'An administrator enables it in Build & Run → Runtimes.',
       image:            'Container image',
       imagePlaceholder: 'ghcr.io/acme/mcp-server:1.0',
       port:             'Port',
@@ -228,6 +233,7 @@ export default {
       submit:           'Create MCP server',
       commitMessage:    'MCP server starter',
       partial:          'The project {name} was created, but setting it up stopped: {error}',
+      retry:            'Continue the setup',
     },
   },
 }

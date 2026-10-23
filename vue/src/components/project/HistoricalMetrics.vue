@@ -23,6 +23,20 @@ watch(() => props.projectId, () => {
 function fmtVal(v, dec = 2) {
   return v != null ? Number(v).toFixed(dec) : '—'
 }
+
+// The sessions' totals of the summary are the deployment's size × the sessions' pod time, as
+// metering counts them: total_cpu_ms in vCPU milliseconds, total_memory_mb_ms in MiB × ms
+const HOUR_MS = 3_600_000
+function fmtHours(v) {
+  if (!v) return '0'
+  return v < 0.01 ? '< 0.01' : v.toFixed(2)
+}
+function sessionUsage(sessions) {
+  return t('metrics.sessionUsage', {
+    cpu: fmtHours(Number(sessions?.total_cpu_ms ?? 0) / HOUR_MS),
+    memory: fmtHours(Number(sessions?.total_memory_mb_ms ?? 0) / 1024 / HOUR_MS),
+  })
+}
 </script>
 
 <template>
@@ -50,19 +64,20 @@ function fmtVal(v, dec = 2) {
     <div v-if="summary" data-tour="metrics-summary" class="grid grid-cols-2 sm:grid-cols-4 gap-3">
       <div class="bg-gray-900 border border-gray-800 rounded-md p-3">
         <div class="text-xs text-gray-400">{{ t('metrics.avgCpu') }}</div>
-        <div class="text-lg font-mono text-sky-400">{{ fmtVal(summary.metrics?.avg_cpu, 4) }}</div>
+        <div class="text-lg font-mono text-sky-400" data-test="metrics-avg-cpu">{{ fmtVal(summary.metrics?.avg_cpu, 4) }} <span class="text-xs text-gray-500">{{ t('metrics.unitCores') }}</span></div>
       </div>
       <div class="bg-gray-900 border border-gray-800 rounded-md p-3">
         <div class="text-xs text-gray-400">{{ t('metrics.avgMemory') }}</div>
-        <div class="text-lg font-mono text-emerald-400">{{ fmtVal(summary.metrics?.avg_memory) }} MB</div>
+        <div class="text-lg font-mono text-emerald-400" data-test="metrics-avg-memory">{{ fmtVal(summary.metrics?.avg_memory) }} <span class="text-xs text-gray-500">MiB</span></div>
       </div>
       <div class="bg-gray-900 border border-gray-800 rounded-md p-3">
         <div class="text-xs text-gray-400">{{ t('metrics.avgRps') }}</div>
-        <div class="text-lg font-mono text-amber-400">{{ fmtVal(summary.metrics?.avg_rps, 3) }}</div>
+        <div class="text-lg font-mono text-amber-400" data-test="metrics-avg-rps">{{ fmtVal(summary.metrics?.avg_rps, 3) }} <span class="text-xs text-gray-500">/s</span></div>
       </div>
       <div class="bg-gray-900 border border-gray-800 rounded-md p-3">
         <div class="text-xs text-gray-400">{{ t('metrics.totalSessions') }}</div>
-        <div class="text-lg font-mono text-purple-400">{{ summary.sessions?.total_sessions ?? 0 }}</div>
+        <div class="text-lg font-mono text-purple-400" data-test="metrics-sessions">{{ summary.sessions?.total_sessions ?? 0 }}</div>
+        <div v-if="summary.sessions?.total_sessions" class="text-[11px] text-gray-500 mt-0.5" data-test="metrics-session-usage">{{ sessionUsage(summary.sessions) }}</div>
       </div>
     </div>
 
@@ -93,7 +108,7 @@ function fmtVal(v, dec = 2) {
             v-for="(val, i) in chartData.memory" :key="'mem-'+i"
             class="flex-1 bg-emerald-600 rounded-t-sm min-h-[2px] transition-all"
             :style="{ height: barHeight(val, chartData.memory) }"
-            :title="fmtVal(val) + ' MB'"
+            :title="fmtVal(val) + ' MiB'"
           />
         </div>
       </div>

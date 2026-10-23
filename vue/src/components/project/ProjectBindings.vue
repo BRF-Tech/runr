@@ -2,6 +2,8 @@
 // Bindings of a project (docs/bindings.md): managed KV / object storage / Postgres / external
 // credentials attached with an env prefix. Values reach the functions through the Secret
 // <project>-bindings (envFrom); attach, detach and rotation roll the running revision.
+// A ready Postgres binding can be attached with dynamic credentials: a user of the project's own
+// from the region's OpenBao (credential_mode "dynamic"), switchable both ways afterwards.
 // Changes: env.edit on the project + bindings.manage; values: bindings.view_credentials.
 import { ref, reactive, computed, onMounted, onBeforeUnmount } from 'vue'
 import { useI18n } from 'vue-i18n'
@@ -15,6 +17,7 @@ import {
   bindingStatusClass, bindingPayload, defaultSettings, isBusy, fmtBytes, limitBytes,
 } from '@/utils/bindings'
 import { Database, HardDrive, Boxes, KeyRound, Plus, Pencil, RefreshCw, Eye, Copy, X, Check, AlertTriangle } from 'lucide-vue-next'
+import { useLatest } from '@/composables/useLatest'
 
 const props = defineProps({ project: { type: Object, required: true } })
 
@@ -28,6 +31,11 @@ const canReveal = computed(() => perms.can('bindings.view_credentials'))
 const canRotate = computed(() => perms.can('bindings.manage'))
 
 const attachments = ref([])
+// A global project (docs/global-projects.md, "Data"): how each binding is reached in its regions
+// (direct, data link, a replica per region), from the project's global summary
+const globalAccess = computed(() => Object.fromEntries(
+  (props.project?.global?.bindings ?? []).map(b => [String(b.binding_id), b.access]),
+))
 const available = ref([])
 const secretName = ref(`${props.project.slug ?? ''}-bindings`)
 const types = ref(null)
@@ -49,11 +57,21 @@ const emptyForm = () => ({
   plan: 'shared',
   settings: defaultSettings('kv', 'shared', types.value),
   values: [{ key: '', value: '' }],
+  dynamic: false,
 })
 const form = reactive(emptyForm())
+const switching = reactive({})      // attachment id → true while its credentials change
 
 // ── Derived ──────────────────────────────────────────────────────────────────────────────
 const selectedExisting = computed(() => available.value.find(b => b.id === form.binding_id) ?? null)
+
+// Dynamic credentials: an existing Postgres binding that is ready (OpenBao connects with its role)
+const dynamicPossible = computed(() => form.mode === 'existing' && selectedExisting.value?.type === 'postgres')
+const dynamicReady = computed(() => dynamicPossible.value && selectedExisting.value?.status === 'ready')
+
+function isDynamic(a) {
+  return a?.credential_mode === 'dynamic'
+}
 
 const previewNames = computed(() => {
   if (form.mode === 'existing') return selectedExisting.value ? bindingEnvNames(selectedExisting.value, form.env_prefix) : []
@@ -73,20 +91,25 @@ const canSubmit = computed(() => {
 
 // ── Loading + polling while the API works on a binding ─────────────────────────────────
 let pollTimer = null
+// The newest list wins (a poll sent before an action's reload must not drop the new row), and a
+// load that ends after the tab is gone arms no more polls
+const latest = useLatest()
 
 async function load(silent = false) {
+  const current = latest.begin()
   if (!silent) loading.value = true
   try {
     const { data } = await bindingsApi.projectBindings(props.project.id)
+    if (!current()) return
     attachments.value = data?.data ?? []
     available.value = data?.available ?? []
     if (data?.secret) secretName.value = data.secret
   } catch {
-    if (!silent) attachments.value = []
+    if (current() && !silent) attachments.value = []
   } finally {
-    loading.value = false
+    if (current()) loading.value = false
   }
-  schedulePoll()
+  if (current()) schedulePoll()
 }
 
 function schedulePoll() {
@@ -132,6 +155,7 @@ async function submit() {
     const body = { env_prefix: form.env_prefix || null }
     if (form.mode === 'existing') body.binding_id = form.binding_id
     else body.binding = bindingPayload(form)
+    if (dynamicReady.value && form.dynamic) body.credentials = 'dynamic'
     await bindingsApi.attach(props.project.id, body)
     toast.success(t('bindings.attached'))
     showForm.value = false
@@ -191,6 +215,28 @@ async function detach(a) {
   }
 }
 
+// Static ⇄ dynamic on an existing Postgres attachment; a refusal (no OpenBao in the region, the
+// binding not ready) is the server's 422 message
+async function switchCredentials(a) {
+  const toDynamic = !isDynamic(a)
+  const ok = await confirm({
+    title: t(toDynamic ? 'bindings.switchDynamicTitle' : 'bindings.switchStaticTitle'),
+    message: t(toDynamic ? 'bindings.switchDynamicConfirm' : 'bindings.switchStaticConfirm', { name: a.binding?.name ?? '' }),
+    confirmLabel: t(toDynamic ? 'bindings.switchToDynamic' : 'bindings.switchToStatic'),
+  })
+  if (!ok) return
+  switching[a.id] = true
+  try {
+    await bindingsApi.updateAttachment(props.project.id, a.id, { credentials: toDynamic ? 'dynamic' : 'static' })
+    toast.success(t('bindings.switched'))
+    await load(true)
+  } catch (e) {
+    toast.error(e?.response?.data?.message ?? t('bindings.switchFailed'))
+  } finally {
+    delete switching[a.id]
+  }
+}
+
 async function rotate(a) {
   const ok = await confirm({
     title: t('bindings.rotateTitle'),
@@ -216,10 +262,13 @@ async function toggleReveal(a) {
   revealed[a.id] = 'loading'
   try {
     const { data } = await bindingsApi.credentials(a.binding_id)
+    // Hidden again (or rotated) while the credentials loaded: the answer is not shown
+    if (revealed[a.id] !== 'loading') return
     const env = data?.data?.env ?? {}
     // Shown with the attachment's prefix — the names the functions see
     revealed[a.id] = Object.fromEntries(Object.entries(env).map(([k, v]) => [(a.env_prefix ?? '') + k, v]))
   } catch (e) {
+    if (revealed[a.id] !== 'loading') return
     delete revealed[a.id]
     toast.error(e?.response?.data?.message ?? t('bindings.revealFailed'))
   }
@@ -277,6 +326,16 @@ onBeforeUnmount(() => clearTimeout(pollTimer))
           </select>
           <p v-if="!available.length" class="text-[11px] text-gray-400 mt-1">{{ t('bindings.noAvailable') }}</p>
         </div>
+        <!-- A Postgres binding: a user of the project's own from the region's OpenBao -->
+        <div v-if="dynamicPossible" class="md:col-span-2" data-dynamic-option>
+          <label class="flex items-start gap-2 text-xs text-gray-200" :class="dynamicReady ? 'cursor-pointer' : 'opacity-60'">
+            <input v-model="form.dynamic" type="checkbox" class="mt-0.5" :disabled="!dynamicReady" data-field="dynamic" />
+            <span>
+              {{ t('bindings.dynamicCredentials') }}
+              <span class="block text-[11px] text-gray-400">{{ dynamicReady ? t('bindings.dynamicHint') : t('bindings.dynamicNotReady') }}</span>
+            </span>
+          </label>
+        </div>
       </div>
 
       <!-- New binding -->
@@ -303,6 +362,7 @@ onBeforeUnmount(() => clearTimeout(pollTimer))
           </div>
         </div>
         <p class="text-[11px] text-gray-400">{{ t(`bindings.typeHints.${form.type}`) }}</p>
+        <p v-if="form.type === 'postgres'" class="text-[11px] text-gray-500" data-dynamic-new-hint>{{ t('bindings.dynamicNewHint') }}</p>
         <BindingSettingsFields v-model:settings="form.settings" v-model:values="form.values" :type="form.type" :plan="form.plan" :types="types" />
       </div>
 
@@ -361,8 +421,20 @@ onBeforeUnmount(() => clearTimeout(pollTimer))
             <span class="text-[11px] text-gray-400">{{ t(`bindings.types.${a.binding?.type}`) }}</span>
             <span v-if="a.binding?.plan === 'dedicated'" class="text-[10px] px-1.5 py-0.5 rounded-sm border border-violet-800/40 bg-violet-900/30 text-violet-300">{{ t('bindings.plans.dedicated') }}</span>
             <span :class="bindingStatusClass(a.binding?.status)" data-binding-status>{{ t(`bindings.status.${a.binding?.status ?? 'pending'}`) }}</span>
+            <span v-if="isDynamic(a)" class="text-[10px] px-1.5 py-0.5 rounded-sm border border-teal-800/60 bg-teal-900/20 text-teal-300"
+              :title="t('bindings.dynamicHint')" data-dynamic-badge>{{ t('bindings.dynamicBadge') }}</span>
+            <span v-if="globalAccess[String(a.binding?.id)]" class="text-[10px] px-1.5 py-0.5 rounded-sm border border-sky-800/50 bg-sky-900/20 text-sky-300"
+              :title="t(`globalProjects.data.accessHint.${globalAccess[String(a.binding?.id)]}`)" data-global-access>
+              {{ t(`globalProjects.data.access.${globalAccess[String(a.binding?.id)]}`) }}
+            </span>
           </div>
           <div class="flex items-center gap-1">
+            <button v-if="canManage && a.binding?.type === 'postgres'" type="button"
+              class="text-[11px] px-1.5 py-0.5 rounded-sm border border-gray-700 text-gray-300 hover:text-gray-100 disabled:opacity-40"
+              :disabled="switching[a.id] || (!isDynamic(a) && a.binding?.status !== 'ready')" data-action="switch-credentials"
+              @click="switchCredentials(a)">
+              {{ isDynamic(a) ? t('bindings.switchToStatic') : t('bindings.switchToDynamic') }}
+            </button>
             <button type="button" class="p-1 text-gray-400 hover:text-gray-200" :title="t('bindings.refresh')" @click="load(true)">
               <RefreshCw class="w-3.5 h-3.5" />
             </button>

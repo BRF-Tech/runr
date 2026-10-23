@@ -54,6 +54,12 @@ async function load() {
   }
 }
 
+// The list after a change: its failure (e.g. 403 after revoking one's own access) is not an
+// error of the change, which is already saved
+async function reload() {
+  try { await load() } catch { /* the list keeps what it showed */ }
+}
+
 async function grant() {
   saving.value = true
   error.value  = null
@@ -61,7 +67,7 @@ async function grant() {
     await rbacApi.grantProjectAccess(props.projectId, form.value)
     toast.success(t('rbac.granted'))
     form.value = { ...form.value, subject_id: '' }
-    await load()
+    await reload()
   } catch (e) {
     error.value = message(e)
   } finally {
@@ -73,7 +79,7 @@ async function changeRole(g, role) {
   try {
     await rbacApi.grantProjectAccess(props.projectId, { subject_type: g.subject_type, subject_id: g.subject_id, role })
     toast.success(t('rbac.roleUpdated'))
-    await load()
+    await reload()
   } catch (e) {
     toast.error(message(e))
   }
@@ -84,7 +90,7 @@ async function revoke(g) {
   if (!ok) return
   try {
     await rbacApi.revokeProjectAccess(props.projectId, g.id)
-    await load()
+    await reload()
   } catch (e) {
     toast.error(message(e))
   }

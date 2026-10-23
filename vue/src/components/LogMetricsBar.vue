@@ -68,16 +68,17 @@ function fmtCpu(cores) {
   if (cores < 0.00005) return '< 0.0001'
   return cores < 1 ? cores.toFixed(4) : cores.toFixed(2)
 }
+// Memory readings are MiB (working set / 1048576, or the size in Kubernetes Mi)
 function fmtMem(mb) {
   if (!mb) return '0'
-  return mb >= 1024 ? `${(mb / 1024).toFixed(2)} GB` : `${mb.toFixed(1)} MB`
+  return mb >= 1024 ? `${(mb / 1024).toFixed(2)} GiB` : `${mb.toFixed(1)} MiB`
 }
 </script>
 
 <template>
   <div class="flex w-full border-b border-gray-800 shrink-0 bg-gray-950/40 font-mono">
 
-    <!-- Anlık -->
+    <!-- Now -->
     <div class="flex-1 relative border-r border-gray-800/60 pt-6 pb-3 px-2">
       <span class="absolute top-1.5 left-2 text-[9px] font-semibold text-brand-400 uppercase tracking-widest border border-brand-700/50 bg-brand-900/30 rounded-sm px-1.5 py-0.5 leading-none">{{ t('project.logs.metrics.current') }}</span>
       <div class="flex items-start justify-center gap-8">
@@ -97,7 +98,7 @@ function fmtMem(mb) {
       </div>
     </div>
 
-    <!-- Toplam -->
+    <!-- Use × time since the deployment started: core-minutes / -hours, MiB-minutes / GiB-hours -->
     <div class="flex-1 relative border-r border-gray-800/60 pt-6 pb-3 px-2">
       <span class="absolute top-1.5 left-2 text-[9px] font-semibold text-brand-400 uppercase tracking-widest border border-brand-700/50 bg-brand-900/30 rounded-sm px-1.5 py-0.5 leading-none">{{ t('project.logs.metrics.total') }}</span>
       <div class="flex items-start justify-center gap-8">
@@ -118,7 +119,7 @@ function fmtMem(mb) {
       </div>
     </div>
 
-    <!-- Ortalama (saatlik) -->
+    <!-- The averages of the last hour (cores, MiB): not a rate per hour -->
     <div class="flex-1 relative pt-6 pb-3 px-2">
       <span class="absolute top-1.5 left-2 text-[9px] font-semibold text-brand-400 uppercase tracking-widest border border-brand-700/50 bg-brand-900/30 rounded-sm px-1.5 py-0.5 leading-none">{{ t('project.logs.metrics.avgPerH') }}</span>
       <div class="flex items-start justify-center gap-8">
@@ -126,14 +127,13 @@ function fmtMem(mb) {
           <span class="text-[11px] text-white uppercase tracking-wider">{{ t('project.logs.metrics.cpu') }}</span>
           <div class="flex items-baseline gap-1">
             <span class="text-sm font-semibold text-brand-300 leading-none">{{ fmtCpu(avgCpuPerH) }}</span>
-            <span class="text-[9px] text-gray-100">{{ t('project.logs.metrics.corePerH') }}</span>
+            <span class="text-[9px] text-gray-100">{{ t('project.logs.metrics.cores') }}</span>
           </div>
         </div>
         <div class="flex flex-col items-center gap-0.5">
           <span class="text-[11px] text-white uppercase tracking-wider">{{ t('project.logs.metrics.memory') }}</span>
           <div class="flex items-baseline gap-1">
             <span class="text-sm font-semibold text-brand-300 leading-none">{{ fmtMem(avgMemMbPerH) }}</span>
-            <span class="text-[9px] text-gray-100">{{ t('project.logs.metrics.perH') }}</span>
           </div>
         </div>
       </div>

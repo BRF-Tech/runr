@@ -44,7 +44,9 @@ async function mirror(model) {
   try {
     const { data } = await aiApi.createSnapshot(model.id, regionId)
     const snapshot = data?.data ?? data
-    ai.upsertModel({ ...model, snapshots: [...(model.snapshots ?? []).filter(s => s.id !== snapshot.id), snapshot] })
+    // On the model as the list has it now: the copy of `model` taken at the click is older than
+    // what the page's poll brought meanwhile
+    ai.upsertSnapshot(model.id, snapshot)
     toast.success(t(model.source === 'hub' ? 'ai.library.mirrorQueued' : 'ai.library.importQueued'))
   } catch (e) { toast.error(errMessage(e)) } finally { busy[model.id] = false }
 }
@@ -54,7 +56,7 @@ async function deleteSnapshot(model, snapshot) {
   if (!ok) return
   try {
     await aiApi.deleteSnapshot(model.id, snapshot.id)
-    ai.upsertModel({ ...model, snapshots: (model.snapshots ?? []).filter(s => s.id !== snapshot.id) })
+    ai.removeSnapshot(model.id, snapshot.id)
     toast.success(t('ai.library.snapshotDeleted'))
   } catch (e) { toast.error(errMessage(e)) }
 }

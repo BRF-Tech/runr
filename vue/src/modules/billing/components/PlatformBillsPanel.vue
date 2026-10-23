@@ -10,6 +10,7 @@ import { Building2 } from 'lucide-vue-next'
 import { billingApi } from '../api/billing'
 import { apiMessage, can, recentPeriods } from '../utils/billing'
 import BillRow from './BillRow.vue'
+import { useLatest } from '@/composables/useLatest'
 
 const props = defineProps({
   // 'tenant': the active tenant's bills from the platform; 'platform': every tenant's bills
@@ -28,7 +29,10 @@ const payment = computed(() => (platform.value && can('billing.manage')
   ? { setUrl: billingApi.setTenantPaymentUrl, setPaid: billingApi.setTenantPaid }
   : null))
 
+// Filters overtake each other: the bills of the newest request are shown
+const latest = useLatest()
 async function load() {
+  const current = latest.begin()
   loading.value = true
   error.value = null
   try {
@@ -36,12 +40,14 @@ async function load() {
     for (const key of ['period', 'status', 'paid']) if (filters[key] !== '') params[key] = filters[key]
     if (platform.value && filters.tenant.trim()) params.tenant = filters.tenant.trim()
     const { data } = platform.value ? await billingApi.tenantBills(params) : await billingApi.platformBills(params)
+    if (!current()) return
     bills.value = data?.data ?? []
   } catch (e) {
+    if (!current()) return
     error.value = apiMessage(e, t('common.error'))
     bills.value = []
   } finally {
-    loading.value = false
+    if (current()) loading.value = false
   }
 }
 

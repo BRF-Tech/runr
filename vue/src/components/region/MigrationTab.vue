@@ -80,13 +80,15 @@ const outcomeClass = (outcome) => OUTCOME_CLASS[outcome] ?? OUTCOME_CLASS.cancel
           @click="$emit('refresh-projects')">{{ t('settings.regionDetail.migration.refreshProjects') }}</button>
       </div>
       <ul class="divide-y divide-gray-800/60 text-xs">
-        <li v-for="p in migrationProjects" :key="`${p.organization ?? ''}/${p.project_id}`" class="py-1.5 flex items-start gap-2"
-          :data-project="p.project">
+        <!-- an environment of a project (docs/environments.md) is a row of its own -->
+        <li v-for="p in migrationProjects" :key="`${p.organization ?? ''}/${p.project_id}/${p.environment ?? ''}`" class="py-1.5 flex items-start gap-2"
+          :data-project="p.project" :data-environment="p.environment ?? undefined">
           <span class="px-1.5 py-0.5 rounded-sm font-medium shrink-0" :class="outcomeClass(p.outcome)">
             {{ t(`settings.regionDetail.migration.outcome.${p.outcome}`) }}
           </span>
           <div class="min-w-0">
             <span class="text-gray-100">{{ p.project }}</span>
+            <span v-if="p.environment" class="text-gray-300"> ({{ p.environment }})</span>
             <span v-if="p.version" class="text-gray-400 font-mono"> v{{ p.version }}</span>
             <span v-if="p.organization" class="text-gray-400"> · {{ p.organization }}</span>
             <p v-if="p.message" class="text-gray-400 break-words">{{ p.message }}</p>

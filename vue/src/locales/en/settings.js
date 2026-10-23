@@ -12,6 +12,15 @@ export default {
       placeholder: 'runr.example.com',
       example:     'Example:',
     },
+    // The organization's time zone (TimezoneCard): the timed warmers' crons run in it
+    timezone: {
+      section:     'Time zone',
+      description: "The organization's time zone. Timed warmers run their cron rows in it, and so do schedule triggers without a zone of their own (they follow a change at once); without a setting {zone} applies.",
+      label:       'Time zone (IANA name)',
+      now:         'Local time there: {time}',
+      unknown:     'This browser does not know this time zone; the server checks it when you save.',
+      reset:       'Back to {zone}',
+    },
     resources: {
       section: 'Total Resources',
       cpu:     'CPU',
@@ -38,6 +47,10 @@ export default {
       statusConfirm_inactive:    'Deactivate this region? All projects will return 404 and deploys will be blocked.',
       statusConfirm_maintenance: 'Enable maintenance mode? All projects will return 503 and deploys will be blocked.',
       dnsNotConfigured:   'DNS record not configured. Your projects will not be reachable.',
+      reconcile_running:     'The region is being brought to RunR {version} (region:reconcile runs).',
+      reconcile_unfinished:  'The region is not at RunR {version} yet: region:reconcile did not finish here.',
+      reconcile_unreachable: 'region:reconcile could not reach the cluster of this region; it keeps what it had.',
+      reconcileHint:         'The log of the Job runr-region-reconcile-* (one per upgrade) has the details. Fix what it names, then run php artisan region:reconcile.',
       dnsChecking:        'Checking DNS...',
       dnsResolved:        'DNS record verified',
       dnsNotResolved:     'DNS record not found',

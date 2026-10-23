@@ -1,4 +1,5 @@
 import { defineAsyncComponent, markRaw } from 'vue'
+import { BarChart3, Building2, Users } from 'lucide-vue-next'
 import { useSettingsStore } from '@/stores/settings'
 import { usePermissionsStore } from '@/stores/permissions'
 import { setBroadcastChannelPrefix, resubscribeBroadcast } from '@/composables/useRealtimeNotifications'
@@ -66,28 +67,44 @@ export default function (registry) {
   }
   registry.isCentralAdminFn = isCentralAdmin
 
-  // Settings tab — only visible for admin users in central mode (no active tenant)
+  // Administration → Platform → Tenants — only visible for admin users in central mode (no active tenant)
   registry.settingsTabs.push({
     key: 'tenants',
     labelKey: 'tenancy.tabTenants',
+    descKey: 'tenancy.navTenantsDesc',
+    icon: markRaw(Building2),
+    group: 'admin',
+    section: 'platform',
+    order: 20,
     component: markRaw(defineAsyncComponent(() => import('./components/TenantSettings.vue'))),
     visibleIf: isCentralAdmin,
     dataTour: 'settings-tenants-tab',
   })
 
-  // Users management tab — visible only when tenancy is enabled (members.view; platform admins)
+  // Administration → Members → Users (replaces the core page) — visible only when tenancy is
+  // enabled (members.view; platform admins)
   registry.settingsTabs.push({
     key: 'users',
     labelKey: 'tenancy.tabUsers',
+    descKey: 'tenancy.navUsersDesc',
+    icon: markRaw(Users),
+    group: 'admin',
+    section: 'members',
+    order: 10,
     component: markRaw(defineAsyncComponent(() => import('./components/UsersManagement.vue'))),
     visibleIf: () => isTenancyEnabled() && (isCentralAdmin() || usePermissionsStore().can('members.view')),
     dataTour: 'settings-users-tab',
   })
 
-  // Resource usage tab — central admin only
+  // Administration → Platform → Resource Usage — central admin only
   registry.settingsTabs.push({
     key: 'resource-usage',
     labelKey: 'tenancy.tabResourceUsage',
+    descKey: 'tenancy.navResourceUsageDesc',
+    icon: markRaw(BarChart3),
+    group: 'admin',
+    section: 'platform',
+    order: 30,
     component: markRaw(defineAsyncComponent(() => import('./components/ResourceUsage.vue'))),
     visibleIf: isCentralAdmin,
     dataTour: 'settings-usage-tab',

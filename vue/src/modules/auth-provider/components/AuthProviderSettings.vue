@@ -2,6 +2,7 @@
 import { ref, watch, nextTick } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useConfirm } from '@/composables/useConfirm'
+import { useLatest } from '@/composables/useLatest'
 import { useTutorialStore } from '@/stores/tutorial'
 import { Plus, Pencil, Trash2, ShieldCheck } from 'lucide-vue-next'
 import { createTutorial } from '@/composables/useTutorial'
@@ -18,6 +19,8 @@ const loading = ref(true)
 const showForm = ref(false)
 const editing = ref(null)
 const saving = ref(false)
+// Providers being switched: the API flips the state, a double click would flip it back
+const toggling = ref(new Set())
 const formError = ref(null)
 const formInitial = ref(null)
 const formSamlSp = ref(null)
@@ -66,10 +69,16 @@ const SAML_FIELDS = [
   'saml_name_attribute', 'saml_sign_requests', 'saml_sp_x509_cert', 'saml_sp_private_key',
 ]
 
+// The newest list wins (two reloads after quick changes may answer out of order)
+const latest = useLatest()
 async function fetchProviders() {
-  try { providers.value = (await api.list()).data }
-  catch { /* silent */ }
-  finally { loading.value = false }
+  const current = latest.begin()
+  try {
+    const { data } = await api.list()
+    if (current()) providers.value = data
+  } catch { /* silent */ } finally {
+    if (current()) loading.value = false
+  }
 }
 
 function openAdd() {
@@ -149,7 +158,16 @@ async function handleSave(form) {
 function handleCancel() { showForm.value = false }
 
 async function toggleProvider(provider) {
-  await api.toggle(provider.id); await fetchProviders()
+  if (toggling.value.has(provider.id)) return
+  toggling.value = new Set([...toggling.value, provider.id])
+  try {
+    await api.toggle(provider.id)
+    await fetchProviders()
+  } finally {
+    const next = new Set(toggling.value)
+    next.delete(provider.id)
+    toggling.value = next
+  }
 }
 
 async function confirmDelete(p) {
@@ -249,6 +267,7 @@ fetchProviders()
             <button type="button" class="relative w-9 h-5 rounded-full transition-colors cursor-pointer"
               :class="p.is_enabled ? 'bg-brand-500' : 'bg-gray-700'"
               :data-tour="idx === 0 ? 'auth-provider-toggle' : undefined"
+              :disabled="toggling.has(p.id)"
               @click="toggleProvider(p)">
               <span class="absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full transition-transform" :class="p.is_enabled ? 'translate-x-4' : ''" />
             </button>

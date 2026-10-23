@@ -1,14 +1,15 @@
 <script setup>
-// Region settings → Billing (moduleRegistry.regionTabs): the region's billing type and its prices in
-// effect, with new price versions from an effective date. A type change is refused while fixed
-// allocations are active in the region (the API answers 409 and says why).
+// Region settings → Billing (moduleRegistry.regionTabs): the region's billing type, whether its queue
+// consumers are charged, and its prices in effect, with new price versions from an effective date.
+// A type change is refused while fixed allocations are active in the region (the API answers 409
+// and says why).
 import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Plus } from 'lucide-vue-next'
 import { useConfirm } from '@/composables/useConfirm'
 import { useToast } from '@/composables/useToast'
 import { billingApi } from '../api/billing'
-import { BILLING_TYPES, PRICE_GROUPS, apiMessage, can, formatUnitPrice } from '../utils/billing'
+import { BILLING_TYPES, PRICE_GROUPS, apiMessage, billingContext, can, formatUnitPrice, isPlatformAdmin } from '../utils/billing'
 import PriceVersionForm from './PriceVersionForm.vue'
 
 const props = defineProps({
@@ -26,6 +27,10 @@ const busy = ref(false)
 const editing = ref(false)
 
 const canManage = computed(() => can('billing.manage'))
+// Platform administrators in the platform's context: the tenants a platform region is shared with
+const platform = computed(() => billingContext() === 'platform' && isPlatformAdmin())
+const orgs = ref([])
+const orgBusy = ref(null)
 
 async function load() {
   loading.value = true
@@ -34,6 +39,7 @@ async function load() {
     const [r, p] = await Promise.all([billingApi.regions(), billingApi.prices()])
     row.value = (r.data?.data ?? []).find(x => x.id === props.region.id) ?? null
     currency.value = p.data?.currency || 'USD'
+    if (row.value && row.value.own !== false) await loadOrganizations()
   } catch (e) {
     error.value = apiMessage(e, t('common.error'))
   } finally {
@@ -62,13 +68,56 @@ async function changeType(type) {
   }
 }
 
+/** Queue consumers of the region (docs/billing.md#queue-consumers): the region owner's setting. */
+async function setQueue(charge) {
+  if (!row.value || charge === !!row.value.charge_queue_consumers) return
+  busy.value = true
+  try {
+    const { data } = await billingApi.setRegionQueueConsumers(props.region.id, charge)
+    row.value = { ...row.value, ...(data?.data ?? { charge_queue_consumers: charge }) }
+    toast.success(t('billing.queue.saved'))
+  } catch (e) {
+    row.value = { ...row.value }
+    toast.error(apiMessage(e, t('common.error')))
+  } finally {
+    busy.value = false
+  }
+}
+
+/** The platform's choice per tenant (GET /billing/regions/{id}/organizations); nothing outside the platform. */
+async function loadOrganizations() {
+  if (!platform.value) return
+  try {
+    const { data } = await billingApi.regionOrganizations(props.region.id)
+    orgs.value = data?.data ?? []
+  } catch {
+    orgs.value = []
+  }
+}
+
+/** Switch queue consumer charging off for one tenant (false) or back to the region (null). */
+async function setOrganization(org, charge) {
+  if (charge === (org.queue_consumers_override === false ? false : null)) return
+  orgBusy.value = org.tenant.id
+  try {
+    const { data } = await billingApi.setRegionOrganization(props.region.id, org.tenant.id, charge)
+    orgs.value = orgs.value.map(o => (o.tenant.id === org.tenant.id ? { ...o, ...(data?.data ?? { queue_consumers_override: charge }) } : o))
+    toast.success(t('billing.queue.saved'))
+  } catch (e) {
+    orgs.value = [...orgs.value]
+    toast.error(apiMessage(e, t('common.error')))
+  } finally {
+    orgBusy.value = null
+  }
+}
+
 async function onSaved() {
   editing.value = false
   toast.success(t('billing.prices.saved'))
   await load()
 }
 
-defineExpose({ load, changeType })
+defineExpose({ load, changeType, setQueue, setOrganization })
 </script>
 
 <template>
@@ -91,6 +140,39 @@ defineExpose({ load, changeType })
           </button>
         </div>
         <p v-if="row.active_allocations" class="text-[11px] text-gray-400 mt-1">{{ t('billing.region.locked', { n: row.active_allocations }) }}</p>
+      </div>
+
+      <div data-test="region-billing-queue">
+        <label class="label">{{ t('billing.queue.title') }}</label>
+        <p class="text-[11px] text-gray-400 max-w-xl">{{ t('billing.queue.hint') }}</p>
+        <label class="flex items-center gap-2 text-xs text-gray-300 mt-2">
+          <input type="checkbox" :checked="!!row.charge_queue_consumers" :disabled="!canManage || busy || row.own === false"
+            data-test="region-billing-queue-charge" @change="setQueue($event.target.checked)">
+          {{ t('billing.queue.region') }}
+        </label>
+        <p v-if="row.own === false" class="text-[11px] text-gray-500 mt-1">{{ t('billing.queue.sharedHint') }}</p>
+        <p class="text-[11px] mt-1" :class="row.queue_consumers_charged ? 'text-amber-400' : 'text-gray-500'" data-test="region-billing-queue-effective">
+          {{ row.queue_consumers_charged ? t('billing.queue.charged') : t('billing.queue.notCharged') }}
+        </p>
+        <p v-if="row.queue_consumers_owner_override === false" class="text-[11px] text-gray-500" data-test="region-billing-queue-owner-off">{{ t('billing.queue.ownerOff') }}</p>
+
+        <div v-if="platform && orgs.length" class="mt-3 space-y-1 max-w-xl" data-test="region-billing-orgs">
+          <div class="text-xs font-medium text-gray-300">{{ t('billing.queue.organizations') }}</div>
+          <p class="text-[11px] text-gray-500">{{ t('billing.queue.organizationsHint') }}</p>
+          <div v-for="o in orgs" :key="o.tenant.id" class="flex items-center justify-between gap-3 text-xs" :data-test="`region-billing-org-${o.tenant.id}`">
+            <span class="text-gray-100">{{ o.tenant.name || o.tenant.slug }}</span>
+            <div class="flex items-center gap-2">
+              <select :value="o.queue_consumers_override === false ? 'off' : 'follow'" class="input h-7 text-xs" :disabled="!canManage || orgBusy === o.tenant.id"
+                :data-test="`region-billing-org-select-${o.tenant.id}`" @change="setOrganization(o, $event.target.value === 'off' ? false : null)">
+                <option value="follow">{{ t('billing.queue.follow') }}</option>
+                <option value="off">{{ t('billing.queue.offForOrg') }}</option>
+              </select>
+              <span class="text-[10px]" :class="o.queue_consumers_charged ? 'text-amber-400' : 'text-gray-500'" :data-test="`region-billing-org-charged-${o.tenant.id}`">
+                {{ o.queue_consumers_charged ? t('billing.queue.regionOn') : t('billing.queue.regionOff') }}
+              </span>
+            </div>
+          </div>
+        </div>
       </div>
 
       <div class="space-y-2">

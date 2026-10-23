@@ -54,9 +54,14 @@ function groupKey(group) {
   return te(key) ? key : null
 }
 
-// "a|b" — either permission
+// "a|b" — either permission; "@platform:a" — a platform administrator whose token carries a
+const PLATFORM_PREFIX = '@platform:'
 function requirementLabel(requirement) {
-  return String(requirement).split('|').map(permLabel).join(` ${t('mcp.tools.or')} `)
+  const value = String(requirement)
+  if (value.startsWith(PLATFORM_PREFIX)) {
+    return t('mcp.tools.platformAdmin', { permissions: requirementLabel(value.slice(PLATFORM_PREFIX.length)) })
+  }
+  return value.split('|').map(permLabel).join(` ${t('mcp.tools.or')} `)
 }
 
 onMounted(load)

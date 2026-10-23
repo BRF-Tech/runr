@@ -2,6 +2,7 @@
 import { onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { RefreshCw, Search } from 'lucide-vue-next'
+import { useLatest } from '@/composables/useLatest'
 import { workflowsApi } from '../api/workflows'
 import WorkflowStatusBadge from './WorkflowStatusBadge.vue'
 import { RUN_STATUSES, formatDuration, formatTime, isActive, runQuery, shortId } from '../utils/format'
@@ -12,6 +13,8 @@ const props = defineProps({
   workflow:     { type: String, default: '' },        // preselected workflow filter
   pollInterval: { type: Number, default: 10000 },
   reloadKey:    { type: Number, default: 0 },
+  // The environment whose runs are listed (docs/workflows.md#environments); null: production
+  environment:  { type: String, default: null },
 })
 
 const emit = defineEmits(['open', 'update:workflow'])
@@ -24,19 +27,26 @@ const loading = ref(true)
 const error   = ref(null)
 let timer = null
 let searchTimer = null
+// Filters, search, page, reloads and the poll overtake each other: the newest load wins, and a
+// load that ends after the table is gone (a run opened, another tab) schedules no more polls
+const latest = useLatest()
 
 async function load({ silent = false } = {}) {
+  const current = latest.begin()
   if (!silent) loading.value = true
   try {
-    const { data } = await workflowsApi.runs(props.projectId, runQuery({ ...filters, perPage: 25 }))
+    const { data } = await workflowsApi.runs(props.projectId, runQuery({ ...filters, perPage: 25 }), props.environment)
+    if (!current()) return
     runs.value  = data.data ?? []
     meta.value  = data.meta ?? meta.value
     error.value = null
   } catch (e) {
-    error.value = e.response?.data?.message ?? t('workflows.loadFailed')
+    if (current()) error.value = e.response?.data?.message ?? t('workflows.loadFailed')
   } finally {
-    loading.value = false
-    schedule()
+    if (current()) {
+      loading.value = false
+      schedule()
+    }
   }
 }
 
@@ -58,6 +68,7 @@ watch(() => filters.q, () => {
   searchTimer = setTimeout(() => { filters.page = 1; load() }, 300)
 })
 watch(() => props.reloadKey, () => load({ silent: true }))
+watch(() => props.environment, () => { filters.page = 1; load() })
 
 function go(page) {
   if (page < 1 || page > (meta.value.last_page ?? 1)) return

@@ -19,7 +19,9 @@ export const usePermissionsStore = defineStore('permissions', () => {
   const projects      = ref({})
   const tokenScoped   = ref(false)
 
-  let pending = null
+  let pending = null    // the request in flight
+  let queued = null     // one more load, asked for while it ran
+  let generation = 0    // answers of an earlier generation (before a reset / a newer load) are dropped
 
   const orgSet = computed(() => new Set(permissions.value))
 
@@ -48,19 +50,37 @@ export const usePermissionsStore = defineStore('permissions', () => {
     loaded.value        = true
   }
 
-  async function load() {
-    if (!localStorage.getItem('token')) {
-      reset()
-      return
-    }
-    pending ??= rbacApi.myPermissions()
-      .then(({ data }) => apply(data))
+  function request() {
+    const gen = generation
+    pending = rbacApi.myPermissions()
+      .then(({ data }) => { if (gen === generation) apply(data) })
       .catch(() => { /* keep the previous state; the API still enforces */ })
       .finally(() => { pending = null })
     return pending
   }
 
+  /**
+   * One request at a time. A load asked for while one is in flight gets one more load after it:
+   * the request in flight was sent before what the caller is about (a project it just created,
+   * an organization switch), so its answer is dropped and every caller meanwhile shares the
+   * follow-up.
+   */
+  async function load() {
+    if (!localStorage.getItem('token')) {
+      reset()
+      return
+    }
+    if (!pending) return request()
+    generation++
+    queued ??= pending.then(() => {
+      queued = null
+      return localStorage.getItem('token') ? request() : undefined
+    })
+    return queued
+  }
+
   function reset() {
+    generation++
     loaded.value = false
     platformAdmin.value = false
     role.value = null

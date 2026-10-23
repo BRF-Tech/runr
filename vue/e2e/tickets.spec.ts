@@ -5,7 +5,7 @@ import { apiLogin, completeTutorial, type Session } from './helpers/auth'
 import { uniqueName, type Seeder } from './helpers/seed'
 import { field } from './helpers/ui'
 
-// Settings → Support Tickets (ticket module).
+// User menu → Support Tickets (ticket module).
 
 /** Stack mode: a member account (not an administrator), in the first tenant on a multi-tenant stack. */
 async function memberSession(seed: Seeder): Promise<Session> {

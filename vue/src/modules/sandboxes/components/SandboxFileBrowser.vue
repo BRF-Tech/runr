@@ -4,6 +4,7 @@ import { useI18n } from 'vue-i18n'
 import { Folder, File, FileSymlink, ArrowUp, RefreshCw, Upload, FolderPlus, Download, Archive, Trash2, X } from 'lucide-vue-next'
 import { useConfirm } from '@/composables/useConfirm'
 import { useToast } from '@/composables/useToast'
+import { useLatest } from '@/composables/useLatest'
 import { sandboxesApi } from '../api/sandboxes'
 import {
   apiError, base64ToBytes, breadcrumbs, bytesToText, fileToBase64, formatBytes, formatDateTime,
@@ -30,12 +31,18 @@ const newFolder = ref(null) // null = closed, string = name being typed
 const uploading = ref(false)
 const fileInput = ref(null)
 
+// The folder and the file opened last: a slower answer for one opened before is dropped
+const latestList = useLatest()
+const latestFile = useLatest()
+
 async function load(target = path.value) {
   if (props.disabled) return
+  const current = latestList.begin()
   loading.value = true
   error.value   = null
   try {
     const { data } = await sandboxesApi.files.list(props.sandboxId, target)
+    if (!current()) return
     const payload = data?.data ?? {}
     if (payload.is_dir === false) {
       // A file path: show its folder and preview it
@@ -47,9 +54,9 @@ async function load(target = path.value) {
     entries.value   = sortEntries(payload.entries ?? [])
     truncated.value = !!payload.truncated
   } catch (e) {
-    error.value = apiError(e, t('sandboxes.files.loadFailed'))
+    if (current()) error.value = apiError(e, t('sandboxes.files.loadFailed'))
   } finally {
-    loading.value = false
+    if (current()) loading.value = false
   }
 }
 
@@ -63,6 +70,7 @@ function entryPath(entry) {
 
 function open(entry) {
   if (entry.type === 'dir') {
+    latestFile.cancel()
     preview.value = null
     load(entryPath(entry))
   } else {
@@ -71,14 +79,16 @@ function open(entry) {
 }
 
 async function openFile({ path: filePath, size }) {
+  const current = latestFile.begin()
   try {
     const { data } = await sandboxesApi.files.read(props.sandboxId, filePath)
+    if (!current()) return
     const payload = data?.data ?? {}
     const bytes   = base64ToBytes(payload.content_base64 ?? '')
     const text    = bytesToText(bytes)
     preview.value = { path: filePath, size: payload.size ?? size ?? bytes.length, text, binary: text === null }
   } catch (e) {
-    toast.error(apiError(e, t('sandboxes.files.readFailed')))
+    if (current()) toast.error(apiError(e, t('sandboxes.files.readFailed')))
   }
 }
 

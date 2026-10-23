@@ -1,7 +1,8 @@
 <script setup>
 // Regions & prices (GET /billing/regions, GET /billing/prices): the billing type of every region
-// (pay as you go or fixed resources — one per region) and the price versions, each from an
-// effective date on. No region is ever unpriced: region prices → the organization's default
+// (pay as you go or fixed resources — one per region), whether its queue consumers are charged
+// (the region's setting on own regions, the organization's own choice on every region) and the
+// price versions, each from an effective date on. No region is ever unpriced: region prices → the organization's default
 // prices → (tenant) the platform's default prices → RunR's defaults.
 import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
@@ -75,6 +76,43 @@ async function changeType(region, type) {
   }
 }
 
+/** Replace a region's row with the API's answer (the select shows the stored value on failure). */
+function applyRow(region, updated) {
+  regions.value = regions.value.map(r => (r.id === region.id ? { ...r, ...updated } : r))
+}
+
+/** Queue consumers (docs/billing.md#queue-consumers): the region's setting, by its owner. */
+async function setQueueRegion(region, charge) {
+  if (charge === !!region.charge_queue_consumers) return
+  busy.value = region.id
+  try {
+    const { data } = await billingApi.setRegionQueueConsumers(region.id, charge)
+    applyRow(region, data?.data ?? { charge_queue_consumers: charge })
+    toast.success(t('billing.queue.saved'))
+  } catch (e) {
+    regions.value = [...regions.value]
+    toast.error(apiMessage(e, t('common.error')))
+  } finally {
+    busy.value = null
+  }
+}
+
+/** The organization's own choice for a region: false (off for its projects) or null (as the region). */
+async function setQueueOverride(region, charge) {
+  if (charge === (region.queue_consumers_override === false ? false : null)) return
+  busy.value = region.id
+  try {
+    const { data } = await billingApi.setQueueConsumerOverride(region.id, charge)
+    applyRow(region, data?.data ?? { queue_consumers_override: charge })
+    toast.success(t('billing.queue.saved'))
+  } catch (e) {
+    regions.value = [...regions.value]
+    toast.error(apiMessage(e, t('common.error')))
+  } finally {
+    busy.value = null
+  }
+}
+
 function newVersion(region = null) {
   editing.value = region
     ? { regionId: region.id, regionName: region.name, initial: region.prices ?? {} }
@@ -107,7 +145,7 @@ async function removeVersion(version) {
 const price = (value) => formatUnitPrice(value, currency.value, locale.value)
 const isFuture = (version) => (version?.effective_from ?? '') > today()
 
-defineExpose({ load, changeType, newVersion, removeVersion })
+defineExpose({ load, changeType, setQueueRegion, setQueueOverride, newVersion, removeVersion })
 </script>
 
 <template>
@@ -132,6 +170,7 @@ defineExpose({ load, changeType, newVersion, removeVersion })
               <tr class="text-left text-[10px] text-gray-500 uppercase tracking-wider bg-gray-900/60">
                 <th class="px-3 py-2 font-medium">{{ t('billing.prices.region') }}</th>
                 <th class="px-3 py-2 font-medium">{{ t('billing.prices.type') }}</th>
+                <th class="px-3 py-2 font-medium" :title="t('billing.queue.hint')">{{ t('billing.queue.title') }}</th>
                 <th v-for="f in SUMMARY" :key="f" class="px-3 py-2 font-medium text-right">{{ t(`billing.prices.fields.${f}`) }}</th>
                 <th class="px-3 py-2 font-medium">{{ t('billing.prices.source') }}</th>
                 <th class="px-3 py-2" />
@@ -152,6 +191,24 @@ defineExpose({ load, changeType, newVersion, removeVersion })
                   <span v-else :data-test="`region-type-${r.id}`">{{ t(`billing.type.${r.billing_type}`) }}</span>
                   <div v-if="r.active_allocations" class="text-[10px] text-gray-500 mt-0.5">{{ t('billing.prices.allocations', { n: r.active_allocations }) }}</div>
                   <div v-if="r.pending_requests" class="text-[10px] text-amber-400 mt-0.5">{{ t('billing.prices.pendingRequests', { n: r.pending_requests }) }}</div>
+                </td>
+                <td class="px-3 py-2 space-y-1" :data-test="`queue-${r.id}`">
+                  <!-- The region's setting (its owner's), then the organization's own choice -->
+                  <select v-if="typeEditable(r)" :value="r.charge_queue_consumers ? 'on' : 'off'" class="input h-7 text-xs" :disabled="busy === r.id"
+                    :data-test="`queue-region-${r.id}`" @change="setQueueRegion(r, $event.target.value === 'on')">
+                    <option value="on">{{ t('billing.queue.regionOn') }}</option>
+                    <option value="off">{{ t('billing.queue.regionOff') }}</option>
+                  </select>
+                  <div v-else :data-test="`queue-region-${r.id}`">{{ r.charge_queue_consumers ? t('billing.queue.regionOn') : t('billing.queue.regionOff') }}</div>
+                  <select v-if="canManage" :value="r.queue_consumers_override === false ? 'off' : 'follow'" class="input h-7 text-xs" :disabled="busy === r.id"
+                    :data-test="`queue-override-${r.id}`" @change="setQueueOverride(r, $event.target.value === 'off' ? false : null)">
+                    <option value="follow">{{ t('billing.queue.follow') }}</option>
+                    <option value="off">{{ t('billing.queue.off') }}</option>
+                  </select>
+                  <div class="text-[10px]" :class="r.queue_consumers_charged ? 'text-amber-400' : 'text-gray-500'" :data-test="`queue-charged-${r.id}`">
+                    {{ r.queue_consumers_charged ? t('billing.queue.charged') : t('billing.queue.notCharged') }}
+                  </div>
+                  <div v-if="r.queue_consumers_owner_override === false" class="text-[10px] text-gray-500" :data-test="`queue-owner-off-${r.id}`">{{ t('billing.queue.ownerOff') }}</div>
                 </td>
                 <td v-for="f in SUMMARY" :key="f" class="px-3 py-2 text-right font-mono">{{ price(r.prices?.[f]) }}</td>
                 <td class="px-3 py-2">

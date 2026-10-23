@@ -171,6 +171,7 @@ export default {
 
     events: {
       tab:           'Events',
+      navDesc: 'Events of the workflows with their effects',
       title:         'Events',
       intro:         'Events received by the events API (POST /api/events), emitted by workflows or bridged from queues. Events start workflows, resume waits and cancel runs.',
       empty:         'No events yet.',

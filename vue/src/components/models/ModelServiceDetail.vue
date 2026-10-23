@@ -31,14 +31,25 @@ const bindingsLoaded = ref(false)
 const edit = reactive({ cpu: '', memory_mb: 0, min_scale: 0, max_scale: 1, scale_to_zero: true, timeout_seconds: 300 })
 const editSaving = ref(false)
 
+const fromService = (s) => ({
+  cpu:             s.cpu ?? '',
+  memory_mb:       s.memory_mb ?? 0,
+  min_scale:       s.min_scale ?? 0,
+  max_scale:       s.max_scale ?? 1,
+  scale_to_zero:   s.scale_to_zero ?? true,
+  timeout_seconds: s.timeout_seconds ?? 300,
+})
+// What the form was filled with: the models page polls the services every few seconds while one
+// is busy, and a poll must not reset what is being edited (not saved yet)
+let shown = null
+
 watch(() => props.service, (s) => {
   if (!s) return
-  edit.cpu             = s.cpu ?? ''
-  edit.memory_mb       = s.memory_mb ?? 0
-  edit.min_scale       = s.min_scale ?? 0
-  edit.max_scale       = s.max_scale ?? 1
-  edit.scale_to_zero   = s.scale_to_zero ?? true
-  edit.timeout_seconds = s.timeout_seconds ?? 300
+  const edited = shown && shown.id === s.id && JSON.stringify({ ...edit }) !== JSON.stringify(shown.values)
+  if (edited) return
+  const values = fromService(s)
+  Object.assign(edit, values)
+  shown = { id: s.id, values }
 }, { immediate: true })
 
 const statusClass = computed(() => AI_STATUS_CLASSES[props.service.status] ?? 'bg-gray-800 text-gray-400 border-gray-700')
@@ -98,6 +109,7 @@ async function saveConfig() {
       scale_to_zero: edit.scale_to_zero,
       timeout_seconds: Number(edit.timeout_seconds) || undefined,
     })
+    shown = null // saved: the form follows the service again
     ai.upsertService(data?.data ?? data)
     toast.success(t('ai.services.saved'))
   } catch (e) { toast.error(errMessage(e)) } finally { editSaving.value = false }

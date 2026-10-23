@@ -1,7 +1,7 @@
 <script setup>
 // Scope of an API token: full access ('*') or a selection of catalog permissions, grouped like
-// the permission catalog (docs/permissions.md). Used by Settings → API tokens, the MCP token
-// form and the OAuth consent page.
+// the permission catalog (docs/permissions.md). Used by Administration → API Tokens, the MCP
+// token form and the OAuth consent page.
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRbacLabels } from '@/composables/useRbac'

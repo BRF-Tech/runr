@@ -6,6 +6,7 @@ import { onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { billingApi } from '../api/billing'
 import { apiMessage, currentPeriod, formatMoney, recentPeriods } from '../utils/billing'
+import { useLatest } from '@/composables/useLatest'
 
 const emit = defineEmits(['show-owner'])
 const { t, locale } = useI18n()
@@ -17,18 +18,23 @@ const currency = ref('USD')
 const loading = ref(false)
 const error = ref(null)
 
+// The rollup of the period picked last
+const latest = useLatest()
 async function load() {
+  const current = latest.begin()
   loading.value = true
   error.value = null
   try {
     const { data } = await billingApi.rollup({ period: period.value })
+    if (!current()) return
     rows.value = data?.data ?? []
     currency.value = data?.currency || 'USD'
   } catch (e) {
+    if (!current()) return
     error.value = apiMessage(e, t('common.error'))
     rows.value = []
   } finally {
-    loading.value = false
+    if (current()) loading.value = false
   }
 }
 

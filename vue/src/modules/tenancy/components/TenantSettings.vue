@@ -4,6 +4,7 @@ import { useI18n } from 'vue-i18n'
 import { tenantsApi } from '../api/tenants'
 import { useConfirm } from '@/composables/useConfirm'
 import { useToast } from '@/composables/useToast'
+import { useLatest } from '@/composables/useLatest'
 import { useTutorialStore } from '@/stores/tutorial'
 import { createTutorial } from '@/composables/useTutorial'
 import TenantUsers from './TenantUsers.vue'
@@ -47,6 +48,8 @@ onMounted(loadTenants)
 // Deletion runs in a queued job: poll the list while a tenant is being deleted
 let pollTimer = null
 onUnmounted(stopPolling)
+// The newest list load wins; one that ends after the page is gone starts no poll
+const latest = useLatest()
 
 function stopPolling() {
   if (pollTimer) clearInterval(pollTimer)
@@ -62,15 +65,22 @@ function syncPolling() {
   }
 }
 
+// Never throws: a failed reload after a successful create / delete is not that action's error
 async function loadTenants(silent = false) {
+  const current = latest.begin()
   if (!silent) loading.value = true
   try {
     const { data } = await tenantsApi.list()
+    if (!current()) return
     tenants.value = Array.isArray(data) ? data : (data.data ?? [])
     if (expandedId.value && !tenants.value.some(tn => tn.id === expandedId.value)) expandedId.value = null
+  } catch (e) {
+    if (current() && !silent) toast.error(e.response?.data?.message ?? t('common.error'))
   } finally {
-    if (!silent) loading.value = false
-    syncPolling()
+    if (current()) {
+      loading.value = false
+      syncPolling()
+    }
   }
 }
 

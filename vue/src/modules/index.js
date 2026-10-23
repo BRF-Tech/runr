@@ -1,9 +1,13 @@
 import { reactive } from 'vue'
 
 export const moduleRegistry = reactive({
-  headerSlots: [],          // Components for AppHeader right side
+  headerSlots: [],          // Components for AppHeader right side (context switchers: the tenant switcher)
   appTopSlots: [],          // Components rendered above RouterView
-  settingsTabs: [],         // Extra tabs: { key, labelKey, component }
+  // Settings-page tabs (/settings?tab=<key>), placed in the main menu by their group and section
+  // (src/navigation/menu.js): { key, labelKey, component, group, section, descKey, icon, order, visibleIf(), dataTour }
+  settingsTabs: [],
+  // Module pages with a route of their own, in the main menu: { key, to, labelKey, group, section, descKey, icon, order, visibleIf() }
+  navLinks: [],
   accountSections: [],      // Extra sections of Account settings: { key, component }
   projectTabs: [],          // Extra project detail tabs: { id, labelKey, component, visibleIf(project), order }
   regionTabs: [],           // Extra tabs of an own region's detail: { key, labelKey, component (prop region), visibleIf(region), order }

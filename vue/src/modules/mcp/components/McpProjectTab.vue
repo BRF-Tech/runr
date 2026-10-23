@@ -5,6 +5,7 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { usePermissionsStore } from '@/stores/permissions'
+import { useLatest } from '@/composables/useLatest'
 import { mcpApi } from '../api/mcp'
 import McpServerPanel from './McpServerPanel.vue'
 import McpServerSetup from './McpServerSetup.vue'
@@ -19,27 +20,40 @@ const perms = usePermissionsStore()
 const server = ref(null)
 const loading = ref(true)
 const error = ref(null)
+const latest = useLatest()
 
 const canManage = computed(() => perms.can('mcp.servers.manage', props.project.id))
 const canCall = computed(() => perms.can('mcp.servers.call', props.project.id))
 const canViewLogs = computed(() => perms.can('logs.view', props.project.id))
 
+// The answer for another project (the tab moved on) or one older than a save is dropped
 async function load() {
+  const current = latest.begin()
   loading.value = true
   error.value = null
   try {
     const { data } = await mcpApi.server(props.project.id)
-    server.value = data.data ?? data
+    if (current()) server.value = data.data ?? data
   } catch (e) {
+    if (!current()) return
     if (e.response?.status === 404) server.value = null
     else error.value = e.response?.data?.message ?? t('common.error')
   } finally {
-    loading.value = false
+    if (current()) loading.value = false
   }
 }
 
 function onSaved(updated) {
+  latest.cancel()
+  loading.value = false
+  error.value = null
   server.value = updated
+}
+
+function onRemoved() {
+  latest.cancel()
+  loading.value = false
+  server.value = null
 }
 
 onMounted(load)
@@ -57,7 +71,7 @@ watch(() => props.project.id, load)
     </template>
 
     <template v-else>
-      <McpServerPanel :project="project" :server="server" :can-manage="canManage" @saved="onSaved" @removed="server = null" />
+      <McpServerPanel :project="project" :server="server" :can-manage="canManage" @saved="onSaved" @removed="onRemoved" />
       <McpInspector v-if="canCall" :project="project" />
       <McpCallLog v-if="canViewLogs" :project="project" />
     </template>

@@ -18,7 +18,11 @@ import EnvVarsEditor from '@/components/project/EnvVarsEditor.vue'
 import SecretEnvVarsEditor from '@/components/project/SecretEnvVarsEditor.vue'
 import ScaleConfig from '@/components/project/ScaleConfig.vue'
 import GpuConfig from '@/components/project/GpuConfig.vue'
+import DeployStrategySettings from '@/components/project/DeployStrategySettings.vue'
 import { gpuForm } from '@/utils/ai'
+import { scheduleForm, warmerScheduleError } from '@/utils/warmSchedule'
+import { workloadTrigger } from '@/modules/triggers/utils/triggers'
+import { isGlobalProject } from '@/utils/globalProjects'
 
 const { t }         = useI18n()
 const settingsStore = useSettingsStore()
@@ -27,10 +31,21 @@ const { start: startEditTutorial } = useEditTutorial()
 
 watch(() => tutorialStore.restartCounter, () => { nextTick(() => startEditTutorial()) })
 
-const props = defineProps({ project: { type: Object, default: null } })
+const props = defineProps({
+  project:     { type: Object, default: null },
+  // The deploy strategy section links to the project's Traces tab (tracing for canary thresholds)
+  tracingLink: { type: Boolean, default: false },
+})
 const canEditEnv = computed(() =>
   !props.project?.config?.env_vars_hidden && usePermissionsStore().can('env.edit', props.project?.id))
-const emit  = defineEmits(['updated', 'close'])
+// triggers-changed: the trigger list was changed (saved at once, outside the modal's Save)
+const emit  = defineEmits(['updated', 'close', 'strategy-saved', 'open-tracing', 'triggers-changed'])
+
+// A project with a trigger list (docs/triggers.md) edits the list in step 3 (saved at once by
+// the triggers API); config.trigger_type then only mirrors how the workload runs (CronJob or
+// service) for the scaling fields and is not sent.
+const listMode    = Array.isArray(props.project.triggers)
+const triggerList = ref(props.project.triggers ?? [])
 
 const step = ref(1)
 const regions = computed(() => settingsStore.data.regions ?? [])
@@ -53,13 +68,15 @@ const form = reactive({
     cpu:             toMillicores(props.project.config?.cpu) || toMillicores(defaultSize.cpu),
     memory_mb:       props.project.config?.memory_mb       ?? defaultSize.memory_mb,
     timeout_seconds: props.project.config?.timeout_seconds ?? 30,
-    trigger_type:    props.project.config?.trigger_type    ?? 'http',
+    trigger_type:    listMode ? workloadTrigger(props.project.triggers) : (props.project.config?.trigger_type ?? 'http'),
     schedule:        props.project.config?.schedule        ?? '',
     queue_stream:    props.project.config?.queue_stream    ?? '',
     env_vars:        envVarsToString(props.project.config?.env_vars),
     scale_to_zero:   props.project.config?.scale_to_zero   ?? true,
     min_scale:       props.project.config?.min_scale        ?? 0,
     max_scale:       props.project.config?.max_scale        ?? 1,
+    // Timed warmer rows (null = off)
+    scale_schedule:  scheduleForm(props.project.config?.scale_schedule),
     // stored: turning the GPU off sends gpu: null (buildConfigPayload)
     gpu:             { ...gpuForm(props.project.config?.gpu), stored: !!props.project.config?.gpu },
   },
@@ -73,8 +90,11 @@ const isDirty = computed(() => JSON.stringify(form) !== JSON.stringify(initial))
 const selectedRegion = computed(() => regions.value.find(r => r.id === form.knative_region_id))
 const selectedRegionName = computed(() => selectedRegion.value?.name ?? '')
 const serviceTypeLabel = computed(() => types.value.find(t => t.id === form.service_type)?.label ?? '')
+// Global project (docs/global-projects.md): regions on the Regions tab, HTTP only, no GPU
+const isGlobal = computed(() => isGlobalProject(props.project))
 
 const triggerSummary = computed(() => {
+  if (listMode) return triggerList.value.filter(x => x.enabled).map(x => x.name).join(', ')
   const label = t(`create.triggerTypes.${form.config.trigger_type}`)
   if (form.config.trigger_type === 'schedule' && form.config.schedule.trim()) return `${label}: ${form.config.schedule.trim()}`
   if (form.config.trigger_type === 'queue' && form.config.queue_stream.trim()) return `${label}: ${form.config.queue_stream.trim()}`
@@ -90,6 +110,15 @@ const runtimeTriggerUnsupported = computed(() => form.service_type !== 'caas' &&
 const runtimeRegionUnavailable  = computed(() => form.service_type !== 'caas' && !!runtimeEntry.value
   && Array.isArray(runtimeEntry.value.regions) && !!form.knative_region_id && !runtimeEntry.value.regions.includes(form.knative_region_id))
 
+// The trigger list loaded or changed: keep the workload's trigger (CronJob or service) in step,
+// in the snapshot too — the list is saved already, it does not make the form dirty
+function onTriggerState({ triggers }) {
+  triggerList.value = triggers
+  const workload = workloadTrigger(triggers)
+  form.config.trigger_type = workload
+  initial.config.trigger_type = workload
+}
+
 // Secret env vars are saved on their own (write-only API); a name is either plain or secret
 const plainEnvNames = computed(() => Object.keys(parseEnvVars(form.config.env_vars) ?? {}))
 
@@ -99,6 +128,8 @@ const canNext = computed(() => {
   if (step.value === 3) {
     if (form.service_type === 'caas' && !form.config.image.trim()) return false
     if (runtimeTriggerUnsupported.value) return false
+    // the trigger list is checked by the API with each change
+    if (listMode) return true
     if (!form.config.trigger_type) return false
     if (form.config.trigger_type === 'schedule' && !isValidCron(form.config.schedule)) return false
     if (form.config.trigger_type === 'queue' && !form.config.queue_stream.trim()) return false
@@ -107,9 +138,17 @@ const canNext = computed(() => {
   if (step.value === 4) {
     return form.config.cpu > 0 && form.config.memory_mb >= 64 && form.config.timeout_seconds >= 1
       && form.config.timeout_seconds <= maxTimeoutFor(selectedRegion.value) && !envVarsError(form.config.env_vars)
+      && scaleValid(form.config)
   }
   return true
 })
+// min ≤ max (the API checks it too) and, with the timed warmer on, valid rows (scheduled projects have neither)
+function scaleValid(c) {
+  if (c.trigger_type === 'schedule') return true
+  if (!c.scale_to_zero && !c.scale_schedule && Number(c.min_scale) > Number(c.max_scale)) return false
+  return !warmerScheduleError(c.scale_schedule, c.max_scale)
+}
+
 function next() { if (canNext.value) step.value++ }
 function back() { error.value = null; step.value-- }
 async function submit() {
@@ -118,11 +157,19 @@ async function submit() {
   try {
     const base = {
       description:       form.description.trim() || undefined,
-      knative_region_id: form.knative_region_id || undefined,
+      // a global project's regions change through PUT /projects/{id}/global, never here
+      knative_region_id: isGlobal.value ? undefined : (form.knative_region_id || undefined),
       config_message:    form.config_message || undefined,
     }
     // runtime ve runtime_version edit sırasında değiştirilemez
-    const { data } = await projectsApi.update(props.project.id, { ...base, config: buildConfigPayload(form.config, form.service_type) })
+    const config = buildConfigPayload(form.config, form.service_type)
+    // The trigger list is saved through its own API: the single-trigger fields stay as they are
+    if (listMode) {
+      delete config.trigger_type
+      delete config.schedule
+      delete config.queue_stream
+    }
+    const { data } = await projectsApi.update(props.project.id, { ...base, config })
     emit('updated', data.data ?? data)
   } catch (e) {
     error.value = e.response?.data?.message
@@ -180,7 +227,9 @@ async function submit() {
             <input v-model="form.description" class="input" :placeholder="t('create.step1.descriptionPlaceholder')" />
           </div>
 
-          <div class="mt-6">
+          <!-- A global project changes its regions on its Regions tab (docs/global-projects.md) -->
+          <p v-if="isGlobal" class="mt-6 text-xs text-gray-400" data-testid="edit-global-regions">{{ t('globalProjects.editRegionsHint') }}</p>
+          <div v-else class="mt-6">
             <label class="label">{{ t('create.sections.region') }} <span class="normal-case text-red-500/70">*</span></label>
             <RegionSelector :regions="regions" :selected-region-id="form.knative_region_id" @select="form.knative_region_id = $event" />
             <p v-if="runtimeRegionUnavailable" class="text-xs text-red-400 mt-2">
@@ -259,11 +308,15 @@ async function submit() {
               </div>
             </section>
 
+            <p v-if="isGlobal" class="text-xs text-gray-400" data-testid="edit-global-triggers">{{ t('globalProjects.create.triggersHint') }}</p>
             <TriggerConfig
               v-model:trigger-type="form.config.trigger_type"
               v-model:schedule="form.config.schedule"
               v-model:queue-stream="form.config.queue_stream"
               :region="selectedRegion"
+              :project="listMode ? props.project : null"
+              @state="onTriggerState"
+              @changed="emit('triggers-changed', $event.triggers)"
             />
             <p v-if="runtimeTriggerUnsupported" class="text-xs text-red-400 -mt-3">
               {{ t('runtimes.picker.triggerUnsupportedBy', { runtime: runtimeLabel(form.runtime), trigger: t(`create.triggerTypes.${form.config.trigger_type}`) }) }}
@@ -309,6 +362,13 @@ async function submit() {
               v-model:scale-to-zero="form.config.scale_to_zero"
               v-model:min-scale="form.config.min_scale"
               v-model:max-scale="form.config.max_scale"
+              v-model:scale-schedule="form.config.scale_schedule"
+              warmer
+              :region-id="form.knative_region_id"
+              :cpu="form.config.cpu"
+              :memory-mb="form.config.memory_mb"
+              :trigger-type="form.config.trigger_type"
+              :warm-scale="props.project.warm_scale ?? null"
             />
 
             <!-- Environment variables: env.view to see them, env.edit to change them -->
@@ -316,6 +376,15 @@ async function submit() {
             <p v-else-if="props.project?.config?.env_vars_hidden" class="text-xs text-gray-400">{{ t('rbac.envHidden') }}</p>
 
             <SecretEnvVarsEditor :project-id="props.project.id" :plain-names="plainEnvNames" />
+
+            <!-- Deploy strategy: saved on its own, creates no version -->
+            <DeployStrategySettings
+              :project="props.project"
+              :trigger-type="form.config.trigger_type"
+              :tracing-link="tracingLink"
+              @saved="emit('strategy-saved', $event)"
+              @open-tracing="emit('open-tracing')"
+            />
 
             <section>
               <p class="section-title">{{ t('edit.sections.versionNote') }}</p>

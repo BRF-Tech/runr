@@ -5,6 +5,7 @@ import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ShieldCheck, ShieldAlert, RefreshCw, Download, X } from 'lucide-vue-next'
 import { useToast } from '@/composables/useToast'
+import { useLatest } from '@/composables/useLatest'
 import { supplyChainApi, saveBlob } from '../api'
 import SeverityBadges from './SeverityBadges.vue'
 import FindingsTable from './FindingsTable.vue'
@@ -22,6 +23,10 @@ const detail        = ref(null)
 const detailLoading = ref(false)
 const busy          = ref({})
 let timer = null
+// The newest load / detail wins (a rescan, the poll, another version picked); a load that ends
+// after the tab is gone schedules no more polls
+const latest       = useLatest()
+const latestDetail = useLatest()
 
 const versions    = computed(() => data.value?.versions ?? [])
 const deployments = computed(() => data.value?.deployments ?? [])
@@ -30,15 +35,17 @@ const policy      = computed(() => data.value?.policy ?? null)
 const anyRunning  = computed(() => versions.value.some(v => ['pending', 'running'].includes(v.report?.status)))
 
 async function load(silent = false) {
+  const current = latest.begin()
   if (!silent) loading.value = true
   try {
     const { data: res } = await supplyChainApi.projectSecurity(props.project.id)
-    data.value = res?.data ?? null
+    if (current()) data.value = res?.data ?? null
   } catch {
-    if (!silent) data.value = null
+    if (current() && !silent) data.value = null
   } finally {
-    loading.value = false
+    if (current()) loading.value = false
   }
+  if (!current()) return
   if (selectedId.value && silent) loadDetail(selectedId.value, true)
   schedule()
 }
@@ -50,6 +57,7 @@ function schedule() {
 }
 
 async function loadDetail(versionId, silent = false) {
+  const current = latestDetail.begin()
   selectedId.value = versionId
   if (!silent) {
     detailLoading.value = true
@@ -57,15 +65,17 @@ async function loadDetail(versionId, silent = false) {
   }
   try {
     const { data: res } = await supplyChainApi.versionSecurity(props.project.id, versionId)
-    detail.value = res?.data ?? null
+    if (current()) detail.value = res?.data ?? null
   } catch {
-    if (!silent) detail.value = null
+    if (current() && !silent) detail.value = null
   } finally {
-    detailLoading.value = false
+    if (current()) detailLoading.value = false
   }
 }
 
 function closeDetail() {
+  latestDetail.cancel()
+  detailLoading.value = false
   selectedId.value = null
   detail.value = null
 }

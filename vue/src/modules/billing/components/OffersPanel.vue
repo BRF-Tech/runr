@@ -106,12 +106,18 @@ async function saveMarkup(regionId) {
 }
 
 async function removeMarkup(version) {
+  // A second click would delete it again: a 404 error right after the success
+  const key = `remove-${version.id}`
+  if (busy.value === key) return
+  busy.value = key
   try {
     await billingApi.deleteMarkup(version.id)
     toast.success(t('billing.offers.markupDeleted'))
     await load()
   } catch (e) {
     toast.error(apiMessage(e, t('common.error')))
+  } finally {
+    if (busy.value === key) busy.value = null
   }
 }
 
@@ -178,7 +184,7 @@ defineExpose({ load, accept, saveMarkup, markupForms, acceptMarkup })
         <div class="text-sm text-gray-200 font-mono" data-test="offers-default-markup-value">{{ defaultMarkup }} %</div>
         <div v-for="v in markups?.default?.scheduled ?? []" :key="v.id" class="text-xs text-amber-300 flex items-center gap-2">
           {{ t('billing.offers.scheduled', { percent: v.percent, date: v.effective_from }) }}
-          <button v-if="canManage" type="button" class="text-gray-400 hover:text-red-400" @click="removeMarkup(v)">{{ t('billing.offers.remove') }}</button>
+          <button v-if="canManage" type="button" class="text-gray-400 hover:text-red-400" :disabled="busy === `remove-${v.id}`" @click="removeMarkup(v)">{{ t('billing.offers.remove') }}</button>
         </div>
         <div v-if="canManage && markupForms.default" class="flex flex-wrap items-end gap-2">
           <div>
@@ -207,7 +213,7 @@ defineExpose({ load, accept, saveMarkup, markupForms, acceptMarkup })
           </div>
           <div v-for="v in regionMarkups(o.region.id)?.scheduled ?? []" :key="v.id" class="text-xs text-amber-300 flex items-center gap-2">
             {{ t('billing.offers.scheduled', { percent: v.percent, date: v.effective_from }) }}
-            <button v-if="canManage" type="button" class="text-gray-400 hover:text-red-400" @click="removeMarkup(v)">{{ t('billing.offers.remove') }}</button>
+            <button v-if="canManage" type="button" class="text-gray-400 hover:text-red-400" :disabled="busy === `remove-${v.id}`" @click="removeMarkup(v)">{{ t('billing.offers.remove') }}</button>
           </div>
           <div v-if="canManage && markupForms[o.region.id]" class="flex flex-wrap items-end gap-2">
             <div>

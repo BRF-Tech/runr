@@ -1,7 +1,8 @@
 import { defineAsyncComponent, markRaw } from 'vue'
+import { Database } from 'lucide-vue-next'
 import { usePermissionsStore } from '@/stores/permissions'
 
-// Bindings (docs/bindings.md): the project "Bindings" tab and Settings → Data (the
+// Bindings (docs/bindings.md): the project "Bindings" tab and Data & Integrations → Data (the
 // organization's bindings). Core plugin — loaded by modules/index.js with every build;
 // messages: locales/{en,tr}/bindings.js in the core catalog.
 export default function (registry) {
@@ -18,8 +19,12 @@ export default function (registry) {
   registry.settingsTabs.push({
     key: 'data',
     labelKey: 'bindings.data.tab',
+    descKey: 'bindings.data.navDesc',
+    icon: markRaw(Database),
+    group: 'data',
+    section: 'data',
     component: markRaw(defineAsyncComponent(() => import('@/components/bindings/DataPage.vue'))),
     visibleIf: () => usePermissionsStore().can('bindings.view'),
-    order: 30,
+    order: 10,
   })
 }

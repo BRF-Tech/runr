@@ -4,8 +4,8 @@ import { useI18n } from 'vue-i18n'
 import { gitApi } from '@/api/git'
 import TermText from '@/components/TermText.vue'
 
-// Add or edit a git provider (Settings → Git providers). Secrets are write-only: an empty field
-// keeps the stored value.
+// Add or edit a git provider (Data & Integrations → Git providers). Secrets are write-only: an
+// empty field keeps the stored value.
 const props = defineProps({
   provider: { type: Object, default: null },
 })

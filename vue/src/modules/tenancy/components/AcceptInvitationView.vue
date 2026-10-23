@@ -1,11 +1,14 @@
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { tenantsApi } from '../api/tenants'
 import { CheckCircle, XCircle, Clock, Loader2 } from 'lucide-vue-next'
 
 const { t }  = useI18n()
+// The redirect after accepting: dropped when the user left the page before it
+let redirectTimer = null
+onUnmounted(() => clearTimeout(redirectTimer))
 const route  = useRoute()
 const router = useRouter()
 
@@ -46,7 +49,7 @@ async function submit() {
     localStorage.setItem('user', JSON.stringify(data.user))
 
     status.value = 'success'
-    setTimeout(() => router.push('/projects'), 2000)
+    redirectTimer = setTimeout(() => router.push('/projects'), 2000)
   } catch (e) {
     status.value = 'form'
     errorMsg.value = e.response?.data?.message || t('tenancy.invitationError')

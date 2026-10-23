@@ -1,4 +1,4 @@
-// Git ile dağıtım: projenin Git sekmesi ve Ayarlar → Git sağlayıcıları (docs/git-deploy.md)
+// Git ile dağıtım: projenin Git sekmesi ve Veri ve Entegrasyonlar → Git sağlayıcıları (docs/git-deploy.md)
 export default {
   gitDeploy: {
     tab:        'Git',
@@ -45,7 +45,7 @@ export default {
       disconnectConfirm:  '{repo} bağlantısı kaldırılsın mı? Webhook\'u ve projenin tüm önizlemeleri silinir; proje sürümlerini korur.',
       disconnected:       'Depo bağlantısı kaldırıldı.',
       noProviders:        'Henüz bir git sağlayıcısı yapılandırılmadı.',
-      configureProviders: 'Ayarlar → Git sağlayıcıları altında sağlayıcı ekleyin',
+      configureProviders: 'Veri ve Entegrasyonlar → Git sağlayıcıları altında sağlayıcı ekleyin',
       notConnected:       'Bağlı bir depo yok.',
       intro:              'GitHub, GitLab ya da Forgejo/Gitea üzerindeki bir depoyu bağlayın: dağıtım dalına yapılan push\'lar dağıtılır, pull request\'ler önizleme alabilir.',
       provider:           'Sağlayıcı',
@@ -161,6 +161,7 @@ export default {
     },
     providers: {
       tab:          'Git sağlayıcıları',
+      navDesc: 'GitHub App, GitLab ve Forgejo / Gitea bağlantıları',
       title:        'Git sağlayıcıları',
       description:  'Projelerin depo bağlayabildiği GitHub (bir GitHub App), GitLab ve Forgejo/Gitea sunucuları. Gizli değerler şifreli saklanır ve bir daha gösterilmez.',
       add:          'Sağlayıcı ekle',

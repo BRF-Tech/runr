@@ -86,6 +86,14 @@ function fill(data) {
   preset.value = ''
 }
 
+// An uploaded or removed asset: only its field follows the answer, the texts and colours being
+// edited (not saved yet) stay
+function fillAsset(data, kind) {
+  resolved.value = data.branding ?? resolved.value
+  const asset = ASSETS.find(a => a.kind === kind)
+  if (asset) form[asset.field] = (data.stored ?? {})[asset.field] ?? null
+}
+
 async function load() {
   loading.value = true
   error.value = null
@@ -230,7 +238,7 @@ async function upload(kind, event) {
   uploading.value = kind
   try {
     const { data } = isPlatform.value ? await brandingApi.adminUpload(kind, file) : await brandingApi.tenantUpload(kind, file)
-    fill(data)
+    fillAsset(data, kind)
     refreshStore(data)
     toast.success(t('whiteLabel.branding.uploaded'))
   } catch (e) {
@@ -244,7 +252,7 @@ async function removeAsset(kind) {
   uploading.value = kind
   try {
     const { data } = isPlatform.value ? await brandingApi.adminRemove(kind) : await brandingApi.tenantRemove(kind)
-    fill(data)
+    fillAsset(data, kind)
     refreshStore(data)
   } catch (e) {
     toast.error(e.response?.data?.message ?? t('common.error'))

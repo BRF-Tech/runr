@@ -2,7 +2,7 @@ import { test, expect } from './fixtures/test'
 import type { MockApi } from './fixtures/mock-api'
 
 // Observability v2 in the UI (docs/observability.md): the project tabs Traces / Replay / Uptime,
-// Settings → Alerts (channels, send test, rules) and the public status page. Every observability
+// Observability → Alerts (channels, send test, rules) and the public status page. Every observability
 // endpoint is answered by the in-memory fake below (mocked API, no cluster).
 
 type Json = Record<string, any>

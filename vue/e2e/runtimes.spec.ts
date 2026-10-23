@@ -234,7 +234,7 @@ test.beforeEach(async ({ page }) => {
 
 const modal = (page: Page, text: string | RegExp) => page.locator('div.fixed.inset-0').filter({ hasText: text }).last()
 
-test('an admin registers, manages and test-deploys a custom runtime in Settings → Runtimes', async ({ page }) => {
+test('an admin registers, manages and test-deploys a custom runtime in Build & Run → Runtimes', async ({ page }) => {
   const api = new FakeApi([
     builtin('python', 'Python', 'py', 'python', '3.14', 'def\\s+handler\\s*\\('),
     builtin('nodejs', 'Node.js', 'js', 'javascript', '24.14', 'function\\s+handler'),

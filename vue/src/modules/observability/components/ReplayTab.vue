@@ -8,6 +8,7 @@ import { usePermissionsStore } from '@/stores/permissions'
 import { observabilityApi } from '../api/observability'
 import { formatDuration, rowsToObject, splitList } from '../utils/format'
 import ReplayDiff from './ReplayDiff.vue'
+import { useLatest } from '@/composables/useLatest'
 
 /**
  * Project "Replay" tab: capture of failed requests (off by default; privacy note, body limit,
@@ -89,22 +90,34 @@ async function save() {
   }
 }
 
+// The capture opened last: a slower answer for one opened before is dropped
+const latestOpen = useLatest()
+
 async function openCapture(c) {
+  const current = latestOpen.begin()
   result.value = null
   overrides.value = []
   try {
     const { data } = await observabilityApi.replayCapture(props.project.id, c.id)
-    open.value = data.data
+    if (current()) open.value = data.data
   } catch (e) {
-    toast.error(e.response?.data?.message ?? t('observability.common.error'))
+    if (current()) toast.error(e.response?.data?.message ?? t('observability.common.error'))
   }
 }
 
+function closeCapture() {
+  latestOpen.cancel()
+  open.value = null
+}
+
 async function replay() {
+  const captureId = open.value.id
   replaying.value = true
   try {
     const headers = rowsToObject(overrides.value)
-    const { data } = await observabilityApi.replay(props.project.id, open.value.id, Object.keys(headers).length ? { headers } : {})
+    const { data } = await observabilityApi.replay(props.project.id, captureId, Object.keys(headers).length ? { headers } : {})
+    // Another capture is open now (or none): the result belongs to the one replayed
+    if (open.value?.id !== captureId) return
     result.value = data.data
     open.value = { ...open.value, replay_count: (open.value.replay_count || 0) + 1 }
   } catch (e) {
@@ -191,7 +204,7 @@ onMounted(load)
       <!-- Capture detail -->
       <div v-if="open" class="space-y-4" data-test="capture-detail">
         <div class="flex items-center gap-3">
-          <button type="button" class="btn-secondary text-xs px-2.5 py-1" @click="open = null"><ArrowLeft class="w-3 h-3" />{{ t('observability.replay.detail.back') }}</button>
+          <button type="button" class="btn-secondary text-xs px-2.5 py-1" @click="closeCapture"><ArrowLeft class="w-3 h-3" />{{ t('observability.replay.detail.back') }}</button>
           <span class="font-mono text-xs text-gray-200">{{ open.method }} {{ open.path }}<span v-if="open.query" class="text-gray-500">?{{ open.query }}</span></span>
           <span class="font-mono text-[11px] px-1.5 rounded-sm bg-red-900/40 text-red-300">{{ open.timed_out ? 'timeout' : open.status }}</span>
           <button type="button" class="ml-auto text-gray-400 hover:text-red-400" :title="t('observability.replay.detail.delete')" @click="remove(open)"><Trash2 class="w-4 h-4" /></button>

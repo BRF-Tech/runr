@@ -2,7 +2,8 @@
 // One bill (docs/billing.md): a project's or a user's month, or what an organization owes the
 // platform. Expands to its line items; closed bills show the payment link and paid status the
 // invoicing system set, and — with `payment` (billing.manage) — let an operator set them.
-// metered_cost / difference come only for billing.view holders (fixed price vs real usage).
+// metered_cost / difference come only for billing.view holders (fixed price vs real usage). A
+// project's lines name the environment their usage came from when it ran in more than production.
 import { computed, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ChevronDown, ExternalLink } from 'lucide-vue-next'
@@ -34,6 +35,9 @@ const saving = ref(false)
 const current = computed(() => detail.value ?? props.bill)
 const currency = computed(() => current.value.currency || 'USD')
 const lines = computed(() => current.value.line_items ?? null)
+// A project that ran in an environment besides production (docs/environments.md): every line says
+// which environment its usage came from
+const showEnvironment = computed(() => (lines.value ?? []).some((line) => !!line.environment_id))
 const closed = computed(() => current.value.status === 'closed')
 const canEdit = computed(() => !!props.payment && closed.value)
 const hasCosts = computed(() => current.value.metered_cost !== undefined && current.value.metered_cost !== null)
@@ -112,6 +116,11 @@ async function savePaid() {
   }
 }
 
+function lineEnvironment(line) {
+  if (!line.environment_name) return '—'
+  return line.environment_name === 'deleted environment' ? t('billing.bill.deletedEnvironment') : line.environment_name
+}
+
 function lineQuantity(line) {
   return `${formatNumber(line.quantity, locale.value, 4)} ${line.unit ?? ''}`.trim()
 }
@@ -158,6 +167,7 @@ defineExpose({ toggle, saveUrl, savePaid, form })
         <thead>
           <tr class="text-left text-[10px] text-gray-500 uppercase tracking-wider">
             <th class="py-1 pr-2 font-medium">{{ t('billing.bill.description') }}</th>
+            <th v-if="showEnvironment" class="py-1 pr-2 font-medium" :data-test="`bill-environment-head-${bill.id}`">{{ t('billing.bill.environment') }}</th>
             <th class="py-1 pr-2 font-medium text-right">{{ t('billing.bill.quantity') }}</th>
             <th class="py-1 pr-2 font-medium text-right">{{ t('billing.bill.unitPrice') }}</th>
             <th class="py-1 font-medium text-right">{{ t('billing.bill.amount') }}</th>
@@ -173,6 +183,7 @@ defineExpose({ toggle, saveUrl, savePaid, form })
                 <span v-if="line.multiplier && Number(line.multiplier) !== 1"> · ×{{ formatNumber(line.multiplier, locale, 3) }}</span>
               </div>
             </td>
+            <td v-if="showEnvironment" class="py-1.5 pr-2 font-mono text-gray-400" :data-test="`bill-line-environment-${bill.id}-${i}`">{{ lineEnvironment(line) }}</td>
             <td class="py-1.5 pr-2 text-right font-mono">{{ lineQuantity(line) }}</td>
             <td class="py-1.5 pr-2 text-right font-mono">{{ formatUnitPrice(line.unit_price, currency, locale) }}</td>
             <td class="py-1.5 text-right font-mono">{{ money(line.total) }}</td>

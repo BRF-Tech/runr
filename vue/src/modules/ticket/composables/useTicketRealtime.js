@@ -18,10 +18,12 @@ async function getEcho() {
  */
 export function useTicketListRealtime(onNewTicket, onStatusChanged = null) {
   let channel = null
+  // The component may be gone when the socket client has loaded: it joins nothing then
+  let disposed = false
 
   async function subscribe() {
     const e = await getEcho()
-    if (!e) return
+    if (!e || disposed || channel) return
     channel = getChannel('support-tickets')
     // Private channel: only ticket managers are authorized (routes/channels.php)
     const ch = e.private(channel).listen('.SupportTicketCreated', (ev) => {
@@ -40,7 +42,7 @@ export function useTicketListRealtime(onNewTicket, onStatusChanged = null) {
     if (echo && channel) { echo.leave(channel); channel = null }
   }
 
-  onUnmounted(unsubscribe)
+  onUnmounted(() => { disposed = true; unsubscribe() })
   return { subscribe, unsubscribe }
 }
 
@@ -53,10 +55,11 @@ export function useTicketListRealtime(onNewTicket, onStatusChanged = null) {
 export function useTicketDetailRealtime(ticketId, onReply, onRead, onInternalNote = null, onStatusChanged = null) {
   let channel = null
   let internalChannel = null
+  let disposed = false
 
   async function subscribe() {
     const e = await getEcho()
-    if (!e) return
+    if (!e || disposed || channel) return
     channel = getChannel(`support-ticket.${ticketId}`)
     const ch = e.private(channel)
       .listen('.SupportTicketReplied', (ev) => {
@@ -88,6 +91,6 @@ export function useTicketDetailRealtime(ticketId, onReply, onRead, onInternalNot
     if (echo && internalChannel) { echo.leave(internalChannel); internalChannel = null }
   }
 
-  onUnmounted(unsubscribe)
+  onUnmounted(() => { disposed = true; unsubscribe() })
   return { subscribe, unsubscribe }
 }

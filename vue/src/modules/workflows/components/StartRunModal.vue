@@ -8,6 +8,8 @@ import { parseJsonObject } from '../utils/format'
 const props = defineProps({
   projectId: { type: String, required: true },
   workflow:  { type: String, required: true },
+  // The environment of the workflow (docs/workflows.md#environments); null: production
+  environment: { type: String, default: null },
 })
 
 const emit = defineEmits(['started', 'close'])
@@ -30,7 +32,7 @@ async function submit() {
   try {
     const payload = { data: parsed, test: test.value }
     if (idempotencyKey.value.trim()) payload.idempotency_key = idempotencyKey.value.trim()
-    const res = await workflowsApi.startRun(props.projectId, props.workflow, payload)
+    const res = await workflowsApi.startRun(props.projectId, props.workflow, payload, props.environment)
     emit('started', { run: res.data.data, created: res.data.created })
   } catch (e) {
     error.value = e.response?.data?.message ?? t('common.error')

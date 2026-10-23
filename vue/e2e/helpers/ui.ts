@@ -49,3 +49,28 @@ export function continueButton(scope: Page | Locator): Locator {
 export async function openProjectTab(page: Page, name: string): Promise<void> {
   await page.getByRole('button', { name, exact: true }).click()
 }
+
+/** Main-menu groups (src/navigation/menu.js). */
+export type NavGroup = 'build' | 'data' | 'observability' | 'admin'
+
+/** Opens a mega menu of the main menu (wide screens) and returns its panel. */
+export async function openNavMenu(page: Page, group: NavGroup): Promise<Locator> {
+  await page.getByTestId('main-nav').getByTestId(`nav-group-${group}`).click()
+  const panel = page.locator(`#nav-panel-${group}`)
+  await expect(panel).toBeVisible()
+  return panel
+}
+
+/** Goes to a page through the main menu: the group's mega menu, then the link (`nav-link-<key>`). */
+export async function navigateTo(page: Page, group: NavGroup, link: string): Promise<void> {
+  const panel = await openNavMenu(page, group)
+  await panel.getByTestId(`nav-link-${link}`).click()
+}
+
+/** Opens the user menu (avatar) and returns it. */
+export async function openUserMenu(page: Page): Promise<Locator> {
+  await page.getByTestId('user-menu-button').click()
+  const menu = page.locator('#user-menu')
+  await expect(menu).toBeVisible()
+  return menu
+}

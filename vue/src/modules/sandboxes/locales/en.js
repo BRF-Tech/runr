@@ -2,7 +2,9 @@
 export default {
   sandboxes: {
     nav:         'Sandboxes',
-    settingsTab: 'Sandboxes',
+    navDesc:     'Isolated environments for untrusted code',
+    settingsTab: 'Sandbox settings',
+    settingsTabDesc: 'Sandbox regions, warm pools and quotas',
     title:       'Sandboxes',
     subtitle:    'Isolated environments for running untrusted code — for AI agents, notebooks and tests.',
 
@@ -281,7 +283,7 @@ export default {
         empty:           'No regions.',
         enabled:         'Sandboxes enabled',
         installedClasses: 'Installed sandbox classes',
-        noClasses:       'Neither gVisor nor Kata is installed in this region (Settings → Regions → Sandbox).',
+        noClasses:       'Neither gVisor nor Kata is installed in this region (the region\'s Isolation tab).',
         allowedClasses:  'Allowed classes',
         defaultClass:    'Default class',
         strongest:       'Strongest allowed',

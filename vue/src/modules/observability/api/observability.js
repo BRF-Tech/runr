@@ -29,6 +29,12 @@ export const observabilityApi = {
   incidents:     (projectId) => client.get(`/projects/${projectId}/uptime-incidents`),
   updateIncident: (projectId, id, payload) => client.patch(`/projects/${projectId}/uptime-incidents/${id}`, payload),
 
+  // Load tests (docs/load-test.md)
+  loadTests:      (projectId, params = {}) => client.get(`/projects/${projectId}/load-tests`, { params }),
+  loadTest:       (projectId, id) => client.get(`/projects/${projectId}/load-tests/${id}`),
+  startLoadTest:  (projectId, payload) => client.post(`/projects/${projectId}/load-tests`, payload),
+  cancelLoadTest: (projectId, id) => client.post(`/projects/${projectId}/load-tests/${id}/cancel`),
+
   // Region tracing backend
   regionTracing:        (regionId) => client.get(`/observability/regions/${regionId}/tracing`),
   updateRegionTracing:  (regionId, payload) => client.put(`/observability/regions/${regionId}/tracing`, payload),

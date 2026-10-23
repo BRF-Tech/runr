@@ -15,6 +15,8 @@ import type { Json } from '../fixtures/data'
 /** Stack-mode credentials: the dev-stack administrator (AdminSeeder: ADMIN_EMAIL default in api/config/app.php, ADMIN_PASSWORD in api/.env.docker). */
 export const STACK_LOGIN = process.env.E2E_LOGIN || 'admin@example.com'
 export const STACK_PASSWORD = process.env.E2E_PASSWORD || 'admin123'
+/** The user name of that account (ADMIN_USERNAME); empty when E2E_LOGIN names another account without E2E_USERNAME. */
+export const STACK_USERNAME = process.env.E2E_USERNAME || (process.env.E2E_LOGIN ? '' : 'admin')
 
 export interface Session {
   token: string
@@ -24,15 +26,19 @@ export interface Session {
 }
 
 export interface UiLogin {
-  email: string
+  /** The user name or the e-mail address. */
+  login: string
   password: string
   /** Second factor; when given, the 2FA step is expected and completed. */
   code?: string
 }
 
-export async function loginViaUi(page: Page, { email, password, code }: UiLogin): Promise<void> {
+/** The sign-in field: the user name or the e-mail address. */
+export const LOGIN_FIELD = 'E-mail or user name'
+
+export async function loginViaUi(page: Page, { login, password, code }: UiLogin): Promise<void> {
   await page.goto('/login')
-  await page.getByPlaceholder('Email').fill(email)
+  await page.getByLabel(LOGIN_FIELD).fill(login)
   await page.getByPlaceholder('••••••••').fill(password)
   // exact: with the tenancy module the account-type cards read "… Sign in with …"
   await page.getByRole('button', { name: 'Sign In', exact: true }).click()

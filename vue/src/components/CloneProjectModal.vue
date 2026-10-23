@@ -9,6 +9,7 @@ import { useRuntimesStore } from '@/stores/runtimes'
 import { runtimeLabel } from '@/utils/runtimes'
 import { slugError, projectSlug, maxTimeoutFor } from '@/composables/projectValidation'
 import { defaultSizeFor, toMillicores } from '@/utils/instanceSizes'
+import { scheduleForm } from '@/utils/warmSchedule'
 import RegionSelector from '@/components/project/RegionSelector.vue'
 import ResourcesEditor from '@/components/project/ResourcesEditor.vue'
 import TriggerConfig from '@/components/project/TriggerConfig.vue'
@@ -43,13 +44,16 @@ const form = reactive({
     cpu:               toMillicores(c.cpu) || toMillicores(defaultSize.cpu),
     memory_mb:         c.memory_mb ?? defaultSize.memory_mb,
     timeout_seconds:   c.timeout_seconds ?? 30,
-    trigger_type:      c.trigger_type ?? 'http',
+    // The clone starts with one trigger (the single-trigger API): a primary trigger of a newer
+    // type (webhook, topic, platform_event …) has no equivalent there, the clone serves HTTP
+    trigger_type:      ['http', 'schedule', 'queue', 'workflow'].includes(c.trigger_type) ? c.trigger_type : 'http',
     schedule:          c.schedule ?? '',
     queue_stream:      c.queue_stream ?? '',
     env_vars:          envVarsToString(c.env_vars),
     scale_to_zero:     c.scale_to_zero ?? true,
     min_scale:         c.min_scale ?? 0,
     max_scale:         c.max_scale ?? 1,
+    scale_schedule:    scheduleForm(c.scale_schedule),
   },
 })
 

@@ -5,11 +5,18 @@ import { useAuthStore } from '@/stores/auth'
 import { useToast } from '@/composables/useToast'
 import { dispatchPlatformEvent } from '@/composables/useJobEvents'
 import { setWsConnected } from '@/composables/useWsConnection'
-import { notificationTitle } from '@/utils/notifications'
+import { isPromotionNotification, notificationTitle } from '@/utils/notifications'
+import { useApprovalsStore } from '@/stores/approvals'
 import i18n from '@/i18n'
 
 let echoInstance = null
 let subscribed = false
+// The subscribe in flight (its number), null when none: it waits for the socket client to load,
+// and a second subscribe meanwhile (the sign-in watcher and the tenancy login hook both start
+// one) must not listen a second time; an unsubscribe meanwhile cancels it
+let subscribing = null
+let subscribeSeq = 0
+let echoModule = null   // the socket client, loaded once
 let channelPrefix = ''
 let activeChannels = []
 let wsStateHandled = false
@@ -46,16 +53,25 @@ export function useRealtimeNotifications() {
   const toast = useToast()
 
   async function subscribe() {
-    if (subscribed) return
+    if (subscribed || subscribing !== null) return
     // Every channel is private: without a session each authorization answers 401
     if (!useAuthStore().token) return
 
+    const seq = ++subscribeSeq
+    subscribing = seq
+    let mod
     try {
-      const mod = await import('@/plugins/echo')
-      echoInstance = mod.default
+      echoModule ??= import('@/plugins/echo')
+      mod = await echoModule
     } catch {
+      echoModule = null
+      if (subscribing === seq) subscribing = null
       return // Echo/Pusher not available, polling fallback only
     }
+    // Unsubscribed (or subscribed afresh by a resubscribe) while the client loaded
+    if (subscribing !== seq) return
+    subscribing = null
+    echoInstance = mod.default
 
     const notifCh = getChannel('notifications')
     const platformCh = getChannel('platform')
@@ -68,6 +84,8 @@ export function useRealtimeNotifications() {
       const n    = e.notification ?? e
       const type = n.type || ''
       notifStore.addNotification(n)
+      // A promotion waits for the user's approval (or theirs was decided): the header count follows
+      if (isPromotionNotification(n)) useApprovalsStore().fetchCount()
       // DemoManager bileşeni kendi toast'ını gösteriyor, burada gösterme
       const demoSuccessTypes = ['demo.seeded', 'demo.deployed', 'demo.removed']
       if (!demoSuccessTypes.includes(type)) {
@@ -116,6 +134,12 @@ export function useRealtimeNotifications() {
       }
     }
 
+    // A promotion was requested, decided or ended (docs/environments.md#notifications): the
+    // header's approvals count follows; an open approvals inbox reloads (useJobEvents)
+    if (topic === 'environment.promotion') {
+      useApprovalsStore().fetchCount()
+    }
+
     // Demo removed/seeded → refresh settings (regions, demo_status)
     if (topic === 'demo.removed' || topic === 'demo.seeded') {
       settingsStore.fetch()
@@ -137,6 +161,7 @@ export function useRealtimeNotifications() {
   }
 
   function unsubscribe() {
+    subscribing = null
     if (!subscribed || !echoInstance) return
     activeChannels.forEach(ch => echoInstance.leave(ch))
     activeChannels = []

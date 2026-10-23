@@ -4,6 +4,7 @@ import { useI18n } from 'vue-i18n'
 import { ChevronDown, FileCode2 } from 'lucide-vue-next'
 import MonacoEditor from '@/components/MonacoEditor.vue'
 import { runtimesApi } from '@/api/runtimes'
+import { useLatest } from '@/composables/useLatest'
 
 // Starter code the new project gets from the runtime manifest (template.files)
 const props = defineProps({
@@ -20,21 +21,29 @@ const active  = ref(null)
 const failed  = ref(false)
 let loadedFor = null
 
+// The starter of the runtime picked last: an answer for one picked before is dropped
+const latest = useLatest()
 async function load() {
+  const current = latest.begin()
   const key = `${props.runtime}:${props.serviceType}`
-  if (!props.runtime || loadedFor === key) return
+  if (!props.runtime || loadedFor === key) {
+    loading.value = false
+    return
+  }
   loading.value = true
   failed.value  = false
   try {
     const { data } = await runtimesApi.template(props.runtime, { service_type: props.serviceType })
+    if (!current()) return
     files.value  = data.files ?? {}
     active.value = Object.keys(files.value)[0] ?? null
     loadedFor    = key
   } catch {
+    if (!current()) return
     files.value = {}
     failed.value = true
   } finally {
-    loading.value = false
+    if (current()) loading.value = false
   }
 }
 

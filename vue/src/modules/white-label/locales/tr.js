@@ -3,6 +3,9 @@ export default {
     tabBranding:     'Marka',
     tabSignup:       'Kayıt',
     tabOrgBranding:  'Organizasyon Markası',
+    navBrandingDesc: 'Konsolun ürün adı, logoları ve renkleri',
+    navSignupDesc: 'Kendi kendine kayıt, CAPTCHA ve koşullar',
+    navOrgBrandingDesc: 'Organizasyonun kendi adı, logosu ve renkleri',
 
     login: {
       byCompany: '{product} by {company}',

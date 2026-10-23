@@ -27,3 +27,19 @@ export function withPlugins(locale = 'en') {
 export function fakeT(key, params) {
   return params ? `${key} ${JSON.stringify(params)}` : key
 }
+
+/**
+ * A promise the spec settles by hand, to choose the order in which API answers arrive:
+ *
+ *   const files = deferred()
+ *   projectsApi.saveFiles.mockReturnValueOnce(files.promise)
+ *   ...click create...                          // the request is in flight
+ *   await w.setProps({ existingNames: [...] })  // a websocket event lands first
+ *   files.resolve({ data: {} }); await flushPromises()
+ */
+export function deferred() {
+  let resolve
+  let reject
+  const promise = new Promise((res, rej) => { resolve = res; reject = rej })
+  return { promise, resolve, reject }
+}

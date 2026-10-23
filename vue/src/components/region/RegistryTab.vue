@@ -17,6 +17,15 @@ const props = defineProps({
 })
 const emit = defineEmits(['saved'])
 
+// The region as this tab last saw it: its own setup / removal answers and status polls change it
+// right away (the settings page's copy of the region, the prop, does not follow every save)
+const current = ref(props.region)
+watch(() => props.region, (r) => { current.value = r })
+function update(region) {
+  current.value = region
+  emit('saved', region)
+}
+
 const form = useRegistrySetup()
 const storageClasses = ref([])
 const classesLoaded = ref(false)
@@ -25,17 +34,17 @@ const error = ref(null)
 const replacing = ref(false)
 let poll = null
 
-const status = computed(() => props.region.registry_status)
+const status = computed(() => current.value.registry_status)
 const installing = computed(() => status.value === 'installing')
-const hasRegistry = computed(() => !!props.region.registry_mode && status.value === 'ready')
+const hasRegistry = computed(() => !!current.value.registry_mode && status.value === 'ready')
 // an internal registry is removed first; an external one is replaced
-const showForm = computed(() => !installing.value && (!hasRegistry.value || (replacing.value && props.region.registry_mode === 'external')))
+const showForm = computed(() => !installing.value && (!hasRegistry.value || (replacing.value && current.value.registry_mode === 'external')))
 
 async function loadStorageClasses() {
   if (classesLoaded.value) return
   classesLoaded.value = true
   try {
-    const { data: blob } = await knativeRegionsApi.downloadKubeconfig(props.region.id)
+    const { data: blob } = await knativeRegionsApi.downloadKubeconfig(current.value.id)
     const kubeconfig = typeof blob === 'string' ? blob : await blob.text()
     const { data } = await knativeRegionsApi.previewStorageClasses({ kubeconfig })
     storageClasses.value = data.storageClasses || []
@@ -47,14 +56,14 @@ async function loadStorageClasses() {
 }
 watch(showForm, (show) => { if (show) loadStorageClasses() }, { immediate: true })
 // another registry (set up, removed): the replace form closes
-watch(() => [props.region.registry_mode, props.region.registry_status], () => { replacing.value = false })
+watch(() => [current.value.registry_mode, current.value.registry_status], () => { replacing.value = false })
 
 function startPoll() {
   stopPoll()
   poll = setInterval(async () => {
     try {
-      const { data } = await knativeRegionsApi.registryStatusForRegion(props.region.id)
-      emit('saved', { ...props.region, ...data })
+      const { data } = await knativeRegionsApi.registryStatusForRegion(current.value.id)
+      update({ ...current.value, ...data })
       if (data.registry_status !== 'installing') stopPoll()
     } catch { /* next tick */ }
   }, 3000)
@@ -67,10 +76,10 @@ async function submit() {
   busy.value = true
   error.value = null
   try {
-    const { data } = await knativeRegionsApi.configureRegistry(props.region.id, form.getRegistryPayload())
+    const { data } = await knativeRegionsApi.configureRegistry(current.value.id, form.getRegistryPayload())
     replacing.value = false
     const region = data.region?.data ?? data.region
-    if (region) emit('saved', region)
+    if (region) update(region)
   } catch (e) {
     error.value = e.response?.data?.message ?? Object.values(e.response?.data?.errors ?? {}).flat()[0] ?? t('common.error')
   } finally { busy.value = false }
@@ -79,15 +88,15 @@ async function submit() {
 async function remove() {
   const ok = await confirm({
     title: t('settings.regionDetail.registry.remove'),
-    message: t(props.region.registry_mode === 'internal' ? 'settings.regionDetail.registry.removeInternalConfirm' : 'settings.regionDetail.registry.removeExternalConfirm'),
+    message: t(current.value.registry_mode === 'internal' ? 'settings.regionDetail.registry.removeInternalConfirm' : 'settings.regionDetail.registry.removeExternalConfirm'),
     destructive: true,
   })
   if (!ok) return
   busy.value = true
   error.value = null
   try {
-    const { data } = await knativeRegionsApi.removeRegistry(props.region.id)
-    emit('saved', data.data ?? data)
+    const { data } = await knativeRegionsApi.removeRegistry(current.value.id)
+    update(data.data ?? data)
   } catch (e) {
     error.value = e.response?.data?.message ?? t('common.error')
   } finally { busy.value = false }
@@ -96,10 +105,10 @@ async function remove() {
 
 <template>
   <div class="space-y-4" data-testid="registry-tab">
-    <RegistrySection v-if="region.registry_mode && !showForm" :readonly="true" :registry-mode="region.registry_mode" :setup-status="status"
-      :is-setting-up="installing" setup-phase="queued" :setup-error="status === 'error' ? region.registry_status_message : null" />
-    <p v-if="region.registry_address && hasRegistry" class="text-xs text-gray-400 font-mono bg-gray-900/60 rounded-sm px-3 py-2">{{ region.registry_address }}</p>
-    <p v-if="installing && region.registry_status_message" class="text-xs text-gray-400" data-testid="registry-progress">{{ region.registry_status_message }}</p>
+    <RegistrySection v-if="current.registry_mode && !showForm" :readonly="true" :registry-mode="current.registry_mode" :setup-status="status"
+      :is-setting-up="installing" setup-phase="queued" :setup-error="status === 'error' ? current.registry_status_message : null" />
+    <p v-if="current.registry_address && hasRegistry" class="text-xs text-gray-400 font-mono bg-gray-900/60 rounded-sm px-3 py-2">{{ current.registry_address }}</p>
+    <p v-if="installing && current.registry_status_message" class="text-xs text-gray-400" data-testid="registry-progress">{{ current.registry_status_message }}</p>
 
     <template v-if="showForm">
       <p class="text-xs text-gray-400">{{ t(hasRegistry ? 'settings.regionDetail.registry.replaceHint' : 'settings.regionDetail.registry.setupHint') }}</p>
@@ -119,7 +128,7 @@ async function remove() {
     </template>
 
     <div v-if="hasRegistry && !replacing" class="flex gap-2">
-      <button v-if="region.registry_mode === 'external'" type="button" class="btn-secondary text-xs" data-testid="replace-registry" @click="replacing = true">
+      <button v-if="current.registry_mode === 'external'" type="button" class="btn-secondary text-xs" data-testid="replace-registry" @click="replacing = true">
         {{ t('settings.regionDetail.registry.replace') }}
       </button>
       <button type="button" class="btn-secondary text-xs text-red-400! hover:text-red-300!" :disabled="busy" data-testid="remove-registry" @click="remove">

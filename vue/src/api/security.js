@@ -1,12 +1,21 @@
 import client from './client'
 
-// Secret env vars of a project — values are write-only (docs/security.md)
+// Secret env vars of a project (docs/security.md, docs/secret-stores.md): a value goes straight into
+// the region (write-only), or the variable is a reference to one of the organization's secret stores
 export const projectSecretsApi = {
   list: (projectId) =>
     client.get(`/projects/${projectId}/secrets`),
 
   set: (projectId, name, value) =>
     client.put(`/projects/${projectId}/secrets/${encodeURIComponent(name)}`, { value }),
+
+  // reference: { store_id, path, key? } — RunR never sees the value
+  setReference: (projectId, name, reference) =>
+    client.put(`/projects/${projectId}/secrets/${encodeURIComponent(name)}`, { reference }),
+
+  // Sync the project's references now and read their status (same answer as list)
+  refresh: (projectId) =>
+    client.post(`/projects/${projectId}/secrets/refresh`),
 
   remove: (projectId, name) =>
     client.delete(`/projects/${projectId}/secrets/${encodeURIComponent(name)}`),

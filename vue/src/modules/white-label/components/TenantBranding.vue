@@ -1,5 +1,5 @@
 <script setup>
-// Settings → Organization branding (tenant owner/admin): the active tenant's own logo, colours
+// Administration → Organization Branding (tenant owner/admin): the active tenant's own logo, colours
 // and login text, shown to its members and on its tenant sign-in page.
 import { useI18n } from 'vue-i18n'
 import BrandingForm from './BrandingForm.vue'

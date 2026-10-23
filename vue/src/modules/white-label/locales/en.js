@@ -3,6 +3,9 @@ export default {
     tabBranding:     'Branding',
     tabSignup:       'Signup',
     tabOrgBranding:  'Organization Branding',
+    navBrandingDesc: 'Product name, logos and colours of the console',
+    navSignupDesc: 'Self-service sign-up, CAPTCHA and terms',
+    navOrgBrandingDesc: 'The organization\'s own name, logo and colours',
 
     login: {
       byCompany: '{product} by {company}',

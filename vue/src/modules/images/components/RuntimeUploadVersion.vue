@@ -1,5 +1,5 @@
 <script setup>
-// Settings → Runtimes → Add / Edit: a version whose image is an uploaded image (`upload:`,
+// Build & Run → Runtimes → Add / Edit: a version whose image is an uploaded image (`upload:`,
 // docs/runtimes.md#versions). Emits { version, upload, makeDefault }; the editor adds it to the
 // manifest text (appendUploadVersion).
 import { ref, computed, onMounted } from 'vue'

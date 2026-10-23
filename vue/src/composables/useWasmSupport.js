@@ -1,6 +1,7 @@
 import { ref, computed } from 'vue'
 import { wasmApi } from '@/api/wasm'
 import { useJobEvents } from '@/composables/useJobEvents'
+import { useLatest } from '@/composables/useLatest'
 
 /**
  * WebAssembly support of a region (Sandbox tab → WebAssembly card): status, shims, node
@@ -43,11 +44,19 @@ export function useWasmSupport(regionId, emit, t, confirm) {
     }
   }
 
+  // The newest status read wins (events and actions start reads that may answer out of order)
+  const latest = useLatest()
+  // wasm.* events: a fast job can report before the install / uninstall request answers, and
+  // that answer must not put the status back to "installing"
+  let statusEvents = 0
+
   async function load({ cluster = true } = {}) {
     if (!regionId.value) return
+    const current = latest.begin()
     loading.value = true
     try {
       const { data } = await wasmApi.status(regionId.value, cluster ? {} : { cluster: 0 })
+      if (!current()) return
       status.value         = data.status || 'not_installed'
       message.value        = data.message || ''
       installedShims.value = Array.isArray(data.shims) ? data.shims : []
@@ -66,9 +75,9 @@ export function useWasmSupport(regionId, emit, t, confirm) {
       }
       clusterError.value = data.cluster_error || null
     } catch (e) {
-      clusterError.value = e.response?.data?.message || e.message
+      if (current()) clusterError.value = e.response?.data?.message || e.message
     } finally {
-      loading.value = false
+      if (current()) loading.value = false
     }
   }
 
@@ -85,12 +94,14 @@ export function useWasmSupport(regionId, emit, t, confirm) {
       : [...selectedNodes.value, name]
   }
 
-  function applyRegion(data) {
+  function applyRegion(data, eventsBefore) {
     const region = data?.region?.data ?? data?.region
     if (region) {
       initFromRegion(region)
       emit?.('saved', region)
     }
+    // The job reported while the request ran: read the status again
+    if (statusEvents !== eventsBefore) load({ cluster: false })
   }
 
   async function install() {
@@ -103,12 +114,13 @@ export function useWasmSupport(regionId, emit, t, confirm) {
 
     busy.value = true
     error.value = null
+    const eventsBefore = statusEvents
     try {
       const { data } = await wasmApi.install(regionId.value, {
         shims: selectedShims.value,
         nodes: allNodes.value ? null : selectedNodes.value,
       })
-      applyRegion(data)
+      applyRegion(data, eventsBefore)
     } catch (e) {
       error.value = e.response?.data?.message || e.message
     } finally {
@@ -126,9 +138,10 @@ export function useWasmSupport(regionId, emit, t, confirm) {
 
     busy.value = true
     error.value = null
+    const eventsBefore = statusEvents
     try {
       const { data } = await wasmApi.uninstall(regionId.value)
-      applyRegion(data)
+      applyRegion(data, eventsBefore)
     } catch (e) {
       error.value = e.response?.data?.message || e.message
     } finally {
@@ -139,6 +152,7 @@ export function useWasmSupport(regionId, emit, t, confirm) {
   useJobEvents({
     'wasm.*': (payload) => {
       if (payload?.region_id !== regionId.value) return
+      statusEvents++
       load()
     },
     'install.progress': (payload) => {

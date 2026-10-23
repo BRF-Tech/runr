@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
 import { withPlugins } from '../helpers'
 
-// Settings → Audit log (docs/security.md): filters, table, detail drawer, export, retention.
+// Administration → Audit log (docs/security.md): filters, table, detail drawer, export, retention.
 const auditApi = vi.hoisted(() => ({
   list: vi.fn(),
   get: vi.fn(),

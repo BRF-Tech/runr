@@ -11,7 +11,10 @@ import { useTypeCards, useRuntimeData, buildCreatePayload, defaultRuntimeId } fr
 import { runtimeLabel } from '@/utils/runtimes'
 import { slugError, projectSlug, isValidCron, envVarsError, maxTimeoutFor } from '@/composables/projectValidation'
 import { defaultSizeFor, toMillicores } from '@/utils/instanceSizes'
+import { warmerScheduleError } from '@/utils/warmSchedule'
+import { globalSelectionValid, isGlobalRegion, stepOneError } from '@/utils/globalProjects'
 import RegionSelector from '@/components/project/RegionSelector.vue'
+import GlobalRegionPicker from '@/components/project/GlobalRegionPicker.vue'
 import CreateStep3 from '@/components/project/CreateStep3.vue'
 import CreateStep4 from '@/components/project/CreateStep4.vue'
 
@@ -42,6 +45,10 @@ const form = reactive({
   runtime_version: null,
   description: '',
   knative_region_id: null,
+  // Global project (docs/global-projects.md): several regions, knative_region_id is the primary
+  placement: 'regional',
+  global_mode: 'ha',
+  region_ids: [],
   config: {
     image: '',
     command: '',
@@ -56,6 +63,8 @@ const form = reactive({
     scale_to_zero: true,
     min_scale: 0,
     max_scale: 1,
+    // Timed warmer rows (null = off)
+    scale_schedule: null,
     gpu: { enabled: false, count: 1, type: '', memory_min: null },
   },
   endpoint_type: 'subdomain',
@@ -67,9 +76,38 @@ const form = reactive({
 
 const loading = ref(false)
 const error   = ref(null)
+// A step-1 error of the region choice (global: regions, primary, mode), shown under the regions
+const errorOnRegions = ref(false)
 
+const isGlobal = computed(() => form.placement === 'global')
 const selectedRegion = computed(() => regions.value.find(r => r.id === form.knative_region_id))
-const selectedRegionName = computed(() => selectedRegion.value?.name ?? '')
+// A global project names its regions, the primary first
+const selectedRegionName = computed(() => {
+  if (!isGlobal.value) return selectedRegion.value?.name ?? ''
+  const names = [form.knative_region_id, ...form.region_ids.filter(id => id !== form.knative_region_id)]
+    .map(id => regions.value.find(r => r.id === id)?.name)
+    .filter(Boolean)
+  return names.join(' + ')
+})
+
+// Regional ↔ global: a global project starts from the regional pick, a regional one keeps the primary
+function setPlacement(placement) {
+  if (form.placement === placement) return
+  form.placement = placement
+  if (placement === 'global') {
+    const region = selectedRegion.value
+    form.region_ids = region && isGlobalRegion(region) ? [region.id] : []
+    form.knative_region_id = form.region_ids[0] ?? null
+  } else {
+    form.region_ids = []
+  }
+}
+
+// A changed region choice clears the error the API gave for the previous one
+watch(() => [form.placement, form.knative_region_id, form.global_mode, ...form.region_ids], () => {
+  if (errorOnRegions.value) { error.value = null; errorOnRegions.value = false }
+})
+
 const serviceTypeLabel = computed(() => types.value.find(t => t.id === form.service_type)?.label ?? '')
 
 const triggerSummary = computed(() => {
@@ -127,7 +165,10 @@ const nameSlugError = computed(() => slugError(form.name))
 const maxTimeout = computed(() => maxTimeoutFor(selectedRegion.value))
 
 const canNext = computed(() => {
-  if (step.value === 1) return form.name.trim().length >= 2 && !!form.knative_region_id && !nameAlreadyExists.value && !nameSlugError.value
+  if (step.value === 1) {
+    const regionsOk = isGlobal.value ? globalSelectionValid(form.region_ids, form.knative_region_id) : !!form.knative_region_id
+    return form.name.trim().length >= 2 && regionsOk && !nameAlreadyExists.value && !nameSlugError.value
+  }
   if (step.value === 2) return !!form.service_type
   if (step.value === 3) {
     if (form.service_type === 'caas' && !form.config.image.trim()) return false
@@ -141,9 +182,17 @@ const canNext = computed(() => {
   if (step.value === 4) {
     return form.config.cpu > 0 && form.config.memory_mb >= 64 && form.config.timeout_seconds >= 1
       && form.config.timeout_seconds <= maxTimeout.value && !envVarsError(form.config.env_vars)
+      && scaleValid(form.config)
   }
   return true
 })
+
+// min ≤ max (the API checks it too) and, with the timed warmer on, valid rows (scheduled projects have neither)
+function scaleValid(c) {
+  if (c.trigger_type === 'schedule') return true
+  if (!c.scale_to_zero && !c.scale_schedule && Number(c.min_scale) > Number(c.max_scale)) return false
+  return !warmerScheduleError(c.scale_schedule, c.max_scale)
+}
 
 function next() { if (canNext.value) step.value++ }
 function back() { error.value = null; step.value-- }
@@ -179,12 +228,16 @@ async function submit() {
   try {
     const { data } = await projectsApi.create(buildCreatePayload(form))
     const project = data.data ?? data
+    // Created, but its secret values did not reach the region (it did not answer): set them again
+    const secretEnvError = data?.secret_env_error ?? data?.data?.secret_env_error
+    if (secretEnvError) toast.warning(t('secretEnv.createdWithoutSecrets', { error: secretEnvError }))
     await saveSecrets(project.id)
     emit('created', project)
   } catch (e) {
     const errors = e.response?.data?.errors ?? {}
-    const nameErr = errors.name?.[0]
-    if (nameErr) { step.value = 1; error.value = nameErr }
+    // Name and region choice (global: regions, primary, mode) are fixed on step 1
+    const firstStepErr = stepOneError(errors)
+    if (firstStepErr) { step.value = 1; error.value = firstStepErr; errorOnRegions.value = !errors.name }
     else { error.value = e.response?.data?.message ?? Object.values(errors).flat()[0] ?? t('common.error') }
   } finally { loading.value = false }
 }
@@ -212,6 +265,7 @@ async function submit() {
               <span class="text-gray-400 text-xs">—</span>
               <span class="text-[11px] text-gray-400 font-mono truncate">
                 {{ form.name }} · {{ selectedRegionName }} · {{ serviceTypeLabel }}
+                <template v-if="isGlobal"> · {{ t(`globalProjects.mode.${form.global_mode}`) }}</template>
                 <template v-if="step >= 4">
                   <template v-if="form.service_type !== 'caas'"> · {{ runtimeLabel(form.runtime) }} {{ form.runtime_version }} · {{ triggerSummary }}</template>
                   <template v-else> · {{ form.config.image }}{{ form.config.trigger_type !== 'schedule' && form.config.port ? ':' + form.config.port : '' }}</template>
@@ -231,9 +285,9 @@ async function submit() {
           <p class="text-sm text-gray-400 mb-6">{{ t('create.step1.subtitle') }}</p>
 
           <label class="label">{{ t('create.fields.name') }} <span class="normal-case text-red-500/70">*</span></label>
-          <input v-model="form.name" class="input text-lg py-3" :class="(error && step === 1) || nameAlreadyExists ? 'border-red-500/60' : ''" :placeholder="t('create.step1.namePlaceholder')" autofocus @keyup.enter="next" @input="error = null" />
+          <input v-model="form.name" class="input text-lg py-3" :class="(error && step === 1 && !errorOnRegions) || nameAlreadyExists ? 'border-red-500/60' : ''" :placeholder="t('create.step1.namePlaceholder')" autofocus @keyup.enter="next" @input="error = null" />
           <p v-if="nameAlreadyExists" class="text-sm text-red-400 mt-1.5">{{ t('create.step1.nameTaken') }}</p>
-          <p v-else-if="error && step === 1" class="text-sm text-red-400 mt-1.5">{{ error }}</p>
+          <p v-else-if="error && step === 1 && !errorOnRegions" class="text-sm text-red-400 mt-1.5">{{ error }}</p>
           <p v-else-if="nameSlugError" class="text-sm text-red-400 mt-1.5">{{ t(nameSlugError.key, nameSlugError.params) }}</p>
           <p v-else class="text-xs text-gray-400 mt-2 font-mono">slug: {{ projectSlug(form.name) || '—' }}</p>
 
@@ -242,10 +296,43 @@ async function submit() {
             <input v-model="form.description" class="input" :placeholder="t('create.step1.descriptionPlaceholder')" />
           </div>
 
-          <div class="mt-6" data-tour="create-region">
+          <!-- Regional (one region) or global (several regions behind one host name) -->
+          <div class="mt-6" data-testid="create-placement">
+            <label class="label">{{ t('globalProjects.create.placement') }}</label>
+            <div class="grid grid-cols-2 gap-2">
+              <button
+                v-for="p in ['regional', 'global']" :key="p"
+                type="button"
+                class="rounded-md border px-3 py-2 text-xs text-left transition-colors"
+                :class="form.placement === p ? 'border-sky-500/60 bg-sky-900/20 text-sky-300' : 'border-gray-800 bg-gray-900/40 text-gray-400 hover:text-gray-100'"
+                :aria-pressed="form.placement === p ? 'true' : 'false'"
+                :data-placement="p"
+                @click="setPlacement(p)"
+              >
+                <span class="font-medium">{{ t(`globalProjects.create.${p}`) }}</span>
+                <p class="text-[10px] mt-0.5 opacity-80 leading-relaxed">{{ t(`globalProjects.create.${p}Hint`) }}</p>
+              </button>
+            </div>
+          </div>
+
+          <div v-if="!isGlobal" class="mt-6" data-tour="create-region">
             <label class="label">{{ t('create.sections.region') }} <span class="normal-case text-red-500/70">*</span></label>
             <RegionSelector :regions="regions" :selected-region-id="form.knative_region_id" @select="form.knative_region_id = $event" />
           </div>
+
+          <div v-else class="mt-6">
+            <label class="label">{{ t('globalProjects.create.regions') }} <span class="normal-case text-red-500/70">*</span></label>
+            <GlobalRegionPicker
+              :regions="regions"
+              :region-ids="form.region_ids"
+              :primary-id="form.knative_region_id"
+              :mode="form.global_mode"
+              @update:region-ids="form.region_ids = $event"
+              @update:primary-id="form.knative_region_id = $event"
+              @update:mode="form.global_mode = $event"
+            />
+          </div>
+          <p v-if="error && step === 1 && errorOnRegions" class="text-sm text-red-400 mt-3" data-testid="create-region-error">{{ error }}</p>
 
           <div class="flex justify-end mt-8">
             <button class="btn-primary" :disabled="!canNext" @click="next">{{ t('common.next') }}</button>

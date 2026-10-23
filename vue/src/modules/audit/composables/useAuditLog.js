@@ -1,5 +1,6 @@
 import { ref, reactive } from 'vue'
 import { auditApi } from '@/api/security'
+import { useLatest } from '@/composables/useLatest'
 
 const emptyFilters = () => ({
   actor: '', action: '', target: '', target_type: '', result: '', from: '', to: '', q: '',
@@ -23,7 +24,7 @@ export function filterParams(filters) {
 }
 
 /**
- * Audit log state for the Settings → Audit log tab: filters, a page of events, the selected
+ * Audit log state for Administration → Audit log: filters, a page of events, the selected
  * event (detail drawer), export and retention settings.
  */
 export function useAuditLog() {
@@ -37,18 +38,24 @@ export function useAuditLog() {
   const settings = ref(null)
   const savingSettings = ref(false)
 
+  // Apply, reset and the pages overtake each other: the events of the newest request are shown
+  const latest = useLatest()
+
   async function load(page = 1) {
+    const current = latest.begin()
     loading.value = true
     error.value = null
     try {
       const { data } = await auditApi.list({ ...filterParams(filters), page, per_page: meta.value.per_page })
+      if (!current()) return
       events.value = data?.data ?? []
       meta.value = { ...meta.value, ...(data?.meta ?? {}) }
     } catch (e) {
+      if (!current()) return
       error.value = e?.response?.status ?? 'error'
       events.value = []
     } finally {
-      loading.value = false
+      if (current()) loading.value = false
     }
   }
 

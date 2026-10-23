@@ -39,8 +39,11 @@ function timeAgo(dateStr) {
   return t('notifications.daysAgo', { n: days })
 }
 
-async function handleClick(n) {
-  if (!n.read_at) await store.markRead(n.id)
+// The click opens the notification's page at once; marking it read follows in the background
+// (waiting for it sent a quick second click to the first notification's page, and a failed
+// mark-read to none)
+function handleClick(n) {
+  if (!n.read_at) store.markRead(n.id).catch(() => { /* stays unread */ })
   const action = notificationAction(n)
   if (action) router.push(action)
 }
@@ -60,7 +63,7 @@ async function removeAll() {
 </script>
 
 <template>
-  <div class="absolute right-0 mt-2 w-80 max-h-96 rounded-md border border-gray-800 bg-gray-900 shadow-xl z-50 flex flex-col">
+  <div class="fixed inset-x-3 top-16 sm:absolute sm:inset-x-auto sm:top-auto sm:right-0 sm:mt-2 sm:w-80 max-h-96 rounded-md border border-gray-800 bg-gray-900 shadow-xl z-50 flex flex-col">
     <!-- Header -->
     <div class="flex items-center justify-between px-4 py-3 border-b border-gray-800">
       <h3 class="text-sm font-semibold text-gray-100">{{ t('notifications.title') }}</h3>

@@ -1,5 +1,5 @@
 <script setup>
-// Settings → My bills (GET /billing/me): the bills the signed-in user pays — one per project they
+// User menu → My bills (GET /billing/me): the bills the signed-in user pays — one per project they
 // own and month, and their account bill (resources outside projects). Payment happens through the
 // payment link of a closed bill, set by the invoicing system.
 import { onMounted, ref, watch } from 'vue'
@@ -8,6 +8,7 @@ import { Wallet } from 'lucide-vue-next'
 import { billingApi } from '../api/billing'
 import { apiMessage, currentPeriod, formatMoney, recentPeriods } from '../utils/billing'
 import BillRow from './BillRow.vue'
+import { useLatest } from '@/composables/useLatest'
 
 const { t, locale } = useI18n()
 
@@ -19,19 +20,24 @@ const currency = ref('USD')
 const loading = ref(false)
 const error = ref(null)
 
+// The bills of the period picked last
+const latest = useLatest()
 async function load() {
+  const current = latest.begin()
   loading.value = true
   error.value = null
   try {
     const { data } = await billingApi.myBills({ period: period.value })
+    if (!current()) return
     bills.value = data?.data ?? []
     total.value = data?.total ?? 0
     currency.value = data?.currency || 'USD'
   } catch (e) {
+    if (!current()) return
     error.value = apiMessage(e, t('common.error'))
     bills.value = []
   } finally {
-    loading.value = false
+    if (current()) loading.value = false
   }
 }
 

@@ -2,7 +2,9 @@
 // Private connections of a project to Managed PostgreSQL through Skupper v2.
 // The pasted link token and the credentials go straight to the region (Kubernetes); RunR's
 // database keeps only name, routing key, port and env prefix.
-import { ref, reactive, computed, onMounted } from 'vue'
+// The connections are those of the environment the switcher is on (docs/environments.md): an
+// environment's live in the region it runs in and only its workload gets their env vars.
+import { ref, reactive, computed, onMounted, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { projectsApi } from '@/api/projects'
 import { usePermissionsStore } from '@/stores/permissions'
@@ -11,7 +13,11 @@ import { useToast } from '@/composables/useToast'
 import { Database, Plus, Trash2, RefreshCw } from 'lucide-vue-next'
 import TermText from '@/components/TermText.vue'
 
-const props = defineProps({ project: { type: Object, required: true } })
+const props = defineProps({
+  project:     { type: Object, required: true },
+  // the selected environment's name; null: production (the project's own workload)
+  environment: { type: String, default: null },
+})
 // Connecting and disconnecting: connections.manage on the project (docs/permissions.md)
 const canManage = computed(() => usePermissionsStore().can('connections.manage', props.project.id))
 
@@ -32,14 +38,20 @@ const emptyForm = () => ({
 })
 const form = reactive(emptyForm())
 
+let loads = 0
 async function load() {
+  const current = ++loads
   loading.value = true
   try {
-    const { data } = await projectsApi.privateConnections(props.project.id)
+    const { data } = await projectsApi.privateConnections(props.project.id, props.environment)
+    // a list of the environment left that is still loading must not land in this one
+    if (current !== loads) return
     bindings.value = data?.data ?? []
     bindings.value.forEach(b => loadStatus(b))
-  } catch { bindings.value = [] } finally {
-    loading.value = false
+  } catch {
+    if (current === loads) bindings.value = []
+  } finally {
+    if (current === loads) loading.value = false
   }
 }
 
@@ -58,6 +70,7 @@ async function save() {
   errors.value = {}
   try {
     const payload = { ...form, env_prefix: form.env_prefix || null, port: Number(form.port) || 5432 }
+    if (props.environment) payload.environment = props.environment
     await projectsApi.createPrivateConnection(props.project.id, payload)
     toast.success(t('privateConnections.created'))
     Object.assign(form, emptyForm())
@@ -102,6 +115,13 @@ function fieldError(key) {
 }
 
 onMounted(load)
+
+// The environment switcher moved: that environment's connections
+watch(() => props.environment, () => {
+  showForm.value = false
+  errors.value = {}
+  load()
+})
 </script>
 
 <template>
@@ -110,6 +130,9 @@ onMounted(load)
       <div>
         <h3 class="text-sm font-semibold text-gray-100">{{ t('privateConnections.title') }}</h3>
         <p class="text-xs text-gray-400 mt-1 max-w-2xl">{{ t('privateConnections.intro') }}</p>
+        <p v-if="environment" class="text-xs text-gray-400 mt-1 max-w-2xl" data-testid="private-connections-environment">
+          {{ t('privateConnections.environmentNote', { environment }) }}
+        </p>
       </div>
       <button v-if="!showForm && canManage" type="button" class="btn btn-primary text-xs shrink-0" @click="showForm = true">
         <Plus class="w-3.5 h-3.5" /> {{ t('privateConnections.add') }}
@@ -163,6 +186,7 @@ onMounted(load)
           :placeholder="t('privateConnections.linkTokenHint')" required />
         <p v-if="fieldError('link_token')" class="text-xs text-red-400 mt-1">{{ fieldError('link_token') }}</p>
         <p v-if="fieldError('project')" class="text-xs text-red-400 mt-1">{{ fieldError('project') }}</p>
+        <p v-if="fieldError('environment')" class="text-xs text-red-400 mt-1">{{ fieldError('environment') }}</p>
       </div>
       <p class="text-[11px] text-gray-400">{{ t('privateConnections.secretNote') }}</p>
       <div class="flex justify-end gap-2">

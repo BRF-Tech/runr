@@ -7,7 +7,7 @@ import { usePermissionsStore } from '@/stores/permissions'
 import { useSettingsStore } from '@/stores/settings'
 import { withPlugins } from '../../helpers'
 
-// Settings → Data (docs/bindings.md): the organization's bindings with attachments and usage,
+// Data & Integrations → Data (docs/bindings.md): the organization's bindings with attachments and usage,
 // limits, create (dedicated Postgres), delete with a typed name and retention, restore,
 // rotate, credentials only with bindings.view_credentials.
 

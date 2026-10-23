@@ -1,10 +1,11 @@
 <script setup>
 // First-run wizard of a self-service tenant (multi-tenant): organization name and region (when the
 // platform offers several) → POST /api/onboarding.
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute } from 'vue-router'
 import { moduleRegistry } from '@/modules/index'
+import { useLatest } from '@/composables/useLatest'
 import { onboardingApi } from '../api/whiteLabel'
 import { activeTenant, inTenantContext } from '../utils/context'
 import { Building2, MapPin, X } from 'lucide-vue-next'
@@ -38,7 +39,12 @@ function dismissed(tenantId) {
   try { return sessionStorage.getItem(DISMISS_KEY) === tenantId } catch { return false }
 }
 
+// The newest load wins: its answer is the one for the organization now active
+const latest = useLatest()
+
 async function load() {
+  clearTimeout(loadTimer)
+  const current = latest.begin()
   open.value = false
   info.value = null
   if (!inTenantContext() || route.meta?.public) return
@@ -46,6 +52,7 @@ async function load() {
   if (!tenant || dismissed(tenant.id)) return
   try {
     const { data } = await onboardingApi.get()
+    if (!current()) return
     info.value = data
     if (data?.status !== 'pending' || !data?.can_complete) return
     orgName.value = data.tenant?.name ?? tenant.name ?? ''
@@ -53,21 +60,38 @@ async function load() {
     stepIndex.value = 0
     open.value = true
   } catch {
-    info.value = null
+    if (current()) info.value = null
   }
 }
+
+// Triggers that come together load once: an organization switch changes the active tenant and
+// then the view key (moduleRegistry.viewKey), one after the other in the same task
+let loadTimer = null
+function scheduleLoad() {
+  clearTimeout(loadTimer)
+  loadTimer = setTimeout(load, 0)
+}
+// The tenant watcher is set up after an await (outside the setup), so it is stopped by hand
+let stopTenantWatch = null
+let unmounted = false
+onUnmounted(() => {
+  unmounted = true
+  clearTimeout(loadTimer)
+  stopTenantWatch?.()
+})
 
 onMounted(async () => {
   load()
   // The tenancy module picks the active tenant after sign-in (TenantSwitcher): follow it
   try {
     const { useTenantStore } = await import('@/modules/tenancy/stores/tenant')
+    if (unmounted) return
     const tenantStore = useTenantStore()
-    watch(() => tenantStore.activeTenantId, (id, previous) => { if (id !== previous) load() })
+    stopTenantWatch = watch(() => tenantStore.activeTenantId, (id, previous) => { if (id !== previous) scheduleLoad() })
   } catch { /* tenancy module not built */ }
 })
-watch(() => moduleRegistry.viewKey, load)
-watch(() => route.name, (name, previous) => { if (previous === 'login' || previous === 'signup-verify') load() })
+watch(() => moduleRegistry.viewKey, scheduleLoad)
+watch(() => route.name, (name, previous) => { if (previous === 'login' || previous === 'signup-verify') scheduleLoad() })
 
 function next() {
   error.value = null

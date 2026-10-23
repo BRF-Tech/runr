@@ -40,6 +40,8 @@ const reasonKeys = {
   arch_mismatch: 'archMismatch',
   no_kvm:        'noKvm',
   no_devmapper:  'noDevmapper',
+  small_shm:     'smallShm',
+  no_dbus:       'noDbus',
   no_gpu:        'noGpu',
   no_iommu:      'noIommu',
   no_snp:        'noSnp',
@@ -130,7 +132,7 @@ function shimClass(shim) {
               Rust
             </span>
             <p v-if="!shim.available && shim.reason" class="text-[10px] mt-0.5 opacity-70">
-              {{ reasonText(shim.reason) }}
+              {{ reasonText(shim.reason) }}<template v-if="shim.detail"> ({{ shim.detail }})</template>
             </p>
             <p v-else-if="shim.available && shim.setup === 'devmapper'" class="text-[10px] mt-0.5 opacity-70">
               {{ t('settings.regionDetail.sandbox.shimSetup.devmapper') }}

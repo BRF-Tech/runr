@@ -78,7 +78,9 @@ async function request(method, params) {
   return response.result
 }
 
+// One exchange at a time: the session id and the log follow the order of the messages
 async function run(fn) {
+  if (busy.value) return
   busy.value = true
   error.value = null
   try {
@@ -155,8 +157,11 @@ function callTool() {
     if (Object.keys(built.errors).length) return
     args = built.args
   }
+  const tool = selectedTool.value
   return run(async () => {
-    lastResult.value = await request('tools/call', { name: selectedTool.value.name, arguments: args })
+    const result = await request('tools/call', { name: tool.name, arguments: args })
+    // Another tool picked meanwhile: its form must not show this tool's result
+    if (selectedTool.value === tool) lastResult.value = result
   })
 }
 

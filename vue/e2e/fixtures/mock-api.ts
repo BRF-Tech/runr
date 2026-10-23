@@ -1,5 +1,6 @@
 import type { Page, Request, Route } from '@playwright/test'
 import { defaultDb, expandPermissions, type Json, type MockDb } from './data'
+import { DEFAULT_TIMEZONE, knownTimezone, warmerPreview } from './warmer'
 
 // In-memory fake of the RunR REST API for mock mode. Installed with page.route
 // on every same-origin /api/* request (channel auth: POST /api/broadcasting/auth), so no
@@ -9,6 +10,12 @@ import { defaultDb, expandPermissions, type Json, type MockDb } from './data'
 //   - assert what the UI sent:              const req = mockApi.waitFor('POST', '/projects')
 //                                           ...click...; expect((await req).body).toMatchObject(...)
 //                                           mockApi.calls('PUT', '/projects/:id')
+//   - order answers like a slow network:    const files = mockApi.hold('POST', '/projects/:id/files')
+//                                           ...click...; await files.arrived
+//                                           await realtime.platform('project.created', ...)  // lands first
+//                                           files.release()
+//                                           mockApi.delay('GET', '/projects/:id/versions', 1500)
+//     (the e2e `network` fixture holds answers the same way in stack mode)
 
 export interface MockRequest {
   method: string
@@ -41,11 +48,32 @@ interface Waiter {
   resolve: (r: MockRequest) => void
 }
 
+/** Answers held back until release() (MockApi.hold, the e2e `network` fixture). */
+export interface Gate {
+  /** Resolves with the first held request once it has arrived. */
+  readonly arrived: Promise<MockRequest>
+  /** Held requests so far. */
+  readonly requests: MockRequest[]
+  /** Lets every held answer (and the ones still to come) go out. */
+  release(): void
+}
+
+interface Hold {
+  method: string
+  pattern: RegExp
+  /** requests still to hold */
+  remaining: number
+  delayMs: number
+  gate: Promise<void> | null
+  arrive: (r: MockRequest) => void
+  requests: MockRequest[]
+}
+
 const ok = (body: unknown, status = 200): MockReply => ({ status, body })
 const notFound = (): MockReply => ({ status: 404, body: { message: 'Not found.' } })
 const now = () => new Date().toISOString()
 
-function compile(path: string | RegExp): { pattern: RegExp; keys: string[] } {
+export function compile(path: string | RegExp): { pattern: RegExp; keys: string[] } {
   if (path instanceof RegExp) return { pattern: path, keys: [] }
   const keys: string[] = []
   const source = path.replace(/:(\w+)/g, (_, k) => { keys.push(k); return '([^/]+)' })
@@ -68,7 +96,7 @@ function parseMultipart(raw: string, contentType: string): Json {
   return out
 }
 
-function parseBody(request: Request): any {
+export function parseBody(request: Request): any {
   const raw = request.postData()
   if (raw == null) return undefined
   const type = request.headers()['content-type'] ?? ''
@@ -84,6 +112,8 @@ export class MockApi {
   private readonly overrides: RouteDef[] = []
   private readonly defaults: RouteDef[] = []
   private waiters: Waiter[] = []
+  private readonly holds: Hold[] = []
+  private readonly releases: Array<() => void> = []
 
   constructor(options: { modules?: boolean } = {}) {
     this.db = defaultDb(options.modules ? 'multi' : 'single')
@@ -112,6 +142,39 @@ export class MockApi {
   waitFor(method: string, path: string | RegExp): Promise<MockRequest> {
     const { pattern } = compile(path)
     return new Promise(resolve => this.waiters.push({ method: method.toUpperCase(), pattern, resolve }))
+  }
+
+  /**
+   * Holds the answers to the next `times` requests matching method + path until release(). The
+   * fake handles the request at once (its data changes, like a server that did the work) and
+   * the answer reaches the page only at release(): a spec puts a websocket event, a second
+   * click or a navigation between a request and its answer.
+   */
+  hold(method: string, path: string | RegExp, { times = 1 }: { times?: number } = {}): Gate {
+    let release!: () => void
+    let arrive!: (r: MockRequest) => void
+    const gate = new Promise<void>(resolve => { release = resolve })
+    const arrived = new Promise<MockRequest>(resolve => { arrive = resolve })
+    const hold: Hold = { method: method.toUpperCase(), ...compile(path), remaining: times, delayMs: 0, gate, arrive, requests: [] }
+    this.holds.push(hold)
+    this.releases.push(release)
+    return {
+      arrived,
+      requests: hold.requests,
+      release: () => { hold.remaining = 0; release() },
+    }
+  }
+
+  /** Lets every held answer go out (the fixture does it after each test). */
+  releaseAll(): void {
+    for (const hold of this.holds) hold.remaining = 0
+    for (const release of this.releases) release()
+  }
+
+  /** Answers the next `times` (default: every) requests matching method + path `ms` later. */
+  delay(method: string, path: string | RegExp, ms: number, { times = Infinity }: { times?: number } = {}): this {
+    this.holds.push({ method: method.toUpperCase(), ...compile(path), remaining: times, delayMs: ms, gate: null, arrive: () => {}, requests: [] })
+    return this
   }
 
   nextId(prefix: string): string {
@@ -155,6 +218,15 @@ export class MockApi {
       this.unhandled.push(`${req.method} ${path}`)
       reply = req.method === 'GET' ? ok({ data: [] }) : ok({})
     }
+    // Held / delayed answers (hold(), delay()): the newest rule for the request wins
+    const hold = [...this.holds].reverse().find(h => h.remaining > 0 && h.method === req.method && h.pattern.test(path))
+    if (hold) {
+      hold.remaining -= 1
+      hold.requests.push(req)
+      hold.arrive(req)
+      if (hold.gate) await hold.gate
+      if (hold.delayMs) await new Promise(resolve => setTimeout(resolve, hold.delayMs))
+    }
     await route.fulfill({
       status: reply.status ?? 200,
       headers: reply.headers,
@@ -170,6 +242,70 @@ function project(db: MockDb, id: string): Json | undefined {
   return db.projects.find(p => p.id === id)
 }
 
+// cert-manager of a region (CertManagerService): its fields on the region rows of the mock
+// (cert_manager_status, cert_manager_issuer, …), the reasons the API gives custom domains
+const CERT_MANAGER_REASONS: Record<string, string> = {
+  not_installed: 'cert-manager is not installed in this region. An administrator installs it under the region\'s General tab (cert-manager); `php artisan region:reconcile` does it on every upgrade.',
+  installing:    'cert-manager is being installed in this region; TLS mode cert-manager is offered as soon as it runs (usually a few minutes). Until then HTTPS uses the region\'s default certificate.',
+  uninstalling:  'cert-manager is being removed from this region.',
+  error:         'cert-manager could not be set up in this region (ERROR: image pull failed). An administrator retries it under the region\'s General tab (cert-manager → Install again).',
+}
+const NOT_PUBLIC = 'the region\'s external address 10.0.0.20 is not reachable from the internet (a private or reserved address)'
+
+function issuerKind(issuer: string | null): string | null {
+  if (!issuer) return null
+  return issuer === 'runr-acme' ? 'acme' : issuer === 'runr-ca' ? 'ca' : 'own'
+}
+
+function certManagerForDomains(r: Json | undefined): Json {
+  const status = r?.cert_manager_status ?? 'not_installed'
+  const issuer = r?.cert_manager_issuer ?? null
+  const available = status === 'ready' && !!issuer
+  return {
+    available, status, issuer, kind: issuerKind(issuer),
+    reason: available ? null : (CERT_MANAGER_REASONS[status] ?? CERT_MANAGER_REASONS.not_installed),
+    ca: available && issuerKind(issuer) === 'ca',
+    ca_download: available && issuerKind(issuer) === 'ca',
+    default_mode: available ? 'cert-manager' : 'none',
+  }
+}
+
+function certManagerState(r: Json): Json {
+  const status = r.cert_manager_status ?? 'not_installed'
+  const issuer = r.cert_manager_issuer ?? null
+  const settings = r.knative_settings ?? {}
+  return {
+    status,
+    message: r.cert_manager_status_message ?? null,
+    managed: r.cert_manager_managed ?? null,
+    version: r.cert_manager_version ?? null,
+    namespace: status === 'not_installed' ? null : 'cert-manager',
+    chart_version: 'v1.21.2',
+    install_enabled: true,
+    issuer: { name: issuer, kind: issuerKind(issuer), source: issuer ? (issuerKind(issuer) === 'own' ? 'region' : 'runr') : null },
+    issuer_mode: settings.cert_manager_issuer_mode ?? 'auto',
+    plan: { kind: 'ca', reason: NOT_PUBLIC },
+    acme: {
+      email: settings.cert_manager_acme_email ?? null, email_source: settings.cert_manager_acme_email ? 'region' : null,
+      server: 'https://acme-v02.api.letsencrypt.org/directory', public: false, public_reason: NOT_PUBLIC,
+    },
+    domains: certManagerForDomains(r),
+    can_manage: true,
+    cluster: status === 'ready'
+      ? { present: true, runr: r.cert_manager_managed !== false, namespace: 'cert-manager', version: r.cert_manager_version ?? null, available: true, drift: [], issuer_exists: true, issuer_ready: true, issuer_message: null, ca_available: issuerKind(issuer) === 'ca', domain_certificates: 0 }
+      : null,
+    cluster_error: null,
+  }
+}
+
+function caDownload(regionName: string): MockReply {
+  return {
+    status: 200,
+    body: '-----BEGIN CERTIFICATE-----\nMIIBszCCAVmgAwIBAgIRAJ3e2e\n-----END CERTIFICATE-----\n',
+    headers: { 'content-disposition': `attachment; filename="${regionName}-runr-ca.crt"` },
+  }
+}
+
 function addVersion(api: MockApi, db: MockDb, projectId: string, message: string | undefined, files: Record<string, string>): Json {
   const list = (db.versions[projectId] ??= [])
   const v = {
@@ -182,6 +318,26 @@ function addVersion(api: MockApi, db: MockDb, projectId: string, message: string
   list.unshift(v)
   db.versionFiles[v.id] = { ...files }
   return v
+}
+
+/** Default options of the deploy strategies (api DeployStrategy::DEFAULTS). */
+export const DEPLOY_STRATEGY_DEFAULTS: Json = {
+  strategy: 'direct',
+  blue_green: { auto_promote: false, health_path: null, health_checks: 3, keep_previous_minutes: 15 },
+  canary: { steps: [10, 50, 100], interval_minutes: 5, error_rate_threshold: 5, p95_threshold_ms: null },
+}
+
+/** GET /projects/:id/deploy-strategy of a project without stored options. */
+function deployStrategyOf(p: Json): Json {
+  const trigger = p.config?.trigger_type ?? 'http'
+  return {
+    ...structuredClone(DEPLOY_STRATEGY_DEFAULTS),
+    strategy: p.deploy_strategy ?? 'direct',
+    eligible: ['http', 'workflow'].includes(trigger),
+    trigger_type: trigger,
+    tracing: false,
+    defaults: structuredClone(DEPLOY_STRATEGY_DEFAULTS),
+  }
 }
 
 function settingsPayload(db: MockDb): Json {
@@ -343,6 +499,57 @@ function imageQuota(): Json {
   return { limit_bytes: 50 * 1024 ** 3, used_bytes: 0, images: 0 }
 }
 
+/**
+ * The `global` object of a global project (GlobalProjectResource, docs/global-projects.md): every
+ * region ready, healthy and in DNS, serving the project's latest version.
+ */
+export function globalObject(db: MockDb, project: Json, mode: string, regionIds: string[]): Json {
+  const primary = regionIds[0]
+  const version = (db.versions[project.id] ?? []).length || null
+  return {
+    mode,
+    failover: 'automatic',
+    failover_after_seconds: 180,
+    moving_to: null,
+    hostname: db.globalDns.zone ? `${project.slug}.${db.globalDns.zone}` : null,
+    primary_region_id: primary,
+    regions: regionIds.map((id, position) => {
+      const region = db.regions.find(r => r.id === id)
+      return {
+        region_id: id,
+        region_name: region?.name ?? id,
+        role: id === primary ? 'primary' : 'secondary',
+        position,
+        status: 'ready',
+        status_message: null,
+        version,
+        target_version: null,
+        healthy: true,
+        health_checked_at: now(),
+        address: region?.external_ip ?? `203.0.113.${10 + position}`,
+        in_dns: true,
+        // the primary runs the triggers; no regional data unless a spec adds bindings
+        triggers_active: id === primary,
+        data_status: null,
+        data_message: null,
+        unhealthy_since: null,
+        fenced_at: null,
+      }
+    }),
+    data: [],
+    warnings: [],
+  }
+}
+
+/** GET /knative-regions/{id}/global-dns of a region without a server yet. */
+function noGlobalDnsServer(region: Json): Json {
+  return {
+    region_id: region.id, region_name: region.name, status: 'disabled', status_message: null, address: null,
+    ns_name: null, reachable: null, sync_status: null, sync_message: null, synced_at: null,
+    tls_status: null, tls_message: null, tls_expires_at: null, eligible: true, reason: null, geoip: null,
+  }
+}
+
 function registerDefaults(api: MockApi): void {
   // ── Platform ──
   api.define('GET', '/version', () => ok({ version: '0.0.0-e2e' }))
@@ -351,9 +558,19 @@ function registerDefaults(api: MockApi): void {
   api.define('POST', '/tutorial/complete', () => ok({}))
   api.define('GET', '/settings', (_, db) => ok(settingsPayload(db)))
   api.define('PATCH', '/settings', (req, db) => {
-    Object.assign(db.settings, req.body ?? {})
+    const body = { ...(req.body ?? {}) }
+    // The organization's time zone: "" / null goes back to the default, an unknown name is refused
+    if ('timezone' in body) {
+      if (body.timezone === null || body.timezone === '') body.timezone = DEFAULT_TIMEZONE
+      else if (!knownTimezone(body.timezone)) {
+        return { status: 422, body: { message: 'The timezone must be a valid zone.', errors: { timezone: ['The timezone must be a valid zone.'] } } }
+      }
+    }
+    Object.assign(db.settings, body)
     return ok(settingsPayload(db))
   })
+  // Timed warmer: the week the rows keep warm and the month's warm hours (e2e/fixtures/warmer.ts)
+  api.define('POST', '/scale-schedule/preview', (req, db) => warmerPreview(req.body, String(db.settings.timezone ?? DEFAULT_TIMEZONE)))
   api.define('GET', '/branding', (_, db) => ok(defaultBranding(!!db.settings.tenancy_enabled)))
   // Private broadcast channels are authorized here (the fake socket accepts any signature)
   api.define('POST', '/broadcasting/auth', (req) => ok({ auth: `runr-local-key:e2e-${req.body?.channel_name ?? ''}` }))
@@ -374,7 +591,12 @@ function registerDefaults(api: MockApi): void {
   // ── Auth ──
   api.define('POST', '/auth/login', (req, db) => {
     const { login, password, two_factor_code: code } = req.body ?? {}
-    const user = db.users.find(u => u.email === login || u.username === login) ?? (login === db.user.email ? db.user : null)
+    // The user name or the e-mail address in any letter case; with "@" the e-mail address first
+    // (App\Support\Auth\LoginIdentifier)
+    const id = String(login ?? '').trim().toLowerCase()
+    const accounts = [db.user, ...db.users.filter(u => u.id !== db.user.id)]
+    const byEmail = id.includes('@') ? accounts.find(u => String(u.email ?? '').toLowerCase() === id) : undefined
+    const user = byEmail ?? accounts.find(u => String(u.username ?? '').toLowerCase() === id) ?? null
     if (!user || password !== db.password) {
       return ok({ message: 'These credentials do not match our records.' }, 422)
     }
@@ -404,6 +626,10 @@ function registerDefaults(api: MockApi): void {
   api.define('DELETE', '/notifications/:id', (req, db) => { db.notifications = db.notifications.filter(n => n.id !== req.params.id); return ok({}) })
   api.define('DELETE', '/notifications', (_, db) => { db.notifications = []; return ok({}) })
 
+  // ── Runtime patches (docs/runtimes.md#runtime-patches): nothing pending unless a spec says so ──
+  api.define('GET', '/runtime-patches/banners', () => ok({ data: [] }))
+  api.define('GET', '/runtime-patches', () => ok({ data: [], feed: { enabled: false, status: 'disabled', fetched_at: null }, keep: 5 }))
+
   // ── Projects ──
   api.define('GET', '/projects', (_, db) => ok({ data: db.projects }))
   api.define('POST', '/projects', (req, db) => {
@@ -426,6 +652,15 @@ function registerDefaults(api: MockApi): void {
       config: { ...(b.config ?? {}) },
       created_at: now(),
       updated_at: now(),
+      placement: 'regional',
+      global: null,
+    }
+    // Global project: its regions (the primary first) and the global host name as the endpoint
+    if (b.placement === 'global') {
+      p.placement = 'global'
+      p.global = globalObject(db, p, b.global_mode ?? 'ha', b.region_ids ?? [])
+      db.globalProjects[id] = p.global
+      p.endpoint_url = p.global.hostname ? `https://${p.global.hostname}` : p.endpoint_url
     }
     db.projects.unshift(p)
     db.versions[id] = []
@@ -513,17 +748,47 @@ function registerDefaults(api: MockApi): void {
     db.deployments[req.params.id] = (db.deployments[req.params.id] ?? []).filter(d => d.id !== req.params.did)
     return ok({}, 204)
   })
+  // Deploy strategy (the project's deploy_strategy, default options) and rollouts (none);
+  // e2e/deploy-strategies.spec.ts installs a stateful fake over these
+  api.define('GET', '/projects/:id/deploy-strategy', (req, db) => {
+    const p = project(db, req.params.id)
+    return p ? ok({ data: deployStrategyOf(p) }) : notFound()
+  })
+  api.define('GET', '/projects/:id/rollout', () => ok({ data: null }))
+  api.define('GET', '/projects/:id/deployments/:did/rollout', () => notFound())
+  // Environments (docs/environments.md): none besides production unless a spec adds them
+  // (e2e/environments.spec.ts); the approvals inbox is empty
+  api.define('GET', '/projects/:id/environments', () => ok({ data: [], abilities: { manage: true, promote: true, approve: true } }))
+  api.define('GET', '/projects/:id/promotions', () => ok({ data: [] }))
+  api.define('GET', '/environment-promotions', () => ok({ data: [] }))
   api.define('GET', '/projects/:id/metrics/history', () => ok({ data: [] }))
   api.define('GET', '/projects/:id/metrics/summary', () => ok({ data: {} }))
+  // Rightsizing (docs/monitoring.md#rightsizing): no recommendation unless a spec overrides these
+  api.define('GET', '/rightsizing', () => ok({ data: [], summary: { count: 0, monthly_savings: null, currency: null, freed_memory_mb: 0, freed_cpu_m: 0 } }))
+  api.define('GET', '/projects/:id/rightsizing', () => ok({
+    status: 'collecting', reason: null, data: null, pending_deploy: false,
+    collecting: { days: 0, required_days: 3, sessions: 0, required_sessions: 20, window_days: 14 },
+  }))
   api.define('GET', '/projects/:id/private-connections', () => ok({ data: [] }))
 
   // Custom domains
   api.define('GET', '/projects/:id/domains', (req, db) => {
     const p = project(db, req.params.id)
+    const cm = certManagerForDomains(db.regions.find(r => r.id === p?.knative_region_id))
     return ok({
       data: db.domains[req.params.id] ?? [],
-      meta: { eligible: true, default_host: p?.endpoint_url?.replace(/^https?:\/\//, '') ?? null },
+      meta: {
+        eligible: true,
+        default_host: p?.endpoint_url?.replace(/^https?:\/\//, '') ?? null,
+        cert_manager_issuer: cm.available ? cm.issuer : null,
+        cert_manager: cm,
+      },
     })
+  })
+  api.define('GET', '/projects/:id/domains/ca-certificate', (req, db) => {
+    const p = project(db, req.params.id)
+    const cm = certManagerForDomains(db.regions.find(r => r.id === p?.knative_region_id))
+    return cm.kind === 'ca' ? caDownload('eu-1') : ok({ message: 'This region has no region CA.' }, 404)
   })
   api.define('POST', '/projects/:id/domains', (req, db) => {
     const host = String(req.body?.domain ?? '').trim().toLowerCase()
@@ -536,7 +801,8 @@ function registerDefaults(api: MockApi): void {
       status: 'pending',
       verification: { type: 'TXT', name: `_runr-challenge.${host}`, value: 'runr-verify=e2e' },
       dns_targets: [{ type: 'CNAME', name: host, value: 'ingress.eu-1.runr.test' }],
-      tls_mode: 'auto',
+      // cert-manager where the project's region issues certificates (CertManagerService::defaultTlsMode)
+      tls_mode: certManagerForDomains(db.regions.find(r => r.id === project(db, req.params.id)?.knative_region_id)).default_mode,
       tls_expires_at: null,
       created_at: now(),
     }
@@ -552,6 +818,170 @@ function registerDefaults(api: MockApi): void {
   api.define('DELETE', '/projects/:id/domains/:did', (req, db) => {
     db.domains[req.params.id] = (db.domains[req.params.id] ?? []).filter(d => d.id !== req.params.did)
     return ok({}, 204)
+  })
+
+  // Network: access mode and internal callers (docs/internal-network.md)
+  const network = (db: MockDb, p: Json) => {
+    return (db.network[p.id] ??= {
+      access_mode: 'public', allowed_cidrs: [], callers: [],
+    })
+  }
+  const networkData = (db: MockDb, p: Json) => {
+    const n = network(db, p)
+    const name = `${p.slug}.platform`
+    return {
+      ...n,
+      internal_name: name, internal_host: `${name}.runr.internal`, internal_url: `http://${name}.runr.internal`,
+      organization: 'platform', token_header: 'X-Runr-Internal-Token', token_env: 'RUNR_INTERNAL_TOKEN',
+      cross_tenant_grants: db.settings.internal_cross_tenant_grants !== false, enforced: true,
+    }
+  }
+  api.define('GET', '/projects/:id/network', (req, db) => {
+    const p = project(db, req.params.id)
+    return p ? ok({ data: networkData(db, p) }) : notFound()
+  })
+  api.define('PUT', '/projects/:id/network', (req, db) => {
+    const p = project(db, req.params.id)
+    if (!p) return notFound()
+    const mode = req.body?.access_mode
+    const cidrs: string[] = req.body?.allowed_cidrs ?? []
+    if (mode === 'allowlist' && !cidrs.length) {
+      return ok({ message: 'The allowed cidrs field is required when access mode is allowlist.', errors: { allowed_cidrs: ['The allowed cidrs field is required when access mode is allowlist.'] } }, 422)
+    }
+    Object.assign(network(db, p), { access_mode: mode, allowed_cidrs: mode === 'allowlist' ? cidrs : [] })
+    if (mode === 'internal') p.endpoint_url = null
+    return ok({ message: 'Network settings saved.', data: networkData(db, p) })
+  })
+  api.define('POST', '/projects/:id/network/callers', (req, db) => {
+    const p = project(db, req.params.id)
+    if (!p) return notFound()
+    let caller = String(req.body?.caller ?? '').trim().toLowerCase()
+    if (!caller.includes('.')) caller = `${caller}.platform`
+    const org = caller.slice(caller.indexOf('.') + 1)
+    if (org !== 'platform' && db.settings.internal_cross_tenant_grants === false) {
+      const message = 'The platform does not allow grants to projects of other organizations.'
+      return ok({ message, errors: { caller: [message] } }, 422)
+    }
+    const row = { caller, organization: org, cross_tenant: org !== 'platform', created_at: now() }
+    const n = network(db, p)
+    n.callers = [...n.callers.filter((c: Json) => c.caller !== caller), row].sort((a: Json, b: Json) => a.caller.localeCompare(b.caller))
+    return ok({ data: row }, 201)
+  })
+  api.define('DELETE', '/projects/:id/network/callers/:caller', (req, db) => {
+    const p = project(db, req.params.id)
+    if (!p) return notFound()
+    const n = network(db, p)
+    const before = n.callers.length
+    n.callers = n.callers.filter((c: Json) => c.caller !== decodeURIComponent(req.params.caller))
+    return n.callers.length < before ? ok({}, 204) : notFound()
+  })
+
+  // Global projects (docs/global-projects.md): regions, primary and DNS mode of a global project
+  api.define('GET', '/projects/:id/global', (req, db) => {
+    const g = db.globalProjects[req.params.id]
+    return g ? ok({ data: g }) : notFound()
+  })
+  api.define('PUT', '/projects/:id/global', (req, db) => {
+    const p = project(db, req.params.id)
+    const g = db.globalProjects[req.params.id]
+    if (!p || !g) return notFound()
+    const b = req.body ?? {}
+    const primary = b.primary_region_id ?? g.primary_region_id
+    const ids: string[] = b.region_ids ?? g.regions.map((r: Json) => r.region_id)
+    if (!ids.includes(primary)) {
+      return ok({ message: 'The primary region must be one of the regions.', errors: { primary_region_id: ['The primary region must be one of the regions.'] } }, 422)
+    }
+    if (ids.length < 2) {
+      return ok({ message: 'A global project runs in at least 2 regions.', errors: { region_ids: ['A global project runs in at least 2 regions.'] } }, 422)
+    }
+    const ordered = [primary, ...ids.filter(id => id !== primary)]
+    const next = globalObject(db, p, b.mode ?? g.mode, ordered)
+    next.failover = b.failover ?? g.failover ?? 'automatic'
+    next.data = g.data ?? []
+    // a removed region stays listed as removing until its copy is gone; an added one rolls out
+    for (const old of g.regions) {
+      if (!ordered.includes(old.region_id)) next.regions.push({ ...old, status: 'removing', in_dns: false, role: 'secondary' })
+    }
+    for (const r of next.regions) {
+      if (!g.regions.some((old: Json) => old.region_id === r.region_id)) Object.assign(r, { status: 'deploying', version: null, in_dns: false, healthy: null })
+    }
+    db.globalProjects[p.id] = next
+    p.global = next
+    p.knative_region_id = primary
+    return ok({ data: next })
+  })
+  api.define('POST', '/projects/:id/global/sync', (req, db) => (db.globalProjects[req.params.id] ? ok({ queued: true }, 202) : notFound()))
+  // Failover: the target becomes the primary at once, the old primary is fenced until it rejoins
+  api.define('POST', '/projects/:id/global/failover', (req, db) => {
+    const p = project(db, req.params.id)
+    const g = db.globalProjects[req.params.id]
+    if (!p || !g) return notFound()
+    const to = req.body?.region_id ?? g.regions.find((r: Json) => r.role !== 'primary' && r.status === 'ready')?.region_id
+    const target = g.regions.find((r: Json) => r.region_id === to)
+    if (!target || target.role === 'primary') {
+      return ok({ message: 'No other region serves the active version and answers.', errors: { region_id: ['No other region serves the active version and answers.'] } }, 422)
+    }
+    const old = g.primary_region_id
+    const ordered = [to, ...g.regions.map((r: Json) => r.region_id).filter((id: string) => id !== to)]
+    const next = globalObject(db, p, g.mode, ordered)
+    next.failover = g.failover
+    next.data = g.data ?? []
+    const fenced = next.regions.find((r: Json) => r.region_id === old)
+    const toName = db.regions.find(r => r.id === to)?.name ?? to
+    Object.assign(fenced, {
+      status: 'fenced', in_dns: false, healthy: false, fenced_at: now(), unhealthy_since: now(),
+      status_message: `Failed over to ${toName}: this region is out of the DNS answers until it answers again.`,
+    })
+    db.globalProjects[p.id] = next
+    p.global = next
+    p.knative_region_id = to
+    return ok(next, 202)
+  })
+
+  // Global DNS: the zone, its delegation and each region's server
+  api.define('GET', '/global-dns', (_, db) => ok({ ...db.globalDns, servers: Object.values(db.globalDnsServers) }))
+  api.define('POST', '/global-dns/sync', () => ok({ queued: true }, 202))
+  api.define('GET', '/knative-regions/:id/global-dns', (req, db) => {
+    const region = db.regions.find(r => r.id === req.params.id)
+    if (!region) return notFound()
+    return ok(db.globalDnsServers[region.id] ?? noGlobalDnsServer(region))
+  })
+  api.define('POST', '/knative-regions/:id/global-dns', (req, db) => {
+    const region = db.regions.find(r => r.id === req.params.id)
+    if (!region) return notFound()
+    const server = { ...noGlobalDnsServer(region), status: 'installing', status_message: 'Waiting for the LoadBalancer address' }
+    db.globalDnsServers[region.id] = server
+    return ok(server, 202)
+  })
+  // The GeoIP source of a region's server and its reload
+  api.define('PUT', '/knative-regions/:id/global-dns/geoip', (req, db) => {
+    const server = db.globalDnsServers[req.params.id]
+    if (!server) return notFound()
+    const source = req.body?.source ?? 'default'
+    const url = source === 'url' ? req.body?.url ?? null : null
+    server.geoip = {
+      source, url,
+      effective_url: source === 'url' ? url : source === 'default' ? 'https://download.db-ip.com/free/dbip-city-lite-{yyyy}-{mm}.mmdb.gz' : null,
+      status: 'unknown', message: null, checked_at: null,
+    }
+    return ok(server)
+  })
+  api.define('POST', '/knative-regions/:id/global-dns/geoip/reload', (req, db) => {
+    const server = db.globalDnsServers[req.params.id]
+    if (!server) return notFound()
+    server.geoip = { ...(server.geoip ?? { source: 'default', url: null, effective_url: null }), status: 'unknown', message: 'The server reads its GeoIP source again.' }
+    return ok(server, 202)
+  })
+  api.define('DELETE', '/knative-regions/:id/global-dns', (req, db) => {
+    const region = db.regions.find(r => r.id === req.params.id)
+    if (!region) return notFound()
+    const users = db.projects.filter(p => (db.globalProjects[p.id]?.regions ?? []).some((r: Json) => r.region_id === region.id))
+    if (users.length) {
+      return ok({ message: `Global projects still use ${region.name}: ${users.map(p => p.name).join(', ')}.` }, 422)
+    }
+    const server = { ...(db.globalDnsServers[region.id] ?? noGlobalDnsServer(region)), status: 'uninstalling' }
+    db.globalDnsServers[region.id] = server
+    return ok(server, 202)
   })
 
   // ── API tokens ──
@@ -772,6 +1202,28 @@ function registerDefaults(api: MockApi): void {
     if (!region) return notFound()
     return region.has_kubeconfig === false ? ok({ message: 'Kubeconfig not configured.' }, 422) : ok(kataShims(db))
   })
+  // cert-manager of a region and the ClusterIssuer of custom domains (docs/regions.md#cert-manager)
+  api.define('GET', '/knative-regions/:id/cert-manager', (req, db) => {
+    const r = db.regions.find(x => x.id === req.params.id)
+    return r ? ok(certManagerState(r)) : notFound()
+  })
+  api.define('POST', '/knative-regions/:id/cert-manager', (req, db) => {
+    const r = db.regions.find(x => x.id === req.params.id)
+    if (!r) return notFound()
+    Object.assign(r, { cert_manager_status: 'installing', cert_manager_status_message: '[10:00:00] Installation queued...\n' })
+    return ok({ message: 'cert-manager installation queued.', region: r }, 202)
+  })
+  api.define('DELETE', '/knative-regions/:id/cert-manager', (req, db) => {
+    const r = db.regions.find(x => x.id === req.params.id)
+    if (!r) return notFound()
+    Object.assign(r, { cert_manager_status: 'uninstalling' })
+    return ok({ message: 'cert-manager removal queued.', region: r }, 202)
+  })
+  api.define('GET', '/knative-regions/:id/cert-manager/ca-certificate', (req, db) => {
+    const r = db.regions.find(x => x.id === req.params.id)
+    return r && issuerKind(r.cert_manager_issuer ?? null) === 'ca' ? caDownload(r.name) : ok({ message: 'This region has no region CA.' }, 404)
+  })
+
   // WebAssembly support of a region (docs/wasm.md): the region's state, the shims RunR installs
   // and, unless ?cluster=0, the worker nodes (all eligible)
   api.define('GET', '/knative-regions/:id/wasm', (req, db) => {
@@ -868,6 +1320,21 @@ function registerDefaults(api: MockApi): void {
   api.define('GET', '/billing/markups', () => ok({ default: { current: null, scheduled: [], history: [] }, regions: [] }))
   api.define('GET', '/billing/platform-bills', emptyList)
   api.define('GET', '/billing/tenant-bills', emptyList)
+  // A pay-as-you-go project's monthly cost limit: none set, nothing used this month
+  const today = new Date()
+  const costLimitStatus = (over: Json = {}): Json => ({
+    available: true, currency: 'USD', period, limit: null, month_to_date: 0, forecast: 0,
+    days_elapsed: today.getDate(), days_in_month: new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate(),
+    percent: null, warning_percent: 80, state: 'none', warned_at: null, reached_at: null,
+    stopped: false, can_manage: true, can_resume: false, checked_at: null,
+    ...over,
+  })
+  api.define('GET', '/projects/:id/billing/cost-limit', () => ok({ data: costLimitStatus() }))
+  api.define('PUT', '/projects/:id/billing/cost-limit', req => ok({ data: costLimitStatus({
+    limit: { amount: Number(req.body?.amount), action: req.body?.action, updated_by: null, updated_at: now() }, percent: 0, state: 'ok',
+  }) }))
+  api.define('DELETE', '/projects/:id/billing/cost-limit', () => ok({ data: costLimitStatus() }))
+  api.define('POST', '/projects/:id/billing/cost-limit/resume', () => ({ status: 409, body: { message: 'The cost limit did not stop this project.', code: 'cost_limit_not_stopped' } }))
   api.define('GET', '/projects/:id/billing', (req, db) => {
     const p = project(db, req.params.id)
     if (!p) return notFound()
@@ -882,6 +1349,7 @@ function registerDefaults(api: MockApi): void {
         payment_url: null, payment_url_set_at: null, paid: false, paid_at: null, payment_reference: null, closed_at: null,
       },
       bills: [],
+      cost_limit: costLimitStatus(),
     })
   })
 
@@ -915,28 +1383,211 @@ function registerDefaults(api: MockApi): void {
     } })
   })
 
-  // ── Hosted MCP server of a project (docs/mcp.md): none until a spec sets one up ──
-  api.define('GET', '/projects/:id/mcp-server', () => ({ status: 404, body: { message: 'This project is not served as an MCP server.' } }))
+  // ── Hosted MCP servers (docs/mcp.md): the starters of "New MCP server" and a project's server
+  // (HostedServerController); a project is no MCP server until PUT …/mcp-server makes it one ──
+  const mcpServers = new Map<string, Json>()
+  api.define('GET', '/mcp-servers/templates', () => ok({ data: [
+    { id: 'python', name: 'Python (FastMCP)', description: 'Official MCP Python SDK', service_type: 'faas', runtime: 'mcp-python', runtime_registered: true, runtime_available: true, can_register_runtime: false, runtime_manifest: null, files: { 'server.py': 'from mcp.server.fastmcp import FastMCP\n', 'requirements.txt': 'mcp\n' }, path: '/mcp' },
+    { id: 'image', name: 'Container image', description: 'An MCP server you already have as a container image that serves Streamable HTTP.', service_type: 'caas', runtime: null, runtime_registered: true, runtime_available: true, can_register_runtime: false, runtime_manifest: null, files: null, path: '/mcp', port: 8080 },
+  ] }))
+  api.define('GET', '/projects/:id/mcp-server', (req) => {
+    const server = mcpServers.get(req.params.id)
+    return server ? ok({ data: server }) : { status: 404, body: { message: 'This project is not served as an MCP server.' } }
+  })
+  api.define('PUT', '/projects/:id/mcp-server', (req, db) => {
+    const p = project(db, req.params.id)
+    if (!p) return notFound()
+    const prev = mcpServers.get(p.id)
+    const server: Json = {
+      id: prev?.id ?? api.nextId('mcp'), project_id: p.id, handle: p.slug, url: `http://127.0.0.1/mcp/servers/${p.slug}`,
+      access_mode: req.body?.access_mode ?? prev?.access_mode ?? 'token', path: req.body?.path ?? prev?.path ?? '/mcp',
+      audit_calls: req.body?.audit_calls ?? prev?.audit_calls ?? false, function_url: p.endpoint_url ?? null,
+      key_rotated_at: prev?.key_rotated_at ?? now(), needs_redeploy: false, created_at: prev?.created_at ?? now(), updated_at: now(),
+    }
+    mcpServers.set(p.id, server)
+    p.mcp_server = { handle: server.handle, url: server.url, access_mode: server.access_mode }
+    return ok({ data: server, created: !prev }, prev ? 200 : 201)
+  })
+  api.define('GET', '/projects/:id/mcp-server/calls', () => ok({ data: [], meta: { current_page: 1, last_page: 1, total: 0, per_page: 50 } }))
 
-  // ── Secret environment variables (write-only; docs/security.md): the names and who set them,
-  // never a value (ProjectSecretController) ──
+  // ── Secret environment variables (docs/security.md, docs/secret-stores.md): a value written into
+  // the region (write-only: the names, version, fingerprint and who set them, never a value) or a
+  // reference to a secret store with its sync status (ProjectSecretController) ──
   const secrets: Record<string, Json[]> = {}
-  api.define('GET', '/projects/:id/secrets', (req, db) => ok({
+  const secretList = (req: MockRequest, db: MockDb) => ok({
     data: secrets[req.params.id] ?? [],
     can_view_values: !!db.permissions.platform_admin || (db.permissions.permissions ?? []).includes('secrets.view_values'),
-  }))
+    storage: 'region',
+  })
+  api.define('GET', '/projects/:id/secrets', secretList)
+  api.define('POST', '/projects/:id/secrets/refresh', secretList)
   api.define('PUT', '/projects/:id/secrets/:name', (req, db) => {
     if (!project(db, req.params.id)) return notFound()
-    const value = req.body?.value
-    if (typeof value !== 'string' || value === '') {
-      return ok({ message: 'The value field is required.', errors: { value: ['The value field is required.'] } }, 422)
-    }
     const list = (secrets[req.params.id] ??= [])
-    const row = { name: req.params.name, updated_at: now(), updated_by: { id: db.user.id, name: db.user.name } }
     const i = list.findIndex(x => x.name === req.params.name)
+    const version = i >= 0 ? (list[i].version ?? 1) + 1 : 1
+    const base = { name: req.params.name, version, updated_at: now(), updated_by: { id: db.user.id, name: db.user.name } }
+    let row: Json
+    const reference = req.body?.reference
+    if (reference) {
+      const store = db.secretStores.find(s => s.id === reference.store_id)
+      if (!store) return ok({ message: 'The given data was invalid.', errors: { 'reference.store_id': ['No secret store of this organization has this ID.'] } }, 422)
+      if (!reference.path) return ok({ message: 'The given data was invalid.', errors: { 'reference.path': ['The reference.path field is required.'] } }, 422)
+      row = {
+        ...base, source: 'external',
+        reference: { store_id: store.id, store_name: store.name, provider: store.provider, path: reference.path, key: reference.key ?? null },
+        sync: { status: 'pending', message: 'Not synced yet: deploy the project to apply the reference.', synced_at: null },
+      }
+    } else {
+      const value = req.body?.value
+      if (typeof value !== 'string' || value === '') {
+        return ok({ message: 'The value field is required.', errors: { value: ['The value field is required.'] } }, 422)
+      }
+      // A stand-in for the keyed fingerprint: 12 hex digits that change with the value
+      let h = 0
+      for (const c of value) h = (h * 31 + c.charCodeAt(0)) >>> 0
+      row = { ...base, source: 'region', stored_in: 'region', fingerprint: h.toString(16).padStart(12, '0').slice(-12) }
+    }
     if (i >= 0) list[i] = row
     else list.push(row)
     return ok({ data: row, requires_deploy: true }, i >= 0 ? 200 : 201)
+  })
+  api.define('DELETE', '/projects/:id/secrets/:name', req => {
+    const list = secrets[req.params.id] ?? []
+    const i = list.findIndex(x => x.name === req.params.name)
+    if (i === -1) return notFound()
+    list.splice(i, 1)
+    return ok({ requires_deploy: true })
+  })
+
+  // ── Secret stores of the organization (docs/secret-stores.md): settings only, never a credential ──
+  const STORE_PROVIDERS = [
+    { provider: 'vault', auth: ['kubernetes', 'jwt'], settings: { server: true, mount: false, kv_version: false, vault_namespace: false, ca_bundle: false, auth_mount: false, role: true, audience: false } },
+    { provider: 'aws', auth: ['workload_identity'], settings: { region: true, role_arn: true, audience: false } },
+    { provider: 'gcp', auth: ['workload_identity'], settings: { project_id: true, audience: true, service_account_email: false } },
+    { provider: 'azure', auth: ['workload_identity'], settings: { vault_url: true, tenant_id: true, client_id: true } },
+  ]
+  const storeRefs = (id: string) => Object.values(secrets).flat().filter(s => s.reference?.store_id === id).length
+  const storeOut = (s: Json) => ({ ...s, kubernetes_name: `runr-ss-${String(s.id).toLowerCase()}`, references: storeRefs(s.id) })
+  api.define('GET', '/secret-stores', (_, db) => ok({ data: db.secretStores.map(storeOut), providers: STORE_PROVIDERS }))
+  api.define('GET', '/secret-stores/:id', (req, db) => {
+    const s = db.secretStores.find(x => x.id === req.params.id)
+    return s ? ok({ data: storeOut(s) }) : notFound()
+  })
+  api.define('POST', '/secret-stores', (req, db) => {
+    const b = req.body ?? {}
+    const known = STORE_PROVIDERS.find(p => p.provider === b.provider)
+    if (!known) return ok({ message: 'The given data was invalid.', errors: { provider: ['The selected provider is invalid.'] } }, 422)
+    const unknown = Object.keys(b.settings ?? {}).filter(k => !(k in known.settings))
+    if (unknown.length) {
+      return ok({ message: 'The given data was invalid.', errors: Object.fromEntries(unknown.map(k => [`settings.${k}`, [`"${k}" is not a setting of a ${b.provider} store.`]])) }, 422)
+    }
+    const store = {
+      id: api.nextId('ss'), name: b.name, provider: b.provider, auth: b.auth ?? known.auth[0],
+      settings: b.settings ?? {}, refresh_interval: b.refresh_interval ?? 3600, regions: {},
+      audience: b.provider === 'aws' ? 'sts.amazonaws.com' : b.auth === 'jwt' ? 'vault' : null,
+      created_at: now(), updated_at: now(),
+    }
+    db.secretStores.push(store)
+    return ok({ data: storeOut(store) }, 201)
+  })
+  api.define('PUT', '/secret-stores/:id', (req, db) => {
+    const s = db.secretStores.find(x => x.id === req.params.id)
+    if (!s) return notFound()
+    Object.assign(s, { name: req.body?.name ?? s.name, auth: req.body?.auth ?? s.auth, settings: { ...s.settings, ...(req.body?.settings ?? {}) }, updated_at: now() })
+    return ok({ data: storeOut(s) })
+  })
+  api.define('DELETE', '/secret-stores/:id', (req, db) => {
+    const i = db.secretStores.findIndex(x => x.id === req.params.id)
+    if (i === -1) return notFound()
+    if (storeRefs(req.params.id) > 0) return ok({ message: 'Secret variables of a project refer to this store: change them first.' }, 409)
+    db.secretStores.splice(i, 1)
+    return { status: 204 }
+  })
+  api.define('GET', '/secret-stores/:id/trust', (req, db) => {
+    const s = db.secretStores.find(x => x.id === req.params.id)
+    const region = db.regions.find(r => r.id === req.query.get('region_id'))
+    if (!s || !region) return notFound()
+    const namespace = region.project_namespace ?? region.name
+    const sa = `runr-ss-${String(s.id).toLowerCase()}`
+    return ok({ data: {
+      region: { id: region.id, name: region.name },
+      issuer: 'https://kubernetes.default.svc.cluster.local',
+      jwks_uri: 'https://203.0.113.10:6443/openid/v1/jwks',
+      jwks: { keys: [{ kty: 'RSA', kid: 'e2e-key', use: 'sig', alg: 'RS256', n: 'e2e-public-modulus', e: 'AQAB' }] },
+      pem_keys: ['-----BEGIN PUBLIC KEY-----\nE2E-PUBLIC-KEY\n-----END PUBLIC KEY-----'],
+      publicly_reachable: false,
+      namespace, service_account: sa, subject: `system:serviceaccount:${namespace}:${sa}`,
+      audience: s.audience ?? null,
+      eso_status: 'ready',
+    } })
+  })
+  api.define('POST', '/secret-stores/:id/verify', (req, db) => {
+    const s = db.secretStores.find(x => x.id === req.params.id)
+    if (!s) return notFound()
+    const regionId = req.body?.region_id
+    s.regions = { ...(s.regions ?? {}), [regionId]: { status: 'ready', message: null, checked_at: now() } }
+    return ok({ data: { status: 'ready', message: null, region_id: regionId } })
+  })
+
+  // ── External Secrets Operator of a region (docs/secret-stores.md) ──
+  api.define('GET', '/knative-regions/:id/external-secrets', (req, db) => {
+    const r = db.regions.find(x => x.id === req.params.id)
+    if (!r) return notFound()
+    return ok({ data: {
+      status: r.eso_status ?? 'not_installed', message: null, chart_version: r.eso_status === 'ready' ? '0.19.2' : null,
+      release_chart_version: '0.19.2', installed_at: null, references: 0, can_manage: true,
+    } })
+  })
+  api.define('POST', '/knative-regions/:id/external-secrets', (req, db) => {
+    const r = db.regions.find(x => x.id === req.params.id)
+    if (!r) return notFound()
+    r.eso_status = 'ready'
+    return ok({ message: 'External Secrets Operator is being installed.', data: { status: 'installing', release_chart_version: '0.19.2', references: 0, can_manage: true } }, 202)
+  })
+  api.define('DELETE', '/knative-regions/:id/external-secrets', (req, db) => {
+    const r = db.regions.find(x => x.id === req.params.id)
+    if (!r) return notFound()
+    r.eso_status = 'not_installed'
+    return ok({ message: 'External Secrets Operator is being removed.', data: { status: 'uninstalling', release_chart_version: '0.19.2', references: 0, can_manage: true } }, 202)
+  })
+
+  // ── The region's own OpenBao (docs/secret-stores.md, OpenBaoController): needs the operator;
+  // the install answers "installing", the next status read "ready" ──
+  const openBao = (r: Json, extra: Json = {}) => ({
+    status: r.openbao_status ?? 'not_installed', message: null,
+    version: r.openbao_status === 'ready' ? '2.4.1' : null, release_version: '2.4.1', installed_at: null,
+    default_for_values: r.openbao_default ?? true, values: r.openbao_values ?? 0,
+    eso_status: r.eso_status ?? 'not_installed', can_manage: true, ...extra,
+  })
+  api.define('GET', '/knative-regions/:id/openbao', (req, db) => {
+    const r = db.regions.find(x => x.id === req.params.id)
+    if (!r) return notFound()
+    return ok({ data: openBao(r) })
+  })
+  api.define('POST', '/knative-regions/:id/openbao', (req, db) => {
+    const r = db.regions.find(x => x.id === req.params.id)
+    if (!r) return notFound()
+    if (r.eso_status !== 'ready') {
+      return ok({ message: `OpenBao in region "${r.name}" needs External Secrets Operator there: install it first on the region's Secrets tab.` }, 422)
+    }
+    r.openbao_status = 'ready'
+    return ok({ message: 'OpenBao is being installed.', data: openBao(r, { status: 'installing', version: null }) }, 202)
+  })
+  api.define('PATCH', '/knative-regions/:id/openbao', (req, db) => {
+    const r = db.regions.find(x => x.id === req.params.id)
+    if (!r) return notFound()
+    r.openbao_default = !!req.body?.default_for_values
+    return ok({ data: openBao(r) })
+  })
+  api.define('DELETE', '/knative-regions/:id/openbao', (req, db) => {
+    const r = db.regions.find(x => x.id === req.params.id)
+    if (!r) return notFound()
+    if ((r.openbao_values ?? 0) > 0) {
+      return ok({ message: `Secret values or dynamic credentials of projects in region "${r.name}" live in its OpenBao: move them before removing it.` }, 409)
+    }
+    r.openbao_status = 'not_installed'
+    return ok({ message: 'OpenBao is being removed.', data: openBao(r, { status: 'uninstalling' }) }, 202)
   })
 
   // ── Uploaded images (docs/images.md): none uploaded yet; the list carries the quota (ImageController) ──

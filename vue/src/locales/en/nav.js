@@ -1,0 +1,63 @@
+// The console's navigation (src/navigation/menu.js): main menu, mega menus, mobile drawer and
+// user menu. Descriptions are one line each; module entries keep theirs in their own messages.
+export default {
+  nav: {
+    main:        'Main menu',
+    menu:        'Menu',
+    openMenu:    'Open the menu',
+    closeMenu:   'Close the menu',
+    accountMenu: 'Account menu',
+    signedInAs:  'Signed in as',
+    userSettings: 'Account settings',
+    logout:      'Logout',
+    settings:    'Settings',
+    preferences: 'Preferences',
+    theme:       'Theme',
+    themeDark:     'Dark',
+    themeFullDark: 'Full Dark',
+    themeLight:    'Light',
+    language:    'Language',
+    languageEn:  'English',
+    languageTr:  'Türkçe',
+
+    groups: {
+      build:             'Build & Run',
+      buildDesc:         'Sandboxes, models, runtimes, images and workflow events.',
+      data:              'Data & Integrations',
+      dataDesc:          'Your data stores and the services RunR connects to.',
+      observability:     'Observability',
+      observabilityDesc: 'Alerts, tracing and the public status page.',
+      admin:             'Administration',
+      adminDesc:         'Members, access, billing and the platform.',
+    },
+
+    sections: {
+      workloads:    'Workloads',
+      runtimes:     'Runtimes & images',
+      automation:   'Automation',
+      data:         'Data',
+      integrations: 'Integrations',
+      monitoring:   'Monitoring',
+      members:      'Members',
+      access:       'Access & security',
+      organization: 'Organization',
+      platform:     'Platform',
+      more:         'More',
+    },
+
+    links: {
+      modelsDesc:           'Hugging Face models as services your functions call',
+      runtimesDesc:         'Language runtimes, their versions and builds',
+      patchesDesc:          'Runtime patch feed, policy and deadlines',
+      usersDesc:            'Accounts of the organization and their roles',
+      tokensDesc:           'Personal tokens for the CLI, CI and AI agents',
+      platformSettings:     'Regions & settings',
+      platformSettingsDesc: 'Regions, base domain, registration and demo data',
+      orgSettings:          'Regions & domain',
+      orgSettingsDesc:      'The organization\'s regions and its own domain',
+      approvalsDesc:        'Promotions waiting for your approval',
+      rightsizingDesc:      'Size recommendations from what the pods used',
+      accountDesc:          'Profile, password, two-factor and sessions',
+    },
+  },
+}

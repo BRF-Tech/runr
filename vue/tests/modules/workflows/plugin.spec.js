@@ -26,6 +26,8 @@ describe('workflows module plugin', () => {
     expect(tab.visibleIf({ service_type: 'caas' })).toBe(true)
     expect(tab.visibleIf({ service_type: 'faas' })).toBe(true)
     expect(tab.visibleIf({ service_type: 'maas' })).toBe(false)
+    // every environment is a workflow app of its own: the tab follows the environment switcher
+    expect(tab.environments).toBe(true)
 
     // Permissions loaded: the tab needs workflows.view on the project, the events view org-wide
     usePermissionsStore().apply({ permissions: ['projects.view'], projects: { p2: ['workflows.view'] } })

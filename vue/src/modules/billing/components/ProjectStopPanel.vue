@@ -44,6 +44,12 @@ const visible = computed(() => {
     .filter(p => !q || (p.name ?? '').toLowerCase().includes(q) || (p.owner?.name ?? '').toLowerCase().includes(q))
 })
 
+// Who stopped it: the platform, the organization, or the project's own monthly cost limit
+function stopLabel(stopped) {
+  if (stopped?.level === 'platform') return t('projectLifecycle.stoppedByPlatform')
+  return stopped?.system === 'cost_limit' ? t('billing.costLimit.stoppedBadge') : t('projectLifecycle.stoppedByOrganization')
+}
+
 // A platform stop is lifted by a platform administrator only (the API answers 403 otherwise)
 function canResume(project) {
   return project.stopped?.level !== 'platform' || perms.platformAdmin
@@ -112,7 +118,7 @@ defineExpose({ load, resume, query, onlyStopped })
             <td class="px-3 py-2 text-gray-100">{{ p.name }}</td>
             <td class="px-3 py-2">{{ p.owner?.name ?? t('projectLifecycle.ownerUnknown') }}</td>
             <td class="px-3 py-2">
-              <span v-if="p.stopped" class="text-red-400" :data-test="`stop-project-level-${p.id}`">{{ p.stopped.level === 'platform' ? t('projectLifecycle.stoppedByPlatform') : t('projectLifecycle.stoppedByOrganization') }}</span>
+              <span v-if="p.stopped" class="text-red-400" :data-test="`stop-project-level-${p.id}`">{{ stopLabel(p.stopped) }}</span>
               <span v-else class="text-emerald-400">{{ t('billing.projects.running') }}</span>
               <div v-if="p.stopped?.reason" class="text-[10px] text-gray-500 mt-0.5">{{ p.stopped.reason }}</div>
             </td>

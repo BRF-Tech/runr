@@ -112,7 +112,21 @@ describe('settings store', () => {
     expect(store.data).toEqual({
       base_domain: 'runr.example', extra: 1, total_cpu_m: 0, total_memory_mb: 0,
       regions: [], executor_images: [], gpu_demo_enabled: false, custom_runtimes_enabled: false,
+      timezone: 'Europe/Istanbul',
     })
+  })
+
+  it('keeps the organization time zone, Europe/Istanbul when the API sends none', async () => {
+    settingsApi.get.mockResolvedValue({ data: { timezone: 'Europe/Berlin' } })
+    const store = useSettingsStore()
+    await store.fetch()
+    expect(store.data.timezone).toBe('Europe/Berlin')
+
+    // a settings.updated broadcast without the zone keeps it; one with a new zone takes it
+    store.update({ base_domain: 'b' })
+    expect(store.data.timezone).toBe('Europe/Berlin')
+    store.update({ timezone: 'America/New_York' })
+    expect(store.data.timezone).toBe('America/New_York')
   })
 
   it('update keeps regions and images when the payload has none', () => {
@@ -134,6 +148,27 @@ describe('settings store', () => {
     await store.fetch()
     store.invalidate()
     expect(store.loaded).toBe(false)
+  })
+})
+
+// Fetches answering out of order, and an organization switch (invalidate) while one is in flight
+describe('settings store: answers arriving late', () => {
+  beforeEach(() => { setActivePinia(createPinia()) })
+
+  it('keeps the newest fetch and drops the one an invalidate overtook', async () => {
+    let first
+    settingsApi.get
+      .mockReturnValueOnce(new Promise((resolve) => { first = resolve }))
+      .mockResolvedValueOnce({ data: { base_domain: 'new.example', regions: [{ id: 'r2' }] } })
+    const store = useSettingsStore()
+    const older = store.fetch()
+    store.invalidate()
+    await store.fetch()
+    first({ data: { base_domain: 'old.example', regions: [{ id: 'r1' }] } })
+    await older
+    expect(store.data.base_domain).toBe('new.example')
+    expect(store.data.regions).toEqual([{ id: 'r2' }])
+    expect(store.loaded).toBe(true)
   })
 })
 

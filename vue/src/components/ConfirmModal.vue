@@ -20,6 +20,8 @@ defineEmits(['confirm', 'cancel'])
     <div class="relative card w-full max-w-sm">
       <h2 class="text-base font-semibold text-gray-100 mb-2">{{ title }}</h2>
       <p class="text-sm text-gray-400 mb-6 whitespace-pre-line">{{ message }}</p>
+      <!-- Extra input of the decision (e.g. the optional reason of a rollout abort) -->
+      <slot />
       <div class="flex justify-end gap-2">
         <button class="btn-secondary" :disabled="loading" @click="$emit('cancel')">
           {{ t('common.cancel') }}

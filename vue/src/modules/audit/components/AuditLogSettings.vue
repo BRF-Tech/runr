@@ -1,6 +1,6 @@
 <script setup>
-// Settings → Audit log (docs/security.md): filters, paginated events, detail drawer, CSV/JSON
-// export (audit.export) and the retention setting (platform admins).
+// Administration → Audit log (docs/security.md): filters, paginated events, detail drawer,
+// CSV/JSON export (audit.export) and the retention setting (platform admins).
 import { ref, computed, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useToast } from '@/composables/useToast'
@@ -17,7 +17,8 @@ const {
 const retentionDays = ref(null)
 const targetTypes = ['project', 'deployment', 'domain', 'gateway', 'gateway_route', 'region', 'user', 'api_token',
   'session', 'tenant', 'invitation', 'auth_provider', 'private_connection', 'ticket', 'payment', 'cost_config',
-  'runtime', 'role', 'group', 'sso_group_mapping', 'social_account', 'workflow_run', 'plan']
+  'runtime', 'role', 'group', 'sso_group_mapping', 'social_account', 'workflow_run', 'plan',
+  'api_consumer', 'api_key', 'api_plan']
 
 const resultClass = {
   success: 'bg-emerald-900/30 text-emerald-300 border-emerald-800/50',

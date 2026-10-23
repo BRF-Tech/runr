@@ -6,6 +6,7 @@ import ModelsView from '@/views/ModelsView.vue'
 import { aiApi } from '@/api/ai'
 import { useSettingsStore } from '@/stores/settings'
 import { makeI18n, freshPinia, regions, modelService } from '@/test-support/helpers'
+import { deferred } from '../helpers'
 
 vi.mock('@/api/ai', () => ({
   aiApi: {
@@ -130,5 +131,46 @@ describe('Models page', () => {
 
     expect(w.find('[data-testid="library-add"]').exists()).toBe(false)
     expect(w.find('[data-testid="library-deploy-all-minilm-l6-v2"]').exists()).toBe(false)
+  })
+})
+
+// The page polls both lists every 5 s while a service deploys; an action's answer and a poll's
+// answer arrive in either order (deferred promises)
+describe('Models page: polls and actions answering out of order', () => {
+  it('a mirror does not write back the copy of the model taken at the click', async () => {
+    const w = await mountView({ tab: 'library' })
+    const created = deferred()
+    aiApi.createSnapshot.mockReturnValueOnce(created.promise)
+    await w.find('[data-testid="library-mirror-region-all-minilm-l6-v2"]').setValue('r2')
+    await w.find('[data-testid="library-mirror-all-minilm-l6-v2"]').trigger('click')
+
+    // the poll meanwhile: the eu-1 copy failed
+    aiApi.models.mockResolvedValueOnce({ data: { data: [{ ...library[0], snapshots: [{ ...library[0].snapshots[0], status: 'failed' }] }], abilities: { view: true, deploy: true, manage: true } } })
+    vi.advanceTimersByTime(5000)
+    await flushPromises()
+    expect(w.find('[data-snapshot-region="eu-1"]').text()).toContain('Failed')
+
+    created.resolve({ data: { id: 'sn2', ai_model_id: 'am1', knative_region_id: 'r2', region_name: 'us-1', status: 'pending' } })
+    await flushPromises()
+    expect(w.find('[data-snapshot-region="eu-1"]').text()).toContain('Failed')
+    expect(w.find('[data-snapshot-region="us-1"]').text()).toContain('Pending')
+  })
+
+  it('a poll read before a mirror does not drop the new copy', async () => {
+    const w = await mountView({ tab: 'library' })
+    const poll = deferred()
+    aiApi.models.mockReturnValueOnce(poll.promise)
+    vi.advanceTimersByTime(5000)                    // the poll is in flight
+    await flushPromises()
+
+    aiApi.createSnapshot.mockResolvedValueOnce({ data: { id: 'sn2', ai_model_id: 'am1', knative_region_id: 'r2', region_name: 'us-1', status: 'pending' } })
+    await w.find('[data-testid="library-mirror-region-all-minilm-l6-v2"]').setValue('r2')
+    await w.find('[data-testid="library-mirror-all-minilm-l6-v2"]').trigger('click')
+    await flushPromises()
+
+    // read before the mirror: only the eu-1 copy (a fresh answer, not the list the page holds)
+    poll.resolve({ data: { data: [{ ...library[0], snapshots: [{ ...library[0].snapshots[0] }] }], abilities: { view: true, deploy: true, manage: true } } })
+    await flushPromises()
+    expect(w.find('[data-snapshot-region="us-1"]').exists()).toBe(true)
   })
 })

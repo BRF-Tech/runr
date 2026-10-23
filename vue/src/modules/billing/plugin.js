@@ -29,7 +29,10 @@ export default function (registry) {
   registry.settingsTabs.push({
     key: 'billing',
     labelKey: 'billing.tab',
+    descKey: 'billing.navDesc',
     icon: markRaw(CreditCard),
+    group: 'admin',
+    section: 'organization',
     component: lazy(() => import('./components/BillingAdmin.vue')),
     visibleIf: canViewBilling,
     dataTour: 'settings-billing-tab',
@@ -39,10 +42,13 @@ export default function (registry) {
   registry.settingsTabs.push({
     key: 'my-bills',
     labelKey: 'billing.myBills.tab',
+    descKey: 'billing.myBills.navDesc',
     icon: markRaw(Receipt),
+    // the user menu: the bills the user pays
+    group: 'account',
     component: lazy(() => import('./components/MyBills.vue')),
     visibleIf: canSeeOwnBills,
-    order: 41,
+    order: 20,
   })
 
   registry.projectTabs.push({

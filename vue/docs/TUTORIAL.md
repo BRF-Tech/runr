@@ -26,7 +26,7 @@ vue/src/
 
 ## Tour flows
 
-### 1. Projects tour (9 steps)
+### 1. Projects tour (10 steps)
 | # | data-tour | Location | Description |
 |---|-----------|----------|-------------|
 | 1 | *(none — overlay)* | — | Welcome message |
@@ -37,9 +37,10 @@ vue/src/
 | 6 | `resource-bars` | ProjectsView | CPU/memory resource bars |
 | 7 | `project-card` | ProjectsView | First project card (idx===0) |
 | 8 | `notifications-btn` | AppHeader | Notification bell |
-| 9 | `settings-btn` | AppHeader | Settings button |
+| 9 | `main-nav` | MainNav (AppHeader) | The main menu: Projects and the Build & Run, Data & Integrations, Observability and Administration menus |
+| 10 | `user-menu-btn` | UserMenu (AppHeader) | The user menu: account settings, theme, language, tutorial, sign-out |
 
-**Trigger:** automatically on the first sign-in (`tutorial_completed_at === null`), later with the "?" button.
+**Trigger:** automatically on the first sign-in (`tutorial_completed_at === null`), later with **Restart tutorial** in the user menu.
 **On completion:** `POST /api/tutorial/complete` stores the timestamp in the database.
 
 ### 2. Create tour (8 steps)

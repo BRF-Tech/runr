@@ -1,6 +1,32 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import { aiApi } from '@/api/ai'
+import { createChangeJournal, removeChange } from '@/utils/changeJournal'
+
+/** Has `answer` (a list item read from the API) a newer state than `local` (an action's answer)? */
+function newer(answer, local) {
+  if (!answer?.updated_at || !local?.updated_at) return false
+  return new Date(answer.updated_at) > new Date(local.updated_at)
+}
+
+/** Change: inserts `item`, or merges it into the item with its id (unless that one is newer). */
+const upsertChange = (item) => (list) => {
+  const i = list.findIndex(x => x.id === item.id)
+  if (i === -1) return [item, ...list]
+  if (newer(list[i], item)) return list
+  const next = [...list]
+  next[i] = { ...list[i], ...item }
+  return next
+}
+
+/** Change: puts `snapshot` on the model `modelId` (the model as the list has it now). */
+const snapshotChange = (modelId, snapshot) => (list) => list.map(m => (m.id === modelId
+  ? { ...m, snapshots: [...(m.snapshots ?? []).filter(s => s.id !== snapshot.id), snapshot] }
+  : m))
+
+const snapshotRemoval = (modelId, snapshotId) => (list) => list.map(m => (m.id === modelId
+  ? { ...m, snapshots: (m.snapshots ?? []).filter(s => s.id !== snapshotId) }
+  : m))
 
 /**
  * Models page state: the engine catalog (GET /models/engines), the model library, the model
@@ -15,6 +41,24 @@ export const useAiStore = defineStore('ai', () => {
   const enginesLoaded  = ref(false)
   const modelsLoaded   = ref(false)
   const servicesLoaded = ref(false)
+
+  // The models page polls both lists every few seconds while something is busy. A change made
+  // here (a deploy, a stop, a new offline copy: the action's answer) while such a request is in
+  // flight is applied to its answer, which may have been read before it; of two requests the
+  // newer one wins.
+  const journals = { models: createChangeJournal(), services: createChangeJournal() }
+  let modelsRequest = 0
+  let servicesRequest = 0
+
+  function changeModels(apply) {
+    models.value = apply(models.value)
+    journals.models.record(apply)
+  }
+
+  function changeServices(apply) {
+    services.value = apply(services.value)
+    journals.services.record(apply)
+  }
 
   function takeAbilities(data) {
     if (data?.abilities) abilities.value = { view: true, deploy: false, manage: false, hub: true, ...data.abilities }
@@ -32,39 +76,51 @@ export const useAiStore = defineStore('ai', () => {
   }
 
   async function fetchModels() {
+    const request = ++modelsRequest
+    const since = journals.models.mark()
     const { data } = await aiApi.models()
-    models.value = data?.data ?? []
+    if (request !== modelsRequest) return
+    models.value = journals.models.replay(data?.data ?? [], since)
     takeAbilities(data)
     modelsLoaded.value = true
   }
 
   async function fetchServices() {
+    const request = ++servicesRequest
+    const since = journals.services.mark()
     const { data } = await aiApi.services()
-    services.value = data?.data ?? []
+    if (request !== servicesRequest) return
+    services.value = journals.services.replay(data?.data ?? [], since)
     takeAbilities(data)
     servicesLoaded.value = true
   }
 
   function upsertService(service) {
     if (!service?.id) return
-    const i = services.value.findIndex(s => s.id === service.id)
-    if (i === -1) services.value = [service, ...services.value]
-    else services.value.splice(i, 1, { ...services.value[i], ...service })
+    changeServices(upsertChange(service))
   }
 
   function removeService(id) {
-    services.value = services.value.filter(s => s.id !== id)
+    changeServices(removeChange(id))
   }
 
   function upsertModel(model) {
     if (!model?.id) return
-    const i = models.value.findIndex(m => m.id === model.id)
-    if (i === -1) models.value = [model, ...models.value]
-    else models.value.splice(i, 1, { ...models.value[i], ...model })
+    changeModels(upsertChange(model))
   }
 
   function removeModel(id) {
-    models.value = models.value.filter(m => m.id !== id)
+    changeModels(removeChange(id))
+  }
+
+  /** An offline copy of a model created or changed: set on the model as the list has it now. */
+  function upsertSnapshot(modelId, snapshot) {
+    if (!modelId || !snapshot?.id) return
+    changeModels(snapshotChange(modelId, snapshot))
+  }
+
+  function removeSnapshot(modelId, snapshotId) {
+    changeModels(snapshotRemoval(modelId, snapshotId))
   }
 
   /** Engine ids that serve a task (catalog), `custom` always last. */
@@ -90,7 +146,7 @@ export const useAiStore = defineStore('ai', () => {
     enginesLoaded, modelsLoaded, servicesLoaded,
     canDeploy, canManage, hubAvailable,
     fetchEngines, fetchModels, fetchServices,
-    upsertService, removeService, upsertModel, removeModel,
+    upsertService, removeService, upsertModel, removeModel, upsertSnapshot, removeSnapshot,
     enginesForTask, engineDevices,
   }
 })

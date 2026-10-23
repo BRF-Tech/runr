@@ -1,3 +1,19 @@
+import { levelKey, pathLocation } from '@/utils/runtimePatches'
+
+/** environment.promotion.<event> → title key: one waits for the reader's approval, or the reader's own changed */
+const PROMOTION_TITLES = {
+  'environment.promotion.pending_approval': 'notifications.promotionPending',
+  'environment.promotion.approved':         'notifications.promotionApproved',
+  'environment.promotion.rejected':         'notifications.promotionRejected',
+  'environment.promotion.deployed':         'notifications.promotionDeployed',
+  'environment.promotion.failed':           'notifications.promotionFailed',
+}
+
+/** Whether a notification is about a promotion between environments. */
+export function isPromotionNotification(n) {
+  return String(n?.type || '').startsWith('environment.promotion.')
+}
+
 /**
  * Translate a notification record using its type + data fields.
  * Falls back to the stored title if no mapping exists.
@@ -86,6 +102,31 @@ export function notificationTitle(n, t) {
   if (type === 'ticket.reply')   return t('notifications.ticketReply',   { subject: n.data?.ticket_subject || '' })
   if (type === 'ticket.status')  return n.title || ''
 
+  // ── Runtime patches (docs/runtimes.md#runtime-patches) ─────────────────────
+  // A new patch, a migration, a dropped pin and an end-of-life reminder carry what the title
+  // needs; a refused feed keeps the title the API wrote
+  if (type === 'runtime_patch' && d.event === 'patch' && d.tag) {
+    return t('notifications.runtimePatch', { level: t(`runtimePatches.levels.${levelKey(d.level)}`), tag: d.tag, runtime: `${d.runtime} ${d.version}` })
+  }
+  if (type === 'runtime_patch' && d.event === 'migrated' && d.project_name) {
+    return t('notifications.runtimePatchMigrated', { project: d.project_name, tag: d.tag || '' })
+  }
+  if (type === 'runtime_patch' && d.event === 'migration_failed' && d.project_name) {
+    return t('notifications.runtimePatchMigrationFailed', { project: d.project_name, tag: d.tag || '' })
+  }
+  if (type === 'runtime_patch' && d.event === 'pin_dropped' && d.project_name) {
+    return t('notifications.runtimePatchPinDropped', { project: d.project_name })
+  }
+  if (type === 'runtime_eol' && d.eol_at) {
+    return t('notifications.runtimeEol', { runtime: `${d.runtime} ${d.version}`, date: d.eol_at })
+  }
+
+  // ── Promotions between environments (docs/environments.md#notifications) ──
+  const promotion = PROMOTION_TITLES[type]
+  if (promotion && d.project_name) {
+    return t(promotion, { project: d.project_name, version: d.version ?? '', target: d.target_environment || 'production' })
+  }
+
   // ── Fallback ─────────────────────────────────────────────────────────────────
   return n.title || ''
 }
@@ -98,6 +139,15 @@ export function notificationAction(n) {
     const query = { tab: 'support-tickets', ticketId: n.data?.ticket_id }
     if (n.data?.tenant_id) query.tenantId = n.data.tenant_id
     return { path: '/settings', query }
+  }
+  // Runtime patches: the project(s) concerned, the Patches page of platform administrators
+  if (['runtime_patch', 'runtime_eol', 'runtime_patch_feed'].includes(n.type)) {
+    return pathLocation(n.data?.path)
+  }
+  // Promotions: the approvals inbox (one waits for the reader), else the project's environments
+  if (isPromotionNotification(n)) {
+    if (n.type === 'environment.promotion.pending_approval') return { path: '/approvals' }
+    return n.data?.project_id ? { path: `/projects/${n.data.project_id}`, hash: '#environments' } : null
   }
   return null
 }

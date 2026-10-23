@@ -22,8 +22,10 @@ export default {
       cardDesc:       'Each card shows a project with its type, runtime, status and last version info. Click to open.',
       notifications:     'Notifications',
       notificationsDesc: 'Resource threshold alerts and system events appear here. The badge shows unread count.',
-      settings:       'Settings',
-      settingsDesc:   'Manage regions, base domain and global resource limits. Load demo data to quickly explore the platform.',
+      menus:          'Menus',
+      menusDesc:      'Projects stays on its own. Build & Run, Data & Integrations, Observability and Administration open menus with every other page: regions and platform settings, members and API tokens are under Administration.',
+      userMenu:       'Your account',
+      userMenuDesc:   'Account settings, theme, language, this tutorial and sign-out.',
     },
     create: {
       name:           'Project Name',

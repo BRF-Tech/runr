@@ -55,10 +55,20 @@ function fromBase64(b64) {
   return decoder.decode(bytes)
 }
 
+// The modal can close while the xterm chunks or the session token load: no socket may be opened
+// after that (an orphan shell on the pod, and for a sandbox a keepalive that never lets it idle)
+let disposed = false
+
+// A socket still connecting is closed too (closing it aborts the handshake)
+function closeSocket() {
+  if (ws && ws.readyState <= WebSocket.OPEN) ws.close()
+}
+
 // ── Close: immediate UI dismiss, WS cleanup in background ────────────────────
 function closeSession() {
   emit('close')
-  if (ws && ws.readyState === WebSocket.OPEN) ws.close()
+  stopKeepalive()
+  closeSocket()
 }
 
 // ── Build WebSocket URL from current window location ──────────────────────────
@@ -71,6 +81,7 @@ function wsUrl(token) {
 async function init() {
   const { Terminal } = await import('@xterm/xterm')
   const { FitAddon } = await import('@xterm/addon-fit')
+  if (disposed) return
 
   if (!document.querySelector('#xterm-styles')) {
     const link = document.createElement('link')
@@ -134,6 +145,7 @@ async function init() {
     errorMsg.value = e.response?.data?.message || t('project.shell.startFailed')
     return
   }
+  if (disposed) return
 
   // Open WebSocket to Reverb shell handler
   try {
@@ -159,7 +171,7 @@ async function init() {
       } else if (msg.connected) {
         podName.value = msg.pod || ''
         status.value = 'starting' // keep overlay until first output
-        startKeepalive()
+        if (!disposed) startKeepalive()
       } else if (msg.output) {
         terminal?.write(fromBase64(msg.output))
         if (status.value !== 'connected') {
@@ -212,9 +224,10 @@ function handleResize() { fitAddon?.fit() }
 onMounted(() => { init() })
 
 onUnmounted(() => {
+  disposed = true
   stopKeepalive()
   window.removeEventListener('resize', handleResize)
-  if (ws && ws.readyState === WebSocket.OPEN) ws.close()
+  closeSocket()
   terminal?.dispose()
 })
 </script>

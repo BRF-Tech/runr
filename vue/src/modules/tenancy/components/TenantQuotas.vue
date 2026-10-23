@@ -5,6 +5,7 @@ import { tenantsApi } from '../api/tenants'
 import { useSettingsStore } from '@/stores/settings'
 import { useConfirm } from '@/composables/useConfirm'
 import { useToast } from '@/composables/useToast'
+import { useLatest } from '@/composables/useLatest'
 import { Globe, Plus, Pencil, Trash2, Info } from 'lucide-vue-next'
 import CapacityBudgets from '@/components/region/CapacityBudgets.vue'
 import TenantBindingQuota from './TenantBindingQuota.vue'
@@ -77,13 +78,18 @@ watch(isInfiniteSelected, (val) => {
 
 onMounted(loadRegions)
 
+// The newest list wins; a failed reload after a saved change is not that change's error
+const latestRegions = useLatest()
 async function loadRegions() {
+  const current = latestRegions.begin()
   loading.value = true
   try {
     const { data } = await tenantsApi.listRegions(props.tenantId)
-    regions.value = Array.isArray(data) ? data : (data.data ?? [])
+    if (current()) regions.value = Array.isArray(data) ? data : (data.data ?? [])
+  } catch {
+    /* the list keeps what it showed */
   } finally {
-    loading.value = false
+    if (current()) loading.value = false
   }
 }
 
@@ -130,6 +136,10 @@ async function submitForm() {
     } else {
       const { gpu_quota, ...assign } = form.value
       await tenantsApi.assignRegion(props.tenantId, assign)
+      // Assigned: if the GPU quota below fails, saving again edits this assignment instead of
+      // assigning the region a second time ("already assigned")
+      editingId.value = form.value.region_id
+      loadRegions()
       if (gpuQuota !== null) await tenantsApi.updateRegionGpuQuota(props.tenantId, form.value.region_id, { gpu_quota: gpuQuota })
       toast.success(t('tenancy.regionAssigned'))
     }

@@ -14,6 +14,9 @@ import { triggerKind, triggerLabel } from '../utils/format'
 
 const props = defineProps({
   project: { type: Object, required: true },
+  // The environment the project page's switcher selected (docs/workflows.md#environments):
+  // its own workflow app, definitions and runs; null: production
+  environment: { type: String, default: null },
 })
 
 const { t } = useI18n()
@@ -47,7 +50,7 @@ async function load({ quiet = false } = {}) {
     loadError.value = null
   }
   try {
-    const { data } = await workflowsApi.list(props.project.id)
+    const { data } = await workflowsApi.list(props.project.id, props.environment)
     workflows.value = data.data ?? []
     app.value       = data.app ?? null
   } catch (e) {
@@ -59,6 +62,13 @@ async function load({ quiet = false } = {}) {
 
 onMounted(() => load())
 watch(() => props.project?.id, () => load())
+// Another environment: its own definitions and runs, none of the previous one's open
+watch(() => props.environment, () => {
+  selected.value  = ''
+  openRunId.value = null
+  startFor.value  = null
+  load()
+})
 
 watch(openRunId, (id) => {
   if (!router) return
@@ -80,7 +90,7 @@ function onSynced(payload) {
 
 async function toggleActive(w) {
   try {
-    const { data } = await workflowsApi.setActive(props.project.id, w.name, !w.is_active)
+    const { data } = await workflowsApi.setActive(props.project.id, w.name, !w.is_active, props.environment)
     workflows.value = workflows.value.map((x) => (x.id === w.id ? { ...x, ...data.data } : x))
     toast.success(data.data.is_active ? t('workflows.list.resumed_ok') : t('workflows.list.paused_ok'))
   } catch (e) {
@@ -130,6 +140,7 @@ function totalRuns(w) {
         v-if="app"
         :project-id="project.id"
         :app="app"
+        :environment="environment"
         :can-manage="canManage"
         @updated="(a) => (app = a)"
         @synced="onSynced"
@@ -205,6 +216,7 @@ function totalRuns(w) {
             :project-id="project.id"
             :workflows="names"
             :reload-key="reloadKey"
+            :environment="environment"
             @open="(id) => (openRunId = id)"
           />
         </section>
@@ -215,6 +227,7 @@ function totalRuns(w) {
       v-if="startFor"
       :project-id="project.id"
       :workflow="startFor"
+      :environment="environment"
       @started="onStarted"
       @close="startFor = null"
     />

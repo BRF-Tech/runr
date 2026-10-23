@@ -1,14 +1,16 @@
 <script setup>
 import { ref, computed, nextTick, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { useRoute, useRouter } from 'vue-router'
+import { useRoute } from 'vue-router'
 import { useTutorialStore } from '@/stores/tutorial'
 import { createTutorial, useTokensTutorial, useUsersTutorial } from '@/composables/useTutorial'
 import { settingsSteps } from '@/composables/tutorialSteps'
 import { useSettingsPage } from '@/composables/useSettingsPage'
 import { moduleRegistry } from '@/modules/index'
 import { usePermissionsStore } from '@/stores/permissions'
-import { Globe, ShieldCheck, Cpu, Package, Settings, KeyRound, Users, Building2, BarChart3, CreditCard, Shield, MapPin, HardDrive, Ticket, Boxes, ScrollText, Database, GitBranch } from 'lucide-vue-next'
+import { useNavigation } from '@/navigation/useNavigation'
+import { routeTab } from '@/navigation/menu'
+import { Globe, ShieldCheck, Cpu, Package, Settings, MapPin, HardDrive, Boxes, Network } from 'lucide-vue-next'
 import AppHeader from '@/components/AppHeader.vue'
 import RegionDetailModal from '@/components/RegionDetailModal.vue'
 import DemoManager from '@/components/settings/DemoManager.vue'
@@ -16,12 +18,14 @@ import RegionsList from '@/components/settings/RegionsList.vue'
 import UsersManager from '@/components/settings/UsersManager.vue'
 import ApiTokensManager from '@/components/settings/ApiTokensManager.vue'
 import RuntimesManager from '@/components/settings/RuntimesManager.vue'
+import RuntimePatchesManager from '@/components/settings/RuntimePatchesManager.vue'
+import TimezoneCard from '@/components/settings/TimezoneCard.vue'
+import GlobalDnsPanel from '@/components/settings/GlobalDnsPanel.vue'
 import { useRuntimesStore } from '@/stores/runtimes'
 import TermText from '@/components/TermText.vue'
 
 const { t } = useI18n()
 const route  = useRoute()
-const router = useRouter()
 const tutorialStore = useTutorialStore()
 const runtimesStore = useRuntimesStore()
 runtimesStore.fetch()
@@ -44,47 +48,36 @@ watch(() => tutorialStore.restartCounter, () => {
   // Module tabs (auth-providers, tenants etc.) handle their own tutorial via restartCounter watch
 })
 
-const visibleTabs = computed(() =>
-  moduleRegistry.settingsTabs
-    .filter(tab => !tab.visibleIf || tab.visibleIf())
-    .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
-)
-
-// If tenancy module provides its own 'users' tab, hide the built-in one
 const perms = usePermissionsStore()
-const showBuiltInUsers = computed(() =>
-  !visibleTabs.value.some(tab => tab.key === 'users') && perms.can('members.view')
-)
-const showTokens = computed(() => perms.can('tokens.manage'))
 const canChangeSettings = computed(() => perms.can('settings.manage'))
 
-// Deep link: read initial tab from query param
-const builtInKeys = ['settings', 'users', 'tokens', 'runtimes']
-const validKeys  = computed(() => [...builtInKeys, ...moduleRegistry.settingsTabs.map(t => t.key)])
-const activeTab  = ref(validKeys.value.includes(route.query.tab || 'settings') ? (route.query.tab || 'settings') : 'settings')
+// The page of each tab is a link of the main menu (src/navigation/menu.js): /settings?tab=<key>.
+// The tab shows when the menu shows its link; without ?tab (or with an unknown one) the page
+// shows the regions and platform settings. The tabs above the content are the other pages of
+// the same menu section.
+const navigation = useNavigation()
+const builtInKeys = ['settings', 'users', 'tokens', 'runtimes', 'patches']
+const validKeys  = computed(() => [...builtInKeys, ...moduleRegistry.settingsTabs.map(tab => tab.key)])
+const activeTab  = computed(() => {
+  const key = routeTab(route)
+  return validKeys.value.includes(key) ? key : 'settings'
+})
+const place      = computed(() => navigation.findTab(activeTab.value))
+const activeLink = computed(() => place.value?.link ?? null)
+const siblings   = computed(() => (place.value?.section?.links ?? []).filter(link => link.tab))
 
-// Sync activeTab when route query changes (e.g. from AppHeader menu)
-watch(() => route.query.tab, (tab) => {
-  const key = tab || 'settings'
-  if (validKeys.value.includes(key)) activeTab.value = key
+// The menu group (a user-menu page: its own name)
+const pageTitle  = computed(() => {
+  if (place.value?.group) return t(place.value.group.labelKey)
+  return activeLink.value ? t(activeLink.value.labelKey) : t('settings.title')
 })
 
-function setTab(key) {
-  activeTab.value = key
-  router.replace({ query: key === 'settings' ? {} : { tab: key } })
-}
-
-const tabIcons = {
-  settings: Settings, tokens: KeyRound, users: Users, runtimes: Boxes,
-  tenants: Building2, 'resource-usage': BarChart3,
-  billing: CreditCard, 'auth-providers': Shield,
-  'support-tickets': Ticket,
-  'audit-log': ScrollText,
-  roles: ShieldCheck, groups: Users, data: Database, 'git-providers': GitBranch,
-}
+// Core pages: the menu shows their link (the tenancy module's Users replaces the core one)
+const showsCore = (key) => activeTab.value === key && activeLink.value?.source === 'core'
 
 const {
   baseDomain, registrationEnabled, gpuDemoEnabled, customRuntimesEnabled, totalCpuM, totalMemoryMb, regions, demoStatus,
+  internalCrossTenantGrants, canSwitchCrossTenant,
   loading, saving, error, saved, usedCpuM, usedMemoryMb,
   submit, openAdd, openEdit, closeRegionDetail, onRegionSaved,
   deleteRegion, downloadKubeconfig, refreshRegions,
@@ -104,6 +97,9 @@ const isTenantContext = computed(() => {
   return !moduleRegistry.isCentralAdminFn()
 })
 
+// Global DNS (global projects, docs/global-projects.md): the platform's zone, outside an organization
+const showGlobalDns = computed(() => !isTenantContext.value && perms.can('regions.view'))
+
 // Inside an organization: its own domain (Tenancy module card), for members with settings.manage
 const tenantDomainCard = computed(() =>
   isTenantContext.value && canChangeSettings.value ? moduleRegistry.settingsSlots?.tenantDomain ?? null : null
@@ -114,8 +110,8 @@ const tenantDomainCard = computed(() =>
 <template>
   <AppHeader />
 
-  <main class="px-6 py-6">
-    <!-- Page Header -->
+  <main class="px-4 sm:px-6 py-6">
+    <!-- Page Header: the menu group and section of the page -->
     <div class="flex items-center gap-2 mb-4">
       <RouterLink to="/projects" class="flex items-center gap-1.5 text-sm text-gray-400 hover:text-brand-500 transition-colors font-medium">
         {{ t('settings.backToProjects') }}
@@ -123,29 +119,27 @@ const tenantDomainCard = computed(() =>
     </div>
     <div class="flex items-center gap-3 mb-6">
       <div class="w-0.5 h-9 rounded-full shrink-0" style="background:linear-gradient(180deg,rgb(var(--brand-500)),rgb(var(--brand-700)))"></div>
-      <h1 class="text-lg font-semibold text-gray-100">{{ t('settings.title') }}</h1>
+      <div class="min-w-0">
+        <h1 class="text-lg font-semibold text-gray-100" data-testid="settings-title">{{ pageTitle }}</h1>
+        <p v-if="place?.section" class="text-xs text-gray-400" data-testid="settings-section">{{ t(place.section.labelKey) }}</p>
+      </div>
     </div>
 
-    <!-- Tab bar -->
-    <div class="flex flex-wrap gap-2 mb-6">
-      <button class="settings-tab" :class="activeTab === 'settings' && 'is-active'" @click="setTab('settings')">
-        <Settings class="w-4 h-4" />{{ t('settings.tabLabel') }}
-      </button>
-      <button v-if="showTokens" class="settings-tab" :class="activeTab === 'tokens' && 'is-active'" data-tour="settings-tokens-tab" @click="setTab('tokens')">
-        <KeyRound class="w-4 h-4" />{{ t('tokens.tab') }}
-      </button>
-      <button v-if="showBuiltInUsers" class="settings-tab" :class="activeTab === 'users' && 'is-active'" data-tour="settings-users-tab" @click="setTab('users')">
-        <Users class="w-4 h-4" />{{ t('users.tab') }}
-      </button>
-      <button v-if="runtimesStore.canUseCustom" class="settings-tab" :class="activeTab === 'runtimes' && 'is-active'" @click="setTab('runtimes')">
-        <Boxes class="w-4 h-4" />{{ t('runtimes.tab') }}
-      </button>
-      <button v-for="tab in visibleTabs" :key="tab.key"
-        class="settings-tab" :class="activeTab === tab.key && 'is-active'"
-        :data-tour="tab.dataTour" @click="setTab(tab.key)">
-        <component :is="tab.icon || tabIcons[tab.key] || Settings" class="w-4 h-4" />{{ t(tab.labelKey) }}
-      </button>
-    </div>
+    <!-- The pages of the same menu section -->
+    <nav v-if="siblings.length > 1" class="flex flex-wrap gap-2 mb-6" :aria-label="t(place.section.labelKey)" data-testid="settings-section-tabs">
+      <RouterLink
+        v-for="link in siblings"
+        :key="link.key"
+        :to="navigation.linkLocation(link)"
+        class="settings-tab"
+        :class="link.tab === activeTab && 'is-active'"
+        :aria-current="link.tab === activeTab ? 'page' : undefined"
+        :data-tour="link.dataTour || undefined"
+        :data-settings-tab="link.tab"
+      >
+        <component :is="link.icon || Settings" class="w-4 h-4" aria-hidden="true" />{{ t(link.labelKey) }}
+      </RouterLink>
+    </nav>
 
     <!-- Platform tab content -->
     <template v-if="activeTab === 'settings'">
@@ -219,6 +213,9 @@ const tenantDomainCard = computed(() =>
               </p>
             </div>
 
+            <!-- The organization's time zone: the timed warmers' crons run in it (saved on its own) -->
+            <TimezoneCard />
+
             <div v-if="!moduleRegistry.hideRegistrationToggleFn?.()" class="card" data-tour="settings-registration">
               <div class="flex items-center gap-2 mb-4 pb-3 border-b border-gray-800">
                 <ShieldCheck class="w-4 h-4" style="color:rgb(var(--brand-500))" />
@@ -270,6 +267,24 @@ const tenantDomainCard = computed(() =>
               </div>
             </div>
 
+            <div v-if="canSwitchCrossTenant" class="card" data-testid="settings-cross-tenant">
+              <div class="flex items-center gap-2 mb-4 pb-3 border-b border-gray-800">
+                <Network class="w-4 h-4" style="color:rgb(var(--brand-500))" />
+                <h3 class="text-sm font-semibold text-gray-100">{{ t('network.platform.section') }}</h3>
+              </div>
+              <p class="text-xs text-gray-400 mb-3">{{ t('network.platform.description') }}</p>
+              <div class="flex items-center gap-3">
+                <button type="button" class="relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors"
+                  :class="internalCrossTenantGrants ? 'bg-brand-500' : 'bg-gray-700'" data-testid="settings-cross-tenant-toggle"
+                  @click="internalCrossTenantGrants = !internalCrossTenantGrants">
+                  <span class="pointer-events-none inline-block h-5 w-5 rounded-full bg-white shadow-sm transition" :class="internalCrossTenantGrants ? 'translate-x-5' : 'translate-x-0'" />
+                </button>
+                <span class="text-sm" :class="internalCrossTenantGrants ? 'text-brand-500' : 'text-gray-400'">
+                  {{ internalCrossTenantGrants ? t('network.platform.enabled') : t('network.platform.disabled') }}
+                </span>
+              </div>
+            </div>
+
             <DemoManager :status="demoStatus" @changed="refreshRegions" />
 
             <div data-tour="settings-save">
@@ -283,14 +298,22 @@ const tenantDomainCard = computed(() =>
           <!-- Organization domain (inside an organization) -->
           <component :is="tenantDomainCard" v-if="tenantDomainCard" class="mb-6" />
 
+          <!-- The organization's time zone (inside an organization) -->
+          <TimezoneCard v-if="isTenantContext" class="mb-6" />
+
           <!-- Regions -->
-          <div :class="isTenantContext ? 'card' : 'col-span-3 card'">
-            <div class="flex items-center gap-2 mb-4 pb-3 border-b border-gray-800">
-              <Package class="w-4 h-4" style="color:rgb(var(--brand-500))" />
-              <h3 class="text-sm font-semibold text-gray-100">{{ t('settings.regions.section') }}</h3>
+          <div :class="isTenantContext ? '' : 'col-span-3 space-y-4'">
+            <div class="card">
+              <div class="flex items-center gap-2 mb-4 pb-3 border-b border-gray-800">
+                <Package class="w-4 h-4" style="color:rgb(var(--brand-500))" />
+                <h3 class="text-sm font-semibold text-gray-100">{{ t('settings.regions.section') }}</h3>
+              </div>
+              <RegionsList :regions="regions" :loading="loading"
+                @edit="openEdit" @delete="deleteRegion" @download-kubeconfig="downloadKubeconfig" @add="openAdd" />
             </div>
-            <RegionsList :regions="regions" :loading="loading"
-              @edit="openEdit" @delete="deleteRegion" @download-kubeconfig="downloadKubeconfig" @add="openAdd" />
+
+            <!-- Global DNS of global projects: the zone, its delegation, the regions' servers -->
+            <GlobalDnsPanel v-if="showGlobalDns" />
           </div>
         </div>
       </div>
@@ -298,18 +321,19 @@ const tenantDomainCard = computed(() =>
       <RegionDetailModal v-if="regionDetailOpen" ref="regionModalRef" :region="regionDetailTarget" @close="closeRegionDetail" @saved="onRegionSaved" />
     </template>
 
-    <!-- Users tab (built-in, only when tenancy doesn't provide its own) -->
-    <UsersManager v-if="activeTab === 'users' && showBuiltInUsers" ref="usersRef" />
+    <!-- Users (core; the tenancy module's own page replaces it) -->
+    <UsersManager v-if="showsCore('users')" ref="usersRef" />
 
-    <!-- Runtimes tab (runtimes.manage, or runtimes.use_custom for custom runtimes) -->
-    <RuntimesManager v-if="activeTab === 'runtimes' && runtimesStore.canUseCustom" />
+    <!-- Runtimes (runtimes.manage, or runtimes.use_custom for custom runtimes) -->
+    <RuntimesManager v-if="showsCore('runtimes')" />
 
-    <!-- API Tokens tab -->
-    <ApiTokensManager v-if="activeTab === 'tokens' && showTokens" />
+    <!-- Patches tab (platform administrators): patch feed, policy, deadlines -->
+    <RuntimePatchesManager v-if="showsCore('patches')" />
 
-    <!-- Module tabs -->
-    <template v-for="tab in visibleTabs" :key="tab.key">
-      <component v-if="activeTab === tab.key" :is="tab.component" />
-    </template>
+    <!-- API Tokens -->
+    <ApiTokensManager v-if="showsCore('tokens')" />
+
+    <!-- Module pages -->
+    <component :is="activeLink.component" v-if="activeLink?.source === 'module' && activeLink.component" :key="activeLink.key" />
   </main>
 </template>

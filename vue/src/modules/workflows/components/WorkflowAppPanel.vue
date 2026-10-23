@@ -11,6 +11,8 @@ const props = defineProps({
   projectId: { type: String, required: true },
   app:       { type: Object, default: null },
   canManage: { type: Boolean, default: true },
+  // The environment whose workflow app this is (docs/workflows.md#environments); null: production
+  environment: { type: String, default: null },
 })
 
 const emit = defineEmits(['updated', 'synced'])
@@ -37,7 +39,7 @@ async function saveEndpoint() {
   saving.value = true
   error.value  = null
   try {
-    const { data } = await workflowsApi.updateApp(props.projectId, override.value.trim())
+    const { data } = await workflowsApi.updateApp(props.projectId, override.value.trim(), props.environment)
     emit('updated', data.data)
     toast.success(t('workflows.app.saved'))
   } catch (e) {
@@ -51,7 +53,7 @@ async function sync() {
   syncing.value = true
   error.value   = null
   try {
-    const { data } = await workflowsApi.sync(props.projectId)
+    const { data } = await workflowsApi.sync(props.projectId, props.environment)
     emit('synced', data)
     toast.success(t('workflows.app.synced'))
   } catch (e) {
@@ -72,7 +74,7 @@ async function rotate() {
   if (!ok) return
   rotating.value = true
   try {
-    const { data } = await workflowsApi.rotateKey(props.projectId)
+    const { data } = await workflowsApi.rotateKey(props.projectId, props.environment)
     key.value = null
     emit('updated', data.data)
     toast.success(t('workflows.app.rotated'))
@@ -85,7 +87,7 @@ async function rotate() {
 
 async function reveal() {
   try {
-    const { data } = await workflowsApi.signingKey(props.projectId)
+    const { data } = await workflowsApi.signingKey(props.projectId, props.environment)
     key.value = data.signing_key
   } catch (e) {
     toast.error(e.response?.data?.message ?? t('common.error'))

@@ -4,6 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { gitApi } from '@/api/git'
 import { useToast } from '@/composables/useToast'
 import { useConfirm } from '@/composables/useConfirm'
+import { useLatest } from '@/composables/useLatest'
 import { envVarsToString, parseEnvVars } from '@/composables/useProjectForm'
 import { envVarsError } from '@/composables/projectValidation'
 
@@ -73,10 +74,12 @@ export function useProjectGit(projectId) {
       || form.preview_env.trim() !== envVarsToString(s.preview_env).trim()
   })
 
-  function applyInfo(data) {
+  // keepEdits (the background poll): settings being edited, not saved yet, stay in the form
+  function applyInfo(data, { keepEdits = false } = {}) {
+    const edited = keepEdits && dirty.value
     info.value = data
     const s = data?.settings ?? {}
-    Object.assign(form, {
+    if (!edited) Object.assign(form, {
       deploy_branch:     s.deploy_branch ?? 'main',
       root_dir:          s.root_dir ?? '',
       auto_deploy:       !!s.auto_deploy,
@@ -91,7 +94,11 @@ export function useProjectGit(projectId) {
     if (!connect.providerId && providers.value.length) connect.providerId = providers.value[0].id
   }
 
+  // The newest load wins; a save / disconnect answer supersedes a poll sent before it
+  const latest = useLatest()
+
   async function load({ silent = false } = {}) {
+    const current = latest.begin()
     if (!silent) loading.value = true
     loadError.value = null
     try {
@@ -100,13 +107,14 @@ export function useProjectGit(projectId) {
         gitApi.previews(projectId()),
         gitApi.deploys(projectId()),
       ])
-      applyInfo(g.data.data ?? g.data)
+      if (!current()) return
+      applyInfo(g.data.data ?? g.data, { keepEdits: silent })
       previews.value = p.data.data ?? []
       deploys.value  = d.data.data ?? []
     } catch (e) {
-      if (!silent) loadError.value = e.response?.data?.message ?? t('gitDeploy.loadFailed')
+      if (current() && !silent) loadError.value = e.response?.data?.message ?? t('gitDeploy.loadFailed')
     } finally {
-      loading.value = false
+      if (current()) loading.value = false
     }
   }
 
@@ -132,6 +140,8 @@ export function useProjectGit(projectId) {
         })
       }
       const { data } = await gitApi.update(projectId(), payload)
+      latest.cancel()
+      loading.value = false
       applyInfo(data.data ?? data)
       toast.success(t('gitDeploy.settings.saved'))
     } catch (e) {
@@ -263,14 +273,18 @@ export function useProjectGit(projectId) {
     busy.value = { ...busy.value, disconnect: true }
     try {
       const { data } = await gitApi.disconnect(projectId())
+      latest.cancel()
+      loading.value = false
       applyInfo(data.data ?? data)
-      previews.value = (await gitApi.previews(projectId())).data.data ?? []
       toast.success(t('gitDeploy.connect.disconnected'))
     } catch (e) {
       toast.error(firstError(e) ?? t('gitDeploy.connect.failed'))
+      return
     } finally {
       busy.value = { ...busy.value, disconnect: false }
     }
+    // Disconnected: the previews list follows; its failure is no disconnect error
+    try { previews.value = (await gitApi.previews(projectId())).data.data ?? [] } catch { /* kept */ }
   }
 
   // ── Previews ───────────────────────────────────────────────────────────────

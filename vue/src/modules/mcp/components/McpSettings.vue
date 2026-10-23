@@ -1,5 +1,5 @@
 <script setup>
-// Settings → AI agents (MCP): how to connect an MCP client to RunR, scoped MCP tokens, the
+// Data & Integrations → AI agents (MCP): how to connect an MCP client to RunR, scoped MCP tokens, the
 // clients connected through OAuth and the tool catalog (docs/mcp.md).
 import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'

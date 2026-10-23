@@ -95,20 +95,29 @@ export function useInstallPopup(deps) {
     else stopPoll()
   }, { immediate: true })
 
+  // knative.* events per component: a fast job can report before the install request answers,
+  // and that answer must not put the component back to "installing"
+  const componentEvents = { operator: 0, serving: 0 }
+
+  function refreshComponent(comp) {
+    return knativeRegionsApi.componentStatus(regionId.value).then(({ data }) => {
+      const c = data[comp]
+      ;({ operator: operatorStatus, serving: servingStatus })[comp].value = c.status
+      ;({ operator: operatorMessage, serving: servingMessage })[comp].value = c.message || ''
+    }).catch(() => {})
+  }
+
   // --- WS event handlers ---
   useJobEvents({
     'knative.*': (payload, topic) => {
       if (payload.region_id !== regionId.value) return
       const comp = topic.includes('operator') ? 'operator' : 'serving'
+      componentEvents[comp]++
       if (topic.endsWith('_failed')) {
         ;({ operator: operatorStatus, serving: servingStatus })[comp].value = 'error'
         ;({ operator: operatorMessage, serving: servingMessage })[comp].value = payload.error || ''
       } else {
-        knativeRegionsApi.componentStatus(regionId.value).then(({ data }) => {
-          const c = data[comp]
-          ;({ operator: operatorStatus, serving: servingStatus })[comp].value = c.status
-          ;({ operator: operatorMessage, serving: servingMessage })[comp].value = c.message || ''
-        }).catch(() => {})
+        refreshComponent(comp)
       }
       installing.value = { ...installing.value, [comp]: false }
     },
@@ -221,13 +230,20 @@ export function useInstallPopup(deps) {
     if (!regionId.value) return
     popupError.value = null
     popupSubmitting.value = true
+    const eventsBefore = componentEvents[component] ?? 0
+    // The job already reported while the request ran: its status, not "installing"
+    const overtaken = () => (componentEvents[component] ?? 0) !== eventsBefore
     if (component === 'serving' && installPopupMode.value === 'upgrade') {
       try {
         if (!popupVersion.value) throw new Error(t('settings.regionDetail.installPopup.noUpgrade'))
         await knativeRegionsApi.upgradeServing(regionId.value, { version: popupVersion.value })
-        servingStatus.value = 'installing'
-        servingMessage.value = ''
-        installing.value = { ...installing.value, serving: true }
+        if (overtaken()) {
+          refreshComponent('serving')
+        } else {
+          servingStatus.value = 'installing'
+          servingMessage.value = ''
+          installing.value = { ...installing.value, serving: true }
+        }
         installPopupOpen.value = false
       } catch (e) {
         popupError.value = e.response?.data?.message ?? e.message ?? t('common.error')
@@ -248,9 +264,13 @@ export function useInstallPopup(deps) {
       if (component === 'serving') {
         servingVersion.value = popupVersion.value
       }
-      sRef.value = 'installing'
-      mRef.value = ''
-      installing.value = { ...installing.value, [component]: true }
+      if (overtaken()) {
+        refreshComponent(component)
+      } else {
+        sRef.value = 'installing'
+        mRef.value = ''
+        installing.value = { ...installing.value, [component]: true }
+      }
       installPopupOpen.value = false
     } catch (e) {
       popupError.value = e.response?.data?.message ?? t('common.error')

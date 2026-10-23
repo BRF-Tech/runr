@@ -28,6 +28,15 @@ export interface MockDb {
   deployments: Record<string, Json[]>
   /** projectId → custom domains */
   domains: Record<string, Json[]>
+  /** projectId → network (access mode, allow list); absent: public, nobody listed */
+  network: Record<string, Json>
+  // Global projects (docs/global-projects.md)
+  /** projectId → the `global` object of a global project (GET /projects/{id}/global) */
+  globalProjects: Record<string, Json>
+  /** regionId → the region's global DNS server object (GET /knative-regions/{id}/global-dns) */
+  globalDnsServers: Record<string, Json>
+  /** GET /global-dns without its servers: zone, tls, update_region_id, delegation, last_sync_at */
+  globalDns: Json
   tokens: Json[]
   /** GET /tokens available_abilities: [{ key, group, scope }] (the user's permissions) */
   abilities: Json[]
@@ -50,6 +59,8 @@ export interface MockDb {
   tenants: Json[]
   activeTenant: Json | null
   tickets: Json[]
+  /** GET /secret-stores — the organization's secret stores (docs/secret-stores.md) */
+  secretStores: Json[]
   seq: number
 }
 
@@ -123,6 +134,8 @@ const baseConfig = {
   scale_to_zero: true,
   min_scale: 0,
   max_scale: 1,
+  // timed warmer off (ProjectResource config.scale_schedule)
+  scale_schedule: null,
   env_vars: { LOG_LEVEL: 'info' },
 }
 
@@ -208,6 +221,9 @@ const CATALOG_ROWS: CatalogRow[] = [
   ['projects.manage_access', 'projects', 'project', ['projects.view'], 'all'],
   ['projects.stop', 'projects', 'org', [], 'all'],
   ['code.edit', 'projects', 'project', ['projects.view'], 'all'],
+  ['environments.manage', 'projects', 'project', ['projects.view'], 'all'],
+  ['environments.promote', 'projects', 'project', ['projects.view'], 'all'],
+  ['environments.approve', 'projects', 'project', ['projects.view'], 'all'],
   ['git.pull', 'git', 'project', ['projects.view'], 'all'],
   ['git.push', 'git', 'project', ['git.pull'], 'all'],
   ['git.manage', 'git', 'project', ['git.pull'], 'all'],
@@ -216,7 +232,10 @@ const CATALOG_ROWS: CatalogRow[] = [
   ['env.view', 'configuration', 'project', ['projects.view'], 'all'],
   ['env.edit', 'configuration', 'project', ['env.view'], 'all'],
   ['secrets.view_values', 'configuration', 'project', ['env.view'], 'all'],
+  ['secret_stores.view', 'configuration', 'org', [], 'all'],
+  ['secret_stores.manage', 'configuration', 'org', ['secret_stores.view'], 'all'],
   ['domains.manage', 'configuration', 'project', ['projects.view'], 'all'],
+  ['network.manage', 'configuration', 'project', ['projects.view'], 'all'],
   ['connections.manage', 'configuration', 'project', ['projects.view'], 'all'],
   ['shell.exec', 'operations', 'project', ['projects.view'], 'all'],
   ['logs.view', 'operations', 'project', ['projects.view'], 'all'],
@@ -230,6 +249,7 @@ const CATALOG_ROWS: CatalogRow[] = [
   ['workflows.run', 'workflows', 'project', ['workflows.view'], 'all'],
   ['workflows.manage', 'workflows', 'project', ['workflows.view'], 'all'],
   ['events.send', 'workflows', 'org', [], 'all'],
+  ['topics.manage', 'workflows', 'org', [], 'all'],
   ['sandboxes.view', 'sandboxes', 'org', [], 'all'],
   ['sandboxes.create', 'sandboxes', 'org', ['sandboxes.view'], 'all'],
   ['sandboxes.exec', 'sandboxes', 'org', ['sandboxes.view'], 'all'],
@@ -270,6 +290,7 @@ const CATALOG_ROWS: CatalogRow[] = [
   ['sso.manage', 'organization', 'org', [], 'all'],
   ['audit.view', 'organization', 'org', [], 'all'],
   ['audit.export', 'organization', 'org', ['audit.view'], 'all'],
+  ['org.transfer', 'organization', 'org', [], 'all'],
   ['tenants.residency.manage', 'organization', 'org', [], 'multi'],
   ['billing.view', 'billing', 'org', [], 'all'],
   ['billing.manage', 'billing', 'org', ['billing.view'], 'all'],
@@ -287,11 +308,12 @@ const ROLE_ROWS: RoleRow[] = [
   ['admin', 'Admin', 'Full control of the organization except granting ownership.', 'all', ['*']],
   ['developer', 'Developer', 'Builds, deploys and operates projects.', 'all', [
     'projects.view', 'projects.create', 'projects.update', 'projects.delete', 'projects.deploy',
-    'code.edit', 'env.view', 'env.edit', 'domains.manage', 'connections.manage',
+    'environments.manage', 'environments.promote',
+    'code.edit', 'env.view', 'env.edit', 'secret_stores.view', 'domains.manage', 'network.manage', 'connections.manage',
     'git.pull', 'git.push', 'git.manage', 'previews.manage',
     'shell.exec', 'logs.view', 'metrics.view',
     'traces.view', 'replay.manage', 'uptime.manage',
-    'workflows.view', 'workflows.run', 'workflows.manage', 'events.send',
+    'workflows.view', 'workflows.run', 'workflows.manage', 'events.send', 'topics.manage',
     'sandboxes.view', 'sandboxes.create', 'sandboxes.exec',
     'security.view',
     'regions.view', 'runtimes.use_custom',
@@ -380,6 +402,7 @@ export function defaultDb(edition: Edition = 'single'): MockDb {
       total_cpu_m: 16000,
       total_memory_mb: 32768,
       tenancy_enabled: edition === 'multi',
+      timezone: 'Europe/Istanbul',
     },
     regions: [{ ...READY_REGION }, { ...CRON_REGION }],
     executorImages: structuredClone(EXECUTOR_IMAGES),
@@ -418,6 +441,18 @@ export function defaultDb(edition: Edition = 'single'): MockDb {
       'p-xaas': [],
       'p-faas': [],
       'p-caas': [],
+    },
+    network: {},
+    // No region runs a global DNS server: specs of global projects add them
+    globalProjects: {},
+    globalDnsServers: {},
+    globalDns: {
+      zone: 'g.runr.test',
+      base_domain: 'runr.test',
+      tls: 'acme',
+      update_region_id: null,
+      delegation: { records: [], status: 'unknown', message: null },
+      last_sync_at: null,
     },
     tokens: [{
       id: 11,
@@ -476,6 +511,7 @@ export function defaultDb(edition: Edition = 'single'): MockDb {
       created_at: ISO('2026-03-06T09:00:00Z'),
       updated_at: ISO('2026-03-06T09:00:00Z'),
     }],
+    secretStores: [],
     seq: 100,
   }
   return db

@@ -26,6 +26,12 @@ const routes = [
     name: 'models',
     component: () => import('@/views/ModelsView.vue'),
   },
+  // The approvals inbox: promotions waiting for an approver (docs/environments.md#approvals)
+  {
+    path: '/approvals',
+    name: 'approvals',
+    component: () => import('@/views/ApprovalsView.vue'),
+  },
   {
     path: '/settings',
     name: 'settings',
@@ -37,6 +43,8 @@ const routes = [
     component: () => import('@/views/AccountSettingsView.vue'),
   },
   { path: '/sandboxes', name: 'sandboxes', component: () => import('@/modules/sandboxes/views/SandboxesView.vue') },
+  // The organization's rightsizing recommendations (docs/monitoring.md#rightsizing)
+  { path: '/rightsizing', name: 'rightsizing', component: () => import('@/views/RightsizingView.vue') },
   {
     path: '/:pathMatch(.*)*',
     redirect: '/projects',

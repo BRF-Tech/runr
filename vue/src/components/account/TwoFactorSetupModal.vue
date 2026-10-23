@@ -49,8 +49,9 @@ function handleDownload() {
   emit('close')
 }
 
+// Enter while the confirmation runs sends nothing more: every confirm writes new recovery codes
 function submit() {
-  if (code.value.length === 6) emit('confirm', code.value)
+  if (code.value.length === 6 && !props.saving) emit('confirm', code.value)
 }
 </script>
 

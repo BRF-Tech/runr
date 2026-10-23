@@ -2,7 +2,9 @@
 export default {
   sandboxes: {
     nav:         'Sandbox\'lar',
-    settingsTab: 'Sandbox\'lar',
+    navDesc:     'Güvenilmeyen kod için yalıtılmış ortamlar',
+    settingsTab: 'Sandbox ayarları',
+    settingsTabDesc: 'Sandbox bölgeleri, sıcak havuzlar ve kotalar',
     title:       'Sandbox\'lar',
     subtitle:    'Güvenilmeyen kodu çalıştırmak için yalıtılmış ortamlar — yapay zekâ ajanları, not defterleri ve testler için.',
 
@@ -281,7 +283,7 @@ export default {
         empty:           'Bölge yok.',
         enabled:         'Sandbox\'lar etkin',
         installedClasses: 'Kurulu sandbox sınıfları',
-        noClasses:       'Bu bölgede ne gVisor ne de Kata kurulu (Ayarlar → Bölgeler → Sandbox).',
+        noClasses:       'Bu bölgede ne gVisor ne de Kata kurulu (bölgenin İzolasyon sekmesi).',
         allowedClasses:  'İzin verilen sınıflar',
         defaultClass:    'Varsayılan sınıf',
         strongest:       'İzin verilen en güçlü sınıf',

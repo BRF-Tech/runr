@@ -4,13 +4,14 @@ import { useI18n } from 'vue-i18n'
 import { BellRing, Pencil, Plus, Send, Trash2, RefreshCw } from 'lucide-vue-next'
 import { useToast } from '@/composables/useToast'
 import { useConfirm } from '@/composables/useConfirm'
+import { useLatest } from '@/composables/useLatest'
 import { projectsApi } from '@/api/projects'
 import { knativeRegionsApi } from '@/api/knativeRegions'
 import { observabilityApi } from '../api/observability'
 import AlertChannelForm from './AlertChannelForm.vue'
 import AlertRuleEditor from './AlertRuleEditor.vue'
 
-/** Settings → Alerts: channels (with "send test"), rules, fired alerts and the delivery log. */
+/** Observability → Alerts: channels (with "send test"), rules, fired alerts and the delivery log. */
 const { t } = useI18n()
 const toast = useToast()
 const { confirm } = useConfirm()
@@ -50,10 +51,13 @@ async function load() {
   knativeRegionsApi.list().then(({ data }) => { regions.value = data.data ?? data ?? [] }).catch(() => {})
 }
 
+// The deliveries of the filter picked last: an answer for an earlier filter is dropped
+const latestDeliveries = useLatest()
 async function loadDeliveries() {
+  const current = latestDeliveries.begin()
   const params = Object.fromEntries(Object.entries(deliveryFilter.value).filter(([, v]) => v))
   const res = await observabilityApi.deliveries(params)
-  deliveries.value = res.data.data ?? []
+  if (current()) deliveries.value = res.data.data ?? []
   return res
 }
 

@@ -2,6 +2,7 @@ export default {
   account: {
     // Ticket sistemi
     ticketTitle:        'Destek Talepleri',
+    ticketNavDesc: 'Operatörlerden yardım isteyin',
     newTicket:          'Yeni Talep',
     myTickets:          'Taleplerim',
     noTickets:          'Henüz destek talebiniz yok. Ekibimizden yardım almak için bir talep oluşturun.',

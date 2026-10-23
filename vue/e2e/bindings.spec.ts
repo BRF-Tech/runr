@@ -4,7 +4,7 @@ import { effectivePermissions, type Json } from './fixtures/data'
 import { confirmDialog } from './helpers/ui'
 
 // Bindings (docs/bindings.md): project Bindings tab (create + attach with an env prefix, attach
-// existing, rotate, detach), Settings → Data (delete with typed name, restore), Region → Data
+// existing, rotate, detach), Data & Integrations → Data (delete with typed name, restore), Region → Data
 // services (external S3 store, Postgres) and the credentials reveal permission. Provisioning
 // runs in a Kubernetes region, so the flows run against the mocked API.
 

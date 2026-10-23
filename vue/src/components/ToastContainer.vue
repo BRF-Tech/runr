@@ -38,7 +38,10 @@ watch(toasts, (list) => {
           class="rounded-md border px-4 py-2.5 text-sm shadow-lg backdrop-blur-xs"
           :class="toast.type === 'error'
             ? 'bg-red-950/90 border-red-800/60 text-red-300'
-            : 'bg-emerald-950/90 border-emerald-800/60 text-emerald-300'"
+            : toast.type === 'warning'
+              ? 'bg-amber-950/90 border-amber-800/60 text-amber-300'
+              : 'bg-emerald-950/90 border-emerald-800/60 text-emerald-300'"
+          :data-toast-type="toast.type"
         >
           {{ toast.message }}
         </div>

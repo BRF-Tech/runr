@@ -60,27 +60,40 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms))
 async function start() {
   error.value = null
   phase.value = 'preparing'
-  controller  = new AbortController()
+  const ctrl = new AbortController()
+  controller  = ctrl
+  // Aborted (or the dialog closed) while a step ran: the steps after it do not run, and what the
+  // step created in the meantime is aborted too
+  const stopped = () => !alive || ctrl.signal.aborted
   try {
     const files = []
     for (const f of picked.value) {
       const entry = { path: f.path, size: f.file.size }
       if (f.file.size <= SHA256_MAX_BYTES) {
         const sha = await sha256Hex(f.file)
+        if (stopped()) return
         if (sha) entry.sha256 = sha
       }
       files.push(entry)
     }
+    if (stopped()) return
     const { data } = await aiApi.createUpload(props.model.id, { knative_region_id: regionId.value, files })
-    upload.value = data?.data ?? data
+    const created = data?.data ?? data
+    if (stopped()) {
+      // abort() ran before this upload existed: the region's receiver is not left behind
+      if (created?.id) aiApi.abortUpload(props.model.id, created.id).catch(() => {})
+      return
+    }
+    upload.value = created
 
     // The region's receiver starts first
-    for (let i = 0; alive && upload.value?.status === 'preparing' && i < 120; i++) {
+    for (let i = 0; upload.value?.status === 'preparing' && i < 120; i++) {
       await sleep(2000)
+      if (stopped()) return
       const res = await aiApi.getUpload(props.model.id, upload.value.id)
+      if (stopped()) return
       upload.value = res.data?.data ?? res.data
     }
-    if (!alive) return
     if (upload.value?.status !== 'ready') throw new Error(upload.value?.message || t('ai.upload.receiverFailed'))
 
     phase.value = 'uploading'
@@ -88,19 +101,20 @@ async function start() {
       modelId: props.model.id,
       upload:  upload.value,
       files:   picked.value,
-      signal:  controller.signal,
+      signal:  ctrl.signal,
       onProgress: (p) => { progress.value = p },
     })
+    if (stopped()) return
 
     phase.value = 'completing'
     const done = await aiApi.completeUpload(props.model.id, upload.value.id)
     const snapshot = done.data?.snapshot
-    if (snapshot) ai.upsertModel({ ...props.model, snapshots: [...(props.model.snapshots ?? []).filter(s => s.id !== snapshot.id), snapshot] })
+    if (snapshot) ai.upsertSnapshot(props.model.id, snapshot)
     phase.value = 'done'
     toast.success(t('ai.upload.completed'))
     emit('completed', snapshot)
   } catch (e) {
-    if (e?.name === 'AbortError') return
+    if (e?.name === 'AbortError' || stopped()) return
     phase.value = 'failed'
     error.value = e?.response?.data?.message ?? e?.message ?? t('common.error')
   }

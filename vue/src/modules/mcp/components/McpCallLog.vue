@@ -4,6 +4,7 @@
 // deployment logs.
 import { onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { useLatest } from '@/composables/useLatest'
 import { mcpApi } from '../api/mcp'
 import { RefreshCw } from 'lucide-vue-next'
 
@@ -16,6 +17,7 @@ const loading = ref(true)
 const error = ref(null)
 const outcome = ref('')
 const page = ref(1)
+const latest = useLatest()
 
 const outcomeStyle = {
   ok:          'bg-emerald-900/30 border-emerald-800/40 text-emerald-400',
@@ -24,17 +26,20 @@ const outcomeStyle = {
   unreachable: 'bg-gray-800 border-gray-700 text-gray-400',
 }
 
+// Filter and page changes overtake each other: only the newest answer is shown
 async function load() {
+  const current = latest.begin()
   loading.value = true
   error.value = null
   try {
     const { data } = await mcpApi.calls(props.project.id, { page: page.value, per_page: 25, outcome: outcome.value || undefined })
+    if (!current()) return
     calls.value = data.data ?? []
     meta.value = data.meta ?? meta.value
   } catch (e) {
-    error.value = e.response?.data?.message ?? t('common.error')
+    if (current()) error.value = e.response?.data?.message ?? t('common.error')
   } finally {
-    loading.value = false
+    if (current()) loading.value = false
   }
 }
 
@@ -47,7 +52,8 @@ function actorLabel(call) {
   return call.actor.name || call.actor.id || '—'
 }
 
-watch(outcome, () => { page.value = 1; load() })
+// A new filter starts at page 1: one load (by the page watcher when the page changes)
+watch(outcome, () => { if (page.value !== 1) page.value = 1; else load() })
 watch(page, load)
 onMounted(load)
 </script>

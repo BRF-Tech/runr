@@ -3,7 +3,7 @@ import { continueButton } from './helpers/ui'
 import type { Json } from './fixtures/data'
 import type { MockApi } from './fixtures/mock-api'
 
-// Uploaded images (docs/images.md) with the mocked API: Settings → Images lists the uploads with
+// Uploaded images (docs/images.md) with the mocked API: Build & Run → Images lists the uploads with
 // their scan and the quota, uploads a file in chunks (progress, completion), resumes and deletes;
 // the CaaS step of the create wizard picks an uploaded image of the region.
 
@@ -41,7 +41,7 @@ function imagesBackend(mockApi: MockApi, state: { images: Json[], uploads: Json[
 test.describe('Uploaded images', () => {
   test.skip(({ e2eMode }) => e2eMode === 'stack', 'needs the mocked API (uploads go to a region registry)')
 
-  test('Settings → Images lists the uploads with their scan and the quota, and deletes', async ({ page, auth, mockApi }) => {
+  test('Build & Run → Images lists the uploads with their scan and the quota, and deletes', async ({ page, auth, mockApi }) => {
     const state = { images: [uploaded(), uploaded({ id: 'img-2', name: 'q-interpreter:1.0', kind: 'wasm', platforms: ['wasip1/wasm'], security: null, size_bytes: 1048576 })], uploads: [] }
     imagesBackend(mockApi, state)
     await auth.signIn()

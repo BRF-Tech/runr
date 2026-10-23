@@ -1,5 +1,6 @@
 import { test, expect } from './fixtures/test'
 import { broadcastDeploy, openDeployModal } from './helpers/deploy'
+import { settle } from './helpers/timing'
 
 // Deploy modal → POST /projects/:id/deploy → Deployments tab, updated by the
 // deployment.* platform events. A real deploy needs a Kubernetes region with
@@ -65,5 +66,31 @@ test.describe('Deploy', () => {
     await page.getByRole('button', { name: 'Yes, Delete' }).click()
     expect((await sent).path).toBe('/projects/p-xaas/deployments/d-xaas-1')
     await expect(page.getByText('No deployments yet.')).toBeVisible()
+  })
+
+  // The list reloads after the deploy; the job reports the new deployment active while that
+  // GET is in flight, and the GET was read before (still pending): the status is not lost
+  test('a status broadcast while the list reloads after a deploy is kept', async ({ page, auth, mockApi, realtime, network }) => {
+    const seeded = new Set((mockApi.db.deployments['p-xaas'] ?? []).map((d: { id: string }) => d.id))
+    mockApi.on('GET', '/projects/p-xaas/deployments', (_, db) => ({ body: { data: (db.deployments['p-xaas'] ?? [])
+      .map((d: { id: string, status: string }) => (seeded.has(d.id) ? d : { ...d, status: 'pending' })) } }))
+    await auth.signIn()
+    await page.goto('/projects/p-xaas#deployments')
+    const rows = page.locator('tbody tr')
+    await expect(rows).toHaveCount(1)
+
+    const reload = await network.hold('GET', '/projects/p-xaas/deployments')
+    const modal = await openDeployModal(page)
+    await modal.getByRole('button', { name: 'Deploy' }).click()
+    await reload.arrived
+    const created = mockApi.db.deployments['p-xaas'][0]
+    await realtime.platform('deployment.status', { project_id: 'p-xaas', deployment_id: created.id, status: 'active' })
+
+    const late = page.waitForResponse(r => new URL(r.url()).pathname === '/api/projects/p-xaas/deployments')
+    reload.release()
+    await late
+    await settle(page)
+    await expect(rows).toHaveCount(2)
+    await expect(rows.first()).toContainText('Active')
   })
 })

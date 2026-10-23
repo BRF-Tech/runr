@@ -1,4 +1,4 @@
-// Bağlamalar (docs/bindings.md): proje sekmesi, Ayarlar → Veri, Bölge → Veri servisleri
+// Bağlamalar (docs/bindings.md): proje sekmesi, Veri ve Entegrasyonlar → Veri, Bölge → Veri servisleri
 export default {
   bindings: {
     tab:                      'Bağlamalar',
@@ -49,6 +49,20 @@ export default {
     notAttached:              'Bağlı değil',
     usage:                    'Kullanım',
     overQuota:                'Boyut limitinin üzerinde: yazma reddedilir.',
+    // Bölgenin OpenBao'sundan dinamik Postgres kimlik bilgileri (docs/bindings.md)
+    dynamicCredentials:       'Dinamik kimlik bilgileri (OpenBao)',
+    dynamicHint:              'Bu projeye ait, bölgenin OpenBao\'sunun verdiği ve bölgede yenilenen bir Postgres kullanıcısı; bağlamanın kendi kullanıcı adı ve parolası projeye hiç ulaşmaz. Bölgede External Secrets Operator ve OpenBao gerekir.',
+    dynamicNotReady:          'Bağlama henüz hazır değil: hazır olunca dinamik kimlik bilgileriyle bağlayın.',
+    dynamicNewHint:           'Dinamik kimlik bilgileri için bağlamanın var olması gerekir: önce oluşturun, hazır olunca bağlantıyı dinamik kimlik bilgilerine geçirin.',
+    dynamicBadge:             'Dinamik (OpenBao)',
+    switchToDynamic:          'Dinamik kimlik bilgilerini kullan',
+    switchToStatic:           'Bağlamanın kendi kullanıcısını kullan',
+    switchDynamicTitle:       'Dinamik kimlik bilgileri',
+    switchDynamicConfirm:     '{name} için bu projeye bölgenin OpenBao\'sundan kendine ait bir Postgres kullanıcısı verilsin mi? Fonksiyonlar onunla yeniden başlar.',
+    switchStaticTitle:        'Bağlamanın kendi kullanıcısına dön',
+    switchStaticConfirm:      '{name} için bu projeye yeniden bağlamanın kendi kullanıcısı verilsin mi? OpenBao\'nun onun için verdiği kullanıcılar iptal edilir ve fonksiyonlar yeniden başlar.',
+    switched:                 'Kimlik bilgileri değişti. Fonksiyonlar yeniden başlıyor.',
+    switchFailed:             'Kimlik bilgileri değiştirilemedi.',
 
     types: {
       kv:       'KV (Redis)',
@@ -107,6 +121,7 @@ export default {
 
     data: {
       tab:            'Veri',
+      navDesc: 'KV, nesne depolama, Postgres ve harici bağlamalar',
       title:          'Veri',
       intro:          'Organizasyonun bağlamaları: KV, nesne depolama, Postgres ve harici kimlik bilgileri. Projelere, projenin Bağlamalar sekmesinden bağlayın.',
       create:         'Yeni bağlama',

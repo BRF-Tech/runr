@@ -2,6 +2,7 @@ export default {
   account: {
     // Ticket system
     ticketTitle:        'Support Tickets',
+    ticketNavDesc: 'Ask the operators for help',
     newTicket:          'New Ticket',
     myTickets:          'My Tickets',
     noTickets:          'No tickets yet. Create one to get help from our team.',

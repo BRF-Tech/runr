@@ -1,6 +1,6 @@
 <script setup>
-// Settings → Signup (platform admin): self-service registration — e-mail verification, invite-only
-// mode, e-mail domain allowlist, CAPTCHA, terms / privacy links; multi-tenant: automatic tenant
+// Administration → Signup (platform admin): self-service registration — e-mail verification,
+// invite-only mode, e-mail domain allowlist, CAPTCHA, terms / privacy links; multi-tenant: automatic tenant
 // creation, default quota and the regions offered in the onboarding wizard.
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useI18n } from 'vue-i18n'

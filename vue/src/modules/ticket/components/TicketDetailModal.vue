@@ -77,7 +77,10 @@ async function loadDetail() {
     ? await fetchAdminTicket(props.ticket.id, tenantId.value)
     : await fetchTicket(props.ticket.id)
   detail.value  = data
-  replies.value = data.replies || []
+  // Replies broadcast while the ticket was loading are kept; the ones it has are not doubled
+  const loaded = data.replies || []
+  const ids = new Set(loaded.map(r => r.id))
+  replies.value = [...loaded, ...replies.value.filter(r => !ids.has(r.id))]
   scrollToBottom()
   prefetchImages()
 }
@@ -123,11 +126,18 @@ async function send() {
   } finally { sending.value = false }
 }
 
+// A reply the loaded ticket already has (its broadcast arrived after the load) is not added twice
+function addReply(reply) {
+  if (reply?.id != null && replies.value.some(r => r.id === reply.id)) return false
+  replies.value.push(reply)
+  return true
+}
+
 const { subscribe: subscribeToTicket } = useTicketDetailRealtime(
   props.ticket.id,
-  (reply) => { replies.value.push(reply); scrollToBottom(); (reply.attachments || []).filter(isImage).forEach(fetchBlobUrl) },
+  (reply) => { if (addReply(reply)) { scrollToBottom(); (reply.attachments || []).filter(isImage).forEach(fetchBlobUrl) } },
   (data) => { adminReadAt.value = data.admin_read_at; userReadAt.value = data.user_read_at },
-  (note) => { replies.value.push(note) },
+  (note) => { addReply(note) },
   (status) => { if (detail.value) detail.value.status = status },
 )
 

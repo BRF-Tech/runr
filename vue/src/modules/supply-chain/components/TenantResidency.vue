@@ -4,6 +4,7 @@
 import { ref, reactive, computed, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useToast } from '@/composables/useToast'
+import { useResidency } from '../composables/useResidency'
 import { supplyChainApi } from '../api'
 
 const props = defineProps({ tenantId: { type: [String, Number], required: true } })
@@ -91,6 +92,8 @@ async function save() {
     const { data: res } = await supplyChainApi.updateTenantPolicy(props.tenantId, payload())
     data.value = res?.data ?? data.value
     fill(data.value)
+    // The region pickers read the policy again (it may be the signed-in organization's own)
+    useResidency().reset()
     toast.success(t('supplyChain.residency.saved'))
   } catch (e) {
     errors.value = e?.response?.data?.errors ?? {}

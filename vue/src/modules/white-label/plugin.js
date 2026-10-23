@@ -29,19 +29,25 @@ export default function (registry) {
   // Register form (step 2): CAPTCHA, terms acceptance
   registry.registerExtensions.push(lazy(() => import('./components/SignupExtras.vue')))
 
-  // Settings tabs
+  // Administration → Platform (install) and → Organization (a tenant's own brand)
   registry.settingsTabs.push({
     key: 'branding',
     labelKey: 'whiteLabel.tabBranding',
+    descKey: 'whiteLabel.navBrandingDesc',
     icon: markRaw(Palette),
+    group: 'admin',
+    section: 'platform',
     component: lazy(() => import('./components/BrandingSettings.vue')),
     visibleIf: () => canManageInstall('branding.manage', multiTenant),
-    order: 50,
+    order: 40,
   })
   registry.settingsTabs.push({
     key: 'signup',
     labelKey: 'whiteLabel.tabSignup',
+    descKey: 'whiteLabel.navSignupDesc',
     icon: markRaw(UserPlus),
+    group: 'admin',
+    section: 'platform',
     component: lazy(() => import('./components/SignupSettings.vue')),
     visibleIf: () => canManageInstall('signup.manage', multiTenant),
     order: 51,
@@ -55,10 +61,13 @@ export default function (registry) {
     registry.settingsTabs.push({
       key: 'org-branding',
       labelKey: 'whiteLabel.tabOrgBranding',
+      descKey: 'whiteLabel.navOrgBrandingDesc',
       icon: markRaw(Brush),
+      group: 'admin',
+      section: 'organization',
       component: lazy(() => import('./components/TenantBranding.vue')),
       visibleIf: () => canInTenant('branding.manage', multiTenant) && !!features().tenant_branding,
-      order: 54,
+      order: 20,
     })
   }
 

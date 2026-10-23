@@ -10,7 +10,7 @@ import trRbac from '@/locales/tr/rbac'
 describe('images module plugin', () => {
   beforeEach(() => setActivePinia(createPinia()))
 
-  it('registers Settings → Images for users with images.view, and its messages', () => {
+  it('registers Build & Run → Images for users with images.view, and its messages', () => {
     const registry = { projectTabs: [], settingsTabs: [], localeMessages: [] }
     plugin(registry)
 

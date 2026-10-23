@@ -59,7 +59,10 @@ async function toggleOpen(group) {
   }
   openId.value = group.id
   toAdd.value  = []
-  detail.value = (await rbacApi.group(group.id)).data.group
+  detail.value = null
+  const { data } = await rbacApi.group(group.id)
+  // Another group opened (or this one closed) meanwhile: its row shows its own members
+  if (openId.value === group.id) detail.value = data.group
 }
 
 function openNew() {
@@ -106,22 +109,30 @@ async function remove(group) {
 
 async function addMembers() {
   if (!toAdd.value.length) return
+  const groupId = openId.value
   try {
-    detail.value = (await rbacApi.addGroupMembers(openId.value, toAdd.value)).data.group
-    toAdd.value = []
-    await load()
+    const { data } = await rbacApi.addGroupMembers(groupId, toAdd.value)
+    if (openId.value === groupId) {
+      detail.value = data.group
+      toAdd.value = []
+    }
   } catch (e) {
     toast.error(message(e))
+    return
   }
+  try { await load() } catch { /* the list keeps what it showed */ }
 }
 
 async function removeMember(member) {
+  const groupId = openId.value
   try {
-    detail.value = (await rbacApi.removeGroupMember(openId.value, member.id)).data.group
-    await load()
+    const { data } = await rbacApi.removeGroupMember(groupId, member.id)
+    if (openId.value === groupId) detail.value = data.group
   } catch (e) {
     toast.error(message(e))
+    return
   }
+  try { await load() } catch { /* the list keeps what it showed */ }
 }
 
 onMounted(load)

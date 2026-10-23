@@ -9,6 +9,7 @@ import { useConfirm } from '@/composables/useConfirm'
 import { useToast } from '@/composables/useToast'
 import { billingApi } from '../api/billing'
 import { apiMessage, can, formatDateTime, formatMoney, gb, vcpu } from '../utils/billing'
+import { useLatest } from '@/composables/useLatest'
 
 const { t, locale } = useI18n()
 const { confirm } = useConfirm()
@@ -25,19 +26,24 @@ const rejecting = reactive({ id: null, reason: '' })
 
 const canApprove = computed(() => can('billing.approve'))
 
+// The requests of the status picked last
+const latest = useLatest()
 async function load() {
+  const current = latest.begin()
   loading.value = true
   error.value = null
   try {
     const params = { per_page: 100 }
     if (status.value) params.status = status.value
     const { data } = await billingApi.fixedRequests(params)
+    if (!current()) return
     requests.value = data?.data ?? []
   } catch (e) {
+    if (!current()) return
     error.value = apiMessage(e, t('common.error'))
     requests.value = []
   } finally {
-    loading.value = false
+    if (current()) loading.value = false
   }
 }
 

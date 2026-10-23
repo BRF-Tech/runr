@@ -1,5 +1,5 @@
 /**
- * Adds a version with an `upload:` source to the YAML text of a runtime manifest (Settings →
+ * Adds a version with an `upload:` source to the YAML text of a runtime manifest (Build & Run →
  * Runtimes, docs/runtimes.md#versions): appended to the top-level `versions:` list, or a new list
  * when the manifest has none. The text is edited as lines so the rest of the manifest — comments
  * included — stays as the user wrote it.

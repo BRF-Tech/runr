@@ -5,6 +5,7 @@ import { tenantsApi } from '../api/tenants'
 import { useTenantStore } from '../stores/tenant'
 import { useConfirm } from '@/composables/useConfirm'
 import { useToast } from '@/composables/useToast'
+import { useLatest } from '@/composables/useLatest'
 import { useTutorialStore } from '@/stores/tutorial'
 import { createTutorial } from '@/composables/useTutorial'
 import TenantUsers from './TenantUsers.vue'
@@ -24,6 +25,8 @@ const editingId = ref(null)
 const editForm  = ref({ name: '', email: '' })
 const editError = ref(null)
 const editSaving = ref(false)
+// Users whose admin flag is being switched: the API flips it, a double click would flip it back
+const toggling   = ref(new Set())
 
 const currentUserId = JSON.parse(localStorage.getItem('user') || '{}')?.id
 let searchTimer = null
@@ -41,14 +44,17 @@ watch(() => tutorialStore.restartCounter, () => { nextTick(() => startTutorial()
 onMounted(() => { if (!isTenantMode.value) loadUsers() })
 watch(isTenantMode, (v) => { if (!v) loadUsers() })
 
+// The users of the search typed last: an answer for an earlier search is dropped
+const latest = useLatest()
 async function loadUsers() {
+  const current = latest.begin()
   loading.value = true
   try {
     const params = search.value.trim() ? { search: search.value.trim() } : {}
     const { data } = await tenantsApi.listAllUsers(params)
-    users.value = data.users ?? (Array.isArray(data) ? data : [])
+    if (current()) users.value = data.users ?? (Array.isArray(data) ? data : [])
   } finally {
-    loading.value = false
+    if (current()) loading.value = false
   }
 }
 
@@ -71,11 +77,13 @@ function cancelEdit() {
 async function submitEdit(user) {
   editSaving.value = true
   editError.value  = null
+  // What was sent: the form may already hold another user's values when the answer arrives
+  const sent = { ...editForm.value }
   try {
-    await tenantsApi.updateAnyUser(user.id, editForm.value)
-    user.name  = editForm.value.name
-    user.email = editForm.value.email
-    editingId.value = null
+    await tenantsApi.updateAnyUser(user.id, sent)
+    user.name  = sent.name
+    user.email = sent.email
+    if (editingId.value === user.id) editingId.value = null
     toast.success(t('tenancy.userUpdated'))
   } catch (e) {
     editError.value = e.response?.data?.message
@@ -87,12 +95,18 @@ async function submitEdit(user) {
 }
 
 async function toggleAdmin(user) {
+  if (toggling.value.has(user.id)) return
+  toggling.value = new Set([...toggling.value, user.id])
   try {
     const { data } = await tenantsApi.toggleAdmin(user.id)
     user.is_admin = data.is_admin
     toast.success(t('tenancy.adminToggled'))
   } catch (e) {
     toast.error(e.response?.data?.message ?? t('common.error'))
+  } finally {
+    const next = new Set(toggling.value)
+    next.delete(user.id)
+    toggling.value = next
   }
 }
 
@@ -222,6 +236,7 @@ function initials(user) {
                   ? 'text-amber-400 hover:text-amber-300 hover:bg-amber-900/20'
                   : 'text-gray-400 hover:text-amber-400 hover:bg-amber-900/20'"
                 :title="t('tenancy.toggleAdmin')"
+                :disabled="toggling.has(user.id)"
                 @click="toggleAdmin(user)">
                 <ShieldCheck class="w-4 h-4" />
               </button>

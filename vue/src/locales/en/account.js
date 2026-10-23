@@ -1,6 +1,6 @@
 export default {
   account: {
-    title:          'User Settings',
+    title:          'Account settings',
     backToProjects: '← Projects',
 
     // Tabs

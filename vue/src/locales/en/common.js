@@ -37,18 +37,6 @@ export default {
     daySaturday:    'Saturday',
   },
 
-  nav: {
-    logout:         'Logout',
-    signedInAs:     'Signed in as',
-    settings:       'Settings',
-    administration: 'Administration',
-    userSettings:   'User Settings',
-    support:        'Support',
-    themeDark:      'Dark',
-    themeFullDark:  'Full Dark',
-    themeLight:     'Light',
-  },
-
   auth: {
     appName:             'RunR',
     usernamePlaceholder: 'admin',
@@ -61,6 +49,7 @@ export default {
     tenantUser:          'Tenant User',
     tenantUserDesc:      'Member of a tenant, with the access its roles grant',
     email:               'Email',
+    loginIdentifier:     'E-mail or user name',
     tenancy:             'Tenancy',
     loginTitle:          'Log In to your Account',
     loginSubtitle:       'Access your account securely by entering your credentials.',

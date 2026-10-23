@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
-import { withPlugins } from '../../helpers'
+import { deferred, withPlugins } from '../../helpers'
 
 const push = vi.hoisted(() => vi.fn())
 const mcpApi = vi.hoisted(() => ({ templates: vi.fn(), saveServer: vi.fn() }))
@@ -137,6 +137,113 @@ describe('New MCP server', () => {
     expect(w.find('[data-testid="mcp-create-error"]').text()).toContain('weather')
     expect(w.find('[data-testid="mcp-create-error"]').text()).toContain('MCP servers need the HTTP trigger.')
     expect(push).not.toHaveBeenCalled()
+    expect(w.emitted('done')).toBeUndefined()
+  })
+
+  it('continues the setup of the created project on retry, without a second project', async () => {
+    mcpApi.saveServer
+      .mockRejectedValueOnce({ response: { status: 503, data: { message: 'Try again.' } } })
+      .mockResolvedValueOnce({ data: { data: { handle: 'weather' } } })
+    const w = await mountModal()
+    await fill(w)
+    await w.find('[data-testid="mcp-create-submit"]').trigger('click')
+    await flushPromises()
+    expect(w.find('[data-testid="mcp-create-submit"]').text()).toBe('Continue the setup')
+    expect(w.find('[data-testid="mcp-create-fields"]').attributes('disabled')).toBeDefined()
+
+    await w.find('[data-testid="mcp-create-submit"]').trigger('click')
+    await flushPromises()
+    expect(projectsApi.create).toHaveBeenCalledTimes(1)
+    expect(projectsApi.saveFiles).toHaveBeenCalledTimes(1)
+    expect(mcpApi.saveServer).toHaveBeenCalledTimes(2)
+    expect(w.emitted('done')[0][0]).toMatchObject({ id: 'p9' })
+    expect(push).toHaveBeenCalledWith({ path: '/projects/p9', hash: '#mcp' })
+  })
+})
+
+// The orderings a slow API produces: a request of the setup is held with a deferred promise
+// while the projects list (existingNames) or the user acts.
+describe('New MCP server: answers arriving late', () => {
+  it('shows no "name taken" error when the project.created broadcast lists the project during the setup', async () => {
+    const files = deferred()
+    projectsApi.saveFiles.mockReturnValueOnce(files.promise)
+    const w = await mountModal({ existingNames: ['other'] })
+    await fill(w)
+    await w.find('[data-testid="mcp-create-submit"]').trigger('click')
+    await flushPromises()
+    expect(projectsApi.saveFiles).toHaveBeenCalled()
+    expect(w.emitted('created')[0][0]).toMatchObject({ id: 'p9' })
+
+    // The projects page lists the new project (broadcast, or the created event) while the
+    // starter files are still being saved
+    await w.setProps({ existingNames: ['weather', 'other'] })
+    expect(w.text()).not.toContain('already exists')
+    expect(w.find('[data-testid="mcp-create-error"]').exists()).toBe(false)
+
+    files.resolve({ data: { version: { id: 'v1' } } })
+    await flushPromises()
+    expect(w.text()).not.toContain('already exists')
+    expect(w.find('[data-testid="mcp-create-error"]').exists()).toBe(false)
+    expect(push).toHaveBeenCalledWith({ path: '/projects/p9', hash: '#mcp' })
+  })
+
+  it('shows no error when the broadcast lists the project before the POST answer', async () => {
+    const created = deferred()
+    projectsApi.create.mockReturnValueOnce(created.promise)
+    const w = await mountModal()
+    await fill(w)
+    await w.find('[data-testid="mcp-create-submit"]').trigger('click')
+    await w.setProps({ existingNames: ['weather'] })
+    expect(w.text()).not.toContain('already exists')
+
+    created.resolve({ data: { id: 'p9', name: 'weather' } })
+    await flushPromises()
+    expect(w.text()).not.toContain('already exists')
+    expect(push).toHaveBeenCalledTimes(1)
+  })
+
+  it('creates one project however often the button is clicked', async () => {
+    const created = deferred()
+    projectsApi.create.mockReturnValueOnce(created.promise)
+    const w = await mountModal()
+    await fill(w)
+    const submit = w.find('[data-testid="mcp-create-submit"]')
+    await submit.trigger('click')
+    await submit.trigger('click')
+    await submit.trigger('click')
+    created.resolve({ data: { id: 'p9', name: 'weather' } })
+    await flushPromises()
+    expect(projectsApi.create).toHaveBeenCalledTimes(1)
+    expect(push).toHaveBeenCalledTimes(1)
+  })
+
+  it('cannot be closed while the setup runs', async () => {
+    const saved = deferred()
+    mcpApi.saveServer.mockReturnValueOnce(saved.promise)
+    const w = await mountModal()
+    await fill(w)
+    await w.find('[data-testid="mcp-create-submit"]').trigger('click')
+    await flushPromises()
+    await w.find('.absolute.inset-0').trigger('click')
+    expect(w.emitted('close')).toBeUndefined()
+
+    saved.resolve({ data: { data: { handle: 'weather' } } })
+    await flushPromises()
+    await w.find('.absolute.inset-0').trigger('click')
+    expect(w.emitted('close')).toHaveLength(1)
+  })
+
+  it('does not navigate when the page was left before the setup ended', async () => {
+    const saved = deferred()
+    mcpApi.saveServer.mockReturnValueOnce(saved.promise)
+    const w = await mountModal()
+    await fill(w)
+    await w.find('[data-testid="mcp-create-submit"]').trigger('click')
+    await flushPromises()
+    w.unmount()
+    saved.resolve({ data: { data: { handle: 'weather' } } })
+    await flushPromises()
+    expect(push).not.toHaveBeenCalled()
   })
 })
 
@@ -156,5 +263,21 @@ describe('New MCP server button', () => {
     const w = mount(NewMcpServerButton, { props: { hasReadyRegion: true }, global: { ...plugins.global, stubs: { CreateMcpServerModal: { template: '<div data-testid="modal-stub" />' } } } })
     await w.find('[data-testid="new-mcp-server-btn"]').trigger('click')
     expect(w.find('[data-testid="modal-stub"]').exists()).toBe(true)
+  })
+
+  it('passes the created project on and stays open until the setup is done', async () => {
+    const Modal = { name: 'CreateMcpServerModal', emits: ['created', 'done', 'close'], template: '<div data-testid="modal-stub" />' }
+    const w = mount(NewMcpServerButton, { props: { hasReadyRegion: true }, global: { ...plugins.global, stubs: { CreateMcpServerModal: Modal } } })
+    await w.find('[data-testid="new-mcp-server-btn"]').trigger('click')
+    const modal = w.findComponent({ name: 'CreateMcpServerModal' })
+
+    modal.vm.$emit('created', { id: 'p9' })
+    await flushPromises()
+    expect(w.emitted('created')[0][0]).toEqual({ id: 'p9' })
+    expect(w.find('[data-testid="modal-stub"]').exists()).toBe(true)
+
+    modal.vm.$emit('done', { id: 'p9' })
+    await flushPromises()
+    expect(w.find('[data-testid="modal-stub"]').exists()).toBe(false)
   })
 })

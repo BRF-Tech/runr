@@ -9,6 +9,7 @@ import CreateSandboxDialog from '../components/CreateSandboxDialog.vue'
 import SandboxDetailPanel from '../components/SandboxDetailPanel.vue'
 import { sandboxesApi, sandboxAdminApi } from '../api/sandboxes'
 import { useSandboxActions } from '../composables/useSandboxActions'
+import { useLatest } from '@/composables/useLatest'
 import {
   ISOLATION_STYLES, apiError, formatDuration, isAlive, secondsSince, secondsUntil, shortId,
 } from '../utils'
@@ -38,12 +39,18 @@ const statusFilters = computed(() => [
   { id: 'all',    label: t('sandboxes.filters.statusAll') },
 ])
 
+// Filters, the poll, the tab coming back and actions overtake each other: the list of the newest
+// request is shown, and a poll sent before an action does not undo it (replace())
+const latest = useLatest()
+
 async function load() {
+  const current = latest.begin()
   loading.value = true
   try {
     const params = { status: status.value }
     if (regionId.value) params.region = regionId.value
     const { data } = await sandboxesApi.list(params)
+    if (!current()) return
     sandboxes.value = data?.data ?? []
     error.value = null
     // Keep an open detail panel current
@@ -52,9 +59,9 @@ async function load() {
       if (fresh) detailTarget.value = fresh
     }
   } catch (e) {
-    error.value = apiError(e, t('sandboxes.list.loadFailed'))
+    if (current()) error.value = apiError(e, t('sandboxes.list.loadFailed'))
   } finally {
-    loading.value = false
+    if (current()) loading.value = false
   }
 }
 
@@ -93,6 +100,8 @@ onUnmounted(() => {
 
 function replace(updated) {
   if (!updated) return
+  latest.cancel()
+  loading.value = false
   const idx = sandboxes.value.findIndex(s => s.id === updated.id)
   if (idx !== -1) sandboxes.value[idx] = { ...sandboxes.value[idx], ...updated }
   if (detailTarget.value?.id === updated.id) detailTarget.value = { ...detailTarget.value, ...updated }

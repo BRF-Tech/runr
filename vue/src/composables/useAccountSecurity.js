@@ -55,6 +55,7 @@ export function useAccountSecurity() {
   }
 
   async function confirm2FA(code) {
+    if (tfSaving.value) return false
     tfSaving.value = true
     try {
       const { data } = await accountApi.confirm2FA(code)
@@ -88,13 +89,18 @@ export function useAccountSecurity() {
     }
   }
 
+  // One at a time: the codes shown must be the ones the last request stored
   async function regenerateCodes() {
+    if (tfSaving.value) return
+    tfSaving.value = true
     try {
       const { data } = await accountApi.regenerateCodes()
       recoveryCodes.value = data.recovery_codes
       toast.success(t('account.codesRegenerated'))
     } catch (e) {
       toast.error(e.response?.data?.message ?? t('common.error'))
+    } finally {
+      tfSaving.value = false
     }
   }
 

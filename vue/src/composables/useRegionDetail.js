@@ -24,7 +24,7 @@ export function useRegionDetail(props, emit) {
   ])
 
   const activeTab = ref('general')
-  const editTabs = ['general', 'workers', 'registry', 'operator', 'serving', 'redis', 'data', 'sandbox', 'gpu', 'migration', 'supplyChain']
+  const editTabs = ['general', 'workers', 'registry', 'operator', 'serving', 'redis', 'data', 'secrets', 'sandbox', 'gpu', 'migration', 'supplyChain']
   // Tabs contributed by modules (moduleRegistry.regionTabs, e.g. Billing)
   const moduleRegionTabs = computed(() =>
     (moduleRegistry.regionTabs ?? [])

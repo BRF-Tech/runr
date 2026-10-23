@@ -3,7 +3,7 @@ import type { Page } from '@playwright/test'
 import { uniqueName } from './helpers/seed'
 import { confirmDialog, field } from './helpers/ui'
 
-// Settings → Users (single-tenant user management).
+// Administration → Users (single-tenant user management).
 
 function userRow(page: Page, username: string) {
   return page.locator('div.flex.items-center.gap-3').filter({ hasText: `@${username}` })
@@ -12,7 +12,7 @@ function userRow(page: Page, username: string) {
 test.describe('Users', () => {
   test('creates, edits and deletes a user', async ({ page, auth, seed, mockApi, isStack }) => {
     test.skip(isStack && (await seed.call('get', '/api/settings')).tenancy_enabled === true,
-      'single-tenant user management: on a multi-tenant stack Settings → Users is the tenancy module\'s platform user list; runs against a stack with TENANCY_ENABLED=false')
+      'single-tenant user management: on a multi-tenant stack Administration → Users is the tenancy module\'s platform user list; runs against a stack with TENANCY_ENABLED=false')
     const username = uniqueName('e2e').replace(/-/g, '_')
     const email = `${username}@e2e.test`
     if (isStack) {

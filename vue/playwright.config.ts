@@ -13,6 +13,8 @@ import type { E2eOptions } from './e2e/fixtures/test'
 // Environment:
 //   E2E_BASE_URL      stack mode UI URL (default http://localhost:8061)
 //   E2E_LOGIN         stack mode login e-mail (default admin@example.com, AdminSeeder)
+//   E2E_USERNAME      stack mode user name of that account (default admin; with another E2E_LOGIN
+//                     and no E2E_USERNAME the user name sign-in spec is skipped)
 //   E2E_PASSWORD      stack mode password (default admin123, api/.env.docker)
 //   E2E_TENANCY=true  stack mode: the stack runs with the tenancy, auth-provider and ticket modules
 //                     (TENANCY_ENABLED, AUTH_PROVIDER_ENABLED, TICKET_ENABLED), also run @modules specs

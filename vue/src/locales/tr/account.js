@@ -1,6 +1,6 @@
 export default {
   account: {
-    title:          'Kullanıcı Ayarları',
+    title:          'Hesap ayarları',
     backToProjects: '← Projeler',
 
     // Tabs

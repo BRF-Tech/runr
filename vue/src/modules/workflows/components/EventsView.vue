@@ -10,6 +10,7 @@ import SendEventModal from './SendEventModal.vue'
 import JsonBlock from './JsonBlock.vue'
 import WorkflowStatusBadge from './WorkflowStatusBadge.vue'
 import { formatTime, shortId } from '../utils/format'
+import { useLatest } from '@/composables/useLatest'
 
 const SOURCES = ['api', 'workflow', 'queue', 'cron', 'test']
 
@@ -28,7 +29,10 @@ const selected = ref(null)   // { data, runs }
 const sending  = ref(false)
 let searchTimer = null
 
+// Search, source filter, pages and a sent event overtake each other: the newest list is shown
+const latest = useLatest()
 async function load() {
+  const current = latest.begin()
   loading.value = true
   try {
     const params = { per_page: 25 }
@@ -36,13 +40,15 @@ async function load() {
     if (filters.source) params.source = filters.source
     if (filters.page > 1) params.page = filters.page
     const { data } = await workflowsApi.events(params)
+    if (!current()) return
     events.value = data.data ?? []
     meta.value   = data.meta ?? meta.value
     error.value  = null
   } catch (e) {
+    if (!current()) return
     error.value = e.response?.data?.message ?? t('workflows.loadFailed')
   } finally {
-    loading.value = false
+    if (current()) loading.value = false
   }
 }
 
@@ -55,11 +61,16 @@ async function loadUsage() {
   }
 }
 
+// The event opened last
+const latestEvent = useLatest()
 async function open(id) {
+  const current = latestEvent.begin()
   try {
     const { data } = await workflowsApi.event(id)
+    if (!current()) return
     selected.value = { event: data.data, runs: data.runs ?? [] }
   } catch (e) {
+    if (!current()) return
     toast.error(e.response?.data?.message ?? t('common.error'))
   }
 }

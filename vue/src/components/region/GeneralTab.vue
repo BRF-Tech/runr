@@ -8,7 +8,7 @@ import TermText from '@/components/TermText.vue'
 const { t } = useI18n()
 const isCentralAdmin = computed(() => moduleRegistry.isCentralAdminFn?.() ?? false)
 
-defineProps({
+const props = defineProps({
   isEdit:          { type: Boolean, default: false },
   isWizard:        { type: Boolean, default: false },
   isStepReadonly:  { type: Boolean, default: false },
@@ -24,6 +24,9 @@ defineProps({
   dnsResolved:     { type: [Boolean, null], default: null },
   togglingStatus:  { type: Boolean, default: false },
 })
+
+// region:reconcile left this region behind (unfinished, unreachable) or still runs; done says nothing
+const reconcileShown = computed(() => ['running', 'unfinished', 'unreachable'].includes(props.region?.reconcile?.status))
 
 defineEmits([
   'save', 'close', 'next', 'change-status',
@@ -74,6 +77,20 @@ defineEmits([
           {{ t('settings.regions.status_' + s) }}
         </button>
       </div>
+    </div>
+
+    <!-- The last region:reconcile (the upgrade's Job runr-region-reconcile-<revision>): shown while it
+         runs, or when it left this region behind the release -->
+    <div v-if="reconcileShown" data-testid="region-reconcile"
+      class="rounded-md border px-3 py-2.5 space-y-1"
+      :class="region.reconcile.status === 'running' ? 'border-sky-800/60 bg-sky-900/10' : 'border-amber-700/60 bg-amber-900/10'">
+      <p class="text-xs font-medium" :class="region.reconcile.status === 'running' ? 'text-sky-400' : 'text-amber-400'">
+        {{ t('settings.regions.reconcile_' + region.reconcile.status, { version: region.reconcile.version || '' }) }}
+      </p>
+      <ul v-if="region.reconcile.problems?.length" class="text-[11px] text-gray-400 font-mono space-y-0.5">
+        <li v-for="(problem, i) in region.reconcile.problems" :key="i">{{ problem }}</li>
+      </ul>
+      <p v-if="region.reconcile.status !== 'running'" class="text-[11px] text-gray-400">{{ t('settings.regions.reconcileHint') }}</p>
     </div>
 
     <!-- DNS Section (if serving is ready) -->

@@ -4,6 +4,7 @@ import { useI18n } from 'vue-i18n'
 import { ArrowLeft, Ban, RefreshCw, RotateCcw, Repeat, Copy } from 'lucide-vue-next'
 import { useToast } from '@/composables/useToast'
 import { useConfirm } from '@/composables/useConfirm'
+import { useLatest } from '@/composables/useLatest'
 import { workflowsApi } from '../api/workflows'
 import WorkflowStatusBadge from './WorkflowStatusBadge.vue'
 import WorkflowStepTimeline from './WorkflowStepTimeline.vue'
@@ -27,22 +28,29 @@ const loading = ref(true)
 const error   = ref(null)
 const busy    = ref(null) // 'cancel' | 'retry' | 'replay'
 let timer = null
+// Another run opened, an action's answer or the poll: the newest load wins, and a load that
+// ends after the detail is gone schedules no more polls
+const latest = useLatest()
 
 const active     = computed(() => run.value && isActive(run.value.status))
 const canRetry   = computed(() => props.canRun && run.value && ['failed', 'cancelled', 'timed_out'].includes(run.value.status))
 const canReplay  = computed(() => props.canRun && run.value && !isActive(run.value.status))
 
 async function load({ silent = false } = {}) {
+  const current = latest.begin()
   if (!silent) loading.value = true
   try {
     const { data } = await workflowsApi.run(props.projectId, props.runId)
+    if (!current()) return
     run.value   = data.data
     error.value = null
   } catch (e) {
-    error.value = e.response?.data?.message ?? t('workflows.loadFailed')
+    if (current()) error.value = e.response?.data?.message ?? t('workflows.loadFailed')
   } finally {
-    loading.value = false
-    schedule()
+    if (current()) {
+      loading.value = false
+      schedule()
+    }
   }
 }
 
@@ -93,6 +101,8 @@ async function act(kind, call, message) {
   busy.value = kind
   try {
     const { data } = await call()
+    // A poll sent before the action must not put the old status back
+    latest.cancel()
     run.value = { ...run.value, ...data.data }
     toast.success(message)
     emit('changed')

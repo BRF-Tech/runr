@@ -2,7 +2,7 @@ import { test, expect, type Page } from './fixtures/test'
 import type { MockApi } from './fixtures/mock-api'
 
 // Git deploy (docs/git-deploy.md): the project's Git tab — remote URL, settings, connecting a
-// Forgejo repository, previews, deploy history — and Settings → Git providers. Provider calls,
+// Forgejo repository, previews, deploy history — and Data & Integrations → Git providers. Provider calls,
 // webhooks and clusters are not part of a UI run: the API is mocked.
 
 test.skip(({ e2eMode }) => e2eMode === 'stack', 'needs provider repositories and pull requests; covered with the mocked API (the Kind suite runs it for real: ci.sh test-git-deploy)')
@@ -86,7 +86,7 @@ function installGitApi(api: MockApi, projectId = 'p-faas') {
     return { body: { data: info() } }
   })
 
-  // Settings → Git providers
+  // Data & Integrations → Git providers
   api.on('GET', '/git-providers', () => ({ body: { data: state.providers } }))
   api.on('POST', '/git-providers', (req) => {
     const provider = {
@@ -197,7 +197,7 @@ test.describe('Git deploy', () => {
     await expect(page.getByText('The handler file index.js is not in the tree')).toBeVisible()
   })
 
-  test('an admin adds a GitHub App in Settings → Git providers', async ({ page, auth, mockApi }) => {
+  test('an admin adds a GitHub App in Data & Integrations → Git providers', async ({ page, auth, mockApi }) => {
     installGitApi(mockApi)
     await auth.signIn()
     await page.goto('/settings?tab=git-providers')

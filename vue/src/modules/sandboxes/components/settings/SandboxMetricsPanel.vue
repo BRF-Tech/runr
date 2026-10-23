@@ -3,6 +3,7 @@ import { ref, computed, watch, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { sandboxAdminApi } from '../../api/sandboxes'
 import { apiError, formatMs, histogramBars } from '../../utils'
+import { useLatest } from '@/composables/useLatest'
 
 defineProps({ regions: { type: Array, default: () => [] } })
 
@@ -13,16 +14,20 @@ const windowKey = ref('24h')
 const regionId  = ref('')
 const metrics   = ref(null)
 const error     = ref(null)
+// The metrics of the window / region picked last
+const latest    = useLatest()
 
 async function load() {
+  const current = latest.begin()
   try {
     const params = { window: windowKey.value }
     if (regionId.value) params.region = regionId.value
     const { data } = await sandboxAdminApi.metrics(params)
+    if (!current()) return
     metrics.value = data?.data ?? null
     error.value   = null
   } catch (e) {
-    error.value = apiError(e, t('sandboxes.settings.metrics.loadFailed'))
+    if (current()) error.value = apiError(e, t('sandboxes.settings.metrics.loadFailed'))
   }
 }
 

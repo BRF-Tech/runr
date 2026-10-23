@@ -145,6 +145,19 @@ describe('ProjectStopBanner', () => {
     expect(find(w, 'project-stopped-by').text()).toContain('Stopped by Bob for the organization')
   })
 
+  it('a stop by the project\'s monthly cost limit says so and points to the Billing tab', () => {
+    const plugins = withPlugins()
+    grant(['projects.view'])
+    const stopped = project({ stopped: { at: '2026-10-19T10:00:00Z', by: null, reason: 'Monthly cost limit reached', level: 'organization', system: 'cost_limit' } })
+    const w = mount(ProjectStopBanner, { props: { project: stopped }, global: plugins.global })
+    expect(find(w, 'project-stopped-title').text()).toBe('This project was stopped by its monthly cost limit')
+    expect(find(w, 'project-stopped-reason').text()).toBe('Reason: Monthly cost limit reached')
+    expect(find(w, 'project-stopped-by').text()).toContain('Stopped on')
+    expect(find(w, 'project-stopped-by').text()).toContain('on the Billing tab')
+    // the owner resumes it on the Billing tab; projects.stop holders keep their Resume
+    expect(find(w, 'project-resume').exists()).toBe(false)
+  })
+
   it('renders nothing for a running project', () => {
     const w = mount(ProjectStopBanner, { props: { project: project() }, global: withPlugins().global })
     expect(find(w, 'project-stopped-banner').exists()).toBe(false)

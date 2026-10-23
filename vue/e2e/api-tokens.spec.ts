@@ -2,7 +2,7 @@ import { test, expect } from './fixtures/test'
 import { uniqueName } from './helpers/seed'
 import { confirmDialog } from './helpers/ui'
 
-// Settings → API Tokens: create (plain token shown once), scoped abilities, delete.
+// Administration → API Tokens: create (plain token shown once), scoped abilities, delete.
 
 test.describe('API tokens', () => {
   test('creates a token, shows the plain value once and deletes it', async ({ page, auth, seed, mockApi, isStack }) => {

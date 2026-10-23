@@ -1,4 +1,5 @@
 import { test, expect } from './fixtures/test'
+import { settle } from './helpers/timing'
 
 // Multi-tenant mode: the tenant switcher in the header scopes every API call with
 // X-Tenant-ID. Runs in the mock-modules project (tenancy module built in) and in
@@ -36,6 +37,23 @@ test.describe('Tenant switcher', { tag: '@modules' }, () => {
     await page.getByRole('button', { name: /^Central/ }).last().click()
     expect((await reloaded).headers['x-tenant-id']).toBeUndefined()
     await expect(page.locator('header').getByRole('button', { name: /Central/ })).toBeVisible()
+  })
+
+  // A switch changes the active tenant and then the view key, one after the other: the
+  // onboarding wizard reads the new organization's onboarding once, not once per change
+  test('loads the onboarding of the organization switched to once', async ({ page, auth, mockApi, isStack }) => {
+    test.skip(isStack, 'counts the requests on the mocked API')
+    await auth.signIn()
+    await page.goto('/projects')
+    await page.locator('header').getByRole('button', { name: /Central/ }).click()
+    const before = mockApi.calls('GET', '/onboarding').length
+    const reloaded = mockApi.waitFor('GET', '/projects')
+    await page.getByRole('button', { name: /Acme Corp/ }).click()
+    await reloaded
+
+    await expect.poll(() => mockApi.calls('GET', '/onboarding').length).toBe(before + 1)
+    await settle(page)
+    expect(mockApi.calls('GET', '/onboarding')).toHaveLength(before + 1)
   })
 
   test('finds a tenant by search', async ({ page, auth, mockApi, isStack }) => {

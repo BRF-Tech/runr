@@ -121,10 +121,25 @@ describe('Region → General → Settings', () => {
 
     expect(api.updateSettings).toHaveBeenCalledWith('r1', {
       request_timeout: 900, agent_ws_url: 'wss://runr.internal.example.test', cert_manager_cluster_issuer: null,
-      ingress_trusted_ips: ['10.0.0.0/24', '192.0.2.10'],
+      ingress_trusted_ips: ['10.0.0.0/24', '192.0.2.10'], internal_auth: 'enforce',
     })
     expect(w.emitted('saved')[0][0].knative_settings.request_timeout).toBe(900)
     expect(w.text()).toContain('Settings saved.')
+  })
+
+  it('enforces the internal network unless audit is chosen', async () => {
+    api.updateSettings.mockResolvedValue({ data: { region: region({ knative_settings: { internal_auth: 'audit' } }) } })
+    // a region of an earlier release has no internal_auth: it enforces
+    const w = mountIt(RegionSettingsSection, { region: region({ knative_settings: { request_timeout: 300 } }) })
+    expect(w.find('[data-testid="region-internal-auth"]').element.value).toBe('enforce')
+
+    await w.find('[data-testid="region-internal-auth"]').setValue('audit')
+    await w.find('[data-testid="save-region-settings"]').trigger('click')
+    await flushPromises()
+
+    expect(api.updateSettings.mock.calls[0][1].internal_auth).toBe('audit')
+    expect(mountIt(RegionSettingsSection, { region: region({ knative_settings: { internal_auth: 'audit' } }) })
+      .find('[data-testid="region-internal-auth"]').element.value).toBe('audit')
   })
 })
 
@@ -296,5 +311,22 @@ describe('Region → Migration', () => {
 
     await w.find('[data-testid="migration-projects-refresh"]').trigger('click')
     expect(w.emitted('refresh-projects')).toHaveLength(1)
+  })
+
+  it('lists the environments of the move as rows of their own', () => {
+    const w = mountIt(MigrationTab, {
+      region: { id: 'r1' }, migrationStatus: 'dns_check',
+      migrationProjects: [
+        { organization: null, project_id: 'p1', project: 'orders', environment: null, outcome: 'moved', version: 5, message: null },
+        { organization: null, project_id: 'p1', project: 'orders', environment: 'staging', outcome: 'building', version: 6, message: 'Waits for v6 to be built into the registry of eu (the version\'s code, the same runtime base); deployed when it is ready.' },
+      ],
+    })
+
+    const rows = w.findAll('[data-testid="migration-projects"] li')
+    expect(rows).toHaveLength(2)
+    expect(rows[0].text()).not.toContain('(staging)')
+    expect(rows[1].attributes('data-environment')).toBe('staging')
+    expect(rows[1].text()).toContain('orders (staging) v6')
+    expect(rows[1].text()).toContain('built into the registry of eu')
   })
 })

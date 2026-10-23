@@ -13,13 +13,22 @@ import wasmLocale from './tr/wasm'
 import rbac from './tr/rbac'
 import bindingsLocale from './tr/bindings'
 import workflowsLocale from './tr/workflows'
+import triggersLocale from './tr/triggers'
 import aiLocale from './tr/ai'
 import gitDeploy from './tr/git'
 import mcpLocale from './tr/mcp'
+import networkLocale from './tr/network'
+import runtimePatchesLocale from './tr/runtimePatches'
+import deployStrategyLocale from './tr/deployStrategy'
+import rightsizingLocale from './tr/rightsizing'
+import navLocale from './tr/nav'
+import environmentsLocale from './tr/environments'
+import globalProjectsLocale from './tr/globalProjects'
 
 export default {
   ...common,
   ...workflowsLocale,
+  ...triggersLocale,
   ...gitDeploy,
   ...projects,
   ...projectForms,
@@ -35,6 +44,15 @@ export default {
   ai: { ...aiProjects.ai, ...aiLocale.ai },
   ...bindingsLocale,
   ...mcpLocale,
+  ...networkLocale,
+  ...runtimePatchesLocale,
+  // deploy strategies (blue-green, canary) and their rollouts
+  ...deployStrategyLocale,
+  ...rightsizingLocale,
+  ...navLocale,
+  ...environmentsLocale,
+  // Global projects and their global DNS (docs/global-projects.md)
+  ...globalProjectsLocale,
   settings: {
     ...settings.settings,
     ...regionDetail.settings,
@@ -110,7 +128,9 @@ export default {
     avgRps:        'Ort. RPS',
     totalSessions: 'Toplam Oturum',
     cpuCores:      'CPU (çekirdek)',
-    memoryMb:      'Bellek (MB)',
+    memoryMb:      'Bellek (MiB)',
+    unitCores:     'çekirdek',
+    sessionUsage:  'dağıtımın boyutunda {cpu} vCPU·sa, {memory} GiB·sa',
     rps:           'İstek/sn',
     noData:        'Bu dönem için metrik verisi yok',
     history:       'Metrik Geçmişi',

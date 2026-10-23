@@ -1,9 +1,17 @@
 <script setup>
-import { computed } from 'vue'
+// Trigger settings of the project forms. A new project (create, clone) picks its one trigger here
+// (config.trigger_type + schedule / queue_stream: the API makes it the primary trigger). An
+// existing project with a trigger list (`project.triggers`, docs/triggers.md) gets the list
+// editor instead: every change is saved at once through the triggers API (TriggerList).
+import { computed, defineAsyncComponent } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { moduleRegistry } from '@/modules/index'
 import { isValidCron } from '@/composables/projectValidation'
+import { useSettingsStore } from '@/stores/settings'
+import { DEFAULT_TIMEZONE } from '@/utils/warmSchedule'
 import TermText from '@/components/TermText.vue'
+
+const TriggerList = defineAsyncComponent(() => import('@/modules/triggers/components/TriggerList.vue'))
 
 const { t } = useI18n()
 
@@ -13,12 +21,21 @@ const props = defineProps({
   queueStream: { type: String, default: '' },
   region: { type: Object, default: null },
   showTooltips: { type: Boolean, default: true },
+  // An existing project: its trigger list is edited instead of the single trigger
+  project: { type: Object, default: null },
 })
+
+const listMode = computed(() => !!props.project?.id && Array.isArray(props.project.triggers))
+
+// A schedule runs in the organization's time zone until its trigger names one (docs/triggers.md)
+const settings = useSettingsStore()
+const orgZone = computed(() => settings.data?.timezone || DEFAULT_TIMEZONE)
 
 const streamSuffix = computed(() => moduleRegistry.queueStreamSuffixFn?.() || '')
 const resolvedStream = computed(() => props.queueStream.trim() ? `${props.queueStream.trim()}${streamSuffix.value}` : '')
 
-defineEmits(['update:triggerType', 'update:schedule', 'update:queueStream'])
+// state: { triggers, plan } after loading and after each change; changed: after a change
+defineEmits(['update:triggerType', 'update:schedule', 'update:queueStream', 'state', 'changed'])
 
 const triggers = [
   { id: 'http',     labelKey: 'create.triggerTypes.http',     activeStyle: 'background:rgb(16 185 129/0.15);border-color:rgb(16 185 129/0.5);color:#6ee7b7' },
@@ -42,7 +59,11 @@ function disabledReason(id) {
 </script>
 
 <template>
-  <section>
+  <section v-if="listMode" data-test="trigger-list-config">
+    <p class="section-title">{{ t('triggers.title') }}</p>
+    <TriggerList :project="project" compact :show-inbox="false" @state="$emit('state', $event)" @changed="$emit('changed', $event)" />
+  </section>
+  <section v-else>
     <p class="section-title">{{ t('create.sections.trigger') }}</p>
     <div class="flex gap-2">
       <div v-for="tr in triggers" :key="tr.id" class="flex-1 relative group/trigger">
@@ -73,6 +94,7 @@ function disabledReason(id) {
       <input :value="schedule" class="input font-mono" :placeholder="t('create.placeholders.schedule')" @input="$emit('update:schedule', $event.target.value)" />
       <p v-if="!schedule.trim()" class="text-xs text-red-400 mt-1">{{ t('create.fields.cronRequired') }}</p>
       <p v-else-if="!isValidCron(schedule)" class="text-xs text-red-400 mt-1">{{ t('create.validation.cronInvalid') }}</p>
+      <p class="text-xs text-gray-400 mt-1" data-test="cron-zone">{{ t('create.fields.cronZone', { zone: orgZone }) }}</p>
     </div>
     <div v-if="triggerType === 'queue'" class="mt-3">
       <label class="label"><TermText path="create.fields.queueStream" /> <span class="normal-case text-red-500/70">*</span></label>

@@ -1,6 +1,7 @@
 export default {
   authProvider: {
     tab: 'Kimlik Sağlayıcılar',
+    navDesc: 'OAuth, OpenID Connect ve SAML ile tek oturum açma',
     title: 'Kimlik Doğrulama Sağlayıcıları',
     description: 'Kullanıcı kimlik doğrulaması için OAuth/SSO sağlayıcılarını yönetin.',
     addBtn: 'Sağlayıcı Ekle',

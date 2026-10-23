@@ -56,20 +56,35 @@ function toggle() {
 function close() { open.value = false; search.value = '' }
 
 const switchError = ref(null)
+// One switch at a time: a second organization clicked while the first is checked would land
+// the console in whichever answers last
+const switching = ref(false)
 
 async function select(tenantId) {
+  if (switching.value) return
+  switching.value = true
   switchError.value = null
-  const ok = await tenantSwitch.enter(tenantId)
-  if (!ok) {
-    switchError.value = t('tenancy.switchFailed')
-    return
+  try {
+    const ok = await tenantSwitch.enter(tenantId)
+    if (!ok) {
+      switchError.value = t('tenancy.switchFailed')
+      return
+    }
+    close()
+  } finally {
+    switching.value = false
   }
-  close()
 }
 
 async function goToCentral() {
+  if (switching.value) return
+  switching.value = true
   close()
-  await tenantSwitch.leave()
+  try {
+    await tenantSwitch.leave()
+  } finally {
+    switching.value = false
+  }
 }
 </script>
 

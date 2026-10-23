@@ -25,11 +25,24 @@ export const useNotificationStore = defineStore('notifications', () => {
     }
   }
 
+  // Marked read once, however often it is clicked (the count drops once)
+  const marking = new Set()
   async function markRead(id) {
-    await notificationsApi.markRead(id)
     const n = notifications.value.find(x => x.id === id)
-    if (n) n.read_at = new Date().toISOString()
-    unreadCount.value = Math.max(0, unreadCount.value - 1)
+    if (marking.has(id) || n?.read_at) return
+    marking.add(id)
+    try {
+      await notificationsApi.markRead(id)
+      const now = notifications.value.find(x => x.id === id)
+      if (now && !now.read_at) {
+        now.read_at = new Date().toISOString()
+        unreadCount.value = Math.max(0, unreadCount.value - 1)
+      } else if (!now) {
+        unreadCount.value = Math.max(0, unreadCount.value - 1)
+      }
+    } finally {
+      marking.delete(id)
+    }
   }
 
   async function markAllRead() {

@@ -2,6 +2,7 @@
 export default {
   images: {
     tab: 'İmajlar',
+    navDesc: 'Yüklediğiniz container imajları ve WebAssembly modülleri',
     title: 'Yüklenen imajlar',
     description: 'Bir bölgenin registry\'sine yüklenen container imajları (docker save ya da OCI image-layout tar\'ları) ve WebAssembly modülleri (.wasm) — CaaS projeleri, runtime sürümleri ve wasm-exec fonksiyonları için. Dosya RunR üzerinden bölgeye gider; internet erişimi olmayan bölgeler imajlarını böyle alır.',
     upload: 'İmaj yükle',
@@ -58,7 +59,7 @@ export default {
       formats: { auto: 'Dosyadan algıla', docker: 'docker save arşivi', oci: 'OCI image layout', wasm: 'WebAssembly modülü' },
       start: 'Yükle',
       abort: 'İptal et',
-      resumeHint: '{name} sürdürülüyor: %{percent} zaten bölgede. Aynı dosyayı seçin ({size}).',
+      resumeHint: '{name} sürdürülüyor: {\'%\'}{percent} zaten bölgede. Aynı dosyayı seçin ({size}).',
       sameFile: 'Bu yükleme {name} ({size}) dosyasını bekliyor; sürdürmek için o dosyayı seçin.',
       receiverFailed: 'Bölgedeki alıcı başlamadı.',
       completed: '{name} yüklendi.',
@@ -80,7 +81,7 @@ export default {
       select: 'Yüklenen bir imaj seçin',
       none: 'Bu bölgeye yüklenmiş container imajı yok.',
       pickRegion: 'Önce bölgeyi seçin.',
-      manage: 'Ayarlar → İmajlar\'dan yükleyin.',
+      manage: 'Geliştir ve Çalıştır → İmajlar\'dan yükleyin.',
       pinned: 'Digest ile sabitlendi: {digest}',
     },
 

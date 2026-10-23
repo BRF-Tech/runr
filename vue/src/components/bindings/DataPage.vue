@@ -1,5 +1,5 @@
 <script setup>
-// Settings → Data (docs/bindings.md): every binding of the organization with its region,
+// Data & Integrations → Data (docs/bindings.md): every binding of the organization with its region,
 // status, attached projects and measured usage; create, rotate, delete with retention
 // (typed name), restore before the purge date; the organization's binding limits.
 import { ref, reactive, computed, onMounted, onBeforeUnmount } from 'vue'
@@ -15,6 +15,7 @@ import {
   fmtBytes, limitBytes, usagePercent,
 } from '@/utils/bindings'
 import { Database, HardDrive, Boxes, KeyRound, Plus, RefreshCw, Trash2, Undo2, Eye, Copy } from 'lucide-vue-next'
+import { useLatest } from '@/composables/useLatest'
 
 const { t, locale } = useI18n()
 const { confirm } = useConfirm()
@@ -56,18 +57,26 @@ const filtered = computed(() => filterType.value ? bindings.value.filter(b => b.
 const canCreate = computed(() => !saving.value && isValidName(form.name) && (form.type === 'external' || !!form.knative_region_id))
 
 let pollTimer = null
+// The newest list wins (a poll sent before an action's reload must not drop the new row), and a
+// load that ends after the page is gone arms no more polls
+const latest = useLatest()
+// Bindings with a restore request in flight: a second click would answer "not being deleted"
+const restoring = ref(new Set())
 
 async function load(silent = false) {
+  const current = latest.begin()
   if (!silent) loading.value = true
   try {
     const [{ data: list }, { data: q }] = await Promise.all([bindingsApi.list(), bindingsApi.quota()])
+    if (!current()) return
     bindings.value = list?.data ?? []
     quota.value = q?.data ?? null
   } catch {
-    if (!silent) bindings.value = []
+    if (current() && !silent) bindings.value = []
   } finally {
-    loading.value = false
+    if (current()) loading.value = false
   }
+  if (!current()) return
   clearTimeout(pollTimer)
   if (bindings.value.some(isBusy)) pollTimer = setTimeout(() => load(true), 3000)
 }
@@ -151,15 +160,23 @@ async function confirmDelete() {
 }
 
 async function restore(b) {
+  if (restoring.value.has(b.id)) return
+  restoring.value = new Set([...restoring.value, b.id])
   try {
     await bindingsApi.restore(b.id)
     toast.success(t('bindings.data.restored'))
-    await load(true)
   } catch (e) {
     toast.error(e?.response?.data?.message ?? t('bindings.data.restoreFailed'))
+    return
+  } finally {
+    const next = new Set(restoring.value)
+    next.delete(b.id)
+    restoring.value = next
   }
+  await load(true)
 }
 
+// Hidden again (or rotated) while the credentials loaded: the answer is not shown
 async function toggleReveal(b) {
   if (revealed[b.id]) {
     delete revealed[b.id]
@@ -168,8 +185,9 @@ async function toggleReveal(b) {
   revealed[b.id] = 'loading'
   try {
     const { data } = await bindingsApi.credentials(b.id)
-    revealed[b.id] = data?.data?.env ?? {}
+    if (revealed[b.id] === 'loading') revealed[b.id] = data?.data?.env ?? {}
   } catch (e) {
+    if (revealed[b.id] !== 'loading') return
     delete revealed[b.id]
     toast.error(e?.response?.data?.message ?? t('bindings.revealFailed'))
   }
@@ -327,7 +345,7 @@ onBeforeUnmount(() => clearTimeout(pollTimer))
           <div class="flex items-center gap-1">
             <template v-if="b.status === 'deleting'">
               <span class="text-[11px] text-red-300 mr-2" data-purge-date>{{ t('bindings.data.purgeOn', { date: fmtDate(b.purge_at) }) }}</span>
-              <button v-if="canManage" type="button" class="btn btn-secondary text-xs" data-action="restore" @click="restore(b)">
+              <button v-if="canManage" type="button" class="btn btn-secondary text-xs" data-action="restore" :disabled="restoring.has(b.id)" @click="restore(b)">
                 <Undo2 class="w-3.5 h-3.5" /> {{ t('bindings.data.restore') }}
               </button>
             </template>

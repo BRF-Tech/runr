@@ -15,6 +15,11 @@ export function useSandboxTab(regionId, emit, t, confirm) {
   const mappingSuccess = ref(false)
 
   const installing = ref({})
+  // Status events per runtime: a fast job can finish (or fail) before the install request answers,
+  // and that answer ("installing") must not overwrite what the event told
+  const statusEvents = { kata: 0, gvisor: 0 }
+  // The mapping as the server has it: an event's status read does not overwrite a mapping being edited
+  let serverMapping = null
 
   // Kata shim detection
   const shims = ref(null)
@@ -45,6 +50,7 @@ export function useSandboxTab(regionId, emit, t, confirm) {
       caas:  migrateLegacy(region.sandbox_caas_runtime || 'runc'),
       build: migrateLegacy(region.sandbox_build_runtime || 'runc'),
     }
+    serverMapping = { ...mapping.value }
     if (region.sandbox_kata_hypervisor) {
       const hv = region.sandbox_kata_hypervisor
       selectedShims.value = Array.isArray(hv) ? hv : [hv]
@@ -83,6 +89,7 @@ export function useSandboxTab(regionId, emit, t, confirm) {
     }
 
     installing.value = { ...installing.value, [runtime]: true }
+    const eventsBefore = statusEvents[runtime]
     try {
       const payload = { runtime }
       if (runtime === 'kata') {
@@ -95,6 +102,8 @@ export function useSandboxTab(regionId, emit, t, confirm) {
         initFromRegion(region)
         emit('saved', region)
       }
+      // The job reported while the request ran: its status is newer than the answer's
+      if (statusEvents[runtime] !== eventsBefore) refreshStatus(runtime)
     } catch (e) {
       const field = runtime === 'kata' ? kataMessage : gvisorMessage
       field.value = e.response?.data?.message || e.message
@@ -184,6 +193,25 @@ export function useSandboxTab(regionId, emit, t, confirm) {
     return map[status] || status
   }
 
+  // The runtime's status as the region has it now (after an event, or an install answer an event
+  // overtook)
+  function refreshStatus(runtime) {
+    const statusRef = runtime === 'kata' ? kataStatus : gvisorStatus
+    const msgRef = runtime === 'kata' ? kataMessage : gvisorMessage
+    return knativeRegionsApi.sandboxStatus(regionId.value).then(({ data }) => {
+      const st = data[runtime]
+      statusRef.value = st.status
+      msgRef.value = st.message || ''
+      if (st.hypervisor) kataHypervisor.value = Array.isArray(st.hypervisor) ? st.hypervisor : [st.hypervisor]
+      // A mapping being edited (not saved yet) stays
+      const edited = serverMapping && JSON.stringify(mapping.value) !== JSON.stringify(serverMapping)
+      if (data.mapping && !edited && !mappingSaving.value) {
+        mapping.value = { ...data.mapping }
+        serverMapping = { ...data.mapping }
+      }
+    }).catch(() => {})
+  }
+
   // --- WS event handlers ---
   useJobEvents({
     'sandbox.*': (payload, topic) => {
@@ -196,18 +224,13 @@ export function useSandboxTab(regionId, emit, t, confirm) {
       const runtime = topic.includes('kata') ? 'kata' : 'gvisor'
       const statusRef = runtime === 'kata' ? kataStatus : gvisorStatus
       const msgRef = runtime === 'kata' ? kataMessage : gvisorMessage
+      statusEvents[runtime]++
       if (topic.endsWith('_failed')) {
         statusRef.value = 'error'
         // The region keeps the step log with the error as its last line (loaded below)
         if (!msgRef.value) msgRef.value = payload.error || ''
       }
-      knativeRegionsApi.sandboxStatus(regionId.value).then(({ data }) => {
-        const st = data[runtime]
-        statusRef.value = st.status
-        msgRef.value = st.message || ''
-        if (st.hypervisor) kataHypervisor.value = Array.isArray(st.hypervisor) ? st.hypervisor : [st.hypervisor]
-        if (data.mapping) mapping.value = data.mapping
-      }).catch(() => {})
+      refreshStatus(runtime)
       installing.value = { ...installing.value, [runtime]: false }
     },
     'install.progress': (payload) => {

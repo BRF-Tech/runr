@@ -48,12 +48,49 @@ export const projectsApi = {
   versionFiles: (id, versionId) =>
     client.get(`/projects/${id}/versions/${versionId}/files`),
 
-  // Deployments
-  deployments: (id) =>
-    client.get(`/projects/${id}/deployments`),
+  // Deployments — of the project's own workload, or of one environment (name; 'all': every one)
+  deployments: (id, environment = null) =>
+    environment ? client.get(`/projects/${id}/deployments`, { params: { environment } }) : client.get(`/projects/${id}/deployments`),
 
+  // payload: { version_id, strategy?: 'direct' | 'blue_green' | 'canary' } — strategy overrides
+  // the project's deploy strategy for this one deploy (its options come from the project)
+  // { version_id, environment?, restore_config?, deploy_config? }
   deploy: (id, payload) =>
     client.post(`/projects/${id}/deploy`, payload),
+
+  // Deploy strategy (direct / blue-green / canary): its own endpoint, saving creates no version.
+  // environment (a name): one of the project's environments — the project's settings unless it
+  // sets its own; { reset: true } drops what it sets (docs/deploy-strategies.md#environments)
+  deployStrategy: (id, environment = null) =>
+    environment
+      ? client.get(`/projects/${id}/deploy-strategy`, { params: { environment } })
+      : client.get(`/projects/${id}/deploy-strategy`),
+
+  updateDeployStrategy: (id, payload, environment = null) =>
+    client.put(`/projects/${id}/deploy-strategy`, environment ? { ...payload, environment } : payload),
+
+  // Rollouts of a strategy: the newest one of the project's own workload (or of an environment,
+  // by name), or the one a deployment opened
+  rollout: (id, environment = null) =>
+    environment
+      ? client.get(`/projects/${id}/rollout`, { params: { environment } })
+      : client.get(`/projects/${id}/rollout`),
+
+  deploymentRollout: (id, deploymentId) =>
+    client.get(`/projects/${id}/deployments/${deploymentId}/rollout`),
+
+  promoteRollout: (id, deploymentId) =>
+    client.post(`/projects/${id}/deployments/${deploymentId}/rollout/promote`),
+
+  abortRollout: (id, deploymentId, reason = null) =>
+    client.post(`/projects/${id}/deployments/${deploymentId}/rollout/abort`, reason ? { reason } : {}),
+
+  rollbackRollout: (id, deploymentId) =>
+    client.post(`/projects/${id}/deployments/${deploymentId}/rollout/rollback`),
+
+  // Roll back to a deployment: its version with the config it ran with, unless keepCurrentConfig
+  rollback: (id, deploymentId, keepCurrentConfig = false) =>
+    client.post(`/projects/${id}/deployments/${deploymentId}/rollback`, keepCurrentConfig ? { keep_current_config: true } : {}),
 
   deploymentLogs: (id, deploymentId, since = null) =>
     client.get(`/projects/${id}/deployments/${deploymentId}/logs`, { params: since ? { since } : {} }),
@@ -94,9 +131,27 @@ export const projectsApi = {
   deleteDomain: (id, domainId) =>
     client.delete(`/projects/${id}/domains/${domainId}`),
 
-  // Private connections (Managed PostgreSQL through Skupper)
-  privateConnections: (id) =>
-    client.get(`/projects/${id}/private-connections`),
+  // Network: access mode and the allow list of internal callers (docs/internal-network.md)
+  network: (id) =>
+    client.get(`/projects/${id}/network`),
+
+  updateNetwork: (id, payload) =>
+    client.put(`/projects/${id}/network`, payload),
+
+  addNetworkCaller: (id, caller) =>
+    client.post(`/projects/${id}/network/callers`, { caller }),
+
+  removeNetworkCaller: (id, caller) =>
+    client.delete(`/projects/${id}/network/callers/${encodeURIComponent(caller)}`),
+
+  // The CA of the project's region when its custom-domain certificates come from it (PEM)
+  domainsCaCertificate: (id) =>
+    client.get(`/projects/${id}/domains/ca-certificate`, { responseType: 'blob' }),
+
+  // Private connections (Managed PostgreSQL through Skupper): production's, or one environment's
+  // (environment: its name; the payload of a new one carries it too — docs/environments.md)
+  privateConnections: (id, environment = null) =>
+    client.get(`/projects/${id}/private-connections`, { params: environment ? { environment } : {} }),
 
   createPrivateConnection: (id, payload) =>
     client.post(`/projects/${id}/private-connections`, payload),
@@ -106,4 +161,9 @@ export const projectsApi = {
 
   deletePrivateConnection: (id, bindingId) =>
     client.delete(`/projects/${id}/private-connections/${bindingId}`),
+
+  // Timed warmer (config.scale_schedule): the week it keeps warm in the organization's time zone and,
+  // in a pay-as-you-go region with billing on, the month's warm vCPU-hours / GB-hours (and cost)
+  scaleSchedulePreview: (payload) =>
+    client.post('/scale-schedule/preview', payload),
 }

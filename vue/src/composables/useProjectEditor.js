@@ -3,6 +3,7 @@ import { projectsApi } from '@/api/projects'
 import { isLegacyServiceType } from '@/utils/projectHelpers'
 import { usePermissionsStore } from '@/stores/permissions'
 import { runtimeExtension, runtimeHandlerPattern } from '@/utils/runtimes'
+import { useLatest } from '@/composables/useLatest'
 
 export function useProjectEditor({ project, versions, versionsLoaded, loadVersionsFn }) {
   const selectedVersion           = ref(null)
@@ -13,6 +14,9 @@ export function useProjectEditor({ project, versions, versionsLoaded, loadVersio
   const editSaving                = ref(false)
   const handlerError              = ref(false)
   const originalCode              = ref('')
+  // Files of the version picked last: a slower answer for a version picked before must not
+  // fill the editor (and its unsaved-changes baseline) of the one picked after
+  const filesRequest              = useLatest()
 
   // ── Handler validation ────────────────────────────────────────────────────
   // Extension and handler check come from the runtime catalog (manifest), the built-in values
@@ -93,38 +97,48 @@ export function useProjectEditor({ project, versions, versionsLoaded, loadVersio
 
   async function loadVersionFiles(version) {
     if (selectedVersion.value?.id === version.id) return
+    const current = filesRequest.begin()
     selectedVersion.value           = version
     selectedVersionFiles.value      = {}
     selectedVersionActiveFile.value = null
     commitMsg.value                 = ''
-    if (project.value.service_type === 'caas' || project.value.service_type === 'maas') return
-    // Blueprint mode — config_snapshot already has the graph from loadVersions()
-    if (['aaas', 'agentflow'].includes(project.value.service_type) && project.value.config?.config_mode === 'blueprint') return
+    // caas / maas: no files; blueprint mode: config_snapshot already has the graph from loadVersions()
+    const noFiles = project.value.service_type === 'caas' || project.value.service_type === 'maas'
+      || (['aaas', 'agentflow'].includes(project.value.service_type) && project.value.config?.config_mode === 'blueprint')
+    versionFilesLoading.value = !noFiles
+    if (noFiles) return
 
-    versionFilesLoading.value = true
     try {
       const isLatest = versions.value.length > 0 && version.id === versions.value[0].id
+      let files
       if (isLatest) {
-        selectedVersionFiles.value = await fetchCurrentFiles()
+        files = await fetchCurrentFiles()
       } else {
         const { data } = await projectsApi.versionFiles(project.value.id, version.id)
         const allFiles = data.files ?? data.data ?? data
-        selectedVersionFiles.value = Object.fromEntries(
-          Object.entries(allFiles).filter(([name]) => !name.startsWith('.')),
-        )
+        files = Object.fromEntries(Object.entries(allFiles).filter(([name]) => !name.startsWith('.')))
       }
-      selectedVersionActiveFile.value = Object.keys(selectedVersionFiles.value)[0] ?? null
-      originalCode.value = JSON.stringify(selectedVersionFiles.value)
-    } finally { versionFilesLoading.value = false }
+      if (!current()) return
+      selectedVersionFiles.value      = files
+      selectedVersionActiveFile.value = Object.keys(files)[0] ?? null
+      originalCode.value = JSON.stringify(files)
+    } finally {
+      if (current()) versionFilesLoading.value = false
+    }
   }
 
   async function loadDefaultCode() {
+    const current = filesRequest.begin()
     versionFilesLoading.value = true
     try {
-      selectedVersionFiles.value = await fetchCurrentFiles()
-      selectedVersionActiveFile.value = Object.keys(selectedVersionFiles.value)[0] ?? null
-      originalCode.value = JSON.stringify(selectedVersionFiles.value)
-    } finally { versionFilesLoading.value = false }
+      const files = await fetchCurrentFiles()
+      if (!current()) return
+      selectedVersionFiles.value      = files
+      selectedVersionActiveFile.value = Object.keys(files)[0] ?? null
+      originalCode.value = JSON.stringify(files)
+    } finally {
+      if (current()) versionFilesLoading.value = false
+    }
   }
 
   // ── Editing ───────────────────────────────────────────────────────────────
@@ -132,6 +146,9 @@ export function useProjectEditor({ project, versions, versionsLoaded, loadVersio
     handlerError.value = false
     if (!validateHandler()) { handlerError.value = true; return }
     editSaving.value = true
+    // What is saved: the editor stays editable, and what is typed while the request runs is not
+    // part of this version
+    const sent = JSON.stringify(selectedVersionFiles.value)
     try {
       if (project.value.service_type === 'xaas' || (project.value.service_type === 'aaas' && project.value.config?.config_mode === 'code')) {
         const filename = project.value.config?.filename ?? 'main'
@@ -141,10 +158,18 @@ export function useProjectEditor({ project, versions, versionsLoaded, loadVersio
         await projectsApi.saveFiles(project.value.id, payload, commitMsg.value || undefined)
       }
       commitMsg.value      = ''
-      originalCode.value   = JSON.stringify(selectedVersionFiles.value)
+      originalCode.value   = sent
       versionsLoaded.value = false
       await loadVersionsFn()
-      if (versions.value.length) await loadVersionFiles(versions.value[0])
+      if (!versions.value.length) return
+      if (JSON.stringify(selectedVersionFiles.value) === sent) {
+        await loadVersionFiles(versions.value[0])
+      } else {
+        // Typed on while saving: the new version is the base, those changes stay unsaved (dirty)
+        filesRequest.cancel()
+        versionFilesLoading.value = false
+        selectedVersion.value = versions.value[0]
+      }
     } finally { editSaving.value = false }
   }
 

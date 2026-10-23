@@ -1,5 +1,6 @@
 import { ref, computed } from 'vue'
 import { projectsApi } from '@/api/projects'
+import { useLatest } from '@/composables/useLatest'
 
 const RANGE_MAP = {
   '1h':  { hours: 1,   granularity: '1m' },
@@ -15,6 +16,8 @@ export function useHistoricalMetrics(projectId) {
   const summary = ref(null)
   const loading = ref(false)
   const selectedRange = ref('24h')
+  // The range picked last: a slow 90-day query must not fill the chart under "1h"
+  const latest = useLatest()
 
   const rangeOptions = Object.keys(RANGE_MAP)
 
@@ -38,6 +41,7 @@ export function useHistoricalMetrics(projectId) {
     if (range.hours) from.setHours(from.getHours() - range.hours)
     if (range.days) from.setDate(from.getDate() - range.days)
 
+    const current = latest.begin()
     loading.value = true
     try {
       const { data: resp } = await projectsApi.metricsHistory(projectId.value ?? projectId, {
@@ -45,9 +49,9 @@ export function useHistoricalMetrics(projectId) {
         to: now.toISOString(),
         granularity: range.granularity,
       })
-      data.value = resp.data ?? []
+      if (current()) data.value = resp.data ?? []
     } catch { /* silent */ } finally {
-      loading.value = false
+      if (current()) loading.value = false
     }
   }
 

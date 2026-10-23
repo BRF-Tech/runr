@@ -19,6 +19,13 @@ export const billingApi = {
   deletePrice:     (id)             => client.delete(`/billing/prices/${id}`),
   regions:         ()               => client.get('/billing/regions'),
   setRegionType:   (id, type)       => client.put(`/billing/regions/${id}`, { billing_type: type }),
+  // Queue consumers (docs/billing.md#queue-consumers): the region owner's setting, and the
+  // organization's own choice for a region (false: off for its projects, null: as the region)
+  setRegionQueueConsumers:  (id, charge) => client.put(`/billing/regions/${id}`, { charge_queue_consumers: charge }),
+  setQueueConsumerOverride: (id, charge) => client.put(`/billing/regions/${id}/queue-consumers`, { charge }),
+  // Platform: the tenants a platform region is shared with, and the platform's choice for each
+  regionOrganizations:      (id)                 => client.get(`/billing/regions/${id}/organizations`),
+  setRegionOrganization:    (id, tenant, charge) => client.put(`/billing/regions/${id}/organizations/${tenant}`, { charge }),
 
   // Markup and shared region offers (tenant context)
   markups:         ()               => client.get('/billing/markups'),
@@ -57,4 +64,10 @@ export const billingApi = {
   quote:           (projectId, params)    => client.get(`/projects/${projectId}/billing/quote`, { params }),
   requestFixed:    (projectId, data)      => client.post(`/projects/${projectId}/billing/fixed-requests`, data),
   cancelRequest:   (projectId, requestId) => client.post(`/projects/${projectId}/billing/fixed-requests/${requestId}/cancel`),
+
+  // A pay-as-you-go project's monthly cost limit (notify or stop at 100 %)
+  costLimit:       (projectId)            => client.get(`/projects/${projectId}/billing/cost-limit`),
+  setCostLimit:    (projectId, data)      => client.put(`/projects/${projectId}/billing/cost-limit`, data),
+  clearCostLimit:  (projectId)            => client.delete(`/projects/${projectId}/billing/cost-limit`),
+  resumeCostLimit: (projectId)            => client.post(`/projects/${projectId}/billing/cost-limit/resume`),
 }

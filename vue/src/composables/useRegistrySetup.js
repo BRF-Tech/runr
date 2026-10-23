@@ -84,13 +84,18 @@ export function useRegistrySetup() {
 
     const payload = { ...wizardPayload, ...getRegistryPayload(), ...getMonitoringPayload() }
 
+    early.length = 0
+    requesting = true
     try {
       const { data } = await knativeRegionsApi.registryStart(payload)
+      requesting = false
       setupToken.value  = data.setup_token
       setupId.value     = data.setup_id ?? null
       setupStatus.value = 'pending'
       setupPhase.value  = 'queued'
+      replayEarly()
     } catch (e) {
+      requesting = false
       setupError.value = e.response?.data?.message
         ?? Object.values(e.response?.data?.errors ?? {}).flat()[0]
         ?? i18n.global.t('regionDetail.registry.setupFailed')
@@ -106,39 +111,66 @@ export function useRegistrySetup() {
 
     const payload = { ...wizardPayload, ...getRegistryPayload(), ...getMonitoringPayload() }
 
+    early.length = 0
+    requesting = true
     try {
       const { data } = await knativeRegionsApi.registryRetry(setupToken.value, payload)
+      requesting = false
       if (data?.setup_id) setupId.value = data.setup_id
       setupStatus.value = 'pending'
       setupPhase.value  = 'queued'
+      replayEarly()
     } catch (e) {
+      requesting = false
       setupError.value = e.response?.data?.message ?? i18n.global.t('regionDetail.registry.retryFailed')
       setupLoading.value = false
     }
   }
 
   // ── WS event handlers ────────────────────────────────────────────────────
-  useJobEvents({
+  // A setup's events are matched by its setup_id, which the start / retry request answers. A job
+  // that fails fast can report before that answer: its events are kept until the id is known.
+  const early = []
+  let requesting = false
+
+  const handlers = {
     'registry.progress': (payload) => {
-      if (!setupId.value || payload.setup_id !== setupId.value) return
       setupStatus.value  = payload.status
       setupPhase.value   = payload.phase
       setupMessage.value = payload.message || ''
     },
     'region.created': (payload) => {
-      if (!setupId.value || payload.setup_id !== setupId.value) return
       setupStatus.value   = 'ready'
       setupPhase.value    = 'done'
       setupRegionId.value = payload.region_id || null
       setupLoading.value  = false
     },
     'region.create_failed': (payload) => {
-      if (!setupId.value || payload.setup_id !== setupId.value) return
       setupStatus.value  = 'error'
       setupError.value   = payload.error || i18n.global.t('regionDetail.registry.setupFailed')
       setupLoading.value = false
     },
-  })
+  }
+
+  function onEvent(topic, payload) {
+    if (!payload?.setup_id) return
+    // The start / retry request runs: the id is not known yet (a retry keeps the previous one)
+    if (requesting) {
+      early.push([topic, payload])
+      return
+    }
+    if (!setupId.value || payload.setup_id !== setupId.value) return
+    handlers[topic](payload)
+  }
+
+  function replayEarly() {
+    const events = early.splice(0)
+    for (const [topic, payload] of events) {
+      if (payload.setup_id === setupId.value) handlers[topic](payload)
+    }
+  }
+
+  useJobEvents(Object.fromEntries(Object.keys(handlers).map(topic => [topic, (payload) => onEvent(topic, payload)])))
 
   // ── Cleanup ───────────────────────────────────────────────────────────────
   function reset() {

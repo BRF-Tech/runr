@@ -83,6 +83,17 @@ export function fixedRequest(over = {}) {
   }
 }
 
+/** A pay-as-you-go project's cost limit status (GET …/billing/cost-limit): 42 so far on 20 October, no limit yet. */
+export function costLimit(over = {}) {
+  return {
+    available: true, currency: 'USD', period: '2026-10', limit: null,
+    month_to_date: 42, forecast: 65.1, days_elapsed: 20, days_in_month: 31,
+    percent: null, warning_percent: 80, state: 'none', warned_at: null, reached_at: null,
+    stopped: false, can_manage: true, can_resume: false, checked_at: '2026-10-20T09:00:00Z',
+    ...over,
+  }
+}
+
 export const PRICES = {
   cpu_vcpu_hour: 0.04, memory_gb_hour: 0.005, gpu_hour: 1.2, cpu_vcpu_month: 25, memory_gb_month: 3, gpu_month: 700,
   kv_gb_hour: 0.0002, object_gb_hour: 0.00004, postgres_gb_hour: 0.0002, postgres_instance_hour: 0.05,

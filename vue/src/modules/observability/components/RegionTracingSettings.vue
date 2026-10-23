@@ -11,7 +11,7 @@ import { rowsToObject } from '../utils/format'
 import TermText from '@/components/TermText.vue'
 
 /**
- * Settings → Tracing: the tracing backend of each region — RunR's collector + Tempo, a reused
+ * Observability → Tracing: the tracing backend of each region — RunR's collector + Tempo, a reused
  * in-cluster Tempo, an external OTLP endpoint or off — with install / remove.
  */
 const { t } = useI18n()
@@ -85,25 +85,44 @@ async function save(region, install) {
   }
 }
 
+// Regions with an install / remove request in flight: a double click must not queue it twice
+const acting = ref(new Set())
+function setActing(id, on) {
+  const next = new Set(acting.value)
+  if (on) next.add(id)
+  else next.delete(id)
+  acting.value = next
+}
+
 async function install(region) {
+  if (acting.value.has(region.id)) return
+  setActing(region.id, true)
   try {
     const { data } = await observabilityApi.installRegionTracing(region.id)
     configs.value = { ...configs.value, [region.id]: data.data }
     toast.success(t('observability.regions.installStarted'))
   } catch (e) {
     toast.error(e.response?.data?.message ?? t('observability.common.error'))
+  } finally {
+    setActing(region.id, false)
   }
 }
 
 async function remove(region) {
+  if (acting.value.has(region.id)) return
   if (!(await confirm({ message: t('observability.regions.removeConfirm', { name: region.name }), destructive: true }))) return
+  setActing(region.id, true)
   try {
     await observabilityApi.removeRegionTracing(region.id)
     toast.success(t('observability.regions.removeStarted'))
-    await load()
   } catch (e) {
     toast.error(e.response?.data?.message ?? t('observability.common.error'))
+    return
+  } finally {
+    setActing(region.id, false)
   }
+  // The follow-up reload is not part of the removal: its failure is no removal error
+  try { await load() } catch { /* the list keeps what it showed */ }
 }
 
 const statusLabel = (c) => t('observability.regions.statuses.' + (c?.status ?? 'notInstalled'))
@@ -134,8 +153,8 @@ onMounted(load)
         <span v-if="configs[r.id]?.status_message" class="text-[11px] text-red-400 truncate max-w-[24rem]" :title="configs[r.id].status_message">{{ configs[r.id].status_message }}</span>
         <div v-if="canManage && editing !== r.id" class="ml-auto flex gap-1.5">
           <button type="button" class="btn-secondary text-xs px-2 py-1" :data-test="`edit-tracing-${r.id}`" @click="edit(r)">{{ t('observability.regions.configure') }}</button>
-          <button v-if="configs[r.id]?.mode !== 'off'" type="button" class="btn-primary text-xs px-2 py-1" @click="install(r)">{{ t('observability.regions.install') }}</button>
-          <button v-if="configs[r.id]?.status" type="button" class="btn-secondary text-xs px-2 py-1" @click="remove(r)">{{ t('observability.regions.remove') }}</button>
+          <button v-if="configs[r.id]?.mode !== 'off'" type="button" class="btn-primary text-xs px-2 py-1" :disabled="acting.has(r.id)" @click="install(r)">{{ t('observability.regions.install') }}</button>
+          <button v-if="configs[r.id]?.status" type="button" class="btn-secondary text-xs px-2 py-1" :disabled="acting.has(r.id)" @click="remove(r)">{{ t('observability.regions.remove') }}</button>
         </div>
       </div>
 
