@@ -28,6 +28,7 @@ export default function (registry) {
     component: markRaw(defineAsyncComponent(() => import('./components/AccountSupportTab.vue'))),
     visibleIf: ticketsEnabled,
     dataTour:  'settings-support-tab',
+    tutorial:  true,
     order:     30,
   })
 

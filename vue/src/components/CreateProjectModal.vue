@@ -280,24 +280,26 @@ async function submit() {
         </div>
 
         <!-- Step 1: Name + Region -->
-        <div v-if="step === 1" data-tour="create-name">
+        <div v-if="step === 1">
           <h2 class="text-lg font-semibold mb-1">{{ t('create.step1.title') }}</h2>
           <p class="text-sm text-gray-400 mb-6">{{ t('create.step1.subtitle') }}</p>
 
-          <label class="label">{{ t('create.fields.name') }} <span class="normal-case text-red-500/70">*</span></label>
-          <input v-model="form.name" class="input text-lg py-3" :class="(error && step === 1 && !errorOnRegions) || nameAlreadyExists ? 'border-red-500/60' : ''" :placeholder="t('create.step1.namePlaceholder')" autofocus @keyup.enter="next" @input="error = null" />
-          <p v-if="nameAlreadyExists" class="text-sm text-red-400 mt-1.5">{{ t('create.step1.nameTaken') }}</p>
-          <p v-else-if="error && step === 1 && !errorOnRegions" class="text-sm text-red-400 mt-1.5">{{ error }}</p>
-          <p v-else-if="nameSlugError" class="text-sm text-red-400 mt-1.5">{{ t(nameSlugError.key, nameSlugError.params) }}</p>
-          <p v-else class="text-xs text-gray-400 mt-2 font-mono">slug: {{ projectSlug(form.name) || '—' }}</p>
+          <div data-tour="create-name">
+            <label class="label">{{ t('create.fields.name') }} <span class="normal-case text-red-500/70">*</span></label>
+            <input v-model="form.name" class="input text-lg py-3" :class="(error && step === 1 && !errorOnRegions) || nameAlreadyExists ? 'border-red-500/60' : ''" :placeholder="t('create.step1.namePlaceholder')" autofocus @keyup.enter="next" @input="error = null" />
+            <p v-if="nameAlreadyExists" class="text-sm text-red-400 mt-1.5">{{ t('create.step1.nameTaken') }}</p>
+            <p v-else-if="error && step === 1 && !errorOnRegions" class="text-sm text-red-400 mt-1.5">{{ error }}</p>
+            <p v-else-if="nameSlugError" class="text-sm text-red-400 mt-1.5">{{ t(nameSlugError.key, nameSlugError.params) }}</p>
+            <p v-else class="text-xs text-gray-400 mt-2 font-mono">slug: {{ projectSlug(form.name) || '—' }}</p>
+          </div>
 
-          <div class="mt-6">
+          <div class="mt-6" data-tour="create-description">
             <label class="label">{{ t('create.fields.description') }} <span class="normal-case text-gray-400">{{ t('common.optional') }}</span></label>
             <input v-model="form.description" class="input" :placeholder="t('create.step1.descriptionPlaceholder')" />
           </div>
 
           <!-- Regional (one region) or global (several regions behind one host name) -->
-          <div class="mt-6" data-testid="create-placement">
+          <div class="mt-6" data-testid="create-placement" data-tour="create-placement">
             <label class="label">{{ t('globalProjects.create.placement') }}</label>
             <div class="grid grid-cols-2 gap-2">
               <button
@@ -340,11 +342,11 @@ async function submit() {
         </div>
 
         <!-- Step 2: Type -->
-        <div v-else-if="step === 2" data-tour="create-types">
+        <div v-else-if="step === 2">
           <h2 class="text-lg font-semibold mb-1">{{ t('create.step2.title') }}</h2>
           <p class="text-sm text-gray-400 mb-6">{{ t('create.step2.subtitle') }}</p>
 
-          <div class="flex flex-col gap-3">
+          <div class="flex flex-col gap-3" data-tour="create-types">
             <button
               v-for="typeItem in types" :key="typeItem.id"
               class="text-left p-4 rounded-xl border transition-all duration-150"

@@ -50,7 +50,7 @@ const modes = computed(() => [
 
 <template>
   <div class="space-y-5" data-testid="global-regions">
-    <div>
+    <div data-tour="create-global-regions">
       <p class="text-xs text-gray-400 mb-2">{{ t('globalProjects.create.regionsHint', { min: GLOBAL_MIN_REGIONS, max: GLOBAL_MAX_REGIONS }) }}</p>
       <p v-if="regions.length === 0" class="text-xs text-gray-400 italic">{{ t('settings.regions.noRegions') }}</p>
       <div v-else class="grid grid-cols-2 gap-2">
@@ -89,7 +89,7 @@ const modes = computed(() => [
       </p>
     </div>
 
-    <div v-if="chosen.length">
+    <div v-if="chosen.length" data-tour="create-global-primary">
       <label class="label">{{ t('globalProjects.create.primary') }}</label>
       <select
         class="input font-mono"
@@ -102,7 +102,7 @@ const modes = computed(() => [
       <p class="text-[11px] text-gray-400 mt-1">{{ t('globalProjects.create.primaryHint') }}</p>
     </div>
 
-    <div>
+    <div data-tour="create-dns-mode">
       <label class="label">{{ t('globalProjects.create.mode') }}</label>
       <div class="grid grid-cols-2 gap-2">
         <button

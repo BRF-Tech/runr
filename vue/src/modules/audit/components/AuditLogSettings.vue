@@ -10,7 +10,7 @@ import { ScrollText, Download, X, ChevronLeft, ChevronRight, Filter, RotateCcw }
 const { t, locale } = useI18n()
 const toast = useToast()
 const {
-  filters, events, meta, loading, error, selected, exporting, settings, savingSettings,
+  filters, events, meta, loading, error, selected, exporting, settings, savingSettings, settingsError,
   load, apply, reset, open, close, exportAs, loadSettings, saveRetention,
 } = useAuditLog()
 
@@ -55,7 +55,7 @@ async function doExport(format) {
 
 async function doSaveRetention() {
   if (await saveRetention(retentionDays.value)) toast.success(t('audit.retention.saved'))
-  else toast.error(t('common.error'))
+  else toast.error(settingsError.value ?? t('common.error'))
 }
 
 onMounted(async () => {

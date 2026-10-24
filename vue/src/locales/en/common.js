@@ -7,6 +7,8 @@ export default {
     close:    '✕',
     loading:  'Loading…',
     error:    'An error occurred.',
+    networkError: 'The console could not reach the server. Check your connection and try again.',
+    timeoutError: 'The server did not answer in time. Check your connection and try again.',
     copy:     'Copy',
     copied:   '✓',
     dismiss:  'Dismiss',

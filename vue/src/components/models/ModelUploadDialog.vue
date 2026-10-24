@@ -6,6 +6,7 @@ import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { X, Upload, FolderUp } from 'lucide-vue-next'
 import { aiApi, uploadModelFiles, uploadPath, sha256Hex, SHA256_MAX_BYTES } from '@/api/ai'
+import { isCancelled } from '@/api/errors'
 import { useSettingsStore } from '@/stores/settings'
 import { useAiStore } from '@/stores/ai'
 import { useToast } from '@/composables/useToast'
@@ -114,7 +115,7 @@ async function start() {
     toast.success(t('ai.upload.completed'))
     emit('completed', snapshot)
   } catch (e) {
-    if (e?.name === 'AbortError' || stopped()) return
+    if (isCancelled(e) || stopped()) return
     phase.value = 'failed'
     error.value = e?.response?.data?.message ?? e?.message ?? t('common.error')
   }

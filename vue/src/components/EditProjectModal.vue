@@ -210,7 +210,10 @@ async function submit() {
               </span>
             </template>
           </div>
-          <button class="text-gray-400 hover:text-gray-100 transition-colors" @click="emit('close')">{{ t('common.close') }}</button>
+          <div class="flex items-center gap-2">
+            <button :title="t('tutorial.restart')" class="text-gray-400 hover:text-gray-100 transition-colors text-sm p-1" @click="startEditTutorial()">?</button>
+            <button class="text-gray-400 hover:text-gray-100 transition-colors" @click="emit('close')">{{ t('common.close') }}</button>
+          </div>
         </div>
 
         <!-- Step 1: Name + Region -->
@@ -274,7 +277,7 @@ async function submit() {
         </div>
 
         <!-- Step 3: Lang + Trigger -->
-        <div v-else-if="step === 3" data-tour="edit-trigger">
+        <div v-else-if="step === 3">
           <h2 class="text-lg font-semibold mb-1">{{ t('create.step3.title') }}</h2>
           <p class="text-sm text-gray-400 mb-1">{{ t('create.step3.subtitle') }}</p>
           <p class="text-xs text-gray-400 mb-5">{{ t('create.stepInfo', { name: form.name, region: selectedRegionName, type: serviceTypeLabel }) }}</p>
@@ -282,6 +285,7 @@ async function submit() {
           <div class="space-y-5 max-h-[58vh] overflow-y-auto pr-1">
             <RuntimeSelector
               v-if="form.service_type !== 'caas'"
+              data-tour="edit-runtime"
               :runtimes="runtimes"
               :runtime-versions="runtimeVersions"
               :selected-runtime="form.runtime"
@@ -290,7 +294,7 @@ async function submit() {
             />
             <p v-if="form.service_type !== 'caas'" class="text-xs text-yellow-500/80 -mt-3">{{ t('edit.step3.locked') }}</p>
 
-            <section v-if="form.service_type === 'caas'">
+            <section v-if="form.service_type === 'caas'" data-tour="edit-runtime">
               <p class="section-title">{{ t('create.sections.container') }}</p>
               <div class="flex gap-3">
                 <div class="flex-1">
@@ -310,6 +314,7 @@ async function submit() {
 
             <p v-if="isGlobal" class="text-xs text-gray-400" data-testid="edit-global-triggers">{{ t('globalProjects.create.triggersHint') }}</p>
             <TriggerConfig
+              data-tour="edit-trigger"
               v-model:trigger-type="form.config.trigger_type"
               v-model:schedule="form.config.schedule"
               v-model:queue-stream="form.config.queue_stream"
@@ -330,13 +335,14 @@ async function submit() {
         </div>
 
         <!-- Step 4: Resources + Scale + Env + Submit -->
-        <div v-else-if="step === 4" data-tour="edit-resources">
+        <div v-else-if="step === 4">
           <h2 class="text-lg font-semibold mb-1">{{ t('create.step4.title') }}</h2>
           <p class="text-sm text-gray-400 mb-1">{{ t('create.step4.subtitle') }}</p>
           <p class="text-xs text-gray-400 mb-5">{{ t('create.stepInfo', { name: form.name, region: selectedRegionName, type: serviceTypeLabel }) }}</p>
 
           <div class="space-y-5 max-h-[58vh] overflow-y-auto pr-1">
             <ResourcesEditor
+              data-tour="edit-resources"
               v-model:cpu="form.config.cpu"
               v-model:memory-mb="form.config.memory_mb"
               v-model:timeout-seconds="form.config.timeout_seconds"
@@ -346,6 +352,7 @@ async function submit() {
             />
 
             <GpuConfig
+              data-tour="edit-gpu"
               v-model="form.config.gpu"
               v-model:timeout-seconds="form.config.timeout_seconds"
               :service-type="form.service_type"
@@ -359,6 +366,7 @@ async function submit() {
 
             <ScaleConfig
               v-if="form.config.trigger_type !== 'schedule'"
+              data-tour="edit-scale"
               v-model:scale-to-zero="form.config.scale_to_zero"
               v-model:min-scale="form.config.min_scale"
               v-model:max-scale="form.config.max_scale"
@@ -372,13 +380,14 @@ async function submit() {
             />
 
             <!-- Environment variables: env.view to see them, env.edit to change them -->
-            <EnvVarsEditor v-if="canEditEnv" v-model="form.config.env_vars" />
+            <EnvVarsEditor v-if="canEditEnv" v-model="form.config.env_vars" data-tour="edit-env" />
             <p v-else-if="props.project?.config?.env_vars_hidden" class="text-xs text-gray-400">{{ t('rbac.envHidden') }}</p>
 
-            <SecretEnvVarsEditor :project-id="props.project.id" :plain-names="plainEnvNames" />
+            <SecretEnvVarsEditor :project-id="props.project.id" :plain-names="plainEnvNames" data-tour="edit-secrets" />
 
             <!-- Deploy strategy: saved on its own, creates no version -->
             <DeployStrategySettings
+              data-tour="edit-strategy"
               :project="props.project"
               :trigger-type="form.config.trigger_type"
               :tracing-link="tracingLink"
@@ -386,7 +395,7 @@ async function submit() {
               @open-tracing="emit('open-tracing')"
             />
 
-            <section>
+            <section data-tour="edit-note">
               <p class="section-title">{{ t('edit.sections.versionNote') }}</p>
               <input v-model="form.config_message" class="input" :placeholder="t('edit.fields.versionNotePlaceholder')" />
             </section>

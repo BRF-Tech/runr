@@ -194,6 +194,7 @@ usePlatformSync({ projects, refetch: silentRefresh, journals: { projects: journa
             to="/rightsizing"
             class="ml-1 inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-xs text-sky-300 bg-sky-950/40 border border-sky-900/60 hover:text-sky-200"
             data-testid="rightsizing-link"
+            data-tour="rightsizing-link"
           ><Gauge class="w-3.5 h-3.5" />{{ rightsizingLabel }}</RouterLink>
         </div>
 

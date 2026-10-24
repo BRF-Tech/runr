@@ -6,6 +6,7 @@ import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { X, Upload } from 'lucide-vue-next'
 import { imagesApi, uploadImageFile, fileSha256, nameFromFilename, validName } from '../api'
+import { isCancelled } from '@/api/errors'
 import { useSettingsStore } from '@/stores/settings'
 import { useToast } from '@/composables/useToast'
 import { isRegionReady } from '@/composables/useProjectForm'
@@ -121,7 +122,7 @@ async function start() {
     toast.success(t('images.dialog.completed', { name: upload.value.name }))
     emit('completed', upload.value.image)
   } catch (e) {
-    if (e?.name === 'AbortError') return
+    if (isCancelled(e)) return
     phase.value = 'failed'
     error.value = e?.response?.data?.message ?? e?.message ?? t('common.error')
   }

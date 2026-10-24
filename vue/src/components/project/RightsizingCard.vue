@@ -90,7 +90,7 @@ defineExpose({ load, apply, dismiss })
 </script>
 
 <template>
-  <div v-if="open" class="mx-6 mt-3 rounded-xl border border-sky-900/60 bg-sky-950/20 px-4 py-3 space-y-2" data-test="rightsizing-card">
+  <div v-if="open" class="mx-6 mt-3 rounded-xl border border-sky-900/60 bg-sky-950/20 px-4 py-3 space-y-2" data-test="rightsizing-card" data-tour="rightsizing-card">
     <div class="flex flex-wrap items-start justify-between gap-3">
       <div class="flex items-start gap-3 min-w-0">
         <Gauge class="w-5 h-5 text-sky-400 shrink-0 mt-0.5" />

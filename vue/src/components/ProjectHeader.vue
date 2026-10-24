@@ -198,7 +198,7 @@ async function copyUrl() {
       </div>
 
       <!-- Tabs -->
-      <div class="flex gap-1 -mb-px">
+      <div class="flex gap-1 -mb-px" data-tour="project-tabs">
         <button
           v-for="tab in tabs" :key="tab.id"
           class="tab-line px-5 py-2.5 text-[15px]"

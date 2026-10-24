@@ -77,7 +77,7 @@ function reachableText(v) {
 </script>
 
 <template>
-  <div class="card" data-testid="global-dns-panel">
+  <div class="card" data-testid="global-dns-panel" data-tour="settings-global-dns">
     <div class="flex items-center gap-2 mb-4 pb-3 border-b border-gray-800">
       <Earth class="w-4 h-4" style="color:rgb(var(--brand-500))" />
       <h3 class="text-sm font-semibold text-gray-100">{{ t('globalDns.platform.title') }}</h3>

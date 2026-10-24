@@ -79,6 +79,7 @@ export default function (registry) {
     component: markRaw(defineAsyncComponent(() => import('./components/TenantSettings.vue'))),
     visibleIf: isCentralAdmin,
     dataTour: 'settings-tenants-tab',
+    tutorial: true,
   })
 
   // Administration → Members → Users (replaces the core page) — visible only when tenancy is
@@ -94,6 +95,7 @@ export default function (registry) {
     component: markRaw(defineAsyncComponent(() => import('./components/UsersManagement.vue'))),
     visibleIf: () => isTenancyEnabled() && (isCentralAdmin() || usePermissionsStore().can('members.view')),
     dataTour: 'settings-users-tab',
+    tutorial: true,
   })
 
   // Administration → Platform → Resource Usage — central admin only
@@ -108,6 +110,7 @@ export default function (registry) {
     component: markRaw(defineAsyncComponent(() => import('./components/ResourceUsage.vue'))),
     visibleIf: isCentralAdmin,
     dataTour: 'settings-usage-tab',
+    tutorial: true,
   })
 
   // Billing (bills, prices, region offers) is the Billing module's (modules/billing)

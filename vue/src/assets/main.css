@@ -259,6 +259,19 @@ html { scrollbar-gutter: stable; }
 .runr-tour-popover .driver-popover-arrow-side-bottom .driver-popover-arrow {
   border-color: rgb(var(--gray-700));
 }
+/* The element a tour step shows is visible while the step is active. Controls that appear only on
+   hover (opacity-0 group-hover:opacity-100, invisible group-hover:visible: the deployment table's
+   log, rollback and delete buttons) were highlighted invisible. driver.js puts
+   driver-active-element on the step's element and takes it off when the step ends, so outside the
+   tour nothing changes. An opacity-0 ancestor (a toolbar shown on hover) shows with it; a hidden
+   (display: none) hover target cannot be shown this way (tests/composables/tutorialHoverTargets.spec.js). */
+.driver-active-element.opacity-0,
+.opacity-0:has(.driver-active-element) {
+  opacity: 1 !important;
+}
+.driver-active-element {
+  visibility: visible !important;
+}
 /* ── Light theme: badge & accent color overrides ─────────────────────────── */
 /* Backgrounds: dark-900 tones → light-50 tones */
 [data-theme="light"] [class*="bg-emerald-900"] { background-color: rgb(236 253 245 / 0.8); }

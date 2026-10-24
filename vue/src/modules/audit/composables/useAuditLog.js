@@ -1,5 +1,6 @@
 import { ref, reactive } from 'vue'
 import { auditApi } from '@/api/security'
+import { requestErrorMessage } from '@/api/errors'
 import { useLatest } from '@/composables/useLatest'
 
 const emptyFilters = () => ({
@@ -37,6 +38,8 @@ export function useAuditLog() {
   const exporting = ref(false)
   const settings = ref(null)
   const savingSettings = ref(false)
+  // Why the last retention save failed: the API's message or that the server could not be reached
+  const settingsError = ref(null)
 
   // Apply, reset and the pages overtake each other: the events of the newest request are shown
   const latest = useLatest()
@@ -103,11 +106,13 @@ export function useAuditLog() {
 
   async function saveRetention(days) {
     savingSettings.value = true
+    settingsError.value = null
     try {
       const { data } = await auditApi.updateSettings({ retention_days: Number(days) })
       settings.value = data
       return true
-    } catch {
+    } catch (e) {
+      settingsError.value = requestErrorMessage(e)
       return false
     } finally {
       savingSettings.value = false
@@ -115,7 +120,7 @@ export function useAuditLog() {
   }
 
   return {
-    filters, events, meta, loading, error, selected, exporting, settings, savingSettings,
+    filters, events, meta, loading, error, selected, exporting, settings, savingSettings, settingsError,
     load, apply, reset, open, close, exportAs, loadSettings, saveRetention,
   }
 }

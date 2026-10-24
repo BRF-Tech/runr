@@ -1,5 +1,6 @@
 import axios from 'axios'
 import { moduleRegistry } from '@/modules/index'
+import { describeConnectionFailure } from '@/api/errors'
 
 const client = axios.create({
   baseURL: import.meta.env.VITE_API_URL || '/api',
@@ -81,6 +82,12 @@ client.interceptors.response.use(
         window.location.href = `/login${redirect}`
       }
     }
+
+    // No answer at all (network down, DNS, a TLS certificate the browser rejected, CORS, a dropped
+    // connection, a timeout): the error displays show that the console could not reach the server
+    // instead of "An error occurred." (src/api/errors.js). HTTP errors and cancelled requests pass
+    // through untouched.
+    describeConnectionFailure(error)
 
     return Promise.reject(error)
   },

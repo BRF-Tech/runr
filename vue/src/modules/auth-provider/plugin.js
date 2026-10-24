@@ -19,6 +19,7 @@ export default function (registry) {
     order: 20,
     component: markRaw(AuthProviderSettings),
     dataTour: 'auth-providers-tab',
+    tutorial: true,
     // Sign-in providers and SSO group mapping: sso.manage (docs/permissions.md)
     visibleIf: () => usePermissionsStore().can('sso.manage'),
   })

@@ -6,6 +6,7 @@ import { ShieldCheck, UsersRound } from 'lucide-vue-next'
 import SettingsView from '@/views/SettingsView.vue'
 import { moduleRegistry } from '@/modules/index'
 import { usePermissionsStore } from '@/stores/permissions'
+import { useTutorialStore } from '@/stores/tutorial'
 import { freshPinia, makeI18n } from '@/test-support/helpers'
 
 // The settings page under the new navigation: its title is the menu group, the tabs above the
@@ -16,6 +17,14 @@ vi.mock('@/modules/index', async () => {
   return { moduleRegistry: reactive({ settingsTabs: [], navLinks: [], headerSlots: [], viewKey: 0 }) }
 })
 vi.mock('@/api/runtimes', () => ({ runtimesApi: { list: vi.fn(() => new Promise(() => {})) } }))
+// The tours the page starts on a tutorial restart (driver.js itself is not under test here)
+const tours = vi.hoisted(() => ({ settings: vi.fn(), tokens: vi.fn(), users: vi.fn(), tabs: vi.fn() }))
+vi.mock('@/composables/useTutorial', () => ({
+  createTutorial:          () => ({ start: tours.settings }),
+  useTokensTutorial:       () => ({ start: tours.tokens }),
+  useUsersTutorial:        () => ({ start: tours.users }),
+  useSettingsTabsTutorial: () => ({ start: tours.tabs }),
+}))
 vi.mock('@/composables/useSettingsPage', async () => {
   const { ref: r } = await import('vue')
   return {
@@ -31,9 +40,18 @@ vi.mock('@/composables/useSettingsPage', async () => {
 })
 
 const stub = (name) => ({ name, render: () => h('div', { 'data-stub': name }) })
+// The users tour opens the add form first (UsersManager.openAdd)
+const openUsersForm = vi.fn()
+const usersStub = {
+  name: 'UsersManager',
+  setup(_, { expose }) {
+    expose({ openAdd: openUsersForm })
+    return () => h('div', { 'data-stub': 'UsersManager' })
+  },
+}
 const STUBS = {
   AppHeader: true, RegionDetailModal: true, DemoManager: true, RegionsList: true,
-  UsersManager: stub('UsersManager'), ApiTokensManager: stub('ApiTokensManager'), RuntimesManager: stub('RuntimesManager'),
+  UsersManager: usersStub, ApiTokensManager: stub('ApiTokensManager'), RuntimesManager: stub('RuntimesManager'),
 }
 
 let router
@@ -146,5 +164,46 @@ describe('SettingsView', () => {
     await flushPromises()
     expect(w.find('[data-stub="Late"]').exists()).toBe(true)
     expect(tabs(w)).toEqual(['Users', 'Roles', 'Groups', 'Settings'])
+  })
+})
+
+describe('SettingsView tutorial', () => {
+  async function restart() {
+    useTutorialStore().requestRestart()
+    await flushPromises()
+  }
+  const started = () => Object.keys(tours).filter(key => tours[key].mock.calls.length > 0)
+
+  it('starts the tour of the page shown: platform, API tokens, users', async () => {
+    grant(['regions.view', 'tokens.manage', 'members.view'])
+    await open('/settings')
+    await restart()
+    expect(started()).toEqual(['settings'])
+
+    vi.clearAllMocks()
+    await router.push('/settings?tab=tokens')
+    await restart()
+    expect(started()).toEqual(['tokens'])
+
+    vi.clearAllMocks()
+    await router.push('/settings?tab=users')
+    await restart()
+    expect(started()).toEqual(['users'])
+    expect(openUsersForm).toHaveBeenCalled()
+  })
+
+  it('gives a module page the tour of the tabs of its menu section', async () => {
+    grant(['members.view'])
+    await open('/settings?tab=roles')
+    await restart()
+    expect(started()).toEqual(['tabs'])
+  })
+
+  it('leaves a module page with a tour of its own (tutorial: true) to that tour', async () => {
+    grant(['members.view'])
+    moduleRegistry.settingsTabs.push({ key: 'own', labelKey: 'nav.settings', group: 'admin', section: 'members', order: 90, component: markRaw(stub('Own')), tutorial: true })
+    await open('/settings?tab=own')
+    await restart()
+    expect(started()).toEqual([])
   })
 })

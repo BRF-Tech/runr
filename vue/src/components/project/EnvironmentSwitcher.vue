@@ -29,7 +29,7 @@ function pick(env) {
 </script>
 
 <template>
-  <div v-if="environments.length > 1" class="px-6 mb-4" data-testid="environment-switcher">
+  <div v-if="environments.length > 1" class="px-6 mb-4" data-testid="environment-switcher" data-tour="environment-switcher">
     <div class="flex items-center gap-2 flex-wrap">
       <span class="flex items-center gap-1.5 text-xs text-gray-400 mr-1">
         <Layers class="w-3.5 h-3.5" />{{ t('environments.switcherLabel') }}

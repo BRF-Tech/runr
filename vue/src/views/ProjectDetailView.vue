@@ -303,6 +303,7 @@ onMounted(() => init())
             :rollout="rollout"
             poll
             data-test="current-rollout"
+            data-tour="rollout-panel"
             @updated="onRolloutUpdated"
           />
           <DeploymentTable

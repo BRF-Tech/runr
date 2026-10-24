@@ -42,6 +42,7 @@ const plainEnvNames = computed(() => Object.keys(parseEnvVars(props.form.config.
 
       <!-- a global project's GPUs are admitted in every one of its regions (docs/global-projects.md) -->
       <GpuConfig
+        data-tour="create-gpu"
         v-model="form.config.gpu"
         v-model:timeout-seconds="form.config.timeout_seconds"
         :service-type="form.service_type"
@@ -67,9 +68,9 @@ const plainEnvNames = computed(() => Object.keys(parseEnvVars(props.form.config.
         :trigger-type="form.config.trigger_type"
       />
 
-      <EnvVarsEditor v-model="form.config.env_vars" />
+      <EnvVarsEditor v-model="form.config.env_vars" data-tour="create-env" />
 
-      <SecretEnvVarsEditor v-if="form.secrets" v-model="form.secrets" :plain-names="plainEnvNames" />
+      <SecretEnvVarsEditor v-if="form.secrets" v-model="form.secrets" :plain-names="plainEnvNames" data-tour="create-secrets" />
     </div>
 
     <p v-if="error" class="text-sm text-red-400 mt-3">{{ error }}</p>

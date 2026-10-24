@@ -3,7 +3,7 @@ import { ref, computed, nextTick, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute } from 'vue-router'
 import { useTutorialStore } from '@/stores/tutorial'
-import { createTutorial, useTokensTutorial, useUsersTutorial } from '@/composables/useTutorial'
+import { createTutorial, useSettingsTabsTutorial, useTokensTutorial, useUsersTutorial } from '@/composables/useTutorial'
 import { settingsSteps } from '@/composables/tutorialSteps'
 import { useSettingsPage } from '@/composables/useSettingsPage'
 import { moduleRegistry } from '@/modules/index'
@@ -35,17 +35,20 @@ const { start: startSettingsTutorial } = createTutorial(settingsSteps, {
 })
 const { start: startTokensTutorial } = useTokensTutorial()
 const { start: startUsersTutorial } = useUsersTutorial()
+const { start: startTabsTutorial } = useSettingsTabsTutorial()
 const usersRef = ref(null)
 
+// A tutorial restart starts the tour of the page shown. Module pages with a tour of their own
+// (settingsTabs entry with `tutorial: true`) start it themselves; the other pages get the tour
+// of their menu section's tabs.
 watch(() => tutorialStore.restartCounter, () => {
-  const tab = activeTab.value
-  if (tab === 'settings') nextTick(() => startSettingsTutorial())
-  else if (tab === 'tokens') nextTick(() => startTokensTutorial())
-  else if (tab === 'users') {
+  if (activeTab.value === 'settings') nextTick(() => startSettingsTutorial())
+  else if (showsCore('tokens')) nextTick(() => startTokensTutorial())
+  else if (showsCore('users')) {
     usersRef.value?.openAdd()
     nextTick(() => startUsersTutorial())
   }
-  // Module tabs (auth-providers, tenants etc.) handle their own tutorial via restartCounter watch
+  else if (!ownTutorial.value) nextTick(() => startTabsTutorial())
 })
 
 const perms = usePermissionsStore()
@@ -74,6 +77,10 @@ const pageTitle  = computed(() => {
 
 // Core pages: the menu shows their link (the tenancy module's Users replaces the core one)
 const showsCore = (key) => activeTab.value === key && activeLink.value?.source === 'core'
+
+// The module page shown starts a tour of its own on a tutorial restart
+const ownTutorial = computed(() => activeLink.value?.source === 'module'
+  && moduleRegistry.settingsTabs.some(tab => tab.key === activeLink.value.tab && tab.tutorial))
 
 const {
   baseDomain, registrationEnabled, gpuDemoEnabled, customRuntimesEnabled, totalCpuM, totalMemoryMb, regions, demoStatus,
@@ -267,7 +274,7 @@ const tenantDomainCard = computed(() =>
               </div>
             </div>
 
-            <div v-if="canSwitchCrossTenant" class="card" data-testid="settings-cross-tenant">
+            <div v-if="canSwitchCrossTenant" class="card" data-testid="settings-cross-tenant" data-tour="settings-cross-tenant">
               <div class="flex items-center gap-2 mb-4 pb-3 border-b border-gray-800">
                 <Network class="w-4 h-4" style="color:rgb(var(--brand-500))" />
                 <h3 class="text-sm font-semibold text-gray-100">{{ t('network.platform.section') }}</h3>

@@ -81,6 +81,7 @@ defineEmits(['next', 'back'])
 
       <EndpointTypeSelector
         v-if="form.config.trigger_type === 'http'"
+        data-tour="create-endpoint"
         v-model:endpoint-type="form.endpoint_type"
         v-model:gateway-path="form.gateway_path"
         v-model:gateway-methods="form.gateway_methods"

@@ -1,6 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
+import { AxiosError } from 'axios'
 import { deferred, withPlugins } from '../../helpers'
+import i18n from '@/i18n'
+import { describeConnectionFailure } from '@/api/errors'
 
 const push = vi.hoisted(() => vi.fn())
 const mcpApi = vi.hoisted(() => ({ templates: vi.fn(), saveServer: vi.fn() }))
@@ -119,6 +122,19 @@ describe('New MCP server', () => {
     const w = await mountModal()
     expect(w.find('[data-testid="mcp-enable-runtime"]').exists()).toBe(false)
     expect(w.find('[data-testid="mcp-runtime-missing"]').text()).toContain('An administrator enables it')
+  })
+
+  it('says the console could not reach the server when the templates never arrive (e.g. a rejected certificate)', async () => {
+    i18n.global.locale.value = 'en'
+    try {
+      // what the API client's interceptor makes of a request without an answer
+      mcpApi.templates.mockRejectedValue(describeConnectionFailure(new AxiosError('Network Error', AxiosError.ERR_NETWORK, {}, {})))
+      const w = await mountModal()
+      expect(w.find('[data-testid="mcp-create-error"]').text())
+        .toBe('The console could not reach the server. Check your connection and try again.')
+    } finally {
+      i18n.global.locale.value = 'tr'
+    }
   })
 
   it('refuses a taken name and an invalid slug', async () => {

@@ -100,6 +100,8 @@ const liveId = computed(() => props.deployments.find(d => d.status === 'active')
 function canRollBack(d) {
   return canDeploy.value && !!d.version && d.id !== liveId.value && !['pending', 'running'].includes(d.status)
 }
+// The tour points at the first roll-back button (the live deployment has none)
+const firstRollbackId = computed(() => props.deployments.find(canRollBack)?.id ?? null)
 </script>
 
 <template>
@@ -116,6 +118,7 @@ function canRollBack(d) {
         class="ml-auto inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-md border border-gray-700/60 bg-gray-800/40 text-gray-300 hover:text-gray-100 hover:border-gray-500 transition-colors"
         :title="t('deployStrategy.openHint')"
         data-test="deploy-strategy-open"
+        data-tour="deploy-strategy-btn"
         @click="$emit('configure-strategy')"
       >
         <SlidersHorizontal class="w-3.5 h-3.5" />{{ t('deployStrategy.label') }}:
@@ -221,6 +224,7 @@ function canRollBack(d) {
                   class="text-gray-400 hover:text-gray-100 transition-colors opacity-0 group-hover:opacity-100"
                   :title="t('environments.rollback.action')"
                   data-testid="deployment-rollback"
+                  :data-tour="d.id === firstRollbackId ? 'deployment-rollback-btn' : undefined"
                   @click="$emit('rollback', d)"
                 >
                   <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">

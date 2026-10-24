@@ -1,6 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
 import { withPlugins } from '../helpers'
+import { apiError } from '@/test-support/helpers'
+import { useToast } from '@/composables/useToast'
 
 // Administration → Audit log (docs/security.md): filters, table, detail drawer, export, retention.
 const auditApi = vi.hoisted(() => ({
@@ -127,6 +129,16 @@ describe('AuditLogSettings', () => {
     await w.find('[data-testid="audit-retention-save"]').trigger('click')
     await flushPromises()
     expect(auditApi.updateSettings).toHaveBeenCalledWith({ retention_days: 90 })
+  })
+
+  it('says why the retention could not be saved', async () => {
+    const { toasts } = useToast()
+    toasts.value = []
+    auditApi.updateSettings.mockRejectedValueOnce(apiError(422, { errors: { retention_days: ['The retention days may not be greater than 3650.'] } }))
+    const w = await mountLog()
+    await w.find('[data-testid="audit-retention-save"]').trigger('click')
+    await flushPromises()
+    expect(toasts.value.at(-1)).toMatchObject({ type: 'error', message: 'The retention days may not be greater than 3650.' })
   })
 
   it('shows the retention read-only when it cannot be changed', async () => {

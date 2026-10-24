@@ -26,6 +26,7 @@ const open = ref(false)
       class="btn-secondary flex items-center gap-1.5"
       :disabled="!hasReadyRegion"
       data-testid="new-mcp-server-btn"
+      data-tour="new-mcp-server-btn"
       @click="hasReadyRegion && (open = true)"
     ><Bot class="w-4 h-4" />{{ t('mcp.create.button') }}</button>
     <CreateMcpServerModal v-if="open" :existing-names="existingNames" @created="emit('created', $event)" @done="open = false" @close="open = false" />

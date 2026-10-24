@@ -74,12 +74,12 @@ export const CORE_LINKS = [
   },
   {
     key: 'users', group: 'admin', section: 'members', tab: 'users', order: 10,
-    labelKey: 'users.tab', descKey: 'nav.links.usersDesc', icon: markRaw(Users),
+    labelKey: 'users.tab', descKey: 'nav.links.usersDesc', icon: markRaw(Users), dataTour: 'settings-users-tab',
     visibleIf: can('members.view'),
   },
   {
     key: 'tokens', group: 'admin', section: 'access', tab: 'tokens', order: 10,
-    labelKey: 'tokens.tab', descKey: 'nav.links.tokensDesc', icon: markRaw(KeyRound),
+    labelKey: 'tokens.tab', descKey: 'nav.links.tokensDesc', icon: markRaw(KeyRound), dataTour: 'settings-tokens-tab',
     visibleIf: can('tokens.manage'),
   },
   {

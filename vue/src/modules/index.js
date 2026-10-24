@@ -4,7 +4,9 @@ export const moduleRegistry = reactive({
   headerSlots: [],          // Components for AppHeader right side (context switchers: the tenant switcher)
   appTopSlots: [],          // Components rendered above RouterView
   // Settings-page tabs (/settings?tab=<key>), placed in the main menu by their group and section
-  // (src/navigation/menu.js): { key, labelKey, component, group, section, descKey, icon, order, visibleIf(), dataTour }
+  // (src/navigation/menu.js): { key, labelKey, component, group, section, descKey, icon, order, visibleIf(), dataTour, tutorial }
+  // tutorial: true — the page starts a tour of its own on a tutorial restart (the settings page
+  // then starts none; other pages get the tour of their section's tabs)
   settingsTabs: [],
   // Module pages with a route of their own, in the main menu: { key, to, labelKey, group, section, descKey, icon, order, visibleIf() }
   navLinks: [],

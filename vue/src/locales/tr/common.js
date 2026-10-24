@@ -7,6 +7,8 @@ export default {
     close:     '✕',
     loading:   'Yükleniyor…',
     error:     'Bir hata oluştu.',
+    networkError: 'Konsol sunucuya ulaşamadı. Bağlantınızı kontrol edip tekrar deneyin.',
+    timeoutError: 'Sunucu zamanında yanıt vermedi. Bağlantınızı kontrol edip tekrar deneyin.',
     copy:      'Kopyala',
     copied:    '✓',
     dismiss:   'Kapat',

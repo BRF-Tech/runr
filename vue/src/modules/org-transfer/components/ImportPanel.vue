@@ -12,6 +12,7 @@ import { FileUp, Upload, FileText, Download, RotateCw } from 'lucide-vue-next'
 import { orgTransferApi, unwrap, uploadPackage, resumableImport, importSourcePayload, importSourceComplete } from '../api'
 import ImportPlanView from './ImportPlanView.vue'
 import { sha256Hex, SHA256_MAX_BYTES } from '@/api/ai'
+import { isCancelled } from '@/api/errors'
 import { formatBytes } from '@/utils/ai'
 
 const { t } = useI18n()
@@ -127,7 +128,7 @@ async function upload() {
     emit('changed', unwrap(await orgTransferApi.complete(transfer.id)))
     file.value = null
   } catch (e) {
-    if (e?.name === 'AbortError') return
+    if (isCancelled(e)) return
     error.value = e?.response?.data?.message ?? e?.message ?? t('orgTransfer.import.uploadFailed')
   } finally {
     uploading.value = false

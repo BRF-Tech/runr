@@ -4,7 +4,7 @@ import { onUnmounted, watch, nextTick } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useTutorialStore } from '@/stores/tutorial'
 import {
-  projectsSteps, createSteps, settingsSteps,
+  projectsSteps, createSteps, settingsSteps, settingsTabSteps,
   detailVersionsSteps, detailDeploymentsSteps, detailMetricsSteps,
   editSteps, tokensSteps, usersSteps,
   accountProfileSteps, accountSupportSteps,
@@ -91,6 +91,10 @@ export function useCreateTutorial() {
 
 export function useSettingsTutorial() {
   return createTutorial(settingsSteps)
+}
+
+export function useSettingsTabsTutorial() {
+  return createTutorial(settingsTabSteps)
 }
 
 export function useDetailVersionsTutorial() {

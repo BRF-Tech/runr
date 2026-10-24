@@ -2,6 +2,7 @@
 import { ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { projectsApi } from '@/api/projects'
+import { requestErrorMessage } from '@/api/errors'
 import StatusBadge from '@/components/StatusBadge.vue'
 
 const { t } = useI18n()
@@ -24,8 +25,8 @@ async function confirm() {
   try {
     await projectsApi.deleteDeployment(props.project.id, props.deployment.id)
     emit('deleted', props.deployment.id)
-  } catch {
-    error.value    = t('common.error')
+  } catch (e) {
+    error.value    = requestErrorMessage(e, t('common.error'))
     deleting.value = false
   }
 }
@@ -67,7 +68,7 @@ async function confirm() {
         </div>
 
         <!-- Error -->
-        <p v-if="error" class="text-xs text-red-400">{{ error }}</p>
+        <p v-if="error" class="text-xs text-red-400" data-testid="deployment-delete-error">{{ error }}</p>
       </div>
 
       <!-- Footer -->
@@ -82,6 +83,7 @@ async function confirm() {
         <button
           class="text-sm font-medium px-4 py-2 rounded-md bg-red-600 hover:bg-red-500 disabled:opacity-50 disabled:cursor-not-allowed text-white transition-colors"
           :disabled="deleting"
+          data-testid="deployment-delete-confirm"
           @click="confirm"
         >
           {{ deleting ? t('project.deleteDeployment.deleting') : t('project.deleteDeployment.confirm') }}
