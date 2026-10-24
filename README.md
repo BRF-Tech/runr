@@ -257,7 +257,7 @@ To install a specific release, pin the chart version; the API and UI images foll
 default to the chart's `appVersion`):
 
 ```bash
-helm upgrade --install runr brf-tech/runr --version 0.6.0 \
+helm upgrade --install runr brf-tech/runr --version 0.6.1 \
   --namespace runr --create-namespace \
   --set domain=runr.example.com
 ```

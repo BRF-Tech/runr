@@ -8,8 +8,8 @@ use SharedSupport\TenantMigrationRegistry;
 
 /**
  * The one way a tenant's database (a PostgreSQL schema "tenant_<tenant id>") is created and
- * migrated: Tenancy's TenantMigrations plus the tenant migrations other modules register
- * (TenantMigrationRegistry, e.g. the Ticket module). Every path that creates or migrates a
+ * migrated: Tenancy's TenantMigrations, every module's TenantMigrations — switched off or not —
+ * and the tenant migrations registered in TenantMigrationRegistry. Every path that creates or migrates a
  * tenant goes through here — the console (POST /api/tenants), self-service signups,
  * tenancy:create-tenant, tenancy:migrate, tenancy:setup and the development seeder — so a
  * tenant never misses a module's migrations and the next tenancy:migrate finds nothing it ran
@@ -24,10 +24,31 @@ class TenantSchema
      */
     public static function paths(): array
     {
-        return array_values(array_unique(array_merge(
+        $paths = array_merge(
             [module_path('Tenancy', 'Database/TenantMigrations')],
+            self::modulePaths(),
             TenantMigrationRegistry::paths(),
-        )));
+        );
+
+        return array_values(array_unique(array_map(fn (string $path) => realpath($path) ?: $path, $paths)));
+    }
+
+    /**
+     * The TenantMigrations folder of every module, enabled or not. The entrypoint disables a module
+     * that is switched off (BILLING_ENABLED, TICKET_ENABLED), so its provider never registers its
+     * tenant migrations, while its central ones run anyway (run_module_migrations): a tenant
+     * created or migrated then got no billing_* or support_* tables (docs/billing.md: the tables
+     * exist while the module is off).
+     *
+     * @return list<string>
+     */
+    private static function modulePaths(): array
+    {
+        $modules = rtrim((string) config('modules.paths.modules', base_path('Modules')), '/\\');
+        $paths = glob($modules.'/*/Database/TenantMigrations', GLOB_ONLYDIR) ?: [];
+        sort($paths);
+
+        return $paths;
     }
 
     /**

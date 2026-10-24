@@ -87,6 +87,11 @@ ESLint, Vitest, Playwright and the end-to-end suites on kind, is described in
   utility classes (theme in `vue/src/assets/main.css`; a `<style>` block that uses `@apply` starts
   with `@reference` to it). User-facing strings go through `vue-i18n` (`vue/src/locales`) in
   English and Turkish.
+- **Console tutorial**: every console change also looks at the in-app tutorial. A control that is
+  added, moved, renamed or removed updates the tour that shows it: the steps in
+  `vue/src/composables/tutorialSteps.js` (and `useRegionWizardTutorial.js`), their `data-tour`
+  targets and the `tutorial.*` texts in English and Turkish; a new control on a toured screen gets
+  a step. `vue/tests/composables/tutorialSteps.spec.js` fails when a step's target or text is gone.
 - **Go**: `gofmt`.
 - **Comments** explain why, not what.
 

@@ -21,9 +21,10 @@ use Symfony\Component\Yaml\Yaml;
 use Tests\TestCase;
 
 /**
- * Build / deployment readiness: first check ~1 s after submit / apply, then every 2 s, up to the
- * overall timeout (the build Job's deadline + 60 s / 300 s). The checks are delayed queue jobs, which Redis
- * workers pick up only when they pop: block_for + Horizon sleep bounds how late a due check runs.
+ * Build / deployment readiness: first check ~1 s after submit / apply, then every 2 s — a
+ * deployment every second for its first 10 s — up to the overall timeout (the build Job's deadline
+ * + 60 s / 300 s). The checks are delayed queue jobs, which Redis workers pick up only when they
+ * pop: block_for + Horizon sleep bounds how late a due check runs.
  */
 class ReadinessPollingScheduleTest extends TestCase
 {
@@ -74,19 +75,24 @@ class ReadinessPollingScheduleTest extends TestCase
         // Builds: the build Job's deadline (900 s by default) plus a minute
         $this->assertSame(960, CheckBuildReadyJob::timeoutSeconds());
 
-        foreach ([CheckBuildReadyJob::class => 960, CheckDeploymentReadyJob::class => 300] as $job => $timeout) {
-            $this->assertSame(1, $job::FIRST_CHECK_DELAY);
-            $this->assertSame(2, $job::POLL_INTERVAL);
-            $this->assertSame($timeout, $job === CheckBuildReadyJob::class ? $job::timeoutSeconds() : $job::TIMEOUT_SECONDS);
-
-            // the last check is the first one at or after the timeout
-            $lastCheckAt = fn (int $attempts) => $job::FIRST_CHECK_DELAY + ($attempts - 1) * $job::POLL_INTERVAL;
-            $this->assertGreaterThanOrEqual($timeout, $lastCheckAt($job::maxAttempts()), $job);
-            $this->assertLessThan($timeout, $lastCheckAt($job::maxAttempts() - 1), $job);
-        }
-
+        $this->assertSame(1, CheckBuildReadyJob::FIRST_CHECK_DELAY);
+        $this->assertSame(2, CheckBuildReadyJob::POLL_INTERVAL);
+        // the last check is the first one at or after the timeout
+        $lastCheckAt = fn (int $attempts) => CheckBuildReadyJob::FIRST_CHECK_DELAY + ($attempts - 1) * CheckBuildReadyJob::POLL_INTERVAL;
+        $this->assertGreaterThanOrEqual(960, $lastCheckAt(CheckBuildReadyJob::maxAttempts()));
+        $this->assertLessThan(960, $lastCheckAt(CheckBuildReadyJob::maxAttempts() - 1));
         $this->assertSame(481, CheckBuildReadyJob::maxAttempts());
-        $this->assertSame(151, CheckDeploymentReadyJob::maxAttempts());
+
+        // Deployments: 1 s after the apply, every second up to 11 s, then every 2 s up to 300 s
+        $this->assertSame(300, CheckDeploymentReadyJob::TIMEOUT_SECONDS);
+        $this->assertSame([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 13, 15], array_map(CheckDeploymentReadyJob::checkAt(...), range(1, 13)));
+        $this->assertSame(1, CheckDeploymentReadyJob::delayBefore(2));
+        $this->assertSame(1, CheckDeploymentReadyJob::delayBefore(11));
+        $this->assertSame(2, CheckDeploymentReadyJob::delayBefore(12));
+        $max = CheckDeploymentReadyJob::maxAttempts();
+        $this->assertSame(156, $max);
+        $this->assertGreaterThanOrEqual(300, CheckDeploymentReadyJob::checkAt($max));
+        $this->assertLessThan(300, CheckDeploymentReadyJob::checkAt($max - 1));
     }
 
     public function test_a_due_check_is_picked_up_within_a_second(): void
@@ -176,6 +182,11 @@ class ReadinessPollingScheduleTest extends TestCase
 
         $this->assertSame('pending', $deployment->fresh()->status);
         Bus::assertDispatched(CheckDeploymentReadyJob::class, fn (CheckDeploymentReadyJob $job) => $job->attempt === 4
+            && $job->delay->equalTo(now()->addSeconds(1)));
+
+        // past the first 10 s: every 2 s
+        (new CheckDeploymentReadyJob($deployment, $project, 20))->failed(new \RuntimeException('timed out'));
+        Bus::assertDispatched(CheckDeploymentReadyJob::class, fn (CheckDeploymentReadyJob $job) => $job->attempt === 21
             && $job->delay->equalTo(now()->addSeconds(2)));
 
         (new CheckDeploymentReadyJob($deployment, $project, CheckDeploymentReadyJob::maxAttempts()))->failed(new \RuntimeException('timed out'));
@@ -183,7 +194,7 @@ class ReadinessPollingScheduleTest extends TestCase
         $this->assertSame('failed', $deployment->fresh()->status);
     }
 
-    public function test_a_deployment_is_checked_after_one_second_then_every_two_until_the_timeout(): void
+    public function test_a_deployment_is_checked_after_one_second_then_every_second_then_every_two_until_the_timeout(): void
     {
         $this->freezeTime();
         Event::fake([PlatformEvent::class, NotificationCreated::class]);
@@ -198,6 +209,10 @@ class ReadinessPollingScheduleTest extends TestCase
 
         (new CheckDeploymentReadyJob($deployment, $project, 1))->handle();
         Bus::assertDispatched(CheckDeploymentReadyJob::class, fn (CheckDeploymentReadyJob $job) => $job->attempt === 2
+            && $job->delay->equalTo(now()->addSeconds(1)));
+
+        (new CheckDeploymentReadyJob($deployment, $project, 11))->handle();
+        Bus::assertDispatched(CheckDeploymentReadyJob::class, fn (CheckDeploymentReadyJob $job) => $job->attempt === 12
             && $job->delay->equalTo(now()->addSeconds(2)));
 
         (new CheckDeploymentReadyJob($deployment, $project, CheckDeploymentReadyJob::maxAttempts()))->handle();

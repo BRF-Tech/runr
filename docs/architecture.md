@@ -550,6 +550,12 @@ sequenceDiagram
     Q-->>UI: PlatformEvent over Reverb (deployment.*)
 ```
 
+- `ProcessDeployment` and `CheckDeploymentReadyJob` run on Horizon's `deploys` queue, whose
+  process pool always has a worker of its own (`App\Support\Projects\DeployQueue`): a deploy does
+  not wait behind the teardown of the deployment it replaces, the minute jobs or a long install on
+  `default`. The readiness check runs 1 s after the apply, every second for the next 10 s, then
+  every 2 s up to 300 s. The calls to a region's API server reuse their connections
+  (`KubernetesClient`, 20 s while idle), so each one after the first costs one round trip.
 - `Version::BUILD_STATUSES`: `pending`, `building`, `ready`, `failed`, `pruned`, `cancelled`.
   Only `ready` versions can be deployed. `pruned` versions had their build image removed by the
   registry retention (`RetainRegistryImagesJob`). `cancelled` builds were stopped by RunR, not

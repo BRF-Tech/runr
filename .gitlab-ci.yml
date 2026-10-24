@@ -223,10 +223,11 @@ test:api:
   script:
     # before_script and script share one shell: the working directory is already api/
     # Coverage floor: line coverage of app/ (phpunit.xml <source>), the measured value rounded down
-    # to whole percent; raise it with the coverage. This process (not PHPUnit's) reads the report,
-    # hence its memory limit (docs/development.md → Testing). PHPUnit's own options go last: the
-    # first option `artisan test` does not know ends the parsing of its own (--coverage, --min).
-    - php -d memory_limit=1G artisan test --compact --coverage --min=76 --stop-on-failure
+    # to whole percent; raise it with the coverage. PHPUnit's process writes the report (its memory
+    # limit is in phpunit.xml), this one reads it, hence its own limit (docs/development.md →
+    # Testing). PHPUnit's own options go last: the first option `artisan test` does not know ends
+    # the parsing of its own (--coverage, --min).
+    - php -d memory_limit=2G artisan test --compact --coverage --min=76 --stop-on-failure
   coverage: '/^\s*Total:\s*(\d+(?:\.\d+)?) %/'
   rules:
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"

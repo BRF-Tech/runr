@@ -398,8 +398,8 @@ With Docker Compose: `docker compose exec api php artisan test`.
 `phpunit.xml` sets what the suite depends on, whatever `.env` says: in-memory SQLite, the array
 cache, mail and session drivers, a synchronous queue, `APP_URL=http://localhost` (forced: the
 URLs assertions build do not follow the `.env` copied from `.env.example`) and
-`memory_limit=1G` (the CI image has no `php.ini`, and PHP's default 128 MB is not enough for the
-whole suite).
+`memory_limit=3G` (the CI image has no `php.ini`; PHP's default 128 MB is not enough for the whole
+suite, and with coverage this process writes a report of more than 1 GB).
 
 Every test gets a throwaway storage directory (`storage_path()`, `tests/TestCase.php`): the
 internal git repositories, project remotes and builds tests create never land in the checkout's
@@ -411,11 +411,11 @@ of the GitHub `api` job) — the measured coverage rounded down to whole percent
 add coverage. Locally, with pcov or Xdebug installed:
 
 ```bash
-php -d memory_limit=1G artisan test --compact --coverage --min=76
+php -d memory_limit=2G artisan test --compact --coverage --min=76
 ```
 
 The `-d memory_limit` is for the `artisan` process, which reads the coverage report after PHPUnit
-has finished.
+has finished; PHPUnit's own process, which writes it, takes its limit from `phpunit.xml`.
 
 ### PHP style and static analysis
 

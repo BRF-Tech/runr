@@ -11,6 +11,7 @@
 - [ ] Commit messages follow Conventional Commits (`feat(api): …`, `fix(ui): …`)
 - [ ] `php artisan test` passes (API changes)
 - [ ] `npm run build` passes (console changes)
+- [ ] The console tutorial shows the changed and new controls (`vue/src/composables/tutorialSteps.js`, `tutorial.*` texts; console changes)
 - [ ] `helm lint helm/` passes (chart changes)
 - [ ] Documentation in `docs/` is updated for changed behaviour, configuration or Helm values
 - [ ] New database migrations work on PostgreSQL and SQLite

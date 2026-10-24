@@ -14,9 +14,18 @@ use App\Models\Setting;
 use App\Models\Version;
 use App\Models\XaasConfig;
 use App\Services\CacheVersionService;
+use Illuminate\Contracts\Events\ShouldHandleEventsAfterCommit;
 use Illuminate\Database\Eloquent\Model;
 
-class CacheInvalidationObserver
+/**
+ * Bumps the response cache versions (App\Http\Middleware\ResponseCache) of what a change touches —
+ * after the transaction that made it commits. A bump inside the transaction let a GET in between
+ * read the new version with the old rows and cache them under it: a deployment activated inside
+ * LiveDeployments::activate() answered "pending" from the cache until something else bumped the
+ * project (a redeploy measured 22 s where the deployment was active after 5 s). Outside a
+ * transaction the bump happens at once, as before.
+ */
+class CacheInvalidationObserver implements ShouldHandleEventsAfterCommit
 {
     public function __construct(
         private CacheVersionService $cacheVersion

@@ -7,6 +7,7 @@ use App\Services\Concerns\KubernetesNamespacedTrait;
 use App\Services\Contracts\KnativeConstants;
 use App\Services\Helpers\PrivateIngress;
 use App\Services\InternalNetwork\InternalNetwork;
+use GuzzleHttp\Handler\CurlHandler;
 use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Http;
@@ -17,9 +18,38 @@ class KubernetesClient
     use KubernetesClusterTrait;
     use KubernetesNamespacedTrait;
 
+    /**
+     * Seconds a connection to an API server is kept for the next call after its last one: below
+     * the idle timeouts of API servers and of the load balancers / NAT in front of them, above the
+     * gaps between the calls of a deploy and its readiness checks.
+     */
+    public const IDLE_SECONDS = 20;
+
+    /** API servers a process keeps connections to at once (the longest unused one goes first) */
+    private const MAX_TRANSPORTS = 16;
+
+    /**
+     * Per API server and credentials: the request options (with the CA / client certificate files
+     * written once) and one cURL handler, whose handles keep their connections open between
+     * requests. Without it every call opened a new TCP + TLS connection: on an API server a few
+     * milliseconds away that is two to three round trips per call, and a deploy (its secret
+     * values, manifests, internal-network routes, the replaced deployment's teardown, every
+     * readiness check) makes a dozen calls one after the other. Shared by the clients of a process
+     * (a Horizon worker runs the deploy and its checks), each PHP thread its own.
+     *
+     * @var array<string, array{options: array<string, mixed>, handler: callable|null, used: float}>
+     */
+    private static array $transports = [];
+
     private string $server;
 
-    private array $httpOptions;
+    private string $transportKey;
+
+    /** @var array<string, mixed> the kubeconfig's cluster entry */
+    private array $cluster;
+
+    /** @var array<string, mixed> the kubeconfig's user entry */
+    private array $user;
 
     public function __construct(string $kubeconfigYaml)
     {
@@ -31,8 +61,16 @@ class KubernetesClient
         $user = collect($config['users'])->firstWhere('name', $context['user'])['user'];
 
         $this->server = rtrim($cluster['server'], '/');
-
-        $this->httpOptions = $this->buildHttpOptions($cluster, $user);
+        $this->cluster = (array) $cluster;
+        $this->user = (array) $user;
+        $this->transportKey = hash('sha256', serialize([
+            $this->server,
+            $cluster['certificate-authority-data'] ?? null,
+            ! empty($cluster['insecure-skip-tls-verify']),
+            $user['token'] ?? null,
+            $user['client-certificate-data'] ?? null,
+            $user['client-key-data'] ?? null,
+        ]));
     }
 
     /** The cluster's API server URL (from the kubeconfig). */
@@ -270,7 +308,7 @@ class KubernetesClient
     ): array {
         $prefix = trim($pathPrefix, '/');
         $base = $this->serviceProxyBase($namespace, $service, $port, $scheme).($prefix === '' ? '' : $prefix.'/').'api/v1/query';
-        $opts = $this->httpOptions;
+        $opts = $this->transport()['options'];
 
         $responses = Http::pool(function ($pool) use ($base, $queries, $opts) {
             foreach ($queries as $key => $q) {
@@ -307,11 +345,71 @@ class KubernetesClient
 
     private function request(): PendingRequest
     {
-        $req = Http::withOptions($this->httpOptions)
+        $transport = $this->transport();
+
+        // The shared handler under Laravel's own handlers (Http::fake() answers before it)
+        return Http::withOptions($transport['options'])
+            ->setHandler($transport['handler'])
             ->timeout(30)
             ->acceptJson();
+    }
 
-        return $req;
+    /**
+     * This API server's entry of $transports: kept while it is used, new after IDLE_SECONDS
+     * without a call (its connections may have been dropped on the way) or when its certificate
+     * files are gone (a temp directory cleaner).
+     *
+     * @return array{options: array<string, mixed>, handler: callable|null, used: float}
+     */
+    private function transport(): array
+    {
+        $now = (float) now()->format('U.u');
+        $entry = self::$transports[$this->transportKey] ?? null;
+        if ($entry !== null && ($now - $entry['used'] > self::IDLE_SECONDS || ! self::filesPresent($entry['options']))) {
+            self::forgetTransport($this->transportKey);
+            $entry = null;
+        }
+
+        if ($entry === null) {
+            while (count(self::$transports) >= self::MAX_TRANSPORTS) {
+                $used = array_column(self::$transports, 'used');
+                self::forgetTransport((string) array_keys(self::$transports)[array_search(min($used), $used, true)]);
+            }
+            $entry = [
+                'options' => $this->buildHttpOptions($this->cluster, $this->user),
+                // a cURL handler keeps its handles — and their open connections — between requests;
+                // null (no ext-curl): Guzzle's default, a new connection per request as before
+                'handler' => function_exists('curl_init') ? new CurlHandler : null,
+            ];
+        }
+
+        $entry['used'] = $now;
+
+        return self::$transports[$this->transportKey] = $entry;
+    }
+
+    /** @param array<string, mixed> $options */
+    private static function filesPresent(array $options): bool
+    {
+        foreach ([$options['verify'] ?? null, $options['cert'] ?? null, $options['ssl_key'] ?? null] as $path) {
+            if (is_string($path) && ! is_file($path)) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /** Drops an entry: its handler (the connections close with it) and its certificate files. */
+    private static function forgetTransport(string $key): void
+    {
+        $options = self::$transports[$key]['options'] ?? [];
+        unset(self::$transports[$key]);
+        foreach ([$options['verify'] ?? null, $options['cert'] ?? null, $options['ssl_key'] ?? null] as $path) {
+            if (is_string($path) && is_file($path)) {
+                @unlink($path);
+            }
+        }
     }
 
     private function buildHttpOptions(array $cluster, array $user): array

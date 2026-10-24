@@ -87,6 +87,37 @@ edit projects, deploy or change regions in that time: the previous version canno
 migration has just encrypted, shows env vars as empty and would save that. Its region status
 checks fail in that window and the new version's next check reports the region again.
 
+## 0.6.0 → 0.6.1
+
+0.6.1 is a fix release ([CHANGELOG.md](../CHANGELOG.md)). It adds no database migrations and no
+Helm values; values of 0.6.0, `--reuse-values` included, keep working. Upgrade with the
+[Procedure](#procedure).
+
+- With tenancy, the upgrade's migration Job runs the tenant migrations of the Billing and Ticket
+  modules that tenant schemas missed. 0.6.0 skipped them while the module was switched off
+  (`billing.enabled` is off by default): a tenant created on 0.6.0 has no `billing_*` tables, and
+  a tenant of 0.5.x lacks the two Billing migrations of 0.6.0 (`billing_cost_limits`, queue consumer
+  charging). They create tables and columns only; billing stays as it is set.
+
+- Horizon works a second queue, `deploys`, next to `default`: a new deployment's Knative apply and
+  its readiness checks. Its process pool always keeps a worker of its own, so an idle
+  `runr-horizon` runs one more worker process (about 70 MB). The chart's default memory limit
+  (1 GiB) covers it; a lower `horizon.resources.limits.memory` needs room for it.
+
+### Rolling back to 0.6.0
+
+0.6.0's Horizon does not work the `deploys` queue. A deploy whose apply or readiness check still
+waits there when the 0.6.0 pods take over stays `pending` or `running`.
+
+1. Before `helm rollback runr <revision of 0.6.0> -n runr`, let the running deploys finish:
+   `kubectl -n runr exec deploy/runr-api -- php artisan queue:monitor redis:deploys` shows a size
+   of 0. A readiness check gives up after 300 s at the latest. Where only one package version is
+   kept (a marketplace that offers the latest release only), add the 0.6.0 package again and
+   upgrade the release to it. **Never uninstall** to go back: `helm uninstall` deletes the chart's
+   database volume and `runr-secret` with its `APP_KEY`.
+2. A deploy started after that check, before the 0.6.0 pods run, keeps its status on 0.6.0: deploy
+   that version again.
+
 ## 0.5.10 → 0.6.0
 
 0.6.0 adds environments, triggers beyond HTTP, schedules and queues, the internal network, secret

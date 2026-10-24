@@ -19,8 +19,10 @@
     </source>
     <php>
         <!-- The whole suite peaks at about 400 MB: PHP's default 128 MB (the CI image has no
-             php.ini) ended `php artisan test` with "Allowed memory size exhausted" -->
-        <ini name="memory_limit" value="1G"/>
+             php.ini) ended `php artisan test` with "Allowed memory size exhausted". With coverage
+             this process writes the report (php-code-coverage Report/PHP.php), above 1 GB for the
+             whole suite: 3G (the CI command gives artisan, which reads it, 2G) -->
+        <ini name="memory_limit" value="3G"/>
         <env name="APP_ENV" value="testing"/>
         <!-- URLs in assertions are built on http://localhost, whatever .env (copied from .env.example in CI) says -->
         <env name="APP_URL" value="http://localhost" force="true"/>

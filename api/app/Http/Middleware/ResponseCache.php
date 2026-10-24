@@ -6,7 +6,9 @@ use App\Models\Project;
 use App\Services\CacheVersionService;
 use Closure;
 use Illuminate\Contracts\Auth\Authenticatable;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\Request;
+use Illuminate\Routing\Route;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Cache;
 use Laravel\Sanctum\PersonalAccessToken;
@@ -68,6 +70,12 @@ class ResponseCache
             // Cache unavailable — skip
         }
 
+        // The route's models were read (SubstituteBindings) before the versions of the key: a
+        // change committed in between, its bump before the key, would be cached under the new
+        // versions with the old row (a deployment activated by its readiness check stayed
+        // "pending" until the project changed again). Read again, they are never older than the key.
+        $this->refreshRouteModels($request);
+
         $response = $next($request);
 
         // A response that opted out of caching (secret values, ProjectSecretController) stays out
@@ -78,6 +86,21 @@ class ResponseCache
         $response->headers->set('X-Cache', 'MISS');
 
         return $response;
+    }
+
+    /** The route's bound Eloquent models read again (one gone in between: 404, like the binding). */
+    private function refreshRouteModels(Request $request): void
+    {
+        $route = $request->route();
+        if (! $route instanceof Route) {
+            return;
+        }
+
+        foreach ($route->parameters() as $value) {
+            if ($value instanceof Model && $value->exists) {
+                $value->refresh();
+            }
+        }
     }
 
     private function authenticatedUser(): ?Authenticatable

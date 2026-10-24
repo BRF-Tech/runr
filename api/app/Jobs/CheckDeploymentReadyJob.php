@@ -11,6 +11,7 @@ use App\Services\KubernetesClient;
 use App\Services\Projects\LiveDeployments;
 use App\Services\Projects\WarmScaleService;
 use App\Services\Rollouts\RolloutService;
+use App\Support\Projects\DeployQueue;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Foundation\Bus\PendingDispatch;
@@ -28,8 +29,16 @@ class CheckDeploymentReadyJob implements ShouldQueue
     /** The project (or deployment) was deleted while the check was queued: nothing to check */
     public bool $deleteWhenMissingModels = true;
 
-    /** First check ~1 s after the Knative Service was applied, then every 2 s */
+    /**
+     * First check ~1 s after the Knative Service was applied, then every second for the next
+     * FAST_POLL_SECONDS — a new revision of a running function is ready within them, mostly in
+     * 2-3 s: a 2 s step found it ready a second later on average — then every 2 s.
+     */
     public const FIRST_CHECK_DELAY = 1;
+
+    public const FAST_POLL_INTERVAL = 1;
+
+    public const FAST_POLL_SECONDS = 10;
 
     public const POLL_INTERVAL = 2;
 
@@ -43,6 +52,8 @@ class CheckDeploymentReadyJob implements ShouldQueue
         ?string $initiatorId = null,
     ) {
         $this->initiatorId = $initiatorId;
+        // Every check on the deploy queue (DeployQueue): a busy default worker does not hold it back
+        $this->onQueue(DeployQueue::name());
     }
 
     /** The first check of an applied deployment. */
@@ -51,10 +62,30 @@ class CheckDeploymentReadyJob implements ShouldQueue
         return self::dispatch($deployment, $project, 1, $initiatorId)->delay(now()->addSeconds(self::FIRST_CHECK_DELAY));
     }
 
-    /** Checks that fit the timeout: the first one plus one per poll interval. */
+    /** Seconds after the apply at which check $attempt (1 = the first) is due. */
+    public static function checkAt(int $attempt): int
+    {
+        $fastChecks = intdiv(self::FAST_POLL_SECONDS, self::FAST_POLL_INTERVAL);
+        $after = max(0, $attempt - 1);
+
+        return $after <= $fastChecks
+            ? self::FIRST_CHECK_DELAY + $after * self::FAST_POLL_INTERVAL
+            : self::FIRST_CHECK_DELAY + self::FAST_POLL_SECONDS + ($after - $fastChecks) * self::POLL_INTERVAL;
+    }
+
+    /** Seconds between check $attempt - 1 and check $attempt. */
+    public static function delayBefore(int $attempt): int
+    {
+        return self::checkAt($attempt) - self::checkAt($attempt - 1);
+    }
+
+    /** Checks that fit the timeout: the last one is the first due at or after it. */
     public static function maxAttempts(): int
     {
-        return 1 + (int) ceil((self::TIMEOUT_SECONDS - self::FIRST_CHECK_DELAY) / self::POLL_INTERVAL);
+        $fastChecks = intdiv(self::FAST_POLL_SECONDS, self::FAST_POLL_INTERVAL);
+        $fastEnd = self::FIRST_CHECK_DELAY + self::FAST_POLL_SECONDS;
+
+        return 1 + $fastChecks + (int) ceil(max(0, self::TIMEOUT_SECONDS - $fastEnd) / self::POLL_INTERVAL);
     }
 
     public function handle(): void
@@ -197,7 +228,7 @@ class CheckDeploymentReadyJob implements ShouldQueue
                 'error' => $e?->getMessage(),
             ]);
             self::dispatch($deployment, $this->project, $this->attempt + 1, $this->initiatorId)
-                ->delay(now()->addSeconds(self::POLL_INTERVAL));
+                ->delay(now()->addSeconds(self::delayBefore($this->attempt + 1)));
 
             return;
         }
@@ -230,7 +261,7 @@ class CheckDeploymentReadyJob implements ShouldQueue
         }
 
         self::dispatch($deployment, $this->project, $this->attempt + 1, $this->initiatorId)
-            ->delay(now()->addSeconds(self::POLL_INTERVAL));
+            ->delay(now()->addSeconds(self::delayBefore($this->attempt + 1)));
     }
 
     private function markFailed(Deployment $deployment, string $reason): void

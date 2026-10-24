@@ -70,4 +70,27 @@ class ModuleTenantMigrationsTest extends TestCase
         });
         $this->assertSame([true, true, true, true], $tables);
     }
+
+    public function test_the_tenant_migrations_of_disabled_modules_run_without_their_providers(): void
+    {
+        // The entrypoint disables a switched-off module (module:disable): its provider never boots
+        // and registers nothing, its central migrations run anyway (run_module_migrations)
+        (new \ReflectionProperty(TenantMigrationRegistry::class, 'paths'))->setValue(null, []);
+        Artisan::call('migrate', ['--path' => 'Modules/Billing/Database/Migrations', '--force' => true]);
+
+        $paths = TenantSchema::paths();
+        $this->assertContains(realpath(base_path('Modules/Billing/Database/TenantMigrations')), $paths);
+        $this->assertContains(realpath(base_path('Modules/Ticket/Database/TenantMigrations')), $paths);
+        $this->assertSame(array_values(array_unique($paths)), $paths);
+
+        $tenant = Tenant::create(['name' => 'Acme', 'slug' => 'acme']);
+        TenantSchema::create($tenant);
+
+        $tables = TenantSchema::inTenant($tenant, function () use ($tenant) {
+            $prefix = DB::connection()->getDriverName() === 'pgsql' ? $tenant->database()->getName().'.' : '';
+
+            return array_map(fn (string $t) => Schema::hasTable($prefix.$t), ['billing_markups', 'billing_bills', 'billing_settings', 'support_tickets']);
+        });
+        $this->assertSame([true, true, true, true], $tables);
+    }
 }

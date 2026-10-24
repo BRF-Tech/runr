@@ -6,6 +6,7 @@ use App\Events\DeploymentCreated;
 use App\Events\DeploymentStatusChanged;
 use App\Services\KnativeDeployService;
 use App\Services\Rollouts\RolloutService;
+use App\Support\Projects\DeployQueue;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Support\Facades\Log;
 
@@ -23,6 +24,12 @@ class ProcessDeployment implements ShouldQueue
     public function __construct(
         private KnativeDeployService $deployer,
     ) {}
+
+    /** The deploy queue (DeployQueue): not behind the teardown of the deployment it replaces. */
+    public function viaQueue(): ?string
+    {
+        return DeployQueue::name();
+    }
 
     public function handle(DeploymentCreated $event): void
     {

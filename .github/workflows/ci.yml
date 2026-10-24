@@ -58,7 +58,7 @@ jobs:
       - run: vendor/bin/pint --test
       - run: cp .env.example .env && php artisan key:generate
       # Coverage floor as in GitLab's test:api (docs/development.md → Testing)
-      - run: php -d memory_limit=1G artisan test --compact --coverage --min=76
+      - run: php -d memory_limit=2G artisan test --compact --coverage --min=76
       - run: vendor/bin/phpstan analyse --memory-limit=1G --no-progress
 
   ui:

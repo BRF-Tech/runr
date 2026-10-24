@@ -8,6 +8,49 @@ did not change says so.
 
 ## [Unreleased]
 
+## [0.6.1] - 2026-10-24
+
+### Upgrade notes
+
+No new database migrations and no new Helm values. With tenancy, the migration Job runs the Billing
+and Ticket tenant migrations that 0.6.0 skipped while the module was off. Horizon works a new
+`deploys` queue with a worker of its own. Before a rollback to 0.6.0, let the running deploys
+finish: the [0.6.0 → 0.6.1 section of upgrade.md](docs/upgrade.md#060--061) says how.
+
+### Fixed
+
+- **The console's tutorial follows the 0.6.0 console.** Its steps point at the current controls
+  again (a step whose target was gone dropped out without a word; a unit test now checks every
+  target and text) and show the create wizard's global projects, New MCP server, rightsizing,
+  environments, rollouts, deploy strategies, the timed warmer and the settings pages' tabs; the
+  edit modal gets a tutorial button.
+- **The console says when it cannot reach the server.** A request that got no answer (network
+  down, DNS, a server certificate the browser rejected, CORS, a dropped connection) showed only
+  "An error occurred."; it now says the console could not reach the server and to check the
+  connection, and a timeout says the server did not answer in time. HTTP errors still show the
+  API's message, cancelled requests stay silent. Deleting a deployment and saving the audit log
+  retention show the API's message instead of "An error occurred." too.
+- **Tour steps on buttons that appear on hover show the button.** The deployment table's log,
+  rollback and delete steps highlighted an invisible button; the step's element is shown while the
+  step is active.
+- **A tenant gets the tables of the Billing and Ticket modules while they are switched off.** The
+  entrypoint disables a module that is off, so its tenant migrations were never registered: a
+  tenant created on 0.6.0 with billing off had no `billing_*` tables, and older tenants missed
+  0.6.0's `billing_cost_limits` and queue consumer charging, against [docs/billing.md](docs/billing.md)
+  ("the billing tables exist … also while the module is off"). Tenant schemas now take every
+  module's tenant migrations, enabled or not.
+- **A redeploy is active within seconds again.** 0.6.0 added calls to the region's API server on
+  the way from `POST /deploy` to an active deployment, one after the other and each on a new TCP
+  and TLS connection: the replaced deployment's teardown (queued ahead of the deploy on Horizon's
+  one idle worker), the secret values and the internal-network routes. Against a real API server
+  a redeploy took 10-12 s instead of 4-5 s. The apply and the readiness checks now run on a
+  `deploys` queue with a Horizon worker of their own (one more idle process in `runr-horizon`),
+  calls to an API server reuse their connections, a new deployment is checked every second for
+  its first 10 s, and the response cache no longer keeps a deployment "pending" after its
+  activation (a GET during it was cached under the new version with the old row until the
+  project changed again: 11-22 s in Kind). Kind with 100 ms added to the API server: 7.0 s on
+  0.6.0 (6.1 s on 0.5.10) → 3.4 s, median; without it 3.5-3.7 s → 2.5 s.
+
 ## [0.6.0] - 2026-10-23
 
 ### Upgrade notes
@@ -3154,7 +3197,8 @@ Initial tagged release.
 - API gateways with routes, in-app notifications and support tickets.
 - Helm chart with a single-tenant / multi-tenant edition, an install form (`values.schema.json`), generated secrets and a Traefik ingress; a Docker Compose setup for development.
 
-[Unreleased]: https://github.com/brf-tech/runr/compare/v0.6.0...main
+[Unreleased]: https://github.com/brf-tech/runr/compare/v0.6.1...main
+[0.6.1]: https://github.com/brf-tech/runr/releases/tag/v0.6.1
 [0.6.0]: https://github.com/brf-tech/runr/releases/tag/v0.6.0
 [0.5.10]: https://github.com/brf-tech/runr/releases/tag/v0.5.10
 [0.5.9]: https://github.com/brf-tech/runr/releases/tag/v0.5.9

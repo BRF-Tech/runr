@@ -19,7 +19,8 @@
 #      a primary 300–900 scale), while a prober calls the function every second.
 #   4. Checks: migrations ran, the bootstrap Job succeeded and every deployment runs the new
 #      images (multi-tenant: every tenant schema has the Billing tables and tenant migrations
-#      0060–0062, the bootstrap Job's tenancy:migrate finished), both users sign in and
+#      0060–0062, 0070 and 0076, also one created with billing off; the bootstrap Job's
+#      tenancy:migrate finished), both users sign in and
 #      keep what they could do (Owner / Admin), env vars are encrypted at rest and still read and deploy,
 #      a secret env var lands in the project's Kubernetes Secret (never in the Knative Service),
 #      the tokens work with their scopes, the function answered during and after the upgrade,
@@ -969,12 +970,14 @@ _upg_mt_checks() {
 
 # Tables of the Billing module in a tenant schema (Modules/Billing/Database/BillingSchema::create,
 # tenant: with billing_markups)
-_UPG_TENANT_BILLING_TABLES=(billing_prices billing_region_settings billing_markups billing_fixed_requests billing_bills billing_events billing_settings)
-# Tenant migrations every tenant schema has after the upgrade: the Billing module's (registered
-# whether or not billing is switched on), Tenancy's of 0.5.x (deployments.sizing / ended_at,
-# projects.stop_level) and of 0.6.0 (the Member role's new permissions; one gateway route per
-# project's own workload: the index gateway_routes_project_production_unique)
+_UPG_TENANT_BILLING_TABLES=(billing_prices billing_region_settings billing_markups billing_fixed_requests billing_bills billing_events billing_settings billing_cost_limits)
+# Tenant migrations every tenant schema has after the upgrade: the Billing module's, 0.6.0's
+# included (they run whether or not billing is switched on: TenantSchema::paths() takes every
+# module's, also of a module the entrypoint disabled), Tenancy's of 0.5.x (deployments.sizing /
+# ended_at, projects.stop_level) and of 0.6.0 (the Member role's new permissions; one gateway route
+# per project's own workload: the index gateway_routes_project_production_unique)
 _UPG_TENANT_MIGRATIONS=(0060_create_billing_tables 0061_harden_billing_tables 0062_add_deployment_spans_and_stop_level
+  0070_create_billing_cost_limits_table 0076_add_queue_consumer_charging
   0108_grant_060_permissions_to_legacy_member_role 0109_add_production_route_unique_index)
 _UPG_ROUTE_INDEX="gateway_routes_project_production_unique"
 
@@ -1002,7 +1005,7 @@ _upg_tenant_schema_gaps() {
 }
 
 # Every tenant schema after the upgrade: the Billing tables, tenant migrations 0060–0062 with the
-# columns of 0062, 0108 and 0109 with its index; the bootstrap Job's tenancy:migrate (the safety
+# columns of 0062, 0070 and 0076, 0108 and 0109 with its index; the bootstrap Job's tenancy:migrate (the safety
 # net after the migration Job) finished within its time limit
 _upg_mt_tenant_schema_checks() {
   local schemas schema missing gaps="" count=0
@@ -1015,7 +1018,7 @@ _upg_mt_tenant_schema_checks() {
   gaps="${gaps%$'\n'}"
   echo "  tenant schemas: ${count}${gaps:+, missing:}"
   [ -z "$gaps" ] || echo "$gaps" | sed 's/^/    /'
-  _upg_check "every tenant schema (${count}) has the Billing tables, tenant migrations 0060–0062, 0108 and 0109, the columns of 0062 and the index of 0109" \
+  _upg_check "every tenant schema (${count}) has the Billing tables, tenant migrations 0060–0062, 0070, 0076, 0108 and 0109, the columns of 0062 and the index of 0109" \
     bash -c '[ "$1" -ge 1 ] && [ -z "$2" ]' _ "$count" "$gaps"
   _upg_check "bootstrap Job: tenancy:migrate finished (no \"tenant migrations incomplete\")" \
     bash -c '[ -s "$1" ] && ! grep -q "tenant migrations incomplete" "$1"' _ "${_upg_tmp}/bootstrap.log"

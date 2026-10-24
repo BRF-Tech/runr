@@ -200,7 +200,11 @@ return [
     'defaults' => [
         'supervisor-1' => [
             'connection' => 'redis',
-            'queue' => ['default'],
+            // deploys (App\Support\Projects\DeployQueue): a new deployment's apply and readiness
+            // checks. balance auto gives each queue a process pool of its own with at least one
+            // worker (minProcesses is per queue, maxProcesses for all of them): a deploy never waits
+            // behind a teardown, the minute jobs or a long install on `default`
+            'queue' => ['deploys', 'default'],
             'balance' => 'auto',
             'autoScalingStrategy' => 'time',
             'maxProcesses' => 1,

@@ -9,9 +9,11 @@ use App\Models\KnativeRegion;
 use App\Models\Project;
 use App\Models\Version;
 use App\Services\CacheVersionService;
+use App\Services\Projects\LiveDeployments;
 use App\Workflows\Jobs\SyncWorkflowsJob;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Queue;
 use Tests\TestCase;
 
@@ -102,6 +104,30 @@ class DeploymentTransitionTest extends TestCase
         $deployment->transition(['pending', 'running'], ['status' => 'active', 'ready_at' => now()]);
 
         $this->assertGreaterThan($before, $cache->version($scope), 'the deployments endpoints answer the new status');
+    }
+
+    public function test_an_activation_invalidates_the_cache_once_it_commits(): void
+    {
+        // A bump inside LiveDeployments::activate()'s transaction let a GET in between cache the
+        // deployment as "pending" under the new version: it stayed pending until the next bump
+        $deployment = $this->deployment($this->project('committed'));
+        $cache = app(CacheVersionService::class);
+        $scope = CacheVersionService::projectScope($deployment->project_id);
+        $before = $cache->version($scope);
+
+        $inside = null;
+        Deployment::updated(function (Deployment $d) use ($cache, $scope, &$inside) {
+            if ($d->wasChanged('status') && $d->status === 'active') {
+                $inside = [$cache->version($scope), DB::transactionLevel()];
+            }
+        });
+
+        $this->assertTrue(app(LiveDeployments::class)->activate($deployment, ['knative_ready' => true, 'ready_at' => now()]));
+
+        $this->assertNotNull($inside);
+        $this->assertGreaterThan(DB::transactionLevel(), $inside[1], 'the status was written inside the transaction');
+        $this->assertSame($before, $inside[0], 'no new cache version before the commit');
+        $this->assertGreaterThan($before, $cache->version($scope), 'the new version once it committed');
     }
 
     public function test_ended_at_is_set_once_when_a_deployment_stops_running(): void
