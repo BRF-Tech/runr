@@ -43,7 +43,7 @@
     "description": "Open source serverless platform built on Kubernetes and Knative. Deploy functions, projects, containers and WebAssembly on your own clusters with scale-to-zero, event triggers, environments, sandboxes, durable workflows, GPUs and MCP.",
     "applicationCategory": "DeveloperApplication",
     "operatingSystem": "Linux, Kubernetes",
-    "softwareVersion": "0.6.1",
+    "softwareVersion": "0.6.2",
     "license": "https://opensource.org/licenses/MIT",
     "url": "https://runr.sh",
     "downloadUrl": "https://runr.sh/dl/",
@@ -1493,7 +1493,7 @@ helm upgrade --install runr brf-tech/runr \
       <p data-tr="Tek makinede üretim kurulumu: <code>compose/build.sh</code> imajları sürüm etiketinden derler; internetsiz (air-gapped) sunucuya <code>runr-images.tar</code> olarak taşınır."
          data-en="A production install on one machine: <code>compose/build.sh</code> builds the images from the release tag; air-gapped hosts get them as <code>runr-images.tar</code>.">
          Tek makinede üretim kurulumu: <code>compose/build.sh</code> imajları sürüm etiketinden derler; internetsiz (air-gapped) sunucuya <code>runr-images.tar</code> olarak taşınır.</p>
-      <pre><code>git clone -b v0.6.1 \
+      <pre><code>git clone -b v0.6.2 \
   https://github.com/BRF-Tech/runr.git
 cd runr &amp;&amp; bash compose/build.sh
 cd compose &amp;&amp; cp .env.example .env
@@ -1520,15 +1520,15 @@ runr deploy</code></pre>
     </div>
 
     <div class="install-card reveal">
-      <h4>Terraform <span class="install-kind">runr.sh/brf-tech/runr</span></h4>
+      <h4>Terraform <span class="install-kind">brf-tech/runr</span></h4>
       <p data-tr="Projeler, değişkenler, domain'ler, deploy'lar, binding'ler, runtime'lar, workflow tetikleyicileri, modeller, MCP sunucuları, roller ve marka — kod olarak."
          data-en="Projects, variables, domains, deployments, bindings, runtimes, workflow triggers, models, MCP servers, roles and branding — as code.">
          Projeler, değişkenler, domain'ler, deploy'lar, binding'ler, runtime'lar, workflow tetikleyicileri, modeller, MCP sunucuları, roller ve marka — kod olarak.</p>
       <pre><code>terraform {
   required_providers {
     runr = {
-      source  = "runr.sh/brf-tech/runr"
-      version = "~&gt; 0.5"
+      source  = "brf-tech/runr"
+      version = "~&gt; 0.6"
     }
   }
 }</code></pre>
@@ -1542,7 +1542,7 @@ runr deploy</code></pre>
          data-en="Deploy on every push and run preview environments for pull / merge requests: the ready-made Action on GitHub, a job that installs the CLI and runs <code>runr deploy</code> on GitLab CI/CD.">
          Her push'ta deploy edin, pull / merge request'ler için preview ortamları açın: GitHub'da hazır Action, GitLab CI/CD'de CLI'ı kurup <code>runr deploy</code> çalıştıran bir job.</p>
       <pre><code># GitHub Actions: secrets RUNR_API_URL, RUNR_TOKEN
-- uses: brf-tech/runr/actions/deploy@v0.6.1
+- uses: brf-tech/runr/actions/deploy@v0.6.2
   with:
     api-url: ${{ secrets.RUNR_API_URL }}
     token: ${{ secrets.RUNR_TOKEN }}
@@ -1640,8 +1640,8 @@ deploy:
     <details class="faq-item reveal">
       <summary data-tr="Nasıl kurarım?" data-en="How do I install it?">Nasıl kurarım?</summary>
       <div class="faq-body"
-        data-tr="Kubernetes'te, BRF'nin herkese açık Helm deposundaki chart'la (<code>helm repo add brf-tech https://helm.brf.sh</code>, chart <code>brf-tech/runr</code>; <a href='/docs/overview/#kubernetes-helm'>Helm kurulumu</a>), tek sunucuda Docker Compose ile (<a href='/docs/compose/'>tek sunucu rehberi</a>). <code>runr</code> CLI'ı <code>curl -fsSL https://runr.sh/install.sh | sh</code> ile kurulur ya da <a href='/dl/'>runr.sh/dl</a>'den indirilir; Terraform provider'ı <code>runr.sh/brf-tech/runr</code>. Ayrıntılar yukarıdaki kurulum bölümünde ve <a href='/docs/'>dokümanlarda</a>."
-        data-en="On Kubernetes with the chart from BRF's public Helm repository (<code>helm repo add brf-tech https://helm.brf.sh</code>, chart <code>brf-tech/runr</code>; <a href='/docs/overview/#kubernetes-helm'>Helm install</a>), on a single host with Docker Compose (<a href='/docs/compose/'>single-host guide</a>). The <code>runr</code> CLI installs with <code>curl -fsSL https://runr.sh/install.sh | sh</code> or downloads from <a href='/dl/'>runr.sh/dl</a>; the Terraform provider is <code>runr.sh/brf-tech/runr</code>. Details in the install section above and in the <a href='/docs/'>documentation</a>.">
+        data-tr="Kubernetes'te, BRF'nin herkese açık Helm deposundaki chart'la (<code>helm repo add brf-tech https://helm.brf.sh</code>, chart <code>brf-tech/runr</code>; <a href='/docs/overview/#kubernetes-helm'>Helm kurulumu</a>), tek sunucuda Docker Compose ile (<a href='/docs/compose/'>tek sunucu rehberi</a>). <code>runr</code> CLI'ı <code>curl -fsSL https://runr.sh/install.sh | sh</code> ile kurulur ya da <a href='/dl/'>runr.sh/dl</a>'den indirilir; Terraform provider'ı Terraform Registry'de <code>brf-tech/runr</code> (OpenTofu için <code>runr.sh/brf-tech/runr</code>). Ayrıntılar yukarıdaki kurulum bölümünde ve <a href='/docs/'>dokümanlarda</a>."
+        data-en="On Kubernetes with the chart from BRF's public Helm repository (<code>helm repo add brf-tech https://helm.brf.sh</code>, chart <code>brf-tech/runr</code>; <a href='/docs/overview/#kubernetes-helm'>Helm install</a>), on a single host with Docker Compose (<a href='/docs/compose/'>single-host guide</a>). The <code>runr</code> CLI installs with <code>curl -fsSL https://runr.sh/install.sh | sh</code> or downloads from <a href='/dl/'>runr.sh/dl</a>; the Terraform provider is <code>brf-tech/runr</code> on the Terraform Registry (<code>runr.sh/brf-tech/runr</code> for OpenTofu). Details in the install section above and in the <a href='/docs/'>documentation</a>.">
         Helm, Docker Compose, CLI ya da Terraform ile.
       </div>
     </details>
@@ -1766,7 +1766,7 @@ deploy:
     </div>
     <div class="footer-bottom">
       <span>© 2026 BRF Teknoloji and RunR contributors. <span data-tr="MIT lisansıyla yayımlanır." data-en="Released under the MIT License.">MIT lisansıyla yayımlanır.</span></span>
-      <span class="mono">runr.sh · <a href="/dl/">v0.6.1</a></span>
+      <span class="mono">runr.sh · <a href="/dl/">v0.6.2</a></span>
     </div>
   </div>
 </footer>
