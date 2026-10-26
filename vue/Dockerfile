@@ -25,7 +25,15 @@ RUN npm run build
 # ─── Stage 2: Serve ───────────────────────────────────────────────────────────
 FROM ghcr.io/brf-tech/runr/reqs/caddy:2-alpine
 
-LABEL org.opencontainers.image.description="RunR UI"
+# RunR's own labels in place of the Caddy base's (the release build adds version, revision and
+# created; org.opencontainers.image.source links the ghcr package to the repository)
+LABEL org.opencontainers.image.title="RunR UI" \
+      org.opencontainers.image.description="RunR UI: the console served by Caddy" \
+      org.opencontainers.image.licenses="MIT" \
+      org.opencontainers.image.vendor="BRF Teknoloji" \
+      org.opencontainers.image.url="https://runr.sh" \
+      org.opencontainers.image.documentation="https://github.com/BRF-Tech/runr/tree/main/docs" \
+      org.opencontainers.image.source="https://github.com/BRF-Tech/runr"
 
 COPY --from=builder /app/dist /srv
 COPY Caddyfile /etc/caddy/Caddyfile
