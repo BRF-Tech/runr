@@ -729,7 +729,8 @@ Every table is in the central schema, in both editions (tenant rows carry `tenan
 - **Documentation resources.** `runr://docs/{page}` reads `MCP_DOCS_PATH`, else `../docs` next to
   the API (repository checkout; Docker Compose mounts `./docs` at `/var/www/docs`), else
   `resources/docs` inside the API image, which the image builds fill with `docs/*.md`
-  (`.gitlab-ci.yml` `build:api`, `compose/build.sh`, `ci.sh build-deploy`).
+  (the release workflow `.github/workflows/release-images.yml`, `compose/build.sh`,
+  `ci.sh build-deploy`).
 - **Hosted servers** reach their projects through the function URL
   (`https://<slug>.<function domain>`), like durable workflows do: the API must be able to reach
   the region's function domain.

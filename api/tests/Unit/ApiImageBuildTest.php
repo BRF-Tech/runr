@@ -8,8 +8,9 @@ use PHPUnit\Framework\TestCase;
  * docker/entrypoint.sh serves the API with Octane on FrankenPHP, which needs the frankenphp
  * binary in the image: every API image starts from the FrankenPHP base, and the scripts that
  * build an image to run (compose/build.sh for air-gapped installs, compose/deploy.sh, ci.sh
- * deploy, the GitLab build:api job) build Dockerfile.prod, which also bakes vendor/ in. The
- * compose build once built the php-fpm development Dockerfile: no frankenphp, no vendor/.
+ * deploy, the release workflow .github/workflows/release-images.yml) build Dockerfile.prod,
+ * which also bakes vendor/ in. The compose build once built the php-fpm development Dockerfile:
+ * no frankenphp, no vendor/.
  */
 class ApiImageBuildTest extends TestCase
 {
@@ -134,12 +135,10 @@ class ApiImageBuildTest extends TestCase
             $this->assertMatchesRegularExpression('#--file\s+"?\$\{?[A-Za-z_]+\}?/api/Dockerfile\.prod"?#', $text, "{$script} builds the API image from Dockerfile.prod");
         }
 
-        $ci = $this->repoFile('.gitlab-ci.yml');
-        if ($ci !== null) {
+        $workflow = $this->repoFile('.github/workflows/release-images.yml');
+        if ($workflow !== null) {
             $checked++;
-            $job = substr($ci, (int) strpos($ci, "\nbuild:api:"));
-            $job = substr($job, 0, (int) strpos($job, "\nbuild:ui:"));
-            $this->assertStringContainsString('--file api/Dockerfile.prod', $job, '.gitlab-ci.yml build:api builds Dockerfile.prod');
+            $this->assertStringContainsString('--file api/Dockerfile.prod', $workflow, 'the release workflow builds the API image from Dockerfile.prod');
         }
 
         if ($checked === 0) {

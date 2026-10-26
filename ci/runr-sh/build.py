@@ -540,19 +540,21 @@ Expand-Archive runr.zip -DestinationPath "$env:LOCALAPPDATA\\runr"</code></pre>
 <a href="/docs/cli/#install">CLI documentation</a>.</p>
 
 <h2 id="terraform">Terraform provider<a class="d-anchor" href="#terraform" aria-label="Link to this section">#</a></h2>
-<p>runr.sh serves the provider registry protocol, so <code>terraform init</code> (or OpenTofu) installs
-the provider from here:</p>
+<p>The provider is on the <a href="https://registry.terraform.io/providers/brf-tech/runr/latest">Terraform
+Registry</a> as <code>brf-tech/runr</code>:</p>
 <pre><code>terraform {{
   required_providers {{
     runr = {{
-      source  = "runr.sh/brf-tech/runr"
-      version = "~&gt; 0.5"
+      source  = "brf-tech/runr"
+      version = "~&gt; {minor}"
     }}
   }}
 }}</code></pre>
-<p><code>terraform init</code> downloads the archive for your platform and checks it against
-<code>{sums_name}</code>, whose signature it verifies with the RunR release key below. Guide:
-<a href="/docs/terraform/">Terraform provider</a>.</p>
+<p>runr.sh serves this release, the same signed archives, with the provider registry protocol under the address
+<code>runr.sh/brf-tech/runr</code>: OpenTofu installs the provider from here, and configurations that use
+this address keep working. Either way <code>terraform init</code> downloads the archive for your platform
+and checks it against <code>{sums_name}</code>, whose signature it verifies with the RunR release key below.
+Guide: <a href="/docs/terraform/">Terraform provider</a>.</p>
 {tf_table}
 <p>Checksums: <a href="{tf_base}/{sums_name}"><code>{sums_name}</code></a>,
 signature <a href="{tf_base}/{sums_name}.sig"><code>{sums_name}.sig</code></a>.</p>
@@ -565,7 +567,8 @@ gpg --import runr-release-signing.pub.asc
 curl -fsSLO https://runr.sh{tf_base}/{sums_name}
 curl -fsSLO https://runr.sh{tf_base}/{sums_name}.sig
 gpg --verify {sums_name}.sig {sums_name}</code></pre>
-""".format(version=version, tag=tag, repo=REPO, cli_base=cli_base, tf_base=tf_base, sums_name=sums_name,
+""".format(version=version, minor=".".join(version.split(".")[:2]), tag=tag, repo=REPO, cli_base=cli_base,
+           tf_base=tf_base, sums_name=sums_name,
            cli_table=file_table(cli_rows, cli_base), tf_table=file_table(tf_rows, tf_base),
            key_id=key_id, fpr_spaced=fpr_spaced)
     return page_html("Download · RunR", "Download the RunR %s CLI and Terraform provider, with checksums "

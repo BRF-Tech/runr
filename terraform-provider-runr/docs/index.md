@@ -18,7 +18,7 @@ Credentials come from the provider block, else `RUNR_API_URL` / `RUNR_TOKEN`, el
 terraform {
   required_providers {
     runr = {
-      source  = "runr.sh/brf-tech/runr"
+      source  = "brf-tech/runr"
       version = "~> 0.6"
     }
   }

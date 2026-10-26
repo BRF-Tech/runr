@@ -13,6 +13,9 @@ set -euo pipefail
 #     the CI build jobs) gives every RUN step
 #     OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=unix:///dev/otel-grpc.sock, and Spin exits with "Failed to
 #     initialize telemetry: invalid URI" before it runs the command.
+#  3. The stage the image is built from (the last FROM) labels org.opencontainers.image.source with
+#     the repository's URL (RUNR_SOURCE_URL of runtime/lib/build.sh): it links the image's ghcr
+#     package to the repository, and replaces the source a base image names (Caddy's, Trivy's).
 #
 #   bash ci/check-dockerfiles.sh                 the tracked Dockerfiles
 #   bash ci/check-dockerfiles.sh FILE...         these files
@@ -23,6 +26,9 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 # shellcheck source=/dev/null
 source "${ROOT}/runtime/lib/common.sh"
+# RUNR_SOURCE_URL
+# shellcheck source=/dev/null
+source "${ROOT}/runtime/lib/build.sh"
 
 # Is an image reference on Docker Hub? (no registry host: library/… or <org>/<name>)
 on_docker_hub() {
@@ -64,6 +70,29 @@ spin_without_otel_off() {
   ' "$@"
 }
 
+# every file whose last stage does not label org.opencontainers.image.source with URL $1 (the last
+# such label of the stage counts: a later LABEL replaces an earlier one)
+source_label_missing() {
+  local url="$1"
+  shift
+  awk -v want="$url" '
+    function report() { if (file != "" && !ok) print file }
+    FNR == 1 { report(); file = FILENAME; ok = 0; inlabel = 0 }
+    /^[[:space:]]*#/ { next }
+    toupper($1) == "FROM" { ok = 0; inlabel = 0; next }
+    toupper($1) == "LABEL" { inlabel = 1 }
+    inlabel {
+      line = $0
+      gsub(/"/, "", line)
+      if (match(line, /org\.opencontainers\.image\.source=[^[:space:]\\]+/)) {
+        ok = (substr(line, RSTART + 32, RLENGTH - 32) == want)
+      }
+      if ($0 !~ /\\[[:space:]]*$/) inlabel = 0
+    }
+    END { report() }
+  ' "$@"
+}
+
 if [ "$#" -gt 0 ]; then
   dockerfiles=("$@")
 else
@@ -90,8 +119,14 @@ while IFS= read -r where; do
   failed=$((failed + 1))
 done < <(spin_without_otel_off "${dockerfiles[@]}")
 
+while IFS= read -r file; do
+  [ -n "$file" ] || continue
+  echo "✗ ${file}: the image's stage (the last FROM) does not label org.opencontainers.image.source=\"${RUNR_SOURCE_URL}\""
+  failed=$((failed + 1))
+done < <(source_label_missing "$RUNR_SOURCE_URL" "${dockerfiles[@]}")
+
 if [ "$failed" -gt 0 ]; then
   exit 1
 fi
 
-echo "✓ ${#dockerfiles[@]} Dockerfiles: ${bases} base images, none from Docker Hub; every Spin RUN step has OTEL_SDK_DISABLED=true"
+echo "✓ ${#dockerfiles[@]} Dockerfiles: ${bases} base images, none from Docker Hub; every Spin RUN step has OTEL_SDK_DISABLED=true; every image labels its source ${RUNR_SOURCE_URL}"

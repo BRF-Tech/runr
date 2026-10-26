@@ -3,7 +3,9 @@
 # every command and succeeds. Every build command exits 0 with and without --push (each used to end
 # with `[ "$push" = "0" ] && echo …`, the exit status 1 of a successful push), every image build —
 # buildx and plain docker build, the release tars of `ci.sh build-deploy` included — pulls its base
-# images (--pull), and the Compose build scripts do the same.
+# images (--pull), and the Compose build scripts do the same. Every push carries the OCI labels
+# (org.opencontainers.image.source = the repository, the version) and the source as an annotation
+# of its index, which links the ghcr package to the repository.
 #
 #   bash runtime/test/build_push_test.sh
 # shellcheck source-path=SCRIPTDIR
@@ -75,6 +77,14 @@ pushed() {
   fi
   grep -qE '^docker buildx use ' "$log" && fail "$1: the push builder became the host's current builder"
   grep -qxF 'docker buildx rm runr-multiarch' "$log" || fail "$1: the push builder was not removed"
+  # the OCI labels and the source annotation link the ghcr package to the repository
+  local build
+  while read -r build; do
+    grep -q -- "--label=org.opencontainers.image.source=${RUNR_SOURCE_URL} " <<<"$build" || fail "$1: no source label: ${build}"
+    grep -qE -- "--label=org\.opencontainers\.image\.version=[^ ]+ " <<<"$build" || fail "$1: no version label: ${build}"
+    grep -qE -- "--annotation ${2:-index}:org\.opencontainers\.image\.source=${RUNR_SOURCE_URL} " <<<"$build" \
+      || fail "$1: no ${2:-index} annotation of the source: ${build}"
+  done < <(grep -E '^docker buildx build ' "$log")
 }
 
 # --- every build command, local and --push ------------------------------------------------------
@@ -91,6 +101,12 @@ for cmd in cmd_build_queue_consumer cmd_build_image_upload cmd_build_gateway_aut
   pushed "$cmd --push"
 done
 echo "ok - build commands exit 0 with and without --push, every build with --pull"
+echo "ok - every push labels its image with the source and version and annotates its index with the source"
+
+# one platform: no index, the source is an annotation of the image
+PLATFORMS=linux/amd64 run cmd_test_image --push
+pushed "cmd_test_image --push (linux/amd64)" manifest
+echo "ok - a single-platform push annotates the image itself with the source"
 
 # --- release tars (ci.sh build-deploy) ----------------------------------------------------------
 mkdir -p "$tmp/repo/runtime" "$tmp/repo/docs" "$tmp/repo/api" "$tmp/repo/vue"

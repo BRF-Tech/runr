@@ -2,44 +2,16 @@
 stages:
   - check
   - test
-  - build
-  - export
-  - deploy
+
+# No job here builds or pushes an image: every RunR image on ghcr.io is built and pushed by the
+# GitHub release workflow of the public repository (.github/workflows/release-images.yml), on its
+# release tag, with that repository's own token; runtime/test/release_workflow_test.sh keeps it so.
 
 variables:
   DOCKER_DRIVER: overlay2
   DOCKER_TLS_CERTDIR: "/certs"
-  API_IMAGE: "${CI_REGISTRY_IMAGE}/api"
-  UI_IMAGE:  "${CI_REGISTRY_IMAGE}/ui"
 
 # ─── Templates ────────────────────────────────────────────────────────────────
-
-# Shared setup for Docker build + push (multi-arch: amd64 + arm64)
-.docker_build:
-  image: ghcr.io/brf-tech/runr/reqs/docker:27
-  services:
-    # The client reaches the daemon as tcp://docker:2376; a mirrored image gets no "docker" alias
-    - name: ghcr.io/brf-tech/runr/reqs/docker:27-dind
-      alias: docker
-  before_script:
-    - docker login -u "$CI_REGISTRY_USER" -p "$CI_REGISTRY_PASSWORD" "$CI_REGISTRY"
-    - docker run --rm --privileged ghcr.io/brf-tech/runr/reqs/binfmt:latest --install all
-    # buildx takes the daemon's TLS settings from a context, not from DOCKER_HOST / DOCKER_CERT_PATH
-    - docker context create tls-env
-    - docker buildx create --name multiarch --driver docker-container --use tls-env
-    - docker buildx inspect --bootstrap multiarch >/dev/null
-
-# Shared setup for Helm deploys
-.helm_deploy:
-  # The image's entrypoint is helm; the job script needs a shell
-  image:
-    name: ghcr.io/brf-tech/runr/reqs/helm:3.15
-    entrypoint: [""]
-  before_script:
-    - mkdir -p ~/.kube
-    - echo "$KUBE_CONFIG" | base64 -d > ~/.kube/config
-  after_script:
-    - rm -f ~/.kube/config
 
 # Composer dependencies (incl. dev tools) for PHP quality jobs; working dir: api/
 .php_composer:
@@ -119,11 +91,11 @@ check:reqs-mirror:
     - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
 
 # ─── Dockerfiles + build scripts ─────────────────────────────────────────────
-# No Docker Hub base image, and OTEL_SDK_DISABLED=true in Spin RUN steps — a docker-container
-# BuildKit builder (this pipeline's, `ci.sh … --push`) breaks them otherwise
-# (ci/check-dockerfiles.sh); runtime/ci.sh without Docker or a registry: build/push exit codes and
-# --pull, the pinned runtime images the e2e suites pull, the reqs mirror check, the shared Kind
-# helpers (runtime/test/).
+# No Docker Hub base image, OTEL_SDK_DISABLED=true in Spin RUN steps — a docker-container BuildKit
+# builder (`ci.sh … --push`, the release workflow) breaks them otherwise — and the source label of
+# every image (ci/check-dockerfiles.sh); runtime/ci.sh without Docker or a registry: build/push
+# exit codes and --pull, the labels of a push, the pinned runtime images the e2e suites pull, the
+# reqs mirror check, the shared Kind helpers, the release workflow (runtime/test/).
 
 check:build-scripts:
   stage: check
@@ -560,114 +532,3 @@ e2e:kind:
     - if: $CI_PIPELINE_SOURCE == "schedule" && $SCHEDULED_JOB == "e2e"
     - when: manual
       allow_failure: true
-
-# ─── Build ────────────────────────────────────────────────────────────────────
-
-build:api:
-  extends: .docker_build
-  stage: build
-  script:
-    # runr://docs/{page} of the MCP server (docs/mcp.md): the image carries docs/ as resources/docs
-    - mkdir -p api/resources/docs && cp docs/*.md api/resources/docs/
-    - >
-      docker buildx build
-      --platform linux/amd64,linux/arm64
-      --provenance=false --sbom=false
-      --cache-from "type=registry,ref=$API_IMAGE:latest"
-      --tag "$API_IMAGE:$CI_COMMIT_SHA"
-      --tag "$API_IMAGE:$CI_COMMIT_REF_SLUG"
-      --tag "$API_IMAGE:latest"
-      --output "type=image,push=true,oci-mediatypes=true"
-      --file api/Dockerfile.prod
-      api/
-  rules:
-    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
-    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
-      changes:
-        - api/**/*
-
-build:ui:
-  extends: .docker_build
-  stage: build
-  script:
-    - >
-      docker buildx build
-      --platform linux/amd64,linux/arm64
-      --provenance=false --sbom=false
-      --cache-from "type=registry,ref=$UI_IMAGE:latest"
-      --build-arg VITE_TICKET_ENABLED=true
-      --build-arg VITE_BILLING_ENABLED=true
-      --tag "$UI_IMAGE:$CI_COMMIT_SHA"
-      --tag "$UI_IMAGE:$CI_COMMIT_REF_SLUG"
-      --tag "$UI_IMAGE:latest"
-      --output "type=image,push=true,oci-mediatypes=true"
-      vue/
-  rules:
-    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
-      exists:
-        - vue/Dockerfile
-    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
-      changes:
-        - vue/**/*
-      exists:
-        - vue/Dockerfile
-
-# ─── Export ───────────────────────────────────────────────────────────────────
-# Produces the OpenAPI JSON as a static artifact.
-# Usable for GitLab Pages or as any other artifact.
-
-export:openapi:
-  stage: export
-  image: "$API_IMAGE:$CI_COMMIT_SHA"
-  # The artisan command runs inside the built image; without a DB, only the routes are scanned
-  before_script:
-    - cd /var/www/html
-    - cp .env.example .env || true
-    - php artisan key:generate --quiet
-  script:
-    - php artisan scramble:export --path=openapi.json
-    - cp /var/www/html/openapi.json "$CI_PROJECT_DIR/openapi.json"
-  artifacts:
-    name: "openapi-$CI_COMMIT_SHA"
-    paths:
-      - openapi.json
-    expire_in: 30 days
-    expose_as: "OpenAPI Spec"
-  rules:
-    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
-  needs:
-    - build:api
-
-# ─── Deploy ───────────────────────────────────────────────────────────────────
-
-deploy:production:
-  extends: .helm_deploy
-  stage: deploy
-  script:
-    - >
-      helm upgrade --install runr ./helm
-      --namespace runr
-      --create-namespace
-      --set secret.create=false
-      --set ingress.enabled=false
-      --set createNamespace=true
-      --set database.postgres.fixPgdata=false
-      --set api.storage.fixPermissions=false
-      --set podColocation=false
-      --set bootstrap.enabled=false
-      --set api.image.repository="$API_IMAGE"
-      --set api.image.tag="$CI_COMMIT_SHA"
-      --set ui.image.repository="$UI_IMAGE"
-      --set ui.image.tag="$CI_COMMIT_SHA"
-      --atomic
-      --timeout 5m
-  environment:
-    name: production
-    url: https://runr.sh
-  rules:
-    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
-      when: manual
-  needs:
-    - build:api
-    # build:ui is not here yet; add it here once it is:
-    # - build:ui

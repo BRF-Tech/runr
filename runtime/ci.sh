@@ -65,6 +65,8 @@ Commands:
                                       queue-consumer at helm/Chart.yaml appVersion, gateway-auth,
                                       image-upload, supply-chain, the Spin shim at their own); --push
                                       builds and pushes each one the registry does not have yet
+  compose-index FILE...               The multi-arch tags of what per-platform pushes recorded
+                                      (PUSH_BY_DIGEST=FILE), annotated with the images' OCI labels
   test-image [--push]                 Build + push the CaaS test image (nginx-test)
   test [--k8s=X.Y.Z] [--no-cleanup]  Kind cluster + Knative + e2e test (runtime plugins included)
   test-runtimes [test flags]          Kind + Knative, runtime plugin e2e only (python, C, Q, schedule, queue)
@@ -156,6 +158,9 @@ Commands:
 
 Environment:
   PLATFORMS       Build platforms (default: linux/amd64,linux/arm64)
+  PUSH_BY_DIGEST  FILE: a --push build pushes by digest only (no tag) and records "<repo>@<digest>
+                  <tag>..." in FILE; compose-index tags them (the release workflow, one runner per
+                  platform: .github/workflows/release-images.yml)
   RUNTIME_IMAGES_REGISTRY  Where the e2e suites pull the runtime images from (default: ghcr.io/brf-tech/runr)
   RUNTIME_IMAGES_LOCAL     1: a runtime image this host has (a local build of BRF-Tech/runr-runtimes)
                   is used as it is, not pulled
@@ -199,6 +204,7 @@ case "$command" in
   gateway-auth)    cmd_build_gateway_auth "$@" ;;
   build-agent)     cmd_build_agent "$@" ;;
   release-images)  cmd_release_images "$@" ;;
+  compose-index)   cmd_compose_index "$@" ;;
   test-image)      cmd_test_image "$@" ;;
   test)            cmd_test "$@" ;;
   test-runtimes)   cmd_test_runtimes "$@" ;;

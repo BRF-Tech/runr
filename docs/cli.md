@@ -48,7 +48,7 @@ installs `runr` into `/usr/local/bin` when that is writable, else into `~/.local
 
 ```sh
 curl -fsSL https://runr.sh/install.sh | sh
-curl -fsSL https://runr.sh/install.sh | RUNR_VERSION=v0.6.1 sh             # a specific release
+curl -fsSL https://runr.sh/install.sh | RUNR_VERSION=v0.6.2 sh             # a specific release
 curl -fsSL https://runr.sh/install.sh | RUNR_INSTALL_DIR="$HOME/bin" sh    # another directory
 ```
 
@@ -3234,7 +3234,7 @@ deploy:
   stage: deploy
   image: alpine:3.21
   variables:
-    RUNR_VERSION: v0.6.1
+    RUNR_VERSION: v0.6.2
   before_script:
     - apk add --no-cache curl tar
     - curl -fsSL https://runr.sh/install.sh | sh

@@ -14,6 +14,14 @@ COPY *.go ./
 RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -trimpath -ldflags="-s -w -X main.version=${VERSION}" -o /runr-gateway-auth .
 
 FROM scratch
+# version, revision and created: the release build (ci.sh --push)
+LABEL org.opencontainers.image.title="runr-gateway-auth" \
+      org.opencontainers.image.description="RunR API product service of the regions (API keys and JWT routes with limits and usage reports)" \
+      org.opencontainers.image.licenses="MIT" \
+      org.opencontainers.image.vendor="BRF Teknoloji" \
+      org.opencontainers.image.url="https://runr.sh" \
+      org.opencontainers.image.documentation="https://github.com/BRF-Tech/runr/tree/main/docs" \
+      org.opencontainers.image.source="https://github.com/BRF-Tech/runr"
 # CA roots: JWKS of token issuers and RunR's URL are often https
 COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
 COPY --from=builder /runr-gateway-auth /runr-gateway-auth

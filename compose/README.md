@@ -22,7 +22,7 @@ On a machine with internet access, check out the release you install and create 
 settings file `.env`:
 
 ```bash
-git clone --branch v0.6.1 https://github.com/BRF-Tech/runr.git
+git clone --branch v0.6.2 https://github.com/BRF-Tech/runr.git
 cd runr
 cp compose/.env.example compose/.env
 ```

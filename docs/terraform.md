@@ -56,6 +56,35 @@ actions and reports Terraform leaves to the CLI and the API.
 terraform {
   required_providers {
     runr = {
+      source  = "brf-tech/runr"
+      version = "~> 0.6"
+    }
+  }
+}
+```
+
+The provider is published on the Terraform Registry as
+[`brf-tech/runr`](https://registry.terraform.io/providers/brf-tech/runr/latest) (provider name
+`runr`). `terraform init` downloads the archive for your platform from the provider's GitHub
+release ([BRF-Tech/terraform-provider-runr](https://github.com/BRF-Tech/terraform-provider-runr/releases)).
+Before it installs the archive, it checks its SHA-256 against the release's `SHA256SUMS` and the
+signature of that file against the RunR release key (key ID `2588846B241BC095`, fingerprint
+`2CA5 13A7 57AE 0C94 BD8A 7EE2 2588 846B 241B C095`, public key at
+<https://runr.sh/dl/runr-release-signing.pub.asc>). The lock file `.terraform.lock.hcl` records
+the checksums.
+
+### runr.sh as the source
+
+runr.sh serves the latest release, the same signed archives, with Terraform's provider registry
+protocol under the address `runr.sh/brf-tech/runr`; the archives come from
+`https://runr.sh/dl/terraform/<tag>/`.
+OpenTofu installs the provider from there (`tofu init`), and configurations that already use
+this address keep working as they are:
+
+```hcl
+terraform {
+  required_providers {
+    runr = {
       source  = "runr.sh/brf-tech/runr"
       version = "~> 0.6"
     }
@@ -63,29 +92,25 @@ terraform {
 }
 ```
 
-The provider's address is `runr.sh/brf-tech/runr` (provider name `runr`): runr.sh serves
-Terraform's provider registry protocol, so `terraform init` (and OpenTofu's `tofu init`) finds
-the releases there and downloads the archive for your platform from
-`https://runr.sh/dl/terraform/<tag>/`. Before it installs the archive, `terraform init` checks
-its SHA-256 against the release's `SHA256SUMS` and the signature of that file against the RunR
-release key (key ID `2588846B241BC095`, fingerprint
-`2CA5 13A7 57AE 0C94 BD8A 7EE2 2588 846B 241B C095`, public key at
-<https://runr.sh/dl/runr-release-signing.pub.asc>). The lock file `.terraform.lock.hcl` records
-the checksums.
+Both addresses install the same archives, so the checksums in the lock file are the same; only the
+address differs. To move a configuration from `runr.sh/brf-tech/runr` to `brf-tech/runr`, change
+`source` and move the state once:
+`terraform state replace-provider runr.sh/brf-tech/runr registry.terraform.io/brf-tech/runr`,
+then run `terraform init`.
 
-A configuration that used the address `brf-tech/runr` changes `source` as above and moves its
-state once:
-`terraform state replace-provider registry.terraform.io/brf-tech/runr runr.sh/brf-tech/runr`.
+### A build from this repository
 
 To use a build from this repository, build and install it into the local plugin directory
 and run `terraform init` as usual:
 
 ```sh
-make -C terraform-provider-runr install VERSION=0.6.0   # ~/.terraform.d/plugins/runr.sh/brf-tech/runr/0.6.0/<os>_<arch>/
+make -C terraform-provider-runr install VERSION=0.6.0   # ~/.terraform.d/plugins/registry.terraform.io/brf-tech/runr/0.6.0/<os>_<arch>/
 ```
 
-During provider development a `dev_overrides` block in `~/.terraformrc` points
-`runr.sh/brf-tech/runr` at the directory with the binary (`make -C terraform-provider-runr build`).
+A configuration on the address `runr.sh/brf-tech/runr` installs with `PLUGIN_HOST=runr.sh`
+instead. During provider development a `dev_overrides` block in `~/.terraformrc` points
+`registry.terraform.io/brf-tech/runr` at the directory with the binary
+(`make -C terraform-provider-runr build`).
 
 ### Upgrading from 0.5
 

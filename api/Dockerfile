@@ -30,8 +30,11 @@ RUN composer install \
 # ─── Stage 2: Runtime image ───────────────────────────────────────────────────
 FROM ghcr.io/brf-tech/runr/reqs/frankenphp:${FRANKENPHP_TAG} AS base
 
-LABEL org.opencontainers.image.source="https://github.com/brf-tech/runr"
-LABEL org.opencontainers.image.description="RunR API (development)"
+LABEL org.opencontainers.image.title="RunR API (development)" \
+      org.opencontainers.image.description="RunR API (development)" \
+      org.opencontainers.image.licenses="MIT" \
+      org.opencontainers.image.vendor="BRF Teknoloji" \
+      org.opencontainers.image.source="https://github.com/BRF-Tech/runr"
 
 # The oldest PHP the image may ship: the PHP 8.3 release that fixes CVE-2026-109618 and
 # CVE-2026-109619 (https://www.php.net/archive/2026.php#2026-10-21-5); Dockerfile.prod has the

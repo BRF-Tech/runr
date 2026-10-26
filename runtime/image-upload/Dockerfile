@@ -20,6 +20,14 @@ COPY *.go ./
 RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -trimpath -ldflags="-s -w -X main.version=${VERSION}" -o /runr-image-upload .
 
 FROM scratch
+# version, revision and created: the release build (ci.sh --push)
+LABEL org.opencontainers.image.title="runr-image-upload" \
+      org.opencontainers.image.description="RunR image upload receiver and organization transfer agent of the regions" \
+      org.opencontainers.image.licenses="MIT" \
+      org.opencontainers.image.vendor="BRF Teknoloji" \
+      org.opencontainers.image.url="https://runr.sh" \
+      org.opencontainers.image.documentation="https://github.com/BRF-Tech/runr/tree/main/docs" \
+      org.opencontainers.image.source="https://github.com/BRF-Tech/runr"
 COPY --from=builder /runr-image-upload /runr-image-upload
 USER 65532:65532
 EXPOSE 8080

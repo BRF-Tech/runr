@@ -20,9 +20,36 @@ cleanup_buildx() {
   fi
 }
 
+# The repository RunR's images are built from. As the org.opencontainers.image.source label of an
+# image and as an annotation of its multi-arch index it links the image's ghcr package to the
+# repository (the Dockerfiles carry the label too, so a plain docker build has it).
+RUNR_SOURCE_URL="https://github.com/BRF-Tech/runr"
+
+# oci_label_args TAG — the --label flags of a push build, one per line, on top of the Dockerfile's
+# (title, description, licenses, vendor): the source, the version (TAG's tag), the commit the
+# checkout is at (revision) and its time (created: SOURCE_DATE_EPOCH, else the commit's time). They
+# replace what a base image brings (FrankenPHP's, Caddy's, Trivy's version, revision and date).
+oci_label_args() {
+  local tag="$1" root revision epoch created
+  root="${SCRIPT_DIR}/.."
+  revision="$(git -C "$root" rev-parse HEAD 2>/dev/null || true)"
+  epoch="${SOURCE_DATE_EPOCH:-$(git -C "$root" log -1 --format=%ct 2>/dev/null || true)}"
+  echo "--label=org.opencontainers.image.source=${RUNR_SOURCE_URL}"
+  echo "--label=org.opencontainers.image.version=${tag##*:}"
+  if [ -n "$revision" ]; then
+    echo "--label=org.opencontainers.image.revision=${revision}"
+  fi
+  if [ -n "$epoch" ]; then
+    created="$(date -u -d "@${epoch}" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u -r "${epoch}" +%Y-%m-%dT%H:%M:%SZ)"
+    echo "--label=org.opencontainers.image.created=${created}"
+  fi
+}
+
 # Build helper — multiplatform push or local single-platform. --pull: base images come from their
 # registry, never from a copy the build host's Docker already holds (an old pull of a
 # ghcr.io/brf-tech/runr/reqs tag would otherwise be built on); a caller's --pull=false, after it, wins.
+# A push carries the OCI labels (oci_label_args) and the source as an annotation of the index (of
+# the image itself on a single platform).
 do_build() {
   local tag="$1" context="$2" push="$3"
   shift 3
@@ -30,12 +57,21 @@ do_build() {
 
   if [ "$push" = "1" ]; then
     ensure_buildx
+    local labels=() annotation="manifest"
+    mapfile -t labels < <(oci_label_args "${tag}")
+    if [ -n "${PUSH_BY_DIGEST:-}" ]; then
+      push_by_digest "${tag}" "${context}" "${labels[@]}" "$@"
+      return
+    fi
+    case "${PLATFORMS}" in *,*) annotation="index" ;; esac
     docker buildx build \
       --builder "${BUILDER_NAME}" \
       --pull \
       --platform "${PLATFORMS}" \
       --provenance=false \
       --sbom=false \
+      "${labels[@]}" \
+      --annotation "${annotation}:org.opencontainers.image.source=${RUNR_SOURCE_URL}" \
       "$@" \
       -t "${tag}" \
       --output "type=image,push=true,oci-mediatypes=true" \
@@ -43,6 +79,109 @@ do_build() {
   else
     docker build --pull "$@" -t "${tag}" "${context}"
   fi
+}
+
+# PUSH_BY_DIGEST=FILE: a --push build pushes its image (the platforms of PLATFORMS) by digest only,
+# with no tag, and appends "<repository>@<digest> <tag>…" to FILE: the build's tag and its extra
+# -t ones. The release workflow (.github/workflows/release-images.yml) builds each platform on a
+# runner of its own this way, without emulation; compose-index then tags the multi-arch indexes.
+push_by_digest() {
+  local tag="$1" context="$2"
+  shift 2
+  local tags=("$tag") args=() meta digest
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      -t|--tag) tags+=("$2"); shift 2 ;;
+      *) args+=("$1"); shift ;;
+    esac
+  done
+  meta="$(mktemp)"
+  docker buildx build \
+    --builder "${BUILDER_NAME}" \
+    --pull \
+    --platform "${PLATFORMS}" \
+    --provenance=false \
+    --sbom=false \
+    ${args[@]+"${args[@]}"} \
+    --metadata-file "${meta}" \
+    --output "type=image,name=${tag%:*},push-by-digest=true,name-canonical=true,push=true,oci-mediatypes=true" \
+    "${context}"
+  digest="$(sed -n 's/.*"containerimage\.digest"[[:space:]]*:[[:space:]]*"\(sha256:[0-9a-f]\{64\}\)".*/\1/p' "${meta}" | head -n 1)"
+  rm -f "${meta}"
+  if [ -z "$digest" ]; then
+    echo -e "${RED}${tag}: the build reported no digest${NC}"
+    return 1
+  fi
+  echo "${tag%:*}@${digest} ${tags[*]}" >> "${PUSH_BY_DIGEST}"
+  echo "==> ${tag%:*}@${digest} (${PLATFORMS}), for ${tags[*]}"
+}
+
+# platform_digests REF — "<os>/<arch> <digest>" of each platform image of REF (an index: its
+# entries; a single image: itself, its platform from its config)
+platform_digests() {
+  local ref="$1" raw
+  raw="$(docker buildx imagetools inspect --raw "$ref")"
+  if jq -e '.manifests' >/dev/null <<<"$raw"; then
+    jq -r '.manifests[] | select(.platform.architecture != "unknown") | "\(.platform.os)/\(.platform.architecture) \(.digest)"' <<<"$raw"
+  else
+    echo "$(docker buildx imagetools inspect --format '{{json .Image}}' "$ref" | jq -r '"\(.os)/\(.architecture)"') ${ref##*@}"
+  fi
+}
+
+# cmd_compose_index FILE… — `ci.sh compose-index FILE…`: the multi-arch tags of the images that
+# per-platform pushes (PUSH_BY_DIGEST) recorded in FILE…. The lines with the same tags are one
+# image: its platform images (of a pushed index, its entries), one per platform of PLATFORMS, go
+# into one index under each of the tags. The index is annotated with the OCI labels of its first
+# platform image (title, description, licenses … show on the package page) and always with the
+# source, which links the package to the repository. Each tag is checked afterwards: its index
+# names exactly those platform images.
+cmd_compose_index() {
+  if [ "$#" = 0 ]; then
+    echo -e "${RED}usage: ci.sh compose-index FILE…${NC}"
+    exit 1
+  fi
+  local tags refs ref repo want p first args annotations got t
+  while read -r tags; do
+    [ -n "$tags" ] || continue
+    refs="$(awk -v want="$tags" '{ ref = $1; $1 = ""; sub(/^ /, ""); if ($0 == want) print ref }' "$@")"
+    repo="${refs%%@*}"
+    want=""
+    for ref in $refs; do
+      [ "${ref%%@*}" = "$repo" ] || { echo -e "${RED}${tags}: images of two repositories (${repo}, ${ref%%@*})${NC}"; exit 1; }
+      want+="$(platform_digests "$ref")"$'\n'
+    done
+    want="$(sort <<<"$want" | grep .)"
+    if [ -n "$(cut -d' ' -f1 <<<"$want" | uniq -d)" ]; then
+      echo -e "${RED}${tags}: two images of one platform: ${want}${NC}"
+      exit 1
+    fi
+    for p in ${PLATFORMS//,/ }; do
+      grep -q "^${p} " <<<"$want" || { echo -e "${RED}${tags}: no ${p} image (${want//$'\n'/, })${NC}"; exit 1; }
+    done
+
+    first="$(head -n 1 <<<"$want" | cut -d' ' -f2)"
+    annotations=()
+    mapfile -t annotations < <(docker buildx imagetools inspect --format '{{json .Image}}' "${repo}@${first}" \
+      | jq -r '.config.Labels // {} | to_entries[]
+          | select((.key | startswith("org.opencontainers.image.")) and .key != "org.opencontainers.image.source")
+          | "--annotation=index:\(.key)=\(.value)"')
+    annotations+=("--annotation=index:org.opencontainers.image.source=${RUNR_SOURCE_URL}")
+    args=()
+    for t in $tags; do args+=(-t "$t"); done
+    while read -r p ref; do args+=("${repo}@${ref}"); done <<<"$want"
+    echo "==> ${tags} ($(cut -d' ' -f1 <<<"$want" | paste -sd, -))"
+    docker buildx imagetools create "${annotations[@]}" "${args[@]}"
+
+    for t in $tags; do
+      got="$(docker buildx imagetools inspect --raw "$t" \
+        | jq -r '.manifests[] | "\(.platform.os)/\(.platform.architecture) \(.digest)"' | sort)"
+      if [ "$got" != "$want" ]; then
+        echo -e "${RED}✗ ${t}: its index is ${got//$'\n'/, }, not ${want//$'\n'/, }${NC}"
+        exit 1
+      fi
+      echo "✓ ${t}: ${got//$'\n'/, }"
+    done
+  done < <(awk '{ $1 = ""; sub(/^ /, ""); if (!seen[$0]++) print }' "$@")
 }
 
 # The release's version: helm/Chart.yaml appVersion (RELEASE_VERSION overrides it). The region agent

@@ -37,7 +37,7 @@ const upgradeConfig = `
 terraform {
   required_providers {
     runr = {
-      source = "runr.sh/brf-tech/runr"
+      source = "brf-tech/runr"
     }
   }
 }
@@ -264,7 +264,7 @@ func TestUpgradeFromPreviousProviderBinary(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "main.tf"), []byte(config), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	overrides := fmt.Sprintf("provider_installation {\n  dev_overrides {\n    \"runr.sh/brf-tech/runr\" = %q\n  }\n  direct {}\n}\n",
+	overrides := fmt.Sprintf("provider_installation {\n  dev_overrides {\n    \"registry.terraform.io/brf-tech/runr\" = %q\n  }\n  direct {}\n}\n",
 		filepath.ToSlash(prev))
 	if err := os.WriteFile(filepath.Join(dir, "previous.tfrc"), []byte(overrides), 0o600); err != nil {
 		t.Fatal(err)
@@ -415,14 +415,14 @@ func toFloat(v any) float64 {
 }
 
 // serveProvider serves the provider in this process and returns the TF_REATTACH_PROVIDERS value
-// for runr.sh/brf-tech/runr; the server stops when the test ends.
+// for registry.terraform.io/brf-tech/runr; the server stops when the test ends.
 func serveProvider(t *testing.T) string {
 	t.Helper()
 	ctx, cancel := context.WithCancel(context.Background())
 	reattach := make(chan *plugin.ReattachConfig)
 	closed := make(chan struct{})
 	go func() {
-		err := tf6server.Serve("runr.sh/brf-tech/runr", providerserver.NewProtocol6(New("test")()),
+		err := tf6server.Serve("registry.terraform.io/brf-tech/runr", providerserver.NewProtocol6(New("test")()),
 			tf6server.WithDebug(ctx, reattach, closed), tf6server.WithLoggingSink(t),
 			tf6server.WithGoPluginLogger(hclog.NewNullLogger()))
 		if err != nil {
@@ -451,7 +451,7 @@ func serveProvider(t *testing.T) string {
 		Test            bool
 		Addr            addr
 	}
-	b, err := json.Marshal(map[string]config{"runr.sh/brf-tech/runr": {
+	b, err := json.Marshal(map[string]config{"registry.terraform.io/brf-tech/runr": {
 		Protocol: string(cfg.Protocol), ProtocolVersion: cfg.ProtocolVersion, Pid: cfg.Pid, Test: true,
 		Addr: addr{Network: cfg.Addr.Network(), String: cfg.Addr.String()},
 	}})

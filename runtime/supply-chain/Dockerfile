@@ -32,6 +32,15 @@ RUN set -eux; \
     chmod 0755 syft cosign oras
 
 FROM ghcr.io/aquasecurity/trivy:${TRIVY_VERSION}
+# RunR's own labels in place of the Trivy base's (version, revision and created: the release build,
+# ci.sh --push). The tools keep their own licenses (Apache-2.0); MIT is runr-supply-chain's.
+LABEL org.opencontainers.image.title="runr-supply-chain" \
+      org.opencontainers.image.description="RunR supply-chain tools: Trivy with syft and cosign and oras driven by runr-supply-chain" \
+      org.opencontainers.image.licenses="MIT AND Apache-2.0" \
+      org.opencontainers.image.vendor="BRF Teknoloji" \
+      org.opencontainers.image.url="https://runr.sh" \
+      org.opencontainers.image.documentation="https://github.com/BRF-Tech/runr/tree/main/docs" \
+      org.opencontainers.image.source="https://github.com/BRF-Tech/runr"
 COPY --from=tools /dl/syft /dl/cosign /dl/oras /usr/local/bin/
 COPY runr-supply-chain.sh /usr/local/bin/runr-supply-chain
 RUN chmod 0755 /usr/local/bin/runr-supply-chain

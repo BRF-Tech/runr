@@ -1,0 +1,352 @@
+# Builds and pushes every image a RunR release needs to ghcr.io/brf-tech/runr/ with this workflow's
+# own GITHUB_TOKEN, so each package it pushes is linked to this repository (an existing package
+# accepts the push once it grants the repository write access: Package settings → Manage Actions
+# access → BRF-Tech/runr, role Write):
+#   - api, ui and ui-mt, the console's release build: <version> and latest (ui-mt: <version>-mt)
+#   - runtime/ci.sh release-images: the region agent and the queue consumer at <version> and latest,
+#     gateway-auth, image-upload, supply-chain and the Spin shim at their own versions; each one the
+#     registry does not have yet
+# On a release tag v<version> (helm/Chart.yaml version and appVersion = <version>), or by hand for a
+# tag: a run again builds what the registry lacks and composes the tags again. latest moves only to
+# the highest release tag.
+# linux/amd64 and linux/arm64 are built on runners of their own (no emulation), pushed by digest and
+# composed into multi-arch tags. Every image carries RunR's OCI labels (source = this repository,
+# title, description, version, revision, created, licenses) and every index the same as
+# annotations, so nothing comes from a base image.
+# The amd64 images of api, ui and ui-mt are also the image tars of offline installs: the tar's own
+# OCI layout is pushed, so the amd64 entry of each tag is the tar's image byte for byte (artifact
+# runr-<version>-tars: the docker save tars, the chart, SHA256SUMS, DIGESTS).
+# Last, every tag is pulled without credentials. The GitHub release is published only after this
+# run succeeded: the chart of a published release goes to helm.brf.sh at once.
+name: Release images
+
+run-name: Release images ${{ inputs.tag || github.ref_name }}
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag (v<version>): builds the images the registry lacks and composes its tags again'
+        required: true
+
+permissions:
+  contents: read
+
+# one run per release tag at a time, never cancelled halfway through a push
+concurrency:
+  group: release-images-${{ inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+env:
+  REGISTRY: ghcr.io/brf-tech/runr
+  SOURCE_URL: https://github.com/BRF-Tech/runr
+  CRANE_VERSION: v0.21.2
+  CRANE_SHA256: 897e7c342db072ba76531246fc18fbf3e8e298688b6ecf98916770984b263866
+  # the helm of the API image (api/Dockerfile.prod), for the chart next to the image tars
+  HELM_VERSION: v3.16.0
+  HELM_SHA256: 327cfbc7ddc5a3eb644039ceb0cff66394628654c4f5a76bf715ed15b893983b
+
+jobs:
+  release:
+    name: Release tag
+    runs-on: ubuntu-24.04
+    outputs:
+      tag: ${{ steps.release.outputs.tag }}
+      version: ${{ steps.release.outputs.version }}
+      sha: ${{ steps.release.outputs.sha }}
+      epoch: ${{ steps.release.outputs.epoch }}
+      latest: ${{ steps.release.outputs.latest }}
+    steps:
+      # every tag: latest goes to the highest release tag only
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+          fetch-depth: 0
+          persist-credentials: false
+      - id: release
+        env:
+          TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          if ! [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+            echo "::error::${TAG} is not a release tag (v<version>)"
+            exit 1
+          fi
+          version="${TAG#v}"
+          # the tag is the release commit: the chart's version and appVersion are the tag's
+          if ! grep -qxF "version: ${version}" helm/Chart.yaml || ! grep -qxF "appVersion: \"${version}\"" helm/Chart.yaml; then
+            echo "::error::helm/Chart.yaml of ${TAG} does not say version ${version} and appVersion \"${version}\""
+            exit 1
+          fi
+          highest="$(git tag -l 'v*' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -n 1)"
+          latest=false
+          if [ "$TAG" = "$highest" ]; then latest=true; fi
+          {
+            echo "tag=${TAG}"
+            echo "version=${version}"
+            echo "sha=$(git rev-parse HEAD)"
+            # SOURCE_DATE_EPOCH of every build: the commit's time, as the local release rounds had it
+            echo "epoch=$(git log -1 --format=%ct HEAD)"
+            echo "latest=${latest}"
+          } >> "$GITHUB_OUTPUT"
+          echo "${TAG}: $(git rev-parse HEAD), latest=${latest} (highest release tag: ${highest})"
+
+  build:
+    name: Build ${{ matrix.arch }}
+    needs: release
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 120
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    env:
+      ARCH: ${{ matrix.arch }}
+      VERSION: ${{ needs.release.outputs.version }}
+      REVISION: ${{ needs.release.outputs.sha }}
+      SOURCE_DATE_EPOCH: ${{ needs.release.outputs.epoch }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.release.outputs.sha }}
+          persist-credentials: false
+      # runr://docs/{page} of the MCP server (docs/mcp.md): the API image carries docs/ as resources/docs
+      - run: mkdir -p api/resources/docs && cp docs/*.md api/resources/docs/
+      # the builder of api, ui and ui-mt; runtime/ci.sh creates and removes its own (runr-multiarch)
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+        with:
+          name: runr-release
+          driver: docker-container
+          use: false
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      # crane pushes the image tars' layouts (it reads the login above from the Docker config)
+      - name: Install crane and helm (pinned, checksums verified)
+        if: matrix.arch == 'amd64'
+        run: |
+          curl -fsSL -o /tmp/crane.tar.gz "https://github.com/google/go-containerregistry/releases/download/${CRANE_VERSION}/go-containerregistry_Linux_x86_64.tar.gz"
+          echo "${CRANE_SHA256}  /tmp/crane.tar.gz" | sha256sum -c -
+          sudo tar -xzf /tmp/crane.tar.gz -C /usr/local/bin crane
+          curl -fsSL -o /tmp/helm.tar.gz "https://get.helm.sh/helm-${HELM_VERSION}-linux-amd64.tar.gz"
+          echo "${HELM_SHA256}  /tmp/helm.tar.gz" | sha256sum -c -
+          mkdir -p "$RUNNER_TEMP/bin"
+          tar -xzf /tmp/helm.tar.gz -C "$RUNNER_TEMP/bin" --strip-components=1 linux-amd64/helm
+      - name: api, ui, ui-mt
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/digests" "$RUNNER_TEMP/tars"
+          created="$(date -u -d "@${SOURCE_DATE_EPOCH}" +%Y-%m-%dT%H:%M:%SZ)"
+          # app KEY CONTEXT REPOSITORY LOCAL-NAME "TAG…" ARG… — the image of this runner's platform,
+          # pushed by digest and recorded for the merge job ("<repository>@<digest> <tag>…").
+          # amd64: exported as the image tar (the docker save layout, RepoTags LOCAL-NAME), then the
+          # tar's own OCI layout is pushed, so the pushed image is the tar's; arm64: pushed by the builder
+          app() {
+            local key="$1" context="$2" repo="${REGISTRY}/$3" name="$4" tags="$5" out=() tar digest pushed platform t refs=""
+            shift 5
+            if [ "$ARCH" = amd64 ]; then
+              tar="$RUNNER_TEMP/tars/${name/:/-}.tar"
+              out=(-t "$name" --output "type=docker,dest=${tar},oci-mediatypes=true")
+            else
+              out=(--output "type=image,name=${repo},push-by-digest=true,name-canonical=true,push=true,oci-mediatypes=true")
+            fi
+            docker buildx build --builder runr-release --pull --platform "linux/${ARCH}" \
+              --provenance=false --sbom=false --build-arg SOURCE_DATE_EPOCH \
+              --label "org.opencontainers.image.source=${SOURCE_URL}" \
+              --label "org.opencontainers.image.version=${VERSION}" \
+              --label "org.opencontainers.image.revision=${REVISION}" \
+              --label "org.opencontainers.image.created=${created}" \
+              --metadata-file "$RUNNER_TEMP/${key}.meta.json" \
+              "$@" "${out[@]}" "$context"
+            if [ "$ARCH" = amd64 ]; then
+              digest="$(tar -xOf "$tar" index.json | jq -r '.manifests[0].digest')"
+              mkdir "$RUNNER_TEMP/layout-${key}"
+              tar -xf "$tar" -C "$RUNNER_TEMP/layout-${key}"
+              pushed="$(crane push "$RUNNER_TEMP/layout-${key}" "${repo}@${digest}")"
+              case "$pushed" in
+                *"@${digest}") ;;
+                *) echo "::error::${key}: pushed ${pushed}, the tar's image is ${digest}"; exit 1 ;;
+              esac
+            else
+              digest="$(jq -r '."containerimage.digest"' "$RUNNER_TEMP/${key}.meta.json")"
+            fi
+            platform="$(docker buildx imagetools inspect --format '{{json .Image}}' "${repo}@${digest}" | jq -r '.os + "/" + .architecture')"
+            if [ "$platform" != "linux/${ARCH}" ]; then
+              echo "::error::${key}: ${repo}@${digest} is ${platform}"
+              exit 1
+            fi
+            for t in $tags; do refs+=" ${repo}:${t}"; done
+            echo "${repo}@${digest}${refs}" | tee -a "$RUNNER_TEMP/digests/app-${ARCH}.txt"
+          }
+          ui=(--build-arg VITE_WS_PROXY=true --build-arg VITE_REVERB_KEY=runr-key
+              --build-arg VITE_TICKET_ENABLED=true --build-arg VITE_BILLING_ENABLED=true)
+          app api api api "runr-api:${VERSION}" "${VERSION} latest" \
+            --file api/Dockerfile.prod --build-arg "APP_VERSION=v${VERSION}"
+          app ui vue ui "runr-ui:${VERSION}" "${VERSION} latest" \
+            "${ui[@]}" --build-arg VITE_TENANCY_ENABLED=false --build-arg VITE_AUTH_PROVIDER_ENABLED=false
+          app ui-mt vue ui "runr-ui:${VERSION}-mt" "${VERSION}-mt" \
+            "${ui[@]}" --build-arg VITE_TENANCY_ENABLED=true --build-arg VITE_AUTH_PROVIDER_ENABLED=true
+      - name: Image tars (the chart, SHA256SUMS)
+        if: matrix.arch == 'amd64'
+        run: |
+          set -euo pipefail
+          "$RUNNER_TEMP/bin/helm" package helm -d "$RUNNER_TEMP/tars"
+          cd "$RUNNER_TEMP/tars"
+          files=("runr-api-${VERSION}.tar" "runr-ui-${VERSION}.tar" "runr-ui-${VERSION}-mt.tar" "runr-${VERSION}.tgz")
+          sha256sum "${files[@]}" > SHA256SUMS
+          stat -c '%s  %n' "${files[@]}" > SIZES
+          # the amd64 image of each tar, as pushed (the merge job checks each tag's amd64 entry is it)
+          cp "$RUNNER_TEMP/digests/app-amd64.txt" DIGESTS
+          tar -xOzf "runr-${VERSION}.tgz" runr/Chart.yaml | grep -E '^(version|appVersion):'
+          cat SHA256SUMS SIZES DIGESTS
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: matrix.arch == 'amd64'
+        with:
+          name: runr-${{ needs.release.outputs.version }}-tars
+          path: ${{ runner.temp }}/tars/
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 90
+          overwrite: true
+      - name: Region images (runtime/ci.sh release-images, by digest)
+        env:
+          PLATFORMS: linux/${{ matrix.arch }}
+        run: |
+          set -euo pipefail
+          : > "$RUNNER_TEMP/digests/region-${ARCH}.txt"
+          PUSH_BY_DIGEST="$RUNNER_TEMP/digests/region-${ARCH}.txt" bash runtime/ci.sh release-images --push
+          cat "$RUNNER_TEMP/digests/region-${ARCH}.txt"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: digests-${{ matrix.arch }}
+          path: ${{ runner.temp }}/digests/
+          if-no-files-found: error
+          overwrite: true
+
+  merge:
+    name: Multi-arch tags
+    needs: [release, build]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
+    env:
+      LATEST: ${{ needs.release.outputs.latest }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.release.outputs.sha }}
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: digests-*
+          merge-multiple: true
+          path: ${{ runner.temp }}/digests
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      # each tag's index: the amd64 and arm64 images of its lines, annotated with their OCI labels;
+      # checked afterwards against the digests the build jobs pushed
+      - name: compose-index
+        run: |
+          set -euo pipefail
+          files=("$RUNNER_TEMP"/digests/*.txt)
+          if [ "$LATEST" != true ]; then
+            for f in "${files[@]}"; do
+              awk '{ line = $1; for (i = 2; i <= NF; i++) if ($i !~ /:latest$/) line = line " " $i; print line }' "$f" > "$f.tags"
+              mv "$f.tags" "$f"
+            done
+          fi
+          cat "${files[@]}"
+          bash runtime/ci.sh compose-index "${files[@]}"
+
+  verify:
+    name: Anonymous pulls
+    needs: [release, merge]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      VERSION: ${{ needs.release.outputs.version }}
+      LATEST: ${{ needs.release.outputs.latest }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.release.outputs.sha }}
+          persist-credentials: false
+      - name: Install crane (pinned, checksum verified)
+        run: |
+          curl -fsSL -o /tmp/crane.tar.gz "https://github.com/google/go-containerregistry/releases/download/${CRANE_VERSION}/go-containerregistry_Linux_x86_64.tar.gz"
+          echo "${CRANE_SHA256}  /tmp/crane.tar.gz" | sha256sum -c -
+          sudo tar -xzf /tmp/crane.tar.gz -C /usr/local/bin crane
+      # The local release rounds' s91 / s92 / s95, without credentials (an empty Docker config): every
+      # tag of the release answers, with linux/amd64 and linux/arm64; the console images' configs per
+      # platform, the API's APP_VERSION, the source label and annotation. A package this run created
+      # answers 401 / 403 until it is made public: set its visibility in its settings, then re-run
+      # the failed jobs of this run.
+      - name: Every tag pulls without credentials
+        run: |
+          set -uo pipefail
+          anon="$(mktemp -d)"
+          echo '{}' > "$anon/config.json"
+          export DOCKER_CONFIG="$anon"
+          app=("${REGISTRY}/api:${VERSION}" "${REGISTRY}/ui:${VERSION}" "${REGISTRY}/ui:${VERSION}-mt")
+          mapfile -t region < <(bash runtime/ci.sh release-images)
+          refs=("${app[@]}" "${region[@]}")
+          if [ "$LATEST" = true ]; then
+            refs+=("${REGISTRY}/api:latest" "${REGISTRY}/ui:latest" "${REGISTRY}/agent:latest" "${REGISTRY}/queue-consumer:latest")
+          fi
+          rc=0
+          fail() { echo "::error::$*"; rc=1; }
+          { echo "| Image | Digest | Platforms |"; echo "|---|---|---|"; } >> "$GITHUB_STEP_SUMMARY"
+          for ref in "${refs[@]}"; do
+            if ! m="$(crane manifest "$ref" 2>&1)"; then
+              pkg="${ref#ghcr.io/brf-tech/}"
+              pkg="${pkg%:*}"
+              fail "${ref} does not pull without credentials ($(tail -n 1 <<<"$m")). 404: not pushed; 401/403: a new package, private: https://github.com/orgs/BRF-Tech/packages/container/${pkg//\//%2F}/settings → Change visibility → Public, then re-run the failed jobs"
+              continue
+            fi
+            platforms="$(jq -r '[.manifests[]?.platform | select(.architecture != "unknown") | "\(.os)/\(.architecture)"] | sort | join(",")' <<<"$m")"
+            [ "$platforms" = "linux/amd64,linux/arm64" ] || fail "${ref}: platforms '${platforms}', not linux/amd64 and linux/arm64"
+            digest="$(crane digest "$ref")"
+            echo "${ref} ${digest} ${platforms}"
+            echo "| \`${ref}\` | \`${digest}\` | ${platforms} |" >> "$GITHUB_STEP_SUMMARY"
+          done
+          for ref in "${app[@]}"; do
+            src="$(crane manifest "$ref" 2>/dev/null | jq -r '.annotations["org.opencontainers.image.source"] // ""')"
+            [ "$src" = "$SOURCE_URL" ] || fail "${ref}: the index annotation org.opencontainers.image.source is '${src}'"
+            for p in linux/amd64 linux/arm64; do
+              if ! c="$(crane config --platform "$p" "$ref" 2>&1)"; then
+                fail "${ref} ${p}: $(tail -n 1 <<<"$c")"
+                continue
+              fi
+              got="$(jq -r '.os + "/" + .architecture' <<<"$c")"
+              [ "$got" = "$p" ] || fail "${ref} ${p}: the config is ${got}"
+              [ "$(jq -r '.config.Labels["org.opencontainers.image.source"] // ""' <<<"$c")" = "$SOURCE_URL" ] \
+                || fail "${ref} ${p}: no org.opencontainers.image.source=${SOURCE_URL}"
+              [ "$(jq -r '.config.Labels["org.opencontainers.image.version"] // ""' <<<"$c")" = "$VERSION" ] \
+                || fail "${ref} ${p}: org.opencontainers.image.version is not ${VERSION}"
+              case "$ref" in
+                */api:*)
+                  [ "$(jq -r '.config.Env[] | select(startswith("APP_VERSION="))' <<<"$c")" = "APP_VERSION=v${VERSION}" ] \
+                    || fail "${ref} ${p}: not APP_VERSION=v${VERSION}" ;;
+              esac
+              echo "${ref} ${p}: config ok"
+            done
+          done
+          exit "$rc"
+      # every ghcr.io/brf-tech/runr/reqs/* image the release references (BRF-Tech/runr-runtimes' mirror)
+      - name: Reqs mirror (anonymous)
+        run: bash ci/check-reqs-mirror.sh

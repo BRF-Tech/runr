@@ -8,6 +8,49 @@ did not change says so.
 
 ## [Unreleased]
 
+## [0.6.2] - 2026-10-26
+
+### Upgrade notes
+
+No new database migrations and no new Helm values; values of 0.6.1, `--reuse-values` included,
+keep working ([0.6.1 → 0.6.2 in upgrade.md](docs/upgrade.md#061--062)). The region agent and the
+queue consumer follow the release (0.6.2); gateway-auth, image-upload, supply-chain and the Spin
+shim keep their versions.
+
+### Changed
+
+- **The Terraform provider is on the Terraform Registry as `brf-tech/runr`.** With
+  `source = "brf-tech/runr"`, `terraform init` downloads the archive from the provider's GitHub
+  release and checks it against the release's `SHA256SUMS`, signed with the RunR release key (key
+  ID `2588846B241BC095`). runr.sh keeps serving the latest release, the same signed archives,
+  under `runr.sh/brf-tech/runr`, for OpenTofu and for configurations that use that address.
+  Moving a configuration over is optional: change `source`, run
+  `terraform state replace-provider runr.sh/brf-tech/runr registry.terraform.io/brf-tech/runr`
+  once, then `terraform init` ([docs/terraform.md](docs/terraform.md#install)). The provider's
+  debug address and `make install` (`PLUGIN_HOST`, default `registry.terraform.io`) follow.
+- **The release images are built and pushed by the repository's own GitHub Actions workflow.**
+  `.github/workflows/release-images.yml` runs on the release tag `v<version>` with the
+  repository's `GITHUB_TOKEN`: `api`, `ui` and `ui:<version>-mt`, and the region images of
+  `runtime/ci.sh release-images` the registry does not have yet. linux/amd64 and linux/arm64 build
+  on runners of their own (no emulation), are pushed by digest and composed into multi-arch tags;
+  `latest` moves only to the highest release tag; the last job pulls every tag without
+  credentials. Every image labels RunR's own OCI metadata in place of its base image's
+  (`org.opencontainers.image.source=https://github.com/BRF-Tech/runr`, title, description,
+  version, revision, created, licenses) and every index carries it as annotations, so each
+  package on ghcr.io is linked to the repository. The run's artifact `runr-<version>-tars` holds
+  the amd64 image tars of `api`, `ui` and `ui-mt` (the pushed images, byte for byte), the chart and
+  `SHA256SUMS`. The GitLab pipeline builds and pushes no image any more; its test jobs stay
+  ([development.md](docs/development.md#ci-jobs)). `ci/check-dockerfiles.sh` fails on an image
+  that does not label the source.
+
+### Fixed
+
+- **The MCP server's documentation resources are in the API image again.** The released API image
+  had no `resources/docs` (the release builds did not copy `docs/` into it, 0.6.1 included), so
+  `runr://docs/{page}` found no page unless `MCP_DOCS_PATH` or a `docs/` next to the API was set
+  up. The release workflow copies `docs/*.md` into the image, as `compose/build.sh` and
+  `ci.sh build-deploy` do ([mcp.md](docs/mcp.md)).
+
 ## [0.6.1] - 2026-10-24
 
 ### Upgrade notes
@@ -3197,7 +3240,8 @@ Initial tagged release.
 - API gateways with routes, in-app notifications and support tickets.
 - Helm chart with a single-tenant / multi-tenant edition, an install form (`values.schema.json`), generated secrets and a Traefik ingress; a Docker Compose setup for development.
 
-[Unreleased]: https://github.com/brf-tech/runr/compare/v0.6.1...main
+[Unreleased]: https://github.com/brf-tech/runr/compare/v0.6.2...main
+[0.6.2]: https://github.com/brf-tech/runr/releases/tag/v0.6.2
 [0.6.1]: https://github.com/brf-tech/runr/releases/tag/v0.6.1
 [0.6.0]: https://github.com/brf-tech/runr/releases/tag/v0.6.0
 [0.5.10]: https://github.com/brf-tech/runr/releases/tag/v0.5.10

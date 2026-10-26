@@ -23,7 +23,7 @@ func main() {
 	flag.Parse()
 
 	err := providerserver.Serve(context.Background(), provider.New(version), providerserver.ServeOpts{
-		Address: "runr.sh/brf-tech/runr",
+		Address: "registry.terraform.io/brf-tech/runr",
 		Debug:   debug,
 	})
 	if err != nil {

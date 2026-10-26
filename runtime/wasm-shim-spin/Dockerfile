@@ -185,11 +185,15 @@ RUN --mount=type=cache,id=runr-shim-spin-test-registry,target=/usr/local/cargo/r
 # ── the image ──
 FROM ${BASE_IMAGE}
 ARG VERSION=v0.26.0-runr.1
+# source: this repository, which builds the image (it links the ghcr package); url: the upstream
+# project, whose commit 922760061d91 (tag v0.26.0) is built. revision and created: the release
+# build (ci.sh --push)
 LABEL org.opencontainers.image.title="containerd-shim-spin" \
       org.opencontainers.image.version="${VERSION}" \
-      org.opencontainers.image.description="containerd-shim-spin v0.26.0 with a patched containerd-shim-wasm (NOTICE), as RunR installs it on region nodes" \
+      org.opencontainers.image.description="containerd-shim-spin v0.26.0 (922760061d91) with a patched containerd-shim-wasm (NOTICE) as RunR installs it on region nodes" \
       org.opencontainers.image.licenses="Apache-2.0" \
-      org.opencontainers.image.source="https://github.com/spinframework/containerd-shim-spin" \
-      org.opencontainers.image.revision="922760061d91bacd455c5824b8143dec2a372515"
+      org.opencontainers.image.vendor="BRF Teknoloji" \
+      org.opencontainers.image.url="https://github.com/spinframework/containerd-shim-spin" \
+      org.opencontainers.image.source="https://github.com/BRF-Tech/runr"
 COPY --from=build /out/ /shim/
 COPY --chmod=0644 LICENSE NOTICE /shim/

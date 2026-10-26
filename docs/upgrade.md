@@ -87,6 +87,25 @@ edit projects, deploy or change regions in that time: the previous version canno
 migration has just encrypted, shows env vars as empty and would save that. Its region status
 checks fail in that window and the new version's next check reports the region again.
 
+## 0.6.1 → 0.6.2
+
+0.6.2 changes how the release images are built and gives the Terraform provider its Terraform
+Registry address ([CHANGELOG.md](../CHANGELOG.md)). It adds no database migrations and no Helm
+values; values of 0.6.1, `--reuse-values` included, keep working. Upgrade with the
+[Procedure](#procedure).
+
+- The images keep their names and tags (`ghcr.io/brf-tech/runr/api`, `ui`, `ui:<version>-mt`,
+  `agent`, `queue-consumer`); they are built by the repository's release workflow now and carry
+  RunR's own OCI labels. A registry mirror or an allow list keyed on the image names needs no
+  change.
+- The API image carries `docs/` again, so the MCP server's `runr://docs/{page}` resources answer
+  without `MCP_DOCS_PATH` ([mcp.md](mcp.md)).
+- Terraform configurations with `source = "runr.sh/brf-tech/runr"` keep working with this
+  release's provider; moving them to `brf-tech/runr` is optional
+  ([terraform.md](terraform.md#install)).
+
+A rollback to 0.6.1 is a plain `helm rollback`: nothing of 0.6.2 has to be undone first.
+
 ## 0.6.0 → 0.6.1
 
 0.6.1 is a fix release ([CHANGELOG.md](../CHANGELOG.md)). It adds no database migrations and no

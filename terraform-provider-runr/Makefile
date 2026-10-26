@@ -2,7 +2,10 @@
 
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null | sed 's/^v//' || echo dev)
 OS_ARCH ?= $(shell go env GOOS)_$(shell go env GOARCH)
-PLUGIN_DIR := $(HOME)/.terraform.d/plugins/runr.sh/brf-tech/runr/$(VERSION)/$(OS_ARCH)
+# Host of the provider address the configuration uses: registry.terraform.io (source "brf-tech/runr")
+# or runr.sh (source "runr.sh/brf-tech/runr").
+PLUGIN_HOST ?= registry.terraform.io
+PLUGIN_DIR := $(HOME)/.terraform.d/plugins/$(PLUGIN_HOST)/brf-tech/runr/$(VERSION)/$(OS_ARCH)
 
 .PHONY: help build install test testacc vet fmt docs snapshot clean
 

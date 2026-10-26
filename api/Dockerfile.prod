@@ -25,8 +25,15 @@ RUN composer install \
 # ─── Stage 2: Runtime image ───────────────────────────────────────────────────
 FROM ghcr.io/brf-tech/runr/reqs/frankenphp:${FRANKENPHP_TAG} AS base
 
-LABEL org.opencontainers.image.source="https://github.com/brf-tech/runr"
-LABEL org.opencontainers.image.description="RunR API"
+# RunR's own labels in place of the FrankenPHP base's (the release build adds version, revision and
+# created; org.opencontainers.image.source links the ghcr package to the repository)
+LABEL org.opencontainers.image.title="RunR API" \
+      org.opencontainers.image.description="RunR API: REST API and MCP server of the console" \
+      org.opencontainers.image.licenses="MIT" \
+      org.opencontainers.image.vendor="BRF Teknoloji" \
+      org.opencontainers.image.url="https://runr.sh" \
+      org.opencontainers.image.documentation="https://github.com/BRF-Tech/runr/tree/main/docs" \
+      org.opencontainers.image.source="https://github.com/BRF-Tech/runr"
 
 # The oldest PHP the image may ship: the PHP 8.3 release that fixes CVE-2026-109618 and
 # CVE-2026-109619 (https://www.php.net/archive/2026.php#2026-10-21-5); Dockerfile has the same.
@@ -90,6 +97,7 @@ RUN chmod +x /entrypoint.sh
 # Version (git SHA at build time, overridden by CI/CD with tag)
 ARG APP_VERSION=dev
 ENV APP_VERSION=${APP_VERSION}
+LABEL org.opencontainers.image.version="${APP_VERSION}"
 
 # Application
 WORKDIR /var/www/html

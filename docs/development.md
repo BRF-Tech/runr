@@ -680,7 +680,7 @@ cd api && composer audit --locked                   # reported
 |---|---|---|
 | `secrets:gitleaks` | MRs, default branch | yes |
 | `check:reqs-mirror` (`ci/check-reqs-mirror.sh`: every `ghcr.io/brf-tech/runr/reqs/*` reference resolves anonymously on ghcr.io; BRF-Tech/runr-runtimes publishes the mirror) | MRs, default branch | yes |
-| `check:build-scripts` (`ci/check-dockerfiles.sh`: no Docker Hub base image, `OTEL_SDK_DISABLED=true` before Spin runs in a build step; `runtime/test/*_test.sh`: `runtime/ci.sh` without Docker or a registry, the pinned runtime images) | MRs, default branch | yes |
+| `check:build-scripts` (`ci/check-dockerfiles.sh`: no Docker Hub base image, `OTEL_SDK_DISABLED=true` before Spin runs in a build step, every image labels `org.opencontainers.image.source`; `runtime/test/*_test.sh`: `runtime/ci.sh` without Docker or a registry, the pinned runtime images, the release workflow) | MRs, default branch | yes |
 | `test:api` (PHPUnit with the coverage floor) | MRs / default branch touching `api/**` | yes |
 | `lint:php` (Pint) | same as `test:api` | yes |
 | `analyse:php` | same as `test:api` | yes |
@@ -696,6 +696,18 @@ cd api && composer audit --locked                   # reported
 `.github/workflows/ci.yml` runs the core checks (reqs mirror, Dockerfiles and build scripts,
 API tests + Larastan, UI lint/unit/build, UI e2e in mocked mode, Go) on GitHub pull requests and
 pushes to `main`.
+
+No pipeline here builds or pushes an image. The images on `ghcr.io/brf-tech/runr` come from
+`.github/workflows/release-images.yml` on the public repository's release tag `v<version>`, with
+that repository's own `GITHUB_TOKEN`: `api`, `ui` and `ui-mt` at the version (and `latest`), and
+the region images of `runtime/ci.sh release-images` the registry does not have yet. Each platform
+(linux/amd64, linux/arm64) builds on a runner of its own and is pushed by digest
+(`PUSH_BY_DIGEST`), `runtime/ci.sh compose-index` tags the multi-arch indexes, and the last job
+pulls every tag without credentials. Every image and index carries
+`org.opencontainers.image.source=https://github.com/BRF-Tech/runr`, which links its package to
+the repository. The run's artifact `runr-<version>-tars` holds the amd64 `docker save` tars of
+`api`, `ui` and `ui-mt` (the images pushed, byte for byte), the chart and `SHA256SUMS`, for
+installations that load the images from files.
 
 ---
 

@@ -59,6 +59,19 @@ bash runtime/ci.sh release-images --push     # builds and pushes each one the re
 (`api/config`, the Spin shim) and checks that no default of RunR's own images is `:latest`. The
 API and UI images (`api`, `ui`, `ui-mt` at `appVersion`) come from the console's release build.
 
+A release publishes both through `.github/workflows/release-images.yml` on its tag (GitHub
+Actions, the repository's own token): each platform on a runner of its own, pushed by digest, the
+multi-arch tags composed afterwards:
+
+```bash
+PLATFORMS=linux/arm64 PUSH_BY_DIGEST=region-arm64.txt bash runtime/ci.sh release-images --push
+bash runtime/ci.sh compose-index app-*.txt region-*.txt   # "<repo>@<digest> <tag>…" per line
+```
+
+Every `--push` labels the image with `org.opencontainers.image.source=https://github.com/BRF-Tech/runr`
+(its version, commit and date too) and annotates its index with the same source, which links the
+ghcr package to the repository; `runtime/test/release_workflow_test.sh` checks the workflow.
+
 #### Test image — CaaS test image (nginx-test)
 
 ```bash
@@ -92,6 +105,7 @@ installs Knative through the API. See [docs/development.md](../docs/development.
 | `queue-consumer [--push]` | Build the queue-consumer image (`<appVersion>` and `latest`) |
 | `build-agent [--push]` | Build the runr-agent image (`<appVersion>` and `latest`) |
 | `release-images [--push [--force]]` | The images of the regions a release references by version; `--push` builds and pushes the missing ones |
+| `compose-index FILE...` | The multi-arch tags of what per-platform pushes (`PUSH_BY_DIGEST=FILE`) recorded |
 | `wasm-shim [--push]` | Build the Spin shim image (`containerd-shim-spin`) |
 | `supply-chain [--push]` | Build the supply-chain tools image |
 | `image-upload [--push]` | Build the image-upload receiver / org transfer agent |
