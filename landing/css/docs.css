@@ -5,17 +5,17 @@
    ============================================================ */
 
 :root {
-  --bg: #0a0e1a;
-  --bg-elev: #111827;
-  --bg-soft: #0f172a;
-  --border: #1e293b;
-  --border-strong: #334155;
-  --text: #e2e8f0;
-  --text-dim: #94a3b8;
-  --text-muted: #64748b;
+  --bg: #030712;
+  --bg-elev: #1f2937;
+  --bg-soft: #111827;
+  --border: #374151;
+  --border-strong: #4b5563;
+  --text: #e5e7eb;
+  --text-dim: #9ca3af;
+  --text-muted: #6b7280;
   --accent: #f97316;
   --accent-soft: #fb923c;
-  --code-bg: #0b1222;
+  --code-bg: #111827;
   --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace;
   --grad-r: linear-gradient(135deg, #FFB347, #FF8C42 50%, #E63946);
 }
@@ -28,7 +28,7 @@
 ::-webkit-scrollbar { width: 10px; height: 10px; }
 ::-webkit-scrollbar-track, ::-webkit-scrollbar-corner { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 8px; border: 2px solid transparent; background-clip: padding-box; }
-::-webkit-scrollbar-thumb:hover { background-color: #475569; }
+::-webkit-scrollbar-thumb:hover { background-color: #4b5563; }
 
 html {
   background: var(--bg);
@@ -55,7 +55,7 @@ a:hover { color: #fdba74; text-decoration: underline; }
 /* ── Top bar ── */
 .d-top {
   position: sticky; top: 0; z-index: 10;
-  background: rgba(10, 14, 26, 0.86);
+  background: rgba(3, 7, 18, 0.86);
   backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
   border-bottom: 1px solid var(--border);
 }
@@ -125,7 +125,7 @@ a:hover { color: #fdba74; text-decoration: underline; }
 .d-doc ul, .d-doc ol { padding-left: 24px; }
 .d-doc li { margin: 4px 0; }
 .d-doc li > p { margin: 0 0 6px; }
-.d-doc strong { color: #f8fafc; }
+.d-doc strong { color: #f9fafb; }
 .d-doc hr { border: 0; border-top: 1px solid var(--border); margin: 28px 0; }
 .d-doc blockquote {
   border-left: 3px solid var(--accent); background: rgba(249,115,22,0.05);
@@ -134,21 +134,21 @@ a:hover { color: #fdba74; text-decoration: underline; }
 
 .d-doc code {
   font-family: var(--mono); font-size: 0.88em;
-  background: rgba(148, 163, 184, 0.12); border: 1px solid rgba(148,163,184,0.14);
-  border-radius: 5px; padding: 0.1em 0.35em; color: #f1f5f9;
+  background: rgba(156, 163, 175, 0.12); border: 1px solid rgba(156,163,175,0.14);
+  border-radius: 5px; padding: 0.1em 0.35em; color: #f3f4f6;
 }
 .d-doc pre {
   background: var(--code-bg); border: 1px solid var(--border); border-radius: 10px;
   padding: 14px 16px; overflow-x: auto; line-height: 1.55;
 }
-.d-doc pre code { background: none; border: 0; padding: 0; font-size: 13px; color: #e2e8f0; white-space: pre; }
+.d-doc pre code { background: none; border: 0; padding: 0; font-size: 13px; color: #e5e7eb; white-space: pre; }
 
 .d-doc table {
   display: block; overflow-x: auto; border-collapse: collapse; font-size: 14px; max-width: 100%;
 }
 .d-doc th, .d-doc td { border: 1px solid var(--border); padding: 7px 11px; vertical-align: top; text-align: left; }
 .d-doc th { background: var(--bg-elev); color: var(--text); font-weight: 600; }
-.d-doc tr:nth-child(even) td { background: rgba(15, 23, 42, 0.55); }
+.d-doc tr:nth-child(even) td { background: rgba(17, 24, 39, 0.55); }
 .d-doc input[type="checkbox"] { margin-right: 6px; }
 
 .d-doc .d-license {

@@ -42,7 +42,7 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.shot picture, .shot img {
+.shot img {
   display: block;
   width: 100%;
   height: auto;

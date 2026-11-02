@@ -98,8 +98,8 @@
   backdrop-filter: blur(10px) saturate(140%);
   -webkit-backdrop-filter: blur(10px) saturate(140%);
   background:
-    linear-gradient(180deg, rgba(10,14,26,0.15) 0%, rgba(10,14,26,0.25) 70%, var(--bg) 100%),
-    linear-gradient(90deg, rgba(10,14,26,0.3) 0%, transparent 18%, transparent 82%, rgba(10,14,26,0.3) 100%);
+    linear-gradient(180deg, rgba(3,7,18,0.15) 0%, rgba(3,7,18,0.25) 70%, var(--bg) 100%),
+    linear-gradient(90deg, rgba(3,7,18,0.3) 0%, transparent 18%, transparent 82%, rgba(3,7,18,0.3) 100%);
 }
 
 /* Big text glow */

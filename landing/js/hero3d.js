@@ -58,7 +58,7 @@
     const H = () => canvas.clientHeight || canvas.offsetHeight || window.innerHeight;
 
     const scene = new THREE.Scene();
-    scene.fog = new THREE.Fog(0x0a0e1a, 16, 55);
+    scene.fog = new THREE.Fog(0x030712, 16, 55);
 
     const camera = new THREE.PerspectiveCamera(48, W() / H(), 0.1, 200);
     camera.position.set(0, 9, 18);

@@ -235,9 +235,9 @@
 }
 .s2p-lang.live   { background: rgba(74,222,128,.08); border-color: var(--success); color: var(--success); }
 .s2p-lang.live::before { content: '●'; font-size: 8px; color: var(--success); }
-.s2p-lang.plugin { background: rgba(56,189,248,.08); border-color: var(--info); color: var(--info); }
+.s2p-lang.plugin { background: rgba(251,146,60,.08); border-color: var(--info); color: var(--info); }
 .s2p-lang.plugin::before { content: '◆'; font-size: 8px; color: var(--info); }
-.s2p-lang.wasm   { background: rgba(167,139,250,.08); border-color: var(--purple); color: var(--purple); }
+.s2p-lang.wasm   { background: rgba(230,57,70,.08); border-color: var(--purple); color: var(--purple); }
 .s2p-lang.wasm::before { content: '◆'; font-size: 8px; color: var(--purple); }
 
 /* ── INSTALL CARDS ──────────────────────────────────────── */

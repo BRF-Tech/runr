@@ -13,13 +13,13 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  background: rgba(10, 14, 26, 0.6);
+  background: rgba(3, 7, 18, 0.6);
   backdrop-filter: blur(16px);
   border-bottom: 1px solid transparent;
   transition: background .3s, border-color .3s, padding .3s;
 }
 .nav.is-scrolled {
-  background: rgba(10, 14, 26, 0.85);
+  background: rgba(3, 7, 18, 0.85);
   border-bottom-color: var(--border);
   padding: 10px 24px;
 }
@@ -109,8 +109,8 @@
 .btn-primary:hover { transform: translateY(-1px); box-shadow: 0 8px 24px rgba(249, 115, 22, 0.45); }
 .btn-ghost { background: transparent; border-color: var(--border-strong); color: var(--text); }
 .btn-ghost:hover { border-color: var(--accent); color: var(--accent); background: rgba(249, 115, 22, 0.05); }
-.btn-enterprise { background: transparent; border: 1px solid rgba(167,139,250,0.50); color: #c4b5fd; transition: all .2s; }
-.btn-enterprise:hover { background: rgba(167,139,250,0.12); border-color: #a78bfa; color: #ddd6fe; box-shadow: 0 0 18px rgba(167,139,250,0.35); transform: translateY(-1px); }
+.btn-enterprise { background: transparent; border: 1px solid rgba(230,57,70,0.50); color: #fdba74; transition: all .2s; }
+.btn-enterprise:hover { background: rgba(230,57,70,0.12); border-color: #e63946; color: #ffffff; box-shadow: 0 0 18px rgba(230,57,70,0.35); transform: translateY(-1px); }
 .btn-lg { padding: 14px 28px; font-size: 16px; }
 
 /* ── HERO ───────────────────────────────────────────────── */
@@ -133,7 +133,7 @@
   background:
     radial-gradient(ellipse 60% 40% at 70% 30%, rgba(255,140,66,0.35), transparent 70%),
     radial-gradient(ellipse 50% 50% at 30% 70%, rgba(230,57,70,0.25), transparent 70%),
-    linear-gradient(180deg, #0a0e1a 0%, #14091a 100%);
+    linear-gradient(180deg, #030712 0%, #111827 100%);
 }
 .hero-fade {
   position: absolute;
@@ -141,7 +141,7 @@
   /* Fade only from the bottom and very lightly at the edges — don't smother the canvas */
   background:
     linear-gradient(180deg, transparent 0%, transparent 70%, var(--bg) 100%),
-    linear-gradient(90deg, rgba(10,14,26,0.4) 0%, transparent 15%, transparent 85%, rgba(10,14,26,0.4) 100%);
+    linear-gradient(90deg, rgba(3,7,18,0.4) 0%, transparent 15%, transparent 85%, rgba(3,7,18,0.4) 100%);
   z-index: 1;
   pointer-events: none;
 }

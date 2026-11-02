@@ -60,7 +60,7 @@
   else localStorage.setItem('runr_locale', 'en');
 
   // ── SCREENSHOTS ──
-  // A console scene that is not published yet (shots/<name>-light|dark.png missing) takes its
+  // A console scene that is not published yet (shots/<name>-dark.png missing) takes its
   // frame with it, so the section reads as text only instead of showing a broken image.
   document.querySelectorAll('[data-shot] img').forEach(img => {
     const hide = () => { const w = img.closest('[data-shot]'); if (w) w.classList.add('is-missing'); };

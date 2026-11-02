@@ -4,15 +4,15 @@
    ============================================================ */
 
 :root {
-  --bg: #0a0e1a;
-  --bg-elev: #111827;
-  --bg-soft: #0f172a;
-  --border: #1e293b;
-  --border-strong: #334155;
-  --text: #e2e8f0;
-  --text-dim: #94a3b8;
-  --text-muted: #64748b;
-  --text-faint: #475569;
+  --bg: #030712;
+  --bg-elev: #1f2937;
+  --bg-soft: #111827;
+  --border: #374151;
+  --border-strong: #4b5563;
+  --text: #e5e7eb;
+  --text-dim: #9ca3af;
+  --text-muted: #6b7280;
+  --text-faint: #4b5563;
   --accent: #f97316;
   --accent-soft: #fb923c;
   --grad-1: #FFB347;
@@ -21,8 +21,8 @@
   --success: #4ade80;
   --danger: #ef4444;
   --warning: #fbbf24;
-  --info: #38bdf8;
-  --purple: #a78bfa;
+  --info: #fb923c;
+  --purple: #e63946;
   --grad-r: linear-gradient(135deg, var(--grad-1), var(--grad-2) 50%, var(--grad-3));
 
   --max-w: 1300px;
@@ -73,7 +73,7 @@ body::before {
   position: fixed;
   inset: 0;
   z-index: 0;
-  background: rgba(10, 14, 26, 0.32);
+  background: rgba(3, 7, 18, 0.32);
   backdrop-filter: blur(7px) saturate(135%);
   -webkit-backdrop-filter: blur(7px) saturate(135%);
   pointer-events: none;

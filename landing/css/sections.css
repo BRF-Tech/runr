@@ -146,8 +146,8 @@
 }
 
 .sandbox-note {
-  background: rgba(56, 189, 248, 0.06);
-  border: 1px solid rgba(56, 189, 248, 0.3);
+  background: rgba(251, 146, 60, 0.06);
+  border: 1px solid rgba(251, 146, 60, 0.3);
   border-radius: var(--radius);
   padding: 20px 24px;
   display: flex;
