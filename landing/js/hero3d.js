@@ -21,10 +21,35 @@
   if (!canvas) return;
   if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
 
+  // Low-end devices keep the CSS hero (hero-fx.css): two cores or fewer, under 2 GB of memory,
+  // a data-saver connection or no WebGL. Three.js is only downloaded when the scene will run.
+  const nav = navigator;
+  if ((nav.hardwareConcurrency && nav.hardwareConcurrency <= 2) ||
+      (nav.deviceMemory && nav.deviceMemory < 2) ||
+      (nav.connection && nav.connection.saveData)) {
+    console.info('[RunR] hero3d: low-end device, CSS hero fallback active.');
+    return;
+  }
+  try {
+    const probe = document.createElement('canvas');
+    if (!(probe.getContext('webgl2') || probe.getContext('webgl'))) return;
+  } catch (_) { return; }
+
+  // Note: 0.158 is the last UMD-bundled Three.js; 0.160+ ships ES modules only.
+  const THREE_SRC = 'https://cdn.jsdelivr.net/npm/three@0.158.0/build/three.min.js';
+  if (typeof THREE === 'undefined' && !document.querySelector('script[data-three]')) {
+    const s = document.createElement('script');
+    s.src = THREE_SRC;
+    s.async = true;
+    s.dataset.three = '1';
+    s.onerror = function () { console.warn('[RunR] Three.js did not load — CSS hero fallback active.'); };
+    document.head.appendChild(s);
+  }
+
   let retries = 0;
   function start() {
     if (typeof THREE === 'undefined') {
-      if (++retries > 80) { console.warn('[RunR] Three.js did not load — CSS hero fallback active.'); return; }
+      if (++retries > 200) { console.warn('[RunR] Three.js did not load — CSS hero fallback active.'); return; }
       setTimeout(start, 50); return;
     }
     console.info('[RunR] hero3d: Pod Skyline starting (Three.js r' + THREE.REVISION + ')');

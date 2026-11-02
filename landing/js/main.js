@@ -9,24 +9,26 @@
   // ── CONFIG ──
   const API_BASE = ''; // same-origin (runr.sh/api/*)
 
+  // The static HTML is English (what search engines and link previews read); a visitor whose
+  // browser is Turkish, or who asks with ?lang=tr, gets the Turkish texts from the data-tr attributes.
   const META = {
     tr: {
-      title: 'RunR — Açık Kaynak Serverless Mimari · Kubernetes Üzerinde',
-      desc:  'Fonksiyonlar, çoklu dosya projeleri, container\'lar ve WebAssembly kendi Kubernetes cluster\'larınızda, Knative ile scale-to-zero. Sandbox API, durable workflow, GPU ve MCP dahil. MIT lisanslı açık kaynak.'
+      title: 'RunR - Kubernetes Üzerinde Açık Kaynak Serverless Platform',
+      desc:  'Kubernetes ve Knative üzerinde açık kaynak serverless platform. Fonksiyonlar, projeler, container\'lar ve WebAssembly kendi cluster\'larınızda; scale-to-zero, olay tetikleyicileri, ortamlar, blue-green ve canary rollout, Sandbox API, durable workflow, GPU ve MCP dahil. MIT lisanslı.'
     },
     en: {
-      title: 'RunR — Open Source Serverless Architecture on Kubernetes',
-      desc:  'Functions, multi-file projects, containers and WebAssembly on your own Kubernetes clusters, with Knative scale-to-zero. Sandbox API, durable workflows, GPUs and MCP built in. Open source under the MIT license.'
+      title: 'RunR — Open Source Serverless Platform on Kubernetes',
+      desc:  'Open-source serverless platform on Kubernetes and Knative. Functions, projects, containers and WebAssembly on your own clusters with scale-to-zero, event triggers, environments, blue-green and canary rollouts, a Sandbox API, durable workflows, GPUs and MCP. MIT licensed.'
     }
   };
 
   // ── I18N ──
   function getLocale() {
-    const stored = localStorage.getItem('runr_locale');
-    if (stored === 'tr' || stored === 'en') return stored;
     const param = new URLSearchParams(location.search).get('lang');
     if (param === 'tr' || param === 'en') return param;
-    return (navigator.language || 'tr').slice(0, 2).toLowerCase() === 'tr' ? 'tr' : 'en';
+    const stored = localStorage.getItem('runr_locale');
+    if (stored === 'tr' || stored === 'en') return stored;
+    return (navigator.language || 'en').slice(0, 2).toLowerCase() === 'tr' ? 'tr' : 'en';
   }
 
   function applyLocale(loc) {
@@ -42,6 +44,7 @@
       // For placeholder/value/aria-label
       if (el.dataset.target === 'placeholder') el.placeholder = txt;
       else if (el.dataset.target === 'aria-label') el.setAttribute('aria-label', txt);
+      else if (el.dataset.target === 'alt') el.setAttribute('alt', txt);
       else el.innerHTML = txt;
     });
 
@@ -53,7 +56,17 @@
   }
 
   let currentLocale = getLocale();
-  applyLocale(currentLocale);
+  if (currentLocale !== 'en') applyLocale(currentLocale);
+  else localStorage.setItem('runr_locale', 'en');
+
+  // ── SCREENSHOTS ──
+  // A console scene that is not published yet (shots/<name>-light|dark.png missing) takes its
+  // frame with it, so the section reads as text only instead of showing a broken image.
+  document.querySelectorAll('[data-shot] img').forEach(img => {
+    const hide = () => { const w = img.closest('[data-shot]'); if (w) w.classList.add('is-missing'); };
+    if (img.complete && img.naturalWidth === 0 && img.currentSrc) hide();
+    img.addEventListener('error', hide);
+  });
 
   document.addEventListener('click', (e) => {
     const btn = e.target.closest('.lang-btn');

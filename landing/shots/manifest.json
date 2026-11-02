@@ -1,0 +1,275 @@
+{
+  "generated": "2026-11-02T21:13:07.803Z",
+  "source": "mocked API",
+  "source_detail": "The real console UI (vue/) rendered on the in-browser mocked API of the e2e suite (vue/e2e/fixtures/mock-api.ts) with the fictional dataset of vue/shots/db.ts: no backend, no cluster. Numbers that read as measurements (sandbox start times) follow the README section \"Measured cold starts\"; everything else is the fictional organization Northwind.",
+  "not_live": "No kind region was set up for these shots: the live frames (rollout, logs, environments, sandboxes, models, MCP, global DNS, supply chain) need Knative, a registry, Kata/gVisor and a GPU node on the cluster, which the WSL host of the run (26 GB free, no nested virtualization for Kata, no GPU) cannot provide.",
+  "viewport": "1440x900",
+  "device_scale_factor": 1,
+  "locale": "en",
+  "themes": [
+    "light",
+    "dark"
+  ],
+  "scenes": [
+    {
+      "name": "projects",
+      "title": "Projects",
+      "page": "/projects",
+      "taken": "2026-11-02T21:11:33.145Z",
+      "viewport": "1440x900",
+      "theme_files": {
+        "light": "projects-light.png",
+        "dark": "projects-dark.png"
+      },
+      "source": "mocked API",
+      "sizes_bytes": {
+        "light": 128518,
+        "dark": 131852
+      }
+    },
+    {
+      "name": "project-overview",
+      "title": "Project overview",
+      "page": "/projects/order-webhooks#deployments",
+      "taken": "2026-11-02T21:11:39.456Z",
+      "viewport": "1440x900",
+      "theme_files": {
+        "light": "project-overview-light.png",
+        "dark": "project-overview-dark.png"
+      },
+      "source": "mocked API",
+      "sizes_bytes": {
+        "light": 110823,
+        "dark": 112832
+      }
+    },
+    {
+      "name": "code-editor",
+      "title": "Code editor",
+      "page": "/projects/image-resizer",
+      "taken": "2026-11-02T21:11:47.036Z",
+      "viewport": "1440x900",
+      "theme_files": {
+        "light": "code-editor-light.png",
+        "dark": "code-editor-dark.png"
+      },
+      "source": "mocked API",
+      "sizes_bytes": {
+        "light": 177925,
+        "dark": 178128
+      }
+    },
+    {
+      "name": "deploy-rollout",
+      "title": "Canary rollout",
+      "page": "/projects/checkout-api#deployments",
+      "taken": "2026-11-02T21:11:53.129Z",
+      "viewport": "1440x900",
+      "theme_files": {
+        "light": "deploy-rollout-light.png",
+        "dark": "deploy-rollout-dark.png"
+      },
+      "source": "mocked API",
+      "sizes_bytes": {
+        "light": 100667,
+        "dark": 102541
+      }
+    },
+    {
+      "name": "logs-metrics",
+      "title": "Logs and metrics",
+      "page": "/projects/order-webhooks#deployments (logs)",
+      "taken": "2026-11-02T21:12:03.900Z",
+      "viewport": "1440x900",
+      "theme_files": {
+        "light": "logs-metrics-light.png",
+        "dark": "logs-metrics-dark.png"
+      },
+      "source": "mocked API",
+      "sizes_bytes": {
+        "light": 279628,
+        "dark": 285473
+      }
+    },
+    {
+      "name": "triggers",
+      "title": "Triggers",
+      "page": "/projects/order-webhooks#triggers",
+      "taken": "2026-11-02T21:12:09.992Z",
+      "viewport": "1440x900",
+      "theme_files": {
+        "light": "triggers-light.png",
+        "dark": "triggers-dark.png"
+      },
+      "source": "mocked API",
+      "sizes_bytes": {
+        "light": 101488,
+        "dark": 103136
+      }
+    },
+    {
+      "name": "environments",
+      "title": "Environments and promotion",
+      "page": "/projects/order-webhooks#environments",
+      "taken": "2026-11-02T21:12:15.783Z",
+      "viewport": "1440x900",
+      "theme_files": {
+        "light": "environments-light.png",
+        "dark": "environments-dark.png"
+      },
+      "source": "mocked API",
+      "sizes_bytes": {
+        "light": 107739,
+        "dark": 109922
+      }
+    },
+    {
+      "name": "deploy-strategies",
+      "title": "Deploy strategy",
+      "page": "/projects/checkout-api#deployments (strategy)",
+      "taken": "2026-11-02T21:12:22.114Z",
+      "viewport": "1440x900",
+      "theme_files": {
+        "light": "deploy-strategies-light.png",
+        "dark": "deploy-strategies-dark.png"
+      },
+      "source": "mocked API",
+      "sizes_bytes": {
+        "light": 169730,
+        "dark": 176792
+      }
+    },
+    {
+      "name": "sandbox",
+      "title": "Sandboxes",
+      "page": "/sandboxes",
+      "taken": "2026-11-02T21:12:27.524Z",
+      "viewport": "1440x900",
+      "theme_files": {
+        "light": "sandbox-light.png",
+        "dark": "sandbox-dark.png"
+      },
+      "source": "mocked API",
+      "sizes_bytes": {
+        "light": 105195,
+        "dark": 105849
+      }
+    },
+    {
+      "name": "huggingface",
+      "title": "Model services and playground",
+      "page": "/models?tab=services",
+      "taken": "2026-11-02T21:12:33.404Z",
+      "viewport": "1440x900",
+      "theme_files": {
+        "light": "huggingface-light.png",
+        "dark": "huggingface-dark.png"
+      },
+      "source": "mocked API",
+      "sizes_bytes": {
+        "light": 124756,
+        "dark": 129906
+      }
+    },
+    {
+      "name": "mcp",
+      "title": "Hosted MCP server",
+      "page": "/projects/weather-tools#mcp",
+      "taken": "2026-11-02T21:12:39.385Z",
+      "viewport": "1440x900",
+      "theme_files": {
+        "light": "mcp-light.png",
+        "dark": "mcp-dark.png"
+      },
+      "source": "mocked API",
+      "sizes_bytes": {
+        "light": 103485,
+        "dark": 105848
+      }
+    },
+    {
+      "name": "region-wizard",
+      "title": "Add Region wizard",
+      "page": "/settings (Add Region)",
+      "taken": "2026-11-02T21:12:46.133Z",
+      "viewport": "1440x900",
+      "theme_files": {
+        "light": "region-wizard-light.png",
+        "dark": "region-wizard-dark.png"
+      },
+      "source": "mocked API",
+      "sizes_bytes": {
+        "light": 165275,
+        "dark": 168341
+      }
+    },
+    {
+      "name": "rbac",
+      "title": "Roles and permissions",
+      "page": "/settings?tab=roles",
+      "taken": "2026-11-02T21:12:51.644Z",
+      "viewport": "1440x900",
+      "theme_files": {
+        "light": "rbac-light.png",
+        "dark": "rbac-dark.png"
+      },
+      "source": "mocked API",
+      "sizes_bytes": {
+        "light": 106955,
+        "dark": 108753
+      }
+    },
+    {
+      "name": "workflows",
+      "title": "Durable workflows",
+      "page": "/projects/order-pipeline#workflows",
+      "taken": "2026-11-02T21:12:56.904Z",
+      "viewport": "1440x900",
+      "theme_files": {
+        "light": "workflows-light.png",
+        "dark": "workflows-dark.png"
+      },
+      "source": "mocked API",
+      "sizes_bytes": {
+        "light": 117129,
+        "dark": 119605
+      }
+    },
+    {
+      "name": "global-projects",
+      "title": "Global project regions",
+      "page": "/projects/shop#regions",
+      "taken": "2026-11-02T21:13:02.120Z",
+      "viewport": "1440x900",
+      "theme_files": {
+        "light": "global-projects-light.png",
+        "dark": "global-projects-dark.png"
+      },
+      "source": "mocked API",
+      "sizes_bytes": {
+        "light": 101042,
+        "dark": 102887
+      }
+    },
+    {
+      "name": "supply-chain",
+      "title": "Software supply chain",
+      "page": "/projects/checkout-api#security",
+      "taken": "2026-11-02T21:13:07.803Z",
+      "viewport": "1440x900",
+      "theme_files": {
+        "light": "supply-chain-light.png",
+        "dark": "supply-chain-dark.png"
+      },
+      "source": "mocked API",
+      "sizes_bytes": {
+        "light": 111245,
+        "dark": 112838
+      }
+    }
+  ],
+  "optimized": {
+    "tool": "Pillow (optimize + 256-color palette when above the limit)",
+    "limit_bytes": 358400
+  }
+}

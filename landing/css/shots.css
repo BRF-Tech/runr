@@ -1,0 +1,181 @@
+/* ============================================================
+   RunR Landing — shots.css
+   Console screenshots (browser frame, hero shot, tour rows,
+   galleries), the comparison footnote and the segmented control
+   of the enterprise form.
+   ============================================================ */
+
+/* ── BROWSER FRAME ──────────────────────────────────────── */
+.shot {
+  position: relative;
+  min-width: 0;
+  background: var(--bg-elev);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(249, 115, 22, 0.08);
+}
+.shot-bar {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 10px 14px;
+  background: var(--bg-soft);
+  border-bottom: 1px solid var(--border);
+}
+.shot-bar .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--border-strong); flex-shrink: 0; }
+.shot-bar .dot:nth-child(1) { background: rgba(239, 68, 68, 0.75); }
+.shot-bar .dot:nth-child(2) { background: rgba(251, 191, 36, 0.75); }
+.shot-bar .dot:nth-child(3) { background: rgba(74, 222, 128, 0.75); }
+.shot-bar .url {
+  margin-left: 8px;
+  flex: 1;
+  max-width: 440px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 11px;
+  color: var(--text-muted);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 3px 10px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.shot picture, .shot img {
+  display: block;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 1440 / 900;
+  background: var(--bg-soft);
+}
+/* A scene that is not published yet: the frame disappears, the text keeps its place */
+[data-shot].is-missing { display: none; }
+
+/* ── HERO SHOT ──────────────────────────────────────────── */
+.hero { flex-direction: column; }
+.hero-shot {
+  position: relative;
+  z-index: 2;
+  width: 100%;
+  max-width: 1120px;
+  margin: 56px auto 0;
+}
+.hero-shot .shot {
+  box-shadow: 0 40px 120px rgba(0, 0, 0, 0.6), 0 0 90px rgba(249, 115, 22, 0.12);
+  border-color: rgba(249, 115, 22, 0.35);
+}
+.hero-shot .shot-caption { margin-top: 12px; }
+.shot-caption { font-size: 12px; color: var(--text-muted); text-align: center; }
+
+/* ── TOUR ROWS (text beside a screenshot) ───────────────── */
+.tour-rows { display: flex; flex-direction: column; gap: 64px; }
+/* minmax(0, …) tracks: the nowrap address in the frame bar must not widen the page on phones */
+.tour-row {
+  display: grid;
+  grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
+  gap: 40px;
+  align-items: center;
+}
+.tour-row > * { min-width: 0; }
+.tour-row.flip .tour-text { order: 2; }
+.tour-row:has([data-shot].is-missing) { grid-template-columns: 1fr; }
+.tour-row:has([data-shot].is-missing) .tour-text { max-width: 760px; margin: 0 auto; }
+.tour-text .tour-kicker {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--tc, var(--accent));
+  margin-bottom: 10px;
+}
+.tour-text h3 { font-size: clamp(20px, 2.2vw, 28px); margin-bottom: 10px; }
+.tour-text p { color: var(--text-dim); font-size: 14px; line-height: 1.65; }
+.tour-list { margin-top: 14px; display: flex; flex-direction: column; gap: 6px; }
+.tour-list li {
+  list-style: none;
+  font-size: 13px;
+  color: var(--text-dim);
+  padding-left: 20px;
+  position: relative;
+}
+.tour-list li::before {
+  content: '▸';
+  position: absolute;
+  left: 4px;
+  color: var(--tc, var(--accent));
+}
+.tour-link {
+  display: inline-block;
+  margin-top: 16px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--accent);
+}
+.tour-link:hover { text-decoration: underline; }
+@media (max-width: 900px) {
+  .tour-rows { gap: 48px; }
+  .tour-row { grid-template-columns: minmax(0, 1fr); gap: 20px; }
+  .tour-row.flip .tour-text { order: 0; }
+}
+
+/* ── GALLERIES (tiles with a frame and a caption) ───────── */
+.shot-gallery {
+  display: grid;
+  grid-template-columns: repeat(var(--cols, 3), minmax(0, 1fr));
+  gap: 18px;
+  margin-top: 28px;
+}
+.shot-gallery > * { min-width: 0; }
+@media (max-width: 1100px) { .shot-gallery { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 700px)  { .shot-gallery { grid-template-columns: minmax(0, 1fr); } }
+.shot-gallery .shot-bar { padding: 7px 10px; }
+.shot-gallery .shot-bar .dot { width: 8px; height: 8px; }
+.shot-gallery .shot-bar .url { font-size: 10px; padding: 2px 8px; }
+.shot-tile h4 { margin-top: 12px; font-size: 14px; color: var(--text); }
+.shot-tile p { font-size: 12px; color: var(--text-muted); line-height: 1.55; }
+
+/* ── COMPARISON ─────────────────────────────────────────── */
+.tbl td small { display: block; color: var(--text-muted); font-weight: 400; font-size: 11px; margin-top: 2px; }
+.tbl-note a { text-decoration: underline; }
+
+/* ── SEGMENTED CONTROL (replaces the native select) ─────── */
+.seg {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 4px;
+  background: var(--bg-soft);
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  padding: 4px;
+}
+.seg label {
+  position: relative;
+  display: block;
+  text-align: center;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-dim);
+  padding: 7px 4px;
+  border-radius: 6px;
+  cursor: pointer;
+  margin: 0;
+  transition: background .2s, color .2s;
+}
+.seg label:hover { color: var(--text); }
+.seg input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  opacity: 0;
+  cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
+}
+.seg label:has(input:checked) { background: rgba(249, 115, 22, 0.18); color: var(--text); box-shadow: inset 0 0 0 1px rgba(249, 115, 22, 0.5); }
+.seg label:has(input:focus-visible) { box-shadow: 0 0 0 2px var(--accent); }
