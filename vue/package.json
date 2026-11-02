@@ -13,7 +13,8 @@
     "test:coverage": "vitest run --coverage",
     "test:e2e": "playwright test --project=stack",
     "test:e2e:mock": "playwright test --project=mock --project=mock-modules",
-    "test:e2e:create-flows": "playwright test --project=stack create-flows"
+    "test:e2e:create-flows": "playwright test --project=stack create-flows",
+    "shots": "playwright test --config shots/playwright.config.ts"
   },
   "dependencies": {
     "@guolao/vue-monaco-editor": "^1.6.0",
