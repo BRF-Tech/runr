@@ -8,6 +8,36 @@ did not change says so.
 
 ## [Unreleased]
 
+### Changed
+
+- **The README is a product page.** It opens with the logo, the one-line positioning, badges
+  (release, license, CI, Helm chart, Terraform Registry, Go module) and a hero screenshot, then six
+  feature cards, the quick start first (Helm in three commands, the single-host install, the CLI),
+  "Why RunR", a short comparison for people coming from Knative, Knative Functions, OpenFaaS, AWS
+  Lambda or Vercel, a feature tour in seven parts with a screenshot and the documenting page each
+  (`landing/shots/<name>-light.png` and `-dark.png`, chosen by the reader's colour scheme), the
+  measured cold starts, the architecture, the repository layout and the project sections. The
+  heading anchors other pages link to (`#quick-start`, `#kubernetes-helm`) are unchanged.
+  `README.tr.md` is the same page in Turkish. The runr.sh build (`ci/runr-sh/build.py`) now
+  rewrites the images of a published page as it rewrites its links: a file under `landing/` is
+  served from the site root, any other repository image from GitHub raw at the release tag; the
+  summary counts them as `images_rewritten`.
+- **runr.sh is English by default and shows the console.** The landing's static HTML is English
+  (what search engines and link previews read); a Turkish browser, or `?lang=tr`, still gets the
+  Turkish texts, and `hreflang` points `en` and `x-default` at the page itself. New on the page: a
+  console screenshot under the hero and a tour of the 0.6 features (deploy strategies, environments
+  and promotion, global projects, triggers and the event gateway, durable workflows, supply chain
+  and secret stores, plus deployments, logs and metrics, roles and the region wizard), scenes in the
+  project-type and AI sections, all from `landing/shots/<scene>-light|dark.png` (1440x900; a scene
+  that is not published yet hides its frame); the comparison now sets RunR next to bare Knative,
+  Knative Functions, OpenFaaS, AWS Lambda and Vercel, compiled from their documentation with the
+  sources and a non-affiliation note; `helm repo update` in the Helm card; a segmented team-size
+  control in the enterprise form instead of the native select; the Three.js hero is downloaded and
+  started only on devices that will run it (cores, memory, data saver, WebGL); the social images are
+  rendered from `landing/assets/og-image.src.html` (`og-image.png` 1200x630, `github-social-preview.png`
+  1280x640, with `ci/runr-sh/render-social.js`) and replace `og-image.svg`; the tagline under the
+  wordmark is an `h2` that names the platform, and the FAQ is also published as `FAQPage` JSON-LD.
+
 ## [0.6.2] - 2026-10-26
 
 ### Upgrade notes

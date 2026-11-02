@@ -13,11 +13,12 @@ paths = [
 ]
 
 [[allowlists]]
-description = "Made-up tokens, passwords and throwaway keys in the Go, UI and end-to-end test suites"
+description = "Made-up tokens, passwords and throwaway keys in the Go, UI and end-to-end test suites and in the seed data of the console screenshots"
 paths = [
   '''_test\.go$''',
   '''(^|/)vue/e2e/''',
   '''(^|/)vue/tests/''',
+  '''(^|/)vue/shots/''',
 ]
 
 [[allowlists]]

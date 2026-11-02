@@ -4,7 +4,8 @@
   prepare  picks the documentation pages (docs/*.md, the root Markdown files and every Markdown
            page they link to), applies the site's text substitutions and writes the pandoc inputs
   render   turns the pandoc output into pages (links between pages rewritten to runr.sh URLs, links
-           to unpublished repository files to GitHub at the release tag), adds the landing, the
+           to unpublished repository files to GitHub at the release tag, images under landing/ to
+           the site root and other repository images to GitHub raw at the tag), adds the landing, the
            downloads (CLI, Terraform provider, signing key), the Terraform provider registry, checks
            every internal link and writes a deterministic ZIP
 
@@ -253,6 +254,37 @@ def rewrite_links(src, page, body, urls, version, stats):
     return A_TAG.sub(repl, body)
 
 
+RAW = "https://raw.githubusercontent.com/brf-tech/runr"
+IMG_SRC = re.compile(r'\s(src|srcset)="([^"]*)"')
+
+
+def rewrite_images(src, page, body, version, stats):
+    """Relative image paths (`<img src>`, `<source srcset>`, Markdown images rendered by pandoc)
+    → the site: a file under landing/ is copied to the site root by copy_landing, so it is served
+    from there; any other repository file comes from GitHub raw at the release tag. A path to
+    nothing in the repository is left as it is, for check_links to report."""
+    def one(path):
+        if not path or re.match(r"^[a-z][a-z0-9+.-]*:", path) or path.startswith(("/", "#", "data:")):
+            return path
+        rel = posixpath.normpath(posixpath.join(posixpath.dirname(page), path))
+        if rel.startswith("..") or not os.path.isfile(os.path.join(src, *rel.split("/"))):
+            return path
+        stats["images"] += 1
+        if rel.startswith("landing/"):
+            return "/" + rel[len("landing/"):]
+        return "%s/v%s/%s" % (RAW, version, rel)
+
+    def repl(m):
+        attr, value = m.group(1), html.unescape(m.group(2))
+        if attr == "srcset":
+            parts = [c.strip().split(None, 1) for c in value.split(",") if c.strip()]
+            new = ", ".join(" ".join([one(p[0])] + p[1:]) for p in parts)
+        else:
+            new = one(value)
+        return ' %s="%s"' % (attr, html.escape(new, quote=True))
+    return IMG_SRC.sub(repl, body)
+
+
 def add_anchors(body):
     def repl(m):
         tag, ident, rest, inner = m.group(1), m.group(3), m.group(4), m.group(5)
@@ -364,6 +396,7 @@ def render_pages(a, site, version, stats):
             if not os.path.isfile(frag):
                 die("pandoc output missing for " + page)
             body = rewrite_links(a.src, page, read(frag), urls, version, stats)
+            body = rewrite_images(a.src, page, body, version, stats)
             body = add_anchors(body)
             h1 = re.search(r"<h1[^>]*>(.*?)</h1>", body, re.S)
             name = strip_tags(h1.group(1)) if h1 else posixpath.basename(page)
@@ -673,7 +706,7 @@ def cmd_render(a):
     site = a.site
     if os.path.exists(site):
         die("site dir exists: " + site)
-    stats = {"rewritten": 0, "github": [], "unlinked": []}
+    stats = {"rewritten": 0, "github": [], "unlinked": [], "images": 0}
     copy_landing(a.src, site)
     pages = render_pages(a, site, version, stats)
     nplat = render_downloads(a, site, version)
@@ -697,7 +730,7 @@ def cmd_render(a):
         "zip": os.path.basename(a.zip), "sha256": zsha, "zip_bytes": zsize, "files": len(files),
         "content_bytes": total, "pages": len(pages), "provider_platforms": nplat,
         "links_rewritten": stats["rewritten"], "links_github": len(stats["github"]),
-        "links_unlinked": len(stats["unlinked"]),
+        "links_unlinked": len(stats["unlinked"]), "images_rewritten": stats["images"],
         "missing_anchors": len(warnings),
     }
     write(os.path.join(a.work, "summary.json"), json.dumps(summary, indent=1))
