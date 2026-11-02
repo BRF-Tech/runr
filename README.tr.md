@@ -25,10 +25,7 @@ Her değişiklik dağıtabileceğiniz, karşılaştırabileceğiniz ve geri alab
 
 <sub>Bu sayfa, [İngilizce README](README.md) dosyasının çevirisidir; ikisi arasında fark olduğunda İngilizce metin geçerlidir. Bağlantı verdiği belgeler İngilizcedir.</sub>
 
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="landing/shots/projects-dark.png">
-  <img src="landing/shots/projects-light.png" alt="RunR konsolu: bir organizasyonun projeleri" width="900">
-</picture>
+<img src="landing/shots/projects-dark.png" alt="RunR konsolu: bir organizasyonun projeleri" width="900">
 
 </div>
 
@@ -245,10 +242,7 @@ Her iddianın arkasında [`docs/`](docs/README.md) içinde bir sayfa durur; her 
   tutan zamanlı ısıtıcı ([ölçekleme](docs/scaling.md)).
 
 <p align="center">
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="landing/shots/code-editor-dark.png">
-  <img src="landing/shots/code-editor-light.png" alt="RunR konsolunda tek dosyalık bir fonksiyonun kod editörü" width="860">
-</picture>
+<img src="landing/shots/code-editor-dark.png" alt="RunR konsolunda tek dosyalık bir fonksiyonun kod editörü" width="860">
 </p>
 <p align="center"><sub>Konsolun editöründe tek dosyalık bir fonksiyon; kaydetmek bir sürüm oluşturur</sub></p>
 
@@ -256,10 +250,7 @@ Her iddianın arkasında [`docs/`](docs/README.md) içinde bir sayfa durur; her 
 <summary><b>Daha fazla ekran görüntüsü</b> - bir projenin genel görünümü</summary>
 
 <p align="center">
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="landing/shots/project-overview-dark.png">
-  <img src="landing/shots/project-overview-light.png" alt="Bir projenin genel görünüm sayfası" width="860">
-</picture>
+<img src="landing/shots/project-overview-dark.png" alt="Bir projenin genel görünüm sayfası" width="860">
 </p>
 <p align="center"><sub>Bir projenin genel görünümü: URL, tetikleyiciler, dağıtılan sürüm, ölçek ve son dağıtımlar</sub></p>
 
@@ -295,10 +286,7 @@ Her iddianın arkasında [`docs/`](docs/README.md) içinde bir sayfa durur; her 
   alan adları.
 
 <p align="center">
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="landing/shots/deploy-rollout-dark.png">
-  <img src="landing/shots/deploy-rollout-light.png" alt="RunR konsolunda bir dağıtımın adım adım rollout'u" width="860">
-</picture>
+<img src="landing/shots/deploy-rollout-dark.png" alt="RunR konsolunda bir dağıtımın adım adım rollout'u" width="860">
 </p>
 <p align="center"><sub>Canlı bir rollout: derleme, imaj, revizyon, trafik</sub></p>
 
@@ -309,20 +297,14 @@ Her iddianın arkasında [`docs/`](docs/README.md) içinde bir sayfa durur; her 
 <tr>
 <td width="50%" valign="top">
 
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="landing/shots/deploy-strategies-dark.png">
-  <img src="landing/shots/deploy-strategies-light.png" alt="Bir projenin dağıtım stratejisi ayarları: blue-green ve canary">
-</picture>
+<img src="landing/shots/deploy-strategies-dark.png" alt="Bir projenin dağıtım stratejisi ayarları: blue-green ve canary">
 
 <sub>Dağıtım stratejisi: sağlık kontrolü ve sıcak önceki revizyonla blue-green ya da hata oranı ve gecikme eşikleriyle canary adımları</sub>
 
 </td>
 <td width="50%" valign="top">
 
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="landing/shots/environments-dark.png">
-  <img src="landing/shots/environments-light.png" alt="Onay bekleyen bir terfiyle bir projenin ortamları">
-</picture>
+<img src="landing/shots/environments-dark.png" alt="Onay bekleyen bir terfiyle bir projenin ortamları">
 
 <sub>Ortamlar: dev, staging ve production, her birinin çalıştırdığı sürüm, onay bekleyen bir terfi</sub>
 
@@ -358,10 +340,7 @@ Her iddianın arkasında [`docs/`](docs/README.md) içinde bir sayfa durur; her 
   ([API ürünü](docs/api-product.md)).
 
 <p align="center">
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="landing/shots/triggers-dark.png">
-  <img src="landing/shots/triggers-light.png" alt="RunR konsolunda bir projenin tetikleyici listesi" width="860">
-</picture>
+<img src="landing/shots/triggers-dark.png" alt="RunR konsolunda bir projenin tetikleyici listesi" width="860">
 </p>
 <p align="center"><sub>Bir projenin tetikleyicileri: HTTP, bir zamanlama, bir kuyruk ve bir webhook gelen kutusu tek listede</sub></p>
 
@@ -369,10 +348,7 @@ Her iddianın arkasında [`docs/`](docs/README.md) içinde bir sayfa durur; her 
 <summary><b>Daha fazla ekran görüntüsü</b> - bir workflow çalışması</summary>
 
 <p align="center">
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="landing/shots/workflows-dark.png">
-  <img src="landing/shots/workflows-light.png" alt="Bir durable workflow'un çalışma geçmişi" width="860">
-</picture>
+<img src="landing/shots/workflows-dark.png" alt="Bir durable workflow'un çalışma geçmişi" width="860">
 </p>
 <p align="center"><sub>Bir durable workflow'un çalışmaları: her adım, yeniden denemeleri ve aralarındaki uykular</sub></p>
 
@@ -396,10 +372,7 @@ Her iddianın arkasında [`docs/`](docs/README.md) içinde bir sayfa durur; her 
   ([MCP araçları](docs/sandbox-api.md#mcp-tools)).
 
 <p align="center">
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="landing/shots/sandbox-dark.png">
-  <img src="landing/shots/sandbox-light.png" alt="RunR konsolunda runtime'ı, sınırları ve süreçleriyle bir sandbox" width="860">
-</picture>
+<img src="landing/shots/sandbox-dark.png" alt="RunR konsolunda runtime'ı, sınırları ve süreçleriyle bir sandbox" width="860">
 </p>
 <p align="center"><sub>Bir sandbox: runtime sınıfı, sınırları, süreçleri ve çalıştırdığı komutlar</sub></p>
 
@@ -425,10 +398,7 @@ Her iddianın arkasında [`docs/`](docs/README.md) içinde bir sayfa durur; her 
   olarak çalışır; çağrı günlüğü ve bir denetleyici ile ([MCP sunucusu barındırma](docs/mcp.md#hosting-mcp-servers)).
 
 <p align="center">
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="landing/shots/huggingface-dark.png">
-  <img src="landing/shots/huggingface-light.png" alt="Bir Hugging Face modelinin model servisi olarak dağıtılması" width="860">
-</picture>
+<img src="landing/shots/huggingface-dark.png" alt="Bir Hugging Face modelinin model servisi olarak dağıtılması" width="860">
 </p>
 <p align="center"><sub>Hugging Face Hub'dan bir model, motoru, kipi ve GPU'suyla model servisi olarak dağıtılmış</sub></p>
 
@@ -436,10 +406,7 @@ Her iddianın arkasında [`docs/`](docs/README.md) içinde bir sayfa durur; her 
 <summary><b>Daha fazla ekran görüntüsü</b> - MCP sunucusu</summary>
 
 <p align="center">
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="landing/shots/mcp-dark.png">
-  <img src="landing/shots/mcp-light.png" alt="RunR konsolunun MCP sayfası: bağlı istemciler ve barındırılan sunucular" width="860">
-</picture>
+<img src="landing/shots/mcp-dark.png" alt="RunR konsolunun MCP sayfası: bağlı istemciler ve barındırılan sunucular" width="860">
 </p>
 <p align="center"><sub>MCP: RunR'ın kendi sunucusuna bağlı istemciler ve proje olarak barındırılan MCP sunucuları</sub></p>
 
@@ -467,10 +434,7 @@ Her iddianın arkasında [`docs/`](docs/README.md) içinde bir sayfa durur; her 
   sabitlenen organizasyonlar ([tedarik zinciri ve veri yerleşimi](docs/supply-chain.md)).
 
 <p align="center">
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="landing/shots/rbac-dark.png">
-  <img src="landing/shots/rbac-light.png" alt="RunR konsolunda bir organizasyonun roller sayfası" width="860">
-</picture>
+<img src="landing/shots/rbac-dark.png" alt="RunR konsolunda bir organizasyonun roller sayfası" width="860">
 </p>
 <p align="center"><sub>Roller: yerleşik roller, özel bir rol ve her birinin taşıdığı yetkiler</sub></p>
 
@@ -478,10 +442,7 @@ Her iddianın arkasında [`docs/`](docs/README.md) içinde bir sayfa durur; her 
 <summary><b>Daha fazla ekran görüntüsü</b> - bir imajın tedarik zinciri</summary>
 
 <p align="center">
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="landing/shots/supply-chain-dark.png">
-  <img src="landing/shots/supply-chain-light.png" alt="Bir dağıtımın tedarik zinciri görünümü: SBOM, tarama, imza ve politika" width="860">
-</picture>
+<img src="landing/shots/supply-chain-dark.png" alt="Bir dağıtımın tedarik zinciri görünümü: SBOM, tarama, imza ve politika" width="860">
 </p>
 <p align="center"><sub>Tedarik zinciri: bir dağıtımın SBOM'u, tarama sonucu, imzası ve politika kapısı</sub></p>
 
@@ -517,10 +478,7 @@ Her iddianın arkasında [`docs/`](docs/README.md) içinde bir sayfa durur; her 
   bir organizasyona ya da kuruluma aktarılır ([dışa ve içe aktarma](docs/org-export.md)).
 
 <p align="center">
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="landing/shots/region-wizard-dark.png">
-  <img src="landing/shots/region-wizard-light.png" alt="Bölge ekleme: kubeconfig yüklemesi ve RunR'ın kurduğu bileşenler" width="860">
-</picture>
+<img src="landing/shots/region-wizard-dark.png" alt="Bölge ekleme: kubeconfig yüklemesi ve RunR'ın kurduğu bileşenler" width="860">
 </p>
 <p align="center"><sub>Bölge ekleme: bir kubeconfig yükleyin, RunR Knative Serving'i ve bölge bileşenlerini kurar</sub></p>
 
@@ -531,20 +489,14 @@ Her iddianın arkasında [`docs/`](docs/README.md) içinde bir sayfa durur; her 
 <tr>
 <td width="50%" valign="top">
 
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="landing/shots/logs-metrics-dark.png">
-  <img src="landing/shots/logs-metrics-light.png" alt="Bir projenin günlükleri ve metrikleri">
-</picture>
+<img src="landing/shots/logs-metrics-dark.png" alt="Bir projenin günlükleri ve metrikleri">
 
 <sub>Bir projenin günlükleri ve metrikleri: istekler, gecikme, pod'lar, soğuk başlatmalar ve günlük akışı</sub>
 
 </td>
 <td width="50%" valign="top">
 
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="landing/shots/global-projects-dark.png">
-  <img src="landing/shots/global-projects-light.png" alt="Bölgeleri ve sağlık durumlarıyla bir global proje">
-</picture>
+<img src="landing/shots/global-projects-dark.png" alt="Bölgeleri ve sağlık durumlarıyla bir global proje">
 
 <sub>Bir global proje: bölgeleri, birincil bölge, her kopyanın sağlığı ve failover geçmişi</sub>
 

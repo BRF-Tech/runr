@@ -15,7 +15,7 @@ did not change says so.
   feature cards, the quick start first (Helm in three commands, the single-host install, the CLI),
   "Why RunR", a short comparison for people coming from Knative, Knative Functions, OpenFaaS, AWS
   Lambda or Vercel, a feature tour in seven parts with a screenshot and the documenting page each
-  (`landing/shots/<name>-light.png` and `-dark.png`, chosen by the reader's colour scheme), the
+  (`landing/shots/<name>-dark.png`, the console's dark theme), the
   measured cold starts, the architecture, the repository layout and the project sections. The
   heading anchors other pages link to (`#quick-start`, `#kubernetes-helm`) are unchanged.
   `README.tr.md` is the same page in Turkish. The runr.sh build (`ci/runr-sh/build.py`) now
@@ -28,7 +28,7 @@ did not change says so.
   console screenshot under the hero and a tour of the 0.6 features (deploy strategies, environments
   and promotion, global projects, triggers and the event gateway, durable workflows, supply chain
   and secret stores, plus deployments, logs and metrics, roles and the region wizard), scenes in the
-  project-type and AI sections, all from `landing/shots/<scene>-light|dark.png` (1440x900; a scene
+  project-type and AI sections, all from `landing/shots/<scene>-dark.png` (1440x900, the console's dark theme; a scene
   that is not published yet hides its frame); the comparison now sets RunR next to bare Knative,
   Knative Functions, OpenFaaS, AWS Lambda and Vercel, compiled from their documentation with the
   sources and a non-affiliation note; `helm repo update` in the Helm card; a segmented team-size
@@ -37,6 +37,10 @@ did not change says so.
   rendered from `landing/assets/og-image.src.html` (`og-image.png` 1200x630, `github-social-preview.png`
   1280x640, with `ci/runr-sh/render-social.js`) and replace `og-image.svg`; the tagline under the
   wordmark is an `h2` that names the platform, and the FAQ is also published as `FAQPage` JSON-LD.
+  The site's palette is neutral black, matching the console's dark theme: gray-950 `#030712` behind
+  gray surfaces and gray text with the brand orange and red; the former slate (navy-tinted) palette,
+  the blue and purple accents and the third-party blues of the diagrams are gone, and the console
+  scenes are shown in the dark theme only.
 
 ## [0.6.2] - 2026-10-26
 

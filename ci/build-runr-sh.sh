@@ -81,6 +81,14 @@ date="$("$PY" -c 'import sys, time; print(time.strftime("%Y-%m-%d", time.gmtime(
 
 "$PY" "$here/runr-sh/build.py" prepare --src "$work/src" --work "$work"
 
+# Files of the release tag: a linked repository file the tag does not have yet goes to GitHub at
+# main (README.tr.md between a release and the next tag). Without the tag, every link uses the tag.
+tagfiles=""
+if git -C "$root" rev-parse -q --verify "refs/tags/v$version^{commit}" >/dev/null 2>&1; then
+  git -C "$root" ls-tree -r --name-only "v$version" > "$work/tag-files.txt"
+  tagfiles="$work/tag-files.txt"
+fi
+
 # Markdown → HTML fragments (GitHub-flavored Markdown, GitHub-style heading ids).
 convert='for f in *.md; do pandoc -f gfm -t html5 --no-highlight --wrap=none "$f" -o "../html/${f%.md}.html" || exit 1; done'
 if command -v pandoc >/dev/null 2>&1 && pandoc --version | head -1 | grep -q '^pandoc 3\.'; then
@@ -94,7 +102,8 @@ fi
 "$PY" "$here/runr-sh/build.py" render --src "$work/src" --work "$work" --site "$work/site" \
   --release "$release" --key "$key" --key-id 2588846B241BC095 \
   --key-fpr 2CA513A757AE0C94BD8A7EE22588846B241BC095 \
-  --version "$version" --zip "$out" --date "$date" --epoch "$epoch"
+  --version "$version" --zip "$out" --date "$date" --epoch "$epoch" \
+  ${tagfiles:+--tag-files "$tagfiles"}
 
 sha="$("$PY" -c 'import hashlib, sys; print(hashlib.sha256(open(sys.argv[1], "rb").read()).hexdigest())' "$out")"
 size="$(wc -c < "$out" | tr -d ' ')"
@@ -111,7 +120,7 @@ files="$("$PY" -c 'import zipfile, sys; print(len(zipfile.ZipFile(sys.argv[1]).n
   echo "summary:"
   cat "$work/summary.json"
   echo
-  echo "links to repository files that are not published (to GitHub at the release tag):"
+  echo "links to repository files that are not published (to GitHub at the release tag, at main when the tag does not have the file):"
   cat "$work/github.txt"
   echo
   echo "links to nothing in the repository (shown as text):"

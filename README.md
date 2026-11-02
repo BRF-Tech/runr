@@ -21,10 +21,7 @@ Every change is a version you can deploy, compare and roll back. Blue-green and 
 
 **English** · [Türkçe](README.tr.md)
 
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="landing/shots/projects-dark.png">
-  <img src="landing/shots/projects-light.png" alt="The RunR console: the projects of an organization" width="900">
-</picture>
+<img src="landing/shots/projects-dark.png" alt="The RunR console: the projects of an organization" width="900">
 
 </div>
 
@@ -239,10 +236,7 @@ Every claim is backed by a page in [`docs/`](docs/README.md); what changed in ea
   warm on a weekly schedule ([scaling](docs/scaling.md)).
 
 <p align="center">
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="landing/shots/code-editor-dark.png">
-  <img src="landing/shots/code-editor-light.png" alt="The code editor of a single-file function in the RunR console" width="860">
-</picture>
+<img src="landing/shots/code-editor-dark.png" alt="The code editor of a single-file function in the RunR console" width="860">
 </p>
 <p align="center"><sub>A single-file function in the console's editor; saving creates a version</sub></p>
 
@@ -250,10 +244,7 @@ Every claim is backed by a page in [`docs/`](docs/README.md); what changed in ea
 <summary><b>More screenshots</b> - a project's overview</summary>
 
 <p align="center">
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="landing/shots/project-overview-dark.png">
-  <img src="landing/shots/project-overview-light.png" alt="The overview page of a project" width="860">
-</picture>
+<img src="landing/shots/project-overview-dark.png" alt="The overview page of a project" width="860">
 </p>
 <p align="center"><sub>A project's overview: URL, triggers, the deployed version, scale and the last deployments</sub></p>
 
@@ -289,10 +280,7 @@ Every claim is backed by a page in [`docs/`](docs/README.md); what changed in ea
   region.
 
 <p align="center">
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="landing/shots/deploy-rollout-dark.png">
-  <img src="landing/shots/deploy-rollout-light.png" alt="A deployment's rollout, step by step, in the RunR console" width="860">
-</picture>
+<img src="landing/shots/deploy-rollout-dark.png" alt="A deployment's rollout, step by step, in the RunR console" width="860">
 </p>
 <p align="center"><sub>A rollout, live: build, image, revision, traffic</sub></p>
 
@@ -303,20 +291,14 @@ Every claim is backed by a page in [`docs/`](docs/README.md); what changed in ea
 <tr>
 <td width="50%" valign="top">
 
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="landing/shots/deploy-strategies-dark.png">
-  <img src="landing/shots/deploy-strategies-light.png" alt="The deploy strategy settings of a project: blue-green and canary">
-</picture>
+<img src="landing/shots/deploy-strategies-dark.png" alt="The deploy strategy settings of a project: blue-green and canary">
 
 <sub>Deploy strategy: blue-green with a health check and a warm previous revision, or canary steps with error-rate and latency thresholds</sub>
 
 </td>
 <td width="50%" valign="top">
 
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="landing/shots/environments-dark.png">
-  <img src="landing/shots/environments-light.png" alt="The environments of a project with a promotion waiting for approval">
-</picture>
+<img src="landing/shots/environments-dark.png" alt="The environments of a project with a promotion waiting for approval">
 
 <sub>Environments: dev, staging and production, the version each one runs, a promotion waiting for approval</sub>
 
@@ -350,10 +332,7 @@ Every claim is backed by a page in [`docs/`](docs/README.md); what changed in ea
   ([API product](docs/api-product.md)).
 
 <p align="center">
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="landing/shots/triggers-dark.png">
-  <img src="landing/shots/triggers-light.png" alt="The trigger list of a project in the RunR console" width="860">
-</picture>
+<img src="landing/shots/triggers-dark.png" alt="The trigger list of a project in the RunR console" width="860">
 </p>
 <p align="center"><sub>A project's triggers: HTTP, a schedule, a queue and a webhook inbox on one list</sub></p>
 
@@ -361,10 +340,7 @@ Every claim is backed by a page in [`docs/`](docs/README.md); what changed in ea
 <summary><b>More screenshots</b> - a workflow run</summary>
 
 <p align="center">
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="landing/shots/workflows-dark.png">
-  <img src="landing/shots/workflows-light.png" alt="The run history of a durable workflow" width="860">
-</picture>
+<img src="landing/shots/workflows-dark.png" alt="The run history of a durable workflow" width="860">
 </p>
 <p align="center"><sub>A durable workflow's runs: every step, its retries and the sleeps between them</sub></p>
 
@@ -387,10 +363,7 @@ Every claim is backed by a page in [`docs/`](docs/README.md); what changed in ea
   ([MCP tools](docs/sandbox-api.md#mcp-tools)).
 
 <p align="center">
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="landing/shots/sandbox-dark.png">
-  <img src="landing/shots/sandbox-light.png" alt="A sandbox in the RunR console with its runtime, limits and processes" width="860">
-</picture>
+<img src="landing/shots/sandbox-dark.png" alt="A sandbox in the RunR console with its runtime, limits and processes" width="860">
 </p>
 <p align="center"><sub>A sandbox: its runtime class, limits, processes and the commands it ran</sub></p>
 
@@ -413,10 +386,7 @@ Every claim is backed by a page in [`docs/`](docs/README.md); what changed in ea
   ([hosting MCP servers](docs/mcp.md#hosting-mcp-servers)).
 
 <p align="center">
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="landing/shots/huggingface-dark.png">
-  <img src="landing/shots/huggingface-light.png" alt="Deploying a Hugging Face model as a model service" width="860">
-</picture>
+<img src="landing/shots/huggingface-dark.png" alt="Deploying a Hugging Face model as a model service" width="860">
 </p>
 <p align="center"><sub>A model from the Hugging Face Hub, deployed as a model service with its engine, mode and GPU</sub></p>
 
@@ -424,10 +394,7 @@ Every claim is backed by a page in [`docs/`](docs/README.md); what changed in ea
 <summary><b>More screenshots</b> - the MCP server</summary>
 
 <p align="center">
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="landing/shots/mcp-dark.png">
-  <img src="landing/shots/mcp-light.png" alt="The MCP page of the RunR console: connected clients and hosted servers" width="860">
-</picture>
+<img src="landing/shots/mcp-dark.png" alt="The MCP page of the RunR console: connected clients and hosted servers" width="860">
 </p>
 <p align="center"><sub>MCP: the clients connected to RunR's own server and the MCP servers hosted as projects</sub></p>
 
@@ -456,10 +423,7 @@ Every claim is backed by a page in [`docs/`](docs/README.md); what changed in ea
   and data locations ([supply chain and data residency](docs/supply-chain.md)).
 
 <p align="center">
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="landing/shots/rbac-dark.png">
-  <img src="landing/shots/rbac-light.png" alt="The roles page of an organization in the RunR console" width="860">
-</picture>
+<img src="landing/shots/rbac-dark.png" alt="The roles page of an organization in the RunR console" width="860">
 </p>
 <p align="center"><sub>Roles: the built-in roles, a custom one and the permissions each one carries</sub></p>
 
@@ -467,10 +431,7 @@ Every claim is backed by a page in [`docs/`](docs/README.md); what changed in ea
 <summary><b>More screenshots</b> - the supply chain of an image</summary>
 
 <p align="center">
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="landing/shots/supply-chain-dark.png">
-  <img src="landing/shots/supply-chain-light.png" alt="The supply chain view of a deployment: SBOM, scan, signature and policy" width="860">
-</picture>
+<img src="landing/shots/supply-chain-dark.png" alt="The supply chain view of a deployment: SBOM, scan, signature and policy" width="860">
 </p>
 <p align="center"><sub>Supply chain: the SBOM, the scan result, the signature and the policy gate of a deployment</sub></p>
 
@@ -503,10 +464,7 @@ Every claim is backed by a page in [`docs/`](docs/README.md); what changed in ea
   into another organization or installation ([export and import](docs/org-export.md)).
 
 <p align="center">
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="landing/shots/region-wizard-dark.png">
-  <img src="landing/shots/region-wizard-light.png" alt="Adding a region: the kubeconfig upload and the components RunR installs" width="860">
-</picture>
+<img src="landing/shots/region-wizard-dark.png" alt="Adding a region: the kubeconfig upload and the components RunR installs" width="860">
 </p>
 <p align="center"><sub>Adding a region: upload a kubeconfig and RunR installs Knative Serving and the region components</sub></p>
 
@@ -517,20 +475,14 @@ Every claim is backed by a page in [`docs/`](docs/README.md); what changed in ea
 <tr>
 <td width="50%" valign="top">
 
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="landing/shots/logs-metrics-dark.png">
-  <img src="landing/shots/logs-metrics-light.png" alt="The logs and metrics of a project">
-</picture>
+<img src="landing/shots/logs-metrics-dark.png" alt="The logs and metrics of a project">
 
 <sub>Logs and metrics of a project: requests, latency, pods, cold starts and the log stream</sub>
 
 </td>
 <td width="50%" valign="top">
 
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="landing/shots/global-projects-dark.png">
-  <img src="landing/shots/global-projects-light.png" alt="A global project with its regions and their health">
-</picture>
+<img src="landing/shots/global-projects-dark.png" alt="A global project with its regions and their health">
 
 <sub>A global project: its regions, the primary, the health of every copy and the failover history</sub>
 

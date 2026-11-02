@@ -4,7 +4,8 @@
   prepare  picks the documentation pages (docs/*.md, the root Markdown files and every Markdown
            page they link to), applies the site's text substitutions and writes the pandoc inputs
   render   turns the pandoc output into pages (links between pages rewritten to runr.sh URLs, links
-           to unpublished repository files to GitHub at the release tag, images under landing/ to
+           to unpublished repository files to GitHub at the release tag (at main when the tag
+           does not have the file yet), images under landing/ to
            the site root and other repository images to GitHub raw at the tag), adds the landing, the
            downloads (CLI, Terraform provider, signing key), the Terraform provider registry, checks
            every internal link and writes a deterministic ZIP
@@ -214,6 +215,18 @@ def strip_tags(s):
     return html.unescape(re.sub(r"<[^>]+>", "", s)).strip()
 
 
+TAG_FILES = None
+
+
+def github_ref(rel, version):
+    """The GitHub ref a repository path is linked at: the release tag, or `main` for a path the
+    tag's tree does not have (a file added after the release; `main` has it). Without
+    --tag-files every path links to the tag."""
+    if TAG_FILES is None or rel in TAG_FILES or any(f.startswith(rel + "/") for f in TAG_FILES):
+        return "v" + version
+    return "main"
+
+
 def rewrite_links(src, page, body, urls, version, stats):
     """Links between published pages → runr.sh URLs; links to repository files that are not
     published → the file (blob) or directory (tree) on GitHub at the release tag; repository URLs
@@ -242,7 +255,7 @@ def rewrite_links(src, page, body, urls, version, stats):
                 local = repo_file_target(src, page, href)
                 if local and local[0]:
                     kind, rel, anchor = local
-                    new = "%s/%s/v%s/%s" % (REPO, kind, version, rel) + ("#" + anchor if anchor else "")
+                    new = "%s/%s/%s/%s" % (REPO, kind, github_ref(rel, version), rel) + ("#" + anchor if anchor else "")
                     stats["github"].append("%s -> %s" % (page, new))
                 elif not re.match(r"^[a-z][a-z0-9+.-]*:", href):
                     stats["unlinked"].append("%s -> %s" % (page, href))
@@ -272,7 +285,7 @@ def rewrite_images(src, page, body, version, stats):
         stats["images"] += 1
         if rel.startswith("landing/"):
             return "/" + rel[len("landing/"):]
-        return "%s/v%s/%s" % (RAW, version, rel)
+        return "%s/%s/%s" % (RAW, github_ref(rel, version), rel)
 
     def repl(m):
         attr, value = m.group(1), html.unescape(m.group(2))
@@ -707,6 +720,9 @@ def cmd_render(a):
     if os.path.exists(site):
         die("site dir exists: " + site)
     stats = {"rewritten": 0, "github": [], "unlinked": [], "images": 0}
+    if a.tag_files:
+        global TAG_FILES
+        TAG_FILES = set(l.strip() for l in read(a.tag_files).splitlines() if l.strip())
     copy_landing(a.src, site)
     pages = render_pages(a, site, version, stats)
     nplat = render_downloads(a, site, version)
@@ -757,6 +773,8 @@ def main():
     pr.add_argument("--zip", required=True)
     pr.add_argument("--date", required=True)
     pr.add_argument("--epoch", type=int, required=True)
+    pr.add_argument("--tag-files", help="paths of the release tag's tree (git ls-tree -r --name-only); "
+                    "a linked repository file that is not among them goes to GitHub at main")
     a = p.parse_args()
     {"prepare": cmd_prepare, "render": cmd_render}[a.cmd](a)
 
