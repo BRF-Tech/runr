@@ -10,14 +10,14 @@ Every change is a version you can deploy, compare and roll back. Blue-green and 
 
 [![Quick start](https://img.shields.io/badge/Quick_start-e63946?style=for-the-badge)](#quick-start)
 [![Documentation](https://img.shields.io/badge/Documentation-374151?style=for-the-badge)](https://runr.sh/docs/)
-[![runr.sh](https://img.shields.io/badge/runr.sh-0a0e1a?style=for-the-badge)](https://runr.sh)
+[![runr.sh](https://img.shields.io/badge/runr.sh-030712?style=for-the-badge)](https://runr.sh)
 
 [![Release](https://img.shields.io/github/v/release/BRF-Tech/runr?color=e63946)](https://github.com/BRF-Tech/runr/releases)
 [![License: MIT](https://img.shields.io/github/license/BRF-Tech/runr?color=22c55e)](LICENSE)
 [![CI](https://img.shields.io/github/actions/workflow/status/BRF-Tech/runr/ci.yml?branch=main&label=ci)](https://github.com/BRF-Tech/runr/actions/workflows/ci.yml)
-[![Helm chart](https://img.shields.io/badge/Helm_chart-brf--tech%2Frunr-0f1689)](#kubernetes-helm)
-[![Terraform Registry](https://img.shields.io/badge/Terraform_Registry-brf--tech%2Frunr-7b42bc)](https://registry.terraform.io/providers/brf-tech/runr/latest)
-[![Go module: cli](https://pkg.go.dev/badge/github.com/brf-tech/runr/cli.svg)](https://pkg.go.dev/github.com/brf-tech/runr/cli)
+[![Helm chart](https://img.shields.io/badge/Helm_chart-brf--tech%2Frunr-374151)](#kubernetes-helm)
+[![Terraform Registry](https://img.shields.io/badge/Terraform_Registry-brf--tech%2Frunr-374151)](https://registry.terraform.io/providers/brf-tech/runr/latest)
+[![Go module: cli](https://img.shields.io/badge/Go_reference-cli-374151?logo=go&logoColor=white)](https://pkg.go.dev/github.com/brf-tech/runr/cli)
 
 **English** · [Türkçe](README.tr.md)
 
