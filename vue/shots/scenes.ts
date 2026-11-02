@@ -305,7 +305,7 @@ function seedModels(api: MockApi): void {
   const services = [
     service({ id: 'ms-qwen', name: 'qwen2-5-7b-instruct', hub_id: 'Qwen/Qwen2.5-7B-Instruct', task: 'text-generation', library: 'transformers', size: 15_231_000_000,
       engine: 'vllm', device: 'gpu', api: 'openai', gpu: { count: 1, type: 'NVIDIA-L4', memory_mb: 24576 }, cpu: '4', memory: 16384, min_scale: 1, max_scale: 2,
-      image: 'ghcr.io/brf-tech/runr/reqs/vllm-openai:v0.8.5', args: ['--max-model-len', '8192'], playground: { kind: 'chat', path: '/v1/chat/completions' }, bindings: 2, deployedMin: 6 * DAY }),
+      image: 'docker.io/vllm/vllm-openai:v0.6.6', args: ['--max-model-len', '8192'], playground: { kind: 'chat', path: '/v1/chat/completions' }, bindings: 2, deployedMin: 6 * DAY }),
     service({ id: 'ms-embed', name: 'all-minilm-l6-v2', hub_id: 'sentence-transformers/all-MiniLM-L6-v2', task: 'feature-extraction', library: 'sentence-transformers', size: 90_900_000,
       engine: 'tei', device: 'cpu', api: 'tei', cpu: '1', memory: 1024, max_scale: 4, image: 'ghcr.io/huggingface/text-embeddings-inference:cpu-1.9.4',
       playground: { kind: 'embeddings', path: '/v1/embeddings' }, bindings: 3, deployedMin: 21 * DAY }),

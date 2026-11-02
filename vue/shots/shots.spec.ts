@@ -7,13 +7,16 @@ import { FakeRealtime } from '../e2e/fixtures/realtime'
 import { applyShotsDb } from './db'
 import { SCENES, type Scene } from './scenes'
 
-// Renders every scene of shots/scenes.ts in the light and the dark theme into landing/shots/
-// (<name>-<theme>.png, 1440x900 viewport) and writes landing/shots/manifest.json. Run through
-// `npm run shots` (shots/playwright.config.ts); optimize the PNGs afterwards with
-// `python shots/optimize.py`.
+// Renders every scene of shots/scenes.ts into landing/shots/ (<name>-dark.png, 1440x900
+// viewport) and writes landing/shots/manifest.json. Run through `npm run shots`
+// (shots/playwright.config.ts); optimize the PNGs afterwards with `python shots/optimize.py`.
+//
+// The showcase is dark only: the "dark" files show the console's `fulldark` theme (black).
 
-export const THEMES = ['light', 'dark'] as const
+export const THEMES = ['dark'] as const
 type Theme = (typeof THEMES)[number]
+/** The console theme (localStorage `theme`) behind each showcase theme. */
+export const CONSOLE_THEMES: Record<Theme, string> = { dark: 'fulldark' }
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const OUT_DIR = resolve(__dirname, '../../landing/shots')
@@ -51,6 +54,7 @@ function writeManifest(entries: Record<string, ManifestEntry>): void {
     device_scale_factor: 1,
     locale: 'en',
     themes: [...THEMES],
+    console_themes: { ...CONSOLE_THEMES },
     scenes,
   }
   mkdirSync(OUT_DIR, { recursive: true })
@@ -65,7 +69,7 @@ async function boot(page: Page, api: MockApi, theme: Theme): Promise<void> {
     localStorage.setItem('token', '1|shots-session')
     localStorage.setItem('user', JSON.stringify(user))
     localStorage.removeItem('active_tenant')
-  }, { theme, user: api.db.user })
+  }, { theme: CONSOLE_THEMES[theme], user: api.db.user })
   await api.install(page)
   await new FakeRealtime().install(page)
 }

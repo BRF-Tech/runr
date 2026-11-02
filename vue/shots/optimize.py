@@ -63,7 +63,7 @@ def main() -> int:
         for scene in manifest.get("scenes", []):
             scene["sizes_bytes"] = {theme: sizes.get(name) for theme, name in (scene.get("theme_files") or {}).items()}
         manifest["optimized"] = {"tool": "Pillow (optimize + 256-color palette when above the limit)", "limit_bytes": limit}
-        manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+        manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8", newline="\n")
     print(f"\n{len(pngs)} files, {total / 1024:.0f} KiB total" + (f", {len(over)} over the limit: {', '.join(over)}" if over else ""))
     return 0
 
