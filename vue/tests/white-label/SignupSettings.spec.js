@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { mount } from '@vue/test-utils'
+import { mount, RouterLinkStub } from '@vue/test-utils'
 import client from '@/api/client'
 import SignupSettings from '@/modules/white-label/components/SignupSettings.vue'
 import { parseDomains } from '@/modules/white-label/utils/signup'
@@ -14,9 +14,6 @@ const settings = (over = {}) => ({
   email_verification: true,
   invite_only: false,
   allowed_domains: ['acme.test'],
-  captcha_provider: 'turnstile',
-  captcha_site_key: '0x4AAA',
-  captcha_secret_set: true,
   terms_url: 'https://acme.test/terms',
   privacy_url: null,
   tenant_auto_create: true,
@@ -30,7 +27,7 @@ const settings = (over = {}) => ({
 
 async function mountSettings(data = settings()) {
   vi.mocked(client.get).mockImplementation((url) => url === '/admin/signup-settings' ? ok(data) : ok({}))
-  vi.mocked(client.put).mockImplementation((url, body) => ok({ ...data, ...body, captcha_secret_set: body.captcha_secret_clear ? false : data.captcha_secret_set }))
+  vi.mocked(client.put).mockImplementation((url, body) => ok({ ...data, ...body }))
   const wrapper = mount(SignupSettings, { global: globalOptions() })
   await flush()
   return wrapper
@@ -49,44 +46,24 @@ describe('SignupSettings', () => {
     expect(parseDomains('')).toEqual([])
   })
 
-  it('never sends the stored secret back and keeps it by default', async () => {
+  it('sends the signup settings without CAPTCHA fields', async () => {
     const wrapper = await mountSettings()
-    expect(wrapper.find('[data-test="secret-state"]').text()).toContain('Stored')
-    expect(wrapper.find('[data-test="field-captcha_secret"]').element.value).toBe('')
-
     await wrapper.find('form').trigger('submit')
     await flush()
 
     const body = lastPut()
     expect(vi.mocked(client.put).mock.calls.at(-1)[0]).toBe('/admin/signup-settings')
-    expect(body).not.toHaveProperty('captcha_secret')
-    expect(body).not.toHaveProperty('captcha_secret_clear')
+    expect(Object.keys(body).filter(k => k.startsWith('captcha'))).toEqual([])
     expect(body.allowed_domains).toEqual(['acme.test'])
-    expect(body.captcha_site_key).toBe('0x4AAA')
     // single-tenant: no tenant fields
     expect(body).not.toHaveProperty('tenant_auto_create')
   })
 
-  it('replaces the secret with a typed value', async () => {
+  it('points at the bot protection for the CAPTCHA of the sign-up form', async () => {
     const wrapper = await mountSettings()
-    await wrapper.find('[data-test="field-captcha_secret"]').setValue('  new-secret ')
-    await wrapper.find('form').trigger('submit')
-    await flush()
-
-    expect(lastPut().captcha_secret).toBe('new-secret')
-    // the input is emptied after saving: the secret is not kept in the page
-    expect(wrapper.find('[data-test="field-captcha_secret"]').element.value).toBe('')
-  })
-
-  it('clears the secret with captcha_secret_clear', async () => {
-    const wrapper = await mountSettings()
-    await wrapper.find('[data-test="clear-captcha_secret"]').trigger('click')
-    expect(wrapper.find('[data-test="secret-state"]').text()).toContain('Not set')
-    await wrapper.find('form').trigger('submit')
-    await flush()
-
-    expect(lastPut().captcha_secret_clear).toBe(true)
-    expect(lastPut()).not.toHaveProperty('captcha_secret')
+    expect(wrapper.find('[data-test="signup-captcha-moved"]').text()).toContain('bot protection')
+    expect(wrapper.find('[data-test="field-captcha_secret"]').exists()).toBe(false)
+    expect(wrapper.getComponent(RouterLinkStub).props('to')).toEqual({ path: '/settings', query: { tab: 'bot-protection' } })
   })
 
   it('multi-tenant: sends tenant creation, quota and regions', async () => {

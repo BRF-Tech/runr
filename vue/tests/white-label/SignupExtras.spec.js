@@ -76,11 +76,12 @@ describe('SignupExtras', () => {
     expect(wrapper.find('[data-test="allowed-domains"]').text()).toContain('acme.test, corp.example')
   })
 
-  it('renders the CAPTCHA when a provider is configured', async () => {
+  it('leaves the CAPTCHA to the register form (the bot protection)', async () => {
     window.turnstile = { render: vi.fn(() => 'w1'), reset: vi.fn(), remove: vi.fn() }
-    const { wrapper } = await mountExtras(status({ captcha: { provider: 'turnstile', site_key: '0x4AAA' } }))
-    expect(wrapper.find('[data-test="captcha"]').exists()).toBe(true)
-    expect(window.turnstile.render).toHaveBeenCalled()
+    const { wrapper, model } = await mountExtras(status({ captcha: { provider: 'turnstile', site_key: '0x4AAA' } }))
+    expect(wrapper.find('[data-test="captcha"]').exists()).toBe(false)
+    expect(window.turnstile.render).not.toHaveBeenCalled()
+    expect(model()).not.toHaveProperty('captcha_token')
     delete window.turnstile
   })
 })

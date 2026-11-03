@@ -10,6 +10,8 @@ import { moduleRegistry } from '@/modules/index'
 import RegisterForm from '@/components/RegisterForm.vue'
 import RunrWordmark from '@/components/RunrWordmark.vue'
 import { useBrandingStore } from '@/modules/white-label/stores/branding'
+import { useCaptcha } from '@/modules/white-label/composables/useCaptcha'
+import CaptchaField from '@/modules/white-label/components/CaptchaField.vue'
 import { useLatest } from '@/composables/useLatest'
 
 const { t, locale } = useI18n()
@@ -105,13 +107,23 @@ watch(userType, (val) => {
 const showLoginForm = computed(() => userType.value === 'platform' || tenancyStep.value === 2)
 const showTenancyStep = computed(() => tenancyEnabled && userType.value === 'tenant' && tenancyStep.value === 1)
 
+// Bot protection of the sign-in (docs/security.md#bot-protection): the organization's own keys on
+// its sign-in page; the demo sign-in is the same form. The two-factor step reuses the answer.
+const loginTenant = computed(() => (userType.value === 'tenant' && tenancyStep.value === 2) ? tenancySlug.value.trim() || null : null)
+const captcha = useCaptcha('login', { tenant: loginTenant })
+
+function leave2FA() { needs2FA.value = false; twoFactorCode.value = ''; error.value = null; captcha.reset() }
+
 async function submit() {
   error.value = null; loading.value = true
   try {
-    const tenantSlug = (userType.value === 'tenant' && tenancyStep.value === 2) ? tenancySlug.value.trim() : null
+    const tenantSlug = loginTenant.value
     const code = needs2FA.value ? twoFactorCode.value : null
     // The user name or the e-mail address (the API matches either in any letter case)
-    const data = await auth.login(login.value.trim(), password.value, tenantSlug, code)
+    const data = await captcha.submit(
+      (fields) => auth.login(login.value.trim(), password.value, tenantSlug, code, fields),
+      { keep: needs2FA.value },
+    )
 
     if (data.requires_2fa) {
       needs2FA.value = true
@@ -192,11 +204,13 @@ function loginWithProvider(p) {
                   <label class="login-label block text-xs font-bold mb-2 uppercase tracking-widest">{{ t('auth.twoFactorCode') }}</label>
                   <input v-model="twoFactorCode" type="text" inputmode="numeric" maxlength="20" class="login-input w-full px-4 py-4 rounded-md text-base transition font-mono text-center tracking-widest" :placeholder="t('auth.twoFactorCode')" autocomplete="one-time-code" autofocus />
                 </div>
+                <!-- The password step's answer is spent: a new one -->
+                <CaptchaField v-if="!captcha.token && !captcha.local" :captcha="captcha" />
                 <p v-if="error" class="text-sm font-medium" style="color:#dc2626">{{ error }}</p>
                 <button type="submit" class="login-submit w-full py-4 rounded-md text-base font-semibold text-white transition-all disabled:opacity-50" :disabled="loading || !twoFactorCode">
                   {{ loading ? t('auth.submitting') : t('auth.twoFactorSubmit') }}
                 </button>
-                <button type="button" class="text-sm hover:underline" style="color:rgb(var(--brand-600))" @click="needs2FA = false; twoFactorCode = ''; error = null">
+                <button type="button" class="text-sm hover:underline" style="color:rgb(var(--brand-600))" @click="leave2FA">
                   {{ t('auth.twoFactorBack') }}
                 </button>
               </form>
@@ -273,6 +287,8 @@ function loginWithProvider(p) {
                         </button>
                       </div>
                     </div>
+                    <!-- Bot protection -->
+                    <CaptchaField :captcha="captcha" />
                     <p v-if="error" class="text-sm font-medium" style="color:#dc2626">{{ error }}</p>
                     <button type="submit" class="login-submit w-full py-4 rounded-md text-base font-semibold text-white transition-all disabled:opacity-50" :disabled="loading">
                       {{ loading ? t('auth.submitting') : t('auth.submit') }}

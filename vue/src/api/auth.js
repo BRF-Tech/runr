@@ -1,12 +1,14 @@
 import client from './client'
 
+// `extra`: the bot protection's answer (captcha_token / captcha_local, white-label useCaptcha)
 export const authApi = {
-  login: (login, password, tenantSlug, twoFactorCode) =>
+  login: (login, password, tenantSlug, twoFactorCode, extra = {}) =>
     client.post('/auth/login', {
       login,
       password,
       tenant_slug: tenantSlug || undefined,
       two_factor_code: twoFactorCode || undefined,
+      ...extra,
     }),
 
   register: (payload) =>
@@ -19,8 +21,8 @@ export const authApi = {
   verifySignup: (token) =>
     client.post('/auth/signup/verify', { token }),
 
-  resendSignup: (email) =>
-    client.post('/auth/signup/resend', { email }),
+  resendSignup: (email, extra = {}) =>
+    client.post('/auth/signup/resend', { email, ...extra }),
 
   logout: () =>
     client.post('/auth/logout'),

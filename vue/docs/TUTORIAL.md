@@ -110,6 +110,21 @@ tabs `settings-branding-tab` / `settings-org-branding-tab` start it on a tutoria
 | 6 | `branding-preview` | BrandingForm | Login page preview |
 | 7 | `branding-save` | BrandingForm | Save |
 
+### 8. Bot protection tour (`botProtectionSteps`)
+Administration → Access & security → Bot protection (white-label `BotProtectionSettings`); the
+settings tab `settings-bot-protection-tab` (a step of the section's tab tour) starts it on a
+tutorial restart (`tutorial: true`), after the tab steps of its section. Inside an organization
+the page has its own provider and keys only: steps 3–5 drop out.
+
+| # | data-tour | Location | Description |
+|---|-----------|----------|-------------|
+| 1 | `bot-protection-provider` | BotProtectionSettings | Provider (Turnstile, reCAPTCHA, hCaptcha, off; an organization: its own or the platform's) |
+| 2 | `bot-protection-keys` | BotProtectionSettings | Site key and the write-only secret |
+| 3 | `bot-protection-forms` | BotProtectionSettings (platform) | Guarded forms: sign-in, demo sign-in, sign-up, public forms |
+| 4 | `bot-protection-fallback` | BotProtectionSettings (platform) | The browser check while the provider is down, the timeout |
+| 5 | `bot-protection-status` | BotProtectionSettings (platform) | Whether the fallback is active, how many checks were handed out |
+| 6 | `bot-protection-save` | BotProtectionSettings | Save, Reset to the installation defaults |
+
 ## Adding a step
 
 ### 1. Add a marker to the template

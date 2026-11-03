@@ -1,25 +1,21 @@
 <script setup>
 // Register form, step 2 (moduleRegistry.registerExtensions): what GET /api/auth/registration-status
-// asks for — CAPTCHA (captcha_token), terms / privacy acceptance (accept_terms) — plus a hint when
-// only some e-mail domains may sign up.
-import { computed, onMounted, ref, watch } from 'vue'
+// asks for — terms / privacy acceptance (accept_terms) — plus a hint when only some e-mail domains
+// may sign up. The CAPTCHA is the bot protection's, rendered by RegisterForm itself (CaptchaField).
+import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { signupApi } from '../api/whiteLabel'
-import CaptchaWidget from './CaptchaWidget.vue'
 
 const model = defineModel({ type: Object, default: () => ({}) })
-const props = defineProps({
-  // incremented by the form after a rejected submit → fresh CAPTCHA challenge
+defineProps({
+  // incremented by the form after a rejected submit (extensions with a single-use answer start over)
   attempt: { type: Number, default: 0 },
 })
 const { t } = useI18n()
 
 const status = ref(null)
-const captcha = ref(null)
 
 const needsTerms = computed(() => !!(status.value?.terms_url || status.value?.privacy_url))
-const captchaProvider = computed(() => status.value?.captcha?.provider ?? 'none')
-const captchaSiteKey = computed(() => status.value?.captcha?.site_key ?? '')
 const allowedDomains = computed(() => status.value?.allowed_domains ?? [])
 
 function patch(values) {
@@ -34,8 +30,6 @@ onMounted(async () => {
     status.value = null
   }
 })
-
-watch(() => props.attempt, () => captcha.value?.reset())
 </script>
 
 <template>
@@ -59,9 +53,5 @@ watch(() => props.attempt, () => captcha.value?.reset())
         {{ t('whiteLabel.signup.acceptSuffix') }}
       </span>
     </label>
-
-    <!-- CAPTCHA -->
-    <CaptchaWidget ref="captcha" :provider="captchaProvider" :site-key="captchaSiteKey"
-      @token="patch({ captcha_token: $event })" />
   </div>
 </template>

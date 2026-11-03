@@ -8,6 +8,8 @@ import { useAuthStore } from '@/stores/auth'
 import { moduleRegistry } from '@/modules/index'
 import { signupApi } from '../api/whiteLabel'
 import { useBrandingStore } from '../stores/branding'
+import { useCaptcha } from '../composables/useCaptcha'
+import CaptchaField from './CaptchaField.vue'
 import { CheckCircle2, Loader2, MailWarning } from 'lucide-vue-next'
 import runrIconUrl from '@/assets/runr-icon.svg'
 
@@ -25,6 +27,9 @@ const resending = ref(false)
 const resent = ref(false)
 
 const logo = computed(() => branding.logoFor('light'))
+
+// Sending the link again mails an address: bot protection (public_forms)
+const resendCaptcha = useCaptcha('public_forms')
 
 onMounted(async () => {
   const token = typeof route.query.token === 'string' ? route.query.token : ''
@@ -53,9 +58,10 @@ async function resend() {
   if (!email.value) return
   resending.value = true
   try {
-    await signupApi.resend(email.value.trim())
+    await resendCaptcha.submit((fields) => signupApi.resend(email.value.trim(), fields))
     resent.value = true
-  } catch { /* 200 for any address — only network errors land here */ }
+    resendCaptcha.reset()
+  } catch { /* 200 for any address — only the bot check and network errors land here */ }
   finally { resending.value = false }
 }
 </script>
@@ -92,6 +98,7 @@ async function resend() {
           <label class="block text-xs font-bold uppercase tracking-widest" style="color:rgb(var(--surface-light-500))">{{ t('auth.email') }}</label>
           <input v-model="email" type="email" required autocomplete="email"
             class="w-full px-4 py-3 rounded-md text-base outline-hidden" style="background:rgb(var(--surface-light-900));border:1.5px solid rgb(var(--surface-light-700));color:rgb(var(--surface-light-100))" />
+          <CaptchaField :captcha="resendCaptcha" />
           <p v-if="resent" class="text-sm font-medium" style="color:#059669">{{ t('whiteLabel.signup.resent') }}</p>
           <button type="submit" class="w-full py-3 rounded-md text-base font-semibold text-white disabled:opacity-50"
             style="background:rgb(var(--brand-600))" :disabled="resending || !email" data-test="verify-resend">

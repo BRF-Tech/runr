@@ -24,7 +24,9 @@ test.describe('Main menu', () => {
     await expect(mainNav(page).getByTestId('nav-group-admin')).toHaveAttribute('aria-expanded', 'true')
     // Organization: the export / import of the organization (org-transfer module)
     await expect(admin.locator('section h3')).toHaveText(['Members', 'Access & security', 'Organization', 'Platform'])
-    await expect(admin.locator('[data-nav-link]')).toHaveCount(10)
+    // Access & security: tokens, SSO providers, audit log, secret stores, bot protection
+    await expect(admin.locator('[data-nav-link]')).toHaveCount(11)
+    await expect(admin.getByTestId('nav-link-bot-protection')).toBeVisible()
     await expect(admin.getByTestId('nav-link-tokens')).toContainText('Personal tokens for the CLI, CI and AI agents')
     await expect(admin.getByTestId('nav-link-platform-settings')).toContainText('Regions & settings')
 
@@ -49,7 +51,7 @@ test.describe('Main menu', () => {
     await expect(page.getByTestId('settings-title')).toHaveText('Administration')
     await expect(page.getByTestId('settings-section')).toHaveText('Access & security')
     const tabs = page.getByTestId('settings-section-tabs').getByRole('link')
-    await expect(tabs).toHaveText(['API Tokens', 'Audit log', 'Secret stores'])
+    await expect(tabs).toHaveText(['API Tokens', 'Audit log', 'Secret stores', 'Bot protection'])
     await expect(tabs.first()).toHaveAttribute('aria-current', 'page')
 
     await tabs.nth(1).click()

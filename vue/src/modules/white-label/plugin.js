@@ -1,8 +1,9 @@
 // White-label module (both editions): branding, self-service signup extras, signup e-mail
-// verification page, onboarding wizard (docs/white-label.md). Billing is the Billing module's.
+// verification page, onboarding wizard (docs/white-label.md), the bot protection of the anonymous
+// forms (docs/security.md#bot-protection). Billing is the Billing module's.
 // Auto-loaded by modules/index.js (core plugin glob).
 import { defineAsyncComponent, markRaw } from 'vue'
-import { Palette, UserPlus, Brush } from 'lucide-vue-next'
+import { Palette, UserPlus, Brush, Bot } from 'lucide-vue-next'
 import router from '@/router'
 import { applyBranding, readCachedBranding } from './utils/branding'
 import { canInTenant, canManageInstall, isMultiTenantBuild } from './utils/context'
@@ -26,7 +27,7 @@ export default function (registry) {
     registry.appTopSlots.push(lazy(() => import('./components/OnboardingWizard.vue')))
   }
 
-  // Register form (step 2): CAPTCHA, terms acceptance
+  // Register form (step 2): terms acceptance, allowed domains (the CAPTCHA is RegisterForm's own)
   registry.registerExtensions.push(lazy(() => import('./components/SignupExtras.vue')))
 
   // Administration → Platform (install) and → Organization (a tenant's own brand)
@@ -54,6 +55,23 @@ export default function (registry) {
     component: lazy(() => import('./components/SignupSettings.vue')),
     visibleIf: () => canManageInstall('signup.manage', multiTenant),
     order: 51,
+  })
+
+  // Administration → Access & security → Bot protection: the install's (platform administrators;
+  // single-tenant settings.manage) or, inside an organization, its own provider keys
+  registry.settingsTabs.push({
+    key: 'bot-protection',
+    labelKey: 'whiteLabel.tabBotProtection',
+    descKey: 'whiteLabel.navBotProtectionDesc',
+    icon: markRaw(Bot),
+    group: 'admin',
+    section: 'access',
+    component: lazy(() => import('./components/BotProtectionSettings.vue')),
+    visibleIf: () => canManageInstall('settings.manage', multiTenant) || canInTenant('settings.manage', multiTenant),
+    order: 40,
+    dataTour: 'settings-bot-protection-tab',
+    // The page starts its own tour (botProtectionSteps: provider, keys, forms, fallback)
+    tutorial: true,
   })
 
   if (multiTenant) {

@@ -68,7 +68,7 @@ describe('LoginView identifier field', () => {
 
     await submit(w, 'admin')
 
-    expect(authApi.login).toHaveBeenCalledWith('admin', 'secret-password', null, null)
+    expect(authApi.login).toHaveBeenCalledWith('admin', 'secret-password', null, null, {})
     expect(router.push).toHaveBeenCalledWith('/projects')
   })
 
@@ -78,7 +78,7 @@ describe('LoginView identifier field', () => {
 
     await submit(w, '  Admin@Example.com ')
 
-    expect(authApi.login).toHaveBeenCalledWith('Admin@Example.com', 'secret-password', null, null)
+    expect(authApi.login).toHaveBeenCalledWith('Admin@Example.com', 'secret-password', null, null, {})
     expect(router.push).toHaveBeenCalledWith('/projects')
   })
 
@@ -105,7 +105,7 @@ describe('LoginView identifier field', () => {
     await w.find('form').trigger('submit')
     await flushPromises()
 
-    expect(authApi.login).toHaveBeenLastCalledWith('admin', 'secret-password', null, '123456')
+    expect(authApi.login).toHaveBeenLastCalledWith('admin', 'secret-password', null, '123456', {})
     expect(router.push).toHaveBeenCalledWith('/projects')
   })
 })

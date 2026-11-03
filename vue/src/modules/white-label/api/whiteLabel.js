@@ -19,9 +19,19 @@ export const brandingApi = {
 export const signupApi = {
   status:         ()      => client.get('/auth/registration-status'),
   verify:         (token) => client.post('/auth/signup/verify', { token }),
-  resend:         (email) => client.post('/auth/signup/resend', { email }),
+  resend:         (email, extra = {}) => client.post('/auth/signup/resend', { email, ...extra }),
   settings:       ()      => client.get('/admin/signup-settings'),
   updateSettings: (data)  => client.put('/admin/signup-settings', data),
+}
+
+// Bot protection (docs/security.md#bot-protection)
+export const botProtectionApi = {
+  config:       (tenantSlug)       => client.get('/captcha/config', { params: tenantSlug ? { tenant: tenantSlug } : {} }),
+  challenge:    (form, tenantSlug) => client.post('/captcha/local/challenge', tenantSlug ? { form, tenant: tenantSlug } : { form }),
+  adminGet:     ()                 => client.get('/admin/captcha'),
+  adminUpdate:  (data)             => client.put('/admin/captcha', data),
+  tenantGet:    ()                 => client.get('/tenant/captcha'),
+  tenantUpdate: (data)             => client.put('/tenant/captcha', data),
 }
 
 export const onboardingApi = {

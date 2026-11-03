@@ -1,9 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { authApi } from '@/api/auth'
+import client from '@/api/client'
 import RegisterForm from '@/components/RegisterForm.vue'
-import { flush, globalOptions, makeRouter } from './helpers'
+import { hashOf } from '@/modules/white-label/utils/captchaPow'
+import { flush, globalOptions, makeRouter, ok } from './helpers'
 
+vi.mock('@/api/client', () => ({
+  default: { get: vi.fn(), post: vi.fn(), put: vi.fn(), patch: vi.fn(), delete: vi.fn() },
+}))
 vi.mock('@/api/auth', () => ({
   authApi: { register: vi.fn(), resendSignup: vi.fn(), login: vi.fn(), logout: vi.fn(), me: vi.fn(), registrationStatus: vi.fn() },
 }))
@@ -40,6 +45,8 @@ describe('RegisterForm (white-label extensions)', () => {
   beforeEach(() => {
     localStorage.clear()
     for (const fn of Object.values(authApi)) vi.mocked(fn).mockReset()
+    // the bot protection is off unless a test turns it on
+    vi.mocked(client.get).mockReset().mockImplementation(() => ok({ provider: 'none', site_key: null, fallback: 'local', forms: [] }))
   })
 
   it('merges extension fields into the payload and shows the check-inbox state on 202', async () => {
@@ -61,7 +68,7 @@ describe('RegisterForm (white-label extensions)', () => {
 
     await wrapper.find('[data-test="signup-resend"]').trigger('click')
     await flush()
-    expect(authApi.resendSignup).toHaveBeenCalledWith('ada@acme.test')
+    expect(authApi.resendSignup).toHaveBeenCalledWith('ada@acme.test', {})
     expect(wrapper.text()).toContain('a new link is on its way')
   })
 
@@ -85,5 +92,27 @@ describe('RegisterForm (white-label extensions)', () => {
 
     expect(wrapper.text()).toContain('Sign-up is by invitation only')
     expect(wrapper.find('[data-test="ext"]').attributes('data-attempt')).toBe('1')
+  })
+
+  it('the bot protection: 409 → the browser check → the form is sent again with captcha_local', async () => {
+    vi.mocked(client.get).mockImplementation(() => ok({ provider: 'turnstile', site_key: '1x00000000000000000000AA', fallback: 'local', forms: ['register'] }))
+    window.turnstile = { render: vi.fn((el, opts) => { opts.callback('tok-reg'); return 'w1' }), reset: vi.fn(), remove: vi.fn() }
+    const salt = '0123456789abcdef0123456789abcdef?expires=1762300600'
+    const challenge = { algorithm: 'SHA-256', salt, hash: hashOf(salt, 321), signature: 'cd'.repeat(32), maxnumber: 1000 }
+    vi.mocked(authApi.register)
+      .mockRejectedValueOnce({ response: { status: 409, data: { captcha: 'fallback', challenge } } })
+      .mockResolvedValueOnce({ status: 201, data: { user: { id: 'u1' }, token: '1|abc' } })
+    const router = await makeRouter('/login')
+    const wrapper = mount(RegisterForm, { global: globalOptions({ router }) })
+
+    await fillAndSubmit(wrapper)
+    await flush(6)
+
+    const [first, second] = vi.mocked(authApi.register).mock.calls.map(([body]) => body)
+    expect(first).toMatchObject({ username: 'ada', captcha_token: 'tok-reg' })
+    expect(first).not.toHaveProperty('captcha_local')
+    expect(JSON.parse(atob(second.captcha_local))).toMatchObject({ number: 321, salt })
+    expect(localStorage.getItem('token')).toBe('1|abc')
+    delete window.turnstile
   })
 })

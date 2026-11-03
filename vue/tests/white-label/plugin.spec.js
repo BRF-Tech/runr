@@ -42,10 +42,12 @@ describe('white-label plugin', () => {
     expect(registry.localeMessages[0]).toHaveProperty('tr.whiteLabel')
     // single-tenant: only the branding loader on top, no tenant tabs at all
     expect(registry.appTopSlots).toHaveLength(1)
-    expect(registry.settingsTabs.map(t => t.key)).toEqual(['branding', 'signup'])
+    expect(registry.settingsTabs.map(t => t.key)).toEqual(['branding', 'signup', 'bot-protection'])
+    // the bot protection page tours itself
+    expect(registry.settingsTabs.find(t => t.key === 'bot-protection')).toMatchObject({ group: 'admin', section: 'access', dataTour: 'settings-bot-protection-tab', tutorial: true })
   })
 
-  it('single-tenant: branding / signup tabs follow branding.manage / signup.manage', () => {
+  it('single-tenant: branding / signup / bot protection tabs follow branding.manage / signup.manage / settings.manage', () => {
     vi.stubEnv('VITE_TENANCY_ENABLED', 'false')
     const registry = install()
     signIn()
@@ -54,13 +56,15 @@ describe('white-label plugin', () => {
     expect(visible(registry)).toEqual(['branding'])
     grant(['signup.manage'])
     expect(visible(registry)).toEqual(['signup'])
+    grant(['settings.manage'])
+    expect(visible(registry)).toEqual(['bot-protection'])
     grant([])
     expect(visible(registry)).toEqual([])
     grant([], { platformAdmin: true })
-    expect(visible(registry)).toEqual(['branding', 'signup'])
+    expect(visible(registry)).toEqual(['branding', 'signup', 'bot-protection'])
   })
 
-  it('multi-tenant central administrator: branding and signup (plans are gone)', () => {
+  it('multi-tenant central administrator: branding, signup and the bot protection (plans are gone)', () => {
     vi.stubEnv('VITE_TENANCY_ENABLED', 'true')
     const registry = install()
     expect(registry.appTopSlots).toHaveLength(2) // branding loader, onboarding wizard
@@ -68,7 +72,7 @@ describe('white-label plugin', () => {
     grant([], { platformAdmin: true, edition: 'multi' })
     useBrandingStore().set({ features: { billing: true, tenant_branding: true, multi_tenant: true } })
 
-    expect(visible(registry)).toEqual(['branding', 'signup'])
+    expect(visible(registry)).toEqual(['branding', 'signup', 'bot-protection'])
     expect(registry.settingsTabs.map(t => t.key)).not.toContain('plans')
     expect(registry.settingsTabs.map(t => t.key)).not.toContain('subscription')
   })
@@ -91,5 +95,9 @@ describe('white-label plugin', () => {
     grant(['projects.view'], { edition: 'multi' })
     branding.set({ features: { tenant_branding: true, multi_tenant: true } })
     expect(visible(registry)).toEqual([])
+
+    // settings.manage in the tenant: its own bot protection keys
+    grant(['settings.manage'], { edition: 'multi' })
+    expect(visible(registry)).toEqual(['bot-protection'])
   })
 })

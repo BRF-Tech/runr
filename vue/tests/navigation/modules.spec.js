@@ -114,7 +114,7 @@ describe('main menu with the module plugins', () => {
       observability: { monitoring: ['alerts', 'tracing', 'status-page', 'rightsizing'] },
       admin: {
         members: ['users', 'roles', 'groups'],
-        access: ['tokens', 'auth-providers', 'audit-log'],
+        access: ['tokens', 'auth-providers', 'audit-log', 'bot-protection'],
         organization: ['billing'],
         platform: ['platform-settings', 'branding', 'signup'],
       },
@@ -205,7 +205,7 @@ describe('main menu with the module plugins', () => {
       const nav = navFor(r)
       expect(tree(nav).admin).toEqual({
         members: ['users'],
-        access: ['tokens', 'auth-providers', 'audit-log', 'secret-stores'],
+        access: ['tokens', 'auth-providers', 'audit-log', 'secret-stores', 'bot-protection'],
         organization: ['billing'],
         platform: ['platform-settings', 'tenants', 'resource-usage', 'branding', 'signup'],
       })
@@ -222,7 +222,7 @@ describe('main menu with the module plugins', () => {
       const nav = navFor(r)
       expect(tree(nav).admin).toEqual({
         members: ['users', 'roles', 'groups'],
-        access: ['tokens', 'auth-providers', 'audit-log'],
+        access: ['tokens', 'auth-providers', 'audit-log', 'bot-protection'],
         organization: ['org-settings', 'org-branding', 'billing'],
       })
       expect(tree(nav).data.integrations).toEqual(['ai-agents'])

@@ -5,6 +5,8 @@ import { useI18n } from 'vue-i18n'
 import { useAuthStore } from '@/stores/auth'
 import { authApi } from '@/api/auth'
 import { moduleRegistry } from '@/modules/index'
+import { useCaptcha } from '@/modules/white-label/composables/useCaptcha'
+import CaptchaField from '@/modules/white-label/components/CaptchaField.vue'
 
 const emit = defineEmits(['back'])
 const { t } = useI18n()
@@ -24,8 +26,12 @@ const showPw   = ref(false)
 
 const extraFieldsComponent = moduleRegistry.registerSlots?.extraFields
 
-// Module extensions (step 2): extra payload fields, e.g. captcha_token / accept_terms / plan_id
+// Module extensions (step 2): extra payload fields, e.g. accept_terms
 const extensions = moduleRegistry.registerExtensions ?? []
+
+// Bot protection: the sign-up (register) and sending the link again (public_forms)
+const captcha = useCaptcha('register')
+const resendCaptcha = useCaptcha('public_forms')
 const extra   = ref({})
 const attempt = ref(0)
 
@@ -37,9 +43,10 @@ const resent       = ref(false)
 async function resend() {
   resending.value = true
   try {
-    await authApi.resendSignup(pendingEmail.value)
+    await resendCaptcha.submit((fields) => authApi.resendSignup(pendingEmail.value, fields))
     resent.value = true
-  } catch { /* the API answers 200 for any address; network errors only */ }
+    resendCaptcha.reset()
+  } catch { /* the API answers 200 for any address; the bot check and network errors only */ }
   finally { resending.value = false }
 }
 
@@ -61,7 +68,7 @@ async function submit() {
     for (const [key, value] of Object.entries(extra.value || {})) {
       if (value !== undefined && value !== null && value !== '') payload[key] = value
     }
-    const { data, status } = await authApi.register(payload)
+    const { data, status } = await captcha.submit((fields) => authApi.register({ ...payload, ...fields }))
     if (status === 202 || data?.verification_required) {
       pendingEmail.value = data?.email || email.value
       return
@@ -93,6 +100,7 @@ async function submit() {
       <p class="login-subtitle text-xl leading-relaxed">{{ t('whiteLabel.signup.checkInboxText', { email: pendingEmail }) }}</p>
     </div>
     <p v-if="resent" class="text-sm font-medium mb-4" style="color:#059669">{{ t('whiteLabel.signup.resent') }}</p>
+    <CaptchaField :captcha="resendCaptcha" class="mb-4" />
     <button type="button" class="login-submit w-full py-4 rounded-md text-base font-semibold text-white transition-all disabled:opacity-50"
       :disabled="resending" data-test="signup-resend" @click="resend">
       {{ resending ? t('whiteLabel.signup.resending') : t('whiteLabel.signup.resend') }}
@@ -165,8 +173,11 @@ async function submit() {
         placeholder="••••••••" autocomplete="new-password" required />
     </div>
 
-    <!-- Module extensions: CAPTCHA, terms acceptance, plan choice -->
+    <!-- Module extensions: terms acceptance -->
     <component v-for="(ext, i) in extensions" :key="'reg-ext-' + i" :is="ext" v-model="extra" :attempt="attempt" />
+
+    <!-- Bot protection -->
+    <CaptchaField :captcha="captcha" />
 
     <p v-if="error" class="text-sm font-medium" style="color:#dc2626">{{ error }}</p>
 

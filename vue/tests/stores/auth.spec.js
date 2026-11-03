@@ -43,7 +43,7 @@ describe('auth store', () => {
 
     await auth.login('admin', 'secret', 'acme', undefined)
 
-    expect(authApi.login).toHaveBeenCalledWith('admin', 'secret', 'acme', undefined)
+    expect(authApi.login).toHaveBeenCalledWith('admin', 'secret', 'acme', undefined, {})
     expect(auth.isAuthenticated).toBe(true)
     expect(localStorage.getItem('token')).toBe('abc')
     expect(JSON.parse(localStorage.getItem('user'))).toEqual({ id: 1, is_admin: false })

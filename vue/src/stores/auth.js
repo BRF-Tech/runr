@@ -9,8 +9,8 @@ export const useAuthStore = defineStore('auth', () => {
   const isAuthenticated = computed(() => !!token.value)
   const isAdmin = computed(() => !!user.value?.is_admin)
 
-  async function login(loginValue, password, tenantSlug, twoFactorCode) {
-    const { data, status } = await authApi.login(loginValue, password, tenantSlug, twoFactorCode)
+  async function login(loginValue, password, tenantSlug, twoFactorCode, extra = {}) {
+    const { data, status } = await authApi.login(loginValue, password, tenantSlug, twoFactorCode, extra)
 
     // 2FA required — don't set token/user yet
     if (status === 202 || data.requires_2fa) {

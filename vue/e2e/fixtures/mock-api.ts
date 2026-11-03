@@ -560,6 +560,16 @@ function registerDefaults(api: MockApi): void {
   // ── Platform ──
   api.define('GET', '/version', () => ok({ version: '0.0.0-e2e' }))
   api.define('GET', '/auth/registration-status', () => ok({ enabled: false }))
+  // Bot protection (docs/security.md#bot-protection): off unless a spec turns it on (e2e/captcha.spec.ts)
+  api.define('GET', '/captcha/config', () => ok({ provider: 'none', site_key: null, fallback: 'local', forms: [] }))
+  api.define('POST', '/captcha/local/challenge', () => ok({ message: 'Bot protection is off.', captcha: 'none' }, 404))
+  api.define('GET', '/admin/captcha', () => ok({
+    provider: 'none', site_key: null, secret_set: false, forms: ['login', 'register', 'password_reset', 'demo_login', 'public_forms'],
+    fallback: 'local', verify_timeout_ms: 4000, source: 'off', stored: null,
+    defaults: { provider: 'none', site_key: null, secret_set: false, forms: ['login', 'register', 'password_reset', 'demo_login', 'public_forms'], fallback: 'local', verify_timeout_ms: 4000, legacy: false },
+    providers: ['none', 'turnstile', 'recaptcha', 'hcaptcha'], form_keys: ['login', 'register', 'password_reset', 'demo_login', 'public_forms'],
+    multi_tenant: false, fallback_active: false, fallback_total: 0, fallback_last_at: null,
+  }))
   api.define('GET', '/auth-providers/discover', () => ok([]))
   api.define('POST', '/tutorial/complete', () => ok({}))
   api.define('GET', '/settings', (_, db) => ok(settingsPayload(db)))

@@ -1,14 +1,15 @@
 <script setup>
 // Administration → Signup (platform admin): self-service registration — e-mail verification,
-// invite-only mode, e-mail domain allowlist, CAPTCHA, terms / privacy links; multi-tenant: automatic tenant
-// creation, default quota and the regions offered in the onboarding wizard.
+// invite-only mode, e-mail domain allowlist, terms / privacy links; multi-tenant: automatic tenant
+// creation, default quota and the regions offered in the onboarding wizard. The sign-up form's
+// CAPTCHA is the bot protection's (BotProtectionSettings): this page links there.
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useToast } from '@/composables/useToast'
 import { useSettingsStore } from '@/stores/settings'
 import { signupApi } from '../api/whiteLabel'
 import { parseDomains } from '../utils/signup'
-import { KeyRound, Trash2 } from 'lucide-vue-next'
+import { ShieldCheck } from 'lucide-vue-next'
 
 const { t } = useI18n()
 const toast = useToast()
@@ -18,9 +19,6 @@ const loading = ref(true)
 const saving = ref(false)
 const error = ref(null)
 const errors = ref({})
-const secretSet = ref(false)
-const secretInput = ref('')
-const clearSecret = ref(false)
 const multiTenant = ref(false)
 const domainsText = ref('')
 
@@ -28,8 +26,6 @@ const form = reactive({
   registration_enabled: true,
   email_verification: false,
   invite_only: false,
-  captcha_provider: 'none',
-  captcha_site_key: '',
   terms_url: '',
   privacy_url: '',
   tenant_auto_create: true,
@@ -48,14 +44,10 @@ function fill(data) {
   for (const key of Object.keys(form)) {
     if (data[key] !== undefined) form[key] = Array.isArray(data[key]) ? [...data[key]] : data[key]
   }
-  form.captcha_site_key = data.captcha_site_key ?? ''
   form.terms_url = data.terms_url ?? ''
   form.privacy_url = data.privacy_url ?? ''
   domainsText.value = (data.allowed_domains ?? []).join('\n')
-  secretSet.value = !!data.captcha_secret_set
   multiTenant.value = !!data.multi_tenant
-  secretInput.value = ''
-  clearSecret.value = false
 }
 
 onMounted(async () => {
@@ -76,21 +68,17 @@ function intOrNull(v) {
   return Number.isFinite(n) && n >= 0 ? Math.floor(n) : null
 }
 
-/** PUT payload. captcha_secret: omitted = keep, value = replace (never read back); captcha_secret_clear removes it. */
+/** PUT payload. */
 function payload() {
   const out = {
     registration_enabled: !!form.registration_enabled,
     email_verification: !!form.email_verification,
     invite_only: !!form.invite_only,
     allowed_domains: parseDomains(domainsText.value),
-    captcha_provider: form.captcha_provider,
-    captcha_site_key: form.captcha_site_key?.trim() || null,
     terms_url: form.terms_url?.trim() || null,
     privacy_url: form.privacy_url?.trim() || null,
     verification_ttl_hours: intOrNull(form.verification_ttl_hours) ?? 48,
   }
-  if (secretInput.value.trim() !== '') out.captcha_secret = secretInput.value.trim()
-  else if (clearSecret.value) out.captcha_secret_clear = true
   if (multiTenant.value) {
     out.tenant_auto_create = !!form.tenant_auto_create
     out.default_cpu_quota_m = intOrNull(form.default_cpu_quota_m)
@@ -177,42 +165,14 @@ function fieldError(key) {
         </div>
       </section>
 
-      <!-- CAPTCHA -->
-      <section class="card space-y-4">
-        <h4 class="text-sm font-semibold text-gray-100">{{ t('whiteLabel.signupSettings.captcha') }}</h4>
-        <div class="grid gap-4 sm:grid-cols-2">
-          <div>
-            <label class="label">{{ t('whiteLabel.signupSettings.captchaProvider') }}</label>
-            <select v-model="form.captcha_provider" class="input" data-test="field-captcha_provider">
-              <option value="none">{{ t('whiteLabel.signupSettings.captchaNone') }}</option>
-              <option value="turnstile">Cloudflare Turnstile</option>
-              <option value="hcaptcha">hCaptcha</option>
-            </select>
-          </div>
-          <div v-if="form.captcha_provider !== 'none'">
-            <label class="label">{{ t('whiteLabel.signupSettings.captchaSiteKey') }}</label>
-            <input v-model="form.captcha_site_key" class="input font-mono" data-test="field-captcha_site_key" />
-            <p v-if="fieldError('captcha_site_key')" class="text-xs text-red-400 mt-1">{{ fieldError('captcha_site_key') }}</p>
-          </div>
-        </div>
-        <div v-if="form.captcha_provider !== 'none'">
-          <div class="flex items-center justify-between">
-            <label class="label">{{ t('whiteLabel.signupSettings.captchaSecret') }}</label>
-            <span class="text-xs flex items-center gap-1" :class="secretSet && !clearSecret ? 'text-emerald-400' : 'text-gray-400'" data-test="secret-state">
-              <KeyRound class="w-3 h-3" />
-              {{ secretSet && !clearSecret ? t('whiteLabel.secret.set') : t('whiteLabel.secret.notSet') }}
-            </span>
-          </div>
-          <div class="flex gap-2">
-            <input v-model="secretInput" type="password" autocomplete="new-password" class="input font-mono"
-              :placeholder="secretSet ? t('whiteLabel.secret.replacePlaceholder') : t('whiteLabel.secret.enterPlaceholder')"
-              data-test="field-captcha_secret" @input="clearSecret = false" />
-            <button v-if="secretSet" type="button" class="btn-secondary" data-test="clear-captcha_secret"
-              @click="clearSecret = true; secretInput = ''">
-              <Trash2 class="w-4 h-4" />{{ t('whiteLabel.secret.clear') }}
-            </button>
-          </div>
-          <p class="text-xs text-gray-400 mt-1">{{ t('whiteLabel.secret.hint') }}</p>
+      <!-- CAPTCHA: the bot protection's register form -->
+      <section class="card flex items-start gap-3" data-test="signup-captcha-moved">
+        <ShieldCheck class="w-4 h-4 mt-0.5 shrink-0 text-brand-400" aria-hidden="true" />
+        <div class="text-sm">
+          <h4 class="font-semibold text-gray-100">{{ t('whiteLabel.signupSettings.captcha') }}</h4>
+          <p class="text-xs text-gray-400 mt-1">{{ t('whiteLabel.signupSettings.captchaMoved') }}</p>
+          <RouterLink :to="{ path: '/settings', query: { tab: 'bot-protection' } }" class="inline-block mt-2 text-xs font-semibold text-brand-400 hover:underline"
+            data-test="signup-captcha-link">{{ t('whiteLabel.signupSettings.captchaMovedLink') }}</RouterLink>
         </div>
       </section>
 

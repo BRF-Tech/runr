@@ -1,8 +1,10 @@
 <script setup>
-import { ref, onMounted, onUnmounted } from 'vue'
+import { computed, ref, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { tenantsApi } from '../api/tenants'
+import { useCaptcha } from '@/modules/white-label/composables/useCaptcha'
+import CaptchaField from '@/modules/white-label/components/CaptchaField.vue'
 import { CheckCircle, XCircle, Clock, Loader2 } from 'lucide-vue-next'
 
 const { t }  = useI18n()
@@ -13,11 +15,14 @@ const route  = useRoute()
 const router = useRouter()
 
 const status     = ref('loading') // loading | form | submitting | success | expired | not-found | error
-const invitation = ref(null)      // { email, role, tenant, has_account }
+const invitation = ref(null)      // { email, role, tenant, tenant_slug, has_account }
 const name       = ref('')
 const password   = ref('')
 const errorMsg   = ref('')
 const tenantName = ref('')
+
+// Bot protection (public_forms), with the inviting organization's own keys when it has some
+const captcha = useCaptcha('public_forms', { tenant: computed(() => invitation.value?.tenant_slug || null) })
 
 onMounted(async () => {
   try {
@@ -41,7 +46,7 @@ async function submit() {
     : { name: name.value, password: password.value }
 
   try {
-    const { data } = await tenantsApi.acceptInvitation(route.params.token, payload)
+    const { data } = await captcha.submit((fields) => tenantsApi.acceptInvitation(route.params.token, { ...payload, ...fields }))
     tenantName.value = data.tenant
 
     // Auto-login with returned token
@@ -117,6 +122,9 @@ function goLogin() { router.push('/login') }
               {{ t('tenancy.passwordMinLength') }}
             </p>
           </div>
+
+          <!-- Bot protection -->
+          <CaptchaField :captcha="captcha" theme="auto" />
 
           <!-- Error -->
           <p v-if="errorMsg" class="text-sm text-red-400">{{ errorMsg }}</p>

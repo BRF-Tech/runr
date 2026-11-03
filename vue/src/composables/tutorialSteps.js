@@ -138,6 +138,7 @@ export function settingsTabSteps(t) {
     { element: '[data-tour="settings-tokens-tab"]',    popover: { title: t('tutorial.settings.tokens'),        description: t('tutorial.settings.tokensDesc') } },
     { element: '[data-tour="auth-providers-tab"]',     popover: { title: t('tutorial.settings.authProviders'), description: t('tutorial.settings.authProvidersDesc') } },
     { element: '[data-tour="settings-audit-tab"]',     popover: { title: t('tutorial.settings.audit'),         description: t('tutorial.settings.auditDesc') } },
+    { element: '[data-tour="settings-bot-protection-tab"]', popover: { title: t('tutorial.settings.botProtection'), description: t('tutorial.settings.botProtectionDesc') } },
     { element: '[data-tour="settings-org-branding-tab"]', popover: { title: t('tutorial.settings.orgBranding'), description: t('tutorial.settings.orgBrandingDesc') } },
     { element: '[data-tour="settings-billing-tab"]',   popover: { title: t('tutorial.settings.billing'),       description: t('tutorial.settings.billingDesc') } },
     { element: '[data-tour="settings-tenants-tab"]',   popover: { title: t('tutorial.settings.tenants'),       description: t('tutorial.settings.tenantsDesc') } },
@@ -159,6 +160,21 @@ export function brandingSteps(t) {
     { element: '[data-tour="branding-default-theme"]', popover: { title: t('tutorial.branding.defaultTheme'), description: t('tutorial.branding.defaultThemeDesc') } },
     { element: '[data-tour="branding-preview"]',       popover: { title: t('tutorial.branding.preview'),      description: t('tutorial.branding.previewDesc') } },
     { element: '[data-tour="branding-save"]',          popover: { title: t('tutorial.branding.save'),         description: t('tutorial.branding.saveDesc') } },
+  ]
+}
+
+// Administration → Access & security → Bot protection (white-label BotProtectionSettings): the
+// platform's page has every step; an organization's own keys show the provider, the keys and
+// Save (the forms, the fallback and its status are the platform's and drop out).
+export function botProtectionSteps(t) {
+  return [
+    ...settingsTabSteps(t),
+    { element: '[data-tour="bot-protection-provider"]', popover: { title: t('tutorial.botProtection.provider'), description: t('tutorial.botProtection.providerDesc') } },
+    { element: '[data-tour="bot-protection-keys"]',     popover: { title: t('tutorial.botProtection.keys'),     description: t('tutorial.botProtection.keysDesc') } },
+    { element: '[data-tour="bot-protection-forms"]',    popover: { title: t('tutorial.botProtection.forms'),    description: t('tutorial.botProtection.formsDesc') } },
+    { element: '[data-tour="bot-protection-fallback"]', popover: { title: t('tutorial.botProtection.fallback'), description: t('tutorial.botProtection.fallbackDesc') } },
+    { element: '[data-tour="bot-protection-status"]',   popover: { title: t('tutorial.botProtection.status'),   description: t('tutorial.botProtection.statusDesc') } },
+    { element: '[data-tour="bot-protection-save"]',     popover: { title: t('tutorial.botProtection.save'),     description: t('tutorial.botProtection.saveDesc') } },
   ]
 }
 
