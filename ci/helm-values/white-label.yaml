@@ -57,6 +57,13 @@ signup:
     siteKey: 0x4AAAAAAAexample
   termsUrl: https://acme-cloud.example/terms
   privacyUrl: https://acme-cloud.example/privacy
+# Bot protection with Cloudflare's Turnstile test keys (always pass)
+captcha:
+  provider: turnstile
+  siteKey: 1x00000000000000000000AA
+  secret: 1x0000000000000000000000000000000AA
+  forms: [login, register, demo_login]
+  verifyTimeoutMs: 3000
 billing:
   enabled: true
   currency: EUR

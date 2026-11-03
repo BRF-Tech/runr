@@ -1045,6 +1045,83 @@
         }
       }
     },
+    "captcha": {
+      "type": "object",
+      "title": "Bot protection",
+      "description": "A CAPTCHA on the anonymous forms (sign-in, sign-up, the demo sign-in, the public forms), with a local proof-of-work check while the provider cannot be reached (docs/security.md#bot-protection). Install defaults: Administration → Access & security → Bot protection overrides them per field; an organization may use its own provider keys.",
+      "additionalProperties": false,
+      "properties": {
+        "provider": {
+          "type": "string",
+          "title": "CAPTCHA provider",
+          "enum": [
+            "none",
+            "turnstile",
+            "recaptcha",
+            "hcaptcha"
+          ],
+          "description": "CAPTCHA_PROVIDER: Cloudflare Turnstile, Google reCAPTCHA (v2 checkbox) or hCaptcha; none switches the protection off (the default)."
+        },
+        "siteKey": {
+          "type": "string",
+          "title": "Site key",
+          "description": "CAPTCHA_SITE_KEY: the widget's public key; its host name list must include the console's domain."
+        },
+        "secret": {
+          "type": "string",
+          "title": "Secret key",
+          "writeOnly": true,
+          "description": "The provider secret of siteverify. Stored in the Secret runr-secret (key CAPTCHA_SECRET) with secret.create=true; with secret.create=false put CAPTCHA_SECRET into your Secret."
+        },
+        "forms": {
+          "title": "Guarded forms",
+          "description": "CAPTCHA_FORMS: login, register, password_reset, demo_login (the sign-in of a shared account, auth.frozenAccounts), public_forms (sign-up e-mail resend, invitation accept). Empty: all of them.",
+          "oneOf": [
+            {
+              "type": "array",
+              "uniqueItems": true,
+              "items": {
+                "type": "string",
+                "enum": [
+                  "login",
+                  "register",
+                  "password_reset",
+                  "demo_login",
+                  "public_forms"
+                ]
+              }
+            },
+            {
+              "type": "string",
+              "pattern": "^((login|register|password_reset|demo_login|public_forms|all)(,(login|register|password_reset|demo_login|public_forms))*)?$"
+            }
+          ]
+        },
+        "fallback": {
+          "type": "string",
+          "title": "Fallback",
+          "enum": [
+            "local",
+            "off"
+          ],
+          "description": "CAPTCHA_FALLBACK: local (default) hands out a proof-of-work check while the provider cannot be reached; off answers 503 instead — for tests only."
+        },
+        "verifyTimeoutMs": {
+          "type": "integer",
+          "title": "siteverify timeout (ms)",
+          "minimum": 500,
+          "maximum": 30000,
+          "description": "CAPTCHA_VERIFY_TIMEOUT_MS: timeout of one siteverify call; one retry follows a network error, a timeout or a 5xx."
+        },
+        "localMaxNumber": {
+          "type": "integer",
+          "title": "Local check ceiling",
+          "minimum": 1000,
+          "maximum": 10000000,
+          "description": "CAPTCHA_LOCAL_MAXNUMBER: scan ceiling of the local proof-of-work check (default 200000: ~1-3 s on a desktop, < 8 s on a phone)."
+        }
+      }
+    },
     "storage": {
       "type": "object",
       "title": "Storage",

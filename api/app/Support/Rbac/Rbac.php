@@ -250,6 +250,25 @@ class Rbac
             ->all(), []);
     }
 
+    /**
+     * Members of this organization whose own organization-wide role grants $permission (group
+     * roles are not resolved): who to tell about something only that permission can fix.
+     *
+     * @return list<string> user ids
+     */
+    public function memberIdsHolding(string $permission): array
+    {
+        $ids = [];
+        foreach ($this->organization()->members() as $member) {
+            $role = $member->role ?? null;
+            if ($role !== null && in_array($permission, $this->rolePermissions((string) $role), true)) {
+                $ids[] = (string) $member->id;
+            }
+        }
+
+        return $ids;
+    }
+
     /** @return list<string> permissions of a role key (built-in or custom) in this organization */
     public function rolePermissions(string $role): array
     {

@@ -56,13 +56,7 @@ class BillingNotifier
     public function holders(string $permission): Collection
     {
         $organization = $this->rbac->organization();
-        $ids = [];
-        foreach ($organization->members() as $member) {
-            $role = $member->role ?? null;
-            if ($role !== null && in_array($permission, $this->rbac->rolePermissions((string) $role), true)) {
-                $ids[] = (string) $member->id;
-            }
-        }
+        $ids = $this->rbac->memberIdsHolding($permission);
 
         $connection = $organization->userConnection();
         $users = $ids === [] ? new Collection : User::on($connection)->whereIn('id', $ids)->get();

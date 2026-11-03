@@ -167,6 +167,15 @@ data:
   SIGNUP_DEFAULT_MEMORY_QUOTA_MB: {{ $quota.memoryMb | default 4096 | quote }}
   SIGNUP_REGIONS: {{ $signup.regions | default "" | quote }}
 
+  # Bot protection (docs/security.md#bot-protection); the provider secret is in the Secret (CAPTCHA_SECRET)
+  {{- $bot := .Values.captcha | default dict }}
+  CAPTCHA_PROVIDER: {{ $bot.provider | default "none" | quote }}
+  CAPTCHA_SITE_KEY: {{ $bot.siteKey | default "" | quote }}
+  CAPTCHA_FORMS: {{ join "," ($bot.forms | default list) | quote }}
+  CAPTCHA_FALLBACK: {{ $bot.fallback | default "local" | quote }}
+  CAPTCHA_VERIFY_TIMEOUT_MS: {{ $bot.verifyTimeoutMs | default 4000 | int | quote }}
+  CAPTCHA_LOCAL_MAXNUMBER: {{ $bot.localMaxNumber | default 200000 | int | quote }}
+
   # First administrator account (the password is in the Secret: ADMIN_PASSWORD)
   ADMIN_USERNAME: {{ .Values.admin.username | quote }}
   ADMIN_EMAIL: {{ .Values.admin.email | quote }}

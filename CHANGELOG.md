@@ -8,6 +8,83 @@ did not change says so.
 
 ## [Unreleased]
 
+## [0.6.4] - 2026-11-03
+
+### Upgrade notes
+
+One new database migration, `captcha_settings` (the bot protection's settings), run by the pre-upgrade
+migration Job. Bot protection stays off until a provider is set: the new Helm values `captcha.*` are
+optional (`captcha.provider: none`), and values of 0.6.3, `--reuse-values` included, keep working
+([0.6.3 → 0.6.4 in upgrade.md](docs/upgrade.md#063--064)). A sign-up CAPTCHA keeps guarding the
+sign-up form only: one saved in Administration → Signup moves to Bot protection with the forms set to
+`register`, and `signup.captcha.*` keep applying while `captcha.provider` is `none`; the `captcha_*`
+fields of `/api/admin/signup-settings` are gone. A wrong configuration (a key missing, a secret the
+provider refuses or that cannot be decrypted) no longer refuses every sign-up: the forms get the local
+check and the administrators an alarm. With `secret.create: true` (the default) the API, UI, Horizon,
+scheduler and Reverb pods get the annotation `checksum/secret-values`: the first upgrade rolls them
+once, with the new images, and later a `helm upgrade` that changes only a secret value rolls them too.
+The region agent and the queue consumer follow the release (0.6.4); gateway-auth, image-upload,
+supply-chain and the Spin shim keep their versions.
+
+### Added
+
+- **Bot protection on every anonymous form.** A CAPTCHA guards the sign-in (also an organization's
+  sign-in page and the two-factor step after it), the demo sign-in (the sign-in of a shared account
+  of `RUNR_FROZEN_ACCOUNTS`), the sign-up and the public forms (sign-up e-mail resend, invitation
+  accept). Cloudflare Turnstile first, Google reCAPTCHA (v2 checkbox) and hCaptcha as options; off
+  by default. While the provider cannot be reached (network error, timeout, 5xx, a 2xx answer that
+  is not its JSON or names `internal-error`; one retry), the API answers 409 with a local
+  proof-of-work challenge, the console solves it in a Web Worker with a progress bar and sends the
+  form again — a refused token still answers 422, and so does any HTTP 4xx of the provider (429
+  included, with or without JSON), so a flood never opens the fallback; a local answer (base64 JSON
+  only) is accepted only for 120 s after the provider failed. Every piece of that state is per scope
+  — the platform's keys, or one organization's own keys: the window, the spent tokens and local
+  answers, the configuration alarm, and the HMAC key of the local challenges, so an answer of one
+  scope never passes in another and one scope's trouble never opens the other's window. A wrong
+  configuration counts as an outage, never as a refusal for everyone: no site key, no secret, a
+  stored secret that cannot be decrypted or keys the provider refuses (only `invalid-input-secret`,
+  `missing-input-secret` — Cloudflare answers them with HTTP 400 — and hCaptcha's key pair
+  codes; `bad-request` stays a refusal) hands out the local check and sends who can fix it — the
+  platform administrators, or the organization's `settings.manage` holders for its own keys — a
+  "configuration is wrong" notification (once an hour per problem); with a key missing the console
+  skips the widget and solves the local check at once (`misconfigured` in `GET
+  /api/captcha/config`), and the settings page shows the problem under the keys. When only the
+  widget cannot load (an ad blocker) while the API reaches the provider, the console says so and
+  asks to turn the blocker off. Every guarded form is throttled, and a token is bounded before it
+  goes out (Turnstile 2048 characters, reCAPTCHA 8192, hCaptcha 32768; base64url and dots only),
+  else 422 without a call; the challenge endpoint refuses a form its scope does not guard (422).
+  Settings: an organization's own provider and keys (multi-tenant, for its white-label host names;
+  they guard only its own surfaces — its members' sign-ins and its invitations; a sign-in naming
+  it is checked with its keys whoever signs in, and for anyone but a member it then fails like a
+  wrong password, so its keys never let anyone else in and nothing before the password tells who
+  is a member) over the
+  platform's (Administration → Access & security → Bot protection, with the forms, the fallback
+  and the timeout) over the Helm values `captcha.*` (`CAPTCHA_PROVIDER`, `CAPTCHA_SITE_KEY`,
+  `CAPTCHA_SECRET`, `CAPTCHA_FORMS`, schema-checked) over off; the secret is write-only and
+  encrypted. `GET /api/captcha/config`, `POST /api/captcha/local/challenge`, `GET` / `PUT
+  /api/admin/captcha`, `GET` / `PUT /api/tenant/captcha`; `captcha_fallback_total` in the Prometheus
+  format at `GET /api/admin/captcha/metrics`, and more than one local check in 10 minutes sends the
+  platform administrators an in-app notification (once per 10 minutes). The in-app tutorial tours
+  the new page ([security.md](docs/security.md#bot-protection)).
+
+### Changed
+
+- **The sign-up CAPTCHA is the bot protection's `register` form.** It no longer fails closed: a
+  provider without a secret or out of reach hands out the local check instead of refusing every
+  sign-up. The CAPTCHA saved in Administration → Signup moves to Administration → Bot protection
+  with the forms set to `register`, so an upgraded install guards the same form as before; the
+  Helm values `signup.captcha.*` keep guarding the sign-up form while `captcha.provider` is
+  `none`. The CAPTCHA section of Administration → Signup and the `captcha_*` fields of
+  `/api/admin/signup-settings` are gone.
+
+### Fixed
+
+- **A secret value changed with `helm upgrade` applies at once.** The pods read the chart's Secret
+  as env when they start, and only a ConfigMap change rolled them: a new `captcha.secret`, password,
+  `billing.webhookSecret` or `secret.appKey` waited for the next restart. The pod annotation
+  `checksum/secret-values` (salted with the stored `APP_KEY`) rolls them now
+  ([helm-values.md](docs/helm-values.md#secretname-and-secret)).
+
 ## [0.6.3] - 2026-11-03
 
 ### Upgrade notes
@@ -3494,7 +3571,8 @@ Initial tagged release.
 - API gateways with routes, in-app notifications and support tickets.
 - Helm chart with a single-tenant / multi-tenant edition, an install form (`values.schema.json`), generated secrets and a Traefik ingress; a Docker Compose setup for development.
 
-[Unreleased]: https://github.com/brf-tech/runr/compare/v0.6.3...main
+[Unreleased]: https://github.com/brf-tech/runr/compare/v0.6.4...main
+[0.6.4]: https://github.com/brf-tech/runr/releases/tag/v0.6.4
 [0.6.3]: https://github.com/brf-tech/runr/releases/tag/v0.6.3
 [0.6.2]: https://github.com/brf-tech/runr/releases/tag/v0.6.2
 [0.6.1]: https://github.com/brf-tech/runr/releases/tag/v0.6.1

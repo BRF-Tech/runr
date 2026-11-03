@@ -305,6 +305,8 @@ signup:
   verificationTtlHours: 48
   allowedDomains: ""       # comma-separated: "example.com,*.example.org"; empty = any domain
   inviteOnly: false        # invitations only (tenant invitations / accounts created by an admin)
+  # Earlier releases' sign-up CAPTCHA: use captcha.* below. It still guards the sign-up form while
+  # captcha.provider is none.
   captcha:
     provider: none         # none | turnstile | hcaptcha
     siteKey: ""
@@ -318,6 +320,22 @@ signup:
     cpuM: 2000
     memoryMb: 4096
   regions: ""              # platform region ids offered in the wizard (comma-separated); empty = all active regions
+
+# ─── Bot protection (docs/security.md#bot-protection) ─
+# A CAPTCHA on the anonymous forms: sign-in, sign-up, the demo sign-in (a shared account of
+# auth.frozenAccounts) and the public forms (sign-up e-mail resend, invitation accept). While the
+# provider cannot be reached or its keys are wrong (the administrators get an alarm), a local
+# proof-of-work check in the browser stands in. These are the install defaults: Administration →
+# Access & security → Bot protection overrides them per field, and an organization may use its own
+# provider keys (multi-tenant).
+captcha:
+  provider: none           # none | turnstile | recaptcha (v2 checkbox) | hcaptcha
+  siteKey: ""
+  secret: ""               # Secret: CAPTCHA_SECRET (secret.create=false: put CAPTCHA_SECRET into your Secret)
+  forms: []                # login, register, password_reset, demo_login, public_forms; empty = all
+  fallback: local          # local | off (off answers 503 while the provider is down: for tests only)
+  verifyTimeoutMs: 4000    # per siteverify call; one retry
+  localMaxNumber: 200000   # scan ceiling of the local challenge (~1-3 s on a desktop, < 8 s on a phone)
 
 knative:
   minK8sMinor: "30"

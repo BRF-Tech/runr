@@ -9,6 +9,7 @@ use App\Http\Middleware\RecordAuditTrail;
 use App\Http\Middleware\ResponseCache;
 use App\Http\Middleware\SetLocale;
 use App\Http\Middleware\TrackTokenSession;
+use App\Http\Middleware\VerifyCaptcha;
 use App\Support\Projects\DeletedProject;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
@@ -70,6 +71,8 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->alias([
             'region.mutable' => EnsureRegionMutable::class,
             'account.frozen' => EnsureAccountNotFrozen::class,
+            // Bot protection of an anonymous form: captcha.verify:<form> (docs/security.md#bot-protection)
+            'captcha.verify' => VerifyCaptcha::class,
         ]);
 
         // Roles & permissions: every authenticated API route is authorized against

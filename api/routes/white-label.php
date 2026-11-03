@@ -17,7 +17,8 @@ Route::get('/branding', [BrandingController::class, 'show'])->name('branding.sho
 Route::get('/branding/assets/{kind}', [BrandingController::class, 'asset'])
     ->whereIn('kind', $assetKinds)->middleware('throttle:120,1')->name('branding.asset');
 Route::post('/auth/signup/verify', [SignupController::class, 'verify'])->middleware('throttle:auth')->name('signup.verify');
-Route::post('/auth/signup/resend', [SignupController::class, 'resend'])->middleware('throttle:auth')->name('signup.resend');
+// Sends mail to the address it is given: bot protection (public_forms)
+Route::post('/auth/signup/resend', [SignupController::class, 'resend'])->middleware(['throttle:auth', 'captcha.verify:public_forms'])->name('signup.resend');
 
 // The install's branding and signup settings
 Route::middleware('auth:sanctum')->prefix('admin')->group(function () use ($assetKinds) {

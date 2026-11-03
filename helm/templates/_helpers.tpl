@@ -111,8 +111,9 @@ MAIL_PASSWORD / REDIS_PASSWORD when configured (runr.passwordRef)
       name: {{ .Values.secretName }}
       key: ADMIN_PASSWORD
       optional: true
-{{- /* Billing events signing secret (docs/billing.md) and signup CAPTCHA secret (docs/white-label.md), optional */}}
-{{- range $key := list "BILLING_WEBHOOK_SECRET" "SIGNUP_CAPTCHA_SECRET" }}
+{{- /* Billing events signing secret (docs/billing.md), bot protection secret (docs/security.md#bot-protection)
+     and earlier releases' signup CAPTCHA secret, optional */}}
+{{- range $key := list "BILLING_WEBHOOK_SECRET" "CAPTCHA_SECRET" "SIGNUP_CAPTCHA_SECRET" }}
 - name: {{ $key }}
   valueFrom:
     secretKeyRef:
@@ -355,14 +356,40 @@ Values the chart does not support stop the install with a message (rendered by c
 {{- end -}}
 
 {{/*
-Checksum annotation for ConfigMap change detection
+Checksum annotations: the ConfigMap, and the secret values the chart's Secret takes from the
+values (secret.create) — a helm upgrade that changes one of them (captcha.secret, a password,
+billing.webhookSecret, secret.appKey …) rolls the pods, which read the Secret as env when they
+start; before, the change waited for the next restart. The values the Secret generates or keeps
+(lookup) do not enter: they do not change. The hash is salted with the Secret's stored APP_KEY when
+there is one, so the annotation tells nothing about a weak password.
 + deploy timestamp for forcing rollout on redeploy (latest tag)
 */}}
 {{- define "runr.checksum" -}}
 checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+{{- if .Values.secret.create }}
+checksum/secret-values: {{ include "runr.secretValuesChecksum" . }}
+{{- end }}
 {{- with .Values.deployTimestamp }}
 deploy-timestamp: {{ . | quote }}
 {{- end }}
+{{- end -}}
+
+{{- define "runr.secretValuesChecksum" -}}
+{{- $existing := lookup "v1" "Secret" (include "runr.namespace" .) .Values.secretName -}}
+{{- $salt := "" -}}
+{{- if $existing -}}{{- $salt = get ($existing.data | default dict) "APP_KEY" | default "" -}}{{- end -}}
+{{- $s := .Values.secret | default dict -}}
+{{- $values := dict
+  "appKey" ($s.appKey | default "" | toString)
+  "previousAppKeys" ($s.previousAppKeys | default "" | toString)
+  "database" ((.Values.database | default dict).password | default "" | toString)
+  "mail" ((.Values.mail | default dict).password | default "" | toString)
+  "redis" ((.Values.redis | default dict).password | default "" | toString)
+  "admin" ((.Values.admin | default dict).password | default "" | toString)
+  "billing" ((.Values.billing | default dict).webhookSecret | default "" | toString)
+  "captcha" ((.Values.captcha | default dict).secret | default "" | toString)
+  "signupCaptcha" (((.Values.signup | default dict).captcha | default dict).secret | default "" | toString) -}}
+{{- printf "%s\n%s" $salt (toJson $values) | sha256sum -}}
 {{- end -}}
 
 {{/*

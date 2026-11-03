@@ -4,7 +4,7 @@ namespace App\Http\Requests\Auth;
 
 use App\Rules\AllowedSignupDomain;
 use App\Rules\UniqueIgnoringCase;
-use App\Services\WhiteLabel\CaptchaVerifier;
+use App\Services\Captcha\CaptchaGate;
 use App\Services\WhiteLabel\SignupSettings;
 use Illuminate\Contracts\Validation\Validator;
 use Illuminate\Foundation\Http\FormRequest;
@@ -70,10 +70,6 @@ class RegisterRequest extends FormRequest
             ];
         }
 
-        if ($signup->captchaEnabled()) {
-            $rules['captcha_token'] = ['required', 'string', 'max:4096'];
-        }
-
         if ($signup->requiresTermsAcceptance()) {
             $rules['accept_terms'] = ['accepted'];
         }
@@ -82,22 +78,21 @@ class RegisterRequest extends FormRequest
     }
 
     /**
-     * The CAPTCHA is verified with the provider only once every other field is valid: a token is
-     * single-use at the provider, so a typo in the form must not burn it.
+     * Bot protection of the `register` form (docs/security.md#bot-protection): checked only once
+     * every other field is valid — a token is single-use at the provider, so a typo in the form must
+     * not burn it. A refusal (422 required / invalid, 409 fallback with a local challenge, 503) is
+     * the answer as the gate gives it.
      */
     public function withValidator(Validator $validator): void
     {
-        if (! app(SignupSettings::class)->captchaEnabled()) {
-            return;
-        }
-
         $validator->after(function (Validator $v) {
             if ($v->errors()->isNotEmpty()) {
                 return;
             }
 
-            if (! app(CaptchaVerifier::class)->verify((string) $this->input('captcha_token'), $this->ip())) {
-                $v->errors()->add('captcha_token', __('whitelabel.signup.captcha_failed'));
+            $refusal = app(CaptchaGate::class)->check($this, 'register');
+            if ($refusal !== null) {
+                throw new HttpResponseException($refusal);
             }
         });
     }

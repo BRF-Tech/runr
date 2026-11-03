@@ -10,6 +10,7 @@ callers.
 - [Real-time channels](#real-time-channels)
 - [Password sign-in](#password-sign-in)
 - [Sign-in sessions and API tokens](#sign-in-sessions-and-api-tokens)
+- [Bot protection](#bot-protection)
 - [SSO sign-in handoff](#sso-sign-in-handoff)
 - [Secret environment variables](#secret-environment-variables)
 - [Key rotation](#key-rotation)
@@ -313,6 +314,211 @@ a frozen account the console's Account settings page says that it is a shared ac
 disables its change controls. A frozen account's role still decides what it may do elsewhere:
 freezing does not make a role read-only, so a public demo login still belongs in a role that can
 only look.
+
+## Bot protection
+
+A CAPTCHA guards the forms anyone can send without signing in. It is **off** until a provider is
+set. Providers: **Cloudflare Turnstile** (managed widget, usually invisible), **Google reCAPTCHA**
+(v2 checkbox) and **hCaptcha**. While the provider cannot be reached, a local proof-of-work check
+in the browser takes its place: the forms neither stop working (fail-closed) nor open up
+(fail-open). A wrong configuration counts as such an outage: the protection never switches
+itself off, and the administrators are told.
+
+| Form (`forms`) | What it guards |
+| --- | --- |
+| `login` | `POST /api/auth/login`: the console's sign-in, also an organization's sign-in page (`tenant_slug`) and the two-factor step that follows |
+| `demo_login` | `POST /api/auth/login` when the identifier names a shared account of `RUNR_FROZEN_ACCOUNTS` ([Shared accounts](#shared-accounts)), such as a public demo login |
+| `register` | `POST /api/auth/register`, the self-service sign-up |
+| `public_forms` | `POST /api/auth/signup/resend` (sends a verification e-mail), `POST /api/invitations/{token}/accept` (multi-tenant) |
+| `password_reset` | RunR has no password reset form; the key exists for the shared settings model and guards nothing |
+
+Not guarded, because no form sends them and a one-time secret already proves the request:
+`POST /api/auth/signup/verify` (the e-mail link's token), `POST /api/oauth/exchange` (the SSO
+handoff code), `POST /api/saml/{provider}/acs` (the identity provider's signed answer) and the
+regions' and webhooks' own endpoints. The landing page's forms post to the landing's own backend,
+not to this API.
+
+Every guarded form is throttled too, so a flood cannot spend the provider's `siteverify` without
+bound: `AUTH_RATE_LIMIT_PER_MINUTE` (default 10) per client address and account on each, and the
+API's guest limit per address (`API_GUEST_RATE_LIMIT_PER_MINUTE`, default 120) for a flood that
+changes the account it names. `GET /api/captcha/config` allows 120 and `POST
+/api/captcha/local/challenge` 30 requests per minute and address. Over the limit: `429` before the
+provider is asked.
+
+### Settings
+
+The protection that applies is resolved per request, the first that is set winning:
+
+1. **The organization's own provider** (multi-tenant): a tenant administrator with
+   `settings.manage` sets a provider, site key and secret under **Administration → Access &
+   security → Bot protection** (`PUT /api/tenant/captcha`) — for the host names of a white-label
+   domain. It guards **only the organization's own surfaces**: a sign-in (`tenant_slug`) of an
+   account that is a member of it, and its invitation links (accepting one also creates the
+   account: RunR has no other sign-up into an organization). A sign-in naming the organization is
+   checked with its keys whoever signs in — the widget its page shows — so nothing before the
+   password check depends on whether the account is its member, or exists: a bad token gets the
+   same `422`, an outage the same `409`. For an account that is not its member (a platform
+   administrator who is not one included), or no account at all, a passing check is not enough:
+   the sign-in then fails like a wrong password — `401` with the same message, after the same
+   password-hash work — whatever the password, and never reaches the two-factor step. So an
+   organization's keys (Cloudflare's always-pass test keys, say) never let anyone else in, and
+   the answer never tells who is a member; a non-member signs in on the platform's page. Every
+   other request gets the platform's protection, even when it names the organization: the
+   sign-up, the sign-up e-mail resend. The white-label module maps no host names to organizations
+   (branding goes by slug), so no host rule applies. An organization cannot switch the protection
+   off and does not pick the forms: the platform's forms, fallback and timeout apply to it.
+2. **The platform's settings**: **Administration → Access & security → Bot protection**
+   (single-tenant: `settings.manage`; multi-tenant: platform administrators), `PUT
+   /api/admin/captcha`, stored per field; a field saved empty goes back to the install default,
+   **Reset** removes every stored value.
+3. **The install default**: Helm values `captcha.*` → env `CAPTCHA_PROVIDER`, `CAPTCHA_SITE_KEY`,
+   `CAPTCHA_SECRET`, `CAPTCHA_FORMS` (comma-separated; empty: every form), `CAPTCHA_FALLBACK`,
+   `CAPTCHA_VERIFY_TIMEOUT_MS`, `CAPTCHA_LOCAL_MAXNUMBER` ([helm-values.md](helm-values.md#captcha)).
+4. **Off.**
+
+The secret key is write-only: it is stored encrypted with the application key (`captcha_settings`,
+re-encrypted on [key rotation](#key-rotation)), never returned by the API, shown as set / not set
+and logged in the audit trail by field name only (`captcha.settings.update`,
+`tenant.captcha.settings.update`). A provider is saved only with its site key and secret. A stored
+secret that can no longer be decrypted (the application key changed without
+[key rotation](#key-rotation)) is a configuration error, not "no secret": the install's
+`CAPTCHA_SECRET` does not stand in for it, the forms run on the local check and the settings page
+asks for the secret again.
+
+Upgrading from 0.6.3 and earlier: the sign-up CAPTCHA saved in Administration → Signup moves into
+the platform's settings with the forms set to `register`, so it keeps guarding the sign-up form
+only; tick more forms to widen it. The Helm values `signup.captcha.*` (`SIGNUP_CAPTCHA_*`) keep
+applying to the sign-up form while `captcha.provider` is `none`. The `captcha_*` fields of
+`/api/admin/signup-settings` are gone; `GET /api/auth/registration-status` still reports the
+sign-up form's provider and site key.
+
+For a test install, Cloudflare's Turnstile test keys work everywhere: site key
+`1x00000000000000000000AA` with secret `1x0000000000000000000000000000000AA` always passes,
+secret `2x0000000000000000000000000000000AA` always fails
+([Turnstile testing](https://developers.cloudflare.com/turnstile/troubleshooting/testing/)).
+
+### The flow
+
+1. The console asks `GET /api/captcha/config` (with `?tenant=<slug>` on an organization's sign-in
+   page) → `{provider, site_key, fallback, forms, misconfigured}` and renders the widget on the
+   forms listed — unless `misconfigured` is true (no site key, no secret, a stored secret that
+   cannot be decrypted): then it shows no widget and asks `POST /api/captcha/local/challenge` for
+   the local check at once (5. below). The token goes with the form as `captcha_token` (the API
+   also reads `cf-turnstile-response`, `turnstile_token`, `g-recaptcha-response` and
+   `h-captcha-response`).
+2. The token is bounded before it goes out: at most 2048 characters for Turnstile (its documented
+   maximum; a live token measured 730), 8192 for reCAPTCHA (no documented maximum; a live v2 token
+   measured 2297) and 32768 for hCaptcha (no documented maximum, its tokens carry a signed
+   payload), and only `[A-Za-z0-9._-]` — base64url and dots, the shape of every token measured
+   (live Turnstile, its test token `XXXX.DUMMY.TOKEN.XXXX`, live reCAPTCHA v2) and documented
+   (hCaptcha's `P1_<JWT>` and its test token). Any other token is refused, `422 {"captcha":
+   "invalid"}`, without asking the provider; the log names only its length and character class.
+   Then the API checks the token with the provider's `siteverify` (timeout
+   `CAPTCHA_VERIFY_TIMEOUT_MS`, default 4 s, one retry). A token is single-use, in its scope: an
+   accepted one is remembered for 5 minutes and refused again. The sign-up form is checked once
+   its other fields are valid, so a typo does not spend the token. The two-factor step after a
+   password reuses the password step's answer once, for the same account and client address.
+3. **No token** → `422 {"captcha": "required"}`. **The provider refuses it** (`success: false`:
+   invalid, expired or used token, a bot, `bad-request`) → `422 {"captcha": "invalid"}`: the
+   console resets the widget. **Any HTTP 4xx of the provider** is such a refusal too — `429`
+   included, with or without a JSON body: otherwise a flood that made the provider answer 429
+   would open the cheap fallback for everyone. A refused token never opens the fallback.
+4. **The provider cannot be reached** (network error, timeout, 5xx, a 2xx answer that is not its
+   JSON, or a 2xx answer naming `internal-error`: the provider says it could not verify) → after
+   one retry the fallback window opens for 120 seconds (cache flag `captcha:fallback:active`; an
+   organization's own keys open their own, `captcha:fallback:active:tenant:<id>`, so a broken
+   organization never opens cheap answers on the platform's forms) and the API answers `409
+   {"captcha": "fallback", "challenge": {…}}`. The console solves the challenge in a Web Worker,
+   with a progress bar and the text "The verification service cannot be reached…", and sends the
+   form again with `captcha_local`. `CAPTCHA_FALLBACK=off` answers `503 {"captcha":
+   "unavailable"}` instead — for tests only.
+5. **The configuration is wrong** — no site key, no secret, a stored secret that cannot be
+   decrypted, or the provider refuses the keys — only `siteverify`'s `invalid-input-secret` or
+   `missing-input-secret` (Cloudflare answers them with HTTP 400) and hCaptcha's key pair codes
+   `sitekey-secret-mismatch` and `invalid-keys`, not retried; never `bad-request`, which a broken
+   token from anyone gets → handled like 4.: the form gets the `409` challenge
+   (with or without a token: without a site key the console shows no widget) and the
+   administrators get an alarm ([Monitoring](#monitoring)). Never a `422` for everyone.
+6. `captcha_local` is accepted **only while the fallback window is open** (with a key or secret
+   missing, as long as the configuration stays wrong); otherwise `422 {"captcha":
+   "fallback_inactive"}` and the console shows the widget again. A bot cannot skip the provider
+   with cheap work while the provider answers. Only standard base64 of the JSON is read: bare
+   JSON is `bad_payload`.
+
+When the widget itself cannot load in the browser (an ad blocker, a firewall), the console asks
+`POST /api/captcha/local/challenge` (`{form, tenant?}`). The challenge is the page's scope: the
+organization's own keys for its sign-in page and its invitations (`tenant` with `login`,
+`demo_login` or `public_forms`), else the platform's; its answer counts in that scope only. An
+unknown or missing `form`, or one the scope does not guard, gets `422 {"captcha": "unprotected"}`
+and nothing is handed out (`login` counts as guarded while `demo_login` is: a shared account's
+sign-in is that form). While the fallback window is open, or once the API's own probe of
+`siteverify` fails or the configuration is wrong, it answers `200 {challenge}` (and opens the
+window; an open one is not extended from here); while the provider answers, `409 {"captcha":
+"provider"}` — the fallback stays shut — and the console says the check could not load in the
+browser and to turn off the ad blocker or content blocker for the page; with the protection off,
+`404`.
+
+**Every piece of state is the scope's** — the platform's keys, or one organization's own keys —
+and a form reads only its own scope's: the fallback window (above), the spent tokens
+(`captcha:token:used:<hash>`, an organization's `captcha:token:used:tenant:<id>:<hash>`), the
+local answers' single-use marks (`captcha:local:used:<signature>`, an organization's
+`captcha:local:used:tenant:<id>:<signature>`), the reachability probe, the two-factor follow-up
+and the configuration alarm with its status. An organization's broken or unreachable keys never
+open the platform's window or mark the platform misconfigured, and the reverse.
+
+### The local check
+
+A proof-of-work challenge without images, readable by screen readers, the same in every language
+(the shared contract of BRF products, close to ALTCHA):
+
+- `challenge = {algorithm: "SHA-256", salt: "<32 hex>?expires=<unix s>", hash, signature, maxnumber}`,
+  `hash = sha256(salt + number)` (the number in decimal, chosen by the server and kept secret),
+  `signature = HMAC-SHA256(key, hash)` over the hash's lower-case hex. The platform's key is
+  `CAPTCHA_LOCAL_HMAC_KEY`, or derived from `APP_KEY` (every API pod shares it); an organization's
+  own keys sign with `HMAC-SHA256(that key, "captcha-local-scope:tenant:<id>")`, so a challenge of
+  one scope fails `bad_signature` in another. The signing itself is the shared contract's, its
+  test vectors unchanged. Lifetime 600 s;
+  `maxnumber` 200000 (`CAPTCHA_LOCAL_MAXNUMBER`): about 1–3 s on a desktop, under 8 s on a phone.
+- The browser scans `0 … maxnumber` for the number whose hash matches and sends
+  `{algorithm, salt, number, hash, signature}` as JSON in standard base64 (`captcha_local`).
+- The API checks, in this order: `bad_payload`, `bad_algorithm`, `bad_salt`, `expired`,
+  `bad_number`, `bad_signature`, `bad_hash`, `replayed` — the first that fails is the answer's
+  `captcha`. It keeps no state but a single-use mark per accepted signature
+  (`captcha:local:used:<signature>`, per scope, until the challenge expires). The base64 and the
+  `expires` digits are matched whole (`\A…\z`): a trailing newline is refused.
+
+The marks, the fallback window and the counters live in the cache (`CAPTCHA_CACHE_STORE`, default
+the API's cache): every API pod has to share it, as Redis does.
+
+### Monitoring
+
+`GET /api/admin/captcha/metrics` (who manages the settings: single-tenant `settings.manage`,
+multi-tenant the platform administrators) answers in the Prometheus text format:
+
+```
+captcha_fallback_total{form="login",provider="turnstile"} 3
+captcha_fallback_active 0
+```
+
+`captcha_fallback_total` counts the local challenges handed out while the provider could not be
+reached; Administration → Bot protection shows the total and whether the fallback is active.
+
+More than one in 10 minutes means the provider, or the API's way out to it, is failing: the
+platform administrators then get an in-app notification ("Bot protection: the CAPTCHA provider
+cannot be reached", type *infrastructure*, so the notification preferences apply) and the API log
+a warning, at most once per 10 minutes. The window and the dedup mark live in the same cache as
+the counter (`captcha:fallback:window`, `captcha:fallback:alerted`).
+
+A **wrong configuration** has an alarm of its own (the challenges it hands out still count in
+`captcha_fallback_total`, not in the 10-minute window above): "Bot protection: the CAPTCHA
+configuration is wrong", type *infrastructure*, level error, naming the problem (`site_key_missing`,
+`secret_missing`, `secret_unreadable`, `secret_rejected`), with an error in the API log. It goes to
+who can fix it — the platform administrators for the platform's protection; for an organization's
+own keys, the organization's members whose role grants `settings.manage`, in the organization —
+at most once an hour per protection and problem (`captcha:misconfigured:alerted:<scope>:<problem>`);
+saving the settings starts over. `GET /api/admin/captcha` and `GET /api/tenant/captcha` report it as
+`problem: {reason, at}` (`at`: when a form last met it; a refused secret is remembered a day, until
+a token passes with the keys again), and the settings page shows it under the keys.
 
 ## SSO sign-in handoff
 

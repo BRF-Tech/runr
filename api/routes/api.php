@@ -66,7 +66,9 @@ Route::get('/version', function () {
 });
 
 Route::post('/auth/register', [AuthController::class, 'register'])->middleware('throttle:auth');
-Route::post('/auth/login', [AuthController::class, 'login'])->middleware('throttle:auth');
+// Bot protection (docs/security.md#bot-protection): login (demo_login for a shared account); the
+// sign-up form checks in RegisterRequest once its other fields are valid
+Route::post('/auth/login', [AuthController::class, 'login'])->middleware(['throttle:auth', 'captcha.verify:login']);
 Route::get('/auth/registration-status', [AuthController::class, 'registrationStatus']);
 
 Route::middleware('auth:sanctum')->group(function () {

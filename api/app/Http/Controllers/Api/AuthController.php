@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Requests\Auth\LoginRequest;
 use App\Http\Requests\Auth\RegisterRequest;
 use App\Models\User;
+use App\Services\Captcha\CaptchaGate;
 use App\Services\WhiteLabel\SignupService;
 use App\Services\WhiteLabel\SignupSettings;
 use App\Support\Auth\LoginIdentifier;
@@ -30,7 +31,10 @@ class AuthController extends Controller
     /**
      * Sign in with the user name or the e-mail address (`login`) and the password: 200 {user, token},
      * 202 {requires_2fa} until `two_factor_code` is given. An unknown account and a wrong password
-     * get the same 401.
+     * get the same 401 — so does a sign-in that names an organization whose own bot protection keys
+     * checked it, for an account that is not its member (CaptchaGate::outsider). With bot
+     * protection on (middleware captcha.verify:login), the CAPTCHA answer of the password step also
+     * passes the two-factor step that follows (CaptchaGate::allowFollowUp).
      *
      * @unauthenticated
      */
@@ -48,7 +52,10 @@ class AuthController extends Controller
             return response()->json(['message' => __('api.auth.login_failed')], 401);
         }
 
-        if (! Hash::check($password, $user->password)) {
+        // A sign-in that passed an organization's own bot protection keys for an account that is not
+        // its member fails like a wrong password, after the same hash check: those keys never let
+        // anyone else in, and the answer never tells who is a member (CaptchaGate::outsider)
+        if (! Hash::check($password, $user->password) || app(CaptchaGate::class)->outsider($request)) {
             return response()->json(['message' => __('api.auth.login_failed')], 401);
         }
 
@@ -61,10 +68,14 @@ class AuthController extends Controller
             $code = $request->input('two_factor_code');
 
             if (! $code) {
+                app(CaptchaGate::class)->allowFollowUp($request);
+
                 return response()->json(['requires_2fa' => true], 202);
             }
 
             if (! $this->verify2FA($user, $code)) {
+                app(CaptchaGate::class)->allowFollowUp($request);
+
                 return response()->json(['message' => __('api.account.invalid_2fa_code')], 422);
             }
         }

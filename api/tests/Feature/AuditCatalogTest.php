@@ -54,6 +54,7 @@ class AuditCatalogTest extends TestCase
         'POST api/internal/workflows/queue/{context}/{projectId}/{environmentId}/{token}' => 'queue bridge delivery of an environment (signed path token); stored in workflow_events',
         'POST api/broadcasting/auth' => 'channel subscription; a refusal is recorded as authorization.denied',
         'POST api/oauth/exchange' => 'one-time sign-in code; the sign-in itself is auth.sso.login',
+        'POST api/captcha/local/challenge' => 'bot protection fallback challenge for an anonymous form, changes nothing (counted in captcha_fallback_total)',
         'POST api/saml/{provider}/acs' => 'recorded by SamlController (auth.sso.login)',
         'POST api/support-tickets' => 'end-user ticket, not an admin action',
         'POST api/support-tickets/{supportTicket}/replies' => 'end-user ticket, not an admin action',

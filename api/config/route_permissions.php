@@ -695,6 +695,14 @@ return [
     'DELETE admin/branding/assets/{kind}' => 'branding.manage',
     'GET admin/signup-settings' => 'signup.manage',
     'PUT admin/signup-settings' => 'signup.manage',
+    // Bot protection of the install and its fallback counter in the Prometheus format
+    // (multi-tenant: CaptchaController refines them to the platform administrators)
+    'GET admin/captcha' => 'settings.manage',
+    'PUT admin/captcha' => 'settings.manage',
+    'GET admin/captcha/metrics' => 'settings.manage',
+    // An organization's own bot protection keys (multi-tenant)
+    'GET tenant/captcha' => 'settings.manage',
+    'PUT tenant/captcha' => 'settings.manage',
     // Multi-tenant: the tenant's own brand, onboarding wizard
     'GET tenant/branding' => 'branding.manage',
     'PUT tenant/branding' => 'branding.manage',

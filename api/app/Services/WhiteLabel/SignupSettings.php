@@ -2,17 +2,19 @@
 
 namespace App\Services\WhiteLabel;
 
+use App\Services\Captcha\CaptchaSettings;
+
 /**
  * Self-service signup settings (Settings → Signup). Stored value ← install default
  * (config/whitelabel.php signup.*, Helm values). `registration_enabled` is the existing setting
  * and stays on by default.
+ *
+ * The CAPTCHA of the sign-up form is the `register` form of the bot protection
+ * (App\Services\Captcha\CaptchaSettings, Settings → Access & security → Bot protection); the
+ * signup_captcha_* settings of earlier releases moved there (migration create_captcha_settings_table).
  */
 class SignupSettings
 {
-    public const CAPTCHA_PROVIDERS = ['none', 'turnstile', 'hcaptcha'];
-
-    public const SECRET_CAPTCHA = 'signup_captcha_secret';
-
     public function __construct(private readonly PlatformSettings $settings) {}
 
     // ── Typed reads ─────────────────────────────────────────────────────────
@@ -67,30 +69,6 @@ class SignupSettings
         return false;
     }
 
-    public function captchaProvider(): string
-    {
-        $provider = strtolower($this->settings->string('signup_captcha_provider', null) ?? (string) config('whitelabel.signup.captcha_provider', 'none'));
-
-        return in_array($provider, self::CAPTCHA_PROVIDERS, true) ? $provider : 'none';
-    }
-
-    public function captchaSiteKey(): ?string
-    {
-        $key = $this->settings->string('signup_captcha_site_key', null) ?? (string) config('whitelabel.signup.captcha_site_key', '');
-
-        return $key === '' ? null : $key;
-    }
-
-    public function captchaSecret(): ?string
-    {
-        return $this->settings->secret(self::SECRET_CAPTCHA, (string) config('whitelabel.signup.captcha_secret', ''));
-    }
-
-    public function captchaEnabled(): bool
-    {
-        return $this->captchaProvider() !== 'none';
-    }
-
     public function termsUrl(): ?string
     {
         return $this->url('signup_terms_url', 'terms_url');
@@ -136,18 +114,22 @@ class SignupSettings
     // ── Payloads ────────────────────────────────────────────────────────────
 
     /**
-     * GET /api/auth/registration-status (public).
+     * GET /api/auth/registration-status (public). `captcha` is the bot protection of the sign-up
+     * form (the console reads GET /api/captcha/config; kept for API clients).
      */
     public function publicStatus(): array
     {
+        $captcha = app(CaptchaSettings::class)->platform();
+        $guarded = $captcha->protects('register');
+
         return [
             'enabled' => $this->registrationEnabled(),
             'invite_only' => $this->inviteOnly(),
             'email_verification' => $this->emailVerification(),
             'allowed_domains' => $this->allowedDomains(),
             'captcha' => [
-                'provider' => $this->captchaProvider(),
-                'site_key' => $this->captchaEnabled() ? $this->captchaSiteKey() : null,
+                'provider' => $guarded ? $captcha->provider : 'none',
+                'site_key' => $guarded ? $captcha->siteKey : null,
             ],
             'terms_url' => $this->termsUrl(),
             'privacy_url' => $this->privacyUrl(),
@@ -156,7 +138,8 @@ class SignupSettings
     }
 
     /**
-     * GET /api/admin/signup-settings — the secret is reported as set / not set only.
+     * GET /api/admin/signup-settings. The CAPTCHA is set in Settings → Bot protection (GET / PUT
+     * /api/admin/captcha).
      */
     public function adminPayload(): array
     {
@@ -167,9 +150,6 @@ class SignupSettings
             'email_verification' => $this->emailVerification(),
             'invite_only' => $this->inviteOnly(),
             'allowed_domains' => $this->allowedDomains(),
-            'captcha_provider' => $this->captchaProvider(),
-            'captcha_site_key' => $this->captchaSiteKey(),
-            'captcha_secret_set' => $this->captchaSecret() !== null,
             'terms_url' => $this->termsUrl(),
             'privacy_url' => $this->privacyUrl(),
             'tenant_auto_create' => $this->tenantAutoCreate(),
@@ -192,11 +172,6 @@ class SignupSettings
             'invite_only' => ['sometimes', 'boolean'],
             'allowed_domains' => ['sometimes', 'nullable', 'array', 'max:200'],
             'allowed_domains.*' => ['string', 'max:190', 'regex:/^@?(\*\.)?([a-z0-9-]+\.)+[a-z]{2,}$/i'],
-            'captcha_provider' => ['sometimes', 'string', 'in:'.implode(',', self::CAPTCHA_PROVIDERS)],
-            'captcha_site_key' => ['sometimes', 'nullable', 'string', 'max:255'],
-            'captcha_secret' => ['sometimes', 'nullable', 'string', 'max:500'],
-            // Empty strings arrive as null (ConvertEmptyStringsToNull): clearing the secret is explicit
-            'captcha_secret_clear' => ['sometimes', 'boolean'],
             'terms_url' => ['sometimes', 'nullable', 'url:http,https', 'max:500'],
             'privacy_url' => ['sometimes', 'nullable', 'url:http,https', 'max:500'],
             'tenant_auto_create' => ['sometimes', 'boolean'],
@@ -214,8 +189,6 @@ class SignupSettings
             'registration_enabled' => 'registration_enabled',
             'email_verification' => 'signup_email_verification',
             'invite_only' => 'signup_invite_only',
-            'captcha_provider' => 'signup_captcha_provider',
-            'captcha_site_key' => 'signup_captcha_site_key',
             'terms_url' => 'signup_terms_url',
             'privacy_url' => 'signup_privacy_url',
             'tenant_auto_create' => 'signup_tenant_auto_create',
@@ -242,13 +215,6 @@ class SignupSettings
 
         if (array_key_exists('self_service_region_ids', $data)) {
             $this->settings->set('signup_regions', implode(',', (array) ($data['self_service_region_ids'] ?? [])));
-        }
-
-        // Write-only: null / omitted → unchanged; captcha_secret_clear → removed (the Helm value applies again)
-        if (! empty($data['captcha_secret_clear'])) {
-            $this->settings->setSecret(self::SECRET_CAPTCHA, '');
-        } elseif (isset($data['captcha_secret']) && $data['captcha_secret'] !== '') {
-            $this->settings->setSecret(self::SECRET_CAPTCHA, (string) $data['captcha_secret']);
         }
     }
 

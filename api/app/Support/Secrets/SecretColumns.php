@@ -99,6 +99,8 @@ final class SecretColumns
         'sandboxes' => ['env' => self::JSON],
         // White-label platform secrets: payment gateway keys, CAPTCHA secret (`encrypted` cast)
         'secure_settings' => ['value' => self::KEYED],
+        // Bot protection: the platform's and the organizations' CAPTCHA provider secrets (`encrypted` cast)
+        'captcha_settings' => ['secret' => self::KEYED],
         // Region cosign key pair: the API's copy of the encrypted private key and its password
         // (docs/supply-chain.md, "Signing"); the working copy is a Kubernetes Secret in the region
         'region_supply_chain_settings' => [

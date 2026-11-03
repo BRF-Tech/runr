@@ -3,7 +3,6 @@
 namespace App\Providers;
 
 use App\Services\WhiteLabel\BrandingService;
-use App\Services\WhiteLabel\CaptchaVerifier;
 use App\Services\WhiteLabel\PlatformSettings;
 use App\Services\WhiteLabel\SignupService;
 use App\Services\WhiteLabel\SignupSettings;
@@ -27,7 +26,6 @@ class WhiteLabelServiceProvider extends ServiceProvider
         $this->app->scoped(PlatformSettings::class);
         $this->app->scoped(BrandingService::class);
         $this->app->scoped(SignupSettings::class);
-        $this->app->scoped(CaptchaVerifier::class);
         $this->app->scoped(SignupService::class);
     }
 

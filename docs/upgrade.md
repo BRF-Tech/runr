@@ -87,6 +87,55 @@ edit projects, deploy or change regions in that time: the previous version canno
 migration has just encrypted, shows env vars as empty and would save that. Its region status
 checks fail in that window and the new version's next check reports the region again.
 
+## 0.6.3 → 0.6.4
+
+0.6.4 brings bot protection on the anonymous forms and a Helm fix for secret values
+([CHANGELOG.md](../CHANGELOG.md)). It adds one database migration, `captcha_settings`, which the
+pre-upgrade migration Job runs before the new pods start. Its new Helm values `captcha.*` are
+optional and the protection stays off until a provider is set, so values of 0.6.3,
+`--reuse-values` included, keep working. Upgrade with the [Procedure](#procedure).
+
+- Bot protection is off until set: `captcha.provider` is `none` by default. To switch it on, set
+  a provider with its site key and secret under Administration → Access & security → Bot
+  protection, or with the Helm values `captcha.provider`, `captcha.siteKey` and `captcha.secret`
+  (and, optional, `captcha.forms` — empty: every form —, `captcha.fallback`,
+  `captcha.verifyTimeoutMs`, `captcha.localMaxNumber`; [helm-values.md](helm-values.md#captcha),
+  [Bot protection](security.md#bot-protection)). The values are schema-checked: an unknown
+  provider or form stops the upgrade with a message. The secret goes to the Secret as
+  `CAPTCHA_SECRET`; with `secret.create: false`, put `CAPTCHA_SECRET` into your Secret. A wrong
+  configuration — a key missing, a stored secret that cannot be decrypted, or keys the provider
+  refuses — never refuses everyone: the forms get the local check, the administrators an in-app
+  alarm, and the settings page shows the problem under the keys
+  ([Monitoring](security.md#monitoring)).
+- The sign-up CAPTCHA becomes the bot protection's `register` form. A CAPTCHA saved in
+  Administration → Signup moves to Bot protection with the forms set to `register` (the migration
+  copies it, the old settings stay stored for a rollback), so it keeps guarding the sign-up form
+  only; tick more forms to widen it. The Helm values `signup.captcha.*` keep guarding the sign-up
+  form while `captcha.provider` is `none`. It no longer fails closed: a wrong configuration (no
+  site key or secret, a secret the provider refuses) or a provider out of reach hands out the local
+  check instead of refusing every sign-up, and the administrators get an alarm.
+- The API adds `GET /api/captcha/config`, `POST /api/captcha/local/challenge`, `GET` / `PUT
+  /api/admin/captcha`, `GET` / `PUT /api/tenant/captcha` and `GET /api/admin/captcha/metrics`.
+  The `captcha_*` fields of `/api/admin/signup-settings` and the CAPTCHA section of
+  Administration → Signup are gone; `GET /api/auth/registration-status` still reports the sign-up
+  form's provider and site key. Once the protection is on, a client that sends a guarded form
+  without the console needs a token ([The flow](security.md#the-flow)).
+- The pods roll once. With `secret.create: true` (the default) the API, UI, Horizon, scheduler and
+  Reverb pods get the annotation `checksum/secret-values`, a hash of the values' secret values
+  salted with the stored `APP_KEY`; the first upgrade to 0.6.4 rolls them once, with the new
+  images. After that, a `helm upgrade` that changes `captcha.secret`, a password,
+  `billing.webhookSecret` or `secret.appKey` rolls them too, so the new value applies at once
+  ([secretName and secret](helm-values.md#secretname-and-secret)). With your own Secret there is
+  no such annotation: restart the pods after changing it.
+- The region agent and the queue consumer move to 0.6.4 (the Job
+  `runr-region-reconcile-<revision>` after `helm upgrade`); gateway-auth, image-upload,
+  supply-chain and the Spin shim keep their versions.
+
+A rollback to 0.6.3 is a plain `helm rollback`: there is no migration to undo; the
+`captcha_settings` table stays and 0.6.3 does not use it, and 0.6.3 goes back to the sign-up
+CAPTCHA settings stored before the upgrade (changes made on the Bot protection page do not reach
+it).
+
 ## 0.6.2 → 0.6.3
 
 0.6.3 brings white-label themes, RunR's colours and logo in the console, and fixes for read-only

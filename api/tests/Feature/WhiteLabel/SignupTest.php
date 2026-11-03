@@ -5,9 +5,9 @@ namespace Tests\Feature\WhiteLabel;
 use App\Events\UserRegistered;
 use App\Mail\SignupVerificationMail;
 use App\Models\PendingSignup;
-use App\Models\SecureSetting;
 use App\Models\User;
-use App\Services\WhiteLabel\CaptchaVerifier;
+use App\Services\Captcha\CaptchaSettings;
+use App\Services\Captcha\CaptchaVerifier;
 use App\Services\WhiteLabel\SignupService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request as HttpRequest;
@@ -21,7 +21,8 @@ use Tests\TestCase;
 /**
  * Self-service signup (docs/white-label.md): registration stays on by default; e-mail
  * verification (pending signup → link → account + sign-in), domain allowlist, invite-only,
- * CAPTCHA (Turnstile / hCaptcha, faked), terms acceptance, the public registration status.
+ * CAPTCHA (the bot protection's register form; Turnstile / hCaptcha faked — the whole flow is
+ * tests/Feature/Captcha), terms acceptance, the public registration status.
  */
 class SignupTest extends TestCase
 {
@@ -239,11 +240,15 @@ class SignupTest extends TestCase
         $this->assertNotNull(User::query()->where('email', 'jane@example.com')->value('terms_accepted_at'));
     }
 
+    private function captcha(string $provider, ?string $siteKey, ?string $secret, string $forms = 'register'): void
+    {
+        config(['captcha.provider' => $provider, 'captcha.site_key' => $siteKey ?? '', 'captcha.secret' => $secret ?? '', 'captcha.forms' => $forms, 'ratelimit.enabled' => false]);
+        app(CaptchaSettings::class)->flush();
+    }
+
     public function test_turnstile_tokens_are_verified_server_side(): void
     {
-        $this->setting('signup_captcha_provider', 'turnstile');
-        $this->setting('signup_captcha_site_key', '0x4AAAAAAA');
-        SecureSetting::setValue('signup_captcha_secret', 'turnstile-secret');
+        $this->captcha('turnstile', '0x4AAAAAAA', 'turnstile-secret');
 
         Http::fake([
             'challenges.cloudflare.com/*' => Http::sequence()
@@ -263,8 +268,7 @@ class SignupTest extends TestCase
 
     public function test_the_captcha_is_not_spent_while_other_fields_are_invalid(): void
     {
-        $this->setting('signup_captcha_provider', 'hcaptcha');
-        SecureSetting::setValue('signup_captcha_secret', 'h-secret');
+        $this->captcha('hcaptcha', 'h-site', 'h-secret');
         Http::fake(['api.hcaptcha.com/*' => Http::response(['success' => true])]);
 
         $this->postJson('/api/auth/register', $this->form(['captcha_token' => 'tok', 'password_confirmation' => 'nope']))
@@ -273,23 +277,24 @@ class SignupTest extends TestCase
         Http::assertNothingSent();
     }
 
-    public function test_a_captcha_without_secret_fails_closed(): void
+    public function test_a_captcha_without_secret_falls_back_to_the_local_challenge(): void
     {
-        $this->setting('signup_captcha_provider', 'turnstile');
+        // neither fail-closed nor fail-open: the proof-of-work challenge stands in
+        $this->captcha('turnstile', '0x4AAAAAAA', null);
         Http::fake();
 
         $this->postJson('/api/auth/register', $this->form(['captcha_token' => 'tok']))
-            ->assertStatus(422)->assertJsonValidationErrors('captcha_token');
+            ->assertStatus(409)->assertJsonPath('captcha', 'fallback')->assertJsonStructure(['challenge' => ['salt', 'hash', 'signature', 'maxnumber']]);
         Http::assertNothingSent();
+        $this->assertDatabaseMissing('users', ['email' => 'jane@example.com']);
     }
 
-    public function test_an_unreachable_captcha_provider_rejects_the_signup(): void
+    public function test_an_unreachable_captcha_provider_hands_out_the_local_challenge(): void
     {
-        $this->setting('signup_captcha_provider', 'turnstile');
-        SecureSetting::setValue('signup_captcha_secret', 's');
+        $this->captcha('turnstile', '0x4AAAAAAA', 's');
         Http::fake(['challenges.cloudflare.com/*' => Http::response('oops', 503)]);
 
-        $this->postJson('/api/auth/register', $this->form(['captcha_token' => 'tok']))->assertStatus(422);
+        $this->postJson('/api/auth/register', $this->form(['captcha_token' => 'tok']))->assertStatus(409)->assertJsonPath('captcha', 'fallback');
         $this->assertDatabaseMissing('users', ['email' => 'jane@example.com']);
     }
 

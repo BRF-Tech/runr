@@ -10,7 +10,6 @@ return [
         'registration_disabled' => 'Registration is disabled.',
         'invite_only' => 'Accounts are created by invitation only. Ask your administrator for an invitation.',
         'domain_not_allowed' => 'Sign-up is not open for this e-mail domain.',
-        'captcha_failed' => 'The CAPTCHA check failed. Please try again.',
         'verification_sent' => 'Check your inbox: we sent you a link to confirm your e-mail address.',
         'verification_resent' => 'If a sign-up is waiting for this address, a new confirmation link is on its way.',
         'verification_invalid' => 'This confirmation link is not valid. Request a new one.',

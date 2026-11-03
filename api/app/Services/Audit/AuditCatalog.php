@@ -16,6 +16,7 @@ use App\Models\Binding;
 use App\Models\BindingAttachment;
 use App\Models\BindingRegionService;
 use App\Models\Branding;
+use App\Models\CaptchaSetting;
 use App\Models\ContainerConfig;
 use App\Models\FaasConfig;
 use App\Models\Gateway;
@@ -175,6 +176,8 @@ final class AuditCatalog
         SecurityPolicyOverride::class => 'policy_override',
         Setting::class => 'setting',
         Branding::class => 'branding',
+        // Bot protection (the provider secret is hidden + encrypted: changed by name only)
+        CaptchaSetting::class => 'captcha_setting',
         Runtime::class => 'runtime',
         // Uploaded images (docs/images.md)
         UploadedImage::class => 'uploaded_image',
@@ -926,6 +929,10 @@ final class AuditCatalog
             'POST api/tenant/branding/assets/{kind}' => $r('tenant.branding.asset.upload', meta: fn (Request $q) => ['kind' => $q->route('kind')]),
             'DELETE api/tenant/branding/assets/{kind}' => $r('tenant.branding.asset.delete', meta: fn (Request $q) => ['kind' => $q->route('kind')]),
             'POST api/onboarding' => $r('tenant.onboarding.complete', meta: fn (Request $q) => $q->only(['region_id'])),
+
+            // ── Bot protection (docs/security.md#bot-protection): payloads carry the provider secret ──
+            'PUT api/admin/captcha' => $r('captcha.settings.update', meta: fn (Request $q) => ['fields' => array_keys($q->all())]),
+            'PUT api/tenant/captcha' => $r('tenant.captcha.settings.update', meta: fn (Request $q) => ['fields' => array_keys($q->all())]),
 
             // ── SSO providers (AuthProvider module) ──────────────────────────────
             'POST api/auth-providers' => $r('auth_provider.create', 'auth_provider', 'response:id', 'input:name', meta: fn (Request $q) => ['driver' => $q->input('driver')]),

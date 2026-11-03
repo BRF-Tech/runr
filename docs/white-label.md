@@ -285,7 +285,7 @@ or Administration → Signup). Administration → **Signup** adds:
 | Verification link lifetime | 48 h | After that the link answers 410; the user asks for a new one |
 | Allowed domains | any | `example.com` (exact), `*.example.com` (sub-domains) |
 | Invite-only | off | Public signup answers 403; users join through tenant invitations or admin-created accounts |
-| CAPTCHA | none | Cloudflare Turnstile or hCaptcha |
+| CAPTCHA | none | The bot protection's `register` form ([2.2](#22-captcha)) |
 | Terms / privacy URLs | none | When set, signup requires accepting them; the time is stored (`users.terms_accepted_at`) |
 | Tenant per signup (multi-tenant) | on | Every signup gets its own organization |
 | Default quota (multi-tenant) | 2000 m CPU / 4096 MB | Quota on the first region |
@@ -307,14 +307,21 @@ refused. Expired waiting signups are removed after a week (scheduled daily).
 
 ### 2.2 CAPTCHA
 
-1. Create a site at Cloudflare Turnstile or hCaptcha for the console host name.
-2. Administration → Signup: provider, site key, secret key (write-only, stored encrypted) — or Helm
-   `signup.captcha.{provider,siteKey,secret}`.
-3. The signup form renders the widget; the API verifies the token with the provider's
-   `siteverify` endpoint once every other field is valid (a token is single-use).
+The sign-up form is the `register` form of the [bot protection](security.md#bot-protection), which
+guards every anonymous form (sign-in, sign-up, the demo sign-in, the public forms):
 
-A provider selected without a secret, an unreachable provider or an unexpected answer rejects the
-signup (fail closed) and is logged.
+1. Create a widget at Cloudflare Turnstile (or Google reCAPTCHA v2, hCaptcha) for the console host
+   name — an organization with its own white-label host names may set its own keys.
+2. Administration → Access & security → **Bot protection**: provider, site key, secret key
+   (write-only, stored encrypted), the forms — or Helm `captcha.{provider,siteKey,secret,forms}`.
+3. The sign-up form renders the widget; the API verifies the token with the provider's
+   `siteverify` once every other field is valid (a token is single-use).
+
+While the provider cannot be reached, a short proof-of-work check in the browser stands in
+(409 with a challenge, the form sent again with `captcha_local`); a refused token answers 422.
+Settings saved in Administration → Signup by an earlier release moved there with the forms set to
+`register`; the Helm values `signup.captcha.*` keep guarding the sign-up form while
+`captcha.provider` is `none`.
 
 ### 2.3 Tenant per signup and onboarding (multi-tenant)
 
@@ -335,7 +342,7 @@ at the tenant's default markup (0 % until the tenant sets one).
 | Method | Path | Who |
 |---|---|---|
 | GET | `/api/auth/registration-status` | public (enabled, invite-only, verification, domains, CAPTCHA site key, terms, tenant per signup) |
-| POST | `/api/auth/register` | public (`captcha_token`, `accept_terms`, `tenant_name`) |
+| POST | `/api/auth/register` | public (`captcha_token` or `captcha_local`, `accept_terms`, `tenant_name`) |
 | POST | `/api/auth/signup/verify`, `/api/auth/signup/resend` | public |
 | GET / PUT | `/api/admin/signup-settings` | `signup.manage` (single-tenant; multi-tenant: platform administrators) |
 | GET | `/api/onboarding` | every tenant member (status, offered regions, default quota) |
@@ -368,7 +375,7 @@ signup:
   verificationTtlHours: 48
   allowedDomains: ""          # "example.com,*.example.org"
   inviteOnly: false
-  captcha: { provider: none, siteKey: "", secret: "" }   # turnstile | hcaptcha; secret → Secret
+  captcha: { provider: none, siteKey: "", secret: "" }   # earlier releases: use captcha.* (docs/helm-values.md#captcha)
   termsUrl: ""
   privacyUrl: ""
   tenantAutoCreate: true
@@ -384,7 +391,7 @@ billing:                      # docs/billing.md — the Billing module
 
 Every value is an install default: a value saved in the admin UI wins. Secrets go to the release
 Secret (`secretName`); with `secret.create: false` add the keys `BILLING_WEBHOOK_SECRET` and
-`SIGNUP_CAPTCHA_SECRET` to the pre-created Secret yourself (both optional).
+`CAPTCHA_SECRET` to the pre-created Secret yourself (both optional).
 
 ## 5. Permissions
 
@@ -406,7 +413,8 @@ The onboarding status is open to every tenant member. Billing permissions:
 |---|---|
 | `brandings` | Platform branding (`tenant_id` null) and tenant overrides, uploaded asset paths |
 | `pending_signups` | Signups waiting for their e-mail verification (token stored as SHA-256) |
-| `secure_settings` | Secrets entered in the admin UI (CAPTCHA secret), encrypted (`encrypted` cast) |
+| `secure_settings` | Secrets entered in the admin UI (payment gateway keys), encrypted (`encrypted` cast) |
+| `captcha_settings` | Bot protection of the platform (`tenant_id` null) and the organizations' own keys; the secret encrypted (`encrypted` cast) |
 | `tenant_onboarding` | Onboarding wizard state of self-service tenants |
 | `users.terms_accepted_at` | Terms / privacy acceptance at signup |
 

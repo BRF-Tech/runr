@@ -40,6 +40,8 @@ class InvitationController extends Controller
             'email' => $invitation->email,
             'role' => $invitation->role,
             'tenant' => $invitation->tenant->name,
+            // The bot protection of the accept form is the organization's (GET /api/captcha/config?tenant=)
+            'tenant_slug' => $invitation->tenant->getAttribute('slug'),
             'has_account' => AccountLookup::emailTaken($invitation->email, 'central'),
         ]);
     }

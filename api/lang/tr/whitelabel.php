@@ -10,7 +10,6 @@ return [
         'registration_disabled' => 'Kayıt kapalı.',
         'invite_only' => 'Hesaplar yalnızca davetle açılır. Yöneticinizden davet isteyin.',
         'domain_not_allowed' => 'Bu e-posta alan adı ile kayıt yapılamaz.',
-        'captcha_failed' => 'CAPTCHA doğrulaması başarısız oldu. Lütfen tekrar deneyin.',
         'verification_sent' => 'Gelen kutunuzu kontrol edin: e-posta adresinizi doğrulamanız için bir bağlantı gönderdik.',
         'verification_resent' => 'Bu adres için bekleyen bir kayıt varsa yeni doğrulama bağlantısı gönderildi.',
         'verification_invalid' => 'Bu doğrulama bağlantısı geçerli değil. Yeni bir bağlantı isteyin.',

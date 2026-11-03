@@ -111,7 +111,7 @@ helm status runr -n runr      # prints how to read the first administrator's pas
 
 The chart installs the gateway, UI, API, Horizon, scheduler and Reverb and - unless you point it at
 external services - PostgreSQL, Redis and Mailpit, with migration and bootstrap hooks that create the
-first administrator. To install a specific release, pin the chart version (`--version 0.6.3`); the
+first administrator. To install a specific release, pin the chart version (`--version 0.6.4`); the
 API and UI images follow it. `edition=multi-tenant` switches on the Tenancy and Auth Provider
 modules and the multi-tenant console image.
 

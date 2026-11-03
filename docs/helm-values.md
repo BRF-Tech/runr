@@ -1,8 +1,8 @@
 # Helm values reference
 
-Every value of the Helm chart `runr` 0.6.3 from BRF's public Helm repository, grouped by top-level
+Every value of the Helm chart `runr` 0.6.4 from BRF's public Helm repository, grouped by top-level
 key, with its default from the chart's `values.yaml` and what the templates do with it.
-`helm show values brf-tech/runr --version 0.6.3` prints the file with its comments. How these
+`helm show values brf-tech/runr --version 0.6.4` prints the file with its comments. How these
 values fit together in a production install is described in [Installing RunR in
 production](install.md).
 
@@ -343,15 +343,21 @@ RunR always sends through SMTP (`MAIL_MAILER=smtp`).
 
 | Key | Default | What it does |
 | --- | --- | --- |
-| `secretName` | `runr-secret` | The Secret every pod reads: `APP_KEY`, `REVERB_APP_SECRET`, `DB_PASSWORD` (unless `database.existingSecret`) and the optional `ADMIN_PASSWORD`, `REDIS_PASSWORD`, `MAIL_PASSWORD`, `APP_PREVIOUS_KEYS`, `BILLING_WEBHOOK_SECRET`, `SIGNUP_CAPTCHA_SECRET` |
+| `secretName` | `runr-secret` | The Secret every pod reads: `APP_KEY`, `REVERB_APP_SECRET`, `DB_PASSWORD` (unless `database.existingSecret`) and the optional `ADMIN_PASSWORD`, `REDIS_PASSWORD`, `MAIL_PASSWORD`, `APP_PREVIOUS_KEYS`, `BILLING_WEBHOOK_SECRET`, `CAPTCHA_SECRET`, `SIGNUP_CAPTCHA_SECRET` |
 | `secret.create` | `true` | `true`: the chart creates the Secret. The first install generates `APP_KEY`, `REVERB_APP_SECRET`, `DB_PASSWORD` (unless `database.password` or `database.existingSecret` gives it) and `ADMIN_PASSWORD`; upgrades read the existing Secret (`lookup`) and keep them. `database.password`, `redis.password` and `mail.password` are written to it while set. `false`: create the Secret before installing; the chart only references it, and the passwords of the database, Redis and SMTP server come from `DB_PASSWORD` of it or from `*.existingSecret` |
 | `secret.appKey` | `""` | Replaces `APP_KEY` (`base64:` and 32 random bytes, base64). Empty: generated at install and kept on upgrade. Used for a key rotation and a restore, and by tools that render without cluster access |
 | `secret.previousAppKeys` | `""` | `APP_PREVIOUS_KEYS`, comma-separated earlier keys: values encrypted with them still decrypt. Present only while set |
 
 `APP_KEY` encrypts the secrets stored in the database ([security.md](security.md#encryption-at-rest));
 the rotation procedure is in [security.md](security.md#key-rotation). With `secret.create: false`
-the values `secret.appKey`, `secret.previousAppKeys`, `admin.password`, `billing.webhookSecret` and
-`signup.captcha.secret` are not used: put the keys into your Secret.
+the values `secret.appKey`, `secret.previousAppKeys`, `admin.password`, `billing.webhookSecret`,
+`captcha.secret` and `signup.captcha.secret` are not used: put the keys into your Secret.
+
+With `secret.create: true`, a `helm upgrade` that changes one of these values or `database.password`,
+`redis.password` or `mail.password` rolls the pods (the pod annotation `checksum/secret-values`, a
+hash salted with the stored `APP_KEY`), so the new value applies at once. With your own Secret,
+restart the pods that read it after changing it (`kubectl -n runr rollout restart deploy/runr-api
+deploy/runr-horizon deploy/runr-scheduler deploy/runr-reverb`).
 
 ### admin
 
@@ -486,14 +492,40 @@ console setting `registration_enabled` (on by default, Administration → Region
 | `signup.verificationTtlHours` | `48` | Lifetime of the verification link |
 | `signup.allowedDomains` | `""` | Comma-separated e-mail domains allowed to sign up, `"example.com,*.example.org"`; empty: any |
 | `signup.inviteOnly` | `false` | Public signup answers 403; accounts come from tenant invitations and administrators |
-| `signup.captcha.provider` | `none` | `none`, `turnstile` or `hcaptcha` |
-| `signup.captcha.siteKey` | `""` | The provider's site key |
-| `signup.captcha.secret` | `""` | The provider's secret, written to the Secret as `SIGNUP_CAPTCHA_SECRET` with `secret.create: true` |
+| `signup.captcha.provider` | `none` | Earlier releases' sign-up CAPTCHA (`none`, `turnstile` or `hcaptcha`): guards the sign-up form while `captcha.provider` is `none`; use [`captcha`](#captcha) |
+| `signup.captcha.siteKey` | `""` | Its site key |
+| `signup.captcha.secret` | `""` | Its secret, written to the Secret as `SIGNUP_CAPTCHA_SECRET` with `secret.create: true` |
 | `signup.termsUrl`, `signup.privacyUrl` | `""` | Terms of service and privacy policy links of the signup form |
 | `signup.tenantAutoCreate` | `true` | Multi-tenant: every signup gets its own tenant; the onboarding wizard (organization name, region) runs at the first sign-in |
 | `signup.defaultQuota.cpuM` | `2000` | CPU quota of such a tenant, in millicores |
 | `signup.defaultQuota.memoryMb` | `4096` | Memory quota of such a tenant, in MB |
 | `signup.regions` | `""` | Platform region ids offered in the wizard, comma-separated; empty: every active region |
+
+### captcha
+
+Bot protection of the anonymous forms ([security.md](security.md#bot-protection)): a CAPTCHA with a
+local proof-of-work check while the provider cannot be reached or its keys are wrong (missing,
+refused: the administrators get an alarm). These are install defaults:
+Administration → Access & security → Bot protection overrides them per field, and an organization
+may use its own provider keys.
+
+| Key | Default | What it does |
+| --- | --- | --- |
+| `captcha.provider` | `none` | `none` (off), `turnstile` (Cloudflare Turnstile), `recaptcha` (Google reCAPTCHA v2 checkbox) or `hcaptcha` (`CAPTCHA_PROVIDER`) |
+| `captcha.siteKey` | `""` | The widget's site key; its host name list must include `domain` (`CAPTCHA_SITE_KEY`) |
+| `captcha.secret` | `""` | The provider's secret, written to the Secret as `CAPTCHA_SECRET` with `secret.create: true`; with `secret.create: false` add `CAPTCHA_SECRET` to your Secret |
+| `captcha.forms` | `[]` | Guarded forms: `login`, `register`, `password_reset` (RunR has none), `demo_login` (a shared account of `auth.frozenAccounts`), `public_forms` (sign-up e-mail resend, invitation accept); a list or one comma-separated string; empty: all (`CAPTCHA_FORMS`) |
+| `captcha.fallback` | `local` | `local`: the proof-of-work check while the provider cannot be reached or the keys are wrong; `off`: 503 instead, for tests only — a wrong configuration still alarms (`CAPTCHA_FALLBACK`) |
+| `captcha.verifyTimeoutMs` | `4000` | Timeout of one `siteverify` call, 500–30000; one retry (`CAPTCHA_VERIFY_TIMEOUT_MS`) |
+| `captcha.localMaxNumber` | `200000` | Scan ceiling of the local check, 1000–10000000: about 1–3 s on a desktop, under 8 s on a phone (`CAPTCHA_LOCAL_MAXNUMBER`) |
+
+```yaml
+# Cloudflare Turnstile on every anonymous form
+captcha:
+  provider: turnstile
+  siteKey: 0x4AAAAAAA…      # the widget of the console's host name
+  secret: 0x4AAAAAAA…       # → Secret (CAPTCHA_SECRET)
+```
 
 ## Regions and features
 

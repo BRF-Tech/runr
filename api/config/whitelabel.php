@@ -64,11 +64,11 @@ return [
         // Only invited users join (tenant invitations / admin-created accounts)
         'invite_only' => env('SIGNUP_INVITE_ONLY', false),
 
-        // none | turnstile | hcaptcha
+        // Earlier releases' sign-up CAPTCHA (none | turnstile | hcaptcha): the install default of
+        // the bot protection's `register` form while CAPTCHA_PROVIDER is "none" (config/captcha.php)
         'captcha_provider' => env('SIGNUP_CAPTCHA_PROVIDER', 'none'),
         'captcha_site_key' => env('SIGNUP_CAPTCHA_SITE_KEY', ''),
         'captcha_secret' => env('SIGNUP_CAPTCHA_SECRET', ''),
-        'captcha_timeout' => (int) env('SIGNUP_CAPTCHA_TIMEOUT', 10),
 
         'terms_url' => env('SIGNUP_TERMS_URL', ''),
         'privacy_url' => env('SIGNUP_PRIVACY_URL', ''),

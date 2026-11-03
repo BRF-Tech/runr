@@ -53,7 +53,7 @@ examples below).
 The modules of the console are built into its image, so the multi-tenant console is a separate UI
 image: with `edition: multi-tenant` the UI runs `ghcr.io/brf-tech/runr/ui:<tag>-mt`
 (`ui.image.multiTenantSuffix`, default `-mt`). The tag defaults to the chart's release, its
-`appVersion`, so chart 0.6.3 runs `0.6.3-mt`; the moving tag `latest` has no multi-tenant variant
+`appVersion`, so chart 0.6.4 runs `0.6.4-mt`; the moving tag `latest` has no multi-tenant variant
 and runs `<appVersion>-mt` as well. A UI image of your own that carries the modules under its plain
 tag needs `ui.image.multiTenantSuffix: ""`.
 
@@ -170,7 +170,7 @@ A custom certificate is easiest to pass from files, and renewed by running the s
 the new files:
 
 ```sh
-helm upgrade runr brf-tech/runr --version 0.6.3 -n runr --reuse-values \
+helm upgrade runr brf-tech/runr --version 0.6.4 -n runr --reuse-values \
   --set ingress.tls.mode=custom \
   --set-file ingress.tls.certificate=fullchain.pem \
   --set-file ingress.tls.privateKey=privkey.pem
@@ -219,7 +219,7 @@ named in `*.existingSecret`:
 | `REDIS_PASSWORD`, `MAIL_PASSWORD` | Passwords of Redis and the SMTP server, while `redis.password` / `mail.password` are set |
 | `ADMIN_PASSWORD` | Password of the first administrator (optional) |
 | `APP_PREVIOUS_KEYS` | Earlier keys during a [key rotation](security.md#key-rotation) (optional) |
-| `BILLING_WEBHOOK_SECRET`, `SIGNUP_CAPTCHA_SECRET` | Signing secret of billing events, CAPTCHA secret of the signup form (optional) |
+| `BILLING_WEBHOOK_SECRET`, `CAPTCHA_SECRET` | Signing secret of billing events, secret of the [bot protection](security.md#bot-protection)'s CAPTCHA provider (optional; `SIGNUP_CAPTCHA_SECRET` of earlier releases still works) |
 
 With `secret.create: true` (the default) the chart creates the Secret. On the first install it
 generates `APP_KEY` (`base64:` and 32 random bytes), `REVERB_APP_SECRET`, `DB_PASSWORD` (unless the
@@ -627,7 +627,7 @@ The chart generates `APP_KEY`, `REVERB_APP_SECRET` and the administrator's passw
    `api.image.tag` and `ui.image.tag` default to the chart's `appVersion`.
 
    ```sh
-   helm upgrade --install runr brf-tech/runr --version 0.6.3 \
+   helm upgrade --install runr brf-tech/runr --version 0.6.4 \
      --namespace runr --create-namespace \
      -f values-production.yaml
    ```
@@ -664,8 +664,13 @@ The chart generates `APP_KEY`, `REVERB_APP_SECRET` and the administrator's passw
   console setting: switch it off in **Administration → Regions & settings → User Registration** or
   **Administration → Signup**, or through the API (`PATCH /api/settings` with
   `{"registration_enabled": false}`, permission `settings.manage`). To have public signup closed
-  from the first start, install with `signup.inviteOnly: true`. To keep it open but controlled, use `signup.allowedDomains`,
-  `signup.emailVerification` and `signup.captcha` — [white-label.md](white-label.md#2-self-service-signup).
+  from the first start, install with `signup.inviteOnly: true`. To keep it open but controlled, use `signup.allowedDomains`
+  and `signup.emailVerification` — [white-label.md](white-label.md#2-self-service-signup).
+- **Bot protection.** A console reachable from the internet gets a CAPTCHA on its sign-in, sign-up
+  and other anonymous forms: `captcha.provider: turnstile` (or `recaptcha`, `hcaptcha`) with
+  `captcha.siteKey` and `captcha.secret` of a widget for `domain`, or the same in **Administration →
+  Access & security → Bot protection**. While the provider cannot be reached, a short check in the
+  browser stands in; watch `captcha_fallback_total` ([security.md](security.md#bot-protection)).
 - **Mail server.** `mail.host` set to your SMTP server and `mail.from` to an address of your
   domain. Mailpit, the default, holds every message — sign-up verification links included — and
   its web UI has no sign-in.

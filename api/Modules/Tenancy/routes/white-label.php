@@ -3,6 +3,7 @@
 use Illuminate\Support\Facades\Route;
 use Modules\Tenancy\Http\Controllers\WhiteLabel\OnboardingController;
 use Modules\Tenancy\Http\Controllers\WhiteLabel\TenantBrandingController;
+use Modules\Tenancy\Http\Controllers\WhiteLabel\TenantCaptchaController;
 
 /*
 | White-label, multi-tenant part (docs/white-label.md) — loaded by TenantWhiteLabelServiceProvider
@@ -21,3 +22,7 @@ Route::post('/tenant/branding/assets/{kind}', [TenantBrandingController::class, 
     ->whereIn('kind', ['logo_light', 'logo_dark', 'logo_mark', 'favicon', 'email_logo'])->name('tenant.branding.assets.store');
 Route::delete('/tenant/branding/assets/{kind}', [TenantBrandingController::class, 'deleteAsset'])
     ->whereIn('kind', ['logo_light', 'logo_dark', 'logo_mark', 'favicon', 'email_logo'])->name('tenant.branding.assets.destroy');
+
+// The tenant's own bot protection keys (docs/security.md#bot-protection)
+Route::get('/tenant/captcha', [TenantCaptchaController::class, 'show'])->name('tenant.captcha.show');
+Route::put('/tenant/captcha', [TenantCaptchaController::class, 'update'])->name('tenant.captcha.update');

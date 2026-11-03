@@ -470,6 +470,53 @@ refused brand-shade 'Additional property 975 is not allowed' --set 'branding.col
 refused brand-tone 'branding.colors.light' --set 'branding.colors.light=white' || problems+=("branding.colors.light=white accepted")
 report branding-colors "primary scale and the themes' tones (base colour or full scale), default theme; unknown shades and themes refused"
 
+# Bot protection (docs/security.md#bot-protection): captcha.* reach runr-config as CAPTCHA_* (off and
+# every form by default), the secret only the Secret; the pods read CAPTCHA_SECRET from it
+problems=()
+if render captcha-default --show-only templates/configmap.yaml \
+  && render captcha-values -f "$ROOT/ci/helm-values/white-label.yaml" --show-only templates/configmap.yaml \
+  && render captcha-secret -f "$ROOT/ci/helm-values/white-label.yaml" --show-only templates/secret.yaml \
+  && render captcha-api -f "$ROOT/ci/helm-values/white-label.yaml" --show-only templates/api-deployment.yaml \
+  && render captcha-forms --set 'captcha.forms=login\,register' --show-only templates/configmap.yaml; then
+  for want in 'CAPTCHA_PROVIDER: "none"' 'CAPTCHA_SITE_KEY: ""' 'CAPTCHA_FORMS: ""' 'CAPTCHA_FALLBACK: "local"' 'CAPTCHA_VERIFY_TIMEOUT_MS: "4000"' 'CAPTCHA_LOCAL_MAXNUMBER: "200000"'; do
+    grep -q -F -- "$want" "$OUT/captcha-default.render" || problems+=("defaults: no $want")
+  done
+  for want in 'CAPTCHA_PROVIDER: "turnstile"' 'CAPTCHA_SITE_KEY: "1x00000000000000000000AA"' 'CAPTCHA_FORMS: "login,register,demo_login"' 'CAPTCHA_VERIFY_TIMEOUT_MS: "3000"'; do
+    grep -q -F -- "$want" "$OUT/captcha-values.render" || problems+=("white-label: no $want")
+  done
+  grep -q -F 'CAPTCHA_FORMS: "login,register"' "$OUT/captcha-forms.render" || problems+=("a comma-separated captcha.forms not passed on")
+  grep -q -F '1x0000000000000000000000000000000AA' "$OUT/captcha-values.render" && problems+=("the secret is in runr-config")
+  grep -q -E '^  CAPTCHA_SECRET: ' "$OUT/captcha-secret.render" || problems+=("CAPTCHA_SECRET not in the Secret")
+  grep -q -E '^ +- name: CAPTCHA_SECRET$' "$OUT/captcha-api.render" || problems+=("the api pod does not read CAPTCHA_SECRET")
+else
+  problems+=("helm template: $(cat "$OUT"/captcha-*.err)")
+fi
+refused captcha-provider 'captcha.provider' --set captcha.provider=friendly || problems+=("an unknown captcha.provider accepted")
+refused captcha-form 'captcha.forms' --set 'captcha.forms[0]=contact' || problems+=("an unknown form in captcha.forms accepted")
+report bot-protection "captcha.* reach runr-config (off by default), the secret only the Secret; unknown providers and forms refused"
+
+# Secret values: a secret value of the values that changes (captcha.secret, a password …) rolls the
+# pods (checksum/secret-values; they read the Secret as env when they start); the same values render
+# the same annotation, it holds no value, and secret.create=false (an operator's Secret) has none
+problems=()
+if render secret-sum-a --set captcha.secret=first-secret-value --show-only templates/api-deployment.yaml \
+  && render secret-sum-a2 --set captcha.secret=first-secret-value --show-only templates/api-deployment.yaml \
+  && render secret-sum-b --set captcha.secret=second-secret-value --show-only templates/api-deployment.yaml \
+  && render secret-sum-mail --set captcha.secret=first-secret-value --set mail.password=smtp-pass --show-only templates/api-deployment.yaml \
+  && render secret-sum-off --set secret.create=false --show-only templates/api-deployment.yaml; then
+  secret_sum() { sed -n 's/^ *checksum\/secret-values: *//p' "$OUT/$1.render" | head -1; }
+  a=$(secret_sum secret-sum-a)
+  [ -n "$a" ] || problems+=("no checksum/secret-values on the api pods")
+  [ "$a" = "$(secret_sum secret-sum-a2)" ] || problems+=("the same values render another checksum/secret-values")
+  [ -n "$a" ] && [ "$a" = "$(secret_sum secret-sum-b)" ] && problems+=("a changed captcha.secret keeps checksum/secret-values")
+  [ -n "$a" ] && [ "$a" = "$(secret_sum secret-sum-mail)" ] && problems+=("a changed mail.password keeps checksum/secret-values")
+  grep -q -F 'first-secret-value' "$OUT/secret-sum-a.render" && problems+=("the secret value is in the Deployment")
+  grep -q -F 'checksum/secret-values' "$OUT/secret-sum-off.render" && problems+=("checksum/secret-values with secret.create=false")
+else
+  problems+=("helm template: $(cat "$OUT"/secret-sum-*.err)")
+fi
+report secret-values "a changed secret value of the values (captcha.secret, passwords …) rolls the pods; the annotation holds no value"
+
 # Gateway: the ingress controller's X-Forwarded-Proto (https) reaches the API — no route overwrites
 # it with the gateway's own scheme, and the ingress controller is a trusted proxy; /horizon and
 # /horizon/* go to the API

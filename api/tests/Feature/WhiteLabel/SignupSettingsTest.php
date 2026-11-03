@@ -2,8 +2,6 @@
 
 namespace Tests\Feature\WhiteLabel;
 
-use App\Models\SecureSetting;
-use App\Services\WhiteLabel\SignupSettings;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Tests\Feature\WhiteLabel\Concerns\CoreWhiteLabel;
@@ -11,7 +9,8 @@ use Tests\TestCase;
 
 /**
  * Settings → Signup (GET / PUT /api/admin/signup-settings): defaults from config / Helm values,
- * stored values winning, the CAPTCHA secret write-only and encrypted at rest.
+ * stored values winning. The sign-up CAPTCHA is the bot protection's `register` form now
+ * (Settings → Bot protection, tests/Feature/Captcha): its fields are no longer part of these settings.
  */
 class SignupSettingsTest extends TestCase
 {
@@ -29,23 +28,17 @@ class SignupSettingsTest extends TestCase
         config([
             'whitelabel.signup.email_verification' => true,
             'whitelabel.signup.allowed_domains' => 'example.com',
-            'whitelabel.signup.captcha_provider' => 'hcaptcha',
-            'whitelabel.signup.captcha_site_key' => 'site-key',
-            'whitelabel.signup.captcha_secret' => 'from-helm',
         ]);
 
         $this->actingAs($this->coreUser(true))->getJson('/api/admin/signup-settings')->assertOk()->assertJson([
             'registration_enabled' => true,
             'email_verification' => true,
             'allowed_domains' => ['example.com'],
-            'captcha_provider' => 'hcaptcha',
-            'captcha_site_key' => 'site-key',
-            'captcha_secret_set' => true,
             'multi_tenant' => false,
-        ])->assertJsonMissingPath('captcha_secret');
+        ])->assertJsonMissingPath('captcha_provider')->assertJsonMissingPath('captcha_secret_set');
     }
 
-    public function test_updates_are_stored_and_the_secret_is_write_only_and_encrypted(): void
+    public function test_updates_are_stored(): void
     {
         $admin = $this->coreUser(true);
 
@@ -53,8 +46,8 @@ class SignupSettingsTest extends TestCase
             'email_verification' => true,
             'invite_only' => false,
             'allowed_domains' => ['@Example.com', '*.acme.org'],
+            // earlier releases' fields: ignored (Settings → Bot protection)
             'captcha_provider' => 'turnstile',
-            'captcha_site_key' => '0x4AAA',
             'captcha_secret' => 'top-secret',
             'terms_url' => 'https://example.com/terms',
             'default_cpu_quota_m' => 3000,
@@ -65,26 +58,13 @@ class SignupSettingsTest extends TestCase
         $response->assertJson([
             'email_verification' => true,
             'allowed_domains' => ['example.com', '*.acme.org'],
-            'captcha_provider' => 'turnstile',
-            'captcha_secret_set' => true,
             'terms_url' => 'https://example.com/terms',
             'default_cpu_quota_m' => 3000,
             'default_memory_quota_mb' => 6144,
             'verification_ttl_hours' => 24,
         ]);
         $this->assertStringNotContainsString('top-secret', $response->getContent());
-
-        // encrypted at rest
-        $raw = DB::table('secure_settings')->where('key', SignupSettings::SECRET_CAPTCHA)->value('value');
-        $this->assertNotSame('top-secret', $raw);
-        $this->assertSame('top-secret', SecureSetting::getValue(SignupSettings::SECRET_CAPTCHA));
-
-        // omitted / null keeps the secret
-        $this->actingAs($admin)->putJson('/api/admin/signup-settings', ['captcha_secret' => null])->assertJsonPath('captcha_secret_set', true);
-        $this->actingAs($admin)->putJson('/api/admin/signup-settings', ['captcha_secret' => ''])->assertJsonPath('captcha_secret_set', true);
-
-        // explicit clear
-        $this->actingAs($admin)->putJson('/api/admin/signup-settings', ['captcha_secret_clear' => true])->assertJsonPath('captcha_secret_set', false);
+        $this->getJson('/api/captcha/config')->assertJsonPath('provider', 'none');
     }
 
     public function test_a_cleared_url_overrides_a_configured_default(): void
@@ -101,7 +81,6 @@ class SignupSettingsTest extends TestCase
     {
         $admin = $this->coreUser(true);
 
-        $this->actingAs($admin)->putJson('/api/admin/signup-settings', ['captcha_provider' => 'recaptcha'])->assertStatus(422);
         $this->actingAs($admin)->putJson('/api/admin/signup-settings', ['allowed_domains' => ['not a domain']])->assertStatus(422);
         $this->actingAs($admin)->putJson('/api/admin/signup-settings', ['terms_url' => 'javascript:x'])->assertStatus(422);
 

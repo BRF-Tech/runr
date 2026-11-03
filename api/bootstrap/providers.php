@@ -4,6 +4,7 @@ use App\Providers\AiServiceProvider;
 use App\Providers\ApiProductServiceProvider;
 use App\Providers\AppServiceProvider;
 use App\Providers\BindingServiceProvider;
+use App\Providers\CaptchaServiceProvider;
 use App\Providers\EnvironmentServiceProvider;
 use App\Providers\GitDeployServiceProvider;
 use App\Providers\HorizonServiceProvider;
@@ -32,6 +33,7 @@ return [
     ObservabilityServiceProvider::class,
     WorkflowServiceProvider::class,
     WhiteLabelServiceProvider::class,
+    CaptchaServiceProvider::class,
     AiServiceProvider::class,
     BindingServiceProvider::class,
     SupplyChainServiceProvider::class,
