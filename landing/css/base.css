@@ -4,15 +4,15 @@
    ============================================================ */
 
 :root {
-  --bg: #030712;
-  --bg-elev: #1f2937;
-  --bg-soft: #111827;
-  --border: #374151;
-  --border-strong: #4b5563;
-  --text: #e5e7eb;
-  --text-dim: #9ca3af;
-  --text-muted: #6b7280;
-  --text-faint: #4b5563;
+  --bg: #0a0a0a;
+  --bg-elev: #262626;
+  --bg-soft: #171717;
+  --border: #404040;
+  --border-strong: #525252;
+  --text: #e5e5e5;
+  --text-dim: #a3a3a3;
+  --text-muted: #737373;
+  --text-faint: #525252;
   --accent: #f97316;
   --accent-soft: #fb923c;
   --grad-1: #FFB347;
@@ -73,7 +73,7 @@ body::before {
   position: fixed;
   inset: 0;
   z-index: 0;
-  background: rgba(3, 7, 18, 0.32);
+  background: rgba(10, 10, 10, 0.32);
   backdrop-filter: blur(7px) saturate(135%);
   -webkit-backdrop-filter: blur(7px) saturate(135%);
   pointer-events: none;
@@ -280,7 +280,7 @@ h4 { font-size: 17px; margin-bottom: 6px; font-weight: 700; }
   margin-top: 36px;
 }
 .stat {
-  background: rgba(17, 24, 39, 0.7);
+  background: rgba(23, 23, 23, 0.7);
   backdrop-filter: blur(8px);
   border: 1px solid var(--border);
   border-radius: var(--radius);

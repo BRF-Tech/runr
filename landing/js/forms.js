@@ -14,11 +14,25 @@
     const finalForm    = document.getElementById('form-final-cta');
     const entForm      = document.getElementById('form-enterprise');
 
+    function busy(btn) { btn && (btn.disabled = true, btn.dataset._lbl = btn.textContent, btn.textContent = '…'); }
+    function idle(btn) { if (btn) { btn.disabled = false; btn.textContent = btn.dataset._lbl || btn.textContent; } }
+
+    // The form's Turnstile token; Turnstile loads on demand (js/turnstile.js), so a submit may
+    // wait for it. '' after an error toast (Turnstile unavailable, failed or not solved).
+    async function botToken(formName) {
+      try {
+        return await R.tsWait(formName);
+      } catch (e) {
+        R.toast(R.errMessage((e && e.message) || 'bot_check_required'), 'error');
+        return '';
+      }
+    }
+
     async function submitWaitlist(email, source, btn, formName) {
       if (!R.emailLooksValid(email)) { R.toast(R.errMessage('invalid_email'), 'error'); return; }
-      const token = R.tsToken(formName);
-      if (!token) { R.toast(R.errMessage('bot_check_required'), 'error'); return; }
-      btn && (btn.disabled = true, btn.dataset._lbl = btn.textContent, btn.textContent = '…');
+      busy(btn);
+      const token = await botToken(formName);
+      if (!token) { idle(btn); return; }
       try {
         const { ok, data } = await R.postJson(`${R.API_BASE}/api/waitlist`, {
           email: email.trim().toLowerCase(),
@@ -27,6 +41,8 @@
           turnstile_token: token
         });
         if (ok) {
+          // Umami (its script comes from the web server) counts accepted sign-ups only.
+          window.umami?.track('release-news-signup', { source: source || 'unknown' });
           R.toast(R.locale() === 'tr' ? 'Listedesiniz! Teşekkürler.' : "You're on the list. Thanks!", 'success');
           finalForm && finalForm.reset();
         } else {
@@ -35,7 +51,7 @@
       } catch (_) {
         R.toast(R.errMessage('network'), 'error');
       } finally {
-        if (btn) { btn.disabled = false; btn.textContent = btn.dataset._lbl || btn.textContent; }
+        idle(btn);
         R.tsReset(formName);
       }
     }
@@ -57,19 +73,21 @@
           team_size: entForm.team_size.value,
           message: entForm.message.value.trim(),
           locale: R.locale(),
-          turnstile_token: R.tsToken('enterprise')
+          turnstile_token: ''
         };
         if (!body.name || body.name.length < 2)        { R.toast(R.errMessage('validation_failed'), 'error'); return; }
         if (!body.company || body.company.length < 2) { R.toast(R.errMessage('validation_failed'), 'error'); return; }
         if (!R.emailLooksValid(body.email))            { R.toast(R.errMessage('invalid_email'), 'error'); return; }
         if (!body.message || body.message.length < 10){ R.toast(R.errMessage('validation_failed'), 'error'); return; }
-        if (!body.turnstile_token)                     { R.toast(R.errMessage('bot_check_required'), 'error'); return; }
 
         const btn = entForm.querySelector('button[type=submit]');
-        btn && (btn.disabled = true, btn.dataset._lbl = btn.textContent, btn.textContent = '…');
+        busy(btn);
+        body.turnstile_token = await botToken('enterprise');
+        if (!body.turnstile_token) { idle(btn); return; }
         try {
           const { ok, data } = await R.postJson(`${R.API_BASE}/api/enterprise-contact`, body);
           if (ok) {
+            window.umami?.track('enterprise-contact-sent', { team_size: body.team_size });
             R.toast(R.locale() === 'tr' ? 'Teşekkürler, en kısa sürede dönüş yapacağız.' : "Thanks, we'll be in touch soon.", 'success');
             R.closeModal();
             entForm.reset();
@@ -79,7 +97,7 @@
         } catch (_) {
           R.toast(R.errMessage('network'), 'error');
         } finally {
-          if (btn) { btn.disabled = false; btn.textContent = btn.dataset._lbl || btn.textContent; }
+          idle(btn);
           R.tsReset('enterprise');
         }
       });

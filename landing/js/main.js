@@ -1,6 +1,6 @@
 /* ============================================================
    RunR Landing — main.js
-   i18n, nav, modals, forms, FAQ, magnetic buttons, 3D tilt.
+   Language link, nav, modals, forms, FAQ, magnetic buttons, 3D tilt.
    ============================================================ */
 
 (function () {
@@ -9,55 +9,30 @@
   // ── CONFIG ──
   const API_BASE = ''; // same-origin (runr.sh/api/*)
 
-  // The static HTML is English (what search engines and link previews read); a visitor whose
-  // browser is Turkish, or who asks with ?lang=tr, gets the Turkish texts from the data-tr attributes.
-  const META = {
-    tr: {
-      title: 'RunR - Kubernetes Üzerinde Açık Kaynak Serverless Platform',
-      desc:  'Kubernetes ve Knative üzerinde açık kaynak serverless platform. Fonksiyonlar, projeler, container\'lar ve WebAssembly kendi cluster\'larınızda; scale-to-zero, olay tetikleyicileri, ortamlar, blue-green ve canary rollout, Sandbox API, durable workflow, GPU ve MCP dahil. MIT lisanslı.'
-    },
-    en: {
-      title: 'RunR — Open Source Serverless Platform on Kubernetes',
-      desc:  'Open-source serverless platform on Kubernetes and Knative. Functions, projects, containers and WebAssembly on your own clusters with scale-to-zero, event triggers, environments, blue-green and canary rollouts, a Sandbox API, durable workflows, GPUs and MCP. MIT licensed.'
-    }
-  };
+  // ── LANGUAGE ──
+  // Each language is its own static page: / is English, /tr/ Turkish (ci/runr-sh/build.py writes
+  // it from the data-tr texts of index.html); the page's language is its <html lang>. The EN/TR
+  // link opens the other page and stores the choice; the script in the <head> of / sends a stored
+  // Turkish choice, or a Turkish browser without one, to /tr/. /tr/ never switches to English.
+  const currentLocale = document.documentElement.lang === 'tr' ? 'tr' : 'en';
 
-  // ── I18N ──
-  function getLocale() {
-    const param = new URLSearchParams(location.search).get('lang');
-    if (param === 'tr' || param === 'en') return param;
-    const stored = localStorage.getItem('runr_locale');
-    if (stored === 'tr' || stored === 'en') return stored;
-    return (navigator.language || 'en').slice(0, 2).toLowerCase() === 'tr' ? 'tr' : 'en';
-  }
+  document.addEventListener('click', (e) => {
+    const link = e.target.closest('.lang-btn');
+    if (!link) return;
+    const to = link.getAttribute('hreflang');
+    try { if (to === 'tr' || to === 'en') localStorage.setItem('runr_locale', to); } catch (_) {}
+  });
 
-  function applyLocale(loc) {
-    document.documentElement.lang = loc;
-    document.title = META[loc].title;
-    const md = document.querySelector('meta[name="description"]');
-    if (md) md.setAttribute('content', META[loc].desc);
-
-    // Swap all data-tr / data-en attributes
-    document.querySelectorAll('[data-tr]').forEach(el => {
-      const txt = el.getAttribute(loc === 'tr' ? 'data-tr' : 'data-en');
-      if (txt == null) return;
-      // For placeholder/value/aria-label
-      if (el.dataset.target === 'placeholder') el.placeholder = txt;
-      else if (el.dataset.target === 'aria-label') el.setAttribute('aria-label', txt);
-      else if (el.dataset.target === 'alt') el.setAttribute('alt', txt);
-      else el.innerHTML = txt;
-    });
-
-    // Update lang button label
-    const langBtn = document.querySelector('.lang-btn');
-    if (langBtn) langBtn.textContent = loc === 'tr' ? 'EN' : 'TR';
-
-    localStorage.setItem('runr_locale', loc);
-  }
-
-  let currentLocale = getLocale();
-  if (currentLocale !== 'en') applyLocale(currentLocale);
-  else localStorage.setItem('runr_locale', 'en');
+  // ── INSTALL SNIPPETS ──
+  // A copy from an install snippet (<pre data-snippet>) is counted in Umami, whose script the
+  // web server adds to every page.
+  document.addEventListener('copy', () => {
+    const sel = document.getSelection();
+    const node = sel && sel.anchorNode;
+    const el = node && (node.nodeType === 1 ? node : node.parentElement);
+    const pre = el && el.closest('pre[data-snippet]');
+    if (pre) window.umami?.track('install-snippet-copy', { snippet: pre.dataset.snippet });
+  });
 
   // ── SCREENSHOTS ──
   // A console scene that is not published yet (shots/<name>-dark.png missing) takes its
@@ -66,13 +41,6 @@
     const hide = () => { const w = img.closest('[data-shot]'); if (w) w.classList.add('is-missing'); };
     if (img.complete && img.naturalWidth === 0 && img.currentSrc) hide();
     img.addEventListener('error', hide);
-  });
-
-  document.addEventListener('click', (e) => {
-    const btn = e.target.closest('.lang-btn');
-    if (!btn) return;
-    currentLocale = currentLocale === 'tr' ? 'en' : 'tr';
-    applyLocale(currentLocale);
   });
 
   // ── NAV ──
@@ -168,8 +136,8 @@
 
   function errMessage(code) {
     const map = {
-      tr: { invalid_email: 'Geçerli bir e-posta girin.', disposable: 'Geçici e-posta servisleri kabul edilmiyor.', no_mx: 'Bu domain\'in mail sunucusu bulunamadı.', rate_limited: 'Çok hızlı denediniz, biraz bekleyin.', validation_failed: 'Lütfen formu kontrol edin.', bot_check_failed: 'Bot kontrolünü tamamlayın.', bot_check_required: 'Lütfen "Ben robot değilim" kutucuğunu işaretleyin.', network: 'Bağlantı hatası, tekrar deneyin.' },
-      en: { invalid_email: 'Please enter a valid email.', disposable: 'Disposable email services are not allowed.', no_mx: 'This domain has no mail server.', rate_limited: 'You\'re going too fast — please wait.', validation_failed: 'Please check the form.', bot_check_failed: 'Bot check failed, try again.', bot_check_required: 'Please complete the bot check.', network: 'Network error, try again.' }
+      tr: { invalid_email: 'Geçerli bir e-posta girin.', disposable: 'Geçici e-posta servisleri kabul edilmiyor.', no_mx: 'Bu domain\'in mail sunucusu bulunamadı.', rate_limited: 'Çok hızlı denediniz, biraz bekleyin.', validation_failed: 'Lütfen formu kontrol edin.', bot_check_failed: 'Bot kontrolünü tamamlayın.', bot_check_required: 'Lütfen "Ben robot değilim" kutucuğunu işaretleyin.', bot_check_unavailable: 'Bot kontrolü yüklenemedi. Bağlantınızı ya da reklam engelleyicinizi kontrol edip tekrar deneyin.', network: 'Bağlantı hatası, tekrar deneyin.' },
+      en: { invalid_email: 'Please enter a valid email.', disposable: 'Disposable email services are not allowed.', no_mx: 'This domain has no mail server.', rate_limited: 'You\'re going too fast — please wait.', validation_failed: 'Please check the form.', bot_check_failed: 'Bot check failed, try again.', bot_check_required: 'Please complete the bot check.', bot_check_unavailable: 'The bot check could not load. Check your connection or ad blocker and try again.', network: 'Network error, try again.' }
     };
     return (map[currentLocale][code]) || map[currentLocale].network;
   }
@@ -177,6 +145,11 @@
   function tsToken(formName) {
     return (window.RunRTurnstile && window.RunRTurnstile.getToken)
       ? window.RunRTurnstile.getToken(formName) : '';
+  }
+  // Waits for the form's token: Turnstile loads on demand (js/turnstile.js).
+  function tsWait(formName) {
+    return (window.RunRTurnstile && window.RunRTurnstile.waitToken)
+      ? window.RunRTurnstile.waitToken(formName) : Promise.reject(new Error('bot_check_unavailable'));
   }
   function tsReset(formName) {
     if (window.RunRTurnstile && window.RunRTurnstile.reset) window.RunRTurnstile.reset(formName);
@@ -198,7 +171,7 @@
     API_BASE,
     locale: () => currentLocale,
     toast, closeModal, postJson,
-    errMessage, emailLooksValid, tsToken, tsReset,
+    errMessage, emailLooksValid, tsToken, tsWait, tsReset,
     modals
   };
 

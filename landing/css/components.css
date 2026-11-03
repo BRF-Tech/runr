@@ -13,13 +13,13 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  background: rgba(3, 7, 18, 0.6);
+  background: rgba(10, 10, 10, 0.6);
   backdrop-filter: blur(16px);
   border-bottom: 1px solid transparent;
   transition: background .3s, border-color .3s, padding .3s;
 }
 .nav.is-scrolled {
-  background: rgba(3, 7, 18, 0.85);
+  background: rgba(10, 10, 10, 0.85);
   border-bottom-color: var(--border);
   padding: 10px 24px;
 }
@@ -43,6 +43,8 @@
 .nav-spacer { flex: 1; }
 .nav-actions { display: flex; gap: 8px; align-items: center; }
 .lang-btn {
+  display: inline-block;
+  line-height: normal;
   background: transparent;
   border: 1px solid var(--border-strong);
   color: var(--text-muted);
@@ -133,7 +135,16 @@
   background:
     radial-gradient(ellipse 60% 40% at 70% 30%, rgba(255,140,66,0.35), transparent 70%),
     radial-gradient(ellipse 50% 50% at 30% 70%, rgba(230,57,70,0.25), transparent 70%),
-    linear-gradient(180deg, #030712 0%, #111827 100%);
+    linear-gradient(180deg, #0a0a0a 0%, #171717 100%);
+}
+/* Phones, touch screens and reduced motion: the still of the 3D hero (assets/hero-static*.webp)
+   in the canvas's place. index.html loads js/hero3d.js and js/bg.js only where this query does
+   not match. */
+.hero-static { display: none; }
+@media (max-width: 768px), (pointer: coarse), (prefers-reduced-motion: reduce) {
+  .hero .hero-canvas { display: none; }
+  .hero-static { display: block; position: absolute; inset: 0; z-index: 1; pointer-events: none; }
+  .hero-static img { width: 100%; height: 100%; object-fit: cover; object-position: center top; }
 }
 .hero-fade {
   position: absolute;
@@ -141,7 +152,7 @@
   /* Fade only from the bottom and very lightly at the edges — don't smother the canvas */
   background:
     linear-gradient(180deg, transparent 0%, transparent 70%, var(--bg) 100%),
-    linear-gradient(90deg, rgba(3,7,18,0.4) 0%, transparent 15%, transparent 85%, rgba(3,7,18,0.4) 100%);
+    linear-gradient(90deg, rgba(10,10,10,0.4) 0%, transparent 15%, transparent 85%, rgba(10,10,10,0.4) 100%);
   z-index: 1;
   pointer-events: none;
 }

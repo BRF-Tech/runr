@@ -1,5 +1,5 @@
 {
-  "generated": "2026-11-02T22:05:47.245Z",
+  "generated": "2026-11-03T00:55:43.561Z",
   "source": "mocked API",
   "source_detail": "The real console UI (vue/) rendered on the in-browser mocked API of the e2e suite (vue/e2e/fixtures/mock-api.ts) with the fictional dataset of vue/shots/db.ts: no backend, no cluster. Numbers that read as measurements (sandbox start times) follow the README section \"Measured cold starts\"; everything else is the fictional organization Northwind.",
   "not_live": "No kind region was set up for these shots: the live frames (rollout, logs, environments, sandboxes, models, MCP, global DNS, supply chain) need Knative, a registry, Kata/gVisor and a GPU node on the cluster, which the WSL host of the run (26 GB free, no nested virtualization for Kata, no GPU) cannot provide.",
@@ -17,229 +17,428 @@
       "name": "projects",
       "title": "Projects",
       "page": "/projects",
-      "taken": "2026-11-02T22:04:23.612Z",
+      "taken": "2026-11-03T00:54:47.586Z",
       "viewport": "1440x900",
       "theme_files": {
         "dark": "projects-dark.png"
       },
       "source": "mocked API",
       "sizes_bytes": {
-        "dark": 129429
+        "dark": 112203
+      },
+      "webp_files": {
+        "dark": {
+          "1440": "projects-dark-1440.webp",
+          "720": "projects-dark-720.webp"
+        }
+      },
+      "webp_sizes_bytes": {
+        "dark": {
+          "1440": 62814,
+          "720": 28824
+        }
       }
     },
     {
       "name": "project-overview",
       "title": "Project overview",
       "page": "/projects/order-webhooks#deployments",
-      "taken": "2026-11-02T22:04:31.510Z",
+      "taken": "2026-11-03T00:54:51.425Z",
       "viewport": "1440x900",
       "theme_files": {
         "dark": "project-overview-dark.png"
       },
       "source": "mocked API",
       "sizes_bytes": {
-        "dark": 109699
+        "dark": 101937
+      },
+      "webp_files": {
+        "dark": {
+          "1440": "project-overview-dark-1440.webp",
+          "720": "project-overview-dark-720.webp"
+        }
+      },
+      "webp_sizes_bytes": {
+        "dark": {
+          "1440": 41838,
+          "720": 19644
+        }
       }
     },
     {
       "name": "code-editor",
       "title": "Code editor",
       "page": "/projects/image-resizer",
-      "taken": "2026-11-02T22:04:40.436Z",
+      "taken": "2026-11-03T00:54:55.414Z",
       "viewport": "1440x900",
       "theme_files": {
         "dark": "code-editor-dark.png"
       },
       "source": "mocked API",
       "sizes_bytes": {
-        "dark": 178226
+        "dark": 172942
+      },
+      "webp_files": {
+        "dark": {
+          "1440": "code-editor-dark-1440.webp",
+          "720": "code-editor-dark-720.webp"
+        }
+      },
+      "webp_sizes_bytes": {
+        "dark": {
+          "1440": 77322,
+          "720": 30220
+        }
       }
     },
     {
       "name": "deploy-rollout",
       "title": "Canary rollout",
       "page": "/projects/checkout-api#deployments",
-      "taken": "2026-11-02T22:04:45.882Z",
+      "taken": "2026-11-03T00:54:58.606Z",
       "viewport": "1440x900",
       "theme_files": {
         "dark": "deploy-rollout-dark.png"
       },
       "source": "mocked API",
       "sizes_bytes": {
-        "dark": 99880
+        "dark": 91585
+      },
+      "webp_files": {
+        "dark": {
+          "1440": "deploy-rollout-dark-1440.webp",
+          "720": "deploy-rollout-dark-720.webp"
+        }
+      },
+      "webp_sizes_bytes": {
+        "dark": {
+          "1440": 51268,
+          "720": 19508
+        }
       }
     },
     {
       "name": "logs-metrics",
       "title": "Logs and metrics",
       "page": "/projects/order-webhooks#deployments (logs)",
-      "taken": "2026-11-02T22:04:53.079Z",
+      "taken": "2026-11-03T00:55:04.275Z",
       "viewport": "1440x900",
       "theme_files": {
         "dark": "logs-metrics-dark.png"
       },
       "source": "mocked API",
       "sizes_bytes": {
-        "dark": 279553
+        "dark": 255098
+      },
+      "webp_files": {
+        "dark": {
+          "1440": "logs-metrics-dark-1440.webp",
+          "720": "logs-metrics-dark-720.webp"
+        }
+      },
+      "webp_sizes_bytes": {
+        "dark": {
+          "1440": 105612,
+          "720": 36208
+        }
       }
     },
     {
       "name": "triggers",
       "title": "Triggers",
       "page": "/projects/order-webhooks#triggers",
-      "taken": "2026-11-02T22:04:57.785Z",
+      "taken": "2026-11-03T00:55:08.436Z",
       "viewport": "1440x900",
       "theme_files": {
         "dark": "triggers-dark.png"
       },
       "source": "mocked API",
       "sizes_bytes": {
-        "dark": 100214
+        "dark": 89450
+      },
+      "webp_files": {
+        "dark": {
+          "1440": "triggers-dark-1440.webp",
+          "720": "triggers-dark-720.webp"
+        }
+      },
+      "webp_sizes_bytes": {
+        "dark": {
+          "1440": 46862,
+          "720": 18134
+        }
       }
     },
     {
       "name": "environments",
       "title": "Environments and promotion",
       "page": "/projects/order-webhooks#environments",
-      "taken": "2026-11-02T22:05:01.987Z",
+      "taken": "2026-11-03T00:55:12.000Z",
       "viewport": "1440x900",
       "theme_files": {
         "dark": "environments-dark.png"
       },
       "source": "mocked API",
       "sizes_bytes": {
-        "dark": 106062
+        "dark": 93641
+      },
+      "webp_files": {
+        "dark": {
+          "1440": "environments-dark-1440.webp",
+          "720": "environments-dark-720.webp"
+        }
+      },
+      "webp_sizes_bytes": {
+        "dark": {
+          "1440": 51762,
+          "720": 23502
+        }
       }
     },
     {
       "name": "deploy-strategies",
       "title": "Deploy strategy",
       "page": "/projects/checkout-api#deployments (strategy)",
-      "taken": "2026-11-02T22:05:07.552Z",
+      "taken": "2026-11-03T00:55:15.642Z",
       "viewport": "1440x900",
       "theme_files": {
         "dark": "deploy-strategies-dark.png"
       },
       "source": "mocked API",
       "sizes_bytes": {
-        "dark": 180098
+        "dark": 164292
+      },
+      "webp_files": {
+        "dark": {
+          "1440": "deploy-strategies-dark-1440.webp",
+          "720": "deploy-strategies-dark-720.webp"
+        }
+      },
+      "webp_sizes_bytes": {
+        "dark": {
+          "1440": 34314,
+          "720": 13122
+        }
       }
     },
     {
       "name": "sandbox",
       "title": "Sandboxes",
       "page": "/sandboxes",
-      "taken": "2026-11-02T22:05:11.630Z",
+      "taken": "2026-11-03T00:55:18.870Z",
       "viewport": "1440x900",
       "theme_files": {
         "dark": "sandbox-dark.png"
       },
       "source": "mocked API",
       "sizes_bytes": {
-        "dark": 104746
+        "dark": 95470
+      },
+      "webp_files": {
+        "dark": {
+          "1440": "sandbox-dark-1440.webp",
+          "720": "sandbox-dark-720.webp"
+        }
+      },
+      "webp_sizes_bytes": {
+        "dark": {
+          "1440": 33534,
+          "720": 18812
+        }
       }
     },
     {
       "name": "huggingface",
       "title": "Model services and playground",
       "page": "/models?tab=services",
-      "taken": "2026-11-02T22:05:16.629Z",
+      "taken": "2026-11-03T00:55:22.598Z",
       "viewport": "1440x900",
       "theme_files": {
         "dark": "huggingface-dark.png"
       },
       "source": "mocked API",
       "sizes_bytes": {
-        "dark": 128861
+        "dark": 111105
+      },
+      "webp_files": {
+        "dark": {
+          "1440": "huggingface-dark-1440.webp",
+          "720": "huggingface-dark-720.webp"
+        }
+      },
+      "webp_sizes_bytes": {
+        "dark": {
+          "1440": 42098,
+          "720": 13656
+        }
       }
     },
     {
       "name": "mcp",
       "title": "Hosted MCP server",
       "page": "/projects/weather-tools#mcp",
-      "taken": "2026-11-02T22:05:21.731Z",
+      "taken": "2026-11-03T00:55:26.481Z",
       "viewport": "1440x900",
       "theme_files": {
         "dark": "mcp-dark.png"
       },
       "source": "mocked API",
       "sizes_bytes": {
-        "dark": 102441
+        "dark": 91272
+      },
+      "webp_files": {
+        "dark": {
+          "1440": "mcp-dark-1440.webp",
+          "720": "mcp-dark-720.webp"
+        }
+      },
+      "webp_sizes_bytes": {
+        "dark": {
+          "1440": 53770,
+          "720": 20666
+        }
       }
     },
     {
       "name": "region-wizard",
       "title": "Add Region wizard",
       "page": "/settings (Add Region)",
-      "taken": "2026-11-02T22:05:29.349Z",
+      "taken": "2026-11-03T00:55:30.769Z",
       "viewport": "1440x900",
       "theme_files": {
         "dark": "region-wizard-dark.png"
       },
       "source": "mocked API",
       "sizes_bytes": {
-        "dark": 166071
+        "dark": 153876
+      },
+      "webp_files": {
+        "dark": {
+          "1440": "region-wizard-dark-1440.webp",
+          "720": "region-wizard-dark-720.webp"
+        }
+      },
+      "webp_sizes_bytes": {
+        "dark": {
+          "1440": 29264,
+          "720": 12172
+        }
       }
     },
     {
       "name": "rbac",
       "title": "Roles and permissions",
       "page": "/settings?tab=roles",
-      "taken": "2026-11-02T22:05:34.010Z",
+      "taken": "2026-11-03T00:55:34.033Z",
       "viewport": "1440x900",
       "theme_files": {
         "dark": "rbac-dark.png"
       },
       "source": "mocked API",
       "sizes_bytes": {
-        "dark": 104786
+        "dark": 92174
+      },
+      "webp_files": {
+        "dark": {
+          "1440": "rbac-dark-1440.webp",
+          "720": "rbac-dark-720.webp"
+        }
+      },
+      "webp_sizes_bytes": {
+        "dark": {
+          "1440": 34720,
+          "720": 25168
+        }
       }
     },
     {
       "name": "workflows",
       "title": "Durable workflows",
       "page": "/projects/order-pipeline#workflows",
-      "taken": "2026-11-02T22:05:38.544Z",
+      "taken": "2026-11-03T00:55:37.273Z",
       "viewport": "1440x900",
       "theme_files": {
         "dark": "workflows-dark.png"
       },
       "source": "mocked API",
       "sizes_bytes": {
-        "dark": 117929
+        "dark": 103679
+      },
+      "webp_files": {
+        "dark": {
+          "1440": "workflows-dark-1440.webp",
+          "720": "workflows-dark-720.webp"
+        }
+      },
+      "webp_sizes_bytes": {
+        "dark": {
+          "1440": 61746,
+          "720": 26608
+        }
       }
     },
     {
       "name": "global-projects",
       "title": "Global project regions",
       "page": "/projects/shop#regions",
-      "taken": "2026-11-02T22:05:42.673Z",
+      "taken": "2026-11-03T00:55:40.351Z",
       "viewport": "1440x900",
       "theme_files": {
         "dark": "global-projects-dark.png"
       },
       "source": "mocked API",
       "sizes_bytes": {
-        "dark": 98739
+        "dark": 89560
+      },
+      "webp_files": {
+        "dark": {
+          "1440": "global-projects-dark-1440.webp",
+          "720": "global-projects-dark-720.webp"
+        }
+      },
+      "webp_sizes_bytes": {
+        "dark": {
+          "1440": 50338,
+          "720": 22478
+        }
       }
     },
     {
       "name": "supply-chain",
       "title": "Software supply chain",
       "page": "/projects/checkout-api#security",
-      "taken": "2026-11-02T22:05:47.245Z",
+      "taken": "2026-11-03T00:55:43.561Z",
       "viewport": "1440x900",
       "theme_files": {
         "dark": "supply-chain-dark.png"
       },
       "source": "mocked API",
       "sizes_bytes": {
-        "dark": 115367
+        "dark": 105456
+      },
+      "webp_files": {
+        "dark": {
+          "1440": "supply-chain-dark-1440.webp",
+          "720": "supply-chain-dark-720.webp"
+        }
+      },
+      "webp_sizes_bytes": {
+        "dark": {
+          "1440": 56234,
+          "720": 23412
+        }
       }
     }
   ],
   "optimized": {
     "tool": "Pillow (optimize + 256-color palette when above the limit)",
-    "limit_bytes": 358400
+    "limit_bytes": 358400,
+    "webp": {
+      "tool": "Pillow WebP, method 6, the smaller of lossless and quality 80",
+      "widths": [
+        "full",
+        720
+      ]
+    }
   }
 }

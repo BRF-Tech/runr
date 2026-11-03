@@ -1,20 +1,46 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-tr-lang="tr">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <!-- The page is English by default (what crawlers and link previews read); js/main.js switches a
-       Turkish browser, or ?lang=tr, to the data-tr texts. -->
-  <title>RunR — Open Source Serverless Platform on Kubernetes</title>
-  <meta name="description" content="Open-source serverless platform on Kubernetes and Knative. Functions, projects, containers and WebAssembly on your own clusters with scale-to-zero, event triggers, environments, blue-green and canary rollouts, a Sandbox API, durable workflows, GPUs and MCP. MIT licensed.">
+  <!-- This file is the English page (/) and the source of the Turkish one (/tr/): ci/runr-sh/build.py
+       writes /tr/ with every data-tr text (data-target: the attribute it fills) and every
+       data-tr-<attribute> value applied, and removes these attributes from both pages. -->
+  <title data-tr="RunR - Kubernetes Üzerinde Açık Kaynak Serverless Platform">RunR — Open Source Serverless Platform on Kubernetes</title>
+  <meta name="description" content="Open-source serverless platform on Kubernetes and Knative. Functions, projects, containers and WebAssembly on your own clusters with scale-to-zero, event triggers, environments, blue-green and canary rollouts, a Sandbox API, durable workflows, GPUs and MCP. MIT licensed."
+        data-tr-content="Kubernetes ve Knative üzerinde açık kaynak serverless platform. Fonksiyonlar, projeler, container'lar ve WebAssembly kendi cluster'larınızda; scale-to-zero, olay tetikleyicileri, ortamlar, blue-green ve canary rollout, Sandbox API, durable workflow, GPU ve MCP dahil. MIT lisanslı.">
   <meta name="keywords" content="serverless, knative, kubernetes, open source, mit, self-hosted, faas, caas, webassembly, sandbox, gvisor, kata containers, durable workflows, event-driven, kafka, cloudevents, blue-green, canary, environments, multi-region, gpu, hugging face, mcp, multi-tenant, scale-to-zero, terraform, helm">
-  <meta name="theme-color" content="#030712">
+  <meta name="theme-color" content="#0a0a0a">
   <meta name="author" content="BRF Teknoloji">
 
-  <!-- Canonical & hreflang (the default page is English; ?lang=tr is the Turkish version) -->
-  <link rel="canonical" href="https://runr.sh/">
+  <!-- A Turkish browser without a stored language choice, or a stored choice of Turkish, opens
+       /tr/ before anything else loads (?lang=tr / ?lang=en of older links count as a choice);
+       crawlers and every other browser stay here. The EN/TR link stores the reader's choice
+       (js/main.js). /tr/ is built from this file with lang="tr" and never redirects. -->
+  <script>
+    (function () {
+      if (document.documentElement.lang !== 'en') return;
+      try {
+        var q = new URLSearchParams(location.search), pick = q.get('lang');
+        var choice = localStorage.getItem('runr_locale');
+        if (pick === 'tr' || pick === 'en') { choice = pick; localStorage.setItem('runr_locale', pick); }
+        if (!choice && (navigator.language || '').slice(0, 2).toLowerCase() === 'tr') {
+          choice = 'tr';
+          localStorage.setItem('runr_locale', 'tr');
+        }
+        if (choice !== 'tr') return;
+        q.delete('lang');
+        var rest = q.toString();
+        window.stop();
+        location.replace('/tr/' + (rest ? '?' + rest : '') + location.hash);
+      } catch (e) { /* storage blocked: stay on the English page */ }
+    })();
+  </script>
+
+  <!-- Canonical & hreflang: / is English, /tr/ Turkish; each page is its own canonical -->
+  <link rel="canonical" href="https://runr.sh/" data-tr-href="https://runr.sh/tr/">
   <link rel="alternate" hreflang="en" href="https://runr.sh/">
-  <link rel="alternate" hreflang="tr" href="https://runr.sh/?lang=tr">
+  <link rel="alternate" hreflang="tr" href="https://runr.sh/tr/">
   <link rel="alternate" hreflang="x-default" href="https://runr.sh/">
 
   <!-- Favicon -->
@@ -22,21 +48,26 @@
 
   <!-- Open Graph (assets/og-image.png is rendered from assets/og-image.src.html) -->
   <meta property="og:type" content="website">
-  <meta property="og:title" content="RunR — Open Source Serverless Platform on Kubernetes">
-  <meta property="og:description" content="Functions, multi-file projects, containers and WebAssembly on Knative, on your own Kubernetes clusters: event triggers, environments, blue-green and canary rollouts, global projects, a Sandbox API, durable workflows, GPUs and MCP built in. Open source under the MIT license.">
-  <meta property="og:url" content="https://runr.sh/">
+  <meta property="og:title" content="RunR — Open Source Serverless Platform on Kubernetes"
+        data-tr-content="RunR - Kubernetes Üzerinde Açık Kaynak Serverless Platform">
+  <meta property="og:description" content="Functions, multi-file projects, containers and WebAssembly on Knative, on your own Kubernetes clusters: event triggers, environments, blue-green and canary rollouts, global projects, a Sandbox API, durable workflows, GPUs and MCP built in. Open source under the MIT license."
+        data-tr-content="Fonksiyonlar, çoklu dosya projeleri, container'lar ve WebAssembly Knative üzerinde, kendi Kubernetes cluster'larınızda: olay tetikleyicileri, ortamlar, blue-green ve canary rollout, global projeler, Sandbox API, durable workflow, GPU ve MCP dahil. MIT lisanslı açık kaynak.">
+  <meta property="og:url" content="https://runr.sh/" data-tr-content="https://runr.sh/tr/">
   <meta property="og:image" content="https://runr.sh/assets/og-image.png">
   <meta property="og:image:width" content="1200">
   <meta property="og:image:height" content="630">
-  <meta property="og:image:alt" content="RunR: open source serverless platform on Kubernetes, with a view of the console's project list">
+  <meta property="og:image:alt" content="RunR: open source serverless platform on Kubernetes, with a view of the console's project list"
+        data-tr-content="RunR: Kubernetes üzerinde açık kaynak serverless platform, konsolun proje listesiyle">
   <meta property="og:site_name" content="RunR">
-  <meta property="og:locale" content="en_US">
-  <meta property="og:locale:alternate" content="tr_TR">
+  <meta property="og:locale" content="en_US" data-tr-content="tr_TR">
+  <meta property="og:locale:alternate" content="tr_TR" data-tr-content="en_US">
 
   <!-- Twitter -->
   <meta name="twitter:card" content="summary_large_image">
-  <meta name="twitter:title" content="RunR — Open Source Serverless Platform on Kubernetes">
-  <meta name="twitter:description" content="Functions, projects, containers and WebAssembly on your own Kubernetes clusters, with scale-to-zero, canary rollouts, event triggers, durable workflows, GPUs and MCP. Open source under the MIT license.">
+  <meta name="twitter:title" content="RunR — Open Source Serverless Platform on Kubernetes"
+        data-tr-content="RunR - Kubernetes Üzerinde Açık Kaynak Serverless Platform">
+  <meta name="twitter:description" content="Functions, projects, containers and WebAssembly on your own Kubernetes clusters, with scale-to-zero, canary rollouts, event triggers, durable workflows, GPUs and MCP. Open source under the MIT license."
+        data-tr-content="Fonksiyonlar, projeler, container'lar ve WebAssembly kendi Kubernetes cluster'larınızda; scale-to-zero, canary rollout, olay tetikleyicileri, durable workflow, GPU ve MCP ile. MIT lisanslı açık kaynak.">
   <meta name="twitter:image" content="https://runr.sh/assets/og-image.png">
 
   <!-- JSON-LD: Schema.org SoftwareApplication -->
@@ -49,7 +80,7 @@
     "applicationCategory": "DeveloperApplication",
     "applicationSubCategory": "Serverless platform",
     "operatingSystem": "Kubernetes",
-    "softwareVersion": "0.6.2",
+    "softwareVersion": "0.6.3",
     "license": "https://opensource.org/licenses/MIT",
     "url": "https://runr.sh",
     "downloadUrl": "https://runr.sh/dl/",
@@ -64,7 +95,8 @@
   }
   </script>
 
-  <!-- JSON-LD: the FAQ section (English texts; seo_patch regenerates it from the data-en attributes) -->
+  <!-- JSON-LD: the FAQ section. ci/runr-sh/build.py rebuilds this block for / and /tr/ from the
+       questions and answers of the page's FAQ section, in the page's language. -->
   <script type="application/ld+json">
   {
     "@context": "https://schema.org",
@@ -175,10 +207,8 @@
 
   <!-- Three.js is loaded by js/hero3d.js, only on devices that will run the 3D hero. -->
 
-  <!-- Cloudflare Turnstile (bot blocker, frontend widget). The stub exists before the async
-       loader can finish; js/turnstile.js replaces it and renders the widgets. -->
-  <script>window.onTurnstileLoad = function () {};</script>
-  <script src="https://challenges.cloudflare.com/turnstile/v0/api.js?onload=onTurnstileLoad" async defer></script>
+  <!-- Cloudflare Turnstile (bot blocker, frontend widget) is loaded by js/turnstile.js when a
+       form is used or scrolls into view, not with the page. -->
 </head>
 
 <body>
@@ -204,29 +234,41 @@
     <a href="#compare"    data-tr="Karşılaştır" data-en="Compare">Compare</a>
     <a href="#faq"        data-tr="SSS" data-en="FAQ">FAQ</a>
     <!-- In the mobile menu only: the nav buttons below are hidden on narrow screens -->
-    <a class="nav-mobile-only" href="/docs/"
+    <a class="nav-mobile-only" href="/docs/" data-umami-event="docs-click" data-umami-event-place="mobile-nav"
        data-tr="Dokümanlar" data-en="Docs">Docs</a>
-    <a class="nav-mobile-only" href="/dl/" data-tr="İndir" data-en="Download">Download</a>
-    <a class="nav-mobile-only" href="https://github.com/BRF-Tech/runr" data-tr="GitHub" data-en="GitHub">GitHub</a>
-    <a class="nav-mobile-only" href="#" data-open-modal="enterprise" data-source="nav"
+    <a class="nav-mobile-only" href="/dl/" data-umami-event="download-click" data-umami-event-place="mobile-nav" data-tr="İndir" data-en="Download">Download</a>
+    <a class="nav-mobile-only" href="https://github.com/BRF-Tech/runr" data-umami-event="github-click" data-umami-event-place="mobile-nav" data-tr="GitHub" data-en="GitHub">GitHub</a>
+    <a class="nav-mobile-only" href="#" data-open-modal="enterprise" data-source="nav" data-umami-event="enterprise-open" data-umami-event-place="mobile-nav"
        data-tr="Enterprise Al" data-en="Get Enterprise">Get Enterprise</a>
   </div>
   <div class="nav-spacer"></div>
   <div class="nav-actions">
-    <a class="btn btn-ghost btn-nav" href="/docs/"
+    <a class="btn btn-ghost btn-nav" href="/docs/" data-umami-event="docs-click" data-umami-event-place="nav"
        data-tr="Dokümanlar" data-en="Docs">Docs</a>
-    <a class="btn btn-ghost btn-nav" href="/dl/" data-tr="İndir" data-en="Download">Download</a>
-    <a class="btn btn-ghost btn-nav btn-gh" href="https://github.com/BRF-Tech/runr" aria-label="RunR on GitHub"
+    <a class="btn btn-ghost btn-nav" href="/dl/" data-umami-event="download-click" data-umami-event-place="nav" data-tr="İndir" data-en="Download">Download</a>
+    <a class="btn btn-ghost btn-nav btn-gh" href="https://github.com/BRF-Tech/runr" aria-label="RunR on GitHub" data-umami-event="github-click" data-umami-event-place="nav"
        data-tr="RunR GitHub'da" data-en="RunR on GitHub" data-target="aria-label"><svg class="gh-mark" viewBox="0 0 16 16" width="16" height="16" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg><span class="gh-label">GitHub</span></a>
-    <button class="btn btn-enterprise" data-open-modal="enterprise" data-source="nav"
+    <button class="btn btn-enterprise" data-open-modal="enterprise" data-source="nav" data-umami-event="enterprise-open" data-umami-event-place="nav"
             data-tr="Enterprise Al" data-en="Get Enterprise">Get Enterprise</button>
-    <button class="lang-btn" aria-label="Toggle language">TR</button>
+    <!-- The other language's page; js/main.js stores the choice for the redirect in <head> -->
+    <a class="lang-btn" href="/tr/" hreflang="tr" lang="tr" title="Türkçe"
+       data-tr-href="/" data-tr-hreflang="en" data-tr-lang="en" data-tr-title="English" data-tr="EN"
+       data-umami-event="lang-switch" data-umami-event-to="tr" data-tr-data-umami-event-to="en">TR</a>
   </div>
 </nav>
 
 <!-- ═══ HERO ═══ -->
 <header class="hero">
   <canvas class="hero-canvas" id="hero3d" aria-hidden="true"></canvas>
+  <!-- Phones, touch screens and reduced motion see a still of the 3D hero (rendered from it by
+       ci/runr-sh/render-hero.js) instead of the canvas, and never load js/hero3d.js, three.js or
+       js/bg.js (the loader at the end of the page). Elsewhere no <source> matches, the <img>
+       keeps its empty placeholder and nothing is downloaded. -->
+  <picture class="hero-static" aria-hidden="true">
+    <source media="(max-width: 768px)" srcset="assets/hero-static.webp" type="image/webp">
+    <source media="(pointer: coarse), (prefers-reduced-motion: reduce)" srcset="assets/hero-static-wide.webp" type="image/webp">
+    <img src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==" alt="" decoding="async">
+  </picture>
   <div class="hero-fade" aria-hidden="true"></div>
   <div class="hero-sparks" aria-hidden="true">
     <span class="hero-spark s1"></span>
@@ -249,9 +291,9 @@
       Functions, multi-file projects, containers and WebAssembly on Knative — on your own Kubernetes clusters, with a Sandbox API, durable workflows, GPUs and MCP built in. No per-request fees. No lock-in.
     </p>
     <div class="hero-cta reveal">
-      <a class="btn btn-primary btn-lg btn-magnetic" href="/docs/install/"
+      <a class="btn btn-primary btn-lg btn-magnetic" href="/docs/install/" data-umami-event="quick-start-click" data-umami-event-place="hero"
          data-tr="Hızlı başlangıç" data-en="Quick start">Quick start</a>
-      <a class="btn btn-ghost btn-lg btn-gh" href="https://github.com/BRF-Tech/runr"><svg class="gh-mark" viewBox="0 0 16 16" width="18" height="18" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg><span>GitHub</span></a>
+      <a class="btn btn-ghost btn-lg btn-gh" href="https://github.com/BRF-Tech/runr" data-umami-event="github-click" data-umami-event-place="hero"><svg class="gh-mark" viewBox="0 0 16 16" width="18" height="18" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg><span>GitHub</span></a>
     </div>
     <div class="stats reveal-stagger">
       <div class="stat reveal">
@@ -281,8 +323,11 @@
   <div class="hero-shot reveal" data-shot="projects">
     <div class="shot">
       <div class="shot-bar" aria-hidden="true"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="url">runr.example.com/projects</span></div>
-      <img src="shots/projects-dark.png" width="1440" height="900" fetchpriority="high"
+      <picture>
+        <source type="image/webp" srcset="shots/projects-dark-720.webp 720w, shots/projects-dark-1440.webp 1440w" sizes="(max-width: 1168px) calc(100vw - 48px), 1120px">
+        <img src="shots/projects-dark.png" width="1440" height="900" fetchpriority="high"
              alt="The RunR console: the Projects list of an organization with the type, runtime, region, status and last deployment of every project">
+      </picture>
     </div>
     <p class="shot-caption"
        data-tr="RunR konsolu: bir organizasyonun projeleri - tip, runtime, region, durum ve son deploy."
@@ -426,8 +471,11 @@
     <figure class="shot-tile reveal" data-shot="code-editor">
       <div class="shot">
         <div class="shot-bar" aria-hidden="true"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="url">runr.example.com/projects/orders-webhook/code</span></div>
-        <img src="shots/code-editor-dark.png" width="1440" height="900" loading="lazy"
+        <picture>
+          <source type="image/webp" srcset="shots/code-editor-dark-720.webp 720w, shots/code-editor-dark-1440.webp 1440w" sizes="(max-width: 700px) calc(100vw - 48px), (max-width: 1100px) calc(50vw - 40px), 600px">
+          <img src="shots/code-editor-dark.png" width="1440" height="900" loading="lazy" decoding="async"
                alt="The web editor of a single-file function in the RunR console, with the Deploy button and the version history" data-tr="RunR konsolunda tek dosyalık bir fonksiyonun web editörü, Deploy düğmesi ve versiyon geçmişiyle" data-en="The web editor of a single-file function in the RunR console, with the Deploy button and the version history" data-target="alt">
+        </picture>
       </div>
       <figcaption>
         <h4 data-tr="Web editörü" data-en="The web editor">The web editor</h4>
@@ -437,8 +485,11 @@
     <figure class="shot-tile reveal" data-shot="project-overview">
       <div class="shot">
         <div class="shot-bar" aria-hidden="true"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="url">runr.example.com/projects/checkout-api</span></div>
-        <img src="shots/project-overview-dark.png" width="1440" height="900" loading="lazy"
+        <picture>
+          <source type="image/webp" srcset="shots/project-overview-dark-720.webp 720w, shots/project-overview-dark-1440.webp 1440w" sizes="(max-width: 700px) calc(100vw - 48px), (max-width: 1100px) calc(50vw - 40px), 600px">
+          <img src="shots/project-overview-dark.png" width="1440" height="900" loading="lazy" decoding="async"
                alt="The Overview tab of a project: URL, status, the latest versions, and the requests and errors of the last hours" data-tr="Bir projenin Overview sekmesi: URL, durum, son versiyonlar, son saatlerin istekleri ve hataları" data-en="The Overview tab of a project: URL, status, the latest versions, and the requests and errors of the last hours" data-target="alt">
+        </picture>
       </div>
       <figcaption>
         <h4 data-tr="Bir bakışta proje" data-en="A project at a glance">A project at a glance</h4>
@@ -665,8 +716,11 @@
     </div>
     <div class="shot" data-shot="deploy-strategies">
       <div class="shot-bar" aria-hidden="true"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="url">runr.example.com/projects/checkout-api/deployments</span></div>
-      <img src="shots/deploy-strategies-dark.png" width="1440" height="900" loading="lazy"
+      <picture>
+        <source type="image/webp" srcset="shots/deploy-strategies-dark-720.webp 720w, shots/deploy-strategies-dark-1440.webp 1440w" sizes="(max-width: 900px) calc(100vw - 48px), 700px">
+        <img src="shots/deploy-strategies-dark.png" width="1440" height="900" loading="lazy" decoding="async"
              alt="Deploy strategy settings of a function: canary steps, the interval per step and the error-rate and p95 thresholds that roll the release back automatically" data-tr="Bir fonksiyonun deploy strateji ayarları: canary adımları, adım süresi ve sürümü otomatik geri alan hata oranı ve p95 eşikleri" data-en="Deploy strategy settings of a function: canary steps, the interval per step and the error-rate and p95 thresholds that roll the release back automatically" data-target="alt">
+      </picture>
     </div>
   </div>
   <div class="tour-row flip reveal" style="--tc:#ffb347">
@@ -683,8 +737,11 @@
     </div>
     <div class="shot" data-shot="environments">
       <div class="shot-bar" aria-hidden="true"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="url">runr.example.com/projects/checkout-api/environments</span></div>
-      <img src="shots/environments-dark.png" width="1440" height="900" loading="lazy"
+      <picture>
+        <source type="image/webp" srcset="shots/environments-dark-720.webp 720w, shots/environments-dark-1440.webp 1440w" sizes="(max-width: 900px) calc(100vw - 48px), 700px">
+        <img src="shots/environments-dark.png" width="1440" height="900" loading="lazy" decoding="async"
              alt="The Environments tab of a project: dev, staging and production with their URLs and versions, and a promotion into production waiting for approval" data-tr="Bir projenin Environments sekmesi: URL'leri ve versiyonlarıyla dev, staging ve production; onay bekleyen bir production terfisi" data-en="The Environments tab of a project: dev, staging and production with their URLs and versions, and a promotion into production waiting for approval" data-target="alt">
+      </picture>
     </div>
   </div>
   <div class="tour-row reveal" style="--tc:#e63946">
@@ -701,8 +758,11 @@
     </div>
     <div class="shot" data-shot="global-projects">
       <div class="shot-bar" aria-hidden="true"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="url">runr.example.com/projects/checkout-api/regions</span></div>
-      <img src="shots/global-projects-dark.png" width="1440" height="900" loading="lazy"
+      <picture>
+        <source type="image/webp" srcset="shots/global-projects-dark-720.webp 720w, shots/global-projects-dark-1440.webp 1440w" sizes="(max-width: 900px) calc(100vw - 48px), 700px">
+        <img src="shots/global-projects-dark.png" width="1440" height="900" loading="lazy" decoding="async"
              alt="A global project across regions: HA mode, the health of every region, the primary region and the DNS records of the host name" data-tr="Region'lar arasında bir global proje: HA modu, her region'ın sağlığı, birincil region ve host adının DNS kayıtları" data-en="A global project across regions: HA mode, the health of every region, the primary region and the DNS records of the host name" data-target="alt">
+      </picture>
     </div>
   </div>
   <div class="tour-row flip reveal" style="--tc:#fb923c">
@@ -719,8 +779,11 @@
     </div>
     <div class="shot" data-shot="triggers">
       <div class="shot-bar" aria-hidden="true"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="url">runr.example.com/projects/orders-webhook/triggers</span></div>
-      <img src="shots/triggers-dark.png" width="1440" height="900" loading="lazy"
+      <picture>
+        <source type="image/webp" srcset="shots/triggers-dark-720.webp 720w, shots/triggers-dark-1440.webp 1440w" sizes="(max-width: 900px) calc(100vw - 48px), 700px">
+        <img src="shots/triggers-dark.png" width="1440" height="900" loading="lazy" decoding="async"
              alt="The Triggers list of a project: HTTP, schedule, queue, webhook, Kafka and Postgres CDC triggers with their delivery state" data-tr="Bir projenin Triggers listesi: HTTP, zamanlama, kuyruk, webhook, Kafka ve Postgres CDC tetikleyicileri, teslim durumlarıyla" data-en="The Triggers list of a project: HTTP, schedule, queue, webhook, Kafka and Postgres CDC triggers with their delivery state" data-target="alt">
+      </picture>
     </div>
   </div>
   <div class="tour-row reveal" style="--tc:#4ade80">
@@ -737,8 +800,11 @@
     </div>
     <div class="shot" data-shot="workflows">
       <div class="shot-bar" aria-hidden="true"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="url">runr.example.com/projects/fraud-workflow/workflows</span></div>
-      <img src="shots/workflows-dark.png" width="1440" height="900" loading="lazy"
+      <picture>
+        <source type="image/webp" srcset="shots/workflows-dark-720.webp 720w, shots/workflows-dark-1440.webp 1440w" sizes="(max-width: 900px) calc(100vw - 48px), 700px">
+        <img src="shots/workflows-dark.png" width="1440" height="900" loading="lazy" decoding="async"
              alt="A durable workflow run in the console: its steps, sleeps and awaited events with their timings" data-tr="Konsolda bir durable workflow koşusu: adımları, uykuları ve beklenen olayları, süreleriyle" data-en="A durable workflow run in the console: its steps, sleeps and awaited events with their timings" data-target="alt">
+      </picture>
     </div>
   </div>
   <div class="tour-row flip reveal" style="--tc:#fbbf24">
@@ -756,8 +822,11 @@
     </div>
     <div class="shot" data-shot="supply-chain">
       <div class="shot-bar" aria-hidden="true"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="url">runr.example.com/projects/image-resize/supply-chain</span></div>
-      <img src="shots/supply-chain-dark.png" width="1440" height="900" loading="lazy"
+      <picture>
+        <source type="image/webp" srcset="shots/supply-chain-dark-720.webp 720w, shots/supply-chain-dark-1440.webp 1440w" sizes="(max-width: 900px) calc(100vw - 48px), 700px">
+        <img src="shots/supply-chain-dark.png" width="1440" height="900" loading="lazy" decoding="async"
              alt="The supply chain of an image: its SBOM, the result of the vulnerability scan, the cosign signature and the verdict of the policy gate" data-tr="Bir imajın tedarik zinciri: SBOM'u, zafiyet taramasının sonucu, cosign imzası ve policy kapısının kararı" data-en="The supply chain of an image: its SBOM, the result of the vulnerability scan, the cosign signature and the verdict of the policy gate" data-target="alt">
+      </picture>
     </div>
   </div>
   </div>
@@ -767,8 +836,11 @@
     <figure class="shot-tile reveal" data-shot="deploy-rollout">
       <div class="shot">
         <div class="shot-bar" aria-hidden="true"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="url">runr.example.com/projects/checkout-api/deployments/184</span></div>
-        <img src="shots/deploy-rollout-dark.png" width="1440" height="900" loading="lazy"
+        <picture>
+          <source type="image/webp" srcset="shots/deploy-rollout-dark-720.webp 720w, shots/deploy-rollout-dark-1440.webp 1440w" sizes="(max-width: 700px) calc(100vw - 48px), (max-width: 1100px) calc(50vw - 40px), 300px">
+          <img src="shots/deploy-rollout-dark.png" width="1440" height="900" loading="lazy" decoding="async"
                alt="A deployment in progress in the RunR console: the build and rollout steps streaming live with their durations" data-tr="RunR konsolunda süren bir deploy: build ve rollout adımları süreleriyle canlı akıyor" data-en="A deployment in progress in the RunR console: the build and rollout steps streaming live with their durations" data-target="alt">
+        </picture>
       </div>
       <figcaption>
         <h4 data-tr="Canlı bir deploy" data-en="A deployment, live">A deployment, live</h4>
@@ -778,8 +850,11 @@
     <figure class="shot-tile reveal" data-shot="logs-metrics">
       <div class="shot">
         <div class="shot-bar" aria-hidden="true"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="url">runr.example.com/projects/checkout-api/logs</span></div>
-        <img src="shots/logs-metrics-dark.png" width="1440" height="900" loading="lazy"
+        <picture>
+          <source type="image/webp" srcset="shots/logs-metrics-dark-720.webp 720w, shots/logs-metrics-dark-1440.webp 1440w" sizes="(max-width: 700px) calc(100vw - 48px), (max-width: 1100px) calc(50vw - 40px), 300px">
+          <img src="shots/logs-metrics-dark.png" width="1440" height="900" loading="lazy" decoding="async"
                alt="The Logs and Metrics tabs of a project: live log lines next to request, latency and replica charts" data-tr="Bir projenin Logs ve Metrics sekmeleri: istek, gecikme ve replika grafiklerinin yanında canlı log satırları" data-en="The Logs and Metrics tabs of a project: live log lines next to request, latency and replica charts" data-target="alt">
+        </picture>
       </div>
       <figcaption>
         <h4 data-tr="Proje başına log ve metrik" data-en="Logs and metrics per project">Logs and metrics per project</h4>
@@ -789,8 +864,11 @@
     <figure class="shot-tile reveal" data-shot="rbac">
       <div class="shot">
         <div class="shot-bar" aria-hidden="true"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="url">runr.example.com/settings/roles</span></div>
-        <img src="shots/rbac-dark.png" width="1440" height="900" loading="lazy"
+        <picture>
+          <source type="image/webp" srcset="shots/rbac-dark-720.webp 720w, shots/rbac-dark-1440.webp 1440w" sizes="(max-width: 700px) calc(100vw - 48px), (max-width: 1100px) calc(50vw - 40px), 300px">
+          <img src="shots/rbac-dark.png" width="1440" height="900" loading="lazy" decoding="async"
                alt="Roles and permissions in the RunR console: built-in and custom roles against the permission catalog" data-tr="RunR konsolunda roller ve izinler: izin kataloğuna karşı hazır ve özel roller" data-en="Roles and permissions in the RunR console: built-in and custom roles against the permission catalog" data-target="alt">
+        </picture>
       </div>
       <figcaption>
         <h4 data-tr="Roller ve izinler" data-en="Roles and permissions">Roles and permissions</h4>
@@ -800,8 +878,11 @@
     <figure class="shot-tile reveal" data-shot="region-wizard">
       <div class="shot">
         <div class="shot-bar" aria-hidden="true"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="url">runr.example.com/admin/regions/new</span></div>
-        <img src="shots/region-wizard-dark.png" width="1440" height="900" loading="lazy"
+        <picture>
+          <source type="image/webp" srcset="shots/region-wizard-dark-720.webp 720w, shots/region-wizard-dark-1440.webp 1440w" sizes="(max-width: 700px) calc(100vw - 48px), (max-width: 1100px) calc(50vw - 40px), 300px">
+          <img src="shots/region-wizard-dark.png" width="1440" height="900" loading="lazy" decoding="async"
                alt="The region wizard: a kubeconfig is checked and Knative Serving, Traefik, the registry and the observability stack are installed step by step" data-tr="Region sihirbazı: kubeconfig denetlenir, Knative Serving, Traefik, registry ve observability yığını adım adım kurulur" data-en="The region wizard: a kubeconfig is checked and Knative Serving, Traefik, the registry and the observability stack are installed step by step" data-target="alt">
+        </picture>
       </div>
       <figcaption>
         <h4 data-tr="Region ekleme" data-en="Add a region">Add a region</h4>
@@ -1015,8 +1096,11 @@
     <figure class="shot-tile reveal" data-shot="huggingface">
       <div class="shot">
         <div class="shot-bar" aria-hidden="true"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="url">runr.example.com/models</span></div>
-        <img src="shots/huggingface-dark.png" width="1440" height="900" loading="lazy"
+        <picture>
+          <source type="image/webp" srcset="shots/huggingface-dark-720.webp 720w, shots/huggingface-dark-1440.webp 1440w" sizes="(max-width: 700px) calc(100vw - 48px), (max-width: 1100px) calc(50vw - 40px), 400px">
+          <img src="shots/huggingface-dark.png" width="1440" height="900" loading="lazy" decoding="async"
                alt="The Hugging Face Hub browser in the RunR console, with a model service being deployed to a GPU region" data-tr="RunR konsolunda Hugging Face Hub tarayıcısı, bir GPU region'ına deploy edilen model servisiyle" data-en="The Hugging Face Hub browser in the RunR console, with a model service being deployed to a GPU region" data-target="alt">
+        </picture>
       </div>
       <figcaption>
         <h4 data-tr="Hugging Face modelleri" data-en="Hugging Face models">Hugging Face models</h4>
@@ -1026,8 +1110,11 @@
     <figure class="shot-tile reveal" data-shot="mcp">
       <div class="shot">
         <div class="shot-bar" aria-hidden="true"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="url">runr.example.com/settings/mcp</span></div>
-        <img src="shots/mcp-dark.png" width="1440" height="900" loading="lazy"
+        <picture>
+          <source type="image/webp" srcset="shots/mcp-dark-720.webp 720w, shots/mcp-dark-1440.webp 1440w" sizes="(max-width: 700px) calc(100vw - 48px), (max-width: 1100px) calc(50vw - 40px), 400px">
+          <img src="shots/mcp-dark.png" width="1440" height="900" loading="lazy" decoding="async"
                alt="MCP in the RunR console: the built-in MCP server endpoint, connected clients and a hosted MCP server behind the gateway with its call log" data-tr="RunR konsolunda MCP: dahili MCP sunucusu adresi, bağlı istemciler ve gateway arkasında barındırılan bir MCP sunucusu, çağrı kaydıyla" data-en="MCP in the RunR console: the built-in MCP server endpoint, connected clients and a hosted MCP server behind the gateway with its call log" data-target="alt">
+        </picture>
       </div>
       <figcaption>
         <h4 data-tr="MCP sunucusu ve MCP barındırma" data-en="MCP server and MCP hosting">MCP server and MCP hosting</h4>
@@ -1037,8 +1124,11 @@
     <figure class="shot-tile reveal" data-shot="sandbox">
       <div class="shot">
         <div class="shot-bar" aria-hidden="true"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="url">runr.example.com/sandboxes</span></div>
-        <img src="shots/sandbox-dark.png" width="1440" height="900" loading="lazy"
+        <picture>
+          <source type="image/webp" srcset="shots/sandbox-dark-720.webp 720w, shots/sandbox-dark-1440.webp 1440w" sizes="(max-width: 700px) calc(100vw - 48px), (max-width: 1100px) calc(50vw - 40px), 400px">
+          <img src="shots/sandbox-dark.png" width="1440" height="900" loading="lazy" decoding="async"
                alt="The Sandbox API page: running sandboxes with their class (gVisor or Kata), the warm pool and the quota of the organization" data-tr="Sandbox API sayfası: sınıfıyla (gVisor ya da Kata) çalışan sandbox'lar, sıcak havuz ve organizasyonun kotası" data-en="The Sandbox API page: running sandboxes with their class (gVisor or Kata), the warm pool and the quota of the organization" data-target="alt">
+        </picture>
       </div>
       <figcaption>
         <h4 data-tr="Sandbox API" data-en="Sandbox API">Sandbox API</h4>
@@ -1238,130 +1328,130 @@
   <div class="arch-diagram reveal">
     <svg viewBox="0 0 1100 460" xmlns="http://www.w3.org/2000/svg" font-family="'Segoe UI',system-ui,sans-serif">
       <defs>
-        <linearGradient id="aVue" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="#42b883"/><stop offset="100%" stop-color="#374151"/></linearGradient>
+        <linearGradient id="aVue" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="#42b883"/><stop offset="100%" stop-color="#404040"/></linearGradient>
         <linearGradient id="aApi" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="#ff2d20"/><stop offset="100%" stop-color="#c0392b"/></linearGradient>
-        <linearGradient id="aK8s" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="#9ca3af"/><stop offset="100%" stop-color="#374151"/></linearGradient>
+        <linearGradient id="aK8s" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="#a3a3a3"/><stop offset="100%" stop-color="#404040"/></linearGradient>
         <filter id="aGlow"><feDropShadow dx="0" dy="2" stdDeviation="4" flood-color="#000" flood-opacity=".5"/></filter>
-        <marker id="aArr" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><polygon points="0 0,8 3,0 6" fill="#4b5563"/></marker>
+        <marker id="aArr" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><polygon points="0 0,8 3,0 6" fill="#525252"/></marker>
       </defs>
-      <rect width="1100" height="460" fill="#030712" rx="12"/>
+      <rect width="1100" height="460" fill="#0a0a0a" rx="12"/>
 
       <!-- User -->
-      <rect x="20" y="40" width="130" height="60" rx="10" fill="#111827" stroke="#9ca3af" stroke-width="1.5" filter="url(#aGlow)"/>
-      <text x="85" y="68" text-anchor="middle" fill="#e5e7eb" font-size="13" font-weight="700" data-tr="Kullanıcı" data-en="User">User</text>
-      <text x="85" y="86" text-anchor="middle" fill="#6b7280" font-size="10">Browser · CLI · MCP</text>
+      <rect x="20" y="40" width="130" height="60" rx="10" fill="#171717" stroke="#a3a3a3" stroke-width="1.5" filter="url(#aGlow)"/>
+      <text x="85" y="68" text-anchor="middle" fill="#e5e5e5" font-size="13" font-weight="700" data-tr="Kullanıcı" data-en="User">User</text>
+      <text x="85" y="86" text-anchor="middle" fill="#737373" font-size="10">Browser · CLI · MCP</text>
 
       <!-- Vue -->
-      <rect x="200" y="20" width="220" height="100" rx="12" fill="#111827" stroke="#42b883" stroke-width="2" filter="url(#aGlow)"/>
+      <rect x="200" y="20" width="220" height="100" rx="12" fill="#171717" stroke="#42b883" stroke-width="2" filter="url(#aGlow)"/>
       <rect x="200" y="20" width="220" height="28" rx="12" fill="url(#aVue)"/>
       <text x="310" y="40" text-anchor="middle" fill="#fff" font-size="13" font-weight="700">Vue 3 + Vite</text>
       <text x="310" y="66" text-anchor="middle" fill="#86efac" font-size="11">100+ component · 30+ composable</text>
       <text x="310" y="82" text-anchor="middle" fill="#86efac" font-size="11">7 store · driver.js tour</text>
-      <text x="310" y="100" text-anchor="middle" fill="#6b7280" font-size="10">Tailwind · Monaco · xterm.js · i18n</text>
-      <text x="310" y="116" text-anchor="middle" fill="#4b5563" font-size="10">runr-ui</text>
+      <text x="310" y="100" text-anchor="middle" fill="#737373" font-size="10">Tailwind · Monaco · xterm.js · i18n</text>
+      <text x="310" y="116" text-anchor="middle" fill="#525252" font-size="10">runr-ui</text>
 
-      <line x1="150" y1="70" x2="195" y2="70" stroke="#4b5563" stroke-width="1.5" marker-end="url(#aArr)"/>
+      <line x1="150" y1="70" x2="195" y2="70" stroke="#525252" stroke-width="1.5" marker-end="url(#aArr)"/>
 
       <!-- API -->
-      <rect x="200" y="160" width="220" height="130" rx="12" fill="#111827" stroke="#ff2d20" stroke-width="2" filter="url(#aGlow)"/>
+      <rect x="200" y="160" width="220" height="130" rx="12" fill="#171717" stroke="#ff2d20" stroke-width="2" filter="url(#aGlow)"/>
       <rect x="200" y="160" width="220" height="28" rx="12" fill="url(#aApi)"/>
       <text x="310" y="180" text-anchor="middle" fill="#fff" font-size="13" font-weight="700">Laravel 12 API · PHP 8.3</text>
       <text x="310" y="206" text-anchor="middle" fill="#fca5a5" font-size="11">110+ Controller · 70+ Service</text>
       <text x="310" y="222" text-anchor="middle" fill="#fca5a5" font-size="11">70+ Job · 100+ Model · 90+ Trait</text>
-      <text x="310" y="240" text-anchor="middle" fill="#9ca3af" font-size="10">Sanctum · Scramble · ETag · RBAC</text>
-      <text x="310" y="256" text-anchor="middle" fill="#9ca3af" font-size="10">MCP · git HTTP · OAuth 2.1</text>
-      <text x="310" y="272" text-anchor="middle" fill="#4b5563" font-size="10">runr-api · Octane (FrankenPHP)</text>
+      <text x="310" y="240" text-anchor="middle" fill="#a3a3a3" font-size="10">Sanctum · Scramble · ETag · RBAC</text>
+      <text x="310" y="256" text-anchor="middle" fill="#a3a3a3" font-size="10">MCP · git HTTP · OAuth 2.1</text>
+      <text x="310" y="272" text-anchor="middle" fill="#525252" font-size="10">runr-api · Octane (FrankenPHP)</text>
 
       <line x1="310" y1="120" x2="310" y2="155" stroke="#fb923c" stroke-width="2" marker-end="url(#aArr)"/>
       <text x="320" y="142" fill="#fb923c" font-size="9">REST + WS</text>
 
       <!-- Horizon -->
-      <rect x="30" y="170" width="150" height="50" rx="10" fill="#111827" stroke="#ff2d20" stroke-width="1.5"/>
+      <rect x="30" y="170" width="150" height="50" rx="10" fill="#171717" stroke="#ff2d20" stroke-width="1.5"/>
       <rect x="30" y="170" width="150" height="22" rx="10" fill="url(#aApi)" opacity=".7"/>
       <text x="105" y="186" text-anchor="middle" fill="#fff" font-size="11" font-weight="600">Horizon</text>
-      <text x="105" y="210" text-anchor="middle" fill="#9ca3af" font-size="10">Queue · Build · Deploy</text>
+      <text x="105" y="210" text-anchor="middle" fill="#a3a3a3" font-size="10">Queue · Build · Deploy</text>
 
       <!-- Reverb -->
-      <rect x="30" y="240" width="150" height="50" rx="10" fill="#111827" stroke="#e63946" stroke-width="1.5"/>
-      <rect x="30" y="240" width="150" height="22" rx="10" fill="#374151"/>
-      <text x="105" y="256" text-anchor="middle" fill="#e9d5ff" font-size="11" font-weight="600">Reverb</text>
-      <text x="105" y="280" text-anchor="middle" fill="#9ca3af" font-size="10">WebSocket · Shell PTY</text>
+      <rect x="30" y="240" width="150" height="50" rx="10" fill="#171717" stroke="#e63946" stroke-width="1.5"/>
+      <rect x="30" y="240" width="150" height="22" rx="10" fill="#404040"/>
+      <text x="105" y="256" text-anchor="middle" fill="#fb923c" font-size="11" font-weight="600">Reverb</text>
+      <text x="105" y="280" text-anchor="middle" fill="#a3a3a3" font-size="10">WebSocket · Shell PTY</text>
 
       <!-- PG + Redis -->
-      <rect x="450" y="160" width="130" height="60" rx="10" fill="#111827" stroke="#9ca3af" stroke-width="2"/>
-      <text x="515" y="186" text-anchor="middle" fill="#e5e7eb" font-size="12" font-weight="700">PostgreSQL 17</text>
-      <text x="515" y="204" text-anchor="middle" fill="#9ca3af" font-size="10">Central + Tenant schemas</text>
+      <rect x="450" y="160" width="130" height="60" rx="10" fill="#171717" stroke="#a3a3a3" stroke-width="2"/>
+      <text x="515" y="186" text-anchor="middle" fill="#e5e5e5" font-size="12" font-weight="700">PostgreSQL 17</text>
+      <text x="515" y="204" text-anchor="middle" fill="#a3a3a3" font-size="10">Central + Tenant schemas</text>
 
-      <rect x="450" y="232" width="130" height="55" rx="10" fill="#111827" stroke="#dc382d" stroke-width="2"/>
+      <rect x="450" y="232" width="130" height="55" rx="10" fill="#171717" stroke="#dc382d" stroke-width="2"/>
       <text x="515" y="256" text-anchor="middle" fill="#fca5a5" font-size="12" font-weight="700">Redis 7</text>
-      <text x="515" y="274" text-anchor="middle" fill="#9ca3af" font-size="10">Queue · Cache · WS broker</text>
+      <text x="515" y="274" text-anchor="middle" fill="#a3a3a3" font-size="10">Queue · Cache · WS broker</text>
 
-      <line x1="420" y1="220" x2="445" y2="195" stroke="#9ca3af" stroke-width="1.5" marker-end="url(#aArr)"/>
+      <line x1="420" y1="220" x2="445" y2="195" stroke="#a3a3a3" stroke-width="1.5" marker-end="url(#aArr)"/>
       <line x1="420" y1="240" x2="445" y2="250" stroke="#dc382d" stroke-width="1" stroke-dasharray="4,2" marker-end="url(#aArr)"/>
 
       <!-- K8s -->
-      <rect x="200" y="320" width="540" height="120" rx="12" fill="#111827" stroke="#9ca3af" stroke-width="2" filter="url(#aGlow)"/>
+      <rect x="200" y="320" width="540" height="120" rx="12" fill="#171717" stroke="#a3a3a3" stroke-width="2" filter="url(#aGlow)"/>
       <rect x="200" y="320" width="540" height="28" rx="12" fill="url(#aK8s)"/>
       <text x="470" y="340" text-anchor="middle" fill="#fff" font-size="13" font-weight="700">Region · any Kubernetes cluster · add-ons via Helm</text>
 
-      <line x1="310" y1="295" x2="310" y2="315" stroke="#9ca3af" stroke-width="2" stroke-dasharray="6,3" marker-end="url(#aArr)"/>
+      <line x1="310" y1="295" x2="310" y2="315" stroke="#a3a3a3" stroke-width="2" stroke-dasharray="6,3" marker-end="url(#aArr)"/>
       <text x="318" y="312" fill="#fb923c" font-size="9">kubeconfig</text>
 
-      <rect x="215" y="360" width="120" height="65" rx="8" fill="#111827" stroke="#9ca3af"/>
+      <rect x="215" y="360" width="120" height="65" rx="8" fill="#171717" stroke="#a3a3a3"/>
       <text x="275" y="378" text-anchor="middle" fill="#fb923c" font-size="11" font-weight="700">Knative Serving</text>
-      <text x="275" y="394" text-anchor="middle" fill="#9ca3af" font-size="9">Scale-to-zero · Revision</text>
-      <text x="275" y="408" text-anchor="middle" fill="#9ca3af" font-size="9">matched to K8s</text>
-      <text x="275" y="420" text-anchor="middle" fill="#9ca3af" font-size="9">XaaS · FaaS · CaaS pods</text>
+      <text x="275" y="394" text-anchor="middle" fill="#a3a3a3" font-size="9">Scale-to-zero · Revision</text>
+      <text x="275" y="408" text-anchor="middle" fill="#a3a3a3" font-size="9">matched to K8s</text>
+      <text x="275" y="420" text-anchor="middle" fill="#a3a3a3" font-size="9">XaaS · FaaS · CaaS pods</text>
 
-      <rect x="350" y="360" width="120" height="65" rx="8" fill="#111827" stroke="#e63946"/>
+      <rect x="350" y="360" width="120" height="65" rx="8" fill="#171717" stroke="#e63946"/>
       <text x="410" y="378" text-anchor="middle" fill="#e63946" font-size="11" font-weight="700">Sandbox</text>
-      <text x="410" y="394" text-anchor="middle" fill="#9ca3af" font-size="9">runc · gVisor (runsc)</text>
-      <text x="410" y="408" text-anchor="middle" fill="#9ca3af" font-size="9">Kata · Spin (Wasm)</text>
-      <text x="410" y="420" text-anchor="middle" fill="#9ca3af" font-size="9">RuntimeClass per type</text>
+      <text x="410" y="394" text-anchor="middle" fill="#a3a3a3" font-size="9">runc · gVisor (runsc)</text>
+      <text x="410" y="408" text-anchor="middle" fill="#a3a3a3" font-size="9">Kata · Spin (Wasm)</text>
+      <text x="410" y="420" text-anchor="middle" fill="#a3a3a3" font-size="9">RuntimeClass per type</text>
 
-      <rect x="485" y="360" width="120" height="65" rx="8" fill="#111827" stroke="#9ca3af"/>
+      <rect x="485" y="360" width="120" height="65" rx="8" fill="#171717" stroke="#a3a3a3"/>
       <text x="545" y="378" text-anchor="middle" fill="#fb923c" font-size="11" font-weight="700">Traefik + Cilium</text>
-      <text x="545" y="394" text-anchor="middle" fill="#9ca3af" font-size="9">Ingress · L7 LB</text>
-      <text x="545" y="408" text-anchor="middle" fill="#9ca3af" font-size="9">bpf-lb-sock-hostns</text>
-      <text x="545" y="420" text-anchor="middle" fill="#9ca3af" font-size="9">eBPF dataplane</text>
+      <text x="545" y="394" text-anchor="middle" fill="#a3a3a3" font-size="9">Ingress · L7 LB</text>
+      <text x="545" y="408" text-anchor="middle" fill="#a3a3a3" font-size="9">bpf-lb-sock-hostns</text>
+      <text x="545" y="420" text-anchor="middle" fill="#a3a3a3" font-size="9">eBPF dataplane</text>
 
-      <rect x="620" y="360" width="115" height="65" rx="8" fill="#111827" stroke="#e63946"/>
+      <rect x="620" y="360" width="115" height="65" rx="8" fill="#171717" stroke="#e63946"/>
       <text x="677" y="378" text-anchor="middle" fill="#fdba74" font-size="11" font-weight="700">Zot Registry</text>
-      <text x="677" y="394" text-anchor="middle" fill="#9ca3af" font-size="9">OCI · pull-through</text>
-      <text x="677" y="408" text-anchor="middle" fill="#9ca3af" font-size="9">S3 / PVC / External</text>
-      <text x="677" y="420" text-anchor="middle" fill="#9ca3af" font-size="9">Build artifacts</text>
+      <text x="677" y="394" text-anchor="middle" fill="#a3a3a3" font-size="9">OCI · pull-through</text>
+      <text x="677" y="408" text-anchor="middle" fill="#a3a3a3" font-size="9">S3 / PVC / External</text>
+      <text x="677" y="420" text-anchor="middle" fill="#a3a3a3" font-size="9">Build artifacts</text>
 
       <!-- Observability -->
-      <rect x="780" y="160" width="180" height="280" rx="12" fill="#111827" stroke="#e6522c" stroke-width="2" filter="url(#aGlow)"/>
+      <rect x="780" y="160" width="180" height="280" rx="12" fill="#171717" stroke="#e6522c" stroke-width="2" filter="url(#aGlow)"/>
       <rect x="780" y="160" width="180" height="28" rx="12" fill="#9a3412"/>
       <text x="870" y="180" text-anchor="middle" fill="#fed7aa" font-size="13" font-weight="700">Observability</text>
       <text x="800" y="208" fill="#fb923c" font-size="11" font-weight="600">Metrics + Logs</text>
-      <text x="800" y="224" fill="#9ca3af" font-size="10">Prometheus + cAdvisor</text>
-      <text x="800" y="240" fill="#9ca3af" font-size="10">Loki + Promtail</text>
+      <text x="800" y="224" fill="#a3a3a3" font-size="10">Prometheus + cAdvisor</text>
+      <text x="800" y="240" fill="#a3a3a3" font-size="10">Loki + Promtail</text>
       <text x="800" y="264" fill="#fb923c" font-size="11" font-weight="600">Traces</text>
-      <text x="800" y="280" fill="#9ca3af" font-size="10">OpenTelemetry + Tempo</text>
-      <text x="800" y="296" fill="#9ca3af" font-size="10">replay · uptime · alerts</text>
+      <text x="800" y="280" fill="#a3a3a3" font-size="10">OpenTelemetry + Tempo</text>
+      <text x="800" y="296" fill="#a3a3a3" font-size="10">replay · uptime · alerts</text>
       <text x="800" y="320" fill="#fb923c" font-size="11" font-weight="600">Region Agent</text>
-      <text x="800" y="336" fill="#9ca3af" font-size="10">Go · one per region</text>
-      <text x="800" y="352" fill="#9ca3af" font-size="10">metrics · sessions · events</text>
+      <text x="800" y="336" fill="#a3a3a3" font-size="10">Go · one per region</text>
+      <text x="800" y="352" fill="#a3a3a3" font-size="10">metrics · sessions · events</text>
       <text x="800" y="376" fill="#fb923c" font-size="11" font-weight="600">Usage + Billing</text>
-      <text x="800" y="392" fill="#9ca3af" font-size="10">UsageAggregationJob</text>
-      <text x="800" y="408" fill="#9ca3af" font-size="10">Billing API · webhooks</text>
+      <text x="800" y="392" fill="#a3a3a3" font-size="10">UsageAggregationJob</text>
+      <text x="800" y="408" fill="#a3a3a3" font-size="10">Billing API · webhooks</text>
 
       <!-- Tenancy -->
-      <rect x="980" y="40" width="110" height="200" rx="12" fill="#111827" stroke="#fbbf24" stroke-width="2"/>
+      <rect x="980" y="40" width="110" height="200" rx="12" fill="#171717" stroke="#fbbf24" stroke-width="2"/>
       <rect x="980" y="40" width="110" height="28" rx="12" fill="#92400e"/>
       <text x="1035" y="60" text-anchor="middle" fill="#fde68a" font-size="12" font-weight="700">Tenancy</text>
       <text x="990" y="86" fill="#fbbf24" font-size="10" font-weight="600">Modules/</text>
-      <text x="990" y="100" fill="#9ca3af" font-size="9">Tenancy</text>
-      <text x="990" y="113" fill="#9ca3af" font-size="9">AuthProvider</text>
-      <text x="990" y="126" fill="#9ca3af" font-size="9">Ticket</text>
-      <text x="990" y="139" fill="#9ca3af" font-size="9">Billing</text>
+      <text x="990" y="100" fill="#a3a3a3" font-size="9">Tenancy</text>
+      <text x="990" y="113" fill="#a3a3a3" font-size="9">AuthProvider</text>
+      <text x="990" y="126" fill="#a3a3a3" font-size="9">Ticket</text>
+      <text x="990" y="139" fill="#a3a3a3" font-size="9">Billing</text>
       <text x="990" y="156" fill="#fbbf24" font-size="10" font-weight="600">Frontend</text>
-      <text x="990" y="172" fill="#9ca3af" font-size="9">plugin.js</text>
-      <text x="990" y="186" fill="#9ca3af" font-size="9">Tenant switcher</text>
-      <text x="990" y="202" fill="#9ca3af" font-size="9">Billing pages</text>
-      <text x="990" y="226" fill="#4b5563" font-size="9">*_ENABLED flags</text>
+      <text x="990" y="172" fill="#a3a3a3" font-size="9">plugin.js</text>
+      <text x="990" y="186" fill="#a3a3a3" font-size="9">Tenant switcher</text>
+      <text x="990" y="202" fill="#a3a3a3" font-size="9">Billing pages</text>
+      <text x="990" y="226" fill="#525252" font-size="9">*_ENABLED flags</text>
     </svg>
   </div>
 
@@ -1390,7 +1480,7 @@
         <span class="tag">Private channels</span><span class="tag">Shell PTY</span><span class="tag">Notifications</span><span class="tag">Live metrics</span>
       </div>
     </div>
-    <div class="arch-card reveal" style="--ac:#9ca3af">
+    <div class="arch-card reveal" style="--ac:#a3a3a3">
       <div class="arch-num">04</div>
       <h4>Kubernetes</h4>
       <div class="arch-sub">K8s 1.30+ · Helm</div>
@@ -1398,7 +1488,7 @@
         <span class="tag">Helm</span><span class="tag">HPA</span><span class="tag">PDB</span><span class="tag">RBAC</span><span class="tag">Multi-cluster</span>
       </div>
     </div>
-    <div class="arch-card reveal" style="--ac:#9ca3af">
+    <div class="arch-card reveal" style="--ac:#a3a3a3">
       <div class="arch-num">05</div>
       <h4>Knative Serving</h4>
       <div class="arch-sub">Matched to K8s · auto-scale</div>
@@ -1414,7 +1504,7 @@
         <span class="tag">runc</span><span class="tag">gVisor</span><span class="tag">Kata: CLH · QEMU · Dragonball · FC</span><span class="tag">Spin (Wasm)</span>
       </div>
     </div>
-    <div class="arch-card reveal" style="--ac:#9ca3af">
+    <div class="arch-card reveal" style="--ac:#a3a3a3">
       <div class="arch-num">07</div>
       <h4>Network</h4>
       <div class="arch-sub">Traefik Gateway · Cilium</div>
@@ -1539,7 +1629,7 @@
           <td class="runr-cell yes" data-tr="MIT, her özellik" data-en="MIT, every feature">MIT, every feature</td>
           <td class="yes">Apache-2.0 (CNCF)</td>
           <td class="yes">Apache-2.0</td>
-          <td class="partial" data-tr="CE: MIT kaynak, ticari kullanımda 60 gün sınırı · Standard / Enterprise ücretli" data-en="CE: MIT source, 60-day limit on commercial use · Standard / Enterprise paid">CE: MIT source, 60-day limit on commercial use · Standard / Enterprise paid</td>
+          <td class="partial" data-tr="CE: EULA, ticari kullanımda şirket başına tek kurulum, en fazla 60 gün · Standard / Enterprise ücretli" data-en="CE: EULA, commercial use one installation per company for up to 60 days · Standard / Enterprise paid">CE: EULA, commercial use one installation per company for up to 60 days · Standard / Enterprise paid</td>
           <td class="no" data-tr="Kapalı kaynak" data-en="Proprietary">Proprietary</td>
           <td class="no" data-tr="Kapalı kaynak" data-en="Proprietary">Proprietary</td>
         </tr>
@@ -1577,7 +1667,7 @@
           <td class="yes" data-tr="Fonksiyonlar imaja derlenir" data-en="Functions build to images">Functions build to images</td>
           <td class="yes" data-tr="Evet (fonksiyonlar imajdır)" data-en="Yes (functions are images)">Yes (functions are images)</td>
           <td class="yes" data-tr="Evet, 10 GB'a kadar" data-en="Yes, up to 10 GB">Yes, up to 10 GB</td>
-          <td class="partial" data-tr="Fonksiyonlar için değil; Daemons (beta) ve Sandbox" data-en="Not for functions; Daemons (beta) and Sandbox">Not for functions; Daemons (beta) and Sandbox</td>
+          <td class="partial" data-tr="Fonksiyonlar için Container runtime (beta); Daemons (beta)" data-en="Container runtime for functions (beta); Daemons (beta)">Container runtime for functions (beta); Daemons (beta)</td>
         </tr>
         <tr>
           <td><strong>WebAssembly</strong></td>
@@ -1621,8 +1711,8 @@
           <td class="no">—</td>
           <td class="no">—</td>
           <td class="no">—</td>
-          <td class="partial" data-tr="AWS Step Functions (ayrı hizmet)" data-en="AWS Step Functions (a separate service)">AWS Step Functions (a separate service)</td>
-          <td class="partial">Workflow DevKit</td>
+          <td class="yes" data-tr="Lambda durable functions; ayrıca AWS Step Functions" data-en="Lambda durable functions; also AWS Step Functions">Lambda durable functions; also AWS Step Functions</td>
+          <td class="yes">Vercel Workflows</td>
         </tr>
         <tr>
           <td><strong data-tr="Ortamlar ve terfi" data-en="Environments and promotion">Environments and promotion</strong></td>
@@ -1648,7 +1738,7 @@
           <td class="no">—</td>
           <td class="no">—</td>
           <td class="no">—</td>
-          <td class="partial" data-tr="Region başına; çok region'lu yönlendirme sizin işiniz" data-en="Per region; multi-region routing is yours to build">Per region; multi-region routing is yours to build</td>
+          <td class="partial" data-tr="Region başına; Web Functions için çok region'lu endpoint (gecikmeye göre, sağlık tabanlı failover yok)" data-en="Per region; multi-Region endpoints for Web Functions (latency routing, no health-based failover)">Per region; multi-Region endpoints for Web Functions (latency routing, no health-based failover)</td>
           <td class="partial" data-tr="Edge ağı; fonksiyon region'ları" data-en="Edge network; function regions">Edge network; function regions</td>
         </tr>
         <tr>
@@ -1675,8 +1765,8 @@
           <td class="partial" data-tr="Kubernetes GPU kaynakları" data-en="Kubernetes GPU resources">Kubernetes GPU resources</td>
           <td class="no">—</td>
           <td class="partial" data-tr="Profiles ile GPU (ücretli sürümler)" data-en="GPU through Profiles (paid editions)">GPU through Profiles (paid editions)</td>
-          <td class="no" data-tr="GPU yok" data-en="No GPUs">No GPUs</td>
-          <td class="no" data-tr="GPU yok" data-en="No GPUs">No GPUs</td>
+          <td class="no">—</td>
+          <td class="no">—</td>
         </tr>
         <tr>
           <td><strong>MCP</strong></td>
@@ -1708,6 +1798,15 @@
       </tbody>
     </table>
   </div>
+  <!-- One page per alternative: docs/compare/*.md, published at /compare/<name>/ -->
+  <p class="tbl-note compare-links" style="font-size:13px;margin-top:14px;text-align:center">
+     <span data-tr="Tek tek, kaynaklarıyla (İngilizce):" data-en="One at a time, with sources:">One at a time, with sources:</span>
+     <a href="/compare/cloud-run/" data-umami-event="compare-click" data-umami-event-page="cloud-run">RunR vs Google Cloud Run</a> ·
+     <a href="/compare/aws-lambda/" data-umami-event="compare-click" data-umami-event-page="aws-lambda">RunR vs AWS Lambda</a> ·
+     <a href="/compare/vercel/" data-umami-event="compare-click" data-umami-event-page="vercel">RunR vs Vercel</a> ·
+     <a href="/compare/knative/" data-umami-event="compare-click" data-umami-event-page="knative">RunR vs Knative</a> ·
+     <a href="/compare/openfaas/" data-umami-event="compare-click" data-umami-event-page="openfaas">RunR vs OpenFaaS</a>
+  </p>
   <p class="faint tbl-note" style="font-size:11px;margin-top:10px;text-align:center" data-tr="Her projenin herkese açık dokümanlarından 2026-11-02'de derlendi (bağlantılar aşağıda); ücretli sürüm notları üreticilerin kendi sürüm sayfalarını izler, “—” dokümanların böyle bir özellik tanımlamadığı anlamına gelir. Knative bir CNCF projesidir; OpenFaaS, AWS Lambda ve Vercel sahiplerinin markalarıdır. RunR bunların hiçbiriyle bağlantılı değildir, hiçbiri tarafından desteklenmez." data-en="Compiled from each project's public documentation on 2026-11-02 (links below); paid-edition notes follow the vendors' own edition pages, and “—” means the documentation describes no such feature. Knative is a CNCF project; OpenFaaS, AWS Lambda and Vercel are trademarks of their owners. RunR is not affiliated with or endorsed by any of them.">Compiled from each project's public documentation on 2026-11-02 (links below); paid-edition notes follow the vendors' own edition pages, and “—” means the documentation describes no such feature. Knative is a CNCF project; OpenFaaS, AWS Lambda and Vercel are trademarks of their owners. RunR is not affiliated with or endorsed by any of them.</p>
   <p class="faint tbl-note" style="font-size:11px;margin-top:6px;text-align:center">
      <span data-tr="Kaynaklar, 2026-11-02'de okundu:" data-en="Sources, read on 2026-11-02:">Sources, read on 2026-11-02:</span>
@@ -1726,7 +1825,13 @@
      <a href="https://vercel.com/docs/deployments/environments" target="_blank" rel="noopener">Vercel environments</a> ·
      <a href="https://vercel.com/docs/sandbox" target="_blank" rel="noopener">Vercel Sandbox</a> ·
      <a href="https://vercel.com/kb/guide/vercel-daemons" target="_blank" rel="noopener">Vercel Daemons</a> ·
-     <a href="https://vercel.com/pricing" target="_blank" rel="noopener">Vercel pricing</a>
+     <a href="https://vercel.com/pricing" target="_blank" rel="noopener">Vercel pricing</a> ·
+     <span data-tr="2026-11-03'te:" data-en="read on 2026-11-03:">read on 2026-11-03:</span>
+     <a href="https://github.com/openfaas/faas/blob/master/EULA.md" target="_blank" rel="noopener">OpenFaaS CE EULA</a> ·
+     <a href="https://docs.aws.amazon.com/lambda/latest/dg/durable-functions.html" target="_blank" rel="noopener">Lambda durable functions</a> ·
+     <a href="https://docs.aws.amazon.com/lambda/latest/dg/web-functions-endpoints.html" target="_blank" rel="noopener">Lambda Web Functions endpoints</a> ·
+     <a href="https://vercel.com/docs/functions/runtimes/container" target="_blank" rel="noopener">Vercel Container runtime</a> ·
+     <a href="https://vercel.com/docs/workflows" target="_blank" rel="noopener">Vercel Workflows</a>
   </p>
   <!-- RunR cold start in the table (#perf-compare-cold) is measured; this note gives the conditions -->
   <p class="faint perf-note" id="perf-compare-note" data-measured="v0.5.0" style="font-size:11px;margin-top:10px;text-align:center"
@@ -1754,13 +1859,13 @@
       <p data-tr="Lambda ms×GB $501 (30M GB-sn + 5M istek) · egress $225 (2.500 GB × $0,09) · S3 depolama + istek $142 · API Gateway $5 · CloudWatch log $3 (us-east-1)"
          data-en="Lambda ms×GB $501 (30M GB-s + 5M requests) · egress $225 (2,500 GB × $0.09) · S3 storage + requests $142 · API Gateway $5 · CloudWatch logs $3 (us-east-1)">Lambda ms×GB $501 (30M GB-s + 5M requests) · egress $225 (2,500 GB × $0.09) · S3 storage + requests $142 · API Gateway $5 · CloudWatch logs $3 (us-east-1)</p>
     </div>
-    <div class="card reveal"><h4 style="color:#9ca3af;font-size:16px">GCP Cloud Run</h4>
+    <div class="card reveal"><h4 style="color:#a3a3a3;font-size:16px">GCP Cloud Run</h4>
       <p style="font-size:28px;font-weight:800;color:#fbbf24;margin:8px 0" data-tr="≈ $890 / ay"
          data-en="≈ $890 / mo">≈ $890 / mo</p>
       <p data-tr="Cloud Run vCPU-sn + GiB-sn $437 (1 vCPU, 2 GiB, 15M sn + 5M istek) · egress $285 (2.500 GiB × $0,12–0,11) · Cloud Storage + işlemler $127 · load balancer $38 · log $3 (us-central1)"
          data-en="Cloud Run vCPU-s + GiB-s $437 (1 vCPU, 2 GiB, 15M s + 5M requests) · egress $285 (2,500 GiB × $0.12–0.11) · Cloud Storage + operations $127 · load balancer $38 · logs $3 (us-central1)">Cloud Run vCPU-s + GiB-s $437 (1 vCPU, 2 GiB, 15M s + 5M requests) · egress $285 (2,500 GiB × $0.12–0.11) · Cloud Storage + operations $127 · load balancer $38 · logs $3 (us-central1)</p>
     </div>
-    <div class="card reveal"><h4 style="color:#9ca3af;font-size:16px">Azure Functions</h4>
+    <div class="card reveal"><h4 style="color:#a3a3a3;font-size:16px">Azure Functions</h4>
       <p style="font-size:28px;font-weight:800;color:#fbbf24;margin:8px 0" data-tr="≈ $1.142 / ay"
          data-en="≈ $1,142 / mo">≈ $1,142 / mo</p>
       <p data-tr="Flex Consumption ms×GB $782 (30M GB-sn × $0,000026 + 5M çalıştırma) · egress $217,50 (2.500 GB × $0,087) · Blob depolama + işlemler $131 · Log Analytics $11,50 (East US; Consumption en çok 1,5 GB olduğundan Flex)"
@@ -1815,14 +1920,14 @@
       <span class="mig-time" data-tr="Az kod değişikliği" data-en="Small code changes">Small code changes</span>
     </div>
     <div class="mig-card reveal">
-      <h4><span style="color:#9ca3af">GCP Cloud Run</span><span class="arrow">→</span>RunR</h4>
+      <h4><span style="color:#a3a3a3">GCP Cloud Run</span><span class="arrow">→</span>RunR</h4>
       <p data-tr="Cloud Run zaten Knative — RunR de Knative. Container'lar olduğu gibi çalışır."
          data-en="Cloud Run is Knative — RunR IS Knative. Containers work as-is.">
          Cloud Run is Knative — RunR IS Knative. Containers work as-is.</p>
       <span class="mig-time" data-tr="Kod değişikliği yok" data-en="No code changes">No code changes</span>
     </div>
     <div class="mig-card reveal">
-      <h4><span style="color:#9ca3af">Azure Functions</span><span class="arrow">→</span>RunR</h4>
+      <h4><span style="color:#a3a3a3">Azure Functions</span><span class="arrow">→</span>RunR</h4>
       <p data-tr="SDK binding'leri kaldırın, standart HTTP handler'lara dönüştürün."
          data-en="Strip SDK bindings, convert to standard HTTP handlers.">
          Strip SDK bindings, convert to standard HTTP handlers.</p>
@@ -1843,7 +1948,7 @@
       <span class="mig-time" data-tr="Dockerfile ekleyin" data-en="Add a Dockerfile">Add a Dockerfile</span>
     </div>
     <div class="mig-card reveal">
-      <h4><span style="color:#9ca3af">Docker Compose</span><span class="arrow">→</span>RunR</h4>
+      <h4><span style="color:#a3a3a3">Docker Compose</span><span class="arrow">→</span>RunR</h4>
       <p data-tr="Her servis bir CaaS projesi. Aynı image, aynı env. Artık auto-scale var."
          data-en="Each service becomes a CaaS project. Same image, same env. Now with auto-scale.">
          Each service becomes a CaaS project. Same image, same env. Now with auto-scale.</p>
@@ -1894,12 +1999,12 @@
       <p data-tr="Chart, BRF'nin herkese açık Helm deposunda: kimlik bilgisi gerekmez, zorunlu tek değer <code>domain</code>."
          data-en="The chart is in BRF's public Helm repository: no credentials needed, and <code>domain</code> is the only required value.">
          The chart is in BRF's public Helm repository: no credentials needed, and <code>domain</code> is the only required value.</p>
-      <pre><code>helm repo add brf-tech https://helm.brf.sh
+      <pre data-snippet="helm"><code>helm repo add brf-tech https://helm.brf.sh
 helm repo update
 helm upgrade --install runr brf-tech/runr \
   -n runr --create-namespace \
   --set domain=runr.example.com</code></pre>
-      <a class="install-link" href="/docs/overview/#kubernetes-helm"
+      <a class="install-link" href="/docs/overview/#kubernetes-helm" data-umami-event="install-guide-click" data-umami-event-method="helm"
          data-tr="Helm kurulum rehberi →" data-en="Helm install guide →">Helm install guide →</a>
     </div>
 
@@ -1908,14 +2013,14 @@ helm upgrade --install runr brf-tech/runr \
       <p data-tr="Tek makinede üretim kurulumu: <code>compose/build.sh</code> imajları sürüm etiketinden derler; internetsiz (air-gapped) sunucuya <code>runr-images.tar</code> olarak taşınır."
          data-en="A production install on one machine: <code>compose/build.sh</code> builds the images from the release tag; air-gapped hosts get them as <code>runr-images.tar</code>.">
          A production install on one machine: <code>compose/build.sh</code> builds the images from the release tag; air-gapped hosts get them as <code>runr-images.tar</code>.</p>
-      <pre><code>git clone -b v0.6.2 \
+      <pre data-snippet="compose"><code>git clone -b v0.6.3 \
   https://github.com/BRF-Tech/runr.git
 cd runr &amp;&amp; bash compose/build.sh
 cd compose &amp;&amp; cp .env.example .env
 cp api.env.example api.env  # + APP_KEY
 docker compose up -d
 docker compose run --rm migrator</code></pre>
-      <a class="install-link" href="/docs/compose/"
+      <a class="install-link" href="/docs/compose/" data-umami-event="install-guide-click" data-umami-event-method="compose"
          data-tr="Tek sunucu kurulum rehberi →" data-en="Single-host install guide →">Single-host install guide →</a>
     </div>
 
@@ -1924,13 +2029,13 @@ docker compose run --rm migrator</code></pre>
       <p data-tr="İskelet oluşturun, runtime imajlarıyla yerelde çalıştırın ve deploy edin. Tek komutla kurulur; ikili dosyalar ve checksum'lar runr.sh/dl'de."
          data-en="Scaffold, run locally on the runtime images and deploy. One command installs it; binaries and checksums are on runr.sh/dl.">
          Scaffold, run locally on the runtime images and deploy. One command installs it; binaries and checksums are on runr.sh/dl.</p>
-      <pre><code>curl -fsSL https://runr.sh/install.sh | sh
+      <pre data-snippet="cli"><code>curl -fsSL https://runr.sh/install.sh | sh
 runr login https://runr.example.com
 runr init hello --runtime python
 cd hello
 runr dev       # localhost:8080
 runr deploy</code></pre>
-      <a class="install-link" href="/dl/"
+      <a class="install-link" href="/dl/" data-umami-event="download-click" data-umami-event-place="install-cli"
          data-tr="CLI'ı indir →" data-en="Download the CLI →">Download the CLI →</a>
     </div>
 
@@ -1939,7 +2044,7 @@ runr deploy</code></pre>
       <p data-tr="Projeler, değişkenler, domain'ler, deploy'lar, binding'ler, runtime'lar, workflow tetikleyicileri, modeller, MCP sunucuları, roller ve marka — kod olarak."
          data-en="Projects, variables, domains, deployments, bindings, runtimes, workflow triggers, models, MCP servers, roles and branding — as code.">
          Projects, variables, domains, deployments, bindings, runtimes, workflow triggers, models, MCP servers, roles and branding — as code.</p>
-      <pre><code>terraform {
+      <pre data-snippet="terraform"><code>terraform {
   required_providers {
     runr = {
       source  = "brf-tech/runr"
@@ -1947,7 +2052,7 @@ runr deploy</code></pre>
     }
   }
 }</code></pre>
-      <a class="install-link" href="/docs/terraform/"
+      <a class="install-link" href="/docs/terraform/" data-umami-event="install-guide-click" data-umami-event-method="terraform"
          data-tr="Terraform provider →" data-en="Terraform provider →">Terraform provider →</a>
     </div>
 
@@ -1956,8 +2061,8 @@ runr deploy</code></pre>
       <p data-tr="Her push'ta deploy edin, pull / merge request'ler için preview ortamları açın: GitHub'da hazır Action, GitLab CI/CD'de CLI'ı kurup <code>runr deploy</code> çalıştıran bir job."
          data-en="Deploy on every push and run preview environments for pull / merge requests: the ready-made Action on GitHub, a job that installs the CLI and runs <code>runr deploy</code> on GitLab CI/CD.">
          Deploy on every push and run preview environments for pull / merge requests: the ready-made Action on GitHub, a job that installs the CLI and runs <code>runr deploy</code> on GitLab CI/CD.</p>
-      <pre><code># GitHub Actions: secrets RUNR_API_URL, RUNR_TOKEN
-- uses: brf-tech/runr/actions/deploy@v0.6.2
+      <pre data-snippet="ci"><code># GitHub Actions: secrets RUNR_API_URL, RUNR_TOKEN
+- uses: brf-tech/runr/actions/deploy@v0.6.3
   with:
     api-url: ${{ secrets.RUNR_API_URL }}
     token: ${{ secrets.RUNR_TOKEN }}
@@ -1971,9 +2076,9 @@ deploy:
     - curl -fsSL https://runr.sh/install.sh | sh
     - runr deploy ./functions/orders</code></pre>
       <div class="install-link-row">
-        <a class="install-link" href="/docs/github-action/"
+        <a class="install-link" href="/docs/github-action/" data-umami-event="install-guide-click" data-umami-event-method="github-actions"
            data-tr="GitHub Actions →" data-en="GitHub Actions →">GitHub Actions →</a>
-        <a class="install-link" href="/docs/github-action/#gitlab-cicd"
+        <a class="install-link" href="/docs/github-action/#gitlab-cicd" data-umami-event="install-guide-click" data-umami-event-method="gitlab-ci"
            data-tr="GitLab CI/CD →" data-en="GitLab CI/CD →">GitLab CI/CD →</a>
       </div>
     </div>
@@ -1984,7 +2089,7 @@ deploy:
          data-en="The architecture, a page for every feature, upgrade notes between releases and the changelog — at <code>runr.sh/docs</code>.">
          The architecture, a page for every feature, upgrade notes between releases and the changelog — at <code>runr.sh/docs</code>.</p>
       <ul class="install-links">
-        <li><a href="/docs/" data-tr="Doküman dizini" data-en="Documentation index">Documentation index</a></li>
+        <li><a href="/docs/" data-umami-event="docs-click" data-umami-event-place="install-docs" data-tr="Doküman dizini" data-en="Documentation index">Documentation index</a></li>
         <li><a href="/docs/overview/#quick-start" data-tr="Hızlı başlangıç" data-en="Quick start">Quick start</a></li>
         <li><a href="/docs/architecture/" data-tr="Mimari" data-en="Architecture">Architecture</a></li>
         <li><a href="/docs/upgrade/" data-tr="Yükseltme" data-en="Upgrading">Upgrading</a></li>
@@ -2011,11 +2116,11 @@ deploy:
       <span>✓ <strong data-tr="Katkıya açık" data-en="Open to contributions">Open to contributions</strong></span>
     </div>
     <div class="os-cta">
-      <a class="btn btn-primary btn-magnetic" href="/dl/"
+      <a class="btn btn-primary btn-magnetic" href="/dl/" data-umami-event="download-click" data-umami-event-place="opensource"
          data-tr="İndirmeler" data-en="Downloads">Downloads</a>
-      <a class="btn btn-ghost btn-gh" href="https://github.com/BRF-Tech/runr"><svg class="gh-mark" viewBox="0 0 16 16" width="16" height="16" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg><span
+      <a class="btn btn-ghost btn-gh" href="https://github.com/BRF-Tech/runr" data-umami-event="github-click" data-umami-event-place="opensource"><svg class="gh-mark" viewBox="0 0 16 16" width="16" height="16" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg><span
          data-tr="GitHub'da görün" data-en="View on GitHub">View on GitHub</span></a>
-      <a class="btn btn-ghost" href="/docs/contributing/"
+      <a class="btn btn-ghost" href="/docs/contributing/" data-umami-event="contribute-click" data-umami-event-place="opensource"
          data-tr="Katkıda Bulun" data-en="Contribute">Contribute</a>
     </div>
   </div>
@@ -2159,13 +2264,14 @@ deploy:
       </div>
       <div class="footer-links">
         <a href="#features" data-tr="Özellikler" data-en="Features">Features</a>
-        <a href="/dl/" data-tr="İndir" data-en="Download">Download</a>
+        <a href="/dl/" data-umami-event="download-click" data-umami-event-place="footer" data-tr="İndir" data-en="Download">Download</a>
         <a href="#platform" data-tr="Platform" data-en="Platform">Platform</a>
     <a href="#tour" data-tr="Konsol turu" data-en="Console tour">Console tour</a>
-        <a href="/docs/" data-tr="Dokümanlar" data-en="Docs">Docs</a>
+        <a href="/docs/" data-umami-event="docs-click" data-umami-event-place="footer" data-tr="Dokümanlar" data-en="Docs">Docs</a>
         <a href="#install" data-tr="Kurulum" data-en="Install">Install</a>
         <a href="/docs/changelog/" data-tr="Sürüm notları" data-en="Changelog">Changelog</a>
         <a href="#compare" data-tr="Karşılaştır" data-en="Compare">Compare</a>
+        <a href="/compare/" data-umami-event="compare-click" data-umami-event-page="index" data-umami-event-place="footer" data-tr="Karşılaştırma sayfaları" data-en="Comparison pages">Comparison pages</a>
         <a href="/docs/contributing/" data-tr="Katkıda bulunma" data-en="Contributing">Contributing</a>
         <a href="#faq" data-tr="SSS" data-en="FAQ">FAQ</a>
         <a href="/security/" data-tr="Güvenlik politikası" data-en="Security policy">Security policy</a>
@@ -2175,14 +2281,14 @@ deploy:
       <div class="footer-meta">
         <p class="made">Made with ❤️ by</p>
         <p class="made"><a href="https://brf.sh" target="_blank" rel="noopener">brf.sh</a> / <a href="https://burak.sh" target="_blank" rel="noopener">burak.sh</a></p>
-        <p class="footer-contact"><span data-tr="Kaynak kod:" data-en="Source code:">Source code:</span> <a href="https://github.com/BRF-Tech/runr">github.com/BRF-Tech/runr</a></p>
+        <p class="footer-contact"><span data-tr="Kaynak kod:" data-en="Source code:">Source code:</span> <a href="https://github.com/BRF-Tech/runr" data-umami-event="github-click" data-umami-event-place="footer">github.com/BRF-Tech/runr</a></p>
         <p class="footer-contact"><span data-tr="Güvenlik:" data-en="Security:">Security:</span> <a href="mailto:security@runr.sh">security@runr.sh</a></p>
         <p class="footer-contact"><span data-tr="Davranış kuralları:" data-en="Conduct:">Conduct:</span> <a href="mailto:conduct@runr.sh">conduct@runr.sh</a></p>
       </div>
     </div>
     <div class="footer-bottom">
       <span>© 2026 BRF Teknoloji and RunR contributors. <span data-tr="MIT lisansıyla yayımlanır." data-en="Released under the MIT License.">Released under the MIT License.</span></span>
-      <span class="mono">runr.sh · <a href="/dl/">v0.6.2</a></span>
+      <span class="mono">runr.sh · <a href="/dl/" data-umami-event="download-click" data-umami-event-place="footer-version">v0.6.3</a></span>
     </div>
   </div>
 </footer>
@@ -2248,12 +2354,30 @@ deploy:
 </div>
 
 <!-- Scripts -->
-<script src="js/bg.js" defer></script>
-<script src="js/hero3d.js" defer></script>
+<!-- Deferred scripts run in this order: the reveal of the hero text and the page logic first. -->
 <script src="js/reveal.js" defer></script>
-<script src="js/turnstile.js" defer></script>
 <script src="js/main.js" defer></script>
+<script src="js/turnstile.js" defer></script>
 <script src="js/forms.js" defer></script>
+<!-- The canvas background (js/bg.js) and the 3D hero (js/hero3d.js, which downloads three.js)
+     load after the page's own scripts, and only on wider screens with a fine pointer and without
+     reduced motion: phones, touch screens and reduced motion get the still image of the hero and
+     never request them. The media query is the one of .hero-static in css/components.css. -->
+<script>
+  (function () {
+    if (window.matchMedia('(max-width: 768px), (pointer: coarse), (prefers-reduced-motion: reduce)').matches) return;
+    function load() {
+      ['/js/bg.js', '/js/hero3d.js'].forEach(function (src) {
+        var s = document.createElement('script');
+        s.src = src;
+        s.async = false;
+        document.body.appendChild(s);
+      });
+    }
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', load);
+    else load();
+  })();
+</script>
 
 <!-- ───────────────────────────────────────────────────────────
      Backend config for the forms (same-origin /api on runr.sh).

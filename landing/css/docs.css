@@ -5,17 +5,17 @@
    ============================================================ */
 
 :root {
-  --bg: #030712;
-  --bg-elev: #1f2937;
-  --bg-soft: #111827;
-  --border: #374151;
-  --border-strong: #4b5563;
-  --text: #e5e7eb;
-  --text-dim: #9ca3af;
-  --text-muted: #6b7280;
+  --bg: #0a0a0a;
+  --bg-elev: #262626;
+  --bg-soft: #171717;
+  --border: #404040;
+  --border-strong: #525252;
+  --text: #e5e5e5;
+  --text-dim: #a3a3a3;
+  --text-muted: #737373;
   --accent: #f97316;
   --accent-soft: #fb923c;
-  --code-bg: #111827;
+  --code-bg: #171717;
   --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace;
   --grad-r: linear-gradient(135deg, #FFB347, #FF8C42 50%, #E63946);
 }
@@ -28,7 +28,7 @@
 ::-webkit-scrollbar { width: 10px; height: 10px; }
 ::-webkit-scrollbar-track, ::-webkit-scrollbar-corner { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 8px; border: 2px solid transparent; background-clip: padding-box; }
-::-webkit-scrollbar-thumb:hover { background-color: #4b5563; }
+::-webkit-scrollbar-thumb:hover { background-color: #525252; }
 
 html {
   background: var(--bg);
@@ -55,7 +55,7 @@ a:hover { color: #fdba74; text-decoration: underline; }
 /* ── Top bar ── */
 .d-top {
   position: sticky; top: 0; z-index: 10;
-  background: rgba(3, 7, 18, 0.86);
+  background: rgba(10, 10, 10, 0.86);
   backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
   border-bottom: 1px solid var(--border);
 }
@@ -125,7 +125,7 @@ a:hover { color: #fdba74; text-decoration: underline; }
 .d-doc ul, .d-doc ol { padding-left: 24px; }
 .d-doc li { margin: 4px 0; }
 .d-doc li > p { margin: 0 0 6px; }
-.d-doc strong { color: #f9fafb; }
+.d-doc strong { color: #fafafa; }
 .d-doc hr { border: 0; border-top: 1px solid var(--border); margin: 28px 0; }
 .d-doc blockquote {
   border-left: 3px solid var(--accent); background: rgba(249,115,22,0.05);
@@ -134,21 +134,21 @@ a:hover { color: #fdba74; text-decoration: underline; }
 
 .d-doc code {
   font-family: var(--mono); font-size: 0.88em;
-  background: rgba(156, 163, 175, 0.12); border: 1px solid rgba(156,163,175,0.14);
-  border-radius: 5px; padding: 0.1em 0.35em; color: #f3f4f6;
+  background: rgba(163, 163, 163, 0.12); border: 1px solid rgba(163,163,163,0.14);
+  border-radius: 5px; padding: 0.1em 0.35em; color: #f5f5f5;
 }
 .d-doc pre {
   background: var(--code-bg); border: 1px solid var(--border); border-radius: 10px;
   padding: 14px 16px; overflow-x: auto; line-height: 1.55;
 }
-.d-doc pre code { background: none; border: 0; padding: 0; font-size: 13px; color: #e5e7eb; white-space: pre; }
+.d-doc pre code { background: none; border: 0; padding: 0; font-size: 13px; color: #e5e5e5; white-space: pre; }
 
 .d-doc table {
   display: block; overflow-x: auto; border-collapse: collapse; font-size: 14px; max-width: 100%;
 }
 .d-doc th, .d-doc td { border: 1px solid var(--border); padding: 7px 11px; vertical-align: top; text-align: left; }
 .d-doc th { background: var(--bg-elev); color: var(--text); font-weight: 600; }
-.d-doc tr:nth-child(even) td { background: rgba(17, 24, 39, 0.55); }
+.d-doc tr:nth-child(even) td { background: rgba(23, 23, 23, 0.55); }
 .d-doc input[type="checkbox"] { margin-right: 6px; }
 
 .d-doc .d-license {
@@ -161,7 +161,7 @@ a:hover { color: #fdba74; text-decoration: underline; }
 /* ── Downloads page ── */
 .d-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 14px; margin: 0 0 18px; }
 .d-card {
-  background: rgba(17, 24, 39, 0.75); border: 1px solid var(--border); border-radius: 12px; padding: 16px 18px;
+  background: rgba(23, 23, 23, 0.75); border: 1px solid var(--border); border-radius: 12px; padding: 16px 18px;
 }
 .d-card h3 { margin: 0 0 6px; font-size: 16px; border: 0; padding: 0; }
 .d-card p { color: var(--text-dim); font-size: 14px; margin: 0 0 10px; }

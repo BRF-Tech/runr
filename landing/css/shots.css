@@ -42,6 +42,7 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
+.shot picture { display: block; }
 .shot img {
   display: block;
   width: 100%;

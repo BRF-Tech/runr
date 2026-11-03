@@ -21,12 +21,12 @@
   html, body { width: 100vw; height: 100vh; overflow: hidden; }
   body {
     font-family: 'Segoe UI', system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
-    color: #e5e7eb;
-    background: #030712;
+    color: #e5e5e5;
+    background: #0a0a0a;
     background-image:
       radial-gradient(ellipse 48rem 36rem at 86% 10%, rgba(255, 140, 66, 0.22), transparent 62%),
       radial-gradient(ellipse 40rem 30rem at 10% 100%, rgba(230, 57, 70, 0.18), transparent 62%),
-      linear-gradient(180deg, #030712 0%, #111827 100%);
+      linear-gradient(180deg, #0a0a0a 0%, #171717 100%);
     position: relative;
   }
   /* faint grid */
@@ -34,8 +34,8 @@
     content: '';
     position: absolute; inset: 0;
     background-image:
-      linear-gradient(rgba(156, 163, 175, 0.07) 1px, transparent 1px),
-      linear-gradient(90deg, rgba(156, 163, 175, 0.07) 1px, transparent 1px);
+      linear-gradient(rgba(163, 163, 163, 0.07) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(163, 163, 163, 0.07) 1px, transparent 1px);
     background-size: 6rem 6rem;
     mask-image: radial-gradient(ellipse 70% 70% at 50% 50%, #000 40%, transparent 100%);
     -webkit-mask-image: radial-gradient(ellipse 70% 70% at 50% 50%, #000 40%, transparent 100%);
@@ -58,7 +58,7 @@
     -webkit-text-fill-color: transparent; color: transparent;
   }
   .tagline { margin-top: 2.4rem; font-size: 3.1rem; font-weight: 700; line-height: 1.2; letter-spacing: -0.01em; max-width: 52rem; }
-  .sub { margin-top: 1.4rem; font-size: 1.9rem; color: #9ca3af; line-height: 1.45; max-width: 52rem; }
+  .sub { margin-top: 1.4rem; font-size: 1.9rem; color: #a3a3a3; line-height: 1.45; max-width: 52rem; }
   .chips { display: flex; flex-wrap: wrap; gap: 0.8rem; margin-top: 2.6rem; max-width: 54rem; }
   .chip {
     font-size: 1.35rem; font-weight: 700; letter-spacing: 0.04em;
@@ -66,9 +66,9 @@
     border: 1px solid rgba(249, 115, 22, 0.5); background: rgba(249, 115, 22, 0.1); color: #fdba74;
     font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   }
-  .chip.dim { border-color: #374151; background: rgba(17, 24, 39, 0.7); color: #9ca3af; }
-  .url { position: absolute; left: 6.4rem; bottom: 3.6rem; font-size: 1.7rem; color: #6b7280; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; letter-spacing: 0.04em; }
-  .url b { color: #e5e7eb; font-weight: 700; }
+  .chip.dim { border-color: #404040; background: rgba(23, 23, 23, 0.7); color: #a3a3a3; }
+  .url { position: absolute; left: 6.4rem; bottom: 3.6rem; font-size: 1.7rem; color: #737373; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; letter-spacing: 0.04em; }
+  .url b { color: #e5e5e5; font-weight: 700; }
 
   /* the console, as a browser window leaning out of the right edge */
   .frame {
@@ -78,39 +78,39 @@
     border-radius: 1.6rem 0 0 1.6rem;
     border: 1px solid rgba(249, 115, 22, 0.35);
     border-right: 0;
-    background: #111827;
+    background: #171717;
     overflow: hidden;
     box-shadow: 0 4rem 12rem rgba(0, 0, 0, 0.65), 0 0 9rem rgba(249, 115, 22, 0.14);
     transform: perspective(160rem) rotateY(-7deg) translateX(1rem);
     transform-origin: left center;
   }
-  .bar { display: flex; align-items: center; gap: 0.7rem; padding: 1.1rem 1.4rem; background: #111827; border-bottom: 1px solid #1f2937; }
+  .bar { display: flex; align-items: center; gap: 0.7rem; padding: 1.1rem 1.4rem; background: #171717; border-bottom: 1px solid #262626; }
   .dot { width: 1.1rem; height: 1.1rem; border-radius: 50%; }
   .dot:nth-child(1) { background: rgba(239, 68, 68, 0.8); }
   .dot:nth-child(2) { background: rgba(251, 191, 36, 0.8); }
   .dot:nth-child(3) { background: rgba(74, 222, 128, 0.8); }
-  .addr { margin-left: 0.8rem; flex: 1; font-size: 1.2rem; color: #6b7280; background: #030712; border: 1px solid #1f2937; border-radius: 0.6rem; padding: 0.3rem 1rem; font-family: ui-monospace, Menlo, Consolas, monospace; }
+  .addr { margin-left: 0.8rem; flex: 1; font-size: 1.2rem; color: #737373; background: #0a0a0a; border: 1px solid #262626; border-radius: 0.6rem; padding: 0.3rem 1rem; font-family: ui-monospace, Menlo, Consolas, monospace; }
   .frame img { display: block; width: 100%; height: calc(100% - 4.2rem); object-fit: cover; object-position: left top; }
   .frame.missing img { display: none; }
 
   /* CSS mock of the project list, shown only while the screenshot does not exist */
   .mock { display: none; height: calc(100% - 4.2rem); grid-template-columns: 16rem 1fr; }
   .frame.missing .mock { display: grid; }
-  .side { background: #111827; border-right: 1px solid #1f2937; padding: 1.6rem 1.2rem; display: flex; flex-direction: column; gap: 1rem; }
-  .side i { display: block; height: 1.3rem; border-radius: 0.4rem; background: #1f2937; }
+  .side { background: #171717; border-right: 1px solid #262626; padding: 1.6rem 1.2rem; display: flex; flex-direction: column; gap: 1rem; }
+  .side i { display: block; height: 1.3rem; border-radius: 0.4rem; background: #262626; }
   .side i.on { background: rgba(249, 115, 22, 0.35); }
   .side i:nth-child(1) { width: 70%; } .side i:nth-child(2) { width: 55%; } .side i:nth-child(3) { width: 80%; }
   .side i:nth-child(4) { width: 50%; } .side i:nth-child(5) { width: 65%; } .side i:nth-child(6) { width: 45%; }
   .main { padding: 1.8rem 2rem; }
   .main h6 { font-size: 1.9rem; font-weight: 800; margin-bottom: 1.4rem; display: flex; align-items: center; justify-content: space-between; }
   .main h6 b { font-size: 1.2rem; font-weight: 700; color: #fff; background: linear-gradient(135deg, #FFB347, #FF8C42 50%, #E63946); padding: 0.5rem 1.2rem; border-radius: 0.6rem; }
-  .row { display: grid; grid-template-columns: 2.2rem 13rem 5.5rem 9rem 6.5rem 9rem; gap: 1.2rem; align-items: center; padding: 1.05rem 1rem; border-bottom: 1px solid #1f2937; font-size: 1.25rem; color: #9ca3af; font-family: ui-monospace, Menlo, Consolas, monospace; white-space: nowrap; }
-  .row.head { color: #6b7280; font-size: 1.05rem; text-transform: uppercase; letter-spacing: 0.08em; }
+  .row { display: grid; grid-template-columns: 2.2rem 13rem 5.5rem 9rem 6.5rem 9rem; gap: 1.2rem; align-items: center; padding: 1.05rem 1rem; border-bottom: 1px solid #262626; font-size: 1.25rem; color: #a3a3a3; font-family: ui-monospace, Menlo, Consolas, monospace; white-space: nowrap; }
+  .row.head { color: #737373; font-size: 1.05rem; text-transform: uppercase; letter-spacing: 0.08em; }
   .row .ic { width: 2.2rem; height: 2.2rem; border-radius: 0.6rem; display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 1.1rem; color: #fff; font-family: 'Segoe UI', system-ui, sans-serif; }
-  .row .nm { color: #e5e7eb; font-weight: 600; }
+  .row .nm { color: #e5e5e5; font-weight: 600; }
   .row .ok::before { content: '●'; color: #4ade80; margin-right: 0.5rem; }
   .row .warm::before { content: '●'; color: #fbbf24; margin-right: 0.5rem; }
-  .row .zero::before { content: '○'; color: #6b7280; margin-right: 0.5rem; }
+  .row .zero::before { content: '○'; color: #737373; margin-right: 0.5rem; }
 </style>
 </head>
 <body>
