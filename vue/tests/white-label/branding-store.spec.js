@@ -1,6 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import client from '@/api/client'
-import { applyBranding, normalizeBranding, readCachedBranding } from '@/modules/white-label/utils/branding'
+import { nextTick } from 'vue'
+import { BRANDING_STYLE_ID, applyBranding, normalizeBranding, readCachedBranding } from '@/modules/white-label/utils/branding'
+import { RUNR_DARK, RUNR_LIGHT, SURFACE_SHADES } from '@/modules/white-label/utils/color'
+import { useTheme } from '@/composables/useTheme'
 import { useBrandingStore } from '@/modules/white-label/stores/branding'
 import { makePinia, ok } from './helpers'
 
@@ -89,6 +92,87 @@ describe('branding: normalize + apply', () => {
 
     applyBranding({})
     expect(favicon()).toBe('/favicon.svg')
+  })
+})
+
+describe('branding: the theme tones and the default theme', () => {
+  const NAVY = {
+    950: '9 27 78', 900: '15 36 96', 800: '22 46 114', 700: '30 59 133', 600: '175 195 225', 500: '205 218 240',
+    400: '222 232 248', 300: '235 240 250', 200: '242 245 252', 100: '248 250 254', 50: '252 253 255',
+  }
+  const scaleOf = rgbByShade => Object.fromEntries(SURFACE_SHADES.map(s => [s, rgbByShade[s].join(' ')]))
+  const styleText = () => document.getElementById(BRANDING_STYLE_ID)?.textContent ?? ''
+  /** The --<prefix>-* variables of the rule with this selector in the branding's <style>. */
+  const vars = (selector, prefix) => {
+    const rule = styleText().split('\n').find(line => line.startsWith(`${selector} {`)) ?? ''
+    return Object.fromEntries([...rule.matchAll(new RegExp(`--${prefix}-(\\d+): ([\\d ]+);`, 'g'))].map(m => [m[1], m[2]]))
+  }
+
+  beforeEach(async () => {
+    localStorage.clear()
+    document.head.innerHTML = '<link rel="icon" type="image/svg+xml" href="/favicon.svg">'
+    document.documentElement.removeAttribute('style')
+    delete document.documentElement.dataset.theme
+    useTheme().set('fulldark')
+    localStorage.clear()
+  })
+
+  it("RunR's tones and theme when nothing is customised", () => {
+    const b = normalizeBranding({})
+    expect(b.dark_color).toBe('#0a0a0a')
+    expect(b.light_color).toBe('#fffcf8')
+    expect(b.dark_scale).toBeNull()
+    expect(b.light_scale).toBeNull()
+    expect(b.default_theme).toBe('dark')
+    expect(b.surfaces.dark).toEqual(scaleOf(RUNR_DARK))
+    expect(b.surfaces.light).toEqual(scaleOf(RUNR_LIGHT))
+  })
+
+  it('reads the base colours, the explicit scales and the default theme; drops invalid values', () => {
+    const b = normalizeBranding({
+      dark_scale: { ...NAVY, 75: '1 2 3', 300: 'nope' },
+      light_color: '#FFF', light_scale: null, default_theme: 'light',
+    })
+    // a scale without its base colour: the base is its 950
+    expect(b.dark_color).toBe('#091b4e')
+    expect(b.dark_scale['75']).toBeUndefined()
+    expect(b.dark_scale['300']).toBeUndefined()
+    expect(b.surfaces.dark['900']).toBe('15 36 96')
+    expect(b.surfaces.dark['300']).toMatch(/^\d+ \d+ \d+$/)
+    expect(b.light_color).toBe('#ffffff')
+    expect(b.default_theme).toBe('light')
+    expect(normalizeBranding({ default_theme: 'navy', dark_color: 'blue' })).toMatchObject({ default_theme: 'dark', dark_color: '#0a0a0a' })
+  })
+
+  it('writes both themes\' tones to the <style id="runr-branding"> element, and rewrites it', () => {
+    applyBranding({ dark_scale: NAVY })
+    expect(vars('html:not([data-theme="light"])', 'gray')).toEqual(NAVY)
+    expect(vars('html[data-theme="light"]', 'gray')).toEqual(scaleOf(RUNR_LIGHT))
+    // both themes under their own names for the login page
+    expect(vars('html:root', 'surface-dark')).toEqual(NAVY)
+    expect(vars('html:root', 'surface-light')).toEqual(scaleOf(RUNR_LIGHT))
+
+    applyBranding({})
+    expect(document.querySelectorAll(`#${BRANDING_STYLE_ID}`)).toHaveLength(1)
+    expect(vars('html:not([data-theme="light"])', 'gray')).toEqual(scaleOf(RUNR_DARK))
+  })
+
+  it('the default theme reaches users who never picked one, not the others', async () => {
+    const { current } = useTheme()
+    localStorage.removeItem('theme')
+    applyBranding({ default_theme: 'light' })
+    await nextTick()
+    // the user picked dark in beforeEach (then storage was cleared): the pick stays for this visit
+    expect(current.value).toBe('fulldark')
+
+    vi.resetModules()
+    const fresh = await import('@/composables/useTheme')
+    const freshBranding = await import('@/modules/white-label/utils/branding')
+    delete document.documentElement.dataset.theme
+    freshBranding.applyBranding({ default_theme: 'light' })
+    await nextTick()
+    expect(fresh.useTheme().current.value).toBe('light')
+    expect(document.documentElement.dataset.theme).toBe('light')
   })
 })
 

@@ -28,7 +28,11 @@ export function formatSeconds(seconds) {
   return `${Math.floor(h / 24)}d ${h % 24}h`
 }
 
-const PALETTE = ['#38bdf8', '#a78bfa', '#34d399', '#fbbf24', '#f472b6', '#60a5fa', '#fb923c', '#2dd4bf']
+// Shades of the brand and of the theme's tones: a service per colour, no other hues (white-label)
+const PALETTE = [
+  'rgb(var(--brand-500))', 'rgb(var(--gray-500))', 'rgb(var(--brand-300))', 'rgb(var(--brand-700))',
+  'rgb(var(--gray-600))', 'rgb(var(--brand-400))', 'rgb(var(--brand-800))', 'rgb(var(--gray-400))',
+]
 
 /** A stable colour per service name of a trace. */
 export function serviceColors(services) {

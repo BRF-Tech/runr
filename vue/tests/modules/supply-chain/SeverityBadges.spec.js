@@ -13,7 +13,8 @@ describe('SeverityBadges', () => {
     const badges = w.findAll('[data-severity]')
     expect(badges.map(b => b.attributes('data-severity'))).toEqual(['critical', 'high', 'medium', 'low', 'unknown'])
     expect(w.find('[data-severity="critical"]').text()).toBe('Critical2')
-    expect(w.find('[data-severity="critical"]').classes()).toContain('text-red-300')
+    // critical solid red, high a red tint (no orange: the RunR brand)
+    expect(w.find('[data-severity="critical"]').classes()).toContain('bg-red-700')
     expect(w.find('[data-severity="medium"]').classes()).toContain('text-gray-500')
   })
 

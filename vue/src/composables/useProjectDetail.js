@@ -5,6 +5,7 @@ import { projectsApi } from '@/api/projects'
 import { environmentsApi } from '@/api/environments'
 import { useSettingsStore } from '@/stores/settings'
 import { useRuntimesStore } from '@/stores/runtimes'
+import { usePermissionsStore } from '@/stores/permissions'
 import { useConfirm } from '@/composables/useConfirm'
 import { useToast } from '@/composables/useToast'
 import { useProjectEditor } from '@/composables/useProjectEditor'
@@ -73,7 +74,7 @@ export function useProjectDetail() {
       const hash = route.hash?.replace('#', '')
       const known = [
         'versions', 'deployments', ...(isGlobalProject(project.value) ? ['regions'] : []),
-        'environments', 'metrics', 'domains', 'network', 'connections', 'models', 'access', ...moduleProjectTabs.value.map(tab => tab.id),
+        'environments', ...(canViewMetrics.value ? ['metrics'] : []), 'domains', 'network', 'connections', ...(canViewModels.value ? ['models'] : []), 'access', ...moduleProjectTabs.value.map(tab => tab.id),
       ]
       activeTab.value = known.includes(hash) ? hash : 'versions'
     } finally {
@@ -187,6 +188,13 @@ export function useProjectDetail() {
     ['aaas', 'agentflow', 'maas'].includes(project.value?.service_type)
   )
 
+  // The Models tab needs models.view organization-wide (ProjectModelBindingController): without
+  // it the API refuses the bindings, and the tab is left out rather than showing "no models"
+  const perms = usePermissionsStore()
+  const canViewModels = computed(() => perms.can('models.view'))
+  // Metrics history: metrics.view on the project (GET …/metrics/history answers 403 without it)
+  const canViewMetrics = computed(() => perms.can('metrics.view', project.value?.id))
+
   const moduleProjectTabs = computed(() =>
     (moduleRegistry.projectTabs ?? [])
       .filter(tab => !tab.visibleIf || (project.value && tab.visibleIf(project.value)))
@@ -200,7 +208,7 @@ export function useProjectDetail() {
       { id: 'deployments', label: t('project.tabs.deployments') },
       // Global project: its regions, their status and the DNS mode (docs/global-projects.md)
       ...(isGlobalProject(project.value) ? [{ id: 'regions', label: t('globalProjects.tab') }] : []),
-      { id: 'metrics',     label: t('metrics.history') },
+      ...(canViewMetrics.value ? [{ id: 'metrics', label: t('metrics.history') }] : []),
       { id: 'domains',     label: t('project.tabs.domains') },
       // access mode and internal callers (docs/internal-network.md)
       { id: 'network',     label: t('network.tab') },
@@ -214,7 +222,8 @@ export function useProjectDetail() {
     // Tabs contributed by modules (moduleRegistry.projectTabs, e.g. Workflows, Git)
     const extra = moduleProjectTabs.value.map(tab => ({ id: tab.id, label: t(tab.labelKey) }))
     // models: model services bound to the project (docs/huggingface.md)
-    return [...base.slice(0, 2), envTab, ...base.slice(2), { id: 'connections', label: t('privateConnections.tab') }, { id: 'models', label: t('ai.project.tab') }, ...extra, access]
+    const models = canViewModels.value ? [{ id: 'models', label: t('ai.project.tab') }] : []
+    return [...base.slice(0, 2), envTab, ...base.slice(2), { id: 'connections', label: t('privateConnections.tab') }, ...models, ...extra, access]
   })
 
   watch(activeTab, (tab) => {

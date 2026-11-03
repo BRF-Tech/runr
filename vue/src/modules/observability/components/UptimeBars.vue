@@ -12,7 +12,7 @@ const { t } = useI18n()
 function color(uptime) {
   if (uptime === null || uptime === undefined) return 'bg-gray-700'
   if (uptime >= 99.9) return 'bg-emerald-500'
-  if (uptime >= 95) return 'bg-amber-400'
+  if (uptime >= 95) return 'bg-yellow-400'
   return 'bg-red-500'
 }
 </script>

@@ -124,7 +124,7 @@ async function reveal() {
         <div class="flex flex-wrap items-center gap-2">
           <span class="font-mono text-gray-100">{{ app?.key_fingerprint }}…</span>
           <button v-if="canManage" type="button" class="btn-secondary text-xs px-2.5 py-1" @click="reveal"><Eye class="w-3.5 h-3.5" />{{ t('workflows.app.revealKey') }}</button>
-          <button v-if="canManage" type="button" class="btn-secondary text-xs px-2.5 py-1 text-amber-300" :disabled="rotating" data-test="rotate-key" @click="rotate"><KeyRound class="w-3.5 h-3.5" />{{ t('workflows.app.rotateKey') }}</button>
+          <button v-if="canManage" type="button" class="btn-secondary text-xs px-2.5 py-1 text-yellow-300" :disabled="rotating" data-test="rotate-key" @click="rotate"><KeyRound class="w-3.5 h-3.5" />{{ t('workflows.app.rotateKey') }}</button>
         </div>
         <p v-if="key" class="font-mono text-gray-100 break-all mt-2 bg-gray-950/60 border border-gray-800 rounded-sm px-2 py-1" data-test="signing-key">{{ key }}</p>
         <p class="text-gray-400 mt-1">{{ t('workflows.app.keyHint') }}</p>
@@ -132,7 +132,7 @@ async function reveal() {
     </div>
 
     <div v-if="app?.queue_bridge?.enabled" class="flex items-start gap-2 text-gray-300">
-      <Radio class="w-3.5 h-3.5 mt-0.5 text-violet-300 shrink-0" />
+      <Radio class="w-3.5 h-3.5 mt-0.5 text-brand-300 shrink-0" />
       <span>
         <span class="text-gray-400">{{ t('workflows.app.queueBridge') }}:</span>
         {{ t('workflows.app.queueBridgeEvent', { stream: app.queue_bridge.stream, event: app.queue_bridge.event }) }}

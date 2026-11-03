@@ -71,7 +71,7 @@ defineExpose({ active, sections, warnings })
       </div>
     </div>
 
-    <div v-for="w in warnings" :key="w.code" role="alert" class="rounded-xl border border-amber-900/50 bg-amber-950/20 px-4 py-3 text-xs text-amber-300"
+    <div v-for="w in warnings" :key="w.code" role="alert" class="rounded-xl border border-yellow-900/50 bg-yellow-950/20 px-4 py-3 text-xs text-yellow-300"
       :data-test="`billing-warning-${w.code}`">{{ w.message }}</div>
 
     <div class="flex flex-wrap gap-1 border-b border-gray-800">

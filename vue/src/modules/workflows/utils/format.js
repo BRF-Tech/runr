@@ -6,14 +6,14 @@ export const RUN_STATUSES = [...ACTIVE_STATUSES, ...TERMINAL_STATUSES]
 
 const STATUS_CLASSES = {
   queued:    'bg-gray-800 text-gray-300 border-gray-700',
-  running:   'bg-sky-900/40 text-sky-300 border-sky-800/50',
-  sleeping:  'bg-indigo-900/40 text-indigo-300 border-indigo-800/50',
-  waiting:   'bg-violet-900/40 text-violet-300 border-violet-800/50',
-  retrying:  'bg-amber-900/40 text-amber-300 border-amber-800/50',
+  running:   'bg-brand-900/40 text-brand-300 border-brand-800/50',
+  sleeping:  'bg-transparent text-brand-400 border-brand-500/60',
+  waiting:   'bg-gray-800 text-brand-300 border-gray-700',
+  retrying:  'bg-yellow-900/40 text-yellow-300 border-yellow-800/50',
   completed: 'bg-emerald-900/40 text-emerald-400 border-emerald-800/50',
   failed:    'bg-red-900/40 text-red-400 border-red-800/50',
   cancelled: 'bg-gray-800 text-gray-400 border-gray-700',
-  timed_out: 'bg-orange-900/40 text-orange-300 border-orange-800/50',
+  timed_out: 'bg-yellow-900/40 text-yellow-300 border-yellow-800/50',
 }
 
 export function statusClass(status) {

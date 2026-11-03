@@ -97,7 +97,7 @@ async function submit() {
       :disabled="resending" data-test="signup-resend" @click="resend">
       {{ resending ? t('whiteLabel.signup.resending') : t('whiteLabel.signup.resend') }}
     </button>
-    <p class="text-center mt-6 text-sm" style="color:#64748b">
+    <p class="text-center mt-6 text-sm" style="color:rgb(var(--surface-light-600))">
       <button type="button" class="hover:underline" style="color:rgb(var(--brand-600))" @click="emit('back')">
         {{ t('auth.backToLogin') }}
       </button>
@@ -171,7 +171,7 @@ async function submit() {
     <p v-if="error" class="text-sm font-medium" style="color:#dc2626">{{ error }}</p>
 
     <div class="flex gap-3">
-      <button type="button" class="px-6 py-4 rounded-md text-base font-semibold transition-all" style="background:#f1f5f9;color:#374151;border:1.5px solid #e2e8f0" @click="step = 1">
+      <button type="button" class="px-6 py-4 rounded-md text-base font-semibold transition-all" style="background:rgb(var(--surface-light-800));color:rgb(var(--surface-light-500));border:1.5px solid rgb(var(--surface-light-700))" @click="step = 1">
         {{ t('common.back') }}
       </button>
       <button type="button" class="login-submit flex-1 py-4 rounded-md text-base font-semibold text-white transition-all disabled:opacity-50"
@@ -181,7 +181,7 @@ async function submit() {
     </div>
   </div>
 
-  <p class="text-center mt-6 text-sm" style="color:#64748b">
+  <p class="text-center mt-6 text-sm" style="color:rgb(var(--surface-light-600))">
     <button type="button" class="hover:underline" style="color:rgb(var(--brand-600))" @click="emit('back')">
       {{ t('auth.backToLogin') }}
     </button>

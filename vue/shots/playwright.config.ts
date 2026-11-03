@@ -12,7 +12,8 @@ const __dirname = dirname(fileURLToPath(import.meta.url))
 // The console runs on the mocked-API Vite server of the e2e suite (e2e/vite.config.e2e.ts) and
 // every /api call is answered in the browser by e2e/fixtures/mock-api.ts with the dataset of
 // shots/db.ts: no backend, no cluster, the same pixels for every run. The scenes live in
-// shots/scenes.ts, the runner in shots/shots.spec.ts, the PNG step in shots/optimize.py.
+// shots/scenes.ts, the runner in shots/shots.spec.ts, the PNG and WebP step (run it after
+// every render: `python shots/optimize.py`) in shots/optimize.py.
 
 const PORT = Number(process.env.SHOTS_PORT || 4175)
 

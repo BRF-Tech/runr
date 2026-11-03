@@ -145,13 +145,13 @@ onMounted(load)
   <div class="space-y-6" data-test="alerts-settings">
     <div>
       <div class="flex items-center gap-2">
-        <BellRing class="w-4 h-4 text-amber-300" />
+        <BellRing class="w-4 h-4 text-yellow-300" />
         <span class="text-[15px] font-semibold text-gray-100">{{ t('observability.alerts.title') }}</span>
       </div>
       <p class="text-xs text-gray-400 mt-1.5">{{ t('observability.alerts.intro') }}</p>
     </div>
 
-    <div v-if="loading" class="flex justify-center py-10"><div class="animate-spin h-6 w-6 border-2 border-sky-500 border-t-transparent rounded-full" /></div>
+    <div v-if="loading" class="flex justify-center py-10"><div class="animate-spin h-6 w-6 border-2 border-brand-500 border-t-transparent rounded-full" /></div>
     <div v-else-if="error" class="bg-red-900/20 border border-red-800/40 rounded-md px-4 py-3 text-xs text-red-400">{{ error }}</div>
 
     <template v-else>
@@ -242,7 +242,7 @@ onMounted(load)
               <td class="py-1.5 pr-3 text-gray-500">{{ t('observability.alerts.deliveries.attempts', { n: d.attempts }) }}</td>
               <td class="py-1.5 pr-3 text-red-400 truncate max-w-[16rem]" :title="d.last_error">{{ d.last_error }}</td>
               <td class="py-1.5 text-right">
-                <button v-if="d.status === 'failed' && d.kind !== 'test'" type="button" class="text-sky-400 hover:text-sky-300" :data-test="`retry-${d.id}`" @click="retry(d)">{{ t('observability.alerts.deliveries.retry') }}</button>
+                <button v-if="d.status === 'failed' && d.kind !== 'test'" type="button" class="text-brand-400 hover:text-brand-300" :data-test="`retry-${d.id}`" @click="retry(d)">{{ t('observability.alerts.deliveries.retry') }}</button>
               </td>
             </tr>
           </tbody>

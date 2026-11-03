@@ -22,7 +22,7 @@ const targetTypes = ['project', 'deployment', 'domain', 'gateway', 'gateway_rout
 
 const resultClass = {
   success: 'bg-emerald-900/30 text-emerald-300 border-emerald-800/50',
-  denied:  'bg-amber-900/30 text-amber-300 border-amber-800/50',
+  denied:  'bg-yellow-900/30 text-yellow-300 border-yellow-800/50',
   failure: 'bg-red-900/30 text-red-300 border-red-800/50',
 }
 
@@ -163,7 +163,7 @@ onMounted(async () => {
             <td class="px-3 py-2 text-gray-400 whitespace-nowrap">{{ fmtTime(e.occurred_at) }}</td>
             <td class="px-3 py-2 text-gray-100">
               {{ actorLabel(e) }}
-              <span v-if="e.actor?.impersonator" class="block text-[11px] text-amber-300">{{ t('audit.impersonating') }}</span>
+              <span v-if="e.actor?.impersonator" class="block text-[11px] text-yellow-300">{{ t('audit.impersonating') }}</span>
             </td>
             <td class="px-3 py-2 font-mono text-gray-100">{{ e.action }}</td>
             <td class="px-3 py-2 text-gray-300 truncate max-w-[16rem]">{{ targetLabel(e) }}</td>
@@ -233,7 +233,7 @@ onMounted(async () => {
             <div class="text-gray-400">{{ t('audit.detail.authMethod') }}</div><div class="col-span-2 font-mono text-gray-300">{{ selected.actor.auth_method }}</div>
           </template>
           <template v-if="selected.actor?.impersonator">
-            <div class="text-gray-400">{{ t('audit.detail.impersonator') }}</div><div class="col-span-2 text-amber-300">{{ selected.actor.impersonator.name }} ({{ selected.actor.impersonator.id }})</div>
+            <div class="text-gray-400">{{ t('audit.detail.impersonator') }}</div><div class="col-span-2 text-yellow-300">{{ selected.actor.impersonator.name }} ({{ selected.actor.impersonator.id }})</div>
           </template>
           <template v-if="selected.tenant_id">
             <div class="text-gray-400">{{ t('audit.detail.tenant') }}</div><div class="col-span-2 font-mono text-gray-300">{{ selected.tenant_id }}</div>

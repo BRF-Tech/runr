@@ -61,17 +61,17 @@ async function resend() {
 </script>
 
 <template>
-  <div class="min-h-screen flex items-center justify-center p-6" style="background:#f1f5f9">
+  <div class="min-h-screen flex items-center justify-center p-6" style="background:rgb(var(--surface-light-800))">
     <div class="w-full max-w-md rounded-2xl bg-white shadow-xl px-10 py-10" data-test="verify-email">
       <div class="flex items-center gap-3 mb-8">
         <img v-if="logo" :src="logo" :alt="branding.productName" class="h-10 object-contain" data-test="verify-logo" />
         <template v-else>
           <img :src="branding.markUrl || runrIconUrl" alt="" class="h-9 w-9 object-contain" />
-          <span class="text-2xl font-extrabold tracking-tight" style="color:#0f172a">{{ branding.productName }}</span>
+          <span class="text-2xl font-extrabold tracking-tight" style="color:rgb(var(--surface-light-100))">{{ branding.productName }}</span>
         </template>
       </div>
 
-      <div v-if="state === 'verifying' || state === 'done'" class="flex items-center gap-3" style="color:#334155">
+      <div v-if="state === 'verifying' || state === 'done'" class="flex items-center gap-3" style="color:rgb(var(--surface-light-400))">
         <CheckCircle2 v-if="state === 'done'" class="w-5 h-5" style="color:#059669" />
         <Loader2 v-else class="w-5 h-5 animate-spin" style="color:rgb(var(--brand-600))" />
         <span class="text-base">{{ state === 'done' ? t('whiteLabel.verify.done') : t('whiteLabel.verify.verifying') }}</span>
@@ -81,17 +81,17 @@ async function resend() {
         <div class="flex items-start gap-3 mb-6">
           <MailWarning class="w-6 h-6 shrink-0" style="color:#dc2626" />
           <div>
-            <h1 class="text-xl font-bold mb-1" style="color:#0f172a" data-test="verify-state">
+            <h1 class="text-xl font-bold mb-1" style="color:rgb(var(--surface-light-100))" data-test="verify-state">
               {{ state === 'expired' ? t('whiteLabel.verify.expiredTitle') : state === 'invalid' ? t('whiteLabel.verify.invalidTitle') : t('whiteLabel.verify.errorTitle') }}
             </h1>
-            <p class="text-sm" style="color:#64748b">{{ message || t('whiteLabel.verify.resendHint') }}</p>
+            <p class="text-sm" style="color:rgb(var(--surface-light-600))">{{ message || t('whiteLabel.verify.resendHint') }}</p>
           </div>
         </div>
 
         <form class="space-y-3" @submit.prevent="resend">
-          <label class="block text-xs font-bold uppercase tracking-widest" style="color:#374151">{{ t('auth.email') }}</label>
+          <label class="block text-xs font-bold uppercase tracking-widest" style="color:rgb(var(--surface-light-500))">{{ t('auth.email') }}</label>
           <input v-model="email" type="email" required autocomplete="email"
-            class="w-full px-4 py-3 rounded-md text-base outline-hidden" style="background:#f8fafc;border:1.5px solid #e2e8f0;color:#0f172a" />
+            class="w-full px-4 py-3 rounded-md text-base outline-hidden" style="background:rgb(var(--surface-light-900));border:1.5px solid rgb(var(--surface-light-700));color:rgb(var(--surface-light-100))" />
           <p v-if="resent" class="text-sm font-medium" style="color:#059669">{{ t('whiteLabel.signup.resent') }}</p>
           <button type="submit" class="w-full py-3 rounded-md text-base font-semibold text-white disabled:opacity-50"
             style="background:rgb(var(--brand-600))" :disabled="resending || !email" data-test="verify-resend">

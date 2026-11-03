@@ -108,8 +108,8 @@ export function bindingStatusClass(status) {
     case 'ready':        return `${base} bg-emerald-900/40 border-emerald-800/40 text-emerald-400`
     case 'provisioning':
     case 'pending':
-    case 'rotating':     return `${base} bg-amber-900/40 border-amber-800/40 text-amber-400 animate-pulse`
-    case 'degraded':     return `${base} bg-orange-900/40 border-orange-800/40 text-orange-400`
+    case 'rotating':     return `${base} bg-yellow-900/40 border-yellow-800/40 text-yellow-400 animate-pulse`
+    case 'degraded':     return `${base} bg-yellow-900/40 border-yellow-800/40 text-yellow-400`
     case 'deleting':
     case 'purging':      return `${base} bg-red-900/30 border-red-800/40 text-red-300`
     case 'error':        return `${base} bg-red-900/40 border-red-800/40 text-red-400`

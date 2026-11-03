@@ -84,14 +84,35 @@ onMounted(() => {
   wide = window.matchMedia?.('(min-width: 1024px)') ?? null
   wide?.addEventListener?.('change', onWide)
 })
+
+// ── Height ──
+// Sticky headers below this one (ProjectHeader) stick at --app-header-height. main.css sets it
+// to the h-14 row and its border; the header measures itself, so a taller header (a module's
+// header item, the browser zoom) still has nothing slide under it. The banners above
+// (App.vue: impersonation, migration, runtime patches) scroll away and do not count.
+const headerEl = ref(null)
+let headerResize = null
+function syncHeight() {
+  const height = headerEl.value?.offsetHeight
+  if (height) document.documentElement.style.setProperty('--app-header-height', `${height}px`)
+}
+onMounted(() => {
+  syncHeight()
+  if (typeof ResizeObserver !== 'undefined' && headerEl.value) {
+    headerResize = new ResizeObserver(() => syncHeight())
+    headerResize.observe(headerEl.value)
+  }
+})
+
 onBeforeUnmount(() => {
   wide?.removeEventListener?.('change', onWide)
   document.removeEventListener('pointerdown', onNotifPointer)
+  headerResize?.disconnect()
 })
 </script>
 
 <template>
-  <header class="sticky top-0 z-40 border-b border-gray-800 bg-gray-950">
+  <header ref="headerEl" class="sticky top-0 z-40 border-b border-gray-800 bg-gray-950">
     <div class="px-3 sm:px-6 h-14 flex items-center gap-2 sm:gap-4">
       <!-- Menu button (narrow screens) -->
       <button
@@ -137,7 +158,7 @@ onBeforeUnmount(() => {
         >
           <ShieldCheck class="w-4 h-4" aria-hidden="true" />
           <span v-if="approvals.pending > 0" data-testid="nav-approvals-count"
-            class="absolute -top-0.5 -right-0.5 min-w-[16px] h-4 flex items-center justify-center rounded-md bg-amber-500 text-gray-950 text-[10px] font-bold px-1"
+            class="absolute -top-0.5 -right-0.5 min-w-[16px] h-4 flex items-center justify-center rounded-md bg-yellow-500 text-black text-[10px] font-bold px-1"
           >{{ approvals.pending > 99 ? '99+' : approvals.pending }}</span>
         </RouterLink>
 

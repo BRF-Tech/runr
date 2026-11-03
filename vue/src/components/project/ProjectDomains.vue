@@ -118,7 +118,7 @@ function statusClass(status) {
   const base = 'inline-flex items-center px-2 py-0.5 rounded-sm text-[10px] font-medium border'
   switch (status) {
     case 'active':   return `${base} bg-emerald-900/40 text-emerald-400 border-emerald-800/50`
-    case 'verified': return `${base} bg-blue-900/40 text-blue-300 border-blue-800/50`
+    case 'verified': return `${base} bg-brand-900/40 text-brand-300 border-brand-800/50`
     case 'error':    return `${base} bg-red-900/40 text-red-400 border-red-800/50`
     case 'pending':  return `${base} bg-yellow-900/40 text-yellow-400 border-yellow-800/50`
     default:         return `${base} bg-gray-800 text-gray-400 border-gray-700`
@@ -136,7 +136,7 @@ function expiryInfo(d) {
   const days = (ts - Date.now()) / 86400000
   const date = fmtDate(d.tls_expires_at)
   if (days < 0)   return { text: t('project.domains.tlsExpired', { date }), cls: 'text-red-400' }
-  if (days <= 14) return { text: t('project.domains.tlsExpires', { date }), cls: 'text-amber-400' }
+  if (days <= 14) return { text: t('project.domains.tlsExpires', { date }), cls: 'text-yellow-400' }
   return { text: t('project.domains.tlsExpires', { date }), cls: 'text-gray-400' }
 }
 
@@ -305,7 +305,7 @@ function onTlsSaved({ domain, message }) {
 
     <!-- Loading -->
     <div v-if="loading" class="flex items-center justify-center py-12">
-      <div class="animate-spin h-6 w-6 border-2 border-sky-500 border-t-transparent rounded-full" />
+      <div class="animate-spin h-6 w-6 border-2 border-brand-500 border-t-transparent rounded-full" />
     </div>
 
     <!-- Load error -->

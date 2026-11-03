@@ -39,7 +39,7 @@ watch(toasts, (list) => {
           :class="toast.type === 'error'
             ? 'bg-red-950/90 border-red-800/60 text-red-300'
             : toast.type === 'warning'
-              ? 'bg-amber-950/90 border-amber-800/60 text-amber-300'
+              ? 'bg-yellow-950/90 border-yellow-800/60 text-yellow-300'
               : 'bg-emerald-950/90 border-emerald-800/60 text-emerald-300'"
           :data-toast-type="toast.type"
         >

@@ -95,17 +95,17 @@ async function remove(secret) {
         <button class="text-gray-400 hover:text-gray-100" @click="$emit('close')">✕</button>
       </div>
       <p class="text-xs text-gray-400 mb-4">{{ t('environments.secrets.intro') }}</p>
-      <p v-if="!inherits" class="text-xs text-amber-300 mb-3">{{ t('environments.secrets.notInherited') }}</p>
+      <p v-if="!inherits" class="text-xs text-yellow-300 mb-3">{{ t('environments.secrets.notInherited') }}</p>
 
       <div v-if="loading" class="flex items-center justify-center py-8">
-        <div class="animate-spin h-5 w-5 border-2 border-sky-500 border-t-transparent rounded-full" />
+        <div class="animate-spin h-5 w-5 border-2 border-brand-500 border-t-transparent rounded-full" />
       </div>
       <ul v-else class="space-y-1 mb-4">
         <li v-for="s in secrets" :key="s.name" class="flex items-center gap-3 px-3 py-2 rounded-md border border-gray-800">
           <span class="font-mono text-sm text-gray-100 flex-1 truncate">{{ s.name }}</span>
           <span
             class="text-[10px] px-1.5 py-0.5 rounded-sm border"
-            :class="s.scope === 'environment' ? 'bg-sky-900/40 text-sky-300 border-sky-800/50' : 'bg-gray-800 text-gray-400 border-gray-700'"
+            :class="s.scope === 'environment' ? 'bg-brand-900/40 text-brand-300 border-brand-800/50' : 'bg-gray-800 text-gray-400 border-gray-700'"
           >{{ s.scope === 'environment' ? t('environments.secrets.scopeEnvironment') : t('environments.secrets.scopeProject') }}</span>
           <button
             v-if="canEdit && s.scope === 'environment'"

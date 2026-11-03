@@ -53,7 +53,7 @@ function pendingText(step) {
         <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
           <button
             type="button"
-            class="flex items-center gap-1 text-sm text-gray-100 hover:text-sky-300 transition-colors font-mono"
+            class="flex items-center gap-1 text-sm text-gray-100 hover:text-brand-300 transition-colors font-mono"
             :disabled="!hasDetails(step)"
             @click="toggle(step)"
           >
@@ -74,7 +74,7 @@ function pendingText(step) {
             <button
               v-if="step.child_run_id"
               type="button"
-              class="text-[11px] inline-flex items-center gap-1 text-sky-400 hover:text-sky-300"
+              class="text-[11px] inline-flex items-center gap-1 text-brand-400 hover:text-brand-300"
               @click="emit('open-run', step.child_run_id)"
             >
               <ExternalLink class="w-3 h-3" />{{ t('workflows.detail.childRun') }}

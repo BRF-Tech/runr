@@ -53,7 +53,7 @@ function sessionUsage(sessions) {
           v-for="r in rangeOptions" :key="r"
           class="px-3 py-1.5 text-sm font-mono rounded-sm transition-colors"
           :class="selectedRange === r
-            ? 'bg-sky-600 text-white'
+            ? 'bg-brand-600 text-white'
             : 'bg-gray-800 text-gray-400 hover:text-brand-500'"
           @click="setRange(r)"
         >{{ r }}</button>
@@ -64,7 +64,7 @@ function sessionUsage(sessions) {
     <div v-if="summary" data-tour="metrics-summary" class="grid grid-cols-2 sm:grid-cols-4 gap-3">
       <div class="bg-gray-900 border border-gray-800 rounded-md p-3">
         <div class="text-xs text-gray-400">{{ t('metrics.avgCpu') }}</div>
-        <div class="text-lg font-mono text-sky-400" data-test="metrics-avg-cpu">{{ fmtVal(summary.metrics?.avg_cpu, 4) }} <span class="text-xs text-gray-500">{{ t('metrics.unitCores') }}</span></div>
+        <div class="text-lg font-mono text-brand-400" data-test="metrics-avg-cpu">{{ fmtVal(summary.metrics?.avg_cpu, 4) }} <span class="text-xs text-gray-500">{{ t('metrics.unitCores') }}</span></div>
       </div>
       <div class="bg-gray-900 border border-gray-800 rounded-md p-3">
         <div class="text-xs text-gray-400">{{ t('metrics.avgMemory') }}</div>
@@ -72,18 +72,18 @@ function sessionUsage(sessions) {
       </div>
       <div class="bg-gray-900 border border-gray-800 rounded-md p-3">
         <div class="text-xs text-gray-400">{{ t('metrics.avgRps') }}</div>
-        <div class="text-lg font-mono text-amber-400" data-test="metrics-avg-rps">{{ fmtVal(summary.metrics?.avg_rps, 3) }} <span class="text-xs text-gray-500">/s</span></div>
+        <div class="text-lg font-mono text-brand-300" data-test="metrics-avg-rps">{{ fmtVal(summary.metrics?.avg_rps, 3) }} <span class="text-xs text-gray-500">/s</span></div>
       </div>
       <div class="bg-gray-900 border border-gray-800 rounded-md p-3">
         <div class="text-xs text-gray-400">{{ t('metrics.totalSessions') }}</div>
-        <div class="text-lg font-mono text-purple-400" data-test="metrics-sessions">{{ summary.sessions?.total_sessions ?? 0 }}</div>
+        <div class="text-lg font-mono text-brand-400" data-test="metrics-sessions">{{ summary.sessions?.total_sessions ?? 0 }}</div>
         <div v-if="summary.sessions?.total_sessions" class="text-[11px] text-gray-500 mt-0.5" data-test="metrics-session-usage">{{ sessionUsage(summary.sessions) }}</div>
       </div>
     </div>
 
     <!-- Chart Area -->
     <div v-if="loading" class="flex items-center justify-center py-12">
-      <div class="animate-spin h-6 w-6 border-2 border-sky-500 border-t-transparent rounded-full" />
+      <div class="animate-spin h-6 w-6 border-2 border-brand-500 border-t-transparent rounded-full" />
     </div>
 
     <div v-else-if="data.length" data-tour="metrics-charts" class="space-y-4">
@@ -93,7 +93,7 @@ function sessionUsage(sessions) {
         <div class="h-32 flex items-end gap-px">
           <div
             v-for="(val, i) in chartData.cpu" :key="'cpu-'+i"
-            class="flex-1 bg-sky-600 rounded-t-sm min-h-[2px] transition-all"
+            class="flex-1 bg-brand-600 rounded-t-sm min-h-[2px] transition-all"
             :style="{ height: barHeight(val, chartData.cpu) }"
             :title="fmtVal(val, 4)"
           />
@@ -119,7 +119,7 @@ function sessionUsage(sessions) {
         <div class="h-32 flex items-end gap-px">
           <div
             v-for="(val, i) in chartData.rps" :key="'rps-'+i"
-            class="flex-1 bg-amber-600 rounded-t-sm min-h-[2px] transition-all"
+            class="flex-1 bg-brand-400 rounded-t-sm min-h-[2px] transition-all"
             :style="{ height: barHeight(val, chartData.rps) }"
             :title="fmtVal(val, 3)"
           />

@@ -222,3 +222,144 @@ describe('BrandingForm', () => {
     expect(disabled.find('[data-test="tenant-branding-disabled"]').exists()).toBe(true)
   })
 })
+
+describe('BrandingForm: the theme tones and the default theme', () => {
+  const NAVY_HEX = {
+    50: '#fcfdff', 100: '#f8fafe', 200: '#f2f5fc', 300: '#ebf0fa', 400: '#dee8f8', 500: '#cddaf0',
+    600: '#afc3e1', 700: '#1e3b85', 800: '#162e72', 900: '#0f2460', 950: '#091b4e',
+  }
+  const withDefaults = (stored = {}, defaults = {}) => ({
+    ...adminPayload,
+    stored: { ...adminPayload.stored, ...stored },
+    defaults: { ...adminPayload.defaults, dark_color: '#0a0a0a', light_color: '#fffcf8', default_theme: 'dark', ...defaults },
+  })
+
+  beforeEach(() => {
+    localStorage.clear()
+    for (const fn of Object.values(client)) vi.mocked(fn).mockReset()
+  })
+
+  it('shows both themes with their defaults (the Helm values) and sends null for them', async () => {
+    const wrapper = await mountPlatform(withDefaults())
+
+    for (const theme of ['dark', 'light']) {
+      expect(wrapper.find(`[data-test="theme-tones-${theme}"]`).exists()).toBe(true)
+      expect(wrapper.find(`[data-test="field-${theme}_color"]`).element.value).toBe('')
+      expect(wrapper.findAll(`[data-test^="${theme}-swatch-"]`)).toHaveLength(11)
+    }
+    expect(wrapper.find('[data-test="field-dark_color"]').attributes('placeholder')).toBe('#0a0a0a')
+    expect(wrapper.find('[data-test="field-light_color"]').attributes('placeholder')).toBe('#fffcf8')
+    expect(wrapper.find('[data-test="dark-swatch-950"]').attributes('title')).toBe('#0a0a0a')
+    expect(wrapper.find('[data-test="light-swatch-900"]').attributes('title')).toBe('#fef5ef')
+    // the default theme: "Default (Dark)"
+    expect(wrapper.find('[data-test="field-default_theme"]').text()).toContain('Default (Dark)')
+
+    await wrapper.find('form').trigger('submit')
+    await flush()
+    const body = lastPut()[1]
+    expect(body).toMatchObject({ dark_color: null, dark_scale: null, light_color: null, light_scale: null, default_theme: null })
+  })
+
+  it('the stored values fill the fields; a base colour derives its scale', async () => {
+    const wrapper = await mountPlatform(withDefaults({ dark_color: '#091b4e', default_theme: 'light', light_scale: { 950: '255 255 255' } }))
+
+    expect(wrapper.find('[data-test="field-dark_color"]').element.value).toBe('#091b4e')
+    expect(wrapper.find('[data-test="dark-swatch-950"]').attributes('title')).toBe('#091b4e')
+    // a navy page: navy cards
+    const card = wrapper.find('[data-test="dark-swatch-900"]').attributes('title')
+    expect(parseInt(card.slice(5, 7), 16)).toBeGreaterThan(parseInt(card.slice(1, 3), 16))
+    expect(wrapper.find('[data-test="light-swatch-950"]').attributes('title')).toBe('#ffffff')
+    expect(wrapper.find('[data-test="field-default_theme"]').element.value).toBe('light')
+    expect(wrapper.find('[data-test="reset-default_theme"]').exists()).toBe(true)
+
+    await wrapper.find('form').trigger('submit')
+    await flush()
+    const body = lastPut()[1]
+    expect(body.dark_color).toBe('#091b4e')
+    expect(body.dark_scale).toBeNull()
+    expect(body.default_theme).toBe('light')
+    // a stored scale is sent whole
+    expect(Object.keys(body.light_scale)).toHaveLength(11)
+    expect(body.light_scale['950']).toBe('#ffffff')
+  })
+
+  it('the Ocean preset fills the navy dark theme and a cool light theme', async () => {
+    const wrapper = await mountPlatform(withDefaults())
+
+    await wrapper.find('[data-test="branding-preset"]').setValue('ocean')
+    expect(wrapper.find('[data-test="field-dark_color"]').element.value).toBe('#091b4e')
+    expect(wrapper.find('[data-test="dark-swatch-800"]').attributes('title')).toBe('#162e72')
+
+    await wrapper.find('form').trigger('submit')
+    await flush()
+    const body = lastPut()[1]
+    expect(body.dark_color).toBe('#091b4e')
+    expect(body.dark_scale).toEqual(NAVY_HEX)
+    expect(body.light_color).toBe('#ffffff')
+    expect(body.light_scale['600']).toBe('#374669')
+  })
+
+  it('one tone set by hand sends the whole scale; "Default" brings each back', async () => {
+    const wrapper = await mountPlatform(withDefaults())
+
+    await wrapper.find('[data-test="dark-shade-900"]').setValue('#202020')
+    await wrapper.find('[data-test="field-default_theme"]').setValue('light')
+    await wrapper.find('form').trigger('submit')
+    await flush()
+    let body = lastPut()[1]
+    expect(body.dark_scale['900']).toBe('#202020')
+    expect(body.dark_scale['950']).toBe('#0a0a0a')
+    expect(Object.keys(body.dark_scale)).toHaveLength(11)
+    expect(body.default_theme).toBe('light')
+
+    await wrapper.find('[data-test="dark-shade-900"]').setValue('#202020')
+    await wrapper.find('[data-test="dark-reset-shade-900"]').trigger('click')
+    await wrapper.find('[data-test="field-dark_color"]').setValue('#111111')
+    await wrapper.find('[data-test="reset-dark_color"]').trigger('click')
+    await wrapper.find('form').trigger('submit')
+    await flush()
+    body = lastPut()[1]
+    expect(body.dark_scale).toBeNull()
+    expect(body.dark_color).toBeNull()
+  })
+
+  it('an invalid base colour is not sent; a hard-to-read base shows its contrast warning', async () => {
+    const wrapper = await mountPlatform(withDefaults())
+
+    await wrapper.find('[data-test="field-light_color"]').setValue('cream')
+    expect(wrapper.find('[data-test="theme-tones-light"]').text()).toContain('Use a hex colour')
+    expect(wrapper.find('[data-test="dark-contrast"]').text()).not.toContain('hard to read')
+
+    // a mid-gray page for the dark theme: its light text no longer reads
+    await wrapper.find('[data-test="field-dark_color"]').setValue('#9a9a9a')
+    expect(wrapper.find('[data-test="dark-contrast"]').text()).toContain('hard to read')
+
+    await wrapper.find('form').trigger('submit')
+    await flush()
+    expect(lastPut()[1].light_color).toBeNull()
+  })
+
+  it('the preview shows the login page in the tones being edited', async () => {
+    const wrapper = await mountPlatform(withDefaults())
+    await wrapper.find('[data-test="field-light_color"]').setValue('#ffffff')
+    const card = wrapper.find('[data-test="preview-card"]').attributes('style')
+    expect(card).toMatch(/background: (rgb\(255, 255, 255\)|#ffffff)/)
+    expect(wrapper.find('[data-test="light-preview"]').attributes('style')).toMatch(/background: (rgb\(255, 255, 255\)|#ffffff)/)
+  })
+
+  it('tenant scope: the tones and the default theme are an organization\'s to set too', async () => {
+    const tenantPayload = { enabled: true, branding: { ...resolved, dark_color: '#0a0a0a', light_color: '#fffcf8', default_theme: 'dark' }, stored: { dark_color: '#0a0a0a' } }
+    vi.mocked(client.get).mockReturnValue(ok(tenantPayload))
+    vi.mocked(client.put).mockReturnValue(ok(tenantPayload))
+    const wrapper = mount(BrandingForm, { props: { scope: 'tenant' }, global: globalOptions() })
+    await flush()
+
+    expect(wrapper.find('[data-test="field-dark_color"]').element.value).toBe('#0a0a0a')
+    await wrapper.find('[data-test="field-default_theme"]').setValue('light')
+    await wrapper.find('form').trigger('submit')
+    await flush()
+    const [url, body] = lastPut()
+    expect(url).toBe('/tenant/branding')
+    expect(body).toMatchObject({ dark_color: '#0a0a0a', default_theme: 'light', light_color: null })
+  })
+})

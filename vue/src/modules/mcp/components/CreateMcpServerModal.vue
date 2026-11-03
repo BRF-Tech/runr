@@ -185,8 +185,8 @@ onMounted(async () => {
               </button>
             </div>
 
-            <div v-if="runtimeMissing" class="mt-3 rounded-lg border border-amber-800/50 bg-amber-900/20 px-3 py-2.5" data-testid="mcp-runtime-missing">
-              <p class="text-xs text-amber-200">{{ t('mcp.create.runtimeMissing', { runtime: template.runtime }) }}</p>
+            <div v-if="runtimeMissing" class="mt-3 rounded-lg border border-yellow-800/50 bg-yellow-900/20 px-3 py-2.5" data-testid="mcp-runtime-missing">
+              <p class="text-xs text-yellow-200">{{ t('mcp.create.runtimeMissing', { runtime: template.runtime }) }}</p>
               <button v-if="template.can_register_runtime" class="btn-secondary text-xs mt-2" :disabled="enabling" data-testid="mcp-enable-runtime" @click="enableRuntime">
                 {{ enabling ? t('common.saving') : t('mcp.create.enableRuntime') }}
               </button>

@@ -197,7 +197,7 @@ onBeforeUnmount(() => clearTimeout(pollTimer))
     </div>
 
     <div v-if="loading" class="flex justify-center py-6">
-      <div class="animate-spin h-4 w-4 border-2 border-sky-500 border-t-transparent rounded-full" />
+      <div class="animate-spin h-4 w-4 border-2 border-brand-500 border-t-transparent rounded-full" />
     </div>
 
     <p v-else-if="!state" class="text-xs text-gray-400 py-6 text-center">{{ t('bindings.services.unavailable') }}</p>
@@ -208,12 +208,12 @@ onBeforeUnmount(() => clearTimeout(pollTimer))
       <div v-for="service in SERVICES" :key="service" class="rounded-xl border border-gray-800 bg-gray-900/60 p-4 space-y-3" :data-service="service">
         <div class="flex flex-wrap items-center justify-between gap-2">
           <div class="flex items-center gap-2">
-            <component :is="ICONS[service]" class="w-4 h-4 text-sky-400" />
+            <component :is="ICONS[service]" class="w-4 h-4 text-brand-400" />
             <span class="text-sm font-semibold text-gray-100">{{ t(`bindings.services.${service}`) }}</span>
             <span :class="statusBadgeClass(statusOf(service))" data-service-status>{{ t(`bindings.services.status.${statusOf(service)}`) }}</span>
             <span v-if="services[service]?.installed && services[service]?.mode" class="text-[11px] text-gray-400">{{ t(`bindings.services.modes.${services[service].mode}`) }}</span>
             <span v-if="service === 'object' && services.object?.config?.scoped_keys === false"
-              class="text-[10px] px-1.5 py-0.5 rounded-sm border border-amber-800/40 bg-amber-900/30 text-amber-300" :title="t('bindings.services.sharedKeyHint')" data-shared-key>
+              class="text-[10px] px-1.5 py-0.5 rounded-sm border border-yellow-800/40 bg-yellow-900/30 text-yellow-300" :title="t('bindings.services.sharedKeyHint')" data-shared-key>
               {{ t('bindings.services.sharedKey') }}
             </span>
           </div>
@@ -264,7 +264,7 @@ onBeforeUnmount(() => clearTimeout(pollTimer))
                 </div>
               </template>
             </div>
-            <p v-if="forms.kv.mode === 'region' && !regionRedis.has_password" class="text-xs text-amber-400 flex items-center gap-1" data-kv-password-warning>
+            <p v-if="forms.kv.mode === 'region' && !regionRedis.has_password" class="text-xs text-yellow-400 flex items-center gap-1" data-kv-password-warning>
               <AlertTriangle class="w-3.5 h-3.5" /> {{ t('bindings.services.regionRedisPassword') }}
             </p>
             <p v-else-if="forms.kv.mode === 'region'" class="text-[11px] text-gray-400">{{ t('bindings.services.regionRedisHint') }}</p>
@@ -337,7 +337,7 @@ onBeforeUnmount(() => clearTimeout(pollTimer))
               </template>
             </div>
             <p v-if="forms.object.mode === 'external' && services.object?.installed" class="text-[11px] text-gray-500">{{ t('bindings.services.keepSecret') }}</p>
-            <p v-if="forms.object.mode === 'external' && forms.object.provider === 's3'" class="text-[11px] text-amber-400">{{ t('bindings.services.sharedKeyHint') }}</p>
+            <p v-if="forms.object.mode === 'external' && forms.object.provider === 's3'" class="text-[11px] text-yellow-400">{{ t('bindings.services.sharedKeyHint') }}</p>
           </template>
 
           <!-- Postgres -->

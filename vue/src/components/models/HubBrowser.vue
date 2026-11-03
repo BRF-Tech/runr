@@ -89,7 +89,7 @@ onMounted(() => search())
       <button type="submit" class="btn-primary h-[38px]" :disabled="loading" data-testid="hub-search-submit">{{ t('ai.hub.searchButton') }}</button>
     </form>
 
-    <div v-if="offline" class="rounded-lg border border-amber-800/40 bg-amber-900/20 px-4 py-3 text-xs text-amber-300" data-testid="hub-offline">
+    <div v-if="offline" class="rounded-lg border border-yellow-800/40 bg-yellow-900/20 px-4 py-3 text-xs text-yellow-300" data-testid="hub-offline">
       {{ offline }} {{ t('ai.hub.offlineHint') }}
     </div>
     <p v-else-if="error" class="text-xs text-red-400">{{ error }}</p>
@@ -103,7 +103,7 @@ onMounted(() => search())
         :data-hub-model="m.id" @click="emit('open', m.id)">
         <div class="flex items-center gap-2">
           <span class="font-mono text-sm text-gray-100 truncate">{{ m.id }}</span>
-          <Lock v-if="m.gated || m.private" class="w-3.5 h-3.5 text-amber-400 shrink-0" :title="t('ai.hub.gated')" />
+          <Lock v-if="m.gated || m.private" class="w-3.5 h-3.5 text-yellow-400 shrink-0" :title="t('ai.hub.gated')" />
         </div>
         <div class="flex flex-wrap items-center gap-3 mt-1.5 text-[11px] text-gray-400">
           <span v-if="m.task" class="px-1.5 py-0.5 rounded-sm bg-gray-800 text-gray-300">{{ t(`ai.tasks.${m.task}`, m.task) }}</span>

@@ -97,7 +97,7 @@ onMounted(async () => {
     <div class="flex items-start justify-between gap-4">
       <div>
         <div class="flex items-center gap-2">
-          <Activity class="w-4 h-4 text-sky-400" />
+          <Activity class="w-4 h-4 text-brand-400" />
           <span class="text-[15px] font-semibold text-gray-100">{{ t('observability.tracing.title') }}</span>
         </div>
         <p class="text-xs text-gray-400 mt-1.5">{{ t('observability.tracing.intro') }}</p>
@@ -109,7 +109,7 @@ onMounted(async () => {
       <label class="flex items-center gap-2 text-sm text-gray-200">
         <input
           type="checkbox"
-          class="accent-sky-500"
+          class="accent-brand-500"
           :checked="settings.tracing_enabled"
           :disabled="!canToggle || saving || (!settings.tracing_enabled && !region?.accepts_spans)"
           data-test="tracing-toggle"
@@ -167,7 +167,7 @@ onMounted(async () => {
       </form>
 
       <div v-if="listError" class="bg-red-900/20 border border-red-800/40 rounded-md px-4 py-3 text-xs text-red-400" data-test="traces-error">{{ listError }}</div>
-      <div v-else-if="loading" class="flex justify-center py-10"><div class="animate-spin h-6 w-6 border-2 border-sky-500 border-t-transparent rounded-full" /></div>
+      <div v-else-if="loading" class="flex justify-center py-10"><div class="animate-spin h-6 w-6 border-2 border-brand-500 border-t-transparent rounded-full" /></div>
       <div v-else-if="!traces.length" class="text-center text-gray-400 py-8 text-sm" data-test="traces-empty">
         <p>{{ t('observability.tracing.list.empty') }}</p>
         <p class="text-xs mt-1">{{ t('observability.tracing.list.emptyHint') }}</p>
@@ -192,7 +192,7 @@ onMounted(async () => {
             <td class="py-2 pr-3 text-gray-400 whitespace-nowrap">{{ tr.start ? new Date(tr.start).toLocaleString() : '—' }}</td>
             <td class="py-2 pr-3 font-mono text-gray-100">
               {{ tr.root_service }} · {{ tr.root_name }}
-              <Snowflake v-if="tr.cold_start" class="inline w-3 h-3 text-sky-300 ml-1" :title="t('observability.tracing.list.coldStart')" />
+              <Snowflake v-if="tr.cold_start" class="inline w-3 h-3 text-brand-300 ml-1" :title="t('observability.tracing.list.coldStart')" />
             </td>
             <td class="py-2 pr-3 font-mono text-gray-300 truncate max-w-[16rem]">{{ tr.path || '—' }}</td>
             <td class="py-2 pr-3">

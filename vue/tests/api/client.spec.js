@@ -41,10 +41,17 @@ describe('request interceptor', () => {
     expect(requests[0].headers['Accept-Language']).toBe('en')
   })
 
-  it('omits Authorization without a token and defaults the locale to tr', async () => {
+  it('omits Authorization without a token and sends the browser\'s language without a stored one', async () => {
+    const languages = vi.spyOn(navigator, 'languages', 'get')
+    languages.mockReturnValue(['tr-TR', 'en'])
     await client.get('/projects')
     expect(requests[0].headers.Authorization).toBeUndefined()
     expect(requests[0].headers['Accept-Language']).toBe('tr')
+
+    languages.mockReturnValue(['de-DE', 'tr'])
+    await client.get('/projects')
+    expect(requests[1].headers['Accept-Language']).toBe('en')
+    languages.mockRestore()
   })
 
   it('targets the /api base URL with JSON headers', async () => {

@@ -77,7 +77,7 @@ async function save(value) {
       <option v-for="z in zones" :key="z" :value="z" />
     </datalist>
     <p v-if="localTime && known" class="text-xs text-gray-400 font-mono mt-2">{{ t('settings.timezone.now', { time: localTime }) }}</p>
-    <p v-if="!known" class="text-xs text-amber-400 mt-2">{{ t('settings.timezone.unknown') }}</p>
+    <p v-if="!known" class="text-xs text-yellow-400 mt-2">{{ t('settings.timezone.unknown') }}</p>
     <p v-if="error" class="text-xs text-red-400 mt-2" data-testid="timezone-error">{{ error }}</p>
     <div v-if="canChange" class="flex items-center gap-2 mt-3">
       <button type="button" class="btn-primary" :disabled="saving || !dirty" data-testid="timezone-save" @click="save(zone.trim())">

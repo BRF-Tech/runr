@@ -101,7 +101,7 @@ async function remove() {
     <CopyBlock :text="server.url" :label="t('mcp.project.url')" inline />
     <p v-if="server.function_url" class="text-[11px] text-gray-400 font-mono break-all">{{ t('mcp.project.forwardsTo', { url: server.function_url + (server.path || '') }) }}</p>
 
-    <div v-if="server.needs_redeploy" class="rounded-lg border border-amber-800/50 bg-amber-900/20 px-3 py-2 text-xs text-amber-200" data-testid="mcp-needs-redeploy">
+    <div v-if="server.needs_redeploy" class="rounded-lg border border-yellow-800/50 bg-yellow-900/20 px-3 py-2 text-xs text-yellow-200" data-testid="mcp-needs-redeploy">
       {{ t('mcp.project.needsRedeploy') }}
     </div>
 

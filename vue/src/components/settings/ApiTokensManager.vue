@@ -46,11 +46,11 @@ const abilityGroupOf = computed(() =>
   Object.fromEntries(availableAbilities.value.map(ab => [ab.key ?? ab, ab.group])))
 
 const abilityCategoryStyle = {
-  projects:       { bg: 'bg-sky-900/30', border: 'border-sky-800/40', text: 'text-sky-400' },
-  configuration:  { bg: 'bg-violet-900/30', border: 'border-violet-800/40', text: 'text-violet-400' },
-  git:            { bg: 'bg-rose-900/30', border: 'border-rose-800/40', text: 'text-rose-400' },
-  operations:     { bg: 'bg-emerald-900/30', border: 'border-emerald-800/40', text: 'text-emerald-400' },
-  infrastructure: { bg: 'bg-amber-900/30', border: 'border-amber-800/40', text: 'text-amber-400' },
+  projects:       { bg: 'bg-brand-900/30', border: 'border-brand-800/40', text: 'text-brand-400' },
+  configuration:  { bg: 'bg-transparent', border: 'border-brand-500/60', text: 'text-brand-400' },
+  git:            { bg: 'bg-gray-800', border: 'border-gray-700/60', text: 'text-brand-300' },
+  operations:     { bg: 'bg-brand-800/40', border: 'border-brand-700/60', text: 'text-brand-300' },
+  infrastructure: { bg: 'bg-gray-800', border: 'border-gray-700/60', text: 'text-gray-300' },
 }
 
 function abilityStyle(ab) {
@@ -145,7 +145,7 @@ async function confirmDelete(token) {
               <span v-if="isExpired(token)" class="text-[10px] font-medium px-1.5 py-0.5 rounded-sm bg-red-900/30 border border-red-800/50 text-red-400">
                 {{ t('tokens.expired') }}
               </span>
-              <span v-if="token.abilities?.includes('*')" class="text-[10px] font-medium px-1.5 py-0.5 rounded-sm bg-emerald-900/30 border border-emerald-800/40 text-emerald-400">
+              <span v-if="token.abilities?.includes('*')" class="text-[10px] font-medium px-1.5 py-0.5 rounded-sm bg-brand-700 border border-transparent text-white">
                 {{ t('tokens.fullAccess') }}
               </span>
             </div>

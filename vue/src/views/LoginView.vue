@@ -150,23 +150,23 @@ function loginWithProvider(p) {
 
     <div class="relative z-10 grid md:grid-cols-2 min-h-screen">
       <!-- Left: Branding + Carousel -->
-      <div class="hidden md:flex flex-col justify-center pl-40 pr-8 pb-20 text-white sticky top-0 h-screen">
+      <div class="hidden md:flex flex-col justify-center pl-40 pr-8 pb-20 sticky top-0 h-screen" style="color:rgb(var(--surface-dark-50))">
         <div class="mb-14" data-test="login-brand"><RunrWordmark size="lg" force-white /></div>
         <!-- Branded login text replaces the carousel -->
         <div v-if="brandHeadline" class="min-h-40" data-test="login-headline">
           <h1 class="text-6xl font-bold mb-5 leading-tight">{{ brandHeadline }}</h1>
-          <p v-if="branding.data.login_text" class="text-blue-200 text-lg leading-relaxed max-w-md whitespace-pre-line">{{ branding.data.login_text }}</p>
+          <p v-if="branding.data.login_text" class="text-lg leading-relaxed max-w-md whitespace-pre-line" style="color:rgb(var(--brand-300))">{{ branding.data.login_text }}</p>
         </div>
         <template v-else>
         <Transition name="slide-fade" mode="out-in">
           <div :key="slideIndex" class="min-h-40">
             <h1 class="text-6xl font-bold mb-5 leading-tight">{{ slides[slideIndex].tagline }}</h1>
-            <p class="text-blue-200 text-lg leading-relaxed max-w-md">{{ slides[slideIndex].desc }}</p>
+            <p class="text-lg leading-relaxed max-w-md" style="color:rgb(var(--brand-300))">{{ slides[slideIndex].desc }}</p>
           </div>
         </Transition>
         <div class="flex gap-3 mt-10">
           <button v-for="i in 3" :key="i" type="button" class="rounded-full transition-all duration-500"
-            :class="slideIndex === i - 1 ? 'w-16 h-4 bg-blue-400' : 'w-14 h-3.5 bg-white/30'" @click="slideIndex = i - 1" />
+            :class="slideIndex === i - 1 ? 'w-16 h-4 bg-brand-400' : 'w-14 h-3.5 bg-white/30'" @click="slideIndex = i - 1" />
         </div>
         </template>
       </div>
@@ -281,8 +281,8 @@ function loginWithProvider(p) {
                 </div>
 
                 <!-- Provider side panel -->
-                <div v-if="providers.length" class="w-56 pl-8 border-l flex flex-col justify-center gap-3" style="border-color:#e2e8f0">
-                  <p class="text-xs font-bold uppercase tracking-widest mb-1" style="color:#374151">{{ t('auth.orSignInWith') }}</p>
+                <div v-if="providers.length" class="w-56 pl-8 border-l flex flex-col justify-center gap-3" style="border-color:rgb(var(--surface-light-700))">
+                  <p class="text-xs font-bold uppercase tracking-widest mb-1" style="color:rgb(var(--surface-light-500))">{{ t('auth.orSignInWith') }}</p>
                   <button v-for="p in providers" :key="p.id" type="button" data-testid="sso-provider"
                     class="oauth-btn flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-semibold transition-all" @click="loginWithProvider(p)">
                     <!-- Google -->
@@ -306,7 +306,7 @@ function loginWithProvider(p) {
                       <path d="m23.6004 9.5927-.0337-.0862L20.3.9814a.851.851 0 0 0-.3362-.405.8748.8748 0 0 0-.9997.0539.8748.8748 0 0 0-.29.4399l-2.2055 6.748H7.5375l-2.2057-6.748a.8573.8573 0 0 0-.29-.4412.8748.8748 0 0 0-.9997-.0537.8585.8585 0 0 0-.3362.4049L.4332 9.5015l-.0325.0862a6.0657 6.0657 0 0 0 2.0119 7.0105l.0113.0087.03.0213 4.976 3.7264 2.462 1.8633 1.4995 1.1321a1.0085 1.0085 0 0 0 1.2197 0l1.4995-1.1321 2.4619-1.8633 5.006-3.7489.0125-.01a6.0682 6.0682 0 0 0 2.0094-7.003z"/>
                     </svg>
                     <!-- SAML 2.0 -->
-                    <ShieldCheck v-else-if="p.driver === 'saml'" class="w-5 h-5 shrink-0" style="color:#059669" />
+                    <ShieldCheck v-else-if="p.driver === 'saml'" class="w-5 h-5 shrink-0" style="color:rgb(var(--brand-600))" />
                     <!-- OIDC / OpenID Connect -->
                     <svg v-else class="w-5 h-5 shrink-0" viewBox="0 0 24 24" fill="#F78C40">
                       <path d="M14.54.889l-3.63 1.773v18.17c-4.15-.52-7.27-2.78-7.27-5.5 0-2.58 2.8-4.75 6.63-5.41v-2.31C4.42 8.322 0 11.502 0 15.332c0 3.96 4.74 7.24 10.91 7.78l3.63-1.71V.888m.64 6.724v2.31c1.43.25 2.71.7 3.76 1.31l-1.97 1.11 7.03 1.53-.5-5.21-1.87 1.06c-1.74-1.06-3.96-1.81-6.45-2.11z"/>
@@ -318,7 +318,7 @@ function loginWithProvider(p) {
             </template>
 
             <!-- Register link -->
-            <p v-if="registrationEnabled" class="text-center mt-6 text-sm" style="color:#64748b">
+            <p v-if="registrationEnabled" class="text-center mt-6 text-sm" style="color:rgb(var(--surface-light-600))">
               {{ t('auth.registerLink') }}
               <button type="button" class="font-semibold hover:underline" style="color:rgb(var(--brand-600))" @click="mode = 'register'">{{ t('auth.registerAction') }}</button>
             </p>
@@ -326,7 +326,7 @@ function loginWithProvider(p) {
           </template>
 
           <!-- Branded footer: links, support, credit line -->
-          <footer class="mt-auto pt-10 flex flex-wrap justify-center gap-x-4 gap-y-1 text-xs" style="color:#94a3b8" data-test="login-footer">
+          <footer class="mt-auto pt-10 flex flex-wrap justify-center gap-x-4 gap-y-1 text-xs" style="color:rgb(var(--surface-light-600) / .7)" data-test="login-footer">
             <a v-for="(link, i) in footerLinks" :key="i" :href="link.url" target="_blank" rel="noopener noreferrer" class="hover:underline">{{ link.label }}</a>
             <a v-if="branding.data.support_url" :href="branding.data.support_url" target="_blank" rel="noopener noreferrer" class="hover:underline">{{ t('whiteLabel.login.support') }}</a>
             <a v-else-if="branding.data.support_email" :href="`mailto:${branding.data.support_email}`" class="hover:underline">{{ branding.data.support_email }}</a>
@@ -344,7 +344,7 @@ function loginWithProvider(p) {
 
 <style scoped>
 .login-bg {
-  background-color: #030712;
+  background-color: rgb(var(--surface-dark-950));
   background-image:
     radial-gradient(ellipse 80% 60% at 15% 40%, rgb(var(--brand-600) / .12) 0%, transparent 65%),
     radial-gradient(ellipse 60% 50% at 85% 60%, rgb(var(--brand-900) / .09) 0%, transparent 65%),
@@ -358,21 +358,21 @@ function loginWithProvider(p) {
 .login-orb-3 { width: 30%; height: 30%; top: 40%; left: 40%; background: rgb(var(--brand-500) / .06); animation: lo1 35s ease-in-out infinite reverse; }
 @keyframes lo1 { 0%,100% { transform: translate(0,0) scale(1); } 50% { transform: translate(5%,4%) scale(1.08); } }
 @keyframes lo2 { 0%,100% { transform: translate(0,0) scale(1); } 50% { transform: translate(-5%,-4%) scale(1.06); } }
-.login-card { background: #fff; box-shadow: 8px 0 40px rgba(0,0,0,.18); }
-.login-card :deep(.login-title) { color: #0f172a; letter-spacing: -.5px; } .login-card :deep(.login-subtitle) { color: #64748b; line-height: 1.6; }
-.login-card :deep(.login-label) { color: #374151; letter-spacing: .08em; } .login-card :deep(.login-input) { background: #f8fafc; color: #0f172a; border: 1.5px solid #e2e8f0; outline: none; }
-.login-card :deep(.login-input)::placeholder { color: #cbd5e1; }
-.login-card :deep(.login-input):focus { background: #fff; border-color: rgb(var(--brand-600)); box-shadow: 0 0 0 3px rgb(var(--brand-600) / .12); }
-.login-card :deep(.login-eye) { color: #94a3b8; } .login-card :deep(.login-eye):hover { color: #475569; }
+.login-card { background: rgb(var(--surface-light-950)); box-shadow: 8px 0 40px rgba(0,0,0,.18); }
+.login-card :deep(.login-title) { color: rgb(var(--surface-light-100)); letter-spacing: -.5px; } .login-card :deep(.login-subtitle) { color: rgb(var(--surface-light-600)); line-height: 1.6; }
+.login-card :deep(.login-label) { color: rgb(var(--surface-light-500)); letter-spacing: .08em; } .login-card :deep(.login-input) { background: rgb(var(--surface-light-900)); color: rgb(var(--surface-light-100)); border: 1.5px solid rgb(var(--surface-light-700)); outline: none; }
+.login-card :deep(.login-input)::placeholder { color: color-mix(in srgb, rgb(var(--surface-light-600)) 82%, rgb(var(--surface-light-900))); } /* 5.3:1 (WCAG 1.4.3); the border tone 700 had 1.4:1 */
+.login-card :deep(.login-input):focus { background: rgb(var(--surface-light-950)); border-color: rgb(var(--brand-600)); box-shadow: 0 0 0 3px rgb(var(--brand-600) / .12); }
+.login-card :deep(.login-eye) { color: rgb(var(--surface-light-600) / .7); } .login-card :deep(.login-eye):hover { color: rgb(var(--surface-light-500)); }
 .user-type-active { border-color: rgb(var(--brand-600)); color: rgb(var(--brand-600)); background: rgb(var(--brand-600) / .04); }
-.user-type-inactive { border-color: #e2e8f0; color: #374151; background: #f8fafc; } .user-type-inactive:hover { border-color: #cbd5e1; color: #111827; }
+.user-type-inactive { border-color: rgb(var(--surface-light-700)); color: rgb(var(--surface-light-500)); background: rgb(var(--surface-light-900)); } .user-type-inactive:hover { border-color: rgb(var(--surface-light-700)); color: rgb(var(--surface-light-200)); }
 .user-type-radio { display: block; width: 1.1rem; height: 1.1rem; border-radius: 50%; border: 2px solid; flex-shrink: 0; }
-.user-type-radio-active { border-color: rgb(var(--brand-600)); box-shadow: inset 0 0 0 3px #fff, inset 0 0 0 5px rgb(var(--brand-600)); }
-.user-type-radio-inactive { border-color: #9ca3af; } .user-type-desc { color: inherit; opacity: 0.65; }
+.user-type-radio-active { border-color: rgb(var(--brand-600)); box-shadow: inset 0 0 0 3px rgb(var(--surface-light-950)), inset 0 0 0 5px rgb(var(--brand-600)); }
+.user-type-radio-inactive { border-color: rgb(var(--surface-light-600) / .6); } .user-type-desc { color: inherit; opacity: 0.65; }
 .login-card :deep(.login-submit) { background: linear-gradient(135deg,rgb(var(--brand-600)),rgb(var(--brand-700))); letter-spacing: .02em; box-shadow: 0 4px 14px rgb(var(--brand-600) / .35); }
 .login-card :deep(.login-submit):hover:not(:disabled) { background: linear-gradient(135deg,rgb(var(--brand-500)),rgb(var(--brand-600))); box-shadow: 0 6px 20px rgb(var(--brand-600) / .45); transform: translateY(-1px); }
 .login-card :deep(.login-submit):active:not(:disabled) { transform: translateY(0); }
-.oauth-btn { background: #f8fafc; color: #1e293b; border: 1.5px solid #e2e8f0; } .oauth-btn:hover { background: #f1f5f9; border-color: #cbd5e1; transform: translateY(-1px); box-shadow: 0 2px 8px rgba(0,0,0,.06); }
+.oauth-btn { background: rgb(var(--surface-light-900)); color: rgb(var(--surface-light-300)); border: 1.5px solid rgb(var(--surface-light-700)); } .oauth-btn:hover { background: rgb(var(--surface-light-800)); border-color: rgb(var(--surface-light-700)); transform: translateY(-1px); box-shadow: 0 2px 8px rgba(0,0,0,.06); }
 .slide-fade-enter-active, .slide-fade-leave-active { transition: opacity .4s ease, transform .4s ease; }
 .slide-fade-enter-from { opacity: 0; transform: translateY(14px); } .slide-fade-leave-to { opacity: 0; transform: translateY(-14px); }
 </style>

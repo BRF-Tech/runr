@@ -40,7 +40,7 @@ const usesTimestamp = computed(() => ['stripe', 'slack'].includes(props.form.ver
       <select v-model="form.verify" class="input text-xs" data-field="verify">
         <option v-for="p in presets" :key="p" :value="p">{{ t(`triggers.webhook.presets.${p}`) }}</option>
       </select>
-      <p class="text-[11px] mt-1" :class="form.verify === 'none' ? 'text-amber-300' : 'text-gray-400'">{{ t(`triggers.webhook.presetHints.${form.verify}`) }}</p>
+      <p class="text-[11px] mt-1" :class="form.verify === 'none' ? 'text-yellow-300' : 'text-gray-400'">{{ t(`triggers.webhook.presetHints.${form.verify}`) }}</p>
     </div>
 
     <div v-if="form.verify === 'hmac'" class="grid grid-cols-2 md:grid-cols-4 gap-3" data-test="webhook-hmac">

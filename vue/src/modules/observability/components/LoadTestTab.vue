@@ -114,8 +114,8 @@ const statusClass = (s) => ({
   completed: 'bg-emerald-900/30 text-emerald-300',
   failed: 'bg-red-900/40 text-red-300',
   cancelled: 'bg-gray-800 text-gray-400',
-  running: 'bg-sky-900/40 text-sky-300',
-  pending: 'bg-amber-900/30 text-amber-300',
+  running: 'bg-brand-900/40 text-brand-300',
+  pending: 'bg-yellow-900/30 text-yellow-300',
 }[s] || 'bg-gray-800 text-gray-400')
 const when = (iso) => iso ? new Date(iso).toLocaleString() : '—'
 </script>
@@ -125,7 +125,7 @@ const when = (iso) => iso ? new Date(iso).toLocaleString() : '—'
     <div class="flex items-start justify-between gap-4">
       <div>
         <div class="flex items-center gap-2">
-          <Gauge class="w-4 h-4 text-sky-400" />
+          <Gauge class="w-4 h-4 text-brand-400" />
           <span class="text-[15px] font-semibold text-gray-100">{{ t('observability.loadTest.title') }}</span>
         </div>
         <p class="text-xs text-gray-400 mt-1.5">{{ t('observability.loadTest.intro') }}</p>
@@ -135,12 +135,12 @@ const when = (iso) => iso ? new Date(iso).toLocaleString() : '—'
       </span>
     </div>
 
-    <div class="flex items-start gap-2 bg-amber-900/15 border border-amber-800/40 rounded-md px-3 py-2 text-xs text-amber-200" data-test="load-test-metered">
+    <div class="flex items-start gap-2 bg-yellow-900/15 border border-yellow-800/40 rounded-md px-3 py-2 text-xs text-yellow-200" data-test="load-test-metered">
       <AlertTriangle class="w-3.5 h-3.5 mt-0.5 shrink-0" />
       <span>{{ t('observability.loadTest.metered') }}</span>
     </div>
 
-    <div v-if="loading" class="flex justify-center py-10"><div class="animate-spin h-6 w-6 border-2 border-sky-500 border-t-transparent rounded-full" /></div>
+    <div v-if="loading" class="flex justify-center py-10"><div class="animate-spin h-6 w-6 border-2 border-brand-500 border-t-transparent rounded-full" /></div>
     <div v-else-if="error" class="bg-red-900/20 border border-red-800/40 rounded-md px-4 py-3 text-xs text-red-400">{{ error }}</div>
 
     <template v-else>
@@ -183,7 +183,7 @@ const when = (iso) => iso ? new Date(iso).toLocaleString() : '—'
             <button
               v-for="u in meta.users" :key="u" type="button" role="radio" :aria-checked="form.users === u"
               class="text-xs px-3 py-1.5 rounded-md border"
-              :class="form.users === u ? 'border-sky-500 bg-sky-900/30 text-sky-200' : 'border-gray-700 text-gray-300 hover:border-gray-500'"
+              :class="form.users === u ? 'border-brand-500 bg-brand-900/30 text-brand-300' : 'border-gray-700 text-gray-300 hover:border-gray-500'"
               :data-test="`load-test-users-${u}`"
               @click="form.users = u"
             >{{ u }}</button>
@@ -195,7 +195,7 @@ const when = (iso) => iso ? new Date(iso).toLocaleString() : '—'
             <button
               v-for="d in meta.durations" :key="d" type="button" role="radio" :aria-checked="form.duration_seconds === d"
               class="text-xs px-3 py-1.5 rounded-md border"
-              :class="form.duration_seconds === d ? 'border-sky-500 bg-sky-900/30 text-sky-200' : 'border-gray-700 text-gray-300 hover:border-gray-500'"
+              :class="form.duration_seconds === d ? 'border-brand-500 bg-brand-900/30 text-brand-300' : 'border-gray-700 text-gray-300 hover:border-gray-500'"
               :data-test="`load-test-duration-${d}`"
               @click="form.duration_seconds = d"
             >{{ durationLabel(d) }}</button>
@@ -206,12 +206,12 @@ const when = (iso) => iso ? new Date(iso).toLocaleString() : '—'
             <Play class="w-3.5 h-3.5" />{{ t('observability.loadTest.start') }}
           </button>
           <span v-if="active" class="text-[11px] text-gray-400">{{ t('observability.loadTest.oneAtATime') }}</span>
-          <span v-else-if="remaining === 0" class="text-[11px] text-amber-300" data-test="load-test-limit">{{ t('observability.loadTest.limitReached') }}</span>
+          <span v-else-if="remaining === 0" class="text-[11px] text-yellow-300" data-test="load-test-limit">{{ t('observability.loadTest.limitReached') }}</span>
         </div>
       </form>
 
       <!-- Live status of the running test -->
-      <div v-if="active" class="bg-gray-900 border border-sky-800/50 rounded-md p-4 space-y-2" data-test="load-test-active" :data-status="active.status">
+      <div v-if="active" class="bg-gray-900 border border-brand-800/50 rounded-md p-4 space-y-2" data-test="load-test-active" :data-status="active.status">
         <div class="flex flex-wrap items-center gap-3">
           <span class="text-[11px] px-1.5 rounded-sm" :class="statusClass(active.status)">{{ t('observability.loadTest.status.' + active.status) }}</span>
           <span class="text-xs font-mono text-gray-300 truncate max-w-[28rem]">{{ active.method }} {{ active.url }}</span>
@@ -221,7 +221,7 @@ const when = (iso) => iso ? new Date(iso).toLocaleString() : '—'
           </button>
         </div>
         <div class="h-1.5 bg-gray-800 rounded-full overflow-hidden">
-          <div class="h-full bg-sky-500 transition-all duration-1000" :class="{ 'animate-pulse w-full opacity-40': progress === null }" :style="progress !== null ? { width: `${Math.round(progress * 100)}%` } : {}" data-test="load-test-progress" />
+          <div class="h-full bg-brand-500 transition-all duration-1000" :class="{ 'animate-pulse w-full opacity-40': progress === null }" :style="progress !== null ? { width: `${Math.round(progress * 100)}%` } : {}" data-test="load-test-progress" />
         </div>
         <p class="text-[11px] text-gray-500">{{ active.status === 'pending' ? t('observability.loadTest.preparing') : t('observability.loadTest.running') }}</p>
       </div>

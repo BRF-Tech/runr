@@ -151,7 +151,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
               <label class="label">{{ t('triggers.fields.cron') }} <span class="normal-case text-red-500/70">*</span></label>
               <input v-model="form.cron" class="input font-mono text-xs" placeholder="*/15 * * * *" data-field="cron" />
               <p v-if="errors['config.cron']" class="text-[11px] text-red-400 mt-1">{{ errors['config.cron'] }}</p>
-              <p v-else-if="cronText" class="text-[11px] text-sky-400/80 mt-1">{{ cronText }}</p>
+              <p v-else-if="cronText" class="text-[11px] text-brand-400/80 mt-1">{{ cronText }}</p>
             </div>
             <div>
               <label class="label" for="trigger-timezone">{{ t('triggers.fields.timezone') }}</label>
@@ -180,7 +180,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
               <label class="label"><TermText path="triggers.fields.stream" /> <span class="normal-case text-red-500/70">*</span></label>
               <input v-model="form.stream" class="input font-mono text-xs" placeholder="orders-events" data-field="stream" />
               <p v-if="errors['config.stream']" class="text-[11px] text-red-400 mt-1">{{ errors['config.stream'] }}</p>
-              <p v-else-if="form.stream.trim() && streamSuffix" class="text-[11px] text-sky-400/70 mt-1 font-mono">{{ t('triggers.fields.streamResolved', { name: `${form.stream.trim()}${streamSuffix}` }) }}</p>
+              <p v-else-if="form.stream.trim() && streamSuffix" class="text-[11px] text-brand-400/70 mt-1 font-mono">{{ t('triggers.fields.streamResolved', { name: `${form.stream.trim()}${streamSuffix}` }) }}</p>
             </div>
             <div>
               <label class="label">{{ t('triggers.fields.startFrom') }}</label>
@@ -215,7 +215,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
               </select>
               <p v-if="errors['config.topic']" class="text-[11px] text-red-400 mt-1">{{ errors['config.topic'] }}</p>
               <p v-else-if="topicsFailed" class="text-[11px] text-red-400 mt-1">{{ t('triggers.topics.loadFailed') }}</p>
-              <p v-else-if="topicsStore.loaded && !regionTopics.length" class="text-[11px] text-amber-300 mt-1" data-test="no-topics">{{ t('triggers.fields.topicNone') }}</p>
+              <p v-else-if="topicsStore.loaded && !regionTopics.length" class="text-[11px] text-yellow-300 mt-1" data-test="no-topics">{{ t('triggers.fields.topicNone') }}</p>
             </div>
             <div>
               <label class="label">{{ t('triggers.fields.startFrom') }}</label>

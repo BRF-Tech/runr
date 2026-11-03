@@ -1,11 +1,15 @@
 import { afterEach } from 'vitest'
 
+// A spec of the node environment (// @vitest-environment node: the pre-paint build, the ui
+// entrypoint) has no window: the browser shims below are for jsdom
+const browser = typeof window !== 'undefined'
+
 // jsdom has no layout engine; vue-router's scrollBehavior calls this on navigation.
-window.scrollTo = () => {}
+if (browser) window.scrollTo = () => {}
 
 // jsdom has no matchMedia (useTheme reads prefers-color-scheme when AppHeader loads).
 // Answers "no match" for every query, like a browser without a dark-mode preference.
-if (typeof window.matchMedia !== 'function') {
+if (browser && typeof window.matchMedia !== 'function') {
   window.matchMedia = (query) => ({
     matches: false,
     media: query,
@@ -53,14 +57,16 @@ if (subtle?.digest) {
 // Unit tests never reach a server. A request no spec mocked (e.g. a store a component loads on
 // the side) fails at once like an unreachable API, instead of jsdom connecting to its origin
 // (http://localhost:3000, where a local dev server may well be listening).
-XMLHttpRequest.prototype.send = function send() {
-  setTimeout(() => {
-    this.dispatchEvent(new ProgressEvent('error'))
-    this.dispatchEvent(new ProgressEvent('loadend'))
-  }, 0)
+if (browser) {
+  XMLHttpRequest.prototype.send = function send() {
+    setTimeout(() => {
+      this.dispatchEvent(new ProgressEvent('error'))
+      this.dispatchEvent(new ProgressEvent('loadend'))
+    }, 0)
+  }
 }
 
 // Every test starts with empty browser storage.
 afterEach(() => {
-  localStorage.clear()
+  if (browser) localStorage.clear()
 })

@@ -95,7 +95,7 @@ async function build(row) {
 
 const statusStyle = {
   pending:  'border-gray-700/60 bg-gray-800/60 text-gray-300',
-  building: 'border-sky-800/50 bg-sky-950/40 text-sky-300',
+  building: 'border-brand-800/50 bg-brand-900/40 text-brand-300',
   ready:    'border-emerald-800/50 bg-emerald-950/30 text-emerald-400',
   failed:   'border-red-800/50 bg-red-950/30 text-red-400',
 }

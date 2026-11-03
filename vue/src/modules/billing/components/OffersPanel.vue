@@ -127,7 +127,7 @@ defineExpose({ load, accept, saveMarkup, markupForms, acceptMarkup })
 <template>
   <div class="space-y-6" data-test="billing-offers">
     <div v-if="loading" class="flex justify-center py-6">
-      <div class="animate-spin h-4 w-4 border-2 border-sky-500 border-t-transparent rounded-full" />
+      <div class="animate-spin h-4 w-4 border-2 border-brand-500 border-t-transparent rounded-full" />
     </div>
     <p v-else-if="error" class="text-sm text-red-400">{{ error }}</p>
 
@@ -140,7 +140,7 @@ defineExpose({ load, accept, saveMarkup, markupForms, acceptMarkup })
         <div v-if="!pending.length" class="flex items-center gap-2 text-sm text-gray-400" data-test="offers-none-pending">
           <Inbox class="w-4 h-4" />{{ t('billing.offers.nonePending') }}
         </div>
-        <div v-for="o in pending" :key="o.region.id" class="rounded-xl border border-amber-900/50 bg-amber-950/20 p-4 space-y-3" :data-test="`offer-${o.region.id}`">
+        <div v-for="o in pending" :key="o.region.id" class="rounded-xl border border-yellow-900/50 bg-yellow-950/20 p-4 space-y-3" :data-test="`offer-${o.region.id}`">
           <div class="flex flex-wrap items-center justify-between gap-2">
             <div class="flex items-center gap-2">
               <span class="text-sm font-mono text-gray-100">{{ o.region.name }}</span>
@@ -182,7 +182,7 @@ defineExpose({ load, accept, saveMarkup, markupForms, acceptMarkup })
         <h3 class="text-sm font-semibold text-gray-100">{{ t('billing.offers.defaultMarkup') }}</h3>
         <p class="text-xs text-gray-400 max-w-3xl">{{ t('billing.offers.defaultMarkupHint') }}</p>
         <div class="text-sm text-gray-200 font-mono" data-test="offers-default-markup-value">{{ defaultMarkup }} %</div>
-        <div v-for="v in markups?.default?.scheduled ?? []" :key="v.id" class="text-xs text-amber-300 flex items-center gap-2">
+        <div v-for="v in markups?.default?.scheduled ?? []" :key="v.id" class="text-xs text-yellow-300 flex items-center gap-2">
           {{ t('billing.offers.scheduled', { percent: v.percent, date: v.effective_from }) }}
           <button v-if="canManage" type="button" class="text-gray-400 hover:text-red-400" :disabled="busy === `remove-${v.id}`" @click="removeMarkup(v)">{{ t('billing.offers.remove') }}</button>
         </div>
@@ -211,7 +211,7 @@ defineExpose({ load, accept, saveMarkup, markupForms, acceptMarkup })
             </div>
             <span class="text-xs text-gray-300 font-mono">{{ t('billing.offers.currentMarkup', { percent: o.markup_percent ?? defaultMarkup }) }}</span>
           </div>
-          <div v-for="v in regionMarkups(o.region.id)?.scheduled ?? []" :key="v.id" class="text-xs text-amber-300 flex items-center gap-2">
+          <div v-for="v in regionMarkups(o.region.id)?.scheduled ?? []" :key="v.id" class="text-xs text-yellow-300 flex items-center gap-2">
             {{ t('billing.offers.scheduled', { percent: v.percent, date: v.effective_from }) }}
             <button v-if="canManage" type="button" class="text-gray-400 hover:text-red-400" :disabled="busy === `remove-${v.id}`" @click="removeMarkup(v)">{{ t('billing.offers.remove') }}</button>
           </div>

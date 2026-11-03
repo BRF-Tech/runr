@@ -41,7 +41,7 @@ const outcomeClass = (outcome) => OUTCOME_CLASS[outcome] ?? OUTCOME_CLASS.cancel
         class="px-2 py-0.5 rounded-sm text-xs font-medium"
         :class="{
           'bg-yellow-900/50 text-yellow-400': ['pending', 'in_progress'].includes(migrationStatus),
-          'bg-blue-900/50 text-blue-400': migrationStatus === 'dns_check',
+          'bg-brand-900/50 text-brand-400': migrationStatus === 'dns_check',
           'bg-green-900/50 text-green-400': migrationStatus === 'completed',
           'bg-red-900/50 text-red-400': migrationStatus === 'failed',
         }"
@@ -63,7 +63,7 @@ const outcomeClass = (outcome) => OUTCOME_CLASS[outcome] ?? OUTCOME_CLASS.cancel
     </div>
 
     <!-- DNS check message -->
-    <p v-if="migrationStatus === 'dns_check'" class="text-xs text-amber-400">
+    <p v-if="migrationStatus === 'dns_check'" class="text-xs text-yellow-400">
       {{ t('settings.regionDetail.migration.dnsCheckPhase') }}
     </p>
 
@@ -121,7 +121,7 @@ const outcomeClass = (outcome) => OUTCOME_CLASS[outcome] ?? OUTCOME_CLASS.cancel
       </div>
 
       <button
-        class="px-3 py-1.5 text-xs font-medium rounded-sm bg-amber-600 hover:bg-amber-500 text-white disabled:opacity-50 disabled:cursor-not-allowed"
+        class="px-3 py-1.5 text-xs font-medium rounded-sm bg-yellow-600 hover:bg-yellow-500 text-white disabled:opacity-50 disabled:cursor-not-allowed"
         :disabled="!migrationKubeconfigName || migrationLoading"
         @click="$emit('start')"
       >
@@ -159,7 +159,7 @@ const outcomeClass = (outcome) => OUTCOME_CLASS[outcome] ?? OUTCOME_CLASS.cancel
     </div>
 
     <!-- Base-domain migration: the region answers on the new function domain too until its DNS answers -->
-    <div v-if="region?.is_domain_migrating" class="rounded-md border border-blue-800/50 bg-blue-900/10 px-3 py-3 space-y-2" data-testid="domain-migration">
+    <div v-if="region?.is_domain_migrating" class="rounded-md border border-brand-800/50 bg-brand-900/10 px-3 py-3 space-y-2" data-testid="domain-migration">
       <h4 class="text-xs font-semibold text-gray-100">{{ t('settings.regionDetail.migration.domainMigration') }}</h4>
       <p class="text-xs text-gray-400">
         {{ t('settings.regionDetail.migration.domainMigrationHint', { target: region.domain_migration_target || '—' }) }}

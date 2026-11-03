@@ -114,7 +114,7 @@ onMounted(load)
 <template>
   <div class="space-y-4" data-tenant-residency>
     <div v-if="loading && !data" class="flex justify-center py-4">
-      <div class="animate-spin h-4 w-4 border-2 border-sky-500 border-t-transparent rounded-full" />
+      <div class="animate-spin h-4 w-4 border-2 border-brand-500 border-t-transparent rounded-full" />
     </div>
 
     <template v-else-if="data">

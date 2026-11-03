@@ -15,6 +15,7 @@ import { gitApi } from '@/api/git'
 import { useToast } from '@/composables/useToast'
 import ProjectGitTab from '@/components/git/ProjectGitTab.vue'
 import { gitNavigation } from '@/composables/useProjectGit'
+import { usePermissionsStore } from '@/stores/permissions'
 import { withPlugins } from '../../helpers'
 
 const PROJECT = { id: 'p1', name: 'orders', slug: 'orders' }
@@ -231,6 +232,27 @@ describe('ProjectGitTab', () => {
     expect(byTest(wrapper, 'git-redeploy').exists()).toBe(false)
     expect(byTest(wrapper, 'git-deploy-branch').attributes('disabled')).toBeDefined()
     expect(wrapper.find('[data-testid="git-preview-delete"]').exists()).toBe(false)
+  })
+
+  // The public demo's read-only role: git.pull, no git.push, no tokens.manage. The remote
+  // answers its push with 403 and it cannot create the API token git signs in with
+  it('gives a role without git.push the clone command, and the tokens link only with tokens.manage', async () => {
+    const { wrapper } = await mountTab({ data: payload({ abilities: { pull: true, push: false, manage: false, manage_previews: false } }) })
+    // the mount's Pinia is the active one
+    usePermissionsStore().apply({ permissions: ['projects.view', 'git.pull'], platform_admin: false, edition: 'single', role: null, roles: [], projects: {} })
+    await flushPromises()
+
+    const commands = byTest(wrapper, 'git-remote-commands').text()
+    expect(commands).toBe('git clone https://console.example.com/git/runr/orders.git')
+    expect(commands).not.toContain('git push')
+    expect(byTest(wrapper, 'git-remote').text()).toContain('Pushing a new version needs the git.push permission.')
+    expect(wrapper.find('[data-testid="git-remote-tokens"]').exists()).toBe(false)
+    expect(byTest(wrapper, 'git-remote-auth').text()).toContain('creating one needs the API tokens permission')
+
+    usePermissionsStore().apply({ permissions: ['projects.view', 'git.pull', 'tokens.manage'], platform_admin: false, edition: 'single', role: null, roles: [], projects: {} })
+    await flushPromises()
+    expect(byTest(wrapper, 'git-remote-tokens').attributes('href')).toBe('/settings?tab=tokens')
+    expect(byTest(wrapper, 'git-remote-auth').text()).toContain('the git.pull permission')
   })
 
   it('shows the load error and retries', async () => {

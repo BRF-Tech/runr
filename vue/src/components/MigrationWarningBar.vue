@@ -35,7 +35,7 @@ function hoursRemaining(startedAt) {
   <div
     v-for="(w, i) in warnings"
     :key="i"
-    class="bg-amber-600 text-white text-center text-xs py-1.5 px-4 font-medium"
+    class="bg-yellow-500 text-black text-center text-xs py-1.5 px-4 font-medium"
   >
     {{ w.message }}
   </div>

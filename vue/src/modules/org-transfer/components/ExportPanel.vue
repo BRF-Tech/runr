@@ -206,7 +206,7 @@ function destinationText(d) {
         <input id="export-passphrase-repeat" v-model="form.passphrase2" type="password" class="input" autocomplete="new-password" data-testid="export-passphrase-repeat">
       </div>
     </div>
-    <p v-if="form.includeSecrets" class="text-[11px] ml-5 mb-3" :class="passphraseError ? 'text-amber-400' : 'text-gray-500'" data-testid="export-passphrase-hint">
+    <p v-if="form.includeSecrets" class="text-[11px] ml-5 mb-3" :class="passphraseError ? 'text-yellow-400' : 'text-gray-500'" data-testid="export-passphrase-hint">
       {{ passphraseError ?? t('orgTransfer.export.passphraseHint', { min: MIN_PASSPHRASE }) }}
     </p>
 
@@ -273,7 +273,7 @@ function destinationText(d) {
         <p v-if="estimate.binding_data_bytes">{{ t('orgTransfer.export.estimateData', { size: formatBytes(estimate.binding_data_bytes) }) }}</p>
         <p v-if="estimate.images?.count">{{ t('orgTransfer.export.estimateImages', { count: estimate.images.count }) }}</p>
         <p class="text-gray-200">{{ t('orgTransfer.export.estimateTotal', { size: formatBytes(estimate.total_bytes) }) }}</p>
-        <p v-for="(w, i) in estimate.warnings ?? []" :key="i" class="text-amber-400">{{ w }}</p>
+        <p v-for="(w, i) in estimate.warnings ?? []" :key="i" class="text-yellow-400">{{ w }}</p>
         <p v-for="b in (estimate.bindings ?? []).filter(x => x.data_supported === false)" :key="b.id" class="text-gray-500">{{ b.name }}: {{ t('orgTransfer.export.dataUnsupported') }}</p>
       </div>
     </div>

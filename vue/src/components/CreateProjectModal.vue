@@ -257,7 +257,7 @@ async function submit() {
                 v-for="n in 4" :key="n"
                 class="h-1.5 rounded-full transition-all duration-300"
                 :class="[n < step ? 'w-4' : n === step ? 'w-6' : 'w-1.5']"
-                :style="n <= step ? 'background-color:rgb(var(--brand-600))' : 'background-color:#374151'"
+                :style="n <= step ? 'background-color:rgb(var(--brand-600))' : 'background-color:rgb(var(--gray-700))'"
               />
             </div>
             <span class="text-xs text-gray-400">{{ t('create.stepOf', { step }) }}</span>
@@ -306,7 +306,7 @@ async function submit() {
                 v-for="p in ['regional', 'global']" :key="p"
                 type="button"
                 class="rounded-md border px-3 py-2 text-xs text-left transition-colors"
-                :class="form.placement === p ? 'border-sky-500/60 bg-sky-900/20 text-sky-300' : 'border-gray-800 bg-gray-900/40 text-gray-400 hover:text-gray-100'"
+                :class="form.placement === p ? 'border-brand-500/60 bg-brand-900/20 text-brand-300' : 'border-gray-800 bg-gray-900/40 text-gray-400 hover:text-gray-100'"
                 :aria-pressed="form.placement === p ? 'true' : 'false'"
                 :data-placement="p"
                 @click="setPlacement(p)"

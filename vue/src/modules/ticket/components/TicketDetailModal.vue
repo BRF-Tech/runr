@@ -5,6 +5,7 @@ import { X, Send, Paperclip, Download, Maximize2 } from 'lucide-vue-next'
 import client from '@/api/client'
 import { fetchTicket, sendReply, fetchAdminTicket, updateTicketStatus, sendAdminReply, attachmentUrl as userAttUrl, adminAttachmentUrl, markRead, adminMarkRead } from '../api/support'
 import { useAuthStore } from '@/stores/auth'
+import { usePermissionsStore } from '@/stores/permissions'
 import { useTicketDetailRealtime } from '../composables/useTicketRealtime'
 import FilePreview from './FilePreview.vue'
 import TicketInternalNotes from './TicketInternalNotes.vue'
@@ -18,14 +19,17 @@ const props = defineProps({
 const emit  = defineEmits(['close', 'updated', 'changed'])
 const { t } = useI18n()
 const auth  = useAuthStore()
+const perms = usePermissionsStore()
+// A member replies with tickets.create (POST /support-tickets/{id}/replies); the staff reply as staff
+const canReply = computed(() => props.admin || perms.can('tickets.create'))
 
 const detail = ref(null), replies = ref([]), message = ref(''), sending = ref(false)
 const chatEl = ref(null), files = ref([]), fileInput = ref(null)
 const statusLoading = ref(false), lightboxSrc = ref(null), activeTab = ref('conversation')
 const adminReadAt = ref(null), userReadAt = ref(null)
 const statuses = ['open', 'in_progress', 'resolved', 'closed']
-const priorityClass = { low: 'bg-gray-700 text-gray-300', medium: 'bg-yellow-900/60 text-yellow-300', high: 'bg-orange-900/60 text-orange-300', critical: 'bg-red-900/60 text-red-300' }
-const statusClass = { open: 'bg-blue-900/60 text-blue-300', in_progress: 'bg-yellow-900/60 text-yellow-300', resolved: 'bg-green-900/60 text-green-300', closed: 'bg-gray-700 text-gray-300' }
+const priorityClass = { low: 'bg-gray-700 text-gray-300', medium: 'bg-yellow-900/60 text-yellow-300', high: 'bg-red-900/40 text-red-300', critical: 'bg-red-700 text-white' }
+const statusClass = { open: 'bg-brand-900/60 text-brand-300', in_progress: 'bg-yellow-900/60 text-yellow-300', resolved: 'bg-green-900/60 text-green-300', closed: 'bg-gray-700 text-gray-300' }
 const publicReplies   = computed(() => replies.value.filter(r => !r.is_internal))
 const internalReplies = computed(() => replies.value.filter(r => r.is_internal))
 const currentTags     = computed(() => detail.value?.tags || [])
@@ -267,7 +271,7 @@ onMounted(() => { loadDetail(); subscribeToTicket(); markAsRead() })
           <p v-if="!publicReplies.length && detail" class="text-center text-sm text-gray-500 py-12">{{ t('account.ticketNoReplies') }}</p>
         </div>
         <!-- Reply input -->
-        <div class="px-8 py-5 border-t border-gray-800 shrink-0">
+        <div v-if="canReply" class="px-8 py-5 border-t border-gray-800 shrink-0" data-reply-form>
           <FilePreview :files="files" @remove="removeFile" />
           <div class="flex gap-3 mt-3">
             <input v-model="message" class="input flex-1 text-sm h-11"

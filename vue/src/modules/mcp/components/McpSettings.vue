@@ -3,6 +3,7 @@
 // clients connected through OAuth and the tool catalog (docs/mcp.md).
 import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { Lock } from 'lucide-vue-next'
 import { usePermissionsStore } from '@/stores/permissions'
 import { mcpApi } from '../api/mcp'
 import CopyBlock from './CopyBlock.vue'
@@ -73,23 +74,29 @@ onMounted(load)
         <span v-for="v in info?.protocol_versions || []" :key="v" class="font-mono px-1.5 py-0.5 rounded-sm border border-gray-700 bg-gray-800/40">{{ v }}</span>
       </div>
 
-      <div class="flex gap-2">
-        <button
-          v-if="oauthEnabled" type="button" data-testid="mcp-auth-oauth"
-          class="px-3 py-1.5 rounded-lg border text-xs font-medium"
-          :class="auth === 'oauth' ? 'border-emerald-800/50 text-emerald-400 bg-emerald-900/20' : 'border-gray-700 text-gray-400'"
-          @click="auth = 'oauth'"
-        >{{ t('mcp.settings.authOauth') }}</button>
-        <button
-          type="button" data-testid="mcp-auth-token"
-          class="px-3 py-1.5 rounded-lg border text-xs font-medium"
-          :class="auth === 'token' ? 'border-brand-500/50 text-brand-500 bg-brand-500/10' : 'border-gray-700 text-gray-400'"
-          @click="auth = 'token'"
-        >{{ t('mcp.settings.authToken') }}</button>
-      </div>
-      <p class="text-[11px] text-gray-400">{{ auth === 'oauth' ? t('mcp.settings.authOauthHint') : t('mcp.settings.authTokenHint') }}</p>
+      <!-- both ways to connect issue an API token (the OAuth consent, POST tokens): tokens.manage -->
+      <template v-if="canManageTokens">
+        <div class="flex gap-2">
+          <button
+            v-if="oauthEnabled" type="button" data-testid="mcp-auth-oauth"
+            class="px-3 py-1.5 rounded-lg border text-xs font-medium"
+            :class="auth === 'oauth' ? 'border-emerald-800/50 text-emerald-400 bg-emerald-900/20' : 'border-gray-700 text-gray-400'"
+            @click="auth = 'oauth'"
+          >{{ t('mcp.settings.authOauth') }}</button>
+          <button
+            type="button" data-testid="mcp-auth-token"
+            class="px-3 py-1.5 rounded-lg border text-xs font-medium"
+            :class="auth === 'token' ? 'border-brand-500/50 text-brand-500 bg-brand-500/10' : 'border-gray-700 text-gray-400'"
+            @click="auth = 'token'"
+          >{{ t('mcp.settings.authToken') }}</button>
+        </div>
+        <p class="text-[11px] text-gray-400">{{ auth === 'oauth' ? t('mcp.settings.authOauthHint') : t('mcp.settings.authTokenHint') }}</p>
 
-      <McpClientSnippets :url="endpoint" name="runr" :auth="auth" :token="token" />
+        <McpClientSnippets :url="endpoint" name="runr" :auth="auth" :token="token" />
+      </template>
+      <p v-else class="flex items-start gap-2 rounded-lg border border-gray-800 bg-gray-950/40 px-3 py-2 text-xs text-gray-400" data-testid="mcp-connect-needs-tokens">
+        <Lock class="w-3.5 h-3.5 mt-0.5 shrink-0" />{{ t('mcp.settings.connectNeedsTokens') }}
+      </p>
     </section>
 
     <!-- Scoped MCP token -->

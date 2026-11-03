@@ -31,8 +31,8 @@ async function load() {
 
 const typeStyle = (type) => {
   if (/fail|error|kill|terminat|quota|lost/.test(type ?? '')) return 'border-red-900/60 text-red-300'
-  if (/exec|run|process|terminal/.test(type ?? '')) return 'border-sky-900/60 text-sky-300'
-  if (/file/.test(type ?? '')) return 'border-violet-900/60 text-violet-300'
+  if (/exec|run|process|terminal/.test(type ?? '')) return 'border-brand-900/60 text-brand-300'
+  if (/file/.test(type ?? '')) return 'border-brand-500/60 text-brand-400'
   return 'border-gray-700 text-gray-300'
 }
 

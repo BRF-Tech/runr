@@ -141,7 +141,7 @@ onMounted(load)
           <td class="py-1.5 text-gray-400">{{ fmt(k.last_used_at) }}</td>
           <td class="py-1.5 text-right whitespace-nowrap">
             <template v-if="k.status === 'active' && consumer.can_manage">
-              <button type="button" class="text-gray-400 hover:text-sky-300 mr-2" :title="t('apiProduct.keys.rotate')" data-test="key-rotate" @click="rotate(k)"><RotateCw class="w-3.5 h-3.5" /></button>
+              <button type="button" class="text-gray-400 hover:text-brand-300 mr-2" :title="t('apiProduct.keys.rotate')" data-test="key-rotate" @click="rotate(k)"><RotateCw class="w-3.5 h-3.5" /></button>
               <button type="button" class="text-gray-400 hover:text-red-400" :title="t('apiProduct.keys.revoke')" data-test="key-revoke" @click="revoke(k)"><Ban class="w-3.5 h-3.5" /></button>
             </template>
           </td>

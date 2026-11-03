@@ -311,7 +311,7 @@ function fieldErrorText(name) {
           <button type="button" class="w-full flex items-center gap-2 px-2 py-1 text-left" :data-testid="`mcp-log-${entry.direction}`" @click="toggle(entry.key)">
             <ChevronDown v-if="expanded.has(entry.key)" class="w-3 h-3 text-gray-400" />
             <ChevronRight v-else class="w-3 h-3 text-gray-400" />
-            <span class="text-[10px] font-mono" :class="entry.direction === 'out' ? 'text-sky-400' : 'text-emerald-400'">{{ entry.direction === 'out' ? '→' : '←' }}</span>
+            <span class="text-[10px] font-mono" :class="entry.direction === 'out' ? 'text-brand-400' : 'text-emerald-400'">{{ entry.direction === 'out' ? '→' : '←' }}</span>
             <span class="text-[11px] font-mono text-gray-100">{{ entry.label }}</span>
             <span v-if="entry.payload?.id !== undefined" class="text-[10px] font-mono text-gray-500">#{{ entry.payload.id }}</span>
             <span v-if="entry.status" class="text-[10px] font-mono text-gray-500">HTTP {{ entry.status }}</span>

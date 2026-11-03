@@ -79,9 +79,9 @@ function isVersionSelected(key) {
           :key="lang"
           class="rounded-lg border p-2.5 transition-all"
           :class="isLangFullySelected(versions)
-            ? 'border-sky-600/50 bg-sky-950/30'
+            ? 'border-brand-600/50 bg-brand-900/30'
             : isLangPartial(versions)
-              ? 'border-sky-700/30 bg-gray-900/60'
+              ? 'border-brand-700/30 bg-gray-900/60'
               : 'border-gray-800 bg-gray-900/40 hover:border-gray-700'"
         >
           <!-- Runtime header -->
@@ -104,7 +104,7 @@ function isVersionSelected(key) {
               :key="v.key"
               class="px-2 py-0.5 rounded-sm text-[11px] font-mono border transition-all"
               :class="isVersionSelected(v.key)
-                ? 'bg-sky-900/50 border-sky-600/50 text-sky-300'
+                ? 'bg-brand-900/50 border-brand-600/50 text-brand-300'
                 : 'bg-gray-800/60 border-gray-700/50 text-gray-400 hover:text-gray-100 hover:border-gray-600'"
               @click.stop="$emit('toggle', v.key)"
             >{{ v.version || t('projects.runtimeDefault') }}</button>

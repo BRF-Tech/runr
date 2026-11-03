@@ -31,8 +31,12 @@ test.describe('Platform settings', () => {
     await page.goto('/settings')
     const card = page.locator('[data-tour="settings-registration"]')
     await expect(card.getByText('Registration Closed')).toBeVisible()
-    await card.getByRole('button').click()
+    // a switch (role="switch", aria-checked), disabled without settings.manage
+    const toggle = card.getByRole('switch')
+    await expect(toggle).toHaveAttribute('aria-checked', 'false')
+    await toggle.click()
     await expect(card.getByText('Registration Open')).toBeVisible()
+    await expect(toggle).toHaveAttribute('aria-checked', 'true')
 
     const sent = mockApi.waitFor('PATCH', '/settings')
     await page.locator('[data-tour="settings-save"]').getByRole('button').click()

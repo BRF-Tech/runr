@@ -2,6 +2,8 @@ export default {
   account: {
     title:          'Hesap ayarları',
     backToProjects: '← Projeler',
+    // Dondurulmuş hesap (RUNR_FROZEN_ACCOUNTS, ortak demo girişi): değiştirme kontrolleri kapalı
+    frozenNote:     'Bu ortak bir hesap: hesap ve oturum açma ayarları kilitli.',
 
     // Tabs
     tabAccount:       'Hesap',

@@ -142,8 +142,8 @@ onMounted(() => {
     </div>
 
     <!-- Unfinished uploads -->
-    <div v-if="uploads.length" class="mb-4 rounded-lg border border-amber-800/50 bg-amber-950/10 p-3" data-testid="images-open-uploads">
-      <p class="text-xs font-medium text-amber-300 mb-2">{{ t('images.openUploads') }}</p>
+    <div v-if="uploads.length" class="mb-4 rounded-lg border border-yellow-800/50 bg-yellow-950/10 p-3" data-testid="images-open-uploads">
+      <p class="text-xs font-medium text-yellow-300 mb-2">{{ t('images.openUploads') }}</p>
       <div v-for="u in uploads" :key="u.id" class="flex items-center gap-3 text-xs py-1" :data-upload="u.id">
         <span class="font-mono text-gray-200">{{ u.name }}</span>
         <span class="text-gray-500">{{ u.region_name }}</span>
@@ -178,9 +178,9 @@ onMounted(() => {
             <td class="py-2 pr-3">
               <p class="font-mono text-gray-100">{{ image.name }}</p>
               <p class="font-mono text-[10px] text-gray-500 truncate max-w-[16rem]" :title="image.digest">{{ image.digest }}</p>
-              <p v-if="image.note" class="text-[10px] text-amber-400 max-w-[20rem]">{{ image.note }}</p>
+              <p v-if="image.note" class="text-[10px] text-yellow-400 max-w-[20rem]">{{ image.note }}</p>
               <!-- The region moved to another cluster since the upload: its registry does not have it -->
-              <p v-if="image.in_registry === false" class="text-[10px] text-amber-400 max-w-[20rem]" data-testid="image-not-in-registry">
+              <p v-if="image.in_registry === false" class="text-[10px] text-yellow-400 max-w-[20rem]" data-testid="image-not-in-registry">
                 {{ t('images.notInRegistry') }}
               </p>
             </td>

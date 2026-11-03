@@ -144,10 +144,10 @@ async function deleteUser(user) {
 function roleBadge(role) {
   const base = 'px-1.5 py-0.5 rounded-sm text-[10px] font-medium border'
   switch (role) {
-    case 'owner': return `${base} bg-violet-900/40 border-violet-800/40 text-violet-400`
-    case 'admin': return `${base} bg-emerald-900/40 border-emerald-800/40 text-emerald-400`
+    case 'owner': return `${base} bg-brand-700 border-transparent text-white`
+    case 'admin': return `${base} bg-brand-900/40 border-brand-800/40 text-brand-300`
     case 'member':
-    case 'developer': return `${base} bg-blue-900/40 border-blue-800/40 text-blue-400`
+    case 'developer': return `${base} bg-transparent border-brand-500/60 text-brand-400`
     default:      return `${base} bg-gray-800/40 border-gray-700/40 text-gray-400`
   }
 }
@@ -214,7 +214,7 @@ function initials(user) {
                   <span class="text-sm font-semibold text-gray-100">{{ user.name }}</span>
                   <span class="text-gray-400 font-mono text-[11px]">{{ user.email }}</span>
                   <span v-if="user.is_admin"
-                    class="px-1.5 py-0.5 rounded-sm text-[10px] font-medium border bg-amber-900/40 border-amber-800/40 text-amber-400">
+                    class="px-1.5 py-0.5 rounded-sm text-[10px] font-medium border bg-yellow-900/40 border-yellow-800/40 text-yellow-400">
                     {{ t('tenancy.platformAdmin') }}
                   </span>
                   <span v-if="user.two_factor_confirmed_at"
@@ -233,8 +233,8 @@ function initials(user) {
               <button v-if="user.id !== currentUserId"
                 class="p-1.5 rounded-md transition-colors shrink-0"
                 :class="user.is_admin
-                  ? 'text-amber-400 hover:text-amber-300 hover:bg-amber-900/20'
-                  : 'text-gray-400 hover:text-amber-400 hover:bg-amber-900/20'"
+                  ? 'text-yellow-400 hover:text-yellow-300 hover:bg-yellow-900/20'
+                  : 'text-gray-400 hover:text-yellow-400 hover:bg-yellow-900/20'"
                 :title="t('tenancy.toggleAdmin')"
                 :disabled="toggling.has(user.id)"
                 @click="toggleAdmin(user)">
@@ -242,7 +242,7 @@ function initials(user) {
               </button>
               <!-- Reset 2FA -->
               <button v-if="user.id !== currentUserId && user.two_factor_confirmed_at"
-                class="p-1.5 rounded-md text-gray-400 hover:text-amber-400 hover:bg-amber-900/20 transition-colors shrink-0"
+                class="p-1.5 rounded-md text-gray-400 hover:text-yellow-400 hover:bg-yellow-900/20 transition-colors shrink-0"
                 :title="t('tenancy.reset2FA')"
                 @click="reset2FA(user)">
                 <ShieldOff class="w-3.5 h-3.5" />

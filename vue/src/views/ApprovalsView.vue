@@ -68,7 +68,7 @@ useJobEvents({ 'environment.promotion': () => load() })
       </div>
 
       <div v-if="loading && !promotions.length" class="flex items-center justify-center py-12">
-        <div class="animate-spin h-6 w-6 border-2 border-sky-500 border-t-transparent rounded-full" />
+        <div class="animate-spin h-6 w-6 border-2 border-brand-500 border-t-transparent rounded-full" />
       </div>
       <div v-else-if="error" class="bg-red-900/20 border border-red-800/40 rounded-md px-4 py-3">
         <p class="text-xs text-red-400">{{ error }}</p>

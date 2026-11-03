@@ -17,10 +17,10 @@ const levels = computed(() => (props.all || !props.compact)
   : ['critical', 'high', 'medium'])
 
 const tone = {
-  critical: 'bg-red-900/50 border-red-700/60 text-red-300',
-  high:     'bg-orange-900/40 border-orange-700/50 text-orange-300',
-  medium:   'bg-amber-900/30 border-amber-700/40 text-amber-300',
-  low:      'bg-sky-900/30 border-sky-800/40 text-sky-300',
+  critical: 'bg-red-700 border-red-700 text-white',
+  high:     'bg-red-900/40 border-red-800/60 text-red-300',
+  medium:   'bg-yellow-900/30 border-yellow-700/40 text-yellow-300',
+  low:      'bg-brand-900/30 border-brand-800/40 text-brand-300',
   unknown:  'bg-gray-800/60 border-gray-700/60 text-gray-300',
 }
 

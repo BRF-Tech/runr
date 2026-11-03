@@ -151,7 +151,7 @@ defineExpose({ load, changeType, setQueueRegion, setQueueOverride, newVersion, r
 <template>
   <div class="space-y-6" data-test="billing-prices">
     <div v-if="loading" class="flex justify-center py-6">
-      <div class="animate-spin h-4 w-4 border-2 border-sky-500 border-t-transparent rounded-full" />
+      <div class="animate-spin h-4 w-4 border-2 border-brand-500 border-t-transparent rounded-full" />
     </div>
     <p v-else-if="error" class="text-sm text-red-400">{{ error }}</p>
 
@@ -190,7 +190,7 @@ defineExpose({ load, changeType, setQueueRegion, setQueueOverride, newVersion, r
                   </select>
                   <span v-else :data-test="`region-type-${r.id}`">{{ t(`billing.type.${r.billing_type}`) }}</span>
                   <div v-if="r.active_allocations" class="text-[10px] text-gray-500 mt-0.5">{{ t('billing.prices.allocations', { n: r.active_allocations }) }}</div>
-                  <div v-if="r.pending_requests" class="text-[10px] text-amber-400 mt-0.5">{{ t('billing.prices.pendingRequests', { n: r.pending_requests }) }}</div>
+                  <div v-if="r.pending_requests" class="text-[10px] text-yellow-400 mt-0.5">{{ t('billing.prices.pendingRequests', { n: r.pending_requests }) }}</div>
                 </td>
                 <td class="px-3 py-2 space-y-1" :data-test="`queue-${r.id}`">
                   <!-- The region's setting (its owner's), then the organization's own choice -->
@@ -205,7 +205,7 @@ defineExpose({ load, changeType, setQueueRegion, setQueueOverride, newVersion, r
                     <option value="follow">{{ t('billing.queue.follow') }}</option>
                     <option value="off">{{ t('billing.queue.off') }}</option>
                   </select>
-                  <div class="text-[10px]" :class="r.queue_consumers_charged ? 'text-amber-400' : 'text-gray-500'" :data-test="`queue-charged-${r.id}`">
+                  <div class="text-[10px]" :class="r.queue_consumers_charged ? 'text-yellow-400' : 'text-gray-500'" :data-test="`queue-charged-${r.id}`">
                     {{ r.queue_consumers_charged ? t('billing.queue.charged') : t('billing.queue.notCharged') }}
                   </div>
                   <div v-if="r.queue_consumers_owner_override === false" class="text-[10px] text-gray-500" :data-test="`queue-owner-off-${r.id}`">{{ t('billing.queue.ownerOff') }}</div>
@@ -214,7 +214,7 @@ defineExpose({ load, changeType, setQueueRegion, setQueueOverride, newVersion, r
                 <td class="px-3 py-2">
                   <div>{{ t(`billing.prices.sources.${r.prices?.source ?? 'default'}`) }}</div>
                   <div v-if="r.prices?.effective_from" class="text-[10px] text-gray-500">{{ t('billing.prices.since', { date: r.prices.effective_from }) }}</div>
-                  <div v-for="v in r.scheduled_prices ?? []" :key="v.id" class="text-[10px] text-amber-400 flex items-center gap-1">
+                  <div v-for="v in r.scheduled_prices ?? []" :key="v.id" class="text-[10px] text-yellow-400 flex items-center gap-1">
                     {{ t('billing.prices.scheduledFrom', { date: v.effective_from }) }}
                     <button v-if="canManage" type="button" class="text-gray-500 hover:text-red-400" :data-test="`price-delete-${v.id}`" @click="removeVersion(v)"><Trash2 class="w-3 h-3" /></button>
                   </div>
@@ -270,8 +270,8 @@ defineExpose({ load, changeType, setQueueRegion, setQueueOverride, newVersion, r
         </div>
 
         <div v-if="defaults?.scheduled?.length" class="space-y-1">
-          <div v-for="v in defaults.scheduled" :key="v.id" class="flex items-center justify-between rounded-lg border border-amber-900/40 bg-amber-950/20 px-3 py-2 text-xs" :data-test="`price-scheduled-${v.id}`">
-            <span class="text-amber-300">{{ t('billing.prices.scheduledFrom', { date: v.effective_from }) }} · {{ price(v.cpu_vcpu_hour) }} / {{ t('billing.prices.fields.cpu_vcpu_hour') }}</span>
+          <div v-for="v in defaults.scheduled" :key="v.id" class="flex items-center justify-between rounded-lg border border-yellow-900/40 bg-yellow-950/20 px-3 py-2 text-xs" :data-test="`price-scheduled-${v.id}`">
+            <span class="text-yellow-300">{{ t('billing.prices.scheduledFrom', { date: v.effective_from }) }} · {{ price(v.cpu_vcpu_hour) }} / {{ t('billing.prices.fields.cpu_vcpu_hour') }}</span>
             <button v-if="canManage && isFuture(v)" type="button" class="text-gray-400 hover:text-red-400" :data-test="`price-delete-${v.id}`" @click="removeVersion(v)"><Trash2 class="w-3.5 h-3.5" /></button>
           </div>
         </div>

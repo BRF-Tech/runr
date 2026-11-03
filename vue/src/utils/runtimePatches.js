@@ -19,9 +19,9 @@ export function levelKey(level) {
 /** Badge / chip colours of a level (Tailwind classes, same scale as the EOL badges). */
 export function levelClasses(level) {
   switch (level) {
-    case 'zero-day': return 'bg-red-900/40 border-red-800/50 text-red-400'
-    case 'critical': return 'bg-orange-900/40 border-orange-800/50 text-orange-400'
-    case 'security': return 'bg-amber-900/40 border-amber-800/50 text-amber-400'
+    case 'zero-day': return 'bg-red-700 border-red-700 text-white'
+    case 'critical': return 'bg-red-900/40 border-red-800/50 text-red-400'
+    case 'security': return 'bg-yellow-900/40 border-yellow-800/50 text-yellow-400'
     default:         return 'bg-gray-800/40 border-gray-700/60 text-gray-400'
   }
 }
@@ -30,9 +30,9 @@ export function levelClasses(level) {
 export function bannerClasses(level) {
   switch (level) {
     case 'zero-day': return 'bg-red-700 text-white'
-    case 'critical': return 'bg-orange-600 text-white'
-    case 'security': return 'bg-amber-600 text-white'
-    default:         return 'bg-gray-700 text-white'
+    case 'critical': return 'bg-red-900 text-red-100'
+    case 'security': return 'bg-yellow-500 text-black'
+    default:         return 'bg-gray-700 text-gray-100'
   }
 }
 
@@ -66,7 +66,7 @@ export function patchBadge(state) {
       tag: state.pin?.tag || state.pin?.id || state.pin?.digest?.slice(0, 19) || '',
       warn,
       subtle: !warn,
-      classes: warn ? levelClasses('security') : 'bg-blue-900/30 border-blue-800/50 text-blue-400',
+      classes: warn ? levelClasses('security') : 'bg-brand-900/30 border-brand-800/50 text-brand-400',
     }
   }
   if (state.state === 'patch_available') {

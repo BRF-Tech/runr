@@ -88,6 +88,7 @@ export default {
     empty: {
       title: 'No sandboxes yet',
       text:  'A sandbox is a short-lived, isolated container on your own cluster. Agents and apps create them through the API or the SDKs; you can also start one here.',
+      textReadOnly: 'A sandbox is a short-lived, isolated container on your own cluster. Agents and apps create them through the API or the SDKs.',
       ended: 'No sandboxes match this filter.',
     },
 

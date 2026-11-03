@@ -42,8 +42,8 @@ const hitRate = computed(() => {
 const histograms = computed(() => {
   const st = metrics.value?.start_time ?? {}
   return [
-    { key: 'pool_hit', label: t('sandboxes.settings.metrics.poolHit'), data: st.pool_hit, color: '#10b981' },
-    { key: 'cold',     label: t('sandboxes.settings.metrics.cold'),    data: st.cold,     color: 'rgb(var(--brand-500))' },
+    { key: 'pool_hit', label: t('sandboxes.settings.metrics.poolHit'), data: st.pool_hit, color: 'rgb(var(--brand-300))' },
+    { key: 'cold',     label: t('sandboxes.settings.metrics.cold'),    data: st.cold,     color: 'rgb(var(--brand-700))' },
   ].map(h => {
     const bars = histogramBars(h.data)
     const max  = Math.max(1, ...bars.map(b => b.count))
@@ -96,7 +96,7 @@ const histograms = computed(() => {
         </div>
         <div class="rounded-xl border border-gray-800 bg-gray-900/60 px-4 py-3">
           <p class="text-[10px] uppercase tracking-wider text-gray-500">{{ t('sandboxes.settings.metrics.misses') }}</p>
-          <p class="text-lg font-mono text-amber-400" data-metric="misses">{{ metrics.pool?.misses ?? 0 }}</p>
+          <p class="text-lg font-mono text-yellow-400" data-metric="misses">{{ metrics.pool?.misses ?? 0 }}</p>
         </div>
         <div class="rounded-xl border border-gray-800 bg-gray-900/60 px-4 py-3">
           <p class="text-[10px] uppercase tracking-wider text-gray-500">{{ t('sandboxes.settings.metrics.hitRate') }}</p>

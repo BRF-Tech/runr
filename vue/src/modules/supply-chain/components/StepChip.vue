@@ -11,8 +11,8 @@ const { t } = useI18n()
 
 const tone = {
   ok:      'bg-emerald-900/40 border-emerald-800/40 text-emerald-400',
-  running: 'bg-sky-900/40 border-sky-800/40 text-sky-300',
-  pending: 'bg-sky-900/20 border-sky-900/40 text-sky-400',
+  running: 'bg-brand-900/40 border-brand-800/40 text-brand-300',
+  pending: 'bg-brand-900/20 border-brand-900/40 text-brand-400',
   failed:  'bg-red-900/40 border-red-800/40 text-red-400',
   skipped: 'bg-transparent border-gray-800 text-gray-500',
 }

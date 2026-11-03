@@ -122,10 +122,10 @@ defineExpose({ load, apply, dismiss })
             <tr v-for="r in items" :key="r.id" class="border-b border-gray-800/60 last:border-0 align-top" :data-rightsizing-row="r.project?.name ?? r.project_id">
               <td class="px-4 py-3">
                 <RouterLink :to="`/projects/${r.project_id}`" class="text-gray-100 hover:underline">{{ r.project?.name ?? r.project_id }}</RouterLink>
-                <p v-if="r.blocked" class="text-[11px] text-amber-400 mt-0.5">{{ t('rightsizing.blocked', { message: r.blocked.message }) }}</p>
+                <p v-if="r.blocked" class="text-[11px] text-yellow-400 mt-0.5">{{ t('rightsizing.blocked', { message: r.blocked.message }) }}</p>
               </td>
               <td class="px-4 py-3 font-mono text-gray-300 whitespace-nowrap">{{ sizeText(r.current) }}</td>
-              <td class="px-4 py-3 font-mono text-sky-300 whitespace-nowrap">{{ sizeText(r.recommended) }}</td>
+              <td class="px-4 py-3 font-mono text-brand-300 whitespace-nowrap">{{ sizeText(r.recommended) }}</td>
               <td class="px-4 py-3 text-gray-300">{{ reasonsText(t, r.reasons) }}</td>
               <td class="px-4 py-3 text-gray-300">{{ freedText(t, r) ?? '—' }}</td>
               <td class="px-4 py-3 text-gray-300" data-test="rightsizing-row-savings">{{ savingsText(t, r, locale) ?? '—' }}</td>

@@ -57,7 +57,7 @@ function hasDetails(d) {
               </td>
               <td class="px-3 py-2.5 text-xs text-gray-400 whitespace-nowrap">{{ fmtDate(d.created_at) }}</td>
               <td class="px-3 py-2.5 text-xs">
-                <span v-if="d.kind === 'preview'" class="text-violet-300">{{ t('gitDeploy.history.preview', { number: d.pr_number }) }}</span>
+                <span v-if="d.kind === 'preview'" class="text-brand-300">{{ t('gitDeploy.history.preview', { number: d.pr_number }) }}</span>
                 <span v-else class="text-gray-200">{{ t('gitDeploy.history.production') }}</span>
                 <span class="text-gray-500"> · {{ t(`gitDeploy.sources.${d.provider}`) }}</span>
               </td>
@@ -80,7 +80,7 @@ function hasDetails(d) {
                 </div>
                 <div v-if="d.warnings?.length">
                   <p class="text-gray-500 mb-1">{{ t('gitDeploy.history.warnings') }}</p>
-                  <ul class="list-disc pl-5 text-amber-300 space-y-0.5">
+                  <ul class="list-disc pl-5 text-yellow-300 space-y-0.5">
                     <li v-for="(w, i) in d.warnings" :key="i">{{ w }}</li>
                   </ul>
                 </div>

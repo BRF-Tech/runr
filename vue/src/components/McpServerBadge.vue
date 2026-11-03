@@ -10,8 +10,7 @@ const { t } = useI18n()
 <template>
   <span
     v-if="server"
-    class="inline-flex items-center gap-1 px-2.5 py-1 rounded-md border text-xs font-mono font-medium"
-    style="background:rgb(139 92 246/0.12);border-color:rgb(139 92 246/0.35);color:#a78bfa"
+    class="inline-flex items-center gap-1 px-2.5 py-1 rounded-md border text-xs font-mono font-medium bg-gray-800/60 border-gray-700 text-brand-300"
     :title="server.url || ''"
     data-testid="mcp-server-badge"
   ><Bot class="w-3 h-3" />{{ t('mcp.badge') }}</span>

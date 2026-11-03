@@ -3,14 +3,19 @@
 // admin); scope "tenant": the active tenant's override (GET/PUT /api/tenant/branding, tenant
 // owner/admin). A field sent as null goes back to its default (platform: config / Helm value,
 // tenant: the platform branding). Image fields take an upload, an https URL, a /storage/… path
-// or a data:image/…;base64 URI.
+// or a data:image/…;base64 URI. Colours: the brand scale and accent, the tone scales of the dark
+// and light themes (ThemeToneEditor) and the theme of users who never picked one.
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useToast } from '@/composables/useToast'
 import { brandingApi } from '../api/whiteLabel'
 import { useBrandingStore } from '../stores/branding'
-import { SHADES, expandPalette, isHexColor, normalizeHex, readableTextOn, toHex } from '../utils/color'
+import {
+  DEFAULT_DARK, DEFAULT_LIGHT, SHADES, SURFACE_SHADES, editorSurfaceScale, expandPalette, isHexColor, normalizeHex,
+  readableTextOn, toHex,
+} from '../utils/color'
 import { BRANDING_PRESETS, findPreset } from '../utils/presets'
+import ThemeToneEditor from './ThemeToneEditor.vue'
 import runrIconUrl from '@/assets/runr-icon.svg'
 import runrWordmarkLightUrl from '@/assets/runr-wordmark-light.svg'
 import runrWordmarkDarkUrl from '@/assets/runr-wordmark-dark.svg'
@@ -28,6 +33,9 @@ const IDENTITY_FIELDS = ['product_name', 'company_name', 'support_email', 'suppo
 const LOGIN_FIELDS    = ['login_headline', 'login_text']
 const TEXT_FIELDS     = [...IDENTITY_FIELDS, ...LOGIN_FIELDS, 'email_from_name']
 const COLOR_FIELDS    = ['primary_color', 'accent_color']
+const TONE_FIELDS     = ['dark_color', 'light_color']
+const TONE_THEMES     = [{ theme: 'dark', fallback: DEFAULT_DARK }, { theme: 'light', fallback: DEFAULT_LIGHT }]
+const THEME_CHOICES   = ['dark', 'light']
 const LOGO_ASSETS     = [
   { kind: 'logo_light', field: 'logo_light_url', fallback: runrWordmarkLightUrl, surface: 'light' },
   { kind: 'logo_dark',  field: 'logo_dark_url',  fallback: runrWordmarkDarkUrl,  surface: 'dark' },
@@ -55,25 +63,33 @@ const form = reactive({
   primary_color: null,
   accent_color: null,
   primary_scale: null,                     // null = expand from primary_color; { shade: '#rrggbb' | '' }
+  dark_color: null,
+  dark_scale: null,                        // null = derive from dark_color; { shade: '#rrggbb' | '' }, 50 … 950
+  light_color: null,
+  light_scale: null,
+  default_theme: null,                     // null = the default (Helm value / platform branding)
   ...Object.fromEntries(ASSETS.map(a => [a.field, null])),
   footer_links: null,
   powered_by: null,
   tenant_overrides_enabled: false,
 })
 
-function scaleForm(scale) {
+function scaleForm(scale, shades = SHADES) {
   if (!scale || typeof scale !== 'object') return null
-  const out = Object.fromEntries(SHADES.map(s => [s, toHex(scale[s]) ?? '']))
+  const out = Object.fromEntries(shades.map(s => [s, toHex(scale[s]) ?? '']))
   return Object.values(out).some(Boolean) ? out : null
 }
 
 function fill(data) {
   resolved.value = data.branding ?? null
   const stored = data.stored ?? {}
-  for (const key of [...TEXT_FIELDS, ...COLOR_FIELDS, ...ASSETS.map(a => a.field)]) {
+  for (const key of [...TEXT_FIELDS, ...COLOR_FIELDS, ...TONE_FIELDS, ...ASSETS.map(a => a.field)]) {
     form[key] = stored[key] ?? null
   }
   form.primary_scale = scaleForm(stored.primary_scale)
+  form.dark_scale = scaleForm(stored.dark_scale, SURFACE_SHADES)
+  form.light_scale = scaleForm(stored.light_scale, SURFACE_SHADES)
+  form.default_theme = THEME_CHOICES.includes(stored.default_theme) ? stored.default_theme : null
   form.footer_links = Array.isArray(stored.footer_links) ? stored.footer_links.map(l => ({ ...l })) : null
   form.powered_by = stored.powered_by ?? null
   if (isPlatform.value) {
@@ -150,7 +166,28 @@ function applyPreset(key) {
   form.primary_color = p.primary_color
   form.accent_color = p.accent_color
   form.primary_scale = { ...p.primary_scale }
+  form.dark_color = p.dark_color
+  form.dark_scale = { ...p.dark_scale }
+  form.light_color = p.light_color
+  form.light_scale = { ...p.light_scale }
 }
+
+// ── Theme tones ─────────────────────────────────────────────────────────────
+/** The base colour of a theme's tones in effect (stored, else the default). */
+function toneBase(theme) {
+  return normalizeHex(effective(`${theme}_color`)) || (theme === 'light' ? DEFAULT_LIGHT : DEFAULT_DARK)
+}
+/** Placeholder / fallback of a theme's base colour: the default (Helm value / platform branding). */
+function toneFallback(theme) {
+  const v = isPlatform.value ? defaults.value[`${theme}_color`] : resolved.value?.[`${theme}_color`]
+  return normalizeHex(v) || (theme === 'light' ? DEFAULT_LIGHT : DEFAULT_DARK)
+}
+const darkTones = computed(() => editorSurfaceScale(form.dark_scale, toneBase('dark'), 'dark'))
+const lightTones = computed(() => editorSurfaceScale(form.light_scale, toneBase('light'), 'light'))
+const defaultThemeFallback = computed(() => {
+  const v = isPlatform.value ? defaults.value.default_theme : resolved.value?.default_theme
+  return v === 'light' ? 'light' : 'dark'
+})
 
 // ── Footer links ────────────────────────────────────────────────────────────
 function addLink() {
@@ -184,6 +221,16 @@ function payload() {
   }
   const overridden = form.primary_scale && SHADES.some(s => form.primary_scale[s] && isHexColor(form.primary_scale[s]))
   out.primary_scale = overridden ? { ...effectiveScale.value } : null
+  for (const { theme } of TONE_THEMES) {
+    const color = form[`${theme}_color`]
+    out[`${theme}_color`] = color && isHexColor(color) ? normalizeHex(color) : null
+    const scale = form[`${theme}_scale`]
+    // A scale set by hand is sent whole (the shades shown), like the brand scale
+    out[`${theme}_scale`] = scale && SURFACE_SHADES.some(s => isHexColor(scale[s]))
+      ? editorSurfaceScale(scale, toneBase(theme), theme)
+      : null
+  }
+  out.default_theme = THEME_CHOICES.includes(form.default_theme) ? form.default_theme : null
   for (const { field } of ASSETS) {
     const v = form[field]
     out[field] = v === null || v === undefined || String(v).trim() === '' ? null : String(v).trim()
@@ -302,10 +349,10 @@ function isDataUri(v) {
         </section>
 
         <!-- Colours -->
-        <section class="card space-y-4" data-test="branding-colors">
+        <section class="card space-y-4" data-test="branding-colors" data-tour="branding-brand-colors">
           <div class="flex flex-wrap items-center justify-between gap-3">
             <h4 class="text-sm font-semibold text-gray-100">{{ t('whiteLabel.branding.colors') }}</h4>
-            <div class="flex items-center gap-2">
+            <div class="flex items-center gap-2" data-tour="branding-presets">
               <label class="text-xs text-gray-400" for="branding-preset">{{ t('whiteLabel.branding.presets') }}</label>
               <select id="branding-preset" v-model="preset" class="input h-8 text-xs w-44" data-test="branding-preset"
                 @change="applyPreset($event.target.value)">
@@ -358,6 +405,37 @@ function isDataUri(v) {
               </div>
             </div>
             <p class="text-xs text-gray-400 mt-2">{{ t('whiteLabel.branding.scaleHint') }}</p>
+          </div>
+        </section>
+
+        <!-- Themes: the tones of the dark and the light theme, the default theme -->
+        <section class="card space-y-4" data-test="branding-themes">
+          <div>
+            <h4 class="text-sm font-semibold text-gray-100">{{ t('whiteLabel.branding.themes') }}</h4>
+            <p class="text-xs text-gray-400 mt-1">{{ t('whiteLabel.branding.themesHint') }}</p>
+          </div>
+          <div class="grid gap-6 2xl:grid-cols-2">
+            <div v-for="tone in TONE_THEMES" :key="tone.theme" :data-tour="tone.theme === 'dark' ? 'branding-dark-tones' : 'branding-light-tones'">
+              <ThemeToneEditor :theme="tone.theme" :fallback="toneFallback(tone.theme)" :brand="effectiveScale"
+                :error="fieldError(`${tone.theme}_color`) || fieldError(`${tone.theme}_scale`)"
+                :color="form[`${tone.theme}_color`]" :scale="form[`${tone.theme}_scale`]"
+                @update:color="form[`${tone.theme}_color`] = $event" @update:scale="form[`${tone.theme}_scale`] = $event" />
+            </div>
+          </div>
+          <div class="pt-4 border-t border-gray-800" data-tour="branding-default-theme">
+            <div class="flex items-center justify-between">
+              <label class="label" for="branding-default_theme">{{ t('whiteLabel.branding.field_default_theme') }}</label>
+              <button v-if="form.default_theme !== null" type="button" class="text-xs text-gray-400 hover:text-gray-100 flex items-center gap-1"
+                data-test="reset-default_theme" @click="reset('default_theme')">
+                <RotateCcw class="w-3 h-3" />{{ t('whiteLabel.branding.reset') }}
+              </button>
+            </div>
+            <select id="branding-default_theme" v-model="form.default_theme" class="input sm:w-64" data-test="field-default_theme">
+              <option :value="null">{{ t('whiteLabel.branding.defaultThemeInherit', { theme: t(`whiteLabel.branding.theme_${defaultThemeFallback}`) }) }}</option>
+              <option v-for="key in THEME_CHOICES" :key="key" :value="key">{{ t(`whiteLabel.branding.theme_${key}`) }}</option>
+            </select>
+            <p v-if="fieldError('default_theme')" class="text-xs text-red-400 mt-1">{{ fieldError('default_theme') }}</p>
+            <p class="text-xs text-gray-400 mt-1">{{ t('whiteLabel.branding.defaultThemeHint') }}</p>
           </div>
         </section>
 
@@ -476,17 +554,17 @@ function isDataUri(v) {
 
         <p v-if="error" class="text-sm text-red-400">{{ error }}</p>
         <div class="flex justify-end">
-          <button type="submit" class="btn-primary" :disabled="saving" data-test="branding-save">
+          <button type="submit" class="btn-primary" :disabled="saving" data-test="branding-save" data-tour="branding-save">
             {{ saving ? t('common.saving') : t('common.save') }}
           </button>
         </div>
       </form>
 
       <!-- Live preview -->
-      <aside class="space-y-3" data-test="branding-preview">
+      <aside class="space-y-3" data-test="branding-preview" data-tour="branding-preview">
         <p class="label">{{ t('whiteLabel.branding.preview') }}</p>
         <div class="rounded-xl overflow-hidden border border-gray-800">
-          <div class="px-4 py-3 flex items-center gap-3" style="background:#030712">
+          <div class="px-4 py-3 flex items-center gap-3" :style="{ background: darkTones['950'] }">
             <img v-if="previewDark" :src="previewDark" alt="" class="h-7 max-w-32 object-contain" />
             <template v-else>
               <img :src="previewMark" alt="" class="h-7 w-7 object-contain" />
@@ -496,15 +574,15 @@ function isDataUri(v) {
               </span>
             </template>
           </div>
-          <div class="bg-white px-5 py-5 space-y-3">
+          <div class="px-5 py-5 space-y-3" :style="{ background: lightTones['950'] }" data-test="preview-card">
             <img v-if="previewLogo" :src="previewLogo" alt="" class="h-8 max-w-40 object-contain" />
-            <p class="text-lg font-bold" style="color:#0f172a">{{ effective('login_headline') || t('whiteLabel.branding.previewHeadline') }}</p>
-            <p v-if="effective('login_text')" class="text-xs" style="color:#64748b">{{ effective('login_text') }}</p>
-            <div class="h-8 rounded-md" style="background:#f8fafc;border:1.5px solid #e2e8f0" />
+            <p class="text-lg font-bold" :style="{ color: lightTones['100'] }">{{ effective('login_headline') || t('whiteLabel.branding.previewHeadline') }}</p>
+            <p v-if="effective('login_text')" class="text-xs" :style="{ color: lightTones['600'] }">{{ effective('login_text') }}</p>
+            <div class="h-8 rounded-md" :style="{ background: lightTones['900'], border: `1.5px solid ${lightTones['700']}` }" />
             <button type="button" class="w-full py-2 rounded-md text-sm font-semibold" data-test="preview-button"
               :style="{ background: effectiveScale['600'], color: readableTextOn(effectiveScale['600']) }">{{ t('auth.submit') }}</button>
-            <p class="text-xs font-semibold" :style="{ color: effectiveScale['500'] }">{{ t('whiteLabel.branding.previewLink') }}</p>
-            <div class="flex flex-wrap gap-x-3 gap-y-1 text-[11px] pt-2 border-t" style="border-color:#e2e8f0;color:#64748b">
+            <p class="text-xs font-semibold" :style="{ color: effectiveScale['700'] }">{{ t('whiteLabel.branding.previewLink') }}</p>
+            <div class="flex flex-wrap gap-x-3 gap-y-1 text-[11px] pt-2 border-t" :style="{ borderColor: lightTones['700'], color: lightTones['600'] }">
               <span v-for="(link, i) in previewLinks" :key="i">{{ link.label }}</span>
               <span v-if="previewDefault">{{ t('whiteLabel.login.byCompany', { product: previewName, company: previewCompany }) }}</span>
               <template v-else>

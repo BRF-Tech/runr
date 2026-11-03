@@ -77,7 +77,7 @@ async function addToLibrary() {
             <span v-if="info.task" class="px-1.5 py-0.5 rounded-sm bg-gray-800 text-gray-300">{{ t(`ai.tasks.${info.task}`, info.task) }}</span>
             <span v-if="info.library" class="px-1.5 py-0.5 rounded-sm bg-gray-800 font-mono text-gray-300">{{ info.library }}</span>
             <span v-if="info.license" class="px-1.5 py-0.5 rounded-sm bg-gray-800 text-gray-300">{{ t('ai.hub.license') }}: {{ info.license }}</span>
-            <span v-if="gated" class="flex items-center gap-1 px-1.5 py-0.5 rounded-sm bg-amber-900/40 border border-amber-800/40 text-amber-300" data-testid="hub-gated">
+            <span v-if="gated" class="flex items-center gap-1 px-1.5 py-0.5 rounded-sm bg-yellow-900/40 border border-yellow-800/40 text-yellow-300" data-testid="hub-gated">
               <Lock class="w-3 h-3" />{{ t('ai.hub.gated') }}
             </span>
           </div>
@@ -101,9 +101,9 @@ async function addToLibrary() {
             </div>
           </div>
 
-          <p v-if="gated && !hubTokenConfigured" class="text-xs text-amber-300/90 bg-amber-900/20 rounded-sm px-3 py-2">{{ t('ai.hub.gatedNoToken') }}</p>
+          <p v-if="gated && !hubTokenConfigured" class="text-xs text-yellow-300/90 bg-yellow-900/20 rounded-sm px-3 py-2">{{ t('ai.hub.gatedNoToken') }}</p>
           <p v-else-if="gated" class="text-xs text-gray-400">{{ t('ai.hub.gatedWithToken') }}</p>
-          <p v-for="w in warnings" :key="w" class="text-xs text-amber-300/90 bg-amber-900/20 rounded-sm px-3 py-2">{{ t(`ai.hub.warnings.${w}`, w) }}</p>
+          <p v-for="w in warnings" :key="w" class="text-xs text-yellow-300/90 bg-yellow-900/20 rounded-sm px-3 py-2">{{ t(`ai.hub.warnings.${w}`, w) }}</p>
 
           <!-- Engines -->
           <section>

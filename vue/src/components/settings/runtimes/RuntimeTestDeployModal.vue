@@ -75,7 +75,7 @@ async function start() {
             @click="regionId = r.id"
           >{{ r.name }}</button>
         </div>
-        <p v-else class="text-xs text-amber-400 mb-4">{{ t('runtimes.testDeploy.noRegions') }}</p>
+        <p v-else class="text-xs text-yellow-400 mb-4">{{ t('runtimes.testDeploy.noRegions') }}</p>
 
         <label class="label">{{ t('runtimes.testDeploy.version') }}</label>
         <div class="flex flex-wrap gap-2 mb-5">

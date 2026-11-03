@@ -5,16 +5,18 @@ export const ALIVE_STATUSES = ['pending', 'running', 'paused']
 export const STATUS_STYLES = {
   pending:     'bg-yellow-900/40 text-yellow-300 border-yellow-800',
   running:     'bg-emerald-900/40 text-emerald-300 border-emerald-800',
-  paused:      'bg-sky-900/40 text-sky-300 border-sky-800',
-  terminating: 'bg-orange-900/40 text-orange-300 border-orange-800',
+  paused:      'bg-brand-900/40 text-brand-300 border-brand-800',
+  terminating: 'bg-yellow-900/40 text-yellow-300 border-yellow-800',
   terminated:  'bg-gray-800 text-gray-400 border-gray-700',
   failed:      'bg-red-900/40 text-red-300 border-red-800',
 }
 
+// The isolation classes in the brand's colour, the stronger the fuller: Kata (a VM) solid,
+// gVisor (a user-space kernel) tinted, runc (namespaces only) outlined
 export const ISOLATION_STYLES = {
-  kata:   'border-violet-800/50 bg-violet-950/40 text-violet-300',
-  gvisor: 'border-sky-800/50 bg-sky-950/40 text-sky-300',
-  runc:   'border-amber-800/50 bg-amber-950/30 text-amber-300',
+  kata:   'border-transparent bg-brand-700 text-white',
+  gvisor: 'border-brand-800/50 bg-brand-900/40 text-brand-300',
+  runc:   'border-brand-500/60 bg-transparent text-brand-400',
 }
 
 /** Languages of POST /sandboxes/{id}/run, in picker order. */

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { cveUrl, deadlinePassed, levelClasses, levelKey, levelRank, pathLocation, patchBadge, patchReason } from '@/utils/runtimePatches'
+import { bannerClasses, cveUrl, deadlinePassed, levelClasses, levelKey, levelRank, pathLocation, patchBadge, patchReason } from '@/utils/runtimePatches'
 import { notificationAction, notificationTitle } from '@/utils/notifications'
 import { fakeT } from '../helpers'
 
@@ -11,9 +11,15 @@ describe('runtime patch helpers', () => {
     expect(levelKey('zero-day')).toBe('zeroDay')
     expect(levelKey('critical')).toBe('critical')
     expect(levelKey(undefined)).toBe('routine')
-    expect(levelClasses('zero-day')).toContain('text-red-400')
-    expect(levelClasses('security')).toContain('text-amber-400')
+    // zero-day solid red, critical red tint, security yellow: no orange (the RunR brand)
+    expect(levelClasses('zero-day')).toContain('bg-red-700')
+    expect(levelClasses('critical')).toContain('text-red-400')
+    expect(levelClasses('security')).toContain('text-yellow-400')
     expect(levelClasses('routine')).toContain('text-gray-400')
+    // the banners: white on the saturated levels; a routine one (a release, feed trouble) has
+    // the theme's tones, white on its gray-700 was unreadable on the light theme
+    expect(bannerClasses('zero-day')).toBe('bg-red-700 text-white')
+    expect(bannerClasses('routine')).toBe('bg-gray-700 text-gray-100')
   })
 
   it('shows nothing for an up-to-date project or none at all', () => {
@@ -25,7 +31,7 @@ describe('runtime patch helpers', () => {
     expect(patchBadge({ state: 'patch_available', level: 'routine' })).toMatchObject({ kind: 'available', level: 'routine', subtle: true })
     const critical = patchBadge({ state: 'patch_available', level: 'critical' })
     expect(critical).toMatchObject({ kind: 'available', level: 'critical', subtle: false })
-    expect(critical.classes).toContain('orange')
+    expect(critical.classes).toContain('red-900')
   })
 
   it('an overdue deadline is red whatever the level; a pin names its tag and warns when it is gone', () => {

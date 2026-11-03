@@ -151,7 +151,7 @@ async function abort() {
       <p class="text-[11px] text-gray-400">{{ t('images.dialog.subtitle') }}</p>
       <p class="text-[11px] text-gray-500 font-mono">{{ t('images.dialog.help') }}</p>
 
-      <p v-if="resume" class="text-[11px] text-amber-400" data-testid="image-upload-resume">
+      <p v-if="resume" class="text-[11px] text-yellow-400" data-testid="image-upload-resume">
         {{ t('images.dialog.resumeHint', { name: resume.name, percent, size: formatBytes(resume.size_bytes) }) }}
       </p>
 

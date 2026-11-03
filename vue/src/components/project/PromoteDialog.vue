@@ -111,7 +111,7 @@ async function submit() {
       </div>
 
       <div v-if="loading" class="flex items-center justify-center py-10">
-        <div class="animate-spin h-6 w-6 border-2 border-sky-500 border-t-transparent rounded-full" />
+        <div class="animate-spin h-6 w-6 border-2 border-brand-500 border-t-transparent rounded-full" />
       </div>
 
       <template v-else-if="preview">
@@ -144,7 +144,7 @@ async function submit() {
               <span v-if="isNames(change)" class="text-gray-400">
                 <span v-if="change.added?.length" class="text-emerald-400">+ {{ change.added.join(', ') }}</span>
                 <span v-if="change.removed?.length" class="text-red-400 ml-2">− {{ change.removed.join(', ') }}</span>
-                <span v-if="change.changed?.length" class="text-amber-300 ml-2">~ {{ change.changed.join(', ') }}</span>
+                <span v-if="change.changed?.length" class="text-yellow-300 ml-2">~ {{ change.changed.join(', ') }}</span>
               </span>
               <span v-else class="font-mono text-gray-400">{{ show(change.from) }} → <span class="text-gray-200">{{ show(change.to) }}</span></span>
             </li>
@@ -173,9 +173,9 @@ async function submit() {
         </section>
 
         <!-- Approval -->
-        <div v-if="preview.requires_approval" class="flex items-start gap-2.5 bg-amber-900/20 border border-amber-800/40 rounded-md px-4 py-3 mb-4" data-testid="promote-approval">
-          <ShieldCheck class="w-4 h-4 text-amber-400 mt-0.5 shrink-0" />
-          <p class="text-xs text-amber-200">{{ t('environments.promoteDialog.approvalNotice', { environment: target }) }}</p>
+        <div v-if="preview.requires_approval" class="flex items-start gap-2.5 bg-yellow-900/20 border border-yellow-800/40 rounded-md px-4 py-3 mb-4" data-testid="promote-approval">
+          <ShieldCheck class="w-4 h-4 text-yellow-400 mt-0.5 shrink-0" />
+          <p class="text-xs text-yellow-200">{{ t('environments.promoteDialog.approvalNotice', { environment: target }) }}</p>
         </div>
 
         <label class="label mb-1.5" for="promote-message">{{ t('environments.promoteDialog.message') }}</label>

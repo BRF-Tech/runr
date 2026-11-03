@@ -97,7 +97,7 @@ defineExpose({ load, cancel })
 <template>
   <div class="space-y-5 max-w-5xl" data-test="project-billing">
     <div v-if="loading && !info" class="flex justify-center py-6">
-      <div class="animate-spin h-4 w-4 border-2 border-sky-500 border-t-transparent rounded-full" />
+      <div class="animate-spin h-4 w-4 border-2 border-brand-500 border-t-transparent rounded-full" />
     </div>
     <div v-else-if="forbidden" class="py-8 text-center" data-test="project-billing-forbidden">
       <Lock class="w-6 h-6 text-gray-500 mx-auto mb-2" />
@@ -126,10 +126,10 @@ defineExpose({ load, cancel })
               </div>
               <div class="text-xs text-gray-400">{{ t('billing.project.allocationPrice', { price: money(allocation.monthly_price), date: formatDate(allocation.active_from, locale) }) }}</div>
             </template>
-            <p v-else class="text-xs text-amber-400" data-test="project-no-allocation">{{ t('billing.project.noAllocation') }}</p>
+            <p v-else class="text-xs text-yellow-400" data-test="project-no-allocation">{{ t('billing.project.noAllocation') }}</p>
           </div>
-          <div v-if="pending" class="rounded-xl border border-amber-900/50 bg-amber-950/20 p-4 space-y-1" data-test="project-pending-request">
-            <h3 class="text-sm font-semibold text-amber-300">{{ t('billing.project.pending') }}</h3>
+          <div v-if="pending" class="rounded-xl border border-yellow-900/50 bg-yellow-950/20 p-4 space-y-1" data-test="project-pending-request">
+            <h3 class="text-sm font-semibold text-yellow-300">{{ t('billing.project.pending') }}</h3>
             <div class="text-sm text-gray-200 font-mono">
               {{ vcpu(pending.cpu_m) }} {{ t('billing.units.vcpu') }} · {{ gb(pending.memory_mb) }} {{ t('billing.units.gb') }}<span v-if="pending.gpu_count"> · {{ pending.gpu_count }} {{ t('billing.units.gpu') }}</span>
             </div>

@@ -60,7 +60,7 @@ const stopsNow = computed(() => form.value.action === 'stop' && amount.value !==
 const forecastOver = computed(() => !!limit.value && Number(props.status?.forecast ?? 0) > Number(limit.value.amount))
 
 const barWidth = computed(() => `${Math.min(100, Math.max(0, percent.value ?? 0))}%`)
-const barClass = computed(() => ({ reached: 'bg-red-500', warning: 'bg-amber-400' }[props.status?.state] ?? 'bg-emerald-500'))
+const barClass = computed(() => ({ reached: 'bg-red-500', warning: 'bg-yellow-400' }[props.status?.state] ?? 'bg-emerald-500'))
 
 const stateLabel = computed(() => {
   if (props.status?.state === 'reached') return t('billing.costLimit.state.reached')
@@ -69,7 +69,7 @@ const stateLabel = computed(() => {
 })
 const stateClass = computed(() => (props.status?.state === 'reached'
   ? 'bg-red-950/40 border-red-900/60 text-red-300'
-  : 'bg-amber-950/30 border-amber-900/50 text-amber-300'))
+  : 'bg-yellow-950/30 border-yellow-900/50 text-yellow-300'))
 
 const money = (v) => formatMoney(v, currency.value, locale.value)
 
@@ -160,7 +160,7 @@ defineExpose({ form, amount, canSave, stopsNow, save, remove, resume })
       >
         <div class="h-full rounded-full transition-all" :class="barClass" :style="{ width: barWidth }" />
       </div>
-      <p class="text-xs" :class="forecastOver ? 'text-amber-300' : 'text-gray-400'" data-test="cost-limit-forecast">
+      <p class="text-xs" :class="forecastOver ? 'text-yellow-300' : 'text-gray-400'" data-test="cost-limit-forecast">
         {{ t('billing.costLimit.forecast', { amount: money(status.forecast) }) }}<span v-if="forecastOver"> · {{ t('billing.costLimit.forecastOver') }}</span>
         <span class="text-gray-500"> · {{ t('billing.costLimit.forecastHint', { elapsed: status.days_elapsed ?? 0, days: status.days_in_month ?? 0 }) }}</span>
       </p>
@@ -206,7 +206,7 @@ defineExpose({ form, amount, canSave, stopsNow, save, remove, resume })
               role="radio"
               :aria-checked="form.action === a"
               class="px-3 py-1.5 text-xs font-medium transition-colors"
-              :class="form.action === a ? (a === 'stop' ? 'bg-red-900/50 text-red-200' : 'bg-sky-900/50 text-sky-200') : 'bg-gray-900 text-gray-400 hover:text-gray-200'"
+              :class="form.action === a ? (a === 'stop' ? 'bg-red-900/50 text-red-200' : 'bg-brand-900/50 text-brand-300') : 'bg-gray-900 text-gray-400 hover:text-gray-200'"
               :data-test="`cost-limit-action-${a}`"
               @click="form.action = a"
             >{{ t(`billing.costLimit.actions.${a}`) }}</button>
@@ -215,7 +215,7 @@ defineExpose({ form, amount, canSave, stopsNow, save, remove, resume })
       </div>
       <p class="text-[11px] text-gray-500">{{ t(`billing.costLimit.actionHint.${form.action}`) }}</p>
       <p v-if="limit?.updated_by?.name" class="text-[11px] text-gray-500">{{ t('billing.costLimit.setBy', { name: limit.updated_by.name, date: formatDateTime(limit.updated_at, locale) }) }}</p>
-      <p v-if="invalid" class="text-xs text-amber-400" data-test="cost-limit-invalid">{{ t('billing.costLimit.invalid') }}</p>
+      <p v-if="invalid" class="text-xs text-yellow-400" data-test="cost-limit-invalid">{{ t('billing.costLimit.invalid') }}</p>
       <p v-if="stopsNow" class="text-xs text-red-300 rounded-lg border border-red-900/60 bg-red-950/30 px-3 py-2" data-test="cost-limit-stop-now">
         {{ t('billing.costLimit.stopNow', { amount: money(monthToDate) }) }}
       </p>

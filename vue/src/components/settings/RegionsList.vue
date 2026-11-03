@@ -24,7 +24,7 @@ function componentTagClass(status) {
   switch (status) {
     case 'ready':         return `${base} bg-emerald-900/40 text-emerald-400`
     case 'installing':    return `${base} bg-yellow-900/40 text-yellow-400 animate-pulse`
-    case 'uninstalling':  return `${base} bg-orange-900/40 text-orange-400 animate-pulse`
+    case 'uninstalling':  return `${base} bg-yellow-900/40 text-yellow-400 animate-pulse`
     case 'error':         return `${base} bg-red-900/40 text-red-400`
     case 'not_installed': return `${base} bg-gray-800/40 text-gray-400`
     default:              return `${base} bg-gray-800/40 text-gray-400`
@@ -84,7 +84,7 @@ function fmtTimeAgo(iso) {
             <!-- Synced regions: minimal display -->
             <template v-if="r.is_synced">
               <span class="font-medium text-gray-100 font-mono">{{ r.name }}</span>
-              <span class="px-1.5 py-0.5 rounded-sm text-[10px] font-medium bg-indigo-900/40 text-indigo-400">
+              <span class="px-1.5 py-0.5 rounded-sm text-[10px] font-medium bg-brand-900/40 text-brand-400">
                 {{ t('settings.regions.syncedBadge') }}
               </span>
             </template>
@@ -101,19 +101,19 @@ function fmtTimeAgo(iso) {
               </div>
             </div>
             <span class="font-medium text-gray-100 font-mono">{{ r.name }}</span>
-            <span v-if="r.is_demo" class="px-1.5 py-0.5 rounded-sm text-[10px] font-medium" style="background:rgb(var(--brand-500)/0.15);color:rgb(var(--brand-500))">
+            <span v-if="r.is_demo" class="px-1.5 py-0.5 rounded-sm text-[10px] font-medium border border-gray-700 bg-gray-800/60 text-brand-300">
               {{ t('settings.regions.demoBadge') }}
             </span>
-            <span v-if="isCentralAdmin && r.region_mode === 'infinite'" class="px-1.5 py-0.5 rounded-sm text-[10px] font-medium font-mono bg-violet-900/40 text-violet-400">
+            <span v-if="isCentralAdmin && r.region_mode === 'infinite'" class="px-1.5 py-0.5 rounded-sm text-[10px] font-medium font-mono bg-brand-700 text-white">
               {{ t('tenancy.regionMode_infinite') }}
             </span>
-            <span v-if="isCentralAdmin && r.region_mode !== 'infinite' && !r.is_demo" class="px-1.5 py-0.5 rounded-sm text-[10px] font-medium font-mono bg-sky-900/40 text-sky-400">
+            <span v-if="isCentralAdmin && r.region_mode !== 'infinite' && !r.is_demo" class="px-1.5 py-0.5 rounded-sm text-[10px] font-medium font-mono border border-brand-500/60 text-brand-400">
               {{ t('tenancy.regionMode_managed') }}
             </span>
             <span v-if="r.region_status === 'inactive'" class="px-1.5 py-0.5 rounded-sm text-[10px] font-medium bg-gray-800/40 text-gray-400">
               {{ t('settings.regions.status_inactive') }}
             </span>
-            <span v-else-if="r.region_status === 'maintenance'" class="px-1.5 py-0.5 rounded-sm text-[10px] font-medium bg-amber-900/40 text-amber-400 animate-pulse">
+            <span v-else-if="r.region_status === 'maintenance'" class="px-1.5 py-0.5 rounded-sm text-[10px] font-medium bg-yellow-900/40 text-yellow-400 animate-pulse">
               {{ t('settings.regions.status_maintenance') }}
             </span>
             <!-- Cluster down: show warning instead of component tags -->
@@ -167,10 +167,13 @@ function fmtTimeAgo(iso) {
             </span>
           </div>
         </div>
-        <!-- Synced (assigned) regions: only show edit for demo seed -->
+        <!-- Synced (assigned) regions: only the demo seed / remove (regions.manage, like every
+             region change); a read-only role has no button here -->
         <template v-if="r.is_synced">
           <button
+            v-if="canManage"
             type="button"
+            data-action="region-demo"
             class="text-gray-400 hover:text-gray-100 transition-colors shrink-0"
             :title="t('settings.regions.demoBadge')"
             @click="emit('edit', r)"

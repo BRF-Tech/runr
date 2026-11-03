@@ -14,7 +14,6 @@ export default {
     preferences: 'Preferences',
     theme:       'Theme',
     themeDark:     'Dark',
-    themeFullDark: 'Full Dark',
     themeLight:    'Light',
     language:    'Language',
     languageEn:  'English',

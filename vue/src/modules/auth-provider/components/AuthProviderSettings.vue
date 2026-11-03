@@ -49,13 +49,14 @@ watch(() => tutorialStore.restartCounter, () => {
   nextTick(() => startTutorial())
 })
 
+const NEUTRAL = { bg: 'bg-gray-800/60', border: 'border-gray-700/60', text: 'text-gray-100' }
 const driverMeta = {
-  google:    { bg: 'bg-blue-900/30', border: 'border-blue-800/40', text: 'text-blue-400' },
-  github:    { bg: 'bg-gray-800/60', border: 'border-gray-700/60', text: 'text-gray-100' },
-  microsoft: { bg: 'bg-sky-900/30', border: 'border-sky-800/40', text: 'text-sky-400' },
-  gitlab:    { bg: 'bg-orange-900/30', border: 'border-orange-800/40', text: 'text-orange-400' },
-  oidc:      { bg: 'bg-indigo-900/30', border: 'border-indigo-800/40', text: 'text-indigo-400' },
-  saml:      { bg: 'bg-emerald-900/30', border: 'border-emerald-800/40', text: 'text-emerald-400' },
+  google:    NEUTRAL,
+  github:    NEUTRAL,
+  microsoft: NEUTRAL,
+  gitlab:    NEUTRAL,
+  oidc:      { bg: 'bg-brand-900/30', border: 'border-brand-800/40', text: 'text-brand-400' },
+  saml:      { bg: 'bg-transparent', border: 'border-brand-500/60', text: 'text-brand-400' },
 }
 
 const driverLabels = {

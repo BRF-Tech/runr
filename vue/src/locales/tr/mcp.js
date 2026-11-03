@@ -17,6 +17,7 @@ export default {
       authToken:      'API tokenı',
       authOauthHint:  'İstemci RunR oturum açma sayfasını tarayıcıda açar; yetkileri ve organizasyonu onay sayfasında siz seçersiniz.',
       authTokenHint:  'İstemci Authorization başlığında bir API tokenı gönderir. Aşağıda kapsamlı bir token oluşturun.',
+      connectNeedsTokens: 'Bir istemciyi bağlamak için kendi API tokenlarınızı yönetme yetkisi gerekir: OAuth ile oturum açmak da API tokenı da istemciye bir token verir. Bir yöneticiye başvurun.',
     },
 
     snippets: {
@@ -117,6 +118,8 @@ export default {
       errorTitle:     'İstemci bağlanamıyor',
       expiredTitle:   'Bu isteğin süresi doldu',
       expiredText:    'Bağlantıyı istemciden yeniden başlatın.',
+      noAccessTitle:  'MCP istemcisi bağlayamazsınız',
+      noAccessText:   'Bir istemciyi bağlamak için kendi API tokenlarınızı yönetme yetkisi gerekir. Bir yöneticiye başvurun ya da isteği reddederek istemciye dönün.',
     },
 
     project: {

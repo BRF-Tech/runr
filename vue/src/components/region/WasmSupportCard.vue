@@ -78,7 +78,7 @@ const showForm = computed(() => canManage.value && !busyStatus.value)
     </details>
 
     <p v-if="error" class="text-xs text-red-400" data-testid="wasm-error">{{ error }}</p>
-    <p v-if="clusterError" class="text-xs text-amber-300/90 bg-amber-900/20 rounded-sm px-3 py-2">{{ t('wasm.card.clusterError', { error: clusterError }) }}</p>
+    <p v-if="clusterError" class="text-xs text-yellow-300/90 bg-yellow-900/20 rounded-sm px-3 py-2">{{ t('wasm.card.clusterError', { error: clusterError }) }}</p>
     <p v-if="!canManage && !loading" class="text-[11px] text-gray-400 italic">{{ t('wasm.card.readOnly') }}</p>
 
     <template v-if="showForm">
@@ -100,7 +100,7 @@ const showForm = computed(() => canManage.value && !busyStatus.value)
       <div class="space-y-1.5">
         <p class="text-xs text-gray-400 font-medium">{{ t('wasm.card.nodes') }}</p>
         <p v-if="loading && !nodes.length" class="text-[11px] text-gray-500">{{ t('wasm.card.loading') }}</p>
-        <p v-else-if="!clusterError && !eligibleNodes.length" class="text-xs text-amber-300/90 bg-amber-900/20 rounded-sm px-3 py-2" data-testid="wasm-no-eligible">{{ t('wasm.card.noEligible') }}</p>
+        <p v-else-if="!clusterError && !eligibleNodes.length" class="text-xs text-yellow-300/90 bg-yellow-900/20 rounded-sm px-3 py-2" data-testid="wasm-no-eligible">{{ t('wasm.card.noEligible') }}</p>
         <template v-else-if="nodes.length">
           <label class="flex items-center gap-2 text-xs text-gray-300" data-testid="wasm-all-nodes">
             <input v-model="allNodes" type="checkbox" />
@@ -113,7 +113,7 @@ const showForm = computed(() => canManage.value && !busyStatus.value)
               <input type="checkbox" :disabled="!n.eligible" :checked="selectedNodes.includes(n.name)" @change="toggleNode(n.name)" />
               <span class="font-mono">{{ n.name }}</span>
               <span class="text-[10px] text-gray-500">{{ n.arch }} · {{ n.flavor }}</span>
-              <span v-if="!n.eligible" class="text-[10px] text-amber-400/80">{{ t(`wasm.card.reason.${n.reason}`) }}</span>
+              <span v-if="!n.eligible" class="text-[10px] text-yellow-400/80">{{ t(`wasm.card.reason.${n.reason}`) }}</span>
               <span v-else-if="n.shims && n.shims.length" class="text-[10px] text-emerald-400/80">{{ t('wasm.card.nodeReady', { shims: n.shims.join(', ') }) }}</span>
             </label>
             <p class="text-[11px] text-gray-500">{{ t('wasm.card.selectedNodes', { count: selectedNodes.length }) }}</p>
@@ -122,7 +122,7 @@ const showForm = computed(() => canManage.value && !busyStatus.value)
       </div>
 
       <p v-if="knativePending.length" class="text-[11px] text-gray-500">{{ t('wasm.card.knativePending', { features: knativePending.join(', ') }) }}</p>
-      <p class="text-[11px] text-amber-400/90">{{ t('wasm.card.installWarning') }}</p>
+      <p class="text-[11px] text-yellow-400/90">{{ t('wasm.card.installWarning') }}</p>
 
       <div class="flex gap-2">
         <button class="btn-primary text-xs" :disabled="!canSubmit" data-testid="wasm-install" @click="install">

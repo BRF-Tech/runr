@@ -18,6 +18,6 @@ const { t } = useI18n()
       autocomplete="organization"
       required
     />
-    <p class="text-xs mt-1.5" style="color:#94a3b8">{{ t('tenancy.workspaceHint') }}</p>
+    <p class="text-xs mt-1.5" style="color:rgb(var(--surface-light-600) / .7)">{{ t('tenancy.workspaceHint') }}</p>
   </div>
 </template>

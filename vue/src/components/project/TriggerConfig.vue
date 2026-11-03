@@ -38,12 +38,14 @@ const resolvedStream = computed(() => props.queueStream.trim() ? `${props.queueS
 defineEmits(['update:triggerType', 'update:schedule', 'update:queueStream', 'state', 'changed'])
 
 const triggers = [
-  { id: 'http',     labelKey: 'create.triggerTypes.http',     activeStyle: 'background:rgb(16 185 129/0.15);border-color:rgb(16 185 129/0.5);color:#6ee7b7' },
-  { id: 'schedule', labelKey: 'create.triggerTypes.schedule', activeStyle: 'background:rgb(245 158 11/0.15);border-color:rgb(245 158 11/0.5);color:#fcd34d' },
-  { id: 'queue',    labelKey: 'create.triggerTypes.queue',    activeStyle: 'background:rgb(14 165 233/0.15);border-color:rgb(14 165 233/0.5);color:#7dd3fc' },
+  { id: 'http',     labelKey: 'create.triggerTypes.http' },
+  { id: 'schedule', labelKey: 'create.triggerTypes.schedule' },
+  { id: 'queue',    labelKey: 'create.triggerTypes.queue' },
   // Durable workflows (modules/workflows): served over HTTP to the workflow engine
-  { id: 'workflow', labelKey: 'create.triggerTypes.workflow', activeStyle: 'background:rgb(139 92 246/0.15);border-color:rgb(139 92 246/0.5);color:#c4b5fd' },
+  { id: 'workflow', labelKey: 'create.triggerTypes.workflow' },
 ]
+// The chosen trigger type, in the brand's colour
+const ACTIVE = 'bg-brand-900/30 border-brand-500/60 text-brand-300'
 
 function isDisabled(id) {
   if (id === 'http' || id === 'workflow') return props.region && !props.region.is_synced && !props.region.has_serving && !props.region.is_demo
@@ -71,11 +73,10 @@ function disabledReason(id) {
           type="button"
           class="w-full py-1.5 rounded-md border text-sm transition-colors"
           :class="triggerType === tr.id
-            ? 'border'
+            ? ACTIVE
             : isDisabled(tr.id)
               ? 'bg-gray-900 border-gray-800 text-gray-400 cursor-not-allowed opacity-50'
               : 'bg-gray-800 border-gray-700 text-gray-400 hover:border-gray-500'"
-          :style="triggerType === tr.id ? tr.activeStyle : ''"
           :disabled="isDisabled(tr.id)"
           @click="!isDisabled(tr.id) && $emit('update:triggerType', tr.id)"
         >{{ t(tr.labelKey) }}</button>
@@ -100,7 +101,7 @@ function disabledReason(id) {
       <label class="label"><TermText path="create.fields.queueStream" /> <span class="normal-case text-red-500/70">*</span></label>
       <input :value="queueStream" class="input font-mono" :placeholder="t('create.placeholders.queueStream')" @input="$emit('update:queueStream', $event.target.value)" />
       <p v-if="!queueStream.trim()" class="text-xs text-red-400 mt-1">{{ t('create.fields.queueRequired') }}</p>
-      <p v-else-if="resolvedStream && streamSuffix" class="text-xs text-sky-400/70 mt-1 font-mono">{{ t('create.fields.queueStreamResolved', { name: resolvedStream }) }}</p>
+      <p v-else-if="resolvedStream && streamSuffix" class="text-xs text-brand-400/70 mt-1 font-mono">{{ t('create.fields.queueStreamResolved', { name: resolvedStream }) }}</p>
     </div>
     <div v-if="triggerType === 'workflow'" class="mt-3" data-test="workflow-trigger">
       <p class="text-xs text-gray-400 leading-relaxed">{{ t('workflows.trigger.hint') }}</p>

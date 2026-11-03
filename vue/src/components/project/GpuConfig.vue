@@ -67,12 +67,12 @@ watch([gpuRequired, visible], ([required, shown]) => {
 
     <div class="flex items-center gap-3 mb-3">
       <button type="button" class="relative inline-flex h-6 w-11 shrink-0 rounded-full border-2 border-transparent transition-colors"
-        :class="[value.enabled ? 'bg-amber-500' : 'bg-gray-700', gpuRequired ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer']"
+        :class="[value.enabled ? 'bg-brand-500' : 'bg-gray-700', gpuRequired ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer']"
         :disabled="gpuRequired" data-testid="gpu-toggle" :aria-pressed="value.enabled"
         @click="setEnabled(!value.enabled)">
         <span class="pointer-events-none inline-block h-5 w-5 rounded-full bg-white shadow-sm transition" :class="value.enabled ? 'translate-x-5' : 'translate-x-0'" />
       </button>
-      <span class="text-sm" :class="value.enabled ? 'text-amber-400' : 'text-gray-400'">
+      <span class="text-sm" :class="value.enabled ? 'text-brand-400' : 'text-gray-400'">
         {{ value.enabled ? t('ai.gpu.enabled') : t('ai.gpu.disabled') }}
       </span>
     </div>
@@ -87,7 +87,7 @@ watch([gpuRequired, visible], ([required, shown]) => {
         @update:memory-min="update({ memory_min: $event })"
       />
 
-      <p v-if="gpu && !hasGpus" class="mt-3 flex items-start gap-1.5 text-xs text-amber-400" data-testid="gpu-none">
+      <p v-if="gpu && !hasGpus" class="mt-3 flex items-start gap-1.5 text-xs text-yellow-400" data-testid="gpu-none">
         <AlertTriangle class="w-3.5 h-3.5 shrink-0 mt-0.5" />{{ t('ai.gpu.noGpuNodes') }}
       </p>
       <p v-if="sandbox?.gpu === 'unsupported'" class="mt-3 flex items-start gap-1.5 text-xs text-red-400" data-testid="gpu-sandbox-unsupported">

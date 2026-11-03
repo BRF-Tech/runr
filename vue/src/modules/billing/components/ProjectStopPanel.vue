@@ -99,7 +99,7 @@ defineExpose({ load, resume, query, onlyStopped })
     </div>
 
     <div v-if="loading" class="flex justify-center py-6">
-      <div class="animate-spin h-4 w-4 border-2 border-sky-500 border-t-transparent rounded-full" />
+      <div class="animate-spin h-4 w-4 border-2 border-brand-500 border-t-transparent rounded-full" />
     </div>
     <p v-else-if="error" class="text-sm text-red-400">{{ error }}</p>
     <p v-else-if="!visible.length" class="text-sm text-gray-400 py-6 text-center" data-test="projects-empty">{{ t('billing.projects.empty') }}</p>

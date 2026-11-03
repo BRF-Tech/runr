@@ -106,7 +106,7 @@ async function reject(request) {
 function statusCls(s) {
   const base = 'px-1.5 py-0.5 rounded-sm text-[10px] font-medium border'
   return {
-    pending:  `${base} bg-amber-900/40 border-amber-800/40 text-amber-400`,
+    pending:  `${base} bg-yellow-900/40 border-yellow-800/40 text-yellow-400`,
     approved: `${base} bg-emerald-900/40 border-emerald-800/40 text-emerald-400`,
     rejected: `${base} bg-red-900/40 border-red-800/40 text-red-400`,
   }[s] || `${base} bg-gray-800/40 border-gray-700/40 text-gray-400`
@@ -129,7 +129,7 @@ defineExpose({ load, approve, reject, startReject, rejecting, status })
     </div>
 
     <div v-if="loading" class="flex justify-center py-6">
-      <div class="animate-spin h-4 w-4 border-2 border-sky-500 border-t-transparent rounded-full" />
+      <div class="animate-spin h-4 w-4 border-2 border-brand-500 border-t-transparent rounded-full" />
     </div>
     <p v-else-if="error" class="text-sm text-red-400">{{ error }}</p>
     <div v-else-if="!requests.length" class="py-8 text-center" data-test="approvals-empty">

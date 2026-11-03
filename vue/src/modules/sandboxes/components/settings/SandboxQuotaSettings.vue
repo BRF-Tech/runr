@@ -2,6 +2,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { moduleRegistry } from '@/modules/index'
+import { usePermissionsStore } from '@/stores/permissions'
 import { useConfirm } from '@/composables/useConfirm'
 import { useToast } from '@/composables/useToast'
 import { sandboxAdminApi } from '../../api/sandboxes'
@@ -27,9 +28,13 @@ const showTable = ref(false)
 const error     = ref(null)
 const saving    = ref({})
 
-// Platform admins in central context (tenancy module), every user of a single-tenant install;
-// the API answers 403 to everyone else and the table stays hidden
-const mayManageTenants = computed(() => moduleRegistry.isCentralAdminFn ? moduleRegistry.isCentralAdminFn() : true)
+// The organizations' quotas (GET /sandbox-quotas/tenants) need sandboxes.manage, and with the
+// tenancy module a platform administrator in the central context. Anyone else does not send
+// the request (it would answer 403) and the table stays hidden
+const perms = usePermissionsStore()
+const mayManageTenants = computed(() =>
+  perms.can('sandboxes.manage')
+  && (moduleRegistry.isCentralAdminFn ? moduleRegistry.isCentralAdminFn() : true))
 
 const rowKey = (row) => row.tenant?.id ?? 'default'
 
@@ -126,7 +131,7 @@ function pct(used, limit) {
 
 function barColor(p) {
   if (p >= 90) return '#ef4444'
-  if (p >= 70) return '#f59e0b'
+  if (p >= 70) return '#eab308'
   return 'rgb(var(--brand-500))'
 }
 
@@ -181,7 +186,7 @@ onMounted(() => {
           <tr v-for="row in tenants" :key="rowKey(row)" :data-quota-row="rowKey(row)" class="border-b border-gray-800/60 last:border-0">
             <td class="px-3 py-2">
               <span class="text-gray-200">{{ row.tenant ? row.tenant.name : t('sandboxes.settings.quotas.defaults') }}</span>
-              <span v-if="row.tenant && row.custom" class="ml-1 px-1.5 py-0.5 rounded-sm border border-sky-800/50 bg-sky-950/40 text-[10px] text-sky-400">{{ t('sandboxes.settings.quotas.custom') }}</span>
+              <span v-if="row.tenant && row.custom" class="ml-1 px-1.5 py-0.5 rounded-sm border border-brand-800/50 bg-brand-900/40 text-[10px] text-brand-400">{{ t('sandboxes.settings.quotas.custom') }}</span>
             </td>
             <td v-for="l in LIMITS" :key="l.key" class="px-2 py-2">
               <input v-model.number="forms[rowKey(row)][l.key]" class="input font-mono h-8! w-24! text-xs" type="number" min="0" :name="l.key" />

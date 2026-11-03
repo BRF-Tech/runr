@@ -138,9 +138,27 @@ export function settingsTabSteps(t) {
     { element: '[data-tour="settings-tokens-tab"]',    popover: { title: t('tutorial.settings.tokens'),        description: t('tutorial.settings.tokensDesc') } },
     { element: '[data-tour="auth-providers-tab"]',     popover: { title: t('tutorial.settings.authProviders'), description: t('tutorial.settings.authProvidersDesc') } },
     { element: '[data-tour="settings-audit-tab"]',     popover: { title: t('tutorial.settings.audit'),         description: t('tutorial.settings.auditDesc') } },
+    { element: '[data-tour="settings-org-branding-tab"]', popover: { title: t('tutorial.settings.orgBranding'), description: t('tutorial.settings.orgBrandingDesc') } },
     { element: '[data-tour="settings-billing-tab"]',   popover: { title: t('tutorial.settings.billing'),       description: t('tutorial.settings.billingDesc') } },
     { element: '[data-tour="settings-tenants-tab"]',   popover: { title: t('tutorial.settings.tenants'),       description: t('tutorial.settings.tenantsDesc') } },
     { element: '[data-tour="settings-usage-tab"]',     popover: { title: t('tutorial.settings.resourceUsage'), description: t('tutorial.settings.resourceUsageDesc') } },
+    { element: '[data-tour="settings-branding-tab"]',  popover: { title: t('tutorial.settings.branding'),      description: t('tutorial.settings.brandingDesc') } },
+  ]
+}
+
+// Administration → Branding (the platform's) and → Organization Branding (a tenant's): the same
+// form (white-label BrandingForm). The colour controls: presets, brand scale, the tones of the two
+// themes, the default theme; then the preview and Save.
+export function brandingSteps(t) {
+  return [
+    ...settingsTabSteps(t),
+    { element: '[data-tour="branding-presets"]',       popover: { title: t('tutorial.branding.presets'),      description: t('tutorial.branding.presetsDesc') } },
+    { element: '[data-tour="branding-brand-colors"]',  popover: { title: t('tutorial.branding.brandColors'),  description: t('tutorial.branding.brandColorsDesc') } },
+    { element: '[data-tour="branding-dark-tones"]',    popover: { title: t('tutorial.branding.darkTones'),    description: t('tutorial.branding.darkTonesDesc') } },
+    { element: '[data-tour="branding-light-tones"]',   popover: { title: t('tutorial.branding.lightTones'),   description: t('tutorial.branding.lightTonesDesc') } },
+    { element: '[data-tour="branding-default-theme"]', popover: { title: t('tutorial.branding.defaultTheme'), description: t('tutorial.branding.defaultThemeDesc') } },
+    { element: '[data-tour="branding-preview"]',       popover: { title: t('tutorial.branding.preview'),      description: t('tutorial.branding.previewDesc') } },
+    { element: '[data-tour="branding-save"]',          popover: { title: t('tutorial.branding.save'),         description: t('tutorial.branding.saveDesc') } },
   ]
 }
 
@@ -158,7 +176,8 @@ export function settingsSteps(t) {
     { element: '[data-tour="settings-save"]',          popover: { title: t('tutorial.settings.save'),          description: t('tutorial.settings.saveDesc') } },
     { element: '[data-tour="settings-regions"]',       popover: { title: t('tutorial.settings.regions'),       description: t('tutorial.settings.regionsDesc') } },
     { element: '[data-tour="settings-global-dns"]',    popover: { title: t('tutorial.settings.globalDns'),     description: t('tutorial.settings.globalDnsDesc') } },
-    // Last: the tour goes on with the region wizard (SettingsView opens it)
+    // Last: the tour goes on with the region wizard (SettingsView opens it for a user with
+    // regions.manage, the button's permission; a read-only role ends the tour here)
     { element: '[data-tour="settings-add-region"]',    popover: { title: t('tutorial.settings.addRegion'),     description: t('tutorial.settings.addRegionDesc') } },
   ]
 }
@@ -173,6 +192,7 @@ export function tokensSteps(t) {
   ]
 }
 
+// SettingsView opens the add form first for a user with members.invite; without it the step drops
 export function usersSteps(t) {
   return [
     ...settingsTabSteps(t),
@@ -183,10 +203,12 @@ export function usersSteps(t) {
 export function detailVersionsSteps(t) {
   return [
     { element: '[data-tour="project-header"]',  popover: { title: t('tutorial.detail.header'),   description: t('tutorial.detail.headerDesc') } },
+    // The row carries the target only while the role has an action on the project
     { element: '[data-tour="action-buttons"]',  popover: { title: t('tutorial.detail.actions'),  description: t('tutorial.detail.actionsDesc') } },
     { element: '[data-tour="project-tabs"]',    popover: { title: t('tutorial.detail.tabs'),     description: t('tutorial.detail.tabsDesc') } },
-    // Shown while the project has a size recommendation
+    // Shown while the project has a size recommendation; its buttons for a role with projects.update
     { element: '[data-tour="rightsizing-card"]', popover: { title: t('tutorial.detail.rightsizing'), description: t('tutorial.detail.rightsizingDesc') } },
+    { element: '[data-tour="rightsizing-actions"]', popover: { title: t('tutorial.detail.rightsizingActions'), description: t('tutorial.detail.rightsizingActionsDesc') } },
     { element: '[data-tour="version-list"]',    popover: { title: t('tutorial.detail.versions'), description: t('tutorial.detail.versionsDesc') } },
     { element: '[data-tour="editor-area"]',     popover: { title: t('tutorial.detail.editor'),   description: t('tutorial.detail.editorDesc') } },
     { element: '[data-tour="commit-bar"]',      popover: { title: t('tutorial.detail.save'),     description: t('tutorial.detail.saveDesc') } },
@@ -198,6 +220,8 @@ export function detailDeploymentsSteps(t) {
     // The environment switcher shows with more than one environment, the rollout while one runs
     { element: '[data-tour="environment-switcher"]',    popover: { title: t('tutorial.detail.environment'),          description: t('tutorial.detail.environmentDesc') } },
     { element: '[data-tour="rollout-panel"]',           popover: { title: t('tutorial.detail.rollout'),              description: t('tutorial.detail.rolloutDesc') } },
+    // Promote / abort / roll back: for a role with projects.deploy
+    { element: '[data-tour="rollout-actions"]',         popover: { title: t('tutorial.detail.rolloutActions'),       description: t('tutorial.detail.rolloutActionsDesc') } },
     { element: '[data-tour="deploy-strategy-btn"]',     popover: { title: t('tutorial.detail.strategy'),             description: t('tutorial.detail.strategyDesc') } },
     { element: '[data-tour="deployment-table"]',        popover: { title: t('tutorial.detail.deploymentTable'),      description: t('tutorial.detail.deploymentTableDesc') } },
     { element: '[data-tour="deployment-log-btn"]',      popover: { title: t('tutorial.detail.deploymentLogs'),       description: t('tutorial.detail.deploymentLogsDesc') } },
@@ -231,8 +255,11 @@ export function editSteps(t) {
   ]
 }
 
+// A frozen account (a shared demo login) shows its note first; for any other account the note is
+// not on the page and the step drops out
 export function accountProfileSteps(t) {
   return [
+    { element: '[data-tour="account-frozen-note"]',  popover: { title: t('tutorial.account.frozen'),       description: t('tutorial.account.frozenDesc') } },
     { element: '[data-tour="account-name-fields"]',  popover: { title: t('tutorial.account.nameFields'),   description: t('tutorial.account.nameFieldsDesc') } },
     { element: '[data-tour="account-bio"]',          popover: { title: t('tutorial.account.bio'),          description: t('tutorial.account.bioDesc') } },
     { element: '[data-tour="account-save-profile"]', popover: { title: t('tutorial.account.saveProfile'),  description: t('tutorial.account.saveProfileDesc') } },

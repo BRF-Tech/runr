@@ -8,6 +8,7 @@ import { useConfirm } from '@/composables/useConfirm'
 import { useToast } from '@/composables/useToast'
 import { useLatest } from '@/composables/useLatest'
 import { useTutorialStore } from '@/stores/tutorial'
+import { usePermissionsStore } from '@/stores/permissions'
 import { createTutorial } from '@/composables/useTutorial'
 import { UserPlus, X, RefreshCw, Mail, CheckCircle, AlertTriangle, Send, ShieldCheck, ShieldOff } from 'lucide-vue-next'
 
@@ -25,6 +26,15 @@ const loading     = ref(false)
 const showForm    = ref(false)
 
 const currentUserId = JSON.parse(localStorage.getItem('user') || '{}')?.id
+
+// The same permissions as the core users page (UsersManager.vue, api/config/route_permissions.php):
+// adding users and the invitations need members.invite, reset 2FA members.update, the role
+// roles.manage, removing members.remove. A read-only role sees the list only.
+const perms       = usePermissionsStore()
+const canInvite   = computed(() => perms.can('members.invite'))
+const canUpdate   = computed(() => perms.can('members.update'))
+const canRemove   = computed(() => perms.can('members.remove'))
+const canSetRoles = computed(() => perms.can('roles.manage'))
 
 // Built-in and custom roles of the tenant (docs/permissions.md); Owner is not handed out here
 const allRoles    = ref([])
@@ -53,12 +63,14 @@ const tutorialStore = useTutorialStore()
 function tenantUsersSteps(t) {
   return [
     { element: '[data-tour="tenant-users-form"]', popover: { title: t('tenancy.tutorialTenantUsersForm'), description: t('tenancy.tutorialTenantUsersFormDesc') } },
-    { element: '[data-tour="tenant-users-list"]', popover: { title: t('tenancy.tutorialTenantUsersList'), description: t('tenancy.tutorialTenantUsersListDesc') } },
+    // a read-only role has no role select or remove button in the list
+    { element: '[data-tour="tenant-users-list"]', popover: { title: t('tenancy.tutorialTenantUsersList'), description: canSetRoles.value || canRemove.value ? t('tenancy.tutorialTenantUsersListDesc') : t('tenancy.tutorialTenantUsersListDescReadOnly') } },
   ]
 }
 const { start: startTutorial } = createTutorial(tenantUsersSteps)
 watch(() => tutorialStore.restartCounter, () => {
-  openAddUser()
+  // the add form only for a user who may add users (its button's permission)
+  if (canInvite.value) openAddUser()
   nextTick(() => startTutorial())
 })
 
@@ -196,7 +208,8 @@ async function resendInvitation(inv) {
   }
 }
 
-const roleBadges = { owner: 'bg-violet-900/40 border-violet-800/40 text-violet-400', admin: 'bg-emerald-900/40 border-emerald-800/40 text-emerald-400', member: 'bg-blue-900/40 border-blue-800/40 text-blue-400', developer: 'bg-blue-900/40 border-blue-800/40 text-blue-400' }
+// Roles in the brand's colour by style: owner solid, admin tinted, member / developer outlined
+const roleBadges = { owner: 'bg-brand-700 border-transparent text-white', admin: 'bg-brand-900/40 border-brand-800/40 text-brand-300', member: 'bg-transparent border-brand-500/60 text-brand-400', developer: 'bg-transparent border-brand-500/60 text-brand-400' }
 const roleBadgeClass = (role) => `px-1.5 py-0.5 rounded-sm text-[10px] font-medium border ${roleBadges[role] ?? 'bg-gray-800/40 border-gray-700/40 text-gray-400'}`
 const initials = (user) => (user.name || user.email || '?').split(' ').map(w => w[0]).slice(0, 2).join('').toUpperCase()
 const submitLabel = () => formSaving.value ? t('common.saving') : searchResult.value && !searchResult.value.found ? t('tenancy.sendInvitation') : t('tenancy.addUser')
@@ -208,13 +221,13 @@ const canSubmit = () => !!form.value.email.trim() && !searchResult.value?.alread
     <!-- Header -->
     <div class="flex items-center justify-between mb-4">
       <p class="text-xs text-gray-100 font-semibold uppercase tracking-wider">{{ t('tenancy.users') }}</p>
-      <button class="btn-primary text-xs flex items-center gap-1.5" @click="openAddUser">
+      <button v-if="canInvite" class="btn-primary text-xs flex items-center gap-1.5" data-action="add-user" @click="openAddUser">
         <UserPlus class="w-3.5 h-3.5" />{{ t('tenancy.addUser') }}
       </button>
     </div>
 
     <!-- Add user form -->
-    <div v-if="showForm" data-tour="tenant-users-form" class="rounded-xl border border-gray-800 bg-gray-900/60 px-4 py-4 mb-4 space-y-3">
+    <div v-if="showForm && canInvite" data-tour="tenant-users-form" class="rounded-xl border border-gray-800 bg-gray-900/60 px-4 py-4 mb-4 space-y-3">
       <p class="text-sm font-semibold text-gray-100">{{ t('tenancy.addUser') }}</p>
       <div class="grid grid-cols-3 gap-3">
         <div class="col-span-2">
@@ -234,10 +247,10 @@ const canSubmit = () => !!form.value.email.trim() && !searchResult.value?.alread
         <RefreshCw class="w-3 h-3 animate-spin" />{{ t('common.loading') }}
       </div>
       <div v-else-if="searchResult" class="rounded-lg px-3 py-2 text-xs border">
-        <div v-if="searchResult.already_member" class="flex items-center gap-2 text-amber-400 border-amber-800/40 bg-amber-900/20"><AlertTriangle class="w-3.5 h-3.5 shrink-0" />{{ t('tenancy.alreadyMember') }}</div>
-        <div v-else-if="searchResult.pending_invitation" class="flex items-center gap-2 text-amber-400"><AlertTriangle class="w-3.5 h-3.5 shrink-0" />{{ t('tenancy.pendingInvitation') }}</div>
+        <div v-if="searchResult.already_member" class="flex items-center gap-2 text-yellow-400 border-yellow-800/40 bg-yellow-900/20"><AlertTriangle class="w-3.5 h-3.5 shrink-0" />{{ t('tenancy.alreadyMember') }}</div>
+        <div v-else-if="searchResult.pending_invitation" class="flex items-center gap-2 text-yellow-400"><AlertTriangle class="w-3.5 h-3.5 shrink-0" />{{ t('tenancy.pendingInvitation') }}</div>
         <div v-else-if="searchResult.found" class="flex items-center gap-2 text-emerald-400"><CheckCircle class="w-3.5 h-3.5 shrink-0" />{{ t('tenancy.userFound', { name: searchResult.user.name }) }}</div>
-        <div v-else class="flex items-center gap-2 text-blue-400"><Send class="w-3.5 h-3.5 shrink-0" />{{ t('tenancy.willInvite') }}</div>
+        <div v-else class="flex items-center gap-2 text-brand-400"><Send class="w-3.5 h-3.5 shrink-0" />{{ t('tenancy.willInvite') }}</div>
       </div>
       <p v-if="formError" class="text-xs text-red-400">{{ formError }}</p>
       <div class="flex gap-2">
@@ -265,19 +278,20 @@ const canSubmit = () => !!form.value.email.trim() && !searchResult.value?.alread
             </div>
           </div>
           <!-- Reset 2FA -->
-          <button v-if="user.role !== 'owner' && user.id !== currentUserId && user.two_factor_confirmed_at"
-            class="p-1 rounded-md text-gray-400 hover:text-amber-400 hover:bg-amber-900/20 transition-colors shrink-0"
+          <button v-if="canUpdate && user.role !== 'owner' && user.id !== currentUserId && user.two_factor_confirmed_at"
+            class="p-1 rounded-md text-gray-400 hover:text-yellow-400 hover:bg-yellow-900/20 transition-colors shrink-0"
             :title="t('tenancy.reset2FA')"
             @click="reset2FA(user)">
             <ShieldOff class="w-3.5 h-3.5" />
           </button>
-          <span v-if="user.role === 'owner' || user.id === currentUserId" :class="roleBadgeClass(user.role)">{{ label(user.role) }}</span>
-          <select v-else class="bg-gray-800 border border-gray-700 text-gray-100 text-[11px] rounded-sm px-1.5 py-0.5 focus:outline-hidden"
+          <span v-if="!canSetRoles || user.role === 'owner' || user.id === currentUserId" :class="roleBadgeClass(user.role)" :data-user-role="user.id">{{ label(user.role) }}</span>
+          <select v-else :data-user-role-select="user.id" class="bg-gray-800 border border-gray-700 text-gray-100 text-[11px] rounded-sm px-1.5 py-0.5 focus:outline-hidden"
             :value="user.role" @change="changeRole(user, $event.target.value)">
             <option v-for="r in roles" :key="r.key" :value="r.key" :disabled="r.grantable === false && r.key !== user.role">{{ label(r.key) }}</option>
           </select>
-          <button v-if="user.role !== 'owner' && user.id !== currentUserId"
-            class="p-1 rounded-md text-gray-400 hover:text-red-400 hover:bg-red-900/20 transition-colors shrink-0" @click="removeUser(user)">
+          <button v-if="canRemove && user.role !== 'owner' && user.id !== currentUserId"
+            class="p-1 rounded-md text-gray-400 hover:text-red-400 hover:bg-red-900/20 transition-colors shrink-0"
+            :title="t('tenancy.removeUserTitle')" @click="removeUser(user)">
             <X class="w-3.5 h-3.5" />
           </button>
         </div>
@@ -296,12 +310,12 @@ const canSubmit = () => !!form.value.email.trim() && !searchResult.value?.alread
               <span class="text-gray-100 font-mono truncate">{{ inv.email }}</span>
             </div>
             <span :class="roleBadgeClass(inv.role)">{{ label(inv.role) }}</span>
-            <button class="p-1 rounded-md text-gray-400 hover:text-blue-400 hover:bg-blue-900/20 transition-colors"
+            <button v-if="canInvite" class="p-1 rounded-md text-gray-400 hover:text-brand-400 hover:bg-brand-900/20 transition-colors"
               :title="t('tenancy.resend')" @click="resendInvitation(inv)">
               <RefreshCw class="w-3.5 h-3.5" />
             </button>
-            <button class="p-1 rounded-md text-gray-400 hover:text-red-400 hover:bg-red-900/20 transition-colors shrink-0"
-              @click="cancelInvitation(inv)">
+            <button v-if="canInvite" class="p-1 rounded-md text-gray-400 hover:text-red-400 hover:bg-red-900/20 transition-colors shrink-0"
+              :title="t('tenancy.cancelInvitationTitle')" @click="cancelInvitation(inv)">
               <X class="w-3.5 h-3.5" />
             </button>
           </div>

@@ -11,13 +11,14 @@ import AbilityPicker from '@/components/settings/AbilityPicker.vue'
 import { useRbacLabels } from '@/composables/useRbac'
 import { mcpApi } from '../api/mcp'
 import { navigateAway } from '../utils/navigate'
-import { AlertTriangle, Bot, Building2, Clock, Loader2, ShieldAlert } from 'lucide-vue-next'
+import { AlertTriangle, Bot, Building2, Clock, Loader2, Lock, ShieldAlert } from 'lucide-vue-next'
 
 const route = useRoute()
 const { t } = useI18n()
 const { permLabel } = useRbacLabels()
 
-const status = ref('loading')   // loading | ready | expired | error | redirecting
+// forbidden: the request needs tokens.manage (403), the user can still deny it
+const status = ref('loading')   // loading | ready | expired | forbidden | error | redirecting
 const request = ref(null)
 const message = ref('')
 const submitting = ref(false)
@@ -29,6 +30,8 @@ const lifetime = ref(30)
 
 const errorCode = computed(() => route.query.error ? String(route.query.error) : null)
 const errorDescription = computed(() => route.query.error_description ? String(route.query.error_description) : '')
+// the request's id: the loaded request's, or the link's while it could not be read (403)
+const requestId = computed(() => request.value?.id ?? (route.query.request ? String(route.query.request) : null))
 
 const available = computed(() => request.value?.available_abilities ?? [])
 const fixedScopes = computed(() => request.value?.fixed_scopes ?? null)
@@ -73,7 +76,7 @@ async function load() {
   } catch (e) {
     const code = e.response?.status
     message.value = e.response?.data?.message ?? ''
-    status.value = code === 404 || code === 410 ? 'expired' : 'error'
+    status.value = code === 404 || code === 410 ? 'expired' : code === 403 ? 'forbidden' : 'error'
   }
 }
 
@@ -97,16 +100,21 @@ async function approve() {
       ?? res?.data?.message
       ?? t('common.error')
     if (res?.status === 404 || res?.status === 410) status.value = 'expired'
+    else if (res?.status === 403) {
+      fieldError.value = null
+      status.value = 'forbidden'
+    }
   } finally {
     submitting.value = false
   }
 }
 
 async function deny() {
-  if (submitting.value) return
+  if (submitting.value || !requestId.value) return
   submitting.value = true
+  fieldError.value = null
   try {
-    const { data } = await mcpApi.deny(request.value.id)
+    const { data } = await mcpApi.deny(requestId.value)
     status.value = 'redirecting'
     navigateAway(data.redirect_url)
   } catch (e) {
@@ -128,7 +136,7 @@ watch(() => route.query.request, load)
       <div class="bg-gray-900 border border-gray-800 rounded-xl p-8" data-testid="oauth-consent">
         <!-- Loading -->
         <div v-if="status === 'loading' || status === 'redirecting'" class="text-center py-6">
-          <Loader2 class="w-10 h-10 mx-auto mb-3 text-sky-400 animate-spin" />
+          <Loader2 class="w-10 h-10 mx-auto mb-3 text-brand-400 animate-spin" />
           <p class="text-sm text-gray-400">{{ status === 'redirecting' ? t('mcp.consent.redirecting') : t('common.loading') }}</p>
         </div>
 
@@ -140,9 +148,18 @@ watch(() => route.query.request, load)
           <p v-if="errorCode" class="text-[11px] font-mono text-gray-500 mt-2">{{ errorCode }}</p>
         </div>
 
+        <!-- No permission to connect clients (tokens.manage): the request can still be denied -->
+        <div v-else-if="status === 'forbidden'" class="text-center py-4" data-testid="oauth-consent-forbidden">
+          <Lock class="w-10 h-10 mx-auto mb-3 text-yellow-400" />
+          <h2 class="text-lg font-semibold text-gray-100 mb-1">{{ t('mcp.consent.noAccessTitle') }}</h2>
+          <p class="text-sm text-gray-400">{{ t('mcp.consent.noAccessText') }}</p>
+          <p v-if="fieldError" class="text-xs text-red-400 mt-3" data-testid="oauth-consent-field-error">{{ fieldError }}</p>
+          <button class="btn-secondary text-sm mt-5" :disabled="submitting" data-testid="oauth-consent-deny" @click="deny">{{ t('mcp.consent.deny') }}</button>
+        </div>
+
         <!-- Expired / unknown request -->
         <div v-else-if="status === 'expired'" class="text-center py-4" data-testid="oauth-consent-expired">
-          <Clock class="w-10 h-10 mx-auto mb-3 text-amber-400" />
+          <Clock class="w-10 h-10 mx-auto mb-3 text-yellow-400" />
           <h2 class="text-lg font-semibold text-gray-100 mb-1">{{ t('mcp.consent.expiredTitle') }}</h2>
           <p class="text-sm text-gray-400">{{ t('mcp.consent.expiredText') }}</p>
         </div>
@@ -166,9 +183,9 @@ watch(() => route.query.request, load)
             </div>
           </div>
 
-          <div class="rounded-lg border border-amber-800/50 bg-amber-900/20 px-4 py-3 mb-5 flex gap-2">
-            <AlertTriangle class="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
-            <p class="text-xs text-amber-200">{{ t('mcp.consent.warning') }}</p>
+          <div class="rounded-lg border border-yellow-800/50 bg-yellow-900/20 px-4 py-3 mb-5 flex gap-2">
+            <AlertTriangle class="w-4 h-4 text-yellow-400 shrink-0 mt-0.5" />
+            <p class="text-xs text-yellow-200">{{ t('mcp.consent.warning') }}</p>
           </div>
 
           <!-- Organization the token works in -->
@@ -177,7 +194,7 @@ watch(() => route.query.request, load)
               <Building2 class="w-4 h-4 text-gray-400" />
               <span v-if="request.tenant">{{ t('mcp.consent.tenant', { tenant: request.tenant.name }) }}</span>
             </div>
-            <p v-if="request.required_tenant" class="text-xs text-amber-300 mt-1.5" data-testid="oauth-consent-required-tenant">
+            <p v-if="request.required_tenant" class="text-xs text-yellow-300 mt-1.5" data-testid="oauth-consent-required-tenant">
               {{ t('mcp.consent.requiredTenant', { tenant: request.required_tenant.name }) }}
             </p>
             <p v-else class="text-[11px] text-gray-400 mt-1">{{ t('mcp.consent.tenantHint') }}</p>
@@ -201,7 +218,7 @@ watch(() => route.query.request, load)
             <p class="text-[11px] text-gray-400 mt-1.5">{{ t('mcp.consent.lifetimeHint') }}</p>
           </div>
 
-          <p v-if="request.can_approve === false" class="text-xs text-amber-300 mb-3">{{ t('mcp.consent.cannotApprove') }}</p>
+          <p v-if="request.can_approve === false" class="text-xs text-yellow-300 mb-3">{{ t('mcp.consent.cannotApprove') }}</p>
           <p v-if="fieldError" class="text-xs text-red-400 mb-3" data-testid="oauth-consent-field-error">{{ fieldError }}</p>
 
           <div class="flex items-center justify-end gap-2">

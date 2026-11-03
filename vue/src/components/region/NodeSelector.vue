@@ -81,6 +81,6 @@ const workerResources = computed(() => {
       <p class="text-[10px] text-gray-400 uppercase tracking-wider mb-1">{{ t('settings.regionDetail.workers.totalComputed') }}</p>
       <p class="text-sm font-mono text-gray-100">{{ fmtCpu(workerResources.cpu_m) }} <span class="text-gray-400 mx-1">·</span> {{ fmtMem(workerResources.memory_mb) }}</p>
     </div>
-    <p class="text-[10px] text-orange-400/70 leading-relaxed">{{ t('settings.regionDetail.workers.taintWarning') }}</p>
+    <p class="text-[10px] text-yellow-400/70 leading-relaxed">{{ t('settings.regionDetail.workers.taintWarning') }}</p>
   </template>
 </template>

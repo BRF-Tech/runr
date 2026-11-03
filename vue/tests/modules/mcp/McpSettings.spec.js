@@ -151,6 +151,29 @@ describe('Data & Integrations → AI agents (MCP)', () => {
     expect(w.find('[data-testid="mcp-tools"]').exists()).toBe(true)
   })
 
+  // OAuth consent and a new API token both need tokens.manage (the read-only demo role has neither)
+  it('says that connecting needs tokens.manage instead of the auth choice and the snippets', async () => {
+    usePermissionsStore().apply({ permissions: ['projects.view', 'logs.view', 'members.view'], platform_admin: false, edition: 'single', role: null, roles: [], projects: {} })
+    const w = await mountSettings()
+
+    expect(w.find('[data-testid="mcp-auth-oauth"]').exists()).toBe(false)
+    expect(w.find('[data-testid="mcp-auth-token"]').exists()).toBe(false)
+    expect(w.find('[data-testid="mcp-snippets"]').exists()).toBe(false)
+    expect(w.get('[data-testid="mcp-connect-needs-tokens"]').text()).toContain('manage your own API tokens')
+    // the endpoint and the tool catalog stay
+    expect(w.get('[data-testid="mcp-connect"]').text()).toContain(ENDPOINT)
+    expect(w.find('[data-testid="mcp-tools"]').exists()).toBe(true)
+  })
+
+  it('offers both ways to connect with tokens.manage', async () => {
+    usePermissionsStore().apply({ permissions: ['projects.view', 'tokens.manage'], platform_admin: false, edition: 'single', role: null, roles: [], projects: {} })
+    const w = await mountSettings()
+
+    expect(w.find('[data-testid="mcp-auth-oauth"]').exists()).toBe(true)
+    expect(w.find('[data-testid="mcp-snippets"]').exists()).toBe(true)
+    expect(w.find('[data-testid="mcp-connect-needs-tokens"]').exists()).toBe(false)
+  })
+
   it('offers only tokens when OAuth is off', async () => {
     mcpApi.info.mockResolvedValue({ data: info({ oauth: { enabled: false } }) })
     const w = await mountSettings()

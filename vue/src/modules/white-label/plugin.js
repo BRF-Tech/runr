@@ -40,6 +40,9 @@ export default function (registry) {
     component: lazy(() => import('./components/BrandingSettings.vue')),
     visibleIf: () => canManageInstall('branding.manage', multiTenant),
     order: 40,
+    dataTour: 'settings-branding-tab',
+    // The page starts its own tour (brandingSteps: the colour and theme controls)
+    tutorial: true,
   })
   registry.settingsTabs.push({
     key: 'signup',
@@ -68,6 +71,8 @@ export default function (registry) {
       component: lazy(() => import('./components/TenantBranding.vue')),
       visibleIf: () => canInTenant('branding.manage', multiTenant) && !!features().tenant_branding,
       order: 20,
+      dataTour: 'settings-org-branding-tab',
+      tutorial: true,
     })
   }
 

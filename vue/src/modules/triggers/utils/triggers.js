@@ -515,7 +515,7 @@ export const EVENT_STATUSES = ['pending', 'delivering', 'delivered', 'failed']
 
 const EVENT_STATUS_CLASSES = {
   pending:    'bg-gray-800 text-gray-300 border-gray-700',
-  delivering: 'bg-sky-900/40 text-sky-300 border-sky-800/50',
+  delivering: 'bg-brand-900/40 text-brand-300 border-brand-800/50',
   delivered:  'bg-emerald-900/40 text-emerald-300 border-emerald-800/50',
   failed:     'bg-red-900/40 text-red-300 border-red-800/50',
 }

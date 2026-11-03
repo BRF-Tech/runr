@@ -315,7 +315,7 @@ describe('UserMenu', () => {
     await menu.get('[data-theme-option="light"]').trigger('click')
     expect(document.documentElement.dataset.theme).toBe('light')
     expect(menu.get('[data-theme-option="light"]').attributes('aria-pressed')).toBe('true')
-    expect(menu.get('[data-theme-option="dark"]').attributes('aria-pressed')).toBe('false')
+    expect(menu.get('[data-theme-option="fulldark"]').attributes('aria-pressed')).toBe('false')
 
     await menu.get('[data-locale-option="tr"]').trigger('click')
     expect(i18n.global.locale.value).toBe('tr')
@@ -405,6 +405,35 @@ describe('AppHeader', () => {
     await flushPromises()
     expect(router.currentRoute.value.fullPath).toBe('/settings?tab=tokens')
     expect(w.find('[data-testid="mobile-nav"]').exists()).toBe(false)
+  })
+
+  it('publishes its measured height as --app-header-height for the sticky headers below it', async () => {
+    grant([])
+    const observers = []
+    vi.stubGlobal('ResizeObserver', class {
+      constructor(callback) { this.callback = callback; observers.push(this) }
+      observe() {}
+      disconnect() { this.disconnected = true }
+    })
+    let height = 57
+    vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockImplementation(function () { return this.tagName === 'HEADER' ? height : 0 })
+    try {
+      const w = await mountWith(AppHeader)
+      const value = () => document.documentElement.style.getPropertyValue('--app-header-height')
+      expect(value()).toBe('57px')
+
+      // a taller header (a module's header item, the browser zoom): ProjectHeader follows it
+      height = 73
+      observers.forEach(o => o.callback())
+      expect(value()).toBe('73px')
+
+      w.unmount()
+      mounted.splice(mounted.indexOf(w), 1)
+      expect(observers.some(o => o.disconnected)).toBe(true)
+    } finally {
+      vi.unstubAllGlobals()
+      document.documentElement.style.removeProperty('--app-header-height')
+    }
   })
 
   it('renders the modules\' header items (tenant switcher)', async () => {

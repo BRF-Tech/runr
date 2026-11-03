@@ -115,7 +115,7 @@ function totalRuns(w) {
     <div class="flex items-start justify-between gap-4">
       <div class="min-w-0">
         <div class="flex items-center gap-2">
-          <div class="w-0.5 h-5 rounded-full shrink-0" style="background:linear-gradient(180deg,#8b5cf6,rgb(var(--brand-500)))"></div>
+          <div class="w-0.5 h-5 rounded-full shrink-0" style="background:linear-gradient(180deg,rgb(var(--brand-500)),rgb(var(--brand-700)))"></div>
           <span class="text-[15px] font-semibold text-gray-100">{{ t('workflows.title') }}</span>
         </div>
         <p class="text-xs text-gray-400 mt-1.5 ml-[10px]">{{ t('workflows.intro') }}</p>
@@ -123,7 +123,7 @@ function totalRuns(w) {
     </div>
 
     <div v-if="loading" class="flex items-center justify-center py-12">
-      <div class="animate-spin h-6 w-6 border-2 border-sky-500 border-t-transparent rounded-full" />
+      <div class="animate-spin h-6 w-6 border-2 border-brand-500 border-t-transparent rounded-full" />
     </div>
 
     <div v-else-if="loadError" class="bg-red-900/20 border border-red-800/40 rounded-md px-4 py-3">
@@ -169,14 +169,14 @@ function totalRuns(w) {
           <div
             v-for="w in workflows" :key="w.id"
             class="bg-gray-900 border rounded-md p-3 space-y-2 transition-colors"
-            :class="[selected === w.name ? 'border-sky-700/60' : 'border-gray-800', w.archived ? 'opacity-60' : '']"
+            :class="[selected === w.name ? 'border-brand-700/60' : 'border-gray-800', w.archived ? 'opacity-60' : '']"
             :data-workflow="w.name"
           >
             <div class="flex items-center gap-2">
-              <WorkflowIcon class="w-4 h-4 text-violet-300 shrink-0" />
-              <button type="button" class="font-mono text-sm text-gray-100 hover:text-sky-300 truncate" @click="selected = selected === w.name ? '' : w.name">{{ w.name }}</button>
+              <WorkflowIcon class="w-4 h-4 text-brand-300 shrink-0" />
+              <button type="button" class="font-mono text-sm text-gray-100 hover:text-brand-300 truncate" @click="selected = selected === w.name ? '' : w.name">{{ w.name }}</button>
               <span v-if="w.archived" class="text-[10px] px-1.5 rounded-sm bg-gray-800 text-gray-400">{{ t('workflows.list.archived') }}</span>
-              <span v-else-if="!w.is_active" class="text-[10px] px-1.5 rounded-sm bg-amber-900/40 text-amber-300">{{ t('workflows.list.paused') }}</span>
+              <span v-else-if="!w.is_active" class="text-[10px] px-1.5 rounded-sm bg-yellow-900/40 text-yellow-300">{{ t('workflows.list.paused') }}</span>
               <span class="ml-auto text-[11px] text-gray-400">{{ t('workflows.list.runs') }}: {{ totalRuns(w) }}</span>
             </div>
             <p v-if="w.description" class="text-xs text-gray-400">{{ w.description }}</p>

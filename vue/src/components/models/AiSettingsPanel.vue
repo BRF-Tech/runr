@@ -102,7 +102,7 @@ onMounted(async () => {
 
     <div class="card space-y-3">
       <div class="flex items-center gap-2 pb-3 border-b border-gray-800">
-        <Cpu class="w-4 h-4" style="color:#f59e0b" />
+        <Cpu class="w-4 h-4 text-brand-400" />
         <h3 class="text-sm font-semibold text-gray-100">{{ t('ai.settings.quotaTitle') }}</h3>
       </div>
       <p class="text-xs text-gray-400">{{ t('ai.settings.quotaDescription') }}</p>

@@ -149,7 +149,7 @@ async function copyId() {
     </div>
 
     <div v-if="loading && !run" class="flex items-center justify-center py-12">
-      <div class="animate-spin h-6 w-6 border-2 border-sky-500 border-t-transparent rounded-full" />
+      <div class="animate-spin h-6 w-6 border-2 border-brand-500 border-t-transparent rounded-full" />
     </div>
     <p v-else-if="error && !run" class="text-xs text-red-400">{{ error }}</p>
 
@@ -161,7 +161,7 @@ async function copyId() {
         <div><p class="text-gray-400">{{ t('workflows.runs.duration') }}</p><p class="text-gray-100 mt-0.5 font-mono">{{ formatDuration(run.duration_ms) }}</p></div>
         <div><p class="text-gray-400">{{ t('workflows.runs.steps') }}</p><p class="text-gray-100 mt-0.5">{{ run.steps_count }}</p></div>
         <div v-if="run.event_name"><p class="text-gray-400">{{ t('workflows.detail.event') }}</p><p class="text-gray-100 mt-0.5 font-mono break-all">{{ run.event_name }}</p></div>
-        <div v-if="run.attempt > 0"><p class="text-gray-400">{{ t('workflows.detail.attempts') }}</p><p class="text-amber-300 mt-0.5">{{ t('workflows.detail.runAttempt', { n: run.attempt }) }}</p></div>
+        <div v-if="run.attempt > 0"><p class="text-gray-400">{{ t('workflows.detail.attempts') }}</p><p class="text-yellow-300 mt-0.5">{{ t('workflows.detail.runAttempt', { n: run.attempt }) }}</p></div>
         <div v-if="run.next_attempt_at && active"><p class="text-gray-400">{{ t('workflows.detail.nextAttempt') }}</p><p class="text-gray-100 mt-0.5">{{ formatTime(run.next_attempt_at, locale) }}</p></div>
         <div v-if="run.timeout_at && active"><p class="text-gray-400">{{ t('workflows.detail.timeoutAt') }}</p><p class="text-gray-100 mt-0.5">{{ formatTime(run.timeout_at, locale) }}</p></div>
         <div v-if="run.idempotency_key"><p class="text-gray-400">{{ t('workflows.detail.idempotencyKey') }}</p><p class="text-gray-100 mt-0.5 font-mono break-all">{{ run.idempotency_key }}</p></div>
@@ -169,13 +169,13 @@ async function copyId() {
         <div v-if="run.replay_of_run_id">
           <p class="text-gray-400">{{ t('workflows.detail.replayOf') }}</p>
           <p class="mt-0.5">
-            <button type="button" class="font-mono text-sky-400 hover:text-sky-300" @click="emit('open-run', run.replay_of_run_id)">{{ run.replay_of_run_id }}</button>
+            <button type="button" class="font-mono text-brand-400 hover:text-brand-300" @click="emit('open-run', run.replay_of_run_id)">{{ run.replay_of_run_id }}</button>
             <span v-if="run.replay_from_step" class="text-gray-400"> {{ t('workflows.detail.replayFromStep', { step: run.replay_from_step }) }}</span>
           </p>
         </div>
         <div v-if="run.parent_run_id">
           <p class="text-gray-400">{{ t('workflows.detail.parent') }}</p>
-          <p class="mt-0.5"><button type="button" class="font-mono text-sky-400 hover:text-sky-300" @click="emit('open-run', run.parent_run_id)">{{ run.parent_run_id }}</button></p>
+          <p class="mt-0.5"><button type="button" class="font-mono text-brand-400 hover:text-brand-300" @click="emit('open-run', run.parent_run_id)">{{ run.parent_run_id }}</button></p>
         </div>
       </div>
 
@@ -204,7 +204,7 @@ async function copyId() {
         <div class="flex flex-wrap gap-2">
           <button
             v-for="c in run.children" :key="c.id" type="button"
-            class="inline-flex items-center gap-1.5 text-xs font-mono text-sky-400 hover:text-sky-300"
+            class="inline-flex items-center gap-1.5 text-xs font-mono text-brand-400 hover:text-brand-300"
             @click="emit('open-run', c.id)"
           >{{ c.id }} <WorkflowStatusBadge :status="c.status" size="xs" /></button>
         </div>

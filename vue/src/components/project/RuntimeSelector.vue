@@ -60,11 +60,11 @@ function title(r) {
         <span
           v-if="r.source && r.source !== 'builtin'"
           class="absolute top-1 right-1 px-1 rounded-sm text-[9px] font-mono leading-tight border"
-          :class="r.source === 'custom' ? 'border-violet-800/60 text-violet-400 bg-violet-950/40' : 'border-sky-800/60 text-sky-400 bg-sky-950/40'"
+          :class="r.source === 'custom' ? 'border-brand-800/60 text-brand-400 bg-brand-900/40' : 'border-brand-500/60 text-brand-400 bg-transparent'"
         >{{ t(`runtimes.source.${r.source}`) }}</span>
         <span
           v-if="isWasmRuntime(r)"
-          class="wasm-badge absolute top-1 left-1 px-1 rounded-sm text-[9px] font-mono leading-tight border border-indigo-700/60 text-indigo-300 bg-indigo-950/40"
+          class="wasm-badge absolute top-1 left-1 px-1 rounded-sm text-[9px] font-mono leading-tight border border-gray-700 text-brand-300 bg-gray-800/80"
           :title="t('wasm.picker.badgeTitle')"
         >{{ t('wasm.picker.badge') }}</span>
         <RuntimeIcon :runtime="r.id" :size="28" />
@@ -90,7 +90,7 @@ function title(r) {
         >
           {{ v.version }}
           <span v-if="v.is_default" class="ml-1 text-[10px] opacity-60">{{ t('create.fields.defaultBadge') }}</span>
-          <span v-if="v.gpu_required" class="ml-1 text-[10px] text-amber-400">GPU</span>
+          <span v-if="v.gpu_required" class="ml-1 text-[10px] text-brand-400">GPU</span>
         </button>
       </div>
     </div>

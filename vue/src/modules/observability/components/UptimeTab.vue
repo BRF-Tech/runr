@@ -127,7 +127,7 @@ onMounted(load)
       @cancel="editing = null"
     />
 
-    <div v-if="loading" class="flex justify-center py-10"><div class="animate-spin h-6 w-6 border-2 border-sky-500 border-t-transparent rounded-full" /></div>
+    <div v-if="loading" class="flex justify-center py-10"><div class="animate-spin h-6 w-6 border-2 border-brand-500 border-t-transparent rounded-full" /></div>
     <div v-else-if="error" class="bg-red-900/20 border border-red-800/40 rounded-md px-4 py-3 text-xs text-red-400">{{ error }}</div>
     <div v-else-if="!checks.length" class="text-center text-gray-400 py-8 text-sm" data-test="checks-empty">
       <p>{{ t('observability.uptime.empty') }}</p>
@@ -173,7 +173,7 @@ onMounted(load)
           <span class="text-gray-100">{{ inc.title }}</span>
           <span class="text-gray-500">{{ new Date(inc.started_at).toLocaleString() }}</span>
           <span class="text-gray-500">{{ t('observability.uptime.incidents.duration') }} {{ formatSeconds(inc.duration_seconds) }}</span>
-          <button v-if="canManage" type="button" class="ml-auto text-sky-400 hover:text-sky-300" @click="editingIncident = { ...inc }">{{ t('observability.uptime.incidents.editMessage') }}</button>
+          <button v-if="canManage" type="button" class="ml-auto text-brand-400 hover:text-brand-300" @click="editingIncident = { ...inc }">{{ t('observability.uptime.incidents.editMessage') }}</button>
         </div>
         <p v-if="inc.cause" class="text-gray-400 mt-1">{{ t('observability.uptime.incidents.cause') }}: {{ inc.cause }}</p>
         <p v-if="inc.message" class="text-gray-300 mt-1">{{ inc.message }}</p>

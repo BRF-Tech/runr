@@ -17,6 +17,7 @@ export default {
       authToken:      'API token',
       authOauthHint:  'The client opens the RunR sign-in in the browser; you choose the permissions and the organization on the consent page.',
       authTokenHint:  'The client sends an API token in the Authorization header. Create a scoped token below.',
+      connectNeedsTokens: 'Connecting a client needs the permission to manage your own API tokens: signing in with OAuth and an API token both give the client a token. Ask an administrator.',
     },
 
     snippets: {
@@ -117,6 +118,8 @@ export default {
       errorTitle:     'The client cannot connect',
       expiredTitle:   'This request has expired',
       expiredText:    'Start the connection again from the client.',
+      noAccessTitle:  'You cannot connect MCP clients',
+      noAccessText:   'Connecting a client needs the permission to manage your own API tokens. Ask an administrator, or deny the request to return to the client.',
     },
 
     project: {

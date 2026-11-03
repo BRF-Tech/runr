@@ -36,7 +36,7 @@ const statusLabel = (status) => t(`runtimePatches.admin.feed.statuses.${status |
 const statusClass = computed(() => ({
   ok: 'text-emerald-400',
   disabled: 'text-gray-400',
-  unreachable: 'text-amber-400',
+  unreachable: 'text-yellow-400',
 }[feed.value?.status] ?? 'text-red-400'))
 
 function messageOf(e) {
@@ -181,7 +181,7 @@ defineExpose({ load, checkNow, togglePolicy, remind, force, openExtend, saveDead
               <RefreshCw class="w-3.5 h-3.5" :class="checking && 'animate-spin'" />{{ t('runtimePatches.admin.feed.checkNow') }}
             </button>
           </div>
-          <p v-if="!data.key_configured" class="text-xs text-amber-400 mb-3" data-test="runtime-patches-key-missing">{{ t('runtimePatches.admin.feed.keyMissing') }}</p>
+          <p v-if="!data.key_configured" class="text-xs text-yellow-400 mb-3" data-test="runtime-patches-key-missing">{{ t('runtimePatches.admin.feed.keyMissing') }}</p>
           <dl class="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-xs">
             <dt class="text-gray-400">{{ t('runtimePatches.admin.feed.reference') }}</dt>
             <dd class="font-mono text-gray-100 break-all">{{ feed.reference }}</dd>
@@ -262,13 +262,13 @@ defineExpose({ load, checkNow, togglePolicy, remind, force, openExtend, saveDead
                   <td class="py-2 pr-3 text-gray-400">{{ fmt(patch.published_at) }}</td>
                   <td class="py-2 pr-3" :data-test="`runtime-patches-deadline-${patch.id}`">
                     <template v-if="patch.deadline_at">
-                      <span :class="patch.overdue ? 'text-red-400' : 'text-amber-400'">{{ fmt(patch.deadline_at) }}</span>
+                      <span :class="patch.overdue ? 'text-red-400' : 'text-yellow-400'">{{ fmt(patch.deadline_at) }}</span>
                       <span v-if="patch.deadline_extended" class="ml-1 text-gray-400">({{ t('runtimePatches.admin.patches.extended') }})</span>
                       <span v-if="patch.overdue" class="ml-1 text-red-400">· {{ t('runtimePatches.admin.patches.overdue') }}</span>
                     </template>
                     <span v-else class="text-gray-400">{{ t('runtimePatches.admin.patches.none') }}</span>
                   </td>
-                  <td class="py-2 pr-3 font-mono" :class="patch.affected ? 'text-amber-400' : 'text-gray-400'" :data-test="`runtime-patches-affected-${patch.id}`">{{ patch.affected ?? 0 }}</td>
+                  <td class="py-2 pr-3 font-mono" :class="patch.affected ? 'text-yellow-400' : 'text-gray-400'" :data-test="`runtime-patches-affected-${patch.id}`">{{ patch.affected ?? 0 }}</td>
                   <td class="py-2 text-right whitespace-nowrap">
                     <template v-if="patch.in_feed">
                       <button type="button" class="btn-secondary text-xs inline-flex items-center gap-1 mr-1" :disabled="busy[`${patch.id}:remind`]" :data-test="`runtime-patches-remind-${patch.id}`" @click="remind(patch)"><BellRing class="w-3 h-3" />{{ t('runtimePatches.admin.actions.remind') }}</button>
@@ -291,7 +291,7 @@ defineExpose({ load, checkNow, togglePolicy, remind, force, openExtend, saveDead
                       <tbody>
                         <tr v-for="org in patch.organizations" :key="org.tenant_id ?? 'central'">
                           <td class="pr-4 text-gray-100">{{ org.name || (org.tenant_id ?? t('runtimePatches.admin.patches.thisInstallation')) }}</td>
-                          <td class="pr-4 font-mono" :class="org.affected ? 'text-amber-400' : 'text-gray-400'">{{ org.affected }}</td>
+                          <td class="pr-4 font-mono" :class="org.affected ? 'text-yellow-400' : 'text-gray-400'">{{ org.affected }}</td>
                           <td class="text-gray-400">{{ migrationSummary(org.migrations) || t('runtimePatches.admin.patches.none') }}</td>
                         </tr>
                       </tbody>
@@ -313,10 +313,10 @@ defineExpose({ load, checkNow, togglePolicy, remind, force, openExtend, saveDead
         <p v-if="!advisories.length" class="text-sm text-gray-400">{{ t('runtimePatches.admin.advisories.empty') }}</p>
         <ul v-else class="space-y-2">
           <li v-for="a in advisories" :key="a.version" class="flex flex-wrap items-center gap-2 text-xs" :class="a.newer ? 'text-gray-100' : 'text-gray-400'">
-            <ShieldAlert v-if="a.newer" class="w-3.5 h-3.5 text-amber-400" />
+            <ShieldAlert v-if="a.newer" class="w-3.5 h-3.5 text-yellow-400" />
             <span class="font-mono font-semibold">RunR {{ a.version }}</span>
             <span class="px-2 py-0.5 rounded-md border" :class="levelClasses(a.level)">{{ levelLabel(a.level) }}</span>
-            <span v-if="a.newer" class="text-amber-400">{{ t('runtimePatches.admin.advisories.newer', { running: data.running_version }) }}</span>
+            <span v-if="a.newer" class="text-yellow-400">{{ t('runtimePatches.admin.advisories.newer', { running: data.running_version }) }}</span>
             <span>{{ a.reason }}</span>
             <a v-if="a.url" :href="a.url" target="_blank" rel="noopener" class="inline-flex items-center gap-1 text-brand-400 hover:text-brand-300"><ExternalLink class="w-3 h-3" /></a>
           </li>

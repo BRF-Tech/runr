@@ -236,7 +236,7 @@ async function submit() {
             <p v-if="suggested?.gpu?.memory_min_hint_mb" class="text-[11px] text-gray-400">
               {{ t('ai.deploy.gpuMemoryHint', { memory: Math.ceil(suggested.gpu.memory_min_hint_mb / 1024) }) }}
             </p>
-            <p v-if="form.knative_region_id && regionGpu && !hasGpus" class="text-xs text-amber-400">{{ t('ai.gpu.noGpuNodes') }}</p>
+            <p v-if="form.knative_region_id && regionGpu && !hasGpus" class="text-xs text-yellow-400">{{ t('ai.gpu.noGpuNodes') }}</p>
             <p v-if="quota && quota.quota !== null && quota.quota !== undefined" class="text-[11px] text-gray-400" data-testid="deploy-gpu-quota">
               {{ t('ai.deploy.gpuQuota', { used: quota.used ?? 0, quota: quota.quota, remaining: quota.remaining ?? 0 }) }}
             </p>

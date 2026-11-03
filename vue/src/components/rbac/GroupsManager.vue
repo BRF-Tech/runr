@@ -192,7 +192,7 @@ onMounted(load)
             <div class="min-w-0">
               <div class="flex items-center gap-2">
                 <span class="text-sm font-semibold text-gray-100">{{ group.name }}</span>
-                <span v-if="group.role" class="text-[10px] px-1.5 py-0.5 rounded-sm border border-sky-800/50 bg-sky-900/30 text-sky-400">{{ roleLabel(group.role, roles) }}</span>
+                <span v-if="group.role" class="text-[10px] px-1.5 py-0.5 rounded-sm border border-brand-800/50 bg-brand-900/30 text-brand-400">{{ roleLabel(group.role, roles) }}</span>
               </div>
               <p class="text-xs text-gray-400">
                 {{ t('rbac.memberCount', { n: group.member_count }) }}

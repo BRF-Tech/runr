@@ -80,7 +80,7 @@ async function run() {
 
 <template>
   <div class="space-y-3" data-testid="playground" :data-kind="kind">
-    <p v-if="!ready" class="text-xs text-amber-300/90 bg-amber-900/20 rounded-sm px-3 py-2">{{ t('ai.playground.notReady') }}</p>
+    <p v-if="!ready" class="text-xs text-yellow-300/90 bg-yellow-900/20 rounded-sm px-3 py-2">{{ t('ai.playground.notReady') }}</p>
     <p class="text-[11px] text-gray-400">{{ t(`ai.playground.kinds.${kind}`) }}</p>
 
     <!-- Chat -->

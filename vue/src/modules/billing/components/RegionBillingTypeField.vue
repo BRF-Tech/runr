@@ -26,7 +26,7 @@ function choose(type) {
     <label class="label">{{ t('billing.wizard.title') }}</label>
     <div class="grid grid-cols-2 gap-2">
       <button v-for="type in BILLING_TYPES" :key="type" type="button" class="rounded-md border px-3 py-2 text-xs text-left transition-colors"
-        :class="selected === type ? 'border-sky-500/60 bg-sky-900/20 text-sky-400' : 'border-gray-800 bg-gray-900/40 text-gray-400 hover:text-gray-100'"
+        :class="selected === type ? 'border-brand-500/60 bg-brand-900/20 text-brand-400' : 'border-gray-800 bg-gray-900/40 text-gray-400 hover:text-gray-100'"
         :data-test="`region-billing-type-${type}`" @click="choose(type)">
         <span class="font-medium">{{ t(`billing.type.${type}`) }}</span>
         <p class="text-[10px] mt-0.5 opacity-70">{{ t(`billing.typeHint.${type}`) }}</p>

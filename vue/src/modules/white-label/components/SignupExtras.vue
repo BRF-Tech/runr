@@ -41,12 +41,12 @@ watch(() => props.attempt, () => captcha.value?.reset())
 <template>
   <div v-if="status" class="space-y-5" data-test="signup-extras">
     <!-- Allowed e-mail domains -->
-    <p v-if="allowedDomains.length" class="text-xs" style="color:#64748b" data-test="allowed-domains">
+    <p v-if="allowedDomains.length" class="text-xs" style="color:rgb(var(--surface-light-600))" data-test="allowed-domains">
       {{ t('whiteLabel.signup.allowedDomainsHint', { domains: allowedDomains.join(', ') }) }}
     </p>
 
     <!-- Terms / privacy -->
-    <label v-if="needsTerms" class="flex items-start gap-2 text-sm cursor-pointer" style="color:#374151" data-test="terms">
+    <label v-if="needsTerms" class="flex items-start gap-2 text-sm cursor-pointer" style="color:rgb(var(--surface-light-500))" data-test="terms">
       <input type="checkbox" class="mt-1" :checked="!!model?.accept_terms" data-test="terms-checkbox"
         @change="patch({ accept_terms: $event.target.checked })" />
       <span>

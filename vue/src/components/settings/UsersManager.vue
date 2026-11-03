@@ -138,7 +138,7 @@ defineExpose({ openAdd })
             <span v-else-if="user.role" class="text-[10px] px-1.5 py-0.5 rounded-sm border border-gray-700 text-gray-300 shrink-0">{{ roleLabel(user.role, roles) }}</span>
             <!-- Reset 2FA (not self, only if 2FA enabled) -->
             <button v-if="canUpdate && user.id !== currentUserId && user.two_factor_confirmed_at"
-              class="text-gray-400 hover:text-amber-400 transition-colors shrink-0"
+              class="text-gray-400 hover:text-yellow-400 transition-colors shrink-0"
               :title="t('users.reset2FA')"
               @click="reset2FA(user)">
               <ShieldOff class="w-3.5 h-3.5" />

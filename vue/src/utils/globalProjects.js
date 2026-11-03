@@ -91,9 +91,9 @@ export function regionStatusClass(status) {
   switch (status) {
     case 'ready':     return `${BADGE} bg-emerald-900/40 text-emerald-400 border-emerald-800/50`
     case 'building':
-    case 'deploying': return `${BADGE} bg-blue-900/40 text-blue-300 border-blue-800/50`
+    case 'deploying': return `${BADGE} bg-brand-900/40 text-brand-300 border-brand-800/50`
     case 'failed':    return `${BADGE} bg-red-900/40 text-red-400 border-red-800/50`
-    case 'fenced':    return `${BADGE} bg-orange-900/40 text-orange-300 border-orange-800/50`
+    case 'fenced':    return `${BADGE} bg-yellow-900/40 text-yellow-300 border-yellow-800/50`
     case 'removing':  return `${BADGE} bg-yellow-900/40 text-yellow-400 border-yellow-800/50`
     default:          return `${BADGE} bg-gray-800 text-gray-400 border-gray-700`
   }
@@ -109,9 +109,9 @@ export function dataStatusClass(status) {
     case 'ready':        return `${BADGE} bg-emerald-900/40 text-emerald-400 border-emerald-800/50`
     case 'syncing':
     case 'pending':
-    case 'provisioning': return `${BADGE} bg-blue-900/40 text-blue-300 border-blue-800/50`
+    case 'provisioning': return `${BADGE} bg-brand-900/40 text-brand-300 border-brand-800/50`
     case 'promoting':
-    case 'recloning':    return `${BADGE} bg-orange-900/40 text-orange-300 border-orange-800/50`
+    case 'recloning':    return `${BADGE} bg-yellow-900/40 text-yellow-300 border-yellow-800/50`
     case 'failed':       return `${BADGE} bg-red-900/40 text-red-400 border-red-800/50`
     case 'removing':     return `${BADGE} bg-yellow-900/40 text-yellow-400 border-yellow-800/50`
     default:             return `${BADGE} bg-gray-800 text-gray-400 border-gray-700`

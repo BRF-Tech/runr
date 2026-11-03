@@ -64,7 +64,7 @@ const memoryTooHigh = computed(() => {
         data-testid="gpu-memory-min" :placeholder="t('ai.gpu.memoryMinPlaceholder')" :disabled="disabled"
         @input="emit('update:memoryMin', $event.target.value === '' ? null : Math.max(0, parseInt($event.target.value, 10) || 0))" />
     </div>
-    <p v-if="Number(count) > maxCount" class="col-span-3 text-xs text-amber-400">{{ t('ai.gpu.countAboveNode', { max: maxCount }) }}</p>
-    <p v-if="memoryTooHigh" class="col-span-3 text-xs text-amber-400">{{ t('ai.gpu.memoryAboveNodes') }}</p>
+    <p v-if="Number(count) > maxCount" class="col-span-3 text-xs text-yellow-400">{{ t('ai.gpu.countAboveNode', { max: maxCount }) }}</p>
+    <p v-if="memoryTooHigh" class="col-span-3 text-xs text-yellow-400">{{ t('ai.gpu.memoryAboveNodes') }}</p>
   </div>
 </template>

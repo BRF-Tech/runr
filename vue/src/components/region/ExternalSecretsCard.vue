@@ -145,7 +145,7 @@ defineExpose({ load })
       <dt class="text-gray-500">{{ t('externalSecrets.chartVersion') }}</dt>
       <dd class="font-mono text-gray-200" data-testid="eso-chart-version">
         {{ state.chart_version ?? '—' }}
-        <span v-if="outdated" class="text-amber-300 font-sans"> · {{ t('externalSecrets.outdated', { version: state.release_chart_version }) }}</span>
+        <span v-if="outdated" class="text-yellow-300 font-sans"> · {{ t('externalSecrets.outdated', { version: state.release_chart_version }) }}</span>
       </dd>
       <dt class="text-gray-500">{{ t('externalSecrets.releaseVersion') }}</dt>
       <dd class="font-mono text-gray-200">{{ state.release_chart_version ?? '—' }}</dd>

@@ -264,7 +264,7 @@ function healthLabel(r) {
 
     <!-- Loading -->
     <div v-if="loading" class="flex items-center justify-center py-12">
-      <div class="animate-spin h-6 w-6 border-2 border-sky-500 border-t-transparent rounded-full" />
+      <div class="animate-spin h-6 w-6 border-2 border-brand-500 border-t-transparent rounded-full" />
     </div>
 
     <div v-else-if="loadError && !global" class="bg-red-900/20 border border-red-800/40 rounded-md px-4 py-3">
@@ -299,7 +299,7 @@ function healthLabel(r) {
               v-for="m in ['ha', 'proximity']" :key="m"
               type="button"
               class="text-[11px] px-3 py-1 rounded-md border transition-colors"
-              :class="global.mode === m ? 'border-sky-500/60 bg-sky-900/30 text-sky-300' : 'border-gray-800 bg-gray-900/40 text-gray-400 hover:text-gray-100'"
+              :class="global.mode === m ? 'border-brand-500/60 bg-brand-900/30 text-brand-300' : 'border-gray-800 bg-gray-900/40 text-gray-400 hover:text-gray-100'"
               :disabled="!canUpdate || !!busy || global.mode === m"
               :aria-pressed="global.mode === m ? 'true' : 'false'"
               :data-global-mode="m"
@@ -316,7 +316,7 @@ function healthLabel(r) {
               v-for="f in GLOBAL_FAILOVERS" :key="f"
               type="button"
               class="text-[11px] px-3 py-1 rounded-md border transition-colors"
-              :class="failoverMode === f ? 'border-sky-500/60 bg-sky-900/30 text-sky-300' : 'border-gray-800 bg-gray-900/40 text-gray-400 hover:text-gray-100'"
+              :class="failoverMode === f ? 'border-brand-500/60 bg-brand-900/30 text-brand-300' : 'border-gray-800 bg-gray-900/40 text-gray-400 hover:text-gray-100'"
               :disabled="!canUpdate || !!busy || failoverMode === f"
               :aria-pressed="failoverMode === f ? 'true' : 'false'"
               :data-global-failover="f"
@@ -334,9 +334,9 @@ function healthLabel(r) {
       </div>
 
       <!-- A move of the primary (switchover or failover) is running -->
-      <div v-if="movingTo" class="flex items-center gap-2.5 bg-sky-900/20 border border-sky-800/40 rounded-md px-4 py-2.5" data-testid="global-moving">
-        <ArrowRightLeft class="w-4 h-4 text-sky-300 shrink-0 animate-pulse" />
-        <p class="text-xs text-sky-300">{{ t('globalProjects.failover.moving', { region: movingTo }) }}</p>
+      <div v-if="movingTo" class="flex items-center gap-2.5 bg-brand-900/20 border border-brand-800/40 rounded-md px-4 py-2.5" data-testid="global-moving">
+        <ArrowRightLeft class="w-4 h-4 text-brand-300 shrink-0 animate-pulse" />
+        <p class="text-xs text-brand-300">{{ t('globalProjects.failover.moving', { region: movingTo }) }}</p>
       </div>
 
       <!-- Warnings (bindings, …) -->
@@ -371,16 +371,16 @@ function healthLabel(r) {
               <td class="px-3 py-2">
                 <div class="flex items-center gap-1.5">
                   <span class="font-mono text-gray-100">{{ r.region_name }}</span>
-                  <span v-if="r.role === 'primary'" class="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-sm text-[10px] bg-amber-900/30 border border-amber-800/50 text-amber-300">
+                  <span v-if="r.role === 'primary'" class="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-sm text-[10px] bg-brand-900/30 border border-brand-800/50 text-brand-300">
                     <Star class="w-2.5 h-2.5" />{{ t('globalProjects.roles.primary') }}
                   </span>
                   <span v-else class="text-[10px] text-gray-400">{{ t('globalProjects.roles.secondary') }}</span>
-                  <span v-if="r.triggers_active" class="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-sm text-[10px] bg-violet-900/30 border border-violet-800/50 text-violet-300"
+                  <span v-if="r.triggers_active" class="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-sm text-[10px] bg-brand-900/30 border border-brand-800/50 text-brand-300"
                     :title="t('globalProjects.triggersHint')" data-testid="global-triggers-badge">
                     <Zap class="w-2.5 h-2.5" />{{ t('globalProjects.triggers') }}
                   </span>
                 </div>
-                <p v-if="r.status_message" class="text-[11px] mt-1 leading-relaxed" :class="r.status === 'failed' ? 'text-red-400' : r.status === 'fenced' ? 'text-orange-300' : 'text-gray-400'">{{ r.status_message }}</p>
+                <p v-if="r.status_message" class="text-[11px] mt-1 leading-relaxed" :class="r.status === 'failed' ? 'text-red-400' : r.status === 'fenced' ? 'text-yellow-300' : 'text-gray-400'">{{ r.status_message }}</p>
                 <p v-if="r.fenced_at" class="text-[11px] mt-0.5 text-gray-400">{{ t('globalProjects.fencedAt', { time: fmtDateTime(r.fenced_at) }) }}</p>
               </td>
               <td class="px-3 py-2">
@@ -388,7 +388,7 @@ function healthLabel(r) {
               </td>
               <td class="px-3 py-2 font-mono text-gray-100 whitespace-nowrap">
                 <span>{{ r.version != null ? `v${r.version}` : '—' }}</span>
-                <span v-if="r.target_version != null && r.target_version !== r.version" class="text-sky-400"> → v{{ r.target_version }}</span>
+                <span v-if="r.target_version != null && r.target_version !== r.version" class="text-brand-400"> → v{{ r.target_version }}</span>
               </td>
               <td class="px-3 py-2 whitespace-nowrap">
                 <span class="inline-flex items-center gap-1.5" :title="r.health_checked_at ? t('globalProjects.health.checkedAt', { time: fmtTime(r.health_checked_at) }) : ''">
@@ -421,7 +421,7 @@ function healthLabel(r) {
                   >{{ t('globalProjects.makePrimary') }}</button>
                   <button
                     v-if="r.role !== 'primary'"
-                    class="btn-secondary text-[11px] px-2 py-1 text-orange-300 hover:text-orange-200"
+                    class="btn-secondary text-[11px] px-2 py-1 text-yellow-300 hover:text-yellow-200"
                     :disabled="!!busy || !canFailoverTo(global, r)"
                     :title="global.moving_to ? t('globalProjects.failover.running') : r.status !== 'ready' ? t('globalProjects.primaryNeedsReady') : t('globalProjects.failover.hint')"
                     data-testid="global-failover"

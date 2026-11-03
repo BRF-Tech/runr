@@ -176,6 +176,7 @@ export default {
     tutorialTenantUsersFormDesc: 'Kullanıcı eklemek için e-posta girin. E-posta kayıtlıysa doğrudan eklenir, kayıtlı değilse davet gönderilir.',
     tutorialTenantUsersList:     'Kullanıcı Listesi',
     tutorialTenantUsersListDesc: 'Mevcut üyeleri ve rollerini görüntüleyin. Açılır menüden rol değiştirin veya kullanıcıyı çalışma alanından kaldırın.',
+    tutorialTenantUsersListDescReadOnly: 'Çalışma alanının üyelerini ve rollerini görüntüleyin.',
 
     // Tutorial — Kiracılar
     tutorialTenantForm:         'Kiracı Formu',

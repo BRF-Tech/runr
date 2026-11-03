@@ -60,11 +60,11 @@ async function confirm() {
         <p class="text-sm text-gray-100">{{ t('project.deleteDeployment.message') }}</p>
 
         <!-- Active warning -->
-        <div v-if="isLive" class="flex items-start gap-2.5 bg-orange-900/20 border border-orange-800/40 rounded-md px-4 py-3">
-          <svg class="w-4 h-4 text-orange-400 mt-0.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+        <div v-if="isLive" class="flex items-start gap-2.5 bg-yellow-900/20 border border-yellow-800/40 rounded-md px-4 py-3">
+          <svg class="w-4 h-4 text-yellow-400 mt-0.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
             <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v4m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
           </svg>
-          <p class="text-xs text-orange-300 leading-relaxed">{{ t('project.deleteDeployment.warnActive') }}</p>
+          <p class="text-xs text-yellow-300 leading-relaxed">{{ t('project.deleteDeployment.warnActive') }}</p>
         </div>
 
         <!-- Error -->

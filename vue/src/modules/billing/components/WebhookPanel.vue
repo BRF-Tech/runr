@@ -107,7 +107,7 @@ function deliveryCls(status) {
   return {
     delivered: `${base} bg-emerald-900/40 border-emerald-800/40 text-emerald-400`,
     failed:    `${base} bg-red-900/40 border-red-800/40 text-red-400`,
-    pending:   `${base} bg-amber-900/40 border-amber-800/40 text-amber-400`,
+    pending:   `${base} bg-yellow-900/40 border-yellow-800/40 text-yellow-400`,
   }[status] || `${base} bg-gray-800/40 border-gray-700/40 text-gray-400`
 }
 
@@ -117,7 +117,7 @@ defineExpose({ load, save, test, redeliver, url, secret })
 <template>
   <div class="space-y-6" data-test="billing-webhook">
     <div v-if="loading" class="flex justify-center py-6">
-      <div class="animate-spin h-4 w-4 border-2 border-sky-500 border-t-transparent rounded-full" />
+      <div class="animate-spin h-4 w-4 border-2 border-brand-500 border-t-transparent rounded-full" />
     </div>
     <p v-else-if="error" class="text-sm text-red-400">{{ error }}</p>
 
@@ -137,7 +137,7 @@ defineExpose({ load, save, test, redeliver, url, secret })
             <Send class="w-3.5 h-3.5" />{{ t('billing.webhook.test') }}
           </button>
         </div>
-        <p v-if="!webhookConfigured" class="text-xs text-amber-400" data-test="webhook-not-configured">{{ t('billing.webhook.notConfigured') }}</p>
+        <p v-if="!webhookConfigured" class="text-xs text-yellow-400" data-test="webhook-not-configured">{{ t('billing.webhook.notConfigured') }}</p>
       </section>
 
       <section class="space-y-2">

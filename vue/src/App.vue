@@ -20,7 +20,7 @@ watch(() => auth.token, (token) => (token ? subscribe() : unsubscribe()))
 onMounted(() => {
   subscribe()
   fetchVersion().then(v => {
-    if (v) console.log(`%c RunR %c ${v} `, 'background:#f97316;color:#fff;font-weight:bold;border-radius:3px 0 0 3px', 'background:#1e293b;color:#94a3b8;border-radius:0 3px 3px 0')
+    if (v) console.log(`%c RunR %c ${v} `, 'background:#f97316;color:#fff;font-weight:bold;border-radius:3px 0 0 3px', 'background:#262626;color:#a3a3a3;border-radius:0 3px 3px 0')
   })
 })
 

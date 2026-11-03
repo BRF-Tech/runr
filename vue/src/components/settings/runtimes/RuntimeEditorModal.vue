@@ -323,7 +323,7 @@ function fmtBytes(n) { return n >= 1024 ? `${(n / 1024).toFixed(1)} KB` : `${n} 
                 {{ t('runtimes.editor.valid', { name: validated.name ?? '', id: validated.id ?? '', n: validated.versions?.length ?? 0 }) }}
               </p>
               <p v-else class="text-gray-400">{{ t('runtimes.editor.validateHint') }}</p>
-              <p v-for="u in unresolvedFiles" :key="u.version" class="mt-1.5 flex items-center gap-2 text-amber-400">
+              <p v-for="u in unresolvedFiles" :key="u.version" class="mt-1.5 flex items-center gap-2 text-yellow-400">
                 <AlertTriangle class="w-3.5 h-3.5" />{{ t('runtimes.editor.unresolvedFile', { file: u.file, version: u.version }) }}
               </p>
             </div>
@@ -344,7 +344,7 @@ function fmtBytes(n) { return n >= 1024 ? `${(n / 1024).toFixed(1)} KB` : `${n} 
                   <span v-if="!r.is_active" class="text-[10px] text-gray-500">{{ t('settings.regions.inactive') }}</span>
                 </label>
                 <p v-if="!regions.length" class="text-xs text-gray-400">{{ t('runtimes.editor.noRegions') }}</p>
-                <p v-else-if="!selectedRegions.length" class="text-xs text-amber-400">{{ t('runtimes.editor.pickRegion') }}</p>
+                <p v-else-if="!selectedRegions.length" class="text-xs text-yellow-400">{{ t('runtimes.editor.pickRegion') }}</p>
               </div>
             </section>
 
@@ -369,7 +369,7 @@ function fmtBytes(n) { return n >= 1024 ? `${(n / 1024).toFixed(1)} KB` : `${n} 
                 <span class="font-mono normal-case text-[10px]" :class="filesBytes > MAX_FILES_BYTES ? 'text-red-400' : 'text-gray-500'">{{ fmtBytes(filesBytes) }}</span>
               </div>
               <p class="text-[11px] text-gray-400 mb-2">{{ t('runtimes.editor.filesHint') }}</p>
-              <p v-if="isEdit && existingNames.length && !filesTouched" class="text-[11px] text-amber-400/90 mb-2">{{ t('runtimes.editor.replaceFilesHint') }}</p>
+              <p v-if="isEdit && existingNames.length && !filesTouched" class="text-[11px] text-yellow-400/90 mb-2">{{ t('runtimes.editor.replaceFilesHint') }}</p>
               <p v-if="filesBytes > MAX_FILES_BYTES" class="text-[11px] text-red-400 mb-2">{{ t('runtimes.editor.filesTooLarge') }}</p>
               <p v-if="fileError" class="text-[11px] text-red-400 mb-2">{{ fileError }}</p>
 
@@ -394,7 +394,7 @@ function fmtBytes(n) { return n >= 1024 ? `${(n / 1024).toFixed(1)} KB` : `${n} 
                 <ul class="space-y-1 mb-2">
                   <li v-for="f in files" :key="f.name"
                     class="flex items-center gap-2 rounded-md border px-2 py-1"
-                    :class="activeFile === f.name ? 'border-sky-700/60 bg-sky-950/30' : 'border-gray-800 bg-gray-900/40'">
+                    :class="activeFile === f.name ? 'border-brand-700/60 bg-brand-900/30' : 'border-gray-800 bg-gray-900/40'">
                     <FileText class="w-3.5 h-3.5 text-gray-500 shrink-0" />
                     <input
                       :value="f.name"

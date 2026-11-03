@@ -27,11 +27,18 @@ import TermText from '@/components/TermText.vue'
 const { t } = useI18n()
 const route  = useRoute()
 const tutorialStore = useTutorialStore()
+const perms = usePermissionsStore()
 const runtimesStore = useRuntimesStore()
 runtimesStore.fetch()
 const regionModalRef = ref(null)
+// The platform tour goes on with the region wizard, for a user who may add regions (the Add
+// region button's permission): a read-only role ends the tour on the platform page
 const { start: startSettingsTutorial } = createTutorial(settingsSteps, {
-  onComplete: () => { openAdd(); setTimeout(() => regionModalRef.value?.startTutorial(), 400) },
+  onComplete: () => {
+    if (!perms.can('regions.manage')) return
+    openAdd()
+    setTimeout(() => regionModalRef.value?.startTutorial(), 400)
+  },
 })
 const { start: startTokensTutorial } = useTokensTutorial()
 const { start: startUsersTutorial } = useUsersTutorial()
@@ -45,14 +52,20 @@ watch(() => tutorialStore.restartCounter, () => {
   if (activeTab.value === 'settings') nextTick(() => startSettingsTutorial())
   else if (showsCore('tokens')) nextTick(() => startTokensTutorial())
   else if (showsCore('users')) {
-    usersRef.value?.openAdd()
+    // the add form only for a user who may add users (its button's permission)
+    if (perms.can('members.invite')) usersRef.value?.openAdd()
     nextTick(() => startUsersTutorial())
   }
   else if (!ownTutorial.value) nextTick(() => startTabsTutorial())
 })
 
-const perms = usePermissionsStore()
 const canChangeSettings = computed(() => perms.can('settings.manage'))
+// Without settings.manage the platform settings show read-only: the fields and switches are
+// disabled and Save is left out (PATCH /settings answers 403), like the time zone card
+const toggleClass = (on) => [
+  on ? 'bg-brand-500' : 'bg-gray-700',
+  canChangeSettings.value ? 'cursor-pointer' : 'cursor-not-allowed opacity-60',
+]
 
 // The page of each tab is a link of the main menu (src/navigation/menu.js): /settings?tab=<key>.
 // The tab shows when the menu shows its link; without ?tab (or with an unknown one) the page
@@ -95,7 +108,7 @@ function barColor(used, total) {
   if (!total) return 'rgb(var(--brand-500))'
   const pct = used / total * 100
   if (pct >= 80) return '#ef4444'
-  if (pct >= 60) return '#f59e0b'
+  if (pct >= 60) return '#eab308'
   return 'rgb(var(--brand-500))'
 }
 
@@ -214,7 +227,7 @@ const tenantDomainCard = computed(() =>
               </div>
               <label class="label"><TermText path="settings.endpoint.domain" /></label>
               <p class="text-xs text-gray-400 mb-2">{{ t('settings.endpoint.description', { format: '{slug}.{region}.{domain}' }) }}</p>
-              <input v-model="baseDomain" class="input font-mono" :placeholder="t('settings.endpoint.placeholder')" autocomplete="off" spellcheck="false" />
+              <input v-model="baseDomain" class="input font-mono" :placeholder="t('settings.endpoint.placeholder')" :disabled="!canChangeSettings" autocomplete="off" spellcheck="false" data-testid="settings-base-domain" />
               <p v-if="baseDomain.trim()" class="text-xs text-gray-400 font-mono mt-2 break-all">
                 {{ t('settings.endpoint.example') }} <span style="color:rgb(var(--brand-500))">https://function.knative-region.{{ baseDomain.trim() }}</span>
               </p>
@@ -230,8 +243,8 @@ const tenantDomainCard = computed(() =>
               </div>
               <p class="text-xs text-gray-400 mb-3">{{ t('settings.registration.description') }}</p>
               <div class="flex items-center gap-3">
-                <button type="button" class="relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors"
-                  :class="registrationEnabled ? 'bg-brand-500' : 'bg-gray-700'" @click="registrationEnabled = !registrationEnabled">
+                <button type="button" role="switch" :aria-checked="registrationEnabled" class="relative inline-flex h-6 w-11 shrink-0 rounded-full border-2 border-transparent transition-colors"
+                  :class="toggleClass(registrationEnabled)" :disabled="!canChangeSettings" data-testid="settings-registration-toggle" @click="registrationEnabled = !registrationEnabled">
                   <span class="pointer-events-none inline-block h-5 w-5 rounded-full bg-white shadow-sm transition" :class="registrationEnabled ? 'translate-x-5' : 'translate-x-0'" />
                 </button>
                 <span class="text-sm" :class="registrationEnabled ? 'text-brand-500' : 'text-gray-400'">
@@ -242,16 +255,16 @@ const tenantDomainCard = computed(() =>
 
             <div class="card">
               <div class="flex items-center gap-2 mb-4 pb-3 border-b border-gray-800">
-                <Cpu class="w-4 h-4" style="color:#f59e0b" />
+                <Cpu class="w-4 h-4 text-brand-400" />
                 <h3 class="text-sm font-semibold text-gray-100">{{ t('settings.gpuDemo.section') }}</h3>
               </div>
               <p class="text-xs text-gray-400 mb-3">{{ t('settings.gpuDemo.description') }}</p>
               <div class="flex items-center gap-3">
-                <button type="button" class="relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors"
-                  :class="gpuDemoEnabled ? 'bg-amber-500' : 'bg-gray-700'" @click="gpuDemoEnabled = !gpuDemoEnabled">
+                <button type="button" role="switch" :aria-checked="gpuDemoEnabled" class="relative inline-flex h-6 w-11 shrink-0 rounded-full border-2 border-transparent transition-colors"
+                  :class="toggleClass(gpuDemoEnabled)" :disabled="!canChangeSettings" data-testid="settings-gpu-demo-toggle" @click="gpuDemoEnabled = !gpuDemoEnabled">
                   <span class="pointer-events-none inline-block h-5 w-5 rounded-full bg-white shadow-sm transition" :class="gpuDemoEnabled ? 'translate-x-5' : 'translate-x-0'" />
                 </button>
-                <span class="text-sm" :class="gpuDemoEnabled ? 'text-amber-400' : 'text-gray-400'">
+                <span class="text-sm" :class="gpuDemoEnabled ? 'text-brand-400' : 'text-gray-400'">
                   {{ gpuDemoEnabled ? t('settings.gpuDemo.enabled') : t('settings.gpuDemo.disabled') }}
                 </span>
               </div>
@@ -264,8 +277,8 @@ const tenantDomainCard = computed(() =>
               </div>
               <p class="text-xs text-gray-400 mb-3">{{ t('runtimes.customSetting.description') }}</p>
               <div class="flex items-center gap-3">
-                <button type="button" class="relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors"
-                  :class="customRuntimesEnabled ? 'bg-brand-500' : 'bg-gray-700'" @click="customRuntimesEnabled = !customRuntimesEnabled">
+                <button type="button" role="switch" :aria-checked="customRuntimesEnabled" class="relative inline-flex h-6 w-11 shrink-0 rounded-full border-2 border-transparent transition-colors"
+                  :class="toggleClass(customRuntimesEnabled)" :disabled="!canChangeSettings" data-testid="settings-custom-runtimes-toggle" @click="customRuntimesEnabled = !customRuntimesEnabled">
                   <span class="pointer-events-none inline-block h-5 w-5 rounded-full bg-white shadow-sm transition" :class="customRuntimesEnabled ? 'translate-x-5' : 'translate-x-0'" />
                 </button>
                 <span class="text-sm" :class="customRuntimesEnabled ? 'text-brand-500' : 'text-gray-400'">
@@ -281,8 +294,8 @@ const tenantDomainCard = computed(() =>
               </div>
               <p class="text-xs text-gray-400 mb-3">{{ t('network.platform.description') }}</p>
               <div class="flex items-center gap-3">
-                <button type="button" class="relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors"
-                  :class="internalCrossTenantGrants ? 'bg-brand-500' : 'bg-gray-700'" data-testid="settings-cross-tenant-toggle"
+                <button type="button" role="switch" :aria-checked="internalCrossTenantGrants" class="relative inline-flex h-6 w-11 shrink-0 rounded-full border-2 border-transparent transition-colors"
+                  :class="toggleClass(internalCrossTenantGrants)" :disabled="!canChangeSettings" data-testid="settings-cross-tenant-toggle"
                   @click="internalCrossTenantGrants = !internalCrossTenantGrants">
                   <span class="pointer-events-none inline-block h-5 w-5 rounded-full bg-white shadow-sm transition" :class="internalCrossTenantGrants ? 'translate-x-5' : 'translate-x-0'" />
                 </button>
@@ -292,14 +305,18 @@ const tenantDomainCard = computed(() =>
               </div>
             </div>
 
-            <DemoManager :status="demoStatus" @changed="refreshRegions" />
+            <DemoManager :status="demoStatus" :can-manage="canChangeSettings" @changed="refreshRegions" />
 
-            <div data-tour="settings-save">
+            <!-- Save: only with settings.manage (the tour's Save step drops without it) -->
+            <div v-if="canChangeSettings" data-tour="settings-save">
               <p v-if="error" class="text-sm text-red-400 mb-3">{{ error }}</p>
-              <button type="button" class="btn-primary w-full justify-center" :disabled="saving || !canChangeSettings" @click="submit">
+              <button type="button" class="btn-primary w-full justify-center" :disabled="saving" data-testid="settings-save" @click="submit">
                 {{ saving ? t('common.saving') : saved ? t('settings.saved') : t('common.save') }}
               </button>
             </div>
+            <p v-else class="text-xs text-gray-400" data-testid="settings-read-only">
+              {{ t('rbac.readOnlyNotice', { permission: 'settings.manage' }) }}
+            </p>
           </div>
 
           <!-- Organization domain (inside an organization) -->

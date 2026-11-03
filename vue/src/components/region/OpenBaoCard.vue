@@ -178,7 +178,7 @@ defineExpose({ load })
       <dt class="text-gray-500">{{ t('openBao.version') }}</dt>
       <dd class="font-mono text-gray-200" data-testid="openbao-version">
         {{ state.version ?? '—' }}
-        <span v-if="outdated" class="text-amber-300 font-sans"> · {{ t('openBao.outdated', { version: state.release_version }) }}</span>
+        <span v-if="outdated" class="text-yellow-300 font-sans"> · {{ t('openBao.outdated', { version: state.release_version }) }}</span>
       </dd>
       <dt class="text-gray-500">{{ t('openBao.releaseVersion') }}</dt>
       <dd class="font-mono text-gray-200">{{ state.release_version ?? '—' }}</dd>
@@ -209,7 +209,7 @@ defineExpose({ load })
     <p v-if="region?.is_demo" class="text-[11px] text-gray-400 italic">{{ t('openBao.demo') }}</p>
     <template v-else-if="state">
       <p v-if="!canManage" class="text-[11px] text-gray-400 italic">{{ t('openBao.readOnly') }}</p>
-      <p v-else-if="!esoReady && status === 'not_installed'" class="text-[11px] text-amber-300" data-testid="openbao-needs-eso">{{ t('openBao.needsEso') }}</p>
+      <p v-else-if="!esoReady && status === 'not_installed'" class="text-[11px] text-yellow-300" data-testid="openbao-needs-eso">{{ t('openBao.needsEso') }}</p>
     </template>
 
     <div v-if="canManage && !busyStatus" class="flex gap-2">

@@ -22,7 +22,7 @@ const inbox = ref(null)   // the trigger whose inbox is open
     <template v-else>
       <div>
         <div class="flex items-center gap-2">
-          <Zap class="w-4 h-4 text-amber-300" />
+          <Zap class="w-4 h-4 text-brand-300" />
           <h3 class="text-sm font-semibold text-gray-100">{{ t('triggers.title') }}</h3>
         </div>
         <p class="text-xs text-gray-400 mt-1 max-w-3xl">{{ t('triggers.intro') }}</p>

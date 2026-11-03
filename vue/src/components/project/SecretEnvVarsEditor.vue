@@ -381,13 +381,13 @@ defineExpose({ load })
           <template v-else>
             <!-- The region's own OpenBao, or its Kubernetes Secret -->
             <span
-              v-if="isOpenBao(row)" class="px-1.5 py-0.5 rounded-sm border bg-teal-900/20 border-teal-800/60 text-teal-300"
+              v-if="isOpenBao(row)" class="px-1.5 py-0.5 rounded-sm border bg-brand-900/20 border-brand-800/60 text-brand-300"
               :title="t('secretEnv.source.openbaoHint')" :data-testid="`secret-source-${row.name}`"
             >{{ t('secretEnv.source.openbao') }}</span>
             <span v-else class="text-gray-500" :data-testid="`secret-source-${row.name}`">{{ t('secretEnv.source.region') }}</span>
             <span
               v-if="row.stored_in === 'database'"
-              class="px-1.5 py-0.5 rounded-sm border bg-amber-900/20 border-amber-800/60 text-amber-300"
+              class="px-1.5 py-0.5 rounded-sm border bg-yellow-900/20 border-yellow-800/60 text-yellow-300"
               :title="t('secretEnv.source.databaseHint')" :data-testid="`secret-in-database-${row.name}`"
             >{{ t('secretEnv.source.database') }}</span>
             <span v-if="row.fingerprint" class="font-mono text-gray-600" :title="t('secretEnv.fingerprintHint')" :data-testid="`secret-fingerprint-${row.name}`">
@@ -399,7 +399,7 @@ defineExpose({ load })
           {{ row.sync.message }}
         </p>
         <p v-if="!row.pending && updatedLine(row)" class="text-[11px] text-gray-500 mt-0.5">{{ updatedLine(row) }}</p>
-        <p v-if="mismatch[row.name]" class="text-[11px] text-amber-300 mt-0.5" :data-testid="`secret-mismatch-${row.name}`">{{ t('secretEnv.mismatch') }}</p>
+        <p v-if="mismatch[row.name]" class="text-[11px] text-yellow-300 mt-0.5" :data-testid="`secret-mismatch-${row.name}`">{{ t('secretEnv.mismatch') }}</p>
         <p v-if="rowError[row.name]" class="text-[11px] text-red-400 mt-0.5" :data-testid="`secret-row-error-${row.name}`">{{ rowError[row.name] }}</p>
 
         <div v-if="replacing === row.name" class="flex gap-2 mt-2">
@@ -444,8 +444,8 @@ defineExpose({ load })
         <p class="text-xs text-gray-300 font-medium">{{ refEditing ? t('secretEnv.ref.editTitle', { name: refEditing }) : t('secretEnv.ref.title') }}</p>
         <p class="text-[11px] text-gray-500">{{ t('secretEnv.ref.hint') }}</p>
         <p v-if="stores === null" class="text-[11px] text-gray-400">{{ t('common.loading') }}</p>
-        <p v-else-if="storesError" class="text-[11px] text-amber-300" data-testid="secret-ref-stores-error">{{ storesError }}</p>
-        <p v-else-if="!stores.length" class="text-[11px] text-amber-300" data-testid="secret-ref-no-stores">{{ t('secretEnv.ref.noStores') }}</p>
+        <p v-else-if="storesError" class="text-[11px] text-yellow-300" data-testid="secret-ref-stores-error">{{ storesError }}</p>
+        <p v-else-if="!stores.length" class="text-[11px] text-yellow-300" data-testid="secret-ref-no-stores">{{ t('secretEnv.ref.noStores') }}</p>
         <div class="grid grid-cols-2 gap-2">
           <input
             v-model="refName" class="input font-mono text-xs" :placeholder="t('secretEnv.namePlaceholder')" :disabled="!!refEditing"

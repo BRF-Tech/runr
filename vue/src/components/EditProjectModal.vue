@@ -195,7 +195,7 @@ async function submit() {
                 v-for="n in 4" :key="n"
                 class="h-1.5 rounded-full transition-all duration-300"
                 :class="[n < step ? 'w-4' : n === step ? 'w-6' : 'w-1.5']"
-                :style="n <= step ? 'background-color:rgb(var(--brand-600))' : 'background-color:#374151'"
+                :style="n <= step ? 'background-color:rgb(var(--brand-600))' : 'background-color:rgb(var(--gray-700))'"
               />
             </div>
             <span class="text-xs text-gray-400">{{ t('edit.stepOf', { step }) }}</span>

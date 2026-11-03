@@ -31,14 +31,14 @@ async function stopImpersonation() {
 <template>
   <div
     v-if="isImpersonating"
-    class="bg-amber-600 text-white text-center text-xs py-1.5 px-4 font-medium flex items-center justify-center gap-2"
+    class="bg-yellow-500 text-black text-center text-xs py-1.5 px-4 font-medium flex items-center justify-center gap-2"
     role="status"
     data-testid="impersonation-bar"
   >
     <ShieldAlert class="w-3.5 h-3.5 shrink-0" />
     <span>{{ t('tenancy.impersonating', { name: tenantName }) }}</span>
     <button
-      class="underline hover:text-amber-200 transition-colors disabled:opacity-60"
+      class="underline hover:text-yellow-200 transition-colors disabled:opacity-60"
       :disabled="stopping"
       @click="stopImpersonation"
     >

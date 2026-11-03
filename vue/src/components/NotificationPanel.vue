@@ -23,8 +23,8 @@ function levelIcon(level) {
 
 function levelColor(level) {
   if (level === 'critical') return 'text-red-400'
-  if (level === 'warning')  return 'text-amber-400'
-  return 'text-blue-400'
+  if (level === 'warning')  return 'text-yellow-400'
+  return 'text-brand-400'
 }
 
 function timeAgo(dateStr) {
@@ -115,7 +115,7 @@ async function removeAll() {
           <p class="text-[10px] text-gray-400 mt-1">{{ timeAgo(n.created_at) }}</p>
         </div>
         <div class="flex items-center gap-1.5 shrink-0 mt-0.5">
-          <div v-if="!n.read_at" class="w-2 h-2 rounded-full bg-blue-500"></div>
+          <div v-if="!n.read_at" class="w-2 h-2 rounded-full bg-brand-500"></div>
           <button
             class="opacity-0 group-hover:opacity-100 text-gray-400 hover:text-red-400 transition-all"
             :title="t('notifications.delete')"

@@ -27,9 +27,9 @@ const comments = ref({})   // promotion id → decision comment
 const errors   = ref({})   // promotion id → refusal message
 
 const STATUS_CLASS = {
-  pending_approval: 'bg-amber-900/40 text-amber-300 border-amber-800/60',
-  approved:         'bg-blue-900/40 text-blue-300 border-blue-800/60',
-  deploying:        'bg-blue-900/40 text-blue-300 border-blue-800/60',
+  pending_approval: 'bg-yellow-900/40 text-yellow-300 border-yellow-800/60',
+  approved:         'bg-brand-900/40 text-brand-300 border-brand-800/60',
+  deploying:        'bg-brand-900/40 text-brand-300 border-brand-800/60',
   deployed:         'bg-emerald-900/40 text-emerald-300 border-emerald-800/60',
   failed:           'bg-red-900/40 text-red-300 border-red-800/60',
   rejected:         'bg-red-900/40 text-red-300 border-red-800/60',

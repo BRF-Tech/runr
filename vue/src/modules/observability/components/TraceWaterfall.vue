@@ -64,7 +64,7 @@ function toggle(row) {
           />
           <span
             v-for="(ev, i) in row.events" :key="i"
-            class="absolute top-0 w-0.5 h-5 bg-amber-300"
+            class="absolute top-0 w-0.5 h-5 bg-yellow-300"
             :style="{ left: Math.min(100, (ev.offset_ms / (trace.duration_ms || 1)) * 100) + '%' }"
             :title="ev.name"
           />
@@ -80,7 +80,7 @@ function toggle(row) {
         <span class="text-gray-400">{{ t('observability.tracing.detail.kind') }}: {{ selected.kind }}</span>
         <span class="text-gray-400">{{ t('observability.tracing.detail.duration') }}: {{ formatDuration(selected.duration_ms) }}</span>
         <span class="text-gray-500 font-mono">{{ selected.span_id }}</span>
-        <span v-if="selected.missing_parent" class="text-amber-300">{{ t('observability.tracing.detail.missingParent') }}</span>
+        <span v-if="selected.missing_parent" class="text-yellow-300">{{ t('observability.tracing.detail.missingParent') }}</span>
       </div>
 
       <div v-if="selected.isError" class="bg-red-900/20 border border-red-800/40 rounded-sm px-3 py-2 text-xs text-red-300" data-test="span-status-error">
@@ -102,7 +102,7 @@ function toggle(row) {
         <p class="label">{{ t('observability.tracing.detail.events') }}</p>
         <div v-for="(ev, i) in selected.events" :key="i" class="text-xs mb-2">
           <div class="flex gap-3">
-            <span class="font-mono" :class="ev.name === 'exception' ? 'text-red-300' : 'text-amber-300'">{{ ev.name }}</span>
+            <span class="font-mono" :class="ev.name === 'exception' ? 'text-red-300' : 'text-yellow-300'">{{ ev.name }}</span>
             <span class="text-gray-500 font-mono">+{{ formatDuration(ev.offset_ms) }}</span>
           </div>
           <div v-for="[k, v] in attributeList(ev.attributes)" :key="k" class="pl-3 font-mono text-gray-300 break-all">

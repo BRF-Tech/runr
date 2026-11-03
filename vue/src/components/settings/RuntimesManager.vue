@@ -43,8 +43,8 @@ function regionsLabel(r) {
 
 const sourceStyle = {
   builtin:  'border-gray-700/60 bg-gray-800/60 text-gray-300',
-  platform: 'border-sky-800/50 bg-sky-950/40 text-sky-400',
-  custom:   'border-violet-800/50 bg-violet-950/40 text-violet-400',
+  platform: 'border-brand-800/50 bg-brand-900/40 text-brand-400',
+  custom:   'border-brand-500/60 bg-transparent text-brand-400',
 }
 
 function onEditorSaved({ runtime, created }) {
@@ -100,7 +100,7 @@ function onEditorSaved({ runtime, created }) {
               <span class="font-mono text-[11px] text-gray-400">{{ r.id }}</span>
               <span class="px-1.5 py-0.5 rounded-sm border text-[10px] font-medium" :class="sourceStyle[r.source] ?? sourceStyle.builtin">{{ t(`runtimes.source.${r.source}`) }}</span>
               <span class="px-1.5 py-0.5 rounded-sm border border-gray-700/60 bg-gray-800/40 text-[10px] font-mono text-gray-300">{{ t(`runtimes.mode.${r.run_mode}`) }}</span>
-              <span v-if="r.compiled" class="px-1.5 py-0.5 rounded-sm border border-amber-800/50 bg-amber-950/30 text-[10px] font-medium text-amber-400">{{ t('runtimes.list.compiled') }}</span>
+              <span v-if="r.compiled" class="px-1.5 py-0.5 rounded-sm border border-brand-800/50 bg-brand-900/30 text-[10px] font-medium text-brand-300">{{ t('runtimes.list.compiled') }}</span>
             </div>
             <p v-if="r.description" class="text-xs text-gray-400 truncate max-w-[460px]">{{ r.description }}</p>
           </div>
@@ -111,9 +111,9 @@ function onEditorSaved({ runtime, created }) {
           <span
             v-for="v in r.versions" :key="v.version"
             class="px-1.5 py-0.5 rounded-sm text-[11px] font-mono border"
-            :class="v.is_default ? 'border-sky-700/50 bg-sky-950/40 text-sky-300' : 'border-gray-700/50 bg-gray-800/50 text-gray-400'"
+            :class="v.is_default ? 'border-brand-700/50 bg-brand-900/40 text-brand-300' : 'border-gray-700/50 bg-gray-800/50 text-gray-400'"
             :title="v.eol_at ? t('runtimes.list.eolAt', { date: v.eol_at }) : ''"
-          >{{ v.version }}<span v-if="v.built" class="ml-1 text-amber-400">⚒</span></span>
+          >{{ v.version }}<span v-if="v.built" class="ml-1 text-brand-400">⚒</span></span>
         </div>
 
         <!-- Regions + usage -->

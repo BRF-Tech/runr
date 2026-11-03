@@ -119,7 +119,7 @@ defineExpose({ load, showOwner, filters })
     </div>
 
     <div v-if="loading" class="flex justify-center py-6">
-      <div class="animate-spin h-4 w-4 border-2 border-sky-500 border-t-transparent rounded-full" />
+      <div class="animate-spin h-4 w-4 border-2 border-brand-500 border-t-transparent rounded-full" />
     </div>
     <p v-else-if="error" class="text-sm text-red-400" data-test="bills-error">{{ error }}</p>
     <div v-else-if="!bills.length" class="py-8 text-center" data-test="bills-empty">

@@ -99,8 +99,8 @@ const canUpgrade = () => {
       </div>
 
       <!-- Adopted info -->
-      <div v-if="isReady() && message && message.includes('Adopted')" class="bg-blue-500/10 border border-blue-500/20 rounded-md px-4 py-2.5">
-        <p class="text-xs text-blue-400">{{ t('settings.regionDetail.adopted') }}</p>
+      <div v-if="isReady() && message && message.includes('Adopted')" class="bg-brand-500/10 border border-brand-500/20 rounded-md px-4 py-2.5">
+        <p class="text-xs text-brand-400">{{ t('settings.regionDetail.adopted') }}</p>
       </div>
 
       <!-- Log box -->

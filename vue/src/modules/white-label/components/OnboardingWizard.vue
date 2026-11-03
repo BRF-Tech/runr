@@ -175,7 +175,7 @@ defineExpose({ steps, load })
         <p v-if="singleRegion" class="text-sm text-gray-400" data-test="onboarding-single-region">
           {{ t('whiteLabel.onboarding.singleRegion', { name: singleRegion.name }) }}
         </p>
-        <p v-else-if="!info?.region_assigned && !regions.length" class="text-sm text-amber-400" data-test="onboarding-no-region">
+        <p v-else-if="!info?.region_assigned && !regions.length" class="text-sm text-yellow-400" data-test="onboarding-no-region">
           {{ t('whiteLabel.onboarding.noRegion') }}
         </p>
       </div>

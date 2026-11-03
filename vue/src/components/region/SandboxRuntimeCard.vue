@@ -80,7 +80,7 @@ const notAdded = computed(() => {
     </p>
 
     <!-- Ready, but the last install's additions failed (the working install was kept) -->
-    <p v-if="notAdded" class="text-xs text-amber-300/90 bg-amber-900/20 rounded-sm px-3 py-2 font-mono whitespace-pre-wrap wrap-break-word">{{ notAdded }}</p>
+    <p v-if="notAdded" class="text-xs text-yellow-300/90 bg-yellow-900/20 rounded-sm px-3 py-2 font-mono whitespace-pre-wrap wrap-break-word">{{ notAdded }}</p>
 
     <!-- Ready: the install's step log stays available (collapsed) -->
     <details v-if="status === 'ready' && message" class="text-xs text-gray-400">

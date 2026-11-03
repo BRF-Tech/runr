@@ -137,10 +137,10 @@ defineExpose({ toggle, saveUrl, savePaid, form })
         <span v-if="showTenant && current.kind !== 'tenant' && current.tenant" class="text-xs text-gray-400">{{ current.tenant.name }}</span>
         <span v-if="showOwner && current.owner && current.kind === 'project'" class="text-xs text-gray-400" :data-test="`bill-owner-${bill.id}`">· {{ current.owner.name || current.owner.email }}</span>
         <span class="px-1.5 py-0.5 rounded-sm text-[10px] font-medium border"
-          :class="closed ? 'bg-emerald-900/40 border-emerald-800/40 text-emerald-400' : 'bg-amber-900/40 border-amber-800/40 text-amber-400'"
+          :class="closed ? 'bg-emerald-900/40 border-emerald-800/40 text-emerald-400' : 'bg-yellow-900/40 border-yellow-800/40 text-yellow-400'"
           :data-test="`bill-status-${bill.id}`">{{ t(`billing.status.${current.status}`) }}</span>
         <span v-if="closed" class="px-1.5 py-0.5 rounded-sm text-[10px] font-medium border"
-          :class="current.paid ? 'bg-sky-900/40 border-sky-800/40 text-sky-300' : 'bg-gray-800/40 border-gray-700/40 text-gray-400'"
+          :class="current.paid ? 'bg-brand-900/40 border-brand-800/40 text-brand-300' : 'bg-gray-800/40 border-gray-700/40 text-gray-400'"
           :data-test="`bill-paid-${bill.id}`">{{ current.paid ? t('billing.paid') : t('billing.unpaid') }}</span>
         <span v-if="current.source === 'legacy'" class="px-1.5 py-0.5 rounded-sm text-[10px] font-medium border bg-gray-800/40 border-gray-700/40 text-gray-400">{{ t('billing.bill.legacy') }}</span>
       </div>
@@ -159,7 +159,7 @@ defineExpose({ toggle, saveUrl, savePaid, form })
       </div>
 
       <div v-if="loading" class="flex justify-center py-3">
-        <div class="animate-spin h-4 w-4 border-2 border-sky-500 border-t-transparent rounded-full" />
+        <div class="animate-spin h-4 w-4 border-2 border-brand-500 border-t-transparent rounded-full" />
       </div>
       <p v-else-if="error" class="text-xs text-red-400">{{ error }}</p>
 

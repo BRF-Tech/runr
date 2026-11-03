@@ -168,7 +168,7 @@ watch(() => filters.name, () => {
               <td class="px-3 py-2 text-gray-300 whitespace-nowrap">{{ formatTime(e.created_at, locale) }}</td>
               <td class="px-3 py-2 text-gray-400 space-x-2">
                 <span v-if="e.runs_started" class="text-emerald-400">{{ t('workflows.events.runsStarted', { n: e.runs_started }) }}</span>
-                <span v-if="e.waits_resumed" class="text-violet-300">{{ t('workflows.events.waitsResumed', { n: e.waits_resumed }) }}</span>
+                <span v-if="e.waits_resumed" class="text-brand-300">{{ t('workflows.events.waitsResumed', { n: e.waits_resumed }) }}</span>
                 <span v-if="e.runs_cancelled" class="text-gray-400">{{ t('workflows.events.runsCancelled', { n: e.runs_cancelled }) }}</span>
               </td>
             </tr>
@@ -193,7 +193,7 @@ watch(() => filters.name, () => {
           <p v-if="!selected.runs.length" class="text-xs text-gray-400">{{ t('workflows.events.noRuns') }}</p>
           <ul v-else class="space-y-1">
             <li v-for="r in selected.runs" :key="r.id" class="flex items-center gap-2 text-xs">
-              <button type="button" class="font-mono text-sky-400 hover:text-sky-300" @click="openRun(r)">{{ shortId(r.id) }}</button>
+              <button type="button" class="font-mono text-brand-400 hover:text-brand-300" @click="openRun(r)">{{ shortId(r.id) }}</button>
               <span class="font-mono text-gray-300">{{ r.workflow?.name }}</span>
               <WorkflowStatusBadge :status="r.status" size="xs" />
             </li>

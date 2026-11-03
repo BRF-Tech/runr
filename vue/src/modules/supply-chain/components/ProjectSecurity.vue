@@ -129,7 +129,7 @@ onUnmounted(() => clearTimeout(timer))
     <div class="flex items-start justify-between gap-4">
       <div>
         <h3 class="text-sm font-semibold text-gray-100 flex items-center gap-2">
-          <ShieldCheck class="w-4 h-4 text-sky-400" /> {{ t('supplyChain.project.title') }}
+          <ShieldCheck class="w-4 h-4 text-brand-400" /> {{ t('supplyChain.project.title') }}
         </h3>
         <p class="text-xs text-gray-400 mt-1 max-w-3xl">{{ t('supplyChain.project.intro') }}</p>
       </div>
@@ -139,7 +139,7 @@ onUnmounted(() => clearTimeout(timer))
     </div>
 
     <div v-if="loading && !data" class="flex justify-center py-6">
-      <div class="animate-spin h-4 w-4 border-2 border-sky-500 border-t-transparent rounded-full" />
+      <div class="animate-spin h-4 w-4 border-2 border-brand-500 border-t-transparent rounded-full" />
     </div>
 
     <template v-else-if="data">
@@ -156,7 +156,7 @@ onUnmounted(() => clearTimeout(timer))
           </template>
         </span>
         <span v-if="policy?.require_signature" class="text-emerald-400">{{ t('supplyChain.project.signatureRequired') }}</span>
-        <span v-if="data.pipeline && data.pipeline.admission !== 'off'" class="text-sky-300">{{ t('supplyChain.project.admission', { mode: data.pipeline.admission }) }}</span>
+        <span v-if="data.pipeline && data.pipeline.admission !== 'off'" class="text-brand-300">{{ t('supplyChain.project.admission', { mode: data.pipeline.admission }) }}</span>
       </div>
 
       <!-- Versions -->
@@ -177,7 +177,7 @@ onUnmounted(() => clearTimeout(timer))
             </thead>
             <tbody>
               <tr v-for="v in versions" :key="v.id" class="border-t border-gray-800/80"
-                :class="selectedId === v.id ? 'bg-sky-950/30' : ''" :data-version-row="v.label">
+                :class="selectedId === v.id ? 'bg-brand-900/30' : ''" :data-version-row="v.label">
                 <td class="px-3 py-2 font-mono" style="color:rgb(var(--brand-500))">{{ v.label }}</td>
                 <template v-if="!v.applicable">
                   <td colspan="4" class="px-3 py-2 text-gray-500">{{ t('supplyChain.project.notApplicable') }}</td>
@@ -204,7 +204,7 @@ onUnmounted(() => clearTimeout(timer))
                   </template>
                   <td v-else colspan="3" class="px-3 py-2 text-gray-500">{{ t('supplyChain.project.noReport') }}</td>
                   <td class="px-3 py-2 text-right whitespace-nowrap">
-                    <button type="button" class="text-sky-400 hover:text-sky-300 mr-3" @click="loadDetail(v.id)">{{ t('supplyChain.project.details') }}</button>
+                    <button type="button" class="text-brand-400 hover:text-brand-300 mr-3" @click="loadDetail(v.id)">{{ t('supplyChain.project.details') }}</button>
                     <button type="button" class="text-gray-400 hover:text-gray-100 mr-3 disabled:opacity-40"
                       :disabled="busy[v.id] || ['pending', 'running'].includes(v.report?.status)" :title="t('supplyChain.project.rescan')"
                       @click="rescan(v)">
@@ -225,7 +225,7 @@ onUnmounted(() => clearTimeout(timer))
       <!-- Version detail -->
       <section v-if="selectedId" class="rounded-xl border border-gray-800 bg-gray-900/60 p-4 space-y-4" data-version-detail>
         <div v-if="detailLoading" class="flex justify-center py-4">
-          <div class="animate-spin h-4 w-4 border-2 border-sky-500 border-t-transparent rounded-full" />
+          <div class="animate-spin h-4 w-4 border-2 border-brand-500 border-t-transparent rounded-full" />
         </div>
         <template v-else-if="detail">
           <div class="flex items-start justify-between gap-3">
@@ -255,7 +255,7 @@ onUnmounted(() => clearTimeout(timer))
 
             <!-- Deploy decision -->
             <div v-if="detail.decision?.applicable" class="rounded-lg border px-3 py-2 text-xs"
-              :class="decisionBlocked ? 'border-red-800/60 bg-red-950/30 text-red-300' : decisionWarnings.length ? 'border-amber-800/50 bg-amber-950/20 text-amber-300' : 'border-emerald-800/50 bg-emerald-950/20 text-emerald-300'"
+              :class="decisionBlocked ? 'border-red-800/60 bg-red-950/30 text-red-300' : decisionWarnings.length ? 'border-yellow-800/50 bg-yellow-950/20 text-yellow-300' : 'border-emerald-800/50 bg-emerald-950/20 text-emerald-300'"
               data-decision>
               <p class="font-medium flex items-center gap-1.5">
                 <ShieldAlert v-if="decisionBlocked || decisionWarnings.length" class="w-3.5 h-3.5" />
@@ -334,8 +334,8 @@ onUnmounted(() => clearTimeout(timer))
       <section v-if="overrides.length">
         <h4 class="text-xs font-semibold text-gray-200 mb-2">{{ t('supplyChain.project.overrides') }}</h4>
         <div class="space-y-1.5">
-          <div v-for="o in overrides" :key="o.id" class="rounded-lg border border-amber-900/50 bg-amber-950/10 px-3 py-2 text-xs" :data-override="o.id">
-            <p class="text-amber-300">{{ o.reason }}</p>
+          <div v-for="o in overrides" :key="o.id" class="rounded-lg border border-yellow-900/50 bg-yellow-950/10 px-3 py-2 text-xs" :data-override="o.id">
+            <p class="text-yellow-300">{{ o.reason }}</p>
             <p class="text-gray-500 mt-0.5">
               {{ t('supplyChain.project.overrideBy', { user: o.username ?? '—', date: fmt(o.created_at) }) }}
               · {{ (o.violations ?? []).map(v => v.rule).join(', ') }}

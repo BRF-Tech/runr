@@ -54,7 +54,7 @@ const stateClasses = computed(() => {
   if (!s) return ''
   if (s.state === 'overdue') return levelClasses('zero-day')
   if (s.state === 'patch_available') return levelClasses(s.level)
-  if (s.state === 'pinned') return 'bg-blue-900/30 border-blue-800/50 text-blue-400'
+  if (s.state === 'pinned') return 'bg-brand-900/30 border-brand-800/50 text-brand-400'
   return 'bg-emerald-900/30 border-emerald-800/50 text-emerald-400'
 })
 
@@ -175,12 +175,12 @@ defineExpose({ load, apply, pin, unpin, data })
 
           <p v-if="!state.deployed" class="text-xs text-gray-400">{{ t('runtimePatches.dialog.notDeployed') }}</p>
 
-          <div v-if="state.deadline_at" class="text-xs" :class="deadlinePassed(state.deadline_at) ? 'text-red-400' : 'text-amber-400'" data-test="runtime-patch-deadline">
+          <div v-if="state.deadline_at" class="text-xs" :class="deadlinePassed(state.deadline_at) ? 'text-red-400' : 'text-yellow-400'" data-test="runtime-patch-deadline">
             {{ t('runtimePatches.dialog.deadline', { date: fmt(state.deadline_at) }) }} —
             {{ data.auto_migrate ? t('runtimePatches.dialog.deadlineAuto') : t('runtimePatches.dialog.deadlineManual') }}
           </div>
 
-          <div v-if="state.pin" class="text-xs" :class="state.pin.available ? 'text-blue-400' : 'text-amber-400'" data-test="runtime-patch-pin">
+          <div v-if="state.pin" class="text-xs" :class="state.pin.available ? 'text-brand-400' : 'text-yellow-400'" data-test="runtime-patch-pin">
             <Pin class="w-3 h-3 inline -mt-0.5" />
             {{ t('runtimePatches.badge.pinned', { tag: state.pin.tag || state.pin.id || state.pin.digest }) }}
             <span v-if="!state.pin.available"> — {{ t('runtimePatches.dialog.pinGone') }}</span>
@@ -203,9 +203,9 @@ defineExpose({ load, apply, pin, unpin, data })
                 <span class="font-mono text-sm text-gray-100">{{ patch.tag }}</span>
                 <span class="text-[11px] font-medium px-2 py-0.5 rounded-md border leading-none" :class="levelClasses(patch.level)" data-test="runtime-patch-level">{{ levelLabel(patch.level) }}</span>
                 <span v-if="patch.id === currentId" class="text-[11px] px-2 py-0.5 rounded-md border border-emerald-800/50 bg-emerald-900/30 text-emerald-400 leading-none">{{ t('runtimePatches.dialog.running') }}</span>
-                <span v-if="patch.id === pinId" class="text-[11px] px-2 py-0.5 rounded-md border border-blue-800/50 bg-blue-900/30 text-blue-400 leading-none">{{ t('runtimePatches.dialog.pinnedHere') }}</span>
+                <span v-if="patch.id === pinId" class="text-[11px] px-2 py-0.5 rounded-md border border-brand-800/50 bg-brand-900/30 text-brand-400 leading-none">{{ t('runtimePatches.dialog.pinnedHere') }}</span>
                 <span class="text-xs text-gray-400">{{ t('runtimePatches.dialog.published', { date: fmt(patch.published_at) }) }}</span>
-                <span v-if="patch.deadline_at" class="text-xs" :class="deadlinePassed(patch.deadline_at) ? 'text-red-400' : 'text-amber-400'">{{ t('runtimePatches.dialog.deadline', { date: fmt(patch.deadline_at) }) }}</span>
+                <span v-if="patch.deadline_at" class="text-xs" :class="deadlinePassed(patch.deadline_at) ? 'text-red-400' : 'text-yellow-400'">{{ t('runtimePatches.dialog.deadline', { date: fmt(patch.deadline_at) }) }}</span>
                 <button
                   v-if="canDeploy && patch.id !== pinId"
                   type="button"
@@ -236,7 +236,7 @@ defineExpose({ load, apply, pin, unpin, data })
               <span class="font-mono text-gray-300">{{ fmt(m.created_at) }}</span>
               <span>{{ t(`runtimePatches.dialog.trigger.${m.trigger}`) }}</span>
               <span class="font-mono">{{ patches.find(p => p.id === m.patch_id)?.tag ?? m.patch_id }}</span>
-              <span :class="{ 'text-emerald-400': m.status === 'succeeded', 'text-red-400': m.status === 'failed', 'text-amber-400': m.status === 'rolled_back' }">{{ t(`runtimePatches.dialog.migrationStatus.${m.status}`) }}</span>
+              <span :class="{ 'text-emerald-400': m.status === 'succeeded', 'text-red-400': m.status === 'failed', 'text-yellow-400': m.status === 'rolled_back' }">{{ t(`runtimePatches.dialog.migrationStatus.${m.status}`) }}</span>
               <span v-if="m.message" class="truncate max-w-md" :title="m.message">{{ m.message }}</span>
             </li>
           </ul>

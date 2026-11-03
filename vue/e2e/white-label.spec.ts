@@ -69,6 +69,11 @@ const brandVars = (page: Page, keys: string[]) => page.evaluate((list) => {
   return list.map(k => style.getPropertyValue(`--brand-${k}`).trim())
 }, keys)
 
+const grayVars = (page: Page, keys: string[]) => page.evaluate((list) => {
+  const style = getComputedStyle(document.documentElement)
+  return list.map(k => style.getPropertyValue(`--gray-${k}`).trim())
+}, keys)
+
 
 test.describe('White-label branding and signup', () => {
   test.skip(({ e2eMode }) => e2eMode === 'stack', 'needs the mocked API')
@@ -102,7 +107,8 @@ test.describe('White-label branding and signup', () => {
     await page.goto('/login')
 
     await expect(page).toHaveTitle('RunR')
-    await expect(byTest(page, 'login-brand').locator('[data-test="wordmark-runr"]')).toContainText('RunR')
+    // the runr.sh logo, an image since it is the console's wordmark
+    await expect(byTest(page, 'login-brand').locator('[data-test="wordmark-runr"]')).toHaveAttribute('alt', 'RunR serverless')
     await expect(byTest(page, 'login-credit')).toHaveText('RunR by BRF Teknoloji')
     await expect(byTest(page, 'login-powered-by')).toHaveCount(0)
     await expect(page.locator('link[rel~="icon"]')).toHaveAttribute('href', '/favicon.svg')
@@ -202,6 +208,78 @@ test.describe('White-label branding and signup', () => {
     // the console follows the saved branding right away
     await expect(page).toHaveTitle('Acme Functions')
     expect(await brandVars(page, ['600'])).toEqual(['0 123 192'])
+  })
+
+  test('the theme tones: RunR\'s by default, the Ocean preset brings the navy dark theme back', async ({ page, auth, mockApi }) => {
+    const admin = {
+      branding: runrDefault(),
+      stored: {},
+      defaults: { product_name: 'RunR', company_name: 'BRF Teknoloji', primary_color: '#f97316', accent_color: '#e63946', powered_by: true, dark_color: '#0a0a0a', light_color: '#fffcf8', default_theme: 'dark' },
+      tenant_overrides_enabled: false,
+    }
+    useBranding(mockApi, runrDefault())
+    mockApi.on('GET', '/admin/branding', () => ({ body: admin }))
+    mockApi.on('PUT', '/admin/branding', req => ({
+      body: { ...admin, branding: { ...runrDefault(), ...req.body, palette: OCEAN }, stored: req.body },
+    }))
+    await auth.signIn()
+    await page.goto('/settings?tab=branding')
+
+    // RunR's own: the black, neutral dark theme
+    expect(await grayVars(page, ['950', '900'])).toEqual(['10 10 10', '23 23 23'])
+    await expect(byTest(page, 'dark-swatch-950')).toHaveAttribute('title', '#0a0a0a')
+    await expect(byTest(page, 'light-swatch-900')).toHaveAttribute('title', '#fef5ef')
+
+    await byTest(page, 'branding-preset').selectOption('ocean')
+    await expect(byTest(page, 'field-dark_color')).toHaveValue('#091b4e')
+    await byTest(page, 'field-default_theme').selectOption('light')
+
+    const saved = mockApi.waitFor('PUT', '/admin/branding')
+    await byTest(page, 'branding-save').click()
+    const body = (await saved).body
+    expect(body.dark_color).toBe('#091b4e')
+    expect(body.dark_scale['900']).toBe('#0f2460')
+    expect(body.default_theme).toBe('light')
+
+    // the console follows: the navy tones on the dark theme, the default theme for a user who never picked one
+    await expect.poll(() => page.evaluate(() => document.documentElement.dataset.theme)).toBe('light')
+    await page.evaluate(() => { document.documentElement.dataset.theme = 'fulldark' })
+    expect(await grayVars(page, ['950', '900', '600'])).toEqual(['9 27 78', '15 36 96', '175 195 225'])
+  })
+
+  test('a cached navy branding paints before the app starts, with its default theme', async ({ page, auth, mockApi }) => {
+    const navy = {
+      ...rebranded(),
+      dark_color: '#091b4e',
+      dark_scale: { 950: '9 27 78', 900: '15 36 96', 800: '22 46 114', 700: '30 59 133', 600: '175 195 225', 500: '205 218 240', 400: '222 232 248', 300: '235 240 250', 200: '242 245 252', 100: '248 250 254', 50: '252 253 255' },
+      default_theme: 'light',
+    }
+    useBranding(mockApi, navy)
+    await auth.signIn()
+    await page.goto('/projects')
+    await expect.poll(() => page.evaluate(() => document.documentElement.dataset.theme)).toBe('light')
+
+    // the next page load: the pre-paint script applies the cached copy before any request answers
+    await page.route('**/api/branding**', () => { /* never answers */ })
+    await page.reload({ waitUntil: 'commit' })
+    await page.waitForFunction(() => document.getElementById('runr-branding'))
+    const early = await page.evaluate(() => ({
+      theme: document.documentElement.dataset.theme,
+      css: document.getElementById('runr-branding')?.textContent ?? '',
+      brand: getComputedStyle(document.documentElement).getPropertyValue('--brand-600').trim(),
+    }))
+    expect(early.theme).toBe('light')
+    expect(early.css).toContain('--gray-950: 9 27 78;')
+    expect(early.brand).toBe('0 123 192')
+  })
+
+  test('the user\'s own theme wins over the branding default', async ({ page, auth, mockApi }) => {
+    useBranding(mockApi, { ...runrDefault(), default_theme: 'light' })
+    await auth.signIn()
+    await page.addInitScript(() => { localStorage.setItem('theme', 'fulldark'); localStorage.setItem('theme_chosen', '1') })
+    await page.goto('/projects')
+    await expect(page.locator('[data-tour="user-menu-btn"]')).toBeVisible()
+    expect(await page.evaluate(() => document.documentElement.dataset.theme)).toBe('fulldark')
   })
 
   test('the branding and signup tabs need branding.manage / signup.manage', async ({ page, auth, mockApi }) => {

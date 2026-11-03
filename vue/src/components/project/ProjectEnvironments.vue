@@ -145,7 +145,7 @@ async function onPromoted(promotion) {
     </div>
 
     <div v-if="loading" class="flex items-center justify-center py-12">
-      <div class="animate-spin h-6 w-6 border-2 border-sky-500 border-t-transparent rounded-full" />
+      <div class="animate-spin h-6 w-6 border-2 border-brand-500 border-t-transparent rounded-full" />
     </div>
     <div v-else-if="loadError" class="bg-red-900/20 border border-red-800/40 rounded-md px-4 py-3">
       <p class="text-xs text-red-400">{{ loadError }}</p>
@@ -159,7 +159,7 @@ async function onPromoted(promotion) {
             <div class="flex items-center gap-2">
               <span class="font-semibold text-gray-100">{{ env.name }}</span>
               <span v-if="env.is_primary" class="text-[10px] px-1.5 py-0.5 rounded-sm bg-gray-800 text-gray-400 border border-gray-700">{{ t('environments.primary') }}</span>
-              <span v-if="env.requires_approval" class="flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-sm bg-amber-900/30 text-amber-300 border border-amber-800/50" :title="t('environments.approvalRequiredHint')">
+              <span v-if="env.requires_approval" class="flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-sm bg-yellow-900/30 text-yellow-300 border border-yellow-800/50" :title="t('environments.approvalRequiredHint')">
                 <ShieldCheck class="w-3 h-3" />{{ t('environments.approvalRequired') }}
               </span>
             </div>

@@ -285,7 +285,7 @@
   }
   input::placeholder,
   textarea::placeholder {
-    color: var(--color-gray-400);
+    color: var(--placeholder-color-weak);
   }
   button:not(:disabled),
   [role='button']:not(:disabled) {

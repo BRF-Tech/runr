@@ -66,7 +66,7 @@ const names = computed(() => Object.keys(files.value))
         <div v-if="names.length > 1" class="flex gap-1 px-2 py-1.5 border-b border-gray-800 bg-gray-900/60">
           <button v-for="n in names" :key="n" type="button"
             class="px-2 py-0.5 rounded-sm text-[11px] font-mono"
-            :class="active === n ? 'bg-sky-900/50 text-sky-300' : 'text-gray-400 hover:text-gray-100'"
+            :class="active === n ? 'bg-brand-900/50 text-brand-300' : 'text-gray-400 hover:text-gray-100'"
             @click="active = n">{{ n }}</button>
         </div>
         <p v-else class="px-3 py-1 text-[11px] font-mono text-gray-400 border-b border-gray-800 bg-gray-900/60">{{ active }}</p>

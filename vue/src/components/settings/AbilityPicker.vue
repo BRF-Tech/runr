@@ -44,8 +44,8 @@ function toggle(key) {
     <div v-if="allowFullAccess" class="flex gap-3 mb-3">
       <button type="button" data-tour="tokens-full-access"
         class="flex items-center gap-2 px-3 py-2 rounded-lg border text-xs font-medium transition-all cursor-pointer"
-        :class="fullAccess ? 'border-emerald-800/50 text-emerald-400' : 'border-gray-700 text-gray-400 hover:border-gray-600'"
-        :style="fullAccess ? 'background:rgb(16 185 129/0.1)' : ''"
+        :class="fullAccess ? 'border-brand-500/50 text-brand-400' : 'border-gray-700 text-gray-400 hover:border-gray-600'"
+        :style="fullAccess ? 'background:rgb(var(--brand-500)/0.1)' : ''"
         @click="emit('update:fullAccess', true)"
       >
         <ShieldCheck class="w-4 h-4" />
@@ -53,7 +53,7 @@ function toggle(key) {
       </button>
       <button type="button" data-tour="tokens-custom-access"
         class="flex items-center gap-2 px-3 py-2 rounded-lg border text-xs font-medium transition-all cursor-pointer"
-        :class="!fullAccess ? 'border-brand-500/50 text-brand-500' : 'border-gray-700 text-gray-400 hover:border-gray-600'"
+        :class="!fullAccess ? 'border-brand-500/50 text-brand-400' : 'border-gray-700 text-gray-400 hover:border-gray-600'"
         :style="!fullAccess ? 'background:rgb(var(--brand-500)/0.1)' : ''"
         @click="emit('update:fullAccess', false)"
       >

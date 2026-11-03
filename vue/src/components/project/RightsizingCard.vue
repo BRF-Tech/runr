@@ -40,6 +40,8 @@ const freed = computed(() => freedText(t, recommendation.value))
 const evidence = computed(() => recommendation.value?.evidence ?? {})
 
 async function load() {
+  // GET …/rightsizing needs metrics.view on the project: without it nothing is asked (a 403)
+  if (!perms.can('metrics.view', props.project.id)) return
   try {
     const { data } = await rightsizingApi.forProject(props.project.id)
     // an older API without rightsizing answers 404; the mocked API an empty list
@@ -90,24 +92,24 @@ defineExpose({ load, apply, dismiss })
 </script>
 
 <template>
-  <div v-if="open" class="mx-6 mt-3 rounded-xl border border-sky-900/60 bg-sky-950/20 px-4 py-3 space-y-2" data-test="rightsizing-card" data-tour="rightsizing-card">
+  <div v-if="open" class="mx-6 mt-3 rounded-xl border border-brand-900/60 bg-brand-900/20 px-4 py-3 space-y-2" data-test="rightsizing-card" data-tour="rightsizing-card">
     <div class="flex flex-wrap items-start justify-between gap-3">
       <div class="flex items-start gap-3 min-w-0">
-        <Gauge class="w-5 h-5 text-sky-400 shrink-0 mt-0.5" />
+        <Gauge class="w-5 h-5 text-brand-400 shrink-0 mt-0.5" />
         <div class="space-y-1 min-w-0">
-          <p class="text-sm font-medium text-sky-200" data-test="rightsizing-title">{{ title }}</p>
+          <p class="text-sm font-medium text-brand-300" data-test="rightsizing-title">{{ title }}</p>
           <p v-for="(line, i) in lines" :key="i" class="text-xs text-gray-300" data-test="rightsizing-line">{{ line }}</p>
           <p class="text-[11px] text-gray-400" data-test="rightsizing-impact">
             <span v-if="freed">{{ freed }}</span>
             <span v-if="freed && savings"> · </span>
             <span v-if="savings" data-test="rightsizing-savings">{{ savings }}</span>
           </p>
-          <p v-if="recommendation.blocked" class="text-[11px] text-amber-400" data-test="rightsizing-blocked">
+          <p v-if="recommendation.blocked" class="text-[11px] text-yellow-400" data-test="rightsizing-blocked">
             {{ t('rightsizing.blocked', { message: recommendation.blocked.message }) }}
           </p>
         </div>
       </div>
-      <div v-if="canDecide" class="flex flex-wrap items-center gap-2">
+      <div v-if="canDecide" class="flex flex-wrap items-center gap-2" data-tour="rightsizing-actions">
         <button type="button" class="btn-primary text-xs" :disabled="busy || !!recommendation.blocked" data-test="rightsizing-apply" @click="apply">
           {{ t('rightsizing.apply') }}
         </button>
@@ -147,11 +149,11 @@ defineExpose({ load, apply, dismiss })
       </div>
       <div v-if="evidence.oom_kills" class="flex justify-between gap-3">
         <dt class="text-gray-400">{{ t('rightsizing.evidence.oomKills') }}</dt>
-        <dd class="font-mono text-amber-400">{{ evidence.oom_kills }}</dd>
+        <dd class="font-mono text-yellow-400">{{ evidence.oom_kills }}</dd>
       </div>
       <div v-if="evidence.throttled_ratio" class="flex justify-between gap-3">
         <dt class="text-gray-400">{{ t('rightsizing.evidence.throttled') }}</dt>
-        <dd class="font-mono text-amber-400">{{ t('rightsizing.evidence.throttledValue', { percent: Math.round(evidence.throttled_ratio * 1000) / 10 }) }}</dd>
+        <dd class="font-mono text-yellow-400">{{ t('rightsizing.evidence.throttledValue', { percent: Math.round(evidence.throttled_ratio * 1000) / 10 }) }}</dd>
       </div>
       <p class="sm:col-span-2 text-gray-500">
         {{ t('rightsizing.evidence.rule', { memoryMargin: evidence.memory_margin ?? 1.3, cpuMargin: evidence.cpu_margin ?? 1.3 }) }}
@@ -161,7 +163,7 @@ defineExpose({ load, apply, dismiss })
   </div>
 
   <div v-else-if="pendingDeploy" class="mx-6 mt-3 rounded-xl border border-gray-800 bg-gray-900 px-4 py-2 flex items-center gap-2 text-xs text-gray-300" data-test="rightsizing-pending">
-    <Gauge class="w-4 h-4 text-sky-400 shrink-0" />
+    <Gauge class="w-4 h-4 text-brand-400 shrink-0" />
     {{ t('rightsizing.pendingDeploy') }}
     <span class="font-mono text-gray-400">{{ sizeText(recommendation?.recommended) }}</span>
   </div>

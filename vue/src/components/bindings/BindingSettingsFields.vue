@@ -109,7 +109,7 @@ function removeRow(index) {
           <X class="w-3.5 h-3.5" />
         </button>
       </div>
-      <button type="button" class="text-xs text-sky-400 hover:text-sky-300 flex items-center gap-1" data-action="add-value" @click="addRow">
+      <button type="button" class="text-xs text-brand-400 hover:text-brand-300 flex items-center gap-1" data-action="add-value" @click="addRow">
         <Plus class="w-3 h-3" /> {{ t('bindings.external.addValue') }}
       </button>
     </div>

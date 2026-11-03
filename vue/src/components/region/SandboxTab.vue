@@ -75,7 +75,7 @@ const mappingFields = ['xaas', 'faas', 'caas', 'build']
       <p v-if="kataBlocked && kataStatus === 'ready'" class="text-xs text-red-300/90 bg-red-900/20 rounded-sm px-3 py-2">
         {{ t('settings.regionDetail.sandbox.kata.kvmMissingInstalled') }}
       </p>
-      <p v-else-if="kataBlocked" class="text-xs text-amber-300/90 bg-amber-900/20 rounded-sm px-3 py-2">
+      <p v-else-if="kataBlocked" class="text-xs text-yellow-300/90 bg-yellow-900/20 rounded-sm px-3 py-2">
         {{ t('settings.regionDetail.sandbox.kata.kvmMissing') }}
       </p>
       <p v-else-if="kvm && kvm.state === 'mixed'" class="text-[11px] text-gray-400">
@@ -109,7 +109,7 @@ const mappingFields = ['xaas', 'faas', 'caas', 'build']
           </div>
           <p class="text-[11px] text-gray-400">{{ t('settings.regionDetail.sandbox.kata.fcHint') }}</p>
         </div>
-        <p class="text-[11px] text-amber-400/90">
+        <p class="text-[11px] text-yellow-400/90">
           {{ t('settings.regionDetail.sandbox.kata.installWarning') }}
         </p>
       </template>
@@ -136,7 +136,7 @@ const mappingFields = ['xaas', 'faas', 'caas', 'build']
               <span class="text-xs text-gray-400">GiB</span>
             </div>
           </div>
-          <p class="text-[11px] text-amber-400/90">{{ t('settings.regionDetail.sandbox.kata.installWarning') }}</p>
+          <p class="text-[11px] text-yellow-400/90">{{ t('settings.regionDetail.sandbox.kata.installWarning') }}</p>
           <button type="button" class="btn-primary text-xs" :disabled="installing.kata || !addingShims" data-testid="kata-add"
             @click="installRuntime('kata')">
             {{ t('settings.regionDetail.sandbox.kata.addBtn') }}

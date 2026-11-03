@@ -6,6 +6,8 @@ export default {
     title:  'API gateways',
     intro:  'Offer your functions as an API: routes ask for an API key or a JWT, consumers get keys and plans with rate limits and quotas, and RunR measures their calls for your invoicing system.',
     empty:  'No gateways yet. A project created with the gateway endpoint gets one in its region, or add one for a region below.',
+    emptyReadOnly: 'You have no gateway. Adding one needs the permission to change projects.',
+    readOnly: 'You can see this gateway but not change it: that needs the permission to change projects.',
     newGateway: {
       label:   'Gateway in another region',
       region:  'Region',
@@ -66,6 +68,7 @@ export default {
       },
       saved: 'Route {path} saved. The region applies it within seconds.',
       createdClosed: 'The route is created with its check: it is never public, not even for a moment.',
+      readOnly: 'Changing this route needs the permission to change the project {project}.',
     },
 
     consumers: {

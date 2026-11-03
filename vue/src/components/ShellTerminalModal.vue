@@ -2,7 +2,7 @@
 import { ref, onMounted, onUnmounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { projectsApi } from '@/api/projects'
-import { brandColor } from '@/utils/brandColor'
+import { brandColor, surfaceColor } from '@/utils/brandColor'
 
 const { t } = useI18n()
 
@@ -97,27 +97,29 @@ async function init() {
     fontFamily:  '"JetBrains Mono", "Cascadia Code", "Fira Code", ui-monospace, monospace',
     scrollback:  5000,
     theme: {
-      background:          '#030712',
-      foreground:          '#e2e8f0',
+      // The dark theme's tones and the brand; the ANSI colours (blue, cyan, magenta …) stay
+      // what the programs in the shell ask for
+      background:          surfaceColor('dark', 950),
+      foreground:          surfaceColor('dark', 300),
       cursor:              brandColor(400),
-      cursorAccent:        '#030712',
+      cursorAccent:        surfaceColor('dark', 950),
       selectionBackground: brandColor(700, 0.35),
-      black:               '#1e293b',
+      black:               surfaceColor('dark', 800),
       red:                 '#f87171',
       green:               '#4ade80',
       yellow:              '#facc15',
       blue:                '#60a5fa',
       magenta:             '#c084fc',
       cyan:                '#22d3ee',
-      white:               '#e2e8f0',
-      brightBlack:         '#475569',
+      white:               surfaceColor('dark', 300),
+      brightBlack:         surfaceColor('dark', 700),
       brightRed:           '#fca5a5',
       brightGreen:         '#86efac',
       brightYellow:        '#fde047',
       brightBlue:          '#93c5fd',
       brightMagenta:       '#d8b4fe',
       brightCyan:          '#67e8f9',
-      brightWhite:         '#f8fafc',
+      brightWhite:         surfaceColor('dark', 50),
     },
   })
 
@@ -253,13 +255,13 @@ onUnmounted(() => {
 
         <div class="flex items-center gap-3 shrink-0">
           <span class="inline-flex items-center gap-1.5 text-[10px] font-mono" :class="{
-            'text-amber-400':   ['connecting', 'searching', 'waking_up', 'starting'].includes(status),
+            'text-yellow-400':   ['connecting', 'searching', 'waking_up', 'starting'].includes(status),
             'text-emerald-400': status === 'connected',
             'text-red-400':     status === 'error',
             'text-gray-400':    status === 'closed',
           }">
             <span class="w-1.5 h-1.5 rounded-full" :class="{
-              'bg-amber-400 animate-pulse': ['connecting', 'searching', 'waking_up', 'starting'].includes(status),
+              'bg-yellow-400 animate-pulse': ['connecting', 'searching', 'waking_up', 'starting'].includes(status),
               'bg-emerald-400':             status === 'connected',
               'bg-red-400':                 status === 'error',
               'bg-gray-600':                status === 'closed',

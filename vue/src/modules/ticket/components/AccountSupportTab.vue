@@ -20,8 +20,10 @@ const route  = useRoute()
 const router = useRouter()
 const tutorialStore = useTutorialStore()
 const createModalRef = ref(null)
+// The tour goes on in the new-ticket form for a user who has its button (tickets.create)
 const { start: startTutorial } = createTutorial(accountSupportSteps, {
   onComplete: () => {
+    if (!canCreate.value) return
     showCreate.value = true
     setTimeout(() => createModalRef.value?.startTutorial(), 400)
   },
@@ -33,9 +35,13 @@ watch(() => tutorialStore.restartCounter, () => { nextTick(() => startTutorial()
 // permissions are loaded — the staff view waits for them.
 const perms      = usePermissionsStore()
 const isStaff    = computed(() => auth.isAdmin || (perms.loaded && perms.can('tickets.manage')))
+// Opening a ticket (POST /support-tickets) needs tickets.create; the staff answer tickets instead
+const canCreate  = computed(() => !isStaff.value && perms.can('tickets.create'))
 // Tickets of several tenants (platform administrators outside a tenant) carry the tenant
 const showTenant = computed(() => isStaff.value && tickets.value.some(tk => tk.tenant_name))
 const loading    = ref(true)
+// The list could not be loaded: 'forbidden' (403, the role may not see tickets) or 'failed'
+const loadError  = ref(null)
 const tickets    = ref([])
 const stats      = ref({ open: 0, in_progress: 0, resolved: 0, total: 0 })
 const showCreate = ref(false)
@@ -48,11 +54,11 @@ const totalPages = ref(1)
 const priorityClass = {
   low:      'bg-gray-700 text-gray-300',
   medium:   'bg-yellow-900/60 text-yellow-300',
-  high:     'bg-orange-900/60 text-orange-300',
-  critical: 'bg-red-900/60 text-red-300',
+  high:     'bg-red-900/40 text-red-300',
+  critical: 'bg-red-700 text-white',
 }
 const statusClass = {
-  open:        'bg-blue-900/60 text-blue-300',
+  open:        'bg-brand-900/60 text-brand-300',
   in_progress: 'bg-yellow-900/60 text-yellow-300',
   resolved:    'bg-green-900/60 text-green-300',
   closed:      'bg-gray-700 text-gray-300',
@@ -85,14 +91,19 @@ async function fetchList() {
 async function load() {
   loading.value = true
   try {
-    await fetchList()
-  } catch { /* the list keeps what it showed */ } finally {
+    if (await fetchList()) loadError.value = null
+  } catch (e) {
+    // Not an empty list: the page says why there are no tickets to show
+    loadError.value = e?.response?.status === 403 ? 'forbidden' : 'failed'
+  } finally {
     loading.value = false
   }
 }
 
 async function silentLoad() {
-  try { await fetchList() } catch { /* the next broadcast or reload tries again */ }
+  try {
+    if (await fetchList()) loadError.value = null
+  } catch { /* the next broadcast or reload tries again */ }
 }
 
 function onFilter(status) { filter.value = filter.value === status ? '' : status; page.value = 1; load() }
@@ -180,15 +191,18 @@ onMounted(async () => {
             <input v-model="search" class="input pl-9 text-xs h-8" :placeholder="t('adminTickets.searchPlaceholder')"
               @keyup.enter="onSearch()" />
           </div>
-          <button v-if="!isStaff" data-tour="support-new-ticket" class="btn-primary text-xs gap-1.5 h-8" @click="showCreate = true">
+          <button v-if="canCreate" data-tour="support-new-ticket" class="btn-primary text-xs gap-1.5 h-8" @click="showCreate = true">
             <Plus class="w-3.5 h-3.5" />{{ t('account.newTicket') }}
           </button>
         </div>
       </div>
 
       <div v-if="loading" class="py-12 text-center text-gray-400 text-sm">{{ t('common.loading') }}</div>
+      <div v-else-if="loadError" class="py-12 text-center text-sm" :class="loadError === 'forbidden' ? 'text-gray-400' : 'text-red-400'" data-state="tickets-error">
+        {{ loadError === 'forbidden' ? t('account.ticketsNoAccess') : t('account.ticketsLoadFailed') }}
+      </div>
       <div v-else-if="!tickets.length" class="py-12 text-center text-gray-500 text-sm">
-        {{ isStaff ? t('adminTickets.noTickets') : t('account.noTickets') }}
+        {{ isStaff ? t('adminTickets.noTickets') : canCreate ? t('account.noTickets') : t('account.noTicketsReadOnly') }}
       </div>
 
       <div v-else data-tour="support-ticket-list" class="overflow-x-auto">
@@ -227,7 +241,7 @@ onMounted(async () => {
                 </span>
               </td>
               <td v-if="showTenant" class="px-4 py-4">
-                <span v-if="tk.tenant_name" class="inline-flex items-center gap-1.5 text-xs font-medium px-2 py-1 rounded-full bg-purple-900/30 text-purple-300 border border-purple-800/30 whitespace-nowrap">
+                <span v-if="tk.tenant_name" class="inline-flex items-center gap-1.5 text-xs font-medium px-2 py-1 rounded-full bg-brand-900/30 text-brand-300 border border-brand-800/30 whitespace-nowrap">
                   <Building2 class="w-3 h-3" />{{ tk.tenant_name }}
                 </span>
               </td>
@@ -249,7 +263,7 @@ onMounted(async () => {
       </div>
     </div>
 
-    <CreateTicketModal v-if="showCreate" ref="createModalRef" @close="showCreate = false" @created="onCreated" />
+    <CreateTicketModal v-if="showCreate && canCreate" ref="createModalRef" @close="showCreate = false" @created="onCreated" />
     <TicketDetailModal v-if="selected" :ticket="selected" :admin="isStaff" @close="selected = null" @updated="onUpdated" @changed="silentLoad" />
   </div>
 </template>

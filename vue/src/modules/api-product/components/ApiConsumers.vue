@@ -1,10 +1,11 @@
 <script setup>
-import { onMounted, reactive, ref, watch } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ChevronDown, ChevronRight, Plus, Trash2 } from 'lucide-vue-next'
 import { useToast } from '@/composables/useToast'
 import { useConfirm } from '@/composables/useConfirm'
 import { apiProductApi } from '../api/apiProduct'
+import { canManageGateway } from '../utils/access'
 import ApiKeys from './ApiKeys.vue'
 
 /**
@@ -15,6 +16,9 @@ const props = defineProps({ gateway: { type: Object, required: true } })
 const { t } = useI18n()
 const toast = useToast()
 const { confirm } = useConfirm()
+// a new consumer of the gateway: whoever may change it (ApiProductPolicy::create); each
+// consumer's own actions follow its can_manage
+const canManage = computed(() => canManageGateway(props.gateway))
 
 const consumers = ref([])
 const plans = ref([])
@@ -94,7 +98,7 @@ onMounted(load)
 
 <template>
   <div class="space-y-4" data-test="api-consumers">
-    <form class="grid gap-3 md:grid-cols-5 items-end bg-gray-900 border border-gray-800 rounded-md p-3" data-test="consumer-form" @submit.prevent="create">
+    <form v-if="canManage" class="grid gap-3 md:grid-cols-5 items-end bg-gray-900 border border-gray-800 rounded-md p-3" data-test="consumer-form" @submit.prevent="create">
       <div>
         <label class="label">{{ t('apiProduct.consumers.name') }}</label>
         <input v-model="form.name" class="input" required maxlength="120" placeholder="Acme Ltd" data-test="consumer-name">
@@ -126,7 +130,7 @@ onMounted(load)
       </div>
     </form>
 
-    <div v-if="loading" class="flex justify-center py-6"><div class="animate-spin h-5 w-5 border-2 border-sky-500 border-t-transparent rounded-full" /></div>
+    <div v-if="loading" class="flex justify-center py-6"><div class="animate-spin h-5 w-5 border-2 border-brand-500 border-t-transparent rounded-full" /></div>
     <p v-else-if="!consumers.length" class="text-xs text-gray-500" data-test="consumers-empty">{{ t('apiProduct.consumers.none') }}</p>
 
     <div v-for="c in consumers" :key="c.id" class="bg-gray-900 border border-gray-800 rounded-md" :data-consumer="c.name">
@@ -138,7 +142,7 @@ onMounted(load)
         <span v-if="c.external_id" class="text-[11px] font-mono text-gray-500">{{ c.external_id }}</span>
         <span v-if="c.scope === 'organization'" class="text-[10px] px-1.5 py-0.5 rounded bg-gray-800 text-gray-400">{{ t('apiProduct.consumers.organization') }}</span>
         <span class="text-[11px] text-gray-500">{{ t('apiProduct.consumers.keyCount', { active: c.keys?.active ?? 0, total: c.keys?.total ?? 0 }) }}</span>
-        <span class="text-[11px]" :class="c.status === 'suspended' ? 'text-amber-400' : 'text-emerald-400'" data-test="consumer-status">{{ t(`apiProduct.consumers.status.${c.status}`) }}</span>
+        <span class="text-[11px]" :class="c.status === 'suspended' ? 'text-yellow-400' : 'text-emerald-400'" data-test="consumer-status">{{ t(`apiProduct.consumers.status.${c.status}`) }}</span>
 
         <div v-if="c.can_manage" class="ml-auto flex items-center gap-2">
           <select :value="c.plan_id ?? ''" class="input h-8! w-40! text-xs" data-test="consumer-plan-change" @change="update(c, { plan_id: $event.target.value || null })">

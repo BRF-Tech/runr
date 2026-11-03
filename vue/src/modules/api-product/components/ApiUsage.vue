@@ -120,7 +120,7 @@ onMounted(load)
       </div>
     </div>
 
-    <div v-if="loading" class="flex justify-center py-6"><div class="animate-spin h-5 w-5 border-2 border-sky-500 border-t-transparent rounded-full" /></div>
+    <div v-if="loading" class="flex justify-center py-6"><div class="animate-spin h-5 w-5 border-2 border-brand-500 border-t-transparent rounded-full" /></div>
     <p v-else-if="usage && !usage.data.length" class="text-xs text-gray-500">{{ t('apiProduct.usage.none') }}</p>
     <div v-else-if="usage" class="overflow-x-auto">
       <table class="w-full text-xs" data-test="usage-table">
@@ -149,7 +149,7 @@ onMounted(load)
             <td class="py-1.5 text-right text-gray-400">{{ n(row.rate_limited) }}</td>
             <td class="py-1.5 text-right text-gray-400">{{ n(row.quota_exceeded) }}</td>
             <template v-if="measured">
-              <td class="py-1.5 text-right" :class="row.errors ? 'text-amber-400' : 'text-gray-400'" :title="statusTitle(row)" data-test="usage-row-errors">{{ n(row.errors) }}</td>
+              <td class="py-1.5 text-right" :class="row.errors ? 'text-yellow-400' : 'text-gray-400'" :title="statusTitle(row)" data-test="usage-row-errors">{{ n(row.errors) }}</td>
               <td class="py-1.5 text-right text-gray-400">{{ latency(row.latency_p50_ms) }}</td>
               <td class="py-1.5 text-right text-gray-400" data-test="usage-row-p95">{{ latency(row.latency_p95_ms) }}</td>
               <td class="py-1.5 text-right text-gray-400">{{ latency(row.latency_p99_ms) }}</td>

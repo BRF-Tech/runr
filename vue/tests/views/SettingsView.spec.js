@@ -19,8 +19,11 @@ vi.mock('@/modules/index', async () => {
 vi.mock('@/api/runtimes', () => ({ runtimesApi: { list: vi.fn(() => new Promise(() => {})) } }))
 // The tours the page starts on a tutorial restart (driver.js itself is not under test here)
 const tours = vi.hoisted(() => ({ settings: vi.fn(), tokens: vi.fn(), users: vi.fn(), tabs: vi.fn() }))
+// The platform tour's options (its onComplete opens the region wizard) and the page's openAdd
+const tourOptions = vi.hoisted(() => ({ settings: null }))
+const openRegionWizard = vi.hoisted(() => vi.fn())
 vi.mock('@/composables/useTutorial', () => ({
-  createTutorial:          () => ({ start: tours.settings }),
+  createTutorial:          (steps, options = {}) => { tourOptions.settings = options; return { start: tours.settings } },
   useTokensTutorial:       () => ({ start: tours.tokens }),
   useUsersTutorial:        () => ({ start: tours.users }),
   useSettingsTabsTutorial: () => ({ start: tours.tabs }),
@@ -32,7 +35,7 @@ vi.mock('@/composables/useSettingsPage', async () => {
       baseDomain: r(''), registrationEnabled: r(true), gpuDemoEnabled: r(false), customRuntimesEnabled: r(false),
       totalCpuM: r(0), totalMemoryMb: r(0), regions: r([]), demoStatus: r('idle'),
       loading: r(false), saving: r(false), error: r(null), saved: r(false), usedCpuM: r(0), usedMemoryMb: r(0),
-      submit: vi.fn(), openAdd: vi.fn(), openEdit: vi.fn(), closeRegionDetail: vi.fn(), onRegionSaved: vi.fn(),
+      submit: vi.fn(), openAdd: openRegionWizard, openEdit: vi.fn(), closeRegionDetail: vi.fn(), onRegionSaved: vi.fn(),
       deleteRegion: vi.fn(), downloadKubeconfig: vi.fn(), refreshRegions: vi.fn(),
       regionDetailOpen: r(false), regionDetailTarget: r(null), fmtCpu: String, fmtMem: String,
     }),
@@ -150,6 +153,30 @@ describe('SettingsView', () => {
     expect(bills.find('[data-stub="MyBills"]').exists()).toBe(true)
   })
 
+  // The public demo's read-only role saw the platform settings editable (only Save was
+  // disabled) and the demo data's Remove button: they show read-only without settings.manage
+  it('shows the platform settings read-only without settings.manage', async () => {
+    grant(['regions.view'])
+    const w = await open('/settings')
+    expect(w.get('[data-testid="settings-base-domain"]').attributes('disabled')).toBeDefined()
+    for (const toggle of ['settings-registration-toggle', 'settings-gpu-demo-toggle']) {
+      expect(w.get(`[data-testid="${toggle}"]`).attributes('disabled')).toBeDefined()
+    }
+    expect(w.find('[data-testid="settings-save"]').exists()).toBe(false)
+    expect(w.find('[data-tour="settings-save"]').exists()).toBe(false)
+    expect(w.get('[data-testid="settings-read-only"]').text()).toBe('You can view this, changes need the settings.manage permission.')
+    expect(w.findComponent({ name: 'DemoManager' }).props('canManage')).toBe(false)
+
+    grant(['regions.view', 'settings.manage'])
+    await flushPromises()
+    expect(w.get('[data-testid="settings-base-domain"]').attributes('disabled')).toBeUndefined()
+    expect(w.get('[data-testid="settings-registration-toggle"]').attributes('disabled')).toBeUndefined()
+    expect(w.get('[data-testid="settings-save"]').attributes('disabled')).toBeUndefined()
+    expect(w.find('[data-tour="settings-save"]').exists()).toBe(true)
+    expect(w.find('[data-testid="settings-read-only"]').exists()).toBe(false)
+    expect(w.findComponent({ name: 'DemoManager' }).props('canManage')).toBe(true)
+  })
+
   it('falls back to the platform page for an unknown tab', async () => {
     grant(['regions.view'])
     const w = await open('/settings?tab=nope')
@@ -175,7 +202,7 @@ describe('SettingsView tutorial', () => {
   const started = () => Object.keys(tours).filter(key => tours[key].mock.calls.length > 0)
 
   it('starts the tour of the page shown: platform, API tokens, users', async () => {
-    grant(['regions.view', 'tokens.manage', 'members.view'])
+    grant(['regions.view', 'tokens.manage', 'members.view', 'members.invite'])
     await open('/settings')
     await restart()
     expect(started()).toEqual(['settings'])
@@ -197,6 +224,34 @@ describe('SettingsView tutorial', () => {
     await open('/settings?tab=roles')
     await restart()
     expect(started()).toEqual(['tabs'])
+  })
+
+  // A read-only role (the public demo's, a Viewer) sees no Add user button: the users tour shows
+  // the page without opening the add form, whose step then drops out
+  it('opens the add-user form for the users tour only for a user who may add users', async () => {
+    vi.clearAllMocks()
+    grant(['members.view'])
+    await open('/settings?tab=users')
+    await restart()
+    expect(started()).toEqual(['users'])
+    expect(openUsersForm).not.toHaveBeenCalled()
+  })
+
+  // The platform tour ends with the Add region button and goes on with the region wizard: only
+  // for a user who may add regions (the button's permission, regions.manage)
+  it('goes on with the region wizard only for a user who may add regions', async () => {
+    vi.clearAllMocks()
+    grant(['regions.view'])
+    await open('/settings')
+    await restart()
+    expect(started()).toEqual(['settings'])
+    tourOptions.settings.onComplete()
+    expect(openRegionWizard).not.toHaveBeenCalled()
+
+    grant(['regions.view', 'regions.manage'])
+    await flushPromises()
+    tourOptions.settings.onComplete()
+    expect(openRegionWizard).toHaveBeenCalledTimes(1)
   })
 
   it('leaves a module page with a tour of its own (tutorial: true) to that tour', async () => {

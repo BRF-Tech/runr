@@ -9,6 +9,9 @@ import TwoFactorCard from './TwoFactorCard.vue'
 import ActiveSessionsCard from './ActiveSessionsCard.vue'
 import AccountDangerCard from './AccountDangerCard.vue'
 
+// frozen: a shared account (AccountSettingsView); the API refuses its changes
+defineProps({ frozen: { type: Boolean, default: false } })
+
 const { t } = useI18n()
 const { loading, saving, error, form, loadProfile, saveProfile } = useAccountProfile()
 const security = useAccountSecurity()
@@ -25,7 +28,8 @@ onMounted(() => {
 <template>
   <div v-if="loading" class="py-16 text-center text-gray-400 text-sm">{{ t('common.loading') }}</div>
 
-  <div v-else class="space-y-8">
+  <!-- A frozen account: every change control below is off (a fieldset disables its buttons and fields) -->
+  <fieldset v-else :disabled="frozen" class="space-y-8 min-w-0 [&_:disabled]:opacity-50 [&_:disabled]:cursor-not-allowed" data-testid="account-change-controls">
     <!-- Stats ribbon -->
     <div class="grid grid-cols-3 gap-4">
       <div class="rounded-xl border border-gray-800 bg-gray-900/80 p-4 relative overflow-hidden">
@@ -157,5 +161,5 @@ onMounted(() => {
         </div>
       </div>
     </div>
-  </div>
+  </fieldset>
 </template>

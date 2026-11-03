@@ -8,9 +8,9 @@ const props = defineProps({ status: { type: String, default: null } })
 
 const colors = {
   pending:       'bg-yellow-900/40 text-yellow-300 border-yellow-800',
-  running:       'bg-blue-900/40 text-blue-300 border-blue-800',
+  running:       'bg-brand-900/40 text-brand-300 border-brand-800',
   active:        'bg-emerald-900/40 text-emerald-300 border-emerald-800',
-  shutting_down: 'bg-orange-900/40 text-orange-300 border-orange-800',
+  shutting_down: 'bg-yellow-900/40 text-yellow-300 border-yellow-800',
   shut_down:     'bg-gray-800 text-gray-400 border-gray-700',
   failed:        'bg-red-900/40 text-red-300 border-red-800',
 }

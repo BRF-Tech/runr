@@ -1,9 +1,18 @@
 <script setup>
-// Administration → Branding (platform admin): product name, logos, colours, login page, footer.
+// Administration → Branding (platform admin): product name, logos, colours, themes, login page,
+// footer. A tutorial restart starts the branding tour (tutorialSteps.js brandingSteps).
+import { nextTick, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { useTutorialStore } from '@/stores/tutorial'
+import { createTutorial } from '@/composables/useTutorial'
+import { brandingSteps } from '@/composables/tutorialSteps'
 import BrandingForm from './BrandingForm.vue'
 
 const { t } = useI18n()
+const tutorialStore = useTutorialStore()
+const { start: startTutorial } = createTutorial(brandingSteps)
+
+watch(() => tutorialStore.restartCounter, () => { nextTick(() => startTutorial()) })
 </script>
 
 <template>

@@ -176,6 +176,7 @@ export default {
     tutorialTenantUsersFormDesc: 'Enter an email to add a user. If the email is already registered, they are added directly. Otherwise, an invitation is sent.',
     tutorialTenantUsersList:     'User List',
     tutorialTenantUsersListDesc: 'View current members and their roles. Change roles via the dropdown, or remove users from the workspace.',
+    tutorialTenantUsersListDescReadOnly: 'View the members of the workspace and their roles.',
 
     // Tutorial — Tenants
     tutorialTenantForm:         'Tenant Form',

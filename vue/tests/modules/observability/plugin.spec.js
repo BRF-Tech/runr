@@ -92,7 +92,7 @@ describe('UptimeBars', () => {
       global: { plugins: [makeI18n()] },
     })
     const classes = w.findAll('[data-day]').map((d) => d.classes().find((c) => c.startsWith('bg-')))
-    expect(classes).toEqual(['bg-emerald-500', 'bg-amber-400', 'bg-red-500', 'bg-gray-700'])
+    expect(classes).toEqual(['bg-emerald-500', 'bg-yellow-400', 'bg-red-500', 'bg-gray-700'])
     expect(w.find('[data-day="2026-10-11"]').attributes('title')).toContain('no data')
   })
 })

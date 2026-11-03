@@ -220,7 +220,7 @@ function fmtMem(mb) { return mb >= 1024 ? (mb / 1024).toFixed(1) + ' GB' : mb + 
       <p class="text-[11px] text-gray-400">{{ t('tenancy.gpuQuotaHint') }}</p>
 
       <!-- Info banners -->
-      <div v-if="isInfiniteSelected" class="flex items-center gap-2 rounded-lg border border-blue-800/40 bg-blue-900/20 px-3 py-2 text-xs text-blue-400">
+      <div v-if="isInfiniteSelected" class="flex items-center gap-2 rounded-lg border border-brand-800/40 bg-brand-900/20 px-3 py-2 text-xs text-brand-400">
         <Info class="w-3.5 h-3.5 shrink-0" />{{ t('tenancy.infiniteQuotaHint') }}
       </div>
       <div v-if="remainingResources" class="flex items-center gap-2 rounded-lg border border-gray-700 bg-gray-800/40 px-3 py-2 text-[11px] text-gray-400">
@@ -253,11 +253,11 @@ function fmtMem(mb) { return mb >= 1024 ? (mb / 1024).toFixed(1) + ' GB' : mb + 
           </div>
           <span class="font-semibold text-gray-100 font-mono">{{ region.name }}</span>
           <span v-if="region.region_mode === 'infinite'"
-            class="px-1.5 py-0.5 rounded-sm text-[10px] font-medium border bg-blue-900/40 border-blue-800/40 text-blue-400">
+            class="px-1.5 py-0.5 rounded-sm text-[10px] font-medium border bg-brand-900/40 border-brand-800/40 text-brand-400">
             {{ t('tenancy.regionMode_infinite') }}
           </span>
           <span v-else class="text-gray-400 font-mono text-[11px]">{{ fmtCpu(region.cpu_quota_m ?? 0) }} / {{ fmtMem(region.memory_quota_mb ?? 0) }}</span>
-          <span v-if="region.gpu_quota !== null && region.gpu_quota !== undefined" class="text-amber-400/80 font-mono text-[11px]" data-testid="tenant-gpu-quota-value">
+          <span v-if="region.gpu_quota !== null && region.gpu_quota !== undefined" class="text-yellow-400/80 font-mono text-[11px]" data-testid="tenant-gpu-quota-value">
             {{ t('tenancy.gpuQuotaValue', { n: region.gpu_quota }) }}
           </span>
           <div class="flex-1" />

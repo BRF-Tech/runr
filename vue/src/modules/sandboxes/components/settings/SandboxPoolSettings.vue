@@ -192,7 +192,7 @@ onMounted(() => {
         :class="!p.is_enabled && 'opacity-60'"
       >
         <div class="flex items-center gap-2 min-w-[220px] flex-1">
-          <Flame class="w-4 h-4 text-orange-400" />
+          <Flame class="w-4 h-4 text-brand-400" />
           <div>
             <p class="text-sm font-semibold text-gray-100">{{ p.runtime }} <span class="font-mono text-xs text-gray-400">{{ p.runtime_version }}</span></p>
             <p class="text-[11px] font-mono text-gray-500">{{ p.region?.name }} · {{ p.sandbox_class || '—' }} · {{ p.cpu_m }}m · {{ p.memory_mb }} MiB · {{ p.disk_mb }} MiB</p>

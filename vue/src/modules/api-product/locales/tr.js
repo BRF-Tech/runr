@@ -6,6 +6,8 @@ export default {
     title:  'API gateway\'leri',
     intro:  'Fonksiyonlarınızı API olarak sunun: route\'lar API anahtarı ya da JWT ister, tüketiciler hız sınırı ve kotası olan planlar ve anahtarlar alır, RunR çağrılarını faturalama sisteminiz için ölçer.',
     empty:  'Henüz gateway yok. Gateway uç noktasıyla oluşturulan bir proje kendi bölgesinde bir gateway alır; aşağıdan bir bölge için de ekleyebilirsiniz.',
+    emptyReadOnly: 'Gateway\'iniz yok. Gateway eklemek için projeleri değiştirme yetkisi gerekir.',
+    readOnly: 'Bu gateway\'i görebilirsiniz ama değiştiremezsiniz: bunun için projeleri değiştirme yetkisi gerekir.',
     newGateway: {
       label:   'Başka bir bölgede gateway',
       region:  'Bölge',
@@ -66,6 +68,7 @@ export default {
       },
       saved: '{path} route\'u kaydedildi. Bölge saniyeler içinde uygular.',
       createdClosed: 'Route denetimiyle birlikte oluşturulur: bir an bile herkese açık olmaz.',
+      readOnly: 'Bu route\'u değiştirmek için {project} projesini değiştirme yetkisi gerekir.',
     },
 
     consumers: {

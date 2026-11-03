@@ -12,8 +12,8 @@ defineProps({
 defineEmits(['toggle', 'clear', 'update:open'])
 
 const options = [
-  { key: 's2z',    icon: ArrowDownToLine, color: '#10b981', selectedClass: 'border-emerald-600/50 bg-emerald-950/30', idleClass: 'border-gray-800 bg-gray-900/40 hover:border-gray-700' },
-  { key: 'custom', icon: ArrowUpDown,     color: '#60a5fa', selectedClass: 'border-sky-600/50 bg-sky-950/30',        idleClass: 'border-gray-800 bg-gray-900/40 hover:border-gray-700' },
+  { key: 's2z',    icon: ArrowDownToLine, color: 'rgb(var(--brand-300))', selectedClass: 'border-brand-500/60 bg-transparent', idleClass: 'border-gray-800 bg-gray-900/40 hover:border-gray-700' },
+  { key: 'custom', icon: ArrowUpDown,     color: 'rgb(var(--brand-500))', selectedClass: 'border-brand-600/50 bg-brand-900/30', idleClass: 'border-gray-800 bg-gray-900/40 hover:border-gray-700' },
 ]
 </script>
 

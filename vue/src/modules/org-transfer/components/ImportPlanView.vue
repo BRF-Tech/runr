@@ -128,8 +128,8 @@ async function apply() {
 
 const levelClass = (level) => ({
   error:   'bg-red-950/40 text-red-300 border-red-800/60',
-  warning: 'bg-amber-950/30 text-amber-300 border-amber-800/60',
-  manual:  'bg-sky-950/30 text-sky-300 border-sky-800/60',
+  warning: 'bg-yellow-950/30 text-yellow-300 border-yellow-800/60',
+  manual:  'bg-brand-900/30 text-brand-300 border-brand-800/60',
 }[level] ?? 'bg-gray-800 text-gray-300 border-gray-700')
 
 const statusText = (s) => (s ? t(`orgTransfer.import.itemStatusValue.${s}`) : '')
@@ -194,7 +194,7 @@ const generalIssues = computed(() => plan.value.issues ?? [])
             <input v-model="skipped" type="checkbox" :value="p.source_id" :disabled="readOnly || p.status === 'imported'" data-testid="plan-skip">{{ t('orgTransfer.import.skip') }}
           </label>
         </div>
-        <p v-if="p.collision && p.suggested_name" class="text-[11px] text-amber-400 mt-1">→ {{ p.suggested_name }}</p>
+        <p v-if="p.collision && p.suggested_name" class="text-[11px] text-yellow-400 mt-1">→ {{ p.suggested_name }}</p>
         <div v-if="p.issues?.length" class="flex flex-wrap gap-1 mt-1.5">
           <span v-for="(issue, i) in p.issues" :key="i" class="text-[11px] px-1.5 py-0.5 rounded border" :class="levelClass(issue.level)" :data-level="issue.level" :data-code="issue.code" data-testid="plan-issue">
             {{ t(`orgTransfer.import.level.${issue.level}`) }}: {{ issue.message }}
@@ -251,13 +251,13 @@ const generalIssues = computed(() => plan.value.issues ?? [])
     <div v-if="historyTotals" class="mb-4 text-xs text-gray-400" data-testid="plan-history">
       <p class="label">{{ t('orgTransfer.import.history') }}</p>
       <p>{{ t('orgTransfer.import.historyLine', historyTotals) }}</p>
-      <p v-if="historyTotals.dropped" class="text-amber-400">{{ t('orgTransfer.import.historyDropped', { n: historyTotals.dropped }) }}</p>
+      <p v-if="historyTotals.dropped" class="text-yellow-400">{{ t('orgTransfer.import.historyDropped', { n: historyTotals.dropped }) }}</p>
       <p class="text-gray-500">{{ t('orgTransfer.import.historyHint') }}</p>
     </div>
 
     <!-- Manual steps -->
-    <div v-if="plan.manual_steps?.length" class="mb-4 rounded-lg border border-sky-900/60 bg-sky-950/10 p-3" data-testid="plan-manual-steps">
-      <p class="text-xs font-medium text-sky-300 mb-1">{{ t('orgTransfer.import.manualSteps') }}</p>
+    <div v-if="plan.manual_steps?.length" class="mb-4 rounded-lg border border-brand-900/60 bg-brand-900/10 p-3" data-testid="plan-manual-steps">
+      <p class="text-xs font-medium text-brand-300 mb-1">{{ t('orgTransfer.import.manualSteps') }}</p>
       <div v-for="step in plan.manual_steps" :key="step.code" class="text-xs text-gray-300 mb-1" :data-step="step.code">
         <p>{{ step.message }}</p>
         <p v-if="step.items?.length" class="font-mono text-gray-500">{{ step.items.join(', ') }}</p>
@@ -266,7 +266,7 @@ const generalIssues = computed(() => plan.value.issues ?? [])
 
     <!-- Secrets of the package -->
     <div v-if="secrets !== 'absent' && !readOnly" class="mb-4" data-testid="plan-secrets" :data-state="secrets">
-      <p class="text-xs mb-1 flex items-center gap-1" :class="secrets === 'locked' ? 'text-amber-300' : 'text-emerald-400'">
+      <p class="text-xs mb-1 flex items-center gap-1" :class="secrets === 'locked' ? 'text-yellow-300' : 'text-emerald-400'">
         <component :is="secrets === 'locked' ? Lock : Unlock" class="w-3.5 h-3.5" />
         {{ secrets === 'locked' ? t('orgTransfer.import.secretsLocked') : t('orgTransfer.import.secretsUnlocked') }}
       </p>
@@ -275,7 +275,7 @@ const generalIssues = computed(() => plan.value.issues ?? [])
     </div>
 
     <p v-if="blocking > 0" class="text-xs text-red-400 mb-2" data-testid="plan-blocking">{{ t('orgTransfer.import.blocking', { n: blocking }) }}</p>
-    <p v-else-if="plan.warnings" class="text-xs text-amber-400 mb-2">{{ t('orgTransfer.import.warnings', { n: plan.warnings }) }}</p>
+    <p v-else-if="plan.warnings" class="text-xs text-yellow-400 mb-2">{{ t('orgTransfer.import.warnings', { n: plan.warnings }) }}</p>
     <p v-if="error" class="text-sm text-red-400 mb-2" data-testid="plan-error">{{ error }}</p>
 
     <!-- Apply -->

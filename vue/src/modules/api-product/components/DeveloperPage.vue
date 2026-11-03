@@ -35,7 +35,7 @@ onMounted(async () => {
         <header class="space-y-2">
           <h1 class="text-2xl font-semibold text-gray-100">{{ page.name }}</h1>
           <p v-if="page.description" class="text-sm text-gray-300 whitespace-pre-line">{{ page.description }}</p>
-          <p v-for="u in page.base_urls" :key="u" class="font-mono text-sm text-sky-300">{{ u }}</p>
+          <p v-for="u in page.base_urls" :key="u" class="font-mono text-sm text-brand-300">{{ u }}</p>
         </header>
 
         <section class="space-y-3">

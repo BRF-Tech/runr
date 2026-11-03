@@ -33,10 +33,10 @@ defineEmits(['copy'])
   </div>
 
   <!-- Uninstalling -->
-  <div v-else-if="status === 'uninstalling'" class="bg-orange-900/20 border border-orange-800/40 rounded-md p-3">
+  <div v-else-if="status === 'uninstalling'" class="bg-yellow-900/20 border border-yellow-800/40 rounded-md p-3">
     <div class="flex items-center gap-2">
-      <div class="w-3 h-3 border-2 border-orange-400 border-t-transparent rounded-full animate-spin" />
-      <span class="text-xs text-orange-400">{{ t('settings.regionDetail.knative.statusUninstalling') }}</span>
+      <div class="w-3 h-3 border-2 border-yellow-400 border-t-transparent rounded-full animate-spin" />
+      <span class="text-xs text-yellow-400">{{ t('settings.regionDetail.knative.statusUninstalling') }}</span>
     </div>
   </div>
 </template>

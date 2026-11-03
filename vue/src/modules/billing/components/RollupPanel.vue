@@ -59,7 +59,7 @@ defineExpose({ load, period })
     </div>
 
     <div v-if="loading" class="flex justify-center py-6">
-      <div class="animate-spin h-4 w-4 border-2 border-sky-500 border-t-transparent rounded-full" />
+      <div class="animate-spin h-4 w-4 border-2 border-brand-500 border-t-transparent rounded-full" />
     </div>
     <p v-else-if="error" class="text-sm text-red-400">{{ error }}</p>
     <p v-else-if="!rows.length" class="text-sm text-gray-400 py-6 text-center" data-test="rollup-empty">{{ t('billing.owners.empty') }}</p>
@@ -86,7 +86,7 @@ defineExpose({ load, period })
             <td class="px-3 py-2 text-right font-mono">{{ row.bills }}</td>
             <td class="px-3 py-2 text-right font-mono text-gray-100">{{ money(row.total) }}</td>
             <td class="px-3 py-2 text-right font-mono">{{ money(row.paid_total) }}</td>
-            <td class="px-3 py-2 text-right font-mono" :class="Number(row.unpaid_total) > 0 && 'text-amber-400'">{{ money(row.unpaid_total) }}</td>
+            <td class="px-3 py-2 text-right font-mono" :class="Number(row.unpaid_total) > 0 && 'text-yellow-400'">{{ money(row.unpaid_total) }}</td>
           </tr>
         </tbody>
       </table>

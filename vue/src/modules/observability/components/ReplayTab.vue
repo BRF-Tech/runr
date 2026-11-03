@@ -153,19 +153,19 @@ onMounted(load)
   <div class="space-y-4" data-test="replay-tab">
     <div>
       <div class="flex items-center gap-2">
-        <RotateCcw class="w-4 h-4 text-violet-300" />
+        <RotateCcw class="w-4 h-4 text-brand-300" />
         <span class="text-[15px] font-semibold text-gray-100">{{ t('observability.replay.title') }}</span>
       </div>
       <p class="text-xs text-gray-400 mt-1.5">{{ t('observability.replay.intro') }}</p>
     </div>
 
-    <div v-if="loading" class="flex justify-center py-10"><div class="animate-spin h-6 w-6 border-2 border-sky-500 border-t-transparent rounded-full" /></div>
+    <div v-if="loading" class="flex justify-center py-10"><div class="animate-spin h-6 w-6 border-2 border-brand-500 border-t-transparent rounded-full" /></div>
     <div v-else-if="error" class="bg-red-900/20 border border-red-800/40 rounded-md px-4 py-3 text-xs text-red-400">{{ error }}</div>
 
     <template v-else-if="settings">
-      <div class="flex items-start gap-2.5 bg-amber-900/15 border border-amber-800/40 rounded-md px-4 py-3" data-test="replay-privacy">
-        <ShieldAlert class="w-4 h-4 text-amber-300 mt-0.5 shrink-0" />
-        <p class="text-xs text-amber-200 leading-relaxed">{{ t('observability.replay.privacy') }}</p>
+      <div class="flex items-start gap-2.5 bg-yellow-900/15 border border-yellow-800/40 rounded-md px-4 py-3" data-test="replay-privacy">
+        <ShieldAlert class="w-4 h-4 text-yellow-300 mt-0.5 shrink-0" />
+        <p class="text-xs text-yellow-200 leading-relaxed">{{ t('observability.replay.privacy') }}</p>
       </div>
 
       <p v-if="!settings.replay_available" class="text-xs text-gray-400" data-test="replay-unavailable">{{ t('observability.replay.unavailableCaas') }}</p>
@@ -173,7 +173,7 @@ onMounted(load)
       <!-- Capture settings -->
       <form v-else-if="canManage" class="bg-gray-900 border border-gray-800 rounded-md p-4 grid gap-4 md:grid-cols-2" data-test="replay-settings" @submit.prevent="save">
         <label class="flex items-center gap-2 text-sm text-gray-200 md:col-span-2">
-          <input v-model="form.enabled" type="checkbox" class="accent-violet-500" data-test="replay-toggle">
+          <input v-model="form.enabled" type="checkbox" class="accent-brand-500" data-test="replay-toggle">
           {{ t('observability.replay.toggle') }}
         </label>
         <div>
@@ -216,7 +216,7 @@ onMounted(load)
             <div class="font-mono text-[11px] text-gray-300">
               <div v-for="(v, k) in open.headers" :key="k"><span class="text-gray-500">{{ k }}:</span> {{ v }}</div>
             </div>
-            <p v-if="open.redacted_headers?.length" class="text-[11px] text-amber-300" data-test="capture-redacted">{{ t('observability.replay.detail.redacted', { list: open.redacted_headers.join(', ') }) }}</p>
+            <p v-if="open.redacted_headers?.length" class="text-[11px] text-yellow-300" data-test="capture-redacted">{{ t('observability.replay.detail.redacted', { list: open.redacted_headers.join(', ') }) }}</p>
             <pre class="bg-gray-950 border border-gray-800 rounded-md p-3 max-h-64 overflow-auto text-[11px] text-gray-200">{{ pretty(open.body, open.body_base64) || t('observability.replay.detail.noBody') }}</pre>
             <p v-if="open.body_truncated" class="text-[11px] text-gray-500">{{ t('observability.replay.detail.truncated') }}</p>
           </div>

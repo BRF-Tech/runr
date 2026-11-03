@@ -67,7 +67,7 @@ const confirmDisabled = () => {
           <option v-for="v in compatibleVersions" :key="v" :value="v">{{ v }}</option>
         </select>
         <template v-if="mode === 'upgrade'">
-          <p v-if="!versionsLoading && !compatibleVersions.length" class="text-[11px] text-amber-400 mt-1" data-testid="no-upgrade">
+          <p v-if="!versionsLoading && !compatibleVersions.length" class="text-[11px] text-yellow-400 mt-1" data-testid="no-upgrade">
             {{ t('settings.regionDetail.installPopup.noUpgrade') }}
           </p>
           <p v-else class="text-[10px] text-gray-400 mt-1">{{ t('settings.regionDetail.installPopup.upgradeHint') }}</p>

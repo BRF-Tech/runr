@@ -207,10 +207,13 @@ describe('RolloutPanel', () => {
     const viewer = mountPanel(canary(), { permissions: ['projects.view'] })
     expect(find(viewer, 'rollout-promote').exists()).toBe(false)
     expect(find(viewer, 'rollout-abort').exists()).toBe(false)
+    // the tour's Promote / Abort step points at the buttons: it drops for a role without them
+    expect(viewer.find('[data-tour="rollout-actions"]').exists()).toBe(false)
 
     const deployer = mountPanel(canary({ can: { promote: false, abort: true, rollback: false } }), { permissions: ['projects.deploy'] })
     expect(find(deployer, 'rollout-promote').exists()).toBe(false)
     expect(find(deployer, 'rollout-abort').exists()).toBe(true)
+    expect(deployer.find('[data-tour="rollout-actions"]').exists()).toBe(true)
   })
 
   it('shows why a rollout was rolled back; the log panel folds the history', async () => {

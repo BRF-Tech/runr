@@ -192,7 +192,7 @@ usePlatformSync({ projects, refetch: silentRefresh, journals: { projects: journa
           <RouterLink
             v-if="rightsizingCount > 0"
             to="/rightsizing"
-            class="ml-1 inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-xs text-sky-300 bg-sky-950/40 border border-sky-900/60 hover:text-sky-200"
+            class="ml-1 inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-xs text-brand-300 bg-brand-900/40 border border-brand-900/60 hover:text-brand-300"
             data-testid="rightsizing-link"
             data-tour="rightsizing-link"
           ><Gauge class="w-3.5 h-3.5" />{{ rightsizingLabel }}</RouterLink>
@@ -204,7 +204,7 @@ usePlatformSync({ projects, refetch: silentRefresh, journals: { projects: journa
             v-model="searchQuery"
             type="text"
             :placeholder="t('projects.searchPlaceholder')"
-            class="h-9 bg-gray-900 border border-gray-800 rounded-md px-3 text-sm text-gray-100 placeholder-gray-400 focus:outline-hidden focus:border-gray-600 w-48"
+            class="h-9 bg-gray-900 border border-gray-800 rounded-md px-3 text-sm text-gray-100 placeholder-weak focus:outline-hidden focus:border-gray-600 w-48"
           />
           <div data-tour="filter-tabs" class="h-9 flex items-center gap-1 bg-gray-900 border border-gray-800 rounded-md px-1">
             <button

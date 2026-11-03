@@ -27,7 +27,8 @@ describe('capacity budgets', () => {
 
   it('colours a budget by how full it is', () => {
     expect(fillColor(50)).toBe('rgb(var(--brand-500))')
-    expect(fillColor(70)).toBe('#f97316')
+    // the warning step is yellow: orange would read as the RunR brand
+    expect(fillColor(70)).toBe('#eab308')
     expect(fillColor(90)).toBe('#ef4444')
   })
 

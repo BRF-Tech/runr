@@ -1,11 +1,12 @@
 <script setup>
-import { onMounted, reactive, ref, watch } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Plus, Trash2 } from 'lucide-vue-next'
 import { useToast } from '@/composables/useToast'
 import { useConfirm } from '@/composables/useConfirm'
 import { apiProductApi } from '../api/apiProduct'
 import { planLimits } from '../utils/format'
+import { canManageGateway } from '../utils/access'
 
 /**
  * Plans offered on the gateway: its own and the organization's. Rate limits (per second with
@@ -15,6 +16,9 @@ const props = defineProps({ gateway: { type: Object, required: true } })
 const { t } = useI18n()
 const toast = useToast()
 const { confirm } = useConfirm()
+// the gateway's plans: whoever may change it creates and deletes them (ApiProductPolicy); the
+// organization's are api_products.manage's (Administration)
+const canManage = computed(() => canManageGateway(props.gateway))
 
 const FIELDS = ['rate_per_second', 'burst', 'rate_per_minute', 'quota_per_day', 'quota_per_month']
 const plans = ref([])
@@ -80,19 +84,19 @@ onMounted(load)
 
 <template>
   <div class="space-y-4" data-test="api-plans">
-    <div v-if="loading" class="flex justify-center py-6"><div class="animate-spin h-5 w-5 border-2 border-sky-500 border-t-transparent rounded-full" /></div>
+    <div v-if="loading" class="flex justify-center py-6"><div class="animate-spin h-5 w-5 border-2 border-brand-500 border-t-transparent rounded-full" /></div>
     <p v-else-if="!plans.length" class="text-xs text-gray-500">{{ t('apiProduct.plans.none') }}</p>
     <div v-for="p in plans" :key="p.id" class="flex flex-wrap items-center gap-3 bg-gray-900 border border-gray-800 rounded-md px-3 py-2" :data-plan="p.name">
       <span class="text-sm text-gray-100">{{ p.name }}</span>
       <span v-if="p.scope === 'organization'" class="text-[10px] px-1.5 py-0.5 rounded bg-gray-800 text-gray-400">{{ t('apiProduct.consumers.organization') }}</span>
       <span class="text-[11px] text-gray-400" data-test="plan-limits">{{ planLimits(p, t) }}</span>
       <span v-if="p.description" class="text-[11px] text-gray-500">{{ p.description }}</span>
-      <button v-if="p.scope === 'gateway'" type="button" class="ml-auto text-gray-500 hover:text-red-400" :title="t('apiProduct.common.delete')" data-test="plan-delete" @click="remove(p)">
+      <button v-if="canManage && p.scope === 'gateway'" type="button" class="ml-auto text-gray-500 hover:text-red-400" :title="t('apiProduct.common.delete')" data-test="plan-delete" @click="remove(p)">
         <Trash2 class="w-4 h-4" />
       </button>
     </div>
 
-    <form class="space-y-3 bg-gray-900 border border-gray-800 rounded-md p-3" data-test="plan-form" @submit.prevent="create">
+    <form v-if="canManage" class="space-y-3 bg-gray-900 border border-gray-800 rounded-md p-3" data-test="plan-form" @submit.prevent="create">
       <div class="grid gap-3 md:grid-cols-2">
         <div>
           <label class="label">{{ t('apiProduct.plans.name') }}</label>

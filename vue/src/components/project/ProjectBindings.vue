@@ -400,7 +400,7 @@ onBeforeUnmount(() => clearTimeout(pollTimer))
     </form>
 
     <div v-if="loading" class="flex justify-center py-6">
-      <div class="animate-spin h-4 w-4 border-2 border-sky-500 border-t-transparent rounded-full" />
+      <div class="animate-spin h-4 w-4 border-2 border-brand-500 border-t-transparent rounded-full" />
     </div>
 
     <div v-else-if="!attachments.length && !showForm" class="py-10 text-center">
@@ -416,14 +416,14 @@ onBeforeUnmount(() => clearTimeout(pollTimer))
         :data-attachment="a.binding?.name">
         <div class="flex flex-wrap items-center justify-between gap-2">
           <div class="flex items-center gap-2 min-w-0">
-            <component :is="TYPE_ICONS[a.binding?.type] || Database" class="w-4 h-4 text-sky-400 shrink-0" />
+            <component :is="TYPE_ICONS[a.binding?.type] || Database" class="w-4 h-4 text-brand-400 shrink-0" />
             <span class="text-sm font-semibold text-gray-100">{{ a.binding?.name }}</span>
             <span class="text-[11px] text-gray-400">{{ t(`bindings.types.${a.binding?.type}`) }}</span>
-            <span v-if="a.binding?.plan === 'dedicated'" class="text-[10px] px-1.5 py-0.5 rounded-sm border border-violet-800/40 bg-violet-900/30 text-violet-300">{{ t('bindings.plans.dedicated') }}</span>
+            <span v-if="a.binding?.plan === 'dedicated'" class="text-[10px] px-1.5 py-0.5 rounded-sm border border-brand-800/40 bg-brand-900/30 text-brand-300">{{ t('bindings.plans.dedicated') }}</span>
             <span :class="bindingStatusClass(a.binding?.status)" data-binding-status>{{ t(`bindings.status.${a.binding?.status ?? 'pending'}`) }}</span>
-            <span v-if="isDynamic(a)" class="text-[10px] px-1.5 py-0.5 rounded-sm border border-teal-800/60 bg-teal-900/20 text-teal-300"
+            <span v-if="isDynamic(a)" class="text-[10px] px-1.5 py-0.5 rounded-sm border border-brand-500/60 bg-transparent text-brand-400"
               :title="t('bindings.dynamicHint')" data-dynamic-badge>{{ t('bindings.dynamicBadge') }}</span>
-            <span v-if="globalAccess[String(a.binding?.id)]" class="text-[10px] px-1.5 py-0.5 rounded-sm border border-sky-800/50 bg-sky-900/20 text-sky-300"
+            <span v-if="globalAccess[String(a.binding?.id)]" class="text-[10px] px-1.5 py-0.5 rounded-sm border border-gray-700 bg-gray-800/60 text-brand-300"
               :title="t(`globalProjects.data.accessHint.${globalAccess[String(a.binding?.id)]}`)" data-global-access>
               {{ t(`globalProjects.data.access.${globalAccess[String(a.binding?.id)]}`) }}
             </span>
@@ -442,7 +442,7 @@ onBeforeUnmount(() => clearTimeout(pollTimer))
               :title="revealed[a.id] ? t('bindings.hide') : t('bindings.reveal')" @click="toggleReveal(a)">
               <Eye class="w-3.5 h-3.5" />
             </button>
-            <button v-if="canRotate && a.binding?.type !== 'external'" type="button" class="p-1 text-gray-400 hover:text-amber-300" data-action="rotate"
+            <button v-if="canRotate && a.binding?.type !== 'external'" type="button" class="p-1 text-gray-400 hover:text-yellow-300" data-action="rotate"
               :title="t('bindings.rotate')" :disabled="a.binding?.status !== 'ready'" @click="rotate(a)">
               <KeyRound class="w-3.5 h-3.5" />
             </button>
@@ -476,7 +476,7 @@ onBeforeUnmount(() => clearTimeout(pollTimer))
           <span v-if="a.binding?.details?.prefix">{{ t('bindings.details.prefix') }}: {{ a.binding.details.prefix }}</span>
           <span v-if="a.binding?.details?.mode === 'db'">{{ t('bindings.details.mode_db') }}</span>
           <span v-if="a.binding?.details?.bucket">{{ t('bindings.details.bucket') }}: {{ a.binding.details.bucket }}</span>
-          <span v-if="a.binding?.type === 'object' && a.binding?.details?.scoped_keys === false" class="text-amber-400">{{ t('bindings.details.sharedKey') }}</span>
+          <span v-if="a.binding?.type === 'object' && a.binding?.details?.scoped_keys === false" class="text-yellow-400">{{ t('bindings.details.sharedKey') }}</span>
           <span v-if="a.binding?.details?.database">{{ t('bindings.details.database') }}: {{ a.binding.details.database }}</span>
           <span v-if="a.binding?.type !== 'external'">{{ t('bindings.usage') }}: {{ usageLabel(a.binding ?? {}) }}</span>
           <span v-if="a.binding?.settings?.over_quota" class="text-red-400">{{ t('bindings.overQuota') }}</span>

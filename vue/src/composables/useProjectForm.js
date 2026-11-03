@@ -86,7 +86,7 @@ export function useTypeCards() {
       subtitle:    t('create.step2.xaas.subtitle'),
       description: t('create.step2.xaas.description'),
       icon: '⚡',
-      active: 'border-blue-500 ring-2 ring-blue-500/30 bg-blue-950/30',
+      active: 'border-brand-500 ring-2 ring-brand-500/30 bg-brand-900/30',
     },
     {
       id: 'faas',
@@ -94,7 +94,7 @@ export function useTypeCards() {
       subtitle:    t('create.step2.faas.subtitle'),
       description: t('create.step2.faas.description'),
       icon: '📦',
-      active: 'border-purple-500 ring-2 ring-purple-500/30 bg-purple-950/30',
+      active: 'border-brand-500 ring-2 ring-brand-500/30 bg-brand-900/30',
     },
     {
       id: 'caas',
@@ -102,7 +102,7 @@ export function useTypeCards() {
       subtitle:    t('create.step2.caas.subtitle'),
       description: t('create.step2.caas.description'),
       icon: '🐳',
-      active: 'border-emerald-500 ring-2 ring-emerald-500/30 bg-emerald-950/30',
+      active: 'border-brand-500 ring-2 ring-brand-500/30 bg-brand-900/30',
     },
   ])
 }

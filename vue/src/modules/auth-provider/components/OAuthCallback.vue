@@ -64,12 +64,12 @@ onMounted(async () => {
   <div class="min-h-screen flex items-center justify-center bg-gray-950">
     <div v-if="error" class="text-center">
       <p class="text-red-400 text-sm mb-4">{{ error }}</p>
-      <RouterLink to="/login" class="text-sm text-blue-400 hover:text-blue-300">
+      <RouterLink to="/login" class="text-sm text-brand-400 hover:text-brand-300">
         {{ t('auth.submit') }}
       </RouterLink>
     </div>
     <div v-else class="text-center">
-      <div class="w-8 h-8 border-2 border-blue-400 border-t-transparent rounded-full animate-spin mx-auto mb-3"></div>
+      <div class="w-8 h-8 border-2 border-brand-400 border-t-transparent rounded-full animate-spin mx-auto mb-3"></div>
       <p class="text-gray-400 text-sm">{{ t('common.loading') }}</p>
     </div>
   </div>

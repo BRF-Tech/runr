@@ -7,7 +7,7 @@ import { useLogFilter, mergeLogLines, parseRaw, TIME_PRESETS } from '@/composabl
 export const LEVEL_COLORS = {
   ERROR: 'bg-red-900/40 text-red-400 border-red-800/60',
   WARN:  'bg-yellow-900/30 text-yellow-400 border-yellow-800/60',
-  INFO:  'bg-blue-900/30 text-blue-400 border-blue-800/60',
+  INFO:  'bg-brand-900/30 text-brand-400 border-brand-800/60',
   DEBUG: 'bg-gray-800 text-gray-500 border-gray-700',
 }
 export const LINE_COLORS = { ERROR: 'text-red-400', WARN: 'text-yellow-400', DEBUG: 'text-gray-500' }
@@ -148,10 +148,14 @@ export function useDeploymentLogs(props, emit) {
       error.value = res.data.error ?? null
 
       if (res.data.suggest_status) {
-        try {
-          await projectsApi.updateDeploymentStatus(props.project.id, props.deployment.id, res.data.suggest_status)
-          emit('status-changed', res.data.suggest_status)
-        } catch {}
+        // The pods are gone: the deployment's status follows (PATCH …/status needs projects.deploy;
+        // a role without it does not send the request, which the API would refuse with 403)
+        if (usePermissionsStore().can('projects.deploy', props.project?.id)) {
+          try {
+            await projectsApi.updateDeploymentStatus(props.project.id, props.deployment.id, res.data.suggest_status)
+            emit('status-changed', res.data.suggest_status)
+          } catch {}
+        }
         if (pollTimer) { clearInterval(pollTimer); pollTimer = null }
       } else {
         const newRaw  = res.data.logs ?? ''
@@ -230,7 +234,7 @@ export function useDeploymentLogs(props, emit) {
   function podClass(pod) {
     if (activePod.value === pod.name) return 'bg-brand-600/30 border border-brand-500/60 text-brand-300 ring-1 ring-brand-500/30'
     if (pod.status === 'Running')     return 'bg-brand-900/30 border border-brand-700/50 text-brand-300'
-    if (pod.status === 'Pending')     return 'bg-amber-900/30 border border-amber-800/50 text-amber-400'
+    if (pod.status === 'Pending')     return 'bg-yellow-900/30 border border-yellow-800/50 text-yellow-400'
     if (pod.status === 'Succeeded')   return 'bg-gray-800 border border-gray-700 text-gray-400'
     return 'bg-red-900/30 border border-red-800/50 text-red-400'
   }
@@ -238,7 +242,7 @@ export function useDeploymentLogs(props, emit) {
   function podDot(pod) {
     if (activePod.value === pod.name) return 'bg-brand-400'
     if (pod.status === 'Running')     return 'bg-brand-400'
-    if (pod.status === 'Pending')     return 'bg-amber-400 animate-pulse'
+    if (pod.status === 'Pending')     return 'bg-yellow-400 animate-pulse'
     if (pod.status === 'Succeeded')   return 'bg-gray-500'
     return 'bg-red-400'
   }

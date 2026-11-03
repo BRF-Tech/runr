@@ -108,7 +108,7 @@ function handleConfirmSkip({ step, warning }) {
         <span v-for="n in 7" :key="n"
           class="h-1.5 rounded-full transition-all duration-300"
           :class="[n < wizardStep ? 'w-4' : n === wizardStep ? 'w-6' : 'w-1.5']"
-          :style="n <= wizardStep ? 'background-color:rgb(var(--brand-600))' : 'background-color:#374151'" />
+          :style="n <= wizardStep ? 'background-color:rgb(var(--brand-600))' : 'background-color:rgb(var(--gray-700))'" />
       </div>
 
       <!-- ═══ EDIT MODE ═══ -->

@@ -1,6 +1,7 @@
 import { defineAsyncComponent, markRaw } from 'vue'
 import { LifeBuoy } from 'lucide-vue-next'
 import { useBrandingStore } from '@/modules/white-label/stores/branding'
+import { usePermissionsStore } from '@/stores/permissions'
 import en from './locales/en.js'
 import tr from './locales/tr.js'
 
@@ -17,6 +18,16 @@ export function ticketsEnabled() {
   }
 }
 
+/**
+ * The support page lists the user's own tickets (GET /support-tickets: tickets.view) or, for the
+ * support staff, every ticket (GET /admin/support-tickets: tickets.manage); a role with neither
+ * does not see the page (docs/permissions.md).
+ */
+export function canSeeSupport() {
+  const perms = usePermissionsStore()
+  return perms.can('tickets.view') || perms.can('tickets.manage')
+}
+
 export default function (registry) {
   registry.settingsTabs.push({
     key:       'support-tickets',
@@ -26,7 +37,7 @@ export default function (registry) {
     // the user menu (every user asks for help there; staff answer on the same page)
     group:     'account',
     component: markRaw(defineAsyncComponent(() => import('./components/AccountSupportTab.vue'))),
-    visibleIf: ticketsEnabled,
+    visibleIf: () => ticketsEnabled() && canSeeSupport(),
     dataTour:  'settings-support-tab',
     tutorial:  true,
     order:     30,

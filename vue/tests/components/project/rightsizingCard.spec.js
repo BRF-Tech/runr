@@ -152,6 +152,10 @@ describe('RightsizingCard', () => {
     const viewer = await mountCard({ status: 'open', data: recommendation() }, ['projects.view', 'metrics.view'])
     expect(find(viewer, 'rightsizing-apply').exists()).toBe(false)
     expect(find(viewer, 'rightsizing-dismiss').exists()).toBe(false)
+    // the tour's Apply / Hide step points at the buttons: it drops for a role without them
+    expect(viewer.find('[data-tour="rightsizing-card"]').exists()).toBe(true)
+    expect(viewer.find('[data-tour="rightsizing-actions"]').exists()).toBe(false)
+    expect(w.find('[data-tour="rightsizing-actions"]').exists()).toBe(true)
   })
 
   it('reminds to deploy an applied size the deployment does not run yet', async () => {

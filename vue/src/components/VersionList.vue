@@ -64,7 +64,7 @@ function fmt(dateTime) {
           >latest</span>
           <span
             v-if="configMode === 'blueprint'"
-            class="text-[9px] px-1.5 py-0.5 rounded-sm font-medium leading-none bg-amber-500/15 text-amber-400"
+            class="text-[9px] px-1.5 py-0.5 rounded-sm font-medium leading-none border border-brand-500/60 text-brand-400"
           >blueprint</span>
           <span
             v-if="v.build_status === 'pending' || v.build_status === 'building'"

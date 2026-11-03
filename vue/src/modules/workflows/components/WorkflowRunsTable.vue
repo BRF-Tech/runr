@@ -124,7 +124,7 @@ defineExpose({ load })
             :data-run="r.id"
             @click="emit('open', r.id)"
           >
-            <td class="px-3 py-2 font-mono text-sky-400" :title="r.id">{{ shortId(r.id) }}</td>
+            <td class="px-3 py-2 font-mono text-brand-400" :title="r.id">{{ shortId(r.id) }}</td>
             <td class="px-3 py-2 font-mono text-gray-100">{{ r.workflow?.name }}</td>
             <td class="px-3 py-2">
               <WorkflowStatusBadge :status="r.status" size="xs" />

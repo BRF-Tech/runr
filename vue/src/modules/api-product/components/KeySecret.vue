@@ -24,8 +24,8 @@ async function copy() {
 </script>
 
 <template>
-  <div class="rounded-md border border-amber-700/50 bg-amber-900/10 p-3 space-y-2" role="alert" data-test="key-secret">
-    <p class="text-xs text-amber-200">{{ t('apiProduct.keys.secretTitle', { name }) }}</p>
+  <div class="rounded-md border border-yellow-700/50 bg-yellow-900/10 p-3 space-y-2" role="alert" data-test="key-secret">
+    <p class="text-xs text-yellow-200">{{ t('apiProduct.keys.secretTitle', { name }) }}</p>
     <div class="flex items-center gap-2">
       <code class="flex-1 font-mono text-xs text-gray-100 bg-gray-950 border border-gray-800 rounded px-2 py-1.5 break-all select-all" data-test="key-secret-value">{{ value }}</code>
       <button type="button" class="btn-secondary text-xs px-2 py-1.5 inline-flex items-center gap-1" data-test="key-secret-copy" @click="copy">

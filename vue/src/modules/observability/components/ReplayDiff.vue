@@ -29,7 +29,7 @@ const { t } = useI18n()
       <div class="font-mono text-[11px] space-y-0.5">
         <div v-for="(v, k) in diff.headers.removed" :key="'r' + k" class="text-red-300">- {{ k }}: {{ v }}</div>
         <div v-for="(v, k) in diff.headers.added" :key="'a' + k" class="text-emerald-300">+ {{ k }}: {{ v }}</div>
-        <div v-for="(pair, k) in diff.headers.changed" :key="'c' + k" class="text-amber-300">~ {{ k }}: {{ pair[0] }} → {{ pair[1] }}</div>
+        <div v-for="(pair, k) in diff.headers.changed" :key="'c' + k" class="text-yellow-300">~ {{ k }}: {{ pair[0] }} → {{ pair[1] }}</div>
       </div>
     </div>
 

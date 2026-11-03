@@ -6,6 +6,7 @@ import { runtimesApi } from '@/api/runtimes'
 import { useConfirm } from '@/composables/useConfirm'
 import { useToast } from '@/composables/useToast'
 import { freshPinia } from '@/test-support/helpers'
+import { usePermissionsStore } from '@/stores/permissions'
 import { histogramBars } from '@/modules/sandboxes/utils'
 import { sandboxI18n, regionRows, pythonRuntime } from './fixtures'
 
@@ -207,6 +208,23 @@ describe('SandboxSettingsTab quotas and metrics', () => {
     useConfirm().accept()
     await flushPromises()
     expect(sandboxAdminApi.resetQuota).toHaveBeenCalledWith('t1')
+  })
+
+  // The quotas of every organization need sandboxes.manage: a role without it (the public demo's
+  // read-only one) sent the request anyway and got a 403 in the network log
+  it('does not ask for the organizations\' quotas without sandboxes.manage', async () => {
+    usePermissionsStore().apply({ permissions: ['sandboxes.view', 'regions.view'], platform_admin: false, edition: 'single', role: null, roles: [], projects: {} })
+    const wrapper = await mountTab()
+
+    expect(sandboxAdminApi.tenantQuotas).not.toHaveBeenCalled()
+    expect(sandboxAdminApi.quota).toHaveBeenCalled()
+    expect(wrapper.find('[data-tenant-quotas]').exists()).toBe(false)
+    expect(wrapper.find('[data-own-quota]').exists()).toBe(true)
+
+    usePermissionsStore().apply({ permissions: ['sandboxes.manage'], platform_admin: false, edition: 'single', role: null, roles: [], projects: {} })
+    const manager = await mountTab()
+    expect(sandboxAdminApi.tenantQuotas).toHaveBeenCalledTimes(1)
+    expect(manager.find('[data-tenant-quotas]').exists()).toBe(true)
   })
 
   it('hides the organizations table when the API refuses it', async () => {

@@ -8,7 +8,7 @@
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
-import { CircleHelp, Languages, LogOut, Moon, MoonStar, Sun } from 'lucide-vue-next'
+import { CircleHelp, Languages, LogOut, Moon, Sun } from 'lucide-vue-next'
 import { useAuthStore } from '@/stores/auth'
 import { useTutorialStore } from '@/stores/tutorial'
 import { useTheme } from '@/composables/useTheme'
@@ -31,9 +31,8 @@ const userInitial = computed(() => auth.user?.email?.[0]?.toUpperCase() ?? '?')
 const userAvatar  = computed(() => auth.user?.avatar_url || null)
 
 const THEMES = [
-  { key: 'light',    icon: Sun,      labelKey: 'nav.themeLight' },
-  { key: 'dark',     icon: Moon,     labelKey: 'nav.themeDark' },
-  { key: 'fulldark', icon: MoonStar, labelKey: 'nav.themeFullDark' },
+  { key: 'light',    icon: Sun,  labelKey: 'nav.themeLight' },
+  { key: 'fulldark', icon: Moon, labelKey: 'nav.themeDark' },
 ]
 const LANGUAGES = [
   { key: 'en', labelKey: 'nav.languageEn', flag: 'fi-gb' },
@@ -148,7 +147,7 @@ defineExpose({ open, close, isOpen })
       <div class="px-4 py-3 border-b border-gray-800 space-y-3">
         <div>
           <p id="user-menu-theme" class="text-xs text-gray-400 mb-1.5">{{ t('nav.theme') }}</p>
-          <div class="grid grid-cols-3 gap-1" role="group" aria-labelledby="user-menu-theme">
+          <div class="grid grid-cols-2 gap-1" role="group" aria-labelledby="user-menu-theme">
             <button
               v-for="option in THEMES"
               :key="option.key"

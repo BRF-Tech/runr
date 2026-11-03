@@ -13,6 +13,7 @@ import { runtimeLabel } from '@/utils/runtimes'
 import { isLegacyServiceType } from '@/utils/projectHelpers'
 import { patchBadge } from '@/utils/runtimePatches'
 import { isGlobalProject } from '@/utils/globalProjects'
+import { usePermissionsStore } from '@/stores/permissions'
 import { ExternalLink, Globe, Earth, Clock, Zap, Cpu, MemoryStick, Timer, ArrowUpDown, User2 } from 'lucide-vue-next'
 
 const { t } = useI18n()
@@ -43,6 +44,13 @@ const globalRegionNames = computed(() => (props.project.global?.regions ?? []).m
 const hasPatchBadge = computed(() => !!patchBadge(props.project.runtime_patch))
 const patchOverdue = computed(() => props.project.runtime_patch?.state === 'overdue')
 
+// The edit pencil: the same permissions as the project page's Edit button (ProjectHeader). A
+// read-only role does not get it; the API would refuse the change (403)
+const perms = usePermissionsStore()
+const canEdit = computed(() =>
+  !isLegacyServiceType(props.project.service_type)
+  && (perms.can('projects.update', props.project.id) || perms.can('env.edit', props.project.id)))
+
 const cardClass = computed(() => {
   if (isEol.value || patchOverdue.value) return 'border-red-900/50 bg-red-950/20'
   if (isSunsetting.value) return 'border-yellow-900/50 bg-yellow-950/20'
@@ -72,7 +80,7 @@ defineEmits(['edit', 'patches'])
         <McpServerBadge :server="project.mcp_server" />
         <span
           v-if="isGlobal"
-          class="inline-flex items-center gap-1 text-xs font-medium rounded-md border px-2.5 py-1 bg-sky-900/30 border-sky-800/50 text-sky-300"
+          class="inline-flex items-center gap-1 text-xs font-medium rounded-md border px-2.5 py-1 bg-brand-900/30 border-brand-800/50 text-brand-300"
           :title="globalRegionNames"
           data-test="project-card-global"
         ><Earth class="w-3 h-3" />{{ t('globalProjects.badge') }}</span>
@@ -80,20 +88,21 @@ defineEmits(['edit', 'patches'])
           v-if="regionName"
           class="inline-flex items-center text-xs font-mono font-medium rounded-md border px-2.5 py-1"
           :class="theme === 'light'
-            ? 'text-white bg-brand-600 border border-brand-700'
+            ? 'text-gray-950 bg-gray-200 border border-gray-300'
             : 'text-white bg-white/10 border border-white/20'"
         >{{ regionName }}</span>
         <span
           v-if="project.config?.scale_to_zero != null"
           class="inline-flex items-center gap-1 font-mono text-xs px-2.5 py-1 rounded-md"
           :class="project.config.scale_to_zero
-            ? 'bg-emerald-900/30 border border-emerald-800/50 text-emerald-400'
-            : 'bg-blue-900/30 border border-blue-800/50 text-blue-400'"
+            ? 'bg-transparent border border-brand-500/60 text-brand-400'
+            : 'bg-brand-900/30 border border-brand-800/50 text-brand-300'"
         ><ArrowUpDown class="w-3 h-3" />{{ project.config.scale_to_zero ? t('projects.scalingS2z') : t('projects.scalingCustomLabel', { min: project.config.min_scale, max: project.config.max_scale }) }}</span>
         <button
-          v-if="!isLegacyServiceType(project.service_type)"
+          v-if="canEdit"
           class="opacity-0 group-hover:opacity-100 text-gray-400 hover:text-gray-100 transition-all p-0.5"
           :title="t('project.edit')"
+          data-test="project-card-edit"
           @click.stop="$emit('edit', project)"
         >
           <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor">
@@ -111,7 +120,7 @@ defineEmits(['edit', 'patches'])
     <!-- Endpoint / Schedule / Queue -->
     <div v-if="endpointUrl || project.config?.schedule || project.config?.queue_stream" class="text-xs">
       <div v-if="endpointUrl" class="flex items-center gap-1.5">
-        <span class="inline-flex items-center gap-1 font-mono text-xs px-2.5 py-1 rounded-md shrink-0" style="background:rgb(16 185 129/0.12);border:1px solid rgb(16 185 129/0.3);color:#10b981">
+        <span class="inline-flex items-center gap-1 font-mono text-xs px-2.5 py-1 rounded-md shrink-0 border bg-brand-900/30 border-brand-800/50 text-brand-300">
           <Globe class="w-3 h-3" />HTTP
         </span>
         <a
@@ -126,7 +135,7 @@ defineEmits(['edit', 'patches'])
         </a>
       </div>
       <div v-else-if="project.config?.schedule" class="flex items-center gap-1.5">
-        <span class="inline-flex items-center gap-1 font-mono text-xs px-2.5 py-1 rounded-md bg-amber-900/30 border border-amber-800/50 text-amber-400 shrink-0">
+        <span class="inline-flex items-center gap-1 font-mono text-xs px-2.5 py-1 rounded-md border bg-transparent border-brand-500/60 text-brand-400 shrink-0">
           <Clock class="w-3 h-3" />CRON
         </span>
         <span class="font-mono text-gray-400 truncate">{{ project.config.schedule }}</span>
@@ -134,7 +143,7 @@ defineEmits(['edit', 'patches'])
         <span class="text-gray-400 italic truncate">{{ describeCron(project.config.schedule, t) }}</span>
       </div>
       <div v-else-if="project.config?.queue_stream" class="flex items-center gap-1.5">
-        <span class="inline-flex items-center gap-1 font-mono text-xs px-2.5 py-1 rounded-md shrink-0" style="background:rgb(var(--brand-500)/0.12);border:1px solid rgb(var(--brand-500)/0.3);color:rgb(var(--brand-500))">
+        <span class="inline-flex items-center gap-1 font-mono text-xs px-2.5 py-1 rounded-md shrink-0 border bg-gray-800/60 border-gray-700 text-brand-300">
           <Zap class="w-3 h-3" />STREAM
         </span>
         <span class="font-mono text-gray-400 truncate">{{ project.config.queue_stream }}{{ moduleRegistry.queueStreamSuffixFn?.() || '' }}</span>
@@ -187,7 +196,7 @@ defineEmits(['edit', 'patches'])
         <template v-if="project.latest_deployment?.version">
           <span
             v-if="['pending','running'].includes(project.latest_deployment.status)"
-            class="text-amber-400/90"
+            class="text-yellow-400/90"
             :title="project.latest_deployment.status"
           >○ {{ project.latest_deployment.version.label }}</span>
           <span

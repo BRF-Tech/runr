@@ -138,9 +138,9 @@ defineExpose({ vcpu, memoryGb, gpus, note, fetchQuote, submit, canSubmit, amount
 
     <!-- The monthly price before the request is sent -->
     <div class="rounded-lg border border-gray-800 bg-gray-950/50 p-3 space-y-2" data-test="fixed-request-quote">
-      <p v-if="!amounts" class="text-xs text-amber-400" data-test="fixed-request-invalid">{{ t('billing.request.invalid') }}</p>
+      <p v-if="!amounts" class="text-xs text-yellow-400" data-test="fixed-request-invalid">{{ t('billing.request.invalid') }}</p>
       <div v-else-if="quoting && !quote" class="flex items-center gap-2 text-xs text-gray-400">
-        <div class="animate-spin h-3 w-3 border-2 border-sky-500 border-t-transparent rounded-full" />{{ t('billing.request.calculating') }}
+        <div class="animate-spin h-3 w-3 border-2 border-brand-500 border-t-transparent rounded-full" />{{ t('billing.request.calculating') }}
       </div>
       <p v-else-if="quoteError" class="text-xs text-red-400" data-test="fixed-request-quote-error">{{ quoteError }}</p>
       <template v-else-if="quote">

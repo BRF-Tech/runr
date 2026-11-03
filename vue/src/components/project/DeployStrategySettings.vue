@@ -30,10 +30,12 @@ const emit = defineEmits(['saved', 'open-tracing'])
 const { t } = useI18n()
 const toast = useToast()
 
+// The chosen strategy in the brand's colour
+const CHOSEN = 'background:rgb(var(--brand-600)/0.15);border-color:rgb(var(--brand-500)/0.5)'
 const OPTIONS = [
-  { id: 'direct',     icon: Rocket,   style: 'background:rgb(var(--brand-600)/0.15);border-color:rgb(var(--brand-500)/0.5)' },
-  { id: 'blue_green', icon: Columns2, style: 'background:rgb(14 165 233/0.15);border-color:rgb(14 165 233/0.5)' },
-  { id: 'canary',     icon: Bird,     style: 'background:rgb(245 158 11/0.15);border-color:rgb(245 158 11/0.5)' },
+  { id: 'direct',     icon: Rocket,   style: CHOSEN },
+  { id: 'blue_green', icon: Columns2, style: CHOSEN },
+  { id: 'canary',     icon: Bird,     style: CHOSEN },
 ]
 
 // Validation keys shown next to a field; any other error goes under the form
@@ -373,14 +375,14 @@ defineExpose({ load, save, useProjectSettings })
         <!-- Thresholds are judged on the project's span metrics: without tracing, time only -->
         <div
           v-if="settings.tracing === false"
-          class="flex items-start gap-2.5 bg-sky-900/20 border border-sky-800/40 rounded-md px-3 py-2.5"
+          class="flex items-start gap-2.5 bg-brand-900/20 border border-brand-800/40 rounded-md px-3 py-2.5"
           data-test="canary-no-tracing"
         >
-          <Activity class="w-4 h-4 text-sky-400 mt-0.5 shrink-0" />
-          <div class="text-xs text-sky-200 space-y-1.5">
+          <Activity class="w-4 h-4 text-brand-400 mt-0.5 shrink-0" />
+          <div class="text-xs text-brand-300 space-y-1.5">
             <p>{{ t('deployStrategy.canary.noTracing') }}</p>
             <button
-              v-if="tracingLink" type="button" class="text-sky-300 hover:text-sky-100 underline underline-offset-2"
+              v-if="tracingLink" type="button" class="text-brand-300 hover:text-brand-300 underline underline-offset-2"
               data-test="canary-open-tracing" @click="emit('open-tracing')"
             >{{ t('deployStrategy.canary.openTracing') }}</button>
           </div>

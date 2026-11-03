@@ -169,7 +169,7 @@ function reachableText(v) {
               <tr v-for="s in servers" :key="s.region_id" class="border-t border-gray-800 align-top" :data-server="s.region_name">
                 <td class="px-3 py-1.5 font-mono text-gray-100">
                   {{ s.region_name }}
-                  <span v-if="s.region_id === overview.update_region_id" class="ml-1 text-[10px] text-sky-400" :title="t('globalDns.platform.updateServerHint')">{{ t('globalDns.platform.updateServer') }}</span>
+                  <span v-if="s.region_id === overview.update_region_id" class="ml-1 text-[10px] text-brand-400" :title="t('globalDns.platform.updateServerHint')">{{ t('globalDns.platform.updateServer') }}</span>
                 </td>
                 <td class="px-3 py-1.5">
                   <span class="inline-flex items-center gap-1.5">

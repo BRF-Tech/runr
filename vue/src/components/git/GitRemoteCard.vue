@@ -3,6 +3,7 @@ import { computed, inject } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { GitBranch, Copy, RotateCw, Lock } from 'lucide-vue-next'
 import { PROJECT_GIT } from '@/composables/useProjectGit'
+import { usePermissionsStore } from '@/stores/permissions'
 
 // The project's RunR git remote: URL, commands, read-only state, redeploy of the branch head
 const { t } = useI18n()
@@ -10,10 +11,15 @@ const git = inject(PROJECT_GIT)
 
 const remote   = computed(() => git.info?.remote_url ?? '')
 const branch   = computed(() => git.info?.settings?.deploy_branch ?? 'main')
-const commands = computed(() => [
-  `git remote add runr ${remote.value}`,
-  `git push runr ${branch.value}`,
-].join('\n'))
+// Push (git.push) or clone / pull only (git.pull): the remote answers a push of a role without
+// git.push with 403, so such a role gets the clone command and the pull wording
+const canPush  = computed(() => !!git.abilities?.push)
+const commands = computed(() => (canPush.value
+  ? [`git remote add runr ${remote.value}`, `git push runr ${branch.value}`]
+  : [`git clone ${remote.value}`]).join('\n'))
+// Git signs in with an API token: the link to create one only for a role that may (tokens.manage)
+const perms = usePermissionsStore()
+const canCreateToken = computed(() => perms.can('tokens.manage'))
 </script>
 
 <template>
@@ -21,7 +27,7 @@ const commands = computed(() => [
     <div class="flex items-center gap-2 mb-4 pb-3 border-b border-gray-800">
       <GitBranch class="w-4 h-4" style="color:rgb(var(--brand-500))" />
       <h3 class="text-sm font-semibold text-gray-100">{{ t('gitDeploy.remote.title') }}</h3>
-      <span v-if="git.info.read_only" class="ml-auto inline-flex items-center gap-1 text-[11px] text-amber-400" data-testid="git-read-only">
+      <span v-if="git.info.read_only" class="ml-auto inline-flex items-center gap-1 text-[11px] text-yellow-400" data-testid="git-read-only">
         <Lock class="w-3 h-3" />{{ t('gitDeploy.remote.readOnly') }}
       </span>
     </div>
@@ -37,7 +43,7 @@ const commands = computed(() => [
     <p class="text-xs text-gray-400 mt-3">
       {{ git.info.read_only
         ? t('gitDeploy.remote.readOnlyHint', { repo: git.info.connection?.repo_full_name ?? '' })
-        : t('gitDeploy.remote.pushHint', { branch }) }}
+        : canPush ? t('gitDeploy.remote.pushHint', { branch }) : t('gitDeploy.remote.pullHint') }}
     </p>
 
     <div v-if="!git.info.read_only" class="mt-3 relative">
@@ -47,9 +53,12 @@ const commands = computed(() => [
       </button>
     </div>
 
-    <p class="text-xs text-gray-500 mt-3">
-      {{ t('gitDeploy.remote.authHint', { user: git.info.username_hint }) }}
-      <RouterLink to="/settings?tab=tokens" class="text-brand-500 hover:underline">{{ t('gitDeploy.remote.tokensLink') }}</RouterLink>
+    <p class="text-xs text-gray-500 mt-3" data-testid="git-remote-auth">
+      <template v-if="canCreateToken">
+        {{ t(canPush ? 'gitDeploy.remote.authHint' : 'gitDeploy.remote.authHintPull', { user: git.info.username_hint }) }}
+        <RouterLink to="/settings?tab=tokens" class="text-brand-500 hover:underline" data-testid="git-remote-tokens">{{ t('gitDeploy.remote.tokensLink') }}</RouterLink>
+      </template>
+      <template v-else>{{ t('gitDeploy.remote.noTokensHint') }}</template>
     </p>
 
     <div class="mt-4 flex items-center justify-between gap-3 text-xs">

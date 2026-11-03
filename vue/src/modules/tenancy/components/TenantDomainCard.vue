@@ -96,8 +96,8 @@ async function completeMigration() {
       {{ t('tenancy.domain.example') }} <span style="color:rgb(var(--brand-500))">https://function.region.{{ effective }}</span>
     </p>
     <p v-if="ownDomain" class="text-xs text-gray-500 mt-1">{{ t('tenancy.domain.dnsHint', { host: `*.region.${ownDomain}` }) }}</p>
-    <div v-if="migration" class="mt-3 rounded border border-amber-700/50 bg-amber-900/20 p-3" data-testid="tenant-domain-migration">
-      <p class="text-xs text-amber-200">
+    <div v-if="migration" class="mt-3 rounded border border-yellow-700/50 bg-yellow-900/20 p-3" data-testid="tenant-domain-migration">
+      <p class="text-xs text-yellow-200">
         {{ migration.from
           ? t('tenancy.domain.moving', { from: migration.from, to: migration.to || t('tenancy.domain.platformShort') })
           : t('tenancy.domain.movingFirst', { to: migration.to }) }}

@@ -55,7 +55,7 @@ defineEmits([
     <div v-if="isCentralAdmin && form.region_mode" class="flex items-center justify-between rounded-md border border-gray-800 bg-gray-900/40 px-3 py-2.5">
       <span class="text-xs text-gray-400">{{ t('settings.regionDetail.regionMode') }}</span>
       <span class="text-xs font-mono"
-        :class="form.region_mode === 'infinite' ? 'text-violet-400' : 'text-sky-400'">
+        :class="form.region_mode === 'infinite' ? 'text-brand-400' : 'text-brand-400'">
         {{ t('tenancy.regionMode_' + form.region_mode) }}
       </span>
     </div>
@@ -69,7 +69,7 @@ defineEmits([
           class="flex-1 text-[11px] py-1.5 rounded-md transition-colors font-medium"
           :class="form.region_status === s
             ? (s === 'active' ? 'bg-emerald-900/60 text-emerald-400 ring-1 ring-emerald-700'
-              : s === 'maintenance' ? 'bg-amber-900/60 text-amber-400 ring-1 ring-amber-700'
+              : s === 'maintenance' ? 'bg-yellow-900/60 text-yellow-400 ring-1 ring-yellow-700'
               : 'bg-gray-700 text-gray-100 ring-1 ring-gray-600')
             : 'bg-gray-900/40 text-gray-400 hover:text-gray-400'"
           :disabled="togglingStatus || form.region_status === s"
@@ -83,8 +83,8 @@ defineEmits([
          runs, or when it left this region behind the release -->
     <div v-if="reconcileShown" data-testid="region-reconcile"
       class="rounded-md border px-3 py-2.5 space-y-1"
-      :class="region.reconcile.status === 'running' ? 'border-sky-800/60 bg-sky-900/10' : 'border-amber-700/60 bg-amber-900/10'">
-      <p class="text-xs font-medium" :class="region.reconcile.status === 'running' ? 'text-sky-400' : 'text-amber-400'">
+      :class="region.reconcile.status === 'running' ? 'border-brand-800/60 bg-brand-900/10' : 'border-yellow-700/60 bg-yellow-900/10'">
+      <p class="text-xs font-medium" :class="region.reconcile.status === 'running' ? 'text-brand-400' : 'text-yellow-400'">
         {{ t('settings.regions.reconcile_' + region.reconcile.status, { version: region.reconcile.version || '' }) }}
       </p>
       <ul v-if="region.reconcile.problems?.length" class="text-[11px] text-gray-400 font-mono space-y-0.5">
@@ -159,13 +159,13 @@ defineEmits([
       <label class="label">{{ t('settings.regionDetail.regionMode') }}</label>
       <div class="grid grid-cols-2 gap-2">
         <button type="button" class="rounded-md border px-3 py-2 text-xs text-left transition-colors"
-          :class="form.region_mode === 'managed' ? 'border-sky-500/60 bg-sky-900/20 text-sky-400' : 'border-gray-800 bg-gray-900/40 text-gray-400 hover:text-gray-100'"
+          :class="form.region_mode === 'managed' ? 'border-brand-500/60 bg-brand-900/20 text-brand-400' : 'border-gray-800 bg-gray-900/40 text-gray-400 hover:text-gray-100'"
           @click="$emit('update:form-region-mode', 'managed')">
           <span class="font-medium">{{ t('tenancy.regionMode_managed') }}</span>
           <p class="text-[10px] mt-0.5 opacity-70">{{ t('settings.regionDetail.regionModeManaged') }}</p>
         </button>
         <button type="button" class="rounded-md border px-3 py-2 text-xs text-left transition-colors"
-          :class="form.region_mode === 'infinite' ? 'border-violet-500/60 bg-violet-900/20 text-violet-400' : 'border-gray-800 bg-gray-900/40 text-gray-400 hover:text-gray-100'"
+          :class="form.region_mode === 'infinite' ? 'border-brand-500/60 bg-brand-900/20 text-brand-400' : 'border-gray-800 bg-gray-900/40 text-gray-400 hover:text-gray-100'"
           @click="$emit('update:form-region-mode', 'infinite')">
           <span class="font-medium">{{ t('tenancy.regionMode_infinite') }}</span>
           <p class="text-[10px] mt-0.5 opacity-70">{{ t('settings.regionDetail.regionModeInfinite') }}</p>

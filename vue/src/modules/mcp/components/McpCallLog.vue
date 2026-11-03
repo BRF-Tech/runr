@@ -22,7 +22,7 @@ const latest = useLatest()
 const outcomeStyle = {
   ok:          'bg-emerald-900/30 border-emerald-800/40 text-emerald-400',
   error:       'bg-red-900/30 border-red-800/40 text-red-400',
-  denied:      'bg-amber-900/30 border-amber-800/40 text-amber-400',
+  denied:      'bg-yellow-900/30 border-yellow-800/40 text-yellow-400',
   unreachable: 'bg-gray-800 border-gray-700 text-gray-400',
 }
 

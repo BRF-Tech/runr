@@ -67,16 +67,16 @@ function toggleWarmer() {
         type="button"
         class="flex flex-col items-center gap-2 py-4 px-3 rounded-lg border text-sm font-medium transition-all"
         :class="scaleToZero
-          ? 'text-white border-transparent shadow-lg'
+          ? 'text-gray-100 border-transparent shadow-lg'
           : 'bg-gray-900/60 border-gray-700/60 text-gray-400 hover:border-gray-500 hover:text-gray-100'"
-        :style="scaleToZero ? 'background:rgb(16 185 129/0.15);border-color:rgb(16 185 129/0.5);box-shadow:0 0 12px rgb(16 185 129/0.12)' : ''"
+        :style="scaleToZero ? 'background:rgb(var(--brand-600)/0.15);border-color:rgb(var(--brand-500)/0.5);box-shadow:0 0 12px rgb(var(--brand-600)/0.12)' : ''"
         @click="selectZero"
       >
         <div
           class="w-10 h-10 rounded-lg flex items-center justify-center"
-          :class="scaleToZero ? 'bg-emerald-500/20' : 'bg-gray-800'"
+          :class="scaleToZero ? 'bg-brand-500/20' : 'bg-gray-800'"
         >
-          <ArrowDownToLine class="w-5 h-5" :class="scaleToZero ? 'text-emerald-400' : 'text-gray-400'" />
+          <ArrowDownToLine class="w-5 h-5" :class="scaleToZero ? 'text-brand-400' : 'text-gray-400'" />
         </div>
         <span class="font-mono text-xs">{{ t('create.fields.scaleZero') }}</span>
         <span class="text-[11px] leading-snug opacity-60 text-center">{{ t('create.fields.scaleZeroDesc') }}</span>
@@ -87,7 +87,7 @@ function toggleWarmer() {
         type="button"
         class="flex flex-col items-center gap-2 py-4 px-3 rounded-lg border text-sm font-medium transition-all"
         :class="!scaleToZero
-          ? 'text-white border-transparent shadow-lg'
+          ? 'text-gray-100 border-transparent shadow-lg'
           : 'bg-gray-900/60 border-gray-700/60 text-gray-400 hover:border-gray-500 hover:text-gray-100'"
         :style="!scaleToZero ? 'background:rgb(var(--brand-600)/0.15);border-color:rgb(var(--brand-500)/0.5);box-shadow:0 0 12px rgb(var(--brand-600)/0.12)' : ''"
         @click="selectCustom"
@@ -110,7 +110,7 @@ function toggleWarmer() {
         <div class="flex items-center gap-1">
           <button
             type="button"
-            class="w-8 h-8 rounded-md border border-gray-700 bg-gray-800 flex items-center justify-center text-gray-400 hover:text-white hover:border-gray-500 transition-colors"
+            class="w-8 h-8 rounded-md border border-gray-700 bg-gray-800 flex items-center justify-center text-gray-400 hover:text-gray-100 hover:border-gray-500 transition-colors"
             @click="adjustMin(-1)"
           ><Minus class="w-3.5 h-3.5" /></button>
           <input
@@ -125,7 +125,7 @@ function toggleWarmer() {
           />
           <button
             type="button"
-            class="w-8 h-8 rounded-md border border-gray-700 bg-gray-800 flex items-center justify-center text-gray-400 hover:text-white hover:border-gray-500 transition-colors"
+            class="w-8 h-8 rounded-md border border-gray-700 bg-gray-800 flex items-center justify-center text-gray-400 hover:text-gray-100 hover:border-gray-500 transition-colors"
             @click="adjustMin(1)"
           ><Plus class="w-3.5 h-3.5" /></button>
         </div>
@@ -138,7 +138,7 @@ function toggleWarmer() {
         <div class="flex items-center gap-1">
           <button
             type="button"
-            class="w-8 h-8 rounded-md border border-gray-700 bg-gray-800 flex items-center justify-center text-gray-400 hover:text-white hover:border-gray-500 transition-colors"
+            class="w-8 h-8 rounded-md border border-gray-700 bg-gray-800 flex items-center justify-center text-gray-400 hover:text-gray-100 hover:border-gray-500 transition-colors"
             @click="adjustMax(-1)"
           ><Minus class="w-3.5 h-3.5" /></button>
           <input
@@ -153,7 +153,7 @@ function toggleWarmer() {
           />
           <button
             type="button"
-            class="w-8 h-8 rounded-md border border-gray-700 bg-gray-800 flex items-center justify-center text-gray-400 hover:text-white hover:border-gray-500 transition-colors"
+            class="w-8 h-8 rounded-md border border-gray-700 bg-gray-800 flex items-center justify-center text-gray-400 hover:text-gray-100 hover:border-gray-500 transition-colors"
             @click="adjustMax(1)"
           ><Plus class="w-3.5 h-3.5" /></button>
         </div>

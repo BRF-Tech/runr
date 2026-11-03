@@ -33,7 +33,7 @@ function override() {
     <div class="absolute inset-0 bg-black/70 backdrop-blur-xs" @click="emit('close')" />
     <div class="relative card w-full max-w-lg space-y-4">
       <div class="flex items-center justify-between">
-        <h2 class="text-base font-semibold flex items-center gap-2" :class="pending ? 'text-sky-300' : 'text-red-300'">
+        <h2 class="text-base font-semibold flex items-center gap-2" :class="pending ? 'text-brand-300' : 'text-red-300'">
           <Clock v-if="pending" class="w-4 h-4" />
           <ShieldAlert v-else class="w-4 h-4" />
           {{ pending ? t('supplyChain.block.pendingTitle') : t('supplyChain.block.title') }}

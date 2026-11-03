@@ -2,6 +2,8 @@ export default {
   account: {
     title:          'Account settings',
     backToProjects: '← Projects',
+    // A frozen account (RUNR_FROZEN_ACCOUNTS, a shared demo login): the change controls are off
+    frozenNote:     'This is a shared account: its account and sign-in settings are locked.',
 
     // Tabs
     tabAccount:       'Account',

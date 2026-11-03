@@ -210,7 +210,7 @@ async function upload() {
     <label class="label" for="import-file">{{ t('orgTransfer.import.file') }}</label>
     <input id="import-file" type="file" accept=".zst,application/zstd" class="block w-full text-xs text-gray-300 mb-2" :disabled="uploading" data-testid="import-file" @change="onPick">
     <p v-if="file" class="text-xs text-gray-400 font-mono mb-1">{{ file.name }} · {{ formatBytes(file.size) }}</p>
-    <p v-if="file && resume" class="text-xs text-amber-300 mb-2" data-testid="import-resume-note">
+    <p v-if="file && resume" class="text-xs text-yellow-300 mb-2" data-testid="import-resume-note">
       {{ t('orgTransfer.import.resuming', { size: formatBytes(resume.upload?.uploaded_bytes) }) }}
     </p>
 

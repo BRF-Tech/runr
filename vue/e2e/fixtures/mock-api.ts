@@ -378,6 +378,12 @@ function defaultBranding(multiTenant: boolean): Json {
     powered_by: true,
     palette: { 300: '253 186 116', 400: '251 146 60', 500: '249 115 22', 600: '234 88 12', 700: '194 65 12', 800: '154 52 18', 900: '124 45 18' },
     accent_rgb: '230 57 70',
+    // RunR's theme tones (the console derives the scales from the base colours) and theme
+    dark_color: '#0a0a0a',
+    dark_scale: null,
+    light_color: '#fffcf8',
+    light_scale: null,
+    default_theme: 'dark',
     is_default_brand: true,
     tenant: null,
     // billing: the modules server builds the Billing module in (VITE_BILLING_ENABLED)

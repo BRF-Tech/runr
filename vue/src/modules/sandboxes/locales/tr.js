@@ -88,6 +88,7 @@ export default {
     empty: {
       title: 'Henüz sandbox yok',
       text:  'Sandbox, kendi kümenizde çalışan kısa ömürlü, yalıtılmış bir konteynerdir. Ajanlar ve uygulamalar onları API ya da SDK\'lar ile oluşturur; buradan da başlatabilirsiniz.',
+      textReadOnly: 'Sandbox, kendi kümenizde çalışan kısa ömürlü, yalıtılmış bir konteynerdir. Ajanlar ve uygulamalar onları API ya da SDK\'lar ile oluşturur.',
       ended: 'Bu filtreye uyan sandbox yok.',
     },
 

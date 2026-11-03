@@ -105,7 +105,7 @@ onMounted(() => load(true))
     <div class="flex items-start justify-between gap-4">
       <div>
         <div class="flex items-center gap-2">
-          <Radio class="w-4 h-4 text-sky-300" />
+          <Radio class="w-4 h-4 text-brand-300" />
           <h2 class="text-[15px] font-semibold text-gray-100">{{ t('triggers.topics.title') }}</h2>
         </div>
         <p class="text-xs text-gray-400 mt-1 max-w-3xl">{{ t('triggers.topics.intro') }}</p>
@@ -193,7 +193,7 @@ onMounted(() => load(true))
             </thead>
             <tbody>
               <tr v-for="s in selected.subscriptions" :key="s.trigger_id" class="border-t border-gray-800/60" :data-subscription="s.project_name">
-                <td class="py-1 pr-3"><RouterLink :to="projectOf(s.project_id)" class="text-sky-400 hover:text-sky-300">{{ s.project_name ?? s.project_id }}</RouterLink></td>
+                <td class="py-1 pr-3"><RouterLink :to="projectOf(s.project_id)" class="text-brand-400 hover:text-brand-300">{{ s.project_name ?? s.project_id }}</RouterLink></td>
                 <td class="py-1 pr-3 font-mono text-gray-300">{{ s.trigger }}<span v-if="!s.enabled" class="ml-1 text-gray-500">({{ t('triggers.topics.subscriptionOff') }})</span></td>
                 <td class="py-1 pr-3 text-gray-400">{{ t(`triggers.fields.start_${s.start_from === 'earliest' ? 'earliest' : 'latest'}`) }}</td>
               </tr>

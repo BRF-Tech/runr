@@ -54,7 +54,7 @@ async function kill(p) {
 const statusStyle = {
   running: 'text-emerald-400',
   exited:  'text-gray-400',
-  killed:  'text-orange-400',
+  killed:  'text-yellow-400',
 }
 
 watch(() => props.disabled, (d) => { if (!d) load() })

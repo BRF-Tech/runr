@@ -93,6 +93,9 @@ describe('KeySecret', () => {
 })
 
 describe('GatewayRoutes', () => {
+  // no permissions loaded: the API decides (the plugin tests above load some)
+  beforeEach(() => setActivePinia(createPinia()))
+
   const gateway = {
     id: 'gw1',
     routes: [{ id: 'r1', path: '/orders', project: { name: 'orders' }, url: 'https://jane.eu-1.runr.test/orders', auth_mode: 'public', gateway_only: false }],

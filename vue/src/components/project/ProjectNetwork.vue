@@ -172,7 +172,7 @@ async function copy(text, key) {
     </div>
 
     <div v-if="loading" class="flex items-center justify-center py-12">
-      <div class="animate-spin h-6 w-6 border-2 border-sky-500 border-t-transparent rounded-full" />
+      <div class="animate-spin h-6 w-6 border-2 border-brand-500 border-t-transparent rounded-full" />
     </div>
 
     <div v-else-if="loadError" class="bg-red-900/20 border border-red-800/40 rounded-md px-4 py-3">
@@ -293,7 +293,7 @@ async function copy(text, key) {
             <span class="font-mono text-sm text-gray-100 break-all">{{ c.caller }}</span>
             <span
               v-if="c.cross_tenant"
-              class="inline-flex items-center px-2 py-0.5 rounded-sm text-[10px] font-medium border bg-amber-900/30 text-amber-300 border-amber-800/50"
+              class="inline-flex items-center px-2 py-0.5 rounded-sm text-[10px] font-medium border bg-yellow-900/30 text-yellow-300 border-yellow-800/50"
             >{{ t('network.callers.grant', { org: c.organization }) }}</span>
             <button
               v-if="canManage" type="button" class="ml-auto btn-secondary text-xs px-2.5 py-1 text-red-400 hover:text-red-300"

@@ -59,7 +59,7 @@ defineProps({
           </div>
           <div v-if="version.config_snapshot.schedule">
             <p class="label">{{ t('project.schedule') }}</p>
-            <p class="font-mono text-amber-400/80">{{ version.config_snapshot.schedule }}</p>
+            <p class="font-mono text-brand-400/80">{{ version.config_snapshot.schedule }}</p>
           </div>
         </div>
 
@@ -110,7 +110,7 @@ defineProps({
               v-for="(val, key) in version.config_snapshot.env_vars" :key="key"
               class="flex gap-2 font-mono text-xs"
             >
-              <span class="text-indigo-400">{{ key }}</span>
+              <span class="text-brand-400">{{ key }}</span>
               <span class="text-gray-400">=</span>
               <span class="text-gray-400">{{ val }}</span>
             </div>

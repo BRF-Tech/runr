@@ -240,7 +240,7 @@ describe('TicketDetailModal', () => {
     expect(wrapper.text()).toContain('Looks like a quota issue')
     expect(wrapper.text()).not.toContain('Can you share the log?')
     expect(wrapper.find('input.h-11').exists()).toBe(false)
-    const noteInput = wrapper.findAll('input').find(i => i.classes().includes('placeholder-amber-600'))
+    const noteInput = wrapper.findAll('input').find(i => i.classes().includes('placeholder-yellow-600'))
     await noteInput.setValue('Checked the quota')
     await noteInput.trigger('keyup.enter')
     await flushPromises()

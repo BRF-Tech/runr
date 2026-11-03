@@ -34,14 +34,14 @@ async function save() {
 <template>
   <section class="rounded-xl border border-gray-800 bg-gray-900/60 px-5 py-4 space-y-4" data-testid="mcp-setup">
     <div class="flex items-start gap-3">
-      <Bot class="w-5 h-5 text-sky-400 shrink-0 mt-0.5" />
+      <Bot class="w-5 h-5 text-brand-400 shrink-0 mt-0.5" />
       <div>
         <p class="text-sm font-semibold text-gray-100">{{ t('mcp.project.setupTitle') }}</p>
         <p class="text-xs text-gray-400 mt-0.5">{{ t('mcp.project.setupHint') }}</p>
       </div>
     </div>
 
-    <p v-if="!httpTrigger" class="text-xs text-amber-300" data-testid="mcp-setup-trigger">{{ t('mcp.project.needsHttp') }}</p>
+    <p v-if="!httpTrigger" class="text-xs text-yellow-300" data-testid="mcp-setup-trigger">{{ t('mcp.project.needsHttp') }}</p>
 
     <div>
       <p class="label mb-2">{{ t('mcp.project.accessMode') }}</p>

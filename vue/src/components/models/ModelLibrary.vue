@@ -97,7 +97,7 @@ async function deleteModel(model) {
           <div class="flex items-center gap-2">
             <span class="font-mono text-sm text-gray-100">{{ m.name }}</span>
             <span class="px-1.5 py-0.5 rounded-sm text-[10px] bg-gray-800 text-gray-300">{{ t(`ai.sources.${m.source}`, m.source) }}</span>
-            <Lock v-if="m.gated || m.private" class="w-3.5 h-3.5 text-amber-400" />
+            <Lock v-if="m.gated || m.private" class="w-3.5 h-3.5 text-yellow-400" />
           </div>
           <p class="text-[11px] text-gray-400 font-mono truncate">
             <template v-if="m.hub_id">{{ m.hub_id }}@{{ (m.revision_sha || m.revision || 'main').slice(0, 12) }}</template>

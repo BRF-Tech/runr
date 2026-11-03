@@ -1,6 +1,7 @@
 import axios from 'axios'
 import { moduleRegistry } from '@/modules/index'
 import { describeConnectionFailure } from '@/api/errors'
+import { currentLocale } from '@/utils/locale'
 
 const client = axios.create({
   baseURL: import.meta.env.VITE_API_URL || '/api',
@@ -30,7 +31,8 @@ client.interceptors.request.use((config) => {
   const token = localStorage.getItem('token')
   if (token) config.headers.Authorization = `Bearer ${token}`
 
-  config.headers['Accept-Language'] = localStorage.getItem('locale') || 'tr'
+  // The console's language: the stored choice, else the browser's (utils/locale.js)
+  config.headers['Accept-Language'] = currentLocale()
 
   // Run module request interceptors
   for (const interceptor of moduleRegistry.requestInterceptors) {

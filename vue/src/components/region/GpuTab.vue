@@ -244,7 +244,7 @@ watch(() => props.regionId, () => { load(); loadStorage() }, { immediate: true }
 const statusClass = (s) => AI_STATUS_CLASSES[s] ?? 'bg-gray-800 text-gray-400 border-gray-700'
 const sandboxClass = (s) => s === 'ok'
   ? 'text-emerald-400'
-  : s === 'nvproxy' ? 'text-blue-400' : 'text-red-400'
+  : s === 'nvproxy' ? 'text-brand-400' : 'text-red-400'
 </script>
 
 <template>
@@ -276,7 +276,7 @@ const sandboxClass = (s) => s === 'ok'
         </div>
       </div>
 
-      <p v-if="withoutPlugin.length" class="flex items-start gap-2 text-xs text-amber-300/90 bg-amber-900/20 rounded-sm px-3 py-2" data-testid="gpu-without-plugin">
+      <p v-if="withoutPlugin.length" class="flex items-start gap-2 text-xs text-yellow-300/90 bg-yellow-900/20 rounded-sm px-3 py-2" data-testid="gpu-without-plugin">
         <AlertTriangle class="w-3.5 h-3.5 shrink-0 mt-0.5" />
         {{ t('ai.gpu.region.hardwareWithoutPlugin', { nodes: withoutPlugin.join(', ') }) }}
       </p>
@@ -285,7 +285,7 @@ const sandboxClass = (s) => s === 'ok'
       <div class="bg-gray-900/60 border border-gray-800 rounded-xl p-4 space-y-3">
         <div class="flex items-center justify-between gap-3">
           <div>
-            <h4 class="text-sm font-medium text-gray-100 flex items-center gap-1.5"><Cpu class="w-4 h-4 text-amber-400" />{{ t('ai.gpu.region.support') }}</h4>
+            <h4 class="text-sm font-medium text-gray-100 flex items-center gap-1.5"><Cpu class="w-4 h-4 text-brand-400" />{{ t('ai.gpu.region.support') }}</h4>
             <p class="text-xs text-gray-400 mt-0.5">{{ t(`ai.gpu.region.modes.${mode}`) }}</p>
           </div>
           <div class="flex items-center gap-2">
@@ -396,7 +396,7 @@ const sandboxClass = (s) => s === 'ok'
                 </td>
                 <td class="py-1.5">
                   <span v-if="n.has_device_plugin" class="text-emerald-400">{{ t('ai.gpu.region.pluginYes') }}</span>
-                  <span v-else-if="n.hardware_detected" class="text-amber-400">{{ t('ai.gpu.region.pluginHardwareOnly') }}</span>
+                  <span v-else-if="n.hardware_detected" class="text-yellow-400">{{ t('ai.gpu.region.pluginHardwareOnly') }}</span>
                   <span v-else class="text-gray-500">—</span>
                 </td>
               </tr>

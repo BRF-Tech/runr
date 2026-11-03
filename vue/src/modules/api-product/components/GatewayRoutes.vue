@@ -7,6 +7,8 @@ import { useConfirm } from '@/composables/useConfirm'
 import { projectsApi } from '@/api/projects'
 import { environmentsApi } from '@/api/environments'
 import { apiProductApi } from '../api/apiProduct'
+import { usePermissionsStore } from '@/stores/permissions'
+import { canManageGateway } from '../utils/access'
 
 /**
  * The gateway's routes and how callers authenticate on each: public, an API key of a consumer,
@@ -19,6 +21,12 @@ const emit = defineEmits(['updated'])
 const { t } = useI18n()
 const toast = useToast()
 const { confirm } = useConfirm()
+// adding, changing and removing routes: the gateway's manager, with projects.update on the
+// route's project (GatewayPolicy::route); others see the routes and their settings read-only
+const perms = usePermissionsStore()
+const canManage = computed(() => canManageGateway(props.gateway))
+const canRoute = (projectId) => canManage.value && perms.can('projects.update', projectId)
+const canAdd = computed(() => canManage.value && perms.canAnywhere('projects.update'))
 
 // ── New route: project → its environments in the gateway's region → path, and its
 // authentication: a key or JWT route is created with it in one call, never public for a moment ──
@@ -42,7 +50,8 @@ async function openAdd() {
   if (!projects.value.length) {
     try {
       const { data } = await projectsApi.list()
-      projects.value = data.data ?? data ?? []
+      // only the projects the user may route
+      projects.value = (data.data ?? data ?? []).filter((p) => canRoute(p.id))
     } catch { projects.value = [] }
   }
 }
@@ -156,19 +165,21 @@ async function save(route) {
 }
 
 const err = (routeId, field) => (errors.value?.[routeId]?.[field] || [])[0]
+
+const editable = (route) => canRoute(route.project_id ?? route.project?.id)
 </script>
 
 <template>
   <div class="space-y-3" data-test="api-routes">
     <div class="flex items-start justify-between gap-3">
       <p class="text-[11px] text-gray-500">{{ t('apiProduct.routes.hint') }}</p>
-      <button v-if="!adding" type="button" class="btn-secondary text-xs px-3 py-1.5 shrink-0" data-test="route-add-open" @click="openAdd">
+      <button v-if="canAdd && !adding" type="button" class="btn-secondary text-xs px-3 py-1.5 shrink-0" data-test="route-add-open" @click="openAdd">
         <Plus class="w-3.5 h-3.5" />{{ t('apiProduct.routes.add') }}
       </button>
     </div>
 
     <!-- New route: to a project's own workload or to one of its environments in this region -->
-    <form v-if="adding" class="bg-gray-900 border border-gray-800 rounded-md p-3 space-y-3" data-test="route-add" @submit.prevent="addRoute">
+    <form v-if="canAdd && adding" class="bg-gray-900 border border-gray-800 rounded-md p-3 space-y-3" data-test="route-add" @submit.prevent="addRoute">
       <div class="grid gap-3 md:grid-cols-3">
         <div>
           <label class="label">{{ t('apiProduct.routes.project') }}</label>
@@ -183,7 +194,7 @@ const err = (routeId, field) => (errors.value?.[routeId]?.[field] || [])[0]
           <select v-model="newRoute.environment" class="input" :disabled="!routable.length" data-test="route-add-environment">
             <option v-for="e in routable" :key="e.id" :value="e.is_primary ? 'production' : e.name">{{ e.name }}</option>
           </select>
-          <p v-if="newRoute.project_id && environments.length && !routable.length" class="text-[11px] text-amber-400/80 mt-1" data-test="route-add-no-environment">
+          <p v-if="newRoute.project_id && environments.length && !routable.length" class="text-[11px] text-yellow-400/80 mt-1" data-test="route-add-no-environment">
             {{ t('apiProduct.routes.noEnvironmentHere') }}
           </p>
           <p v-if="addErr('environment')" class="text-[11px] text-red-400 mt-1" data-test="route-add-environment-error">{{ addErr('environment') }}</p>
@@ -249,59 +260,64 @@ const err = (routeId, field) => (errors.value?.[routeId]?.[field] || [])[0]
         <span class="text-[11px] text-gray-500">→ {{ route.project?.name }}</span>
         <span
           v-if="route.environment"
-          class="px-1.5 py-0.5 rounded-sm text-[10px] font-medium border border-sky-800/40 bg-sky-900/30 text-sky-300"
+          class="px-1.5 py-0.5 rounded-sm text-[10px] font-medium border border-brand-800/40 bg-brand-900/30 text-brand-300"
           data-test="route-environment"
         >{{ route.environment }}</span>
         <span v-if="route.methods?.length" class="text-[11px] text-gray-500">{{ route.methods.join(', ') }}</span>
-        <a :href="route.url" target="_blank" rel="noopener" class="ml-auto text-[11px] text-sky-400 hover:text-sky-300 font-mono">{{ route.url }}</a>
-        <button type="button" class="p-1 text-gray-400 hover:text-red-400" :title="t('apiProduct.routes.remove')" data-test="route-remove" @click="removeRoute(route)">
+        <a :href="route.url" target="_blank" rel="noopener" class="ml-auto text-[11px] text-brand-400 hover:text-brand-300 font-mono">{{ route.url }}</a>
+        <button v-if="editable(route)" type="button" class="p-1 text-gray-400 hover:text-red-400" :title="t('apiProduct.routes.remove')" data-test="route-remove" @click="removeRoute(route)">
           <Trash2 class="w-3.5 h-3.5" />
         </button>
       </div>
 
+      <!-- its authentication: read-only for whoever may not change the route -->
       <div v-if="drafts[route.id]" class="grid gap-3 md:grid-cols-3">
         <div>
           <label class="label">{{ t('apiProduct.routes.auth') }}</label>
-          <select v-model="drafts[route.id].auth_mode" class="input" data-test="route-auth">
+          <select v-model="drafts[route.id].auth_mode" class="input" :disabled="!editable(route)" data-test="route-auth">
             <option v-for="m in MODES" :key="m" :value="m">{{ t(`apiProduct.routes.modes.${m}`) }}</option>
           </select>
         </div>
         <label class="flex items-center gap-2 text-sm text-gray-200 md:col-span-2 md:mt-5">
-          <input v-model="drafts[route.id].gateway_only" type="checkbox" data-test="route-gateway-only">
+          <input v-model="drafts[route.id].gateway_only" type="checkbox" :disabled="!editable(route)" data-test="route-gateway-only">
           {{ t('apiProduct.routes.gatewayOnly') }}
         </label>
 
         <template v-if="drafts[route.id].auth_mode === 'jwt'">
           <div class="md:col-span-3">
             <label class="label">{{ t('apiProduct.routes.jwksUrl') }}</label>
-            <input v-model="drafts[route.id].jwks_url" class="input font-mono" placeholder="https://id.example.com/.well-known/jwks.json" data-test="route-jwks">
+            <input v-model="drafts[route.id].jwks_url" class="input font-mono" placeholder="https://id.example.com/.well-known/jwks.json" :disabled="!editable(route)" data-test="route-jwks">
             <p v-if="err(route.id, 'jwt.jwks_url')" class="text-[11px] text-red-400 mt-1" data-test="route-jwks-error">{{ err(route.id, 'jwt.jwks_url') }}</p>
           </div>
           <div>
             <label class="label">{{ t('apiProduct.routes.issuer') }}</label>
-            <input v-model="drafts[route.id].issuer" class="input font-mono" placeholder="https://id.example.com">
+            <input v-model="drafts[route.id].issuer" class="input font-mono" placeholder="https://id.example.com" :disabled="!editable(route)" data-test="route-issuer">
           </div>
           <div>
             <label class="label">{{ t('apiProduct.routes.audience') }}</label>
-            <input v-model="drafts[route.id].audience" class="input font-mono">
+            <input v-model="drafts[route.id].audience" class="input font-mono" :disabled="!editable(route)" data-test="route-audience">
           </div>
           <div>
             <label class="label">{{ t('apiProduct.routes.subjectClaim') }}</label>
-            <input v-model="drafts[route.id].subject_claim" class="input font-mono" placeholder="sub">
+            <input v-model="drafts[route.id].subject_claim" class="input font-mono" placeholder="sub" :disabled="!editable(route)" data-test="route-subject-claim">
           </div>
           <label class="flex items-center gap-2 text-sm text-gray-200 md:col-span-3">
-            <input v-model="drafts[route.id].require_consumer" type="checkbox">
+            <input v-model="drafts[route.id].require_consumer" type="checkbox" :disabled="!editable(route)" data-test="route-require-consumer">
             {{ t('apiProduct.routes.requireConsumer') }}
           </label>
         </template>
       </div>
 
       <p v-if="drafts[route.id]?.auth_mode !== 'public'" class="text-[11px] text-gray-500">{{ t(`apiProduct.routes.explain.${drafts[route.id]?.auth_mode}`) }}</p>
-      <p v-if="drafts[route.id]?.gateway_only" class="text-[11px] text-amber-400/80">{{ t('apiProduct.routes.gatewayOnlyHint') }}</p>
+      <p v-if="drafts[route.id]?.gateway_only" class="text-[11px] text-yellow-400/80">{{ t('apiProduct.routes.gatewayOnlyHint') }}</p>
 
-      <button type="button" class="btn-primary text-xs px-3 py-1.5" :disabled="saving === route.id" data-test="route-save" @click="save(route)">
+      <button v-if="editable(route)" type="button" class="btn-primary text-xs px-3 py-1.5" :disabled="saving === route.id" data-test="route-save" @click="save(route)">
         {{ t('apiProduct.common.save') }}
       </button>
+      <!-- the gateway's manager without projects.update on this route's project (the gateway says so above otherwise) -->
+      <p v-else-if="canManage" class="text-[11px] text-gray-500" data-test="route-read-only">
+        {{ t('apiProduct.routes.readOnly', { project: route.project?.name ?? '' }) }}
+      </p>
     </div>
   </div>
 </template>

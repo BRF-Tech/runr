@@ -95,6 +95,21 @@ vue/src/
 | 4 | `region-serving` | RegionDetailModal step 4 | Knative Serving version selection |
 | 5 | `region-redis` | RegionDetailModal step 5 | Redis connection |
 
+### 7. Branding tour (`brandingSteps`)
+Administration → Branding and → Organization Branding (white-label `BrandingForm`); the settings
+tabs `settings-branding-tab` / `settings-org-branding-tab` start it on a tutorial restart
+(`tutorial: true`), after the tab steps of their section.
+
+| # | data-tour | Location | Description |
+|---|-----------|----------|-------------|
+| 1 | `branding-presets` | BrandingForm (Colours) | Colour presets: RunR, Ocean (blue brand, navy dark theme) |
+| 2 | `branding-brand-colors` | BrandingForm (Colours) | Base colour, accent, shades 300–900 |
+| 3 | `branding-dark-tones` | ThemeToneEditor (dark) | The dark theme's base colour, tones 50–950, preview and contrast |
+| 4 | `branding-light-tones` | ThemeToneEditor (light) | The same for the light theme |
+| 5 | `branding-default-theme` | BrandingForm (Themes) | The theme of users who never picked one |
+| 6 | `branding-preview` | BrandingForm | Login page preview |
+| 7 | `branding-save` | BrandingForm | Save |
+
 ## Adding a step
 
 ### 1. Add a marker to the template

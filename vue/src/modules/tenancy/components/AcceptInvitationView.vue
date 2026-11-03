@@ -65,7 +65,7 @@ function goLogin() { router.push('/login') }
 
       <!-- Loading -->
       <div v-if="status === 'loading'" class="text-center">
-        <Loader2 class="w-12 h-12 mx-auto mb-4 text-blue-400 animate-spin" />
+        <Loader2 class="w-12 h-12 mx-auto mb-4 text-brand-400 animate-spin" />
         <p class="text-sm text-gray-400">{{ t('tenancy.invitationPleaseWait') }}</p>
       </div>
 
@@ -97,7 +97,7 @@ function goLogin() { router.push('/login') }
               v-model="name"
               type="text"
               required
-              class="w-full bg-gray-800 border border-gray-700 rounded-md px-3 py-2 text-sm text-gray-100 focus:outline-hidden focus:border-blue-500"
+              class="w-full bg-gray-800 border border-gray-700 rounded-md px-3 py-2 text-sm text-gray-100 focus:outline-hidden focus:border-brand-500"
               :placeholder="t('tenancy.userName')"
             />
           </div>
@@ -110,7 +110,7 @@ function goLogin() { router.push('/login') }
               type="password"
               required
               :minlength="invitation.has_account ? undefined : 8"
-              class="w-full bg-gray-800 border border-gray-700 rounded-md px-3 py-2 text-sm text-gray-100 focus:outline-hidden focus:border-blue-500"
+              class="w-full bg-gray-800 border border-gray-700 rounded-md px-3 py-2 text-sm text-gray-100 focus:outline-hidden focus:border-brand-500"
               placeholder="••••••••"
             />
             <p v-if="!invitation.has_account" class="text-[11px] text-gray-400 mt-1">

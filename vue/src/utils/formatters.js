@@ -13,8 +13,8 @@ export function statusBadgeClass(status) {
   switch (status) {
     case 'ready':         return `${base} bg-emerald-900/40 text-emerald-400 border border-emerald-800/50`
     case 'installing':    return `${base} bg-yellow-900/40 text-yellow-400 border border-yellow-800/50 animate-pulse`
-    case 'uninstalling':  return `${base} bg-orange-900/40 text-orange-400 border border-orange-800/50 animate-pulse`
-    case 'degraded':      return `${base} bg-orange-900/40 text-orange-400 border border-orange-800/50`
+    case 'uninstalling':  return `${base} bg-yellow-900/40 text-yellow-400 border border-yellow-800/50 animate-pulse`
+    case 'degraded':      return `${base} bg-yellow-900/40 text-yellow-400 border border-yellow-800/50`
     case 'error':         return `${base} bg-red-900/40 text-red-400 border border-red-800/50`
     case 'not_installed': return `${base} bg-gray-900/40 text-gray-400 border border-gray-800/50`
     default:              return `${base} bg-gray-900/40 text-gray-400 border border-gray-800/50`
@@ -26,7 +26,7 @@ export function redisStatusBadgeClass(status) {
   switch (status) {
     case 'ready':        return `${base} bg-emerald-900/40 text-emerald-400 border border-emerald-800/50`
     case 'installing':   return `${base} bg-yellow-900/40 text-yellow-400 border border-yellow-800/50 animate-pulse`
-    case 'uninstalling': return `${base} bg-orange-900/40 text-orange-400 border border-orange-800/50 animate-pulse`
+    case 'uninstalling': return `${base} bg-yellow-900/40 text-yellow-400 border border-yellow-800/50 animate-pulse`
     case 'error':        return `${base} bg-red-900/40 text-red-400 border border-red-800/50`
     default:             return `${base} bg-gray-900/40 text-gray-400 border border-gray-800/50`
   }

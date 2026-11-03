@@ -10,6 +10,7 @@ import SandboxDetailPanel from '../components/SandboxDetailPanel.vue'
 import { sandboxesApi, sandboxAdminApi } from '../api/sandboxes'
 import { useSandboxActions } from '../composables/useSandboxActions'
 import { useLatest } from '@/composables/useLatest'
+import { usePermissionsStore } from '@/stores/permissions'
 import {
   ISOLATION_STYLES, apiError, formatDuration, isAlive, secondsSince, secondsUntil, shortId,
 } from '../utils'
@@ -18,6 +19,12 @@ const POLL_MS = 5000
 
 const { t } = useI18n()
 const actions = useSandboxActions()
+
+// docs/permissions.md: sandboxes.create creates, extends and kills sandboxes; sandboxes.exec opens
+// the terminal and pauses / resumes them. A role without them (Viewer) sees the list only.
+const perms     = usePermissionsStore()
+const canCreate = computed(() => perms.can('sandboxes.create'))
+const canExec   = computed(() => perms.can('sandboxes.exec'))
 
 const sandboxes = ref([])
 const regions   = ref([])
@@ -162,7 +169,10 @@ function metadataChips(s) {
   return Object.entries(s.metadata ?? {}).slice(0, 3).map(([k, v]) => `${k}=${v}`)
 }
 
-const emptyText = computed(() => status.value === 'active' && !regionId.value ? t('sandboxes.empty.text') : t('sandboxes.empty.ended'))
+const emptyText = computed(() => {
+  if (status.value !== 'active' || regionId.value) return t('sandboxes.empty.ended')
+  return canCreate.value ? t('sandboxes.empty.text') : t('sandboxes.empty.textReadOnly')
+})
 </script>
 
 <template>
@@ -210,7 +220,7 @@ const emptyText = computed(() => status.value === 'active' && !regionId.value ? 
           <button class="btn-secondary flex items-center gap-1.5 text-xs" :disabled="loading" :title="t('sandboxes.actions.refresh')" @click="load">
             <RefreshCw class="w-3.5 h-3.5" :class="loading && 'animate-spin'" />
           </button>
-          <button class="btn-primary flex items-center gap-1.5" data-action="create-sandbox" @click="createOpen = true">
+          <button v-if="canCreate" class="btn-primary flex items-center gap-1.5" data-action="create-sandbox" @click="createOpen = true">
             <Plus class="w-4 h-4" />{{ t('sandboxes.actions.create') }}
           </button>
         </div>
@@ -223,7 +233,7 @@ const emptyText = computed(() => status.value === 'active' && !regionId.value ? 
         <Box class="w-9 h-9 mx-auto mb-3 text-gray-500" />
         <p class="text-sm font-semibold text-gray-200 mb-1">{{ t('sandboxes.empty.title') }}</p>
         <p class="text-sm text-gray-400 mb-5 max-w-md mx-auto">{{ emptyText }}</p>
-        <button class="btn-primary inline-flex items-center gap-1.5" @click="createOpen = true">
+        <button v-if="canCreate" class="btn-primary inline-flex items-center gap-1.5" @click="createOpen = true">
           <Plus class="w-4 h-4" />{{ t('sandboxes.actions.create') }}
         </button>
       </div>
@@ -279,32 +289,35 @@ const emptyText = computed(() => status.value === 'active' && !regionId.value ? 
                   </button>
                   <template v-if="isAlive(s.status)">
                     <button
+                      v-if="canExec"
                       class="h-7 w-7 flex items-center justify-center rounded-md text-gray-400 hover:text-gray-100 hover:bg-gray-800 disabled:opacity-40"
                       :disabled="s.status !== 'running'"
                       :title="t('sandboxes.actions.terminal')"
                       @click="openTerminal(s)"
                     ><TerminalSquare class="w-3.5 h-3.5" /></button>
                     <button
+                      v-if="canCreate"
                       class="h-7 px-1.5 flex items-center gap-1 justify-center rounded-md text-[11px] font-mono text-gray-400 hover:text-gray-100 hover:bg-gray-800 disabled:opacity-40"
                       :disabled="busy[s.id]"
                       :title="t('sandboxes.actions.extend')"
                       @click="run(s, 'extend')"
                     ><Clock class="w-3.5 h-3.5" />{{ t('sandboxes.actions.extend15') }}</button>
                     <button
-                      v-if="s.status === 'running'"
+                      v-if="canExec && s.status === 'running'"
                       class="h-7 w-7 flex items-center justify-center rounded-md text-gray-400 hover:text-gray-100 hover:bg-gray-800 disabled:opacity-40"
                       :disabled="busy[s.id]"
                       :title="t('sandboxes.actions.pause')"
                       @click="run(s, 'pause')"
                     ><Pause class="w-3.5 h-3.5" /></button>
                     <button
-                      v-else-if="s.status === 'paused'"
+                      v-else-if="canExec && s.status === 'paused'"
                       class="h-7 w-7 flex items-center justify-center rounded-md text-gray-400 hover:text-gray-100 hover:bg-gray-800 disabled:opacity-40"
                       :disabled="busy[s.id]"
                       :title="t('sandboxes.actions.resume')"
                       @click="run(s, 'resume')"
                     ><Play class="w-3.5 h-3.5" /></button>
                     <button
+                      v-if="canCreate"
                       class="h-7 w-7 flex items-center justify-center rounded-md text-gray-400 hover:text-red-400 hover:bg-gray-800 disabled:opacity-40"
                       :disabled="busy[s.id]"
                       :title="t('sandboxes.actions.kill')"
@@ -321,7 +334,7 @@ const emptyText = computed(() => status.value === 'active' && !regionId.value ? 
       <div v-else class="py-16 text-center text-gray-400 text-sm">{{ t('common.loading') }}</div>
     </main>
 
-    <CreateSandboxDialog v-if="createOpen" @close="createOpen = false" @created="onCreated" />
+    <CreateSandboxDialog v-if="createOpen && canCreate" @close="createOpen = false" @created="onCreated" />
 
     <SandboxDetailPanel
       v-if="detailTarget"
@@ -334,7 +347,7 @@ const emptyText = computed(() => status.value === 'active' && !regionId.value ? 
     />
 
     <ShellTerminalModal
-      v-if="terminalTarget"
+      v-if="terminalTarget && canExec"
       :title="t('sandboxes.terminal.title', { id: shortId(terminalTarget.id) })"
       :start-session="actions.terminalSession(terminalTarget)"
       :keepalive="actions.keepalive(terminalTarget)"

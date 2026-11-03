@@ -215,7 +215,7 @@ function usageLabel(b) {
 
 function barColor(pct) {
   if (pct >= 90) return '#ef4444'
-  if (pct >= 70) return '#f59e0b'
+  if (pct >= 70) return '#eab308'
   return 'rgb(var(--brand-500))'
 }
 
@@ -318,7 +318,7 @@ onBeforeUnmount(() => clearTimeout(pollTimer))
     </div>
 
     <div v-if="loading" class="flex justify-center py-8">
-      <div class="animate-spin h-5 w-5 border-2 border-sky-500 border-t-transparent rounded-full" />
+      <div class="animate-spin h-5 w-5 border-2 border-brand-500 border-t-transparent rounded-full" />
     </div>
 
     <div v-else-if="!filtered.length" class="py-10 text-center">
@@ -335,10 +335,10 @@ onBeforeUnmount(() => clearTimeout(pollTimer))
         :data-binding-row="b.name">
         <div class="flex flex-wrap items-center justify-between gap-2">
           <div class="flex items-center gap-2 min-w-0">
-            <component :is="TYPE_ICONS[b.type] || Database" class="w-4 h-4 text-sky-400 shrink-0" />
+            <component :is="TYPE_ICONS[b.type] || Database" class="w-4 h-4 text-brand-400 shrink-0" />
             <span class="text-sm font-semibold text-gray-100">{{ b.name }}</span>
             <span class="text-[11px] text-gray-400">{{ t(`bindings.types.${b.type}`) }}</span>
-            <span v-if="b.plan === 'dedicated'" class="text-[10px] px-1.5 py-0.5 rounded-sm border border-violet-800/40 bg-violet-900/30 text-violet-300">{{ t('bindings.plans.dedicated') }}</span>
+            <span v-if="b.plan === 'dedicated'" class="text-[10px] px-1.5 py-0.5 rounded-sm border border-brand-800/40 bg-brand-900/30 text-brand-300">{{ t('bindings.plans.dedicated') }}</span>
             <span :class="bindingStatusClass(b.status)" data-binding-status>{{ t(`bindings.status.${b.status}`) }}</span>
             <span v-if="b.region" class="text-[11px] text-gray-500 font-mono">{{ b.region.name }}</span>
           </div>
@@ -354,7 +354,7 @@ onBeforeUnmount(() => clearTimeout(pollTimer))
                 :title="revealed[b.id] ? t('bindings.hide') : t('bindings.reveal')" @click="toggleReveal(b)">
                 <Eye class="w-3.5 h-3.5" />
               </button>
-              <button v-if="canManage && b.type !== 'external'" type="button" class="p-1 text-gray-400 hover:text-amber-300" data-action="rotate"
+              <button v-if="canManage && b.type !== 'external'" type="button" class="p-1 text-gray-400 hover:text-yellow-300" data-action="rotate"
                 :title="t('bindings.rotate')" :disabled="b.status !== 'ready'" @click="rotate(b)">
                 <KeyRound class="w-3.5 h-3.5" />
               </button>
@@ -371,7 +371,7 @@ onBeforeUnmount(() => clearTimeout(pollTimer))
             <p class="text-gray-500 mb-1">{{ t('bindings.attachedTo') }}</p>
             <div class="flex flex-wrap gap-1">
               <RouterLink v-for="a in (b.attachments ?? [])" :key="a.id" :to="`/projects/${a.project_id}#bindings`"
-                class="px-1.5 py-0.5 rounded-sm border border-gray-700 bg-gray-800/60 text-gray-200 hover:border-sky-700">
+                class="px-1.5 py-0.5 rounded-sm border border-gray-700 bg-gray-800/60 text-gray-200 hover:border-brand-700">
                 {{ a.project?.name ?? a.project_id }}<span v-if="a.env_prefix" class="text-gray-500 font-mono"> · {{ a.env_prefix }}</span>
               </RouterLink>
               <span v-if="!(b.attachments ?? []).length" class="text-gray-500">{{ t('bindings.notAttached') }}</span>
@@ -387,7 +387,7 @@ onBeforeUnmount(() => clearTimeout(pollTimer))
           <div class="font-mono text-gray-400 space-y-0.5">
             <p v-if="b.details?.prefix">{{ t('bindings.details.prefix') }}: {{ b.details.prefix }}</p>
             <p v-if="b.details?.bucket">{{ t('bindings.details.bucket') }}: {{ b.details.bucket }}
-              <span v-if="b.type === 'object' && b.details?.scoped_keys === false" class="text-amber-400"> · {{ t('bindings.details.sharedKey') }}</span>
+              <span v-if="b.type === 'object' && b.details?.scoped_keys === false" class="text-yellow-400"> · {{ t('bindings.details.sharedKey') }}</span>
             </p>
             <p v-if="b.details?.cluster">{{ t('bindings.details.cluster') }}: {{ b.details.cluster }}</p>
             <p>{{ (b.env_keys ?? []).join(', ') }}</p>

@@ -56,7 +56,7 @@ onMounted(load)
 <template>
   <div v-if="info" class="mt-6 rounded-xl border border-gray-800 bg-gray-900/60 px-4 py-4 space-y-3" data-tenant-binding-quota>
     <div class="flex items-center gap-2">
-      <Database class="w-4 h-4 text-sky-400" />
+      <Database class="w-4 h-4 text-brand-400" />
       <p class="text-xs text-gray-100 font-semibold uppercase tracking-wider">{{ t('bindings.tenantQuota.title') }}</p>
     </div>
     <p class="text-[11px] text-gray-400">{{ t('bindings.tenantQuota.intro') }}</p>

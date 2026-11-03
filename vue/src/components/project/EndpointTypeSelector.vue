@@ -15,9 +15,11 @@ defineProps({
 defineEmits(['update:endpointType', 'update:gatewayPath', 'update:gatewayMethods'])
 
 const options = [
-  { id: 'subdomain', labelKey: 'create.endpointTypes.subdomain', activeStyle: 'background:rgb(16 185 129/0.15);border-color:rgb(16 185 129/0.5);color:#6ee7b7' },
-  { id: 'gateway',   labelKey: 'create.endpointTypes.gateway',   activeStyle: 'background:rgb(139 92 246/0.15);border-color:rgb(139 92 246/0.5);color:#c4b5fd' },
+  { id: 'subdomain', labelKey: 'create.endpointTypes.subdomain' },
+  { id: 'gateway',   labelKey: 'create.endpointTypes.gateway' },
 ]
+// The chosen endpoint type, in the brand's colour
+const ACTIVE = 'bg-brand-900/30 border-brand-500/60 text-brand-300'
 </script>
 
 <template>
@@ -28,8 +30,7 @@ const options = [
         v-for="opt in options" :key="opt.id"
         type="button"
         class="flex-1 py-1.5 rounded-md border text-sm transition-colors"
-        :class="endpointType === opt.id ? 'border' : 'bg-gray-800 border-gray-700 text-gray-400 hover:border-gray-500'"
-        :style="endpointType === opt.id ? opt.activeStyle : ''"
+        :class="endpointType === opt.id ? ACTIVE : 'bg-gray-800 border-gray-700 text-gray-400 hover:border-gray-500'"
         @click="$emit('update:endpointType', opt.id)"
       >{{ t(opt.labelKey) }}</button>
     </div>

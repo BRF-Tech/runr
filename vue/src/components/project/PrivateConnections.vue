@@ -105,7 +105,7 @@ function stateCls(state) {
   const base = 'px-1.5 py-0.5 rounded-sm text-[10px] font-medium border'
   return {
     ready: `${base} bg-emerald-900/40 border-emerald-800/40 text-emerald-400`,
-    pending: `${base} bg-amber-900/40 border-amber-800/40 text-amber-400`,
+    pending: `${base} bg-yellow-900/40 border-yellow-800/40 text-yellow-400`,
     error: `${base} bg-red-900/40 border-red-800/40 text-red-400`,
   }[state] || `${base} bg-gray-800/40 border-gray-700/40 text-gray-400`
 }
@@ -196,7 +196,7 @@ watch(() => props.environment, () => {
     </form>
 
     <div v-if="loading" class="flex justify-center py-6">
-      <div class="animate-spin h-4 w-4 border-2 border-sky-500 border-t-transparent rounded-full" />
+      <div class="animate-spin h-4 w-4 border-2 border-brand-500 border-t-transparent rounded-full" />
     </div>
 
     <div v-else-if="!bindings.length && !showForm" class="py-10 text-center">
@@ -210,7 +210,7 @@ watch(() => props.environment, () => {
       <div v-for="b in bindings" :key="b.id" class="rounded-xl border border-gray-800 bg-gray-900/60 px-4 py-3">
         <div class="flex flex-wrap items-center justify-between gap-2">
           <div class="flex items-center gap-2 min-w-0">
-            <Database class="w-4 h-4 text-sky-400 shrink-0" />
+            <Database class="w-4 h-4 text-brand-400 shrink-0" />
             <span class="text-sm font-semibold text-gray-100">{{ b.name }}</span>
             <span :class="stateCls(statuses[b.id]?.state)">{{ t('privateConnections.state.' + (statuses[b.id]?.state ?? 'loading')) }}</span>
           </div>

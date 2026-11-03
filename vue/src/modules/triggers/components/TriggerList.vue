@@ -163,7 +163,7 @@ defineExpose({ load })
 <template>
   <div class="space-y-3" data-test="trigger-list">
     <div v-if="loading" class="flex justify-center py-6">
-      <div class="animate-spin h-4 w-4 border-2 border-sky-500 border-t-transparent rounded-full" />
+      <div class="animate-spin h-4 w-4 border-2 border-brand-500 border-t-transparent rounded-full" />
     </div>
     <p v-else-if="loadError" class="bg-red-900/20 border border-red-800/40 rounded-md px-4 py-3 text-xs text-red-400" data-test="trigger-load-error">{{ loadError }}</p>
 
@@ -197,8 +197,8 @@ defineExpose({ load })
               </button>
               <span class="font-mono text-sm text-gray-100">{{ tr.name }}</span>
               <span class="text-[11px] px-1.5 py-0.5 rounded-sm border border-gray-700 bg-gray-800 text-gray-300">{{ typeLabel(tr.type, tr.label) }}</span>
-              <span v-if="tr.primary" class="text-[10px] px-1.5 py-0.5 rounded-sm border border-amber-800/50 bg-amber-900/30 text-amber-300" :title="t('triggers.primaryHint')" data-test="primary-badge">{{ t('triggers.primary') }}</span>
-              <span class="text-[10px] px-1.5 py-0.5 rounded-sm border border-sky-900/50 bg-sky-950/40 text-sky-300" :title="t(`triggers.runsOnHint.${tr.runs_on ?? 'unknown'}`)" data-test="runs-on">{{ t(`triggers.runsOn.${tr.runs_on ?? 'unknown'}`) }}</span>
+              <span v-if="tr.primary" class="text-[10px] px-1.5 py-0.5 rounded-sm border border-brand-800/50 bg-brand-900/30 text-brand-300" :title="t('triggers.primaryHint')" data-test="primary-badge">{{ t('triggers.primary') }}</span>
+              <span class="text-[10px] px-1.5 py-0.5 rounded-sm border border-brand-900/50 bg-brand-900/40 text-brand-300" :title="t(`triggers.runsOnHint.${tr.runs_on ?? 'unknown'}`)" data-test="runs-on">{{ t(`triggers.runsOn.${tr.runs_on ?? 'unknown'}`) }}</span>
             </div>
 
             <div class="flex items-center gap-0.5">
@@ -206,7 +206,7 @@ defineExpose({ load })
                 <Inbox class="w-3.5 h-3.5" />{{ t('triggers.openInbox') }}
               </button>
               <template v-if="canEdit">
-                <button v-if="tr.enabled && !tr.primary" type="button" class="p-1.5 text-gray-400 hover:text-amber-300" :title="t('triggers.makePrimary')" :aria-label="t('triggers.makePrimary')" :disabled="busy[keyOf(tr)]" data-action="primary" @click="makePrimary(tr)">
+                <button v-if="tr.enabled && !tr.primary" type="button" class="p-1.5 text-gray-400 hover:text-brand-300" :title="t('triggers.makePrimary')" :aria-label="t('triggers.makePrimary')" :disabled="busy[keyOf(tr)]" data-action="primary" @click="makePrimary(tr)">
                   <Star class="w-3.5 h-3.5" />
                 </button>
                 <button type="button" class="p-1.5 text-gray-400 hover:text-gray-100" :title="t('triggers.edit')" :aria-label="t('triggers.edit')" :disabled="busy[keyOf(tr)]" data-action="edit" @click="openEdit(tr)">
@@ -254,10 +254,10 @@ defineExpose({ load })
       </template>
       <p v-else class="text-[11px] text-gray-400">{{ t('triggers.readOnly') }}</p>
 
-      <p v-if="pendingDeploy" class="flex items-start gap-1.5 rounded-lg border border-amber-800/50 bg-amber-900/20 px-3 py-2 text-xs text-amber-200" data-test="requires-deploy">
+      <p v-if="pendingDeploy" class="flex items-start gap-1.5 rounded-lg border border-yellow-800/50 bg-yellow-900/20 px-3 py-2 text-xs text-yellow-200" data-test="requires-deploy">
         <Info class="w-3.5 h-3.5 shrink-0 mt-0.5" />{{ t('triggers.requiresDeploy') }}
       </p>
-      <p v-for="(note, i) in cleanupNotes" :key="i" class="flex items-start gap-1.5 rounded-lg border border-sky-800/50 bg-sky-900/20 px-3 py-2 text-xs text-sky-200" data-test="trigger-cleanup">
+      <p v-for="(note, i) in cleanupNotes" :key="i" class="flex items-start gap-1.5 rounded-lg border border-brand-800/50 bg-brand-900/20 px-3 py-2 text-xs text-brand-300" data-test="trigger-cleanup">
         <Info class="w-3.5 h-3.5 shrink-0 mt-0.5" />{{ note }}
       </p>
     </template>

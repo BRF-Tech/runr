@@ -75,7 +75,7 @@ const modes = computed(() => [
             <span class="inline-block w-3 h-3 rounded-sm border shrink-0 text-[9px] leading-[10px] text-center"
               :class="regionIds.includes(r.id) ? 'border-white bg-white/20' : 'border-gray-600'">{{ regionIds.includes(r.id) ? '✓' : '' }}</span>
             <p class="font-mono font-medium">{{ r.name }}</p>
-            <Star v-if="r.id === primaryId" class="w-3 h-3 text-amber-300" :aria-label="t('globalProjects.roles.primary')" />
+            <Star v-if="r.id === primaryId" class="w-3 h-3 text-brand-300" :aria-label="t('globalProjects.roles.primary')" />
           </div>
           <p v-if="unavailableKey(r)" class="text-[10px] mt-0.5 opacity-80">{{ t(unavailableKey(r)) }}</p>
           <p v-else class="text-[10px] mt-0.5 opacity-70 flex items-center gap-1"><Globe class="w-2.5 h-2.5" />{{ t('globalProjects.create.globalDnsReady') }}</p>
@@ -109,7 +109,7 @@ const modes = computed(() => [
           v-for="m in modes" :key="m.id"
           type="button"
           class="rounded-md border px-3 py-2 text-xs text-left transition-colors"
-          :class="mode === m.id ? 'border-sky-500/60 bg-sky-900/20 text-sky-300' : 'border-gray-800 bg-gray-900/40 text-gray-400 hover:text-gray-100'"
+          :class="mode === m.id ? 'border-brand-500/60 bg-brand-900/20 text-brand-300' : 'border-gray-800 bg-gray-900/40 text-gray-400 hover:text-gray-100'"
           :aria-pressed="mode === m.id ? 'true' : 'false'"
           :data-global-mode="m.id"
           @click="emit('update:mode', m.id)"

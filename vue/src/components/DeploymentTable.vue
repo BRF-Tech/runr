@@ -25,6 +25,8 @@ defineEmits(['view-logs', 'delete', 'configure-strategy', 'rollback'])
 
 // Deleting a deployment: projects.deploy on the project (docs/permissions.md)
 const canDeploy = computed(() => usePermissionsStore().can('projects.deploy', props.project?.id))
+// A deployment's logs (GET …/logs) need logs.view: without it the rows open nothing
+const canViewLogs = computed(() => usePermissionsStore().can('logs.view', props.project?.id))
 
 function fmt(timestamp) {
   if (!timestamp) return '—'
@@ -39,13 +41,13 @@ const strategy     = computed(() => projectStrategy(props.strategy ? { ...props.
 const showStrategy = computed(() => !!props.project && !isLegacyServiceType(props.project.service_type))
 
 const CHIP = {
-  candidate: 'bg-sky-900/30 border-sky-800/60 text-sky-300',
-  waiting:   'bg-violet-900/30 border-violet-800/60 text-violet-300',
+  candidate: 'bg-brand-900/30 border-brand-800/60 text-brand-300',
+  waiting:   'bg-transparent border-brand-500/60 text-brand-400',
   stable:    'bg-emerald-900/30 border-emerald-800/60 text-emerald-300',
   previous:  'bg-gray-800 border-gray-700 text-gray-300',
   promoted:  'bg-emerald-900/30 border-emerald-800/60 text-emerald-300',
   aborted:   'bg-gray-800 border-gray-700 text-gray-400',
-  rolled_back: 'bg-orange-900/30 border-orange-800/60 text-orange-300',
+  rolled_back: 'bg-yellow-900/30 border-yellow-800/60 text-yellow-300',
   failed:    'bg-red-900/30 border-red-800/60 text-red-300',
 }
 
@@ -153,9 +155,10 @@ const firstRollbackId = computed(() => props.deployments.find(canRollBack)?.id ?
           <tr
             v-for="(d, i) in deployments"
             :key="d.id"
-            class="group border-t border-gray-800/60 hover:bg-gray-800/30 transition-colors cursor-pointer"
-            :title="t('project.logs.viewLogs')"
-            @click="$emit('view-logs', d)"
+            class="group border-t border-gray-800/60 hover:bg-gray-800/30 transition-colors"
+            :class="canViewLogs && 'cursor-pointer'"
+            :title="canViewLogs ? t('project.logs.viewLogs') : undefined"
+            @click="canViewLogs && $emit('view-logs', d)"
           >
             <!-- Status -->
             <td class="px-4 py-4">
@@ -169,7 +172,7 @@ const firstRollbackId = computed(() => props.deployments.find(canRollBack)?.id ?
                 >{{ chips[d.id].text }}</span>
                 <span
                   v-if="d.config_source === 'restored'"
-                  class="self-start text-[10px] px-1.5 py-0.5 rounded-sm bg-sky-900/40 text-sky-300 border border-sky-800/50"
+                  class="self-start text-[10px] px-1.5 py-0.5 rounded-sm bg-brand-900/40 text-brand-300 border border-brand-800/50"
                   :title="t('environments.rollback.restoredHint')"
                   data-testid="deployment-restored"
                 >{{ t('environments.rollback.restored') }}</span>
@@ -210,8 +213,10 @@ const firstRollbackId = computed(() => props.deployments.find(canRollBack)?.id ?
             <td class="px-4 py-4">
               <div class="flex items-center gap-3 justify-end" @click.stop>
                 <button
+                  v-if="canViewLogs"
                   class="text-gray-400 hover:text-gray-100 transition-colors opacity-0 group-hover:opacity-100"
                   :title="t('project.logs.viewLogs')"
+                  data-testid="deployment-logs"
                   :data-tour="i === 0 ? 'deployment-log-btn' : undefined"
                   @click="$emit('view-logs', d)"
                 >

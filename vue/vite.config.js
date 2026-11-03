@@ -1,9 +1,11 @@
 import {defineConfig} from 'vite'
 import vue from '@vitejs/plugin-vue'
 import {fileURLToPath, URL} from 'node:url'
+import {prePaintPlugin} from './build/prePaintPlugin.js'
 
 export default defineConfig({
-    plugins: [vue()],
+    // runr-pre-paint: index.html's inline pre-paint script (build/prePaintPlugin.js)
+    plugins: [vue(), prePaintPlugin()],
     build: {
         target: 'esnext',
     },

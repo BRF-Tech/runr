@@ -1,16 +1,21 @@
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute } from 'vue-router'
 import { CheckCircle2, AlertTriangle, XCircle, HelpCircle } from 'lucide-vue-next'
 import { observabilityApi } from '../api/observability'
 import { formatPercent, formatSeconds } from '../utils/format'
 import UptimeBars from './UptimeBars.vue'
+import { useTheme } from '@/composables/useTheme'
+import { applyBranding } from '@/modules/white-label/utils/branding'
+import { useBrandingStore } from '@/modules/white-label/stores/branding'
 
 /**
  * Public status page (no sign-in): /status/<slug>, or /status on the page's custom domain.
  * Shows the overall status, each component's daily uptime and the incident history, in the
- * organization's branding when it has one.
+ * organization's branding when it has one: its brand scale, both themes' tones and its default
+ * theme (dark_color / dark_scale, light_color / light_scale, default_theme), applied to the
+ * document while the page shows; leaving it puts the console's own branding back.
  */
 const { t } = useI18n()
 const route = useRoute()
@@ -20,10 +25,21 @@ const notFound = ref(false)
 const loading = ref(true)
 
 const overall = computed(() => page.value?.status ?? 'unknown')
-const brandColor = computed(() => page.value?.branding?.primary_color || 'rgb(var(--brand-500))')
+// The page's brand scale is applied to --brand-*: its 500 is the brand colour (palette or primary)
+const brandColor = 'rgb(var(--brand-500))'
+const { current: theme } = useTheme()
+const consoleBranding = useBrandingStore()
+let ownBranding = false
+// The page's own logo, else the organization's logo for the theme shown
+const logo = computed(() => {
+  const b = page.value?.branding ?? {}
+  return page.value?.logo_url || (theme.value === 'light'
+    ? (b.logo_light_url || b.logo_dark_url)
+    : (b.logo_dark_url || b.logo_light_url)) || null
+})
 
 const ICONS = { operational: CheckCircle2, partial_outage: AlertTriangle, major_outage: XCircle, unknown: HelpCircle, outage: XCircle }
-const COLORS = { operational: 'text-emerald-400', partial_outage: 'text-amber-400', major_outage: 'text-red-400', outage: 'text-red-400', unknown: 'text-gray-400' }
+const COLORS = { operational: 'text-emerald-400', partial_outage: 'text-yellow-400', major_outage: 'text-red-400', outage: 'text-red-400', unknown: 'text-gray-400' }
 
 async function load() {
   loading.value = true
@@ -31,6 +47,10 @@ async function load() {
     const slug = route.params.slug
     const { data } = slug ? await observabilityApi.publicStatusPage(slug) : await observabilityApi.publicStatusByDomain(window.location.hostname)
     page.value = data.data
+    if (page.value?.branding) {
+      applyBranding(page.value.branding)
+      ownBranding = true
+    }
     document.title = page.value.title
   } catch {
     notFound.value = true
@@ -40,18 +60,19 @@ async function load() {
 }
 
 onMounted(load)
+onBeforeUnmount(() => { if (ownBranding) consoleBranding.apply() })
 </script>
 
 <template>
   <div class="min-h-screen bg-gray-950 text-gray-100" data-test="public-status-page">
     <div class="max-w-3xl mx-auto px-6 py-10 space-y-8">
-      <div v-if="loading" class="flex justify-center py-20"><div class="animate-spin h-6 w-6 border-2 border-sky-500 border-t-transparent rounded-full" /></div>
+      <div v-if="loading" class="flex justify-center py-20"><div class="animate-spin h-6 w-6 border-2 border-brand-500 border-t-transparent rounded-full" /></div>
 
       <div v-else-if="notFound" class="text-center py-20 text-gray-400" data-test="status-not-found">{{ t('observability.statusPublic.notFound') }}</div>
 
       <template v-else-if="page">
         <header class="flex items-center gap-4">
-          <img v-if="page.logo_url || page.branding?.logo_dark_url" :src="page.logo_url || page.branding.logo_dark_url" alt="" class="h-9">
+          <img v-if="logo" :src="logo" alt="" class="h-9" data-test="status-logo">
           <div>
             <h1 class="text-2xl font-semibold" data-test="status-title">{{ page.title }}</h1>
             <p v-if="page.description" class="text-sm text-gray-400 mt-1">{{ page.description }}</p>

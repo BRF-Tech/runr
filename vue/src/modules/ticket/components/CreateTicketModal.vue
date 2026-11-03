@@ -37,8 +37,8 @@ const priorities = ['low', 'medium', 'high', 'critical']
 const priorityChipActive = {
   low:      'bg-gray-700/60 text-gray-200 border-gray-500',
   medium:   'bg-yellow-900/30 text-yellow-300 border-yellow-700/50',
-  high:     'bg-orange-900/30 text-orange-300 border-orange-700/50',
-  critical: 'bg-red-900/30 text-red-300 border-red-700/50',
+  high:     'bg-red-900/30 text-red-300 border-red-800/50',
+  critical: 'bg-red-700 text-white border-red-700',
 }
 
 // Suggestions for the subject typed last: an answer for an earlier subject is dropped
@@ -95,7 +95,7 @@ async function submit() {
       </div>
 
       <div class="px-6 py-6 space-y-6 max-h-[75vh] overflow-y-auto">
-        <div v-if="restored" class="flex items-center gap-2 text-xs text-amber-400 bg-amber-900/20 rounded-lg px-4 py-3 border border-amber-800/30">
+        <div v-if="restored" class="flex items-center gap-2 text-xs text-yellow-400 bg-yellow-900/20 rounded-lg px-4 py-3 border border-yellow-800/30">
           <Info class="w-4 h-4 shrink-0" />{{ t('account.ticketDraftRestored') }}
         </div>
 

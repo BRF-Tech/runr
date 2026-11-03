@@ -192,7 +192,7 @@ onUnmounted(() => window.removeEventListener('mouseup', onWindowMouseUp))
 
           <line v-for="gy in gridY" :key="gy"
             x1="0" :y1="gy.toFixed(1)" :x2="VW" :y2="gy.toFixed(1)"
-            stroke="#1f2937" stroke-width="0.6" />
+            class="stroke-gray-800" stroke-width="0.6" />
 
           <rect v-if="selectionRect && !brushRect"
             :x="selectionRect.x" y="0" :width="selectionRect.width" :height="VH"
@@ -211,7 +211,7 @@ onUnmounted(() => window.removeEventListener('mouseup', onWindowMouseUp))
 
           <circle v-if="hoverPt"
             :cx="hoverPt.x.toFixed(1)" :cy="hoverPt.y.toFixed(1)" r="2.5"
-            fill="currentColor" stroke="#030712" stroke-width="1.2" />
+            fill="currentColor" class="stroke-gray-950" stroke-width="1.2" />
         </svg>
 
         <!-- Hover tooltip — pinned inside chart at top -->

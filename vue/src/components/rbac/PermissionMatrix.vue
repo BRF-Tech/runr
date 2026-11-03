@@ -64,7 +64,7 @@ function toggle(key) {
               :class="effective.has(p.key) ? 'text-gray-100' : 'text-gray-400 group-hover/perm:text-gray-100'">
               {{ permLabel(p.key) }}
               <Lock v-if="impliedBy(p.key)" class="w-3 h-3 text-gray-500" />
-              <FolderKanban v-if="p.scope === 'project'" class="w-3 h-3 text-sky-500" :title="t('rbac.projectScopedHint')" />
+              <FolderKanban v-if="p.scope === 'project'" class="w-3 h-3 text-brand-400" :title="t('rbac.projectScopedHint')" />
             </span>
             <span class="block text-[10px] font-mono text-gray-500">{{ p.key }}</span>
           </span>

@@ -28,13 +28,13 @@ export function barWidth(used, total) {
 
 export function fillColor(percent) {
   if (percent > 80) return '#ef4444'
-  if (percent > 60) return '#f97316'
+  if (percent > 60) return '#eab308'
   return 'rgb(var(--brand-500))'
 }
 
 export function fillBackground(percent) {
   if (percent > 80) return 'rgba(239,68,68,0.08)'
-  if (percent > 60) return 'rgba(249,115,22,0.08)'
+  if (percent > 60) return 'rgba(234,179,8,0.08)'
   return 'rgb(var(--brand-500) / 0.07)'
 }
 

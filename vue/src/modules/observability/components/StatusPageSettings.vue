@@ -72,13 +72,13 @@ onMounted(load)
   <div class="space-y-5" data-test="status-page-settings">
     <div>
       <div class="flex items-center gap-2">
-        <Globe class="w-4 h-4 text-sky-400" />
+        <Globe class="w-4 h-4 text-brand-400" />
         <span class="text-[15px] font-semibold text-gray-100">{{ t('observability.status.title') }}</span>
       </div>
       <p class="text-xs text-gray-400 mt-1.5">{{ t('observability.status.intro') }}</p>
     </div>
 
-    <div v-if="loading" class="flex justify-center py-10"><div class="animate-spin h-6 w-6 border-2 border-sky-500 border-t-transparent rounded-full" /></div>
+    <div v-if="loading" class="flex justify-center py-10"><div class="animate-spin h-6 w-6 border-2 border-brand-500 border-t-transparent rounded-full" /></div>
 
     <form v-else-if="page" class="space-y-5" @submit.prevent="save">
       <div class="grid gap-4 md:grid-cols-2">
@@ -115,7 +115,7 @@ onMounted(load)
       </div>
 
       <div v-if="page.exists" class="flex items-center gap-2 text-xs">
-        <a :href="publicUrl" target="_blank" rel="noopener" class="text-sky-400 hover:text-sky-300 inline-flex items-center gap-1" data-test="status-open">
+        <a :href="publicUrl" target="_blank" rel="noopener" class="text-brand-400 hover:text-brand-300 inline-flex items-center gap-1" data-test="status-open">
           <ExternalLink class="w-3 h-3" />{{ publicUrl }}
         </a>
         <span v-if="!page.is_public" class="text-gray-500">({{ t('observability.status.notPublicYet') }})</span>

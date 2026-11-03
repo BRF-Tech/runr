@@ -181,25 +181,25 @@ async function downloadCa() {
             <dd class="text-gray-300" data-testid="cert-manager-issuer">
               <span class="font-mono">{{ issuer.name }}</span>
               <span class="text-gray-400"> · {{ t(`settings.regionDetail.certManager.kind_${issuer.kind ?? 'own'}`) }}</span>
-              <span v-if="cluster && cluster.issuer_ready === false" class="text-amber-400"> · {{ t('settings.regionDetail.certManager.issuerNotReady') }}</span>
+              <span v-if="cluster && cluster.issuer_ready === false" class="text-yellow-400"> · {{ t('settings.regionDetail.certManager.issuerNotReady') }}</span>
             </dd>
           </template>
         </dl>
         <p v-if="issuer.source === 'runr' && state.plan?.reason" class="text-[11px] text-gray-500" data-testid="cert-manager-why">
           {{ t('settings.regionDetail.certManager.why', { reason: state.plan.reason }) }}
         </p>
-        <p v-if="cluster?.issuer_message" class="text-[11px] text-amber-300/90">{{ cluster.issuer_message }}</p>
+        <p v-if="cluster?.issuer_message" class="text-[11px] text-yellow-300/90">{{ cluster.issuer_message }}</p>
 
         <!-- the region CA: clients trust its certificates once it is installed -->
-        <div v-if="issuer.kind === 'ca'" class="flex items-start justify-between gap-3 rounded-sm bg-sky-900/15 border border-sky-800/40 px-3 py-2">
-          <p class="text-[11px] text-sky-200/90 leading-relaxed">{{ t('settings.regionDetail.certManager.caHint') }}</p>
+        <div v-if="issuer.kind === 'ca'" class="flex items-start justify-between gap-3 rounded-sm bg-brand-900/15 border border-brand-800/40 px-3 py-2">
+          <p class="text-[11px] text-brand-300/90 leading-relaxed">{{ t('settings.regionDetail.certManager.caHint') }}</p>
           <button v-if="caDownload" type="button" class="btn-secondary text-xs shrink-0" data-testid="cert-manager-ca" @click="downloadCa">
             {{ t('settings.regionDetail.certManager.downloadCa') }}
           </button>
         </div>
 
         <!-- custom domains cannot use it: why and what to do -->
-        <p v-if="domains && !domains.available && status !== 'not_installed'" class="text-[11px] text-amber-300/90 bg-amber-900/20 rounded-sm px-3 py-2" data-testid="cert-manager-domains">
+        <p v-if="domains && !domains.available && status !== 'not_installed'" class="text-[11px] text-yellow-300/90 bg-yellow-900/20 rounded-sm px-3 py-2" data-testid="cert-manager-domains">
           {{ domains.reason }}
         </p>
         <p v-if="status === 'not_installed'" class="text-[11px] text-gray-400" data-testid="cert-manager-not-installed">
@@ -213,7 +213,7 @@ async function downloadCa() {
           <summary class="cursor-pointer select-none hover:text-gray-300">{{ t('settings.regionDetail.certManager.log') }}</summary>
           <p class="mt-2 bg-gray-900 rounded-sm px-3 py-2 font-mono whitespace-pre-wrap wrap-break-word max-h-40 overflow-y-auto">{{ state.message }}</p>
         </details>
-        <p v-if="state.cluster_error" class="text-[11px] text-amber-300/90">{{ t('settings.regionDetail.certManager.clusterError', { error: state.cluster_error }) }}</p>
+        <p v-if="state.cluster_error" class="text-[11px] text-yellow-300/90">{{ t('settings.regionDetail.certManager.clusterError', { error: state.cluster_error }) }}</p>
 
         <!-- RunR's default issuer: mode and ACME e-mail (region settings) -->
         <div v-if="canManage" class="space-y-2 border-t border-gray-800/60 pt-3">

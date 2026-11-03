@@ -109,7 +109,7 @@ const {
             <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
           </svg>
           <input v-model="search" type="text" :placeholder="t('project.logs.searchPlaceholder')"
-            class="w-full bg-gray-950 border border-gray-800 rounded-sm text-xs font-mono text-gray-100 placeholder-gray-700 pl-7 pr-6 py-1.5 focus:outline-hidden focus:border-gray-400 transition-colors" />
+            class="w-full bg-gray-950 border border-gray-800 rounded-sm text-xs font-mono text-gray-100 placeholder-weak pl-7 pr-6 py-1.5 focus:outline-hidden focus:border-gray-400 transition-colors" />
           <button v-if="search" class="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-100 text-xs" @click="search = ''">✕</button>
         </div>
         <div v-if="availableLevels.length" class="flex items-center gap-1 shrink-0">

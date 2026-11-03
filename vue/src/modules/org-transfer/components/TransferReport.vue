@@ -19,7 +19,7 @@ const isImport = computed(() => props.transfer.kind === 'import')
 const counts = computed(() => report.value.counts ?? {})
 
 const statusClass = (s) => ({
-  created: 'text-emerald-400', exists: 'text-gray-400', skipped: 'text-gray-500', failed: 'text-red-400', manual: 'text-sky-300',
+  created: 'text-emerald-400', exists: 'text-gray-400', skipped: 'text-gray-500', failed: 'text-red-400', manual: 'text-brand-300',
 }[s] ?? 'text-gray-300')
 </script>
 
@@ -56,8 +56,8 @@ const statusClass = (s) => ({
             </tbody>
           </table>
         </div>
-        <div v-if="report.manual_steps?.length" class="rounded-lg border border-sky-900/60 bg-sky-950/10 p-3" data-testid="report-manual-steps">
-          <p class="text-xs font-medium text-sky-300 mb-1">{{ t('orgTransfer.import.manualSteps') }}</p>
+        <div v-if="report.manual_steps?.length" class="rounded-lg border border-brand-900/60 bg-brand-900/10 p-3" data-testid="report-manual-steps">
+          <p class="text-xs font-medium text-brand-300 mb-1">{{ t('orgTransfer.import.manualSteps') }}</p>
           <div v-for="step in report.manual_steps" :key="step.code" class="text-xs text-gray-300 mb-1">
             <p>{{ step.message }}</p>
             <p v-if="step.items?.length" class="font-mono text-gray-500">{{ step.items.join(', ') }}</p>
@@ -76,8 +76,8 @@ const statusClass = (s) => ({
       </template>
 
       <div v-if="report.warnings?.length" data-testid="report-warnings">
-        <p class="text-xs font-medium text-amber-300 mb-1">{{ t('orgTransfer.report.warnings') }}</p>
-        <p v-for="(w, i) in report.warnings" :key="i" class="text-xs text-amber-400/90">{{ w }}</p>
+        <p class="text-xs font-medium text-yellow-300 mb-1">{{ t('orgTransfer.report.warnings') }}</p>
+        <p v-for="(w, i) in report.warnings" :key="i" class="text-xs text-yellow-400/90">{{ w }}</p>
       </div>
     </div>
   </div>

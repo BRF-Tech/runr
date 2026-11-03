@@ -78,7 +78,7 @@ function onKeydown(e) {
             data-exit-code
           >{{ t('sandboxes.run.exitCode', { code: result.exit_code }) }}</span>
           <span class="text-gray-400">{{ t('sandboxes.run.duration', { ms: result.duration_ms ?? 0 }) }}</span>
-          <span v-if="result.timed_out" class="text-amber-400">{{ t('sandboxes.run.timedOut') }}</span>
+          <span v-if="result.timed_out" class="text-yellow-400">{{ t('sandboxes.run.timedOut') }}</span>
         </div>
 
         <div v-if="result.stdout">

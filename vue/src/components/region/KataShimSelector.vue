@@ -128,7 +128,7 @@ function shimClass(shim) {
               {{ t('settings.regionDetail.sandbox.recommended') }}
             </span>
             <span v-if="shim.runtime === 'rs'"
-              class="ml-1 text-[9px] font-mono px-1 py-0.5 rounded-sm bg-violet-900/30 text-violet-400 border border-violet-800/40">
+              class="ml-1 text-[9px] font-mono px-1 py-0.5 rounded-sm bg-brand-900/30 text-brand-400 border border-brand-800/40">
               Rust
             </span>
             <p v-if="!shim.available && shim.reason" class="text-[10px] mt-0.5 opacity-70">

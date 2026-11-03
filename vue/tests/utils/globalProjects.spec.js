@@ -87,7 +87,7 @@ describe('utils/globalProjects', () => {
   it('styles statuses and knows when something is still moving', () => {
     expect(regionStatusClass('ready')).toContain('emerald')
     expect(regionStatusClass('failed')).toContain('red')
-    expect(regionStatusClass('deploying')).toContain('blue')
+    expect(regionStatusClass('deploying')).toContain('brand')
     expect(regionStatusClass('whatever')).toContain('gray')
     expect(stateTextClass('in_sync')).toBe('text-emerald-400')
     expect(stateTextClass('drift')).toBe('text-yellow-400')
@@ -112,12 +112,12 @@ describe('utils/globalProjects', () => {
   })
 
   it('colours a fenced region, the data states and the replica states', () => {
-    expect(regionStatusClass('fenced')).toContain('orange')
+    expect(regionStatusClass('fenced')).toContain('yellow')
     expect(dataStatusClass('ready')).toContain('emerald')
-    expect(dataStatusClass('syncing')).toContain('blue')
-    expect(dataStatusClass('provisioning')).toContain('blue')
-    expect(dataStatusClass('promoting')).toContain('orange')
-    expect(dataStatusClass('recloning')).toContain('orange')
+    expect(dataStatusClass('syncing')).toContain('brand')
+    expect(dataStatusClass('provisioning')).toContain('brand')
+    expect(dataStatusClass('promoting')).toContain('yellow')
+    expect(dataStatusClass('recloning')).toContain('yellow')
     expect(dataStatusClass('failed')).toContain('red')
     expect(dataStatusClass(null)).toContain('gray')
   })

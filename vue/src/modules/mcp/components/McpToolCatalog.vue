@@ -99,7 +99,7 @@ onMounted(load)
               <span class="text-xs text-gray-400">{{ tool.title }}</span>
               <span v-if="tool.annotations?.readOnlyHint" class="text-[10px] font-medium px-1.5 py-0.5 rounded-sm border bg-emerald-900/30 border-emerald-800/40 text-emerald-400">{{ t('mcp.tools.readOnly') }}</span>
               <span v-if="tool.annotations?.destructiveHint" class="text-[10px] font-medium px-1.5 py-0.5 rounded-sm border bg-red-900/30 border-red-800/40 text-red-400">{{ t('mcp.tools.destructive') }}</span>
-              <span v-if="tool.streams" class="text-[10px] font-medium px-1.5 py-0.5 rounded-sm border bg-sky-900/30 border-sky-800/40 text-sky-400">{{ t('mcp.tools.streams') }}</span>
+              <span v-if="tool.streams" class="text-[10px] font-medium px-1.5 py-0.5 rounded-sm border bg-brand-900/30 border-brand-800/40 text-brand-400">{{ t('mcp.tools.streams') }}</span>
             </div>
             <p class="text-[11px] text-gray-400 mt-1">{{ tool.description }}</p>
             <div class="flex flex-wrap gap-1 mt-1.5">

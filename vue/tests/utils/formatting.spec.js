@@ -18,8 +18,8 @@ describe('status badges', () => {
   it.each([
     ['ready', 'text-emerald-400'],
     ['installing', 'animate-pulse'],
-    ['uninstalling', 'text-orange-400'],
-    ['degraded', 'text-orange-400'],
+    ['uninstalling', 'text-yellow-400'],
+    ['degraded', 'text-yellow-400'],
     ['error', 'text-red-400'],
     ['not_installed', 'text-gray-400'],
     ['something-new', 'text-gray-400'],

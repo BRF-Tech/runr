@@ -126,6 +126,33 @@ test.describe('Roles and permissions', () => {
     await expect(page.locator('[data-tour="action-buttons"]').getByRole('button', { name: 'Edit' })).toHaveCount(0)
   })
 
+  // The public demo's custom role: it only looks. The console hides or locks what the API
+  // would refuse it (403): the card's edit pencil, the Models tab, the platform settings
+  test('the public demo\'s read-only role gets no control the API refuses', async ({ page, auth, mockApi, seed, isStack }) => {
+    test.skip(isStack, 'narrows the mocked permissions')
+    const project = await seed.project('xaas')
+    mockApi.db.permissions = effectivePermissions('demo', ['projects.view', 'git.pull', 'env.view', 'secret_stores.view',
+      'logs.view', 'metrics.view', 'traces.view', 'workflows.view', 'sandboxes.view', 'regions.view', 'images.view',
+      'bindings.view', 'members.view'])
+    await auth.signIn({ user: { ...mockApi.db.user, is_admin: false } })
+
+    await page.goto('/projects')
+    await expect(page.locator('[data-tour="project-card"]')).toBeVisible()
+    await expect(page.locator('[data-test="project-card-edit"]')).toHaveCount(0)
+
+    await page.goto(`/projects/${project.id}`)
+    await expect(page.locator('[data-tab="metrics"]')).toHaveCount(1)
+    await expect(page.locator('[data-tab="models"]')).toHaveCount(0)
+
+    await page.goto('/settings')
+    await expect(page.getByTestId('settings-base-domain')).toBeDisabled()
+    await expect(page.getByTestId('settings-registration-toggle')).toBeDisabled()
+    await expect(page.getByTestId('settings-save')).toHaveCount(0)
+    await expect(page.getByTestId('settings-read-only')).toBeVisible()
+    await expect(page.getByTestId('demo-remove')).toHaveCount(0)
+    await expect(page.getByTestId('demo-seed')).toHaveCount(0)
+  })
+
   test('project access unlocks deploying one project', async ({ page, auth, mockApi, seed, isStack }) => {
     test.skip(isStack, 'narrows the mocked permissions')
     const project = await seed.project('xaas')

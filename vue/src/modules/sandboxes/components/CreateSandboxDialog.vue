@@ -142,7 +142,7 @@ const pill = (active) => active
               @click="form.region = r.region.id"
             >{{ r.region.name }}</button>
           </div>
-          <p v-else class="text-xs text-amber-400 mb-4" data-no-regions>{{ t('sandboxes.create.noRegions') }}</p>
+          <p v-else class="text-xs text-yellow-400 mb-4" data-no-regions>{{ t('sandboxes.create.noRegions') }}</p>
 
           <!-- Source -->
           <label class="label">{{ t('sandboxes.create.source') }}</label>

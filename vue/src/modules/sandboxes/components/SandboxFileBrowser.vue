@@ -251,7 +251,7 @@ onMounted(() => load())
             >
               <td class="px-3 py-1.5">
                 <button type="button" class="flex items-center gap-2 font-mono text-gray-200 hover:text-brand-500 text-left" @click="open(entry)">
-                  <component :is="typeIcon(entry.type)" class="w-3.5 h-3.5 shrink-0" :class="entry.type === 'dir' ? 'text-sky-400' : 'text-gray-500'" />
+                  <component :is="typeIcon(entry.type)" class="w-3.5 h-3.5 shrink-0" :class="entry.type === 'dir' ? 'text-brand-400' : 'text-gray-500'" />
                   <span class="truncate">{{ entry.name }}</span>
                 </button>
               </td>
@@ -271,7 +271,7 @@ onMounted(() => load())
           </tbody>
         </table>
       </div>
-      <p v-if="truncated" class="text-[11px] text-amber-400 mt-2">{{ t('sandboxes.files.truncated') }}</p>
+      <p v-if="truncated" class="text-[11px] text-yellow-400 mt-2">{{ t('sandboxes.files.truncated') }}</p>
 
       <!-- Preview -->
       <div v-if="preview" class="mt-4 rounded-lg border border-gray-800 bg-gray-950" data-file-preview>

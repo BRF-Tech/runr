@@ -78,7 +78,7 @@ onMounted(load)
       <span v-if="copied" class="text-[11px] text-emerald-400">{{ t('observability.tracing.detail.copied') }}</span>
     </div>
 
-    <div v-if="loading" class="flex justify-center py-10"><div class="animate-spin h-6 w-6 border-2 border-sky-500 border-t-transparent rounded-full" /></div>
+    <div v-if="loading" class="flex justify-center py-10"><div class="animate-spin h-6 w-6 border-2 border-brand-500 border-t-transparent rounded-full" /></div>
     <div v-else-if="error && !trace" class="bg-red-900/20 border border-red-800/40 rounded-md px-4 py-3 text-xs text-red-400" data-test="trace-error">{{ error }}</div>
 
     <template v-else-if="trace">

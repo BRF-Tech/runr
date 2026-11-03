@@ -108,7 +108,8 @@ onMounted(load)
 
     <!-- Grant -->
     <div v-if="canManage" class="rounded-xl border border-gray-800 bg-gray-900/60 px-4 py-3 space-y-3">
-      <div class="grid grid-cols-[8rem_1fr_12rem_auto] gap-2 items-end">
+      <!-- One column on a phone (the four fields ran past the screen's edge) -->
+      <div class="grid grid-cols-1 sm:grid-cols-[8rem_1fr_12rem_auto] gap-2 items-end">
         <div>
           <label class="label">{{ t('rbac.subject') }}</label>
           <select v-model="form.subject_type" class="input text-sm" @change="form.subject_id = ''">
@@ -117,7 +118,7 @@ onMounted(load)
           </select>
         </div>
         <div>
-          <label class="label">&nbsp;</label>
+          <label class="label max-sm:hidden">&nbsp;</label>
           <select v-model="form.subject_id" class="input text-sm" data-testid="access-subject">
             <option value="" disabled>{{ t('rbac.selectMembers') }}</option>
             <option v-for="s in subjects" :key="s.id" :value="s.id">{{ s.label }}</option>

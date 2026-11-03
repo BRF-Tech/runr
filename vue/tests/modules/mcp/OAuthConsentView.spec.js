@@ -141,6 +141,32 @@ describe('OAuth consent page', () => {
     expect(card.text()).toContain('invalid_client')
   })
 
+  it('says that connecting needs tokens.manage when the request is forbidden, and still denies it', async () => {
+    mcpApi.consentRequest.mockRejectedValue({ response: { status: 403, data: { message: 'This action is unauthorized.' } } })
+    const w = await mountView()
+
+    expect(w.find('[data-testid="oauth-consent-error"]').exists()).toBe(false)
+    const card = w.get('[data-testid="oauth-consent-forbidden"]')
+    expect(card.text()).toContain('manage your own API tokens')
+    expect(card.text()).not.toContain('unauthorized')
+
+    await card.get('[data-testid="oauth-consent-deny"]').trigger('click')
+    await flushPromises()
+    expect(mcpApi.deny).toHaveBeenCalledWith('req-1')
+    expect(navigateAway).toHaveBeenCalledWith('http://localhost:33418/callback?error=access_denied&state=xyz')
+  })
+
+  it('shows the no-access message when approving is forbidden', async () => {
+    mcpApi.approve.mockRejectedValue({ response: { status: 403, data: { message: 'This action is unauthorized.' } } })
+    const w = await mountView()
+    await w.find('[data-testid="oauth-consent-approve"]').trigger('click')
+    await flushPromises()
+
+    expect(w.find('[data-testid="oauth-consent-forbidden"]').exists()).toBe(true)
+    expect(w.find('[data-testid="oauth-consent-field-error"]').exists()).toBe(false)
+    expect(navigateAway).not.toHaveBeenCalled()
+  })
+
   it('disables approving without permission to manage tokens', async () => {
     mcpApi.consentRequest.mockResolvedValue({ data: { data: request({ can_approve: false }) } })
     const w = await mountView()

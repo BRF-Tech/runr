@@ -14,7 +14,6 @@ export default {
     preferences: 'Tercihler',
     theme:       'Tema',
     themeDark:     'Koyu',
-    themeFullDark: 'Tam Koyu',
     themeLight:    'Açık',
     language:    'Dil',
     languageEn:  'English',

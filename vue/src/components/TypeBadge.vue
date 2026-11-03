@@ -1,11 +1,12 @@
 <script setup>
 defineProps({ type: { type: String, default: null } })
 
-// Any other (legacy) service type falls back to a neutral style and its raw name.
+// The three types in the brand's colour, told apart by style: XaaS solid, FaaS tinted, CaaS
+// outlined. Any other (legacy) service type falls back to a neutral style and its raw name.
 const colors = {
-  xaas:      'bg-blue-900/50 text-blue-300 border-blue-800',
-  faas:      'bg-purple-900/50 text-purple-300 border-purple-800',
-  caas:      'bg-emerald-900/50 text-emerald-300 border-emerald-800',
+  xaas:      'bg-brand-700 text-white border-transparent',
+  faas:      'bg-brand-900/50 text-brand-300 border-brand-800',
+  caas:      'bg-transparent text-brand-400 border-brand-500/70',
 }
 
 const labels = {

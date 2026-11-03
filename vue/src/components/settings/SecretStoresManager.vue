@@ -392,7 +392,7 @@ defineExpose({ load })
       <p v-if="trustLoading" class="text-xs text-gray-400">{{ t('common.loading') }}</p>
       <p v-else-if="trustError" class="text-xs text-red-400" data-testid="secret-store-trust-error">{{ trustError }}</p>
       <template v-else-if="trust">
-        <p v-if="trust.eso_status && trust.eso_status !== 'ready'" class="text-xs text-amber-300 bg-amber-900/20 rounded-sm px-3 py-2" data-testid="secret-store-trust-eso">
+        <p v-if="trust.eso_status && trust.eso_status !== 'ready'" class="text-xs text-yellow-300 bg-yellow-900/20 rounded-sm px-3 py-2" data-testid="secret-store-trust-eso">
           {{ t('secretStores.trust.esoMissing') }}
         </p>
 
@@ -417,7 +417,7 @@ defineExpose({ load })
           </template>
         </dl>
 
-        <p v-if="trust.publicly_reachable === false" class="text-xs text-amber-300 bg-amber-900/20 rounded-sm px-3 py-2 flex gap-2" data-testid="secret-store-trust-private">
+        <p v-if="trust.publicly_reachable === false" class="text-xs text-yellow-300 bg-yellow-900/20 rounded-sm px-3 py-2 flex gap-2" data-testid="secret-store-trust-private">
           <AlertTriangle class="w-3.5 h-3.5 shrink-0 mt-0.5" />{{ t('secretStores.trust.notPublic') }}
         </p>
 

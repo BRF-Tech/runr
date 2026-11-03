@@ -29,10 +29,10 @@ const shown = computed(() => {
 const totalCount = computed(() => props.total ?? props.findings.length)
 
 const tone = {
-  CRITICAL: 'text-red-300 bg-red-900/40 border-red-800/60',
-  HIGH:     'text-orange-300 bg-orange-900/30 border-orange-800/50',
-  MEDIUM:   'text-amber-300 bg-amber-900/30 border-amber-800/40',
-  LOW:      'text-sky-300 bg-sky-900/30 border-sky-800/40',
+  CRITICAL: 'text-white bg-red-700 border-red-700',
+  HIGH:     'text-red-300 bg-red-900/30 border-red-800/50',
+  MEDIUM:   'text-yellow-300 bg-yellow-900/30 border-yellow-800/40',
+  LOW:      'text-brand-300 bg-brand-900/30 border-brand-800/40',
   UNKNOWN:  'text-gray-300 bg-gray-800/60 border-gray-700/60',
 }
 
@@ -85,7 +85,7 @@ function safeUrl(url) {
               </span>
             </td>
             <td class="px-3 py-1.5 font-mono whitespace-nowrap">
-              <a v-if="safeUrl(f.url)" :href="safeUrl(f.url)" target="_blank" rel="noopener noreferrer" class="text-sky-400 hover:text-sky-300 inline-flex items-center gap-1">
+              <a v-if="safeUrl(f.url)" :href="safeUrl(f.url)" target="_blank" rel="noopener noreferrer" class="text-brand-400 hover:text-brand-300 inline-flex items-center gap-1">
                 {{ f.id }} <ExternalLink class="w-3 h-3" />
               </a>
               <span v-else>{{ f.id }}</span>

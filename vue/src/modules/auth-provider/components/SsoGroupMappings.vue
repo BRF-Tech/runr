@@ -126,7 +126,7 @@ onMounted(load)
         <span class="font-mono text-gray-100">{{ m.external_group }}</span>
         <span class="text-gray-500">→</span>
         <span v-if="m.group" class="px-1.5 py-0.5 rounded-sm border border-gray-700 text-gray-300">{{ m.group.name }}</span>
-        <span v-if="m.role" class="px-1.5 py-0.5 rounded-sm border border-sky-800/50 bg-sky-900/30 text-sky-400">{{ roleLabel(m.role, roles) }}</span>
+        <span v-if="m.role" class="px-1.5 py-0.5 rounded-sm border border-brand-800/50 bg-brand-900/30 text-brand-400">{{ roleLabel(m.role, roles) }}</span>
         <span class="flex-1" />
         <span class="text-gray-500">{{ m.provider?.name ?? t('authProvider.mappingAnyProvider') }}</span>
         <button class="text-gray-400 hover:text-red-400" @click="remove(m)"><Trash2 class="w-3.5 h-3.5" /></button>

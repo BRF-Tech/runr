@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="tr">
+<html lang="en">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -9,7 +9,14 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
   </head>
-  <script>document.documentElement.dataset.theme=localStorage.getItem('theme')||'fulldark'</script>
+  <!-- The platform's branding defaults (Helm branding.colors.*, branding.defaultTheme): the ui
+       container writes this file at start (docker-entrypoint.sh); a classic script, read before
+       the first paint -->
+  <script src="/branding-defaults.js"></script>
+  <!-- Before the first paint: the theme (the user's pick, else the cached branding's default, else
+       the platform's), the cached branding's colours or the platform's, and the page language.
+       vite.config.js inlines src/modules/white-label/prePaint.js here (build/prePaintPlugin.js) -->
+  <!-- runr:pre-paint -->
   <body class="bg-gray-950 text-gray-100 antialiased">
     <div id="app"></div>
     <script type="module" src="/src/main.js"></script>

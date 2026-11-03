@@ -47,7 +47,7 @@ function fmtDate(iso) {
         <span class="text-gray-500">{{ t('gitDeploy.connect.defaultBranch') }}</span>
         <span class="text-gray-300 font-mono">{{ git.connection.default_branch || '-' }}</span>
         <span class="text-gray-500">{{ t('gitDeploy.connect.webhook') }}</span>
-        <span :class="git.connection.webhook_registered ? 'text-emerald-400' : 'text-amber-400'">
+        <span :class="git.connection.webhook_registered ? 'text-emerald-400' : 'text-yellow-400'">
           {{ git.connection.webhook_registered ? t('gitDeploy.connect.webhookOk') : t('gitDeploy.connect.webhookMissing') }}
         </span>
         <span class="text-gray-500">{{ t('gitDeploy.connect.lastEvent') }}</span>

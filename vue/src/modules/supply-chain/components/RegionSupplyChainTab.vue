@@ -186,11 +186,11 @@ onUnmounted(() => clearTimeout(timer))
     <p class="text-xs text-gray-400">{{ t('supplyChain.region.intro') }}</p>
 
     <div v-if="loading && !settings" class="flex justify-center py-6">
-      <div class="animate-spin h-4 w-4 border-2 border-sky-500 border-t-transparent rounded-full" />
+      <div class="animate-spin h-4 w-4 border-2 border-brand-500 border-t-transparent rounded-full" />
     </div>
 
     <template v-else-if="settings">
-      <p v-if="!canManage" class="text-xs text-amber-400" data-read-only>{{ t('supplyChain.region.readOnly') }}</p>
+      <p v-if="!canManage" class="text-xs text-yellow-400" data-read-only>{{ t('supplyChain.region.readOnly') }}</p>
 
       <fieldset :disabled="!canManage" class="space-y-5">
         <!-- Pipeline -->
@@ -227,7 +227,7 @@ onUnmounted(() => clearTimeout(timer))
                 {{ settings.scanner_db_status === 'refreshing' ? t('supplyChain.region.dbRefreshing') : t('supplyChain.region.dbRefresh') }}
               </button>
             </div>
-            <p v-if="settings.scanner_db_message" class="text-[11px] text-amber-400 whitespace-pre-line">{{ settings.scanner_db_message }}</p>
+            <p v-if="settings.scanner_db_message" class="text-[11px] text-yellow-400 whitespace-pre-line">{{ settings.scanner_db_message }}</p>
           </template>
         </section>
 

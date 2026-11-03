@@ -8,6 +8,9 @@ import { useJobEvents } from '@/composables/useJobEvents'
 
 const props = defineProps({
   status: { type: String, default: 'idle' },
+  // settings.manage: loading and removing the demo data (POST / DELETE /demo); without it the
+  // status shows and the buttons are left out
+  canManage: { type: Boolean, default: true },
 })
 const emit = defineEmits(['changed'])
 
@@ -138,17 +141,19 @@ defineExpose({ demoBusy })
         <p class="text-xs text-gray-400 mt-0.5">{{ t('settings.demo.description') }}</p>
       </div>
       <button
-        v-if="demoLoaded"
+        v-if="canManage && demoLoaded"
         type="button"
         class="text-xs text-red-500 hover:text-red-400 border border-red-800/50 hover:border-red-600/50 rounded-sm px-2.5 py-1 transition-colors shrink-0 ml-3"
         :disabled="requesting"
+        data-testid="demo-remove"
         @click="removeDemo"
       >
         {{ t('settings.demo.removeBtn') }}
       </button>
       <button
-        v-else
+        v-else-if="canManage"
         type="button"
+        data-testid="demo-seed"
         class="text-xs border rounded-sm px-2.5 py-1 transition-colors shrink-0 ml-3 flex items-center gap-1.5"
         :class="demoBusy ? 'opacity-50 cursor-not-allowed' : ''"
         :disabled="demoBusy"

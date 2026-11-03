@@ -44,7 +44,7 @@ const statusClass = (s) => AI_STATUS_CLASSES[s] ?? 'bg-gray-800 text-gray-400 bo
             <td class="px-3 py-2 text-gray-300 font-mono truncate max-w-56">{{ s.model?.hub_id ?? s.model?.name }}</td>
             <td class="px-3 py-2 text-gray-300">
               {{ t(`ai.engines.${s.engine}`, s.engine) }}
-              <span class="ml-1 px-1 rounded-sm font-mono text-[10px]" :class="s.device === 'gpu' ? 'bg-amber-900/40 text-amber-300' : 'bg-gray-800 text-gray-400'">{{ (s.device ?? '').toUpperCase() }}</span>
+              <span class="ml-1 px-1 rounded-sm font-mono text-[10px]" :class="s.device === 'gpu' ? 'bg-brand-900/40 text-brand-300' : 'bg-gray-800 text-gray-400'">{{ (s.device ?? '').toUpperCase() }}</span>
             </td>
             <td class="px-3 py-2 text-gray-300">{{ t(`ai.modes.${s.mode}`, s.mode) }}</td>
             <td class="px-3 py-2 text-gray-400">{{ s.region_name }}</td>

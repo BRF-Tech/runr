@@ -37,7 +37,12 @@ LABEL org.opencontainers.image.title="RunR UI" \
 
 COPY --from=builder /app/dist /srv
 COPY Caddyfile /etc/caddy/Caddyfile
+# At start: /srv/branding-defaults.js from the BRANDING_* env (the platform's default theme and
+# colours before the first paint), then Caddy
+COPY docker-entrypoint.sh /usr/local/bin/runr-ui-entrypoint
+RUN chmod +x /usr/local/bin/runr-ui-entrypoint
 
 EXPOSE 80
 
+ENTRYPOINT ["/usr/local/bin/runr-ui-entrypoint"]
 CMD ["caddy", "run", "--config", "/etc/caddy/Caddyfile"]

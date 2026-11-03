@@ -109,8 +109,8 @@ const alerts = computed(() => {
       <div data-tour="usage-overview" class="grid grid-cols-2 gap-3 mb-5">
         <div class="rounded-xl border border-gray-800 bg-gray-900/60 p-4">
           <div class="flex items-center gap-2 mb-2">
-            <div class="w-8 h-8 rounded-lg flex items-center justify-center bg-sky-900/30 border border-sky-800/40">
-              <Cpu class="w-4 h-4 text-sky-400" />
+            <div class="w-8 h-8 rounded-lg flex items-center justify-center bg-brand-900/30 border border-brand-800/40">
+              <Cpu class="w-4 h-4 text-brand-400" />
             </div>
             <p class="text-xs text-gray-100 uppercase tracking-wider font-semibold">{{ t('tenancy.usageTotalCpu') }}</p>
           </div>
@@ -125,8 +125,8 @@ const alerts = computed(() => {
         </div>
         <div class="rounded-xl border border-gray-800 bg-gray-900/60 p-4">
           <div class="flex items-center gap-2 mb-2">
-            <div class="w-8 h-8 rounded-lg flex items-center justify-center bg-violet-900/30 border border-violet-800/40">
-              <HardDrive class="w-4 h-4 text-violet-400" />
+            <div class="w-8 h-8 rounded-lg flex items-center justify-center bg-brand-900/30 border border-brand-800/40">
+              <HardDrive class="w-4 h-4 text-brand-400" />
             </div>
             <p class="text-xs text-gray-100 uppercase tracking-wider font-semibold">{{ t('tenancy.usageTotalMemory') }}</p>
           </div>
@@ -147,11 +147,11 @@ const alerts = computed(() => {
       <div v-for="r in infinite" :key="r.id"
         class="rounded-xl border border-gray-800 bg-gray-900/60 p-4 mb-3">
         <div class="flex items-center gap-2 mb-3">
-          <div class="w-7 h-7 rounded-lg flex items-center justify-center bg-violet-900/30 border border-violet-800/40">
-            <Globe class="w-3.5 h-3.5 text-violet-400" />
+          <div class="w-7 h-7 rounded-lg flex items-center justify-center bg-brand-900/30 border border-brand-800/40">
+            <Globe class="w-3.5 h-3.5 text-brand-400" />
           </div>
           <span class="font-semibold text-gray-100 text-xs font-mono">{{ r.name }}</span>
-          <span class="px-1.5 py-0.5 rounded-sm text-[10px] font-medium border bg-violet-900/40 border-violet-800/40 text-violet-400">
+          <span class="px-1.5 py-0.5 rounded-sm text-[10px] font-medium border bg-brand-900/40 border-brand-800/40 text-brand-400">
             {{ t('tenancy.regionMode_infinite') }}
           </span>
         </div>
@@ -185,11 +185,11 @@ const alerts = computed(() => {
         @click="toggle(r.id)">
         <div class="p-4">
           <div class="flex items-center gap-2 mb-3">
-            <div class="w-7 h-7 rounded-lg flex items-center justify-center bg-sky-900/30 border border-sky-800/40">
-              <Globe class="w-3.5 h-3.5 text-sky-400" />
+            <div class="w-7 h-7 rounded-lg flex items-center justify-center bg-brand-900/30 border border-brand-800/40">
+              <Globe class="w-3.5 h-3.5 text-brand-400" />
             </div>
             <span class="font-semibold text-gray-100 text-xs font-mono">{{ r.name }}</span>
-            <span class="px-1.5 py-0.5 rounded-sm text-[10px] font-medium border bg-sky-900/40 border-sky-800/40 text-sky-400">
+            <span class="px-1.5 py-0.5 rounded-sm text-[10px] font-medium border bg-brand-900/40 border-brand-800/40 text-brand-400">
               {{ t('tenancy.regionMode_managed') }}
             </span>
             <ChevronDown class="w-4 h-4 text-gray-400 ml-auto transition-transform"

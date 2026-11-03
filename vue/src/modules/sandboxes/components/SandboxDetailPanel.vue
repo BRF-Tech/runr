@@ -10,6 +10,7 @@ import SandboxLogs from './SandboxLogs.vue'
 import { sandboxesApi } from '../api/sandboxes'
 import { useSandboxActions } from '../composables/useSandboxActions'
 import { useLatest } from '@/composables/useLatest'
+import { usePermissionsStore } from '@/stores/permissions'
 import { formatDateTime, formatDuration, isAlive, secondsUntil } from '../utils'
 
 const props = defineProps({
@@ -21,8 +22,19 @@ const emit = defineEmits(['close', 'changed', 'killed', 'open-terminal'])
 const { t } = useI18n()
 const actions = useSandboxActions()
 
-const TABS = ['overview', 'files', 'processes', 'run', 'logs', 'terminal']
-const tab      = ref(TABS.includes(props.initialTab) ? props.initialTab : 'overview')
+// docs/permissions.md: the files, processes, run and terminal tabs (and pause / resume) need
+// sandboxes.exec, extend and kill need sandboxes.create; without them those tabs and buttons are
+// left out (their endpoints answer 403), the overview and the activity log stay
+const perms     = usePermissionsStore()
+const canCreate = computed(() => perms.can('sandboxes.create'))
+const canExec   = computed(() => perms.can('sandboxes.exec'))
+
+const ALL_TABS  = ['overview', 'files', 'processes', 'run', 'logs', 'terminal']
+const EXEC_TABS = ['files', 'processes', 'run', 'terminal']
+const TABS      = computed(() => ALL_TABS.filter(key => canExec.value || !EXEC_TABS.includes(key)))
+const tab      = ref(TABS.value.includes(props.initialTab) ? props.initialTab : 'overview')
+// The permissions can arrive (or change) while the panel is open
+watch(TABS, (tabs) => { if (!tabs.includes(tab.value)) tab.value = 'overview' })
 const current  = ref({ ...props.sandbox })
 const busy     = ref(false)
 const extendBy = ref(900)
@@ -151,23 +163,23 @@ const extendOptions = computed(() => [
       <div class="flex-1 overflow-y-auto px-5 py-4">
         <!-- Overview -->
         <div v-if="tab === 'overview'" data-panel="overview">
-          <div v-if="alive" class="flex flex-wrap items-end gap-2 mb-5">
-            <div>
+          <div v-if="alive && (canCreate || canExec)" class="flex flex-wrap items-end gap-2 mb-5">
+            <div v-if="canCreate">
               <label class="label">{{ t('sandboxes.detail.extendBy') }}</label>
               <select v-model.number="extendBy" class="input w-40" name="extend_by">
                 <option v-for="o in extendOptions" :key="o.value" :value="o.value">{{ o.label }}</option>
               </select>
             </div>
-            <button class="btn-secondary flex items-center gap-1.5" :disabled="busy" data-action="extend" @click="act('extend', extendBy)">
+            <button v-if="canCreate" class="btn-secondary flex items-center gap-1.5" :disabled="busy" data-action="extend" @click="act('extend', extendBy)">
               <Clock class="w-3.5 h-3.5" />{{ t('sandboxes.actions.extend') }}
             </button>
-            <button v-if="running" class="btn-secondary flex items-center gap-1.5" :disabled="busy" data-action="pause" @click="act('pause')">
+            <button v-if="canExec && running" class="btn-secondary flex items-center gap-1.5" :disabled="busy" data-action="pause" @click="act('pause')">
               <Pause class="w-3.5 h-3.5" />{{ t('sandboxes.actions.pause') }}
             </button>
-            <button v-else-if="current.status === 'paused'" class="btn-secondary flex items-center gap-1.5" :disabled="busy" data-action="resume" @click="act('resume')">
+            <button v-else-if="canExec && current.status === 'paused'" class="btn-secondary flex items-center gap-1.5" :disabled="busy" data-action="resume" @click="act('resume')">
               <Play class="w-3.5 h-3.5" />{{ t('sandboxes.actions.resume') }}
             </button>
-            <button class="btn-danger flex items-center gap-1.5 ml-auto" :disabled="busy" data-action="kill" @click="act('kill')">
+            <button v-if="canCreate" class="btn-danger flex items-center gap-1.5 ml-auto" :disabled="busy" data-action="kill" @click="act('kill')">
               <Square class="w-3.5 h-3.5" />{{ t('sandboxes.actions.kill') }}
             </button>
           </div>
@@ -191,7 +203,7 @@ const extendOptions = computed(() => [
           <button class="btn-primary flex items-center gap-1.5" :disabled="!running" data-action="open-terminal" @click="emit('open-terminal', current)">
             <TerminalSquare class="w-4 h-4" />{{ t('sandboxes.detail.openTerminal') }}
           </button>
-          <p v-if="!running" class="text-xs text-amber-400 mt-2">{{ t('sandboxes.detail.notRunning') }}</p>
+          <p v-if="!running" class="text-xs text-yellow-400 mt-2">{{ t('sandboxes.detail.notRunning') }}</p>
         </div>
       </div>
     </aside>

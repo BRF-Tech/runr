@@ -130,7 +130,7 @@ defineExpose({ load })
         <div class="grid md:grid-cols-2 gap-4">
           <div>
             <p class="label">{{ t('sandboxes.settings.regions.allowedClasses') }}</p>
-            <p v-if="!installedOf(r).length" class="text-xs text-amber-400">{{ t('sandboxes.settings.regions.noClasses') }}</p>
+            <p v-if="!installedOf(r).length" class="text-xs text-yellow-400">{{ t('sandboxes.settings.regions.noClasses') }}</p>
             <div class="flex flex-wrap gap-3">
               <label v-for="c in installedOf(r)" :key="c" class="flex items-center gap-1.5 text-xs font-mono text-gray-300">
                 <input v-model="forms[r.region.id].allowed" type="checkbox" :value="c" :name="`class-${c}`" :disabled="!r.can_manage" />{{ c }}
@@ -141,7 +141,7 @@ defineExpose({ load })
               <input v-model="forms[r.region.id].allow_runc" type="checkbox" name="allow_runc" :disabled="!r.can_manage" />
               {{ t('sandboxes.settings.regions.allowRunc') }}
             </label>
-            <p v-if="forms[r.region.id].allow_runc" class="flex items-start gap-1.5 text-[11px] text-amber-400 mt-1" data-runc-warning>
+            <p v-if="forms[r.region.id].allow_runc" class="flex items-start gap-1.5 text-[11px] text-yellow-400 mt-1" data-runc-warning>
               <AlertTriangle class="w-3.5 h-3.5 shrink-0" />{{ t('sandboxes.settings.regions.runcWarning') }}
             </p>
 

@@ -32,11 +32,11 @@ const { wsConnected } = useWsConnection()
 
 const STATUS_CLASS = {
   pending:           'bg-yellow-900/40 text-yellow-300 border-yellow-800',
-  progressing:       'bg-blue-900/40 text-blue-300 border-blue-800',
-  waiting_promotion: 'bg-violet-900/40 text-violet-300 border-violet-800',
+  progressing:       'bg-brand-900/40 text-brand-300 border-brand-800',
+  waiting_promotion: 'bg-transparent text-brand-400 border-brand-500/60',
   promoted:          'bg-emerald-900/40 text-emerald-300 border-emerald-800',
   aborted:           'bg-gray-800 text-gray-300 border-gray-700',
-  rolled_back:       'bg-orange-900/40 text-orange-300 border-orange-800',
+  rolled_back:       'bg-yellow-900/40 text-yellow-300 border-yellow-800',
   failed:            'bg-red-900/40 text-red-300 border-red-800',
 }
 
@@ -236,7 +236,7 @@ onUnmounted(() => {
     <div class="flex flex-wrap items-start justify-between gap-3">
       <div class="min-w-0">
         <div class="flex items-center gap-2 flex-wrap">
-          <component :is="isCanary ? Bird : Columns2" class="w-4 h-4" :class="isCanary ? 'text-amber-400' : 'text-sky-400'" />
+          <component :is="isCanary ? Bird : Columns2" class="w-4 h-4 text-brand-400" />
           <span class="text-sm font-semibold text-gray-100">{{ t('rollout.title', { strategy: strategyName }) }}</span>
           <!-- the environment it rolls out (production: the project's own workload) -->
           <span
@@ -256,14 +256,14 @@ onUnmounted(() => {
           <template v-if="r.created_by"> · {{ t('rollout.startedBy', { name: r.created_by, time: eventTime(r.created_at) }) }}</template>
         </p>
       </div>
-      <div v-if="can.promote || can.abort || can.rollback" class="flex items-center gap-2 shrink-0">
+      <div v-if="can.promote || can.abort || can.rollback" class="flex items-center gap-2 shrink-0" data-tour="rollout-actions">
         <button
           v-if="can.promote" type="button" class="btn-primary text-xs px-3 py-1.5" :disabled="!!busy"
           data-test="rollout-promote" @click="ask('promote')"
         >{{ t('rollout.actions.promote') }}</button>
         <button
           v-if="can.rollback" type="button"
-          class="btn-secondary text-xs px-3 py-1.5 text-orange-300 hover:text-orange-200 border border-orange-900/50 hover:border-orange-700"
+          class="btn-secondary text-xs px-3 py-1.5 text-yellow-300 hover:text-yellow-200 border border-yellow-900/50 hover:border-yellow-700"
           :disabled="!!busy" data-test="rollout-rollback" @click="ask('rollback')"
         >{{ t('rollout.actions.rollback') }}</button>
         <button
@@ -277,12 +277,12 @@ onUnmounted(() => {
     <!-- Traffic split -->
     <div data-test="rollout-traffic">
       <div class="flex h-2.5 rounded-full overflow-hidden bg-gray-800" role="img" :aria-label="t('rollout.traffic.aria', { candidate: traffic.candidate, stable: traffic.stable })">
-        <div class="h-full transition-all duration-500" :class="isCanary ? 'bg-amber-400' : 'bg-sky-400'" :style="{ width: `${traffic.candidate}%` }" />
+        <div class="h-full transition-all duration-500 bg-brand-400" :style="{ width: `${traffic.candidate}%` }" />
         <div class="h-full bg-emerald-600/70 transition-all duration-500" :style="{ width: `${traffic.stable}%` }" />
       </div>
       <div class="flex justify-between mt-1.5 text-[11px]">
-        <span class="flex items-center gap-1.5" :class="isCanary ? 'text-amber-300' : 'text-sky-300'" data-test="rollout-traffic-candidate">
-          <span class="w-2 h-2 rounded-full" :class="isCanary ? 'bg-amber-400' : 'bg-sky-400'" />
+        <span class="flex items-center gap-1.5 text-brand-300" data-test="rollout-traffic-candidate">
+          <span class="w-2 h-2 rounded-full bg-brand-400" />
           {{ t('rollout.traffic.new') }} {{ pct(traffic.candidate) }}
         </span>
         <span class="flex items-center gap-1.5 text-emerald-300" data-test="rollout-traffic-stable">
@@ -300,7 +300,7 @@ onUnmounted(() => {
           <span
             class="text-[11px] font-mono px-2 py-0.5 rounded-sm border"
             :class="step && i === step.index
-              ? 'bg-amber-500/15 border-amber-500/50 text-amber-300'
+              ? 'bg-brand-900/40 border-brand-500/60 text-brand-300'
               : (step ? i < step.index : r.status === 'promoted') ? 'bg-gray-800 border-gray-700 text-gray-300' : 'border-gray-800 text-gray-500'"
           >{{ pct(s) }}</span>
         </template>
@@ -309,8 +309,8 @@ onUnmounted(() => {
     </div>
 
     <!-- Canary: the new revision's metrics against the thresholds, or time only without them -->
-    <div v-if="isCanary && timeOnly" class="flex items-start gap-2 text-xs text-sky-200 bg-sky-900/20 border border-sky-800/40 rounded-md px-3 py-2" data-test="rollout-time-only">
-      <Activity class="w-3.5 h-3.5 text-sky-400 mt-0.5 shrink-0" />{{ t('rollout.metrics.timeOnly') }}
+    <div v-if="isCanary && timeOnly" class="flex items-start gap-2 text-xs text-brand-300 bg-brand-900/20 border border-brand-800/40 rounded-md px-3 py-2" data-test="rollout-time-only">
+      <Activity class="w-3.5 h-3.5 text-brand-400 mt-0.5 shrink-0" />{{ t('rollout.metrics.timeOnly') }}
     </div>
     <div v-else-if="metricRows.length" data-test="rollout-metrics">
       <div class="grid grid-cols-3 gap-2">
@@ -338,12 +338,12 @@ onUnmounted(() => {
     </div>
 
     <!-- Blue-green: waiting for a promotion / health checks of the automatic promotion -->
-    <p v-if="!isCanary && r.status === 'waiting_promotion'" class="text-xs text-violet-300" data-test="rollout-waiting">
+    <p v-if="!isCanary && r.status === 'waiting_promotion'" class="text-xs text-brand-300" data-test="rollout-waiting">
       {{ t('rollout.waitingPromotion') }}
     </p>
     <p v-else-if="r.status === 'pending'" class="text-xs text-yellow-300">{{ t('rollout.pendingHint') }}</p>
     <div v-if="health" class="flex items-start gap-2 text-xs text-gray-300" data-test="rollout-health">
-      <HeartPulse class="w-3.5 h-3.5 text-rose-400 mt-0.5 shrink-0" />
+      <HeartPulse class="w-3.5 h-3.5 text-brand-400 mt-0.5 shrink-0" />
       <div>
         <p>{{ healthLine }}</p>
         <p v-if="health.last_error" class="text-red-400 mt-0.5">{{ health.last_error }}</p>

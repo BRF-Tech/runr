@@ -3,6 +3,7 @@ import 'driver.js/dist/driver.css'
 import { onUnmounted, watch, nextTick } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useTutorialStore } from '@/stores/tutorial'
+import { revealInScrollRow } from '@/utils/scrollRow'
 import {
   projectsSteps, createSteps, settingsSteps, settingsTabSteps,
   detailVersionsSteps, detailDeploymentsSteps, detailMetricsSteps,
@@ -37,6 +38,11 @@ function buildDriver(steps, { t, tutorialStore, onComplete }) {
       if (!popover.wrapper.querySelector('.driver-popover-progress-text')) {
         popover.footer.prepend(counter)
       }
+    },
+    // A step's element in a row that scrolls sideways (a project tab past the visible ones,
+    // ProjectHeader) can start out of view: the row scrolls to it before driver.js measures it
+    onHighlightStarted: (element) => {
+      if (element) revealInScrollRow(element)
     },
     onDestroyed: () => {
       tutorialStore.tutorialActive = false

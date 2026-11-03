@@ -229,7 +229,7 @@ const reachableLabel = computed(() => {
               v-for="src in GEOIP_SOURCES" :key="src"
               type="button"
               class="text-[11px] px-3 py-1 rounded-md border transition-colors"
-              :class="geoipForm.source === src ? 'border-sky-500/60 bg-sky-900/30 text-sky-300' : 'border-gray-800 bg-gray-900/40 text-gray-400 hover:text-gray-100'"
+              :class="geoipForm.source === src ? 'border-brand-500/60 bg-brand-900/30 text-brand-300' : 'border-gray-800 bg-gray-900/40 text-gray-400 hover:text-gray-100'"
               :disabled="!canManage || !!geoipBusy"
               :aria-pressed="geoipForm.source === src ? 'true' : 'false'"
               :data-geoip-source="src"

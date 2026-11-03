@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, watch, nextTick, onMounted, onBeforeUnmount } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import { describeCron } from '@/utils/cron'
@@ -13,7 +13,8 @@ import { isLegacyServiceType } from '@/utils/projectHelpers'
 import { isGlobalProject } from '@/utils/globalProjects'
 import { usePermissionsStore } from '@/stores/permissions'
 import { projectStrategy } from '@/utils/deployStrategy'
-import { MapPin, Cpu, MemoryStick, Timer, Pencil, Play, Clock, Zap, Globe, Earth, Copy, Check, ArrowUpDown, UserRound, OctagonPause, Bird, Columns2 } from 'lucide-vue-next'
+import { revealInScrollRow, rowScrollBehavior, scrollRowEdges, scrollRowPage } from '@/utils/scrollRow'
+import { MapPin, Cpu, MemoryStick, Timer, Pencil, Play, Clock, Zap, Globe, Earth, Copy, Check, ArrowUpDown, UserRound, OctagonPause, Bird, Columns2, ChevronLeft, ChevronRight } from 'lucide-vue-next'
 
 const { t } = useI18n()
 const router = useRouter()
@@ -74,6 +75,12 @@ const currentUserId = (() => {
 })()
 const isOwner = computed(() => !!props.project.owner_id && String(props.project.owner_id) === currentUserId)
 const canTransfer = computed(() => isOwner.value || perms.can('projects.manage_access', props.project.id))
+// At least one of the action buttons shows: only then is the row the tour's "Actions" step (a
+// read-only role sees none, and the tour leaves the step out instead of pointing at nothing)
+const hasActions = computed(() =>
+  (!isLegacy.value && (canUpdate.value || canClone.value || canDeploy.value))
+  || (canStop.value && (!isStopped.value || canTakeOver.value) && !isLegacy.value)
+  || canDelete.value)
 
 // patches: the runtime patch badge was clicked (the project page opens the dialog)
 defineEmits(['edit', 'clone', 'delete', 'deploy', 'stop', 'transfer-owner', 'patches', 'update:activeTab'])
@@ -86,10 +93,50 @@ async function copyUrl() {
   urlCopied.value = true
   setTimeout(() => { urlCopied.value = false }, 2000)
 }
+
+// ── Tab row ──
+// One row that scrolls sideways when the tabs do not fit (a project with the module tabs is
+// wider than a 1440 px window). The active tab is scrolled into view when the page opens on it
+// (#traces) and when it changes; a fade with an arrow marks each end that hides tabs. Tab
+// moves the focus through every tab (the browser scrolls the focused one into view).
+const tabRow = ref(null)
+const edges = ref({ start: false, end: false })
+
+function updateEdges() {
+  edges.value = scrollRowEdges(tabRow.value)
+}
+
+function revealActiveTab(behavior = 'auto') {
+  const button = [...(tabRow.value?.querySelectorAll('[data-tab]') ?? [])].find(b => b.dataset.tab === props.activeTab)
+  if (button) revealInScrollRow(button, { behavior })
+  updateEdges()
+}
+
+function pageTabs(direction) {
+  scrollRowPage(tabRow.value, direction, { behavior: rowScrollBehavior() })
+}
+
+watch(() => props.activeTab, () => nextTick(() => revealActiveTab(rowScrollBehavior())))
+// Other tabs or labels (a module tab, the language): the ends move. A refresh of the project
+// that keeps the tabs leaves the row where the user scrolled it.
+watch(() => props.tabs.map(tab => `${tab.id}:${tab.label}`).join('|'), () => nextTick(() => revealActiveTab()))
+
+let rowResize = null
+onMounted(() => {
+  revealActiveTab()
+  if (typeof ResizeObserver !== 'undefined' && tabRow.value) {
+    rowResize = new ResizeObserver(() => updateEdges())
+    rowResize.observe(tabRow.value)
+  }
+})
+onBeforeUnmount(() => rowResize?.disconnect())
 </script>
 
 <template>
-  <div class="border-b border-gray-800 bg-gray-950 sticky top-0 z-10">
+  <!-- Sticks below the sticky AppHeader (--app-header-height, main.css; AppHeader measures it).
+       Narrower than lg the header wraps to twice its height: it scrolls with the page there
+       instead of covering half a phone's screen. -->
+  <div class="border-b border-gray-800 bg-gray-950 lg:sticky top-[var(--app-header-height)] z-10" data-test="project-header">
     <div class="px-6 pt-3 pb-0">
 
       <!-- Breadcrumb -->
@@ -100,8 +147,8 @@ async function copyUrl() {
         >{{ t('project.backToProjects') }}</button>
       </div>
 
-      <!-- Title row -->
-      <div data-tour="project-header" class="flex items-start justify-between gap-4 mb-3">
+      <!-- Title row: the actions next to the title from lg, below it on narrower screens -->
+      <div data-tour="project-header" class="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between lg:gap-4 mb-3">
         <div class="flex items-center gap-3 min-w-0">
           <div class="w-0.5 h-9 rounded-full shrink-0" style="background:linear-gradient(180deg,rgb(var(--brand-500)),rgb(var(--brand-700)))"></div>
           <div class="min-w-0">
@@ -109,32 +156,32 @@ async function copyUrl() {
             <div class="flex flex-wrap items-center gap-1.5">
               <TypeBadge :type="project.service_type" />
               <McpServerBadge :server="project.mcp_server" />
-              <span v-if="project.runtime && !isBlueprintMode" class="inline-flex items-center gap-1.5 text-xs font-mono font-medium px-2.5 py-1 rounded-md border" style="background:rgb(var(--brand-500)/0.12);border-color:rgb(var(--brand-500)/0.35);color:rgb(var(--brand-500))"><RuntimeIcon :runtime="project.runtime" :size="14" />{{ runtimeLabel(project.runtime) }}{{ project.runtime_version ? ' ' + project.runtime_version : '' }}</span>
-              <span v-if="isBlueprintMode" class="inline-flex items-center gap-1.5 text-xs font-mono font-medium px-2.5 py-1 rounded-md border" style="background:rgb(139 92 246/0.12);border-color:rgb(139 92 246/0.35);color:#8b5cf6">Blueprint</span>
+              <span v-if="project.runtime && !isBlueprintMode" class="inline-flex items-center gap-1.5 text-xs font-mono font-medium px-2.5 py-1 rounded-md border bg-brand-900/30 border-brand-800/50 text-brand-300"><RuntimeIcon :runtime="project.runtime" :size="14" />{{ runtimeLabel(project.runtime) }}{{ project.runtime_version ? ' ' + project.runtime_version : '' }}</span>
+              <span v-if="isBlueprintMode" class="inline-flex items-center gap-1.5 text-xs font-mono font-medium px-2.5 py-1 rounded-md border bg-transparent border-brand-500/60 text-brand-400">Blueprint</span>
               <span v-if="project.service_type === 'caas' && project.config?.image" class="inline-flex items-center gap-1.5 text-xs font-mono font-medium px-2.5 py-1 rounded-md border border-gray-700/60 bg-gray-800/40 text-gray-100"><RuntimeIcon runtime="docker" :size="14" />{{ project.config.image }}</span>
               <span v-if="regionLabel" class="inline-flex items-center gap-1 text-xs font-mono font-medium px-2.5 py-1 rounded-md border border-gray-700/60 bg-gray-800/40 text-gray-400"><MapPin class="w-3 h-3" />{{ regionLabel }}</span>
               <!-- Global project (docs/global-projects.md): the primary above, every region on hover -->
-              <span v-if="isGlobal" class="inline-flex items-center gap-1 text-xs font-medium px-2.5 py-1 rounded-md border bg-sky-900/30 border-sky-800/50 text-sky-300" :title="globalRegionNames" data-test="project-global-badge"><Earth class="w-3 h-3" />{{ t('globalProjects.badge') }}<template v-if="globalRegionCount"> · {{ t('globalProjects.badgeRegions', { n: globalRegionCount }) }}</template></span>
+              <span v-if="isGlobal" class="inline-flex items-center gap-1 text-xs font-medium px-2.5 py-1 rounded-md border bg-brand-900/30 border-brand-800/50 text-brand-300" :title="globalRegionNames" data-test="project-global-badge"><Earth class="w-3 h-3" />{{ t('globalProjects.badge') }}<template v-if="globalRegionCount"> · {{ t('globalProjects.badgeRegions', { n: globalRegionCount }) }}</template></span>
               <span
                 v-if="project.config?.scale_to_zero != null"
                 class="inline-flex items-center gap-1 text-xs font-mono font-medium px-2.5 py-1 rounded-md border"
                 :class="project.config.scale_to_zero
-                  ? 'bg-emerald-900/30 border-emerald-800/50 text-emerald-400'
-                  : 'bg-blue-900/30 border-blue-800/50 text-blue-400'"
+                  ? 'bg-transparent border-brand-500/60 text-brand-400'
+                  : 'bg-brand-900/30 border-brand-800/50 text-brand-300'"
               >
                 <ArrowUpDown class="w-3 h-3" />
                 {{ project.config.scale_to_zero ? t('projects.scalingS2z') : t('projects.scalingCustomLabel', { min: project.config.min_scale, max: project.config.max_scale }) }}
               </span>
               <span
                 v-if="warmerOn"
-                class="inline-flex items-center gap-1 text-xs font-mono font-medium px-2.5 py-1 rounded-md border bg-amber-900/20 border-amber-800/50 text-amber-400"
+                class="inline-flex items-center gap-1 text-xs font-mono font-medium px-2.5 py-1 rounded-md border bg-gray-800/60 border-gray-700 text-brand-300"
                 :title="project.warm_scale?.applied_at || ''"
                 data-testid="warmer-badge"
               ><Clock class="w-3 h-3" />{{ warmerBadge }}</span>
               <span
                 v-if="deployStrategy !== 'direct'"
                 class="inline-flex items-center gap-1 text-xs font-mono font-medium px-2.5 py-1 rounded-md border"
-                :class="deployStrategy === 'canary' ? 'bg-amber-900/30 border-amber-800/50 text-amber-400' : 'bg-sky-900/30 border-sky-800/50 text-sky-400'"
+                :class="deployStrategy === 'canary' ? 'bg-transparent border-brand-500/60 text-brand-400' : 'bg-brand-900/30 border-brand-800/50 text-brand-300'"
                 :title="t('deployStrategy.badgeHint')"
                 data-test="project-strategy-badge"
               >
@@ -148,7 +195,7 @@ async function copyUrl() {
           </div>
         </div>
 
-        <div data-tour="action-buttons" class="flex items-center gap-2 shrink-0 pt-1">
+        <div :data-tour="hasActions ? 'action-buttons' : undefined" data-test="project-actions" class="flex flex-wrap items-center gap-2 lg:shrink-0 lg:pt-1">
           <button v-if="!isLegacy && canUpdate" class="btn-secondary flex items-center gap-1.5" @click="$emit('edit')"><Pencil class="w-3.5 h-3.5" />{{ t('project.edit') }}</button>
           <button v-if="!isLegacy && canClone" class="btn-secondary" @click="$emit('clone')">{{ t('project.clone') }}</button>
           <button v-if="canStop && (!isStopped || canTakeOver) && !isLegacy" class="btn-secondary text-red-400 hover:text-red-300 border-red-900/50 hover:border-red-700" data-test="project-stop" @click="$emit('stop')">{{ canTakeOver ? t('projectLifecycle.takeOver') : t('projectLifecycle.stop') }}</button>
@@ -170,7 +217,7 @@ async function copyUrl() {
           <button v-if="canTransfer && !isLegacy" type="button" class="text-brand-400 hover:text-brand-300" data-test="project-owner-transfer" @click="$emit('transfer-owner')">{{ t('projectLifecycle.transfer') }}</button>
         </span>
         <div v-if="endpointUrl" class="flex items-center gap-1.5 min-w-0">
-          <span class="inline-flex items-center gap-1 text-xs font-mono font-medium px-2.5 py-1 rounded-md shrink-0" style="background:rgb(16 185 129/0.12);border:1px solid rgb(16 185 129/0.3);color:#10b981"><Globe class="w-3 h-3" />HTTP</span>
+          <span class="inline-flex items-center gap-1 text-xs font-mono font-medium px-2.5 py-1 rounded-md shrink-0 border bg-brand-900/30 border-brand-800/50 text-brand-300"><Globe class="w-3 h-3" />HTTP</span>
           <a :href="endpointUrl" target="_blank" rel="noopener" class="text-xs font-mono text-brand-400 hover:text-brand-300 truncate transition-colors">{{ endpointUrl }}</a>
           <button @click="copyUrl" class="text-gray-400 hover:text-gray-100 transition-colors shrink-0">
             <Check v-if="urlCopied" class="w-3.5 h-3.5 text-green-400" />
@@ -178,12 +225,12 @@ async function copyUrl() {
           </button>
         </div>
         <div v-if="project.config?.schedule" class="flex items-center gap-1.5 shrink-0">
-          <span class="inline-flex items-center gap-1 text-xs font-mono font-medium px-2.5 py-1 rounded-md bg-amber-900/30 border border-amber-800/50 text-amber-400"><Clock class="w-3 h-3" />CRON</span>
+          <span class="inline-flex items-center gap-1 text-xs font-mono font-medium px-2.5 py-1 rounded-md border bg-transparent border-brand-500/60 text-brand-400"><Clock class="w-3 h-3" />CRON</span>
           <span class="text-xs font-mono text-gray-100">{{ project.config.schedule }}</span>
           <span class="text-xs text-gray-400 italic">· {{ describeCron(project.config.schedule, t) }}</span>
         </div>
         <div v-if="project.config?.queue_stream" class="flex items-center gap-1.5 shrink-0">
-          <span class="inline-flex items-center gap-1 text-xs font-mono font-medium px-2.5 py-1 rounded-md" style="background:rgb(var(--brand-500)/0.12);border:1px solid rgb(var(--brand-500)/0.3);color:rgb(var(--brand-500))"><Zap class="w-3 h-3" />STREAM</span>
+          <span class="inline-flex items-center gap-1 text-xs font-mono font-medium px-2.5 py-1 rounded-md border bg-gray-800/60 border-gray-700 text-brand-300"><Zap class="w-3 h-3" />STREAM</span>
           <span class="text-xs font-mono text-gray-100">{{ project.config.queue_stream }}{{ moduleRegistry.queueStreamSuffixFn?.() || '' }}</span>
         </div>
         <span v-if="project.config?.cpu || project.config?.memory_mb || project.config?.timeout_seconds"
@@ -197,15 +244,33 @@ async function copyUrl() {
         </span>
       </div>
 
-      <!-- Tabs -->
-      <div class="flex gap-1 -mb-px" data-tour="project-tabs">
-        <button
-          v-for="tab in tabs" :key="tab.id"
-          class="tab-line px-5 py-2.5 text-[15px]"
-          :class="activeTab === tab.id ? 'is-active' : ''"
-          :data-tour="tab.id === 'deployments' ? 'deployments-tab' : tab.id === 'metrics' ? 'metrics-tab' : undefined"
-          @click="$emit('update:activeTab', tab.id)"
-        >{{ tab.label }}</button>
+      <!-- Tabs: a row that scrolls sideways (the fades and arrows show the hidden ends) -->
+      <div class="relative -mb-px" data-tour="project-tabs">
+        <div
+          ref="tabRow"
+          class="flex gap-1 overflow-x-auto overscroll-x-contain scroll-px-12 scrollbar-none"
+          data-scroll-row
+          data-test="project-tabs-row"
+          @scroll.passive="updateEdges"
+        >
+          <button
+            v-for="tab in tabs" :key="tab.id"
+            type="button"
+            class="tab-line shrink-0 whitespace-nowrap px-5 py-2.5 text-[15px] focus:outline-hidden focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand-500/60"
+            :class="activeTab === tab.id ? 'is-active' : ''"
+            :aria-current="activeTab === tab.id ? 'true' : undefined"
+            :data-tab="tab.id"
+            :data-tour="tab.id === 'deployments' ? 'deployments-tab' : tab.id === 'metrics' ? 'metrics-tab' : undefined"
+            @click="$emit('update:activeTab', tab.id)"
+          >{{ tab.label }}</button>
+        </div>
+        <!-- The arrows only help a pointer (Tab reaches every tab): out of the tab order -->
+        <div v-if="edges.start" class="pointer-events-none absolute top-0 bottom-px left-0 w-12 flex items-center bg-linear-to-r from-gray-950 from-40% to-transparent" data-test="project-tabs-start">
+          <button type="button" tabindex="-1" aria-hidden="true" class="pointer-events-auto h-7 w-7 flex items-center justify-center rounded-md text-gray-400 hover:text-gray-100 hover:bg-gray-800 transition-colors" data-test="project-tabs-back" @click="pageTabs(-1)"><ChevronLeft class="w-4 h-4" /></button>
+        </div>
+        <div v-if="edges.end" class="pointer-events-none absolute top-0 bottom-px right-0 w-12 flex items-center justify-end bg-linear-to-l from-gray-950 from-40% to-transparent" data-test="project-tabs-end">
+          <button type="button" tabindex="-1" aria-hidden="true" class="pointer-events-auto h-7 w-7 flex items-center justify-center rounded-md text-gray-400 hover:text-gray-100 hover:bg-gray-800 transition-colors" data-test="project-tabs-forward" @click="pageTabs(1)"><ChevronRight class="w-4 h-4" /></button>
+        </div>
       </div>
 
     </div>

@@ -222,7 +222,7 @@ function toggleExpand(tenant) {
                 <span class="text-sm font-semibold text-gray-100">{{ tenant.name }}</span>
                 <code class="text-[10px] font-mono px-1.5 py-0.5 rounded-sm bg-gray-800 border border-gray-700 text-gray-400">{{ tenant.slug }}</code>
                 <span v-if="isDeleting(tenant)"
-                  class="flex items-center gap-1 px-1.5 py-0.5 rounded-sm text-[10px] font-medium border bg-amber-900/30 border-amber-800/40 text-amber-400">
+                  class="flex items-center gap-1 px-1.5 py-0.5 rounded-sm text-[10px] font-medium border bg-yellow-900/30 border-yellow-800/40 text-yellow-400">
                   <Loader2 class="w-3 h-3 animate-spin" />{{ t('tenancy.statusDeleting') }}
                 </span>
                 <span v-else-if="deleteFailed(tenant)"
@@ -237,7 +237,7 @@ function toggleExpand(tenant) {
               <p v-if="deleteFailed(tenant) && tenant.status_message"
                 class="mt-1 text-[11px] text-red-400 wrap-break-word">{{ tenant.status_message }}</p>
             </div>
-            <button class="p-1.5 rounded-md text-gray-400 hover:text-amber-400 hover:bg-gray-800 transition-colors shrink-0"
+            <button class="p-1.5 rounded-md text-gray-400 hover:text-yellow-400 hover:bg-gray-800 transition-colors shrink-0"
               :title="t('tenancy.openAsAdmin')"
               :aria-label="t('tenancy.openAsAdmin')"
               data-testid="open-as-admin"

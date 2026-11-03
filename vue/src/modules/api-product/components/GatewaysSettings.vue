@@ -1,10 +1,12 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { ShieldAlert, Waypoints } from 'lucide-vue-next'
+import { Eye, ShieldAlert, Waypoints } from 'lucide-vue-next'
 import { useToast } from '@/composables/useToast'
+import { usePermissionsStore } from '@/stores/permissions'
 import { useSettingsStore } from '@/stores/settings'
 import { apiProductApi } from '../api/apiProduct'
+import { canManageGateway } from '../utils/access'
 import GatewayRoutes from './GatewayRoutes.vue'
 import ApiConsumers from './ApiConsumers.vue'
 import ApiPlans from './ApiPlans.vue'
@@ -25,6 +27,7 @@ const section = ref('routes')
 const sections = ['routes', 'consumers', 'plans', 'usage', 'domain']
 
 const gateway = computed(() => gateways.value.find((g) => g.id === selectedId.value) ?? null)
+const canManage = computed(() => canManageGateway(gateway.value))
 
 async function load() {
   loading.value = true
@@ -49,7 +52,9 @@ function replace(updated) {
 const regionOf = (g) => g.region?.name ?? g.knative_region_id
 
 // A gateway of one's own in another region, e.g. for an environment that runs there
-// (docs/environments.md#gateway-routes)
+// (docs/environments.md#gateway-routes): whoever may change projects (GatewayPolicy::create)
+const perms = usePermissionsStore()
+const canCreate = computed(() => perms.canAnywhere('projects.update'))
 const settings = useSettingsStore()
 const newRegion = ref('')
 const creating = ref(false)
@@ -82,17 +87,17 @@ onMounted(() => {
   <div class="space-y-5" data-test="api-gateways">
     <div>
       <div class="flex items-center gap-2">
-        <Waypoints class="w-4 h-4 text-sky-400" />
+        <Waypoints class="w-4 h-4 text-brand-400" />
         <h2 class="text-[15px] font-semibold text-gray-100">{{ t('apiProduct.title') }}</h2>
       </div>
       <p class="text-xs text-gray-400 mt-1.5">{{ t('apiProduct.intro') }}</p>
     </div>
 
-    <div v-if="loading" class="flex justify-center py-10"><div class="animate-spin h-6 w-6 border-2 border-sky-500 border-t-transparent rounded-full" /></div>
+    <div v-if="loading" class="flex justify-center py-10"><div class="animate-spin h-6 w-6 border-2 border-brand-500 border-t-transparent rounded-full" /></div>
 
-    <p v-else-if="!gateways.length" class="text-sm text-gray-400" data-test="api-gateways-empty">{{ t('apiProduct.empty') }}</p>
+    <p v-else-if="!gateways.length" class="text-sm text-gray-400" data-test="api-gateways-empty">{{ t(canCreate ? 'apiProduct.empty' : 'apiProduct.emptyReadOnly') }}</p>
 
-    <form v-if="!loading && freeRegions.length" class="flex flex-wrap items-end gap-2" data-test="api-gateway-new" @submit.prevent="createGateway">
+    <form v-if="!loading && canCreate && freeRegions.length" class="flex flex-wrap items-end gap-2" data-test="api-gateway-new" @submit.prevent="createGateway">
       <div>
         <label class="label">{{ t('apiProduct.newGateway.label') }}</label>
         <select v-model="newRegion" class="input text-xs" data-test="api-gateway-new-region">
@@ -112,7 +117,7 @@ onMounted(() => {
           :key="g.id"
           type="button"
           class="px-3 py-1.5 rounded-md border text-xs text-left"
-          :class="g.id === selectedId ? 'border-sky-500/60 bg-sky-500/10 text-sky-200' : 'border-gray-800 bg-gray-900 text-gray-300 hover:border-gray-700'"
+          :class="g.id === selectedId ? 'border-brand-500/60 bg-brand-500/10 text-brand-300' : 'border-gray-800 bg-gray-900 text-gray-300 hover:border-gray-700'"
           :data-gateway="g.id"
           @click="selectedId = g.id"
         >
@@ -121,11 +126,16 @@ onMounted(() => {
         </button>
       </div>
 
+      <!-- read-only: the controls below are hidden or disabled -->
+      <p v-if="gateway && !canManage" class="flex items-center gap-2 text-xs text-gray-400" data-test="api-gateway-read-only">
+        <Eye class="w-3.5 h-3.5 shrink-0" />{{ t('apiProduct.readOnly') }}
+      </p>
+
       <!-- fail closed: while gateway-auth is not ready its key and JWT routes answer 503 -->
       <div
         v-if="gateway && gateway.status !== 'active'"
         class="flex items-start gap-2 rounded-md border px-3 py-2 text-xs"
-        :class="gateway.status === 'pending' ? 'border-amber-700/50 bg-amber-900/10 text-amber-200' : 'border-red-800/60 bg-red-900/10 text-red-200'"
+        :class="gateway.status === 'pending' ? 'border-yellow-700/50 bg-yellow-900/10 text-yellow-200' : 'border-red-800/60 bg-red-900/10 text-red-200'"
         role="status"
         data-test="api-gateway-status"
       >
@@ -142,7 +152,7 @@ onMounted(() => {
           :key="s"
           type="button"
           class="px-3 py-2 text-xs -mb-px border-b-2"
-          :class="section === s ? 'border-sky-400 text-sky-200' : 'border-transparent text-gray-400 hover:text-gray-200'"
+          :class="section === s ? 'border-brand-400 text-brand-300' : 'border-transparent text-gray-400 hover:text-gray-200'"
           :data-section="s"
           @click="section = s"
         >{{ t(`apiProduct.sections.${s}`) }}</button>

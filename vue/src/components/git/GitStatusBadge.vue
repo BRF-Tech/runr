@@ -19,8 +19,8 @@ const tone = computed(() => {
     case 'importing':
     case 'building':
     case 'deploying':
-    case 'deleting':  return 'bg-sky-900/40 text-sky-400 border-sky-800/50 animate-pulse'
-    case 'skipped':   return 'bg-amber-900/30 text-amber-400 border-amber-800/50'
+    case 'deleting':  return 'bg-brand-900/40 text-brand-400 border-brand-800/50 animate-pulse'
+    case 'skipped':   return 'bg-yellow-900/30 text-yellow-400 border-yellow-800/50'
     default:          return 'bg-gray-900/40 text-gray-400 border-gray-800/50'
   }
 })

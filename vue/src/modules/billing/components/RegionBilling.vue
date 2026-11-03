@@ -123,7 +123,7 @@ defineExpose({ load, changeType, setQueue, setOrganization })
 <template>
   <div class="space-y-5" data-test="region-billing">
     <div v-if="loading" class="flex justify-center py-6">
-      <div class="animate-spin h-4 w-4 border-2 border-sky-500 border-t-transparent rounded-full" />
+      <div class="animate-spin h-4 w-4 border-2 border-brand-500 border-t-transparent rounded-full" />
     </div>
     <p v-else-if="error" class="text-sm text-red-400">{{ error }}</p>
     <p v-else-if="!row" class="text-sm text-gray-400">{{ t('billing.region.unknown') }}</p>
@@ -133,7 +133,7 @@ defineExpose({ load, changeType, setQueue, setOrganization })
         <label class="label">{{ t('billing.prices.type') }}</label>
         <div class="grid grid-cols-2 gap-2 max-w-xl">
           <button v-for="type in BILLING_TYPES" :key="type" type="button" class="rounded-md border px-3 py-2 text-xs text-left transition-colors"
-            :class="row.billing_type === type ? 'border-sky-500/60 bg-sky-900/20 text-sky-400' : 'border-gray-800 bg-gray-900/40 text-gray-400 hover:text-gray-100'"
+            :class="row.billing_type === type ? 'border-brand-500/60 bg-brand-900/20 text-brand-400' : 'border-gray-800 bg-gray-900/40 text-gray-400 hover:text-gray-100'"
             :disabled="!canManage || busy" :data-test="`region-billing-type-${type}`" @click="changeType(type)">
             <span class="font-medium">{{ t(`billing.type.${type}`) }}</span>
             <p class="text-[10px] mt-0.5 opacity-70">{{ t(`billing.typeHint.${type}`) }}</p>
@@ -151,7 +151,7 @@ defineExpose({ load, changeType, setQueue, setOrganization })
           {{ t('billing.queue.region') }}
         </label>
         <p v-if="row.own === false" class="text-[11px] text-gray-500 mt-1">{{ t('billing.queue.sharedHint') }}</p>
-        <p class="text-[11px] mt-1" :class="row.queue_consumers_charged ? 'text-amber-400' : 'text-gray-500'" data-test="region-billing-queue-effective">
+        <p class="text-[11px] mt-1" :class="row.queue_consumers_charged ? 'text-yellow-400' : 'text-gray-500'" data-test="region-billing-queue-effective">
           {{ row.queue_consumers_charged ? t('billing.queue.charged') : t('billing.queue.notCharged') }}
         </p>
         <p v-if="row.queue_consumers_owner_override === false" class="text-[11px] text-gray-500" data-test="region-billing-queue-owner-off">{{ t('billing.queue.ownerOff') }}</p>
@@ -167,7 +167,7 @@ defineExpose({ load, changeType, setQueue, setOrganization })
                 <option value="follow">{{ t('billing.queue.follow') }}</option>
                 <option value="off">{{ t('billing.queue.offForOrg') }}</option>
               </select>
-              <span class="text-[10px]" :class="o.queue_consumers_charged ? 'text-amber-400' : 'text-gray-500'" :data-test="`region-billing-org-charged-${o.tenant.id}`">
+              <span class="text-[10px]" :class="o.queue_consumers_charged ? 'text-yellow-400' : 'text-gray-500'" :data-test="`region-billing-org-charged-${o.tenant.id}`">
                 {{ o.queue_consumers_charged ? t('billing.queue.regionOn') : t('billing.queue.regionOff') }}
               </span>
             </div>
@@ -197,7 +197,7 @@ defineExpose({ load, changeType, setQueue, setOrganization })
             </template>
           </div>
         </div>
-        <div v-for="v in row.scheduled_prices ?? []" :key="v.id" class="text-xs text-amber-300">{{ t('billing.prices.scheduledFrom', { date: v.effective_from }) }}</div>
+        <div v-for="v in row.scheduled_prices ?? []" :key="v.id" class="text-xs text-yellow-300">{{ t('billing.prices.scheduledFrom', { date: v.effective_from }) }}</div>
       </div>
     </template>
 

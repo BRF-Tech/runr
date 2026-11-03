@@ -7,6 +7,7 @@ import { useI18n } from 'vue-i18n'
 import { Sparkles, Plus, Trash2, Copy, Info } from 'lucide-vue-next'
 import { aiApi } from '@/api/ai'
 import { useAiStore } from '@/stores/ai'
+import { usePermissionsStore } from '@/stores/permissions'
 import { useConfirm } from '@/composables/useConfirm'
 import { useToast } from '@/composables/useToast'
 import { aliasFor, isValidAlias, bindingEnv, usageSnippets, AI_STATUS_CLASSES } from '@/utils/ai'
@@ -18,8 +19,16 @@ const toast = useToast()
 
 const props = defineProps({ project: { type: Object, required: true } })
 
+// Binding, unbinding and the weights switch: models.deploy (organization-wide) and
+// projects.update on the project; the API checks both (route_permissions.php,
+// ProjectModelBindingController)
+const perms = usePermissionsStore()
+const canChange = computed(() => ai.canDeploy && perms.can('projects.update', props.project.id))
+
 const bindings = ref([])
 const loading  = ref(false)
+// The bindings could not be loaded (403 without models.view): said so, not "no models bound"
+const loadError = ref(null)
 const showForm = ref(false)
 const saving   = ref(false)
 const form = reactive({ ai_model_service_id: null, alias: '', mount_weights: false })
@@ -41,10 +50,14 @@ function errMessage(e) {
 
 async function load() {
   loading.value = true
+  loadError.value = null
   try {
     const { data } = await aiApi.projectModels(props.project.id)
     bindings.value = data?.data ?? []
-  } catch { bindings.value = [] } finally { loading.value = false }
+  } catch (e) {
+    bindings.value = []
+    loadError.value = e?.response?.status === 403 ? t('rbac.forbidden') : errMessage(e)
+  } finally { loading.value = false }
 }
 
 async function bind() {
@@ -103,7 +116,7 @@ onMounted(() => {
         <h3 class="text-sm font-semibold text-gray-100 flex items-center gap-1.5"><Sparkles class="w-4 h-4 text-gray-400" />{{ t('ai.project.title') }}</h3>
         <p class="text-xs text-gray-400 mt-1">{{ t('ai.project.subtitle') }}</p>
       </div>
-      <button v-if="ai.canDeploy && !showForm" class="btn-primary text-xs" data-testid="bind-open" @click="showForm = true"><Plus class="w-3.5 h-3.5" />{{ t('ai.project.bind') }}</button>
+      <button v-if="canChange && !loadError && !showForm" class="btn-primary text-xs" data-testid="bind-open" @click="showForm = true"><Plus class="w-3.5 h-3.5" />{{ t('ai.project.bind') }}</button>
     </div>
 
     <p class="flex items-start gap-1.5 text-[11px] text-gray-400 bg-gray-800/40 border border-gray-700 rounded-sm px-3 py-2" data-testid="bind-next-deploy">
@@ -148,6 +161,7 @@ onMounted(() => {
     </div>
 
     <p v-if="loading" class="text-xs text-gray-400">{{ t('common.loading') }}</p>
+    <p v-else-if="loadError" class="py-8 text-center text-xs text-red-400" data-testid="project-models-error">{{ loadError }}</p>
     <p v-else-if="!bindings.length && !showForm" class="py-8 text-center text-xs text-gray-400">{{ t('ai.project.empty') }}</p>
 
     <!-- Bindings -->
@@ -158,7 +172,7 @@ onMounted(() => {
           <span class="text-xs text-gray-400 truncate">{{ serviceOf(b)?.name }} · {{ serviceOf(b)?.model?.hub_id ?? serviceOf(b)?.model?.name }}</span>
           <span v-if="serviceOf(b)?.status" class="inline-block px-1.5 py-0.5 rounded-sm border text-[10px] font-mono" :class="statusClass(serviceOf(b).status)">{{ t(`ai.services.statuses.${serviceOf(b).status}`, serviceOf(b).status) }}</span>
         </div>
-        <div v-if="ai.canDeploy" class="flex items-center gap-2 shrink-0">
+        <div v-if="canChange" class="flex items-center gap-2 shrink-0">
           <label class="flex items-center gap-1.5 text-[11px] text-gray-400">
             <input type="checkbox" :checked="b.mount_weights" class="rounded-sm border-gray-700 bg-gray-800" @change="toggleMount(b)" />{{ t('ai.project.mountWeightsShort') }}
           </label>

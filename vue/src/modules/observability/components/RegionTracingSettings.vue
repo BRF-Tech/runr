@@ -126,7 +126,7 @@ async function remove(region) {
 }
 
 const statusLabel = (c) => t('observability.regions.statuses.' + (c?.status ?? 'notInstalled'))
-const statusClass = (c) => ({ ready: 'bg-emerald-900/30 text-emerald-300', installing: 'bg-sky-900/30 text-sky-300', error: 'bg-red-900/40 text-red-300' }[c?.status] || 'bg-gray-800 text-gray-400')
+const statusClass = (c) => ({ ready: 'bg-emerald-900/30 text-emerald-300', installing: 'bg-brand-900/30 text-brand-300', error: 'bg-red-900/40 text-red-300' }[c?.status] || 'bg-gray-800 text-gray-400')
 const err = (k) => (errors.value?.[k] || [])[0]
 
 onMounted(load)
@@ -136,13 +136,13 @@ onMounted(load)
   <div class="space-y-4" data-test="region-tracing-settings">
     <div>
       <div class="flex items-center gap-2">
-        <Network class="w-4 h-4 text-sky-400" />
+        <Network class="w-4 h-4 text-brand-400" />
         <span class="text-[15px] font-semibold text-gray-100">{{ t('observability.regions.title') }}</span>
       </div>
       <p class="text-xs text-gray-400 mt-1.5">{{ t('observability.regions.intro') }}</p>
     </div>
 
-    <div v-if="loading" class="flex justify-center py-10"><div class="animate-spin h-6 w-6 border-2 border-sky-500 border-t-transparent rounded-full" /></div>
+    <div v-if="loading" class="flex justify-center py-10"><div class="animate-spin h-6 w-6 border-2 border-brand-500 border-t-transparent rounded-full" /></div>
     <p v-else-if="!regions.length" class="text-xs text-gray-500">{{ t('observability.regions.empty') }}</p>
 
     <div v-for="r in regions" :key="r.id" class="bg-gray-900 border border-gray-800 rounded-md p-4 space-y-3" :data-region="r.id">
