@@ -42,6 +42,24 @@ class BrandingService
 
     public const SHADES = ['300', '400', '500', '600', '700', '800', '900'];
 
+    /** Page background (shade 950) of RunR's dark theme ("fulldark" in the console) */
+    public const DEFAULT_DARK = '#0a0a0a';
+
+    /** Page background (shade 950) of RunR's warm light theme */
+    public const DEFAULT_LIGHT = '#fffcf8';
+
+    /** Theme of users who never picked one */
+    public const DEFAULT_THEME = 'dark';
+
+    public const THEMES = ['dark', 'light'];
+
+    /**
+     * Shades of a theme's tone scale (--gray-50 … --gray-950 in the console): 950–700 the
+     * surfaces (950 the page background), 600–50 the text tones. The API serves the base colour
+     * and the explicit shades; the console derives the rest.
+     */
+    public const SURFACE_SHADES = ['50', '100', '200', '300', '400', '500', '600', '700', '800', '900', '950'];
+
     /** Largest data: URI accepted for a logo / favicon (characters) */
     public const MAX_DATA_URI = 750000;
 
@@ -52,6 +70,11 @@ class BrandingService
         'primary_color' => ['nullable', 'string', 'regex:/^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/'],
         'primary_scale' => ['nullable', 'array'],
         'accent_color' => ['nullable', 'string', 'regex:/^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/'],
+        'dark_color' => ['nullable', 'string', 'regex:/^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/'],
+        'dark_scale' => ['nullable', 'array'],
+        'light_color' => ['nullable', 'string', 'regex:/^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/'],
+        'light_scale' => ['nullable', 'array'],
+        'default_theme' => ['nullable', 'string', 'in:dark,light'],
         'login_headline' => ['nullable', 'string', 'max:120'],
         'login_text' => ['nullable', 'string', 'max:600'],
         'support_email' => ['nullable', 'email', 'max:190'],
@@ -116,10 +139,13 @@ class BrandingService
     {
         $c = (array) config('whitelabel.branding', []);
 
-        $scale = self::normalizeScale(is_string($c['primary_scale'] ?? null) ? json_decode((string) $c['primary_scale'], true) : ($c['primary_scale'] ?? null));
-        $primary = self::normalizeColor($c['primary_color'] ?? null)
-            ?? (isset($scale['500']) ? self::hexOf($scale['500']) : null)
-            ?? self::DEFAULT_PRIMARY;
+        $scale = self::normalizeScale(self::jsonValue($c['primary_scale'] ?? null));
+        $primary = self::normalizeColor($c['primary_color'] ?? null) ?? self::shadeHex($scale, '500') ?? self::DEFAULT_PRIMARY;
+
+        // The themes' tone scales: base colour = the page background (shade 950)
+        $darkScale = self::normalizeScale(self::jsonValue($c['dark_scale'] ?? null), self::SURFACE_SHADES);
+        $lightScale = self::normalizeScale(self::jsonValue($c['light_scale'] ?? null), self::SURFACE_SHADES);
+        $theme = strtolower(trim((string) ($c['default_theme'] ?? '')));
 
         $defaults = [
             'product_name' => trim((string) ($c['product_name'] ?? '')) ?: self::DEFAULT_PRODUCT,
@@ -132,6 +158,11 @@ class BrandingService
             'primary_color' => $primary,
             'primary_scale' => $scale,
             'accent_color' => self::normalizeColor($c['accent_color'] ?? null) ?? self::DEFAULT_ACCENT,
+            'dark_color' => self::normalizeColor($c['dark_color'] ?? null) ?? self::shadeHex($darkScale, '950') ?? self::DEFAULT_DARK,
+            'dark_scale' => $darkScale,
+            'light_color' => self::normalizeColor($c['light_color'] ?? null) ?? self::shadeHex($lightScale, '950') ?? self::DEFAULT_LIGHT,
+            'light_scale' => $lightScale,
+            'default_theme' => in_array($theme, self::THEMES, true) ? $theme : self::DEFAULT_THEME,
             'email_from_name' => trim((string) ($c['email_from_name'] ?? '')) ?: null,
             'login_headline' => (string) ($c['login_headline'] ?? ''),
             'login_text' => (string) ($c['login_text'] ?? ''),
@@ -228,6 +259,10 @@ class BrandingService
         $branding['mail_logo_url'] = $logo;
         $branding['mail_from_name'] = $branding['email_from_name'] ?: $branding['product_name'];
         $branding['app_url'] = $base;
+        // On the white mail body: links in shade 700 (readable on white), the primary button and
+        // the wordmark in 600 (the console's primary button; white text on 500 is too faint)
+        $branding['mail_link_color'] = self::hexOf((string) ($branding['palette']['700'] ?? '')) ?? self::hexOf(self::RUNR_PALETTE['700']);
+        $branding['mail_button_color'] = self::hexOf((string) ($branding['palette']['600'] ?? '')) ?? self::hexOf(self::RUNR_PALETTE['600']);
 
         return $branding;
     }
@@ -441,27 +476,33 @@ class BrandingService
     }
 
     /**
-     * Shades from one base colour: lighter by mixing with white (300 40 %, 400 20 %), darker by
-     * mixing with black (600 18 %, 700 36 %, 800 50 %, 900 62 %).
+     * Shades from one base colour, the console's expansion exactly (expandPalette() in
+     * vue/src/modules/white-label/utils/color.js; tests on both sides pin the same values): lighter
+     * by mixing with white (300 45 %, 400 25 %), darker by mixing with black (600 12 %, 700 30 %,
+     * 800 45 %, 900 58 %); RunR's base colour gives RunR's scale. The mix and its rounding are the
+     * console's too (a·(1 − w) + b·w, rounded half up), so mails, the status page and the console
+     * show one palette.
      *
      * @return array<string, string>
      */
     public static function expand(string $hex): array
     {
         [$r, $g, $b] = self::rgb($hex);
-        $mix = fn (float $t, int $to) => array_map(fn ($c) => (int) round($c + ($to - $c) * $t), [$r, $g, $b]);
+        $runr = sprintf('#%02x%02x%02x', $r, $g, $b) === self::DEFAULT_PRIMARY;
+
+        $mix = fn (float $w, int $to) => array_map(fn (int $c) => (int) floor($c * (1 - $w) + $to * $w + 0.5), [$r, $g, $b]);
 
         $shades = [
-            '300' => $mix(0.40, 255),
-            '400' => $mix(0.20, 255),
+            '300' => $mix(0.45, 255),
+            '400' => $mix(0.25, 255),
             '500' => [$r, $g, $b],
-            '600' => $mix(0.18, 0),
-            '700' => $mix(0.36, 0),
-            '800' => $mix(0.50, 0),
-            '900' => $mix(0.62, 0),
+            '600' => $mix(0.12, 0),
+            '700' => $mix(0.30, 0),
+            '800' => $mix(0.45, 0),
+            '900' => $mix(0.58, 0),
         ];
 
-        return array_map(fn ($c) => implode(' ', $c), $shades);
+        return $runr ? self::RUNR_PALETTE : array_map(fn ($c) => implode(' ', $c), $shades);
     }
 
     /** @return array{0: int, 1: int, 2: int} */
@@ -474,18 +515,20 @@ class BrandingService
 
     /**
      * Scale input → RGB triplets per shade ("#rrggbb" or "r g b" / "r, g, b"); unknown keys and
-     * invalid values are dropped; empty → null.
+     * invalid values are dropped; empty → null. $shades: the primary scale's (300–900) or a
+     * theme's tone scale (SURFACE_SHADES, 50–950).
      *
+     * @param  list<string>  $shades
      * @return array<string, string>|null
      */
-    public static function normalizeScale(mixed $scale): ?array
+    public static function normalizeScale(mixed $scale, array $shades = self::SHADES): ?array
     {
         if (! is_array($scale)) {
             return null;
         }
 
         $out = [];
-        foreach (self::SHADES as $shade) {
+        foreach ($shades as $shade) {
             $value = $scale[$shade] ?? $scale[(int) $shade] ?? null;
             if ($value === null) {
                 continue;
@@ -577,8 +620,10 @@ class BrandingService
         }
 
         return match ($field) {
-            'primary_color', 'accent_color' => self::normalizeColor($value),
+            'primary_color', 'accent_color', 'dark_color', 'light_color' => self::normalizeColor($value),
             'primary_scale' => self::normalizeScale($value),
+            'dark_scale', 'light_scale' => self::normalizeScale($value, self::SURFACE_SHADES),
+            'default_theme' => in_array($value, self::THEMES, true) ? $value : null,
             'powered_by' => (bool) $value,
             'footer_links' => self::normalizeLinks($value),
             'logo_light_url', 'logo_dark_url', 'logo_mark_url', 'favicon_url', 'email_logo_url' => $this->cleanAssetUrl($field, (string) $value),
@@ -718,6 +763,23 @@ class BrandingService
     private function disk(): string
     {
         return (string) config('whitelabel.branding.asset_disk', 'public');
+    }
+
+    /** A config value given as JSON (env) or as an array (config()) */
+    private static function jsonValue(mixed $value): mixed
+    {
+        return is_string($value) ? json_decode($value, true) : $value;
+    }
+
+    /**
+     * "#rrggbb" of one shade of a normalized scale (its base colour when no colour is given), null
+     * without it. The shade keys are numeric, so PHP stores them as integers.
+     *
+     * @param  array<int|string, string>|null  $scale
+     */
+    private static function shadeHex(?array $scale, string $shade): ?string
+    {
+        return isset($scale[$shade]) ? self::hexOf($scale[$shade]) : null;
     }
 
     public static function normalizeColor(mixed $value): ?string

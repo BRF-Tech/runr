@@ -26,22 +26,23 @@ Route::middleware('tenancy.admin')->prefix('tenants')->group(function () {
     Route::delete('/{tenant}/regions/{region}', [TenantController::class, 'removeRegion']);
 });
 
-// Tenant user management (inline auth: tenant admin/owner OR platform admin)
+// Tenant user management (inline auth: tenant admin/owner OR platform admin). `account.frozen`:
+// a frozen account (a shared demo login) changes none of the {user} routes on its own account
 Route::prefix('tenants')->group(function () {
     Route::get('/{tenant}/users', [TenantUserController::class, 'index']);
     Route::post('/{tenant}/users', [TenantUserController::class, 'store']);
     Route::post('/{tenant}/users/search', [TenantUserController::class, 'searchEmail']);
-    Route::patch('/{tenant}/users/{user}', [TenantUserController::class, 'update']);
-    Route::delete('/{tenant}/users/{user}', [TenantUserController::class, 'destroy']);
+    Route::patch('/{tenant}/users/{user}', [TenantUserController::class, 'update'])->middleware('account.frozen');
+    Route::delete('/{tenant}/users/{user}', [TenantUserController::class, 'destroy'])->middleware('account.frozen');
 
-    Route::post('/{tenant}/users/{user}/reset-2fa', [TenantUserController::class, 'reset2FA']);
+    Route::post('/{tenant}/users/{user}/reset-2fa', [TenantUserController::class, 'reset2FA'])->middleware('account.frozen');
 
     Route::post('/{tenant}/invitations/{invitation}/resend', [TenantUserController::class, 'resendInvitation']);
     Route::delete('/{tenant}/invitations/{invitation}', [TenantUserController::class, 'cancelInvitation']);
 });
 
-// Admin toggle + 2FA reset on /users endpoint (platform admin only)
-Route::middleware('tenancy.admin')->group(function () {
+// Admin toggle + 2FA reset on /users endpoint (platform admin only; a frozen one not on itself)
+Route::middleware(['tenancy.admin', 'account.frozen'])->group(function () {
     Route::post('/users/{user}/toggle-admin', [TenancyUserController::class, 'toggleAdmin']);
     Route::post('/users/{user}/reset-2fa', [TenancyUserController::class, 'reset2FA']);
 });

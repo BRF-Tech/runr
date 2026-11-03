@@ -44,9 +44,9 @@ class BrandingValuesTest extends TestCase
 
         $this->assertSame(BrandingService::SHADES, array_map('strval', array_keys($palette)));
         $this->assertSame('0 159 227', $palette['500']);
-        // 300 / 400 mix with white, 600–900 with black
-        $this->assertSame('102 197 238', $palette['300']);
-        $this->assertSame('51 178 233', $palette['400']);
+        // 300 / 400 mix with white (45 % / 25 %, the console's weights: BrandPaletteTest), 600–900 with black
+        $this->assertSame('115 202 240', $palette['300']);
+        $this->assertSame('64 183 234', $palette['400']);
         foreach (['600', '700', '800', '900'] as $shade) {
             [$r, $g, $b] = array_map('intval', explode(' ', $palette[$shade]));
             $this->assertLessThan(159, $g);
@@ -65,6 +65,26 @@ class BrandingValuesTest extends TestCase
         $this->assertSame(BrandingService::expand('#009fe3')['400'], $palette['400']);
         $this->assertNull(BrandingService::normalizeScale([]));
         $this->assertNull(BrandingService::normalizeScale('nope'));
+    }
+
+    public function test_a_theme_tone_scale_takes_the_shades_50_to_950(): void
+    {
+        $this->assertSame(['50', '100', '200', '300', '400', '500', '600', '700', '800', '900', '950'], BrandingService::SURFACE_SHADES);
+
+        $scale = BrandingService::normalizeScale(
+            [950 => '#091B4E', '700' => '30, 59, 133', '50' => 'rgb(252 253 255)', '600' => 'bad', '1000' => '#000000', '25' => '#ffffff'],
+            BrandingService::SURFACE_SHADES,
+        );
+        $this->assertSame(['50' => '252 253 255', '700' => '30 59 133', '950' => '9 27 78'], $scale);
+        $this->assertSame('#091b4e', BrandingService::hexOf($scale['950']));
+
+        // the primary scale keeps to 300–900
+        $this->assertSame(['700' => '30 59 133'], BrandingService::normalizeScale(['950' => '#091b4e', '700' => '30 59 133', '50' => '#ffffff']));
+        $this->assertNull(BrandingService::normalizeScale(['950' => 'navy'], BrandingService::SURFACE_SHADES));
+
+        $this->assertSame('#0a0a0a', BrandingService::DEFAULT_DARK);
+        $this->assertSame('#fffcf8', BrandingService::DEFAULT_LIGHT);
+        $this->assertSame('dark', BrandingService::DEFAULT_THEME);
     }
 
     public function test_logo_values(): void

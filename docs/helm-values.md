@@ -1,8 +1,8 @@
 # Helm values reference
 
-Every value of the Helm chart `runr` 0.6.2 from BRF's public Helm repository, grouped by top-level
+Every value of the Helm chart `runr` 0.6.3 from BRF's public Helm repository, grouped by top-level
 key, with its default from the chart's `values.yaml` and what the templates do with it.
-`helm show values brf-tech/runr --version 0.6.2` prints the file with its comments. How these
+`helm show values brf-tech/runr --version 0.6.3` prints the file with its comments. How these
 values fit together in a production install is described in [Installing RunR in
 production](install.md).
 
@@ -50,7 +50,7 @@ Helm checks the values against the chart's `values.schema.json` on `install`, `u
 | `clientIp.trustedProxies`, `clientIp.proxyHops` | A string; an integer of at least 0 |
 | `ai.*` | `huggingface.endpoint` an http(s) URL; `gpu.defaultTimeout` 1–3600; `gpu.progressDeadline` seconds or minutes (`1800s`); `gpu.scaleToZeroRetention` seconds, minutes or hours (`5m`); `modelStorage.sizeGi` at least 1; `modelStorage.accessMode` `ReadWriteMany` or `ReadWriteOnce`; the image and chart version keys are strings |
 | `billing.*` | `enabled` a boolean; `currency` three capital letters (ISO 4217); `webhookUrl` an http(s) URL or empty |
-| `branding.*` | `productName` up to 80 and `companyName` up to 120 characters; logos and favicon empty, an https URL, a path, a `data:image/…;base64,…` URI (up to 750000 characters) or a ConfigMap / Secret key reference; colours `#rgb` / `#rrggbb` (`primary` also as the `300`–`900` scale); `supportUrl` an http(s) URL, `supportEmail` an address; up to 8 `footerLinks` with a label and an http(s) or `mailto:` URL |
+| `branding.*` | `productName` up to 80 and `companyName` up to 120 characters; logos and favicon empty, an https URL, a path, a `data:image/…;base64,…` URI (up to 750000 characters) or a ConfigMap / Secret key reference; colours `#rgb` / `#rrggbb` (`primary` also as the `300`–`900` scale, `dark` and `light` as the `50`–`950` scale, a scale's shades also `r g b`); `defaultTheme` `""`, `dark` or `light`; `supportUrl` an http(s) URL, `supportEmail` an address; up to 8 `footerLinks` with a label and an http(s) or `mailto:` URL |
 | `observability.*` | `tracing.defaultMode` `managed`, `reuse`, `external` or `off`; `tracing.knativeSampleRate` 0–1; `tracing.tempoStorage` `<number>Mi`, `Gi` or `Ti`; lower bounds of the retention, interval and count keys (`uptime.minIntervalSeconds` at least 10, `loadTest.maxUsers` at least 10, `loadTest.maxDurationSeconds` at least 30); `replay.ingestUrl` an http(s) URL or empty |
 | `sandboxApi.enabled`, `sandboxApi.namespacePrefix`, `sandboxApi.allowCustomImages` | Booleans; `namespacePrefix` a DNS label of up to 22 characters |
 | `bindings.namespace`, `bindings.retentionDays`, `bindings.storageClass`, `bindings.quotas.*` | A DNS label; at least 1; a string; integers of at least 0 |
@@ -430,6 +430,7 @@ Details: [security.md](security.md#secret-environment-variables), [secret-stores
 | Key | Default | What it does |
 | --- | --- | --- |
 | `auth.loginTokenTtlDays` | `30` | Days a sign-in to the console or the CLI stays valid, counted from the sign-in; it applies to earlier sign-ins as well. `0`: until signed out (`RUNR_LOGIN_TOKEN_TTL_DAYS`). API tokens keep the expiry they were created with |
+| `auth.frozenAccounts` | `[]` | E-mail addresses of shared sign-ins, such as a public demo login whose password is published: a list or one comma-separated string, case-insensitive (`RUNR_FROZEN_ACCOUNTS`). They sign in and use what their roles grant, but cannot change their own account — profile, password, two-factor, sessions, API tokens, disabling or deleting it; administrators still manage them ([Shared accounts](security.md#shared-accounts)) |
 
 ### billing
 
@@ -462,6 +463,9 @@ key of a ConfigMap or Secret in the release namespace (`{configMapKeyRef: {name,
 | `branding.favicon` | `""` | Favicon |
 | `branding.colors.primary` | `""` | One base colour `#rrggbb` (shade 500; 300–900 derived) or the full `300`–`900` scale; empty: the RunR orange scale (`#f97316`) |
 | `branding.colors.accent` | `""` | Accent colour; empty: `#e63946` |
+| `branding.colors.dark` | `""` | Tones of the console's dark theme: one base colour `#rrggbb`, the page background (shade 950; the console derives the other shades), or the full `50`–`950` scale with `#rrggbb` or `r g b` values (950–700 the surfaces, 600–50 the text tones) — `BRANDING_DARK_COLOR` / `BRANDING_DARK_SCALE`; empty: RunR's neutral dark (`#0a0a0a`) |
+| `branding.colors.light` | `""` | The same for the light theme (`BRANDING_LIGHT_COLOR` / `BRANDING_LIGHT_SCALE`); empty: RunR's warm light (`#fffcf8`) |
+| `branding.defaultTheme` | `""` | Theme of the users who never picked one: `dark` or `light` (`BRANDING_DEFAULT_THEME`); empty: `dark` |
 | `branding.loginHeadline`, `branding.loginText` | `""` | Texts of the login page |
 | `branding.supportUrl`, `branding.supportEmail` | `""` | Support contact |
 | `branding.footerLinks` | `[]` | Footer links, `[{label: Status, url: https://status.example.com}]` |

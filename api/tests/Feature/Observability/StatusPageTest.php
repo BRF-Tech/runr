@@ -6,6 +6,7 @@ use App\Models\Observability\StatusPageRoute;
 use App\Models\Observability\UptimeCheck;
 use App\Models\Observability\UptimeIncident;
 use App\Models\Observability\UptimeResult;
+use App\Services\WhiteLabel\BrandingService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\Concerns\ActsWithRoles;
 use Tests\Concerns\FakesObservabilityCluster;
@@ -103,5 +104,35 @@ class StatusPageTest extends TestCase
         $this->signedIn($owner)->putJson('/api/observability/status-page', ['slug' => 'mine', 'title' => 'x', 'is_public' => true])->assertOk();
         $this->signedIn($owner)->putJson('/api/observability/status-page', ['slug' => 'mine', 'title' => 'y', 'is_public' => true])->assertOk();
         $this->assertSame(1, StatusPageRoute::query()->where('slug', 'mine')->count());
+    }
+
+    /**
+     * The public page in the organization's colours: the brand scale and both themes' tones with
+     * the default theme (before, only the brand colours: the page showed RunR's dark theme).
+     */
+    public function test_the_public_page_carries_the_theme_tones_and_the_default_theme(): void
+    {
+        $owner = $this->userWithRole('owner');
+        app(BrandingService::class)->update([
+            'primary_color' => '#2563eb',
+            'dark_color' => '#101418',
+            'light_color' => '#f8fafc',
+            'light_scale' => ['600' => '#475569'],
+            'default_theme' => 'light',
+        ]);
+        $this->signedIn($owner)->putJson('/api/observability/status-page', ['slug' => 'acme', 'title' => 'Acme status', 'is_public' => true])->assertOk();
+
+        $this->app['auth']->forgetGuards();
+        $branding = $this->getJson('/api/public/status-pages/acme')->assertOk()->json('data.branding');
+
+        $this->assertSame('#2563eb', $branding['primary_color']);
+        $this->assertSame('#101418', $branding['dark_color']);
+        $this->assertSame('#f8fafc', $branding['light_color']);
+        $this->assertSame('light', $branding['default_theme']);
+        $this->assertArrayHasKey('dark_scale', $branding);
+        $this->assertSame('71 85 105', $branding['light_scale']['600'] ?? null);
+        // still nothing beyond what the page shows (no e-mail sender, captcha or signup settings)
+        $this->assertArrayNotHasKey('email_from_name', $branding);
+        $this->assertArrayNotHasKey('footer_links', $branding);
     }
 }

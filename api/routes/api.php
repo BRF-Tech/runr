@@ -317,41 +317,47 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::delete('/notifications/{id}', [NotificationController::class, 'destroy']);
     Route::delete('/notifications', [NotificationController::class, 'destroyAll']);
 
-    // User management
+    // User management. `account.frozen`: a frozen account changes none of these on its own account
+    // ({user} = the caller); on another user's they pass
     Route::get('/users', [UserController::class, 'index']);
     Route::post('/users', [UserController::class, 'store']);
-    Route::patch('/users/{user}', [UserController::class, 'update']);
-    Route::delete('/users/{user}', [UserController::class, 'destroy']);
-    Route::post('/users/{user}/reset-2fa', [UserController::class, 'reset2FA']);
+    Route::patch('/users/{user}', [UserController::class, 'update'])->middleware('account.frozen');
+    Route::delete('/users/{user}', [UserController::class, 'destroy'])->middleware('account.frozen');
+    Route::post('/users/{user}/reset-2fa', [UserController::class, 'reset2FA'])->middleware('account.frozen');
 
-    // API Tokens
-    Route::get('/tokens', [ApiTokenController::class, 'index']);
-    Route::post('/tokens', [ApiTokenController::class, 'store']);
-    Route::delete('/tokens/{token}', [ApiTokenController::class, 'destroy']);
+    // The signed-in user's own account and API tokens. `account.frozen`
+    // (App\Http\Middleware\EnsureAccountNotFrozen): a frozen account — a shared demo login,
+    // auth.frozen_accounts — reads them but changes none (403, frozen: true); signing out stays.
+    Route::middleware('account.frozen')->group(function () {
+        // API Tokens
+        Route::get('/tokens', [ApiTokenController::class, 'index']);
+        Route::post('/tokens', [ApiTokenController::class, 'store']);
+        Route::delete('/tokens/{token}', [ApiTokenController::class, 'destroy']);
 
-    // Account (self-service)
-    Route::get('/account', [AccountController::class, 'show']);
-    Route::patch('/account/profile', [AccountController::class, 'updateProfile']);
-    Route::post('/account/avatar', [AccountController::class, 'uploadAvatar']);
-    Route::delete('/account/avatar', [AccountController::class, 'removeAvatar']);
-    Route::post('/account/password', [AccountController::class, 'changePassword'])->middleware('throttle:auth');
-    Route::post('/account/disable', [AccountController::class, 'disableAccount']);
-    Route::delete('/account', [AccountController::class, 'deleteAccount']);
+        // Account (self-service)
+        Route::get('/account', [AccountController::class, 'show']);
+        Route::patch('/account/profile', [AccountController::class, 'updateProfile']);
+        Route::post('/account/avatar', [AccountController::class, 'uploadAvatar']);
+        Route::delete('/account/avatar', [AccountController::class, 'removeAvatar']);
+        Route::post('/account/password', [AccountController::class, 'changePassword'])->middleware('throttle:auth');
+        Route::post('/account/disable', [AccountController::class, 'disableAccount']);
+        Route::delete('/account', [AccountController::class, 'deleteAccount']);
 
-    // Two-Factor Authentication
-    Route::post('/account/2fa/setup', [TwoFactorController::class, 'setup']);
-    Route::post('/account/2fa/confirm', [TwoFactorController::class, 'confirm']);
-    Route::delete('/account/2fa', [TwoFactorController::class, 'disable']);
-    Route::post('/account/2fa/recovery-codes', [TwoFactorController::class, 'recoveryCodes']);
+        // Two-Factor Authentication
+        Route::post('/account/2fa/setup', [TwoFactorController::class, 'setup']);
+        Route::post('/account/2fa/confirm', [TwoFactorController::class, 'confirm']);
+        Route::delete('/account/2fa', [TwoFactorController::class, 'disable']);
+        Route::post('/account/2fa/recovery-codes', [TwoFactorController::class, 'recoveryCodes']);
 
-    // Sessions
-    Route::get('/account/sessions', [SessionController::class, 'index']);
-    Route::delete('/account/sessions/{tokenId}', [SessionController::class, 'destroy']);
-    Route::post('/account/sessions/revoke-all', [SessionController::class, 'destroyAll']);
+        // Sessions
+        Route::get('/account/sessions', [SessionController::class, 'index']);
+        Route::delete('/account/sessions/{tokenId}', [SessionController::class, 'destroy']);
+        Route::post('/account/sessions/revoke-all', [SessionController::class, 'destroyAll']);
 
-    // Notification Preferences
-    Route::get('/account/notification-preferences', [NotificationPreferenceController::class, 'index']);
-    Route::put('/account/notification-preferences', [NotificationPreferenceController::class, 'update']);
+        // Notification Preferences
+        Route::get('/account/notification-preferences', [NotificationPreferenceController::class, 'index']);
+        Route::put('/account/notification-preferences', [NotificationPreferenceController::class, 'update']);
+    });
 
     // Contact form
     Route::post('/contact', [ContactController::class, 'store']);

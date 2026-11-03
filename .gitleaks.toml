@@ -1,4 +1,4 @@
-# Secret scanning of the checked-out tree (CI job secrets:gitleaks).
+# Secret scanning of the checked-out tree (CI: the gitleaks job of .github/workflows/ci.yml).
 # Run locally: git archive HEAD | tar -x -C /tmp/runr-tree && gitleaks dir /tmp/runr-tree --config .gitleaks.toml
 
 title = "RunR"

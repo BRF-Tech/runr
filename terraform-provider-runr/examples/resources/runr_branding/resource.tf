@@ -5,6 +5,8 @@ resource "runr_branding" "brand" {
   company_name    = "Acme Corp."
   primary_color   = "#0f766e"
   accent_color    = "#f59e0b"
+  dark_color      = "#0b1f1d" # page background of the dark theme; the console derives its tones
+  default_theme   = "dark"
   login_headline  = "Welcome to Acme Cloud"
   support_email   = "support@acme.example"
   support_url     = "https://help.acme.example"

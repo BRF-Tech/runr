@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Tests the release workflow (.github/workflows/release-images.yml) and GitLab CI's part, without
-# GitHub, Docker or a registry:
+# Tests the release workflow (.github/workflows/release-images.yml), without GitHub, Docker or a
+# registry:
 #   - the workflow runs on a release tag v* and by hand for a tag;
 #   - it builds api (api/Dockerfile.prod), ui and ui-mt at the tag's version and runs
 #     runtime/ci.sh release-images --push by digest, on a linux/amd64 and a linux/arm64 runner of
@@ -13,7 +13,7 @@
 #     index as an annotation, and the anonymous checks look for both;
 #   - the image tars are the amd64 images it pushes (their own layouts, by digest), with the chart and
 #     SHA256SUMS, as the local release rounds named them;
-#   - .gitlab-ci.yml builds and pushes no image.
+#   - no other workflow builds or pushes an image, and there is no other CI (.gitlab-ci.yml).
 #
 #   bash runtime/test/release_workflow_test.sh
 # shellcheck source-path=SCRIPTDIR
@@ -142,9 +142,14 @@ has "$verify" 'APP_VERSION=v${VERSION}' "the anonymous checks do not look at the
 has "$verify" 'bash ci/check-reqs-mirror.sh' "the reqs mirror is not checked"
 echo "ok - image tars from the pushed amd64 images, anonymous checks of every tag"
 
-# --- GitLab CI pushes no image ----------------------------------------------------------------------
-gl="$root/.gitlab-ci.yml"
-pushes="$(grep -vE '^[[:space:]]*#' "$gl" | grep -nE 'docker (image )?push|push=true|--push|docker login|CI_REGISTRY|imagetools create|crane (push|copy|cp)|skopeo copy|buildah push|podman push|kaniko|stage: (build|export|deploy)' || true)"
-[ -z "$pushes" ] || fail ".gitlab-ci.yml still builds or pushes an image: ${pushes}"
-grep -qE '^(build:api|build:ui|export:openapi|deploy:production):' "$gl" && fail ".gitlab-ci.yml still has an image, export or deploy job"
-echo "ok - .gitlab-ci.yml builds and pushes no image"
+# --- no other workflow pushes an image -------------------------------------------------------------
+[ -e "$root/.gitlab-ci.yml" ] && fail ".gitlab-ci.yml is back: GitHub Actions is the repository's only CI"
+others=0
+for other in "$root"/.github/workflows/*.yml; do
+  [ "$other" = "$wf" ] && continue
+  others=$((others + 1))
+  pushes="$(grep -vE '^[[:space:]]*#' "$other" | grep -nE 'docker (image )?push|push=true|--push|docker login|docker/login-action|packages: write|imagetools create|crane (push|copy|cp)|skopeo copy|buildah push|podman push' || true)"
+  [ -z "$pushes" ] || fail "$(basename "$other") builds or pushes an image: ${pushes}"
+done
+[ "$others" -gt 0 ] || fail "no workflow next to release-images.yml (.github/workflows/ci.yml)"
+echo "ok - no other workflow (${others}) pushes an image, and no other CI"

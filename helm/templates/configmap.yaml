@@ -96,6 +96,9 @@ data:
   # config/auth.php). `--reuse-values` with older values has no auth key → default.
   {{- $auth := .Values.auth | default dict }}
   RUNR_LOGIN_TOKEN_TTL_DAYS: {{ if hasKey $auth "loginTokenTtlDays" }}{{ int $auth.loginTokenTtlDays | toString | quote }}{{ else }}"30"{{ end }}
+  # Frozen accounts: shared sign-ins (a public demo login) that cannot change their own account
+  # (values auth.frozenAccounts: a list or a comma-separated string; empty = none)
+  RUNR_FROZEN_ACCOUNTS: {{ join "," ($auth.frozenAccounts | default list) | quote }}
 
   # Billing module (docs/billing.md, values billing.*): on/off, currency, events webhook — the
   # webhook secret comes from the Secret (helpers runr.billingEnabled / runr.billingCurrency, also
@@ -126,6 +129,18 @@ data:
   BRANDING_PRIMARY_SCALE: ""
   {{- end }}
   BRANDING_ACCENT_COLOR: {{ $colors.accent | default "" | quote }}
+  {{- /* The themes' tone scales: a base colour (the page background, shade 950) or the full scale */}}
+  {{- range $theme, $env := dict "dark" "DARK" "light" "LIGHT" }}
+  {{- $tone := get $colors $theme }}
+  {{- if kindIs "map" $tone }}
+  BRANDING_{{ $env }}_COLOR: {{ index $tone "950" | default "" | quote }}
+  BRANDING_{{ $env }}_SCALE: {{ $tone | toJson | quote }}
+  {{- else }}
+  BRANDING_{{ $env }}_COLOR: {{ $tone | default "" | quote }}
+  BRANDING_{{ $env }}_SCALE: ""
+  {{- end }}
+  {{- end }}
+  BRANDING_DEFAULT_THEME: {{ $brand.defaultTheme | default "" | quote }}
   BRANDING_EMAIL_FROM_NAME: {{ $mail.fromName | default "" | quote }}
   BRANDING_LOGIN_HEADLINE: {{ $brand.loginHeadline | default "" | quote }}
   BRANDING_LOGIN_TEXT: {{ $brand.loginText | default "" | quote }}

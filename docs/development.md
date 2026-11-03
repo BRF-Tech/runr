@@ -398,17 +398,18 @@ With Docker Compose: `docker compose exec api php artisan test`.
 `phpunit.xml` sets what the suite depends on, whatever `.env` says: in-memory SQLite, the array
 cache, mail and session drivers, a synchronous queue, `APP_URL=http://localhost` (forced: the
 URLs assertions build do not follow the `.env` copied from `.env.example`) and
-`memory_limit=3G` (the CI image has no `php.ini`; PHP's default 128 MB is not enough for the whole
-suite, and with coverage this process writes a report of more than 1 GB).
+`memory_limit=3G` (a PHP without `php.ini`, such as the php Docker images, has a default of 128 MB,
+which is not enough for the whole suite, and with coverage this process writes a report of more
+than 1 GB).
 
 Every test gets a throwaway storage directory (`storage_path()`, `tests/TestCase.php`): the
 internal git repositories, project remotes and builds tests create never land in the checkout's
 `api/storage/`. The suite needs the `git` binary, but no git identity.
 
 Coverage floor: CI runs the suite with [pcov](https://github.com/krakjoe/pcov) and fails when the
-line coverage of `app/` (`<source>` in `phpunit.xml`) drops below the `--min` of `test:api` (and
-of the GitHub `api` job) — the measured coverage rounded down to whole percent; raise it when tests
-add coverage. Locally, with pcov or Xdebug installed:
+line coverage of `app/` (`<source>` in `phpunit.xml`) drops below the `--min` of the `api` job of
+`.github/workflows/ci.yml` — the measured coverage rounded down to whole percent; raise it in both
+places when tests add coverage. Locally, with pcov or Xdebug installed:
 
 ```bash
 php -d memory_limit=2G artisan test --compact --coverage --min=76
@@ -421,9 +422,9 @@ has finished; PHPUnit's own process, which writes it, takes its limit from `phpu
 
 ```bash
 cd api
-vendor/bin/pint --test        # list files whose style differs (CI: lint:php)
+vendor/bin/pint --test        # list files whose style differs (CI: the api job)
 vendor/bin/pint               # rewrite them
-vendor/bin/phpstan analyse --memory-limit=1G   # Larastan level 5 (CI: analyse:php)
+vendor/bin/phpstan analyse --memory-limit=1G   # Larastan level 5 (CI: the api job)
 ```
 
 `api/phpstan-baseline.neon` records the findings that existed when Larastan was
@@ -435,7 +436,7 @@ large merge, regenerate it on a checkout whose model docblocks match the committ
 cd api && vendor/bin/phpstan analyse --memory-limit=1G --generate-baseline
 ```
 
-`lint:php` fails on any style difference; run `vendor/bin/pint` on the files you change.
+CI fails on any style difference; run `vendor/bin/pint` on the files you change.
 
 ### UI lint and unit tests (ESLint, Vitest)
 
@@ -497,7 +498,7 @@ Two modes:
   listening on such a port is reused, so give a second checkout its own ports.
   `mock` runs the core build, `mock-modules` a build with the tenancy, ticket
   and auth-provider modules and runs the specs tagged `@modules`. No backend
-  needed; this is the mode CI runs on merge requests.
+  needed; this is the mode CI runs on pull requests.
 - **Full stack** (`test:e2e`, project `stack`): runs against a running stack,
   e.g. `docker compose up -d` (or `scripts/devready.sh docker`). Settings:
   `E2E_BASE_URL` (default `http://localhost:8061`, the compose `vue`
@@ -627,7 +628,7 @@ go test -race ./...       # the race detector needs cgo (gcc)
 
 Without a local Go toolchain:
 `docker run --rm -v "$PWD":/src -w /src/runtime/agent ghcr.io/brf-tech/runr/reqs/golang:1.26-alpine sh -c 'apk add --no-cache build-base && CGO_ENABLED=1 go test -race ./...'`
-(the image `test:go` uses; `GOTOOLCHAIN=auto` fetches a newer toolchain for a module that asks for one).
+(CI's `go` job runs Go 1.26.9; `GOTOOLCHAIN=auto` fetches a newer toolchain for a module that asks for one).
 The queue-consumer stream tests use an in-process miniredis; set
 `QC_TEST_REDIS=localhost:6379` to run them against a real Redis. The Sentry tunnel's tests
 (`proxy/`) need no Redis either: the handlers and the worker run against an in-memory queue, the
@@ -645,9 +646,10 @@ made before it was added is converted once with `git rm --cached -r -q . && git 
 
 `bash runtime/ci.sh test` creates a Kind cluster, starts the API stack with
 Docker Compose and runs `php artisan test:e2e` (details in the next section).
-When the Docker daemon is remote (docker-in-docker in CI), set
-`E2E_DOCKER_ADDR` to the daemon's host name (CI: `docker`): the Kind API
+When the Docker daemon is remote (e.g. docker-in-docker), set
+`E2E_DOCKER_ADDR` to the daemon's host name (e.g. `docker`): the Kind API
 server then listens on all interfaces and the kubeconfig points at that host.
+CI runs the suite on the runner's own Docker daemon (`e2e.yml`, [CI jobs](#ci-jobs)).
 `E2E_API_WAIT` sets how many seconds to wait for the API (default 30).
 
 `bash runtime/ci.sh test-helm-upgrade` checks the Helm upgrade path instead: the chart and images of
@@ -676,28 +678,43 @@ cd api && composer audit --locked                   # reported
 
 ### CI jobs
 
-| Job | Runs | Blocking |
-|---|---|---|
-| `secrets:gitleaks` | MRs, default branch | yes |
-| `check:reqs-mirror` (`ci/check-reqs-mirror.sh`: every `ghcr.io/brf-tech/runr/reqs/*` reference resolves anonymously on ghcr.io; BRF-Tech/runr-runtimes publishes the mirror) | MRs, default branch | yes |
-| `check:build-scripts` (`ci/check-dockerfiles.sh`: no Docker Hub base image, `OTEL_SDK_DISABLED=true` before Spin runs in a build step, every image labels `org.opencontainers.image.source`; `runtime/test/*_test.sh`: `runtime/ci.sh` without Docker or a registry, the pinned runtime images, the release workflow) | MRs, default branch | yes |
-| `test:api` (PHPUnit with the coverage floor) | MRs / default branch touching `api/**` | yes |
-| `lint:php` (Pint) | same as `test:api` | yes |
-| `analyse:php` | same as `test:api` | yes |
-| `test:ui` (lint without warnings, Vitest with the coverage floor, build) | MRs / default branch touching `vue/**` | yes |
-| `test:ui-e2e` (Playwright, mocked API) | MRs / default branch touching `vue/**` | yes |
-| `test:ui-e2e:stack` (Playwright, compose stack in dind) | manual, schedule `SCHEDULED_JOB=ui-e2e` | no |
-| `lint:helm` (`ci/check-helm-chart.sh`) | MRs / default branch touching `helm/**`, `ci/helm-values/**` | yes |
-| `test:go` (gofmt, vet, race tests per `go.mod`) | MRs / default branch touching Go files | yes |
-| `audit:npm` | default branch, schedules, MRs touching `vue/package*.json` | production deps: yes; dev tooling: no |
-| `audit:composer` | default branch, schedules, MRs touching `api/composer.*` | no |
-| `e2e:kind` (`runtime/ci.sh test` in dind) | manual, schedule `SCHEDULED_JOB=e2e` | no |
+GitHub Actions is the repository's CI; the workflows live in `.github/workflows/`, and
+`runtime/test/ci_workflows_test.sh` (run by the `build-scripts` job) keeps them so.
 
-`.github/workflows/ci.yml` runs the core checks (reqs mirror, Dockerfiles and build scripts,
-API tests + Larastan, UI lint/unit/build, UI e2e in mocked mode, Go) on GitHub pull requests and
-pushes to `main`.
+| Workflow → job | Runs | When | Blocking |
+|---|---|---|---|
+| `ci.yml` → `gitleaks` | gitleaks on the files of the commit (not its history), allowlist `.gitleaks.toml` | every pull request, pushes to `main`, by hand | yes |
+| `ci.yml` → `reqs-mirror` | `ci/check-reqs-mirror.sh`: every `ghcr.io/brf-tech/runr/reqs/*` reference resolves anonymously on ghcr.io; BRF-Tech/runr-runtimes publishes the mirror | same | yes |
+| `ci.yml` → `build-scripts` | `ci/check-dockerfiles.sh` (no Docker Hub base image, `OTEL_SDK_DISABLED=true` before Spin runs in a build step, every image labels `org.opencontainers.image.source`); `runtime/test/*_test.sh` (`runtime/ci.sh` without Docker or a registry, the pinned runtime images, the release workflow, these workflows) | same | yes |
+| `ci.yml` → `helm` | `ci/check-helm-chart.sh` (helm 3.16, kubeconform) | same | yes |
+| `ci.yml` → `api` | Pint, PHPUnit with the coverage floor, Larastan on PHP 8.2 (8.2.35 or later) | same | yes |
+| `ci.yml` → `ui` | lint without warnings, Vitest with the coverage floor (report: artifact `ui-coverage`), build | same | yes |
+| `ci.yml` → `ui-e2e` | Playwright, mocked API (report: artifact `playwright-report`) | same | yes |
+| `ci.yml` → `go` | gofmt, vet, race tests with coverage per `go.mod` | same | yes |
+| `ci.yml` → `sdk-node` | typecheck and Vitest of `sdk/node` | same | yes |
+| `audit.yml` → `npm` | `npm audit` of `vue/` | pushes to `main`, daily, pull requests touching `vue/package*.json` or `api/composer.*`, by hand | production deps: yes; dev tooling: no |
+| `audit.yml` → `composer` | `composer audit --locked` of `api/` | same | no |
+| `e2e.yml` → `kind` | `runtime/ci.sh test` (Kind, Knative and the Compose stack on the runner's Docker) | weekly, by hand | no |
+| `e2e.yml` → `ui-stack` | Playwright against the dev stack (`docker compose`, project `stack`, single-tenant, `E2E_SEED_DEMO=true`) | weekly, by hand | no |
+| `upstream-releases.yml` → `check` | `ci/check-knative-releases.sh`, `ci/check-helm-releases.sh`; an issue per finding | daily, by hand | no |
+| `release-images.yml` | the release images (below) | release tag `v<version>`, by hand | — |
 
-No pipeline here builds or pushes an image. The images on `ghcr.io/brf-tech/runr` come from
+By hand: Actions → the workflow → **Run workflow**, or `gh workflow run e2e.yml -f suite=kind -f
+k8s=1.33.0` (`suite`: `all`, `kind`, `ui-stack`; `workers`: `1` for a runner short of disk).
+
+The two e2e suites run on standard GitHub-hosted runners (4 vCPUs, 16 GB, the runner's own
+Docker). `ci.sh test` needs neither `/dev/kvm` nor a GPU: its sandbox cases run the gVisor
+RuntimeClass on the runc handler (the Kind nodes have no gVisor). The suites CI does not run need
+a host of their own: `test-sandbox-api --sandbox-kata` (`/dev/kvm` inside the Kind nodes),
+`test-ai` with its GPU case, and the per-feature suites of [Testing](#testing) (`test-runtimes`,
+`test-wasm`, …, `test-region-move`, `test-global-projects`).
+
+`upstream-releases.yml` files an issue once per title (`deps: <chart> <version> released`,
+`Knative 1.<minor> released: …`): a title an issue already has, open or closed, is not filed again.
+`bash ci/check-knative-releases.sh` makes the table change of a released Knative minor in a
+checkout.
+
+Only the release workflow builds and pushes images. The images on `ghcr.io/brf-tech/runr` come from
 `.github/workflows/release-images.yml` on the public repository's release tag `v<version>`, with
 that repository's own `GITHUB_TOKEN`: `api`, `ui` and `ui-mt` at the version (and `latest`), and
 the region images of `runtime/ci.sh release-images` the registry does not have yet. Each platform

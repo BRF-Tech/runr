@@ -1,4 +1,4 @@
-{{-- Branded mail layout (white-label, docs/white-label.md): product name / logo, brand colours, footer links --}}
+{{-- Branded mail layout (white-label, docs/white-label.md): product name / logo, brand colours, footer links; the link and button colours come from the theme, resources/views/mail/default.blade.php --}}
 @php($brand = app(\App\Services\WhiteLabel\BrandingService::class)->forMail())
 <x-mail::layout>
 {{-- Header --}}
@@ -7,7 +7,7 @@
 @if (!empty($brand['mail_logo_url']))
 <img src="{{ $brand['mail_logo_url'] }}" class="logo" alt="{{ $brand['product_name'] }}" style="height: 48px; width: auto; max-width: 240px;">
 @else
-<span style="color: {{ $brand['primary_color'] }};">{{ $brand['product_name'] }}</span>
+<span style="color: {{ $brand['mail_button_color'] }};">{{ $brand['product_name'] }}</span>
 @endif
 </x-mail::header>
 </x-slot:header>

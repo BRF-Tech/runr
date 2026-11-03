@@ -384,6 +384,7 @@ return [
         'preferences_updated' => 'Bildirim tercihleri güncellendi.',
         '2fa_required' => 'İki faktörlü kimlik doğrulama kodu gerekli.',
         'invalid_recovery_code' => 'Geçersiz kurtarma kodu.',
+        'frozen' => 'Bu ortak bir hesap: hesap ve oturum açma ayarları kilitli.',
     ],
 
     // ── Contact ──

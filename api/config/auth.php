@@ -128,4 +128,19 @@ return [
 
     'login_token_ttl_days' => max(0, (int) env('RUNR_LOGIN_TOKEN_TTL_DAYS', 30)),
 
+    /*
+    |--------------------------------------------------------------------------
+    | Frozen accounts (docs/security.md, "Shared accounts")
+    |--------------------------------------------------------------------------
+    |
+    | E-mail addresses (comma-separated, case-insensitive) of shared sign-ins, such as a public
+    | demo login whose password is published: they sign in and out and use what their roles grant,
+    | but cannot change their own account — profile, password, two-factor authentication, sessions,
+    | API tokens, linked identities, disabling or deleting it (403, `frozen: true`). Administrators
+    | still manage them under Members. Empty: no account is frozen.
+    |
+    */
+
+    'frozen_accounts' => (string) env('RUNR_FROZEN_ACCOUNTS', ''),
+
 ];

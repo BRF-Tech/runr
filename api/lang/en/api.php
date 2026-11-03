@@ -384,6 +384,7 @@ return [
         'preferences_updated' => 'Notification preferences updated.',
         '2fa_required' => 'Two-factor authentication code required.',
         'invalid_recovery_code' => 'Invalid recovery code.',
+        'frozen' => 'This is a shared account: its account and sign-in settings are locked.',
     ],
 
     // ── Contact ──

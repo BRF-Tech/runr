@@ -41,7 +41,7 @@ id_ed25519*
 HANDOVER.md
 
 # Tool leftovers: browser-automation sessions, test reports, Go / Python build and test
-# output, the CI jobs' caches inside the project directory
+# output
 .playwright-mcp/
 playwright-report/
 test-results/
@@ -53,9 +53,6 @@ __pycache__/
 *.py[cod]
 .pytest_cache/
 .venv/
-.composer-cache/
-.npm/
-.go-cache/
 # Octane downloads FrankenPHP here when it is not on the PATH
 /api/frankenphp
 

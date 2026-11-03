@@ -1,0 +1,73 @@
+# Dependency audits. Advisories are published without any change on our side, so the audits run on
+# every push to main, every day and by hand, and on pull requests that touch a manifest or lockfile
+# (a fresh upstream advisory must not block an unrelated pull request).
+name: Audit
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    paths:
+      - vue/package.json
+      - vue/package-lock.json
+      - api/composer.json
+      - api/composer.lock
+  schedule:
+    # every day 04:41 UTC
+    - cron: '41 4 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: audit-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  npm:
+    name: npm audit (UI)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: vue
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # npm audit reads package-lock.json: no install, nothing to cache
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          package-manager-cache: false
+      # The shipped UI bundle: a high or critical advisory in a production dependency fails
+      - name: npm audit (production dependencies)
+        run: npm audit --omit=dev --audit-level=high
+      # Build and test tooling (devDependencies) is reported without failing the run: its fix can
+      # wait for an upstream major upgrade
+      - name: npm audit (dev tooling, reported)
+        continue-on-error: true
+        run: npm audit --audit-level=high
+
+  composer:
+    name: composer audit (API, reported)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    # Most advisories sit in transitive packages (league/commonmark, guzzle, phpseclib, symfony/*)
+    # and clear with a lock refresh inside the existing constraints: reported without failing the
+    # run until composer.lock is refreshed
+    continue-on-error: true
+    defaults:
+      run:
+        working-directory: api
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # 2.40.0
+        with:
+          php-version: '8.2'
+          coverage: none
+          tools: composer:v2
+      - run: composer audit --locked --no-interaction

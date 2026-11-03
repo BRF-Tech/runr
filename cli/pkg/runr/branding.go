@@ -20,12 +20,14 @@ const (
 )
 
 // BrandingTextFields are the text settings of a brand (BrandingService::FIELDS without the
-// colour scale, the footer links and powered_by). The *_url fields take an https URL or a
-// data: URI of an image.
+// colour scales, the footer links and powered_by). The *_url fields take an https URL or a
+// data: URI of an image; dark_color / light_color are the page backgrounds (shade 950) the
+// console derives each theme's tones from, default_theme is dark or light.
 var BrandingTextFields = []string{
-	"product_name", "company_name", "primary_color", "accent_color", "login_headline", "login_text",
-	"support_email", "support_url", "email_from_name", "logo_light_url", "logo_dark_url",
-	"logo_mark_url", "favicon_url", "email_logo_url",
+	"product_name", "company_name", "primary_color", "accent_color", "dark_color", "light_color",
+	"default_theme", "login_headline", "login_text", "support_email", "support_url",
+	"email_from_name", "logo_light_url", "logo_dark_url", "logo_mark_url", "favicon_url",
+	"email_logo_url",
 }
 
 // BrandingAssetOfField maps an image URL field to its asset kind (an upload in the console

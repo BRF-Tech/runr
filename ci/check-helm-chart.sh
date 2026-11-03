@@ -145,6 +145,34 @@ else
   fail=1
 fi
 
+# The platform's branding defaults reach the ui container too (vue/docker-entrypoint.sh writes
+# them to /branding-defaults.js for the console's first paint): every BRANDING_* key the
+# entrypoint reads comes from the API's runr-config, which renders it, with the white-label values
+ui_keys="BRANDING_PRIMARY_COLOR BRANDING_PRIMARY_SCALE BRANDING_ACCENT_COLOR BRANDING_DARK_COLOR BRANDING_DARK_SCALE BRANDING_LIGHT_COLOR BRANDING_LIGHT_SCALE BRANDING_DEFAULT_THEME"
+if helm template runr "$ROOT/helm" --namespace runr -f "$ROOT/ci/helm-values/white-label.yaml" \
+    --show-only templates/ui-deployment.yaml >"$OUT/ui-branding.render" 2>"$OUT/ui-branding.err" \
+  && helm template runr "$ROOT/helm" --namespace runr -f "$ROOT/ci/helm-values/white-label.yaml" \
+    --show-only templates/configmap.yaml >"$OUT/ui-branding-config.render" 2>>"$OUT/ui-branding.err"; then
+  problems=()
+  for key in $ui_keys; do
+    grep -A4 -E "^ +- name: ${key}$" "$OUT/ui-branding.render" | grep -q -E '^ +name: runr-config$' \
+      || problems+=("${key}: not from runr-config on the ui container")
+    grep -q -E "^  ${key}: " "$OUT/ui-branding-config.render" || problems+=("${key}: not in runr-config")
+  done
+  grep -q -E '^  BRANDING_DEFAULT_THEME: "light"$' "$OUT/ui-branding-config.render" || problems+=("BRANDING_DEFAULT_THEME: not the values' light")
+  grep -q -E '^  BRANDING_DARK_SCALE: ".*\\"950\\":\\"9 27 78\\"' "$OUT/ui-branding-config.render" || problems+=("BRANDING_DARK_SCALE: not the values' scale")
+  if [ ${#problems[@]} -eq 0 ]; then
+    echo "✓ ui-branding: the ui container gets the platform's branding defaults from runr-config"
+  else
+    printf '✗ ui-branding: %s\n' "${problems[@]}"
+    fail=1
+  fi
+else
+  echo "✗ ui-branding: helm template"
+  cat "$OUT/ui-branding.err"
+  fail=1
+fi
+
 # SSO callbacks: the provider redirects to the API's web route /oauth/<provider>/callback, which the
 # gateway must send to runr-api; the console's own /oauth/callback page (and every other path the
 # API does not serve) stays with runr-ui
@@ -397,6 +425,50 @@ else
 fi
 refused schema-patches 'runtimePatches.autoMigrate' --set-string runtimePatches.autoMigrate=maybe || problems+=("runtimePatches.autoMigrate not validated")
 report runtime-patches "feed, public key (line breaks kept), region and automatic migration rendered; defaults left to the application"
+
+# Frozen accounts (auth.frozenAccounts → RUNR_FROZEN_ACCOUNTS): none by default, a list and one
+# comma-separated string render the same comma-separated value
+problems=()
+if render frozen-default --show-only templates/configmap.yaml \
+  && render frozen-list --set 'auth.frozenAccounts={demo@example.test,shared@example.test}' --show-only templates/configmap.yaml \
+  && render frozen-string --set-string 'auth.frozenAccounts=demo@example.test\,shared@example.test' --show-only templates/configmap.yaml; then
+  grep -q -F 'RUNR_FROZEN_ACCOUNTS: ""' "$OUT/frozen-default.render" || problems+=("defaults: an account frozen")
+  grep -q -F 'RUNR_FROZEN_ACCOUNTS: "demo@example.test,shared@example.test"' "$OUT/frozen-list.render" || problems+=("a list not rendered comma-separated")
+  grep -q -F 'RUNR_FROZEN_ACCOUNTS: "demo@example.test,shared@example.test"' "$OUT/frozen-string.render" || problems+=("a comma-separated string not rendered as given")
+else
+  problems+=("helm template: $(cat "$OUT"/frozen*.err)")
+fi
+report frozen-accounts "none by default; a list or a comma-separated string of addresses rendered"
+
+# Branding colours: a scale given as a map renders its base colour (primary: shade 500, the
+# themes' tones: 950, the page background) and the scale as JSON, one colour renders it with an
+# empty scale; branding.defaultTheme is dark | light. The navy dark theme of the values.yaml
+# comment renders as written.
+problems=()
+printf '%s\n' 'branding:' '  colors:' '    primary: "#009fe3"' '    accent: "#009fe3"' '    dark:' \
+  '      "950": "9 27 78"' '      "900": "15 36 96"' '      "800": "22 46 114"' '      "700": "30 59 133"' \
+  '      "600": "175 195 225"' '      "500": "205 218 240"' '      "400": "222 232 248"' '      "300": "235 240 250"' \
+  '      "200": "242 245 252"' '      "100": "248 250 254"' '      "50":  "252 253 255"' >"$OUT/navy.values"
+if render brand-default --show-only templates/configmap.yaml && render brand-scales -f "$ROOT/ci/helm-values/white-label.yaml" --show-only templates/configmap.yaml \
+  && render brand-navy -f "$OUT/navy.values" --show-only templates/configmap.yaml; then
+  for want in 'BRANDING_DARK_COLOR: ""' 'BRANDING_DARK_SCALE: ""' 'BRANDING_LIGHT_COLOR: ""' 'BRANDING_LIGHT_SCALE: ""' 'BRANDING_DEFAULT_THEME: ""'; do
+    grep -q -F "$want" "$OUT/brand-default.render" || problems+=("defaults: no $want")
+  done
+  for want in 'BRANDING_PRIMARY_COLOR: "#009fe3"' 'BRANDING_DARK_COLOR: "9 27 78"' 'BRANDING_DARK_SCALE: "{\"100\":\"248 250 254\",' '\"50\":\"#fcfdff\",' '\"950\":\"9 27 78\"}"' \
+    'BRANDING_LIGHT_COLOR: "#f5f7fc"' 'BRANDING_LIGHT_SCALE: ""' 'BRANDING_DEFAULT_THEME: "light"'; do
+    grep -q -F -- "$want" "$OUT/brand-scales.render" || problems+=("white-label: no $want")
+  done
+  for want in 'BRANDING_PRIMARY_COLOR: "#009fe3"' 'BRANDING_PRIMARY_SCALE: ""' 'BRANDING_ACCENT_COLOR: "#009fe3"' 'BRANDING_DARK_COLOR: "9 27 78"' \
+    '\"50\":\"252 253 255\"' '\"600\":\"175 195 225\"' 'BRANDING_LIGHT_COLOR: ""'; do
+    grep -q -F -- "$want" "$OUT/brand-navy.render" || problems+=("navy dark theme: no $want")
+  done
+else
+  problems+=("helm template: $(cat "$OUT"/brand-*.err)")
+fi
+refused brand-theme 'branding.defaultTheme' --set branding.defaultTheme=sepia || problems+=("branding.defaultTheme not validated")
+refused brand-shade 'Additional property 975 is not allowed' --set 'branding.colors.dark.975=#000000' || problems+=("an unknown shade of branding.colors.dark accepted")
+refused brand-tone 'branding.colors.light' --set 'branding.colors.light=white' || problems+=("branding.colors.light=white accepted")
+report branding-colors "primary scale and the themes' tones (base colour or full scale), default theme; unknown shades and themes refused"
 
 # Gateway: the ingress controller's X-Forwarded-Proto (https) reaches the API — no route overwrites
 # it with the gateway's own scheme, and the ingress controller is a trusted proxy; /horizon and

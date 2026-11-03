@@ -41,6 +41,9 @@ type brandingModel struct {
 	CompanyName           types.String `tfsdk:"company_name"`
 	PrimaryColor          types.String `tfsdk:"primary_color"`
 	AccentColor           types.String `tfsdk:"accent_color"`
+	DarkColor             types.String `tfsdk:"dark_color"`
+	LightColor            types.String `tfsdk:"light_color"`
+	DefaultTheme          types.String `tfsdk:"default_theme"`
 	LoginHeadline         types.String `tfsdk:"login_headline"`
 	LoginText             types.String `tfsdk:"login_text"`
 	SupportEmail          types.String `tfsdk:"support_email"`
@@ -60,7 +63,8 @@ type brandingModel struct {
 func (m *brandingModel) texts() map[string]*types.String {
 	return map[string]*types.String{
 		"product_name": &m.ProductName, "company_name": &m.CompanyName, "primary_color": &m.PrimaryColor,
-		"accent_color": &m.AccentColor, "login_headline": &m.LoginHeadline, "login_text": &m.LoginText,
+		"accent_color": &m.AccentColor, "dark_color": &m.DarkColor, "light_color": &m.LightColor,
+		"default_theme": &m.DefaultTheme, "login_headline": &m.LoginHeadline, "login_text": &m.LoginText,
 		"support_email": &m.SupportEmail, "support_url": &m.SupportURL, "email_from_name": &m.EmailFromName,
 		"logo_light_url": &m.LogoLightURL, "logo_dark_url": &m.LogoDarkURL, "logo_mark_url": &m.LogoMarkURL,
 		"favicon_url": &m.FaviconURL, "email_logo_url": &m.EmailLogoURL,
@@ -99,10 +103,17 @@ func (r *brandingResource) Schema(_ context.Context, _ resource.SchemaRequest, r
 					"installation who are not platform administrators, `install` otherwise.",
 				PlanModifiers: []planmodifier.String{stringplanmodifier.RequiresReplaceIfConfigured(), stringplanmodifier.UseStateForUnknown()},
 				Validators:    []validator.String{stringvalidator.OneOf(runr.BrandingInstall, runr.BrandingOrganization)}},
-			"product_name":   text("Product name shown in the console, the login page and e-mails.", 80),
-			"company_name":   text("Company name (footer, e-mails).", 120),
-			"primary_color":  schema.StringAttribute{Optional: true, MarkdownDescription: "Primary colour (`#rrggbb`).", Validators: color},
-			"accent_color":   schema.StringAttribute{Optional: true, MarkdownDescription: "Accent colour (`#rrggbb`).", Validators: color},
+			"product_name":  text("Product name shown in the console, the login page and e-mails.", 80),
+			"company_name":  text("Company name (footer, e-mails).", 120),
+			"primary_color": schema.StringAttribute{Optional: true, MarkdownDescription: "Primary colour (`#rrggbb`).", Validators: color},
+			"accent_color":  schema.StringAttribute{Optional: true, MarkdownDescription: "Accent colour (`#rrggbb`).", Validators: color},
+			"dark_color": schema.StringAttribute{Optional: true, Validators: color,
+				MarkdownDescription: "Page background of the dark theme (`#rrggbb`); the console derives the theme's other tones from it. Default: RunR's dark (`#0a0a0a`)."},
+			"light_color": schema.StringAttribute{Optional: true, Validators: color,
+				MarkdownDescription: "Page background of the light theme (`#rrggbb`); the console derives the theme's other tones from it. Default: RunR's warm light (`#fffcf8`)."},
+			"default_theme": schema.StringAttribute{Optional: true,
+				MarkdownDescription: "Theme of the users who never picked one: `dark` or `light`. Default: `dark`.",
+				Validators:          []validator.String{stringvalidator.OneOf("dark", "light")}},
 			"login_headline": text("Headline of the login page.", 120),
 			"login_text":     text("Text of the login page.", 600),
 			"support_email": schema.StringAttribute{Optional: true, MarkdownDescription: "Support e-mail address.",

@@ -3,15 +3,17 @@
 namespace App\Services;
 
 use App\Jobs\BuildVersionJob;
+use App\Models\ContainerConfig;
+use App\Models\FaasConfig;
 use App\Models\Project;
 use App\Models\Version;
+use App\Models\XaasConfig;
 use App\Rules\WithinResourceLimit;
 use App\Services\Concerns\ProjectConfigTrait;
 use App\Services\Concerns\RuntimeConfigTrait;
 use App\Services\GlobalProjects\GlobalProjectService;
 use App\Services\Runtimes\ProjectEntrypoint;
 use App\Support\Secrets\SecretRedactor;
-use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\ValidationException;
@@ -221,12 +223,15 @@ class ProjectService
      * row is loaded or between its load and the write (Eloquent's update does not tell) — and
      * answers 404 (Project::notFound()), not a server error.
      *
+     * Typed as the config row classes, not the abstract Model: the OpenAPI export (Scramble)
+     * reads the callers' toArray() through this type and cannot on the abstract one.
+     *
      * @throws ModelNotFoundException
      */
-    private function updateConfigRow(Project $project, string $relation, array $config): Model
+    private function updateConfigRow(Project $project, string $relation, array $config): ContainerConfig|XaasConfig|FaasConfig
     {
         $row = $project->getRelationValue($relation);
-        if (! $row instanceof Model) {
+        if (! $row instanceof ContainerConfig && ! $row instanceof XaasConfig && ! $row instanceof FaasConfig) {
             throw $project->notFound();
         }
         $row->update(self::withNormalizedGpu($config));

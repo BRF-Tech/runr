@@ -3889,12 +3889,6 @@ parameters:
 			path: app/Services/Wasm/WasmBuildService.php
 
 		-
-			message: '#^Expression on left side of \?\? is always null\.$#'
-			identifier: nullCoalesce.expr
-			count: 1
-			path: app/Services/WhiteLabel/BrandingService.php
-
-		-
 			message: '#^Method App\\Services\\WhiteLabel\\BrandingService\:\:expand\(\) should return array\<string, string\> but returns array\<int, string\>\.$#'
 			identifier: return.type
 			count: 1
@@ -3909,12 +3903,6 @@ parameters:
 		-
 			message: '#^Method App\\Services\\WhiteLabel\\BrandingService\:\:palette\(\) should return array\<string, string\> but returns array\<int, mixed\>\.$#'
 			identifier: return.type
-			count: 1
-			path: app/Services/WhiteLabel/BrandingService.php
-
-		-
-			message: '#^Offset ''500'' on array\<string, string\>\|null in isset\(\) does not exist\.$#'
-			identifier: isset.offset
 			count: 1
 			path: app/Services/WhiteLabel/BrandingService.php
 

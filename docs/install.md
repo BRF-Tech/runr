@@ -53,7 +53,7 @@ examples below).
 The modules of the console are built into its image, so the multi-tenant console is a separate UI
 image: with `edition: multi-tenant` the UI runs `ghcr.io/brf-tech/runr/ui:<tag>-mt`
 (`ui.image.multiTenantSuffix`, default `-mt`). The tag defaults to the chart's release, its
-`appVersion`, so chart 0.6.2 runs `0.6.2-mt`; the moving tag `latest` has no multi-tenant variant
+`appVersion`, so chart 0.6.3 runs `0.6.3-mt`; the moving tag `latest` has no multi-tenant variant
 and runs `<appVersion>-mt` as well. A UI image of your own that carries the modules under its plain
 tag needs `ui.image.multiTenantSuffix: ""`.
 
@@ -170,7 +170,7 @@ A custom certificate is easiest to pass from files, and renewed by running the s
 the new files:
 
 ```sh
-helm upgrade runr brf-tech/runr --version 0.6.2 -n runr --reuse-values \
+helm upgrade runr brf-tech/runr --version 0.6.3 -n runr --reuse-values \
   --set ingress.tls.mode=custom \
   --set-file ingress.tls.certificate=fullchain.pem \
   --set-file ingress.tls.privateKey=privkey.pem
@@ -627,7 +627,7 @@ The chart generates `APP_KEY`, `REVERB_APP_SECRET` and the administrator's passw
    `api.image.tag` and `ui.image.tag` default to the chart's `appVersion`.
 
    ```sh
-   helm upgrade --install runr brf-tech/runr --version 0.6.2 \
+   helm upgrade --install runr brf-tech/runr --version 0.6.3 \
      --namespace runr --create-namespace \
      -f values-production.yaml
    ```
@@ -691,6 +691,9 @@ The chart generates `APP_KEY`, `REVERB_APP_SECRET` and the administrator's passw
 - **Sessions and audit.** `auth.loginTokenTtlDays` (default 30) limits how long a sign-in stays
   valid; `audit.siemForwarding: true` writes every audit event to the container log for a log
   collector ([security.md](security.md#siem-forwarding)).
+- **Shared logins.** A login whose password several people know — a public demo account —
+  belongs in `auth.frozenAccounts`: it signs in, but nobody can change its password, two-factor
+  setting or sessions, or delete it ([security.md](security.md#shared-accounts)).
 
 ## Backup and restore
 

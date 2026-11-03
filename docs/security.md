@@ -279,6 +279,41 @@ with its device, address and last use.
   organizations' copies, groups and role assignments of users that no longer exist. These are the
   rows user deletions, member removals and organization deletions of releases before 0.5.6 left.
 
+## Shared accounts
+
+A login several people share, such as a public demo account whose password is published next to
+the console, can be **frozen**: list its e-mail address in `RUNR_FROZEN_ACCOUNTS` (comma-separated,
+case-insensitive; Helm value `auth.frozenAccounts`, a list or one comma-separated string; empty by
+default). A frozen account signs in and out and uses what its role grants — give it the Viewer
+role for a read-only demo ([Permissions](permissions.md)) — but none of its users can change the
+account itself, so no visitor locks out the others:
+
+- **Refused** with `403` and `{"message": "…", "frozen": true}` (in the caller's language): the
+  writes of `/api/account/*` (profile, avatar, password, two-factor setup, confirm, disable and
+  recovery codes, revoking sessions, notification preferences, disabling and deleting the
+  account), creating and deleting API tokens (`POST /api/tokens`, `DELETE /api/tokens/{id}`),
+  revoking a connected MCP client and approving an MCP client's consent
+  (`DELETE /api/mcp/clients/{client}`, `POST /api/oauth2/requests/{id}/approve`), linking or
+  unlinking an SSO identity (`POST /api/oauth/link/complete`, `DELETE /api/social-accounts/{id}`),
+  and the members' routes when they name the account itself: `PATCH` and `DELETE /api/users/{id}`,
+  `POST /api/users/{id}/reset-2fa`, `PUT /api/members/{id}/role`,
+  `DELETE /api/groups/{group}/members/{id}`, and in the multi-tenant edition
+  `PATCH` / `DELETE /api/tenants/{tenant}/users/{id}`, `POST /api/tenants/{tenant}/users/{id}/reset-2fa`
+  and `POST /api/users/{id}/toggle-admin`.
+- **Allowed**: every read of these routes, signing in (`POST /api/auth/login`) and signing out
+  (`POST /api/auth/logout`, which deletes only the caller's own session), another administrator's
+  actions on the account under Members (`PATCH /api/users/{id}`,
+  `POST /api/users/{id}/reset-2fa`, removing it), and a frozen administrator's actions on other
+  members. To change its password, the operator takes the
+  address off the list for the change (a configuration change of the API, e.g. `helm upgrade`),
+  signs in as the account, changes it and puts the address back.
+
+`GET /api/account` and `GET /api/auth/me` carry `frozen: true|false` for the signed-in user; for
+a frozen account the console's Account settings page says that it is a shared account and
+disables its change controls. A frozen account's role still decides what it may do elsewhere:
+freezing does not make a role read-only, so a public demo login still belongs in a role that can
+only look.
+
 ## SSO sign-in handoff
 
 After an OAuth, OIDC or SAML sign-in RunR redirects the browser to

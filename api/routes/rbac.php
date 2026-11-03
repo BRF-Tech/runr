@@ -28,10 +28,12 @@ Route::get('/groups/{group}', [GroupController::class, 'show']);
 Route::put('/groups/{group}', [GroupController::class, 'update']);
 Route::delete('/groups/{group}', [GroupController::class, 'destroy']);
 Route::post('/groups/{group}/members', [GroupController::class, 'addMembers']);
-Route::delete('/groups/{group}/members/{user}', [GroupController::class, 'removeMember']);
+// `account.frozen`: a frozen account (a shared demo login) changes neither its own group
+// memberships nor its own role; another member's pass
+Route::delete('/groups/{group}/members/{user}', [GroupController::class, 'removeMember'])->middleware('account.frozen');
 
 Route::get('/members', [MemberController::class, 'index']);
-Route::put('/members/{user}/role', [MemberController::class, 'updateRole']);
+Route::put('/members/{user}/role', [MemberController::class, 'updateRole'])->middleware('account.frozen');
 
 Route::get('/projects/{project}/access', [ProjectAccessController::class, 'index']);
 Route::post('/projects/{project}/access', [ProjectAccessController::class, 'store']);

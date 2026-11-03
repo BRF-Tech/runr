@@ -33,6 +33,18 @@ spec:
             # Port Caddy listens on (vue/Caddyfile)
             - name: RUNR_UI_PORT
               value: {{ .Values.ui.port | quote }}
+            # The platform's branding defaults (branding.colors.*, branding.defaultTheme): the
+            # entrypoint writes them to /branding-defaults.js, so a first visit opens in the
+            # platform's theme and colours before GET /api/branding answers. The API's keys of
+            # runr-config, one source for both (vue/docker-entrypoint.sh validates them)
+            {{- range $key := list "BRANDING_PRIMARY_COLOR" "BRANDING_PRIMARY_SCALE" "BRANDING_ACCENT_COLOR" "BRANDING_DARK_COLOR" "BRANDING_DARK_SCALE" "BRANDING_LIGHT_COLOR" "BRANDING_LIGHT_SCALE" "BRANDING_DEFAULT_THEME" }}
+            - name: {{ $key }}
+              valueFrom:
+                configMapKeyRef:
+                  name: runr-config
+                  key: {{ $key }}
+                  optional: true
+            {{- end }}
           resources:
             {{- toYaml .Values.ui.resources | nindent 12 }}
           readinessProbe:

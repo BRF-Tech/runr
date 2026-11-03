@@ -87,6 +87,40 @@ edit projects, deploy or change regions in that time: the previous version canno
 migration has just encrypted, shows env vars as empty and would save that. Its region status
 checks fail in that window and the new version's next check reports the region again.
 
+## 0.6.2 → 0.6.3
+
+0.6.3 brings white-label themes, RunR's colours and logo in the console, and fixes for read-only
+roles ([CHANGELOG.md](../CHANGELOG.md)). It adds no database migrations. Its new Helm values
+`branding.colors.dark`, `branding.colors.light`, `branding.defaultTheme` and `auth.frozenAccounts`
+are optional and empty by default, so values of 0.6.2, `--reuse-values` included, keep working.
+Upgrade with the [Procedure](#procedure).
+
+- The console has two themes, Dark and Light; the navy theme is gone. A browser that has it
+  stored opens in Dark. To keep the navy look, set it as a white-label theme: the "Ocean" preset
+  on the Branding page, or `branding.colors.dark`
+  ([white-label.md](white-label.md#theme-tones-and-the-default-theme)).
+- RunR's own colours change: the dark theme is neutral black (`#0a0a0a`), the light theme warm
+  (`#fffcf8`), warnings yellow. An installation with its own brand (`branding.colors.primary`,
+  `accent`) keeps them; its themes take the new defaults unless `branding.colors.dark` /
+  `light` are set.
+- The UI container gets the platform's branding defaults: the chart gives it the `BRANDING_*`
+  keys of `runr-config`, and its entrypoint writes them to `/branding-defaults.js` at start, so a
+  first visit opens in the platform's theme. A UI container that cannot write the file starts
+  without them and says so in its log.
+- A first visit opens in the browser's language: Turkish for a Turkish browser, English for every
+  other one (it was Turkish for all). A user's own choice still wins.
+- `auth.frozenAccounts` (env `RUNR_FROZEN_ACCOUNTS`) is new and optional: e-mail addresses of
+  shared sign-ins, such as a public demo login, that cannot change their own account; empty (the
+  default) changes nothing ([Shared accounts](security.md#shared-accounts)).
+- The branding API (`GET /api/branding`, `/api/admin/branding`, `/api/tenant/branding`) adds the
+  theme fields (`dark_color`, `dark_scale`, `light_color`, `light_scale`, `default_theme`), an API
+  gateway adds `can_manage`, and `GET /api/account` and `GET /api/auth/me` add `frozen`; nothing is
+  removed. The `runr_branding` attributes `dark_color`, `light_color` and `default_theme` of the
+  Terraform provider 0.6.3 need a 0.6.3 API.
+
+A rollback to 0.6.2 is a plain `helm rollback`: there is no migration to undo; theme settings saved
+with 0.6.3 stay stored, and 0.6.2 does not use them.
+
 ## 0.6.1 → 0.6.2
 
 0.6.2 changes how the release images are built and gives the Terraform provider its Terraform

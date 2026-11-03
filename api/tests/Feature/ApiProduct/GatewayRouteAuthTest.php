@@ -194,6 +194,29 @@ class GatewayRouteAuthTest extends TestCase
         $this->assertSame('public', $this->rt->fresh()->auth_mode ?? 'public');
     }
 
+    /** can_manage (GatewayPolicy::update): the console shows the gateway's controls only with it. */
+    public function test_the_gateway_says_whether_the_caller_may_manage_it(): void
+    {
+        $this->actingAs($this->owner, 'sanctum')->getJson("/api/gateways/{$this->gw->id}")
+            ->assertOk()->assertJsonPath('data.can_manage', true);
+        $this->signedIn($this->owner)->getJson('/api/gateways')
+            ->assertOk()->assertJsonPath('data.0.can_manage', true);
+
+        // the read-only demo role: sees everything, changes nothing — not even its own gateway
+        $role = $this->customRole('demo-read-only', [
+            'projects.view', 'git.pull', 'env.view', 'secret_stores.view', 'logs.view', 'metrics.view', 'traces.view',
+            'workflows.view', 'sandboxes.view', 'regions.view', 'images.view', 'bindings.view', 'members.view',
+        ]);
+        $reader = $this->userWithRole($role->key);
+        $own = $this->gateway($reader, $this->gw->knativeRegion()->firstOrFail());
+
+        $this->signedIn($reader)->getJson('/api/gateways')
+            ->assertOk()->assertJsonPath('data.0.id', $own->id)->assertJsonPath('data.0.can_manage', false);
+        $this->signedIn($reader)->getJson("/api/gateways/{$this->gw->id}")
+            ->assertOk()->assertJsonPath('data.can_manage', false);
+        $this->signedIn($reader)->patchJson("/api/gateways/{$own->id}", ['developer_page' => true])->assertForbidden();
+    }
+
     public function test_a_ready_gateway_auth_makes_the_gateway_active(): void
     {
         $this->patchRoute(['auth_mode' => 'key'])->assertOk();

@@ -6,6 +6,8 @@
 #
 #   - status and Content-Type of the pages, the downloads and the provider registry documents
 #   - every internal link of every page answers 200 (HTTP crawl)
+#   - the ZIP's files (not with --live): the two landing pages and their metadata, the docs
+#     metadata, the sitemap, the still hero, and no blue-tinted colour (check-colors.py)
 #   - `curl -fsSL https://runr.sh/install.sh | sh` installs the CLI on linux/amd64 (root and
 #     non-root) and linux/arm64 (emulated), the version matches latest.txt
 #   - `terraform init` installs runr.sh/brf-tech/runr and verifies its signature, on amd64 and
@@ -165,6 +167,111 @@ echo "== HTTP"
 out="$(run "$CURL_IMAGE" linux/amd64 http.sh 2>&1 || true)"
 echo "$out"
 fails=$((fails + $(printf '%s\n' "$out" | grep -c '^FAIL' || true)))
+
+# --- SEO (the ZIP's files) ---------------------------------------------------------------------
+# The two landing pages (/ English, /tr/ Turkish: lang, own canonical, the hreflang set, og:locale,
+# no translation attributes or relative asset paths left on /tr/), the social tags and breadcrumb
+# of a docs page, the comparison pages in the sitemap, and no Umami <script> in any page (the web
+# server adds it; a second one would count every visit twice). On both landing pages: no
+# unconditional three.js / hero3d.js / bg.js script (phones get the still hero image, which must
+# exist), every srcset file exists, and Turnstile is not loaded with the page.
+if [ "$live" = false ]; then
+cat > "$tmp/seo.py" <<'EOF'
+import json, os, posixpath, re, sys
+root = sys.argv[1]
+site = "https://runr.sh"
+fails = 0
+def check(ok, what):
+    global fails
+    print(("ok   " if ok else "FAIL ") + what)
+    fails += 0 if ok else 1
+def page(rel):
+    p = os.path.join(root, *rel.split("/"))
+    return open(p, encoding="utf-8").read() if os.path.isfile(p) else ""
+def meta(text, attr, name):
+    m = re.search(r'<meta %s="%s" content="([^"]*)"' % (attr, re.escape(name)), text)
+    return m.group(1) if m else None
+alternates = {"en": site + "/", "tr": site + "/tr/", "x-default": site + "/"}
+for rel, lang, url, locale in (("index.html", "en", "/", "en_US"), ("tr/index.html", "tr", "/tr/", "tr_TR")):
+    t = page(rel)
+    check(bool(t), "%s exists" % url)
+    check(re.search(r'<html lang="%s"' % lang, t) is not None, '%s has <html lang="%s">' % (url, lang))
+    canon = re.findall(r'<link rel="canonical" href="([^"]+)"', t)
+    check(canon == [site + url], "%s canonical is itself (%s)" % (url, canon))
+    alts = dict(re.findall(r'<link rel="alternate" hreflang="([^"]+)" href="([^"]+)"', t))
+    check(alts == alternates, "%s hreflang en / tr / x-default (%s)" % (url, alts))
+    check(meta(t, "property", "og:locale") == locale, "%s og:locale %s" % (url, locale))
+    check(meta(t, "property", "og:url") == site + url, "%s og:url" % url)
+    check(re.search(r'\sdata-(?:tr|en)(?:-[a-z-]+)?=', t) is None, "%s has no data-tr / data-en attributes" % url)
+    ld = [json.loads(b) for b in re.findall(r'<script type="application/ld\+json">(.*?)</script>', t, re.S)]
+    faq = [d for d in ld if d.get("@type") == "FAQPage"]
+    check(len(faq) == 1 and len(faq[0]["mainEntity"]) > 0, "%s FAQPage JSON-LD (%d questions)" % (
+        url, len(faq[0]["mainEntity"]) if faq else 0))
+    # phones, touch screens and reduced motion: the still hero, and no 3D / canvas scripts by default
+    check(re.search(r'<script[^>]+src="[^"]*(?:three|hero3d|bg\.js)', t) is None,
+          "%s loads no three.js / hero3d.js / bg.js unconditionally" % url)
+    check("matchMedia('(max-width: 768px), (pointer: coarse), (prefers-reduced-motion: reduce)')" in t,
+          "%s loads the 3D hero only past its media query" % url)
+    stills = re.findall(r'<picture class="hero-static".*?</picture>', t, re.S)
+    srcs = re.findall(r'srcset="([^"]+)"', stills[0]) if stills else []
+    check(len(srcs) == 2 and all(os.path.isfile(os.path.join(root, *s.lstrip("/").split("/"))) for s in srcs),
+          "%s has the still hero images %s" % (url, srcs))
+    missing = [c.split()[0] for s in re.findall(r'\ssrcset="([^"]+)"', t) for c in s.split(",") if c.strip()]
+    missing = [c for c in missing if not os.path.isfile(os.path.join(root, *(c.lstrip("/") if c.startswith("/")
+               else posixpath.join(posixpath.dirname(rel), c)).split("/")))]
+    check(not missing, "%s: every srcset file exists %s" % (url, missing[:3]))
+    check("challenges.cloudflare.com" not in re.sub(r"<!--.*?-->", "", t, flags=re.S),
+          "%s does not load Turnstile with the page" % url)
+for f in ("hero-static.webp", "hero-static-wide.webp"):
+    p = os.path.join(root, "assets", f)
+    check(os.path.isfile(p) and os.path.getsize(p) > 2000, "assets/%s exists" % f)
+tr = page("tr/index.html")
+rel_refs =[u for u in re.findall(r'\s(?:href|src)="([^"]+)"', tr) if not re.match(r"^(/|#|\?|[a-z][a-z0-9+.-]*:)", u)]
+check(not rel_refs, "/tr/ has no relative asset paths %s" % rel_refs[:3])
+check(re.search(r"<title>[^<]*Kubernetes Üzerinde", tr) is not None, "/tr/ has the Turkish title")
+d = page("docs/triggers/index.html")
+for attr, name, want in (("property", "og:type", "article"), ("property", "og:url", site + "/docs/triggers/"),
+                         ("property", "og:site_name", "RunR"), ("property", "og:image", site + "/assets/og-image.png"),
+                         ("name", "twitter:card", "summary_large_image")):
+    check(meta(d, attr, name) == want, "/docs/triggers/ %s = %s" % (name, want))
+for attr, name in (("property", "og:title"), ("property", "og:description"), ("name", "twitter:title"),
+                   ("name", "twitter:description"), ("name", "twitter:image")):
+    check(bool(meta(d, attr, name)), "/docs/triggers/ has %s" % name)
+crumbs = [json.loads(b) for b in re.findall(r'<script type="application/ld\+json">(.*?)</script>', d, re.S)]
+crumbs = [c for c in crumbs if c.get("@type") == "BreadcrumbList"]
+check(bool(crumbs) and [i["item"] for i in crumbs[0]["itemListElement"]] == [site + "/docs/", site + "/docs/triggers/"],
+      "/docs/triggers/ BreadcrumbList Documentation -> page")
+sm = page("sitemap.xml")
+locs = re.findall(r"<loc>([^<]+)</loc>", sm)
+for u in ("/", "/tr/", "/compare/", "/compare/cloud-run/", "/compare/aws-lambda/", "/compare/vercel/",
+          "/compare/knative/", "/compare/openfaas/", "/dl/", "/docs/"):
+    check(site + u in locs, "sitemap lists %s" % u)
+check(sm.count('hreflang="tr" href="%s/tr/"' % site) == 2 and sm.count('hreflang="x-default"') == 2,
+      "sitemap: / and /tr/ carry their alternates")
+check("?lang=" not in sm and len(set(re.findall(r"<lastmod>([^<]+)</lastmod>", sm))) == 1,
+      "sitemap: no ?lang= URLs, one lastmod (the build date)")
+umami = []
+for dirpath, _, files in os.walk(root):
+    for f in files:
+        if f.endswith(".html"):
+            t = open(os.path.join(dirpath, f), encoding="utf-8").read()
+            if re.search(r"<script[^>]+(?:umami|stats\.brf\.sh)", t, re.I):
+                umami.append(os.path.relpath(os.path.join(dirpath, f), root))
+check(not umami, "no page has its own Umami script %s" % umami[:3])
+print("seo: %d failed" % fails)
+EOF
+echo "== SEO"
+out="$("$PY" "$tmp/seo.py" "$tmp/root/srv/static/runr" 2>&1 || true)"
+echo "$out"
+fails=$((fails + $(printf '%s\n' "$out" | grep -c '^FAIL' || true)))
+# The site is neutral black and gray with orange / red accents: no blue-tinted colour in its
+# stylesheets, the colours its pages apply or the canvas scripts (check-colors.py, allow list there).
+echo "== colours"
+out="$("$PY" "$here/check-colors.py" "$tmp/root/srv/static/runr" 2>&1 || true)"
+echo "$out"
+printf '%s\n' "$out" | grep -q '^colours: ' || { echo "FAIL check-colors.py did not run"; fails=$((fails + 1)); }
+fails=$((fails + $(printf '%s\n' "$out" | grep -c '^FAIL' || true)))
+fi
 
 # --- crawl -------------------------------------------------------------------------------------
 cat > "$tmp/in/crawl.py" <<'EOF'

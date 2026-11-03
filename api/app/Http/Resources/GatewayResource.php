@@ -7,6 +7,7 @@ use App\Services\ApiProduct\GatewayDomains;
 use App\Services\GatewayService;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
+use Illuminate\Support\Facades\Gate;
 
 class GatewayResource extends JsonResource
 {
@@ -44,6 +45,10 @@ class GatewayResource extends JsonResource
             'developer_page_key' => $this->resource->developer_page ? DeveloperPage::keyFor($this->resource) : null,
             'description' => $this->resource->description,
             'developer_page_metrics' => (bool) $this->resource->developer_page_metrics,
+            // the caller may change the gateway (GatewayPolicy::update): its routes, consumers,
+            // plans, domain and developer page; a route also needs projects.update on its project
+            /** @var bool */
+            'can_manage' => $request->user() !== null && Gate::forUser($request->user())->allows('update', $this->resource),
             /** @var list<array{id: string, path: string, methods: list<string>|null, project_id: string, project: array{id: string, name: string, slug: string}|null, environment_id: string|null, environment: string|null, url: string|null, auth_mode: "public"|"key"|"jwt", jwt: array{jwks_url: string, issuer: string|null, audience: string|null, subject_claim: string, require_consumer: bool}|null, gateway_only: bool}> */
             'routes' => $this->whenLoaded('routes', fn () => $this->resource->routes
                 ->map(fn ($route) => GatewayRouteResource::onHost($route, $publicHost)->resolve($request))

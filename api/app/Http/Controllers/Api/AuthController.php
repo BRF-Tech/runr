@@ -121,8 +121,9 @@ class AuthController extends Controller
         return response()->json(['message' => __('api.auth.logged_out')]);
     }
 
+    /** The signed-in user with `frozen`, as GET /account answers it. */
     public function me(Request $request): JsonResponse
     {
-        return response()->json($request->user());
+        return response()->json($request->user()->append('frozen'));
     }
 }

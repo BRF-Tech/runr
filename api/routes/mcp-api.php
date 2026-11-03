@@ -12,15 +12,17 @@ use Illuminate\Support\Facades\Route;
 |--------------------------------------------------------------------------
 */
 
-// Settings → AI agents (MCP)
+// Settings → AI agents (MCP). The connected clients hold the caller's own tokens and approving a
+// consent creates one: `account.frozen` refuses both for a frozen account (a shared demo login)
 Route::get('/mcp', [McpSettingsController::class, 'show']);
 Route::get('/mcp/tools', [McpSettingsController::class, 'tools']);
 Route::get('/mcp/clients', [McpSettingsController::class, 'clients']);
-Route::delete('/mcp/clients/{client}', [McpSettingsController::class, 'revoke'])->where('client', '[A-Za-z0-9_]{1,64}');
+Route::delete('/mcp/clients/{client}', [McpSettingsController::class, 'revoke'])->where('client', '[A-Za-z0-9_]{1,64}')
+    ->middleware('account.frozen');
 
 // The consent page of the OAuth server
 Route::get('/oauth2/requests/{id}', [OAuthConsentController::class, 'show']);
-Route::post('/oauth2/requests/{id}/approve', [OAuthConsentController::class, 'approve']);
+Route::post('/oauth2/requests/{id}/approve', [OAuthConsentController::class, 'approve'])->middleware('account.frozen');
 Route::post('/oauth2/requests/{id}/deny', [OAuthConsentController::class, 'deny']);
 
 // Hosted MCP servers (static paths before the project routes)

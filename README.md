@@ -9,15 +9,15 @@ Functions, containers and WebAssembly with scale-to-zero on Knative, on clusters
 Every change is a version you can deploy, compare and roll back. Blue-green and canary, environments, event triggers, durable workflows, sandboxes for AI agents, GPU and Hugging Face models, MCP, RBAC, SSO, audit log, supply chain.
 
 [![Quick start](https://img.shields.io/badge/Quick_start-e63946?style=for-the-badge)](#quick-start)
-[![Documentation](https://img.shields.io/badge/Documentation-374151?style=for-the-badge)](https://runr.sh/docs/)
-[![runr.sh](https://img.shields.io/badge/runr.sh-030712?style=for-the-badge)](https://runr.sh)
+[![Documentation](https://img.shields.io/badge/Documentation-404040?style=for-the-badge)](https://runr.sh/docs/)
+[![runr.sh](https://img.shields.io/badge/runr.sh-0a0a0a?style=for-the-badge)](https://runr.sh)
 
 [![Release](https://img.shields.io/github/v/release/BRF-Tech/runr?color=e63946)](https://github.com/BRF-Tech/runr/releases)
 [![License: MIT](https://img.shields.io/github/license/BRF-Tech/runr?color=22c55e)](LICENSE)
 [![CI](https://img.shields.io/github/actions/workflow/status/BRF-Tech/runr/ci.yml?branch=main&label=ci)](https://github.com/BRF-Tech/runr/actions/workflows/ci.yml)
-[![Helm chart](https://img.shields.io/badge/Helm_chart-brf--tech%2Frunr-374151)](#kubernetes-helm)
-[![Terraform Registry](https://img.shields.io/badge/Terraform_Registry-brf--tech%2Frunr-374151)](https://registry.terraform.io/providers/brf-tech/runr/latest)
-[![Go module: cli](https://img.shields.io/badge/Go_reference-cli-374151?logo=go&logoColor=white)](https://pkg.go.dev/github.com/brf-tech/runr/cli)
+[![Helm chart](https://img.shields.io/badge/Helm_chart-brf--tech%2Frunr-404040)](#kubernetes-helm)
+[![Terraform Registry](https://img.shields.io/badge/Terraform_Registry-brf--tech%2Frunr-404040)](https://registry.terraform.io/providers/brf-tech/runr/latest)
+[![Go module: cli](https://img.shields.io/badge/Go_reference-cli-404040?logo=go&logoColor=white)](https://pkg.go.dev/github.com/brf-tech/runr/cli)
 
 **English** · [Türkçe](README.tr.md)
 
@@ -111,7 +111,7 @@ helm status runr -n runr      # prints how to read the first administrator's pas
 
 The chart installs the gateway, UI, API, Horizon, scheduler and Reverb and - unless you point it at
 external services - PostgreSQL, Redis and Mailpit, with migration and bootstrap hooks that create the
-first administrator. To install a specific release, pin the chart version (`--version 0.6.2`); the
+first administrator. To install a specific release, pin the chart version (`--version 0.6.3`); the
 API and UI images follow it. `edition=multi-tenant` switches on the Tenancy and Auth Provider
 modules and the multi-tenant console image.
 

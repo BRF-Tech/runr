@@ -4,6 +4,7 @@ namespace Tests\Feature\WhiteLabel;
 
 use App\Services\WhiteLabel\BrandingService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Notifications\Messages\MailMessage;
 use Illuminate\Support\Facades\Storage;
 use Modules\Tenancy\Models\Tenant;
 use Tests\Feature\WhiteLabel\Concerns\WhiteLabelTenancy;
@@ -86,6 +87,54 @@ class TenantBrandingTest extends TestCase
             ->assertJsonPath('support_email', 'help@example.com');
     }
 
+    public function test_a_tenant_overrides_the_theme_tones_and_falls_back_to_the_platform_per_field(): void
+    {
+        $this->actingAs($this->admin())->putJson('/api/admin/branding', [
+            'dark_color' => '#101820',
+            'light_scale' => ['950' => '#f5f7fc', '700' => '200 210 228'],
+            'default_theme' => 'light',
+        ])->assertOk();
+
+        $owner = $this->member($this->tenant, 'owner');
+        $headers = $this->tenantHeaders($this->tenant);
+        $this->actingAs($owner)->putJson('/api/tenant/branding', [
+            'dark_scale' => ['950' => '9 27 78', '900' => '#0f2460'],
+            'light_color' => '#FFF',
+            'default_theme' => 'dark',
+        ], $headers)->assertOk()
+            ->assertJsonPath('stored.dark_scale', ['900' => '15 36 96', '950' => '9 27 78'])
+            ->assertJsonPath('stored.light_color', '#ffffff')
+            ->assertJsonPath('stored.default_theme', 'dark')
+            ->assertJsonPath('defaults.dark_color', '#101820')
+            ->assertJsonPath('defaults.default_theme', 'light')
+            ->assertJsonPath('branding.default_theme', 'dark');
+
+        // tenant values where it set them, the platform's elsewhere
+        $this->getJson('/api/branding?tenant=acme')->assertOk()
+            ->assertJsonPath('dark_color', '#101820')
+            ->assertJsonPath('dark_scale.950', '9 27 78')
+            ->assertJsonPath('light_color', '#ffffff')
+            ->assertJsonPath('light_scale', ['700' => '200 210 228', '950' => '245 247 252'])
+            ->assertJsonPath('default_theme', 'dark');
+
+        // the platform brand is untouched
+        $this->getJson('/api/branding')->assertOk()
+            ->assertJsonPath('dark_scale', null)
+            ->assertJsonPath('light_color', '#fffcf8')
+            ->assertJsonPath('default_theme', 'light');
+
+        // null: back to the platform's value
+        $this->actingAs($owner)->putJson('/api/tenant/branding', ['default_theme' => null, 'dark_scale' => null], $headers)->assertOk()
+            ->assertJsonMissingPath('stored.default_theme');
+        $this->getJson('/api/branding?tenant=acme')
+            ->assertJsonPath('default_theme', 'light')
+            ->assertJsonPath('dark_scale', null)
+            ->assertJsonPath('light_color', '#ffffff');
+
+        $this->actingAs($owner)->putJson('/api/tenant/branding', ['default_theme' => 'sepia'], $headers)
+            ->assertStatus(422)->assertJsonValidationErrors('default_theme');
+    }
+
     public function test_members_cannot_change_the_branding_and_the_platform_can_switch_overrides_off(): void
     {
         $member = $this->member($this->tenant, 'member');
@@ -136,5 +185,24 @@ class TenantBrandingTest extends TestCase
         $this->assertSame('Acme Billing', $mail['mail_from_name']);
 
         $this->assertSame('RunR', app(BrandingService::class)->forMail()['product_name']);
+    }
+
+    public function test_a_mail_sent_for_a_tenant_takes_its_brand_colours(): void
+    {
+        $owner = $this->member($this->tenant, 'owner');
+        $this->actingAs($owner)->putJson('/api/tenant/branding', ['primary_color' => '#16a34a'], $this->tenantHeaders($this->tenant))->assertOk();
+
+        $expanded = BrandingService::expand('#16a34a');
+        $render = fn () => (string) (new MailMessage)->line('Hello')->action('Open the console', 'https://console.example.com/x')->render();
+
+        $html = BrandingService::withMailTenant((string) $this->tenant->id, $render);
+        $this->assertStringContainsString('background-color: '.BrandingService::hexOf($expanded['600']), $html);
+        $this->assertStringContainsString('color: '.BrandingService::hexOf($expanded['700']), $html);
+        $this->assertStringNotContainsString('#3869d4', $html);
+
+        // the platform's mails keep RunR's colours
+        $html = $render();
+        $this->assertStringContainsString('background-color: #ea580c', $html);
+        $this->assertStringNotContainsString(BrandingService::hexOf($expanded['600']), $html);
     }
 }

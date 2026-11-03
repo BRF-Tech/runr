@@ -277,6 +277,15 @@ branding:
     #              "700": "0 85 184", "800": "0 68 153", "900": "0 43 128" }   # "Ocean" example preset
     primary: ""            # empty: RunR orange (#f97316 scale)
     accent: ""             # empty: #e63946
+    # Tone scales of the console's two themes (--gray-50 … --gray-950): one base colour "#rrggbb"
+    # (shade 950, the page background; the console derives the other shades) or the full scale
+    # 50–950 with "#rrggbb" or "r g b" values (950–700 surfaces, 600–50 text tones):
+    #   dark: { "950": "9 27 78", "900": "15 36 96", "800": "22 46 114", "700": "30 59 133",
+    #           "600": "175 195 225", "500": "205 218 240", "400": "222 232 248", "300": "235 240 250",
+    #           "200": "242 245 252", "100": "248 250 254", "50": "252 253 255" }   # navy dark theme
+    dark: ""               # empty: RunR dark (#0a0a0a, neutral)
+    light: ""              # empty: RunR warm light (#fffcf8)
+  defaultTheme: ""         # dark | light — users who never picked a theme; empty: dark
   loginHeadline: ""
   loginText: ""
   supportUrl: ""
@@ -632,6 +641,12 @@ auth:
   # (env RUNR_LOGIN_TOKEN_TTL_DAYS); it applies to sessions signed in earlier as well.
   # 0 = until signed out. API tokens keep the expiry they were created with.
   loginTokenTtlDays: 30
+  # Frozen accounts (env RUNR_FROZEN_ACCOUNTS): e-mail addresses of shared sign-ins, such as a
+  # public demo login whose password is published — a list or one comma-separated string,
+  # case-insensitive. They sign in and use what their roles grant, but cannot change their own
+  # account (profile, password, two-factor, sessions, API tokens, disabling or deleting it), so no
+  # visitor locks out the others; administrators still manage them. Empty = none.
+  frozenAccounts: []
 
 # ─── First administrator account ─────────────
 # password empty: generated randomly into the Secret (ADMIN_PASSWORD) when secret.create=true;

@@ -16,9 +16,10 @@ use Laravel\Sanctum\PersonalAccessToken;
 
 class AccountController extends Controller
 {
+    /** The signed-in user with `frozen`: a shared account whose own settings are locked (FrozenAccounts). */
     public function show(Request $request): JsonResponse
     {
-        return response()->json($request->user());
+        return response()->json($request->user()->append('frozen'));
     }
 
     public function updateProfile(UpdateProfileRequest $request): JsonResponse

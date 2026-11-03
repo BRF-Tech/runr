@@ -2,6 +2,7 @@
 
 use App\Http\Middleware\AuthorizeApiRoute;
 use App\Http\Middleware\CheckAccountDisabled;
+use App\Http\Middleware\EnsureAccountNotFrozen;
 use App\Http\Middleware\EnsureRegionMutable;
 use App\Http\Middleware\ETagResponse;
 use App\Http\Middleware\RecordAuditTrail;
@@ -64,9 +65,11 @@ return Application::configure(basePath: dirname(__DIR__))
         // config/ratelimit.php. Runs after auth + tenant identification (middleware priority).
         $middleware->throttleApi('api');
 
-        // Region-mutating routes (routes/api.php); the Tenancy module binds its own implementation
+        // Region-mutating routes (routes/api.php); the Tenancy module binds its own implementation.
+        // The signed-in user's own account routes: refused for frozen accounts (auth.frozen_accounts).
         $middleware->alias([
             'region.mutable' => EnsureRegionMutable::class,
+            'account.frozen' => EnsureAccountNotFrozen::class,
         ]);
 
         // Roles & permissions: every authenticated API route is authorized against

@@ -3,11 +3,10 @@
 namespace Modules\Tenancy\Jobs;
 
 use App\Jobs\Concerns\BroadcastsJobCompletion;
-use App\Models\Deployment;
 use App\Models\ExecutorImage;
 use App\Models\KnativeRegion;
-use App\Services\ProjectService;
-use Database\Seeders\Concerns\DemoVersionsTrait;
+use App\Models\User;
+use Database\Seeders\Concerns\DemoProjectsTrait;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
@@ -17,7 +16,7 @@ use Modules\Tenancy\Models\Tenant;
 
 class SeedTenantDemoJob implements ShouldQueue
 {
-    use BroadcastsJobCompletion, DemoVersionsTrait;
+    use BroadcastsJobCompletion, DemoProjectsTrait;
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
     public int $timeout = 60;
@@ -33,8 +32,11 @@ class SeedTenantDemoJob implements ShouldQueue
     {
         $this->seedEolRuntimes();
 
+        // The deployments name their deployer by user name, as a deploy does
+        $username = User::query()->whereKey($this->userId)->value('username') ?? 'admin';
+
         // Demo region + projects live in tenant schema (tenant-owned)
-        $this->tenant->run(function () {
+        $this->tenant->run(function () use ($username) {
             $existing = KnativeRegion::where('is_demo', true)
                 ->where('is_synced', false)
                 ->first();
@@ -44,7 +46,7 @@ class SeedTenantDemoJob implements ShouldQueue
             }
 
             $region = $this->createDemoRegion();
-            $this->seedDemoProjects($region);
+            $this->seedDemoProjectSet($region, $this->userId, $username);
         });
 
         $this->tenant->update(['data' => array_merge($this->tenant->data ?? [], ['demo_status' => 'idle'])]);
@@ -99,40 +101,6 @@ class SeedTenantDemoJob implements ShouldQueue
         );
     }
 
-    private function seedDemoProjects(KnativeRegion $region): void
-    {
-        $svc = app(ProjectService::class);
-        $samples = $this->demoProjectSamples();
-
-        $created = [];
-        foreach ($samples as $data) {
-            $created[] = $svc->create(array_merge($data, [
-                'created_by' => $this->userId,
-                'knative_region_id' => $region->id,
-            ]));
-        }
-
-        foreach ($created as $project) {
-            $project->load('latestVersion');
-            if ($project->latestVersion) {
-                Deployment::create([
-                    'project_id' => $project->id,
-                    'version_id' => $project->latestVersion->id,
-                    'status' => 'active',
-                    'deployed_by' => $this->userId,
-                ]);
-            }
-        }
-
-        foreach ($created as $project) {
-            match ($project->service_type) {
-                'xaas' => $this->seedXaaSVersions($svc, $project, $this->userId),
-                'faas' => $this->seedFaaSVersions($svc, $project, $this->userId),
-                'caas' => $this->seedCaaSVersions($svc, $project, $this->userId),
-            };
-        }
-    }
-
     private function seedEolRuntimes(): void
     {
         ExecutorImage::firstOrCreate(
@@ -143,23 +111,6 @@ class SeedTenantDemoJob implements ShouldQueue
             ['runtime' => 'nodejs', 'version' => '18'],
             ['docker_image' => 'ghcr.io/brf-tech/runr/exec-nodejs:18', 'is_default' => false, 'is_active' => true, 'eol_at' => now()->addWeeks(8)->toDateString(), 'sort_order' => 90],
         );
-    }
-
-    private function demoProjectSamples(): array
-    {
-        return [
-            ['name' => 'demo-xaas-http',      'service_type' => 'xaas', 'runtime' => 'python', 'runtime_version' => '3.12', 'description' => 'Demo XaaS HTTP fonksiyon', 'config' => ['trigger_type' => 'http', 'memory_mb' => 256, 'timeout_seconds' => 30]],
-            ['name' => 'demo-xaas-schedule',   'service_type' => 'xaas', 'runtime' => 'python', 'runtime_version' => '3.12', 'description' => 'Demo XaaS cron fonksiyon', 'config' => ['trigger_type' => 'schedule', 'schedule' => '0 * * * *', 'memory_mb' => 256, 'timeout_seconds' => 30]],
-            ['name' => 'demo-faas-http',       'service_type' => 'faas', 'runtime' => 'nodejs', 'runtime_version' => '22', 'description' => 'Demo FaaS HTTP fonksiyon', 'config' => ['handler' => 'main.handler', 'trigger_type' => 'http', 'cpu' => '250m', 'memory_mb' => 256, 'timeout_seconds' => 30]],
-            ['name' => 'demo-faas-schedule',   'service_type' => 'faas', 'runtime' => 'nodejs', 'runtime_version' => '22', 'description' => 'Demo FaaS cron fonksiyon', 'config' => ['handler' => 'main.handler', 'trigger_type' => 'schedule', 'schedule' => '*/15 * * * *', 'cpu' => '250m', 'memory_mb' => 256, 'timeout_seconds' => 30]],
-            ['name' => 'demo-caas-http',       'service_type' => 'caas', 'description' => 'Demo CaaS HTTP konteyner', 'config' => ['image' => 'ghcr.io/brf-tech/runr/reqs/nginx:1.27-alpine', 'trigger_type' => 'http', 'cpu' => '500m', 'memory_mb' => 256, 'timeout_seconds' => 30]],
-            ['name' => 'demo-caas-schedule',   'service_type' => 'caas', 'description' => 'Demo CaaS cron konteyner', 'config' => ['image' => 'ghcr.io/brf-tech/runr/reqs/alpine:3.21', 'command' => ['echo', 'hello'], 'trigger_type' => 'schedule', 'schedule' => '0 0 * * *', 'cpu' => '250m', 'memory_mb' => 256, 'timeout_seconds' => 60]],
-            ['name' => 'demo-xaas-queue',      'service_type' => 'xaas', 'runtime' => 'python', 'runtime_version' => '3.12', 'description' => 'Demo XaaS event consumer', 'config' => ['trigger_type' => 'queue', 'queue_stream' => 'order-events', 'memory_mb' => 256, 'timeout_seconds' => 30]],
-            ['name' => 'demo-faas-queue',      'service_type' => 'faas', 'runtime' => 'nodejs', 'runtime_version' => '20', 'description' => 'Demo FaaS event consumer', 'config' => ['handler' => 'main.handler', 'trigger_type' => 'queue', 'queue_stream' => 'payment-events', 'cpu' => '250m', 'memory_mb' => 256, 'timeout_seconds' => 30]],
-            ['name' => 'demo-caas-queue',      'service_type' => 'caas', 'description' => 'Demo CaaS event consumer', 'config' => ['image' => 'ghcr.io/brf-tech/runr/reqs/nginx:1.27-alpine', 'trigger_type' => 'queue', 'queue_stream' => 'notification-events', 'cpu' => '250m', 'memory_mb' => 256, 'timeout_seconds' => 30]],
-            ['name' => 'demo-xaas-eol',        'service_type' => 'xaas', 'runtime' => 'python', 'runtime_version' => '3.9', 'description' => 'Demo XaaS — EOL runtime', 'config' => ['trigger_type' => 'http', 'memory_mb' => 256, 'timeout_seconds' => 30]],
-            ['name' => 'demo-faas-sunsetting', 'service_type' => 'faas', 'runtime' => 'nodejs', 'runtime_version' => '18', 'description' => 'Demo FaaS — sunsetting runtime', 'config' => ['handler' => 'main.handler', 'trigger_type' => 'http', 'cpu' => '250m', 'memory_mb' => 256, 'timeout_seconds' => 30]],
-        ];
     }
 
     public function failed(?\Throwable $e): void

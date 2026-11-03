@@ -18,6 +18,13 @@ class BrandingTest extends TestCase
     use CoreWhiteLabel;
     use RefreshDatabase;
 
+    /** A navy dark theme (the full tone scale, Helm branding.colors.dark as a map) */
+    private const NAVY = [
+        '950' => '9 27 78', '900' => '15 36 96', '800' => '22 46 114', '700' => '30 59 133',
+        '600' => '175 195 225', '500' => '205 218 240', '400' => '222 232 248', '300' => '235 240 250',
+        '200' => '242 245 252', '100' => '248 250 254', '50' => '252 253 255',
+    ];
+
     protected function setUp(): void
     {
         parent::setUp();
@@ -44,6 +51,179 @@ class BrandingTest extends TestCase
         ]);
         $this->assertSame(BrandingService::RUNR_PALETTE, $response->json('palette'));
         $this->assertNull($response->json('features.plans'), 'plans were removed');
+
+        // The themes' tones: RunR's dark and warm light page backgrounds, no explicit scales
+        // (the console derives them), dark for users who never picked a theme
+        $this->assertSame('#0a0a0a', $response->json('dark_color'));
+        $this->assertSame('#fffcf8', $response->json('light_color'));
+        $this->assertSame('dark', $response->json('default_theme'));
+        foreach (['dark_scale', 'light_scale'] as $key) {
+            $this->assertArrayHasKey($key, $response->json());
+            $this->assertNull($response->json($key));
+        }
+    }
+
+    public function test_empty_install_values_give_runr_s_theme_tones(): void
+    {
+        config([
+            'whitelabel.branding.dark_color' => '',
+            'whitelabel.branding.dark_scale' => '',
+            'whitelabel.branding.light_color' => '',
+            'whitelabel.branding.light_scale' => '',
+            'whitelabel.branding.default_theme' => '',
+        ]);
+
+        $this->getJson('/api/branding')->assertOk()
+            ->assertJsonPath('dark_color', BrandingService::DEFAULT_DARK)
+            ->assertJsonPath('dark_scale', null)
+            ->assertJsonPath('light_color', BrandingService::DEFAULT_LIGHT)
+            ->assertJsonPath('light_scale', null)
+            ->assertJsonPath('default_theme', BrandingService::DEFAULT_THEME);
+
+        // Values the API cannot use fall back the same way
+        config([
+            'whitelabel.branding.dark_color' => 'navy',
+            'whitelabel.branding.dark_scale' => '{not json',
+            'whitelabel.branding.light_scale' => json_encode(['950' => 'white']),
+            'whitelabel.branding.default_theme' => 'blue',
+        ]);
+
+        $this->getJson('/api/branding')->assertOk()
+            ->assertJsonPath('dark_color', '#0a0a0a')
+            ->assertJsonPath('dark_scale', null)
+            ->assertJsonPath('light_color', '#fffcf8')
+            ->assertJsonPath('light_scale', null)
+            ->assertJsonPath('default_theme', 'dark');
+    }
+
+    public function test_the_install_brand_sets_the_theme_tones_and_the_default_theme(): void
+    {
+        // Helm branding.colors.dark as a map: BRANDING_DARK_COLOR empty, BRANDING_DARK_SCALE JSON;
+        // branding.colors.light as a string: the base colour only
+        config([
+            'whitelabel.branding.dark_color' => '',
+            'whitelabel.branding.dark_scale' => json_encode(self::NAVY + ['1000' => '#000000']),
+            'whitelabel.branding.light_color' => '#F5F7FC',
+            'whitelabel.branding.light_scale' => '',
+            'whitelabel.branding.default_theme' => 'Light',
+        ]);
+
+        $data = $this->getJson('/api/branding')->assertOk()->json();
+
+        // the scale's 950 becomes the base colour when only the scale is given
+        $this->assertSame('#091b4e', $data['dark_color']);
+        $this->assertSame(BrandingService::SURFACE_SHADES, array_map('strval', array_keys($data['dark_scale'])));
+        $this->assertSame('9 27 78', $data['dark_scale']['950']);
+        $this->assertSame('30 59 133', $data['dark_scale']['700']);
+        $this->assertSame('252 253 255', $data['dark_scale']['50']);
+        $this->assertSame('#f5f7fc', $data['light_color']);
+        $this->assertNull($data['light_scale']);
+        $this->assertSame('light', $data['default_theme']);
+
+        // An explicit base colour wins over the scale's 950
+        config(['whitelabel.branding.dark_color' => '#0a0a0a']);
+        $this->getJson('/api/branding')->assertJsonPath('dark_color', '#0a0a0a')->assertJsonPath('dark_scale.950', '9 27 78');
+    }
+
+    /**
+     * The former navy look as Helm values (the env the chart renders for them): with the explicit
+     * ocean primary scale the console gets the ocean preset's brand scale and navy dark tones;
+     * one base colour "#009fe3" is expanded by the API into a different scale.
+     */
+    public function test_the_navy_helm_values_give_the_ocean_preset(): void
+    {
+        $ocean = ['300' => '102 197 237', '400' => '51 181 233', '500' => '0 159 227', '600' => '0 123 192', '700' => '0 85 184', '800' => '0 68 153', '900' => '0 43 128'];
+        $navy = [
+            'whitelabel.branding.accent_color' => '#009fe3',
+            'whitelabel.branding.dark_color' => '9 27 78',              // "950" of the map
+            'whitelabel.branding.dark_scale' => json_encode(self::NAVY),
+        ];
+
+        // branding.colors.primary as the full scale
+        config($navy + ['whitelabel.branding.primary_color' => '0 159 227', 'whitelabel.branding.primary_scale' => json_encode($ocean)]);
+        $data = $this->getJson('/api/branding')->assertOk()->json();
+        $this->assertSame('#009fe3', $data['primary_color']);
+        $this->assertSame($ocean, $data['palette']);
+        $this->assertSame('#009fe3', $data['accent_color']);
+        $this->assertSame('#091b4e', $data['dark_color']);
+        $this->assertEquals(self::NAVY, $data['dark_scale']);
+        $this->assertSame('#fffcf8', $data['light_color'], 'the light theme stays RunR\'s unless branding.colors.light is set');
+
+        // branding.colors.primary: "#009fe3" — the API's own expansion, not the ocean scale
+        config(['whitelabel.branding.primary_color' => '#009fe3', 'whitelabel.branding.primary_scale' => '']);
+        $palette = $this->getJson('/api/branding')->json('palette');
+        $this->assertSame(BrandingService::expand('#009fe3'), $palette);
+        $this->assertNotSame($ocean, $palette);
+    }
+
+    public function test_the_theme_tones_are_stored_normalised_and_reset_to_the_install_value(): void
+    {
+        config(['whitelabel.branding.dark_color' => '#101010']);
+        $admin = $this->coreUser(true);
+
+        $this->actingAs($admin)->putJson('/api/admin/branding', [
+            'dark_color' => '#ABC',
+            'dark_scale' => ['950' => '#091B4E', '700' => '30, 59, 133', '600' => 'bad', '1000' => '#ffffff'],
+            'light_color' => '#FFFFFF',
+            'light_scale' => ['950' => '255 255 255', '50' => 'rgb(2, 6, 25)'],
+            'default_theme' => 'light',
+        ])->assertOk()
+            ->assertJsonPath('branding.dark_color', '#aabbcc')
+            ->assertJsonPath('branding.dark_scale', ['700' => '30 59 133', '950' => '9 27 78'])
+            ->assertJsonPath('branding.light_color', '#ffffff')
+            ->assertJsonPath('branding.light_scale', ['50' => '2 6 25', '950' => '255 255 255'])
+            ->assertJsonPath('branding.default_theme', 'light')
+            ->assertJsonPath('stored.dark_color', '#aabbcc')
+            ->assertJsonPath('stored.dark_scale', ['700' => '30 59 133', '950' => '9 27 78'])
+            ->assertJsonPath('stored.default_theme', 'light')
+            ->assertJsonPath('defaults.dark_color', '#101010')
+            ->assertJsonPath('defaults.light_color', '#fffcf8')
+            ->assertJsonPath('defaults.default_theme', 'dark');
+
+        $this->getJson('/api/branding')->assertOk()
+            ->assertJsonPath('dark_color', '#aabbcc')
+            ->assertJsonPath('dark_scale.950', '9 27 78')
+            ->assertJsonPath('light_scale.50', '2 6 25')
+            ->assertJsonPath('default_theme', 'light');
+
+        // null: back to the install value (Helm / env), the RunR default without one
+        $this->actingAs($admin)->putJson('/api/admin/branding', [
+            'dark_color' => null, 'dark_scale' => null, 'light_color' => null, 'light_scale' => null, 'default_theme' => null,
+        ])->assertOk()
+            ->assertJsonMissingPath('stored.dark_color')
+            ->assertJsonMissingPath('stored.dark_scale')
+            ->assertJsonMissingPath('stored.default_theme');
+
+        $this->getJson('/api/branding')->assertOk()
+            ->assertJsonPath('dark_color', '#101010')
+            ->assertJsonPath('dark_scale', null)
+            ->assertJsonPath('light_color', '#fffcf8')
+            ->assertJsonPath('light_scale', null)
+            ->assertJsonPath('default_theme', 'dark');
+
+        // A scale without a usable shade is no scale
+        $this->actingAs($admin)->putJson('/api/admin/branding', ['light_scale' => ['950' => 'white']])->assertOk()
+            ->assertJsonMissingPath('stored.light_scale')
+            ->assertJsonPath('branding.light_scale', null);
+    }
+
+    public function test_invalid_theme_tones_and_themes_are_rejected(): void
+    {
+        $admin = $this->coreUser(true);
+
+        foreach ([
+            'dark_color' => ['dark_color' => 'navy'],
+            'light_color' => ['light_color' => '#12345'],
+            'default_theme' => ['default_theme' => 'blue'],
+            'dark_scale' => ['dark_scale' => 'navy'],
+            'light_scale.950' => ['light_scale' => ['950' => ['255', '255', '255']]],
+            'dark_scale.900' => ['dark_scale' => ['900' => str_repeat('1', 33)]],
+        ] as $error => $body) {
+            $this->actingAs($admin)->putJson('/api/admin/branding', $body)
+                ->assertStatus(422)->assertJsonValidationErrors($error);
+        }
+
+        $this->assertNull(Branding::platform());
     }
 
     public function test_the_features_name_the_optional_modules_the_api_runs(): void

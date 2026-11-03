@@ -77,7 +77,8 @@ Go modules (`cli/`, `terraform-provider-runr/`, `runtime/agent`, `runtime/queue-
 `runtime/image-upload`, `proxy/`) are checked in their directory with
 `gofmt -l . && go vet ./... && go test -race ./...`. Every suite, including Pint, Larastan,
 ESLint, Vitest, Playwright and the end-to-end suites on kind, is described in
-[docs/development.md](docs/development.md#testing); CI runs the same commands.
+[docs/development.md](docs/development.md#testing). CI is GitHub Actions: `.github/workflows/ci.yml`
+runs the same commands on every pull request ([CI jobs](docs/development.md#ci-jobs)).
 
 ### Code style
 

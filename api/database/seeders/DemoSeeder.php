@@ -2,17 +2,15 @@
 
 namespace Database\Seeders;
 
-use App\Models\Deployment;
 use App\Models\ExecutorImage;
 use App\Models\KnativeRegion;
 use App\Models\User;
-use App\Services\ProjectService;
-use Database\Seeders\Concerns\DemoVersionsTrait;
+use Database\Seeders\Concerns\DemoProjectsTrait;
 use Illuminate\Database\Seeder;
 
 class DemoSeeder extends Seeder
 {
-    use DemoVersionsTrait;
+    use DemoProjectsTrait;
 
     public function run(): void
     {
@@ -90,125 +88,10 @@ class DemoSeeder extends Seeder
         );
     }
 
+    /** The demo projects (DemoProjectsTrait): versions and a deployment history each. */
     private function seedDemoProjects(KnativeRegion $region): void
     {
         $admin = User::where('username', 'admin')->firstOrFail();
-        $svc = app(ProjectService::class);
-        $samples = [
-            [
-                'name' => 'demo-xaas-http',
-                'service_type' => 'xaas',
-                'runtime' => 'python',
-                'runtime_version' => '3.12',
-                'description' => 'Demo XaaS HTTP fonksiyon',
-                'config' => ['trigger_type' => 'http', 'memory_mb' => 256, 'timeout_seconds' => 30],
-            ],
-            [
-                'name' => 'demo-xaas-schedule',
-                'service_type' => 'xaas',
-                'runtime' => 'python',
-                'runtime_version' => '3.12',
-                'description' => 'Demo XaaS cron fonksiyon',
-                'config' => ['trigger_type' => 'schedule', 'schedule' => '0 * * * *', 'memory_mb' => 256, 'timeout_seconds' => 30],
-            ],
-            [
-                'name' => 'demo-faas-http',
-                'service_type' => 'faas',
-                'runtime' => 'nodejs',
-                'runtime_version' => '22',
-                'description' => 'Demo FaaS HTTP fonksiyon',
-                'config' => ['handler' => 'main.handler', 'trigger_type' => 'http', 'cpu' => '250m', 'memory_mb' => 256, 'timeout_seconds' => 30],
-            ],
-            [
-                'name' => 'demo-faas-schedule',
-                'service_type' => 'faas',
-                'runtime' => 'nodejs',
-                'runtime_version' => '22',
-                'description' => 'Demo FaaS cron fonksiyon',
-                'config' => ['handler' => 'main.handler', 'trigger_type' => 'schedule', 'schedule' => '*/15 * * * *', 'cpu' => '250m', 'memory_mb' => 256, 'timeout_seconds' => 30],
-            ],
-            [
-                'name' => 'demo-caas-http',
-                'service_type' => 'caas',
-                'description' => 'Demo CaaS HTTP konteyner',
-                'config' => ['image' => 'ghcr.io/brf-tech/runr/reqs/nginx:1.27-alpine', 'trigger_type' => 'http', 'cpu' => '500m', 'memory_mb' => 256, 'timeout_seconds' => 30],
-            ],
-            [
-                'name' => 'demo-caas-schedule',
-                'service_type' => 'caas',
-                'description' => 'Demo CaaS cron konteyner',
-                'config' => ['image' => 'ghcr.io/brf-tech/runr/reqs/alpine:3.21', 'command' => ['echo', 'hello'], 'trigger_type' => 'schedule', 'schedule' => '0 0 * * *', 'cpu' => '250m', 'memory_mb' => 256, 'timeout_seconds' => 60],
-            ],
-            [
-                'name' => 'demo-xaas-queue',
-                'service_type' => 'xaas',
-                'runtime' => 'python',
-                'runtime_version' => '3.12',
-                'description' => 'Demo XaaS event consumer',
-                'config' => ['trigger_type' => 'queue', 'queue_stream' => 'order-events', 'memory_mb' => 256, 'timeout_seconds' => 30],
-            ],
-            [
-                'name' => 'demo-faas-queue',
-                'service_type' => 'faas',
-                'runtime' => 'nodejs',
-                'runtime_version' => '20',
-                'description' => 'Demo FaaS event consumer',
-                'config' => ['handler' => 'main.handler', 'trigger_type' => 'queue', 'queue_stream' => 'payment-events', 'cpu' => '250m', 'memory_mb' => 256, 'timeout_seconds' => 30],
-            ],
-            [
-                'name' => 'demo-caas-queue',
-                'service_type' => 'caas',
-                'description' => 'Demo CaaS event consumer',
-                'config' => ['image' => 'ghcr.io/brf-tech/runr/reqs/nginx:1.27-alpine', 'trigger_type' => 'queue', 'queue_stream' => 'notification-events', 'cpu' => '250m', 'memory_mb' => 256, 'timeout_seconds' => 30],
-            ],
-            // Project past its EOL (red card)
-            [
-                'name' => 'demo-xaas-eol',
-                'service_type' => 'xaas',
-                'runtime' => 'python',
-                'runtime_version' => '3.9',
-                'description' => 'Demo XaaS — EOL runtime',
-                'config' => ['trigger_type' => 'http', 'memory_mb' => 256, 'timeout_seconds' => 30],
-            ],
-            // Project nearing its EOL (yellow card)
-            [
-                'name' => 'demo-faas-sunsetting',
-                'service_type' => 'faas',
-                'runtime' => 'nodejs',
-                'runtime_version' => '18',
-                'description' => 'Demo FaaS — sunsetting runtime',
-                'config' => ['handler' => 'main.handler', 'trigger_type' => 'http', 'cpu' => '250m', 'memory_mb' => 256, 'timeout_seconds' => 30],
-            ],
-        ];
-
-        $created = [];
-        foreach ($samples as $data) {
-            $created[] = $svc->create(array_merge($data, [
-                'created_by' => $admin->id,
-                'knative_region_id' => $region->id,
-            ]));
-        }
-
-        // Add an active v1 deployment to every project
-        foreach ($created as $project) {
-            $project->load('latestVersion');
-            if ($project->latestVersion) {
-                Deployment::create([
-                    'project_id' => $project->id,
-                    'version_id' => $project->latestVersion->id,
-                    'status' => 'active',
-                    'deployed_by' => $admin->id,
-                ]);
-            }
-        }
-
-        // Incremental versions
-        foreach ($created as $project) {
-            match ($project->service_type) {
-                'xaas' => $this->seedXaaSVersions($svc, $project, $admin->id),
-                'faas' => $this->seedFaaSVersions($svc, $project, $admin->id),
-                'caas' => $this->seedCaaSVersions($svc, $project, $admin->id),
-            };
-        }
+        $this->seedDemoProjectSet($region, $admin->id, $admin->username);
     }
 }

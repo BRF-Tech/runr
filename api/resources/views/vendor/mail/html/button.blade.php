@@ -3,7 +3,8 @@
     'color' => 'primary',
     'align' => 'center',
 ])
-@php($brandColor = app(\App\Services\WhiteLabel\BrandingService::class)->forMail()['primary_color'])
+{{-- The primary button in the brand's shade 600 (white text on 500 reads poorly); the theme (resources/views/mail/default.blade.php) gives the same --}}
+@php($brandColor = app(\App\Services\WhiteLabel\BrandingService::class)->forMail()['mail_button_color'])
 <table class="action" align="{{ $align }}" width="100%" cellpadding="0" cellspacing="0" role="presentation">
 <tr>
 <td align="{{ $align }}">

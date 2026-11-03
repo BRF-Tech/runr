@@ -23,6 +23,8 @@ resource "runr_branding" "brand" {
   company_name    = "Acme Corp."
   primary_color   = "#0f766e"
   accent_color    = "#f59e0b"
+  dark_color      = "#0b1f1d" # page background of the dark theme; the console derives its tones
+  default_theme   = "dark"
   login_headline  = "Welcome to Acme Cloud"
   support_email   = "support@acme.example"
   support_url     = "https://help.acme.example"
@@ -50,10 +52,13 @@ resource "runr_branding" "brand" {
 
 - `accent_color` (String) Accent colour (`#rrggbb`).
 - `company_name` (String) Company name (footer, e-mails).
+- `dark_color` (String) Page background of the dark theme (`#rrggbb`); the console derives the theme's other tones from it. Default: RunR's dark (`#0a0a0a`).
+- `default_theme` (String) Theme of the users who never picked one: `dark` or `light`. Default: `dark`.
 - `email_from_name` (String) Sender name of e-mails.
 - `email_logo_url` (String) Logo of e-mails: an `https://` URL or a `data:` URI, e.g. `"data:image/png;base64,${filebase64("logo.png")}"`. An image uploaded in the console stays while this is unset.
 - `favicon_url` (String) Favicon: an `https://` URL or a `data:` URI, e.g. `"data:image/png;base64,${filebase64("logo.png")}"`. An image uploaded in the console stays while this is unset.
 - `footer_links` (Attributes List) Links of the console footer (at most 8). (see [below for nested schema](#nestedatt--footer_links))
+- `light_color` (String) Page background of the light theme (`#rrggbb`); the console derives the theme's other tones from it. Default: RunR's warm light (`#fffcf8`).
 - `login_headline` (String) Headline of the login page.
 - `login_text` (String) Text of the login page.
 - `logo_dark_url` (String) Logo for dark backgrounds: an `https://` URL or a `data:` URI, e.g. `"data:image/png;base64,${filebase64("logo.png")}"`. An image uploaded in the console stays while this is unset.

@@ -1,10 +1,14 @@
-# Core checks of the GitLab pipeline (.gitlab-ci.yml) for the public GitHub mirror.
+# The repository's checks: on every pull request, every push to main, and by hand for any branch.
+# The dependency audits (audit.yml), the long end-to-end suites (e2e.yml) and the upstream release
+# checks (upstream-releases.yml) run in workflows of their own; the release images come from
+# release-images.yml. runtime/test/ci_workflows_test.sh keeps every check here.
 name: CI
 
 on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -14,135 +18,217 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  gitleaks:
+    name: Secret scan (gitleaks)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      GITLEAKS_IMAGE: ghcr.io/gitleaks/gitleaks:v8.30.1
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # The files of the checked-out commit, not its history. Allowlist: .gitleaks.toml
+      - name: gitleaks
+        run: |
+          mkdir -p "$RUNNER_TEMP/tree"
+          git archive HEAD | tar -x -C "$RUNNER_TEMP/tree"
+          docker run --rm -v "$RUNNER_TEMP/tree:/tree:ro" -v "$PWD/.gitleaks.toml:/gitleaks.toml:ro" -w /tree \
+            "$GITLEAKS_IMAGE" dir . --config /gitleaks.toml --redact --no-banner --verbose
+
   reqs-mirror:
     name: Reqs mirror (anonymous pulls)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
     steps:
-      - uses: actions/checkout@v4
-      # Every ghcr.io/brf-tech/runr/reqs/* image the repository references resolves anonymously (the
-      # mirror of BRF-Tech/runr-runtimes)
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # Every ghcr.io/brf-tech/runr/reqs/* image the repository references resolves anonymously on
+      # ghcr.io. BRF-Tech/runr-runtimes publishes the mirror: an image this repository starts to use
+      # is added to REQS_IMAGES of its lib/mirror.sh and mirrored by its workflow first.
       - run: bash ci/check-reqs-mirror.sh
 
   build-scripts:
     name: Dockerfiles + build scripts
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
     steps:
-      - uses: actions/checkout@v4
-      # No Docker Hub base image; Spin RUN steps with OTEL_SDK_DISABLED=true (docker-container builders)
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # No Docker Hub base image, OTEL_SDK_DISABLED=true in Spin RUN steps (docker-container
+      # builders) and the source label of every image
       - run: bash ci/check-dockerfiles.sh
-      # runtime/ci.sh without Docker or a registry: build/push exit codes and --pull, the pinned
-      # runtime images the e2e suites pull, the reqs mirror check, the shared Kind helpers
+      # runtime/ci.sh without Docker or a registry: build/push exit codes and --pull, the labels of a
+      # push, the pinned runtime images the e2e suites pull, the reqs mirror check, the shared Kind
+      # helpers, the release workflow and these CI workflows
       - run: for t in runtime/test/*_test.sh; do echo "── $t"; bash "$t"; done
 
+  helm:
+    name: Helm chart (lint, template, kubeconform)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      # the helm of the API image (api/Dockerfile.prod)
+      HELM_VERSION: v3.16.0
+      HELM_SHA256: 327cfbc7ddc5a3eb644039ceb0cff66394628654c4f5a76bf715ed15b893983b
+      KUBECONFORM_VERSION: v0.7.0
+      KUBECONFORM_SHA256: c31518ddd122663b3f3aa874cfe8178cb0988de944f29c74a0b9260920d115d3
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install helm and kubeconform (pinned, checksums verified)
+        run: |
+          curl -fsSL -o /tmp/helm.tar.gz "https://get.helm.sh/helm-${HELM_VERSION}-linux-amd64.tar.gz"
+          echo "${HELM_SHA256}  /tmp/helm.tar.gz" | sha256sum -c -
+          curl -fsSL -o /tmp/kubeconform.tar.gz "https://github.com/yannh/kubeconform/releases/download/${KUBECONFORM_VERSION}/kubeconform-linux-amd64.tar.gz"
+          echo "${KUBECONFORM_SHA256}  /tmp/kubeconform.tar.gz" | sha256sum -c -
+          mkdir -p "$RUNNER_TEMP/bin"
+          tar -xzf /tmp/helm.tar.gz -C "$RUNNER_TEMP/bin" --strip-components=1 linux-amd64/helm
+          tar -xzf /tmp/kubeconform.tar.gz -C "$RUNNER_TEMP/bin" kubeconform
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+      # helm lint --strict + helm template with the defaults and every ci/helm-values/*.yaml,
+      # kubeconform against Kubernetes 1.30 and later
+      - run: helm version --short && bash ci/check-helm-chart.sh
+
   api:
-    name: API tests + static analysis
-    runs-on: ubuntu-latest
+    name: API (Pint, PHPUnit, Larastan)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
     defaults:
       run:
         working-directory: api
     steps:
-      - uses: actions/checkout@v4
-      - uses: shivammathur/setup-php@v2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # 2.40.0
         with:
           php-version: '8.2'
           extensions: pdo_sqlite, pcntl
           coverage: pcov
           tools: composer:v2
+      # PHP 8.2.35 or a later 8.2 release, the one that fixes CVE-2026-109618 and CVE-2026-109619 (the
+      # API image has its own floor, PHP_MIN_VERSION of api/Dockerfile.prod)
+      - name: PHP 8.2.35 or later
+        run: |
+          php -r 'exit((int) !(str_starts_with(PHP_VERSION, "8.2.") && version_compare(PHP_VERSION, "8.2.35", ">=")));' \
+            || { echo "::error::PHP $(php -r 'echo PHP_VERSION;') is not 8.2.35 or a later 8.2 release"; exit 1; }
       - name: Composer cache
-        uses: actions/cache@v4
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.composer/cache
           key: composer-${{ hashFiles('api/composer.lock') }}
           restore-keys: composer-
-      - run: composer install --no-interaction --prefer-dist --no-progress
-      - run: vendor/bin/pint --test
-      - run: cp .env.example .env && php artisan key:generate
-      # Coverage floor as in GitLab's test:api (docs/development.md → Testing)
-      - run: php -d memory_limit=2G artisan test --compact --coverage --min=76
-      - run: vendor/bin/phpstan analyse --memory-limit=1G --no-progress
+      - id: composer
+        run: composer install --no-interaction --prefer-dist --no-progress
+      # Pint, PHPUnit and Larastan each report, whichever of them fails
+      - name: Pint (code style; fix with vendor/bin/pint)
+        if: ${{ !cancelled() && steps.composer.outcome == 'success' }}
+        run: vendor/bin/pint --test
+      # Coverage floor: the line coverage of app/, the measured value rounded down to whole percent
+      # (docs/development.md → Testing). The -d memory_limit is for the artisan process, which reads
+      # the report PHPUnit wrote.
+      - name: PHPUnit (coverage floor)
+        if: ${{ !cancelled() && steps.composer.outcome == 'success' }}
+        run: |
+          cp .env.example .env && php artisan key:generate
+          php -d memory_limit=2G artisan test --compact --coverage --min=76
+      # New findings fail; the known ones live in phpstan-baseline.neon
+      - name: Larastan
+        if: ${{ !cancelled() && steps.composer.outcome == 'success' }}
+        run: vendor/bin/phpstan analyse --memory-limit=1G --no-progress
 
   ui:
     name: UI lint + unit tests + build
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
     defaults:
       run:
         working-directory: vue
+    env:
+      NODE_OPTIONS: --max-old-space-size=4096
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
           cache: npm
           cache-dependency-path: vue/package-lock.json
       - run: npm ci --no-audit --no-fund
       - run: npm run lint
+      # coverage.thresholds of vitest.config.js: fails below the floor
       - run: npm run test:coverage
       - run: npm run build
-        env:
-          NODE_OPTIONS: --max-old-space-size=4096
-
-  sdk-node:
-    name: Workflow SDK (Node) typecheck + tests
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: sdk/node
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: ${{ !cancelled() }}
         with:
-          node-version: 22
-      # No lockfile (a library, sdk/.gitignore): npm 10 fails to resolve Vitest 4 (devEngines)
-      - run: npm install -g npm@11 --no-audit --no-fund
-      - run: npm install --no-audit --no-fund
-      - run: npm run typecheck
-      - run: npm test
+          name: ui-coverage
+          path: vue/coverage/
+          if-no-files-found: ignore
+          retention-days: 7
 
   ui-e2e:
     name: UI e2e (mocked API)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
     defaults:
       run:
         working-directory: vue
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
           cache: npm
           cache-dependency-path: vue/package-lock.json
       - run: npm ci --no-audit --no-fund
+      # the Chromium of the @playwright/test version in package-lock.json
       - run: npx playwright install --with-deps chromium
+      # Playwright starts the Vite dev servers itself (playwright.config.ts)
       - run: npm run test:e2e:mock
         env:
           NODE_OPTIONS: --max-old-space-size=4096
-      - uses: actions/upload-artifact@v4
-        if: failure()
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: ${{ !cancelled() }}
         with:
           name: playwright-report
           path: |
             vue/playwright-report/
             vue/test-results/
+          if-no-files-found: ignore
           retention-days: 7
 
   go:
-    name: Go vet + race tests
-    runs-on: ubuntu-latest
+    name: Go (gofmt, vet, race tests)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
     steps:
-      - uses: actions/checkout@v4
-      # go1.26.9: the stdlib security fixes (GO-2026-6603 … 6617); the modules tested here declare it
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # go1.26.9: the stdlib security fixes (GO-2026-6603 … 6617); every module tested here declares
+      # it. A toolchain GOTOOLCHAIN downloads for a newer go directive has no covdata, so
+      # -coverprofile fails on packages without tests: raise this version with the modules.
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: '1.26.9'
           cache-dependency-path: '**/go.sum'
       # The Terraform provider's tests run real plans against the fake API (write-only attributes
       # need Terraform 1.11+); without a terraform binary every test would download one.
-      - uses: hashicorp/setup-terraform@v3
+      - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
         with:
           terraform_version: '1.13.3'
           terraform_wrapper: false
       - name: gofmt + go vet + go test -race (every go.mod)
         env:
+          CGO_ENABLED: '1'
           GOTOOLCHAIN: auto
           GOFLAGS: -mod=readonly
           CHECKPOINT_DISABLE: '1'
@@ -153,6 +239,29 @@ jobs:
             echo "::group::$dir"
             unformatted=$(cd "$dir" && gofmt -l .)
             if [ -n "$unformatted" ]; then echo "gofmt -w needed in $dir:"; echo "$unformatted"; exit 1; fi
-            (cd "$dir" && go vet ./... && go test -race -count=1 ./...) || exit 1
+            (cd "$dir" && go vet ./... && go test -race -count=1 -coverprofile=cover.out ./... && go tool cover -func=cover.out | tail -n 1) || exit 1
             echo "::endgroup::"
           done
+
+  sdk-node:
+    name: Workflow SDK (Node) typecheck + tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    defaults:
+      run:
+        working-directory: sdk/node
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # A library keeps no lockfile (sdk/.gitignore): nothing to cache
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          package-manager-cache: false
+      # npm resolves the tree on every install: npm 10 fails to resolve Vitest 4, hence npm 11
+      # (devEngines in package.json)
+      - run: npm install -g npm@11 --no-audit --no-fund
+      - run: npm install --no-audit --no-fund
+      - run: npm run typecheck
+      - run: npm test

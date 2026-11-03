@@ -99,6 +99,17 @@ release.
 | [White-label](white-label.md) | Branding, self-service signup, onboarding |
 | [Billing](billing.md) | The Billing module: monthly bills per project paid by its owner, region prices with effective dates, pay-as-you-go and fixed regions with approval, shared regions with markup, environments and previews on the bill, queue consumer charging, the monthly cost limit, rightsizing savings, project stop and resume, the billing API and signed events for your invoicing system |
 
+## Comparisons
+
+| Page | What it covers |
+| --- | --- |
+| [RunR compared](compare/README.md) | RunR next to the platforms people weigh it against, one page each, every statement about the other platform linked to its own documentation |
+| [RunR vs Google Cloud Run](compare/cloud-run.md) | Where each runs and who operates it, builds from source, scale to zero, rollouts, isolation, events, several regions, GPUs, workflows |
+| [RunR vs AWS Lambda](compare/aws-lambda.md) | Where each runs, what you deploy, isolation, event sources, rollouts, durable workflows, several regions, sandboxes for untrusted code, code signing |
+| [RunR vs Vercel](compare/vercel.md) | Git deploys and previews, runtimes, environments, rollouts, events, workflows, sandboxes, MCP, single sign-on |
+| [RunR vs Knative](compare/knative.md) | What RunR adds on top of Knative Serving: console and API, installation, builds, rollouts, event sources, isolation |
+| [RunR vs OpenFaaS](compare/openfaas.md) | License and editions, single-host installs, scale to zero, builds, event connectors, asynchronous calls, isolation, GPUs, console and teams |
+
 ## Project
 
 | Page | What it covers |

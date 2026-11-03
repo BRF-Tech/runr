@@ -8,8 +8,98 @@ did not change says so.
 
 ## [Unreleased]
 
+## [0.6.3] - 2026-11-03
+
+### Upgrade notes
+
+No new database migrations. New Helm values, optional and empty by default: `branding.colors.dark`,
+`branding.colors.light` and `branding.defaultTheme` (the white-label themes) and `auth.frozenAccounts`
+(shared sign-ins, `RUNR_FROZEN_ACCOUNTS`; empty changes nothing); values of 0.6.2, `--reuse-values`
+included, keep working ([0.6.2 → 0.6.3 in upgrade.md](docs/upgrade.md#062--063)). The console's navy
+theme is gone: a browser that has it stored opens in Dark (the "Ocean" preset brings the navy look
+back as a white-label theme). The region agent and the queue consumer follow the release (0.6.3);
+gateway-auth, image-upload, supply-chain and the Spin shim keep their versions.
+
+### Added
+
+- **White-label themes.** The branding sets the tones of the dark and the light theme and the
+  default theme, besides the brand scale and accent: `dark_color` / `light_color` (one base colour,
+  the page background; the other tones are derived from it, text keeping its contrast) or the full
+  scale `dark_scale` / `light_scale` (`--gray-50` … `--gray-950`), and `default_theme` (`dark` |
+  `light`, the theme of users who never picked one; a user's own pick always wins). Helm values
+  `branding.colors.dark`, `branding.colors.light` and `branding.defaultTheme` (schema-checked,
+  env `BRANDING_DARK_COLOR` / `_SCALE`, `BRANDING_LIGHT_COLOR` / `_SCALE`, `BRANDING_DEFAULT_THEME`),
+  the API (`GET /api/branding`, `/api/admin/branding`, `/api/tenant/branding`: stored, served,
+  validated, per tenant where tenant branding is allowed), the CLI and the Terraform resource
+  `runr_branding` (`dark_color`, `light_color`, `default_theme`). Settings → Branding has a Themes
+  section with each theme's base colour, its 11 tones, a preview with the contrast of its text and
+  "Default" back to the Helm value; the in-app tutorial tours it. The cached branding's tones and
+  default theme are applied before the first paint, so a re-branded console does not flash RunR's
+  palette. The "Ocean" preset brings the former navy dark theme back as a white-label theme
+  ([white-label.md](docs/white-label.md#theme-tones-and-the-default-theme)).
+- **runr.sh in Turkish at `/tr/`.** The site build (`ci/runr-sh/build.py`) writes the landing twice
+  from `landing/index.html`: `/` in English and `/tr/` in Turkish, both static, with the Turkish
+  texts of the `data-tr` attributes in place (title, description and social tags included) and the
+  FAQ's `FAQPage` JSON-LD in each page's language. Each page is its own canonical; `hreflang`
+  points `en` and `x-default` at `/` and `tr` at `/tr/`. On `/`, a Turkish browser without a stored
+  choice, a stored Turkish choice or an old `?lang=tr` link goes to `/tr/` before the page loads;
+  crawlers and other browsers stay. The EN/TR button is a link to the other page and stores the
+  choice; `/tr/` never switches to English. The sitemap is generated: both landing pages with
+  their alternates, then every other page, with the build date as `lastmod`.
+- **Comparison pages.** `docs/compare/` sets RunR next to Google Cloud Run, AWS Lambda, Vercel,
+  Knative and OpenFaaS, one short page each: a table of differences, when to choose which and the
+  RunR pages to read next, every statement about the other platform linked to its own
+  documentation. They are published at `runr.sh/compare/<name>/` (the index at `/compare/`) and
+  linked from the landing's comparison section, the site footer and the docs index.
+- **Click counting on runr.sh.** The self-hosted Umami, whose script the web server adds to every
+  page, counts the landing's calls to action (`quick-start-click`, `docs-click`,
+  `download-click`, `github-click`, `install-guide-click`, `contribute-click`, `enterprise-open`,
+  `compare-click`, `lang-switch`), copies from the install snippets (`install-snippet-copy`),
+  accepted release-news sign-ups and enterprise requests (`release-news-signup`,
+  `enterprise-contact-sent`), the GitHub and download links of the documentation pages
+  (`docs-github-click`, `docs-download-click`) and the archive links of `/dl/` (`dl-file-click`).
+- **Frozen accounts for shared logins.** A login several people share, such as a public demo
+  account whose password is published, can be listed in `RUNR_FROZEN_ACCOUNTS` (comma-separated
+  e-mail addresses, case-insensitive; Helm value `auth.frozenAccounts`, a list or a string, empty
+  by default). It signs in and out and uses what its role grants, but its own account routes refuse
+  every change with 403 and `frozen: true`, in the caller's language: profile, avatar, password,
+  two-factor authentication, sessions, notification preferences, API tokens, the tokens of MCP
+  clients (revoke, consent), linked SSO identities, disabling and deleting the account, and the
+  members' routes (user, role, group, 2FA reset, tenant membership, platform admin) when they name
+  the account itself. No visitor can lock the others out; reads stay, and so do another
+  administrator's actions on the account under Members and a frozen administrator's on other
+  members. `GET /api/account` and `GET /api/auth/me` carry `frozen`; Account settings then says
+  it is a shared account and disables its change controls, and its tour starts with that note
+  ([security.md](docs/security.md#shared-accounts)).
+
 ### Changed
 
+- **Documentation pages carry social and breadcrumb metadata.** Every page of the docs template
+  has Open Graph and Twitter card tags with the landing's social image, and a `BreadcrumbList`
+  (Documentation or Comparisons → page). The overview and runtime-images pages get titles that name
+  them, and a page's description comes from its introduction (a paragraph that only leads into a
+  list or table loses its last sentence), else from its line in the docs index, cut at a sentence
+  end.
+- **The landing is light on phones.** Below 769 px, with a touch screen or with reduced motion,
+  the hero shows a still of the 3D scene (`landing/assets/hero-static.webp`, 10 KB, and
+  `hero-static-wide.webp`, rendered by `ci/runr-sh/render-hero.js`), and the page never downloads
+  three.js, the 3D hero or the canvas background; a loader adds those two scripts only past that
+  media query, so the desktop keeps them unchanged. Turnstile loads when a form gets focus or input
+  or comes into view, and a submit waits for its token (or reports that the bot check could not
+  load). The console screenshots are `<picture>` elements with WebP at 720 and 1440 px before the
+  PNG; `vue/shots/optimize.py`, the harness step after every render, writes the WebP files
+  (Pillow, the smaller of lossless and quality 80) and lists them in `manifest.json`. The built
+  pages carry no translation attributes (`/` is 135 KB instead of 228 KB), the reveal of the hero
+  text runs before the page's other scripts, and below-the-fold screenshots decode asynchronously.
+  Lighthouse 12.8.2 on a local build, median of three runs: mobile performance 50 → 99 on `/` and
+  47 → 99 on the Turkish page (largest contentful paint 6.6 → 1.8 s, total blocking time 919 → 6
+  ms, page weight 1,067 → 151 KB); desktop 81 → 83 on `/` (1,103 → 342 KB); the documentation
+  pages stay at 100.
+- **The landing's comparison table follows the vendors' documentation of 2026-11-03.** OpenFaaS
+  CE is under its EULA (commercial use: one installation per company for up to 60 days); Vercel
+  Functions run container images (beta); AWS Lambda has durable functions and multi-Region
+  endpoints for Web Functions; Vercel's durable workflows are Vercel Workflows. The new sources are
+  listed.
 - **The README is a product page.** It opens with the logo, the one-line positioning, badges
   (release, license, CI, Helm chart, Terraform Registry, Go module) and a hero screenshot, then six
   feature cards, the quick start first (Helm in three commands, the single-host install, the CLI),
@@ -23,8 +113,7 @@ did not change says so.
   served from the site root, any other repository image from GitHub raw at the release tag; the
   summary counts them as `images_rewritten`.
 - **runr.sh is English by default and shows the console.** The landing's static HTML is English
-  (what search engines and link previews read); a Turkish browser, or `?lang=tr`, still gets the
-  Turkish texts, and `hreflang` points `en` and `x-default` at the page itself. New on the page: a
+  (what search engines and link previews read); the Turkish page is `/tr/` (see Added). New on the page: a
   console screenshot under the hero and a tour of the 0.6 features (deploy strategies, environments
   and promotion, global projects, triggers and the event gateway, durable workflows, supply chain
   and secret stores, plus deployments, logs and metrics, roles and the region wizard), scenes in the
@@ -37,10 +126,141 @@ did not change says so.
   rendered from `landing/assets/og-image.src.html` (`og-image.png` 1200x630, `github-social-preview.png`
   1280x640, with `ci/runr-sh/render-social.js`) and replace `og-image.svg`; the tagline under the
   wordmark is an `h2` that names the platform, and the FAQ is also published as `FAQPage` JSON-LD.
-  The site's palette is neutral black, matching the console's dark theme: gray-950 `#030712` behind
-  gray surfaces and gray text with the brand orange and red; the former slate (navy-tinted) palette,
-  the blue and purple accents and the third-party blues of the diagrams are gone, and the console
-  scenes are shown in the dark theme only.
+  The site's palette is neutral black with the brand orange and red as its only accents: the
+  backgrounds, surfaces, borders and text use the neutral grays (R = G = B; `#0a0a0a`, `#171717`,
+  `#262626`, `#404040`, `#525252`, `#737373`, `#a3a3a3`, `#e5e5e5`), also in the glass layers, the
+  documentation pages, the social image source, the 3D hero's fog and the README badges; the former
+  slate (navy-tinted) palette, the cool grays (`#030712`, `#111827`, …), the blue and purple accents
+  and the third-party blues of the diagrams are gone, and the console scenes are shown in the dark
+  theme only. `ci/runr-sh/verify.sh` fails on a blue-tinted colour in the built site
+  (`ci/runr-sh/check-colors.py`).
+- **One RunR logo everywhere.** The console's header and sign-in page show the runr.sh wordmark
+  ("Run" with the gradient "R" and the lowercase "serverless" tagline) instead of a text wordmark
+  with an uppercase tagline; the console's favicon and the repository's `logo/` files are the
+  runr.sh ones.
+- **The console has two themes: Dark and Light.** The navy theme is removed. Dark is the pure
+  gray palette that was called "Full Dark", and it is also the default before the app boots. A
+  browser that still has the navy theme stored opens in Dark.
+- **The console is in RunR's colours.** Its blue, sky, indigo, violet, purple, cyan and teal
+  accents (category badges such as XaaS, "2–12 instances", the gVisor label, info chips, links,
+  highlights, spinners, charts) take the brand scale, so they follow a white-label brand too;
+  categories differ by the brand's style instead of by hue (XaaS solid, FaaS tinted, CaaS
+  outlined; Kata solid, gVisor tinted, runc outlined; likewise trigger kinds, strategies, roles,
+  run states and token groups). Status keeps its colours: green for success, red for errors
+  (critical solid red, high a red tint), and warnings move from amber and orange, which read as
+  the RunR orange, to yellow. The light theme is warm (whites and gray-browns from the RunR orange
+  hue, the same contrast); the dark theme is neutral black (R = G = B: `#0a0a0a` page, Tailwind's
+  neutral surfaces; it was Tailwind's blue-tinted cool gray). The login, sign-up and verification
+  pages, the shell terminal, the code editor's cursor, selection and focus and the log chart take
+  the theme tones and the brand instead of slate hexes and vs-dark's blue. In e-mails the links
+  (Laravel's theme gave them its own colour) take the branding's primary shade 700 and the primary
+  button and wordmark its shade 600 (white on 500 read 2.8:1), the tenant's when a mail is sent
+  for one.
+- **GitHub Actions is the repository's only CI.** `.gitlab-ci.yml` is gone; its jobs run in
+  `.github/workflows/`: `ci.yml` on every pull request and push to `main` (gitleaks, the reqs
+  mirror, the Dockerfiles and build scripts, the Helm chart with kubeconform, Pint, PHPUnit with
+  the coverage floor and Larastan, the UI lint, unit tests, build and mocked e2e, Go, the Node
+  SDK), `audit.yml` (npm and Composer audits on `main`, daily and on pull requests that touch a
+  lockfile), `e2e.yml` (the Kind suite `runtime/ci.sh test` and the Playwright suite against the
+  dev stack, weekly and by hand, on standard GitHub-hosted runners) and `upstream-releases.yml`
+  (new Knative minors and Helm chart versions, daily, filed as issues). Every action is pinned to
+  a commit SHA and every downloaded tool checked against its SHA256
+  ([development.md](docs/development.md#ci-jobs)).
+
+### Fixed
+
+- **The API reference answers again.** Since 0.6.0, `/api/docs`, `/api/docs.json` and
+  `php artisan scramble:export` (which writes the CLI's `testdata/openapi.json`) failed with a
+  500. The cause was one service method that declared the abstract `Model` as its return type,
+  which the OpenAPI generator cannot inspect. It now declares the concrete models, and the CLI's
+  copy of the document is regenerated, with the theme fields and the gateways' `can_manage`.
+- **The project header stays below the console header.** It stuck at the top of the window, so
+  when the page scrolled it slid under the console header and its title was cut off. It now sticks
+  at the console header's height, which the header measures (`--app-header-height`). Narrower
+  than 1024 px it scrolls with the page (it wraps to twice its height there), its actions sit
+  below the title instead of past the screen's edge, and the project Access form is one column on
+  a phone.
+- **Every project tab can be reached.** The tab row ran past the window: at 1440 px the tabs after
+  Traces (Replay, Uptime, Security, Access) were neither visible nor reachable. The tabs stay in
+  one row that scrolls sideways, with a fade and an arrow at each end that hides tabs; the active
+  tab is scrolled into view when the page opens on it and when it changes, Tab reaches every tab,
+  and a tour step on a tab out of view scrolls the row to it first.
+- **Badges read on the light theme.** Badges, chips and notices tinted sky, green, teal or rose,
+  amber backgrounds and borders, violet-300 and blue-400 text kept their dark-theme tones on the
+  light theme: light text on a dark tint (the restored config badge, the rollout chips of the
+  deployments, the sandbox Paused status, the supply chain Low severity, among others). Every
+  tint the console uses now swaps to a light background with dark text (4.5:1 at least, checked
+  by a unit test), and a hover colour (a delete icon's red) shows only while hovered instead of
+  always. The approvals count, the routine runtime patch banner and the scale buttons' hover use
+  tones that read on both themes.
+- **The tours fit a read-only role.** For a user who can only look (the built-in Viewer, a custom
+  read-only role such as the public demo's), the project tour highlighted an empty box as the
+  project's Actions, the platform tour went on into the Add region wizard, which such a user
+  cannot open, and the users tour opened the Add user form. The Actions step now shows only while
+  the role has an action on the project, the region wizard follows the platform tour only with
+  `regions.manage` and the users tour opens the form only with `members.invite`; without them the
+  steps drop out like any step whose control is hidden.
+- **The console follows a read-only role.** The public demo runs with a custom role that can only
+  look (`projects.view`, `git.pull`, `env.view`, the `*.view` permissions, `logs.view`,
+  `metrics.view`, `traces.view`); the console showed it controls the API refused with 403, and
+  asked for data it may not read. Now: the project card's edit pencil needs `projects.update` or
+  `env.edit`; the platform settings (base domain, registration, GPU demo, custom runtimes,
+  cross-organization grants) show read-only without `settings.manage`, without Save and without
+  the demo data's Load / Remove; the Models tab needs `models.view` (a refused load says so instead
+  of "No models bound") and binding needs `models.deploy` and `projects.update`; the sandbox
+  settings ask for the organizations' quotas only with `sandboxes.manage`; the Git tab gives a role
+  without `git.push` the clone command and the API tokens link only with `tokens.manage`; the log
+  panel sets a gone deployment's status only for a role that may deploy. A sweep of the console
+  against the route permissions found more of the same, now gated: the Sandboxes page (create,
+  extend, kill need `sandboxes.create`; terminal, pause / resume and the files, processes and run
+  tabs `sandboxes.exec`), API gateways (new gateway, routes, consumers, plans, domain and
+  developer page follow the gateway's new `can_manage` and `projects.update`), Settings → AI
+  agents (connecting a client needs `tokens.manage`; the consent page shows a no-access card on a
+  403), Support (the page needs `tickets.view`, New ticket and replies `tickets.create`, a list the
+  API refuses no longer looks empty), an organization's Users page with tenancy (the member
+  permissions of the single-tenant page), a synced region's demo button (`regions.manage`), and
+  for other roles the Metrics tab and the rightsizing card (`metrics.view`) and a deployment's logs
+  (`logs.view`). The tours follow: the rightsizing card's and the rollout panel's buttons are steps
+  of their own that drop without the permission, the support tour opens the new-ticket form and an
+  organization's users tour the add form only for a role that sees their buttons, and the texts of
+  the platform settings and the deploy strategy button describe the setting instead of asking a
+  role that cannot to change it.
+- **A first visit opens in the browser's language.** A new browser opened the console in Turkish
+  whatever its language. Without a stored choice the console now starts in Turkish for a Turkish
+  browser and in English for every other one (also the API's `Accept-Language` and the page's
+  `lang`); the language switch's choice still wins.
+- **A first visit opens in the installation's branding.** Before `GET /api/branding` was cached, a
+  first visit showed RunR's dark theme until the API answered. The UI container now writes the
+  platform's branding defaults (Helm `branding.colors.*` and `branding.defaultTheme`, the same
+  `runr-config` keys as the API's) to `/branding-defaults.js` at start, checked values only, and
+  the pre-paint script reads it: the user's theme pick first, then the cached branding, then
+  these defaults, then RunR's. The pre-paint is now `src/modules/white-label/prePaint.js`, inlined
+  into `index.html` by the build, so it derives a base colour's tones with the console's own code
+  ([white-label.md](docs/white-label.md)).
+- **Demo data in English, with a deployment history.** The demo projects' descriptions were partly
+  Turkish, and only the three container projects had a deployment (a code project has no version
+  until its code is saved, and the seeder deployed before saving). The eleven demo projects (the
+  install's demo data and an organization's alike) now have English descriptions, four versions
+  each and a history over the last twelve days: every version deployed in turn, two failed
+  deployments, a rollback to the version before (with its config) and a canary rollout
+  (10 / 50 / 100 %, promoted), so the project page and its tour have deployments to show.
+- **The public status page in the organization's colours.** It showed the organization's brand
+  colour on RunR's dark theme: the API left out the theme tones and the default theme. The page
+  now gets them and applies the organization's branding while it shows (a visitor's own theme pick
+  wins), with the logo of the theme shown.
+- **One palette for one brand colour.** The API derived a single primary colour's 300–900 scale with
+  other mix weights than the console (300: 40 % white against 45 %, 600: 18 % black against 12 %
+  …), so mails, the status page and the console showed two palettes. The API now derives the
+  console's scale exactly; tests on both sides pin the same values.
+- **Neutral mail tones.** The mails' text, borders and panels used Laravel's zinc tones (`#18181b`,
+  `#52525b`, `#a1a1aa`, `#e4e4e7`), a slight blue cast next to the neutral palette. They are the
+  neutral tones of the same shades now (R = G = B); the brand colours and the success / error
+  buttons keep their hue.
+- **Placeholders read as placeholders.** Input placeholders (gray-400, 12:1) read almost like typed
+  values (14.5:1); the log filter's and the login card's were nearly invisible (1.9:1, 1.4:1). They
+  carry formats and examples, and WCAG 1.4.3 sets no lower bar for placeholder or hint text, so
+  every placeholder now has 4.5:1 or more and stays clearly weaker than a typed value (5.7:1 dark,
+  4.9:1 light, 5.3:1 on the login card).
 
 ## [0.6.2] - 2026-10-26
 
@@ -3274,7 +3494,8 @@ Initial tagged release.
 - API gateways with routes, in-app notifications and support tickets.
 - Helm chart with a single-tenant / multi-tenant edition, an install form (`values.schema.json`), generated secrets and a Traefik ingress; a Docker Compose setup for development.
 
-[Unreleased]: https://github.com/brf-tech/runr/compare/v0.6.2...main
+[Unreleased]: https://github.com/brf-tech/runr/compare/v0.6.3...main
+[0.6.3]: https://github.com/brf-tech/runr/releases/tag/v0.6.3
 [0.6.2]: https://github.com/brf-tech/runr/releases/tag/v0.6.2
 [0.6.1]: https://github.com/brf-tech/runr/releases/tag/v0.6.1
 [0.6.0]: https://github.com/brf-tech/runr/releases/tag/v0.6.0

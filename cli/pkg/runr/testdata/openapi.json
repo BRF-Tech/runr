@@ -11172,6 +11172,39 @@
                                                         "accent_color": {
                                                             "type": "string"
                                                         },
+                                                        "dark_color": {
+                                                            "type": "string"
+                                                        },
+                                                        "dark_scale": {
+                                                            "type": [
+                                                                "array",
+                                                                "null"
+                                                            ],
+                                                            "items": {}
+                                                        },
+                                                        "light_color": {
+                                                            "type": "string"
+                                                        },
+                                                        "light_scale": {
+                                                            "type": [
+                                                                "array",
+                                                                "null"
+                                                            ],
+                                                            "items": {}
+                                                        },
+                                                        "default_theme": {
+                                                            "anyOf": [
+                                                                {
+                                                                    "type": "string"
+                                                                },
+                                                                {
+                                                                    "type": "string",
+                                                                    "enum": [
+                                                                        "dark"
+                                                                    ]
+                                                                }
+                                                            ]
+                                                        },
                                                         "email_from_name": {
                                                             "type": [
                                                                 "string",
@@ -11283,10 +11316,6 @@
                                                                     "minItems": 7,
                                                                     "maxItems": 7,
                                                                     "additionalItems": false
-                                                                },
-                                                                {
-                                                                    "type": "array",
-                                                                    "items": {}
                                                                 }
                                                             ]
                                                         },
@@ -11308,6 +11337,11 @@
                                                         "primary_color",
                                                         "primary_scale",
                                                         "accent_color",
+                                                        "dark_color",
+                                                        "dark_scale",
+                                                        "light_color",
+                                                        "light_scale",
+                                                        "default_theme",
                                                         "email_from_name",
                                                         "login_headline",
                                                         "login_text",
@@ -11444,6 +11478,39 @@
                                                         "accent_color": {
                                                             "type": "string"
                                                         },
+                                                        "dark_color": {
+                                                            "type": "string"
+                                                        },
+                                                        "dark_scale": {
+                                                            "type": [
+                                                                "array",
+                                                                "null"
+                                                            ],
+                                                            "items": {}
+                                                        },
+                                                        "light_color": {
+                                                            "type": "string"
+                                                        },
+                                                        "light_scale": {
+                                                            "type": [
+                                                                "array",
+                                                                "null"
+                                                            ],
+                                                            "items": {}
+                                                        },
+                                                        "default_theme": {
+                                                            "anyOf": [
+                                                                {
+                                                                    "type": "string"
+                                                                },
+                                                                {
+                                                                    "type": "string",
+                                                                    "enum": [
+                                                                        "dark"
+                                                                    ]
+                                                                }
+                                                            ]
+                                                        },
                                                         "email_from_name": {
                                                             "type": [
                                                                 "string",
@@ -11555,10 +11622,6 @@
                                                                     "minItems": 7,
                                                                     "maxItems": 7,
                                                                     "additionalItems": false
-                                                                },
-                                                                {
-                                                                    "type": "array",
-                                                                    "items": {}
                                                                 }
                                                             ]
                                                         },
@@ -11580,6 +11643,11 @@
                                                         "primary_color",
                                                         "primary_scale",
                                                         "accent_color",
+                                                        "dark_color",
+                                                        "dark_scale",
+                                                        "light_color",
+                                                        "light_scale",
+                                                        "default_theme",
                                                         "email_from_name",
                                                         "login_headline",
                                                         "login_text",
@@ -11731,6 +11799,39 @@
                                                         "accent_color": {
                                                             "type": "string"
                                                         },
+                                                        "dark_color": {
+                                                            "type": "string"
+                                                        },
+                                                        "dark_scale": {
+                                                            "type": [
+                                                                "array",
+                                                                "null"
+                                                            ],
+                                                            "items": {}
+                                                        },
+                                                        "light_color": {
+                                                            "type": "string"
+                                                        },
+                                                        "light_scale": {
+                                                            "type": [
+                                                                "array",
+                                                                "null"
+                                                            ],
+                                                            "items": {}
+                                                        },
+                                                        "default_theme": {
+                                                            "anyOf": [
+                                                                {
+                                                                    "type": "string"
+                                                                },
+                                                                {
+                                                                    "type": "string",
+                                                                    "enum": [
+                                                                        "dark"
+                                                                    ]
+                                                                }
+                                                            ]
+                                                        },
                                                         "email_from_name": {
                                                             "type": [
                                                                 "string",
@@ -11842,10 +11943,6 @@
                                                                     "minItems": 7,
                                                                     "maxItems": 7,
                                                                     "additionalItems": false
-                                                                },
-                                                                {
-                                                                    "type": "array",
-                                                                    "items": {}
                                                                 }
                                                             ]
                                                         },
@@ -11867,6 +11964,11 @@
                                                         "primary_color",
                                                         "primary_scale",
                                                         "accent_color",
+                                                        "dark_color",
+                                                        "dark_scale",
+                                                        "light_color",
+                                                        "light_scale",
+                                                        "default_theme",
                                                         "email_from_name",
                                                         "login_headline",
                                                         "login_text",
@@ -12016,6 +12118,39 @@
                                                         "accent_color": {
                                                             "type": "string"
                                                         },
+                                                        "dark_color": {
+                                                            "type": "string"
+                                                        },
+                                                        "dark_scale": {
+                                                            "type": [
+                                                                "array",
+                                                                "null"
+                                                            ],
+                                                            "items": {}
+                                                        },
+                                                        "light_color": {
+                                                            "type": "string"
+                                                        },
+                                                        "light_scale": {
+                                                            "type": [
+                                                                "array",
+                                                                "null"
+                                                            ],
+                                                            "items": {}
+                                                        },
+                                                        "default_theme": {
+                                                            "anyOf": [
+                                                                {
+                                                                    "type": "string"
+                                                                },
+                                                                {
+                                                                    "type": "string",
+                                                                    "enum": [
+                                                                        "dark"
+                                                                    ]
+                                                                }
+                                                            ]
+                                                        },
                                                         "email_from_name": {
                                                             "type": [
                                                                 "string",
@@ -12127,10 +12262,6 @@
                                                                     "minItems": 7,
                                                                     "maxItems": 7,
                                                                     "additionalItems": false
-                                                                },
-                                                                {
-                                                                    "type": "array",
-                                                                    "items": {}
                                                                 }
                                                             ]
                                                         },
@@ -12152,6 +12283,11 @@
                                                         "primary_color",
                                                         "primary_scale",
                                                         "accent_color",
+                                                        "dark_color",
+                                                        "dark_scale",
+                                                        "light_color",
+                                                        "light_scale",
+                                                        "default_theme",
                                                         "email_from_name",
                                                         "login_headline",
                                                         "login_text",
@@ -68930,6 +69066,28 @@
                                             "null"
                                         ]
                                     },
+                                    "dark_color": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ]
+                                    },
+                                    "light_color": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ]
+                                    },
+                                    "default_theme": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "enum": [
+                                            "dark",
+                                            "light"
+                                        ]
+                                    },
                                     "login_headline": {
                                         "type": [
                                             "string",
@@ -69003,6 +69161,32 @@
                                         "maxLength": 750000
                                     },
                                     "primary_scale": {
+                                        "type": [
+                                            "array",
+                                            "null"
+                                        ],
+                                        "items": {
+                                            "type": [
+                                                "string",
+                                                "null"
+                                            ],
+                                            "maxLength": 32
+                                        }
+                                    },
+                                    "dark_scale": {
+                                        "type": [
+                                            "array",
+                                            "null"
+                                        ],
+                                        "items": {
+                                            "type": [
+                                                "string",
+                                                "null"
+                                            ],
+                                            "maxLength": 32
+                                        }
+                                    },
+                                    "light_scale": {
                                         "type": [
                                             "array",
                                             "null"
@@ -76855,6 +77039,9 @@
                     "developer_page_metrics": {
                         "type": "boolean"
                     },
+                    "can_manage": {
+                        "type": "boolean"
+                    },
                     "routes": {
                         "type": "array",
                         "items": {
@@ -77004,6 +77191,7 @@
                     "developer_page_key",
                     "description",
                     "developer_page_metrics",
+                    "can_manage",
                     "created_at"
                 ],
                 "title": "GatewayResource"

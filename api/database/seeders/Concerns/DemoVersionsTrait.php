@@ -10,6 +10,11 @@ trait DemoVersionsTrait
     {
         $svc->saveXaaSCode($project, <<<'PY'
 def handler(event, context):
+    return {"statusCode": 200, "body": "Hello, World!"}
+PY, $userId, 'Initial version');
+
+        $svc->saveXaaSCode($project, <<<'PY'
+def handler(event, context):
     return {"statusCode": 200, "body": "Hello, World!!"}
 PY, $userId, 'Add extra exclamation mark');
 
@@ -35,10 +40,12 @@ PY, $userId, 'Add logging and third exclamation mark');
         $mainFile = "main.{$ext}";
         $depFile = $this->demoDependencyFile($project->runtime);
 
+        $codeV1 = $this->demoFaaSCode($project->runtime, 1);
         $codeV2 = $this->demoFaaSCode($project->runtime, 2);
         $codeV3 = $this->demoFaaSCode($project->runtime, 3);
         $codeV4 = $this->demoFaaSCode($project->runtime, 4);
 
+        $files1 = [$mainFile => $codeV1];
         $files2 = [$mainFile => $codeV2];
         $files3 = [$mainFile => $codeV3];
         $files4 = [$mainFile => $codeV4];
@@ -49,6 +56,7 @@ PY, $userId, 'Add logging and third exclamation mark');
             $files4[$depFile] = $depContent;
         }
 
+        $svc->saveFaaSFiles($project, $files1, $userId, 'Initial version');
         $svc->saveFaaSFiles($project, $files2, $userId, 'Add extra exclamation mark');
         $svc->saveFaaSFiles($project, $files3, $userId, 'Add dependencies');
         $svc->saveFaaSFiles($project, $files4, $userId, 'Add logging');
@@ -58,16 +66,19 @@ PY, $userId, 'Add logging and third exclamation mark');
     {
         return match ($runtime) {
             'nodejs' => match ($variant) {
+                1 => "exports.handler = async (event, context) => {\n  return { statusCode: 200, body: 'Hello, World!' };\n};",
                 2 => "exports.handler = async (event, context) => {\n  return { statusCode: 200, body: 'Hello, World!!' };\n};",
                 3 => "exports.handler = async (event, context) => {\n  const message = 'Hello, World!!';\n  return { statusCode: 200, body: message };\n};",
                 default => "exports.handler = async (event, context) => {\n  const message = 'Hello, World!!!';\n  console.log('Returning:', message);\n  return { statusCode: 200, body: message };\n};",
             },
             'python' => match ($variant) {
+                1 => "def handler(event, context):\n    return {\"statusCode\": 200, \"body\": \"Hello, World!\"}",
                 2 => "def handler(event, context):\n    return {\"statusCode\": 200, \"body\": \"Hello, World!!\"}",
                 3 => "def handler(event, context):\n    message = \"Hello, World!!\"\n    return {\"statusCode\": 200, \"body\": message}",
                 default => "def handler(event, context):\n    message = \"Hello, World!!!\"\n    print(f\"Returning: {message}\")\n    return {\"statusCode\": 200, \"body\": message}",
             },
             'php' => match ($variant) {
+                1 => "<?php\n\nfunction handler(\$event, \$context): array\n{\n    return ['statusCode' => 200, 'body' => 'Hello, World!'];\n}",
                 2 => "<?php\n\nfunction handler(\$event, \$context): array\n{\n    return ['statusCode' => 200, 'body' => 'Hello, World!!'];\n}",
                 3 => "<?php\n\nfunction handler(\$event, \$context): array\n{\n    \$message = 'Hello, World!!';\n    return ['statusCode' => 200, 'body' => \$message];\n}",
                 default => "<?php\n\nfunction handler(\$event, \$context): array\n{\n    \$message = 'Hello, World!!!';\n    error_log(\"Returning: {\$message}\");\n    return ['statusCode' => 200, 'body' => \$message];\n}",

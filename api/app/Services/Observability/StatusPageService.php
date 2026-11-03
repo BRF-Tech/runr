@@ -111,8 +111,12 @@ class StatusPageService
             return null;
         }
 
+        // The brand scale and both themes' tones with the default theme: the public page shows in
+        // the organization's colours (dark_color / dark_scale, light_color / light_scale), not
+        // in RunR's (docs/white-label.md)
         return array_intersect_key($b, array_flip([
             'product_name', 'company_name', 'primary_color', 'accent_color', 'palette',
+            'dark_color', 'dark_scale', 'light_color', 'light_scale', 'default_theme',
             'logo_light_url', 'logo_dark_url', 'logo_mark_url', 'favicon_url', 'support_url', 'powered_by',
         ]));
     }

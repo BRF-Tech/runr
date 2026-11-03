@@ -26,6 +26,16 @@ return [
         'primary_color' => env('BRANDING_PRIMARY_COLOR', '#f97316'),
         'primary_scale' => env('BRANDING_PRIMARY_SCALE', ''),
         'accent_color' => env('BRANDING_ACCENT_COLOR', '#e63946'),
+        // Tone scales of the console's themes (--gray-50 … --gray-950): a base colour, the page
+        // background (shade 950; the console derives the other shades) unless the scale gives the
+        // shades: {"50":"#…","100":"…",…,"950":"…"} (hex or "r g b"). Empty: RunR's dark
+        // (#0a0a0a) / warm light (#fffcf8).
+        'dark_color' => env('BRANDING_DARK_COLOR', ''),
+        'dark_scale' => env('BRANDING_DARK_SCALE', ''),
+        'light_color' => env('BRANDING_LIGHT_COLOR', ''),
+        'light_scale' => env('BRANDING_LIGHT_SCALE', ''),
+        // Theme of users who never picked one: dark | light (empty: dark)
+        'default_theme' => env('BRANDING_DEFAULT_THEME', ''),
         // E-mail template: sender name (default: product name) and logo (default: light logo)
         'email_from_name' => env('BRANDING_EMAIL_FROM_NAME', ''),
         'email_logo' => env('BRANDING_EMAIL_LOGO', ''),

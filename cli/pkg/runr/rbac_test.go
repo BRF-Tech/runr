@@ -222,6 +222,23 @@ func TestBrandingClient(t *testing.T) {
 	if _, err := c.UpdateBranding(ctx, scope, map[string]any{"primary_color": "orange"}); !runr.IsValidation(err) {
 		t.Fatalf("bad colour = %v", err)
 	}
+	// The themes' page backgrounds and the default theme.
+	b, err = c.UpdateBranding(ctx, scope, map[string]any{"dark_color": "#091b4e", "light_color": "#ffffff", "default_theme": "light"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if v, _ := b.StoredString("dark_color"); v != "#091b4e" || b.Branding["default_theme"] != "light" || b.Branding["light_color"] != "#ffffff" {
+		t.Fatalf("theme fields = %+v", b)
+	}
+	for field, value := range map[string]string{"dark_color": "navy", "light_color": "#12345", "default_theme": "sepia"} {
+		if _, err := c.UpdateBranding(ctx, scope, map[string]any{field: value}); !runr.IsValidation(err) {
+			t.Fatalf("bad %s = %v", field, err)
+		}
+	}
+	b, err = c.UpdateBranding(ctx, scope, map[string]any{"dark_color": nil, "light_color": nil, "default_theme": nil})
+	if err != nil || b.Branding["dark_color"] != "#0a0a0a" || b.Branding["default_theme"] != "dark" {
+		t.Fatalf("theme fields after reset = %+v, %v", b, err)
+	}
 	// nil resets a field to its default.
 	b, err = c.UpdateBranding(ctx, scope, map[string]any{"product_name": nil})
 	if err != nil {

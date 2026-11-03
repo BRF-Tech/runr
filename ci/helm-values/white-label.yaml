@@ -1,5 +1,6 @@
 # ci/check-helm-chart.sh: a white-label installation (docs/white-label.md) — data: URI logos,
-# a ConfigMap reference and an explicit primary scale 300–900, with the Billing module on
+# a ConfigMap reference, an explicit primary scale 300–900, the themes' tones and the default
+# theme, with the Billing module on
 domain: console.acme-cloud.example
 branding:
   productName: Acme Cloud
@@ -20,6 +21,21 @@ branding:
       "800": "0 68 153"
       "900": "0 43 128"
     accent: "#e63946"
+    # the dark theme's full tone scale 50–950 (navy), the light theme from its base colour
+    dark:
+      "950": "9 27 78"
+      "900": "15 36 96"
+      "800": "22 46 114"
+      "700": "30 59 133"
+      "600": "175 195 225"
+      "500": "205 218 240"
+      "400": "222 232 248"
+      "300": "235 240 250"
+      "200": "242 245 252"
+      "100": "248 250 254"
+      "50": "#fcfdff"
+    light: "#f5f7fc"
+  defaultTheme: light
   loginHeadline: Build on Acme Cloud
   loginText: "Sign in with your Acme account."
   supportUrl: https://support.acme-cloud.example

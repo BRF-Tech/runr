@@ -972,8 +972,12 @@ resource "runr_branding" "brand" {
   the platform allows organization brands). The default scope follows the token's user. The
   resource owns the whole brand: attributes left out use the defaults, and destroying it resets
   the brand. Images take `https://` URLs or `data:` URIs (`filebase64()`); an image uploaded in
-  the console stays while its attribute is unset. `powered_by` and `tenant_branding_enabled`
-  belong to the install scope; `tenant_branding_enabled` left out keeps the console's setting.
+  the console stays while its attribute is unset. `dark_color` and `light_color` are the page
+  backgrounds of the console's two themes (the console derives each theme's tones from them),
+  `default_theme` (`dark` or `light`) the theme of users who never picked one; the explicit
+  scales (`primary_scale`, `dark_scale`, `light_scale`) stay with the console and the Helm values.
+  `powered_by` and `tenant_branding_enabled` belong to the install scope;
+  `tenant_branding_enabled` left out keeps the console's setting.
 
 ## Hosted MCP servers
 

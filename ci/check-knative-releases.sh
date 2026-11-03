@@ -1,22 +1,35 @@
 #!/bin/bash
 set -euo pipefail
 
-# ── Knative Release Checker ──────────────────────────────────────────────────
-# Fetches the available Knative Operator chart versions from the Helm repo and
-# checks the commented-out (unreleased) rows of the
-# KnativeVersionHelper::KNATIVE_K8S_COMPAT table. When a new release exists it
-# updates the table and opens a GitLab MR.
+# ── Knative release check ────────────────────────────────────────────────────
+# Reads the Knative Operator chart versions of its Helm repository and checks the commented-out
+# (unreleased) rows of the KnativeVersionHelper::KNATIVE_K8S_COMPAT table. A minor that is out now
+# gets its row uncommented and its latest chart pinned in FALLBACK_CHART_VERSIONS, in this
+# checkout, for review; a minor newer than every row is named (its minimum Kubernetes minor is
+# added by hand). Each finding is printed, and written to RELEASES_REPORT_DIR when that is set: a
+# Markdown file whose first line is its title. .github/workflows/upstream-releases.yml files an
+# issue for each title no issue has yet.
 #
-# Required env:
-#   GITLAB_TOKEN       — api scope, to open the MR
-#   CI_PROJECT_ID      — GitLab project ID (automatic in CI)
-#   CI_SERVER_URL      — GitLab URL (automatic in CI)
-#   CI_DEFAULT_BRANCH  — default branch (automatic in CI)
+#   bash ci/check-knative-releases.sh
+#   RELEASES_REPORT_DIR=DIR bash ci/check-knative-releases.sh
+#
+# Needs bash, helm, jq, git, GNU grep and sed.
 # ─────────────────────────────────────────────────────────────────────────────
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$ROOT"
 
 COMPAT_FILE="api/app/Services/Helpers/KnativeVersionHelper.php"
 HELM_REPO_URL="https://knative.github.io/operator"
 HELM_REPO_NAME="knative-operator"
+SCHEDULE_URL="https://github.com/knative/community/blob/main/mechanics/RELEASE-SCHEDULE.md"
+
+# report NAME TITLE BODY — one finding as RELEASES_REPORT_DIR/NAME.md
+report() {
+    [ -n "${RELEASES_REPORT_DIR:-}" ] || return 0
+    mkdir -p "$RELEASES_REPORT_DIR"
+    printf '%s\n\n%s\n' "$2" "$3" > "${RELEASES_REPORT_DIR}/$1.md"
+}
 
 # ── 1. Get the available versions from the Helm repo ────────────────────────
 helm repo add "$HELM_REPO_NAME" "$HELM_REPO_URL" --force-update >/dev/null 2>&1
@@ -59,7 +72,7 @@ done < "$COMPAT_FILE"
 # Find the highest minor in the table
 HIGHEST_IN_TABLE=$(grep -oP '^\s+(\d+)\s*=>' "$COMPAT_FILE" | grep -oP '\d+' | sort -n | tail -1)
 # Including the commented-out ones
-HIGHEST_COMMENTED=$(grep -oP '//\s*(\d+)\s*=>' "$COMPAT_FILE" | grep -oP '\d+' | sort -n | tail -1)
+HIGHEST_COMMENTED=$(grep -oP '//\s*(\d+)\s*=>' "$COMPAT_FILE" | grep -oP '\d+' | sort -n | tail -1 || true)
 HIGHEST=${HIGHEST_COMMENTED:-$HIGHEST_IN_TABLE}
 
 echo ""
@@ -69,19 +82,29 @@ for MINOR_VER in $AVAILABLE_MINORS; do
     KN_MINOR=$(echo "$MINOR_VER" | cut -d. -f2)
     if [ "$KN_MINOR" -gt "$HIGHEST" ]; then
         echo "⚠ Knative 1.$KN_MINOR is not in the table! Add it manually (check the min K8s constraint)"
-        echo "  Source: https://github.com/knative/community/blob/main/mechanics/RELEASE-SCHEDULE.md"
+        echo "  Source: ${SCHEDULE_URL}"
+        report "knative-1.${KN_MINOR}-missing" "Knative 1.${KN_MINOR} is not in KNATIVE_K8S_COMPAT" \
+"The Knative Operator chart repository (${HELM_REPO_URL}) has Knative 1.${KN_MINOR}, newer than every row of \`KNATIVE_K8S_COMPAT\` in \`${COMPAT_FILE}\` (the highest is 1.${HIGHEST}).
+
+- [ ] Add the row \`${KN_MINOR} => <minimum Kubernetes minor>\` ([release schedule](${SCHEDULE_URL}))
+- [ ] Pin its latest chart in \`FALLBACK_CHART_VERSIONS\` (\`bash ci/check-knative-releases.sh\` does it for a commented-out row)
+- [ ] Try it on a test cluster
+
+Reported by ci/check-knative-releases.sh."
     fi
 done
 
 if [ "$UPDATED" = false ]; then
     echo ""
-    echo "No new releases, no MR will be opened."
+    echo "No unreleased row of the table has been released."
     exit 0
 fi
 
 # ── 4. Pin a fallback chart for each newly released minor ───────────────────
 # FALLBACK_CHART_VERSIONS: the latest patch of each minor (used when the chart repository
-# cannot be read; the newest one the cluster's Kubernetes version supports is picked)
+# cannot be read; the newest one the cluster's Kubernetes version supports is picked). Each new
+# minor goes on top, the oldest first: the list stays newest first.
+mapfile -t NEWLY_RELEASED < <(printf '%s\n' "${NEWLY_RELEASED[@]}" | sort -V)
 LATEST_CHART=""
 for TARGET in "${NEWLY_RELEASED[@]}"; do
     CHART=$(helm search repo "$HELM_REPO_NAME/knative-operator" --versions -o json \
@@ -96,48 +119,31 @@ for TARGET in "${NEWLY_RELEASED[@]}"; do
     echo "FALLBACK_CHART_VERSIONS: ${TARGET} → ${CHART}"
 done
 
-# ── 5. Git commit + push + MR ───────────────────────────────────────────────
+# ── 5. Report the change ─────────────────────────────────────────────────────
 VERSIONS_STR=$(printf ", %s" "${NEWLY_RELEASED[@]}")
 VERSIONS_STR=${VERSIONS_STR:2}
-BRANCH="knative-release/${NEWLY_RELEASED[0]}"
+DIFF=$(git -c safe.directory="$ROOT" diff -- "$COMPAT_FILE")
 
-git config user.email "ci@runr.sh"
-git config user.name "RunR CI"
-git checkout -b "$BRANCH"
-git add "$COMPAT_FILE"
-git commit -m "feat: add Knative ${VERSIONS_STR} to compat matrix
+echo ""
+echo "${COMPAT_FILE} updated in this checkout:"
+echo "$DIFF"
 
-New Knative Operator chart(s) detected in Helm repo.
-KNATIVE_K8S_COMPAT table updated automatically.
+report "knative-${NEWLY_RELEASED[0]}-released" "Knative ${VERSIONS_STR} released: update KNATIVE_K8S_COMPAT" \
+"New Knative Operator version(s) in the Helm repository (${HELM_REPO_URL}):
 
-Source: https://github.com/knative/community/blob/main/mechanics/RELEASE-SCHEDULE.md"
+$(printf -- '- **%s**\n' "${NEWLY_RELEASED[@]}")
 
-git push -o ci.skip "https://gitlab-ci-token:${GITLAB_TOKEN}@${CI_SERVER_URL#https://}/${CI_PROJECT_PATH}.git" "$BRANCH"
+\`bash ci/check-knative-releases.sh\` makes this change in a checkout:
 
-# Open the MR
-curl -sf --header "PRIVATE-TOKEN: ${GITLAB_TOKEN}" \
-    "${CI_SERVER_URL}/api/v4/projects/${CI_PROJECT_ID}/merge_requests" \
-    --data-urlencode "source_branch=${BRANCH}" \
-    --data-urlencode "target_branch=${CI_DEFAULT_BRANCH}" \
-    --data-urlencode "title=feat: Knative ${VERSIONS_STR} released" \
-    --data-urlencode "description=## Knative New Release
+- uncomments the unreleased row(s) of \`KNATIVE_K8S_COMPAT\`
+- pins the fallback chart(s) in \`FALLBACK_CHART_VERSIONS\`: ${LATEST_CHART:-none found}
 
-New Knative Operator version(s) detected in the Helm repo:
+\`\`\`diff
+${DIFF}
+\`\`\`
 
-$(printf "- **%s**\n" "${NEWLY_RELEASED[@]}")
-
-### Changes
-- Removed the unreleased comment in the \`KNATIVE_K8S_COMPAT\` table
-- Pinned fallback charts (\`FALLBACK_CHART_VERSIONS\`): ${LATEST_CHART}
-
-### To check
-- [ ] Is the min K8s version correct? ([Release Schedule](https://github.com/knative/community/blob/main/mechanics/RELEASE-SCHEDULE.md))
+- [ ] Is the min K8s version correct? ([release schedule](${SCHEDULE_URL}))
 - [ ] Is the compat matrix order correct?
 - [ ] Try it on a test cluster
 
-🤖 Created automatically (scheduled pipeline)" \
-    --data-urlencode "remove_source_branch=true" \
-    --data-urlencode "labels=knative,automated" | jq -r '.web_url'
-
-echo ""
-echo "MR created!"
+Reported by ci/check-knative-releases.sh."

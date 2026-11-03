@@ -116,6 +116,8 @@ class BrandingController extends Controller
     {
         $rules = BrandingService::FIELDS + [
             'primary_scale.*' => ['nullable', 'string', 'max:32'],
+            'dark_scale.*' => ['nullable', 'string', 'max:32'],
+            'light_scale.*' => ['nullable', 'string', 'max:32'],
             'footer_links.*' => ['array'],
             'footer_links.*.label' => ['required', 'string', 'max:60'],
             'footer_links.*.url' => ['required', 'string', 'max:500', 'regex:#^(https?://|mailto:)\S+$#i'],

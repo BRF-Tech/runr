@@ -3,6 +3,7 @@
 namespace App\Models;
 
 // use Illuminate\Contracts\Auth\MustVerifyEmail;
+use App\Support\Auth\FrozenAccounts;
 use Database\Factories\UserFactory;
 use Eloquent;
 use Illuminate\Database\Eloquent\Collection;
@@ -22,6 +23,7 @@ use Stancl\Tenancy\Database\TenantCollection;
  * @property-read Collection<int, Gateway> $gateways
  * @property-read int|null $gateways_count
  * @property-read string|null $avatar_url
+ * @property-read bool $frozen
  * @property-read Collection<int, NotificationPreference> $notificationPreferences
  * @property-read int|null $notification_preferences_count
  * @property-read DatabaseNotificationCollection<int, DatabaseNotification> $notifications
@@ -111,5 +113,14 @@ class User extends Authenticatable
         }
 
         return Storage::disk('public')->url($this->avatar_path);
+    }
+
+    /**
+     * A frozen account (FrozenAccounts, a shared demo login): its own account routes refuse every
+     * change. Appended for the signed-in user's own account only (GET /account, GET /auth/me).
+     */
+    public function getFrozenAttribute(): bool
+    {
+        return FrozenAccounts::includes($this);
     }
 }

@@ -1,0 +1,172 @@
+# The long end-to-end suites, every week and by hand (Actions → E2E → Run workflow, or
+# `gh workflow run e2e.yml -f suite=kind -f k8s=1.33.0`), on standard GitHub-hosted runners with
+# their own Docker:
+#   - kind: runtime/ci.sh test — a Kind cluster (1 control-plane + 2 workers), Knative and the API
+#     stack of docker-compose.yml, every runtime deployed through the API. It needs neither
+#     /dev/kvm nor a GPU: the sandbox cases run the gvisor RuntimeClass on the runc handler (the
+#     Kind nodes have no gVisor). Kata (test-sandbox-api --sandbox-kata), the GPU case
+#     (test-ai --ai-gpu) and the per-feature suites (test-runtimes, test-wasm, …) are not part of
+#     it: they run on a host of their own (docs/development.md → CI jobs).
+#   - ui-stack: Playwright against the dev stack (docker compose: postgres, redis, api + migrator,
+#     horizon, reverb, mailpit, the vue dev server). Specs that need a Kubernetes cluster skip
+#     themselves.
+name: E2E
+
+on:
+  schedule:
+    # Mondays 02:17 UTC
+    - cron: '17 2 * * 1'
+  workflow_dispatch:
+    inputs:
+      suite:
+        description: 'Suites to run'
+        type: choice
+        options: [all, kind, ui-stack]
+        default: all
+      k8s:
+        description: 'kind: Kubernetes version of the cluster (a kindest-node tag of the reqs mirror)'
+        default: '1.32.0'
+      workers:
+        description: 'kind: worker nodes (1: a runner short of disk; the control-plane then runs the platform pods too)'
+        type: choice
+        options: ['2', '1']
+        default: '2'
+
+permissions:
+  contents: read
+
+# a scheduled run and one started by hand on the same branch wait for each other
+concurrency:
+  group: e2e-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  kind:
+    name: Kind e2e (runtime/ci.sh test)
+    if: github.event_name == 'schedule' || inputs.suite == 'all' || inputs.suite == 'kind'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 150
+    env:
+      KIND_VERSION: v0.26.0
+      KIND_SHA256: d445b44c28297bc23fd67e51cc24bb294ae7b977712be2d4d312883d0835829b
+      KUBECTL_VERSION: v1.32.0
+      KUBECTL_SHA256: 646d58f6d98ee670a71d9cdffbf6625aeea2849d567f214bc43a35f8ccb7bf70
+      CLOUD_PROVIDER_KIND_VERSION: v0.10.0
+      CLOUD_PROVIDER_KIND_SHA256: 8b88095d72f8dbb4ce65ecf34e4bde5c1c8a3de90c65e66dda7dcd65fba2d58b
+      K8S_VERSION: ${{ inputs.k8s || '1.32.0' }}
+      KIND_WORKERS: ${{ inputs.workers || '2' }}
+      # the API image is built before the stack starts
+      E2E_API_WAIT: '300'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Kubernetes version
+        run: |
+          if ! [[ "$K8S_VERSION" =~ ^1\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::k8s '${K8S_VERSION}' is not a Kubernetes version (1.32.0)"
+            exit 1
+          fi
+      # Every Kind node holds the region's images: room for them (SDKs the job does not use)
+      - name: Free disk space
+        run: |
+          df -h /
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/.ghcup /opt/hostedtoolcache/CodeQL
+          df -h /
+      # three Kind nodes run more inotify watchers than the runner's defaults allow (kind's known issues)
+      - name: inotify limits for Kind
+        run: sudo sysctl -w fs.inotify.max_user_watches=524288 fs.inotify.max_user_instances=512
+      - name: Install kind, kubectl and cloud-provider-kind (pinned, checksums verified)
+        run: |
+          curl -fsSL -o /tmp/kind "https://github.com/kubernetes-sigs/kind/releases/download/${KIND_VERSION}/kind-linux-amd64"
+          echo "${KIND_SHA256}  /tmp/kind" | sha256sum -c -
+          curl -fsSL -o /tmp/kubectl "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/amd64/kubectl"
+          echo "${KUBECTL_SHA256}  /tmp/kubectl" | sha256sum -c -
+          curl -fsSL -o /tmp/cpk.tar.gz "https://github.com/kubernetes-sigs/cloud-provider-kind/releases/download/${CLOUD_PROVIDER_KIND_VERSION}/cloud-provider-kind_${CLOUD_PROVIDER_KIND_VERSION#v}_linux_amd64.tar.gz"
+          echo "${CLOUD_PROVIDER_KIND_SHA256}  /tmp/cpk.tar.gz" | sha256sum -c -
+          sudo install -m 0755 /tmp/kind /usr/local/bin/kind
+          sudo install -m 0755 /tmp/kubectl /usr/local/bin/kubectl
+          sudo tar -xzf /tmp/cpk.tar.gz -C /usr/local/bin cloud-provider-kind
+          kind version && kubectl version --client && docker info --format '{{.ServerVersion}} {{.NCPU}} CPUs {{.MemTotal}} bytes'
+      # Kind (kindest-node of the reqs mirror) + Knative + the API stack on this runner's Docker
+      # (E2E_DOCKER_ADDR stays localhost); the run deletes its cluster and stack at its end
+      - name: runtime/ci.sh test
+        run: bash runtime/ci.sh test --k8s="$K8S_VERSION"
+      # php artisan test:e2e writes its results table to api/storage/e2e-results-<time>.md
+      - name: Results
+        if: ${{ !cancelled() }}
+        run: |
+          shopt -s nullglob
+          for f in api/storage/e2e-results-*.md; do cat "$f" >> "$GITHUB_STEP_SUMMARY"; done
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: ${{ !cancelled() }}
+        with:
+          name: e2e-kind-results
+          path: api/storage/e2e-results-*.md
+          if-no-files-found: ignore
+          retention-days: 7
+
+  ui-stack:
+    name: UI e2e (dev stack)
+    if: github.event_name == 'schedule' || inputs.suite == 'all' || inputs.suite == 'ui-stack'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      TENANCY_ENABLED: 'false'
+      E2E_TENANCY: 'false'
+      # One account, two workers: above the console's per-user default (docs/development.md)
+      API_USER_RATE_LIMIT_PER_MINUTE: '3000'
+      # Horizon seeds the demo data the project specs need without a cluster
+      E2E_SEED_DEMO: 'true'
+      # the compose vue service (VUE_PORT)
+      E2E_BASE_URL: http://localhost:8061
+      NODE_OPTIONS: --max-old-space-size=4096
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Start the dev stack
+        run: |
+          # Secrets are encrypted at rest with APP_KEY (empty in api/.env.docker; devready.sh fills it in)
+          sed -i "s|^APP_KEY=.*|APP_KEY=base64:$(head -c 32 /dev/urandom | base64)|" api/.env.docker
+          # The API services also join the external `kind` network (docker-compose.yml), which only a
+          # Kind cluster creates
+          docker network inspect kind >/dev/null 2>&1 || docker network create kind
+          docker compose up -d --build --wait api
+          # Reverb and Mailpit as in an install: the API broadcasts to Reverb (REVERB_HOST) and the
+          # queued mail goes to Mailpit (MAIL_HOST, api/.env.docker)
+          docker compose up -d horizon reverb mailpit vue
+          # the vue service installs its packages first (up to 10 minutes)
+          for _ in $(seq 1 120); do
+            curl -sf "$E2E_BASE_URL/" >/dev/null && break
+            sleep 5
+          done
+          curl -sf "$E2E_BASE_URL/" >/dev/null || {
+            echo "::error::the vue service does not answer at ${E2E_BASE_URL}"
+            docker compose logs --tail 50 vue
+            exit 1
+          }
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: vue/package-lock.json
+      - working-directory: vue
+        run: npm ci --no-audit --no-fund
+      - working-directory: vue
+        run: npx playwright install --with-deps chromium
+      - working-directory: vue
+        run: npm run test:e2e
+      - name: Stack logs
+        if: ${{ !cancelled() }}
+        run: docker compose logs api horizon reverb vue > compose.log 2>&1 || true
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: ${{ !cancelled() }}
+        with:
+          name: e2e-ui-stack
+          path: |
+            compose.log
+            vue/playwright-report/
+            vue/test-results/
+          if-no-files-found: ignore
+          retention-days: 7

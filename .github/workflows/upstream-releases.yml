@@ -1,0 +1,72 @@
+# Upstream releases RunR follows, every day and by hand: a released Knative minor for the
+# KNATIVE_K8S_COMPAT table (ci/check-knative-releases.sh) and new versions of the Helm charts RunR
+# installs into a region (ci/check-helm-releases.sh). Each finding becomes an issue of this
+# repository once: a title an issue already has, open or closed, is not filed again.
+name: Upstream releases
+
+on:
+  schedule:
+    # every day 05:23 UTC
+    - cron: '23 5 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: upstream-releases
+  cancel-in-progress: false
+
+jobs:
+  check:
+    name: Knative and Helm chart releases
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      issues: write
+    env:
+      # the helm of the API image (api/Dockerfile.prod)
+      HELM_VERSION: v3.16.0
+      HELM_SHA256: 327cfbc7ddc5a3eb644039ceb0cff66394628654c4f5a76bf715ed15b893983b
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install helm (pinned, checksum verified)
+        run: |
+          curl -fsSL -o /tmp/helm.tar.gz "https://get.helm.sh/helm-${HELM_VERSION}-linux-amd64.tar.gz"
+          echo "${HELM_SHA256}  /tmp/helm.tar.gz" | sha256sum -c -
+          mkdir -p "$RUNNER_TEMP/bin"
+          tar -xzf /tmp/helm.tar.gz -C "$RUNNER_TEMP/bin" --strip-components=1 linux-amd64/helm
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+      - name: Knative releases
+        env:
+          RELEASES_REPORT_DIR: ${{ runner.temp }}/releases
+        run: bash ci/check-knative-releases.sh
+      - name: Helm chart releases
+        if: ${{ !cancelled() }}
+        env:
+          RELEASES_REPORT_DIR: ${{ runner.temp }}/releases
+        run: bash ci/check-helm-releases.sh
+      # one issue per finding whose title no issue (open or closed) has yet
+      - name: File the findings as issues
+        if: ${{ !cancelled() }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASES_REPORT_DIR: ${{ runner.temp }}/releases
+        run: |
+          shopt -s nullglob
+          for f in "$RELEASES_REPORT_DIR"/*.md; do
+            title="$(head -n 1 "$f")"
+            tail -n +3 "$f" > "$f.body"
+            known="$(gh issue list --repo "$GITHUB_REPOSITORY" --state all --limit 100 \
+              --search "\"${title}\" in:title" --json title --jq '.[].title')"
+            if grep -qxF -- "$title" <<<"$known"; then
+              echo "already filed: ${title}"
+              continue
+            fi
+            url="$(gh issue create --repo "$GITHUB_REPOSITORY" --title "$title" --body-file "$f.body")"
+            echo "filed: ${title} ${url}"
+            echo "- [${title}](${url})" >> "$GITHUB_STEP_SUMMARY"
+          done

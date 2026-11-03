@@ -35,6 +35,11 @@ The default brand is **RunR by BRF Teknoloji** (RunR wordmark, RunR icon, RunR o
 | `primary_color` | Base colour `#rrggbb` — shade 500 of the primary scale | `#f97316` |
 | `primary_scale` | Optional explicit shades 300–900 (`#rrggbb` or `r g b`) | derived from the base colour |
 | `accent_color` | Highlight colour (`#rrggbb`) | `#e63946` |
+| `dark_color` | Base colour of the dark theme's tones: its page background (tone 950) | `#0a0a0a` |
+| `dark_scale` | Optional explicit tones 50–950 of the dark theme (`#rrggbb` or `r g b`) | derived from `dark_color` |
+| `light_color` | Base colour of the light theme's tones: its page background (tone 950) | `#fffcf8` |
+| `light_scale` | Optional explicit tones 50–950 of the light theme | derived from `light_color` |
+| `default_theme` | `dark` or `light`: the theme of users who never picked one | `dark` |
 | `login_headline`, `login_text` | Replace the login page carousel | empty (carousel) |
 | `support_email`, `support_url` | Support contact on the login page and in e-mails | empty |
 | `footer_links` | Up to 8 `{label, url}` links (`https://` or `mailto:`) | none |
@@ -69,7 +74,8 @@ tokens keep their names and read these variables, so every button, link, badge a
 follows the brand.
 
 - Give **one base colour** (`primary_color`, shade 500): RunR derives 300 / 400 by mixing with
-  white (40 % / 20 %) and 600–900 by mixing with black (18 / 36 / 50 / 62 %).
+  white (45 % / 25 %) and 600–900 by mixing with black (12 / 30 / 45 / 58 %). The console, the
+  mails and the public status page derive the same scale.
 - Or give the **full scale** (`primary_scale`) when your design system defines its own shades;
   shades you leave out are derived from the base colour.
 
@@ -87,6 +93,78 @@ Example preset **"Ocean"** (blue scale, also available as a preset button in Adm
 | accent | `#009fe3` |
 
 `GET /api/branding` returns the resolved `palette` (RGB triplets per shade) next to the colours.
+
+**The console's colours.** Every accent is the brand scale: buttons, links, highlights, info chips,
+category badges, charts. Where categories need telling apart they differ by the style of the brand,
+not by another hue: project types XaaS solid / FaaS tinted / CaaS outlined, isolation Kata solid /
+gVisor tinted / runc outlined, and likewise trigger kinds, strategies, roles and run states. Status
+keeps its own colours whatever the brand: green for success, yellow for warnings, red for errors
+(critical solid, high a red tint). Warnings are yellow, not amber or orange, so they read apart from
+an orange brand (on the light theme their text is an olive-yellow, about 47° of hue from RunR's
+700 shade).
+
+#### Theme tones and the default theme
+
+The console has two themes, dark and light; users pick one in their menu. Each theme has its own
+tone scale `--gray-50` … `--gray-950`: 950–700 are the surfaces (page, cards, inputs, borders),
+600–50 the text tones from muted to strongest. The branding sets both:
+
+- Give **one base colour** per theme (`dark_color`, `light_color`): the page background, tone 950.
+  The other tones are derived from it in OKLCH: each takes the base colour's hue and a fixed share
+  of its chroma per tone (a gray base gives a gray scale, a navy one navy surfaces and bluish text),
+  the surfaces follow the base colour's lightness, and the text tones keep RunR's lightness and with
+  it their contrast. RunR's own base colours give RunR's scales.
+- Or give the **full scale** (`dark_scale`, `light_scale`): tones you leave out are derived.
+- `default_theme` (`dark` | `light`) is the theme of users who never picked one; a user's own pick
+  always wins.
+
+RunR's tones (empty branding): the dark theme is neutral (R = G = B, no blue cast) with a
+near-black page, Tailwind's neutral surfaces and text tones of the same contrast as before; the
+light theme is warm, from the RunR orange hue at low saturation, with the contrast of the former
+light theme.
+
+| Tone | Dark | Light |
+|---|---|---|
+| 950 (page) | `10 10 10` | `255 252 248` |
+| 900 (cards) | `23 23 23` | `254 245 239` |
+| 800 (inputs) | `38 38 38` | `245 232 223` |
+| 700 (borders) | `64 64 64` | `223 206 193` |
+| 600 (muted text) | `186 186 186` | `85 67 53` |
+| 500 | `215 215 215` | `58 43 32` |
+| 400 | `232 232 232` | `42 29 20` |
+| 300 | `240 240 240` | `32 21 14` |
+| 200 | `246 246 246` | `23 15 9` |
+| 100 | `250 250 250` | `16 10 6` |
+| 50 (strongest text) | `253 253 253` | `10 7 4` |
+
+The **"Ocean"** preset also brings a navy dark theme (the console's former navy theme) and a cool
+light theme. The same with Helm values (section 1.4):
+
+```yaml
+branding:
+  colors:
+    primary: { "300": "102 197 237", "400": "51 181 233", "500": "0 159 227", "600": "0 123 192",
+               "700": "0 85 184", "800": "0 68 153", "900": "0 43 128" }
+    accent: "#009fe3"
+    dark: { "950": "9 27 78", "900": "15 36 96", "800": "22 46 114", "700": "30 59 133",
+            "600": "175 195 225", "500": "205 218 240", "400": "222 232 248", "300": "235 240 250",
+            "200": "242 245 252", "100": "248 250 254", "50": "252 253 255" }
+    light: { "950": "255 255 255", "900": "245 247 252", "800": "230 235 245", "700": "200 210 228",
+             "600": "55 70 105", "500": "30 45 80", "400": "18 30 62", "300": "10 22 50",
+             "200": "6 15 40", "100": "3 10 32", "50": "2 6 25" }
+```
+
+The console writes the tones to `<style id="runr-branding">` (each theme's `--gray-*`, and both as
+`--surface-dark-*` / `--surface-light-*` for the login and sign-up pages, which show a dark panel
+beside a light card, and for the terminal, which stays dark). It caches the branding: on the next
+page load the script in `index.html` applies the cached tones, brand scale and default theme before
+the first paint, so a re-branded console does not flash RunR's palette. A browser's very first
+visit has no cached branding yet: it starts in the installation's branding defaults instead (the
+Helm values `branding.colors.*` and `branding.defaultTheme`, the API's `BRANDING_*` settings). The
+UI container gets the same keys of `runr-config` and writes them to `/branding-defaults.js` when it
+starts (only checked colours, shade maps and `dark` / `light` reach the file), which `index.html`
+reads before the script. Without either, RunR's own theme. A brand saved in Settings → Branding
+reaches a first visit once `GET /api/branding` answers and is cached from then on.
 
 ### 1.4 Installing with your own brand via Helm values
 
@@ -120,6 +198,11 @@ branding:
       "800": "0 68 153"
       "900": "0 43 128"
     accent: "#009fe3"
+    # the themes' tones: one base colour (the page background, tone 950) each, or the full
+    # 50–950 scale (section 1.3); empty: RunR's black dark theme and warm light theme
+    dark: "#0a0a0a"
+    # light: "#ffffff"
+  defaultTheme: dark          # dark | light: the theme of users who never picked one
   loginHeadline: "Serverless functions for your teams"
   loginText: "Deploy code in seconds on our private cloud."
   supportUrl: "https://support.example.com"
@@ -147,7 +230,8 @@ kubectl -n runr create secret generic example-brand-secret --from-file=favicon=.
 The values become environment variables of the API, Horizon and scheduler pods
 (`BRANDING_PRODUCT_NAME`, `BRANDING_COMPANY_NAME`, `BRANDING_LOGO_LIGHT`, `BRANDING_LOGO_DARK`,
 `BRANDING_LOGO_MARK`, `BRANDING_FAVICON`, `BRANDING_PRIMARY_COLOR`, `BRANDING_PRIMARY_SCALE`,
-`BRANDING_ACCENT_COLOR`, `BRANDING_LOGIN_HEADLINE`, `BRANDING_LOGIN_TEXT`,
+`BRANDING_ACCENT_COLOR`, `BRANDING_DARK_COLOR`, `BRANDING_DARK_SCALE`, `BRANDING_LIGHT_COLOR`,
+`BRANDING_LIGHT_SCALE`, `BRANDING_DEFAULT_THEME`, `BRANDING_LOGIN_HEADLINE`, `BRANDING_LOGIN_TEXT`,
 `BRANDING_SUPPORT_EMAIL`, `BRANDING_SUPPORT_URL`, `BRANDING_FOOTER_LINKS`, `BRANDING_POWERED_BY`,
 `BRANDING_EMAIL_FROM_NAME`, `BRANDING_EMAIL_LOGO`, `BRANDING_TENANT_OVERRIDES`); a ConfigMap /
 Secret reference is passed with `valueFrom`.
@@ -156,9 +240,10 @@ Secret reference is passed with `valueFrom`.
 
 - **Login page** (before sign-in): `GET /api/branding` (or `?tenant=<slug>` once a user picked an
   organization's tenant sign-in) — logos, colours, headline, footer links, support link, copyright line.
-- **Console**: header logo / product name, document title, favicon, colours.
-- **E-mails**: Laravel's mail theme is branded — header logo or product name, button colour,
-  footer links, support contact, copyright line, "Powered by RunR". Sender name:
+- **Console**: header logo / product name, document title, favicon, colours, the tones of both
+  themes and the default theme (the login and sign-up pages included).
+- **E-mails**: Laravel's mail theme is branded — header logo or product name, the primary
+  button in the brand's 600 shade, links in its 700 shade (readable on white), footer links, support contact, copyright line, "Powered by RunR". Sender name:
   `email_from_name` (mails sent with the install's default sender name are renamed). Mails sent
   for a tenant (invitations) use that tenant's branding. A `data:` logo is served
   to mail clients through `GET /api/branding/assets/email_logo`.
@@ -169,7 +254,10 @@ Secret reference is passed with `valueFrom`.
 ### 1.6 Admin UI and API
 
 Administration → **Branding** (`branding.manage`; multi-tenant: platform administrators): every field,
-logo uploads, colour presets with live swatches, per-field reset, the tenant-branding switch.
+logo uploads, colour presets with live swatches, per-field reset, the tenant-branding switch, and a
+**Themes** section: the base colour and the 11 tones of each theme, a preview of each with the brand's
+button, link and badge and the contrast of its text (a warning below 4.5:1), and the default theme.
+A tutorial restart on the page tours these controls.
 Administration → **Organization Branding** (multi-tenant, `branding.manage` in the tenant — owners and
 admins by default): the same fields for the tenant.
 
@@ -270,7 +358,8 @@ plans, subscriptions and purchases of 0.5.7 in `billing_legacy_archive`
 ## 4. Helm values
 
 ```yaml
-branding: { productName, companyName, logo: {light, dark, mark}, favicon, colors: {primary, accent},
+branding: { productName, companyName, logo: {light, dark, mark}, favicon,
+            colors: {primary, accent, dark, light}, defaultTheme,
             loginHeadline, loginText, supportUrl, supportEmail, footerLinks, poweredBy, email: {fromName, logo},
             tenantOverrides }                                        # section 1.4
 

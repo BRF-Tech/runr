@@ -28,6 +28,7 @@ func (s *Server) brand() *brandState {
 
 var brandDefaults = map[string]any{
 	"product_name": "RunR", "company_name": "", "primary_color": "#2563eb", "accent_color": "#7c3aed",
+	"dark_color": "#0a0a0a", "light_color": "#fffcf8", "default_theme": "dark",
 	"login_headline": "Welcome back", "login_text": "", "support_email": "", "support_url": "",
 	"email_from_name": nil, "logo_light_url": nil, "logo_dark_url": nil, "logo_mark_url": nil,
 	"favicon_url": nil, "email_logo_url": nil, "footer_links": []any{}, "powered_by": true,
@@ -156,9 +157,13 @@ func (s *Server) brandUpdate(scope string, body map[string]any) *apiErr {
 				return errValidation(f, fmt.Sprintf("The %s field must not be greater than %d characters.", strings.ReplaceAll(f, "_", " "), max))
 			}
 			switch f {
-			case "primary_color", "accent_color":
+			case "primary_color", "accent_color", "dark_color", "light_color":
 				if !brandColor.MatchString(str) {
 					return errValidation(f, "The "+strings.ReplaceAll(f, "_", " ")+" field format is invalid.")
+				}
+			case "default_theme":
+				if str != "dark" && str != "light" {
+					return errValidation(f, "The selected default theme is invalid.")
 				}
 			case "support_email":
 				if _, err := mail.ParseAddress(str); err != nil {

@@ -76,13 +76,15 @@
     handle {
         root * /srv
 
+        # Not the platform's branding defaults, which the ui image writes at start
         @assets {
             path *.js *.css *.woff *.woff2 *.svg *.png *.jpg *.ico *.webp *.ttf *.eot
+            not path /branding-defaults.js
         }
         header @assets Cache-Control "public, max-age=31536000, immutable"
 
         @index {
-            path /index.html
+            path /index.html /branding-defaults.js
         }
         header @index Cache-Control "no-store, no-cache, must-revalidate"
 

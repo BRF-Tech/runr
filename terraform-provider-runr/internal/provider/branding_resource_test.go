@@ -23,6 +23,8 @@ resource "runr_branding" "brand" {
 const brandFull = `
   product_name  = "Acme Cloud"
   primary_color = "#ff6600"
+  dark_color    = "#091b4e"
+  default_theme = "light"
   support_url   = "https://help.acme.example"
   powered_by    = false
   footer_links = [
@@ -39,7 +41,7 @@ func TestBranding(t *testing.T) {
 		ProtoV6ProviderFactories: providerFactories(),
 		CheckDestroy: func(*terraform.State) error {
 			st := stored()
-			for _, f := range []string{"product_name", "primary_color", "footer_links", "powered_by", "company_name"} {
+			for _, f := range []string{"product_name", "primary_color", "dark_color", "default_theme", "footer_links", "powered_by", "company_name"} {
 				if _, ok := st[f]; ok {
 					return fmt.Errorf("%s left after destroy: %v", f, st)
 				}
@@ -63,6 +65,9 @@ func TestBranding(t *testing.T) {
 						if st["product_name"] != "Acme Cloud" || st["powered_by"] != false || st["primary_color"] != "#ff6600" {
 							return fmt.Errorf("stored = %v", st)
 						}
+						if st["dark_color"] != "#091b4e" || st["default_theme"] != "light" {
+							return fmt.Errorf("theme fields stored = %v", st)
+						}
 						if links, _ := st["footer_links"].([]any); len(links) != 2 {
 							return fmt.Errorf("footer links = %v", st["footer_links"])
 						}
@@ -81,9 +86,11 @@ func TestBranding(t *testing.T) {
 				Check: check(func() error {
 					st := stored()
 					_, color := st["primary_color"]
+					_, dark := st["dark_color"]
+					_, theme := st["default_theme"]
 					_, links := st["footer_links"]
 					_, powered := st["powered_by"]
-					if st["product_name"] != "Acme" || color || links || powered {
+					if st["product_name"] != "Acme" || color || dark || theme || links || powered {
 						return fmt.Errorf("stored = %v", st)
 					}
 					return nil
@@ -197,6 +204,14 @@ func TestBrandingRejected(t *testing.T) {
 			{
 				Config:      brandConfig(srv, `footer_links = [{ label = "x", url = "ftp://x" }]`),
 				ExpectError: phrase("must be an http(s) or mailto: link"),
+			},
+			{
+				Config:      brandConfig(srv, `light_color = "white"`),
+				ExpectError: phrase("must be a hex colour"),
+			},
+			{
+				Config:      brandConfig(srv, `default_theme = "sepia"`),
+				ExpectError: phrase("value must be one of"),
 			},
 		},
 	})
