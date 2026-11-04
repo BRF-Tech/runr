@@ -30,6 +30,13 @@ const (
 // Markers in the working directory. The tool container writes .done (optional JSON result) or
 // .failed (the reason) when it is finished; a receiving agent writes in/.ready once every file is
 // verified — the tool waits for it before it restores.
+//
+// A marker with content is put in place in one step, so that whoever polls for it never reads it
+// half written: the agent's own markers (writeMarker) and a tool's JSON result (written to
+// /work/.result, then `mv`d onto .done) are renamed into place. An empty .done is a plain "done"
+// (`touch /work/.done`). A tool script's .failed comes from a shell redirection (`printf … >
+// /work/.failed`), which creates the file before it writes the reason: an empty .failed counts
+// only when it is still empty at the next look (check).
 const (
 	markerDone   = ".done"
 	markerFailed = ".failed"
@@ -86,6 +93,9 @@ type Agent struct {
 
 	stopped  chan struct{}
 	stopOnce sync.Once
+
+	// emptyFailed: the last look found .failed without a reason yet (the watcher's own state)
+	emptyFailed bool
 }
 
 type agentFile struct {
@@ -202,6 +212,11 @@ func (a *Agent) check() bool {
 
 	if msg, ok := readMarker(filepath.Join(a.cfg.Dir, markerFailed)); ok {
 		msg = strings.TrimSpace(msg)
+		// the tool's shell may have created the file and not written the reason yet: look again
+		if msg == "" && !a.emptyFailed {
+			a.emptyFailed = true
+			return false
+		}
 		if len(msg) > 2000 {
 			msg = msg[:2000]
 		}
@@ -267,11 +282,11 @@ func (a *Agent) runPull(ctx context.Context) {
 	log.Printf("pulling %s", a.cfg.Pull)
 	res, err := a.pull(ctx, a.cfg.Pull, filepath.Join(a.outDir(), "image.tar"), a.cfg.PlainHTTP)
 	if err != nil {
-		_ = os.WriteFile(filepath.Join(a.cfg.Dir, markerFailed), []byte(err.Error()), 0o644)
+		_ = writeMarker(filepath.Join(a.cfg.Dir, markerFailed), []byte(err.Error()))
 		return
 	}
 	b, _ := json.Marshal(res)
-	_ = os.WriteFile(filepath.Join(a.cfg.Dir, markerDone), b, 0o644)
+	_ = writeMarker(filepath.Join(a.cfg.Dir, markerDone), b)
 }
 
 func (a *Agent) Handler() http.Handler {
@@ -524,7 +539,7 @@ func (a *Agent) handleComplete(w http.ResponseWriter, req *http.Request) {
 	log.Printf("verified %s: %d bytes, sha256 %s", name, f.Size, sum)
 
 	if all {
-		if err := os.WriteFile(filepath.Join(a.inDir(), markerReady), []byte(time.Now().UTC().Format(time.RFC3339)), 0o644); err != nil {
+		if err := writeMarker(filepath.Join(a.inDir(), markerReady), []byte(time.Now().UTC().Format(time.RFC3339))); err != nil {
 			a.finish(TransferFailed, "writing in/.ready: "+err.Error(), nil, nil)
 			writeError(w, http.StatusInternalServerError, "writing in/.ready: "+err.Error())
 			return
@@ -612,6 +627,31 @@ func listOut(dir string) ([]*agentFile, error) {
 		})
 	}
 	return files, nil
+}
+
+// writeMarker puts a marker in place in one step: the content goes into a temporary file next to
+// it, which is then renamed onto the marker (os.WriteFile creates the file, then writes it — a
+// poller in between reads it empty). Readable by the other container whatever user it runs as.
+func writeMarker(path string, content []byte) error {
+	f, err := os.CreateTemp(filepath.Dir(path), filepath.Base(path)+".tmp-*")
+	if err != nil {
+		return err
+	}
+	tmp := f.Name()
+	_, err = f.Write(content)
+	if err == nil {
+		err = f.Chmod(0o644)
+	}
+	if cerr := f.Close(); err == nil {
+		err = cerr
+	}
+	if err == nil {
+		err = os.Rename(tmp, path)
+	}
+	if err != nil {
+		os.Remove(tmp)
+	}
+	return err
 }
 
 func readMarker(path string) (string, bool) {

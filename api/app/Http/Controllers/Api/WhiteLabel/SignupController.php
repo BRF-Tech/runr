@@ -18,7 +18,11 @@ use Illuminate\Http\Request;
  */
 class SignupController extends Controller
 {
-    /** @unauthenticated */
+    /**
+     * Verify a signup's e-mail address and create the account
+     *
+     * @unauthenticated
+     */
     public function verify(Request $request, SignupService $signup): JsonResponse
     {
         $data = $request->validate(['token' => ['required', 'string', 'max:128']]);
@@ -26,7 +30,11 @@ class SignupController extends Controller
         return $signup->verify($data['token']);
     }
 
-    /** @unauthenticated */
+    /**
+     * Send the signup verification e-mail again
+     *
+     * @unauthenticated
+     */
     public function resend(Request $request, SignupService $signup): JsonResponse
     {
         $data = $request->validate(['email' => ['required', 'email', 'max:190']]);
@@ -34,11 +42,13 @@ class SignupController extends Controller
         return $signup->resend($data['email']);
     }
 
+    /** Get the signup settings */
     public function settings(SignupSettings $settings): JsonResponse
     {
         return response()->json($settings->adminPayload());
     }
 
+    /** Update the signup settings */
     public function updateSettings(Request $request, SignupSettings $settings): JsonResponse
     {
         $data = $request->validate(SignupSettings::rules());

@@ -21,11 +21,13 @@ class SettingsController extends Controller
 {
     use BroadcastsModelEvents, SettingsQueryTrait;
 
+    /** Get the general settings with regions, executor images and capacity. */
     public function index(): JsonResponse
     {
         return response()->json($this->buildSettingsData());
     }
 
+    /** Update general settings such as the base domain, sign-up and time zone. */
     #[BodyParameter('timezone', 'The organization\'s time zone (IANA); null or "" goes back to the default (the platform\'s zone in an organization, else Europe/Istanbul)', type: 'string|null')]
     public function update(Request $request): JsonResponse
     {

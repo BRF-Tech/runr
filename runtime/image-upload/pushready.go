@@ -73,7 +73,7 @@ func pushWhenReady(ctx context.Context, name string, getenv func(string) string,
 		return fail(dir, fmt.Errorf("push to %s: %w", target, err))
 	}
 	b, _ := json.Marshal(res)
-	return os.WriteFile(filepath.Join(dir, markerDone), b, 0o644)
+	return writeMarker(filepath.Join(dir, markerDone), b)
 }
 
 // fail writes the .failed marker the agent reports, and returns err.
@@ -82,6 +82,6 @@ func fail(dir string, err error) error {
 	if len(msg) > 2000 {
 		msg = msg[:2000]
 	}
-	_ = os.WriteFile(filepath.Join(dir, markerFailed), []byte(msg), 0o644)
+	_ = writeMarker(filepath.Join(dir, markerFailed), []byte(msg))
 	return err
 }

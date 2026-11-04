@@ -22,18 +22,8 @@ RUN composer install \
     --optimize-autoloader \
     --ignore-platform-req=ext-pcntl
 
-# ─── Stage 2: Runtime image ───────────────────────────────────────────────────
+# ─── Stage 2: Runtime (the image's stage 4 adds the OpenAPI document) ─────────
 FROM ghcr.io/brf-tech/runr/reqs/frankenphp:${FRANKENPHP_TAG} AS base
-
-# RunR's own labels in place of the FrankenPHP base's (the release build adds version, revision and
-# created; org.opencontainers.image.source links the ghcr package to the repository)
-LABEL org.opencontainers.image.title="RunR API" \
-      org.opencontainers.image.description="RunR API: REST API and MCP server of the console" \
-      org.opencontainers.image.licenses="MIT" \
-      org.opencontainers.image.vendor="BRF Teknoloji" \
-      org.opencontainers.image.url="https://runr.sh" \
-      org.opencontainers.image.documentation="https://github.com/BRF-Tech/runr/tree/main/docs" \
-      org.opencontainers.image.source="https://github.com/BRF-Tech/runr"
 
 # The oldest PHP the image may ship: the PHP 8.3 release that fixes CVE-2026-109618 and
 # CVE-2026-109619 (https://www.php.net/archive/2026.php#2026-10-21-5); Dockerfile has the same.
@@ -104,6 +94,17 @@ WORKDIR /var/www/html
 COPY . .
 COPY --from=vendor /app/vendor ./vendor
 
+# The API reference's viewer (GET /api/docs, resources/views/vendor/scramble/docs.blade.php):
+# Scalar's standalone bundle (dist/browser/standalone.js of the npm package @scalar/api-reference),
+# pinned and checked against its SHA-256; the page's fallback for a checkout without it names the
+# same version
+ARG SCALAR_VERSION=1.75.1
+ARG SCALAR_SHA256=3bbeeea5ba810f5b443997bd246e32106f1a117659a20e2fcc3de855e5047956
+RUN mkdir -p public/api/vendor/scalar \
+    && curl -fsSL --retry 5 --retry-all-errors -o public/api/vendor/scalar/api-reference.js \
+         "https://cdn.jsdelivr.net/npm/@scalar/api-reference@${SCALAR_VERSION}/dist/browser/standalone.js" \
+    && echo "${SCALAR_SHA256}  public/api/vendor/scalar/api-reference.js" | sha256sum -c -
+
 # Clear the stale bootstrap cache
 RUN rm -f bootstrap/cache/packages.php bootstrap/cache/services.php
 
@@ -115,6 +116,35 @@ RUN git config --global user.email "runr@runr.sh" \
 RUN mkdir -p storage/framework/{sessions,views,cache} storage/logs bootstrap/cache \
     && chown -R www-data:www-data storage bootstrap/cache \
     && chmod -R 775 storage bootstrap/cache
+
+# ─── Stage 3: The OpenAPI document ────────────────────────────────────────────
+# GET /api/docs.json and the API reference serve the document built here, once per image
+# (php artisan runr:api-docs, App\Support\ApiDocument): generating it takes longer than a request
+# may run. It documents every module's endpoints, so docker/api-docs.sh enables the modules here
+# (the container's start enables those its install turns on); Scramble reads the models' columns
+# from a throw-away SQLite database. --check fails the build when an operation lacks a one-line
+# summary, an operationId of its own or one group (CI runs the same script on every pull request).
+# Only the document leaves this stage. It runs on the image's platform (it is the image's PHP,
+# extensions and vendor/): the release builds each platform on a runner of that platform
+# (release-images.yml), so it never runs emulated there.
+FROM base AS api-docs
+RUN sh docker/api-docs.sh /tmp/api-docs/openapi.json --check
+
+# ─── Stage 4: The image ───────────────────────────────────────────────────────
+FROM base
+
+# RunR's own labels in place of the FrankenPHP base's (the release build adds version, revision and
+# created; org.opencontainers.image.source links the ghcr package to the repository)
+LABEL org.opencontainers.image.title="RunR API" \
+      org.opencontainers.image.description="RunR API: REST API and MCP server of the console" \
+      org.opencontainers.image.licenses="MIT" \
+      org.opencontainers.image.vendor="BRF Teknoloji" \
+      org.opencontainers.image.url="https://runr.sh" \
+      org.opencontainers.image.documentation="https://github.com/BRF-Tech/runr/tree/main/docs" \
+      org.opencontainers.image.source="https://github.com/BRF-Tech/runr"
+
+# The OpenAPI document (config scramble.document_path)
+COPY --from=api-docs /tmp/api-docs/openapi.json resources/api-docs/openapi.json
 
 EXPOSE 80
 

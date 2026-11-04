@@ -187,7 +187,8 @@ and detaching on a project needs `env.edit` on that project as well as `bindings
 ### AI agents (MCP)
 
 [AI agents](mcp.md). The tools of the RunR MCP server use the permissions above — an agent can
-do what its token can do; approving an OAuth client needs `tokens.manage`.
+do what its token can do; approving an OAuth client needs `tokens.manage`, listing and
+disconnecting one's own clients needs no permission.
 
 | Permission | Scope | Includes | Allows |
 | --- | --- | --- | --- |
@@ -204,7 +205,7 @@ do what its token can do; approving an OAuth client needs `tokens.manage`.
 | `members.remove` | organization | `members.view` | remove members |
 | `roles.manage` | organization | `members.view` | create custom roles, assign roles to members and groups, set the default role |
 | `groups.manage` | organization | `members.view` | create groups and manage their members |
-| `tokens.manage` | organization | — | create and revoke own API tokens |
+| `tokens.manage` | organization | — | create API tokens and connect MCP clients (listing and revoking one's own needs no permission); in an organization of the multi-tenant edition, see every API token created there |
 | `settings.manage` | organization | — | base domain, registration, demo data; single-tenant: the audit log retention; multi-tenant: the tenant's own domain ([Organization domain](tenancy.md#organization-domain)), complete the onboarding wizard of a self-service tenant |
 | `branding.manage` | organization | — | the brand ([White-label](white-label.md#1-branding)) — single-tenant the install's, multi-tenant the tenant's own (the platform brand is the platform administrators') |
 | `signup.manage` | organization (single-tenant) | — | self-service signup settings (single-tenant; multi-tenant: platform administrators) |
@@ -381,6 +382,7 @@ whose route no longer exists. Add the route, then one line to `config/route_perm
 'GET status'            => '@authenticated',               // any signed-in user
 'GET tenants/{tenant}'  => '@platform',                    // platform administrators only
 'GET billing/tenant-bills' => '@platform:billing.view',    // platform administrators; a token must carry billing.view
+'GET tokens'            => '@own:tokens.manage',           // any signed-in user (own credentials); a limited token must carry tokens.manage
 'PATCH gateways/{gateway}' => '@policy',                   // the controller authorizes (Policy)
 ```
 
@@ -424,7 +426,8 @@ access and API tokens with the permissions listed below
 | `POST /api/groups`, `PUT/DELETE /api/groups/{group}`, `POST /api/groups/{group}/members`, `DELETE /api/groups/{group}/members/{user}` | `groups.manage` (+ `roles.manage` for the group role) | groups |
 | `GET/POST /api/projects/{project}/access`, `DELETE …/access/{assignment}` | `projects.view` / `projects.manage_access` | project access |
 | `GET/POST /api/sso/group-mappings`, `PUT/DELETE /api/sso/group-mappings/{mapping}` | `sso.manage` | SSO group mapping |
-| `GET/POST /api/tokens`, `DELETE /api/tokens/{token}` | `tokens.manage` | own API tokens |
+| `GET /api/tokens`, `DELETE /api/tokens/{token}` | signed in (a limited token: `tokens.manage`) | list and revoke own API tokens |
+| `POST /api/tokens` | `tokens.manage` | create an API token |
 
 A refused request answers `403` with the permission it needs:
 

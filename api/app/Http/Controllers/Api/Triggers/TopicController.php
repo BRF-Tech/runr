@@ -34,6 +34,7 @@ class TopicController extends Controller
 
     public function __construct(private TopicPublisher $publisher) {}
 
+    /** List the organization's topics */
     #[OpenApiResponse(200, 'The organization\'s topics with the number of triggers subscribed to each', type: 'array{data: list<array{'.self::TOPIC_FIELDS.', subscriptions: int}>}')]
     public function index(): JsonResponse
     {
@@ -46,6 +47,7 @@ class TopicController extends Controller
         ]);
     }
 
+    /** Create a topic on a region's Redis */
     #[BodyParameter('knative_region_id', 'The region (ULID) whose Redis carries the topic', type: 'string')]
     #[OpenApiResponse(201, 'The new topic', type: 'array{data: array{'.self::TOPIC_FIELDS.', subscriptions: int}}')]
     public function store(Request $request): JsonResponse
@@ -72,6 +74,7 @@ class TopicController extends Controller
         return response()->json(['data' => $this->present($topic->load('knativeRegion:id,name')) + ['subscriptions' => 0]], 201);
     }
 
+    /** Show a topic with the triggers subscribed to it */
     #[OpenApiResponse(200, 'The topic with the triggers subscribed to it', type: 'array{data: array{'.self::TOPIC_FIELDS.', subscriptions: list<array{trigger_id: string, trigger: string, enabled: bool, project_id: string, project_name: string|null, start_from: string}>}}')]
     public function show(string $topic): JsonResponse
     {
@@ -89,6 +92,7 @@ class TopicController extends Controller
         ]]);
     }
 
+    /** Change a topic's description */
     public function update(Request $request, string $topic): JsonResponse
     {
         $row = $this->find($topic);
@@ -97,6 +101,7 @@ class TopicController extends Controller
         return response()->json(['data' => $this->present($row)]);
     }
 
+    /** Delete a topic no trigger subscribes to */
     public function destroy(string $topic): JsonResponse
     {
         $row = $this->find($topic);
@@ -118,6 +123,7 @@ class TopicController extends Controller
         return response()->json(null, 204);
     }
 
+    /** Publish an event to a topic's subscribers */
     #[BodyParameter('data', 'The event: any JSON value; a string with a content_type other than application/json is sent as it is', required: true, type: 'mixed')]
     #[OpenApiResponse(202, 'The publisher took the event (demo: a demo region, nothing is delivered)', type: 'array{data: array{id: string, stream_id: string, demo?: bool}}')]
     #[OpenApiResponse(502, 'The region\'s publisher did not take the event', type: 'array{message: string}')]

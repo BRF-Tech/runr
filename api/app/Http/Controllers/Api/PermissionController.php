@@ -15,6 +15,8 @@ class PermissionController extends Controller
     public function __construct(private readonly Rbac $rbac) {}
 
     /**
+     * List the permission catalog of this edition
+     *
      * The permission catalog of this edition (permission matrix of the Roles page).
      */
     public function catalog(): JsonResponse
@@ -34,6 +36,8 @@ class PermissionController extends Controller
     }
 
     /**
+     * Show the caller's effective permissions in the organization
+     *
      * Effective permissions of the signed-in user in the current organization: organization-wide
      * ones, and the extra ones from project access per project — limited by the API token used.
      */

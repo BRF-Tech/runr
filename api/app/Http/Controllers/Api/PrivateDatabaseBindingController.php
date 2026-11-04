@@ -31,7 +31,11 @@ class PrivateDatabaseBindingController extends Controller
         private readonly SkupperLinkParser $parser,
     ) {}
 
-    /** The connections of the project's own workload, or of one environment with ?environment= (docs/environments.md). */
+    /**
+     * List the project's private database connections
+     *
+     * The connections of the project's own workload, or of one environment with ?environment= (docs/environments.md).
+     */
     public function index(Request $request, Project $project): JsonResponse
     {
         $target = DeployTarget::environment($project, EnvironmentResolver::resolve($project, $request->query('environment')));
@@ -46,6 +50,8 @@ class PrivateDatabaseBindingController extends Controller
     }
 
     /**
+     * Create a private database connection for the project
+     *
      * A connection of the project's own workload, or with `environment` (a name or id) of one of
      * its environments: it lives in the namespace of the region the environment runs in, and only
      * the environment's workloads get its env vars. Names and env var prefixes are unique per
@@ -148,6 +154,7 @@ class PrivateDatabaseBindingController extends Controller
         return response()->json(['data' => $this->present($binding->fresh(), $project), 'env_synced' => $this->syncEnv($target)], 201);
     }
 
+    /** Get the status of a private database connection */
     public function status(Project $project, string $privateConnection): JsonResponse
     {
         $binding = $this->bindingOf($project, $privateConnection);
@@ -162,6 +169,7 @@ class PrivateDatabaseBindingController extends Controller
         return response()->json(['data' => $this->present($binding, $project), 'status' => $status]);
     }
 
+    /** Delete a private database connection */
     public function destroy(Project $project, string $privateConnection): JsonResponse
     {
         $binding = $this->bindingOf($project, $privateConnection);
@@ -187,6 +195,7 @@ class PrivateDatabaseBindingController extends Controller
 
     // ── Region capability ────────────────────────────────────────────────────
 
+    /** Get the region's Skupper availability and site */
     public function regionStatus(KnativeRegion $knativeRegion): JsonResponse
     {
         if (! $knativeRegion->kubeconfig) {
@@ -200,6 +209,7 @@ class PrivateDatabaseBindingController extends Controller
         }
     }
 
+    /** Create the region's Skupper site unless it exists */
     public function ensureSite(KnativeRegion $knativeRegion): JsonResponse
     {
         if (! $knativeRegion->kubeconfig) {

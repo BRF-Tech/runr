@@ -284,6 +284,8 @@ class BrandingService
                 'tenant_branding' => $multi && $this->tenantOverridesEnabled(),
                 'billing' => PlatformSettings::configBool(config('billing.enabled'), false),
                 'tickets' => PlatformSettings::configBool(config('ticket.enabled'), false),
+                // the sign-in page's SSO buttons (GET /api/auth-providers/discover exists only then)
+                'auth_providers' => PlatformSettings::configBool(config('authprovider.enabled'), false),
             ],
         ];
     }

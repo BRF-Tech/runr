@@ -48,7 +48,7 @@ installs `runr` into `/usr/local/bin` when that is writable, else into `~/.local
 
 ```sh
 curl -fsSL https://runr.sh/install.sh | sh
-curl -fsSL https://runr.sh/install.sh | RUNR_VERSION=v0.6.4 sh             # a specific release
+curl -fsSL https://runr.sh/install.sh | RUNR_VERSION=v0.6.5 sh             # a specific release
 curl -fsSL https://runr.sh/install.sh | RUNR_INSTALL_DIR="$HOME/bin" sh    # another directory
 ```
 
@@ -164,7 +164,8 @@ Other commands need: `runr logs` → `logs.view`; `runr env set|unset` → `env.
 `runr projects delete` → `projects.delete`; `runr projects patch apply|pin|unpin` →
 `projects.deploy`; `runr strategy set|reset` → `projects.update`; `runr rollout
 promote|abort|rollback` → `projects.deploy`; `runr projects global set|failover` →
-`projects.update`, `runr projects global sync` → `projects.deploy`; `runr tokens …` → `tokens.manage`;
+`projects.update`, `runr projects global sync` → `projects.deploy`; `runr tokens create` → `tokens.manage` (listing and
+revoking one's own tokens needs no role permission; a limited token must carry `tokens.manage`);
 `runr environments create|update|delete` → `environments.manage` (`--env` also `env.edit`),
 `runr environments secrets` → `env.view` / `env.edit`, `runr promote` → `environments.promote`,
 `runr approvals approve|reject` → `environments.approve`. Reading (`projects ls|get|patches`, `status`,
@@ -2552,7 +2553,8 @@ handle is the project's slug); the gateway forwards to the function's URL plus t
 | Command | Needs |
 |---|---|
 | `runr mcp [config]`, `mcp tools`, `mcp-server templates` | a login |
-| `runr mcp token create`, `mcp clients [ls]\|revoke` | `tokens.manage` |
+| `runr mcp token create` | `tokens.manage` |
+| `runr mcp clients [ls]\|revoke` | a login (a limited token: `tokens.manage`) |
 | `runr mcp-server [get]\|ls` | `projects.view` |
 | `runr mcp-server set\|rotate-key\|rm` | `mcp.servers.manage` on the project (and `projects.deploy` for the redeploy) |
 | `runr mcp-server calls` | `logs.view` |
@@ -3234,7 +3236,7 @@ deploy:
   stage: deploy
   image: alpine:3.21
   variables:
-    RUNR_VERSION: v0.6.4
+    RUNR_VERSION: v0.6.5
   before_script:
     - apk add --no-cache curl tar
     - curl -fsSL https://runr.sh/install.sh | sh

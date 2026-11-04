@@ -3,13 +3,22 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Support\Carbon;
 
 /**
+ * An in-app notification: a user's own (user_id set: a job's result, a support ticket) or shared
+ * by the organization's members (no user_id: a resource threshold). An own notification keeps its
+ * read and deleted state in read_at and deleted_at; a shared one keeps it per member in
+ * notification_user_states (userStates), so one member's action never changes another's view.
+ * A shared one's own read_at and deleted_at are no longer written: one set before 0.6.5 keeps it
+ * read or deleted for everyone.
+ *
  * @property string $id
  * @property string|null $user_id
  * @property string $type
@@ -22,6 +31,8 @@ use Illuminate\Support\Carbon;
  * @property Carbon|null $updated_at
  * @property Carbon|null $deleted_at
  * @property-read User|null $user
+ * @property-read Collection<int, NotificationUserState> $userStates
+ * @property-read int|null $user_states_count
  *
  * @method static Builder<static>|Notification byType(string $type)
  * @method static Builder<static>|Notification newModelQuery()
@@ -62,6 +73,16 @@ class Notification extends Model
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class);
+    }
+
+    /**
+     * The members' read and deleted state of a shared notification.
+     *
+     * @return HasMany<NotificationUserState, $this>
+     */
+    public function userStates(): HasMany
+    {
+        return $this->hasMany(NotificationUserState::class);
     }
 
     protected function casts(): array

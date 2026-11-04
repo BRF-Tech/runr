@@ -25,6 +25,8 @@ use Illuminate\Support\Facades\Gate;
 class WasmController extends Controller
 {
     /**
+     * Show the region's WebAssembly support and its nodes' eligibility
+     *
      * WebAssembly status of the region, the shims RunR installs and — unless ?cluster=0 — the
      * nodes with their eligibility, the RuntimeClasses and the Knative features still to enable.
      */
@@ -57,6 +59,8 @@ class WasmController extends Controller
     }
 
     /**
+     * Install WebAssembly support in the region or change it
+     *
      * Install WebAssembly support (or change its shims / nodes): queued, progress on the region
      * (sandbox_wasm_status_message, install.progress events with component "wasm").
      */
@@ -120,7 +124,9 @@ class WasmController extends Controller
     }
 
     /**
-     * Remove WebAssembly support from the region's nodes (refused while Wasm pods run).
+     * Remove WebAssembly support from the region's nodes (queued)
+     *
+     * Refused while Wasm pods run (the support then stays installed).
      */
     public function uninstall(KnativeRegion $knativeRegion): JsonResponse
     {

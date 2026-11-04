@@ -29,7 +29,7 @@ class WorkflowEventController
         private readonly EventIngestor $ingestor,
     ) {}
 
-    /** POST /events */
+    /** Send events that can start workflow runs */
     public function store(Request $request): JsonResponse
     {
         Gate::authorize('events.send');
@@ -65,7 +65,12 @@ class WorkflowEventController
         ]);
     }
 
-    /** GET /events  Filters: name (prefix), source, project_id, environment (a name, production), from, to, per_page */
+    /**
+     * List the organization's events
+     *
+     * Filters: name (prefix), source, project_id, environment (a name, production), from, to,
+     * per_page.
+     */
     public function index(Request $request): AnonymousResourceCollection
     {
         Gate::authorize('workflows.view');
@@ -106,7 +111,7 @@ class WorkflowEventController
         );
     }
 
-    /** GET /events/{event} — the event and the runs it started */
+    /** Show an event and the runs it started */
     public function show(string $event): JsonResponse
     {
         Gate::authorize('workflows.view');

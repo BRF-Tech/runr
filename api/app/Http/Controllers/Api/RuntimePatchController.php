@@ -26,6 +26,7 @@ class RuntimePatchController extends Controller
 {
     public function __construct(private readonly RuntimePatches $patches) {}
 
+    /** List the runtime patches of the feed, newest first */
     #[OpenApiResponse(200, 'The patches of the feed (?runtime=, ?version=), the feed\'s status and how many patches per version are kept', type: 'array{data: list<array{'.RuntimePatch::OPENAPI_FIELDS.'}>, feed: array{enabled: bool, status: "ok"|"invalid_signature"|"invalid_schema"|"unreachable"|"disabled", fetched_at: string|null}, keep: int}')]
     public function index(Request $request): JsonResponse
     {
@@ -49,6 +50,7 @@ class RuntimePatchController extends Controller
         ]);
     }
 
+    /** List the patch and release banners for the signed-in user */
     #[OpenApiResponse(200, 'Banners for the signed-in user: urgent patches of the projects they see; for platform administrators a newer RunR release and the feed\'s trouble', type: 'array{data: list<array{kind: "runtime_patch", level: string, overdue: bool, patch: array{'.RuntimePatch::OPENAPI_FIELDS.'}, project_count: int, projects: list<array{id: string, name: string}>}|array{kind: "platform_advisory", level: string, running: string, version: string, reason: string, url: string|null, published_at: string|null}|array{kind: "feed_disabled", level: string}|array{kind: "feed_invalid", level: string, status: string, error: string|null}>}')]
     public function banners(Request $request, Rbac $rbac): JsonResponse
     {

@@ -4,8 +4,9 @@
 #     variables, tokens or pipeline schedules);
 #   - ci.yml runs on every pull request, every push to main and by hand, and covers every check:
 #     gitleaks, the reqs mirror, the Dockerfiles and runtime/test, the Helm chart, Pint, PHPUnit
-#     with the coverage floor of docs/development.md, Larastan, the UI lint, unit tests with
-#     coverage, build and mocked e2e, Go and the Node SDK;
+#     with the coverage floor of docs/development.md, Larastan, the API reference with every module
+#     (api/docker/api-docs.sh --check), the UI lint, unit tests with coverage, build and mocked e2e,
+#     Go and the Node SDK;
 #   - audit.yml audits the npm and Composer dependencies on main, every day and on pull requests
 #     that touch a lockfile; production npm dependencies block, dev tooling and Composer report;
 #   - e2e.yml runs the Kind suite and the UI suite against the dev stack every week and by hand,
@@ -98,7 +99,7 @@ check gitleaks 'git archive HEAD' 'dir . --config /gitleaks.toml --redact' '.git
 check reqs-mirror 'bash ci/check-reqs-mirror.sh'
 check build-scripts 'bash ci/check-dockerfiles.sh' 'for t in runtime/test/*_test.sh; do'
 check helm 'bash ci/check-helm-chart.sh' 'kubeconform'
-check api 'vendor/bin/pint --test' 'artisan test --compact --coverage --min=' 'vendor/bin/phpstan analyse' '"8.2.35"' 'coverage: pcov'
+check api 'vendor/bin/pint --test' 'artisan test --compact --coverage --min=' 'vendor/bin/phpstan analyse' '"8.2.35"' 'coverage: pcov'   'sh docker/api-docs.sh "$RUNNER_TEMP/openapi.json" --check' 'vendor/bin/phpunit --no-coverage tests/Feature/ApiDocsTest.php'
 check ui 'npm run lint' 'npm run test:coverage' 'npm run build'
 check ui-e2e 'npx playwright install --with-deps chromium' 'npm run test:e2e:mock'
 check go 'gofmt -l .' 'go vet ./...' 'go test -race -count=1' "-not -path './examples/wasm/*'"
@@ -107,7 +108,7 @@ check sdk-node 'npm install -g npm@11' 'npm run typecheck' 'npm test'
 ci_min="$(grep -oE 'artisan test --compact --coverage --min=[0-9]+' "$ci" | grep -oE '[0-9]+$')"
 doc_min="$(grep -oE 'artisan test --compact --coverage --min=[0-9]+' "$root/docs/development.md" | grep -oE '[0-9]+$' | sort -u)"
 [ -n "$ci_min" ] && [ "$ci_min" = "$doc_min" ] || fail "the API coverage floor of ci.yml (${ci_min}) is not docs/development.md's (${doc_min})"
-echo "ok - ci.yml: gitleaks, reqs mirror, Dockerfiles + runtime/test, Helm chart, Pint, PHPUnit (--min=${ci_min}), Larastan, UI, UI e2e, Go, Node SDK"
+echo "ok - ci.yml: gitleaks, reqs mirror, Dockerfiles + runtime/test, Helm chart, Pint, PHPUnit (--min=${ci_min}), Larastan, API reference (every module), UI, UI e2e, Go, Node SDK"
 
 # --- audit.yml --------------------------------------------------------------------------------------
 audit="$wfdir/audit.yml"

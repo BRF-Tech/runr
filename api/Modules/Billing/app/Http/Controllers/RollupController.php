@@ -20,6 +20,7 @@ class RollupController extends Controller
 
     public function __construct(private readonly BillService $bills) {}
 
+    /** Get the month's bills rolled up per payer */
     public function index(Request $request): JsonResponse
     {
         $request->validate(['period' => ['sometimes', 'string', 'regex:/^\d{4}-(0[1-9]|1[0-2])$/']]);

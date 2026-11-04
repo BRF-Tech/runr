@@ -37,6 +37,7 @@ class RuntimePatchAdminController extends Controller
         private readonly RuntimePatchNotifier $notifier,
     ) {}
 
+    /** Show the patch feed, every patch with its affected projects, and RunR releases */
     #[OpenApiResponse(200, 'The Patches page: the feed, every patch with the projects behind it per organization, the advisories of newer RunR releases', type: 'array{data: array{feed: '.RuntimePatchFeed::OPENAPI_TYPE.', key_configured: bool, running_version: string, patches: list<array{'.RuntimePatch::OPENAPI_FIELDS.', announced_at: string|null, removed_at: string|null, overdue: bool, affected: int, organizations: list<array{tenant_id: string|null, name: string|null, affected: int, migrations: array<string, int>}>}>, advisories: list<array{version: string, level: string, reason: string, url: string|null, published_at: string|null, newer: bool}>}}')]
     public function index(): JsonResponse
     {
@@ -64,7 +65,9 @@ class RuntimePatchAdminController extends Controller
     }
 
     /**
-     * Checks the feed now.
+     * Check the runtime patch feed now
+     *
+     * Reads the feed now; 502 when it does not verify or cannot be read.
      *
      * @response JsonResponse<array{data: array<string, mixed>}, 200>
      */
@@ -77,6 +80,7 @@ class RuntimePatchAdminController extends Controller
         return response()->json(['data' => $feed->toApi()], in_array($feed->status, [RuntimePatchFeed::OK, RuntimePatchFeed::DISABLED], true) ? 200 : 502);
     }
 
+    /** Turn automatic migration at patch deadlines on or off */
     public function policy(Request $request): JsonResponse
     {
         $data = $request->validate(['auto_migrate' => ['required', 'boolean']]);
@@ -87,11 +91,13 @@ class RuntimePatchAdminController extends Controller
         return response()->json(['data' => $feed->toApi()]);
     }
 
+    /** Notify everyone a patch concerns again */
     public function remind(RuntimePatch $patch): JsonResponse
     {
         return response()->json(['data' => ['told' => $this->notifier->announce($patch, remind: true)]]);
     }
 
+    /** Migrate every project behind a patch now */
     public function force(Request $request, RuntimePatch $patch): JsonResponse
     {
         if (! $patch->in_feed) {
@@ -107,6 +113,7 @@ class RuntimePatchAdminController extends Controller
         return response()->json(['data' => ['started' => $started]], 202);
     }
 
+    /** Extend or move a patch's deadline */
     public function deadline(Request $request, RuntimePatch $patch): JsonResponse
     {
         if (! $patch->hasDeadline()) {

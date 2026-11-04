@@ -4,6 +4,8 @@ namespace App\Support\Auth;
 
 use App\Mcp\Models\McpSession;
 use App\Models\User;
+use App\Services\Notifications\NotificationRetention;
+use App\Support\PlatformConnection;
 use Closure;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Relations\Relation;
@@ -14,11 +16,15 @@ use Laravel\Sanctum\Sanctum;
  * The personal access tokens of a user — sign-in sessions and API tokens (docs/security.md,
  * "Sign-in sessions and API tokens") — go with the user: deleting an account, by its owner or by
  * an administrator, deletes every token of it in the same transaction, and then the MCP server
- * sessions those tokens opened and what the deletion hooks (UserDeletionHook) clean up.
+ * sessions those tokens opened, the user's notifications and what the deletion hooks
+ * (UserDeletionHook) clean up.
  */
 final class UserTokens
 {
-    /** Deletes $user and every token of theirs in one transaction, then their MCP sessions. */
+    /**
+     * Deletes $user and every token of theirs in one transaction, then their MCP sessions and
+     * their notifications.
+     */
     public static function deleteUser(User $user): void
     {
         // Asked before the delete: what the account still refers to (memberships) goes with it
@@ -36,6 +42,10 @@ final class UserTokens
 
         // Bound to the deleted tokens (they answer nothing without them); central in both editions
         McpSession::query()->where('user_id', (string) $user->getKey())->delete();
+
+        // The user's notifications and their state of the shared ones in the central schema; the
+        // organizations' schemas follow with the hooks (TenantMembers)
+        app(NotificationRetention::class)->forgetUsers([$user->getKey()], PlatformConnection::name());
 
         foreach ($after as $run) {
             $run();

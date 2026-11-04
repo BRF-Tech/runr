@@ -32,6 +32,7 @@ class TriggerEventController extends Controller
 
     public function __construct(private InboxService $inbox) {}
 
+    /** List a trigger's stored events, newest first */
     #[OpenApiResponse(200, 'A page of the trigger\'s stored events, newest first', type: 'array{data: list<array{'.self::EVENT_FIELDS.'}>, meta: array{current_page: int, last_page: int, per_page: int, total: int}}')]
     public function index(Request $request, Project $project, string $trigger): JsonResponse
     {
@@ -58,6 +59,7 @@ class TriggerEventController extends Controller
         ]);
     }
 
+    /** Show a stored event with its headers and body */
     #[OpenApiResponse(200, 'The stored event with its headers and body (body_text: the body as text when it is UTF-8 and at most 64 KiB)', type: 'array{data: array{'.self::EVENT_FIELDS.', headers: array<string, mixed>, body_base64: string, body_text: string|null}}')]
     public function show(Project $project, string $trigger, string $event): JsonResponse
     {
@@ -72,6 +74,7 @@ class TriggerEventController extends Controller
         ]]);
     }
 
+    /** Replay a stored event */
     public function replay(Project $project, string $trigger, string $event): JsonResponse
     {
         $row = $this->event($this->trigger($project, $trigger), $event);
@@ -79,6 +82,7 @@ class TriggerEventController extends Controller
         return response()->json(['data' => $this->inbox->replay($row)->toSummaryArray()]);
     }
 
+    /** Replay a trigger's failed, delivered or chosen stored events */
     #[OpenApiResponse(200, 'How many events were handed to the event gateway again', type: 'array{replayed: int}')]
     public function replayMany(Request $request, Project $project, string $trigger): JsonResponse
     {

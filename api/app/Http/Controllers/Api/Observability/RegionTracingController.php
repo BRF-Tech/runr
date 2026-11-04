@@ -20,15 +20,16 @@ use Illuminate\Validation\Rule;
  */
 class RegionTracingController extends Controller
 {
-    /** GET /api/observability/regions/{knativeRegion}/tracing */
+    /** Get the region's tracing configuration. */
     public function show(KnativeRegion $knativeRegion): JsonResponse
     {
         return response()->json(['data' => RegionTracingConfig::forRegion($knativeRegion)->toApi()]);
     }
 
     /**
-     * PUT /api/observability/regions/{knativeRegion}/tracing — store the configuration;
-     * install = true applies it to the cluster right away.
+     * Update the region's tracing configuration.
+     *
+     * Stores the configuration; install = true applies it to the cluster right away.
      */
     public function update(Request $request, KnativeRegion $knativeRegion): JsonResponse
     {
@@ -82,13 +83,13 @@ class RegionTracingController extends Controller
         return response()->json(['data' => $config->toApi()]);
     }
 
-    /** POST /api/observability/regions/{knativeRegion}/tracing/install */
+    /** Apply the region's tracing configuration to its cluster. */
     public function install(Request $request, KnativeRegion $knativeRegion): JsonResponse
     {
         return $this->dispatchInstall($request, $knativeRegion, RegionTracingConfig::forRegion($knativeRegion));
     }
 
-    /** DELETE /api/observability/regions/{knativeRegion}/tracing — remove the collector (and RunR's Tempo). */
+    /** Remove the region's tracing collector (and RunR's Tempo). */
     public function destroy(Request $request, KnativeRegion $knativeRegion): JsonResponse
     {
         if (! $knativeRegion->kubeconfig) {

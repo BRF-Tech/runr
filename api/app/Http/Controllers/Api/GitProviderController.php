@@ -21,6 +21,7 @@ use Illuminate\Validation\ValidationException;
  */
 class GitProviderController extends Controller
 {
+    /** List the Git providers */
     public function index(): JsonResponse
     {
         $this->authorizeManage();
@@ -28,6 +29,7 @@ class GitProviderController extends Controller
         return response()->json(['data' => GitProvider::withCount('links')->orderBy('type')->orderBy('name')->get()->map(fn ($p) => $this->present($p))->values()]);
     }
 
+    /** Add a GitHub App, a GitLab instance, or a Forgejo or Gitea instance */
     public function store(Request $request): JsonResponse
     {
         $this->authorizeManage();
@@ -41,6 +43,7 @@ class GitProviderController extends Controller
         return response()->json(['data' => $this->present($provider->loadCount('links'))], 201);
     }
 
+    /** Change a Git provider */
     public function update(Request $request, string $provider): JsonResponse
     {
         $this->authorizeManage();
@@ -63,6 +66,7 @@ class GitProviderController extends Controller
         return response()->json(['data' => $this->present($row->loadCount('links'))]);
     }
 
+    /** Remove a Git provider no project is connected through */
     public function destroy(string $provider): JsonResponse
     {
         $this->authorizeManage();

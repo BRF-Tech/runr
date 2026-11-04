@@ -51,6 +51,10 @@ for name in gateway-auth image-upload; do
   built=$(awk -F= '/^ARG VERSION=/ { print $2; exit }' "$here/${name}/Dockerfile")
   echo "$list" | grep -qxF "ghcr.io/brf-tech/runr/${name}:${built}" || fail "${name}: its Dockerfile builds ${built}, the list has $(echo "$list" | grep "/${name}:")"
 done
+# image-upload reports its version (runr-image-upload version): a build without the Dockerfile's
+# -ldflags (go build, go run) says the same as the image
+src=$(sed -n 's/^var version = "\(.*\)"$/\1/p' "$here/image-upload/main.go")
+[ "$src" = "$(image_upload_version)" ] || fail "image-upload: main.go says ${src}, image_upload_version $(image_upload_version)"
 echo "ok - every image the API references by version is in the release list ($(echo "$refs" | wc -l | tr -d ' ') references)"
 
 # --- no :latest default of RunR's own images ----------------------------------------------------------

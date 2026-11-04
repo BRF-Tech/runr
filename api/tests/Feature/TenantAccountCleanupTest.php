@@ -3,6 +3,8 @@
 namespace Tests\Feature;
 
 use App\Http\Controllers\Api\UserController;
+use App\Models\Notification;
+use App\Models\NotificationUserState;
 use App\Models\RoleAssignment;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -14,7 +16,9 @@ use Modules\Tenancy\Http\Controllers\TenancyUserController;
 use Modules\Tenancy\Http\Middleware\IdentifyTenant;
 use Modules\Tenancy\Models\Tenant;
 use Modules\Tenancy\Models\TenantLocalUser;
+use Modules\Tenancy\Models\TenantUser;
 use Modules\Tenancy\Providers\TenancyServiceProvider;
+use Modules\Tenancy\Support\TenantTokens;
 use Symfony\Component\HttpKernel\Exception\HttpException;
 use Tests\Concerns\ActsWithRoles;
 use Tests\Concerns\WiresTenancy;
@@ -22,9 +26,11 @@ use Tests\TestCase;
 
 /**
  * Multi-tenant leftovers of deleted accounts and memberships (docs/security.md, "Sign-in sessions
- * and API tokens"): a deleted account's copies and role rows go from every organization it
- * belonged to, and tokens:prune removes what earlier releases left behind — the tokens
- * organizations refuse for good and the copies of accounts that no longer exist.
+ * and API tokens"): a deleted account's copies, role rows and notifications go from every
+ * organization it belonged to and its notifications from the central schema, a removed member's
+ * notifications from that organization, and tokens:prune removes what earlier releases left
+ * behind — the tokens organizations refuse for good and the copies of accounts that no longer
+ * exist.
  */
 class TenantAccountCleanupTest extends TestCase
 {
@@ -35,6 +41,8 @@ class TenantAccountCleanupTest extends TestCase
         'Modules/Tenancy/Database/TenantMigrations/0003_create_users_table.php',
         'Modules/Tenancy/Database/TenantMigrations/0020_add_created_by_to_projects.php',
         'Modules/Tenancy/Database/TenantMigrations/0040_create_rbac_tables.php',
+        'Modules/Tenancy/Database/TenantMigrations/0007_add_user_id_to_notifications.php',
+        'Modules/Tenancy/Database/TenantMigrations/0110_create_notification_user_states_table.php',
     ];
 
     protected function setUp(): void
@@ -81,6 +89,46 @@ class TenantAccountCleanupTest extends TestCase
         ]);
     }
 
+    /** In $tenant's schema (null: the central one): a shared notification. Returns its id. */
+    private function sharedIn(?Tenant $tenant): string
+    {
+        $create = fn () => Notification::query()->create(['type' => 'resource_threshold', 'level' => 'warning', 'title' => 'shared'])->id;
+
+        return $tenant ? $tenant->run($create) : $create();
+    }
+
+    /**
+     * In $tenant's schema (null: the central one): an own notification of $user, a deleted one, and
+     * their read state of the shared notification $shared.
+     */
+    private function notificationsOf(?Tenant $tenant, User $user, string $shared): void
+    {
+        $create = function () use ($user, $shared) {
+            Notification::query()->create(['user_id' => (string) $user->id, 'type' => 'model_service.deploy_failed', 'level' => 'warning', 'title' => 'own']);
+            Notification::query()->create(['user_id' => (string) $user->id, 'type' => 'model_service.deploy_failed', 'level' => 'warning', 'title' => 'deleted'])->delete();
+            NotificationUserState::query()->create(['notification_id' => $shared, 'user_id' => $user->id, 'read_at' => now()]);
+        };
+
+        $tenant ? $tenant->run($create) : $create();
+    }
+
+    /**
+     * In $tenant's schema (null: the central one): $user's notifications (deleted ones too), their
+     * state rows, and the shared notifications.
+     *
+     * @return array{0: int, 1: int, 2: int}
+     */
+    private function notificationsLeft(?Tenant $tenant, User $user): array
+    {
+        $count = fn () => [
+            Notification::withTrashed()->where('user_id', (string) $user->id)->count(),
+            NotificationUserState::query()->where('user_id', $user->id)->count(),
+            Notification::query()->whereNull('user_id')->count(),
+        ];
+
+        return $tenant ? $tenant->run($count) : $count();
+    }
+
     private function tokenIn(User $user, ?string $tenantId, string $name): int
     {
         $token = $user->createToken($name)->accessToken;
@@ -121,11 +169,67 @@ class TenantAccountCleanupTest extends TestCase
         $this->platformAdmin();
         $dev = User::factory()->create(['username' => 'dev', 'password' => 'dev-password']);
         $this->member($acme, $dev);
+        foreach ([null, $acme] as $tenant) {
+            $this->notificationsOf($tenant, $dev, $this->sharedIn($tenant));
+        }
 
         $this->signedIn($dev)->deleteJson('/api/account', ['password' => 'dev-password'])->assertOk();
 
         $this->assertNull(User::query()->find($dev->id));
         $this->assertSame([false, 0, 0], $this->leftIn($acme, $dev->id));
+        $this->assertSame([0, 0, 1], $this->notificationsLeft(null, $dev), 'central: the notifications and state go, the shared one stays');
+        $this->assertSame([0, 0, 1], $this->notificationsLeft($acme, $dev));
+    }
+
+    // ── Notifications ───────────────────────────────────────────────────────
+
+    public function test_a_platform_admin_deleting_an_account_removes_its_notifications_everywhere(): void
+    {
+        $this->app->bind(UserController::class, TenancyUserController::class);
+        $acme = $this->createTenantWithSchema('acme', self::SCHEMA);
+        $globex = $this->createTenantWithSchema('globex', self::SCHEMA);
+        $root = $this->platformAdmin();
+        $dev = User::factory()->create(['username' => 'dev']);
+        $other = User::factory()->create(['username' => 'other']);
+        $this->member($acme, $dev);
+        $this->member($globex, $dev);
+        $this->member($acme, $other);
+        foreach ([null, $acme, $globex] as $tenant) {
+            $shared = $this->sharedIn($tenant);
+            $this->notificationsOf($tenant, $dev, $shared);
+            $this->notificationsOf($tenant, $other, $shared);
+        }
+
+        $this->signedIn($root)->deleteJson("/api/users/{$dev->id}")->assertOk();
+
+        foreach (['central' => null, 'acme' => $acme, 'globex' => $globex] as $where => $tenant) {
+            $this->assertSame([0, 0, 1], $this->notificationsLeft($tenant, $dev), "{$where}: the deleted account's notifications and state");
+            $this->assertSame([2, 1, 1], $this->notificationsLeft($tenant, $other), "{$where}: the other user keeps theirs");
+        }
+    }
+
+    public function test_a_member_removed_from_an_organization_loses_their_notifications_there_only(): void
+    {
+        $acme = $this->createTenantWithSchema('acme', self::SCHEMA);
+        $globex = $this->createTenantWithSchema('globex', self::SCHEMA);
+        $dev = User::factory()->create(['username' => 'dev']);
+        $other = User::factory()->create(['username' => 'other']);
+        $this->member($acme, $dev);
+        $this->member($globex, $dev);
+        $this->member($acme, $other);
+        foreach ([null, $acme, $globex] as $tenant) {
+            $shared = $this->sharedIn($tenant);
+            $this->notificationsOf($tenant, $dev, $shared);
+            $this->notificationsOf($tenant, $other, $shared);
+        }
+
+        // What DELETE /api/tenants/{tenant}/users/{user} runs
+        TenantTokens::removeMember(TenantUser::query()->where('tenant_id', $acme->id)->where('user_id', $dev->id)->firstOrFail());
+
+        $this->assertSame([0, 0, 1], $this->notificationsLeft($acme, $dev));
+        $this->assertSame([2, 1, 1], $this->notificationsLeft($acme, $other));
+        $this->assertSame([2, 1, 1], $this->notificationsLeft($globex, $dev), 'another organization keeps them');
+        $this->assertSame([2, 1, 1], $this->notificationsLeft(null, $dev), 'the account keeps its central ones');
     }
 
     // ── tokens:prune: leftovers of earlier releases ─────────────────────────
@@ -178,6 +282,9 @@ class TenantAccountCleanupTest extends TestCase
         $gone = User::factory()->create(['username' => 'gone']);
         $this->member($acme, $kept);
         $this->member($acme, $gone);
+        $shared = $this->sharedIn($acme);
+        $this->notificationsOf($acme, $kept, $shared);
+        $this->notificationsOf($acme, $gone, $shared);
         // Deleted as earlier releases did: the membership cascades, the copy and role rows stay
         User::query()->whereKey($gone->id)->delete();
         $this->assertSame([true, 1, 1], $this->leftIn($acme, $gone->id));
@@ -188,6 +295,8 @@ class TenantAccountCleanupTest extends TestCase
 
         $this->assertSame([false, 0, 0], $this->leftIn($acme, $gone->id));
         $this->assertSame([true, 1, 1], $this->leftIn($acme, $kept->id));
+        $this->assertSame([0, 0, 1], $this->notificationsLeft($acme, $gone), 'its notifications go with the copy');
+        $this->assertSame([2, 1, 1], $this->notificationsLeft($acme, $kept));
 
         // Again: nothing left to remove
         $this->artisan('tokens:prune')

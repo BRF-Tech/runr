@@ -14,6 +14,10 @@
 /auth.json
 /node_modules
 /public/api-docs.json
+# The OpenAPI document of /api/docs.json (php artisan runr:api-docs; the API image builds its own)
+/resources/api-docs/
+# The API reference's viewer, downloaded by the API image's build (Dockerfile.prod)
+/public/api/vendor/
 /public/build
 /public/hot
 /public/storage

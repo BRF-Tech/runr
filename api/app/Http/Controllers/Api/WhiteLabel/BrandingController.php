@@ -24,7 +24,14 @@ class BrandingController extends Controller
 {
     public function __construct(private readonly BrandingService $branding) {}
 
-    /** @unauthenticated */
+    /**
+     * Get the branding the console shows, with its feature flags.
+     *
+     * `?tenant=<slug>` gives that organization's branding. Public: the sign-in page is branded
+     * before sign-in.
+     *
+     * @unauthenticated
+     */
     public function show(Request $request): JsonResponse
     {
         $tenant = $this->branding->findTenant($request->query('tenant'));
@@ -34,8 +41,10 @@ class BrandingController extends Controller
     }
 
     /**
-     * A branding image (logo / mark / favicon / e-mail logo) by kind — uploaded file or data: URI
-     * decoded; a URL value redirects. Used where a data: URI cannot be (e-mails).
+     * Download a branding image (logo, mark, favicon or e-mail logo) by kind.
+     *
+     * The uploaded file or the decoded data: URI; a URL value redirects. Used where a data: URI
+     * cannot be (e-mails).
      *
      * @unauthenticated
      */
@@ -62,6 +71,7 @@ class BrandingController extends Controller
         ]);
     }
 
+    /** Get the platform branding with its stored values and defaults. */
     public function index(Request $request): JsonResponse
     {
         $this->authorizeInstallBrand($request);
@@ -69,6 +79,11 @@ class BrandingController extends Controller
         return response()->json($this->branding->adminPayload());
     }
 
+    /**
+     * Update the platform branding.
+     *
+     * A partial update: a field sent as null goes back to its default.
+     */
     public function update(Request $request): JsonResponse
     {
         $this->authorizeInstallBrand($request);
@@ -79,6 +94,11 @@ class BrandingController extends Controller
         return response()->json($this->branding->adminPayload());
     }
 
+    /**
+     * Upload a platform branding image.
+     *
+     * Multipart "file"; {kind} is logo_light, logo_dark, logo_mark, favicon or email_logo.
+     */
     public function uploadAsset(Request $request, string $kind): JsonResponse
     {
         $this->authorizeInstallBrand($request);
@@ -89,6 +109,7 @@ class BrandingController extends Controller
         return response()->json($this->branding->adminPayload());
     }
 
+    /** Remove a platform branding image. */
     public function deleteAsset(Request $request, string $kind): JsonResponse
     {
         $this->authorizeInstallBrand($request);

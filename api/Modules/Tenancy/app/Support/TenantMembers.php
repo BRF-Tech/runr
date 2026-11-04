@@ -4,6 +4,7 @@ namespace Modules\Tenancy\Support;
 
 use App\Models\RoleAssignment;
 use App\Models\User;
+use App\Services\Notifications\NotificationRetention;
 use App\Support\Auth\AccountPruner;
 use App\Support\Auth\UserDeletionHook;
 use App\Support\Rbac\AccessManager;
@@ -16,9 +17,9 @@ use Modules\Tenancy\Models\TenantLocalUser;
 use Modules\Tenancy\Models\TenantUser;
 
 /**
- * Each organization keeps a copy of its members in its own schema (TenantLocalUser), and their
- * groups and role assignments. A deleted account's memberships cascade in the central database;
- * its copies and role rows go here:
+ * Each organization keeps a copy of its members in its own schema (TenantLocalUser), their
+ * groups and role assignments, and their notifications. A deleted account's memberships cascade
+ * in the central database; its copies, role rows and notifications go here:
  *
  *  - as a UserDeletionHook: the account deleted by a platform administrator or by its user
  *    (UserTokens::deleteUser) — in every organization it belonged to, once the delete is committed;
@@ -62,8 +63,9 @@ final class TenantMembers implements AccountPruner, UserDeletionHook
     }
 
     /**
-     * In $tenant's schema, the copies, group memberships and role assignments of the users
-     * $userIds — null: of every user the schema knows whose central account no longer exists.
+     * In $tenant's schema, the copies, group memberships, role assignments and notifications
+     * (NotificationRetention::forgetUsers) of the users $userIds — null: of every user the schema
+     * knows whose central account no longer exists.
      *
      * @param  list<int|string>|null  $userIds
      * @return int the copies deleted
@@ -85,6 +87,7 @@ final class TenantMembers implements AccountPruner, UserDeletionHook
                     $copies += TenantLocalUser::withoutEvents(fn () => TenantLocalUser::where('id', $userId)->delete());
                     app(AccessManager::class)->forgetUser($userId);
                 }
+                app(NotificationRetention::class)->forgetUsers($userIds);
 
                 return $copies;
             });

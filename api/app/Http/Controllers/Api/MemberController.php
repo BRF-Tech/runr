@@ -20,6 +20,7 @@ class MemberController extends Controller
         private readonly AccessManager $access,
     ) {}
 
+    /** List the organization's members with their roles and groups */
     public function index(): JsonResponse
     {
         $groups = DB::table('rbac_group_user')

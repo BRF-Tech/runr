@@ -48,6 +48,7 @@ class ProjectTriggerController extends Controller
         private TriggerPresenter $presenter,
     ) {}
 
+    /** List the trigger types with their config fields */
     #[OpenApiResponse(200, 'The trigger types with their config fields, the platform events and the webhook verification presets', type: 'array{data: list<array{type: string, label: string, description: string|null, serves_http: bool, gateway: bool, requires_redis: bool, exclusive: bool, stores_events: bool, secrets: list<string>, max_per_project: int|null, fields: list<array{key: string, type: "string"|"text"|"list"|"integer"|"boolean"|"select"|"duration"|"json", label: string, help: string|null, required: bool, default: mixed, options: list<string>|null, secret: bool}>}>, platform_events: list<string>, webhook_presets: list<string>}')]
     public function types(TriggerTypes $types): JsonResponse
     {
@@ -58,6 +59,7 @@ class ProjectTriggerController extends Controller
         ]);
     }
 
+    /** List the project's triggers and their plan */
     #[OpenApiResponse(200, 'The project\'s triggers and their plan', type: 'array{data: list<'.self::TRIGGER_TYPE.'>, plan: '.self::PLAN_TYPE.'}')]
     public function index(Project $project): JsonResponse
     {
@@ -68,6 +70,8 @@ class ProjectTriggerController extends Controller
     }
 
     /**
+     * Add a trigger to the project
+     *
      * Adds a trigger: {type, name?, enabled?, position?, config?, secrets?} — config and secrets
      * as the type describes them (GET /api/trigger-types).
      */
@@ -91,6 +95,7 @@ class ProjectTriggerController extends Controller
     }
 
     // the answer adds what the change left to clean up (cleanup()), which the generator cannot follow
+    /** Change a trigger of the project */
     #[BodyParameter('name', 'Unique in the project', type: 'string')]
     #[BodyParameter('enabled', type: 'bool')]
     #[BodyParameter('position', 'Place in the project\'s list (0–1000)', type: 'int')]
@@ -110,6 +115,7 @@ class ProjectTriggerController extends Controller
         ] + $this->cleanup());
     }
 
+    /** Remove a trigger from the project */
     #[OpenApiResponse(200, 'The plan of the project\'s triggers and what the removal left to clean up', type: 'array{plan: '.self::PLAN_TYPE.', requires_deploy: bool, cleanup?: list<'.self::CLEANUP_TYPE.'>}')]
     public function destroy(Project $project, string $trigger): JsonResponse
     {
@@ -121,6 +127,7 @@ class ProjectTriggerController extends Controller
         ] + $this->cleanup());
     }
 
+    /** Replace the project's whole list of triggers */
     #[BodyParameter('triggers', 'The whole list in its order, each entry as for POST; an entry whose name and type match an existing trigger updates it in place (its secrets, inbox URL and stored events stay)', required: true, type: 'list<array{type: string, name?: string, enabled?: bool, config?: array<string, mixed>, secrets?: array<string, string>}>')]
     #[OpenApiResponse(200, 'The triggers, their plan and what the change left to clean up', type: 'array{data: list<'.self::TRIGGER_TYPE.'>, plan: '.self::PLAN_TYPE.', requires_deploy: bool, cleanup?: list<'.self::CLEANUP_TYPE.'>}')]
     public function replace(Request $request, Project $project): JsonResponse

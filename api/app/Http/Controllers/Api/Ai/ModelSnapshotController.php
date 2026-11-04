@@ -19,10 +19,11 @@ use Illuminate\Support\Facades\Gate;
 /**
  * Offline copies of a model in regions ("closed circuit", docs/huggingface.md#offline-mode).
  *
- * @tags AI · Models
+ * @tags AI > Models
  */
 class ModelSnapshotController extends Controller
 {
+    /** List a model's offline copies in the regions */
     public function index(AiModel $model): JsonResponse
     {
         abort_unless(Gate::allows('models.view'), 403);
@@ -30,7 +31,13 @@ class ModelSnapshotController extends Controller
         return response()->json(['data' => AiModelSnapshotResource::collection($model->snapshots()->with('region')->get())->resolve()]);
     }
 
-    /** Mirror a Hub model into a region (or re-run a failed mirror / import). */
+    /**
+     * Mirror a Hub model into a region, or run a failed mirror or import again
+     *
+     * Mirror a Hub model into a region (or re-run a failed mirror / import); queued. A model
+     * imported from a volume or registry is imported again in its own region only, and a ready
+     * copy is kept unless force is set.
+     */
     public function store(Request $request, AiModel $model, ModelStorage $storage): JsonResponse
     {
         abort_unless(Gate::allows(in_array($model->source, ['pvc', 'oci'], true) ? 'models.manage' : 'models.deploy'), 403);
@@ -78,6 +85,7 @@ class ModelSnapshotController extends Controller
         return response()->json(new AiModelSnapshotResource($snapshot->fresh('region')), 202);
     }
 
+    /** Delete a model's offline copy in a region */
     public function destroy(AiModel $model, AiModelSnapshot $snapshot): JsonResponse
     {
         abort_unless(Gate::allows('models.manage'), 403);
@@ -95,6 +103,7 @@ class ModelSnapshotController extends Controller
         return response()->json(null, 204);
     }
 
+    /** Show the job logs of a model copy's mirror or import */
     public function logs(AiModel $model, AiModelSnapshot $snapshot): JsonResponse
     {
         abort_unless(Gate::allows('models.view'), 403);

@@ -626,8 +626,8 @@ Under `/api` (session or API token):
 |---|---|---|
 | `GET /api/mcp` | signed in | endpoint, server info, protocol revisions, OAuth metadata URLs, token lifetimes |
 | `GET /api/mcp/tools` | signed in | the tool catalog: name, title, description, group, permissions, `allowed` for the caller, annotations, input schema |
-| `GET /api/mcp/clients` | `tokens.manage` | the caller's OAuth-connected clients with their tokens |
-| `DELETE /api/mcp/clients/{client}` | `tokens.manage` | revoke every token of the caller for that client |
+| `GET /api/mcp/clients` | signed in (a limited token: `tokens.manage`) | the caller's OAuth-connected clients with their tokens |
+| `DELETE /api/mcp/clients/{client}` | signed in (a limited token: `tokens.manage`) | revoke every token of the caller for that client |
 | `GET /api/oauth2/requests/{id}` | `tokens.manage` | a pending authorization request (consent page): client, requested scopes, grantable permissions, organization, lifetimes |
 | `POST /api/oauth2/requests/{id}/approve` | `tokens.manage` | `{"abilities": [...], "expires_in_days": 30}` → `{"redirect_url": "…?code=…&state=…&iss=…"}` |
 | `POST /api/oauth2/requests/{id}/deny` | signed in | → `{"redirect_url": "…?error=access_denied&state=…"}` |

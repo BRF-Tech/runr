@@ -33,7 +33,11 @@ class ProjectBindingController extends Controller
 {
     public function __construct(private BindingManager $manager) {}
 
-    /** Attachments of the project (of one environment with ?environment=) + bindings that can still be attached. */
+    /**
+     * List the project's binding attachments and attachable bindings
+     *
+     * Attachments of the project (of one environment with ?environment=) + bindings that can still be attached.
+     */
     public function index(Request $request, Project $project): JsonResponse
     {
         // Route: projects.view on the project; the organization's other bindings need bindings.view
@@ -69,6 +73,8 @@ class ProjectBindingController extends Controller
     }
 
     /**
+     * Attach a binding to the project, or create and attach one
+     *
      * Attach: {binding_id, env_prefix} — or create + attach: {binding: {name, type, plan?, settings?, values?}, env_prefix}
      * (a new binding lives in the project's region).
      */
@@ -111,7 +117,11 @@ class ProjectBindingController extends Controller
         return response()->json(['data' => BindingResource::attachment($attachment)], 201);
     }
 
-    /** Change the env prefix of an attachment, or its credentials (static | dynamic). */
+    /**
+     * Change the env prefix or credentials of a binding attachment
+     *
+     * The env prefix of an attachment, or its credentials (static | dynamic).
+     */
     public function update(Request $request, Project $project, string $attachment): JsonResponse
     {
         Gate::authorize('bindings.manage');
@@ -132,6 +142,7 @@ class ProjectBindingController extends Controller
         return response()->json(['data' => BindingResource::attachment($model->load('binding.region'))]);
     }
 
+    /** Detach a binding from the project */
     public function destroy(Project $project, string $attachment): JsonResponse
     {
         Gate::authorize('bindings.manage');

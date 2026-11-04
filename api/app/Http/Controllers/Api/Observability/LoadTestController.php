@@ -26,9 +26,10 @@ class LoadTestController extends Controller
     public function __construct(private LoadTestService $service) {}
 
     /**
-     * GET /api/projects/{project}/load-tests — the latest tests (?limit=, default 10), newest
-     * first, and in meta what a new test can choose (users, durations, targets) and the
-     * organization's daily limit.
+     * List the project's latest load tests.
+     *
+     * The latest tests (?limit=, default 10), newest first, and in meta what a new test can choose
+     * (users, durations, targets) and the organization's daily limit.
      */
     #[OpenApiResponse(200, 'The latest tests, newest first, and what a new test can choose', type: 'array{data: list<'.self::TEST_TYPE.'>, meta: array{enabled: bool, users: list<int>, durations: list<int>, methods: list<"GET"|"POST">, targets: list<string>, daily_limit: int, used_today: int, max_body_bytes: int, metered: bool}}')]
     public function index(Request $request, Project $project): JsonResponse
@@ -49,8 +50,10 @@ class LoadTestController extends Controller
     }
 
     /**
-     * POST /api/projects/{project}/load-tests — start a test (202): host (default: the function
-     * host), path, method GET / POST, body and content_type (POST), users, duration_seconds.
+     * Start a load test of the project.
+     *
+     * Starts a test (202): host (default: the function host), path, method GET / POST, body and
+     * content_type (POST), users, duration_seconds.
      *
      * @response JsonResponse<array{data: array<string, mixed>}, 202>
      */
@@ -88,14 +91,14 @@ class LoadTestController extends Controller
         return response()->json(['data' => $test->load('starter:id,name')->toApi()], 202);
     }
 
-    /** GET /api/projects/{project}/load-tests/{loadTest} */
+    /** Get a load test with its results. */
     #[OpenApiResponse(200, 'The test', type: 'array{data: '.self::TEST_TYPE.'}')]
     public function show(Project $project, string $loadTest): JsonResponse
     {
         return response()->json(['data' => $this->find($project, $loadTest)->toApi()]);
     }
 
-    /** POST /api/projects/{project}/load-tests/{loadTest}/cancel — stop a pending or running test. */
+    /** Stop a pending or running load test. */
     #[OpenApiResponse(200, 'The test', type: 'array{data: '.self::TEST_TYPE.'}')]
     public function cancel(Project $project, string $loadTest): JsonResponse
     {

@@ -19,6 +19,16 @@ class RoutePermissions
      */
     public const PLATFORM_SCOPED = 'platform';
 
+    /**
+     * '@own:tokens.manage' — the caller's own credentials (list and revoke their API tokens and
+     * MCP clients): every signed-in user, no role permission needed; an API token limited to some
+     * permissions must carry it (a limited token still ends itself with a sign-out).
+     */
+    public const OWN = '@own';
+
+    /** parse() mode of OWN */
+    public const OWN_SCOPED = 'own';
+
     public const POLICY = '@policy';
 
     /** Does the route sit behind authentication (auth / auth:sanctum)? */
@@ -71,7 +81,8 @@ class RoutePermissions
 
     /**
      * Parse a requirement into [mode, permissions]: mode 'all' | 'any' | 'anywhere' | 'platform'
-     * (platform administrator + token permission, any of them) | a marker.
+     * (platform administrator + token permission, any of them) | 'own' (any signed-in user + token
+     * permission, any of them) | a marker.
      *
      * @param  string|list<string>  $requirement
      * @return array{0: string, 1: list<string>}
@@ -83,6 +94,9 @@ class RoutePermissions
         }
         if (str_starts_with($requirement, self::PLATFORM.':')) {
             return [self::PLATFORM_SCOPED, explode('|', substr($requirement, strlen(self::PLATFORM) + 1))];
+        }
+        if (str_starts_with($requirement, self::OWN.':')) {
+            return [self::OWN_SCOPED, explode('|', substr($requirement, strlen(self::OWN) + 1))];
         }
         if (str_starts_with($requirement, '@')) {
             return [$requirement, []];

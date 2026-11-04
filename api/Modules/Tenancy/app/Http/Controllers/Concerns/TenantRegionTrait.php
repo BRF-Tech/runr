@@ -20,6 +20,7 @@ use Modules\Tenancy\Support\TenantRegionShares;
 
 trait TenantRegionTrait
 {
+    /** List an organization's regions with quotas and usage. */
     public function regions(string $id): JsonResponse
     {
         $tenant = Tenant::findOrFail($id);
@@ -62,6 +63,7 @@ trait TenantRegionTrait
         return response()->json($regions);
     }
 
+    /** Give an organization a platform region with a quota. */
     public function assignRegion(Request $request, string $id): JsonResponse
     {
         $tenant = Tenant::findOrFail($id);
@@ -154,6 +156,7 @@ trait TenantRegionTrait
         return response()->json($tenant->regions()->get());
     }
 
+    /** Change an organization's CPU and memory quota in a region. */
     public function updateRegionQuota(Request $request, string $id, string $regionId): JsonResponse
     {
         $tenant = Tenant::findOrFail($id);
@@ -185,6 +188,11 @@ trait TenantRegionTrait
         return response()->json($tenant->regions()->get());
     }
 
+    /**
+     * Take a region away from an organization.
+     *
+     * What the organization runs there is cleaned up in the background.
+     */
     public function removeRegion(string $id, string $region): JsonResponse
     {
         $tenant = Tenant::findOrFail($id);

@@ -32,11 +32,12 @@ Route::middleware('auth:sanctum')->group(function () use ($workflowName) {
     // One definition: declared (added or replaced) or archived, the others as they are
     Route::put('/projects/{project}/workflows/{workflow}', [WorkflowController::class, 'declareOne'])->where('workflow', $workflowName);
     Route::delete('/projects/{project}/workflows/{workflow}', [WorkflowController::class, 'archive'])->where('workflow', $workflowName);
-    Route::get('/projects/{project}/workflows/{workflow}/runs', [WorkflowRunController::class, 'index'])->where('workflow', $workflowName);
+    // Named: the two run lists share a method, and a route's name is its operationId in the API reference
+    Route::get('/projects/{project}/workflows/{workflow}/runs', [WorkflowRunController::class, 'index'])->where('workflow', $workflowName)->name('workflowRun.indexForWorkflow');
     Route::post('/projects/{project}/workflows/{workflow}/runs', [WorkflowRunController::class, 'start'])->where('workflow', $workflowName);
 
     // Runs
-    Route::get('/projects/{project}/workflow-runs', [WorkflowRunController::class, 'index']);
+    Route::get('/projects/{project}/workflow-runs', [WorkflowRunController::class, 'index'])->name('workflowRun.index');
     Route::get('/projects/{project}/workflow-runs/{run}', [WorkflowRunController::class, 'show']);
     Route::post('/projects/{project}/workflow-runs/{run}/cancel', [WorkflowRunController::class, 'cancel']);
     Route::post('/projects/{project}/workflow-runs/{run}/retry', [WorkflowRunController::class, 'retry']);

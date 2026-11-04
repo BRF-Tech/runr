@@ -28,7 +28,7 @@ class ResidencyController extends Controller
 
     public function __construct(private RegionPolicy $residency) {}
 
-    /** GET /api/residency */
+    /** Get the organization's data residency policy for region pickers. */
     public function current(): JsonResponse
     {
         $tenantId = $this->residency->tenantId();
@@ -51,7 +51,7 @@ class ResidencyController extends Controller
         ]]);
     }
 
-    /** GET /api/tenants/{tenant}/security-policy */
+    /** Get an organization's security policy: data residency and deploy gate. */
     public function show(string $tenant): JsonResponse
     {
         $this->authorizeAny();
@@ -60,7 +60,12 @@ class ResidencyController extends Controller
         return response()->json(['data' => $this->payload($tenant)]);
     }
 
-    /** PUT /api/tenants/{tenant}/security-policy */
+    /**
+     * Update an organization's security policy: data residency and deploy gate.
+     *
+     * Residency fields need tenants.residency.manage, the policy gate fields
+     * regions.supply_chain.manage.
+     */
     public function update(Request $request, string $tenant): JsonResponse
     {
         $this->findTenant($tenant);

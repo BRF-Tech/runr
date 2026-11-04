@@ -39,7 +39,6 @@ mkdir -p "${PROJECT_ROOT}/api/resources/docs" && cp "${PROJECT_ROOT}"/docs/*.md 
 docker build \
     --pull \
     --file "${PROJECT_ROOT}/api/Dockerfile.prod" \
-    --target base \
     -t runr-api:latest \
     "${PROJECT_ROOT}/api"
 

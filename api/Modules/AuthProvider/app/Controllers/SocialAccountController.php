@@ -12,6 +12,7 @@ use Modules\AuthProvider\Services\ProviderConfigService;
 /** The signed-in user's linked external accounts (Account settings → Linked accounts). */
 class SocialAccountController extends Controller
 {
+    /** List the signed-in user's linked external accounts */
     public function index(Request $request): JsonResponse
     {
         $accounts = SocialAccount::where('user_id', $request->user()->id)
@@ -23,7 +24,11 @@ class SocialAccountController extends Controller
         return response()->json($accounts->map(fn (SocialAccount $a) => self::presentAccount($a, $names->all()))->values());
     }
 
-    /** Providers the signed-in user can link (enabled OAuth / OIDC providers of the organization). */
+    /**
+     * List the SSO providers the signed-in user can link an identity from
+     *
+     * The enabled OAuth / OIDC providers of the organization; SAML providers cannot be linked.
+     */
     public function providers(ProviderConfigService $config): JsonResponse
     {
         return response()->json($config->linkable()->map(fn (AuthProvider $p) => [
@@ -33,6 +38,7 @@ class SocialAccountController extends Controller
         ])->values());
     }
 
+    /** Unlink an external account from the signed-in user */
     public function destroy(Request $request, SocialAccount $socialAccount): JsonResponse
     {
         if ((string) $socialAccount->user_id !== (string) $request->user()->id) {

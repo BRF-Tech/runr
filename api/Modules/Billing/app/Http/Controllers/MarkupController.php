@@ -34,6 +34,7 @@ class MarkupController extends Controller
         private readonly Regions $regions,
     ) {}
 
+    /** Get the tenant's markups on shared platform regions */
     public function index(): JsonResponse
     {
         $this->tenantOrFail();
@@ -49,6 +50,7 @@ class MarkupController extends Controller
         ]);
     }
 
+    /** Add a markup version for the default or a shared region */
     public function store(Request $request): JsonResponse
     {
         $this->tenantOrFail();
@@ -71,6 +73,7 @@ class MarkupController extends Controller
         return response()->json(['data' => $markup->fresh()?->toApiArray()], 201);
     }
 
+    /** Delete a markup version not yet in effect */
     public function destroy(string $markup): Response
     {
         $this->tenantOrFail();

@@ -39,6 +39,7 @@ class AuditEventController extends Controller
         'ip_address', 'user_agent', 'request_id', 'http_method', 'route', 'status_code', 'metadata',
     ];
 
+    /** List audit events, filtered and paginated */
     public function index(Request $request): JsonResponse
     {
         Gate::authorize('audit.view');
@@ -61,6 +62,7 @@ class AuditEventController extends Controller
         ]);
     }
 
+    /** Show one audit event */
     public function show(Request $request, string $id): JsonResponse
     {
         Gate::authorize('audit.view');
@@ -70,6 +72,7 @@ class AuditEventController extends Controller
         return response()->json(['data' => $event->toPublicArray()]);
     }
 
+    /** Export the filtered audit events as CSV or JSON */
     public function export(Request $request): StreamedResponse
     {
         Gate::authorize('audit.export');
@@ -105,6 +108,7 @@ class AuditEventController extends Controller
         ]);
     }
 
+    /** Show the audit log's retention settings */
     public function settings(): JsonResponse
     {
         Gate::authorize('audit.view');
@@ -118,6 +122,8 @@ class AuditEventController extends Controller
     }
 
     /**
+     * Change how long audit events are kept
+     *
      * Retention is install-wide. Single-tenant: settings.manage (route rule). Multi-tenant:
      * a platform admin outside any tenant — a tenant's settings.manage covers the tenant only.
      */

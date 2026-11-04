@@ -17,10 +17,10 @@ use Illuminate\Support\Str;
 use Symfony\Component\HttpFoundation\Response;
 
 /**
- * @tags Sandboxes
- *
  * Commands in a sandbox: exec (JSON result, Server-Sent Events, or a WebSocket token), the code
  * interpreter (run), and the interactive terminal (the console's web-shell WebSocket).
+ *
+ * @tags Sandboxes > Commands
  */
 class SandboxExecController extends SandboxApiController
 {
@@ -33,7 +33,9 @@ class SandboxExecController extends SandboxApiController
     ) {}
 
     /**
-     * Run a command. JSON result, or SSE (Accept: text/event-stream / stream: true).
+     * Run a command in the sandbox
+     *
+     * JSON result, or SSE (Accept: text/event-stream / stream: true).
      */
     public function exec(Request $request, string $sandbox): Response
     {
@@ -78,6 +80,8 @@ class SandboxExecController extends SandboxApiController
     }
 
     /**
+     * Get a one-time token for an interactive exec over WebSocket.
+     *
      * One-time token for the exec WebSocket (/ws/sandbox-exec?token=…): output frames as they
      * come, stdin from the client, kill. With `tty` the command runs on a terminal of `cols` ×
      * `rows` (default 80 × 24) that resize frames change.
@@ -148,8 +152,10 @@ class SandboxExecController extends SandboxApiController
     }
 
     /**
-     * Code interpreter: run code with the language's interpreter; structured result (stdout,
-     * stderr, exit code, files changed, image outputs of /output).
+     * Run code in the sandbox with the language's interpreter.
+     *
+     * Code interpreter: structured result (stdout, stderr, exit code, files changed, image outputs
+     * of /output).
      */
     public function run(Request $request, string $sandbox): Response
     {
@@ -185,6 +191,8 @@ class SandboxExecController extends SandboxApiController
     }
 
     /**
+     * Create a one-time session for an interactive terminal in the sandbox
+     *
      * Interactive terminal: a one-time session for the web-shell WebSocket (/ws/shell?token=…).
      */
     public function terminal(Request $request, string $sandbox): JsonResponse

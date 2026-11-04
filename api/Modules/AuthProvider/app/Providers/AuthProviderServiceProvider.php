@@ -2,8 +2,7 @@
 
 namespace Modules\AuthProvider\Providers;
 
-use Dedoc\Scramble\Scramble;
-use Dedoc\Scramble\Support\Generator\Tag;
+use App\Http\Middleware\NormalizeApiTags;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\ServiceProvider;
 use Modules\AuthProvider\Console\AuthProviderE2eCommand;
@@ -62,14 +61,9 @@ class AuthProviderServiceProvider extends ServiceProvider
         }
     }
 
+    /** The API reference: every controller of the module in Single sign-on */
     protected function registerApiTags(): void
     {
-        if (! class_exists(Scramble::class)) {
-            return;
-        }
-
-        Scramble::afterOpenApiGenerated(function ($openApi) {
-            $openApi->tags[] = new Tag('Auth Providers', 'OAuth/SSO provider management');
-        });
+        NormalizeApiTags::registerTags(['Modules\\AuthProvider\\' => 'Single sign-on']);
     }
 }

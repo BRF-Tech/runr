@@ -22,6 +22,9 @@
 |   '@platform:billing.view'         platform administrators; an API token of one must carry
 |                                    the permission (narrowly scoped tokens for the operator's
 |                                    systems, e.g. the billing API)
+|   '@own:tokens.manage'             the caller's own credentials: every signed-in user, no role
+|                                    permission; an API token limited to permissions must carry
+|                                    it (listing and revoking one's own API tokens and MCP clients)
 |   '@policy'                        the controller authorizes through a Policy
 |
 | A route may instead carry Laravel's `can:` middleware (->can('audit.view')); it then needs
@@ -267,9 +270,10 @@ return [
     'GET mcp' => '@authenticated',
     'DELETE mcp' => '@authenticated',
     'GET mcp/tools' => '@authenticated',
-    // OAuth: connected clients are the caller's own tokens; approving a consent creates a token
-    'GET mcp/clients' => 'tokens.manage',
-    'DELETE mcp/clients/{client}' => 'tokens.manage',
+    // OAuth: connected clients are the caller's own tokens — listing and disconnecting them needs
+    // no role permission (@own); approving a consent creates a token (tokens.manage)
+    'GET mcp/clients' => '@own:tokens.manage',
+    'DELETE mcp/clients/{client}' => '@own:tokens.manage',
     'GET oauth2/requests/{id}' => 'tokens.manage',
     'POST oauth2/requests/{id}/approve' => 'tokens.manage',
     'POST oauth2/requests/{id}/deny' => '@authenticated',
@@ -573,9 +577,11 @@ return [
     'DELETE groups/{group}/members/{user}' => 'groups.manage',
 
     // ── API tokens (own tokens; a token never exceeds its owner's permissions) ──
-    'GET tokens' => 'tokens.manage',
+    // Everyone lists and revokes their own (@own: a limited token must carry tokens.manage);
+    // creating one needs the role permission
+    'GET tokens' => '@own:tokens.manage',
     'POST tokens' => 'tokens.manage',
-    'DELETE tokens/{token}' => 'tokens.manage',
+    'DELETE tokens/{token}' => '@own:tokens.manage',
 
     // ── Single sign-on (AuthProvider module) ──
     'GET auth-providers' => 'sso.manage',

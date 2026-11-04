@@ -110,6 +110,10 @@ Scheduled tasks include `executor:sync` (runtime versions, every 30 minutes),
 in every tenant schema, `LogRetentionJob` (daily),
 `metric-snapshot-retention` (daily: metric snapshots older than 90 days are removed, the daily
 ones kept, in the central schema and in every tenant schema),
+`notification-retention` (daily at 03:45: in-app notifications older than
+`RUNR_NOTIFICATION_RETENTION_DAYS`, 90 by default, 0 keeps them, and those of deleted users are
+deleted for good with their members' read state, in the central schema and in every tenant
+schema),
 `registry-empty-repositories` (daily: build repositories without a tag in the regions' internal
 registries go to Zot's garbage collection),
 `close-stale-sessions` (every ten minutes: deployment sessions open for more than 30 minutes

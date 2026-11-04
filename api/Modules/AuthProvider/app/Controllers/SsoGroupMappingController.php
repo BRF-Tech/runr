@@ -19,6 +19,7 @@ class SsoGroupMappingController extends Controller
 {
     public function __construct(private readonly AccessManager $access) {}
 
+    /** List the SSO group mappings */
     public function index(): JsonResponse
     {
         $mappings = SsoGroupMapping::query()->with(['group:id,name', 'provider:id,name,driver'])
@@ -28,6 +29,7 @@ class SsoGroupMappingController extends Controller
         return response()->json(['mappings' => $mappings]);
     }
 
+    /** Add an SSO group mapping */
     public function store(Request $request): JsonResponse
     {
         $data = $this->validated($request);
@@ -36,6 +38,7 @@ class SsoGroupMappingController extends Controller
         return response()->json(['mapping' => $this->present($mapping->load(['group:id,name', 'provider:id,name,driver']))], 201);
     }
 
+    /** Update an SSO group mapping */
     public function update(Request $request, SsoGroupMapping $mapping): JsonResponse
     {
         if ($mapping->role) {
@@ -46,6 +49,7 @@ class SsoGroupMappingController extends Controller
         return response()->json(['mapping' => $this->present($mapping->fresh(['group:id,name', 'provider:id,name,driver']))]);
     }
 
+    /** Delete an SSO group mapping */
     public function destroy(Request $request, SsoGroupMapping $mapping): JsonResponse
     {
         if ($mapping->role) {

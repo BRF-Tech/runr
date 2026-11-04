@@ -16,7 +16,11 @@ use Illuminate\Http\JsonResponse;
  */
 class RegionCapacityController extends Controller
 {
-    /** Both budgets per resource, the factors and how full they are. */
+    /**
+     * Get the region's capacity budgets, overcommit factors and utilization
+     *
+     * Both budgets per resource, the factors and how full they are.
+     */
     public function show(KnativeRegion $knativeRegion): JsonResponse
     {
         if ($knativeRegion->getAttribute('is_synced')) {
@@ -26,7 +30,11 @@ class RegionCapacityController extends Controller
         return response()->json($this->payload($knativeRegion));
     }
 
-    /** Set the FaaS overcommit factors (1 = no overcommit, every reservation against the capacity). */
+    /**
+     * Set the region's FaaS overcommit factors.
+     *
+     * 1 = no overcommit, every reservation against the capacity.
+     */
     public function update(UpdateRegionCapacityRequest $request, KnativeRegion $knativeRegion): JsonResponse
     {
         $knativeRegion->update($request->validated());

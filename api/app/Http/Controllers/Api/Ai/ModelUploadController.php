@@ -18,12 +18,13 @@ use Illuminate\Support\Facades\Gate;
  * (docs/huggingface.md#air-gapped-regions). The files of one upload become the model's offline
  * snapshot in that region.
  *
- * @tags AI · Models
+ * @tags AI > Models
  */
 class ModelUploadController extends Controller
 {
     public function __construct(private UploadService $uploads) {}
 
+    /** Start an upload of model files into a region's model volume */
     public function store(Request $request, AiModel $model): JsonResponse
     {
         abort_unless(Gate::allows('models.deploy'), 403);
@@ -60,6 +61,7 @@ class ModelUploadController extends Controller
         return response()->json(new AiModelUploadResource($upload), 201);
     }
 
+    /** Show an upload's status and progress */
     public function show(AiModel $model, AiModelUpload $upload): JsonResponse
     {
         abort_unless(Gate::allows('models.view'), 403);
@@ -67,7 +69,11 @@ class ModelUploadController extends Controller
         return response()->json(new AiModelUploadResource($this->uploads->refreshReadiness($upload)));
     }
 
-    /** One chunk: raw body (application/octet-stream), ?path=<file>&offset=<byte>. */
+    /**
+     * Upload a chunk of a model file
+     *
+     * One chunk: raw body (application/octet-stream), ?path=<file>&offset=<byte>.
+     */
     public function chunk(Request $request, AiModel $model, AiModelUpload $upload): JsonResponse
     {
         abort_unless(Gate::allows('models.deploy'), 403);
@@ -93,6 +99,12 @@ class ModelUploadController extends Controller
         return response()->json($result);
     }
 
+    /**
+     * Finish an upload and make its files the model's copy in the region
+     *
+     * Every file has to be uploaded in full; the upload's files become the model's copy in the
+     * region.
+     */
     public function complete(AiModel $model, AiModelUpload $upload): JsonResponse
     {
         abort_unless(Gate::allows('models.deploy'), 403);
@@ -122,6 +134,7 @@ class ModelUploadController extends Controller
         ]);
     }
 
+    /** Abort an upload */
     public function destroy(AiModel $model, AiModelUpload $upload): JsonResponse
     {
         abort_unless(Gate::allows('models.deploy'), 403);

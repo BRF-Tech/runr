@@ -29,6 +29,7 @@ use App\Workflows\Models\WorkflowRun;
 use App\Workflows\Models\WorkflowStep;
 use App\Workflows\Models\WorkflowUsage;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Str;
 use Tests\Concerns\ActsWithRoles;
@@ -241,6 +242,10 @@ class OrgRunHistoryTest extends TestCase
 
     public function test_metering_never_counts_an_imported_deployment(): void
     {
+        // The deployment ran from 01:00 to 03:00 of the metered day; the metering counts today only
+        // until now, so the clock stands after that (run between 00:00 and 01:00 UTC, today's
+        // 01:00 lay ahead and nothing was metered either way)
+        $this->travelTo(Carbon::parse('2026-11-04 12:00:00'));
         $region = KnativeRegion::create(['name' => 'eu-2', 'project_namespace' => 'eu-2', 'is_active' => true]);
         $project = Project::create(['name' => 'always-on', 'service_type' => 'faas', 'runtime' => 'python', 'created_by' => (string) $this->owner->id]);
         $project->forceFill(['knative_region_id' => $region->id])->saveQuietly();

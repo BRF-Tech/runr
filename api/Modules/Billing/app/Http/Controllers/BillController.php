@@ -28,6 +28,7 @@ class BillController extends Controller
 
     public function __construct(private readonly BillService $bills) {}
 
+    /** List the bills of the organization's projects and members */
     public function index(Request $request): JsonResponse
     {
         $request->validate([
@@ -60,11 +61,13 @@ class BillController extends Controller
         return $this->paginated($page, collect($page->items())->map(fn (Bill $b) => $this->bills->present($b, false, $costs))->all());
     }
 
+    /** Get a bill with its line items */
     public function show(Request $request, string $bill): JsonResponse
     {
         return response()->json(['data' => $this->bills->present($this->bills->find($bill), true, $this->canViewCosts($request))]);
     }
 
+    /** Set the payment link of a closed bill */
     public function paymentUrl(Request $request, string $bill): JsonResponse
     {
         $data = $request->validate(['payment_url' => ['present', 'nullable', 'string', 'max:2000', 'url:http,https']]);
@@ -74,6 +77,7 @@ class BillController extends Controller
         return response()->json(['data' => $this->bills->present($model, true, true)]);
     }
 
+    /** Mark a closed bill paid or unpaid */
     public function paid(Request $request, string $bill): JsonResponse
     {
         $data = $request->validate([

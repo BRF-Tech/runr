@@ -28,7 +28,11 @@ class WebhookInboxController
     ) {}
 
     /**
+     * Receive a webhook in a trigger's inbox
+     *
      * Webhook inbox of a trigger: the body is any content the sender posts, kept as it came.
+     *
+     * @unauthenticated
      */
     #[OpenApiResponse(200, 'The event is stored (duplicate: the delivery id was stored before); Slack\'s url_verification gets {challenge} instead', type: 'array{id: string, status: "stored"|"duplicate"}|array{challenge: string}')]
     #[OpenApiResponse(401, 'The signature does not verify', type: 'array{message: string}')]
@@ -41,8 +45,12 @@ class WebhookInboxController
     }
 
     /**
+     * Receive a webhook in a trigger's inbox
+     *
      * Webhook inbox of a trigger, for senders that PUT: the same inbox as POST — the body is kept as
      * it came, the answers are the same.
+     *
+     * @unauthenticated
      */
     #[OpenApiResponse(200, 'The event is stored (duplicate: the delivery id was stored before); Slack\'s url_verification gets {challenge} instead', type: 'array{id: string, status: "stored"|"duplicate"}|array{challenge: string}')]
     #[OpenApiResponse(401, 'The signature does not verify', type: 'array{message: string}')]

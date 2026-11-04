@@ -27,7 +27,11 @@ class GatewayDomainController extends Controller
         private readonly GatewayService $gateways,
     ) {}
 
-    /** The name waits for verification; the TXT record to create is in custom_domain_pending. */
+    /**
+     * Request a custom domain for the gateway
+     *
+     * The name waits for verification; the TXT record to create is in custom_domain_pending.
+     */
     #[OpenApiResponse(200, 'The gateway with the domain waiting for verification (custom_domain_pending)', type: 'array{data: GatewayResource}')]
     #[OpenApiResponse(422, 'The domain cannot be used', type: 'array{message: string, errors: array<string, list<string>>}')]
     public function store(Request $request, Gateway $gateway): JsonResponse
@@ -47,6 +51,7 @@ class GatewayDomainController extends Controller
         return $this->respond($gateway);
     }
 
+    /** Verify the gateway's custom domain */
     #[OpenApiResponse(200, 'The domain is verified and routed', type: 'array{message: string, data: GatewayResource}')]
     #[OpenApiResponse(422, 'Not verified yet: why, and the gateway', type: 'array{message: string, data: GatewayResource}')]
     public function verify(Gateway $gateway): JsonResponse
@@ -63,6 +68,7 @@ class GatewayDomainController extends Controller
         return $this->respond($gateway, __('api_product.domain.active'));
     }
 
+    /** Remove the gateway's custom domain */
     #[OpenApiResponse(200, 'The gateway without its own domain', type: 'array{data: GatewayResource}')]
     public function destroy(Gateway $gateway): JsonResponse
     {

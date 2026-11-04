@@ -30,7 +30,8 @@ class WorkflowRunController
     ) {}
 
     /**
-     * GET /projects/{project}/workflow-runs and GET /projects/{project}/workflows/{workflow}/runs
+     * List the runs of the project's workflows or of one workflow
+     *
      * Filters: status (comma separated), workflow (name), source, q (run id / event name),
      * from, to (ISO dates), per_page (≤ 100).
      */
@@ -87,7 +88,7 @@ class WorkflowRunController
         return WorkflowRunResource::collection($runs);
     }
 
-    /** GET /projects/{project}/workflow-runs/{run} */
+    /** Show a workflow run with its steps */
     public function show(Project $project, string $run): JsonResponse
     {
         Gate::authorize('workflows.view', $project);
@@ -97,7 +98,11 @@ class WorkflowRunController
         return response()->json(['data' => new WorkflowRunResource($model)]);
     }
 
-    /** POST /projects/{project}/workflows/{workflow}/runs  {data?, idempotency_key?, test?} */
+    /**
+     * Start a run of a workflow
+     *
+     * Body {data?, idempotency_key?, test?}.
+     */
     public function start(Request $request, Project $project, string $workflow): JsonResponse
     {
         Gate::authorize('workflows.run', $project);
@@ -130,7 +135,7 @@ class WorkflowRunController
         ], $result->created ? 201 : 200);
     }
 
-    /** POST /projects/{project}/workflow-runs/{run}/cancel */
+    /** Cancel a workflow run */
     public function cancel(Request $request, Project $project, string $run): JsonResponse
     {
         Gate::authorize('workflows.run', $project);
@@ -146,7 +151,11 @@ class WorkflowRunController
         return response()->json(['data' => new WorkflowRunResource($model->fresh()->load('workflow:id,name'))]);
     }
 
-    /** POST /projects/{project}/workflow-runs/{run}/retry — the same run, failed steps again */
+    /**
+     * Retry the failed steps of a workflow run
+     *
+     * The same run, failed steps again.
+     */
     public function retry(Project $project, string $run): JsonResponse
     {
         Gate::authorize('workflows.run', $project);
@@ -156,7 +165,11 @@ class WorkflowRunController
         return response()->json(['data' => new WorkflowRunResource($model->load('workflow:id,name'))]);
     }
 
-    /** POST /projects/{project}/workflow-runs/{run}/replay {from_step?} — a new run */
+    /**
+     * Replay a workflow run as a new run
+     *
+     * Body {from_step?}: a new run.
+     */
     public function replay(Request $request, Project $project, string $run): JsonResponse
     {
         Gate::authorize('workflows.run', $project);

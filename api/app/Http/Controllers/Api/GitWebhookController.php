@@ -26,6 +26,11 @@ use Illuminate\Support\Collection;
  */
 class GitWebhookController extends Controller
 {
+    /**
+     * Receive a webhook delivery of a GitHub App
+     *
+     * @unauthenticated
+     */
     public function github(Request $request, string $provider): JsonResponse
     {
         $app = GitProvider::where('type', GitProvider::GITHUB)->find($provider);
@@ -56,6 +61,11 @@ class GitWebhookController extends Controller
         return $this->accept(GitProvider::GITHUB, $delivery, $name, $event, $links, $app->id);
     }
 
+    /**
+     * Receive a webhook delivery of a GitLab project hook
+     *
+     * @unauthenticated
+     */
     public function gitlab(Request $request, string $link): JsonResponse
     {
         $repo = GitRepoLink::where('provider_type', GitProvider::GITLAB)->find($link);
@@ -77,6 +87,11 @@ class GitWebhookController extends Controller
         return $this->accept(GitProvider::GITLAB, $delivery, $name, $event, $links, $repo->git_provider_id);
     }
 
+    /**
+     * Receive a webhook delivery of a Forgejo or Gitea repository hook
+     *
+     * @unauthenticated
+     */
     public function forgejo(Request $request, string $link): JsonResponse
     {
         $repo = GitRepoLink::where('provider_type', GitProvider::FORGEJO)->find($link);

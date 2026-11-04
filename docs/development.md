@@ -133,6 +133,22 @@ Every authenticated API route needs a rule in `api/config/route_permissions.php`
 `RouteAuthorizationTest`. New permissions go into `api/config/permissions.php` with labels in
 `vue/src/locales/{en,tr}/rbac.js` — see [Roles and permissions](permissions.md#for-contributors-adding-a-route-or-a-permission).
 
+Every API route is in one group of the API reference (`/api/docs`), one of `NormalizeApiTags::GROUPS`
+(`api/app/Http/Middleware/NormalizeApiTags.php`): a new controller names it with a `@tags <group>`
+line at the end of its class comment, or gets an entry in the class map there (a module registers
+its own with `NormalizeApiTags::registerTags`). `ApiDocsTest` fails for a route in any other group.
+
+Every operation has a summary: the first paragraph of the controller method's PHPDoc, one line of at
+most 80 characters that says what the operation does ("List the project's workflows"), without the
+HTTP method, a path or a trailing period; the paragraphs after it are the description. Its
+operationId is the route's name, else Scramble's `<controller>.<method>`; a method that serves two
+routes gets one per route from their names, and `@operationId` in the PHPDoc sets one by hand.
+A route without a sign-in (no `auth:sanctum`: webhooks, public pages, invitations) has
+`@unauthenticated` in its method's PHPDoc, so the reference shows it public. `ApiDocsTest` checks
+these rules on the test app's document; the `api` job of `ci.yml` builds the document as the image
+does, every module enabled, with `sh docker/api-docs.sh <path> --check` (`ApiDocument::problems`)
+and runs `ApiDocsTest` again with the modules on.
+
 ### Useful commands
 
 ```bash
@@ -151,9 +167,21 @@ docker compose down
 # Restart Horizon or the scheduler manually
 docker compose restart horizon scheduler
 
-# Update the API docs (Scramble)
+# Build the OpenAPI document /api/docs.json serves (api/resources/api-docs/openapi.json)
+docker compose exec api php artisan runr:api-docs
+
+# Scramble's own document, the one the CLI's contract test reads (cd cli && make openapi)
 docker compose exec api php artisan scramble:export --path=public/api-docs.json
 ```
+
+The API reference (`/api/docs`) and its OpenAPI document (`/api/docs.json`) serve the document the
+API image builds (`php artisan runr:api-docs`, a stage of `api/Dockerfile.prod`): generating it
+reads every API route's controller, requests and resources and takes longer than a request may
+run. In the dev stack, without that file, `/api/docs.json` generates the document on each request,
+so it shows the code as it is (slowly). A file written with `runr:api-docs` is served as it is
+until you delete it (`rm api/resources/api-docs/openapi.json`); git and the image builds never take
+it. The page loads the Scalar viewer from the image (`public/api/vendor/scalar/`), in a checkout
+without it the same version from jsDelivr.
 
 ---
 
@@ -687,7 +715,7 @@ GitHub Actions is the repository's CI; the workflows live in `.github/workflows/
 | `ci.yml` → `reqs-mirror` | `ci/check-reqs-mirror.sh`: every `ghcr.io/brf-tech/runr/reqs/*` reference resolves anonymously on ghcr.io; BRF-Tech/runr-runtimes publishes the mirror | same | yes |
 | `ci.yml` → `build-scripts` | `ci/check-dockerfiles.sh` (no Docker Hub base image, `OTEL_SDK_DISABLED=true` before Spin runs in a build step, every image labels `org.opencontainers.image.source`); `runtime/test/*_test.sh` (`runtime/ci.sh` without Docker or a registry, the pinned runtime images, the release workflow, these workflows) | same | yes |
 | `ci.yml` → `helm` | `ci/check-helm-chart.sh` (helm 3.16, kubeconform) | same | yes |
-| `ci.yml` → `api` | Pint, PHPUnit with the coverage floor, Larastan on PHP 8.2 (8.2.35 or later) | same | yes |
+| `ci.yml` → `api` | Pint, PHPUnit with the coverage floor, Larastan on PHP 8.2 (8.2.35 or later); the API reference as the image builds it, every module enabled (`api/docker/api-docs.sh --check`, `ApiDocsTest`) | same | yes |
 | `ci.yml` → `ui` | lint without warnings, Vitest with the coverage floor (report: artifact `ui-coverage`), build | same | yes |
 | `ci.yml` → `ui-e2e` | Playwright, mocked API (report: artifact `playwright-report`) | same | yes |
 | `ci.yml` → `go` | gofmt, vet, race tests with coverage per `go.mod` | same | yes |

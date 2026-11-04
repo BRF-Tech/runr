@@ -17,7 +17,9 @@ class KnativeUninstallController extends Controller
     use KnativeValidationTrait;
 
     /**
-     * Uninstall Knative Operator.
+     * Uninstall the Knative Operator from the region's cluster
+     *
+     * Runs as a background job; refused while Knative Serving is installed.
      */
     public function uninstallOperator(KnativeRegion $knativeRegion): JsonResponse
     {
@@ -39,7 +41,8 @@ class KnativeUninstallController extends Controller
     }
 
     /**
-     * Uninstall Knative Serving.
+     * Uninstall Knative Serving from the region's cluster.
+     *
      * The region Traefik stays while it serves non-Knative Ingresses (e.g. the RunR console on a
      * single-cluster install); `remove_traefik: true` removes it anyway.
      */

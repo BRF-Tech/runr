@@ -38,7 +38,7 @@ class HostedServerController extends Controller
         private readonly CallRecorder $calls,
     ) {}
 
-    /** GET /api/mcp-servers/templates */
+    /** List the starter templates of a hosted MCP server */
     public function templates(Request $request): JsonResponse
     {
         $registry = app(RuntimeRegistry::class);
@@ -81,7 +81,11 @@ class HostedServerController extends Controller
         return response()->json(['data' => $data]);
     }
 
-    /** GET /api/mcp-servers — the organization's hosted servers on projects the caller sees. */
+    /**
+     * List the organization's hosted MCP servers
+     *
+     * The organization's hosted servers on projects the caller sees.
+     */
     public function index(Request $request): JsonResponse
     {
         $visible = app(Rbac::class)->visibleProjectIds($request->user());
@@ -100,7 +104,7 @@ class HostedServerController extends Controller
             ->values()]);
     }
 
-    /** GET /api/projects/{project}/mcp-server */
+    /** Show the project's hosted MCP server */
     public function show(Request $request, Project $project): JsonResponse
     {
         $server = HostedServer::forProject($project);
@@ -109,7 +113,7 @@ class HostedServerController extends Controller
         return response()->json(['data' => HostedServerResource::make($server, $project, $request)]);
     }
 
-    /** PUT /api/projects/{project}/mcp-server — serve the project as an MCP server, or change it. */
+    /** Serve the project as an MCP server, or change its settings */
     public function upsert(Request $request, Project $project): JsonResponse
     {
         $server = HostedServer::forProject($project);
@@ -141,7 +145,7 @@ class HostedServerController extends Controller
         ], $created ? 201 : 200);
     }
 
-    /** DELETE /api/projects/{project}/mcp-server — the project stops being an MCP server. */
+    /** Stop serving the project as an MCP server */
     public function destroy(Project $project): JsonResponse
     {
         $server = HostedServer::forProject($project);
@@ -153,7 +157,11 @@ class HostedServerController extends Controller
         return response()->json(null, 204);
     }
 
-    /** POST /api/projects/{project}/mcp-server/rotate-key — takes effect with the next deploy. */
+    /**
+     * Rotate the gateway key of the project's MCP server
+     *
+     * Takes effect with the next deploy.
+     */
     public function rotateKey(Request $request, Project $project): JsonResponse
     {
         $server = HostedServer::forProject($project);
@@ -167,7 +175,7 @@ class HostedServerController extends Controller
         ]);
     }
 
-    /** GET /api/projects/{project}/mcp-server/calls */
+    /** List the calls to the project's MCP server */
     public function calls(Request $request, Project $project): JsonResponse
     {
         $server = HostedServer::forProject($project);
@@ -198,9 +206,10 @@ class HostedServerController extends Controller
     }
 
     /**
-     * POST /api/projects/{project}/mcp-server/inspector — one JSON-RPC message to the server
-     * through the gateway as the signed-in user (auth "console"); the answer's messages (JSON or
-     * SSE) come back whole.
+     * Send one JSON-RPC message to the project's MCP server
+     *
+     * One JSON-RPC message to the server through the gateway as the signed-in user (auth
+     * "console"); the answer's messages (JSON or SSE) come back whole.
      */
     public function inspector(Request $request, Project $project): JsonResponse
     {

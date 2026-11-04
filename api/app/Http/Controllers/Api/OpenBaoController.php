@@ -26,13 +26,17 @@ class OpenBaoController extends Controller
     /** The API document's shape of OpenBao's status in the region (status()) */
     private const STATUS_TYPE = 'array{status: "not_installed"|"installing"|"ready"|"uninstalling"|"error", message: string|null, version: string|null, release_version: string, installed_at: string|null, default_for_values: bool, values: int, eso_status: "not_installed"|"installing"|"ready"|"uninstalling"|"error", can_manage: bool}';
 
+    /** Show the status of the region's OpenBao */
     public function show(KnativeRegion $knativeRegion, OpenBaoInstallService $service): JsonResponse
     {
         return response()->json(['data' => $this->status($knativeRegion, RegionSecretSetting::forRegion($knativeRegion), $service)]);
     }
 
     /**
-     * Install (or bring to this release's image): queued.
+     * Install or update the region's OpenBao (queued)
+     *
+     * Install (or bring to this release's image): queued. Needs External Secrets Operator in the
+     * region.
      *
      * @response JsonResponse<array{message: string, data: array<string, mixed>}, 202>
      */
@@ -54,7 +58,11 @@ class OpenBaoController extends Controller
         return response()->json(['message' => __('api.secret.openbao_install_queued'), 'data' => $this->status($knativeRegion, $settings, $service)], 202);
     }
 
-    /** PATCH {default_for_values: bool}: new secret values of the region's projects go to OpenBao or not. */
+    /**
+     * Choose whether new secret values in the region go to OpenBao
+     *
+     * Body {default_for_values: bool}: new secret values of the region's projects go to OpenBao or not.
+     */
     public function update(Request $request, KnativeRegion $knativeRegion, OpenBaoInstallService $service): JsonResponse
     {
         $data = $request->validate(['default_for_values' => ['required', 'boolean']]);
@@ -65,7 +73,9 @@ class OpenBaoController extends Controller
     }
 
     /**
-     * Remove: refused while values or dynamic credentials of the region's projects live in it.
+     * Remove the region's OpenBao (queued)
+     *
+     * Refused while values or dynamic credentials of the region's projects live in it.
      *
      * @response JsonResponse<array{message: string, data: array<string, mixed>}, 202>
      */

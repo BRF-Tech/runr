@@ -28,6 +28,8 @@ class CertManagerController extends Controller
     public function __construct(private readonly CertManagerService $service) {}
 
     /**
+     * Get the region's cert-manager status and custom-domain issuer.
+     *
      * cert-manager of the region: status and step log, whether RunR installed it, the issuer of
      * custom domains and why RunR chose it, the ACME e-mail, whether custom domains can use it and
      * — unless ?cluster=0 — what the cluster runs (the issuer's Ready condition, the region CA).
@@ -88,7 +90,9 @@ class CertManagerController extends Controller
     }
 
     /**
-     * Install cert-manager (or reuse the cluster's own) and create the default issuer; on a
+     * Install cert-manager in the region and create its default issuer.
+     *
+     * Installs cert-manager (or reuses the cluster's own) and creates the default issuer; on a
      * working install it brings RunR's release to this release's chart and creates a missing
      * issuer again. Queued: progress in the step log (message) and install.progress events with
      * component "cert-manager".
@@ -121,9 +125,11 @@ class CertManagerController extends Controller
     }
 
     /**
-     * The region stops using cert-manager: refused while its custom domains have cert-manager
-     * certificates. RunR's issuers and RunR's cert-manager go only when nothing else on the cluster
-     * uses them; a cert-manager RunR did not install stays.
+     * Stop using cert-manager in the region.
+     *
+     * Refused while its custom domains have cert-manager certificates. RunR's issuers and
+     * RunR's cert-manager go only when nothing else on the cluster uses them; a cert-manager
+     * RunR did not install stays.
      *
      * @response JsonResponse<array{message: string, region: array<string, mixed>}, 202>
      */
@@ -158,8 +164,10 @@ class CertManagerController extends Controller
     }
 
     /**
-     * The region CA's certificate (PEM): what browsers and clients trust to accept the custom-domain
-     * certificates of a region whose issuer is the region CA (runr-ca). Never the key.
+     * Download the region CA's certificate (PEM).
+     *
+     * What browsers and clients trust to accept the custom-domain certificates of a region whose
+     * issuer is the region CA (runr-ca). Never the key.
      *
      * @response Response<"", 200>
      */

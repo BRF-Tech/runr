@@ -25,7 +25,7 @@
 prepare_images_e2e() {
   local cluster="$1"
   local work="${IMAGES_E2E_DIR:-/tmp/runr-images-e2e}"
-  local upload_tag="${REGISTRY}/image-upload:${IMAGE_UPLOAD_VERSION:-1.0.0}"
+  local upload_tag="${REGISTRY}/image-upload:$(image_upload_version)"
   local exec_tag
   exec_tag="$(wasm_runtime_image exec)"
   local echo_tag="runr-e2e/echo:upload"

@@ -14,6 +14,7 @@ use Modules\AuthProvider\Services\Saml\SamlService;
 
 class AuthProviderController extends Controller
 {
+    /** List the organization's SSO providers */
     public function index(): JsonResponse
     {
         $providers = AuthProvider::ordered()->get();
@@ -21,6 +22,7 @@ class AuthProviderController extends Controller
         return response()->json($providers->map(fn (AuthProvider $p) => $this->present($p))->values());
     }
 
+    /** Add an SSO provider */
     public function store(Request $request): JsonResponse
     {
         $data = $request->validate([
@@ -57,6 +59,7 @@ class AuthProviderController extends Controller
         return response()->json($this->present($provider), 201);
     }
 
+    /** Update an SSO provider */
     public function update(Request $request, AuthProvider $authProvider): JsonResponse
     {
         $data = $request->validate([
@@ -91,6 +94,7 @@ class AuthProviderController extends Controller
         return response()->json($this->present($authProvider));
     }
 
+    /** Delete an SSO provider */
     public function destroy(AuthProvider $authProvider): JsonResponse
     {
         $authProvider->delete();
@@ -98,6 +102,7 @@ class AuthProviderController extends Controller
         return response()->json(['message' => __('api.oauth.provider_deleted')]);
     }
 
+    /** Turn an SSO provider on or off */
     public function toggle(AuthProvider $authProvider): JsonResponse
     {
         $authProvider->update(['is_enabled' => ! $authProvider->is_enabled]);

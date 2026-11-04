@@ -55,7 +55,7 @@ return [
     // Region side of binding data and image transfers (runtime/image-upload `transfer`): serves
     // the dump a tool container writes, or receives a file the tool container restores — through
     // the Kubernetes API server, so the region needs no route to RunR
-    'transfer_image' => RegistryMove::ref(env('RUNR_TRANSFER_IMAGE', 'ghcr.io/brf-tech/runr/image-upload:1.1.0')),
+    'transfer_image' => RegistryMove::ref(env('RUNR_TRANSFER_IMAGE', 'ghcr.io/brf-tech/runr/image-upload:1.1.1')),
 
     // Seconds one transfer pod may run (dump / restore of one binding, one image)
     'transfer_timeout' => max(300, (int) env('RUNR_ORG_TRANSFER_POD_TIMEOUT', 3 * 3600)),

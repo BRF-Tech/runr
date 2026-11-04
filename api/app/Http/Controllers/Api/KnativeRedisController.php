@@ -17,7 +17,7 @@ use Illuminate\Http\JsonResponse;
 class KnativeRedisController extends Controller
 {
     /**
-     * Test Redis connectivity from inside the cluster.
+     * Test Redis connectivity from inside the region's cluster
      */
     public function testRedis(TestRedisRequest $request, KnativeRegion $knativeRegion, KnativeRedisService $redisService): JsonResponse
     {
@@ -37,7 +37,10 @@ class KnativeRedisController extends Controller
     }
 
     /**
-     * Configure Redis for queue trigger support.
+     * Set up Redis for the region's queue triggers (queued)
+     *
+     * Configures Redis for queue trigger support in a background job. In managed mode RunR runs
+     * Redis in the cluster; the other modes use the Redis at the given address.
      */
     public function configureRedis(ConfigureRedisRequest $request, KnativeRegion $knativeRegion): JsonResponse
     {
@@ -72,7 +75,10 @@ class KnativeRedisController extends Controller
     }
 
     /**
-     * Remove Redis configuration.
+     * Remove the region's Redis configuration (queued)
+     *
+     * Runs as a background job. A Redis that RunR runs in the cluster (managed mode) is deleted
+     * too.
      */
     public function removeRedis(KnativeRegion $knativeRegion): JsonResponse
     {
@@ -94,7 +100,7 @@ class KnativeRedisController extends Controller
     }
 
     /**
-     * Get Redis status for a region.
+     * Get the region's Redis mode and status
      */
     public function redisStatus(KnativeRegion $knativeRegion): JsonResponse
     {

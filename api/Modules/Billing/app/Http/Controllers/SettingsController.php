@@ -25,11 +25,21 @@ class SettingsController extends Controller
         private readonly BillingEvents $events,
     ) {}
 
+    /**
+     * Get the organization's billing settings
+     *
+     * @operationId billingSettings.show
+     */
     public function show(): JsonResponse
     {
         return response()->json($this->payload());
     }
 
+    /**
+     * Update the billing webhook settings
+     *
+     * @operationId billingSettings.update
+     */
     public function update(Request $request): JsonResponse
     {
         $data = $request->validate(BillingSettings::rules());

@@ -17,7 +17,11 @@ use Illuminate\Support\Facades\Gate;
  */
 class WorkflowUsageController
 {
-    /** GET /workflow-usage?from&to */
+    /**
+     * Show the organization's workflow usage per day and workflow
+     *
+     * Query: from, to.
+     */
     public function tenant(Request $request): JsonResponse
     {
         Gate::authorize('workflows.view');
@@ -25,7 +29,11 @@ class WorkflowUsageController
         return response()->json($this->report($request, null));
     }
 
-    /** GET /projects/{project}/workflow-usage?from&to */
+    /**
+     * Show the project's workflow usage per day and workflow
+     *
+     * Query: from, to.
+     */
     public function project(Request $request, Project $project): JsonResponse
     {
         Gate::authorize('workflows.view', $project);

@@ -25,6 +25,7 @@ class PlatformBillController extends Controller
 
     public function __construct(private readonly TenantBillService $bills) {}
 
+    /** List the tenant's bills from the platform */
     public function index(Request $request): JsonResponse
     {
         $tenantId = (string) $this->tenantOrFail()->getKey();
@@ -49,6 +50,7 @@ class PlatformBillController extends Controller
         return $this->paginated($page, collect($page->items())->map(fn (Bill $b) => $this->bills->present($b, false, false))->all());
     }
 
+    /** Get one of the tenant's bills from the platform */
     public function show(string $bill): JsonResponse
     {
         $tenantId = (string) $this->tenantOrFail()->getKey();

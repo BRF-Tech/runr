@@ -23,6 +23,7 @@ use Illuminate\Support\Facades\Gate;
  */
 class DeployStrategyController extends Controller
 {
+    /** Get the project's deploy strategy. */
     #[OpenApiResponse(200, 'The deploy strategy', type: 'array{data: array{strategy: "direct"|"blue_green"|"canary", blue_green: array{auto_promote: bool, health_path: string|null, health_checks: int, keep_previous_minutes: int}, canary: array{steps: int[], interval_minutes: int, error_rate_threshold: float|null, p95_threshold_ms: int|null}, eligible: bool, trigger_type: string, tracing: bool, defaults: array{strategy: string, blue_green: array<string, mixed>, canary: array<string, mixed>}, environment: string, own: array<string, mixed>|null, inherited: bool, project: string|null}}')]
     public function show(Request $request, Project $project, DeployStrategies $strategies): JsonResponse
     {
@@ -30,6 +31,8 @@ class DeployStrategyController extends Controller
     }
 
     /**
+     * Update the project's deploy strategy.
+     *
      * A partial update: strategy and the option keys sent in blue_green / canary; the others keep
      * their value. 422 for an invalid value, or a strategy other than direct on a queue / schedule
      * function.

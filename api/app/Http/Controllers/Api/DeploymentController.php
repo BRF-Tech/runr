@@ -44,8 +44,10 @@ class DeploymentController extends Controller
     use BroadcastsModelEvents;
 
     /**
-     * Deployments of the project's own workload, newest first; ?environment= (a name or id) lists
-     * one environment's (docs/environments.md), ?environment=all every environment's.
+     * List the project's deployments, newest first.
+     *
+     * Deployments of the project's own workload; ?environment= (a name or id) lists one
+     * environment's (docs/environments.md), ?environment=all every environment's.
      */
     public function index(Request $request, Project $project): AnonymousResourceCollection
     {
@@ -67,6 +69,7 @@ class DeploymentController extends Controller
     // instead of its own workload. restore_config: run the config an earlier deployment of the
     // version recorded (restore_from_deployment_id, else the newest one in that environment) —
     // what a rollback does (docs/versioning.md#rollback).
+    /** Deploy a version of the project. */
     #[OpenApiResponse(409, 'The project is stopped', type: 'array{message: string, code: "project_stopped", reason: string|null, level: string|null}')]
     #[OpenApiResponse(422, 'A deploy check or the validation refused the deploy', type: 'array{message: string, code?: string, errors?: array<string, string[]>}')]
     public function deploy(DeployProjectRequest $request, Project $project): JsonResponse
@@ -160,9 +163,11 @@ class DeploymentController extends Controller
     }
 
     /**
-     * POST /projects/{project}/deployments/{deployment}/rollback — deploy the deployment's version
-     * again in its environment, with the config it ran with (its config_snapshot and overrides),
-     * unless keep_current_config: then with the config of now (docs/versioning.md#rollback).
+     * Roll back to a deployment's version.
+     *
+     * Deploys the deployment's version again in its environment, with the config it ran with (its
+     * config_snapshot and overrides), unless keep_current_config: then with the config of now
+     * (docs/versioning.md#rollback).
      *
      * The deployment, or (a version built again for the region first) the queued deploy; the
      * refusals of deployTo() come with a computed status, which the generator cannot follow.
@@ -268,12 +273,15 @@ class DeploymentController extends Controller
         ], 202);
     }
 
+    /** Get a deployment. */
     public function show(Project $project, Deployment $deployment): DeploymentResource
     {
         return new DeploymentResource($deployment->load(['version', ...DeploymentResource::rolloutRelations()]));
     }
 
     /**
+     * Get a deploy that waits for its version to be built again.
+     *
      * A deploy that waits for its version's build — the answer of a deploy whose version is built
      * again for the region's registry: status waiting, starting, deployed (deployment_id),
      * failed or cancelled, with what happened in message. Never answered from the response cache:
@@ -287,6 +295,7 @@ class DeploymentController extends Controller
         return (new QueuedDeployResource($queued))->response($request)->header('Cache-Control', 'no-store, private');
     }
 
+    /** Get a deployment's logs. */
     public function logs(Project $project, Deployment $deployment): JsonResponse
     {
         $deployment->load('version');
@@ -301,6 +310,7 @@ class DeploymentController extends Controller
         return response()->json($data);
     }
 
+    /** Get a deployment's metrics. */
     public function metrics(Project $project, Deployment $deployment): JsonResponse
     {
         $quick = request()->boolean('quick', false);
@@ -309,6 +319,7 @@ class DeploymentController extends Controller
         return response()->json($data);
     }
 
+    /** Delete a deployment and remove what it runs. */
     #[OpenApiResponse(409, 'The deployment serves while a rollout is under way', type: 'array{message: string, code: "rollout_in_progress"}')]
     public function destroy(Request $request, Project $project, Deployment $deployment): JsonResponse
     {
@@ -349,7 +360,7 @@ class DeploymentController extends Controller
     }
 
     /**
-     * PATCH /api/projects/{project}/deployments/{deployment}/status
+     * Set a deployment's status.
      *
      * Sets a deployment's status — the console applies the status the log check suggests
      * (useDeploymentLogs.js). DeploymentStatusChanged lets the listeners act on it, e.g.

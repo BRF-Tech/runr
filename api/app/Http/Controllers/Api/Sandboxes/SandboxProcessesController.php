@@ -9,14 +9,15 @@ use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\Response;
 
 /**
- * @tags Sandboxes
- *
  * Background processes of a sandbox: start, list, state, logs (tail or SSE follow), signal.
+ *
+ * @tags Sandboxes > Processes
  */
 class SandboxProcessesController extends SandboxApiController
 {
     public function __construct(private SandboxProcesses $processes) {}
 
+    /** Start a background process in the sandbox. */
     public function store(Request $request, string $sandbox): JsonResponse
     {
         $row = $this->findSandbox($request, $sandbox, 'sandboxes.exec');
@@ -35,6 +36,7 @@ class SandboxProcessesController extends SandboxApiController
         return response()->json(['data' => self::shape($process)], 201);
     }
 
+    /** List the sandbox's background processes. */
     public function index(Request $request, string $sandbox): JsonResponse
     {
         $row = $this->findSandbox($request, $sandbox, 'sandboxes.exec');
@@ -42,6 +44,7 @@ class SandboxProcessesController extends SandboxApiController
         return response()->json(['data' => $this->processes->list($row)->map(fn ($p) => self::shape($p))->values()]);
     }
 
+    /** Get the state of a background process. */
     public function show(Request $request, string $sandbox, string $process): JsonResponse
     {
         $row = $this->findSandbox($request, $sandbox, 'sandboxes.exec');
@@ -49,7 +52,11 @@ class SandboxProcessesController extends SandboxApiController
         return response()->json(['data' => self::shape($this->processes->get($row, $process))]);
     }
 
-    /** Tail of stdout / stderr; follow=1 streams them (SSE) until the process ends. */
+    /**
+     * Get the output of a background process
+     *
+     * Tail of stdout / stderr; follow=1 streams them (SSE) until the process ends.
+     */
     public function logs(Request $request, string $sandbox, string $process): Response
     {
         $row = $this->findSandbox($request, $sandbox, 'sandboxes.exec');
@@ -68,6 +75,11 @@ class SandboxProcessesController extends SandboxApiController
         return response()->json(['data' => $this->processes->logs($row, $proc, (int) $request->query('tail_bytes', 65536))]);
     }
 
+    /**
+     * Stop a background process with a signal.
+     *
+     * `signal` (query or body) picks the signal; default TERM.
+     */
     public function destroy(Request $request, string $sandbox, string $process): JsonResponse
     {
         $row = $this->findSandbox($request, $sandbox, 'sandboxes.exec');

@@ -12,7 +12,9 @@ use Illuminate\Http\JsonResponse;
 class RegistryController extends Controller
 {
     /**
-     * Get registry status for a region.
+     * Get the region's registry status
+     *
+     * The registry's mode, address and status (with its message), and whether the region has one.
      */
     public function status(KnativeRegion $knativeRegion): JsonResponse
     {
@@ -26,9 +28,11 @@ class RegistryController extends Controller
     }
 
     /**
-     * Set up the registry of an existing region (async job): one created without a registry,
-     * whose registry was removed, or with an external registry to replace. An internal registry
-     * is removed first (DELETE …/registry): its volume holds the images.
+     * Set up the registry of an existing region.
+     *
+     * Runs as a background job: for a region created without a registry, whose registry was
+     * removed, or with an external registry to replace. An internal registry is removed first
+     * (DELETE …/registry): its volume holds the images.
      */
     public function store(ConfigureRegistryRequest $request, KnativeRegion $knativeRegion): JsonResponse
     {
@@ -55,7 +59,9 @@ class RegistryController extends Controller
     }
 
     /**
-     * Remove registry from a region.
+     * Remove the region's registry
+     *
+     * An internal registry is uninstalled from the region's cluster; an external one is disconnected.
      */
     public function destroy(KnativeRegion $knativeRegion, ZotRegistryService $zot): JsonResponse
     {

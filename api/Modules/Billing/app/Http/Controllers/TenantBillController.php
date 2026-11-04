@@ -26,6 +26,7 @@ class TenantBillController extends Controller
 
     public function __construct(private readonly TenantBillService $bills) {}
 
+    /** List the platform's bills to its tenants */
     public function index(Request $request): JsonResponse
     {
         $request->validate([
@@ -59,11 +60,13 @@ class TenantBillController extends Controller
         return $this->paginated($page, collect($page->items())->map(fn (Bill $b) => $this->bills->present($b, false, true))->all());
     }
 
+    /** Get a bill to a tenant with its line items */
     public function show(string $bill): JsonResponse
     {
         return response()->json(['data' => $this->bills->present($this->bills->find($bill), true, true)]);
     }
 
+    /** Set the payment link of a closed tenant bill */
     public function paymentUrl(Request $request, string $bill): JsonResponse
     {
         $data = $request->validate(['payment_url' => ['present', 'nullable', 'string', 'max:2000', 'url:http,https']]);
@@ -71,6 +74,7 @@ class TenantBillController extends Controller
         return response()->json(['data' => $this->bills->present($this->bills->setPaymentUrl($this->bills->find($bill), $data['payment_url'] ?? null), true, true)]);
     }
 
+    /** Mark a closed tenant bill paid or unpaid */
     public function paid(Request $request, string $bill): JsonResponse
     {
         $data = $request->validate([

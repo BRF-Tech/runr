@@ -65,6 +65,7 @@ class ProjectBillingController extends Controller
         private readonly Rbac $rbac,
     ) {}
 
+    /** Get the project's billing overview */
     public function show(Request $request, Project $project): JsonResponse
     {
         $this->authorizeProject($request, $project);
@@ -94,6 +95,7 @@ class ProjectBillingController extends Controller
         ]);
     }
 
+    /** Get the project's monthly cost limit */
     #[OpenApiResponse(200, 'The limit and this month so far', type: 'array{data: '.self::COST_LIMIT_TYPE.'}')]
     public function costLimit(Request $request, Project $project): JsonResponse
     {
@@ -102,7 +104,12 @@ class ProjectBillingController extends Controller
         return response()->json(['data' => $this->limits->status($project, $this->canRequest($request, $project))]);
     }
 
-    /** Set or change the limit; checked right away (a limit the month already passed acts now). */
+    /**
+     * Set the project's monthly cost limit
+     *
+     * Sets or changes the limit; it is checked right away (a limit the month already passed acts
+     * now).
+     */
     #[OpenApiResponse(200, 'The limit and this month so far', type: 'array{data: '.self::COST_LIMIT_TYPE.'}')]
     public function setCostLimit(Request $request, Project $project): JsonResponse
     {
@@ -124,7 +131,11 @@ class ProjectBillingController extends Controller
         return response()->json(['data' => $this->limits->status($project->refresh(), true, $limit)]);
     }
 
-    /** Remove the limit; a project it stopped stays stopped until it is resumed. */
+    /**
+     * Remove the project's monthly cost limit
+     *
+     * A project the limit stopped stays stopped until it is resumed.
+     */
     #[OpenApiResponse(200, 'No limit any more and this month so far', type: 'array{data: '.self::COST_LIMIT_TYPE.'}')]
     public function clearCostLimit(Request $request, Project $project): JsonResponse
     {
@@ -135,6 +146,8 @@ class ProjectBillingController extends Controller
     }
 
     /**
+     * Resume a project its cost limit stopped
+     *
      * Resume a project its cost limit stopped — once the limit no longer stops it (raised,
      * removed, switched to notify, or a new month). Answers like POST /projects/{project}/resume.
      */
@@ -162,6 +175,7 @@ class ProjectBillingController extends Controller
         ]);
     }
 
+    /** Quote the monthly price of fixed resources for the project */
     public function quote(Request $request, Project $project): JsonResponse
     {
         $this->authorizeProject($request, $project);
@@ -170,6 +184,7 @@ class ProjectBillingController extends Controller
         return response()->json($this->requests->quote($project, (int) $data['cpu_m'], (int) $data['memory_mb'], (int) ($data['gpu_count'] ?? 0)));
     }
 
+    /** Get one of the project's bills */
     public function bill(Request $request, Project $project, string $bill): JsonResponse
     {
         $this->authorizeProject($request, $project);
@@ -179,6 +194,7 @@ class ProjectBillingController extends Controller
         return response()->json(['data' => $this->bills->present($model, true, $this->canViewCosts($request))]);
     }
 
+    /** Request fixed resources for the project */
     public function storeRequest(Request $request, Project $project): JsonResponse
     {
         $this->authorizeProject($request, $project, true);
@@ -189,6 +205,7 @@ class ProjectBillingController extends Controller
         return response()->json(['data' => $this->presenter->fixedRequest($model)], 201);
     }
 
+    /** Cancel the project's fixed resource request */
     public function cancel(Request $request, Project $project, string $fixedRequest): JsonResponse
     {
         $this->authorizeProject($request, $project, true);

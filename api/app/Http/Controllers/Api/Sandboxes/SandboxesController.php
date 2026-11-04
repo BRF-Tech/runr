@@ -11,17 +11,19 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
 
 /**
- * @tags Sandboxes
- *
  * Sandbox lifecycle: create, list, get, delete, TTL, idle keepalive, pause / resume, network,
  * activity log (docs/sandbox-api.md).
+ *
+ * @tags Sandboxes
  */
 class SandboxesController extends SandboxApiController
 {
     public function __construct(private SandboxService $sandboxes) {}
 
     /**
-     * List sandboxes of the organization.
+     * List the organization's sandboxes
+     *
+     * Active ones by default; all_tenants=1 lists every organization's (platform administrators).
      */
     public function index(Request $request): JsonResponse
     {
@@ -143,6 +145,7 @@ class SandboxesController extends SandboxApiController
         return response()->json($body, $status);
     }
 
+    /** Get a sandbox */
     public function show(Request $request, string $sandbox): JsonResponse
     {
         $row = $this->findSandbox($request, $sandbox);
@@ -150,6 +153,7 @@ class SandboxesController extends SandboxApiController
         return response()->json(['data' => (new SandboxResource($row))->resolve($request)]);
     }
 
+    /** Delete a sandbox */
     public function destroy(Request $request, string $sandbox): JsonResponse
     {
         $row = $this->findSandbox($request, $sandbox, 'sandboxes.create');
@@ -158,7 +162,11 @@ class SandboxesController extends SandboxApiController
         return response()->json(['data' => (new SandboxResource($row))->resolve($request)]);
     }
 
-    /** New expiry: now + ttl_seconds (capped by the region's max TTL from the start). */
+    /**
+     * Set how long a sandbox lives from now
+     *
+     * New expiry: now + ttl_seconds (capped by the region's max TTL from the start).
+     */
     public function timeout(Request $request, string $sandbox): JsonResponse
     {
         $row = $this->findSandbox($request, $sandbox, 'sandboxes.create');
@@ -167,7 +175,7 @@ class SandboxesController extends SandboxApiController
         return response()->json(['data' => (new SandboxResource($this->sandboxes->extend($row, (int) $data['ttl_seconds'])))->resolve($request)]);
     }
 
-    /** Reset the idle timer. */
+    /** Reset a sandbox's idle timer */
     public function keepalive(Request $request, string $sandbox): JsonResponse
     {
         $row = $this->findSandbox($request, $sandbox, 'sandboxes.exec');
@@ -175,6 +183,7 @@ class SandboxesController extends SandboxApiController
         return response()->json(['data' => (new SandboxResource($this->sandboxes->keepalive($row)))->resolve($request)]);
     }
 
+    /** Pause a sandbox */
     public function pause(Request $request, string $sandbox): JsonResponse
     {
         $row = $this->findSandbox($request, $sandbox, 'sandboxes.exec');
@@ -182,6 +191,7 @@ class SandboxesController extends SandboxApiController
         return response()->json(['data' => (new SandboxResource($this->sandboxes->pause($row)))->resolve($request)]);
     }
 
+    /** Resume a paused sandbox */
     public function resume(Request $request, string $sandbox): JsonResponse
     {
         $row = $this->findSandbox($request, $sandbox, 'sandboxes.exec');
@@ -189,6 +199,7 @@ class SandboxesController extends SandboxApiController
         return response()->json(['data' => (new SandboxResource($this->sandboxes->resume($row)))->resolve($request)]);
     }
 
+    /** Replace a sandbox's egress network rules */
     public function network(Request $request, string $sandbox): JsonResponse
     {
         $row = $this->findSandbox($request, $sandbox, 'sandboxes.create');
@@ -197,7 +208,11 @@ class SandboxesController extends SandboxApiController
         return response()->json(['data' => (new SandboxResource($this->sandboxes->updateNetwork($row, $request->input('network'))))->resolve($request)]);
     }
 
-    /** Activity log; pod=1 adds the pod's phase, conditions, events and log. */
+    /**
+     * Get a sandbox's activity log
+     *
+     * Activity log (the last 500 events); pod=1 adds the pod's phase, conditions, events and log.
+     */
     public function logs(Request $request, string $sandbox): JsonResponse
     {
         $row = $this->findSandbox($request, $sandbox);

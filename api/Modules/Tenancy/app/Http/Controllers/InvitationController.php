@@ -21,7 +21,12 @@ use Modules\Tenancy\Models\TenantUser;
 class InvitationController extends Controller
 {
     /**
-     * Preview invitation details (public, no auth).
+     * Preview an invitation to an organization
+     *
+     * Public, no auth: the invitation token identifies it. 404 for an unknown token, 410 for an
+     * expired invitation.
+     *
+     * @unauthenticated
      */
     public function show(string $token): JsonResponse
     {
@@ -47,9 +52,12 @@ class InvitationController extends Controller
     }
 
     /**
-     * Accept invitation (public, token-based auth).
-     * If user doesn't exist: requires name + password to register.
-     * If user exists: requires password to verify identity.
+     * Accept an invitation to an organization.
+     *
+     * Public, authenticated by the invitation token. If the user does not exist: requires name +
+     * password to register. If the user exists: requires the password to verify identity.
+     *
+     * @unauthenticated
      */
     public function accept(string $token, Request $request): JsonResponse
     {

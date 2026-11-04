@@ -22,6 +22,7 @@ class MyBillsController extends Controller
 
     public function __construct(private readonly BillService $bills) {}
 
+    /** List the signed-in user's own bills for a month */
     public function index(Request $request): JsonResponse
     {
         $request->validate(['period' => ['sometimes', 'string', 'regex:/^\d{4}-(0[1-9]|1[0-2])$/']]);

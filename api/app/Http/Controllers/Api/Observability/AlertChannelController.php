@@ -29,13 +29,17 @@ class AlertChannelController extends Controller
         private OutboundUrlGuard $guard,
     ) {}
 
-    /** GET /api/observability/alert-channels */
+    /** List the organization's alert channels. */
     public function index(): JsonResponse
     {
         return response()->json(['data' => AlertChannel::query()->orderBy('name')->get()->map(fn (AlertChannel $c) => $c->toApi())->all()]);
     }
 
-    /** POST /api/observability/alert-channels — {name, type, config, is_enabled} */
+    /**
+     * Create an alert channel.
+     *
+     * Body: {name, type, config, is_enabled}.
+     */
     public function store(Request $request): JsonResponse
     {
         $base = $request->validate([
@@ -57,7 +61,11 @@ class AlertChannelController extends Controller
         return response()->json(['data' => $channel->toApi()], 201);
     }
 
-    /** PUT /api/observability/alert-channels/{channel} — config optional (omitted: secrets kept) */
+    /**
+     * Update an alert channel.
+     *
+     * config is optional (omitted: the secrets are kept).
+     */
     public function update(Request $request, string $channel): JsonResponse
     {
         $model = AlertChannel::query()->findOrFail($channel);
@@ -83,7 +91,11 @@ class AlertChannelController extends Controller
         return response()->json(['data' => $model->toApi()]);
     }
 
-    /** DELETE /api/observability/alert-channels/{channel} — also removed from every rule. */
+    /**
+     * Delete an alert channel.
+     *
+     * It is also removed from every rule.
+     */
     public function destroy(Request $request, string $channel): Response
     {
         $model = AlertChannel::query()->findOrFail($channel);
@@ -99,7 +111,7 @@ class AlertChannelController extends Controller
         return response()->noContent();
     }
 
-    /** POST /api/observability/alert-channels/{channel}/test — send a test message now. */
+    /** Send a test message to an alert channel now. */
     public function test(Request $request, string $channel): JsonResponse
     {
         $model = AlertChannel::query()->findOrFail($channel);

@@ -19,7 +19,10 @@ use Illuminate\Validation\ValidationException;
 class RegistrySetupController extends Controller
 {
     /**
-     * Start registry setup + region creation (async).
+     * Start creating a region together with its registry (queued)
+     *
+     * Registry setup + region creation (async): the kubeconfig and the namespace are checked first,
+     * the rest runs in the background; poll the returned setup token.
      */
     public function start(RegistrySetupRequest $request, KnativeStatusService $statusService): JsonResponse
     {
@@ -47,7 +50,9 @@ class RegistrySetupController extends Controller
     }
 
     /**
-     * Poll setup status.
+     * Get the state of a registry setup
+     *
+     * Poll setup status with the setup token (404 once the token has expired).
      */
     public function status(string $token): JsonResponse
     {
@@ -61,6 +66,8 @@ class RegistrySetupController extends Controller
     }
 
     /**
+     * Retry a failed registry setup with the same or changed settings
+     *
      * Retry a failed setup with (optionally updated) config.
      */
     public function retry(string $token, RegistrySetupRequest $request, KnativeStatusService $statusService): JsonResponse
@@ -91,7 +98,9 @@ class RegistrySetupController extends Controller
     }
 
     /**
-     * Test PVC provisioning (standalone).
+     * Test that the cluster can provision the registry's storage volume
+     *
+     * Test PVC provisioning (standalone): a test claim of the storage class and size must bind.
      */
     public function testPvc(TestPvcRequest $request, ZotRegistryService $zot): JsonResponse
     {
@@ -105,6 +114,8 @@ class RegistrySetupController extends Controller
     }
 
     /**
+     * Test the registry's S3 storage connection from inside the cluster
+     *
      * Test S3 connectivity (standalone).
      */
     public function testS3(TestS3Request $request, ZotRegistryService $zot): JsonResponse
@@ -117,6 +128,8 @@ class RegistrySetupController extends Controller
     }
 
     /**
+     * Test the connection to an external registry from inside the cluster
+     *
      * Test external registry connectivity (standalone).
      */
     public function testExternal(TestExternalRegistryRequest $request, ZotRegistryService $zot): JsonResponse

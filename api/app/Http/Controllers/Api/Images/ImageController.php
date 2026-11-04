@@ -23,7 +23,11 @@ class ImageController extends Controller
 {
     public function __construct(private UploadedImages $images, private ImageQuota $quota) {}
 
-    /** GET /images?knative_region_id=&kind=image|wasm|spin */
+    /**
+     * List the organization's uploaded images
+     *
+     * Optional filters: `?knative_region_id=` and `?kind=image|wasm|spin`.
+     */
     public function index(Request $request): JsonResponse
     {
         abort_unless(Gate::allows('images.view'), 403);
@@ -42,6 +46,7 @@ class ImageController extends Controller
         ]);
     }
 
+    /** Get an uploaded image */
     public function show(Request $request, UploadedImage $image): JsonResponse
     {
         abort_unless(Gate::allows('images.view'), 403);
@@ -50,7 +55,7 @@ class ImageController extends Controller
         return response()->json(['data' => (new UploadedImageResource($image))->resolve($request)]);
     }
 
-    /** GET /images/quota */
+    /** Get the organization's image storage quota and usage */
     public function quota(): JsonResponse
     {
         abort_unless(Gate::allows('images.view'), 403);
@@ -59,8 +64,10 @@ class ImageController extends Controller
     }
 
     /**
-     * DELETE /images/{image}: the record and its manifest in the region registry. Refused (409)
-     * while a CaaS project or a runtime version still uses the image.
+     * Delete an uploaded image
+     *
+     * The record and its manifest in the region registry. Refused (409) while a CaaS project or a
+     * runtime version still uses the image.
      */
     public function destroy(UploadedImage $image): JsonResponse
     {

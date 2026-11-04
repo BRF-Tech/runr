@@ -14,7 +14,10 @@ use Illuminate\Http\JsonResponse;
 class KnativeNodeController extends Controller
 {
     /**
-     * List worker nodes from the cluster.
+     * List the worker nodes of the region's cluster
+     *
+     * Every node outside the control plane, with its capacity, readiness and whether it is a
+     * selected worker. A cluster that does not answer gives a 400; the region stays as it is.
      */
     public function listNodes(KnativeRegion $knativeRegion, KnativeNodeService $nodeService): JsonResponse
     {
@@ -47,7 +50,11 @@ class KnativeNodeController extends Controller
     }
 
     /**
-     * Apply worker node selection.
+     * Choose the worker nodes the region's projects run on
+     *
+     * Applies the worker node selection: the selected nodes are labelled and tainted for projects,
+     * deselected ones are released, and the region's capacity is calculated again. With no node
+     * selected, projects run on every schedulable node.
      */
     public function applyWorkers(ApplyWorkersRequest $request, KnativeRegion $knativeRegion, KnativeNodeService $nodeService): JsonResponse
     {

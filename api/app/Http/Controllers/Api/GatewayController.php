@@ -23,6 +23,7 @@ class GatewayController extends Controller
 {
     public function __construct(private GatewayService $gatewayService) {}
 
+    /** List the caller's gateways */
     public function index(Request $request): AnonymousResourceCollection
     {
         $gateways = Gateway::where('user_id', $request->user()->id)
@@ -33,6 +34,8 @@ class GatewayController extends Controller
     }
 
     /**
+     * Get or create the caller's gateway in a region
+     *
      * The caller's gateway in a region, created when there is none (one per member and region):
      * a gateway for the routes to the environments that run in another region than the
      * caller's projects (docs/environments.md#gateway-routes).
@@ -59,6 +62,7 @@ class GatewayController extends Controller
         return (new GatewayResource($gateway->load(['routes.project', 'knativeRegion'])))->response()->setStatusCode($existing ? 200 : 201);
     }
 
+    /** Show a gateway and its routes */
     public function show(Gateway $gateway): GatewayResource
     {
         Gate::authorize('view', $gateway);
@@ -68,6 +72,8 @@ class GatewayController extends Controller
     }
 
     /**
+     * Change the gateway's rate limit and developer page
+     *
      * Gateway settings: optional Traefik rate limit for the function endpoints behind this
      * gateway (`rate_limit: {average, burst}` requests per second per client IP, `null` = off);
      * the public developer page (`developer_page`, `description`, and `developer_page_metrics`:
@@ -102,7 +108,11 @@ class GatewayController extends Controller
         return new GatewayResource($gateway);
     }
 
-    /** The gateway's routes, each as the gateway shows it. */
+    /**
+     * List the gateway's routes
+     *
+     * Each route as the gateway shows it.
+     */
     #[OpenApiResponse(200, 'The routes of the gateway', type: 'array{data: list<GatewayRouteResource>}')]
     public function routes(Gateway $gateway): JsonResponse
     {
@@ -118,6 +128,8 @@ class GatewayController extends Controller
     }
 
     /**
+     * Add a route to a project's workload or one of its environments
+     *
      * A route to a project's own workload, or with `environment` (a name or id) to one of its
      * environments (docs/environments.md#gateway-routes). The gateway must be in the region the
      * workload runs in; a project environment has one route, a path is used once per gateway.
@@ -180,6 +192,8 @@ class GatewayController extends Controller
     }
 
     /**
+     * Change a route's path, methods and API product settings
+     *
      * Path and methods; the API product settings of the route (docs/api-product.md):
      * `auth_mode` public | key | jwt, `jwt` {jwks_url, issuer, audience, subject_claim,
      * require_consumer} for jwt, `gateway_only` (the own URL of the workload the route leads to —
@@ -226,6 +240,7 @@ class GatewayController extends Controller
         return new GatewayRouteResource($route->load('project'));
     }
 
+    /** Remove a route from the gateway */
     public function removeRoute(Gateway $gateway, GatewayRoute $route): JsonResponse
     {
         abort_unless((string) $route->gateway_id === (string) $gateway->id, 404);

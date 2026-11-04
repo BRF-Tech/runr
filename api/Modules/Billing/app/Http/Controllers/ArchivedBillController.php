@@ -24,6 +24,7 @@ class ArchivedBillController extends Controller
 
     public function __construct(private readonly BillArchive $archive) {}
 
+    /** List the bills of deleted tenants */
     public function index(Request $request): JsonResponse
     {
         $request->validate([
@@ -54,6 +55,7 @@ class ArchivedBillController extends Controller
         return $this->paginated($page, collect($page->items())->map(fn (ArchivedBill $b) => $this->archive->present($b))->all());
     }
 
+    /** Get a bill of a deleted tenant */
     public function show(string $bill): JsonResponse
     {
         abort_unless($this->archive->tableExists(), 404);

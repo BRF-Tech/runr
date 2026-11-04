@@ -20,7 +20,11 @@ class PublicStatusPageController extends Controller
 {
     public function __construct(private StatusPageService $pages) {}
 
-    /** GET /api/public/status-pages/{slug} */
+    /**
+     * Get a public status page by its slug.
+     *
+     * @unauthenticated
+     */
     public function show(string $slug): JsonResponse
     {
         if (! preg_match('/^[a-z0-9]([-a-z0-9]*[a-z0-9])?$/', $slug)) {
@@ -30,7 +34,13 @@ class PublicStatusPageController extends Controller
         return $this->respond(StatusPageRoute::query()->where('slug', $slug)->first());
     }
 
-    /** GET /api/public/status-pages?domain=<host> */
+    /**
+     * Get a public status page by its custom domain.
+     *
+     * The domain is the query parameter `?domain=<host>`.
+     *
+     * @unauthenticated
+     */
     public function byDomain(Request $request): JsonResponse
     {
         $domain = rtrim(strtolower(trim((string) $request->query('domain', ''))), '.');

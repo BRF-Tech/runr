@@ -52,6 +52,7 @@ class RegionController extends Controller
         private readonly QueueConsumerCharging $consumers,
     ) {}
 
+    /** List the regions with their billing type and prices */
     public function index(): JsonResponse
     {
         return response()->json([
@@ -60,6 +61,7 @@ class RegionController extends Controller
         ]);
     }
 
+    /** Set a region's billing type or queue consumer charging */
     public function update(Request $request, string $region): JsonResponse
     {
         $data = $request->validate([
@@ -91,6 +93,8 @@ class RegionController extends Controller
     }
 
     /**
+     * Set the organization's queue consumer charging in a region
+     *
      * The organization's own choice for a region (its own or a shared one): charge: false — its
      * projects there are not charged for their queue consumers; null — as the region. It cannot
      * switch on what the region leaves off (true is kept as "as the region").
@@ -111,6 +115,8 @@ class RegionController extends Controller
     }
 
     /**
+     * List the organizations a platform region is shared with
+     *
      * The organizations (tenants) a platform region is shared with, each with the platform's
      * choice for it (docs/billing.md#queue-consumers): queue_consumers_override false — the region's
      * queue consumers are not charged to that tenant, on the platform's bill to it nor on its own
@@ -138,6 +144,8 @@ class RegionController extends Controller
     }
 
     /**
+     * Set queue consumer charging for one tenant in a platform region
+     *
      * The platform's choice for one tenant in a platform region: {charge: false} — not charged to
      * the tenant; {charge: null} — as the region. It cannot switch on what the region leaves off.
      */

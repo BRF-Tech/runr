@@ -34,6 +34,7 @@ class ProjectRuntimePatchController extends Controller
         private readonly RuntimePatchMigrations $migrations,
     ) {}
 
+    /** Show the project's patch state, pinnable patches and migrations */
     #[OpenApiResponse(200, 'Patch state of the project, the patches it can pin and its last migrations', type: 'array{data: array{state: '.RuntimePatches::STATE_OPENAPI_TYPE.'|null, patches: list<array{'.RuntimePatch::OPENAPI_FIELDS.'}>, keep: int, auto_migrate: bool, migrations: list<'.RuntimePatchMigration::OPENAPI_TYPE.'>}}')]
     public function show(Request $request, Project $project): JsonResponse
     {
@@ -53,7 +54,9 @@ class ProjectRuntimePatchController extends Controller
     }
 
     /**
-     * Redeploys the live version onto the newest patch (a pin ends).
+     * Redeploy the project's live version onto the newest runtime patch
+     *
+     * Starts the redeploy in the background (202 with the migration); a pin ends.
      *
      * @response JsonResponse<array{data: array<string, mixed>, message: string}, 202>
      */
@@ -80,6 +83,8 @@ class ProjectRuntimePatchController extends Controller
     }
 
     /**
+     * Pin the project on one of the last runtime patches
+     *
      * Pins the project on one of the last patches; with deploy (default) it redeploys onto it (202).
      *
      * @response JsonResponse<array{data: array<string, mixed>, migration: null}, 200>
@@ -110,6 +115,7 @@ class ProjectRuntimePatchController extends Controller
         ], $migration ? 202 : 200);
     }
 
+    /** Unpin the project so it follows the newest patch again */
     #[OpenApiResponse(200, 'The patch state without the pin', type: 'array{data: '.RuntimePatches::STATE_OPENAPI_TYPE.'|null}')]
     public function unpin(Project $project): JsonResponse
     {

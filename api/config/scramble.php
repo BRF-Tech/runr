@@ -16,6 +16,14 @@ return [
      */
     'export_path' => 'api.json',
 
+    /*
+     * RunR: the OpenAPI document GET /api/docs.json serves (App\Support\ApiDocument), built with
+     * the API image by `php artisan runr:api-docs` (api/Dockerfile.prod). Never committed (.gitignore)
+     * and kept out of the image's build context (.dockerignore), so the image always builds its own.
+     * Without the file (a development checkout) the document is generated on each request.
+     */
+    'document_path' => resource_path('api-docs/openapi.json'),
+
     'info' => [
         'version' => env('API_VERSION', '1.0.0'),
         'description' => 'RunR API',

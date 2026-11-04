@@ -32,6 +32,7 @@ class UsageController extends Controller
         private readonly Presenter $presenter,
     ) {}
 
+    /** Get the metered usage of the projects in a month */
     public function index(Request $request): JsonResponse
     {
         $request->validate(['period' => ['sometimes', 'string', 'regex:/^\d{4}-(0[1-9]|1[0-2])$/'], 'project' => ['sometimes', 'string', 'max:26']]);

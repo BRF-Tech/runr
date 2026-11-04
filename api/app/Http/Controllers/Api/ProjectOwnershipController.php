@@ -31,6 +31,7 @@ class ProjectOwnershipController extends Controller
 {
     public function __construct(private readonly Rbac $rbac) {}
 
+    /** Transfer the project to a new owner */
     public function update(Request $request, Project $project): JsonResponse
     {
         $actor = $request->user();

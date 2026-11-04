@@ -34,6 +34,7 @@ class PriceController extends Controller
         private readonly Regions $regions,
     ) {}
 
+    /** Get the organization's default prices and their versions */
     public function index(): JsonResponse
     {
         $today = Carbon::today()->toDateString();
@@ -56,6 +57,7 @@ class PriceController extends Controller
         ]);
     }
 
+    /** Add a price version for the defaults or a region */
     public function store(Request $request): JsonResponse
     {
         $rules = [
@@ -90,6 +92,7 @@ class PriceController extends Controller
         return response()->json(['data' => $price->fresh()?->toApiArray()], 201);
     }
 
+    /** Delete a price version not yet in effect */
     public function destroy(string $price): Response
     {
         $model = Price::query()->findOrFail($price);

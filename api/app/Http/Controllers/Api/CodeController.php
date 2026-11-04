@@ -28,6 +28,7 @@ class CodeController extends Controller
         private RuntimeRegistry $runtimes,
     ) {}
 
+    /** Get the source file of an XaaS project */
     public function getXaaSCode(Request $request, string $projectId): JsonResponse
     {
         $project = $this->getProject($projectId, ['xaas', 'aaas']);
@@ -54,6 +55,7 @@ class CodeController extends Controller
         return response()->json(['code' => $code, 'version' => new VersionResource($version)]);
     }
 
+    /** Save the source file of an XaaS project as a new version */
     public function saveXaaSCode(SaveXaaSCodeRequest $request, string $projectId): JsonResponse
     {
         // Saving creates a new Version: former AI types are read-only
@@ -80,6 +82,7 @@ class CodeController extends Controller
         return response()->json(['message' => __('api.code.saved'), 'version' => new VersionResource($version)], 201);
     }
 
+    /** Get the files of a FaaS project */
     public function getFaaSFiles(Request $request, string $projectId): JsonResponse
     {
         $project = $this->getProject($projectId, ['faas', 'agentflow']);
@@ -102,6 +105,7 @@ class CodeController extends Controller
         return response()->json(['files' => $files, 'version' => new VersionResource($version)]);
     }
 
+    /** Save the files of a FaaS project as a new version */
     public function saveFaaSFiles(SaveFaaSFilesRequest $request, string $projectId): JsonResponse
     {
         // Saving creates a new Version: former AI types are read-only
@@ -141,6 +145,7 @@ class CodeController extends Controller
         return response()->json(['message' => __('api.code.files_saved'), 'version' => new VersionResource($version)], 201);
     }
 
+    /** List the project's code versions */
     public function versions(Request $request, string $projectId): AnonymousResourceCollection
     {
         $versions = Version::where('project_id', $projectId)
@@ -151,6 +156,7 @@ class CodeController extends Controller
         return VersionResource::collection($versions);
     }
 
+    /** Get the files of one version of the project */
     public function versionFiles(Request $request, string $projectId, string $versionId): JsonResponse
     {
         $project = Project::findOrFail($projectId);

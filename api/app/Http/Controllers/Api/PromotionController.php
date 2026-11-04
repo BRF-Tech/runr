@@ -40,7 +40,11 @@ class PromotionController extends Controller
 
     public function __construct(private Promotions $promotions) {}
 
-    /** What a promotion from {environment} to ?to= (default: the next environment) changes. */
+    /**
+     * Preview what promoting the environment's live version would change
+     *
+     * What a promotion from {environment} to ?to= (default: the next environment) changes.
+     */
     #[QueryParameter('to', 'The target environment (name or id); default: the next one in the pipeline', type: 'string')]
     #[OpenApiResponse(200, 'What the promotion changes: the code version, the target\'s configuration and how the target differs from the source', type: 'array{data: array{source: '.self::SIDE_TYPE.', target: '.self::SIDE_TYPE.', version: '.self::VERSION_TYPE.'|null, code: array{from: '.self::VERSION_TYPE.'|null, to: '.self::VERSION_TYPE.'|null, changes: bool}, config: list<'.self::CHANGE_TYPE.'>, environment_differences: list<'.self::CHANGE_TYPE.'>, requires_approval: bool, can_promote: bool, problem: string|null, can_approve: bool}}')]
     public function preview(Request $request, Project $project, string $environment): JsonResponse
@@ -52,7 +56,11 @@ class PromotionController extends Controller
         ]]);
     }
 
-    /** Request a promotion of {environment}'s live version to `to` (default: the next environment). */
+    /**
+     * Promote the environment's live version to the next or a named environment.
+     *
+     * Requests a promotion of {environment}'s live version to `to` (default: the next environment).
+     */
     #[OpenApiResponse(202, 'The promotion: deploying, or waiting for an approver', type: 'array{data: '.self::PROMOTION_TYPE.'}')]
     #[OpenApiResponse(422, 'Nothing to promote, or a deploy check refused it', type: 'array{message: string, code?: string}')]
     public function promote(Request $request, Project $project, string $environment): JsonResponse
@@ -68,7 +76,11 @@ class PromotionController extends Controller
         return response()->json(['data' => $this->present($promotion, $request)], 202);
     }
 
-    /** Promotions of the project, newest first (?status= filters). */
+    /**
+     * List the project's promotions, newest first
+     *
+     * ?status= filters by status.
+     */
     #[QueryParameter('status', 'Only promotions in this status', type: '"pending_approval"|"approved"|"deploying"|"deployed"|"failed"|"rejected"|"cancelled"|"superseded"')]
     #[QueryParameter('limit', '1–200, default 50', type: 'int')]
     #[OpenApiResponse(200, 'The project\'s promotions, newest first', type: 'array{data: list<'.self::PROMOTION_TYPE.'>}')]
@@ -85,6 +97,8 @@ class PromotionController extends Controller
     }
 
     /**
+     * List promotions waiting for approval in the user's projects.
+     *
      * The approvals inbox: promotions of every project the user may see, ?status=pending_approval
      * (the default) — each says whether the user may approve it.
      */
@@ -107,6 +121,7 @@ class PromotionController extends Controller
         return response()->json(['data' => $this->presentAll($promotions, $request)]);
     }
 
+    /** Approve a promotion that waits for approval. */
     #[OpenApiResponse(200, 'The promotion', type: 'array{data: '.self::PROMOTION_TYPE.'}')]
     public function approve(Request $request, Project $project, string $promotion): JsonResponse
     {
@@ -116,6 +131,7 @@ class PromotionController extends Controller
         return response()->json(['data' => $this->present($this->promotions->approve($row, $request->user(), $request->input('comment')), $request)]);
     }
 
+    /** Reject a promotion that waits for approval. */
     #[OpenApiResponse(200, 'The promotion', type: 'array{data: '.self::PROMOTION_TYPE.'}')]
     public function reject(Request $request, Project $project, string $promotion): JsonResponse
     {
@@ -125,7 +141,11 @@ class PromotionController extends Controller
         return response()->json(['data' => $this->present($this->promotions->reject($row, $request->user(), $request->input('comment')), $request)]);
     }
 
-    /** The requester withdraws a promotion that still waits (an approver may too). */
+    /**
+     * Cancel a promotion that waits for approval
+     *
+     * The requester withdraws a promotion that still waits (an approver may too).
+     */
     #[OpenApiResponse(200, 'The promotion', type: 'array{data: '.self::PROMOTION_TYPE.'}')]
     public function cancel(Request $request, Project $project, string $promotion): JsonResponse
     {

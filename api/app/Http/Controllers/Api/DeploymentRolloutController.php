@@ -21,6 +21,8 @@ use Illuminate\Http\Request;
 class DeploymentRolloutController extends Controller
 {
     /**
+     * Get the project's newest rollout.
+     *
      * The newest rollout (open, kept or ended) of the project's own workload, or with ?environment=
      * (a name or id) of one of its environments (docs/deploy-strategies.md#environments); data null
      * when it never rolled out.
@@ -35,11 +37,13 @@ class DeploymentRolloutController extends Controller
         return response()->json(['data' => $rollout ? new DeploymentRolloutResource($rollout) : null]);
     }
 
+    /** Get a deployment's rollout. */
     public function show(Project $project, Deployment $deployment): DeploymentRolloutResource
     {
         return new DeploymentRolloutResource($this->rolloutOf($project, $deployment));
     }
 
+    /** Promote a rollout and send all traffic to the new revision now */
     #[OpenApiResponse(409, 'The rollout cannot be promoted now', type: 'array{message: string, code: "rollout_not_promotable"|"rollout_busy"}')]
     #[OpenApiResponse(502, 'The cluster did not take the new traffic split', type: 'array{message: string, code: "rollout_traffic_failed"}')]
     #[OpenApiResponse(200, 'The rollout after the action', type: 'array{data: DeploymentRolloutResource}')]
@@ -48,6 +52,11 @@ class DeploymentRolloutController extends Controller
         return $this->act(fn () => $rollouts->promote($this->rolloutOf($project, $deployment), $request->user()?->username));
     }
 
+    /**
+     * Abort a rollout and remove its new revision
+     *
+     * The new revision goes, the traffic stays where it was.
+     */
     #[OpenApiResponse(409, 'The rollout is not under way', type: 'array{message: string, code: "rollout_not_abortable"|"rollout_busy"}')]
     #[OpenApiResponse(502, 'The cluster did not take the new traffic split', type: 'array{message: string, code: "rollout_traffic_failed"}')]
     #[OpenApiResponse(200, 'The rollout after the action', type: 'array{data: DeploymentRolloutResource}')]
@@ -58,6 +67,7 @@ class DeploymentRolloutController extends Controller
         return $this->act(fn () => $rollouts->abort($this->rolloutOf($project, $deployment), $request->user()?->username, $data['reason'] ?? null));
     }
 
+    /** Roll a promoted rollout back to the previous revision while it is kept warm. */
     #[OpenApiResponse(409, 'The previous revision is no longer kept', type: 'array{message: string, code: "rollout_not_rollbackable"|"rollout_busy"}')]
     #[OpenApiResponse(502, 'The cluster did not take the new traffic split', type: 'array{message: string, code: "rollout_traffic_failed"}')]
     #[OpenApiResponse(200, 'The rollout after the action', type: 'array{data: DeploymentRolloutResource}')]

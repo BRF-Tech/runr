@@ -29,14 +29,22 @@ class ProjectNetworkController extends Controller
 
     public function __construct(private readonly InternalNetworkService $network) {}
 
-    /** The project's access mode, internal name and host, and its allow list */
+    /**
+     * Show the project's access mode, internal name and allow lists
+     *
+     * The project's access mode, internal name and host, and its allow list.
+     */
     #[OpenApiResponse(200, 'The project\'s network', type: 'array{data: '.self::NETWORK_TYPE.'}')]
     public function show(Project $project): JsonResponse
     {
         return response()->json(['data' => $this->data($project)]);
     }
 
-    /** Access mode: public | allowlist (allowed_cidrs) | internal */
+    /**
+     * Set the project's access mode and IP allow list
+     *
+     * Access mode: public | allowlist (allowed_cidrs) | internal.
+     */
     #[OpenApiResponse(200, 'The project\'s network after the change; warning: what the change could not apply yet', type: 'array{message: string, warning?: string, data: '.self::NETWORK_TYPE.'}')]
     public function update(Request $request, Project $project): JsonResponse
     {
@@ -58,6 +66,8 @@ class ProjectNetworkController extends Controller
     }
 
     /**
+     * Allow a project to call this one
+     *
      * Allows a project to call this one: a project of this organization (id, name or internal
      * name) or another organization's project by its internal name <project>.<organization>.
      */
@@ -74,6 +84,7 @@ class ProjectNetworkController extends Controller
         ], fn ($v) => $v !== null), 201);
     }
 
+    /** Remove a project from the caller allow list */
     public function removeCaller(Project $project, string $caller): JsonResponse
     {
         abort_unless($this->network->removeCaller($project, $caller), 404);

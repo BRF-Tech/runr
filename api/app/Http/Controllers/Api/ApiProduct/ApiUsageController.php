@@ -33,6 +33,8 @@ class ApiUsageController extends Controller
     ) {}
 
     /**
+     * Get the API usage report
+     *
      * Without gateway_id: every gateway the caller sees — every gateway with api_products.manage
      * or billing.view (the invoicing system's token).
      */

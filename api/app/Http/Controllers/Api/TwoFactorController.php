@@ -8,8 +8,13 @@ use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
 use PragmaRX\Google2FA\Google2FA;
 
+/**
+ * Two-factor authentication of the signed-in user's own account. Turning it on or off changes
+ * what the next sign-in asks for; it ends no sign-in session and no API token.
+ */
 class TwoFactorController extends Controller
 {
+    /** Start two-factor setup with a new TOTP secret */
     public function setup(Request $request): JsonResponse
     {
         $user = $request->user();
@@ -30,6 +35,7 @@ class TwoFactorController extends Controller
         ]);
     }
 
+    /** Turn on two-factor authentication with a TOTP code */
     public function confirm(Request $request): JsonResponse
     {
         $request->validate(['code' => 'required|string|size:6']);
@@ -55,6 +61,7 @@ class TwoFactorController extends Controller
         ]);
     }
 
+    /** Turn off two-factor authentication */
     public function disable(Request $request): JsonResponse
     {
         $request->validate(['password' => 'required|string']);
@@ -74,6 +81,7 @@ class TwoFactorController extends Controller
         return response()->json(['message' => __('api.account.2fa_disabled')]);
     }
 
+    /** Generate new two-factor recovery codes */
     public function recoveryCodes(Request $request): JsonResponse
     {
         $user = $request->user();

@@ -33,6 +33,7 @@ class GlobalProjectController extends Controller
 
     public function __construct(private readonly GlobalProjectService $global) {}
 
+    /** Show the global project's mode, regions and their health */
     #[OpenApiResponse(200, 'The global project: mode, failover, host name, every region\'s copy with a health check, its bindings across the regions', type: self::GLOBAL_TYPE)]
     public function show(Project $project): JsonResponse
     {
@@ -41,6 +42,7 @@ class GlobalProjectController extends Controller
         return response()->json($this->global->summary($project, true));
     }
 
+    /** Change the global project's mode, failover, primary and regions */
     #[OpenApiResponse(200, 'The global project after the change', type: self::GLOBAL_TYPE)]
     public function update(Request $request, Project $project): JsonResponse
     {
@@ -69,6 +71,8 @@ class GlobalProjectController extends Controller
     }
 
     /**
+     * Fail the primary over to another region
+     *
      * Failover of the primary to another region (docs/global-projects.md, "Failover"): for a
      * primary that does not answer — the target's replica clusters are promoted at once, the old
      * primary is fenced until it rejoins. region_id: the target, else the first healthy region in
@@ -96,6 +100,7 @@ class GlobalProjectController extends Controller
         return response()->json($this->global->summary($project->fresh() ?? $project), 202);
     }
 
+    /** Roll out to regions that are not ready and apply the routes again */
     public function sync(Project $project): JsonResponse
     {
         $this->assertGlobal($project);

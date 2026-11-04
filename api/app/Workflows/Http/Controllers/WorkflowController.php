@@ -27,7 +27,7 @@ class WorkflowController
         private readonly WorkflowRegistry $registry,
     ) {}
 
-    /** GET /projects/{project}/workflows */
+    /** List the project's workflows and its workflow app */
     public function index(Request $request, Project $project): JsonResponse
     {
         Gate::authorize('workflows.view', $project);
@@ -36,7 +36,7 @@ class WorkflowController
         return response()->json($this->listing(WorkflowEnvironments::fromRequest($request, $project)));
     }
 
-    /** GET /projects/{project}/workflows/{workflow} */
+    /** Show a workflow definition with its run counts */
     public function show(Request $request, Project $project, string $workflow): JsonResponse
     {
         Gate::authorize('workflows.view', $project);
@@ -48,7 +48,11 @@ class WorkflowController
         return response()->json(['data' => new WorkflowResource($model)]);
     }
 
-    /** POST /projects/{project}/workflows/sync — introspect the deployed function of the environment */
+    /**
+     * Sync the workflow definitions from the deployed function
+     *
+     * Introspects the deployed function of the environment.
+     */
     public function sync(Request $request, Project $project): JsonResponse
     {
         Gate::authorize('workflows.manage', $project);
@@ -61,8 +65,10 @@ class WorkflowController
     }
 
     /**
-     * PUT /projects/{project}/workflows — declare the set of definitions (manifest): the ones it
-     * does not list are archived. A definition declared unchanged keeps its source (e.g. `sdk`).
+     * Declare the project's whole set of workflow definitions
+     *
+     * Declares the set of definitions (manifest): the ones it does not list are archived. A
+     * definition declared unchanged keeps its source (e.g. `sdk`).
      */
     public function declare(Request $request, Project $project): JsonResponse
     {
@@ -80,9 +86,11 @@ class WorkflowController
     }
 
     /**
-     * PUT /projects/{project}/workflows/{workflow} — declare one definition (the body: its fields,
-     * as in runr.workflows.json, without or with the same name): added or replaced, the others stay
-     * as they are. Declared unchanged, it keeps its source.
+     * Add or replace one workflow definition
+     *
+     * Declares one definition (the body: its fields, as in runr.workflows.json, without or with the
+     * same name): added or replaced, the others stay as they are. Declared unchanged, it keeps its
+     * source.
      */
     #[BodyParameter('environment', 'The environment (a name or id; left out or production: the project\'s own workload)', type: 'string|null')]
     #[BodyParameter('name', 'The workflow\'s name, if given: the one in the address', type: 'string')]
@@ -116,8 +124,9 @@ class WorkflowController
     }
 
     /**
-     * DELETE /projects/{project}/workflows/{workflow} — archive one definition: its runs stay, it
-     * starts no new runs; the others stay as they are.
+     * Archive a workflow definition
+     *
+     * Its runs stay, it starts no new runs; the others stay as they are.
      */
     public function archive(Request $request, Project $project, string $workflow): JsonResponse
     {
@@ -130,7 +139,7 @@ class WorkflowController
         return response()->json(['message' => __('workflows.archived', ['name' => $model->name]), 'data' => new WorkflowResource($model)]);
     }
 
-    /** PATCH /projects/{project}/workflows/{workflow} — pause / resume */
+    /** Pause or resume a workflow */
     public function update(Request $request, Project $project, string $workflow): JsonResponse
     {
         Gate::authorize('workflows.manage', $project);
@@ -142,7 +151,11 @@ class WorkflowController
         return response()->json(['data' => new WorkflowResource($model->fresh())]);
     }
 
-    /** GET /projects/{project}/workflows/app */
+    /**
+     * Show the workflow app: its endpoint, key fingerprint and sync status
+     *
+     * @operationId workflow.app
+     */
     public function app(Request $request, Project $project): JsonResponse
     {
         Gate::authorize('workflows.view', $project);
@@ -153,7 +166,11 @@ class WorkflowController
         return response()->json(['data' => new WorkflowAppResource(WorkflowApp::forProject($view), $view)]);
     }
 
-    /** PATCH /projects/{project}/workflows/app — endpoint override (null: the environment's function URL) */
+    /**
+     * Set or clear the workflow app's endpoint override
+     *
+     * Endpoint override (null: the environment's function URL).
+     */
     public function updateApp(Request $request, Project $project, EndpointGuard $guard): JsonResponse
     {
         Gate::authorize('workflows.manage', $project);
@@ -172,7 +189,7 @@ class WorkflowController
         return response()->json(['data' => new WorkflowAppResource($app, $view)]);
     }
 
-    /** POST /projects/{project}/workflows/app/rotate-key */
+    /** Rotate the workflow app's signing key */
     public function rotateKey(Request $request, Project $project): JsonResponse
     {
         Gate::authorize('workflows.manage', $project);
@@ -188,7 +205,11 @@ class WorkflowController
         ]);
     }
 
-    /** GET /projects/{project}/workflows/app/signing-key — for functions served outside RunR (endpoint override) */
+    /**
+     * Get the workflow app's signing key
+     *
+     * For functions served outside RunR (endpoint override).
+     */
     public function signingKey(Request $request, Project $project): JsonResponse
     {
         Gate::authorize('workflows.manage', $project);

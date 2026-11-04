@@ -15,6 +15,7 @@ class TenantController extends Controller
 {
     use TenantRegionTrait;
 
+    /** List the organizations with their user and region counts. */
     public function index(Request $request): JsonResponse
     {
         $tenants = Tenant::withCount(['users', 'regions'])->get()
@@ -26,6 +27,11 @@ class TenantController extends Controller
         return response()->json($tenants);
     }
 
+    /**
+     * Create an organization.
+     *
+     * The caller becomes its owner.
+     */
     public function store(Request $request): JsonResponse
     {
         $data = $request->validate([
@@ -50,6 +56,7 @@ class TenantController extends Controller
         return response()->json($tenant->load('users'), 201);
     }
 
+    /** Get an organization with its users and regions. */
     public function show(string $id): JsonResponse
     {
         $tenant = Tenant::with('users:id,name,email', 'regions')->findOrFail($id);
@@ -57,6 +64,7 @@ class TenantController extends Controller
         return response()->json($tenant);
     }
 
+    /** Rename an organization. */
     public function update(Request $request, string $id): JsonResponse
     {
         $tenant = Tenant::findOrFail($id);
@@ -71,7 +79,9 @@ class TenantController extends Controller
     }
 
     /**
-     * Start (or retry) deleting a tenant: status → deleting, DeleteTenantJob does the teardown
+     * Delete an organization with everything it runs.
+     *
+     * Starts (or retries) deleting a tenant: status → deleting, DeleteTenantJob does the teardown
      * (every project's workloads on every region, domain entries, labelled leftovers, the agent of
      * tenant-owned regions) and drops the database only when nothing was left behind — otherwise
      * the tenant stays as delete_failed. `force=true` drops it regardless.
@@ -99,6 +109,7 @@ class TenantController extends Controller
         ], 202);
     }
 
+    /** Get the current organization, the caller's role there and their organizations. */
     public function current(Request $request): JsonResponse
     {
         $user = $request->user();
@@ -141,6 +152,7 @@ class TenantController extends Controller
         ])->all();
     }
 
+    /** Switch to another organization. */
     public function switchTenant(Request $request): JsonResponse
     {
         $request->validate(['tenant_id' => 'required|string']);

@@ -24,6 +24,8 @@ class ApiConsumerController extends Controller
     public function __construct(private readonly ApiProductAccess $access) {}
 
     /**
+     * List the API consumers
+     *
      * With gateway_id: the gateway's consumers and the organization's. Without: the consumers of
      * every gateway the caller sees, and the organization's for api_products.manage.
      */
@@ -64,6 +66,7 @@ class ApiConsumerController extends Controller
         return response()->json(['data' => ApiConsumerResource::collection($query->limit(1000)->get())->resolve()]);
     }
 
+    /** Create an API consumer */
     #[BodyParameter('name', required: true, type: 'string')]
     #[BodyParameter('gateway_id', 'The gateway; left out: a consumer of the organization, accepted on every gateway (api_products.manage)', type: 'string|null')]
     #[BodyParameter('email', 'Contact', type: 'string|null')]
@@ -103,6 +106,7 @@ class ApiConsumerController extends Controller
         return response()->json(['data' => (new ApiConsumerResource($consumer->load(['plan', 'keys'])))->resolve($request)], 201);
     }
 
+    /** Get an API consumer */
     #[OpenApiResponse(200, 'The consumer', type: 'array{data: ApiConsumerResource}')]
     public function show(Request $request, ApiConsumer $apiConsumer): JsonResponse
     {
@@ -111,7 +115,11 @@ class ApiConsumerController extends Controller
         return response()->json(['data' => (new ApiConsumerResource($apiConsumer->load(['plan', 'keys'])))->resolve($request)]);
     }
 
-    /** Name, contact, external id, JWT subject, plan, status (suspended: every key answers 403). */
+    /**
+     * Change an API consumer's details, plan or status
+     *
+     * Name, contact, external id, JWT subject, plan, status (suspended: every key answers 403).
+     */
     #[BodyParameter('name', type: 'string')]
     #[BodyParameter('email', 'Contact', type: 'string|null')]
     #[BodyParameter('external_id', 'Its id in the caller\'s own systems (billing, CRM)', type: 'string|null')]
@@ -142,7 +150,11 @@ class ApiConsumerController extends Controller
         return response()->json(['data' => (new ApiConsumerResource($apiConsumer->fresh(['plan', 'keys'])))->resolve($request)]);
     }
 
-    /** The consumer and its keys go; its usage stays in the reports. */
+    /**
+     * Delete an API consumer and its keys
+     *
+     * Its usage stays in the reports.
+     */
     public function destroy(ApiConsumer $apiConsumer): JsonResponse
     {
         Gate::authorize('delete', $apiConsumer);

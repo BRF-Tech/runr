@@ -381,6 +381,9 @@ func TestContractPermissions(t *testing.T) {
 			continue
 		}
 		want = strings.TrimSuffix(want, ":any")
+		// '@own:x': any signed-in user, a limited token must carry x — the fake checks only
+		// token scopes, so the contract writes x
+		want = strings.TrimPrefix(want, "@own:")
 		if want == "@authenticated" || want == "@policy" {
 			want = ""
 		}

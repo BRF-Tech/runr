@@ -10,3 +10,6 @@ storage/framework/views/*
 .env.docker
 tests/
 phpunit.xml
+# Built in the image (Dockerfile.prod): a local copy never replaces them
+resources/api-docs/
+public/api/vendor/

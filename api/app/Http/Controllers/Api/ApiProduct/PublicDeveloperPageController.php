@@ -17,7 +17,11 @@ use Illuminate\Http\JsonResponse;
  */
 class PublicDeveloperPageController extends Controller
 {
-    /** GET /api/public/developer-pages/{key} */
+    /**
+     * Get a gateway's public developer page
+     *
+     * @unauthenticated
+     */
     #[OpenApiResponse(200, 'The gateway\'s public developer page: its base URLs and routes (health: success rate and latency of the last metrics_days days, when the owner shows it)', type: 'array{data: array{name: string, description: string|null, base_urls: list<string>, routes: list<array{path: string, methods: list<string>|null, auth: "public"|"key"|"jwt", jwt_issuer: string|null, health?: array{success_rate: float, latency_p50_ms: float|null, latency_p95_ms: float|null, latency_p99_ms: float|null}|null}>, metrics_days: int|null, key_headers: list<string>, rate_limit_headers: list<string>}}')]
     public function show(string $key, DeveloperPage $pages): JsonResponse
     {

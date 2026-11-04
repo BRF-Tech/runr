@@ -31,7 +31,11 @@ class CaptchaController extends Controller
 {
     public function __construct(private readonly CaptchaSettings $settings) {}
 
-    /** @unauthenticated */
+    /**
+     * Get the public bot protection settings for the sign-in forms
+     *
+     * @unauthenticated
+     */
     public function config(Request $request, BrandingService $branding): JsonResponse
     {
         $tenant = $branding->findTenant(is_string($request->query('tenant')) ? $request->query('tenant') : null);
@@ -40,7 +44,11 @@ class CaptchaController extends Controller
             ->header('Cache-Control', 'public, max-age=30');
     }
 
-    /** @unauthenticated */
+    /**
+     * Get a local proof-of-work challenge for a form
+     *
+     * @unauthenticated
+     */
     public function challenge(Request $request, CaptchaGate $gate): JsonResponse
     {
         $request->validate([
@@ -51,6 +59,7 @@ class CaptchaController extends Controller
         return $gate->localChallengeResponse($request)->header('Cache-Control', 'no-store');
     }
 
+    /** Get the install's bot protection settings */
     public function show(Request $request, CaptchaGate $gate, CaptchaMetrics $metrics): JsonResponse
     {
         $this->authorizeInstall($request);
@@ -58,6 +67,7 @@ class CaptchaController extends Controller
         return response()->json($this->payload($gate, $metrics));
     }
 
+    /** Update the install's bot protection settings */
     public function update(Request $request, CaptchaGate $gate, CaptchaMetrics $metrics): JsonResponse
     {
         $this->authorizeInstall($request);
@@ -68,6 +78,7 @@ class CaptchaController extends Controller
         return response()->json($this->payload($gate, $metrics));
     }
 
+    /** Get the bot protection fallback metrics in Prometheus format */
     public function metrics(Request $request, CaptchaGate $gate, CaptchaMetrics $metrics): Response
     {
         $this->authorizeInstall($request);

@@ -22,6 +22,7 @@ class SupportTicketController extends Controller
 {
     use HandlesTicketAttachments;
 
+    /** List the signed-in user's support tickets */
     public function index(Request $request): JsonResponse
     {
         $tickets = SupportTicket::where('user_id', $request->user()->id)
@@ -33,6 +34,7 @@ class SupportTicketController extends Controller
         return response()->json($tickets);
     }
 
+    /** Open a support ticket. */
     public function store(StoreSupportTicketRequest $request): JsonResponse
     {
         $ticket = SupportTicket::create([
@@ -55,6 +57,7 @@ class SupportTicketController extends Controller
         return response()->json($ticket, 201);
     }
 
+    /** Get one of the signed-in user's tickets with its replies */
     public function show(Request $request, SupportTicket $supportTicket): JsonResponse
     {
         if ($supportTicket->user_id !== $request->user()->id) {
@@ -67,6 +70,7 @@ class SupportTicketController extends Controller
         );
     }
 
+    /** Reply to one of the signed-in user's tickets */
     public function reply(Request $request, SupportTicket $supportTicket): JsonResponse
     {
         if ($supportTicket->user_id !== $request->user()->id) {
@@ -94,6 +98,7 @@ class SupportTicketController extends Controller
         return response()->json($reply, 201);
     }
 
+    /** Download an attachment of one of the signed-in user's tickets */
     public function downloadAttachment(Request $request, SupportTicket $supportTicket, string $filename): StreamedResponse
     {
         if ($supportTicket->user_id !== $request->user()->id) {
@@ -103,6 +108,7 @@ class SupportTicketController extends Controller
         return $this->serveAttachment($supportTicket, $filename);
     }
 
+    /** Find the signed-in user's open tickets whose subject contains the given text */
     public function suggestions(Request $request): JsonResponse
     {
         $request->validate([
@@ -119,6 +125,7 @@ class SupportTicketController extends Controller
         return response()->json($tickets);
     }
 
+    /** Count the signed-in user's tickets by status */
     public function stats(Request $request): JsonResponse
     {
         $userId = $request->user()->id;
@@ -130,6 +137,7 @@ class SupportTicketController extends Controller
         ]);
     }
 
+    /** Mark one of the signed-in user's tickets as read */
     public function markRead(Request $request, SupportTicket $supportTicket): JsonResponse
     {
         if ($supportTicket->user_id !== $request->user()->id) {

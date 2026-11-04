@@ -25,6 +25,7 @@ class GroupController extends Controller
         private readonly AccessManager $access,
     ) {}
 
+    /** List the organization's groups */
     public function index(): JsonResponse
     {
         $counts = DB::table('rbac_group_user')->select('group_id', DB::raw('count(*) as n'))->groupBy('group_id')->pluck('n', 'group_id');
@@ -44,11 +45,13 @@ class GroupController extends Controller
         return response()->json(['groups' => $groups]);
     }
 
+    /** Show a group with its members and project access */
     public function show(Group $group): JsonResponse
     {
         return response()->json(['group' => $this->detail($group)]);
     }
 
+    /** Create a group, optionally with an organization-wide role */
     public function store(Request $request): JsonResponse
     {
         Gate::authorize('create', Group::class);
@@ -71,6 +74,7 @@ class GroupController extends Controller
         return response()->json(['group' => $this->detail($group)], 201);
     }
 
+    /** Change a group's name, description or role */
     public function update(Request $request, Group $group): JsonResponse
     {
         Gate::authorize('update', $group);
@@ -91,6 +95,7 @@ class GroupController extends Controller
         return response()->json(['group' => $this->detail($group->fresh())]);
     }
 
+    /** Delete a group */
     public function destroy(Request $request, Group $group): JsonResponse
     {
         Gate::authorize('delete', $group);
@@ -102,6 +107,7 @@ class GroupController extends Controller
         return response()->json(['message' => __('rbac.group_deleted')]);
     }
 
+    /** Add members to a group */
     public function addMembers(Request $request, Group $group): JsonResponse
     {
         Gate::authorize('update', $group);
@@ -115,6 +121,7 @@ class GroupController extends Controller
         return response()->json(['group' => $this->detail($group)]);
     }
 
+    /** Remove a member from a group */
     public function removeMember(Request $request, Group $group, string $user): JsonResponse
     {
         Gate::authorize('update', $group);

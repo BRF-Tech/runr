@@ -35,8 +35,8 @@
 # published agent). PowerDNS (reqs/pdns-auth) is loaded into both clusters when the host has it.
 # Phase 2 loads into both clusters: the data service images (test-bindings.sh; the CloudNativePG
 # operator itself comes from ghcr.io as in the bindings suite), reqs/nginx (the projects and the data
-# link's forwarder), the upload receiver and the transfer agent (runtime/image-upload 1.0.0 / 1.1.0:
-# the upload into A, the copy into B) and gateway-auth; it saves the nginx image as an upload archive
+# link's forwarder), the upload receiver and the transfer agent (runtime/image-upload at the version
+# the API names, image_upload_version: the upload into A, the copy into B) and gateway-auth; it saves the nginx image as an upload archive
 # into api:/tmp/runr-global-images/nginx.tar.
 #
 # RUNR_E2E_GLOBAL_CASES — only these cases (comma-separated, e.g. gp-data-link,gp-postgres-replica):
@@ -143,8 +143,8 @@ global_projects_prepare_target() {
 global_projects_prepare_phase2() {
   local cluster="$1" c img work="${GLOBAL_E2E_DIR:-/tmp/runr-global-images-e2e}"
   local nginx="${REGISTRY}/reqs/nginx:1.27-alpine"
-  local upload_tag="${REGISTRY}/image-upload:${IMAGE_UPLOAD_VERSION:-1.0.0}"
-  local transfer_tag="${REGISTRY}/image-upload:${ORG_TRANSFER_AGENT_VERSION:-1.1.0}"
+  local upload_tag="${REGISTRY}/image-upload:$(image_upload_version)"
+  local transfer_tag="${REGISTRY}/image-upload:${ORG_TRANSFER_AGENT_VERSION:-$(image_upload_version)}"
   local gateway_auth="${GATEWAY_AUTH_IMAGE:-${REGISTRY}/gateway-auth:1.0.0}"
   local archive_tag="runr-e2e/gp-nginx:upload"
 
@@ -159,7 +159,7 @@ global_projects_prepare_phase2() {
   # the receiver of the upload into A, the transfer agent of the copy into B
   docker build -q --pull -t "${upload_tag}" "${SCRIPT_DIR}/image-upload" >/dev/null \
     || echo -e "${YELLOW}  ${upload_tag} not built: gp-uploaded-image fails${NC}"
-  docker build -q --pull --build-arg "VERSION=${ORG_TRANSFER_AGENT_VERSION:-1.1.0}" -t "${transfer_tag}" "${SCRIPT_DIR}/image-upload" >/dev/null \
+  docker build -q --pull --build-arg "VERSION=${ORG_TRANSFER_AGENT_VERSION:-$(image_upload_version)}" -t "${transfer_tag}" "${SCRIPT_DIR}/image-upload" >/dev/null \
     || echo -e "${YELLOW}  ${transfer_tag} not built: gp-uploaded-image fails${NC}"
   # the gateway's auth service (a gateway of region B, gp-gateway)
   docker build -q -t "${gateway_auth}" "${SCRIPT_DIR}/gateway-auth" >/dev/null \

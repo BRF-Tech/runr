@@ -21,7 +21,7 @@ class TraceController extends Controller
     public function __construct(private TraceQueryService $traces) {}
 
     /**
-     * GET /api/projects/{project}/traces
+     * Search the project's traces.
      *
      * @queryParam status string all|error|ok
      * @queryParam min_duration_ms number minimum duration of the server span
@@ -48,7 +48,7 @@ class TraceController extends Controller
         return $this->guarded(fn () => response()->json(['data' => $this->traces->search($project, $filters)]));
     }
 
-    /** GET /api/projects/{project}/traces/{traceId} — the waterfall of one trace. */
+    /** Get the waterfall of one trace. */
     public function show(Project $project, string $traceId): JsonResponse
     {
         if (! preg_match('/^[0-9a-fA-F]{32}$/', $traceId)) {
@@ -62,7 +62,7 @@ class TraceController extends Controller
         });
     }
 
-    /** GET /api/projects/{project}/traces/{traceId}/logs — the project's log lines with this trace id. */
+    /** List the project's log lines with the trace's id. */
     public function logs(Project $project, string $traceId): JsonResponse
     {
         if (! preg_match('/^[0-9a-fA-F]{32}$/', $traceId)) {

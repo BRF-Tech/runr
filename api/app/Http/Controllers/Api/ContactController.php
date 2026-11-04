@@ -9,6 +9,7 @@ use Illuminate\Support\Facades\Mail;
 
 class ContactController extends Controller
 {
+    /** Send a contact form message to the platform. */
     public function store(ContactRequest $request)
     {
         $data = $request->validated();

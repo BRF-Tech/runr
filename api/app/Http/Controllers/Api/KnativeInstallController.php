@@ -26,7 +26,10 @@ class KnativeInstallController extends Controller
     use KnativeValidationTrait;
 
     /**
-     * Check Knative status on the cluster.
+     * Check the Knative status of the region's cluster
+     *
+     * Reads the status from the cluster and records it on the region. While an install or
+     * uninstall runs, or after an error, the recorded status comes back unless force is set.
      */
     public function knativeStatus(Request $request, KnativeRegion $knativeRegion, KnativeStatusService $statusService): JsonResponse
     {
@@ -79,7 +82,10 @@ class KnativeInstallController extends Controller
     }
 
     /**
-     * Install Knative via Helm (async job).
+     * Install Knative (Operator and Serving) in the region's cluster
+     *
+     * Runs as a background job (the Operator from its Helm chart); a Knative Operator or Serving
+     * that already runs on the cluster is adopted.
      */
     public function installKnative(KnativeRegion $knativeRegion): JsonResponse
     {
@@ -105,9 +111,10 @@ class KnativeInstallController extends Controller
     }
 
     /**
-     * Uninstall Knative from the cluster (async job).
-     * The region Traefik stays while it serves non-Knative Ingresses (e.g. the RunR console);
-     * `remove_traefik: true` removes it anyway.
+     * Uninstall Knative (Operator and Serving) from the region's cluster.
+     *
+     * Runs as a background job. The region Traefik stays while it serves non-Knative Ingresses
+     * (e.g. the RunR console); `remove_traefik: true` removes it anyway.
      */
     public function uninstallKnative(Request $request, KnativeRegion $knativeRegion): JsonResponse
     {
@@ -135,7 +142,9 @@ class KnativeInstallController extends Controller
     // ── Component-based install endpoints ────────────────────────────────────
 
     /**
-     * Install Knative Operator.
+     * Install the Knative Operator in the region's cluster
+     *
+     * Runs as a background job. An operator that already runs in the namespace is adopted instead.
      */
     public function installOperator(InstallOperatorRequest $request, KnativeRegion $knativeRegion, KnativeStatusService $statusService): JsonResponse
     {
@@ -186,7 +195,10 @@ class KnativeInstallController extends Controller
     }
 
     /**
-     * Install Knative Serving.
+     * Install Knative Serving in the region's cluster
+     *
+     * Needs a ready Knative Operator; runs as a background job. A Serving that already runs in the
+     * namespace is adopted instead.
      */
     public function installServing(InstallServingRequest $request, KnativeRegion $knativeRegion, KnativeStatusService $statusService): JsonResponse
     {
@@ -244,9 +256,11 @@ class KnativeInstallController extends Controller
     }
 
     /**
-     * Upgrade Knative Serving to the next minor version (async job). Knative upgrades one minor
-     * at a time; the version has to be one the cluster's Kubernetes version supports
-     * (GET …/compatible-versions). Serving is shared by the regions of a cluster.
+     * Upgrade Knative Serving to the next minor version.
+     *
+     * Runs as a background job. Knative upgrades one minor at a time; the version has to be one
+     * the cluster's Kubernetes version supports (GET …/compatible-versions). Serving is shared by
+     * the regions of a cluster.
      */
     public function upgradeServing(UpgradeServingRequest $request, KnativeRegion $knativeRegion, KnativeStatusService $statusService): JsonResponse
     {
@@ -302,7 +316,7 @@ class KnativeInstallController extends Controller
     }
 
     /**
-     * Detect existing Knative components on the cluster and adopt them.
+     * Detect existing Knative components on the region's cluster and adopt them
      */
     public function detectComponents(KnativeRegion $knativeRegion, KnativeStatusService $statusService): JsonResponse
     {
@@ -330,7 +344,7 @@ class KnativeInstallController extends Controller
     // ── Query endpoints ──────────────────────────────────────────────────────
 
     /**
-     * Check if a namespace exists on the cluster.
+     * Check whether a namespace exists on the region's cluster
      */
     public function checkNamespace(CheckNamespaceRequest $request, KnativeRegion $knativeRegion, KnativeStatusService $statusService): JsonResponse
     {
@@ -350,7 +364,10 @@ class KnativeInstallController extends Controller
     }
 
     /**
-     * Get compatible Knative Operator chart versions.
+     * List the Knative versions the region's cluster supports
+     *
+     * Compatible Knative Operator chart versions: up to five Knative minor versions that the
+     * cluster's Kubernetes version supports (and the chart repository offers, when it is reachable).
      */
     public function compatibleVersions(KnativeRegion $knativeRegion, KnativeStatusService $statusService): JsonResponse
     {
@@ -368,7 +385,10 @@ class KnativeInstallController extends Controller
     }
 
     /**
-     * Get component statuses for a region.
+     * Get the status of the region's Knative and sandbox components
+     *
+     * The recorded status of the Knative Operator and Serving and of the Kata and gVisor
+     * sandboxes, with the sandbox runtime per project type.
      */
     public function componentStatus(KnativeRegion $knativeRegion, KnativeStatusService $statusService): JsonResponse
     {

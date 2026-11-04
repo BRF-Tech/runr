@@ -8,14 +8,15 @@ use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\Response;
 
 /**
- * @tags Sandboxes
- *
  * Files of a sandbox: list, read, write, delete, mkdir, directory up- and download as tar.
+ *
+ * @tags Sandboxes > Files
  */
 class SandboxFilesController extends SandboxApiController
 {
     public function __construct(private SandboxFiles $files) {}
 
+    /** List the files in a sandbox directory */
     public function index(Request $request, string $sandbox): JsonResponse
     {
         $row = $this->findSandbox($request, $sandbox, 'sandboxes.exec');
@@ -24,7 +25,11 @@ class SandboxFilesController extends SandboxApiController
         return response()->json(['data' => $this->files->list($row, $path)]);
     }
 
-    /** Raw bytes, or {path, size, content_base64} with format=json. */
+    /**
+     * Read a file from a sandbox
+     *
+     * Raw bytes, or {path, size, content_base64} with format=json.
+     */
     public function read(Request $request, string $sandbox): Response
     {
         $row = $this->findSandbox($request, $sandbox, 'sandboxes.exec');
@@ -42,7 +47,11 @@ class SandboxFilesController extends SandboxApiController
         ]);
     }
 
-    /** Raw body, or JSON {content_base64, mode?}. */
+    /**
+     * Write a file in a sandbox
+     *
+     * Raw body, or JSON {content_base64, mode?}; missing parent directories are created.
+     */
     public function write(Request $request, string $sandbox): JsonResponse
     {
         $row = $this->findSandbox($request, $sandbox, 'sandboxes.exec');
@@ -67,6 +76,7 @@ class SandboxFilesController extends SandboxApiController
         return response()->json(['data' => $this->files->write($row, $path, $content, $mode !== null ? (string) $mode : null)]);
     }
 
+    /** Delete a file or directory in a sandbox */
     public function destroy(Request $request, string $sandbox): JsonResponse
     {
         $row = $this->findSandbox($request, $sandbox, 'sandboxes.exec');
@@ -74,6 +84,7 @@ class SandboxFilesController extends SandboxApiController
         return response()->json(['data' => $this->files->remove($row, (string) $request->query('path', ''), $request->boolean('recursive'))]);
     }
 
+    /** Create a directory in a sandbox */
     public function mkdir(Request $request, string $sandbox): JsonResponse
     {
         $row = $this->findSandbox($request, $sandbox, 'sandboxes.exec');
@@ -82,7 +93,11 @@ class SandboxFilesController extends SandboxApiController
         return response()->json(['data' => $this->files->mkdir($row, $data['path'])]);
     }
 
-    /** Tar of a directory's contents. */
+    /**
+     * Download a sandbox directory's contents as a tar archive
+     *
+     * Tar of a directory's contents.
+     */
     public function archive(Request $request, string $sandbox): Response
     {
         $row = $this->findSandbox($request, $sandbox, 'sandboxes.exec');

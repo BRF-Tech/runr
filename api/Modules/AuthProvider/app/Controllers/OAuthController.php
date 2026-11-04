@@ -21,6 +21,8 @@ class OAuthController extends Controller
     ) {}
 
     /**
+     * List the enabled SSO providers for the sign-in page
+     *
      * Enabled providers of the organization for the sign-in page (`?tenant=<slug>`: the tenant's).
      *
      * @unauthenticated
@@ -43,6 +45,8 @@ class OAuthController extends Controller
     }
 
     /**
+     * Get the sign-in URL of an SSO provider
+     *
      * `{redirect_url}` of the provider's sign-in. `?provider=<id>` picks one of several providers
      * of the driver (default: the first enabled one in sign-in order), `?tenant=<slug>` the tenant
      * whose providers are meant.
@@ -102,10 +106,12 @@ class OAuthController extends Controller
     }
 
     /**
-     * POST /api/oauth/exchange {code} — the console trades the one-time code of an SSO callback
-     * (OAuth / OIDC / SAML) for the API token. A code works once, for 60 seconds. In a
-     * multi-tenant install the answer also carries `tenants` and `active_tenant` like the
-     * password sign-in: the tenant whose sign-in page the sign-in started from.
+     * Exchange the one-time code of an SSO callback for an API token
+     *
+     * Body `{code}`: the console trades the one-time code of an SSO callback (OAuth / OIDC / SAML)
+     * for the API token. A code works once, for 60 seconds. In a multi-tenant install the answer
+     * also carries `tenants` and `active_tenant` like the password sign-in: the tenant whose
+     * sign-in page the sign-in started from.
      *
      * @unauthenticated
      */
@@ -132,9 +138,11 @@ class OAuthController extends Controller
     }
 
     /**
-     * GET /api/oauth/{driver}/link — `{redirect_url}` of the provider's sign-in that links the
-     * identity to the signed-in user (`?provider=<id>` as for the sign-in). The provider sends the
-     * browser back to the console's account settings, which confirm the link.
+     * Start linking an external identity to the signed-in user
+     *
+     * `{redirect_url}` of the provider's sign-in that links the identity to the signed-in user
+     * (`?provider=<id>` as for the sign-in). The provider sends the browser back to the console's
+     * account settings, which confirm the link.
      */
     public function link(Request $request, string $provider): JsonResponse
     {
@@ -148,9 +156,11 @@ class OAuthController extends Controller
     }
 
     /**
-     * POST /api/oauth/link/complete {code} — the signed-in user confirms the identity the
-     * provider's callback staged (`?sso_link=<code>` on the account settings page): 201 linked,
-     * 200 already linked to this user, 409 linked to another user, 422 unknown / expired code.
+     * Confirm linking an external identity to the signed-in user
+     *
+     * Body `{code}`: the signed-in user confirms the identity the provider's callback staged
+     * (`?sso_link=<code>` on the account settings page): 201 linked, 200 already linked to this
+     * user, 409 linked to another user, 422 unknown / expired code.
      */
     public function completeLink(Request $request): JsonResponse
     {

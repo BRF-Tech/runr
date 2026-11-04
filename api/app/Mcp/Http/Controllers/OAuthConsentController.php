@@ -19,12 +19,14 @@ class OAuthConsentController extends Controller
 {
     public function __construct(private readonly AuthorizationServer $server) {}
 
+    /** Show an MCP client's authorization request for the consent page */
     public function show(Request $request, string $id): JsonResponse
     {
         return response()->json(['data' => $this->server->describe($this->find($id), $request, $request->user())])
             ->header('Cache-Control', 'no-store');
     }
 
+    /** Approve an MCP client's authorization request with the chosen permissions */
     public function approve(Request $request, string $id): JsonResponse
     {
         $data = $request->validate([
@@ -42,6 +44,7 @@ class OAuthConsentController extends Controller
         ])->header('Cache-Control', 'no-store');
     }
 
+    /** Deny an MCP client's authorization request */
     public function deny(Request $request, string $id): JsonResponse
     {
         $pending = $this->find($id);

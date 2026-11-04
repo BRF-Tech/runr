@@ -26,10 +26,10 @@ use Modules\Tenancy\Models\Tenant;
 use Symfony\Component\HttpFoundation\Response;
 
 /**
- * @tags Sandboxes
- *
  * Sandbox API settings: region settings (classes, runc opt-in, TTL and size ceilings), warm pools,
  * organization quotas, metrics and usage.
+ *
+ * @tags Sandboxes > Settings
  */
 class SandboxAdminController extends SandboxApiController
 {
@@ -44,6 +44,7 @@ class SandboxAdminController extends SandboxApiController
 
     // ── Regions ─────────────────────────────────────────────────────────────────────────────
 
+    /** List the regions with their sandbox settings. */
     public function regions(Request $request): JsonResponse
     {
         Gate::authorize('sandboxes.view');
@@ -56,7 +57,12 @@ class SandboxAdminController extends SandboxApiController
         return response()->json(['data' => $data]);
     }
 
-    /** Settings of a region (route also carries region.mutable). */
+    /**
+     * Update the region's sandbox settings
+     *
+     * Settings of a region: classes, runc opt-in, TTL and size ceilings (route also carries
+     * region.mutable).
+     */
     public function updateRegion(Request $request, KnativeRegion $knativeRegion): JsonResponse
     {
         Gate::authorize('sandboxes.manage');
@@ -89,6 +95,7 @@ class SandboxAdminController extends SandboxApiController
 
     // ── Pools ───────────────────────────────────────────────────────────────────────────────
 
+    /** List the organization's warm sandbox pools. */
     public function pools(Request $request): JsonResponse
     {
         Gate::authorize('sandboxes.view');
@@ -101,6 +108,7 @@ class SandboxAdminController extends SandboxApiController
         return response()->json(['data' => $data]);
     }
 
+    /** Create a warm sandbox pool. */
     public function storePool(Request $request): JsonResponse
     {
         Gate::authorize('sandboxes.manage');
@@ -170,6 +178,7 @@ class SandboxAdminController extends SandboxApiController
         return response()->json(['data' => $this->pools->describe($pool, $region)], 201);
     }
 
+    /** Update a warm sandbox pool. */
     public function updatePool(Request $request, string $pool): JsonResponse
     {
         Gate::authorize('sandboxes.manage');
@@ -192,6 +201,7 @@ class SandboxAdminController extends SandboxApiController
         return response()->json(['data' => $this->pools->describe($row->refresh())]);
     }
 
+    /** Delete a warm sandbox pool and its warm pods. */
     public function destroyPool(Request $request, string $pool): Response
     {
         Gate::authorize('sandboxes.manage');
@@ -202,7 +212,11 @@ class SandboxAdminController extends SandboxApiController
 
     // ── Quotas ──────────────────────────────────────────────────────────────────────────────
 
-    /** The current organization's limits and usage. */
+    /**
+     * Get the organization's sandbox limits and usage
+     *
+     * The current organization's limits and usage.
+     */
     public function quota(Request $request): JsonResponse
     {
         Gate::authorize('sandboxes.view');
@@ -215,7 +229,11 @@ class SandboxAdminController extends SandboxApiController
         ]]);
     }
 
-    /** Every organization's limits and usage, plus the defaults row (platform). */
+    /**
+     * List every organization's sandbox limits and usage
+     *
+     * Every organization's limits and usage, plus the defaults row (platform).
+     */
     public function quotaTenants(Request $request): JsonResponse
     {
         $this->authorizePlatform($request);
@@ -243,7 +261,11 @@ class SandboxAdminController extends SandboxApiController
         return response()->json(['data' => $rows]);
     }
 
-    /** Set an organization's quota ("default": the defaults row). */
+    /**
+     * Set an organization's sandbox quota
+     *
+     * Set an organization's quota ("default": the defaults row).
+     */
     public function updateQuota(Request $request, string $tenant): JsonResponse
     {
         $this->authorizePlatform($request);
@@ -271,7 +293,11 @@ class SandboxAdminController extends SandboxApiController
         ]]);
     }
 
-    /** Back to the defaults. */
+    /**
+     * Reset an organization's sandbox quota to the defaults
+     *
+     * Back to the defaults ("default": the defaults row goes back to the installation's).
+     */
     public function destroyQuota(Request $request, string $tenant): Response
     {
         $this->authorizePlatform($request);
@@ -283,6 +309,7 @@ class SandboxAdminController extends SandboxApiController
 
     // ── Metrics & usage ─────────────────────────────────────────────────────────────────────
 
+    /** Get sandbox metrics for a time window. */
     public function metrics(Request $request): JsonResponse
     {
         Gate::authorize('sandboxes.view');
@@ -297,6 +324,7 @@ class SandboxAdminController extends SandboxApiController
         return response()->json(['data' => $this->metrics->summary($tenant, $data['region'] ?? null, $data['window'] ?? '24h')]);
     }
 
+    /** Get every organization's sandbox metrics in Prometheus text format. */
     public function prometheus(Request $request): Response
     {
         $this->authorizePlatform($request);
@@ -305,6 +333,8 @@ class SandboxAdminController extends SandboxApiController
     }
 
     /**
+     * List the organization's daily sandbox usage
+     *
      * Daily sandbox usage of the organization (?from= &to=, default this month).
      *
      * Quantities only: what they cost is the Billing module's (GET /api/billing/usage, the account

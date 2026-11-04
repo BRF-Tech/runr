@@ -24,13 +24,13 @@ use Symfony\Component\HttpFoundation\Response;
  */
 class AlertRuleController extends Controller
 {
-    /** GET /api/observability/alert-rules */
+    /** List the organization's alert rules. */
     public function index(): JsonResponse
     {
         return response()->json(['data' => AlertRule::query()->orderBy('name')->get()->map(fn (AlertRule $r) => $r->toApi())->all()]);
     }
 
-    /** POST /api/observability/alert-rules */
+    /** Create an alert rule. */
     public function store(Request $request): JsonResponse
     {
         $rule = AlertRule::query()->create($this->validated($request, null) + ['state' => AlertRule::STATE_OK]);
@@ -38,7 +38,7 @@ class AlertRuleController extends Controller
         return response()->json(['data' => $rule->toApi()], 201);
     }
 
-    /** PUT /api/observability/alert-rules/{rule} */
+    /** Update an alert rule. */
     public function update(Request $request, string $rule): JsonResponse
     {
         $model = AlertRule::query()->findOrFail($rule);
@@ -47,7 +47,11 @@ class AlertRuleController extends Controller
         return response()->json(['data' => $model->toApi()]);
     }
 
-    /** DELETE /api/observability/alert-rules/{rule} — its firing alerts are closed silently. */
+    /**
+     * Delete an alert rule.
+     *
+     * Its firing alerts are closed silently.
+     */
     public function destroy(Request $request, string $rule): Response
     {
         $model = AlertRule::query()->findOrFail($rule);
@@ -58,7 +62,11 @@ class AlertRuleController extends Controller
         return response()->noContent();
     }
 
-    /** GET /api/observability/alert-events — ?status=firing|resolved */
+    /**
+     * List fired alerts.
+     *
+     * Optional filter: ?status=firing|resolved.
+     */
     public function events(Request $request): JsonResponse
     {
         $request->validate(['status' => ['nullable', Rule::in([AlertEvent::FIRING, AlertEvent::RESOLVED])]]);
@@ -72,7 +80,11 @@ class AlertRuleController extends Controller
         return response()->json(['data' => $events->map(fn (AlertEvent $e) => $e->toApi())->all()]);
     }
 
-    /** GET /api/observability/alert-deliveries — the delivery log, ?channel_id=, ?status= */
+    /**
+     * List alert deliveries.
+     *
+     * The delivery log; optional filters: ?channel_id=, ?status=.
+     */
     public function deliveries(Request $request): JsonResponse
     {
         $request->validate([
@@ -93,7 +105,7 @@ class AlertRuleController extends Controller
         ]);
     }
 
-    /** POST /api/observability/alert-deliveries/{delivery}/retry — send a failed delivery again. */
+    /** Send a failed alert delivery again. */
     public function retry(Request $request, string $delivery): JsonResponse
     {
         $model = AlertDelivery::query()->findOrFail($delivery);

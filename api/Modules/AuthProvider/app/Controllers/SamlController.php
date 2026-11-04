@@ -27,7 +27,10 @@ class SamlController extends Controller
     ) {}
 
     /**
-     * SP metadata XML to register at the IdP (entity ID, ACS URL, signing certificate).
+     * Get the SP metadata XML to register at the SAML identity provider
+     *
+     * SAML service provider metadata to register at the IdP: entity ID, ACS URL and signing
+     * certificate.
      *
      * @unauthenticated
      */
@@ -42,7 +45,9 @@ class SamlController extends Controller
     }
 
     /**
-     * Start SP-initiated sign-in: JSON `{redirect_url}` for the console, a 302 for browsers.
+     * Start a sign-in with a SAML provider
+     *
+     * SP-initiated sign-in: JSON `{redirect_url}` for the console, a 302 for browsers.
      *
      * @unauthenticated
      */
@@ -64,6 +69,8 @@ class SamlController extends Controller
     }
 
     /**
+     * Receive a SAML response and sign the user in
+     *
      * Assertion Consumer Service (HTTP-POST binding): validates the SAMLResponse, then signs the
      * user in exactly like the OAuth callback (redirect to the console with a token).
      *

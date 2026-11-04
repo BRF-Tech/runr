@@ -42,6 +42,7 @@ class TenantUserController extends Controller
         return app(AccessManager::class);
     }
 
+    /** List an organization's members and pending invitations. */
     public function index(string $tenantId): JsonResponse
     {
         $this->authorizeTenant($tenantId);
@@ -75,6 +76,7 @@ class TenantUserController extends Controller
         ]);
     }
 
+    /** Look up an e-mail address before adding a member. */
     public function searchEmail(Request $request, string $tenantId): JsonResponse
     {
         $this->authorizeTenant($tenantId, requireAdmin: true);
@@ -111,6 +113,11 @@ class TenantUserController extends Controller
         ]);
     }
 
+    /**
+     * Add a member to an organization, or invite them by e-mail.
+     *
+     * An existing account is added directly; any other address gets an invitation.
+     */
     public function store(Request $request, string $tenantId): JsonResponse
     {
         $this->authorizeTenant($tenantId, requireAdmin: true);
@@ -174,6 +181,7 @@ class TenantUserController extends Controller
         return response()->json(['message' => __('api.tenant_user.invitation_sent'), 'action' => 'invited'], 201);
     }
 
+    /** Change a member's role in an organization. */
     public function update(Request $request, string $tenantId, string $userId): JsonResponse
     {
         $this->authorizeTenant($tenantId, requireAdmin: true);
@@ -196,6 +204,7 @@ class TenantUserController extends Controller
         return response()->json(['message' => __('api.tenant_user.role_updated')]);
     }
 
+    /** Remove a member from an organization. */
     public function destroy(string $tenantId, string $userId): JsonResponse
     {
         $this->authorizeTenant($tenantId, requireAdmin: true);
@@ -219,6 +228,7 @@ class TenantUserController extends Controller
         return response()->json(['message' => __('api.tenant_user.removed')]);
     }
 
+    /** Cancel a pending invitation. */
     public function cancelInvitation(string $tenantId, string $invitationId): JsonResponse
     {
         $this->authorizeTenant($tenantId, requireAdmin: true);
@@ -232,6 +242,7 @@ class TenantUserController extends Controller
         return response()->json(['message' => __('api.tenant_user.invitation_cancelled')]);
     }
 
+    /** Reset a member's two-factor authentication. */
     public function reset2FA(string $tenantId, string $userId): JsonResponse
     {
         $this->authorizeTenant($tenantId, requireAdmin: true);
@@ -256,6 +267,11 @@ class TenantUserController extends Controller
         return response()->json(['message' => __('api.user.2fa_reset')]);
     }
 
+    /**
+     * Send an invitation again with a new link.
+     *
+     * The previous link stops working.
+     */
     public function resendInvitation(string $tenantId, string $invitationId): JsonResponse
     {
         $this->authorizeTenant($tenantId, requireAdmin: true);

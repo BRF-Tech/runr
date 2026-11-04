@@ -440,6 +440,25 @@ else
 fi
 report frozen-accounts "none by default; a list or a comma-separated string of addresses rendered"
 
+# Notification retention (notifications.retentionDays → RUNR_NOTIFICATION_RETENTION_DAYS): 90 by
+# default and for values reused from a release before the key, 0 (keep forever) rendered as 0, a
+# negative or non-numeric value refused by the schema
+problems=()
+if render notifications-default --show-only templates/configmap.yaml \
+  && render notifications-reused --set notifications=null --show-only templates/configmap.yaml \
+  && render notifications-keep --set notifications.retentionDays=0 --show-only templates/configmap.yaml \
+  && render notifications-days --set-string notifications.retentionDays=30 --show-only templates/configmap.yaml; then
+  grep -q -F 'RUNR_NOTIFICATION_RETENTION_DAYS: "90"' "$OUT/notifications-default.render" || problems+=("defaults: not 90 days")
+  grep -q -F 'RUNR_NOTIFICATION_RETENTION_DAYS: "90"' "$OUT/notifications-reused.render" || problems+=("values without the key: not 90 days")
+  grep -q -F 'RUNR_NOTIFICATION_RETENTION_DAYS: "0"' "$OUT/notifications-keep.render" || problems+=("0 not rendered as 0")
+  grep -q -F 'RUNR_NOTIFICATION_RETENTION_DAYS: "30"' "$OUT/notifications-days.render" || problems+=("a string of digits not rendered")
+else
+  problems+=("helm template: $(cat "$OUT"/notifications*.err)")
+fi
+refused schema-notifications-negative 'notifications.retentionDays' --set notifications.retentionDays=-1 || problems+=("a negative notifications.retentionDays not refused")
+refused schema-notifications-text 'notifications.retentionDays' --set-string notifications.retentionDays=forever || problems+=("a non-numeric notifications.retentionDays not refused")
+report notification-retention "90 days by default and for reused values, 0 kept, the value validated"
+
 # Branding colours: a scale given as a map renders its base colour (primary: shade 500, the
 # themes' tones: 950, the page background) and the scale as JSON, one colour renders it with an
 # empty scale; branding.defaultTheme is dark | light. The navy dark theme of the values.yaml

@@ -10,14 +10,20 @@ use App\Services\WhiteLabel\SignupService;
 use App\Services\WhiteLabel\SignupSettings;
 use App\Support\Auth\LoginIdentifier;
 use App\Support\Auth\LoginTokens;
+use Illuminate\Auth\SessionGuard;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
+use Laravel\Sanctum\Contracts\HasAbilities;
+use Laravel\Sanctum\PersonalAccessToken;
 use PragmaRX\Google2FA\Google2FA;
 
 class AuthController extends Controller
 {
     /**
+     * Sign up for a new account
+     *
      * Self-service signup (docs/white-label.md): 201 {user, token}, or with e-mail verification on
      * 202 {verification_required, email} — the account is created when the e-mail link is opened.
      *
@@ -29,6 +35,8 @@ class AuthController extends Controller
     }
 
     /**
+     * Sign in and get an access token
+     *
      * Sign in with the user name or the e-mail address (`login`) and the password: 200 {user, token},
      * 202 {requires_2fa} until `two_factor_code` is given. An unknown account and a wrong password
      * get the same 401 — so does a sign-in that names an organization whose own bot protection keys
@@ -115,6 +123,8 @@ class AuthController extends Controller
     }
 
     /**
+     * Get the public signup options for the sign-in page
+     *
      * Public signup options for the login page: enabled, invite-only, verification, allowed domains,
      * CAPTCHA provider + site key, terms / privacy links, tenant per signup (multi-tenant).
      *
@@ -125,14 +135,43 @@ class AuthController extends Controller
         return response()->json(app(SignupSettings::class)->publicStatus());
     }
 
+    /**
+     * Sign out and revoke the current token
+     *
+     * Only the token of the request ends — a sign-in session, or an API token that signs itself
+     * out; the user's other sessions and API tokens stay. A request without a stored token (a
+     * cookie session) ends that web session.
+     */
     public function logout(Request $request): JsonResponse
     {
-        $request->user()->currentAccessToken()->delete();
+        /** @var HasAbilities|null $token */
+        $token = $request->user()->currentAccessToken();
+
+        if ($token instanceof PersonalAccessToken) {
+            $token->delete();
+        } else {
+            // A cookie session: Sanctum's TransientToken of the session guards it signs in with
+            // (sanctum.guard)
+            foreach ((array) config('sanctum.guard', 'web') as $guard) {
+                $session = Auth::guard($guard);
+                if ($session instanceof SessionGuard) {
+                    $session->logout();
+                }
+            }
+            if ($request->hasSession()) {
+                $request->session()->invalidate();
+                $request->session()->regenerateToken();
+            }
+        }
 
         return response()->json(['message' => __('api.auth.logged_out')]);
     }
 
-    /** The signed-in user with `frozen`, as GET /account answers it. */
+    /**
+     * Get the signed-in user
+     *
+     * The signed-in user with `frozen`, as GET /account answers it.
+     */
     public function me(Request $request): JsonResponse
     {
         return response()->json($request->user()->append('frozen'));

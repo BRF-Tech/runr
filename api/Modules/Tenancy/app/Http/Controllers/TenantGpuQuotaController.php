@@ -14,6 +14,11 @@ use Modules\Tenancy\Models\Tenant;
  */
 class TenantGpuQuotaController extends Controller
 {
+    /**
+     * Set an organization's GPU quota in a region.
+     *
+     * null = no GPU limit, 0 = no GPUs.
+     */
     public function update(Request $request, string $tenant, string $region): JsonResponse
     {
         $data = $request->validate([

@@ -27,6 +27,7 @@ class RegionOfferController extends Controller
         private readonly PriceBook $prices,
     ) {}
 
+    /** List the platform regions shared with the tenant */
     public function index(): JsonResponse
     {
         $tenant = $this->tenantOrFail();
@@ -37,6 +38,7 @@ class RegionOfferController extends Controller
         ]);
     }
 
+    /** Accept a shared platform region */
     public function accept(Request $request, string $region): JsonResponse
     {
         $tenant = $this->tenantOrFail();

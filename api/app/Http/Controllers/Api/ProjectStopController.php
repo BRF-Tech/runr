@@ -23,6 +23,7 @@ class ProjectStopController extends Controller
 {
     public function __construct(private readonly ProjectStopService $stops) {}
 
+    /** Stop a project */
     #[OpenApiResponse(409, 'The project is already stopped (a platform administrator takes an organization\'s stop over: 200)', type: 'array{message: string, code: "project_already_stopped", level: "platform"|"organization"|null, reason?: string|null}')]
     public function stop(Request $request, Project $project): JsonResponse
     {
@@ -39,6 +40,7 @@ class ProjectStopController extends Controller
         return response()->json(['data' => $this->present($request, $project)]);
     }
 
+    /** Resume a stopped project */
     #[OpenApiResponse(403, 'The platform stopped the project: only a platform administrator resumes it', type: 'array{message: string, code: "project_stopped_by_platform"}')]
     public function resume(Request $request, Project $project): JsonResponse
     {

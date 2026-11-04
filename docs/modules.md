@@ -58,11 +58,14 @@ The Ticket and Billing screens are also hidden **at run time** when the API repo
 the console reads `features.tickets` and `features.billing` of `GET /api/branding` at start. The
 published UI images (both editions) are therefore built with `VITE_TICKET_ENABLED=true` and
 `VITE_BILLING_ENABLED=true`, and one image serves installations with and without these modules.
+The sign-in page asks for its SSO buttons (`GET /api/auth-providers/discover`) only when the build
+has the AuthProvider screens and the API reports the module on (`features.auth_providers`): with
+the module off that route does not exist.
 
 Build the UI image with the flags of your modules (`vue/Dockerfile`):
 
 ```bash
-docker build -t registry.example.com/runr/ui:0.6.4-mt \
+docker build -t registry.example.com/runr/ui:0.6.5-mt \
   --build-arg VITE_WS_PROXY=true \
   --build-arg VITE_REVERB_KEY=runr-key \
   --build-arg VITE_TENANCY_ENABLED=true \
@@ -77,7 +80,7 @@ Helm, `ui.image.repository` and `ui.image.tag` select the UI image; the tag defa
 chart's `appVersion`. `edition: multi-tenant` appends `ui.image.multiTenantSuffix` (default `-mt`)
 to the tag and runs the published multi-tenant UI, `<version>-mt`, built with the Tenancy and
 AuthProvider screens; with
-`repository: registry.example.com/runr/ui` and `tag: "0.6.4"` it runs the image built above. A
+`repository: registry.example.com/runr/ui` and `tag: "0.6.5"` it runs the image built above. A
 multi-tenant UI of your own under its plain tag needs `multiTenantSuffix: ""`. In the
 single-tenant edition the tag is used as it is — with `authProvider.enabled: true` or the Ticket
 screens, point `ui.image.tag` at a build with those flags

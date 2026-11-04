@@ -24,6 +24,7 @@ class TenantBrandingController extends Controller
 
     public function __construct(private readonly BrandingService $branding) {}
 
+    /** Get the organization's branding override with its stored values and defaults. */
     public function show(Request $request): JsonResponse
     {
         $tenant = $this->tenantOf($request);
@@ -31,6 +32,12 @@ class TenantBrandingController extends Controller
         return response()->json($this->payload((string) $tenant->id));
     }
 
+    /**
+     * Update the organization's branding override.
+     *
+     * A partial update: a field sent as null goes back to the platform value. Allowed only while the
+     * platform enables organization overrides.
+     */
     public function update(Request $request): JsonResponse
     {
         $tenantId = $this->authorizeTenant($request);
@@ -41,6 +48,11 @@ class TenantBrandingController extends Controller
         return response()->json($this->payload($tenantId));
     }
 
+    /**
+     * Upload a branding image of the organization.
+     *
+     * Multipart "file"; {kind} is logo_light, logo_dark, logo_mark, favicon or email_logo.
+     */
     public function uploadAsset(Request $request, string $kind): JsonResponse
     {
         $tenantId = $this->authorizeTenant($request);
@@ -51,6 +63,7 @@ class TenantBrandingController extends Controller
         return response()->json($this->payload($tenantId));
     }
 
+    /** Remove a branding image of the organization. */
     public function deleteAsset(Request $request, string $kind): JsonResponse
     {
         $tenantId = $this->authorizeTenant($request);

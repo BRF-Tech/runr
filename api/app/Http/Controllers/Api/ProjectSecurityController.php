@@ -30,7 +30,7 @@ class ProjectSecurityController extends Controller
         private DeployPolicyGate $gate,
     ) {}
 
-    /** GET /api/projects/{project}/security */
+    /** Get the project's supply-chain overview: versions, deployments, policy. */
     public function index(Project $project): JsonResponse
     {
         Gate::authorize('security.view', $project);
@@ -93,7 +93,7 @@ class ProjectSecurityController extends Controller
         ]]);
     }
 
-    /** GET /api/projects/{project}/versions/{version}/security */
+    /** Get a version's security report and the deploy policy decision. */
     public function version(Project $project, Version $version): JsonResponse
     {
         Gate::authorize('security.view', $project);
@@ -108,7 +108,11 @@ class ProjectSecurityController extends Controller
         ]]);
     }
 
-    /** POST /api/projects/{project}/versions/{version}/security/scan — scan again (full run when the version has no SBOM yet) */
+    /**
+     * Scan a version's image again.
+     *
+     * A full run when the version has no SBOM yet.
+     */
     public function rescan(Project $project, Version $version): JsonResponse
     {
         Gate::authorize('security.view', $project);
@@ -127,7 +131,11 @@ class ProjectSecurityController extends Controller
         return response()->json(['data' => $queued->summary()], 202);
     }
 
-    /** GET /api/projects/{project}/versions/{version}/sbom?format=spdx-json|cyclonedx-json */
+    /**
+     * Download a version's SBOM.
+     *
+     * ?format=spdx-json|cyclonedx-json.
+     */
     public function sbom(Request $request, Project $project, Version $version): Response
     {
         Gate::authorize('security.view', $project);
@@ -138,7 +146,7 @@ class ProjectSecurityController extends Controller
         return $this->download($report, (string) $request->query('format', 'spdx-json'), "{$project->slug}-v{$version->number}");
     }
 
-    /** GET /api/projects/{project}/deployments/{deployment}/security */
+    /** Get the security report of a deployment's version. */
     public function deployment(Project $project, Deployment $deployment): JsonResponse
     {
         Gate::authorize('security.view', $project);

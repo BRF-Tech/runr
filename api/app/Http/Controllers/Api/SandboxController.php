@@ -143,7 +143,10 @@ class SandboxController extends Controller
     }
 
     /**
-     * Get sandbox status for a region.
+     * Get the region's sandbox runtime status and project-type mapping
+     *
+     * Sandbox status for a region: Kata and gVisor, and the runtime each project type and the
+     * builds use.
      */
     public function sandboxStatus(KnativeRegion $knativeRegion): JsonResponse
     {
@@ -211,7 +214,10 @@ class SandboxController extends Controller
     }
 
     /**
-     * Update project-type → sandbox runtime mapping.
+     * Set the sandbox runtime per project type and for builds in the region
+     *
+     * Update project-type → sandbox runtime mapping (XaaS, FaaS, CaaS, builds): runc or a runtime
+     * that is ready in the region.
      */
     public function updateMapping(UpdateSandboxMappingRequest $request, KnativeRegion $knativeRegion): JsonResponse
     {

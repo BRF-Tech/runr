@@ -29,7 +29,12 @@ class BindingController extends Controller
         private BindingQuotas $quotas,
     ) {}
 
-    /** Bindings with their project attachments and measured usage. */
+    /**
+     * List the bindings with their project attachments and usage
+     *
+     * Bindings with their project attachments and measured usage. Filters: `type`,
+     * `knative_region_id` (external bindings match every region).
+     */
     public function index(Request $request): JsonResponse
     {
         Gate::authorize('bindings.view');
@@ -47,7 +52,11 @@ class BindingController extends Controller
         ]);
     }
 
-    /** Binding types: env keys, plans, defaults and maxima. */
+    /**
+     * List the binding types with their env keys, plans, defaults and maxima
+     *
+     * Also the retention days of a deleted binding and what the caller may do.
+     */
     public function types(): JsonResponse
     {
         Gate::authorize('bindings.view');
@@ -94,7 +103,11 @@ class BindingController extends Controller
         ]);
     }
 
-    /** Limits of the organization, claimed sizes and measured bytes. */
+    /**
+     * Get the organization's binding limits and usage
+     *
+     * Limits of the organization, claimed sizes and measured bytes.
+     */
     public function quota(): JsonResponse
     {
         Gate::authorize('bindings.view');
@@ -102,6 +115,7 @@ class BindingController extends Controller
         return response()->json(['data' => $this->quotas->summary()]);
     }
 
+    /** Create a binding */
     public function store(Request $request): JsonResponse
     {
         Gate::authorize('bindings.manage');
@@ -117,6 +131,7 @@ class BindingController extends Controller
         return response()->json(['data' => (new BindingResource($binding->fresh(['region', 'attachments.project'])))->resolve()], 201);
     }
 
+    /** Get a binding */
     public function show(Binding $binding): JsonResponse
     {
         Gate::authorize('bindings.view');
@@ -127,7 +142,11 @@ class BindingController extends Controller
         ]);
     }
 
-    /** Change limits (or the values of an external binding). */
+    /**
+     * Change a binding's limits or an external binding's values
+     *
+     * Change limits (`settings`) or the values of an external binding (`values`).
+     */
     public function update(Request $request, Binding $binding): JsonResponse
     {
         Gate::authorize('bindings.manage');
@@ -154,7 +173,13 @@ class BindingController extends Controller
         return response()->json(['data' => (new BindingResource($binding->load(['region', 'attachments.project'])))->resolve()]);
     }
 
-    /** Delete with retention: body {confirm: <binding name>}. */
+    /**
+     * Delete a binding and keep its data for the retention period
+     *
+     * Delete with retention: body `{confirm: <binding name>}`. The binding is detached from every
+     * project at once; its data is purged at the end of the retention period unless it is
+     * restored.
+     */
     public function destroy(Request $request, Binding $binding): JsonResponse
     {
         Gate::authorize('bindings.manage');
@@ -175,6 +200,7 @@ class BindingController extends Controller
         ], 202);
     }
 
+    /** Restore a binding waiting for deletion */
     public function restore(Binding $binding): JsonResponse
     {
         Gate::authorize('bindings.manage');
@@ -188,7 +214,11 @@ class BindingController extends Controller
         return response()->json(['message' => __('api.bindings.restored'), 'data' => (new BindingResource($binding->load(['region', 'attachments'])))->resolve()]);
     }
 
-    /** New credentials + rolling restart of the attached workloads (queued). */
+    /**
+     * Rotate a binding's credentials (queued)
+     *
+     * New credentials + rolling restart of the attached workloads (queued).
+     */
     public function rotate(Binding $binding): JsonResponse
     {
         Gate::authorize('bindings.manage');
@@ -202,7 +232,11 @@ class BindingController extends Controller
         return response()->json(['message' => __('api.bindings.rotation_queued'), 'data' => (new BindingResource($binding->fresh(['region', 'attachments.project'])))->resolve()], 202);
     }
 
-    /** Live health of the binding on its data service. */
+    /**
+     * Get a binding's live health on its data service
+     *
+     * The binding with its live health on its data service.
+     */
     public function status(Binding $binding): JsonResponse
     {
         Gate::authorize('bindings.view');
@@ -210,7 +244,11 @@ class BindingController extends Controller
         return response()->json(['data' => (new BindingResource($binding->load('region')))->resolve(), 'health' => $this->manager->health($binding)]);
     }
 
-    /** The binding's env vars with their values (audited: binding.credentials.reveal; never cached). */
+    /**
+     * Reveal a binding's credentials
+     *
+     * The binding's env vars with their values (audited: binding.credentials.reveal; never cached).
+     */
     public function credentials(Binding $binding): JsonResponse
     {
         Gate::authorize('bindings.view_credentials');
@@ -221,9 +259,11 @@ class BindingController extends Controller
     }
 
     /**
-     * Daily usage records (storage GB-hours, instance hours, peak size) of the last ?days= days.
+     * List a binding's daily usage records
      *
-     * Quantities only: what they cost is the Billing module's (GET /api/billing/usage, the bills).
+     * Daily usage records (storage GB-hours, instance hours, peak size) of the last ?days= days
+     * (default 30, at most 366). Quantities only: what they cost is the Billing module's
+     * (GET /api/billing/usage, the bills).
      */
     public function usage(Request $request, Binding $binding): JsonResponse
     {

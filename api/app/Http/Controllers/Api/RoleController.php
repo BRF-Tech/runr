@@ -22,6 +22,7 @@ class RoleController extends Controller
         private readonly AccessManager $access,
     ) {}
 
+    /** List the built-in and custom roles */
     public function index(Request $request): JsonResponse
     {
         $user = $request->user();
@@ -40,11 +41,13 @@ class RoleController extends Controller
         ]);
     }
 
+    /** Show a role and its permissions */
     public function show(string $role): JsonResponse
     {
         return response()->json(['role' => $this->find($role)]);
     }
 
+    /** Create a custom role */
     public function store(Request $request): JsonResponse
     {
         Gate::authorize('create', Role::class);
@@ -61,6 +64,7 @@ class RoleController extends Controller
         return response()->json(['role' => $this->customArray($role)], 201);
     }
 
+    /** Change a custom role's name, description or permissions */
     public function update(Request $request, string $role): JsonResponse
     {
         $model = $this->customOrFail($role);
@@ -77,6 +81,7 @@ class RoleController extends Controller
         return response()->json(['role' => $this->customArray($model)]);
     }
 
+    /** Delete a custom role */
     public function destroy(Request $request, string $role): JsonResponse
     {
         $model = $this->customOrFail($role);
@@ -87,7 +92,11 @@ class RoleController extends Controller
         return response()->json(['message' => __('rbac.role_deleted')]);
     }
 
-    /** The role members get when nothing else is chosen (new users, invitations, SSO). */
+    /**
+     * Set the organization's default role
+     *
+     * The role members get when nothing else is chosen (new users, invitations, SSO).
+     */
     public function setDefault(Request $request): JsonResponse
     {
         $data = $request->validate(['role' => 'required|string|max:64']);

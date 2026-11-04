@@ -20,10 +20,11 @@ use Illuminate\Validation\Rule;
  * the project's containers RUNR_MODEL_<ALIAS>_* env vars (and, with mount_weights, the model's
  * offline snapshot read-only) on its next deploy. Any language reaches the model over HTTP.
  *
- * @tags AI · Model services
+ * @tags AI > Model services
  */
 class ProjectModelBindingController extends Controller
 {
+    /** List the project's model bindings and the services it can bind */
     public function index(Project $project): JsonResponse
     {
         abort_unless(Gate::allows('models.view'), 403);
@@ -39,6 +40,7 @@ class ProjectModelBindingController extends Controller
         ]);
     }
 
+    /** Bind a model service to the project */
     public function store(Request $request, Project $project): JsonResponse
     {
         abort_unless(Gate::allows('models.deploy'), 403);
@@ -86,6 +88,7 @@ class ProjectModelBindingController extends Controller
         return response()->json(new AiModelBindingResource($binding->load('service.model', 'service.region')), 201);
     }
 
+    /** Change a model binding's alias or weight mount */
     public function update(Request $request, Project $project, AiModelBinding $modelBinding): JsonResponse
     {
         abort_unless(Gate::allows('models.deploy'), 403);
@@ -109,6 +112,7 @@ class ProjectModelBindingController extends Controller
         return response()->json(new AiModelBindingResource($modelBinding->fresh(['service.model', 'service.region'])));
     }
 
+    /** Remove a model binding from the project */
     public function destroy(Project $project, AiModelBinding $modelBinding): JsonResponse
     {
         abort_unless(Gate::allows('models.deploy'), 403);

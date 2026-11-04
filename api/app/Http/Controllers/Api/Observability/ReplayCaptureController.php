@@ -20,7 +20,11 @@ class ReplayCaptureController extends Controller
 {
     public function __construct(private ReplayService $replays) {}
 
-    /** GET /api/projects/{project}/replays — newest first, ?status=, ?path= */
+    /**
+     * List the project's captured failed requests.
+     *
+     * Newest first; optional filters: ?status=, ?path=.
+     */
     public function index(Request $request, Project $project): JsonResponse
     {
         $request->validate([
@@ -42,14 +46,15 @@ class ReplayCaptureController extends Controller
         ]);
     }
 
-    /** GET /api/projects/{project}/replays/{capture} */
+    /** Get a captured request. */
     public function show(Project $project, string $capture): JsonResponse
     {
         return response()->json(['data' => $this->find($project, $capture)->toDetail()]);
     }
 
     /**
-     * POST /api/projects/{project}/replays/{capture}/replay — re-send to the current revision.
+     * Replay a captured request against the project's current revision.
+     *
      * Optional: headers {name: value} added for this replay only (never stored), query.
      */
     public function replay(Request $request, Project $project, string $capture): JsonResponse
@@ -79,7 +84,7 @@ class ReplayCaptureController extends Controller
         return response()->json(['data' => $result]);
     }
 
-    /** DELETE /api/projects/{project}/replays/{capture} */
+    /** Delete a captured request. */
     public function destroy(Request $request, Project $project, string $capture): Response
     {
         $model = $this->find($project, $capture);
@@ -88,7 +93,7 @@ class ReplayCaptureController extends Controller
         return response()->noContent();
     }
 
-    /** DELETE /api/projects/{project}/replays — every capture of the project. */
+    /** Delete every captured request of the project. */
     public function destroyAll(Request $request, Project $project): JsonResponse
     {
         $count = ReplayCapture::query()->where('project_id', $project->getKey())->delete();

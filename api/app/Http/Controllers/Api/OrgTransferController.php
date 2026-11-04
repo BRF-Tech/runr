@@ -61,6 +61,7 @@ class OrgTransferController extends Controller
 
     public function __construct(private OrgTransferService $transfers) {}
 
+    /** List the organization's latest transfers */
     #[OpenApiResponse(200, 'The organization\'s transfers, their plan and report summed up', type: 'array{data: list<array{'.self::TRANSFER_FIELDS.', plan: array{blocking: int, warnings: int, can_apply: bool}|null, report: array{counts: array<string, mixed>|null, entries: list<array<string, mixed>>|null}|null, '.self::TRANSFER_TAIL.'}>}')]
     public function index(Request $request): JsonResponse
     {
@@ -69,6 +70,7 @@ class OrgTransferController extends Controller
         return response()->json(['data' => $this->transfers->list()->map(fn (OrgTransfer $t) => self::summary($t))->values()]);
     }
 
+    /** Estimate what an export would hold and its size */
     #[BodyParameter('projects', 'Project ids to export; left out: every project', type: 'list<string>|null')]
     #[BodyParameter('include_members', type: 'bool')]
     #[BodyParameter('include_images', type: 'bool')]
@@ -85,6 +87,8 @@ class OrgTransferController extends Controller
     }
 
     /**
+     * Start an export of the organization
+     *
      * Starts an export; the options as for …/export/estimate, with the passphrase of the secrets
      * and where the package goes (default: download).
      *
@@ -121,6 +125,7 @@ class OrgTransferController extends Controller
         return response()->json(['data' => $transfer->fresh()?->toApi()], 202);
     }
 
+    /** Show a transfer's status, progress, package, plan and report */
     public function show(Request $request, string $transfer): JsonResponse
     {
         $this->authorizeOwner($request);
@@ -129,6 +134,8 @@ class OrgTransferController extends Controller
     }
 
     /**
+     * Download a transfer's package
+     *
      * The package, streamed; `Range: bytes=N-` (or N-M) answers 206 from N.
      *
      * @response \Illuminate\Http\Response<"", 200>
@@ -190,6 +197,7 @@ class OrgTransferController extends Controller
         }, $status, $headers);
     }
 
+    /** Cancel a transfer and remove its files */
     public function destroy(Request $request, string $transfer): Response
     {
         $this->authorizeOwner($request);
@@ -199,9 +207,11 @@ class OrgTransferController extends Controller
     }
 
     /**
-     * POST …/import: {filename, size, sha256?} opens an upload (201, chunks next); {source,
-     * sha256?} lets RunR read the package from an object binding of the organization or an
-     * S3-compatible bucket — the export's destinations — in the background, resumable (202).
+     * Start an import by opening an upload or reading the package from a bucket
+     *
+     * {filename, size, sha256?} opens an upload (201, chunks next); {source, sha256?} lets RunR
+     * read the package from an object binding of the organization or an S3-compatible bucket —
+     * the export's destinations — in the background, resumable (202).
      *
      * @response JsonResponse<array{data: array<string, mixed>}, 201>
      */
@@ -246,7 +256,7 @@ class OrgTransferController extends Controller
     }
 
     /**
-     * POST …/fetch — resume reading the package of an import from its source.
+     * Resume reading an import's package from its source
      *
      * @response JsonResponse<array{data: array<string, mixed>}, 202>
      */
@@ -277,7 +287,9 @@ class OrgTransferController extends Controller
     }
 
     /**
-     * GET …/history?kind=usage|bill&project=&per_page= — the usage records and bills of the source
+     * List the usage records and bills an import kept
+     *
+     * Query: kind=usage|bill, project, per_page. The usage records and bills of the source
      * organization an import kept, read-only (docs/org-export.md#run-history): never metered or
      * billed here.
      */
@@ -309,7 +321,9 @@ class OrgTransferController extends Controller
     }
 
     /**
-     * PUT …/chunk?offset=N — raw body, at most chunk_size bytes
+     * Upload one chunk of an import's package
+     *
+     * ?offset=N, raw body, at most chunk_size bytes.
      *
      * @response JsonResponse<array{uploaded_bytes: int, size_bytes: int}, 200>
      */
@@ -336,6 +350,8 @@ class OrgTransferController extends Controller
     }
 
     /**
+     * Finish the upload of an import's package
+     *
      * The upload is complete: the package is verified and planned in the background.
      *
      * @response JsonResponse<array{data: array<string, mixed>}, 202>
@@ -361,7 +377,10 @@ class OrgTransferController extends Controller
     }
 
     /**
-     * Plans the import again with the choices (region map, renames, projects to skip, …).
+     * Plan an import again with the given choices
+     *
+     * Plans the import again with the choices (region map, renames, projects to skip, …): a dry
+     * run that creates nothing yet.
      *
      * @response JsonResponse<array{data: array<string, mixed>}, 200>
      */
@@ -392,7 +411,10 @@ class OrgTransferController extends Controller
     }
 
     /**
-     * Applies the import with the choices of …/plan and what goes along.
+     * Apply an import with the given choices (queued)
+     *
+     * Applies the import with the choices of …/plan and what goes along (images, invite_members,
+     * deploy); refused while the plan has blocking problems. Applying again resumes a failed apply.
      *
      * @response JsonResponse<array{data: array<string, mixed>}, 202>
      */

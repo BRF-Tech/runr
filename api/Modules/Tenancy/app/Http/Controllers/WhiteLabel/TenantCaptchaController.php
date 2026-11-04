@@ -24,11 +24,13 @@ class TenantCaptchaController extends Controller
 
     public function __construct(private readonly CaptchaSettings $settings) {}
 
+    /** Get the organization's own bot protection keys */
     public function show(Request $request): JsonResponse
     {
         return response()->json($this->settings->tenantPayload((string) $this->tenantOf($request)->id));
     }
 
+    /** Set the organization's own bot protection keys */
     public function update(Request $request): JsonResponse
     {
         $tenantId = (string) $this->tenantOf($request)->id;

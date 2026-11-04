@@ -1,8 +1,8 @@
 # Helm values reference
 
-Every value of the Helm chart `runr` 0.6.4 from BRF's public Helm repository, grouped by top-level
+Every value of the Helm chart `runr` 0.6.5 from BRF's public Helm repository, grouped by top-level
 key, with its default from the chart's `values.yaml` and what the templates do with it.
-`helm show values brf-tech/runr --version 0.6.4` prints the file with its comments. How these
+`helm show values brf-tech/runr --version 0.6.5` prints the file with its comments. How these
 values fit together in a production install is described in [Installing RunR in
 production](install.md).
 
@@ -14,8 +14,8 @@ production](install.md).
 - [Secret and first administrator](#secret-and-first-administrator): `secretName`, `secret`,
   `admin`, `bootstrap`
 - [Edition](#edition): `edition`, `tenancy`, `authProvider`, `ticket`
-- [Platform settings](#platform-settings): `quota`, `audit`, `projectSecrets`, `auth`, `billing`,
-  `branding`, `signup`
+- [Platform settings](#platform-settings): `quota`, `audit`, `notifications`, `projectSecrets`,
+  `auth`, `billing`, `branding`, `signup`
 - [Regions and features](#regions-and-features): `knative`, `observability`, `sandboxApi`,
   `gitDeploy`, `supplyChain`, `globalDns`, `images`, `runtimePatches`, `apiProduct`, `orgTransfer`,
   `ai`, `bindings`
@@ -46,6 +46,7 @@ Helm checks the values against the chart's `values.schema.json` on `install`, `u
 | `storage.application`, `storage.database` | `<number>Gi` or empty |
 | `quota.cpu`, `quota.memoryGiB` | A number of at least 0, a numeric string or empty |
 | `projectSecrets.*` | `storage` `region` or `database`; `finalize` a boolean |
+| `notifications.retentionDays` | An integer of at least 0 or a string of digits |
 | `knative.*` | `minK8sMinor` a string or an integer; `traefikImage` a string; `certManager.install` a boolean, `certManager.acmeEmail`, `acmeServer`, `chartVersion`, `imagePrefix` strings |
 | `clientIp.trustedProxies`, `clientIp.proxyHops` | A string; an integer of at least 0 |
 | `ai.*` | `huggingface.endpoint` an http(s) URL; `gpu.defaultTimeout` 1–3600; `gpu.progressDeadline` seconds or minutes (`1800s`); `gpu.scaleToZeroRetention` seconds, minutes or hours (`5m`); `modelStorage.sizeGi` at least 1; `modelStorage.accessMode` `ReadWriteMany` or `ReadWriteOnce`; the image and chart version keys are strings |
@@ -408,6 +409,12 @@ upper bound of the sum of tenant quotas on a region.
 
 Details: [security.md](security.md#audit-log).
 
+### notifications
+
+| Key | Default | What it does |
+| --- | --- | --- |
+| `notifications.retentionDays` | `90` | In-app notifications created more than this many days ago are deleted daily at 03:45 (`notification-retention`), read or not, deleted or not, with every member's read state of the shared ones, in the central schema and in every organization's schema; `0` keeps them (`RUNR_NOTIFICATION_RETENTION_DAYS`). The notifications of deleted users are removed whatever the value |
+
 ### projectSecrets
 
 | Key | Default | What it does |
@@ -682,7 +689,7 @@ Empty values keep the application defaults.
 
 | Key | Default | What it does |
 | --- | --- | --- |
-| `images.uploadImage` | `""` | Image of the upload receiver the regions pull; empty: `ghcr.io/brf-tech/runr/image-upload:1.1.0` (the image of the transfer agent too) |
+| `images.uploadImage` | `""` | Image of the upload receiver the regions pull; empty: `ghcr.io/brf-tech/runr/image-upload:1.1.1` (the image of the transfer agent too) |
 | `images.quotaGb` | `""` | Storage of uploaded images per organization over every region; empty: 50, `0` = unlimited |
 | `images.maxUploadGb` | `""` | Largest file of one upload; empty: 20 |
 | `images.uploadTtlHours` | `""` | An upload not completed within this time is aborted; empty: 24 |
@@ -733,7 +740,7 @@ settings (`RUNR_ORG_TRANSFER_*`) are in [org-export.md](org-export.md).
 
 | Key | Default | What it does |
 | --- | --- | --- |
-| `orgTransfer.transferImage` | `""` | Image of the transfer pods the regions pull (binding data, images); empty: `ghcr.io/brf-tech/runr/image-upload:1.1.0` |
+| `orgTransfer.transferImage` | `""` | Image of the transfer pods the regions pull (binding data, images); empty: `ghcr.io/brf-tech/runr/image-upload:1.1.1` |
 | `orgTransfer.maxPackageGb` | `""` | Largest package an import takes; empty: 50 |
 | `orgTransfer.retentionHours` | `""` | Packages are removed after this many hours; empty: 168 |
 | `orgTransfer.podDiskGb` | `""` | emptyDir of a transfer pod (one binding's dump or one image); empty: 20 |

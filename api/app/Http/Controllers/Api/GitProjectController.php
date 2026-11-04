@@ -46,6 +46,7 @@ class GitProjectController extends Controller
         private RepoConnector $connector,
     ) {}
 
+    /** Show the project's Git remote, settings and connected repository */
     public function show(Request $request, Project $project): JsonResponse
     {
         $this->authorizeGit('git.pull', $project);
@@ -53,6 +54,7 @@ class GitProjectController extends Controller
         return response()->json(['data' => $this->payload($request, $project)]);
     }
 
+    /** Change the project's Git deploy and preview settings */
     public function update(Request $request, Project $project, PreviewService $previews): JsonResponse
     {
         $this->authorizeGit('git.manage', $project);
@@ -100,6 +102,7 @@ class GitProjectController extends Controller
         return response()->json(['data' => $this->payload($request, $project)]);
     }
 
+    /** List the project's Git deploys */
     public function deploys(Request $request, Project $project): JsonResponse
     {
         $this->authorizeGit('git.pull', $project);
@@ -117,7 +120,12 @@ class GitProjectController extends Controller
         ]);
     }
 
-    /** Commit of every git-created version (the Versions list shows it). */
+    /**
+     * List the commits of the project's versions created from Git
+     *
+     * Commit of every git-created version (the Versions list shows it), keyed by version id.
+     * Preview versions of pull requests are left out.
+     */
     public function versions(Project $project): JsonResponse
     {
         $this->authorizeGit('git.pull', $project);
@@ -127,6 +135,7 @@ class GitProjectController extends Controller
         return response()->json(['data' => $sources->mapWithKeys(fn (VersionGitSource $s) => [$s->version_id => $s->toPublicArray()])]);
     }
 
+    /** Deploy the head of the deploy branch again */
     public function redeploy(Request $request, Project $project, GitDeployService $deploys): JsonResponse
     {
         $this->authorizeGit('git.push', $project);
@@ -141,6 +150,7 @@ class GitProjectController extends Controller
         return response()->json(['data' => $deploy->load('version')->toPublicArray()], 202);
     }
 
+    /** List the repositories the given credentials can deploy from */
     public function repositories(Request $request, Project $project): JsonResponse
     {
         $this->authorizeGit('git.manage', $project);
@@ -159,6 +169,7 @@ class GitProjectController extends Controller
         return response()->json(['data' => $repos]);
     }
 
+    /** Connect a repository to the project */
     public function connect(Request $request, Project $project): JsonResponse
     {
         $this->authorizeGit('git.manage', $project);
@@ -172,6 +183,7 @@ class GitProjectController extends Controller
         return response()->json(['data' => $this->payload($request, $project)], 201);
     }
 
+    /** Disconnect the project's repository */
     public function disconnect(Request $request, Project $project): JsonResponse
     {
         $this->authorizeGit('git.manage', $project);
@@ -188,6 +200,7 @@ class GitProjectController extends Controller
         return response()->json(['data' => $this->payload($request, $project)]);
     }
 
+    /** List the organization's GitHub App installations */
     public function installations(Request $request, Project $project): JsonResponse
     {
         $this->authorizeGit('git.pull', $project);
@@ -205,6 +218,7 @@ class GitProjectController extends Controller
             ])->values()]);
     }
 
+    /** Get the URL that installs the GitHub App */
     public function githubInstall(Request $request, Project $project): JsonResponse
     {
         $this->authorizeGit('git.manage', $project);
@@ -216,6 +230,7 @@ class GitProjectController extends Controller
         return response()->json(['url' => GitUrls::githubInstall($provider, $state)]);
     }
 
+    /** Get the URL that authorizes RunR on GitLab */
     public function gitlabAuthorize(Request $request, Project $project, GitLabClient $gitlab): JsonResponse
     {
         $this->authorizeGit('git.manage', $project);

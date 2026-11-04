@@ -55,6 +55,7 @@ class AuthorizeApiRoute
             RoutePermissions::PLATFORM => $this->rbac->isPlatformAdmin($user) && $this->rbac->tokenAbilities($user) === null,
             RoutePermissions::PLATFORM_SCOPED => $this->rbac->isPlatformAdmin($user)
                 && collect($permissions)->contains(fn ($p) => $this->rbac->tokenAllows($user, $p)),
+            RoutePermissions::OWN_SCOPED => collect($permissions)->contains(fn ($p) => $this->rbac->tokenAllows($user, $p)),
             'anywhere' => $this->rbac->allowsAnywhere($user, $permissions[0]),
             'all' => $this->rbac->holdsAll($user, $permissions, $this->projectId($project)),
             default => collect($permissions)->contains(fn ($p) => $this->rbac->allows($user, $p, $project)),

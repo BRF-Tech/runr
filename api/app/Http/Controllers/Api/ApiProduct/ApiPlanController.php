@@ -25,6 +25,7 @@ class ApiPlanController extends Controller
 {
     public function __construct(private readonly ApiProductAccess $access) {}
 
+    /** List the API plans */
     #[OpenApiResponse(200, 'The plans', type: 'array{data: list<ApiPlanResource>}')]
     public function index(Request $request): JsonResponse
     {
@@ -50,6 +51,7 @@ class ApiPlanController extends Controller
         return response()->json(['data' => ApiPlanResource::collection($query->get())->resolve()]);
     }
 
+    /** Create an API plan */
     #[BodyParameter('name', 'Unique per gateway (or in the organization)', required: true, type: 'string')]
     #[BodyParameter('gateway_id', 'The gateway; left out: a plan of the organization', type: 'string|null')]
     #[BodyParameter('description', type: 'string|null')]
@@ -81,6 +83,7 @@ class ApiPlanController extends Controller
         return response()->json(['data' => (new ApiPlanResource($plan))->resolve($request)], 201);
     }
 
+    /** Update an API plan */
     #[BodyParameter('name', 'Unique per gateway (or in the organization)', type: 'string')]
     #[BodyParameter('description', type: 'string|null')]
     #[BodyParameter('rate_per_second', 'Token bucket rate, requests per second; null: none', type: 'int|null')]
@@ -110,6 +113,7 @@ class ApiPlanController extends Controller
         return response()->json(['data' => (new ApiPlanResource($apiPlan->fresh()))->resolve($request)]);
     }
 
+    /** Delete an API plan */
     public function destroy(ApiPlan $apiPlan): JsonResponse
     {
         Gate::authorize('delete', $apiPlan);

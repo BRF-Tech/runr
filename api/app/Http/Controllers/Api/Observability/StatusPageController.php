@@ -20,7 +20,7 @@ class StatusPageController extends Controller
 {
     public function __construct(private StatusPageService $pages) {}
 
-    /** GET /api/observability/status-page */
+    /** Get the organization's status page with its components and a preview. */
     public function show(): JsonResponse
     {
         $page = $this->pages->current();
@@ -46,7 +46,9 @@ class StatusPageController extends Controller
     }
 
     /**
-     * PUT /api/observability/status-page — page settings plus, optionally, the components:
+     * Update the organization's status page and its components.
+     *
+     * Page settings plus, optionally, the components:
      * components: [{id, show_on_status_page, status_page_name, status_page_order}]
      */
     public function update(Request $request): JsonResponse

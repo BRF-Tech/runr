@@ -20,7 +20,7 @@ class ModelServiceSecurityController extends Controller
 {
     public function __construct(private SupplyChainPipeline $pipeline) {}
 
-    /** GET /api/model-services/{service}/security */
+    /** Get the supply-chain report of a model service's image */
     public function show(AiModelService $service): JsonResponse
     {
         Gate::authorize('models.view');
@@ -38,7 +38,11 @@ class ModelServiceSecurityController extends Controller
         ]]);
     }
 
-    /** GET /api/model-services/{service}/sbom?format=spdx-json|cyclonedx-json */
+    /**
+     * Download the SBOM of a model service's image
+     *
+     * `?format=spdx-json|cyclonedx-json` (default: spdx-json).
+     */
     public function sbom(Request $request, AiModelService $service): Response
     {
         Gate::authorize('models.view');

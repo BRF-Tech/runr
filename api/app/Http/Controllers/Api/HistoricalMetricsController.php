@@ -17,7 +17,7 @@ class HistoricalMetricsController extends Controller
     ) {}
 
     /**
-     * GET /api/projects/{project}/metrics/history
+     * Get the project's metrics over a time range.
      *
      * @queryParam from string required ISO 8601 start date
      * @queryParam to string required ISO 8601 end date
@@ -46,7 +46,7 @@ class HistoricalMetricsController extends Controller
     }
 
     /**
-     * GET /api/projects/{project}/metrics/summary
+     * Summarize the project's metrics and sessions over a period.
      *
      * sessions: the sessions that started in the period and ended. Their total_cpu_ms (CPU
      * milliseconds, 1 vCPU for 1 s = 1000) and total_memory_mb_ms (MiB × ms) are what metering

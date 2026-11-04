@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Events\PlatformEvent;
 use App\Models\NotificationPreference;
 use App\Models\User;
+use App\Support\Auth\LoginTokens;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Event;
@@ -16,7 +17,7 @@ use Tests\TestCase;
 
 /**
  * Self-service account (/api/account…): profile, avatar, password, two-factor authentication,
- * signed-in sessions (API tokens), disabling and deleting the account, and the notification
+ * sign-in sessions (not the API tokens), disabling and deleting the account, and the notification
  * preferences — always the signed-in user's own.
  */
 class AccountApiTest extends TestCase
@@ -152,21 +153,22 @@ class AccountApiTest extends TestCase
 
     public function test_sessions_are_listed_and_revoked_but_never_the_current_one(): void
     {
-        $current = $this->token('laptop');
-        $this->token('phone');
-        $this->token('tablet');
-        $other = User::factory()->create()->createToken('theirs');
-        $currentId = PersonalAccessToken::findToken($current)->id;
+        $session = fn () => LoginTokens::issue($this->user);
+        $current = $session()->plainTextToken;
+        $phone = (int) $session()->accessToken->id;
+        $tablet = (int) $session()->accessToken->id;
+        $ci = (int) $this->user->createToken('ci')->accessToken->id;
+        $other = LoginTokens::issue(User::factory()->create());
+        $currentId = (int) PersonalAccessToken::findToken($current)->id;
 
         $sessions = $this->as($current)->getJson('/api/account/sessions')->assertOk()->json('sessions');
-        $this->assertEqualsCanonicalizing(['laptop', 'phone', 'tablet'], array_column($sessions, 'name'), 'only the user\'s own');
-        $this->assertSame(['laptop'], array_column(array_filter($sessions, fn ($s) => $s['is_current']), 'name'));
+        $this->assertEqualsCanonicalizing([$currentId, $phone, $tablet], array_column($sessions, 'id'), 'only the user\'s own sessions, no API token');
+        $this->assertSame([$currentId], array_column(array_filter($sessions, fn ($s) => $s['is_current']), 'id'));
 
         $this->deleteJson("/api/account/sessions/{$currentId}")
             ->assertStatus(422)->assertJsonPath('message', __('api.account.cannot_revoke_current'));
 
         Event::fake([PlatformEvent::class]);
-        $phone = collect($sessions)->firstWhere('name', 'phone')['id'];
         $this->deleteJson("/api/account/sessions/{$phone}")->assertOk()->assertJsonPath('message', __('api.account.session_revoked'));
         $this->assertNull(PersonalAccessToken::find($phone));
         Event::assertDispatched(PlatformEvent::class, fn (PlatformEvent $e) => $e->topic === 'session.revoked' && $e->payload['token_ids'] === [$phone]);
@@ -176,8 +178,11 @@ class AccountApiTest extends TestCase
         $this->assertNotNull(PersonalAccessToken::find($other->accessToken->id));
         Event::assertNotDispatched(PlatformEvent::class, fn (PlatformEvent $e) => in_array($other->accessToken->id, $e->payload['token_ids'] ?? [], true));
 
+        // nor is an API token a session
+        $this->deleteJson("/api/account/sessions/{$ci}")->assertNotFound();
+
         $this->postJson('/api/account/sessions/revoke-all')->assertOk()->assertJsonPath('message', __('api.account.all_sessions_revoked'));
-        $this->assertSame([$currentId], $this->user->tokens()->pluck('id')->all());
+        $this->assertEqualsCanonicalizing([$currentId, $ci], $this->user->tokens()->pluck('id')->map(fn ($id) => (int) $id)->all(), 'the API token stays');
         $this->assertNotNull(PersonalAccessToken::find($other->accessToken->id));
     }
 

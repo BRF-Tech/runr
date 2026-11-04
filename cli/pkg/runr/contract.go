@@ -39,8 +39,9 @@ type Endpoint struct {
 	Optional bool
 	// Permission is what the route requires under role-based access control
 	// (api/config/route_permissions.php): "" for any signed-in user, "a|b" for any of them,
-	// "a+b" for all of them, "@platform" for platform administrators. Token scopes must cover
-	// it; runrtest enforces it for scoped tokens.
+	// "a+b" for all of them, "@platform" for platform administrators; "@own:a" there (the
+	// caller's own credentials, no role needed) is "a" here. Token scopes must cover it;
+	// runrtest enforces it for scoped tokens.
 	Permission string
 	// FreeForm lists request fields whose value is an object with caller-chosen keys (an
 	// event payload, a binding's settings, labels): the fake API does not check the keys

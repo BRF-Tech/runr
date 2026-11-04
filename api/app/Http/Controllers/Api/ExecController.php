@@ -15,7 +15,8 @@ use Illuminate\Support\Str;
 class ExecController extends Controller
 {
     /**
-     * Start a new exec session.
+     * Start a shell session in a deployment's pod
+     *
      * Validates access, stores session config in Redis, returns a one-time
      * token instantly. Pod discovery + wake-up happens on the WS side
      * (ShellController → shell:wake subprocess) for real-time progress.

@@ -25,7 +25,11 @@ class DataServiceController extends Controller
 
     public function __construct(private DataServiceManager $manager) {}
 
-    /** Status of the region's data services (?live=1 adds a health check). */
+    /**
+     * Get the status of the region's data services
+     *
+     * Status of the region's data services (?live=1 adds a health check).
+     */
     public function index(Request $request, KnativeRegion $knativeRegion): JsonResponse
     {
         if (! $knativeRegion->kubeconfig) {
@@ -38,7 +42,7 @@ class DataServiceController extends Controller
         ]);
     }
 
-    /** Install or reconfigure a service (queued). */
+    /** Install or reconfigure a data service in the region (queued) */
     public function store(Request $request, KnativeRegion $knativeRegion, string $service): JsonResponse
     {
         Gate::authorize('regions.data_services.manage', $knativeRegion);
@@ -65,7 +69,11 @@ class DataServiceController extends Controller
         ], 202);
     }
 
-    /** Uninstall a service (refused while bindings use it). */
+    /**
+     * Uninstall a data service from the region (queued)
+     *
+     * Refused while bindings use it.
+     */
     public function destroy(KnativeRegion $knativeRegion, string $service): JsonResponse
     {
         Gate::authorize('regions.data_services.manage', $knativeRegion);

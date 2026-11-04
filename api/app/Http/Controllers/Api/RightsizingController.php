@@ -26,8 +26,10 @@ class RightsizingController extends Controller
     public function __construct(private RightsizingService $rightsizing) {}
 
     /**
-     * GET /api/rightsizing — the open recommendations of the projects the user may read the
-     * metrics of, largest monthly saving first (then the most memory freed), with their totals.
+     * List the open rightsizing recommendations
+     *
+     * The open recommendations of the projects the user may read the metrics of, largest monthly
+     * saving first (then the most memory freed), with their totals.
      */
     #[OpenApiResponse(200, 'The open recommendations and their totals (monthly_savings and currency: null without billing)', type: 'array{data: list<RightsizingRecommendationResource>, summary: array{count: int, monthly_savings: float|null, currency: string|null, freed_memory_mb: int, freed_cpu_m: int}}')]
     public function index(Request $request): JsonResponse
@@ -52,7 +54,9 @@ class RightsizingController extends Controller
     }
 
     /**
-     * GET /api/projects/{project}/rightsizing — the project's recommendation, or why there is none:
+     * Get the project's rightsizing recommendation
+     *
+     * The project's recommendation, or why there is none:
      *
      *   status  open | snoozed | dismissed | applied (data: the recommendation)
      *           collecting (collecting: days and sessions so far and needed) | right_sized
@@ -83,10 +87,11 @@ class RightsizingController extends Controller
     }
 
     /**
-     * POST /api/projects/{project}/rightsizing/apply — the open recommendation's size becomes the
-     * project's config (a new version; the next deploy runs it). 404 without an open
-     * recommendation, 409 when the project changed size since, 422 when the region capacity or a
-     * fixed allocation refuses it (as a manual edit).
+     * Apply the project's open rightsizing recommendation
+     *
+     * The open recommendation's size becomes the project's config (a new version; the next deploy
+     * runs it). 404 without an open recommendation, 409 when the project changed size since, 422
+     * when the region capacity or a fixed allocation refuses it (as a manual edit).
      */
     #[OpenApiResponse(200, 'The recommendation, applied, and the new version that carries its size', type: 'array{data: RightsizingRecommendationResource, version: array{id: string, number: int, label: string}, deploy_required: bool, message: string}')]
     public function apply(Request $request, Project $project): JsonResponse
@@ -121,8 +126,10 @@ class RightsizingController extends Controller
     }
 
     /**
-     * POST /api/projects/{project}/rightsizing/dismiss — hide the open recommendation: with
-     * snooze_days for that many days, without while the recommended size stays the same.
+     * Dismiss or snooze the project's rightsizing recommendation
+     *
+     * Hides the open recommendation: with snooze_days for that many days, without while the
+     * recommended size stays the same.
      */
     #[OpenApiResponse(200, 'The recommendation, dismissed or snoozed', type: 'array{data: RightsizingRecommendationResource, message: string}')]
     public function dismiss(Request $request, Project $project): JsonResponse

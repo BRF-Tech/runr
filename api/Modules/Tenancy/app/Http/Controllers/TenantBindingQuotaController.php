@@ -17,6 +17,7 @@ use Modules\Tenancy\Models\TenantBindingQuota;
  */
 class TenantBindingQuotaController
 {
+    /** Get an organization's binding limits, the defaults and current usage. */
     public function show(string $tenant): JsonResponse
     {
         $model = Tenant::query()->findOrFail($tenant);
@@ -24,6 +25,7 @@ class TenantBindingQuotaController
         return response()->json(['data' => $this->payload($model)]);
     }
 
+    /** Set an organization's binding limit overrides. */
     public function update(Request $request, string $tenant): JsonResponse
     {
         $model = Tenant::query()->findOrFail($tenant);

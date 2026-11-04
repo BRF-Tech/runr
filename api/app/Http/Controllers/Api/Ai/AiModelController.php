@@ -17,12 +17,13 @@ use Illuminate\Validation\Rule;
  * Models of the organization (docs/huggingface.md): Hub models pinned to a revision, uploaded
  * models (air-gapped) and imports (a folder of the model volume, an OCI artifact).
  *
- * @tags AI · Models
+ * @tags AI > Models
  */
 class AiModelController extends Controller
 {
     public function __construct(private ModelLibrary $library) {}
 
+    /** List the organization's models */
     public function index(): JsonResponse
     {
         abort_unless(Gate::allows('models.view'), 403);
@@ -35,6 +36,7 @@ class AiModelController extends Controller
         ]);
     }
 
+    /** Add a model from the Hub, an upload, a volume folder or an OCI artifact */
     public function store(Request $request): JsonResponse
     {
         $source = (string) $request->input('source', 'hub');
@@ -61,6 +63,7 @@ class AiModelController extends Controller
         return response()->json(new AiModelResource($model->load('snapshots.region')->loadCount('services')), 201);
     }
 
+    /** Show a model and its copies in the regions */
     public function show(AiModel $model): JsonResponse
     {
         abort_unless(Gate::allows('models.view'), 403);
@@ -68,6 +71,7 @@ class AiModelController extends Controller
         return response()->json(new AiModelResource($model->load('snapshots.region')->loadCount('services')));
     }
 
+    /** Change a model's name, task or library */
     public function update(Request $request, AiModel $model): JsonResponse
     {
         abort_unless(Gate::allows('models.deploy'), 403);
@@ -88,6 +92,7 @@ class AiModelController extends Controller
         return response()->json(new AiModelResource($model->fresh()->load('snapshots.region')->loadCount('services')));
     }
 
+    /** Delete a model and its copies in the regions */
     public function destroy(AiModel $model): JsonResponse
     {
         abort_unless(Gate::allows('models.manage'), 403);

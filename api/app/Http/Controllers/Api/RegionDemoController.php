@@ -12,6 +12,7 @@ use Illuminate\Http\Request;
 
 class RegionDemoController extends Controller
 {
+    /** Create and deploy the demo projects in the region */
     public function store(Request $request, KnativeRegion $knativeRegion, RegionDemoService $service): JsonResponse
     {
         if ($knativeRegion->is_demo) {
@@ -37,6 +38,7 @@ class RegionDemoController extends Controller
         return response()->json(['region_demo_status' => 'seeding']);
     }
 
+    /** Remove the demo projects from the region */
     public function destroy(KnativeRegion $knativeRegion): JsonResponse
     {
         if ($knativeRegion->region_demo_status === 'removing') {

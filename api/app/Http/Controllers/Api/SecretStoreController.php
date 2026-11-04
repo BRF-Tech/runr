@@ -32,6 +32,7 @@ class SecretStoreController extends Controller
      */
     private const STORE_TYPE = 'array{id: string, name: string, provider: "vault"|"aws"|"gcp"|"azure", auth: "kubernetes"|"jwt"|"workload_identity", settings: array<string, string>, refresh_interval: int, kubernetes_name: string, audience: string|null, regions: array<string, array{status: string, message: string|null, checked_at: string}>, created_at: string|null, updated_at: string|null, references: int}';
 
+    /** List the organization's secret stores and the providers' settings */
     #[OpenApiResponse(200, 'The organization\'s secret stores and, per provider, the ways it authenticates and the settings it takes (name => required)', type: 'array{data: list<'.self::STORE_TYPE.'>, providers: list<array{provider: "vault"|"aws"|"gcp"|"azure", auth: list<string>, settings: array<string, bool>}>}')]
     public function index(): JsonResponse
     {
@@ -47,6 +48,7 @@ class SecretStoreController extends Controller
         ]);
     }
 
+    /** Show a secret store */
     #[OpenApiResponse(200, 'The secret store', type: 'array{data: '.self::STORE_TYPE.'}')]
     public function show(SecretStore $secretStore): JsonResponse
     {
@@ -55,6 +57,7 @@ class SecretStoreController extends Controller
         return response()->json(['data' => $secretStore->toApiArray() + ['references' => (int) $secretStore->secrets_count]]);
     }
 
+    /** Add a Vault, AWS, GCP or Azure secret store */
     #[BodyParameter('name', 'Lowercase letters, digits and dashes, unique in the organization', required: true, type: 'string')]
     #[BodyParameter('provider', 'vault, aws, gcp or azure', required: true, type: 'string')]
     #[BodyParameter('auth', 'vault: kubernetes (default) or jwt; the others: workload_identity', type: 'string|null')]
@@ -77,6 +80,7 @@ class SecretStoreController extends Controller
         return response()->json(['data' => $store->toApiArray() + ['references' => 0]], 201);
     }
 
+    /** Change a secret store's name, auth, settings or refresh interval */
     #[BodyParameter('name', 'Lowercase letters, digits and dashes, unique in the organization', type: 'string')]
     #[BodyParameter('auth', 'vault: kubernetes or jwt; the others: workload_identity', type: 'string|null')]
     #[BodyParameter('settings', 'The settings to change, merged into the store\'s (the provider cannot change)', type: 'array<string, string|null>')]
@@ -103,7 +107,12 @@ class SecretStoreController extends Controller
         return response()->json(['data' => $secretStore->toApiArray() + ['references' => $secretStore->secrets()->count()]]);
     }
 
-    /** Refused while a project secret refers to the store (409, the projects named). */
+    /**
+     * Delete a secret store no project secret refers to
+     *
+     * Refused while a project secret refers to the store (409, the projects named). The store's
+     * SecretStore and service account are removed from the regions.
+     */
     public function destroy(SecretStore $secretStore): JsonResponse
     {
         $projects = $secretStore->secrets()->with('project:id,name')->get()
@@ -146,9 +155,10 @@ class SecretStoreController extends Controller
     }
 
     /**
-     * GET /secret-stores/{secretStore}/trust?region_id=… — what the store has to trust for the
-     * region: its cluster's issuer (URL, JWKS, PEM keys), the service account and namespace, the
-     * subject and audience.
+     * Show what the store has to trust for a region
+     *
+     * ?region_id=…: the region cluster's issuer (URL, JWKS, PEM keys), the service account and
+     * namespace, the subject and audience.
      */
     #[QueryParameter('region_id', 'The region (ULID)', required: true, type: 'string')]
     #[OpenApiResponse(200, 'What the store has to trust for the region', type: 'array{data: array{issuer: string, jwks_uri: string|null, jwks: array{keys: list<array<string, mixed>>}, pem_keys: list<string>, publicly_reachable: bool, region: array{id: string, name: string}, namespace: string, service_account: string, subject: string, audience: string|null, eso_status: "not_installed"|"installing"|"ready"|"uninstalling"|"error"}}')]
@@ -169,8 +179,10 @@ class SecretStoreController extends Controller
     }
 
     /**
-     * POST /secret-stores/{secretStore}/verify {region_id} — applies the store's service account
-     * and SecretStore in the region now and returns what External Secrets Operator says of it.
+     * Apply the store in a region and return whether it is ready
+     *
+     * Body {region_id}: applies the store's service account and SecretStore in the region now and
+     * returns what External Secrets Operator says of it.
      */
     #[BodyParameter('region_id', 'The region (ULID)', required: true, type: 'string')]
     #[OpenApiResponse(200, 'The Ready condition of the store\'s SecretStore in the region', type: 'array{data: array{status: "ready"|"failed"|"pending", message: string|null, region_id: string}}')]

@@ -30,6 +30,7 @@ class FixedRequestController extends Controller
         private readonly Presenter $presenter,
     ) {}
 
+    /** List the projects' fixed resource requests */
     public function index(Request $request): JsonResponse
     {
         $request->validate([
@@ -50,6 +51,7 @@ class FixedRequestController extends Controller
         return $this->paginated($page, collect($page->items())->map(fn (FixedRequest $r) => $this->presenter->fixedRequest($r))->all());
     }
 
+    /** Approve a fixed resource request */
     public function approve(Request $request, string $fixedRequest): JsonResponse
     {
         $data = $request->validate(['note' => ['sometimes', 'nullable', 'string', 'max:1000']]);
@@ -59,6 +61,7 @@ class FixedRequestController extends Controller
         return response()->json(['data' => $this->presenter->fixedRequest($model)]);
     }
 
+    /** Reject a fixed resource request */
     public function reject(Request $request, string $fixedRequest): JsonResponse
     {
         $data = $request->validate(['reason' => ['required', 'string', 'min:3', 'max:1000']]);

@@ -17,6 +17,7 @@ class ResourceUsageController extends Controller
         protected TenantQuotaService $quotaService
     ) {}
 
+    /** Get CPU and memory usage and quotas per region and organization */
     public function index(): JsonResponse
     {
         $regions = KnativeRegion::on('central')

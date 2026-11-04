@@ -320,6 +320,7 @@ class TenancyServiceProvider extends ServiceProvider
             'Invitation' => 'Tenants > Invitations',
             'Impersonate' => 'Tenants > Impersonate',
             'ResourceUsage' => 'Tenants > Resources',
+            'TenantGpuQuota' => 'Tenants',
         ]);
     }
 

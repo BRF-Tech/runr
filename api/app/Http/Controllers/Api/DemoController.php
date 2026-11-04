@@ -10,6 +10,7 @@ use Illuminate\Http\JsonResponse;
 
 class DemoController extends Controller
 {
+    /** Load the demo region and its sample projects */
     public function store(): JsonResponse
     {
         Setting::set('demo_status', 'seeding');
@@ -18,6 +19,7 @@ class DemoController extends Controller
         return response()->json(['demo_status' => 'seeding']);
     }
 
+    /** Remove the demo region and its projects */
     public function destroy(): JsonResponse
     {
         Setting::set('demo_status', 'removing');

@@ -27,6 +27,7 @@ class TenancyUserController extends UserController
         return response()->json(['users' => []]);
     }
 
+    /** Grant or revoke a user's platform administrator role. */
     public function toggleAdmin(Request $request, string $userId): JsonResponse
     {
         if (! $request->user()->is_admin) {
@@ -65,6 +66,7 @@ class TenancyUserController extends UserController
         parent::deleteUser($user);
     }
 
+    /** Reset a user's two-factor authentication (platform admin). */
     public function reset2FA(string $userId): JsonResponse
     {
         if (! request()->user()->is_admin) {

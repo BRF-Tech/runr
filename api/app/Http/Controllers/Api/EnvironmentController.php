@@ -50,7 +50,11 @@ class EnvironmentController extends Controller
         private Promotions $promotions,
     ) {}
 
-    /** The project's environments in pipeline order, each with its live deployment. */
+    /**
+     * List the project's environments in pipeline order
+     *
+     * Each with its live deployment.
+     */
     #[OpenApiResponse(200, 'The environments in pipeline order and what the user may do with them', type: 'array{data: list<'.EnvironmentResource::OPENAPI_TYPE.'>, abilities: array{manage: bool, promote: bool, approve: bool}}')]
     public function index(Request $request, Project $project): JsonResponse
     {
@@ -69,6 +73,7 @@ class EnvironmentController extends Controller
         ]);
     }
 
+    /** Get an environment with its live deployment. */
     #[OpenApiResponse(200, 'The environment with its live deployment', type: 'array{data: '.EnvironmentResource::OPENAPI_TYPE.'}')]
     public function show(Request $request, Project $project, string $environment): JsonResponse
     {
@@ -77,6 +82,7 @@ class EnvironmentController extends Controller
         return response()->json(['data' => EnvironmentResource::make($request, $project, $row, $this->promotions->liveDeployment($project, $row))]);
     }
 
+    /** Create an environment in the project. */
     #[BodyParameter('name', 'Unique in the project', required: true, type: 'string')]
     #[BodyParameter('knative_region_id', 'The region it runs in; default: the project\'s', type: 'string|null')]
     #[BodyParameter('position', 'Place in the pipeline', type: 'int|null')]
@@ -98,6 +104,7 @@ class EnvironmentController extends Controller
         return response()->json(['data' => EnvironmentResource::make($request, $project, $environment)], 201);
     }
 
+    /** Update an environment's settings and overrides. */
     #[BodyParameter('knative_region_id', 'The region it runs in; null: the project\'s', type: 'string|null')]
     #[BodyParameter('position', 'Place in the pipeline', type: 'int|null')]
     #[BodyParameter('requires_approval', 'A promotion into it waits for an approver', type: 'bool|null')]
@@ -124,6 +131,7 @@ class EnvironmentController extends Controller
         return response()->json(['data' => EnvironmentResource::make($request, $project, $row, $this->promotions->liveDeployment($project, $row))]);
     }
 
+    /** Delete an environment with everything it runs. */
     public function destroy(Project $project, string $environment): JsonResponse
     {
         $row = EnvironmentResolver::resolveRow($project, $environment);
@@ -132,7 +140,11 @@ class EnvironmentController extends Controller
         return response()->json(['message' => __('environments.deleted', ['name' => $row->name]), 'incomplete' => $failures !== []]);
     }
 
-    /** Secret env vars of the environment: its own, and the project's it inherits (names only). */
+    /**
+     * List the secret variables of the environment
+     *
+     * Secret env vars of the environment: its own, and the project's it inherits (names only).
+     */
     #[OpenApiResponse(200, 'Its own secret variables and the project\'s it inherits (scope project), by name; never their values', type: 'array{data: list<'.self::SECRET_TYPE.'|array{name: string, scope: "project", updated_at: string|null}>, inherit_secrets: bool}')]
     public function secrets(Project $project, string $environment): JsonResponse
     {
@@ -151,9 +163,11 @@ class EnvironmentController extends Controller
     }
 
     /**
-     * PUT …/environments/{environment}/secrets/{name} — create or replace (write-only). The value
-     * goes straight into the environment's region (<workload>-secret-env); RunR keeps the name, a
-     * version and a keyed fingerprint (503 when the region does not answer: nothing changed).
+     * Create or replace a secret variable of the environment.
+     *
+     * Write-only. The value goes straight into the environment's region (<workload>-secret-env);
+     * RunR keeps the name, a version and a keyed fingerprint (503 when the region does not answer:
+     * nothing changed).
      */
     #[BodyParameter('value', 'The value (write-only)', required: true, type: 'string')]
     #[OpenApiResponse(200, 'The secret variable was replaced', type: 'array{data: '.self::SECRET_TYPE.', requires_deploy: bool}')]
@@ -196,6 +210,7 @@ class EnvironmentController extends Controller
             ->header('Cache-Control', 'no-store');
     }
 
+    /** Delete a secret variable of the environment. */
     public function deleteSecret(Project $project, string $environment, string $name): JsonResponse
     {
         $row = EnvironmentResolver::resolveRow($project, $environment);

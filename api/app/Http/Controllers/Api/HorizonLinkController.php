@@ -16,6 +16,12 @@ use Illuminate\Http\Request;
  */
 class HorizonLinkController extends Controller
 {
+    /**
+     * Get a single-use sign-in link to the Horizon dashboard.
+     *
+     * For a platform administrator or, in the single-tenant edition, an Owner, with a console
+     * session or an unscoped API token.
+     */
     public function __invoke(Request $request, HorizonAccess $access, Rbac $rbac): JsonResponse
     {
         $user = $request->user();

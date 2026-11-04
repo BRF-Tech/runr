@@ -45,6 +45,7 @@ class GlobalDnsController extends Controller
         private readonly GlobalDnsServerService $servers,
     ) {}
 
+    /** Show the global DNS zone, its delegation records and servers */
     #[OpenApiResponse(200, 'The zone, its delegation and (platform administrators) the servers', type: 'array{zone: string|null, base_domain: string|null, tls: "acme"|"none", update_region_id: string|null, delegation: array{records: list<array{name: string, type: "NS"|"A"|"AAAA", value: string}>, status: "ok"|"partial"|"missing"|"unknown", message: string|null}, servers: list<array{'.self::SERVER_FIELDS.'}>, last_sync_at: string|null}')]
     public function index(): JsonResponse
     {
@@ -85,6 +86,7 @@ class GlobalDnsController extends Controller
         ]);
     }
 
+    /** Sync the global zone to every DNS server now */
     public function sync(): JsonResponse
     {
         abort_unless(RuntimeRegistry::currentTenantId() === null, 403, __('api.global_dns.platform_regions_only'));
@@ -93,6 +95,7 @@ class GlobalDnsController extends Controller
         return response()->json(['queued' => true], 202);
     }
 
+    /** Show the region's global DNS server */
     #[OpenApiResponse(200, 'The region\'s server (status disabled without one)', type: self::ELIGIBLE_SERVER_TYPE)]
     public function show(KnativeRegion $knativeRegion): JsonResponse
     {
@@ -109,6 +112,7 @@ class GlobalDnsController extends Controller
         ]);
     }
 
+    /** Install a global DNS server in the region */
     #[OpenApiResponse(202, 'The server is being installed', type: self::ELIGIBLE_SERVER_TYPE)]
     public function enable(Request $request, KnativeRegion $knativeRegion): JsonResponse
     {
@@ -127,6 +131,8 @@ class GlobalDnsController extends Controller
     }
 
     /**
+     * Set the GeoIP source of the region's DNS server
+     *
      * The region server's GeoIP source (docs/global-projects.md, "GeoIP database"): default (the
      * platform's globalDns.geoipUrl), url (a URL the cluster reaches — an internal mirror, a file in
      * the region's object store), file (the operator's own file on the server's volume, for a
@@ -152,7 +158,11 @@ class GlobalDnsController extends Controller
         return response()->json($this->serverObject($knativeRegion, $server, $this->zone->name()));
     }
 
-    /** The server reads its GeoIP source again (after the operator copied a new file). */
+    /**
+     * Reload the GeoIP source of the region's DNS server
+     *
+     * The server reads its GeoIP source again (after the operator copied a new file).
+     */
     #[OpenApiResponse(202, 'The server reads its source again', type: 'array{'.self::SERVER_FIELDS.'}')]
     public function reloadGeoip(KnativeRegion $knativeRegion): JsonResponse
     {
@@ -169,6 +179,7 @@ class GlobalDnsController extends Controller
         return response()->json($this->serverObject($knativeRegion, $server->refresh(), $this->zone->name()), 202);
     }
 
+    /** Remove the region's global DNS server */
     #[OpenApiResponse(202, 'The server is being removed', type: self::ELIGIBLE_SERVER_TYPE)]
     public function disable(KnativeRegion $knativeRegion): JsonResponse
     {

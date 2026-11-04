@@ -23,6 +23,7 @@ use Illuminate\Validation\ValidationException;
  */
 class GitPreviewController extends Controller
 {
+    /** List the project's live and recent preview environments */
     public function index(Request $request, Project $project): JsonResponse
     {
         abort_unless(Gate::allows('git.pull', $project), 403, __('git.forbidden', ['permission' => 'git.pull']));
@@ -36,6 +37,7 @@ class GitPreviewController extends Controller
         return response()->json(['data' => $previews->map(fn (PreviewEnvironment $p) => $p->toPublicArray())->values()]);
     }
 
+    /** Deploy a preview environment's version again */
     public function redeploy(Project $project, string $preview): JsonResponse
     {
         abort_unless(Gate::allows('previews.manage', $project), 403, __('git.forbidden', ['permission' => 'previews.manage']));
@@ -56,6 +58,7 @@ class GitPreviewController extends Controller
         return response()->json(['data' => $row->fresh()->toPublicArray()], 202);
     }
 
+    /** Delete a preview environment now */
     public function destroy(Project $project, string $preview, PreviewService $previews): JsonResponse
     {
         abort_unless(Gate::allows('previews.manage', $project), 403, __('git.forbidden', ['permission' => 'previews.manage']));

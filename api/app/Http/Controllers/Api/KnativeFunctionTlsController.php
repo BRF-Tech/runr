@@ -17,6 +17,7 @@ use Illuminate\Http\JsonResponse;
  */
 class KnativeFunctionTlsController extends Controller
 {
+    /** Set the TLS certificate of the region's function domain. */
     public function update(UpdateFunctionTlsRequest $request, KnativeRegion $knativeRegion, KnativeFunctionTlsService $service): JsonResponse
     {
         if ($knativeRegion->is_demo) {
@@ -41,6 +42,8 @@ class KnativeFunctionTlsController extends Controller
     }
 
     /**
+     * Remove the TLS certificate of the region's function domain
+     *
      * Function-domain TLS off: the region Traefik serves HTTPS with its own default certificate.
      */
     public function destroy(KnativeRegion $knativeRegion, KnativeFunctionTlsService $service): JsonResponse

@@ -21,7 +21,7 @@ use Illuminate\Validation\Rule;
  * NVIDIA device plugin or GPU Operator, GPU settings (time-slicing, RuntimeClass, gVisor
  * nvproxy) and the region's model volume.
  *
- * @tags AI · GPU
+ * @tags AI > GPU
  */
 class GpuController extends Controller
 {
@@ -30,7 +30,12 @@ class GpuController extends Controller
         private GpuPolicy $policy,
     ) {}
 
-    /** GPU nodes, allocation, install status, settings and sandbox support per project type. */
+    /**
+     * Show the region's GPU nodes, allocation, install status and settings
+     *
+     * GPU nodes, allocation, install status, settings and sandbox support per project type. With
+     * refresh, the GPU inventory is read from the cluster now and the answer is not cached.
+     */
     public function show(Request $request, KnativeRegion $knativeRegion): JsonResponse
     {
         if ($request->boolean('refresh')) {
@@ -45,6 +50,7 @@ class GpuController extends Controller
         return response()->json($this->status($knativeRegion));
     }
 
+    /** Install the NVIDIA device plugin or GPU Operator in the region */
     public function install(Request $request, KnativeRegion $knativeRegion): JsonResponse
     {
         $this->authorizeRegion($knativeRegion);
@@ -87,6 +93,7 @@ class GpuController extends Controller
         ], 202);
     }
 
+    /** Remove the region's GPU support */
     public function uninstall(KnativeRegion $knativeRegion): JsonResponse
     {
         $this->authorizeRegion($knativeRegion);
@@ -108,7 +115,11 @@ class GpuController extends Controller
         ], 202);
     }
 
-    /** Time-slicing / RuntimeClass re-apply the installed chart (queued); gVisor nvproxy is RunR-side. */
+    /**
+     * Change the region's GPU settings
+     *
+     * Time-slicing / RuntimeClass re-apply the installed chart (queued); gVisor nvproxy is RunR-side.
+     */
     public function updateSettings(Request $request, KnativeRegion $knativeRegion): JsonResponse
     {
         $this->authorizeRegion($knativeRegion);
@@ -147,11 +158,13 @@ class GpuController extends Controller
         ], $queued ? 202 : 200);
     }
 
+    /** Show the status and settings of the region's model volume */
     public function storage(KnativeRegion $knativeRegion, ModelStorage $storage): JsonResponse
     {
         return response()->json($storage->status($knativeRegion));
     }
 
+    /** Change the settings of the region's model volume */
     public function updateStorage(Request $request, KnativeRegion $knativeRegion, ModelStorage $storage): JsonResponse
     {
         $this->authorizeRegion($knativeRegion);

@@ -26,13 +26,66 @@ class ApiImageBuildTest extends TestCase
         return is_file($file) ? (string) file_get_contents($file) : null;
     }
 
-    /** The FROM line of the stage the image is built from (the last stage). */
+    /**
+     * The stages of a Dockerfile in order: the image or stage of each FROM line, the stage's name
+     * (AS …, null without one) and its text (from its FROM line to the next).
+     *
+     * @return list<array{from: string, name: string|null, text: string}>
+     */
+    private function stages(string $dockerfile): array
+    {
+        $text = $this->apiFile($dockerfile);
+        preg_match_all('/^FROM\s+(\S+)(?:\s+AS\s+(\S+))?[ \t\r]*$/mi', $text, $m, PREG_SET_ORDER | PREG_OFFSET_CAPTURE);
+        $this->assertNotEmpty($m, "{$dockerfile} has no FROM");
+
+        $stages = [];
+        foreach ($m as $i => $from) {
+            $start = $from[0][1];
+            $end = isset($m[$i + 1]) ? $m[$i + 1][0][1] : strlen($text);
+            $stages[] = [
+                'from' => $from[1][0],
+                'name' => isset($from[2]) && $from[2][1] >= 0 ? strtolower($from[2][0]) : null,
+                'text' => substr($text, $start, $end - $start),
+            ];
+        }
+
+        return $stages;
+    }
+
+    /**
+     * The stages the image is made of: the last stage and the earlier ones it builds on (FROM
+     * <stage name>), first the one that starts from an image. Stages the image only copies from
+     * (vendor, api-docs) are not part of it.
+     *
+     * @return non-empty-list<array{from: string, name: string|null, text: string}>
+     */
+    private function imageStages(string $dockerfile): array
+    {
+        $stages = $this->stages($dockerfile);
+        $index = count($stages) - 1;
+        $chain = [$stages[$index]];
+
+        // FROM names an earlier stage only (Docker resolves it among the stages above)
+        while (true) {
+            $parent = null;
+            for ($i = $index - 1; $i >= 0; $i--) {
+                if ($stages[$i]['name'] !== null && $stages[$i]['name'] === strtolower($chain[0]['from'])) {
+                    $parent = $i;
+                    break;
+                }
+            }
+            if ($parent === null) {
+                return $chain;
+            }
+            array_unshift($chain, $stages[$parent]);
+            $index = $parent;
+        }
+    }
+
+    /** The image the image is built from: the FROM of its first stage (imageStages). */
     private function runtimeBase(string $dockerfile): string
     {
-        preg_match_all('/^FROM\s+(\S+)/m', $this->apiFile($dockerfile), $m);
-        $this->assertNotEmpty($m[1], "{$dockerfile} has no FROM");
-
-        return (string) end($m[1]);
+        return $this->imageStages($dockerfile)[0]['from'];
     }
 
     /** The default value of an ARG of a Dockerfile, null when it has none. */
@@ -45,12 +98,13 @@ class ApiImageBuildTest extends TestCase
         return trim($m[1], '"\'');
     }
 
-    /** The text of the stage the image is built from (from its FROM line on). */
+    /**
+     * The text of the stages the image is made of (imageStages), first stage first: the runtime
+     * stage that starts from the FrankenPHP image and what the last stage adds on top of it.
+     */
     private function runtimeStage(string $dockerfile): string
     {
-        $text = $this->apiFile($dockerfile);
-
-        return substr($text, (int) strrpos($text, "\nFROM "));
+        return implode('', array_column($this->imageStages($dockerfile), 'text'));
     }
 
     public function test_the_entrypoint_runs_octane_on_frankenphp(): void
@@ -116,6 +170,25 @@ class ApiImageBuildTest extends TestCase
         if (($m[2] ?? '') !== '') {
             $this->assertTrue(version_compare($m[1].$m[2], $min, '>='), "FRANKENPHP_TAG {$tag} pins a PHP older than {$min}");
         }
+    }
+
+    /**
+     * Dockerfile.prod builds the OpenAPI document in a stage of its own on the runtime stage (with
+     * the modules enabled and a throw-away database): the image is the runtime stage again with
+     * only the document copied in, never the api-docs stage.
+     */
+    public function test_the_production_image_builds_on_the_runtime_stage_not_on_the_api_docs_stage(): void
+    {
+        $stages = $this->imageStages('Dockerfile.prod');
+
+        $this->assertSame(['base', null], array_column($stages, 'name'), 'Dockerfile.prod: the image is the runtime stage "base" and the last stage on it');
+        $this->assertDoesNotMatchRegularExpression('#^RUN .*docker/api-docs\.sh#m', $this->runtimeStage('Dockerfile.prod'), 'Dockerfile.prod: the image does not run the document build');
+        $this->assertContains('api-docs', array_column($this->stages('Dockerfile.prod'), 'name'));
+        $this->assertMatchesRegularExpression(
+            '#^COPY --from=api-docs /tmp/api-docs/openapi\.json resources/api-docs/openapi\.json$#m',
+            end($stages)['text'],
+            'Dockerfile.prod: the last stage copies the document from the api-docs stage',
+        );
     }
 
     public function test_the_production_image_carries_vendor(): void

@@ -135,24 +135,9 @@ class BillingServiceProvider extends ServiceProvider
         // ... and the organization's bills with the run history (read-only on import)
         SectionRegistry::extend(BillingHistoryTransferSection::class, 86);
 
-        NormalizeApiTags::registerTags([
-            'Settings' => 'Billing',
-            'Price' => 'Billing',
-            'Region' => 'Billing',
-            'Markup' => 'Billing',
-            'RegionOffer' => 'Billing',
-            'Bill' => 'Billing',
-            'Usage' => 'Billing',
-            'Rollup' => 'Billing',
-            'MyBills' => 'Billing',
-            'FixedRequest' => 'Billing',
-            'Event' => 'Billing',
-            'PlatformBill' => 'Billing',
-            'TenantBill' => 'Billing',
-            'LegacyRecord' => 'Billing',
-            'ArchivedBill' => 'Billing',
-            'ProjectBilling' => 'Billing',
-        ]);
+        // The API reference: every controller of the module in Billing, by namespace (a class name
+        // such as Settings is also the core's)
+        NormalizeApiTags::registerTags(['Modules\\Billing\\' => 'Billing']);
 
         $this->app->booted(fn () => $this->registerSchedule());
     }

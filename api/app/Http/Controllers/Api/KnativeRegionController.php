@@ -39,6 +39,7 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
  */
 class KnativeRegionController extends Controller
 {
+    /** List the regions. */
     public function index(): AnonymousResourceCollection
     {
         $regions = KnativeRegion::orderBy('name')->get();
@@ -47,13 +48,21 @@ class KnativeRegionController extends Controller
     }
 
     /**
-     * Single region, same shape as an index item.
+     * Get a region
+     *
+     * Single region, same shape as an item of the region list.
      */
     public function show(KnativeRegion $knativeRegion): KnativeRegionResource
     {
         return new KnativeRegionResource($knativeRegion);
     }
 
+    /**
+     * Create a region on a Kubernetes cluster.
+     *
+     * Checks the kubeconfig and creates the region's project namespace on the cluster; its Redis
+     * (and a registry given with the region) are set up in the background.
+     */
     public function store(StoreKnativeRegionRequest $request, KnativeStatusService $statusService, KnativeNodeService $nodeService): JsonResponse
     {
         $validated = $request->validated();
@@ -162,7 +171,11 @@ class KnativeRegionController extends Controller
     }
 
     /**
-     * Validate kubeconfig connectivity (without creating a region).
+     * Check that a kubeconfig reaches a supported Kubernetes cluster
+     *
+     * Validates kubeconfig connectivity without creating a region: the cluster has to answer and
+     * run a supported Kubernetes version. The answer holds the version and, when RunR adapted the
+     * kubeconfig (e.g. for a local cluster), the adapted one.
      */
     public function validateKubeconfig(KubeconfigRequest $request): JsonResponse
     {
@@ -179,7 +192,9 @@ class KnativeRegionController extends Controller
     }
 
     /**
-     * Preview worker nodes using raw kubeconfig (no region required).
+     * List the worker nodes of a cluster from its kubeconfig
+     *
+     * Previews the worker nodes using a raw kubeconfig; no region is required.
      */
     public function previewNodes(KubeconfigRequest $request, KnativeNodeService $nodeService): JsonResponse
     {
@@ -197,7 +212,10 @@ class KnativeRegionController extends Controller
     }
 
     /**
-     * List StorageClasses from cluster using raw kubeconfig.
+     * List the storage classes of a cluster from its kubeconfig
+     *
+     * Lists the StorageClasses using a raw kubeconfig; no region is required. The cluster's
+     * default class is marked.
      */
     public function previewStorageClasses(KubeconfigRequest $request): JsonResponse
     {
@@ -218,7 +236,9 @@ class KnativeRegionController extends Controller
     }
 
     /**
-     * Check if a namespace exists using raw kubeconfig (no region required).
+     * Check whether a namespace exists on a cluster, given its kubeconfig
+     *
+     * Uses a raw kubeconfig; no region is required.
      */
     public function checkNamespacePreview(CheckNamespacePreviewRequest $request, KnativeStatusService $statusService): JsonResponse
     {
@@ -235,6 +255,7 @@ class KnativeRegionController extends Controller
         }
     }
 
+    /** Update a region's settings, status or kubeconfig. */
     public function update(UpdateKnativeRegionRequest $request, KnativeRegion $knativeRegion): JsonResponse
     {
         $data = $request->validated();
@@ -326,6 +347,7 @@ class KnativeRegionController extends Controller
         }
     }
 
+    /** Download the region's kubeconfig. */
     public function downloadKubeconfig(KnativeRegion $knativeRegion): StreamedResponse|JsonResponse
     {
         if (! $knativeRegion->kubeconfig) {
@@ -341,6 +363,7 @@ class KnativeRegionController extends Controller
         ]);
     }
 
+    /** Delete a region. */
     public function destroy(KnativeRegion $knativeRegion): JsonResponse
     {
         // The region's PowerDNS server of the global zone goes first: its NS record and the global
@@ -355,6 +378,8 @@ class KnativeRegionController extends Controller
     }
 
     /**
+     * Point the region's Prometheus and Loki at existing instances or RunR's own.
+     *
      * The region's Prometheus and Loki after its creation: a URL points the region at an existing
      * in-cluster instance (RunR's own release keeps running — regions on the same cluster may use
      * it), null switches back to RunR's own, which is installed when the region's Serving is
@@ -409,7 +434,10 @@ class KnativeRegionController extends Controller
     }
 
     /**
-     * Update Knative settings for a region.
+     * Update the region's request timeout, agent URL, issuer and network settings
+     *
+     * Updates the region's Knative settings. What changed is applied in the background: Traefik,
+     * Knative, the internal network, the runr-agent or the cert-manager issuer.
      */
     public function updateSettings(UpdateRegionSettingsRequest $request, KnativeRegion $knativeRegion): JsonResponse
     {

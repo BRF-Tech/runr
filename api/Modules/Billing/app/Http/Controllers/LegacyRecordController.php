@@ -19,6 +19,7 @@ class LegacyRecordController extends Controller
 {
     use BillingRequests;
 
+    /** List the billing records kept from 0.5.7 */
     public function index(Request $request): JsonResponse
     {
         $request->validate([

@@ -11,17 +11,20 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Storage;
-use Laravel\Sanctum\Contracts\HasAbilities;
-use Laravel\Sanctum\PersonalAccessToken;
 
 class AccountController extends Controller
 {
-    /** The signed-in user with `frozen`: a shared account whose own settings are locked (FrozenAccounts). */
+    /**
+     * Get the signed-in user's account
+     *
+     * The signed-in user with `frozen`: a shared account whose own settings are locked (FrozenAccounts).
+     */
     public function show(Request $request): JsonResponse
     {
         return response()->json($request->user()->append('frozen'));
     }
 
+    /** Update the signed-in user's profile */
     public function updateProfile(UpdateProfileRequest $request): JsonResponse
     {
         $user = $request->user();
@@ -33,6 +36,7 @@ class AccountController extends Controller
         ]);
     }
 
+    /** Upload the signed-in user's avatar */
     public function uploadAvatar(Request $request): JsonResponse
     {
         $request->validate([
@@ -56,6 +60,7 @@ class AccountController extends Controller
         ]);
     }
 
+    /** Remove the signed-in user's avatar */
     public function removeAvatar(Request $request): JsonResponse
     {
         $user = $request->user();
@@ -68,6 +73,7 @@ class AccountController extends Controller
         return response()->json(['message' => __('api.account.avatar_removed')]);
     }
 
+    /** Change the signed-in user's password */
     public function changePassword(ChangePasswordRequest $request): JsonResponse
     {
         $user = $request->user();
@@ -80,39 +86,44 @@ class AccountController extends Controller
 
         // Whoever signed in elsewhere (with the old password) is signed out: the user's other
         // sign-in sessions end, the event signs their browsers out. API tokens stay.
-        /** @var HasAbilities|null $current a stored token, or none (a session without a token) */
-        $current = $user->currentAccessToken();
-        $currentId = $current instanceof PersonalAccessToken ? $current->getKey() : null;
-        $revokedIds = $user->tokens()
-            ->whereIn('name', LoginTokens::NAMES)
-            ->when($currentId !== null, fn ($q) => $q->whereKeyNot($currentId))
-            ->pluck('id')
-            ->map(fn ($id) => (int) $id)
-            ->all();
-
-        if ($revokedIds !== []) {
-            $user->tokens()->whereKey($revokedIds)->delete();
-            event(new PlatformEvent('session.revoked', ['token_ids' => $revokedIds]));
-        }
+        LoginTokens::endSessions($user, LoginTokens::currentId($user));
 
         return response()->json(['message' => __('api.account.password_changed')]);
     }
 
+    /**
+     * Disable the signed-in user's account
+     *
+     * Every other token of the account ends — sign-in sessions and API tokens alike — and the
+     * current one is refused from then on: a disabled account keeps no working credential. The
+     * browsers of the ended sessions are signed out at once (`session.revoked`).
+     */
     public function disableAccount(Request $request): JsonResponse
     {
         $user = $request->user();
-        $currentTokenId = $user->currentAccessToken()->id;
+        $currentTokenId = LoginTokens::currentId($user);
 
         $user->update([
             'is_disabled' => true,
             'disabled_at' => now(),
         ]);
 
-        $user->tokens()->where('id', '!=', $currentTokenId)->delete();
+        $endedIds = $user->tokens()
+            ->when($currentTokenId !== null, fn ($q) => $q->whereKeyNot($currentTokenId))
+            ->pluck('id')
+            ->map(fn ($id) => (int) $id)
+            ->values()
+            ->all();
+
+        if ($endedIds !== []) {
+            $user->tokens()->whereKey($endedIds)->delete();
+            event(new PlatformEvent('session.revoked', ['token_ids' => $endedIds]));
+        }
 
         return response()->json(['message' => __('api.account.disabled')]);
     }
 
+    /** Delete the signed-in user's account */
     public function deleteAccount(Request $request): JsonResponse
     {
         $request->validate(['password' => 'required|string']);

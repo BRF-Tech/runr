@@ -27,7 +27,7 @@ use Illuminate\Validation\Rule;
  * Model services (docs/huggingface.md): one-click deploy of a Hub model (or of a model of the
  * library), status, logs, playground, stop / start, delete.
  *
- * @tags AI · Model services
+ * @tags AI > Model services
  */
 class ModelServiceController extends Controller
 {
@@ -36,6 +36,7 @@ class ModelServiceController extends Controller
         private ModelServiceDeployer $deployer,
     ) {}
 
+    /** List the model services */
     public function index(Request $request): JsonResponse
     {
         abort_unless(Gate::allows('models.view'), 403);
@@ -51,6 +52,7 @@ class ModelServiceController extends Controller
         ]);
     }
 
+    /** Create a model service from a Hub or library model */
     public function store(Request $request, ModelLibrary $library): JsonResponse
     {
         abort_unless(Gate::allows('models.deploy'), 403);
@@ -108,6 +110,7 @@ class ModelServiceController extends Controller
         return response()->json(new AiModelServiceResource($service->fresh(['model', 'region'])->loadCount('bindings')), 201);
     }
 
+    /** Get a model service */
     public function show(AiModelService $service): JsonResponse
     {
         abort_unless(Gate::allows('models.view'), 403);
@@ -115,7 +118,11 @@ class ModelServiceController extends Controller
         return response()->json(new AiModelServiceResource($service->load('model', 'region')->loadCount('bindings')));
     }
 
-    /** Settings change; a running service is redeployed with them. */
+    /**
+     * Change a model service's settings
+     *
+     * Settings change; a running service is redeployed with them (a failed one too).
+     */
     public function update(Request $request, AiModelService $service): JsonResponse
     {
         abort_unless(Gate::allows('models.deploy'), 403);
@@ -143,6 +150,7 @@ class ModelServiceController extends Controller
         return response()->json(new AiModelServiceResource($service->fresh(['model', 'region'])->loadCount('bindings')));
     }
 
+    /** Deploy a model service */
     public function deploy(AiModelService $service): JsonResponse
     {
         abort_unless(Gate::allows('models.deploy'), 403);
@@ -165,6 +173,7 @@ class ModelServiceController extends Controller
         return response()->json(new AiModelServiceResource($service->fresh(['model', 'region'])->loadCount('bindings')), 202);
     }
 
+    /** Stop a model service */
     public function stop(AiModelService $service): JsonResponse
     {
         abort_unless(Gate::allows('models.deploy'), 403);
@@ -174,6 +183,7 @@ class ModelServiceController extends Controller
         return response()->json(new AiModelServiceResource($service->fresh(['model', 'region'])->loadCount('bindings')), 202);
     }
 
+    /** Delete a model service */
     public function destroy(AiModelService $service): JsonResponse
     {
         abort_unless(Gate::allows('models.deploy'), 403);
@@ -189,6 +199,7 @@ class ModelServiceController extends Controller
         return response()->json(null, 204);
     }
 
+    /** Get the logs of a model service's pods */
     public function logs(Request $request, AiModelService $service): JsonResponse
     {
         abort_unless(Gate::allows('models.view'), 403);
@@ -202,7 +213,13 @@ class ModelServiceController extends Controller
         return response()->json(['pods' => $pods]);
     }
 
-    /** Playground: one request to the service (allowed paths per engine). */
+    /**
+     * Send one request to a model service from the playground
+     *
+     * Only the paths the service's engine allows; the body is limited in size.
+     *
+     * @operationId modelService.invoke
+     */
     public function invoke(Request $request, AiModelService $service): JsonResponse
     {
         abort_unless(Gate::allows('models.view'), 403);
@@ -230,6 +247,7 @@ class ModelServiceController extends Controller
         }
     }
 
+    /** List the projects bound to a model service */
     public function bindings(AiModelService $service): JsonResponse
     {
         abort_unless(Gate::allows('models.view'), 403);

@@ -8,6 +8,157 @@ did not change says so.
 
 ## [Unreleased]
 
+## [0.6.5] - 2026-11-04
+
+### Upgrade notes
+
+One new database migration, `notification_user_states` (each member's read and deleted state of the
+shared notifications), run by the pre-upgrade migration Job in the central schema and, with
+multi-tenancy, in every organization's schema (tenant migration 0110). It only adds a table, is safe
+while 0.6.4 still serves requests, and a rollback to 0.6.4 ignores it; a shared notification read or
+deleted before the upgrade stays so for everyone. One new Helm value, `notifications.retentionDays`
+(default 90): values of 0.6.4, `--reuse-values` included, keep working and render it as 90 ([0.6.4 →
+0.6.5 in upgrade.md](docs/upgrade.md#064--065)). 0.6.5 adds the daily task `notification-retention`
+(03:45). Its first run after the upgrade deletes every in-app notification older than 90 days, read
+or not, with the members' read state, and the notifications of accounts deleted earlier. To keep
+them longer, set `notifications.retentionDays` (`RUNR_NOTIFICATION_RETENTION_DAYS`) before
+upgrading; `0` keeps them. Deleting an account removes its notifications in every organization.
+Regions that pull through a mirror need `ghcr.io/brf-tech/runr/image-upload:1.1.1` there, next to
+the agent and queue-consumer images of 0.6.5: the uploads and organization transfers started after
+the upgrade use it. An installation that sets `images.uploadImage` or `orgTransfer.transferImage`
+keeps the image named there. Gateway-auth, supply-chain and the Spin shim keep their versions.
+Revoking the other sessions keeps the API tokens; every user lists and revokes their own API tokens
+and MCP clients, creating one still needs `tokens.manage` ("Create API tokens"). `GET /api/branding`
+adds `features.auth_providers` and `GET /api/tokens` adds `mcp_client`. The API reference
+(`/api/docs`, `/api/docs.json`) serves a document built with the API image: it lists the endpoints
+of every module, also of those turned off, names its server relative to the host (`/api`), and six
+operationIds changed (`workflowRun.index`, `workflowRun.indexForWorkflow`, `workflow.app`,
+`modelService.invoke`, `billingSettings.show`, `billingSettings.update`): regenerate an SDK made
+from it. The UI images carry pre-compressed copies of their files (150 MB for linux/amd64, 124 MB in
+0.6.4). A UI image built from source builds on `reqs/node:22-alpine`.
+
+### Security
+
+- **Dependency updates for published advisories** (the Audit workflow had failed since 0.6.3). The
+  console's code editor sanitizes with DOMPurify 3.4.17 (GHSA-cg2g-xh64-v4q7, critical;
+  GHSA-mrv2-3pqr-j5jr, GHSA-p98j-92pf-mc4p, GHSA-6688-9rhm-gjv2, GHSA-c6gr-qvv4-5v3f): monaco-editor
+  0.57.0 ships its own copy, DOMPurify 3.4.15, which the build now replaces with the dompurify
+  package (`vue/build/monacoDompurifyPlugin.js`; the build fails if a newer Monaco moves its copy).
+  The console takes vue-i18n 11.4.18 (GHSA-83rm-6c8r-g728, GHSA-8rc2-428q-7ww3: no fixed 9.x or
+  10.x exists; the UI image builds on Node.js 22, which vue-i18n 11 requires) and follow-redirects
+  1.16.2 (GHSA-mrwp-f3q8-3g9p, used by axios). The API takes symfony/mime 7.4.22 (CVE-2026-45070,
+  e-mail header injection through MIME parameter names) with symfony/polyfill-mbstring 1.43.3.
+  Build tooling: Vite 6.4.5 (GHSA-8g5g-mxqh-grgj) and Vitest 4.1.12 (GHSA-qxg6-89mg-rqv8,
+  GHSA-xp26-3454-mjgp). `npm audit --omit=dev` reports nothing; the dev tooling keeps two moderate
+  advisories of minimatch and glob that eslint 10 and js-beautify (of @vue/test-utils) do not take
+  the fixed majors of yet.
+
+### Fixed
+
+- **Notifications no longer pile up forever.** Nothing ever deleted an in-app notification: the
+  shared ones, the read ones and the ones users had deleted (a soft delete) stayed in the
+  database for good, with every member's read state of the shared ones. The new daily task
+  `notification-retention` (03:45) deletes the notifications created more than 90 days ago —
+  read or not, deleted or not, with their members' state — in the central schema and in every
+  organization's schema, in chunks of 1,000 rows. The retention is the new setting
+  `RUNR_NOTIFICATION_RETENTION_DAYS` (Helm value `notifications.retentionDays`, default `90`,
+  `0` keeps every notification; [helm-values.md](docs/helm-values.md#notifications)). The first
+  run after the upgrade deletes every notification older than the retention.
+- **A deleted account's notifications go with it.** Deleting an account, by its user or by an
+  administrator, left the user's notifications and their read and deleted state of the shared
+  ones behind; it now deletes them in the central schema and, in the multi-tenant edition, in
+  every organization the account belonged to. Removing a member from an organization deletes
+  their notifications there. The daily `notification-retention` task also removes what
+  deletions before this release left behind, whatever the retention.
+- **Revoking the other sessions no longer ends the user's API tokens.** Account settings → Active
+  Sessions listed every token of the user, API tokens included, and "Revoke All Other Sessions"
+  (`POST /api/account/sessions/revoke-all`) deleted them all but the current one: signing out the
+  other browsers also broke the user's CI, CLI (`runr-cli@<host>`) and MCP client tokens. The
+  session routes now list and revoke sign-in sessions only (the tokens named `api` and
+  `invitation-accept`, which API tokens cannot take since 0.5.5): revoking one by an API token's
+  id answers 404, revoking all others ends every other sign-in session and keeps the API tokens.
+  API tokens are listed and deleted under Administration → API Tokens only; `DELETE /api/tokens/{id}`
+  answers 404 for a sign-in session's id. What the other paths end is unchanged and now tested:
+  signing out ends the token of the request, a password change the other sign-in sessions,
+  disabling the account every token but the current one, deleting it every token; two-factor
+  changes and a frozen account's refused requests end none. Disabling the account now also signs
+  out the other browsers at once (`session.revoked`), as a password change does, and Active
+  Sessions no longer lists a session that ended (past its expiry or the session lifetime, as the
+  sign-in check counts it) until the daily cleanup removed it. Signing out a cookie session (no
+  stored token) answered 500; it now ends the web session. Listing and revoking one's own API
+  tokens and connected MCP clients no longer needs a role permission (route rule
+  `@own:tokens.manage`: a limited API token must still carry `tokens.manage`); creating a token
+  still needs `tokens.manage`. Administration → API Tokens is shown to every user, without the
+  create form for a role that lacks it; in an organization of the multi-tenant edition such a
+  member lists their own tokens only. The `tokens.manage` label reads "Create API tokens". The
+  tokens of connected MCP clients stay on that list, now labelled "MCP client" (`mcp_client` in
+  `GET /api/tokens`). No data migration.
+- **One member's Mark all as read or Delete all no longer changes the other members'
+  notifications.** A shared notification (one without a user: a resource threshold, the result of a
+  job nobody started) had one read state and one deletion for everyone, so when a member marked it
+  read, deleted it, or used Mark all as read or Delete all, it was read or gone for every member of
+  the organization. Each member now reads and deletes shared notifications for themselves (the new
+  table `notification_user_states`, in the central schema and in every organization's schema): the
+  list, the unread badge and `/api/notifications/unread-count` are per member. A user's own
+  notifications keep their state as before. A shared notification someone read or deleted before
+  the upgrade stays read or deleted for everyone.
+- **The API reference opens again.** `/api/docs.json` and the reference page `/api/docs` generated
+  the OpenAPI document on each request, which takes longer than a request may run: on every
+  install they ended in a 500 at the 30 s limit, or never loaded. The API image now builds the
+  document once (`php artisan runr:api-docs`, a stage of `api/Dockerfile.prod`) and both serve that
+  file, `/api/docs.json` with an ETag and `Cache-Control: public, max-age=300`. It documents the
+  endpoints of every module (Tenancy, AuthProvider, Ticket, Billing), also of those an install has
+  turned off, and names its server relative to the host (`/api`). The page also loaded a viewer
+  script the image never had: the image now carries the Scalar viewer (1.75.1, checked against its
+  SHA-256), without its AI chat, MCP generator and telemetry. A checkout without the built file
+  (development) still generates the document per request
+  ([development.md](docs/development.md#useful-commands)).
+- **Every operation of the API reference is in one group with a proper name, has a one-line
+  summary and an operationId of its own** (Projects > Deployments, Regions > Install, Sandboxes >
+  Files, …). An operation whose controller names its group was also in a second one named after the
+  controller class (Images and Image, Bindings and Binding), most others were in such a class name
+  (AdminSupportTicket, GitWebhook), and the Sandbox API's operations were in pieces of their
+  controllers' descriptions ("TTL", "delete", "activity log (docs/sandbox-api.md)."). The billing
+  module's group also took the core's Settings endpoints. Most operations had no summary, one that
+  restated their method and path, or a paragraph; each now says in one line what it does ("List the
+  project's workflows"), the rest is its description. The two lists of workflow runs shared the
+  operationId `workflows.workflowRun.index_0`, which OpenAPI requires to be unique. These
+  operationIds changed (SDK generators name their methods after them): `workflowRun.index` and
+  `workflowRun.indexForWorkflow`, `workflow.app` (was `workflows.workflow`), `modelService.invoke`
+  (was `ai.modelService`), `billingSettings.show` and `billingSettings.update` (were `settings.show`
+  and `modules.billing.settings.update`). The webhooks, Git callbacks, invitations and public status
+  and developer pages no longer show a required token. The image build and CI fail when an
+  operation lacks a summary, an operationId of its own or a group (`php artisan runr:api-docs
+  --check`).
+- **The console's files are no longer compressed on each request.** The UI image's Caddy compressed
+  every response as it sent it: the 4.9 MB main bundle took 4.4 s with zstd on demo.runr.sh. The
+  build now puts a Brotli (quality 11) and a gzip (-9) copy next to every text file above 1 KiB,
+  and Caddy sends those as they are (`file_server { precompressed br gzip }`), Brotli first: the
+  main bundle goes out as 1.0 MB. A client that takes only zstd gets it compressed on the fly as
+  before (every browser that takes zstd takes Brotli). Cache-Control and the other headers are
+  unchanged; what has no copy (small files, `branding-defaults.js`, which the container writes at
+  start) is still compressed on the fly, now gzip first. Both UI images (`ui`, `ui-mt`) are built
+  this way, their build stage on the build host's platform.
+
+- **The transfer agent could report a failed pull without its reason, or a pull without its
+  result** (image-upload 1.1.1). It wrote its `.failed` and `.done` markers by creating the file,
+  then writing it, and its own watcher could read one in between, empty. Markers are now renamed
+  into place; an empty `.failed` of a tool script (a shell redirection creates the file before the
+  reason is in it) counts only when it is still empty at the next look. Regions that pull through
+  a mirror need `ghcr.io/brf-tech/runr/image-upload:1.1.1`.
+- **The sign-in page no longer asks for SSO providers without the AuthProvider module**, which
+  left a 404 of `GET /api/auth-providers/discover` in the browser console on every visit. It asks
+  only when the console has the module's screens and the API reports the module on
+  (`features.auth_providers` of `GET /api/branding`, new).
+- **The CAPTCHA widget is light on the sign-in and sign-up cards**, which are light in both
+  console themes; elsewhere (the invitation page) it follows the console's theme instead of the
+  browser's, and is drawn again when the theme changes.
+- **The console no longer shows message keys while it starts.** The messages of the modules every
+  image has (branding and onboarding, bot protection, images, sandboxes, …) came in only after the
+  optional modules had loaded, so in the multi-tenant image the onboarding wizard of a new
+  organization showed its keys (`whiteLabel.onboarding.title`, …) for a moment. They are now in
+  before the first render.
+
 ## [0.6.4] - 2026-11-03
 
 ### Upgrade notes
@@ -3571,7 +3722,8 @@ Initial tagged release.
 - API gateways with routes, in-app notifications and support tickets.
 - Helm chart with a single-tenant / multi-tenant edition, an install form (`values.schema.json`), generated secrets and a Traefik ingress; a Docker Compose setup for development.
 
-[Unreleased]: https://github.com/brf-tech/runr/compare/v0.6.4...main
+[Unreleased]: https://github.com/brf-tech/runr/compare/v0.6.5...main
+[0.6.5]: https://github.com/brf-tech/runr/releases/tag/v0.6.5
 [0.6.4]: https://github.com/brf-tech/runr/releases/tag/v0.6.4
 [0.6.3]: https://github.com/brf-tech/runr/releases/tag/v0.6.3
 [0.6.2]: https://github.com/brf-tech/runr/releases/tag/v0.6.2

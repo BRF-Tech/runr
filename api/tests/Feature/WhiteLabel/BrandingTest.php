@@ -47,7 +47,7 @@ class BrandingTest extends TestCase
             'powered_by' => true,
             'is_default_brand' => true,
             'tenant' => null,
-            'features' => ['multi_tenant' => false, 'tenant_branding' => false, 'billing' => false, 'tickets' => false],
+            'features' => ['multi_tenant' => false, 'tenant_branding' => false, 'billing' => false, 'tickets' => false, 'auth_providers' => false],
         ]);
         $this->assertSame(BrandingService::RUNR_PALETTE, $response->json('palette'));
         $this->assertNull($response->json('features.plans'), 'plans were removed');
@@ -228,17 +228,20 @@ class BrandingTest extends TestCase
 
     public function test_the_features_name_the_optional_modules_the_api_runs(): void
     {
-        // The console hides billing and support tickets when the API runs without them, also in
-        // images built with every module (a disabled module never merges its config)
-        config(['billing.enabled' => true, 'ticket.enabled' => true]);
+        // The console hides billing, support tickets and the sign-in page's SSO buttons when the
+        // API runs without them, also in images built with every module (a disabled module never
+        // merges its config)
+        config(['billing.enabled' => true, 'ticket.enabled' => true, 'authprovider.enabled' => true]);
         $this->getJson('/api/branding')->assertOk()
             ->assertJsonPath('features.billing', true)
-            ->assertJsonPath('features.tickets', true);
+            ->assertJsonPath('features.tickets', true)
+            ->assertJsonPath('features.auth_providers', true);
 
-        config(['billing.enabled' => 'false', 'ticket.enabled' => false]);
+        config(['billing.enabled' => 'false', 'ticket.enabled' => false, 'authprovider.enabled' => false]);
         $this->getJson('/api/branding')->assertOk()
             ->assertJsonPath('features.billing', false)
-            ->assertJsonPath('features.tickets', false);
+            ->assertJsonPath('features.tickets', false)
+            ->assertJsonPath('features.auth_providers', false);
     }
 
     public function test_the_install_brand_from_helm_values_replaces_the_defaults(): void

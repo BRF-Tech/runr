@@ -20,15 +20,15 @@
 #                               and loads them into the Kind cluster (cmd_test calls it for
 #                               --suite=org-transfer, step 4c of test.sh).
 #
-# ORG_TRANSFER_AGENT_VERSION  — tag of the locally built agent image (default 1.1.0, the version the
-#                               API's org_transfer config names); the API pulls it IfNotPresent, so
-#                               the loaded build is what runs.
+# ORG_TRANSFER_AGENT_VERSION  — tag of the locally built agent image (default image_upload_version,
+#                               the version the API's org_transfer config names); the API pulls it
+#                               IfNotPresent, so the loaded build is what runs.
 # KIND_LOCK                   — one Kind cluster at a time on a shared host; defaults to
 #                               /tmp/runr-kind.lock here (test-runtimes.sh: acquire_kind_lock).
 
 prepare_org_transfer_e2e() {
   local cluster="$1"
-  local version="${ORG_TRANSFER_AGENT_VERSION:-1.1.0}"
+  local version="${ORG_TRANSFER_AGENT_VERSION:-$(image_upload_version)}"
   local agent_tag="${REGISTRY}/image-upload:${version}"
 
   echo ""

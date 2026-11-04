@@ -20,13 +20,17 @@ use Illuminate\Http\Request;
  */
 class ProjectObservabilityController extends Controller
 {
-    /** GET /api/projects/{project}/observability */
+    /** Get the project's tracing and request replay settings. */
     public function show(Project $project, ReplayService $replay, IngestUrl $ingest): JsonResponse
     {
         return response()->json(['data' => $this->payload($project, $replay, $ingest)]);
     }
 
-    /** PUT /api/projects/{project}/observability/tracing — {enabled, sample_ratio} */
+    /**
+     * Switch tracing on or off for the project.
+     *
+     * Body: {enabled, sample_ratio}.
+     */
     public function updateTracing(Request $request, Project $project, ReplayService $replay, IngestUrl $ingest): JsonResponse
     {
         $data = $request->validate([
@@ -50,8 +54,9 @@ class ProjectObservabilityController extends Controller
     }
 
     /**
-     * PUT /api/projects/{project}/observability/replay —
-     * {enabled, max_body_bytes, retention_days, redact_headers[], redact_query[]}
+     * Update the request replay settings of the project.
+     *
+     * Body: {enabled, max_body_bytes, retention_days, redact_headers[], redact_query[]}.
      */
     public function updateReplay(Request $request, Project $project, ReplayService $replay, IngestUrl $ingest): JsonResponse
     {

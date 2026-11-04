@@ -33,7 +33,11 @@ class RuntimeController extends Controller
         private RuntimeImageBuildService $builds,
     ) {}
 
-    /** GET /runtimes — ?all=1 (manage) includes disabled runtimes, ?region=<id> filters by availability */
+    /**
+     * List the runtimes to pick from
+     *
+     * ?all=1 (manage) includes disabled runtimes, ?region=<id> filters by availability.
+     */
     public function index(Request $request): JsonResponse
     {
         $manage = Gate::allows('runtimes.manage');
@@ -53,6 +57,7 @@ class RuntimeController extends Controller
         ]);
     }
 
+    /** Show a runtime's details */
     public function show(Runtime $runtime): JsonResponse
     {
         $this->abortUnlessVisible($runtime);
@@ -60,7 +65,11 @@ class RuntimeController extends Controller
         return response()->json(['data' => (new RuntimeResource($runtime))->detail()->resolve()]);
     }
 
-    /** POST /runtimes/validate — the manifest editor's live check */
+    /**
+     * Validate a runtime manifest
+     *
+     * The manifest editor's live check.
+     */
     public function validateManifest(Request $request): JsonResponse
     {
         abort_unless(Gate::any(['runtimes.manage', 'runtimes.use_custom']), 403);
@@ -75,6 +84,7 @@ class RuntimeController extends Controller
         return response()->json(['valid' => true, 'manifest' => $manifest->toArray()]);
     }
 
+    /** Register a platform or custom runtime from its manifest */
     public function store(SaveRuntimeRequest $request): JsonResponse
     {
         $source = match (true) {
@@ -96,6 +106,7 @@ class RuntimeController extends Controller
         return response()->json(['data' => (new RuntimeResource($runtime->fresh()))->detail()->resolve()], 201);
     }
 
+    /** Change a runtime's manifest, files, regions or enabled state */
     public function update(SaveRuntimeRequest $request, Runtime $runtime): JsonResponse
     {
         $this->authorizeChange($runtime);
@@ -121,6 +132,7 @@ class RuntimeController extends Controller
         return response()->json(['data' => (new RuntimeResource($runtime->fresh()))->detail()->resolve()]);
     }
 
+    /** Delete a runtime no project uses */
     public function destroy(Runtime $runtime): JsonResponse
     {
         $this->authorizeChange($runtime);
@@ -134,7 +146,7 @@ class RuntimeController extends Controller
         return response()->json(null, 204);
     }
 
-    /** GET /runtimes/{id}/template — starter files for a service type and handler */
+    /** Get a runtime's starter files for a service type and handler */
     public function template(Request $request, Runtime $runtime): JsonResponse
     {
         $this->abortUnlessVisible($runtime);
@@ -154,7 +166,11 @@ class RuntimeController extends Controller
         return response()->json(['files' => (object) ([$entry->filename => $files[$entry->filename] ?? ''] + $files)]);
     }
 
-    /** GET /runtimes/{id}/builds — region builds of the dockerfile / git versions */
+    /**
+     * List a runtime's image builds in the regions
+     *
+     * Region builds of the dockerfile / git versions.
+     */
     public function builds(Runtime $runtime): JsonResponse
     {
         $this->abortUnlessVisible($runtime);
@@ -173,7 +189,11 @@ class RuntimeController extends Controller
         ])->values()]);
     }
 
-    /** POST /runtimes/{id}/builds {knative_region_id, version?} — (re)build in a region */
+    /**
+     * Build a runtime's image in a region, or build it again
+     *
+     * Body {knative_region_id, version?}: (re)build in a region.
+     */
     public function build(Request $request, Runtime $runtime): JsonResponse
     {
         $this->authorizeChange($runtime);
@@ -201,8 +221,10 @@ class RuntimeController extends Controller
     }
 
     /**
-     * POST /runtimes/{id}/test-deploy {knative_region_id, version?} — an XaaS HTTP project from
-     * the runtime's starter template, built when needed and deployed as soon as it is ready.
+     * Deploy a test project from the runtime's starter template
+     *
+     * Body {knative_region_id, version?}: an XaaS HTTP project from the runtime's starter template,
+     * built when needed and deployed as soon as it is ready.
      */
     public function testDeploy(Request $request, Runtime $runtime, ProjectService $projects): JsonResponse
     {

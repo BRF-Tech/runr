@@ -18,7 +18,11 @@ use Modules\Tenancy\Models\TenantUser;
  */
 class ImpersonateController extends Controller
 {
-    /** Start: the tenant as the console stores it while it is open as administrator. */
+    /**
+     * Start a platform administrator's impersonation of an organization
+     *
+     * The answer is the tenant as the console stores it while it is open as administrator.
+     */
     public function start(Request $request, string $tenantId): JsonResponse
     {
         $tenant = Tenant::findOrFail($tenantId);
@@ -40,7 +44,9 @@ class ImpersonateController extends Controller
     }
 
     /**
-     * Stop: the tenant being left — the request's tenant context (X-Tenant-ID) or tenant_id.
+     * End a platform administrator's impersonation of an organization
+     *
+     * The tenant being left: the request's tenant context (X-Tenant-ID) or tenant_id.
      * tenant_id of the answer is the audit event's subject.
      */
     public function stop(Request $request): JsonResponse

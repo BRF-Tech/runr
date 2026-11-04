@@ -3,6 +3,7 @@
 namespace Modules\Tenancy\Models;
 
 use App\Models\User;
+use App\Services\Notifications\NotificationRetention;
 use App\Support\Rbac\AccessManager;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -41,8 +42,10 @@ class TenantUser extends Model
             $tenant?->run(function () use ($tu) {
                 TenantLocalUser::withoutEvents(fn () => TenantLocalUser::where('id', $tu->user_id)->delete()
                 );
-                // Groups and project access of the former member go with them
+                // Groups and project access of the former member go with them, and their
+                // notifications in the organization, which no one else sees
                 app(AccessManager::class)->forgetUser($tu->user_id);
+                app(NotificationRetention::class)->forgetUsers([$tu->getAttribute('user_id')]);
             });
         });
     }

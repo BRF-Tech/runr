@@ -22,6 +22,7 @@ class ExternalSecretsController extends Controller
     /** The API document's shape of the operator's status in the region (status()) */
     private const STATUS_TYPE = 'array{status: "not_installed"|"installing"|"ready"|"uninstalling"|"error", message: string|null, chart_version: string|null, release_chart_version: string, installed_at: string|null, references: int, can_manage: bool}';
 
+    /** Show the status of External Secrets Operator in the region */
     public function show(KnativeRegion $knativeRegion, ExternalSecretsInstallService $service): JsonResponse
     {
         $settings = $knativeRegion->kubeconfig && ! $knativeRegion->is_demo
@@ -32,6 +33,8 @@ class ExternalSecretsController extends Controller
     }
 
     /**
+     * Install or upgrade External Secrets Operator in the region (queued)
+     *
      * Install (or bring to this release's chart version): queued.
      *
      * @response JsonResponse<array{message: string, data: array<string, mixed>}, 202>
@@ -52,7 +55,9 @@ class ExternalSecretsController extends Controller
     }
 
     /**
-     * Remove: refused while projects on the region have references.
+     * Remove External Secrets Operator from the region (queued)
+     *
+     * Refused while projects on the region have references.
      *
      * @response JsonResponse<array{message: string, data: array<string, mixed>}, 202>
      */

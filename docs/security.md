@@ -243,8 +243,11 @@ the console or with `runr login --with-password`, through SSO, after a self-serv
 accepting an invitation — creates a **sign-in session**: an API token the console sends with every
 request. API tokens are the ones users create themselves (Administration → API Tokens, `runr tokens create`, the
 `runr-cli@<host>` token of `runr login --with-password`). Both are stored as SHA-256 hashes.
-**User menu → Account settings → Active Sessions** lists every token of the user — sign-in sessions and API tokens —
-with its device, address and last use.
+**User menu → Account settings → Active Sessions** lists the user's sign-in sessions that are
+still valid with their device, address and last use (a session past its expiry or its lifetime is
+not listed; the daily cleanup removes it); API tokens are listed and deleted under Administration → API Tokens
+only (before 0.6.5 the Active Sessions also listed the API tokens, and revoking all others ended
+them).
 
 - **Lifetime.** A sign-in session ends 30 days after the sign-in (`RUNR_LOGIN_TOKEN_TTL_DAYS`,
   Helm value `auth.loginTokenTtlDays`); the console then asks to sign in again. The lifetime
@@ -253,25 +256,35 @@ with its device, address and last use.
   they were created with: none, or the date given. The `runr-cli@<host>` token of
   `runr login --with-password` expires 90 days after the login unless `--token-ttl` sets another
   lifetime ([CLI](cli.md#log-in)).
-- **Signing out** (`POST /api/auth/logout`) deletes the session's token. **Revoking** a session
-  (`DELETE /api/account/sessions/{id}`) deletes that token, **revoking all others**
-  (`POST /api/account/sessions/revoke-all`) every token of the user except the current one; the
-  browsers that held them are signed out. Deleting an API token (`DELETE /api/tokens/{id}`,
-  `runr logout`) ends it. A deleted token answers 401 from then on.
+- **Signing out** (`POST /api/auth/logout`) deletes the token of the request only: the session's,
+  or an API token's that signs itself out; a request signed in with a cookie session (no stored
+  token) ends that web session. **Revoking** a session
+  (`DELETE /api/account/sessions/{id}`) deletes that sign-in session (an API token's id answers
+  404), **revoking all others** (`POST /api/account/sessions/revoke-all`) every sign-in session of
+  the user except the current one; the browsers that held them are signed out. Neither ends an API
+  token. Deleting an API token (`DELETE /api/tokens/{id}`, `runr logout`) ends it; a sign-in
+  session's id answers 404 there. A deleted token answers 401 from then on.
 - **Changing the password** (`POST /api/account/password`) ends the user's other sign-in
-  sessions; the session that changed it and the API tokens stay. **Disabling the account** ends
-  every token but the current one, which is refused from then on.
+  sessions; the session that changed it and the API tokens stay. Turning two-factor
+  authentication on or off, or an administrator resetting it, ends no token. **Disabling the
+  account** ends every token but the current one — sign-in sessions and API tokens; the browsers
+  that held them are signed out at once — and the current one is refused from then on. A frozen account ([Shared accounts](#shared-accounts))
+  revokes nothing of its own; signing out stays.
 - **Deleting a user** — the user's own account deletion (`DELETE /api/account`) or an
   administrator's (`DELETE /api/users/{id}`, in the multi-tenant edition from the platform
   administrators' user list) — deletes every sign-in session and API token of the user in the
-  transaction that deletes the account, then the user's MCP server sessions. In the multi-tenant
+  transaction that deletes the account, then the user's MCP server sessions and their in-app
+  notifications, with their read and deleted state of the shared ones. In the multi-tenant
   edition, the account's memberships go with it, and so do its copies in the organizations it
   belonged to — each organization keeps a copy of its members in its own schema — with the
-  user's groups and role assignments there. Removing a member from an organization
+  user's groups, role assignments and notifications there. Removing a member from an organization
   (`DELETE /api/tenants/{tenant}/users/{user}`) deletes the API tokens the member created in that
-  organization, which work there only; their sign-in sessions and their tokens of other
-  organizations stay. Deleting an organization deletes every API token created in it.
+  organization, which work there only, and their notifications there; their sign-in sessions and
+  their tokens of other organizations stay. The daily `notification-retention` task also removes
+  the notifications that deletions before 0.6.5 left behind
+  ([helm-values.md](helm-values.md#notifications)). Deleting an organization deletes every API token created in it.
 - API tokens cannot be named `api` or `invitation-accept`: these names mark sign-in sessions.
+  A token a user gave one of these names before 0.5.5 counts as a sign-in session.
 - **Cleanup.** `php artisan tokens:prune` (scheduled daily at 03:15) removes the sign-in sessions
   that ended, API tokens 30 days after they expired — until then the console lists an expired
   token as expired — and the tokens of users that no longer exist. In the multi-tenant edition it
@@ -405,7 +418,9 @@ secret `2x0000000000000000000000000000000AA` always fails
    cannot be decrypted): then it shows no widget and asks `POST /api/captcha/local/challenge` for
    the local check at once (5. below). The token goes with the form as `captcha_token` (the API
    also reads `cf-turnstile-response`, `turnstile_token`, `g-recaptcha-response` and
-   `h-captcha-response`).
+   `h-captcha-response`). The widget is light on the sign-in and sign-up cards (light in both
+   console themes) and follows the console's theme elsewhere (the invitation page), drawn again
+   when the theme changes.
 2. The token is bounded before it goes out: at most 2048 characters for Turnstile (its documented
    maximum; a live token measured 730), 8192 for reCAPTCHA (no documented maximum; a live v2 token
    measured 2297) and 32768 for hCaptcha (no documented maximum, its tokens carry a signed

@@ -36,7 +36,7 @@ class ImageUploadController extends Controller
 {
     public function __construct(private ImageUploadService $uploads) {}
 
-    /** GET /images/uploads — the current organization's open uploads */
+    /** List the organization's open image uploads */
     public function index(Request $request): JsonResponse
     {
         abort_unless(Gate::allows('images.upload'), 403);
@@ -50,6 +50,7 @@ class ImageUploadController extends Controller
         return response()->json(['data' => ImageUploadResource::collection($uploads)->resolve($request)]);
     }
 
+    /** Start a chunked image upload into a region's registry */
     public function store(Request $request): JsonResponse
     {
         abort_unless(Gate::allows('images.upload'), 403);
@@ -94,6 +95,7 @@ class ImageUploadController extends Controller
         return response()->json(['data' => (new ImageUploadResource($upload))->resolve($request)], 201);
     }
 
+    /** Get the status of an image upload */
     public function show(Request $request, ImageUpload $upload): JsonResponse
     {
         abort_unless(Gate::allows('images.upload'), 403);
@@ -102,7 +104,11 @@ class ImageUploadController extends Controller
         return response()->json(['data' => (new ImageUploadResource($this->uploads->refresh($upload)))->resolve($request)]);
     }
 
-    /** PUT /images/uploads/{upload}/chunk?offset=N — raw body, at most chunk_size bytes */
+    /**
+     * Upload a chunk of an image file
+     *
+     * `?offset=N`; the raw body, at most chunk_size bytes.
+     */
     public function chunk(Request $request, ImageUpload $upload): JsonResponse
     {
         abort_unless(Gate::allows('images.upload'), 403);
@@ -121,6 +127,7 @@ class ImageUploadController extends Controller
         }
     }
 
+    /** Finish an image upload and push it to the registry */
     public function complete(Request $request, ImageUpload $upload): JsonResponse
     {
         abort_unless(Gate::allows('images.upload'), 403);
@@ -140,6 +147,7 @@ class ImageUploadController extends Controller
         return response()->json(['data' => (new ImageUploadResource($upload))->resolve($request)], 202);
     }
 
+    /** Abort an image upload */
     public function destroy(ImageUpload $upload): JsonResponse
     {
         abort_unless(Gate::allows('images.upload'), 403);

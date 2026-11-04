@@ -20,12 +20,13 @@ use Illuminate\Validation\Rule;
  * Hugging Face Hub browser (server-side proxy), serving engines, the organization's Hub token
  * and its GPU quota (docs/huggingface.md).
  *
- * @tags AI · Hub
+ * @tags AI > Hub
  */
 class HubController extends Controller
 {
     public function __construct(private HubClient $hub) {}
 
+    /** List the inference engines and, per model task, its engines and defaults. */
     public function engines(): JsonResponse
     {
         abort_unless(Gate::allows('models.view'), 403);
@@ -33,6 +34,7 @@ class HubController extends Controller
         return response()->json(EngineCatalog::catalog());
     }
 
+    /** Search models on the Hugging Face Hub. */
     public function search(Request $request): JsonResponse
     {
         abort_unless(Gate::allows('models.view'), 403);
@@ -60,7 +62,11 @@ class HubController extends Controller
         }
     }
 
-    /** Model info with engine suggestions for the deploy dialog (?knative_region_id= sizes for that region's GPUs). */
+    /**
+     * Get a Hub model's details with engine suggestions for the deploy dialog.
+     *
+     * ?knative_region_id= sizes the suggestions for that region's GPUs.
+     */
     public function info(Request $request): JsonResponse
     {
         abort_unless(Gate::allows('models.view'), 403);
@@ -92,6 +98,7 @@ class HubController extends Controller
         return response()->json($info);
     }
 
+    /** Show whether the organization's Hugging Face token is set. */
     public function token(): JsonResponse
     {
         abort_unless(Gate::allows('models.view'), 403);
@@ -106,7 +113,9 @@ class HubController extends Controller
     }
 
     /**
-     * Store the token (encrypted) and update the token Secret in the organization's regions.
+     * Set the organization's Hugging Face token.
+     *
+     * Stores the token (encrypted) and updates the token Secret in the organization's regions.
      * ?validate=1 checks it with the Hub first (not on consoles without Hub access).
      */
     public function setToken(Request $request, HubToken $token): JsonResponse
@@ -138,6 +147,7 @@ class HubController extends Controller
         ]);
     }
 
+    /** Remove the organization's Hugging Face token. */
     public function deleteToken(HubToken $token): JsonResponse
     {
         abort_unless(Gate::allows('models.manage'), 403);
@@ -148,6 +158,7 @@ class HubController extends Controller
         return response()->json(['configured' => false, 'hint' => null, 'updated_at' => null]);
     }
 
+    /** Show the organization's GPU quota and usage in a region. */
     public function gpuQuota(Request $request, GpuQuota $quota): JsonResponse
     {
         abort_unless(Gate::allows('models.view'), 403);

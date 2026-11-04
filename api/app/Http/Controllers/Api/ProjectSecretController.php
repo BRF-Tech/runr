@@ -35,6 +35,7 @@ class ProjectSecretController extends Controller
      */
     private const LIST_TYPE = 'array{data: list<array{name: string, source: "region"|"external"|"openbao", version: int, updated_at: string|null, updated_by: array{id: int, name: string}|null, reference?: array{store_id: string, store_name: string|null, provider: string|null, path: string|null, key: string|null}, sync?: array{status: "pending"|"synced"|"failed", message: string|null, synced_at: string|null}, stored_in?: "region"|"openbao"|"database", fingerprint?: string|null, rollback_copy?: bool}>, can_view_values: bool, storage: "region"|"database"}';
 
+    /** List the project's secret variables without their values */
     #[OpenApiResponse(200, 'The project\'s secret variables (never their values), whether the user may read values and where new values go', type: self::LIST_TYPE)]
     public function index(Project $project): JsonResponse
     {
@@ -49,8 +50,9 @@ class ProjectSecretController extends Controller
     }
 
     /**
-     * PUT /projects/{project}/secrets/{name} — create or replace: {"value": "…"} (write-only) or
-     * {"reference": {"store_id": "…", "path": "…", "key": "…"}}.
+     * Create or replace a secret variable as a value or a store reference
+     *
+     * Body {"value": "…"} (write-only) or {"reference": {"store_id": "…", "path": "…", "key": "…"}}.
      */
     public function upsert(Request $request, Project $project, string $name): JsonResponse
     {
@@ -109,6 +111,7 @@ class ProjectSecretController extends Controller
         ], $existing ? 200 : 201)->header('Cache-Control', 'no-store');
     }
 
+    /** Delete a secret variable of the project */
     public function destroy(Project $project, string $name): JsonResponse
     {
         $project->secrets()->where('name', $name)->firstOrFail();
@@ -118,8 +121,10 @@ class ProjectSecretController extends Controller
     }
 
     /**
-     * GET /projects/{project}/secrets/{name}/value — gated by `secrets.view_values`, read from the
-     * region (503 when the region does not answer; a reference is read in its store, not here).
+     * Read a secret variable's value from the region
+     *
+     * Gated by `secrets.view_values`, read from the region (503 when the region does not answer; a
+     * reference is read in its store, not here).
      */
     public function reveal(Project $project, string $name): JsonResponse
     {
@@ -142,8 +147,9 @@ class ProjectSecretController extends Controller
     }
 
     /**
-     * POST /projects/{project}/secrets/refresh — sync the project's references now and read their
-     * status (External Secrets Operator's force-sync).
+     * Sync the project's secret references now and read their status
+     *
+     * External Secrets Operator's force-sync.
      */
     #[OpenApiResponse(200, 'The project\'s secret variables after the sync (as GET …/secrets)', type: self::LIST_TYPE)]
     #[OpenApiResponse(503, 'The region did not answer', type: 'array{message: string, reason: string}')]

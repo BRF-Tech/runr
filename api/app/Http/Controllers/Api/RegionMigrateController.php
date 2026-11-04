@@ -14,6 +14,11 @@ use Illuminate\Http\Request;
 
 class RegionMigrateController extends Controller
 {
+    /**
+     * Move the region to another cluster.
+     *
+     * Body: the new cluster's kubeconfig. The move runs in the background.
+     */
     public function startMigration(Request $request, KnativeRegion $knativeRegion): JsonResponse
     {
         $request->validate([
@@ -33,6 +38,8 @@ class RegionMigrateController extends Controller
     }
 
     /**
+     * Get the state of the region's move and what it did with each project.
+     *
      * The move's state and, while it can still be rolled back, what it did with each project of the
      * region and each environment that runs there (`environment`: its name, none for a project's
      * own workload) — RegionMigrateService::migrationReport(): moved, building, deployed,
@@ -52,6 +59,11 @@ class RegionMigrateController extends Controller
         ])->header('Cache-Control', 'no-store, private');
     }
 
+    /**
+     * Complete the region's move to the new cluster.
+     *
+     * Only in the move's DNS check phase.
+     */
     public function completeMigration(KnativeRegion $knativeRegion, RegionMigrateService $service): JsonResponse
     {
         if ($knativeRegion->migration_status !== 'dns_check') {
@@ -64,9 +76,11 @@ class RegionMigrateController extends Controller
     }
 
     /**
-     * Complete a base-domain migration without waiting for its DNS check: the new function domain
-     * becomes the region's, the old one is no longer served (DomainMigrateService). For DNS the
-     * control plane resolves differently from the clients (split-horizon DNS).
+     * Complete a base-domain migration without waiting for its DNS check.
+     *
+     * The new function domain becomes the region's, the old one is no longer served
+     * (DomainMigrateService). For DNS the control plane resolves differently from the clients
+     * (split-horizon DNS).
      */
     public function completeDomainMigration(KnativeRegion $knativeRegion, DomainMigrateService $service): JsonResponse
     {
@@ -83,6 +97,8 @@ class RegionMigrateController extends Controller
     }
 
     /**
+     * Roll the region back to its old cluster.
+     *
      * The region goes back to its old cluster, its projects are deployed there again; what the move
      * deployed for them on the cluster it leaves is removed from there in the background, and the
      * operator gets a notification with the result (RegionMigrateService::rollbackMigration()).

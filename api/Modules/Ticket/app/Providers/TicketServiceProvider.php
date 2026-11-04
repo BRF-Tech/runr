@@ -2,6 +2,7 @@
 
 namespace Modules\Ticket\Providers;
 
+use App\Http\Middleware\NormalizeApiTags;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\ServiceProvider;
 use Modules\Ticket\Console\TicketE2eCommand;
@@ -32,6 +33,9 @@ class TicketServiceProvider extends ServiceProvider
 
         Route::prefix('api')
             ->group(module_path($this->name, 'routes/api.php'));
+
+        // The API reference: every controller of the module in Support
+        NormalizeApiTags::registerTags(['Modules\\Ticket\\' => 'Support']);
 
         if ($this->app->runningInConsole()) {
             $this->commands([TicketE2eCommand::class]);

@@ -107,7 +107,7 @@
       "title": "Uploaded images",
       "description": "Container images and WebAssembly modules uploaded into region registries (docs/images.md).",
       "properties": {
-        "uploadImage": {"type": "string", "title": "Receiver image", "description": "Image of the upload receiver Job in the regions. Empty: ghcr.io/brf-tech/runr/image-upload:1.1.0."},
+        "uploadImage": {"type": "string", "title": "Receiver image", "description": "Image of the upload receiver Job in the regions. Empty: ghcr.io/brf-tech/runr/image-upload:1.1.1."},
         "quotaGb": {"type": ["string", "number"], "title": "Storage per organization (GiB)", "description": "Uploaded images over every region. Empty: 50; 0: unlimited."},
         "maxUploadGb": {"type": ["string", "number"], "title": "Largest upload (GiB)", "description": "Empty: 20."},
         "uploadTtlHours": {"type": ["string", "number"], "title": "Upload time limit (hours)", "description": "Empty: 24."}
@@ -179,7 +179,7 @@
       "title": "Organization export / import",
       "description": "Packages of an organization exported and imported again (docs/org-export.md).",
       "properties": {
-        "transferImage": {"type": "string", "title": "Transfer agent image", "description": "Image of the transfer pods in the regions (binding data, images). Empty: ghcr.io/brf-tech/runr/image-upload:1.1.0."},
+        "transferImage": {"type": "string", "title": "Transfer agent image", "description": "Image of the transfer pods in the regions (binding data, images). Empty: ghcr.io/brf-tech/runr/image-upload:1.1.1."},
         "maxPackageGb": {"type": ["string", "number"], "title": "Largest package (GiB)", "description": "Empty: 50."},
         "retentionHours": {"type": ["string", "number"], "title": "Package retention (hours)", "description": "Empty: 168."},
         "podDiskGb": {"type": ["string", "number"], "title": "Transfer pod disk (GiB)", "description": "One binding's dump or one image. Empty: 20."}
@@ -1158,6 +1158,20 @@
           "title": "Finalize the upgrade from 0.5.10",
           "default": false,
           "description": "Once the upgrade from 0.5.10 is confirmed: the bootstrap Job runs secrets:move-to-region --finalize, which drops the encrypted copies of secret values RunR keeps for a rollback and allows secret store references. RunR 0.5.10 cannot be installed again afterwards without losing secret values (docs/upgrade.md)."
+        }
+      }
+    },
+    "notifications": {
+      "type": "object",
+      "title": "In-app notifications",
+      "properties": {
+        "retentionDays": {
+          "type": ["integer", "string"],
+          "title": "Retention (days)",
+          "minimum": 0,
+          "pattern": "^[0-9]+$",
+          "default": 90,
+          "description": "Notifications older than this many days are deleted daily, read or not, in the central schema and in every organization's (RUNR_NOTIFICATION_RETENTION_DAYS). 0 keeps them; those of deleted users are removed either way."
         }
       }
     },

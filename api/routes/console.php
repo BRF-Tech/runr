@@ -18,6 +18,7 @@ use App\Jobs\LogRetentionJob;
 use App\Jobs\Metering\UsageAggregationJob;
 use App\Jobs\PruneAuditEventsJob;
 use App\Jobs\PruneMetricSnapshotsJob;
+use App\Jobs\PruneNotificationsJob;
 use App\Jobs\PruneRegistryRepositoriesJob;
 use App\Jobs\Rightsizing\RightsizingJob;
 use App\Jobs\RuntimeEolRemindersJob;
@@ -173,6 +174,13 @@ Schedule::command(PruneTokensCommand::class)
 Schedule::job(new PruneAuditEventsJob)
     ->dailyAt('03:30')
     ->name('audit-retention-prune')
+    ->withoutOverlapping(120);
+
+// Notification retention (config/notifications.php, RUNR_NOTIFICATION_RETENTION_DAYS) and the
+// notifications of deleted users (central + tenant schemas)
+Schedule::job(new PruneNotificationsJob)
+    ->dailyAt('03:45')
+    ->name('notification-retention')
     ->withoutOverlapping(120);
 
 // AI: GPU inventory of the regions, model service metering, expired model uploads (docs/ai.md)

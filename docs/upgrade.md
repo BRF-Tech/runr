@@ -87,6 +87,108 @@ edit projects, deploy or change regions in that time: the previous version canno
 migration has just encrypted, shows env vars as empty and would save that. Its region status
 checks fail in that window and the new version's next check reports the region again.
 
+## 0.6.4 → 0.6.5
+
+0.6.5 takes the dependency updates for published advisories and fixes the API reference, the
+sign-in sessions and API tokens, the transfer agent, the sign-in page and the shared notifications
+([CHANGELOG.md](../CHANGELOG.md)). It adds one database migration, `notification_user_states`,
+which the pre-upgrade migration Job runs before the new pods start, and one Helm value,
+`notifications.retentionDays` (default 90): values of 0.6.4, `--reuse-values` included, keep
+working and render it as 90. Upgrade with the [Procedure](#procedure).
+
+- The migration `notification_user_states` (central `2026_11_04_100001`, and with multi-tenancy
+  the tenant migration `0110` in every organization's schema) holds each member's read and deleted
+  state of the shared notifications, the ones without a user such as resource thresholds. It is
+  additive only: one table with its indexes and a foreign key to `notifications`; no existing row
+  changes. It is safe while 0.6.4 still serves requests: 0.6.4 never reads the table, and on
+  PostgreSQL creating the foreign key briefly holds back writes to `notifications`, not reads. A
+  shared notification that someone marked read or deleted before the upgrade, or on a 0.6.4 pod
+  during the rollout, stays read or deleted for everyone. From 0.6.5, a member's mark read, Mark
+  all as read, delete and Delete all apply to that member only; the list, the unread badge and
+  `GET /api/notifications/unread-count` are per member. A user's own notifications keep their
+  state as before.
+- 0.6.5 adds the daily task `notification-retention` (03:45). Its first run after the upgrade
+  deletes every in-app notification older than 90 days, read or not, with the members' read state,
+  and the notifications of accounts deleted earlier. To keep them longer, set
+  `notifications.retentionDays` (`RUNR_NOTIFICATION_RETENTION_DAYS`) before upgrading; `0` keeps
+  them. The task runs in the central schema and, with multi-tenancy, in every organization's schema
+  ([notifications](helm-values.md#notifications)). Deleting an account now removes its notifications
+  and their read and deleted state, centrally and in every organization; removing a member from an
+  organization removes their notifications in that organization only.
+- Regions that pull through a mirror of their own need `ghcr.io/brf-tech/runr/image-upload:1.1.1`
+  there before the upgrade, next to the agent and queue-consumer images of 0.6.5. The upload
+  receiver and the transfer agent of the uploads and organization transfers started after the
+  upgrade use it (image-upload 1.1.1: a failed pull keeps its reason, a pull its result); nothing
+  that runs is changed. An installation that sets `images.uploadImage` or
+  `orgTransfer.transferImage` keeps the image named there: point it at 1.1.1 for the fix
+  ([images](helm-values.md#images), [orgTransfer](helm-values.md#orgtransfer)).
+- Active Sessions and "Revoke All Other Sessions" cover sign-in sessions only: revoking the other
+  sessions keeps the user's API tokens (CI, CLI, MCP clients), which it ended before. `GET
+  /api/account/sessions` lists sign-in sessions only and leaves out those that ended; `DELETE
+  /api/account/sessions/{id}` answers 404 for an API token's id, and `DELETE /api/tokens/{id}`
+  for a sign-in session's id. Disabling the account now signs the other browsers out at once
+  ([Sign-in sessions and API tokens](security.md#sign-in-sessions-and-api-tokens)).
+- Every user may list and revoke their own API tokens and connected MCP clients (`GET` / `DELETE
+  /api/tokens`, `GET` / `DELETE /api/mcp/clients`: route rule `@own:tokens.manage`), so
+  Administration → API Tokens is in everyone's menu; creating a token or connecting an MCP client
+  still needs `tokens.manage`, which now reads "Create API tokens". An API token limited to some
+  permissions must still carry `tokens.manage` to list or delete the user's other tokens. In an
+  organization of the multi-tenant edition, a member without `tokens.manage` lists their own
+  tokens only ([Organization](permissions.md#organization)). `GET /api/tokens` adds `mcp_client`
+  for each token; nothing is removed.
+- `GET /api/branding` adds `features.auth_providers` (the AuthProvider module is on); nothing is
+  removed. The sign-in page asks for SSO providers (`GET /api/auth-providers/discover`) only when
+  the console has the module's screens and the API reports it on
+  ([UI build flags](modules.md#ui-build-flags)).
+- The API reference opens again. `/api/docs.json` and the page `/api/docs` serve an OpenAPI
+  document the API image builds (`php artisan runr:api-docs`), instead of generating it on each
+  request, which ended in a 500 at the 30 s limit or never loaded; `/api/docs.json` carries an ETag
+  and `Cache-Control: public, max-age=300`. The page loads the Scalar viewer, which the image now
+  carries. The document lists the endpoints of every module, also of those the installation has
+  turned off (their routes answer only where the module is on), and names its server relative to
+  the host (`servers`: `/api`): a client generated from it takes the installation's address as
+  its base. Its 677 operations are in 54 groups, one group each (such as "AI > GPU", "Regions >
+  Install", "Tenants"), each with a one-line summary and an operationId of its own; the operations
+  that need no sign-in (webhooks, Git callbacks, invitations, the public status and developer
+  pages) no longer show a required token. The image build fails when an operation lacks one of
+  these (`php artisan runr:api-docs --check`).
+- Six operationIds changed; an SDK generated from the document names its methods after them:
+
+  | Operation | Before | Now |
+  | --- | --- | --- |
+  | `GET /projects/{project}/workflow-runs` | `workflows.workflowRun.index_0` | `workflowRun.index` |
+  | `GET /projects/{project}/workflows/{workflow}/runs` | `workflows.workflowRun.index_0` | `workflowRun.indexForWorkflow` |
+  | `GET /projects/{project}/workflows/app` | `workflows.workflow` | `workflow.app` |
+  | `POST /model-services/{service}/invoke` | `ai.modelService` | `modelService.invoke` |
+  | `GET /billing/settings` | `settings.show` | `billingSettings.show` |
+  | `PUT /billing/settings` | `modules.billing.settings.update` | `billingSettings.update` |
+
+  The two run lists shared one operationId before, which OpenAPI does not allow. Routes and
+  behaviour are unchanged.
+- The UI image sends its files pre-compressed: the build puts a Brotli and a gzip copy next to
+  every text file above 1 KiB, and Caddy sends them as they are (`file_server { precompressed br
+  gzip }`); what has no copy (small files, `branding-defaults.js`) is still compressed on the fly,
+  now gzip first, and a client that takes only zstd gets it on the fly as before. Cache-Control and
+  the other headers are unchanged. Both UI images (`ui`, `ui-mt`) are built this way and are larger
+  for the copies: 150 MB for linux/amd64, against 124 MB for `ui:0.6.4`.
+- The UI image builds on `ghcr.io/brf-tech/runr/reqs/node:22-alpine` (vue-i18n 11 requires
+  Node.js 22), its build stage on the build host's platform: a UI image built from source with
+  `vue/Dockerfile` ([UI build flags](modules.md#ui-build-flags)) pulls it.
+- `compose/build.sh` builds the API image with its OpenAPI document (the image's last stage, no
+  longer `--target base`); the build machine downloads the Scalar viewer from jsDelivr, checked
+  against its SHA-256 ([development.md](development.md#useful-commands)).
+- The region agent and the queue consumer move to 0.6.5 (the Job
+  `runr-region-reconcile-<revision>` after `helm upgrade`); gateway-auth, supply-chain and the Spin
+  shim keep their versions.
+
+A rollback to 0.6.4 is a plain `helm rollback`: there is no migration to undo; the
+`notification_user_states` table stays and 0.6.4 ignores it (shared notifications show the one
+state they keep in `notifications`). The region Job of the 0.6.4
+chart moves the region images back to 0.6.4, and uploads and transfers started after the rollback
+use image-upload 1.1.0 again. 0.6.4 lists API tokens under Active Sessions again, and its "Revoke
+All Other Sessions" ends them. Notifications that the retention task or an account deletion removed
+stay removed; 0.6.4 does not use `notifications.retentionDays`.
+
 ## 0.6.3 → 0.6.4
 
 0.6.4 brings bot protection on the anonymous forms and a Helm fix for secret values

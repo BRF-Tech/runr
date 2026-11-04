@@ -24,6 +24,7 @@ class ProjectAccessController extends Controller
         private readonly AccessManager $access,
     ) {}
 
+    /** List the roles users and groups hold on the project */
     public function index(Request $request, Project $project): JsonResponse
     {
         $members = $this->rbac->organization()->members()->keyBy(fn ($m) => (string) $m->id);
@@ -51,6 +52,7 @@ class ProjectAccessController extends Controller
         ]);
     }
 
+    /** Give a user or group a role on the project */
     public function store(Request $request, Project $project): JsonResponse
     {
         $data = $request->validate([
@@ -71,6 +73,7 @@ class ProjectAccessController extends Controller
         ]], 201);
     }
 
+    /** Revoke a user's or group's role on the project */
     public function destroy(Request $request, Project $project, string $assignment): JsonResponse
     {
         $grant = RoleAssignment::query()->where('project_id', $project->id)->findOrFail($assignment);

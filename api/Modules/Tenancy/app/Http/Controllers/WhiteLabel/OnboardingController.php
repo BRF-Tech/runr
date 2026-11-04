@@ -20,6 +20,7 @@ class OnboardingController extends Controller
 
     public function __construct(private readonly SelfServiceOnboarding $onboarding) {}
 
+    /** Get the organization's onboarding status and options */
     public function show(Request $request): JsonResponse
     {
         $tenant = $request->attributes->get('tenant');
@@ -32,6 +33,7 @@ class OnboardingController extends Controller
         return response()->json($this->onboarding->payload($tenant, $request->user()));
     }
 
+    /** Complete the organization's onboarding */
     public function complete(Request $request): JsonResponse
     {
         $tenant = $this->tenantOf($request);

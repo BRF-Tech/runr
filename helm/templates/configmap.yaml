@@ -91,6 +91,10 @@ data:
   {{- $audit := .Values.audit | default dict }}
   AUDIT_RETENTION_DAYS: {{ if hasKey $audit "retentionDays" }}{{ int $audit.retentionDays | toString | quote }}{{ else }}"365"{{ end }}
   AUDIT_FORWARD_ENABLED: {{ ternary "true" "false" (eq (toString $audit.siemForwarding) "true") | quote }}
+  # In-app notification retention in days, 0 = keep forever (values notifications.retentionDays,
+  # api config/notifications.php). `--reuse-values` with older values has no notifications key → default.
+  {{- $notifications := .Values.notifications | default dict }}
+  RUNR_NOTIFICATION_RETENTION_DAYS: {{ if hasKey $notifications "retentionDays" }}{{ int $notifications.retentionDays | toString | quote }}{{ else }}"90"{{ end }}
 
   # Sign-in session lifetime in days, 0 = until signed out (values auth.loginTokenTtlDays, api
   # config/auth.php). `--reuse-values` with older values has no auth key → default.

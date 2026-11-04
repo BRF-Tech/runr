@@ -32,6 +32,7 @@ class ProjectController extends Controller
         private GatewayService $gatewayService,
     ) {}
 
+    /** List the projects the signed-in user can see */
     public function index(Request $request): AnonymousResourceCollection
     {
         $query = Project::with([
@@ -72,6 +73,7 @@ class ProjectController extends Controller
         return ProjectResource::collection($query->orderByDesc('created_at')->get());
     }
 
+    /** Create a project */
     public function store(StoreProjectRequest $request): JsonResponse
     {
         $validated = $request->validated();
@@ -131,6 +133,7 @@ class ProjectController extends Controller
         return response()->json($payload, 201);
     }
 
+    /** Get a project */
     public function show(Project $project): ProjectResource
     {
         $project->load([
@@ -143,6 +146,7 @@ class ProjectController extends Controller
         return new ProjectResource($project);
     }
 
+    /** Update a project */
     public function update(UpdateProjectRequest $request, Project $project): ProjectResource
     {
         $data = $request->validated();
@@ -265,6 +269,7 @@ class ProjectController extends Controller
         return is_array($secretEnv) ? $secretEnv : [];
     }
 
+    /** Delete a project */
     public function destroy(Project $project): JsonResponse
     {
         $projectId = $project->id;

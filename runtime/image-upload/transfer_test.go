@@ -11,6 +11,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"testing"
@@ -102,6 +103,15 @@ func writeFile(t *testing.T, path, content string) {
 	}
 }
 
+// putMarker writes a marker with content the way a tool must: in one step (a tool script writes
+// /work/.result, then mv's it onto .done).
+func putMarker(t *testing.T, path, content string) {
+	t.Helper()
+	if err := writeMarker(path, []byte(content)); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestSendServesTheToolsFilesOnceDone(t *testing.T) {
 	cfg := transferTestConfig(t, ModeSend)
 	a, c := startAgent(t, cfg, nil)
@@ -116,7 +126,7 @@ func TestSendServesTheToolsFilesOnceDone(t *testing.T) {
 	writeFile(t, filepath.Join(cfg.Dir, "out", "data.dump"), "0123456789")
 	writeFile(t, filepath.Join(cfg.Dir, "out", ".partial"), "not served")
 	writeFile(t, filepath.Join(cfg.Dir, "secret"), "outside out/")
-	writeFile(t, filepath.Join(cfg.Dir, markerDone), `{"rows": 3}`)
+	putMarker(t, filepath.Join(cfg.Dir, markerDone), `{"rows": 3}`)
 
 	st := waitTransferState(t, a, TransferDone)
 	if len(st.Files) != 1 || st.Files[0].Name != "data.dump" || st.Files[0].Size != 10 || st.Files[0].SHA256 != sha([]byte("0123456789")) || st.Files[0].Received != 10 {
@@ -217,6 +227,113 @@ func TestSendReportsAFailedPull(t *testing.T) {
 	}
 }
 
+// A tool script's fail() writes .failed with a shell redirection: the file exists, still empty,
+// before the reason is in it. The watcher looks again instead of reporting a failure without a
+// reason (the agent itself never leaves a marker half written: writeMarker).
+func TestAnEmptyFailedMarkerWaitsOneLookForItsReason(t *testing.T) {
+	cfg := transferTestConfig(t, ModeSend)
+	a, err := NewAgent(cfg, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer a.Close()
+	failed := filepath.Join(cfg.Dir, markerFailed)
+
+	writeFile(t, failed, "")
+	if a.check() {
+		t.Fatalf("an empty .failed ended the transfer: %+v", a.Status())
+	}
+	if st := a.Status(); st.State != TransferWorking {
+		t.Fatalf("state %s (%s)", st.State, st.Message)
+	}
+
+	writeFile(t, failed, "pg_dump: connection refused\n")
+	if !a.check() {
+		t.Fatal("the reason in .failed did not end the transfer")
+	}
+	if st := a.Status(); st.State != TransferFailed || st.Message != "pg_dump: connection refused" {
+		t.Fatalf("status %+v", st)
+	}
+}
+
+func TestAFailedMarkerThatStaysEmptyStillEndsTheTransfer(t *testing.T) {
+	cfg := transferTestConfig(t, ModeSend)
+	a, err := NewAgent(cfg, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer a.Close()
+
+	writeFile(t, filepath.Join(cfg.Dir, markerFailed), " \n")
+	if a.check() {
+		t.Fatal("the first look at an empty .failed ended the transfer")
+	}
+	if !a.check() {
+		t.Fatal("a .failed still empty at the next look did not end the transfer")
+	}
+	if st := a.Status(); st.State != TransferFailed || st.Message != "the transfer tool failed without saying why" {
+		t.Fatalf("status %+v", st)
+	}
+}
+
+// A poller never finds one of the agent's markers present but not yet written; nothing but the
+// marker is left behind.
+func TestWriteMarkerNeverShowsAHalfWrittenMarker(t *testing.T) {
+	dir := t.TempDir()
+	const n = 300
+	content := []byte("reading registry.test/runr-builds/api:v3: MANIFEST_UNKNOWN")
+
+	var writeErr error
+	written := make(chan struct{})
+	go func() {
+		defer close(written)
+		for i := range n {
+			if writeErr = writeMarker(filepath.Join(dir, ".failed-"+itoa(i)), content); writeErr != nil {
+				return
+			}
+		}
+	}()
+
+	for i := range n {
+		path := filepath.Join(dir, ".failed-"+itoa(i))
+		for {
+			b, err := os.ReadFile(path)
+			if err == nil {
+				if string(b) != string(content) {
+					t.Fatalf("%s read as %q", filepath.Base(path), b)
+				}
+				break
+			}
+			if !errors.Is(err, os.ErrNotExist) {
+				t.Fatal(err)
+			}
+			select {
+			case <-written:
+				if writeErr != nil {
+					t.Fatal(writeErr)
+				}
+			default:
+			}
+		}
+	}
+	<-written
+
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != n {
+		t.Fatalf("%d entries for %d markers (temporary files left behind)", len(entries), n)
+	}
+	info, err := os.Stat(filepath.Join(dir, ".failed-0"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if runtime.GOOS != "windows" && info.Mode().Perm() != 0o644 {
+		t.Fatalf("mode %v: the tool container, another user, must read the marker", info.Mode().Perm())
+	}
+}
+
 func TestReceiveResumesVerifiesAndHandsTheFilesToTheTool(t *testing.T) {
 	data := []byte("abcdefghij")
 	cfg := transferTestConfig(t, ModeReceive,
@@ -279,7 +396,7 @@ func TestReceiveResumesVerifiesAndHandsTheFilesToTheTool(t *testing.T) {
 		t.Fatalf("chunk after ready: %d", code)
 	}
 
-	writeFile(t, filepath.Join(cfg.Dir, markerDone), `{"restored": 2}`)
+	putMarker(t, filepath.Join(cfg.Dir, markerDone), `{"restored": 2}`)
 	st = waitTransferState(t, a, TransferDone)
 	if string(st.Result) != `{"restored": 2}` {
 		t.Fatalf("result %s", st.Result)

@@ -20,6 +20,7 @@ class AdminSupportTicketController extends Controller
 {
     use HandlesTicketAttachments;
 
+    /** List support tickets for the support team. */
     public function index(Request $request): JsonResponse
     {
         $tickets = SupportTicket::with(['user:id,name,email', 'assignee:id,name,email'])
@@ -33,6 +34,7 @@ class AdminSupportTicketController extends Controller
         return response()->json($tickets);
     }
 
+    /** Get a support ticket with its replies and internal notes. */
     public function show(int $id): JsonResponse
     {
         $ticket = SupportTicket::findOrFail($id);
@@ -42,6 +44,7 @@ class AdminSupportTicketController extends Controller
         );
     }
 
+    /** Change a support ticket's status and notify its author. */
     public function updateStatus(Request $request, int $id): JsonResponse
     {
         $ticket = SupportTicket::findOrFail($id);
@@ -65,6 +68,7 @@ class AdminSupportTicketController extends Controller
         return response()->json($ticket);
     }
 
+    /** Reply to a support ticket or add an internal note. */
     public function reply(Request $request, int $id): JsonResponse
     {
         $ticket = SupportTicket::findOrFail($id);
@@ -96,6 +100,7 @@ class AdminSupportTicketController extends Controller
         return response()->json($reply, 201);
     }
 
+    /** Assign a support ticket to a member of the support team. */
     public function assign(Request $request, int $id): JsonResponse
     {
         $ticket = SupportTicket::findOrFail($id);
@@ -111,6 +116,7 @@ class AdminSupportTicketController extends Controller
         );
     }
 
+    /** Set a support ticket's tags. */
     public function updateTags(Request $request, int $id): JsonResponse
     {
         $ticket = SupportTicket::findOrFail($id);
@@ -126,18 +132,25 @@ class AdminSupportTicketController extends Controller
         return response()->json($ticket);
     }
 
+    /** Download an attachment of a support ticket. */
     public function downloadAttachment(Request $request, int $id, string $filename): StreamedResponse
     {
         // Staff see internal notes: their files too
         return $this->serveAttachment(SupportTicket::findOrFail($id), $filename, includeInternal: true);
     }
 
-    /** Assignee choices: the members who work the support queue (tickets.manage). */
+    /**
+     * List the support team members a ticket can be assigned to
+     *
+     * Assignee choices: the members who work the support queue (tickets.manage), and the platform
+     * administrators where users have is_admin.
+     */
     public function staff(): JsonResponse
     {
         return response()->json(['data' => TicketStaff::present(TicketStaff::users())]);
     }
 
+    /** Count support tickets by status for the support team. */
     public function stats(): JsonResponse
     {
         return response()->json([
@@ -148,6 +161,7 @@ class AdminSupportTicketController extends Controller
         ]);
     }
 
+    /** Mark a support ticket as read by the support team. */
     public function adminMarkRead(Request $request, int $id): JsonResponse
     {
         $ticket = SupportTicket::findOrFail($id);

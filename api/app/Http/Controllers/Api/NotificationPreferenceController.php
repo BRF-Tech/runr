@@ -16,6 +16,7 @@ class NotificationPreferenceController extends Controller
 
     private const CHANNELS = ['in_app', 'email'];
 
+    /** List the caller's notification preferences per type and channel */
     public function index(Request $request): JsonResponse
     {
         $existing = $request->user()
@@ -35,6 +36,7 @@ class NotificationPreferenceController extends Controller
         return response()->json(['preferences' => $preferences]);
     }
 
+    /** Change the caller's notification preferences */
     public function update(Request $request): JsonResponse
     {
         $request->validate([

@@ -26,6 +26,7 @@ class EventController extends Controller
         private readonly BillingSettings $settings,
     ) {}
 
+    /** List the organization's billing events */
     public function index(Request $request): JsonResponse
     {
         $request->validate([
@@ -58,6 +59,7 @@ class EventController extends Controller
         ]);
     }
 
+    /** Deliver a billing event to the webhook again */
     public function redeliver(string $event): JsonResponse
     {
         $this->assertWebhook();
@@ -67,6 +69,7 @@ class EventController extends Controller
         return response()->json(['data' => $model->fresh()?->toApiArray()]);
     }
 
+    /** Send a test event to the billing webhook */
     public function test(): JsonResponse
     {
         $this->assertWebhook();

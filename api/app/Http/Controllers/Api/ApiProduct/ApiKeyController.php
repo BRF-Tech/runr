@@ -35,6 +35,7 @@ class ApiKeyController extends Controller
         private readonly ApiProductAccess $access,
     ) {}
 
+    /** List a consumer's API keys */
     #[OpenApiResponse(200, 'The consumer\'s keys, newest first, without their secrets', type: 'array{data: list<ApiKeyResource>}')]
     public function index(ApiConsumer $apiConsumer): JsonResponse
     {
@@ -46,6 +47,8 @@ class ApiKeyController extends Controller
     }
 
     /**
+     * Create an API key for a consumer
+     *
      * scopes: [{route_id, methods}] (null: every route the consumer may call); plan_id overrides the
      * consumer's plan for this key; expires_at in the future.
      */
@@ -71,6 +74,7 @@ class ApiKeyController extends Controller
         return $response;
     }
 
+    /** Change an API key's name, scopes, plan or expiry */
     #[BodyParameter('name', type: 'string')]
     #[BodyParameter('scopes', 'The routes (and methods, default all) the key may call; null: every route the consumer may call', type: self::SCOPES_TYPE)]
     #[BodyParameter('plan_id', 'A plan for this key instead of the consumer\'s', type: 'string|null')]
@@ -98,6 +102,8 @@ class ApiKeyController extends Controller
     }
 
     /**
+     * Rotate an API key
+     *
      * A new key with the same scopes, plan and expiry; the old one keeps working for
      * overlap_minutes (default 1440, 0 = revoked now) so callers switch without an outage.
      */
@@ -120,7 +126,11 @@ class ApiKeyController extends Controller
         return $response;
     }
 
-    /** The key stops working within the region's sync interval (seconds). */
+    /**
+     * Revoke an API key
+     *
+     * The key stops working within the region's sync interval (seconds).
+     */
     #[OpenApiResponse(200, 'The revoked key', type: 'array{data: ApiKeyResource}')]
     public function revoke(Request $request, ApiKey $apiKey): JsonResponse
     {

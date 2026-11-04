@@ -12,6 +12,7 @@ use Illuminate\Http\Request;
 
 class UserController extends Controller
 {
+    /** Create a user, optionally with an organization role */
     public function store(Request $request): JsonResponse
     {
         $data = $request->validate([
@@ -44,6 +45,7 @@ class UserController extends Controller
         return response()->json(['user' => $this->formatUser($user, $org->memberRole($user->id))], 201);
     }
 
+    /** List users, optionally filtered by name or e-mail address */
     public function index(Request $request): JsonResponse
     {
         $query = User::orderBy('name');
@@ -62,6 +64,7 @@ class UserController extends Controller
         ]);
     }
 
+    /** Change a user's name or e-mail address */
     public function update(Request $request, string $userId): JsonResponse
     {
         $user = User::findOrFail($userId);
@@ -75,6 +78,7 @@ class UserController extends Controller
         return response()->json(['message' => __('api.user.updated')]);
     }
 
+    /** Delete a user with their sessions and API tokens */
     public function destroy(string $userId): JsonResponse
     {
         $user = User::findOrFail($userId);
@@ -98,6 +102,12 @@ class UserController extends Controller
         UserTokens::deleteUser($user);
     }
 
+    /**
+     * Reset a user's two-factor authentication
+     *
+     * For a member the caller may manage; 422 when the user has no two-factor authentication. The
+     * Tenancy module serves this route for platform administrators instead.
+     */
     public function reset2FA(string $userId): JsonResponse
     {
         $user = User::findOrFail($userId);

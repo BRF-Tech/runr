@@ -27,7 +27,11 @@ class ProjectDomainController extends Controller
 {
     public function __construct(private readonly ProjectDomainService $service) {}
 
-    /** Domains of the project's own workload, or of one environment with ?environment= (docs/environments.md#domains). */
+    /**
+     * List the project's custom domains
+     *
+     * Domains of the project's own workload, or of one environment with ?environment= (docs/environments.md#domains).
+     */
     public function index(Request $request, Project $project): JsonResponse
     {
         $target = DeployTarget::environment($project, EnvironmentResolver::resolve($project, $request->query('environment')));
@@ -40,6 +44,7 @@ class ProjectDomainController extends Controller
         ]);
     }
 
+    /** Add a custom domain to the project */
     public function store(StoreProjectDomainRequest $request, Project $project): JsonResponse
     {
         // environment: the domain routes to that environment's workload
@@ -53,6 +58,7 @@ class ProjectDomainController extends Controller
         return response()->json(['data' => (new ProjectDomainResource($domain))->resolve()], 201);
     }
 
+    /** Verify a custom domain and activate its routing */
     public function verify(Project $project, ProjectDomain $domain): JsonResponse
     {
         $domain->setRelation('project', $this->targetOf($project, $domain));
@@ -70,6 +76,7 @@ class ProjectDomainController extends Controller
         ], 422);
     }
 
+    /** Set the TLS mode and certificate of a custom domain */
     public function updateTls(UpdateProjectDomainTlsRequest $request, Project $project, ProjectDomain $domain): JsonResponse
     {
         $domain->setRelation('project', $this->targetOf($project, $domain));
@@ -85,6 +92,7 @@ class ProjectDomainController extends Controller
         return response()->json(['message' => __('api.domain.tls_updated'), 'data' => $data]);
     }
 
+    /** Remove a custom domain from the project */
     public function destroy(Project $project, ProjectDomain $domain): JsonResponse
     {
         $domain->setRelation('project', $this->targetOf($project, $domain));
@@ -111,6 +119,8 @@ class ProjectDomainController extends Controller
     }
 
     /**
+     * Download the region CA certificate of the project's custom domains
+     *
      * The CA certificate (PEM) of the project's region, when its custom-domain certificates come
      * from the region CA: what clients trust to accept them. Never the key. ?environment= (a name
      * or id): the CA of the region that environment runs in (docs/environments.md#domains).

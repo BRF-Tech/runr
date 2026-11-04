@@ -2,7 +2,6 @@
 
 namespace App\Providers;
 
-use App\Http\Middleware\GroupApiSchemas;
 use App\Http\Middleware\NormalizeApiTags;
 use App\Models\ContainerConfig;
 use App\Models\Deployment;
@@ -19,13 +18,17 @@ use App\Models\XaasConfig;
 use App\Observers\CacheInvalidationObserver;
 use App\Services\GitDeploy\GitTables;
 use App\Services\Projects\QueuedDeploys;
+use App\Support\ApiDocument;
 use App\Support\ApiRateLimits;
 use App\Support\Auth\LoginTokens;
 use Dedoc\Scramble\Scramble;
 use Dedoc\Scramble\Support\Generator\OpenApi;
 use Dedoc\Scramble\Support\Generator\SecurityScheme;
+use Dedoc\Scramble\Support\RouteInfo;
+use Illuminate\Http\Request;
 use Illuminate\Routing\Route;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Route as RouteFacade;
 use Illuminate\Support\ServiceProvider;
 use Laravel\Sanctum\PersonalAccessToken;
 use Laravel\Sanctum\Sanctum;
@@ -61,11 +64,21 @@ class AppServiceProvider extends ServiceProvider
                     && ! str_starts_with($route->uri, 'api/internal/')
             );
 
-            Scramble::registerUiRoute('api/docs')
+            // The API reference and its OpenAPI document. Not Scramble::registerUiRoute /
+            // registerJsonSpecificationRoute: both generate the document on every request, longer
+            // than a request may run. The document is built with the API image (App\Support\ApiDocument);
+            // the reference page (resources/views/vendor/scramble/docs.blade.php) reads it from
+            // /api/docs.json.
+            RouteFacade::get('api/docs', fn () => view('scramble::docs', [
+                'config' => Scramble::getGeneratorConfig(Scramble::DEFAULT_API),
+            ]))->middleware(['api']);
+
+            RouteFacade::get('api/docs.json', fn (Request $request) => ApiDocument::respond($request))
                 ->middleware(['api']);
 
-            Scramble::registerJsonSpecificationRoute('api/docs.json')
-                ->middleware(['api', GroupApiSchemas::class]);
+            // One group per operation (NormalizeApiTags::GROUPS): the controller's @tags line, else
+            // its namespace or class name through the group map
+            Scramble::resolveTagsUsing(fn (RouteInfo $routeInfo) => NormalizeApiTags::forRoute($routeInfo));
 
             Scramble::afterOpenApiGenerated(function (
                 OpenApi $openApi

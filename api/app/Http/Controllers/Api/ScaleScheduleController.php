@@ -38,6 +38,8 @@ class ScaleScheduleController extends Controller
     public const ESTIMATE_DAYS = 30;
 
     /**
+     * Preview a timed warmer schedule before it is saved
+     *
      * A timed warmer schedule before it is saved: the current week, the value now and the estimate
      * of the next 30 days (a pay-as-you-go region only).
      */

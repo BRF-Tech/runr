@@ -140,6 +140,17 @@ jobs:
       - name: Larastan
         if: ${{ !cancelled() && steps.composer.outcome == 'success' }}
         run: vendor/bin/phpstan analyse --memory-limit=1G --no-progress
+      # The API reference as the image builds it, every module enabled (api/docker/api-docs.sh, the
+      # api-docs stage of api/Dockerfile.prod): every operation, the modules' too, has a one-line
+      # summary, an operationId of its own and one group (ApiDocument::problems). Then ApiDocsTest
+      # again with the modules on (the PHPUnit step runs it without them). The last step: it enables
+      # the modules in this checkout
+      - name: API reference (every module, as the image builds it)
+        if: ${{ !cancelled() && steps.composer.outcome == 'success' }}
+        run: |
+          sh docker/api-docs.sh "$RUNNER_TEMP/openapi.json" --check
+          TENANCY_ENABLED=true AUTH_PROVIDER_ENABLED=true TICKET_ENABLED=true BILLING_ENABLED=true \
+            vendor/bin/phpunit --no-coverage tests/Feature/ApiDocsTest.php
 
   ui:
     name: UI lint + unit tests + build

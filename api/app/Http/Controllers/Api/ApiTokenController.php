@@ -14,22 +14,25 @@ use Illuminate\Validation\Rule;
 /**
  * Personal API tokens. A token carries '*' (everything its owner may do) or a list of
  * permissions; either way it never exceeds what the owner may do at the time it is used.
- * Sign-in sessions (LoginTokens) are tokens too; they are listed under the account's sessions.
+ * Sign-in sessions (LoginTokens) are tokens too; the account's session routes list and revoke
+ * them, these routes never do.
  */
 class ApiTokenController extends Controller
 {
+    /** List the signed-in user's API tokens */
     public function index(Request $request): JsonResponse
     {
         $currentTokenId = $request->user()->currentAccessToken()?->id;
 
-        $tokens = $request->user()->tokens()
-            ->whereNotIn('name', LoginTokens::NAMES)
+        $tokens = LoginTokens::apiTokensOf($request->user())
             ->when($currentTokenId, fn ($q) => $q->where('id', '!=', $currentTokenId))
             ->orderByDesc('created_at')
             ->get()
             ->map(fn ($token) => [
                 'id' => $token->id,
                 'name' => $token->name,
+                // A token an MCP client holds (connected through OAuth): labelled in the list
+                'mcp_client' => $token->getAttribute('oauth_client_id') !== null,
                 'abilities' => $token->abilities,
                 'last_used_at' => $token->last_used_at?->toISOString(),
                 'expires_at' => $token->expires_at?->toISOString(),
@@ -42,6 +45,7 @@ class ApiTokenController extends Controller
         ]);
     }
 
+    /** Create an API token for the signed-in user */
     public function store(Request $request): JsonResponse
     {
         [$name, $abilities, $expiresAt] = $this->validatedToken($request);
@@ -53,6 +57,7 @@ class ApiTokenController extends Controller
             'token' => [
                 'id' => $token->accessToken->id,
                 'name' => $token->accessToken->name,
+                'mcp_client' => false,
                 'abilities' => $token->accessToken->abilities,
                 'expires_at' => $token->accessToken->expires_at?->toISOString(),
                 'created_at' => $token->accessToken->created_at?->toISOString(),
@@ -60,9 +65,15 @@ class ApiTokenController extends Controller
         ], 201);
     }
 
+    /**
+     * Delete one of the signed-in user's API tokens
+     *
+     * 404 for a sign-in session: the account's sessions are revoked there, which also signs out
+     * the browser that held one.
+     */
     public function destroy(Request $request, string $tokenId): JsonResponse
     {
-        $deleted = $request->user()->tokens()->where('id', $tokenId)->delete();
+        $deleted = LoginTokens::apiTokensOf($request->user())->whereKey($tokenId)->delete();
 
         if (! $deleted) {
             return response()->json(['message' => __('api.token.not_found')], 404);

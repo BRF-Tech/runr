@@ -26,7 +26,11 @@ class UptimeCheckController extends Controller
 {
     public function __construct(private UptimeService $uptime, private OutboundUrlGuard $guard) {}
 
-    /** GET /api/projects/{project}/uptime-checks — with uptime 24 h / 7 d / 30 d */
+    /**
+     * List the project's uptime checks with their uptime.
+     *
+     * With uptime 24 h / 7 d / 30 d.
+     */
     public function index(Project $project): JsonResponse
     {
         $checks = UptimeCheck::query()->where('project_id', $project->getKey())->orderBy('name')->get();
@@ -39,7 +43,7 @@ class UptimeCheckController extends Controller
         ])->all()]);
     }
 
-    /** POST /api/projects/{project}/uptime-checks */
+    /** Create an uptime check for the project. */
     public function store(Request $request, Project $project): JsonResponse
     {
         $max = (int) config('observability.uptime.max_checks_per_project', 20);
@@ -57,7 +61,7 @@ class UptimeCheckController extends Controller
         return response()->json(['data' => $check->toApi()], 201);
     }
 
-    /** PUT /api/projects/{project}/uptime-checks/{check} */
+    /** Update an uptime check. */
     public function update(Request $request, Project $project, string $check): JsonResponse
     {
         $model = $this->find($project, $check);
@@ -74,7 +78,7 @@ class UptimeCheckController extends Controller
         return response()->json(['data' => $model->toApi()]);
     }
 
-    /** DELETE /api/projects/{project}/uptime-checks/{check} — with results and incidents. */
+    /** Delete an uptime check with its results and incidents. */
     public function destroy(Request $request, Project $project, string $check): Response
     {
         $model = $this->find($project, $check);
@@ -86,8 +90,9 @@ class UptimeCheckController extends Controller
     }
 
     /**
-     * GET /api/projects/{project}/uptime-checks/{check}/results — recent results (?hours=24,
-     * ?location=), uptime and daily bars of the last 30 days.
+     * Get an uptime check's recent results, uptime and incidents.
+     *
+     * Recent results (?hours=24, ?location=), uptime and daily bars of the last 30 days.
      */
     public function results(Request $request, Project $project, string $check): JsonResponse
     {
@@ -121,7 +126,7 @@ class UptimeCheckController extends Controller
         ]]);
     }
 
-    /** POST /api/projects/{project}/uptime-checks/{check}/run — probe now from the control plane. */
+    /** Run an uptime check now from the control plane. */
     public function run(Project $project, string $check): JsonResponse
     {
         $model = $this->find($project, $check);
@@ -152,7 +157,7 @@ class UptimeCheckController extends Controller
         return response()->json(['data' => ['ok' => $ok, 'status_code' => $status, 'response_ms' => $ms, 'error' => $error, 'check' => $model->refresh()->toApi()]]);
     }
 
-    /** GET /api/projects/{project}/uptime-incidents */
+    /** List the project's uptime incidents. */
     public function incidents(Project $project): JsonResponse
     {
         $incidents = UptimeIncident::query()->where('project_id', $project->getKey())->orderByDesc('started_at')->limit(100)->get();
@@ -160,7 +165,7 @@ class UptimeCheckController extends Controller
         return response()->json(['data' => $incidents->map(fn (UptimeIncident $i) => $i->toApi())->all()]);
     }
 
-    /** PATCH /api/projects/{project}/uptime-incidents/{incident} — the public message / title. */
+    /** Update an uptime incident's public title and message. */
     public function updateIncident(Request $request, Project $project, string $incident): JsonResponse
     {
         $data = $request->validate([

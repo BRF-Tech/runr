@@ -20,8 +20,9 @@ use Tests\TestCase;
 /**
  * Sign-in sessions of the multi-tenant edition (docs/security.md, "Sign-in sessions and API
  * tokens"): a Tenant user's sign-in and an accepted invitation carry the session lifetime, and
- * signing out or deleting a tenant's API token ends the token for good. Tokens of every tenant live
- * in the central table.
+ * signing out or deleting a tenant's API token ends the token for good, and neither the API token
+ * routes nor the session routes revoke the other kind. Tokens of every tenant live in the central
+ * table.
  */
 class TenantSignInSessionTest extends TestCase
 {
@@ -126,5 +127,27 @@ class TenantSignInSessionTest extends TestCase
         $this->app['auth']->forgetGuards();
         $this->withToken($cli->plainTextToken)->deleteJson('/api/tokens/'.$cli->accessToken->id)->assertOk();
         $this->me($cli->plainTextToken)->assertUnauthorized();
+    }
+
+    public function test_sign_in_sessions_and_api_tokens_are_revoked_only_by_their_own_routes(): void
+    {
+        $owner = User::factory()->create(['username' => 'owner']);
+        $session = $owner->createToken('api')->plainTextToken;
+        $invited = $owner->createToken('invitation-accept');
+        $ci = $owner->createToken('ci');
+
+        // A sign-in session carries no tenant: the API token route answers 404 for it
+        $this->app['auth']->forgetGuards();
+        $this->withToken($ci->plainTextToken)->deleteJson('/api/tokens/'.$invited->accessToken->id)->assertNotFound();
+        $this->me($invited->plainTextToken)->assertOk();
+
+        // And the session routes never end an API token
+        $this->app['auth']->forgetGuards();
+        $this->withToken($session)->deleteJson('/api/account/sessions/'.$ci->accessToken->id)->assertNotFound();
+        $this->app['auth']->forgetGuards();
+        $this->withToken($session)->postJson('/api/account/sessions/revoke-all')->assertOk();
+        $this->me($invited->plainTextToken)->assertUnauthorized();
+        $this->me($ci->plainTextToken)->assertOk();
+        $this->me($session)->assertOk();
     }
 }

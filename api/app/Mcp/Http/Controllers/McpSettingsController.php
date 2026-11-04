@@ -22,7 +22,7 @@ class McpSettingsController extends Controller
 {
     public function __construct(private readonly ToolRegistry $tools) {}
 
-    /** GET /api/mcp */
+    /** Show the MCP endpoint and the OAuth details an AI agent connects with */
     public function show(Request $request): JsonResponse
     {
         return response()->json([
@@ -42,7 +42,11 @@ class McpSettingsController extends Controller
         ]);
     }
 
-    /** GET /api/mcp/tools — every tool, and whether the caller (with the request's token) may use it. */
+    /**
+     * List the MCP tools and whether the caller may use them
+     *
+     * Every tool, and whether the caller (with the request's token) may use it.
+     */
     public function tools(Request $request): JsonResponse
     {
         $user = $request->user();
@@ -62,7 +66,11 @@ class McpSettingsController extends Controller
         return response()->json(['data' => $tools, 'groups' => ToolRegistry::GROUPS]);
     }
 
-    /** GET /api/mcp/clients — OAuth clients holding tokens of the caller in this organization. */
+    /**
+     * List the OAuth clients connected with the caller's account
+     *
+     * OAuth clients holding tokens of the caller in this organization.
+     */
     public function clients(Request $request): JsonResponse
     {
         $tokens = $this->oauthTokens($request)->orderByDesc('created_at')->get();
@@ -93,7 +101,11 @@ class McpSettingsController extends Controller
         return response()->json(['data' => $data]);
     }
 
-    /** DELETE /api/mcp/clients/{client} — revokes every token of the caller the client holds here. */
+    /**
+     * Disconnect an OAuth client from the caller's account
+     *
+     * Revokes every token of the caller the client holds here.
+     */
     public function revoke(Request $request, string $client): JsonResponse
     {
         $revoked = $this->oauthTokens($request)->where('oauth_client_id', $client)->delete();

@@ -29,9 +29,13 @@ use Illuminate\Support\Str;
 class GitCallbackController extends Controller
 {
     /**
+     * Link a GitHub App installation and return to the console
+     *
      * An installation is linked to the organization only when GitHub confirms — through the OAuth
      * code of "Request user authorization (OAuth) during installation" — that the GitHub user
      * who came back can access it. Without that, an installation id from the URL is never trusted.
+     *
+     * @unauthenticated
      */
     public function githubSetup(Request $request, GitHubClient $github): RedirectResponse
     {
@@ -85,6 +89,11 @@ class GitCallbackController extends Controller
         return $this->toConsole($state['project_id'], ['git_installation' => $installation]);
     }
 
+    /**
+     * Finish the GitLab OAuth authorization and return to the console
+     *
+     * @unauthenticated
+     */
     public function gitlabCallback(Request $request, GitLabClient $gitlab): RedirectResponse
     {
         $state = OAuthState::read($request->query('state'));

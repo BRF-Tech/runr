@@ -27,7 +27,7 @@ use Symfony\Component\HttpFoundation\Response;
  */
 class RegionSupplyChainController extends Controller
 {
-    /** GET /api/knative-regions/{knativeRegion}/supply-chain */
+    /** Get the region's supply-chain settings. */
     public function show(KnativeRegion $knativeRegion): JsonResponse
     {
         Gate::authorize('regions.view');
@@ -35,7 +35,7 @@ class RegionSupplyChainController extends Controller
         return response()->json(['data' => $this->payload($knativeRegion)]);
     }
 
-    /** PUT /api/knative-regions/{knativeRegion}/supply-chain */
+    /** Update the region's supply-chain settings. */
     public function update(UpdateRegionSupplyChainRequest $request, KnativeRegion $knativeRegion, AdmissionPolicyService $admission): JsonResponse
     {
         Gate::authorize('regions.supply_chain.manage', $knativeRegion);
@@ -68,7 +68,7 @@ class RegionSupplyChainController extends Controller
         return response()->json(['data' => $this->payload($knativeRegion)]);
     }
 
-    /** POST /api/knative-regions/{knativeRegion}/supply-chain/signing-key — generate, or rotate an existing key */
+    /** Generate the region's signing key, or rotate the existing one. */
     public function generateKey(Request $request, KnativeRegion $knativeRegion, SigningKeyService $keys): JsonResponse
     {
         Gate::authorize('regions.supply_chain.manage', $knativeRegion);
@@ -87,7 +87,11 @@ class RegionSupplyChainController extends Controller
         return response()->json(['data' => $this->payload($knativeRegion)], 202);
     }
 
-    /** DELETE /api/knative-regions/{knativeRegion}/supply-chain/signing-key/retired */
+    /**
+     * Forget the region's retired signing keys.
+     *
+     * Images signed only with them are no longer trusted.
+     */
     public function forgetRetiredKeys(KnativeRegion $knativeRegion, SigningKeyService $keys): JsonResponse
     {
         Gate::authorize('regions.supply_chain.manage', $knativeRegion);
@@ -100,7 +104,11 @@ class RegionSupplyChainController extends Controller
         return response()->json(['data' => $this->payload($knativeRegion)]);
     }
 
-    /** GET /api/knative-regions/{knativeRegion}/supply-chain/public-key — PEM (cosign verify --key) */
+    /**
+     * Download the region's public signing key.
+     *
+     * PEM, for cosign verify --key.
+     */
     public function publicKey(KnativeRegion $knativeRegion): Response
     {
         Gate::authorize('regions.view');
@@ -116,7 +124,7 @@ class RegionSupplyChainController extends Controller
         ]);
     }
 
-    /** POST /api/knative-regions/{knativeRegion}/supply-chain/scanner-db/refresh */
+    /** Refresh the copy of the scanner's vulnerability DB in the region registry. */
     public function refreshScannerDb(KnativeRegion $knativeRegion, ScannerDbMirrorService $mirror): JsonResponse
     {
         Gate::authorize('regions.supply_chain.manage', $knativeRegion);
@@ -130,7 +138,7 @@ class RegionSupplyChainController extends Controller
         return response()->json(['data' => $this->payload($knativeRegion)], 202);
     }
 
-    /** POST /api/knative-regions/{knativeRegion}/supply-chain/admission — install, or update an installed policy */
+    /** Install the admission policy in the region, or update the installed one. */
     public function installAdmission(Request $request, KnativeRegion $knativeRegion, AdmissionPolicyService $admission): JsonResponse
     {
         Gate::authorize('regions.supply_chain.manage', $knativeRegion);
@@ -149,7 +157,7 @@ class RegionSupplyChainController extends Controller
         return response()->json(['data' => $this->payload($knativeRegion)], 202);
     }
 
-    /** DELETE /api/knative-regions/{knativeRegion}/supply-chain/admission */
+    /** Remove the admission policy from the region. */
     public function uninstallAdmission(KnativeRegion $knativeRegion, AdmissionPolicyService $admission): JsonResponse
     {
         Gate::authorize('regions.supply_chain.manage', $knativeRegion);
@@ -159,7 +167,7 @@ class RegionSupplyChainController extends Controller
         return response()->json(['data' => $this->payload($knativeRegion)], 202);
     }
 
-    /** GET /api/knative-regions/{knativeRegion}/supply-chain/admission/preview — what the install applies */
+    /** Preview what the admission policy install applies. */
     public function admissionPreview(KnativeRegion $knativeRegion, AdmissionPolicyService $admission): JsonResponse
     {
         Gate::authorize('regions.supply_chain.manage', $knativeRegion);
@@ -167,7 +175,7 @@ class RegionSupplyChainController extends Controller
         return response()->json(['data' => $admission->preview($knativeRegion)]);
     }
 
-    /** GET /api/knative-regions/{knativeRegion}/supply-chain/runtime-images — reports of runtime images built here */
+    /** List the security reports of runtime images built in the region. */
     public function runtimeImages(KnativeRegion $knativeRegion): JsonResponse
     {
         Gate::authorize('regions.view');
@@ -189,7 +197,7 @@ class RegionSupplyChainController extends Controller
         ])->values()]);
     }
 
-    /** GET /api/knative-regions/{knativeRegion}/supply-chain/runtime-images/{report}/sbom */
+    /** Download the SBOM of a runtime image built in the region. */
     public function runtimeImageSbom(Request $request, KnativeRegion $knativeRegion, string $report): Response
     {
         Gate::authorize('regions.view');

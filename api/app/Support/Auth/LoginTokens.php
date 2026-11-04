@@ -2,8 +2,11 @@
 
 namespace App\Support\Auth;
 
+use App\Events\PlatformEvent;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Relations\MorphMany;
+use Laravel\Sanctum\Contracts\HasAbilities;
 use Laravel\Sanctum\NewAccessToken;
 use Laravel\Sanctum\PersonalAccessToken;
 use Laravel\Sanctum\Sanctum;
@@ -12,7 +15,9 @@ use Laravel\Sanctum\Sanctum;
  * Sign-in sessions (docs/security.md, "Sign-in sessions and API tokens"): the API tokens a
  * sign-in issues — a password sign-in of the console or the CLI, an SSO sign-in, a self-service
  * signup, an accepted invitation. Their names tell them apart from the API tokens users create
- * (those cannot take these names).
+ * (those cannot take these names since 0.5.5; a token a user named so before counts as a session).
+ * The account's session routes list and revoke sign-in sessions only, the API token routes API
+ * tokens only (sessionsOf, apiTokensOf).
  *
  * A session ends auth.login_token_ttl_days after the sign-in (RUNR_LOGIN_TOKEN_TTL_DAYS): a new
  * one carries that expires_at, and the age rule ends the sessions signed in before they carried
@@ -43,6 +48,60 @@ final class LoginTokens
     public static function isLoginToken(PersonalAccessToken $token): bool
     {
         return in_array($token->name, self::NAMES, true);
+    }
+
+    /**
+     * The sign-in sessions of $user: what the account's Active Sessions list, revoke and revoke
+     * all others, and what a password change ends. The user's other tokens are API tokens.
+     *
+     * @return MorphMany<PersonalAccessToken, User>
+     */
+    public static function sessionsOf(User $user): MorphMany
+    {
+        return $user->tokens()->whereIn('name', self::NAMES);
+    }
+
+    /**
+     * The API tokens of $user (personal tokens, the CLI's, MCP clients'): what the API token
+     * routes list and delete. Never a sign-in session.
+     *
+     * @return MorphMany<PersonalAccessToken, User>
+     */
+    public static function apiTokensOf(User $user): MorphMany
+    {
+        return $user->tokens()->whereNotIn('name', self::NAMES);
+    }
+
+    /** The stored token the request of $user came with; null without one (a cookie session). */
+    public static function currentId(User $user): ?int
+    {
+        /** @var HasAbilities|null $current */
+        $current = $user->currentAccessToken();
+
+        return $current instanceof PersonalAccessToken ? (int) $current->getKey() : null;
+    }
+
+    /**
+     * Ends the sign-in sessions of $user except $keep (the current token): the session.revoked
+     * event signs out the browsers that held them. API tokens stay.
+     *
+     * @return list<int> the ids of the ended sessions
+     */
+    public static function endSessions(User $user, ?int $keep = null): array
+    {
+        $ids = self::sessionsOf($user)
+            ->when($keep !== null, fn ($q) => $q->whereKeyNot($keep))
+            ->pluck('id')
+            ->map(fn ($id) => (int) $id)
+            ->values()
+            ->all();
+
+        if ($ids !== []) {
+            $user->tokens()->whereKey($ids)->delete();
+            event(new PlatformEvent('session.revoked', ['token_ids' => $ids]));
+        }
+
+        return $ids;
     }
 
     /** A sign-in session older than the lifetime, whatever its expires_at says. */
