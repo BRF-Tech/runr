@@ -124,7 +124,7 @@ function goLogin() { router.push('/login') }
           </div>
 
           <!-- Bot protection -->
-          <CaptchaField :captcha="captcha" theme="auto" />
+          <CaptchaField :captcha="captcha" />
 
           <!-- Error -->
           <p v-if="errorMsg" class="text-sm text-red-400">{{ errorMsg }}</p>

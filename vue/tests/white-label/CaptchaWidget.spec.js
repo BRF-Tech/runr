@@ -1,12 +1,16 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { mount } from '@vue/test-utils'
+import { enableAutoUnmount, mount } from '@vue/test-utils'
 import CaptchaWidget from '@/modules/white-label/components/CaptchaWidget.vue'
 import { resetCaptchaLoaders } from '@/modules/white-label/utils/captcha'
+import { useTheme } from '@/composables/useTheme'
 import { flush, globalOptions } from './helpers'
 
 vi.mock('@/api/client', () => ({
   default: { get: vi.fn(), post: vi.fn(), put: vi.fn(), patch: vi.fn(), delete: vi.fn() },
 }))
+
+// widgets of earlier tests would follow a later theme change
+enableAutoUnmount(afterEach)
 
 describe('CaptchaWidget', () => {
   beforeEach(() => {
@@ -20,6 +24,7 @@ describe('CaptchaWidget', () => {
     delete window.turnstile
     delete window.hcaptcha
     delete window.grecaptcha
+    useTheme().set('fulldark')
   })
 
   it('renders nothing and loads no script for provider "none"', async () => {
@@ -62,6 +67,8 @@ describe('CaptchaWidget', () => {
   })
 
   it('renders the reCAPTCHA v2 checkbox once its API is ready', async () => {
+    // 'auto' (the browser's preference) is not used: the console's theme is
+    useTheme().set('light')
     const wrapper = mount(CaptchaWidget, { props: { provider: 'recaptcha', siteKey: 'g-site', theme: 'auto' }, global: globalOptions() })
     await flush(1)
 
@@ -107,5 +114,57 @@ describe('CaptchaWidget', () => {
 
     expect(render).toHaveBeenCalledTimes(1)
     expect(render.mock.calls[0][1].sitekey).toBe('site-hc')
+  })
+
+  describe('theme', () => {
+    const turnstile = () => {
+      let n = 0
+      window.turnstile = { render: vi.fn(() => `w${++n}`), reset: vi.fn(), remove: vi.fn() }
+      return window.turnstile
+    }
+    const container = (wrapper) => wrapper.find('[data-captcha-theme]')
+
+    it('is the fixed theme of the surface (the light sign-in card), whatever the console shows', async () => {
+      useTheme().set('fulldark')
+      const api = turnstile()
+      const wrapper = mount(CaptchaWidget, { props: { provider: 'turnstile', siteKey: '0x4AAA', theme: 'light' }, global: globalOptions() })
+      await flush()
+
+      expect(api.render.mock.calls[0][1]).toMatchObject({ sitekey: '0x4AAA', theme: 'light' })
+      // the iframe takes its colour scheme from its container, not from the dark page
+      expect(container(wrapper).attributes('data-captcha-theme')).toBe('light')
+      expect(container(wrapper).element.style.colorScheme).toBe('light')
+    })
+
+    it('follows the console’s theme otherwise, and renders the widget again when it changes', async () => {
+      useTheme().set('light')
+      const api = turnstile()
+      const wrapper = mount(CaptchaWidget, { props: { provider: 'turnstile', siteKey: '0x4AAA' }, global: globalOptions() })
+      await flush()
+      expect(api.render.mock.calls[0][1].theme).toBe('light')
+
+      useTheme().set('fulldark')
+      await flush()
+
+      expect(api.remove).toHaveBeenCalledWith('w1')
+      expect(api.render).toHaveBeenCalledTimes(2)
+      expect(api.render.mock.calls[1][1].theme).toBe('dark')
+      // a fresh element for the new widget
+      expect(api.render.mock.calls[1][0]).not.toBe(api.render.mock.calls[0][0])
+      expect(wrapper.emitted('token').at(-1)).toEqual([''])
+      expect(container(wrapper).element.style.colorScheme).toBe('dark')
+    })
+
+    it('gives hCaptcha and reCAPTCHA the same theme', async () => {
+      useTheme().set('fulldark')
+      window.hcaptcha = { render: vi.fn(() => 'h1'), reset: vi.fn(), remove: vi.fn() }
+      window.grecaptcha = { render: vi.fn(() => 1), reset: vi.fn() }
+      mount(CaptchaWidget, { props: { provider: 'hcaptcha', siteKey: 'site-hc' }, global: globalOptions() })
+      mount(CaptchaWidget, { props: { provider: 'recaptcha', siteKey: 'g-site', theme: 'light' }, global: globalOptions() })
+      await flush()
+
+      expect(window.hcaptcha.render.mock.calls[0][1].theme).toBe('dark')
+      expect(window.grecaptcha.render.mock.calls[0][1].theme).toBe('light')
+    })
   })
 })

@@ -53,8 +53,9 @@ export const DEFAULT_BRANDING = Object.freeze({
   powered_by:       true,
   is_default_brand: true,
   tenant:           null,
-  // billing / tickets: the Billing / Ticket module is on in the API (the console hides their pages otherwise)
-  features:         Object.freeze({ billing: false, tickets: true, tenant_branding: false, multi_tenant: false }),
+  // billing / tickets / auth_providers: the Billing / Ticket / AuthProvider module is on in the API
+  // (the console hides their pages, the sign-in page its SSO buttons, otherwise)
+  features:         Object.freeze({ billing: false, tickets: true, tenant_branding: false, multi_tenant: false, auth_providers: false }),
 })
 
 /** Explicit palette of the payload ("r g b" per shade) or null. */
@@ -126,6 +127,7 @@ export function normalizeBranding(raw) {
       tickets:         d.features?.tickets !== false,
       tenant_branding: !!d.features?.tenant_branding,
       multi_tenant:    !!d.features?.multi_tenant,
+      auth_providers:  d.features?.auth_providers === true,
     },
   }
 }

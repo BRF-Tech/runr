@@ -96,6 +96,8 @@ export default {
     fullAccess:     'Tam Erişim',
     customAccess:   'Özel',
     noTokens:       'Henüz token oluşturulmamış.',
+    mcpClient:      'MCP istemcisi',
+    createNeedsPermission: 'API tokenlarınız ve bağlı MCP istemcileriniz burada listelenir, onları iptal edebilirsiniz. Token oluşturmak için API tokenı oluşturma yetkisi gerekir: bir yöneticiye başvurun.',
     createdBanner:  'Token oluşturuldu! Bu değeri bir daha göremezsiniz.',
     createdWarning: 'Bu token sadece bir kez gösterilir. Güvenli bir yere kaydedin.',
     deleteTitle:    'Token Sil',

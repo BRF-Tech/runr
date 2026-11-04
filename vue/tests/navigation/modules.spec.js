@@ -175,9 +175,14 @@ describe('main menu with the module plugins', () => {
     features({ billing: false, tickets: false })
     grant(['projects.view'])
     const nav = navFor(r, { runtimes: { loaded: true, canUseCustom: false } })
-    // AI agents (MCP) is for everyone (connection instructions); with projects.view the API
-    // gateways and the organization's topics; nothing else is left
-    expect(tree(nav)).toEqual({ build: { workloads: ['gateways'], automation: ['topics'] }, data: { integrations: ['ai-agents'] } })
+    // AI agents (MCP) is for everyone (connection instructions), so is API Tokens (one's own
+    // tokens are listed and revoked without a permission); with projects.view the API gateways
+    // and the organization's topics; nothing else is left
+    expect(tree(nav)).toEqual({
+      build: { workloads: ['gateways'], automation: ['topics'] },
+      data: { integrations: ['ai-agents'] },
+      admin: { access: ['tokens'] },
+    })
     expect(accountKeys(nav)).toEqual(['account'])
   })
 

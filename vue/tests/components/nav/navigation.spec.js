@@ -206,17 +206,19 @@ describe('MainNav (wide screens)', () => {
   })
 
   it('follows permission changes: a group appears and disappears with its links', async () => {
-    grant(['models.view'])
+    // Build holds Models (models.view) only here; Administration always holds API Tokens
+    grant(['projects.view'])
     const w = await mountWith(MainNav)
-    expect(w.find('[data-testid="nav-group-admin"]').exists()).toBe(false)
-    grant(['models.view', 'tokens.manage'])
-    await flushPromises()
+    expect(w.find('[data-testid="nav-group-build"]').exists()).toBe(false)
     expect(w.find('[data-testid="nav-group-admin"]').exists()).toBe(true)
-    await w.get('[data-testid="nav-group-admin"]').trigger('click')
-    grant(['models.view'])
+    grant(['projects.view', 'models.view'])
     await flushPromises()
-    expect(w.find('[data-testid="nav-group-admin"]').exists()).toBe(false)
-    expect(w.find('#nav-panel-admin').exists()).toBe(false)
+    expect(w.find('[data-testid="nav-group-build"]').exists()).toBe(true)
+    await w.get('[data-testid="nav-group-build"]').trigger('click')
+    grant(['projects.view'])
+    await flushPromises()
+    expect(w.find('[data-testid="nav-group-build"]').exists()).toBe(false)
+    expect(w.find('#nav-panel-build').exists()).toBe(false)
   })
 
   it('places a module page by its declared group', async () => {

@@ -2,10 +2,13 @@ import {defineConfig} from 'vite'
 import vue from '@vitejs/plugin-vue'
 import {fileURLToPath, URL} from 'node:url'
 import {prePaintPlugin} from './build/prePaintPlugin.js'
+import {monacoDompurifyPlugin} from './build/monacoDompurifyPlugin.js'
 
 export default defineConfig({
-    // runr-pre-paint: index.html's inline pre-paint script (build/prePaintPlugin.js)
-    plugins: [vue(), prePaintPlugin()],
+    // runr-pre-paint: index.html's inline pre-paint script (build/prePaintPlugin.js);
+    // runr-monaco-dompurify: Monaco sanitizes with the dompurify package, not its own older copy
+    // (build/monacoDompurifyPlugin.js)
+    plugins: [vue(), prePaintPlugin(), monacoDompurifyPlugin()],
     build: {
         target: 'esnext',
     },

@@ -100,7 +100,7 @@ async function submit() {
       <p class="login-subtitle text-xl leading-relaxed">{{ t('whiteLabel.signup.checkInboxText', { email: pendingEmail }) }}</p>
     </div>
     <p v-if="resent" class="text-sm font-medium mb-4" style="color:#059669">{{ t('whiteLabel.signup.resent') }}</p>
-    <CaptchaField :captcha="resendCaptcha" class="mb-4" />
+    <CaptchaField :captcha="resendCaptcha" theme="light" class="mb-4" />
     <button type="button" class="login-submit w-full py-4 rounded-md text-base font-semibold text-white transition-all disabled:opacity-50"
       :disabled="resending" data-test="signup-resend" @click="resend">
       {{ resending ? t('whiteLabel.signup.resending') : t('whiteLabel.signup.resend') }}
@@ -177,7 +177,7 @@ async function submit() {
     <component v-for="(ext, i) in extensions" :key="'reg-ext-' + i" :is="ext" v-model="extra" :attempt="attempt" />
 
     <!-- Bot protection -->
-    <CaptchaField :captcha="captcha" />
+    <CaptchaField :captcha="captcha" theme="light" />
 
     <p v-if="error" class="text-sm font-medium" style="color:#dc2626">{{ error }}</p>
 

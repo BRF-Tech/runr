@@ -386,8 +386,9 @@ function defaultBranding(multiTenant: boolean): Json {
     default_theme: 'dark',
     is_default_brand: true,
     tenant: null,
-    // billing: the modules server builds the Billing module in (VITE_BILLING_ENABLED)
-    features: { multi_tenant: multiTenant, billing: multiTenant, tickets: true, tenant_branding: false },
+    // billing, auth_providers: the modules server builds the Billing and AuthProvider modules in
+    // (VITE_BILLING_ENABLED, VITE_AUTH_PROVIDER_ENABLED)
+    features: { multi_tenant: multiTenant, billing: multiTenant, tickets: true, tenant_branding: false, auth_providers: multiTenant },
   }
 }
 

@@ -96,6 +96,8 @@ export default {
     fullAccess:     'Full Access',
     customAccess:   'Custom',
     noTokens:       'No tokens created yet.',
+    mcpClient:      'MCP client',
+    createNeedsPermission: 'Your API tokens and connected MCP clients are listed here and you can revoke them. Creating a token needs the permission to create API tokens: ask an administrator.',
     createdBanner:  'Token created! You won\'t be able to see this value again.',
     createdWarning: 'This token is only shown once. Save it in a secure place.',
     deleteTitle:    'Delete Token',

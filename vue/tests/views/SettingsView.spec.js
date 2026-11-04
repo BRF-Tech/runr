@@ -130,6 +130,13 @@ describe('SettingsView', () => {
     expect(w.get('[data-settings-tab="audit-log"]').attributes('data-tour')).toBe('settings-audit-tab')
   })
 
+  it('opens API tokens without tokens.manage: everyone revokes their own', async () => {
+    grant(['projects.view'])
+    const w = await open('/settings?tab=tokens')
+    expect(w.get('[data-testid="settings-section"]').text()).toBe('Access & security')
+    expect(w.find('[data-stub="ApiTokensManager"]').exists()).toBe(true)
+  })
+
   it('shows nothing of a page whose link the user does not have', async () => {
     grant(['tokens.manage'])
     const w = await open('/settings?tab=audit-log')

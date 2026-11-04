@@ -17,7 +17,7 @@ export default {
       authToken:      'API tokenı',
       authOauthHint:  'İstemci RunR oturum açma sayfasını tarayıcıda açar; yetkileri ve organizasyonu onay sayfasında siz seçersiniz.',
       authTokenHint:  'İstemci Authorization başlığında bir API tokenı gönderir. Aşağıda kapsamlı bir token oluşturun.',
-      connectNeedsTokens: 'Bir istemciyi bağlamak için kendi API tokenlarınızı yönetme yetkisi gerekir: OAuth ile oturum açmak da API tokenı da istemciye bir token verir. Bir yöneticiye başvurun.',
+      connectNeedsTokens: 'Bir istemciyi bağlamak için API tokenı oluşturma yetkisi gerekir: OAuth ile oturum açmak da API tokenı da istemciye bir token verir. Bir yöneticiye başvurun.',
     },
 
     snippets: {
@@ -111,7 +111,7 @@ export default {
       lifetimeHint:   'Token Yönetim → API Token altında görünür ve orada her an iptal edilebilir.',
       untilRevoked:   'İptal edilene kadar',
       days:           '{n} gün',
-      cannotApprove:  'Onaylamak için kendi API tokenlarınızı yönetme yetkisi gerekir. Bir yöneticiye başvurun.',
+      cannotApprove:  'Onaylamak için API tokenı oluşturma yetkisi gerekir. Bir yöneticiye başvurun.',
       approve:        'Onayla',
       deny:           'Reddet',
       redirecting:    'İstemciye dönülüyor…',
@@ -119,7 +119,7 @@ export default {
       expiredTitle:   'Bu isteğin süresi doldu',
       expiredText:    'Bağlantıyı istemciden yeniden başlatın.',
       noAccessTitle:  'MCP istemcisi bağlayamazsınız',
-      noAccessText:   'Bir istemciyi bağlamak için kendi API tokenlarınızı yönetme yetkisi gerekir. Bir yöneticiye başvurun ya da isteği reddederek istemciye dönün.',
+      noAccessText:   'Bir istemciyi bağlamak için API tokenı oluşturma yetkisi gerekir. Bir yöneticiye başvurun ya da isteği reddederek istemciye dönün.',
     },
 
     project: {

@@ -93,8 +93,9 @@ describe('navigation definition', () => {
     const nav = buildNavigation({ ctx: ctx({ can: only('tokens.manage'), canUseRuntimes: false }) })
     expect(tree(nav)).toEqual({ admin: { access: ['tokens'] } })
 
+    // API Tokens stays: everyone lists and revokes their own tokens (creating needs tokens.manage)
     const none = buildNavigation({ ctx: ctx({ can: () => false, canUseRuntimes: false }) })
-    expect(none.groups).toEqual([])
+    expect(tree(none)).toEqual({ admin: { access: ['tokens'] } })
     expect(none.account.map(link => link.key)).toEqual(['account'])
   })
 

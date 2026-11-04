@@ -3,12 +3,19 @@ import { computed, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useApiTokens } from '@/composables/useApiTokens'
 import { useConfirm } from '@/composables/useConfirm'
+import { usePermissionsStore } from '@/stores/permissions'
 import AbilityPicker from '@/components/settings/AbilityPicker.vue'
 import TokenExpiryPicker from '@/components/settings/TokenExpiryPicker.vue'
 import { Plus, Key, Trash2, Copy, Check } from 'lucide-vue-next'
 
 const { t, locale } = useI18n()
 const { confirm } = useConfirm()
+const perms = usePermissionsStore()
+
+// Everyone lists and revokes their own tokens; creating one needs tokens.manage (POST /api/tokens).
+// In an organization of the multi-tenant edition tokens.manage also lists the other members'
+// tokens (mine: false), which only their owners revoke.
+const mayCreate = computed(() => perms.can('tokens.manage'))
 
 const {
   tokens, availableAbilities, loading, creating, error,
@@ -95,8 +102,11 @@ async function confirmDelete(token) {
       <button class="text-xs text-gray-400 hover:text-gray-100 mt-2" @click="dismissCreatedToken">{{ t('common.dismiss') }}</button>
     </div>
 
+    <!-- Without tokens.manage: the list only -->
+    <p v-if="!mayCreate" class="text-xs text-gray-400 mb-5" data-testid="tokens-create-needs-permission">{{ t('tokens.createNeedsPermission') }}</p>
+
     <!-- Create form -->
-    <div data-tour="tokens-create-form" class="rounded-xl border border-gray-800 bg-gray-900/60 px-5 py-4 mb-5 space-y-4">
+    <div v-else data-tour="tokens-create-form" class="rounded-xl border border-gray-800 bg-gray-900/60 px-5 py-4 mb-5 space-y-4">
       <p class="text-sm font-semibold text-gray-100">{{ t('tokens.createTitle') }}</p>
 
       <!-- Name -->
@@ -142,6 +152,9 @@ async function confirmDelete(token) {
           <div class="flex-1 min-w-0">
             <div class="flex items-center gap-2">
               <span class="text-sm font-semibold text-gray-100">{{ token.name }}</span>
+              <span v-if="token.mcp_client" class="text-[10px] font-medium px-1.5 py-0.5 rounded-sm bg-gray-800 border border-gray-700/60 text-gray-300" data-testid="token-mcp-client">
+                {{ t('tokens.mcpClient') }}
+              </span>
               <span v-if="isExpired(token)" class="text-[10px] font-medium px-1.5 py-0.5 rounded-sm bg-red-900/30 border border-red-800/50 text-red-400">
                 {{ t('tokens.expired') }}
               </span>
@@ -163,7 +176,8 @@ async function confirmDelete(token) {
               </span>
             </div>
           </div>
-          <button class="p-1.5 rounded-md text-gray-400 hover:text-red-400 hover:bg-red-900/20 transition-colors shrink-0" @click="confirmDelete(token)">
+          <button v-if="token.mine !== false" class="p-1.5 rounded-md text-gray-400 hover:text-red-400 hover:bg-red-900/20 transition-colors shrink-0"
+            :aria-label="t('tokens.deleteTitle')" data-testid="token-delete" @click="confirmDelete(token)">
             <Trash2 class="w-4 h-4" />
           </button>
         </div>

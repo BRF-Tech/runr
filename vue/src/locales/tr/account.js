@@ -65,21 +65,21 @@ export default {
 
     // Sessions
     sessionsTitle:      'Aktif Oturumlar',
-    sessionsDesc:       'Aktif oturumlarınızı yönetin. Artık kullanmadığınız oturumları iptal edebilirsiniz.',
+    sessionsDesc:       'Hesabınızda oturum açık olan tarayıcı ve cihazlar. Artık kullanmadığınız oturumları iptal edebilirsiniz. API token\'ları oturum değildir: Yönetim → API Token altında listelenir ve iptal edilir.',
     currentSession:     'Mevcut',
     revokeSession:      'İptal Et',
     revokeAll:          'Diğer Tüm Oturumları İptal Et',
     sessionRevoked:     'Oturum iptal edildi.',
     allSessionsRevoked: 'Diğer tüm oturumlar iptal edildi.',
     revokeConfirm:      'Bu oturumu iptal etmek istediğinize emin misiniz?',
-    revokeAllConfirm:   'Diğer tüm oturumları iptal etmek istediğinize emin misiniz?',
+    revokeAllConfirm:   'Diğer tüm oturumları iptal etmek istediğinize emin misiniz? API token\'larınız çalışmaya devam eder.',
     lastActive:         'Son etkinlik',
     device:             'Cihaz',
 
     // Danger zone
     dangerTitle:        'Tehlikeli Bölge',
     disableAccount:     'Hesabı Devre Dışı Bırak',
-    disableDesc:        'Hesabınızı devre dışı bırakır. Diğer tüm oturumlardan çıkış yapılır.',
+    disableDesc:        'Hesabınızı devre dışı bırakır. Diğer tüm oturumlardan çıkış yapılır ve API token\'larınız çalışmaz hale gelir.',
     disableConfirm:     'Hesabınızı devre dışı bırakmak istediğinize emin misiniz?',
     deleteAccount:      'Hesabı Sil',
     deleteDesc:         'Hesabınızı ve tüm ilişkili verileri kalıcı olarak siler. Bu işlem geri alınamaz.',

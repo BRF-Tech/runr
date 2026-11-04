@@ -1,7 +1,9 @@
 # Port: RUNR_UI_PORT (the Helm chart sets it from ui.port), 80 when unset
 :{$RUNR_UI_PORT:80} {
     root * /srv
-    encode zstd gzip
+    # Only responses without a pre-compressed file (below): small files and the branding defaults.
+    # gzip first: on the fly zstd was the slowest for large files
+    encode gzip zstd
 
     # Hashed build assets: cached for a year. Not the platform's branding defaults, which the
     # container writes at start (docker-entrypoint.sh) and a new configuration changes
@@ -17,5 +19,9 @@
     header @index Cache-Control "no-store, no-cache, must-revalidate"
 
     try_files {path} /index.html
-    file_server
+    # The build's .br / .gz next to each text file (Dockerfile), in the client's preference, Brotli
+    # first when it takes both
+    file_server {
+        precompressed br gzip
+    }
 }

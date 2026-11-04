@@ -69,10 +69,14 @@ onMounted(async () => {
 onUnmounted(() => clearInterval(timer))
 
 // The sign-in options of the context picked last (platform or an organization): a slower answer
-// for the other one is dropped
+// for the other one is dropped. Only with the AuthProvider module: its screens in this build
+// (VITE_AUTH_PROVIDER_ENABLED, the SSO sign-in ends on its /oauth/callback page) and the module on
+// in the API (GET /api/branding → features.auth_providers); otherwise there is no discover route.
 const discovery = useLatest()
+const ssoAvailable = computed(() => import.meta.env.VITE_AUTH_PROVIDER_ENABLED === 'true' && branding.features?.auth_providers === true)
 async function discoverProviders(tenantSlug) {
   const current = discovery.begin()
+  if (!ssoAvailable.value) { providers.value = []; return }
   try {
     const params = tenantSlug ? { tenant: tenantSlug } : {}
     const { data } = await client.get('/auth-providers/discover', { params })
@@ -103,6 +107,9 @@ watch(userType, (val) => {
   tenancyStep.value = 1; discovery.cancel(); providers.value = []; error.value = null
   if (val === 'platform') { discoverProviders(); if (branding.tenantSlug) branding.load(null) }
 })
+
+// The branding's answer (features) can come after the page: look again once SSO turns out to be on
+watch(ssoAvailable, () => discoverProviders(userType.value === 'tenant' && tenancyStep.value === 2 ? tenancySlug.value.trim() || undefined : undefined))
 
 const showLoginForm = computed(() => userType.value === 'platform' || tenancyStep.value === 2)
 const showTenancyStep = computed(() => tenancyEnabled && userType.value === 'tenant' && tenancyStep.value === 1)
@@ -205,7 +212,7 @@ function loginWithProvider(p) {
                   <input v-model="twoFactorCode" type="text" inputmode="numeric" maxlength="20" class="login-input w-full px-4 py-4 rounded-md text-base transition font-mono text-center tracking-widest" :placeholder="t('auth.twoFactorCode')" autocomplete="one-time-code" autofocus />
                 </div>
                 <!-- The password step's answer is spent: a new one -->
-                <CaptchaField v-if="!captcha.token && !captcha.local" :captcha="captcha" />
+                <CaptchaField v-if="!captcha.token && !captcha.local" :captcha="captcha" theme="light" />
                 <p v-if="error" class="text-sm font-medium" style="color:#dc2626">{{ error }}</p>
                 <button type="submit" class="login-submit w-full py-4 rounded-md text-base font-semibold text-white transition-all disabled:opacity-50" :disabled="loading || !twoFactorCode">
                   {{ loading ? t('auth.submitting') : t('auth.twoFactorSubmit') }}
@@ -288,7 +295,7 @@ function loginWithProvider(p) {
                       </div>
                     </div>
                     <!-- Bot protection -->
-                    <CaptchaField :captcha="captcha" />
+                    <CaptchaField :captcha="captcha" theme="light" />
                     <p v-if="error" class="text-sm font-medium" style="color:#dc2626">{{ error }}</p>
                     <button type="submit" class="login-submit w-full py-4 rounded-md text-base font-semibold text-white transition-all disabled:opacity-50" :disabled="loading">
                       {{ loading ? t('auth.submitting') : t('auth.submit') }}

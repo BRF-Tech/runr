@@ -78,9 +78,10 @@ export const CORE_LINKS = [
     visibleIf: can('members.view'),
   },
   {
+    // Everyone lists and revokes their own API tokens; creating one needs tokens.manage (the page
+    // hides its form without it)
     key: 'tokens', group: 'admin', section: 'access', tab: 'tokens', order: 10,
     labelKey: 'tokens.tab', descKey: 'nav.links.tokensDesc', icon: markRaw(KeyRound), dataTour: 'settings-tokens-tab',
-    visibleIf: can('tokens.manage'),
   },
   {
     // The settings page inside an organization of the multi-tenant edition: its regions and domain

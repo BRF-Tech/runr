@@ -143,11 +143,11 @@ describe('Data & Integrations → AI agents (MCP)', () => {
     expect(w.find('[data-testid="mcp-tools"]').text()).toContain('Billing')
   })
 
-  it('hides the token form and the clients without tokens.manage', async () => {
+  it('hides the token form without tokens.manage and keeps the clients the user connected', async () => {
     usePermissionsStore().apply({ permissions: ['projects.view'], projects: {} })
     const w = await mountSettings()
     expect(w.find('[data-testid="mcp-token-form"]').exists()).toBe(false)
-    expect(w.find('[data-testid="mcp-clients"]').exists()).toBe(false)
+    expect(w.find('[data-testid="mcp-clients"]').exists()).toBe(true)
     expect(w.find('[data-testid="mcp-tools"]').exists()).toBe(true)
   })
 
@@ -159,7 +159,7 @@ describe('Data & Integrations → AI agents (MCP)', () => {
     expect(w.find('[data-testid="mcp-auth-oauth"]').exists()).toBe(false)
     expect(w.find('[data-testid="mcp-auth-token"]').exists()).toBe(false)
     expect(w.find('[data-testid="mcp-snippets"]').exists()).toBe(false)
-    expect(w.get('[data-testid="mcp-connect-needs-tokens"]').text()).toContain('manage your own API tokens')
+    expect(w.get('[data-testid="mcp-connect-needs-tokens"]').text()).toContain('create API tokens')
     // the endpoint and the tool catalog stay
     expect(w.get('[data-testid="mcp-connect"]').text()).toContain(ENDPOINT)
     expect(w.find('[data-testid="mcp-tools"]').exists()).toBe(true)

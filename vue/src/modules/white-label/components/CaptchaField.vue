@@ -11,7 +11,8 @@ import CaptchaWidget from './CaptchaWidget.vue'
 
 const props = defineProps({
   captcha: { type: Object, required: true },
-  theme:   { type: String, default: 'light' },
+  // 'light' | 'dark' for a surface with a fixed theme; none: the console's theme (CaptchaWidget)
+  theme:   { type: String, default: null },
 })
 const { t } = useI18n()
 

@@ -147,7 +147,7 @@ describe('OAuth consent page', () => {
 
     expect(w.find('[data-testid="oauth-consent-error"]').exists()).toBe(false)
     const card = w.get('[data-testid="oauth-consent-forbidden"]')
-    expect(card.text()).toContain('manage your own API tokens')
+    expect(card.text()).toContain('create API tokens')
     expect(card.text()).not.toContain('unauthorized')
 
     await card.get('[data-testid="oauth-consent-deny"]').trigger('click')

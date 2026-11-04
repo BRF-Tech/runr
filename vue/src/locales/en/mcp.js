@@ -17,7 +17,7 @@ export default {
       authToken:      'API token',
       authOauthHint:  'The client opens the RunR sign-in in the browser; you choose the permissions and the organization on the consent page.',
       authTokenHint:  'The client sends an API token in the Authorization header. Create a scoped token below.',
-      connectNeedsTokens: 'Connecting a client needs the permission to manage your own API tokens: signing in with OAuth and an API token both give the client a token. Ask an administrator.',
+      connectNeedsTokens: 'Connecting a client needs the permission to create API tokens: signing in with OAuth and an API token both give the client a token. Ask an administrator.',
     },
 
     snippets: {
@@ -111,7 +111,7 @@ export default {
       lifetimeHint:   'The token appears under Administration → API Tokens and can be revoked there at any time.',
       untilRevoked:   'Until revoked',
       days:           '{n} days',
-      cannotApprove:  'Approving needs the permission to manage your own API tokens. Ask an administrator.',
+      cannotApprove:  'Approving needs the permission to create API tokens. Ask an administrator.',
       approve:        'Approve',
       deny:           'Deny',
       redirecting:    'Returning to the client…',
@@ -119,7 +119,7 @@ export default {
       expiredTitle:   'This request has expired',
       expiredText:    'Start the connection again from the client.',
       noAccessTitle:  'You cannot connect MCP clients',
-      noAccessText:   'Connecting a client needs the permission to manage your own API tokens. Ask an administrator, or deny the request to return to the client.',
+      noAccessText:   'Connecting a client needs the permission to create API tokens. Ask an administrator, or deny the request to return to the client.',
     },
 
     project: {

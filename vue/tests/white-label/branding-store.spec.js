@@ -33,7 +33,7 @@ describe('branding: normalize + apply', () => {
     expect(b.is_default_brand).toBe(true)
     expect(b.palette).toBeNull()
     expect(b.logo_mark_url).toBeNull()
-    expect(b.features).toEqual({ billing: false, tickets: true, tenant_branding: false, multi_tenant: false })
+    expect(b.features).toEqual({ billing: false, tickets: true, tenant_branding: false, multi_tenant: false, auth_providers: false })
   })
 
   it('reads the billing and ticket module flags (tickets default to on for older APIs)', () => {

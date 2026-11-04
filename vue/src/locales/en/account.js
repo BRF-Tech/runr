@@ -65,21 +65,21 @@ export default {
 
     // Sessions
     sessionsTitle:      'Active Sessions',
-    sessionsDesc:       'Manage your active sessions. You can revoke sessions you no longer use.',
+    sessionsDesc:       'The browsers and devices signed in to your account. You can revoke sessions you no longer use. API tokens are not sessions: they are listed and revoked under Administration → API Tokens.',
     currentSession:     'Current',
     revokeSession:      'Revoke',
     revokeAll:          'Revoke All Other Sessions',
     sessionRevoked:     'Session revoked.',
     allSessionsRevoked: 'All other sessions revoked.',
     revokeConfirm:      'Are you sure you want to revoke this session?',
-    revokeAllConfirm:   'Are you sure you want to revoke all other sessions?',
+    revokeAllConfirm:   'Are you sure you want to revoke all other sessions? Your API tokens keep working.',
     lastActive:         'Last active',
     device:             'Device',
 
     // Danger zone
     dangerTitle:        'Danger Zone',
     disableAccount:     'Disable Account',
-    disableDesc:        'Disable your account. You will be logged out of all other sessions.',
+    disableDesc:        'Disable your account. You will be logged out of all other sessions and your API tokens stop working.',
     disableConfirm:     'Are you sure you want to disable your account?',
     deleteAccount:      'Delete Account',
     deleteDesc:         'Permanently delete your account and all associated data. This action cannot be undone.',

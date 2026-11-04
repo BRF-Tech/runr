@@ -102,8 +102,8 @@ onMounted(load)
     <!-- Scoped MCP token -->
     <McpTokenForm v-if="!loading && canManageTokens" @created="onTokenCreated" />
 
-    <!-- OAuth clients -->
-    <McpConnectedClients v-if="!loading && canManageTokens && oauthEnabled" />
+    <!-- OAuth clients: the user's own credentials, listed and disconnected without tokens.manage -->
+    <McpConnectedClients v-if="!loading && oauthEnabled" />
 
     <!-- Tools -->
     <McpToolCatalog v-if="!loading" />

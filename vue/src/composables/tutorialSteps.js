@@ -205,6 +205,8 @@ export function tokensSteps(t) {
     { element: '[data-tour="tokens-expiry"]',        popover: { title: t('tutorial.tokens.expiry'),        description: t('tutorial.tokens.expiryDesc') } },
     { element: '[data-tour="tokens-full-access"]',   popover: { title: t('tutorial.tokens.fullAccess'),    description: t('tutorial.tokens.fullAccessDesc') } },
     { element: '[data-tour="tokens-custom-access"]', popover: { title: t('tutorial.tokens.customAccess'),  description: t('tutorial.tokens.customAccessDesc') } },
+    // Everyone's: the create steps above drop for a user without tokens.manage (no form)
+    { element: '[data-tour="tokens-list"]',          popover: { title: t('tutorial.tokens.list'),          description: t('tutorial.tokens.listDesc') } },
   ]
 }
 

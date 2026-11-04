@@ -98,7 +98,7 @@ async function resend() {
           <label class="block text-xs font-bold uppercase tracking-widest" style="color:rgb(var(--surface-light-500))">{{ t('auth.email') }}</label>
           <input v-model="email" type="email" required autocomplete="email"
             class="w-full px-4 py-3 rounded-md text-base outline-hidden" style="background:rgb(var(--surface-light-900));border:1.5px solid rgb(var(--surface-light-700));color:rgb(var(--surface-light-100))" />
-          <CaptchaField :captcha="resendCaptcha" />
+          <CaptchaField :captcha="resendCaptcha" theme="light" />
           <p v-if="resent" class="text-sm font-medium" style="color:#059669">{{ t('whiteLabel.signup.resent') }}</p>
           <button type="submit" class="w-full py-3 rounded-md text-base font-semibold text-white disabled:opacity-50"
             style="background:rgb(var(--brand-600))" :disabled="resending || !email" data-test="verify-resend">

@@ -9,7 +9,7 @@ import { createApp } from 'vue'
 import { createPinia } from 'pinia'
 import App from './App.vue'
 import router from './router'
-import i18n from './i18n'
+import i18n, { mergeModuleMessages } from './i18n'
 
 import { moduleRegistry, tenancyReady, authProviderReady, ticketReady, billingReady } from '@/modules/index'
 
@@ -43,6 +43,12 @@ app.directive('click-outside', {
   unmounted(el) { document.removeEventListener('click', el._clickOutside) },
 })
 
+// The core modules' messages are registered by now (modules/index.js loads their plugins
+// eagerly): merged before the first render, so a screen of theirs that opens with the app (the
+// onboarding wizard, the sign-in page's bot protection) never shows a message key while the
+// conditional modules below are still loading.
+const coreMessages = mergeModuleMessages(moduleRegistry.localeMessages)
+
 // Mount immediately, then merge async module plugins (routes, i18n) when ready.
 // Top-level await + dynamic import creates a circular dependency deadlock in production
 // builds (plugin chunk statically imports main bundle which is blocked by await).
@@ -53,9 +59,6 @@ Promise.all([tenancyReady, authProviderReady, ticketReady, billingReady]).then((
     router.addRoute(route)
   }
 
-  for (const msgs of moduleRegistry.localeMessages) {
-    for (const [locale, data] of Object.entries(msgs)) {
-      i18n.global.mergeLocaleMessage(locale, data)
-    }
-  }
+  // the conditional modules' messages (the core ones are in)
+  mergeModuleMessages(moduleRegistry.localeMessages, coreMessages)
 })
