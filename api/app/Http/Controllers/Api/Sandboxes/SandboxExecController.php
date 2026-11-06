@@ -8,6 +8,7 @@ use App\Services\Sandboxes\CodeRunner;
 use App\Services\Sandboxes\Exec\ExecScript;
 use App\Services\Sandboxes\SandboxFiles;
 use App\Services\Sandboxes\SandboxLog;
+use App\Services\Sandboxes\SandboxManifests;
 use App\Services\Sandboxes\SandboxService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -118,6 +119,11 @@ class SandboxExecController extends SandboxApiController
         }
 
         $argv = ExecScript::command($data['cmd'], $this->env($request), $cwd, $timeout, $row->pids_limit, $execId, $tty);
+        // Without a terminal the input is framed and kubectl's stdin stays open (SandboxExecSocket).
+        // "argv" stays as it was: while the pods roll, the session may reach a reverb of 0.6.6
+        // gVisor: the command writes through pipes inside the sandbox; Kata's Rust runtime: acknowledged frames
+        $acked = Sandbox::ackedInputFor($row->sandbox_class);
+        $framedArgv = $tty ? null : ExecScript::command($data['cmd'], $this->env($request), $cwd, $timeout, $row->pids_limit, $execId, false, null, true, Sandbox::relayedOutputFor($row->sandbox_class), $acked);
         $token = Str::uuid()->toString();
         $ttl = (int) config('sandbox.exec.ws_token_ttl', 60);
 
@@ -136,6 +142,8 @@ class SandboxExecController extends SandboxApiController
             'user_id' => $this->userId($request),
             'command' => SandboxLog::commandLine($data['cmd']),
             'tty' => $tty,
+            'framed_argv' => $framedArgv,
+            'acked_input' => ! $tty && $acked,
             'cols' => (int) ($data['cols'] ?? 80),
             'rows' => (int) ($data['rows'] ?? 24),
         ])));
@@ -268,8 +276,9 @@ class SandboxExecController extends SandboxApiController
             abort(response()->json(['message' => __('sandboxes.ws_code_too_large'), 'errors' => ['code' => [__('sandboxes.ws_code_too_large')]]], 422));
         }
 
-        $file = '/tmp/.runr/code/ws-'.strtolower((string) Str::ulid());
-        $script = 'mkdir -p /tmp/.runr/code && printf %s "$1" > "$2" || exit 1'."\n";
+        $file = SandboxManifests::CODE_DIR.'/ws-'.strtolower((string) Str::ulid());
+        // The pod's KEEPALIVE created the directory: mkdir runs only when the write fails (a pod of 0.6.6 or earlier)
+        $script = '{ printf %s "$1" > "$2"; } 2>/dev/null || { mkdir -p '.SandboxManifests::CODE_DIR.' && printf %s "$1" > "$2"; } || exit 1'."\n";
         foreach ($candidates as $argv) {
             $words = implode(' ', array_map(fn ($a) => (string) $a === '{file}' ? '"$2"' : ExecScript::quote((string) $a), $argv));
             $script .= 'if command -v '.ExecScript::quote((string) $argv[0]).' >/dev/null 2>&1; then exec '.$words.'; fi'."\n";

@@ -71,18 +71,21 @@ class CodeRunner
         RequestTime::allow($timeout + 5);
         $cwd = SandboxFiles::normalizePath($cwd ?? SandboxManifests::WORKSPACE, 'cwd');
         $runId = strtolower((string) Str::ulid());
-        $file = "/tmp/.runr/code/run-{$runId}.{$extension}";
+        $file = SandboxManifests::CODE_DIR."/run-{$runId}.{$extension}";
         $marker = '--runr-files-'.Str::random(20).'--';
         $maxFiles = (int) config('sandbox.run.max_files_changed', 1000);
 
         $streamOut = $onOutput ? $this->markerFilter($marker, $onOutput) : null;
 
         $sandbox->touchActivity();
+        $region = $this->service->regionOf($sandbox);
+        // The code goes first, by an exec of its own; the run's exec has no stdin (ExecScript)
+        $this->service->storeInput($sandbox, $region, $file, $code);
         $result = $this->service->rawExec(
             $sandbox,
-            $this->service->regionOf($sandbox),
-            ExecScript::runCode($file, $candidates, $env, $cwd, $timeout, $sandbox->pids_limit, $marker, $maxFiles),
-            $code,
+            $region,
+            ExecScript::runCode($file, $candidates, $env, $cwd, $timeout, $sandbox->pids_limit, $marker, $maxFiles, Sandbox::relayedOutputFor($sandbox->sandbox_class)),
+            null,
             $timeout + 5,
             $streamOut,
             $onTick,

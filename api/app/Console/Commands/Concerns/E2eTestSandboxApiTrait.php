@@ -103,6 +103,7 @@ trait E2eTestSandboxApiTrait
             && ($r->json('data.outputs.0.mime') === 'image/svg+xml')) ?: $r->body());
 
         $tests[] = $this->sbxEntry('sbx-files', $this->checkSandboxFiles($id));
+        $tests[] = $this->sbxEntry('sbx-stdio', $this->checkSandboxStdio($id));
         $tests[] = $this->sbxEntry('sbx-processes', $this->checkSandboxProcesses($id));
 
         $p = $this->api()->post("/api/sandboxes/{$id}/pause");
@@ -290,7 +291,80 @@ trait E2eTestSandboxApiTrait
             $this->api()->delete('/api/sandboxes/'.$r->json('data.id'));
         }
 
-        return array_merge($entries, $this->checkKataGuestVcpus($create, $hypervisors));
+        return array_merge($entries, $this->checkKataStdio($create, $hypervisors), $this->checkKataGuestVcpus($create, $hypervisors));
+    }
+
+    /** Large input and output on every Kata hypervisor (checkSandboxStdio): a sandbox of each. */
+    private function checkKataStdio(callable $create, array $hypervisors): array
+    {
+        $entries = [];
+        foreach ($hypervisors as $hv) {
+            $name = "sbx-kata-{$hv}-stdio";
+            $r = $create(['runtime' => 'python', 'sandbox_class' => "kata-{$hv}"]);
+            if ($r->status() !== 201) {
+                $failedId = $r->json('data.id');
+                $why = 'create: HTTP '.$r->status().' '.mb_substr($r->body(), 0, 300);
+                if (is_string($failedId)) {
+                    $why .= ' — '.$this->sbxDiagnosis($failedId);
+                    $this->api()->delete("/api/sandboxes/{$failedId}");
+                }
+                $entries[] = $this->sbxEntry($name, $why);
+
+                continue;
+            }
+            $entries[] = $this->sbxEntry($name, $this->checkSandboxStdio((string) $r->json('data.id')));
+            $this->api()->delete('/api/sandboxes/'.$r->json('data.id'));
+        }
+
+        return $entries;
+    }
+
+    /**
+     * Input and output over 64 KiB, which RunR 0.6.6 lost: Kata's Go runtime (clh, qemu, fc) stops
+     * a command's output once its stdin closed, Kata's Rust runtime (dragonball) ends an exec's
+     * stdin at 64 KiB, gVisor returns short writes over 64 KiB on the exec's stdout and stderr.
+     * Sizes and sha256 are checked; every problem is listed.
+     */
+    private function checkSandboxStdio(string $id): bool|string
+    {
+        $exec = fn (array $body) => $this->api()->timeout(180)->post("/api/sandboxes/{$id}/exec", $body);
+        $problems = [];
+
+        $in = bin2hex(random_bytes(32768));
+        $r = $exec(['cmd' => 'cat', 'stdin' => $in]);
+        if ($r->json('data.stdout') !== $in || $r->json('data.exit_code') !== 0) {
+            $problems[] = 'stdin 64 KiB → cat: '.strlen((string) $r->json('data.stdout')).' bytes, exit '.json_encode($r->json('data.exit_code'));
+        }
+        $r = $exec(['cmd' => 'cat; echo after-eof', 'stdin' => 'in']);
+        if ($r->json('data.stdout') !== "inafter-eof\n") {
+            $problems[] = 'output after the end of stdin: '.json_encode(mb_substr((string) $r->json('data.stdout'), 0, 80));
+        }
+        $big = bin2hex(random_bytes(524288));
+        $r = $exec(['cmd' => 'wc -c', 'stdin' => $big]);
+        $s = $exec(['cmd' => 'sha256sum | cut -c1-64', 'stdin' => $big]);
+        if ((int) trim((string) $r->json('data.stdout')) !== strlen($big) || trim((string) $s->json('data.stdout')) !== hash('sha256', $big)) {
+            $problems[] = 'stdin 1 MiB: '.trim((string) $r->json('data.stdout')).' bytes, sha256 '.(trim((string) $s->json('data.stdout')) === hash('sha256', $big) ? 'same' : 'different');
+        }
+        $r = $exec(['cmd' => ['python3', '-c', 'print("y" * 100000)']]);
+        if (strlen((string) $r->json('data.stdout')) !== 100001) {
+            $problems[] = 'print of 100000 bytes: '.strlen((string) $r->json('data.stdout')).' bytes';
+        }
+        $r = $exec(['cmd' => ['python3', '-c', 'import os, sys; os.write(1, b"y" * 1048576); sys.stderr.write("e" * 300000)']]);
+        if (strlen((string) $r->json('data.stderr')) !== 300000 || strlen((string) $r->json('data.stdout')) < 65536) {
+            $problems[] = 'stderr of 300000 bytes: '.strlen((string) $r->json('data.stderr')).' bytes, stdout '.strlen((string) $r->json('data.stdout'));
+        }
+        $r = $this->api()->timeout(180)->post("/api/sandboxes/{$id}/run", ['code' => 'print("y" * 100000)', 'language' => 'python']);
+        if (strlen((string) $r->json('data.stdout')) !== 100001) {
+            $problems[] = 'run printing 100000 bytes: '.strlen((string) $r->json('data.stdout')).' bytes, exit '.json_encode($r->json('data.exit_code'));
+        }
+        $bin = random_bytes(1048576);
+        $put = $this->api()->timeout(180)->withBody($bin, 'application/octet-stream')->put("/api/sandboxes/{$id}/files/content?path=/workspace/stdio.bin");
+        $r = $exec(['cmd' => 'wc -c < /workspace/stdio.bin; sha256sum < /workspace/stdio.bin | cut -c1-64; rm -f /workspace/stdio.bin']);
+        if (! $put->successful() || trim((string) $r->json('data.stdout')) !== strlen($bin)."\n".hash('sha256', $bin)) {
+            $problems[] = 'upload of 1 MiB: '.$put->status().' '.mb_substr($put->body(), 0, 120).' / '.json_encode(mb_substr((string) $r->json('data.stdout'), 0, 40));
+        }
+
+        return $problems === [] ?: implode('; ', $problems);
     }
 
     /**

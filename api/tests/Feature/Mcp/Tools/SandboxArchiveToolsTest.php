@@ -72,7 +72,8 @@ class SandboxArchiveToolsTest extends SandboxTestCase
         $this->assertSame(strlen($archive), $result['bytes']);
 
         $upload = collect($this->exec->calls)->last();
-        $this->assertStringContainsString("exec tar -x -m -o -f - -C '/workspace/copy'", FakeSandboxExecTransport::script($upload['argv']));
+        $this->assertStringContainsString('head -c '.strlen($archive).' >&5', FakeSandboxExecTransport::script($upload['argv']));
+        $this->assertStringContainsString("tar -x -m -o -f \"\$runr_t\" -C '/workspace/copy'", FakeSandboxExecTransport::script($upload['argv']));
         $this->assertSame(['src/', 'src/main.py', 'README.md'], array_column(TarReader::entries($upload['stdin']), 'name'));
         $this->assertTrue(AuditEvent::where('action', 'sandbox.file.upload')->exists());
     }

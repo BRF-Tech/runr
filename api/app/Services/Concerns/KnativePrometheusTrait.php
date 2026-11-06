@@ -14,7 +14,7 @@ trait KnativePrometheusTrait
      * Pinned kube-prometheus-stack chart (Prometheus Operator v0.94.2): the version installs
      * resolved and were tested with. A new chart release can change values or CRDs.
      */
-    public const PROMETHEUS_CHART_VERSION = '92.18.0';
+    public const PROMETHEUS_CHART_VERSION = '92.21.2';
 
     /**
      * Install kube-prometheus-stack + standalone cAdvisor with 1s housekeeping.

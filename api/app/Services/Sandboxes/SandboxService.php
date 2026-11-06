@@ -454,7 +454,8 @@ class SandboxService
         }
 
         if ($dirs !== []) {
-            $result = $this->rawExec($sandbox, $region, ExecScript::extractTarAt('/', $dirs), $tar->bytes(), 120);
+            $bytes = $tar->bytes();
+            $result = $this->rawExec($sandbox, $region, ExecScript::extractTarAt('/', strlen($bytes), $dirs), $bytes, 120);
             if (! $result->ok()) {
                 throw new SandboxException(__('sandboxes.files_failed', ['detail' => trim($result->stderr) ?: "exit {$result->exitCode}"]), 502, 'files_failed');
             }
@@ -666,31 +667,66 @@ class SandboxService
         RequestTime::allow($timeout);
         $region = $this->regionOf($sandbox);
 
-        $argv = ExecScript::command($cmd, $env, $cwd, $timeout, $sandbox->pids_limit, $execId);
-
         $sandbox->touchActivity();
-        $result = $this->rawExec($sandbox, $region, $argv, $stdin, $timeout, $onOutput, $onTick, (int) config('sandbox.exec.max_output', 10485760));
+
+        // The input goes first, by an exec of its own; the command's exec has no stdin (ExecScript)
+        $stdinFile = null;
+        if ($stdin !== null) {
+            $stdinFile = ExecScript::inputFile($execId ?? strtolower((string) Str::ulid()));
+            $this->storeInput($sandbox, $region, $stdinFile, $stdin);
+        }
+        $argv = ExecScript::command($cmd, $env, $cwd, $timeout, $sandbox->pids_limit, $execId, false, $stdinFile, false, Sandbox::relayedOutputFor($sandbox->sandbox_class));
+
+        try {
+            $result = $this->rawExec($sandbox, $region, $argv, null, $timeout, $onOutput, $onTick, (int) config('sandbox.exec.max_output', 10485760));
+        } catch (SandboxException $e) {
+            if ($stdinFile !== null) {
+                // The command did not start: its stored input goes (best effort; later commands remove stale ones)
+                try {
+                    $this->rawExec($sandbox, $region, ['/bin/sh', '-c', 'rm -f "$1"', 'runr', $stdinFile], null, 15);
+                } catch (\Throwable) {
+                }
+            }
+            throw $e;
+        }
         $sandbox->touchActivity();
 
         return $result;
     }
 
     /**
-     * Run an internal script (no wrapper) in the sandbox's container.
+     * Stores $bytes in $file in the sandbox: the input of a command or the code of a run, written by
+     * an exec of its own before the exec that uses it (ExecScript class doc).
+     *
+     * @throws SandboxException
+     */
+    public function storeInput(Sandbox $sandbox, KnativeRegion $region, string $file, string $bytes): void
+    {
+        $result = $this->rawExec($sandbox, $region, ExecScript::storeInput($file, strlen($bytes)), $bytes, 120);
+        if (! $result->ok()) {
+            throw new SandboxException(__('sandboxes.files_failed', ['detail' => trim($result->stderr) ?: "exit {$result->exitCode}"]), 502, 'files_failed');
+        }
+    }
+
+    /**
+     * Run an internal script (no wrapper) in the sandbox's container. On Kata's Rust runtime its
+     * input goes in acknowledged frames (ExecScript::ackedInput).
      *
      * @throws SandboxException cluster_error
      */
     public function rawExec(Sandbox $sandbox, KnativeRegion $region, array $argv, ?string $stdin = null, int $timeout = 60, ?callable $onOutput = null, ?callable $onTick = null, ?int $maxOutput = null): ExecResult
     {
+        $ackId = $stdin !== null && Sandbox::ackedInputFor($sandbox->sandbox_class) ? bin2hex(random_bytes(8)) : null;
         try {
             return $this->transport->exec(
                 PodTarget::of($sandbox, $region),
-                $argv,
+                $ackId !== null ? ExecScript::ackedInput($argv, $ackId) : $argv,
                 $stdin,
                 $timeout,
                 $onOutput,
                 $maxOutput ?? (int) config('sandbox.files.max_download_bytes', 52428800) + 4096,
                 $onTick,
+                $ackId,
             );
         } catch (ExecTransportException $e) {
             throw SandboxException::cluster($e->getMessage());

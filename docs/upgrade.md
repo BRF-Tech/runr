@@ -87,6 +87,75 @@ edit projects, deploy or change regions in that time: the previous version canno
 migration has just encrypted, shows env vars as empty and would save that. Its region status
 checks fail in that window and the new version's next check reports the region again.
 
+## 0.6.6 → 0.6.7
+
+### kube-prometheus-stack 92.21.2
+
+Regions installed from now on run kube-prometheus-stack 92.21.2 (Prometheus v3.16.0) instead of
+92.18.0 (Prometheus v3.15.1). Nothing moves by itself: an installed region keeps its chart until
+`php artisan cluster:patch-observability [REGION-ID]` moves it, and `region:reconcile` does not. Run
+it when it suits the region:
+
+- Prometheus restarts once, on the new image. It keeps its volume and its data; the region's
+  metrics have a gap while the new pod starts and reads back its write-ahead log.
+- The Prometheus Operator restarts once. The chart no longer puts its own version in the labels of
+  the operator's pod, so a later chart upgrade restarts the operator only when the operator changes.
+- The admission webhook's certificate Jobs run with kube-webhook-certgen 1.11.1 instead of 1.11.0,
+  as they do on every upgrade of the chart, and keep the certificates.
+- kube-state-metrics and node-exporter keep running: their charts and images are the same. Loki's
+  chart and values are those of 0.6.6.
+- No CRD step is needed. The Prometheus Operator stays at v0.94.2, and its CRDs are the same as in
+  92.18.0 and 92.10.1.
+- A region still on 92.10.1, not moved under 0.6.6, also gets what 0.6.6 brought in the same run
+  ([below](#registry-monitoring-and-knative)): the operator moves to v0.94.2, the chart recreates
+  the admission webhook's Secret as `kubernetes.io/tls` with the same certificates, and
+  kube-state-metrics restarts once.
+- A region whose nodes pull through a mirror of their own needs
+  `quay.io/prometheus/prometheus:v3.16.0-distroless` and `ghcr.io/jkroepke/kube-webhook-certgen:1.11.1`
+  there first. Both come from their upstream registries, not from RunR's reqs mirror.
+
+Prometheus v3.16.0 brings fixes of PromQL and of its storage, and makes the `anchored` and `smoothed`
+range selectors stable ([release notes](https://github.com/prometheus/prometheus/releases/tag/v3.16.0)).
+Its changes of behaviour concern what RunR does not use: the experimental search API, query
+statistics, TLS of the web server, remote write and exemplars. It writes its data in the format
+v3.15.1 reads.
+
+### Sandbox input and output
+
+0.6.7 changes how a sandbox command's input and output travel, around three bugs of the runtimes.
+Nothing needs a step, and Kata and gVisor keep their versions: none of the three is fixed upstream
+yet (Kata 4.3.1 is Kata's latest release; gVisor's code is the same up to 20261102.0), and a newer
+Kata would run kata-deploy again, which stops Kata pods.
+
+- **Kata's Go runtime (Cloud Hypervisor, QEMU, Firecracker)** stops a command's output once the
+  exec's stdin is closed. A command's stdin is no longer closed while it runs: an `/exec` with
+  `stdin` (and a code run, as before) takes one exec more, as the input is written into the sandbox
+  first and the command reads it from there.
+- **Kata's Rust runtime (Dragonball)** ends an exec's stdin once 64 KiB of it wait unread in the
+  guest: its passfd IO writes the guest's pipe without waiting. Input to a Dragonball sandbox goes in
+  acknowledged frames of 48 KiB, the next once the sandbox read the last. On the single-node test VM
+  a 1 MiB upload took 1.0 s and a 10 MiB one 6.6 s (median of 20 each). Turning passfd IO off
+  (`use_passfd_io = false`) would avoid the bug as well, but needs kata-deploy to run again.
+- **gVisor** returns a short write when a program writes more than 64 KiB at once to an exec's stdout
+  or stderr, and a program that does not write the rest loses it (Python with `PYTHONUNBUFFERED`, as
+  RunR's Python runtime sets it). A user command on gVisor (`/exec`, `/run` and the exec WebSocket
+  without a terminal) now writes through pipes inside the sandbox, whose `cat` writes everything; the
+  exit code, kill and timeout stay as they were. It costs about 100 ms per command on the
+  single-node test VM (`true`: median 294 ms instead of 192 ms, n=60 each, interleaved).
+  Terminal sessions are unchanged.
+- Every input is taken as exactly its size and checked once written: input that arrives short fails
+  with `runr: the input ended after N of M bytes` (`the upload`, `the archive` for those) instead of
+  being stored short. An archive upload is written to `/tmp/.runr/exec` first and extracted from
+  there, so while it is extracted it takes its size on the sandbox's disk twice.
+- The changes are in the scripts the API runs in a sandbox for each command. Running sandboxes keep
+  running, those started by 0.6.6 included, and their next command runs the new way.
+- While the API and reverb pods roll, an exec WebSocket without a terminal that reaches a reverb pod
+  of 0.6.6 runs as it did in 0.6.6: the session keeps 0.6.6's command next to the new one.
+- A custom image (`sandbox.allow_custom_images`) now needs `cat` for `/exec` with `stdin` (code runs
+  needed it before), `mkfifo` for the exec WebSocket without a terminal, and on Dragonball `head` or
+  `dd` for any input. coreutils and busybox have them all. Without `head` an upload reads to the end
+  of its input, as before; without `cat` a command on gVisor writes directly, as before.
+
 ## 0.6.5 → 0.6.6
 
 ### Kata Containers 4.3.1

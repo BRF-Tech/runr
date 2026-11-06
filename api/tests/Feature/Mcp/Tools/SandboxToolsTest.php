@@ -68,7 +68,7 @@ class SandboxToolsTest extends SandboxTestCase
         $this->assertStringNotContainsString('sk-do-not-show', json_encode($result));
 
         // The files arrived through the API (one tar on stdin)
-        $inject = $this->exec->callsContaining('exec tar -x -m -o -f - -C');
+        $inject = $this->exec->callsContaining('tar -x -m -o -f "$runr_t" -C');
         $entries = collect(TarReader::entries($inject[0]['stdin']))->keyBy('name');
         $this->assertSame("print(42)\n", $entries['workspace/main.py']['content']);
 

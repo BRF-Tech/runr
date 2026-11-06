@@ -46,9 +46,11 @@ class SandboxRunCodeTest extends SandboxTestCase
         ], $data['files_changed']);
         $this->assertSame([['path' => '/output/plot.png', 'mime' => 'image/png', 'size' => strlen($png), 'data_base64' => base64_encode($png)]], $data['outputs']);
 
-        // The code travels on stdin; python3 first, python as the fallback
-        $run = $this->exec->callsContaining('/tmp/.runr/code/run-')[0];
-        $this->assertSame('print("hello")', $run['stdin']);
+        // The code is stored by an exec of its own; the run has no stdin; python3 first, python as the fallback
+        [$store, $run] = $this->exec->callsContaining('/tmp/.runr/code/run-');
+        $this->assertSame('print("hello")', $store['stdin']);
+        $this->assertStringContainsString('head -c '.strlen('print("hello")').' >&5', $store['argv'][2]);
+        $this->assertNull($run['stdin']);
         $this->assertStringContainsString("command -v 'python3'", $run['argv'][2]);
         $this->assertMatchesRegularExpression("#'/tmp/\\.runr/code/run-[a-z0-9]{26}\\.py'#", $run['argv'][2]);
 
@@ -70,7 +72,7 @@ class SandboxRunCodeTest extends SandboxTestCase
         $this->postJson("/api/sandboxes/{$row->id}/run", ['code' => 'console.log(1)', 'language' => 'node'])->assertOk()->assertJsonPath('data.language', 'javascript');
         $this->postJson("/api/sandboxes/{$row->id}/run", ['code' => 'echo 1', 'language' => 'shell'])->assertOk()->assertJsonPath('data.language', 'bash');
 
-        $scripts = array_map(fn ($c) => $c['argv'][2], $this->exec->callsContaining('/tmp/.runr/code/run-'));
+        $scripts = array_values(array_map(fn ($c) => $c['argv'][2], $this->exec->callsContaining('run=""; rc=127')));
         $this->assertStringContainsString("command -v 'node'", $scripts[0]);
         $this->assertStringContainsString('.js', $scripts[0]);
         $this->assertStringContainsString("command -v 'bash'", $scripts[2]);
@@ -86,7 +88,7 @@ class SandboxRunCodeTest extends SandboxTestCase
             ->assertJsonPath('data.language', 'bash5')
             ->assertJsonPath('data.stdout', "hi\n");
 
-        $script = $this->exec->callsContaining('/tmp/.runr/code/run-')[0]['argv'][2];
+        $script = $this->exec->callsContaining('run=""; rc=127')[0]['argv'][2];
         $this->assertMatchesRegularExpression("#'bash' '/tmp/\\.runr/code/run-[a-z0-9]{26}\\.sh'#", $script);
     }
 

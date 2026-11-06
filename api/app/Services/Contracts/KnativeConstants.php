@@ -72,7 +72,8 @@ interface KnativeConstants
     // stays QUEUE_PROXY_CPU_M and memory stays request == limit. The pod may then use
     // user limit + 1 CPU (+ RuntimeClass overhead) while it starts — a Kata VM boots inside that
     // limit, and queue-proxy itself is ready sooner — and proxies with more than 100m under load.
-    // Measured on a single-node k3s test VM (scale from zero, Node.js 250m): runc 2.0 → 1.5 s, Kata CLH 3.9 → 2.7 s.
+    // Measured on a single-node k3s test VM (scale from zero, Node.js 250m; Kata 3.28.0): runc 2.0 → 1.5 s,
+    // Kata CLH 3.9 → 2.7 s.
     // Trade: project pods are Burstable instead of Guaranteed (0.3.8 had pinned request == limit).
     // The burst only uses CPU the node has idle — under contention every pod gets CPU by its
     // request (cpu.weight); nothing more is reserved: the scheduler, ResourceReservation, tenant

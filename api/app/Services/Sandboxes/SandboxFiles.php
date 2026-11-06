@@ -110,7 +110,7 @@ class SandboxFiles
             throw new SandboxException(__('sandboxes.mode_invalid'), 422, 'invalid', ['errors' => ['mode' => [__('sandboxes.mode_invalid')]]]);
         }
 
-        $result = $this->run($sandbox, ExecScript::writeFile($path, $mode), $content, self::TIMEOUT);
+        $result = $this->run($sandbox, ExecScript::writeFile($path, strlen($content), $mode), $content, self::TIMEOUT);
         $this->assertOk($result, $path);
 
         SandboxLog::record($sandbox, SandboxLog::FILE_UPLOAD, $path, ['op' => 'write', 'bytes' => strlen($content)]);
@@ -167,7 +167,7 @@ class SandboxFiles
         $path = self::normalizePath($path);
         $this->assertUploadSize(strlen($tar));
 
-        $result = $this->run($sandbox, ExecScript::extractTarAt($path), $tar, self::TIMEOUT);
+        $result = $this->run($sandbox, ExecScript::extractTarAt($path, strlen($tar)), $tar, self::TIMEOUT);
         $this->assertOk($result, $path);
 
         SandboxLog::record($sandbox, SandboxLog::FILE_UPLOAD, $path, ['op' => 'extract', 'bytes' => strlen($tar)]);

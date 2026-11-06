@@ -111,7 +111,7 @@ helm status runr -n runr      # prints how to read the first administrator's pas
 
 The chart installs the gateway, UI, API, Horizon, scheduler and Reverb and - unless you point it at
 external services - PostgreSQL, Redis and Mailpit, with migration and bootstrap hooks that create the
-first administrator. To install a specific release, pin the chart version (`--version 0.6.6`); the
+first administrator. To install a specific release, pin the chart version (`--version 0.6.7`); the
 API and UI images follow it. `edition=multi-tenant` switches on the Tenancy and Auth Provider
 modules and the multi-tenant console image.
 
@@ -497,11 +497,13 @@ Every claim is backed by a page in [`docs/`](docs/README.md); what changed in ea
 # Measured cold starts
 
 Measured on RunR 0.5.0, 2026-10-15: single-node k3s v1.34.11 on a test VM (8 vCPU Broadwell,
-nested KVM, 15.6 GiB), Knative 1.21.3, gVisor 20260921.0, Kata Containers 3.28.0; function
-250m CPU / 256 MiB (container 500m / 512 MiB, WebAssembly 250m / 128 MiB), image on the node,
-RunR's default scale-to-zero; HTTPS from inside the VM through Traefik, a new connection per
-request. Cold start: from zero replicas to the first full HTTPS response, median (p90), n=12 each.
-Warm request: median of 100 requests.
+nested KVM, 15.6 GiB), Knative 1.21.3, gVisor 20260921.0; function 250m CPU / 256 MiB (container
+500m / 512 MiB, WebAssembly 250m / 128 MiB), image on the node, RunR's default scale-to-zero;
+HTTPS from inside the VM through Traefik, a new connection per request. The Kata Containers rows
+were measured again on RunR 0.6.6 with Kata Containers 4.3.1, 2026-11-06, on the same VM in the
+same way, with Python 3.15 (RunR 0.6.6's default; the 0.5.0 Python rows ran Python 3.14). Cold
+start: from zero replicas to the first full HTTPS response, median (p90), n=12 each. Warm request:
+median of 100 requests.
 
 | Sandbox runtime | Function | Cold start | Warm request |
 | --- | --- | --- | --- |
@@ -511,18 +513,19 @@ Warm request: median of 100 requests.
 | runc | PHP | 1.65 s (2.48) | 9 ms |
 | runc | Container image (CaaS) | 1.57 s (2.02) | 9 ms |
 | gVisor | Python | 1.97 s (2.64) | 12 ms |
-| Kata Containers + Cloud Hypervisor | Python | 3.11 s (3.25) | 10 ms |
-| Kata Containers + Firecracker | Python | 3.21 s (3.47) | 10 ms |
-| Kata Containers + QEMU | Python | 3.89 s (4.45) | 10 ms |
-| Kata Containers + Dragonball | Python | 3.95 s (4.04) | 11 ms |
+| Kata Containers 4.3.1 + Cloud Hypervisor | Python | 3.19 s (3.53) | 12 ms |
+| Kata Containers 4.3.1 + Firecracker | Python | 3.17 s (3.52) | 11 ms |
+| Kata Containers 4.3.1 + QEMU | Python | 3.96 s (4.21) | 11 ms |
+| Kata Containers 4.3.1 + Dragonball | Python | 4.15 s (4.48) | 12 ms |
 | WebAssembly (Spin shim) | Rust | 1.54 s (1.84) | 9 ms |
 | WebAssembly (Spin shim) | JavaScript | 2.12 s (2.58) | 11 ms |
 
 Kata was measured with Python only; Firecracker's root filesystem is on containerd's devmapper
-snapshotter. Sandbox API, create to first command (Python 3.14, 500m / 512 MiB, n=10 per class):
-cold 2.01 s under gVisor, 2.99 s under Kata Firecracker, 4.01 s under Kata Cloud Hypervisor;
-0.28–0.36 s from a warm pool of 2. How the Kata cold start was brought down, and where the remaining
-time goes: [Kata hypervisors → Cold start](docs/kata-hypervisors.md#cold-start).
+snapshotter. Sandbox API, create to first command (RunR 0.6.6 and Kata Containers 4.3.1,
+2026-11-06, the same VM; Python 3.15, 500m / 512 MiB, median, n=10 per class): cold 2.21 s under
+gVisor, 3.09 s under Kata Cloud Hypervisor, 3.43 s under Kata Firecracker; 0.31–0.48 s from a warm
+pool of 2. How the Kata cold start was brought down, and where the remaining time goes:
+[Kata hypervisors → Cold start](docs/kata-hypervisors.md#cold-start).
 
 <br>
 

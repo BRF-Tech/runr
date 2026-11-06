@@ -188,6 +188,24 @@ class Sandbox extends Model
         return $class === 'gvisor' ? 'gvisor' : 'runc';
     }
 
+    /**
+     * An exec's input goes in acknowledged frames: Kata's Rust runtime ends an exec's stdin when
+     * input reaches it faster than the sandbox reads (ExecScript class doc).
+     */
+    public static function ackedInputFor(?string $class): bool
+    {
+        return in_array(KataRuntime::hypervisorOf($class), KataRuntime::RUST_RUNTIME, true);
+    }
+
+    /**
+     * A user command writes through pipes inside the sandbox: gVisor returns short writes over
+     * 64 KiB on an exec's stdout and stderr (ExecScript class doc).
+     */
+    public static function relayedOutputFor(?string $class): bool
+    {
+        return $class === 'gvisor';
+    }
+
     /** When the idle timer runs out (null: no idle timeout, or not running). */
     public function idleExpiresAt(): ?Carbon
     {

@@ -116,7 +116,7 @@ helm status runr -n runr      # ilk yöneticinin parolasının nasıl okunacağ�
 Chart gateway'i, UI'ı, API'yi, Horizon'u, zamanlayıcıyı ve Reverb'i, dış servislere
 yönlendirmediğiniz sürece PostgreSQL, Redis ve Mailpit'i kurar; migration ve bootstrap hook'ları
 ilk yöneticiyi oluşturur. Belirli bir sürümü kurmak için chart sürümünü sabitleyin
-(`--version 0.6.6`); API ve UI imajları onu izler. `edition=multi-tenant`, Tenancy ve Auth Provider
+(`--version 0.6.7`); API ve UI imajları onu izler. `edition=multi-tenant`, Tenancy ve Auth Provider
 modüllerini ve çok kiracılı konsol imajını açar.
 
 <details>
@@ -511,11 +511,12 @@ Her iddianın arkasında [`docs/`](docs/README.md) içinde bir sayfa durur; her 
 # Ölçülen soğuk başlatma süreleri
 
 RunR 0.5.0 ile 2026-10-15'te ölçüldü: test VM'inde tek düğümlü k3s v1.34.11 (8 vCPU Broadwell, iç
-içe KVM, 15,6 GiB), Knative 1.21.3, gVisor 20260921.0, Kata Containers 3.28.0; fonksiyon 250m CPU /
-256 MiB (container 500m / 512 MiB, WebAssembly 250m / 128 MiB), imaj düğümde, RunR'ın varsayılan
-scale-to-zero ayarı; VM içinden Traefik üzerinden HTTPS, her istekte yeni bağlantı. Soğuk başlatma:
-sıfır replikadan ilk tam HTTPS yanıtına, medyan (p90), her biri n=12. Sıcak istek: 100 isteğin
-medyanı.
+içe KVM, 15,6 GiB), Knative 1.21.3, gVisor 20260921.0; fonksiyon 250m CPU / 256 MiB (container
+500m / 512 MiB, WebAssembly 250m / 128 MiB), imaj düğümde, RunR'ın varsayılan scale-to-zero ayarı;
+VM içinden Traefik üzerinden HTTPS, her istekte yeni bağlantı. Kata Containers satırları RunR 0.6.6
+ve Kata Containers 4.3.1 ile 2026-11-06'da aynı VM'de, aynı yöntemle yeniden ölçüldü; Python 3.15
+ile (RunR 0.6.6'nın varsayılanı; 0.5.0'ın Python satırları Python 3.14 ile). Soğuk başlatma: sıfır
+replikadan ilk tam HTTPS yanıtına, medyan (p90), her biri n=12. Sıcak istek: 100 isteğin medyanı.
 
 | Sandbox runtime'ı | Fonksiyon | Soğuk başlatma | Sıcak istek |
 | --- | --- | --- | --- |
@@ -525,18 +526,19 @@ medyanı.
 | runc | PHP | 1,65 sn (2,48) | 9 ms |
 | runc | Container imajı (CaaS) | 1,57 sn (2,02) | 9 ms |
 | gVisor | Python | 1,97 sn (2,64) | 12 ms |
-| Kata Containers + Cloud Hypervisor | Python | 3,11 sn (3,25) | 10 ms |
-| Kata Containers + Firecracker | Python | 3,21 sn (3,47) | 10 ms |
-| Kata Containers + QEMU | Python | 3,89 sn (4,45) | 10 ms |
-| Kata Containers + Dragonball | Python | 3,95 sn (4,04) | 11 ms |
+| Kata Containers 4.3.1 + Cloud Hypervisor | Python | 3,19 sn (3,53) | 12 ms |
+| Kata Containers 4.3.1 + Firecracker | Python | 3,17 sn (3,52) | 11 ms |
+| Kata Containers 4.3.1 + QEMU | Python | 3,96 sn (4,21) | 11 ms |
+| Kata Containers 4.3.1 + Dragonball | Python | 4,15 sn (4,48) | 12 ms |
 | WebAssembly (Spin shim) | Rust | 1,54 sn (1,84) | 9 ms |
 | WebAssembly (Spin shim) | JavaScript | 2,12 sn (2,58) | 11 ms |
 
 Kata yalnız Python ile ölçüldü; Firecracker'ın kök dosya sistemi containerd'nin devmapper
-snapshotter'ındadır. Sandbox API, oluşturmadan ilk komuta (Python 3.14, 500m / 512 MiB, sınıf başına
-n=10): gVisor altında soğuk 2,01 sn, Kata Firecracker altında 2,99 sn, Kata Cloud Hypervisor altında
-4,01 sn; 2'lik sıcak havuzdan 0,28-0,36 sn. Kata soğuk başlatmasının nasıl düşürüldüğü ve kalan
-sürenin nereye gittiği: [Kata hipervizörleri → Cold start](docs/kata-hypervisors.md#cold-start).
+snapshotter'ındadır. Sandbox API, oluşturmadan ilk komuta (RunR 0.6.6 ve Kata Containers 4.3.1,
+2026-11-06, aynı VM; Python 3.15, 500m / 512 MiB, medyan, sınıf başına n=10): gVisor altında soğuk
+2,21 sn, Kata Cloud Hypervisor altında 3,09 sn, Kata Firecracker altında 3,43 sn; 2'lik sıcak
+havuzdan 0,31-0,48 sn. Kata soğuk başlatmasının nasıl düşürüldüğü ve kalan sürenin nereye gittiği:
+[Kata hipervizörleri → Cold start](docs/kata-hypervisors.md#cold-start).
 
 <br>
 

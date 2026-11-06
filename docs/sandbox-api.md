@@ -171,7 +171,7 @@ Create body — every field is optional:
 | Field | Default | Meaning |
 |---|---|---|
 | `runtime`, `version` | `python`, its default version | a runtime of the catalog (`GET /runtimes`), offered in the region |
-| `image` | | any image instead of a runtime (`sandbox.allow_custom_images`); it needs `/bin/sh`, and `tar` for file transfer |
+| `image` | | any image instead of a runtime (`sandbox.allow_custom_images`); it needs `/bin/sh`, `tar` for file transfer, `cat` for `stdin` and code runs, `mkfifo` for the exec WebSocket without a terminal, and on Kata Dragonball `head` or `dd` for any input (coreutils and busybox have them all) |
 | `cpu` | `500m` | `"500m"`, `0.5`, `"1"` (50m up to the region's per-sandbox limit) |
 | `memory` | 512 | MiB, or `"512Mi"`, `"1Gi"` (64 MiB up to the limit) |
 | `disk` | 1024 | MiB or a quantity: ephemeral storage and the size of each writable directory |
@@ -200,7 +200,7 @@ Create body — every field is optional:
 |---|---|
 | `cmd` | a string (run by `/bin/sh -c`) or an argv list |
 | `code` + `language` | instead of `cmd`: run code with the language's interpreter (see [Code interpreter](#code-interpreter)) |
-| `stdin` / `stdin_base64` | standard input as text / bytes (up to 10 MiB) |
+| `stdin` / `stdin_base64` | standard input as text / bytes (up to 10 MiB). It is written into the sandbox first, then the command reads it from there: a command never sees the exec's own stdin close, after which Kata's Go runtime (Cloud Hypervisor, QEMU, Firecracker) stops passing its output. On Kata Dragonball it goes in acknowledged frames (about 1.5 MiB/s on the test VM), as Dragonball ends an exec's stdin once 64 KiB wait unread. Input that arrives short fails (`runr: the input ended after N of M bytes`) |
 | `timeout` | seconds (default 60, up to 3600); at the timeout the process is killed (`timed_out: true`, exit code 137) |
 | `env` | extra environment for this command (on top of the sandbox's `env`) |
 | `cwd` | working directory (default `/workspace`) |
@@ -208,7 +208,9 @@ Create body — every field is optional:
 
 JSON result: `{"data": {"exit_code", "stdout", "stderr", "timed_out", "duration_ms", "truncated"}}`.
 Output that is not valid UTF-8 comes as `stdout_base64` / `stderr_base64`; output above 10 MiB is
-cut (`truncated: true`).
+cut (`truncated: true`). On gVisor a command writes through pipes inside the sandbox: gVisor returns a
+short write over 64 KiB on an exec's own stdout and stderr, which some programs do not repeat
+(Python unbuffered), and the pipes' `cat` writes all of it.
 
 **Server-Sent Events** — each output chunk as it is written:
 
@@ -240,7 +242,10 @@ Connect to `wss://<console host><url>`:
 | client → server | `{"type":"stdin","data":"<base64>"}`, `{"type":"stdin_close"}`, `{"type":"kill"}`, `{"type":"resize","cols","rows"}` |
 
 The WebSocket is the way for interactive programs that read stdin while they run; the connection
-closes after the `exit` frame. `kill` stops the command (`killed: true`, exit code 137).
+closes after the `exit` frame. `kill` stops the command (`killed: true`, exit code 137). Without a
+terminal the API passes the input on in frames and ends it in-band at `stdin_close`: the exec's own
+stdin stays open until the command has ended (Kata's Go runtime stops a command's output once it
+closes), and the exit code comes from a marker the command's wrapper writes when it ends.
 
 **A terminal for any command** — `"tty": true` in the body runs the command on a terminal
 (`kubectl exec -t`), so shells, REPLs, editors and pagers behave as in a terminal window:

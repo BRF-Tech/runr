@@ -8,6 +8,74 @@ did not change says so.
 
 ## [Unreleased]
 
+## [0.6.7] - 2026-11-06
+
+### Upgrade notes
+
+- **Nothing needs a step.** There is no database migration, Kata is not reinstalled, and running
+  sandboxes keep running: their next command runs the new way. See
+  [docs/upgrade.md](docs/upgrade.md#066--067).
+- **A sandbox command on gVisor takes about 100 ms more** on the single-node test VM: it
+  writes through pipes inside the sandbox, so that a large write no longer loses its end. On
+  Dragonball, input goes in acknowledged frames of 48 KiB (a 10 MiB upload took 6.6 s on the same
+  VM). See [docs/upgrade.md](docs/upgrade.md#sandbox-input-and-output).
+- **A custom sandbox image** (`sandbox.allow_custom_images`) now needs `cat` for `/exec` with
+  `stdin`, `mkfifo` for the exec WebSocket without a terminal, and on Dragonball `head` or `dd` for
+  any input. coreutils and busybox have them all.
+- **kube-prometheus-stack 92.21.2 does not reach an installed region by itself:**
+  `php artisan cluster:patch-observability` moves it and restarts Prometheus once. See
+  [docs/upgrade.md](docs/upgrade.md#kube-prometheus-stack-92212).
+
+### Changed
+
+- **A sandbox command starts one process less.** Every command ran `mkdir -p /tmp/.runr/exec`
+  before it wrote its PID file; the sandbox pod now creates that directory (and
+  `/tmp/.runr/code`) when it starts, and a command writes its PID file with the shell alone. On
+  the single-node test VM (nested KVM, Kata 4.3.1) a command took 22–37 ms less at the median on
+  Cloud Hypervisor, QEMU, Dragonball and gVisor (kubectl exec of the command's wrapper, n=60 per
+  class; Firecracker unchanged). The code interpreter and the files of a create or of a claimed
+  warm pod start no mkdir when their directories exist. Sandboxes started by 0.6.6 or earlier
+  create the directory on their first command.
+- **kube-prometheus-stack 92.21.2** (Prometheus v3.16.0, kube-webhook-certgen 1.11.1; the Prometheus
+  Operator stays at v0.94.2). Regions installed from now on run it; an installed region keeps its
+  chart until `php artisan cluster:patch-observability`, a change back to RunR's own monitoring or a
+  new Serving install moves it. The move restarts Prometheus and its operator once and needs no step
+  of its own: the operator's CRDs are the same. The chart no longer puts its version in the labels of
+  the operator's pod, so a later chart upgrade restarts the operator only when the operator changes
+  ([upgrade.md](docs/upgrade.md#kube-prometheus-stack-92212)).
+
+### Fixed
+
+- **On Kata, a sandbox command's output no longer stops when its input ends.** With Kata
+  Containers 4.3.1 (RunR 0.6.6), the Go runtime behind Cloud Hypervisor, QEMU and Firecracker
+  stops passing a command's stdout once the exec's stdin is closed: `/run` with more than 32 KiB
+  of output timed out with 32 KiB, `/exec` with `stdin` lost what the command wrote after its
+  input ended (and more than 32 KiB of it hung until the timeout), and the exec WebSocket lost the
+  output after `stdin_close`. RunR no longer closes an exec's stdin while a command runs: the
+  input of `/exec` and the code of `/run` are written into the sandbox by an exec of their own and
+  read from there (an input whose command never started is removed after an hour), uploads and the
+  env file of a claimed warm pod take exactly their bytes, and the exec WebSocket passes its input
+  on in frames that end in-band, with the exit code from a marker the command's wrapper writes; a
+  kill reaches the command through its PID file as before. Dragonball (runtime-rs) and gVisor were
+  not affected. A custom image now needs `cat` for `/exec` with `stdin` and `mkfifo` for the exec
+  WebSocket without a terminal ([upgrade.md](docs/upgrade.md#sandbox-input-and-output)).
+- **On Dragonball, input over 64 KiB no longer ends at 64 KiB.** Kata 4.3.1's Rust runtime with the
+  Dragonball VMM ends an exec's stdin once 64 KiB of it wait unread in the guest, and the command
+  still exits 0: an upload over 64 KiB was stored short (100000 bytes written, 65536 read back), and
+  `/exec` with `stdin`, a code run's code and the files of a create over 64 KiB were cut. Input to a
+  Dragonball sandbox now goes in acknowledged frames of 48 KiB, the next once the sandbox read the
+  last (on the single-node test VM a 10 MiB upload took 6.6 s). On every class, input that arrives
+  short now fails with a message instead of being stored, and an archive is checked before it is
+  extracted: tar takes an archive cut between two files without a word.
+- **On gVisor, a large write of a command no longer loses its end.** gVisor returns a short write
+  when a program writes more than 64 KiB at once to an exec's stdout or stderr, and programs that do
+  not write the rest lose it: Python's `print("y" * 100000)` came back with 65537 bytes (RunR's Python
+  runtime runs unbuffered). A user command on gVisor now writes through pipes inside the sandbox,
+  whose `cat` writes everything, with its exit code, kill and timeout as before; this costs about
+  100 ms per command on the single-node test VM. Kata and runc were not affected.
+- **kubectl's "command terminated with exit code N" no longer ends a command's stderr** when that
+  stderr did not end in a newline and the trailer came in the same piece of output.
+
 ## [0.6.6] - 2026-11-06
 
 ### Upgrade notes
@@ -3899,7 +3967,8 @@ Initial tagged release.
 - API gateways with routes, in-app notifications and support tickets.
 - Helm chart with a single-tenant / multi-tenant edition, an install form (`values.schema.json`), generated secrets and a Traefik ingress; a Docker Compose setup for development.
 
-[Unreleased]: https://github.com/brf-tech/runr/compare/v0.6.6...main
+[Unreleased]: https://github.com/brf-tech/runr/compare/v0.6.7...main
+[0.6.7]: https://github.com/brf-tech/runr/releases/tag/v0.6.7
 [0.6.6]: https://github.com/brf-tech/runr/releases/tag/v0.6.6
 [0.6.5]: https://github.com/brf-tech/runr/releases/tag/v0.6.5
 [0.6.4]: https://github.com/brf-tech/runr/releases/tag/v0.6.4

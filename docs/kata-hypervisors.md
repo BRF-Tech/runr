@@ -93,19 +93,35 @@ RunR does two things here:
   `requests.cpu`). Existing projects pick up the annotation on their next deploy (Knative's
   `config-deployment` default of 100m request = limit stays, since changing it would restart every Revision).
 
-Measurement (8-vCPU Broadwell OpenStack VM with nested KVM, k3s 1.34, Kata 3.28.0; from zero to first response
-through Knative, function 250m / 256Mi; median, n ≥ 6; 0.4.2 exactly as RunR renders it: the drop-ins written
-by the kata-dropins DaemonSet, the RuntimeClasses and the queue-proxy annotation):
+Measurement with Kata 4.3.1 (RunR 0.6.6, 2026-11-06; 8-vCPU Broadwell OpenStack VM with nested KVM, k3s 1.34,
+Knative 1.21.3; from zero replicas to the first full HTTPS response through Traefik, Python 3.15 function
+250m / 256Mi, image on the node; median (p90) and range, n = 12; the last column is the same measurement with
+RunR 0.5.0 and Kata 3.28.0, Python 3.14):
+
+| | Python, Kata 4.3.1 | Kata 3.28.0 |
+|---|---|---|
+| kata-clh | **3.19 s** (3.53), 3.00–3.60 | 3.11 s (3.25) |
+| kata-fc | **3.17 s** (3.52), 2.91–3.69 | 3.21 s (3.47) |
+| kata-qemu | **3.96 s** (4.21), 3.62–4.22 | 3.89 s (4.45) |
+| kata-dragonball | **4.15 s** (4.48), 3.93–4.67 | 3.95 s (4.04) |
+
+A runc control in the same run took 1.58 s (1.50 s with 0.5.0); warm requests take 10–12 ms on every
+hypervisor. Where the time goes (kata-clh, medians): Knative/kubelet work before the sandbox ~0.45 s (the same
+under runc), VM boot ~1.2 s, creating the two containers ~0.3 s, the function's start inside the guest ~1.3 s
+(at a 250m limit; the cost of first memory touches on nested KVM, 0.37 s under runc), the kubelet's status
+relist ~0.7 s. VM boot by hypervisor: fc 1.14 s, clh 1.18 s, qemu 1.92 s, dragonball 2.07 s (with Kata 3.28.0:
+1.04 / 1.12 / 1.84 / 1.85 s); Dragonball's 0.2 s more is CPU its VMM spends at boot on Kata 4.3.1, for the
+same 3-vCPU / 576 MiB guest.
+
+The two changes above were measured with RunR 0.4.2 on Kata 3.28.0 (the same VM; from zero to first response
+through Knative, function 250m / 256Mi; median and range, n ≥ 6; 0.4.2 exactly as RunR renders it: the
+drop-ins written by the kata-dropins DaemonSet, the RuntimeClasses and the queue-proxy annotation):
 
 | | Node.js 0.4.1 | Node.js 0.4.2 | Python 0.4.1 | Python 0.4.2 |
 |---|---|---|---|---|
 | kata-clh | 6.7 s | **2.7 s** (2.5–3.6) | 6.1 s | **3.1 s** (2.7–3.9) |
 | kata-qemu | 7.1 s | **3.5 s** (3.3–3.9) | 7.3 s | **3.7 s** (3.4–4.4) |
 | kata-dragonball | 7.1 s | **3.6 s** (3.3–4.3) | 7.4 s | **3.7 s** (3.5–8.5) |
-
-Where the remaining time goes (kata-clh, Node.js): Knative/kubelet work before the sandbox ~0.4 s (the same
-under runc), VM boot ~1.1 s, creating the two containers ~0.3 s, the function's start inside the guest
-~0.95 s (at a 250m limit; the cost of first memory touches on nested KVM, 0.17 s under runc).
 
 ### Drop-in updates without restarts
 

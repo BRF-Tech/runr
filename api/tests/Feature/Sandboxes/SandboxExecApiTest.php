@@ -4,6 +4,7 @@ namespace Tests\Feature\Sandboxes;
 
 use App\Models\Sandbox;
 use App\Models\SandboxEvent;
+use App\Services\Sandboxes\Exec\ExecScript;
 use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\Redis;
 use Tests\Support\FakeSandboxExecTransport;
@@ -48,11 +49,25 @@ class SandboxExecApiTest extends SandboxTestCase
         $row = $this->runningSandbox();
 
         $this->postJson("/api/sandboxes/{$row->id}/exec", ['cmd' => 'cat | wc -c', 'stdin' => 'hello'])->assertOk();
-        $this->assertSame(['/bin/sh', '-c', 'cat | wc -c'], FakeSandboxExecTransport::userArgv($this->exec->calls[0]['argv']));
-        $this->assertSame('hello', $this->exec->calls[0]['stdin']);
+        // The input goes first, by an exec of its own; the command's exec has no stdin and reads the file
+        [$store, $run] = $this->exec->calls;
+        $this->assertSame('hello', $store['stdin']);
+        $file = $store['argv'][4];
+        $this->assertMatchesRegularExpression('#^/tmp/\.runr/exec/\d+-[a-z0-9]{26}\.in$#', $file);
+        $this->assertStringContainsString('head -c 5 >&5', $store['argv'][2]);
+        $this->assertFalse($store['acked']);
+        $this->assertSame(['/bin/sh', '-c', 'cat | wc -c'], FakeSandboxExecTransport::userArgv($run['argv']));
+        $this->assertNull($run['stdin']);
+        $this->assertStringContainsString("exec 0< '{$file}'; rm -f '{$file}'", $run['argv'][2]);
 
         $this->postJson("/api/sandboxes/{$row->id}/exec", ['cmd' => 'cat', 'stdin_base64' => base64_encode("\x00\xff")])->assertOk();
-        $this->assertSame("\x00\xff", $this->exec->calls[1]['stdin']);
+        $this->assertSame("\x00\xff", $this->exec->calls[2]['stdin']);
+        $this->assertNull($this->exec->calls[3]['stdin']);
+
+        // Without stdin: one exec
+        $this->postJson("/api/sandboxes/{$row->id}/exec", ['cmd' => 'true'])->assertOk();
+        $this->assertCount(5, $this->exec->calls);
+        $this->assertStringNotContainsString('exec 0<', $this->exec->calls[4]['argv'][2]);
     }
 
     public function test_binary_output_comes_as_base64(): void
@@ -146,6 +161,39 @@ class SandboxExecApiTest extends SandboxTestCase
         $this->assertSame([], $this->exec->calls);
     }
 
+    public function test_input_on_kata_rust_runtime_goes_in_acknowledged_frames(): void
+    {
+        $row = $this->runningSandbox(['sandbox_class' => 'kata-dragonball']);
+
+        $this->postJson("/api/sandboxes/{$row->id}/exec", ['cmd' => 'cat', 'stdin' => 'hello'])->assertOk();
+
+        [$store, $run] = $this->exec->calls;
+        $this->assertTrue($store['acked']);
+        $this->assertSame('hello', $store['stdin']);
+        // The reader acknowledges every frame and hands the bytes to the store script
+        $this->assertStringContainsString('runr_rd | "$@"', $store['argv'][2]);
+        $this->assertStringContainsString('head -c 5 >&5', FakeSandboxExecTransport::script(array_slice($store['argv'], 4)));
+        $this->assertFalse($run['acked']);
+        $this->assertNull($run['stdin']);
+    }
+
+    public function test_commands_on_gvisor_write_through_pipes_inside_the_sandbox(): void
+    {
+        $row = $this->runningSandbox(['sandbox_class' => 'gvisor']);
+
+        $this->postJson("/api/sandboxes/{$row->id}/exec", ['cmd' => 'python3 big.py'])->assertOk();
+
+        $script = $this->exec->calls[0]['argv'][2];
+        $this->assertStringContainsString('timeout -s KILL 60 "$@" <&3 3<&- 6>&- 7>&- 8>&- &', $script);
+        $this->assertStringContainsString('} | cat >&6 6>&- 7>&- 8>&-; } 2>&1 | cat >&7 6>&- 7>&- 8>&-; } 8>&1 )', $script);
+        $this->assertFalse($this->exec->calls[0]['acked']);
+
+        // Kata keeps its exec of the command itself
+        $kata = $this->runningSandbox();
+        $this->postJson("/api/sandboxes/{$kata->id}/exec", ['cmd' => 'true'])->assertOk();
+        $this->assertStringNotContainsString('| cat >&6', $this->exec->calls[1]['argv'][2]);
+    }
+
     public function test_websocket_token_carries_the_prepared_command(): void
     {
         $row = $this->runningSandbox();
@@ -190,6 +238,13 @@ class SandboxExecApiTest extends SandboxTestCase
         $this->assertSame([80, 24], [$stored['cols'], $stored['rows']]);
         $this->assertStringNotContainsString('--foreground', $stored['argv'][2]);
         $this->assertStringNotContainsString('TERM', $stored['argv'][2]);
+
+        // The framed wrapper runs; "argv" stays 0.6.6's for a reverb that does not know framing yet
+        $this->assertSame(['/bin/sh', '-c', 'cat'], array_slice($stored['framed_argv'], 4));
+        $this->assertStringContainsString('runr_rd <&3 > "$runr_fifo"', $stored['framed_argv'][2]);
+        $this->assertStringContainsString(ExecScript::pidFile($stored['exec_id']), $stored['framed_argv'][2]);
+        $this->assertStringNotContainsString('runr_rd', $stored['argv'][2]);
+        $this->assertStringContainsString('exec timeout -s KILL', $stored['argv'][2]);
     }
 
     public function test_websocket_with_a_terminal(): void
@@ -213,6 +268,8 @@ class SandboxExecApiTest extends SandboxTestCase
         // A terminal type unless the sandbox or the request sets one; GNU timeout in the foreground
         $this->assertStringContainsString('export TERM="${TERM:-xterm-256color}"', $stored['argv'][2]);
         $this->assertStringContainsString('exec timeout --foreground -s KILL 600 "$@"', $stored['argv'][2]);
+        // A terminal keeps its stdin open anyway: no framing
+        $this->assertNull($stored['framed_argv']);
     }
 
     public function test_websocket_terminal_sizes_are_validated(): void
@@ -242,6 +299,9 @@ class SandboxExecApiTest extends SandboxTestCase
         $this->assertSame(['/bin/sh', '-c'], array_slice($user, 0, 2));
         $this->assertStringContainsString("command -v 'python3'", $user[2]);
         $this->assertSame('print(2)', $user[4]);
+        // The code file is written first; mkdir runs only when that fails (a pod without /tmp/.runr/code)
+        $this->assertStringStartsWith('{ printf %s "$1" > "$2"; } 2>/dev/null || { mkdir -p /tmp/.runr/code && printf %s "$1" > "$2"; } || exit 1', $user[2]);
+        $this->assertStringStartsWith('/tmp/.runr/code/ws-', $user[5]);
     }
 
     public function test_terminal_session_for_the_web_shell(): void

@@ -10,6 +10,11 @@ namespace App\Services\Sandboxes\Exec;
  * the working directory and applies the timeout / PID limit). $onOutput receives each chunk as it
  * arrives: ('stdout' | 'stderr', bytes). $onTick runs about every 50 ms while the command runs;
  * returning false stops it (client gone).
+ *
+ * $ackId: $argv reads its input in acknowledged frames (ExecScript::ackedInput with this id): the
+ * transport sends $stdin in frames of ExecScript::ACKED_FRAME_BYTES, each once the last was
+ * acknowledged (ExecScript::ackMarker on stderr), then "0\n", and closes stdin at
+ * ExecScript::ackEndMarker; both markers are taken out of stderr whole (MarkerFilter).
  */
 interface ExecTransport
 {
@@ -28,5 +33,6 @@ interface ExecTransport
         ?callable $onOutput = null,
         int $maxOutputBytes = 10485760,
         ?callable $onTick = null,
+        ?string $ackId = null,
     ): ExecResult;
 }

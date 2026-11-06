@@ -143,7 +143,8 @@ class SandboxFilesApiTest extends SandboxTestCase
             ->assertOk()->assertJsonPath('data.path', '/workspace/copy')->assertJsonPath('data.bytes', strlen($archive));
 
         $upload = $this->exec->calls[1];
-        $this->assertStringContainsString("exec tar -x -m -o -f - -C '/workspace/copy'", FakeSandboxExecTransport::script($upload['argv']));
+        $this->assertStringContainsString('head -c '.strlen($archive).' >&5', FakeSandboxExecTransport::script($upload['argv']));
+        $this->assertStringContainsString("tar -x -m -o -f \"\$runr_t\" -C '/workspace/copy'", FakeSandboxExecTransport::script($upload['argv']));
         $this->assertSame(['src/', 'src/main.py', 'README.md'], array_column(TarReader::entries($upload['stdin']), 'name'));
         $this->assertSame("print('x')\n", TarReader::entries($upload['stdin'])[1]['content']);
     }

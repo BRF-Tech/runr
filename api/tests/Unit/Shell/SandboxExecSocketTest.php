@@ -2,6 +2,7 @@
 
 namespace Tests\Unit\Shell;
 
+use App\Services\Sandboxes\Exec\ExecScript;
 use App\Services\Shell\SandboxExecSocket;
 use GuzzleHttp\Psr7\Request;
 use Illuminate\Support\Facades\Crypt;
@@ -17,7 +18,9 @@ use Tests\TestCase;
  * The exec WebSocket's bridge to the command, with a stand-in for kubectl that runs the command
  * locally: stdout and stderr frames, stdin and its end, kill, exit codes — and with a terminal:
  * a pseudo-terminal of the requested size, resize frames, Ctrl+D for the end of input and input
- * held back until the terminal is ready.
+ * held back until the terminal is ready. Framed sessions (no terminal, the wrapper of
+ * ExecScript::command($framedStdin)): the input in frames, kubectl's stdin open until the wrapper's
+ * exit marker, the exit code from the marker, a kill that reaches the command through its PID file.
  */
 class SandboxExecSocketTest extends TestCase
 {
@@ -85,7 +88,11 @@ class SandboxExecSocketTest extends TestCase
             $masked .= $payload[$i] ^ $mask[$i % 4];
         }
         $len = strlen($payload);
-        $header = chr(0x80 | $opcode).($len < 126 ? chr(0x80 | $len) : chr(0x80 | 126).pack('n', $len));
+        $header = chr(0x80 | $opcode).match (true) {
+            $len < 126 => chr(0x80 | $len),
+            $len < 65536 => chr(0x80 | 126).pack('n', $len),
+            default => chr(0x80 | 127).pack('J', $len),
+        };
 
         return $header.$mask.$masked;
     }
@@ -155,6 +162,12 @@ class SandboxExecSocketTest extends TestCase
     private function exec(array $argv, array $session = [], ?callable $step = null): void
     {
         $token = 'c0ffee00-0000-4000-8000-000000000001';
+        if (! empty($session['framed'])) {
+            // A framed session's token: the framed wrapper next to 0.6.6's argv (for an older reverb)
+            $session['framed_argv'] = $argv;
+            $argv = ['/bin/sh', '-c', 'echo "the unframed argv ran" >&2; exit 99'];
+            unset($session['framed']);
+        }
         $config = Crypt::encryptString(json_encode($session + [
             'kubeconfig' => "apiVersion: v1\nkind: Config\n",
             'namespace' => 'runr-sbx-default',
@@ -254,6 +267,101 @@ class SandboxExecSocketTest extends TestCase
         $exit = $this->frame('exit');
         $this->assertTrue($exit['killed']);
         $this->assertNotSame(0, $exit['exit_code']);
+    }
+
+    // ── Framed input (no terminal) ─────────────────────────────────────────────────────────
+
+    /** @param  list<string>  $cmd */
+    private function framed(array $cmd, int $timeout = 30, bool $relay = false, bool $acked = false): array
+    {
+        return ExecScript::command($cmd, [], sys_get_temp_dir(), $timeout, 0, '01jbexec', false, null, true, $relay, $acked);
+    }
+
+    public function test_framed_session_with_acknowledged_frames_and_relayed_output(): void
+    {
+        // Kata's Rust runtime: one frame on its way at a time; gVisor: output through pipes
+        $input = str_repeat('0123456789abcdef', 20000);
+        $sent = false;
+        $this->exec($this->framed(['/bin/sh', '-c', 'cat; printf \'after-eof\006\004\036\n\' >&2; exit 6'], 30, true, true), ['framed' => true, 'acked_input' => true], function () use (&$sent, $input) {
+            if (! $sent) {
+                $sent = true;
+                $this->send(['type' => 'stdin', 'data' => base64_encode($input)]);
+                $this->send(['type' => 'stdin_close']);
+            }
+        });
+
+        $this->assertSame($input, $this->stream('stdout'));
+        // The command's own 0x06, 0x04 and 0x1e pass; neither the acks nor the markers are passed on
+        $this->assertSame("after-eof\x06\x04\x1e\n", $this->stream('stderr'));
+        $this->assertSame(6, $this->frame('exit')['exit_code']);
+    }
+
+    public function test_framed_session_marker_with_the_last_bytes_of_stderr(): void
+    {
+        // The marker and kubectl's end come together: whether the read callback or the final drain
+        // sees it, it is taken out and its exit code kept
+        $this->exec(['/bin/sh', '-c', 'printf "out\036runr-end:01jbexec\n"; printf "err\n\036runr-exit:01jbexec:7\n" >&2; exit 3'], ['framed' => true]);
+
+        $this->assertSame("err\n", $this->stream('stderr'));
+        $this->assertSame('out', $this->stream('stdout'), 'the end marker is taken out of stdout');
+        $this->assertSame(7, $this->frame('exit')['exit_code']);
+    }
+
+    public function test_framed_session_keeps_stdin_open_until_stdout_ended(): void
+    {
+        // The exit marker overtakes the end of stdout: stdin stays open until stdout's end marker (an
+        // early end of stdin would kill the command before its output)
+        $this->exec(['/bin/sh', '-c', 'exec 3<&0; printf "\036runr-exit:01jbexec:0\n" >&2; (cat <&3 > /dev/null; kill $$) & sleep 0.5; head -c 100000 /dev/zero; printf "\036runr-end:01jbexec\n"; wait'], ['framed' => true]);
+
+        $this->assertSame(100000, strlen($this->stream('stdout')));
+        $this->assertSame(0, $this->frame('exit')['exit_code']);
+    }
+
+    public function test_framed_session_output_after_the_end_of_the_input(): void
+    {
+        $sent = false;
+        $this->exec($this->framed(['/bin/sh', '-c', 'cat; echo after-eof; exit 4']), ['framed' => true, 'stdin' => base64_encode("first\n")], function (string $out) use (&$sent) {
+            if (! $sent && str_contains($out, 'first')) {
+                $sent = true;
+                $this->send(['type' => 'stdin', 'data' => base64_encode("second\n")]);
+                $this->send(['type' => 'stdin_close']);
+            }
+        });
+
+        $this->assertSame("first\nsecond\nafter-eof\n", $this->stream('stdout'));
+        $this->assertSame('', $this->stream('stderr'), 'the exit marker is not passed on');
+        $exit = $this->frame('exit');
+        $this->assertSame([4, false, false], [$exit['exit_code'], $exit['killed'], $exit['timed_out']]);
+    }
+
+    public function test_framed_session_without_input_and_a_large_output(): void
+    {
+        $this->exec($this->framed(['/bin/sh', '-c', 'head -c 300000 /dev/zero; echo err >&2']), ['framed' => true]);
+
+        $this->assertSame(300000, strlen($this->stream('stdout')));
+        $this->assertSame("err\n", $this->stream('stderr'));
+        $this->assertSame(0, $this->frame('exit')['exit_code']);
+    }
+
+    public function test_framed_session_kill_reaches_the_command(): void
+    {
+        $pidFile = ExecScript::pidFile('01jbexec');
+        @unlink($pidFile);
+        $pid = 0;
+        $this->exec($this->framed(['sleep', '30'], 60), ['framed' => true], function () use (&$pid, $pidFile) {
+            if ($pid === 0 && is_file($pidFile) && ($pid = (int) trim((string) file_get_contents($pidFile))) > 0) {
+                $this->send(['type' => 'kill']);
+            }
+        });
+
+        $this->assertTrue($this->frame('exit')['killed']);
+        $this->assertGreaterThan(0, $pid);
+        $gone = false;
+        for ($i = 0; $i < 100 && ! $gone; $i++) {
+            $gone = ! file_exists("/proc/{$pid}") || str_contains((string) @file_get_contents("/proc/{$pid}/stat"), ') Z ');
+            usleep(50_000);
+        }
+        $this->assertTrue($gone, 'the command was killed through its PID file');
     }
 
     public function test_resize_frames_without_a_terminal_are_ignored(): void

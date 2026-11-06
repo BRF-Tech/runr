@@ -78,6 +78,8 @@ class SandboxManifestsTest extends TestCase
         $this->assertSame('sandbox', $container['name']);
         $this->assertSame('ghcr.io/brf-tech/runr/exec-python:3.14', $container['image']);
         $this->assertSame(['/bin/sh', '-c', SandboxManifests::KEEPALIVE], $container['command']);
+        // PID 1 creates the directories the commands write to, so they need no mkdir each time
+        $this->assertStringStartsWith('mkdir -p "$HOME/.runr" /tmp/.runr/exec /tmp/.runr/code 2>/dev/null;', SandboxManifests::KEEPALIVE);
         $this->assertSame('/workspace', $container['workingDir']);
         $this->assertSame([
             'allowPrivilegeEscalation' => false,

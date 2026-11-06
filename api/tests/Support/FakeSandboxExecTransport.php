@@ -49,8 +49,9 @@ class FakeSandboxExecTransport implements ExecTransport
         ?callable $onOutput = null,
         int $maxOutputBytes = 10485760,
         ?callable $onTick = null,
+        ?string $ackId = null,
     ): ExecResult {
-        $this->calls[] = ['target' => $target, 'argv' => $argv, 'stdin' => $stdin, 'timeout' => $timeoutSeconds];
+        $this->calls[] = ['target' => $target, 'argv' => $argv, 'stdin' => $stdin, 'timeout' => $timeoutSeconds, 'acked' => $ackId !== null, 'ack_id' => $ackId];
 
         if ($this->failAll) {
             throw new ExecTransportException('Error from server (NotFound): pods "'.$target->pod.'" not found');

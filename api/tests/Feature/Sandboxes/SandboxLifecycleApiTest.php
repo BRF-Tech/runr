@@ -73,7 +73,7 @@ class SandboxLifecycleApiTest extends SandboxTestCase
         $this->assertArrayNotHasKey('value', $env['OPENAI_API_KEY']);
 
         // Files arrive as one tar on stdin (a cold pod needs no env file)
-        $inject = $this->exec->callsContaining('exec tar -x -m -o -f - -C');
+        $inject = $this->exec->callsContaining('tar -x -m -o -f "$runr_t" -C');
         $this->assertCount(1, $inject);
         $entries = collect(TarReader::entries($inject[0]['stdin']))->keyBy('name');
         $this->assertSame("print(42)\n", $entries['workspace/main.py']['content']);

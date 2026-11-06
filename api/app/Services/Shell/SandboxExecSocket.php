@@ -4,7 +4,9 @@ namespace App\Services\Shell;
 
 use App\Http\Controllers\Api\Sandboxes\SandboxExecController;
 use App\Models\Sandbox;
+use App\Services\Sandboxes\Exec\ExecScript;
 use App\Services\Sandboxes\Exec\KubectlCommand;
+use App\Services\Sandboxes\Exec\MarkerFilter;
 use App\Services\Sandboxes\Exec\PodTarget;
 use App\Services\Sandboxes\Exec\TrailerFilter;
 use App\Services\Sandboxes\SandboxLog;
@@ -35,10 +37,25 @@ use React\EventLoop\Loop;
  * After the exit (or error) frame the server sends a close frame and ends the connection once the
  * client answered it (WebSocketClose). The kubeconfig goes to a 0600 temp file that is deleted
  * when the command ends.
+ *
+ * Without a terminal the input is framed (token "framed_argv", ExecScript::command($framedStdin)):
+ * kubectl's stdin stays open until the command ended — closing it stops the command's output on
+ * Kata's Go runtime — each stdin frame goes as "<length>\n<bytes>" and stdin_close as "0\n". The
+ * wrapper writes an exit marker with the exit code on stderr when the command ended; the handler
+ * strips it, takes the exit code from it and ends kubectl by closing its stdin. A kill (or a client
+ * gone) also kills the command through its PID file (ExecScript::killExec). With "acked_input"
+ * (Kata's Rust runtime) one frame of at most ExecScript::ACKED_FRAME_BYTES is on its way at a time:
+ * the next goes once the reader's ExecScript::ackMarker came on stderr (taken out whole, MarkerFilter).
  */
 class SandboxExecSocket
 {
     private const LOCAL_GRACE_SECONDS = 15;
+
+    /** After the exit marker: how long kubectl may take to end once its stdin is closed */
+    private const MARKER_GRACE_SECONDS = 3.0;
+
+    /** After the exit marker: how long the rest of stdout (its end marker) may take to arrive */
+    private const STDOUT_END_SECONDS = 10.0;
 
     /** The TTY wrapper writes this to stderr once the pseudo-terminal is set up. */
     private const TTY_READY = "\x1erunr-tty-ready\n";
@@ -86,7 +103,8 @@ class SandboxExecSocket
         $target = new PodTarget($config['kubeconfig'], $config['namespace'], $config['pod'], $config['container'] ?? 'sandbox', $config['sandbox_id'] ?? null);
         $kcfg = KubectlCommand::writeKubeconfig($target->kubeconfig);
         // argv form: no shell in between, so a kill reaches kubectl itself
-        $cmd = KubectlCommand::argv($target, $kcfg, $config['argv'], true, $tty);
+        $framed = ! $tty && ! empty($config['framed_argv']) && ! empty($config['exec_id']);
+        $cmd = KubectlCommand::argv($target, $kcfg, $framed ? $config['framed_argv'] : $config['argv'], true, $tty);
         $size = [self::dimension($config['cols'] ?? null, 80), self::dimension($config['rows'] ?? null, 24)];
         if ($tty) {
             // kubectl exec -t needs a terminal as its stdin; stderr stays a pipe (kubectl's own
@@ -140,6 +158,26 @@ class SandboxExecSocket
             'stderrHead' => '',
             'size' => $size,
             'pendingSize' => null,
+            // Framed input and the exit marker (no terminal)
+            'framed' => $framed,
+            'marker' => ExecScript::exitMarker((string) ($config['exec_id'] ?? '')),
+            'stderrTail' => '',
+            'markerExit' => null,
+            'endAt' => null,
+            // stdout's end marker (framed): kubectl's stdin closes once it and the exit marker came
+            'endMarker' => ExecScript::endMarker((string) ($config['exec_id'] ?? '')),
+            'stdoutTail' => '',
+            'stdoutDone' => false,
+            'markerAt' => null,
+            'target' => $target,
+            'killProc' => null,
+            'queuedClose' => false,
+            // Acknowledged frames: input not sent yet, a frame on its way, the end to send after it
+            'acked' => $framed && ! empty($config['acked_input']),
+            'ackFilter' => new MarkerFilter([ExecScript::ackMarker((string) ($config['exec_id'] ?? ''))]),
+            'ackPending' => '',
+            'ackInFlight' => false,
+            'ackEnd' => false,
         ];
         $ctx = (object) $session;
 
@@ -159,7 +197,7 @@ class SandboxExecSocket
                     }
                     $this->begin($connection, $ctx);
                 }
-                $this->output($connection, $ctx, 'stdout', $data);
+                $this->output($connection, $ctx, 'stdout', $ctx->framed ? $this->endOfStdout($ctx, $data) : $data);
             } elseif ($ctx->tty && ($data === false || feof($stream))) {
                 // The pseudo-terminal reports an error once kubectl is gone: stop polling it
                 $loop->removeReadStream($stream);
@@ -196,6 +234,14 @@ class SandboxExecSocket
 
                 return;
             }
+            // The exit marker came, stdout's end does not: kubectl's stdin closes all the same
+            if ($ctx->markerAt !== null && $ctx->endAt === null && microtime(true) - $ctx->markerAt > self::STDOUT_END_SECONDS) {
+                $this->closeInput($ctx);
+            }
+            // The command ended (exit marker) and kubectl's stdin is closed: kubectl ends by itself
+            if ($ctx->endAt !== null && microtime(true) - $ctx->endAt > self::MARKER_GRACE_SECONDS) {
+                @proc_terminate($ctx->process, 9);
+            }
             if (! $ctx->ready && microtime(true) - $ctx->started > self::TTY_READY_TIMEOUT) {
                 $this->begin($connection, $ctx);
             }
@@ -220,12 +266,73 @@ class SandboxExecSocket
         $this->sendStart($connection, $ctx);
 
         if (! empty($ctx->config['stdin'])) {
-            @fwrite($ctx->pipes[0], (string) base64_decode($ctx->config['stdin']));
+            $this->write($ctx, (string) base64_decode($ctx->config['stdin']));
         }
         if ($ctx->queued !== '') {
-            @fwrite($ctx->pipes[0], $ctx->queued);
+            $this->write($ctx, $ctx->queued);
             $ctx->queued = '';
         }
+        if (! empty($ctx->queuedClose)) {
+            $this->endInput($ctx);
+        }
+    }
+
+    /** Input to kubectl's stdin: framed ("<length>\n<bytes>") for the framed wrapper. */
+    private function write(object $ctx, string $data): void
+    {
+        if ($data === '' || ! is_resource($ctx->pipes[0] ?? null)) {
+            return;
+        }
+        if ($ctx->acked) {
+            $ctx->ackPending .= $data;
+            $this->pump($ctx);
+
+            return;
+        }
+        @fwrite($ctx->pipes[0], $ctx->framed ? strlen($data)."\n".$data : $data);
+    }
+
+    /** The end of framed input ("0\n"): after the frames still waiting, when acknowledged. */
+    private function endInput(object $ctx): void
+    {
+        if ($ctx->acked) {
+            $ctx->ackEnd = true;
+            $this->pump($ctx);
+        } elseif (is_resource($ctx->pipes[0] ?? null)) {
+            @fwrite($ctx->pipes[0], "0\n");
+        }
+    }
+
+    /** Acknowledged frames: the next one when none is on its way. */
+    private function pump(object $ctx): void
+    {
+        if ($ctx->ackInFlight || ! is_resource($ctx->pipes[0] ?? null)) {
+            return;
+        }
+        if ($ctx->ackPending !== '') {
+            $piece = substr($ctx->ackPending, 0, ExecScript::ACKED_FRAME_BYTES);
+            $ctx->ackPending = (string) substr($ctx->ackPending, strlen($piece));
+            $ctx->ackInFlight = true;
+            @fwrite($ctx->pipes[0], strlen($piece)."\n".$piece);
+        } elseif ($ctx->ackEnd) {
+            $ctx->ackEnd = false;
+            @fwrite($ctx->pipes[0], "0\n");
+        }
+    }
+
+    /** Takes the reader's acknowledgements out of stderr, whole, and sends the next frame. */
+    private function acks(object $ctx, string $data): string
+    {
+        if (! $ctx->acked) {
+            return $data;
+        }
+        [$data, $found] = $ctx->ackFilter->push($data);
+        if ($found !== []) {
+            $ctx->ackInFlight = false;
+            $this->pump($ctx);
+        }
+
+        return $data;
     }
 
     private function sendStart(Connection $connection, object $ctx): void
@@ -253,7 +360,93 @@ class SandboxExecSocket
             $ctx->markerSeen = true;
             $this->begin($connection, $ctx);
         }
+        if ($ctx->framed) {
+            $data = $this->exitMarker($ctx, $this->acks($ctx, $data));
+        }
         $this->output($connection, $ctx, 'stderr', $ctx->filter->push($data));
+    }
+
+    /**
+     * Takes the wrapper's exit marker out of stderr: on the marker, the exit code is kept and
+     * kubectl's stdin closed (the command has ended, nothing more to lose). The bytes that may be
+     * the start of a marker are held back until the next chunk.
+     */
+    private function exitMarker(object $ctx, string $data): string
+    {
+        $data = $ctx->stderrTail.$data;
+        $ctx->stderrTail = '';
+        $at = strpos($data, $ctx->marker);
+        if ($at !== false) {
+            $end = strpos($data, "\n", $at);
+            if ($end === false) {
+                $ctx->stderrTail = substr($data, $at);
+
+                return substr($data, 0, $at);
+            }
+            $code = substr($data, $at + strlen($ctx->marker), $end - $at - strlen($ctx->marker));
+            if (ctype_digit($code)) {
+                $ctx->markerExit = (int) $code;
+                $ctx->markerAt = microtime(true);
+                if ($ctx->stdoutDone) {
+                    $this->closeInput($ctx);
+                }
+            }
+
+            return substr($data, 0, $at).substr($data, $end + 1);
+        }
+        // Hold back a suffix that could start the marker
+        for ($keep = min(strlen($data), strlen($ctx->marker) - 1); $keep > 0; $keep--) {
+            if (str_starts_with($ctx->marker, substr($data, -$keep))) {
+                $ctx->stderrTail = substr($data, -$keep);
+
+                return substr($data, 0, -$keep);
+            }
+        }
+
+        return $data;
+    }
+
+    /**
+     * Takes stdout's end marker out of the command's stdout (framed): once it came and the exit
+     * marker did, kubectl's stdin closes. The bytes that may be the start of the marker are held back.
+     */
+    private function endOfStdout(object $ctx, string $data): string
+    {
+        $data = $ctx->stdoutTail.$data;
+        $ctx->stdoutTail = '';
+        if ($ctx->stdoutDone) {
+            return $data;
+        }
+        $at = strpos($data, $ctx->endMarker);
+        if ($at !== false) {
+            $ctx->stdoutDone = true;
+            if ($ctx->markerExit !== null) {
+                $this->closeInput($ctx);
+            }
+
+            return substr($data, 0, $at).substr($data, $at + strlen($ctx->endMarker));
+        }
+        for ($keep = min(strlen($data), strlen($ctx->endMarker) - 1); $keep > 0; $keep--) {
+            if (str_starts_with($ctx->endMarker, substr($data, -$keep))) {
+                $ctx->stdoutTail = substr($data, -$keep);
+
+                return substr($data, 0, -$keep);
+            }
+        }
+
+        return $data;
+    }
+
+    /** The command and its output ended: kubectl's stdin closes, and kubectl ends (MARKER_GRACE_SECONDS). */
+    private function closeInput(object $ctx): void
+    {
+        if ($ctx->endAt !== null) {
+            return;
+        }
+        $ctx->endAt = microtime(true);
+        if (is_resource($ctx->pipes[0] ?? null)) {
+            @fclose($ctx->pipes[0]);
+        }
     }
 
     private function message(string $message, object $ctx): void
@@ -275,6 +468,13 @@ class SandboxExecSocket
                     if ($ctx->tty) {
                         // A terminal has no end of file: Ctrl+D ends the input of a line reader
                         $this->input($ctx, "\x04");
+                    } elseif ($ctx->framed) {
+                        // The end of the input, in-band: kubectl's stdin stays open (class doc)
+                        if ($ctx->ready) {
+                            $this->endInput($ctx);
+                        } else {
+                            $ctx->queuedClose = true;
+                        }
                     } else {
                         @fclose($ctx->pipes[0]);
                     }
@@ -282,6 +482,7 @@ class SandboxExecSocket
                 break;
             case 'kill':
                 $ctx->killed = true;
+                $this->killCommand($ctx);
                 @proc_terminate($ctx->process, 9);
                 break;
             case 'resize':
@@ -299,10 +500,49 @@ class SandboxExecSocket
     private function input(object $ctx, string $data): void
     {
         if ($ctx->ready) {
-            @fwrite($ctx->pipes[0], $data);
+            $this->write($ctx, $data);
         } else {
             $ctx->queued .= $data;
         }
+    }
+
+    /**
+     * Framed sessions: ending kubectl does not end the command (it runs in the background of its
+     * wrapper), so a kill reaches it through its PID file, by a kubectl exec of its own that runs
+     * next to the session and is reaped by the loop.
+     */
+    private function killCommand(object $ctx): void
+    {
+        if (! $ctx->framed || $ctx->killProc !== null || empty($ctx->config['exec_id'])) {
+            return;
+        }
+        $kcfg = KubectlCommand::writeKubeconfig($ctx->target->kubeconfig);
+        $pipes = [];
+        $proc = @proc_open(KubectlCommand::argv($ctx->target, $kcfg, ExecScript::killExec((string) $ctx->config['exec_id']), false),
+            [['file', '/dev/null', 'r'], ['file', '/dev/null', 'w'], ['file', '/dev/null', 'w']], $pipes, sys_get_temp_dir(), [
+                'PATH' => getenv('PATH') ?: '/usr/local/bin:/usr/bin:/bin',
+                'HOME' => sys_get_temp_dir(),
+            ]);
+        if (! is_resource($proc)) {
+            KubectlCommand::removeKubeconfig($kcfg);
+
+            return;
+        }
+        $ctx->killProc = $proc;
+        $started = microtime(true);
+        $loop = Loop::get();
+        $loop->addPeriodicTimer(0.2, function ($timer) use ($proc, $kcfg, $started, $loop) {
+            $status = proc_get_status($proc);
+            if ($status['running'] && microtime(true) - $started < 20) {
+                return;
+            }
+            if ($status['running']) {
+                @proc_terminate($proc, 9);
+            }
+            @proc_close($proc);
+            KubectlCommand::removeKubeconfig($kcfg);
+            $loop->cancelTimer($timer);
+        });
     }
 
     /** The pseudo-terminal's new size (stty), then SIGWINCH: kubectl sends it to the pod. */
@@ -365,14 +605,33 @@ class SandboxExecSocket
                     $rest = str_replace(self::TTY_READY, '', $ctx->stderrHead).($rest === false ? '' : $rest);
                     $ctx->stderrHead = '';
                 }
+                if ($fd === 2 && $ctx->framed && is_string($rest)) {
+                    // kubectl can end before the read callback saw the exit marker
+                    $rest = $this->exitMarker($ctx, $ctx->acked ? $this->acks($ctx, $rest).$ctx->ackFilter->flush() : $rest);
+                }
+                if ($fd === 1 && $ctx->framed && is_string($rest)) {
+                    $rest = $this->endOfStdout($ctx, $rest).$ctx->stdoutTail;
+                    $ctx->stdoutTail = '';
+                }
                 if ($connection && $rest !== false && $rest !== '') {
                     $this->output($connection, $ctx, $type, $fd === 2 ? $ctx->filter->push($rest) : $rest);
                 }
                 $loop->removeReadStream($ctx->pipes[$fd]);
             }
         }
+        if ($connection && $ctx->stderrTail !== '') {
+            $this->output($connection, $ctx, 'stderr', $ctx->filter->push($ctx->stderrTail));
+            $ctx->stderrTail = '';
+        }
         if ($connection) {
             $this->output($connection, $ctx, 'stderr', $ctx->filter->finish());
+        }
+        if ($ctx->killed && ! $timedOut && $ctx->markerExit === null) {
+            // The client is gone or asked for a kill: the command goes too (framed sessions)
+            $this->killCommand($ctx);
+        }
+        if ($ctx->markerExit !== null) {
+            $exitCode = $ctx->markerExit;
         }
 
         foreach ($ctx->pipes as $pipe) {

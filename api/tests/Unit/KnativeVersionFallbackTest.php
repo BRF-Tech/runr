@@ -161,10 +161,41 @@ class KnativeVersionFallbackTest extends TestCase
 
     public function test_prometheus_and_loki_charts_are_pinned(): void
     {
-        $this->assertSame('92.18.0', (new class
+        $this->assertSame('92.21.2', (new class
         {
             use KnativePrometheusTrait;
         })::PROMETHEUS_CHART_VERSION);
         $this->assertSame('2.10.3', ManagedLoki::CHART_VERSION);
+    }
+
+    /**
+     * The kube-prometheus-stack values RunR sets, as rendered with `helm template` against the
+     * pinned chart: 92.21.2 still takes every one of them and renders them as 92.18.0 did. A key
+     * added here, or one a new chart renames or drops, is rendered against the chart again.
+     */
+    public function test_prometheus_values_are_the_keys_rendered_against_the_pinned_chart(): void
+    {
+        $values = (new class
+        {
+            use KnativePrometheusTrait;
+        })::prometheusHelmValues('knative-serving');
+
+        $this->assertSame(['alertmanager', 'grafana', 'kubelet', 'prometheus'], array_keys($values));
+        $this->assertSame(['enabled' => false], $values['alertmanager']);
+        $this->assertSame(['enabled' => false], $values['grafana']);
+        $this->assertSame(['serviceMonitor' => ['cAdvisor' => false]], $values['kubelet'], 'the standalone cAdvisor replaces the kubelet\'s');
+        $this->assertSame(['prometheusSpec'], array_keys($values['prometheus']));
+        $this->assertSame([
+            'securityContext',
+            'initContainers',
+            'retention',
+            'storageSpec',
+            'tolerations',
+            'affinity',
+            'podMonitorSelectorNilUsesHelmValues',
+            'serviceMonitorSelectorNilUsesHelmValues',
+            'ruleSelectorNilUsesHelmValues',
+            'additionalScrapeConfigs',
+        ], array_keys($values['prometheus']['prometheusSpec']));
     }
 }

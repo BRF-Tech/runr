@@ -150,7 +150,7 @@ class SandboxWarmPoolTest extends SandboxTestCase
 
         // The warm pod's spec predates the env: it comes as the env file (mode 0600) over the exec
         // channel; the Secret sbx-<id>-env holds it in the cluster
-        $inject = $this->exec->callsContaining('exec tar -x -m -o -f - -C');
+        $inject = $this->exec->callsContaining('tar -x -m -o -f "$runr_t" -C');
         $entries = collect(TarReader::entries($inject[0]['stdin']))->keyBy('name');
         $this->assertStringContainsString("export TOKEN='sk-pool-secret'", $entries['home/sandbox/.runr/env.sh']['content']);
         $this->assertSame(0600, $entries['home/sandbox/.runr/env.sh']['mode']);

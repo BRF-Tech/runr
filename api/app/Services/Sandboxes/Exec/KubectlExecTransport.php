@@ -3,6 +3,7 @@
 namespace App\Services\Sandboxes\Exec;
 
 use Symfony\Component\Process\Exception\ProcessTimedOutException;
+use Symfony\Component\Process\InputStream;
 use Symfony\Component\Process\Process;
 
 /**
@@ -12,6 +13,9 @@ use Symfony\Component\Process\Process;
  *
  * The command's own timeout is enforced inside the sandbox (ExecScript: timeout -s KILL); the
  * local process gets 15 s more and is killed then, which also covers an unreachable API server.
+ *
+ * Acknowledged input (ExecTransport, ExecScript::ackedInput) goes frame by frame through an
+ * InputStream: the next frame once the last one's acknowledgement came on stderr.
  */
 final class KubectlExecTransport implements ExecTransport
 {
@@ -25,6 +29,7 @@ final class KubectlExecTransport implements ExecTransport
         ?callable $onOutput = null,
         int $maxOutputBytes = 10485760,
         ?callable $onTick = null,
+        ?string $ackId = null,
     ): ExecResult {
         $kubeconfig = KubectlCommand::writeKubeconfig($target->kubeconfig);
         $started = hrtime(true);
@@ -59,9 +64,44 @@ final class KubectlExecTransport implements ExecTransport
             }
         };
 
-        $readErr = function (Process $process) use (&$rawErrTail, $filter, $append) {
+        // Acknowledged input: the next frame once the reader acknowledged the last
+        $frames = $ackId !== null && $stdin !== null ? new InputStream : null;
+        $acks = $frames !== null ? new MarkerFilter([ExecScript::ackMarker($ackId), ExecScript::ackEndMarker($ackId)]) : null;
+        $offset = 0;
+        $endFrames = function () use (&$frames) {
+            $frames?->close();
+            $frames = null;
+        };
+        $nextFrame = function () use (&$frames, &$offset, $stdin, $endFrames) {
+            if ($frames === null) {
+                return;
+            }
+            if ($offset < strlen((string) $stdin)) {
+                $piece = substr((string) $stdin, $offset, ExecScript::ACKED_FRAME_BYTES);
+                $offset += strlen($piece);
+                $frames->write(strlen($piece)."\n".$piece);
+
+                return;
+            }
+            $frames->write("0\n");
+            $endFrames();
+        };
+        $nextFrame();
+
+        $readErr = function (Process $process) use (&$rawErrTail, $filter, $append, $nextFrame, $endFrames, $acks, $ackId) {
             $chunk = $process->getIncrementalErrorOutput();
             $process->clearErrorOutput();
+            if ($acks !== null && $chunk !== '') {
+                [$chunk, $found] = $acks->push($chunk);
+                foreach ($found as $marker) {
+                    if ($marker === ExecScript::ackMarker((string) $ackId)) {
+                        $nextFrame();
+                    } else {
+                        // The reader ended (before the input did, when its command failed): no more frames
+                        $endFrames();
+                    }
+                }
+            }
             if ($chunk !== '') {
                 $rawErrTail = substr($rawErrTail.$chunk, -512);
                 $append('stderr', $filter->push($chunk));
@@ -73,7 +113,7 @@ final class KubectlExecTransport implements ExecTransport
                 KubectlCommand::argv($target, $kubeconfig, $argv, $stdin !== null),
                 sys_get_temp_dir(),
                 ['PATH' => getenv('PATH') ?: '/usr/local/bin:/usr/bin:/bin', 'HOME' => sys_get_temp_dir()],
-                $stdin,
+                $frames ?? $stdin,
                 $timeoutSeconds + self::LOCAL_GRACE_SECONDS,
             );
 
@@ -101,12 +141,17 @@ final class KubectlExecTransport implements ExecTransport
                     break;
                 }
 
-                usleep(20_000);
+                // Frames wait for the sandbox: poll closely while they go
+                usleep($frames !== null ? 1_000 : 20_000);
             }
 
             if (! $timedOut && ! $stopped) {
                 $append('stdout', $process->getIncrementalOutput());
                 $readErr($process);
+            }
+            if ($acks !== null) {
+                // What looked like the start of a marker and was not
+                $append('stderr', $filter->push($acks->flush()));
             }
             $append('stderr', $filter->finish());
 

@@ -10,7 +10,9 @@ namespace App\Services\Helpers;
  * RunR's config.d drop-in (dropIn()). The RuntimeClass keeps the name "kata-<hv>" that project
  * mappings (sandbox_*_runtime) refer to.
  *
- * Sizing model (measured on a single-node k3s test region, Kata 3.28.0, k3s 1.34, systemd cgroup driver):
+ * Sizing model (measured on a single-node k3s test region, Kata 3.28.0, k3s 1.34, systemd cgroup driver;
+ * checked again on Kata 4.3.1 with RunR 0.6.6: shim, VMM and virtiofsd in the pod's slice, pod cpu.max
+ * = limits + overhead, guests of a 250m function 576 MiB (clh, dragonball, fc) / 511 MiB (qemu)):
  *  - sandbox_cgroup_only = true: the shim, the VMM and virtiofsd run inside the pod cgroup.
  *    With the go runtime's default (false) and the systemd cgroup driver the VMM ended up in an
  *    unlimited root-level cgroup ("kubepods-pod<uid>.slice:cri-containerd:<id>") and the shim /
@@ -52,10 +54,15 @@ namespace App\Services\Helpers;
  * uses for these RuntimeClasses — the VMM's own threads (I/O, virtio-fs, vCPU exits) at idle stay
  * far below it; VM boot is bounded by limits + 250m.
  *
- * These numbers come from Kata 3.28.0 and were not measured again on Kata 4: the go runtime's
- * sizing code is unchanged, and upstream's own overheads for these RuntimeClasses did not grow
- * past RunR's (clh, dragonball, fc 130Mi; qemu 320Mi, 160Mi before), but the guest is a new
- * image and kernel.
+ * These numbers come from Kata 3.28.0. Measured again on Kata 4.3.1 (RunR 0.6.6, 2026-11-06, the
+ * same VM and method, a Python 3.15 function 250m / 256Mi whose own memory in the guest is ~28 MiB,
+ * n = 2 each): host PSS clh 174–187, qemu 277–283, dragonball 168, fc 174 MiB — as large as 0.4.2's
+ * on 3.28 (clh ~186, qemu ~278, dragonball ~165 MiB with a ~56 MiB Node.js function), with the new
+ * guest image and kernel. Overhead = PSS − the function's memory: clh 146–159, qemu 249–255,
+ * dragonball 140, fc 144–145 MiB (higher than 0.4.2's only because a smaller function is subtracted),
+ * which leaves ~95 / ~65 / ~115 / ~175 MiB of headroom: the overheads stay. Upstream's own overheads
+ * for these RuntimeClasses did not grow past RunR's either (clh, dragonball, fc 130Mi; qemu 320Mi,
+ * 160Mi before). fc's idle figure does not show the guest base becoming resident over time.
  *
  * Cold start (0.4.2; measured on a test VM — nested KVM in an 8-vCPU Broadwell OpenStack VM, k3s 1.34,
  * Kata 3.28.0, Knative scale from zero, Node.js function 250m / 256Mi, medians of n >= 6, "pod
@@ -90,6 +97,16 @@ namespace App\Services\Helpers;
  *    ~2.6 s is outside the VM's CPU budget: Knative/kubelet before the sandbox (~0.33 s, also runc),
  *    VM boot ~1.0 s, two container creates ~0.3 s, and the function's own start inside the guest
  *    (~0.9 s for Node at 250m — first-touch memory faults on nested KVM; 0.14 s under runc).
+ *  - Kata 4.3.1 (RunR 0.6.6, 2026-11-06, the same VM; Python 3.15 function 250m / 256Mi, end to end,
+ *    median (p90), n = 12; Kata 3.28.0 with RunR 0.5.0 and Python 3.14 in brackets): clh 3.19 s
+ *    (3.53) [3.11], fc 3.17 s (3.52) [3.21], qemu 3.96 s (4.21) [3.89], dragonball 4.15 s (4.48)
+ *    [3.95]; a runc control in the same run 1.58 s [1.50]. VM boot (RunPodSandbox) clh 1.18,
+ *    fc 1.14, qemu 1.92, dragonball 2.07 s [1.12 / 1.04 / 1.84 / 1.85], the Python start in the
+ *    guest 1.1–1.3 s as before. Dragonball's +0.2 s is VM boot: its shim (VMM and vCPUs) spends
+ *    3.4 instead of 3.2 CPU-s, unthrottled (1 % of periods), with the same 3-vCPU / 576 MiB guest;
+ *    fc's VMM spends 1.75 instead of 1.50 CPU-s. Both are inside Kata 4.3.1 (Dragonball of
+ *    runtime-rs, Firecracker 1.12.1 → 1.17.0, guest kernel 6.18.15 → 6.18.56, Ubuntu noble →
+ *    resolute guest image), not in what RunR configures.
  *
  * Firecracker boots block devices only: its images live in containerd's devmapper snapshotter,
  * which RunR sets up on the nodes when fc is installed (KataDevmapperTrait) — a thin-pool on
@@ -99,6 +116,12 @@ final class KataRuntime
 {
     /** Hypervisors the install API accepts (InstallSandboxRequest), in console order. */
     public const HYPERVISORS = ['clh', 'qemu', 'dragonball', 'fc'];
+
+    /**
+     * Those of HYPERVISORS on Kata's Rust runtime (runtime-rs): an exec's input goes there in
+     * acknowledged frames (ExecScript::ackedInput).
+     */
+    public const RUST_RUNTIME = ['dragonball'];
 
     /** kata-deploy release RunR installs (KataManifestTrait::KATA_IMAGE). */
     public const KATA_VERSION = '4.3.1';

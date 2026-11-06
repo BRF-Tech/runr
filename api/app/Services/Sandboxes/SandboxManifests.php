@@ -60,8 +60,18 @@ final class SandboxManifests
 
     public const ENV_FILE = '/home/sandbox/.runr/env.sh';
 
-    /** PID 1: no service, no shell prompt — a sleep loop that ends on TERM and reaps orphans. */
-    public const KEEPALIVE = 'mkdir -p "$HOME/.runr" /tmp/.runr 2>/dev/null; trap "exit 0" TERM INT; while :; do sleep 5 & wait $!; done';
+    /** PID files of running commands (ExecScript::command, killExec) */
+    public const EXEC_DIR = '/tmp/.runr/exec';
+
+    /** Code files of the code interpreter (ExecScript::runCode, the exec WebSocket's code) */
+    public const CODE_DIR = '/tmp/.runr/code';
+
+    /**
+     * PID 1: no service, no shell prompt — a sleep loop that ends on TERM and reaps orphans. It
+     * creates the directories the commands write to once, so a command does not start a mkdir
+     * process each time (on a Kata or gVisor sandbox a process start costs up to ~25 ms).
+     */
+    public const KEEPALIVE = 'mkdir -p "$HOME/.runr" '.self::EXEC_DIR.' '.self::CODE_DIR.' 2>/dev/null; trap "exit 0" TERM INT; while :; do sleep 5 & wait $!; done';
 
     /** Writable directories (emptyDir volumes), name => mount path */
     public const VOLUMES = [

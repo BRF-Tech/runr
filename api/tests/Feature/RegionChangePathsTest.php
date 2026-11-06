@@ -214,7 +214,7 @@ class RegionChangePathsTest extends TestCase
 
         app(KnativeInstallService::class)->applyMonitoring($region, ['prometheus'], false);
 
-        $this->assertSame(['knative prometheus-community/kube-prometheus-stack 92.18.0'], $installs);
+        $this->assertSame(['knative prometheus-community/kube-prometheus-stack 92.21.2'], $installs);
         $this->assertNotNull($region->fresh()->prometheus_url);
     }
 }
