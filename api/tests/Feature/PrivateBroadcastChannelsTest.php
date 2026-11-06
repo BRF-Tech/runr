@@ -11,6 +11,7 @@ use App\Support\TenantAccess;
 use Illuminate\Broadcasting\PrivateChannel;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Broadcast;
+use Laravel\Reverb\ConfigApplicationProvider;
 use Tests\Concerns\ActsWithRoles;
 use Tests\TestCase;
 
@@ -151,5 +152,19 @@ class PrivateBroadcastChannelsTest extends TestCase
         $this->app['auth']->forgetGuards();
         $this->flushHeaders();
         $this->subscribe('private-platform')->assertUnauthorized();
+    }
+
+    /**
+     * No WebSocket client sends events to the other subscribers of a channel (Pusher client
+     * events, client-*, Echo's whisper): the console sends and listens for none. Without the
+     * setting Reverb took them from any connection, also one that had not subscribed to the
+     * channel — on a login several visitors share, one could reach the others' consoles.
+     */
+    public function test_reverb_refuses_client_events(): void
+    {
+        $apps = collect(config('reverb.apps.apps'));
+        $app = (new ConfigApplicationProvider($apps))->findByKey((string) $apps->first()['key']);
+
+        $this->assertSame('none', $app->acceptClientEventsFrom());
     }
 }

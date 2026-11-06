@@ -8,6 +8,183 @@ did not change says so.
 
 ## [Unreleased]
 
+## [0.6.6] - 2026-11-06
+
+### Upgrade notes
+
+- **Kata Containers moves to 4.3.1, and running Kata pods stop.** `region:reconcile` re-runs
+  kata-deploy on every region with Kata: the container runtime restarts twice on each node, one node
+  at a time. Kata pods on a node stop while it is done: a project's pod starts again by itself on
+  4.3.1 (about 6 minutes in a test, most of it the image pull, which can be done first), and a
+  Sandbox API sandbox ends. Plan it for a quiet hour. See
+  [docs/upgrade.md](docs/upgrade.md#kata-containers-431).
+- **The region Traefik moves to chart 42.3.0 (Traefik v3.7.17).** `region:reconcile` upgrades existing
+  regions: the Traefik pods roll once without an interruption, and a failed upgrade rolls itself
+  back. A region whose nodes pull through a mirror of their own needs
+  `ghcr.io/brf-tech/runr/reqs/traefik:v3.7.17` there first, and `knative.traefikImage` set to it. See
+  [docs/upgrade.md](docs/upgrade.md#region-traefik-chart-4230).
+- **A request header with `_`, `.` or another such character in its name no longer reaches a
+  project.** The region Traefik deletes it on every entry point: a client that sends `X_Request_Id`
+  or `api_key` gets its normal answer, but the project does not get that header, and nothing is
+  logged. Rename such headers to dashes before the upgrade. gRPC metadata keys count too. See
+  [docs/upgrade.md](docs/upgrade.md#request-headers-with-aliasing-names).
+- **`knative.traefikAliasHeadersStrategy: keep` is a stopgap for an app that cannot rename its headers
+  in time.** The default is `delete`. `keep` reopens the hole of the entry under Security: an underscore
+  or dot alias of the identity headers can reach workloads on servers that fold header names. The
+  value is install-wide, for every region; `region:reconcile` moves the regions either way and warns
+  on every run while they keep such headers.
+- `bootstrap.regionReconcileSeconds` is 4800 by default, for the time the Traefik chart's move can
+  take. An upgrade with `--reuse-values` keeps 3600 unless you set it: no step is cut, and what the
+  deadline leaves in the worst case is done by the next attempt.
+
+### Security
+
+- **A caller can no longer forge what RunR vouches for under another spelling.** Traefik's ForwardAuth
+  replaces `X-Runr-Caller` and the gateway's `X-Runr-Consumer` in their dash form only, and a backend
+  that folds header names into variables reads `X_Runr_Caller` or `X.Runr.Caller` as the same header:
+  a caller could pass itself off as another project on the internal network, or as another consumer
+  on a gateway route, towards a project served by PHP's built-in server or a similar CGI or WSGI
+  server (a test with a ForwardAuth showed it for PHP's built-in server and Python's `wsgiref`,
+  not for FrankenPHP or RunR's built-in runtimes). Every entry point now deletes such headers
+  before routing (`global.aliasHeadersStrategy: delete`,
+  [GHSA-rf44-j88r-hh8c](https://github.com/traefik/traefik/security/advisories/GHSA-rf44-j88r-hh8c),
+  [GHSA-x677-9fxg-v5c5](https://github.com/traefik/traefik/security/advisories/GHSA-x677-9fxg-v5c5)),
+  on new regions and on existing ones as they move to chart 42.3.0; `region:reconcile` warns about
+  a region that cannot ([security.md](docs/security.md#region-network-isolation)).
+
+### Changed
+
+- **Region Traefik chart 42.3.0.** New regions install the chart 42.3.0 with Traefik v3.7.17 instead
+  of 40.3.0 with v3.7.4, and need Kubernetes 1.30, RunR's minimum already. The new reconcile step
+  `traefik-chart` moves existing regions: chart 41 renamed the logging keys and its schema refuses the
+  old ones, so `--reuse-values` cannot cross it, and the step rewrites the release's own values
+  instead. Rendered with RunR's values the two charts give the same container arguments, RBAC and
+  Services. A Traefik of a chart before 40 and a cluster below Kubernetes 1.30 are left alone and
+  reported.
+- **Kata Containers 4.3.1.** RunR installs kata-deploy 4.3.1 instead of 3.28.0. clh, qemu and fc
+  stay on Kata's Go runtime (deprecated upstream since 4.0, still shipped and supported), Dragonball
+  stays on runtime-rs. The `kata-installer` DaemonSet follows the upstream chart's daemonset mode:
+  kata-deploy no longer enters the host, so the pod mounts `/opt/kata`, systemd's private socket and
+  the other paths it reaches, not the node's root. A Dragonball guest stays 1 vCPU and 256 MiB plus
+  the pod's limits: runtime-rs now adds the limits to `overhead_vcpus` / `overhead_memory` (32 MiB
+  by default), which RunR's drop-in sets. runtime-rs sizes the vCPUs itself, so the pod annotations
+  RunR wrote for that are gone, and workloads that still carry them keep working
+  ([kata-hypervisors.md](docs/kata-hypervisors.md#guest-size)).
+- **Knative 1.22, 1.23 and 1.24.** A new install takes Knative 1.23 on Kubernetes 1.34 and 1.24 on
+  1.35 or newer (1.22 and 1.23 need Kubernetes 1.34, 1.24 needs 1.35, as in Knative's release
+  schedule); a cluster up to 1.33 gets what it got. The Serving step, `GET
+  /api/knative-regions/{id}/compatible-versions` and `runr regions knative versions` follow, and an
+  installed region stays on its version until it is upgraded. A running Serving is always offered
+  its next minor, so a region left behind climbs one minor at a time
+  ([regions.md](docs/regions.md#knative-and-kubernetes-versions)).
+- **kube-prometheus-stack 92.18.0** (Prometheus Operator v0.94.2, Prometheus v3.15.1, security
+  rebuilds of the two). Regions installed from now on run it; an installed region keeps its chart
+  until `php artisan cluster:patch-observability`, a change back to RunR's own monitoring or a new
+  Serving install moves it. Its upgrade needs no step of its own: the operator's CRDs are the same,
+  and the chart's pre-upgrade Job recreates the admission webhook's Secret as `kubernetes.io/tls`
+  with the same certificates ([regions.md](docs/regions.md#observability)).
+- **Zot 2.1.23 (chart 0.1.130)** for registries set up from now on: fixes of storage, garbage
+  collection and on-demand sync. From Zot 2.1.22 an on-demand sync that fails answers 503, and an
+  image in Docker's manifest formats syncs only with `http.compat: [docker2s2]`. RunR's config covers
+  both: Docker Hub, which answers 401 for a repository it does not know, is no longer asked for
+  RunR's own namespaces (`runr-builds/`, `runr-runtimes/`, `runr-uploads/`), so a build's first
+  push gets its 404, and `http.compat` is set. An installed Zot keeps its version
+  until `php artisan registry:upgrade-zot <region-id>` moves it: an operator's step, because it
+  restarts the registry, so `region:reconcile` does not. The release keeps its values and the
+  config.json that runs, with these two settings added; Helm rolls a failed upgrade back, an
+  upgrade a killed process left pending
+  is rolled back first, and `--dry-run` shows what would change
+  ([regions.md](docs/regions.md#registry)).
+- **The Kind e2e runs Kubernetes 1.34 and 1.35** (`gh workflow run e2e.yml -f suite=kind -f
+  k8s=1.35.0`), the versions that take Knative 1.23 and 1.24: `e2e.yml` moves to Kind v0.31.0, the
+  first release with their node images, and the reqs mirror carries them. A run on a host of your
+  own needs Kind v0.31.0 or later ([development.md](docs/development.md#ci-jobs)).
+
+### Fixed
+
+- **A Kata reinstall no longer promises that running pods keep running.** `region:reconcile`, the
+  install log and the console's warning said so, but kata-deploy's cleanup removes the Kata shim, and
+  containerd restarting without it drops the node's Kata tasks. They now say what happens: Kata pods
+  on the node stop, a project's pod starts again when the node is done, and a sandbox ends. A first
+  install is not affected.
+- **The Knative versions on offer are the ones that install.** The Serving step offered five
+  minors, but a Knative Operator holds four, its own and the three before it, and its chart does not
+  follow the minor chosen: the oldest on the list failed when the operator got it, with "the
+  manifests of the target version are not available to this release". The list now holds what the
+  operator that runs can install, or the one an install is about to pick, so an older operator
+  also no longer offers minors newer than its own. A Serving install without a version
+  (`runr regions knative install REGION serving`) takes the newest of that list instead of the
+  newest the cluster supports, and `POST /knative-regions/{id}/install-serving` refuses a `version`
+  outside it with a 422.
+- **RunR applies the Knative Serving CRDs it downloads.** Every document of `serving-crds.yaml`
+  opens with a licence comment, and the parser skipped a part that opens with a comment: the
+  operator install and the Serving upgrade applied no CRD at all, on every version, and said
+  nothing. The operator's own apply covered for it, later than the install expects: the region's
+  Traefik started before its Knative CRD existed. All twelve are now applied, also the empty
+  `status: {}` of each, which a plain PHP array would have sent as `[]` and the API server refused.
+  An uninstall takes back all of them, found by their `app.kubernetes.io/name=knative-serving`
+  label: Uninstall Operator removed six and `uninstall-knative` none. `uninstall-knative` keeps them
+  while Knative Services are left on the cluster, and Uninstall Serving keeps them
+  ([regions.md](docs/regions.md#knative-operator-and-serving)).
+- **An internal registry on S3 runs.** Zot refused the config RunR gave it on S3 (dedupe on with no
+  remote database, no download directory for its sync), so such a registry never started; with
+  those two fixed it would still have gone to AWS, because the address was written under a key the
+  S3 driver does not read. RunR now turns dedupe off, downloads to the pod's `emptyDir`, and passes
+  the endpoint as `regionendpoint` with path-style addressing. No region needs a migration: none
+  could have run ([regions.md](docs/regions.md#registry)).
+- **The daily chart check reports only a version newer than RunR's.** `ci/check-helm-releases.sh`
+  reported the latest version of every chart without looking at the version RunR pins, so a chart
+  already at its pin got an issue (`deps: loki-stack 2.10.3 released`). It now reads each chart's
+  pin from its constant in the code and files nothing for a chart at its pin; a constant it cannot
+  read fails the check ([development.md](docs/development.md#ci-jobs)).
+- **The notification bell shows the unread count from the start.** The console asked for the count
+  only in the fallback poll, every 2 minutes while the WebSocket was down: with the socket up the
+  badge stayed empty after every page load and counted only the notifications that arrived live
+  (an installation with 533 unread showed none). The header now asks once when the console loads
+  and again after a sign-in or an organization switch, with the socket up or down; the socket and
+  the panel's reads and deletes keep the count from there, and the 2-minute poll still runs while
+  the socket is down. After a sign-out and another member's sign-in the badge shows that member's
+  count, never the previous one's. "Mark all as read" also shows when every notification the panel
+  lists is read but older ones are not.
+- **The console's language: the first of the browser's languages it has.** Without a choice of the
+  language switch the console looked only at the browser's first language: a browser set to
+  German, then Turkish, opened in English. It now takes the first of `navigator.languages` that is
+  Turkish or English, and English when none is; the switch's stored choice still wins, and no
+  installation setting changes the order. The sign-in page, the console after the sign-in, the
+  page's `lang` and the API's `Accept-Language` follow it alike. (A headless browser started
+  without a locale reports the system's language: on a Turkish system it gets Turkish.)
+- **`GET /api/version` shows a build's label as it is.** Every `APP_VERSION` that did not start
+  with `v` got `main-` in front: the public demo's `demo-0.6.5` read `main-demo-0.6.5`, and the
+  `main-<sha>` of `runtime/ci.sh` read `main-main-<sha>`. Only a bare commit id (7 to 40 hex digits,
+  the default of `compose/deploy.sh`) gets the prefix now; a tag, `dev` and any other label stay
+  as they are ([versioning.md](docs/versioning.md)).
+- **No client events on the WebSocket.** `config/reverb.php` left `accept_client_events_from`
+  unset, and Reverb then takes client events (`client-*` messages, Echo's `whisper`) from any
+  connection, also one that has not subscribed to the channel. The console sends and listens for
+  none, so it ignored them; Reverb now refuses them (`none`, env
+  `REVERB_APP_ACCEPT_CLIENT_EVENTS_FROM`), and on a login several people share, such as a public
+  demo, no visitor reaches the others' consoles ([security.md](docs/security.md#real-time-channels)).
+- **The demo data seeded twice is seeded once, and its list starts with the first sample.** A second
+  `runr:install --demo` (DemoSeeder) on the same database added eleven more demo projects; it now
+  keeps the ones the demo region has. The project list (newest first) showed the samples backwards,
+  starting with the Node.js 18 function: it now reads in their order, so the first card the tours
+  open is the Python HTTP function with its rollback history. The demo data stays English and every
+  project keeps its static history (four versions, a deployment each, no build and no region
+  call); tests now check every text the seeder writes and the versions' code for Turkish, the
+  first project's deployments and a second seeding of a fresh database, as the demo's nightly
+  reset does.
+- **The console's index.html is never cached, and a missing build file answers 404.** The UI
+  image's Caddyfile (and the Compose gateway's) set the cache headers before `try_files` rewrote
+  the path: `/`, `/login` and every other console route got index.html without
+  `Cache-Control: no-store`, so a browser could keep it across an upgrade, and a chunk of the
+  previous build that a console opened before the upgrade asked for got index.html under the build
+  files' one-year `immutable` header. The headers are now decided on the rewritten path: index.html
+  for every route and `/branding-defaults.js` never cached, the hashed files under `/assets/` for
+  a year (also their pre-compressed `.br` / `.gz`), a missing file under `/assets/` 404 with
+  `no-store`. A console whose page chunk answers 404 loads again once (at most once a minute), now
+  with the new build. `ci/check-caddyfiles.sh` (CI) runs both Caddyfiles in Caddy and checks these
+  answers.
+
 ## [0.6.5] - 2026-11-04
 
 ### Upgrade notes
@@ -3722,7 +3899,8 @@ Initial tagged release.
 - API gateways with routes, in-app notifications and support tickets.
 - Helm chart with a single-tenant / multi-tenant edition, an install form (`values.schema.json`), generated secrets and a Traefik ingress; a Docker Compose setup for development.
 
-[Unreleased]: https://github.com/brf-tech/runr/compare/v0.6.5...main
+[Unreleased]: https://github.com/brf-tech/runr/compare/v0.6.6...main
+[0.6.6]: https://github.com/brf-tech/runr/releases/tag/v0.6.6
 [0.6.5]: https://github.com/brf-tech/runr/releases/tag/v0.6.5
 [0.6.4]: https://github.com/brf-tech/runr/releases/tag/v0.6.4
 [0.6.3]: https://github.com/brf-tech/runr/releases/tag/v0.6.3

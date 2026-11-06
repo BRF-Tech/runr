@@ -9,6 +9,7 @@ use App\Services\Concerns\ZotPrepullTrait;
 use App\Services\Helpers\DedicatedWorkers;
 use App\Services\Helpers\RunrClusterIdentity;
 use App\Services\Manifests\ZotManifests;
+use App\Services\RegionReconcile\HelmReleaseUpgrade;
 use App\Services\Runtimes\RuntimeRegistry;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Sleep;
@@ -24,8 +25,8 @@ class ZotRegistryService
 
     private const ZOT_HELM_CHART = 'zot/zot';
 
-    // Pinned: values (persistence bool + pvc.*) follow this chart version (zot v2.1.21)
-    private const ZOT_CHART_VERSION = '0.1.125';
+    // Pinned: values (persistence bool + pvc.*) follow this chart version (zot v2.1.23)
+    public const ZOT_CHART_VERSION = '0.1.130';
 
     public const ZOT_RELEASE_NAME = 'runr-zot';
 
@@ -38,6 +39,9 @@ class ZotRegistryService
 
     // Pod template annotation that restarts Zot after RunR changed its config.json
     public const CONFIG_HASH_ANNOTATION = 'runr.sh/zot-config-sha256';
+
+    // Group of the registry's volume on a PVC (patchZotPermissions())
+    private const ZOT_FS_GROUP = 1000;
 
     // Seconds between two looks at the test PVC of testPvcBound()
     private const PVC_TEST_POLL_SECONDS = 3;
@@ -120,6 +124,112 @@ class ZotRegistryService
         Log::info('Zot registry installed', ['namespace' => $ns, 'address' => $address]);
 
         return ['address' => $address];
+    }
+
+    /**
+     * Moves one region's internal registry to the pinned chart, and so to its Zot version, when an
+     * operator asks for it (registry:upgrade-zot): it restarts the registry, so region:reconcile
+     * never does this. The release keeps the values it was installed with
+     * (HelmService::upgradeToChart()): placement and volume as they are, not as the region's
+     * settings would build them now — a worker selected later must not pull a node-bound volume
+     * away from its node. config.json goes in as it runs, with what region:reconcile and the
+     * operator made of it, or the upgrade would put back the one of the install.
+     *
+     * @return string what was done (in dry-run: would be done), or why nothing had to be
+     *
+     * @throws \RuntimeException the registry cannot be upgraded, or the upgrade failed
+     */
+    public function upgrade(KnativeRegion $region, bool $dryRun = false): string
+    {
+        if ($region->registry_mode !== 'internal' || ! $region->has_registry || ! $region->kubeconfig) {
+            throw new \RuntimeException("Region {$region->name} has no internal registry");
+        }
+
+        $ns = $region->registry_namespace ?: self::ZOT_DEFAULT_NS;
+        $release = $ns.'/'.self::ZOT_RELEASE_NAME;
+        $helm = app(HelmService::class);
+
+        $running = $helm->deployedChartVersion(self::ZOT_RELEASE_NAME, $ns, $region->kubeconfig, 'zot');
+        $recovered = '';
+
+        // helm list hides a release whose last operation is pending: an upgrade a killed helm
+        // process left behind goes back to the revision before it (HelmService::recoverInterrupted)
+        if ($running === null) {
+            if ($dryRun) {
+                $pending = HelmReleaseUpgrade::pending($helm, self::ZOT_RELEASE_NAME, $ns, $region->kubeconfig);
+                if ($pending !== null) {
+                    return "would roll back the interrupted {$pending} of Helm release {$release} once it is "
+                        .intdiv(HelmService::INTERRUPTED_AFTER_SECONDS, 60).' minutes old, then upgrade it to chart zot-'.self::ZOT_CHART_VERSION;
+                }
+            } elseif (($line = $helm->recoverInterrupted(self::ZOT_RELEASE_NAME, $ns, $region->kubeconfig)) !== null) {
+                $recovered = "{$line}; ";
+                $running = $helm->deployedChartVersion(self::ZOT_RELEASE_NAME, $ns, $region->kubeconfig, 'zot');
+            }
+        }
+
+        if ($running === null) {
+            throw new \RuntimeException("{$recovered}helm list -n {$ns} shows no deployed zot release ".self::ZOT_RELEASE_NAME);
+        }
+        if (version_compare($running, self::ZOT_CHART_VERSION, '>=')) {
+            return "{$recovered}up to date: Helm release {$release} runs chart zot-{$running}, the pinned chart is zot-".self::ZOT_CHART_VERSION;
+        }
+
+        $k8s = new KubernetesClient($region->kubeconfig);
+        [$kind, $workload] = $this->zotWorkload($k8s, $ns);
+        if (! $workload) {
+            throw new \RuntimeException("Zot StatefulSet/Deployment {$release} not found");
+        }
+        $cm = $k8s->getResourceStatus('v1', 'ConfigMap', self::ZOT_CONFIG_MAP, $ns);
+        $config = $cm['data'][self::ZOT_CONFIG_KEY] ?? null;
+        if (! is_string($config)) {
+            throw new \RuntimeException("ConfigMap {$ns}/".self::ZOT_CONFIG_MAP.' with '.self::ZOT_CONFIG_KEY.' not found');
+        }
+
+        // The running config.json, brought to what the pinned Zot needs: a Zot of 2.1.21 or older
+        // has none of it (region:reconcile leaves its config alone), and on the pinned one a build
+        // could not push and Docker-format images would not sync
+        // (ZotManifests::SYNC_ERRORS_SURFACE_SINCE)
+        try {
+            $synced = ZotManifests::reconcileSyncConfig($config, true);
+        } catch (\JsonException $e) {
+            throw new \RuntimeException("ConfigMap {$ns}/".self::ZOT_CONFIG_MAP.': '.self::ZOT_CONFIG_KEY." is not valid JSON ({$e->getMessage()})");
+        }
+        $config = $synced ?? $config;
+
+        $what = "Helm release {$release} (chart zot-{$running} → zot-".self::ZOT_CHART_VERSION.', '.(self::zotImage($workload) ?? 'image unknown')
+            ."): {$kind} {$release} restarts, and pulls through the registry wait until it is back"
+            .($synced !== null ? "; config.json takes this release's sync upstreams and http.compat" : '');
+        if ($dryRun) {
+            return "would upgrade {$what}";
+        }
+
+        // The chart renders the pod's securityContext from this value: left empty, the upgrade
+        // takes away the fsGroup of patchZotPermissions() and the patch below restarts Zot again
+        $values = [
+            'configFiles' => [self::ZOT_CONFIG_KEY => $config],
+            ...($kind === 'StatefulSet' ? ['podSecurityContext' => ['fsGroup' => self::ZOT_FS_GROUP]] : []),
+        ];
+
+        $helm->repoAdd(self::ZOT_HELM_REPO_NAME, self::ZOT_HELM_REPO_URL);
+        $helm->repoUpdate();
+
+        $upgrade = fn () => $helm->upgradeToChart(self::ZOT_RELEASE_NAME, self::ZOT_HELM_CHART, $ns, $region->kubeconfig, self::ZOT_CHART_VERSION, $values);
+        $result = $upgrade();
+        if (HelmService::operationInProgress($result) && ($line = $helm->recoverInterrupted(self::ZOT_RELEASE_NAME, $ns, $region->kubeconfig)) !== null) {
+            $recovered .= "{$line}; ";
+            $result = $upgrade();
+        }
+
+        if (! $result->success) {
+            throw new \RuntimeException("{$recovered}Zot Helm upgrade failed: ".trim($result->error));
+        }
+
+        if ($kind === 'StatefulSet') {
+            $this->patchZotPermissions($k8s, $ns);
+        }
+        $this->waitForZotReady($k8s, $ns);
+
+        return "{$recovered}upgraded {$what}";
     }
 
     /**
@@ -300,8 +410,11 @@ class ZotRegistryService
      * Brings the running Zot's config.json in $ns to RunR's sync upstreams
      * (ZotManifests::reconcileSyncConfig(): only RunR's entries/keys change) and restarts Zot —
      * only when the config changed. manifestCheckInterval is written only for a Zot image that
-     * knows the key (older ones refuse to start on it). The restart adds the toleration of the
-     * dedicated-worker taint to a Zot without it, as an install of this release has it.
+     * knows the key (older ones refuse to start on it), Docker Hub's content filter and http.compat
+     * only for one that needs them (ZotManifests::surfacesSyncErrors(): an older one is not
+     * restarted for them; upgrade() writes them with the new version). The restart adds the
+     * toleration of the dedicated-worker taint to a Zot without it, as an install of this release
+     * has it.
      *
      * @return string|null what changed (in dry-run: would change), "skipped: …", null = up to date
      */
@@ -319,10 +432,11 @@ class ZotRegistryService
             return "skipped: Zot StatefulSet/Deployment {$ns}/".self::ZOT_RELEASE_NAME.' not found';
         }
 
-        $interval = ZotManifests::supportsManifestCheckInterval(self::zotImage($workload));
+        $image = self::zotImage($workload);
+        $interval = ZotManifests::supportsManifestCheckInterval($image);
 
         try {
-            $new = ZotManifests::reconcileSyncConfig($json, $interval);
+            $new = ZotManifests::reconcileSyncConfig($json, $interval, ZotManifests::surfacesSyncErrors($image));
         } catch (\JsonException $e) {
             throw new \RuntimeException("{$cmRef}: ".self::ZOT_CONFIG_KEY." is not valid JSON ({$e->getMessage()})");
         }
@@ -592,7 +706,7 @@ class ZotRegistryService
     {
         $k8s->mergePatch('apps/v1', 'StatefulSet', self::ZOT_RELEASE_NAME, $ns, [
             'spec' => ['template' => ['spec' => [
-                'securityContext' => ['fsGroup' => 1000],
+                'securityContext' => ['fsGroup' => self::ZOT_FS_GROUP],
                 'initContainers' => [[
                     'name' => 'fix-permissions',
                     'image' => 'ghcr.io/brf-tech/runr/reqs/busybox:latest',

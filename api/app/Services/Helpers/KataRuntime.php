@@ -5,7 +5,7 @@ namespace App\Services\Helpers;
 /**
  * The Kata Containers hypervisors RunR installs and what one Kata pod costs on its node.
  *
- * Each hypervisor is a kata-deploy custom runtime (handler "kata-<hv>-runr", kata-deploy 3.28
+ * Each hypervisor is a kata-deploy custom runtime (handler "kata-<hv>-runr", kata-deploy's
  * CUSTOM_RUNTIMES_ENABLED + /custom-configs) built from kata-deploy's stock configuration plus
  * RunR's config.d drop-in (dropIn()). The RuntimeClass keeps the name "kata-<hv>" that project
  * mappings (sandbox_*_runtime) refer to.
@@ -24,16 +24,13 @@ namespace App\Services\Helpers;
  *    believes it has more memory than the pod may use: limits + base, with the base and the
  *    VMM's own memory inside the overhead. CRI-O does not pass the sizing annotations, so on
  *    CRI-O nodes Kata keeps hot-plugging (static sizing off).
- *  - Dragonball (runtime-rs) in kata-deploy 3.28 adds only the memory limits at boot, not the CPU
- *    limits (InitialSizeManager::setup_config logs the vCPUs and drops them; hot-plug is off with
- *    static sizing), so its guest kept GUEST_BASE_VCPUS whatever the pod's limit. RunR passes the
- *    vCPU count itself: withGuestSizing() annotates every workload manifest the API writes
- *    (GUEST_VCPUS_ANNOTATION / GUEST_MAX_VCPUS_ANNOTATION = guestVcpus()), and Dragonball's drop-in
- *    lets runtime-rs read those annotations on containerd nodes. Kata 3.29.0 sizes the vCPUs
- *    itself (upstream "runtime-rs: Fix initial vCPU / memory with static_sandbox_resource_mgmt"):
- *    on such a KATA_VERSION the annotations would be counted twice, so withGuestSizing() stops at
- *    RUNTIME_RS_STATIC_VCPUS_SINCE. docs/kata-hypervisors.md → Guest size; the sandbox-api e2e
- *    checks nproc in the guest per hypervisor.
+ *  - Dragonball (runtime-rs) sizes a guest from two pairs of settings: with a limit on the pod
+ *    overhead_vcpus / overhead_memory + the limits, without any default_vcpus / default_memory
+ *    (docs/how-to/how-to-size-sandbox-overhead-runtime-rs.md of Kata). kata-deploy's stock
+ *    overhead is 0.2 vCPU / 32 MiB, far below what the guest's kernel and agent need on top of
+ *    the limits, so the drop-in sets both pairs to the base: the same guest as on the go runtime.
+ *    docs/kata-hypervisors.md → Guest size; the sandbox-api e2e checks nproc in the guest per
+ *    hypervisor.
  *  - reclaim_guest_freed_memory = true (clh, qemu, dragonball): free page reporting hands pages
  *    the guest frees back to the host, so the VMM's resident memory follows what the guest uses
  *    instead of growing towards the whole guest RAM over time.
@@ -54,6 +51,11 @@ namespace App\Services\Helpers;
  * (~24 MiB) + Firecracker (~10 MiB) → 320Mi. CPU: 250m per pod, the value upstream kata-deploy
  * uses for these RuntimeClasses — the VMM's own threads (I/O, virtio-fs, vCPU exits) at idle stay
  * far below it; VM boot is bounded by limits + 250m.
+ *
+ * These numbers come from Kata 3.28.0 and were not measured again on Kata 4: the go runtime's
+ * sizing code is unchanged, and upstream's own overheads for these RuntimeClasses did not grow
+ * past RunR's (clh, dragonball, fc 130Mi; qemu 320Mi, 160Mi before), but the guest is a new
+ * image and kernel.
  *
  * Cold start (0.4.2; measured on a test VM — nested KVM in an 8-vCPU Broadwell OpenStack VM, k3s 1.34,
  * Kata 3.28.0, Knative scale from zero, Node.js function 250m / 256Mi, medians of n >= 6, "pod
@@ -99,30 +101,16 @@ final class KataRuntime
     public const HYPERVISORS = ['clh', 'qemu', 'dragonball', 'fc'];
 
     /** kata-deploy release RunR installs (KataManifestTrait::KATA_IMAGE). */
-    public const KATA_VERSION = '3.28.0';
+    public const KATA_VERSION = '4.3.1';
 
     /** Hypervisors on Kata's Rust runtime (runtime-rs); the others run on the go runtime. */
     public const RUNTIME_RS = ['dragonball'];
 
-    /** First kata-deploy release whose runtime-rs adds the pod's CPU limits to a statically sized guest. */
-    public const RUNTIME_RS_STATIC_VCPUS_SINCE = '3.29.0';
-
-    /** Pod annotations runtime-rs takes the guest's vCPUs from (Dragonball's drop-in enables them). */
-    public const GUEST_VCPUS_ANNOTATION = 'io.katacontainers.config.hypervisor.default_vcpus';
-
-    public const GUEST_MAX_VCPUS_ANNOTATION = 'io.katacontainers.config.hypervisor.default_max_vcpus';
-
     /**
-     * enable_annotations of kata-deploy 3.28's runtime-rs configurations (DEFENABLEANNOTATIONS) —
-     * a drop-in's list replaces the stock one, so RunR's starts from it.
+     * enable_annotations of kata-deploy's runtime-rs configurations (DEFENABLEANNOTATIONS) — a
+     * drop-in's list replaces the stock one, so RunR's starts from it.
      */
-    private const RUNTIME_RS_STOCK_ANNOTATIONS = ['enable_iommu', 'virtio_fs_extra_args', 'kernel_params', 'kernel_verity_params', 'default_vcpus', 'default_memory'];
-
-    /** Knative's queue-proxy CPU limit when a revision does not set one (config-deployment, KnativeCRTrait). */
-    private const QUEUE_PROXY_DEFAULT_CPU_LIMIT_M = 100;
-
-    /** Annotation that sets a revision's queue-proxy CPU limit (KnativeConstants::QUEUE_PROXY_CPU_LIMIT_ANNOTATION). */
-    private const QUEUE_PROXY_CPU_LIMIT_ANNOTATION = 'queue.sidecar.serving.knative.dev/cpu-resource-limit';
+    private const RUNTIME_RS_STOCK_ANNOTATIONS = ['enable_iommu', 'kernel_params', 'kernel_verity_params', 'default_vcpus', 'default_memory'];
 
     /** Node label kata-deploy sets once the node's container runtime knows the Kata handlers. */
     public const NODE_LABEL = 'katacontainers.io/kata-runtime';
@@ -228,7 +216,7 @@ final class KataRuntime
     private const FREE_PAGE_REPORTING = ['clh', 'qemu', 'dragonball'];
 
     /**
-     * kernel_params of kata-deploy 3.28's configuration per hypervisor — a drop-in's kernel_params
+     * kernel_params of kata-deploy's configuration per hypervisor — a drop-in's kernel_params
      * replaces the whole string, so RunR's starts from these. Dragonball's has no cgroup parameters
      * (its guest's systemd defaults to cgroup2); the agent as init needs them to mount cgroup2
      * instead of the v1 hierarchies (without them the Dragonball guest does not come up).
@@ -359,7 +347,7 @@ final class KataRuntime
             $lines[] = 'reclaim_guest_freed_memory = true';
         }
         if (in_array($hypervisor, self::RUNTIME_RS, true)) {
-            $lines = [...$lines, ...self::runtimeRsAnnotationLines($hypervisor, $staticSizing)];
+            $lines = [...$lines, ...self::runtimeRsSizingLines($staticSizing)];
         }
         $lines[] = '# RunR: the Kata agent is the guest init (no systemd), for a faster cold start';
         $lines[] = 'kernel_params = '.self::tomlString(self::kernelParams($hypervisor));
@@ -381,152 +369,35 @@ final class KataRuntime
     public static function dropInSummary(): string
     {
         return 'the guest boots the Kata agent as init instead of systemd (faster cold start); '
-            .'shim / VMM / virtiofsd in the pod cgroup, VM sized from the pod limits '
-            .'(Dragonball: vCPUs from the pod annotations RunR sets)';
-    }
-
-    // ── Guest vCPUs of runtime-rs hypervisors ────────────────────────────────
-
-    /** Does this hypervisor's guest need its vCPUs from RunR's pod annotations (see the class doc)? */
-    public static function needsGuestVcpuAnnotations(?string $hypervisor): bool
-    {
-        return in_array($hypervisor, self::RUNTIME_RS, true)
-            && ! self::sizesRuntimeRsVcpusItself(self::KATA_VERSION);
-    }
-
-    /** Does this Kata release give a runtime-rs guest the pod's CPU limits itself (RUNTIME_RS_STATIC_VCPUS_SINCE)? */
-    private static function sizesRuntimeRsVcpusItself(string $kataVersion): bool
-    {
-        return version_compare($kataVersion, self::RUNTIME_RS_STATIC_VCPUS_SINCE, '>=');
+            .'shim / VMM / virtiofsd in the pod cgroup, VM sized from the pod limits';
     }
 
     /**
-     * vCPUs of a statically sized guest: GUEST_BASE_VCPUS + the pod's CPU limits, rounded up — what
-     * the go runtime gives clh / qemu / fc guests from containerd's sandbox sizing annotations (the
-     * containers' limits without the RuntimeClass overhead; the largest init container when it is
-     * larger than the sum). $sidecarCpuLimitM: containers added after RunR renders the pod
-     * (Knative's queue-proxy). A pod without CPU limits keeps the base.
-     */
-    public static function guestVcpus(array $podSpec, int $sidecarCpuLimitM = 0): int
-    {
-        $sum = $sidecarCpuLimitM;
-        foreach ($podSpec['containers'] ?? [] as $container) {
-            $sum += self::cpuMillis($container['resources']['limits']['cpu'] ?? null);
-        }
-        foreach ($podSpec['initContainers'] ?? [] as $container) {
-            $sum = max($sum, self::cpuMillis($container['resources']['limits']['cpu'] ?? null));
-        }
-
-        return self::GUEST_BASE_VCPUS + (int) ceil($sum / 1000);
-    }
-
-    /**
-     * The guest sizing annotations of a pod spec — empty unless it runs on a hypervisor that needs
-     * them (needsGuestVcpuAnnotations()). default_max_vcpus = default_vcpus: no vCPU hot-plug under
-     * static sizing, and runtime-rs refuses a guest with more vCPUs than its maximum (by default the
-     * host's CPU count).
-     *
-     * @return array<string, string>
-     */
-    public static function guestSizingAnnotations(array $podSpec, int $sidecarCpuLimitM = 0): array
-    {
-        if (! self::needsGuestVcpuAnnotations(self::hypervisorOf($podSpec['runtimeClassName'] ?? null))) {
-            return [];
-        }
-
-        $vcpus = (string) self::guestVcpus($podSpec, $sidecarCpuLimitM);
-
-        return [self::GUEST_VCPUS_ANNOTATION => $vcpus, self::GUEST_MAX_VCPUS_ANNOTATION => $vcpus];
-    }
-
-    /**
-     * A workload manifest with the guest sizing annotations on its pod template — every manifest the
-     * API writes passes here (KubernetesNamespacedTrait), so Pods, Jobs, CronJobs, Deployments and
-     * Knative Services on such a hypervisor all get them. Knative adds queue-proxy to the pod: its CPU
-     * limit is the revision's queue-proxy annotation, or Knative's default from config-deployment.
-     * A manifest that sets either sizing annotation itself is left as it is.
-     */
-    public static function withGuestSizing(array $manifest): array
-    {
-        $kind = $manifest['kind'] ?? null;
-        $knative = $kind === 'Service' && str_starts_with((string) ($manifest['apiVersion'] ?? ''), 'serving.knative.dev/');
-
-        $path = match (true) {
-            $kind === 'Pod' => [],
-            $kind === 'CronJob' => ['spec', 'jobTemplate', 'spec', 'template'],
-            $knative, in_array($kind, ['Job', 'Deployment', 'StatefulSet', 'DaemonSet', 'ReplicaSet'], true) => ['spec', 'template'],
-            default => null,
-        };
-        if ($path === null) {
-            return $manifest;
-        }
-
-        $template = $path === [] ? $manifest : data_get($manifest, implode('.', $path));
-        if (! is_array($template) || ! is_array($template['spec'] ?? null)) {
-            return $manifest;
-        }
-
-        $sidecar = 0;
-        if ($knative) {
-            $limit = $template['metadata']['annotations'][self::QUEUE_PROXY_CPU_LIMIT_ANNOTATION] ?? null;
-            $sidecar = $limit !== null ? self::cpuMillis($limit) : self::QUEUE_PROXY_DEFAULT_CPU_LIMIT_M;
-        }
-
-        $sizing = self::guestSizingAnnotations($template['spec'], $sidecar);
-        if ($sizing === []) {
-            return $manifest;
-        }
-
-        $annotations = (array) ($template['metadata']['annotations'] ?? []);
-        if (array_intersect_key($annotations, $sizing) !== []) {
-            return $manifest; // sized by the manifest itself
-        }
-        $template['metadata']['annotations'] = $annotations + $sizing;
-
-        if ($path === []) {
-            return $template;
-        }
-        data_set($manifest, implode('.', $path), $template);
-
-        return $manifest;
-    }
-
-    /** Kubernetes CPU quantity ("250m", "1", "1.5", 2) in millicores; 0 when absent or unparsable. */
-    public static function cpuMillis(mixed $quantity): int
-    {
-        if (is_int($quantity) || is_float($quantity)) {
-            return (int) ceil($quantity * 1000);
-        }
-        if (! is_string($quantity) || ! preg_match('/^(\d+(?:\.\d+)?)(m?)$/', trim($quantity), $m)) {
-            return 0;
-        }
-
-        return (int) ceil($m[2] === 'm' ? (float) $m[1] : (float) $m[1] * 1000);
-    }
-
-    /**
-     * enable_annotations of a runtime-rs hypervisor: kata-deploy's list, plus the guest's maximum
-     * vCPUs where RunR sizes the guest through pod annotations (static sizing on containerd). On
-     * CRI-O Kata hot-plugs vCPUs on top of default_vcpus, so there RunR's vCPU annotations stay
-     * unread (they would count the pod's CPU limits twice). A Kata release that sizes the vCPUs
-     * itself keeps kata-deploy's list.
+     * What a runtime-rs drop-in adds: the base of a statically sized guest under runtime-rs's own
+     * names (the class doc). On CRI-O Kata hot-plugs vCPUs on top of default_vcpus, so a workload
+     * that still carries the default_vcpus pod annotation RunR once wrote must not be read there
+     * (it would count the pod's CPU limits twice).
      *
      * @return list<string>
      */
-    private static function runtimeRsAnnotationLines(string $hypervisor, bool $staticSizing): array
+    private static function runtimeRsSizingLines(bool $staticSizing): array
     {
-        if (! $staticSizing) {
-            $annotations = array_values(array_diff(self::RUNTIME_RS_STOCK_ANNOTATIONS, ['default_vcpus']));
-            $comment = '# RunR: Kata hot-plugs the vCPUs here; RunR\'s vCPU pod annotations stay unread';
-        } elseif (self::needsGuestVcpuAnnotations($hypervisor)) {
-            $annotations = [...self::RUNTIME_RS_STOCK_ANNOTATIONS, 'default_max_vcpus'];
-            $comment = '# RunR: vCPUs = 1 + the pod\'s CPU limits from the pod annotations RunR sets (runtime-rs '
-                .self::KATA_VERSION.' sizes only the memory)';
-        } else {
-            return [];
+        $lines = [
+            '# RunR: runtime-rs adds the pod limits to these, default_vcpus / default_memory only apply without limits',
+            'overhead_vcpus = '.self::GUEST_BASE_VCPUS,
+            'overhead_memory = '.self::GUEST_BASE_MEMORY_MB,
+        ];
+        if ($staticSizing) {
+            return $lines;
         }
 
-        return [$comment, 'enable_annotations = ['.implode(', ', array_map(self::tomlString(...), $annotations)).']'];
+        $annotations = array_values(array_diff(self::RUNTIME_RS_STOCK_ANNOTATIONS, ['default_vcpus']));
+
+        return [
+            ...$lines,
+            '# RunR: Kata hot-plugs the vCPUs here; the vCPU pod annotation of older workloads stays unread',
+            'enable_annotations = ['.implode(', ', array_map(self::tomlString(...), $annotations)).']',
+        ];
     }
 
     /** TOML basic string. */

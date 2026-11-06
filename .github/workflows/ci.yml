@@ -60,6 +60,10 @@ jobs:
       # No Docker Hub base image, OTEL_SDK_DISABLED=true in Spin RUN steps (docker-container
       # builders) and the source label of every image
       - run: bash ci/check-dockerfiles.sh
+      # The console's web servers (vue/Caddyfile, compose/Caddyfile) in the reqs mirror's Caddy:
+      # valid, index.html for every console route never cached, the hashed build files for a year,
+      # a missing build file 404
+      - run: bash ci/check-caddyfiles.sh
       # runtime/ci.sh without Docker or a registry: build/push exit codes and --pull, the labels of a
       # push, the pinned runtime images the e2e suites pull, the reqs mirror check, the shared Kind
       # helpers, the release workflow and these CI workflows

@@ -3,6 +3,7 @@
 namespace App\Services\Helpers;
 
 use App\Models\KnativeRegion;
+use App\Services\Contracts\KnativeConstants;
 use App\Services\HelmService;
 use App\Services\KubernetesClient;
 
@@ -13,9 +14,10 @@ class KnativeVersionHelper
      * Source: https://github.com/knative/community/blob/main/mechanics/RELEASE-SCHEDULE.md
      */
     public const KNATIVE_K8S_COMPAT = [
-        // 24 => 35, // unreleased
-        // 23 => 34, // unreleased
-        // 22 => 34, // unreleased
+        // 25 => 36, // unreleased
+        24 => 35,
+        23 => 34,
+        22 => 34,
         21 => 33,
         20 => 32,
         19 => 32,
@@ -35,12 +37,22 @@ class KnativeVersionHelper
      * ci/check-knative-releases.sh adds a newly released minor.
      */
     public const FALLBACK_CHART_VERSIONS = [
+        '1.24' => '1.24.0',
+        '1.23' => '1.23.1',
+        '1.22' => '1.22.3',
         '1.21' => '1.21.4',
         '1.20' => '1.20.2',
         '1.19' => '1.19.6',
         '1.18' => '1.18.3',
         '1.17' => '1.17.8',
     ];
+
+    /**
+     * Serving minors a Knative Operator can install: its own and the three before it. It carries
+     * their manifests and refuses any other version ("the manifests of the target version … are
+     * not available to this release"); the same for every chart from 1.17 to 1.24.
+     */
+    public const OPERATOR_SERVING_MINORS = 4;
 
     private const HELM_REPO_NAME = 'knative-operator';
 
@@ -115,13 +127,14 @@ class KnativeVersionHelper
      *
      * A cluster whose Kubernetes version could not be read counts as the supported minimum
      * (knative.min_k8s_minor). Without the chart repository the pinned chart of the newest
-     * compatible minor is used (fallbackPair()).
+     * compatible minor is used (fallbackPair()). With $operator, the version of an operator that
+     * runs, only the minors it can install count: a Serving install takes the operator as it is.
      *
      * @return array{chart: string, app: string}
      */
-    public static function resolveVersionPair(?int $k8sMinor, HelmService $helm): array
+    public static function resolveVersionPair(?int $k8sMinor, HelmService $helm, ?string $operator = null): array
     {
-        $compatible = self::compatibleVersions($k8sMinor ?? self::minimumK8sMinor(), 10);
+        $compatible = self::installableVersions($k8sMinor, $operator);
         $available = $compatible ? self::buildAvailableMap($helm) : [];
 
         foreach ($compatible as $minor) {
@@ -130,19 +143,31 @@ class KnativeVersionHelper
             }
         }
 
-        return self::fallbackPair($k8sMinor);
+        return self::fallbackPair($k8sMinor, $operator);
+    }
+
+    /** The minors the cluster supports, newest first; with $operator, those it can install. */
+    private static function installableVersions(?int $k8sMinor, ?string $operator): array
+    {
+        $versions = self::compatibleVersions($k8sMinor ?? self::minimumK8sMinor(), 10);
+        $operatorMinor = self::minorOf($operator);
+
+        return $operatorMinor === null
+            ? $versions
+            : array_values(array_filter($versions, fn ($minor) => self::operatorInstalls($operatorMinor, $minor)));
     }
 
     /**
-     * The pinned chart of the newest Knative minor the cluster supports (FALLBACK_CHART_VERSIONS);
-     * the oldest pinned one for a cluster below every pinned minor's requirement.
+     * The pinned chart of the newest Knative minor the cluster supports (FALLBACK_CHART_VERSIONS)
+     * and $operator can install; the oldest pinned one for a cluster below every pinned minor's
+     * requirement.
      *
      * @return array{chart: string, app: string}
      */
-    public static function fallbackPair(?int $k8sMinor): array
+    public static function fallbackPair(?int $k8sMinor, ?string $operator = null): array
     {
         $pick = null;
-        foreach (self::compatibleVersions($k8sMinor ?? self::minimumK8sMinor(), 10) as $minor) {
+        foreach (self::installableVersions($k8sMinor, $operator) as $minor) {
             if (isset(self::FALLBACK_CHART_VERSIONS[$minor])) {
                 $pick = $minor;
                 break;
@@ -200,16 +225,75 @@ class KnativeVersionHelper
             return [];
         }
 
-        $candidates = self::compatibleVersions($k8sMinor, 10);
-        $available = self::buildAvailableMap(new HelmService);
+        return self::offeredVersions(
+            $k8sMinor,
+            array_keys(self::buildAvailableMap(app(HelmService::class))),
+            $region->knative_serving_status === 'ready' ? $region->knative_serving_version : null,
+            self::runningOperatorVersion($k8s, $region),
+        );
+    }
 
-        // Helm repo not available (e.g. API container) → return matrix as-is
-        if (empty($available)) {
-            return array_slice($candidates, 0, 5);
+    /**
+     * The Knative minors offered to a cluster, newest first: those it supports that the chart
+     * repository has (the table alone when the repository cannot be read, e.g. in the API
+     * container) and the operator can install. The operator's chart does not follow the minor
+     * chosen for Serving: it is the one that runs ($operator), or the chart an install is about
+     * to pick, the newest of those minors (resolveVersionPair()).
+     *
+     * A running Serving ($running) is also offered its next minor, whatever the operator holds:
+     * upgradeServing() moves the operator first, and Knative upgrades one minor at a time, so a
+     * region left behind reaches the newest ones through it.
+     *
+     * @param  list<string>  $available  the repository's minors; empty when it could not be read
+     * @return list<string>
+     */
+    public static function offeredVersions(int $k8sMinor, array $available, ?string $running, ?string $operator = null): array
+    {
+        $supported = self::compatibleVersions($k8sMinor, count(self::KNATIVE_K8S_COMPAT));
+        if ($available !== []) {
+            $supported = array_values(array_intersect($supported, $available));
         }
 
-        $filtered = array_filter($candidates, fn ($v) => isset($available[$v]['chart']));
+        $newest = self::minorOf($operator) ?? $supported[0] ?? null;
+        $offered = $newest === null ? [] : array_values(array_filter($supported, fn ($minor) => self::operatorInstalls($newest, $minor)));
 
-        return array_values(array_slice($filtered, 0, 5));
+        $next = self::nextMinor($running);
+        if ($next !== null && in_array($next, $supported, true) && ! in_array($next, $offered, true)) {
+            $offered[] = $next;
+            usort($offered, fn ($a, $b) => version_compare($b, $a));
+        }
+
+        return $offered;
+    }
+
+    /** Whether the operator of minor $operator holds the manifests of Serving minor $minor. */
+    private static function operatorInstalls(string $operator, string $minor): bool
+    {
+        $behind = self::minorNumber($operator) - self::minorNumber($minor);
+
+        return $behind >= 0 && $behind < self::OPERATOR_SERVING_MINORS;
+    }
+
+    /** The version of the Knative Operator that runs for the region; null when none does. */
+    public static function runningOperatorVersion(KubernetesClient $k8s, KnativeRegion $region): ?string
+    {
+        $namespace = $region->knative_operator_namespace ?: KnativeConstants::HELM_NAMESPACE;
+        $deployment = $k8s->getResourceStatus('apps/v1', 'Deployment', 'knative-operator', $namespace);
+
+        return $deployment['metadata']['labels']['app.kubernetes.io/version'] ?? null;
+    }
+
+    /** "1.20.3" → "1.21"; null for anything else */
+    private static function nextMinor(?string $version): ?string
+    {
+        $minor = self::minorOf($version);
+
+        return $minor === null ? null : explode('.', $minor)[0].'.'.(self::minorNumber($minor) + 1);
+    }
+
+    /** "1.20" → 20 */
+    private static function minorNumber(string $minor): int
+    {
+        return (int) explode('.', $minor)[1];
     }
 }

@@ -2,15 +2,11 @@
 
 namespace App\Services\Concerns;
 
-use App\Services\Helpers\KataRuntime;
 use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Log;
 
 /**
  * Namespaced Kubernetes resource operations.
- *
- * Every workload written here gets the guest sizing annotations a Kata runtime-rs hypervisor needs
- * (KataRuntime::withGuestSizing(); a no-op for anything else).
  *
  * Expects the consuming class to provide:
  *   - request(): PendingRequest
@@ -48,7 +44,6 @@ trait KubernetesNamespacedTrait
     public function applyResource(array $manifest, string $namespace): bool
     {
         $this->lastApplyError = null;
-        $manifest = KataRuntime::withGuestSizing($manifest);
         $kind = $manifest['kind'];
         $apiVersion = $manifest['apiVersion'];
         $name = $manifest['metadata']['name'];
@@ -88,7 +83,6 @@ trait KubernetesNamespacedTrait
     public function createResource(array $manifest, string $namespace): bool
     {
         $this->lastApplyError = null;
-        $manifest = KataRuntime::withGuestSizing($manifest);
         $kind = $manifest['kind'];
         $apiVersion = $manifest['apiVersion'];
 

@@ -285,7 +285,7 @@ Inside `KnativeInstallService::installServing()`, in order:
 
 `KnativeStatusService` sets `loki_status = 'ready'` once the Loki pod is Running.
 
-`php artisan cluster:patch-observability {regionId?}` re-applies the Prometheus and Loki Helm values on existing regions.
+`php artisan cluster:patch-observability {regionId?}` re-applies the Prometheus and Loki Helm values on existing regions, at the chart versions this release pins ([what moves an installed region's charts](regions.md#observability)).
 
 ---
 

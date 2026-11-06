@@ -10,7 +10,7 @@ use App\Support\Images\ImageReference;
  * pinned chart's Docker Hub image), or KNATIVE_TRAEFIK_IMAGE (config knative.traefik_image,
  * Helm value knative.traefikImage). Every node pre-pulls it (knative.prepull_images), and
  * KnativeTraefikTrait sets it as the chart's image.registry / image.repository / image.tag;
- * TraefikImageStep moves the Traefik of existing regions to it.
+ * TraefikChartStep and TraefikImageStep move the Traefik of existing regions to it.
  */
 final class TraefikImage
 {
@@ -20,8 +20,8 @@ final class TraefikImage
     }
 
     /**
-     * The chart's image values for a reference: "ghcr.io/brf-tech/runr/reqs/traefik:v3.7.4" →
-     * registry ghcr.io, repository brf-tech/runr/reqs/traefik, tag v3.7.4. Without a registry host the
+     * The chart's image values for a reference: "ghcr.io/brf-tech/runr/reqs/traefik:v3.7.17" →
+     * registry ghcr.io, repository brf-tech/runr/reqs/traefik, tag v3.7.17. Without a registry host the
      * image is on Docker Hub; "<tag>@<digest>" stays the tag (the chart accepts the pair), a
      * digest alone is image.digest.
      *

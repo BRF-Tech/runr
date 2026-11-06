@@ -54,9 +54,10 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/version', function () {
-    $v = config('app.version');
-    // Tag versions already start with 'v', commit SHAs get 'main-' prefix
-    if ($v !== 'dev' && ! str_starts_with($v, 'v')) {
+    $v = (string) config('app.version');
+    // A build from a commit (APP_VERSION its id, compose/deploy.sh) reads main-<id>; a release tag
+    // (v0.6.5), dev and any other label a build sets (demo-0.6.5) stay as they are
+    if (preg_match('/^[0-9a-f]{7,40}$/i', $v) === 1) {
         $v = 'main-'.$v;
     }
 

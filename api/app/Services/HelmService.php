@@ -14,9 +14,20 @@ class HelmService
     /**
      * Age after which a pending revision belongs to no running helm process (recoverInterrupted):
      * helm's own --timeout 10m of a waiting upgrade, the 660 s RunR gives a helm process, and two
-     * minutes.
+     * minutes. A longer process (CHART_UPGRADE_SECONDS) changes nothing: --atomic's wait and its
+     * rollback are two revisions, each pending for --timeout at most.
      */
     public const INTERRUPTED_AFTER_SECONDS = 780;
+
+    /** What a helm process may take: above helm's own --timeout 10m */
+    private const PROCESS_TIMEOUT = 660;
+
+    /**
+     * What upgradeToChartVersion() may take: --atomic's wait for the release's workloads and, when
+     * they fail, its rollback, each up to --timeout 10m. helm/templates/region-reconcile-job.yaml
+     * counts it among the waits of region:reconcile.
+     */
+    public const CHART_UPGRADE_SECONDS = 1260;
 
     /** Tries of a Helm call that keeps failing on transient API server errors (retryTransient) */
     public const TRANSIENT_TRIES = 5;
@@ -27,6 +38,9 @@ class HelmService
     public const TRANSIENT_MAX_WAIT = 30;
 
     private ?string $tmpKubeconfig = null;
+
+    /** The time limit of the helm process run() starts */
+    protected int $processTimeout = self::PROCESS_TIMEOUT;
 
     public function __destruct()
     {
@@ -142,14 +156,6 @@ class HelmService
             $args[] = $version;
         }
 
-        $tmpValues = null;
-        if ($valuesArray) {
-            $tmpValues = tempnam(sys_get_temp_dir(), 'runr-helm-vals-');
-            file_put_contents($tmpValues, self::valuesYaml($valuesArray));
-            $args[] = '--values';
-            $args[] = $tmpValues;
-        }
-
         foreach ($setValues as $key => $value) {
             $args[] = '--set';
             $args[] = "{$key}={$value}";
@@ -158,6 +164,20 @@ class HelmService
         foreach ($setJsonValues as $key => $value) {
             $args[] = '--set-json';
             $args[] = "{$key}={$value}";
+        }
+
+        return $this->runWithValues($args, $valuesArray);
+    }
+
+    /** $args with $valuesArray as a values file, which is gone again afterwards. */
+    private function runWithValues(array $args, array $valuesArray): HelmResult
+    {
+        $tmpValues = null;
+        if ($valuesArray) {
+            $tmpValues = tempnam(sys_get_temp_dir(), 'runr-helm-vals-');
+            file_put_contents($tmpValues, self::valuesYaml($valuesArray));
+            $args[] = '--values';
+            $args[] = $tmpValues;
         }
 
         $result = $this->run($args);
@@ -223,6 +243,93 @@ class HelmService
     }
 
     /**
+     * Move a release to another chart version with the values it was installed with
+     * (--reset-then-reuse-values: the new chart's defaults, then the release's own values, then
+     * $valuesArray). Not --reuse-values: that keeps the old chart's defaults too, so a chart whose
+     * values.yaml names its image would keep running the old one. Returns once the workloads are
+     * ready; a failed upgrade rolls back (--atomic), so the helm process gets
+     * CHART_UPGRADE_SECONDS, as in upgradeToChartVersion().
+     *
+     * @param  array<string, mixed>  $valuesArray
+     */
+    public function upgradeToChart(
+        string $release,
+        string $chart,
+        string $namespace,
+        string $kubeconfigYaml,
+        string $version,
+        array $valuesArray = [],
+    ): HelmResult {
+        $this->processTimeout = self::CHART_UPGRADE_SECONDS;
+        try {
+            return $this->runWithValues([
+                'helm', 'upgrade', $release, $chart,
+                '-n', $namespace,
+                '--kubeconfig', $this->writeKubeconfig($kubeconfigYaml),
+                '--reset-then-reuse-values',
+                '--version', $version,
+                '--atomic',
+                '--timeout', '10m',
+            ], $valuesArray);
+        } finally {
+            $this->processTimeout = self::PROCESS_TIMEOUT;
+        }
+    }
+
+    /**
+     * The values a release was given: `helm get values -o json`, or null when helm fails. Kept as
+     * JSON, where {} and [] stay apart (a chart's schema may care, PHP arrays cannot tell).
+     */
+    public function releaseValuesJson(string $release, string $namespace, string $kubeconfigYaml): ?string
+    {
+        $result = $this->run([
+            'helm', 'get', 'values', $release,
+            '-n', $namespace,
+            '--kubeconfig', $this->writeKubeconfig($kubeconfigYaml),
+            '-o', 'json',
+        ]);
+
+        return $result->success ? $result->output : null;
+    }
+
+    /**
+     * Upgrade a release to another chart version with exactly $valuesJson over the new chart's
+     * defaults: unlike upgradeReusingValues(), nothing of the release's values that the new chart
+     * may refuse comes along. --atomic waits for the release's workloads and rolls the release back
+     * when they do not become ready: it never stays on a chart whose pods do not run, and the next
+     * reconcile sees the version it started from. The wait and the rollback each get --timeout, so
+     * the helm process gets CHART_UPGRADE_SECONDS: killed in its rollback it would leave the
+     * release pending-rollback.
+     */
+    public function upgradeToChartVersion(
+        string $release,
+        string $chart,
+        string $namespace,
+        string $kubeconfigYaml,
+        string $version,
+        string $valuesJson,
+    ): HelmResult {
+        $values = tempnam(sys_get_temp_dir(), 'runr-helm-vals-');
+        file_put_contents($values, $valuesJson);
+
+        $this->processTimeout = self::CHART_UPGRADE_SECONDS;
+        try {
+            return $this->run([
+                'helm', 'upgrade', $release, $chart,
+                '-n', $namespace,
+                '--kubeconfig', $this->writeKubeconfig($kubeconfigYaml),
+                '--version', $version,
+                '--values', $values,
+                '--atomic',
+                '--timeout', '10m',
+            ]);
+        } finally {
+            $this->processTimeout = self::PROCESS_TIMEOUT;
+            @unlink($values);
+        }
+    }
+
+    /**
      * Uninstall a release.
      */
     public function uninstall(string $release, string $namespace, string $kubeconfigYaml): HelmResult
@@ -246,6 +353,17 @@ class HelmService
      */
     public function deployedChartVersion(string $release, string $namespace, string $kubeconfigYaml, string $chartName): ?string
     {
+        return $this->listedRelease($release, $namespace, $kubeconfigYaml, $chartName)['version'] ?? null;
+    }
+
+    /**
+     * deployedChartVersion() with the status of the newest revision: `failed` says that revision's
+     * chart never came up, whatever the version reads.
+     *
+     * @return array{version: string, status: string}|null
+     */
+    public function listedRelease(string $release, string $namespace, string $kubeconfigYaml, string $chartName): ?array
+    {
         $result = $this->run([
             'helm', 'list',
             '-n', $namespace,
@@ -254,7 +372,14 @@ class HelmService
             '-o', 'json',
         ]);
 
-        return $result->success ? self::chartVersionFromList($result->output, $release, $chartName) : null;
+        $version = $result->success ? self::chartVersionFromList($result->output, $release, $chartName) : null;
+        if ($version === null) {
+            return null;
+        }
+
+        $row = collect((array) json_decode($result->output, true))->firstWhere('name', $release);
+
+        return ['version' => $version, 'status' => (string) ($row['status'] ?? '')];
     }
 
     /**
@@ -366,7 +491,7 @@ class HelmService
         }
         if ($age === null || $age < self::INTERRUPTED_AFTER_SECONDS) {
             throw new RuntimeException("{$name} is {$last['status']}{$since}: another helm operation may still run on it — "
-                .'it is rolled back once it is '.intdiv(self::INTERRUPTED_AFTER_SECONDS, 60).' minutes old (run php artisan region:reconcile again then)');
+                .'it is rolled back once it is '.intdiv(self::INTERRUPTED_AFTER_SECONDS, 60).' minutes old (run it again then)');
         }
 
         $deployed = array_values(array_filter(
@@ -466,7 +591,7 @@ class HelmService
         Log::debug('Helm command', ['cmd' => implode(' ', $command)]);
 
         $process = new Process($command);
-        $process->setTimeout(660); // 11 min
+        $process->setTimeout($this->processTimeout);
         $process->run();
 
         $result = new HelmResult(

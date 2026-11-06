@@ -48,7 +48,7 @@ for img in $listed; do
 done
 [ "$(grep -c '^docker pull ' "$calls")" = "$(echo "$listed" | wc -l)" ] || fail "pulled something not listed: $(grep '^docker pull' "$calls")"
 # the images the e2e regions run before anything is deployed
-for img in ghcr.io/brf-tech/runr/reqs/traefik:v3.7.4 ghcr.io/project-zot/zot:v2.1.21 ghcr.io/osscontainertools/kaniko:v1.28.5 \
+for img in ghcr.io/brf-tech/runr/reqs/traefik:v3.7.17 ghcr.io/project-zot/zot:v2.1.23 ghcr.io/osscontainertools/kaniko:v1.28.5 \
   ghcr.io/brf-tech/runr/reqs/redis:7-alpine ghcr.io/brf-tech/runr/queue-consumer:latest; do
   echo "$listed" | grep -qxF "$img" || fail "${img} not preloaded"
 done

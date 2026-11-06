@@ -65,6 +65,9 @@ cluster come from this table (`App\Services\Helpers\KnativeVersionHelper::KNATIV
 
 | Knative | Kubernetes, at least |
 |---|---|
+| 1.24 | 1.35 |
+| 1.23 | 1.34 |
+| 1.22 | 1.34 |
 | 1.21 | 1.33 |
 | 1.20 | 1.32 |
 | 1.19 | 1.32 |
@@ -75,11 +78,19 @@ cluster come from this table (`App\Services\Helpers\KnativeVersionHelper::KNATIV
 | 1.14 | 1.28 |
 | 1.13 | 1.27 |
 
-The Serving step offers the up to five newest Knative versions that the cluster supports and the
-Knative Operator chart repository has (`GET /api/knative-regions/{id}/compatible-versions`,
-`runr regions knative versions`), the newest first and preselected: a Kubernetes 1.32 cluster,
-for example, is offered Knative 1.20, 1.19, 1.18, 1.17 and 1.16. The operator's chart version is
-picked the same way.
+The Serving step offers the Knative versions that the cluster supports, the Knative Operator chart
+repository has and the operator can install (`GET /api/knative-regions/{id}/compatible-versions`,
+`runr regions knative versions`), the newest first and preselected. An operator installs its own
+minor and the three before it, so that is at most four: a Kubernetes 1.32 cluster, for example, is
+offered Knative 1.20, 1.19, 1.18 and 1.17. The operator's chart comes first and is the newest the
+cluster supports; it does not follow the version chosen for Serving. An operator that already runs
+decides what is offered: one of Knative 1.21 offers 1.21 to 1.18, on Kubernetes 1.35 too. A Serving
+install without a version takes the newest of the list, and one with a version outside it is
+refused (422).
+
+Knative upgrades one minor at a time, and an upgrade moves the operator first, so a running Serving
+is offered its next minor as well: on Kubernetes 1.35 a region on Knative 1.18 also sees 1.19, and
+reaches 1.24 one minor after the other.
 
 ### Nodes
 
@@ -125,12 +136,18 @@ bucket, region, access key, secret key).
 
 ### Ingress, external address and DNS
 
-The Serving step installs **Traefik** as Knative's ingress (chart `traefik/traefik` 40.3.0, image
-`ghcr.io/brf-tech/runr/reqs/traefik:v3.7.4` or the Helm value `knative.traefikImage`) in the
+The Serving step installs **Traefik** as Knative's ingress (chart `traefik/traefik` 42.3.0, image
+`ghcr.io/brf-tech/runr/reqs/traefik:v3.7.17` or the Helm value `knative.traefikImage`) in the
 Knative Serving namespace. Its Service is of type **LoadBalancer** and listens on ports 80 and
 443: the cluster needs a load-balancer implementation that gives the Service an external IP
 address or hostname. RunR reads that address as the region's **external address**
 (`external_ip`), at the end of the Serving install and with every status check.
+
+Traefik deletes a request header whose name has anything but letters, digits and dashes before
+routing, on every entry point: `X_Request_Id`, `api_key` or `X.Custom` never reach a project. The
+request itself goes through, and nothing reports it. The reason, and the install-wide stopgap
+`knative.traefikAliasHeadersStrategy` while an app renames its headers, are in
+[Region network isolation](security.md#region-network-isolation).
 
 Then create one DNS record for the function domain:
 
@@ -324,7 +341,7 @@ steps before it are read-only.
      module only Platform users, and tenant owners for their own region, may set them.
 
    **Save & Next** creates the region: RunR tests the storage (or the external registry, from a
-   pod), installs Zot (release `runr-zot` in `runr-registry`, chart `zot/zot` 0.1.125) with its
+   pod), installs Zot (release `runr-zot` in `runr-registry`, chart `zot/zot` 0.1.130) with its
    node mirror, pre-pulls common images on the nodes, creates the region and its project
    namespace, applies the worker selection and queues RunR's managed Redis.
 3. **Operator.** RunR first adopts a Knative Operator and Serving already running in
@@ -474,13 +491,51 @@ way; an internal one is removed first, because its volume holds the region's ima
 
 | Setting | Values | What it does |
 |---|---|---|
-| Mode | `internal` or `external` | `internal`: RunR runs Zot (release `runr-zot`, chart `zot/zot` 0.1.125, namespace `runr-registry`, ClusterIP port 5000) as the region's registry and as a pull-through cache of `ghcr.io` and Docker Hub, with the node mirror `runr-registry-mirror`. `external`: builds push to your registry |
+| Mode | `internal` or `external` | `internal`: RunR runs Zot (release `runr-zot`, chart `zot/zot` 0.1.130, namespace `runr-registry`, ClusterIP port 5000) as the region's registry and as a pull-through cache of `ghcr.io` and Docker Hub, with the node mirror `runr-registry-mirror`. `external`: builds push to your registry |
 | Storage (`internal`) | `pvc`: StorageClass and size; `s3`: endpoint, bucket, region, access key, secret key | where Zot keeps the images |
 | Address (`external`) | the registry address, optional username and password | tested from a pod in the cluster before the registry is set up |
+
+On S3 Zot keeps no deduplicated blobs (`storage.dedupe` off: deduplication on S3 needs a database
+RunR does not run) and downloads an image to `/var/lib/registry/sync-download` before it goes to
+the bucket. That directory is on the pod's `emptyDir`: it needs room for the largest image pulled
+through the registry, and a restart empties it. The endpoint is the storage service's address with
+its scheme; the bucket is addressed by path (`<endpoint>/<bucket>`).
 
 `runr regions registry rm REGION` or `DELETE /knative-regions/{id}/registry` (`registry.manage`)
 removes the registry: for `internal` the node mirror, the Helm release and the namespace (with
 its volume) when RunR created it; for `external` RunR forgets it.
+
+An installed Zot keeps the chart and the Zot version it was installed with. `region:reconcile`
+brings its sync upstreams up to date (step `registry-sync-config`) and leaves the version alone,
+because a new version restarts the registry. An operator moves one region's registry to the chart
+this release pins, when the region can take the restart:
+
+```sh
+php artisan registry:upgrade-zot <region-id> --dry-run   # what would change
+php artisan registry:upgrade-zot <region-id>
+```
+
+The release keeps the values it was installed with (placement, volume, storage) and the config.json
+that runs now, with the two sync settings below added, and the images it holds stay. Zot
+restarts once, and pulls and builds through the
+registry wait until it is back. Regions on the same cluster share the registry of a namespace, so the upgrade
+reaches them too. Helm waits for the new pod and rolls back a failed upgrade; a registry at the
+pinned chart or past it is left alone. An upgrade a killed process left pending is rolled back
+first, once it is 13 minutes old: before that it may still be running, and the command says so.
+
+Zot 2.1.22 and later answer an on-demand sync that fails with 503, and sync an image in Docker's
+manifest formats only with `http.compat: [docker2s2]`. RunR's config.json has both settings for
+such a Zot:
+
+- `http.compat` holds `docker2s2`, next to anything you added to it.
+- The Docker Hub upstream's `content` leaves out repositories whose first path segment starts with
+  `runr-`, RunR's own (`runr-builds/`, `runr-runtimes/`, `runr-uploads/`). Docker Hub answers 401 for
+  a repository it does not know, so asking it would fail the first push of every build.
+
+`region:reconcile` writes them only to a Zot that needs them, so an older one does not restart for
+them; `registry:upgrade-zot` writes them with the new version. A repository you push to the
+registry yourself is still looked up on Docker Hub unless its name starts with `runr-`, and its
+first push then fails with 503.
 
 ### Knative Operator and Serving
 
@@ -488,7 +543,7 @@ its volume) when RunR created it; for `external` RunR forgets it.
 |---|---|---|---|
 | Operator namespace | `knative-operator` | console Operator → **Install Operator**; `runr regions knative install REGION operator --namespace`; `POST /knative-regions/{id}/install-operator` with `namespace` | where the Knative Operator runs |
 | Serving namespace | `knative-serving` | console Serving → install; `… install REGION serving --namespace`; `POST /knative-regions/{id}/install-serving` with `namespace` | where Knative Serving, Traefik and the status responder run |
-| Knative version | the newest the cluster supports | the Serving install (`--version`, `version`); afterwards console Serving → **Upgrade**, `runr regions knative upgrade REGION --version`, `POST /knative-regions/{id}/upgrade-serving` with `version` | [Knative and Kubernetes versions](#knative-and-kubernetes-versions); upgrades below |
+| Knative version | the newest the cluster supports and the operator can install | the Serving install (`--version`, `version`); afterwards console Serving → **Upgrade**, `runr regions knative upgrade REGION --version`, `POST /knative-regions/{id}/upgrade-serving` with `version` | [Knative and Kubernetes versions](#knative-and-kubernetes-versions); upgrades below |
 | Ingress | Traefik | — | the region's Traefik is Knative's ingress |
 
 Installing adopts what already runs on the cluster — another region's Knative on the same
@@ -512,11 +567,13 @@ resource, Traefik — which stays while it serves other Ingresses, such as the c
 cluster, unless `remove_traefik` is set — and, once Traefik is gone, the Serving namespace when
 RunR created it. The [load tests'](load-test.md#when-the-region-goes) namespace `runr-loadtest`
 goes too, with the tests still running in it.
-Prometheus, Loki, the runr-agent, the tracing backend and cert-manager stay. **Uninstall Operator**
-(`POST /knative-regions/{id}/uninstall-operator`, once Serving is gone) removes the operator and
-the Knative Serving CRDs, and with them every Knative Service left on the cluster.
-`POST /knative-regions/{id}/uninstall-knative` (`runr regions knative uninstall REGION`) removes
-Serving and the operator release in one go and sets both components to `not_installed`.
+Prometheus, Loki, the runr-agent, the tracing backend, cert-manager and the Knative Serving CRDs
+stay: the operator keeps running, and the Knative Services of the cluster's other regions live in
+those CRDs. **Uninstall Operator** (`POST /knative-regions/{id}/uninstall-operator`, once Serving
+is gone) removes the operator and all the Knative Serving CRDs, and with them every Knative Service
+left on the cluster. `POST /knative-regions/{id}/uninstall-knative` (`runr regions knative uninstall
+REGION`) removes Serving and the operator release in one go and sets both components to
+`not_installed`; it removes the CRDs too, unless Knative Services are left on the cluster.
 
 ### Redis
 
@@ -540,7 +597,7 @@ Redis and the region's Redis settings.
 
 | Setting | Default | Change with | What it does |
 |---|---|---|---|
-| Prometheus | RunR's: kube-prometheus-stack (chart 92.10.1), release `knative` in `observability` | when the region is created: wizard step 2, `--prometheus-url`, `prometheus_url`; later console General → **Existing monitoring**, `runr regions set REGION --set prometheus_url=…`, `PUT /knative-regions/{id}/monitoring` | an in-cluster Prometheus to reuse instead. When the cluster runs the Prometheus Operator, RunR adds cAdvisor, its PodMonitors and recording rules (label `app.kubernetes.io/part-of=runr`) for it |
+| Prometheus | RunR's: kube-prometheus-stack (chart 92.18.0), release `knative` in `observability` | when the region is created: wizard step 2, `--prometheus-url`, `prometheus_url`; later console General → **Existing monitoring**, `runr regions set REGION --set prometheus_url=…`, `PUT /knative-regions/{id}/monitoring` | an in-cluster Prometheus to reuse instead. When the cluster runs the Prometheus Operator, RunR adds cAdvisor, its PodMonitors and recording rules (label `app.kubernetes.io/part-of=runr`) for it |
 | Loki | RunR's: loki-stack (chart 2.10.3) in `observability` | when the region is created: `--loki-url`, `--loki-org-id`, `loki_url`, `loki_org_id`; later as Prometheus (`loki_url`, `loki_org_id`) | an in-cluster Loki to reuse instead, with its tenant ID |
 | Tracing backend | Helm `observability.tracing.defaultMode` (`managed`) | the **Tracing** tab next to Platform; `GET`/`PUT`/`DELETE /observability/regions/{id}/tracing`, `POST …/tracing/install`; `php artisan cluster:install-tracing` | OpenTelemetry Collector and Tempo, or a reused Tempo, an external OTLP endpoint, or off ([observability.md](observability.md#tracing-backend)) |
 
@@ -557,7 +614,12 @@ Removing the tracing backend (`DELETE /observability/regions/{id}/tracing`, the 
 again; choosing a mode brings it back.
 
 `php artisan cluster:patch-observability [REGION-ID]` applies RunR's Prometheus and Loki values
-again; [observability.md](observability.md#install-flow) describes the install.
+again, at the chart versions this release pins; [observability.md](observability.md#install-flow)
+describes the install. An installed Prometheus or Loki keeps its chart until then: this command,
+a change of the region's monitoring back to RunR's own, and a new Serving install are what move
+it, `region:reconcile` does not. Helm does not upgrade the Prometheus Operator's CRDs: a chart
+whose operator brings changed CRDs needs them applied by hand first (its
+[upgrade notes](https://github.com/prometheus-community/helm-charts/blob/main/charts/kube-prometheus-stack/UPGRADE.md)).
 
 ### Sandbox runtimes and WebAssembly
 
@@ -1513,4 +1575,5 @@ Run them in the API container (`php artisan …`; with Compose `docker compose e
 | `cluster:install-tracing [REGION-ID] [--mode=managed\|reuse\|external\|off]` | Installs the tracing backend on one region or on every active region with Knative Serving ([observability.md](observability.md#commands)) |
 | `cluster:patch-observability [REGION-ID]` | Applies the Prometheus and Loki Helm values again, on one region or every active region ([observability.md](observability.md#install-flow)) |
 | `registry:redeploy-mirror [REGION-ID]` | Deploys the registry's node mirror DaemonSet again, on every active region with the internal registry or on one |
+| `registry:upgrade-zot REGION-ID [--dry-run]` | Moves the region's internal registry to the Zot chart this release pins, with the values of its release and the config.json that runs; it restarts the registry, so it only runs by hand ([Registry](#registry)). Exit code 1 when the region has no internal registry, no Helm release of it, or the upgrade failed |
 | `registry:rolling-restart REGION-ID [--timeout=300] [--in-place]` | Restarts containerd on the region's worker nodes (the dedicated workers when selected) one at a time: cordon, drain, restart, wait until Ready (`--timeout` seconds), uncordon. Needed on plain containerd after the mirror changed `config.toml`; k3s and rke2 need no restart. A node that runs RunR itself, or the only schedulable node, is not drained; `--in-place` restarts containerd there without draining |

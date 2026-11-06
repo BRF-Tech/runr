@@ -192,6 +192,12 @@ to the prefixed channel and to the unprefixed one (platform administrators follo
 any tenant); internal notes go to the unprefixed `support-ticket.{ticketId}.internal` only. A
 refused subscription answers 403 and is recorded as `authorization.denied`.
 
+Only the API broadcasts. Client events (`client-*` messages a WebSocket client sends to the other
+subscribers of a channel, Echo's `whisper`) are refused with Pusher error 4301: the console sends
+and listens for none, and on a login several people share no visitor reaches the others' consoles
+(`config/reverb.php` `accept_client_events_from`, env `REVERB_APP_ACCEPT_CLIENT_EVENTS_FROM`:
+`none`; `members` or `all` turn them on).
+
 **Custom WebSocket clients (upgrade from 0.4.x).** Public channels are gone: a client that
 subscribed to `platform`, `notifications`, `deployment.{projectId}` or the ticket channels as
 public channels subscribes to them as private channels (`private-<name>` in the Pusher protocol,
@@ -1120,6 +1126,24 @@ namespace. Two things keep a project's service from callers it is not meant for
   inside one organization. Another organization's project needs a grant, which the platform can
   switch off. The callee gets the verified caller in `X-Runr-Caller`, never the token
   ([internal-network.md](internal-network.md)).
+- **What RunR vouches for cannot be forged under another spelling.** Traefik manages a header it
+  sets (`X-Runr-Caller`, `X-Runr-Consumer` and the gateway's others) in its dash form only, while
+  PHP, CGI and WSGI servers fold `X_Runr_Caller` and `X.Runr.Caller` into the same variable. In a
+  test with a ForwardAuth, PHP's built-in server read a caller's `X_Runr_Caller` and
+  `X.Runr.Caller` instead of the verified value, and Python's `wsgiref` read
+  `verified,forged` for the underscore form (FrankenPHP and RunR's built-in runtimes kept the
+  verified value). So every entry point of a region Traefik deletes a request header whose name has
+  anything but letters, digits and dashes, before routing (`aliasHeadersStrategy: delete`;
+  [GHSA-rf44-j88r-hh8c](https://github.com/traefik/traefik/security/advisories/GHSA-rf44-j88r-hh8c),
+  [GHSA-x677-9fxg-v5c5](https://github.com/traefik/traefik/security/advisories/GHSA-x677-9fxg-v5c5)).
+  A region left on an earlier chart cannot do this
+  ([upgrade.md](upgrade.md#request-headers-with-aliasing-names)), nor does a Traefik RunR did not
+  install unless its operator sets the option. The Helm value
+  [`knative.traefikAliasHeadersStrategy: keep`](helm-values.md) turns the deletion off, for every
+  region of the installation. That reopens the hole: an underscore or dot alias of the identity
+  headers can reach workloads on servers that fold header names, so on those a caller can pass
+  itself off as another project or consumer. It is meant as a stopgap while an app renames its
+  headers, and `region:reconcile` warns on every run while it is set.
 - **Access modes** keep a project off the public internet (`internal`: its Knative Service is
   cluster-local) or answer only the addresses of an IP allow list (`allowlist`), on its public
   host, custom domains and gateway route alike.

@@ -69,19 +69,32 @@ class ZotManifests
     }
 
     /**
-     * S3-backed Zot: no volume → `persistence: false`, the chart renders a Deployment.
+     * Where a Zot on S3 downloads an image before it goes to the bucket: on the `data` emptyDir the
+     * chart's Deployment mounts at /var/lib/registry, scratch space that a restart empties.
+     */
+    public const S3_SYNC_DOWNLOAD_DIR = '/var/lib/registry/sync-download';
+
+    /**
+     * S3-backed Zot: no volume → `persistence: false`, the chart renders a Deployment. Zot does not
+     * start on remote storage with its defaults: dedupe needs a remote cache database, which RunR
+     * does not run, and sync needs a local directory to download into. The driver takes the
+     * address as `regionendpoint`: an `endpoint` key passes `zot verify` and goes unread, and Zot
+     * then talks to AWS with the region's credentials.
      */
     public static function s3Values(array $s3, bool $workersOnly = false): array
     {
         $config = self::mirrorConfig();
+        $config['storage']['dedupe'] = false;
         $config['storage']['storageDriver'] = [
             'name' => 's3',
-            'endpoint' => $s3['endpoint'],
+            'regionendpoint' => $s3['endpoint'],
+            'forcepathstyle' => true,
             'region' => $s3['region'],
             'bucket' => $s3['bucket'],
             'accesskey' => $s3['access_key'],
             'secretkey' => $s3['secret_key'],
         ];
+        $config['extensions']['sync']['downloadDir'] = self::S3_SYNC_DOWNLOAD_DIR;
 
         return array_merge([
             'mountConfig' => true,
@@ -115,6 +128,31 @@ class ZotManifests
      */
     public const MANIFEST_CHECK_INTERVAL_SINCE = '2.1.21';
 
+    /**
+     * First Zot release that hands a failed on-demand sync to the client as 503 instead of the 404
+     * of the local lookup, and that refuses to sync Docker media types without DOCKER_COMPAT. Only
+     * such a Zot gets DOCKER_HUB_PREFIX and DOCKER_COMPAT from region:reconcile: an older one needs
+     * neither, and a changed config restarts it.
+     */
+    public const SYNC_ERRORS_SURFACE_SINCE = '2.1.22';
+
+    /**
+     * What Zot asks Docker Hub for: every repository outside RunR's own namespaces, whose first
+     * path segment starts with `runr-` (runr-builds/, runr-runtimes/, runr-uploads/). Docker Hub
+     * answers 401 for a repository it does not know, which is a failed sync to Zot, so a build's
+     * first push, which asks for the tag it is about to write, would get a 503 and stop. A
+     * repository no content entry matches stays a plain 404. Zot's globs have no negation: the
+     * pattern spells out every first segment that does not start with `runr-`.
+     */
+    public const DOCKER_HUB_PREFIX = '{[!r]*,r,r[!u]*,ru,ru[!n]*,run,run[!r]*,runr,runr[!-]*}/**';
+
+    /**
+     * http.compat value for images in Docker's manifest formats (promtail, Prometheus, Loki, …):
+     * Zot keeps them with their digests. A Zot of SYNC_ERRORS_SURFACE_SINCE or later does not sync
+     * them without it, and the nodes then pull past the cache.
+     */
+    public const DOCKER_COMPAT = 'docker2s2';
+
     /** Keys RunR owns in its sync registry entries; everything else in an entry is left alone. */
     private const OWNED_REGISTRY_KEYS = ['urls', 'onDemand', 'tlsVerify', 'content', 'manifestCheckInterval'];
 
@@ -122,11 +160,11 @@ class ZotManifests
     {
         return [
             'storage' => ['rootDirectory' => '/var/lib/registry'],
-            'http' => ['address' => '0.0.0.0', 'port' => '5000'],
+            'http' => ['address' => '0.0.0.0', 'port' => '5000', 'compat' => [self::DOCKER_COMPAT]],
             'log' => ['level' => 'info'],
             'extensions' => [
                 'sync' => [
-                    // Pinned chart (ZotRegistryService::ZOT_CHART_VERSION) = zot v2.1.21
+                    // Pinned chart (ZotRegistryService::ZOT_CHART_VERSION) = zot v2.1.23
                     'registries' => self::syncRegistries(true),
                 ],
             ],
@@ -138,9 +176,11 @@ class ZotManifests
      *  - ghcr.io under {zot}/ghcr.io/… — RunR's runtime and build base images (Kaniko FROM lines);
      *  - Docker Hub for everything else ({zot}/library/…, KnativeRegion::registryImageRef()).
      * ghcr.io comes first: its content only matches ghcr.io/** so other repositories fall through
-     * to Docker Hub, while Docker Hub's "**" would also be asked for ghcr.io/… paths.
+     * to Docker Hub, while Docker Hub's content would also be asked for ghcr.io/… paths.
+     * $syncErrorsSurface: the Zot running them is of SYNC_ERRORS_SURFACE_SINCE or later, as the
+     * pinned one is; an older one keeps Docker Hub's "**".
      */
-    public static function syncRegistries(bool $manifestCheckInterval): array
+    public static function syncRegistries(bool $manifestCheckInterval, bool $syncErrorsSurface = true): array
     {
         $ghcr = [
             'urls' => [self::GHCR_UPSTREAM],
@@ -158,37 +198,53 @@ class ZotManifests
                 'urls' => [self::DOCKER_HUB_UPSTREAM],
                 'onDemand' => true,
                 'tlsVerify' => true,
-                'content' => [['prefix' => '**']],
+                'content' => [['prefix' => $syncErrorsSurface ? self::DOCKER_HUB_PREFIX : '**']],
             ],
         ];
     }
 
     /**
-     * Whether the Zot image (e.g. ghcr.io/project-zot/zot:v2.1.21) accepts manifestCheckInterval.
+     * Whether the Zot image (e.g. ghcr.io/project-zot/zot:v2.1.23) accepts manifestCheckInterval.
      * Unknown (digest-only or unparsable reference) → false, the key would stop an older Zot.
      */
     public static function supportsManifestCheckInterval(?string $zotImage): bool
+    {
+        return self::zotAtLeast($zotImage, self::MANIFEST_CHECK_INTERVAL_SINCE);
+    }
+
+    /**
+     * Whether the Zot image answers a failed on-demand sync with 503 and needs DOCKER_COMPAT.
+     * Unknown (digest-only or unparsable reference) → false: its config stays as it is.
+     */
+    public static function surfacesSyncErrors(?string $zotImage): bool
+    {
+        return self::zotAtLeast($zotImage, self::SYNC_ERRORS_SURFACE_SINCE);
+    }
+
+    private static function zotAtLeast(?string $zotImage, string $version): bool
     {
         if (! $zotImage || preg_match('~:v?(\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?)(?:@sha256:[0-9a-f]+)?$~', $zotImage, $m) !== 1) {
             return false;
         }
 
-        return version_compare($m[1], self::MANIFEST_CHECK_INTERVAL_SINCE, '>=');
+        return version_compare($m[1], $version, '>=');
     }
 
     /**
      * Zot config.json (the chart's runr-zot-config ConfigMap) brought to RunR's sync upstreams.
      * RunR's entries — Docker Hub (by URL) and the ghcr.io entry syncing into {zot}/ghcr.io/ —
      * get RunR's keys (OWNED_REGISTRY_KEYS); the ghcr.io entry sits right before the Docker Hub
-     * one (inserted when missing), a missing Docker Hub entry is appended. Everything else —
-     * storage (S3 credentials), http, log, other extensions, operator-added upstreams (another
-     * ghcr.io entry included) and extra keys inside RunR's entries — is kept as it is.
+     * one (inserted when missing), a missing Docker Hub entry is appended. With $syncErrorsSurface
+     * (the Zot is of SYNC_ERRORS_SURFACE_SINCE or later) http.compat also holds DOCKER_COMPAT,
+     * next to what it holds. Everything else — storage (S3 credentials), the rest of http, log,
+     * other extensions, operator-added upstreams (another ghcr.io entry included) and extra keys
+     * inside RunR's entries — is kept as it is.
      *
      * @return string|null the new config.json, null when it is already up to date
      *
      * @throws \JsonException on an unparsable config.json
      */
-    public static function reconcileSyncConfig(string $json, bool $manifestCheckInterval): ?string
+    public static function reconcileSyncConfig(string $json, bool $manifestCheckInterval, bool $syncErrorsSurface = true): ?string
     {
         // Objects stay objects: an operator's empty {} must not come back as []
         $config = json_decode($json, false, 512, JSON_THROW_ON_ERROR);
@@ -200,7 +256,7 @@ class ZotManifests
         $config->extensions->sync ??= new \stdClass;
         $existing = array_values(is_array($config->extensions->sync->registries ?? null) ? $config->extensions->sync->registries : []);
 
-        [$wantGhcr, $wantHub] = self::syncRegistries($manifestCheckInterval);
+        [$wantGhcr, $wantHub] = self::syncRegistries($manifestCheckInterval, $syncErrorsSurface);
 
         $ghcrAt = self::firstIndex($existing, fn (\stdClass $e) => self::isRunrGhcrEntry(self::toArray($e)));
         $hubAt = self::firstIndex($existing, fn (\stdClass $e) => in_array(self::DOCKER_HUB_UPSTREAM, self::normalizedUrls((array) ($e->urls ?? [])), true));
@@ -229,6 +285,12 @@ class ZotManifests
         }
 
         $config->extensions->sync->registries = $result;
+
+        if ($syncErrorsSurface) {
+            $config->http ??= new \stdClass;
+            $compat = array_values(is_array($config->http->compat ?? null) ? $config->http->compat : []);
+            $config->http->compat = in_array(self::DOCKER_COMPAT, $compat, true) ? $compat : [...$compat, self::DOCKER_COMPAT];
+        }
 
         $after = json_decode(json_encode($config), true);
 

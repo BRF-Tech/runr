@@ -167,18 +167,20 @@ class KataInstallTest extends TestCase
         $this->assertStringContainsString('recreated RuntimeClass kata-clh: handler kata-clh → handler kata-clh-runr', $log);
     }
 
-    public function test_install_again_on_ops_0_4_1_installer_writes_the_drop_ins_without_kata_deploy(): void
+    public function test_install_again_on_an_installer_with_0_4_1s_hash_writes_the_drop_ins_without_kata_deploy(): void
     {
-        // OP after the RunR 0.4.1 install (tests/Fixtures/kata-op)
+        // a RunR 0.4.1 install of this kata-deploy (OP's ConfigMap, tests/Fixtures/kata-op): one hash
+        // in the pod template over the pod spec and the whole ConfigMap
         $op = json_decode(file_get_contents(dirname(__DIR__).'/Fixtures/kata-op/kata-runr-config-0.4.1.json'), true);
         $service = $this->service();
         $spec = (fn () => $this->buildKataInstallerDaemonSet('runr-sandbox', ['clh', 'qemu', 'dragonball'], false, 'k3s'))->call($service)['spec']['template']['spec'];
+        $hash = SandboxInstallService::kataConfigHash($spec, $op['data']);
 
         $this->addNode('runr-test', ['katacontainers.io/kata-runtime' => 'true']);
         $this->daemonSets['kata-installer'] = [
             'metadata' => ['name' => 'kata-installer', 'generation' => 2],
             'spec' => ['template' => [
-                'metadata' => ['labels' => ['runr.dev/component' => 'kata-installer'], 'annotations' => ['runr.dev/kata-config-hash' => $op['kata_config_hash']]],
+                'metadata' => ['labels' => ['runr.dev/component' => 'kata-installer'], 'annotations' => ['runr.dev/kata-config-hash' => $hash]],
                 'spec' => $spec,
             ]],
         ];
@@ -193,7 +195,7 @@ class KataInstallTest extends TestCase
         $this->assertSame('ready', $region->fresh()->sandbox_kata_status);
         // no rollout: same pod template, same (0.4.1) template hash
         $this->assertEquals($spec, $this->daemonSets['kata-installer']['spec']['template']['spec']);
-        $this->assertSame($op['kata_config_hash'], $this->daemonSets['kata-installer']['spec']['template']['metadata']['annotations']['runr.dev/kata-config-hash']);
+        $this->assertSame($hash, $this->daemonSets['kata-installer']['spec']['template']['metadata']['annotations']['runr.dev/kata-config-hash']);
         $this->assertArrayNotHasKey('kata-dropins', $this->daemonSets, 'node script removed');
 
         $log = $this->lastProgress();

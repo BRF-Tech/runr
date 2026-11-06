@@ -406,6 +406,18 @@ refused schema-supply-chain 'supplyChain.enabled' --set-string supplyChain.enabl
 render schema-old-keys --set api.images.quotaGb=100 --set api.supplyChain.toolsImage=registry.example.com/x:1 || problems+=("api.images / api.supplyChain refused: $(cat "$OUT/schema-old-keys.err")")
 report schema "images.* and supplyChain.* validated at the top level, the old api.* keys accepted"
 
+# knative.traefikAliasHeadersStrategy: delete by default, keep as the operator's stopgap, nothing
+# else; values reused from a release without it render no variable, and the API deletes
+problems=()
+render alias-default || problems+=("alias-default: $(cat "$OUT/alias-default.err")")
+grep -q -F 'KNATIVE_TRAEFIK_ALIAS_HEADERS_STRATEGY: "delete"' "$OUT/alias-default.render" || problems+=("the default is not delete")
+render alias-keep --set knative.traefikAliasHeadersStrategy=keep || problems+=("alias-keep: $(cat "$OUT/alias-keep.err")")
+grep -q -F 'KNATIVE_TRAEFIK_ALIAS_HEADERS_STRATEGY: "keep"' "$OUT/alias-keep.render" || problems+=("keep does not reach the ConfigMap")
+render alias-reused --set knative.traefikAliasHeadersStrategy=null || problems+=("alias-reused: $(cat "$OUT/alias-reused.err")")
+grep -q -F 'KNATIVE_TRAEFIK_ALIAS_HEADERS_STRATEGY' "$OUT/alias-reused.render" && problems+=("values without the key render the variable")
+refused schema-alias-reject 'knative.traefikAliasHeadersStrategy' --set knative.traefikAliasHeadersStrategy=reject || problems+=("a strategy other than delete or keep not refused")
+report traefik-alias-headers "knative.traefikAliasHeadersStrategy: delete by default, keep reaches the ConfigMap, values without it render nothing, others refused"
+
 # Runtime patches: the defaults leave the feed reference to the application and render the key
 # runr-runtimes signs the feed with (an empty key switches the feed off), automatic migration on;
 # a multi-line public key keeps its line breaks in the ConfigMap; autoMigrate is validated
@@ -692,8 +704,8 @@ report bootstrap "multi-tenant: tenant migrations after the module toggles, tena
 # revision (bootstrap_revision) after the tenant steps, before the administrator check.
 # The regions are brought to the release by the Job runr-region-reconcile-<revision>: no hook (helm
 # upgrade does not wait for it), one per revision, three attempts (backoffLimit 2), kept a week;
-# region:reconcile --deadline=bootstrap.regionReconcileSeconds (3600: one region cluster's worst
-# case on an upgrade from 0.5.10, about 3400 s) within a time limit 1800 s longer (the longest step);
+# region:reconcile --deadline=bootstrap.regionReconcileSeconds (4800: one region cluster's worst
+# case on an upgrade from 0.5.10, about 4660 s) within a time limit 1800 s longer (the longest step);
 # activeDeadlineSeconds: the wait for the hook (420 / 540 / 1020) + 3 × (the time limit + 1380 s for
 # the other steps and the pause after a failed step).
 problems=()
@@ -729,12 +741,12 @@ for n in rj-single rj-tenancy rj-long; do
   grep -A1 -F 'name: RUNR_HELM_REVISION' "$OUT/$n.render" | grep -q 'value: "1"' || problems+=("$n: no RUNR_HELM_REVISION")
 done
 reconcile_line() { grep -E '^ *timeout [0-9]+ php artisan region:reconcile' "$OUT/$1.render" | sed 's/^ *//'; }
-[ "$(reconcile_line rj-single)" = 'timeout 5400 php artisan region:reconcile --deadline=3600 --run=helm-1 --attempts=3 || reconcile_rc=$?' ] \
+[ "$(reconcile_line rj-single)" = 'timeout 6600 php artisan region:reconcile --deadline=4800 --run=helm-1 --attempts=3 || reconcile_rc=$?' ] \
   || problems+=("rj-single: region:reconcile line: $(reconcile_line rj-single)")
 [ "$(reconcile_line rj-long)" = 'timeout 9000 php artisan region:reconcile --deadline=7200 --run=helm-1 --attempts=3 || reconcile_rc=$?' ] \
   || problems+=("rj-long: region:reconcile line: $(reconcile_line rj-long)")
-grep -q -F -- '--deadline=3600 ' "$OUT/rj-reused.render" || problems+=("rj-reused: values without the key (reused from 0.5.10) do not get 3600")
-for want in rj-single:20760 rj-tenancy:21360 rj-tenancy-off:20880 rj-long:31560; do
+grep -q -F -- '--deadline=4800 ' "$OUT/rj-reused.render" || problems+=("rj-reused: values without the key (reused from 0.5.10) do not get 4800")
+for want in rj-single:24360 rj-tenancy:24960 rj-tenancy-off:24480 rj-long:31560; do
   grep -q "^  activeDeadlineSeconds: ${want#*:}\$" "$OUT/${want%%:*}.render" || problems+=("${want%%:*}: activeDeadlineSeconds not ${want#*:}")
 done
 grep -q -F -- 'if [ "$waited" -ge 420 ]' "$OUT/rj-single.render" || problems+=("rj-single: the wait for the hook is not 420 s")
@@ -782,7 +794,7 @@ done
 grep -q -F 'sleep 300' "$OUT/stub/calls-1" || problems+=("reconcile script: no pause before the next attempt after a failed step")
 grep -q -F 'sleep 300' "$OUT/stub/calls-3" && problems+=("reconcile script: a pause after a deadline, which only needs the next attempt")
 grep -q 'WARNING some region clusters did not answer' "$OUT/stub/out-4" || problems+=("reconcile script: region:reconcile exit 4 → no warning")
-report region-reconcile "the hook: no step of the regions, 420 / 540 / 1020 s, OnFailure, records its revision after the tenant steps; the Job runr-region-reconcile-<revision>: no hook, backoffLimit 2, a week's TTL, region:reconcile --deadline 3600 within timeout 5400 (bootstrap.regionReconcileSeconds, values reused without it, under 300 refused), activeDeadlineSeconds 20760 / 20880 / 21360; exit 0 and 4 end it, 1, 3 and a time limit start the next attempt (after 5 minutes for a failed step), the steps after region:reconcile always run"
+report region-reconcile "the hook: no step of the regions, 420 / 540 / 1020 s, OnFailure, records its revision after the tenant steps; the Job runr-region-reconcile-<revision>: no hook, backoffLimit 2, a week's TTL, region:reconcile --deadline 4800 within timeout 6600 (bootstrap.regionReconcileSeconds, values reused without it, under 300 refused), activeDeadlineSeconds 24360 / 24480 / 24960; exit 0 and 4 end it, 1, 3 and a time limit start the next attempt (after 5 minutes for a failed step), the steps after region:reconcile always run"
 
 # Hook Jobs (migrations, bootstrap) carry the module switches of the values as explicit env: a
 # pre-upgrade hook runs before the new ConfigMap is applied, so through envFrom runr-config an

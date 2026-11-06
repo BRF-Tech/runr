@@ -76,6 +76,23 @@ class KnativeInstallController extends Controller
         return response()->json(['status' => $status, 'message' => $message, 'details' => $details, 'region' => new KnativeRegionResource($region)]);
     }
 
+    /** A 422 with $messageKey unless the region is offered Knative $minor (GET …/compatible-versions). */
+    private function refuseUnlessOffered(string $minor, KnativeRegion $region, KnativeStatusService $statusService, string $messageKey): ?JsonResponse
+    {
+        try {
+            $offered = $statusService->listCompatibleVersions($region);
+        } catch (\Throwable $e) {
+            return response()->json(['message' => __('api.region.versions_fetch_failed', ['message' => $e->getMessage()])], 422);
+        }
+        if (in_array($minor, $offered, true)) {
+            return null;
+        }
+
+        $message = __($messageKey, ['version' => $minor]);
+
+        return response()->json(['message' => $message, 'errors' => ['version' => [$message]]], 422);
+    }
+
     private function broadcastRegion(KnativeRegion $region): void
     {
         event(new PlatformEvent('region.updated', ['region' => (new KnativeRegionResource($region))->resolve()]));
@@ -198,7 +215,8 @@ class KnativeInstallController extends Controller
      * Install Knative Serving in the region's cluster
      *
      * Needs a ready Knative Operator; runs as a background job. A Serving that already runs in the
-     * namespace is adopted instead.
+     * namespace is adopted instead. `version` is a Knative minor of GET …/compatible-versions;
+     * without it, the newest the cluster supports and the operator can install.
      */
     public function installServing(InstallServingRequest $request, KnativeRegion $knativeRegion, KnativeStatusService $statusService): JsonResponse
     {
@@ -237,6 +255,10 @@ class KnativeInstallController extends Controller
                 'message' => 'Serving is already installed.',
                 'region' => new KnativeRegionResource($knativeRegion),
             ]);
+        }
+
+        if ($version && ($err = $this->refuseUnlessOffered(KnativeVersionHelper::minorOf($version) ?? $version, $knativeRegion, $statusService, 'api.region.serving_install_unsupported'))) {
+            return $err;
         }
 
         $knativeRegion->update([
@@ -290,16 +312,8 @@ class KnativeInstallController extends Controller
             ], 422);
         }
 
-        try {
-            $supported = $statusService->listCompatibleVersions($knativeRegion);
-        } catch (\Throwable $e) {
-            return response()->json(['message' => __('api.region.versions_fetch_failed', ['message' => $e->getMessage()])], 422);
-        }
-        if (! in_array($target, $supported, true)) {
-            return response()->json([
-                'message' => __('api.region.serving_upgrade_unsupported', ['version' => $target]),
-                'errors' => ['version' => [__('api.region.serving_upgrade_unsupported', ['version' => $target])]],
-            ], 422);
+        if ($err = $this->refuseUnlessOffered((string) $target, $knativeRegion, $statusService, 'api.region.serving_upgrade_unsupported')) {
+            return $err;
         }
 
         $knativeRegion->update([
@@ -366,8 +380,9 @@ class KnativeInstallController extends Controller
     /**
      * List the Knative versions the region's cluster supports
      *
-     * Compatible Knative Operator chart versions: up to five Knative minor versions that the
-     * cluster's Kubernetes version supports (and the chart repository offers, when it is reachable).
+     * Compatible Knative Operator chart versions: the Knative minor versions that the cluster's
+     * Kubernetes version supports, the chart repository offers (when it is reachable) and the
+     * Knative Operator can install, up to four, and the next minor of a running Serving.
      */
     public function compatibleVersions(KnativeRegion $knativeRegion, KnativeStatusService $statusService): JsonResponse
     {

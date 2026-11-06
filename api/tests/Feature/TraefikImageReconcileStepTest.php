@@ -26,7 +26,7 @@ class TraefikImageReconcileStepTest extends TestCase
 {
     use RefreshDatabase;
 
-    private ?string $traefikImage = 'docker.io/traefik:v3.7.4';
+    private ?string $traefikImage = 'docker.io/traefik:v3.7.17';
 
     private string $releaseName = 'traefik';
 
@@ -68,7 +68,7 @@ class TraefikImageReconcileStepTest extends TestCase
         $this->helm[] = $argv;
 
         return ($argv[1] ?? '') === 'list'
-            ? new HelmResult(true, json_encode([['name' => 'traefik', 'namespace' => 'knative-serving', 'status' => 'deployed', 'chart' => 'traefik-40.3.0', 'app_version' => 'v3.7.4']]), '', 0)
+            ? new HelmResult(true, json_encode([['name' => 'traefik', 'namespace' => 'knative-serving', 'status' => 'deployed', 'chart' => 'traefik-42.3.0', 'app_version' => 'v3.7.17']]), '', 0)
             : new HelmResult(true, '', '', 0);
     }
 
@@ -116,18 +116,18 @@ class TraefikImageReconcileStepTest extends TestCase
     {
         $lines = (new TraefikImageStep)->run($this->cluster(), false);
 
-        $this->assertSame(['upgraded Helm release knative-serving/traefik (chart traefik-40.3.0, values reused): '
-            .'image docker.io/traefik:v3.7.4 → ghcr.io/brf-tech/runr/reqs/traefik:v3.7.4 — the Traefik pods roll once'], $lines);
+        $this->assertSame(['upgraded Helm release knative-serving/traefik (chart traefik-42.3.0, values reused): '
+            .'image docker.io/traefik:v3.7.17 → ghcr.io/brf-tech/runr/reqs/traefik:v3.7.17 — the Traefik pods roll once'], $lines);
 
         $this->assertCount(1, $upgrades = $this->upgrades());
         $argv = $upgrades[0];
         $this->assertSame(['traefik', 'traefik/traefik'], [$argv[2], $argv[3]]);
         $this->assertContains('--reuse-values', $argv);
-        $this->assertSame('40.3.0', $argv[array_search('--version', $argv, true) + 1]);
+        $this->assertSame('42.3.0', $argv[array_search('--version', $argv, true) + 1]);
         $this->assertSame([
             'image.registry' => '"ghcr.io"',
             'image.repository' => '"brf-tech/runr/reqs/traefik"',
-            'image.tag' => '"v3.7.4"',
+            'image.tag' => '"v3.7.17"',
         ], $this->setJson($argv));
     }
 
@@ -135,13 +135,13 @@ class TraefikImageReconcileStepTest extends TestCase
     {
         $lines = (new TraefikImageStep)->run($this->cluster(), true);
 
-        $this->assertStringStartsWith('would upgrade Helm release knative-serving/traefik (chart traefik-40.3.0, values reused): image docker.io/traefik:v3.7.4 → ', $lines[0]);
+        $this->assertStringStartsWith('would upgrade Helm release knative-serving/traefik (chart traefik-42.3.0, values reused): image docker.io/traefik:v3.7.17 → ', $lines[0]);
         $this->assertSame([], $this->upgrades());
     }
 
     public function test_a_traefik_on_the_mirror_is_up_to_date(): void
     {
-        $this->traefikImage = 'ghcr.io/brf-tech/runr/reqs/traefik:v3.7.4';
+        $this->traefikImage = 'ghcr.io/brf-tech/runr/reqs/traefik:v3.7.17';
 
         $this->assertSame([], (new TraefikImageStep)->run($this->cluster(), false));
         $this->assertSame([], $this->helm);
@@ -151,7 +151,7 @@ class TraefikImageReconcileStepTest extends TestCase
     {
         $this->traefikImage = 'docker.io/traefik:v3.5.3';
 
-        $this->assertSame(['left alone: Traefik knative-serving/traefik runs docker.io/traefik:v3.5.3, another Traefik version than ghcr.io/brf-tech/runr/reqs/traefik:v3.7.4'],
+        $this->assertSame(['left alone: Traefik knative-serving/traefik runs docker.io/traefik:v3.5.3, another Traefik version than ghcr.io/brf-tech/runr/reqs/traefik:v3.7.17'],
             (new TraefikImageStep)->run($this->cluster(), false));
         $this->assertSame([], $this->upgrades());
     }
@@ -161,16 +161,16 @@ class TraefikImageReconcileStepTest extends TestCase
         $cluster = $this->cluster();
 
         // the same version: to the image of this release
-        $this->traefikImage = 'ghcr.io/runrsh/reqs/traefik:v3.7.4';
-        $this->assertSame(['upgraded Helm release knative-serving/traefik (chart traefik-40.3.0, values reused): '
-            .'image ghcr.io/runrsh/reqs/traefik:v3.7.4 → ghcr.io/brf-tech/runr/reqs/traefik:v3.7.4 — the Traefik pods roll once'],
+        $this->traefikImage = 'ghcr.io/runrsh/reqs/traefik:v3.7.17';
+        $this->assertSame(['upgraded Helm release knative-serving/traefik (chart traefik-42.3.0, values reused): '
+            .'image ghcr.io/runrsh/reqs/traefik:v3.7.17 → ghcr.io/brf-tech/runr/reqs/traefik:v3.7.17 — the Traefik pods roll once'],
             (new TraefikImageStep)->run($cluster, false));
 
         // another version (an older chart's): the namespace moves, the version stays
         $older = 'v3.6.9';
         $this->helm = [];
         $this->traefikImage = "ghcr.io/runrsh/reqs/traefik:{$older}";
-        $this->assertSame(['upgraded Helm release knative-serving/traefik (chart traefik-40.3.0, values reused): '
+        $this->assertSame(['upgraded Helm release knative-serving/traefik (chart traefik-42.3.0, values reused): '
             ."image ghcr.io/runrsh/reqs/traefik:{$older} → ghcr.io/brf-tech/runr/reqs/traefik:{$older} — the Traefik pods roll once"],
             (new TraefikImageStep)->run($cluster, false));
         $this->assertSame([
@@ -182,7 +182,7 @@ class TraefikImageReconcileStepTest extends TestCase
         // moved: nothing left to do
         $this->helm = [];
         $this->traefikImage = "ghcr.io/brf-tech/runr/reqs/traefik:{$older}";
-        $this->assertSame(["left alone: Traefik knative-serving/traefik runs ghcr.io/brf-tech/runr/reqs/traefik:{$older}, another Traefik version than ghcr.io/brf-tech/runr/reqs/traefik:v3.7.4"],
+        $this->assertSame(["left alone: Traefik knative-serving/traefik runs ghcr.io/brf-tech/runr/reqs/traefik:{$older}, another Traefik version than ghcr.io/brf-tech/runr/reqs/traefik:v3.7.17"],
             (new TraefikImageStep)->run($cluster, false));
         $this->assertSame([], $this->upgrades());
     }
@@ -200,14 +200,14 @@ class TraefikImageReconcileStepTest extends TestCase
 
     public function test_the_configured_image_wins(): void
     {
-        config(['knative.traefik_image' => 'registry.example.com:5000/mirror/traefik:v3.7.4']);
+        config(['knative.traefik_image' => 'registry.example.com:5000/mirror/traefik:v3.7.17']);
 
         (new TraefikImageStep)->run($this->cluster(), false);
 
         $this->assertSame([
             'image.registry' => '"registry.example.com:5000"',
             'image.repository' => '"mirror/traefik"',
-            'image.tag' => '"v3.7.4"',
+            'image.tag' => '"v3.7.17"',
         ], $this->setJson($this->upgrades()[0]));
     }
 
@@ -216,6 +216,7 @@ class TraefikImageReconcileStepTest extends TestCase
         $steps = array_map(fn ($s) => $s->name(), app(RegionReconciler::class)->steps());
 
         $this->assertContains('traefik-image', $steps);
-        $this->assertSame(array_search('ingress-trust', $steps) + 1, array_search('traefik-image', $steps));
+        $this->assertSame(array_search('ingress-trust', $steps) + 1, array_search('traefik-chart', $steps));
+        $this->assertSame(array_search('traefik-chart', $steps) + 1, array_search('traefik-image', $steps));
     }
 }

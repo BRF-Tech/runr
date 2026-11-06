@@ -28,6 +28,10 @@ return [
 
     'traefik_image' => $traefikImage,
 
+    // What the region Traefiks do with request headers whose name aliases another one
+    // (TraefikChartValues::aliasStrategy()), Helm value knative.traefikAliasHeadersStrategy
+    'traefik_alias_headers_strategy' => env('KNATIVE_TRAEFIK_ALIAS_HEADERS_STRATEGY', KnativeConstants::TRAEFIK_ALIAS_HEADERS_STRATEGY),
+
     /*
     |--------------------------------------------------------------------------
     | runr-agent Connection

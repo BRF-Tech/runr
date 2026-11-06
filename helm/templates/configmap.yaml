@@ -225,6 +225,9 @@ data:
   {{- with .Values.knative.traefikImage }}
   KNATIVE_TRAEFIK_IMAGE: {{ include "runr.image" . | quote }}
   {{- end }}
+  {{- with .Values.knative.traefikAliasHeadersStrategy }}
+  KNATIVE_TRAEFIK_ALIAS_HEADERS_STRATEGY: {{ . | quote }}
+  {{- end }}
   # cert-manager in the regions (values knative.certManager, api config/knative.php cert_manager)
   {{- $cm := .Values.knative.certManager | default dict }}
   RUNR_CERT_MANAGER_INSTALL: {{ ne (toString (dig "install" true $cm)) "false" | ternary "true" "false" | quote }}

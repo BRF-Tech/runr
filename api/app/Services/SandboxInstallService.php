@@ -57,8 +57,9 @@ class SandboxInstallService
 
     /** What installing Kata does to the nodes (install API response, console warning). */
     public const KATA_INSTALL_WARNING = 'Installing Kata Containers restarts the container runtime on every target node '
-        .'(containerd, or the k3s / RKE2 service that runs it). Running pods keep running; on a single-node '
-        .'k3s or RKE2 cluster the Kubernetes API is unavailable for about 10–20 seconds.';
+        .'(containerd, or the k3s / RKE2 service that runs it). Running pods keep running, except Kata pods where Kata is '
+        .'already installed: those stop, a project\'s pod starts again when the node is done and a sandbox ends. On a '
+        .'single-node k3s or RKE2 cluster the Kubernetes API is unavailable for about 10–20 seconds.';
 
     /** Firecracker's devmapper setup on top (thin-pool, containerd config; its restart is kata-deploy's). */
     public const KATA_FC_WARNING = 'Firecracker (fc) also sets up containerd\'s devmapper snapshotter on those nodes: a thin-pool '
@@ -171,7 +172,7 @@ class SandboxInstallService
                     .'(running pods keep running; on a single-node cluster the Kubernetes API is unavailable for ~10–20 s)...');
             } elseif ($rerun) {
                 $log("Updating the Kata installer: rolling, one node at a time — on each node kata-deploy's cleanup and reinstall restart "
-                    ."{$restart} (twice, back to back; running pods keep running)...");
+                    ."{$restart} (twice, back to back; Kata pods on the node stop, other pods keep running)...");
             } else {
                 $log('Kata installer unchanged — nothing is restarted');
             }

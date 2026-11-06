@@ -179,7 +179,8 @@ Optional per-region features, each installed from the region's settings in the c
 `App\Services\RegionReconcile\Steps`, in this order: dedicated-worker toleration
 ([Dedicated workers](#dedicated-workers); first, as the steps after it restart the registry, Loki
 and Tempo), Knative Serving config, Prometheus exposure,
-namespace quota, registry sync, ingress trust, Traefik image, request timeout (the region
+namespace quota, registry sync, ingress trust, Traefik chart (the pinned chart and its image,
+[upgrade.md](upgrade.md#region-traefik-chart-4230)), Traefik image, request timeout (the region
 Traefik's read / write timeouts and Knative's maximum revision timeout follow the regions'
 `request_timeout`), private ingress (cluster-local routes off the LoadBalancer: RunR's host
 rewrites to public hosts, two Traefik upgrades with the KIngresses moved to `traefik-internal` in

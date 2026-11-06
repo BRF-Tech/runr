@@ -41,6 +41,28 @@ trait KataManifestTrait
     public const KATA_DROPINS_LOG = 'runr: kata drop-ins updated';
 
     /**
+     * What kata-deploy reaches on the node, as the upstream chart mounts it in daemonset mode
+     * (kata-deploy.commonVolumes): volume => [host path, path in the pod, read-only, hostPath type].
+     * It works inside the pod and enters no host namespace: /opt/kata has to be the host's or the
+     * install ends up in the container, and without systemd's private socket it can neither tell
+     * k3s / RKE2 from containerd nor restart the runtime. /run/lock is its node lock.
+     */
+    private const KATA_HOST_MOUNTS = [
+        'kata-install' => ['/opt/kata', '/opt/kata', false, 'DirectoryOrCreate'],
+        'systemd-system' => ['/etc/systemd/system', '/etc/systemd/system', false, 'DirectoryOrCreate'],
+        'systemd-private' => ['/run/systemd/private', '/run/systemd/private', false, 'Socket'],
+        'boot' => ['/boot', '/boot', true, null],
+        'host-machine-id' => ['/etc/machine-id', '/host-machine-id', true, 'File'],
+        'host-run-lock' => ['/run/lock', '/host-run-lock', false, 'DirectoryOrCreate'],
+        'host-usr-bin' => ['/usr/bin', '/host-usr/bin', true, null],
+        'host-usr-sbin' => ['/usr/sbin', '/host-usr/sbin', true, null],
+        'host-usr-local-bin' => ['/usr/local/bin', '/host-usr-local/bin', true, null],
+        'host-usr-local-sbin' => ['/usr/local/sbin', '/host-usr-local/sbin', true, null],
+        'host-bin' => ['/bin', '/host-bin', true, null],
+        'host-sbin' => ['/sbin', '/host-sbin', true, null],
+    ];
+
+    /**
      * @param  string  $flavor  ContainerRuntimeHelper::FLAVOR_* of the target nodes. kata-deploy detects
      *                          k3s/rke2 itself (config[-v3].toml.tmpl + k3s/rke2 restart) but needs their
      *                          containerd dir mounted at /etc/containerd/ — like the upstream chart's
@@ -62,6 +84,7 @@ trait KataManifestTrait
             : ['kubernetes.io/os' => 'linux'];
 
         $podSpec = [
+            // for config-fixup's nsenter; kata-deploy itself needs no host PID namespace
             'hostPID' => true,
             'serviceAccountName' => self::KATA_SA_NAME,
             'nodeSelector' => $nodeSelector,
@@ -81,7 +104,7 @@ trait KataManifestTrait
             'volumes' => [
                 ['name' => 'crio-conf',       'hostPath' => ['path' => '/etc/crio/']],
                 ['name' => 'containerd-conf', 'hostPath' => ['path' => $confDir]],
-                ['name' => 'host',            'hostPath' => ['path' => '/']],
+                ...self::kataHostVolumes(),
                 ['name' => 'custom-configs',  'configMap' => ['name' => self::KATA_CONFIG_MAP]],
             ],
         ];
@@ -298,6 +321,28 @@ trait KataManifestTrait
         ];
     }
 
+    /** @return list<array<string, mixed>> KATA_HOST_MOUNTS as pod volumes */
+    private static function kataHostVolumes(): array
+    {
+        $volumes = [];
+        foreach (self::KATA_HOST_MOUNTS as $name => [$path, , , $type]) {
+            $volumes[] = ['name' => $name, 'hostPath' => array_filter(['path' => $path, 'type' => $type])];
+        }
+
+        return $volumes;
+    }
+
+    /** @return list<array<string, mixed>> KATA_HOST_MOUNTS as container mounts */
+    private static function kataHostVolumeMounts(): array
+    {
+        $mounts = [];
+        foreach (self::KATA_HOST_MOUNTS as $name => [, $mountPath, $readOnly]) {
+            $mounts[] = ['name' => $name, 'mountPath' => $mountPath] + ($readOnly ? ['readOnly' => true] : []);
+        }
+
+        return $mounts;
+    }
+
     private function buildKataDeployContainer(string $shimList, string $default): array
     {
         return [
@@ -305,6 +350,10 @@ trait KataManifestTrait
             'image' => self::KATA_IMAGE,
             'imagePullPolicy' => 'IfNotPresent',
             'command' => ['/usr/bin/kata-deploy', 'install'],
+            // DAEMONSET_NAME stays unset: it would name kata-installer, and kata-deploy skips its
+            // SIGTERM cleanup while that DaemonSet still selects the node. An update has to clean up:
+            // reinstalling only adds to the containerd config, so a hypervisor the update takes
+            // away would keep its runtime handler.
             'env' => [
                 ['name' => 'NODE_NAME',            'valueFrom' => ['fieldRef' => ['fieldPath' => 'spec.nodeName']]],
                 ['name' => 'DEBUG',                'value' => 'false'],
@@ -317,13 +366,14 @@ trait KataManifestTrait
                 // RunR's handlers (kata-<hv>-runr) with the config.d drop-in from the ConfigMap
                 ['name' => 'CUSTOM_RUNTIMES_ENABLED', 'value' => 'true'],
             ],
+            // the upstream chart runs it unprivileged, with an SELinux stage of its own on such nodes
             'securityContext' => ['privileged' => true],
             // A failed install shows its log tail in the pod status (RunR reports it)
             'terminationMessagePolicy' => 'FallbackToLogsOnError',
             'volumeMounts' => [
                 ['name' => 'crio-conf',       'mountPath' => '/etc/crio/'],
                 ['name' => 'containerd-conf', 'mountPath' => '/etc/containerd/'],
-                ['name' => 'host',            'mountPath' => '/host/'],
+                ...self::kataHostVolumeMounts(),
                 ['name' => 'custom-configs',  'mountPath' => '/custom-configs/', 'readOnly' => true],
             ],
         ];
@@ -373,9 +423,11 @@ trait KataManifestTrait
             'apiVersion' => 'rbac.authorization.k8s.io/v1',
             'kind' => 'ClusterRole',
             'metadata' => ['name' => 'kata-installer-role', 'labels' => ['app.kubernetes.io/managed-by' => 'runr']],
-            // The upstream chart's rules (kata-rbac.yaml, 3.28.0). kata-deploy's SIGTERM cleanup
-            // lists DaemonSets first — without that verb it stops there and leaves the node
-            // configured (label, containerd handlers, /opt/kata).
+            // The upstream chart's rules of 3.28.0 (kata-rbac.yaml), more than later releases ask
+            // for: an update starts with the SIGTERM cleanup of the pods it replaces, which may be
+            // that release's. kata-deploy's SIGTERM cleanup reads DaemonSets first — without that
+            // verb it stops there and leaves the node configured (label, containerd handlers,
+            // /opt/kata).
             'rules' => [
                 ['apiGroups' => [''], 'resources' => ['nodes'], 'verbs' => ['get', 'list', 'patch']],
                 ['apiGroups' => ['node.k8s.io'], 'resources' => ['runtimeclasses'], 'verbs' => ['get', 'list', 'create', 'update', 'patch']],

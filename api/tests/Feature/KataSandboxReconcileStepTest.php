@@ -69,12 +69,14 @@ class KataSandboxReconcileStepTest extends TestCase
     }
 
     /**
-     * OP after the RunR 0.4.1 install (tests/Fixtures/kata-op): the 0.4.1 kata-installer — one hash
-     * over its pod spec and the whole ConfigMap — with 0.4.1's drop-ins, RuntimeClasses current.
+     * A RunR 0.4.1 install of this kata-deploy, with OP's ConfigMap (tests/Fixtures/kata-op): the
+     * 0.4.1 kata-installer — one hash over its pod spec and the whole ConfigMap — with 0.4.1's
+     * drop-ins, RuntimeClasses current.
      */
     private function op041Cluster(): KnativeRegion
     {
         $op = json_decode(file_get_contents(dirname(__DIR__).'/Fixtures/kata-op/kata-runr-config-0.4.1.json'), true);
+        $spec = $this->desired('installer')['spec']['template']['spec'];
 
         $this->addNode('runr-test', [
             'katacontainers.io/kata-runtime' => 'true',
@@ -85,8 +87,8 @@ class KataSandboxReconcileStepTest extends TestCase
             'metadata' => ['name' => 'kata-installer', 'namespace' => 'runr-sandbox', 'generation' => 2,
                 'labels' => ['app.kubernetes.io/managed-by' => 'runr', 'runr.dev/component' => 'kata']],
             'spec' => ['template' => [
-                'metadata' => ['labels' => ['runr.dev/component' => 'kata-installer'], 'annotations' => ['runr.dev/kata-config-hash' => $op['kata_config_hash']]],
-                'spec' => $this->desired('installer')['spec']['template']['spec'],
+                'metadata' => ['labels' => ['runr.dev/component' => 'kata-installer'], 'annotations' => ['runr.dev/kata-config-hash' => SandboxInstallService::kataConfigHash($spec, $op['data'])]],
+                'spec' => $spec,
             ]],
         ];
         $this->configMaps['kata-runr-config'] = ['metadata' => ['name' => 'kata-runr-config', 'namespace' => 'runr-sandbox'], 'data' => $op['data']];
@@ -328,8 +330,9 @@ class KataSandboxReconcileStepTest extends TestCase
                 .'kata-dragonball switch to those handlers with pod overhead kata-clh 250m / 256Mi, kata-qemu 250m / 320Mi, '
                 .'kata-dragonball 250m / 256Mi and nodeSelector katacontainers.io/kata-runtime=true,runr.dev/kvm=true (no RuntimeClass changes before every node is done)',
             "restart: kata-deploy's cleanup and reinstall restart the k3s service (containerd, kubelet and, on servers, the Kubernetes API) "
-                .'on each node, twice back to back, one node at a time (running pods keep running; on a single-node cluster the Kubernetes API '
-                .'is unavailable for ~10–20 s each time)',
+                .'on each node, twice back to back, one node at a time (Kata pods on the node stop: a project\'s pod starts again when the '
+                .'node is done, a sandbox ends; other pods keep running; on a single-node cluster the Kubernetes API is unavailable for '
+                .'~10–20 s each time)',
         ], $lines);
         $this->assertSame([], $this->writes(), 'dry run: read-only');
         $this->assertSame('ready', $region->fresh()->sandbox_kata_status);

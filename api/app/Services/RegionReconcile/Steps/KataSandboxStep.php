@@ -18,7 +18,9 @@ use App\Services\SandboxInstallService;
  * Three kinds of change, reported apart:
  *  - what kata-deploy installs differs (its pod spec or the runtime handlers) → kata-deploy must
  *    run again on every node. Its cleanup and reinstall restart containerd (k3s / RKE2: the whole
- *    service) twice per node, one node at a time. Never silent: the dry run says so, a real run
+ *    service) twice per node, one node at a time. The cleanup removes the Kata shim, and containerd
+ *    restarting without it drops the node's Kata tasks: those pods stop, a project's starts again
+ *    once the node is done, a sandbox ends. Never silent: the dry run says so, a real run
  *    queues the region's Kata install once (InstallSandboxJob — it waits for every node, then
  *    switches the RuntimeClasses) and says so; while that runs the region shows "installing".
  *  - only RunR's config.d drop-ins differ → written in place on every node
@@ -127,8 +129,8 @@ final class KataSandboxStep implements ReconcileStep
                 .SandboxInstallService::describeOverheads($hypervisors).' and nodeSelector '.KataRuntime::NODE_LABEL.'=true,'.KataRuntime::KVM_LABEL.'=true'
                 .' (no RuntimeClass changes before every node is done)';
             $restart = "restart: kata-deploy's cleanup and reinstall restart {$drift['restart']} on each node, twice back to back, "
-                .'one node at a time (running pods keep running; on a single-node cluster the Kubernetes API is unavailable '
-                .'for ~10–20 s each time)';
+                .'one node at a time (Kata pods on the node stop: a project\'s pod starts again when the node is done, a sandbox ends; '
+                .'other pods keep running; on a single-node cluster the Kubernetes API is unavailable for ~10–20 s each time)';
 
             if ($dryRun) {
                 $lines[] = "would re-run {$what}; {$after}";

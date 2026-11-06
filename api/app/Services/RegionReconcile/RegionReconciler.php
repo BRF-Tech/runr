@@ -27,6 +27,7 @@ use App\Services\RegionReconcile\Steps\RegistryPrewarmStep;
 use App\Services\RegionReconcile\Steps\RegistrySyncConfigStep;
 use App\Services\RegionReconcile\Steps\RequestTimeoutStep;
 use App\Services\RegionReconcile\Steps\TracingBackendStep;
+use App\Services\RegionReconcile\Steps\TraefikChartStep;
 use App\Services\RegionReconcile\Steps\TraefikImageStep;
 use App\Services\RegionReconcile\Steps\WasmSandboxStep;
 use App\Services\RegionStatusService;
@@ -81,6 +82,8 @@ class RegionReconciler
             new NamespaceQuotaStep,
             new RegistrySyncConfigStep,
             new IngressTrustStep,
+            // the pinned Traefik chart with its image; traefik-image then has nothing left to move
+            new TraefikChartStep,
             new TraefikImageStep,
             // the Traefik read / write timeouts and Knative's maximum revision timeout
             new RequestTimeoutStep,

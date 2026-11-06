@@ -713,7 +713,7 @@ GitHub Actions is the repository's CI; the workflows live in `.github/workflows/
 |---|---|---|---|
 | `ci.yml` → `gitleaks` | gitleaks on the files of the commit (not its history), allowlist `.gitleaks.toml` | every pull request, pushes to `main`, by hand | yes |
 | `ci.yml` → `reqs-mirror` | `ci/check-reqs-mirror.sh`: every `ghcr.io/brf-tech/runr/reqs/*` reference resolves anonymously on ghcr.io; BRF-Tech/runr-runtimes publishes the mirror | same | yes |
-| `ci.yml` → `build-scripts` | `ci/check-dockerfiles.sh` (no Docker Hub base image, `OTEL_SDK_DISABLED=true` before Spin runs in a build step, every image labels `org.opencontainers.image.source`); `runtime/test/*_test.sh` (`runtime/ci.sh` without Docker or a registry, the pinned runtime images, the release workflow, these workflows) | same | yes |
+| `ci.yml` → `build-scripts` | `ci/check-dockerfiles.sh` (no Docker Hub base image, `OTEL_SDK_DISABLED=true` before Spin runs in a build step, every image labels `org.opencontainers.image.source`); `ci/check-caddyfiles.sh` (`vue/Caddyfile` and `compose/Caddyfile` validate, index.html for every console route is never cached, the hashed build files for a year, a missing build file answers 404); `runtime/test/*_test.sh` (`runtime/ci.sh` without Docker or a registry, the pinned runtime images, the release workflow, these workflows) | same | yes |
 | `ci.yml` → `helm` | `ci/check-helm-chart.sh` (helm 3.16, kubeconform) | same | yes |
 | `ci.yml` → `api` | Pint, PHPUnit with the coverage floor, Larastan on PHP 8.2 (8.2.35 or later); the API reference as the image builds it, every module enabled (`api/docker/api-docs.sh --check`, `ApiDocsTest`) | same | yes |
 | `ci.yml` → `ui` | lint without warnings, Vitest with the coverage floor (report: artifact `ui-coverage`), build | same | yes |
@@ -728,7 +728,9 @@ GitHub Actions is the repository's CI; the workflows live in `.github/workflows/
 | `release-images.yml` | the release images (below) | release tag `v<version>`, by hand | — |
 
 By hand: Actions → the workflow → **Run workflow**, or `gh workflow run e2e.yml -f suite=kind -f
-k8s=1.33.0` (`suite`: `all`, `kind`, `ui-stack`; `workers`: `1` for a runner short of disk).
+k8s=1.35.0` (`suite`: `all`, `kind`, `ui-stack`; `workers`: `1` for a runner short of disk). The
+version is a `kindest-node` tag of the reqs mirror: `1.32.0` (the default, Knative 1.20), `1.34.3`
+(Knative 1.23), `1.35.0` (Knative 1.24).
 
 The two e2e suites run on standard GitHub-hosted runners (4 vCPUs, 16 GB, the runner's own
 Docker). `ci.sh test` needs neither `/dev/kvm` nor a GPU: its sandbox cases run the gVisor
@@ -739,6 +741,8 @@ a host of their own: `test-sandbox-api --sandbox-kata` (`/dev/kvm` inside the Ki
 
 `upstream-releases.yml` files an issue once per title (`deps: <chart> <version> released`,
 `Knative 1.<minor> released: …`): a title an issue already has, open or closed, is not filed again.
+`ci/check-helm-releases.sh` reads the version of each chart from the constant the code pins it in
+and reports only a newer one; a constant it cannot read fails the check.
 `bash ci/check-knative-releases.sh` makes the table change of a released Knative minor in a
 checkout.
 
@@ -767,7 +771,7 @@ The E2E tests run against a Kind cluster plus the Docker Compose stack.
 bash runtime/ci.sh test
 
 # A specific Kubernetes version
-bash runtime/ci.sh test --k8s=1.33.0
+bash runtime/ci.sh test --k8s=1.35.0
 
 # External cluster (skips Kind)
 bash runtime/ci.sh test --kubeconfig=/path/to/kubeconfig
@@ -845,7 +849,7 @@ stack running (Compose project `runr-upgrade`, API on `127.0.0.1:18060`).
 ### Requirements
 
 - Docker + Compose plugin
-- Kind (`go install sigs.k8s.io/kind@latest`), unless an external cluster is used
+- Kind v0.31.0 or later (`go install sigs.k8s.io/kind@latest`), unless an external cluster is used
 - `cloud-provider-kind` for Kind LoadBalancer support (downloaded automatically)
 
 ---

@@ -154,6 +154,7 @@ class KnativeInstallAdoptionTest extends TestCase
     {
         $this->fakeCluster([
             'GET /apis/apiextensions.k8s.io/v1/customresourcedefinitions/services.serving.knative.dev' => ['metadata' => ['name' => 'services.serving.knative.dev']],
+            'GET /apis/apiextensions.k8s.io/v1/customresourcedefinitions' => ['items' => [['metadata' => ['name' => 'services.serving.knative.dev']]]],
             'GET /apis/serving.knative.dev/v1/services' => ['items' => []],
         ]);
 

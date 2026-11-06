@@ -4,6 +4,7 @@ namespace App\Services\Concerns;
 
 use App\Services\KubernetesClient;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use RuntimeException;
 use Symfony\Component\Yaml\Yaml;
 use Throwable;
@@ -55,39 +56,63 @@ trait KnativeCrdTrait
     }
 
     /**
-     * Remove Knative Serving CRDs from the cluster.
+     * Remove the Knative Serving CRDs from the cluster: everything installKnativeCrds() applied,
+     * found by the label each document of serving-crds.yaml carries. Knative Eventing's CRDs and
+     * the operator's own name themselves in that label and stay. Never while the operator keeps
+     * running for a Serving-only uninstall: deleting a CRD deletes every resource of it, also the
+     * Knative Services of the cluster's other regions.
      */
     private function removeKnativeCrds(KubernetesClient $k8s): void
     {
-        $crds = [
-            'services.serving.knative.dev', 'routes.serving.knative.dev',
-            'configurations.serving.knative.dev', 'revisions.serving.knative.dev',
-            'domainmappings.serving.knative.dev', 'ingresses.networking.internal.knative.dev',
-        ];
+        try {
+            $crds = $k8s->listClusterResources('apiextensions.k8s.io/v1', 'CustomResourceDefinition', ['app.kubernetes.io/name' => 'knative-serving']);
+        } catch (Throwable $e) {
+            Log::warning('Cleanup: Knative Serving CRDs not listed', ['error' => $e->getMessage()]);
 
-        foreach ($crds as $crd) {
+            return;
+        }
+
+        foreach ($crds['items'] ?? [] as $crd) {
             try {
-                $k8s->deleteClusterResource('apiextensions.k8s.io/v1', 'CustomResourceDefinition', $crd);
+                $k8s->deleteClusterResource('apiextensions.k8s.io/v1', 'CustomResourceDefinition', $crd['metadata']['name']);
             } catch (Throwable) {
                 // CRD may already be deleted
             }
         }
     }
 
+    /**
+     * The documents of a YAML stream. A document may open with a comment, as each of Knative's
+     * opens with its licence; a part with nothing but comments parses to null. An empty map stays
+     * an object: a CRD's `subresources: {status: {}}` as a PHP array would go out as [], which the
+     * API server refuses.
+     *
+     * @return list<array<string, mixed>>
+     */
     private function parseMultiDocYaml(string $yaml): array
     {
         $docs = [];
         foreach (preg_split('/^---$/m', $yaml) as $part) {
-            $part = trim($part);
-            if ($part === '' || str_starts_with($part, '#')) {
-                continue;
-            }
-            $parsed = Yaml::parse($part);
-            if (is_array($parsed) && ! empty($parsed)) {
+            $parsed = self::mapsAsArrays(Yaml::parse($part, Yaml::PARSE_OBJECT_FOR_MAP));
+            if (is_array($parsed) && $parsed !== []) {
                 $docs[] = $parsed;
             }
         }
 
         return $docs;
+    }
+
+    /** Parsed YAML with its maps as arrays, the empty ones left as objects. */
+    private static function mapsAsArrays(mixed $value): mixed
+    {
+        if ($value instanceof \stdClass) {
+            $map = get_object_vars($value);
+            if ($map === []) {
+                return $value;
+            }
+            $value = $map;
+        }
+
+        return is_array($value) ? array_map(self::mapsAsArrays(...), $value) : $value;
     }
 }

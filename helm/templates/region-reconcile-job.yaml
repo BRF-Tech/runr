@@ -3,19 +3,21 @@
 {{- $tenancySetup := and (eq (include "runr.tenancyEnabled" .) "true") (or (not (hasKey $bootstrap "tenancySetup")) $bootstrap.tenancySetup) }}
 {{- /*
   region:reconcile's time (docs/upgrade.md, Order of operations). No step starts after the deadline
-  (bootstrap.regionReconcileSeconds, 3600 by default): the worst case of one region cluster on an
+  (bootstrap.regionReconcileSeconds, 4800 by default): the worst case of one region cluster on an
   upgrade from 0.5.10, every wait of every step at its limit — private-ingress 1715 s (two Traefik
   rollouts with helm --wait 600 s each, the pods 300 s, the KIngresses 180 s, the DNS grace 35 s),
+  traefik-chart 1260 s (helm --atomic: its wait 600 s and its rollback 600 s),
   internal-network 780 s (the authz 180 s, helm --wait 600 s), cert-manager 700 s (Available 150 s,
   the issuers 3 × 115 s and 30 s, the ACME account 145 s), a Kata KVM probe 150 s, the helm
-  processes — is about 3400 s. The step running at the deadline runs to its end: the time limit adds
-  the longest step (private-ingress, 1800 s), so no step is cut in the middle.
+  processes — is about 4660 s. The step running at the deadline runs to its end: the time limit adds
+  the longest step (private-ingress, and traefik-chart, which starts no upgrade that could outlast
+  it with several serving namespaces: 1800 s), so no step is cut in the middle.
   An attempt: the database 600 s (a fresh install starts it next to this Job), agent:redeploy 120 s,
   images:move-registry 60 s, region:reconcile's time limit, secrets:move-to-region 240 s, the role
   check 60 s, the pause before the next attempt 300 s. Three attempts, after the wait for the bootstrap
   hook (at most as long as it may run).
 */}}
-{{- $reconcileDeadline := int ($bootstrap.regionReconcileSeconds | default 3600) }}
+{{- $reconcileDeadline := int ($bootstrap.regionReconcileSeconds | default 4800) }}
 {{- $reconcileLimit := add $reconcileDeadline 1800 }}
 {{- $attempts := 3 }}
 {{- $attempt := add $reconcileLimit 1380 }}

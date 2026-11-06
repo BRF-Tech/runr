@@ -19,8 +19,9 @@ Public endpoint, no authentication required.
 }
 ```
 
-Tag versions (starting with `v`) are returned as is. Any other value except `dev` (for example a commit
-SHA) is returned with a `main-` prefix, e.g. `main-3c1a7d7`.
+A bare commit SHA (7 to 40 hex digits) is returned with a `main-` prefix, e.g. `main-3c1a7d7`. Every
+other value is returned as is: a tag (`v1.2.0`), `dev`, or another label a build sets (`demo-1.2.0`,
+`main-3c1a7d7` from `runtime/ci.sh`).
 
 ## Setting the version
 

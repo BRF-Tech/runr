@@ -251,7 +251,8 @@ class KnativeStatusService implements KnativeConstants
     }
 
     /**
-     * List compatible Knative minor versions for a cluster (last 5).
+     * List the Knative minor versions offered to a cluster: what it supports and its operator can
+     * install, and a running Serving's next minor (KnativeVersionHelper::offeredVersions()).
      */
     public function listCompatibleVersions(KnativeRegion $region): array
     {

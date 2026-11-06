@@ -115,9 +115,10 @@ _upg_upgrade_set=()
 
 _upg_ns="runr"
 _upg_region="upg"
-# The region Traefik's image after the upgrade (KnativeConstants::TRAEFIK_IMAGE): region:reconcile
-# moves a Traefik of the same version from Docker Hub to it
-_UPG_TRAEFIK_IMAGE="ghcr.io/brf-tech/runr/reqs/traefik:v3.7.4"
+# The region Traefik's chart and image after the upgrade (KnativeConstants::TRAEFIK_CHART_VERSION,
+# TRAEFIK_IMAGE): region:reconcile moves a Traefik of chart 40 or later to them
+_UPG_TRAEFIK_CHART="traefik-42.3.0"
+_UPG_TRAEFIK_IMAGE="ghcr.io/brf-tech/runr/reqs/traefik:v3.7.17"
 # The installed version's image namespace (ghcr.io/runrsh up to 0.5.0, ghcr.io/brf-tech in 0.5.1;
 # set from --from's chart): the upgrade moves every reference to ghcr.io/brf-tech/runr (chart helper
 # runr.image, the database migrations, region:reconcile image-registry)
@@ -146,6 +147,10 @@ _upg_check() {
 _upg_eq() { [ "$1" = "$2" ]; }
 # the mirrored Traefik, or one of another version that region:reconcile leaves alone
 _upg_traefik_mirrored() { [ "$1" = "$_UPG_TRAEFIK_IMAGE" ] || { [ -n "$1" ] && [[ "$1" != *":${_UPG_TRAEFIK_IMAGE##*:}" ]]; }; }
+# the pinned chart, or one before chart 40, which region:reconcile leaves alone
+_upg_traefik_chart() { local version=${1#traefik-}; [ "$1" = "$_UPG_TRAEFIK_CHART" ] || { [ -n "$version" ] && [ "${version%%.*}" -lt 40 ]; }; }
+# on the pinned chart, request headers with aliasing names go at every entry point
+_upg_traefik_aliases() { [ "$1" != "$_UPG_TRAEFIK_CHART" ] || [[ "$2" == *'--global.aliasHeadersStrategy=delete'* ]]; }
 _upg_prefix() { [[ "$1" == "$2"* ]]; }
 _upg_contains() { [[ "$1" == *"$2"* ]]; }
 _upg_2xx() { [[ "$1" =~ ^2 ]]; }
@@ -712,8 +717,14 @@ _upg_st_checks() {
     sleep 10
   done
   _upg_check "region reports Knative Serving ready after the upgrade" _upg_eq "$serving" ready
-  # region:reconcile of the region Job (traefik-image) moved the region Traefik to the reqs
-  # mirror — unless it runs another Traefik version (an older release's chart), which stays
+  # region:reconcile of the region Job (traefik-chart, traefik-image) moved the region Traefik to the
+  # pinned chart and the reqs mirror — unless it runs a chart before 40, which stays
+  traefik_chart=$(_upg_kubectl -n knative-serving get deploy traefik -o jsonpath='{.metadata.labels.helm\.sh/chart}' 2>/dev/null)
+  _upg_check "region Traefik is on ${_UPG_TRAEFIK_CHART} (is on ${traefik_chart:-nothing})" \
+    _upg_traefik_chart "$traefik_chart"
+  traefik_args=$(_upg_kubectl -n knative-serving get deploy traefik -o jsonpath='{.spec.template.spec.containers[0].args}' 2>/dev/null)
+  _upg_check "region Traefik deletes request headers with aliasing names" \
+    _upg_traefik_aliases "$traefik_chart" "$traefik_args"
   traefik_image=$(_upg_kubectl -n knative-serving get deploy traefik -o jsonpath='{.spec.template.spec.containers[0].image}' 2>/dev/null)
   _upg_check "region Traefik runs ${_UPG_TRAEFIK_IMAGE} (runs ${traefik_image:-nothing})" \
     _upg_traefik_mirrored "$traefik_image"
@@ -1196,7 +1207,7 @@ cmd_test_helm_upgrade() {
   _upg_kind_cluster "$k8s"
   # The installed chart's images and, after the upgrade, the same ones under ghcr.io/brf-tech/runr
   local reqs=() img
-  for img in caddy:2-alpine redis:7-alpine postgres:17-alpine mailpit:latest busybox:latest curl:latest; do
+  for img in caddy:2-alpine redis:7-alpine postgres:17-alpine mailpit:latest busybox:latest curl:latest traefik:v3.7.4; do
     reqs+=("${from_ns}/reqs/${img}")
     [ "$from_ns" = "${REGISTRY}" ] || reqs+=("${REGISTRY}/reqs/${img}")
   done

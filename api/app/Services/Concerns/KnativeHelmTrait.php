@@ -116,12 +116,24 @@ trait KnativeHelmTrait
             Log::debug('Cleanup: Helm uninstall skipped', ['error' => $e->getMessage()]);
         }
 
-        if ($keepCrdsInUse && self::knativeServicesExist($k8s)) {
-            Log::info('Cleanup: Knative Serving CRDs kept, Knative Services exist on the cluster', ['region' => $region->name]);
+        if ($keepCrdsInUse) {
+            $this->removeUnusedKnativeCrds($k8s, $region);
         } else {
             $this->removeKnativeCrds($k8s);
         }
         $this->deleteNamespaceIfManaged($k8s, $ns);
+    }
+
+    /** removeKnativeCrds() unless Knative Services are left on the cluster, which the CRDs would take along. */
+    private function removeUnusedKnativeCrds(KubernetesClient $k8s, KnativeRegion $region): void
+    {
+        if (self::knativeServicesExist($k8s)) {
+            Log::info('Cleanup: Knative Serving CRDs kept, Knative Services exist on the cluster', ['region' => $region->name]);
+
+            return;
+        }
+
+        $this->removeKnativeCrds($k8s);
     }
 
     /** Any Knative Service on the cluster (all namespaces); an unreadable list counts as yes. */
@@ -159,8 +171,10 @@ trait KnativeHelmTrait
     }
 
     /**
-     * Full cleanup: delete CRs, Helm releases, and managed namespaces.
+     * Full cleanup: delete CRs, Helm releases, the Knative Serving CRDs and managed namespaces.
      * Traefik (and its namespace) stays while it serves non-Knative Ingresses, unless $removeTraefik.
+     * The CRDs stay while Knative Services exist: unlike the operator's own uninstall, a step taken
+     * once Serving is gone, this one call must not take the resources of other regions along.
      */
     private function cleanup(KnativeRegion $region, bool $removeTraefik = false): void
     {
@@ -196,6 +210,8 @@ trait KnativeHelmTrait
         } catch (Throwable $e) {
             Log::debug('Cleanup: Helm uninstall skipped', ['error' => $e->getMessage()]);
         }
+
+        $this->removeUnusedKnativeCrds($k8s, $region);
 
         // 4. Clean up namespaces (only if managed by runr; the serving namespace stays with a kept Traefik)
         $namespacesToClean = $traefikKeptFor ? [$operatorNs] : array_unique([$servingNs, $operatorNs]);

@@ -92,7 +92,7 @@ final class HelmReleaseUpgrade
     }
 
     /** The status of the release's newest revision when it is pending (pending-upgrade, …), else null */
-    private static function pending(HelmService $helm, string $release, string $namespace, string $kubeconfig): ?string
+    public static function pending(HelmService $helm, string $release, string $namespace, string $kubeconfig): ?string
     {
         $history = $helm->history($release, $namespace, $kubeconfig);
         $status = $history ? $history[array_key_last($history)]['status'] : '';

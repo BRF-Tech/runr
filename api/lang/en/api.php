@@ -66,6 +66,7 @@ return [
         'serving_upgrade_unknown_version' => 'The running Knative Serving version is not known yet; check the region status first.',
         'serving_upgrade_next_minor' => 'Knative upgrades one minor version at a time: from :current to :next.',
         'serving_upgrade_unsupported' => 'The cluster does not support Knative :version (GET /knative-regions/{id}/compatible-versions lists what it supports).',
+        'serving_install_unsupported' => 'The cluster or its Knative Operator cannot install Knative :version (GET /knative-regions/{id}/compatible-versions lists what they can).',
         'serving_upgrade_started' => 'Knative Serving upgrade to :version started.',
         'function_tls_removed' => 'Function-domain TLS removed: the region answers HTTPS with its Traefik default certificate.',
         'monitoring_updated' => 'Monitoring updated.',

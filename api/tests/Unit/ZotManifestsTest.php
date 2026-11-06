@@ -23,7 +23,7 @@ class ZotManifestsTest extends TestCase
         parent::tearDown();
     }
 
-    // ── Helm values (zot chart 0.1.125) ─────────────────────────────────────
+    // ── Helm values (zot chart 0.1.130) ─────────────────────────────────────
 
     public function test_pvc_values_use_chart_keys(): void
     {
@@ -49,6 +49,36 @@ class ZotManifestsTest extends TestCase
 
         $this->assertFalse($values['persistence']);
         $this->assertArrayNotHasKey('pvc', $values);
+    }
+
+    /**
+     * What Zot needs to run on S3: without dedupe off and a download directory it refuses the
+     * config, and it reads the address only from `regionendpoint` (under another key it goes to AWS).
+     */
+    public function test_the_s3_config_is_one_zot_runs_on_the_given_endpoint(): void
+    {
+        $json = ZotManifests::s3Values([
+            'endpoint' => 'https://s3.example', 'region' => 'r', 'bucket' => 'b', 'access_key' => 'a', 'secret_key' => 's',
+        ])['configFiles']['config.json'];
+        $config = json_decode($json, true);
+
+        $this->assertFalse($config['storage']['dedupe']);
+        $this->assertSame(ZotManifests::S3_SYNC_DOWNLOAD_DIR, $config['extensions']['sync']['downloadDir']);
+        $this->assertStringStartsWith('/var/lib/registry/', ZotManifests::S3_SYNC_DOWNLOAD_DIR, 'on the emptyDir of the chart\'s Deployment');
+        $this->assertSame([
+            'name' => 's3', 'regionendpoint' => 'https://s3.example', 'forcepathstyle' => true,
+            'region' => 'r', 'bucket' => 'b', 'accesskey' => 'a', 'secretkey' => 's',
+        ], $config['storage']['storageDriver']);
+
+        $this->assertNull(ZotManifests::reconcileSyncConfig($json, true), 'region:reconcile leaves it alone');
+    }
+
+    public function test_only_the_s3_config_turns_dedupe_off(): void
+    {
+        $config = json_decode(ZotManifests::pvcValues('', '20Gi')['configFiles']['config.json'], true);
+
+        $this->assertArrayNotHasKey('dedupe', $config['storage']);
+        $this->assertArrayNotHasKey('downloadDir', $config['extensions']['sync']);
     }
 
     /**
@@ -347,7 +377,7 @@ TOML);
         $this->assertSame([['prefix' => '**', 'destination' => '/ghcr.io']], $registries[0]['content']);
         $this->assertSame('1h', $registries[0]['manifestCheckInterval']);
         $this->assertSame(['https://registry-1.docker.io'], $registries[1]['urls']);
-        $this->assertSame([['prefix' => '**']], $registries[1]['content']);
+        $this->assertSame([['prefix' => ZotManifests::DOCKER_HUB_PREFIX]], $registries[1]['content']);
         $this->assertArrayNotHasKey('manifestCheckInterval', $registries[1]);
 
         // Both Helm value variants render it (PVC and S3)
@@ -444,6 +474,74 @@ TOML);
         $this->assertSame(ZotManifests::syncRegistries(true), $out['extensions']['sync']['registries']);
         $this->assertSame(['rootDirectory' => '/var/lib/registry'], $out['storage']);
         $this->assertNull(ZotManifests::reconcileSyncConfig(json_encode(ZotManifests::mirrorConfig()), true));
+    }
+
+    /**
+     * A failed on-demand sync reaches the client from Zot 2.1.22 on, and Docker Hub answers 401 for a
+     * repository it does not know: asked for runr-builds/, it fails the HEAD a build's first push
+     * starts with. Every first segment starting with runr- stays out of the filter, nothing else.
+     */
+    public function test_docker_hub_is_not_asked_for_runr_s_own_namespaces(): void
+    {
+        [, $hub] = ZotManifests::syncRegistries(true);
+        $this->assertSame([['prefix' => ZotManifests::DOCKER_HUB_PREFIX]], $hub['content']);
+
+        // doublestar's {a,b} over the first path segment; "/**" is the rest of the path
+        $this->assertSame(1, preg_match('~^\{(.+)\}/\*\*$~', ZotManifests::DOCKER_HUB_PREFIX, $m));
+        $alternatives = explode(',', $m[1]);
+        $asked = fn (string $repository) => collect($alternatives)
+            ->contains(fn (string $glob) => fnmatch($glob, explode('/', $repository)[0]));
+
+        foreach (['runr-builds/app', 'runr-runtimes/deno', 'runr-uploads/org-1/app', 'runr-anything/x'] as $own) {
+            $this->assertFalse($asked($own), "{$own} is RunR's own");
+        }
+        foreach ([
+            'library/alpine', 'grafana/promtail', 'prom/prometheus', 'ghcr.io/brf-tech/runr/x',
+            'r/x', 'ru/x', 'run/x', 'runr/x', 'runrx/y', 'runner/y', 'rust/y', 'rabbitmq/y', 'ubuntu/y',
+        ] as $upstream) {
+            $this->assertTrue($asked($upstream), "{$upstream} stays with Docker Hub");
+        }
+    }
+
+    public function test_a_new_registry_syncs_docker_format_images(): void
+    {
+        $this->assertSame(['docker2s2'], ZotManifests::mirrorConfig()['http']['compat']);
+        $this->assertSame(['docker2s2'], json_decode(ZotManifests::pvcValues('', '20Gi')['configFiles']['config.json'], true)['http']['compat']);
+        $this->assertSame(['docker2s2'], json_decode(ZotManifests::s3Values([
+            'endpoint' => 'https://s3', 'region' => 'r', 'bucket' => 'b', 'access_key' => 'a', 'secret_key' => 's',
+        ])['configFiles']['config.json'], true)['http']['compat']);
+    }
+
+    public function test_sync_errors_surface_from_zot_2_1_22_on(): void
+    {
+        $this->assertTrue(ZotManifests::surfacesSyncErrors('ghcr.io/project-zot/zot:v2.1.22'));
+        $this->assertTrue(ZotManifests::surfacesSyncErrors('ghcr.io/project-zot/zot:v2.1.23'));
+        $this->assertTrue(ZotManifests::surfacesSyncErrors('registry.local:5000/zot:2.2.0@sha256:'.str_repeat('a', 64)));
+        $this->assertFalse(ZotManifests::surfacesSyncErrors('ghcr.io/project-zot/zot:v2.1.21'));
+        $this->assertFalse(ZotManifests::surfacesSyncErrors('ghcr.io/project-zot/zot@sha256:'.str_repeat('b', 64)));
+        $this->assertFalse(ZotManifests::surfacesSyncErrors(null));
+    }
+
+    /** The config a region of an earlier release runs, on the Zot of that release */
+    private function installedOn2121(array $http = ['address' => '0.0.0.0', 'port' => '5000']): string
+    {
+        return json_encode(['http' => $http, 'extensions' => ['sync' => ['registries' => ZotManifests::syncRegistries(true, false)]]]);
+    }
+
+    public function test_reconcile_leaves_the_config_of_a_zot_that_needs_nothing_alone(): void
+    {
+        $this->assertNull(ZotManifests::reconcileSyncConfig($this->installedOn2121(), true, false), 'a changed config restarts Zot');
+    }
+
+    public function test_reconcile_brings_a_zot_that_surfaces_sync_errors_to_the_filter_and_compat(): void
+    {
+        $new = ZotManifests::reconcileSyncConfig($this->installedOn2121(['address' => '0.0.0.0', 'port' => '5000', 'compat' => ['other']]), true, true);
+        $out = json_decode($new, true);
+
+        $this->assertSame(ZotManifests::DOCKER_HUB_PREFIX, $out['extensions']['sync']['registries'][1]['content'][0]['prefix']);
+        $this->assertSame(['other', 'docker2s2'], $out['http']['compat'], 'next to what it holds');
+        $this->assertSame('5000', $out['http']['port']);
+        $this->assertNull(ZotManifests::reconcileSyncConfig($new, true, true));
     }
 
     public function test_reconcile_rejects_invalid_json(): void

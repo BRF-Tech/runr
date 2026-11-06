@@ -328,7 +328,9 @@ final class InternalNetworkManifests
 
     /**
      * The ForwardAuth and the removal of the token header — the callee never sees the caller's
-     * token (it could replay it), it gets the verified caller in X-Runr-Caller.
+     * token (it could replay it), it gets the verified caller in X-Runr-Caller. Both manage the dash
+     * form: an alias a callee would read as X-Runr-Caller (X_Runr_Caller, X.Runr.Caller) goes at the
+     * entry point (KnativeConstants::TRAEFIK_ALIAS_HEADERS_STRATEGY).
      *
      * @return list<array>
      */

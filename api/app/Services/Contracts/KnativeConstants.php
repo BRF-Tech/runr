@@ -22,11 +22,29 @@ interface KnativeConstants
 
     const TRAEFIK_CHART = 'traefik/traefik';
 
-    // Pinned: chart >= 41.0.0 renamed root `logs` to `log`/`accessLog` and its values schema
-    // rejects traefikHelmValues(). 39.x bundles Gateway API v1.4 CRDs, which the
-    // safe-upgrades ValidatingAdmissionPolicy of an installed Gateway API >= v1.5 rejects.
-    // 40.3.0 = Traefik v3.7.4, no bundled Gateway API CRDs.
-    const TRAEFIK_CHART_VERSION = '40.3.0';
+    // Pinned: 39.x bundles Gateway API v1.4 CRDs, which the safe-upgrades
+    // ValidatingAdmissionPolicy of an installed Gateway API >= v1.5 rejects. 42.3.0 = Traefik
+    // v3.7.17, no bundled Gateway API CRDs. Existing regions move to it through TraefikChartStep:
+    // chart >= 41.0.0 renamed root `logs` to `log`/`accessLog`, and its values schema refuses the
+    // old keys a release keeps (TraefikChartValues).
+    const TRAEFIK_CHART_VERSION = '42.3.0';
+
+    // kubeVersion of that chart: Helm refuses it on an earlier Kubernetes
+    const TRAEFIK_CHART_MIN_K8S_MINOR = 30;
+
+    // Request headers whose name aliases another one (X_Runr_Caller or X.Runr.Caller next to
+    // X-Runr-Caller) go before routing, on every entry point. ForwardAuth's authResponseHeaders
+    // and customRequestHeaders manage the dash form only, and backends that fold header names
+    // into variables (PHP's $_SERVER, CGI, WSGI) would read the alias as the header RunR vouches
+    // for (GHSA-rf44-j88r-hh8c, GHSA-x677-9fxg-v5c5). delete, not reject: a client that sends such
+    // a header for its own reasons keeps working, as behind nginx. The default of
+    // knative.traefikAliasHeadersStrategy (TraefikChartValues::aliasStrategy()). docs/security.md
+    const TRAEFIK_ALIAS_HEADERS_STRATEGY = 'delete';
+
+    // The first Traefik that takes it as a global value, for every entry point at once: the
+    // chart refuses it on an earlier image. Below v3.7.13 it would also leave request trailers out
+    // (GHSA-v67p-phpq-fc8x)
+    const TRAEFIK_ALIAS_HEADERS_SINCE = 'v3.7.17';
 
     // The image that chart version runs (its appVersion), from the reqs mirror of
     // docker.io/traefik like RunR's other third-party images (lib/mirror.sh of
@@ -34,7 +52,7 @@ interface KnativeConstants
     // chart's image (KnativeTraefikTrait), pre-pulled by the nodes (config knative.prepull_images)
     // and loaded into Kind by the e2e. KNATIVE_TRAEFIK_IMAGE overrides it (TraefikImage).
     // Changes with TRAEFIK_CHART_VERSION, together with its REQS_IMAGES entry.
-    const TRAEFIK_IMAGE = 'ghcr.io/brf-tech/runr/reqs/traefik:v3.7.4';
+    const TRAEFIK_IMAGE = 'ghcr.io/brf-tech/runr/reqs/traefik:v3.7.17';
 
     // IngressClass owned by the region Traefik; "traefik-knative" when another controller owns "traefik"
     const TRAEFIK_INGRESS_CLASS = 'traefik';

@@ -253,8 +253,9 @@ trait E2eTestInternalNetworkTrait
             return "after the grant: {$added}";
         }
 
-        // the callee gets the verified caller, never the caller's token
-        [, $log] = $this->netCurlPod('in-echo', self::NET_NS, "curl -s --max-time 30 -X POST -H 'Content-Type: application/json' -H '".InternalNetwork::HEADER.": {$sinkToken}' -d '{}' {$internal}");
+        // the callee gets the verified caller, never the caller's token, and no alias of the header
+        // a caller forged (X_Runr_Caller and X.Runr.Caller read as X-Runr-Caller in PHP and CGI)
+        [, $log] = $this->netCurlPod('in-echo', self::NET_NS, "curl -s --max-time 30 -X POST -H 'Content-Type: application/json' -H '".InternalNetwork::HEADER.": {$sinkToken}' -H 'X_Runr_Caller: forged' -H 'X.Runr.Caller: forged' -d '{}' {$internal}");
         $headers = array_change_key_case((array) (json_decode(trim($log), true)['headers'] ?? []), CASE_LOWER);
         $this->line('    the callee sees: x-runr-caller '.json_encode($headers['x-runr-caller'] ?? null).', x-runr-internal-token '.json_encode($headers['x-runr-internal-token'] ?? null));
         $problems = [];
@@ -263,6 +264,9 @@ trait E2eTestInternalNetworkTrait
         }
         if (isset($headers['x-runr-internal-token'])) {
             $problems[] = 'the callee got the caller\'s token';
+        }
+        if (isset($headers['x_runr_caller']) || isset($headers['x.runr.caller'])) {
+            $problems[] = 'an alias of X-Runr-Caller reached the callee';
         }
 
         $network->removeCaller($api, $c['sinkName']);

@@ -51,7 +51,7 @@ class RegistrySyncConfigReconcileStepTest extends TestCase
         return $config;
     }
 
-    private function seedZot(array $config, string $kind = 'statefulsets', string $image = 'ghcr.io/project-zot/zot:v2.1.21'): void
+    private function seedZot(array $config, string $kind = 'statefulsets', string $image = 'ghcr.io/project-zot/zot:v2.1.23'): void
     {
         $this->objects['configmaps/'.ZotRegistryService::ZOT_CONFIG_MAP] = [
             'metadata' => ['name' => ZotRegistryService::ZOT_CONFIG_MAP],
@@ -190,8 +190,39 @@ class RegistrySyncConfigReconcileStepTest extends TestCase
 
         $this->assertStringContainsString('no manifestCheckInterval', $lines[0]);
         $this->assertStringContainsString('restarted Deployment runr-registry/runr-zot', $lines[0]);
-        $this->assertSame(ZotManifests::syncRegistries(false), $this->liveConfig()['extensions']['sync']['registries']);
+        $this->assertSame(ZotManifests::syncRegistries(false, false), $this->liveConfig()['extensions']['sync']['registries']);
         $this->assertSame('PATCH deployments/runr-zot', $this->writes[1]['method'].' '.$this->writes[1]['key']);
+    }
+
+    /**
+     * An upgrade of RunR must not restart the registry of every region for what only a newer Zot
+     * needs: a region keeps its Zot and its config until registry:upgrade-zot moves both.
+     */
+    public function test_a_zot_of_an_earlier_release_is_not_restarted_for_what_only_a_newer_one_needs(): void
+    {
+        $this->fakeCluster();
+        $config = $this->installedConfig();
+        unset($config['http']['compat']);
+        $config['extensions']['sync']['registries'] = ZotManifests::syncRegistries(true, false);
+        $this->seedZot($config, 'statefulsets', 'ghcr.io/project-zot/zot:v2.1.21');
+
+        $this->assertSame([], (new RegistrySyncConfigStep)->run($this->cluster($this->region()), false));
+        $this->assertSame([], $this->writes);
+    }
+
+    public function test_a_zot_that_surfaces_sync_errors_gets_the_filter_and_compat(): void
+    {
+        $this->fakeCluster();
+        $config = $this->installedConfig();
+        unset($config['http']['compat']);
+        $config['extensions']['sync']['registries'] = ZotManifests::syncRegistries(true, false);
+        $this->seedZot($config, 'statefulsets', 'ghcr.io/project-zot/zot:v2.1.23');
+
+        $lines = (new RegistrySyncConfigStep)->run($this->cluster($this->region()), false);
+
+        $this->assertStringContainsString('restarted StatefulSet runr-registry/runr-zot', $lines[0]);
+        $this->assertSame(ZotManifests::syncRegistries(true), $this->liveConfig()['extensions']['sync']['registries']);
+        $this->assertSame(['docker2s2'], $this->liveConfig()['http']['compat']);
     }
 
     public function test_regions_without_a_ready_internal_registry_are_left_alone(): void

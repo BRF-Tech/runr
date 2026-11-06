@@ -143,7 +143,8 @@ trait DemoProjectsTrait
         $svc = app(ProjectService::class);
         $created = [];
 
-        foreach (array_values($this->demoProjectSamples()) as $index => $sample) {
+        $samples = $this->demoProjectSamples();
+        foreach ($samples as $index => $sample) {
             $story = $sample['story'] ?? 'steady';
             unset($sample['story']);
 
@@ -158,7 +159,9 @@ trait DemoProjectsTrait
                 'caas' => $this->seedCaaSVersions($svc, $project, $userId),
             };
 
-            $this->seedDemoDeployments($project->fresh(), $region, $username, $story, $index);
+            // The first sample the newest: the project list (newest first) reads in their order, and
+            // the first card the tours open is the HTTP function with the rollback
+            $this->seedDemoDeployments($project->fresh(), $region, $username, $story, count($samples) - 1 - $index);
             $created[] = $project;
         }
 

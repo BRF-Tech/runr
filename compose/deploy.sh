@@ -161,10 +161,11 @@ case "$ACTION" in
   $0 api|ui|all [VERSION]         — build + push in one go" ;;
 esac
 
-if [[ "$VERSION" == v* ]]; then
-  DISPLAY_V="$VERSION"
-else
+# As GET /api/version shows it: main-<id> for a commit id, a tag or another label as it is
+if [[ "$VERSION" =~ ^[0-9a-fA-F]{7,40}$ ]]; then
   DISPLAY_V="main-$VERSION"
+else
+  DISPLAY_V="$VERSION"
 fi
 
 echo -e "\n${BOLD}RunR Deploy${NC}"

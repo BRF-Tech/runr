@@ -3,7 +3,7 @@
 #   - there is no other CI (.gitlab-ci.yml) and no CI script or document needs one (GitLab
 #     variables, tokens or pipeline schedules);
 #   - ci.yml runs on every pull request, every push to main and by hand, and covers every check:
-#     gitleaks, the reqs mirror, the Dockerfiles and runtime/test, the Helm chart, Pint, PHPUnit
+#     gitleaks, the reqs mirror, the Dockerfiles, the Caddyfiles and runtime/test, the Helm chart, Pint, PHPUnit
 #     with the coverage floor of docs/development.md, Larastan, the API reference with every module
 #     (api/docker/api-docs.sh --check), the UI lint, unit tests with coverage, build and mocked e2e,
 #     Go and the Node SDK;
@@ -12,7 +12,8 @@
 #   - e2e.yml runs the Kind suite and the UI suite against the dev stack every week and by hand,
 #     never on a pull request;
 #   - upstream-releases.yml runs the Knative and Helm chart release checks every day and files an
-#     issue per finding;
+#     issue per finding; each chart of the Helm check has a pin in the code to compare with
+#     (helm_releases_check_test.sh tests the comparison);
 #   - every workflow: contents: read by default, GITHUB_TOKEN as its only secret, every action
 #     pinned to a full commit SHA with its version, every download checked against a pinned
 #     SHA256, no image from Docker Hub, a concurrency group;
@@ -97,7 +98,7 @@ check() { # JOB NEEDLE… — the job exists and runs each needle
 }
 check gitleaks 'git archive HEAD' 'dir . --config /gitleaks.toml --redact' '.gitleaks.toml'
 check reqs-mirror 'bash ci/check-reqs-mirror.sh'
-check build-scripts 'bash ci/check-dockerfiles.sh' 'for t in runtime/test/*_test.sh; do'
+check build-scripts 'bash ci/check-dockerfiles.sh' 'bash ci/check-caddyfiles.sh' 'for t in runtime/test/*_test.sh; do'
 check helm 'bash ci/check-helm-chart.sh' 'kubeconform'
 check api 'vendor/bin/pint --test' 'artisan test --compact --coverage --min=' 'vendor/bin/phpstan analyse' '"8.2.35"' 'coverage: pcov'   'sh docker/api-docs.sh "$RUNNER_TEMP/openapi.json" --check' 'vendor/bin/phpunit --no-coverage tests/Feature/ApiDocsTest.php'
 check ui 'npm run lint' 'npm run test:coverage' 'npm run build'
@@ -142,6 +143,11 @@ has "$kind" 'cloud-provider-kind' "e2e.yml does not install cloud-provider-kind"
 grep -qF -- '--sandbox-kata' <<<"$(grep -vE '^ *#' <<<"$kind")" && fail "e2e.yml runs Kata: GitHub-hosted runners give the Kind nodes no /dev/kvm"
 default_k8s="$(sed -n 's/^  local k8s_ver="\${K8S_VERSION:-\([0-9.]*\)}"$/\1/p' "$here/lib/test.sh")"
 has "$kind" "K8S_VERSION: \${{ inputs.k8s || '${default_k8s}' }}" "e2e.yml's Kubernetes version is not ci.sh test's default ${default_k8s}"
+# Kubernetes 1.35 node images come with Kind v0.31.0, and `kind load` needs a Kind that knows them
+kind_version="$(sed -n 's/^ *KIND_VERSION: v//p' <<<"$kind")"
+[ -n "$kind_version" ] || fail "e2e.yml pins no Kind version"
+[ "$(printf '%s\n' 0.31.0 "$kind_version" | sort -V | head -n 1)" = 0.31.0 ] \
+  || fail "e2e.yml's Kind ${kind_version} cannot run the node images of Kubernetes 1.35: v0.31.0 or later"
 stack="$(job "$e2e" ui-stack)"
 has "$stack" 'docker compose up -d --build --wait api' "e2e.yml does not start the dev stack"
 grep -qxE ' +run: npm run test:e2e' <<<"$stack" || fail "e2e.yml does not run the Playwright stack suite (npm run test:e2e)"
@@ -164,7 +170,17 @@ for s in check-knative-releases.sh check-helm-releases.sh; do
   grep -qF 'RELEASES_REPORT_DIR' "$root/ci/$s" || fail "ci/${s} writes no report for the workflow"
   grep -qE '^[^#]*git (push|commit)' "$root/ci/$s" && fail "ci/${s} commits or pushes"
 done
-echo "ok - upstream-releases.yml: Knative and Helm chart releases, daily, an issue per finding"
+# DEPS rows: "NAME|REPO|CHART|TYPE|PIN_FILE|PIN_CONSTANT"
+charts="$(sed -n '/^DEPS=(/,/^)/p' "$root/ci/check-helm-releases.sh" | grep -F '|' || true)"
+[ -n "$charts" ] || fail "ci/check-helm-releases.sh follows no chart"
+while IFS='|' read -r name _ _ _ pin_file pin_constant; do
+  name="${name#*\"}"
+  pin_constant="${pin_constant%\"}"
+  [ -n "$pin_constant" ] || fail "ci/check-helm-releases.sh: ${name} has no pin to compare with"
+  grep -qE "const +${pin_constant} *= *'[^']+'" "$root/$pin_file" \
+    || fail "ci/check-helm-releases.sh: no ${pin_constant} in ${pin_file} for ${name}"
+done <<<"$charts"
+echo "ok - upstream-releases.yml: Knative and Helm chart releases, daily, an issue per finding; every chart has its pin"
 
 # --- docs/development.md ----------------------------------------------------------------------------
 dev="$root/docs/development.md"

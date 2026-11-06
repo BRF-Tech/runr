@@ -48,7 +48,7 @@ installs `runr` into `/usr/local/bin` when that is writable, else into `~/.local
 
 ```sh
 curl -fsSL https://runr.sh/install.sh | sh
-curl -fsSL https://runr.sh/install.sh | RUNR_VERSION=v0.6.5 sh             # a specific release
+curl -fsSL https://runr.sh/install.sh | RUNR_VERSION=v0.6.6 sh             # a specific release
 curl -fsSL https://runr.sh/install.sh | RUNR_INSTALL_DIR="$HOME/bin" sh    # another directory
 ```
 
@@ -2999,7 +2999,7 @@ state; `--refresh` checks anyway.
 `runr regions knative [REGION]` shows the Knative operator and Knative Serving. `install REGION`
 installs both with Helm; `install REGION operator` and then `install REGION serving` install them
 one by one (`--namespace`; `--version` picks a Knative minor version of
-`runr regions knative versions`, default the newest the cluster supports). What already runs on
+`runr regions knative versions`, default the newest of them). What already runs on
 the cluster is adopted instead, with `install REGION` too: an operator whose Deployments run is
 never installed again (that would remove the Knative CRDs and with them every Knative Service on
 the cluster), a Ready Knative Serving is never applied again. `runr regions knative detect REGION`
@@ -3236,7 +3236,7 @@ deploy:
   stage: deploy
   image: alpine:3.21
   variables:
-    RUNR_VERSION: v0.6.5
+    RUNR_VERSION: v0.6.6
   before_script:
     - apk add --no-cache curl tar
     - curl -fsSL https://runr.sh/install.sh | sh

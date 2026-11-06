@@ -66,6 +66,7 @@ return [
         'serving_upgrade_unknown_version' => 'Çalışan Knative Serving sürümü henüz bilinmiyor; önce bölge durumunu kontrol edin.',
         'serving_upgrade_next_minor' => 'Knative her seferinde bir ara sürüm yükseltilir: :current sürümünden :next sürümüne.',
         'serving_upgrade_unsupported' => 'Küme Knative :version sürümünü desteklemiyor (desteklenen sürümler: GET /knative-regions/{id}/compatible-versions).',
+        'serving_install_unsupported' => 'Küme ya da Knative Operator, Knative :version sürümünü kuramıyor (kurulabilen sürümler: GET /knative-regions/{id}/compatible-versions).',
         'serving_upgrade_started' => 'Knative Serving :version sürümüne yükseltiliyor.',
         'function_tls_removed' => 'Fonksiyon alan adı TLS\'i kaldırıldı: bölge HTTPS\'e Traefik\'in varsayılan sertifikasıyla yanıt veriyor.',
         'monitoring_updated' => 'İzleme güncellendi.',

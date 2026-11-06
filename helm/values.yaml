@@ -343,6 +343,13 @@ knative:
   # of the pinned chart (the mirror of docker.io/traefik). Point it at a registry the regions reach,
   # with the same Traefik version; `region:reconcile` moves existing regions to it.
   traefikImage: ""
+  # What every region Traefik of this installation does with a request header whose name aliases
+  # another one (X_Foo or X.Foo next to X-Foo). delete removes it before routing. keep lets it
+  # through, which reopens a hole: an underscore or dot alias of X-Runr-Caller or X-Runr-Consumer can
+  # reach workloads, and servers that fold header names (PHP's built-in server, WSGI) read it as the
+  # verified header. keep is a stopgap while an app renames its headers. `region:reconcile` moves
+  # the regions either way, and warns on every run while they keep them (docs/security.md).
+  traefikAliasHeadersStrategy: delete
   # cert-manager in the regions: the certificates of project custom domains (TLS mode cert-manager,
   # docs/regions.md#cert-manager). A cluster that runs cert-manager keeps it (reused, never removed
   # by RunR); RunR installs jetstack/cert-manager v1.21.2 (images from ghcr.io/brf-tech/runr/reqs)
@@ -695,10 +702,10 @@ bootstrap:
   # The Job runr-region-reconcile-<revision> brings the regions to the release after helm upgrade
   # returned (not a hook: helm does not wait for it). Seconds each of its three attempts may start
   # region:reconcile steps for (--deadline; the step running then runs to its end, up to 30 minutes
-  # more). 3600 covers the worst case of one region cluster on an upgrade from 0.5.10; a typical
+  # more). 4800 covers the worst case of one region cluster on an upgrade from 0.5.10; a typical
   # cluster takes 5-10 minutes. Steps the deadline leaves are done by the next attempt; raise it for
   # installations with many region clusters (the Job's activeDeadlineSeconds follows; docs/upgrade.md)
-  regionReconcileSeconds: 3600
+  regionReconcileSeconds: 4800
 
 # ─── Ingress ─────────────────────────────────
 # domain → runr-gateway. className: the cluster's ingress class (traefik on k3s)

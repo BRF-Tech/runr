@@ -61,8 +61,10 @@ The Knative Service's cluster-local hosts (`<service>.<namespace>`, `.svc`, `.sv
 `runr.internal` names the project by its name instead of its Knative Service.
 
 What the callee gets: the request without the caller's token (a callee could otherwise replay it)
-and the verified caller in `X-Runr-Caller` (`checkout.acme`, or `runr:system` for RunR). What the
-caller gets when the call is refused, before the request reaches the callee:
+and the verified caller in `X-Runr-Caller` (`checkout.acme`, or `runr:system` for RunR). A caller
+cannot forge it under another spelling: `X_Runr_Caller` and the like are deleted first
+([Region network isolation](security.md#region-network-isolation)). What the caller gets when the
+call is refused, before the request reaches the callee:
 
 | Status | When |
 |---|---|

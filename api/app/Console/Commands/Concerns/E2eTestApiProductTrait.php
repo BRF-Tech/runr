@@ -51,6 +51,7 @@ def handler(event, context):
         "subject": headers.get("x-runr-subject"),
         "api_key": headers.get("x-api-key"),
         "authorization": headers.get("authorization"),
+        "aliases": [k for k in headers if k in ("x_runr_consumer", "x.runr.consumer")],
     }}
 PY;
 
@@ -161,7 +162,8 @@ PY;
             return 'with an unknown key: '.$unknown;
         }
 
-        $res = $this->apiCurl(['X-Api-Key: '.$this->apiKey], 1)[0] ?? null;
+        // X_Runr_Consumer and X.Runr.Consumer read as X-Runr-Consumer in PHP and CGI: they go at the entry point
+        $res = $this->apiCurl(['X-Api-Key: '.$this->apiKey, 'X_Runr_Consumer: forged', 'X.Runr.Consumer: forged'], 1)[0] ?? null;
         if (! is_array($res) || $res['status'] !== '200') {
             return 'with the key: '.json_encode($res);
         }
@@ -171,6 +173,9 @@ PY;
         }
         if (! empty($body['api_key']) || str_contains((string) ($body['authorization'] ?? ''), (string) $this->apiKey)) {
             return 'the key reached the function';
+        }
+        if (($body['aliases'] ?? null) !== []) {
+            return 'an alias of X-Runr-Consumer reached the function: '.json_encode($body['aliases'] ?? null);
         }
 
         return true;

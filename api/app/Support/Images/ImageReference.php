@@ -3,8 +3,8 @@
 namespace App\Support\Images;
 
 /**
- * An image reference in the parts Helm charts take: "ghcr.io/brf-tech/runr/reqs/traefik:v3.7.4" →
- * registry ghcr.io, repository brf-tech/runr/reqs/traefik, tag v3.7.4. Without a registry host the
+ * An image reference in the parts Helm charts take: "ghcr.io/brf-tech/runr/reqs/traefik:v3.7.17" →
+ * registry ghcr.io, repository brf-tech/runr/reqs/traefik, tag v3.7.17. Without a registry host the
  * image is on Docker Hub; "<tag>@<digest>" stays the tag (charts accept the pair), a digest alone
  * is the digest.
  */

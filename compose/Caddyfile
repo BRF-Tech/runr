@@ -72,23 +72,29 @@
         reverse_proxy api:80
     }
 
-    # SPA static files (catch-all)
+    # SPA static files (catch-all), as the ui image's own Caddyfile serves them (vue/Caddyfile):
+    # in this order, which the route block keeps (Caddy's own order sets headers before try_files
+    # rewrites the path). The checks: ci/check-caddyfiles.sh
     handle {
         root * /srv
+        route {
+            # A build file that is not there (a chunk of the previous build): 404, not index.html
+            @missingBuildFile {
+                path /assets/*
+                not file
+            }
+            header @missingBuildFile Cache-Control "no-store"
+            respond @missingBuildFile 404
 
-        # Not the platform's branding defaults, which the ui image writes at start
-        @assets {
-            path *.js *.css *.woff *.woff2 *.svg *.png *.jpg *.ico *.webp *.ttf *.eot
-            not path /branding-defaults.js
+            try_files {path} /index.html
+
+            # index.html (every console route) and the branding defaults the ui image writes at
+            # start: never cached; the hashed build files: cached for a year
+            @noStore path /index.html /branding-defaults.js
+            header @noStore Cache-Control "no-store, no-cache, must-revalidate"
+            header /assets/* Cache-Control "public, max-age=31536000, immutable"
+
+            file_server
         }
-        header @assets Cache-Control "public, max-age=31536000, immutable"
-
-        @index {
-            path /index.html /branding-defaults.js
-        }
-        header @index Cache-Control "no-store, no-cache, must-revalidate"
-
-        try_files {path} /index.html
-        file_server
     }
 }

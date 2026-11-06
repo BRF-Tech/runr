@@ -26,7 +26,9 @@ use App\Services\Contracts\KnativeConstants;
  * a 2xx lets the call through, with the headers named in authResponseHeaders copied from the
  * answer to the upstream request — and removed from it when the answer has none, so a caller can
  * neither forge X-Runr-Consumer nor, on key routes, hand its API key to the function (X-Api-Key and
- * Authorization are listed there). Any other answer (401 / 403 / 429 with RateLimit-* headers)
+ * Authorization are listed there). That covers the dash form: an alias a backend would read as the
+ * same header (X_Runr_Consumer) goes at the entry point, before any of this
+ * (KnativeConstants::TRAEFIK_ALIAS_HEADERS_STRATEGY). Any other answer (401 / 403 / 429 with RateLimit-* headers)
  * goes back to the caller as it is.
  *
  * Fail closed: while gateway-auth is not installed or not ready, gw-auth-<route> asks the region's

@@ -1210,6 +1210,13 @@
           "title": "Region Traefik image",
           "description": "Empty: RunR's mirror of the pinned Traefik version."
         },
+        "traefikAliasHeadersStrategy": {
+          "type": "string",
+          "enum": ["delete", "keep"],
+          "default": "delete",
+          "title": "Request headers with aliasing names",
+          "description": "What every region Traefik of this installation does with a request header whose name aliases another one (X_Foo, X.Foo). delete removes it before routing. keep lets it through: an underscore or dot alias of X-Runr-Caller or X-Runr-Consumer can then reach workloads, and servers that fold header names read it as the verified header. keep is a stopgap while an app renames its headers."
+        },
         "certManager": {
           "type": "object",
           "title": "cert-manager in the Regions",
@@ -1488,8 +1495,8 @@
           "type": "integer",
           "title": "region:reconcile deadline (seconds)",
           "minimum": 300,
-          "default": 3600,
-          "description": "The Job runr-region-reconcile-<revision> brings the regions to the release after helm upgrade returned (not a hook). Seconds each of its three attempts may start region:reconcile steps for; the step running then runs to its end (up to 30 minutes more), and the Job's activeDeadlineSeconds follows. 3600 covers one region cluster's worst case on an upgrade from 0.5.10; steps the deadline leaves are done by the next attempt; raise it for many region clusters."
+          "default": 4800,
+          "description": "The Job runr-region-reconcile-<revision> brings the regions to the release after helm upgrade returned (not a hook). Seconds each of its three attempts may start region:reconcile steps for; the step running then runs to its end (up to 30 minutes more), and the Job's activeDeadlineSeconds follows. 4800 covers one region cluster's worst case on an upgrade from 0.5.10; steps the deadline leaves are done by the next attempt; raise it for many region clusters."
         }
       }
     },

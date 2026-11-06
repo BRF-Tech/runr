@@ -6,6 +6,7 @@ use App\Services\HelmService;
 use App\Services\Helpers\IngressTrust;
 use App\Services\Helpers\PrivateIngress;
 use App\Services\Helpers\RequestTimeout;
+use App\Services\Helpers\TraefikChartValues;
 use App\Services\Helpers\TraefikImage;
 use App\Services\InternalNetwork\InternalNetworkManifests;
 use App\Services\KubernetesClient;
@@ -29,7 +30,7 @@ trait KnativeTraefikTrait
         $helm->repoUpdate();
 
         $values = array_replace_recursive(
-            $this->traefikHelmValues($namespace, $trustedIps, $requestTimeout),
+            $this->traefikHelmValues($namespace, $trustedIps, $requestTimeout, TraefikChartValues::aliasStrategy()),
             $this->traefikIngressClassValues($k8s, $namespace),
             // the chart's own image from the reqs mirror instead of Docker Hub (TraefikImage)
             ['image' => TraefikImage::helmValues(TraefikImage::ref())],
@@ -267,8 +268,9 @@ trait KnativeTraefikTrait
      *
      * @param  list<string>  $trustedIps  see installTraefik()
      * @param  int  $requestTimeout  see installTraefik()
+     * @param  string  $aliasStrategy  TraefikChartValues::aliasStrategy()
      */
-    private function traefikHelmValues(string $namespace, array $trustedIps = [], int $requestTimeout = RequestTimeout::DEFAULT): array
+    private function traefikHelmValues(string $namespace, array $trustedIps = [], int $requestTimeout = RequestTimeout::DEFAULT, string $aliasStrategy = self::TRAEFIK_ALIAS_HEADERS_STRATEGY): array
     {
         return [
             'deployment' => [
@@ -329,16 +331,14 @@ trait KnativeTraefikTrait
                 PrivateIngress::ENTRYPOINT => PrivateIngress::portValues($requestTimeout)
                     + ['http' => ['middlewares' => InternalNetworkManifests::entryPointMiddlewares($namespace)]],
             ],
-            'logs' => [
-                'general' => ['level' => 'INFO', 'format' => 'json'],
-                'access' => [
-                    'enabled' => true, 'format' => 'json', 'filters' => [],
-                    'fields' => [
-                        'general' => ['defaultMode' => 'keep'],
-                        'headers' => [
-                            'defaultMode' => 'drop',
-                            'names' => ['User-Agent' => 'keep', 'X-Real-Ip' => 'keep', 'X-Request-Id' => 'keep'],
-                        ],
+            'log' => ['level' => 'INFO', 'format' => 'json'],
+            'accessLog' => [
+                'enabled' => true, 'format' => 'json', 'filters' => [],
+                'fields' => [
+                    'defaultMode' => 'keep',
+                    'headers' => [
+                        'defaultMode' => 'drop',
+                        'names' => ['User-Agent' => 'keep', 'X-Real-Ip' => 'keep', 'X-Request-Id' => 'keep'],
                     ],
                 ],
             ],
@@ -407,7 +407,10 @@ trait KnativeTraefikTrait
                     'sniStrict' => false, 'preferServerCipherSuites' => true,
                 ],
             ],
-            'global' => ['checkNewVersion' => false, 'sendAnonymousUsage' => false],
+            'global' => [
+                'checkNewVersion' => false, 'sendAnonymousUsage' => false,
+                'aliasHeadersStrategy' => $aliasStrategy,
+            ],
         ];
     }
 

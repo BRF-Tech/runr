@@ -304,12 +304,12 @@ class RegistryImageLifecycleService
      * Build repositories (runr-builds/…, runr-runtimes/…) without a tag. A repository is created by
      * the first upload into it; one whose push never finished (a build that failed after the
      * registry was contacted) stays listed in the catalog. Zot has no API to delete a repository.
-     * Zot 2.1.21 (the pinned chart) removes an idle repository in its garbage collection; older
-     * releases (2.1.2, checked) remove one only together with its last unreferenced blob, so a
-     * repository without any blob stays for good. Each empty one therefore gets one small
-     * unreferenced blob: the next garbage collection after Zot's GC delay (1 h by default) deletes
-     * the blob and, with it, the repository, on every release. A push into the repository before
-     * then keeps it; the blob alone is collected.
+     * Zot from 2.1.21 on (the pinned chart too) removes an idle repository in its garbage
+     * collection; older releases (2.1.2, checked) remove one only together with its last
+     * unreferenced blob, so a repository without any blob stays for good. Each empty one therefore
+     * gets one small unreferenced blob: the next garbage collection after Zot's GC delay (1 h by
+     * default) deletes the blob and, with it, the repository, on every release. A push into the
+     * repository before then keeps it; the blob alone is collected.
      *
      * @return list<string> repositories handed to the garbage collection
      */

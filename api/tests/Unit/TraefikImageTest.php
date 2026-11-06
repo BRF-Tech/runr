@@ -22,7 +22,7 @@ class TraefikImageTest extends TestCase
         // and mirror it first (REQS_IMAGES of lib/mirror.sh in BRF-Tech/runr-runtimes). The mirror
         // list left this repository with the runtime images; ci/check-reqs-mirror.sh fails while
         // the image does not resolve on ghcr.io.
-        $this->assertSame(['40.3.0', 'ghcr.io/brf-tech/runr/reqs/traefik:v3.7.4'], [KnativeConstants::TRAEFIK_CHART_VERSION, KnativeConstants::TRAEFIK_IMAGE]);
+        $this->assertSame(['42.3.0', 'ghcr.io/brf-tech/runr/reqs/traefik:v3.7.17'], [KnativeConstants::TRAEFIK_CHART_VERSION, KnativeConstants::TRAEFIK_IMAGE]);
     }
 
     public function test_the_nodes_pre_pull_it(): void
@@ -61,7 +61,9 @@ class TraefikImageTest extends TestCase
 
         $this->assertStringContainsString('"'.KnativeConstants::TRAEFIK_IMAGE.'"', (string) file_get_contents($harness));
         // test-helm-upgrade loads it and expects region:reconcile to move the region Traefik to it
-        $this->assertStringContainsString('"'.KnativeConstants::TRAEFIK_IMAGE.'"', (string) file_get_contents(dirname($harness).'/test-helm-upgrade.sh'));
+        $upgrade = (string) file_get_contents(dirname($harness).'/test-helm-upgrade.sh');
+        $this->assertStringContainsString('"'.KnativeConstants::TRAEFIK_IMAGE.'"', $upgrade);
+        $this->assertStringContainsString('_UPG_TRAEFIK_CHART="traefik-'.KnativeConstants::TRAEFIK_CHART_VERSION.'"', $upgrade);
     }
 
     public function test_chart_image_values(): void

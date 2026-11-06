@@ -81,6 +81,91 @@ class KataManifestTest extends TestCase
         $this->assertSame(600, $spec['terminationGracePeriodSeconds']);
     }
 
+    /**
+     * kata-deploy works inside its pod (the upstream chart's kata-deploy.commonVolumeMounts): what
+     * it installs goes to /opt/kata of the pod, so that has to be the host's or Kata ends up in the
+     * container, and without systemd's private socket a k3s node reads as plain containerd.
+     */
+    public function test_installer_mounts_what_kata_deploy_reaches_on_the_node(): void
+    {
+        $ds = $this->builder()->buildKataInstallerDaemonSet('runr-sandbox', ['clh'], false, ContainerRuntimeHelper::FLAVOR_K3S);
+        $spec = $ds['spec']['template']['spec'];
+        $container = $spec['containers'][0];
+        $volumes = collect($spec['volumes'])->keyBy('name');
+        $mounts = collect($container['volumeMounts'])->keyBy('name');
+
+        $this->assertSame('quay.io/kata-containers/kata-deploy:'.KataRuntime::KATA_VERSION, $container['image']);
+        $this->assertSame(['/usr/bin/kata-deploy', 'install'], $container['command']);
+        $this->assertEqualsCanonicalizing($volumes->keys()->all(), $mounts->keys()->all(), 'every volume is mounted, every mount has a volume');
+
+        $this->assertSame(['path' => '/opt/kata', 'type' => 'DirectoryOrCreate'], $volumes['kata-install']['hostPath']);
+        $this->assertSame('/opt/kata', $mounts['kata-install']['mountPath']);
+        $this->assertSame(['path' => '/run/systemd/private', 'type' => 'Socket'], $volumes['systemd-private']['hostPath']);
+        $this->assertSame('/run/systemd/private', $mounts['systemd-private']['mountPath']);
+        $this->assertSame('/run/lock', $volumes['host-run-lock']['hostPath']['path']);
+        $this->assertSame('/host-run-lock', $mounts['host-run-lock']['mountPath']);
+        $this->assertArrayNotHasKey('readOnly', $mounts['host-run-lock'], 'its node lock is created there');
+        // k3s keeps its containerd config in a directory of its own, the pod finds it at /etc/containerd/
+        $this->assertSame('/var/lib/rancher/k3s/agent/etc/containerd/', $volumes['containerd-conf']['hostPath']['path']);
+        $this->assertSame('/etc/containerd/', $mounts['containerd-conf']['mountPath']);
+
+        foreach (['host-usr-bin', 'host-usr-sbin', 'host-usr-local-bin', 'host-usr-local-sbin', 'host-bin', 'host-sbin', 'boot', 'host-machine-id'] as $name) {
+            $this->assertTrue($mounts[$name]['readOnly'] ?? false, $name);
+        }
+        $this->assertSame([], $volumes->filter(fn (array $v) => ($v['hostPath']['path'] ?? null) === '/')->all(), 'not the whole host');
+    }
+
+    /**
+     * With DAEMONSET_NAME set kata-deploy skips its SIGTERM cleanup while the DaemonSet still selects
+     * the node, and a reinstall only adds to the containerd config: an update that takes a
+     * hypervisor away would leave its runtime handler on the nodes.
+     */
+    public function test_an_update_runs_kata_deploys_cleanup(): void
+    {
+        $ds = $this->builder()->buildKataInstallerDaemonSet('runr-sandbox', ['clh'], false);
+
+        $this->assertNotContains('DAEMONSET_NAME', array_column($ds['spec']['template']['spec']['containers'][0]['env'], 'name'));
+    }
+
+    /** The same DaemonSet with the release's pod spec: a change of what kata-deploy installs rolls it. */
+    public function test_another_kata_deploy_image_is_another_installer(): void
+    {
+        $data = ['custom-runtimes.list' => "kata-clh-runr:clh::\n"];
+        $spec = ['containers' => [['name' => 'kata-deploy', 'image' => 'quay.io/kata-containers/kata-deploy:3.28.0']]];
+        $next = ['containers' => [['name' => 'kata-deploy', 'image' => 'quay.io/kata-containers/kata-deploy:'.KataRuntime::KATA_VERSION]]];
+        $b = $this->builder();
+
+        $this->assertNotSame($b::kataInstallerHash($spec, $data), $b::kataInstallerHash($next, $data));
+    }
+
+    /**
+     * runtime-rs sizes a guest with limits from overhead_*, without limits from default_*: both are
+     * RunR's base, or the guest would get kata-deploy's 32 MiB on top of the limits.
+     */
+    public function test_dragonball_guest_is_the_base_plus_the_pod_limits(): void
+    {
+        $dropIn = KataRuntime::dropIn('dragonball');
+
+        foreach (['default_vcpus = 1', 'default_memory = 256', 'overhead_vcpus = 1', 'overhead_memory = 256', 'static_sandbox_resource_mgmt = true'] as $line) {
+            $this->assertStringContainsString("{$line}\n", $dropIn);
+        }
+        $this->assertStringNotContainsString('enable_annotations', $dropIn, 'kata-deploy\'s list stays');
+
+        // the go runtime adds the limits to default_*: no such keys
+        foreach (['clh', 'qemu', 'fc'] as $hv) {
+            $this->assertStringNotContainsString('overhead_', KataRuntime::dropIn($hv), $hv);
+            $this->assertStringNotContainsString('enable_annotations', KataRuntime::dropIn($hv), $hv);
+        }
+    }
+
+    public function test_on_cri_o_dragonball_leaves_the_vcpu_annotation_of_older_workloads_unread(): void
+    {
+        $crio = KataRuntime::dropIn('dragonball', false);
+
+        $this->assertStringContainsString('enable_annotations = ["enable_iommu", "kernel_params", "kernel_verity_params", "default_memory"]', $crio);
+        $this->assertStringContainsString('static_sandbox_resource_mgmt = false', $crio);
+    }
+
     public function test_config_hash_follows_what_kata_deploy_installs(): void
     {
         $b = $this->builder();
@@ -117,17 +202,17 @@ class KataManifestTest extends TestCase
     }
 
     /**
-     * OP's kata-installer as RunR 0.4.1 left it (tests/Fixtures/kata-op): its template hash is this
-     * release's installer pod spec with OP's live ConfigMap under 0.4.1's formula — so the upgrade
-     * recognises it as current and only rewrites the drop-ins (no kata-deploy run, no restart).
+     * OP's kata-installer as RunR 0.4.1 left it (tests/Fixtures/kata-op) runs an earlier kata-deploy:
+     * its template hash is no longer this release's pod spec under 0.4.1's formula, so the upgrade
+     * re-runs kata-deploy there. Its handlers are this release's, its drop-ins are not.
      */
-    public function test_ops_0_4_1_installer_matches_this_releases_pod_spec(): void
+    public function test_ops_0_4_1_installer_runs_another_kata_deploy(): void
     {
         $op = json_decode(file_get_contents(dirname(__DIR__).'/Fixtures/kata-op/kata-runr-config-0.4.1.json'), true);
         $ds = $this->builder()->buildKataInstallerDaemonSet('runr-sandbox', ['clh', 'qemu', 'dragonball'], false, ContainerRuntimeHelper::FLAVOR_K3S);
         $spec = $ds['spec']['template']['spec'];
 
-        $this->assertSame($op['kata_config_hash'], $this->builder()::kataConfigHash($spec, $op['data']));
+        $this->assertNotSame($op['kata_config_hash'], $this->builder()::kataConfigHash($spec, $op['data']));
         $this->assertSame($ds['metadata']['annotations']['runr.dev/kata-installer-hash'], $this->builder()::kataInstallerHash($spec, $op['data']), 'same handlers');
         $this->assertNotSame($ds['metadata']['annotations']['runr.dev/kata-dropins-hash'], $this->builder()::kataDropInsHash($op['data']), 'new drop-ins');
     }

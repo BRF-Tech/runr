@@ -116,6 +116,83 @@ class RegionKubeconfigReplaceAndUninstallTest extends TestCase
         $this->assertStringContainsString('new.test', $region->fresh()->kubeconfig);
     }
 
+    private const CRDS = '/apis/apiextensions.k8s.io/v1/customresourcedefinitions';
+
+    /** A cluster with a few of Serving's CRDs, of which the operator's step applied all, and $knativeServices. */
+    private function clusterWithServingCrds(array $knativeServices = []): KnativeRegion
+    {
+        $this->app->instance(HelmService::class, new class extends HelmService
+        {
+            public function uninstall(string $release, string $namespace, string $kubeconfigYaml): HelmResult
+            {
+                return new HelmResult(true, '', '', 0);
+            }
+        });
+        $this->fakeCluster([
+            'GET '.self::CRDS => ['items' => [
+                ['metadata' => ['name' => 'services.serving.knative.dev']],
+                ['metadata' => ['name' => 'podautoscalers.autoscaling.internal.knative.dev']],
+                ['metadata' => ['name' => 'images.caching.internal.knative.dev']],
+            ]],
+            'GET '.self::CRDS.'/services.serving.knative.dev' => ['metadata' => ['name' => 'services.serving.knative.dev']],
+            'GET /apis/serving.knative.dev/v1/services' => ['items' => $knativeServices],
+        ]);
+
+        return KnativeRegion::create([
+            'name' => 'eu-1', 'project_namespace' => 'eu-1', 'is_active' => true, 'kubeconfig' => $this->fakeKubeconfig(),
+            'knative_operator_status' => 'ready', 'knative_serving_status' => 'ready', 'knative_serving_version' => '1.20.0',
+        ]);
+    }
+
+    /** @return list<string> the CRDs deleted, by name */
+    private function deletedCrds(): array
+    {
+        return array_map(fn ($call) => basename($call['path']), $this->k8sCallsTo('DELETE', self::CRDS));
+    }
+
+    /** All that the install applied, by the label its CRDs carry: Eventing's and the operator's name themselves. */
+    public function test_uninstalling_the_operator_removes_every_serving_crd(): void
+    {
+        $region = $this->clusterWithServingCrds();
+
+        app(KnativeUninstallService::class)->uninstallOperator($region);
+
+        $this->assertSame([
+            'services.serving.knative.dev', 'podautoscalers.autoscaling.internal.knative.dev', 'images.caching.internal.knative.dev',
+        ], $this->deletedCrds());
+        $list = array_values(array_filter($this->k8sCallsTo('GET', self::CRDS), fn ($call) => $call['path'] === self::CRDS));
+        $this->assertSame('labelSelector='.urlencode('app.kubernetes.io/name=knative-serving'), $list[0]['query']);
+    }
+
+    /** The operator stays, and the cluster's other regions keep their Knative Services in these CRDs. */
+    public function test_uninstalling_serving_keeps_every_crd(): void
+    {
+        $region = $this->clusterWithServingCrds();
+
+        app(KnativeUninstallService::class)->uninstallServing($region);
+
+        $this->assertSame([], $this->deletedCrds());
+    }
+
+    public function test_the_full_uninstall_leaves_no_crd_behind(): void
+    {
+        $region = $this->clusterWithServingCrds();
+
+        app(KnativeUninstallService::class)->uninstall($region);
+
+        $this->assertCount(3, $this->deletedCrds());
+    }
+
+    public function test_the_full_uninstall_keeps_the_crds_of_knative_services_left_on_the_cluster(): void
+    {
+        $region = $this->clusterWithServingCrds([['metadata' => ['name' => 'shop', 'namespace' => 'eu-2']]]);
+
+        app(KnativeUninstallService::class)->uninstall($region);
+
+        $this->assertSame([], $this->deletedCrds());
+        $this->assertSame('not_installed', $region->refresh()->knative_operator_status);
+    }
+
     public function test_the_full_uninstall_resets_the_component_statuses(): void
     {
         $this->app->instance(HelmService::class, new class extends HelmService

@@ -88,9 +88,16 @@ class DemoSeeder extends Seeder
         );
     }
 
-    /** The demo projects (DemoProjectsTrait): versions and a deployment history each. */
+    /**
+     * The demo projects (DemoProjectsTrait): versions and a deployment history each. A second run
+     * (runr:install --demo again) keeps the projects the region has.
+     */
     private function seedDemoProjects(KnativeRegion $region): void
     {
+        if ($region->projects()->exists()) {
+            return;
+        }
+
         $admin = User::where('username', 'admin')->firstOrFail();
         $this->seedDemoProjectSet($region, $admin->id, $admin->username);
     }

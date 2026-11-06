@@ -416,14 +416,17 @@ class KnativeInstallService implements KnativeConstants
 
             $this->appendComponentLog($region, 'serving', 'Connecting to cluster...');
             $k8s = new KubernetesClient($kubeconfig);
-            $helm = new HelmService;
+            $helm = app(HelmService::class);
 
-            // Resolve version from Helm repo if not set or not available.
+            // Resolve version from Helm repo if not set or not available: one the operator that
+            // runs can install, it does not move for a Serving install.
             // Use appVersion (actual Knative release), not chart version — chart may have
             // patch bumps (e.g. 1.18.3) that have no corresponding GitHub/image release.
             if (! $version) {
                 $versions = Helpers\KnativeVersionHelper::resolveVersionPair(
-                    Helpers\KnativeVersionHelper::detectK8sMinor($k8s), $helm
+                    Helpers\KnativeVersionHelper::detectK8sMinor($k8s),
+                    $helm,
+                    Helpers\KnativeVersionHelper::runningOperatorVersion($k8s, $region),
                 );
                 $version = $versions['app'];
             }

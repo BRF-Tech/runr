@@ -18,6 +18,12 @@ selection with the same compatibility check the console shows (kata-shims).
 | **dragonball** | Dragonball | Rust (runtime-rs) | amd64, arm64 | 250m / 256Mi | VMM built into the shim process. |
 | **fc** | Firecracker | Go | amd64, arm64 | 250m / 320Mi | Needs the devmapper snapshotter, which RunR sets up on containerd nodes (plain, k3s, rke2). |
 
+RunR runs kata-deploy (`KataRuntime::KATA_VERSION`, 4.3.1) as a DaemonSet of its own, `kata-installer` in
+`runr-sandbox`: the upstream Helm chart's daemonset mode, not its default job mode. The pod mounts what the chart
+mounts for it, because kata-deploy works inside the pod: `/opt/kata` (where Kata is installed), systemd's private
+socket `/run/systemd/private` (how it tells k3s and RKE2 from containerd and restarts the runtime, so a node needs
+systemd), `/run/lock` and the node's containerd and CRI-O configuration.
+
 RunR installs each hypervisor as a kata-deploy "custom runtime" (handler `kata-<hv>-runr`, RuntimeClass name
 `kata-<hv>`) with a `config.d` drop-in that sets:
 
@@ -26,8 +32,8 @@ RunR installs each hypervisor as a kata-deploy "custom runtime" (handler `kata-<
   [Guest size](#guest-size))
 - `reclaim_guest_freed_memory = true` (clh, qemu, dragonball)
 - `kernel_params` that start the Kata agent as the guest's init (see below)
-- Dragonball only: `enable_annotations` with `default_max_vcpus` added to kata-deploy's list (containerd
-  nodes), or without `default_vcpus` (CRI-O)
+- Dragonball only: `overhead_vcpus` and `overhead_memory` (the same 1 vCPU and 256 MiB, see
+  [Guest size](#guest-size)), and on CRI-O `enable_annotations` without `default_vcpus`
 
 The RuntimeClasses carry `overhead.podFixed` and `scheduling.nodeSelector`
 `katacontainers.io/kata-runtime=true` + `runr.dev/kvm=true` (fc also `runr.dev/devmapper-snapshotter=true`).
@@ -45,17 +51,15 @@ overhead is not part of the guest.
 
 - **clh, qemu, fc** run on Kata's Go runtime, which takes the size from containerd's sandbox
   sizing annotations itself.
-- **dragonball** runs on the Rust runtime (runtime-rs). Its static sizing in kata-deploy 3.28 adds
-  the memory limits but not the CPU limits, and static sizing turns vCPU hot-plug off, so a
-  Dragonball guest kept 1 vCPU whatever the pod's limit (Kata 3.29.0 sizes the vCPUs as well). RunR
-  writes the vCPU count on every Dragonball workload it creates — Knative Services, CronJobs, Jobs
-  and sandbox pods — as the pod annotations `io.katacontainers.config.hypervisor.default_vcpus`
-  and `…default_max_vcpus` (both the same value: no hot-plug, and runtime-rs refuses a guest with
-  more vCPUs than its maximum, which defaults to the host's CPU count). Dragonball's drop-in enables
-  the two annotations on containerd nodes; on CRI-O, where Kata hot-plugs vCPUs, it leaves them
-  unread. `KataRuntime::RUNTIME_RS_STATIC_VCPUS_SINCE` ends the annotations once RunR's
-  kata-deploy is 3.29.0 or newer. Existing Dragonball functions get them at their next deploy;
-  `region:reconcile` updates the drop-in on the nodes.
+- **dragonball** runs on the Rust runtime (runtime-rs), which takes the same annotations but has
+  two pairs of settings: `overhead_vcpus` / `overhead_memory` are added to a pod's limits,
+  `default_vcpus` / `default_memory` apply to a pod without limits. kata-deploy's own overhead is
+  0.2 vCPU and 32 MiB, far below what the guest's kernel and agent need on top of the limits, so
+  RunR's drop-in sets both pairs to 1 vCPU and 256 MiB and a Dragonball guest has the size of the
+  others. Workloads deployed while RunR ran Kata 3.28 still carry the vCPU pod annotations RunR wrote for it
+  (`io.katacontainers.config.hypervisor.default_vcpus`, `…default_max_vcpus`); runtime-rs ignores
+  them under static sizing, and on CRI-O, where Kata hot-plugs vCPUs, the drop-in leaves them
+  unread.
 
 `ci.sh test-sandbox-api` (with `/dev/kvm`) checks `nproc` inside a 1-CPU and a 2-CPU sandbox on
 each of clh, qemu and dragonball. It gives the Kind nodes a host-like `/dev/shm` first (`KIND_NODE_SHM`,
@@ -189,6 +193,10 @@ The plugin is loaded by the same runtime restart kata-deploy performs.
 | Process model | `containerd-shim-kata-v2` + separate VMM process | Single process (VMM built into the shim) |
 | Shims in RunR | clh, qemu, fc | dragonball |
 | Shim binary | `/opt/kata/bin/containerd-shim-kata-v2` | `/opt/kata/runtime-rs/bin/containerd-shim-kata-v2` |
+
+Since Kata 4.0 the Rust runtime is upstream's default and the Go runtime is deprecated: it is still shipped and
+supported, gets critical fixes and no new features, and has no removal date. RunR stays on it for clh, qemu and fc,
+whose sizing and measurements above are the Go runtime's. Firecracker has no runtime-rs shim in kata-deploy.
 
 ---
 

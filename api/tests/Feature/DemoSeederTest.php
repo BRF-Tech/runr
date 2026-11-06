@@ -5,21 +5,35 @@ namespace Tests\Feature;
 use App\Models\Deployment;
 use App\Models\DeploymentRollout;
 use App\Models\Project;
+use App\Models\User;
 use App\Services\Rollouts\DeployStrategy;
 use Database\Seeders\DemoSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Tests\TestCase;
 
 /**
  * The demo data (Settings → Demo data, `php artisan demo:seed`, the public demo): English texts
- * for an international visitor, and a deployment history in most projects, so the project page
+ * for an international visitor, and a deployment history in every project, so the project page
  * and its tour have deployments to show — before, only the three container projects got one
  * (a code project has no version until its code is saved, and the seeder deployed before).
+ * DemoSeederResetTest: the seeder on a fresh database again (the demo's nightly reset).
  */
 class DemoSeederTest extends TestCase
 {
     use RefreshDatabase;
+
+    /** Letters of Turkish (and no English) text, and Turkish words without them. */
+    public const TURKISH = '/[çğıİöşüÇĞÖŞÜ]|fonksiyon|konteyner/iu';
+
+    /** The demo projects in the order of DemoProjectsTrait::demoProjectSamples(). */
+    public const PROJECTS = [
+        'demo-xaas-http', 'demo-xaas-schedule', 'demo-faas-http', 'demo-faas-schedule', 'demo-caas-http',
+        'demo-caas-schedule', 'demo-xaas-queue', 'demo-faas-queue', 'demo-caas-queue', 'demo-xaas-eol',
+        'demo-faas-sunsetting',
+    ];
 
     protected function setUp(): void
     {
@@ -54,8 +68,61 @@ class DemoSeederTest extends TestCase
 
         $messages = $projects->flatMap(fn (Project $p) => $p->versions()->pluck('commit_message'))->filter();
         foreach ($messages as $message) {
-            $this->assertDoesNotMatchRegularExpression('/[çğıöşüÇĞİÖŞÜ]/u', $message);
+            $this->assertDoesNotMatchRegularExpression(self::TURKISH, $message);
         }
+    }
+
+    /**
+     * Not only the descriptions: every text the demo data writes (every column of every table:
+     * the projects, versions, deployments and their messages, the rollout's events, the region's
+     * status texts, the runtimes) and the code of the versions in the internal git repository.
+     */
+    public function test_no_seeded_text_is_turkish(): void
+    {
+        $found = [];
+        foreach (Schema::getTableListing(schemaQualified: false) as $table) {
+            foreach (DB::table($table)->get() as $row) {
+                foreach ((array) $row as $column => $value) {
+                    if (is_string($value) && preg_match(self::TURKISH, $value) === 1) {
+                        $found[] = "{$table}.{$column}: {$value}";
+                    }
+                }
+            }
+        }
+
+        $code = 0;
+        $files = new \RecursiveIteratorIterator(new \RecursiveDirectoryIterator(storage_path('git'), \FilesystemIterator::SKIP_DOTS));
+        foreach ($files as $file) {
+            if ($file->isFile() && ! str_contains($file->getPathname(), DIRECTORY_SEPARATOR.'.git'.DIRECTORY_SEPARATOR)) {
+                $code++;
+                if (preg_match(self::TURKISH, (string) file_get_contents($file->getPathname())) === 1) {
+                    $found[] = 'git: '.$file->getPathname();
+                }
+            }
+        }
+
+        $this->assertGreaterThan(0, $code);
+        $this->assertSame([], $found);
+    }
+
+    /**
+     * The project list (newest first) reads in the order of the samples: the first card the tours
+     * open is the HTTP function with the rollback, with the history the deployments tour points at
+     * (the rows' log and delete buttons, the roll-back button of an earlier deployment).
+     */
+    public function test_the_first_project_of_the_list_has_a_deployment_history_for_the_tour(): void
+    {
+        $this->actingAs(User::query()->where('username', 'admin')->firstOrFail(), 'sanctum');
+
+        $listed = $this->getJson('/api/projects')->assertOk()->json('data');
+        $this->assertSame(self::PROJECTS, array_column($listed, 'name'));
+
+        $deployments = collect($this->getJson("/api/projects/{$listed[0]['id']}/deployments")->assertOk()->json('data'));
+        $this->assertCount(5, $deployments);
+        $this->assertSame('active', $deployments->first()['status']);
+        $this->assertCount(1, $deployments->where('status', 'active'));
+        $this->assertCount(4, $deployments->where('status', 'shut_down'));
+        $this->assertTrue($deployments->every(fn (array $d) => ! empty($d['version']['id'])));
     }
 
     public function test_every_project_has_four_versions_and_a_deployment_history_with_one_live_deployment(): void

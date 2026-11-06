@@ -87,6 +87,138 @@ edit projects, deploy or change regions in that time: the previous version canno
 migration has just encrypted, shows env vars as empty and would save that. Its region status
 checks fail in that window and the new version's next check reports the region again.
 
+## 0.6.5 → 0.6.6
+
+### Kata Containers 4.3.1
+
+RunR installs kata-deploy 4.3.1 instead of 3.28.0 ([kata-hypervisors.md](kata-hypervisors.md)).
+Nothing has to be set. On every region with Kata, `region:reconcile` queues the region's Kata
+install, and the region shows "installing" until it finishes:
+
+- The `kata-installer` DaemonSet rolls one node at a time. On each node the 3.28 pod's cleanup and
+  the 4.3.1 install restart the container runtime, twice back to back (containerd, or the whole
+  k3s / RKE2 service: on a single-node cluster the Kubernetes API is unavailable for about 10 to
+  20 seconds each time). `region:reconcile --dry-run` reports it first.
+- **Running Kata pods stop on each node, so plan this for a quiet hour.** The 3.28 pod's cleanup
+  removes `/opt/kata`, and containerd cannot take back a task whose shim is gone when it restarts.
+  Pods under runc and gVisor keep running. For a Kata pod it depends on what owns it:
+  - A project's pod, or anything else with `restartPolicy: Always`, starts again by itself on
+    4.3.1 when the node is done, with its guest image and kernel. In a test on a Kind cluster,
+    clh, qemu and Dragonball workloads on one Kata node were down for about 6 minutes.
+  - A Sandbox API sandbox (`restartPolicy: Never`) ends. RunR closes it as failed; create it again.
+- Most of that interruption is the pull of the new image: about 4 minutes 40 seconds of the 6 in
+  that test, after the old pod is gone. Pull it on the Kata nodes first, before the upgrade that
+  runs `region:reconcile`:
+  `crictl pull quay.io/kata-containers/kata-deploy:4.3.1`.
+- RuntimeClasses, handlers and the mappings of the project types stay as they are.
+- A Dragonball workload keeps its guest size. The vCPU pod annotations it may carry are ignored.
+- A region whose Kata install is not "ready" is left out, as in every reconcile, and stays on 3.28
+  until Kata is installed again from its Sandbox tab. Dragonball workloads deployed there meanwhile
+  get no vCPU annotations and boot with 1 vCPU.
+
+### Region Traefik chart 42.3.0
+
+New regions install the Traefik chart 42.3.0 (Traefik v3.7.17) instead of 40.3.0 (Traefik v3.7.4).
+`region:reconcile` (step `traefik-chart`) moves existing regions:
+
+- It runs a `helm upgrade` of the `traefik` release to the new chart with the release's own values.
+  `--reuse-values` cannot do that: chart 41 renamed the logging keys and refuses the old ones, so
+  the step reads the values back, rewrites `logs` as `log` and `accessLog`, and sets the image. The
+  entry points, RBAC, Services and selectors render as before, and the `LoadBalancer` Service
+  keeps its address.
+- The Traefik pods roll once. A new pod is Ready before an old one goes (`maxUnavailable: 0`), so
+  requests keep being served. The upgrade is atomic: if the new pods do not become ready within
+  10 minutes the release goes back to its chart, `region:reconcile` reports the failure and the
+  next run tries again. If that rollback fails too, the release stays `failed`, and the next run
+  moves it again rather than taking it as done.
+- A region whose nodes pull through a mirror of their own needs
+  `ghcr.io/brf-tech/runr/reqs/traefik:v3.7.17` there first. With `knative.traefikImage` set, the
+  region runs that image on the new chart: mirror v3.7.17 and set it before the upgrade.
+  `ghcr.io/brf-tech/runr/reqs/traefik:v3.7.4` stays published for the regions that keep it.
+- Left alone, with a `warning:` from `region:reconcile`: a Traefik of a chart before 40, a cluster on
+  Kubernetes before 1.30, which the chart refuses, and a `knative.traefikImage` older than v3.7.17
+  ([below](#request-headers-with-aliasing-names)). Upgrade Kubernetes or set the image, then run
+  `region:reconcile`.
+- Helm does not touch CRDs on an upgrade. The `traefik.io` CRDs of the two charts differ by one
+  optional field of `Middleware` (`errors.errorRequestHeaders`), which RunR does not set; a new
+  region gets the new CRDs.
+
+If `traefik-chart` fails, it fails like any other step of `region:reconcile`: the other steps still
+run, the region keeps serving on its chart, the attempt ends in error and the next one tries
+again after 5 minutes. After three attempts the Job `runr-region-reconcile-<revision>` ends as
+failed and the platform administrators get a notification. RunR's own `helm upgrade` is done by
+then: the Job is no hook and the release stays `deployed`, unless you run it with `--wait-for-jobs`,
+which makes helm wait for this Job and fail with it. With several serving namespaces in one cluster
+the step starts no upgrade that could outlast its time, and the next attempt goes on with the rest.
+`bootstrap.regionReconcileSeconds` is 4800 by default now, for the longer worst case. An upgrade
+with `--reuse-values` keeps 3600 unless you set it: that is safe, no step is cut, and what the
+deadline leaves in the worst case is done by the next attempt.
+
+What changes for traffic is Traefik's own, from v3.7.5 to v3.7.17
+([migration notes](https://doc.traefik.io/traefik/migrate/v3/)). A request with more than 500 header
+values is answered with 431 before routing, `CONNECT` requests with 501 over every HTTP version,
+and a request target like `http:example.com/admin` with 400. `Upgrade: h2c` and `HTTP2-Settings`
+request headers no longer reach the backends.
+
+### Request headers with aliasing names
+
+Every entry point of a region Traefik now deletes a request header whose name has anything but
+letters, digits and dashes. It comes with the move to chart 42.3.0, and a region on that chart that
+does not do it yet gets it from `traefik-chart` (one more roll of the Traefik pods).
+
+Why: Traefik vouches for `X-Runr-Caller` and the gateway's `X-Runr-Consumer` in their dash form only.
+A backend that folds header names into variables reads `X_Runr_Caller` or `X.Runr.Caller` as the same
+header, so a caller could pass itself off as another project or consumer
+([security.md](security.md#region-network-isolation)). Until a region moves it is open to this, as
+it was before.
+
+What a project sees: **a header with `_`, `.` or another such character in its name no longer
+arrives.** A client that sends `X_Request_Id`, `api_key`, `client_id` or `X.Custom` gets its normal
+answer, on public routes, gateway routes and calls between projects alike, but the project does not
+get the header, and nothing is logged. nginx does the same by default for underscores. gRPC
+metadata keys with `_` or `.` are headers too. Response headers, cookies and query strings stay
+as they are. Rename the header to dashes (`X-Request-Id`), or send the value in the query string or
+the body. RunR's access logs do not record such headers, so check your clients and what your
+projects read.
+
+If an app cannot change in time, `knative.traefikAliasHeadersStrategy: keep` lets such headers through
+on every region of the installation: there is no setting per region or project. It reopens the hole
+above, so it is a stopgap while the app renames its headers: an underscore or dot alias of the
+identity headers can reach workloads, and `region:reconcile` warns on every run. Set it before the
+upgrade, and regions move to the new chart with it; set it back to `delete` and `region:reconcile`
+moves them again (one roll of the Traefik pods each way).
+
+Regions that keep the old behaviour, each reported as a `warning:` by `region:reconcile`:
+
+- a Traefik of a chart before 40, or on Kubernetes before 1.30: the option does not exist there;
+- `knative.traefikImage` older than v3.7.17. The chart refuses the option on such an image, so these
+  regions stay on chart 40, and a new region with such an image fails its Serving install. Set
+  `knative.traefikImage` to v3.7.17 or later.
+
+### Registry, monitoring and Knative
+
+Nothing here moves by itself, because each one restarts something a region depends on. Run them
+when it suits the region:
+
+- **Zot 2.1.23.** Registries set up from now on run it. `php artisan registry:upgrade-zot
+  <region-id>` moves an installed one, `--dry-run` first: the registry restarts once, it keeps its
+  values and running config, adds the two sync settings Zot 2.1.23 needs
+  ([regions.md](regions.md#registry)), and a failed upgrade rolls back. `region:reconcile` does not
+  do this.
+- **kube-prometheus-stack 92.18.0.** Regions installed from now on run it. `php artisan
+  cluster:patch-observability` moves an installed region. These are security rebuilds of Prometheus
+  and its operator, so move regions soon. No CRD step is needed.
+- **Knative 1.22, 1.23 and 1.24.** A region stays on its version until someone upgrades it, one
+  minor at a time. New installs take Knative 1.23 on Kubernetes 1.34 and 1.24 on 1.35 or newer.
+
+Three changes are visible to API and CLI users:
+
+- `compatible-versions` lists four minors at most: those the operator can install. A running
+  Serving is still offered its next minor.
+- `POST install-serving` answers 422 for a `version` outside that list.
+- `runr regions knative install REGION serving` without `--version` follows the running operator
+  instead of taking the newest minor the cluster supports.
+
 ## 0.6.4 → 0.6.5
 
 0.6.5 takes the dependency updates for published advisories and fixes the API reference, the
@@ -374,9 +506,9 @@ what running installations do, so read the list below before upgrading.
    regions. On a region of 0.5.10 this release's steps roll the region Traefik three times, wait
    for the KIngresses and the internal network's authz and can install cert-manager: about
    5 minutes per region cluster (2½ minutes for the private-ingress move on Kind), up to 10 on a
-   slow one. Each attempt lets the command start steps for an hour
-   (`bootstrap.regionReconcileSeconds`, 3600 — the worst case of one cluster, every wait of every
-   step at its limit, is about 57 minutes) and lets the step running then end, so no change is cut
+   slow one. Each attempt lets the command start steps for 80 minutes
+   (`bootstrap.regionReconcileSeconds`, 4800 — the worst case of one cluster, every wait of every
+   step at its limit, is about 78 minutes) and lets the step running then end, so no change is cut
    in the middle. Raise the value for many region clusters. Watch it:
 
    ```sh
