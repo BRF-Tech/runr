@@ -162,9 +162,16 @@ describe('pre-paint: the platform defaults on a first visit', () => {
     expect(platformBranding({})).toBeNull()
   })
 
-  it('sets the page language: the stored choice, else the browser\'s', () => {
+  it('sets the page language: the stored choice, else the browser\'s, else English', () => {
     prePaint({ defaults: null, nav: { languages: ['tr-TR'] } })
     expect(document.documentElement.lang).toBe('tr')
+    prePaint({ defaults: null, nav: { languages: ['en-US', 'en'] } })
+    expect(document.documentElement.lang).toBe('en')
+    prePaint({ defaults: null, nav: { languages: ['de-DE', 'tr'] } })
+    expect(document.documentElement.lang).toBe('tr')
+    // a browser in a language the console lacks, with the platform's branding defaults: English
+    prePaint({ defaults: platform, nav: { languages: ['de-DE'], language: 'de-DE' } })
+    expect(document.documentElement.lang).toBe('en')
     localStorage.setItem('locale', 'en')
     prePaint({ defaults: null, nav: { languages: ['tr-TR'] } })
     expect(document.documentElement.lang).toBe('en')

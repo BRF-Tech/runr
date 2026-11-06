@@ -199,7 +199,7 @@ export default {
           description:      'VM-level isolation using lightweight microVMs. Full syscall compatibility.',
           installBtn:       'Install Kata',
           installConfirm:   'Install and restart',
-          installWarning:   'Installing Kata Containers restarts the container runtime on every target node (containerd, or the k3s / RKE2 service that runs it). Running pods keep running; on a single-node k3s or RKE2 cluster the Kubernetes API is unavailable for about 10–20 seconds.',
+          installWarning:   'Installing Kata Containers restarts the container runtime on every target node (containerd, or the k3s / RKE2 service that runs it). Running pods keep running, except Kata pods where Kata is already installed: those stop, a project\'s pod starts again when the node is done and a sandbox ends. On a single-node k3s or RKE2 cluster the Kubernetes API is unavailable for about 10–20 seconds.',
           devmapperPool:    'Firecracker thin-pool size',
           kvmMissing:       'Kata Containers is not available on this region: hardware virtualization (/dev/kvm) is not available on the nodes. Use gVisor or runc.',
           kvmMissingInstalled: 'Kata Containers is installed, but none of the nodes has hardware virtualization (/dev/kvm): Kata pods cannot start. Map the project types to gVisor or runc, then uninstall Kata.',

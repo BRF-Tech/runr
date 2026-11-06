@@ -8,6 +8,7 @@ import DeploymentTable from '@/components/DeploymentTable.vue'
 import { aiApi } from '@/api/ai'
 import { usePermissionsStore } from '@/stores/permissions'
 import { useProjectDetail } from '@/composables/useProjectDetail'
+import { detailDeploymentsSteps } from '@/composables/tutorialSteps'
 import { modelService } from '@/test-support/helpers'
 import { withPlugins } from '../../helpers'
 
@@ -115,6 +116,29 @@ describe('the deployment table', () => {
     // the read-only role has no roll back or delete: their tour steps drop
     expect(reader.find('[data-tour="deployment-rollback-btn"]').exists()).toBe(false)
     expect(reader.find('[data-tour="deployment-delete-btn"]').exists()).toBe(false)
+  })
+
+  // The demo data's first project (DemoSeeder: demo-xaas-http, the list's first card): four
+  // versions deployed in turn, the fourth rolled back to the third with its config, newest first
+  // as GET …/deployments lists them
+  const history = [
+    { id: 'd5', status: 'active', config_source: 'restored', version: { id: 'v3', number: 3, label: 'v3' }, created_at: '2026-11-03T15:00:00Z' },
+    ...[4, 3, 2, 1].map(n => ({ id: `d${n}`, status: 'shut_down', version: { id: `v${n}`, number: n, label: `v${n}` }, created_at: `2026-10-2${n}T10:00:00Z` })),
+  ]
+  const tourSteps = (w) => detailDeploymentsSteps((key) => key).filter(s => w.find(s.element).exists()).map(s => s.element.match(/"(.+)"/)[1])
+
+  it('shows the deployments tour every step of the table with the demo data\'s history', () => {
+    const demoViewer = mountWith(DeploymentTable, { project: { ...project, service_type: 'xaas' }, deployments: history }, READ_ONLY)
+    expect(tourSteps(demoViewer)).toEqual(['deploy-strategy-btn', 'deployment-table', 'deployment-log-btn'])
+
+    const deployer = mountWith(DeploymentTable, { project: { ...project, service_type: 'xaas' }, deployments: history }, [...READ_ONLY, 'projects.deploy'])
+    expect(tourSteps(deployer)).toEqual(['deploy-strategy-btn', 'deployment-table', 'deployment-log-btn', 'deployment-rollback-btn', 'deployment-delete-btn'])
+    // the roll-back step points at the newest earlier deployment, not the live one
+    expect(deployer.get('[data-tour="deployment-rollback-btn"]').element.closest('tr').textContent).toContain('v4')
+
+    // without deployments (a project the demo data had none for) only the first two were left
+    const empty = mountWith(DeploymentTable, { project: { ...project, service_type: 'xaas' }, deployments: [] }, READ_ONLY)
+    expect(tourSteps(empty)).toEqual(['deploy-strategy-btn', 'deployment-table'])
   })
 })
 

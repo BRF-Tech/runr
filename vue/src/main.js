@@ -10,8 +10,12 @@ import { createPinia } from 'pinia'
 import App from './App.vue'
 import router from './router'
 import i18n, { mergeModuleMessages } from './i18n'
+import { reloadOnStaleChunks } from './utils/staleChunks'
 
 import { moduleRegistry, tenancyReady, authProviderReady, ticketReady, billingReady } from '@/modules/index'
+
+// A page's chunk of the previous build (opened before an upgrade) answers 404: load the new build
+reloadOnStaleChunks()
 
 const app = createApp(App)
 app.use(createPinia())

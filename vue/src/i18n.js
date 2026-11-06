@@ -1,13 +1,14 @@
 import { createI18n } from 'vue-i18n'
 import tr from '@/locales/tr'
 import en from '@/locales/en'
-import { currentLocale } from '@/utils/locale'
+import { DEFAULT_LOCALE, currentLocale } from '@/utils/locale'
 
-// The stored choice, else the browser's language: Turkish for a Turkish browser, English otherwise
+// The stored choice, else the first of the browser's languages the console has, else English
+// (utils/locale.js)
 const i18n = createI18n({
   legacy:        false,   // Composition API mode
   locale:        currentLocale(),
-  fallbackLocale: 'en',
+  fallbackLocale: DEFAULT_LOCALE,
   messages:      { tr, en },
 })
 

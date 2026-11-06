@@ -48,9 +48,16 @@ describe('request interceptor', () => {
     expect(requests[0].headers.Authorization).toBeUndefined()
     expect(requests[0].headers['Accept-Language']).toBe('tr')
 
+    // the first of the browser's languages the console has; English when it has none of them
     languages.mockReturnValue(['de-DE', 'tr'])
     await client.get('/projects')
-    expect(requests[1].headers['Accept-Language']).toBe('en')
+    expect(requests[1].headers['Accept-Language']).toBe('tr')
+
+    languages.mockReturnValue(['de-DE', 'fr'])
+    const language = vi.spyOn(navigator, 'language', 'get').mockReturnValue('de-DE')
+    await client.get('/projects')
+    expect(requests[2].headers['Accept-Language']).toBe('en')
+    language.mockRestore()
     languages.mockRestore()
   })
 

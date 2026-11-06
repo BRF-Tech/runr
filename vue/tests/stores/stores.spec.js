@@ -14,6 +14,7 @@ import { useNotificationStore } from '@/stores/notifications'
 import { useSettingsStore } from '@/stores/settings'
 import { useToast } from '@/composables/useToast'
 import { useConfirm } from '@/composables/useConfirm'
+import { deferred } from '../helpers'
 
 beforeEach(() => {
   setActivePinia(createPinia())
@@ -42,6 +43,50 @@ describe('notification store', () => {
     notificationsApi.unreadCount.mockRejectedValueOnce(new Error('offline'))
     await expect(store.fetchUnreadCount()).resolves.toBeUndefined()
     expect(store.unreadCount).toBe(7)
+  })
+
+  // The header's badge (AppHeader): one count per session (sign-in, organization), and nothing
+  // of the member before in the next one
+  it('loadFor asks for the count once per session and starts another session empty', async () => {
+    const store = useNotificationStore()
+    notificationsApi.unreadCount.mockResolvedValueOnce({ data: { count: 533 } })
+    await store.loadFor('1|ada|0')
+    expect(store.unreadCount).toBe(533)
+
+    store.addNotification({ id: 9, read_at: null })
+    await store.loadFor('1|ada|0')   // the header of the next page
+    expect(notificationsApi.unreadCount).toHaveBeenCalledTimes(1)
+    expect(store.unreadCount).toBe(534)
+
+    await store.loadFor(null)        // signed out
+    expect(store.unreadCount).toBe(0)
+    expect(store.notifications).toEqual([])
+    expect(notificationsApi.unreadCount).toHaveBeenCalledTimes(1)
+
+    notificationsApi.unreadCount.mockResolvedValueOnce({ data: { count: 2 } })
+    await store.loadFor('2|grace|0')
+    expect(store.unreadCount).toBe(2)
+    expect(notificationsApi.unreadCount).toHaveBeenCalledTimes(2)
+  })
+
+  it('drops a count or a list answered for the session before', async () => {
+    const store = useNotificationStore()
+    const adasCount = deferred()
+    const adasList = deferred()
+    notificationsApi.unreadCount.mockReturnValueOnce(adasCount.promise).mockResolvedValueOnce({ data: { count: 2 } })
+    notificationsApi.list.mockReturnValueOnce(adasList.promise)
+
+    const adaLoad = store.loadFor('1|ada|0')
+    const adaPanel = store.fetchAll()
+    await store.loadFor('2|grace|0')
+    adasCount.resolve({ data: { count: 533 } })
+    adasList.resolve({ data: { data: [{ id: 1, read_at: null }] } })
+    await adaLoad
+    await adaPanel
+
+    expect(store.unreadCount).toBe(2)
+    expect(store.notifications).toEqual([])
+    expect(store.loading).toBe(false)
   })
 
   it('fetchAll fills the list and resets loading even on failure', async () => {

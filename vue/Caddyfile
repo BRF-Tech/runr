@@ -5,23 +5,34 @@
     # gzip first: on the fly zstd was the slowest for large files
     encode gzip zstd
 
-    # Hashed build assets: cached for a year. Not the platform's branding defaults, which the
-    # container writes at start (docker-entrypoint.sh) and a new configuration changes
-    @assets {
-        path *.js *.css *.woff *.woff2 *.svg *.png *.jpg *.ico *.webp *.ttf *.eot
-        not path /branding-defaults.js
-    }
-    header @assets Cache-Control "public, max-age=31536000, immutable"
+    # In this order: the route block keeps it. Caddy's own directive order sets headers before
+    # try_files rewrites the path, so a console route (/, /login, /projects/…) got index.html
+    # without its Cache-Control. The checks: ci/check-caddyfiles.sh
+    route {
+        # A build file that is not there, e.g. a chunk of the previous build that a console opened
+        # before an upgrade asks for: 404 (the console loads again, src/utils/staleChunks.js),
+        # never index.html under the build files' immutable header
+        @missingBuildFile {
+            path /assets/*
+            not file
+        }
+        header @missingBuildFile Cache-Control "no-store"
+        respond @missingBuildFile 404
 
-    @index {
-        path /index.html /branding-defaults.js
-    }
-    header @index Cache-Control "no-store, no-cache, must-revalidate"
+        try_files {path} /index.html
 
-    try_files {path} /index.html
-    # The build's .br / .gz next to each text file (Dockerfile), in the client's preference, Brotli
-    # first when it takes both
-    file_server {
-        precompressed br gzip
+        # Decided on the path try_files left. index.html (every console route) and the platform's
+        # branding defaults, which the container writes at start (docker-entrypoint.sh) and a new
+        # configuration changes: never cached
+        @noStore path /index.html /branding-defaults.js
+        header @noStore Cache-Control "no-store, no-cache, must-revalidate"
+        # The hashed build files (Vite: /assets/<name>-<hash>.<ext>): cached for a year
+        header /assets/* Cache-Control "public, max-age=31536000, immutable"
+
+        # The build's .br / .gz next to each text file (Dockerfile), in the client's preference,
+        # Brotli first when it takes both
+        file_server {
+            precompressed br gzip
+        }
     }
 }

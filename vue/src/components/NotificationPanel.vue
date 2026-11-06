@@ -12,7 +12,8 @@ const router = useRouter()
 
 onMounted(() => { store.fetchAll() })
 
-const hasUnread     = computed(() => store.notifications.some(n => !n.read_at))
+// Unread ones may be older than the page the panel lists: the member's count says so too
+const hasUnread     = computed(() => store.unreadCount > 0 || store.notifications.some(n => !n.read_at))
 const hasAny        = computed(() => store.notifications.length > 0)
 
 function levelIcon(level) {
@@ -70,6 +71,7 @@ async function removeAll() {
       <div class="flex items-center gap-2">
         <button
           v-if="hasUnread"
+          data-testid="notifications-mark-all-read"
           class="flex items-center gap-1 text-xs text-gray-400 hover:text-brand-500 transition-colors"
           :title="t('notifications.markAllRead')"
           @click="markAllRead"
@@ -78,6 +80,7 @@ async function removeAll() {
         </button>
         <button
           v-if="hasAny"
+          data-testid="notifications-delete-all"
           class="flex items-center gap-1 text-xs text-gray-400 hover:text-red-400 transition-colors"
           :title="t('notifications.deleteAll')"
           @click="removeAll"
@@ -100,6 +103,7 @@ async function removeAll() {
       <div
         v-for="n in store.notifications"
         :key="n.id"
+        data-testid="notification-item"
         class="group w-full flex items-start gap-3 px-4 py-3 text-left transition-colors hover:bg-gray-800/60 cursor-pointer"
         :class="n.read_at ? 'opacity-60' : ''"
         @click="handleClick(n)"
@@ -117,6 +121,7 @@ async function removeAll() {
         <div class="flex items-center gap-1.5 shrink-0 mt-0.5">
           <div v-if="!n.read_at" class="w-2 h-2 rounded-full bg-brand-500"></div>
           <button
+            data-testid="notification-delete"
             class="opacity-0 group-hover:opacity-100 text-gray-400 hover:text-red-400 transition-all"
             :title="t('notifications.delete')"
             @click="removeOne($event, n)"

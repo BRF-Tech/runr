@@ -42,7 +42,16 @@ onMounted(() => {
 })
 
 // ── Notifications ──
+// The badge is the signed-in member's unread count: asked once per sign-in and organization
+// (moduleRegistry.viewKey; every page mounts a header of its own, the store keeps whose count it
+// holds), then kept by the socket (NotificationCreated) and the panel's reads and deletes; while
+// the socket is down, a poll every 2 minutes
 const notificationStore = useNotificationStore()
+watch(
+  () => (auth.token ? `${auth.token}|${moduleRegistry.viewKey}` : null),
+  (session) => notificationStore.loadFor(session),
+  { immediate: true },
+)
 const notifRoot = ref(null)
 const notifPanelOpen = ref(false)
 function toggleNotifPanel() { notifPanelOpen.value = !notifPanelOpen.value }
@@ -174,7 +183,7 @@ onBeforeUnmount(() => {
             @click="toggleNotifPanel"
           >
             <Bell class="w-4 h-4" aria-hidden="true" />
-            <span v-if="notificationStore.unreadCount > 0"
+            <span v-if="notificationStore.unreadCount > 0" data-testid="notifications-count"
               class="absolute -top-0.5 -right-0.5 min-w-[16px] h-4 flex items-center justify-center rounded-md bg-red-500 text-white text-[10px] font-bold px-1"
             >{{ notificationStore.unreadCount > 99 ? '99+' : notificationStore.unreadCount }}</span>
           </button>

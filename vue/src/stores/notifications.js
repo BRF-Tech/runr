@@ -7,18 +7,39 @@ export const useNotificationStore = defineStore('notifications', () => {
   const unreadCount   = ref(0)
   const loading       = ref(false)
 
+  // The session the count and the list belong to (AppHeader's key: the sign-in and the
+  // organization) and its number: an answer asked for an earlier session is dropped
+  let session    = null
+  let generation = 0
+
   async function fetchUnreadCount() {
+    const asked = generation
     try {
       const { data } = await notificationsApi.unreadCount()
-      unreadCount.value = data.count ?? 0
+      if (asked === generation) unreadCount.value = data.count ?? 0
     } catch { /* silent */ }
   }
 
+  /**
+   * The badge of a session (null: signed out). Another session starts empty and asks for its
+   * member's count once; the same session again (every page mounts a header of its own) asks
+   * nothing: the socket and the panel keep the count from there.
+   */
+  async function loadFor(key) {
+    if (key === session) return
+    session = key
+    generation++
+    notifications.value = []
+    unreadCount.value   = 0
+    if (key) await fetchUnreadCount()
+  }
+
   async function fetchAll(params = {}) {
+    const asked = generation
     loading.value = true
     try {
       const { data } = await notificationsApi.list(params)
-      notifications.value = data.data ?? []
+      if (asked === generation) notifications.value = data.data ?? []
       return data
     } finally {
       loading.value = false
@@ -69,5 +90,5 @@ export const useNotificationStore = defineStore('notifications', () => {
     if (!n.read_at) unreadCount.value++
   }
 
-  return { notifications, unreadCount, loading, fetchUnreadCount, fetchAll, markRead, markAllRead, remove, removeAll, addNotification }
+  return { notifications, unreadCount, loading, fetchUnreadCount, loadFor, fetchAll, markRead, markAllRead, remove, removeAll, addNotification }
 })

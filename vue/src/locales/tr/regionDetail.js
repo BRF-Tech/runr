@@ -199,7 +199,7 @@ export default {
           description:      'Hafif mikroVM\'ler ile VM düzeyinde izolasyon. Tam syscall uyumluluğu.',
           installBtn:       'Kata Kur',
           installConfirm:   'Kur ve yeniden başlat',
-          installWarning:   'Kata Containers kurulumu her hedef node\'da container runtime\'ı yeniden başlatır (containerd ya da onu çalıştıran k3s / RKE2 servisi). Çalışan pod\'lar çalışmaya devam eder; tek node\'lu bir k3s ya da RKE2 kümesinde Kubernetes API yaklaşık 10–20 saniye erişilemez.',
+          installWarning:   'Kata Containers kurulumu her hedef node\'da container runtime\'ı yeniden başlatır (containerd ya da onu çalıştıran k3s / RKE2 servisi). Çalışan pod\'lar çalışmaya devam eder, ama Kata zaten kuruluysa Kata pod\'ları durur: projenin pod\'u node bitince yeniden başlar, sandbox ise sonlanır. Tek node\'lu bir k3s ya da RKE2 kümesinde Kubernetes API yaklaşık 10–20 saniye erişilemez.',
           devmapperPool:    'Firecracker thin-pool boyutu',
           kvmMissing:       'Kata Containers bu bölgede kullanılamaz: node\'larda donanım sanallaştırması (/dev/kvm) yok. gVisor ya da runc kullanın.',
           kvmMissingInstalled: 'Kata Containers kurulu, ancak hiçbir node\'da donanım sanallaştırması (/dev/kvm) yok: Kata pod\'ları başlayamaz. Proje tiplerini gVisor ya da runc\'a eşleyin, ardından Kata\'yı kaldırın.',
