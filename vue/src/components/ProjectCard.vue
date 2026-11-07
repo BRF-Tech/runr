@@ -13,6 +13,7 @@ import { runtimeLabel } from '@/utils/runtimes'
 import { isLegacyServiceType } from '@/utils/projectHelpers'
 import { patchBadge } from '@/utils/runtimePatches'
 import { isGlobalProject } from '@/utils/globalProjects'
+import { lifecycleClasses, projectEndedBy, projectLifecycleNotice } from '@/utils/runtimeLifecycle'
 import { usePermissionsStore } from '@/stores/permissions'
 import { ExternalLink, Globe, Earth, Clock, Zap, Cpu, MemoryStick, Timer, ArrowUpDown, User2 } from 'lucide-vue-next'
 
@@ -36,6 +37,14 @@ const eolWeeksLeft = computed(() => {
   return Math.ceil(diffDays / 7)
 })
 const isSunsetting = computed(() => eolWeeksLeft.value !== null && eolWeeksLeft.value <= 13)
+// runtimeEol is the earlier of the version's end of life and sunset (docs/runtimes.md#lifecycle)
+const endedLabel = computed(() => projectEndedBy(props.project) === 'sunset' ? t('runtimes.lifecycle.versionStates.sunset') : t('projects.eol'))
+// Deprecated, or the runtime left its source (not ended yet, not in its last 13 weeks)
+const lifecycleMark = computed(() => {
+  const state = props.project.runtime_lifecycle?.state
+  if ((state !== 'deprecated' && state !== 'orphaned') || isEol.value || isSunsetting.value) return null
+  return { state, label: t(`runtimes.lifecycle.states.${state}`), classes: lifecycleClasses(state), title: projectLifecycleNotice(props.project, t, runtimeLabel)?.title ?? '' }
+})
 // Global project (docs/global-projects.md): served from several regions on its global host name
 const isGlobal = computed(() => isGlobalProject(props.project))
 const globalRegionNames = computed(() => (props.project.global?.regions ?? []).map(r => r.region_name).join(', '))
@@ -151,7 +160,7 @@ defineEmits(['edit', 'patches'])
     </div>
 
     <!-- Runtime + EOL tags -->
-    <div v-if="project.runtime || runtimeTag || isEol || isSunsetting || hasPatchBadge" class="flex items-center gap-1.5">
+    <div v-if="project.runtime || runtimeTag || isEol || isSunsetting || hasPatchBadge || lifecycleMark" class="flex items-center gap-1.5">
       <span
         v-if="project.runtime"
         class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md border border-gray-700/60 bg-gray-800/40 font-mono text-xs text-gray-100"
@@ -160,17 +169,25 @@ defineEmits(['edit', 'patches'])
         v-if="runtimeTag && project.service_type === 'caas'"
         class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md border border-gray-700/60 bg-gray-800/40 font-mono text-xs text-gray-100"
       ><RuntimeIcon runtime="docker" :size="14" />{{ runtimeTag }}</span>
-      <span v-if="isEol || isSunsetting || hasPatchBadge" class="ml-auto flex items-center gap-1.5">
+      <span v-if="isEol || isSunsetting || hasPatchBadge || lifecycleMark" class="ml-auto flex items-center gap-1.5">
         <RuntimePatchBadge :state="project.runtime_patch" size="sm" @open="$emit('patches', project)" />
         <span
           v-if="isEol"
           class="text-[11px] font-medium px-2 py-0.5 rounded-md bg-red-900/40 border border-red-800/50 text-red-400 leading-none"
-        >{{ t('projects.eol') }}</span>
+        >{{ endedLabel }}</span>
         <span
           v-else-if="isSunsetting"
           class="text-[11px] font-medium px-2 py-0.5 rounded-md bg-yellow-900/40 border border-yellow-800/50 text-yellow-400 leading-none"
           :title="`${t('projects.sunsetting')}: ${runtimeEol}`"
         >{{ t('projects.eolWeeks', { weeks: eolWeeksLeft }) }}</span>
+        <span
+          v-if="lifecycleMark"
+          class="text-[11px] font-medium px-2 py-0.5 rounded-md border leading-none"
+          :class="lifecycleMark.classes"
+          :title="lifecycleMark.title"
+          :data-lifecycle="lifecycleMark.state"
+          data-test="project-card-lifecycle"
+        >{{ lifecycleMark.label }}</span>
       </span>
     </div>
 

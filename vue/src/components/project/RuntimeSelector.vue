@@ -4,12 +4,14 @@ import { useI18n } from 'vue-i18n'
 import RuntimeIcon from '@/components/RuntimeIcon.vue'
 import { runtimeLabel } from '@/utils/runtimes'
 import { isWasmRuntime } from '@/utils/wasm'
+import { day, lifecycleClasses, runtimeBadgeTitle, runtimeState, versionState, versionTitle } from '@/utils/runtimeLifecycle'
 
 const { t } = useI18n()
 
 const props = defineProps({
-  // Catalog entries ({ id, name, description, source, unsupported, ... }) or runtime ids
+  // Catalog entries ({ id, name, description, source, unsupported, retired, lifecycle, ... }) or runtime ids
   runtimes: { type: Array, required: true },
+  // Versions that have not ended; `ended` marks the project's own one after it ended (edit)
   runtimeVersions: { type: Array, default: () => [] },
   selectedRuntime: { type: String, default: null },
   selectedVersion: { type: String, default: null },
@@ -29,12 +31,34 @@ const gridClass = computed(() => {
 })
 
 function isDisabled(r) {
-  return props.readonly || !!r.unsupported
+  return props.readonly || !!r.unsupported || !!r.retired
 }
 
+// Lifecycle (docs/runtimes.md#lifecycle): a deprecated runtime is marked; one that left its source
+// or was sunset can not be picked for a new project
 function title(r) {
   if (r.unsupported) return t('runtimes.picker.unsupportedTrigger', { trigger: t(`create.triggerTypes.${props.triggerType ?? 'http'}`) })
-  return r.description || ''
+  if (r.retired) {
+    return runtimeState(r) === 'orphaned'
+      ? t('runtimes.picker.orphaned')
+      : t('runtimes.picker.sunset', { date: day(r.lifecycle?.sunset_at) })
+  }
+  const lifecycle = runtimeState(r) === 'deprecated' ? runtimeBadgeTitle(r, t, runtimeLabel) : ''
+  return [r.description || '', lifecycle].filter(Boolean).join('\n')
+}
+
+/** The lifecycle mark of a runtime tile (null when active). */
+function runtimeMark(r) {
+  const state = runtimeState(r)
+  if (state === 'active') return null
+  return { state, label: t(`runtimes.lifecycle.states.${state}`), classes: lifecycleClasses(state) }
+}
+
+/** The lifecycle mark of a version: deprecated, or ended (edit shows the project's own one). */
+function versionMark(v) {
+  const state = versionState(v)
+  if (state === 'active') return null
+  return { state, label: t(`runtimes.lifecycle.versionStates.${state}`), classes: lifecycleClasses(state) }
 }
 </script>
 
@@ -69,6 +93,12 @@ function title(r) {
         >{{ t('wasm.picker.badge') }}</span>
         <RuntimeIcon :runtime="r.id" :size="28" />
         <span class="runtime-name font-mono text-xs truncate max-w-full">{{ r.name ?? runtimeLabel(r.id) }}</span>
+        <span
+          v-if="runtimeMark(r)"
+          class="runtime-lifecycle px-1 rounded-sm text-[9px] leading-tight border"
+          :class="runtimeMark(r).classes"
+          :data-lifecycle="runtimeMark(r).state"
+        >{{ runtimeMark(r).label }}</span>
       </button>
     </div>
 
@@ -83,14 +113,21 @@ function title(r) {
           class="px-3 py-1.5 rounded-md border text-sm font-mono transition-all"
           :class="selectedVersion === v.version
             ? 'text-white border-transparent'
-            : 'bg-gray-800 border-gray-700 text-gray-400' + (readonly ? ' opacity-50' : ' hover:border-gray-500')"
+            : 'bg-gray-800 border-gray-700 text-gray-400' + (readonly || v.ended ? ' opacity-50' : ' hover:border-gray-500')"
           :style="selectedVersion === v.version ? 'background-color:rgb(var(--brand-600));border-color:rgb(var(--brand-600))' : ''"
-          :disabled="readonly"
-          @click="!readonly && $emit('update:version', v.version)"
+          :disabled="readonly || v.ended"
+          :title="versionTitle(v, t)"
+          @click="!readonly && !v.ended && $emit('update:version', v.version)"
         >
-          {{ v.version }}
+          <span :class="v.ended && 'line-through'">{{ v.version }}</span>
           <span v-if="v.is_default" class="ml-1 text-[10px] opacity-60">{{ t('create.fields.defaultBadge') }}</span>
           <span v-if="v.gpu_required" class="ml-1 text-[10px] text-brand-400">GPU</span>
+          <span
+            v-if="versionMark(v)"
+            class="version-lifecycle ml-1 px-1 rounded-sm border text-[10px] font-sans"
+            :class="versionMark(v).classes"
+            :data-lifecycle="versionMark(v).state"
+          >{{ versionMark(v).label }}</span>
         </button>
       </div>
     </div>

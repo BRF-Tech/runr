@@ -3,7 +3,7 @@ import { ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Play } from 'lucide-vue-next'
 import { sandboxesApi } from '../api/sandboxes'
-import { RUN_LANGUAGES, apiError, defaultLanguage, formatBytes } from '../utils'
+import { RUN_LANGUAGES, apiError, defaultLanguage, extraRunLanguage, formatBytes } from '../utils'
 
 const props = defineProps({
   sandbox:  { type: Object, required: true },
@@ -50,7 +50,7 @@ function onKeydown(e) {
           <label class="label">{{ t('sandboxes.run.language') }}</label>
           <select v-model="language" class="input" name="language">
             <option v-for="l in RUN_LANGUAGES" :key="l" :value="l">{{ l }}</option>
-            <option v-if="sandbox.runtime && !RUN_LANGUAGES.includes(sandbox.runtime)" :value="sandbox.runtime">{{ sandbox.runtime }}</option>
+            <option v-if="extraRunLanguage(sandbox)" :value="sandbox.runtime">{{ sandbox.runtime }}</option>
           </select>
         </div>
         <button type="button" class="btn-primary flex items-center gap-1.5 ml-auto" :disabled="running || !code.trim()" data-action="run-code" @click="run">

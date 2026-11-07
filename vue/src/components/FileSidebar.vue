@@ -20,10 +20,10 @@ const uploadError = ref('')
 let errorTimer = null
 
 const ALLOWED_EXTS = new Set([
-  'py', 'js', 'ts', 'go', 'php', 'rb', 'sh',
+  'py', 'js', 'mjs', 'ts', 'tsx', 'go', 'php', 'rb', 'sh', 'java', 'cs',
   'json', 'yaml', 'yml', 'html', 'css', 'md', 'txt',
-  'toml', 'env', 'cfg', 'ini', 'xml', 'sql',
-  'dockerfile', 'makefile', 'gitignore',
+  'toml', 'env', 'cfg', 'ini', 'xml', 'sql', 'csproj', 'lock',
+  'dockerfile', 'makefile', 'gitignore', 'gemfile',
 ])
 
 const MAX_SIZE = 512 * 1024

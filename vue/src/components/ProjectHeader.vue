@@ -9,6 +9,7 @@ import McpServerBadge from '@/components/McpServerBadge.vue'
 import RuntimeIcon from '@/components/RuntimeIcon.vue'
 import RuntimePatchBadge from '@/components/project/RuntimePatchBadge.vue'
 import { runtimeLabel } from '@/utils/runtimes'
+import { lifecycleClasses, projectEndedBy, projectLifecycleNotice, projectRuntimeEnded } from '@/utils/runtimeLifecycle'
 import { isLegacyServiceType } from '@/utils/projectHelpers'
 import { isGlobalProject } from '@/utils/globalProjects'
 import { usePermissionsStore } from '@/stores/permissions'
@@ -30,7 +31,15 @@ const props = defineProps({
   isRuntimeEol: { type: Boolean, default: false },
 })
 
-const isEol = computed(() => props.project.runtime_eol && new Date(props.project.runtime_eol) <= new Date())
+// The version ends at its end of life or its sunset, the earlier (runtime_eol; docs/runtimes.md#lifecycle)
+const isEol = computed(() => projectRuntimeEnded(props.project))
+const endedLabel = computed(() => projectEndedBy(props.project) === 'sunset' ? t('runtimes.lifecycle.versionStates.sunset') : t('projects.eol'))
+// Deprecated, or the runtime left its source: a badge (the banner below the header says more)
+const lifecycleMark = computed(() => {
+  const state = props.project.runtime_lifecycle?.state
+  if (state !== 'deprecated' && state !== 'orphaned') return null
+  return { state, label: t(`runtimes.lifecycle.states.${state}`), classes: lifecycleClasses(state), title: projectLifecycleNotice(props.project, t, runtimeLabel)?.title ?? '' }
+})
 const eolWeeksLeft = computed(() => {
   if (!props.project.runtime_eol || isEol.value) return null
   const diffDays = (new Date(props.project.runtime_eol) - new Date()) / (1000 * 60 * 60 * 24)
@@ -188,8 +197,9 @@ onBeforeUnmount(() => rowResize?.disconnect())
                 <component :is="deployStrategy === 'canary' ? Bird : Columns2" class="w-3 h-3" />{{ t(`deployStrategy.names.${deployStrategy}`) }}
               </span>
               <span v-if="isStopped" class="inline-flex items-center gap-1 text-xs font-medium px-2.5 py-1 rounded-md bg-red-900/40 border border-red-800/50 text-red-400" data-test="project-stopped-badge"><OctagonPause class="w-3 h-3" />{{ t('projectLifecycle.stoppedBadge') }}</span>
-              <span v-if="isEol" class="inline-flex items-center text-xs font-medium px-2.5 py-1 rounded-md bg-red-900/40 border border-red-800/50 text-red-400">{{ t('projects.eol') }}</span>
+              <span v-if="isEol" class="inline-flex items-center text-xs font-medium px-2.5 py-1 rounded-md bg-red-900/40 border border-red-800/50 text-red-400" data-test="project-runtime-ended">{{ endedLabel }}</span>
               <span v-else-if="isSunsetting" class="inline-flex items-center text-xs font-medium px-2.5 py-1 rounded-md bg-yellow-900/40 border border-yellow-800/50 text-yellow-400" :title="`${t('projects.sunsetting')}: ${project.runtime_eol}`">{{ t('projects.eolWeeks', { weeks: eolWeeksLeft }) }}</span>
+              <span v-if="!isEol && lifecycleMark" class="inline-flex items-center text-xs font-medium px-2.5 py-1 rounded-md border" :class="lifecycleMark.classes" :title="lifecycleMark.title" :data-lifecycle="lifecycleMark.state" data-test="project-runtime-lifecycle">{{ lifecycleMark.label }}</span>
               <RuntimePatchBadge :state="project.runtime_patch" @open="$emit('patches')" />
             </div>
           </div>
@@ -204,7 +214,7 @@ onBeforeUnmount(() => rowResize?.disconnect())
             v-if="!isLegacy && canDeploy"
             class="btn-primary flex items-center gap-1.5"
             :disabled="deploying || !hasVersions || isRuntimeEol || isStopped"
-            :title="isStopped ? t('projectLifecycle.deployBlocked') : isRuntimeEol ? t('project.eolBlocked') : undefined"
+            :title="isStopped ? t('projectLifecycle.deployBlocked') : isRuntimeEol ? t(projectEndedBy(project) === 'sunset' ? 'project.sunsetBlocked' : 'project.eolBlocked') : undefined"
             @click="$emit('deploy')"
           ><Play class="w-3.5 h-3.5" />{{ t('project.deploy') }}</button>
         </div>

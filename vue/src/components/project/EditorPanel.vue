@@ -5,6 +5,7 @@ import MonacoEditor from '@/components/MonacoEditor.vue'
 import FileSidebar from '@/components/FileSidebar.vue'
 import CaasConfigViewer from '@/components/CaasConfigViewer.vue'
 import { runtimeHandlerPattern } from '@/utils/runtimes'
+import { projectEndedBy } from '@/utils/runtimeLifecycle'
 
 const { t } = useI18n()
 
@@ -27,6 +28,8 @@ const props = defineProps({
 
 // Runtimes with a handler check (built-ins, manifests with handler.pattern) name the handler
 // function in the hint; the others (exec / http runtimes) only have an entry file.
+// A version past its end of life or sunset (docs/runtimes.md#lifecycle) is read-only
+const endedMessage = computed(() => t(projectEndedBy(props.project) === 'sunset' ? 'project.sunsetBlocked' : 'project.eolBlocked'))
 const hasHandlerCheck = computed(() => !!runtimeHandlerPattern(props.project?.runtime, props.handlerName))
 
 const emit = defineEmits([
@@ -96,7 +99,7 @@ function onCodeUpdate(val) {
           <div
             v-if="isRuntimeEol"
             class="text-xs text-red-400 bg-red-950/30 px-3 py-2 border-b border-red-800/50 shrink-0"
-          >{{ t('project.eolBlocked') }}</div>
+          >{{ endedMessage }}</div>
           <div
             v-if="mainFile"
             class="text-[10px] text-gray-400 px-3 py-1.5 border-b border-gray-800 shrink-0"

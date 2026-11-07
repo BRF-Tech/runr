@@ -84,6 +84,19 @@ export default {
       feedInvalid:  'The runtime patch feed was refused ({status}): {error}',
       patchesPage:  'Patches',
       dismiss:      'Dismiss',
+      // The console's own certificate (platform administrators; kind console_tls)
+      consoleTls: {
+        failed:             'The console certificate cannot be issued: {detail}.',
+        pending:            'The console certificate has not been issued for {minutes} minutes: {detail}.',
+        renewal:            'The console certificate cannot be renewed: {detail}. The current one is valid until {date}.',
+        defaultCertificate: "The console serves the ingress controller's default certificate.",
+        issuerNotFound:     'ClusterIssuer {issuer} was not found',
+        certificateMissing: 'cert-manager has not created the Certificate {secret}',
+        noMessage:          'cert-manager gives no reason',
+        fixIssuer:          'Create the ClusterIssuer {issuer}, set ingress.tls.clusterIssuer to an existing one, or use ingress.tls.mode custom or none.',
+        fixOther:           'Set ingress.tls.clusterIssuer to another ClusterIssuer, or use ingress.tls.mode custom or none.',
+        check:              'Check:',
+      },
     },
 
     admin: {

@@ -4,6 +4,7 @@ import { runtimesApi } from '@/api/runtimes'
 import { useRuntimesStore, normalizeRuntime } from '@/stores/runtimes'
 import { useConfirm } from '@/composables/useConfirm'
 import { useToast } from '@/composables/useToast'
+import { runtimeRetired } from '@/utils/runtimeLifecycle'
 
 /** First error message of an API failure (Laravel message / validation errors). */
 export function apiErrorMessage(e, fallback) {
@@ -26,6 +27,14 @@ export function apiProblems(e) {
     (Array.isArray(msgs) ? msgs : [msgs]).map(message => ({ path: field === 'manifest' ? '' : field, message })))
   if (list.length) return list
   return data.message ? [{ path: '', message: data.message }] : []
+}
+
+/**
+ * A runtime a runtime source manages (docs/runtimes.md#runtime-sources): synced from it, its
+ * manifest changes there. Built-ins come from RunR's catalog and keep their own presentation.
+ */
+export function isSourceManaged(runtime) {
+  return !!runtime?.managed && runtime.source !== 'builtin'
 }
 
 /** Versions RunR builds itself (dockerfile / git) — they have per-region image builds. */
@@ -61,8 +70,10 @@ export function useRuntimesManager() {
 
   /** Custom runtimes are changed by their users (runtimes.use_custom), the rest by runtime managers. */
   function canEdit(r)   { return canManage.value || (r.source === 'custom' && canUseCustom.value) }
-  function canDelete(r) { return r.source !== 'builtin' && canEdit(r) }
-  function canTest(r)   { return canEdit(r) && r.is_enabled }
+  // A runtime synced from a source leaves with the source (or its manifest there), not from here
+  function canDelete(r) { return r.source !== 'builtin' && !isSourceManaged(r) && canEdit(r) }
+  // New projects can not use a runtime that left its source or was sunset (docs/runtimes.md#lifecycle)
+  function canTest(r)   { return canEdit(r) && r.is_enabled && !runtimeRetired(r) }
 
   function replace(runtime) {
     const r = normalizeRuntime(runtime)
@@ -121,6 +132,6 @@ export function useRuntimesManager() {
 
   return {
     items, loading, error, canManage, canUseCustom,
-    load, canEdit, canDelete, canTest, toggleEnabled, remove, onSaved,
+    load, canEdit, canDelete, canTest, toggleEnabled, remove, onSaved, replace,
   }
 }

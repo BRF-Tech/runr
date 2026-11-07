@@ -21,6 +21,10 @@ const settingsStore = useSettingsStore()
 
 const isEdit    = computed(() => !!props.runtime)
 const isBuiltin = computed(() => props.runtime?.source === 'builtin')
+// Synced from a runtime source (docs/runtimes.md#runtime-sources): its manifest changes in the source
+const isManaged = computed(() => !isBuiltin.value && !!props.runtime?.managed)
+// Built-ins and synced runtimes: only region availability and status change here
+const manifestLocked = computed(() => isBuiltin.value || isManaged.value)
 
 /** Skeleton of a new runtime (exec mode, the smallest working manifest). */
 const STARTER_MANIFEST = `apiVersion: runr.sh/v1
@@ -88,7 +92,7 @@ onMounted(async () => {
       existingNames.value = Array.isArray(d.files) ? d.files : []
     }
     activeFile.value = files.value[0]?.name ?? null
-    if (!isBuiltin.value) scheduleValidate()
+    if (!manifestLocked.value) scheduleValidate()
   } catch (e) {
     saveError.value = apiErrorMessage(e, t('common.error'))
   } finally {
@@ -126,7 +130,7 @@ async function validate() {
   }
 }
 
-watch(manifestText, () => { if (!isBuiltin.value && !loadingDetail.value) scheduleValidate() })
+watch(manifestText, () => { if (!manifestLocked.value && !loadingDetail.value) scheduleValidate() })
 
 // ── Files (Docker build context of dockerfile versions) ──────────────────────
 const MAX_FILES_BYTES = 900 * 1024
@@ -146,7 +150,7 @@ const unresolvedFiles = computed(() => {
 })
 
 // Adding or removing a file can resolve (or break) a dockerfile version reference
-watch(() => visibleFileNames.value.join(','), () => { if (!isBuiltin.value && !loadingDetail.value) scheduleValidate() })
+watch(() => visibleFileNames.value.join(','), () => { if (!manifestLocked.value && !loadingDetail.value) scheduleValidate() })
 
 function startReplacingFiles() {
   if (filesTouched.value) return
@@ -224,7 +228,7 @@ function toggleRegion(id) {
 const canSave = computed(() => {
   if (saving.value || loadingDetail.value) return false
   if (regionsMode.value === 'selected' && !selectedRegions.value.length) return false
-  if (isBuiltin.value) return true
+  if (manifestLocked.value) return true
   return !!manifestText.value.trim() && filesBytes.value <= MAX_FILES_BYTES
 })
 
@@ -234,7 +238,7 @@ async function save() {
   const regionsPayload = regionsMode.value === 'all' ? null : [...selectedRegions.value]
   try {
     let res
-    if (isBuiltin.value) {
+    if (manifestLocked.value) {
       res = await runtimesApi.update(props.runtime.id, { regions: regionsPayload, is_enabled: enabled.value })
     } else {
       const payload = { manifest: manifestText.value, regions: regionsPayload }
@@ -280,7 +284,7 @@ function fmtBytes(n) { return n >= 1024 ? `${(n / 1024).toFixed(1)} KB` : `${n} 
         <div class="flex items-start justify-between gap-4 mb-5">
           <div>
             <h2 class="text-lg font-semibold text-gray-100">{{ title }}</h2>
-            <p class="text-xs text-gray-400 mt-0.5">{{ isBuiltin ? t('runtimes.editor.builtinReadonly') : (isEdit ? t('runtimes.editor.editHint') : scopeHint) }}</p>
+            <p class="text-xs text-gray-400 mt-0.5">{{ isBuiltin ? t('runtimes.editor.builtinReadonly') : isManaged ? t('runtimes.editor.managedReadonly', { source: runtime.source_name || runtime.source_id }) : (isEdit ? t('runtimes.editor.editHint') : scopeHint) }}</p>
           </div>
           <button class="text-gray-400 hover:text-gray-100 transition-colors" @click="emit('close')">{{ t('common.close') }}</button>
         </div>
@@ -292,17 +296,17 @@ function fmtBytes(n) { return n >= 1024 ? `${(n / 1024).toFixed(1)} KB` : `${n} 
           <div class="lg:col-span-3 space-y-3">
             <div class="flex items-center justify-between">
               <p class="section-title mb-0! border-0! pb-0!"><TermText path="runtimes.editor.manifest" /></p>
-              <label v-if="!isBuiltin" class="btn-secondary text-xs flex items-center gap-1.5 cursor-pointer">
+              <label v-if="!manifestLocked" class="btn-secondary text-xs flex items-center gap-1.5 cursor-pointer">
                 <Upload class="w-3.5 h-3.5" />{{ t('runtimes.editor.uploadManifest') }}
                 <input type="file" accept=".yaml,.yml,.json" class="hidden" @change="uploadManifest" />
               </label>
             </div>
             <div class="rounded-lg border border-gray-800 overflow-hidden">
-              <MonacoEditor v-model="manifestText" filename="runtime.yaml" language="yaml" height="420px" :readonly="isBuiltin" />
+              <MonacoEditor v-model="manifestText" filename="runtime.yaml" language="yaml" height="420px" :readonly="manifestLocked" />
             </div>
 
             <!-- Validation -->
-            <div v-if="!isBuiltin" class="rounded-lg border px-3 py-2.5 text-xs"
+            <div v-if="!manifestLocked" class="rounded-lg border px-3 py-2.5 text-xs"
               :class="problems.length ? 'border-red-800/60 bg-red-950/20' : validated ? 'border-emerald-800/50 bg-emerald-950/20' : 'border-gray-800 bg-gray-900/40'">
               <div v-if="validating" class="flex items-center gap-2 text-gray-400">
                 <Loader2 class="w-3.5 h-3.5 animate-spin" />{{ t('runtimes.editor.validating') }}
@@ -349,7 +353,7 @@ function fmtBytes(n) { return n >= 1024 ? `${(n / 1024).toFixed(1)} KB` : `${n} 
             </section>
 
             <!-- source "upload": a version whose image is an uploaded image (docs/images.md) -->
-            <RuntimeUploadVersion v-if="!isBuiltin" @add="addUploadVersion" />
+            <RuntimeUploadVersion v-if="!manifestLocked" @add="addUploadVersion" />
 
             <section v-if="isEdit">
               <p class="section-title">{{ t('runtimes.editor.status') }}</p>
@@ -363,7 +367,7 @@ function fmtBytes(n) { return n >= 1024 ? `${(n / 1024).toFixed(1)} KB` : `${n} 
               <p class="text-[11px] text-gray-400 mt-1.5">{{ t('runtimes.editor.statusHint') }}</p>
             </section>
 
-            <section v-if="!isBuiltin">
+            <section v-if="!manifestLocked">
               <div class="flex items-center justify-between section-title">
                 <span>{{ t('runtimes.editor.files') }}</span>
                 <span class="font-mono normal-case text-[10px]" :class="filesBytes > MAX_FILES_BYTES ? 'text-red-400' : 'text-gray-500'">{{ fmtBytes(filesBytes) }}</span>

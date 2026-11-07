@@ -7,9 +7,10 @@ import { buildNavigation, findTabLink, isLinkActive, linkLocation } from './menu
 
 /**
  * What the core links' visibleIf(ctx) reads: the user's permissions, whether the user is a
- * platform administrator, whether the console works inside an organization of the multi-tenant
- * edition and the runtime abilities (the catalog's answer once loaded; until then the
- * permissions).
+ * platform administrator, whether the user operates the installation (a platform administrator
+ * or, single-tenant, a holder of platform.manage), whether the console works inside an
+ * organization of the multi-tenant edition and the runtime abilities (the catalog's answer once
+ * loaded; until then the permissions).
  */
 export function navigationContext({ permissions, runtimes, registry = moduleRegistry }) {
   const can = (permission) => permissions.can(permission)
@@ -18,7 +19,7 @@ export function navigationContext({ permissions, runtimes, registry = moduleRegi
   const canUseRuntimes = runtimes?.loaded
     ? !!runtimes.canUseCustom
     : can('runtimes.manage') || can('runtimes.use_custom')
-  return { can, canAnywhere, platformAdmin: !!permissions.platformAdmin, tenantContext, canUseRuntimes }
+  return { can, canAnywhere, platformAdmin: !!permissions.platformAdmin, operatesPlatform: !!permissions.operatesPlatform, tenantContext, canUseRuntimes }
 }
 
 /** The navigation tree of the signed-in user, recomputed when permissions or modules change. */

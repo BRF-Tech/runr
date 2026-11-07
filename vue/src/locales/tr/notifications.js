@@ -46,6 +46,7 @@ export default {
     runtimePatchMigrationFailed: '{tag} yaması {project} projesine uygulanamadı',
     runtimePatchPinDropped: '{project} projesinin sabitlendiği runtime yaması artık yok',
     runtimeEol:           '{runtime} {date} tarihinde kullanım ömrünün sonuna geliyor',
+    runtimeSunset:        '{runtime} {date} tarihinde sonlandırılıyor',
     promotionPending:     '{project}: v{version}, {target} ortamına geçmek için onayınızı bekliyor',
     promotionApproved:    '{project}: v{version} sürümünün {target} ortamına yükseltilmesi onaylandı',
     promotionRejected:    '{project}: v{version} sürümünün {target} ortamına yükseltilmesi reddedildi',

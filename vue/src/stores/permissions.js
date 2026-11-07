@@ -2,12 +2,18 @@ import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 import { rbacApi } from '@/api/rbac'
 
+/** The installation itself in the single-tenant edition (docs/permissions.md#single-tenant-installs-platformmanage) */
+export const PLATFORM_MANAGE = 'platform.manage'
+
 /**
  * Effective permissions of the signed-in user in the current organization (GET /auth/permissions).
  * The API enforces every permission; the UI only hides or disables what the user cannot do.
  *
  *   can('projects.deploy', projectId)  — organization-wide, or through project access
  *   canAnywhere('projects.view')       — organization-wide or on at least one project
+ *   operatesPlatform                   — the installation itself (Patches page, platform banners):
+ *                                        a platform administrator (users.is_admin) or, in the
+ *                                        single-tenant edition, a holder of platform.manage
  */
 export const usePermissionsStore = defineStore('permissions', () => {
   const loaded        = ref(false)
@@ -24,6 +30,10 @@ export const usePermissionsStore = defineStore('permissions', () => {
   let generation = 0    // answers of an earlier generation (before a reset / a newer load) are dropped
 
   const orgSet = computed(() => new Set(permissions.value))
+  // The single-tenant edition has no platform administrators: platform.manage (the Owner's) stands
+  // in for them; a multi-tenant install has no such permission (the API's Rbac::operatesPlatform())
+  const operatesPlatform = computed(() =>
+    platformAdmin.value || (edition.value === 'single' && orgSet.value.has(PLATFORM_MANAGE)))
 
   function can(permission, projectId = null) {
     if (!loaded.value) return true // until loaded: show, the API decides
@@ -91,7 +101,7 @@ export const usePermissionsStore = defineStore('permissions', () => {
   }
 
   return {
-    loaded, platformAdmin, edition, role, roles, permissions, projects, tokenScoped,
+    loaded, platformAdmin, edition, role, roles, permissions, projects, tokenScoped, operatesPlatform,
     can, canAnywhere, load, reset, apply,
   }
 })

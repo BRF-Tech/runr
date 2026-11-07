@@ -5,6 +5,7 @@ import { Plus, Trash2, Flame } from 'lucide-vue-next'
 import { useConfirm } from '@/composables/useConfirm'
 import { useToast } from '@/composables/useToast'
 import { useRuntimesStore } from '@/stores/runtimes'
+import { pickableVersions } from '@/utils/runtimeLifecycle'
 import { sandboxAdminApi } from '../../api/sandboxes'
 import { apiError } from '../../utils'
 import TermText from '@/components/TermText.vue'
@@ -33,8 +34,8 @@ const manageableRegions = computed(() => props.regions.filter(r => r.can_manage 
 
 const runtimes = computed(() => runtimesStore.runtimes
   .filter(r => !Array.isArray(r.regions) || !form.region || r.regions.includes(form.region)))
-const versions = computed(() => (runtimes.value.find(r => r.id === form.runtime)?.versions ?? [])
-  .filter(v => !(v.eol_at && new Date(v.eol_at) <= new Date())))
+// Versions past their end of life or sunset are not offered (docs/runtimes.md#lifecycle)
+const versions = computed(() => pickableVersions(runtimes.value.find(r => r.id === form.runtime)?.versions))
 
 watch(manageableRegions, (list) => {
   if (!form.region && list.length) form.region = list[0].region.id

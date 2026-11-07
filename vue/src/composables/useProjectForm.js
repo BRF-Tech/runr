@@ -6,6 +6,7 @@ import { wasmRuntimeAvailableIn, isWasmRuntime } from '@/utils/wasm'
 import { gpuPayload } from '@/utils/ai'
 import { scaleSchedulePayload } from '@/utils/warmSchedule'
 import { globalCreateFields } from '@/utils/globalProjects'
+import { pickableVersions, runtimeRetired, versionEnded } from '@/utils/runtimeLifecycle'
 
 export function parseEnvVars(raw) {
   if (!raw?.trim()) return undefined
@@ -146,10 +147,13 @@ export function defaultRuntimeId(list) {
 /**
  * Runtime picker data from the runtime catalog (GET /runtimes, stores/runtimes.js):
  *  - runtimes:           enabled runtimes available in the form's region; `unsupported` marks the
- *                        ones that do not support the form's trigger type
- *  - selectableRuntimes: runtimes without the unsupported ones
- *  - runtimeVersions:    versions of form.runtime that are not past their EOL
- * includeCurrent keeps form.runtime in the list even when it is filtered out (edit: read-only pick).
+ *                        ones that do not support the form's trigger type, `retired` the ones new
+ *                        projects can not pick (sunset, or orphaned: they left their source)
+ *  - selectableRuntimes: runtimes without the unsupported and retired ones
+ *  - runtimeVersions:    versions of form.runtime that have not ended — past their end of life or
+ *                        sunset (ends_at, docs/runtimes.md#lifecycle); deprecated ones stay
+ * includeCurrent keeps form.runtime in the list even when it is filtered out, and form's version
+ * even when it ended (`ended`: edit, a read-only pick).
  */
 export function useRuntimeData(form, { includeCurrent = false } = {}) {
   const settingsStore = useSettingsStore()
@@ -176,14 +180,20 @@ export function useRuntimeData(form, { includeCurrent = false } = {}) {
       const current = runtimesStore.byId(form.runtime)
       list.push(current ?? { id: form.runtime, name: form.runtime, versions: [], triggers: null })
     }
-    return list.map(r => ({ ...r, unsupported: !runtimeSupportsTrigger(r, trigger) }))
+    return list.map(r => ({ ...r, unsupported: !runtimeSupportsTrigger(r, trigger), retired: runtimeRetired(r) }))
   })
 
-  const selectableRuntimes = computed(() => runtimes.value.filter(r => !r.unsupported))
+  const selectableRuntimes = computed(() => runtimes.value.filter(r => !r.unsupported && !r.retired))
 
   const runtimeVersions = computed(() => {
     const entry = runtimes.value.find(r => r.id === form.runtime) ?? runtimesStore.byId(form.runtime)
-    return (entry?.versions ?? []).filter(v => !(v.eol_at && new Date(v.eol_at) <= new Date()))
+    const versions = entry?.versions ?? []
+    const now = new Date()
+    const offered = pickableVersions(versions, now)
+    if (!includeCurrent || !form.runtime_version || offered.some(v => v.version === form.runtime_version)) return offered
+    // Edit: the project's own version stays visible (marked) after it ended
+    const current = versions.find(v => v.version === form.runtime_version)
+    return current ? [...offered, { ...current, ended: versionEnded(current, now) }] : offered
   })
 
   return { executorImages, runtimes, selectableRuntimes, runtimeVersions }

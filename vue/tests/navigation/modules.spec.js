@@ -87,7 +87,9 @@ function features(extra = {}) {
 const VIEWER = ['projects.view', 'git.pull', 'logs.view', 'metrics.view', 'traces.view', 'workflows.view', 'sandboxes.view', 'security.view', 'regions.view', 'images.view', 'models.view', 'bindings.view', 'mcp.servers.call', 'members.view', 'tokens.manage', 'tickets.view', 'tickets.create']
 const DEVELOPER = [...VIEWER, 'projects.create', 'projects.update', 'projects.deploy', 'code.edit', 'env.edit', 'sandboxes.create', 'sandboxes.exec', 'runtimes.use_custom', 'images.upload', 'models.deploy', 'bindings.manage', 'mcp.servers.manage']
 const BILLING = ['billing.view', 'billing.manage', 'billing.approve', 'projects.stop', 'regions.view', 'bindings.view', 'members.view', 'tokens.manage', 'tickets.view', 'tickets.create']
-const OWNER = [...new Set([...DEVELOPER, 'alerts.manage', 'status_page.manage', 'roles.manage', 'settings.manage', 'branding.manage', 'signup.manage', 'sso.manage', 'audit.view', 'git_providers.manage', 'runtimes.manage', 'billing.view', 'billing.manage'])]
+const OWNER = [...new Set([...DEVELOPER, 'alerts.manage', 'status_page.manage', 'roles.manage', 'settings.manage', 'branding.manage', 'signup.manage', 'sso.manage', 'audit.view', 'git_providers.manage', 'runtimes.manage', 'billing.view', 'billing.manage', 'platform.manage'])]
+// Admin: everything but platform.manage (the installation itself is the Owner's)
+const ADMIN = OWNER.filter(p => p !== 'platform.manage')
 
 describe('main menu with the module plugins', () => {
   beforeEach(() => {
@@ -107,7 +109,7 @@ describe('main menu with the module plugins', () => {
     expect(tree(nav)).toEqual({
       build: {
         workloads: ['sandboxes-page', 'sandboxes', 'models', 'gateways'],
-        runtimes: ['runtimes', 'images'],
+        runtimes: ['runtimes', 'patches', 'images'],
         automation: ['events', 'topics'],
       },
       data: { data: ['data'], integrations: ['git-providers', 'ai-agents'] },
@@ -120,6 +122,18 @@ describe('main menu with the module plugins', () => {
       },
     })
     expect(accountKeys(nav)).toEqual(['account', 'my-bills', 'support-tickets'])
+  })
+
+  it('single-tenant admin: the same pages but Patches (platform.manage is the Owner\'s)', () => {
+    const r = install()
+    signIn()
+    features()
+    grant(ADMIN)
+    expect(tree(navFor(r)).build.runtimes).toEqual(['runtimes', 'images'])
+
+    // a custom role with platform.manage, without runtimes.manage
+    grant(['projects.view', 'platform.manage'])
+    expect(tree(navFor(r, { runtimes: { loaded: true, canUseCustom: false } })).build.runtimes).toEqual(['patches'])
   })
 
   it('every module settings tab declares a known group (none falls into More)', () => {
@@ -208,6 +222,7 @@ describe('main menu with the module plugins', () => {
       features({ multi_tenant: true })
       grant([], { platformAdmin: true, edition: 'multi' })
       const nav = navFor(r)
+      expect(tree(nav).build.runtimes).toEqual(['runtimes', 'patches', 'images'])
       expect(tree(nav).admin).toEqual({
         members: ['users'],
         access: ['tokens', 'auth-providers', 'audit-log', 'secret-stores', 'bot-protection'],
@@ -223,8 +238,9 @@ describe('main menu with the module plugins', () => {
       useSettingsStore().update({ tenancy_enabled: true })
       signIn({ tenant: { id: 't1', slug: 'acme' } })
       features({ multi_tenant: true, tenant_branding: true })
-      grant(OWNER.filter(p => !['git_providers.manage', 'runtimes.manage', 'signup.manage'].includes(p)), { edition: 'multi' })
+      grant(OWNER.filter(p => !['git_providers.manage', 'runtimes.manage', 'signup.manage', 'platform.manage'].includes(p)), { edition: 'multi' })
       const nav = navFor(r)
+      expect(tree(nav).build.runtimes).not.toContain('patches')
       expect(tree(nav).admin).toEqual({
         members: ['users', 'roles', 'groups'],
         access: ['tokens', 'auth-providers', 'audit-log', 'bot-protection'],

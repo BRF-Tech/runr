@@ -86,6 +86,7 @@ export default {
     // POST deploy answered with a queued deploy: the version is built again first (docs/regions.md)
     deployRebuilding: "v{version} is built again for this region's registry (it was built before the region moved to another cluster); it deploys when the build is ready.",
     eolBlocked:     'This project uses an end-of-life runtime. Update the runtime version to save or deploy.',
+    sunsetBlocked:  'This project uses a runtime version that was sunset. Move it to another version or runtime to save or deploy.',
     selectVersion:  'Which version do you want to deploy?',
     deployConfig:   'Deploy Configuration',
     endpoint:       'Endpoint',

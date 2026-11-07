@@ -7,7 +7,7 @@ import { revealInScrollRow } from '@/utils/scrollRow'
 import {
   projectsSteps, createSteps, settingsSteps, settingsTabSteps,
   detailVersionsSteps, detailDeploymentsSteps, detailMetricsSteps,
-  editSteps, tokensSteps, usersSteps,
+  editSteps, tokensSteps, usersSteps, runtimesSteps, runtimeSourceSteps, patchesSteps,
   accountProfileSteps, accountSupportSteps,
 } from './tutorialSteps'
 
@@ -125,6 +125,18 @@ export function useTokensTutorial() {
 
 export function useUsersTutorial() {
   return createTutorial(usersSteps)
+}
+
+export function useRuntimesTutorial() {
+  return createTutorial(runtimesSteps)
+}
+
+export function usePatchesTutorial() {
+  return createTutorial(patchesSteps)
+}
+
+export function useRuntimeSourceTutorial() {
+  return createTutorial(runtimeSourceSteps)
 }
 
 export function useAccountProfileTutorial() {

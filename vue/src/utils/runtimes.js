@@ -5,6 +5,10 @@ import phpIcon from '@/assets/runtimes/php.svg'
 import dockerIcon from '@/assets/runtimes/docker.svg'
 import tensorflowIcon from '@/assets/runtimes/tensorflow.svg'
 import pytorchIcon from '@/assets/runtimes/pytorch.svg'
+import javaIcon from '@/assets/runtimes/java.svg'
+import dotnetIcon from '@/assets/runtimes/dotnet.svg'
+import rubyIcon from '@/assets/runtimes/ruby.svg'
+import bunIcon from '@/assets/runtimes/bun.svg'
 import { useRuntimesStore, BUILTIN_RUNTIME_NAMES } from '@/stores/runtimes'
 
 export const runtimeIcons = {
@@ -15,6 +19,10 @@ export const runtimeIcons = {
   docker: dockerIcon,
   tensorflow: tensorflowIcon,
   pytorch: pytorchIcon,
+  java: javaIcon,
+  dotnet: dotnetIcon,
+  ruby: rubyIcon,
+  bun: bunIcon,
 }
 
 export const runtimeLabels = BUILTIN_RUNTIME_NAMES
@@ -22,6 +30,7 @@ export const runtimeLabels = BUILTIN_RUNTIME_NAMES
 /** Handler file extension of the built-in runtimes (used until the catalog is loaded). */
 export const BUILTIN_EXTENSIONS = {
   python: 'py', nodejs: 'js', go: 'go', php: 'php', tensorflow: 'py', pytorch: 'py',
+  java: 'java', dotnet: 'cs', ruby: 'rb', bun: 'ts',
 }
 
 /** Handler checks of the built-in runtimes (used until the catalog is loaded). */
@@ -30,6 +39,10 @@ export const BUILTIN_HANDLER_PATTERNS = {
   nodejs: /(?:exports\.handler|module\.exports\.handler|function\s+handler|const\s+handler)/,
   go:     /func\s+Handler\s*\(/,
   php:    /function\s+handler\s*\(/,
+  java:   /\bhandler\s*\(/,
+  dotnet: /\bHandler\s*\(/,
+  ruby:   /def\s+(?:self\.)?handler\b/,
+  bun:    /(?:export\s+(?:default\s+)?(?:async\s+)?function\s*\*?\s*handler\b|export\s+(?:const|let|var)\s+handler\b|export\s*\{[^}]*\bhandler\b|exports\.handler\b)/,
 }
 
 function catalogEntry(runtime) {

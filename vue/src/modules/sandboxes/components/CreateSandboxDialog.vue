@@ -4,6 +4,7 @@ import { useI18n } from 'vue-i18n'
 import { Box, Plus, X, ChevronDown, ChevronRight } from 'lucide-vue-next'
 import { useToast } from '@/composables/useToast'
 import { useRuntimesStore } from '@/stores/runtimes'
+import { pickableVersions } from '@/utils/runtimeLifecycle'
 import { sandboxesApi, sandboxAdminApi } from '../api/sandboxes'
 import { apiError, apiErrorList, buildCreatePayload, shortId } from '../utils'
 import TermText from '@/components/TermText.vue'
@@ -59,8 +60,8 @@ const runtimes = computed(() => runtimesStore.runtimes
 
 const runtime = computed(() => runtimes.value.find(r => r.id === form.runtime) ?? null)
 
-const versions = computed(() => (runtime.value?.versions ?? [])
-  .filter(v => !(v.eol_at && new Date(v.eol_at) <= new Date())))
+// Versions past their end of life or sunset are not offered (docs/runtimes.md#lifecycle)
+const versions = computed(() => pickableVersions(runtime.value?.versions))
 
 // A runtime the catalog (or the region) does not offer falls back to the first one; the version
 // to the runtime's default (the API picks it too when version is left out)

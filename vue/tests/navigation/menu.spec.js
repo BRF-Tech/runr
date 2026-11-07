@@ -99,6 +99,17 @@ describe('navigation definition', () => {
     expect(none.account.map(link => link.key)).toEqual(['account'])
   })
 
+  // Build & Run → Patches: who operates the installation (platform administrators; single-tenant,
+  // the holders of platform.manage — permissions store operatesPlatform), never inside a tenant
+  it('shows Patches to who operates the installation, outside an organization of the multi-tenant edition', () => {
+    expect(tree(buildNavigation({ ctx: ctx({ operatesPlatform: true }) })).build.runtimes).toEqual(['runtimes', 'patches'])
+    expect(tree(buildNavigation({ ctx: ctx({ operatesPlatform: true, tenantContext: true }) })).build.runtimes).toEqual(['runtimes'])
+    // a platform administrator flag alone is not what decides (operatesPlatform carries it)
+    expect(tree(buildNavigation({ ctx: ctx({ platformAdmin: true }) })).build.runtimes).toEqual(['runtimes'])
+    const patches = CORE_LINKS.find(link => link.key === 'patches')
+    expect(patches.dataTour).toBe('settings-patches-tab')
+  })
+
   it('hands module visibleIf the context and hides an entry whose visibleIf throws', () => {
     const seen = []
     const tabs = [

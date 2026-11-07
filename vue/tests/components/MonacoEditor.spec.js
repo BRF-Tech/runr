@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import MonacoEditor from '@/components/MonacoEditor.vue'
 import { useRuntimesStore, normalizeRuntime } from '@/stores/runtimes'
-import { freshPinia, catalog } from '@/test-support/helpers'
+import { freshPinia, catalog, builtinCatalog } from '@/test-support/helpers'
 
 vi.mock('@/api/runtimes', () => ({ runtimesApi: { list: vi.fn() } }))
 vi.mock('@/api/settings', () => ({ settingsApi: { get: vi.fn() } }))
@@ -46,6 +46,28 @@ describe('MonacoEditor language', () => {
     expect(languageOf({ filename: 'run.sh' })).toBe('shell')
     expect(languageOf({ filename: 'main.q' })).toBe('plaintext')
     expect(languageOf({ filename: 'Dockerfile' })).toBe('dockerfile')
+  })
+
+  it('highlights Java, C#, Ruby and TypeScript files and their dependency files', () => {
+    // the manifests' languages once the catalog has the runtimes
+    useRuntimesStore().list = [catalog.q, ...Object.values(builtinCatalog)].map(normalizeRuntime)
+    expect(languageOf({ filename: 'Main.java', runtime: 'java' })).toBe('java')
+    expect(languageOf({ filename: 'Function.cs', runtime: 'dotnet' })).toBe('csharp')
+    expect(languageOf({ filename: 'main.rb', runtime: 'ruby' })).toBe('ruby')
+    expect(languageOf({ filename: 'main.ts', runtime: 'bun' })).toBe('typescript')
+    expect(languageOf({ filename: 'util.js', runtime: 'bun' })).toBe('typescript')   // Bun's manifest language
+    expect(languageOf({ filename: 'Function.csproj', runtime: 'dotnet' })).toBe('xml')
+    expect(languageOf({ filename: 'pom.xml', runtime: 'java' })).toBe('xml')
+    expect(languageOf({ filename: 'Gemfile', runtime: 'ruby' })).toBe('ruby')
+
+    // the extension map without a catalog entry
+    useRuntimesStore().list = []
+    expect(languageOf({ filename: 'Main.java' })).toBe('java')
+    expect(languageOf({ filename: 'Function.cs' })).toBe('csharp')
+    expect(languageOf({ filename: 'main.rb' })).toBe('ruby')
+    expect(languageOf({ filename: 'main.ts' })).toBe('typescript')
+    expect(languageOf({ filename: 'View.tsx' })).toBe('typescript')
+    expect(languageOf({ filename: 'lib.mjs' })).toBe('javascript')
   })
 
   it('lets an explicit language win', () => {

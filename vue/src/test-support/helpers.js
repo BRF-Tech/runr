@@ -71,6 +71,81 @@ export const catalog = {
   },
 }
 
+/**
+ * Catalog entries of the Java, .NET, Ruby and Bun runtimes as GET /runtimes serves their manifests
+ * (BRF-Tech/runr-runtimes runtimes/<id>/runtime.yaml), kept apart from `catalog` so specs that list
+ * every entry of it stay as they are.
+ */
+export const builtinCatalog = {
+  java: {
+    id: 'java', name: 'Java', icon: null, language: 'java', extensions: ['java'], source: 'builtin',
+    run_mode: 'http', compiled: true, triggers: ['http', 'schedule', 'queue'], sandbox: ['runc', 'gvisor', 'kata'], regions: null, is_enabled: true,
+    handler: { file: 'Main', function: 'handler', filename: 'Main.java', pattern: '\\b{handler}\\s*\\(' },
+    dependency_file: 'pom.xml', projects_count: 0,
+    versions: [
+      { version: '25.0', is_default: true, eol_at: null, gpu_required: false, image: 'ghcr.io/brf-tech/runr/exec-java:25.0', built: false },
+      { version: '21.0', is_default: false, eol_at: null, gpu_required: false, image: 'ghcr.io/brf-tech/runr/exec-java:21.0', built: false },
+    ],
+  },
+  dotnet: {
+    id: 'dotnet', name: '.NET (C#)', icon: null, language: 'csharp', extensions: ['cs'], source: 'builtin',
+    run_mode: 'http', compiled: true, triggers: ['http', 'schedule', 'queue'], sandbox: ['runc', 'gvisor', 'kata'], regions: null, is_enabled: true,
+    handler: { file: 'Function', function: 'Handler', filename: 'Function.cs', pattern: '\\b{handler}\\s*\\(' },
+    dependency_file: 'Function.csproj', projects_count: 0,
+    versions: [{ version: '10.0', is_default: true, eol_at: null, gpu_required: false, image: 'ghcr.io/brf-tech/runr/exec-dotnet:10.0', built: false }],
+  },
+  ruby: {
+    id: 'ruby', name: 'Ruby', icon: null, language: 'ruby', extensions: ['rb'], source: 'builtin',
+    run_mode: 'http', compiled: false, triggers: ['http', 'schedule', 'queue'], sandbox: ['runc', 'gvisor', 'kata'], regions: null, is_enabled: true,
+    handler: { file: 'main', function: 'handler', filename: 'main.rb', pattern: 'def\\s+(?:self\\.)?{handler}\\b' },
+    dependency_file: 'Gemfile', projects_count: 0,
+    versions: [
+      { version: '4.0', is_default: true, eol_at: null, gpu_required: false, image: 'ghcr.io/brf-tech/runr/exec-ruby:4.0', built: false },
+      { version: '3.4', is_default: false, eol_at: null, gpu_required: false, image: 'ghcr.io/brf-tech/runr/exec-ruby:3.4', built: false },
+      { version: '3.3', is_default: false, eol_at: null, gpu_required: false, image: 'ghcr.io/brf-tech/runr/exec-ruby:3.3', built: false },
+    ],
+  },
+  bun: {
+    id: 'bun', name: 'TypeScript (Bun)', icon: null, language: 'typescript', extensions: ['ts', 'tsx', 'js', 'mjs'], source: 'builtin',
+    run_mode: 'http', compiled: false, triggers: ['http', 'schedule', 'queue'], sandbox: ['runc', 'gvisor', 'kata'], regions: null, is_enabled: true,
+    handler: {
+      file: 'main', function: 'handler', filename: 'main.ts',
+      pattern: '(?:export\\s+(?:default\\s+)?(?:async\\s+)?function\\s*\\*?\\s*{handler}\\b|export\\s+(?:const|let|var)\\s+{handler}\\b|export\\s*\\{[^}]*\\b{handler}\\b|exports\\.{handler}\\b)',
+    },
+    dependency_file: 'package.json', projects_count: 0,
+    versions: [{ version: '1.4', is_default: true, eol_at: null, gpu_required: false, image: 'ghcr.io/brf-tech/runr/exec-bun:1.4', built: false }],
+  },
+}
+
+/** The starter files of those runtimes' manifests, with the default handler name. */
+export const builtinTemplates = {
+  java: `import java.util.Map;
+
+public class Main {
+    public static Object handler(Map<String, Object> event, Map<String, Object> context) {
+        return Map.of("statusCode", 200, "body", "Hello, World!");
+    }
+}`,
+  dotnet: `using System.Collections.Generic;
+using System.Text.Json.Nodes;
+
+public static class Function
+{
+    public static object Handler(JsonNode? input, IDictionary<string, object?> context)
+    {
+        return new { statusCode = 200, body = "Hello, World!" };
+    }
+}`,
+  ruby: `def handler(event, context)
+  { statusCode: 200, body: "Hello, World!" }
+end`,
+  bun: `type Context = { method: string; path: string; headers: Record<string, string> };
+
+export async function handler(event: any, context: Context) {
+  return { statusCode: 200, body: 'Hello, World!' };
+}`,
+}
+
 /** Regions of the settings payload: r1 ready, r2 ready, r3 without a cluster. */
 export const regions = [
   { id: 'r1', name: 'eu-1', is_active: true, is_synced: true, has_serving: true, has_redis: true, total_cpu_m: 4000, total_memory_mb: 8192 },

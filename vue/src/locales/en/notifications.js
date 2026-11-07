@@ -47,6 +47,7 @@ export default {
     runtimePatchMigrationFailed: 'Patch {tag} could not be applied to {project}',
     runtimePatchPinDropped: 'The pinned runtime patch of {project} is gone',
     runtimeEol:           '{runtime} reaches its end of life on {date}',
+    runtimeSunset:        '{runtime} is sunset on {date}',
     promotionPending:     '{project}: v{version} waits for your approval to go to {target}',
     promotionApproved:    '{project}: the promotion of v{version} to {target} was approved',
     promotionRejected:    '{project}: the promotion of v{version} to {target} was rejected',

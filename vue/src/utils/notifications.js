@@ -117,8 +117,13 @@ export function notificationTitle(n, t) {
   if (type === 'runtime_patch' && d.event === 'pin_dropped' && d.project_name) {
     return t('notifications.runtimePatchPinDropped', { project: d.project_name })
   }
-  if (type === 'runtime_eol' && d.eol_at) {
-    return t('notifications.runtimeEol', { runtime: `${d.runtime} ${d.version}`, date: d.eol_at })
+  // A version's end (docs/runtimes.md#lifecycle): its end of life or its sunset, the earlier
+  // (ends_at). Deprecation and orphan notices keep the title the API wrote.
+  if (type === 'runtime_eol' && d.event === 'sunset' && (d.ends_at || d.sunset_at)) {
+    return t('notifications.runtimeSunset', { runtime: `${d.runtime} ${d.version}`, date: d.ends_at || d.sunset_at })
+  }
+  if (type === 'runtime_eol' && (!d.event || d.event === 'eol') && (d.ends_at || d.eol_at)) {
+    return t('notifications.runtimeEol', { runtime: `${d.runtime} ${d.version}`, date: d.ends_at || d.eol_at })
   }
 
   // ── Promotions between environments (docs/environments.md#notifications) ──

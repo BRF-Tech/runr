@@ -66,11 +66,12 @@ export const CORE_LINKS = [
     visibleIf: (ctx) => !!ctx.canUseRuntimes,
   },
   {
-    // Runtime patches: the platform's patch feed, policy and deadlines (platform administrators,
-    // outside any organization)
+    // Runtime patches: the platform's patch feed, policy and deadlines — for who operates the
+    // installation (platform administrators outside any organization; single-tenant, the holders
+    // of platform.manage)
     key: 'patches', group: 'build', section: 'runtimes', tab: 'patches', order: 15,
-    labelKey: 'runtimePatches.admin.tab', descKey: 'nav.links.patchesDesc', icon: markRaw(ShieldAlert),
-    visibleIf: (ctx) => !!ctx.platformAdmin && !ctx.tenantContext,
+    labelKey: 'runtimePatches.admin.tab', descKey: 'nav.links.patchesDesc', icon: markRaw(ShieldAlert), dataTour: 'settings-patches-tab',
+    visibleIf: (ctx) => !!ctx.operatesPlatform && !ctx.tenantContext,
   },
   {
     key: 'users', group: 'admin', section: 'members', tab: 'users', order: 10,
@@ -147,8 +148,8 @@ const byOrder = (a, b) => a.order - b.order || a.index - b.index
  *   core   core links (CORE_LINKS)
  *   tabs   module settings tabs: { key, labelKey, component, group, section, descKey, icon, order, visibleIf }
  *   pages  module pages: { key, to, labelKey, group, section, descKey, icon, order, visibleIf }
- *   ctx    what visibleIf(ctx) of the core links reads: can(permission), tenantContext,
- *          canUseRuntimes (module entries read their own stores)
+ *   ctx    what visibleIf(ctx) of the core links reads: can(permission), operatesPlatform,
+ *          tenantContext, canUseRuntimes (module entries read their own stores)
  *
  * A visible module tab replaces the core link of the same tab (the tenancy module's Users).
  * Returns { groups: [{ key, labelKey, descKey, icon, sections: [{ key, labelKey, links }], links }],

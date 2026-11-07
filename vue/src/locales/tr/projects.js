@@ -85,6 +85,7 @@ export default {
     deploying:      'Dağıtım yapılıyor…',
     deployRebuilding: "v{version} bu bölgenin registry'si için yeniden build ediliyor (bölge başka bir kümeye taşınmadan önce build edilmişti); build hazır olunca dağıtılır.",
     eolBlocked:     'Bu proje kullanım ömrü dolmuş bir runtime kullanıyor. Kaydetmek veya dağıtım yapmak için runtime versiyonunu güncelleyin.',
+    sunsetBlocked:  'Bu proje sonlandırılmış bir runtime sürümü kullanıyor. Kaydetmek veya dağıtım yapmak için projeyi başka bir sürüme ya da runtime\'a taşıyın.',
     selectVersion:  'Hangi versiyonu dağıtmak istiyorsunuz?',
     deployConfig:   'Dağıtım Yapılandırması',
     endpoint:       'Endpoint',

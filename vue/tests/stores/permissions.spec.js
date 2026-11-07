@@ -51,6 +51,33 @@ describe('permissions store', () => {
     expect(perms.can('regions.view')).toBe(true)
   })
 
+  // The installation itself (Patches page, platform banners): platform administrators; the
+  // single-tenant edition has none, so there platform.manage (the Owner's) counts
+  it('operates the platform: a platform administrator, or single-tenant a holder of platform.manage', () => {
+    const perms = usePermissionsStore()
+    expect(perms.operatesPlatform).toBe(false)
+
+    perms.apply({ edition: 'single', platform_admin: false, role: 'owner', permissions: ['regions.manage', 'platform.manage'], projects: {} })
+    expect(perms.operatesPlatform).toBe(true)
+
+    // Admin: everything but platform.manage
+    perms.apply({ edition: 'single', platform_admin: false, role: 'admin', permissions: ['regions.manage', 'runtimes.manage'], projects: {} })
+    expect(perms.operatesPlatform).toBe(false)
+
+    // a scoped token without it (the API leaves it out of the token's permissions)
+    perms.apply({ edition: 'single', platform_admin: false, role: 'owner', permissions: ['projects.view'], projects: {}, token_scoped: true })
+    expect(perms.operatesPlatform).toBe(false)
+
+    // multi-tenant: only the platform administrators, whatever a tenant role holds
+    perms.apply({ edition: 'multi', platform_admin: false, role: 'owner', permissions: ['platform.manage'], projects: {} })
+    expect(perms.operatesPlatform).toBe(false)
+    perms.apply({ edition: 'multi', platform_admin: true, permissions: [], projects: {} })
+    expect(perms.operatesPlatform).toBe(true)
+
+    perms.reset()
+    expect(perms.operatesPlatform).toBe(false)
+  })
+
   it('ignores a response that is not a permissions payload', () => {
     const perms = usePermissionsStore()
     perms.apply({ data: [] })

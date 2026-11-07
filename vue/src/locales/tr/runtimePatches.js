@@ -84,6 +84,19 @@ export default {
       feedInvalid:  'Runtime yama akışı reddedildi ({status}): {error}',
       patchesPage:  'Yamalar',
       dismiss:      'Kapat',
+      // Konsolun kendi sertifikası (platform yöneticileri; tür console_tls)
+      consoleTls: {
+        failed:             'Konsol sertifikası verilemiyor: {detail}.',
+        pending:            'Konsol sertifikası {minutes} dakikadır verilemedi: {detail}.',
+        renewal:            'Konsol sertifikası yenilenemiyor: {detail}. Geçerli sertifika {date} tarihine kadar geçerli.',
+        defaultCertificate: 'Konsol ingress denetleyicisinin varsayılan sertifikasını sunuyor.',
+        issuerNotFound:     'ClusterIssuer {issuer} bulunamadı',
+        certificateMissing: 'cert-manager {secret} Certificate nesnesini oluşturmadı',
+        noMessage:          'cert-manager bir neden bildirmiyor',
+        fixIssuer:          'ClusterIssuer {issuer} oluşturun, ingress.tls.clusterIssuer değerini var olan bir ClusterIssuer yapın ya da ingress.tls.mode için custom veya none kullanın.',
+        fixOther:           'ingress.tls.clusterIssuer değerini başka bir ClusterIssuer yapın ya da ingress.tls.mode için custom veya none kullanın.',
+        check:              'Denetim:',
+      },
     },
 
     admin: {

@@ -4,6 +4,7 @@ import { isLegacyServiceType } from '@/utils/projectHelpers'
 import { usePermissionsStore } from '@/stores/permissions'
 import { runtimeExtension, runtimeHandlerPattern } from '@/utils/runtimes'
 import { useLatest } from '@/composables/useLatest'
+import { projectRuntimeEnded } from '@/utils/runtimeLifecycle'
 
 export function useProjectEditor({ project, versions, versionsLoaded, loadVersionsFn }) {
   const selectedVersion           = ref(null)
@@ -61,10 +62,9 @@ export function useProjectEditor({ project, versions, versionsLoaded, loadVersio
     selectedVersion.value.id === versions.value[0].id,
   )
 
-  const isRuntimeEol = computed(() => {
-    const eol = project.value?.runtime_eol
-    return eol && new Date(eol) <= new Date()
-  })
+  // The version ended — its end of life or its sunset (runtime_eol is the earlier date, and
+  // runtime_lifecycle says so too, docs/runtimes.md#lifecycle): saving and deploying are refused
+  const isRuntimeEol = computed(() => projectRuntimeEnded(project.value))
 
   const isEditable = computed(() => {
     if (project.value?.service_type === 'caas') return false

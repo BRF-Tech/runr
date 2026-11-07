@@ -1,8 +1,9 @@
 import client from './client'
 
 // Runtime patches (docs/runtimes.md#runtime-patches): the signed patch feed of RunR's runtime
-// images, a project's patch state (apply / pin / unpin) and the platform administrators'
-// Patches page (/admin/runtime-patches, users.is_admin only)
+// images, a project's patch state (apply / pin / unpin) and the Patches page of who operates the
+// installation (/admin/runtime-patches: platform administrators, users.is_admin; single-tenant,
+// the holders of platform.manage — stores/permissions operatesPlatform)
 export const runtimePatchesApi = {
   // The feed's patches, newest first per runtime version (filters: runtime, version)
   list:      (params = {})                 => client.get('/runtime-patches', { params }),
@@ -17,7 +18,7 @@ export const runtimePatchesApi = {
   pin:       (projectId, patchId, deploy = true) => client.put(`/projects/${projectId}/runtime-patches/pin`, { patch_id: patchId, deploy }),
   unpin:     (projectId)                   => client.delete(`/projects/${projectId}/runtime-patches/pin`),
 
-  // Platform administrators
+  // Platform administrators (single-tenant: holders of platform.manage)
   admin:          ()                       => client.get('/admin/runtime-patches'),
   check:          ()                       => client.post('/admin/runtime-patches/check'),
   setPolicy:      (autoMigrate)            => client.put('/admin/runtime-patches/policy', { auto_migrate: autoMigrate }),

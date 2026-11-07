@@ -19,9 +19,18 @@ const ZERO_DAY = {
   projects: [{ id: 'p1', name: 'shop' }, { id: 'p2', name: 'billing' }],
 }
 const ADVISORY = { kind: 'platform_advisory', level: 'security', running: '0.5.10', version: '0.5.11', reason: 'Fixes a session bug.', url: 'https://example.test/0.5.11' }
+// The console certificate as GET /runtime-patches/banners returns it to platform administrators (ConsoleCertificate::banner)
+const CONSOLE_TLS = {
+  kind: 'console_tls', level: 'critical', minutes: null,
+  mode: 'letsencrypt', issuer: 'letsencrypt-prod', secret: 'runr-tls', namespace: 'runr',
+  state: 'failed', reason: 'issuer_not_found',
+  message: 'Referenced "ClusterIssuer" not found: clusterissuer.cert-manager.io "letsencrypt-prod" not found',
+  since: '2026-11-06T22:47:36+00:00', renewal: false, default_certificate: true, not_after: null,
+  checked_at: '2026-11-07T08:00:00+00:00',
+}
 
-function mountBanner() {
-  const plugins = withPlugins()
+function mountBanner(locale = 'en') {
+  const plugins = withPlugins(locale)
   useAuthStore().token = 'token'
   return mount(RuntimePatchBanner, { global: { ...plugins.global, stubs: { RouterLink: RouterLinkStub } } })
 }
@@ -64,6 +73,69 @@ describe('RuntimePatchBanner', () => {
     await find(w, 'runtime-patch-banner-dismiss-platform_advisory').trigger('click')
     expect(find(w, 'runtime-patch-banner-platform_advisory').exists()).toBe(false)
     expect(JSON.parse(sessionStorage.getItem('runr.runtimePatchBanners.dismissed'))).toEqual(['platform_advisory:0.5.11'])
+  })
+
+  it('a console certificate without its ClusterIssuer: why, the default certificate, what to do; dismissible for the session', async () => {
+    vi.spyOn(runtimePatchesApi, 'banners').mockReturnValue(ok({ data: [CONSOLE_TLS] }))
+    const w = mountBanner()
+    await flush()
+
+    const banner = find(w, 'runtime-patch-banner-console_tls')
+    expect(banner.classes()).toContain('bg-red-900')
+    expect(find(w, 'console-tls-banner-text').text()).toBe(
+      "The console certificate cannot be issued: ClusterIssuer letsencrypt-prod was not found. The console serves the ingress controller's default certificate.",
+    )
+    expect(find(w, 'console-tls-banner-fix').text()).toBe(
+      'Create the ClusterIssuer letsencrypt-prod, set ingress.tls.clusterIssuer to an existing one, or use ingress.tls.mode custom or none.',
+    )
+    expect(banner.text()).toContain('kubectl get certificate,certificaterequest -n runr')
+
+    await find(w, 'runtime-patch-banner-dismiss-console_tls').trigger('click')
+    expect(find(w, 'runtime-patch-banner-console_tls').exists()).toBe(false)
+    expect(JSON.parse(sessionStorage.getItem('runr.runtimePatchBanners.dismissed'))).toEqual(['console_tls:failed:issuer_not_found:letsencrypt-prod'])
+  })
+
+  it('the console certificate warning in Turkish', async () => {
+    vi.spyOn(runtimePatchesApi, 'banners').mockReturnValue(ok({ data: [CONSOLE_TLS] }))
+    const w = mountBanner('tr')
+    await flush()
+
+    expect(find(w, 'console-tls-banner-text').text()).toBe(
+      'Konsol sertifikası verilemiyor: ClusterIssuer letsencrypt-prod bulunamadı. Konsol ingress denetleyicisinin varsayılan sertifikasını sunuyor.',
+    )
+    expect(find(w, 'console-tls-banner-fix').text()).toBe(
+      'ClusterIssuer letsencrypt-prod oluşturun, ingress.tls.clusterIssuer değerini var olan bir ClusterIssuer yapın ya da ingress.tls.mode için custom veya none kullanın.',
+    )
+    expect(find(w, 'runtime-patch-banner-console_tls').text()).toContain('Denetim: kubectl get certificate,certificaterequest -n runr')
+  })
+
+  it('a console certificate stuck pending, and a failed renewal, take the message of cert-manager', async () => {
+    const pending = {
+      ...CONSOLE_TLS, state: 'pending', reason: 'issuing', minutes: 42,
+      message: 'Waiting on certificate issuance from order runr/runr-tls-1-123: "pending".',
+    }
+    const renewal = {
+      ...CONSOLE_TLS, level: 'security', reason: 'request_failed', issuer: 'acme', renewal: true, default_certificate: false,
+      message: 'Failed to wait for order resource "runr-tls-2-456" to become ready: order is in "invalid" state.',
+      not_after: '2026-12-01T10:00:00Z',
+    }
+    vi.spyOn(runtimePatchesApi, 'banners').mockReturnValue(ok({ data: [pending] }))
+    const w = mountBanner()
+    await flush()
+    expect(find(w, 'console-tls-banner-text').text()).toBe(
+      'The console certificate has not been issued for 42 minutes: Waiting on certificate issuance from order runr/runr-tls-1-123: "pending". '
+      + "The console serves the ingress controller's default certificate.",
+    )
+    expect(find(w, 'console-tls-banner-fix').text()).toBe('Set ingress.tls.clusterIssuer to another ClusterIssuer, or use ingress.tls.mode custom or none.')
+
+    runtimePatchesApi.banners.mockReturnValue(ok({ data: [renewal] }))
+    await w.vm.load()
+    await flush()
+    const text = find(w, 'console-tls-banner-text').text()
+    expect(text).toContain('The console certificate cannot be renewed: Failed to wait for order resource "runr-tls-2-456" to become ready: order is in "invalid" state. The current one is valid until ')
+    expect(text).toContain(new Date('2026-12-01T10:00:00Z').toLocaleString())
+    expect(text).not.toContain('default certificate')
+    expect(find(w, 'runtime-patch-banner-console_tls').classes()).toContain('bg-yellow-500')
   })
 
   it('reads the banners again when a runtime patch notification arrives and every five minutes', async () => {

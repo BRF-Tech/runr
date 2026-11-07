@@ -3,7 +3,7 @@ import { ref, computed, nextTick, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute } from 'vue-router'
 import { useTutorialStore } from '@/stores/tutorial'
-import { createTutorial, useSettingsTabsTutorial, useTokensTutorial, useUsersTutorial } from '@/composables/useTutorial'
+import { createTutorial, useSettingsTabsTutorial, useTokensTutorial, useUsersTutorial, useRuntimesTutorial, usePatchesTutorial } from '@/composables/useTutorial'
 import { settingsSteps } from '@/composables/tutorialSteps'
 import { useSettingsPage } from '@/composables/useSettingsPage'
 import { moduleRegistry } from '@/modules/index'
@@ -42,6 +42,8 @@ const { start: startSettingsTutorial } = createTutorial(settingsSteps, {
 })
 const { start: startTokensTutorial } = useTokensTutorial()
 const { start: startUsersTutorial } = useUsersTutorial()
+const { start: startRuntimesTutorial } = useRuntimesTutorial()
+const { start: startPatchesTutorial } = usePatchesTutorial()
 const { start: startTabsTutorial } = useSettingsTabsTutorial()
 const usersRef = ref(null)
 
@@ -51,6 +53,10 @@ const usersRef = ref(null)
 watch(() => tutorialStore.restartCounter, () => {
   if (activeTab.value === 'settings') nextTick(() => startSettingsTutorial())
   else if (showsCore('tokens')) nextTick(() => startTokensTutorial())
+  // Build & Run → Runtimes: the tour of the tab shown (Runtimes or Sources)
+  else if (showsCore('runtimes')) nextTick(() => startRuntimesTutorial())
+  // Build & Run → Patches: the feed, the policy, the patches, the releases
+  else if (showsCore('patches')) nextTick(() => startPatchesTutorial())
   else if (showsCore('users')) {
     // the add form only for a user who may add users (its button's permission)
     if (perms.can('members.invite')) usersRef.value?.openAdd()

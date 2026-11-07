@@ -7,7 +7,7 @@ import {
 import { runtimeTag } from '@/utils/projectHelpers'
 import { useProjectEditor } from '@/composables/useProjectEditor'
 import { projectsApi } from '@/api/projects'
-import { freshPinia, catalog, Q_ICON } from '@/test-support/helpers'
+import { freshPinia, catalog, builtinCatalog, builtinTemplates, Q_ICON } from '@/test-support/helpers'
 
 vi.mock('@/api/runtimes', () => ({ runtimesApi: { list: vi.fn() } }))
 vi.mock('@/api/settings', () => ({ settingsApi: { get: vi.fn() } }))
@@ -92,6 +92,94 @@ describe('runtime extension, handler check and editor language', () => {
     expect(runtimeLanguageFor('q', 'README.md')).toBeNull()
     expect(runtimeLanguageFor('c', 'lib.h')).toBe('c')
     expect(runtimeLanguageFor('unknown', 'main.q')).toBeNull()
+  })
+})
+
+describe('the Java, .NET, Ruby and Bun runtimes', () => {
+  const ids = ['java', 'dotnet', 'ruby', 'bun']
+  // The starter file with the handler renamed: the check must not find it
+  const withoutHandler = {
+    java:   builtinTemplates.java.replace('handler(', 'process('),
+    dotnet: builtinTemplates.dotnet.replace('Handler(', 'Process('),
+    ruby:   builtinTemplates.ruby.replace('def handler', 'def process'),
+    bun:    builtinTemplates.bun.replace('function handler', 'function process'),
+  }
+
+  it('have built-in names, icons and extensions until the catalog is loaded', () => {
+    expect(ids.map(id => runtimeLabel(id))).toEqual(['Java', '.NET (C#)', 'Ruby', 'TypeScript (Bun)'])
+    // an asset URL, or the SVG itself as a data URI (Vite inlines small assets): one icon each
+    for (const id of ids) expect(runtimeIcon(id)).toMatch(/^data:image\/svg\+xml,|\.svg$/)
+    expect(new Set(ids.map(id => runtimeIcon(id))).size).toBe(4)
+    expect(ids.map(id => runtimeExtension(id))).toEqual(['java', 'cs', 'rb', 'ts'])
+    expect(runtimeTag({ service_type: 'faas', runtime: 'dotnet', runtime_version: '10.0' })).toBe('cs 10.0')
+  })
+
+  it.each(ids)('%s: the built-in handler check finds the starter file\'s handler, not an empty or other file', (id) => {
+    const re = runtimeHandlerPattern(id)
+    expect(re).toBeInstanceOf(RegExp)
+    expect(re.test(builtinTemplates[id])).toBe(true)
+    expect(re.test('')).toBe(false)
+    expect(re.test(withoutHandler[id])).toBe(false)
+  })
+
+  it('accept the other export forms of a Bun handler and a Ruby class method', () => {
+    const bun = runtimeHandlerPattern('bun')
+    expect(bun.test('export const handler = async (event) => ({ statusCode: 200 })')).toBe(true)
+    expect(bun.test('async function handler() {}\nexport { handler }')).toBe(true)
+    expect(bun.test('export default async function handler() {}')).toBe(true)
+    expect(bun.test('exports.handler = async () => ({})')).toBe(true)
+    expect(bun.test('async function handler() {}')).toBe(false)   // not exported
+
+    const ruby = runtimeHandlerPattern('ruby')
+    expect(ruby.test('class App\n  def self.handler(event, context)\n  end\nend')).toBe(true)
+    expect(ruby.test('def handlers(event)\nend')).toBe(false)
+  })
+
+  it('compile the manifest handler patterns in JavaScript with the project\'s handler name', () => {
+    useCatalog(...Object.values(builtinCatalog))
+    for (const id of ids) {
+      const re = runtimeHandlerPattern(id, builtinCatalog[id].handler.function)
+      expect(re, id).toBeInstanceOf(RegExp)
+      expect(re.test(builtinTemplates[id]), id).toBe(true)
+      expect(re.test(''), id).toBe(false)
+      expect(re.test(withoutHandler[id]), id).toBe(false)
+    }
+    expect(runtimeHandlerPattern('java', 'process').test(builtinTemplates.java)).toBe(false)
+    expect(runtimeHandlerPattern('dotnet', 'handler').test(builtinTemplates.dotnet)).toBe(false)   // C# names are case-sensitive
+  })
+
+  it('give the handler files their manifest language', () => {
+    useCatalog(...Object.values(builtinCatalog))
+    expect(runtimeLanguageFor('java', 'Main.java')).toBe('java')
+    expect(runtimeLanguageFor('dotnet', 'Function.cs')).toBe('csharp')
+    expect(runtimeLanguageFor('ruby', 'main.rb')).toBe('ruby')
+    expect(runtimeLanguageFor('bun', 'main.ts')).toBe('typescript')
+    expect(runtimeLanguageFor('bun', 'View.tsx')).toBe('typescript')
+    expect(runtimeLanguageFor('dotnet', 'Function.csproj')).toBeNull()
+    expect(runtimeLanguageFor('java', 'pom.xml')).toBeNull()
+  })
+
+  it('check the main file of a FaaS project before a save', async () => {
+    useCatalog(...Object.values(builtinCatalog))
+    const ed = useProjectEditor({
+      project:        ref({ id: 'p3', service_type: 'faas', runtime: 'dotnet', config: { handler: 'Function.Handler' } }),
+      versions:       ref([]),
+      versionsLoaded: ref(false),
+      loadVersionsFn: vi.fn(),
+    })
+    expect(ed.mainFile.value).toBe('Function.cs')
+    expect(ed.handlerName.value).toBe('Handler')
+
+    ed.selectedVersionFiles.value = { 'Function.cs': withoutHandler.dotnet }
+    await ed.save()
+    expect(ed.handlerError.value).toBe(true)
+    expect(projectsApi.saveFiles).not.toHaveBeenCalled()
+
+    projectsApi.saveFiles.mockResolvedValue({ data: {} })
+    ed.selectedVersionFiles.value = { 'Function.cs': builtinTemplates.dotnet }
+    await ed.save()
+    expect(ed.handlerError.value).toBe(false)
+    expect(projectsApi.saveFiles).toHaveBeenCalledWith('p3', [{ name: 'Function.cs', content: builtinTemplates.dotnet }], undefined)
   })
 })
 

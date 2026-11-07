@@ -20,13 +20,25 @@ export const ISOLATION_STYLES = {
 }
 
 /** Languages of POST /sandboxes/{id}/run, in picker order. */
-export const RUN_LANGUAGES = ['python', 'javascript', 'typescript', 'bash', 'sh', 'php', 'ruby', 'go']
+export const RUN_LANGUAGES = ['python', 'javascript', 'typescript', 'bash', 'sh', 'php', 'ruby', 'go', 'java', 'csharp']
 
-const RUNTIME_LANGUAGE = { python: 'python', pytorch: 'python', tensorflow: 'python', nodejs: 'javascript', php: 'php', go: 'go', bash: 'bash' }
+const RUNTIME_LANGUAGE = {
+  python: 'python', pytorch: 'python', tensorflow: 'python', nodejs: 'javascript', php: 'php', go: 'go', bash: 'bash',
+  java: 'java', dotnet: 'csharp', ruby: 'ruby', bun: 'typescript',
+}
 
 /** Default code-interpreter language of a sandbox (from its runtime). */
 export function defaultLanguage(sandbox) {
   return RUNTIME_LANGUAGE[sandbox?.runtime] ?? (sandbox?.runtime ? 'bash' : 'python')
+}
+
+/**
+ * The sandbox's runtime as an extra picker entry: only a runtime that is neither a run language
+ * nor one of the runtimes above (their language is listed already, e.g. dotnet → csharp).
+ */
+export function extraRunLanguage(sandbox) {
+  const runtime = sandbox?.runtime
+  return runtime && !RUN_LANGUAGES.includes(runtime) && !Object.hasOwn(RUNTIME_LANGUAGE, runtime) ? runtime : null
 }
 
 export function isAlive(status) {

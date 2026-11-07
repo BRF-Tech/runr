@@ -18,7 +18,7 @@ vi.mock('@/modules/index', async () => {
 })
 vi.mock('@/api/runtimes', () => ({ runtimesApi: { list: vi.fn(() => new Promise(() => {})) } }))
 // The tours the page starts on a tutorial restart (driver.js itself is not under test here)
-const tours = vi.hoisted(() => ({ settings: vi.fn(), tokens: vi.fn(), users: vi.fn(), tabs: vi.fn() }))
+const tours = vi.hoisted(() => ({ settings: vi.fn(), tokens: vi.fn(), users: vi.fn(), tabs: vi.fn(), runtimes: vi.fn(), patches: vi.fn() }))
 // The platform tour's options (its onComplete opens the region wizard) and the page's openAdd
 const tourOptions = vi.hoisted(() => ({ settings: null }))
 const openRegionWizard = vi.hoisted(() => vi.fn())
@@ -27,6 +27,8 @@ vi.mock('@/composables/useTutorial', () => ({
   useTokensTutorial:       () => ({ start: tours.tokens }),
   useUsersTutorial:        () => ({ start: tours.users }),
   useSettingsTabsTutorial: () => ({ start: tours.tabs }),
+  useRuntimesTutorial:     () => ({ start: tours.runtimes }),
+  usePatchesTutorial:      () => ({ start: tours.patches }),
 }))
 vi.mock('@/composables/useSettingsPage', async () => {
   const { ref: r } = await import('vue')
@@ -55,6 +57,7 @@ const usersStub = {
 const STUBS = {
   AppHeader: true, RegionDetailModal: true, DemoManager: true, RegionsList: true,
   UsersManager: usersStub, ApiTokensManager: stub('ApiTokensManager'), RuntimesManager: stub('RuntimesManager'),
+  RuntimePatchesManager: stub('RuntimePatchesManager'),
 }
 
 let router
@@ -184,6 +187,22 @@ describe('SettingsView', () => {
     expect(w.findComponent({ name: 'DemoManager' }).props('canManage')).toBe(true)
   })
 
+  // The single-tenant edition has no platform administrators: platform.manage (the Owner's) opens
+  // Build & Run → Patches, which sits next to Runtimes; without it (Admin, Developer) it is not there
+  it('shows the Patches page to a single-tenant holder of platform.manage, next to Runtimes', async () => {
+    grant(['runtimes.manage', 'platform.manage'])
+    const w = await open('/settings?tab=patches')
+    expect(w.find('[data-stub="RuntimePatchesManager"]').exists()).toBe(true)
+    expect(w.get('[data-testid="settings-section"]').text()).toBe('Runtimes & images')
+    expect(tabs(w)).toEqual(['Runtimes', 'Patches'])
+    expect(w.get('[data-settings-tab="patches"]').attributes('data-tour')).toBe('settings-patches-tab')
+
+    grant(['runtimes.manage'])
+    await flushPromises()
+    expect(w.find('[data-stub="RuntimePatchesManager"]').exists()).toBe(false)
+    expect(w.find('[data-testid="settings-section-tabs"]').exists()).toBe(false)
+  })
+
   it('falls back to the platform page for an unknown tab', async () => {
     grant(['regions.view'])
     const w = await open('/settings?tab=nope')
@@ -224,6 +243,25 @@ describe('SettingsView tutorial', () => {
     await restart()
     expect(started()).toEqual(['users'])
     expect(openUsersForm).toHaveBeenCalled()
+  })
+
+  // Build & Run → Runtimes: the tour of its Runtimes / Sources tabs (tutorialSteps runtimesSteps)
+  it('starts the runtimes tour on the Runtimes page', async () => {
+    vi.clearAllMocks()
+    grant(['runtimes.manage'])
+    const w = await open('/settings?tab=runtimes')
+    expect(w.find('[data-stub="RuntimesManager"]').exists()).toBe(true)
+    await restart()
+    expect(started()).toEqual(['runtimes'])
+  })
+
+  // Build & Run → Patches: the feed, the policy, the patches, the releases (tutorialSteps patchesSteps)
+  it('starts the patches tour on the Patches page', async () => {
+    vi.clearAllMocks()
+    grant(['platform.manage'])
+    await open('/settings?tab=patches')
+    await restart()
+    expect(started()).toEqual(['patches'])
   })
 
   it('gives a module page the tour of the tabs of its menu section', async () => {

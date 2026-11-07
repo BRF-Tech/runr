@@ -229,16 +229,16 @@ function seedSandboxes(api: MockApi): void {
       ended_at: o.ended_at ?? null, end_reason: o.end_reason ?? null, from_pool: o.from_pool ?? false, start_ms: o.start_ms ?? 1840, error: null, created_by: '1', tenant_id: null,
     }
   }
-  // Start times follow the measured figures of README.md ("Measured cold starts", RunR 0.6.6 with
-  // Kata Containers 4.3.1): 0.31-0.48 s from a warm pool, cold 2.2 s under gVisor, 3.1 s under Kata
-  // Cloud Hypervisor, 3.4 s under Kata Firecracker
+  // Start times follow the measured figures of README.md ("Measured cold starts", Kata Containers
+  // 4.3.1): 0.31-0.52 s from a warm pool (gVisor 0.52 s) and cold 2.33 s under gVisor (RunR 0.6.7),
+  // 3.1 s under Kata Cloud Hypervisor and 3.4 s under Kata Firecracker (RunR 0.6.6)
   const sandboxes = [
     sandbox(1, { ageMin: 3, ttl: 1800, from_pool: true, start_ms: 312, metadata: { agent: 'support-copilot', run: 'r-4821' } }),
-    sandbox(2, { ageMin: 9, runtime: 'nodejs', version: '22', cls: 'gvisor', isolation: 'gvisor', cpu: '1000m', memory: 1024, start_ms: 2210, metadata: { agent: 'code-review', pr: '#318' } }),
+    sandbox(2, { ageMin: 9, runtime: 'nodejs', version: '22', cls: 'gvisor', isolation: 'gvisor', cpu: '1000m', memory: 1024, start_ms: 2330, metadata: { agent: 'code-review', pr: '#318' } }),
     sandbox(3, { ageMin: 14, status: 'paused', ttl: 3600, from_pool: true, start_ms: 318, metadata: { agent: 'data-analyst' } }),
-    sandbox(4, { ageMin: 21, ttl: 3600, runtime: 'go', version: '1.23', cls: 'gvisor', isolation: 'gvisor', region: { id: 'r-us', name: 'us-1' }, cpu: '2000m', memory: 2048, disk: 4096, start_ms: 2240, metadata: { agent: 'build-bot' } }),
+    sandbox(4, { ageMin: 21, ttl: 3600, runtime: 'go', version: '1.23', cls: 'gvisor', isolation: 'gvisor', region: { id: 'r-us', name: 'us-1' }, cpu: '2000m', memory: 2048, disk: 4096, start_ms: 2360, metadata: { agent: 'build-bot' } }),
     sandbox(5, { ageMin: 2, version: '3.11', cls: 'kata-clh', isolation: 'kata', ttl: 900, start_ms: 3090, network: { mode: 'allowlist', egress_allow: ['pypi.org:443', 'files.pythonhosted.org:443'] }, metadata: { agent: 'support-copilot', run: 'r-4830' } }),
-    sandbox(6, { ageMin: 6, ttl: 1800, runtime: 'nodejs', version: '22', cls: 'gvisor', isolation: 'gvisor', from_pool: true, start_ms: 427, metadata: { agent: 'code-review', pr: '#321' } }),
+    sandbox(6, { ageMin: 6, ttl: 1800, runtime: 'nodejs', version: '22', cls: 'gvisor', isolation: 'gvisor', from_pool: true, start_ms: 517, metadata: { agent: 'code-review', pr: '#321' } }),
     sandbox(7, { ageMin: 1, ttl: 900, status: 'pending', cls: 'kata-fc', isolation: 'kata', from_pool: false, start_ms: null, metadata: { agent: 'support-copilot', run: 'r-4833' } }),
     sandbox(8, { ageMin: 47, status: 'terminated', ended_at: ago(31), end_reason: 'expired', from_pool: true, start_ms: 309, metadata: { agent: 'data-analyst' } }),
     sandbox(9, { ageMin: 80, status: 'terminated', ended_at: ago(62), end_reason: 'deleted', runtime: 'nodejs', version: '22', cls: 'gvisor', isolation: 'gvisor' }),

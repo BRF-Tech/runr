@@ -132,6 +132,9 @@ export function createSteps(t) {
 export function settingsTabSteps(t) {
   return [
     { element: '[data-tour="settings-sandboxes-tab"]', popover: { title: t('tutorial.settings.sandboxes'),     description: t('tutorial.settings.sandboxesDesc') } },
+    // Build & Run → Patches: for who operates the installation (platform administrators;
+    // single-tenant, the holders of platform.manage — the Owners)
+    { element: '[data-tour="settings-patches-tab"]',   popover: { title: t('tutorial.settings.patches'),       description: t('tutorial.settings.patchesDesc') } },
     { element: '[data-tour="settings-events-tab"]',    popover: { title: t('tutorial.settings.events'),        description: t('tutorial.settings.eventsDesc') } },
     { element: '[data-tour="settings-ai-agents-tab"]', popover: { title: t('tutorial.settings.aiAgents'),      description: t('tutorial.settings.aiAgentsDesc') } },
     { element: '[data-tour="settings-users-tab"]',     popover: { title: t('tutorial.settings.users'),         description: t('tutorial.settings.usersDesc') } },
@@ -218,9 +221,61 @@ export function usersSteps(t) {
   ]
 }
 
+// Build & Run → Runtimes: the tour of the tab shown (Runtimes or Sources); the other tab's steps
+// are not in the DOM and drop out, and so do the lifecycle steps while no runtime has a mark, the
+// synced-runtime step without one, and the Built-in runtimes card for a custom-runtime user
+export function runtimesSteps(t) {
+  return [
+    ...settingsTabSteps(t),
+    { element: '[data-tour="runtimes-tabs"]',           popover: { title: t('tutorial.runtimes.tabs'),        description: t('tutorial.runtimes.tabsDesc') } },
+    // Runtimes tab
+    { element: '[data-tour="runtimes-add"]',            popover: { title: t('tutorial.runtimes.add'),         description: t('tutorial.runtimes.addDesc') } },
+    { element: '[data-tour="runtimes-list"]',           popover: { title: t('tutorial.runtimes.list'),        description: t('tutorial.runtimes.listDesc') } },
+    { element: '[data-tour="runtimes-managed"]',        popover: { title: t('tutorial.runtimes.managed'),     description: t('tutorial.runtimes.managedDesc') } },
+    { element: '[data-tour="runtimes-lifecycle"]',      popover: { title: t('tutorial.runtimes.lifecycle'),   description: t('tutorial.runtimes.lifecycleDesc') } },
+    // Sources tab
+    { element: '[data-tour="runtime-sources-add"]',     popover: { title: t('tutorial.runtimes.addSource'),   description: t('tutorial.runtimes.addSourceDesc') } },
+    { element: '[data-tour="runtime-sources-list"]',    popover: { title: t('tutorial.runtimes.sources'),     description: t('tutorial.runtimes.sourcesDesc') } },
+    { element: '[data-tour="runtime-sources-status"]',  popover: { title: t('tutorial.runtimes.status'),      description: t('tutorial.runtimes.statusDesc') } },
+    { element: '[data-tour="runtime-sources-sync"]',    popover: { title: t('tutorial.runtimes.sync'),        description: t('tutorial.runtimes.syncDesc') } },
+    { element: '[data-tour="runtime-sources-detail"]',  popover: { title: t('tutorial.runtimes.detail'),      description: t('tutorial.runtimes.detailDesc') } },
+    { element: '[data-tour="runtime-catalog-card"]',    popover: { title: t('tutorial.runtimes.catalog'),     description: t('tutorial.runtimes.catalogDesc') } },
+  ]
+}
+
+// Build & Run → Patches (RuntimePatchesManager): the signed patch feed with Check now, the
+// policy of deadlines, the patches with the projects behind them, the RunR releases. The page is
+// for who operates the installation; until the page has loaded only the tab steps are there
+export function patchesSteps(t) {
+  return [
+    ...settingsTabSteps(t),
+    { element: '[data-tour="patches-feed"]',       popover: { title: t('tutorial.patches.feed'),       description: t('tutorial.patches.feedDesc') } },
+    { element: '[data-tour="patches-check"]',      popover: { title: t('tutorial.patches.check'),      description: t('tutorial.patches.checkDesc') } },
+    { element: '[data-tour="patches-policy"]',     popover: { title: t('tutorial.patches.policy'),     description: t('tutorial.patches.policyDesc') } },
+    { element: '[data-tour="patches-list"]',       popover: { title: t('tutorial.patches.list'),       description: t('tutorial.patches.listDesc') } },
+    { element: '[data-tour="patches-advisories"]', popover: { title: t('tutorial.patches.advisories'), description: t('tutorial.patches.advisoriesDesc') } },
+  ]
+}
+
+// The Add / Edit source dialog's "?": RunR's catalog shows interval and status only (the other
+// steps drop out)
+export function runtimeSourceSteps(t) {
+  return [
+    { element: '[data-tour="runtime-source-kind"]',         popover: { title: t('tutorial.runtimeSource.kind'),         description: t('tutorial.runtimeSource.kindDesc') } },
+    { element: '[data-tour="runtime-source-location"]',     popover: { title: t('tutorial.runtimeSource.location'),     description: t('tutorial.runtimeSource.locationDesc') } },
+    { element: '[data-tour="runtime-source-credentials"]',  popover: { title: t('tutorial.runtimeSource.credentials'),  description: t('tutorial.runtimeSource.credentialsDesc') } },
+    { element: '[data-tour="runtime-source-verification"]', popover: { title: t('tutorial.runtimeSource.verification'), description: t('tutorial.runtimeSource.verificationDesc') } },
+    { element: '[data-tour="runtime-source-interval"]',     popover: { title: t('tutorial.runtimeSource.interval'),     description: t('tutorial.runtimeSource.intervalDesc') } },
+    { element: '[data-tour="runtime-source-test"]',         popover: { title: t('tutorial.runtimeSource.test'),         description: t('tutorial.runtimeSource.testDesc') } },
+    { element: '[data-tour="runtime-source-save"]',         popover: { title: t('tutorial.runtimeSource.save'),         description: t('tutorial.runtimeSource.saveDesc') } },
+  ]
+}
+
 export function detailVersionsSteps(t) {
   return [
     { element: '[data-tour="project-header"]',  popover: { title: t('tutorial.detail.header'),   description: t('tutorial.detail.headerDesc') } },
+    // Shown while the project's runtime version is deprecated, ended, or its runtime left its source
+    { element: '[data-tour="runtime-lifecycle-banner"]', popover: { title: t('tutorial.detail.runtimeLifecycle'), description: t('tutorial.detail.runtimeLifecycleDesc') } },
     // The row carries the target only while the role has an action on the project
     { element: '[data-tour="action-buttons"]',  popover: { title: t('tutorial.detail.actions'),  description: t('tutorial.detail.actionsDesc') } },
     { element: '[data-tour="project-tabs"]',    popover: { title: t('tutorial.detail.tabs'),     description: t('tutorial.detail.tabsDesc') } },

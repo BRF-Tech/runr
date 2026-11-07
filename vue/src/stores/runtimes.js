@@ -13,6 +13,10 @@ export const BUILTIN_RUNTIME_NAMES = {
   php: 'PHP',
   tensorflow: 'TensorFlow',
   pytorch: 'PyTorch',
+  java: 'Java',
+  dotnet: '.NET (C#)',
+  ruby: 'Ruby',
+  bun: 'TypeScript (Bun)',
 }
 
 /** Catalog entry with every field the UI reads set (the API may omit optional ones). */
@@ -37,6 +41,12 @@ export function normalizeRuntime(r) {
     regions:         Array.isArray(r.regions) ? r.regions : null,
     is_enabled:      r.is_enabled !== false,
     projects_count:  r.projects_count ?? null,
+    // Runtime sources (docs/runtimes.md#runtime-sources): synced from a source, its manifest
+    // changes there; lifecycle: active | deprecated | sunset | orphaned with dates
+    source_id:       r.source_id ?? null,
+    source_name:     r.source_name ?? null,
+    managed:         !!r.managed,
+    lifecycle:       r.lifecycle ?? { state: 'active' },
   }
 }
 

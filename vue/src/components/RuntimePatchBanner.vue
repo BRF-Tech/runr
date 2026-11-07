@@ -3,7 +3,10 @@
 // docs/runtimes.md#runtime-patches):
 //  - a critical / zero-day runtime patch the user's projects still run behind — cannot be
 //    dismissed; it goes when the API stops returning it (the projects were migrated)
-//  - platform administrators: a newer RunR release, a patch feed that is off or was refused
+//  - platform administrators (single-tenant: the holders of platform.manage — the API decides):
+//    a newer RunR release, a patch feed that is off or was refused, and the console's own
+//    certificate when cert-manager cannot issue or renew it (console_tls,
+//    docs/install.md#when-the-console-certificate-is-not-issued)
 // Read on load, every five minutes and when a runtime patch notification arrives in real time.
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
@@ -32,6 +35,7 @@ function readDismissed() {
 }
 
 function keyOf(b) {
+  if (b.kind === 'console_tls') return [b.kind, b.state, b.reason, b.issuer ?? ''].join(':')
   return [b.kind, b.patch?.id ?? b.version ?? b.status ?? ''].join(':')
 }
 
@@ -88,6 +92,30 @@ function openPatch(b) {
 
 const fmt = iso => (iso ? new Date(iso).toLocaleString() : '')
 
+/** Why the console certificate is not issued: RunR's own words for the issuer and a missing Certificate, else cert-manager's message. */
+function consoleTlsDetail(b) {
+  if (b.reason === 'issuer_not_found') return t('runtimePatches.banner.consoleTls.issuerNotFound', { issuer: b.issuer ?? '' })
+  if (b.reason === 'certificate_missing') return t('runtimePatches.banner.consoleTls.certificateMissing', { secret: b.secret ?? '' })
+  const message = (b.message ?? '').trim().replace(/\.+$/, '')
+  return message || t('runtimePatches.banner.consoleTls.noMessage')
+}
+
+function consoleTlsText(b) {
+  const detail = consoleTlsDetail(b)
+  const head = b.renewal
+    ? t('runtimePatches.banner.consoleTls.renewal', { detail, date: fmt(b.not_after) })
+    : b.state === 'pending'
+      ? t('runtimePatches.banner.consoleTls.pending', { detail, minutes: b.minutes ?? 0 })
+      : t('runtimePatches.banner.consoleTls.failed', { detail })
+  return b.default_certificate ? `${head} ${t('runtimePatches.banner.consoleTls.defaultCertificate')}` : head
+}
+
+function consoleTlsFix(b) {
+  return b.reason === 'issuer_not_found'
+    ? t('runtimePatches.banner.consoleTls.fixIssuer', { issuer: b.issuer ?? '' })
+    : t('runtimePatches.banner.consoleTls.fixOther')
+}
+
 // A runtime patch notification in real time: the banners may have changed
 watch(() => notifications.notifications[0]?.id, () => {
   if (REFRESH_TYPES.includes(notifications.notifications[0]?.type)) load()
@@ -125,6 +153,13 @@ defineExpose({ load, banners, visible, dismiss })
         <span>{{ t('runtimePatches.banner.advisory', { version: b.version, level: levelLabel(b.level), reason: b.reason ?? '' }) }}</span>
         <span v-if="b.running" class="opacity-80">({{ t('runtimePatches.banner.running', { running: b.running }) }})</span>
         <a v-if="b.url" :href="b.url" target="_blank" rel="noopener" class="inline-flex items-center gap-1 underline underline-offset-2">{{ t('runtimePatches.banner.releaseNotes') }}<ExternalLink class="w-3 h-3" /></a>
+      </template>
+
+      <template v-else-if="b.kind === 'console_tls'">
+        <ShieldAlert class="w-3.5 h-3.5 shrink-0" />
+        <span data-test="console-tls-banner-text">{{ consoleTlsText(b) }}</span>
+        <span class="opacity-90" data-test="console-tls-banner-fix">{{ consoleTlsFix(b) }}</span>
+        <span class="opacity-90">{{ t('runtimePatches.banner.consoleTls.check') }} <code class="font-mono">kubectl get certificate,certificaterequest -n {{ b.namespace || 'runr' }}</code></span>
       </template>
 
       <template v-else-if="b.kind === 'feed_disabled' || b.kind === 'feed_invalid'">

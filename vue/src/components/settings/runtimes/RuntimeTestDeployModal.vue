@@ -9,6 +9,7 @@ import { useSettingsStore } from '@/stores/settings'
 import { isRegionReady, runtimeAvailableIn } from '@/composables/useProjectForm'
 import { apiErrorMessage } from '@/composables/useRuntimesManager'
 import { useLatest } from '@/composables/useLatest'
+import { pickableVersions } from '@/utils/runtimeLifecycle'
 
 const props = defineProps({ runtime: { type: Object, required: true } })
 const emit  = defineEmits(['close'])
@@ -21,8 +22,8 @@ onMounted(() => { if (!settingsStore.loaded) settingsStore.fetch() })
 const regions = computed(() => (settingsStore.data.regions ?? [])
   .filter(r => isRegionReady(r) && runtimeAvailableIn(props.runtime, r.id)))
 
-const versions = computed(() => (props.runtime.versions ?? [])
-  .filter(v => !(v.eol_at && new Date(v.eol_at) <= new Date())))
+// Versions past their end of life or sunset are not offered (docs/runtimes.md#lifecycle)
+const versions = computed(() => pickableVersions(props.runtime.versions))
 
 const regionId = ref(null)
 const version  = ref(versions.value.find(v => v.is_default)?.version ?? versions.value[0]?.version ?? null)

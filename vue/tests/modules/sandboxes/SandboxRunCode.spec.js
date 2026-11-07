@@ -66,4 +66,28 @@ describe('SandboxRunCode', () => {
     expect(defaultLanguage({ runtime: 'q' })).toBe('bash')
     expect(defaultLanguage({ runtime: null, image: 'alpine' })).toBe('python')
   })
+
+  it('picks the interpreter of the Java, .NET, Ruby and Bun runtimes', () => {
+    expect(defaultLanguage({ runtime: 'java' })).toBe('java')
+    expect(defaultLanguage({ runtime: 'dotnet' })).toBe('csharp')
+    expect(defaultLanguage({ runtime: 'ruby' })).toBe('ruby')
+    expect(defaultLanguage({ runtime: 'bun' })).toBe('typescript')
+  })
+
+  it('offers Java and C# and preselects the language of the sandbox runtime', async () => {
+    const wrapper = await mountRun({ sandbox: sandbox('01jb0000000000000000aaaa02', { runtime: 'dotnet', runtime_version: '10.0' }) })
+    const options = wrapper.findAll('select[name="language"] option').map(o => o.element.value)
+
+    expect(options).toEqual(expect.arrayContaining(['java', 'csharp', 'ruby', 'typescript']))
+    expect(options).not.toContain('dotnet')   // its language is listed already
+    expect(wrapper.find('select[name="language"]').element.value).toBe('csharp')
+  })
+
+  it('lists a runtime without a known language as an extra entry', async () => {
+    const wrapper = await mountRun({ sandbox: sandbox('01jb0000000000000000aaaa03', { runtime: 'q', runtime_version: '1.0' }) })
+    const options = wrapper.findAll('select[name="language"] option').map(o => o.element.value)
+
+    expect(options.at(-1)).toBe('q')
+    expect(wrapper.find('select[name="language"]').element.value).toBe('bash')
+  })
 })

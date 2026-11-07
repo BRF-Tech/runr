@@ -17,10 +17,11 @@ const props = defineProps({
 const emit = defineEmits(['update:modelValue'])
 
 const EXT_MAP = {
-  py: 'python', js: 'javascript', ts: 'typescript',
+  py: 'python', js: 'javascript', mjs: 'javascript', cjs: 'javascript', ts: 'typescript', tsx: 'typescript',
   go: 'go', php: 'php', rb: 'ruby', sh: 'shell', bash: 'shell',
+  java: 'java', cs: 'csharp',
   c: 'c', h: 'c', rs: 'rust', zig: 'plaintext',
-  json: 'json', yaml: 'yaml', yml: 'yaml',
+  json: 'json', yaml: 'yaml', yml: 'yaml', xml: 'xml', csproj: 'xml',
   html: 'html', css: 'css', md: 'markdown',
   txt: 'plaintext',
 }
@@ -30,6 +31,7 @@ const editorLanguage = computed(() => {
   if (fromRuntime) return fromRuntime
   const name = props.filename.toLowerCase()
   if (name === 'dockerfile' || name.endsWith('.dockerfile')) return 'dockerfile'
+  if (name === 'gemfile') return 'ruby'
   const ext = name.split('.').pop() ?? ''
   return EXT_MAP[ext] ?? 'plaintext'
 })

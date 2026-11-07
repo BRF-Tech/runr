@@ -1,5 +1,6 @@
 <script setup>
-// Build & Run → Patches (platform administrators, GET /admin/runtime-patches,
+// Build & Run → Patches (platform administrators; single-tenant, the holders of platform.manage —
+// GET /admin/runtime-patches,
 // docs/runtimes.md#the-patches-page): the signed patch feed (status, signature, last check and
 // fetch, "Check now"), the automatic migration at deadlines, every patch with the projects behind
 // it per organization and its migrations — remind, force now, extend the deadline — and the RunR
@@ -174,10 +175,10 @@ defineExpose({ load, checkNow, togglePolicy, remind, force, openExtend, saveDead
     <template v-else-if="data">
       <div class="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
         <!-- Feed -->
-        <div class="card lg:col-span-2" data-test="runtime-patches-feed">
+        <div class="card lg:col-span-2" data-test="runtime-patches-feed" data-tour="patches-feed">
           <div class="flex items-center justify-between gap-2 mb-3 pb-3 border-b border-gray-800">
             <h4 class="text-sm font-semibold text-gray-100">{{ t('runtimePatches.admin.feed.title') }}</h4>
-            <button class="btn-primary text-xs flex items-center gap-1.5" :disabled="checking" data-test="runtime-patches-check" @click="checkNow">
+            <button class="btn-primary text-xs flex items-center gap-1.5" :disabled="checking" data-test="runtime-patches-check" data-tour="patches-check" @click="checkNow">
               <RefreshCw class="w-3.5 h-3.5" :class="checking && 'animate-spin'" />{{ t('runtimePatches.admin.feed.checkNow') }}
             </button>
           </div>
@@ -211,7 +212,7 @@ defineExpose({ load, checkNow, togglePolicy, remind, force, openExtend, saveDead
         </div>
 
         <!-- Policy -->
-        <div class="card" data-test="runtime-patches-policy">
+        <div class="card" data-test="runtime-patches-policy" data-tour="patches-policy">
           <h4 class="text-sm font-semibold text-gray-100 mb-3 pb-3 border-b border-gray-800">{{ t('runtimePatches.admin.policy.title') }}</h4>
           <p class="text-xs text-gray-400 mb-3">{{ t('runtimePatches.admin.policy.description') }}</p>
           <div class="flex items-center gap-3">
@@ -225,7 +226,7 @@ defineExpose({ load, checkNow, togglePolicy, remind, force, openExtend, saveDead
       </div>
 
       <!-- Patches -->
-      <div class="card mb-6">
+      <div class="card mb-6" data-tour="patches-list">
         <h4 class="text-sm font-semibold text-gray-100 mb-3 pb-3 border-b border-gray-800">{{ t('runtimePatches.admin.patches.title') }}</h4>
         <p v-if="!patches.length" class="text-sm text-gray-400">{{ t('runtimePatches.admin.patches.empty') }}</p>
         <div v-else class="overflow-x-auto">
@@ -305,7 +306,7 @@ defineExpose({ load, checkNow, togglePolicy, remind, force, openExtend, saveDead
       </div>
 
       <!-- RunR releases -->
-      <div class="card" data-test="runtime-patches-advisories">
+      <div class="card" data-test="runtime-patches-advisories" data-tour="patches-advisories">
         <div class="flex items-center justify-between mb-3 pb-3 border-b border-gray-800">
           <h4 class="text-sm font-semibold text-gray-100">{{ t('runtimePatches.admin.advisories.title') }}</h4>
           <span class="text-xs text-gray-400">{{ t('runtimePatches.admin.advisories.running', { running: data.running_version }) }}</span>
