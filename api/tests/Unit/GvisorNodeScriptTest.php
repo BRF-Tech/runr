@@ -349,6 +349,96 @@ SH;
         $this->assertSame(['k3s'], $this->restarts());
     }
 
+    /**
+     * wget stand-in: fails the first $failures calls (a node whose DNS is not back after a CoreDNS
+     * restart: "bad address"), leaving a partial file, then writes $content.
+     */
+    private function flakyWget(int $failures, string $content = 'payload'): void
+    {
+        $this->fake('wget', <<<SH
+#!/bin/sh
+# wget -q -T <s> -O <file> <url>
+while [ "\$#" -gt 1 ]; do
+  case "\$1" in -O) out="\$2"; shift ;; esac
+  shift
+done
+echo "\$1" >> "\$FAKEROOT/state/wget"
+n=\$((\$(wc -l < "\$FAKEROOT/state/wget")))
+if [ "\$n" -le {$failures} ]; then
+  printf 'partial' > "\$out"
+  echo "wget: bad address 'storage.googleapis.com'" >&2
+  exit 1
+fi
+printf '%s' '{$content}' > "\$out"
+SH);
+    }
+
+    private function wgetCalls(): array
+    {
+        $f = $this->path('state/wget');
+
+        return is_file($f) ? file($f, FILE_IGNORE_NEW_LINES) : [];
+    }
+
+    public function test_a_download_that_fails_is_tried_again_with_backoff(): void
+    {
+        $this->flakyWget(2);
+        $script = $this->scripts()->helpers().'download https://example.test/gvisor.tar.bz2 "$HOST/state/file" && echo "got: $(cat "$HOST/state/file")"'."\n";
+
+        [$code, $out] = $this->runOnNode($script);
+
+        $this->assertSame(0, $code, $out);
+        $this->assertSame(array_fill(0, 3, 'https://example.test/gvisor.tar.bz2'), $this->wgetCalls());
+        $this->assertStringContainsString('download of https://example.test/gvisor.tar.bz2 failed (try 1 of 5), next try in 5s', $out);
+        $this->assertStringContainsString('(try 2 of 5), next try in 10s', $out);
+        $this->assertStringContainsString('got: payload', $out, 'the partial file of a failed try is not kept');
+    }
+
+    public function test_a_download_gives_up_after_its_tries_and_leaves_no_partial_file(): void
+    {
+        $this->flakyWget(99);
+        $script = $this->scripts()->helpers().'download https://example.test/x "$HOST/state/file" || { echo "rc=$?"; [ -e "$HOST/state/file" ] && echo "partial file left"; }; true'."\n";
+
+        [$code, $out] = $this->runOnNode($script);
+
+        $this->assertSame(0, $code, $out);
+        $this->assertCount(5, $this->wgetCalls());
+        foreach (['5s', '10s', '20s', '40s'] as $i => $wait) {
+            $this->assertStringContainsString('(try '.($i + 1)." of 5), next try in {$wait}", $out);
+        }
+        $this->assertStringContainsString('(try 5 of 5), giving up', $out);
+        $this->assertStringContainsString('rc=1', $out);
+        $this->assertStringNotContainsString('partial file left', $out);
+    }
+
+    public function test_the_install_downloads_the_release_through_the_retries(): void
+    {
+        $this->put('etc/containerd/config.toml', self::ORIGINAL_V3);
+        $this->put('state/loaded', self::ORIGINAL_V3);
+        // No binaries on the node: the install downloads; the first try fails, the checksum's does not match then
+        $this->flakyWget(1);
+
+        [$code, $out] = $this->runOnNode($this->scripts()->install());
+
+        $this->assertNotSame(0, $code);
+        // GVISOR_RELEASE is the DaemonSet's env (the pinned release): this node has none
+        $base = 'https://storage.googleapis.com/gvisor/releases/release/latest/'.php_uname('m');
+        $this->assertSame(["{$base}/gvisor.tar.bz2", "{$base}/gvisor.tar.bz2", "{$base}/gvisor.tar.bz2.sha512"], $this->wgetCalls(), $out);
+        $this->assertStringContainsString('next try in 5s', $out);
+        $this->assertStringContainsString('runr: ERROR: gvisor.tar.bz2 does not match its sha512 checksum', $out);
+        $this->assertSame([], $this->restarts(), 'nothing restarted');
+
+        // Every try failing: the install says so and stops before the node is touched
+        exec('rm -f '.escapeshellarg($this->path('state/wget')));
+        $this->flakyWget(99);
+        [$code, $out] = $this->runOnNode($this->scripts()->install());
+        $this->assertNotSame(0, $code);
+        $this->assertStringContainsString('/gvisor.tar.bz2 failed after 5 tries (node node-1)', $out);
+        $this->assertCount(5, $this->wgetCalls());
+        $this->assertSame(self::ORIGINAL_V3, file_get_contents($this->path('etc/containerd/config.toml')));
+        $this->assertSame([], $this->restarts());
+    }
+
     public function test_scripts_are_valid_sh(): void
     {
         foreach (['install' => $this->scripts()->install(), 'cleanup' => $this->scripts()->cleanup()] as $name => $script) {

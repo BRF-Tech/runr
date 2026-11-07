@@ -446,7 +446,8 @@ administrator, or registered by an organization (custom). They are `Runtime` row
 (`RuntimeRegistry`); each version is an `ExecutorImage` row with its runtime image.
 `executor:sync` discovers the versions of the built-in images (`ghcr.io/brf-tech/runr/exec-<runtime>:<version>`)
 and `runtimes:sync` brings the catalog rows and registered versions up to date. The built-in
-catalog holds Python, Node.js, Go, PHP, PyTorch and TensorFlow, and the WebAssembly runtimes
+catalog holds Python, Node.js, Go, PHP, Java, .NET (C#), Ruby, TypeScript on Bun, PyTorch and
+TensorFlow, and the WebAssembly runtimes
 `wasm-rust`, `wasm-go`, `wasm-js`, `wasm-python` and `wasm-exec` ([wasm.md](wasm.md)). Runtimes in
 `exec` and `persistent` mode run behind the universal wrapper (`runr-wrapper`, `wrapper/` of BRF-Tech/runr-runtimes),
 which an init container copies into code-mounted pods. A runtime version past its end-of-life
@@ -610,8 +611,9 @@ installs the runtimes in the `runr-sandbox` namespace:
 
 The [Sandbox API](sandbox-api.md) uses the same RuntimeClasses as **sandbox classes**: each sandbox
 is a plain pod under the region's strongest allowed class (Kata before gVisor; runc only where a
-region allows it). Commands, files and terminals reach the pod through `kubectl exec` from the
-control plane.
+region allows it). Commands and files reach the pod through the API server's exec endpoint, over a
+WebSocket the API opens itself; terminals (and regions whose kubeconfig only kubectl can use) through
+`kubectl exec` from the control plane.
 
 On clusters running Cilium with kube-proxy replacement, `CiliumSandboxCompatTrait` sets
 `bpf-lb-sock-hostns-only` so that sandboxed pods can reach ClusterIP services.
@@ -785,7 +787,8 @@ also the default tenant quota.
 - The runr-agent authenticates with a per-region token. Shell and exec sessions use one-time
   tokens stored in Redis.
 - The Horizon dashboard (`/horizon`, the queues of the whole installation) admits platform
-  administrators and, in the single-tenant edition, Owners, signed in with a single-use link
+  administrators and, in the single-tenant edition, the holders of `platform.manage` (the Owners),
+  signed in with a single-use link
   (`php artisan runr:horizon-link`, `POST /api/horizon/link`); the account is checked again on
   every request ([install.md](install.md#horizon-dashboard)).
 - Client IPs come from `X-Forwarded-For` only as far as trusted proxies wrote it

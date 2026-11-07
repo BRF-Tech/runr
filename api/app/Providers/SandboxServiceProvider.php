@@ -8,7 +8,7 @@ use App\Jobs\Sandboxes\ReapSandboxesJob;
 use App\Jobs\Sandboxes\RefillSandboxPoolsJob;
 use App\Services\Sandboxes\DnsHostResolver;
 use App\Services\Sandboxes\Exec\ExecTransport;
-use App\Services\Sandboxes\Exec\KubectlExecTransport;
+use App\Services\Sandboxes\Exec\SelectingExecTransport;
 use App\Services\Sandboxes\HostResolver;
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Support\Facades\Route;
@@ -24,7 +24,7 @@ class SandboxServiceProvider extends ServiceProvider
 {
     public function register(): void
     {
-        $this->app->bindIf(ExecTransport::class, KubectlExecTransport::class);
+        $this->app->bindIf(ExecTransport::class, SelectingExecTransport::class);
         $this->app->bindIf(HostResolver::class, DnsHostResolver::class);
     }
 

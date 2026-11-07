@@ -521,6 +521,26 @@ TLS of the console Ingress → JSON {mode, issuer, secret, fallback} (ingress.ya
 {{- end -}}
 
 {{/*
+The console certificate's state check (configmap.yaml CONSOLE_TLS_*, rbac.yaml) → JSON {issuer, check}.
+  issuer — the ClusterIssuer cert-manager issues the console certificate from: the Ingress is rendered with
+           the cert-manager.io/cluster-issuer annotation and a tls Secret (ingress-shim then makes a
+           Certificate named like the Secret). Empty otherwise.
+  check  — runr-api may read that Certificate and the namespace's CertificateRequests, for the platform
+           administrators' warning when it cannot be issued: an issuer, the cert-manager.io/v1 API when the
+           chart is rendered, and ingress.tls.certificateCheck not false (values without the key: on).
+*/}}
+{{- define "runr.consoleTlsCheck" -}}
+{{- $t := include "runr.ingressTls" . | fromJson -}}
+{{- $issuer := "" -}}
+{{- if and .Values.ingress.enabled .Values.domain $t.issuer $t.secret -}}
+{{- $issuer = $t.issuer -}}
+{{- end -}}
+{{- $tls := .Values.ingress.tls | default dict -}}
+{{- $check := and (ne $issuer "") (.Capabilities.APIVersions.Has "cert-manager.io/v1") (ne (toString (dig "certificateCheck" true $tls)) "false") -}}
+{{- toJson (dict "issuer" $issuer "check" $check) -}}
+{{- end -}}
+
+{{/*
 Uploaded PEM → Secret data (base64). Input: dict value / field / marker.
 The PEM is accepted as plain text or base64; a PEM collapsed onto one line (a password field strips line breaks)
 is repaired by rebuilding the BEGIN/END lines. If it is empty or not a PEM, the install stops with a clear error.

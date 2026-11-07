@@ -27,7 +27,9 @@ trait SettingsQueryTrait
             ->whereIn('runtime', app(RuntimeRegistry::class)->visible()->pluck('id'))
             ->orderBy('runtime')
             ->orderBy('sort_order')
-            ->get(['id', 'runtime', 'version', 'is_default', 'sort_order', 'eol_at']);
+            ->get(['id', 'runtime', 'version', 'is_default', 'sort_order', 'eol_at', 'deprecated_at', 'sunset_at'])
+            // ends_at: the end of life or the sunset, the earlier (docs/runtimes.md#lifecycle)
+            ->each(fn (ExecutorImage $image) => $image->setAttribute('ends_at', $image->endsAt()?->toDateString()));
     }
 
     protected function buildSettingsData(): array

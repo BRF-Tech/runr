@@ -130,7 +130,8 @@ class SandboxManifestTest extends TestCase
         $step1 = str_replace(['HOST=/host', 'chroot "$HOST"'], ["HOST=$dir/host", 'true'], $step1);
         // fail() writes /dev/termination-log in the pod — print only
         $step1 = preg_replace('/^fail\(\).*$/m', 'fail() { echo "runr: ERROR: $*"; exit 1; }', $step1);
-        $prelude = 'wget() { cp "'.$dir.'/rel/${4#https://storage.googleapis.com/gvisor/releases/release/*/}" "$3"; }'."\n"
+        // wget [-q] [-T <s>] -O <file> <url> (the installer's download())
+        $prelude = 'wget() { while [ "$#" -gt 1 ]; do case "$1" in -O) o="$2"; shift ;; esac; shift; done; cp "'.$dir.'/rel/${1#https://storage.googleapis.com/gvisor/releases/release/*/}" "$o"; }'."\n"
             .'uname() { echo x86_64; }'."\n";
 
         exec('GVISOR_RELEASE=20260921.0 sh -c '.escapeshellarg($prelude.$step1).' 2>&1', $out, $code);

@@ -5,6 +5,7 @@ namespace App\Http\Resources;
 use App\Mcp\Hosting\HostedServerIndex;
 use App\Models\ExecutorImage;
 use App\Models\Project;
+use App\Models\Runtime;
 use App\Models\User;
 use App\Services\GatewayService;
 use App\Services\GlobalProjects\GlobalProjectService;
@@ -13,6 +14,8 @@ use App\Services\ProjectDomainService;
 use App\Services\Projects\ProjectStopService;
 use App\Services\Rollouts\DeployStrategy;
 use App\Services\Runtimes\Patches\RuntimePatches;
+use App\Services\Runtimes\RuntimeLifecycle;
+use App\Services\Runtimes\RuntimeRegistry;
 use App\Support\Rbac\EnvVisibility;
 use App\Support\Rbac\Rbac;
 use App\Triggers\TriggerPresenter;
@@ -86,6 +89,8 @@ class ProjectResource extends JsonResource
             // system "cost_limit" when RunR stopped it by itself (ProjectStopService::stopBySystem)
             'stopped' => $this->resource->isStopped() ? $this->stopState($request) : null,
             'runtime_eol' => $this->resolveRuntimeEol(),
+            // Lifecycle of the runtime version the project runs (docs/runtimes.md#lifecycle)
+            'runtime_lifecycle' => $this->resolveRuntimeLifecycle(),
             // Runtime patches (docs/runtimes.md#runtime-patches): state up_to_date | patch_available |
             // pinned | overdue, the most urgent pending level, deadline, current / latest patch, pin
             /** @var array{state: "up_to_date"|"patch_available"|"pinned"|"overdue", level: "routine"|"security"|"critical"|"zero-day"|null, deadline_at: string|null, deployed: bool, current: array{id: string|null, tag: string|null, level: string|null, digest: string|null, published_at: string|null}|null, latest: array{id: string, tag: string, level: string, digest: string, published_at: string|null}|null, pending: list<string>, pin: array{id: string|null, tag: string|null, digest: string|null, available: bool, by: string|null}|null}|null null: no patch concerns the project */
@@ -132,6 +137,45 @@ class ProjectResource extends JsonResource
         $user = User::query()->find($id, ['id', 'name']);
 
         return ['id' => (string) $id, 'name' => $user?->name];
+    }
+
+    /**
+     * @return array{state: string, runtime_state: string, version: string|null, eol_at: string|null, deprecated_at: string|null, sunset_at: string|null, ends_at: string|null, ends_by: string|null, orphaned_at: string|null, replacement: string|null, notice: string|null}|null
+     */
+    private function resolveRuntimeLifecycle(): ?array
+    {
+        /** @var Project $project */
+        $project = $this->resource;
+        if (! $project->runtime || $project->service_type === 'caas') {
+            return null;
+        }
+
+        try {
+            $version = $project->runtime_version ?: ExecutorImage::defaultVersion((string) $project->runtime);
+            $image = $version ? ExecutorImage::query()->where('runtime', $project->runtime)->where('version', $version)->first() : null;
+            $row = Runtime::query()->find($project->runtime);
+            $runtime = $row ? RuntimeLifecycle::runtime($row, app(RuntimeRegistry::class)->manifest((string) $project->runtime)) : null;
+        } catch (\Throwable) {
+            return null;
+        }
+        $versionState = $image ? RuntimeLifecycle::version($image) : null;
+
+        return [
+            // the version's state, an orphaned runtime first
+            'state' => ($runtime['state'] ?? null) === RuntimeLifecycle::ORPHANED && ! in_array($versionState['state'] ?? null, [RuntimeLifecycle::EOL, RuntimeLifecycle::SUNSET], true)
+                ? RuntimeLifecycle::ORPHANED
+                : ($versionState['state'] ?? RuntimeLifecycle::ACTIVE),
+            'runtime_state' => $runtime['state'] ?? RuntimeLifecycle::ACTIVE,
+            'version' => $version,
+            'eol_at' => $versionState['eol_at'] ?? null,
+            'deprecated_at' => $versionState['deprecated_at'] ?? null,
+            'sunset_at' => $versionState['sunset_at'] ?? null,
+            'ends_at' => $versionState['ends_at'] ?? null,
+            'ends_by' => $versionState['ends_by'] ?? null,
+            'orphaned_at' => $runtime['orphaned_at'] ?? null,
+            'replacement' => $runtime['replacement'] ?? null,
+            'notice' => $runtime['notice'] ?? null,
+        ];
     }
 
     private function resolveRuntimeEol(): ?string

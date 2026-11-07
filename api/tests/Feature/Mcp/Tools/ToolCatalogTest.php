@@ -39,6 +39,8 @@ class ToolCatalogTest extends TestCase
         'webhook_event_replay' => 'confirm',
         // Environments (docs/environments.md)
         'environment_delete' => 'confirm',
+        // Runtime sources: the source's runtimes without projects go with it
+        'runtime_source_remove' => 'confirm',
         // API product: a revoked key cannot come back
         'api_key_revoke' => 'confirm',
         // Global projects: a region left out loses its copy; a failover loses what the replicas
@@ -74,6 +76,7 @@ class ToolCatalogTest extends TestCase
         'domains_list', 'domain_add', 'domain_verify', 'domain_remove',
         'regions_list', 'region_status',
         'runtimes_list', 'runtime_get', 'runtime_register',
+        'runtime_sources_list', 'runtime_source_connect', 'runtime_source_sync', 'runtime_source_remove',
         'runtime_patches_get', 'runtime_patch_apply', 'runtime_patch_pin',
         'workflows_list', 'workflow_run_start', 'workflow_runs_list', 'workflow_run_status', 'event_send',
         'bindings_list', 'binding_create', 'binding_attach',

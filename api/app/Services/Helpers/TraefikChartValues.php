@@ -14,6 +14,13 @@ use stdClass;
  * cannot cross that version. The rest of what RunR gives the chart keeps its meaning up to the
  * pinned one: with these keys moved it renders the same container arguments, RBAC and Services.
  *
+ * Keys RunR gave the chart where it never read them move to the ones it reads (chart 42.3.1's
+ * schema refuses some of them): a Service's `type` into its `spec` (service and
+ * service.additionalServices.*; the chart wrote the same type there or none, which Kubernetes made
+ * ClusterIP), deployment.livenessProbe / readinessProbe to the root keys the chart takes the
+ * probes' timing from (its httpGet it builds itself, on the same /ping and port), and
+ * tlsOptions.*.preferServerCipherSuites, which no Traefik v3 reads, goes.
+ *
  * The move also sets what a new region is given and an earlier chart cannot: request headers with
  * an aliasing name are deleted on every entry point (KnativeConstants::TRAEFIK_ALIAS_HEADERS_STRATEGY),
  * or kept where the operator chose that as a stopgap (aliasStrategy()). As a global value it holds
@@ -114,7 +121,57 @@ final class TraefikChartValues
         unset($image['tag'], $image['digest']);
         $values->image = (object) (TraefikImage::helmValues($imageRef) + $image);
 
+        return self::readKeys($values);
+    }
+
+    /** The keys the chart never read, moved to the ones it reads (see the class) */
+    private static function readKeys(stdClass $values): stdClass
+    {
+        if (($values->service ?? null) instanceof stdClass) {
+            $values->service = self::typeIntoSpec($values->service);
+            if (($values->service->additionalServices ?? null) instanceof stdClass) {
+                foreach (get_object_vars($values->service->additionalServices) as $name => $service) {
+                    if ($service instanceof stdClass) {
+                        $values->service->additionalServices->{$name} = self::typeIntoSpec($service);
+                    }
+                }
+            }
+        }
+
+        if (($values->deployment ?? null) instanceof stdClass) {
+            foreach (['livenessProbe', 'readinessProbe'] as $probe) {
+                $timing = $values->deployment->{$probe} ?? null;
+                unset($values->deployment->{$probe});
+                if ($timing instanceof stdClass && ! isset($values->{$probe})) {
+                    unset($timing->httpGet);
+                    $values->{$probe} = $timing;
+                }
+            }
+        }
+
+        if (($values->tlsOptions ?? null) instanceof stdClass) {
+            foreach (get_object_vars($values->tlsOptions) as $option) {
+                if ($option instanceof stdClass) {
+                    unset($option->preferServerCipherSuites);
+                }
+            }
+        }
+
         return $values;
+    }
+
+    private static function typeIntoSpec(stdClass $service): stdClass
+    {
+        if (property_exists($service, 'type')) {
+            $spec = ($service->spec ?? null) instanceof stdClass ? $service->spec : new stdClass;
+            if (! isset($spec->type) && $service->type !== null) {
+                $spec->type = $service->type;
+            }
+            unset($service->type);
+            $service->spec = $spec;
+        }
+
+        return $service;
     }
 
     private static function accessLog(stdClass $access): stdClass

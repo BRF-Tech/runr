@@ -36,7 +36,8 @@ class HorizonServiceProvider extends HorizonApplicationServiceProvider
     }
 
     /**
-     * Register the Horizon gate: platform administrators only (users.is_admin, account enabled).
+     * Register the Horizon gate: the installation's operators only — platform administrators
+     * (users.is_admin), single-tenant the holders of platform.manage — with an enabled account.
      */
     protected function gate(): void
     {

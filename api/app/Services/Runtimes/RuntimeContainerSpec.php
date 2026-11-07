@@ -97,6 +97,16 @@ class RuntimeContainerSpec
 
         $podSpec['containers'][0] = $container;
 
+        // A private image of a runtime source: its pull Secret in the namespace, imagePullSecrets
+        // (a built image is in the region registry)
+        if (! $built) {
+            $region = $project->knativeRegion;
+            $podSpec = app(RuntimePullSecrets::class)->applyToPodSpec(
+                $podSpec, $manifest->id(), (string) ($container['image'] ?? ''), $region,
+                $region ? (string) ($region->project_namespace ?? $region->name) : 'runr',
+            );
+        }
+
         // WebAssembly runtimes: shim nodes, "/" command, schedule tick as a Linux container (WasmPodSpec)
         return WasmPodSpec::apply($podSpec, $manifest, $project, $trigger, $timeout);
     }

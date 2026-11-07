@@ -1,0 +1,119 @@
+# yaml-language-server: $schema=../../schema/runtime.schema.json
+#
+# sample-lua: Lua functions on RunR. An interpreted language that runs through RunR's universal
+# wrapper in persistent mode: the wrapper (runr-wrapper, the container's entrypoint) starts
+# runner.lua once per worker and keeps it running; every invocation - an HTTP request, a queue
+# message, a schedule tick - is one JSON line on its stdin, the answer one JSON line on its
+# stdout. The function is loaded once per worker, so an invocation costs a function call, not an
+# interpreter start.
+#
+# The two versions show the two ways to provide a runtime image:
+#   5.4  image       built, contract-tested and published by this repository's CI (publish.yml)
+#   5.3  dockerfile  RunR builds the image in each region from the files of this directory
+#                    (Dockerfile, runner.lua), on first use; nothing to publish
+# Reference: https://github.com/BRF-Tech/runr/blob/main/docs/runtimes.md#manifest-reference
+apiVersion: runr.sh/v1
+kind: Runtime
+id: sample-lua
+name: Lua (sample)
+description: Lua with LuaRocks; one long-lived interpreter per worker answers every request (persistent mode).
+icon: "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAzMiAzMiI+PGNpcmNsZSBjeD0iMTQiIGN5PSIxOCIgcj0iMTIiIGZpbGw9IiMwMDAwODAiLz48Y2lyY2xlIGN4PSIxOC41IiBjeT0iMTMuNSIgcj0iMy41IiBmaWxsPSIjZmZmIi8+PGNpcmNsZSBjeD0iMjciIGN5PSI1IiByPSIzLjUiIGZpbGw9IiMwMDAwODAiLz48L3N2Zz4="
+language: lua
+extensions: [lua]
+category: general
+
+# Lifecycle of the whole runtime. Uncomment when you retire it: RunR shows a badge and the notice,
+# names the replacement, reminds the projects' owners 13, 4 and 1 weeks before the sunset, and
+# after the sunset refuses new projects, saves and deploys (running deployments stay untouched).
+# deprecated: "2027-01-01"          # a date, or true for "deprecated now"
+# sunset: "2027-12-31"
+# replacement: sample-lua-next      # the runtime id RunR suggests instead
+# notice: "Lua (sample) moves to sample-lua-next; see https://github.com/<you>/runr-sample-custom-executor"
+
+versions:
+  - version: "5.4"
+    image: ghcr.io/brf-tech/runr/sample-executor-lua:5.4
+    default: true
+    # End of life of this image: its base, Alpine 3.24, is supported until 2028-05-01
+    eol: "2028-05-01"
+  - version: "5.3"
+    dockerfile: Dockerfile
+    buildArgs:
+      RUNTIME_VERSION: "5.3"
+    eol: "2028-05-01"
+    # Lua 5.3 has had no release since 2020: deprecated (badge and notice, still usable), and
+    # gone from the picker after the sunset, before the end of life of its base image
+    deprecated: "2026-12-01"
+    sunset: "2027-06-30"
+
+handler:
+  file: main
+  function: handler
+  # checked on every save of the entry file; {handler} is the handler name
+  pattern: '(function\s+([A-Za-z_][A-Za-z0-9_]*[.:])?{handler}\s*\(|{handler}\s*=\s*function\s*\()'
+
+template:
+  files:
+    "{file}": |
+      -- RunR Lua function. RunR calls handler(event, context) for every invocation:
+      --   event    the request: trigger ("http", "queue", "schedule"), method, path, query,
+      --            headers, body and, for queue messages and schedule ticks, event (the
+      --            CloudEvent; event.data is its JSON payload)
+      --   context  runtime, version, request_id, trigger, worker
+      -- Return a string (the body), a table (sent as JSON) or
+      -- {statusCode = 201, headers = {...}, body = "..."}. print() writes to the logs.
+      local M = {}
+
+      function M.{handler}(event, context)
+        if event.trigger == "schedule" then
+          print("schedule trigger fired")
+          return "tick from Lua"
+        end
+
+        if event.trigger == "queue" then
+          -- the queue consumer posts the stream entry's fields as a JSON object: {"msg": "hi"}
+          local data = event.event and event.event.data
+          local msg = type(data) == "table" and data.msg or event.body
+          return string.format("processed %s (from Lua)", tostring(msg))
+        end
+
+        local name = event.query.name or "World"
+        return string.format("Hello, %s! (from Lua)", name)
+      end
+
+      return M
+
+# A FaaS project with function-dev-1.rockspec is built: LuaRocks installs the rockspec's
+# dependencies into /build/vendor in the version's image, /build/vendor is copied to /app/vendor
+# of the function's image, and LUA_PATH / LUA_CPATH point there. Pure-Lua rocks only: the image
+# has no C compiler (add build-base to the Dockerfile, or set dependencies.image, for C rocks).
+dependencies:
+  file: function-dev-1.rockspec
+  template: |
+    -- LuaRocks dependencies of this function: https://github.com/luarocks/luarocks/wiki/Rockspec-format
+    -- The file name must stay function-dev-1.rockspec (LuaRocks wants <package>-<version>.rockspec).
+    rockspec_format = "3.0"
+    package = "function"
+    version = "dev-1"
+    source = { url = "file:///build/code" }
+    dependencies = {
+      "inspect >= 3.1",
+    }
+    build = { type = "builtin", modules = {} }
+  install: "luarocks --tree /build/vendor install --only-deps /build/code/function-dev-1.rockspec"
+  copy:
+    - { from: /build/vendor, to: /app/vendor }
+  env:
+    LUA_PATH: "/app/vendor/share/lua/{version}/?.lua;/app/vendor/share/lua/{version}/?/init.lua;;"
+    LUA_CPATH: "/app/vendor/lib/lua/{version}/?.so;;"
+
+run:
+  mode: persistent
+  command: ["lua", "/opt/runr/runner.lua"]
+  workers: 2
+
+triggers: [http, schedule, queue]
+sandbox: [runc, gvisor, kata]
+resources:
+  cpu: "250m"
+  memory_mb: 128

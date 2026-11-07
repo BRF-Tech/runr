@@ -12,6 +12,9 @@ class PermissionCatalog
 
     public const OWNER = 'owner';
 
+    /** The installation itself, single-tenant edition only (Rbac::operatesPlatform()) */
+    public const PLATFORM_MANAGE = 'platform.manage';
+
     /** multi-tenant when the Tenancy module is on, single-tenant otherwise */
     public static function edition(): string
     {
@@ -93,7 +96,8 @@ class PermissionCatalog
     }
 
     /**
-     * Built-in roles of the edition: key => [name, description, permissions (expanded), builtin].
+     * Built-in roles of the edition: key => [name, description, permissions (expanded, less the
+     * role's 'except'), builtin].
      *
      * @return array<string, array{key: string, name: string, description: string, permissions: list<string>, builtin: bool}>
      */
@@ -110,7 +114,7 @@ class PermissionCatalog
                 'key' => $key,
                 'name' => $role['name'] ?? ucfirst($key),
                 'description' => $role['description'] ?? '',
-                'permissions' => self::expand($role['permissions'] ?? []),
+                'permissions' => array_values(array_diff(self::expand($role['permissions'] ?? []), $role['except'] ?? [])),
                 'builtin' => true,
             ];
         }

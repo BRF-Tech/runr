@@ -24,8 +24,9 @@ use stdClass;
  * The move changes the logging keys, the image and what happens to request headers with aliasing
  * names (TraefikChartValues::aliasStrategy()); the entry points, RBAC, Services and selectors render
  * as they did, so the LoadBalancer keeps its address and the Deployment rolls its pods as any image
- * change does, a new one Ready before an old one goes. Helm leaves CRDs alone; traefik.io's differ by
- * one optional field of Middleware that RunR does not set.
+ * change does, a new one Ready before an old one goes. Helm leaves CRDs alone: the traefik.io CRDs of
+ * the charts it moves from (40.3.0, 42.3.0) lack only optional fields of the pinned chart's, and RunR
+ * sets none of them (docs/upgrade.md).
  *
  * A Traefik on the pinned chart whose strategy is not the installation's gets just that, either
  * way. While it is keep, every run warns: that is the operator's stopgap, and it reopens what

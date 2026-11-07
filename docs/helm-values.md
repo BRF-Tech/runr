@@ -1,8 +1,8 @@
 # Helm values reference
 
-Every value of the Helm chart `runr` 0.6.7 from BRF's public Helm repository, grouped by top-level
+Every value of the Helm chart `runr` 0.6.8 from BRF's public Helm repository, grouped by top-level
 key, with its default from the chart's `values.yaml` and what the templates do with it.
-`helm show values brf-tech/runr --version 0.6.7` prints the file with its comments. How these
+`helm show values brf-tech/runr --version 0.6.8` prints the file with its comments. How these
 values fit together in a production install is described in [Installing RunR in
 production](install.md).
 
@@ -17,7 +17,7 @@ production](install.md).
 - [Platform settings](#platform-settings): `quota`, `audit`, `notifications`, `projectSecrets`,
   `auth`, `billing`, `branding`, `signup`
 - [Regions and features](#regions-and-features): `knative`, `observability`, `sandboxApi`,
-  `gitDeploy`, `supplyChain`, `globalDns`, `images`, `runtimePatches`, `apiProduct`, `orgTransfer`,
+  `gitDeploy`, `supplyChain`, `globalDns`, `images`, `runtimePatches`, `runtimeCatalog`, `apiProduct`, `orgTransfer`,
   `ai`, `bindings`
 - [Scheduling and cluster](#scheduling-and-cluster): `podColocation`, `placement`,
   `networkPolicy`, `imagePullSecrets`, `imagePullSecretsFromDefaultServiceAccount`, `initImage`,
@@ -60,6 +60,7 @@ Helm checks the values against the chart's `values.schema.json` on `install`, `u
 | `globalDns.*` | `zone`, `namespace`, `image`, `storageClass`, `geoipUrl`, `tls.acmeServer`, `tls.acmeEmail`, `dataLink.image` strings; `serviceAnnotations` an object of strings; `ttl`, `maxRegions`, `failover.afterSeconds`, `dataLink.port` strings or integers; `tls.mode` `""`, `acme` or `none` |
 | `images.*` | `uploadImage` a string; `quotaGb`, `maxUploadGb`, `uploadTtlHours` strings or numbers |
 | `runtimePatches.*` | `feed`, `publicKey`, `viaRegion` strings; `autoMigrate` a boolean (or `"true"` / `"false"`) |
+| `runtimeCatalog.*` | `reference`, `publicKey`, `viaRegion`, `builtinRuntimes` strings; `intervalMinutes`, `timeout` strings or numbers; `offline` a boolean (or `"true"` / `"false"`) |
 | `apiProduct.*` | `gatewayAuthImage`, `callbackUrl` strings; `syncSeconds`, `usageRetentionDays` strings or numbers |
 | `orgTransfer.*` | `transferImage` a string; `maxPackageGb`, `retentionHours`, `podDiskGb` strings or numbers |
 | `placement.*` | `tolerateDedicatedWorkers` a boolean, `tolerations` a list, `affinity` an object, `nodeSelector` string values |
@@ -137,6 +138,7 @@ The Ingress `runr` is created when `ingress.enabled` is `true` and `domain` is s
 | `ingress.tls.clusterIssuer` | `""` | ClusterIssuer of the cert-manager annotation; empty: `letsencrypt-prod` (`letsencrypt`). With `mode: ""` the annotation is added only when this is set |
 | `ingress.tls.certificate` | `""` | `custom`: the full PEM chain, server certificate first; PEM or base64-encoded PEM |
 | `ingress.tls.privateKey` | `""` | `custom`: the certificate's unencrypted private key (PEM); never written to any output |
+| `ingress.tls.certificateCheck` | `true` | When cert-manager issues the console certificate: the `runr-api` ServiceAccount may `get` its Certificate and `list` the CertificateRequests of the release namespace, and platform administrators (single-tenant: the holders of `platform.manage`) see a warning in the console while it cannot be issued ([install.md](install.md#when-the-console-certificate-is-not-issued)). `false`: neither |
 
 | `ingress.tls.mode` | Result |
 | --- | --- |
@@ -148,7 +150,10 @@ The Ingress `runr` is created when `ingress.enabled` is `true` and `domain` is s
 
 Any other mode stops the install with an error. The console's TLS Secret name is also passed to
 the API (`CONSOLE_TLS_SECRET_NAME`), whose ServiceAccount may read that one Secret: a region's
-function domain can reuse the console certificate ([regions.md](regions.md)).
+function domain can reuse the console certificate ([regions.md](regions.md)). The mode, the
+ClusterIssuer cert-manager issues the certificate from and whether the API may read its Certificate
+are passed as `CONSOLE_TLS_MODE`, `CONSOLE_TLS_ISSUER` and `CONSOLE_TLS_CHECK`, for the warning
+when it cannot be issued ([install.md](install.md#when-the-console-certificate-is-not-issued)).
 
 ### clientIp
 
@@ -706,12 +711,31 @@ application defaults.
 | Key | Default | What it does |
 | --- | --- | --- |
 | `runtimePatches.feed` | `""` | OCI reference of the feed (`RUNR_PATCH_FEED`); empty: `ghcr.io/brf-tech/runr/runtime-patches:feed` |
-| `runtimePatches.publicKey` | the key of BRF-Tech/runr-runtimes (`keys/patch-feed.pub`, DER SHA-256 `24d79a49…c0df`) | cosign public key (PEM) the feed must be signed with (`RUNR_PATCH_FEED_PUBLIC_KEY`); another key for a feed of your own; `""`: the feed is off and platform administrators see a warning. Set it as a block: `publicKey: \|` followed by the key's lines — the line breaks reach the API |
+| `runtimePatches.publicKey` | the key of BRF-Tech/runr-runtimes (`keys/patch-feed.pub`, DER SHA-256 `24d79a49…c0df`) | cosign public key (PEM) the feed must be signed with (`RUNR_PATCH_FEED_PUBLIC_KEY`); another key for a feed of your own; `""`: the feed is off and platform administrators (single-tenant: the holders of `platform.manage`) see a warning. Set it as a block: `publicKey: \|` followed by the key's lines — the line breaks reach the API |
 | `runtimePatches.viaRegion` | `""` | Read the feed through this region's internal registry (id or name; its ghcr.io pull-through) instead of from the feed's registry, for an API without a way out (`RUNR_PATCH_FEED_VIA_REGION`) |
 | `runtimePatches.autoMigrate` | `true` | At a critical or zero-day patch's deadline, redeploy the projects still behind onto the newest patch, rolled back when the new revision does not become ready (`RUNR_PATCH_AUTO_MIGRATE`). The default of the platform policy: platform administrators switch it on the Patches page, which wins |
 
 `RUNR_PATCH_FEED_TIMEOUT` (seconds of one registry request, default 15) has no value of its own:
 set it through [`extraEnv`](#extraenv).
+
+### runtimeCatalog
+
+RunR's signed catalog of the built-in runtimes ([runtimes.md](runtimes.md#runtime-sources)),
+published by BRF-Tech/runr-runtimes and read like the patch feed: a HEAD of its tag every
+`intervalMinutes`, the catalog itself only when its digest changed and its cosign signature
+verified with `publicKey`. A runtime added to the catalog is offered without a RunR release. Until
+the catalog was read once — and always with `offline: true` — the catalog the API image ships is in
+use. Empty values keep the application defaults.
+
+| Key | Default | What it does |
+| --- | --- | --- |
+| `runtimeCatalog.reference` | `""` | OCI reference of the catalog (`RUNR_RUNTIME_CATALOG_REF`); empty: `ghcr.io/brf-tech/runr/runtime-catalog:stable` |
+| `runtimeCatalog.offline` | `false` | `true`: never read a catalog (`RUNR_RUNTIME_CATALOG_REF=""`); the built-in runtimes are the API image's — for air-gapped installations |
+| `runtimeCatalog.publicKey` | the key of BRF-Tech/runr-runtimes (`keys/patch-feed.pub`, the patch feed's) | cosign public key (PEM) the catalog must be signed with (`RUNR_RUNTIME_CATALOG_PUBLIC_KEY`); a key of your own for a catalog you mirror and sign yourself |
+| `runtimeCatalog.viaRegion` | `""` | Read the catalog through this region's internal registry (`RUNR_RUNTIME_CATALOG_VIA_REGION`); empty: `runtimePatches.viaRegion`, else directly |
+| `runtimeCatalog.intervalMinutes` | `""` | Minutes between two checks (`RUNR_RUNTIME_CATALOG_INTERVAL`); empty: 15 |
+| `runtimeCatalog.timeout` | `""` | Seconds of one request to a source's registry (`RUNR_RUNTIME_SOURCE_TIMEOUT`); empty: 20 |
+| `runtimeCatalog.builtinRuntimes` | `""` | The first default of the platform setting **Built-in runtimes** (`EXECUTOR_RUNTIMES`, comma-separated ids); empty: every runtime of the catalog. Once a platform administrator saves the setting on the Runtimes page, this is no longer read |
 
 ### apiProduct
 

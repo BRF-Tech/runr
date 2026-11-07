@@ -32,10 +32,82 @@ class OciRegistryClient
     /** @var array<string, string|null> pull tokens per repository */
     private array $tokens = [];
 
+    /** @var array{host: string, username: string, password: string}|null registry credentials (a private runtime source) */
+    private ?array $basic = null;
+
+    /** HTTP status of the last answer (401 / 403: the credentials were refused) */
+    private ?int $lastStatus = null;
+
     public function __construct(
         private readonly int $timeout = 15,
         private readonly ?KnativeRegion $region = null,
     ) {}
+
+    /**
+     * The same client with credentials for $host (docs/runtimes.md#private-sources): the token
+     * service of a Bearer challenge is asked with them (Basic auth), a Basic challenge answered with
+     * them. Requests to other hosts stay anonymous. Not through a region: its pull-through does not
+     * know the credentials.
+     */
+    public function withCredentials(string $host, string $username, string $password): self
+    {
+        if ($this->region !== null) {
+            throw new \RuntimeException('A private registry cannot be read through the registry of a region');
+        }
+
+        $client = clone $this;
+        $client->tokens = [];
+        $client->basic = ['host' => self::normalizeHost($host), 'username' => $username, 'password' => $password];
+
+        return $client;
+    }
+
+    /** "registry-1.docker.io" and "docker.io" are one registry; "GHCR.io" is "ghcr.io". */
+    public static function normalizeHost(string $host): string
+    {
+        $host = strtolower(trim($host));
+
+        return in_array($host, ['docker.io', 'index.docker.io', 'registry-1.docker.io'], true) ? 'registry-1.docker.io' : $host;
+    }
+
+    /**
+     * Tag names of a repository (GET /v2/<name>/tags/list, every page of its Link header, at most
+     * $maxPages pages of 1000): complete false when a page could not be read.
+     *
+     * @return array{tags: list<string>, complete: bool}
+     */
+    public function tags(string $repository, int $maxPages = 10): array
+    {
+        $ref = ImageRef::parse($repository);
+        $path = 'tags/list?n=1000';
+        $tags = [];
+
+        for ($page = 1; $page <= $maxPages; $page++) {
+            try {
+                $response = $this->send('GET', $repository, $path, ['Accept' => 'application/json']);
+            } catch (\Throwable) {
+                return ['tags' => $tags, 'complete' => false];
+            }
+            if (! $response->successful()) {
+                return ['tags' => $tags, 'complete' => false];
+            }
+            foreach ((array) $response->json('tags') as $tag) {
+                if (is_string($tag)) {
+                    $tags[] = $tag;
+                }
+            }
+            if (! preg_match('/<([^>]+)>\s*;\s*rel="?next"?/i', (string) $response->header('Link'), $m)) {
+                return ['tags' => $tags, 'complete' => true];
+            }
+            // "/v2/<name>/tags/list?last=…&n=…" (or an absolute URL): the part after the repository
+            $next = (string) (parse_url($m[1], PHP_URL_PATH) ?? '');
+            $query = (string) (parse_url($m[1], PHP_URL_QUERY) ?? '');
+            $prefix = "/v2/{$ref->repository}/";
+            $path = (str_starts_with($next, $prefix) ? substr($next, strlen($prefix)) : 'tags/list').($query !== '' ? "?{$query}" : '');
+        }
+
+        return ['tags' => $tags, 'complete' => false];
+    }
 
     public static function direct(int $timeout = 15): self
     {
@@ -100,7 +172,7 @@ class OciRegistryClient
      * realm="…",service="…",scope="…"); null without a Bearer challenge or when the service
      * gives none.
      */
-    public static function bearerToken(string $challenge, string $name, int $timeout = 10): ?string
+    public static function bearerToken(string $challenge, string $name, int $timeout = 10, ?array $basic = null): ?string
     {
         if (! preg_match('/^Bearer\s+(.+)$/i', trim($challenge), $m)) {
             return null;
@@ -119,14 +191,31 @@ class OciRegistryClient
             'service' => $params['service'] ?? null,
             'scope' => $params['scope'] ?? "repository:{$name}:pull",
         ]));
-        $response = Http::timeout($timeout)->get($params['realm'].(str_contains($params['realm'], '?') ? '&' : '?').$query);
+        $request = Http::timeout($timeout);
+        if ($basic !== null) {
+            $request = $request->withBasicAuth($basic['username'], $basic['password']);
+        }
+        $response = $request->get($params['realm'].(str_contains($params['realm'], '?') ? '&' : '?').$query);
         $token = $response->successful() ? ($response->json('token') ?? $response->json('access_token')) : null;
 
         return is_string($token) && $token !== '' ? $token : null;
     }
 
+    public function lastStatus(): ?int
+    {
+        return $this->lastStatus;
+    }
+
     /** One request to /v2/<name>/<path>, directly or through the region's registry. */
     private function send(string $method, string $repository, string $path, array $headers): Response
+    {
+        $response = $this->sendOnce($method, $repository, $path, $headers);
+        $this->lastStatus = $response->status();
+
+        return $response;
+    }
+
+    private function sendOnce(string $method, string $repository, string $path, array $headers): Response
     {
         $ref = ImageRef::parse($repository);
 
@@ -138,9 +227,16 @@ class OciRegistryClient
         $url = "https://{$host}/v2/{$ref->repository}/{$path}";
         $key = "{$host}/{$ref->repository}";
 
+        $basic = $this->basic !== null && $this->basic['host'] === self::normalizeHost($host) ? $this->basic : null;
+
         $response = $this->request($method, $url, $headers, $this->tokens[$key] ?? null);
         if ($response->status() === 401 && ! array_key_exists($key, $this->tokens)) {
-            $this->tokens[$key] = self::bearerToken((string) $response->header('WWW-Authenticate'), $ref->repository, $this->timeout);
+            $challenge = (string) $response->header('WWW-Authenticate');
+            if ($basic !== null && preg_match('/^Basic(\s|$)/i', trim($challenge))) {
+                $this->tokens[$key] = 'basic:'.base64_encode($basic['username'].':'.$basic['password']);
+            } else {
+                $this->tokens[$key] = self::bearerToken($challenge, $ref->repository, $this->timeout, $basic);
+            }
             if ($this->tokens[$key] !== null) {
                 $response = $this->request($method, $url, $headers, $this->tokens[$key]);
             }
@@ -151,8 +247,14 @@ class OciRegistryClient
 
     private function request(string $method, string $url, array $headers, ?string $token): Response
     {
+        $authorization = match (true) {
+            $token === null => [],
+            str_starts_with($token, 'basic:') => ['Authorization' => 'Basic '.substr($token, 6)],
+            default => ['Authorization' => "Bearer {$token}"],
+        };
+
         return Http::timeout($this->timeout)
-            ->withHeaders($headers + ($token === null ? [] : ['Authorization' => "Bearer {$token}"]))
+            ->withHeaders($headers + $authorization)
             ->send($method, $url);
     }
 

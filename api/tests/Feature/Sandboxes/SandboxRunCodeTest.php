@@ -92,6 +92,21 @@ class SandboxRunCodeTest extends SandboxTestCase
         $this->assertMatchesRegularExpression("#'bash' '/tmp/\\.runr/code/run-[a-z0-9]{26}\\.sh'#", $script);
     }
 
+    public function test_csharp_runs_as_a_file_based_app_without_native_aot(): void
+    {
+        $row = $this->runningSandbox(['runtime' => 'dotnet', 'runtime_version' => '10.0']);
+        $this->answerRun("42\n", []);
+
+        $this->postJson("/api/sandboxes/{$row->id}/run", ['code' => 'Console.WriteLine(6 * 7);'])->assertOk()
+            ->assertJsonPath('data.language', 'csharp')
+            ->assertJsonPath('data.stdout', "42\n");
+
+        // With Native AOT (a file-based app's default) the restore asks NuGet for the AOT packs, which
+        // a sandbox without network never reaches: the run failed after minutes (0.6.8 final test)
+        $script = $this->exec->callsContaining('run=""; rc=127')[0]['argv'][2];
+        $this->assertMatchesRegularExpression("#'dotnet' 'run' '/tmp/\\.runr/code/run-[a-z0-9]{26}\\.cs' '-p:PublishAot=false'#", $script);
+    }
+
     public function test_unknown_languages_are_refused(): void
     {
         $row = $this->runningSandbox();

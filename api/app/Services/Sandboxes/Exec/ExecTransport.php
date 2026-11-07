@@ -3,8 +3,9 @@
 namespace App\Services\Sandboxes\Exec;
 
 /**
- * Runs a command in a sandbox container and streams its output. Bound to KubectlExecTransport
- * (kubectl exec, like the web shell); tests bind a fake.
+ * Runs a command in a sandbox container and streams its output. Bound to SelectingExecTransport:
+ * the native WebSocket client (NativeExecTransport), kubectl exec (KubectlExecTransport) where
+ * that cannot run it or sandbox.exec.client says so; tests bind a fake.
  *
  * $argv is the full command (ExecScript builds the wrapper that sources the sandbox env, changes to
  * the working directory and applies the timeout / PID limit). $onOutput receives each chunk as it

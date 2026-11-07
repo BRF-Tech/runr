@@ -26,8 +26,9 @@ use Tests\TestCase;
 /**
  * Who hears about a runtime patch, by its level (RuntimePatchNotifier, docs/runtimes.md#patch-notifications):
  * routine nobody; security in-app to the project owner, the last deployer and the organization's
- * owners and admins; critical also the platform administrators and by mail; zero-day ignores the
- * preferences and reaches the organization's alert channels. Once per patch and user.
+ * owners and admins; critical also the platform administrators (single-tenant: the holders of
+ * platform.manage) and by mail; zero-day ignores the preferences and reaches the organization's
+ * alert channels. Once per patch and user.
  */
 class RuntimePatchNotificationsTest extends TestCase
 {
@@ -118,6 +119,27 @@ class RuntimePatchNotificationsTest extends TestCase
         Mail::assertQueued(RuntimePatchMail::class, fn (RuntimePatchMail $m) => $m->hasTo($platform->email));
         Mail::assertNotQueued(RuntimePatchMail::class, fn (RuntimePatchMail $m) => $m->hasTo($this->bystander->email));
         Bus::assertNotDispatched(DeliverAlertJob::class);
+    }
+
+    /** A single-tenant install has no users.is_admin: its holders of platform.manage hear what platform administrators hear. */
+    public function test_single_tenant_holders_of_platform_manage_hear_the_platform_notices(): void
+    {
+        $this->customRole('operator', ['platform.manage']);
+        $operator = $this->userWithRole('viewer');
+        $this->groupWithRole('operators', 'operator', [$operator]);
+        $notifier = app(RuntimePatchNotifier::class);
+
+        // the platform's count behind a critical patch: the operator is no project's, yet told
+        $notifier->announce($this->runtimePatch(['tag' => '3.14.7-r1', 'level' => RuntimePatch::CRITICAL, 'deadline_at' => now()->addDays(5)]));
+        $this->assertSame($this->ids($this->orgOwner, $this->orgAdmin, $this->projectOwner, $this->deployer, $operator), $this->told());
+        $this->assertStringContainsString('1 project', Notification::query()->where('user_id', $operator->id)->sole()->title);
+        $this->assertSame(1, Notification::query()->where('user_id', $this->orgOwner->id)->count(), 'the Owner once, from the organization');
+        Mail::assertQueued(RuntimePatchMail::class, fn (RuntimePatchMail $m) => $m->hasTo($operator->email));
+
+        // a refused feed: only the installation's operators — the Owner and the operator
+        $notifier->feedRejected('sha256:'.str_repeat('a', 64), 'invalid_signature', 'no valid signature');
+        $feed = Notification::query()->where('type', 'runtime_patch_feed')->pluck('user_id')->map(fn ($id) => (string) $id)->sort()->values()->all();
+        $this->assertSame($this->ids($this->orgOwner, $operator), $feed);
     }
 
     public function test_preferences_turn_critical_notices_off_but_not_zero_day_ones(): void

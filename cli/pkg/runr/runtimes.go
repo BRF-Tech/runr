@@ -37,12 +37,44 @@ type CatalogRuntime struct {
 	DependencyFile string           `json:"dependency_file,omitempty"`
 	Versions       []RuntimeVersion `json:"versions"`
 	// Regions the runtime is offered in; empty means every region.
-	Regions       []string `json:"regions,omitempty"`
-	IsEnabled     bool     `json:"is_enabled"`
-	TenantID      string   `json:"tenant_id,omitempty"`
-	CreatedBy     FlexID   `json:"created_by,omitempty"`
-	ProjectsCount int      `json:"projects_count"`
-	UpdatedAt     string   `json:"updated_at,omitempty"`
+	Regions   []string `json:"regions,omitempty"`
+	IsEnabled bool     `json:"is_enabled"`
+	// SourceID, SourceName and SourcePath name the runtime source the runtime comes from
+	// (docs/runtimes.md#runtime-sources) and its directory there; Managed is set for a runtime a
+	// source keeps (its manifest changes with the source). Empty on APIs before runtime sources.
+	SourceID   string `json:"source_id,omitempty"`
+	SourceName string `json:"source_name,omitempty"`
+	SourcePath string `json:"source_path,omitempty"`
+	Managed    bool   `json:"managed,omitempty"`
+	// Lifecycle is the runtime's lifecycle (docs/runtimes.md#lifecycle); nil on older APIs.
+	Lifecycle     *RuntimeLifecycle `json:"lifecycle,omitempty"`
+	TenantID      string            `json:"tenant_id,omitempty"`
+	CreatedBy     FlexID            `json:"created_by,omitempty"`
+	ProjectsCount int               `json:"projects_count"`
+	UpdatedAt     string            `json:"updated_at,omitempty"`
+}
+
+// Runtime lifecycle states (RuntimeLifecycle.State, RuntimeVersion.Lifecycle).
+const (
+	LifecycleActive     = "active"
+	LifecycleDeprecated = "deprecated"
+	LifecycleEOL        = "eol"
+	LifecycleSunset     = "sunset"
+	LifecycleOrphaned   = "orphaned"
+)
+
+// RuntimeLifecycle is a runtime's lifecycle: active, deprecated (a badge and a notice, still
+// usable), sunset (its sunset passed: projects can no longer be created, saved or deployed) or
+// orphaned (it left its source: hidden from new projects, running and deployable until its
+// sunset at the end of the grace period).
+type RuntimeLifecycle struct {
+	State        string `json:"state"`
+	DeprecatedAt string `json:"deprecated_at,omitempty"`
+	SunsetAt     string `json:"sunset_at,omitempty"`
+	OrphanedAt   string `json:"orphaned_at,omitempty"`
+	// Replacement is the runtime id RunR suggests instead; Notice why and what to do.
+	Replacement string `json:"replacement,omitempty"`
+	Notice      string `json:"notice,omitempty"`
 }
 
 // Kind classifies a runtime for listings: wasm, plugin or built-in.
@@ -67,12 +99,46 @@ type RuntimeHandler struct {
 // RuntimeVersion is one version of a catalog runtime. Image is empty for versions the
 // platform builds per region (Built).
 type RuntimeVersion struct {
-	Version     string `json:"version"`
-	IsDefault   bool   `json:"is_default"`
-	EOLAt       string `json:"eol_at,omitempty"`
-	GPURequired bool   `json:"gpu_required,omitempty"`
-	Image       string `json:"image,omitempty"`
-	Built       bool   `json:"built"`
+	Version   string `json:"version"`
+	IsDefault bool   `json:"is_default"`
+	EOLAt     string `json:"eol_at,omitempty"`
+	// DeprecatedAt and SunsetAt are the version's lifecycle dates; EndsAt the earlier of EOLAt and
+	// SunsetAt (after it the version leaves the picker and its projects can no longer be saved
+	// or deployed). Lifecycle is active, deprecated, eol or sunset; "" on older APIs.
+	DeprecatedAt string `json:"deprecated_at,omitempty"`
+	SunsetAt     string `json:"sunset_at,omitempty"`
+	EndsAt       string `json:"ends_at,omitempty"`
+	Lifecycle    string `json:"lifecycle,omitempty"`
+	GPURequired  bool   `json:"gpu_required,omitempty"`
+	Image        string `json:"image,omitempty"`
+	Built        bool   `json:"built"`
+}
+
+// State is the lifecycle a version of the runtime is in, the runtime's own taken into account:
+// orphaned, then the version's end (eol, sunset), the runtime's sunset, deprecated (either), active;
+// "" when the API sends no lifecycle.
+func (r *CatalogRuntime) State(v *RuntimeVersion) string {
+	rt := ""
+	if r.Lifecycle != nil {
+		rt = r.Lifecycle.State
+	}
+	vs := ""
+	if v != nil {
+		vs = v.Lifecycle
+	}
+	switch {
+	case rt == LifecycleOrphaned:
+		return LifecycleOrphaned
+	case vs == LifecycleEOL || vs == LifecycleSunset:
+		return vs
+	case rt == LifecycleSunset:
+		return LifecycleSunset
+	case vs == LifecycleDeprecated || rt == LifecycleDeprecated:
+		return LifecycleDeprecated
+	case vs != "":
+		return vs
+	}
+	return rt
 }
 
 // DefaultVersion returns the default version, else the last one.

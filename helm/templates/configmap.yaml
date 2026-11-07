@@ -215,6 +215,13 @@ data:
   # Console TLS Secret: a region's function-domain TLS copies it in "console certificate" mode
   # (same "runr.ingressTls" resolution as ingress.yaml and rbac.yaml: letsencrypt → runr-tls, custom → runr-tls-custom)
   CONSOLE_TLS_SECRET_NAME: {{ (include "runr.ingressTls" . | fromJson).secret | default "runr-tls-custom" | quote }}
+  # Console certificate state (api config/knative.php console_tls, the platform administrators' warning when
+  # cert-manager cannot issue it): the mode, the ClusterIssuer cert-manager issues it from (empty: none does),
+  # and whether runr-api may read its Certificate (helper "runr.consoleTlsCheck", rbac.yaml)
+  {{- $consoleTls := include "runr.consoleTlsCheck" . | fromJson }}
+  CONSOLE_TLS_MODE: {{ (include "runr.ingressTls" . | fromJson).mode | quote }}
+  CONSOLE_TLS_ISSUER: {{ $consoleTls.issuer | quote }}
+  CONSOLE_TLS_CHECK: {{ $consoleTls.check | ternary "true" "false" | quote }}
 
   # Client IP behind ingress controller → runr-gateway (values clientIp, api config/trustedproxy.php)
   TRUSTED_PROXIES: {{ include "runr.trustedProxies" . | quote }}
@@ -470,6 +477,30 @@ data:
   RUNR_PATCH_FEED_VIA_REGION: {{ . | quote }}
   {{- end }}
   RUNR_PATCH_AUTO_MIGRATE: {{ ternary "true" "false" (ne (toString $rp.autoMigrate) "false") | quote }}
+
+  # Runtime catalog (docs/runtimes.md#runtime-sources): RunR's signed catalog of the built-in
+  # runtimes — empty values keep the application defaults; reference "" uses the bundled catalog
+  {{- $rc := .Values.runtimeCatalog | default dict }}
+  {{- if eq (toString $rc.offline) "true" }}
+  RUNR_RUNTIME_CATALOG_REF: ""
+  {{- else }}{{- with $rc.reference }}
+  RUNR_RUNTIME_CATALOG_REF: {{ . | quote }}
+  {{- end }}{{- end }}
+  {{- with $rc.publicKey }}
+  RUNR_RUNTIME_CATALOG_PUBLIC_KEY: {{ . | trim | quote }}
+  {{- end }}
+  {{- with $rc.viaRegion }}
+  RUNR_RUNTIME_CATALOG_VIA_REGION: {{ . | quote }}
+  {{- end }}
+  {{- with $rc.intervalMinutes }}
+  RUNR_RUNTIME_CATALOG_INTERVAL: {{ . | quote }}
+  {{- end }}
+  {{- with $rc.timeout }}
+  RUNR_RUNTIME_SOURCE_TIMEOUT: {{ . | quote }}
+  {{- end }}
+  {{- with $rc.builtinRuntimes }}
+  EXECUTOR_RUNTIMES: {{ . | quote }}
+  {{- end }}
 
   # API product (docs/api-product.md) — empty values keep the application defaults
   {{- $ap := .Values.apiProduct | default dict }}

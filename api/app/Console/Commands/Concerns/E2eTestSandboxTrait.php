@@ -35,6 +35,7 @@ trait E2eTestSandboxTrait
     private function setupSandboxRuntime(string $regionId): bool
     {
         $this->info('Installing gVisor sandbox runtime...');
+        $this->e2eGvisorFallback = null;
 
         $response = $this->api()->timeout(30)
             ->post("/api/knative-regions/{$regionId}/install-sandbox", [
@@ -44,7 +45,7 @@ trait E2eTestSandboxTrait
         if (! $response->successful()) {
             $this->warn('  gVisor API failed — fallback...');
 
-            return $this->fallbackGvisorSetup($regionId);
+            return $this->fallbackGvisorSetup($regionId, 'install-sandbox answered '.$response->status().': '.mb_substr($response->body(), 0, 500));
         }
 
         // As long as the install itself may take: SandboxInstallService waits up to 10 minutes for
@@ -66,7 +67,7 @@ trait E2eTestSandboxTrait
             if ($gvisor === 'error' || $gvisor === 'failed') {
                 $this->warn('  gVisor install failed — fallback... '.mb_substr($message, -1500));
 
-                return $this->fallbackGvisorSetup($regionId);
+                return $this->fallbackGvisorSetup($regionId, 'the install failed: '.mb_substr($message, -1500));
             }
 
             sleep(5);
@@ -74,11 +75,24 @@ trait E2eTestSandboxTrait
 
         $this->warn('  gVisor install timeout — fallback... '.mb_substr($message, -1500));
 
-        return $this->fallbackGvisorSetup($regionId);
+        return $this->fallbackGvisorSetup($regionId, 'the install did not finish in 15 minutes: '.mb_substr($message, -1500));
     }
 
-    private function fallbackGvisorSetup(string $regionId): bool
+    /**
+     * Why the gvisor RuntimeClass is the runc stand-in of fallbackGvisorSetup() (null: gVisor was
+     * installed). The sandbox-api suite fails on it: its gvisor class must run on runsc.
+     */
+    private ?string $e2eGvisorFallback = null;
+
+    /**
+     * A RuntimeClass "gvisor" with the runc handler, where gVisor could not be installed: the
+     * project sandbox suite then still checks the class mapping and the pod specs. Nothing of it
+     * runs on gVisor — the sandbox-api suite does not accept it ($e2eGvisorFallback).
+     */
+    private function fallbackGvisorSetup(string $regionId, string $reason = 'gVisor was not installed'): bool
     {
+        $this->e2eGvisorFallback = $reason;
+        $this->error('  gVisor is NOT installed: the RuntimeClass gvisor gets the runc handler, nothing runs on gVisor ('.mb_substr($reason, 0, 300).')');
         $k8s = $this->getE2eKubernetesClient();
 
         // Check if RuntimeClass already exists (from previous install attempt)

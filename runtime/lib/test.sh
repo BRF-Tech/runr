@@ -298,11 +298,9 @@ cmd_test() {
     echo "Creating Kind cluster (1m + ${workers}w)..."
     # KIND_ETCD_IN_MEMORY=1: etcd keeps its data on the node's tmpfs (/tmp) — for hosts whose disk
     # is too slow for etcd's fsyncs ("etcdserver: request timed out", Jobs never started)
-    local etcd_patch=""
-    if [ "${KIND_ETCD_IN_MEMORY:-0}" = "1" ]; then
-      etcd_patch='        etcd:
-          local:
-            dataDir: /tmp/etcd'
+    local etcd_patch
+    etcd_patch=$(kind_etcd_patch)
+    if [ -n "$etcd_patch" ]; then
       echo "  etcd data on the control-plane's tmpfs (KIND_ETCD_IN_MEMORY=1)"
     fi
     local kind_config

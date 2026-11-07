@@ -104,6 +104,18 @@ class KubernetesClient
     }
 
     /**
+     * The answer of a GET on an API server path as it came, for a caller that tells "not there"
+     * (404), "not allowed" (401 / 403) and other failures apart — e.g. the console certificate's
+     * cert-manager objects (App\Services\CertManager\ConsoleCertificate). An unreachable API
+     * server throws, an HTTP status never does. $timeout: seconds for the whole request (a check
+     * in a request path keeps it short).
+     */
+    public function getPathResponse(string $path, int $timeout = 30): Response
+    {
+        return $this->request()->connectTimeout(min($timeout, 10))->timeout($timeout)->get($this->server.'/'.ltrim($path, '/'));
+    }
+
+    /**
      * Is an API group/version served by the cluster (discovery document, e.g.
      * "cert-manager.io/v1" → GET /apis/cert-manager.io/v1)?
      */

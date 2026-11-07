@@ -2,6 +2,8 @@
 
 namespace App\Services\Wasm;
 
+use App\Services\Helpers\NodeDownload;
+
 /**
  * Shell scripts of the WebAssembly node DaemonSets (WasmManifests). They run in a privileged
  * pod with the node's / at /host and hostPID — the same model as RunR's gVisor installer — on
@@ -52,7 +54,8 @@ final class WasmNodeScripts
      * - validate_config: `containerd --config <file> config dump` with the node's containerd,
      *   checking which RunR handlers it registers;
      * - runtime_state / any_loaded: what the running runtime has loaded (crictl info);
-     * - restart_runtime: restart the unit that owns containerd (k3s / RKE2: staggered per node).
+     * - restart_runtime: restart the unit that owns containerd (k3s / RKE2: staggered per node);
+     * - download: wget of a release tarball with five tries and backoff (NodeDownload).
      */
     public static function helpers(): string
     {
@@ -65,7 +68,7 @@ HOST=/host
 BEGIN_MARK='{$begin}'
 END_MARK='{$end}'
 
-BASH.<<<'BASH'
+BASH.NodeDownload::script().<<<'BASH'
 BIN_DIR="$HOST/usr/local/bin"
 STATE_DIR="$HOST/var/lib/runr/wasm"
 CONF_DIR="$HOST${CONTAINERD_CONFIG_DIR:-/etc/containerd}"
@@ -302,7 +305,7 @@ while read -r ID BIN HANDLER TYPE SRC_X REF_X SRC_A REF_A; do
   if [ "$SRC" = image ]; then
     F="$D/$BIN"
   else
-    if ! wget -q -O "$TMP/shim.tar.gz" "$SRC"; then rm -rf "$TMP"; fail "download of $SRC failed"; fi
+    if ! download "$SRC" "$TMP/shim.tar.gz"; then rm -rf "$TMP"; fail "download of $SRC failed after ${DOWNLOAD_TRIES:-5} tries"; fi
     echo "$SHA  shim.tar.gz" > "$TMP/sha256"
     if ! (cd "$TMP" && sha256sum -c sha256 >/dev/null 2>&1); then rm -rf "$TMP"; fail "$(basename "$SRC") does not match its sha256 $SHA"; fi
     mkdir -p "$TMP/x" && tar -xzf "$TMP/shim.tar.gz" -C "$TMP/x" || { rm -rf "$TMP"; fail "cannot unpack $(basename "$SRC")"; }

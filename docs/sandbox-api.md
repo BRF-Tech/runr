@@ -52,6 +52,16 @@ is still not running `start_timeout` × 3 after the request (the background star
 the pod's last warning event). A failed sandbox no longer counts towards the organization's
 quota.
 
+A sandbox of a catalog runtime runs on its version image. The nodes of a region have the images
+functions run on pulled in advance ([docs/runtimes.md](runtimes.md#configuration)), and for Python,
+Node.js, PHP, Ruby, Bun and Java that is the sandbox's image as well. A Go or .NET sandbox runs on
+the toolchain or SDK its functions are compiled with (.NET's SDK image is 1.3 GB), which no function
+runs on and the nodes do not pull in advance. A node pulls it on its first such sandbox, through the
+region registry where the region has one (`region:reconcile` keeps the default versions' build images
+there): that start takes longer, past `start_timeout` a create answers 202, and the background start
+waits up to `start_timeout` × 3. A [warm pool](#warm-pool) of the runtime keeps such sandboxes
+started on the region.
+
 ## Security model
 
 Every layer holds on its own; together they keep code in a sandbox away from the cluster, the
@@ -71,7 +81,7 @@ other sandboxes and RunR.
 | Secrets | the request's `env` is stored encrypted at rest (`sandboxes.env`, see [security](security.md)) and reaches the pod through the Kubernetes Secret `sbx-<id>-env` and `secretKeyRef` entries — never as a value in the pod spec, the audit log or an API response (`env_keys` lists the names only). A claimed warm pod, whose spec predates the request, gets the same values as `/home/sandbox/.runr/env.sh` (mode 0600) over the exec channel, sourced by every command. The Secret is deleted with the sandbox; the reaper removes orphaned ones. |
 | Data residency | an organization with a residency policy ([supply chain](supply-chain.md#data-residency)) creates sandboxes and warm pools only in its allowed regions; elsewhere the request answers 422 with `code: region_not_allowed` and is recorded as `residency.denied`. The default region is the first allowed one, and a pool in a region the policy no longer allows is drained. |
 | Caching | every Sandbox API response is sent with `Cache-Control: no-store`, so command output and file contents stay out of the API's response cache, proxies and browsers. |
-| Access | every endpoint is authenticated (session or API token) and scoped to the organization; another organization's sandbox answers 404. Kubeconfigs stay on the RunR side: commands reach the pod through `kubectl exec` from the API, with the region kubeconfig in a 0600 temp file deleted afterwards. |
+| Access | every endpoint is authenticated (session or API token) and scoped to the organization; another organization's sandbox answers 404. Kubeconfigs stay on the RunR side: commands reach the pod through the API server's exec endpoint, from the API itself (a WebSocket per command, `v5.channel.k8s.io`; the CA, client certificate and key of the region kubeconfig in 0600 temp files of the API process). The API's client takes a bearer `token` (a ServiceAccount's too) and `client-certificate-data` / `client-key-data`, alone or together, with `certificate-authority-data` or `insecure-skip-tls-verify`. Terminals, and regions whose kubeconfig or API server it cannot use (an exec plugin, an auth provider, a token, certificate or CA in a file, basic auth, impersonation, a `proxy-url` or an `HTTPS_PROXY` / `HTTP_PROXY` of the API's environment that `NO_PROXY` does not exclude, no `v5.channel.k8s.io` where a command's stdin must end), go through `kubectl exec`, with the kubeconfig in a 0600 temp file deleted afterwards; the API logs the reason once per process (`sandbox exec: kubectl instead of the native client: …`). `SANDBOX_EXEC_CLIENT=kubectl` sends every command there. |
 
 ## Quick start
 
@@ -294,13 +304,16 @@ of the candidates the image has:
 | `language` (aliases) | Interpreter |
 |---|---|
 | `python` (`py`, `python3`) | `python3`, `python` |
-| `javascript` (`js`, `node`, `nodejs`) | `node` |
-| `typescript` (`ts`) | `tsx`, `ts-node`, `node --experimental-strip-types` |
+| `javascript` (`js`, `node`, `nodejs`) | `node`, `bun` |
+| `typescript` (`ts`, `bun`) | `bun`, `tsx`, `ts-node`, `node --experimental-strip-types` |
 | `bash` (`shell`), `sh` | `bash`, `sh` |
 | `php`, `ruby` (`rb`), `go` (`golang`) | `php`, `ruby`, `go run` |
+| `java` | `java` (the source launcher: one file, compiled in memory) |
+| `csharp` (`cs`, `c#`, `dotnet`) | `dotnet run -p:PublishAot=false` (a .NET file-based app: the file is built on every run, which takes seconds; without Native AOT its restore needs no NuGet access, so it runs in a sandbox without network; a `#:package` directive needs egress to nuget.org) |
 | a runtime id | a runtime of the catalog whose manifest runs a file through an `exec`-mode command (`run.command` with `{file}`, no build step), e.g. the Bash example runtime |
 
-Without `language` the sandbox's runtime decides (`python`, `nodejs` → `javascript`, `php`, `go`, …).
+Without `language` the sandbox's runtime decides (`python`, `nodejs` → `javascript`, `php`, `go`,
+`java`, `dotnet` → `csharp`, `ruby`, `bun` → `typescript`, …).
 
 Result:
 
@@ -689,6 +702,7 @@ ConfigMap):
 | `SANDBOX_RUN_MAX_OUTPUTS_BYTES` | via `extraEnv` | 10485760 | rich outputs of a code run together |
 | `SANDBOX_UID_MIN`, `SANDBOX_UID_MAX` | via `extraEnv` | 100000, 165535 | UID range of sandboxes |
 | `SANDBOX_KUBECTL` | via `extraEnv` | `kubectl` | the kubectl binary of the API image |
+| `SANDBOX_EXEC_CLIENT` | via `extraEnv` | `native` | `native`: commands without a terminal go over the API server's WebSocket exec stream from the API (kubectl only where that cannot run them); `kubectl`: a kubectl process per command, as up to 0.6.7 |
 
 The region kubeconfig RunR already holds must allow it to manage namespaces, pods, `pods/exec`,
 NetworkPolicies and ResourceQuotas — the access RunR uses for its own installs.
@@ -727,6 +741,14 @@ NetworkPolicies and ResourceQuotas — the access RunR uses for its own installs
   times of cold and pool-claimed sandboxes and the time from the claim until the pool is warm
   again. gVisor runs inside the Kind nodes (runsc and its
   containerd shim from RunR's installer; the install takes 3.5–5 minutes there, measured in WSL 2).
+  The suite fails when its `gvisor` class does not run on runsc: a failed install is not replaced
+  by the runc RuntimeClass the project sandbox suite stands in with (`sbx-gvisor-install` fails
+  with the install's error), and `sbx-gvisor-runsc` checks that the RuntimeClass `gvisor` has the
+  `runsc` handler and that the sandbox sees gVisor's kernel (`uname -r` 4.4.0, its `dmesg`). The
+  setup waits for CoreDNS to be Ready again after patching it, and the nodes' download of the
+  gVisor release retries with backoff. `sbx-exec-bearer-token` runs one command through the
+  native exec client with a ServiceAccount bearer-token kubeconfig of the Kind cluster: refused
+  without RBAC, run with a Role of `pods/exec`.
   Kata runs only where the host has hardware virtualization — the CPU's vmx / svm flag and a
   `/dev/kvm` that opens (detected; `SANDBOX_KATA=0|1` overrides) — otherwise its checks are
   reported as skipped. Afterwards the runr CLI of the checkout runs on a pseudo-terminal against the

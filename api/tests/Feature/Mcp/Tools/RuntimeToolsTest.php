@@ -3,7 +3,9 @@
 namespace Tests\Feature\Mcp\Tools;
 
 use App\Models\Runtime;
+use App\Models\RuntimeSource;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Http;
 use Tests\Concerns\RegistersRuntimes;
 use Tests\TestCase;
 
@@ -68,5 +70,30 @@ class RuntimeToolsTest extends TestCase
         $viewer = $this->userWithRole('viewer');
 
         $this->assertToolHidden('runtime_register', ['*'], ['manifest' => 'x'], $viewer);
+    }
+
+    public function test_runtime_sources_are_listed_connected_read_and_removed(): void
+    {
+        Http::fake(fn () => Http::response(['errors' => [['code' => 'MANIFEST_UNKNOWN']]], 404));
+
+        $connected = $this->structured($this->callTool('runtime_source_connect', [
+            'name' => 'acme', 'kind' => 'oci-catalog', 'url' => 'registry.acme.test/runtimes/catalog:stable',
+            'registry_username' => 'bot', 'registry_password' => 'secret-registry-password',
+        ]));
+        $this->assertSame('acme', $connected['source']['name']);
+        // the registry has no such catalog (404): not found
+        $this->assertSame('not_found', $connected['source']['status']);
+        $this->assertTrue($connected['source']['credentials']['registry_password_set']);
+        $this->assertStringNotContainsString('secret-registry-password', json_encode($connected));
+
+        $list = $this->structured($this->callTool('runtime_sources_list', []));
+        $this->assertContains('acme', array_column($list['sources'], 'name'));
+        $this->assertSame('bundle', $list['catalog']['mode']);
+
+        $read = $this->structured($this->callTool('runtime_source_sync', ['source' => 'acme']));
+        $this->assertSame('not_found', $read['source']['status']);
+
+        $this->structured($this->callTool('runtime_source_remove', ['source' => 'acme', 'confirm' => true]));
+        $this->assertSame(0, RuntimeSource::query()->where('name', 'acme')->count());
     }
 }

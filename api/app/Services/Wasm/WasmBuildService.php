@@ -16,6 +16,7 @@ use App\Services\Manifests\BuildManifests;
 use App\Services\Runtimes\Placeholders;
 use App\Services\Runtimes\ProjectEntrypoint;
 use App\Services\Runtimes\RuntimeManifest;
+use App\Services\Runtimes\RuntimePullSecrets;
 use Illuminate\Support\Facades\Log;
 
 /**
@@ -88,7 +89,11 @@ class WasmBuildService
         }
 
         $k8s->createResource($this->sourceConfigMap($name, $namespace, $project, $data), $namespace);
-        $k8s->createResource($this->job($name, $namespace, $project, $manifest, $executor, $versionImage, array_keys($files), $imageRef, $module), $namespace);
+        $job = $this->job($name, $namespace, $project, $manifest, $executor, $versionImage, array_keys($files), $imageRef, $module);
+        // A private toolchain image of a runtime source: its pull Secret (docs/runtimes.md#private-sources)
+        $toolchain = (string) ($job['spec']['template']['spec']['containers'][0]['image'] ?? '');
+        $job['spec']['template']['spec'] = app(RuntimePullSecrets::class)->applyToPodSpec($job['spec']['template']['spec'], $manifest->id(), $toolchain, $region, $namespace);
+        $k8s->createResource($job, $namespace);
 
         return $imageRef;
     }

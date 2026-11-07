@@ -269,6 +269,9 @@ func (p *Plan) RunArgs() []string {
 		args = append(args, "-e", k+"="+env[k])
 	}
 	if p.Spec != nil {
+		if p.Spec.User != "" {
+			args = append(args, "--user", p.Spec.User)
+		}
 		args = append(args, "--entrypoint", "sh", p.Image, "-c", p.copyScript())
 		return args
 	}
@@ -295,10 +298,13 @@ func (p *Plan) depsMountSource() string {
 
 // InstallArgs returns the `docker run` arguments that install the dependencies.
 func (p *Plan) InstallArgs() []string {
-	return []string{"run", "--rm", "--name", p.Container + "-deps",
+	args := []string{"run", "--rm", "--name", p.Container + "-deps",
 		"--mount", "type=bind,source=" + p.SourceDir + ",target=/src,readonly",
-		"--mount", "type=bind,source=" + p.DepsDir + ",target=/deps",
-		"--entrypoint", "sh", p.Spec.BuilderImage, "-c", p.Spec.InstallScript}
+		"--mount", "type=bind,source=" + p.DepsDir + ",target=/deps"}
+	if p.Spec.User != "" {
+		args = append(args, "--user", p.Spec.User)
+	}
+	return append(args, "--entrypoint", "sh", p.Spec.BuilderImage, "-c", p.Spec.InstallScript)
 }
 
 // depsHash identifies the dependency file content and the image it was installed for.

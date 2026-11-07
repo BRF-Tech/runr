@@ -14,6 +14,12 @@ class PrepullManifests
      * Other pre-pulls (ModelImagePrepull) give their own name, the helper image the region pulls
      * (registry mirror), their nodes ($placement: nodeSelector / affinity / tolerations instead
      * of $workersOnly) and skip the inotify sysctl step of the registry setup.
+     *
+     * $credentials: images of a private runtime source (image => key of $credentialSecret holding
+     * "username:password"), pulled with crictl --creds from an environment variable of the Secret —
+     * the credentials never appear in the DaemonSet (docs/runtimes.md#private-sources).
+     *
+     * @param  array<string, string>  $credentials
      */
     public static function daemonSet(
         array $images,
@@ -23,11 +29,20 @@ class PrepullManifests
         ?array $placement = null,
         bool $tuneSysctl = true,
         array $labels = [],
+        array $credentials = [],
+        ?string $credentialSecret = null,
     ): array {
         $lines = [];
+        $env = [];
         foreach ($images as $img) {
             $safe = escapeshellarg($img);
-            $lines[] = "echo \"Pulling: {$safe}\"; crictl pull {$safe} 2>/dev/null || echo \"warn: {$safe}\"";
+            $creds = '';
+            if ($credentialSecret !== null && isset($credentials[$img])) {
+                $var = 'RUNR_PULL_CREDS_'.strtoupper((string) preg_replace('/[^A-Za-z0-9]/', '_', $credentials[$img]));
+                $env[$var] = ['name' => $var, 'valueFrom' => ['secretKeyRef' => ['name' => $credentialSecret, 'key' => $credentials[$img]]]];
+                $creds = " --creds \"\${$var}\"";
+            }
+            $lines[] = "echo \"Pulling: {$safe}\"; crictl pull{$creds} {$safe} 2>/dev/null || echo \"warn: {$safe}\"";
         }
         $script = implode('; ', $lines).'; echo Done';
 
@@ -50,6 +65,7 @@ class PrepullManifests
                     'name' => 'pull-all',
                     'image' => 'ghcr.io/brf-tech/runr/reqs/busybox:latest',
                     'command' => ['nsenter', '--target', '1', '--mount', '--net', '--', 'sh', '-c', $script],
+                    ...($env !== [] ? ['env' => array_values($env)] : []),
                     'securityContext' => ['privileged' => true],
                     'resources' => [
                         'requests' => ['cpu' => '10m', 'memory' => '16Mi'],

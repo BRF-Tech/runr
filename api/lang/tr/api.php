@@ -491,6 +491,33 @@ return [
         'no_source_versions' => 'Bu runtime\'ın dockerfile ya da git kaynağından derlenen bir sürümü yok.',
         'test_deploy_description' => ':name runtime\'ının test dağıtımı',
         'custom_not_allowed' => 'Bu platformda özel runtime\'lar etkin değil.',
+        'source_managed' => ':name runtime\'ı ":source" runtime kaynağından geliyor: değişikliği orada yapın; burada yalnızca kullanılabilirliği (etkin, bölgeler) değişebilir.',
+        'source_delete' => ':name runtime\'ı ":source" runtime kaynağından geliyor: silmek yerine kaynaktan çıkarın (ya da burada devre dışı bırakın).',
+        'id_reserved' => "':id' kimliği RunR'ın yerleşik kataloğuna ait.",
+        'orphaned' => ':name runtime\'ı artık kaynağı tarafından sunulmuyor.',
+        'sunset' => ':name runtime\'ının kullanımı :date tarihinde sona erdi.',
+        'not_offered' => "':id' yerleşik runtime'ı bu platformda sunulmuyor.",
+    ],
+
+    // ── Runtime kaynakları (docs/runtimes.md#runtime-sources) ──
+    'runtime_sources' => [
+        'not_allowed' => 'Runtime kaynağı bağlamak için runtimes.manage ya da (özel runtime\'lar açıkken) runtimes.use_custom yetkisi gerekir.',
+        'default_readonly' => 'RunR\'ın kataloğu kurulum tarafından ayarlanır (RUNR_RUNTIME_CATALOG_*): burada yalnızca okunup okunmayacağı ve ne sıklıkla okunacağı değişebilir.',
+        'default_delete' => 'RunR\'ın kataloğu kaldırılamaz; API imajının kataloğunu kullanmak için kapatın.',
+        'too_many' => 'Bir organizasyon en fazla :max runtime kaynağı bağlayabilir.',
+        'name_taken' => '":name" adında bir runtime kaynağı zaten var.',
+        'credentials_kind' => 'SSH deploy key için SSH adresi (ssh://host/yol ya da git@host:yol), HTTPS token için https:// adresi gerekir.',
+        'sync_running' => 'Bu kaynak şu anda okunuyor; birazdan yeniden deneyin.',
+        'clash' => "':id' kimliğini zaten :owner sağlıyor; bu runtime atlandı.",
+        'clash_other' => "':id' kimliği bu platformda zaten alınmış; bu runtime atlandı. Başka bir kimlik seçin.",
+        'clash_same' => "':id' kimliği bu kaynakta iki kez tanımlı (ayrıca :path); ikincisi atlandı.",
+        'id_directory' => "':id' kimliği klasörü ':directory' ile aynı değil.",
+        'patch_foreign' => ":patch yaması ':runtime' runtime'ını adlandırıyor, ama bu kaynak o runtime'ı sağlamıyor; yok sayıldı.",
+        'patches_invalid' => 'Bu kaynağın yamaları geçerli bir yama akışı değil: :error',
+        'owner_source' => '":name" runtime kaynağı',
+        'owner_builtin' => 'RunR\'ın yerleşik kataloğu',
+        'owner_platform' => 'elle kaydedilmiş bir platform runtime\'ı',
+        'owner_custom' => 'elle kaydedilmiş bir özel runtime',
     ],
 
     // ── Gizli ortam değişkenleri ──

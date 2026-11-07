@@ -5,8 +5,7 @@ namespace App\Services\RegionReconcile;
 use App\Events\NotificationCreated;
 use App\Models\Notification;
 use App\Models\Setting;
-use App\Models\User;
-use Illuminate\Support\Facades\DB;
+use App\Support\Rbac\PlatformOperators;
 use Illuminate\Support\Facades\Log;
 use Throwable;
 
@@ -23,8 +22,8 @@ use Throwable;
  *   attempt   the run's attempt (the Job runs the command again after an unfinished one)
  *
  * A run that stops without finishing (its pod killed) stays "running" until expires_at, then reads
- * as unfinished. The platform administrators get a notification when a run's last attempt ends
- * unfinished or with unreachable clusters.
+ * as unfinished. The platform administrators (single-tenant: the holders of platform.manage) get a
+ * notification when a run's last attempt ends unfinished or with unreachable clusters.
  */
 final class ReconcileRecord
 {
@@ -168,7 +167,7 @@ final class ReconcileRecord
         return config('database.connections.central') ? 'central' : null;
     }
 
-    /** One in-app notification per platform administrator */
+    /** One in-app notification per platform administrator (single-tenant: holder of platform.manage) */
     private function notify(array $record): void
     {
         $unreachable = $record['status'] === self::UNREACHABLE;
@@ -183,11 +182,7 @@ final class ReconcileRecord
         ]);
 
         try {
-            $connection = self::connection();
-            if (! DB::connection($connection)->getSchemaBuilder()->hasColumn('users', 'is_admin')) {
-                return;
-            }
-            foreach (User::on($connection)->where('is_admin', true)->get() as $admin) {
+            foreach (app(PlatformOperators::class)->users(self::connection()) as $admin) {
                 $notification = Notification::query()->create([
                     'user_id' => (string) $admin->getKey(),
                     'type' => self::NOTIFICATION,

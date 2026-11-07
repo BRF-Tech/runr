@@ -244,21 +244,7 @@ func init() {
 		if n := s.projectsOn(id); n > 0 {
 			return 0, nil, &apiErr{status: 409, message: fmt.Sprintf("%d projects use this runtime.", n)}
 		}
-		delete(st.registered, id)
-		for i, x := range st.order {
-			if x == id {
-				st.order = append(st.order[:i], st.order[i+1:]...)
-				break
-			}
-		}
-		delete(st.builds, id)
-		imgs := s.images[:0]
-		for _, img := range s.images {
-			if img.Runtime != id {
-				imgs = append(imgs, img)
-			}
-		}
-		s.images = imgs
+		s.removeRuntime(id)
 		return 204, nil, nil
 	})
 	handle("GET /runtimes/{runtime}/builds", func(s *Server, q *featureReq) (int, any, *apiErr) {
@@ -359,6 +345,7 @@ func (s *Server) catalog() []runr.CatalogRuntime {
 	for _, id := range ids {
 		rt := *byID[id]
 		rt.ProjectsCount = s.projectsOn(id)
+		s.decorateRuntime(&rt)
 		out = append(out, rt)
 	}
 	return out
@@ -531,6 +518,27 @@ func (s *Server) registerRuntime(source, text string, files map[string]string, r
 	s.syncRuntimeImages(rt)
 	s.startRuntimeBuilds(rt)
 	return rt, nil
+}
+
+// removeRuntime deletes a registered runtime with its builds and executor images
+// (RuntimeRegistry::delete).
+func (s *Server) removeRuntime(id string) {
+	st := s.runtimes()
+	delete(st.registered, id)
+	for i, x := range st.order {
+		if x == id {
+			st.order = append(st.order[:i], st.order[i+1:]...)
+			break
+		}
+	}
+	delete(st.builds, id)
+	imgs := s.images[:0]
+	for _, img := range s.images {
+		if img.Runtime != id {
+			imgs = append(imgs, img)
+		}
+	}
+	s.images = imgs
 }
 
 // syncRuntimeImages keeps the executor images of a registered runtime in step with its
@@ -737,13 +745,24 @@ func normalizeManifest(data map[string]any) map[string]any {
 		"sandbox": or(data["sandbox"], []any{"runc", "gvisor", "kata"}), "resources": or(data["resources"], map[string]any{}),
 		"runtimeClass": data["runtimeClass"],
 	}
+	// Lifecycle (docs/runtimes.md#lifecycle), when the manifest has it
+	for _, k := range []string{"deprecated", "sunset", "replacement", "notice"} {
+		if v, ok := data[k]; ok {
+			out[k] = manifestDate(v)
+		}
+	}
 	var versions []any
 	hasDefault := false
 	for _, x := range data["versions"].([]any) {
 		v, _ := x.(map[string]any)
 		nv := map[string]any{"version": fmt.Sprint(v["version"]), "image": v["image"], "dockerfile": v["dockerfile"],
 			"git": nil, "buildArgs": or(v["buildArgs"], map[string]any{}), "default": v["default"] == true,
-			"eol": v["eol"], "gpu": v["gpu"] == true}
+			"eol": manifestDate(v["eol"]), "gpu": v["gpu"] == true}
+		for _, k := range []string{"deprecated", "sunset"} {
+			if d, ok := v[k]; ok {
+				nv[k] = manifestDate(d)
+			}
+		}
 		if g, ok := v["git"].(map[string]any); ok {
 			nv["git"] = map[string]any{"url": g["url"], "ref": g["ref"], "path": or(g["path"], ""), "dockerfile": or(g["dockerfile"], "Dockerfile")}
 		}

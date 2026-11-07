@@ -64,6 +64,34 @@
 #                         (from 0.5.4 on the selection gave it already: reconcile leaves it alone),
 #                         Zot runs on that node and comes back there after a restart, and no pod
 #                         waits Pending on the taint
+#   --after-upgrade=ARGS  single-tenant: after the upgrade and region:reconcile, `php artisan` with
+#                         ARGS (separated by commas; {region} is the region's id) in the new API pod
+#                         must exit 0 and report no failure, e.g. cluster:patch-observability,{region}
+#                         or registry:upgrade-zot,{region} (repeatable; the dependency test bot moves
+#                         an installed region's chart with them)
+#   --expect-release=NS/RELEASE=CHART  single-tenant: afterwards the region's Helm release
+#                         NS/RELEASE runs CHART (observability/knative=kube-prometheus-stack-92.22.0;
+#                         repeatable)
+#   --kata                single-tenant: on the installed version the region gets Kata (Cloud
+#                         Hypervisor) through its API; after the upgrade region:reconcile
+#                         (kata-sandbox) runs this checkout's kata-deploy (KataRuntime::KATA_VERSION)
+#                         on the nodes, the region's Kata is ready again and a Kata sandbox runs a
+#                         command. Needs hardware virtualization (vmx / svm, a /dev/kvm that opens)
+#   --rollback            single-tenant: once every check of the upgrade passed, back to the installed
+#                         version with `helm rollback` on the same database (docs/upgrade.md → Back
+#                         to 0.6.7). Before it, on the upgraded version: a project on a runtime only
+#                         its catalog has (UPG_ROLLBACK_RUNTIME, default java; offered first through
+#                         the Built-in runtimes setting when E2E_EXECUTOR_RUNTIMES leaves it out),
+#                         deployed with POST /api/runtimes/<id>/test-deploy and answering. After it:
+#                         the API answers with the installed version on its images, the migrations
+#                         of the upgrade stay recorded (0.6.8: runtime_sources and its columns stay)
+#                         and none is pending, the region Job of that revision completed (after its
+#                         wait for a bootstrap hook a rollback does not run) and took the region
+#                         agent back, the region Traefik stays on its chart, both users sign in, the
+#                         function answered every probe during the rollback and answers and
+#                         redeploys with its env, the runtimes list answers without the upgrade's new
+#                         runtimes, and the new runtime's project answers and redeploys, is not
+#                         listed (404) and can still be created through the API
 #   --skip-build          use the images UPGRADE_TO_API_IMAGE / UPGRADE_TO_UI_IMAGE (+ -mt) as they are
 #   --no-cleanup          keep the cluster and, with it, the Kind lock (the run prints the
 #                         `kind delete cluster` and `rm -rf <lock>` that free both)
@@ -74,7 +102,9 @@
 # other Kind suites (docs/development.md): KIND_WORKERS=0 runs the control-plane alone (not with
 # --dedicated-worker), E2E_EXECUTOR_RUNTIMES (e.g. python) installs the release with only those
 # built-in runtimes (extraEnv.EXECUTOR_RUNTIMES, kept by the upgrade), so the region pre-pulls only
-# their images. Needs docker, kind, kubectl, helm, jq, curl and internet access from the Kind nodes
+# their images. --rollback: UPG_ROLLBACK_RUNTIME (default java) is the new runtime, and its first
+# deploy may take UPG_ROLLBACK_DEPLOY_TRIES × 5 s (default 180: a build of a compiled runtime pulls its
+# SDK). Needs docker, kind, kubectl, helm, jq, curl and internet access from the Kind nodes
 # (Knative, Traefik and runtime images).
 
 _upg_cluster=""
@@ -112,12 +142,29 @@ _upg_billed_charge=""
 _upg_legacy_member=0
 # --upgrade-set=KEY=VALUE (repeatable) and --billing: --set values of the helm upgrade
 _upg_upgrade_set=()
+# --after-upgrade=ARGS, --expect-release=NS/RELEASE=CHART (repeatable), --kata
+_upg_after=()
+_upg_expect=()
+_upg_kata=0
+_upg_kata_image_before=""
+# --rollback: the runtime only the upgrade's catalog has and its project (empty: none was made), the
+# runtimes the upgrade's catalog adds, the migrations before the upgrade and those it added, the
+# region Traefik's chart before the rollback
+_upg_rollback=0
+_upg_rb_runtime=""
+_upg_rb_project=""
+_upg_rb_slug=""
+_upg_rb_host=""
+_upg_rb_new_ids=""
+_upg_rb_migrations_before=""
+_upg_rb_added=""
+_upg_rb_traefik=""
 
 _upg_ns="runr"
 _upg_region="upg"
 # The region Traefik's chart and image after the upgrade (KnativeConstants::TRAEFIK_CHART_VERSION,
 # TRAEFIK_IMAGE): region:reconcile moves a Traefik of chart 40 or later to them
-_UPG_TRAEFIK_CHART="traefik-42.3.0"
+_UPG_TRAEFIK_CHART="traefik-42.3.1"
 _UPG_TRAEFIK_IMAGE="ghcr.io/brf-tech/runr/reqs/traefik:v3.7.17"
 # The installed version's image namespace (ghcr.io/runrsh up to 0.5.0, ghcr.io/brf-tech in 0.5.1;
 # set from --from's chart): the upgrade moves every reference to ghcr.io/brf-tech/runr (chart helper
@@ -267,11 +314,13 @@ _upg_to_images() {
 
 # The Kind cluster's configuration: a control-plane and a worker; --dedicated-worker a second
 # worker; KIND_WORKERS=0 (a host short of disk; not with --dedicated-worker) the control-plane
-# alone, which Kind leaves without its NoSchedule taint for every pod
+# alone, which Kind leaves without its NoSchedule taint for every pod. KIND_ETCD_IN_MEMORY=1 keeps
+# etcd's data on the control-plane's tmpfs, as in the other Kind suites (kind_etcd_patch)
 _upg_kind_config() {
-  local workers=1 i
+  local workers=1 i etcd_patch
   [ "${KIND_WORKERS:-1}" = "0" ] && workers=0
   [ "$_upg_dedicated" = "1" ] && workers=2
+  etcd_patch=$(kind_etcd_patch)
   cat <<KINDEOF
 kind: Cluster
 apiVersion: kind.x-k8s.io/v1alpha4
@@ -282,6 +331,9 @@ containerdConfigPatches:
 nodes:
   - role: control-plane
 KINDEOF
+  if [ -n "$etcd_patch" ]; then
+    printf '%s\n' '    kubeadmConfigPatches:' '      - |' '        kind: ClusterConfiguration' "$etcd_patch"
+  fi
   for i in $(seq 1 "$workers"); do echo "  - role: worker"; done
 }
 
@@ -297,6 +349,7 @@ _upg_kind_cluster() {
   local k8s="$1"
   local config="${_upg_tmp}/kind.yaml"
   [ "${KIND_WORKERS:-1}" = "0" ] && [ "$_upg_dedicated" = "1" ] && echo "  KIND_WORKERS=0 left out: --dedicated-worker needs two workers"
+  [ "${KIND_ETCD_IN_MEMORY:-0}" = "1" ] && echo "  etcd data on the control-plane's tmpfs (KIND_ETCD_IN_MEMORY=1)"
   _upg_kind_config > "$config"
   kind create cluster --name "$_upg_cluster" --image "${REGISTRY}/reqs/kindest-node:v${k8s}" --config "$config"
   kind get kubeconfig --name "$_upg_cluster" > "$_upg_kubeconfig"
@@ -384,15 +437,55 @@ PY
 # GET the function through the region's Traefik (cloud-provider-kind address, Host header). Never
 # fails: the callers retry, and under `set -e` a failed `out=$(…)` (curl 7 while the route is not
 # up yet) would end the whole run without a word. A curl error is returned as the output instead.
-_upg_function_get() {
+_upg_function_get() { _upg_host_get "$_upg_fn_host"; }
+
+# _upg_host_get HOST — GET a function by its host through the region's Traefik, as _upg_function_get
+_upg_host_get() {
   local rc=0
-  curl -sS -m 10 -H "Host: ${_upg_fn_host}" "http://${_upg_lb_ip}/" 2>&1 || rc=$?
+  curl -sS -m 10 -H "Host: $1" "http://${_upg_lb_ip}/" 2>&1 || rc=$?
   [ "$rc" = 0 ] || echo " (curl exit ${rc})"
 }
 
+# _upg_host_wait HOST TEXT — GETs HOST until its answer contains TEXT (UPG_WARM_TRIES tries, default
+# 30, UPG_WARM_SLEEP seconds apart, default 5) and prints the last answer; 1 when it never did
+_upg_host_wait() {
+  local i out=""
+  for i in $(seq 1 "${UPG_WARM_TRIES:-30}"); do
+    out=$(_upg_host_get "$1")
+    if [[ "$out" == *"$2"* ]]; then
+      echo "$out"
+      return 0
+    fi
+    sleep "${UPG_WARM_SLEEP:-5}"
+  done
+  echo "$out"
+  return 1
+}
+
+# _upg_function_warm — GETs the function until it answers with its plain env value (UPG_WARM_TRIES
+# tries, default 30, UPG_WARM_SLEEP seconds apart, default 5) and prints the last answer; 1 when
+# it never did. The upgrade's prober starts on a function that answers: after the minutes the Kata
+# install of --kata takes, the function has scaled to zero, and its cold start (over the prober's
+# 5 s on a loaded host) would count as requests the upgrade lost.
+_upg_function_warm() {
+  local i out=""
+  for i in $(seq 1 "${UPG_WARM_TRIES:-30}"); do
+    out=$(_upg_function_get)
+    if [ "$(echo "$out" | jq -r '.plain // empty' 2>/dev/null)" = "hello-plain" ]; then
+      echo "$out"
+      return 0
+    fi
+    sleep "${UPG_WARM_SLEEP:-5}"
+  done
+  echo "$out"
+  return 1
+}
+
+# _upg_wait_deployment_active PROJECT TOKEN [TRIES] — the project's latest deployment becomes active
+# (TRIES × 5 s, default 60)
 _upg_wait_deployment_active() {
-  local project="$1" token="$2" i status=""
-  for i in $(seq 1 60); do
+  local project="$1" token="$2" tries="${3:-60}" i status=""
+  for i in $(seq 1 "$tries"); do
     _upg_call GET "/api/projects/${project}" "$token"
     status=$(echo "$_upg_body" | jq -r '.data.latest_deployment.status // empty' 2>/dev/null || true)
     [ "$status" = "active" ] && return 0
@@ -401,6 +494,41 @@ _upg_wait_deployment_active() {
   done
   echo -e "${RED}deployment of ${project}: ${status:-no status}${NC}"
   return 1
+}
+
+# _upg_wait_deployment_id PROJECT TOKEN ID [TRIES] — the deployment ID (the answer of POST …/deploy)
+# becomes active (TRIES tries UPG_WAIT_SLEEP seconds apart, default 60 × 5); 1 when it fails or never
+# does. Unlike the latest deployment's status, it cannot be the previous deployment's
+_upg_wait_deployment_id() {
+  local project="$1" token="$2" id="$3" tries="${4:-60}" i status=""
+  if [ -z "$id" ]; then
+    echo -e "${RED}deployment of ${project}: the deploy answered no id${NC}"
+    return 1
+  fi
+  for i in $(seq 1 "$tries"); do
+    _upg_call GET "/api/projects/${project}/deployments/${id}" "$token"
+    status=$(echo "$_upg_body" | jq -r '.data.status // .status // empty' 2>/dev/null || true)
+    [ "$status" = "active" ] && return 0
+    [ "$status" = "failed" ] && break
+    sleep "${UPG_WAIT_SLEEP:-5}"
+  done
+  echo -e "${RED}deployment ${id} of ${project}: ${status:-no status}${NC}"
+  return 1
+}
+
+# _upg_redeploy PROJECT TOKEN [TRIES] — deploys the project's latest version again and waits for that
+# deployment (_upg_wait_deployment_id); 1 when the deploy is refused or does not become active
+_upg_redeploy() {
+  local project="$1" token="$2" tries="${3:-60}" version id
+  _upg_call GET "/api/projects/${project}" "$token"
+  version=$(echo "$_upg_body" | jq -r '.data.latest_version.id // empty' 2>/dev/null || true)
+  _upg_call POST "/api/projects/${project}/deploy" "$token" "$(jq -nc --arg v "$version" '{version_id: $v}')"
+  if [[ ! "$_upg_code" =~ ^2 ]]; then
+    echo -e "${RED}deploy of ${project}: HTTP ${_upg_code} ${_upg_body:0:300}${NC}"
+    return 1
+  fi
+  id=$(echo "$_upg_body" | jq -r '.id // .data.id // empty' 2>/dev/null || true)
+  _upg_wait_deployment_id "$project" "$token" "$id" "$tries"
 }
 
 # _upg_old_workloads — "<kind> <ns>/<name>: <image>" for every workload of the cluster (Deployment,
@@ -835,6 +963,41 @@ _upg_mt_legacy_member() {
 # _upg_sql_literal TEXT — TEXT as a PostgreSQL string literal
 _upg_sql_literal() { printf "'%s'" "${1//\'/\'\'}"; }
 
+# _upg_sql_list "A B" — the words as a list of PostgreSQL string literals ('A','B'); '' for none
+_upg_sql_list() {
+  local word out=""
+  for word in $1; do out+="${out:+,}$(_upg_sql_literal "$word")"; done
+  echo "${out:-''}"
+}
+
+# _upg_only_in "A B C" "B D" → "A C": the words of the first list the second does not have
+_upg_only_in() {
+  local word other out=()
+  for word in $1; do
+    for other in $2; do [ "$word" = "$other" ] && continue 2; done
+    out+=("$word")
+  done
+  echo "${out[*]}"
+}
+
+# _upg_in_both "A B C" "B C D" → "B C": the words of the first list the second has too
+_upg_in_both() {
+  local word other out=()
+  for word in $1; do
+    for other in $2; do
+      if [ "$word" = "$other" ]; then out+=("$word"); break; fi
+    done
+  done
+  echo "${out[*]}"
+}
+
+# _upg_count_words "A B" → 2
+_upg_count_words() {
+  local n=0
+  for _ in $1; do n=$((n + 1)); done
+  echo "$n"
+}
+
 # _upg_plain_region NAME — a platform region on the Kind cluster itself (no components installed):
 # its id in $_upg_new_region (empty when the API refused it: $_upg_code, $_upg_body)
 _upg_new_region=""
@@ -1114,6 +1277,361 @@ _upg_mt_billing_checks() {
     _upg_eq "$(_upg_psql "select status from tenant_regions where knative_region_id = '${offered}'")" active
 }
 
+# --kata, on the installed version: Kata with Cloud Hypervisor through the region's API, ready
+_upg_kata_install() {
+  local i status=""
+  _upg_log "Kata on ${from_tag}"
+  _upg_call_ok POST "/api/knative-regions/${region_id}/install-sandbox" "$admin_token" '{"runtime":"kata","hypervisors":["clh"]}'
+  # the install waits for kata-deploy on every node (InstallSandboxJob, up to 25 minutes)
+  for i in $(seq 1 180); do
+    _upg_call GET "/api/knative-regions/${region_id}/sandbox-status" "$admin_token"
+    status=$(echo "$_upg_body" | jq -r '.kata.status // empty' 2>/dev/null || true)
+    case "$status" in ready|error|failed) break ;; esac
+    sleep 10
+  done
+  if [ "$status" != ready ]; then
+    echo -e "${RED}Kata on ${from_tag}: ${status:-no status}: $(echo "$_upg_body" | jq -r '.kata.message // empty' 2>/dev/null | tail -n 4)${NC}"
+    return 1
+  fi
+  _upg_kata_image_before=$(_upg_kubectl -n runr-sandbox get ds kata-installer -o jsonpath='{.spec.template.spec.containers[0].image}' 2>/dev/null || true)
+  echo "  Kata ready: kata-installer runs ${_upg_kata_image_before:-?}"
+}
+
+# a Kata sandbox runs a command through the API: its exit code
+_upg_kata_sandbox_runs() {
+  local id code
+  _upg_call POST /api/sandboxes "$admin_token" '{"runtime":"python","sandbox_class":"kata"}'
+  [ "$_upg_code" = 201 ] || { echo "  sandbox: HTTP ${_upg_code} ${_upg_body:0:300}"; return 1; }
+  id=$(echo "$_upg_body" | jq -r '.data.id')
+  _upg_call POST "/api/sandboxes/${id}/exec" "$admin_token" '{"cmd":"uname -r"}'
+  code=$(echo "$_upg_body" | jq -r '.data.exit_code // empty' 2>/dev/null || true)
+  echo "  Kata sandbox ${id}: uname -r → exit ${code:-?} ($(echo "$_upg_body" | jq -r '.data.stdout // empty' 2>/dev/null | head -n 1))"
+  _upg_call DELETE "/api/sandboxes/${id}" "$admin_token"
+  [ "$code" = 0 ]
+}
+
+# _upg_release_chart NS/RELEASE — the chart a Helm release of the region runs (traefik-42.3.1)
+_upg_release_chart() {
+  helm --kubeconfig "$_upg_kubeconfig" list -n "${1%%/*}" -o json 2>/dev/null \
+    | jq -r --arg r "${1#*/}" '[.[] | select(.name == $r)][0].chart // empty'
+}
+
+# --after-upgrade, --expect-release, --kata: what the dependency test bot checks on the upgraded
+# region (docs/development.md → Dependency test bot)
+_upg_dependency_checks() {
+  local spec words args=() out rc i release want got kata_version image="" status=""
+  [ "${#_upg_after[@]}" -gt 0 ] || [ "${#_upg_expect[@]}" -gt 0 ] || [ "$_upg_kata" = 1 ] || return 0
+  _upg_log "Dependencies of the region"
+  for spec in ${_upg_after[@]+"${_upg_after[@]}"}; do
+    words="${spec//\{region\}/${region_id}}"
+    IFS=',' read -r -a args <<< "$words"
+    rc=0
+    out=$(_upg_artisan "${args[@]}" 2>&1) || rc=$?
+    printf '%s\n' "$out" | tail -n 20 | sed "s/^/  ${args[0]}: /"
+    _upg_check "php artisan ${args[*]} exits 0 (exit ${rc})" test "$rc" = 0
+    # a command that reports a failed step on its output and exits 0 (cluster:patch-observability)
+    _upg_check "php artisan ${args[0]} reports no failure" bash -c '! grep -qiE "failed|error" <<<"$1"' _ "$out"
+  done
+  for spec in ${_upg_expect[@]+"${_upg_expect[@]}"}; do
+    release="${spec%%=*}"
+    want="${spec#*=}"
+    got=""
+    for i in $(seq 1 30); do
+      got=$(_upg_release_chart "$release")
+      [ "$got" = "$want" ] && break
+      sleep 10
+    done
+    _upg_check "Helm release ${release} runs ${want} (runs ${got:-nothing})" _upg_eq "$got" "$want"
+  done
+  if [ "$_upg_kata" = 1 ]; then
+    kata_version=$(sed -n "s/^ *public const KATA_VERSION = '\([^']*\)';/\1/p" "${SCRIPT_DIR}/../api/app/Services/Helpers/KataRuntime.php")
+    # region:reconcile (kata-sandbox) queued the region's Kata install: kata-deploy runs again on
+    # every node, then the RuntimeClasses switch
+    for i in $(seq 1 180); do
+      image=$(_upg_kubectl -n runr-sandbox get ds kata-installer -o jsonpath='{.spec.template.spec.containers[0].image}' 2>/dev/null || true)
+      _upg_call GET "/api/knative-regions/${region_id}/sandbox-status" "$admin_token"
+      status=$(echo "$_upg_body" | jq -r '.kata.status // empty' 2>/dev/null || true)
+      [[ "$image" == *"kata-deploy:${kata_version}" ]] && [ "$status" = ready ] && break
+      sleep 10
+    done
+    grep -F '[kata-sandbox]' "${_upg_tmp}/reconcile-all.log" | tail -n 5 | sed 's/^/  reconcile: /' || true
+    _upg_check "region:reconcile moved kata-installer from ${_upg_kata_image_before:-?} to kata-deploy:${kata_version} (runs ${image:-nothing})" \
+      bash -c '[[ "$1" == *"kata-deploy:$2" ]]' _ "$image" "$kata_version"
+    _upg_check "the region's Kata is ready again (${status:-no status})" _upg_eq "$status" ready
+    _upg_check "kata-installer rolled out on every node" \
+      _upg_kubectl -n runr-sandbox rollout status ds/kata-installer --timeout=600s
+    _upg_check "a Kata sandbox runs a command after the move" _upg_kata_sandbox_runs
+  fi
+}
+
+# ── --rollback (docs/upgrade.md → Back to 0.6.7) ──────────────────────────────────────────────────
+
+# _upg_previous_revision HISTORY_JSON — the revision `helm rollback` goes back to: the newest one that
+# `helm history -o json` lists as superseded (the installed version's, before the upgrade)
+_upg_previous_revision() {
+  printf '%s' "$1" | jq -r '[.[]? | select(.status == "superseded") | .revision] | max // empty'
+}
+
+# _upg_catalog_ids RUNTIME_CATALOG_JSON — every runtime of the catalog in use (GET /api/runtime-catalog)
+_upg_catalog_ids() { printf '%s' "$1" | jq -r '[.data.runtimes[]?.id] | join(" ")'; }
+
+# _upg_offered_ids RUNTIME_CATALOG_JSON — the built-ins it offers (the Built-in runtimes setting)
+_upg_offered_ids() { printf '%s' "$1" | jq -r '[.data.runtimes[]? | select(.offered) | .id] | join(" ")'; }
+
+# _upg_offer_body "IDS" ID — the body of PUT /api/runtime-catalog that offers ID next to IDS
+_upg_offer_body() {
+  jq -nc --arg ids "$1" --arg id "$2" '{builtin_runtimes: (($ids | split(" ") | map(select(. != ""))) + [$id] | unique)}'
+}
+
+# _upg_runtime_ids RUNTIMES_JSON — the ids GET /api/runtimes lists
+_upg_runtime_ids() { printf '%s' "$1" | jq -r '[.data[]?.id] | join(" ")'; }
+
+# _upg_picker_runtimes SETTINGS_JSON — the runtimes GET /api/settings has versions of (the picker's)
+_upg_picker_runtimes() { printf '%s' "$1" | jq -r '[.executor_images[]?.runtime] | unique | join(" ")'; }
+
+# _upg_bundle_ids FILE — the ids of a bundled catalog (api/resources/runtimes/builtin.json)
+_upg_bundle_ids() { jq -r '[.runtimes[]?.id] | join(" ")' "$1" 2>/dev/null || true; }
+
+# _upg_deploy_code PROJECT TOKEN CODE [TRIES] — CODE as the project's new version: saved, built (a
+# compiled runtime's Kaniko build; the others are ready at once), deployed, and that deployment active
+# (TRIES tries UPG_WAIT_SLEEP seconds apart for the build and for the deployment, default 60 × 5)
+_upg_deploy_code() {
+  local project="$1" token="$2" code="$3" tries="${4:-60}" version build="" id i
+  _upg_call POST "/api/projects/${project}/code" "$token" "$(jq -nc --arg c "$code" '{code: $c, message: "upgrade e2e: after the rollback"}')"
+  version=$(echo "$_upg_body" | jq -r '.version.id // empty' 2>/dev/null || true)
+  if [ -z "$version" ]; then
+    echo -e "${RED}code of ${project}: HTTP ${_upg_code} ${_upg_body:0:300}${NC}"
+    return 1
+  fi
+  for i in $(seq 1 "$tries"); do
+    _upg_call GET "/api/projects/${project}" "$token"
+    build=$(echo "$_upg_body" | jq -r --arg v "$version" 'if .data.latest_version.id == $v then .data.latest_version.build_status // empty else empty end' 2>/dev/null || true)
+    case "$build" in ready|failed) break ;; esac
+    sleep "${UPG_WAIT_SLEEP:-5}"
+  done
+  if [ "$build" != ready ]; then
+    echo -e "${RED}build of version ${version} of ${project}: ${build:-no status}${NC}"
+    return 1
+  fi
+  _upg_call POST "/api/projects/${project}/deploy" "$token" "$(jq -nc --arg v "$version" '{version_id: $v}')"
+  if [[ ! "$_upg_code" =~ ^2 ]]; then
+    echo -e "${RED}deploy of ${project}: HTTP ${_upg_code} ${_upg_body:0:300}${NC}"
+    return 1
+  fi
+  id=$(echo "$_upg_body" | jq -r '.id // .data.id // empty' 2>/dev/null || true)
+  _upg_wait_deployment_id "$project" "$token" "$id" "$tries"
+}
+
+# --rollback, on the upgraded version: what the rollback starts from — the migrations the upgrade
+# added, the region Traefik's chart, and a project on a runtime only the upgrade's catalog has,
+# deployed and answering (left out, with the reason, when there is no such runtime). The variables are
+# cmd_test_helm_upgrade's locals (bash scoping: callees share them).
+_upg_rollback_prepare() {
+  local rt="$_upg_rb_runtime" catalog offered i n=0 ok=0 row out
+  _upg_log "Before the rollback (on ${to_version})"
+  _upg_rb_added=$(_upg_only_in "$(_upg_psql "select migration from migrations order by migration" | xargs)" "$_upg_rb_migrations_before")
+  echo "  migrations the upgrade ran: ${_upg_rb_added:-none}"
+  _upg_rb_traefik=$(_upg_kubectl -n knative-serving get deploy traefik -o jsonpath='{.metadata.labels.helm\.sh/chart}' 2>/dev/null || true)
+  git -C "$root" show "${from}:api/resources/runtimes/builtin.json" > "${_upg_tmp}/from-builtin.json" 2>/dev/null || : > "${_upg_tmp}/from-builtin.json"
+  _upg_rb_new_ids=$(_upg_only_in "$(_upg_bundle_ids "${root}/api/resources/runtimes/builtin.json")" "$(_upg_bundle_ids "${_upg_tmp}/from-builtin.json")")
+  echo "  runtimes only ${to_version}'s catalog has: ${_upg_rb_new_ids:-none}"
+  admin_token=$(_upg_login admin "$admin_pw") || true
+
+  if ! _upg_words " ${_upg_rb_new_ids} " "$rt"; then
+    echo -e "${YELLOW}  ${rt} (UPG_ROLLBACK_RUNTIME) is no runtime only ${to_version}'s catalog has: no project on a new runtime${NC}"
+    return 0
+  fi
+  _upg_call GET /api/runtime-catalog "$admin_token"
+  catalog="$_upg_body"
+  offered=$(_upg_offered_ids "$catalog" 2>/dev/null || true)
+  echo "  catalog in use: $(echo "$catalog" | jq -r '.data.mode // "?"' 2>/dev/null || true), offered: ${offered:-none}"
+  _upg_check "the catalog in use on ${to_version} has ${rt} (GET /api/runtime-catalog: HTTP ${_upg_code})" \
+    _upg_words " $(_upg_catalog_ids "$catalog" 2>/dev/null || true) " "$rt"
+  if ! _upg_words " ${offered} " "$rt"; then
+    # left out by E2E_EXECUTOR_RUNTIMES (EXECUTOR_RUNTIMES): offered through the setting, as an administrator would
+    _upg_call PUT /api/runtime-catalog "$admin_token" "$(_upg_offer_body "$offered" "$rt")"
+    _upg_check "the Built-in runtimes setting offers ${rt} as well (HTTP ${_upg_code})" _upg_eq "$_upg_code" 200
+  fi
+  # its versions: executor:sync discovers those of an offered built-in (at the API's start, every 30 minutes)
+  for i in $(seq 1 30); do
+    _upg_call GET /api/settings "$admin_token"
+    if _upg_words " $(_upg_picker_runtimes "$_upg_body" 2>/dev/null || true) " "$rt"; then n=1; break; fi
+    if [ "$i" = 1 ]; then _upg_artisan executor:sync >/dev/null 2>&1 || true; fi
+    sleep 10
+  done
+  _upg_check "${rt} has versions on ${to_version} (executor:sync)" test "$n" = 1
+  [ "$n" = 1 ] || return 0
+
+  _upg_call POST "/api/runtimes/${rt}/test-deploy" "$admin_token" "$(jq -nc --arg r "$region_id" '{knative_region_id: $r}')"
+  _upg_check "a project on ${rt} is created on ${to_version} (test-deploy: HTTP ${_upg_code})" _upg_eq "$_upg_code" 201
+  if [ "$_upg_code" != 201 ]; then
+    echo "    ${_upg_body:0:400}"
+    return 0
+  fi
+  _upg_rb_project=$(echo "$_upg_body" | jq -r '.data.id // .id // empty' 2>/dev/null || true)
+  _upg_rb_slug=$(echo "$_upg_body" | jq -r '.data.slug // .slug // empty' 2>/dev/null || true)
+  _upg_wait_deployment_active "$_upg_rb_project" "$admin_token" "${UPG_ROLLBACK_DEPLOY_TRIES:-180}" && ok=1
+  _upg_check "the ${rt} project ${_upg_rb_slug} deploys on ${to_version}" test "$ok" = 1
+  _upg_rb_host=$(_upg_kubectl -n "$_upg_region" get ksvc "$_upg_rb_slug" -o jsonpath='{.status.url}' 2>/dev/null | sed -E 's#^https?://##' || true)
+  out=$(_upg_host_wait "$_upg_rb_host" "Hello, World!") || true
+  echo "  ${rt} function ${_upg_rb_host:-?}: ${out:0:200}"
+  _upg_check "the ${rt} function answers on ${to_version}" _upg_contains "$out" "Hello, World!"
+  row=$(_upg_psql "select (manifest is not null)::text || ' ' || coalesce(source_id, '-') from runtimes where id = '${rt}'" || true)
+  echo "  runtimes row ${rt}: manifest stored ${row%% *}, source ${row#* }"
+  _upg_check "the ${rt} row carries its manifest, which ${from_tag} reads" _upg_prefix "$row" true
+}
+
+# --rollback: `helm rollback` to the installed version's revision under the prober, that revision's
+# region Job, and the checks of docs/upgrade.md → Back to 0.6.7 (the same shared variables)
+_upg_rollback_run() {
+  local history from_rev rb_status=0 rb_started rb_seconds rb_job rb_job_status="" rb_last_pod="" probe_start
+  local probes_rb failed_rb i ok out rb_version api_images recorded listed status_json from_traefik agent_image traefik_chart
+  local rt="$_upg_rb_runtime" code rb_new log="${_upg_tmp}/rollback-reconcile.log"
+  history=$(helm --kubeconfig "$_upg_kubeconfig" history runr -n "$_upg_ns" -o json 2>/dev/null || echo '[]')
+  from_rev=$(_upg_previous_revision "$history" || true)
+  _upg_check "helm history lists the revision of ${from_tag} (${from_rev:-none})" test -n "$from_rev"
+  [ -n "$from_rev" ] || return 0
+
+  _upg_log "helm rollback → revision ${from_rev} (${from_tag})"
+  probe_start=$(wc -l < "${_upg_tmp}/probe.log")
+  rb_started=$(date +%s)
+  helm --kubeconfig "$_upg_kubeconfig" rollback runr "$from_rev" -n "$_upg_ns" --wait --timeout 15m || rb_status=$?
+  rb_seconds=$(( $(date +%s) - rb_started ))
+  _upg_check "helm rollback to revision ${from_rev} succeeded (exit ${rb_status}, ${rb_seconds} s)" test "$rb_status" = 0
+  if [ "$rb_status" != 0 ]; then
+    _upg_kubectl -n "$_upg_ns" get pods,jobs 2>/dev/null || true
+    return 0
+  fi
+  # The rollback applies that revision's manifest again: its region Job, which the upgrade deleted, is
+  # created again and runs (helm waits for no Job). Taken as the newest region Job, so that a name
+  # other than the documented one is a failed check, not an hour of waiting
+  rb_job=$(_upg_kubectl -n "$_upg_ns" get jobs -l app=runr-region-reconcile --sort-by=.metadata.creationTimestamp -o name 2>/dev/null | tail -n 1 || true)
+  rb_job="${rb_job#job.batch/}"
+  _upg_check "the rollback created the region Job of that revision, runr-region-reconcile-${from_rev} (newest: ${rb_job:-none})" \
+    _upg_eq "$rb_job" "runr-region-reconcile-${from_rev}"
+  rb_job="${rb_job:-runr-region-reconcile-${from_rev}}"
+  echo "  waiting for job/${rb_job} (region:reconcile of ${from_tag})"
+  for i in $(seq 1 360); do
+    rb_job_status=$(_upg_kubectl -n "$_upg_ns" get job "$rb_job" \
+      -o jsonpath='{range .status.conditions[?(@.status=="True")]}{.type}{" "}{end}' 2>/dev/null || true)
+    case "$rb_job_status" in *Complete*|*Failed*) break ;; esac
+    sleep 10
+  done
+  rb_last_pod=$(_upg_kubectl -n "$_upg_ns" get pods -l "job-name=${rb_job}" --sort-by=.metadata.creationTimestamp -o name 2>/dev/null | tail -n 1 || true)
+  : > "$log"
+  if [ -n "$rb_last_pod" ]; then _upg_kubectl -n "$_upg_ns" logs "$rb_last_pod" > "$log" 2>/dev/null || true; fi
+  tail -n 40 "$log" | sed 's/^/  reconcile: /' || true
+  if ! _upg_wait_api; then
+    _upg_check "the API answers after the rollback" false
+    return 0
+  fi
+
+  _upg_log "Checks after the rollback"
+  rb_version=$(echo "$_upg_body" | jq -r .version 2>/dev/null || true)
+  echo "  /api/version: ${to_version} → ${rb_version}"
+  _upg_check "/api/version answers ${from_version} again (answers ${rb_version:-nothing})" _upg_eq "$rb_version" "$from_version"
+  status_json=$(helm --kubeconfig "$_upg_kubeconfig" status runr -n "$_upg_ns" -o json 2>/dev/null || echo '{}')
+  _upg_check "the release is deployed by \"Rollback to ${from_rev}\"" \
+    _upg_eq "$(echo "$status_json" | jq -r '(.info.status // "") + " / " + (.info.description // "")' 2>/dev/null)" "deployed / Rollback to ${from_rev}"
+  api_images=$(_upg_kubectl -n "$_upg_ns" get deploy runr-api runr-horizon runr-scheduler runr-reverb \
+    -o jsonpath='{range .items[*]}{.spec.template.spec.containers[0].image}{" "}{end}' | tr ' ' '\n' | sort -u | xargs)
+  _upg_check "api, horizon, scheduler and reverb run ${from_tag}'s API image again" _upg_eq "$api_images" "${_upg_from_api_repo}:${from_tag}"
+  _upg_check "the console runs ${from_tag}'s UI image again" \
+    _upg_eq "$(_upg_kubectl -n "$_upg_ns" get deploy runr-ui -o jsonpath='{.spec.template.spec.containers[0].image}')" "${_upg_from_ui_repo}:${from_tag}${_upg_ui_suffix}"
+
+  # The database as the rollback leaves it: no migration hook ran, the upgrade's migrations stay
+  recorded=$(_upg_psql "select count(*) from migrations where migration in ($(_upg_sql_list "$_upg_rb_added"))" || echo "?")
+  _upg_check "the migrations the upgrade ran stay recorded (${_upg_rb_added:-none})" _upg_eq "$recorded" "$(_upg_count_words "$_upg_rb_added")"
+  if _upg_words " ${_upg_rb_added} " 2026_11_07_100001_create_runtime_sources; then
+    _upg_check "the table runtime_sources stays" _upg_eq "$(_upg_psql "select to_regclass('public.runtime_sources') is not null")" t
+    _upg_check "the seven columns of 2026_11_07_100001_create_runtime_sources stay" _upg_eq "$(_upg_psql "select count(*) from information_schema.columns
+      where table_schema = 'public' and ((table_name = 'runtimes' and column_name in ('source_id', 'source_path', 'orphaned_at'))
+        or (table_name = 'executor_images' and column_name in ('deprecated_at', 'sunset_at'))
+        or (table_name in ('runtime_patches', 'runtime_patch_feeds') and column_name = 'source_id'))")" 7
+  fi
+  _upg_check "no migration of ${from_tag} is pending (its migrate:status)" _upg_no_pending_migrations
+
+  # The regions: that revision's Job waited for its bootstrap hook (a rollback runs none), then
+  # region:reconcile took the agent back; it moves no chart down
+  _upg_check "the region Job ${rb_job} of ${from_tag} completed (${rb_job_status:-no condition})" bash -c '[[ "$1" == *Complete* ]]' _ "$rb_job_status"
+  _upg_check "it went on without the bootstrap hook of revision ${from_rev}, which a rollback does not run" \
+    grep -qF "the bootstrap hook of revision ${from_rev} did not finish within" "$log"
+  _upg_check "region:reconcile of ${from_tag} finished (no ERROR, failed or waiting line)" \
+    bash -c 'grep -q "runr-region-reconcile: the regions are at this version" "$1" && ! grep -q -E "runr-region-reconcile: ERROR|\] failed: |\] waiting: " "$1"' _ "$log"
+  _upg_call GET /api/version
+  _upg_check "/api/version says region_reconcile done" _upg_eq "$(echo "$_upg_body" | jq -r .region_reconcile 2>/dev/null)" "done"
+  agent_image=$(_upg_kubectl -n observability get deploy runr-agent -o jsonpath='{.spec.template.spec.containers[0].image}' 2>/dev/null || true)
+  _upg_check "the region agent runs ghcr.io/brf-tech/runr/agent:${from_tag} again (runs ${agent_image:-nothing})" \
+    _upg_eq "$agent_image" "ghcr.io/brf-tech/runr/agent:${from_tag}"
+  traefik_chart=$(_upg_kubectl -n knative-serving get deploy traefik -o jsonpath='{.metadata.labels.helm\.sh/chart}' 2>/dev/null || true)
+  _upg_check "the region Traefik stays on ${_upg_rb_traefik:-?} (runs ${traefik_chart:-nothing})" _upg_eq "$traefik_chart" "$_upg_rb_traefik"
+  from_traefik=$(git -C "$root" show "${from}:api/app/Services/Contracts/KnativeConstants.php" 2>/dev/null \
+    | sed -n "s/^ *\(public \)\{0,1\}const TRAEFIK_CHART_VERSION = '\([^']*\)';.*/\2/p" | head -n 1 || true)
+  if [ -n "$from_traefik" ] && [ -n "$_upg_rb_traefik" ] && [ "$_upg_rb_traefik" != "traefik-${from_traefik}" ]; then
+    _upg_check "region:reconcile of ${from_tag} leaves ${_upg_rb_traefik} with a warning (it pins traefik-${from_traefik})" \
+      bash -c 'grep -F "[traefik-chart] warning:" "$1" | grep -qF "stays on chart $2"' _ "$log" "$_upg_rb_traefik"
+  fi
+
+  # Sign-in, and the function of the installed version: every probe since the rollback, its env, a
+  # redeploy on that version
+  admin_token=$(_upg_login admin "$admin_pw") || true
+  _upg_check "admin signs in after the rollback" test -n "$admin_token"
+  dev_token=$(_upg_login dev "$dev_pw") || true
+  _upg_check "dev signs in after the rollback" test -n "$dev_token"
+  probes_rb=$(tail -n +"$((probe_start + 1))" "${_upg_tmp}/probe.log" | wc -l)
+  failed_rb=$(tail -n +"$((probe_start + 1))" "${_upg_tmp}/probe.log" | awk '$2 != "200"' | wc -l)
+  echo "  prober: ${probes_rb} requests from the rollback to the end of the region Job, ${failed_rb} not 200"
+  _upg_check "the function answered every request during the rollback and the region Job" test "$failed_rb" -eq 0
+  out=$(_upg_function_get)
+  _upg_check "the function answers after the rollback (plain and secret env)" \
+    _upg_eq "$(echo "$out" | jq -r '.plain + "/" + .token + "/" + .db' 2>/dev/null)" "hello-plain/s3cr3t-044/pw-050"
+  ok=0
+  _upg_redeploy "$project" "$admin_token" && ok=1
+  _upg_check "the function redeploys on ${from_tag}" test "$ok" = 1
+  for i in $(seq 1 30); do
+    out=$(_upg_function_get)
+    [ "$(echo "$out" | jq -r '.plain + "/" + .token + "/" + .db' 2>/dev/null)" = "hello-plain/s3cr3t-044/pw-050" ] && break
+    sleep 5
+  done
+  _upg_check "the function answers with its env after the redeploy" \
+    _upg_eq "$(echo "$out" | jq -r '.plain + "/" + .token + "/" + .db' 2>/dev/null)" "hello-plain/s3cr3t-044/pw-050"
+
+  # The runtimes list and the picker: none of the upgrade's new runtimes
+  _upg_call GET /api/runtimes "$admin_token"
+  _upg_check "the runtimes list answers on ${from_tag} (HTTP ${_upg_code})" _upg_eq "$_upg_code" 200
+  listed=$(_upg_runtime_ids "$_upg_body" 2>/dev/null || true)
+  echo "  runtimes listed on ${from_tag}: ${listed:-none}"
+  _upg_check "it lists python" _upg_words " ${listed} " python
+  _upg_check "it lists none of the runtimes only ${to_version}'s catalog has (${_upg_rb_new_ids:-none})" test -z "$(_upg_in_both "$_upg_rb_new_ids" "$listed")"
+  _upg_call GET /api/settings "$admin_token"
+  _upg_check "the runtime picker has versions of none of them (GET /api/settings)" \
+    test -z "$(_upg_in_both "$_upg_rb_new_ids" "$(_upg_picker_runtimes "$_upg_body" 2>/dev/null || true)")"
+
+  # The project on the new runtime: running, deploying a new version (0.6.7 builds it from the
+  # manifest on the runtime's row), not listed, still accepted by the API
+  [ -n "$_upg_rb_project" ] || return 0
+  _upg_call GET "/api/projects/${_upg_rb_project}" "$admin_token"
+  _upg_check "the ${rt} project reads on ${from_tag} (HTTP ${_upg_code})" _upg_eq "$_upg_code" 200
+  out=$(_upg_host_wait "$_upg_rb_host" "Hello, World!") || true
+  _upg_check "the ${rt} function answers after the rollback" _upg_contains "$out" "Hello, World!"
+  _upg_check "the ${rt} row keeps its manifest" _upg_eq "$(_upg_psql "select (manifest is not null)::text from runtimes where id = '${rt}'")" true
+  _upg_call GET "/api/runtimes/${rt}" "$admin_token"
+  _upg_check "${from_tag} does not list ${rt} (GET /api/runtimes/${rt}: HTTP ${_upg_code})" _upg_eq "$_upg_code" 404
+  _upg_call GET "/api/projects/${_upg_rb_project}/code" "$admin_token"
+  code=$(echo "$_upg_body" | jq -r '.code // empty' 2>/dev/null || true)
+  ok=0
+  _upg_deploy_code "$_upg_rb_project" "$admin_token" "${code//Hello, World!/Hello, ${from_tag}!}" "${UPG_ROLLBACK_DEPLOY_TRIES:-180}" && ok=1
+  _upg_check "a new version of the ${rt} project builds and deploys on ${from_tag}" test "$ok" = 1
+  out=$(_upg_host_wait "$_upg_rb_host" "Hello, ${from_tag}!") || true
+  echo "  ${rt} function after its deploy on ${from_tag}: ${out:0:200}"
+  _upg_check "the ${rt} function answers with the version built on ${from_tag}" _upg_contains "$out" "Hello, ${from_tag}!"
+  _upg_call POST /api/projects "$admin_token" "$(jq -nc --arg r "$region_id" --arg rt "$rt" \
+    '{name: ("rollback-" + $rt), knative_region_id: $r, service_type: "xaas", runtime: $rt, config: {trigger_type: "http"}}')"
+  _upg_check "${from_tag}'s API still creates a project on ${rt}, which its console does not offer (HTTP ${_upg_code})" _upg_2xx "$_upg_code"
+  rb_new=$(echo "$_upg_body" | jq -r '.id // .data.id // empty' 2>/dev/null || true)
+  if [ -n "$rb_new" ]; then _upg_call DELETE "/api/projects/${rb_new}" "$admin_token"; fi
+}
+
 cmd_test_helm_upgrade() {
   local from="main" from_tag="" mode="reuse" k8s="${K8S_VERSION:-1.32.0}" skip_build=0
   local arg
@@ -1129,6 +1647,10 @@ cmd_test_helm_upgrade() {
       --dedicated-worker) _upg_dedicated=1 ;;
       --billing) _upg_billing=1 ;;
       --upgrade-set=*) _upg_upgrade_set+=(--set "${arg#--upgrade-set=}") ;;
+      --after-upgrade=*) _upg_after+=("${arg#--after-upgrade=}") ;;
+      --expect-release=*) _upg_expect+=("${arg#--expect-release=}") ;;
+      --kata) _upg_kata=1 ;;
+      --rollback) _upg_rollback=1 ;;
       --no-cleanup) _upg_cleanup=0 ;;
       --cleanup) _upg_cleanup=1 ;;
       *) echo "Unknown flag: ${arg}"; return 1 ;;
@@ -1139,6 +1661,27 @@ cmd_test_helm_upgrade() {
     reset) mode="--reset-then-reuse-values" ;;
     *) echo "--values-mode: reuse or reset"; return 1 ;;
   esac
+  if [ "$_upg_mt" = "1" ] && { [ "${#_upg_after[@]}" -gt 0 ] || [ "${#_upg_expect[@]}" -gt 0 ] || [ "$_upg_kata" = 1 ]; }; then
+    echo "--after-upgrade, --expect-release and --kata need the single-tenant edition's region"
+    return 1
+  fi
+  if [ "$_upg_mt" = "1" ] && [ "$_upg_rollback" = 1 ]; then
+    echo "--rollback needs the single-tenant edition's region and function"
+    return 1
+  fi
+  _upg_rb_runtime="${UPG_ROLLBACK_RUNTIME:-java}"
+  if [[ ! "$_upg_rb_runtime" =~ ^[a-z][a-z0-9-]{0,31}$ ]]; then
+    echo "UPG_ROLLBACK_RUNTIME: a runtime id, not ${_upg_rb_runtime}"
+    return 1
+  fi
+  local spec
+  for spec in ${_upg_expect[@]+"${_upg_expect[@]}"}; do
+    [[ "$spec" =~ ^[a-z0-9-]+/[a-z0-9-]+=[A-Za-z0-9._-]+$ ]] || { echo "--expect-release: NS/RELEASE=CHART-VERSION, not ${spec}"; return 1; }
+  done
+  if [ "$_upg_kata" = 1 ] && ! host_has_kvm; then
+    echo -e "${RED}--kata: this host has no hardware virtualization (vmx / svm and a /dev/kvm that opens): Kata cannot run here${NC}"
+    return 1
+  fi
   local cmd
   for cmd in docker kind kubectl helm jq curl git; do
     command -v "$cmd" >/dev/null 2>&1 || { echo -e "${RED}${cmd} not found${NC}"; return 1; }
@@ -1174,6 +1717,7 @@ cmd_test_helm_upgrade() {
   echo "  edition  : $([ "$_upg_mt" = "1" ] && echo multi-tenant || echo single-tenant)"
   echo "  billing  : $([ "$_upg_billing" = "1" ] && echo "billing.enabled=true on the upgrade" || echo off)"
   [ ${#_upg_upgrade_set[@]} -eq 0 ] || echo "  set      : ${_upg_upgrade_set[*]}"
+  [ "$_upg_rollback" != 1 ] || echo "  rollback : helm rollback to ${from_tag} after the checks, a project on ${_upg_rb_runtime} before it"
   echo "  cluster  : ${_upg_cluster} (Kind v${k8s})"
 
   _upg_log "Images"
@@ -1261,12 +1805,18 @@ EOF
   # ── 2. Data like an existing installation ──
   _upg_log "Data on ${from_tag}"
   if [ "$_upg_mt" = "1" ]; then _upg_mt_data; else _upg_st_data; fi
+  if [ "$_upg_kata" = 1 ]; then _upg_kata_install || return 1; fi
 
   _upg_old_ns_before
 
   # ── 3. helm upgrade, the function under a prober ──
   _upg_log "helm upgrade → this checkout (${mode})"
   _upg_brand_values
+  if [ -n "$_upg_fn_host" ]; then
+    local warmed
+    warmed=$(_upg_function_warm) || { echo -e "${RED}function does not answer before the upgrade (last: ${warmed:-no response})${NC}"; return 1; }
+    echo "  function answers before the upgrade: ${warmed}"
+  fi
   : > "${_upg_tmp}/probe.log"
   if [ -n "$_upg_fn_host" ]; then
     (
@@ -1281,6 +1831,10 @@ EOF
   upgrade_started=$(date -u +%FT%TZ)
   local helm_status=0 helm_started helm_seconds
   [ "$_upg_billing" = "1" ] && _upg_upgrade_set+=(--set billing.enabled=true)
+  # --rollback: the migrations of the installed version, so the checks after the rollback know the upgrade's
+  if [ "$_upg_rollback" = 1 ]; then
+    _upg_rb_migrations_before=$(_upg_psql "select migration from migrations order by migration" | xargs)
+  fi
   helm_started=$(date +%s)
   helm --kubeconfig "$_upg_kubeconfig" upgrade runr "${root}/helm" -n "$_upg_ns" "$mode" \
     -f "${_upg_tmp}/brand.yaml" "${_upg_upgrade_set[@]}" \
@@ -1358,6 +1912,7 @@ EOF
   _upg_check "Horizon: the link works once (second use 403)" _upg_eq "$_upg_code" 403
 
   if [ "$_upg_mt" = "1" ]; then _upg_mt_checks; else _upg_st_checks; fi
+  if [ "$_upg_mt" != "1" ]; then _upg_dependency_checks; fi
 
   # The installed version's image namespace: nothing left in the workloads (control plane: the chart's
   # runr.image helper over the reused values; region: region:reconcile image-registry), the
@@ -1399,6 +1954,16 @@ EOF
   _upg_check "brand logo served from its data: URI (image/svg+xml)" _upg_prefix "$asset_type" image/svg+xml
   _upg_check "brand logo is the given SVG" _upg_contains "$(cat "${_upg_tmp}/logo")" "Acme Cloud"
   _upg_check "console UI answers" _upg_contains "$(curl -s -H "Host: ${_upg_host}" "${_upg_api}/")" '<div id="app"'
+
+  # Back to the installed version (docs/upgrade.md → Back to 0.6.7), once the upgrade is good
+  if [ "$_upg_rollback" = 1 ]; then
+    if [ "$_upg_failures" = "0" ]; then
+      _upg_rollback_prepare
+      _upg_rollback_run
+    else
+      echo -e "${YELLOW}--rollback left out: ${_upg_failures} check(s) of the upgrade failed${NC}"
+    fi
+  fi
 
   echo ""
   if [ "$_upg_failures" = "0" ]; then

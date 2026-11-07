@@ -97,6 +97,11 @@
               "title": "Private key (PEM)",
               "writeOnly": true,
               "description": "mode custom: unencrypted private key of the certificate. Never printed by the chart."
+            },
+            "certificateCheck": {
+              "type": "boolean",
+              "title": "Check the cert-manager certificate",
+              "description": "When cert-manager issues the console certificate: runr-api may read its Certificate and the CertificateRequests of the release namespace, and platform administrators (single-tenant: holders of platform.manage) see a warning when it cannot be issued. false: no such permission, no warning."
             }
           }
         }
@@ -122,6 +127,20 @@
         "publicKey": {"type": "string", "title": "Feed public key", "description": "cosign public key (PEM) the feed's signature must verify with. Default: the key BRF-Tech/runr-runtimes signs the feed with. Empty: the feed is off and platform administrators see a warning."},
         "viaRegion": {"type": "string", "title": "Read through a region", "description": "Region id or name whose internal registry (its ghcr.io pull-through) the feed is read through, for an API without a way out. Empty: read directly."},
         "autoMigrate": {"type": ["boolean", "string"], "enum": [true, false, "true", "false"], "title": "Migrate at deadlines", "description": "At a critical or zero-day patch's deadline, redeploy the projects still behind onto it (rolled back when the new revision does not become ready). The default; platform administrators switch it on the Patches page."}
+      }
+    },
+    "runtimeCatalog": {
+      "type": "object",
+      "title": "Runtime catalog",
+      "description": "RunR's signed catalog of the built-in runtimes, read periodically (docs/runtimes.md#runtime-sources). Further sources are connected in Build & Run → Runtimes → Sources.",
+      "properties": {
+        "reference": {"type": "string", "title": "Catalog", "description": "OCI reference of the catalog. Empty: ghcr.io/brf-tech/runr/runtime-catalog:stable."},
+        "offline": {"type": ["boolean", "string"], "enum": [true, false, "true", "false"], "title": "Offline", "description": "Never read a catalog: the built-in runtimes are the API image's (air-gapped installations)."},
+        "publicKey": {"type": "string", "title": "Catalog public key", "description": "cosign public key (PEM) the catalog must be signed with. Empty: the key of BRF-Tech/runr-runtimes."},
+        "viaRegion": {"type": "string", "title": "Read through a region", "description": "Region id or name whose internal registry the catalog is read through. Empty: runtimePatches.viaRegion, else directly."},
+        "intervalMinutes": {"type": ["string", "number"], "title": "Check interval (minutes)", "description": "Empty: 15."},
+        "timeout": {"type": ["string", "number"], "title": "Registry timeout (seconds)", "description": "Of one request to a source's registry. Empty: 20."},
+        "builtinRuntimes": {"type": "string", "title": "Built-in runtimes (first default)", "description": "Comma-separated ids offered until a platform administrator saves the Built-in runtimes setting. Empty: every runtime of the catalog."}
       }
     },
     "globalDns": {

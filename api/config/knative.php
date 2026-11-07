@@ -117,6 +117,32 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | The console's own certificate (App\Services\CertManager\ConsoleCertificate)
+    |--------------------------------------------------------------------------
+    |
+    | Set by the Helm chart from ingress.tls (helper "runr.ingressTls"), for the platform
+    | administrators' warning when cert-manager cannot issue the console certificate.
+    |
+    | mode:        ingress.tls.mode as the chart resolved it: letsencrypt, custom, secret, none,
+    |              or "" (the keys of releases up to 0.3.5)
+    | issuer:      the ClusterIssuer cert-manager issues the console certificate from; empty when
+    |              cert-manager does not issue it (custom, secret, none, or letsencrypt in a cluster
+    |              that had no cert-manager when the chart was rendered)
+    | secret_name: the console's TLS Secret, and the name of the Certificate cert-manager makes
+    |              for the Ingress
+    | check:       the chart granted runr-api `get` on that Certificate and `list` on the
+    |              CertificateRequests of its namespace (ingress.tls.certificateCheck)
+    |
+    */
+    'console_tls' => [
+        'mode' => env('CONSOLE_TLS_MODE', ''),
+        'issuer' => env('CONSOLE_TLS_ISSUER', ''),
+        'secret_name' => env('CONSOLE_TLS_SECRET_NAME', ''),
+        'check' => (bool) env('CONSOLE_TLS_CHECK', false),
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | Private ingress move (region:reconcile, PrivateIngressStep)
     |--------------------------------------------------------------------------
     |

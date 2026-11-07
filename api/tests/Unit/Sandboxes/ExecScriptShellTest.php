@@ -241,7 +241,9 @@ class ExecScriptShellTest extends TestCase
 
         // Kill through the PID file: the command goes, the wrapper ends with 137
         $kill = str_replace(SandboxManifests::EXEC_DIR, $exec, ExecScript::killExec('01JBKL')[2]);
-        @unlink($exec.'/01jbkl.pid');
+        if (is_file($exec.'/01jbkl.pid')) {
+            unlink($exec.'/01jbkl.pid');
+        }
         $proc = proc_open($wrap(['sleep', '30'], 60, '01JBKL'), [0 => ['file', '/dev/null', 'r'], 1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes, $this->dir, ['PATH' => getenv('PATH') ?: '/usr/bin:/bin']);
         $until = microtime(true) + 10;
         while (! is_file($exec.'/01jbkl.pid') && microtime(true) < $until) {

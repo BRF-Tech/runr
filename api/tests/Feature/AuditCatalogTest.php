@@ -48,6 +48,7 @@ class AuditCatalogTest extends TestCase
         'POST api/registry-setup/test-s3' => 'connectivity test, changes nothing',
         'POST api/tenants/{tenant}/users/search' => 'lookup by e-mail, changes nothing',
         'POST api/runtimes/validate' => 'manifest check, changes nothing',
+        'POST api/runtime-sources/test' => 'reads and validates a runtime source as given, saves nothing',
         'POST api/scale-schedule/preview' => 'timed warmer preview: computes a schedule, changes nothing',
         'POST api/events' => 'workflow event ingestion from functions; stored in workflow_events',
         'POST api/internal/workflows/queue/{context}/{projectId}/{token}' => 'queue bridge delivery (signed path token); stored in workflow_events',

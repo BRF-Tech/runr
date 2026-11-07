@@ -1,0 +1,114 @@
+# yaml-language-server: $schema=../../schema/runtime.schema.json
+#
+# sample-zig: Zig functions on RunR. A compiled language in http mode: every saved version of a
+# function is built (the build section) into one static binary that is its own HTTP server on
+# $PORT. The function only writes a handler; RunR places runr.zig (Request / Response),
+# runr_server.zig (the server) and build.zig next to its code before the build - they are the
+# build.files below, @file references to the files of this directory that RunR inlines when it
+# reads this repository as a runtime source.
+#
+# Schedule ticks: RunR's universal wrapper starts the server, sends it one schedule CloudEvent and
+# stops it (run.schedule: invoke), so the binary needs no schedule mode of its own.
+# Reference: https://github.com/BRF-Tech/runr/blob/main/docs/runtimes.md#compiled-languages
+apiVersion: runr.sh/v1
+kind: Runtime
+id: sample-zig
+name: Zig (sample)
+description: Zig compiled into a static binary that serves HTTP itself (http mode), dependencies from build.zig.zon.
+icon: "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAzMiAzMiI+PHJlY3Qgd2lkdGg9IjMyIiBoZWlnaHQ9IjMyIiByeD0iNyIgZmlsbD0iI2Y3YTQxZCIvPjxwYXRoIGQ9Ik04IDhoMTZ2My41TDEzLjUgMjAuNUgyNFYyNEg4di0zLjVMMTguNSAxMS41SDh6IiBmaWxsPSIjMTIxMjEyIi8+PC9zdmc+"
+# The console's editor (Monaco) has no Zig grammar: plain text
+language: plaintext
+extensions: [zig]
+category: general
+
+# Lifecycle of the whole runtime: see runtimes/sample-lua/runtime.yaml.
+# deprecated: true
+# sunset: "2027-12-31"
+# replacement: sample-zig-next
+# notice: "Zig (sample) moves to sample-zig-next."
+
+versions:
+  # The toolchain image: function builds run in it (build.image "{image}"); RUNTIME_VERSION 0.15
+  # pins Alpine's zig package of the Dockerfile to this version
+  - version: "0.15"
+    image: ghcr.io/brf-tech/runr/sample-executor-zig:0.15
+    default: true
+    # End of life of this image: its base, Alpine 3.23, is supported until 2027-11-01
+    eol: "2027-11-01"
+
+handler:
+  file: main
+  function: handler
+  pattern: 'pub\s+fn\s+{handler}\s*\('
+
+template:
+  files:
+    "{file}": |
+      // RunR Zig function. RunR builds this file together with runr.zig and runr_server.zig into
+      // one static binary that serves HTTP on $PORT; it calls handler() for every invocation.
+      // runr.zig describes Request (trigger, method, path, query, headers, body) and Response.
+      // Allocate with `allocator`: it is freed after the response is written.
+      const std = @import("std");
+      const runr = @import("runr.zig");
+
+      pub fn {handler}(allocator: std.mem.Allocator, req: runr.Request) !runr.Response {
+          switch (req.trigger) {
+              .schedule => {
+                  std.debug.print("schedule trigger fired\n", .{}); // stderr: the logs
+                  return runr.Response.text("tick from Zig");
+              },
+              .queue => {
+                  // the queue consumer posts the stream entry's fields as JSON: {"msg":"hi"}
+                  const msg = runr.jsonString(allocator, req.body, "msg") orelse req.body;
+                  return runr.Response.text(try std.fmt.allocPrint(allocator, "processed {s} (from Zig)", .{msg}));
+              },
+              .http => {
+                  const name = (try req.queryParam(allocator, "name")) orelse "World";
+                  return runr.Response.text(try std.fmt.allocPrint(allocator, "Hello, {s}! (from Zig)", .{name}));
+              },
+          }
+      }
+
+# A FaaS project starts with build.zig.zon (the template below). Add a package with
+# `zig fetch --save <url>`; build.zig imports every dependency under its name. The install step
+# fetches them before the build, so a download problem shows up as such in the build log. The
+# packages are compiled into the binary: nothing to copy into the function's image (no copy, env).
+dependencies:
+  file: build.zig.zon
+  template: |
+    .{
+        .name = .function,
+        .version = "0.0.0",
+        .fingerprint = 0xcaae163d65f89c9b,
+        .minimum_zig_version = "0.15.0",
+        .dependencies = .{},
+        .paths = .{""},
+    }
+  install: "zig build --fetch"
+
+build:
+  image: "{image}"
+  # runr_entry.zig points the server at the handler; the binary lands in /build/out/bin/server,
+  # which is /app/bin/server in the function's image
+  command: >-
+    echo 'pub const handler = @import("{file}").{handler};' > runr_entry.zig &&
+    zig build -Doptimize=ReleaseSmall --prefix /build/out --summary none
+  # The function's image: the binary needs no libc, Alpine gives the wrapper a /bin/sh. A Docker
+  # Hub name without a registry host goes through the region registry's mirror (cached per region)
+  runImage: alpine:3.23.8
+  source: false
+  files:
+    build.zig: "@build.zig"
+    runr.zig: "@runr.zig"
+    runr_server.zig: "@runr_server.zig"
+
+run:
+  mode: http
+  command: ["/app/bin/server"]
+  schedule: invoke
+
+triggers: [http, schedule, queue]
+sandbox: [runc, gvisor, kata]
+resources:
+  cpu: "250m"
+  memory_mb: 128

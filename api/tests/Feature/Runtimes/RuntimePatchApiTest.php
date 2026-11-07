@@ -20,7 +20,8 @@ use Tests\TestCase;
 
 /**
  * The runtime patch API (routes/runtime-patches.php): a project's patches, apply, pin / unpin,
- * the banners, and the platform administrators' Patches page with its actions.
+ * the banners, and the platform administrators' Patches page with its actions — in this
+ * single-tenant suite also the holders of platform.manage (the Owner).
  */
 class RuntimePatchApiTest extends TestCase
 {
@@ -179,7 +180,7 @@ class RuntimePatchApiTest extends TestCase
         $this->signedIn($this->owner)->getJson('/api/runtime-patches/banners')->assertOk()->assertJsonCount(0, 'data');
     }
 
-    public function test_platform_administrators_see_releases_and_the_feed_state(): void
+    public function test_platform_administrators_and_single_tenant_owners_see_releases_and_the_feed_state(): void
     {
         $admin = $this->platformAdmin();
         config(['app.version' => 'v0.5.10', 'runtime_patches.public_key' => '']);
@@ -193,7 +194,13 @@ class RuntimePatchApiTest extends TestCase
         $this->assertSame('Fixes the API', $banners['platform_advisory']['reason']);
         $this->assertArrayHasKey('feed_disabled', $banners->all());
 
-        $this->signedIn($this->owner)->getJson('/api/runtime-patches/banners')->assertJsonCount(0, 'data');
+        // single-tenant: the Owner holds platform.manage; Developer and Viewer do not
+        $owners = collect($this->signedIn($this->owner)->getJson('/api/runtime-patches/banners')->assertOk()->json('data'))->keyBy('kind');
+        $this->assertSame(['platform_advisory', 'feed_disabled'], $owners->keys()->all());
+        $this->assertSame('0.5.11', $owners['platform_advisory']['version']);
+        foreach ([$this->developer, $this->viewer] as $user) {
+            $this->signedIn($user)->getJson('/api/runtime-patches/banners')->assertJsonCount(0, 'data');
+        }
     }
 
     public function test_the_patches_page_is_for_platform_administrators(): void
@@ -204,7 +211,8 @@ class RuntimePatchApiTest extends TestCase
         [$project] = $this->projectBehind($running, $newest);
         $admin = $this->platformAdmin();
 
-        $this->signedIn($this->owner)->getJson('/api/admin/runtime-patches')->assertForbidden();
+        $this->signedIn($this->developer)->getJson('/api/admin/runtime-patches')->assertForbidden()
+            ->assertJsonPath('permissions', ['platform.manage']);
 
         $page = $this->signedIn($admin)->getJson('/api/admin/runtime-patches')->assertOk();
         $patch = collect($page->json('data.patches'))->firstWhere('id', $newest->id);
@@ -233,6 +241,27 @@ class RuntimePatchApiTest extends TestCase
 
         $this->assertSame(1, AuditEvent::query()->where('action', 'runtime_patch.force')->count());
         $this->assertSame(1, AuditEvent::query()->where('action', 'runtime_patch.policy.update')->count());
+    }
+
+    public function test_a_single_tenant_owner_runs_the_patches_page(): void
+    {
+        config(['runtime_patches.public_key' => '']);
+        [$project] = $this->projectBehind($running, $newest);
+        $admin = $this->userWithRole('admin');
+
+        $page = $this->signedIn($this->owner)->getJson('/api/admin/runtime-patches')->assertOk();
+        $this->assertSame(1, collect($page->json('data.patches'))->firstWhere('id', $newest->id)['affected']);
+        $this->signedIn($this->owner)->putJson('/api/admin/runtime-patches/policy', ['auto_migrate' => false])
+            ->assertOk()->assertJsonPath('data.auto_migrate', false);
+        $this->signedIn($this->owner)->postJson("/api/admin/runtime-patches/{$newest->id}/force")
+            ->assertStatus(202)->assertJsonPath('data.started', 1);
+        $this->assertSame(RuntimePatchMigration::FORCE, RuntimePatchMigration::query()->where('project_id', $project->id)->value('trigger'));
+
+        // the built-in Admin role holds everything but platform.manage
+        foreach ([$admin, $this->developer, $this->viewer] as $user) {
+            $this->signedIn($user)->getJson('/api/admin/runtime-patches')->assertForbidden();
+            $this->signedIn($user)->postJson('/api/admin/runtime-patches/check')->assertForbidden();
+        }
     }
 
     public function test_the_catalog_of_patches(): void

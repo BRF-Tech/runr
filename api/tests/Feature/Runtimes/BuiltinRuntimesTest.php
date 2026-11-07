@@ -77,7 +77,7 @@ class BuiltinRuntimesTest extends TestCase
             BuiltinCatalog::flush();
         }
 
-        $this->assertSame(['python', 'nodejs', 'go', 'php', 'tensorflow', 'pytorch', 'wasm-exec', 'wasm-go', 'wasm-js', 'wasm-python', 'wasm-rust'], array_keys($fromBundle));
+        $this->assertSame(['python', 'nodejs', 'go', 'php', 'tensorflow', 'pytorch', 'bun', 'dotnet', 'java', 'ruby', 'wasm-exec', 'wasm-go', 'wasm-js', 'wasm-python', 'wasm-rust'], array_keys($fromBundle));
         if (BuiltinCatalog::sourceDir()) {
             $this->assertEquals(array_map(fn ($m) => $m->toArray(), app(BuiltinCatalog::class)->all()), $fromBundle);
         }
@@ -178,6 +178,49 @@ class BuiltinRuntimesTest extends TestCase
 
         $this->assertFalse($registry->require('python')->needsBuild(['main.py' => 'x']));
         $this->assertTrue($registry->require('python')->needsBuild(['main.py' => 'x', 'requirements.txt' => '']));
+    }
+
+    public function test_java_dotnet_ruby_and_bun(): void
+    {
+        $registry = app(RuntimeRegistry::class);
+        $expected = [
+            // id => [entry file, handler, dependency file, compiled, image, run image]
+            'java' => ['Main.java', 'handler', 'pom.xml', true, 'ghcr.io/brf-tech/runr/exec-java:{version}', '{image}'],
+            'dotnet' => ['Function.cs', 'Handler', 'Function.csproj', true, 'ghcr.io/brf-tech/runr/exec-dotnet:{version}', 'ghcr.io/brf-tech/runr/reqs/dotnet-runtime-deps:{version}-chiseled-extra'],
+            'ruby' => ['main.rb', 'handler', 'Gemfile', false, 'ghcr.io/brf-tech/runr/exec-ruby:{version}', null],
+            'bun' => ['main.ts', 'handler', 'package.json', false, 'ghcr.io/brf-tech/runr/exec-bun:{version}', null],
+        ];
+
+        foreach ($expected as $id => [$file, $handler, $depFile, $compiled, $image, $runImage]) {
+            $m = $registry->require($id);
+            $this->assertContains($id, $registry->builtinIds(), $id);
+            $this->assertSame($file, $m->defaultFilename(), $id);
+            $this->assertSame($handler, $m->handlerFunction(), $id);
+            $this->assertSame($depFile, $m->dependencyFile(), $id);
+            $this->assertSame($compiled, $m->isCompiled(), $id);
+            $this->assertSame($image, $m->versionDiscovery()['image'], $id);
+            $this->assertSame($runImage, $m->build()['runImage'] ?? null, $id);
+            $this->assertSame('http', $m->runMode(), $id);
+            $this->assertSame('native', $m->scheduleMode(), $id);
+            $this->assertFalse($m->usesWrapper(), $id);
+            $this->assertSame(['http', 'schedule', 'queue'], $m->triggers(), $id);
+            $this->assertSame(['runc', 'gvisor', 'kata'], $m->sandbox(), $id);
+
+            // the starter code passes the save check of its own runtime, an empty file does not
+            $code = $m->templateFiles($file, $handler, false)[$file];
+            $this->assertSame(1, preg_match($m->handlerPattern($handler), $code), "{$id}: {$code}");
+            $this->assertSame(0, preg_match($m->handlerPattern($handler), ''), $id);
+            // a FaaS project gets the dependency file, which builds it
+            $this->assertArrayHasKey($depFile, $m->templateFiles($file, $handler, true), $id);
+            $this->assertTrue($m->needsBuild([$file => $code, $depFile => 'x']), $id);
+        }
+        $this->assertSame('java', $registry->require('java')->language());
+        $this->assertSame('csharp', $registry->require('dotnet')->language());
+        $this->assertSame('eclipse-temurin', $registry->require('java')->versionDiscovery()['eol']);
+        // the C# method is PascalCase: a renamed FaaS handler (Function.Process) checks for Process
+        $this->assertSame(1, preg_match($registry->require('dotnet')->handlerPattern('Process'), 'public static object Process(JsonNode? input)'));
+        // interpreted: the code runs on the version image without a build
+        $this->assertFalse($registry->require('ruby')->needsBuild(['main.rb' => 'def handler(e, c) = 1']));
     }
 
     public function test_executor_runtimes_limits_the_offered_built_ins(): void

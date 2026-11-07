@@ -12,8 +12,8 @@ use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Support\Carbon;
 
 /**
- * End-of-life reminders (scheduled daily, docs/runtimes.md#end-of-life): 13, 4 and 1 week(s)
- * before a runtime version's eol_at (config runtime_patches.eol_reminder_weeks), the owners of its
+ * End-of-life and sunset reminders (scheduled daily, docs/runtimes.md#end-of-life): 13, 4 and 1
+ * week(s) before a runtime version ends — its eol_at or sunset_at, the earlier (ExecutorImage::endsAt()) (config runtime_patches.eol_reminder_weeks), the owners of its
  * projects and the organizations' owners and admins hear about it — in-app, by mail too a week
  * ahead. Only the nearest threshold that has been reached is sent (a version that is four weeks
  * from its end when this runs for the first time does not get the 13-week notice as well); each
@@ -34,18 +34,21 @@ class RuntimeEolRemindersJob implements ShouldQueue
         $mailWeeks = array_map('intval', (array) config('runtime_patches.eol_mail_weeks', [1]));
         $now = now();
 
+        $from = $now->toDateString();
+        $until = $now->copy()->addWeeks(max($weeks ?: [13]))->toDateString();
+
+        // The end of a version: its end of life or its sunset, the earlier (docs/runtimes.md#lifecycle)
         $images = ExecutorImage::query()
             ->where('is_active', true)
-            ->whereNotNull('eol_at')
-            ->where('eol_at', '>', $now->toDateString())
-            ->where('eol_at', '<=', $now->copy()->addWeeks(max($weeks ?: [13]))->toDateString())
+            ->where(fn ($q) => $q->whereBetween('eol_at', [$from, $until])->orWhereBetween('sunset_at', [$from, $until]))
             ->get();
 
         foreach ($images as $image) {
-            if ($image->eol_at === null) {
+            $ends = $image->endsAt();
+            if ($ends === null || $ends->toDateString() <= $from || $ends->toDateString() > $until) {
                 continue;
             }
-            $threshold = self::threshold($image->eol_at, $weeks, $now);
+            $threshold = self::threshold($ends, $weeks, $now);
             if ($threshold !== null) {
                 $notifier->eolReminder($image, $threshold, in_array($threshold, $mailWeeks, true));
             }

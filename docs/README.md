@@ -30,12 +30,14 @@ release.
 
 | Page | What it covers |
 | --- | --- |
-| [Runtimes](runtimes.md) | Runtime plugins (`runtime.yaml`), the execution contract, the universal wrapper, the built-in catalog, runtime patches (levels, apply / pin, deadlines, notifications) and end-of-life reminders |
+| [Runtimes](runtimes.md) | Runtime plugins (`runtime.yaml`), the execution contract, the universal wrapper, runtime sources (RunR's signed catalog, OCI catalogs and Git repositories, public or private), the built-in catalog, the lifecycle (end of life, deprecated, sunset, orphaned), runtime patches (levels, apply / pin, deadlines, notifications) and end-of-life reminders |
+| [Executor development](executor-development.md) | Build an executor for any language: the contract, the manifest, images and versions, the wrapper, dependencies, compiled languages, testing, publishing a repository or a signed catalog, private sources, lifecycle fields and patches — with the sample repository runr-sample-custom-executor |
 | [Triggers](triggers.md) | A project's trigger list: HTTP, schedules in a time zone, queues, webhook inbox with signature presets and replay, topics (fan-out), platform events, broker and external sources (Kafka, NATS, RabbitMQ, MQTT, Postgres CDC, S3, e-mail over IMAP); the event gateway's delivery, retries and dead letters; adding a trigger type |
 | [WebAssembly](wasm.md) | Wasm functions on the Spin shim (Rust, Go, JavaScript, Python) and `wasm-exec` (WASI modules on Spin's WAGI executor) |
 | [Kata Containers hypervisors](kata-hypervisors.md) | Cloud Hypervisor, QEMU, Dragonball and Firecracker: requirements, KVM checks, configuration |
 | [Runtime images and `ci.sh`](../runtime/README.md) | What is in `runtime/` and the end-to-end test script on kind |
 | [Example runtimes](../examples/runtimes/README.md) | C, Rust, Bash and Q runtime plugins |
+| [Example runtime source](../examples/runtime-sources/README.md) | A copy of runr-sample-custom-executor's runtimes (Lua, Zig), served as a Git source by the e2e suite |
 | [WebAssembly examples](../examples/wasm/README.md) | One example per Wasm runtime, plus C and Q on `wasm-exec` |
 
 ## Deploy

@@ -31,7 +31,8 @@ class ManifestValidator
 
     /**
      * @param  array<string, string>  $files  files uploaded with the runtime (dockerfile sources)
-     * @param  bool  $builtin  built-in catalog: versionDiscovery allowed
+     * @param  bool  $builtin  a catalog manifest — the built-in catalog or a runtime source
+     *                         (RuntimeSourceSync): versionDiscovery and @path build files allowed
      *
      * @throws InvalidManifestException
      */
@@ -99,7 +100,7 @@ class ManifestValidator
         }
 
         if (isset($data['versionDiscovery']) && ! $builtin) {
-            $add('/versionDiscovery', 'is only available to the built-in catalog; list versions instead');
+            $add('/versionDiscovery', 'is only available to catalogs (the built-in catalog, runtime sources); list versions instead');
         }
         if (! isset($data['versions']) && ! isset($data['versionDiscovery'])) {
             $add('/versions', 'is required');
@@ -130,6 +131,14 @@ class ManifestValidator
             }
             $seen[$version['version']] = true;
             $defaults += ! empty($version['default']) ? 1 : 0;
+            $this->lifecycleProblems($version, $path, $add);
+        }
+        foreach ($data['versionDiscovery']['lifecycle'] ?? [] as $label => $lifecycle) {
+            $this->lifecycleProblems((array) $lifecycle, '/versionDiscovery/lifecycle/'.$label, $add);
+        }
+        $this->lifecycleProblems($data, '', $add);
+        if (isset($data['replacement']) && $data['replacement'] === $data['id']) {
+            $add('/replacement', 'names the runtime itself');
         }
         if ($defaults > 1) {
             $add('/versions', 'has more than one default version');
@@ -182,12 +191,27 @@ class ManifestValidator
         foreach ($data['build']['files'] ?? [] as $name => $content) {
             foreach ((array) $content as $variant) {
                 if (! $builtin && str_starts_with((string) $variant, '@')) {
-                    $add("/build/files/{$name}", 'file references (@path) are only resolved in the built-in catalog');
+                    $add("/build/files/{$name}", 'file references (@path) are only resolved in catalogs (the built-in catalog, runtime sources)');
                 }
             }
         }
 
         return $problems;
+    }
+
+    /**
+     * Lifecycle dates of the runtime ($path '') or a version: a sunset before the deprecation
+     * (or before the end of life it would bring forward needlessly) is a mistake worth naming.
+     *
+     * @param  callable(string, string): void  $add
+     */
+    private function lifecycleProblems(array $item, string $path, callable $add): void
+    {
+        $deprecated = $item['deprecated'] ?? null;
+        $sunset = $item['sunset'] ?? null;
+        if (is_string($deprecated) && is_string($sunset) && $sunset < $deprecated) {
+            $add("{$path}/sunset", "is before the deprecation ({$deprecated})");
+        }
     }
 
     private function normalize(array $data): array
@@ -204,7 +228,7 @@ class ManifestValidator
                 'default' => (bool) ($v['default'] ?? false),
                 'eol' => $v['eol'] ?? null,
                 'gpu' => (bool) ($v['gpu'] ?? false),
-            ];
+            ] + array_filter(['deprecated' => $v['deprecated'] ?? null, 'sunset' => $v['sunset'] ?? null], fn ($x) => $x !== null);
         }
         if ($versions && ! in_array(true, array_column($versions, 'default'), true)) {
             $versions[array_key_last($versions)]['default'] = true;
@@ -242,6 +266,13 @@ class ManifestValidator
             'resources' => $data['resources'] ?? [],
             'runtimeClass' => $data['runtimeClass'] ?? null,
         ];
+
+        // Lifecycle (docs/runtimes.md#lifecycle): deprecated (a date or true), sunset, replacement, notice
+        foreach (['deprecated', 'sunset', 'replacement', 'notice'] as $key) {
+            if (isset($data[$key])) {
+                $normalized[$key] = $data[$key];
+            }
+        }
 
         if (isset($data['wagi'])) {
             $normalized['wagi'] = [

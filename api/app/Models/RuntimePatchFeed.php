@@ -22,6 +22,7 @@ use Illuminate\Support\Carbon;
  * @property Carbon|null $fetched_at
  * @property string|null $rejected_digest
  * @property bool|null $auto_migrate
+ * @property string|null $source_id a runtime source's patch feed (null: RunR's)
  */
 class RuntimePatchFeed extends Model
 {
@@ -42,7 +43,7 @@ class RuntimePatchFeed extends Model
 
     protected $fillable = [
         'reference', 'status', 'error', 'manifest_digest', 'signature_verified', 'generated_at',
-        'checked_at', 'fetched_at', 'rejected_digest', 'auto_migrate',
+        'checked_at', 'fetched_at', 'rejected_digest', 'auto_migrate', 'source_id',
     ];
 
     protected $casts = [
@@ -56,7 +57,7 @@ class RuntimePatchFeed extends Model
     /** The row of the configured feed (created on first use). */
     public static function current(): self
     {
-        return static::query()->firstOrCreate(
+        return static::query()->whereNull('source_id')->firstOrCreate(
             ['reference' => (string) config('runtime_patches.feed')],
             ['status' => self::DISABLED],
         );

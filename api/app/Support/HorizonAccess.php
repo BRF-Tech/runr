@@ -3,8 +3,7 @@
 namespace App\Support;
 
 use App\Models\User;
-use App\Support\Rbac\PermissionCatalog;
-use App\Support\Rbac\SingleTenantOrganization;
+use App\Support\Rbac\Rbac;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
@@ -12,8 +11,9 @@ use Illuminate\Support\Str;
 
 /**
  * Access to the Horizon dashboard (/horizon): the queues of the whole installation, so only for the
- * people who operate it — platform administrators (users.is_admin) and, in the single-tenant
- * edition, the organization's Owners.
+ * people who operate it (Rbac::operatesPlatform()) — platform administrators (users.is_admin) and,
+ * in the single-tenant edition, the holders of platform.manage: its Owners, and custom roles that
+ * include it.
  *
  * The console signs in with API tokens, which a browser does not send when it opens /horizon. Such
  * an administrator therefore gets a single-use sign-in link instead — from
@@ -25,8 +25,8 @@ use Illuminate\Support\Str;
  * The token is 64 random characters, valid for a few minutes, stored only as its SHA-256 in the
  * cache and consumed by its first use. Opening the link signs the browser in to Horizon: the web
  * session (new session id) remembers the administrator, and every later Horizon request checks
- * again that the account still qualifies and is not disabled — taking the flag or the role away
- * ends the access at once. With APP_ENV=local everyone gets in (Horizon's own development rule).
+ * again that the account still qualifies and is not disabled — taking the flag, the role or the
+ * permission away ends the access at once. With APP_ENV=local everyone gets in (Horizon's own development rule).
  */
 class HorizonAccess
 {
@@ -95,10 +95,11 @@ class HorizonAccess
     }
 
     /**
-     * An enabled account of a platform administrator, or of an Owner of the single-tenant
-     * organization (users.is_admin comes with the Tenancy module; a single-tenant install has
-     * Owners instead). Tenant Owners of a multi-tenant install do not qualify: the dashboard shows
-     * every tenant's jobs.
+     * An enabled account of a platform administrator or, in the single-tenant edition, of a holder
+     * of platform.manage (users.is_admin comes with the Tenancy module; a single-tenant install has
+     * the permission instead, and its Owners hold it). Tenant Owners of a multi-tenant install do
+     * not qualify: the dashboard shows every tenant's jobs. The roles are read afresh: a Horizon
+     * session is checked again on every request.
      */
     public function isAdministrator(?User $user): bool
     {
@@ -106,12 +107,10 @@ class HorizonAccess
             return false;
         }
 
-        if ($user->getAttribute('is_admin')) {
-            return true;
-        }
+        $rbac = app(Rbac::class);
+        $rbac->flush();
 
-        return ! config('tenancy.enabled')
-            && (new SingleTenantOrganization)->memberRole($user->getKey()) === PermissionCatalog::OWNER;
+        return $rbac->operatesPlatform($user);
     }
 
     private function user(mixed $id): ?User

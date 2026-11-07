@@ -75,6 +75,8 @@ class NormalizeApiTags
         'Runtime' => 'Runtimes',
         'RuntimePatch' => 'Runtimes',
         'RuntimePatchAdmin' => 'Runtimes',
+        'RuntimeSource' => 'Runtimes',
+        'RuntimeCatalog' => 'Runtimes',
         'ProjectRuntimePatch' => 'Runtimes',
         'ProjectTrigger' => 'Triggers',
         'Topic' => 'Triggers',
@@ -115,6 +117,7 @@ class NormalizeApiTags
         // Settings & Users
         'Settings' => 'Settings',
         'HorizonLink' => 'Settings',
+        'ConsoleTls' => 'Settings',
         'User' => 'Users',
         'Branding' => 'Branding',
         'Demo' => 'Demo',

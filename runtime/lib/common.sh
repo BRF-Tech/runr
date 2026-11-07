@@ -71,3 +71,15 @@ resolve_app_version() {
     echo "main-$(git -C "$root" rev-parse --short HEAD)"
   fi
 }
+
+# ── Kind clusters ──
+
+# kind_etcd_patch — KIND_ETCD_IN_MEMORY=1: the lines of a control-plane's kubeadm
+# ClusterConfiguration patch (at their indent in a Kind config) that keep etcd's data on the
+# node's tmpfs (/tmp), for hosts whose disk is too slow for etcd's fsyncs ("etcdserver: request
+# timed out", Jobs never started). Nothing otherwise. Every suite that creates a Kind cluster
+# uses it.
+kind_etcd_patch() {
+  [ "${KIND_ETCD_IN_MEMORY:-0}" = "1" ] || return 0
+  printf '%s\n' '        etcd:' '          local:' '            dataDir: /tmp/etcd'
+}

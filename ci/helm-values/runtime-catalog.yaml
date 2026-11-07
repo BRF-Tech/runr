@@ -1,0 +1,14 @@
+# ci/check-helm-chart.sh: RunR's runtime catalog from a mirror, signed with an operator key, read
+# through a region's registry, every 30 minutes, two built-ins offered (docs/runtimes.md#runtime-sources)
+domain: console.acme-cloud.example
+runtimeCatalog:
+  reference: registry.acme-cloud.example/runr/runtime-catalog:stable
+  viaRegion: eu-1
+  intervalMinutes: 30
+  timeout: 40
+  builtinRuntimes: "python,go"
+  publicKey: |
+    -----BEGIN PUBLIC KEY-----
+    MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAE2bEu6vDvOkObSAj1H6fN0xTfVTUs
+    l2XJ6O5NW1d7TQ8kIBhXRlqNzeYgqTE/9yzJm8xhuUzh5mcqdA3lNnGQ3A==
+    -----END PUBLIC KEY-----

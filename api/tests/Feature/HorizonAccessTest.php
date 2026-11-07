@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Models\Role;
 use App\Support\HorizonAccess;
 use Illuminate\Contracts\Session\Session;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -15,9 +16,10 @@ use Tests\TestCase;
 
 /**
  * The Horizon dashboard: the console signs in with API tokens, which a browser does not send to
- * /horizon, so administrators — platform administrators, single-tenant Owners — open it with a
- * single-use link (App\Support\HorizonAccess) that signs the browser's session in. Any other
- * request is refused, including every request of an authenticated non-administrator.
+ * /horizon, so administrators — platform administrators, single-tenant holders of platform.manage
+ * (the Owners, a custom role with it) — open it with a single-use link (App\Support\HorizonAccess)
+ * that signs the browser's session in. Any other request is refused, including every request of
+ * an authenticated non-administrator.
  */
 class HorizonAccessTest extends TestCase
 {
@@ -104,6 +106,47 @@ class HorizonAccessTest extends TestCase
 
         $this->expectException(\InvalidArgumentException::class);
         $this->access()->issue($developer);
+    }
+
+    /** The rule is platform.manage (Rbac::operatesPlatform()): Owners hold it, and so may a custom role. */
+    public function test_a_custom_role_with_platform_manage_qualifies_and_loses_it_with_the_permission(): void
+    {
+        $this->userWithRole('owner');
+        $this->customRole('operator', ['platform.manage']);
+        $this->customRole('almost', ['regions.manage', 'runtimes.manage', 'settings.manage']);
+        $operator = $this->userWithRole('operator');
+        $almost = $this->userWithRole('almost');
+
+        $this->assertTrue($this->access()->isAdministrator($operator));
+        $this->assertTrue(Gate::forUser($operator)->allows('viewHorizon'));
+        $this->assertFalse($this->access()->isAdministrator($almost));
+
+        $first = $this->browserRequest($this->tokenOf($this->access()->issue($operator)['url']));
+        $this->assertTrue($this->access()->allows($first));
+
+        // the role loses platform.manage: the session's next request is refused
+        Role::query()->where('key', 'operator')->firstOrFail()->update(['permissions' => ['regions.view']]);
+        $this->assertFalse($this->access()->allows($this->browserRequest(session: $first->session())));
+        $this->assertFalse($this->access()->isAdministrator($operator));
+    }
+
+    public function test_a_group_role_with_platform_manage_qualifies(): void
+    {
+        $this->userWithRole('owner');
+        $this->customRole('operator', ['platform.manage']);
+        $admin = $this->userWithRole('admin');
+        $this->assertFalse($this->access()->isAdministrator($admin));
+
+        $this->groupWithRole('operators', 'operator', [$admin]);
+        $this->assertTrue($this->access()->isAdministrator($admin));
+    }
+
+    public function test_a_token_carrying_platform_manage_still_gets_no_link(): void
+    {
+        $owner = $this->userWithRole('owner');
+        $scoped = $owner->createToken('ops', ['platform.manage'])->plainTextToken;
+
+        $this->withHeader('Authorization', 'Bearer '.$scoped)->postJson('/api/horizon/link')->assertForbidden();
     }
 
     public function test_platform_administrators_qualify_and_tenant_owners_do_not(): void

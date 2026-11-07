@@ -329,6 +329,233 @@
         {
             "apiVersion": "runr.sh/v1",
             "kind": "Runtime",
+            "id": "bun",
+            "name": "TypeScript (Bun)",
+            "description": "TypeScript and JavaScript on Bun with the RunR handler server — export async function handler(event, context).",
+            "language": "typescript",
+            "extensions": [
+                "ts",
+                "tsx",
+                "js",
+                "mjs"
+            ],
+            "category": "general",
+            "versionDiscovery": {
+                "repository": "ghcr.io/brf-tech/runr/exec-bun",
+                "image": "ghcr.io/brf-tech/runr/exec-bun:{version}",
+                "eol": "bun"
+            },
+            "handler": {
+                "file": "main",
+                "function": "handler",
+                "pattern": "(?:export\\s+(?:default\\s+)?(?:async\\s+)?function\\s*\\*?\\s*{handler}\\b|export\\s+(?:const|let|var)\\s+{handler}\\b|export\\s*\\{[^}]*\\b{handler}\\b|exports\\.{handler}\\b)"
+            },
+            "template": {
+                "files": {
+                    "{file}": "type Context = { method: string; path: string; headers: Record<string, string> };\n\nexport async function {handler}(event: any, context: Context) {\n  return { statusCode: 200, body: 'Hello, World!' };\n}"
+                }
+            },
+            "dependencies": {
+                "file": "package.json",
+                "template": "{\"dependencies\":{\"ioredis\":\"^6\"}}",
+                "install": "/opt/runr/bin/runr-install /build/code /build/deps",
+                "copy": [
+                    {
+                        "from": "/build/deps/node_modules",
+                        "to": "/app/code/node_modules"
+                    }
+                ]
+            },
+            "run": {
+                "mode": "http",
+                "schedule": "native"
+            },
+            "triggers": [
+                "http",
+                "schedule",
+                "queue"
+            ],
+            "sandbox": [
+                "runc",
+                "gvisor",
+                "kata"
+            ]
+        },
+        {
+            "apiVersion": "runr.sh/v1",
+            "kind": "Runtime",
+            "id": "dotnet",
+            "name": ".NET (C#)",
+            "description": "C# on .NET with the RunR handler server — public static object Handler(JsonNode? input, IDictionary<string, object?> context).",
+            "language": "csharp",
+            "extensions": [
+                "cs"
+            ],
+            "category": "general",
+            "versionDiscovery": {
+                "repository": "ghcr.io/brf-tech/runr/exec-dotnet",
+                "image": "ghcr.io/brf-tech/runr/exec-dotnet:{version}",
+                "eol": "dotnet"
+            },
+            "handler": {
+                "file": "Function",
+                "function": "Handler",
+                "pattern": "\\b{handler}\\s*\\("
+            },
+            "template": {
+                "files": {
+                    "{file}": "using System.Collections.Generic;\nusing System.Text.Json.Nodes;\n\npublic static class Function\n{\n    public static object {handler}(JsonNode? input, IDictionary<string, object?> context)\n    {\n        return new { statusCode = 200, body = \"Hello, World!\" };\n    }\n}"
+                }
+            },
+            "dependencies": {
+                "file": "Function.csproj",
+                "template": "<Project Sdk=\"Microsoft.NET.Sdk\">\n  <PropertyGroup>\n    <ImplicitUsings>enable</ImplicitUsings>\n    <Nullable>enable</Nullable>\n  </PropertyGroup>\n  <ItemGroup>\n    <PackageReference Include=\"StackExchange.Redis\" Version=\"3.4.31\" />\n  </ItemGroup>\n</Project>\n",
+                "install": "/opt/runr/bin/runr-build restore /build/code /build/out"
+            },
+            "build": {
+                "image": "{image}",
+                "command": "/opt/runr/bin/runr-build publish /build/code /build/out",
+                "runImage": "ghcr.io/brf-tech/runr/reqs/dotnet-runtime-deps:{version}-chiseled-extra",
+                "source": false
+            },
+            "run": {
+                "mode": "http",
+                "schedule": "native",
+                "command": [
+                    "/app/handler"
+                ]
+            },
+            "triggers": [
+                "http",
+                "schedule",
+                "queue"
+            ],
+            "sandbox": [
+                "runc",
+                "gvisor",
+                "kata"
+            ]
+        },
+        {
+            "apiVersion": "runr.sh/v1",
+            "kind": "Runtime",
+            "id": "java",
+            "name": "Java",
+            "description": "Eclipse Temurin (OpenJDK) LTS with the RunR handler server — public static Object handler(Map<String, Object> event, Map<String, Object> context).",
+            "language": "java",
+            "extensions": [
+                "java"
+            ],
+            "category": "general",
+            "versionDiscovery": {
+                "repository": "ghcr.io/brf-tech/runr/exec-java",
+                "image": "ghcr.io/brf-tech/runr/exec-java:{version}",
+                "eol": "eclipse-temurin"
+            },
+            "handler": {
+                "file": "Main",
+                "function": "handler",
+                "pattern": "\\b{handler}\\s*\\("
+            },
+            "template": {
+                "files": {
+                    "{file}": "import java.util.Map;\n\npublic class Main {\n    public static Object {handler}(Map<String, Object> event, Map<String, Object> context) {\n        return Map.of(\"statusCode\", 200, \"body\", \"Hello, World!\");\n    }\n}"
+                }
+            },
+            "dependencies": {
+                "file": "pom.xml",
+                "template": "<project xmlns=\"http://maven.apache.org/POM/4.0.0\">\n  <modelVersion>4.0.0</modelVersion>\n  <groupId>sh.runr</groupId>\n  <artifactId>function</artifactId>\n  <version>1.0.0</version>\n  <dependencies>\n    <dependency>\n      <groupId>redis.clients</groupId>\n      <artifactId>jedis</artifactId>\n      <version>8.0.2</version>\n    </dependency>\n  </dependencies>\n</project>\n",
+                "install": "/opt/runr/bin/runr-deps /build/code/pom.xml /build/out"
+            },
+            "build": {
+                "image": "{image}",
+                "command": "/opt/runr/bin/runr-build /build/code /build/out",
+                "runImage": "{image}"
+            },
+            "run": {
+                "mode": "http",
+                "schedule": "native",
+                "command": [
+                    "/opt/runr/bin/runr-start"
+                ]
+            },
+            "triggers": [
+                "http",
+                "schedule",
+                "queue"
+            ],
+            "sandbox": [
+                "runc",
+                "gvisor",
+                "kata"
+            ],
+            "resources": {
+                "cpu": "500m",
+                "memory_mb": 512
+            }
+        },
+        {
+            "apiVersion": "runr.sh/v1",
+            "kind": "Runtime",
+            "id": "ruby",
+            "name": "Ruby",
+            "description": "CRuby with the RunR handler server — def handler(event, context), or handler(event:, context:) as on AWS Lambda.",
+            "language": "ruby",
+            "extensions": [
+                "rb"
+            ],
+            "category": "general",
+            "versionDiscovery": {
+                "repository": "ghcr.io/brf-tech/runr/exec-ruby",
+                "image": "ghcr.io/brf-tech/runr/exec-ruby:{version}",
+                "eol": "ruby"
+            },
+            "handler": {
+                "file": "main",
+                "function": "handler",
+                "pattern": "def\\s+(?:self\\.)?{handler}\\b"
+            },
+            "template": {
+                "files": {
+                    "{file}": "def {handler}(event, context)\n  { statusCode: 200, body: \"Hello, World!\" }\nend"
+                }
+            },
+            "dependencies": {
+                "file": "Gemfile",
+                "template": "source \"https://rubygems.org\"\n\ngem \"redis\", \"~> 6.0\"\n",
+                "install": "/opt/runr/bin/runr-bundle /build/code /build/gems",
+                "copy": [
+                    {
+                        "from": "/build/gems",
+                        "to": "/app/gems"
+                    }
+                ],
+                "env": {
+                    "RUNR_BUNDLE_SETUP": "/app/gems/vendor/bundler/setup.rb",
+                    "BUNDLE_GEMFILE": "/app/gems/Gemfile",
+                    "BUNDLE_PATH": "/app/gems/vendor",
+                    "BUNDLE_WITHOUT": "development:test",
+                    "BUNDLE_FROZEN": "true"
+                }
+            },
+            "run": {
+                "mode": "http",
+                "schedule": "native"
+            },
+            "triggers": [
+                "http",
+                "schedule",
+                "queue"
+            ],
+            "sandbox": [
+                "runc",
+                "gvisor",
+                "kata"
+            ]
+        },
+        {
+            "apiVersion": "runr.sh/v1",
+            "kind": "Runtime",
             "id": "wasm-exec",
             "name": "WASI (Wasm exec)",
             "description": "Any language compiled to a WASI command (C / C++ with wasi-sdk, Zig, Go with TinyGo, or an uploaded .wasm), run on Spin's WAGI executor: the request on stdin and in CGI environment variables, the response on stdout. Needs WebAssembly support in the region.",

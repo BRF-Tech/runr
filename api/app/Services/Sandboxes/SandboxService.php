@@ -13,6 +13,7 @@ use App\Services\Residency\RegionPolicy;
 use App\Services\Runtimes\Patches\RuntimePatches;
 use App\Services\Runtimes\RuntimeImagePendingException;
 use App\Services\Runtimes\RuntimeManifest;
+use App\Services\Runtimes\RuntimePullSecrets;
 use App\Services\Runtimes\RuntimeRegistry;
 use App\Services\Sandboxes\Exec\ExecResult;
 use App\Services\Sandboxes\Exec\ExecScript;
@@ -267,8 +268,12 @@ class SandboxService
         $settings = SandboxRegionSetting::forRegion($region->id);
         $deadline = $settings->maxTtl() + ($sandbox->pool_id ? (int) config('sandbox.pool.max_age_seconds', 3600) : 0) + (int) config('sandbox.deadline_grace_seconds', 300);
 
+        // A private image of a runtime source: its pull Secret in the sandbox namespace
+        $pod = SandboxManifests::pod($sandbox, $region, $deadline);
+        $pod['spec'] = app(RuntimePullSecrets::class)->applyToPodSpec($pod['spec'], $sandbox->runtime, (string) $sandbox->image, $region, (string) $sandbox->namespace);
+
         try {
-            $created = $k8s->createResource(SandboxManifests::pod($sandbox, $region, $deadline), $sandbox->namespace);
+            $created = $k8s->createResource($pod, $sandbox->namespace);
         } catch (\Throwable $e) {
             throw SandboxException::cluster($e->getMessage());
         }

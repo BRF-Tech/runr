@@ -73,7 +73,7 @@ class RouteAuthorizationTest extends TestCase
 
     public function test_rules_name_catalog_permissions(): void
     {
-        $markers = [RoutePermissions::AUTHENTICATED, RoutePermissions::PLATFORM, RoutePermissions::POLICY];
+        $markers = [RoutePermissions::AUTHENTICATED, RoutePermissions::PLATFORM, RoutePermissions::OPERATOR, RoutePermissions::POLICY];
 
         foreach (config('route_permissions') as $key => $rule) {
             [$mode, $permissions] = RoutePermissions::parse($rule);
@@ -212,5 +212,32 @@ class RouteAuthorizationTest extends TestCase
         // The organization's owner is not the platform's operator
         $this->signedIn($owner)->getJson('/api/resource-usage')->assertForbidden();
         $this->assertInstanceOf(User::class, $owner);
+    }
+
+    /**
+     * '@operator': the installation itself, which a single-tenant install has as well (its holders
+     * of platform.manage operate it). What only a multi-tenant install has — tenants,
+     * impersonation, the platform's accounts and usage, its bills to tenants — stays '@platform'.
+     */
+    public function test_operator_routes_are_the_installations_own_pages(): void
+    {
+        $operator = array_keys(array_filter(config('route_permissions'), fn ($rule) => $rule === RoutePermissions::OPERATOR));
+        $this->assertEqualsCanonicalizing([
+            'GET admin/runtime-patches',
+            'POST admin/runtime-patches/check',
+            'PUT admin/runtime-patches/policy',
+            'POST admin/runtime-patches/{patch}/remind',
+            'POST admin/runtime-patches/{patch}/force',
+            'PUT admin/runtime-patches/{patch}/deadline',
+            'GET admin/console-tls',
+        ], $operator);
+        $this->assertSame([RoutePermissions::OPERATOR, []], RoutePermissions::parse('@operator'));
+
+        foreach (['GET tenants', 'POST impersonate/{tenant}', 'POST users/{user}/toggle-admin', 'GET resource-usage', 'GET tenants/{tenant}/binding-quotas'] as $key) {
+            $this->assertSame(RoutePermissions::PLATFORM, config("route_permissions.{$key}"), $key);
+        }
+        foreach (['GET billing/tenant-bills', 'GET billing/archived-bills', 'GET billing/legacy-records', 'PUT billing/regions/{region}/organizations/{tenant}'] as $key) {
+            $this->assertStringStartsWith(RoutePermissions::PLATFORM.':', config("route_permissions.{$key}"), $key);
+        }
     }
 }

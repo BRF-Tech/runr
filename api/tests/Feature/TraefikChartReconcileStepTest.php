@@ -513,7 +513,7 @@ class TraefikChartReconcileStepTest extends TestCase
     public function test_the_time_limit_is_back_after_the_upgrade(): void
     {
         $helm = app(HelmService::class);
-        $helm->upgradeToChartVersion('traefik', 'traefik/traefik', 'knative-serving', 'kubeconfig', '42.3.0', '{}');
+        $helm->upgradeToChartVersion('traefik', 'traefik/traefik', 'knative-serving', 'kubeconfig', '42.3.1', '{}');
         $helm->repoUpdate();
 
         $this->assertSame(660, $this->processTimeouts['repo']);

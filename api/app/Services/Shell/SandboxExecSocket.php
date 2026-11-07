@@ -4,10 +4,14 @@ namespace App\Services\Shell;
 
 use App\Http\Controllers\Api\Sandboxes\SandboxExecController;
 use App\Models\Sandbox;
+use App\Services\Sandboxes\Exec\AsyncExecStream;
+use App\Services\Sandboxes\Exec\ExecKubeconfig;
 use App\Services\Sandboxes\Exec\ExecScript;
 use App\Services\Sandboxes\Exec\KubectlCommand;
 use App\Services\Sandboxes\Exec\MarkerFilter;
+use App\Services\Sandboxes\Exec\NativeExecUnsupported;
 use App\Services\Sandboxes\Exec\PodTarget;
+use App\Services\Sandboxes\Exec\SelectingExecTransport;
 use App\Services\Sandboxes\Exec\TrailerFilter;
 use App\Services\Sandboxes\SandboxLog;
 use Illuminate\Contracts\Encryption\DecryptException;
@@ -20,9 +24,12 @@ use React\EventLoop\Loop;
 /**
  * WebSocket handler of the Sandbox API exec stream (/ws/sandbox-exec?token=…), next to the web
  * shell in Reverb. The token (POST /api/sandboxes/{id}/exec/ws, one-time, 60 s) carries the
- * prepared command; the handler runs it with `kubectl exec -i` (no TTY: stdout and stderr stay
- * apart, binary-safe) or, when the token asks for a terminal, `kubectl exec -i -t` on a
- * pseudo-terminal of the client's size, and bridges:
+ * prepared command. Without a terminal it runs on the API server's exec stream through the native
+ * client (AsyncExecStream: stdout and stderr apart, binary-safe, stdin ended with v5's close
+ * signal), or with `kubectl exec -i` where SelectingExecTransport says so (sandbox.exec.client
+ * "kubectl", a kubeconfig or API server the native client cannot use — also when the upgrade is
+ * refused before the command started). A terminal is `kubectl exec -i -t` on a pseudo-terminal of
+ * the client's size. The handler bridges:
  *
  *   server → client  {"type":"start","exec_id","tty"} · {"type":"stdout"|"stderr","data":"<base64>"}
  *                    · {"type":"exit","exit_code","timed_out","duration_ms","killed"} · {"type":"error","message"}
@@ -101,6 +108,31 @@ class SandboxExecSocket
         $loop = Loop::get();
         $tty = ! empty($config['tty']);
         $target = new PodTarget($config['kubeconfig'], $config['namespace'], $config['pod'], $config['container'] ?? 'sandbox', $config['sandbox_id'] ?? null);
+
+        // One message and close handler for the session (Reverb takes them once, at openBuffer):
+        // they follow the path, which changes when the native stream is refused before it started
+        $route = (object) ['message' => static fn (string $message) => null, 'close' => static fn () => null];
+        $connection->onMessage(fn ($message) => ($route->message)((string) $message));
+        $connection->onClose(fn () => ($route->close)());
+
+        $native = $tty ? null : SelectingExecTransport::nativeFor($target);
+        if ($native !== null) {
+            $this->startNative($connection, $config, $target, $native, $route, $loop);
+        } else {
+            $this->startKubectl($connection, $config, $target, $tty, $route, $loop);
+        }
+
+        $connection->openBuffer();
+    }
+
+    /**
+     * The command through kubectl. $queued / $stdinClosed: what the client sent while a refused
+     * native upgrade was pending.
+     *
+     * @param  array<string, mixed>  $config
+     */
+    private function startKubectl(Connection $connection, array $config, PodTarget $target, bool $tty, object $route, $loop, string $queued = '', bool $stdinClosed = false): void
+    {
         $kcfg = KubectlCommand::writeKubeconfig($target->kubeconfig);
         // argv form: no shell in between, so a kill reaches kubectl itself
         $framed = ! $tty && ! empty($config['framed_argv']) && ! empty($config['exec_id']);
@@ -123,7 +155,7 @@ class SandboxExecSocket
 
         if (! is_resource($process)) {
             KubectlCommand::removeKubeconfig($kcfg);
-            $this->fail($connection, __('sandboxes.ws_start_failed'));
+            $this->fail($connection, __('sandboxes.ws_start_failed'), false);
 
             return;
         }
@@ -183,6 +215,13 @@ class SandboxExecSocket
 
         if (! $tty) {
             $this->begin($connection, $ctx);
+            if ($queued !== '') {
+                @fwrite($ctx->pipes[0], $queued);
+            }
+            if ($stdinClosed) {
+                $ctx->stdinOpen = false;
+                @fclose($ctx->pipes[0]);
+            }
         }
 
         $loop->addReadStream($pipes[1], function ($stream) use ($connection, $ctx, $loop) {
@@ -210,13 +249,13 @@ class SandboxExecSocket
             }
         });
 
-        $connection->onMessage(fn ($message) => $this->message((string) $message, $ctx));
-        $connection->onClose(function () use ($ctx, $loop) {
+        $route->message = fn (string $message) => $this->message($message, $ctx);
+        $route->close = function () use ($ctx, $loop) {
             if (! $ctx->done) {
                 $ctx->killed = true;
                 $this->finish(null, $ctx, $loop);
             }
-        });
+        };
 
         // Exit / timeout watch; TTY: the ready fallback and the window size
         $ctx->timer = $loop->addPeriodicTimer(0.1, function () use ($connection, $ctx, $loop) {
@@ -249,8 +288,243 @@ class SandboxExecSocket
                 $this->applySize($ctx);
             }
         });
+    }
 
-        $connection->openBuffer();
+    /**
+     * The command on the native exec stream (no terminal). The start frame goes when the server
+     * switched protocols; stdin the client sends before is held back. A refusal before the start
+     * hands the session to kubectl with what was held back.
+     *
+     * @param  array<string, mixed>  $config
+     */
+    private function startNative(Connection $connection, array $config, PodTarget $target, ExecKubeconfig $kubeconfig, object $route, $loop): void
+    {
+        // The framed wrapper as on kubectl (class doc): its stdin is never ended while it runs, as
+        // ending it stops a command's output on Kata's Go runtime; the stream ends with the command
+        $framed = ! empty($config['framed_argv']) && ! empty($config['exec_id']);
+        /** @var array<string, mixed> $session the state of the session, which its handlers change */
+        $session = [
+            'stream' => null,
+            'framed' => $framed,
+            'acked' => $framed && ! empty($config['acked_input']),
+            'ackFilter' => new MarkerFilter([ExecScript::ackMarker((string) ($config['exec_id'] ?? ''))]),
+            'ackPending' => '',
+            'ackInFlight' => false,
+            'ackEnd' => false,
+            'marker' => ExecScript::exitMarker((string) ($config['exec_id'] ?? '')),
+            'endMarker' => ExecScript::endMarker((string) ($config['exec_id'] ?? '')),
+            'stderrTail' => '',
+            'stdoutTail' => '',
+            'stdoutDone' => false,
+            'markerExit' => null,
+            'markerAt' => null,
+            'endAt' => null,
+            'pipes' => [],
+            'target' => $target,
+            'nativeConfig' => $kubeconfig,
+            'killProc' => null,
+            'killStream' => null,
+            'started' => microtime(true),
+            'timeout' => (int) ($config['timeout'] ?? 60),
+            'max' => (int) ($config['max_output'] ?? 10485760),
+            'sent' => 0,
+            'timer' => null,
+            'done' => false,
+            'killed' => false,
+            'open' => false,
+            'stdinOpen' => true,
+            'stdinClosed' => false,
+            'queued' => '',
+            'config' => $config,
+            'tty' => false,
+            'startSent' => false,
+        ];
+        $ctx = (object) $session;
+
+        $ctx->stream = new AsyncExecStream(
+            $loop, $kubeconfig, $target, $framed ? $config['framed_argv'] : $config['argv'], true,
+            onOpen: function () use ($connection, $ctx) {
+                $ctx->open = true;
+                $this->sendStart($connection, $ctx);
+                if (! empty($ctx->config['stdin'])) {
+                    $this->nativeInput($ctx, (string) base64_decode($ctx->config['stdin']));
+                }
+                if ($ctx->queued !== '') {
+                    $this->nativeInput($ctx, $ctx->queued);
+                    $ctx->queued = '';
+                }
+                if ($ctx->stdinClosed) {
+                    $this->nativeEnd($ctx);
+                }
+            },
+            onRefused: function (NativeExecUnsupported $e) use ($connection, $config, $target, $route, $ctx, $loop) {
+                SelectingExecTransport::fallBack($target, $e);
+                if ($ctx->done) {
+                    return;
+                }
+                $ctx->done = true;
+                if ($ctx->timer) {
+                    $loop->cancelTimer($ctx->timer);
+                }
+                $this->startKubectl($connection, $config, $target, false, $route, $loop, $ctx->queued, $ctx->stdinClosed);
+            },
+            onOutput: fn (string $type, string $data) => $this->output($connection, $ctx, $type, ! $ctx->framed ? $data
+                : ($type === 'stdout' ? $this->endOfStdout($ctx, $data) : $this->exitMarker($ctx, $this->acks($ctx, $data)))),
+            onEnd: function (?int $exitCode, ?string $error) use ($connection, $ctx, $loop) {
+                // What may have been the start of a marker is output after all
+                if ($ctx->acked) {
+                    $ctx->stderrTail .= $ctx->ackFilter->flush();
+                }
+                foreach (['stdout' => 'stdoutTail', 'stderr' => 'stderrTail'] as $type => $tail) {
+                    if ($ctx->{$tail} !== '') {
+                        $this->output($connection, $ctx, $type, $ctx->{$tail});
+                        $ctx->{$tail} = '';
+                    }
+                }
+                if ($error !== null) {
+                    // The cluster's error, as kubectl would have written it on its stderr
+                    $this->output($connection, $ctx, 'stderr', $error."\n");
+                    $exitCode = 1;
+                }
+                $this->finishNative($connection, $ctx, $loop, $exitCode);
+            },
+        );
+
+        $route->message = fn (string $message) => $this->nativeMessage($connection, $message, $ctx, $loop);
+        $route->close = function () use ($ctx, $loop) {
+            if (! $ctx->done) {
+                $ctx->killed = true;
+                $this->nativeKill($ctx, $loop);
+                $ctx->stream->close();
+                $this->finishNative(null, $ctx, $loop, 137);
+            }
+        };
+        // The command's own timeout runs in the sandbox; this one also covers an unreachable cluster
+        $ctx->timer = $loop->addTimer($ctx->timeout + self::LOCAL_GRACE_SECONDS, function () use ($connection, $ctx, $loop) {
+            $ctx->timer = null;
+            if (! $ctx->done) {
+                $ctx->killed = true;
+                $ctx->stream->close();
+                $this->finishNative($connection, $ctx, $loop, 137, true);
+            }
+        });
+
+        $ctx->stream->start();
+    }
+
+    private function nativeMessage(Connection $connection, string $message, object $ctx, $loop): void
+    {
+        $msg = json_decode($message, true);
+        if (! is_array($msg) || $ctx->done) {
+            return;
+        }
+
+        switch ($msg['type'] ?? null) {
+            case 'stdin':
+                if ($ctx->stdinOpen && isset($msg['data'])) {
+                    $data = (string) base64_decode((string) $msg['data']);
+                    if ($ctx->open) {
+                        $this->nativeInput($ctx, $data);
+                    } else {
+                        $ctx->queued .= $data;
+                    }
+                }
+                break;
+            case 'stdin_close':
+                if ($ctx->stdinOpen) {
+                    $ctx->stdinOpen = false;
+                    if ($ctx->open) {
+                        $this->nativeEnd($ctx);
+                    } else {
+                        $ctx->stdinClosed = true;
+                    }
+                }
+                break;
+            case 'kill':
+                $ctx->killed = true;
+                $this->nativeKill($ctx, $loop);
+                $ctx->stream->close();
+                $this->finishNative($connection, $ctx, $loop, 137);
+                break;
+        }
+    }
+
+    /** Input on the native stream: framed for the framed wrapper, acknowledged where asked. */
+    private function nativeInput(object $ctx, string $data): void
+    {
+        if ($data === '') {
+            return;
+        }
+        if (! $ctx->framed) {
+            $ctx->stream->stdin($data);
+        } elseif ($ctx->acked) {
+            $ctx->ackPending .= $data;
+            $this->pump($ctx);
+        } else {
+            $ctx->stream->stdin(strlen($data)."\n".$data);
+        }
+    }
+
+    /** The end of the input: in-band for the framed wrapper (its stdin stays open), else v5's close. */
+    private function nativeEnd(object $ctx): void
+    {
+        if ($ctx->framed) {
+            $this->endInput($ctx);
+        } else {
+            $ctx->stream->closeStdin();
+        }
+    }
+
+    /**
+     * A kill or a client gone: the framed command goes through its PID file (ExecScript::killExec),
+     * on a native stream of its own; kubectl when the server refuses it. Closing the session's
+     * stream alone leaves the command running in the sandbox.
+     */
+    private function nativeKill(object $ctx, $loop): void
+    {
+        if (! $ctx->framed || $ctx->killStream !== null || empty($ctx->config['exec_id'])) {
+            return;
+        }
+        $ctx->killStream = new AsyncExecStream(
+            $loop, $ctx->nativeConfig, $ctx->target, ExecScript::killExec((string) $ctx->config['exec_id']), false,
+            onOpen: fn () => null,
+            onRefused: fn () => $this->killCommand($ctx),
+            onOutput: fn () => null,
+            onEnd: fn () => null,
+        );
+        $ctx->killStream->start();
+    }
+
+    private function finishNative(?Connection $connection, object $ctx, $loop, ?int $exitCode, bool $timedOut = false): void
+    {
+        if ($ctx->done) {
+            return;
+        }
+        $ctx->done = true;
+        if ($ctx->timer) {
+            $loop->cancelTimer($ctx->timer);
+            $ctx->timer = null;
+        }
+
+        $durationMs = (int) ((microtime(true) - $ctx->started) * 1000);
+        $exitCode ??= 137;
+        if (! $timedOut && in_array($exitCode, [124, 137], true) && $durationMs >= $ctx->timeout * 1000) {
+            $timedOut = true;
+        }
+
+        if ($connection) {
+            $this->sendStart($connection, $ctx);
+            $connection->send(json_encode([
+                'type' => 'exit',
+                'exit_code' => $exitCode,
+                'timed_out' => $timedOut,
+                'duration_ms' => $durationMs,
+                'killed' => $ctx->killed,
+            ]));
+            WebSocketClose::graceful($connection, $loop);
+        }
+
+        $this->record($ctx, $exitCode, $durationMs, $timedOut);
     }
 
     /**
@@ -298,25 +572,43 @@ class SandboxExecSocket
         if ($ctx->acked) {
             $ctx->ackEnd = true;
             $this->pump($ctx);
-        } elseif (is_resource($ctx->pipes[0] ?? null)) {
-            @fwrite($ctx->pipes[0], "0\n");
+        } else {
+            $this->rawInput($ctx, "0\n");
         }
+    }
+
+    /** Bytes to the command's stdin: the native stream, or kubectl's stdin. */
+    private function rawInput(object $ctx, string $bytes): void
+    {
+        if (isset($ctx->stream)) {
+            if ($ctx->open && ! $ctx->done) {
+                $ctx->stream->stdin($bytes);
+            }
+        } elseif (is_resource($ctx->pipes[0] ?? null)) {
+            @fwrite($ctx->pipes[0], $bytes);
+        }
+    }
+
+    /** Whether the command's stdin takes bytes now. */
+    private function inputOpen(object $ctx): bool
+    {
+        return isset($ctx->stream) ? $ctx->open && ! $ctx->done : is_resource($ctx->pipes[0] ?? null);
     }
 
     /** Acknowledged frames: the next one when none is on its way. */
     private function pump(object $ctx): void
     {
-        if ($ctx->ackInFlight || ! is_resource($ctx->pipes[0] ?? null)) {
+        if ($ctx->ackInFlight || ! $this->inputOpen($ctx)) {
             return;
         }
         if ($ctx->ackPending !== '') {
             $piece = substr($ctx->ackPending, 0, ExecScript::ACKED_FRAME_BYTES);
             $ctx->ackPending = (string) substr($ctx->ackPending, strlen($piece));
             $ctx->ackInFlight = true;
-            @fwrite($ctx->pipes[0], strlen($piece)."\n".$piece);
+            $this->rawInput($ctx, strlen($piece)."\n".$piece);
         } elseif ($ctx->ackEnd) {
             $ctx->ackEnd = false;
-            @fwrite($ctx->pipes[0], "0\n");
+            $this->rawInput($ctx, "0\n");
         }
     }
 
@@ -695,10 +987,12 @@ class SandboxExecSocket
     }
 
     /** Refuses a session before it started: the error, then the closing handshake. */
-    private function fail(Connection $connection, string $message): void
+    private function fail(Connection $connection, string $message, bool $openBuffer = true): void
     {
         $connection->send(json_encode(['type' => 'error', 'message' => $message]));
-        $connection->openBuffer();   // reads the client's close frame
+        if ($openBuffer) {
+            $connection->openBuffer();   // reads the client's close frame
+        }
         WebSocketClose::graceful($connection);
     }
 }

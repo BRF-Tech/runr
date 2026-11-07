@@ -418,29 +418,29 @@ class CaptchaGateTest extends TestCase
         $this->login(['captcha_token' => 'tok-1'])->assertStatus(409);
         $this->assertSame(0, Notification::query()->count());
 
-        // the second within 10 minutes: one notification per administrator who wants it
+        // the second within 10 minutes: one notification per administrator who wants it — and the
+        // install's Owner, jane (single-tenant: platform.manage)
         $this->login(['captcha_token' => 'tok-2'])->assertStatus(409);
-        $sent = Notification::query()->get();
-        $this->assertCount(1, $sent);
-        $this->assertSame((string) $admin->id, (string) $sent[0]->user_id);
+        $sent = Notification::query()->orderBy('id')->get();
+        $this->assertSame([(string) $admin->id, (string) $this->user->id], $sent->pluck('user_id')->map(fn ($id) => (string) $id)->all());
         $this->assertSame(CaptchaFallbackAlert::NOTIFICATION, $sent[0]->type);
         $this->assertSame('warning', $sent[0]->level);
         $this->assertSame(__('captcha.alert.title'), $sent[0]->title);
         $this->assertStringContainsString('Cloudflare Turnstile', $sent[0]->body);
         $this->assertSame(['captcha' => 'fallback', 'provider' => 'turnstile', 'count' => 2, 'path' => '/settings?tab=bot-protection'], $sent[0]->data);
-        Event::assertDispatched(NotificationCreated::class, 1);
+        Event::assertDispatched(NotificationCreated::class, 2);
 
         // dedup: no second alarm within the 10 minutes, also not from the challenge endpoint
         $this->login(['captcha_token' => 'tok-3'])->assertStatus(409);
         $this->postJson('/api/captcha/local/challenge', ['form' => 'login'])->assertOk();
-        $this->assertSame(1, Notification::query()->count());
+        $this->assertSame(2, Notification::query()->count());
 
         // 10 minutes later the window starts over
         $this->travel(CaptchaFallbackAlert::WINDOW_SECONDS + 1)->seconds();
         $this->login(['captcha_token' => 'tok-4'])->assertStatus(409);
-        $this->assertSame(1, Notification::query()->count(), 'one challenge in the new window');
+        $this->assertSame(2, Notification::query()->count(), 'one challenge in the new window');
         $this->login(['captcha_token' => 'tok-5'])->assertStatus(409);
-        $this->assertSame(2, Notification::query()->count());
+        $this->assertSame(4, Notification::query()->count());
     }
 
     public function test_a_429_with_the_providers_answer_is_its_verdict_not_an_outage(): void

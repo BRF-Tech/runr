@@ -58,7 +58,7 @@ func newInitCmd(app *App) *cobra.Command {
 	f := cmd.Flags()
 	f.StringVar(&o.Name, "name", "", "project name (default: the directory name)")
 	f.StringVar(&o.Type, "type", "faas", "project type: faas, xaas or caas")
-	f.StringVar(&o.Runtime, "runtime", "", "runtime of faas/xaas: python, nodejs, go, php or a runtime plugin (default: python)")
+	f.StringVar(&o.Runtime, "runtime", "", "runtime of faas/xaas: python, nodejs, go, php, java, dotnet, ruby, bun or a runtime plugin (default: python)")
 	f.StringVar(&o.RuntimeVersion, "runtime-version", "", "runtime version (default: the platform's default)")
 	f.StringVar(&o.Region, "region", "", "region name")
 	f.StringVar(&o.Image, "image", "", "container image of a caas project")

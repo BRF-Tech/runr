@@ -8,8 +8,11 @@ use App\Models\KnativeRegion;
 use App\Models\PlatformAdvisory;
 use App\Models\RuntimePatch;
 use App\Models\RuntimePatchFeed;
+use App\Models\RuntimeSource;
 use App\Services\CacheVersionService;
 use App\Services\Observability\TenantScope;
+use App\Services\Runtimes\Sources\OciCatalogReader;
+use App\Services\Runtimes\Sources\SourceCredentials;
 use App\Services\SupplyChain\CosignVerifier;
 use App\Services\SupplyChain\ImageRef;
 use App\Support\Images\OciRegistryClient;
@@ -35,6 +38,12 @@ use Illuminate\Support\Facades\Log;
  *
  * Without a public key the feed is off (status disabled). Through `via_region` the feed is read
  * through that region's registry (OciRegistryClient::viaRegion()).
+ *
+ * Runtime sources (docs/runtimes.md#patches-of-a-source) carry patches of their own runtimes the
+ * same way: a signed patch feed of their own (syncSource(), verified with the source's public key,
+ * read with its registry credentials) or patch entries in their signed catalog (applySource()).
+ * Their patches carry the source's id (runtime_patches.source_id) and are stored only for runtimes
+ * of that source; RunR's feed only patches the built-in runtimes (RuntimePatches::of()).
  */
 class PatchFeedSync
 {
@@ -117,7 +126,7 @@ class PatchFeedSync
      *
      * @throws PatchFeedException
      */
-    private function read(OciRegistryClient $registry, string $repository, string $digest): array
+    private function read(OciRegistryClient $registry, string $repository, string $digest, ?string $publicKey = null): array
     {
         $manifest = $registry->manifest($repository, $digest);
         if ($manifest === null) {
@@ -137,7 +146,7 @@ class PatchFeedSync
         }
 
         // The signature before the content is trusted
-        $problem = (new CosignVerifier($registry))->verify($repository, $digest, (string) config('runtime_patches.public_key'));
+        $problem = (new CosignVerifier($registry))->verify($repository, $digest, $publicKey ?? (string) config('runtime_patches.public_key'));
         if ($problem !== null) {
             throw new PatchFeedException(RuntimePatchFeed::INVALID_SIGNATURE, $problem);
         }
@@ -160,18 +169,28 @@ class PatchFeedSync
     }
 
     /**
-     * Store a valid feed.
+     * Store a valid feed: RunR's ($source null), or a runtime source's — only the patches of
+     * $runtimes (the source's own runtimes; the rest are returned as $ignored).
      *
+     * @param  list<string>|null  $runtimes
+     * @param  list<array{id: string, runtime: string}>  $ignored  entries left out (another source's runtime)
      * @return list<string> ids of the patches seen for the first time
      */
-    public function apply(array $data): array
+    public function apply(array $data, ?RuntimeSource $source = null, ?array $runtimes = null, array &$ignored = []): array
     {
         $created = [];
+        $sourceId = $source?->id;
 
-        DB::connection((new RuntimePatch)->getConnectionName())->transaction(function () use ($data, &$created) {
+        DB::connection((new RuntimePatch)->getConnectionName())->transaction(function () use ($data, $sourceId, $runtimes, &$created, &$ignored) {
             $listed = [];
             foreach ($data['patches'] as $entry) {
-                $patch = RuntimePatch::query()->find($entry['id']) ?? new RuntimePatch(['id' => $entry['id']]);
+                if ($runtimes !== null && ! in_array($entry['runtime'], $runtimes, true)) {
+                    $ignored[] = ['id' => (string) $entry['id'], 'runtime' => (string) $entry['runtime']];
+
+                    continue;
+                }
+                $id = self::patchId((string) $entry['id'], $sourceId);
+                $patch = RuntimePatch::query()->find($id) ?? new RuntimePatch(['id' => $id]);
                 $isNew = ! $patch->exists;
                 $published = Carbon::parse($entry['published_at']);
 
@@ -191,7 +210,7 @@ class PatchFeedSync
                     'in_feed' => true,
                     'removed_at' => null,
                 ]);
-                $patch->save();
+                $patch->forceFill(['source_id' => $sourceId])->save();
 
                 if ($isNew) {
                     $created[] = $patch->id;
@@ -199,10 +218,16 @@ class PatchFeedSync
                 $listed[] = $patch->id;
             }
 
+            // Only the same feed's patches leave it: RunR's feed never drops a source's and the other way round
             RuntimePatch::query()->where('in_feed', true)->whereNotIn('id', $listed ?: [''])
+                ->when($sourceId === null, fn ($q) => $q->whereNull('source_id'), fn ($q) => $q->where('source_id', $sourceId))
                 ->update(['in_feed' => false, 'removed_at' => now(), 'updated_at' => now()]);
 
             $this->syncExecutorDigests();
+
+            if ($sourceId !== null) {
+                return;     // platform advisories come from RunR's feed only
+            }
 
             $versions = [];
             foreach ($data['platform'] as $entry) {
@@ -239,20 +264,143 @@ class PatchFeedSync
         return $published->copy()->addDays((int) config("runtime_patches.default_deadline_days.{$entry['level']}", 7));
     }
 
-    /** executor_images.digest: the digest of each version's newest patch (what its floating tag points to). */
+    /**
+     * executor_images.digest: the digest of each version's newest patch (what its floating tag
+     * points to) — of the feed that patches the runtime (RuntimePatches::patchSourceOf()).
+     */
     private function syncExecutorDigests(): void
     {
         $newest = [];
-        foreach (RuntimePatch::query()->where('in_feed', true)->orderBy('published_at')->get(['runtime', 'version', 'digest']) as $patch) {
-            $newest[$patch->runtime."\0".$patch->version] = $patch->digest;
+        foreach (RuntimePatch::query()->where('in_feed', true)->orderBy('published_at')->get(['runtime', 'version', 'digest', 'source_id']) as $patch) {
+            $newest[(string) $patch->source_id."\0".$patch->runtime."\0".$patch->version] = $patch->digest;
         }
 
+        $sources = [];
         foreach (ExecutorImage::query()->get(['id', 'runtime', 'version', 'digest']) as $image) {
-            $digest = $newest[$image->runtime."\0".$image->version] ?? null;
+            $source = $sources[$image->runtime] ??= RuntimePatches::patchSourceOf((string) $image->runtime);
+            $digest = $source === false ? null : ($newest[$source."\0".$image->runtime."\0".$image->version] ?? null);
             if ($image->digest !== $digest) {
                 $image->forceFill(['digest' => $digest])->save();
             }
         }
+    }
+
+    /**
+     * The id a patch of $sourceId is stored under: the feed's id, with the source's after a "~"
+     * (two sources may name their patches alike; RunR's patches keep their id).
+     */
+    public static function patchId(string $entryId, ?string $sourceId): string
+    {
+        if ($sourceId === null) {
+            return $entryId;
+        }
+        if (strlen($entryId) > 100) {
+            $entryId = substr($entryId, 0, 90).'-'.substr(sha1($entryId), 0, 9);
+        }
+
+        return $entryId.'~'.strtolower($sourceId);
+    }
+
+    /**
+     * Patch entries a source's signed catalog carries (RuntimeSourceSync): validated as a schema v1
+     * feed and stored for the source's own runtimes.
+     *
+     * @param  list<array>  $patches
+     * @param  list<string>  $runtimes  the source's runtimes
+     * @return list<string> what was wrong (the feed's errors, entries of runtimes the source does not have)
+     */
+    public function applySource(RuntimeSource $source, array $patches, array $runtimes): array
+    {
+        $data = ['schema' => PatchFeedSchema::VERSION, 'generated_at' => now()->toIso8601String(), 'patches' => $patches, 'platform' => []];
+        $errors = PatchFeedSchema::errors($data);
+        if ($errors !== []) {
+            return [__('api.runtime_sources.patches_invalid', ['error' => implode('; ', array_slice($errors, 0, 5))])];
+        }
+
+        $ignored = [];
+        $created = $this->apply($data, $source, $runtimes, $ignored);
+        if ($created !== []) {
+            AnnounceRuntimePatchesJob::dispatch($created);
+        }
+        $this->forgetCachedProjects();
+
+        return array_map(fn (array $i) => __('api.runtime_sources.patch_foreign', ['patch' => $i['id'], 'runtime' => $i['runtime']]), $ignored);
+    }
+
+    /**
+     * The signed patch feed of a runtime source (its patch_feed reference): read like RunR's — a
+     * HEAD per check, the signature verified with the source's public key (required), the source's
+     * registry credentials — and stored for the source's own runtimes. Its state is a
+     * runtime_patch_feeds row of the source.
+     *
+     * @param  list<string>  $runtimes  the source's runtimes
+     * @return list<string> what was wrong
+     */
+    public function syncSource(RuntimeSource $source, array $runtimes, bool $force = false): array
+    {
+        $feed = RuntimePatchFeed::query()->firstOrCreate(
+            ['source_id' => $source->id],
+            ['reference' => 'source/'.$source->id, 'status' => RuntimePatchFeed::DISABLED],
+        );
+        $feed->checked_at = now();
+        $reference = trim((string) $source->patch_feed);
+        $key = $source->verificationKey();
+        if ($reference === '' || $key === null) {
+            $feed->forceFill(['status' => RuntimePatchFeed::DISABLED, 'error' => $reference === '' ? null : 'A patch feed needs the source\'s public key'])->save();
+
+            return $reference === '' ? [] : ['The patch feed is not read: the source has no public key to verify it with'];
+        }
+
+        $ref = ImageRef::parse($reference);
+        $repository = $ref->name();
+        try {
+            $registry = app(OciCatalogReader::class)->client($source);
+            $digest = $ref->digest ?? $registry->manifestDigest($repository, (string) ($ref->tag ?? 'feed'));
+        } catch (\Throwable $e) {
+            return $this->sourceFeedFailed($feed, $source, RuntimePatchFeed::UNREACHABLE, $e->getMessage());
+        }
+        if ($digest === null) {
+            return $this->sourceFeedFailed($feed, $source, RuntimePatchFeed::UNREACHABLE, "The patch feed {$ref->canonical()} could not be read");
+        }
+        if (! $force && $feed->status === RuntimePatchFeed::OK && $digest === $feed->manifest_digest) {
+            $feed->save();
+
+            return [];
+        }
+
+        try {
+            $data = $this->read($registry, $repository, $digest, $key);
+        } catch (PatchFeedException $e) {
+            return $this->sourceFeedFailed($feed, $source, $e->status, $e->getMessage());
+        }
+
+        $ignored = [];
+        $created = $this->apply($data, $source, $runtimes, $ignored);
+        $feed->forceFill([
+            'status' => RuntimePatchFeed::OK,
+            'error' => null,
+            'manifest_digest' => $digest,
+            'signature_verified' => true,
+            'generated_at' => Carbon::parse((string) $data['generated_at']),
+            'fetched_at' => now(),
+            'rejected_digest' => null,
+        ])->save();
+        if ($created !== []) {
+            AnnounceRuntimePatchesJob::dispatch($created);
+        }
+        $this->forgetCachedProjects();
+
+        return array_map(fn (array $i) => __('api.runtime_sources.patch_foreign', ['patch' => $i['id'], 'runtime' => $i['runtime']]), $ignored);
+    }
+
+    /** @return list<string> */
+    private function sourceFeedFailed(RuntimePatchFeed $feed, RuntimeSource $source, string $status, string $error): array
+    {
+        $error = SourceCredentials::maskFor($error, $source);
+        $feed->forceFill(['status' => $status, 'error' => mb_substr($error, 0, 1000)])->save();
+        Log::warning('Runtime source patch feed not read', ['source' => $source->id, 'status' => $status, 'error' => $error]);
+
+        return ["The patch feed was not read ({$status}): {$error}"];
     }
 
     private function registry(): OciRegistryClient

@@ -215,13 +215,13 @@ YAML);
     {
         $discovery = $this->bashManifest(['versions' => null, 'versionDiscovery' => ['repository' => 'ghcr.io/brf-tech/runr/exec-bash', 'image' => 'ghcr.io/brf-tech/runr/exec-bash:{version}']]);
         $this->assertContains(
-            ['path' => '/versionDiscovery', 'message' => 'is only available to the built-in catalog; list versions instead'],
+            ['path' => '/versionDiscovery', 'message' => 'is only available to catalogs (the built-in catalog, runtime sources); list versions instead'],
             $this->problems($discovery),
         );
         $this->assertNull($this->parse($discovery, [], true)->versions()[0] ?? null);
 
         $refs = $this->cManifest(['build' => ['files' => ['wrapper.c' => '@wrapper.c']]]);
-        $this->assertContains(['path' => '/build/files/wrapper.c', 'message' => 'file references (@path) are only resolved in the built-in catalog'], $this->problems($refs));
+        $this->assertContains(['path' => '/build/files/wrapper.c', 'message' => 'file references (@path) are only resolved in catalogs (the built-in catalog, runtime sources)'], $this->problems($refs));
     }
 
     public function test_gpu_and_runtime_class(): void

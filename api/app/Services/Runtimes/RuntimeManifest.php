@@ -77,7 +77,7 @@ final class RuntimeManifest
     }
 
     /**
-     * @return list<array{version: string, image: ?string, dockerfile: ?string, upload: ?string, git: ?array, buildArgs: array, default: bool, eol: ?string, gpu: bool}>
+     * @return list<array{version: string, image: ?string, dockerfile: ?string, upload: ?string, git: ?array, buildArgs: array, default: bool, eol: ?string, gpu: bool, deprecated?: string|bool, sunset?: string}>
      */
     public function versions(): array
     {
@@ -323,6 +323,56 @@ final class RuntimeManifest
         $command = $this->runCommand();
 
         return $command === null ? null : array_map(fn ($part) => Placeholders::render($part, $values), $command);
+    }
+
+    // ── Lifecycle (docs/runtimes.md#lifecycle) ─────────────────────────────
+
+    /** The runtime is deprecated: a date (YYYY-MM-DD), true (now), or null. */
+    public function deprecated(): string|bool|null
+    {
+        $value = $this->data['deprecated'] ?? null;
+
+        return $value === true || is_string($value) ? $value : null;
+    }
+
+    /** After this date (YYYY-MM-DD) projects of the runtime can no longer be saved or deployed. */
+    public function sunset(): ?string
+    {
+        return is_string($this->data['sunset'] ?? null) ? $this->data['sunset'] : null;
+    }
+
+    public function replacement(): ?string
+    {
+        return is_string($this->data['replacement'] ?? null) ? $this->data['replacement'] : null;
+    }
+
+    public function notice(): ?string
+    {
+        return is_string($this->data['notice'] ?? null) ? $this->data['notice'] : null;
+    }
+
+    /**
+     * The manifest's lifecycle of one version: its own fields (versions list), or the
+     * versionDiscovery.lifecycle entry of the label (discovered versions; a GPU build "2.14-gpu"
+     * follows "2.14"). eol null: RunR's end-of-life source decides (endoflife.date).
+     *
+     * @return array{eol: ?string, deprecated: string|bool|null, sunset: ?string}
+     */
+    public function versionLifecycle(string $version): array
+    {
+        $spec = $this->version($version);
+        if ($spec === null) {
+            $map = (array) ($this->data['versionDiscovery']['lifecycle'] ?? []);
+            $spec = $map[$version] ?? $map[preg_replace('/-gpu$/', '', $version)] ?? [];
+        }
+
+        $deprecated = $spec['deprecated'] ?? null;
+
+        return [
+            'eol' => is_string($spec['eol'] ?? null) ? $spec['eol'] : null,
+            'deprecated' => $deprecated === true || is_string($deprecated) ? $deprecated : null,
+            'sunset' => is_string($spec['sunset'] ?? null) ? $spec['sunset'] : null,
+        ];
     }
 
     /** sha256 of the normalized manifest. */

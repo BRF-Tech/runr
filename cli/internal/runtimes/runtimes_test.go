@@ -39,10 +39,10 @@ func TestBuiltin(t *testing.T) {
 		t.Fatalf("pytorch = %+v", s)
 	}
 	list, _ := Builtin{}.List(context.Background())
-	if len(list) != 4 {
+	if len(list) != 8 {
 		t.Fatalf("builtin list = %+v", list)
 	}
-	if Extension("go") != "go" || Extension("unknown") != "py" || !Known("php") || Known("ruby") {
+	if Extension("go") != "go" || Extension("unknown") != "py" || !Known("php") || !Known("ruby") || Known("cobol") {
 		t.Fatal("helpers")
 	}
 }
@@ -247,5 +247,36 @@ func TestChainFallsBackOnTransportErrors(t *testing.T) {
 
 	if list, err := (Chain{Resolvers: []Resolver{down, Builtin{}}}).List(context.Background()); err != nil || len(list) == 0 {
 		t.Fatalf("list fallback = %v %v", list, err)
+	}
+}
+
+func TestBuiltinJavaDotnetRubyBun(t *testing.T) {
+	t.Setenv(EnvRegistry, "")
+	cases := map[string]struct{ image, file, fn, entry, deps string }{
+		"java":   {"ghcr.io/brf-tech/runr/exec-java:25.0", "Main", "handler", "/opt/runr/bin/runr-start", ""},
+		"dotnet": {"ghcr.io/brf-tech/runr/exec-dotnet:10.0", "Function", "Handler", "/opt/runr/bin/runr-start", ""},
+		"ruby":   {"ghcr.io/brf-tech/runr/exec-ruby:3.4", "main", "handler", "ruby /opt/runr/server.rb", "Gemfile"},
+		"bun":    {"ghcr.io/brf-tech/runr/exec-bun:1.4", "main", "handler", "bun /opt/runr/server.ts", "package.json"},
+	}
+	for id, c := range cases {
+		s, err := Builtin{}.Resolve(context.Background(), id, "")
+		if err != nil {
+			t.Fatalf("%s: %v", id, err)
+		}
+		if s.Image != c.image || s.Entrypoint != c.entry || s.DependencyFile != c.deps || s.User != "0:0" || s.BuilderImage != s.Image {
+			t.Fatalf("%s = %+v", id, s)
+		}
+		if HandlerFile(id) != c.file || HandlerFunction(id) != c.fn {
+			t.Fatalf("%s: handler %s.%s", id, HandlerFile(id), HandlerFunction(id))
+		}
+		if s.Compiled != (id == "java" || id == "dotnet") {
+			t.Fatalf("%s: compiled = %v", id, s.Compiled)
+		}
+	}
+	if s, _ := (Builtin{}).Resolve(context.Background(), "python", ""); s.Entrypoint != "./entrypoint.sh" || s.User != "" {
+		t.Fatalf("python = %+v", s)
+	}
+	if HandlerFile("cobol") != "main" || HandlerFunction("cobol") != "handler" {
+		t.Fatal("unknown runtimes: main.handler")
 	}
 }

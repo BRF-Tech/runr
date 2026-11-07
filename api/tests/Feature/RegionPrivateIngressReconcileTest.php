@@ -314,7 +314,7 @@ class RegionPrivateIngressReconcileTest extends TestCase
         $this->assertSame(['default' => false, 'internal' => true], $port['expose'], 'not on the LoadBalancer Service, on traefik-internal');
         $this->assertSame(80, $port['exposedPort']);
         $this->assertSame('610s', $port['transport']['respondingTimeouts']['writeTimeout'], 'request_timeout reaches the private entry point too');
-        $this->assertSame(['type' => 'ClusterIP'], json_decode($first['service.additionalServices.internal'], true));
+        $this->assertSame(['spec' => ['type' => 'ClusterIP']], json_decode($first['service.additionalServices.internal'], true));
         $transitional = json_decode($first['additionalArguments'], true);
         $this->assertContains('--providers.knative.privateentrypoints=web,internal', $transitional);
         $this->assertContains('--providers.knative.privateservice.name=traefik-internal', $transitional);

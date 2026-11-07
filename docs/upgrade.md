@@ -87,6 +87,316 @@ edit projects, deploy or change regions in that time: the previous version canno
 migration has just encrypted, shows env vars as empty and would save that. Its region status
 checks fail in that window and the new version's next check reports the region again.
 
+## 0.6.7 → 0.6.8
+
+### Runtime sources
+
+The migration `2026_11_07_100001_create_runtime_sources` runs with the upgrade
+([Procedure](#procedure)). It only adds: the table `runtime_sources`; `runtimes.source_id`,
+`source_path` and `orphaned_at`; `executor_images.deprecated_at` and `sunset_at`;
+`runtime_patches.source_id` and `runtime_patch_feeds.source_id`. Existing runtimes, versions,
+patches and projects keep what they have ([runtimes.md](runtimes.md#runtime-sources)).
+
+- **The built-in runtimes now come from RunR's signed catalog.** The API creates the default source
+  *RunR runtimes*, the OCI catalog `ghcr.io/brf-tech/runr/runtime-catalog:stable` signed with the
+  patch feed's key, and reads it at its start and every 15 minutes. Until it has been read once,
+  the catalog the API image ships (`api/resources/runtimes/builtin.json`) stays in use, as in
+  0.6.7; the Runtimes page says which one is in use. A read that fails leaves the runtimes as they
+  were, and the source's status says why: `unreachable`, `not_found` (the registry has no such
+  catalog, or it is not public: ghcr.io answers an anonymous read of both with 401 / 403),
+  `invalid_signature` or `invalid_catalog`.
+- **The API needs to reach ghcr.io** for it, as it does for the patch feed, or a region's registry:
+  `runtimeCatalog.viaRegion` (default `runtimePatches.viaRegion`). An air-gapped installation sets
+  `runtimeCatalog.offline: true` (`RUNR_RUNTIME_CATALOG_REF=""`) and keeps the bundled catalog; its
+  source then shows `disabled`.
+- **Who connects sources.** Platform administrators (`runtimes.manage`) connect sources for every
+  organization; members with `runtimes.use_custom` connect their organization's own, while custom
+  runtimes are on. A source is a signed OCI catalog or a Git repository of
+  `runtimes/<id>/runtime.yaml`, public or private (an HTTPS token or an SSH deploy key, registry
+  credentials for a private catalog and private images); credentials are encrypted at rest and
+  never returned. The upgrade connects no source besides RunR's catalog.
+- **`EXECUTOR_RUNTIMES` is now only the first default of the platform setting Built-in runtimes**
+  (Build & Run → Runtimes). Its default changed from the eleven built-ins to every runtime of the
+  catalog. An installation that sets `EXECUTOR_RUNTIMES` keeps its list until a platform
+  administrator saves the setting.
+- **Lifecycle fields.** A manifest may set `deprecated` (a date or `true`), `sunset`, `replacement`
+  and `notice` for the runtime, `deprecated` and `sunset` for a version, and
+  `versionDiscovery.lifecycle` for discovered versions ([runtimes.md](runtimes.md#lifecycle)). A
+  version ends at the earlier of its end of life and its sunset, with the reminders and refusals of
+  an end of life; a deprecation is announced once.
+- **Projects without a runtime version are refused once their runtime's default version ends**, as
+  pinned projects already were. Before, such a project deployed a default that was past its end of
+  life. Running deployments stay untouched.
+- **Orphaned runtimes.** A runtime that leaves its source (removed from the catalog or repository,
+  or its source removed while projects use it) is orphaned, not deleted. No new project or sandbox
+  picks it; its projects keep saving and deploying for a grace period of 90 days
+  (`RUNR_RUNTIME_ORPHAN_GRACE_DAYS`, via `extraEnv`), which becomes its sunset, and the owners of
+  its projects are told once. It is no longer orphaned when it comes back to its source or another
+  source of the same owner adopts it. A built-in that RunR's catalog drops is orphaned the same way
+  ([runtimes.md](runtimes.md#orphaned-runtimes)).
+- The API image adds `openssh-client`, for Git sources with an SSH deploy key.
+
+### New runtimes: Java, .NET, Ruby and Bun
+
+Four runtimes join the built-in catalog, in RunR's catalog and in the one the 0.6.8 API image
+ships ([runtimes.md](runtimes.md#built-in-catalog)):
+
+| Runtime | Versions | Image |
+|---|---|---|
+| `java` | Eclipse Temurin 21.0 and 25.0 | `ghcr.io/brf-tech/runr/exec-java` |
+| `dotnet` (C#) | .NET 10.0 | `ghcr.io/brf-tech/runr/exec-dotnet` |
+| `ruby` | 3.3, 3.4 and 4.0 | `ghcr.io/brf-tech/runr/exec-ruby` |
+| `bun` (TypeScript, JavaScript) | Bun 1.4 | `ghcr.io/brf-tech/runr/exec-bun` |
+
+- Existing projects keep their runtimes; nothing moves.
+- With the default of the Built-in runtimes setting (every runtime of the catalog) the four are
+  offered right after the upgrade. An installation that lists its runtimes (the setting, or
+  `EXECUTOR_RUNTIMES`) offers them once they are added to the list.
+- Java and .NET build every save: Kaniko runs the version image, which the region registry fetches
+  and `region:reconcile` pre-warms. A .NET function then runs on
+  `ghcr.io/brf-tech/runr/reqs/dotnet-runtime-deps:10.0-chiseled-extra`, not on the SDK image.
+- A region whose nodes pull through a mirror of their own needs these images there before a
+  project uses them.
+- The code interpreter of the Sandbox API runs Java and C# too, and TypeScript and JavaScript with
+  Bun in a Bun sandbox ([sandbox-api.md](sandbox-api.md)).
+
+### Sandbox commands without kubectl
+
+A sandbox command no longer starts a kubectl process: the API opens the API server's exec stream
+itself, a WebSocket per command (`v5.channel.k8s.io`). That covers `/exec` (JSON and SSE), code
+runs, file transfers, background processes, kill and pause, and the exec WebSocket without a
+terminal. Exit codes, output caps, timeouts, kills, error messages and the activity records stay as
+they were. Nothing needs a step ([sandbox-api.md](sandbox-api.md)).
+
+- **`SANDBOX_EXEC_CLIENT`** (via `extraEnv`): `native`, the default; `kubectl` brings back a
+  kubectl process for every command, as in 0.6.7.
+- **Terminal sessions** (`"tty": true`, the console terminal) keep `kubectl exec -t`. The API image
+  keeps kubectl.
+- **kubectl takes over by itself** where the native client cannot run a command, before the command
+  starts, so it never fails for it:
+  - a region kubeconfig with an exec plugin, an auth provider, a token, client certificate or CA in
+    a file, basic auth, impersonation or a `proxy-url`;
+  - an `HTTPS_PROXY` (`HTTP_PROXY` for an `http://` server) in the API's environment that
+    `NO_PROXY` does not exclude, which kubectl and the API's other cluster calls follow;
+  - an API server that refuses the WebSocket upgrade. One without `v5.channel.k8s.io` where a
+    command's stdin must end is remembered for 10 minutes.
+
+  The API logs each reason once per process:
+  `sandbox exec: kubectl instead of the native client: <reason>`.
+- The native client takes a bearer `token` (a ServiceAccount's too) and `client-certificate-data` /
+  `client-key-data`, alone or together, with `certificate-authority-data` or
+  `insecure-skip-tls-verify`. The CA, client certificate and key go to 0600 temp files of the API
+  process, as the API's other cluster calls already do.
+- The native client asks the API server what the API image's kubectl 1.35 asks, a WebSocket upgrade
+  of `pods/exec`: the region kubeconfig needs no other permission.
+
+### The console certificate warning
+
+The console now warns platform administrators (single-tenant: the holders of `platform.manage`,
+[below](#the-installations-own-pages-on-single-tenant-installs)) when cert-manager cannot issue the
+console's own certificate ([install.md](install.md#when-the-console-certificate-is-not-issued)).
+The chart adds three keys to `runr-config` (`CONSOLE_TLS_MODE`, `CONSOLE_TLS_ISSUER`, `CONSOLE_TLS_CHECK`) and,
+when cert-manager issues the certificate, two read rules to the Role `runr-api-role`: `get` on the
+console's Certificate and `list` on the CertificateRequests of the release namespace.
+`ingress.tls.certificateCheck: false` leaves them out.
+
+- **Check the TLS mode the upgrade renders.** A marketplace that merges the package's default values
+  under the installation's own values on an upgrade gives a release that never set
+  `ingress.tls.mode` the package default, e.g. `letsencrypt`. The console Ingress then gets the
+  annotation `cert-manager.io/cluster-issuer: letsencrypt-prod` and the `tls` Secret `runr-tls`
+  as soon as the cluster has cert-manager, also when RunR installed that cert-manager for a region in
+  the same cluster. Without a ClusterIssuer `letsencrypt-prod` the certificate is never issued and
+  the console goes on with the ingress controller's default certificate, which the warning now
+  reports. Check after the upgrade:
+
+  ```sh
+  kubectl -n runr get configmap runr-config -o jsonpath='{.data.CONSOLE_TLS_MODE} {.data.CONSOLE_TLS_ISSUER}{"\n"}'
+  kubectl -n runr get certificate,certificaterequest   # READY True once issued
+  ```
+
+  A console served by the ingress controller's default certificate (e.g. a Traefik `TLSStore`
+  named `default`) sets `ingress.tls.mode: none` in its own values; one that wants Let's Encrypt
+  creates the ClusterIssuer or names an existing one in `ingress.tls.clusterIssuer`.
+
+### The installation's own pages on single-tenant installs
+
+A single-tenant installation has no platform administrators (`users.is_admin` comes with the
+multi-tenant edition). Up to 0.6.7 nobody there reached what is theirs: the Patches page, the
+banners of a newer RunR release and of the patch feed's trouble, and the platform administrators'
+notifications; the console certificate warning above would have reached nobody either. 0.6.8 adds
+the single-tenant permission `platform.manage`, which stands in for them
+([permissions.md](permissions.md#single-tenant-installs-platformmanage)).
+
+- **The Owners hold it after the upgrade.** Built-in roles are read from the catalog, not stored:
+  no migration runs, and the Owners see Build & Run → Patches and the banners once the new API
+  pods serve. They also keep the Horizon dashboard, which now follows the same permission.
+- **Admins do not.** To let an Admin operate the installation, create a custom role with
+  `platform.manage` (Administration → Roles) and give it to them, or to a group they are in: a
+  group's role adds to their own.
+
+Multi-tenant installations are unchanged: only platform administrators.
+
+### Region Traefik chart 42.3.1
+
+New regions install the Traefik chart 42.3.1 instead of 42.3.0. Traefik stays v3.7.17, from the same
+image (`ghcr.io/brf-tech/runr/reqs/traefik:v3.7.17`). An existing region moves by itself:
+`region:reconcile` (step `traefik-chart`) moves it, and no command is needed.
+
+- It is the move of 0.6.6 ([below](#region-traefik-chart-4230)). The step runs a `helm upgrade` of
+  the `traefik` release to chart 42.3.1 with the release's own values, rewritten for the keys the
+  chart reads. The upgrade is atomic: pods that are not ready within 10 minutes bring the release
+  back to its chart, and the next run tries again.
+- The Traefik pods roll once, because the pod template carries the chart's version label
+  (`helm.sh/chart`). A new pod is Ready before an old one goes (`maxUnavailable: 0`), so requests
+  keep being served.
+- The new pods run RunR's probe timing instead of the chart's defaults (0.6.8's fix of the values
+  RunR gives the chart, in the changelog):
+  - readiness after 10 s, every 10 s, a 5 s timeout, two successes, three failures;
+  - liveness after 20 s, every 10 s, a 5 s timeout, five failures.
+- The `traefik` LoadBalancer Service renders as before apart from the chart's version label, and
+  keeps its address. `traefik-internal` now states `type: ClusterIP`, the type it already had.
+- Nothing to mirror. A region whose nodes pull through a mirror of their own already has the image.
+  With `knative.traefikImage` set, the region keeps that image.
+- Left alone, with a `warning:` from `region:reconcile`, as under 0.6.6:
+  - a Traefik of a chart before 40;
+  - a cluster on Kubernetes before 1.30;
+  - a `knative.traefikImage` older than v3.7.17.
+- A region still on chart 40.3.0, which 0.6.7 did not move, goes to 42.3.1 in one step.
+- **No CRD step is needed.** Helm does not upgrade CRDs. The `traefik.io` CRDs of 42.3.1 only add
+  optional fields to those of 42.3.0, and RunR sets none of them:
+  - `IngressRoute`: `routes[].respondingTimeouts`;
+  - `Middleware`: `buffering.disableRequestBuffer`, `buffering.disableResponseBuffer` and `tap`;
+  - `ServersTransport`: `peerCertSANs` and `forwardingTimeouts.readTimeout` / `writeTimeout`;
+  - `ServersTransportTCP`: `tls.peerCertSANs`;
+  - `TraefikService`: `mirroring.streamBody`.
+
+  Nothing is removed and no field changes type. An installed region keeps the CRDs it has; a new
+  region gets those of 42.3.1.
+
+### kube-prometheus-stack 92.22.0
+
+Regions installed from now on run kube-prometheus-stack 92.22.0 instead of 92.21.2. Prometheus
+(v3.16.0), the Prometheus Operator (v0.94.2), kube-state-metrics and node-exporter (1.12.1) keep
+their versions and images: the chart moves its node-exporter subchart from 4.60.1 to 5.0.0. Nothing
+moves by itself: an installed region keeps its chart until
+`php artisan cluster:patch-observability [REGION-ID]` moves it, and `region:reconcile` does not.
+Run it when it suits the region:
+
+- node-exporter restarts once, one node at a time (a DaemonSet). Its container gets the new
+  defaults of the subchart: `allowPrivilegeEscalation: false`, `capabilities.drop: [ALL]` and
+  `seccompProfile.type: RuntimeDefault`. Its host access (`hostNetwork`, `hostPID`, the `/proc`,
+  `/sys` and `/` mounts) stays as it was, and RunR sets no node-exporter values of its own. Each
+  node's host metrics have a gap while its pod restarts.
+- Prometheus, the Prometheus Operator and kube-state-metrics keep running: their pods render as
+  under 92.21.2.
+- The admission webhook's certificate Jobs run, as they do on every upgrade of the chart, with
+  kube-webhook-certgen 1.11.1 as before, and keep the certificates.
+- **No CRD step is needed.** The chart's CRDs are those of 92.21.2.
+- Nothing to mirror: the images are those of 92.21.2. A region whose nodes pull through a mirror of
+  their own needs nothing new there.
+- A region still on 92.18.0 or 92.10.1, not moved under 0.6.7 or 0.6.6, also gets what those
+  brought in the same run ([below](#kube-prometheus-stack-92212)).
+- Loki's chart and values are those of 0.6.7.
+
+### Back to 0.6.7
+
+A rollback to 0.6.7 is a `helm rollback` on the same database. The migration of 0.6.8 stays: do not
+roll it back first.
+
+1. **Roll the release back:** `helm rollback runr <revision of 0.6.7> -n runr --wait`
+   (`helm history runr -n runr` lists the revisions). Where only one package version is kept (a
+   marketplace that offers the latest release only), add the 0.6.7 package again and upgrade the
+   release to it. **Never uninstall** to go back: `helm uninstall` deletes the chart's database
+   volume and `runr-secret` with its `APP_KEY`.
+2. **Nothing runs on the database.** A rollback runs neither the migration Job nor the bootstrap Job:
+   both are upgrade hooks. The 0.6.7 API pods run `php artisan migrate` at their start and find
+   nothing to do. 0.6.7 has no file for `2026_11_07_100001_create_runtime_sources`, so its row stays
+   in `migrations` and `migrate:status` lists nothing pending. The table `runtime_sources` and the
+   new columns stay; they are nullable, and 0.6.7 ignores them.
+3. **The regions follow by themselves.** The region Job `runr-region-reconcile-<revision of 0.6.7>`
+   runs again. It first waits for the bootstrap hook of that revision, which a rollback does not run,
+   and goes on after 420 s (multi-tenant: 1020 s) with `the bootstrap hook of revision <n> did not
+   finish within 420 s — going on`. Then it moves the region agent and the queue consumers back to
+   0.6.7. The region Traefik stays on chart 42.3.1, because 0.6.7 moves no chart down. Every
+   `region:reconcile` of 0.6.7 says so in a `warning:` line of the step `traefik-chart`, which needs
+   nothing.
+
+**Do not roll the migration back.** Its `down()` is complete, and with the 0.6.8 API, before the
+rollback, `php artisan migrate:rollback --path=database/migrations/2026_11_07_100001_create_runtime_sources.php --force`
+would run it. 0.6.7 does not need it, and it costs the next upgrade:
+
+- it deletes the connected sources and their credentials;
+- it drops every runtime's link to its source. After the next upgrade, a source connected again
+  finds its runtime ids held by runtimes it does not manage and skips them, and a runtime that
+  projects use cannot be deleted to make room.
+
+**What keeps working on 0.6.7:**
+
+- Every function keeps serving, and running deployments are not touched.
+- Projects on the runtimes of 0.6.7's own catalog deploy as before. 0.6.7 takes their manifests from
+  the catalog its image ships, not from the rows RunR's catalog wrote.
+- **Projects on Java, .NET, Ruby and Bun keep running and deploying.** 0.6.7 does not have these
+  runtimes, so it reads their manifests from their `runtimes` rows: 0.6.8 keeps the manifest on
+  every built-in row, also while the catalog of the API image is in use. They deploy on the
+  versions 0.6.8 last discovered. 0.6.7 discovers no new ones and leaves the four out of the node
+  pre-pull and the region registry's prewarm.
+- 0.6.7 does not list these four: the runtime picker and Build & Run → Runtimes do not show them,
+  and `GET /api/runtimes/<id>` answers 404. A request to its API still creates a project on one.
+- The runtimes of a connected source stay platform runtimes; those of an organization's source stay
+  custom runtimes of that organization. 0.6.7 no longer reads their sources: it lists them as
+  runtimes registered by hand, and their manifests can be changed in the console.
+
+**What stops or changes:**
+
+- **A source's runtime that discovers its versions loses them.** Its manifest has
+  `versionDiscovery` instead of a `versions` list. 0.6.7's `executor:sync` takes the versions of a
+  registered runtime from that list only and retires the rest; it runs at the API's start and every
+  30 minutes. From then on, a deploy of its projects stops with `Runtime <id>:<version> is no
+  longer available`. Their running deployments stay.
+- **The images of a private source** cannot be pulled: 0.6.7 has no pull Secret for them. New
+  deploys and builds of their projects fail; running pods keep their image.
+- What only 0.6.8 has stays stored but is not used:
+  - runtime sources, with their pages, their MCP tools, `runr runtimes sources` and the Terraform
+    resource `runr_runtime_source` (the API answers 404);
+  - the lifecycle: orphaned runtimes are offered again, a version past its sunset deploys again, and
+    the deprecation badges and the sunset reminders are gone;
+  - the Built-in runtimes setting. 0.6.7 offers the runtimes of `EXECUTOR_RUNTIMES`, by default its
+    whole catalog. To keep a selection, set it on the 0.6.7 release with
+    `helm upgrade runr brf-tech/runr --version 0.6.7 -n runr --reuse-values --set-string 'extraEnv.EXECUTOR_RUNTIMES=python\,go'`;
+    `runtimeCatalog.builtinRuntimes` is a value of the 0.6.8 chart only;
+  - the console certificate warning. Its Role rules and its `CONSOLE_TLS_*` keys leave with the
+    0.6.8 chart, and the check kept its state in the cache only;
+  - single-tenant, `platform.manage`. The Owners and Admins get what 0.6.7 gives them, which has no
+    Patches page and no platform banners for them. A custom role that holds `platform.manage` keeps
+    it in the database. 0.6.7 does not know the permission, so it shows the role without it, and
+    saving the role's permissions there drops it. An API token limited to it reaches nothing more
+    there.
+- **Patches:** 0.6.7 applies RunR's patch feed as before. The patches of a source's own runtimes stay
+  stored, and 0.6.7 handles them like RunR's. When RunR's feed changes while 0.6.7 runs, 0.6.7 marks
+  them as no longer in their feed.
+- The notifications of 0.6.8 (a deprecated or orphaned runtime, a sunset reminder) stay readable with
+  the title and text they were sent with. 0.6.7's console titles a sunset reminder of a version that
+  also has an end of life with the end-of-life date.
+- Sandboxes keep running until their TTL. 0.6.7 runs their commands with kubectl again, and its code
+  runs know neither Java nor C#.
+- One job only 0.6.8 queues fails if the 0.6.7 workers take it: the removal of a deleted source's
+  pull Secrets from the regions. Those Secrets then stay.
+
+**Upgrading to 0.6.8 again** is the normal upgrade. The migration has run already, so the migration
+Job finds nothing to do, and the `executor:sync` of the API's start discovers the versions of the
+sources' runtimes again. Where sources are connected, read them all once anew:
+
+```sh
+kubectl -n runr exec deploy/runr-api -- php artisan runtime-sources:sync --force
+```
+
+It brings back their runtimes as the sources have them, also those changed or deleted by hand on
+0.6.7, and the patches 0.6.7 marked as gone. A custom role whose `platform.manage` 0.6.7 dropped
+needs it again.
+
+`runtime/ci.sh test-helm-upgrade --rollback` repeats this rollback after the upgrade
+([Testing the upgrade path](#testing-the-upgrade-path)).
+
 ## 0.6.6 → 0.6.7
 
 ### kube-prometheus-stack 92.21.2
@@ -1784,6 +2094,22 @@ a tenant admin, member and viewer. After the upgrade every one of them signs in 
 the member's permissions include `settings.manage`, `sso.manage` and `projects.deploy`, the viewer
 lists projects but gets a 403 on `POST /api/projects`, and `secrets:encrypt` finds no plaintext in
 the central or the tenant schema.
+
+`--rollback` (single-tenant) goes back once every check of the upgrade passed
+([Back to 0.6.7](#back-to-067)). On the upgraded version it first deploys a project on a runtime only
+the checkout's catalog has: `UPG_ROLLBACK_RUNTIME`, by default `java`, through `POST
+/api/runtimes/<id>/test-deploy`, offered through the Built-in runtimes setting when
+`E2E_EXECUTOR_RUNTIMES` leaves it out. Then it runs `helm rollback` to the installed version's
+revision while the prober calls the function, waits for that revision's region Job, and checks:
+
+- the API answers with the installed version, on its images;
+- the upgrade's migrations stay recorded, with `runtime_sources` and its columns, and none is pending;
+- the region Job completed after its wait for the bootstrap hook, and took the region agent back;
+- the region Traefik stays on its chart, with the `warning:` of `traefik-chart`;
+- both users sign in, and the function answered every probe and answers and redeploys with its env;
+- the runtimes list and the picker answer, without the checkout's new runtimes;
+- the new runtime's project answers, is not listed (404), builds and deploys a new version, and the
+  API still creates a project on that runtime.
 
 Measured on a 20-core host with Kind 1.32 (main = 0.4.4 → this release, `--reuse-values`): the
 upgrade's migration job took 9 s, the new pods were ready 27 s after it started, the bootstrap

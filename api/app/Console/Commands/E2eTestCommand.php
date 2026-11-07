@@ -23,6 +23,7 @@ use App\Console\Commands\Concerns\E2eTestRegionMoveTrait;
 use App\Console\Commands\Concerns\E2eTestResultTrait;
 use App\Console\Commands\Concerns\E2eTestRunnerTrait;
 use App\Console\Commands\Concerns\E2eTestRuntimePatchesTrait;
+use App\Console\Commands\Concerns\E2eTestRuntimeSourcesTrait;
 use App\Console\Commands\Concerns\E2eTestRuntimesTrait;
 use App\Console\Commands\Concerns\E2eTestSandboxApiTrait;
 use App\Console\Commands\Concerns\E2eTestSandboxTrait;
@@ -64,6 +65,7 @@ class E2eTestCommand extends Command
     use E2eTestResultTrait;
     use E2eTestRunnerTrait;
     use E2eTestRuntimePatchesTrait;
+    use E2eTestRuntimeSourcesTrait;
     use E2eTestRuntimesTrait;
     use E2eTestSandboxApiTrait;
     use E2eTestSandboxTrait;
@@ -82,12 +84,13 @@ class E2eTestCommand extends Command
         {--kubeconfig= : Path to kubeconfig file for test region}
         {--timeout=300 : Deploy wait timeout in seconds}
         {--skip-sandbox : Skip sandbox runtime isolation tests}
-        {--suite=all : all = every phase incl. runtime plugins; runtimes = runtime plugin functions only; supply-chain = SBOM / scan / signing / admission; ai = model services, offline snapshots, bindings, GPU; bindings = bindings only (data services, KV / object / Postgres / external); sandbox-api = Sandbox API only; wasm = WebAssembly support + Wasm runtimes; observability = tracing backend, traces, replay; reconcile = region:reconcile tracing backend and registry pre-warm steps; network = private ingress (cluster-local routes off the LoadBalancer), NetworkPolicies, an earlier release\'s region moved under load; internal-network = the authz, allow lists, cross-organization grants, access modes, audit mode, an earlier release\'s region moved under load; git-deploy = git remote, Forgejo push and previews; images = uploaded images (tar + wasm), CaaS from an upload, wasm-exec in C and Q; admission = project stop / resume, region status blocks, fixed-region allocations (Billing module on); deploy-strategies = blue-green (test URL, promote, warm previous, rollback) and canary (traffic split, automatic promotion, abort) rollouts; region-move = the region moved to the cluster of --move-kubeconfig and rolled back (rebuilds, report, restored state, secret values in the region\'s Secret and OpenBao copied there and back, references); runtime-patches = signed patch feed, workloads by digest, deadline migration with rollback, apply and pin; warmer = the timed warmer: schedule preview, min-scale rendered into the template, PodAutoscaler patches without a restart, schedule turned off and redeployed; triggers = trigger lists: webhook inbox, dead letter + replay, platform events, schedule and topics through the event gateway; trigger-sources = S3 object events on the region object store, Kafka, NATS JetStream, RabbitMQ, MQTT, Postgres CDC with the slot cleanup, IMAP and a schedule time zone through the event gateway; secrets = pass-through secret values, secrets:move-to-region, External Secrets Operator with an OpenBao reference; environments = staging next to production, promotion, rollback restoring the config; cert-manager = cert-manager installed with Serving, the region CA issuer, HTTPS of a custom domain, removal and reinstall; global-projects = a global project in the e2e region and a second region on the cluster of --global-kubeconfig (PowerDNS, rollout, HA failover); api-product = gateway API keys, plans, usage, JWT and gateway-only through the gateway-auth of the region; org-transfer = organization export with binding data and images, download, chunked import, plan, apply with data restore and deploy}
+        {--suite=all : all = every phase incl. runtime plugins; runtimes = runtime plugin functions only; supply-chain = SBOM / scan / signing / admission; ai = model services, offline snapshots, bindings, GPU; bindings = bindings only (data services, KV / object / Postgres / external); sandbox-api = Sandbox API only; wasm = WebAssembly support + Wasm runtimes; observability = tracing backend, traces, replay; reconcile = region:reconcile tracing backend and registry pre-warm steps; network = private ingress (cluster-local routes off the LoadBalancer), NetworkPolicies, an earlier release\'s region moved under load; internal-network = the authz, allow lists, cross-organization grants, access modes, audit mode, an earlier release\'s region moved under load; git-deploy = git remote, Forgejo push and previews; images = uploaded images (tar + wasm), CaaS from an upload, wasm-exec in C and Q; admission = project stop / resume, region status blocks, fixed-region allocations (Billing module on); deploy-strategies = blue-green (test URL, promote, warm previous, rollback) and canary (traffic split, automatic promotion, abort) rollouts; region-move = the region moved to the cluster of --move-kubeconfig and rolled back (rebuilds, report, restored state, secret values in the region\'s Secret and OpenBao copied there and back, references); runtime-patches = signed patch feed, workloads by digest, deadline migration with rollback, apply and pin; runtime-sources = the RunR signed catalog, a signed OCI catalog source (orphaned runtime keeps running), the sample executor repository as an in-cluster Git source, a private image (RUNR_E2E_PRIVATE_*), a sunset refusing deploys and saves; warmer = the timed warmer: schedule preview, min-scale rendered into the template, PodAutoscaler patches without a restart, schedule turned off and redeployed; triggers = trigger lists: webhook inbox, dead letter + replay, platform events, schedule and topics through the event gateway; trigger-sources = S3 object events on the region object store, Kafka, NATS JetStream, RabbitMQ, MQTT, Postgres CDC with the slot cleanup, IMAP and a schedule time zone through the event gateway; secrets = pass-through secret values, secrets:move-to-region, External Secrets Operator with an OpenBao reference; environments = staging next to production, promotion, rollback restoring the config; cert-manager = cert-manager installed with Serving, the region CA issuer, HTTPS of a custom domain, removal and reinstall; global-projects = a global project in the e2e region and a second region on the cluster of --global-kubeconfig (PowerDNS, rollout, HA failover); api-product = gateway API keys, plans, usage, JWT and gateway-only through the gateway-auth of the region; org-transfer = organization export with binding data and images, download, chunked import, plan, apply with data restore and deploy}
         {--sandbox-kata : sandbox-api suite: also install Kata and run a Kata sandbox (nodes with /dev/kvm)}
         {--sandbox-cases= : sandbox-api suite: "kata" runs only the Kata cases, their setup and the quota case (or RUNR_E2E_SANDBOX_CASES)}
         {--examples=/tmp/runr-examples : examples/runtimes copied into the container (runtime plugin suite)}
         {--hf-serve-image= : AI suite: hf-serve image of the CPU model services (default ghcr.io/brf-tech/runr/hf-serve:1.1.1, or RUNR_E2E_HF_SERVE_IMAGE)}
         {--ai-tei : AI suite: also serve sentence-transformers/all-MiniLM-L6-v2 on TEI (CPU), or RUNR_E2E_TEI=1}
+        {--ml : main suite: also a function of each ML runtime offered (the CPU build of its default version: a tensor operation over HTTP), or RUNR_E2E_ML=1}
         {--ai-gpu : AI suite: also install GPU support and run a GPU CaaS project (needs a GPU visible to the nodes), or RUNR_E2E_GPU=1}
         {--gpu-image= : AI suite: image of the GPU CaaS check, built from examples/ai/gpu-caas (or RUNR_E2E_GPU_IMAGE)}
         {--gpu-node=* : AI suite: the GPU nodes GPU support is restricted to (repeatable; default: detected)}
@@ -315,6 +318,16 @@ class E2eTestCommand extends Command
         // Region move only: to the cluster of --move-kubeconfig and back (E2eTestRegionMoveTrait)
         if ($this->option('suite') === 'region-move') {
             $tests = $this->runRegionMoveSuite($regionId);
+            $this->printResultsTable($tests, $startTime);
+            $this->saveResultsMarkdown($tests, $startTime);
+
+            return $this->countResults($tests)['failed'] > 0 ? 1 : 0;
+        }
+
+        // Runtime sources only: RunR's catalog, an OCI catalog, a Git source in the cluster, a private
+        // image, the refusal after a sunset (E2eTestRuntimeSourcesTrait)
+        if ($this->option('suite') === 'runtime-sources') {
+            $tests = $this->runRuntimeSourcesSuite($regionId);
             $this->printResultsTable($tests, $startTime);
             $this->saveResultsMarkdown($tests, $startTime);
 

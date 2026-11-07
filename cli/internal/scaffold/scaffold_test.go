@@ -43,6 +43,10 @@ func TestStarterMatchesTheAPIHandlerCheck(t *testing.T) {
 		"nodejs": "exports.handler",
 		"go":     "func Handler(",
 		"php":    "function handler(",
+		"java":   "public static Object handler(",
+		"dotnet": "public static object Handler(",
+		"ruby":   "def handler(",
+		"bun":    "export async function handler(",
 	}
 	for rt, want := range checks {
 		if !strings.Contains(runtimes.Starter(rt), want) {
@@ -87,5 +91,25 @@ func TestRefusesOverwriteButKeepsGitignore(t *testing.T) {
 	}
 	if _, err := Write(Options{Dir: t.TempDir(), Name: "1bad"}); err == nil {
 		t.Fatal("invalid name accepted")
+	}
+}
+
+func TestEntryFilesOfJavaAndDotnet(t *testing.T) {
+	// Java's public class Main lives in Main.java; .NET's handler is Function.Handler
+	for rt, want := range map[string][2]string{"java": {"Main.java", "Main.handler"}, "dotnet": {"Function.cs", "Function.Handler"}, "ruby": {"main.rb", "main.handler"}} {
+		dir := filepath.Join(t.TempDir(), "p")
+		if _, err := Write(Options{Dir: dir, Name: "demo", Type: "faas", Runtime: rt}); err != nil {
+			t.Fatal(err)
+		}
+		pf, err := projectfile.Load(filepath.Join(dir, "runr.yaml"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if pf.MainFile() != want[0] || pf.Handler != want[1] {
+			t.Fatalf("%s: %s, handler %s", rt, pf.MainFile(), pf.Handler)
+		}
+		if _, err := os.Stat(filepath.Join(dir, want[0])); err != nil {
+			t.Fatalf("%s: %v", rt, err)
+		}
 	}
 }

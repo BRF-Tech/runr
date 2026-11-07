@@ -12,6 +12,7 @@ use App\Models\UploadedImage;
 use App\Services\FunctionBuildService;
 use App\Services\Images\ImageOwner;
 use App\Services\Images\UploadedImages;
+use App\Services\Runtimes\Sources\BuiltinOffer;
 use App\Services\Wasm\WasmRuntimes;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -31,6 +32,9 @@ class RuntimeRegistry
 {
     /** @var array<string, Runtime|false> */
     private array $rows = [];
+
+    /** @var list<string>|null */
+    private ?array $builtinIds = null;
 
     public function __construct(
         private BuiltinCatalog $catalog,
@@ -81,6 +85,7 @@ class RuntimeRegistry
 
     public function forget(?string $id = null): void
     {
+        $this->builtinIds = null;
         if ($id === null) {
             $this->rows = [];
         } else {
@@ -88,13 +93,30 @@ class RuntimeRegistry
         }
     }
 
-    /** Built-in ids offered on this platform (EXECUTOR_RUNTIMES, default: the whole catalog). */
+    /**
+     * Built-in ids offered on this platform: the catalog in use (RunR's catalog, else the bundle)
+     * filtered by the platform setting Built-in runtimes (BuiltinOffer; first default
+     * EXECUTOR_RUNTIMES, empty: the whole catalog — a runtime the catalog gains is offered too).
+     */
     public function builtinIds(): array
     {
-        $enabled = config('executor.runtimes', []);
+        if ($this->builtinIds !== null) {
+            return $this->builtinIds;
+        }
+
+        $enabled = BuiltinOffer::ids();
         $ids = array_keys($this->catalog->all());
 
-        return $enabled ? array_values(array_intersect($ids, $enabled)) : $ids;
+        return $this->builtinIds = $enabled !== null ? array_values(array_intersect($ids, $enabled)) : $ids;
+    }
+
+    /**
+     * Ids a registration or a runtime source other than RunR's catalog can not take: the built-in
+     * catalog in use and the one the API image ships.
+     */
+    public function isReservedId(string $id): bool
+    {
+        return $this->catalog->has($id) || array_key_exists($id, $this->catalog->bundled());
     }
 
     /**
@@ -115,7 +137,7 @@ class RuntimeRegistry
                 ->orWhere('source', Runtime::SOURCE_PLATFORM)
                 ->orWhere(fn ($c) => $c->where('source', Runtime::SOURCE_CUSTOM)
                     ->when($tenantId !== null, fn ($t) => $t->where(fn ($w) => $w->whereNull('tenant_id')->orWhere('tenant_id', $tenantId)))))
-            ->when(! $includeDisabled, fn ($q) => $q->where('is_enabled', true))
+            ->when(! $includeDisabled, fn ($q) => $q->where('is_enabled', true)->whereNull('orphaned_at'))
             ->get()
             ->filter(fn (Runtime $r) => $this->manifest($r->id) !== null && $r->availableIn($regionId)
                 // WebAssembly runtimes: only where the region's WebAssembly support has their shim
@@ -139,8 +161,20 @@ class RuntimeRegistry
         if ($this->catalog->has($id) && ! in_array($id, $this->builtinIds(), true)) {
             return __('api.runtimes.unknown', ['id' => $id]);
         }
+        // A built-in RunR's catalog no longer has (its row keeps the last manifest for its projects)
+        if ($row && $row->isBuiltin() && ! $this->catalog->has((string) $id)) {
+            return __('api.runtimes.not_offered', ['id' => $id]);
+        }
         if ($row && ! $row->is_enabled) {
             return __('api.runtimes.disabled', ['name' => $manifest->name()]);
+        }
+        // Lifecycle (docs/runtimes.md#lifecycle): no new project on a runtime that left its source
+        // or whose sunset came; their projects keep running until their versions end
+        if ($row && $row->isOrphaned()) {
+            return __('api.runtimes.orphaned', ['name' => $manifest->name()]);
+        }
+        if (RuntimeLifecycle::reached($manifest->sunset())) {
+            return __('api.runtimes.sunset', ['name' => $manifest->name(), 'date' => $manifest->sunset()]);
         }
         if ($row && $row->source === Runtime::SOURCE_CUSTOM && ($tenant = self::currentTenantId()) !== null
             && $row->tenant_id !== null && $row->tenant_id !== $tenant) {
@@ -326,19 +360,57 @@ class RuntimeRegistry
     }
 
     /**
-     * Images worth pre-pulling on every region node: runtimeImages() without the ML runtimes
-     * (category ml: PyTorch, TensorFlow and their GPU builds, several GB each), which the nodes
-     * their functions run on pull on first use, like custom runtimes and region builds.
+     * Images worth pre-pulling on every region node: the images the functions run on
+     * (prepullRunImages()).
      *
      * @return list<string>
      */
     public function prepullImages(): array
     {
-        return $this->activeImages(function (string $id) {
-            $manifest = $this->manifest($id);
+        return array_keys($this->prepullRunImages());
+    }
 
-            return ! WasmRuntimes::isWasm($manifest) && $manifest?->category() !== 'ml';
-        });
+    /**
+     * The image the functions of each active version of a built-in or platform runtime run on,
+     * for the node pre-pull, with the runtime it is of (a private source's credentials): the last
+     * stage of the function build (FunctionBuildService::stageImages()). That is the build's
+     * runImage for a runtime with a build section (.NET's chiseled runtime-deps, Go's Alpine,
+     * Java's own version image), the version image for one without (its dependency builds start
+     * from it too). Never the SDK or toolchain a build compiles with: Kaniko fetches that through
+     * the region registry, not from a node, and no function runs on it. Versions without a plain
+     * image (custom runtimes, region builds), the WebAssembly runtimes (their image is the build
+     * toolchain) and the ML runtimes (category ml: PyTorch, TensorFlow and their GPU builds,
+     * several GB each) are left out: the nodes their functions run on pull them on first use.
+     *
+     * @return array<string, string> image => runtime id
+     */
+    public function prepullRunImages(): array
+    {
+        $ids = array_merge(
+            $this->builtinIds(),
+            Runtime::where('source', Runtime::SOURCE_PLATFORM)->where('is_enabled', true)->pluck('id')->all(),
+        );
+
+        $images = [];
+        foreach ($ids as $id) {
+            $manifest = $this->manifest($id);
+            if ($manifest === null || WasmRuntimes::isWasm($manifest) || $manifest->category() === 'ml') {
+                continue;
+            }
+            $versions = ExecutorImage::where('is_active', true)
+                ->where('runtime', $id)
+                ->where('docker_image', '!=', '')
+                ->orderBy('id')
+                ->get(['version', 'docker_image']);
+            foreach ($versions as $executor) {
+                [, $run] = FunctionBuildService::stageImages($manifest, ['version' => $executor->version, 'image' => (string) $executor->docker_image]);
+                if ($run !== '' && ! isset($images[$run])) {
+                    $images[$run] = $id;
+                }
+            }
+        }
+
+        return $images;
     }
 
     /**
@@ -398,7 +470,14 @@ class RuntimeRegistry
                 continue;
             }
 
-            array_push($images, ...FunctionBuildService::stageImages($manifest, ['version' => $executor->version, 'image' => $image]));
+            // a private image of a runtime source is not fetched through the pull-through (it has no
+            // credentials); its builds pull it themselves (RuntimePullSecrets)
+            $pullSecrets = app(RuntimePullSecrets::class);
+            foreach (FunctionBuildService::stageImages($manifest, ['version' => $executor->version, 'image' => $image]) as $stage) {
+                if ($pullSecrets->forImage($id, $stage) === null) {
+                    $images[] = $stage;
+                }
+            }
         }
 
         return array_values(array_unique(array_filter($images)));
@@ -443,14 +522,24 @@ class RuntimeRegistry
 
     // ── Registration ────────────────────────────────────────────────────────
 
-    /** Rows of the built-in catalog (state only: enabled, regions). */
+    /**
+     * Rows of the built-in catalog in use (enabled, regions). A built-in row that RunR's catalog
+     * does not manage (no source_id: the catalog the API image ships is in use) also gets the
+     * catalog's manifest, as the rows of RunR's catalog have it (RuntimeSourceSync). Here the
+     * catalog wins over the row (manifest()). A release whose own catalog lacks the runtime reads
+     * the row instead: after a `helm rollback` to 0.6.7, which knows neither Java, .NET, Ruby nor
+     * Bun, their projects keep deploying (docs/upgrade.md#back-to-067).
+     */
     public function syncBuiltins(): void
     {
         foreach ($this->catalog->all() as $id => $manifest) {
-            Runtime::firstOrCreate(
+            $row = Runtime::firstOrCreate(
                 ['id' => $id],
-                ['name' => $manifest->name(), 'source' => Runtime::SOURCE_BUILTIN, 'is_enabled' => true],
+                ['name' => $manifest->name(), 'source' => Runtime::SOURCE_BUILTIN, 'is_enabled' => true, 'manifest' => $manifest->toArray()],
             );
+            if (! $row->wasRecentlyCreated && $row->isBuiltin() && $row->source_id === null && $row->manifest != $manifest->toArray()) {
+                $row->forceFill(['manifest' => $manifest->toArray()])->save();
+            }
         }
         $this->forget();
     }
@@ -467,7 +556,10 @@ class RuntimeRegistry
         $manifest = $this->parseForSource($source, $text, $files);
         $id = $manifest->id();
 
-        if ($this->catalog->has($id) || Runtime::whereKey($id)->exists()) {
+        if ($this->isReservedId($id)) {
+            throw ValidationException::withMessages(['manifest' => [__('api.runtimes.id_reserved', ['id' => $id])]]);
+        }
+        if (Runtime::whereKey($id)->exists()) {
             throw ValidationException::withMessages(['manifest' => [__('api.runtimes.id_taken', ['id' => $id])]]);
         }
         $this->checkUploads($manifest, $source, $regions, self::currentTenantId());
@@ -502,6 +594,13 @@ class RuntimeRegistry
      */
     public function update(Runtime $runtime, ?string $text, ?array $files, array $state): Runtime
     {
+        if (($text !== null || $files !== null) && $runtime->isSourceManaged()) {
+            throw ValidationException::withMessages(['manifest' => [__('api.runtimes.source_managed', [
+                'name' => $runtime->name,
+                'source' => (string) $runtime->runtimeSource?->name,
+            ])]]);
+        }
+
         return DB::transaction(function () use ($runtime, $text, $files, $state) {
             if (($text !== null || $files !== null) && ! $runtime->isBuiltin()) {
                 $files = $files ?? ($runtime->files ?? []);
@@ -580,6 +679,9 @@ class RuntimeRegistry
         ExecutorImage::where('runtime', $runtime->id)
             ->whereNotIn('version', $listed)
             ->update(['is_active' => false, 'is_default' => false]);
+
+        // deprecated / sunset of the manifest (and of an orphaned runtime) onto the versions
+        app(RuntimeLifecycle::class)->apply($runtime, $manifest);
     }
 
     /**

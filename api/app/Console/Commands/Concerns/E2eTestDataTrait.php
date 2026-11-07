@@ -4,6 +4,38 @@ namespace App\Console\Commands\Concerns;
 
 trait E2eTestDataTrait
 {
+    /**
+     * The ML cases' handlers (E2eTestRunnerTrait::mlTestConfigs()): the framework imported and a
+     * matrix product computed, [[1, 2], [3, 4]] squared sums to 54; anything else raises (500).
+     */
+    private static function mlCode(): array
+    {
+        return [
+            'pytorch' => <<<'PY'
+import torch
+
+
+def handler(event, context):
+    m = torch.tensor([[1.0, 2.0], [3.0, 4.0]])
+    total = float((m @ m).sum())
+    if total != 54.0:
+        raise RuntimeError(f"torch: [[1, 2], [3, 4]] squared sums to {total}, not 54")
+    return {"statusCode": 200, "body": {"runtime": "pytorch", "framework": torch.__version__, "sum": total}}
+PY,
+            'tensorflow' => <<<'PY'
+import tensorflow as tf
+
+
+def handler(event, context):
+    m = tf.constant([[1.0, 2.0], [3.0, 4.0]])
+    total = float(tf.reduce_sum(tf.matmul(m, m)))
+    if total != 54.0:
+        raise RuntimeError(f"tensorflow: [[1, 2], [3, 4]] squared sums to {total}, not 54")
+    return {"statusCode": 200, "body": {"runtime": "tensorflow", "framework": tf.__version__, "sum": total}}
+PY,
+        ];
+    }
+
     private static function xaasEchoCode(): array
     {
         return [
@@ -62,6 +94,59 @@ function handler($event, $context): array
     ]];
 }
 PHP,
+            'java' => <<<'JAVA'
+import java.util.LinkedHashMap;
+import java.util.Map;
+
+public class Main {
+    public static Object handler(Map<String, Object> event, Map<String, Object> context) {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("runtime", "java");
+        body.put("method", context.get("method"));
+        body.put("path", context.get("path"));
+        body.put("headers", context.getOrDefault("headers", Map.of()));
+        body.put("body", event);
+        return Map.of("statusCode", 200, "body", body);
+    }
+}
+JAVA,
+            'dotnet' => <<<'CS'
+using System.Collections.Generic;
+using System.Text.Json.Nodes;
+
+public static class Function
+{
+    public static object Handler(JsonNode? input, IDictionary<string, object?> context)
+    {
+        context.TryGetValue("method", out var method);
+        context.TryGetValue("path", out var path);
+        context.TryGetValue("headers", out var headers);
+        return new
+        {
+            statusCode = 200,
+            body = new { runtime = "dotnet", method, path, headers = headers ?? new Dictionary<string, string>(), body = input },
+        };
+    }
+}
+CS,
+            'ruby' => <<<'RB'
+def handler(event, context)
+  { statusCode: 200, body: {
+    runtime: "ruby", method: context["method"], path: context["path"],
+    headers: context["headers"] || {}, body: event,
+  } }
+end
+RB,
+            'bun' => <<<'TS'
+type Context = { method?: string; path?: string; headers?: Record<string, string> };
+
+export async function handler(event: unknown, context: Context) {
+  return {
+    statusCode: 200,
+    body: { runtime: 'bun', method: context.method, path: context.path, headers: context.headers ?? {}, body: event },
+  };
+}
+TS,
         ];
     }
 
@@ -90,6 +175,54 @@ PHP,
                 'files' => [
                     ['name' => 'main.php', 'content' => self::xaasEchoCode()['php']],
                     ['name' => 'composer.json', 'content' => '{"require":{"predis/predis":"^2.0"}}'],
+                ],
+            ],
+            'java' => [
+                'files' => [
+                    ['name' => 'Main.java', 'content' => self::xaasEchoCode()['java']],
+                    ['name' => 'pom.xml', 'content' => <<<'XML'
+<project xmlns="http://maven.apache.org/POM/4.0.0">
+  <modelVersion>4.0.0</modelVersion>
+  <groupId>sh.runr</groupId>
+  <artifactId>function</artifactId>
+  <version>1.0.0</version>
+  <dependencies>
+    <dependency>
+      <groupId>redis.clients</groupId>
+      <artifactId>jedis</artifactId>
+      <version>8.0.2</version>
+    </dependency>
+  </dependencies>
+</project>
+XML],
+                ],
+            ],
+            'dotnet' => [
+                'files' => [
+                    ['name' => 'Function.cs', 'content' => self::xaasEchoCode()['dotnet']],
+                    ['name' => 'Function.csproj', 'content' => <<<'XML'
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="StackExchange.Redis" Version="3.4.31" />
+  </ItemGroup>
+</Project>
+XML],
+                ],
+            ],
+            'ruby' => [
+                'files' => [
+                    ['name' => 'main.rb', 'content' => self::xaasEchoCode()['ruby']],
+                    ['name' => 'Gemfile', 'content' => "source \"https://rubygems.org\"\n\ngem \"redis\", \"~> 6.0\"\n"],
+                ],
+            ],
+            'bun' => [
+                'files' => [
+                    ['name' => 'main.ts', 'content' => self::xaasEchoCode()['bun']],
+                    ['name' => 'package.json', 'content' => '{"dependencies":{"ioredis":"^6"}}'],
                 ],
             ],
         ];

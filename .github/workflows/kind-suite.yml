@@ -1,0 +1,199 @@
+# One runtime/ci.sh Kind suite on a standard GitHub-hosted runner with its own Docker, called by
+# e2e.yml (the weekly Kind e2e of this repository) and deps-test.yml (a dependency bump of next,
+# from the bundle its bump job made). One suite per runner: every suite starts its own Kind
+# cluster and Compose stack and deletes them at its end.
+#
+# With `kvm`, the runner's /dev/kvm is opened to the Kind nodes and the job says plainly whether
+# hardware virtualization works there (vmx / svm and a /dev/kvm that opens, as
+# lib/test-sandbox-api.sh asks); a suite that needs it fails at once when it does not.
+#
+# `result-name` uploads the outcome (status, the log's end, the e2e's failures) as an artifact of
+# that name, for the caller's report.
+name: Kind suite
+
+on:
+  workflow_call:
+    inputs:
+      command:
+        description: 'runtime/ci.sh command and its flags (test, test-network, test-helm-upgrade --from=v0.6.7, …)'
+        type: string
+        default: test
+      k8s:
+        description: 'Kubernetes version of the Kind cluster (a kindest-node tag of the reqs mirror)'
+        type: string
+        default: '1.32.0'
+      workers:
+        description: 'Kind worker nodes (1: a runner short of disk)'
+        type: string
+        default: '2'
+      kvm:
+        description: 'Open /dev/kvm to the Kind nodes and require hardware virtualization'
+        type: boolean
+        default: false
+      env:
+        description: 'More environment of the suite: NAME=VALUE pairs separated by blanks'
+        type: string
+        default: ''
+      tree-artifact:
+        description: 'An artifact with repo.bundle to test instead of this checkout (deps-test.yml)'
+        type: string
+        default: ''
+      ref:
+        description: 'The ref of the bundle to test'
+        type: string
+        default: ''
+      result-name:
+        description: 'Name of the result artifact (empty: none)'
+        type: string
+        default: ''
+      timeout:
+        description: 'Minutes the suite may take'
+        type: number
+        default: 150
+
+permissions:
+  contents: read
+
+jobs:
+  suite:
+    name: ci.sh ${{ inputs.command }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: ${{ inputs.timeout }}
+    env:
+      # the first Kind with node images of Kubernetes 1.34 and 1.35, which Knative 1.22 and newer need
+      KIND_VERSION: v0.31.0
+      KIND_SHA256: eb244cbafcc157dff60cf68693c14c9a75c4e6e6fedaf9cd71c58117cb93e3fa
+      KUBECTL_VERSION: v1.32.0
+      KUBECTL_SHA256: 646d58f6d98ee670a71d9cdffbf6625aeea2849d567f214bc43a35f8ccb7bf70
+      CLOUD_PROVIDER_KIND_VERSION: v0.10.0
+      CLOUD_PROVIDER_KIND_SHA256: 8b88095d72f8dbb4ce65ecf34e4bde5c1c8a3de90c65e66dda7dcd65fba2d58b
+      # the helm of the API image (api/Dockerfile.prod): test-helm-upgrade and the bot's checks
+      HELM_VERSION: v3.16.0
+      HELM_SHA256: 327cfbc7ddc5a3eb644039ceb0cff66394628654c4f5a76bf715ed15b893983b
+      K8S_VERSION: ${{ inputs.k8s }}
+      KIND_WORKERS: ${{ inputs.workers }}
+      SUITE_COMMAND: ${{ inputs.command }}
+      SUITE_ENV: ${{ inputs.env }}
+      # the API image is built before the stack starts
+      E2E_API_WAIT: '300'
+    steps:
+      - if: inputs.tree-artifact == ''
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - if: inputs.tree-artifact != ''
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: ${{ inputs.tree-artifact }}
+          path: ${{ runner.temp }}/tree
+      # the bundle's history and tags too: test-helm-upgrade installs the release it names
+      - name: The bundle's tree
+        if: inputs.tree-artifact != ''
+        env:
+          REF: ${{ inputs.ref }}
+        run: |
+          git clone -q --no-checkout "$RUNNER_TEMP/tree/repo.bundle" .
+          git checkout -q --detach "refs/remotes/origin/${REF}"
+          git log -1 --format='%H %s'
+      - name: Suite, Kubernetes version and environment
+        run: |
+          if ! [[ "$K8S_VERSION" =~ ^1\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::k8s '${K8S_VERSION}' is not a Kubernetes version (1.32.0)"
+            exit 1
+          fi
+          command_re='^test(-[a-z-]+)?( [A-Za-z0-9=:,./{}_-]+)*$'
+          if ! [[ "$SUITE_COMMAND" =~ $command_re ]]; then
+            echo "::error::command '${SUITE_COMMAND}' is not a runtime/ci.sh test command"
+            exit 1
+          fi
+          pair_re='^[A-Z][A-Z0-9_]*=[A-Za-z0-9=:,./_-]*$'
+          for pair in $SUITE_ENV; do
+            if ! [[ "$pair" =~ $pair_re ]]; then
+              echo "::error::env '${pair}' is not NAME=VALUE"
+              exit 1
+            fi
+            echo "$pair" >> "$GITHUB_ENV"
+          done
+      # Every Kind node holds the region's images: room for them (SDKs the job does not use)
+      - name: Free disk space
+        run: |
+          df -h /
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/.ghcup /opt/hostedtoolcache/CodeQL
+          df -h /
+      # three Kind nodes run more inotify watchers than the runner's defaults allow (kind's known issues)
+      - name: inotify limits for Kind
+        run: sudo sysctl -w fs.inotify.max_user_watches=524288 fs.inotify.max_user_instances=512
+      # The Kind nodes are privileged containers: they see the runner's /dev/kvm. The runner user
+      # needs it too (lib/test-sandbox-api.sh opens it to decide), which a udev rule gives.
+      - name: Hardware virtualization (/dev/kvm)
+        if: inputs.kvm
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules >/dev/null
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm || true
+          flags=$(grep -owE 'vmx|svm' /proc/cpuinfo | sort -u | paste -sd, - || true)
+          if [ -n "$flags" ] && ( exec 3<>/dev/kvm ) 2>/dev/null; then
+            echo "Hardware virtualization: yes (${flags}, /dev/kvm opens)"
+            echo "### Hardware virtualization: yes (${flags}, /dev/kvm opens)" >> "$GITHUB_STEP_SUMMARY"
+          else
+            msg="This runner has no hardware virtualization (CPU flags: ${flags:-none}; /dev/kvm: $(ls -l /dev/kvm 2>&1)): Kata cannot run on a GitHub-hosted runner"
+            echo "$msg" >> "$RUNNER_TEMP/suite.log"
+            echo "::error::${msg}"
+            echo "### Hardware virtualization: no (CPU flags: ${flags:-none}): Kata cannot run on this runner" >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+      - name: Install kind, kubectl, cloud-provider-kind and helm (pinned, checksums verified)
+        run: |
+          curl -fsSL -o /tmp/kind "https://github.com/kubernetes-sigs/kind/releases/download/${KIND_VERSION}/kind-linux-amd64"
+          echo "${KIND_SHA256}  /tmp/kind" | sha256sum -c -
+          curl -fsSL -o /tmp/kubectl "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/amd64/kubectl"
+          echo "${KUBECTL_SHA256}  /tmp/kubectl" | sha256sum -c -
+          curl -fsSL -o /tmp/cpk.tar.gz "https://github.com/kubernetes-sigs/cloud-provider-kind/releases/download/${CLOUD_PROVIDER_KIND_VERSION}/cloud-provider-kind_${CLOUD_PROVIDER_KIND_VERSION#v}_linux_amd64.tar.gz"
+          echo "${CLOUD_PROVIDER_KIND_SHA256}  /tmp/cpk.tar.gz" | sha256sum -c -
+          curl -fsSL -o /tmp/helm.tar.gz "https://get.helm.sh/helm-${HELM_VERSION}-linux-amd64.tar.gz"
+          echo "${HELM_SHA256}  /tmp/helm.tar.gz" | sha256sum -c -
+          sudo install -m 0755 /tmp/kind /usr/local/bin/kind
+          sudo install -m 0755 /tmp/kubectl /usr/local/bin/kubectl
+          sudo tar -xzf /tmp/cpk.tar.gz -C /usr/local/bin cloud-provider-kind
+          sudo tar -xzf /tmp/helm.tar.gz -C /usr/local/bin --strip-components=1 linux-amd64/helm
+          kind version && kubectl version --client && helm version --short && docker info --format '{{.ServerVersion}} {{.NCPU}} CPUs {{.MemTotal}} bytes'
+      # Kind (kindest-node of the reqs mirror) + Knative + the API stack on this runner's Docker
+      # (E2E_DOCKER_ADDR stays localhost); the run deletes its cluster and stack at its end
+      - name: runtime/ci.sh ${{ inputs.command }}
+        run: |
+          set -o pipefail
+          read -r -a args <<< "$SUITE_COMMAND"
+          bash runtime/ci.sh "${args[@]}" 2>&1 | tee "$RUNNER_TEMP/suite.log"
+      # php artisan test:e2e writes its results table to api/storage/e2e-results-<time>.md
+      - name: Results
+        if: ${{ !cancelled() }}
+        run: |
+          shopt -s nullglob
+          for f in api/storage/e2e-results-*.md; do cat "$f" >> "$GITHUB_STEP_SUMMARY"; done
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: ${{ !cancelled() }}
+        with:
+          name: ${{ inputs.result-name != '' && format('e2e-results-{0}', inputs.result-name) || 'e2e-kind-results' }}
+          path: api/storage/e2e-results-*.md
+          if-no-files-found: ignore
+          retention-days: 7
+      # the outcome for the caller: also when a step failed or the run was cancelled
+      - name: Result
+        if: always() && inputs.result-name != ''
+        env:
+          JOB_STATUS: ${{ job.status }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/result"
+          echo "$JOB_STATUS" > "$RUNNER_TEMP/result/status"
+          echo "$SUITE_COMMAND" > "$RUNNER_TEMP/result/command"
+          tail -n 60 "$RUNNER_TEMP/suite.log" > "$RUNNER_TEMP/result/tail.txt" 2>/dev/null || true
+          shopt -s nullglob
+          for f in api/storage/e2e-results-*.md; do
+            awk '/^## Failures/ { on = 1; next } on && /^## / { exit } on && NF { print }' "$f" >> "$RUNNER_TEMP/result/failures.md"
+          done
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always() && inputs.result-name != ''
+        with:
+          name: ${{ inputs.result-name }}
+          path: ${{ runner.temp }}/result/
+          retention-days: 7

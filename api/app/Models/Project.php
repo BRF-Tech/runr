@@ -14,6 +14,7 @@ use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
+use Illuminate\Database\QueryException;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Str;
 
@@ -449,17 +450,27 @@ class Project extends Model
     }
 
     /**
-     * Check if the project's runtime version has reached end-of-life.
+     * Whether the project's runtime version has ended — its end of life or its sunset
+     * (docs/runtimes.md#lifecycle): saving and deploying are refused then. A project without a
+     * version runs the runtime's default one, which ends with the runtime's sunset.
      */
     public function isRuntimeEol(): bool
     {
-        if (! $this->runtime || ! $this->runtime_version) {
+        if (! $this->runtime || in_array($this->service_type, ['caas'], true)) {
             return false;
         }
 
-        $eolMap = ExecutorImage::eolMap();
-        $key = $this->runtime.':'.$this->runtime_version;
-        $eolAt = $eolMap[$key] ?? null;
+        try {
+            $version = $this->runtime_version ?: ExecutorImage::defaultVersion((string) $this->runtime);
+            if (! $version) {
+                return false;
+            }
+
+            $eolAt = ExecutorImage::eolMap()[$this->runtime.':'.$version] ?? null;
+        } catch (QueryException) {
+            // a connection without the runtime versions (a schema that is not the platform's)
+            return false;
+        }
 
         return $eolAt && Carbon::parse($eolAt)->isPast();
     }

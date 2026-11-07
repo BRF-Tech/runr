@@ -7,9 +7,10 @@ use App\Models\Notification;
 use App\Models\NotificationPreference;
 use App\Models\User;
 use App\Services\Observability\TenantScope;
+use App\Support\PlatformConnection;
+use App\Support\Rbac\PlatformOperators;
 use App\Support\Rbac\Rbac;
 use Illuminate\Support\Collection;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
 /**
@@ -17,8 +18,9 @@ use Illuminate\Support\Facades\Log;
  * CaptchaConfigAlert): type "infrastructure" — each recipient's notification preference for that
  * type applies (Account → Notifications) — to who can act on them:
  *
- *   the platform's protection    the platform administrators (users.is_admin), stored in the
- *                                central context
+ *   the platform's protection    the platform administrators (users.is_admin; single-tenant:
+ *                                the holders of platform.manage — PlatformOperators), stored in
+ *                                the central context
  *   an organization's own keys   its members whose own role grants settings.manage (the page's
  *                                permission; group roles are not resolved), stored in its schema
  *                                where their notifications live
@@ -67,12 +69,7 @@ class CaptchaNotifier
     /** @return Collection<int, User> */
     private function platformAdmins(): Collection
     {
-        $connection = config('tenancy.enabled') && config('database.connections.central') ? 'central' : null;
-        if (! DB::connection($connection)->getSchemaBuilder()->hasColumn('users', 'is_admin')) {
-            return new Collection;
-        }
-
-        return User::on($connection)->where('is_admin', true)->get();
+        return app(PlatformOperators::class)->users(PlatformConnection::name());
     }
 
     /** @return Collection<int, User> the current organization's members holding settings.manage */

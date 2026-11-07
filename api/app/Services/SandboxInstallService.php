@@ -55,6 +55,14 @@ class SandboxInstallService
 
     public int $kataPollSeconds = 5;
 
+    /**
+     * How long an install waits for Knative's webhook to accept runtimeClassName once the feature
+     * is switched on (awaitRuntimeClassFeature), and how often it asks (tests shorten them).
+     */
+    public int $runtimeClassFeatureSeconds = 120;
+
+    public int $runtimeClassFeaturePollSeconds = 2;
+
     /** What installing Kata does to the nodes (install API response, console warning). */
     public const KATA_INSTALL_WARNING = 'Installing Kata Containers restarts the container runtime on every target node '
         .'(containerd, or the k3s / RKE2 service that runs it). Running pods keep running, except Kata pods where Kata is '
@@ -227,6 +235,7 @@ class SandboxInstallService
             }
 
             $this->enableRuntimeClassFeature($k8s, $region);
+            $log($this->awaitRuntimeClassFeature($k8s, $region, KataRuntime::runtimeClass($hypervisors[0])));
 
             $log('Configuring Cilium for sandbox compatibility...');
             $this->ensureCiliumSandboxCompat($k8s, $region);
@@ -1196,6 +1205,7 @@ class SandboxInstallService
             $k8s->applyClusterResource($this->buildGvisorRuntimeClass());
 
             $this->enableRuntimeClassFeature($k8s, $region);
+            $this->appendLog($region, 'sandbox_gvisor_status_message', $this->awaitRuntimeClassFeature($k8s, $region, 'gvisor'));
 
             $this->appendLog($region, 'sandbox_gvisor_status_message', 'Configuring Cilium for sandbox compatibility...');
             $this->ensureCiliumSandboxCompat($k8s, $region);
@@ -1396,6 +1406,49 @@ class SandboxInstallService
         } else {
             $k8s->strategicMergePatch('v1', 'ConfigMap', 'config-features', $servingNs, ['data' => $feature]);
         }
+    }
+
+    /**
+     * Waits until Knative's webhook accepts a Service with runtimeClassName and returns the line
+     * for the step log. The KnativeServing patch of enableRuntimeClassFeature() reaches the webhook
+     * a moment later (the operator writes config-features, the webhook's informer reads it); until
+     * then it refuses such a Service ("must not set the field(s): spec.template.spec.runtimeClassName"),
+     * and a sandboxed function deployed right after "ready" failed to deploy (0.6.8 final test: 2 s
+     * after the install). A dry-run create of a Service with this RuntimeClass, which stores nothing,
+     * says when it is accepted. Another answer (no Knative Serving, no permission) ends the wait at
+     * once; a refusal that lasts is a warning, not an error: the RuntimeClass itself works.
+     */
+    private function awaitRuntimeClassFeature(KubernetesClient $k8s, KnativeRegion $region, string $runtimeClass): string
+    {
+        $servingNs = $region->knative_serving_namespace ?? 'knative-serving';
+        $probe = [
+            'apiVersion' => 'serving.knative.dev/v1',
+            'kind' => 'Service',
+            'metadata' => ['name' => 'runr-runtimeclass-check'],
+            'spec' => ['template' => ['spec' => [
+                'runtimeClassName' => $runtimeClass,
+                'containers' => [['image' => 'ghcr.io/brf-tech/runr/reqs/nginx:1.27-alpine']],
+            ]]],
+        ];
+
+        $started = time();
+        $error = null;
+        $accepted = $this->waitFor(function () use ($k8s, $probe, $servingNs, &$error) {
+            $error = $k8s->dryRunCreate($probe, $servingNs);
+
+            // 409: a Service of that name exists, so admission let it through
+            return $error === null || str_starts_with($error, 'HTTP 409') || ! str_contains($error, 'runtimeClassName');
+        }, $this->runtimeClassFeatureSeconds, $this->runtimeClassFeaturePollSeconds);
+
+        if ($accepted && ($error === null || str_starts_with($error, 'HTTP 409'))) {
+            return 'Knative accepts runtimeClassName '.$runtimeClass.' (after '.(time() - $started).' s)';
+        }
+        if ($accepted) {
+            return "Knative's runtimeClassName check left out: {$error}";
+        }
+
+        return "WARNING: Knative still refuses runtimeClassName after {$this->runtimeClassFeatureSeconds} s"
+            .($error !== null ? " ({$error})" : '').': a sandboxed function deploys once Knative Serving reads config-features';
     }
 
     /**

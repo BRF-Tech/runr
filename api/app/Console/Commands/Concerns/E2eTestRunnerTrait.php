@@ -65,6 +65,15 @@ trait E2eTestRunnerTrait
             );
         }
 
+        // ML runtimes (--ml, RUNR_E2E_ML=1): one function of each, over HTTP. Off by default: their
+        // images (pytorch 0.4 GiB, tensorflow 0.5 GiB compressed) would share the region registry's
+        // 1 GiB volume with the rest of the run
+        if ($this->option('ml') || getenv('RUNR_E2E_ML') === '1') {
+            foreach (self::mlTestConfigs($images) as $name => $config) {
+                $tests[] = $this->makeTestEntry($name, $config, $regionId);
+            }
+        }
+
         // CaaS: nginx × HTTP only
         $tests[] = $this->makeTestEntry(
             'caas-nginx-http',
@@ -75,6 +84,39 @@ trait E2eTestRunnerTrait
             ],
             $regionId
         );
+
+        return $tests;
+    }
+
+    /**
+     * The ML cases: a function of each ML runtime with a default version (its CPU build; a -gpu
+     * version never is the default) that is not end-of-life, over HTTP, with the memory the
+     * framework needs to load. Its handler answers 200 only when a matrix product gives the
+     * expected sum (mlCode()), so the curl check fails with the framework.
+     *
+     * @param  list<array<string, mixed>>  $images  the executor images of /api/settings
+     * @return array<string, array<string, mixed>> test name => test config
+     */
+    public static function mlTestConfigs(array $images): array
+    {
+        $code = self::mlCode();
+        $tests = [];
+        foreach ($images as $img) {
+            if (! ($img['is_default'] ?? false) || ($img['gpu_required'] ?? false) || ! isset($code[$img['runtime'] ?? ''])) {
+                continue;
+            }
+            if (($img['eol_at'] ?? null) && $img['eol_at'] <= now()->toDateString()) {
+                continue;
+            }
+            $tests["ml-{$img['runtime']}-{$img['version']}-http"] = [
+                'service_type' => 'xaas',
+                'runtime' => $img['runtime'],
+                'runtime_version' => $img['version'],
+                'trigger_type' => 'http',
+                'code' => $code[$img['runtime']],
+                'project_config' => ['cpu' => '500m', 'memory_mb' => 1024],
+            ];
+        }
 
         return $tests;
     }

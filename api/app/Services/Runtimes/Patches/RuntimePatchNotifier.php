@@ -17,11 +17,13 @@ use App\Models\RuntimePatchNotice;
 use App\Models\User;
 use App\Services\Observability\Alerts\AlertManager;
 use App\Services\Observability\TenantScope;
+use App\Services\Runtimes\RuntimeRegistry;
+use App\Support\PlatformConnection;
 use App\Support\Rbac\PermissionCatalog;
+use App\Support\Rbac\PlatformOperators;
 use App\Support\Rbac\Rbac;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Collection;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
 
@@ -31,7 +33,8 @@ use Illuminate\Support\Facades\Mail;
  *  routine   nobody (the project shows a badge)
  *  security  in-app: the owners and last deployers of the affected projects, the organization's
  *            owners and admins
- *  critical  the same plus the platform administrators, in-app and by mail
+ *  critical  the same plus the platform administrators (single-tenant: the holders of
+ *            platform.manage — PlatformOperators), in-app and by mail
  *  zero-day  everyone above, whatever their notification preferences, plus the organization's
  *            alert channels (Slack, Teams, Telegram, webhook, e-mail — AlertManager)
  *
@@ -197,22 +200,26 @@ class RuntimePatchNotifier
     }
 
     /**
-     * A runtime version reaches its end of life in $weeks week(s): the owners of its projects and
-     * the organization's owners and admins (in every organization), once per threshold.
+     * A runtime version reaches its end — its end of life or its sunset, the earlier
+     * (ExecutorImage::endsAt(), docs/runtimes.md#lifecycle) — in $weeks week(s): the owners of its
+     * projects and the organization's owners and admins (in every organization), once per threshold
+     * and date. A project without a version runs the default one and hears about the default's end.
      *
      * @return int users told
      */
     public function eolReminder(ExecutorImage $image, int $weeks, bool $mail): int
     {
-        $subject = "eol:{$image->runtime}:{$image->version}:{$weeks}";
+        $ends = $image->endsAt();
+        $kind = $image->endKind() ?? 'eol';
+        // a moved date is a new reminder
+        $subject = $kind === 'eol'
+            ? "eol:{$image->runtime}:{$image->version}:{$weeks}"
+            : "sunset:{$image->runtime}:{$image->version}:{$weeks}:".$ends?->toDateString();
+        $notice = $kind === 'sunset' ? (string) (app(RuntimeRegistry::class)->manifest((string) $image->runtime)?->notice() ?? '') : '';
         $told = 0;
 
-        TenantScope::each(function (?string $tenantId) use ($image, $weeks, $mail, $subject, &$told) {
-            $projects = Project::query()
-                ->where('runtime', $image->runtime)
-                ->where('runtime_version', $image->version)
-                ->whereIn('service_type', RuntimePatches::CODE_TYPES)
-                ->get();
+        TenantScope::each(function (?string $tenantId) use ($image, $weeks, $mail, $subject, $kind, $ends, $notice, &$told) {
+            $projects = $this->projectsOn((string) $image->runtime, (string) $image->version, (bool) $image->is_default);
             if ($projects->isEmpty()) {
                 return;
             }
@@ -220,24 +227,91 @@ class RuntimePatchNotifier
             foreach ($this->audience($projects, withDeployers: false) as [$user, $own]) {
                 $values = [
                     'runtime' => $image->runtime.' '.$image->version,
-                    'date' => $image->eol_at?->toDateString(),
+                    'date' => $ends?->toDateString(),
                     'weeks' => $weeks,
                     'projects' => $own->pluck('name')->implode(', '),
+                    'notice' => $notice,
                 ];
                 $message = [
                     'type' => self::EOL_TYPE,
                     'level' => $weeks <= 1 ? 'critical' : 'warning',
-                    'title' => trans_choice('runtime_patches.notify.eol_title', $weeks, $values),
-                    'body' => trans_choice('runtime_patches.notify.eol_body', $weeks, $values),
-                    'data' => ['runtime' => $image->runtime, 'version' => $image->version, 'eol_at' => $image->eol_at?->toDateString(), 'weeks' => $weeks,
+                    'title' => trans_choice("runtime_patches.notify.{$kind}_title", $weeks, $values),
+                    'body' => trim((string) preg_replace('/ {2,}/', ' ', trans_choice("runtime_patches.notify.{$kind}_body", $weeks, $values))),
+                    'data' => ['runtime' => $image->runtime, 'version' => $image->version, 'eol_at' => $image->eol_at?->toDateString(),
+                        'sunset_at' => $image->sunset_at?->toDateString(), 'ends_at' => $ends?->toDateString(), 'ends_by' => $kind, 'weeks' => $weeks,
                         'projects' => $own->map(fn (Project $p) => ['id' => $p->id, 'name' => $p->name])->values()->all(),
-                        'event' => 'eol', 'path' => $own->count() === 1 ? '/projects/'.$own->first()->id : '/projects'],
+                        'event' => $kind, 'path' => $own->count() === 1 ? '/projects/'.$own->first()->id : '/projects'],
                 ];
                 $told += $this->notifyUser($subject, $user, $tenantId, $message, $mail, false) ? 1 : 0;
             }
         });
 
         return $told;
+    }
+
+    /**
+     * A runtime (or one version of it) became deprecated, or left its runtime source (orphaned):
+     * the owners of its projects and the organization's owners and admins, in-app, once per
+     * runtime / version and event (docs/runtimes.md#lifecycle).
+     *
+     * @param  array{date?: string|null, replacement?: string|null, notice?: string|null, source?: string|null}  $details
+     * @return int users told
+     */
+    public function lifecycleNotice(string $runtime, ?string $version, string $event, array $details = []): int
+    {
+        $subject = "{$event}:{$runtime}:".($version ?? '*').':'.($details['date'] ?? '');
+        $told = 0;
+        // the runtime versions are platform-wide: read before the organizations' schemas
+        $isDefault = $version !== null && ExecutorImage::defaultVersion($runtime) === $version;
+
+        TenantScope::each(function (?string $tenantId) use ($runtime, $version, $event, $details, $subject, $isDefault, &$told) {
+            $projects = $version === null
+                ? Project::query()->where('runtime', $runtime)->whereIn('service_type', RuntimePatches::CODE_TYPES)->get()
+                : $this->projectsOn($runtime, $version, $isDefault);
+            if ($projects->isEmpty()) {
+                return;
+            }
+
+            foreach ($this->audience($projects, withDeployers: false) as [$user, $own]) {
+                $values = [
+                    'runtime' => trim($runtime.' '.($version ?? '')),
+                    'date' => $details['date'] ?? '',
+                    'source' => $details['source'] ?? '',
+                    'notice' => $details['notice'] ?? '',
+                    'projects' => $own->pluck('name')->implode(', '),
+                    'replacement' => ! empty($details['replacement']) ? __('runtime_patches.notify.deprecated_replacement', ['replacement' => $details['replacement']]) : '',
+                    'sunset' => ! empty($details['date']) && $event === 'deprecated' ? __('runtime_patches.notify.deprecated_sunset', ['date' => $details['date']]) : '',
+                ];
+                $message = [
+                    'type' => self::EOL_TYPE,
+                    'level' => 'warning',
+                    'title' => __("runtime_patches.notify.{$event}_title", $values),
+                    'body' => trim((string) preg_replace('/ {2,}/', ' ', __("runtime_patches.notify.{$event}_body", $values))),
+                    'data' => ['runtime' => $runtime, 'version' => $version, 'event' => $event, 'date' => $details['date'] ?? null,
+                        'replacement' => $details['replacement'] ?? null,
+                        'projects' => $own->map(fn (Project $p) => ['id' => $p->id, 'name' => $p->name])->values()->all(),
+                        'path' => $own->count() === 1 ? '/projects/'.$own->first()->id : '/projects'],
+                ];
+                $told += $this->notifyUser($subject, $user, $tenantId, $message, false, false) ? 1 : 0;
+            }
+        });
+
+        return $told;
+    }
+
+    /**
+     * Code projects of the organization on a runtime version: pinned to it, or — when it is the
+     * default — on no version at all.
+     *
+     * @return Collection<int, Project>
+     */
+    private function projectsOn(string $runtime, string $version, bool $isDefault): Collection
+    {
+        return Project::query()
+            ->where('runtime', $runtime)
+            ->where(fn ($q) => $q->where('runtime_version', $version)->when($isDefault, fn ($d) => $d->orWhereNull('runtime_version')))
+            ->whereIn('service_type', RuntimePatches::CODE_TYPES)
+            ->get();
     }
 
     /**
@@ -330,15 +404,10 @@ class RuntimePatchNotifier
         return $ids === [] ? new Collection : User::on($organization->userConnection())->whereIn('id', $ids)->get();
     }
 
-    /** @return Collection<int, User> */
+    /** @return Collection<int, User> the platform administrators; single-tenant, the holders of platform.manage */
     private function platformAdmins(): Collection
     {
-        $connection = config('tenancy.enabled') && config('database.connections.central') ? 'central' : null;
-        if (! DB::connection($connection)->getSchemaBuilder()->hasColumn('users', 'is_admin')) {
-            return new Collection;
-        }
-
-        return User::on($connection)->where('is_admin', true)->get();
+        return app(PlatformOperators::class)->users(PlatformConnection::name());
     }
 
     // ── Delivery ────────────────────────────────────────────────────────────

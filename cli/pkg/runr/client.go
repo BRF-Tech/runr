@@ -145,6 +145,9 @@ type APIError struct {
 	// of them (role-based access control).
 	Permissions []string
 	Body        string
+	// Data is the answer's "data", when an error answer carries one (a runtime source read
+	// that failed answers 502 with the source and its status).
+	Data json.RawMessage
 }
 
 func (e *APIError) Error() string {
@@ -429,9 +432,13 @@ func parseAPIError(code int, method, path string, data []byte) *APIError {
 		Code        json.RawMessage `json:"code"`
 		Errors      json.RawMessage `json:"errors"`
 		Permissions []string        `json:"permissions"`
+		Data        json.RawMessage `json:"data"`
 	}
 	if json.Unmarshal(data, &body) == nil {
 		e.Message = body.Message
+		if d := bytes.TrimSpace(body.Data); len(d) > 0 && !bytes.Equal(d, []byte("null")) {
+			e.Data = d
+		}
 		// Only a string code is a refusal code (some answers carry a numeric code of their own)
 		_ = json.Unmarshal(body.Code, &e.Code)
 		e.Permissions = body.Permissions

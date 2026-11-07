@@ -678,7 +678,11 @@ When the Docker daemon is remote (e.g. docker-in-docker), set
 `E2E_DOCKER_ADDR` to the daemon's host name (e.g. `docker`): the Kind API
 server then listens on all interfaces and the kubeconfig points at that host.
 CI runs the suite on the runner's own Docker daemon (`e2e.yml`, [CI jobs](#ci-jobs)).
-`E2E_API_WAIT` sets how many seconds to wait for the API (default 30).
+`E2E_API_WAIT` sets how many seconds to wait for the API (default 30). `TEST_E2E_EXTRA_ARGS=--ml`
+(or `RUNR_E2E_ML=1`) adds a function of each ML runtime offered, the CPU build of its default
+version, that answers only when a matrix product gives its sum: off by default, as the two images
+(0.4 and 0.5 GiB compressed) would share the e2e region registry's 1 GiB volume with the rest of the
+run. BRF-Tech/runr-runtimes' language bot runs it with one ML runtime offered.
 
 `bash runtime/ci.sh test-helm-upgrade` checks the Helm upgrade path instead: the chart and images of
 `main` in a Kind cluster, data created through that version's API, then `helm upgrade` to the
@@ -691,6 +695,103 @@ restored cluster state, it checks the projects' secret values: a value in the re
 in the region's OpenBao and a reference to a secret store are copied to the second cluster, values
 set there come back with the rollback, and the rollback leaves nothing of them on the second
 cluster or in its OpenBao (`runtime/lib/test-region-move.sh` lists every case).
+
+### Dependency test bot
+
+`.github/workflows/deps-test.yml` tests the new versions `upstream-releases.yml` files issues for,
+and moves them onto `next` when they pass. `next` is the development branch of the private
+development repository (origin). The bot never writes this repository: its `main` is the release
+mirror and moves only at releases (the workflow's `GITHUB_TOKEN` can only read contents).
+
+It runs on Saturdays at 06:41 UTC, after that day's release check, and by hand: **Actions →
+Dependency tests → Run workflow**, or `gh workflow run deps-test.yml -f issue=8`. A run takes every
+open issue `deps: <chart> <version> released` or `Knative 1.<minor> released: update
+KNATIVE_K8S_COMPAT` that has no label yet. Of several open issues of one dependency it tests the
+newest version and closes the older ones as superseded. `Knative 1.<minor> is not in
+KNATIVE_K8S_COMPAT` only gets the label `needs attention`: a person adds the minor's row and its
+minimum Kubernetes version.
+
+For each version:
+
+1. **The bump**, on a clone of `next`: `ci/deps-bump.sh <dep> <version>` (the charts and their
+   pins are the rows of `ci/check-helm-releases.sh`). It first renders the pinned and the new chart
+   with RunR's values (`ci/deps/helm-values.php`, from the code the install runs) on Kubernetes
+   1.30 and 1.35. Then it moves the pin, every test and doc that names the pinned version as the
+   current one, and adds a line under `[Unreleased]` → `Changed` of `CHANGELOG.md`. Lines that
+   record the past keep their version: a RunR release or a date next to them, a measurement, the
+   changelog, `docs/upgrade.md`. The commit is `fix(regions): <chart> chart <version>` (Kata:
+   `fix(kata): kata-deploy <version>`), with no trailer.
+2. **The suites** of the dependency, each Kind suite on a runner of its own (`kind-suite.yml`),
+   PHPUnit through `api-tests.yml`, and `runtime/test` with the reqs mirror check:
+
+   | Dependency | Suites besides PHPUnit and `runtime/test` |
+   |---|---|
+   | `traefik` | `ci.sh test`, `ci.sh test-network`, `ci.sh test-helm-upgrade --from=<last release tag>` (region:reconcile moves the region Traefik, step `traefik-chart`) |
+   | `kube-prometheus-stack`, `loki-stack` | `ci.sh test` (a new region installs it), `ci.sh test-observability`, `ci.sh test-helm-upgrade --from=<last release tag> --after-upgrade=cluster:patch-observability,{region}` |
+   | `zot` | `ci.sh test`, `ci.sh test-helm-upgrade --from=<last release tag> --after-upgrade=registry:upgrade-zot,{region}` |
+   | `kata-deploy` | `ci.sh test-sandbox-api` with Kata (`SANDBOX_KATA=1`, `RUNR_E2E_SANDBOX_CASES=kata`), `ci.sh test-helm-upgrade --from=<last release tag> --kata` (region:reconcile runs the new kata-deploy on a region with Kata, step `kata-sandbox`) |
+   | Knative | `ci.sh test` on the reqs mirror's Kind node of the oldest Kubernetes the new minor supports |
+
+   After an e2e suite, `ci/deps/after-e2e.sh` checks that the region runs the new version, and the
+   upgrade suites check the moved release (`--expect-release`): a green suite has exercised it.
+   The Kata suites need hardware virtualization: `kind-suite.yml` opens the runner's `/dev/kvm`
+   and fails with "Kata cannot run on a GitHub-hosted runner" where it does not work, so a
+   kata-deploy issue then needs a person (and a host with KVM).
+3. **Green**: the bump lands on `next` as one commit on top of the `next` it was tested on, a
+   fast-forward (`ci/deps-land.sh`, never forced). The issue gets the run, the commit and the
+   label `deps: passed`, and is closed: "fixed on next by <sha>, ships with the next release". It
+   is closed then, not at the release, because the issue's work is done and every later version
+   gets an issue of its own. When `next` moved meanwhile (another bump of the same run landed, or
+   someone pushed), the bot runs again for that issue on the new `next`, up to three runs in a
+   row; then the next weekly run tries.
+4. **Red**: the label `needs attention` and a comment with the failing suites, their errors and
+   the run. `next` is not touched. The version waits until someone runs the workflow with the
+   issue's number (which takes the label off and tests it again), or a newer release of the
+   dependency supersedes the issue.
+
+A bump that is not mechanical goes to `needs attention` before any suite runs: the new chart
+refuses RunR's values or no longer has a value RunR sets, renders other objects, changes its CRDs
+(Helm never upgrades a chart's CRDs), is a new major release or has another `kubeVersion`; a
+Traefik chart with a new app version (RunR pins its image from the reqs mirror, which
+BRF-Tech/runr-runtimes publishes first); a kata-deploy chart whose objects changed beyond its
+version (RunR renders kata-deploy's DaemonSet itself); a pin the console or the landing page
+names; a Knative minor without its unreleased row, or without a Kind node image of a Kubernetes it
+supports. The comment says which.
+
+Besides its `GITHUB_TOKEN` (which gets `issues: write` for the comments and labels and
+`actions: write` to start itself again), the workflow needs a write deploy key of the origin: the
+bump job clones `next` with it and the landing pushes to it over SSH.
+
+- The repository variable `GITLAB_RUNR_REMOTE`: the origin's SSH URL. No file of this repository
+  names it; `ci/deps/ssh-key.sh` takes only an SSH URL (`git@HOST:GROUP/PROJECT.git`) of the host
+  it pins.
+- The secret `GITLAB_RUNR_PUSH_KEY`: the deploy key's private key (ed25519, OpenSSH format).
+  `next`'s protection lets the key push and refuses a force push; `main` takes no deploy key. A
+  write deploy key may also write any branch the origin does not protect, so the landing pushes
+  exactly `HEAD:refs/heads/next`, a plain fast-forward, and `runtime/test/ci_workflows_test.sh`
+  fails on any other refspec, a second push, a tag, a deletion or a force.
+- The repository variable `GITLAB_KNOWN_HOSTS`: the host's key line (`HOST ssh-ed25519 AAAA…`).
+  ssh trusts no other host key, and `ci/deps/ssh-key.sh` refuses a line of another host or with
+  another fingerprint than the published one it pins
+  (`SHA256:eUXGGm1YGsMAS7vkcx6JOJdOGHPem5gQp4taiCfCLB8`): a changed variable cannot send the push
+  elsewhere.
+
+`ci/deps/ssh-key.sh` writes them for the two steps that use them, to files of mode 0600 in the
+runner's temporary directory (`IdentitiesOnly`, no agent, `StrictHostKeyChecking=yes`); a step that
+always runs removes them, and nothing prints the key.
+
+The bot's commits carry `RunR deps bot <deps-bot@runr.sh>` as author and committer
+(`DEPS_BOT_NAME`, `DEPS_BOT_EMAIL` of the workflow). They never reach this repository themselves:
+a release here is made from the release's tree, in commits of the maintainer, and the release's
+attribution check runs on those, so it accepts the bot's commits as they are.
+
+A value RunR passes a chart and the chart does not read is found the same way: changed alone, it
+renders nothing new (`ci/deps/dead-values.php`). The bump sends a chart that stops reading one of
+them to a person, and its report lists the ones that wait for a condition.
+
+Locally, in a clean clone of `next` with `composer install` done in `api/`:
+`bash ci/deps-bump.sh traefik 42.3.1` makes the change the bot would commit (`git diff`), and its
+report says what it compared; `--no-render` leaves out the chart rendering.
 
 ### Secret scan and dependency audits
 
@@ -715,16 +816,18 @@ GitHub Actions is the repository's CI; the workflows live in `.github/workflows/
 | `ci.yml` → `reqs-mirror` | `ci/check-reqs-mirror.sh`: every `ghcr.io/brf-tech/runr/reqs/*` reference resolves anonymously on ghcr.io; BRF-Tech/runr-runtimes publishes the mirror | same | yes |
 | `ci.yml` → `build-scripts` | `ci/check-dockerfiles.sh` (no Docker Hub base image, `OTEL_SDK_DISABLED=true` before Spin runs in a build step, every image labels `org.opencontainers.image.source`); `ci/check-caddyfiles.sh` (`vue/Caddyfile` and `compose/Caddyfile` validate, index.html for every console route is never cached, the hashed build files for a year, a missing build file answers 404); `runtime/test/*_test.sh` (`runtime/ci.sh` without Docker or a registry, the pinned runtime images, the release workflow, these workflows) | same | yes |
 | `ci.yml` → `helm` | `ci/check-helm-chart.sh` (helm 3.16, kubeconform) | same | yes |
-| `ci.yml` → `api` | Pint, PHPUnit with the coverage floor, Larastan on PHP 8.2 (8.2.35 or later); the API reference as the image builds it, every module enabled (`api/docker/api-docs.sh --check`, `ApiDocsTest`) | same | yes |
+| `ci.yml` → `api` | Pint, PHPUnit with the coverage floor, Larastan on PHP 8.2 (8.2.35 or later); the API reference as the image builds it, every module enabled (`api/docker/api-docs.sh --check`, `ApiDocsTest`); the steps are `api-tests.yml` | same | yes |
 | `ci.yml` → `ui` | lint without warnings, Vitest with the coverage floor (report: artifact `ui-coverage`), build | same | yes |
 | `ci.yml` → `ui-e2e` | Playwright, mocked API (report: artifact `playwright-report`) | same | yes |
 | `ci.yml` → `go` | gofmt, vet, race tests with coverage per `go.mod` | same | yes |
 | `ci.yml` → `sdk-node` | typecheck and Vitest of `sdk/node` | same | yes |
 | `audit.yml` → `npm` | `npm audit` of `vue/` | pushes to `main`, daily, pull requests touching `vue/package*.json` or `api/composer.*`, by hand | production deps: yes; dev tooling: no |
 | `audit.yml` → `composer` | `composer audit --locked` of `api/` | same | no |
-| `e2e.yml` → `kind` | `runtime/ci.sh test` (Kind, Knative and the Compose stack on the runner's Docker) | weekly, by hand | no |
+| `e2e.yml` → `kind` | `runtime/ci.sh test` (Kind, Knative and the Compose stack on the runner's Docker); the steps are `kind-suite.yml` | weekly, by hand | no |
 | `e2e.yml` → `ui-stack` | Playwright against the dev stack (`docker compose`, project `stack`, single-tenant, `E2E_SEED_DEMO=true`) | weekly, by hand | no |
 | `upstream-releases.yml` → `check` | `ci/check-knative-releases.sh`, `ci/check-helm-releases.sh`; an issue per finding | daily, by hand | no |
+| `deps-test.yml` | the [dependency test bot](#dependency-test-bot): each new version of those issues moved on `next`, tested, landed or held | weekly, by hand | no |
+| `api-tests.yml`, `kind-suite.yml` | reusable workflows (`on: workflow_call`): the API checks of `ci.yml` and one `runtime/ci.sh` Kind suite of `e2e.yml`, also run on a dependency bump by `deps-test.yml` | when called | — |
 | `release-images.yml` | the release images (below) | release tag `v<version>`, by hand | — |
 
 By hand: Actions → the workflow → **Run workflow**, or `gh workflow run e2e.yml -f suite=kind -f

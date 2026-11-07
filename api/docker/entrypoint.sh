@@ -137,9 +137,10 @@ elif [ "$ROLE" = "migrator-fresh" ]; then
     php artisan executor:sync || echo "executor:sync failed; the api container syncs the runtimes at its next start"
 fi
 
-# Sync the executor images in the background (api only)
+# Read the runtime sources (RunR's catalog first: the built-in runtimes) and sync the executor
+# images, in the background (api only); offline the bundled catalog stays in use
 if [ "$ROLE" = "api" ]; then
-    php artisan executor:sync &
+    (php artisan runtime-sources:sync || echo "runtime-sources:sync failed; the scheduler reads the sources again"; php artisan executor:sync) &
 fi
 
 # Ports the servers listen on: Reverb REVERB_SERVER_PORT (also read by config/reverb.php), the API

@@ -79,6 +79,11 @@ return [
         'max_stdin' => (int) env('SANDBOX_EXEC_MAX_STDIN', 10 * 1024 * 1024),
         'ws_token_ttl' => 60,
         'kubectl' => env('SANDBOX_KUBECTL', 'kubectl'),
+        // How the API runs a command in a sandbox: "native" (default) on the API server's WebSocket
+        // exec stream from inside the API, "kubectl" a kubectl process per command. Terminal
+        // sessions and kubeconfigs / API servers the native client cannot use take kubectl anyway
+        // (SelectingExecTransport).
+        'client' => env('SANDBOX_EXEC_CLIENT', 'native'),
     ],
 
     'files' => [
@@ -97,20 +102,29 @@ return [
         // whose manifest runs an exec-mode command with {file} (and no build step) works as well.
         'languages' => [
             'python' => ['extension' => 'py', 'commands' => [['python3', '{file}'], ['python', '{file}']]],
-            'javascript' => ['extension' => 'js', 'commands' => [['node', '{file}']]],
-            'typescript' => ['extension' => 'ts', 'commands' => [['tsx', '{file}'], ['ts-node', '{file}'], ['node', '--experimental-strip-types', '{file}']]],
+            'javascript' => ['extension' => 'js', 'commands' => [['node', '{file}'], ['bun', '{file}']]],
+            'typescript' => ['extension' => 'ts', 'commands' => [['bun', '{file}'], ['tsx', '{file}'], ['ts-node', '{file}'], ['node', '--experimental-strip-types', '{file}']]],
             'bash' => ['extension' => 'sh', 'commands' => [['bash', '{file}'], ['sh', '{file}']]],
             'sh' => ['extension' => 'sh', 'commands' => [['sh', '{file}']]],
             'php' => ['extension' => 'php', 'commands' => [['php', '{file}']]],
             'ruby' => ['extension' => 'rb', 'commands' => [['ruby', '{file}']]],
             'go' => ['extension' => 'go', 'commands' => [['go', 'run', '{file}']]],
+            // a single source file: Java's source launcher (JDK 11+), .NET 10's file-based apps.
+            // A file-based app publishes with Native AOT by default, and its restore asks NuGet for
+            // the ILCompiler, ILLink and runtime packs the SDK image does not have: a sandbox without
+            // network (the default) never gets them. Without AOT the restore needs nothing beyond
+            // the SDK's own packs.
+            'java' => ['extension' => 'java', 'commands' => [['java', '{file}']]],
+            'csharp' => ['extension' => 'cs', 'commands' => [['dotnet', 'run', '{file}', '-p:PublishAot=false']]],
         ],
         'aliases' => [
             'py' => 'python', 'python3' => 'python', 'node' => 'javascript', 'nodejs' => 'javascript',
             'js' => 'javascript', 'ts' => 'typescript', 'shell' => 'bash', 'golang' => 'go', 'rb' => 'ruby',
+            'bun' => 'typescript', 'cs' => 'csharp', 'c#' => 'csharp', 'dotnet' => 'csharp',
         ],
         // Language a sandbox's runtime defaults to
-        'runtime_languages' => ['python' => 'python', 'pytorch' => 'python', 'tensorflow' => 'python', 'nodejs' => 'javascript', 'php' => 'php', 'go' => 'go', 'bash' => 'bash'],
+        'runtime_languages' => ['python' => 'python', 'pytorch' => 'python', 'tensorflow' => 'python', 'nodejs' => 'javascript', 'php' => 'php', 'go' => 'go', 'bash' => 'bash',
+            'java' => 'java', 'dotnet' => 'csharp', 'ruby' => 'ruby', 'bun' => 'typescript'],
     ],
 
     'pool' => [

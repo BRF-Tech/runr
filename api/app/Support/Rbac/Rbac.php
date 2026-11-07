@@ -20,6 +20,8 @@ use Laravel\Sanctum\PersonalAccessToken;
  *   ∩ the API token's abilities (a token never exceeds its owner)
  *
  * Platform admins (users.is_admin) hold every permission — still limited by a scoped token.
+ * The installation itself is theirs; the single-tenant edition has no such flag, so there the
+ * holders of platform.manage operate it (operatesPlatform()).
  * Results are memoized per request (scoped binding; flush() after changes).
  */
 class Rbac
@@ -110,6 +112,29 @@ class Rbac
     public function isPlatformAdmin(?Authenticatable $user): bool
     {
         return $user instanceof Model && (bool) $user->getAttribute('is_admin');
+    }
+
+    /**
+     * Does $user operate the installation itself — the Patches page and the runtime patch feed, the
+     * console certificate, the platform's banners, the Horizon dashboard? Platform administrators
+     * (users.is_admin) do. The single-tenant edition has none: there the holders of platform.manage
+     * do (managesPlatform()). A multi-tenant install has no platform.manage — tenant Owners never
+     * operate the installation.
+     */
+    public function operatesPlatform(?Authenticatable $user): bool
+    {
+        return $this->isPlatformAdmin($user) || $this->managesPlatform($user);
+    }
+
+    /**
+     * Single-tenant edition: does $user hold platform.manage organization-wide (the Owner role, a
+     * custom role of their own or of one of their groups), as far as the request's API token
+     * carries it? Always false in the multi-tenant edition.
+     */
+    public function managesPlatform(?Authenticatable $user): bool
+    {
+        return PermissionCatalog::edition() === 'single'
+            && $this->allows($user, PermissionCatalog::PLATFORM_MANAGE);
     }
 
     public function isOwner(?Authenticatable $user): bool
@@ -251,22 +276,44 @@ class Rbac
     }
 
     /**
-     * Members of this organization whose own organization-wide role grants $permission (group
-     * roles are not resolved): who to tell about something only that permission can fix.
+     * Members of this organization whose own organization-wide role grants $permission — with
+     * $groups also those who hold it through a group's organization-wide role (project access
+     * never counts): who to tell about something only that permission can fix.
      *
      * @return list<string> user ids
      */
-    public function memberIdsHolding(string $permission): array
+    public function memberIdsHolding(string $permission, bool $groups = false): array
     {
         $ids = [];
+        $members = [];
         foreach ($this->organization()->members() as $member) {
+            $members[(string) $member->id] = true;
             $role = $member->role ?? null;
             if ($role !== null && in_array($permission, $this->rolePermissions((string) $role), true)) {
-                $ids[] = (string) $member->id;
+                $ids[(string) $member->id] = true;
             }
         }
 
-        return $ids;
+        if ($groups && $members !== []) {
+            $groupIds = $this->safely(fn () => RoleAssignment::query()
+                ->where('subject_type', RoleAssignment::SUBJECT_GROUP)
+                ->whereNull('project_id')
+                ->get(['subject_id', 'role'])
+                ->filter(fn (RoleAssignment $a) => in_array($permission, $this->rolePermissions((string) $a->role), true))
+                ->pluck('subject_id')
+                ->all(), []);
+            $userIds = $groupIds === [] ? [] : $this->safely(fn () => DB::table('rbac_group_user')
+                ->whereIn('group_id', $groupIds)
+                ->pluck('user_id')
+                ->all(), []);
+            foreach ($userIds as $userId) {
+                if (isset($members[(string) $userId])) {
+                    $ids[(string) $userId] = true;
+                }
+            }
+        }
+
+        return array_map('strval', array_keys($ids));
     }
 
     /** @return list<string> permissions of a role key (built-in or custom) in this organization */

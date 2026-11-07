@@ -22,7 +22,7 @@ On a machine with internet access, check out the release you install and create 
 settings file `.env`:
 
 ```bash
-git clone --branch v0.6.7 https://github.com/BRF-Tech/runr.git
+git clone --branch v0.6.8 https://github.com/BRF-Tech/runr.git
 cd runr
 cp compose/.env.example compose/.env
 ```
@@ -338,9 +338,9 @@ docker compose restart horizon
 Horizon (`<APP_URL>/horizon`, served by the API through the gateway) shows the queues of the whole
 installation — running, failed and completed jobs — and retries or deletes jobs. It is open to the
 people who operate the installation: platform administrators (multi-tenant edition) and, in the
-single-tenant edition, the organization's Owners. The console signs in with API tokens, which a
-browser does not send to `/horizon`, so such an administrator opens the dashboard with a
-single-use sign-in link:
+single-tenant edition, the holders of `platform.manage` — the Owners, and custom roles that
+include it. The console signs in with API tokens, which a browser does not send to `/horizon`, so
+such an administrator opens the dashboard with a single-use sign-in link:
 
 | From | Command |
 | --- | --- |
@@ -349,8 +349,8 @@ single-use sign-in link:
 
 The command builds the link from `APP_URL`. Opening the link signs the browser in to Horizon: the
 link works once and only until it expires, and every later Horizon request checks the account
-again — removing the administrator flag or the Owner role, or disabling the account, ends the
-access at once. Behind HTTPS (section 7) `SESSION_SECURE_COOKIE=true` sends the dashboard's
+again — removing the administrator flag, the Owner role or `platform.manage`, or disabling the
+account, ends the access at once. Behind HTTPS (section 7) `SESSION_SECURE_COOKIE=true` sends the dashboard's
 session cookie over HTTPS only. `POST /api/horizon/link` is recorded in the audit log as
 `horizon.link.create`; the link itself is never logged.
 

@@ -14,6 +14,7 @@ The same model runs in both editions:
 | Custom roles, groups, project access, SSO mappings | installation database | the tenant's schema |
 | Billing role and permissions | — | available |
 | Platform administrator (`users.is_admin`) | every permission | every permission, in every tenant and in the central context |
+| The installation itself: Patches page, console certificate, platform banners and notices, Horizon | holders of `platform.manage` (the Owners) | platform administrators |
 
 The catalog and the built-in roles are defined in one file: `api/config/permissions.php`.
 What each API route requires is listed in `api/config/route_permissions.php`.
@@ -25,19 +26,22 @@ Built-in roles are read-only and exist in every organization.
 | Role | Key | For | Permissions |
 | --- | --- | --- | --- |
 | Owner | `owner` | the people responsible for the organization | every permission of the edition (`*`), plus ownership |
-| Admin | `admin` | administrators | every permission of the edition (`*`) |
+| Admin | `admin` | administrators | every permission of the edition (`*`) except `platform.manage` |
 | Developer | `developer` | building, deploying and operating projects | `projects.view`, `projects.create`, `projects.update`, `projects.delete`, `projects.deploy`, `environments.manage`, `environments.promote`, `code.edit`, `env.view`, `env.edit`, `secret_stores.view`, `domains.manage`, `network.manage`, `connections.manage`, `git.pull`, `git.push`, `git.manage`, `previews.manage`, `shell.exec`, `logs.view`, `metrics.view`, `traces.view`, `replay.manage`, `uptime.manage`, `workflows.view`, `workflows.run`, `workflows.manage`, `events.send`, `topics.manage`, `sandboxes.view`, `sandboxes.create`, `sandboxes.exec`, `security.view`, `regions.view`, `runtimes.use_custom`, `images.view`, `images.upload`, `images.delete`, `models.view`, `models.deploy`, `bindings.view`, `bindings.manage`, `mcp.servers.manage`, `mcp.servers.call`, `members.view`, `tokens.manage`, `tickets.view`, `tickets.create` |
 | Viewer | `viewer` | read-only users | `projects.view`, `git.pull`, `logs.view`, `metrics.view`, `traces.view`, `workflows.view`, `sandboxes.view`, `security.view`, `regions.view`, `images.view`, `models.view`, `bindings.view`, `mcp.servers.call`, `members.view`, `tokens.manage`, `tickets.view`, `tickets.create` |
 | Billing | `billing` | finance: bills, prices, fixed resource approvals, stopping projects ([Billing](billing.md)) | `billing.view`, `billing.manage`, `billing.approve`, `projects.stop`, `regions.view`, `bindings.view`, `members.view`, `tokens.manage`, `tickets.view`, `tickets.create` |
 
 "Every permission of the edition": a single-tenant install has no `tenants.residency.manage`;
 a multi-tenant install has no `git_providers.manage`,
-`runtimes.manage`, `signup.manage` and `tickets.manage` (the platform administrators do that work
-there). Roles hold the permissions they list plus the ones those include (see the **Includes**
-column of the catalog).
+`runtimes.manage`, `signup.manage`, `tickets.manage` and `platform.manage` (the platform
+administrators do that work there). Roles hold the permissions they list plus the ones those
+include (see the **Includes** column of the catalog).
 
-Owner and Admin differ only in ownership:
+Owner and Admin differ in ownership and in the installation itself:
 
+- in the single-tenant edition only the Owner role holds `platform.manage`: the Patches page, the
+  console certificate, the platform's banners and notices and the Horizon dashboard
+  ([Platform administrators](#platform-administrators)); an Admin gets it through a custom role;
 - only owners (and platform administrators) grant or revoke the Owner role;
 - the last owner of an organization can be neither demoted nor removed;
 - in multi-tenant installs only tenant owners point a new region at their own monitoring
@@ -151,6 +155,7 @@ See [Git deploy](git-deploy.md).
 | `regions.observability.manage` | organization | `regions.view` | a region's tracing backend: mode (managed, reuse, external, off), install and uninstall, export headers |
 | `runtimes.manage` | organization (single-tenant) | — | register and change platform runtimes, enable built-in ones, switch custom runtimes on; in multi-tenant installs platform administrators manage the runtimes every tenant shares |
 | `runtimes.use_custom` | organization | — | register the organization's own runtimes and run projects on them, while the platform allows custom runtimes ([Runtimes](runtimes.md#permissions)) |
+| `platform.manage` | organization (single-tenant) | — | operate the installation itself: the [Patches page](runtimes.md#the-patches-page) and its actions (`/api/admin/runtime-patches`), the console certificate (`GET /api/admin/console-tls`), the banners and notifications of the platform administrators (a newer RunR release, the patch feed's trouble, a console certificate cert-manager cannot issue, the platform's count behind a critical patch, a region reconcile that did not finish, the alarms of the bot protection) and the [Horizon dashboard](install.md#horizon-dashboard); the Owner role holds it; in multi-tenant installs platform administrators do this ([Platform administrators](#platform-administrators)) |
 | `regions.gpu.manage` | organization | `regions.view` | install and remove GPU support (NVIDIA device plugin / GPU Operator), GPU settings (time-slicing, RuntimeClass, gVisor nvproxy) and the model volume of regions ([AI](ai.md#permissions)); platform regions of a multi-tenant install stay with the platform administrators |
 
 ### Images
@@ -296,7 +301,10 @@ permissions:
 - a token of a platform administrator with a selection of permissions is limited to them: it
   reaches the routes marked `@platform:<permission>` when it carries that permission (the
   platform's tenant bills of the [billing API](billing.md#api-reference)), never the routes marked
-  `@platform`;
+  `@platform` or `@operator`;
+- in the single-tenant edition a token with a selection reaches the routes marked `@operator` (the
+  Patches page, the console certificate) when it carries `platform.manage`; a link to the Horizon
+  dashboard needs a token with full access;
 - a token with only `billing.view` and `billing.manage` is the way to connect an invoicing system
   to the [billing API](billing.md#api-tokens) of its organization;
 - tokens RunR issues to MCP clients through OAuth ([AI agents](mcp.md#oauth-21)) are API tokens
@@ -339,8 +347,10 @@ regions and their region mode, platform prices and the bills to tenants, imperso
 support across tenants. They pass every permission check (`Gate::before`) in every tenant, unless
 they use an API token with a selection of permissions. Routes for them only are marked `@platform`
 in the route map; routes marked `@platform:<permission>` (the tenant bills of the billing API) also
-accept their tokens that carry the permission. Other users have no permissions in the central context (no
-active tenant).
+accept their tokens that carry the permission. Routes of the installation itself are marked
+`@operator`: platform administrators and, in the single-tenant edition, the holders of
+`platform.manage` ([below](#single-tenant-installs-platformmanage)). Other users have no
+permissions in the central context (no active tenant).
 
 Who becomes one — the first administrator account of a Helm or Compose install, the owners and
 admins of an installation switched to the multi-tenant edition, accounts promoted in Administration →
@@ -349,9 +359,28 @@ as its administrator, also one they are not a member of; opening and leaving are
 (`impersonation.start`, `impersonation.stop`) and the changes made meanwhile name them as
 impersonator
 ([Opening a tenant as platform administrator](tenancy.md#opening-a-tenant-as-platform-administrator)).
-In the single-tenant edition, platform administrators and Owners open the
-[Horizon dashboard](install.md#horizon-dashboard); in the multi-tenant edition, platform
-administrators only.
+In the single-tenant edition, platform administrators and the holders of `platform.manage` (the
+Owners) open the [Horizon dashboard](install.md#horizon-dashboard); in the multi-tenant edition,
+platform administrators only.
+
+### Single-tenant installs: `platform.manage`
+
+A single-tenant install has no platform administrators: `users.is_admin` comes with the Tenancy
+module. Its holders of `platform.manage` operate the installation instead — the routes marked
+`@operator` in the route map (the Patches page with its actions, `GET /api/admin/console-tls`),
+the banners and notifications addressed to platform administrators and the Horizon dashboard. They
+gain no other permission by it.
+
+- The **Owner** role holds it. Built-in roles are read from `config/permissions.php`, not stored,
+  so an upgraded install's Owners hold it at once — nothing is migrated.
+- The **Admin** role does not. Give an Admin (or anyone) a custom role that includes it, on their
+  own or through a group: a role with `platform.manage` alone, on a group, keeps everyone's own
+  role.
+- A custom role with it can only be created or granted by someone who holds it (see
+  [Custom roles](#custom-roles)).
+- An API token with a selection of permissions needs `platform.manage` among them.
+- Multi-tenant installs have no `platform.manage`: there only platform administrators operate the
+  installation, and a tenant's Owner never does.
 
 ## Enforcement
 
@@ -381,6 +410,7 @@ whose route no longer exists. Add the route, then one line to `config/route_perm
 'POST things'           => ['regions.manage', 'registry.manage'], // all of them
 'GET status'            => '@authenticated',               // any signed-in user
 'GET tenants/{tenant}'  => '@platform',                    // platform administrators only
+'GET admin/console-tls' => '@operator',                    // the installation: platform administrators; single-tenant, holders of platform.manage
 'GET billing/tenant-bills' => '@platform:billing.view',    // platform administrators; a token must carry billing.view
 'GET tokens'            => '@own:tokens.manage',           // any signed-in user (own credentials); a limited token must carry tokens.manage
 'PATCH gateways/{gateway}' => '@policy',                   // the controller authorizes (Policy)
@@ -393,7 +423,8 @@ A new permission:
 
 1. one entry in `config/permissions.php` (`group`, `scope` — `project` when it can be granted on
    single projects —, `implies`, `edition` when it exists in one edition only);
-2. the built-in roles that should hold it (Owner and Admin hold everything);
+2. the built-in roles that should hold it (Owner holds everything, Admin everything but the
+   permissions under its `except`: `platform.manage`);
 3. a label and a hint in `vue/src/locales/en/rbac.js` and `vue/src/locales/tr/rbac.js`
    (`rbac.perm.<name with _>`, `rbac.permHint.<name with _>`) — `PermissionCatalogTest` checks
    both;

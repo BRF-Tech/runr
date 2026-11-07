@@ -731,15 +731,15 @@ func (f *File) MainFile() string {
 		if f.File != "" {
 			return f.File
 		}
-		return "main." + ext
+		return runtimes.HandlerFile(f.Runtime) + "." + ext
 	}
 	h := f.Handler
 	if h == "" {
-		h = "main.handler"
+		h = runtimes.HandlerFile(f.Runtime) + "." + runtimes.HandlerFunction(f.Runtime)
 	}
 	base, _, _ := strings.Cut(h, ".")
 	if base == "" {
-		base = "main"
+		base = runtimes.HandlerFile(f.Runtime)
 	}
 	return base + "." + ext
 }
@@ -750,11 +750,11 @@ func (f *File) HandlerName() string {
 		if f.Handler != "" {
 			return f.Handler
 		}
-		return "handler"
+		return runtimes.HandlerFunction(f.Runtime)
 	}
 	h := f.Handler
 	if h == "" {
-		h = "main.handler"
+		h = runtimes.HandlerFile(f.Runtime) + "." + runtimes.HandlerFunction(f.Runtime)
 	}
 	if _, fn, ok := strings.Cut(h, "."); ok && fn != "" {
 		return fn

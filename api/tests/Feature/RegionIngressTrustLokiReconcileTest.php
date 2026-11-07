@@ -48,7 +48,7 @@ class RegionIngressTrustLokiReconcileTest extends TestCase
     private array $calls = [];
 
     /** @var array<string, string> release => chart column of `helm list -o json` ("" = not listed) */
-    private array $helmCharts = ['traefik' => 'traefik-42.3.0', 'loki-stack' => 'loki-stack-2.10.3'];
+    private array $helmCharts = ['traefik' => 'traefik-42.3.1', 'loki-stack' => 'loki-stack-2.10.3'];
 
     private bool $helmUpgradeFails = false;
 
@@ -125,7 +125,7 @@ class RegionIngressTrustLokiReconcileTest extends TestCase
                         'metadata' => [
                             'name' => 'traefik',
                             'annotations' => ['meta.helm.sh/release-name' => $c['traefikRelease'], 'meta.helm.sh/release-namespace' => 'knative-serving'],
-                            'labels' => ['helm.sh/chart' => 'traefik-42.3.0', 'app.kubernetes.io/managed-by' => 'Helm'],
+                            'labels' => ['helm.sh/chart' => 'traefik-42.3.1', 'app.kubernetes.io/managed-by' => 'Helm'],
                         ],
                         'spec' => ['template' => ['spec' => ['containers' => [['name' => 'traefik', 'args' => [...$c['traefikArgs'], TraefikChartValues::ALIAS_HEADERS_ARG.'delete']]]]]],
                     ]),
@@ -162,7 +162,7 @@ class RegionIngressTrustLokiReconcileTest extends TestCase
 
         if (($argv[1] ?? '') === 'rollback') {
             // the release is deployed again at the revision it was rolled back to
-            $this->helmCharts[$argv[2]] = $this->helmPendingChart[$argv[2]] ?? 'traefik-42.3.0';
+            $this->helmCharts[$argv[2]] = $this->helmPendingChart[$argv[2]] ?? 'traefik-42.3.1';
             $this->helmHistory[$argv[2]][] = ['revision' => count($this->helmHistory[$argv[2]] ?? []) + 1, 'updated' => now()->toRfc3339String(), 'status' => 'deployed', 'chart' => $this->helmCharts[$argv[2]]];
 
             return new HelmResult(true, 'Rollback was a success! Happy Helming!', '', 0);
@@ -270,7 +270,7 @@ class RegionIngressTrustLokiReconcileTest extends TestCase
         $output = $this->reconcile(['--dry-run' => true]);
 
         $this->assertStringContainsString(
-            '[ingress-trust] would upgrade Helm release knative-serving/traefik (chart traefik-42.3.0, values reused): '
+            '[ingress-trust] would upgrade Helm release knative-serving/traefik (chart traefik-42.3.1, values reused): '
             .'PROXY protocol / X-Forwarded-* trusted from 0.0.0.0/0 → nobody on web, websecure — the Traefik pods roll once',
             $output,
         );
@@ -300,7 +300,7 @@ class RegionIngressTrustLokiReconcileTest extends TestCase
         $this->assertCount(2, $this->upgrades());
 
         [$release, $chart, $namespace, $kubeconfig, $version, $set] = $this->upgrades()[0];
-        $this->assertSame(['traefik', 'traefik/traefik', 'knative-serving', '42.3.0'], [$release, $chart, $namespace, $version]);
+        $this->assertSame(['traefik', 'traefik/traefik', 'knative-serving', '42.3.1'], [$release, $chart, $namespace, $version]);
         $this->assertSame($region->kubeconfig, $kubeconfig);
         $this->assertSame('[]', $set['ports.web.proxyProtocol.trustedIPs']);
         $this->assertSame('[]', $set['ports.web.forwardedHeaders.trustedIPs']);
@@ -326,11 +326,11 @@ class RegionIngressTrustLokiReconcileTest extends TestCase
     private function pendingTraefik(string $status, int $minutesAgo): void
     {
         $this->helmCharts['traefik'] = '';   // helm list hides a release whose newest revision is pending
-        $this->helmPendingChart['traefik'] = 'traefik-42.3.0';
+        $this->helmPendingChart['traefik'] = 'traefik-42.3.1';
         $this->helmHistory['traefik'] = [
-            ['revision' => 1, 'updated' => '2026-09-02T09:14:03.402156871Z', 'status' => 'superseded', 'chart' => 'traefik-42.3.0', 'app_version' => 'v3.7.17', 'description' => 'Install complete'],
-            ['revision' => 2, 'updated' => '2026-09-30T08:01:44.118904203Z', 'status' => 'deployed', 'chart' => 'traefik-42.3.0', 'app_version' => 'v3.7.17', 'description' => 'Upgrade complete'],
-            ['revision' => 3, 'updated' => now()->subMinutes($minutesAgo)->format('Y-m-d\TH:i:s.uP'), 'status' => $status, 'chart' => 'traefik-42.3.0', 'app_version' => 'v3.7.17', 'description' => 'Preparing upgrade'],
+            ['revision' => 1, 'updated' => '2026-09-02T09:14:03.402156871Z', 'status' => 'superseded', 'chart' => 'traefik-42.3.1', 'app_version' => 'v3.7.17', 'description' => 'Install complete'],
+            ['revision' => 2, 'updated' => '2026-09-30T08:01:44.118904203Z', 'status' => 'deployed', 'chart' => 'traefik-42.3.1', 'app_version' => 'v3.7.17', 'description' => 'Upgrade complete'],
+            ['revision' => 3, 'updated' => now()->subMinutes($minutesAgo)->format('Y-m-d\TH:i:s.uP'), 'status' => $status, 'chart' => 'traefik-42.3.1', 'app_version' => 'v3.7.17', 'description' => 'Preparing upgrade'],
         ];
         if ($status === 'pending-install') {
             $this->helmHistory['traefik'] = [array_merge($this->helmHistory['traefik'][2], ['revision' => 1])];
@@ -354,7 +354,7 @@ class RegionIngressTrustLokiReconcileTest extends TestCase
         $output = Artisan::output();
 
         $this->assertStringContainsString('[ingress-trust] rolled back the interrupted pending-upgrade of Helm release knative-serving/traefik since ', $output);
-        $this->assertStringContainsString(' to revision 2; upgraded Helm release knative-serving/traefik (chart traefik-42.3.0, values reused)', $output);
+        $this->assertStringContainsString(' to revision 2; upgraded Helm release knative-serving/traefik (chart traefik-42.3.1, values reused)', $output);
         $this->assertSame(['helm', 'rollback', 'traefik', '2', '-n', 'knative-serving'], array_slice($this->helm('rollback')[0], 0, 6));
         $this->assertSame('traefik', $this->upgrades()[0][0]);
         $this->assertStringNotContainsString('[ingress-trust] failed', $output);
@@ -417,7 +417,7 @@ class RegionIngressTrustLokiReconcileTest extends TestCase
             }
         };
 
-        $result = $helm->install('traefik', 'traefik/traefik', 'knative-serving', [], 'kubeconfig', '42.3.0', wait: false);
+        $result = $helm->install('traefik', 'traefik/traefik', 'knative-serving', [], 'kubeconfig', '42.3.1', wait: false);
 
         $this->assertTrue($result->success);
         $this->assertSame(2, $attempts);

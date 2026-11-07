@@ -78,10 +78,14 @@ final class PrivateIngress
         ];
     }
 
-    /** service.additionalServices entry of traefik-internal */
+    /**
+     * service.additionalServices entry of traefik-internal. The chart reads an additional Service's
+     * type from its spec only (it never read `type` beside it, and chart 42.3.1's schema refuses
+     * it); ClusterIP is the type Kubernetes gave the Service while the chart wrote none.
+     */
     public static function serviceValues(): array
     {
-        return ['type' => 'ClusterIP'];
+        return ['spec' => ['type' => 'ClusterIP']];
     }
 
     /**

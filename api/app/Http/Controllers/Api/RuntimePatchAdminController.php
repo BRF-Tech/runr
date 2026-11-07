@@ -18,7 +18,8 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Schema;
 
 /**
- * The platform administrators' Patches page (docs/runtimes.md#the-patches-page), all @platform:
+ * The platform administrators' Patches page (docs/runtimes.md#the-patches-page), all @operator —
+ * in the single-tenant edition the holders of platform.manage:
  *
  *  GET  /api/admin/runtime-patches                       feed status (last check / fetch, signature),
  *                                                        policy, patches with the projects behind each

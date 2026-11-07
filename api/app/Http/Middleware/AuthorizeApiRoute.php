@@ -3,6 +3,7 @@
 namespace App\Http\Middleware;
 
 use App\Models\Project;
+use App\Support\Rbac\PermissionCatalog;
 use App\Support\Rbac\Rbac;
 use App\Support\Rbac\RoutePermissions;
 use Closure;
@@ -53,6 +54,9 @@ class AuthorizeApiRoute
         $allowed = match ($mode) {
             RoutePermissions::AUTHENTICATED, RoutePermissions::POLICY => true,
             RoutePermissions::PLATFORM => $this->rbac->isPlatformAdmin($user) && $this->rbac->tokenAbilities($user) === null,
+            // single-tenant: platform.manage stands in for the platform administrators it has not got
+            RoutePermissions::OPERATOR => ($this->rbac->isPlatformAdmin($user) && $this->rbac->tokenAbilities($user) === null)
+                || $this->rbac->managesPlatform($user),
             RoutePermissions::PLATFORM_SCOPED => $this->rbac->isPlatformAdmin($user)
                 && collect($permissions)->contains(fn ($p) => $this->rbac->tokenAllows($user, $p)),
             RoutePermissions::OWN_SCOPED => collect($permissions)->contains(fn ($p) => $this->rbac->tokenAllows($user, $p)),
@@ -62,7 +66,12 @@ class AuthorizeApiRoute
         };
 
         if (! $allowed) {
-            return $mode === RoutePermissions::PLATFORM || ($mode === RoutePermissions::PLATFORM_SCOPED && ! $this->rbac->isPlatformAdmin($user))
+            if ($mode === RoutePermissions::OPERATOR && PermissionCatalog::exists(PermissionCatalog::PLATFORM_MANAGE)) {
+                // single-tenant: the permission that lets one in
+                return $this->deny(__('rbac.forbidden', ['permission' => PermissionCatalog::PLATFORM_MANAGE]), [PermissionCatalog::PLATFORM_MANAGE]);
+            }
+
+            return in_array($mode, [RoutePermissions::PLATFORM, RoutePermissions::OPERATOR], true) || ($mode === RoutePermissions::PLATFORM_SCOPED && ! $this->rbac->isPlatformAdmin($user))
                 ? $this->deny(__('rbac.platform_admin_required'), [])
                 : $this->deny(__('rbac.forbidden', ['permission' => implode(' | ', $permissions)]), $permissions);
         }

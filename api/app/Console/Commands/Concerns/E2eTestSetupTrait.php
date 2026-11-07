@@ -272,15 +272,91 @@ trait E2eTestSetupTrait
 
         // Restart CoreDNS pods to pick up new config
         $pods = $k8s->listResources('v1', 'Pod', 'kube-system', ['k8s-app' => 'kube-dns']);
+        $old = [];
         foreach ($pods['items'] ?? [] as $pod) {
             $podName = $pod['metadata']['name'] ?? '';
             if ($podName) {
                 $k8s->deleteResource('v1', 'Pod', $podName, 'kube-system');
+                $old[] = $podName;
             }
         }
 
-        sleep(5); // CoreDNS pods need a moment to restart
-        $this->line('  <fg=green>✓</> CoreDNS patched');
+        // Until the new pods answer, the cluster has no DNS: what runs next (the gVisor
+        // installer's download on every node, image pulls by name) would fail on it
+        $state = $this->waitCoreDnsReady($k8s, $old, self::E2E_COREDNS_READY_SECONDS);
+        if ($state !== true) {
+            $this->warn("  CoreDNS not Ready {$this->e2eCoreDnsWaited}s after its restart: {$state}");
+
+            return;
+        }
+        $this->line("  <fg=green>✓</> CoreDNS patched (Ready after {$this->e2eCoreDnsWaited}s)");
+    }
+
+    /** How long the CoreDNS pods may take to come back Ready after the patch's restart */
+    private const E2E_COREDNS_READY_SECONDS = 180;
+
+    /** Seconds the last waitCoreDnsReady() waited */
+    private int $e2eCoreDnsWaited = 0;
+
+    /**
+     * Waits until CoreDNS answers again after its pods were deleted: none of $deleted is left and
+     * as many pods as the coredns Deployment wants (at least one) are Ready.
+     *
+     * @param  list<string>  $deleted
+     * @return true|string true, or what the pods look like at the deadline
+     */
+    private function waitCoreDnsReady(KubernetesClient $k8s, array $deleted, int $timeout): bool|string
+    {
+        $started = time();
+        $state = 'no CoreDNS pod';
+        do {
+            $deployment = $k8s->getResourceStatus('apps/v1', 'Deployment', 'coredns', 'kube-system');
+            $wanted = (int) ($deployment['spec']['replicas'] ?? 1);
+            $pods = (array) ($k8s->listResources('v1', 'Pod', 'kube-system', ['k8s-app' => 'kube-dns'])['items'] ?? []);
+            $state = self::coreDnsReady($pods, $deleted, $wanted);
+            $this->e2eCoreDnsWaited = time() - $started;
+            if ($state === true) {
+                return true;
+            }
+            sleep(2);
+        } while (time() - $started < $timeout);
+        $this->e2eCoreDnsWaited = time() - $started;
+
+        return $state;
+    }
+
+    /**
+     * Whether CoreDNS is back: none of the deleted pods is left (also not terminating) and at
+     * least $wanted pods (at least one) are Ready and not being deleted.
+     *
+     * @param  list<array<string, mixed>>  $pods  the kube-dns pods
+     * @param  list<string>  $deleted
+     * @return true|string true, or why not
+     */
+    public static function coreDnsReady(array $pods, array $deleted, int $wanted): bool|string
+    {
+        $ready = 0;
+        $states = [];
+        $left = [];
+        foreach ($pods as $pod) {
+            $name = (string) ($pod['metadata']['name'] ?? '');
+            if (in_array($name, $deleted, true)) {
+                $left[] = $name;
+
+                continue;
+            }
+            $isReady = ! isset($pod['metadata']['deletionTimestamp']) && collect($pod['status']['conditions'] ?? [])
+                ->contains(fn ($c) => ($c['type'] ?? null) === 'Ready' && ($c['status'] ?? null) === 'True');
+            $ready += $isReady ? 1 : 0;
+            $states[] = $name.' '.($pod['status']['phase'] ?? '?').($isReady ? ' Ready' : ' not Ready');
+        }
+        $wanted = max(1, $wanted);
+        if ($left === [] && $ready >= $wanted) {
+            return true;
+        }
+
+        return "{$ready}/{$wanted} Ready".($states !== [] ? ' ('.implode(', ', $states).')' : '')
+            .($left !== [] ? '; still there: '.implode(', ', $left) : '');
     }
 
     /**

@@ -51,6 +51,10 @@ var redactedFields = map[string]bool{
 	// The write-only secrets of a trigger (a webhook's signing secret: POST / PATCH of
 	// /projects/{project}/triggers).
 	"secrets": true,
+	// The credentials of a runtime source (POST / PUT /runtime-sources, …/test); its
+	// registry_password is above.
+	"git_token":       true,
+	"ssh_private_key": true,
 }
 
 // secretBodyPaths are endpoints whose whole request and answer bodies stay out of the trace:

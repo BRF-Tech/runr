@@ -3,19 +3,29 @@
 namespace App\Console\Commands\Concerns;
 
 use App\Jobs\InstallSandboxJob;
+use App\Services\Sandboxes\Exec\NativeExecTransport;
+use App\Services\Sandboxes\Exec\NativeExecUnsupported;
+use App\Services\Sandboxes\Exec\PodTarget;
+use App\Services\Sandboxes\Exec\SelectingExecTransport;
+use App\Services\Sandboxes\SandboxManifests;
 use App\Services\SandboxInstallService;
+use Symfony\Component\Yaml\Yaml;
 
 /**
  * Sandbox API end to end (`php artisan test:e2e --suite=sandbox-api`, `ci.sh test-sandbox-api`):
  * against the region's real cluster, through the HTTP API.
  *
- *  - classes: gVisor (installed through the API, as the sandbox suite does), runc (the region's
+ *  - classes: gVisor (installed through the API, as the sandbox suite does; the suite's runc
+ *    stand-in fails sbx-gvisor-install, and sbx-gvisor-runsc checks the RuntimeClass handler and
+ *    gVisor's kernel inside the sandbox — the gvisor cases never pass on runc), runc (the region's
  *    opt-in), Kata only with --sandbox-kata where the nodes have /dev/kvm (else reported skipped):
  *    Cloud Hypervisor, QEMU and Dragonball installed (one the install reports unavailable on the
  *    nodes is skipped with its reason), and per hypervisor the guest's vCPUs (nproc) for a 1 and a
  *    2 CPU sandbox — 1 + the CPU limit; a sandbox that does not start prints its pod and events
  *  - lifecycle: create (pod spec checked in the cluster: RuntimeClass, security context, no
- *    service-account token), exec (stdout, stderr, exit code), SSE streaming, the exec WebSocket
+ *    service-account token), exec (stdout, stderr, exit code), one command through the native
+ *    exec client with a ServiceAccount bearer-token kubeconfig (sbx-exec-bearer-token; the
+ *    region's own kubeconfig is a client certificate), SSE streaming, the exec WebSocket
  *    with a terminal (size, resize, typed input, exit code), timeout, code run
  *    with an image output, files (write / read / list / tar round trip / delete), background
  *    processes, pause / resume, network none (egress blocked where the CNI enforces policies),
@@ -25,6 +35,9 @@ use App\Services\SandboxInstallService;
  */
 trait E2eTestSandboxApiTrait
 {
+    /** The kernel release gVisor reports to a sandbox (`uname -r`), whatever the node runs */
+    private const GVISOR_KERNEL_RELEASE = '4.4.0';
+
     /** Kata hypervisors the suite installs and checks (Firecracker needs a devmapper thin-pool on the nodes). */
     private const SANDBOX_KATA_HYPERVISORS = ['clh', 'qemu', 'dragonball'];
 
@@ -44,7 +57,9 @@ trait E2eTestSandboxApiTrait
         $tests = [];
         if (! $kataOnly) {
             $gvisor = $this->setupSandboxRuntime($regionId);
-            $tests[] = $this->sbxEntry('sbx-gvisor-install', $gvisor ?: 'gVisor could not be installed');
+            // The runc stand-in of the project sandbox suite is no pass here: every gvisor case
+            // would run on runc
+            $tests[] = $this->sbxEntry('sbx-gvisor-install', self::sbxGvisorInstalled($gvisor, $this->e2eGvisorFallback));
         }
 
         // runc is opted in so the suite also runs where gVisor is the runc-handler fallback
@@ -76,11 +91,14 @@ trait E2eTestSandboxApiTrait
         $this->sandboxStarts['cold (gvisor)'] = (int) $sbx['start_ms'];
         $tests[] = $this->sbxEntry('sbx-create', $sbx['status'] === 'running' && $sbx['sandbox_class'] === 'gvisor' ?: json_encode($sbx));
         $tests[] = $this->sbxEntry('sbx-pod-spec', $this->checkSandboxPod($sbx));
+        $tests[] = $this->sbxEntry('sbx-gvisor-runsc', $this->checkSandboxOnGvisor($id));
 
         $exec = fn (array $body) => $this->api()->timeout(120)->post("/api/sandboxes/{$id}/exec", $body);
 
         $r = $exec(['cmd' => 'echo "$GREETING from $(cat /workspace/data.txt)"; echo oops >&2; exit 3']);
         $tests[] = $this->sbxEntry('sbx-exec', ($r->json('data.stdout') === "hello from 42\n" && $r->json('data.stderr') === "oops\n" && $r->json('data.exit_code') === 3) ?: $r->body());
+
+        $tests[] = $this->sbxEntry('sbx-exec-bearer-token', $this->checkSandboxBearerTokenExec($id));
 
         $r = $exec(['cmd' => ['id', '-u']]);
         $tests[] = $this->sbxEntry('sbx-non-root', ((int) trim((string) $r->json('data.stdout')) >= 100000) ?: 'uid '.$r->json('data.stdout'));
@@ -159,6 +177,165 @@ trait E2eTestSandboxApiTrait
         $this->printSandboxStarts();
 
         return $tests;
+    }
+
+    /**
+     * sbx-gvisor-install: gVisor installed through the API. The e2e's runc stand-in
+     * (fallbackGvisorSetup, $fallback its reason) fails the case — loudly, with why.
+     */
+    public static function sbxGvisorInstalled(bool $installed, ?string $fallback): bool|string
+    {
+        if ($fallback !== null) {
+            return 'gVisor was NOT installed, the RuntimeClass gvisor is the runc stand-in: every gvisor case of this suite would run on runc ('.$fallback.')';
+        }
+
+        return $installed ?: 'gVisor could not be installed';
+    }
+
+    /**
+     * The gvisor class really runs on gVisor: the cluster's RuntimeClass gvisor has the runsc
+     * handler, and inside the sandbox the kernel is gVisor's — its dmesg says "gVisor", its
+     * release is the one gVisor reports (4.4.0) — not the node's.
+     */
+    private function checkSandboxOnGvisor(string $id): bool|string
+    {
+        $class = $this->e2eK8s->getClusterResource('node.k8s.io/v1', 'RuntimeClass', 'gvisor');
+        $r = $this->api()->timeout(120)->post("/api/sandboxes/{$id}/exec", ['cmd' => 'uname -r; dmesg 2>/dev/null | head -n 5; true']);
+        if (! $r->successful()) {
+            return 'exec: HTTP '.$r->status().' '.mb_substr($r->body(), 0, 300);
+        }
+
+        return self::sbxGvisorKernel(is_array($class) ? ($class['handler'] ?? null) : null, (string) $r->json('data.stdout'));
+    }
+
+    /** ServiceAccount of sbx-exec-bearer-token, in the sandbox namespace */
+    private const SBX_TOKEN_ACCOUNT = 'runr-e2e-exec-token';
+
+    /**
+     * sbx-exec-bearer-token: one command in the sandbox through the native exec client with a
+     * kubeconfig whose user is a ServiceAccount's bearer token (the region's server and CA, a
+     * TokenRequest token) — the form of a region connected with `kubectl create token`, next to
+     * the client certificate of the Kind kubeconfig every other case uses.
+     *
+     *  1. without RBAC the API server refuses the upgrade (it checked the token, not the region's
+     *     certificate) and nothing runs;
+     *  2. with a Role of pods/exec on the sandbox's namespace the command runs natively — straight
+     *     through NativeExecTransport, so a fallback to kubectl fails the case — with its stdout,
+     *     stderr and exit code.
+     *
+     * The ServiceAccount, Role and RoleBinding are deleted afterwards.
+     */
+    private function checkSandboxBearerTokenExec(string $id): bool|string
+    {
+        if (SelectingExecTransport::client() === 'kubectl') {
+            $this->line('  <fg=yellow>─</> sbx-exec-bearer-token: skipped (SANDBOX_EXEC_CLIENT=kubectl)');
+
+            return true;
+        }
+        $ns = 'runr-sbx-default';
+        $name = self::SBX_TOKEN_ACCOUNT;
+        $k8s = $this->e2eK8s;
+        $meta = ['name' => $name, 'namespace' => $ns, 'labels' => ['app.kubernetes.io/managed-by' => 'runr-e2e']];
+
+        try {
+            if (! $k8s->applyResource(['apiVersion' => 'v1', 'kind' => 'ServiceAccount', 'metadata' => $meta], $ns)) {
+                return 'ServiceAccount: '.$k8s->lastApplyError();
+            }
+            $token = $k8s->requestServiceAccountToken($ns, $name, 600);
+            $kubeconfig = self::sbxBearerTokenKubeconfig((string) $this->getE2eRegion()?->kubeconfig, $token);
+            $target = new PodTarget($kubeconfig, $ns, 'sbx-'.strtolower($id), SandboxManifests::CONTAINER, $id);
+            if (SelectingExecTransport::nativeFor($target) === null) {
+                return 'the native exec client does not take the bearer-token kubeconfig (see the log line "sandbox exec: kubectl instead of the native client")';
+            }
+            $native = new NativeExecTransport;
+
+            // 1) the token alone: no RBAC yet
+            try {
+                $r = $native->exec($target, ['/bin/sh', '-c', 'echo should-not-run'], null, 30);
+
+                return 'the ServiceAccount without RBAC ran a command (exit '.$r->exitCode.'): the API server did not check the token';
+            } catch (NativeExecUnsupported $e) {
+                if (! str_contains($e->getMessage(), 'HTTP 403')) {
+                    return 'without RBAC: '.$e->getMessage().' (expected HTTP 403)';
+                }
+            }
+
+            // 2) pods/exec on the namespace
+            foreach ([
+                ['apiVersion' => 'rbac.authorization.k8s.io/v1', 'kind' => 'Role', 'metadata' => $meta,
+                    'rules' => [['apiGroups' => [''], 'resources' => ['pods'], 'verbs' => ['get']], ['apiGroups' => [''], 'resources' => ['pods/exec'], 'verbs' => ['create', 'get']]]],
+                ['apiVersion' => 'rbac.authorization.k8s.io/v1', 'kind' => 'RoleBinding', 'metadata' => $meta,
+                    'roleRef' => ['apiGroup' => 'rbac.authorization.k8s.io', 'kind' => 'Role', 'name' => $name],
+                    'subjects' => [['kind' => 'ServiceAccount', 'name' => $name, 'namespace' => $ns]]],
+            ] as $manifest) {
+                if (! $k8s->applyResource($manifest, $ns)) {
+                    return $manifest['kind'].': '.$k8s->lastApplyError();
+                }
+            }
+            $deadline = time() + 30;
+            $last = '';
+            do {
+                try {
+                    $r = $native->exec($target, ['/bin/sh', '-c', 'echo "bearer $(id -u)"; echo to-stderr >&2; exit 7'], null, 30);
+
+                    return (preg_match('/^bearer \d+\n$/', $r->stdout) === 1 && $r->stderr === "to-stderr\n" && $r->exitCode === 7)
+                        ?: 'exit '.$r->exitCode.', stdout '.json_encode($r->stdout).', stderr '.json_encode($r->stderr);
+                } catch (NativeExecUnsupported $e) {
+                    // RBAC reaches the authorizer within moments
+                    $last = $e->getMessage();
+                    sleep(2);
+                }
+            } while (time() < $deadline);
+
+            return 'the ServiceAccount with pods/exec was still refused after 30 s: '.$last;
+        } catch (\Throwable $e) {
+            return 'bearer-token exec: '.$e->getMessage();
+        } finally {
+            foreach ([['rbac.authorization.k8s.io/v1', 'RoleBinding'], ['rbac.authorization.k8s.io/v1', 'Role'], ['v1', 'ServiceAccount']] as [$apiVersion, $kind]) {
+                try {
+                    $k8s->deleteResource($apiVersion, $kind, $name, $ns);
+                } catch (\Throwable) {
+                    // best effort
+                }
+            }
+        }
+    }
+
+    /**
+     * The region kubeconfig's current cluster (server, CA, TLS name) with a bearer token as its
+     * only credential, as `kubectl config set-credentials --token` leaves it.
+     */
+    public static function sbxBearerTokenKubeconfig(string $regionKubeconfig, string $token): string
+    {
+        $config = Yaml::parse($regionKubeconfig);
+        $context = collect($config['contexts'] ?? [])->firstWhere('name', $config['current-context'] ?? null)['context'] ?? [];
+        $cluster = collect($config['clusters'] ?? [])->firstWhere('name', $context['cluster'] ?? null)['cluster'] ?? null;
+        if (! is_array($cluster) || empty($cluster['server'])) {
+            throw new \RuntimeException('the region kubeconfig has no cluster for its current context');
+        }
+
+        return Yaml::dump([
+            'apiVersion' => 'v1',
+            'kind' => 'Config',
+            'current-context' => 'sa',
+            'clusters' => [['name' => 'region', 'cluster' => array_intersect_key($cluster, array_flip(['server', 'certificate-authority-data', 'insecure-skip-tls-verify', 'tls-server-name']))]],
+            'users' => [['name' => self::SBX_TOKEN_ACCOUNT, 'user' => ['token' => $token]]],
+            'contexts' => [['name' => 'sa', 'context' => ['cluster' => 'region', 'user' => self::SBX_TOKEN_ACCOUNT]]],
+        ], 6, 2);
+    }
+
+    /** RuntimeClass handler and `uname -r; dmesg` of a gvisor sandbox: true on gVisor, else why not. */
+    public static function sbxGvisorKernel(?string $handler, string $stdout): bool|string
+    {
+        if ($handler !== 'runsc') {
+            return 'the RuntimeClass gvisor has the handler '.($handler ?? '(none: no RuntimeClass)').', not runsc: the gvisor class does not run on gVisor';
+        }
+        $release = trim((string) (preg_split('/\R/', trim($stdout))[0] ?? ''));
+        if ($release === self::GVISOR_KERNEL_RELEASE || str_contains($stdout, 'gVisor')) {
+            return true;
+        }
+
+        return "the sandbox does not see gVisor's kernel (release {$release}, no gVisor in its dmesg): it runs on the node's kernel";
     }
 
     /** --sandbox-cases / RUNR_E2E_SANDBOX_CASES: "kata" = only the Kata cases (with their setup and the quota case). */

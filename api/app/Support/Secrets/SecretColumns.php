@@ -127,6 +127,9 @@ final class SecretColumns
         ],
         // Global DNS (docs/global-projects.md): the API key of a region's PowerDNS server
         'region_global_dns' => ['api_key' => self::TEXT],
+        // Runtime sources (docs/runtimes.md#runtime-sources): Git token / SSH deploy key, registry
+        // username and password of a private source (App\Casts\Encrypted:array)
+        'runtime_sources' => ['credentials' => self::JSON],
     ];
 
     /** Primary key of tables that do not use `id`. */

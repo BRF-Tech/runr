@@ -122,6 +122,25 @@ class RegionReconcileRecordTest extends TestCase
         $this->assertSame(2, Notification::query()->count());
     }
 
+    public function test_a_single_tenant_install_notifies_the_holders_of_platform_manage(): void
+    {
+        // no users.is_admin in this edition: the Owner (platform.manage) hears it, an Admin does not
+        $owner = $this->userWithRole('owner');
+        $this->userWithRole('admin');
+        $record = app(ReconcileRecord::class);
+
+        $record->started('helm-9', 5400);
+        $record->finished($this->outcome(['r1' => ['[tracing] failed: x']], 1), 'helm-9', 3);
+        $record->started('helm-9', 5400);
+        $record->finished($this->outcome(['r1' => ['[tracing] failed: x']], 1), 'helm-9', 3);
+        $record->started('helm-9', 5400);
+        $record->finished($this->outcome(['r1' => ['[tracing] failed: x']], 1), 'helm-9', 3);
+
+        $notification = Notification::query()->sole();
+        $this->assertSame((string) $owner->getKey(), (string) $notification->user_id);
+        $this->assertSame(ReconcileRecord::NOTIFICATION, $notification->type);
+    }
+
     public function test_the_region_api_and_api_version_show_the_last_run(): void
     {
         $user = User::factory()->create(['username' => 'viewer']);

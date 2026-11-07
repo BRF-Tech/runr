@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Api\ConsoleTlsController;
 use App\Http\Controllers\Api\ProjectRuntimePatchController;
 use App\Http\Controllers\Api\RuntimePatchAdminController;
 use App\Http\Controllers\Api\RuntimePatchController;
@@ -20,10 +21,14 @@ Route::post('/projects/{project}/runtime-patches/apply', [ProjectRuntimePatchCon
 Route::put('/projects/{project}/runtime-patches/pin', [ProjectRuntimePatchController::class, 'pin']);
 Route::delete('/projects/{project}/runtime-patches/pin', [ProjectRuntimePatchController::class, 'unpin']);
 
-// Platform administrators: the Patches page
+// Platform administrators (single-tenant: holders of platform.manage): the Patches page
 Route::get('/admin/runtime-patches', [RuntimePatchAdminController::class, 'index']);
 Route::post('/admin/runtime-patches/check', [RuntimePatchAdminController::class, 'check']);
 Route::put('/admin/runtime-patches/policy', [RuntimePatchAdminController::class, 'policy']);
 Route::post('/admin/runtime-patches/{patch}/remind', [RuntimePatchAdminController::class, 'remind']);
 Route::post('/admin/runtime-patches/{patch}/force', [RuntimePatchAdminController::class, 'force']);
 Route::put('/admin/runtime-patches/{patch}/deadline', [RuntimePatchAdminController::class, 'deadline']);
+
+// The same: the console certificate behind the console_tls banner
+// (docs/install.md#when-the-console-certificate-is-not-issued)
+Route::get('/admin/console-tls', [ConsoleTlsController::class, 'show']);

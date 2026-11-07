@@ -36,6 +36,13 @@ class RuntimesSyncCommand extends Command
             if (! $manifest) {
                 return;
             }
+            // A runtime of a source that discovers its versions (versionDiscovery) lists none:
+            // syncVersions() would retire every one. executor:sync reads them from its registry
+            if ($manifest->versionDiscovery() !== null) {
+                $this->line("  {$runtime->source}: {$runtime->id} (versions from its registry: executor:sync)");
+
+                return;
+            }
             $registry->syncVersions($runtime, $manifest);
             if ($this->option('builds')) {
                 $builds->ensureAll($runtime, $manifest);

@@ -14,6 +14,13 @@ class RoutePermissions
     public const PLATFORM = '@platform';
 
     /**
+     * '@operator' — the installation itself (Rbac::operatesPlatform()): platform administrators,
+     * as '@platform'; in the single-tenant edition, which has none, the holders of platform.manage
+     * (an API token of one must carry it). Multi-tenant installs: '@platform' exactly.
+     */
+    public const OPERATOR = '@operator';
+
+    /**
      * '@platform:billing.view' — platform administrators; an API token of one must carry the
      * permission (or '*'). Lets the operator's systems use narrowly scoped tokens on platform routes.
      */
@@ -82,7 +89,7 @@ class RoutePermissions
     /**
      * Parse a requirement into [mode, permissions]: mode 'all' | 'any' | 'anywhere' | 'platform'
      * (platform administrator + token permission, any of them) | 'own' (any signed-in user + token
-     * permission, any of them) | a marker.
+     * permission, any of them) | a marker ('@authenticated', '@platform', '@operator', '@policy').
      *
      * @param  string|list<string>  $requirement
      * @return array{0: string, 1: list<string>}

@@ -136,7 +136,7 @@ bucket, region, access key, secret key).
 
 ### Ingress, external address and DNS
 
-The Serving step installs **Traefik** as Knative's ingress (chart `traefik/traefik` 42.3.0, image
+The Serving step installs **Traefik** as Knative's ingress (chart `traefik/traefik` 42.3.1, image
 `ghcr.io/brf-tech/runr/reqs/traefik:v3.7.17` or the Helm value `knative.traefikImage`) in the
 Knative Serving namespace. Its Service is of type **LoadBalancer** and listens on ports 80 and
 443: the cluster needs a load-balancer implementation that gives the Service an external IP
@@ -296,7 +296,8 @@ the kubeconfig download ([security.md](security.md#encryption-at-rest)).
 
 The kubeconfig is RunR's only access to the cluster, also for a region on the cluster RunR runs
 in: the control plane's own service account only reads the `kube-system` namespace to recognise
-that cluster. Give the kubeconfig **cluster-admin** rights. An install creates namespaces, CRDs
+that cluster, and in its own namespace the console's TLS Secret and cert-manager Certificate
+([install.md](install.md#when-the-console-certificate-is-not-issued)). Give the kubeconfig **cluster-admin** rights. An install creates namespaces, CRDs
 (Knative's, Traefik's, kube-prometheus-stack's), ClusterRoles and ClusterRoleBindings (the
 runr-agent's, cAdvisor's, Traefik's Knative networking role and the charts' own), a PriorityClass
 (`observability-critical`), an IngressClass, RuntimeClasses, node labels and taints, privileged
@@ -597,7 +598,7 @@ Redis and the region's Redis settings.
 
 | Setting | Default | Change with | What it does |
 |---|---|---|---|
-| Prometheus | RunR's: kube-prometheus-stack (chart 92.21.2), release `knative` in `observability` | when the region is created: wizard step 2, `--prometheus-url`, `prometheus_url`; later console General → **Existing monitoring**, `runr regions set REGION --set prometheus_url=…`, `PUT /knative-regions/{id}/monitoring` | an in-cluster Prometheus to reuse instead. When the cluster runs the Prometheus Operator, RunR adds cAdvisor, its PodMonitors and recording rules (label `app.kubernetes.io/part-of=runr`) for it |
+| Prometheus | RunR's: kube-prometheus-stack (chart 92.22.0), release `knative` in `observability` | when the region is created: wizard step 2, `--prometheus-url`, `prometheus_url`; later console General → **Existing monitoring**, `runr regions set REGION --set prometheus_url=…`, `PUT /knative-regions/{id}/monitoring` | an in-cluster Prometheus to reuse instead. When the cluster runs the Prometheus Operator, RunR adds cAdvisor, its PodMonitors and recording rules (label `app.kubernetes.io/part-of=runr`) for it |
 | Loki | RunR's: loki-stack (chart 2.10.3) in `observability` | when the region is created: `--loki-url`, `--loki-org-id`, `loki_url`, `loki_org_id`; later as Prometheus (`loki_url`, `loki_org_id`) | an in-cluster Loki to reuse instead, with its tenant ID |
 | Tracing backend | Helm `observability.tracing.defaultMode` (`managed`) | the **Tracing** tab next to Platform; `GET`/`PUT`/`DELETE /observability/regions/{id}/tracing`, `POST …/tracing/install`; `php artisan cluster:install-tracing` | OpenTelemetry Collector and Tempo, or a reused Tempo, an external OTLP endpoint, or off ([observability.md](observability.md#tracing-backend)) |
 

@@ -10,7 +10,8 @@ use Illuminate\Http\Request;
 
 /**
  * POST /api/horizon/link — a single-use sign-in link to the Horizon dashboard for the caller: a
- * platform administrator or, in the single-tenant edition, an Owner (App\Support\HorizonAccess),
+ * platform administrator or, in the single-tenant edition, a holder of platform.manage — its
+ * Owners and custom roles that include it (App\Support\HorizonAccess),
  * with a console session or an unscoped API token — a token limited to some permissions cannot
  * open a dashboard that retries and deletes jobs.
  */
@@ -19,8 +20,8 @@ class HorizonLinkController extends Controller
     /**
      * Get a single-use sign-in link to the Horizon dashboard.
      *
-     * For a platform administrator or, in the single-tenant edition, an Owner, with a console
-     * session or an unscoped API token.
+     * For a platform administrator or, in the single-tenant edition, a holder of platform.manage
+     * (Owners hold it), with a console session or an unscoped API token.
      */
     public function __invoke(Request $request, HorizonAccess $access, Rbac $rbac): JsonResponse
     {

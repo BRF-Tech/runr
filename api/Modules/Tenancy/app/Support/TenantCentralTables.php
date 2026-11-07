@@ -80,6 +80,8 @@ final class TenantCentralTables
         'runtime_patch_notices' => 'tenant_id',
         // Custom runtimes registered in the organization (their versions and builds below)
         'runtimes' => 'tenant_id',
+        // The organization's runtime sources (docs/runtimes.md#runtime-sources) and their patches
+        'runtime_sources' => 'tenant_id',
         // The platform's queue consumer choice for the organization per platform region (Billing
         // module, docs/billing.md#queue-consumers): a setting, not a billing record. Its own
         // choices (billing_region_overrides) are in its schema and go with it
@@ -166,6 +168,18 @@ final class TenantCentralTables
                 }
                 if (self::has($connection, 'runtime_builds', 'runtime_id')) {
                     $attempt('runtime_builds', fn () => $db->table('runtime_builds')->whereIn('runtime_id', $runtimeIds)->delete());
+                }
+            }
+        }
+
+        // The patches and patch feed state of the organization's runtime sources
+        if (self::has($connection, 'runtime_sources', 'tenant_id')) {
+            $sourceIds = $db->table('runtime_sources')->where('tenant_id', $tenantId)->pluck('id')->map(fn ($id) => (string) $id)->all();
+            if ($sourceIds !== []) {
+                foreach (['runtime_patches', 'runtime_patch_feeds'] as $table) {
+                    if (self::has($connection, $table, 'source_id')) {
+                        $attempt($table, fn () => $db->table($table)->whereIn('source_id', $sourceIds)->delete());
+                    }
                 }
             }
         }

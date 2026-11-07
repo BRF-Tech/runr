@@ -23,11 +23,11 @@ interface KnativeConstants
     const TRAEFIK_CHART = 'traefik/traefik';
 
     // Pinned: 39.x bundles Gateway API v1.4 CRDs, which the safe-upgrades
-    // ValidatingAdmissionPolicy of an installed Gateway API >= v1.5 rejects. 42.3.0 = Traefik
+    // ValidatingAdmissionPolicy of an installed Gateway API >= v1.5 rejects. 42.3.1 = Traefik
     // v3.7.17, no bundled Gateway API CRDs. Existing regions move to it through TraefikChartStep:
     // chart >= 41.0.0 renamed root `logs` to `log`/`accessLog`, and its values schema refuses the
     // old keys a release keeps (TraefikChartValues).
-    const TRAEFIK_CHART_VERSION = '42.3.0';
+    const TRAEFIK_CHART_VERSION = '42.3.1';
 
     // kubeVersion of that chart: Helm refuses it on an earlier Kubernetes
     const TRAEFIK_CHART_MIN_K8S_MINOR = 30;

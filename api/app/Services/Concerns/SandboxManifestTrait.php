@@ -3,6 +3,7 @@
 namespace App\Services\Concerns;
 
 use App\Services\Helpers\ContainerRuntimeHelper;
+use App\Services\Helpers\NodeDownload;
 
 trait SandboxManifestTrait
 {
@@ -145,6 +146,9 @@ trait SandboxManifestTrait
      * - validate_config: `containerd --config <file> config dump` with the node's own containerd
      *   binary (k3s/rke2: their bundled one) — every config change is checked before a restart.
      * - runtime_loaded: whether the running runtime has runsc (crictl info).
+     * - download: wget with five tries, 5 / 10 / 20 / 40 s apart (NodeDownload: the release
+     *   tarball and its checksum — a node's DNS or network that is not back yet does not fail
+     *   the install).
      * - restart_runtime: restart the unit that owns containerd (containerd, or k3s/rke2 whose
      *   restart also restarts kubelet — staggered per node; running pods survive) and wait until
      *   runsc is loaded / unloaded.
@@ -229,6 +233,7 @@ runtime_loaded() {
   return 1
 }
 
+BASH.NodeDownload::script().<<<'BASH'
 # restart_runtime <loaded|unloaded>: restart the runtime's unit, wait until runsc is in that state
 restart_runtime() {
   UNIT=""
@@ -268,7 +273,8 @@ BASH;
     /**
      * Distro-agnostic install script using static binaries.
      * Works on Ubuntu, RHEL, Flatcar, Talos, Bottlerocket, etc.
-     * Downloads the pinned gVisor release tarball (GVISOR_RELEASE), verifies its sha512 and
+     * Downloads the pinned gVisor release tarball (GVISOR_RELEASE; five tries with backoff,
+     * download()), verifies its sha512 and
      * installs runsc, containerd-shim-runsc-v1 and runsc's sidecars (gvisor-bin/) from it into
      * /usr/local/bin.
      *
@@ -309,8 +315,8 @@ if [ -x "$BIN_DIR/runsc" ] && [ -x "$BIN_DIR/containerd-shim-runsc-v1" ] && [ -x
 else
   echo "Installing gVisor ${GVISOR_RELEASE:-latest} (${ARCH}) from ${RELEASE_URL}/gvisor.tar.bz2 ..."
   TMP=$(mktemp -d /tmp/gvisor.XXXXXX) || fail "cannot create a temp dir"
-  wget -q -O "$TMP/gvisor.tar.bz2" "${RELEASE_URL}/gvisor.tar.bz2" || fail "download of ${RELEASE_URL}/gvisor.tar.bz2 failed"
-  wget -q -O "$TMP/gvisor.tar.bz2.sha512" "${RELEASE_URL}/gvisor.tar.bz2.sha512" || fail "download of ${RELEASE_URL}/gvisor.tar.bz2.sha512 failed"
+  download "${RELEASE_URL}/gvisor.tar.bz2" "$TMP/gvisor.tar.bz2" || fail "download of ${RELEASE_URL}/gvisor.tar.bz2 failed after ${DOWNLOAD_TRIES:-5} tries"
+  download "${RELEASE_URL}/gvisor.tar.bz2.sha512" "$TMP/gvisor.tar.bz2.sha512" || fail "download of ${RELEASE_URL}/gvisor.tar.bz2.sha512 failed after ${DOWNLOAD_TRIES:-5} tries"
   (cd "$TMP" && sha512sum -c gvisor.tar.bz2.sha512 >/dev/null 2>&1) || fail "gvisor.tar.bz2 does not match its sha512 checksum"
   mkdir -p "$TMP/x" && tar -xjf "$TMP/gvisor.tar.bz2" -C "$TMP/x" || fail "cannot unpack gvisor.tar.bz2"
   rm -f "$TMP/gvisor.tar.bz2"

@@ -33,7 +33,7 @@ func newRuntimesCmd(app *App) *cobra.Command {
 	ls := runtimesLsCmd(app)
 	cmd.AddCommand(ls, runtimesGetCmd(app), runtimesRegisterCmd(app), runtimesUpdateCmd(app), runtimesRmCmd(app),
 		runtimesValidateCmd(app), runtimesTemplateCmd(app), runtimesBuildsCmd(app), runtimesBuildCmd(app),
-		runtimesTestDeployCmd(app), runtimesPatchesCmd(app))
+		runtimesTestDeployCmd(app), runtimesPatchesCmd(app), runtimeSourcesCmd(app), runtimeCatalogCmd(app))
 	cmd.RunE = ls.RunE
 	cmd.Args = cobra.NoArgs
 	cmd.Flags().AddFlagSet(ls.Flags())
@@ -78,9 +78,10 @@ func runtimesLsCmd(app *App) *cobra.Command {
 				}
 			}
 			return app.Printer().Print(list, func(t *output.TableWriter) {
-				t.Header("RUNTIME", "VERSION", "DEFAULT", "EOL", "KIND", "MODE", "IMAGE")
+				t.Header("RUNTIME", "VERSION", "DEFAULT", "STATE", "EOL", "SUNSET", "KIND", "MODE", "SOURCE", "IMAGE")
 				for _, r := range list {
-					t.Row(r.ID, r.Version, yesNo(r.Default), output.Dash(r.EOL), infoKind(r), output.Dash(r.RunMode), r.Image)
+					t.Row(r.ID, r.Version, yesNo(r.Default), output.Dash(r.State), output.Dash(r.EOL), output.Dash(r.Sunset),
+						infoKind(r), output.Dash(r.RunMode), output.Dash(r.SourceName), r.Image)
 				}
 			})
 		},
@@ -140,6 +141,16 @@ func runtimeDetail(t *output.TableWriter, d *runr.RuntimeDetail) {
 	}
 	t.KV("Kind", d.Kind())
 	t.KV("Source", output.Dash(d.Source))
+	if d.SourceName != "" {
+		from := d.SourceName
+		if d.SourcePath != "" {
+			from += " (" + d.SourcePath + ")"
+		}
+		t.KV("Runtime source", from)
+	}
+	if d.Lifecycle != nil {
+		t.KV("Lifecycle", lifecycleLabel(d.Lifecycle))
+	}
 	t.KV("Run mode", output.Dash(d.RunMode))
 	if d.Wasm != "" {
 		t.KV("WebAssembly shim", d.Wasm)
@@ -178,8 +189,9 @@ func runtimeDetail(t *output.TableWriter, d *runr.RuntimeDetail) {
 		sort.Strings(names)
 		t.KV("Files", strings.Join(names, ", "))
 	}
-	t.Header("VERSION", "DEFAULT", "EOL", "SOURCE", "IMAGE")
-	for _, v := range d.Versions {
+	t.Header("VERSION", "DEFAULT", "STATE", "EOL", "SUNSET", "SOURCE", "IMAGE")
+	for i := range d.Versions {
+		v := &d.Versions[i]
 		source, img := "image", v.Image
 		if d.Manifest != nil {
 			if mv := d.Manifest.Version(v.Version); mv != nil {
@@ -194,7 +206,7 @@ func runtimeDetail(t *output.TableWriter, d *runr.RuntimeDetail) {
 		if img == "" {
 			img = "(built in the region)"
 		}
-		t.Row(v.Version, yesNo(v.IsDefault), output.Dash(v.EOLAt), source, img)
+		t.Row(v.Version, yesNo(v.IsDefault), output.Dash(d.State(v)), output.Dash(v.EOLAt), output.Dash(v.SunsetAt), source, img)
 	}
 }
 

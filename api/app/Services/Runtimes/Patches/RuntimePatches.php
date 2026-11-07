@@ -5,10 +5,12 @@ namespace App\Services\Runtimes\Patches;
 use App\Models\Deployment;
 use App\Models\ExecutorImage;
 use App\Models\Project;
+use App\Models\Runtime;
 use App\Models\RuntimePatch;
 use App\Models\Version;
 use App\Services\Runtimes\RuntimeRegistry;
 use App\Support\SchemaColumns;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Log;
@@ -46,9 +48,66 @@ class RuntimePatches
     /** @var array<string, string|null> default version per runtime */
     private array $defaults = [];
 
+    /** @var array<string, string|false> the feed that patches a runtime (patchSourceOf()) */
+    private static array $patchSources = [];
+
     public function flush(): void
     {
         $this->patches = $this->liveSince = $this->defaults = [];
+        self::$patchSources = [];
+    }
+
+    /**
+     * Whose patches a runtime takes (docs/runtimes.md#patches-of-a-source): '' RunR's feed (the
+     * built-in runtimes), the id of its runtime source (a source's patch feed or catalog), false
+     * none (a runtime registered by hand). A feed can never patch another feed's runtime.
+     */
+    public static function patchSourceOf(string $runtime): string|false
+    {
+        if (array_key_exists($runtime, self::$patchSources)) {
+            return self::$patchSources[$runtime];
+        }
+
+        try {
+            $row = Runtime::query()->find($runtime, ['id', 'source', 'source_id']);
+        } catch (\Throwable) {
+            $row = null;
+        }
+
+        $source = match (true) {
+            $row === null, $row->isBuiltin() => '',
+            $row->source_id !== null => (string) $row->source_id,
+            default => false,
+        };
+
+        // memoized for the request / job only (flush()); a sync changes it rarely
+        if (count(self::$patchSources) > 500) {
+            self::$patchSources = [];
+        }
+
+        return self::$patchSources[$runtime] = $source;
+    }
+
+    /** Forget which feed patches which runtime (a runtime source was read). */
+    public static function flushSources(): void
+    {
+        self::$patchSources = [];
+    }
+
+    /**
+     * RuntimePatch rows of the feed that patches $runtime.
+     *
+     * @return Builder<RuntimePatch>|null
+     */
+    private static function scoped(string $runtime): ?Builder
+    {
+        $source = self::patchSourceOf($runtime);
+        if ($source === false) {
+            return null;
+        }
+
+        return RuntimePatch::query()->where('runtime', $runtime)
+            ->when($source === '', fn ($q) => $q->whereNull('source_id'), fn ($q) => $q->where('source_id', $source));
     }
 
     /**
@@ -93,8 +152,9 @@ class RuntimePatches
         $key = "{$runtime}\0{$version}";
         if (! isset($this->patches[$key])) {
             try {
-                $this->patches[$key] = RuntimePatch::query()
-                    ->where('runtime', $runtime)->where('version', $version)->where('in_feed', true)
+                $query = self::scoped($runtime);
+                $this->patches[$key] = $query === null ? new Collection : $query
+                    ->where('version', $version)->where('in_feed', true)
                     ->orderByDesc('published_at')->orderByDesc('id')
                     ->get()->values();
             } catch (\Throwable $e) {
@@ -131,7 +191,7 @@ class RuntimePatches
         }
 
         return $this->of($runtime, $version)->firstWhere('digest', $digest)
-            ?? RuntimePatch::query()->where('runtime', $runtime)->where('version', $version)->where('digest', $digest)
+            ?? self::scoped($runtime)?->where('version', $version)->where('digest', $digest)
                 ->orderByDesc('published_at')->first();
     }
 

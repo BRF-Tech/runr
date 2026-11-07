@@ -43,11 +43,12 @@ func init() {
 		Endpoint{Method: "GET", Path: "/runtimes", Query: []string{"all", "region"}, Status: 200, Optional: true,
 			Response: concat(prefix("data[].", runtimeFields), []string{"abilities.manage", "abilities.use_custom", "custom_enabled"}),
 			Sources:  append([]string{"app/Http/Controllers/Api/RuntimeController.php"}, runtimeSources...),
-			// WebAssembly runtimes name their shim
-			Capabilities: []string{"data[].wasm"}},
+			// WebAssembly runtimes name their shim; APIs with runtime sources send where a runtime
+			// comes from and its lifecycle (contract_runtime_sources.go)
+			Capabilities: append([]string{"data[].wasm"}, prefix("data[].", runtimeLifecycleFields)...)},
 		Endpoint{Method: "GET", Path: "/runtimes/{runtime}", Status: 200,
 			Response: prefix("data.", runtimeDetailFields), Sources: runtimeSources,
-			Capabilities: []string{"data.wasm"}},
+			Capabilities: append([]string{"data.wasm"}, prefix("data.", runtimeLifecycleFields)...)},
 		Endpoint{Method: "GET", Path: "/runtimes/{runtime}/template", Query: []string{"service_type", "handler"}, Status: 200,
 			Optional: true, Response: []string{"files"}},
 		Endpoint{Method: "POST", Path: "/runtimes/validate", Status: 200, Permission: runtimeAdmin,

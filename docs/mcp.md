@@ -267,6 +267,10 @@ answers what the console's billing pages would.
 | `runtimes_list` | the runtime catalog; each version with its end of life and newest runtime patch (`latest_patch`: tag, level, published, deadline) | | R I |
 | `runtime_get` | a runtime's manifest and starter template | | R I |
 | `runtime_register` | register a runtime from a manifest | `runtimes.manage` \| `runtimes.use_custom` | |
+| `runtime_sources_list` | the runtime sources (RunR's catalog, connected OCI catalogs and Git repositories) with status, revision and the problems of their manifests (file and JSON path); `source`: one source with its runtimes, their lifecycle and its patches | `runtimes.manage` \| `runtimes.use_custom` | R I |
+| `runtime_source_connect` | connect a Git repository or a signed OCI catalog of runtimes (public or private: Git token / SSH deploy key, registry credentials) and read it once | `runtimes.manage` \| `runtimes.use_custom` | |
+| `runtime_source_sync` | read a runtime source now | `runtimes.manage` \| `runtimes.use_custom` | I |
+| `runtime_source_remove` | remove a runtime source (`confirm: true`); its runtimes with projects stay orphaned | `runtimes.manage` \| `runtimes.use_custom` | D I |
 | `runtime_patches_get` | a project's runtime patch state and the last five patches of its runtime version with why each came: level, reason, CVEs, link, deadline; its patch migrations | `projects.view` | R I |
 | `runtime_patch_pin` | pin a project to one of those patches (`patch` by id or tag; redeploys unless `deploy: false`) or `unpin` it | `projects.deploy` | I |
 | `workflows_list` | workflow definitions of a project (`environment`: one environment's workflow app) | `workflows.view` | R I |

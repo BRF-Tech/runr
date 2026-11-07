@@ -30,8 +30,9 @@ use Tests\TestCase;
  *   any HTTP 4xx of the provider (429 included, with or without JSON) → 422 like an invalid token,
  *   the fallback window stays shut · a configuration error — no site key, no secret, a stored
  *   secret that cannot be decrypted, a secret the provider refuses — counts as an outage: the local
- *   fallback answers (never fail-closed) and the platform administrators get a "configuration is
- *   wrong" alarm, at most once an hour per reason, their notification preferences applying ·
+ *   fallback answers (never fail-closed) and the platform administrators (single-tenant: the
+ *   holders of platform.manage too) get a "configuration is wrong" alarm, at most once an hour
+ *   per reason, their notification preferences applying ·
  *   the settings page shows the problem · `captcha_local` is base64 JSON only, accepted for 120 s
  *   after the failure, else 422 fallback_inactive.
  */
@@ -43,6 +44,8 @@ class CaptchaMisconfigurationTest extends TestCase
 
     private User $admin;
 
+    private User $owner;
+
     protected function setUp(): void
     {
         parent::setUp();
@@ -51,7 +54,7 @@ class CaptchaMisconfigurationTest extends TestCase
         Mail::fake();
 
         // the install's first account (Owner), then a platform administrator
-        $this->coreUser(false, ['username' => 'jane', 'email' => 'jane@example.com']);
+        $this->owner = $this->coreUser(false, ['username' => 'jane', 'email' => 'jane@example.com']);
         $this->admin = $this->coreUser(true);
     }
 
@@ -60,10 +63,18 @@ class CaptchaMisconfigurationTest extends TestCase
         return $this->postJson('/api/auth/login', ['login' => 'jane', 'password' => 'password'] + $extra);
     }
 
-    /** @return Collection<int, Notification> */
-    private function alarms(string $captcha = 'misconfigured'): Collection
+    /**
+     * The platform administrators' alarms. The Owner of this single-tenant install holds
+     * platform.manage and gets the same alarm besides (test_the_single_tenant_owner_is_told_too).
+     *
+     * @return Collection<int, Notification>
+     */
+    private function alarms(string $captcha = 'misconfigured', bool $owner = false): Collection
     {
-        return Notification::query()->orderBy('id')->get()->filter(fn (Notification $n) => ($n->data['captcha'] ?? null) === $captcha)->values();
+        return Notification::query()->orderBy('id')->get()
+            ->filter(fn (Notification $n) => ($n->data['captcha'] ?? null) === $captcha)
+            ->filter(fn (Notification $n) => $owner || (string) $n->user_id !== (string) $this->owner->id)
+            ->values();
     }
 
     // ── 4xx is a refusal, never an outage ───────────────────────────────────
@@ -213,7 +224,8 @@ class CaptchaMisconfigurationTest extends TestCase
         $this->login([LocalChallenge::FIELD => $this->solve($refused->json('challenge'))])->assertOk()->assertJsonStructure(['user', 'token']);
 
         $this->assertAlarm(CaptchaConfig::SITE_KEY_MISSING);
-        Event::assertDispatched(NotificationCreated::class, 1);
+        // the platform administrator's and the Owner's (single-tenant: platform.manage)
+        Event::assertDispatched(NotificationCreated::class, 2);
         // a configuration error is not the provider's outage: no "cannot be reached" alarm
         $this->login()->assertStatus(409);
         $this->assertCount(0, $this->alarms('fallback'));
@@ -351,6 +363,20 @@ class CaptchaMisconfigurationTest extends TestCase
         $this->login()->assertStatus(409);
         $this->assertSame([CaptchaConfig::SECRET_MISSING, CaptchaConfig::SECRET_MISSING, CaptchaConfig::SITE_KEY_MISSING], $this->alarms()->map(fn ($n) => $n->data['reason'])->all());
         $this->assertSame([(string) $this->admin->id], $this->alarms()->pluck('user_id')->map(fn ($id) => (string) $id)->unique()->values()->all());
+    }
+
+    /** A single-tenant install has no users.is_admin: its holders of platform.manage (the Owner) hear the alarm. */
+    public function test_the_single_tenant_owner_is_told_too(): void
+    {
+        $this->installCaptcha(['provider' => 'turnstile', 'site_key' => self::TS_SITE_KEY, 'secret' => '', 'forms' => '']);
+        Http::fake();
+
+        $this->login()->assertStatus(409);
+        $this->login()->assertStatus(409);
+
+        $told = $this->alarms(owner: true)->pluck('user_id')->map(fn ($id) => (string) $id)->sort()->values()->all();
+        $this->assertSame(collect([$this->admin->id, $this->owner->id])->map(fn ($id) => (string) $id)->sort()->values()->all(), $told, 'once each');
+        $this->assertSame(CaptchaConfig::SECRET_MISSING, $this->alarms(owner: true)->firstWhere('user_id', $this->owner->id)?->data['reason']);
     }
 
     public function test_saving_the_settings_starts_the_alarm_over(): void

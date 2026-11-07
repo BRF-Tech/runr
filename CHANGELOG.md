@@ -8,6 +8,270 @@ did not change says so.
 
 ## [Unreleased]
 
+## [0.6.8] - 2026-11-08
+
+### Upgrade notes
+
+- **A migration adds runtime sources** (`2026_11_07_100001_create_runtime_sources`): the table
+  `runtime_sources`; `runtimes.source_id`, `source_path`, `orphaned_at`; `executor_images.deprecated_at`,
+  `sunset_at`; `runtime_patches.source_id` and `runtime_patch_feeds.source_id`. It only adds columns
+  and a table; existing runtimes, versions, patches and projects are unchanged. See
+  [docs/runtimes.md](docs/runtimes.md#runtime-sources).
+- **The built-in runtimes now come from RunR's signed catalog** `ghcr.io/brf-tech/runr/runtime-catalog:stable`
+  (published by BRF-Tech/runr-runtimes, signed with the patch feed's key), read at the API's start and
+  every 15 minutes. Until it has been read once the catalog the API image ships is in use, as before;
+  an air-gapped installation sets Helm `runtimeCatalog.offline: true` (`RUNR_RUNTIME_CATALOG_REF=""`)
+  and keeps the bundled catalog. The API needs to reach ghcr.io — or `runtimeCatalog.viaRegion`
+  (default: `runtimePatches.viaRegion`) — like the patch feed already does.
+- **`EXECUTOR_RUNTIMES` is now only the first default of the platform setting Built-in runtimes**
+  (Build & Run → Runtimes): its default changed from the list of eleven built-ins to *every runtime
+  of the catalog*, so a runtime the catalog gains is offered without a release. An installation that
+  sets `EXECUTOR_RUNTIMES` keeps its list until a platform administrator saves the setting.
+- **Projects without a runtime version are refused once their runtime's default version ends**
+  (end of life or sunset), like pinned projects already were; running deployments stay untouched.
+  Before, a project on no version deployed a default that was past its end of life.
+- **The API image adds `openssh-client`** for Git sources with an SSH deploy key.
+- **The console certificate is checked** ([0.6.7 → 0.6.8 in upgrade.md](docs/upgrade.md#the-console-certificate-warning)).
+  When cert-manager issues it, the Role `runr-api-role` gains `get` on the console's Certificate and
+  `list` on the CertificateRequests of the release namespace; `runr-config` gains
+  `CONSOLE_TLS_MODE`, `CONSOLE_TLS_ISSUER` and `CONSOLE_TLS_CHECK`. A marketplace that merges the
+  package's default values into an upgrade can bring `ingress.tls.mode: letsencrypt` to a release
+  that never set it: without the ClusterIssuer `letsencrypt-prod` the console stays on the ingress
+  controller's default certificate, which the new warning reports. Set `ingress.tls.mode: none` (or
+  the mode you use) in the release's own values.
+- **Single-tenant: the Owners now get the Patches page, the platform banners and the platform
+  administrators' notifications** through the new permission `platform.manage`. Nothing is
+  migrated: built-in roles come from the catalog. The Admin role does not hold it; a custom role
+  can ([0.6.7 → 0.6.8 in upgrade.md](docs/upgrade.md#the-installations-own-pages-on-single-tenant-installs)).
+- **Back to 0.6.7 is a `helm rollback` without rolling the migration back**
+  ([Back to 0.6.7](docs/upgrade.md#back-to-067)). 0.6.7 runs on the new table and columns and
+  ignores them. Projects on Java, .NET, Ruby and Bun keep running and deploying there: 0.6.8 keeps
+  every built-in runtime's manifest on its row, which 0.6.7 reads for the runtimes its own catalog
+  lacks. A source's runtime that discovers its versions loses them on 0.6.7, and the images of a
+  private source cannot be pulled there. After upgrading to 0.6.8 again, run `php artisan
+  runtime-sources:sync --force` once where sources are connected.
+
+### Added
+
+- **A dependency test bot.** Every week (and by hand for one issue), each new version of a region
+  dependency that the daily release check filed an issue for (the Traefik, kube-prometheus-stack,
+  loki-stack, Zot and kata-deploy charts, a Knative minor) is moved in the development branch with
+  every test and doc that names the old version, tested with its suites (PHPUnit, the Kind e2e that
+  installs it, and the move of a region installed by the last release), and committed only when
+  they pass; the issue is then closed with `deps: passed`. A failed suite, or a version that is no
+  mechanical bump (a new major, changed CRDs, values the chart no longer takes, a new image of the
+  reqs mirror), labels the issue `needs attention` with what failed, and nothing is committed
+  ([development.md](docs/development.md#dependency-test-bot)).
+- **Runtime sources** ([docs/runtimes.md](docs/runtimes.md#runtime-sources)): platform
+  administrators (for everyone) and organizations (for themselves, while custom runtimes are on)
+  connect **signed OCI catalogs** and **Git repositories** of `runtimes/<id>/runtime.yaml`, public or
+  private (HTTPS token or SSH deploy key; registry credentials for a private catalog and private
+  images). Each source is read periodically and on **Sync now**; every manifest is validated
+  strictly, a bad one is reported with its file and JSON path and does not stop the others; the
+  source records its status, revision, last read and problems; its runtimes are enabled or disabled
+  one by one. **Test connection** reads a source before it is saved.
+- **RunR's own catalog is a source**: the built-in runtimes, a new language of BRF-Tech/runr-runtimes
+  offered without a RunR release; `builtin.json` stays as the offline fallback and the Runtimes page
+  says which is in use. The **Built-in runtimes** setting picks the offered built-ins.
+- **Runtime ids stay one namespace** with explicit rules: built-in ids are RunR's, the first
+  registration wins, a clash is a sync problem naming the holder (never another organization),
+  orphans are adopted by the same owner.
+- **Private runtime images**: function pods, Kaniko function and runtime image builds, WebAssembly
+  toolchain Jobs, sandboxes, the node pre-pull and version discovery use the source's registry
+  credentials (a RunR-managed `kubernetes.io/dockerconfigjson` Secret, Kaniko's docker config,
+  `crictl --creds`). Credentials are encrypted at rest, write-only and masked everywhere.
+- **Lifecycle for every runtime** ([docs/runtimes.md](docs/runtimes.md#lifecycle)): manifest fields
+  `deprecated` (a date or `true`), `sunset`, `replacement` and `notice` for a runtime, `deprecated` and
+  `sunset` for a version, `versionDiscovery.lifecycle` for discovered versions. A version ends at the
+  earlier of its end of life and its sunset — the same reminders (13, 4, 1 weeks), picker removal and
+  save / deploy refusal as an end of life; deprecations are announced once. A runtime that leaves its
+  source is **orphaned**: no new projects, its projects keep running and deploying for 90 days
+  (`RUNR_RUNTIME_ORPHAN_GRACE_DAYS`), then its sunset.
+- **Patches of a source's own runtimes**: from its signed catalog or its own signed patch feed,
+  verified with the source's key — levels, deadlines, notifications, automatic migration and the
+  Patches page like the built-ins. RunR's feed patches only the built-ins.
+- Console: Build & Run → Runtimes → **Sources** (list, add / edit with credentials, test connection,
+  sync now, problems, the source's runtimes with enable / disable, its patches), the same for
+  organizations; the **Built-in runtimes** card; lifecycle badges (end of life, deprecated, sunset,
+  orphaned) on runtimes, versions, the runtime picker and projects; a tour of the Runtimes page.
+- API `/api/runtime-sources` (list, connect, show, change, remove, sync, test) and
+  `/api/runtime-catalog`; CLI `runr runtimes sources …` and `runr runtimes catalog`; MCP tools
+  `runtime_sources_list`, `runtime_source_connect`, `runtime_source_sync`, `runtime_source_remove`;
+  Terraform resource `runr_runtime_source`; Helm values `runtimeCatalog.*`.
+- [docs/executor-development.md](docs/executor-development.md): building an executor for any language,
+  testing, publishing a repository or a signed catalog, private sources, signing, lifecycle and
+  patches — with the sample repository
+  [BRF-Tech/runr-sample-custom-executor](https://github.com/BRF-Tech/runr-sample-custom-executor)
+  (Lua in persistent mode, compiled Zig in http mode).
+- e2e suite `runtime-sources` (`runtime/ci.sh test-runtime-sources`): RunR's published catalog, a
+  signed OCI catalog, the sample repository served as a Git source in the cluster, a private image,
+  a sunset refusing deploys.
+- **Java, .NET (C#), Ruby and TypeScript on Bun as built-in runtimes.** Four runtimes join the
+  catalog (`java`, `dotnet`, `ruby`, `bun`), each with its handler server, starter code, dependency
+  file and the three triggers (http, schedule, queue), under runc, gVisor and Kata. Their images
+  are published by BRF-Tech/runr-runtimes (`exec-java`, `exec-dotnet`, `exec-ruby`, `exec-bun`),
+  run as a user other than root, and get patch tags and the patch feed like the others
+  ([runtimes](docs/runtimes.md#built-in-catalog)).
+  - **Java**: Eclipse Temurin, the LTS lines (21.0 and 25.0).
+    `public static Object handler(Map<String, Object> event, Map<String, Object> context)` in
+    `Main.java`; every save is built with javac, and a FaaS project's `pom.xml` brings its jars
+    through Maven.
+  - **.NET (C#)**: .NET 10.0. `public static object Handler(JsonNode? input, IDictionary<string,
+    object?> context)` in `Function.cs`; every save is built with the SDK, `Function.csproj` names
+    the NuGet packages, and the function runs as a self-contained application on Microsoft's
+    chiseled runtime-deps image.
+  - **Ruby**: 3.3, 3.4 and 4.0. `def handler(event, context)`, or `handler(event:, context:)` as on
+    AWS Lambda; a FaaS project's `Gemfile` is installed with Bundler.
+  - **TypeScript (Bun)**: Bun 1.4, the newest release (Bun supports only its latest).
+    `export async function handler(event, context)` in `main.ts`, JavaScript too; a FaaS project's
+    `package.json` is installed with `bun install`.
+- **The code interpreter runs Java and C#** (`java`: Java's source launcher, `csharp`: .NET's
+  file-based apps, `dotnet run`), and TypeScript and JavaScript with Bun in a Bun sandbox; a
+  sandbox of the new runtimes defaults to its language ([Sandbox API](docs/sandbox-api.md)).
+- **Console and CLI**: the runtime picker, icons, editor highlighting, upload types and the code
+  interpreter's language list know the four; `runr init` and `runr dev` scaffold and run them
+  (`Main.java`, `Function.cs`, `main.rb`, `main.ts`).
+- **End-to-end**: the main suite runs `xaas-<runtime>-<version>-http/schedule/queue` and
+  `faas-<runtime>-<version>-http` for the four (the FaaS cases with Jedis, StackExchange.Redis,
+  the redis gem and ioredis), and their gVisor sandbox cases.
+- **A warning when the console certificate cannot be issued** ([install.md](docs/install.md#when-the-console-certificate-is-not-issued)).
+  With `ingress.tls.mode: letsencrypt` (or a `clusterIssuer` of the older keys) the API reads the
+  console's cert-manager Certificate and its newest CertificateRequest at most every five minutes;
+  platform administrators (single-tenant: the holders of `platform.manage`) see a banner across the
+  console while it cannot be issued — a missing
+  ClusterIssuer, a failed, denied or invalid request, a certificate still pending after ten
+  minutes, or a renewal that fails (with the current certificate's expiry). It says why, whether
+  the console serves the ingress controller's default certificate, and what to do: create the
+  ClusterIssuer, set `ingress.tls.clusterIssuer` to an existing one, or use `custom` or `none`.
+  `GET /api/admin/console-tls` returns the state for every mode (`ok`, `pending`, `failed`,
+  `not_applicable`, `unknown`). The ClusterIssuer itself is not read (it would need a cluster-wide
+  permission): a missing one shows in the CertificateRequest. Helm `ingress.tls.certificateCheck:
+  false` turns the check and its permissions off.
+
+### Changed
+
+- **The node pre-pull pulls the image a function runs on**, not every version image. For a runtime
+  with a build that is the build's `runImage`: .NET's chiseled `dotnet-runtime-deps` image instead
+  of its 1.3 GB SDK image, Go's Alpine instead of the Go toolchain images; Java (`runImage:
+  "{image}"`) and the runtimes without a build keep their version image. No function runs on an SDK,
+  and Kaniko fetches it through the region registry, which `region:reconcile` pre-warms with it; a
+  private run image of a runtime source is pulled with the source's credentials
+  ([docs/runtimes.md](docs/runtimes.md#configuration)). A Go or .NET sandbox runs on the toolchain
+  or SDK, so a node pulls it on its first such sandbox, as for any image it does not have; a warm
+  pool keeps such sandboxes started ([docs/sandbox-api.md](docs/sandbox-api.md#concepts)).
+- **Sandbox commands run without a kubectl process.** The API opens the API server's exec stream
+  itself (a WebSocket per command, `v5.channel.k8s.io`): exec (JSON and SSE), the code
+  interpreter, file transfers, background processes, kill and pause, and the exec WebSocket
+  without a terminal. Exit codes, output caps, timeouts, kills, error messages and the activity
+  records stay as they were. **Terminal sessions (`"tty": true`, the console terminal) keep
+  `kubectl exec -t` for now.** kubectl also takes over where the API's client cannot work: a
+  region kubeconfig with an exec plugin, an auth provider, credentials or a CA in files, a proxy
+  or impersonation, and an API server that refuses the WebSocket upgrade (one without
+  `v5.channel.k8s.io` is remembered for 10 minutes); a command goes to kubectl only before it
+  started. `SANDBOX_EXEC_CLIENT=kubectl` (via `extraEnv`) brings back a kubectl process for
+  every command. The region kubeconfig's CA, client certificate and key are kept in 0600 temp
+  files of the API process, as the API's other cluster calls already do.
+  - The native client takes a bearer `token` (a ServiceAccount's too) and
+    `client-certificate-data` / `client-key-data`, alone or together. Every other credential form
+    (an exec plugin, an auth provider, a token, certificate or CA in a file, basic auth,
+    impersonation, a `proxy-url`) goes to kubectl, and so does a server that an `HTTPS_PROXY` /
+    `HTTP_PROXY` of the API's environment covers and `NO_PROXY` does not exclude: kubectl and the
+    API's other cluster calls go through that proxy. Each reason is logged once per process
+    (`sandbox exec: kubectl instead of the native client: …`), also a command that went to kubectl
+    because the server refused it.
+  - e2e: the sandbox-api suite runs one command through the native client with a ServiceAccount
+    bearer-token kubeconfig of the Kind cluster (`sbx-exec-bearer-token`): refused without RBAC,
+    run with a Role of `pods/exec`.
+- **Region Traefik chart 42.3.1** (from 42.3.0). New regions install it; `region:reconcile` moves
+  the Traefik of an existing region to it (step `traefik-chart`), one pod at a time. Traefik stays
+  v3.7.17. The chart's `traefik.io` CRDs gain optional fields that RunR does not set, so an installed
+  region needs no CRD step ([0.6.7 → 0.6.8 in upgrade.md](docs/upgrade.md#067--068)).
+- **kube-prometheus-stack 92.22.0** (from 92.21.2; Prometheus Operator v0.94.2, as before). Regions
+  installed from now on run it; an installed region keeps its chart until `php artisan
+  cluster:patch-observability`, a change back to RunR's own monitoring or a new Serving install
+  moves it. On that move node-exporter restarts once with a stricter security context, and nothing
+  else restarts ([upgrade.md](docs/upgrade.md#kube-prometheus-stack-92220)).
+
+### Fixed
+
+- **`php artisan runtimes:sync` keeps the versions of a source's runtime that discovers them.** Such
+  a manifest (`versionDiscovery`) lists no versions, and the command took that for every version
+  retired: the runtime's projects could not deploy until the next `executor:sync`. It now leaves
+  them to `executor:sync`, which reads them from the runtime's registry.
+- **The region Traefik gets its probe timing and Service types in keys the chart reads.**
+  - RunR gave the Traefik chart keys it never read.
+    - The probes' timing went under `deployment`. Traefik ran the chart's defaults instead: a
+      readiness failure threshold of 1 and timeouts of 2 s.
+    - Each Service's type went beside its `spec`.
+    - `tlsOptions.default.preferServerCipherSuites` was set, which no Traefik v3 reads.
+  - Chart 42.3.1's schema refuses the `type` keys. They now sit in the Services' `spec`, the
+    probes' timing in the chart's root keys, and the TLS key is gone.
+  - **A new region's Traefik** now runs RunR's probes: readiness after 10 s with two successes,
+    timeouts of 5 s, liveness after 20 s with five failures. Its Services render as before, except
+    one line: `traefik-internal` states `type: ClusterIP`, the type Kubernetes already gave it.
+  - **An installed region** gets the same keys when `region:reconcile` moves its Traefik to chart
+    42.3.1 (step `traefik-chart`, under Changed). That move rolls the pods anyway, and the probe
+    timing comes with it.
+- **The install notes of `ingress.tls.mode: letsencrypt` say the ClusterIssuer has to exist.** They
+  said cert-manager issues the certificate even in a cluster without that issuer, where it never
+  is; they now name the issuer, how to check it (`kubectl get clusterissuer`, `kubectl get
+  certificate -n <namespace>`) and the other choices.
+- **Symfony 7.4.23 for the API.** The update covers `http-foundation`, `http-kernel`, `routing`
+  and `yaml`, plus the `error-handler`, `var-dumper` and contracts releases they need. It clears
+  the seven advisories published on 2026-11-04. They cover:
+  - HEAD requests that bypassed method-restricted access rules;
+  - path rules bypassed by a path appended to the script name;
+  - host placeholders that matched the start of the path;
+  - client-chosen hosts in generated URLs and in inline fragments;
+  - slow parse times in the YAML parser;
+  - Symfony's `private_ranges` shortcut trusting IPv4-mapped, 6to4, Teredo and NAT64 addresses.
+    RunR's `TRUSTED_PROXIES=private_ranges` already uses its own list, as before.
+
+  `composer audit` reports none.
+- **A single-tenant installation reaches its own Patches page, platform banners and notices.**
+  - The single-tenant edition has no `users.is_admin`, so what was for platform administrators
+    reached nobody there:
+    - the Patches page (`/api/admin/runtime-patches`) and `GET /api/admin/console-tls`;
+    - the banners of a newer RunR release, of a patch feed that is off or refused, and of a console
+      certificate cert-manager cannot issue;
+    - the notifications of a critical patch's platform count, a refused feed, a region reconcile
+      that did not finish and the bot protection's alarms.
+  - The new single-tenant permission `platform.manage` (Infrastructure) stands in for the flag. The
+    Owner role holds it; the Admin role does not; a custom role can include it
+    ([docs/permissions.md](docs/permissions.md#single-tenant-installs-platformmanage)).
+  - The Horizon dashboard follows the same permission. Owners keep their access; its link still
+    needs a session or an API token with full access.
+  - An API token with a selection of permissions reaches those routes when it carries
+    `platform.manage`.
+  - Multi-tenant installs are unchanged: only platform administrators, and their scoped tokens
+    stay refused. The `@platform:billing.*` routes stay as they are: tenant bills, archived bills
+    of deleted tenants, the per-tenant queue consumers of a platform region and the 0.5.7 records
+    (archived by a Tenancy migration) exist only in the multi-tenant edition.
+- **RunR's catalog no longer reads as an authentication failure while it is not published.** While
+  `ghcr.io/brf-tech/runr/runtime-catalog` did not exist or was not public, the default source showed
+  `auth_failed`: ghcr.io answers an anonymous read of a missing or private package with 401 / 403. A
+  source read without credentials that the registry or Git host refuses, or that answers 404 / "not
+  found", now has the status `not_found`, shown as *Not found or not public* (*Bulunamadı ya da
+  herkese açık değil*), with a hint on RunR's catalog that the bundled catalog stays in use.
+  `auth_failed` is left to a source whose own credentials were refused; registry credentials for
+  another host than the catalog's do not count. The API, the CLI (`runr.RuntimeSourceNotFound`),
+  the Terraform provider and the MCP tool list the new status
+  ([runtimes.md](docs/runtimes.md#sync)).
+- **The gVisor installer retries its download.** A node fetched gVisor's release tarball and its
+  checksum with one `wget`: a node whose DNS was not back yet (CoreDNS restarting) failed the
+  install. Both downloads now take five tries, 5, 10, 20 and 40 s apart, each failed try in the
+  installer pod's log; the WebAssembly installer downloads its shim tarballs the same way.
+- **The sandbox-api e2e no longer passes its gVisor cases on runc.** The setup restarted CoreDNS and
+  slept 5 s; the nodes' gVisor download failed 16 s later, and the runc RuntimeClass the e2e stands
+  in with ran the `gvisor` class. The setup now waits until CoreDNS is Ready again, and the suite
+  fails when gVisor was not installed (`sbx-gvisor-install`, with the install's error) or when its
+  `gvisor` sandbox does not see gVisor's kernel (`sbx-gvisor-runsc`: the RuntimeClass handler
+  `runsc`, `uname -r`, `dmesg`).
+- **`ci.sh test-helm-upgrade` keeps etcd in memory with `KIND_ETCD_IN_MEMORY=1`**, as the other Kind
+  suites do; its Kind configuration had no etcd patch. `test-global-projects`' second cluster gets
+  it as well, and every suite takes the patch from one helper.
+
+
 ## [0.6.7] - 2026-11-06
 
 ### Upgrade notes
@@ -3967,7 +4231,8 @@ Initial tagged release.
 - API gateways with routes, in-app notifications and support tickets.
 - Helm chart with a single-tenant / multi-tenant edition, an install form (`values.schema.json`), generated secrets and a Traefik ingress; a Docker Compose setup for development.
 
-[Unreleased]: https://github.com/brf-tech/runr/compare/v0.6.7...main
+[Unreleased]: https://github.com/brf-tech/runr/compare/v0.6.8...main
+[0.6.8]: https://github.com/brf-tech/runr/releases/tag/v0.6.8
 [0.6.7]: https://github.com/brf-tech/runr/releases/tag/v0.6.7
 [0.6.6]: https://github.com/brf-tech/runr/releases/tag/v0.6.6
 [0.6.5]: https://github.com/brf-tech/runr/releases/tag/v0.6.5

@@ -6,6 +6,7 @@ use App\Models\PlatformAdvisory;
 use App\Models\Project;
 use App\Models\RuntimePatch;
 use App\Models\RuntimePatchFeed;
+use App\Services\CertManager\ConsoleCertificate;
 use App\Services\Runtimes\Patches\RuntimePatches;
 use App\Support\Rbac\Rbac;
 use Dedoc\Scramble\Attributes\Response as OpenApiResponse;
@@ -18,13 +19,19 @@ use Illuminate\Http\Request;
  *  GET /api/runtime-patches?runtime=&version=   patches of the feed, newest first
  *  GET /api/runtime-patches/banners             what the console keeps on screen until it is
  *                                               resolved: critical / zero-day patches the user's
- *                                               projects run behind; for platform administrators
- *                                               also a newer RunR release and a feed that is off
- *                                               or refused
+ *                                               projects run behind; for the installation's
+ *                                               operators (platform administrators; single-tenant:
+ *                                               holders of platform.manage — Rbac::operatesPlatform())
+ *                                               also a newer RunR release, a feed that is off
+ *                                               or refused, and a console certificate that
+ *                                               cert-manager cannot issue (ConsoleCertificate)
  */
 class RuntimePatchController extends Controller
 {
-    public function __construct(private readonly RuntimePatches $patches) {}
+    public function __construct(
+        private readonly RuntimePatches $patches,
+        private readonly ConsoleCertificate $consoleCertificate,
+    ) {}
 
     /** List the runtime patches of the feed, newest first */
     #[OpenApiResponse(200, 'The patches of the feed (?runtime=, ?version=), the feed\'s status and how many patches per version are kept', type: 'array{data: list<array{'.RuntimePatch::OPENAPI_FIELDS.'}>, feed: array{enabled: bool, status: "ok"|"invalid_signature"|"invalid_schema"|"unreachable"|"disabled", fetched_at: string|null}, keep: int}')]
@@ -51,7 +58,7 @@ class RuntimePatchController extends Controller
     }
 
     /** List the patch and release banners for the signed-in user */
-    #[OpenApiResponse(200, 'Banners for the signed-in user: urgent patches of the projects they see; for platform administrators a newer RunR release and the feed\'s trouble', type: 'array{data: list<array{kind: "runtime_patch", level: string, overdue: bool, patch: array{'.RuntimePatch::OPENAPI_FIELDS.'}, project_count: int, projects: list<array{id: string, name: string}>}|array{kind: "platform_advisory", level: string, running: string, version: string, reason: string, url: string|null, published_at: string|null}|array{kind: "feed_disabled", level: string}|array{kind: "feed_invalid", level: string, status: string, error: string|null}>}')]
+    #[OpenApiResponse(200, 'Banners for the signed-in user: urgent patches of the projects they see; for platform administrators (single-tenant: holders of platform.manage) a newer RunR release, the feed\'s trouble and a console certificate cert-manager cannot issue', type: 'array{data: list<array{kind: "runtime_patch", level: string, overdue: bool, patch: array{'.RuntimePatch::OPENAPI_FIELDS.'}, project_count: int, projects: list<array{id: string, name: string}>}|array{kind: "platform_advisory", level: string, running: string, version: string, reason: string, url: string|null, published_at: string|null}|array{kind: "feed_disabled", level: string}|array{kind: "feed_invalid", level: string, status: string, error: string|null}|array{kind: "console_tls", level: string, minutes: int|null, '.ConsoleCertificate::OPENAPI_FIELDS.'}>}')]
     public function banners(Request $request, Rbac $rbac): JsonResponse
     {
         $user = $request->user();
@@ -78,14 +85,17 @@ class RuntimePatchController extends Controller
             ];
         }
 
-        if ($rbac->isPlatformAdmin($user)) {
+        if ($rbac->operatesPlatform($user)) {
             $banners = array_merge($banners, $this->platformBanners());
         }
 
         return response()->json(['data' => $banners])->header('Cache-Control', 'no-store, private');
     }
 
-    /** A newer RunR release (the newest, at the most urgent level of all newer ones) and the feed's own trouble. */
+    /**
+     * A newer RunR release (the newest, at the most urgent level of all newer ones), the feed's own
+     * trouble, and the console certificate when cert-manager cannot issue or renew it.
+     */
     private function platformBanners(): array
     {
         $banners = [];
@@ -108,6 +118,11 @@ class RuntimePatchController extends Controller
             if (in_array($feed->status, [RuntimePatchFeed::INVALID_SIGNATURE, RuntimePatchFeed::INVALID_SCHEMA], true)) {
                 $banners[] = ['kind' => 'feed_invalid', 'level' => RuntimePatch::CRITICAL, 'status' => $feed->status, 'error' => $feed->error];
             }
+        }
+
+        $consoleTls = $this->consoleCertificate->banner();
+        if ($consoleTls !== null) {
+            $banners[] = $consoleTls;
         }
 
         return $banners;

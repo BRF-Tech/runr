@@ -30,13 +30,14 @@ use Illuminate\Support\Carbon;
  * @property bool $in_feed
  * @property Carbon|null $removed_at
  * @property Carbon|null $announced_at
+ * @property string|null $source_id the runtime source whose catalog or patch feed lists it (null: RunR's feed)
  */
 class RuntimePatch extends Model
 {
     use UsesCentralConnection;
 
     /** The API document's fields of toApi() (the controllers' #[Response] attributes) */
-    public const OPENAPI_FIELDS = 'id: string, runtime: string, version: string, tag: string, image: string, digest: string, level: "routine"|"security"|"critical"|"zero-day", reason: string, reasons: array<string, string>, cves: list<string>, url: string|null, upstream: string|null, published_at: string, deadline_at: string|null, deadline_extended: bool, in_feed: bool';
+    public const OPENAPI_FIELDS = 'id: string, runtime: string, version: string, tag: string, image: string, digest: string, level: "routine"|"security"|"critical"|"zero-day", reason: string, reasons: array<string, string>, cves: list<string>, url: string|null, upstream: string|null, published_at: string, deadline_at: string|null, deadline_extended: bool, in_feed: bool, source_id: string|null';
 
     public const ROUTINE = 'routine';
 
@@ -59,7 +60,7 @@ class RuntimePatch extends Model
     protected $fillable = [
         'id', 'runtime', 'version', 'tag', 'image', 'digest', 'level', 'reason', 'cves', 'url',
         'upstream', 'published_at', 'deadline_at', 'deadline_extended_to', 'deadline_extended_by',
-        'in_feed', 'removed_at', 'announced_at',
+        'in_feed', 'removed_at', 'announced_at', 'source_id',
     ];
 
     protected $casts = [
@@ -151,6 +152,7 @@ class RuntimePatch extends Model
             'deadline_at' => $this->effectiveDeadline()?->toIso8601String(),
             'deadline_extended' => $this->deadline_extended_to !== null,
             'in_feed' => $this->in_feed,
+            'source_id' => $this->source_id,
         ];
     }
 }

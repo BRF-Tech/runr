@@ -576,10 +576,13 @@ var (
 		"python": "python", "py": "python", "python3": "python",
 		"javascript": "nodejs", "js": "nodejs", "node": "nodejs", "nodejs": "nodejs",
 		"typescript": "nodejs", "ts": "nodejs", "php": "php", "go": "go", "golang": "go",
+		"ruby": "ruby", "rb": "ruby", "java": "java", "csharp": "dotnet", "cs": "dotnet", "c#": "dotnet",
+		"bun": "bun",
 	}
 	sandboxExtLang = map[string]string{
 		".py": "python", ".js": "javascript", ".mjs": "javascript", ".cjs": "javascript", ".ts": "typescript",
 		".sh": "bash", ".bash": "bash", ".php": "php", ".rb": "ruby", ".go": "go",
+		".java": "java", ".cs": "csharp", ".tsx": "typescript",
 	}
 )
 

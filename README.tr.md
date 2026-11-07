@@ -116,7 +116,7 @@ helm status runr -n runr      # ilk yöneticinin parolasının nasıl okunacağ�
 Chart gateway'i, UI'ı, API'yi, Horizon'u, zamanlayıcıyı ve Reverb'i, dış servislere
 yönlendirmediğiniz sürece PostgreSQL, Redis ve Mailpit'i kurar; migration ve bootstrap hook'ları
 ilk yöneticiyi oluşturur. Belirli bir sürümü kurmak için chart sürümünü sabitleyin
-(`--version 0.6.7`); API ve UI imajları onu izler. `edition=multi-tenant`, Tenancy ve Auth Provider
+(`--version 0.6.8`); API ve UI imajları onu izler. `edition=multi-tenant`, Tenancy ve Auth Provider
 modüllerini ve çok kiracılı konsol imajını açar.
 
 <details>
@@ -208,7 +208,7 @@ Her iddianın arkasında [`docs/`](docs/README.md) içinde bir sayfa durur; her 
 | Geldiğiniz yer | RunR ile |
 |---|---|
 | **Knative Serving**<br>Kubernetes yapı taşları: istek güdümlü otomatik ölçekleme, scale to zero, revizyonlar ve trafik bölme, YAML olarak yazılan Kubernetes kaynakları. Derlemeyi, imajları, konsolu, kullanıcıları ve politikayı siz getirirsiniz. | RunR her bölgeye Knative Serving, Traefik, bir registry, Redis, Prometheus ve Loki kurar ve güncel tutar ([bölgeler](docs/regions.md)). Üstüne: cluster'da derleme, proje başına bir `git push` uzak deposu, bir editör, geri almalı sürümler, tetikleyiciler, ortamlar, RBAC, SSO ve bir denetim günlüğü. Kimse elle Knative Service yazmaz. |
-| **Knative Functions (`func`)**<br>Bir fonksiyonu dil şablonundan Buildpacks ya da S2I ile container imajına derleyip Knative Service olarak dağıtan bir CLI. | `runr init`, `runr dev` ve `runr deploy` aynısını terminalden, cluster'ın kullandığı runtime imajlarıyla yapar ([CLI](docs/cli.md)) - ve her dağıtım, konsolu, ortamları, tetikleyicileri, ekip erişimi ve gözlemlenebilirliği olan bir kontrol düzleminde bir sürümdür. Python, Node.js, Go, PHP, PyTorch ve TensorFlow yerleşik gelir; her dil bir `runtime.yaml` eklentisidir ([runtime'lar](docs/runtimes.md)). |
+| **Knative Functions (`func`)**<br>Bir fonksiyonu dil şablonundan Buildpacks ya da S2I ile container imajına derleyip Knative Service olarak dağıtan bir CLI. | `runr init`, `runr dev` ve `runr deploy` aynısını terminalden, cluster'ın kullandığı runtime imajlarıyla yapar ([CLI](docs/cli.md)) - ve her dağıtım, konsolu, ortamları, tetikleyicileri, ekip erişimi ve gözlemlenebilirliği olan bir kontrol düzleminde bir sürümdür. Python, Node.js, Go, PHP, Java, .NET (C#), Ruby, TypeScript (Bun), PyTorch ve TensorFlow yerleşik gelir; her dil bir `runtime.yaml` eklentisidir ([runtime'lar](docs/runtimes.md)). |
 | **OpenFaaS**<br>`faas-cli` şablonlarından container imajlarına derlenen ve Kubernetes'te bir gateway'in arkasına dağıtılan fonksiyonlar; bir Community Edition ve ticari sürümler. | Tek platformda üç proje türü: konsolda düzenlenen tek dosyalık bir fonksiyon, cluster'da derlenen çok dosyalı bir proje ve herhangi bir container imajı ([mimari](docs/architecture.md#project-types)). Proje başına tek bir tetikleyici listesi - HTTP, zamanlamalar, kuyruklar, webhook'lar, topic'ler, broker'lar, CDC, S3, e-posta ([tetikleyiciler](docs/triggers.md)). Aynı MIT lisanslı kodun tek kiracılı ve çok kiracılı sürümleri. |
 | **AWS Lambda**<br>Barındırılan bir fonksiyon hizmeti: kodunuz sağlayıcının bölgelerinde, yönetilen runtime'larda ya da bir container imajında çalışır; istek başına ve GB-saniye başına ücretlendirilir. | Aynı scale-to-zero fonksiyonlar - ve uzun süre çalışan container'lar, WebAssembly, GPU iş yükleri ve ajan sandbox'ları - seçtiğiniz cluster'larda, kapalı ağdakiler dahil. Proje başına en az ve en çok ölçek ve zamanlı ısıtıcı ([ölçekleme](docs/scaling.md)); KV, nesne depolama ve Postgres için binding'ler ([binding'ler](docs/bindings.md)); bölgenin kendi deposunda tutulan sırlar ([sır depoları](docs/secret-stores.md)). |
 | **Vercel**<br>Ön yüz çatıları için barındırılan bir platform: pull request başına bir önizleme dağıtımıyla git entegrasyonu ve serverless fonksiyonlar, sağlayıcının altyapısında. | Aynı `git push` akışı kendi cluster'larınızda: proje başına bir uzak depo ya da push ile dağıtım, commit durumları ve her pull / merge request için kendi URL'si ve otomatik temizliği olan bir önizleme ortamı sunan GitHub App, GitLab ya da Forgejo / Gitea bağlantısı ([git ile dağıtım](docs/git-deploy.md)). Onaylı terfi ile dev / staging / production ([ortamlar](docs/environments.md)), blue-green ve canary ([dağıtım stratejileri](docs/deploy-strategies.md)), cert-manager'dan sertifikalı özel alan adları. |
@@ -224,9 +224,10 @@ Her iddianın arkasında [`docs/`](docs/README.md) içinde bir sayfa durur; her 
   komut, argümanlar ve ortam değişkenleriyle herhangi bir container imajı)
   ([mimari](docs/architecture.md#project-types)).
 - **Takılabilir runtime'lar**: her dil bir eklentidir - bir `runtime.yaml` manifestosu ve bir imaj.
-  Python, Node.js, Go, PHP, PyTorch ve TensorFlow yerleşik gelir; platform yöneticileri ve
-  organizasyonlar kendilerininkini kaydeder (C, Rust, Bash ve Q örnekleri dahil), RunR'ın evrensel
-  sarmalayıcısının arkasında `http`, `exec` ya da `persistent` kipinde ([runtime'lar](docs/runtimes.md)).
+  Python, Node.js, Go, PHP, Java, .NET (C#), Ruby, TypeScript (Bun), PyTorch ve TensorFlow
+  yerleşik gelir; platform yöneticileri ve organizasyonlar kendilerininkini kaydeder (C, Rust, Bash
+  ve Q örnekleri dahil), RunR'ın evrensel sarmalayıcısının arkasında `http`, `exec` ya da
+  `persistent` kipinde ([runtime'lar](docs/runtimes.md)).
 - **Runtime yamaları**: runtime imajları değişmez yama etiketleri alır ve imzalı bir akış her
   kuruluma yamanın neden geldiğini söyler (rutin, güvenlik, kritik, zero-day). Projeler bir yamayı
   uygular ya da sabitler; kritik ya da zero-day bir yamanın son tarihinde RunR geride kalan
@@ -534,10 +535,12 @@ replikadan ilk tam HTTPS yanıtına, medyan (p90), her biri n=12. Sıcak istek: 
 | WebAssembly (Spin shim) | JavaScript | 2,12 sn (2,58) | 11 ms |
 
 Kata yalnız Python ile ölçüldü; Firecracker'ın kök dosya sistemi containerd'nin devmapper
-snapshotter'ındadır. Sandbox API, oluşturmadan ilk komuta (RunR 0.6.6 ve Kata Containers 4.3.1,
-2026-11-06, aynı VM; Python 3.15, 500m / 512 MiB, medyan, sınıf başına n=10): gVisor altında soğuk
-2,21 sn, Kata Cloud Hypervisor altında 3,09 sn, Kata Firecracker altında 3,43 sn; 2'lik sıcak
-havuzdan 0,31-0,48 sn. Kata soğuk başlatmasının nasıl düşürüldüğü ve kalan sürenin nereye gittiği:
+snapshotter'ındadır. Sandbox API, oluşturmadan ilk komuta (Kata Containers 4.3.1, aynı VM; Python
+3.15, 500m / 512 MiB, medyan, sınıf başına n=10): gVisor altında soğuk 2,33 sn (RunR 0.6.7,
+2026-11-07; gVisor'da bir komut 0.6.7'den beri ~0,1 sn daha uzun sürer), Kata Cloud Hypervisor
+altında 3,09 sn ve Kata Firecracker altında 3,43 sn (RunR 0.6.6, 2026-11-06; 0.6.7'de gürültü
+payı içinde aynı); 2'lik sıcak havuzdan 0,31-0,52 sn (RunR 0.6.7, 2026-11-07). Kata soğuk
+başlatmasının nasıl düşürüldüğü ve kalan sürenin nereye gittiği:
 [Kata hipervizörleri → Cold start](docs/kata-hypervisors.md#cold-start).
 
 <br>

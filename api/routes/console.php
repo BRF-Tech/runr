@@ -6,6 +6,7 @@ use App\Console\Commands\CheckStaleBuildCommand;
 use App\Console\Commands\PruneTokensCommand;
 use App\Console\Commands\SyncExecutorImagesCommand;
 use App\Console\Commands\SyncRuntimePatchesCommand;
+use App\Console\Commands\SyncRuntimeSourcesCommand;
 use App\Console\Commands\SyncSecretStatusCommand;
 use App\Jobs\AdvanceRolloutsJob;
 use App\Jobs\ApplyWarmScalesJob;
@@ -46,6 +47,13 @@ Schedule::command(SyncRuntimePatchesCommand::class)
     ->everyFiveMinutes()
     ->name('runtime-patch-feed')
     ->withoutOverlapping(10);
+
+// Runtime sources (docs/runtimes.md#runtime-sources): RunR's catalog and the connected OCI catalogs
+// and Git repositories, each at its interval (a HEAD of its tag / an ls-remote; read when it changed)
+Schedule::command(SyncRuntimeSourcesCommand::class)
+    ->everyFiveMinutes()
+    ->name('runtime-sources')
+    ->withoutOverlapping(30);
 
 Schedule::job(new EnforceRuntimePatchesJob)
     ->everyFiveMinutes()

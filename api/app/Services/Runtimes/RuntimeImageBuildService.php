@@ -6,8 +6,10 @@ use App\Jobs\CheckRuntimeImageBuildJob;
 use App\Models\KnativeRegion;
 use App\Models\Runtime;
 use App\Models\RuntimeBuild;
+use App\Models\RuntimeSource;
 use App\Services\KubernetesClient;
 use App\Services\Manifests\BuildManifests;
+use App\Services\Runtimes\Sources\SourceLocation;
 use Illuminate\Support\Facades\Log;
 
 /**
@@ -112,7 +114,7 @@ class RuntimeImageBuildService
         if ($spec['dockerfile'] !== null) {
             $k8s->createResource($this->contextConfigMap($jobName, $namespace, $runtime), $namespace);
         }
-        $k8s->createResource($this->kanikoJob($jobName, $namespace, $runtime, $spec, $image, $region), $namespace);
+        $k8s->createResource($this->withSourceCredentials($this->kanikoJob($jobName, $namespace, $runtime, $spec, $image, $region), $runtime, $spec, $region, $namespace, $k8s), $namespace);
 
         $build->fill([
             'status' => RuntimeBuild::STATUS_BUILDING,
@@ -127,6 +129,49 @@ class RuntimeImageBuildService
         Log::info('Runtime image build submitted', ['runtime' => $runtime->id, 'version' => $spec['version'], 'region' => $region->name, 'image' => $image]);
 
         return $build;
+    }
+
+    /**
+     * A runtime of a private source (docs/runtimes.md#private-sources): the source's registry
+     * credentials as Kaniko's docker config (the Dockerfile's FROM images), and its HTTPS token for a
+     * git version on the source's own Git host (Kaniko's GIT_USERNAME / GIT_PASSWORD, from a Secret).
+     */
+    private function withSourceCredentials(array $job, Runtime $runtime, array $spec, KnativeRegion $region, string $namespace, KubernetesClient $k8s): array
+    {
+        $source = $runtime->source_id ? RuntimeSource::query()->find($runtime->source_id) : null;
+        if (! $source) {
+            return $job;
+        }
+
+        $pullSecrets = app(RuntimePullSecrets::class);
+        if ($source->hasRegistryCredentials() && $pullSecrets->ensure($region, $namespace, $source, $k8s)) {
+            $job = BuildManifests::withDockerConfig($job, RuntimePullSecrets::secretName($source));
+        }
+
+        $token = $source->credential('git', 'token');
+        $gitHost = $spec['git'] !== null ? SourceLocation::host(RuntimeSource::KIND_GIT, (string) $spec['git']['url']) : null;
+        if ($token !== null && $source->kind === RuntimeSource::KIND_GIT && $gitHost !== null
+            && $gitHost === SourceLocation::host(RuntimeSource::KIND_GIT, $source->url)) {
+            $name = RuntimePullSecrets::secretName($source).'-git';
+            $k8s->applyResource([
+                'apiVersion' => 'v1',
+                'kind' => 'Secret',
+                'type' => 'Opaque',
+                'metadata' => ['name' => $name, 'namespace' => $namespace, 'labels' => [RuntimePullSecrets::LABEL => strtolower($source->id), 'app.kubernetes.io/managed-by' => 'runr']],
+                'data' => [
+                    'username' => base64_encode($source->credential('git', 'username') ?? 'x-access-token'),
+                    'password' => base64_encode($token),
+                ],
+            ], $namespace);
+            foreach ($job['spec']['template']['spec']['containers'] as $i => $container) {
+                if (($container['name'] ?? null) === 'kaniko') {
+                    $job['spec']['template']['spec']['containers'][$i]['env'][] = ['name' => 'GIT_USERNAME', 'valueFrom' => ['secretKeyRef' => ['name' => $name, 'key' => 'username']]];
+                    $job['spec']['template']['spec']['containers'][$i]['env'][] = ['name' => 'GIT_PASSWORD', 'valueFrom' => ['secretKeyRef' => ['name' => $name, 'key' => 'password']]];
+                }
+            }
+        }
+
+        return $job;
     }
 
     public static function imageRef(KnativeRegion $region, string $id, string $version, string $digest): string

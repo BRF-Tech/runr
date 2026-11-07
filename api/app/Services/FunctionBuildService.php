@@ -12,6 +12,7 @@ use App\Services\Runtimes\Placeholders;
 use App\Services\Runtimes\ProjectEntrypoint;
 use App\Services\Runtimes\RuntimeContainerSpec;
 use App\Services\Runtimes\RuntimeManifest;
+use App\Services\Runtimes\RuntimePullSecrets;
 use App\Services\Runtimes\RuntimeRegistry;
 use App\Services\Wasm\WasmBuildService;
 use App\Services\Wasm\WasmRuntimes;
@@ -171,8 +172,15 @@ class FunctionBuildService
         $ghcrSynced = app(ZotRegistryService::class)->syncsGhcr($region, $k8s);
         $cmData['Dockerfile'] = $this->dockerfile($project, $manifest, $executor, $versionImage, $files, $mode, $ghcrSynced);
 
+        // The FROM images of a private runtime source: its pull Secret, Kaniko's docker config
+        $pullSource = app(RuntimePullSecrets::class)->forImages($manifest->id(), [$versionImage, ...self::stageImages($manifest, ['version' => $executor->version, 'image' => $versionImage])]);
+        if ($pullSource) {
+            app(RuntimePullSecrets::class)->ensure($region, $namespace, $pullSource, $k8s);
+        }
+
         $k8s->createResource($this->sourceConfigMap($cmName, $namespace, $project, $cmData), $namespace);
-        $k8s->createResource($this->kanikoJob($jobName, $namespace, $cmName, $imageRef, $region, $project, array_keys($files), $manifest->usesWrapper()), $namespace);
+        $job = $this->kanikoJob($jobName, $namespace, $cmName, $imageRef, $region, $project, array_keys($files), $manifest->usesWrapper());
+        $k8s->createResource($pullSource ? BuildManifests::withDockerConfig($job, RuntimePullSecrets::secretName($pullSource)) : $job, $namespace);
 
         return $imageRef;
     }
@@ -200,7 +208,10 @@ class FunctionBuildService
             'trigger' => $this->resolveTrigger($project),
         ];
         $render = fn (string $s) => Placeholders::render($s, $values);
-        $from = fn (string $image) => $region ? $region->buildBaseImageRef($image, $ghcrSynced) : $image;
+        // A private image of a runtime source is pulled from its registry with the source's
+        // credentials (Kaniko's DOCKER_CONFIG), never through the region registry's pull-through
+        $pullSecrets = app(RuntimePullSecrets::class);
+        $from = fn (string $image) => $region && ! $pullSecrets->forImage($manifest->id(), $image) ? $region->buildBaseImageRef($image, $ghcrSynced) : $image;
 
         // Without a compile step the build exists for the dependencies (needsBuild()); a compiled
         // runtime installs them when the project has the dependency file

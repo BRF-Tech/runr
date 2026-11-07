@@ -108,6 +108,11 @@ return [
         // the platform setting custom_runtimes_enabled is on — App\Providers\RuntimeServiceProvider)
         'runtimes.manage' => ['group' => 'infrastructure', 'scope' => 'org', 'edition' => 'single'],
         'runtimes.use_custom' => ['group' => 'infrastructure', 'scope' => 'org'],
+        // The installation itself (single-tenant; multi-tenant installs have platform administrators,
+        // users.is_admin, for it — App\Support\Rbac\Rbac::operatesPlatform()): the Patches page and
+        // the runtime patch feed, the console certificate, the platform's banners and notices (a
+        // newer RunR release, the feed's trouble, the console certificate) and the Horizon dashboard
+        'platform.manage' => ['group' => 'infrastructure', 'scope' => 'org', 'edition' => 'single'],
         // GPU support and the model volume of regions (docs/ai.md); platform regions of a
         // multi-tenant install stay with the platform administrators (region.mutable)
         'regions.gpu.manage' => ['group' => 'infrastructure', 'scope' => 'org', 'implies' => ['regions.view']],
@@ -183,8 +188,10 @@ return [
 
     /*
     | Built-in roles: read-only, available in every organization. '*' = every permission of the
-    | edition. Owner differs from Admin only in ownership: only owners (and platform admins)
-    | grant or revoke the Owner role, and the last owner cannot be removed or demoted.
+    | edition, less the ones under 'except'. Owner differs from Admin in ownership — only owners
+    | (and platform admins) grant or revoke the Owner role, and the last owner cannot be removed or
+    | demoted — and in platform.manage, the installation itself (single-tenant): Owners hold it,
+    | anyone else through a custom role that includes it.
     */
     'roles' => [
         'owner' => [
@@ -196,6 +203,7 @@ return [
             'name' => 'Admin',
             'description' => 'Full control of the organization except granting ownership.',
             'permissions' => ['*'],
+            'except' => ['platform.manage'],
         ],
         'developer' => [
             'name' => 'Developer',

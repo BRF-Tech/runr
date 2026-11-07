@@ -28,6 +28,7 @@ source "${SCRIPT_DIR}/lib/test-org-transfer.sh"
 source "${SCRIPT_DIR}/lib/test-mcp.sh"
 source "${SCRIPT_DIR}/lib/test-admission.sh"
 source "${SCRIPT_DIR}/lib/test-runtime-patches.sh"
+source "${SCRIPT_DIR}/lib/test-runtime-sources.sh"
 source "${SCRIPT_DIR}/lib/test-warmer.sh"
 source "${SCRIPT_DIR}/lib/test-deploy-strategies.sh"
 source "${SCRIPT_DIR}/lib/test-secrets.sh"
@@ -115,6 +116,9 @@ Commands:
                                       status blocks (503 / 404), fixed-region allocations (lib/test-admission.sh)
   test-runtime-patches [test flags]   Kind + Knative, runtime patch e2e: signed feed, functions by digest, deadline
                                       migration rolled back, apply, pin (lib/test-runtime-patches.sh; needs ghcr.io)
+  test-runtime-sources [test flags]   Kind + Knative, runtime source e2e: RunR's signed catalog, an OCI catalog source,
+                                      the sample executor repository as an in-cluster Git source, a private image
+                                      (RUNR_E2E_PRIVATE_*), a sunset refusing deploys (lib/test-runtime-sources.sh)
   test-warmer [test flags]            Kind + Knative, timed warmer e2e: schedule preview, min-scale in the
                                       revision template, PodAutoscaler patches without a restart, warmer off
                                       and redeployed (lib/test-warmer.sh; KIND_LOCK defaults to /tmp/runr-kind.lock)
@@ -140,8 +144,9 @@ Commands:
                                       secret env, tokens, the function during the upgrade, the agent and
                                       white-label; --edition=multi-tenant: tenant roles and 0.5.x billing data;
                                       --billing: billing.enabled=true on the upgrade, Billing API on the imported
-                                      data and a region offer (lib/test-helm-upgrade.sh; KIND_LOCK defaults to
-                                      /tmp/runr-kind.lock)
+                                      data and a region offer; --rollback: then helm rollback to the installed
+                                      version, with a project on a runtime only this checkout's catalog has
+                                      (lib/test-helm-upgrade.sh; KIND_LOCK defaults to /tmp/runr-kind.lock)
   test-tenancy                        Tenancy e2e test (API-only, no K8s needed)
   test-authprovider                   AuthProvider e2e test (API-only, no K8s needed)
   test-ticket                         Ticket e2e test (API + WS mock, no K8s needed)
@@ -226,6 +231,7 @@ case "$command" in
   test-mcp)        cmd_test_mcp "$@" ;;
   test-admission)  cmd_test_admission "$@" ;;
   test-runtime-patches) cmd_test_runtime_patches "$@" ;;
+  test-runtime-sources) cmd_test_runtime_sources "$@" ;;
   test-warmer)     cmd_test_warmer "$@" ;;
   test-deploy-strategies) cmd_test_deploy_strategies "$@" ;;
   test-secrets)    cmd_test_secrets "$@" ;;

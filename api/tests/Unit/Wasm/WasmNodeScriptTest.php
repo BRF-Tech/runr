@@ -303,6 +303,40 @@ SH;
         $this->assertFileDoesNotExist($this->path('var/lib/runr/wasm/runtime-restarted'));
     }
 
+    public function test_a_tarball_download_that_fails_is_tried_again(): void
+    {
+        $this->put('etc/containerd/config.toml', self::ORIGINAL_V3);
+        $this->put('state/loaded', self::ORIGINAL_V3);
+        // the node's DNS is not back on the first try (CoreDNS restarting)
+        rename("{$this->dir}/bin/wget", "{$this->dir}/bin/wget-served");
+        $this->fake('wget', <<<'SH'
+#!/bin/sh
+if [ ! -e "$FAKEROOT/state/wget-failed" ]; then
+  : > "$FAKEROOT/state/wget-failed"
+  echo "wget: bad address 'github.com'" >&2
+  exit 1
+fi
+exec "$(dirname "$0")/wget-served" "$@"
+SH);
+
+        [$code, $out] = $this->runOnNode(WasmNodeScripts::install());
+
+        $this->assertSame(0, $code, $out);
+        $this->assertStringContainsString('spin.tar.gz failed (try 1 of 5), next try in 5s', $out);
+        $this->assertFileExists($this->path('usr/local/bin/containerd-shim-spin-v2'));
+        $this->assertSame(['containerd'], $this->restarts());
+
+        // Never served: the install gives up after the tries and leaves the node as it was
+        $this->fake('wget', "#!/bin/sh\necho try >> \"\$FAKEROOT/state/wget-tries\"\nexit 4\n");
+        unlink($this->path('var/lib/runr/wasm/containerd-shim-spin-v2.sha256'));
+        $this->resetRestarts();
+        [$code, $out] = $this->runOnNode(WasmNodeScripts::install());
+        $this->assertNotSame(0, $code);
+        $this->assertStringContainsString('spin.tar.gz failed after 5 tries', $out);
+        $this->assertCount(5, file($this->path('state/wget-tries')));
+        $this->assertSame([], $this->restarts());
+    }
+
     public function test_a_second_install_changes_and_restarts_nothing(): void
     {
         $this->put('etc/containerd/config.toml', self::ORIGINAL_V3);

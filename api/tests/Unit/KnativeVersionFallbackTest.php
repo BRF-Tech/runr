@@ -161,7 +161,7 @@ class KnativeVersionFallbackTest extends TestCase
 
     public function test_prometheus_and_loki_charts_are_pinned(): void
     {
-        $this->assertSame('92.21.2', (new class
+        $this->assertSame('92.22.0', (new class
         {
             use KnativePrometheusTrait;
         })::PROMETHEUS_CHART_VERSION);
@@ -170,7 +170,7 @@ class KnativeVersionFallbackTest extends TestCase
 
     /**
      * The kube-prometheus-stack values RunR sets, as rendered with `helm template` against the
-     * pinned chart: 92.21.2 still takes every one of them and renders them as 92.18.0 did. A key
+     * pinned chart: 92.22.0 still takes every one of them and renders them as 92.18.0 did. A key
      * added here, or one a new chart renames or drops, is rendered against the chart again.
      */
     public function test_prometheus_values_are_the_keys_rendered_against_the_pinned_chart(): void

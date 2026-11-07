@@ -33,8 +33,10 @@ class PrivateIngressTest extends TestCase
         $this->assertSame(['default' => false, 'internal' => true], $internal['expose'], 'not on the LoadBalancer Service');
         $this->assertSame(80, $internal['exposedPort'], 'the placeholders\' ExternalName is called on port 80');
         $this->assertSame('610s', $internal['transport']['respondingTimeouts']['readTimeout'], 'a queue sink waits as long as a public request');
-        $this->assertSame(['internal' => ['type' => 'ClusterIP']], $values['service']['additionalServices']);
-        $this->assertSame('LoadBalancer', $values['service']['type']);
+        // the type of a Service is in its spec, where the chart reads it
+        $this->assertSame(['internal' => ['spec' => ['type' => 'ClusterIP']]], $values['service']['additionalServices']);
+        $this->assertSame(['type' => 'LoadBalancer'], $values['service']['spec']);
+        $this->assertArrayNotHasKey('type', $values['service']);
         foreach (['web', 'websecure'] as $public) {
             $this->assertTrue($values['ports'][$public]['expose']['default']);
         }
@@ -75,7 +77,7 @@ class PrivateIngressTest extends TestCase
         $set = PrivateIngress::helmSetJson('knative-serving', PrivateIngress::STATE_TRANSITIONAL, 300);
 
         $this->assertSame(['ports.internal', 'service.additionalServices.internal', 'additionalArguments'], array_keys($set));
-        $this->assertSame('{"type":"ClusterIP"}', $set['service.additionalServices.internal']);
+        $this->assertSame('{"spec":{"type":"ClusterIP"}}', $set['service.additionalServices.internal']);
         $this->assertSame('310s', json_decode($set['ports.internal'], true)['transport']['respondingTimeouts']['writeTimeout']);
         $this->assertContains('--providers.knative.privateentrypoints=web,internal', json_decode($set['additionalArguments'], true));
     }

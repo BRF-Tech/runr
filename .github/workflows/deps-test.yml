@@ -1,0 +1,328 @@
+# The dependency test bot (docs/development.md → Dependency test bot), every week and by hand:
+# every open issue of upstream-releases.yml whose version has no result yet ("deps: <chart>
+# <version> released", "Knative 1.<minor> released: …") is moved on the next branch of the private
+# development repository (origin), and tested with its dependency's suites. Green: the
+# bump lands on next as one commit, a fast-forward of the next it was tested on (never forced),
+# and the issue is closed with label "deps: passed". Red, or a bump that is not mechanical: label
+# "needs attention", a comment with what failed, next untouched. A labelled issue is tested again
+# when the workflow is run with its number; a newer release of the dependency supersedes it.
+#
+# This repository's main, the release mirror, is never written: the GITHUB_TOKEN can only read
+# contents, and the one push goes to origin's next over SSH with a write deploy key (the variable
+# GITLAB_RUNR_REMOTE, the secret GITLAB_RUNR_PUSH_KEY, the host key in the variable
+# GITLAB_KNOWN_HOSTS), as a plain fast-forward of HEAD:refs/heads/next: next is protected (no force
+# push), main takes no deploy key.
+name: Dependency tests
+
+on:
+  schedule:
+    # Saturdays 06:41 UTC, after that day's release check (upstream-releases.yml, 05:23 UTC)
+    - cron: '41 6 * * 6'
+  workflow_dispatch:
+    inputs:
+      issue:
+        description: 'Issue numbers to test (again), comma-separated; empty: every open deps issue without a result'
+        default: ''
+      attempt:
+        description: 'The bot sets it when next moved under a green bump (1: a new test)'
+        default: '1'
+
+permissions:
+  contents: read
+
+# one run at a time: two runs would land on the same next
+concurrency:
+  group: deps-test
+  cancel-in-progress: false
+
+env:
+  # the private development repository, an SSH URL (checked by ci/deps/ssh-key.sh)
+  ORIGIN_REMOTE: ${{ vars.GITLAB_RUNR_REMOTE }}
+  # the author and committer of the bot's commits on next
+  DEPS_BOT_NAME: RunR deps bot
+  DEPS_BOT_EMAIL: deps-bot@runr.sh
+
+jobs:
+  plan:
+    name: Issues to test
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      issues: write
+    outputs:
+      tests: ${{ steps.plan.outputs.tests }}
+      any: ${{ steps.plan.outputs.any }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - id: plan
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ONLY: ${{ inputs.issue }}
+        run: |
+          only="${ONLY// /}"
+          if ! [[ "$only" =~ ^[0-9,]*$ ]]; then
+            echo "::error::issue '${ONLY}': issue numbers separated by commas"
+            exit 1
+          fi
+          gh issue list --repo "$GITHUB_REPOSITORY" --state open --limit 300 --json number,title,labels > "$RUNNER_TEMP/issues.json"
+          bash ci/deps-plan.sh "$RUNNER_TEMP/issues.json" --only="$only" > "$RUNNER_TEMP/plan.json"
+          jq . "$RUNNER_TEMP/plan.json"
+          {
+            echo "tests=$(jq -c .tests "$RUNNER_TEMP/plan.json")"
+            echo "any=$(jq -r '.tests | length > 0' "$RUNNER_TEMP/plan.json")"
+          } >> "$GITHUB_OUTPUT"
+          jq -r '.tests[] | "- #\(.issue): \(.dep) \(.version)"' "$RUNNER_TEMP/plan.json" | sed '1i ### Tested in this run' >> "$GITHUB_STEP_SUMMARY"
+      # the labels (created once), superseded issues closed, re-triggered ones unlabelled
+      - name: Issues
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          gh label create "needs attention" --repo "$GITHUB_REPOSITORY" --color d93f0b \
+            --description "The dependency test bot holds it: a person decides" 2>/dev/null || true
+          gh label create "deps: passed" --repo "$GITHUB_REPOSITORY" --color 0e8a16 \
+            --description "The dependency test bot tested it and it is on next" 2>/dev/null || true
+          jq -c '.superseded[]' "$RUNNER_TEMP/plan.json" | while read -r s; do
+            issue=$(jq -r .issue <<< "$s"); by=$(jq -r .by <<< "$s"); version=$(jq -r .version <<< "$s")
+            gh issue close "$issue" --repo "$GITHUB_REPOSITORY" --reason "not planned" \
+              --comment "Superseded by #${by} (${version}): the dependency test bot tests the newest release only ([run](${RUN_URL}))."
+          done
+          jq -r '.retrigger[]' "$RUNNER_TEMP/plan.json" | while read -r issue; do
+            gh issue edit "$issue" --repo "$GITHUB_REPOSITORY" --remove-label "needs attention"
+            gh issue comment "$issue" --repo "$GITHUB_REPOSITORY" --body "Tested again by the dependency test bot ([run](${RUN_URL}))."
+          done
+          jq -c '.attention[]' "$RUNNER_TEMP/plan.json" | while read -r a; do
+            issue=$(jq -r .issue <<< "$a"); reason=$(jq -r .reason <<< "$a")
+            gh issue edit "$issue" --repo "$GITHUB_REPOSITORY" --add-label "needs attention"
+            gh issue comment "$issue" --repo "$GITHUB_REPOSITORY" --body "**Needs a person:** ${reason} ([run](${RUN_URL}))."
+          done
+
+  bump:
+    name: Bumps on next
+    needs: plan
+    if: needs.plan.outputs.any == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    outputs:
+      suites: ${{ steps.bumps.outputs.suites }}
+      unit: ${{ steps.bumps.outputs.unit }}
+      any: ${{ steps.bumps.outputs.any }}
+    env:
+      # the helm of the API image (api/Dockerfile.prod)
+      HELM_VERSION: v3.16.0
+      HELM_SHA256: 327cfbc7ddc5a3eb644039ceb0cff66394628654c4f5a76bf715ed15b893983b
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install helm (pinned, checksum verified)
+        run: |
+          curl -fsSL -o /tmp/helm.tar.gz "https://get.helm.sh/helm-${HELM_VERSION}-linux-amd64.tar.gz"
+          echo "${HELM_SHA256}  /tmp/helm.tar.gz" | sha256sum -c -
+          mkdir -p "$RUNNER_TEMP/bin"
+          tar -xzf /tmp/helm.tar.gz -C "$RUNNER_TEMP/bin" --strip-components=1 linux-amd64/helm
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+      # over SSH with the deploy key, in a 0600 file the step after the next removes
+      - name: Clone next (origin)
+        env:
+          PUSH_KEY: ${{ secrets.GITLAB_RUNR_PUSH_KEY }}
+          KNOWN_HOSTS: ${{ vars.GITLAB_KNOWN_HOSTS }}
+        run: |
+          GIT_SSH_COMMAND="$(bash ci/deps/ssh-key.sh "$RUNNER_TEMP/ssh")"
+          export GIT_SSH_COMMAND
+          git clone -q --branch next --single-branch "$ORIGIN_REMOTE" "$RUNNER_TEMP/next"
+          git -C "$RUNNER_TEMP/next" log -1 --format='next: %H %s'
+          git -C "$RUNNER_TEMP/next" describe --tags --abbrev=0 --match 'v[0-9]*.[0-9]*.[0-9]*'
+      - name: Remove the deploy key
+        if: always()
+        run: rm -rf "$RUNNER_TEMP/ssh"
+      # RunR's values of the charts come from the API's code (ci/deps/helm-values.php)
+      - uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # 2.40.0
+        with:
+          php-version: '8.2'
+          tools: composer:v2
+      - name: Composer install (api)
+        working-directory: ${{ runner.temp }}/next/api
+        run: composer install --no-interaction --prefer-dist --no-progress --no-dev
+      - id: bumps
+        env:
+          TESTS: ${{ needs.plan.outputs.tests }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          echo "$TESTS" > "$RUNNER_TEMP/tests.json"
+          bash ci/deps-run.sh bumps "$RUNNER_TEMP/tests.json" "$RUNNER_TEMP/next" "$RUNNER_TEMP/deps" "$RUN_URL"
+          {
+            echo "suites=$(jq -c . "$RUNNER_TEMP/deps/matrix-suites.json")"
+            echo "unit=$(jq -c . "$RUNNER_TEMP/deps/matrix-unit.json")"
+            echo "any=$(jq -r 'length > 0' "$RUNNER_TEMP/deps/matrix-unit.json")"
+          } >> "$GITHUB_OUTPUT"
+          # next, the bumps (deps/<dep>) and the release tags, for the test jobs
+          mkdir -p "$RUNNER_TEMP/tree"
+          git -C "$RUNNER_TEMP/next" bundle create "$RUNNER_TEMP/tree/repo.bundle" --branches --tags
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: steps.bumps.outputs.any == 'true'
+        with:
+          name: deps-tree
+          path: ${{ runner.temp }}/tree/repo.bundle
+          retention-days: 3
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: deps-bump
+          path: ${{ runner.temp }}/deps/
+          retention-days: 14
+
+  unit:
+    name: ${{ matrix.dep }} unit
+    needs: bump
+    if: needs.bump.outputs.any == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.bump.outputs.unit) }}
+    uses: ./.github/workflows/api-tests.yml
+    with:
+      tree-artifact: deps-tree
+      ref: ${{ matrix.ref }}
+      result-name: deps-result-${{ matrix.dep }}-unit
+
+  shell:
+    name: ${{ matrix.dep }} shell tests
+    needs: bump
+    if: needs.bump.outputs.any == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.bump.outputs.unit) }}
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: deps-tree
+          path: ${{ runner.temp }}/tree
+      - name: The bundle's tree
+        env:
+          REF: ${{ matrix.ref }}
+        run: |
+          git clone -q --no-checkout "$RUNNER_TEMP/tree/repo.bundle" .
+          git checkout -q --detach "refs/remotes/origin/${REF}"
+      # runtime/ci.sh without Docker (the Kind preload, the pinned images, …) and every reqs image
+      # the bump references, as ci.yml's build-scripts and reqs-mirror jobs run them
+      - name: runtime/test and the reqs mirror check
+        run: |
+          set -o pipefail
+          { for t in runtime/test/*_test.sh; do echo "── $t"; bash "$t" || exit 1; done; bash ci/check-reqs-mirror.sh; } 2>&1 | tee "$RUNNER_TEMP/shell.log"
+      - name: Result
+        if: always()
+        env:
+          JOB_STATUS: ${{ job.status }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/result"
+          echo "$JOB_STATUS" > "$RUNNER_TEMP/result/status"
+          tail -n 40 "$RUNNER_TEMP/shell.log" > "$RUNNER_TEMP/result/tail.txt" 2>/dev/null || true
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: deps-result-${{ matrix.dep }}-shell
+          path: ${{ runner.temp }}/result/
+          retention-days: 7
+
+  kind:
+    name: ${{ matrix.dep }} ${{ matrix.suite }}
+    needs: bump
+    if: needs.bump.outputs.any == 'true'
+    strategy:
+      fail-fast: false
+      # one Kind cluster per runner, at most six runners at a time
+      max-parallel: 6
+      matrix:
+        include: ${{ fromJSON(needs.bump.outputs.suites) }}
+    uses: ./.github/workflows/kind-suite.yml
+    with:
+      command: ${{ matrix.command }}
+      k8s: ${{ matrix.k8s }}
+      kvm: ${{ matrix.kvm }}
+      env: ${{ matrix.env }}
+      tree-artifact: deps-tree
+      ref: ${{ matrix.ref }}
+      result-name: deps-result-${{ matrix.dep }}-${{ matrix.suite }}
+      timeout: 180
+
+  land:
+    name: Land green bumps, report on the issues
+    needs: [plan, bump, unit, shell, kind]
+    if: ${{ always() && needs.bump.result != 'skipped' && needs.plan.outputs.any == 'true' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      issues: write
+      # the run of the bumps next moved under (attempt + 1)
+      actions: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: deps-bump
+          path: ${{ runner.temp }}/deps
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: deps-result-*
+          path: ${{ runner.temp }}/deps/results
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        if: needs.bump.outputs.any == 'true'
+        with:
+          name: deps-tree
+          path: ${{ runner.temp }}/tree
+      - name: Outcome
+        run: |
+          bash ci/deps-run.sh outcome "$RUNNER_TEMP/deps"
+          for f in "$RUNNER_TEMP"/deps/outcome/*; do [ -f "$f" ] && echo "$(basename "$f"): $(cat "$f")"; done
+      # Each green bump as a fast-forward of the next it was tested on, in order; after the first,
+      # next has moved for the others, which the bot moves and tests again (attempt + 1)
+      - name: Land on next (origin)
+        env:
+          PUSH_KEY: ${{ secrets.GITLAB_RUNR_PUSH_KEY }}
+          KNOWN_HOSTS: ${{ vars.GITLAB_KNOWN_HOSTS }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/deps/land"
+          [ -s "$RUNNER_TEMP/deps/green" ] || { echo "nothing green to land"; exit 0; }
+          git clone -q --no-checkout "$RUNNER_TEMP/tree/repo.bundle" "$RUNNER_TEMP/repo"
+          GIT_SSH_COMMAND="$(bash ci/deps/ssh-key.sh "$RUNNER_TEMP/ssh")"
+          export GIT_SSH_COMMAND
+          while read -r dep; do
+            base=$(cat "$RUNNER_TEMP/deps/bump/${dep}/base")
+            head=$(cat "$RUNNER_TEMP/deps/bump/${dep}/head")
+            rc=0
+            out=$(cd "$RUNNER_TEMP/repo" && bash "$GITHUB_WORKSPACE/ci/deps-land.sh" "$ORIGIN_REMOTE" "$base" "$head" 2>&1) || rc=$?
+            echo "${dep}: ${out}"
+            echo "$out" | tail -n 1 > "$RUNNER_TEMP/deps/land/${dep}"
+            if [ "$rc" != 0 ] && [ "$rc" != 4 ]; then echo "::warning::${dep}: ${out}"; fi
+          done < "$RUNNER_TEMP/deps/green"
+      - name: Remove the deploy key
+        if: always()
+        run: rm -rf "$RUNNER_TEMP/ssh"
+      - name: Report on the issues
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          ATTEMPT: ${{ inputs.attempt || '1' }}
+        run: |
+          bash ci/deps-run.sh actions "$RUNNER_TEMP/deps" "$RUN_URL" "$ATTEMPT"
+          while IFS=$'\t' read -r action issue arg; do
+            case "$action" in
+              comment) gh issue comment "$issue" --repo "$GITHUB_REPOSITORY" --body-file "$arg" ;;
+              label) gh issue edit "$issue" --repo "$GITHUB_REPOSITORY" --add-label "$arg" ;;
+              unlabel) gh issue edit "$issue" --repo "$GITHUB_REPOSITORY" --remove-label "$arg" ;;
+              close) gh issue close "$issue" --repo "$GITHUB_REPOSITORY" --reason completed ;;
+              dispatch) gh workflow run deps-test.yml --repo "$GITHUB_REPOSITORY" --ref "$GITHUB_REF_NAME" -f issue="$issue" -f attempt="$arg" ;;
+            esac
+          done < "$RUNNER_TEMP/deps/actions"
+          cat "$RUNNER_TEMP"/deps/comments/*.md >> "$GITHUB_STEP_SUMMARY" 2>/dev/null || true

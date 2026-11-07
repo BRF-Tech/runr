@@ -491,6 +491,33 @@ return [
         'no_source_versions' => 'This runtime has no version built from a dockerfile or git source.',
         'test_deploy_description' => 'Test deploy of the :name runtime',
         'custom_not_allowed' => 'Custom runtimes are not enabled on this platform.',
+        'source_managed' => 'The :name runtime comes from the runtime source ":source": change it there; here only its availability (enabled, regions) can change.',
+        'source_delete' => 'The :name runtime comes from the runtime source ":source": remove it from the source (or disable it here) instead.',
+        'id_reserved' => "The id ':id' belongs to RunR's built-in catalog.",
+        'orphaned' => 'The :name runtime is no longer offered by its source.',
+        'sunset' => 'The :name runtime was sunset on :date.',
+        'not_offered' => "The built-in runtime ':id' is not offered on this platform.",
+    ],
+
+    // ── Runtime sources (docs/runtimes.md#runtime-sources) ──
+    'runtime_sources' => [
+        'not_allowed' => 'Connecting runtime sources needs runtimes.manage, or runtimes.use_custom while custom runtimes are enabled.',
+        'default_readonly' => 'RunR\'s catalog is configured by the installation (RUNR_RUNTIME_CATALOG_*): only whether it is read and how often can change here.',
+        'default_delete' => 'RunR\'s catalog can not be removed; switch it off to use the catalog of the API image.',
+        'too_many' => 'An organization may connect at most :max runtime sources.',
+        'name_taken' => 'A runtime source named ":name" exists already.',
+        'credentials_kind' => 'An SSH deploy key needs an SSH URL (ssh://host/path or git@host:path); an HTTPS token an https:// URL.',
+        'sync_running' => 'This source is being read right now; try again in a moment.',
+        'clash' => "The id ':id' is already provided by :owner; this runtime is skipped.",
+        'clash_other' => "The id ':id' is already taken on this platform; this runtime is skipped. Pick another id.",
+        'clash_same' => "The id ':id' is defined twice in this source (also :path); the second one is skipped.",
+        'id_directory' => "The id ':id' does not match its directory ':directory'.",
+        'patch_foreign' => "The patch :patch names the runtime ':runtime', which this source does not provide; it is ignored.",
+        'patches_invalid' => 'The patches of this source are not a valid patch feed: :error',
+        'owner_source' => 'the runtime source ":name"',
+        'owner_builtin' => "RunR's built-in catalog",
+        'owner_platform' => 'a platform runtime registered by hand',
+        'owner_custom' => 'a custom runtime registered by hand',
     ],
 
     // ── Secret environment variables ──

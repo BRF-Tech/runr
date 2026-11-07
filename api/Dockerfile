@@ -60,13 +60,14 @@ RUN install-php-extensions \
 
 # System packages + helm + kubectl
 # git-daemon: git-http-backend of the project git remotes (/git/<org>/<project>.git)
+# openssh-client: Git runtime sources with an SSH deploy key (docs/runtimes.md#private-sources)
 # zstd: organization export packages (docs/org-export.md)
 # helm and kubectl are pinned and checked against their published SHA-256 (amd64 / arm64), so every
 # build of a release tag gets the same binaries; kubectl 1.35 is within one minor version of the
 # Kubernetes versions RunR supports
 ARG HELM_VERSION=v3.16.0
 ARG KUBECTL_VERSION=v1.35.9
-RUN apk add --no-cache git git-daemon sqlite curl libpq zstd \
+RUN apk add --no-cache git git-daemon openssh-client sqlite curl libpq zstd \
     && KUBE_ARCH="$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/')" \
     && case "$KUBE_ARCH" in \
          amd64) HELM_SHA=327cfbc7ddc5a3eb644039ceb0cff66394628654c4f5a76bf715ed15b893983b; \

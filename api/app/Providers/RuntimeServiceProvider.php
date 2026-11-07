@@ -8,6 +8,7 @@ use App\Services\Runtimes\BuiltinCatalog;
 use App\Services\Runtimes\ManifestValidator;
 use App\Services\Runtimes\Patches\RuntimePatches;
 use App\Services\Runtimes\Patches\RuntimePatchMigrations;
+use App\Services\Runtimes\RuntimePullSecrets;
 use App\Services\Runtimes\RuntimeRegistry;
 use App\Support\Rbac\Rbac;
 use Illuminate\Contracts\Auth\Authenticatable;
@@ -25,8 +26,10 @@ class RuntimeServiceProvider extends ServiceProvider
     public function register(): void
     {
         $this->app->singleton(ManifestValidator::class);
-        $this->app->singleton(BuiltinCatalog::class);
+        $this->app->scoped(BuiltinCatalog::class);
         $this->app->scoped(RuntimeRegistry::class);
+        // Runtime sources: which source's pull credentials a runtime image needs, per request / job
+        $this->app->scoped(RuntimePullSecrets::class);
         // Runtime patches: the feed's patches per runtime version, read once per request / job
         $this->app->scoped(RuntimePatches::class);
     }

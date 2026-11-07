@@ -48,7 +48,7 @@ installs `runr` into `/usr/local/bin` when that is writable, else into `~/.local
 
 ```sh
 curl -fsSL https://runr.sh/install.sh | sh
-curl -fsSL https://runr.sh/install.sh | RUNR_VERSION=v0.6.7 sh             # a specific release
+curl -fsSL https://runr.sh/install.sh | RUNR_VERSION=v0.6.8 sh             # a specific release
 curl -fsSL https://runr.sh/install.sh | RUNR_INSTALL_DIR="$HOME/bin" sh    # another directory
 ```
 
@@ -225,7 +225,7 @@ or a parent directory; `--dir` points elsewhere. Unknown keys are rejected.
 ```yaml
 name: orders-api          # project name; its slug names the service and the URL
 type: faas                # faas | xaas | caas
-runtime: python           # faas/xaas: python, nodejs, go, php, tensorflow, pytorch, wasm-*, a runtime plugin
+runtime: python           # faas/xaas: python, nodejs, go, php, java, dotnet, ruby, bun, tensorflow, pytorch, wasm-*, a runtime plugin
 runtime_version: "3.13"   # optional; default: the platform's default version
 region: eu-1              # region name or id; optional when one region is available
                           # (a global project: its primary, default the first of global.regions)
@@ -864,8 +864,9 @@ runr dev --print            # show the docker commands instead of running them
   loaded at start), a change of `runr.yaml` is applied, a change of the dependency file
   installs again.
 - **caas projects** run their image with the first port (`ports:`) published.
-- **Runtimes.** Built-in runtimes (python, nodejs, go, php, tensorflow, pytorch) run on their
-  runtime image as described above; projects of [runtime plugins](runtimes.md) run the way their
+- **Runtimes.** Built-in runtimes (python, nodejs, go, php, java, dotnet, ruby, bun, tensorflow,
+  pytorch) run on their runtime image as described above (java and dotnet build the code in the
+  container before they start it); projects of [runtime plugins](runtimes.md) run the way their
   manifest tells the cluster to run them (next section). WebAssembly runtimes (`wasm-rust`,
   `wasm-go`, `wasm-js`, `wasm-python`, `wasm-exec`) run as components on the region's
   WebAssembly shim (Spin), not in a container: `runr dev` names the shim and points to
@@ -1010,8 +1011,8 @@ Most groups without a subcommand run their `ls`, `get` or `status` command (`run
 | `runr git disconnect` | Disconnect the repository (`--yes`) |
 | `runr git previews [ls]\|get\|redeploy\|rm` | Preview environments of pull and merge requests (`--all`, `--wait`, `--yes`); also `runr previews` |
 | `runr git providers [ls]\|get\|create\|update\|rm` | GitHub Apps, GitLab and Forgejo/Gitea instances of the installation (secrets from files or stdin) |
-| `runr runtimes [ls]` | Runtimes (built-in, plugins, Wasm) and versions: kind, run mode, end-of-life date, image (`--all`, `--region`) |
-| `runr runtimes get RUNTIME` | Run mode, handler, triggers, regions, versions and files of a runtime (`--manifest` prints the manifest) |
+| `runr runtimes [ls]` | Runtimes (built-in, plugins, Wasm) and versions: kind, lifecycle state, end-of-life and sunset dates, run mode, runtime source, image (`--all`, `--region`) |
+| `runr runtimes get RUNTIME` | Run mode, handler, triggers, regions, runtime source, lifecycle, versions and files of a runtime (`--manifest` prints the manifest) |
 | `runr runtimes patches` | The runtime patches of the feed: runtime, version, tag, level, deadline, CVEs, reason (`--runtime`, `--version`) |
 | `runr runtimes register -f FILE` | Register a runtime plugin from a manifest (`--files`, `--region`, `--wait`) |
 | `runr runtimes update RUNTIME` | Change manifest and files, regions, enabled (`-f`, `--files`, `--region`, `--all-regions`, `--enable`, `--disable`, `--wait`) |
@@ -1020,6 +1021,12 @@ Most groups without a subcommand run their `ls`, `get` or `status` command (`run
 | `runr runtimes template RUNTIME` | Starter files (`--type`, `--handler`, `--out`, `--force`) |
 | `runr runtimes builds\|build RUNTIME` | Region image builds of dockerfile and git versions; `build` rebuilds (`--region`, `--version`, `--wait`) |
 | `runr runtimes test-deploy RUNTIME` | Deploy the starter template as a test project (`--region`, `--version`) |
+| `runr runtimes sources [ls]\|get SOURCE` | Runtime sources (RunR's catalog, OCI catalogs, Git repositories): status, runtimes, last read; `get` adds credentials set, its runtimes' lifecycle, problems, patches |
+| `runr runtimes sources add` | Connect a source and read it (`--name`, `--kind`, `--url`, `--ref`, `--path`, `--public-key-file`, `--patch-feed`, `--registry-host`, `--interval`, `--disabled`, credentials from `--git-token-env`/`--git-token-stdin`, `--git-username`, `--ssh-key-file`, `--known-hosts-file`, `--registry-username`, `--registry-password-env`/`--registry-password-stdin`) |
+| `runr runtimes sources update SOURCE` | Change a source (the same flags, `--enable`, `--disable`, `--clear-git-credentials`, `--clear-registry-credentials`) |
+| `runr runtimes sources test [SOURCE]` | Read and validate a source without saving it (exit code 6 unreadable, 5 problems) |
+| `runr runtimes sources sync\|rm SOURCE` | Read a source now (exit code 6 when the read fails); remove it (`--yes`) |
+| `runr runtimes catalog [set --all\|--only IDS]` | The built-in catalog in use and the Built-in runtimes setting |
 | `runr images push FILE` | Upload a `docker save` / OCI layout tar or a `.wasm` into a region registry (`--region`, `--name repo:tag`, `--format`) |
 | `runr images ls\|get\|rm` | List uploads (`--region`, `--kind image\|wasm\|spin`); show one; delete one (`--region`, `--yes`) |
 | `runr images uploads [ls]\|rm` | Unfinished uploads; abort them (`--yes`) |
@@ -1285,10 +1292,14 @@ runr runtimes rm q --yes
 ```
 
 The catalog lists the built-in runtimes and the [runtime plugins](runtimes.md) registered from a
-`runtime.yaml` manifest. `runr runtimes ls` shows each version with its kind (`built-in`,
-`plugin`, `wasm`), run mode (`http`, `exec`, `persistent`), end-of-life date and image (versions
-RunR builds per region show `(built in the region)`). `get` adds the manifest's details, `-o json`
-the normalized manifest, `--manifest` prints the manifest as it was submitted.
+`runtime.yaml` manifest or read from a [runtime source](#runtime-sources). `runr runtimes ls` shows
+each version with its kind (`built-in`, `plugin`, `wasm`), its [lifecycle](runtimes.md#lifecycle)
+state (`active`, `deprecated`, `eol`, `sunset`, `orphaned` — a runtime that left its source),
+end-of-life and sunset dates, run mode (`http`, `exec`, `persistent`), the runtime source it comes
+from and its image (versions RunR builds per region show `(built in the region)`). `get` adds the
+manifest's details, the runtime source and directory it comes from, its lifecycle (deprecated
+since, sunset, the replacement and the notice) and each version's state, `-o json` the normalized
+manifest, `--manifest` prints the manifest as it was submitted.
 
 `register -f runtime.yaml` (`-f -` reads stdin) registers a runtime: a platform runtime with
 `runtimes.manage`, a custom runtime of your organization with `runtimes.use_custom`. `--files
@@ -1306,6 +1317,87 @@ manifest prints every problem with its JSON path, e.g. `/run/command  is require
 and exits with code 5. `template` prints the starter files of a runtime (`--type xaas|faas`,
 `--handler`) or writes them with `--out DIR`. `test-deploy` creates an XaaS project
 `rt-<id>-<random>` from the starter template in a region and deploys it once its version is ready.
+
+### Runtime sources
+
+```sh
+runr runtimes sources                     # name, kind, scope, status, runtimes, last read, URL
+runr runtimes sources get acme            # status, credentials set, runtimes with their lifecycle, problems, patches
+GITHUB_TOKEN=… runr runtimes sources add --name acme --kind git \
+  --url https://github.com/acme/runtimes.git --ref main --git-token-env GITHUB_TOKEN
+runr runtimes sources add --name acme-ssh --kind git --url git@github.com:acme/runtimes.git \
+  --ssh-key-file deploy_key --known-hosts-file known_hosts
+echo "$REGISTRY_PASSWORD" | runr runtimes sources add --name acme-catalog --kind oci-catalog \
+  --url registry.example.com/acme/runtimes:catalog --public-key-file cosign.pub \
+  --patch-feed registry.example.com/acme/runtimes:patches \
+  --registry-username ci --registry-password-stdin
+runr runtimes sources test --kind git --url https://github.com/acme/runtimes.git --ref feature-x
+runr runtimes sources test acme --ref feature-x   # a change of acme, with its stored credentials
+runr runtimes sources update acme --ref v2 --interval 30
+runr runtimes sources update acme --clear-git-credentials
+runr runtimes sources update "RunR runtimes" --interval 30   # RunR's catalog: --interval, --enable, --disable
+runr runtimes sources sync acme
+runr runtimes sources rm acme --yes
+```
+
+[Runtime sources](runtimes.md#runtime-sources) are where runtimes come from: RunR's signed catalog
+(`RunR runtimes`, the built-in runtimes, marked `*` in the list) and the OCI catalogs
+(`--kind oci-catalog`) and Git repositories (`--kind git`, `<path>/<id>/runtime.yaml`; `--path`
+default `runtimes`, `--ref` default the default branch) connected to the platform. With
+`runtimes.manage` a source is a platform source (every organization gets its runtimes) and every
+source is listed; with `runtimes.use_custom` — while the platform allows custom runtimes — it is a
+source of your organization, and only those are listed. `ls -o json` adds which built-in catalog is
+in use and what the token may do.
+
+`add` connects a source and RunR reads it right away; the command prints its status and every
+problem of the read (file, runtime, JSON path, message). A source that could not be read
+(`unreachable`, `not_found`, `auth_failed`, `invalid_signature`, `invalid_catalog`) is connected all the same,
+with a warning: fix it with `update`. A runtime manifest with problems is refused (`partial`), the
+others are read. `--public-key-file` is the cosign key (PEM) the catalog and its `--patch-feed`
+must verify with, `--registry-host` the registry the registry credentials are for (required for a
+git source's runtime images), `--interval` the minutes between reads (default 60, at least the
+platform's minimum), `--disabled` connects it without reading it on its interval.
+
+Credentials are write-only and never a flag value: `--git-token-env VAR` or `--git-token-stdin`
+(HTTPS token, `--git-username` default `x-access-token`), `--ssh-key-file` and
+`--known-hosts-file` (SSH deploy key; without known_hosts the host key is accepted on first use),
+`--registry-username` with `--registry-password-env VAR` or `--registry-password-stdin`. One flag
+reads stdin at most. `get` shows which credentials are set and a token's last four characters,
+never a value.
+
+`update` changes only the flags given (an empty `--ref ""`, `--path`, `--public-key-file`,
+`--patch-feed`, `--registry-host`, `--git-username` or `--registry-username` removes the value);
+`--clear-git-credentials` and `--clear-registry-credentials` remove credentials, `--enable` /
+`--disable` switch the reads on its interval. A new location, key or credentials make RunR read the
+source anew. RunR's catalog takes `--interval`, `--enable` and `--disable` only (anything else: exit
+code 5).
+
+`test` reads and validates a source without saving anything: with `--kind` and `--url` a new one,
+with a source's name or id a change of it (its stored credentials are used). It lists each runtime
+the source defines and every problem; exit code 6 when the source cannot be read or does not
+verify, 5 when a runtime has problems — a check for a runtimes repository's CI. `sync` reads a
+source now, also when its revision did not change: exit code 6 with the source's status and error
+when the read fails or does not verify (its runtimes stay as they were), 5 while another read of it
+runs. `rm` removes a source and its patches: its runtimes no project uses are deleted, the others
+stay orphaned — hidden from new projects, running and deployable until their sunset at the end of
+the grace period. RunR's catalog cannot be removed. A source is named by its id or name; a name two
+sources share (sources of different organizations, seen by a platform administrator) needs the id.
+
+### Built-in runtimes
+
+```sh
+runr runtimes catalog                     # the catalog in use, RunR's catalog's status, offered built-ins
+runr runtimes catalog set --only python,nodejs,go
+runr runtimes catalog set --all           # every runtime of the catalog, also those it gains later
+```
+
+The built-in runtimes come from RunR's catalog as last read, or — while it has not been read — from
+the API image's offline catalog. `runr runtimes catalog` shows which one, RunR's catalog's status
+and revision, and the platform setting [Built-in runtimes](runtimes.md#built-in-runtimes) with each
+runtime: offered or not, in the offline catalog or not. `set --only` (comma-separated or repeated)
+offers those built-ins only, `set --all` every runtime of the catalog; a built-in left out is not
+offered for new projects, its projects keep deploying. Until the setting is saved,
+`EXECUTOR_RUNTIMES` (empty: all) decides. An unknown id exits with code 5.
 
 ### Runtime patches
 
@@ -1346,6 +1438,8 @@ patches` lists the patches of the whole feed and says when the feed is off on th
 | `runr projects patches` | `projects.view` on the project |
 | `runr projects patch apply\|pin\|unpin` | `projects.deploy` on the project |
 | `runr runtimes register\|update\|rm\|validate\|builds\|build\|test-deploy` | `runtimes.manage` for platform runtimes (single-tenant installations; on a multi-tenant installation platform administrators), `runtimes.use_custom` for custom runtimes of your organization while the platform allows them |
+| `runr runtimes sources …` | `runtimes.manage` for platform sources and RunR's catalog, `runtimes.use_custom` for your organization's sources while the platform allows custom runtimes |
+| `runr runtimes catalog [set]` | `runtimes.manage` |
 
 ## Images
 
@@ -3236,7 +3330,7 @@ deploy:
   stage: deploy
   image: alpine:3.21
   variables:
-    RUNR_VERSION: v0.6.7
+    RUNR_VERSION: v0.6.8
   before_script:
     - apk add --no-cache curl tar
     - curl -fsSL https://runr.sh/install.sh | sh

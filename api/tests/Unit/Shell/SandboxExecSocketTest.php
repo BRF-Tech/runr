@@ -2,7 +2,10 @@
 
 namespace Tests\Unit\Shell;
 
+use App\Services\Sandboxes\Exec\ExecKubeconfig;
+use App\Services\Sandboxes\Exec\ExecProtocol;
 use App\Services\Sandboxes\Exec\ExecScript;
+use App\Services\Sandboxes\Exec\SelectingExecTransport;
 use App\Services\Shell\SandboxExecSocket;
 use GuzzleHttp\Psr7\Request;
 use Illuminate\Support\Facades\Crypt;
@@ -12,6 +15,7 @@ use Laravel\Reverb\Servers\Reverb\Http\Connection as HttpConnection;
 use Mockery;
 use React\EventLoop\Loop;
 use React\Socket\ConnectionInterface;
+use Tests\Support\FakeK8sExecServer;
 use Tests\TestCase;
 
 /**
@@ -20,7 +24,10 @@ use Tests\TestCase;
  * a pseudo-terminal of the requested size, resize frames, Ctrl+D for the end of input and input
  * held back until the terminal is ready. Framed sessions (no terminal, the wrapper of
  * ExecScript::command($framedStdin)): the input in frames, kubectl's stdin open until the wrapper's
- * exit marker, the exit code from the marker, a kill that reaches the command through its PID file.
+ * end and exit markers, the exit code from the marker, a kill that reaches the command through its
+ * PID file. Without a terminal and with the kubeconfig of a stand-in API server
+ * (FakeK8sExecServer) the same goes over the native exec stream, and a refused upgrade falls back
+ * to the kubectl stand-in.
  */
 class SandboxExecSocketTest extends TestCase
 {
@@ -31,6 +38,9 @@ class SandboxExecSocketTest extends TestCase
 
     private ?string $kubectl = null;
 
+    /** @var list<FakeK8sExecServer> */
+    private array $servers = [];
+
     protected function setUp(): void
     {
         parent::setUp();
@@ -40,16 +50,23 @@ class SandboxExecSocketTest extends TestCase
         }
         // kubectl stand-in: drops kubectl's own arguments and becomes the command after "--"
         $this->kubectl = tempnam(sys_get_temp_dir(), 'fake-kubectl-');
-        file_put_contents($this->kubectl, "#!/bin/sh\nwhile [ \"\$#\" -gt 0 ] && [ \"\$1\" != \"--\" ]; do shift; done\nshift\nexec \"\$@\"\n");
+        file_put_contents($this->kubectl, "#!/bin/sh\necho ran >> {$this->kubectl}.log\nwhile [ \"\$#\" -gt 0 ] && [ \"\$1\" != \"--\" ]; do shift; done\nshift\nexec \"\$@\"\n");
         chmod($this->kubectl, 0755);
-        config(['sandbox.exec.kubectl' => $this->kubectl]);
+        config(['sandbox.exec.kubectl' => $this->kubectl, 'sandbox.exec.client' => 'native']);
+        SelectingExecTransport::reset();
     }
 
     protected function tearDown(): void
     {
+        foreach ($this->servers as $server) {
+            $server->stop();
+        }
         if ($this->kubectl !== null) {
             @unlink($this->kubectl);
+            @unlink($this->kubectl.'.log');
         }
+        SelectingExecTransport::reset();
+        ExecKubeconfig::flush();
         Mockery::close();
         parent::tearDown();
     }
@@ -378,6 +395,170 @@ class SandboxExecSocketTest extends TestCase
 
         $this->assertSame('x', $this->stream('stdout'));
         $this->assertSame(0, $this->frame('exit')['exit_code']);
+    }
+
+    // ── The native exec stream ─────────────────────────────────────────────────────────────
+
+    private function fakeServer(array $options = []): FakeK8sExecServer
+    {
+        if (! function_exists('pcntl_fork')) {
+            $this->markTestSkipped('the fake API server needs pcntl');
+        }
+
+        return $this->servers[] = FakeK8sExecServer::start($options);
+    }
+
+    private function kubectlRuns(): int
+    {
+        return is_file($this->kubectl.'.log') ? count(file($this->kubectl.'.log')) : 0;
+    }
+
+    public function test_native_stream_output_and_exit_code(): void
+    {
+        $server = $this->fakeServer();
+
+        $this->exec(['/bin/sh', '-c', 'echo out; echo err >&2; exit 3'], ['kubeconfig' => $server->kubeconfig()]);
+
+        $this->assertSame(['type' => 'start', 'exec_id' => '01jbexec', 'tty' => false], $this->messages()[0]);
+        $this->assertSame("out\n", $this->stream('stdout'));
+        $this->assertSame("err\n", $this->stream('stderr'));
+        $exit = $this->frame('exit');
+        $this->assertSame([3, false, false], [$exit['exit_code'], $exit['killed'], $exit['timed_out']]);
+        $this->assertSame(0, $this->kubectlRuns());
+        $request = $server->events('request')[0];
+        $this->assertTrue($request['stdin']);
+        $this->assertSame([ExecProtocol::V5], $request['protocols']);
+    }
+
+    public function test_native_stream_stdin_frames_and_their_end(): void
+    {
+        $server = $this->fakeServer();
+        $sent = false;
+        $this->exec(['cat'], ['kubeconfig' => $server->kubeconfig(), 'stdin' => base64_encode("first\n")], function (string $out) use (&$sent) {
+            if (! $sent && str_contains($out, 'first')) {
+                $sent = true;
+                $this->send(['type' => 'stdin', 'data' => base64_encode("second\n")]);
+                $this->send(['type' => 'stdin_close']);
+            }
+        });
+
+        $this->assertSame("first\nsecond\n", $this->stream('stdout'));
+        $this->assertSame(0, $this->frame('exit')['exit_code']);
+        $this->assertSame(0, $this->kubectlRuns());
+    }
+
+    public function test_native_stream_kill(): void
+    {
+        $server = $this->fakeServer();
+        $killed = false;
+        $this->exec(['/bin/sh', '-c', 'echo running; exec sleep 30'], ['kubeconfig' => $server->kubeconfig()], function (string $out) use (&$killed) {
+            if (! $killed && str_contains($out, 'running')) {
+                $killed = true;
+                $this->send(['type' => 'kill']);
+            }
+        });
+
+        $exit = $this->frame('exit');
+        $this->assertTrue($exit['killed']);
+        $this->assertSame(137, $exit['exit_code']);
+        $this->assertTrue($server->waitEnds(1)[0]['client_gone'], 'the connection to the API server is closed');
+    }
+
+    public function test_native_stream_refused_before_the_start_falls_back_to_kubectl(): void
+    {
+        // A server without v5: stdin cannot be ended there, the upgrade is refused, kubectl runs it
+        $server = $this->fakeServer(['protocols' => [ExecProtocol::V4]]);
+        $closed = false;
+
+        $this->exec(['/bin/sh', '-c', 'cat; echo done'], ['kubeconfig' => $server->kubeconfig(), 'stdin' => base64_encode("in\n")], function () use (&$closed) {
+            if (! $closed) {
+                $closed = true;
+                $this->send(['type' => 'stdin_close']);
+            }
+        });
+
+        $this->assertSame("in\ndone\n", $this->stream('stdout'));
+        $this->assertSame(0, $this->frame('exit')['exit_code']);
+        $this->assertSame(1, $this->kubectlRuns());
+        $this->assertCount(1, $server->events('request'));
+        $this->assertCount(1, array_filter($this->messages(), fn ($m) => ($m['type'] ?? null) === 'start'), 'one start frame');
+    }
+
+    public function test_native_framed_session_never_ends_stdin_and_takes_the_markers_out(): void
+    {
+        // The framed wrapper on the native stream: input in frames, its end in-band, no v5 close
+        $server = $this->fakeServer();
+        $sent = false;
+        $this->exec($this->framed(['/bin/sh', '-c', 'cat; echo after-eof; echo err >&2; exit 4']), ['kubeconfig' => $server->kubeconfig(), 'framed' => true, 'stdin' => base64_encode("first\n")], function (string $out) use (&$sent) {
+            if (! $sent && str_contains($out, 'first')) {
+                $sent = true;
+                $this->send(['type' => 'stdin', 'data' => base64_encode("second\n")]);
+                $this->send(['type' => 'stdin_close']);
+            }
+        });
+
+        $this->assertSame("first\nsecond\nafter-eof\n", $this->stream('stdout'));
+        $this->assertSame("err\n", $this->stream('stderr'));
+        $this->assertSame(4, $this->frame('exit')['exit_code']);
+        $this->assertSame(0, $this->kubectlRuns());
+    }
+
+    public function test_native_framed_session_with_acknowledged_frames_and_relayed_output(): void
+    {
+        $server = $this->fakeServer();
+        $input = str_repeat('0123456789abcdef', 20000);
+        $sent = false;
+        $this->exec($this->framed(['/bin/sh', '-c', 'cat; printf \'after-eof\006\004\036\n\' >&2; exit 6'], 30, true, true), ['kubeconfig' => $server->kubeconfig(), 'framed' => true, 'acked_input' => true], function () use (&$sent, $input) {
+            if (! $sent) {
+                $sent = true;
+                $this->send(['type' => 'stdin', 'data' => base64_encode($input)]);
+                $this->send(['type' => 'stdin_close']);
+            }
+        });
+
+        $this->assertSame($input, $this->stream('stdout'));
+        $this->assertSame("after-eof\x06\x04\x1e\n", $this->stream('stderr'));
+        $this->assertSame(6, $this->frame('exit')['exit_code']);
+        $this->assertSame(0, $this->kubectlRuns());
+    }
+
+    public function test_native_framed_kill_reaches_the_command_through_its_pid_file(): void
+    {
+        // Closing the stream alone would leave the command running: the kill goes through the PID file
+        $server = $this->fakeServer();
+        $pidFile = ExecScript::pidFile('01jbexec');
+        @unlink($pidFile);
+        $pid = 0;
+        $this->exec($this->framed(['sleep', '30'], 60), ['kubeconfig' => $server->kubeconfig(), 'framed' => true], function () use (&$pid, $pidFile) {
+            if ($pid === 0 && is_file($pidFile) && ($pid = (int) trim((string) file_get_contents($pidFile))) > 0) {
+                $this->send(['type' => 'kill']);
+            }
+        });
+
+        $this->assertTrue($this->frame('exit')['killed']);
+        $this->assertGreaterThan(0, $pid);
+        $gone = false;
+        for ($i = 0; $i < 100 && ! $gone; $i++) {
+            $stat = @file_get_contents("/proc/{$pid}/stat");
+            $gone = $stat === false || preg_match('/^\d+ \(.*\) [ZX] /', $stat) === 1;
+            if (! $gone) {
+                // The kill's own exec runs on the event loop
+                Loop::get()->futureTick(fn () => Loop::get()->stop());
+                Loop::get()->addTimer(0.05, fn () => Loop::get()->stop());
+                Loop::get()->run();
+            }
+        }
+        $this->assertTrue($gone, 'the command was killed');
+    }
+
+    public function test_native_stream_cluster_error_is_reported_like_kubectl(): void
+    {
+        $server = $this->fakeServer(['end' => 'failure']);
+
+        $this->exec(['true'], ['kubeconfig' => $server->kubeconfig()]);
+
+        $this->assertSame("error: Internal error occurred: error executing command in container: container not running\n", $this->stream('stderr'));
+        $this->assertSame(1, $this->frame('exit')['exit_code']);
     }
 
     // ── With a terminal ────────────────────────────────────────────────────────────────────

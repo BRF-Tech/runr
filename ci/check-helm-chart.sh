@@ -438,6 +438,26 @@ fi
 refused schema-patches 'runtimePatches.autoMigrate' --set-string runtimePatches.autoMigrate=maybe || problems+=("runtimePatches.autoMigrate not validated")
 report runtime-patches "feed, public key (line breaks kept), region and automatic migration rendered; defaults left to the application"
 
+# Runtime catalog: the defaults leave everything to the application (RunR's catalog, its key, the
+# whole catalog offered); a mirror with its own key, region, interval, timeout and two built-ins
+# render; offline renders an empty reference (the bundled catalog)
+problems=()
+if render catalog-default --show-only templates/configmap.yaml && render catalog -f "$ROOT/ci/helm-values/runtime-catalog.yaml" --show-only templates/configmap.yaml \
+  && render catalog-offline --set runtimeCatalog.offline=true --show-only templates/configmap.yaml; then
+  [ "$(count 'RUNR_RUNTIME_CATALOG_[A-Z_]*:|EXECUTOR_RUNTIMES:|RUNR_RUNTIME_SOURCE_TIMEOUT:' "$OUT/catalog-default.render")" = 0 ] || problems+=("defaults: a runtime catalog value rendered")
+  grep -q -F 'RUNR_RUNTIME_CATALOG_REF: "registry.acme-cloud.example/runr/runtime-catalog:stable"' "$OUT/catalog.render" || problems+=("runtimeCatalog.reference not rendered")
+  grep -q -F 'RUNR_RUNTIME_CATALOG_PUBLIC_KEY: "-----BEGIN PUBLIC KEY-----\nMFkw' "$OUT/catalog.render" || problems+=("runtimeCatalog.publicKey lost its line breaks")
+  grep -q -F 'RUNR_RUNTIME_CATALOG_VIA_REGION: "eu-1"' "$OUT/catalog.render" || problems+=("runtimeCatalog.viaRegion not rendered")
+  grep -q -F 'RUNR_RUNTIME_CATALOG_INTERVAL: "30"' "$OUT/catalog.render" || problems+=("runtimeCatalog.intervalMinutes not rendered")
+  grep -q -F 'RUNR_RUNTIME_SOURCE_TIMEOUT: "40"' "$OUT/catalog.render" || problems+=("runtimeCatalog.timeout not rendered")
+  grep -q -F 'EXECUTOR_RUNTIMES: "python,go"' "$OUT/catalog.render" || problems+=("runtimeCatalog.builtinRuntimes not rendered")
+  grep -q -F 'RUNR_RUNTIME_CATALOG_REF: ""' "$OUT/catalog-offline.render" || problems+=("runtimeCatalog.offline does not render an empty reference")
+else
+  problems+=("helm template: $(cat "$OUT"/catalog*.err)")
+fi
+refused schema-catalog 'runtimeCatalog.offline' --set-string runtimeCatalog.offline=maybe || problems+=("runtimeCatalog.offline not validated")
+report runtime-catalog "reference, public key (line breaks kept), region, interval, timeout, built-ins and offline rendered; defaults left to the application"
+
 # Frozen accounts (auth.frozenAccounts → RUNR_FROZEN_ACCOUNTS): none by default, a list and one
 # comma-separated string render the same comma-separated value
 problems=()
@@ -644,6 +664,65 @@ grep -q '^type: kubernetes.io/tls$' "$shared" && problems+=("shared-storage: a T
 refused tls-secret-unnamed 'ingress.tls.mode=secret: set ingress.tls.secretName' --set ingress.tls.mode=secret || problems+=("mode secret without secretName accepted")
 [ "$(count 'topologyKey: topology\.kubernetes\.io/zone$' "$shared")" = 1 ] || problems+=("shared-storage: gateway.affinity not on the gateway alone")
 report console "CORS origins, TLS from an existing Secret, per-component affinity"
+
+# The console certificate's state check (helper runr.consoleTlsCheck, api ConsoleCertificate):
+# letsencrypt in a cluster with cert-manager passes the mode, the ClusterIssuer and the check to the
+# API (CONSOLE_TLS_*) and lets runr-api get the console's Certificate and list the
+# CertificateRequests — in the release namespace's Role only, never a ClusterIssuer or anything
+# cluster-wide; without cert-manager, with secret / none, without the Ingress's tls section and with
+# ingress.tls.certificateCheck=false none of it; values without the key (reused from 0.6.7) check
+problems=()
+tls() {
+  local name=$1
+  shift
+  render "$name" --show-only templates/configmap.yaml --show-only templates/rbac.yaml "$@" || problems+=("$name: $(cat "$OUT/$name.err")")
+}
+# tls_env <name> <mode> <issuer> <check>
+tls_env() {
+  local f="$OUT/$1.render"
+  grep -q -F "CONSOLE_TLS_MODE: \"$2\"" "$f" || problems+=("$1: CONSOLE_TLS_MODE is not '$2'")
+  grep -q -F "CONSOLE_TLS_ISSUER: \"$3\"" "$f" || problems+=("$1: CONSOLE_TLS_ISSUER is not '$3'")
+  grep -q -F "CONSOLE_TLS_CHECK: \"$4\"" "$f" || problems+=("$1: CONSOLE_TLS_CHECK is not '$4'")
+}
+# The Role's cert-manager rules: get on the one Certificate <secret>, list on CertificateRequests
+tls_rules() {
+  local role
+  role=$(sed -n '/^kind: Role$/,/^---$/p' "$OUT/$1.render" | sed -n '/name: runr-api-role$/,/^---$/p')
+  grep -A2 -F 'resources: ["certificates"]' <<<"$role" | grep -q -F "resourceNames: [\"$2\"]" || problems+=("$1: no get on the Certificate $2")
+  grep -A2 -F 'resources: ["certificates"]' <<<"$role" | grep -q -F 'verbs: ["get"]' || problems+=("$1: the Certificate rule is not get only")
+  grep -A1 -F 'resources: ["certificaterequests"]' <<<"$role" | grep -q -F 'verbs: ["list"]' || problems+=("$1: no list on CertificateRequests")
+}
+no_tls_rules() {
+  grep -q 'cert-manager\.io' "$OUT/$1.render" && problems+=("$1: cert-manager rules rendered")
+  true
+}
+tls tls-le --set ingress.tls.mode=letsencrypt --api-versions cert-manager.io/v1
+tls tls-le-issuer --set ingress.tls.mode=letsencrypt --set ingress.tls.clusterIssuer=acme-issuer --set ingress.tls.secretName=console-cert --api-versions cert-manager.io/v1
+tls tls-le-reused --set ingress.tls.mode=letsencrypt --set ingress.tls.certificateCheck=null --api-versions cert-manager.io/v1
+tls tls-le-off --set ingress.tls.mode=letsencrypt --set ingress.tls.certificateCheck=false --api-versions cert-manager.io/v1
+tls tls-le-no-cm --set ingress.tls.mode=letsencrypt
+tls tls-le-no-ingress --set ingress.tls.mode=letsencrypt --set ingress.enabled=false --api-versions cert-manager.io/v1
+tls tls-secret --set ingress.tls.mode=secret --set ingress.tls.secretName=acme-console-tls --api-versions cert-manager.io/v1
+tls tls-none --set ingress.tls.mode=none --api-versions cert-manager.io/v1
+tls tls-legacy --set ingress.tls.enabled=true --set ingress.tls.clusterIssuer=acme-issuer --api-versions cert-manager.io/v1
+tls tls-legacy-no-tls --set ingress.tls.clusterIssuer=acme-issuer --api-versions cert-manager.io/v1
+tls_env tls-le letsencrypt letsencrypt-prod true && tls_rules tls-le runr-tls
+tls_env tls-le-issuer letsencrypt acme-issuer true && tls_rules tls-le-issuer console-cert
+tls_env tls-le-reused letsencrypt letsencrypt-prod true && tls_rules tls-le-reused runr-tls
+tls_env tls-le-off letsencrypt letsencrypt-prod false && no_tls_rules tls-le-off
+tls_env tls-le-no-cm letsencrypt '' false && no_tls_rules tls-le-no-cm
+tls_env tls-le-no-ingress letsencrypt '' false && no_tls_rules tls-le-no-ingress
+tls_env tls-secret secret '' false && no_tls_rules tls-secret
+tls_env tls-none none '' false && no_tls_rules tls-none
+tls_env tls-legacy '' acme-issuer true && tls_rules tls-legacy runr-tls
+tls_env tls-legacy-no-tls '' '' false && no_tls_rules tls-legacy-no-tls
+for n in tls-le tls-le-issuer tls-legacy; do
+  grep -q -i 'clusterissuers' "$OUT/$n.render" && problems+=("$n: a ClusterIssuer read rendered")
+  [ "$(sed -n '/^kind: ClusterRole$/,/^---$/p' "$OUT/$n.render" | count 'cert-manager' -)" = 0 ] || problems+=("$n: a cert-manager rule in the ClusterRole")
+done
+# kubeconform validates the Role with its cert-manager rules (the *.yaml renderings)
+cp "$OUT/tls-le.render" "$OUT/console-tls-letsencrypt.yaml"
+report console-tls "letsencrypt with cert-manager: CONSOLE_TLS_MODE / ISSUER / CHECK and get on the console's Certificate, list on CertificateRequests in the release namespace (no ClusterIssuer, nothing cluster-wide); none of it without cert-manager, the Ingress or its tls section, with secret / none or certificateCheck=false; values without the key check"
 
 # Bootstrap Job (bootstrap.tenancySetup): the multi-tenant edition converts an installation that
 # ran single-tenant (tenancy:setup) before the administrator check, with the longer deadline; the
@@ -857,11 +936,19 @@ grep -q -F "kubectl get secret runr-admin -n runr -o jsonpath='{.data.password}'
 grep -q -F 'DB_PASSWORD=' <<<"$text" && problems+=("operator-secret: DB_PASSWORD asked for although database.existingSecret is set")
 text=$(notes -f "$ROOT/ci/helm-values/shared-storage.yaml")
 grep -q -F 'TLS: your Secret acme-console-tls' <<<"$text" || problems+=("shared-storage: no TLS note")
+text=$(notes --set ingress.tls.mode=letsencrypt --api-versions cert-manager.io/v1)
+grep -q -F 'The ClusterIssuer letsencrypt-prod has to exist in the cluster' <<<"$text" || problems+=("letsencrypt: no note that the ClusterIssuer has to exist")
+grep -q -F 'kubectl get clusterissuer letsencrypt-prod' <<<"$text" || problems+=("letsencrypt: no ClusterIssuer check")
+grep -q -F 'kubectl get certificate -n runr' <<<"$text" || problems+=("letsencrypt: no Certificate check")
+grep -q -F 'Platform administrators see a warning in the console' <<<"$text" || problems+=("letsencrypt: no note on the console warning")
+grep -q -F 'Platform administrators see a warning' <<<"$(notes --set ingress.tls.mode=letsencrypt --set ingress.tls.certificateCheck=false --api-versions cert-manager.io/v1)" \
+  && problems+=("letsencrypt, certificateCheck=false: the console warning promised")
+grep -q -F 'cert-manager is not installed in this cluster' <<<"$(notes --set ingress.tls.mode=letsencrypt)" || problems+=("letsencrypt without cert-manager: no fallback note")
 # Pass-through: an upgrade says how to finalize the move of the secret values; an install says nothing
 grep -q -F 'projectSecrets.finalize' <<<"$(notes)" && problems+=("install: secret finalize note rendered")
 grep -q -F -- '--set projectSecrets.finalize=true' <<<"$(notes --is-upgrade)" || problems+=("upgrade: no secret finalize note")
 grep -q -F 'do NOT install 0.5.10 again' <<<"$(notes --is-upgrade --set projectSecrets.finalize=true)" || problems+=("upgrade, finalized: no rollback warning")
-report notes "Horizon link, storage, skipped API budget, runr-admin, TLS Secret, the secret finalize step of an upgrade"
+report notes "Horizon link, storage, skipped API budget, runr-admin, TLS Secret, the ClusterIssuer and Certificate checks of letsencrypt, the secret finalize step of an upgrade"
 
 # kubeconform from the PATH, else in a container. The renderings go in on stdin: no bind mount,
 # so a remote Docker daemon (docker-in-docker) works too.

@@ -69,6 +69,33 @@ class BuildManifests
         return self::requestEqualsLimit(KnativeConstants::BUILD_INIT_CPU_M, KnativeConstants::BUILD_INIT_MEMORY_MB);
     }
 
+    /** Where Kaniko reads registry credentials (DOCKER_CONFIG/config.json). */
+    public const DOCKER_CONFIG_DIR = '/kaniko/.docker';
+
+    /**
+     * A Kaniko Job with a kubernetes.io/dockerconfigjson Secret as its docker config: the
+     * credentials of a private runtime source for the FROM pulls (docs/runtimes.md#private-sources).
+     * The push to the region registry needs none.
+     */
+    public static function withDockerConfig(array $job, string $secretName): array
+    {
+        $pod = $job['spec']['template']['spec'];
+        foreach ($pod['containers'] as $i => $container) {
+            if (($container['name'] ?? null) !== 'kaniko') {
+                continue;
+            }
+            $pod['containers'][$i]['volumeMounts'][] = ['name' => 'runr-docker-config', 'mountPath' => self::DOCKER_CONFIG_DIR, 'readOnly' => true];
+            $pod['containers'][$i]['env'][] = ['name' => 'DOCKER_CONFIG', 'value' => self::DOCKER_CONFIG_DIR];
+        }
+        $pod['volumes'][] = [
+            'name' => 'runr-docker-config',
+            'secret' => ['secretName' => $secretName, 'items' => [['key' => '.dockerconfigjson', 'path' => 'config.json']]],
+        ];
+        $job['spec']['template']['spec'] = $pod;
+
+        return $job;
+    }
+
     private static function requestEqualsLimit(int $cpuM, int $memoryMb): array
     {
         $size = ['cpu' => $cpuM.'m', 'memory' => $memoryMb.'Mi'];

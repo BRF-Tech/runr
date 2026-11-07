@@ -6,7 +6,8 @@ an [uploaded image](images.md). The manifest tells RunR everything it needs to r
 language — the image per version, the starter template, how dependencies are installed, how
 compiled code is built, and how the process receives invocations (the run mode `http`, `exec` or
 `persistent`; the last two through RunR's universal wrapper `runr-wrapper`). Python, Node.js, Go,
-PHP, PyTorch, TensorFlow and the WebAssembly runtimes are plugins of exactly the same kind; a
+PHP, Java, .NET (C#), Ruby, TypeScript on Bun, PyTorch, TensorFlow and the WebAssembly runtimes
+are plugins of exactly the same kind; a
 runtime for C, Rust, Zig, Haskell or a language you wrote yourself goes through the same code
 paths, the same build pipeline and the same sandbox.
 
@@ -15,6 +16,9 @@ Containers), i.e. the Kubernetes RuntimeClass a region maps each project type (X
 to — see [Sandboxing, GPUs and RuntimeClasses](#sandboxing-gpus-and-runtimeclasses).
 
 - [Sources of runtimes](#sources-of-runtimes)
+- [Runtime sources](#runtime-sources): RunR's catalog, OCI catalogs, Git repositories, private
+  sources, runtime ids, sync, the Built-in runtimes setting
+- [Lifecycle](#lifecycle): end of life, deprecated, sunset, orphaned runtimes, reminders
 - [How a function runs](#how-a-function-runs)
 - [The execution contract](#the-execution-contract)
 - [The universal wrapper](#the-universal-wrapper)
@@ -40,9 +44,16 @@ to — see [Sandboxing, GPUs and RuntimeClasses](#sandboxing-gpus-and-runtimecla
 
 | Source (`source` in the API) | Where it comes from | Who sees it |
 |---|---|---|
-| **Built-in** (`builtin`) | the catalog the API ships (`api/resources/runtimes/builtin.json`), bundled from `runtimes/<id>/runtime.yaml` of [BRF-Tech/runr-runtimes](https://github.com/BRF-Tech/runr-runtimes), next to the image's Dockerfile and language wrapper — see [Built-in catalog](#built-in-catalog) | everyone; enabled / disabled and region availability are editable, the manifest follows the release |
-| **Platform** (`platform`) | registered by a platform administrator in Build & Run → Runtimes, with `runr runtimes register` or with `POST /api/runtimes` | everyone, in the regions it is available in |
-| **Custom** (`custom`) | registered by a member of an organization when the platform allows custom runtimes | the organization (tenant) that registered it; outside tenant context every user |
+| **Built-in** (`builtin`) | RunR's signed runtime catalog `ghcr.io/brf-tech/runr/runtime-catalog:stable`, which [BRF-Tech/runr-runtimes](https://github.com/BRF-Tech/runr-runtimes) publishes from its `runtimes/<id>/runtime.yaml` next to each image's Dockerfile and language wrapper, read periodically ([Runtime sources](#runtime-sources)); until it has been read once, the catalog the API image ships (`api/resources/runtimes/builtin.json`) — see [Built-in catalog](#built-in-catalog) | everyone (the [Built-in runtimes](#built-in-runtimes) setting picks which); enabled / disabled and region availability are editable, the manifest follows the catalog |
+| **Platform** (`platform`) | registered by a platform administrator in Build & Run → Runtimes, with `runr runtimes register` or with `POST /api/runtimes` — or synced from a [platform source](#runtime-sources) (an OCI catalog or a Git repository) | everyone, in the regions it is available in |
+| **Custom** (`custom`) | registered by a member of an organization when the platform allows custom runtimes — or synced from an [organization source](#runtime-sources) | the organization (tenant) that registered it; outside tenant context every user |
+
+A runtime synced from a source carries `source_id`, `source_name` and `source_path` (its manifest
+in the source) and `managed: true`: its manifest changes in the source, not through the API
+(`PUT /runtimes/{id}` with a manifest answers 422); enabled / disabled and regions stay editable.
+To build an executor of your own — the contract, the manifest, the image, testing, publishing a
+repository or a signed catalog — see [Executor development](executor-development.md) and the sample
+repository [BRF-Tech/runr-sample-custom-executor](https://github.com/BRF-Tech/runr-sample-custom-executor).
 
 Each version of a runtime names where its runtime image comes from — `image`, `dockerfile`,
 `git` or `upload` ([versions](#versions)). Bringing your own image works with every source: an
@@ -51,7 +62,7 @@ image that serves the [HTTP contract](#http-mode) itself (`run.mode: http`), or 
 
 Runtime ids are one namespace across all sources: `projects.runtime` stores the id (`python`,
 `c`, `q`), so an id identifies one runtime everywhere and a registration with an id that exists
-already is rejected. Every manifest is validated strictly against the JSON Schema in
+already is rejected ([runtime ids](#runtime-ids)). Every manifest is validated strictly against the JSON Schema in
 `api/resources/runtimes/runtime.schema.json` (`apiVersion: runr.sh/v1`) plus the rules a schema
 cannot express; a rejected manifest comes back with every problem and its JSON path, e.g.
 `/run/command: is required in exec mode`.
@@ -60,6 +71,283 @@ Disabling a runtime takes it out of the catalog: new projects cannot pick it and
 projects are refused with a message naming the runtime; running deployments stay untouched. The
 same holds for a region the runtime is not offered in. A runtime with projects can be disabled,
 not deleted.
+
+## Runtime sources
+
+Runtimes come from **sources** RunR reads by itself, besides the ones registered one by one:
+
+| Source | What it is | Connected by | Its runtimes |
+|---|---|---|---|
+| **RunR runtimes** (the default source) | RunR's signed OCI catalog, published by BRF-Tech/runr-runtimes | the installation (`RUNR_RUNTIME_CATALOG_*`, Helm [`runtimeCatalog.*`](helm-values.md#runtimecatalog)) | the built-in runtimes |
+| **OCI catalog** (`oci-catalog`) | an OCI artifact holding a catalog of manifests, optionally cosign-signed | a platform administrator (`runtimes.manage`) or an organization (`runtimes.use_custom`, while custom runtimes are on) | platform runtimes, or the organization's custom runtimes |
+| **Git repository** (`git`) | `<path>/<id>/runtime.yaml` of a repository at a branch or tag | as above | as above |
+
+Sources are listed and connected in **Build & Run → Runtimes → Sources**, with
+`runr runtimes sources …`, the MCP tools `runtime_sources_list`, `runtime_source_connect`,
+`runtime_source_sync`, `runtime_source_remove`, the Terraform resource `runr_runtime_source` and
+`/api/runtime-sources` ([API](#api)). A platform administrator sees every source; a member with
+`runtimes.use_custom` sees and manages the organization's own.
+
+- [RunR's catalog](#runrs-catalog)
+- [OCI catalogs](#oci-catalogs)
+- [Git sources](#git-sources)
+- [Private sources](#private-sources)
+- [Runtime ids](#runtime-ids)
+- [Sync](#sync)
+- [Patches of a source](#patches-of-a-source)
+- [Built-in runtimes](#built-in-runtimes)
+
+### RunR's catalog
+
+The built-in runtimes come from `ghcr.io/brf-tech/runr/runtime-catalog:stable`: BRF-Tech/runr-runtimes
+builds it from its `runtimes/<id>/runtime.yaml` after the images of a change are published, pushes
+it with `oras` and signs it with cosign — the same key as the [patch feed](#runtime-patches)
+(`keys/patch-feed.pub` there). RunR reads it like the patch feed: every 15 minutes a HEAD of the
+tag; the catalog itself only when its digest changed; its signature verified with
+`RUNR_RUNTIME_CATALOG_PUBLIC_KEY` before a word of it is trusted. A catalog that does not verify,
+or that is no valid catalog, is refused: the last good one stays and the source says why.
+
+So **a language added to runr-runtimes reaches every installation without a RunR release**: the
+next read creates its built-in runtime, its versions are discovered from its image tags, and the
+[Built-in runtimes](#built-in-runtimes) setting (default: every runtime of the catalog) offers it.
+
+The catalog the API image ships (`api/resources/runtimes/builtin.json`) is only the **offline
+fallback**: it is in use until RunR's catalog has been read once — an air-gapped installation, a
+catalog switched off on the Runtimes page, `RUNR_RUNTIME_CATALOG_REF` set empty (Helm
+`runtimeCatalog.offline: true`). The Runtimes page and `GET /api/runtime-catalog` say which one is
+in use (`mode`: `source` or `bundle`). An API without a way out reads the catalog through a region's
+registry (`RUNR_RUNTIME_CATALOG_VIA_REGION`, default the patch feed's region). A mirror of the
+catalog in your own registry, signed with your own key, works the same: set its reference and key.
+
+Its source row is read-only in the console except whether it is read and how often; its
+reference, key and region come from the installation.
+
+### OCI catalogs
+
+An OCI catalog is an artifact with one layer of media type `application/vnd.runr.runtime-catalog.v1+json`
+(`artifactType` the same, an empty config), pushed with `oras push`:
+
+```json
+{
+  "schema": 1,
+  "generated_at": "2026-11-07T12:00:00Z",
+  "source": {"repository": "https://github.com/acme/runtimes", "revision": "<git commit>"},
+  "runtimes": [
+    {"path": "runtimes/lua/runtime.yaml", "manifest": {"apiVersion": "runr.sh/v1", "kind": "Runtime", "id": "lua", "...": "..."}},
+    {"path": "runtimes/q/runtime.yaml", "manifest": {"...": "..."}, "files": {"Dockerfile": "FROM …", "main.go": "…"}}
+  ],
+  "patches": []
+}
+```
+
+- `runtimes[].manifest` is the runtime.yaml as JSON (versions quoted as strings), `@file` build
+  files inlined; `files` only for a runtime with a `dockerfile:` version — its build context.
+- `patches` (optional): [patch entries](#patches-of-a-source) of the catalog's own runtimes.
+- With a **public key** on the source (a cosign PEM), the catalog must be signed with it
+  (`cosign sign --key`, the classic `sha256-<digest>.sig`); without one it is read unsigned and
+  carries no patches. RunR's own catalog always needs its key.
+- The catalog is read only when its digest changed (one HEAD per check), at most 8 MiB and 200
+  runtimes.
+
+[runr-sample-custom-executor](https://github.com/BRF-Tech/runr-sample-custom-executor) builds,
+pushes and signs one from its repository with GitHub Actions.
+
+### Git sources
+
+A Git source is a repository with one directory per runtime: `<path>/<id>/runtime.yaml` (path
+default `runtimes`), the directory named like the runtime's id, read at a branch or tag (default:
+the default branch). RunR runs `git ls-remote` on every check and a shallow clone only when the
+commit changed. The clone has no submodules, no hooks and no symbolic links (checked out as plain
+files); `@file` build files and the build context of a `dockerfile:` runtime (every other file of
+its directory, at most 50 files and 900 KB) are read from the runtime's directory only — nothing
+outside the clone.
+
+URLs: `https://host/path`, `ssh://[user@]host[:port]/path` or `user@host:path`. `http://` and
+`git://` only with `RUNR_RUNTIME_SOURCES_ALLOW_INSECURE=true` (an internal Git server without TLS);
+`file://` never. A version's own `git:` source (a runtime image RunR builds) is cloned by the
+region's Kaniko build as before.
+
+### Private sources
+
+A source can be private; its credentials are **write-only** — stored encrypted at rest with the
+application key (`runtime_sources.credentials`, like a region's kubeconfig), never in an answer
+(the API says which are set and shows the last four characters of a token), masked in every error,
+log line and problem RunR writes:
+
+| Credential | API field | Used for |
+|---|---|---|
+| HTTPS token of a Git source (GitHub / GitLab / Gitea token) | `git_token`, `git_username` (default `x-access-token`) | `ls-remote` and clone, as an `Authorization` header in the git process's environment — never in the URL or a command line; also the region build of a version whose `git:` URL is on the source's host (Kaniko's `GIT_USERNAME` / `GIT_PASSWORD` from a Secret) |
+| SSH deploy key of a Git source | `ssh_private_key`, `ssh_known_hosts` (without it the host key is accepted on first use) | `ls-remote` and clone through `GIT_SSH_COMMAND`, the key in a 0600 file removed after the read |
+| Registry username and password / token | `registry_username`, `registry_password`, `registry_host` (default: the catalog's registry; required for a Git source) | a private OCI catalog and patch feed; version discovery of private images; every pull of the source's runtime images |
+
+Where RunR pulls a **private runtime image** of a source (an image on `registry_host`):
+
+| Pull | How the credentials reach it |
+|---|---|
+| Function pods (Knative Service, CronJob) of a code-mounted version | `imagePullSecrets`: a `kubernetes.io/dockerconfigjson` Secret `runr-rtsrc-<source>` RunR applies into the project namespace before the workload (label `runr.sh/runtime-source`) |
+| Function builds (dependencies, compiled runtimes) | Kaniko's docker config (`DOCKER_CONFIG=/kaniko/.docker`, the same Secret); the private `FROM` images are pulled from their registry directly, not through the region registry's pull-through |
+| Runtime image builds (`dockerfile:` / `git:` versions) | the same docker config for the Dockerfile's `FROM`; the source's Git token for a `git:` version on its host |
+| WebAssembly toolchain Jobs, sandboxes and warm pools | `imagePullSecrets` with the same Secret |
+| The node pre-pull at registry setup | `crictl pull --creds` from a Secret `runr-image-prepull-creds` (removed with the DaemonSet) |
+| The registry pre-warm | left out: the pull-through has no credentials; the first build pulls the image |
+
+The Secret's value is never part of a deployment's manifests, its logs or the audit log; new
+credentials reach the next deploy or build.
+
+### Runtime ids
+
+Runtime ids are one namespace across the platform, because projects store the id:
+
+- **RunR's catalog keeps the built-in ids.** No other source and no registration takes an id of
+  the built-in catalog in use or of the catalog the API image ships.
+- **The first registration wins.** An id already held — by another source, by a runtime registered
+  by hand, by another organization — is a sync problem of the source that comes later, naming the
+  holder (another organization's source is not named: "already taken on this platform"); that
+  runtime is skipped, the others are read.
+- **Orphans are adopted by the same owner.** A runtime that left its source (orphaned) is taken over
+  by another source of the same scope and organization; its projects follow.
+- **One id once per source.** The same id twice in one source: the first (by path) is read, the
+  second is a problem.
+- **A new built-in does not take an existing id.** When RunR's catalog gains an id a platform or
+  organization runtime holds already, that runtime keeps it and the built-in is not offered on this
+  installation (a problem of RunR's source).
+- An organization's manifests may not set `runtimeClass`, as with registration.
+
+### Sync
+
+The scheduler checks every source every five minutes against its interval (RunR's catalog: 15
+minutes, `RUNR_RUNTIME_CATALOG_INTERVAL`; a connected source: 60 by default, at least 5); **Sync
+now** (`POST /api/runtime-sources/{id}/sync`, `runr runtimes sources sync`) reads it at once, also
+when its revision did not change. A source is read right after it is connected or changed.
+
+Each read:
+
+1. reads the source (above); unchanged — nothing more;
+2. validates every manifest strictly (the JSON Schema and the rules of [Manifest reference](#manifest-reference));
+   a bad manifest is a **problem** with its file and JSON path —
+   `runtimes/lua/runtime.yaml /run/command: is required in exec mode` — and does not stop the others;
+3. applies the [runtime id](#runtime-ids) rules;
+4. creates or updates the source's runtimes: the manifest on the runtime, the versions from the
+   manifest (or discovered from the image tags with the source's credentials), region builds of
+   `dockerfile:` / `git:` versions; a runtime whose manifest is bad this time keeps its last good one;
+5. **orphans** the runtimes that are no longer in the source ([Lifecycle](#orphaned-runtimes));
+6. reads the [patches](#patches-of-a-source) of the source's runtimes.
+
+A source's `status`: `never`, `ok`, `partial` (read, with problems), `unreachable`, `not_found`
+(the registry or Git host has no such catalog or repository, or refused a read without
+credentials: to a reader without credentials a missing package and a private one look the same,
+and ghcr.io answers both with 401 / 403), `auth_failed` (the registry or Git host refused the
+source's own credentials), `invalid_signature`, `invalid_catalog`, `disabled`. RunR's catalog is
+read without credentials: while `ghcr.io/brf-tech/runr/runtime-catalog` is not published or not
+public, its status is `not_found` and the catalog the API image ships stays in use. A failed read
+changes no runtime. The source also keeps `revision` (the catalog's manifest digest or the
+commit), `checked_at`, `synced_at` (the last good read), `runtimes_count`, `signature_verified`
+and its `problems`.
+
+**Test connection** (`POST /api/runtime-sources/test`) reads and validates a source as given —
+before it is saved, or changes of a connected one with its stored credentials — and answers its
+revision, each runtime it defines and every problem, changing nothing.
+
+Each runtime of a source is enabled or disabled one by one (`PUT /api/runtimes/{id}` `is_enabled`,
+the source's runtimes on the Sources tab). Removing a source deletes its runtimes that no project
+uses; the others stay [orphaned](#orphaned-runtimes).
+
+### Patches of a source
+
+A source carries patches of its own runtimes the way RunR's [patch feed](#runtime-patches) carries
+the built-ins': patch tags (`<full version>-r<n>`), levels, reasons, CVEs, deadlines. Two ways:
+
+- **in its signed catalog**: the catalog's `patches` (patch-feed v1 entries), trusted because the
+  catalog's signature verified with the source's key;
+- **its own patch feed**: an OCI artifact like RunR's (`application/vnd.runr.patch-feed.v1+json`)
+  whose reference is set on the source (`patch_feed`), verified with the source's public key and
+  read with its registry credentials (required: a patch feed needs the key).
+
+Patches are stored for the source's own runtimes only — an entry for another runtime is a problem
+and is ignored — and RunR's feed patches only the built-in runtimes, so no feed ever moves another
+feed's runtime. From there everything is the same: workloads run the patch by digest, each project
+shows its patch state, critical and zero-day patches have deadlines and migrate projects
+automatically (the platform policy), notifications go out, and the Patches page lists them (with
+the source). A source's patches are also on its detail (`GET /api/runtime-sources/{id}`).
+
+### Built-in runtimes
+
+The platform setting **Built-in runtimes** (Build & Run → Runtimes, `runtimes.manage`;
+`PUT /api/runtime-catalog`) picks which runtimes of RunR's catalog the platform offers:
+
+- **All runtimes of the catalog** (default): a runtime the catalog gains is offered as soon as it
+  is read;
+- **Only these**: a selection; a runtime the catalog gains is not offered until it is selected.
+
+A built-in left out is not offered for new projects; its projects keep deploying. The setting
+replaces the `EXECUTOR_RUNTIMES` variable, which is now only its first default: until a platform
+administrator saves the setting, `EXECUTOR_RUNTIMES` (empty: all) decides.
+
+## Lifecycle
+
+Every runtime and version has the same lifecycle, whatever its source — built-in, platform,
+organization, registered by hand or synced from a source:
+
+| State | Comes from | What RunR does |
+|---|---|---|
+| **End of life** (`eol`) | a version's `eol` date, else endoflife.date for a `versionDiscovery.eol` product | after the date: the version leaves the picker; its projects can no longer be saved or deployed until they move to another version |
+| **Deprecated** | `deprecated` of a version or of the whole runtime: a date, or `true` (from the first read that saw it) | a badge on the runtime, the version, the picker and the project; a one-time notice to the owners of its projects and the organization's owners and admins; everything keeps working |
+| **Sunset** | `sunset` of a version or of the runtime: a date; for an orphaned runtime, the end of its grace period | like the end of life — after the date the version leaves the picker and its projects can no longer be saved or deployed; a runtime whose sunset passed takes no new projects |
+| **Orphaned** | the runtime left its source | see [Orphaned runtimes](#orphaned-runtimes) |
+
+The version **ends** at the earlier of its end of life and its sunset (`ends_at`, `ends_by: eol |
+sunset` in the API). The reminders count down to that date: 13, 4 and 1 week(s) before it the
+owners of its projects and the organization's owners and admins hear about it — in-app, by mail a
+week ahead ([End of life](#end-of-life)). **Running deployments are never stopped**: an ended
+version's functions keep serving; only saves and deploys are refused (422 with a message naming
+the upgrade).
+
+```yaml
+deprecated: "2026-12-01"      # the whole runtime (or true)
+sunset: "2027-06-30"
+replacement: python           # suggested in the notices and the console
+notice: "Lua 5.1 support ends with this runtime; use lua 5.4."
+versions:
+  - version: "5.3"
+    image: ghcr.io/acme/lua:5.3
+    eol: "2027-01-31"
+    deprecated: true
+    sunset: "2027-01-31"
+versionDiscovery:              # discovered versions take theirs by version label
+  repository: ghcr.io/acme/exec-lua
+  image: ghcr.io/acme/exec-lua:{version}
+  lifecycle:
+    "5.3": {eol: "2027-01-31", deprecated: true}
+```
+
+Dates are quoted `YYYY-MM-DD` strings (YAML reads an unquoted date as something else). A `sunset`
+before its `deprecated` date is refused; `replacement` must name another runtime.
+
+**Pinned and unpinned projects.** A project pinned to a version (`runtime_version`) stays on it until
+it ends, then saves and deploys are refused until it moves. A project without a version runs the
+runtime's default version: when the manifest names a newer default, its next deploy moves to it;
+when the whole runtime is sunset, the default version ends with it. A version removed from a
+manifest is retired: its projects run on the default version. Patch pins and the automatic
+migration at a patch deadline work as described in [Runtime patches](#runtime-patches), for the
+runtimes of every source.
+
+### Orphaned runtimes
+
+A runtime that is no longer in its source (removed from the repository or catalog, or its source
+removed while projects use it) is **orphaned**, not deleted — its projects store its id and their
+deployments keep running:
+
+- it leaves the catalog: no new project picks it, a new project or sandbox on it is refused;
+- its projects keep saving and deploying on its last manifest for the grace period
+  (`RUNR_RUNTIME_ORPHAN_GRACE_DAYS`, 90 days), which becomes its **sunset**: the reminders count down
+  to it and after it saves and deploys are refused — running deployments stay;
+- the owners of its projects and the organization's owners and admins are told once;
+- the console marks it (Orphaned, with the sunset date) on the runtime, the project and the source;
+- it comes back unchanged when it returns to its source, or is adopted by another source of the
+  same owner ([runtime ids](#runtime-ids)); a platform administrator can delete it once no project
+  uses it.
+
+A built-in that RunR's catalog drops is orphaned the same way.
 
 ## How a function runs
 
@@ -341,7 +629,7 @@ Unknown fields are rejected everywhere in the manifest.
 | `extensions` | yes | | 1–10 distinct file extensions without the dot (`^[a-z0-9]{1,10}$`); the first is the handler file's |
 | `category` | | `general` | `general` or `ml` |
 | `versions` | yes¹ | | see [versions](#versions) |
-| `versionDiscovery` | | | built-in catalog only, see [versions](#versions) |
+| `versionDiscovery` | | | catalogs only (the built-in catalog, runtime sources), see [versions](#versions) |
 | `handler` | | | see [handler and template](#handler-and-template) |
 | `template` | | `{"{file}": ""}` | starter code, see [handler and template](#handler-and-template) |
 | `dependencies` | | | see [Dependencies](#dependencies) |
@@ -352,6 +640,10 @@ Unknown fields are rejected everywhere in the manifest.
 | `resources` | | | defaults for new projects, see [resources](#resources) |
 | `runtimeClass` | | | built-in and platform runtimes only, see [RuntimeClasses](#sandboxing-gpus-and-runtimeclasses) |
 | `wagi` | | | runtimes on the Spin shim (requires `runtimeClass: wasmtime-spin-v2`): `argv` (default `${SCRIPT_NAME} ${ARGS}`), `files` (map the project's files into the module, default `false`), `environment` (extra static variables) — RunR generates a `spin.toml` with Spin's WAGI executor for the module the build produces ([wasm-exec](wasm.md#wasm-exec)) |
+| `deprecated` | | | the whole runtime is deprecated from this date (`"YYYY-MM-DD"`), or now (`true`) — [Lifecycle](#lifecycle) |
+| `sunset` | | | after this date (`"YYYY-MM-DD"`) the runtime takes no new projects and its projects can no longer be saved or deployed; running deployments stay |
+| `replacement` | | | the runtime id RunR suggests instead |
+| `notice` | | | why and what to do (up to 500 characters), shown with the lifecycle state |
 
 ¹ unless `versionDiscovery` is set.
 
@@ -363,6 +655,8 @@ versions:
     image: ghcr.io/acme/q:1.0            # exactly one of image | dockerfile | git | upload
     default: true
     eol: "2027-06-30"
+    deprecated: "2027-01-01"             # or true
+    sunset: "2027-06-30"
     gpu: false
   - version: "2.0"
     dockerfile: Dockerfile               # a file uploaded with the runtime
@@ -383,12 +677,14 @@ versions:
 | `buildArgs` | `--build-arg` values, `dockerfile` and `git` versions only |
 | `default` | the version new projects get; at most one per runtime, the last version when none is marked |
 | `eol` | end-of-life date (`YYYY-MM-DD`): the version past it leaves the picker, its projects are flagged in the UI, and saving or deploying them asks for an upgrade |
+| `deprecated` | the version is deprecated from this date, or now (`true`): a badge and a one-time notice ([Lifecycle](#lifecycle)) |
+| `sunset` | like `eol`, set by the runtime's maintainer: after this date the version leaves the picker and its projects can no longer be saved or deployed |
 | `gpu` | the version needs a GPU node (with [`resources.gpu`](#resources)) |
 
 Up to 50 versions. Removing a version from the manifest retires it: projects pinned to it run on
 the default version, as with any retired version.
 
-`versionDiscovery` (built-in catalog) replaces a static list with the images RunR publishes:
+`versionDiscovery` (catalogs: the built-in catalog and runtime sources) replaces a static list with the image tags:
 `executor:sync` lists the clean `X.Y[.Z]` tags of the image `repository`
 (`ghcr.io/brf-tech/runr/exec-python`) in its own registry, maps each to `image`
 (`ghcr.io/brf-tech/runr/exec-python:{version}`), marks the newest as default, deactivates tags that
@@ -400,7 +696,10 @@ the default ([ML runtimes](#ml-runtimes)). The tags come from the registry's OCI
 (`GET /v2/<name>/tags/list`, every page of its `Link` header), read anonymously with a pull token
 from the registry's token service; a `repository` without a registry host is on Docker Hub
 (`registry-1.docker.io`). A runtime whose registry does not answer keeps its versions, and a
-partial tag list deactivates none.
+partial tag list deactivates none. A runtime of a [private source](#private-sources) reads the tags
+with the source's registry credentials. `versionDiscovery.lifecycle` gives discovered versions their
+`eol` (instead of endoflife.date), `deprecated` and `sunset` by version label; a GPU build follows its
+version.
 
 ### handler and template
 
@@ -761,7 +1060,7 @@ and rollbacks are in the [audit log](security.md#audited-events) as `runtime_pat
 |---|---|---|---|
 | Owner (payer) of each project behind, and whoever deployed it last | in-app | in-app, mail | in-app, mail |
 | The organization's owners and admins (in a multi-tenant installation: the tenant's) | in-app | in-app, mail | in-app, mail |
-| Platform administrators (`users.is_admin`), with the number of projects behind | — | in-app, mail | in-app, mail |
+| Platform administrators (`users.is_admin`; single-tenant: the holders of `platform.manage`, the Owners), with the number of projects behind | — | in-app, mail | in-app, mail |
 | The organization's enabled alert channels | — | — | one alert each, resolved when no project runs behind |
 
 - A notice goes out **once** per patch: one in-app notification per user and organization, one
@@ -770,25 +1069,31 @@ and rollbacks are in the [audit log](security.md#audited-events) as `runtime_pat
   `runtime_patch`) turns the in-app and mail notices off — zero-day patches ignore it.
 - Notifications have the type `runtime_patch` (`data.event`: `patch`, `migrated`,
   `migration_failed`, `pin_dropped`), `runtime_eol` for [end-of-life reminders](#end-of-life) and
-  `runtime_patch_feed` for a refused feed (platform administrators); `data` carries the patch, its
+  `runtime_patch_feed` for a refused feed (platform administrators; single-tenant: the holders of
+  `platform.manage`); `data` carries the patch, its
   reasons in both languages, the CVEs, the deadline, the projects and the console path.
 - The console keeps a **banner** on screen for every critical or zero-day patch a project the user
   can see runs behind (`GET /api/runtime-patches/banners`) until none does; platform
-  administrators also see a newer RunR release the feed announces ("RunR 0.5.11 available
-  (zero-day): …"), and a feed that is off or was refused.
+  administrators (single-tenant: the holders of `platform.manage`) also see a newer RunR release
+  the feed announces ("RunR 0.5.11 available (zero-day): …"), a feed that is off or was refused,
+  and a console certificate cert-manager cannot issue.
 - Routine patches only change the badge.
 
 ### End of life
 
-Thirteen, four and one week(s) before a runtime version's end of life (`eol_at`, from
-endoflife.date or the manifest), the owners of its projects and the organization's owners and
-admins hear about it — in-app, and by mail a week ahead (daily at 09:00). Only the nearest
-threshold that has been reached is sent, once per user. After the date the version leaves the
-picker and its projects can no longer be saved or deployed until they move to a newer version.
+Thirteen, four and one week(s) before a runtime version ends — its end of life (`eol_at`, from
+endoflife.date or the manifest) or its sunset (`sunset_at`), the earlier ([Lifecycle](#lifecycle)) —
+the owners of its projects (pinned to it, or on no version while it is the default) and the
+organization's owners and admins hear about it — in-app, and by mail a week ahead (daily at 09:00).
+Only the nearest threshold that has been reached is sent, once per user (a moved sunset is a new
+reminder). After the date the version leaves the picker and its projects can no longer be saved or
+deployed until they move to a newer version; running deployments stay.
 
 ### The Patches page
 
-**Build & Run → Patches**, for platform administrators:
+**Build & Run → Patches**, for platform administrators — in a single-tenant installation, which has
+none, for the holders of `platform.manage`: the Owners, and custom roles that include it
+([permissions.md](permissions.md#single-tenant-installs-platformmanage)):
 
 - the feed: reference, whether a public key is configured, the last check and the last good read,
   the signature, `status` (`ok`, `invalid_signature`, `invalid_schema`, `unreachable`,
@@ -804,17 +1109,17 @@ picker and its projects can no longer be saved or deployed until they move to a 
 | Method & path | Needs | Purpose |
 |---|---|---|
 | `GET /runtime-patches` | a login | the feed's patches (`?runtime=`, `?version=`), newest first: `{data: Patch[], feed: {enabled, status, fetched_at}, keep}` |
-| `GET /runtime-patches/banners` | a login | what the console keeps on screen: `{data: [{kind: runtime_patch \| platform_advisory \| feed_disabled \| feed_invalid, level, …}]}` |
+| `GET /runtime-patches/banners` | a login | what the console keeps on screen: `{data: [{kind: runtime_patch \| platform_advisory \| feed_disabled \| feed_invalid \| console_tls, level, …}]}` |
 | `GET /projects/{project}/runtime-patches` | `projects.view` | `{data: {state, patches (the last five), keep, auto_migrate, migrations}}` |
 | `POST /projects/{project}/runtime-patches/apply` | `projects.deploy` | redeploy onto the newest patch → 202 `{data: migration, message}` |
 | `PUT /projects/{project}/runtime-patches/pin` | `projects.deploy` | `{patch_id, deploy?}` → 200 `{data: state}`, 202 with `migration` when it redeploys |
 | `DELETE /projects/{project}/runtime-patches/pin` | `projects.deploy` | unpin → `{data: state}` |
-| `GET /admin/runtime-patches` | platform administrator | the Patches page: `{data: {feed, key_configured, running_version, patches (with organizations), advisories}}` |
-| `POST /admin/runtime-patches/check` | platform administrator | read the feed now → `{data: feed}` (502 when it was refused or is unreachable) |
-| `PUT /admin/runtime-patches/policy` | platform administrator | `{auto_migrate}` |
-| `POST /admin/runtime-patches/{patch}/remind` | platform administrator | notify everyone again → `{data: {told}}` |
-| `POST /admin/runtime-patches/{patch}/force` | platform administrator | migrate every project behind it now → 202 `{data: {started}}` |
-| `PUT /admin/runtime-patches/{patch}/deadline` | platform administrator | `{deadline_at}` (in the future) |
+| `GET /admin/runtime-patches` | platform administrator; single-tenant `platform.manage` | the Patches page: `{data: {feed, key_configured, running_version, patches (with organizations), advisories}}` |
+| `POST /admin/runtime-patches/check` | platform administrator; single-tenant `platform.manage` | read the feed now → `{data: feed}` (502 when it was refused or is unreachable) |
+| `PUT /admin/runtime-patches/policy` | platform administrator; single-tenant `platform.manage` | `{auto_migrate}` |
+| `POST /admin/runtime-patches/{patch}/remind` | platform administrator; single-tenant `platform.manage` | notify everyone again → `{data: {told}}` |
+| `POST /admin/runtime-patches/{patch}/force` | platform administrator; single-tenant `platform.manage` | migrate every project behind it now → 202 `{data: {started}}` |
+| `PUT /admin/runtime-patches/{patch}/deadline` | platform administrator; single-tenant `platform.manage` | `{deadline_at}` (in the future) |
 
 A patch:
 
@@ -853,8 +1158,8 @@ runr runtimes patches --runtime php --version 8.3
 
 | Ability | Grants |
 |---|---|
-| `runtimes.manage` | register platform runtimes; edit, enable / disable, delete any registered runtime; enable / disable and set regions of built-in runtimes; list disabled runtimes; trigger runtime image builds and test deploys of any runtime; switch custom runtimes on or off for the platform |
-| `runtimes.use_custom` | register custom runtimes for the own organization and edit, enable / disable, delete, build and test-deploy them; create projects on custom runtimes |
+| `runtimes.manage` | register platform runtimes; edit, enable / disable, delete any registered runtime; enable / disable and set regions of built-in runtimes; list disabled runtimes; trigger runtime image builds and test deploys of any runtime; switch custom runtimes on or off for the platform; connect, change, read and remove platform [runtime sources](#runtime-sources), see every source, switch RunR's catalog off and set the [Built-in runtimes](#built-in-runtimes) |
+| `runtimes.use_custom` | register custom runtimes for the own organization and edit, enable / disable, delete, build and test-deploy them; create projects on custom runtimes; connect, change, read and remove the organization's own runtime sources |
 
 Both are permissions of the role model ([Roles and permissions](permissions.md)).
 `runtimes.manage` exists in the single-tenant edition and belongs to its Owner and Admin roles,
@@ -883,6 +1188,14 @@ All endpoints are under `/api`, authenticated with a session or an API token.
 | `POST /runtimes/{id}/builds` | as PUT | `{knative_region_id, version?}` → 202 with the build list; (re)builds the runtime image of every `dockerfile` / `git` version, or of `version`, in the region; 422 when the runtime has none |
 | `POST /runtimes/{id}/test-deploy` | as PUT | `{knative_region_id, version?}` → 201 `{data: Project}`: an XaaS project `rt-<id>-<random>` with the HTTP trigger and the starter template, built when needed and deployed as soon as its version is ready |
 | `GET /settings`, `PATCH /settings` | manage for `custom_runtimes_enabled` | `custom_runtimes_enabled` (bool) |
+| `GET /runtime-sources` | manage or use_custom | `{data: Source[], catalog: {mode: source\|bundle, runtimes}, abilities: {manage, organization}, custom_enabled}` — every source for manage, the organization's for use_custom |
+| `POST /runtime-sources` | manage (platform) or use_custom (organization) | `{name, kind: git\|oci-catalog, url, ref?, path?, public_key?, patch_feed?, registry_host?, interval_minutes?, is_enabled?, git_token?, git_username?, ssh_private_key?, ssh_known_hosts?, registry_username?, registry_password?}` → 201 `{data: Source}`, read once |
+| `POST /runtime-sources/test` | manage or use_custom | the same fields (and `source`: a connected source's id) → `{data: {ok, status, error, revision, signature_verified, runtimes: [{id, path, valid}], problems}}`, nothing saved |
+| `GET /runtime-sources/{id}` | as the source's scope | `{data: {source, runtimes: Runtime[], patches: Patch[], patch_feed}}` |
+| `PUT /runtime-sources/{id}` | as above | the same fields (credentials: omitted keeps, `null` / `""` removes); RunR's catalog: `is_enabled`, `interval_minutes` only → `{data: Source}`, read once |
+| `DELETE /runtime-sources/{id}` | as above | 204: its runtimes without projects deleted, the others orphaned; 422 for RunR's catalog |
+| `POST /runtime-sources/{id}/sync` | as above | read now → `{data: Source}`; 502 when it could not be read or did not verify, 409 while a read runs |
+| `GET /runtime-catalog`, `PUT /runtime-catalog` | manage | `{data: {mode, source, bundle: [ids], builtin_runtimes: null\|[ids], saved, runtimes: [{id, name, offered, in_bundle}]}}`; PUT `{builtin_runtimes: null \| [ids]}` ([Built-in runtimes](#built-in-runtimes)) |
 
 Request limits: `manifest` (YAML or JSON text) up to 256 KiB; `files` as described in
 [Version sources](#version-sources-and-runtime-image-builds); `regions` a list of region ids or
@@ -911,7 +1224,28 @@ A runtime in the catalog:
   "dependency_file": null,
   "versions": [{"version": "1.0", "is_default": true, "eol_at": null, "gpu_required": false, "image": null, "upload": null, "built": true}],
   "regions": null, "is_enabled": true, "tenant_id": null, "created_by": "1",
+  "source_id": null, "source_name": null, "source_path": null, "managed": false,
+  "lifecycle": {"state": "active", "deprecated_at": null, "sunset_at": null, "orphaned_at": null, "replacement": null, "notice": null},
   "projects_count": 3, "updated_at": "2026-10-10T12:00:00Z"
+}
+```
+
+A version also has `deprecated_at`, `sunset_at`, `ends_at` (the earlier of its end of life and its
+sunset) and `lifecycle` (`active`, `deprecated`, `eol`, `sunset`); a project has
+`runtime_lifecycle` (`state`, `version`, the dates, `ends_by`, `orphaned_at`, `replacement`,
+`notice`). A source:
+
+```json
+{
+  "id": "01JC…", "name": "acme-runtimes", "kind": "git", "scope": "platform", "tenant_id": null,
+  "is_default": false, "url": "https://github.com/acme/runtimes.git", "ref": "main", "path": "runtimes",
+  "public_key": null, "patch_feed": null, "registry_host": "ghcr.io",
+  "credentials": {"git": "token", "git_username": null, "git_token_hint": "••••••1a2b", "ssh_key_set": false,
+    "known_hosts_set": false, "registry_username": "acme-bot", "registry_password_set": true},
+  "is_enabled": true, "interval_minutes": 60, "status": "partial", "error": null,
+  "problems": [{"file": "runtimes/lua/runtime.yaml", "runtime": "lua", "path": "/run/command", "message": "is required in exec mode"}],
+  "revision": "4f1c…", "signature_verified": false, "runtimes_count": 3,
+  "checked_at": "…", "synced_at": "…", "next_check_at": "…"
 }
 ```
 
@@ -939,6 +1273,18 @@ runr runtimes builds q
 runr runtimes build q --region eu-1 [--version 1.0] [--wait]
 runr runtimes test-deploy q --region eu-1
 runr runtimes rm q --yes
+
+# runtime sources (cli.md#runtime-sources)
+runr runtimes sources ls
+runr runtimes sources add --name acme --kind git --url https://github.com/acme/runtimes.git --ref main --path runtimes \
+  --git-token-env GITHUB_TOKEN --registry-host ghcr.io --registry-username acme-bot --registry-password-env GHCR_TOKEN
+runr runtimes sources add --name acme-catalog --kind oci-catalog --url ghcr.io/acme/runr/catalog:stable --public-key-file cosign.pub
+runr runtimes sources test --kind git --url https://github.com/acme/runtimes.git
+runr runtimes sources sync acme
+runr runtimes sources get acme            # its runtimes with their lifecycle, problems, patches
+runr runtimes sources rm acme --yes
+runr runtimes catalog                     # RunR's catalog in use (or the bundle) and the offered built-ins
+runr runtimes catalog set --only python,go
 ```
 
 `runr dev` runs a project of a runtime plugin locally in Docker the way its manifest tells the
@@ -961,6 +1307,15 @@ a region's shim only: `runr dev` names the shim and points to `runr deploy`.
   its path, file uploads for Dockerfile builds, and region availability; **Edit**, **View
   manifest**, **Builds** per region (with rebuild), **Delete**, and **Test deploy**, which
   creates a project from the starter template in a region, deploys it and opens it.
+- **Build & Run → Runtimes → Sources** (holders of `runtimes.manage`; the organization's own for
+  `runtimes.use_custom`): every source with its kind, scope, status, last read, revision and
+  runtimes; **Add source** with the credentials of a private one and **Test connection**; **Sync
+  now**; a source's problems with their file and JSON path, its runtimes with an enabled toggle
+  each and their lifecycle, its patches. RunR's catalog shows whether it or the bundled catalog is
+  in use. The **Built-in runtimes** card (`runtimes.manage`) picks the offered built-ins.
+- Lifecycle badges — Deprecated, Sunset, Orphaned, End of life with their dates, the replacement
+  and the notice — on runtimes and versions, in the runtime picker (ended versions are left out)
+  and on projects.
 - **Administration → Regions & settings → Custom Runtimes** (holders of `runtimes.manage`) switches
   `runtimes.use_custom` on for members.
 
@@ -1058,16 +1413,18 @@ registers them for hosted MCP servers ([AI agents](mcp.md#templates)).
 
 The built-in runtimes are manifests in `runtimes/<id>/runtime.yaml` of [BRF-Tech/runr-runtimes](https://github.com/BRF-Tech/runr-runtimes), next to each
 image's Dockerfile and language wrapper. That repository builds, smoke-tests and publishes the
-images with GitHub Actions, under the names and tags below: `ci.sh build` the python, nodejs, go
-and php images (skipping versions past their end of life), `ci.sh ml-runtimes` the PyTorch and
-TensorFlow images ([ML runtimes](#ml-runtimes)) and `ci.sh wasm` the build images of the
+images with GitHub Actions, under the names and tags below: `ci.sh build` the python, nodejs, go,
+php, java, dotnet, ruby and bun images (skipping versions past their end of life),
+`ci.sh ml-runtimes` the PyTorch and TensorFlow images ([ML runtimes](#ml-runtimes)) and
+`ci.sh wasm` the build images of the
 WebAssembly runtimes. Built-in manifests may use `versionDiscovery` and `@path` references in
 `build.files` (a file next to the manifest, inlined when the catalog is bundled).
 
-The API ships the catalog as `api/resources/runtimes/builtin.json`. It reads the manifests
-directly when `RUNR_RUNTIME_CATALOG` names their directory (`runtimes/` of a runr-runtimes
-checkout), else the bundle. After a built-in manifest changes there, regenerate the bundle in
-this repository:
+RunR reads them from the signed catalog runr-runtimes publishes ([RunR's catalog](#runrs-catalog)).
+The API also ships them as `api/resources/runtimes/builtin.json`, the offline fallback in use until
+that catalog has been read once. With `RUNR_RUNTIME_CATALOG` naming their directory (`runtimes/`
+of a runr-runtimes checkout, development) the fallback is read from there instead of the bundle.
+Before a release, regenerate the bundle in this repository:
 
 ```bash
 cd api
@@ -1081,8 +1438,17 @@ php artisan runtimes:bundle --check  # exit 1 when the bundle differs from the m
 | `python`, `nodejs`, `php` | `http`, `schedule: native` | the image's own server (`server.py`, `server.js`, `server.php`) loads `RUNR_FILENAME` from `/app/code` and calls `RUNR_HANDLER(event, context)`; `requirements.txt`, `package.json`, `composer.json` trigger a dependency build in FaaS projects (Composer in the composer image, pinned to the runtime's PHP version) |
 | `pytorch`, `tensorflow` | `http`, `schedule: native` | Python 3.12 images with the ML stack preinstalled (`category: ml`), the same handler server as `python`; a CPU and a `-gpu` version each ([ML runtimes](#ml-runtimes)) |
 | `go` | `http`, `schedule: native`, `build` | the project's `.go` files are compiled together with RunR's Go wrapper for the trigger (`wrapper_http.go` / `wrapper_schedule.go` of the runtime, as `build.files`) into a static binary, `/app/handler` on `ghcr.io/brf-tech/runr/reqs/alpine:3.20` |
+| `java` | `http`, `schedule: native`, `build` | Eclipse Temurin, the LTS lines (`21.0`, `25.0`: a version is the JDK's major, `.0`). Every save is built in the version image, the JDK: the project's `.java` files compiled with javac (`runr-build`; annotation processors such as Lombok run), the jars of a FaaS project's `pom.xml` (its compile and runtime dependencies) copied in by Maven's dependency plugin (`runr-deps`), the files of `src/main/resources` next to the classes. The function's image is the version image plus `/app/classes` and `/app/lib`; the image's handler server calls `public static Object handler(Map<String, Object> event, Map<String, Object> context)` of the class named like the entry file (`Main.java`, in any package), static or on an instance |
+| `dotnet` | `http`, `schedule: native`, `build` | C# on .NET (`10.0`; a version that is out, not a preview). Every save is built with the version's SDK (`runr-build`): the project's `.cs` files, its `Function.csproj` (the NuGet packages it names; RunR sets the target framework to the runtime version, whatever the project names) and RunR's handler server (Kestrel) into a self-contained application, `/app/handler` on Microsoft's chiseled `runtime-deps` image (`ghcr.io/brf-tech/runr/reqs/dotnet-runtime-deps:<version>-chiseled-extra`: no shell, ICU and time zones included). The server calls `public static object Handler(JsonNode? input, IDictionary<string, object?> context)`: the first parameter may also be a `JsonElement`, the raw body as a `string`, or any type the JSON body is deserialized into; the result may be a `Task`, and is serialized with System.Text.Json (camelCase) |
+| `ruby` | `http`, `schedule: native` | CRuby (`3.3`, `3.4`, `4.0`) with RunR's handler server (`server.rb`): `def handler(event, context)`, `def handler(event)`, or `def handler(event:, context:)` as on AWS Lambda; `event` has string keys, the result's keys may be symbols. A FaaS project's `Gemfile` (and `Gemfile.lock`) is installed with Bundler into `/app/gems`, standalone: the server puts the gems on the load path without Bundler resolving the Gemfile at every start. The image has no compiler: a gem with a C extension needs a precompiled platform gem |
+| `bun` | `http`, `schedule: native` | TypeScript and JavaScript on Bun (the newest minor of each major, `1.4`: Bun supports only its latest release): `export async function handler(event, context)` (also `export const handler`, `export { handler }`, a default export, CommonJS); Bun strips the types, it does not check them. A FaaS project's `package.json` (and `bun.lock` or `package-lock.json`) is installed with `bun install --production` into `/app/code/node_modules` |
 | `wasm-rust`, `wasm-go`, `wasm-js`, `wasm-python` | `http`, `schedule: native`, `build`, `runtimeClass: wasmtime-spin-v2` | WebAssembly: built into a Spin OCI artifact and run on the Spin shim; offered in regions with WebAssembly support — [wasm.md](wasm.md) |
 | `wasm-exec` | `http`, `schedule: native`, `build`, `runtimeClass: wasmtime-spin-v2`, `wagi` | any WASI preview 1 command module — C / C++ (wasi-sdk), Zig, Go (TinyGo), a `build.sh`, an uploaded `.wasm` — on Spin's WAGI executor (CGI on stdin / stdout) — [wasm.md](wasm.md#wasm-exec) |
+
+The images of `java`, `ruby` and `bun` run as the user `runr` (10001), the .NET functions as
+`app` (1654), not as root, and so do their function builds: the build working directory `/build`
+belongs to that user. Builds write only below `/build` (`/build/out`, a copy of the code), so
+`/build/code` may be read-only.
 
 Built-in versions come from `executor:sync` (at API start and on its schedule): it creates the
 built-in rows, discovers versions through `versionDiscovery` and syncs the versions of platform
@@ -1145,7 +1511,8 @@ ML_SMOKE_GPU=1 ./ci.sh ml-runtimes gpu  # the -gpu images, smoke-tested on this 
 
 **Upgrading.** A migration adds the `runtimes` and `runtime_builds` tables with a built-in row
 each for `python`, `nodejs`, `go`, `php`, `tensorflow` and `pytorch`; `executor:sync` adds the
-rows of the other built-ins (the WebAssembly runtimes) and their versions. Existing projects keep
+rows of the other built-ins (the WebAssembly runtimes, `java`, `dotnet`, `ruby` and `bun`) and
+their versions. Existing projects keep
 their `runtime` / `runtime_version` values and run on the same images: the built-in manifests
 describe exactly what these runtimes did before they became plugins. Custom runtimes stay off
 until a holder of `runtimes.manage` switches **Custom Runtimes** on.
@@ -1154,13 +1521,32 @@ until a holder of `runtimes.manage` switches **Custom Runtimes** on.
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `EXECUTOR_RUNTIMES` | `python,nodejs,go,php,tensorflow,pytorch,wasm-rust,wasm-go,wasm-js,wasm-python,wasm-exec` | built-in runtimes offered on the platform; projects of a built-in left out keep deploying (the Wasm runtimes appear only in regions with WebAssembly support) |
-| `RUNR_RUNTIME_CATALOG` | — (the bundle) | directory of the built-in catalog sources: `runtimes/` of a BRF-Tech/runr-runtimes checkout |
+| `EXECUTOR_RUNTIMES` | — (every runtime of the catalog) | the first default of the platform setting [Built-in runtimes](#built-in-runtimes): comma-separated ids; once a platform administrator saves the setting it is no longer read. Projects of a built-in left out keep deploying (the Wasm runtimes appear only in regions with WebAssembly support) |
+| `RUNR_RUNTIME_CATALOG` | — (the bundle) | directory of the offline catalog's sources: `runtimes/` of a BRF-Tech/runr-runtimes checkout (development) |
 | `RUNR_WRAPPER_IMAGE` | `ghcr.io/brf-tech/runr/wrapper:1.1.0` | the universal wrapper image for init containers and build Jobs |
 | `BUILD_DEADLINE_SECONDS` | `900` | deadline of a function build Job (Kaniko and WebAssembly toolchain builds; at least 60); the build checks give up a minute later, and a version still building two minutes after the deadline is marked failed |
 
 These are environment variables of the API (`api/config/executor.php`); the Helm chart has no
 dedicated values for them, so a Helm installation sets them via `extraEnv`.
+
+[Runtime sources](#runtime-sources) (`api/config/runtime_sources.php`; the Helm values
+[`runtimeCatalog.*`](helm-values.md#runtimecatalog) set the catalog's):
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `RUNR_RUNTIME_CATALOG_REF` | `ghcr.io/brf-tech/runr/runtime-catalog:stable` | OCI reference of RunR's catalog; empty: the bundled catalog only (air-gapped) |
+| `RUNR_RUNTIME_CATALOG_PUBLIC_KEY` | the key of BRF-Tech/runr-runtimes (`keys/patch-feed.pub`) | cosign public key (PEM) the catalog must be signed with |
+| `RUNR_RUNTIME_CATALOG_VIA_REGION` | `RUNR_PATCH_FEED_VIA_REGION` | read the catalog through this region's registry (id or name) |
+| `RUNR_RUNTIME_CATALOG_INTERVAL` | `15` | minutes between two checks of RunR's catalog |
+| `RUNR_RUNTIME_SOURCE_TIMEOUT` | `20` | seconds of one registry request of a source (catalogs, patch feeds, version discovery) |
+| `RUNR_RUNTIME_SOURCE_GIT_TIMEOUT` | `120` | seconds of a `git ls-remote` or clone of a Git source |
+| `RUNR_RUNTIME_ORPHAN_GRACE_DAYS` | `90` | days an [orphaned runtime](#orphaned-runtimes) stays deployable: its sunset |
+| `RUNR_RUNTIME_SOURCES_ALLOW_INSECURE` | `false` | allow `http://` and `git://` Git sources (an internal Git server without TLS) |
+
+Sources are read by `php artisan runtime-sources:sync` (every five minutes in the scheduler, each
+source at its interval; `--force` reads every enabled source, `--source=<id or name>` one) and at
+the API's start before `executor:sync`. An organization connects at most 10 sources; a catalog is at
+most 8 MiB and 200 runtimes.
 
 [Runtime patches](#runtime-patches) (`api/config/runtime_patches.php`; the Helm values
 [`runtimePatches.*`](helm-values.md#runtimepatches) set the first four):
@@ -1178,10 +1564,19 @@ when its digest did not change), deadlines and migrations as well, end-of-life r
 09:00 (scheduler). The number of pinnable patches (5), the default deadlines (14 days for critical,
 3 for zero-day patches) and the reminder weeks (13, 4, 1; mail at 1) are in the config file.
 
-RunR's image pre-pull on region nodes covers the wrapper image and the active versions of the
-built-in and platform runtimes that have a plain image, except the WebAssembly runtimes (their
-image is the build toolchain) and the ML runtimes (`category: ml`); those, custom runtime images
-and region builds are pulled on first use.
+RunR's image pre-pull on region nodes covers the wrapper image and, for every active version of the
+built-in and platform runtimes that has a plain image, the image its functions run on — a private
+image of a source with the source's credentials. That is the version image for a runtime without a
+`build` section (Python, Node.js, PHP, Ruby, Bun: its functions and their dependency builds run on
+it), and the build's `runImage` for one with a build (the last stage of the
+[generated Dockerfile](#compiled-languages)): .NET's chiseled `dotnet-runtime-deps:<version>-chiseled-extra`
+instead of the 1.3 GB SDK image, Go's Alpine instead of its toolchain, Java's own version image
+(`runImage: "{image}"`). The SDK or toolchain a build compiles with is not pre-pulled: Kaniko
+fetches it through the region registry, never from a node, and `region:reconcile`'s registry
+pre-warm holds it there for the default versions. A Go or .NET sandbox runs on that toolchain or
+SDK, so a node pulls it on its first such sandbox ([docs/sandbox-api.md](sandbox-api.md#concepts)). The WebAssembly runtimes (their image is the build toolchain) and the
+ML runtimes (`category: ml`) are left out; those, custom runtime images and region builds are
+pulled on first use.
 
 ## Testing
 
@@ -1189,7 +1584,13 @@ and region builds are pulled on first use.
   validation, the built-in catalog and the migration of existing projects, the catalog / registration
   API and its abilities, build and deploy manifests per run mode, region runtime image builds and
   `executor:sync`; `tests/Feature/Runtimes/RuntimeUploadSourceTest.php` covers the `upload` source
-  (validation, the image in every region, owner scoping, resolution by digest).
+  (validation, the image in every region, owner scoping, resolution by digest). Runtime sources:
+  `RuntimeCatalogSourceTest` (RunR's catalog, the fallback, a new language without a release, the
+  Built-in runtimes setting), `RuntimeGitSourceTest` (Git sources over local repositories),
+  `RuntimeSourceRulesTest` (id clashes, credentials encrypted / write-only / masked, the API and its
+  permissions), `RuntimePullSecretsTest` (every pull of a private image), `RuntimeLifecycleTest`
+  (end of life, deprecated, sunset, reminders, refusal, per source kind) and
+  `RuntimeSourcePatchesTest` (patches of a source).
 - **UI**: `cd vue && npx vitest run src/components/project/__tests__ src/components/settings/__tests__ src/utils/__tests__ src/components/__tests__`
   (runtime picker, Build & Run → Runtimes, helpers, editor language) and `npx playwright test e2e/runtimes.spec.ts`.
 - **Wrapper and runtime images** (in [BRF-Tech/runr-runtimes](https://github.com/BRF-Tech/runr-runtimes)): `cd wrapper && go vet ./... && go test -count=1 ./...`
@@ -1212,6 +1613,13 @@ and region builds are pulled on first use.
   cold start. `bash runtime/ci.sh test` runs the same suite after its other phases. The flags of
   `ci.sh test` apply (`--k8s=X.Y.Z`, `--no-cleanup`, `--name=…`, `--kubeconfig=…` for an existing
   cluster, where `RUNR_WRAPPER_IMAGE` must be pullable).
+- **Runtime sources end to end**: `bash runtime/ci.sh test-runtime-sources` (test:e2e
+  `--suite=runtime-sources`): RunR's published catalog, a signed OCI catalog (a function on its
+  runtime, then the runtime orphaned and still serving), the layout of
+  [runr-sample-custom-executor](https://github.com/BRF-Tech/runr-sample-custom-executor) (a copy in
+  `examples/runtime-sources/`) served by git daemon in the cluster as a Git source, a private image
+  (`RUNR_E2E_PRIVATE_IMAGE`, `RUNR_E2E_PRIVATE_REGISTRY_USER`, `RUNR_E2E_PRIVATE_REGISTRY_PASSWORD`;
+  skipped without them) and a sunset refusing deploys and saves while the function keeps answering.
 - **Shared hosts**: `KIND_LOCK=/tmp/runr-kind.lock bash runtime/ci.sh test-runtimes` takes the
   lock directory (`mkdir`, owner in `<lock>/owner`: `KIND_LOCK_OWNER`, the PID and the time)
   before creating the cluster, waits for it up to `KIND_LOCK_WAIT` seconds (default 3600) while

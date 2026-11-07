@@ -22,7 +22,7 @@ class TraefikImageTest extends TestCase
         // and mirror it first (REQS_IMAGES of lib/mirror.sh in BRF-Tech/runr-runtimes). The mirror
         // list left this repository with the runtime images; ci/check-reqs-mirror.sh fails while
         // the image does not resolve on ghcr.io.
-        $this->assertSame(['42.3.0', 'ghcr.io/brf-tech/runr/reqs/traefik:v3.7.17'], [KnativeConstants::TRAEFIK_CHART_VERSION, KnativeConstants::TRAEFIK_IMAGE]);
+        $this->assertSame(['42.3.1', 'ghcr.io/brf-tech/runr/reqs/traefik:v3.7.17'], [KnativeConstants::TRAEFIK_CHART_VERSION, KnativeConstants::TRAEFIK_IMAGE]);
     }
 
     public function test_the_nodes_pre_pull_it(): void

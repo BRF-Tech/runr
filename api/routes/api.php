@@ -40,7 +40,9 @@ use App\Http\Controllers\Api\RegionMigrateController;
 use App\Http\Controllers\Api\RegistryController;
 use App\Http\Controllers\Api\RegistrySetupController;
 use App\Http\Controllers\Api\RightsizingController;
+use App\Http\Controllers\Api\RuntimeCatalogController;
 use App\Http\Controllers\Api\RuntimeController;
+use App\Http\Controllers\Api\RuntimeSourceController;
 use App\Http\Controllers\Api\SandboxController;
 use App\Http\Controllers\Api\ScaleScheduleController;
 use App\Http\Controllers\Api\SecretStoreController;
@@ -170,6 +172,18 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/runtimes/{runtime}/builds', [RuntimeController::class, 'builds']);
     Route::post('/runtimes/{runtime}/builds', [RuntimeController::class, 'build']);
     Route::post('/runtimes/{runtime}/test-deploy', [RuntimeController::class, 'testDeploy']);
+
+    // Runtime sources (docs/runtimes.md#runtime-sources): RunR's catalog and the OCI catalogs / Git
+    // repositories platform administrators and organizations connect; the Built-in runtimes setting
+    Route::get('/runtime-catalog', [RuntimeCatalogController::class, 'show']);
+    Route::put('/runtime-catalog', [RuntimeCatalogController::class, 'update']);
+    Route::get('/runtime-sources', [RuntimeSourceController::class, 'index']);
+    Route::post('/runtime-sources', [RuntimeSourceController::class, 'store']);
+    Route::post('/runtime-sources/test', [RuntimeSourceController::class, 'test']);
+    Route::get('/runtime-sources/{source}', [RuntimeSourceController::class, 'show']);
+    Route::put('/runtime-sources/{source}', [RuntimeSourceController::class, 'update']);
+    Route::delete('/runtime-sources/{source}', [RuntimeSourceController::class, 'destroy']);
+    Route::post('/runtime-sources/{source}/sync', [RuntimeSourceController::class, 'sync']);
 
     // Runtime patches: the signed patch feed, project patch state, apply / pin, the Patches page
     require __DIR__.'/runtime-patches.php';

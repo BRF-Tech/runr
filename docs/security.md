@@ -15,6 +15,7 @@ callers.
 - [Secret environment variables](#secret-environment-variables)
 - [Key rotation](#key-rotation)
 - [Runtime patch feed](#runtime-patch-feed)
+- [Runtime sources](#runtime-sources): the signed catalog, credentials, confined Git reads, pull secrets
 - [Audit log](#audit-log)
 - [Audited events](#audited-events)
 - [Retention](#retention)
@@ -58,6 +59,7 @@ edition; tables of schema **central** exist in the central schema only.
 | `region_supply_chain_settings` | central | `signing_private_key`, `signing_key_password` (the API's copy of a region's cosign key pair; [supply chain](supply-chain.md#signing)) |
 | `git_providers` | central | `client_secret`, `private_key`, `webhook_secret` (GitHub App key and secrets, GitLab OAuth application secret, [git deploy](git-deploy.md)) |
 | `git_repo_links` | central | `access_token`, `refresh_token`, `webhook_secret` (provider repository connections) |
+| `runtime_sources` | central | `credentials` (a private runtime source's Git token or SSH deploy key, registry username and password, [runtime sources](runtimes.md#private-sources)) |
 | `mcp_servers` | central | `signing_key`, `signing_key_previous` (gateway keys of hosted MCP servers; [AI agents](mcp.md#gateway-headers-and-signature)) |
 
 Values that are not stored as reversible secrets:
@@ -525,16 +527,17 @@ captcha_fallback_active 0
 reached; Administration → Bot protection shows the total and whether the fallback is active.
 
 More than one in 10 minutes means the provider, or the API's way out to it, is failing: the
-platform administrators then get an in-app notification ("Bot protection: the CAPTCHA provider
-cannot be reached", type *infrastructure*, so the notification preferences apply) and the API log
-a warning, at most once per 10 minutes. The window and the dedup mark live in the same cache as
+platform administrators (single-tenant: the holders of `platform.manage`) then get an in-app
+notification ("Bot protection: the CAPTCHA provider cannot be reached", type *infrastructure*, so
+the notification preferences apply) and the API log a warning, at most once per 10 minutes. The window and the dedup mark live in the same cache as
 the counter (`captcha:fallback:window`, `captcha:fallback:alerted`).
 
 A **wrong configuration** has an alarm of its own (the challenges it hands out still count in
 `captcha_fallback_total`, not in the 10-minute window above): "Bot protection: the CAPTCHA
 configuration is wrong", type *infrastructure*, level error, naming the problem (`site_key_missing`,
 `secret_missing`, `secret_unreadable`, `secret_rejected`), with an error in the API log. It goes to
-who can fix it — the platform administrators for the platform's protection; for an organization's
+who can fix it — the platform administrators (single-tenant: the holders of `platform.manage`)
+for the platform's protection; for an organization's
 own keys, the organization's members whose role grants `settings.manage`, in the organization —
 at most once an hour per protection and problem (`captcha:misconfigured:alerted:<scope>:<problem>`);
 saving the settings starts over. `GET /api/admin/captcha` and `GET /api/tenant/captcha` report it as
@@ -859,7 +862,8 @@ Nothing of a feed is used before its signature verified with the configured publ
 BRF-Tech/runr-runtimes signs the feed with (`keys/patch-feed.pub` there: cosign ECDSA P-256, DER
 SHA-256 `24d79a49162ffec0b866ab7274a451a566f7e27fdb6804bffb6d9859d4b1c0df`), so the feed works
 out of the box; a feed of your own takes your key. An empty key switches the feed off (status
-`disabled`) and platform administrators see a banner saying so.
+`disabled`) and platform administrators (single-tenant: the holders of `platform.manage`) see a
+banner saying so.
 
 ### Schema v1
 
@@ -919,7 +923,8 @@ more than 4 MiB — is refused as a whole.
 
 A feed whose signature does not verify (or that has none) is refused with the status
 `invalid_signature`, one that fails the schema with `invalid_schema`: it is **ignored, the last
-good feed stays in force**, and the platform administrators are told **once per refused digest**
+good feed stays in force**, and the platform administrators (single-tenant: the holders of
+`platform.manage`) are told **once per refused digest**
 (a critical notification, in-app and by mail, whatever their preferences; type
 `runtime_patch_feed`). A registry that cannot be reached sets `unreachable` and changes nothing
 else. `GET /api/admin/runtime-patches` and the Patches page show the status, the error, the last
@@ -950,6 +955,43 @@ cosign sign --key cosign.key --tlog-upload=false \
 
 cosign 3 stores signatures as OCI referrers in its new bundle format by default; sign with
 `--new-bundle-format=false` so the signature is the `.sig` tag RunR reads.
+
+## Runtime sources
+
+The built-in runtimes come from RunR's **runtime catalog**, `ghcr.io/brf-tech/runr/runtime-catalog:stable`,
+an OCI artifact BRF-Tech/runr-runtimes publishes and signs with cosign — the key of the patch feed
+(`keys/patch-feed.pub`; `RUNR_RUNTIME_CATALOG_PUBLIC_KEY`, Helm `runtimeCatalog.publicKey`, to use
+another). RunR reads it like the patch feed: a HEAD of the tag, the manifest by digest, the
+signature verified with the key **before** the catalog's content is read, then the catalog
+(at most 8 MiB). A catalog that does not verify is refused and the last good one stays. Without a
+readable catalog the catalog the API image ships is in use. The catalog and the patch feed share
+the key because both are signed by the same publisher with secrets of the same repository's
+Actions; RunR's configuration takes a separate key should the catalog move to its own.
+
+Connected sources ([runtime sources](runtimes.md#runtime-sources)) follow the same rules, and these:
+
+- **Credentials are write-only.** A source's Git token, SSH deploy key and registry credentials
+  are encrypted at rest (`runtime_sources.credentials`), never returned (the API says which are
+  set, a token's last four characters), and masked — also in their URL-encoded, Basic-auth and
+  base64 forms — in the errors, problems and log lines RunR writes. The audit log records which
+  fields changed, never their values.
+- **Git reads are confined.** A token reaches git as an `Authorization` header in the process's
+  environment (`GIT_CONFIG_*`), never in the URL or the command line; a deploy key is a 0600 file
+  for `GIT_SSH_COMMAND`, removed after the read. The clone allows only https and ssh
+  (`protocol.allow=never` otherwise; `file://` is never accepted), has no hooks or submodules and
+  checks symbolic links out as plain files; files are read from the runtime's own directory only.
+- **Pull secrets stay in the cluster.** A private image's credentials reach the regions as a
+  RunR-managed `kubernetes.io/dockerconfigjson` Secret in the namespace that pulls (the function
+  pods, the Kaniko builds, sandboxes, the pre-pull), never as part of a deployment's manifests,
+  logs or audit.
+- **A source patches only its own runtimes.** Patches of a source's signed catalog or patch feed
+  (verified with the source's key) are stored for that source's runtimes; RunR's feed patches only
+  the built-ins. No feed can point another source's runtime at an image.
+- **Ids cannot be taken over.** Built-in ids belong to RunR's catalog; otherwise the first
+  registration of an id wins and a clash is a problem of the later source — an organization never
+  shadows a built-in or platform runtime and never learns another organization's name from a clash.
+- **Organizations cannot raise their isolation level.** An organization's manifests may not set
+  `runtimeClass`; their pods run under the region's sandbox like any custom runtime's.
 
 ## Audit log
 
@@ -1032,6 +1074,7 @@ Recorded after the API answered, with the outcome of the request:
 | Bindings | `binding.create`, `binding.update`, `binding.delete`, `binding.restore`, `binding.credentials.rotate`, `binding.credentials.reveal`, `binding.attach`, `binding.attachment.update`, `binding.detach`, `region.data_service.install`, `region.data_service.uninstall`, `tenant.binding_quota.update`, `binding.purged` (system, after the retention) |
 | Regions | `region.create`, `region.update`, `region.delete`, `region.kubeconfig.download`, `region.settings.update`, `region.monitoring.update`, `region.capacity.update`, `region.tls.update`, `region.tls.remove`, `region.knative.*`, `region.components.detect`, `region.workers.update`, `region.redis.test`, `region.redis.configure`, `region.redis.remove`, `region.sandbox.install`, `region.sandbox.uninstall`, `region.sandbox.mapping.update`, `region.wasm.install`, `region.wasm.uninstall`, `region.cert_manager.install`, `region.cert_manager.uninstall`, `region.migration.start`, `region.migration.complete`, `region.migration.rollback`, `region.migration.domain.complete`, `region.registry.setup`, `region.registry.remove`, `region.demo.create`, `region.demo.remove`, `registry.setup.start`, `registry.setup.retry`, `region.global_dns.enable`, `region.global_dns.disable`, `region.global_dns.geoip` (source, URL), `region.global_dns.geoip_reload`, `global_dns.sync` |
 | Runtimes | `runtime.create`, `runtime.update`, `runtime.delete`, `runtime.build`, `runtime.test_deploy` |
+| Runtime sources ([details](runtimes.md#runtime-sources)) | `runtime_source.create` (kind, URL, ref, path, which credentials were given — never their values), `runtime_source.update` (the fields sent), `runtime_source.delete`, `runtime_source.sync` (status, revision), `runtime_catalog.update` (the Built-in runtimes setting) |
 | Runtime patches ([details](runtimes.md#runtime-patches)) | `runtime_patch.apply` (patch, migration), `runtime_patch.pin` (patch, whether it redeploys), `runtime_patch.unpin`, `runtime_patch.feed.check` (status, digest), `runtime_patch.policy.update` (automatic migration on or off), `runtime_patch.remind` (users told), `runtime_patch.force` (migrations started), `runtime_patch.deadline.update` (the new deadline); recorded where they happen: `runtime_patch.migrate` (RunR at a deadline — actor `system` — or a platform administrator's force: the patch, the deadline's patch), `runtime_patch.rollback` (system: the digest the project went back to, the reason) |
 | GPUs and models ([AI](ai.md), [Hugging Face models](huggingface.md)) | `region.gpu.install`, `region.gpu.uninstall`, `region.gpu.settings.update`, `region.model_storage.update`, `tenant.gpu_quota.update`, `model.hub_token.set`, `model.hub_token.remove`, `model.create`, `model.update`, `model.delete`, `model.snapshot.create`, `model.snapshot.delete`, `model.upload.start`, `model.upload.complete`, `model.upload.abort`, `model_service.create`, `model_service.update`, `model_service.delete`, `model_service.deploy`, `model_service.stop`, `project.model.bind`, `project.model.binding.update`, `project.model.unbind` |
 | Uploaded images ([details](images.md#audit)) | `image.upload.start`, `image.upload.complete`, `image.upload.abort`, `image.delete` (registry manifest removed or not, what still used it); recorded where they happen: `image.upload.pushed` (digest, kind, size, the digest it replaced), `image.upload.failed` (the region's reason) |

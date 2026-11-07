@@ -276,15 +276,13 @@ trait KnativeTraefikTrait
             'deployment' => [
                 'enabled' => true, 'kind' => 'Deployment', 'replicas' => 3,
                 'revisionHistoryLimit' => 5, 'terminationGracePeriodSeconds' => 60, 'minReadySeconds' => 10,
-                'livenessProbe' => [
-                    'httpGet' => ['path' => '/ping', 'port' => 9000],
-                    'initialDelaySeconds' => 20, 'periodSeconds' => 10, 'timeoutSeconds' => 5, 'failureThreshold' => 5,
-                ],
-                'readinessProbe' => [
-                    'httpGet' => ['path' => '/ping', 'port' => 9000],
-                    'initialDelaySeconds' => 10, 'periodSeconds' => 10, 'timeoutSeconds' => 5,
-                    'failureThreshold' => 3, 'successThreshold' => 2,
-                ],
+            ],
+            // The chart builds the probes' httpGet itself (/ping on ports.traefik.port, 9000) and
+            // takes their timing from these root keys; under deployment it read none of them
+            'livenessProbe' => ['initialDelaySeconds' => 20, 'periodSeconds' => 10, 'timeoutSeconds' => 5, 'failureThreshold' => 5],
+            'readinessProbe' => [
+                'initialDelaySeconds' => 10, 'periodSeconds' => 10, 'timeoutSeconds' => 5,
+                'failureThreshold' => 3, 'successThreshold' => 2,
             ],
             'podDisruptionBudget' => ['enabled' => true, 'maxUnavailable' => 1],
             'ingressClass' => ['enabled' => true, 'isDefaultClass' => true],
@@ -348,8 +346,10 @@ trait KnativeTraefikTrait
                     'addRoutersLabels' => true, 'addServicesLabels' => true, 'buckets' => '0.1,0.3,1.2,5.0',
                 ],
             ],
+            // the chart reads a Service's type from its spec (service.type it never read, and chart
+            // 42.3.1's schema refuses it)
             'service' => [
-                'enabled' => true, 'single' => true, 'type' => 'LoadBalancer',
+                'enabled' => true, 'single' => true, 'spec' => ['type' => 'LoadBalancer'],
                 'additionalServices' => [PrivateIngress::SERVICE_KEY => PrivateIngress::serviceValues()],
             ],
             'autoscaling' => [
@@ -404,7 +404,9 @@ trait KnativeTraefikTrait
                         'TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384', 'TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384',
                         'TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305', 'TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305',
                     ],
-                    'sniStrict' => false, 'preferServerCipherSuites' => true,
+                    // no preferServerCipherSuites: the chart renders none, and Traefik v3's Go TLS
+                    // ignores it (the server's order of TLS 1.2 suites is always preferred)
+                    'sniStrict' => false,
                 ],
             ],
             'global' => [

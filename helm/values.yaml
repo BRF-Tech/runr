@@ -536,6 +536,22 @@ runtimePatches:
   autoMigrate: true            # at a critical / zero-day deadline, redeploy the projects still behind onto the patch
                                # (the default; platform administrators switch it on the Patches page)
 
+# ─── Runtime catalog (docs/runtimes.md#runtime-sources) ─
+# The built-in runtimes come from RunR's signed catalog (BRF-Tech/runr-runtimes publishes it as an
+# OCI artifact, cosign-signed): RunR reads its digest every intervalMinutes and uses a new catalog
+# once its signature verified — a runtime added there appears without a RunR release. The catalog
+# the API image ships is the fallback until the catalog was read once (air-gapped: offline).
+# Further sources (OCI catalogs, Git repositories) are connected in Build & Run → Runtimes → Sources.
+# Empty values keep the application defaults.
+runtimeCatalog:
+  reference: ""                # OCI reference (default ghcr.io/brf-tech/runr/runtime-catalog:stable)
+  offline: false               # true: never read a catalog, use the one of the API image (air-gapped)
+  publicKey: ""                # cosign public key (PEM) of the catalog; default: runr-runtimes' key (keys/patch-feed.pub)
+  viaRegion: ""                # read the catalog through this region's registry (id or name); default: runtimePatches.viaRegion
+  intervalMinutes: ""          # minutes between two checks (default 15)
+  timeout: ""                  # seconds of one registry request of a source (default 20)
+  builtinRuntimes: ""          # first default of the Built-in runtimes setting, e.g. "python,go" (default: every runtime of the catalog)
+
 # ─── API product of the gateways (docs/api-product.md) ─
 # API keys, JWT routes, plans and usage per consumer: the regions run gateway-auth, which the
 # region Traefik asks before every call of a key / JWT route. Empty values keep the defaults.
@@ -730,6 +746,11 @@ ingress:
     clusterIssuer: ""     # letsencrypt: empty → letsencrypt-prod · mode "": when set, cert-manager issues the certificate
     certificate: ""       # custom: full PEM chain (server certificate first); base64-encoded PEM works too
     privateKey: ""        # custom: the certificate's unencrypted private key (PEM); never written to any output
+    # When cert-manager issues the console certificate (letsencrypt, or mode "" with clusterIssuer): runr-api may
+    # get its Certificate and list the CertificateRequests of the release namespace, and platform administrators
+    # (single-tenant: holders of platform.manage) see a warning in the console when it cannot be issued (e.g. no
+    # ClusterIssuer of that name). false: neither.
+    certificateCheck: true
 
 # ─── Client IP (X-Forwarded-For) ─────────────
 # Request path: client → ingress controller (Traefik) → runr-gateway (Caddy) → runr-api. The API takes

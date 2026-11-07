@@ -174,11 +174,82 @@ class TraefikChartValuesTest extends TestCase
     public function test_everything_else_a_release_was_given_stays(): void
     {
         $values = $this->migrated('{"additionalArguments": ["--ping=true"], "ports": {"internal": {"port": 8081, "http": {"middlewares": ["a@kubernetescrd"]}}},
-            "service": {"additionalServices": {"internal": {"type": "ClusterIP"}}}}');
+            "service": {"enabled": true, "single": true, "additionalServices": {"internal": {"labels": {"a": "b"}}}}}');
 
         $this->assertSame('["--ping=true"]', $this->json($values->additionalArguments));
         $this->assertSame('{"port":8081,"http":{"middlewares":["a@kubernetescrd"]}}', $this->json($values->ports->internal));
-        $this->assertSame('{"internal":{"type":"ClusterIP"}}', $this->json($values->service->additionalServices));
+        $this->assertSame('{"enabled":true,"single":true,"additionalServices":{"internal":{"labels":{"a":"b"}}}}', $this->json($values->service));
+    }
+
+    /**
+     * Keys RunR gave the chart that it never read (dead in charts 42.3.0 and 42.3.1, some refused by
+     * 42.3.1's schema): a Service's type beside its spec, the probes' timing under deployment, and
+     * tlsOptions' preferServerCipherSuites. A release installed before keeps them in its values;
+     * the move gives it the keys the chart reads, with the same values.
+     */
+    public function test_keys_the_chart_never_read_move_to_the_ones_it_reads(): void
+    {
+        $values = $this->migrated('{
+            "service": {"enabled": true, "single": true, "type": "LoadBalancer", "additionalServices": {"internal": {"type": "ClusterIP"}}},
+            "deployment": {"replicas": 3, "livenessProbe": {"httpGet": {"path": "/ping", "port": 9000}, "initialDelaySeconds": 20, "failureThreshold": 5},
+              "readinessProbe": {"httpGet": {"path": "/ping", "port": 9000}, "initialDelaySeconds": 10, "successThreshold": 2}},
+            "tlsOptions": {"default": {"minVersion": "VersionTLS12", "sniStrict": false, "preferServerCipherSuites": true}}}');
+
+        $this->assertSame('{"enabled":true,"single":true,"additionalServices":{"internal":{"spec":{"type":"ClusterIP"}}},"spec":{"type":"LoadBalancer"}}', $this->json($values->service));
+        $this->assertSame('{"replicas":3}', $this->json($values->deployment));
+        $this->assertSame('{"initialDelaySeconds":20,"failureThreshold":5}', $this->json($values->livenessProbe), 'the chart builds the httpGet itself');
+        $this->assertSame('{"initialDelaySeconds":10,"successThreshold":2}', $this->json($values->readinessProbe));
+        $this->assertSame('{"minVersion":"VersionTLS12","sniStrict":false}', $this->json($values->tlsOptions->default));
+
+        // what a release sets in the keys the chart reads stays as it is
+        $values = $this->migrated('{"service": {"type": "NodePort", "spec": {"type": "LoadBalancer", "loadBalancerClass": "x"}},
+            "deployment": {"livenessProbe": {"failureThreshold": 9}}, "livenessProbe": {"failureThreshold": 4}}');
+        $this->assertSame('{"spec":{"type":"LoadBalancer","loadBalancerClass":"x"}}', $this->json($values->service));
+        $this->assertSame('{"failureThreshold":4}', $this->json($values->livenessProbe));
+        $this->assertSame('{}', $this->json($values->deployment));
+    }
+
+    /**
+     * Every value a new region gives the chart is one the chart reads (ci/deps/dead-values.php
+     * against charts 42.3.0 and 42.3.1: these keys rendered nothing): a Service's type is in its spec, the
+     * probes' timing at the root, no preferServerCipherSuites.
+     */
+    public function test_a_new_region_gives_the_chart_keys_it_reads(): void
+    {
+        $builder = new class implements KnativeConstants
+        {
+            use KnativeTraefikTrait;
+
+            public function values(): array
+            {
+                return $this->traefikHelmValues('knative-serving');
+            }
+        };
+        $values = $builder->values();
+
+        $this->assertArrayNotHasKey('type', $values['service']);
+        $this->assertSame(['type' => 'LoadBalancer'], $values['service']['spec']);
+        $this->assertSame(['spec' => ['type' => 'ClusterIP']], $values['service']['additionalServices']['internal']);
+        $this->assertArrayNotHasKey('livenessProbe', $values['deployment']);
+        $this->assertArrayNotHasKey('readinessProbe', $values['deployment']);
+        $this->assertSame(['initialDelaySeconds' => 20, 'periodSeconds' => 10, 'timeoutSeconds' => 5, 'failureThreshold' => 5], $values['livenessProbe']);
+        $this->assertSame(['initialDelaySeconds' => 10, 'periodSeconds' => 10, 'timeoutSeconds' => 5, 'failureThreshold' => 3, 'successThreshold' => 2], $values['readinessProbe']);
+        $this->assertArrayNotHasKey('preferServerCipherSuites', $values['tlsOptions']['default']);
+
+        // an earlier region's values, moved to the pinned chart, give the same keys
+        $stored = json_decode((string) json_encode(Yaml::parse(HelmService::valuesYaml($values), Yaml::PARSE_OBJECT_FOR_MAP)));
+        $stored->service->type = 'LoadBalancer';
+        unset($stored->service->spec);
+        $stored->service->additionalServices->internal = (object) ['type' => 'ClusterIP'];
+        $stored->deployment->livenessProbe = (object) (['httpGet' => (object) ['path' => '/ping', 'port' => 9000]] + $values['livenessProbe']);
+        $stored->deployment->readinessProbe = (object) (['httpGet' => (object) ['path' => '/ping', 'port' => 9000]] + $values['readinessProbe']);
+        unset($stored->livenessProbe, $stored->readinessProbe);
+        $stored->tlsOptions->default->preferServerCipherSuites = true;
+        $moved = $this->migrated((string) json_encode($stored));
+        $this->assertEquals($moved->service, json_decode((string) json_encode($values['service'])));
+        $this->assertEquals($moved->livenessProbe, (object) $values['livenessProbe']);
+        $this->assertEquals($moved->readinessProbe, (object) $values['readinessProbe']);
+        $this->assertObjectNotHasProperty('preferServerCipherSuites', $moved->tlsOptions->default);
     }
 
     public function test_it_runs_the_given_image(): void

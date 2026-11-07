@@ -45,6 +45,7 @@ use App\Models\RegionSupplyChainSetting;
 use App\Models\Role;
 use App\Models\RoleAssignment;
 use App\Models\Runtime;
+use App\Models\RuntimeSource;
 use App\Models\SecretStore;
 use App\Models\SecurityPolicyOverride;
 use App\Models\Setting;
@@ -179,6 +180,8 @@ final class AuditCatalog
         // Bot protection (the provider secret is hidden + encrypted: changed by name only)
         CaptchaSetting::class => 'captcha_setting',
         Runtime::class => 'runtime',
+        // Runtime sources (credentials hidden + encrypted: changed by name only)
+        RuntimeSource::class => 'runtime_source',
         // Uploaded images (docs/images.md)
         UploadedImage::class => 'uploaded_image',
         ImageUpload::class => 'image_upload',
@@ -720,6 +723,12 @@ final class AuditCatalog
             'DELETE api/runtimes/{runtime}' => $r('runtime.delete', 'runtime', 'param:runtime'),
             'POST api/runtimes/{runtime}/builds' => $r('runtime.build', 'runtime', 'param:runtime', meta: fn (Request $q) => $q->only(['version', 'knative_region_id'])),
             'POST api/runtimes/{runtime}/test-deploy' => $r('runtime.test_deploy', 'runtime', 'param:runtime', meta: fn (Request $q) => $q->only(['version', 'knative_region_id'])),
+            // Runtime sources: the fields that changed, never a credential's value
+            'POST api/runtime-sources' => $r('runtime_source.create', 'runtime_source', 'response:data.id', 'input:name', meta: fn (Request $q) => $q->only(['kind', 'url', 'ref', 'path']) + ['credentials' => array_values(array_intersect(array_keys($q->all()), ['git_token', 'ssh_private_key', 'registry_password']))]),
+            'PUT api/runtime-sources/{source}' => $r('runtime_source.update', 'runtime_source', 'param:source', meta: fn (Request $q) => ['fields' => array_keys($q->all())]),
+            'DELETE api/runtime-sources/{source}' => $r('runtime_source.delete', 'runtime_source', 'param:source'),
+            'POST api/runtime-sources/{source}/sync' => $r('runtime_source.sync', 'runtime_source', 'param:source', meta: fn (Request $q, ?array $j) => ['status' => $j['data']['status'] ?? null, 'revision' => $j['data']['revision'] ?? null]),
+            'PUT api/runtime-catalog' => $r('runtime_catalog.update', meta: fn (Request $q) => ['builtin_runtimes' => $q->input('builtin_runtimes')]),
 
             // ── Sandbox API (routes/sandboxes.php, docs/sandbox-api.md) ─────────────
             // Command output and file contents are never recorded: commands, paths and sizes only

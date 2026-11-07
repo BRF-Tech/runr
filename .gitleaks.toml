@@ -22,6 +22,16 @@ paths = [
 ]
 
 [[allowlists]]
+description = "The deploy key of the dependency bot's test (ci/deps/ssh-key.sh): a made-up OpenSSH key"
+condition = "AND"
+paths = [
+  '''(^|/)runtime/test/deps_bot_test\.sh$''',
+]
+regexes = [
+  '''not-a-real-key''',
+]
+
+[[allowlists]]
 description = "The CLI reference names the flag --secret-stdin=KEY (a key name, not a value)"
 condition = "AND"
 paths = [

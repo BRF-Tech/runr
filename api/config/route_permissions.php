@@ -19,6 +19,10 @@
 |   'projects.view:any'              org-wide, or on at least one project (lists filter rows)
 |   '@authenticated'                 every signed-in user (own account, own notifications …)
 |   '@platform'                      platform administrators only (users.is_admin)
+|   '@operator'                      the installation itself: platform administrators, as
+|                                    '@platform'; in the single-tenant edition, which has none,
+|                                    the holders of platform.manage (Owners by default; an API
+|                                    token of one must carry it)
 |   '@platform:billing.view'         platform administrators; an API token of one must carry
 |                                    the permission (narrowly scoped tokens for the operator's
 |                                    systems, e.g. the billing API)
@@ -519,18 +523,22 @@ return [
     //    organization's custom runtimes runtimes.use_custom while custom runtimes are enabled) ──
     // ── Runtime patches (docs/runtimes.md#runtime-patches; routes/runtime-patches.php) ──
     'GET runtime-patches' => '@authenticated',
-    // Banners: the user's own visible projects; platform administrators also see the feed's state
+    // Banners: the user's own visible projects; platform administrators (single-tenant: holders of
+    // platform.manage) also see newer releases, the feed's state and the console certificate
     'GET runtime-patches/banners' => '@authenticated',
     'GET projects/{project}/runtime-patches' => 'projects.view',
     'POST projects/{project}/runtime-patches/apply' => 'projects.deploy',
     'PUT projects/{project}/runtime-patches/pin' => 'projects.deploy',
     'DELETE projects/{project}/runtime-patches/pin' => 'projects.deploy',
-    'GET admin/runtime-patches' => '@platform',
-    'POST admin/runtime-patches/check' => '@platform',
-    'PUT admin/runtime-patches/policy' => '@platform',
-    'POST admin/runtime-patches/{patch}/remind' => '@platform',
-    'POST admin/runtime-patches/{patch}/force' => '@platform',
-    'PUT admin/runtime-patches/{patch}/deadline' => '@platform',
+    // The Patches page: platform administrators; single-tenant, holders of platform.manage
+    'GET admin/runtime-patches' => '@operator',
+    'POST admin/runtime-patches/check' => '@operator',
+    'PUT admin/runtime-patches/policy' => '@operator',
+    'POST admin/runtime-patches/{patch}/remind' => '@operator',
+    'POST admin/runtime-patches/{patch}/force' => '@operator',
+    'PUT admin/runtime-patches/{patch}/deadline' => '@operator',
+    // The console certificate behind the console_tls banner (ConsoleTlsController)
+    'GET admin/console-tls' => '@operator',
 
     'GET runtimes' => '@authenticated', // the catalog project forms pick from
     'GET runtimes/{runtime}' => '@authenticated',
@@ -542,6 +550,17 @@ return [
     'GET runtimes/{runtime}/builds' => 'runtimes.manage|runtimes.use_custom',
     'POST runtimes/{runtime}/builds' => 'runtimes.manage|runtimes.use_custom',
     'POST runtimes/{runtime}/test-deploy' => 'runtimes.manage|runtimes.use_custom',
+    // Runtime sources (RuntimeSourceController refines: platform sources and RunR's catalog need
+    // runtimes.manage, the organization's own sources runtimes.use_custom while custom runtimes are on)
+    'GET runtime-catalog' => 'runtimes.manage',
+    'PUT runtime-catalog' => 'runtimes.manage',
+    'GET runtime-sources' => 'runtimes.manage|runtimes.use_custom',
+    'POST runtime-sources' => 'runtimes.manage|runtimes.use_custom',
+    'POST runtime-sources/test' => 'runtimes.manage|runtimes.use_custom',
+    'GET runtime-sources/{source}' => 'runtimes.manage|runtimes.use_custom',
+    'PUT runtime-sources/{source}' => 'runtimes.manage|runtimes.use_custom',
+    'DELETE runtime-sources/{source}' => 'runtimes.manage|runtimes.use_custom',
+    'POST runtime-sources/{source}/sync' => 'runtimes.manage|runtimes.use_custom',
 
     // ── Registry setup (creates a region with its registry) ──
     'POST registry-setup/start' => ['regions.manage', 'registry.manage'],

@@ -55,7 +55,15 @@ RunR v{{ .Chart.AppVersion }} deployed successfully!
        the ingress controller serves its default certificate.
 {{- else }}
   TLS: automatic — cert-manager (ClusterIssuer {{ $t.issuer }}) issues the certificate into Secret {{ $t.secret }}.
-       kubectl get certificate -n {{ $ns }}
+       The ClusterIssuer {{ $t.issuer }} has to exist in the cluster: cert-manager does not create it, and
+       without it the certificate is never issued and the ingress controller serves its default certificate.
+       kubectl get clusterissuer {{ $t.issuer }}
+       kubectl get certificate -n {{ $ns }}     (READY True once {{ $t.secret }} is issued)
+{{- if (include "runr.consoleTlsCheck" . | fromJson).check }}
+       Platform administrators see a warning in the console while it cannot be issued
+       (single-tenant: the holders of platform.manage, the Owners).
+{{- end }}
+       Another issuer: ingress.tls.clusterIssuer=<name>; your own certificate: ingress.tls.mode=custom or none.
 {{- end }}
 {{- else if eq $t.mode "custom" }}
   TLS: uploaded certificate, Secret {{ $t.secret }} (kubernetes.io/tls).
@@ -63,6 +71,9 @@ RunR v{{ .Chart.AppVersion }} deployed successfully!
   TLS: your Secret {{ $t.secret }} (kubernetes.io/tls).
 {{- else if $t.secret }}
   TLS: Secret {{ $t.secret }}{{ if $t.issuer }} (cert-manager ClusterIssuer {{ $t.issuer }}){{ end }}.
+{{- if $t.issuer }}
+       The ClusterIssuer has to exist; kubectl get certificate -n {{ $ns }}     (READY True once issued)
+{{- end }}
 {{- else }}
   TLS: the ingress controller serves its default certificate.
 {{- end }}

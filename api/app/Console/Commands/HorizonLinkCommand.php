@@ -10,8 +10,8 @@ use Illuminate\Console\Command;
 
 /**
  * A single-use sign-in link to the Horizon dashboard for a platform administrator or, in the
- * single-tenant edition, an Owner (App\Support\HorizonAccess). Run where the operator has cluster
- * access:
+ * single-tenant edition, a holder of platform.manage — its Owners and custom roles that include it
+ * (App\Support\HorizonAccess). Run where the operator has cluster access:
  *
  *   kubectl -n runr exec deploy/runr-api -- php artisan runr:horizon-link [--user=<name or e-mail>]
  *
@@ -23,7 +23,7 @@ class HorizonLinkCommand extends Command
                 {--user= : User name or e-mail of the administrator (default: the oldest one)}
                 {--minutes=5 : How long the link stays valid (1–60)}';
 
-    protected $description = 'Print a single-use sign-in link to the Horizon dashboard for a platform administrator (single-tenant: an Owner)';
+    protected $description = 'Print a single-use sign-in link to the Horizon dashboard for a platform administrator (single-tenant: a holder of platform.manage, e.g. an Owner)';
 
     public function handle(HorizonAccess $access): int
     {
@@ -46,8 +46,8 @@ class HorizonLinkCommand extends Command
 
         if ($user === null || ! $access->isAdministrator($user)) {
             $this->error($name !== ''
-                ? "{$name} is neither a platform administrator nor an Owner (or the account is disabled)."
-                : 'No enabled platform administrator or Owner exists.');
+                ? "{$name} is neither a platform administrator nor holds platform.manage (or the account is disabled)."
+                : 'No enabled platform administrator or holder of platform.manage exists.');
 
             return self::FAILURE;
         }

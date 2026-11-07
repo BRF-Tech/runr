@@ -3,9 +3,12 @@
 # cmd_test_sandbox_api  — `ci.sh test-sandbox-api [cmd_test flags]`: Kind cluster + docker compose
 #                         API (cmd_test) running only the Sandbox API suite
 #                         (`php artisan test:e2e --suite=sandbox-api`): gVisor installed through
-#                         the API — runsc runs inside the Kind nodes; a runc-handler RuntimeClass
-#                         stands in only when the install fails, and the run says why — runc
-#                         opted in on the region, sandbox lifecycle, exec + SSE,
+#                         the API — runsc runs inside the Kind nodes (CoreDNS is Ready again before
+#                         the install, whose node download retries with backoff); where the install
+#                         fails, the runc-handler RuntimeClass the project sandbox suite stands in
+#                         with fails sbx-gvisor-install, saying why, and sbx-gvisor-runsc checks the
+#                         gvisor sandbox sees gVisor's kernel — the gvisor cases never pass on runc —
+#                         runc opted in on the region, sandbox lifecycle, exec + SSE,
 #                         code runs, files, processes, pause / resume, network none, TTL expiry
 #                         through the reaper, warm pool claim, quota refusal. It prints the start
 #                         time of cold and pool-claimed sandboxes.

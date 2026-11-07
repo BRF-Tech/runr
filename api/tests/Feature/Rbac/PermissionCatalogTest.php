@@ -31,6 +31,8 @@ class PermissionCatalogTest extends TestCase
         'sandboxes.view', 'sandboxes.create', 'sandboxes.exec', 'sandboxes.manage',
         // API product (docs/api-product.md)
         'api_products.manage',
+        // the installation itself, single-tenant (Patches page, console certificate, Horizon)
+        'platform.manage',
     ];
 
     public function test_the_catalog_has_every_permission_other_features_use(): void
@@ -118,12 +120,36 @@ class PermissionCatalogTest extends TestCase
         $this->assertNotContains('tickets.manage', PermissionCatalog::keys());
     }
 
-    public function test_owner_and_admin_hold_every_permission(): void
+    public function test_owner_and_admin_hold_every_permission_but_the_installation_is_the_owners(): void
     {
-        $roles = PermissionCatalog::builtinRoles();
+        foreach (['single', 'multi'] as $edition) {
+            config(['tenancy.enabled' => $edition === 'multi']);
+            $roles = PermissionCatalog::builtinRoles();
 
-        $this->assertSame(PermissionCatalog::keys(), $roles['owner']['permissions']);
-        $this->assertSame(PermissionCatalog::keys(), $roles['admin']['permissions']);
+            $this->assertSame(PermissionCatalog::keys(), $roles['owner']['permissions'], $edition);
+            $this->assertSame(
+                array_values(array_diff(PermissionCatalog::keys(), [PermissionCatalog::PLATFORM_MANAGE])),
+                $roles['admin']['permissions'],
+                $edition,
+            );
+        }
+    }
+
+    public function test_platform_manage_is_single_tenant_only_and_no_other_built_in_role_holds_it(): void
+    {
+        config(['tenancy.enabled' => false]);
+        $this->assertContains(PermissionCatalog::PLATFORM_MANAGE, PermissionCatalog::keys());
+        $this->assertFalse(PermissionCatalog::isProjectScoped(PermissionCatalog::PLATFORM_MANAGE));
+        foreach (PermissionCatalog::builtinRoles() as $key => $role) {
+            $this->assertSame($key === 'owner', in_array(PermissionCatalog::PLATFORM_MANAGE, $role['permissions'], true), $key);
+        }
+        $this->assertNotContains(PermissionCatalog::PLATFORM_MANAGE, config('permissions.legacy_member_role.permissions'));
+
+        // A multi-tenant install has platform administrators (users.is_admin) for the installation
+        config(['tenancy.enabled' => true]);
+        $this->assertNotContains(PermissionCatalog::PLATFORM_MANAGE, PermissionCatalog::keys());
+        $this->assertSame([], PermissionCatalog::expand([PermissionCatalog::PLATFORM_MANAGE]));
+        $this->assertContains(PermissionCatalog::PLATFORM_MANAGE, PermissionCatalog::allKeys(), 'a Gate ability in both editions');
     }
 
     public function test_developer_and_viewer(): void

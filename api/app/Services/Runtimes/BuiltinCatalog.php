@@ -2,18 +2,43 @@
 
 namespace App\Services\Runtimes;
 
+use App\Models\Runtime;
+use App\Models\RuntimeSource;
+
 /**
- * The built-in runtime catalog. Its sources are runtimes/<id>/runtime.yaml of
- * BRF-Tech/runr-runtimes, next to each runtime's Dockerfile; the API ships them as
- * resources/runtimes/builtin.json (php artisan runtimes:bundle with RUNR_RUNTIME_CATALOG set to that
- * directory; with it set, a test keeps both identical). The sources are read directly where
- * executor.catalog_path (RUNR_RUNTIME_CATALOG) names them, or where ../runtime has
- * <id>/runtime.yaml files; otherwise from the bundle.
+ * The built-in runtime catalog: the runtimes of RunR's default source (docs/runtimes.md#runtime-sources),
+ * BRF-Tech/runr-runtimes' signed catalog ghcr.io/brf-tech/runr/runtime-catalog:stable, read
+ * periodically by RuntimeSourceSync into the runtimes table (source builtin, the manifest on each
+ * row). Until that catalog has been read once — an air-gapped installation, RUNR_RUNTIME_CATALOG_REF
+ * set empty, the default source disabled — the catalog the API image ships is in use:
+ * resources/runtimes/builtin.json (php artisan runtimes:bundle from runtimes/<id>/runtime.yaml of
+ * a runr-runtimes checkout, RUNR_RUNTIME_CATALOG), or those sources directly where
+ * executor.catalog_path names them (development). mode() says which.
+ *
+ * Bound scoped: the default source's manifests are read once per request / job; the parsed bundle
+ * is shared by the process (flush() forgets both).
  */
 class BuiltinCatalog
 {
+    public const MODE_SOURCE = 'source';
+
+    public const MODE_BUNDLE = 'bundle';
+
+    /** Catalog order of the first runtimes; the rest follow by id */
+    private const ORDER = ['python', 'nodejs', 'go', 'php', 'tensorflow', 'pytorch'];
+
+    /** @var array<string, RuntimeManifest>|null the bundle (or the source directory), parsed */
+    private static ?array $bundled = null;
+
+    /** Bumped by flush(): every instance reads anew */
+    private static int $generation = 0;
+
     /** @var array<string, RuntimeManifest>|null */
-    private static ?array $loaded = null;
+    private ?array $loaded = null;
+
+    private string $mode = self::MODE_BUNDLE;
+
+    private int $loadedGeneration = -1;
 
     public function __construct(private ManifestValidator $validator) {}
 
@@ -31,14 +56,48 @@ class BuiltinCatalog
     }
 
     /**
-     * Built-in manifests by id, in catalog order.
+     * Built-in manifests by id, in catalog order: the default source's once it has been read, else
+     * the bundle.
      *
      * @return array<string, RuntimeManifest>
      */
     public function all(): array
     {
-        if (self::$loaded !== null) {
-            return self::$loaded;
+        if ($this->loaded !== null && $this->loadedGeneration === self::$generation) {
+            return $this->loaded;
+        }
+        $this->loadedGeneration = self::$generation;
+
+        $fromSource = $this->fromDefaultSource();
+        if ($fromSource !== null) {
+            $this->mode = self::MODE_SOURCE;
+
+            return $this->loaded = $fromSource;
+        }
+
+        $this->mode = self::MODE_BUNDLE;
+
+        return $this->loaded = $this->bundled();
+    }
+
+    /** Which catalog is in use: source (RunR's catalog as last read) or bundle (the API image's). */
+    public function mode(): string
+    {
+        $this->all();
+
+        return $this->mode;
+    }
+
+    /**
+     * The catalog the API image ships (or the source directory), whatever is in use: the offline
+     * fallback, and the ids a runtime source cannot take.
+     *
+     * @return array<string, RuntimeManifest>
+     */
+    public function bundled(): array
+    {
+        if (self::$bundled !== null) {
+            return self::$bundled;
         }
 
         $raw = self::sourceDir() ? $this->readSources(self::sourceDir()) : $this->readBundle();
@@ -49,7 +108,42 @@ class BuiltinCatalog
             $manifests[$manifest->id()] = $manifest;
         }
 
-        return self::$loaded = $manifests;
+        return self::$bundled = $manifests;
+    }
+
+    /**
+     * The manifests of the default source as last read, null while it has never been read (or it is
+     * switched off): built-in rows of that source with a manifest that are still in it.
+     *
+     * @return array<string, RuntimeManifest>|null
+     */
+    private function fromDefaultSource(): ?array
+    {
+        try {
+            $source = RuntimeSource::existingDefault();
+            if (! $source || ! $source->is_enabled || ! $source->configured() || $source->synced_at === null) {
+                return null;
+            }
+
+            $rows = Runtime::query()
+                ->where('source', Runtime::SOURCE_BUILTIN)
+                ->where('source_id', $source->id)
+                ->whereNull('orphaned_at')
+                ->whereNotNull('manifest')
+                ->get(['id', 'manifest']);
+        } catch (\Throwable) {
+            return null;    // not migrated yet
+        }
+        if ($rows->isEmpty()) {
+            return null;
+        }
+
+        $manifests = [];
+        foreach ($rows->sortBy(fn (Runtime $r) => [array_search($r->id, self::ORDER, true) === false ? PHP_INT_MAX : array_search($r->id, self::ORDER, true), $r->id]) as $row) {
+            $manifests[$row->id] = new RuntimeManifest((array) $row->manifest);
+        }
+
+        return $manifests;
     }
 
     public function get(string $id): ?RuntimeManifest
@@ -62,10 +156,11 @@ class BuiltinCatalog
         return isset($this->all()[$id]);
     }
 
-    /** Forget the loaded catalog (tests, runtimes:bundle). */
+    /** Forget the loaded catalog everywhere in the process (tests, runtimes:bundle, a sync of the default source). */
     public static function flush(): void
     {
-        self::$loaded = null;
+        self::$bundled = null;
+        self::$generation++;
     }
 
     /**
@@ -76,7 +171,7 @@ class BuiltinCatalog
      */
     public function readSources(string $dir): array
     {
-        $order = ['python', 'nodejs', 'go', 'php', 'tensorflow', 'pytorch'];
+        $order = self::ORDER;
         $files = glob("{$dir}/*/runtime.yaml");
         usort($files, function ($a, $b) use ($order) {
             $ia = array_search(basename(dirname($a)), $order, true);

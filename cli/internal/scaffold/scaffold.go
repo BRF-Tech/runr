@@ -128,7 +128,7 @@ func Write(o Options) ([]string, error) {
 
 	handler := o.Handler
 	if handler == "" {
-		handler = "main.handler"
+		handler = runtimes.HandlerFile(o.Runtime) + "." + runtimes.HandlerFunction(o.Runtime)
 	}
 	pf := &projectfile.File{Name: o.Name, Type: o.Type, Runtime: o.Runtime, Handler: handler}
 	mainFile := pf.MainFile()
@@ -174,7 +174,8 @@ func Write(o Options) ([]string, error) {
 	order = append(order, ".gitignore")
 	files[".gitignore"] = ".runr/\n.env\n" + map[string]string{
 		"python": "__pycache__/\n*.pyc\n.venv/\n", "tensorflow": "__pycache__/\n", "pytorch": "__pycache__/\n",
-		"nodejs": "node_modules/\n", "php": "vendor/\n",
+		"nodejs": "node_modules/\n", "php": "vendor/\n", "java": "target/\n", "dotnet": "bin/\nobj/\n",
+		"ruby": ".bundle/\nvendor/\n", "bun": "node_modules/\n",
 	}[o.Runtime]
 
 	if err := os.MkdirAll(o.Dir, 0o755); err != nil {

@@ -49,12 +49,8 @@ _rm_target_cluster=""
 region_move_create_target() {
   local cluster="${1}-to" config status=0
   local version="${k8s_ver:-${K8S_VERSION:-1.32.0}}"
-  local etcd_patch=""
-  if [ "${KIND_ETCD_IN_MEMORY:-0}" = "1" ]; then
-    etcd_patch='        etcd:
-          local:
-            dataDir: /tmp/etcd'
-  fi
+  local etcd_patch
+  etcd_patch=$(kind_etcd_patch)
 
   echo ""
   echo "Creating Kind cluster ${cluster} (1 node, services 10.97.0.0/16): the cluster the region moves to..."

@@ -137,6 +137,11 @@ class RuntimeController extends Controller
     {
         $this->authorizeChange($runtime);
         abort_if($runtime->isBuiltin(), 403, __('api.runtimes.builtin_delete'));
+        // A runtime of a source comes back with the next read: remove it there (an orphaned one may go)
+        abort_if($runtime->isSourceManaged() && ! $runtime->isOrphaned(), 422, __('api.runtimes.source_delete', [
+            'name' => $runtime->name,
+            'source' => (string) $runtime->runtimeSource?->name,
+        ]));
 
         $count = Project::where('runtime', $runtime->id)->count();
         abort_if($count > 0, 409, __('api.runtimes.in_use', ['count' => $count]));

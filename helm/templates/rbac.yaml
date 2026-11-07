@@ -21,18 +21,26 @@ metadata:
   RunR manages every region (Knative install, deploys, registry, sandbox, agent, nodes, ...)
   exclusively through that region's stored kubeconfig, including a region that is this same
   cluster. The in-cluster token of runr-api is read in exactly one place,
-  App\Services\Helpers\RunrClusterIdentity::inClusterClient(), for two read-only calls:
+  App\Services\Helpers\RunrClusterIdentity::inClusterClient(), for read-only calls:
 
     1. GET namespaces/kube-system (cluster-scoped): its UID tells whether a region's
        kubeconfig points at the cluster RunR runs in (same-cluster detection: agent
        WebSocket URL, registry mirror restart mode, function-domain TLS "console" mode).
     2. GET the console TLS Secret in RunR's own namespace: function-domain TLS
        "reuse the console certificate" mode copies it into the region.
+    2b. When cert-manager issues the console certificate (helper "runr.consoleTlsCheck"): GET the
+       Certificate of that Secret and LIST the CertificateRequests in RunR's own namespace, for the
+       platform administrators' warning when it cannot be issued
+       (App\Services\CertManager\ConsoleCertificate). The ClusterIssuer is not read: that would
+       need a cluster-scoped rule the installing identity must hold itself to grant (RBAC
+       escalation check), which cert-manager does not give namespace administrators; a missing
+       issuer shows in the CertificateRequest instead.
 
   Hence a ClusterRole with `get` on the kube-system Namespace only and, when the console has a
-  TLS Secret, a Role in the release namespace with `get` on that one Secret only. No list/watch,
-  nothing in any other namespace. Pods that never call the API (reverb, scheduler, migration jobs,
-  ui, gateway, redis, postgres, mailpit) mount no service account token at all.
+  TLS Secret, a Role in the release namespace with `get` on that one Secret only (and on its
+  cert-manager Certificate, plus `list` on CertificateRequests, with 2b). Nothing in any other
+  namespace. Pods that never call the API (reverb, scheduler, migration jobs, ui, gateway, redis,
+  postgres, mailpit) mount no service account token at all.
 
   One write, only with secret.create=false: the bootstrap Job (same ServiceAccount) stores the
   first administrator's generated password in the Secret runr-admin when your Secret has no
@@ -93,6 +101,20 @@ rules:
     resources: ["secrets"]
     resourceNames: [{{ $t.secret | quote }}]
     verbs: ["get"]
+  {{- if (include "runr.consoleTlsCheck" . | fromJson).check }}
+  # (2b) The console certificate's state: the Certificate cert-manager's ingress-shim makes for the
+  # Ingress (named like the Secret) and the CertificateRequests that say why it is not issued.
+  # Rendered only with the cert-manager.io/v1 API, whose chart grants these reads to the namespace's
+  # admin / edit / view roles: an identity that may install the chart here holds them already.
+  # ingress.tls.certificateCheck=false leaves them out.
+  - apiGroups: ["cert-manager.io"]
+    resources: ["certificates"]
+    resourceNames: [{{ $t.secret | quote }}]
+    verbs: ["get"]
+  - apiGroups: ["cert-manager.io"]
+    resources: ["certificaterequests"]
+    verbs: ["list"]
+  {{- end }}
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding

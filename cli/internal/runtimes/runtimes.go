@@ -46,9 +46,18 @@ type Spec struct {
 	DepsEnv map[string]string `json:"deps_env,omitempty"`
 	// CodeDir is where the wrapper loads the code from (the ConfigMap mount in the cluster).
 	CodeDir string `json:"code_dir"`
-	// Workdir and Entrypoint start the wrapper (the image's ENTRYPOINT).
+	// Workdir and Entrypoint start the wrapper (the image's ENTRYPOINT; ./entrypoint.sh unless the
+	// built-in table names another).
 	Workdir    string `json:"workdir"`
 	Entrypoint string `json:"entrypoint"`
+	// User runs the containers of `runr dev` (empty: the image's user). The images that run
+	// functions as a user other than root get root locally, so they may write the code and
+	// dependency directories `runr dev` bind-mounts.
+	User string `json:"user,omitempty"`
+	// HandlerFile and HandlerFunction are the manifest's handler.file and handler.function: the
+	// entry file's base name and the default handler (main and handler unless set).
+	HandlerFile     string `json:"-"`
+	HandlerFunction string `json:"-"`
 	// PrepareScript runs in the runtime container before the entrypoint.
 	PrepareScript string `json:"prepare_script,omitempty"`
 	// Caches are extra directories kept between runs (container path → cache name).
@@ -92,6 +101,12 @@ type Info struct {
 	RunMode string `json:"run_mode,omitempty"`
 	// Wasm names the WebAssembly shim of a Wasm runtime.
 	Wasm string `json:"wasm,omitempty"`
+	// State is the version's lifecycle with the runtime's (active, deprecated, eol, sunset,
+	// orphaned); Sunset its sunset date; SourceName the runtime source it comes from. Empty on
+	// APIs before runtime sources.
+	State      string `json:"state,omitempty"`
+	Sunset     string `json:"sunset,omitempty"`
+	SourceName string `json:"source_name,omitempty"`
 }
 
 // Resolver finds the Spec of a runtime version.
@@ -139,6 +154,56 @@ var builtin = map[string]Spec{
 			"\t\t\"statusCode\": 200,\n" +
 			"\t\t\"body\":       \"Hello, \" + name + \"!\",\n" +
 			"\t}, nil\n" +
+			"}\n",
+	},
+	"java": {
+		// Compiled: runr-start builds the code (javac, and Maven for pom.xml) before it starts
+		ID: "java", Extension: "java", DefaultVersion: "25.0", Compiled: true,
+		Entrypoint: "/opt/runr/bin/runr-start", User: "0:0", HandlerFile: "Main",
+		Starter: "import java.util.Map;\n\n" +
+			"public class Main {\n" +
+			"    public static Object handler(Map<String, Object> event, Map<String, Object> context) {\n" +
+			"        Object name = event.getOrDefault(\"name\", \"World\");\n" +
+			"        return Map.of(\"statusCode\", 200, \"body\", \"Hello, \" + name + \"!\");\n" +
+			"    }\n" +
+			"}\n",
+	},
+	"dotnet": {
+		// Compiled: runr-start builds the code with the SDK (NuGet for Function.csproj) first
+		ID: "dotnet", Extension: "cs", DefaultVersion: "10.0", Compiled: true,
+		Entrypoint: "/opt/runr/bin/runr-start", User: "0:0", HandlerFile: "Function", HandlerFunction: "Handler",
+		Starter: "using System.Collections.Generic;\nusing System.Text.Json.Nodes;\n\n" +
+			"public static class Function\n" +
+			"{\n" +
+			"    public static object Handler(JsonNode? input, IDictionary<string, object?> context)\n" +
+			"    {\n" +
+			"        var name = input?[\"name\"]?.GetValue<string>() ?? \"World\";\n" +
+			"        return new { statusCode = 200, body = $\"Hello, {name}!\" };\n" +
+			"    }\n" +
+			"}\n",
+	},
+	"ruby": {
+		ID: "ruby", Extension: "rb", DependencyFile: "Gemfile", DefaultVersion: "3.4",
+		InstallScript: "/opt/runr/bin/runr-bundle /src /deps",
+		DepsMount:     "/app/gems", DepsEnv: map[string]string{
+			"RUNR_BUNDLE_SETUP": "/app/gems/vendor/bundler/setup.rb",
+			"BUNDLE_GEMFILE":    "/app/gems/Gemfile", "BUNDLE_PATH": "/app/gems/vendor",
+			"BUNDLE_WITHOUT": "development:test", "BUNDLE_FROZEN": "true",
+		},
+		Entrypoint: "ruby /opt/runr/server.rb", User: "0:0",
+		Starter: "def handler(event, context)\n" +
+			"  name = event.is_a?(Hash) ? event.fetch(\"name\", \"World\") : \"World\"\n" +
+			"  { statusCode: 200, body: \"Hello, #{name}!\" }\n" +
+			"end\n",
+	},
+	"bun": {
+		ID: "bun", Extension: "ts", DependencyFile: "package.json", DefaultVersion: "1.4",
+		InstallScript: "/opt/runr/bin/runr-install /src /deps",
+		DepsMount:     "/app/code/node_modules",
+		Entrypoint:    "bun /opt/runr/server.ts", User: "0:0",
+		Starter: "export async function handler(event: { name?: string }, context: unknown) {\n" +
+			"  const name = event?.name || 'World';\n" +
+			"  return { statusCode: 200, body: `Hello, ${name}!` };\n" +
 			"}\n",
 	},
 	"php": {
@@ -193,6 +258,24 @@ func Starter(id string) string {
 	return builtin[id].Starter
 }
 
+// HandlerFile returns the base name of a runtime's entry file (Main for java, Function for dotnet,
+// main for the others and unknown runtimes).
+func HandlerFile(id string) string {
+	if f := builtin[id].HandlerFile; f != "" {
+		return f
+	}
+	return "main"
+}
+
+// HandlerFunction returns a runtime's default handler name (Handler for dotnet, handler for the
+// others and unknown runtimes).
+func HandlerFunction(id string) string {
+	if f := builtin[id].HandlerFunction; f != "" {
+		return f
+	}
+	return "handler"
+}
+
 // Registry returns the registry the executor images come from.
 func Registry() string {
 	if reg := strings.TrimRight(os.Getenv(EnvRegistry), "/"); reg != "" {
@@ -222,7 +305,9 @@ func specFor(id, version string) (*Spec, error) {
 	s.Image = ImageFor(id, version)
 	s.CodeDir = "/app/code"
 	s.Workdir = "/app"
-	s.Entrypoint = "./entrypoint.sh"
+	if s.Entrypoint == "" {
+		s.Entrypoint = "./entrypoint.sh"
+	}
 	s.Port = 8080
 	switch id {
 	case "php":

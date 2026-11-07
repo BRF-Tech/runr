@@ -111,7 +111,7 @@ helm status runr -n runr      # prints how to read the first administrator's pas
 
 The chart installs the gateway, UI, API, Horizon, scheduler and Reverb and - unless you point it at
 external services - PostgreSQL, Redis and Mailpit, with migration and bootstrap hooks that create the
-first administrator. To install a specific release, pin the chart version (`--version 0.6.7`); the
+first administrator. To install a specific release, pin the chart version (`--version 0.6.8`); the
 API and UI images follow it. `edition=multi-tenant` switches on the Tenancy and Auth Provider
 modules and the multi-tenant console image.
 
@@ -204,7 +204,7 @@ Every claim is backed by a page in [`docs/`](docs/README.md); what changed in ea
 | Coming from | With RunR |
 |---|---|
 | **Knative Serving**<br>The Kubernetes building blocks: request-driven autoscaling, scale to zero, revisions and traffic splitting as Kubernetes resources, written as YAML. You bring the build, the images, the console, the users and the policy. | RunR installs Knative Serving, Traefik, a registry, Redis, Prometheus and Loki in every region and keeps them up to date ([regions](docs/regions.md)). On top: builds in the cluster, a `git push` remote per project, an editor, versions with rollback, triggers, environments, RBAC, SSO and an audit log. Nobody writes a Knative Service by hand. |
-| **Knative Functions (`func`)**<br>A CLI that builds a function from a language template into a container image with Buildpacks or S2I and deploys it as a Knative Service. | `runr init`, `runr dev` and `runr deploy` do the same from a terminal, on the same runtime images the cluster uses ([CLI](docs/cli.md)) - and every deploy is a version in a control plane with a console, environments, triggers, team access and observability. Python, Node.js, Go, PHP, PyTorch and TensorFlow ship built in; any language is a `runtime.yaml` plugin ([runtimes](docs/runtimes.md)). |
+| **Knative Functions (`func`)**<br>A CLI that builds a function from a language template into a container image with Buildpacks or S2I and deploys it as a Knative Service. | `runr init`, `runr dev` and `runr deploy` do the same from a terminal, on the same runtime images the cluster uses ([CLI](docs/cli.md)) - and every deploy is a version in a control plane with a console, environments, triggers, team access and observability. Python, Node.js, Go, PHP, Java, .NET (C#), Ruby, TypeScript (Bun), PyTorch and TensorFlow ship built in; any language is a `runtime.yaml` plugin ([runtimes](docs/runtimes.md)). |
 | **OpenFaaS**<br>Functions built from `faas-cli` templates into container images and deployed behind a gateway on Kubernetes; a Community Edition and commercial editions. | Three project types on one platform: a single-file function edited in the console, a multi-file project built in the cluster, and any container image ([architecture](docs/architecture.md#project-types)). One trigger list per project - HTTP, schedules, queues, webhooks, topics, brokers, CDC, S3, e-mail ([triggers](docs/triggers.md)). Single-tenant and multi-tenant editions of the same MIT-licensed code. |
 | **AWS Lambda**<br>A hosted function service: your code runs in the provider's regions, in managed runtimes or a container image, billed per request and per GB-second. | The same scale-to-zero functions - and long-running containers, WebAssembly, GPU workloads and agent sandboxes - on clusters you choose, including air-gapped ones. Minimum and maximum scale and a timed warmer per project ([scaling](docs/scaling.md)); bindings for KV, object storage and Postgres ([bindings](docs/bindings.md)); secrets kept in the region's own store ([secret stores](docs/secret-stores.md)). |
 | **Vercel**<br>A hosted platform for front-end frameworks: git integration with a preview deployment per pull request and serverless functions, on the provider's infrastructure. | The same `git push` flow on your own clusters: a remote per project or a GitHub App, GitLab or Forgejo / Gitea connection with push-to-deploy, commit statuses and a preview environment per pull or merge request with its own URL and automatic cleanup ([git deploy](docs/git-deploy.md)). Dev / staging / production with promotion and approval ([environments](docs/environments.md)), blue-green and canary ([deploy strategies](docs/deploy-strategies.md)), custom domains with certificates from cert-manager. |
@@ -219,9 +219,10 @@ Every claim is backed by a page in [`docs/`](docs/README.md); what changed in ea
   (a multi-file project with dependencies, built in the cluster when needed) and CaaS (any container
   image with port, command, arguments and environment) ([architecture](docs/architecture.md#project-types)).
 - **Pluggable runtimes**: every language is a plugin - a `runtime.yaml` manifest plus an image.
-  Python, Node.js, Go, PHP, PyTorch and TensorFlow ship built in; platform administrators and
-  organizations register their own (C, Rust, Bash and Q examples included), in `http`, `exec` or
-  `persistent` mode behind RunR's universal wrapper ([runtimes](docs/runtimes.md)).
+  Python, Node.js, Go, PHP, Java, .NET (C#), Ruby, TypeScript (Bun), PyTorch and TensorFlow ship
+  built in; platform administrators and organizations register their own (C, Rust, Bash and Q
+  examples included), in `http`, `exec` or `persistent` mode behind RunR's universal wrapper
+  ([runtimes](docs/runtimes.md)).
 - **Runtime patches**: runtime images get immutable patch tags, and a signed feed tells every
   installation why a patch came (routine, security, critical, zero-day). Projects apply or pin a
   patch; at the deadline of a critical or zero-day patch RunR redeploys the projects still behind
@@ -521,10 +522,12 @@ median of 100 requests.
 | WebAssembly (Spin shim) | JavaScript | 2.12 s (2.58) | 11 ms |
 
 Kata was measured with Python only; Firecracker's root filesystem is on containerd's devmapper
-snapshotter. Sandbox API, create to first command (RunR 0.6.6 and Kata Containers 4.3.1,
-2026-11-06, the same VM; Python 3.15, 500m / 512 MiB, median, n=10 per class): cold 2.21 s under
-gVisor, 3.09 s under Kata Cloud Hypervisor, 3.43 s under Kata Firecracker; 0.31–0.48 s from a warm
-pool of 2. How the Kata cold start was brought down, and where the remaining time goes:
+snapshotter. Sandbox API, create to first command (Kata Containers 4.3.1, the same VM; Python 3.15,
+500m / 512 MiB, median, n=10 per class): cold 2.33 s under gVisor (RunR 0.6.7, 2026-11-07; a
+command on gVisor takes ~0.1 s more since 0.6.7), 3.09 s under Kata Cloud Hypervisor and 3.43 s
+under Kata Firecracker (RunR 0.6.6, 2026-11-06; unchanged within noise on 0.6.7); 0.31–0.52 s from
+a warm pool of 2 (RunR 0.6.7, 2026-11-07). How the Kata cold start was brought down, and where the
+remaining time goes:
 [Kata hypervisors → Cold start](docs/kata-hypervisors.md#cold-start).
 
 <br>

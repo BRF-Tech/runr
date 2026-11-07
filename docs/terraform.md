@@ -27,6 +27,7 @@ actions and reports Terraform leaves to the CLI and the API.
 | Resource | [`runr_private_connection`](../terraform-provider-runr/docs/resources/private_connection.md) | a private connection of a project or environment to a managed PostgreSQL |
 | Resource | [`runr_topic`](../terraform-provider-runr/docs/resources/topic.md) | a fan-out topic of the organization |
 | Resource | [`runr_runtime`](../terraform-provider-runr/docs/resources/runtime.md) | a runtime plugin registered from a `runtime.yaml` manifest |
+| Resource | [`runr_runtime_source`](../terraform-provider-runr/docs/resources/runtime_source.md) | a runtime source: an OCI catalog or a Git repository of `runtime.yaml` manifests RunR reads runtimes from (write-only credentials) |
 | Resource | [`runr_workflow`](../terraform-provider-runr/docs/resources/workflow.md) | a durable workflow declared through the API: triggers, retries, timeout, concurrency, cancellation, paused or active |
 | Resource | [`runr_workflow_trigger`](../terraform-provider-runr/docs/resources/workflow_trigger.md) | one trigger (event, cron or queue) of a durable workflow |
 | Resource | [`runr_workflow_app`](../terraform-provider-runr/docs/resources/workflow_app.md) | the endpoint the workflow engine calls (a function served outside RunR) |
@@ -48,6 +49,7 @@ actions and reports Terraform leaves to the CLI and the API.
 | Data source | [`runr_secret_store_trust`](../terraform-provider-runr/docs/data-sources/secret_store_trust.md) | what a secret store has to trust for a region (issuer, keys, service account) |
 | Data source | [`runr_cost_limit`](../terraform-provider-runr/docs/data-sources/cost_limit.md) | a project's cost limit with this month so far and the forecast |
 | Data source | [`runr_runtime_patches`](../terraform-provider-runr/docs/data-sources/runtime_patches.md) | a project's runtime patch state and the patches it can move to |
+| Data source | [`runr_runtime_source`](../terraform-provider-runr/docs/data-sources/runtime_source.md) | a runtime source (RunR's catalog too) with its status and its runtimes' lifecycle |
 | Data source | [`runr_rightsizing`](../terraform-provider-runr/docs/data-sources/rightsizing.md) | a project's rightsizing recommendation |
 
 ## Install
@@ -157,6 +159,7 @@ and a token never exceeds its owner's permissions, so add what a configuration u
 | `runr_binding` | `bindings.manage` |
 | `runr_binding_attachment` | `env.edit` on the project, `bindings.manage` |
 | `runr_runtime` | `runtimes.manage` (platform runtimes; single-tenant edition, in multi-tenant installs the platform administrators) or `runtimes.use_custom` (the organization's custom runtimes, while the platform allows custom runtimes) |
+| `runr_runtime_source`, `data.runr_runtime_source` | `runtimes.manage` (platform sources, RunR's catalog) or `runtimes.use_custom` (the organization's sources, while the platform allows custom runtimes) |
 | `runr_workflow_trigger` | `workflows.manage` on the project |
 | `runr_model_service` | `models.deploy` |
 | `runr_role` | `roles.manage` |
@@ -743,6 +746,55 @@ still use fails (the API answers 409); delete or move the projects first. `enabl
 (default `true`) takes the runtime out of the catalog for new projects and refuses deploys of
 its projects.
 
+### Runtime sources
+
+```hcl
+variable "runtimes_token" {
+  type      = string
+  sensitive = true
+  ephemeral = true
+}
+
+resource "runr_runtime_source" "acme" {
+  name                   = "acme-runtimes"
+  kind                   = "git"                  # or "oci-catalog" (a signed catalog)
+  url                    = "https://gitlab.example.com/acme/runtimes.git"
+  ref                    = "main"                 # path: default "runtimes" (<path>/<id>/runtime.yaml)
+  git_token_wo           = var.runtimes_token     # never in the state (Terraform 1.11 and later)
+  credentials_wo_version = "2026-11"              # change it to write a rotated token
+  sync_trigger           = "v1.4.0"               # a change reads the source now
+
+  lifecycle {
+    postcondition {
+      condition     = self.status == "ok"
+      error_message = "acme-runtimes: ${self.status} ${coalesce(self.error, "")}"
+    }
+  }
+}
+
+data "runr_runtime_source" "runr" {
+  name = "RunR runtimes"                          # RunR's catalog: the built-in runtimes
+}
+```
+
+`runr_runtime_source` connects a [runtime source](runtimes.md#runtime-sources) with
+`POST /api/runtime-sources` — a platform source with `runtimes.manage`, a source of the
+organization with `runtimes.use_custom` — and every argument changes in place
+(`PUT /api/runtime-sources/{source}`). RunR reads the source when it is connected or changed, every
+`interval_minutes` and when `sync_trigger` changes (`POST …/sync`). A read that fails (`status`
+`unreachable`, `not_found`, `auth_failed`, `invalid_signature`, `invalid_catalog`) is a warning, not an error:
+the source is connected and its runtimes stay as last read; a manifest with problems is refused
+(`status = "partial"`, `problems` with the file and JSON path). Add a `postcondition` on `status`
+where a read must succeed. The credentials (`git_token`, `ssh_private_key`, `registry_password`)
+are write-only: Terraform keeps what it set (sensitive) or, with the `_wo` attributes, nothing —
+`credentials_wo_version` writes them again. `credentials` reports which are set; when that differs
+from what Terraform last wrote (a token rotated or removed outside Terraform), the next plan writes
+the configured ones again. Destroying the source deletes its runtimes no project uses; the others
+stay orphaned until their sunset. RunR's catalog is the installation's: no resource manages it,
+`data.runr_runtime_source` reads it (and any source with its runtimes and their
+[lifecycle](runtimes.md#lifecycle)); its interval and the Built-in runtimes setting are
+`runr runtimes sources update` and `runr runtimes catalog set`.
+
 ## Workflows
 
 A [durable workflow](workflows.md) whose code runs in the project is declared through the API
@@ -1030,6 +1082,7 @@ reports. Terraform does not run them; the CLI, the console and the API do:
 | Rolling back to an earlier version, restoring a deleted binding | an action on a deployment or on retained data; `runr_deployment.version_id` names the version that runs | `runr rollback`, `runr bindings restore` |
 | Load tests | a run with a report | `runr loadtest run` |
 | Organization export and import | a one-off transfer of a whole organization | `runr org export\|import` |
+| Testing a runtime source before connecting it, the Built-in runtimes setting, RunR's catalog's schedule | a dry read with a report; a platform setting and the installation's own source (`data.runr_runtime_source` reads it) | `runr runtimes sources test`, `runr runtimes catalog set`, `runr runtimes sources update "RunR runtimes"` |
 | Syncing secret store references now, verifying a store, revealing a secret value | actions and reads of values RunR does not keep; the stores and references are `runr_secret_store` and `runr_env_var.reference` | `runr env sync`, `POST /api/secret-stores/{store}/verify`, `runr env ls --reveal` |
 | Installing cert-manager, External Secrets Operator, OpenBao or a global DNS server in a region | operations on a region's cluster that RunR runs and reconciles (platform operators); the provider manages no regions | `runr regions cert-manager\|openbao\|global-dns`, the region settings in the console (External Secrets Operator: [secret stores](secret-stores.md#external-secrets-operator-in-a-region)) |
 
@@ -1048,6 +1101,7 @@ reports. Terraform does not run them; the CLI, the console and the API do:
 | `runr_private_connection` | `<project name or id>/<connection name or id>` or `<project>/<environment>/<connection>` |
 | `runr_topic` | topic name or id |
 | `runr_runtime` | runtime id |
+| `runr_runtime_source` | source name or id (not RunR's catalog; the credentials are not imported) |
 | `runr_workflow` | `<project name or id>/<workflow>` or `<project>/<environment>/<workflow>` |
 | `runr_workflow_trigger` | `<project name or id>/<workflow>/<event:NAME \| queue:STREAM \| cron:EXPRESSION[@TIME_ZONE]>` |
 | `runr_workflow_app` | `<project name or id>` or `<project>/<environment>` |

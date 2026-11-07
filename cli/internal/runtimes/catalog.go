@@ -151,15 +151,17 @@ func (c *Catalog) List(ctx context.Context) ([]Info, error) {
 // CatalogInfos lists every version of catalog runtimes, sorted by runtime.
 func CatalogInfos(list []runr.CatalogRuntime) []Info {
 	out := []Info{}
-	for _, rt := range list {
-		for _, v := range rt.Versions {
+	for i := range list {
+		rt := &list[i]
+		for j := range rt.Versions {
+			v := &rt.Versions[j]
 			img := v.Image
 			if img == "" {
 				img = "(built in the region)"
 			}
 			out = append(out, Info{ID: rt.ID, Version: v.Version, Default: v.IsDefault, EOL: v.EOLAt, Image: img,
 				Plugin: !Known(rt.ID) || rt.Source == "custom", Kind: rt.Kind(), Source: rt.Source, RunMode: rt.RunMode,
-				Wasm: rt.Wasm})
+				Wasm: rt.Wasm, State: rt.State(v), Sunset: v.SunsetAt, SourceName: rt.SourceName})
 		}
 	}
 	sort.SliceStable(out, func(i, j int) bool { return out[i].ID < out[j].ID })

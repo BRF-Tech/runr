@@ -97,64 +97,10 @@ jobs:
       # kubeconform against Kubernetes 1.30 and later
       - run: helm version --short && bash ci/check-helm-chart.sh
 
+  # the steps: api-tests.yml, which deps-test.yml runs too (a dependency bump of next)
   api:
     name: API (Pint, PHPUnit, Larastan)
-    runs-on: ubuntu-24.04
-    timeout-minutes: 60
-    defaults:
-      run:
-        working-directory: api
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # 2.40.0
-        with:
-          php-version: '8.2'
-          extensions: pdo_sqlite, pcntl
-          coverage: pcov
-          tools: composer:v2
-      # PHP 8.2.35 or a later 8.2 release, the one that fixes CVE-2026-109618 and CVE-2026-109619 (the
-      # API image has its own floor, PHP_MIN_VERSION of api/Dockerfile.prod)
-      - name: PHP 8.2.35 or later
-        run: |
-          php -r 'exit((int) !(str_starts_with(PHP_VERSION, "8.2.") && version_compare(PHP_VERSION, "8.2.35", ">=")));' \
-            || { echo "::error::PHP $(php -r 'echo PHP_VERSION;') is not 8.2.35 or a later 8.2 release"; exit 1; }
-      - name: Composer cache
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: ~/.composer/cache
-          key: composer-${{ hashFiles('api/composer.lock') }}
-          restore-keys: composer-
-      - id: composer
-        run: composer install --no-interaction --prefer-dist --no-progress
-      # Pint, PHPUnit and Larastan each report, whichever of them fails
-      - name: Pint (code style; fix with vendor/bin/pint)
-        if: ${{ !cancelled() && steps.composer.outcome == 'success' }}
-        run: vendor/bin/pint --test
-      # Coverage floor: the line coverage of app/, the measured value rounded down to whole percent
-      # (docs/development.md → Testing). The -d memory_limit is for the artisan process, which reads
-      # the report PHPUnit wrote.
-      - name: PHPUnit (coverage floor)
-        if: ${{ !cancelled() && steps.composer.outcome == 'success' }}
-        run: |
-          cp .env.example .env && php artisan key:generate
-          php -d memory_limit=2G artisan test --compact --coverage --min=76
-      # New findings fail; the known ones live in phpstan-baseline.neon
-      - name: Larastan
-        if: ${{ !cancelled() && steps.composer.outcome == 'success' }}
-        run: vendor/bin/phpstan analyse --memory-limit=1G --no-progress
-      # The API reference as the image builds it, every module enabled (api/docker/api-docs.sh, the
-      # api-docs stage of api/Dockerfile.prod): every operation, the modules' too, has a one-line
-      # summary, an operationId of its own and one group (ApiDocument::problems). Then ApiDocsTest
-      # again with the modules on (the PHPUnit step runs it without them). The last step: it enables
-      # the modules in this checkout
-      - name: API reference (every module, as the image builds it)
-        if: ${{ !cancelled() && steps.composer.outcome == 'success' }}
-        run: |
-          sh docker/api-docs.sh "$RUNNER_TEMP/openapi.json" --check
-          TENANCY_ENABLED=true AUTH_PROVIDER_ENABLED=true TICKET_ENABLED=true BILLING_ENABLED=true \
-            vendor/bin/phpunit --no-coverage tests/Feature/ApiDocsTest.php
+    uses: ./.github/workflows/api-tests.yml
 
   ui:
     name: UI lint + unit tests + build

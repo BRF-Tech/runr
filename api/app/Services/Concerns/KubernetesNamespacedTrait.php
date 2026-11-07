@@ -131,6 +131,21 @@ trait KubernetesNamespacedTrait
     }
 
     /**
+     * Whether the API server, its admission webhooks included, would create this resource: a POST
+     * with dryRun=All, which stores nothing. Null when it would, else "HTTP <status>: <message>"
+     * (e.g. a webhook's refusal).
+     */
+    public function dryRunCreate(array $manifest, string $namespace): ?string
+    {
+        $url = $this->collectionUrl($manifest['apiVersion'], $manifest['kind'], $namespace);
+        $response = $this->request()
+            ->withHeaders(['Content-Type' => 'application/json'])
+            ->post($url.'?dryRun=All', $manifest);
+
+        return $response->successful() ? null : self::applyFailure($response);
+    }
+
+    /**
      * Delete a Kubernetes resource. $propagationPolicy "Background" also removes dependents
      * (a plain DELETE of a batch/v1 Job or CronJob orphans its pods/Jobs).
      */

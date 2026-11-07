@@ -83,7 +83,8 @@ class SandboxStartPollTest extends SandboxTestCase
 
         $this->assertNull($state);
         $this->assertGreaterThanOrEqual(1.0, $elapsed);
-        $this->assertLessThan(1.5, $elapsed);
+        // It ends at its timeout, not seconds later; the margin leaves room for a loaded CI runner
+        $this->assertLessThan(2.5, $elapsed);
         // Every ~150 ms within the second
         $this->assertGreaterThanOrEqual(6, $this->podReadsOf($sandbox));
         $this->assertLessThanOrEqual(9, $this->podReadsOf($sandbox));

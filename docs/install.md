@@ -53,7 +53,7 @@ examples below).
 The modules of the console are built into its image, so the multi-tenant console is a separate UI
 image: with `edition: multi-tenant` the UI runs `ghcr.io/brf-tech/runr/ui:<tag>-mt`
 (`ui.image.multiTenantSuffix`, default `-mt`). The tag defaults to the chart's release, its
-`appVersion`, so chart 0.6.7 runs `0.6.7-mt`; the moving tag `latest` has no multi-tenant variant
+`appVersion`, so chart 0.6.8 runs `0.6.8-mt`; the moving tag `latest` has no multi-tenant variant
 and runs `<appVersion>-mt` as well. A UI image of your own that carries the modules under its plain
 tag needs `ui.image.multiTenantSuffix: ""`.
 
@@ -153,7 +153,7 @@ The console always runs as `https://<domain>` (`APP_URL`). Choose the certificat
 
 | `ingress.tls.mode` | What the chart does | What you provide |
 | --- | --- | --- |
-| `letsencrypt` | Adds the annotation `cert-manager.io/cluster-issuer: <ingress.tls.clusterIssuer>` (default `letsencrypt-prod`) and a `tls` section with `ingress.tls.secretName` (default `runr-tls`); cert-manager issues the certificate into that Secret | cert-manager and the ClusterIssuer; the console domain resolving to the ingress controller |
+| `letsencrypt` | Adds the annotation `cert-manager.io/cluster-issuer: <ingress.tls.clusterIssuer>` (default `letsencrypt-prod`) and a `tls` section with `ingress.tls.secretName` (default `runr-tls`); cert-manager issues the certificate into that Secret | cert-manager and the ClusterIssuer, which has to exist ([below](#when-the-console-certificate-is-not-issued)); the console domain resolving to the ingress controller |
 | `custom` | Creates a `kubernetes.io/tls` Secret (`ingress.tls.secretName`, default `runr-tls-custom`) from `ingress.tls.certificate` and `ingress.tls.privateKey` and references it in the Ingress | The full PEM chain (server certificate first) and its unencrypted private key, as PEM or base64-encoded PEM |
 | `secret` | References your `kubernetes.io/tls` Secret `ingress.tls.secretName` (required) in the Ingress; creates nothing | The Secret in the release namespace, kept up to date by you or your certificate tooling |
 | `none` | No `tls` section; the ingress controller serves its default certificate | A default certificate in the ingress controller that covers the console domain |
@@ -166,11 +166,26 @@ explicitly for a production install.
 it the Ingress gets no `tls` section and no annotation, and `helm status` says so. A tool that
 renders the chart without cluster access needs `--api-versions cert-manager.io/v1`.
 
+`letsencrypt` also needs the ClusterIssuer: cert-manager does not create it, and the chart does not
+check for it. A cluster with cert-manager but without a ClusterIssuer of that name renders the
+annotation and the `tls` section as usual, and cert-manager makes the Certificate `runr-tls`, but it
+is never issued: the CertificateRequest stays pending with `Referenced "ClusterIssuer" not found`,
+the Secret `runr-tls` never appears, and the ingress controller serves its **default
+certificate** for the console (Traefik logs `secret runr/runr-tls does not exist`). Clusters often
+have cert-manager without that issuer, e.g. when RunR installed it for a region in the same
+cluster ([cert-manager](regions.md#cert-manager)): RunR's own issuers there are for custom domains.
+Check it after an install or upgrade:
+
+```sh
+kubectl get clusterissuer letsencrypt-prod
+kubectl -n runr get certificate,certificaterequest   # READY True once issued
+```
+
 A custom certificate is easiest to pass from files, and renewed by running the same upgrade with
 the new files:
 
 ```sh
-helm upgrade runr brf-tech/runr --version 0.6.7 -n runr --reuse-values \
+helm upgrade runr brf-tech/runr --version 0.6.8 -n runr --reuse-values \
   --set ingress.tls.mode=custom \
   --set-file ingress.tls.certificate=fullchain.pem \
   --set-file ingress.tls.privateKey=privkey.pem
@@ -187,6 +202,34 @@ ingress:
     mode: secret
     secretName: runr-console-tls
 ```
+
+### When the console certificate is not issued
+
+The API checks the console's cert-manager Certificate (at most every five minutes) and shows
+**platform administrators a warning across the top of the console** (in a single-tenant
+installation: the holders of `platform.manage`, its Owners) while it cannot be issued: a
+missing ClusterIssuer, a failed or denied request, or a certificate still pending after ten
+minutes (an ACME order that does not complete, e.g. because the console domain does not reach this
+ingress controller). The warning says why, whether the console serves the ingress controller's
+default certificate, and what to do:
+
+- create the ClusterIssuer the Ingress names, or
+- set `ingress.tls.clusterIssuer` to a ClusterIssuer that exists, or
+- use `ingress.tls.mode: custom` (your certificate) or `none` (the ingress controller's default
+  certificate, e.g. a Traefik `TLSStore` named `default`).
+
+A renewal that fails while the current certificate is still valid shows a warning too, with the
+certificate's expiry. `GET /api/admin/console-tls` returns the same state for every mode: `mode`,
+`issuer`, `secret`, `state` (`ok`, `pending`, `failed`, `not_applicable` when cert-manager does not
+issue the console certificate, `unknown` when the check cannot read it) and its `reason`,
+`message` and `since`.
+
+For the check the chart lets the `runr-api` ServiceAccount `get` the console's Certificate and
+`list` the CertificateRequests in the release namespace (the Role `runr-api-role`), only when the
+cluster serves `cert-manager.io/v1`. cert-manager's chart grants the same reads to the namespace's
+`admin`, `edit` and `view` roles, so whoever may install the chart holds them already. The
+ClusterIssuer itself is not read (a cluster-wide permission): a missing one is read from the
+CertificateRequest. `ingress.tls.certificateCheck: false` leaves the permissions and the warning out.
 
 ## Database, Redis and mail
 
@@ -466,9 +509,10 @@ the user's permissions allow; on small screens the menus collapse into a drawer.
 Horizon (`https://<domain>/horizon`) shows the queues of the whole installation — running, failed
 and completed jobs of every organization — and retries or deletes jobs. It is open to the people
 who operate the installation: platform administrators (`users.is_admin`, multi-tenant) and, in the
-single-tenant edition, the organization's Owners. The console signs in with API tokens, which a
-browser does not send to `/horizon`, so such an administrator opens the dashboard with a
-single-use sign-in link:
+single-tenant edition, the holders of `platform.manage` — the Owners, and custom roles that
+include it ([permissions.md](permissions.md#single-tenant-installs-platformmanage)). The console
+signs in with API tokens, which a browser does not send to `/horizon`, so such an administrator
+opens the dashboard with a single-use sign-in link:
 
 | From | Command |
 | --- | --- |
@@ -477,8 +521,8 @@ single-use sign-in link:
 
 Opening the link signs the browser in to Horizon: the link works once and only until it expires
 (stored as a hash in the cache), and the session that it starts is checked again on every Horizon
-request — removing the administrator flag or the Owner role, or disabling the account, ends the
-access at once. The session cookie is sent over HTTPS only. `POST /api/horizon/link` is recorded
+request — removing the administrator flag, the Owner role or `platform.manage`, or disabling the
+account, ends the access at once. The session cookie is sent over HTTPS only. `POST /api/horizon/link` is recorded
 in the audit log as `horizon.link.create`; the link itself is never logged.
 
 ## Network policies
@@ -627,7 +671,7 @@ The chart generates `APP_KEY`, `REVERB_APP_SECRET` and the administrator's passw
    `api.image.tag` and `ui.image.tag` default to the chart's `appVersion`.
 
    ```sh
-   helm upgrade --install runr brf-tech/runr --version 0.6.7 \
+   helm upgrade --install runr brf-tech/runr --version 0.6.8 \
      --namespace runr --create-namespace \
      -f values-production.yaml
    ```

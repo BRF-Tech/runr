@@ -54,6 +54,8 @@ _gp_agent_image="${GLOBAL_AGENT_IMAGE-${REGISTRY}/agent:e2e-global}"
 global_projects_create_target() {
   local cluster="${1}-global" config status=0
   local version="${k8s_ver:-${K8S_VERSION:-1.32.0}}"
+  local etcd_patch
+  etcd_patch=$(kind_etcd_patch)
 
   echo ""
   echo "Creating Kind cluster ${cluster} (1 node, services 10.98.0.0/16): the second region..."
@@ -79,6 +81,7 @@ nodes:
             - "127.0.0.1"
             - "host.docker.internal"
             - "${kube_server_addr:-127.0.0.1}"
+${etcd_patch}
 KINDEOF
   _gp_target_cluster="$cluster"
   kind create cluster --name "$cluster" \
