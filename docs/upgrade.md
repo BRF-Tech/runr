@@ -87,6 +87,22 @@ edit projects, deploy or change regions in that time: the previous version canno
 migration has just encrypted, shows env vars as empty and would save that. Its region status
 checks fail in that window and the new version's next check reports the region again.
 
+## 0.6.12 → 0.6.13
+
+0.6.13 is a dependency release of 0.6.12, made by the dependency test bot: it moves one dependency
+of a region and nothing else. There is no database migration, the images keep their names, and
+nothing has to be set ([Procedure](#procedure)). The CLI, the Terraform provider and runr.sh stay
+those of 0.6.12.
+
+- **Image-upload Go modules moved** (minor and patch updates): github.com/klauspost/compress v1.19.2
+  → v1.20.2, image-upload image 1.1.1 → 1.1.2 (its own version: release-images.yml builds it). The
+  release's images carry them.
+
+The bot ran these suites on this release before it was tagged: `runtime/test`, `runtime/ci.sh
+test-images`, `runtime/ci.sh test-org-transfer`, `ci/deps-check.sh go:runtime/image-upload`,
+`ci/deps-check.sh image:runtime/image-upload/Dockerfile`
+([run](https://github.com/BRF-Tech/runr/actions/runs/43261944431)).
+
 ## 0.6.11 → 0.6.12
 
 0.6.12 carries two fixes of RunR's release tooling and changes nothing an installation runs. There

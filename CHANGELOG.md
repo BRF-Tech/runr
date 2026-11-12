@@ -8,6 +8,21 @@ did not change says so.
 
 ## [Unreleased]
 
+## [0.6.13] - 2026-11-12
+
+### Upgrade notes
+
+- **A dependency release of 0.6.12: upgrading needs no step.** There is no database migration, the
+  images keep their names and nothing has to be set; only the dependency below changes. The CLI, the
+  Terraform provider and runr.sh stay those of 0.6.12. See
+  [docs/upgrade.md](docs/upgrade.md#0612--0613).
+
+### Changed
+
+- **Image-upload Go modules moved** (minor and patch updates): github.com/klauspost/compress v1.19.2
+  → v1.20.2, image-upload image 1.1.1 → 1.1.2 (its own version: release-images.yml builds it). The
+  release's images carry them.
+
 ## [0.6.12] - 2026-11-12
 
 ### Upgrade notes
@@ -4475,7 +4490,8 @@ Initial tagged release.
 - API gateways with routes, in-app notifications and support tickets.
 - Helm chart with a single-tenant / multi-tenant edition, an install form (`values.schema.json`), generated secrets and a Traefik ingress; a Docker Compose setup for development.
 
-[Unreleased]: https://github.com/brf-tech/runr/compare/v0.6.12...main
+[Unreleased]: https://github.com/brf-tech/runr/compare/v0.6.13...main
+[0.6.13]: https://github.com/brf-tech/runr/releases/tag/v0.6.13
 [0.6.12]: https://github.com/brf-tech/runr/releases/tag/v0.6.12
 [0.6.11]: https://github.com/brf-tech/runr/releases/tag/v0.6.11
 [0.6.10]: https://github.com/brf-tech/runr/releases/tag/v0.6.10

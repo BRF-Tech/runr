@@ -1,8 +1,8 @@
 # Helm values reference
 
-Every value of the Helm chart `runr` 0.6.12 from BRF's public Helm repository, grouped by top-level
+Every value of the Helm chart `runr` 0.6.13 from BRF's public Helm repository, grouped by top-level
 key, with its default from the chart's `values.yaml` and what the templates do with it.
-`helm show values brf-tech/runr --version 0.6.12` prints the file with its comments. How these
+`helm show values brf-tech/runr --version 0.6.13` prints the file with its comments. How these
 values fit together in a production install is described in [Installing RunR in
 production](install.md).
 
@@ -695,7 +695,7 @@ Empty values keep the application defaults.
 
 | Key | Default | What it does |
 | --- | --- | --- |
-| `images.uploadImage` | `""` | Image of the upload receiver the regions pull; empty: `ghcr.io/brf-tech/runr/image-upload:1.1.1` (the image of the transfer agent too) |
+| `images.uploadImage` | `""` | Image of the upload receiver the regions pull; empty: `ghcr.io/brf-tech/runr/image-upload:1.1.2` (the image of the transfer agent too) |
 | `images.quotaGb` | `""` | Storage of uploaded images per organization over every region; empty: 50, `0` = unlimited |
 | `images.maxUploadGb` | `""` | Largest file of one upload; empty: 20 |
 | `images.uploadTtlHours` | `""` | An upload not completed within this time is aborted; empty: 24 |
@@ -765,7 +765,7 @@ settings (`RUNR_ORG_TRANSFER_*`) are in [org-export.md](org-export.md).
 
 | Key | Default | What it does |
 | --- | --- | --- |
-| `orgTransfer.transferImage` | `""` | Image of the transfer pods the regions pull (binding data, images); empty: `ghcr.io/brf-tech/runr/image-upload:1.1.1` |
+| `orgTransfer.transferImage` | `""` | Image of the transfer pods the regions pull (binding data, images); empty: `ghcr.io/brf-tech/runr/image-upload:1.1.2` |
 | `orgTransfer.maxPackageGb` | `""` | Largest package an import takes; empty: 50 |
 | `orgTransfer.retentionHours` | `""` | Packages are removed after this many hours; empty: 168 |
 | `orgTransfer.podDiskGb` | `""` | emptyDir of a transfer pod (one binding's dump or one image); empty: 20 |

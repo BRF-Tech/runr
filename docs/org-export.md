@@ -485,7 +485,7 @@ S3 credentials from `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` — never from
 | `max_running_per_organization` | `RUNR_ORG_TRANSFER_MAX_PER_ORG` | 1 | running exports (and imports) per organization |
 | `max_running` | `RUNR_ORG_TRANSFER_MAX_RUNNING` | 4 | running transfers per installation |
 | `job_timeout` | `RUNR_ORG_TRANSFER_JOB_TIMEOUT` | 4 h | the jobs' timeout; they run on the long queue (connection `redis-long`, Horizon's `supervisor-long`), whose limits follow it: the supervisor's timeout 60 s above it, the queue's `retry_after` 300 s above it |
-| `transfer_image` | `RUNR_TRANSFER_IMAGE` | `ghcr.io/brf-tech/runr/image-upload:1.1.1` | the transfer agent; regions without internet pull it through their registry mirror |
+| `transfer_image` | `RUNR_TRANSFER_IMAGE` | `ghcr.io/brf-tech/runr/image-upload:1.1.2` | the transfer agent; regions without internet pull it through their registry mirror |
 | `transfer_timeout` | `RUNR_ORG_TRANSFER_POD_TIMEOUT` | 3 h | one transfer pod |
 | `transfer_chunk_bytes` | `RUNR_ORG_TRANSFER_POD_CHUNK_BYTES` | 16 MiB | bytes per request between the API and a transfer pod |
 | `transfer_disk_gb` | `RUNR_ORG_TRANSFER_POD_DISK_GB` | 20 | a transfer pod's emptyDir (raise it for larger data) |

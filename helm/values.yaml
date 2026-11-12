@@ -513,7 +513,7 @@ globalDns:
 # Container images (docker save / OCI layout tars) and .wasm modules uploaded through the console,
 # the API or `runr images push` into a region's internal registry. Empty values keep the defaults.
 images:
-  uploadImage: ""              # receiver image the regions pull (default ghcr.io/brf-tech/runr/image-upload:1.1.1, ci.sh image-upload)
+  uploadImage: ""              # receiver image the regions pull (default ghcr.io/brf-tech/runr/image-upload:1.1.2, ci.sh image-upload)
   quotaGb: ""                  # storage of uploaded images per organization over every region (default 50, 0 = unlimited)
   maxUploadGb: ""              # largest file of one upload (default 20)
   uploadTtlHours: ""           # an upload not completed within this time is aborted (default 24)
@@ -565,7 +565,7 @@ apiProduct:
 # Packages live on the API volume (api.storage.size / storage.application): size it for what you
 # export, or write exports to an object binding / S3. Empty values keep the defaults.
 orgTransfer:
-  transferImage: ""            # transfer agent the regions pull for binding data and images (default ghcr.io/brf-tech/runr/image-upload:1.1.1)
+  transferImage: ""            # transfer agent the regions pull for binding data and images (default ghcr.io/brf-tech/runr/image-upload:1.1.2)
   maxPackageGb: ""             # largest package an import takes (default 50)
   retentionHours: ""           # packages are removed after (default 168)
   podDiskGb: ""                # emptyDir of a transfer pod: one binding's dump or one image (default 20)
