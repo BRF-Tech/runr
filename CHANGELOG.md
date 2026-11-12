@@ -8,6 +8,23 @@ did not change says so.
 
 ## [Unreleased]
 
+## [0.6.12] - 2026-11-12
+
+### Upgrade notes
+
+- **Nothing an installation runs changes: upgrading from 0.6.11 changes the version only.** No
+  migration, no new value; the images of 0.6.11 are built again at 0.6.12 and the region Job moves
+  the agent and the event gateway to 0.6.12 as in every release
+  ([0.6.11 → 0.6.12 in upgrade.md](docs/upgrade.md#0611--0612)).
+- **Back to 0.6.11 is a `helm rollback`**; nothing runs on the database.
+
+### Fixed
+
+- **The GitHub Action `brf-tech/runr/actions/deploy` runs where actions must be pinned to a commit.**
+  Its CLI cache step used `actions/cache@v4`, so an organization that requires every action pinned to
+  a full commit SHA refused the deploy action even when it was pinned itself. The step uses
+  `actions/cache` by its commit now (v6.1.0, the same inputs and outputs).
+
 ## [0.6.11] - 2026-11-12
 
 ### Upgrade notes
@@ -4458,7 +4475,8 @@ Initial tagged release.
 - API gateways with routes, in-app notifications and support tickets.
 - Helm chart with a single-tenant / multi-tenant edition, an install form (`values.schema.json`), generated secrets and a Traefik ingress; a Docker Compose setup for development.
 
-[Unreleased]: https://github.com/brf-tech/runr/compare/v0.6.11...main
+[Unreleased]: https://github.com/brf-tech/runr/compare/v0.6.12...main
+[0.6.12]: https://github.com/brf-tech/runr/releases/tag/v0.6.12
 [0.6.11]: https://github.com/brf-tech/runr/releases/tag/v0.6.11
 [0.6.10]: https://github.com/brf-tech/runr/releases/tag/v0.6.10
 [0.6.9]: https://github.com/brf-tech/runr/releases/tag/v0.6.9

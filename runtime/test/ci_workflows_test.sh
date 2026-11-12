@@ -293,6 +293,13 @@ has "$(cat "$deps")" 'bash ci/deps-release.sh publish "$RELEASE_DIR" $dry' "deps
 [ "$(grep -cF 'ORIGIN_REMOTE: ${{ vars.GITLAB_RUNR_REMOTE }}' "$deps")" = 1 ] || fail "deps-test.yml does not take the origin from vars.GITLAB_RUNR_REMOTE"
 grep -nE 'ORIGIN_REMOTE' "$deps" | grep -vE 'ORIGIN_REMOTE: \$\{\{ vars\.GITLAB_RUNR_REMOTE \}\}$|"\$ORIGIN_REMOTE"' && fail "deps-test.yml sets the origin otherwise"
 # (a real host has a dot; HOST, GROUP and ${host} are the placeholders of the docs and the check)
+# the composite actions too: an organization that requires actions pinned to a full commit SHA refuses
+# a pinned brf-tech/runr/actions/deploy whose own steps use an action by its tag
+for act in "$root"/actions/*/action.yml; do
+  bad="$(grep -E '^ *(- )?uses: ' "$act" | grep -vE 'uses: [A-Za-z0-9_.-]+/[A-Za-z0-9_./-]+@[0-9a-f]{40} # v?[0-9]' || true)"
+  [ -z "$bad" ] || fail "${act#"$root"/}: actions not pinned to a full commit SHA with its version: ${bad}"
+done
+echo "ok - actions/*/action.yml: every action pinned to a full commit SHA with its version"
 urls="$(grep -rnE 'git@[a-z0-9-]+\.[a-z0-9.-]+:[a-z0-9._-]+/|ssh://git@[a-z0-9-]+\.[a-z]|gitlab\.com[:/][a-z0-9]|brftech/' \
   "$wfdir" "$root/ci" "$root/docs/development.md" || true)"
 [ -z "$urls" ] || fail "an origin URL in this repository's files (the variable GITLAB_RUNR_REMOTE holds it): ${urls}"

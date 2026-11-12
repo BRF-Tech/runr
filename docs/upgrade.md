@@ -87,6 +87,26 @@ edit projects, deploy or change regions in that time: the previous version canno
 migration has just encrypted, shows env vars as empty and would save that. Its region status
 checks fail in that window and the new version's next check reports the region again.
 
+## 0.6.11 → 0.6.12
+
+0.6.12 carries two fixes of RunR's release tooling and changes nothing an installation runs. There
+is no database migration, the images keep their names, and nothing has to be set
+([Procedure](#procedure)); the region Job moves the region agent and the event gateway to 0.6.12
+([Order of operations](#order-of-operations)).
+
+- **The GitHub Action** `brf-tech/runr/actions/deploy` uses `actions/cache` by its commit (v6.1.0,
+  the same inputs and outputs as `actions/cache@v4`), so it runs in an organization that requires
+  every action pinned to a full commit SHA ([github-action.md](github-action.md)).
+- **The dependency test bot** moves the version of one of RunR's own images in its source too
+  (image-upload's `var version`), so its update of image-upload's `github.com/klauspost/compress`
+  (GO-2026-6865) can be released; 0.6.11 carries that update for the queue consumer.
+
+### Back to 0.6.11
+
+A `helm rollback` (`helm history runr -n runr` lists the revisions); nothing runs on the database,
+and the region Job of the rollback moves the region agent and the event gateway back to 0.6.11.
+**Never uninstall** to go back.
+
 ## 0.6.10 → 0.6.11
 
 0.6.11 is a dependency release of 0.6.10, made by the dependency test bot: it moves one dependency

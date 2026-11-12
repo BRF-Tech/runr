@@ -412,6 +412,13 @@ own_version_bump() {
     fi
     if [ "$count" -gt 0 ]; then total=$((total + count)); echo "edit ${file}: ${image} ${old} → ${new}" >> "$report/edits.log"; fi
   done
+  # the binary's own version where its source names it (image-upload's `var version = "1.1.1"`, which
+  # a build without the Dockerfile's -ldflags reports; runtime/test/release_images_test.sh holds it
+  # equal to the build's default)
+  for file in $(git -C "$ROOT" ls-files -- "runtime/${image}/*.go"); do
+    count=$(( $(replace_pin "$file" "var version = \"${old}\"" "var version = \"${new}\"") ))
+    if [ "$count" -gt 0 ]; then total=$((total + count)); echo "edit ${file}: ${image} ${old} → ${new}" >> "$report/edits.log"; fi
+  done
   if ! bash "$ROOT/runtime/ci.sh" release-images 2>/dev/null | grep -qxF "ghcr.io/brf-tech/runr/${image}:${new}"; then
     reasons+=("after moving ${image} ${old} → ${new}, runtime/ci.sh release-images does not list ghcr.io/brf-tech/runr/${image}:${new}")
   fi

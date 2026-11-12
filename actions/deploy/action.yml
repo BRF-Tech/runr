@@ -97,7 +97,7 @@ runs:
 
     - name: Cache the runr CLI
       id: cache
-      uses: actions/cache@v4
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
         path: ${{ steps.resolve.outputs.dir }}
         key: runr-cli-${{ steps.resolve.outputs.tag }}-${{ steps.resolve.outputs.os }}-${{ steps.resolve.outputs.arch }}
