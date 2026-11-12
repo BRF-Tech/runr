@@ -80,7 +80,7 @@
     "applicationCategory": "DeveloperApplication",
     "applicationSubCategory": "Serverless platform",
     "operatingSystem": "Kubernetes",
-    "softwareVersion": "0.6.8",
+    "softwareVersion": "0.6.9",
     "license": "https://opensource.org/licenses/MIT",
     "url": "https://runr.sh",
     "downloadUrl": "https://runr.sh/dl/",
@@ -1098,9 +1098,9 @@
         <li data-tr="Warm pool, pause / resume, TTL, kota ve kullanım ölçümü" data-en="Warm pools, pause / resume, TTL, quotas and usage metering">Warm pools, pause / resume, TTL, quotas and usage metering</li>
         <li data-tr="Python (<code>runr-sandbox</code>) ve TypeScript (<code>@runr/sandbox</code>) SDK'ları" data-en="Python (<code>runr-sandbox</code>) and TypeScript (<code>@runr/sandbox</code>) SDKs">Python (<code>runr-sandbox</code>) and TypeScript (<code>@runr/sandbox</code>) SDKs</li>
       </ul>
-      <span class="perf-chip" id="perf-sandbox-api" data-measured="v0.6.6 v0.6.7"
-            data-tr="⚡ Oluşturmadan ilk komuta: sıcak havuzdan 0,31–0,52 sn · soğuk 2,33–3,43 sn"
-            data-en="⚡ Create to first command: 0.31–0.52 s from a warm pool · 2.33–3.43 s cold">⚡ Create to first command: 0.31–0.52 s from a warm pool · 2.33–3.43 s cold</span>
+      <span class="perf-chip" id="perf-sandbox-api" data-measured="v0.6.8"
+            data-tr="⚡ Oluşturmadan ilk komuta: sıcak havuzdan 0,25–0,43 sn · soğuk 1,89–3,57 sn"
+            data-en="⚡ Create to first command: 0.25–0.43 s from a warm pool · 1.89–3.57 s cold">⚡ Create to first command: 0.25–0.43 s from a warm pool · 1.89–3.57 s cold</span>
     </div>
 
   </div>
@@ -1149,10 +1149,10 @@
     </figure>
   </div>
   <!-- Measured value in the Sandbox API card (#perf-sandbox-api); this note gives the conditions -->
-  <p class="faint perf-note" id="perf-sandbox-api-note" data-measured="v0.6.6 v0.6.7" style="font-size:11px;margin-top:14px;text-align:center"
-     data-tr="RunR ölçümü: v0.6.7, 2026-11-07, test VM'inde tek düğümlü k3s v1.34.11 (8 vCPU Broadwell, iç içe KVM, 15,6 GiB), Knative 1.21.3, gVisor 20260921.0, Kata Containers 4.3.1; Sandbox API (<code>POST /api/sandboxes</code>, VM içinden çağrıldı), Python 3.15, 500m / 512 MiB, imaj düğümde; ilk komut dönene kadar, medyan (p90), sınıf başına n=10 — soğuk: gVisor 2,33 sn (2,67); Kata Cloud Hypervisor 3,09 sn (3,51) ve Kata Firecracker 3,43 sn (4,04), aynı yöntemle v0.6.6 ile 2026-11-06'da ölçüldü (v0.6.7'de gürültü payı içinde aynı); 2'lik sıcak havuzdan: Kata Firecracker 0,31 sn (0,35), Kata Cloud Hypervisor 0,42 sn (0,47), gVisor 0,52 sn (0,57). Çalışan bir sandbox'ta bir komut: 0,18–0,40 sn."
-     data-en="RunR measurement: v0.6.7, 2026-11-07, single-node k3s v1.34.11 on a test VM (8 vCPU Broadwell, nested KVM, 15.6 GiB), Knative 1.21.3, gVisor 20260921.0, Kata Containers 4.3.1; Sandbox API (<code>POST /api/sandboxes</code>, called from inside the VM), Python 3.15, 500m / 512 MiB, image on the node; timed until the first command returns, median (p90), n=10 per class — cold: gVisor 2.33 s (2.67); Kata Cloud Hypervisor 3.09 s (3.51) and Kata Firecracker 3.43 s (4.04), measured the same way with v0.6.6 on 2026-11-06 (unchanged within noise on v0.6.7); from a warm pool of 2: Kata Firecracker 0.31 s (0.35), Kata Cloud Hypervisor 0.42 s (0.47), gVisor 0.52 s (0.57). A command in a running sandbox: 0.18–0.40 s.">
-     RunR measurement: v0.6.7, 2026-11-07, single-node k3s v1.34.11 on a test VM (8 vCPU Broadwell, nested KVM, 15.6 GiB), Knative 1.21.3, gVisor 20260921.0, Kata Containers 4.3.1; Sandbox API (<code>POST /api/sandboxes</code>, called from inside the VM), Python 3.15, 500m / 512 MiB, image on the node; timed until the first command returns, median (p90), n=10 per class — cold: gVisor 2.33 s (2.67); Kata Cloud Hypervisor 3.09 s (3.51) and Kata Firecracker 3.43 s (4.04), measured the same way with v0.6.6 on 2026-11-06 (unchanged within noise on v0.6.7); from a warm pool of 2: Kata Firecracker 0.31 s (0.35), Kata Cloud Hypervisor 0.42 s (0.47), gVisor 0.52 s (0.57). A command in a running sandbox: 0.18–0.40 s.</p>
+  <p class="faint perf-note" id="perf-sandbox-api-note" data-measured="v0.6.8" style="font-size:11px;margin-top:14px;text-align:center"
+     data-tr="RunR ölçümü: v0.6.8, 2026-11-08, test VM'inde tek düğümlü k3s v1.34.11 (8 vCPU Broadwell, iç içe KVM, 15,6 GiB), Knative 1.21.3, gVisor 20260921.0, Kata Containers 4.3.1; Sandbox API (<code>POST /api/sandboxes</code>, VM içinden çağrıldı), Python 3.15, 500m / 512 MiB, imaj düğümde; ilk komut dönene kadar, medyan (p90), sınıf başına n=10 — soğuk: gVisor 1,89 sn (2,61), Kata Cloud Hypervisor 3,11 sn (3,43), Kata Firecracker 3,57 sn (3,84); 2'lik sıcak havuzdan: Kata Firecracker 0,25 sn (0,30), Kata Cloud Hypervisor 0,35 sn (0,40), gVisor 0,43 sn (0,52). Çalışan bir sandbox'ta bir komut: 0,10–0,31 sn."
+     data-en="RunR measurement: v0.6.8, 2026-11-08, single-node k3s v1.34.11 on a test VM (8 vCPU Broadwell, nested KVM, 15.6 GiB), Knative 1.21.3, gVisor 20260921.0, Kata Containers 4.3.1; Sandbox API (<code>POST /api/sandboxes</code>, called from inside the VM), Python 3.15, 500m / 512 MiB, image on the node; timed until the first command returns, median (p90), n=10 per class — cold: gVisor 1.89 s (2.61), Kata Cloud Hypervisor 3.11 s (3.43), Kata Firecracker 3.57 s (3.84); from a warm pool of 2: Kata Firecracker 0.25 s (0.30), Kata Cloud Hypervisor 0.35 s (0.40), gVisor 0.43 s (0.52). A command in a running sandbox: 0.10–0.31 s.">
+     RunR measurement: v0.6.8, 2026-11-08, single-node k3s v1.34.11 on a test VM (8 vCPU Broadwell, nested KVM, 15.6 GiB), Knative 1.21.3, gVisor 20260921.0, Kata Containers 4.3.1; Sandbox API (<code>POST /api/sandboxes</code>, called from inside the VM), Python 3.15, 500m / 512 MiB, image on the node; timed until the first command returns, median (p90), n=10 per class — cold: gVisor 1.89 s (2.61), Kata Cloud Hypervisor 3.11 s (3.43), Kata Firecracker 3.57 s (3.84); from a warm pool of 2: Kata Firecracker 0.25 s (0.30), Kata Cloud Hypervisor 0.35 s (0.40), gVisor 0.43 s (0.52). A command in a running sandbox: 0.10–0.31 s.</p>
 </section>
 
 <!-- ═══ WHY RUNR ═══ -->
@@ -2025,7 +2025,7 @@ helm upgrade --install runr brf-tech/runr \
       <p data-tr="Tek makinede üretim kurulumu: <code>compose/build.sh</code> imajları sürüm etiketinden derler; internetsiz (air-gapped) sunucuya <code>runr-images.tar</code> olarak taşınır."
          data-en="A production install on one machine: <code>compose/build.sh</code> builds the images from the release tag; air-gapped hosts get them as <code>runr-images.tar</code>.">
          A production install on one machine: <code>compose/build.sh</code> builds the images from the release tag; air-gapped hosts get them as <code>runr-images.tar</code>.</p>
-      <pre data-snippet="compose"><code>git clone -b v0.6.8 \
+      <pre data-snippet="compose"><code>git clone -b v0.6.9 \
   https://github.com/BRF-Tech/runr.git
 cd runr &amp;&amp; bash compose/build.sh
 cd compose &amp;&amp; cp .env.example .env
@@ -2074,7 +2074,7 @@ runr deploy</code></pre>
          data-en="Deploy on every push and run preview environments for pull / merge requests: the ready-made Action on GitHub, a job that installs the CLI and runs <code>runr deploy</code> on GitLab CI/CD.">
          Deploy on every push and run preview environments for pull / merge requests: the ready-made Action on GitHub, a job that installs the CLI and runs <code>runr deploy</code> on GitLab CI/CD.</p>
       <pre data-snippet="ci"><code># GitHub Actions: secrets RUNR_API_URL, RUNR_TOKEN
-- uses: brf-tech/runr/actions/deploy@v0.6.8
+- uses: brf-tech/runr/actions/deploy@v0.6.9
   with:
     api-url: ${{ secrets.RUNR_API_URL }}
     token: ${{ secrets.RUNR_TOKEN }}
@@ -2300,7 +2300,7 @@ deploy:
     </div>
     <div class="footer-bottom">
       <span>© 2026 BRF Teknoloji and RunR contributors. <span data-tr="MIT lisansıyla yayımlanır." data-en="Released under the MIT License.">Released under the MIT License.</span></span>
-      <span class="mono">runr.sh · <a href="/dl/" data-umami-event="download-click" data-umami-event-place="footer-version">v0.6.8</a></span>
+      <span class="mono">runr.sh · <a href="/dl/" data-umami-event="download-click" data-umami-event-place="footer-version">v0.6.9</a></span>
     </div>
   </div>
 </footer>
