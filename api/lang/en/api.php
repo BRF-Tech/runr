@@ -123,6 +123,9 @@ return [
         'owner_assigned_body' => 'You pay the bills of :name from now on, including the bill of the current month when it closes.',
         'stopped_by_platform' => 'This project was stopped by the platform: only a platform administrator can resume it.',
         'resume_version_gone' => 'The version that ran before the stop no longer exists: deploy a version to run the project again.',
+        // A resumed project is admitted again (StoppedCapacity): its stop gave its capacity back
+        'capacity_readmission' => 'Region :region has no room for this project again: its stop gave its capacity back, and other projects use it now. :problems Deploy once capacity is free, or ask the region\'s provider to add nodes.',
+        'quota_readmission' => 'The organization\'s quota on region :region has no room for this project again: its stop gave its share back, and other projects use it now. :message',
         // Scale (docs/scaling.md): min_scale <= max_scale, the timed warmer (config.scale_schedule)
         'min_above_max' => 'The minimum scale (:min) may not be above the maximum scale (:max).',
         'scale_schedule_too_many' => 'The timed warmer has at most :max rows.',
@@ -138,6 +141,15 @@ return [
         'memory' => 'Memory',
         'always_on_exceeded' => ':resource limit exceeded on the always-on budget (no overcommit): this needs :needed, :available of the region capacity :total are free. Always-on workloads, Kata pod overhead, queue consumers, sandboxes and model services reserve real capacity.',
         'faas_exceeded' => ':resource limit exceeded on the FaaS overcommit budget: this needs :needed, :available of :total are free (region capacity :capacity × :factor, minus :reserved always-on).',
+    ],
+
+    // The capacity alarm on a region with its stopped projects back (ResourceThresholdService)
+    'capacity_alarm' => [
+        'budget_always_on' => 'always-on budget',
+        'budget_faas' => 'FaaS overcommit budget',
+        'more' => 'and :count more',
+        'with_stopped' => 'If its :count stopped projects (:stopped of :resource in total) were resumed at the same time, the region\'s :budget would be :percentage % full (threshold :threshold %). Add nodes with at least :add of :resource to stay under :threshold %. Stopped projects: :projects.',
+        'with_stopped_exceeded' => 'If its :count stopped projects (:stopped of :resource in total) were resumed at the same time, the region\'s :budget would be :percentage % full: :exceeded more than it has. Add nodes with at least :add of :resource to stay under :threshold %. Stopped projects: :projects.',
     ],
 
     // ── Project custom domains ──

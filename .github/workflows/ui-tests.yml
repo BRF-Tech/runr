@@ -1,0 +1,124 @@
+# The console's checks: ESLint without warnings, Vitest with the coverage floor and the build.
+# Called by ci.yml (this checkout) and deps-test.yml (a dependency bump, from the bundle its bump
+# job made). Each step runs whichever of the others fails, and the outcome is what Vitest's JSON
+# report says, not only its exit status (ci/ui-results.sh): every test passed, no test file failed
+# to load, and tests/composables/tutorialSteps.spec.js ran and passed (CLAUDE.md: the in-app
+# tutorial), with the lint and the build. `result-name` uploads the outcome as an artifact of that
+# name for the caller's report.
+name: UI tests
+
+on:
+  workflow_call:
+    inputs:
+      tree-artifact:
+        description: 'An artifact with repo.bundle to test instead of this checkout (deps-test.yml)'
+        type: string
+        default: ''
+      ref:
+        description: 'The ref of the bundle to test'
+        type: string
+        default: ''
+      result-name:
+        description: 'Name of the result artifact (empty: none)'
+        type: string
+        default: ''
+
+permissions:
+  contents: read
+
+jobs:
+  ui:
+    name: UI lint + unit tests + build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    defaults:
+      run:
+        working-directory: vue
+    env:
+      NODE_OPTIONS: --max-old-space-size=4096
+    steps:
+      - if: inputs.tree-artifact == ''
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - if: inputs.tree-artifact != ''
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: ${{ inputs.tree-artifact }}
+          path: ${{ runner.temp }}/tree
+      - name: The bundle's tree
+        if: inputs.tree-artifact != ''
+        working-directory: .
+        env:
+          REF: ${{ inputs.ref }}
+        run: |
+          git clone -q --no-checkout "$RUNNER_TEMP/tree/repo.bundle" .
+          git checkout -q --detach "refs/remotes/origin/${REF}"
+          git log -1 --format='%H %s'
+      # the npm cache of this repository's lockfile (a bump's tree saves none)
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: ${{ inputs.tree-artifact == '' && 'npm' || '' }}
+          cache-dependency-path: vue/package-lock.json
+      # each step's output also goes to a log of its own, for the result's tail
+      - id: npm
+        run: |
+          set -o pipefail
+          mkdir -p "$RUNNER_TEMP/ui-logs"
+          npm ci --no-audit --no-fund 2>&1 | tee "$RUNNER_TEMP/ui-logs/npm.log"
+      - id: lint
+        if: ${{ !cancelled() && steps.npm.outcome == 'success' }}
+        run: |
+          set -o pipefail
+          npm run lint 2>&1 | tee "$RUNNER_TEMP/ui-logs/lint.log"
+      # coverage.thresholds of vitest.config.js: fails below the floor. The JSON report is the
+      # result's (the github-actions reporter: the annotations Vitest makes by default on Actions)
+      - id: vitest
+        if: ${{ !cancelled() && steps.npm.outcome == 'success' }}
+        run: |
+          set -o pipefail
+          npm run test:coverage -- --reporter=default --reporter=github-actions --reporter=json --outputFile.json="$RUNNER_TEMP/vitest.json" 2>&1 \
+            | tee "$RUNNER_TEMP/ui-logs/vitest.log"
+      - id: build
+        if: ${{ !cancelled() && steps.npm.outcome == 'success' }}
+        run: |
+          set -o pipefail
+          npm run build 2>&1 | tee "$RUNNER_TEMP/ui-logs/build.log"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: ${{ !cancelled() }}
+        with:
+          name: ${{ inputs.result-name != '' && format('ui-coverage-{0}', inputs.result-name) || 'ui-coverage' }}
+          path: vue/coverage/
+          if-no-files-found: ignore
+          retention-days: 7
+      # the outcome: also when a step failed or the run was cancelled; it fails the job when the
+      # report counts a failure the steps' exit status did not (the tutorial's spec did not run)
+      - name: Result
+        if: always()
+        working-directory: .
+        env:
+          JOB_STATUS: ${{ job.status }}
+          NPM: ${{ steps.npm.outcome }}
+          LINT: ${{ steps.lint.outcome }}
+          VITEST: ${{ steps.vitest.outcome }}
+          BUILD: ${{ steps.build.outcome }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/result"
+          echo "$JOB_STATUS" > "$RUNNER_TEMP/result/status"
+          echo "npm run lint, npm run test:coverage (Vitest), npm run build" > "$RUNNER_TEMP/result/command"
+          # (Vitest's step last: its log's end is the tail when no step failed)
+          logs="$RUNNER_TEMP/ui-logs"
+          rc=0
+          bash ci/ui-results.sh vitest "$RUNNER_TEMP/vitest.json" "$RUNNER_TEMP/result" \
+            "npm ci=${NPM}=${logs}/npm.log" "npm run lint=${LINT}=${logs}/lint.log" \
+            "npm run build=${BUILD}=${logs}/build.log" "npm run test:coverage=${VITEST}=${logs}/vitest.log" || rc=$?
+          # a reading that did not finish counts as a failure
+          [ -s "$RUNNER_TEMP/result/failed" ] || echo 1 > "$RUNNER_TEMP/result/failed"
+          exit "$rc"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always() && inputs.result-name != ''
+        with:
+          name: ${{ inputs.result-name }}
+          path: ${{ runner.temp }}/result/
+          retention-days: 7

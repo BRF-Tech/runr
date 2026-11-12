@@ -123,6 +123,20 @@ class ZotManifests
     public const GHCR_MANIFEST_CHECK_INTERVAL = '1h';
 
     /**
+     * Retries of the ghcr.io upstream (maxRetries, retryDelay; every Zot release knows both, and
+     * Zot wants retryDelay with maxRetries). With maxRetries a failed on-demand fetch goes on in
+     * the background, so the image still reaches the registry once the request that asked has
+     * failed; on the pinned Zot the next request for it (a build's retry) waits for that fetch
+     * instead of starting over. A Zot of 2.1.3 or later also retries each request to ghcr.io that
+     * many times, retryDelay apart (the pinned one retries 5 times without the key). Docker Hub's
+     * entry has none: a Zot older than SYNC_ERRORS_SURFACE_SINCE asks it for every repository, a
+     * build's push included.
+     */
+    public const GHCR_MAX_RETRIES = 5;
+
+    public const GHCR_RETRY_DELAY = '2s';
+
+    /**
      * First Zot release that knows manifestCheckInterval. Older ones refuse to start on the
      * unknown key ("has invalid keys: manifestcheckinterval"), so it is only written for them.
      */
@@ -154,7 +168,7 @@ class ZotManifests
     public const DOCKER_COMPAT = 'docker2s2';
 
     /** Keys RunR owns in its sync registry entries; everything else in an entry is left alone. */
-    private const OWNED_REGISTRY_KEYS = ['urls', 'onDemand', 'tlsVerify', 'content', 'manifestCheckInterval'];
+    private const OWNED_REGISTRY_KEYS = ['urls', 'onDemand', 'tlsVerify', 'content', 'maxRetries', 'retryDelay', 'manifestCheckInterval'];
 
     public static function mirrorConfig(): array
     {
@@ -173,7 +187,8 @@ class ZotManifests
 
     /**
      * On-demand upstreams of the pull-through cache, in lookup order:
-     *  - ghcr.io under {zot}/ghcr.io/… — RunR's runtime and build base images (Kaniko FROM lines);
+     *  - ghcr.io under {zot}/ghcr.io/… — RunR's runtime and build base images (Kaniko FROM lines),
+     *    with retries (GHCR_MAX_RETRIES);
      *  - Docker Hub for everything else ({zot}/library/…, KnativeRegion::registryImageRef()).
      * ghcr.io comes first: its content only matches ghcr.io/** so other repositories fall through
      * to Docker Hub, while Docker Hub's content would also be asked for ghcr.io/… paths.
@@ -187,6 +202,8 @@ class ZotManifests
             'onDemand' => true,
             'tlsVerify' => true,
             'content' => [['prefix' => '**', 'destination' => '/'.self::GHCR_NAMESPACE]],
+            'maxRetries' => self::GHCR_MAX_RETRIES,
+            'retryDelay' => self::GHCR_RETRY_DELAY,
         ];
         if ($manifestCheckInterval) {
             $ghcr['manifestCheckInterval'] = self::GHCR_MANIFEST_CHECK_INTERVAL;
@@ -233,18 +250,30 @@ class ZotManifests
     /**
      * Zot config.json (the chart's runr-zot-config ConfigMap) brought to RunR's sync upstreams.
      * RunR's entries — Docker Hub (by URL) and the ghcr.io entry syncing into {zot}/ghcr.io/ —
-     * get RunR's keys (OWNED_REGISTRY_KEYS); the ghcr.io entry sits right before the Docker Hub
+     * get RunR's keys (OWNED_REGISTRY_KEYS; a ghcr.io entry an operator set to stream gets no
+     * retries, Zot refuses both together); the ghcr.io entry sits right before the Docker Hub
      * one (inserted when missing), a missing Docker Hub entry is appended. With $syncErrorsSurface
      * (the Zot is of SYNC_ERRORS_SURFACE_SINCE or later) http.compat also holds DOCKER_COMPAT,
      * next to what it holds. Everything else — storage (S3 credentials), the rest of http, log,
      * other extensions, operator-added upstreams (another ghcr.io entry included) and extra keys
-     * inside RunR's entries — is kept as it is.
+     * inside RunR's entries — is kept as it is. The ghcr.io retries (GHCR_MAX_RETRIES) come with
+     * another change only: a changed config restarts Zot, and the builds retry their pulls anyway.
      *
      * @return string|null the new config.json, null when it is already up to date
      *
      * @throws \JsonException on an unparsable config.json
      */
     public static function reconcileSyncConfig(string $json, bool $manifestCheckInterval, bool $syncErrorsSurface = true): ?string
+    {
+        $config = self::reconciled($json, $manifestCheckInterval, $syncErrorsSurface, true);
+        $before = self::canonical(json_decode($json, true));
+        $withoutRetries = self::reconciled($json, $manifestCheckInterval, $syncErrorsSurface, false);
+
+        return $before === self::canonical(json_decode(json_encode($withoutRetries), true)) ? null : json_encode($config);
+    }
+
+    /** reconcileSyncConfig() without the comparison; $retries: the ghcr.io entry gets RunR's retries */
+    private static function reconciled(string $json, bool $manifestCheckInterval, bool $syncErrorsSurface, bool $retries): \stdClass
     {
         // Objects stay objects: an operator's empty {} must not come back as []
         $config = json_decode($json, false, 512, JSON_THROW_ON_ERROR);
@@ -257,11 +286,19 @@ class ZotManifests
         $existing = array_values(is_array($config->extensions->sync->registries ?? null) ? $config->extensions->sync->registries : []);
 
         [$wantGhcr, $wantHub] = self::syncRegistries($manifestCheckInterval, $syncErrorsSurface);
+        if (! $retries) {
+            // left as the entry has them
+            unset($wantGhcr['maxRetries'], $wantGhcr['retryDelay']);
+        }
 
         $ghcrAt = self::firstIndex($existing, fn (\stdClass $e) => self::isRunrGhcrEntry(self::toArray($e)));
         $hubAt = self::firstIndex($existing, fn (\stdClass $e) => in_array(self::DOCKER_HUB_UPSTREAM, self::normalizedUrls((array) ($e->urls ?? [])), true));
 
         $ghcr = $ghcrAt !== null ? self::withOwnedKeys($existing[$ghcrAt], $wantGhcr) : (object) $wantGhcr;
+        // Zot refuses to start on retries in an entry that streams (stream: true, an operator's)
+        if (! empty($ghcr->stream)) {
+            unset($ghcr->maxRetries, $ghcr->retryDelay);
+        }
         $result = [];
 
         foreach ($existing as $i => $entry) {
@@ -292,9 +329,7 @@ class ZotManifests
             $config->http->compat = in_array(self::DOCKER_COMPAT, $compat, true) ? $compat : [...$compat, self::DOCKER_COMPAT];
         }
 
-        $after = json_decode(json_encode($config), true);
-
-        return self::canonical(json_decode($json, true)) === self::canonical($after) ? null : json_encode($config);
+        return $config;
     }
 
     /**

@@ -7,9 +7,9 @@
 #     Kind nodes have no gVisor). Kata (test-sandbox-api --sandbox-kata), the GPU case
 #     (test-ai --ai-gpu) and the per-feature suites (test-runtimes, test-wasm, …) are not part of
 #     it: they run on a host of their own (docs/development.md → CI jobs).
-#   - ui-stack: Playwright against the dev stack (docker compose: postgres, redis, api + migrator,
-#     horizon, reverb, mailpit, the vue dev server). Specs that need a Kubernetes cluster skip
-#     themselves.
+#   - ui-stack: Playwright against the dev stack (ui-stack-suite.yml: docker compose with postgres,
+#     redis, api + migrator, horizon, reverb, mailpit, the vue dev server). Specs that need a
+#     Kubernetes cluster skip themselves.
 name: E2E
 
 on:
@@ -51,67 +51,8 @@ jobs:
       k8s: ${{ inputs.k8s || '1.32.0' }}
       workers: ${{ inputs.workers || '2' }}
 
+  # the steps: ui-stack-suite.yml, which deps-test.yml runs too (a dependency bump of the console)
   ui-stack:
     name: UI e2e (dev stack)
     if: github.event_name == 'schedule' || inputs.suite == 'all' || inputs.suite == 'ui-stack'
-    runs-on: ubuntu-24.04
-    timeout-minutes: 60
-    env:
-      TENANCY_ENABLED: 'false'
-      E2E_TENANCY: 'false'
-      # One account, two workers: above the console's per-user default (docs/development.md)
-      API_USER_RATE_LIMIT_PER_MINUTE: '3000'
-      # Horizon seeds the demo data the project specs need without a cluster
-      E2E_SEED_DEMO: 'true'
-      # the compose vue service (VUE_PORT)
-      E2E_BASE_URL: http://localhost:8061
-      NODE_OPTIONS: --max-old-space-size=4096
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - name: Start the dev stack
-        run: |
-          # Secrets are encrypted at rest with APP_KEY (empty in api/.env.docker; devready.sh fills it in)
-          sed -i "s|^APP_KEY=.*|APP_KEY=base64:$(head -c 32 /dev/urandom | base64)|" api/.env.docker
-          # The API services also join the external `kind` network (docker-compose.yml), which only a
-          # Kind cluster creates
-          docker network inspect kind >/dev/null 2>&1 || docker network create kind
-          docker compose up -d --build --wait api
-          # Reverb and Mailpit as in an install: the API broadcasts to Reverb (REVERB_HOST) and the
-          # queued mail goes to Mailpit (MAIL_HOST, api/.env.docker)
-          docker compose up -d horizon reverb mailpit vue
-          # the vue service installs its packages first (up to 10 minutes)
-          for _ in $(seq 1 120); do
-            curl -sf "$E2E_BASE_URL/" >/dev/null && break
-            sleep 5
-          done
-          curl -sf "$E2E_BASE_URL/" >/dev/null || {
-            echo "::error::the vue service does not answer at ${E2E_BASE_URL}"
-            docker compose logs --tail 50 vue
-            exit 1
-          }
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-        with:
-          node-version: 22
-          cache: npm
-          cache-dependency-path: vue/package-lock.json
-      - working-directory: vue
-        run: npm ci --no-audit --no-fund
-      - working-directory: vue
-        run: npx playwright install --with-deps chromium
-      - working-directory: vue
-        run: npm run test:e2e
-      - name: Stack logs
-        if: ${{ !cancelled() }}
-        run: docker compose logs api horizon reverb vue > compose.log 2>&1 || true
-      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        if: ${{ !cancelled() }}
-        with:
-          name: e2e-ui-stack
-          path: |
-            compose.log
-            vue/playwright-report/
-            vue/test-results/
-          if-no-files-found: ignore
-          retention-days: 7
+    uses: ./.github/workflows/ui-stack-suite.yml

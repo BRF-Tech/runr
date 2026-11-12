@@ -29,6 +29,25 @@ class BuildManifests
      */
     public const SKIP_PUSH_PERMISSION_CHECK = '--skip-push-permission-check';
 
+    /**
+     * How often a build tries a failed registry operation again: the manifest of a FROM image, the
+     * layers it unpacks and the push. Kaniko waits 1, 2, 4, 8 and 16 s before the tries (31 s in
+     * all). Without retries the first failed pull of a base image through the region registry
+     * ended the build ("unable to complete operation after 0 attempts"): Zot answers 503 or 404
+     * while its on-demand fetch from upstream fails, and refuses connections while it restarts.
+     */
+    public const REGISTRY_RETRIES = 5;
+
+    /** Kaniko flags of REGISTRY_RETRIES (all three are flags of the pinned KANIKO_IMAGE). */
+    public static function retryArgs(): array
+    {
+        return [
+            '--image-download-retry='.self::REGISTRY_RETRIES,
+            '--image-fs-extract-retry='.self::REGISTRY_RETRIES,
+            '--push-retry='.self::REGISTRY_RETRIES,
+        ];
+    }
+
     /** activeDeadlineSeconds of a function build Job (executor.build_deadline_seconds, ≥ 60). */
     public static function deadlineSeconds(): int
     {

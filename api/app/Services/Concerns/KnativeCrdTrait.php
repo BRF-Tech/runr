@@ -3,7 +3,7 @@
 namespace App\Services\Concerns;
 
 use App\Services\KubernetesClient;
-use Illuminate\Support\Facades\Http;
+use App\Support\GitHubReleaseAsset;
 use Illuminate\Support\Facades\Log;
 use RuntimeException;
 use Symfony\Component\Yaml\Yaml;
@@ -32,9 +32,10 @@ trait KnativeCrdTrait
         $yaml = null;
         foreach ($candidates as $v) {
             $url = 'https://github.com/knative/serving/releases/download/knative-v'.$v.'/serving-crds.yaml';
+            // a 5xx of github.com is tried again, then the file comes through the GitHub API; a 404
+            // (no such patch release) goes on to the next candidate at once
             try {
-                $response = Http::timeout(60)->get($url);
-                $content = $response->successful() ? $response->body() : null;
+                $content = GitHubReleaseAsset::fetch($url);
             } catch (Throwable) {
                 $content = null;
             }

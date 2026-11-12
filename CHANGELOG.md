@@ -8,6 +8,145 @@ did not change says so.
 
 ## [Unreleased]
 
+## [0.6.9] - 2026-11-12
+
+### Upgrade notes
+
+- **Two migrations add one column** (`2026_11_11_100001_add_capacity_released_at_to_projects`, and on a
+  multi-tenant installation `0111_add_capacity_released_at_to_projects` in every tenant schema): the
+  nullable `projects.capacity_released_at`, set by a resume until a deploy admits the project again.
+  Existing projects keep what they have ([0.6.8 → 0.6.9 in upgrade.md](docs/upgrade.md#068--069)).
+- **The projects that are stopped at the upgrade give their capacity back at once** in a
+  pay-as-you-go region (every region while billing is off): they count neither in the region's
+  budgets nor in their organization's quota, and their resume has to fit again. A fixed region
+  keeps their reservation and lends their share
+  ([Stopped projects give their capacity back](docs/upgrade.md#stopped-projects-give-their-capacity-back)).
+- **A region with many stopped projects can alarm right after the upgrade**: the capacity alarm now
+  also watches what the region would need with every stopped project back
+  (`data.basis: "with_stopped"`), checked every minute. Look at Region → Workers → Capacity first
+  ([The capacity alarm with stopped projects](docs/upgrade.md#the-capacity-alarm-with-stopped-projects)).
+- **Multi-tenant: the capacity alarm of an organization's own region goes to its owners and admins**;
+  the platform administrators no longer get its mail. Every capacity alarm mail honours the
+  recipient's `resource_threshold` mail preference.
+- **The region registry's `ghcr.io` retries** (`maxRetries: 5`, `retryDelay: 2s`) reach a registry set
+  up by an earlier release with the next change `region:reconcile` makes to its config.json, or with
+  `registry:upgrade-zot`; the upgrade does not restart Zot for them.
+- **Back to 0.6.8 is a `helm rollback` without rolling the migrations back**
+  ([Back to 0.6.8](docs/upgrade.md#back-to-068)). 0.6.8 ignores the column and counts stopped
+  projects again. After upgrading to 0.6.9 again, deploy once each project that was resumed on 0.6.9
+  and deployed on 0.6.8: until then it counts as released.
+
+### Added
+
+- **The dependency test bot releases what passes.** Each new version of a region dependency that the
+  daily release check filed an issue for is now moved and tested on the last release, not on the
+  development branch, and the versions whose suites pass become one patch release per run: the
+  chart's version, the docs' pins, its changelog section and upgrade notes with every version's
+  line, a signed tag, the images that release-images.yml builds (checked against the registry
+  without credentials, digest by digest), the GitHub release and the chart on helm.brf.sh; the
+  development branch takes the release as a merge, so nothing unfinished ships and the next release
+  carries it. The green versions of a run are made again together on the last release and, two or
+  more, tested together; one that does not go with the others needs a person, and the ones after it
+  wait for the next run, while the ones before it are released. A red suite, a bump that is not
+  mechanical or a release step that fails stops with a comment on the issue that says what was
+  done, and a red version never holds up the green ones; a release that stopped goes on with the
+  workflow's `resume`, and `dry_run` makes and checks everything without pushing. A dependency
+  release ships the chart and the images: the CLI, the Terraform provider and runr.sh stay those of
+  the last full release. A suite whose script ends 0 while its results count failed tests is red.
+  See [docs/development.md](docs/development.md#dependency-test-bot).
+- **The dependency test bot follows every package RunR ships or builds with.** Besides the region
+  charts and Knative, the daily check now reads the API's Composer packages, the npm packages of the
+  console and the SDKs, the Go modules of the region images, the CLI, the Terraform provider and the
+  dev tunnel, the GitHub Actions pins and the Dockerfiles' base images. The minor and patch updates
+  of one group are one issue and one bump; a new major, an exact pin or a new toolchain is an issue
+  of its own that a person decides, and a security advisory makes the group's issue urgent (tested
+  the same day). Packages pinned on purpose stay where they are, with their reason
+  (`ci/deps/holds.txt`). A bump that changes what a release ships (an image, the chart, the API's
+  code) goes into the run's patch release as before; a gateway-auth, image-upload, supply-chain or
+  Spin shim image that changes gets a patch version of its own. The ones that ship nothing (test
+  tooling, the CLI's and the provider's modules, the Actions pins) land on the development branch
+  together, in one push per run, and come with the next release. A bump whose lockfile does not
+  come out the same twice, or that would move a constraint, goes to a person. It also follows the
+  tool pins of the images and the workflows (helm, kubectl, Scalar, syft, cosign, oras, kind,
+  cloud-provider-kind, kubeconform, crane, actionlint, gitleaks, Terraform, govulncheck) and moves
+  their published checksums with them (an image's in the run's patch release, a workflow's on the
+  development branch), files new lines of the toolchains and every release of the patched Spin
+  shim for a person, and follows the Python SDKs and the examples (npm, Go, PyPI, Cargo,
+  Dockerfiles). The bot's commits and tags now carry the identity of RunR's public history and a
+  `RunR-Deps-Bot` trailer, and CI skips their pushes. See
+  [docs/development.md](docs/development.md#package-dependencies).
+- **The console's checks are shared workflows.** Its lint, unit tests and build (`ui-tests.yml`) and
+  its dev-stack suite (`ui-stack-suite.yml`) are reusable workflows that CI, the weekly E2E run and
+  the dependency test bot call. Their result comes from Vitest's and Playwright's JSON reports, so
+  CI also fails when the in-app tutorial's spec did not run. CI now tests the Python SDKs and the
+  Node Sandbox SDK, and the bot tests the Python SDKs. The API checks count PHPUnit's failures from
+  its summary line, so a green run is no longer read as failed.
+- **A region shows, and alarms on, what it would need with its stopped projects back.** Region →
+  Workers → Capacity shows next to the budgets what the region would need if every stopped project
+  were resumed at the same time: what they add per resource, how full the fuller budget would be,
+  by how much it would be exceeded and the capacity that keeps it under the alarm's level, with the
+  largest stopped projects (`GET /api/knative-regions/{id}/capacity` → `with_stopped`). When this
+  figure crosses the capacity alarm's levels (60 % warning, 80 % critical), the people who get the
+  capacity alarm today are told to add nodes — by how much the region would be exceeded, how much
+  to add, and which stopped projects need how much in total — in the app, by mail and through the
+  `resource_threshold` alert rules (`data.basis: "with_stopped"`, its own hourly cooldown). The
+  card's **?** starts a tour of it. On a multi-tenant installation the card shows what the alarm
+  measures: a platform region adds up every tenant's and the platform's own projects. See
+  [docs/architecture.md](docs/architecture.md#region-capacity-and-admission).
+
+### Changed
+
+- **A stopped project gives its capacity back in a pay-as-you-go region.** Its reservation — its
+  own workload and its environments — no longer counts in the region's budgets, nor in its
+  organization's quota, so others can use the room. A resume admits it again: when the region (or
+  the quota) has no room, the redeploy is refused with `capacity_exceeded` (`quota_exceeded`) and
+  the project is resumed without a deployment, holding nothing until a deploy of it fits; a git
+  push or console deploy of it is refused the same way (422). The project page shows a banner
+  while it waits: why (`capacity_exceeded`, `quota_exceeded`, `fixed_allocation_exceeded`), what
+  each resource lacks and what to do — the project resource's new `capacity_waiting`. A region
+  whose billing is off counts as pay as you go. See
+  [docs/billing.md](docs/billing.md#project-stop-and-resume).
+- **The capacity alarm of an organization's own region goes to the organization.** Its members who
+  manage its regions (owners and admins) see it in the app and get the mail; the platform
+  administrators no longer get its mail. Every capacity alarm mail honours the recipient's
+  `resource_threshold` mail preference, and a platform region's alarm also counts the platform's
+  own projects.
+- **A fixed region's allocations cover the projects that run.** A stopped project keeps its
+  reservation and its allocation stays billed, but its share is lent to its organization's other
+  projects in the region: they may run beyond their own allocation up to what the stopped projects
+  lend and no other project uses yet; a running project's own allocation is always its own. The two
+  cannot run at the same time: the stopped project's resume has to fit its allocation minus what
+  the others still use of the lent shares, else it is refused with `fixed_allocation_exceeded`,
+  like a deploy. See [docs/billing.md](docs/billing.md#what-a-fixed-project-may-use).
+- **The Kind e2e plans its waves with the stopped projects back**, so a case that stops a project
+  and resumes it later finds its room free.
+
+### Fixed
+
+- **The Kind e2e fits a GitHub-hosted runner again.** It runs its cases in waves the region runs at
+  once and deletes each wave's projects once they are verified: since 0.6.8's runtimes it had kept
+  every case's project, filled the region's FaaS overcommit budget and refused the later creates. A
+  shell wake-up that fails names what holds the pod.
+- **The UI e2e of the dev stack runs on GitHub-hosted runners.** The new `vue-init` and
+  `vendor-init` services create `vue/node_modules` and `api/vendor`, where the containers' package
+  volumes are mounted, owned like the checkout: Docker made them root's, so `npm ci` on the runner
+  (and `npm ci` or `composer install` on a Linux host) failed with EACCES.
+- **A model service starts on a region whose Knative features were just turned on.** When
+  Knative's webhook refuses the model service's Knative Service for a pod-spec feature it has not
+  seen yet (persistent volume claims, a field a feature flag gates), the deploy applies it again up
+  to six times within about 40 seconds and logs each try; any other refusal still fails at once.
+- **A build no longer fails on the first failed pull through the region registry.** Function and
+  runtime image builds try a failed registry operation (a `FROM` manifest, layer unpacking, the
+  push) up to five more times with backoff instead of ending on one 503 or 404 from Zot (`unable to
+  complete operation after 0 attempts`), and the registry's ghcr.io upstream retries a failed fetch
+  (`maxRetries: 5`, `retryDelay: 2s`; an installed registry takes it with its next config change).
+- **A GitHub 504 no longer fails a region's setup.** The charts a region installs from GitHub
+  releases (Zot's, and the prometheus-community and grafana charts) and Knative Serving's CRDs are
+  downloaded again when GitHub answers 5xx or 429 or the connection breaks, four tries in all, 2, 4
+  and 8 s apart, then once through the GitHub API's asset endpoint; a chart that comes that way is
+  installed only with the digest its repository's index gives it. Before, one "504 Gateway Timeout"
+  failed the whole registry setup ("Zot Helm install failed").
+
 ## [0.6.8] - 2026-11-08
 
 ### Upgrade notes
@@ -4231,7 +4370,8 @@ Initial tagged release.
 - API gateways with routes, in-app notifications and support tickets.
 - Helm chart with a single-tenant / multi-tenant edition, an install form (`values.schema.json`), generated secrets and a Traefik ingress; a Docker Compose setup for development.
 
-[Unreleased]: https://github.com/brf-tech/runr/compare/v0.6.8...main
+[Unreleased]: https://github.com/brf-tech/runr/compare/v0.6.9...main
+[0.6.9]: https://github.com/brf-tech/runr/releases/tag/v0.6.9
 [0.6.8]: https://github.com/brf-tech/runr/releases/tag/v0.6.8
 [0.6.7]: https://github.com/brf-tech/runr/releases/tag/v0.6.7
 [0.6.6]: https://github.com/brf-tech/runr/releases/tag/v0.6.6

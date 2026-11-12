@@ -603,7 +603,7 @@ Webhook requests carry `X-RunR-Event` (`alert.firing`, `alert.resolved`, `test`)
 
 | Type | Fires when | Params |
 |------|-----------|--------|
-| `resource_threshold` | a region's CPU / memory reservation crosses the built-in 60 % / 80 % levels | `resource` (cpu, memory, any), `min_level` (warning, critical); optional region |
+| `resource_threshold` | a region's CPU / memory reservation crosses the built-in 60 % / 80 % levels — or would cross them with every stopped project resumed at once (an alert of its own per region and resource, whose text says how much capacity to add; [architecture.md](architecture.md#region-capacity-and-admission)) | `resource` (cpu, memory, any), `min_level` (warning, critical); optional region |
 | `uptime_down` | an uptime incident opens (resolves with it) | optional project |
 | `error_rate` | share of 5xx / failed invocations above `threshold` % | `threshold`, `window_minutes`, `min_requests` |
 | `p95_latency` | 95th percentile duration above `threshold_ms` | `threshold_ms`, `window_minutes`, `min_requests` |

@@ -325,6 +325,53 @@ and change, and for every new sandbox and warm pool pod. A project or model serv
 reservation does not grow always passes, even on a region that is over capacity. A sandbox
 served from a warm pod passes too: the warm pod holds its capacity already.
 
+A project's reservation lasts as long as the project: from its create on, deployed or not, after a
+failed deploy, and whether its pod runs or it scaled to zero. The FaaS budget counts one pod of
+every scale-to-zero project for that reason; its factor is the bet that they do not all run at the
+same time. Deleting the project releases its reservation at once, and so does a
+[stop](billing.md#project-stop-and-resume) in a pay-as-you-go region (below). A run that creates
+many short-lived projects, such as the Kind e2e, deletes them once they are checked
+([E2E tests](development.md#e2e-tests)).
+
+**Stopped projects** (`App\Services\Helpers\StoppedCapacity`):
+
+| Region | While the project is stopped | Its resume |
+|---|---|---|
+| pay as you go — every region while billing is off | its reservation is released: its own workload and its environments there count neither in the region's budgets nor in its organization's quota, and other projects may use the room | admitted again, as a new reservation next to what holds the region now: when it does not fit the region's budgets (`capacity_exceeded`) or the organization's quota (`quota_exceeded`) the redeploy is refused and the project is resumed without a deployment, `redeploy_error` / `redeploy_code` saying why |
+| fixed ([billing.md](billing.md#what-a-fixed-project-may-use)) | its reservation stays — the allocation is billed — and its share of the allocations is lent to the organization's running projects there | its allocation minus what the others use of the lent shares (`fixed_allocation_exceeded`) |
+
+A resume marks the project (`projects.capacity_released_at`) until a deploy admits it: until then it
+holds nothing, and a refused resume does not take the room it was refused. The admission is the
+last check of every deploy path (`ProjectAdmission`: the resume's redeploy, the console's deploy, a
+git push, a region migration; a preview does not admit the project). Admitted, the mark is cleared
+and the project holds its reservation again like any other. While it waits, the project resource
+carries `capacity_waiting` and the project page shows why (below). The resume, deploy or push answers
+`422` with the code and the region:
+
+```json
+{"message": "Region eu-1 has no room for this project again: its stop gave its capacity back, and other projects use it now. CPU limit exceeded on the FaaS overcommit budget: this needs 350m, 200m of 3000m are free (region capacity 1000m × 3, minus 0m always-on). Deploy once capacity is free, or ask the region's provider to add nodes.", "code": "capacity_exceeded", "region_id": "01J…", "problems": {"cpu_m": "…"}}
+```
+
+`capacity_waiting` (`GET /api/projects/{id}`, null while the project does not wait) is what its next
+deploy would answer now, without admitting it: `since`, `code` (`capacity_exceeded`, `quota_exceeded`,
+`fixed_allocation_exceeded` or another deploy guard's; null: it fits now, a deploy runs it), `message`,
+`region_id` and `shortfall` — per short resource (`cpu_m`, `memory_mb`, `gpus`) `needed`, `available`,
+`missing` and, for the region and the quota, the `budget`:
+
+```json
+{"capacity_waiting": {"since": "2026-11-11T09:00:00+00:00", "code": "capacity_exceeded", "message": "Region eu-1 has no room for this project again: …",
+  "region_id": "01J…", "shortfall": {"cpu_m": {"budget": "faas", "needed": 350, "available": 200, "missing": 150}}}}
+```
+
+A fixed region's refusal (`fixed_allocation_exceeded`, [billing.md](billing.md#what-a-fixed-project-may-use))
+carries the same `region_id` and `shortfall` in its 422 body.
+
+So that the region does not run short when many stopped projects come back at once, it shows next to
+its budgets what it would need with **every stopped project resumed at the same time** — stopped
+ones, and resumed ones not admitted again — and the capacity alarm watches that figure too
+(**Capacity alarm**, below). A fixed region shows that it keeps its stopped projects' reservations
+(`held: true`).
+
 A refusal (422) names the budget and what is still free:
 
 ```text
@@ -383,18 +430,52 @@ curl -sS -X PUT "$API/knative-regions/$REGION/capacity" -H "Authorization: Beare
   "cpu_m": {"capacity": 4505, "always_on_used": 1200, "always_on_available": 3305,
             "faas_overcommit": 3, "faas_budget": 12315, "faas_used": 3150, "faas_available": 9165,
             "utilization": 32.2},
-  "memory_mb": {"capacity": 12000, "…": "…"}}}
+  "memory_mb": {"capacity": 12000, "…": "…"},
+  "with_stopped": {"projects": 7, "held": false, "thresholds": {"warning": 60, "critical": 80},
+    "cpu_m": {"stopped_always_on": 400, "stopped_faas": 9800, "always_on_used": 1600, "faas_used": 12950,
+              "utilization": 107.7, "budget": "faas", "exceeded_by": 1035, "level": "critical", "add_capacity": 1558},
+    "memory_mb": {"…": "…"},
+    "stopped_projects": [{"id": "01J…", "name": "shop", "stopped": true, "cpu_m": 1100, "memory_mb": 612}, "…"]}}}
 ```
 
 `faas_budget` is capacity × factor minus `always_on_used`; `utilization` is the fuller budget in
-percent. Reading needs `regions.view`, changing `regions.manage` (both in
+percent. `with_stopped` is the region with every stopped project back: `projects` how many,
+`stopped_always_on` / `stopped_faas` what they add to each budget, `always_on_used` / `faas_used` what
+each budget would hold then, `utilization` the fuller one in percent, `budget` which one that is,
+`exceeded_by` how much it would lack (in that budget's terms; 0 while it fits), `level` the alarm level
+it would reach (`warning`, `critical` or null) and `add_capacity` the capacity to add to stay under
+that level; `stopped_projects` the 20 largest (`stopped: false`: resumed, waiting for capacity);
+`held` — a fixed region keeps its stopped projects' reservations, so none is released. Reading needs `regions.view`, changing `regions.manage` (both in
 `api/config/route_permissions.php`; with the Tenancy module a platform region is changed by the
 platform administrators, an organization's own region by its owner or admins, and an organization
 reading a platform region gets 403, its quota applies). The region resource
 (`GET /api/knative-regions/{id}`) carries the factors and the same `capacity` object; its
 `used_cpu_m` / `used_memory_mb` add up every admitted reservation (projects, model services,
-sandboxes) and can exceed `total_cpu_m` / `total_memory_mb` on an overcommitted region. Capacity
-alerts (`resource_threshold`, 60 % / 80 %) measure the fuller of the two budgets.
+sandboxes) and can exceed `total_cpu_m` / `total_memory_mb` on an overcommitted region.
+
+**Capacity alarm** (`ResourceThresholdService`, every minute and after a
+deploy). Two levels, **60 %** (warning) and **80 %** (critical), on the fuller of the two budgets:
+
+| Alarm | When | What it says |
+|---|---|---|
+| the region | what holds the region now crosses a level | the resource and how full it is |
+| with stopped projects (`data.basis: "with_stopped"`) | the region with every stopped project back would cross a level — only while stopped projects need some of that resource | by how much the region would be exceeded (`exceeded_by`), the capacity to add to stay under the level (`add_capacity`: add nodes), how many stopped projects need how much in total (`stopped_projects`, `stopped`) and the largest of them by name |
+
+Each is a `resource_threshold` notification, once an hour per region, resource and level (the two
+alarms have their own cooldown), in the app, by mail and to the `resource_threshold`
+[alert rules](observability.md#alerting). Who gets it — the region's provider:
+
+| Installation | Region | Measured | Notified |
+|---|---|---|---|
+| single-tenant | every region | the installation | every user: a shared notification and a mail |
+| multi-tenant | a platform region, the regions shared with tenants (region offers) included | the platform's own projects, every tenant's and every sandbox added up; the stopped projects named `tenant / project`. A check after a tenant's deploy there is the same platform check | the platform administrators: a notification in the platform's schema and a mail |
+| multi-tenant | a tenant's own region | the tenant's schema | the tenant's members who manage its regions (`regions.manage`: its owners and admins): the notification in the tenant's schema, which they see in the app, and a mail. The platform administrators get no mail: the tenant provides that region's nodes |
+
+A recipient who switched the `resource_threshold` mail off (`PUT /api/account/notification-preferences`,
+in an organization its own preferences) gets no mail; a tenant's member who switched its in-app
+channel off does not see it. The capacity card (Workers → **Capacity**, `GET
+/knative-regions/{id}/capacity`) shows what the alarm measures: from the platform a platform region
+adds up every tenant's and the platform's own, a tenant's own region counts in its schema.
 
 **Organization quotas.** With the Tenancy module each organization has a CPU and memory quota per
 platform region (`cpu_quota_m` / `memory_quota_mb`, 0 = no limit for that resource), its share of

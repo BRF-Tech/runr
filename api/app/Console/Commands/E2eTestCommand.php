@@ -36,6 +36,7 @@ use App\Console\Commands\Concerns\E2eTestTriggersTrait;
 use App\Console\Commands\Concerns\E2eTestVerifyTrait;
 use App\Console\Commands\Concerns\E2eTestWarmerTrait;
 use App\Console\Commands\Concerns\E2eTestWasmTrait;
+use App\Console\Commands\Concerns\E2eTestWavesTrait;
 use App\Models\KnativeRegion;
 use App\Services\KubernetesClient;
 use Illuminate\Console\Command;
@@ -78,6 +79,7 @@ class E2eTestCommand extends Command
     use E2eTestVerifyTrait;
     use E2eTestWarmerTrait;
     use E2eTestWasmTrait;
+    use E2eTestWavesTrait;
 
     protected $signature = 'test:e2e
         {--base-url=http://localhost:8000 : API base URL}
@@ -397,14 +399,28 @@ class E2eTestCommand extends Command
             return $this->countResults($tests)['failed'] > 0 ? 1 : 0;
         }
 
-        // Build test matrix and run sequential flow
+        // Build the test matrix and run it in waves the region runs at once, each wave's projects
+        // deleted once it is verified (E2eTestWavesTrait). The first ready HTTP function stays
+        // for the shell tests and goes after them.
         $tests = $this->buildTestMatrix($images, $regionId);
+        $shellKey = null;
+        $this->runTestsInWaves(
+            $tests,
+            $regionId,
+            fn (array &$wave) => $this->runPhaseVerify($wave),
+            function (array $wave) use (&$shellKey): array {
+                $shellKey ??= $this->shellCandidateKey($wave);
 
-        $this->runTestsSequentially($tests);
-        $this->runPhaseVerify($tests);
+                return $shellKey !== null && isset($wave[$shellKey]) ? [$shellKey] : [];
+            },
+        );
 
         // Shell (exec) tests — uses an already-deployed project
         $this->runShellTests($tests, $tests);
+        if ($shellKey !== null) {
+            $this->releaseCases([$tests[$shellKey]]);
+            $tests[$shellKey]['released'] = true;
+        }
 
         // Sandbox tests (unless --skip-sandbox)
         if (! $this->option('skip-sandbox')) {
@@ -540,7 +556,9 @@ class E2eTestCommand extends Command
 
     /**
      * Every running pod of the project namespace (functions, CronJob runs, queue consumers) is on
-     * the region's selected workers. A result entry of the run (null without a selection).
+     * the region's selected workers: those running now and those noted before each wave's
+     * projects were deleted (E2eTestWavesTrait). A result entry of the run (null without a
+     * selection).
      */
     private function runNodePlacementTest(string $regionId): ?array
     {
@@ -561,12 +579,14 @@ class E2eTestCommand extends Command
         $k8s = new KubernetesClient($region->kubeconfig);
         $selectedWorkers = $region->selected_workers;
 
-        $running = [];
+        $running = $this->e2eSeenProjectPods;
         $deadline = time() + 60;
-        while (time() < $deadline) {
+        while (true) {
             $pods = $k8s->listResources('v1', 'Pod', $region->project_namespace ?? $region->name);
-            $running = $this->filterRunningPods($pods['items'] ?? []);
-            if (! empty($running)) {
+            foreach ($this->filterRunningPods($pods['items'] ?? []) as $pod) {
+                $running[$pod['name']] = $pod;
+            }
+            if (! empty($running) || time() >= $deadline) {
                 break;
             }
             sleep(5);
@@ -598,15 +618,21 @@ class E2eTestCommand extends Command
         return $entry;
     }
 
-    private function filterRunningPods(array $items): array
+    /**
+     * The running pods of the project namespace the placement check covers: not Redis, not the
+     * e2e's own curl / XADD pods (runr.dev/purpose, no node selection), not a pod being deleted.
+     *
+     * @return list<array{name: string, node: string|null}>
+     */
+    public static function filterRunningPods(array $items): array
     {
         $running = [];
         foreach ($items as $pod) {
-            if (($pod['status']['phase'] ?? '') !== 'Running') {
+            if (($pod['status']['phase'] ?? '') !== 'Running' || isset($pod['metadata']['deletionTimestamp'])) {
                 continue;
             }
             $podName = $pod['metadata']['name'] ?? 'unknown';
-            if (str_starts_with($podName, 'runr-redis')) {
+            if (str_starts_with($podName, 'runr-redis') || isset($pod['metadata']['labels']['runr.dev/purpose'])) {
                 continue;
             }
             $running[] = ['name' => $podName, 'node' => $pod['spec']['nodeName'] ?? null];

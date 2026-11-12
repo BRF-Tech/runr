@@ -27,6 +27,8 @@ concurrency:
 jobs:
   npm:
     name: npm audit (UI)
+    # not on the dependency test bot's own push (its trailer): release-images.yml takes its tag
+    if: ${{ github.event_name != 'push' || !contains(github.event.head_commit.message, 'RunR-Deps-Bot:') }}
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     defaults:
@@ -52,6 +54,8 @@ jobs:
 
   composer:
     name: composer audit (API, reported)
+    # not on the dependency test bot's own push (its trailer): release-images.yml takes its tag
+    if: ${{ github.event_name != 'push' || !contains(github.event.head_commit.message, 'RunR-Deps-Bot:') }}
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     # Most advisories sit in transitive packages (league/commonmark, guzzle, phpseclib, symfony/*)

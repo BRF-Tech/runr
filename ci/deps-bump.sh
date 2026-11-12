@@ -8,14 +8,22 @@ set -euo pipefail
 # next only when they pass.
 #
 #   bash ci/deps-bump.sh DEP VERSION [--report=DIR] [--values=FILE] [--no-render] [--run-url=URL]
+#   bash ci/deps-bump.sh GROUP FINGERPRINT --updates=FILE [--report=DIR] [--run-url=URL]
 #
 #   DEP       a chart of ci/check-helm-releases.sh (traefik, kube-prometheus-stack, loki-stack, zot,
 #             kata-deploy) or knative (VERSION is then a minor, 1.25)
+#   GROUP     a package group of ci/deps/packages.sh (composer-api, npm-vue, go-agent, actions,
+#             docker, …): FILE holds its finding's updates (ci/deps/bump-packages.sh)
 #   --report  where the result goes (default: a new directory under TMPDIR, printed at the end):
 #               result          bumped | attention | current
 #               summary.md      what the bot found and did, for the issue comment
 #               commit-msg.txt  the commit message (bumped)
-#               suites.json     the suites the change must pass, with their ci.sh commands (bumped)
+#               suites.json     the suites the change must pass, with their ci.sh commands (bumped);
+#                               job: kind (kind-suite.yml), check (ci/deps-check.sh), ui
+#                               (ui-tests.yml) or ui-stack (ui-stack-suite.yml)
+#               path            release | next: a package group's bump that ships nothing lands on
+#                               next only (a chart's is always release)
+#               unit            1 when PHPUnit runs on it (every chart's; a group's when its suites say)
 #               edits.log       every line edited or kept
 #   --values  RunR's values of the chart as a YAML file, instead of ci/deps/helm-values.php
 #   --no-render  no chart is downloaded or rendered (the shell tests)
@@ -66,15 +74,21 @@ for arg in "$@"; do
     --values=*) values_file="${arg#--values=}" ;;
     --no-render) render=0 ;;
     --run-url=*) run_url="${arg#--run-url=}" ;;
+    --updates=*) updates_file="${arg#--updates=}" ;;
     *) echo "unknown argument: ${arg}" >&2; exit 1 ;;
   esac
 done
 bot_row="$(deps_bot_row "$dep" || true)"
-if [ -z "$dep" ] || [ -z "$bot_row" ]; then
-  echo "usage: ci/deps-bump.sh DEP VERSION [--report=DIR] (DEP: $(deps_names | paste -sd, -))" >&2
+# a package group (ci/deps/packages.sh): VERSION is its finding's fingerprint, --updates its updates
+pkg_row=""
+[ -z "$dep" ] || pkg_row="$(deps_pkg_row "$dep" || true)"
+if [ -z "$dep" ] || { [ -z "$bot_row" ] && [ -z "$pkg_row" ]; }; then
+  echo "usage: ci/deps-bump.sh DEP VERSION [--report=DIR] [--updates=FILE] (DEP: $(deps_names | paste -sd, -))" >&2
   exit 1
 fi
-if ! deps_version_valid "$version"; then
+if [ -n "$pkg_row" ]; then
+  [[ "$version" =~ ^[0-9a-f]{8}$ ]] || { echo "${dep}: '${version}' is not a finding's fingerprint" >&2; exit 1; }
+elif ! deps_version_valid "$version"; then
   echo "${dep}: '${version}' is not a version" >&2
   exit 1
 fi
@@ -86,7 +100,10 @@ fi
 [ -n "$report" ] || report="$(mktemp -d "${TMPDIR:-/tmp}/deps-bump-${dep}.XXXXXX")"
 mkdir -p "$report"
 : > "$report/edits.log"
-rm -f -- "$report/result" "$report/summary.md" "$report/commit-msg.txt" "$report/suites.json"
+rm -f -- "$report/result" "$report/summary.md" "$report/commit-msg.txt" "$report/suites.json" "$report/path"
+# a chart's bump is always a release, with PHPUnit (a package group's: ci/deps/bump-packages.sh)
+echo release > "$report/path"
+echo 1 > "$report/unit"
 work="$(mktemp -d "${TMPDIR:-/tmp}/deps-work.XXXXXX")"
 trap 'rm -rf -- "$work"' EXIT
 
@@ -173,6 +190,13 @@ suite_names() {
   local IFS=';'
   echo "${out[*]}" | sed 's/;/, /g'
 }
+
+# ── A package group: ci/deps/bump-packages.sh ──
+if [ -n "$pkg_row" ]; then
+  # shellcheck source=ci/deps/bump-packages.sh
+  source "$ROOT/ci/deps/bump-packages.sh"
+  bump_packages
+fi
 
 # chart_field DIR KEY — a top-level key of DIR/Chart.yaml, without quotes
 chart_field() {

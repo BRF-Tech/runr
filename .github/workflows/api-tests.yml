@@ -108,10 +108,17 @@ jobs:
           mkdir -p "$RUNNER_TEMP/result"
           echo "$JOB_STATUS" > "$RUNNER_TEMP/result/status"
           echo "PHPUnit, Pint, Larastan, API reference" > "$RUNNER_TEMP/result/command"
-          # PHPUnit's failures, or the end of its log
+          # PHPUnit's failures and their count from its summary line ("Tests: 2 failed, 1230
+          # passed"), and the end of its log; the summary line alone is no failure
           if [ -f "$RUNNER_TEMP/phpunit.log" ]; then
-            grep -E '^\s*(FAILED|⨯|✗)|Tests:|FAIL ' "$RUNNER_TEMP/phpunit.log" | head -n 40 > "$RUNNER_TEMP/result/failures.md" || true
+            grep -E '^\s*(FAILED|⨯|✗)|FAIL ' "$RUNNER_TEMP/phpunit.log" | head -n 40 > "$RUNNER_TEMP/result/failures.md" || true
+            summary="$(grep -E 'Tests:' "$RUNNER_TEMP/phpunit.log" | tail -n 1 || true)"
+            failed="$(sed -nE 's/.* ([0-9]+) (failed|errors?).*/\1/p' <<<"$summary" | head -n 1)"
+            echo "${failed:-0}" > "$RUNNER_TEMP/result/failed"
             tail -n 40 "$RUNNER_TEMP/phpunit.log" > "$RUNNER_TEMP/result/tail.txt"
+          else
+            # no PHPUnit log: Composer or the checkout failed before it
+            echo 1 > "$RUNNER_TEMP/result/failed"
           fi
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always() && inputs.result-name != ''

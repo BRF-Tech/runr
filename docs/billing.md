@@ -321,8 +321,8 @@ same way.
 
 | Type | How projects get resources | What the project's bill contains |
 |---|---|---|
-| `payg` | Projects deploy at once, within the region's capacity and their organization's quota. | The metered usage of the month: vCPU-hours, GB-hours and GPU-hours of the project's workloads, by trigger type, at the region's hourly prices — its preview environments and, where [charged](#queue-consumers), its queue consumer as lines of their own. |
-| `fixed` | A project **requests** resources (vCPU, memory, GPUs); the region's seller approves; the project is active and billed from the approval day. It cannot use more than it was approved for: its largest size (every pod up to `max_scale`, its previews) must fit ([What a fixed project may use](#what-a-fixed-project-may-use)). | The monthly price of the approved resources, prorated by day. |
+| `payg` | Projects deploy at once, within the region's capacity and their organization's quota. A stopped project gives its share of both back until it is admitted again ([Project stop and resume](#project-stop-and-resume)). | The metered usage of the month: vCPU-hours, GB-hours and GPU-hours of the project's workloads, by trigger type, at the region's hourly prices — its preview environments and, where [charged](#queue-consumers), its queue consumer as lines of their own. |
+| `fixed` | A project **requests** resources (vCPU, memory, GPUs); the region's seller approves; the project is active and billed from the approval day. It cannot use more than it was approved for: its largest size (every pod up to `max_scale`, its previews) must fit, beyond its own allocation only what its organization's stopped projects there lend ([What a fixed project may use](#what-a-fixed-project-may-use)). | The monthly price of the approved resources, prorated by day. |
 
 The type of a region cannot change while projects hold approved fixed resources there: the request
 answers `409` with `code: active_fixed_allocations` and the number of such projects. End or move
@@ -334,7 +334,7 @@ they can be changed later without touching the rest:
 | Constant | Today |
 |---|---|
 | `TYPE_CHANGE_BLOCKED_BY_ACTIVE_ALLOCATIONS` | one billing type per region; a type change is refused while fixed resources are approved there |
-| `FIXED_HARD_LIMIT` | a fixed project is limited to its approved resources at its worst case (`max_scale`, previews, GPUs) at every deploy and change; a request smaller than what runs is refused; a change is a new request, approved again and prorated by day from its approval |
+| `FIXED_HARD_LIMIT` | a fixed project is limited to its approved resources at its worst case (`max_scale`, previews, GPUs) at every deploy and change — plus what its organization's stopped projects in the region lend; a request smaller than what runs is refused; a change is a new request, approved again and prorated by day from its approval |
 
 ---
 
@@ -422,6 +422,24 @@ git push reports the message; a refused preview shows it as its status. Since th
 exceed its allocation, there is no overage: its usage
 is covered by the fixed price. Bindings, sandboxes and model services in the region are not part of
 the allocation; they are billed by usage on the owner's account bill.
+
+**Stopped projects.** The allocations cover the projects that run. A stopped project runs nothing
+and keeps its allocation, which stays billed — but while it is stopped, its share is lent to its
+organization's other projects in the region:
+
+| | |
+|---|---|
+| Lent | the approved resources of every project of the organization in the region that is stopped, or resumed and not admitted again yet (its resume's redeploy was refused) |
+| Used | what the organization's running projects there need beyond their own allocation, each at its worst case as it runs now (live deployments and previews) |
+| A deploy or change | fits its own allocation, or its own allocation plus what is lent and not used yet. Its own allocation is always its own: a project within it is never refused because another one borrows |
+| A resume | the project stops lending: its redeploy has to fit its allocation minus what the others still use of the lent shares. While another project uses its share, the two cannot run at the same time — the resume answers `200` without a deployment and `redeploy_code: fixed_allocation_exceeded` (the message says how much the others still use); deploy it once they scale down or stop, like any refused deploy |
+| Billing | unchanged: each allocation is billed to its project's bill, stopped or not, and a project's usage on a day with its own allocation in effect is covered by it |
+
+The organization is where the allocations are kept: the installation on a single-tenant install, the
+tenant on a multi-tenant one, and the platform's own projects. Example: `api` and `web` are approved
+1200 m CPU each. `api` is stopped, so `web` may deploy with up to 2400 m at its worst case. Resuming
+`api` is refused while `web` runs above its own 1200 m; once `web` is back to 1200 m, `api` deploys.
+A request or approval still has to cover what the project itself runs now (`scale_down_first`).
 
 A **change** — more or fewer resources — is a new request. When it is approved, the old allocation
 ends the day before (`superseded`) and the new one starts on the approval day. Deleting the project,
@@ -723,9 +741,10 @@ curl -sS -X POST "$RUNR/api/projects/$PROJECT/resume" -H "Authorization: Bearer 
 | Deploys | refused until it is resumed: `409` with `code: project_stopped`, the reason and the `level` — console, CLI, git pushes, previews (new pull requests and redeploys), region migrations |
 | Level | `platform` when a platform administrator stopped it, else `organization` (an administrator of the installation or the tenant). Only the same level or a higher one resumes: an organization cannot lift the platform's stop (`403`, `code: project_stopped_by_platform`). A platform administrator stopping a project its organization stopped takes the stop over (level `platform`, the new reason) |
 | Members | see a banner with the reason, when, and who stopped it: "stopped by the platform" (the administrator is not named), the organization's administrator, or the project's own [monthly cost limit](#monthly-cost-limit) (`stopped.system: "cost_limit"`, no one named); the owner gets a notification |
-| Resume | deploys the version that was running when the project was stopped again, with that deployment's overrides, through every check of a deploy (the version must still be built, the region active, residency and supply-chain policies, a fixed region's [allocation](#what-a-fixed-project-may-use)), and answers with its `deployment_id`. When the redeploy is refused, the project is resumed without a deployment, `redeploy_error` says why and `redeploy_code` carries the code of a deploy guard (e.g. `fixed_allocation_exceeded`) — deploy a version that fits |
+| Capacity | in a pay-as-you-go region (every region while billing is off) the stopped project gives its reservation back — its own workload and its environments count neither in the region's capacity budgets nor in its organization's quota, and others may use the room. The region shows what it would need with every stopped project back, and the capacity alarm tells its provider to add nodes when that would cross its levels ([architecture.md](architecture.md#region-capacity-and-admission)). A fixed region keeps the reservation: the allocation stays billed, and its share is lent to the organization's running projects ([Stopped projects](#what-a-fixed-project-may-use)) |
+| Resume | deploys the version that was running when the project was stopped again, with that deployment's overrides, through every check of a deploy (the version must still be built, the region active, residency and supply-chain policies, a fixed region's [allocation](#what-a-fixed-project-may-use)), and answers with its `deployment_id`. The resumed project is **admitted again**: in a pay-as-you-go region its reservation has to fit the region's budgets (`capacity_exceeded`) and its organization's quota (`quota_exceeded`) next to what others hold now; in a fixed region its allocation minus what other projects use of it (`fixed_allocation_exceeded`). When the redeploy is refused, the project is resumed without a deployment, `redeploy_error` says why and `redeploy_code` carries the code — and it still holds nothing until a deploy of it is admitted: a console deploy that does not fit answers `422` with the same code, a git push reports it. Deploy once there is room, or a version that fits. Until then the project page shows a banner — why it waits, what each resource lacks and what to do — from the project's `capacity_waiting` ([architecture.md](architecture.md#region-capacity-and-admission)) |
 | Audit | `project.stop` (with the reason) and `project.resume` |
-| Billing | `project.stopped` (with the `level`, and `system: "cost_limit"` for a stop by the cost limit) / `project.resumed` events; a stopped project uses nothing, a fixed allocation stays billed until it is changed or ended |
+| Billing | `project.stopped` (with the `level`, and `system: "cost_limit"` for a stop by the cost limit) / `project.resumed` events; a stopped project uses nothing and holds no capacity in a pay-as-you-go region; a fixed allocation stays billed until it is changed or ended, while the organization's running projects may use its share |
 
 The reason is required (3–1000 characters). Stopping a stopped project answers `409`
 (`project_already_stopped`, with the `level` and `reason` of the stop) — also when two stops arrive

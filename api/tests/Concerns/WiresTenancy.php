@@ -57,6 +57,8 @@ trait WiresTenancy
         'Modules/Tenancy/Database/TenantMigrations/0064_add_sandbox_kata_devmapper_pool_gb_to_knative_regions.php',
         // knative_regions.cert_manager_status / cert_manager_issuer (synced from the platform region)
         'Modules/Tenancy/Database/TenantMigrations/0081_add_cert_manager_to_knative_regions.php',
+        // projects.capacity_released_at (a resumed project awaits admission, StoppedCapacity)
+        'Modules/Tenancy/Database/TenantMigrations/0111_add_capacity_released_at_to_projects.php',
     ];
 
     protected function setUpTenancy(): void

@@ -15,7 +15,10 @@ namespace Modules\Billing\Support;
  *     than what runs is refused until the project scales down (FixedRequests). Usage above the
  *     allocation therefore cannot happen and is never billed as overage. A change of resources is
  *     a new request that needs approval again and is prorated by day from its approval
- *     (BillCalculator::fixedLines()).
+ *     (BillCalculator::fixedLines()). The allocations cover the projects that run: a stopped
+ *     project's allocation stays billed and is lent to its organization's running projects in the
+ *     region, which may run beyond their own allocation by what is lent and unused; the stopped
+ *     project's resume has to fit what the others leave of it (Admission::lending()).
  */
 final class BillingPolicy
 {

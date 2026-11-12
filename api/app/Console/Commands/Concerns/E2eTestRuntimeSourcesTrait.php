@@ -181,7 +181,9 @@ SH;
             $manifest = app(RuntimeRegistry::class)->manifest($id);
             $default = collect($manifest?->versions() ?? [])->firstWhere('default', true);
             $image = (string) ($default['image'] ?? '');
-            $template = (string) (($manifest?->toArray()['template']['files'] ?? [])['{file}'] ?? '');
+            // the starter file as a new project gets it: placeholders resolved ({handler} — the
+            // manifest's handler pattern, checked on save, wants the handler's name there)
+            $template = $manifest ? (string) ($manifest->templateFiles($manifest->defaultFilename(), $manifest->handlerFunction(), false)[$manifest->defaultFilename()] ?? '') : '';
             if ($image === '' || $template === '' || ! $this->rsImageExists($image)) {
                 $this->line("    {$id}: {$image} is not published (or not an image version), not deployed");
 

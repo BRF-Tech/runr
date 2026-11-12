@@ -7,6 +7,7 @@ use App\Models\Project;
 use App\Services\Ai\Models\ModelServiceReservations;
 use App\Services\Helpers\RegionCapacity;
 use App\Services\Helpers\ResourceReservation;
+use App\Services\Helpers\StoppedCapacity;
 use Modules\Tenancy\Models\Tenant;
 
 /**
@@ -81,14 +82,15 @@ class TenantQuotaService
      * {cpu_m, memory_mb}, which counts in full against the always-on budget (sandboxes).
      *
      * On refusal: message (each resource's, naming the budget that is used up), budget (always_on
-     * or faas; the CPU's when both resources are short), problems (resource key => message).
+     * or faas; the CPU's when both resources are short), problems (resource key => message),
+     * shortfalls (resource key => RegionCapacity::shortfalls()' entry: budget, needed, available).
      * remaining_cpu_m / remaining_memory_mb, for each resource with a quota: for a refused resource
      * what the refused budget has free; otherwise what is left after this workload of the FaaS
      * budget (a workload with a scale-to-zero part) or of the always-on budget (one without). A
      * resource without a quota (0) is not limited and has no remaining_* entry.
      *
      * @param  array{cpu_m: int, memory_mb: int}|array{hard: array{cpu_m: int, memory_mb: int}, burst: array{cpu_m: int, memory_mb: int}}  $reservation
-     * @return array{allowed: bool, message?: string, budget?: string, problems?: array<string, string>, remaining_cpu_m?: int, remaining_memory_mb?: int}
+     * @return array{allowed: bool, message?: string, budget?: string, problems?: array<string, string>, shortfalls?: array<string, array{budget: string, needed: int, available: int, total: int, capacity: int, factor: float, reserved: int}>, remaining_cpu_m?: int, remaining_memory_mb?: int}
      */
     public function checkReservation(Tenant $tenant, KnativeRegion $region, array $reservation, ?string $excludeProjectId = null, ?string $excludeModelServiceId = null): array
     {
@@ -146,6 +148,8 @@ class TenantQuotaService
                 'message' => implode(' ', $problems),
                 'budget' => $shortfalls[array_key_first($shortfalls)]['budget'],
                 'problems' => $problems,
+                // per short resource: its budget, what is needed and what is free (RegionCapacity::shortfalls)
+                'shortfalls' => $shortfalls,
             ] + $remaining;
         }
 
@@ -222,17 +226,20 @@ class TenantQuotaService
 
     /**
      * What holds the current tenant's quota on a region, split by budget: its projects (without
-     * $excludeProjectId), its model services that are not stopped (without
+     * $excludeProjectId and those a stop released), its model services that are not stopped (without
      * $excludeModelServiceId) and the other contributors (git deploy previews).
      *
      * @return array{hard: array{cpu_m: int, memory_mb: int}, burst: array{cpu_m: int, memory_mb: int}}
      */
     public function currentDemand(KnativeRegion $region, ?string $excludeProjectId = null, ?string $excludeModelServiceId = null): array
     {
+        // a project a stop released (StoppedCapacity: stopped in a pay-as-you-go region, or resumed
+        // and not admitted again yet) holds nothing of the quota either
         $projects = Project::where('knative_region_id', $region->id)
             ->with('xaasConfig', 'faasConfig', 'containerConfig')
             ->when($excludeProjectId, fn ($q) => $q->where('id', '!=', $excludeProjectId))
-            ->get();
+            ->get()
+            ->reject(fn (Project $project) => StoppedCapacity::releases($project, (string) $region->id));
 
         // Model services of the tenant (docs/huggingface.md) reserve CPU / memory too
         $usage = ResourceReservation::addDemand(

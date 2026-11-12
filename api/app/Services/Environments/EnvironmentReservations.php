@@ -8,6 +8,8 @@ use App\Models\ProjectEnvironment;
 use App\Services\GitDeploy\TenantContext;
 use App\Services\Helpers\RegionCapacity;
 use App\Services\Helpers\ResourceReservation;
+use App\Services\Helpers\StoppedCapacity;
+use Illuminate\Database\Eloquent\Collection;
 use Modules\Tenancy\Services\TenantQuotaService;
 
 /**
@@ -17,7 +19,8 @@ use Modules\Tenancy\Services\TenantQuotaService;
  * creation on, deployed or not. It counts in the region capacity (RegionCapacity::usage) and in the
  * organization quota (a TenantQuotaService usage contributor, EnvironmentServiceProvider), so the
  * quotas decide how many fit. Preview environments of pull requests count on their own
- * (PreviewService) and are not limited by this.
+ * (PreviewService) and are not limited by this. The environments of a project stopped in a
+ * pay-as-you-go region hold nothing until the project is admitted again (StoppedCapacity).
  */
 final class EnvironmentReservations
 {
@@ -38,18 +41,55 @@ final class EnvironmentReservations
 
     /**
      * Demand of the environments that run in a region (every region when null) of the current
-     * schema, without $excludeEnvironmentId.
+     * schema, without $excludeEnvironmentId and without those of projects a stop released there
+     * (StoppedCapacity: a stopped project in a pay-as-you-go region holds nothing).
      *
      * @return array{hard: array{cpu_m: int, memory_mb: int}, burst: array{cpu_m: int, memory_mb: int}}
      */
     public static function demandIn(?string $regionId, ?string $excludeEnvironmentId = null): array
     {
         $total = ResourceReservation::noDemand();
-        if (! ProjectEnvironment::tablesReady()) {
-            return $total;
+        foreach (self::environmentsIn($regionId, $excludeEnvironmentId) as $environment) {
+            if (! StoppedCapacity::releases($environment->project, self::regionOf($environment))) {
+                $total = ResourceReservation::addDemand($total, self::demand($environment->project, $environment));
+            }
         }
 
-        $environments = ProjectEnvironment::query()
+        return $total;
+    }
+
+    /**
+     * The environments in a region (every region when null) of projects a stop released there,
+     * per project: what they would hold again (RegionCapacity::stopped()).
+     *
+     * @return array<string, array{project: Project, demand: array{hard: array{cpu_m: int, memory_mb: int}, burst: array{cpu_m: int, memory_mb: int}}}>
+     */
+    public static function releasedByProjectIn(?string $regionId): array
+    {
+        $released = [];
+        foreach (self::environmentsIn($regionId) as $environment) {
+            $project = $environment->project;
+            if (! StoppedCapacity::releases($project, self::regionOf($environment))) {
+                continue;
+            }
+            $key = (string) $project->getKey();
+            $released[$key] = [
+                'project' => $project,
+                'demand' => ResourceReservation::addDemand($released[$key]['demand'] ?? ResourceReservation::noDemand(), self::demand($project, $environment)),
+            ];
+        }
+
+        return $released;
+    }
+
+    /** @return Collection<int, ProjectEnvironment> */
+    private static function environmentsIn(?string $regionId, ?string $excludeEnvironmentId = null): Collection
+    {
+        if (! ProjectEnvironment::tablesReady()) {
+            return new Collection;
+        }
+
+        return ProjectEnvironment::query()
             ->where('is_primary', false)
             ->when($excludeEnvironmentId !== null, fn ($q) => $q->whereKeyNot($excludeEnvironmentId))
             ->when($regionId !== null, fn ($q) => $q->where(fn ($w) => $w->where('knative_region_id', $regionId)
@@ -57,12 +97,14 @@ final class EnvironmentReservations
                     ->whereHas('project', fn ($p) => $p->where('knative_region_id', $regionId)))))
             ->with(['project.xaasConfig', 'project.faasConfig', 'project.containerConfig', 'project.knativeRegion', 'knativeRegion'])
             ->get();
+    }
 
-        foreach ($environments as $environment) {
-            $total = ResourceReservation::addDemand($total, self::demand($environment->project, $environment));
-        }
+    /** The region an environment runs in: its own, else its project's. */
+    private static function regionOf(ProjectEnvironment $environment): ?string
+    {
+        $region = $environment->knative_region_id;
 
-        return $total;
+        return $region !== null && $region !== '' ? (string) $region : $environment->project->knative_region_id;
     }
 
     /**

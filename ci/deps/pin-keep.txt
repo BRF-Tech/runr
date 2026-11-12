@@ -1,0 +1,16 @@
+# Literal strings that name the last release as history, not as a pin (ci/deps/release-pins.sh,
+# --keep): they stay byte for byte when a release moves the pins. Every release (the dependency test
+# bot's and the manual one, whose bump-pins.sh takes this file as PIN_KEEP) keeps the list: a string
+# that names a release older than the last one no longer matters and may go; a new measurement label
+# or a third-party version that happens to be the release's comes in. One string per line.
+#
+# README / landing measurement labels (Sandbox API measured on RunR 0.6.8, 2026-11-08)
+(RunR 0.6.8, 2026-11-08
+data-measured="v0.6.8"
+RunR ölçümü: v0.6.8
+RunR measurement: v0.6.8
+# a third-party dependency that happens to be v0.6.8 (runtime/agent/go.mod)
+github.com/google/gnostic-models v0.6.8
+# the upgrade test's history (test-helm-upgrade.sh comment, helm_upgrade_test.sh fixture)
+(0.6.8: runtime_sources and its columns stay)
+"app_version":"0.6.8"

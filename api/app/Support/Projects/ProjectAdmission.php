@@ -3,6 +3,7 @@
 namespace App\Support\Projects;
 
 use App\Models\Project;
+use App\Services\Helpers\StoppedCapacity;
 use Closure;
 use Illuminate\Http\Exceptions\HttpResponseException;
 
@@ -16,7 +17,11 @@ use Illuminate\Http\Exceptions\HttpResponseException;
  *  - deploy guards and config limiters that optional modules register: the Billing module refuses
  *    a project in a fixed-price region without an approved allocation and keeps everything the
  *    project can run there — its worst case up to max_scale, with a deploy's overrides, and its
- *    previews — within the approved resources (docs/billing.md#what-a-fixed-project-may-use).
+ *    previews — within the approved resources (docs/billing.md#what-a-fixed-project-may-use);
+ *  - last, a resumed project that a deploy has not admitted again (StoppedCapacity): its stop gave
+ *    its capacity back in a pay-as-you-go region, so what it reserves has to fit the region and
+ *    the organization's quota again (422 capacity_exceeded / quota_exceeded). Admitted, it holds
+ *    its reservation again. A preview is not the project's workload and does not admit it.
  *
  * Guards refuse by throwing (an HttpResponseException with a JSON body {message, code}) and get
  * the DeployIntent (the deploy's overrides, or the preview being deployed); config limiters get a
@@ -54,7 +59,8 @@ final class ProjectAdmission
     }
 
     /**
-     * Refuse the deploy of a stopped project (409 project_stopped), then ask every guard.
+     * Refuse the deploy of a stopped project (409 project_stopped), then ask every guard, then
+     * admit a resumed project again (StoppedCapacity::readmit()).
      *
      * @throws HttpResponseException
      */
@@ -73,6 +79,34 @@ final class ProjectAdmission
         foreach (self::$deployGuards as $guard) {
             $guard($project, $intent);
         }
+
+        // Last: admitted, the project holds its reservation again — only when every guard let it through
+        if (! $intent->isPreview()) {
+            StoppedCapacity::readmit($project);
+        }
+    }
+
+    /**
+     * What the module guards would answer a production deploy of the project now — the refusal's
+     * body ({message, code, …}), null when they let it through — without admitting it
+     * (StoppedCapacity::waiting(): why a resumed project still waits).
+     *
+     * @return array<string, mixed>|null
+     */
+    public static function guardRefusal(Project $project, ?DeployIntent $intent = null): ?array
+    {
+        $intent ??= new DeployIntent;
+        try {
+            foreach (self::$deployGuards as $guard) {
+                $guard($project, $intent);
+            }
+        } catch (HttpResponseException $e) {
+            $data = json_decode((string) $e->getResponse()->getContent(), true);
+
+            return is_array($data) ? $data : ['message' => __('api.project.not_deployable'), 'code' => null];
+        }
+
+        return null;
     }
 
     /**

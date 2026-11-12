@@ -1,8 +1,12 @@
 # Upstream releases RunR follows, every day and by hand: a released Knative minor for the
-# KNATIVE_K8S_COMPAT table (ci/check-knative-releases.sh) and versions of the Helm charts RunR
-# installs into a region that are newer than the ones its code pins (ci/check-helm-releases.sh).
+# KNATIVE_K8S_COMPAT table (ci/check-knative-releases.sh), versions of the Helm charts RunR
+# installs into a region that are newer than the ones its code pins (ci/check-helm-releases.sh),
+# and the newer versions of the packages RunR ships or builds with (ci/check-package-releases.sh:
+# Composer, npm, Go modules, GitHub Actions pins, Dockerfile base images; one finding per group).
 # Each finding becomes an issue of this repository once: a title an issue already has, open or
-# closed, is not filed again.
+# closed, is not filed again. A finding with a security advisory gets the label "security" and is
+# tested by the dependency test bot the same day (deps-test.yml with its issue number), not on
+# Saturday.
 name: Upstream releases
 
 on:
@@ -20,12 +24,14 @@ concurrency:
 
 jobs:
   check:
-    name: Knative and Helm chart releases
+    name: Knative, Helm chart and package releases
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 45
     permissions:
       contents: read
       issues: write
+      # deps-test.yml for a finding with a security advisory (a workflow_dispatch)
+      actions: write
     env:
       # the helm of the API image (api/Dockerfile.prod)
       HELM_VERSION: v3.16.0
@@ -50,6 +56,36 @@ jobs:
         env:
           RELEASES_REPORT_DIR: ${{ runner.temp }}/releases
         run: bash ci/check-helm-releases.sh
+      # the tools of the package check, as ci.yml has them (composer outdated/audit, npm view/audit,
+      # go list -u, govulncheck)
+      - uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # 2.40.0
+        if: ${{ !cancelled() }}
+        with:
+          php-version: '8.2'
+          coverage: none
+          tools: composer:v2
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        if: ${{ !cancelled() }}
+        with:
+          node-version: 22
+          package-manager-cache: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        if: ${{ !cancelled() }}
+        with:
+          go-version: '1.26.9'
+          cache-dependency-path: '**/go.sum'
+      - name: Install govulncheck (pinned)
+        if: ${{ !cancelled() }}
+        env:
+          GOVULNCHECK_VERSION: v1.1.4
+        run: go install "golang.org/x/vuln/cmd/govulncheck@${GOVULNCHECK_VERSION}"
+      - name: Package releases
+        if: ${{ !cancelled() }}
+        env:
+          RELEASES_REPORT_DIR: ${{ runner.temp }}/releases
+          GOTOOLCHAIN: auto
+          GOFLAGS: -mod=mod
+        run: bash ci/check-package-releases.sh
       # one issue per finding whose title no issue (open or closed) has yet
       - name: File the findings as issues
         if: ${{ !cancelled() }}
@@ -58,6 +94,9 @@ jobs:
           RELEASES_REPORT_DIR: ${{ runner.temp }}/releases
         run: |
           shopt -s nullglob
+          gh label create security --repo "$GITHUB_REPOSITORY" --color b60205 \
+            --description "A security advisory: the dependency test bot tests it the same day" 2>/dev/null || true
+          urgent=()
           for f in "$RELEASES_REPORT_DIR"/*.md; do
             title="$(head -n 1 "$f")"
             tail -n +3 "$f" > "$f.body"
@@ -67,7 +106,15 @@ jobs:
               echo "already filed: ${title}"
               continue
             fi
-            url="$(gh issue create --repo "$GITHUB_REPOSITORY" --title "$title" --body-file "$f.body")"
+            labels=()
+            [[ "$title" != *' (security)' ]] || labels=(--label security)
+            url="$(gh issue create --repo "$GITHUB_REPOSITORY" --title "$title" --body-file "$f.body" "${labels[@]}")"
             echo "filed: ${title} ${url}"
             echo "- [${title}](${url})" >> "$GITHUB_STEP_SUMMARY"
+            [ "${#labels[@]}" -eq 0 ] || urgent+=("${url##*/}")
           done
+          # a security advisory is tested today (the bot's own run: one release at a time)
+          if [ "${#urgent[@]}" -gt 0 ]; then
+            gh workflow run deps-test.yml --repo "$GITHUB_REPOSITORY" -f issue="$(IFS=,; echo "${urgent[*]}")"
+            echo "- deps-test.yml started for #${urgent[*]} (security)" >> "$GITHUB_STEP_SUMMARY"
+          fi

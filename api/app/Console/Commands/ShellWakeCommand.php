@@ -62,7 +62,7 @@ class ShellWakeCommand extends Command
         }
 
         // Phase 1: Find running pods
-        $running = $this->findRunningPods($k8s, $namespace, $projectId, $version, $slug);
+        $running = self::running($this->findPods($k8s, $namespace, $projectId, $version, $slug));
 
         if (! empty($running)) {
             return $this->emitReady($running[0]);
@@ -80,20 +80,67 @@ class ShellWakeCommand extends Command
         $this->out(['status' => 'waiting']);
 
         $deadline = time() + 30;
+        $pods = [];
         while (time() < $deadline) {
             usleep(2_000_000);
-            $running = $this->findRunningPods($k8s, $namespace, $projectId, $version, $slug);
+            $pods = $this->findPods($k8s, $namespace, $projectId, $version, $slug);
+            $running = self::running($pods);
             if (! empty($running)) {
                 return $this->emitReady($running[0]);
             }
         }
 
-        $this->out(['status' => 'failed', 'error' => 'No running pods found after wake-up attempt.']);
+        $this->out(['status' => 'failed', 'error' => self::notRunningError($pods)]);
 
         return 1;
     }
 
-    private function findRunningPods(KubernetesClient $k8s, string $ns, ?string $projectId, ?int $version, string $slug): array
+    /**
+     * The failure after the wake-up, with what holds the function's pod: the scheduler's message
+     * of a pod it cannot place (a region whose nodes are full: overcommitted scale-to-zero pods
+     * wait as Pending until others scale to zero), a waiting container's reason, or that no pod
+     * was created.
+     *
+     * @param  list<array<string, mixed>>  $pods  the function's pods at the last look
+     */
+    public static function notRunningError(array $pods): string
+    {
+        $error = 'No running pods found after wake-up attempt.';
+        // the new pod rather than one of an earlier scale-down that is being deleted
+        $pod = array_values(array_filter($pods, fn ($p) => ! isset($p['metadata']['deletionTimestamp'])))[0] ?? $pods[0] ?? null;
+        if ($pod === null) {
+            return "{$error} No pod was started.";
+        }
+
+        $name = $pod['metadata']['name'] ?? 'the pod';
+        $phase = $pod['status']['phase'] ?? 'Pending';
+        foreach ($pod['status']['conditions'] ?? [] as $condition) {
+            if (($condition['type'] ?? '') === 'PodScheduled' && ($condition['status'] ?? '') === 'False') {
+                return "{$error} {$name} is {$phase}, not scheduled: ".mb_substr((string) ($condition['message'] ?? $condition['reason'] ?? ''), 0, 300);
+            }
+        }
+        foreach (['initContainerStatuses', 'containerStatuses'] as $key) {
+            foreach ($pod['status'][$key] ?? [] as $status) {
+                $waiting = $status['state']['waiting'] ?? null;
+                if (is_array($waiting)) {
+                    $message = isset($waiting['message']) ? ': '.mb_substr((string) $waiting['message'], 0, 200) : '';
+
+                    return "{$error} {$name} is {$phase}, container ".($status['name'] ?? '?').' '.($waiting['reason'] ?? 'waiting').$message;
+                }
+            }
+        }
+
+        return "{$error} {$name} is {$phase}.";
+    }
+
+    /** @return list<array<string, mixed>> the pods in phase Running */
+    private static function running(array $pods): array
+    {
+        return array_values(array_filter($pods, fn ($p) => ($p['status']['phase'] ?? '') === 'Running'));
+    }
+
+    /** @return list<array<string, mixed>> the function's pods: of its project and version, else of its Knative Service */
+    private function findPods(KubernetesClient $k8s, string $ns, ?string $projectId, ?int $version, string $slug): array
     {
         $pods = [];
 
@@ -112,9 +159,7 @@ class ShellWakeCommand extends Command
             $pods = $result['items'] ?? [];
         }
 
-        return array_values(
-            array_filter($pods, fn ($p) => ($p['status']['phase'] ?? '') === 'Running')
-        );
+        return array_values($pods);
     }
 
     private function emitReady(array $pod): int

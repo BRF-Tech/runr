@@ -9,6 +9,7 @@ use App\Services\Ai\Models\ModelServiceReservations;
 use App\Services\Environments\EnvironmentReservations;
 use App\Services\GlobalProjects\GlobalProjectRegions;
 use App\Services\Sandboxes\SandboxContext;
+use Illuminate\Database\Eloquent\Collection as EloquentCollection;
 use Illuminate\Database\QueryException;
 
 /**
@@ -34,6 +35,11 @@ use Illuminate\Database\QueryException;
  * the same way with the same region's factors: the quota is the organization's always-on budget,
  * and quota × factor minus what that holds is its FaaS overcommit budget (limitsOf(),
  * shortfalls(), budgets()).
+ *
+ * A stopped project holds nothing of a pay-as-you-go region (StoppedCapacity): usage() leaves it
+ * out until a deploy admits it again, stopped() is what such projects would hold if they all came
+ * back at once, withStopped() both budgets with them back (the capacity endpoint, the capacity
+ * alarm). A fixed region keeps a stopped project's reservation: there it counts in usage().
  */
 final class RegionCapacity
 {
@@ -125,19 +131,18 @@ final class RegionCapacity
 
     /**
      * What holds a region (every region when $regionId is null), split by budget: its projects
-     * (without $excludeProjectId), the environments of projects that run there
-     * (EnvironmentReservations, docs/environments.md), its model services that are not stopped
-     * (without $excludeModelServiceId) and its live sandboxes and warm pool pods.
+     * (without $excludeProjectId and without those a stop released, StoppedCapacity), the
+     * environments of projects that run there (EnvironmentReservations, docs/environments.md), its
+     * model services that are not stopped (without $excludeModelServiceId) and its live sandboxes
+     * and warm pool pods ($sandboxes false: without them — a sum over several schemas counts the
+     * Sandbox API's central table once, TenantResourceThresholdService).
      *
      * @return array{hard: array{cpu_m: int, memory_mb: int}, burst: array{cpu_m: int, memory_mb: int}}
      */
-    public static function usage(?string $regionId, ?string $excludeProjectId = null, ?string $excludeModelServiceId = null): array
+    public static function usage(?string $regionId, ?string $excludeProjectId = null, ?string $excludeModelServiceId = null, bool $sandboxes = true): array
     {
-        $projects = Project::with('xaasConfig', 'faasConfig', 'containerConfig')
-            ->when($excludeProjectId, fn ($q) => $q->where('id', '!=', $excludeProjectId))
-            // a global project's copy counts in every region it runs in (docs/global-projects.md)
-            ->when($regionId, fn ($q) => GlobalProjectRegions::whereRunsIn($q, $regionId))
-            ->get();
+        $projects = self::projectsIn($regionId, $excludeProjectId)
+            ->reject(fn (Project $project) => StoppedCapacity::releases($project, $regionId));
 
         $usage = ResourceReservation::addDemand(
             ResourceReservation::sumDemand($projects),
@@ -145,7 +150,127 @@ final class RegionCapacity
         );
         $usage = ResourceReservation::addDemand($usage, EnvironmentReservations::demandIn($regionId));
 
-        return ResourceReservation::addDemand($usage, ['hard' => self::sandboxUsage($regionId), 'burst' => ResourceReservation::zero()]);
+        return $sandboxes
+            ? ResourceReservation::addDemand($usage, ['hard' => self::sandboxUsage($regionId), 'burst' => ResourceReservation::zero()])
+            : $usage;
+    }
+
+    /**
+     * What the projects a stop released in a region (every region when null) would hold again if
+     * they all came back at the same time — stopped ones, and resumed ones a deploy has not admitted
+     * again yet (StoppedCapacity) — with their environments there. projects: each of them with its
+     * part, the largest first.
+     *
+     * @return array{demand: array{hard: array{cpu_m: int, memory_mb: int}, burst: array{cpu_m: int, memory_mb: int}}, projects: list<array{id: string, name: string, stopped: bool, cpu_m: int, memory_mb: int}>}
+     */
+    public static function stopped(?string $regionId): array
+    {
+        $projects = self::projectsIn($regionId)
+            ->filter(fn (Project $project) => StoppedCapacity::releases($project, $regionId))
+            ->values();
+        try {
+            $projects->loadMissing('triggers');
+        } catch (\Throwable) {
+            // a schema without project_triggers: every project counts from its config
+        }
+
+        $environments = EnvironmentReservations::releasedByProjectIn($regionId);
+        $total = ResourceReservation::noDemand();
+        $list = [];
+        $add = function (Project $project, array $demand) use (&$total, &$list): void {
+            $total = ResourceReservation::addDemand($total, $demand);
+            $sum = ResourceReservation::total($demand);
+            $list[] = ['id' => (string) $project->getKey(), 'name' => (string) $project->name, 'stopped' => $project->isStopped(), 'cpu_m' => $sum['cpu_m'], 'memory_mb' => $sum['memory_mb']];
+        };
+
+        foreach ($projects as $project) {
+            $key = (string) $project->getKey();
+            $add($project, ResourceReservation::addDemand(ResourceReservation::demandForProject($project), $environments[$key]['demand'] ?? ResourceReservation::noDemand()));
+            unset($environments[$key]);
+        }
+        // environments here of projects that run in another region
+        foreach ($environments as $environment) {
+            $add($environment['project'], $environment['demand']);
+        }
+
+        usort($list, fn (array $a, array $b) => [$b['cpu_m'], $b['memory_mb']] <=> [$a['cpu_m'], $a['memory_mb']]);
+
+        return ['demand' => $total, 'projects' => $list];
+    }
+
+    /**
+     * Both budgets of a region with its released projects back (stopped()): per resource what the
+     * stopped projects add, what each budget would hold, how full the fuller one would be
+     * (utilization()), which one that is and how much it would lack (exceeded_by, in that
+     * budget's own terms; 0 while it fits). projects: how many projects that is.
+     *
+     * @param  array{hard: array{cpu_m: int, memory_mb: int}, burst: array{cpu_m: int, memory_mb: int}}  $usage  usage()
+     * @param  array{demand: array{hard: array{cpu_m: int, memory_mb: int}, burst: array{cpu_m: int, memory_mb: int}}, projects: list<array<string, mixed>>}  $stopped  stopped()
+     * @return array{projects: int, cpu_m: array{stopped_always_on: int, stopped_faas: int, always_on_used: int, faas_used: int, utilization: float|null, budget: string|null, exceeded_by: int}, memory_mb: array{stopped_always_on: int, stopped_faas: int, always_on_used: int, faas_used: int, utilization: float|null, budget: string|null, exceeded_by: int}}
+     */
+    public static function withStopped(KnativeRegion $region, array $usage, array $stopped): array
+    {
+        $limits = self::limits([$region]);
+        $all = ResourceReservation::addDemand($usage, $stopped['demand']);
+        $budgets = self::budgets($limits, self::factors($region), $all);
+
+        $figure = ['projects' => count($stopped['projects'])];
+        foreach (array_keys(self::RESOURCES) as $key) {
+            $capacity = $limits['capacity'][$key];
+            $overcommit = $limits['overcommit'][$key];
+            $hard = $all['hard'][$key];
+            $burst = $all['burst'][$key];
+
+            $budget = null;
+            $exceeded = 0;
+            if ($capacity > 0) {
+                $budget = $hard / $capacity >= ($hard + $burst) / max(1, $overcommit) ? self::ALWAYS_ON : self::FAAS;
+                $exceeded = max(0, $budget === self::ALWAYS_ON ? $hard - $capacity : $hard + $burst - $overcommit);
+            }
+
+            $figure[$key] = [
+                'stopped_always_on' => $stopped['demand']['hard'][$key],
+                'stopped_faas' => $stopped['demand']['burst'][$key],
+                'always_on_used' => $hard,
+                'faas_used' => $burst,
+                'utilization' => self::utilization($budgets[$key]),
+                'budget' => $budget,
+                'exceeded_by' => $exceeded,
+            ];
+        }
+
+        return $figure;
+    }
+
+    /**
+     * How much capacity a region of $capacity has to gain so that a demand ($hard always-on,
+     * $burst FaaS) fills at most $percent of each budget — capacity and capacity × $factor; 0 when
+     * it does already. What "add nodes" means in the capacity alarm.
+     */
+    public static function capacityToAdd(int $capacity, float $factor, int $hard, int $burst, float $percent): int
+    {
+        if ($capacity <= 0 || $percent <= 0) {
+            return 0;
+        }
+
+        // × 100 / percent: whole amounts stay exact (no 0.6-style binary fractions)
+        $needed = (int) ceil(max($hard * 100 / $percent, ($hard + $burst) * 100 / ($percent * max(self::MIN_OVERCOMMIT, $factor))));
+
+        return max(0, $needed - $capacity);
+    }
+
+    /**
+     * The projects of a region (every region when null) with their configs; a global project's
+     * copy counts in every region it runs in (docs/global-projects.md).
+     *
+     * @return EloquentCollection<int, Project>
+     */
+    private static function projectsIn(?string $regionId, ?string $excludeProjectId = null): EloquentCollection
+    {
+        return Project::with('xaasConfig', 'faasConfig', 'containerConfig')
+            ->when($excludeProjectId, fn ($q) => $q->where('id', '!=', $excludeProjectId))
+            ->when($regionId, fn ($q) => GlobalProjectRegions::whereRunsIn($q, $regionId))
+            ->get();
     }
 
     /**

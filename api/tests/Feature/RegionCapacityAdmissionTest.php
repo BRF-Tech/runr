@@ -169,6 +169,32 @@ class RegionCapacityAdmissionTest extends TestCase
         $this->assertSame([], $this->createErrors($region, [], 'fn-9'));
     }
 
+    /**
+     * A reservation lasts as long as the project — never deployed, after a failed deploy, scaled to
+     * zero — and deleting the project releases it at once (docs/architecture.md → Region capacity
+     * and admission; the Kind e2e deletes each wave's projects once verified). A stop releases it
+     * too in a pay-as-you-go region (StoppedProjectCapacityTest).
+     */
+    public function test_a_project_holds_its_reservation_until_it_is_deleted(): void
+    {
+        Http::fake();
+        $region = $this->region(); // 1000m × 3
+        $projects = [];
+        foreach (range(1, 8) as $i) {
+            $projects[$i] = $this->project($region, "fn-{$i}");
+        }
+        $version = Version::create(['project_id' => $projects[2]->id, 'number' => 1, 'created_by' => 'dev', 'build_status' => 'ready']);
+        Deployment::create(['project_id' => $projects[2]->id, 'version_id' => $version->id, 'status' => 'failed']);
+
+        $this->assertSame(8 * 350, RegionCapacity::usage($region->id)['burst']['cpu_m']);
+        $this->assertArrayHasKey('config.cpu', $this->createErrors($region, [], 'fn-9'));
+
+        $projects[1]->delete();
+
+        $this->assertSame(7 * 350, RegionCapacity::usage($region->id)['burst']['cpu_m']);
+        $this->assertSame([], $this->createErrors($region, [], 'fn-9'));
+    }
+
     public function test_the_memory_overcommit_is_its_own_factor(): void
     {
         $region = $this->region('mem', 64000, 1000); // memory factor 1.5 → 1500 MB

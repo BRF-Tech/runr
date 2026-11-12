@@ -9,6 +9,7 @@ use App\Models\Runtime;
 use App\Models\User;
 use App\Services\GatewayService;
 use App\Services\GlobalProjects\GlobalProjectService;
+use App\Services\Helpers\StoppedCapacity;
 use App\Services\InternalNetwork\InternalNetwork;
 use App\Services\ProjectDomainService;
 use App\Services\Projects\ProjectStopService;
@@ -88,6 +89,12 @@ class ProjectResource extends JsonResource
             // level "platform" (a platform administrator — only one can resume it) or "organization";
             // system "cost_limit" when RunR stopped it by itself (ProjectStopService::stopBySystem)
             'stopped' => $this->resource->isStopped() ? $this->stopState($request) : null,
+            // Resumed, not admitted again yet (StoppedCapacity): it holds nothing until a deploy fits —
+            // since when; code (capacity_exceeded / quota_exceeded / fixed_allocation_exceeded, null:
+            // it fits now) and message of what a deploy would answer now; per short resource needed,
+            // available and missing (shortfall). Null when the project does not wait.
+            /** @var array{since: string|null, code: string|null, message: string|null, region_id: string|null, shortfall: array<string, array{needed: int, available: int, missing: int, budget?: string}>|null}|null */
+            'capacity_waiting' => StoppedCapacity::waiting($this->resource),
             'runtime_eol' => $this->resolveRuntimeEol(),
             // Lifecycle of the runtime version the project runs (docs/runtimes.md#lifecycle)
             'runtime_lifecycle' => $this->resolveRuntimeLifecycle(),

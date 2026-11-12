@@ -379,6 +379,11 @@ TOML);
         $this->assertSame(['https://registry-1.docker.io'], $registries[1]['urls']);
         $this->assertSame([['prefix' => ZotManifests::DOCKER_HUB_PREFIX]], $registries[1]['content']);
         $this->assertArrayNotHasKey('manifestCheckInterval', $registries[1]);
+        // A failed fetch from ghcr.io is tried again (Zot wants retryDelay with maxRetries)
+        $this->assertSame(5, $registries[0]['maxRetries']);
+        $this->assertSame('2s', $registries[0]['retryDelay']);
+        $this->assertArrayNotHasKey('maxRetries', $registries[1]);
+        $this->assertArrayNotHasKey('retryDelay', $registries[1]);
 
         // Both Helm value variants render it (PVC and S3)
         $this->assertTrue(ZotManifests::hasGhcrUpstream(ZotManifests::pvcValues('', '20Gi')['configFiles']['config.json']));
@@ -458,13 +463,62 @@ TOML);
     public function test_reconcile_moves_runr_ghcr_in_front_of_docker_hub_and_drops_the_interval_for_old_zot(): void
     {
         [$ghcr, $hub] = ZotManifests::syncRegistries(true);
-        $json = json_encode(['extensions' => ['sync' => ['registries' => [$hub, $ghcr + ['maxRetries' => 2]]]]]);
+        $json = json_encode(['extensions' => ['sync' => ['registries' => [$hub, $ghcr + ['certDir' => '/certs/ghcr']]]]]);
 
         $out = json_decode(ZotManifests::reconcileSyncConfig($json, false), true);
 
-        $withoutInterval = $ghcr + ['maxRetries' => 2];
+        $withoutInterval = $ghcr + ['certDir' => '/certs/ghcr'];
         unset($withoutInterval['manifestCheckInterval']);
         $this->assertSame([$withoutInterval, $hub], $out['extensions']['sync']['registries']);
+    }
+
+    /**
+     * The ghcr.io entry of an earlier release has no retries. They alone do not restart a Zot whose
+     * config needs nothing else (the builds retry their pulls themselves): they come with the next
+     * change of the config, on every Zot (all of them know the keys), over values the entry has.
+     * Docker Hub's entry keeps what it has.
+     */
+    public function test_the_ghcr_retries_come_with_the_next_change_of_the_config(): void
+    {
+        $config = fn (array $registries) => json_encode(['http' => ['compat' => ['docker2s2']], 'extensions' => ['sync' => ['registries' => $registries]]]);
+
+        foreach ([[true, true], [false, false]] as [$interval, $surface]) {
+            $want = ZotManifests::syncRegistries($interval, $surface);
+            $earlier = $want;
+            unset($earlier[0]['maxRetries'], $earlier[0]['retryDelay']);
+
+            $this->assertNull(ZotManifests::reconcileSyncConfig($config($earlier), $interval, $surface), 'a changed config restarts Zot');
+
+            // Docker Hub's entry no longer is what RunR wants: the retries come with that change
+            $changed = $earlier;
+            $changed[1]['tlsVerify'] = false;
+            $out = json_decode(ZotManifests::reconcileSyncConfig($config($changed), $interval, $surface), true);
+            // the keys an entry gains come after the ones it has
+            $this->assertEquals($want, $out['extensions']['sync']['registries']);
+        }
+
+        // A Zot of 2.1.22 or later on the config of an earlier one: its Docker Hub filter changes
+        [$ghcr, $hub] = ZotManifests::syncRegistries(true, false);
+        $out = json_decode(ZotManifests::reconcileSyncConfig($config([
+            ['maxRetries' => 1, 'retryDelay' => '10m'] + $ghcr,
+            $hub + ['maxRetries' => 3, 'retryDelay' => '30s'],
+        ]), true, true), true);
+        $this->assertSame([5, '2s'], [$out['extensions']['sync']['registries'][0]['maxRetries'], $out['extensions']['sync']['registries'][0]['retryDelay']]);
+        $this->assertSame([3, '30s'], [$out['extensions']['sync']['registries'][1]['maxRetries'], $out['extensions']['sync']['registries'][1]['retryDelay']]);
+    }
+
+    /** Zot refuses to start on retries in an entry that streams: an operator's stream stays retry-free */
+    public function test_reconcile_gives_a_streaming_ghcr_entry_no_retries(): void
+    {
+        [$ghcr, $hub] = ZotManifests::syncRegistries(true);
+        $streaming = $ghcr + ['stream' => true];
+        unset($streaming['maxRetries'], $streaming['retryDelay']);
+        $config = fn (array $registries) => json_encode(['http' => ['compat' => ['docker2s2']], 'extensions' => ['sync' => ['registries' => $registries]]]);
+
+        $this->assertNull(ZotManifests::reconcileSyncConfig($config([$streaming, $hub]), true));
+
+        $out = json_decode(ZotManifests::reconcileSyncConfig($config([$streaming + ['maxRetries' => 2, 'retryDelay' => '1s'], $hub]), true), true);
+        $this->assertSame([$streaming, $hub], $out['extensions']['sync']['registries']);
     }
 
     public function test_reconcile_adds_both_upstreams_to_a_config_without_sync(): void

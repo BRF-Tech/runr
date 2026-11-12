@@ -7,12 +7,15 @@ use App\Events\DeploymentStatusChanged;
 use App\Models\ContainerConfig;
 use App\Models\Deployment;
 use App\Models\Git\PreviewEnvironment;
+use App\Models\KnativeRegion;
 use App\Models\Project;
 use App\Models\ProjectEnvironment;
 use App\Models\Setting;
+use App\Models\User;
 use App\Models\Version;
 use App\Services\Environments\DeployTarget;
 use App\Services\GitService;
+use App\Services\Helpers\StoppedCapacity;
 use App\Services\Projects\ProjectStopService;
 use App\Support\Projects\DeployIntent;
 use App\Support\Projects\ProjectAdmission;
@@ -21,6 +24,7 @@ use Illuminate\Http\Exceptions\HttpResponseException;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Event;
 use Modules\Billing\Models\FixedRequest;
+use Modules\Billing\Services\Admission;
 use Modules\Billing\Services\FixedRequests;
 use Tests\Concerns\ActsWithRoles;
 use Tests\Feature\Billing\Concerns\EnablesBilling;
@@ -181,7 +185,9 @@ class FixedAdmissionTest extends TestCase
         };
         $refused = function ($response, string $code, string $needle) {
             $response->assertStatus(422)->assertJsonPath('code', $code);
-            $this->assertSame(['code', 'message'], collect($response->json())->keys()->sort()->values()->all(), 'the shape of every refusal');
+            // above the allocation also the region and what each short resource lacks
+            $shape = $code === 'fixed_allocation_exceeded' ? ['code', 'message', 'region_id', 'shortfall'] : ['code', 'message'];
+            $this->assertSame($shape, collect($response->json())->keys()->sort()->values()->all(), 'the shape of every refusal');
             $this->assertStringContainsString($needle, $response->json('message'));
         };
 
@@ -191,6 +197,7 @@ class FixedAdmissionTest extends TestCase
 
         // CPU above the allocation: (500m + 100m queue-proxy) × 1 pod against 100m
         $this->allocation($cpu, 100, 4096, '2026-10-01');
+        $this->assertSame(['cpu_m' => ['needed' => 600, 'available' => 100, 'missing' => 500]], $deploy($cpu)->json('shortfall'));
         $refused($deploy($cpu), 'fixed_allocation_exceeded', '600 m CPU');
         // ... also when only an override raises it
         $small = $this->sized($this->billedProject('small', $region, $owner), '100m', 128);
@@ -338,5 +345,106 @@ class FixedAdmissionTest extends TestCase
         $active = $this->allocation($second, 1000, 1024, '2026-10-05');
         app(FixedRequests::class)->endForProject((string) $second->id);
         $this->assertSame(FixedRequest::ENDED, $active->fresh()->status);
+    }
+
+    /** A fixed project of 500m / 512 MB per pod (600m / 612 MB with the queue-proxy) up to $maxScale pods, with a live deployment. */
+    private function running(string $name, KnativeRegion $region, User $owner, int $maxScale): Project
+    {
+        $project = $this->sized($this->billedProject($name, $region, $owner), '500m', 512);
+        $project->containerConfig->update(['max_scale' => $maxScale]);
+        $version = Version::create(['project_id' => $project->id, 'number' => 1, 'created_by' => 'dev', 'build_status' => 'ready']);
+        $project->deployments()->create(['version_id' => $version->id, 'status' => 'active', 'k8s_job_name' => "run-{$name}-v1"]);
+
+        return $project->fresh();
+    }
+
+    /**
+     * The allocations cover the projects that run: a stopped project's share is lent to the
+     * organization's other projects in the region, the two cannot run at the same time — the
+     * resume is refused while another project uses the share — and the allocation stays billed.
+     */
+    public function test_a_stopped_projects_allocation_is_lent_and_its_resume_waits_for_it(): void
+    {
+        $owner = $this->userWithRole('owner');
+        $region = $this->billingRegion('fx', 'fixed');
+        // 2 pods each: 1200m / 1224 MB at the worst case, approved 1200m / 2048 MB each
+        $api = $this->running('api', $region, $owner, 2);
+        $web = $this->running('web', $region, $owner, 2);
+        $apiShare = $this->allocation($api, 1200, 2048, '2026-10-01');
+        $this->allocation($web, 1200, 2048, '2026-10-01');
+
+        // web may not grow into api's share while api runs
+        $this->assertSame('fixed_allocation_exceeded', $this->refusal($web, DeployIntent::production(['max_scale' => 4]))['code'] ?? null);
+
+        app(ProjectStopService::class)->stop($api, $owner, 'paused');
+        $api->deployments()->update(['status' => 'shut_down']);
+        $this->assertTrue(StoppedCapacity::holds((string) $region->id), 'a fixed region keeps the reservation');
+        $this->assertSame(FixedRequest::APPROVED, $apiShare->fresh()->status, 'the allocation stays billed');
+        $this->assertNull($apiShare->fresh()->active_until);
+
+        // stopped: its 1200m are lent — web runs 4 pods (2400m) in its place, 5 do not fit
+        $this->assertNull($this->refusal($web, DeployIntent::production(['max_scale' => 4])));
+        $over = $this->refusal($web, DeployIntent::production(['max_scale' => 5]));
+        $this->assertSame('fixed_allocation_exceeded', $over['code'] ?? null);
+        $this->assertStringContainsString('lend 1200 m CPU', $over['message']);
+        $web->deployments()->update(['deploy_config' => ['max_scale' => 4]]);
+
+        // the resume must fit: web uses api's share, so the redeploy is refused like a deploy
+        $deployment = app(ProjectStopService::class)->resume($api->fresh(), $owner, $refusal, $code);
+        $this->assertNull($deployment);
+        $this->assertSame('fixed_allocation_exceeded', $code);
+        $this->assertStringContainsString('still use 1200 m CPU', (string) $refusal);
+        $api = $api->fresh();
+        $this->assertFalse($api->isStopped());
+        $this->assertNotNull($api->capacity_released_at, 'resumed without a deployment, its share still lent');
+        // the project page: why it waits and what it lacks — web uses 1200m of its 1200m, 400 MB beyond web's own memory
+        $waiting = StoppedCapacity::waiting($api);
+        $this->assertSame('fixed_allocation_exceeded', $waiting['code']);
+        $this->assertSame((string) $region->id, $waiting['region_id']);
+        $this->assertSame(['cpu_m' => ['needed' => 1200, 'available' => 0, 'missing' => 1200]], $waiting['shortfall']);
+        $this->assertNotNull($api->fresh()->capacity_released_at, 'asking does not admit it');
+
+        // a third project within its own allocation is not held up by the lending
+        $jobs = $this->running('jobs', $region, $owner, 1);
+        $this->allocation($jobs, 600, 1024, '2026-10-01');
+        $this->assertNull($this->refusal($jobs));
+        // ... and web keeps what it uses, but may not take more
+        $this->assertNull($this->refusal($web->fresh(), DeployIntent::production(['max_scale' => 4])));
+        $this->assertSame('fixed_allocation_exceeded', $this->refusal($web->fresh(), DeployIntent::production(['max_scale' => 5]))['code'] ?? null);
+
+        // web gives the share back: api is admitted again and holds its own share
+        $web->deployments()->update(['deploy_config' => ['max_scale' => 2]]);
+        $this->assertNull($this->refusal($api));
+        $this->assertNull($api->fresh()->capacity_released_at);
+        $this->assertSame('fixed_allocation_exceeded', $this->refusal($web->fresh(), DeployIntent::production(['max_scale' => 4]))['code'] ?? null);
+    }
+
+    public function test_only_the_part_of_a_lent_share_no_other_project_uses_is_free(): void
+    {
+        $owner = $this->userWithRole('owner');
+        $region = $this->billingRegion('fx', 'fixed');
+        $api = $this->running('api', $region, $owner, 2);
+        $this->allocation($api, 1200, 2048, '2026-10-01');
+        $lender = $this->running('lender', $region, $owner, 1);
+        $this->allocation($lender, 1200, 2048, '2026-10-01');
+
+        // the lender runs: nothing is lent
+        $lending = app(Admission::class)->lending($api, (string) $region->id);
+        $this->assertSame(['cpu_m' => 0, 'memory_mb' => 0, 'gpus' => 0], $lending['lent']);
+        $this->assertSame(['cpu_m' => 0, 'memory_mb' => 0, 'gpus' => 0], $lending['used']);
+
+        // stopped: its allocation is lent; api uses 600m of it at 3 pods
+        app(ProjectStopService::class)->stop($lender, $owner, 'paused');
+        $lender->deployments()->update(['status' => 'shut_down']);
+        $api->deployments()->update(['deploy_config' => ['max_scale' => 3]]);
+        $web = $this->running('web', $region, $owner, 1);
+        $this->allocation($web, 600, 1024, '2026-10-01');
+
+        $lending = app(Admission::class)->lending($web, (string) $region->id);
+        $this->assertSame(['cpu_m' => 1200, 'memory_mb' => 2048, 'gpus' => 0], $lending['lent']);
+        $this->assertSame(600, $lending['used']['cpu_m']);
+        // web: its own 600m + the 600m still free of the lent share
+        $this->assertNull($this->refusal($web, DeployIntent::production(['max_scale' => 2])));
+        $this->assertSame('fixed_allocation_exceeded', $this->refusal($web, DeployIntent::production(['max_scale' => 3]))['code'] ?? null);
     }
 }

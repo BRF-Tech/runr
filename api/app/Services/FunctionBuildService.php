@@ -448,6 +448,7 @@ class FunctionBuildService
                                 '--context=dir:///workspace',
                                 "--destination={$imageRef}",
                                 BuildManifests::SKIP_PUSH_PERMISSION_CHECK,
+                                ...BuildManifests::retryArgs(),
                                 '--insecure',
                                 '--insecure-pull',
                                 '--custom-platform=linux/amd64',

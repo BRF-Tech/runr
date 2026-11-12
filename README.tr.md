@@ -116,7 +116,7 @@ helm status runr -n runr      # ilk yöneticinin parolasının nasıl okunacağ�
 Chart gateway'i, UI'ı, API'yi, Horizon'u, zamanlayıcıyı ve Reverb'i, dış servislere
 yönlendirmediğiniz sürece PostgreSQL, Redis ve Mailpit'i kurar; migration ve bootstrap hook'ları
 ilk yöneticiyi oluşturur. Belirli bir sürümü kurmak için chart sürümünü sabitleyin
-(`--version 0.6.8`); API ve UI imajları onu izler. `edition=multi-tenant`, Tenancy ve Auth Provider
+(`--version 0.6.9`); API ve UI imajları onu izler. `edition=multi-tenant`, Tenancy ve Auth Provider
 modüllerini ve çok kiracılı konsol imajını açar.
 
 <details>
@@ -535,11 +535,10 @@ replikadan ilk tam HTTPS yanıtına, medyan (p90), her biri n=12. Sıcak istek: 
 | WebAssembly (Spin shim) | JavaScript | 2,12 sn (2,58) | 11 ms |
 
 Kata yalnız Python ile ölçüldü; Firecracker'ın kök dosya sistemi containerd'nin devmapper
-snapshotter'ındadır. Sandbox API, oluşturmadan ilk komuta (Kata Containers 4.3.1, aynı VM; Python
-3.15, 500m / 512 MiB, medyan, sınıf başına n=10): gVisor altında soğuk 2,33 sn (RunR 0.6.7,
-2026-11-07; gVisor'da bir komut 0.6.7'den beri ~0,1 sn daha uzun sürer), Kata Cloud Hypervisor
-altında 3,09 sn ve Kata Firecracker altında 3,43 sn (RunR 0.6.6, 2026-11-06; 0.6.7'de gürültü
-payı içinde aynı); 2'lik sıcak havuzdan 0,31-0,52 sn (RunR 0.6.7, 2026-11-07). Kata soğuk
+snapshotter'ındadır. Sandbox API, oluşturmadan ilk komuta (RunR 0.6.8, 2026-11-08, Kata Containers
+4.3.1, aynı VM; Python 3.15, 500m / 512 MiB, medyan (p90), sınıf başına n=10): gVisor altında soğuk
+1,89 sn (2,61), Kata Cloud Hypervisor altında 3,11 sn (3,43) ve Kata Firecracker altında 3,57 sn
+(3,84); 2'lik sıcak havuzdan 0,25-0,43 sn; çalışan bir sandbox'ta bir komut 0,10-0,31 sn. Kata soğuk
 başlatmasının nasıl düşürüldüğü ve kalan sürenin nereye gittiği:
 [Kata hipervizörleri → Cold start](docs/kata-hypervisors.md#cold-start).
 

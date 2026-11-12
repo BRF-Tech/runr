@@ -38,6 +38,7 @@ use Illuminate\Support\Str;
  * @property string|null $stopped_by
  * @property string|null $stop_reason
  * @property string|null $stopped_version_id Version that ran when the project was stopped (redeployed on resume)
+ * @property Carbon|null $capacity_released_at Resumed, not admitted again yet: holds no capacity (payg) / lends its allocation share (fixed) until a deploy admits it (StoppedCapacity)
  * @property string|null $deployed_runtime_class RuntimeClass of the last deploy ("runc" for none; null: unknown, the region's mapping counts)
  * @property string $access_mode public | allowlist | internal (docs/internal-network.md)
  * @property list<string>|null $allowed_cidrs Source ranges of access_mode allowlist
@@ -211,6 +212,7 @@ class Project extends Model
     protected $casts = [
         'is_region_demo' => 'boolean',
         'stopped_at' => 'datetime',
+        'capacity_released_at' => 'datetime',
         'allowed_cidrs' => 'array',
         'warm_scale_applied' => 'integer',
         'warm_scale_applied_at' => 'datetime',

@@ -1,0 +1,33 @@
+# The dependency test bot's holds: packages a person pinned on purpose (ci/deps/packages.sh). The
+# daily check and the bumps leave them; the check's output names each one with its reason.
+#
+#   GROUP NAME VERSIONS REASON…
+#     VERSIONS  *     never moved by the bot
+#               >=X   X and newer are left to a person (older updates still move)
+#
+# A hold is never written without its reason; remove the line when the reason is gone.
+
+# vue/package.json pins it exactly: the warmer editor's unit and e2e tests compare cronstrue's
+# wording (tests/utils/warmSchedule.spec.js, e2e/timed-warmer.spec.ts)
+npm-vue cronstrue * pinned exactly in vue/package.json: the warmer editor's tests compare cronstrue's wording, a person moves it with them
+# CI installs the Chromium of this version (ci.yml, e2e.yml: npx playwright install chromium)
+npm-vue @playwright/test * pinned exactly in vue/package.json: each version brings its own Chromium, which the e2e suites and shots/ run on
+# runtime/wasm-shim-spin/Dockerfile: the Rust toolchain of upstream's rust-toolchain.toml and the
+# cross-rs images upstream builds its release binaries with, by digest
+docker ghcr.io/brf-tech/runr/reqs/rust * the Spin shim builds with the Rust toolchain of upstream's rust-toolchain.toml (runtime/wasm-shim-spin/Dockerfile): it moves with SHIM_WASM_VERSION
+docker ghcr.io/cross-rs/x86_64-unknown-linux-musl * the cross-rs image upstream builds the Spin shim's release binaries with, by digest: it moves with SHIM_WASM_VERSION
+docker ghcr.io/cross-rs/aarch64-unknown-linux-musl * the cross-rs image upstream builds the Spin shim's release binaries with, by digest: it moves with SHIM_WASM_VERSION
+# RunR's own Go module: the provider takes the CLI's packages of the same release
+go-terraform-provider github.com/brf-tech/runr/cli * RunR's own CLI module: the manual release moves it with the provider
+# runtime/wasm-shim-spin/Dockerfile: upstream's build inputs of the Spin shim (its cross/Dockerfile,
+# the containerd-shim-wasm crate its Cargo.lock locks, which RunR's patch applies to)
+pins-images protoc * upstream containerd-shim-spin's cross/Dockerfile pins it (runtime/wasm-shim-spin/Dockerfile): it moves with containerd-shim-spin, by a person
+pins-images libseccomp * upstream containerd-shim-spin's cross/Dockerfile pins it (runtime/wasm-shim-spin/Dockerfile): it moves with containerd-shim-spin, by a person
+pins-images containerd-shim-wasm * the crate containerd-shim-spin's Cargo.lock locks, which patches/containerd-shim-wasm-1.0.1-linux-container-env.patch applies to: it moves with containerd-shim-spin and the patch, by a person
+# CI tests the API on the oldest PHP RunR supports (api/composer.json: php ^8.2; api-tests.yml
+# checks 8.2.35 or later); the API image ships its own (PHP_MIN_VERSION)
+pins-ci php * the API's tests run on the oldest PHP of api/composer.json's php constraint on purpose: it moves when that constraint does, by a person
+# RunR's own SDKs, which the examples use (neither is on npm or PyPI today: a package held for
+# good need not be on its registry)
+npm-example-workflows @runr/workflows * RunR's own Workflow SDK (sdk/node): the example follows its releases, by a person
+pypi-example-workflows runr-workflows * RunR's own Workflow SDK (sdk/python): the example follows its releases, by a person

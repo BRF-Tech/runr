@@ -13,8 +13,11 @@ use App\Services\Ai\Models\ModelServiceDeployer;
 use App\Services\Ai\Models\ModelServiceManifests;
 use App\Support\DeployGate;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Queue;
+use Illuminate\Support\Sleep;
 use Tests\Concerns\BuildsAiFixtures;
 use Tests\TestCase;
 
@@ -120,6 +123,68 @@ class ModelServiceDeployTest extends TestCase
         $this->assertSame(AiModelService::STATUS_FAILED, $service->status);
         $this->assertSame(__('ai.models.apply_failed', ['kind' => 'Knative Service']), $service->status_message);
         Queue::assertNotPushed(CheckModelServiceReadyJob::class);
+        $this->assertCount(1, $this->k8sCallsTo('PATCH', "/services/{$service->service_name}"), 'a refusal of another kind fails at once');
+    }
+
+    /** Knative's webhook refusal of the model volume while it has not seen the PVC feature yet. */
+    private const PVC_REFUSAL = 'admission webhook "validation.webhook.serving.knative.dev" denied the request: validation failed: '
+        .'Persistent volume claim support is disabled, but found persistent volume claim model-volume: spec.template.spec.volumes[0].persistentVolumeClaim';
+
+    public function test_a_refusal_for_a_feature_knative_has_not_seen_yet_is_applied_again(): void
+    {
+        Sleep::fake();
+        Log::spy();
+        $service = $this->service(['mode' => 'online']);
+        $tries = 0;
+        $this->cluster([
+            "PATCH /apis/serving.knative.dev/v1/namespaces/fn/services/{$service->service_name}" => function (Request $request) use (&$tries) {
+                $tries++;
+
+                return $tries <= 2
+                    ? Http::response(['kind' => 'Status', 'message' => self::PVC_REFUSAL], 400)
+                    : Http::response(json_decode($request->body(), true), 200);
+            },
+        ]);
+
+        $service = $this->deploy($service);
+
+        $this->assertSame(AiModelService::STATUS_DEPLOYING, $service->status, (string) $service->status_message);
+        $this->assertNull($service->status_message);
+        $this->assertSame(3, $tries);
+        Sleep::assertSequence([Sleep::for(2)->seconds(), Sleep::for(4)->seconds()]);
+        Log::shouldHaveReceived('warning')->twice()->withArgs(fn (string $message, array $context = []) => str_contains($message, 'applying again')
+            && $context['service'] === $service->name && str_contains($context['error'], 'Persistent volume claim support is disabled'));
+        Queue::assertPushed(CheckModelServiceReadyJob::class, fn ($job) => $job->serviceId === $service->id);
+    }
+
+    public function test_a_feature_refusal_that_lasts_fails_the_service_after_the_retries(): void
+    {
+        Sleep::fake();
+        $service = $this->service(['mode' => 'online']);
+        $this->cluster([
+            "PATCH /apis/serving.knative.dev/v1/namespaces/fn/services/{$service->service_name}" => [
+                ['kind' => 'Status', 'message' => 'admission webhook "validation.webhook.serving.knative.dev" denied the request: validation failed: must not set the field(s): spec.template.spec.nodeSelector'], 400,
+            ],
+        ]);
+
+        $service = $this->deploy($service);
+
+        $this->assertSame(AiModelService::STATUS_FAILED, $service->status);
+        $this->assertSame(__('ai.models.apply_failed', ['kind' => 'Knative Service']), $service->status_message);
+        $this->assertCount(1 + count(ModelServiceDeployer::FEATURE_RETRY_DELAYS), $this->k8sCallsTo('PATCH', "/services/{$service->service_name}"));
+        Sleep::assertSleptTimes(count(ModelServiceDeployer::FEATURE_RETRY_DELAYS));
+        $this->assertSame(42, array_sum(ModelServiceDeployer::FEATURE_RETRY_DELAYS), 'about 30–60 s in all');
+        Queue::assertNotPushed(CheckModelServiceReadyJob::class);
+    }
+
+    public function test_only_a_feature_refusal_counts_as_one_knative_has_not_seen_yet(): void
+    {
+        $this->assertTrue(ModelServiceDeployer::refusedForAFeature('HTTP 400: '.self::PVC_REFUSAL));
+        $this->assertTrue(ModelServiceDeployer::refusedForAFeature('HTTP 400: admission webhook "validation.webhook.serving.knative.dev" denied the request: validation failed: Persistent volume write support is disabled, but found persistent volume claim m that is not read-only'));
+        $this->assertTrue(ModelServiceDeployer::refusedForAFeature('HTTP 400: admission webhook "validation.webhook.serving.knative.dev" denied the request: validation failed: must not set the field(s): spec.template.spec.tolerations'));
+        $this->assertFalse(ModelServiceDeployer::refusedForAFeature('HTTP 400: admission webhook denied the request'));
+        $this->assertFalse(ModelServiceDeployer::refusedForAFeature('HTTP 422: Service "m" is invalid: metadata.name: Invalid value'));
+        $this->assertFalse(ModelServiceDeployer::refusedForAFeature('HTTP 403: services.serving.knative.dev is forbidden'));
     }
 
     public function test_a_demo_region_runs_the_service_at_once(): void

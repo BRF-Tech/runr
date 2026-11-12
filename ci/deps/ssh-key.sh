@@ -13,6 +13,11 @@
 # accept-new). Nothing of the key is printed; the workflow removes DIR in a step of its own that
 # always runs.
 #
+# The key file is the OpenSSH block alone, whatever else the secret holds: carriage returns, lines
+# around it (a note's title or comments) and a body folded onto one line are dropped or reflowed,
+# and ssh-keygen must load the result, so a bad secret fails here with its reason instead of at the
+# clone ("error in libcrypto").
+#
 #   GIT_SSH_COMMAND="$(bash ci/deps/ssh-key.sh DIR)"
 #
 # Needs ssh-keygen.
@@ -34,8 +39,13 @@ if ! [[ "$ORIGIN_REMOTE" =~ ^git@${host}:[A-Za-z0-9._-]+(/[A-Za-z0-9._-]+)+\.git
   echo "GITLAB_RUNR_REMOTE is no SSH URL of ${ORIGIN_HOST} (git@${ORIGIN_HOST}:GROUP/PROJECT.git)" >&2
   exit 1
 fi
+# the key block's marker lines, put together here so that no secret scanner reads this file's text
+# between them as a key block
+kind='OPENSSH PRIVATE KEY'
+begin="-----BEGIN ${kind}-----"
+end="-----END ${kind}-----"
 case "$PUSH_KEY" in
-  *"-----BEGIN OPENSSH PRIVATE KEY-----"*) ;;
+  *"$begin"*) ;;
   *) echo "GITLAB_RUNR_PUSH_KEY is no private key in OpenSSH format" >&2; exit 1 ;;
 esac
 
@@ -52,8 +62,27 @@ if [ "$lines" != 1 ] || [ "$listed" != "$ORIGIN_HOST" ] || [ "$fingerprint" != "
   echo "GITLAB_KNOWN_HOSTS is not the single line of ${ORIGIN_HOST}'s host key ${ORIGIN_FINGERPRINT} (${lines} line(s), host ${listed:-none}, fingerprint ${fingerprint:-unreadable})" >&2
   exit 1
 fi
-# a key file must end in a line end
-printf '%s\n' "$PUSH_KEY" | sed -e '$!b' -e '/^$/d' > "$dir/key"
+# the OpenSSH block alone: no CR, nothing before BEGIN or after END, its base64 body wrapped at 70
+# columns as ssh-keygen writes it, one line end at the end
+body="${PUSH_KEY//$'\r'/}"
+body="${body#*"$begin"}"
+case "$body" in
+  *"$end"*) body="${body%%"$end"*}" ;;
+  *) rm -rf -- "$dir"; echo "GITLAB_RUNR_PUSH_KEY has no ${end} line" >&2; exit 1 ;;
+esac
+body="$(tr -d ' \t\n' <<<"$body")"
+if ! [[ "$body" =~ ^[A-Za-z0-9+/]+=*$ ]]; then
+  rm -rf -- "$dir"
+  echo "GITLAB_RUNR_PUSH_KEY's key block is no base64 (other characters between its BEGIN and END lines)" >&2
+  exit 1
+fi
+{ echo "$begin"; fold -w 70 <<<"$body"; echo "$end"; } > "$dir/key"
 chmod 600 "$dir/key" "$dir/known_hosts"
+# the key must load (no passphrase: the bot cannot type one); the error names the file, never the key
+if ! err="$(ssh-keygen -y -P '' -f "$dir/key" 2>&1 >/dev/null)"; then
+  rm -rf -- "$dir"
+  echo "GITLAB_RUNR_PUSH_KEY does not load: ${err//$dir\/key/the key} (set it again: the private key file's text from its BEGIN to its END line, nothing else)" >&2
+  exit 1
+fi
 printf 'ssh -i %s -o IdentitiesOnly=yes -o IdentityAgent=none -o UserKnownHostsFile=%s -o StrictHostKeyChecking=yes -o BatchMode=yes\n' \
   "$dir/key" "$dir/known_hosts"

@@ -6,28 +6,35 @@
 #     gitleaks, the reqs mirror, the Dockerfiles, the Caddyfiles and runtime/test, the Helm chart, Pint, PHPUnit
 #     with the coverage floor of docs/development.md, Larastan, the API reference with every module
 #     (api/docker/api-docs.sh --check), the UI lint, unit tests with coverage, build and mocked e2e,
-#     Go and the Node SDK;
+#     Go and the SDKs (the Node ones, the Python ones);
 #   - audit.yml audits the npm and Composer dependencies on main, every day and on pull requests
 #     that touch a lockfile; production npm dependencies block, dev tooling and Composer report;
 #   - e2e.yml runs the Kind suite (kind-suite.yml) and the UI suite against the dev stack every
-#     week and by hand, never on a pull request; ci.yml's API checks and e2e.yml's Kind suite are
-#     the reusable workflows api-tests.yml and kind-suite.yml (on: workflow_call only), which
-#     deps-test.yml runs on a dependency bump too;
+#     week and by hand, never on a pull request; ci.yml's API and UI checks and e2e.yml's Kind and
+#     UI stack suites are the reusable workflows api-tests.yml, ui-tests.yml, kind-suite.yml and
+#     ui-stack-suite.yml (on: workflow_call only), which deps-test.yml runs on a dependency bump
+#     too; the UI ones read their reports through ci/ui-results.sh (Vitest's: the tutorial's spec
+#     ran and passed; Playwright's); the dev stack (docker-compose.yml) creates the mount points of
+#     its volumes in the checkout, vue/node_modules and api/vendor, as the checkout's owner, so the
+#     stack suite's npm ci on the runner can write there;
 #   - upstream-releases.yml runs the Knative and Helm chart release checks every day and files an
 #     issue per finding; each chart of the Helm check has a pin in the code to compare with
 #     (helm_releases_check_test.sh tests the comparison);
 #   - deps-test.yml (the dependency test bot) runs every week and by hand, never on a push or a
-#     pull request; it never writes this repository (no contents: write, no pull request, no
-#     push but ci/deps-land.sh's `git push REMOTE HEAD:refs/heads/next`: no other refspec, branch
-#     or tag, nothing forced or deleted); the origin is the variable GITLAB_RUNR_REMOTE, an SSH URL
-#     ci/deps/ssh-key.sh checks (no origin URL in this repository's files); the deploy key (secret
-#     GITLAB_RUNR_PUSH_KEY, variable GITLAB_KNOWN_HOSTS) reaches only the clone and the landing,
-#     through ci/deps/ssh-key.sh (a 0600 file, the host's key with its fingerprint pinned,
-#     StrictHostKeyChecking=yes), and a
-#     step that always runs removes it; every dependency it knows has a pin or a Knative table to
-#     move, and every suite a command;
+#     pull request; its GITHUB_TOKEN never writes contents and it opens no pull request; it pushes
+#     only through ci/deps-release.sh: one atomic push of the origin's main, next and the release
+#     tag, one of this repository's main and the tag, nothing forced or deleted, no other refspec;
+#     the origin is the variable GITLAB_RUNR_REMOTE, an SSH URL ci/deps/ssh-key.sh checks (no origin
+#     URL in this repository's files); the deploy key (secret GITLAB_RUNR_PUSH_KEY, variable
+#     GITLAB_KNOWN_HOSTS) reaches only the clone and the release's push, through ci/deps/ssh-key.sh
+#     (a 0600 file, the host's key with its fingerprint pinned, StrictHostKeyChecking=yes), and a
+#     step that always runs removes it; the GitHub App's key and the signing key reach only the
+#     release job's steps that need them; every dependency it knows has a pin or a Knative table to
+#     move, and every suite a command (a Kind suite, a check of ci/deps-check.sh or the console's
+#     workflows, in both test phases); its green bumps go together (the batch job, with no key)
+#     and their combined tree is tested before the release job;
 #   - every workflow: contents: read by default, GITHUB_TOKEN as its only secret (deps-test.yml:
-#     and the deploy key), every action pinned to a full commit SHA with its version (a
+#     and the deploy key, the App's and the signing key), every action pinned to a full commit SHA with its version (a
 #     reusable workflow of this repository by its path), every download checked against a pinned
 #     SHA256, no image from Docker Hub, a concurrency group (a reusable workflow runs in its
 #     caller's);
@@ -61,7 +68,7 @@ has() { grep -qF -- "$2" <<<"$1" || fail "$3"; }
 
 # --- GitHub Actions is the only CI ------------------------------------------------------------------
 [ -e "$root/.gitlab-ci.yml" ] && fail ".gitlab-ci.yml exists: GitHub Actions is the repository's only CI"
-for f in ci.yml audit.yml e2e.yml upstream-releases.yml release-images.yml deps-test.yml kind-suite.yml api-tests.yml; do
+for f in ci.yml audit.yml e2e.yml upstream-releases.yml release-images.yml deps-test.yml kind-suite.yml api-tests.yml ui-tests.yml ui-stack-suite.yml; do
   [ -f "$wfdir/$f" ] || fail "no .github/workflows/${f}"
 done
 gitlab="$(grep -rnE 'GITLAB_TOKEN|gitlab-ci-token|CI_SERVER_URL|CI_PROJECT_(ID|PATH|DIR)|CI_DEFAULT_BRANCH|CI_PIPELINE_SOURCE|SCHEDULED_JOB|\.gitlab-ci\.yml' \
@@ -79,7 +86,7 @@ for wf in "$wfdir"/*.yml; do
   reusable "$wf" || grep -qE '^concurrency:' "$wf" || fail "${name}: no concurrency group"
   secrets="$(grep -oE '\$\{\{ *secrets\.[A-Za-z0-9_]+ *\}\}' "$wf" | sed -E 's/[${} ]//g' | sort -u || true)"
   allowed="secrets.GITHUB_TOKEN"
-  [ "$name" = deps-test.yml ] && allowed="secrets.GITHUB_TOKEN secrets.GITLAB_RUNR_PUSH_KEY"
+  [ "$name" = deps-test.yml ] && allowed="secrets.GITHUB_TOKEN secrets.GITLAB_RUNR_PUSH_KEY secrets.RUNR_BOT_APP_ID secrets.RUNR_BOT_APP_PRIVATE_KEY secrets.RUNR_BOT_GPG_PRIVATE_KEY secrets.RUNR_BOT_GPG_PASSPHRASE secrets.RUNR_SCRUB_PATTERN"
   for secret in $secrets; do
     [[ " ${allowed} " == *" ${secret} "* ]] || fail "${name}: a secret other than ${allowed// / and }: ${secret}"
   done
@@ -132,15 +139,25 @@ for n in 'vendor/bin/pint --test' 'artisan test --compact --coverage --min=' 've
   'sh docker/api-docs.sh "$RUNNER_TEMP/openapi.json" --check' 'vendor/bin/phpunit --no-coverage tests/Feature/ApiDocsTest.php'; do
   has "$api_tests" "$n" "api-tests.yml (ci.yml's api job) does not run: ${n}"
 done
-check ui 'npm run lint' 'npm run test:coverage' 'npm run build'
+check ui 'uses: ./.github/workflows/ui-tests.yml'
+ui_tests="$(job "$wfdir/ui-tests.yml" ui)"
+for n in 'npm ci --no-audit --no-fund' 'npm run lint' 'npm run test:coverage -- ' '--reporter=json --outputFile.json="$RUNNER_TEMP/vitest.json"' 'npm run build' \
+  'bash ci/ui-results.sh vitest "$RUNNER_TEMP/vitest.json" "$RUNNER_TEMP/result"'; do
+  has "$ui_tests" "$n" "ui-tests.yml (ci.yml's ui job) does not run: ${n}"
+done
+# the report is read in ci.yml as for the bot: a run without the tutorial's spec fails there too
+grep -A1 -F 'name: Result' <<<"$ui_tests" | grep -qxF '        if: always()' \
+  || fail "ui-tests.yml reads Vitest's report only for some callers (its Result step: if: always())"
 check ui-e2e 'npx playwright install --with-deps chromium' 'npm run test:e2e:mock'
 check go 'gofmt -l .' 'go vet ./...' 'go test -race -count=1' "-not -path './examples/wasm/*'"
 check sdk-node 'npm install -g npm@11' 'npm run typecheck' 'npm test'
+check sdk-sandbox-node 'working-directory: sdk/sandbox/node' 'npm ci --no-audit --no-fund' 'npm run typecheck' 'npm test'
+check sdk-python 'for dir in sdk/python sdk/sandbox/python; do' 'python3 -m venv' '"./${dir}[test]"' '"$venv/bin/pytest"'
 # the coverage floor of the API is the one docs/development.md gives
 ci_min="$(grep -oE 'artisan test --compact --coverage --min=[0-9]+' "$wfdir/api-tests.yml" | grep -oE '[0-9]+$')"
 doc_min="$(grep -oE 'artisan test --compact --coverage --min=[0-9]+' "$root/docs/development.md" | grep -oE '[0-9]+$' | sort -u)"
 [ -n "$ci_min" ] && [ "$ci_min" = "$doc_min" ] || fail "the API coverage floor of api-tests.yml (${ci_min}) is not docs/development.md's (${doc_min})"
-echo "ok - ci.yml: gitleaks, reqs mirror, Dockerfiles + runtime/test, Helm chart, Pint, PHPUnit (--min=${ci_min}), Larastan, API reference (every module), UI, UI e2e, Go, Node SDK"
+echo "ok - ci.yml: gitleaks, reqs mirror, Dockerfiles + runtime/test, Helm chart, Pint, PHPUnit (--min=${ci_min}), Larastan, API reference (every module), UI (ui-tests.yml, Vitest's report), UI e2e, Go, the Node and Python SDKs"
 
 # --- audit.yml --------------------------------------------------------------------------------------
 audit="$wfdir/audit.yml"
@@ -186,12 +203,49 @@ kind_version="$(sed -n 's/^ *KIND_VERSION: v//p' <<<"$suite")"
   || fail "kind-suite.yml's Kind ${kind_version} cannot run the node images of Kubernetes 1.35: v0.31.0 or later"
 # the bot's Kata suites ask for /dev/kvm and say plainly when the runner has none
 has "$suite" 'Kata cannot run' "kind-suite.yml does not report a runner without hardware virtualization"
-for f in kind-suite.yml api-tests.yml; do reusable "$wfdir/$f" || fail "${f} is not a reusable workflow (on: workflow_call alone)"; done
-stack="$(job "$e2e" ui-stack)"
-has "$stack" 'docker compose up -d --build --wait api' "e2e.yml does not start the dev stack"
-grep -qxE ' +run: npm run test:e2e' <<<"$stack" || fail "e2e.yml does not run the Playwright stack suite (npm run test:e2e)"
-has "$stack" "E2E_SEED_DEMO: 'true'" "e2e.yml: the stack suite needs the demo data (E2E_SEED_DEMO)"
-echo "ok - e2e.yml: the Kind suite (kind-suite.yml) and the UI stack suite, weekly and by hand"
+for f in kind-suite.yml api-tests.yml ui-tests.yml ui-stack-suite.yml; do reusable "$wfdir/$f" || fail "${f} is not a reusable workflow (on: workflow_call alone)"; done
+has "$(job "$e2e" ui-stack)" 'uses: ./.github/workflows/ui-stack-suite.yml' "e2e.yml's ui-stack job does not run ui-stack-suite.yml"
+stack="$(job "$wfdir/ui-stack-suite.yml" ui-stack)"
+has "$stack" 'docker compose up -d --build --wait api' "ui-stack-suite.yml does not start the dev stack"
+grep -qE '^ +npm run test:e2e -- --reporter=list,html,junit,json ' <<<"$stack" || fail "ui-stack-suite.yml does not run the Playwright stack suite (npm run test:e2e) with its JSON report"
+has "$stack" 'PLAYWRIGHT_JSON_OUTPUT_FILE: ${{ runner.temp }}/playwright.json' "ui-stack-suite.yml writes no Playwright JSON report"
+has "$stack" 'bash ci/ui-results.sh playwright "$RUNNER_TEMP/playwright.json" "$RUNNER_TEMP/result"' "ui-stack-suite.yml does not read Playwright's report"
+has "$stack" "E2E_SEED_DEMO: 'true'" "ui-stack-suite.yml: the stack suite needs the demo data (E2E_SEED_DEMO)"
+echo "ok - e2e.yml: the Kind suite (kind-suite.yml) and the UI stack suite (ui-stack-suite.yml, Playwright's report), weekly and by hand"
+
+# The stack suite's npm ci runs on the runner in vue/, where the compose vue service mounts a
+# node_modules volume of its own. The Docker daemon creates a missing mount point as root, and npm ci
+# then fails with EACCES: vue-init creates it first, owned like vue/ (vendor-init: api/vendor).
+# compose_service NAME — the lines of one service of docker-compose.yml, without comments
+compose_service() {
+  awk -v s="  $1:" '
+    /^services:/ { in_services = 1; next }
+    in_services && /^[^ #]/ { exit }
+    in_services && $0 == s { on = 1; next }
+    on && /^  [A-Za-z0-9_-]+:[[:space:]]*$/ { exit }
+    on && /^[[:space:]]*#/ { next }
+    on { print }
+  ' "$root/docker-compose.yml"
+}
+vue="$(compose_service vue)"
+has "$vue" '- vue_modules:/app/node_modules' "docker-compose.yml: the vue service has no node_modules volume of its own"
+grep -qxF '        condition: service_completed_successfully' <<<"$(grep -A1 -xF '      vue-init:' <<<"$vue")" \
+  || fail "docker-compose.yml: the vue service does not wait for vue-init, which creates vue/node_modules as the checkout's owner"
+vue_init="$(compose_service vue-init)"
+has "$vue_init" '- ./vue:/app' "docker-compose.yml: vue-init does not mount vue/"
+grep -qF 'vue_modules' <<<"$vue_init" && fail "docker-compose.yml: vue-init mounts the vue_modules volume (its mount point in vue/ would be root's)"
+has "$vue_init" 'mkdir -p /app/node_modules && { chown "$$(stat -c %u:%g /app)" /app/node_modules' \
+  "docker-compose.yml: vue-init does not create vue/node_modules owned like vue/"
+vendor_init="$(compose_service vendor-init)"
+has "$vendor_init" '- ./api:/api' "docker-compose.yml: vendor-init does not mount api/"
+has "$vendor_init" 'mkdir -p /api/vendor && { chown "$$(stat -c %u:%g /api)" /api/vendor' \
+  "docker-compose.yml: vendor-init does not create api/vendor owned like api/"
+grep -qxF '        condition: service_completed_successfully' <<<"$(grep -A1 -xF '      vendor-init:' <<<"$(compose_service migrator)")" \
+  || fail "docker-compose.yml: the migrator (the first API container) does not wait for vendor-init"
+# --no-deps would start the vue service without vue-init
+grep -qE '^ +docker compose (up|run) [^#]*--no-deps' <<<"$stack" \
+  && fail "ui-stack-suite.yml starts the dev stack with --no-deps: vue-init would not create vue/node_modules"
+echo "ok - docker-compose.yml: vue-init and vendor-init create vue/node_modules and api/vendor as the checkout's owner (the stack suite's npm ci on the runner)"
 
 # --- upstream-releases.yml --------------------------------------------------------------------------
 up="$wfdir/upstream-releases.yml"
@@ -205,7 +259,8 @@ for wf in "$wfdir"/*.yml; do
   [ "$wf" = "$up" ] || [ "$(basename "$wf")" = deps-test.yml ] && continue
   grep -qE 'issues: write' "$wf" && fail "$(basename "$wf") can write issues"
 done
-for s in check-knative-releases.sh check-helm-releases.sh; do
+has "$(cat "$up")" 'bash ci/check-package-releases.sh' "upstream-releases.yml does not check the package releases"
+for s in check-knative-releases.sh check-helm-releases.sh check-package-releases.sh; do
   grep -qF 'RELEASES_REPORT_DIR' "$root/ci/$s" || fail "ci/${s} writes no report for the workflow"
   grep -qE '^[^#]*git (push|commit)' "$root/ci/$s" && fail "ci/${s} commits or pushes"
 done
@@ -228,12 +283,12 @@ has "$on" "cron: '" "deps-test.yml has no schedule"
 grep -qxE '  workflow_dispatch:' <<<"$on" || fail "deps-test.yml cannot be run by hand"
 has "$on" 'issue:' "deps-test.yml cannot be run for one issue"
 grep -qxE '  (push|pull_request|pull_request_target):' <<<"$on" && fail "deps-test.yml runs on pushes or pull requests"
-# this repository's main moves only at releases: the bot cannot write it
-grep -qE 'contents: *write' "$deps" && fail "deps-test.yml may write this repository's contents"
+# its GITHUB_TOKEN never writes contents; the pushes are ci/deps-release.sh's alone
+grep -qE '^ *contents: *write' "$deps" && fail "deps-test.yml's GITHUB_TOKEN may write this repository's contents"
 grep -qE 'gh pr (create|merge)|pull-requests: *write' "$deps" && fail "deps-test.yml opens or merges pull requests"
 pushes="$(grep -nE '(^|[^-])git([^|]* )?push( |$)' "$deps" || true)"
-[ -z "$pushes" ] || fail "deps-test.yml pushes by itself (only ci/deps-land.sh lands, on next): ${pushes}"
-has "$(cat "$deps")" 'bash "$GITHUB_WORKSPACE/ci/deps-land.sh" "$ORIGIN_REMOTE"' "deps-test.yml does not land through ci/deps-land.sh on the origin"
+[ -z "$pushes" ] || fail "deps-test.yml pushes by itself (only ci/deps-release.sh publish pushes): ${pushes}"
+has "$(cat "$deps")" 'bash ci/deps-release.sh publish "$RELEASE_DIR" $dry' "deps-test.yml does not release through ci/deps-release.sh publish"
 # the origin: the repository variable alone, its URL in none of this repository's files
 [ "$(grep -cF 'ORIGIN_REMOTE: ${{ vars.GITLAB_RUNR_REMOTE }}' "$deps")" = 1 ] || fail "deps-test.yml does not take the origin from vars.GITLAB_RUNR_REMOTE"
 grep -nE 'ORIGIN_REMOTE' "$deps" | grep -vE 'ORIGIN_REMOTE: \$\{\{ vars\.GITLAB_RUNR_REMOTE \}\}$|"\$ORIGIN_REMOTE"' && fail "deps-test.yml sets the origin otherwise"
@@ -244,10 +299,10 @@ urls="$(grep -rnE 'git@[a-z0-9-]+\.[a-z0-9.-]+:[a-z0-9._-]+/|ssh://git@[a-z0-9-]
 grep -qF '^git@${host}:' "$root/ci/deps/ssh-key.sh" && grep -qF 'is no SSH URL of' "$root/ci/deps/ssh-key.sh" \
   || fail "ci/deps/ssh-key.sh does not check that the origin is an SSH URL of the pinned host"
 grep -qF 'GIT_SSH_COMMAND="$(bash ci/deps/ssh-key.sh' "$deps" || fail "deps-test.yml does not check the origin"
-# the deploy key: two steps (the clone, the landing) get it, through ci/deps/ssh-key.sh, and a step
-# that always runs removes it after each; nothing prints it
-[ "$(grep -cF 'PUSH_KEY: ${{ secrets.GITLAB_RUNR_PUSH_KEY }}' "$deps")" = 2 ] || fail "deps-test.yml: the deploy key in other steps than the clone and the landing"
-[ "$(grep -cF 'KNOWN_HOSTS: ${{ vars.GITLAB_KNOWN_HOSTS }}' "$deps")" = 2 ] || fail "deps-test.yml: GitLab's host key (vars.GITLAB_KNOWN_HOSTS) in other steps than the clone and the landing"
+# the deploy key: two steps (the clone, the release's push) get it, through ci/deps/ssh-key.sh, and
+# a step that always runs removes it after each; nothing prints it
+[ "$(grep -cF 'PUSH_KEY: ${{ secrets.GITLAB_RUNR_PUSH_KEY }}' "$deps")" = 2 ] || fail "deps-test.yml: the deploy key in other steps than the clone and the release's push"
+[ "$(grep -cF 'KNOWN_HOSTS: ${{ vars.GITLAB_KNOWN_HOSTS }}' "$deps")" = 2 ] || fail "deps-test.yml: GitLab's host key (vars.GITLAB_KNOWN_HOSTS) in other steps than the clone and the release's push"
 grep -nE '(secrets|vars)\.GITLAB_(RUNR_PUSH_KEY|KNOWN_HOSTS)' "$deps" \
   | grep -vE ': +(PUSH_KEY: \$\{\{ secrets\.GITLAB_RUNR_PUSH_KEY|KNOWN_HOSTS: \$\{\{ vars\.GITLAB_KNOWN_HOSTS) \}\}$' \
   && fail "deps-test.yml uses the deploy key or GitLab's host key other than as a step's PUSH_KEY / KNOWN_HOSTS"
@@ -261,15 +316,41 @@ for o in 'IdentitiesOnly=yes' 'StrictHostKeyChecking=yes' 'UserKnownHostsFile=' 
 done
 grep -nE '^[^#]*(echo|printf|cat)[^>]*\$\{?PUSH_KEY' "$root/ci/deps/ssh-key.sh" | grep -vE '> "\$dir/key"$' \
   && fail "ci/deps/ssh-key.sh prints the key"
-# the landing: one fast-forward of next, never forced
-land="$root/ci/deps-land.sh"
-# (the deploy key can write every branch the origin does not protect: exactly HEAD:refs/heads/next)
+# the GitHub App's key: only create-github-app-token's inputs in the release job, a token of contents:
+# write alone for this repository (or BRF-Tech/helm-charts' dispatch); the signing key: only the
+# release's push; neither is read by a script but to give git the token
+release_job="$(job "$deps" release)"
+[ "$(grep -cE 'secrets\.RUNR_BOT_APP_(ID|PRIVATE_KEY)' "$deps")" = "$(grep -cE 'secrets\.RUNR_BOT_APP_(ID|PRIVATE_KEY)' <<<"$release_job")" ] \
+  || fail "deps-test.yml: the GitHub App's key outside the release job"
+grep -nE 'secrets\.RUNR_BOT_APP_(ID|PRIVATE_KEY)' "$deps" | grep -vE '^[0-9]+: +(app-id: \$\{\{ secrets\.RUNR_BOT_APP_ID|private-key: \$\{\{ secrets\.RUNR_BOT_APP_PRIVATE_KEY) \}\}$' \
+  && fail "deps-test.yml uses the GitHub App's key other than as create-github-app-token's input"
+[ "$(grep -cE '^ +permission-[a-z-]+: ' "$deps")" = "$(grep -cE '^ +permission-contents: write$' "$deps")" ] || fail "deps-test.yml: an App token with another permission than contents: write"
+grep -nE '^ +repositories: ' "$deps" | grep -vE 'repositories: (\$\{\{ github\.event\.repository\.name \}\}|helm-charts)$' \
+  && fail "deps-test.yml: an App token for another repository than this one and helm-charts"
+[ "$(grep -cE 'secrets\.RUNR_BOT_GPG_(PRIVATE_KEY|PASSPHRASE)' "$deps")" = 2 ] && [ "$(grep -cE 'secrets\.RUNR_BOT_GPG_' <<<"$release_job")" = 2 ] \
+  || fail "deps-test.yml: the signing key in other steps than the release's push"
+grep -nE '\$\{?(DEPS_SIGN_KEY|DEPS_SIGN_PASSPHRASE)\b' "$deps" && fail "deps-test.yml reads the signing key in a run script"
+grep -nE '\$\{?APP_TOKEN\b' "$deps" | grep -vE 'if \[ -n "\$APP_TOKEN" \]; then$|x-access-token:%s'"'"' "\$APP_TOKEN"' \
+  && fail "deps-test.yml reads the App's token in a run script other than to give it to git"
+# the release's pushes (ci/deps-release.sh): one of the origin (exactly its main, next and the
+# release tag) and one of this repository (exactly its main and the tag), atomic, never forced
+rel="$root/ci/deps-release.sh"
 gitcmd='^[^#]*(^|[^A-Za-z_-])git( -[cC] [^ ]+)*'
-[ "$(grep -cE "${gitcmd} push" "$land")" = 1 ] || fail "ci/deps-land.sh has another push than the one of next"
-grep -qE '^[^#]*git push "\$remote" HEAD:refs/heads/next 2>&1\)"; then$' "$land" || fail "ci/deps-land.sh does not push exactly HEAD:refs/heads/next"
-grep -qE '^git checkout -q --detach "\$commit"$' "$land" || fail "ci/deps-land.sh does not push the bump it was given as HEAD"
-grep -qE '^[^#]*(--force|--force-with-lease|--mirror|--all|--tags|--delete|--prune| -f( |$)| -d( |$)|\+[A-Za-z0-9/$"{]|"\+| :refs/)' "$land" \
-  && fail "ci/deps-land.sh forces, deletes or pushes more than next"
+[ "$(grep -cE "${gitcmd} push" "$rel")" = 3 ] || fail "ci/deps-release.sh has other pushes than the origin's, this repository's and the landing on next"
+# a bump of next only (ci/deps-release.sh land): the origin's next alone, never forced
+grep -qF 'git -C "$repo" push --porcelain "$ORIGIN_REMOTE" "${land}:refs/heads/next" 2>&1)"; then' "$rel" \
+  || fail "ci/deps-release.sh land does not push exactly the origin's next"
+has "$(cat "$deps")" 'bash ci/deps-release.sh land "$LAND_DIR" $dry' "deps-test.yml does not land the bumps of next only through ci/deps-release.sh land"
+grep -qE 'git -C "\$REPO" push --atomic --porcelain "\$ORIGIN_REMOTE" \\$' "$rel" \
+  && grep -qF '"${RELEASE}:refs/heads/main" "${m}:refs/heads/next" "refs/tags/${NEW_TAG}:refs/tags/${NEW_TAG}" 2>&1)"; then' "$rel" \
+  || fail "ci/deps-release.sh does not push exactly the origin's main, next and the tag, atomically"
+grep -qF 'git -C "$pub" push --atomic --porcelain "$PUBLIC_REMOTE" "${p}:refs/heads/main" "refs/tags/${NEW_TAG}:refs/tags/${NEW_TAG}" 2>&1)"; then' "$rel" \
+  || fail "ci/deps-release.sh does not push exactly this repository's main and the tag, atomically"
+grep -E -A1 "${gitcmd} push" "$rel" | grep -E -- '--force|--force-with-lease|--mirror|--all|--tags|--delete|--prune| -f( |$)| -d( |$)|\+[A-Za-z0-9/$"{]|"\+| :refs/' \
+  && fail "ci/deps-release.sh forces, deletes or pushes more than the release"
+grep -nE 'update-ref -d ' "$rel" | grep -vF 'update-ref -d "refs/tags/${NEW_TAG}"' | grep -vF 'update-ref -d refs/deps-release/release' \
+  && fail "ci/deps-release.sh deletes other refs than its own unpushed tag and its temporary ref"
+grep -qF 'bash "$ROOT/ci/deps/check-attribution.sh" "$pub" "$PUBLIC_BASE" "$p"' "$rel" || fail "ci/deps-release.sh does not check the attribution rule before the push"
 for s in deps-bump.sh deps-plan.sh deps-run.sh; do
   grep -qE "${gitcmd} (push|merge|rebase|reset --hard)( |\$)" "$root/ci/$s" && fail "ci/${s} pushes or rewrites history"
 done
@@ -293,7 +374,68 @@ while IFS='|' read -r name _; do
 done <<<"$charts"
 has "$(job "$deps" unit)" 'uses: ./.github/workflows/api-tests.yml' "deps-test.yml does not run the API checks on a bump"
 has "$(job "$deps" kind)" 'uses: ./.github/workflows/kind-suite.yml' "deps-test.yml does not run the Kind suites on a bump"
-echo "ok - deps-test.yml: weekly and by hand, never writes this repository, lands on origin's next (vars.GITLAB_RUNR_REMOTE, SSH) as a fast-forward only, the deploy key in two steps and removed, every dependency a pin and every suite a command"
+# a bump job that failed (the origin's clone): no release on missing artifacts, the issues hear why
+has "$(job "$deps" release)" "needs.bump.result == 'success'" "deps-test.yml releases after a bump job that failed"
+has "$(job "$deps" bump-failed)" "needs.bump.result != 'success'" "deps-test.yml says nothing on the issues when the bump job failed"
+has "$(job "$deps" check)" 'bash ci/deps-check.sh "$CHECK" "$RUNNER_TEMP/result"' "deps-test.yml does not run a package bump's checks through ci/deps-check.sh"
+# the console's suites: the workflows of ci.yml and e2e.yml, on the matrices ci/deps-run.sh routes to
+# them (SUITE_JOBS), in both test phases, their results named as the outcome reads them
+grep -qE '^SUITE_JOBS=".*ui:ui ui-stack:ui-stack' "$root/ci/deps-run.sh" || fail "ci/deps-run.sh routes no suite to the console's jobs (SUITE_JOBS)"
+for p in ui:ui-tests.yml ui-stack:ui-stack-suite.yml; do
+  j="${p%%:*}"
+  for phase in bump:bumps:deps-tree batch:batch:deps-batch-tree; do
+    need="${phase%%:*}" step_id="${phase#*:}" step_id="${step_id%%:*}"
+    name="$j"
+    [ "$need" = bump ] || name="batch-${j}"
+    text="$(job "$deps" "$name")"
+    has "$text" "uses: ./.github/workflows/${p#*:}" "deps-test.yml's ${name} job does not run ${p#*:}"
+    has "$text" "include: \${{ fromJSON(needs.${need}.outputs.${j}) }}" "deps-test.yml's ${name} job does not take the ${j} matrix of the ${need} job"
+    has "$text" "tree-artifact: ${phase##*:}" "deps-test.yml's ${name} job does not test ${phase##*:}"
+    has "$text" 'result-name: deps-result-${{ matrix.dep }}-${{ matrix.suite }}' "deps-test.yml's ${name} job does not name its result as the outcome reads it"
+    has "$(job "$deps" "$need")" "${j}: \${{ steps.${step_id}.outputs.${j} }}" "deps-test.yml's ${need} job has no ${j} matrix"
+  done
+done
+# one release per run: the green bumps together (ci/deps-run.sh batch, from the bumps' bundle, no
+# key), their combined tree tested with the same jobs, and the release job after both phases
+has "$(job "$deps" batch)" 'bash ci/deps-run.sh batch "$RUNNER_TEMP/deps" "$RUNNER_TEMP/origin"' "deps-test.yml does not make the run's green bumps together (ci/deps-run.sh batch)"
+has "$(job "$deps" batch-unit)" 'uses: ./.github/workflows/api-tests.yml' "deps-test.yml does not run the API checks on the combined tree"
+has "$(job "$deps" batch-kind)" 'uses: ./.github/workflows/kind-suite.yml' "deps-test.yml does not run the Kind suites on the combined tree"
+has "$(job "$deps" batch-check)" 'bash ci/deps-check.sh "$CHECK" "$RUNNER_TEMP/result"' "deps-test.yml does not run the checks on the combined tree"
+has "$(job "$deps" batch-shell)" 'bash "$t" || exit 1' "deps-test.yml does not run runtime/test on the combined tree"
+for j in batch-unit batch-shell batch-check batch-kind; do
+  has "$(job "$deps" "$j")" 'deps-batch-tree' "deps-test.yml: ${j} does not test the combined tree (deps-batch-tree)"
+done
+has "$(job "$deps" batch)" 'needs: [plan, bump, unit, shell, check, ui, ui-stack, kind]' "deps-test.yml puts the bumps together before each is tested"
+has "$release_job" 'needs: [plan, bump, batch, batch-unit, batch-shell, batch-check, batch-ui, batch-ui-stack, batch-kind]' "deps-test.yml releases before the combined tree is tested"
+has "$release_job" "bash ci/deps-run.sh pick \"\$RUNNER_TEMP/deps\" \"\$RUNNER_TEMP/repo\"" "deps-test.yml does not pick the run's release through ci/deps-run.sh pick"
+# every suite of a package group: a Kind suite ci/deps/bump-packages.sh knows, a check of
+# ci/deps-check.sh, or the console's (routed to their jobs above)
+pkgs="$(sed -n '/^DEPS_PKG=(/,/^)/p;/^DEPS_DOCKERFILES=(/,/^)/p' "$root/ci/deps/packages.sh" | grep -F '|' || true)"
+[ -n "$pkgs" ] || fail "ci/deps/packages.sh has no package group"
+for s in $(awk -F'|' '{ sub(/"[[:space:]]*$/, "", $NF); print $NF }' <<<"$pkgs"); do
+  s="${s#+}"
+  case "$s" in
+    unit) ;;
+    npm-test:*|py-test:*|go:*|image:*) grep -qF "  ${s%%:*}:*)" "$root/ci/deps-check.sh" || fail "ci/deps-check.sh has no check ${s%%:*}" ;;
+    caddy|actionlint) grep -qE "^  ${s}\)" "$root/ci/deps-check.sh" || fail "ci/deps-check.sh has no check ${s}" ;;
+    ui|ui-stack) grep -qF "ui|ui-stack) jq -nc --arg s \"\$s\" '{suite: \$s, job: \$s, command: \$s}' ;;" "$root/ci/deps/bump-packages.sh" \
+      || fail "ci/deps/bump-packages.sh does not route ${s} to a job of its own" ;;
+    *) grep -qE "^ +([a-z|-]+\|)?${s}(\|[a-z|-]+)?\) suite_json" "$root/ci/deps/bump-packages.sh" || fail "ci/deps/bump-packages.sh has no Kind suite ${s}" ;;
+  esac
+done
+# the bot's own pushes start release-images.yml and nothing else: every other workflow that runs on
+# a push skips one whose head commit carries the bot's trailer, in every job
+for wf in "$wfdir"/*.yml; do
+  name="$(basename "$wf")"
+  grep -qxE '  push:' <<<"$(block "$wf" on)" || continue
+  [ "$name" = release-images.yml ] && continue
+  njobs="$(sed -n '/^jobs:/,$p' "$wf" | grep -cE '^  [a-z][a-z0-9-]*:$')"
+  nguard="$(grep -cF "if: \${{ github.event_name != 'push' || !contains(github.event.head_commit.message, 'RunR-Deps-Bot:') }}" "$wf")"
+  [ "$njobs" = "$nguard" ] || fail "${name} runs on a push and ${nguard} of its ${njobs} jobs skip the bot's own push (the RunR-Deps-Bot trailer)"
+done
+grep -qxE '  (push|pull_request|pull_request_target):' <<<"$(block "$wfdir/upstream-releases.yml" on)" && fail "upstream-releases.yml runs on pushes or pull requests"
+grep -qxE '  workflow_run:' <<<"$(cat "$wfdir"/*.yml)" && fail "a workflow runs on another's run: the bot's release could start it"
+echo "ok - deps-test.yml: weekly and by hand, its GITHUB_TOKEN read-only on contents, releases only through ci/deps-release.sh (the origin's main, next and tag atomically over SSH, this repository's main and tag with the App's token, never forced), the deploy key in two steps and removed, the App's and the signing key in the release job alone, every dependency a pin and every suite a command, the console's through ui-tests.yml and ui-stack-suite.yml in both phases"
 
 # --- docs/development.md ----------------------------------------------------------------------------
 dev="$root/docs/development.md"

@@ -15,6 +15,7 @@ use App\Services\InternalNetwork\InternalNetwork;
 use App\Services\KubernetesClient;
 use App\Support\DeployGate;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Sleep;
 
 /**
  * Runs model services in their region: deploy (model volume, token Secret, offline
@@ -31,6 +32,12 @@ class ModelServiceDeployer
         'ImagePullBackOff', 'ErrImagePull', 'InvalidImageName', 'ErrImageNeverPull',
         'CreateContainerConfigError', 'CreateContainerError', 'RunContainerError',
     ];
+
+    /**
+     * Seconds before each new apply of a Knative Service that Knative refused for a pod spec
+     * feature it has not seen yet (applyKnativeService): 42 s in all.
+     */
+    public const FEATURE_RETRY_DELAYS = [2, 4, 8, 12, 16];
 
     public function __construct(
         private ModelServiceManifests $manifests,
@@ -111,7 +118,7 @@ class ModelServiceDeployer
             }
 
             $manifest = $this->manifests->knativeService($service, $model, $snapshot, $region, $namespace, $secret);
-            if (! $k8s->applyResource($manifest, $namespace)) {
+            if (! $this->applyKnativeService($k8s, $manifest, $namespace, $service)) {
                 throw new \RuntimeException(__('ai.models.apply_failed', ['kind' => 'Knative Service']));
             }
 
@@ -133,6 +140,43 @@ class ModelServiceDeployer
             Log::error('Model service deploy failed', ['service' => $service->name, 'error' => $e->getMessage()]);
             $this->fail($service, $e->getMessage());
         }
+    }
+
+    /**
+     * Apply the Knative Service. Knative's validating webhook reads the pod spec features
+     * (config-features) through a watch: right after GpuInstallService::enableKnativeFeatures()
+     * turned them on it can still refuse the model volume ("Persistent volume claim support is
+     * disabled") or a gated field ("must not set the field(s)") for a few seconds more than the
+     * wait there gave it — on a busy cluster the first model service of a new region failed so.
+     * Such a refusal is tried again after FEATURE_RETRY_DELAYS (42 s in all), each retry logged;
+     * any other refusal fails at once.
+     */
+    private function applyKnativeService(KubernetesClient $k8s, array $manifest, string $namespace, AiModelService $service): bool
+    {
+        foreach ([0, ...self::FEATURE_RETRY_DELAYS] as $attempt => $delay) {
+            if ($delay > 0) {
+                Sleep::for($delay)->seconds();
+            }
+            if ($k8s->applyResource($manifest, $namespace)) {
+                return true;
+            }
+
+            $error = (string) $k8s->lastApplyError();
+            if (! self::refusedForAFeature($error) || $attempt === count(self::FEATURE_RETRY_DELAYS)) {
+                return false;
+            }
+            Log::warning('Model service: Knative refused a pod spec feature it has not seen yet, applying again', [
+                'service' => $service->name, 'attempt' => $attempt + 1, 'retry_in_seconds' => self::FEATURE_RETRY_DELAYS[$attempt], 'error' => mb_substr($error, 0, 500),
+            ]);
+        }
+
+        return false;
+    }
+
+    /** A refusal of Knative's webhook for a pod spec feature that is off (in its view). */
+    public static function refusedForAFeature(string $error): bool
+    {
+        return (bool) preg_match('/support is (disabled|off)|must not set the field\(s\)/i', $error);
     }
 
     /** Start pre-pulling the service's images (ModelImagePrepull); never fails the caller. */

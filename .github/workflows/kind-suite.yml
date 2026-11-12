@@ -188,9 +188,14 @@ jobs:
           echo "$SUITE_COMMAND" > "$RUNNER_TEMP/result/command"
           tail -n 60 "$RUNNER_TEMP/suite.log" > "$RUNNER_TEMP/result/tail.txt" 2>/dev/null || true
           shopt -s nullglob
+          # what the results say, besides the job's status (a suite that ends 0 with failures failed)
+          failed=0
           for f in api/storage/e2e-results-*.md; do
             awk '/^## Failures/ { on = 1; next } on && /^## / { exit } on && NF { print }' "$f" >> "$RUNNER_TEMP/result/failures.md"
+            n="$(sed -nE 's/.*\*\*Failed:\*\* ([0-9]+).*/\1/p' "$f" | head -n 1)"
+            failed=$((failed + ${n:-0}))
           done
+          echo "$failed" > "$RUNNER_TEMP/result/failed"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always() && inputs.result-name != ''
         with:

@@ -21,10 +21,12 @@ trait E2eTestSandboxTrait
             return [];
         }
 
+        // In waves the region runs at once, each wave's projects deleted once verified (E2eTestWavesTrait)
         $tests = $this->buildSandboxMatrix($images, $regionId);
-        $this->runTestsSequentially($tests);
-        $this->runPhaseVerify($tests);
-        $this->verifySandboxRuntimeClass($tests);
+        $this->runTestsInWaves($tests, $regionId, function (array &$wave): void {
+            $this->runPhaseVerify($wave);
+            $this->verifySandboxRuntimeClass($wave);
+        });
 
         // API-only mapping validation test (no K8s deploy)
         $tests[] = $this->runMappingApiTest($regionId);

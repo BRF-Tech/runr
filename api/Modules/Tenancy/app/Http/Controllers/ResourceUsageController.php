@@ -7,6 +7,7 @@ use App\Models\KnativeRegion;
 use App\Models\Project;
 use App\Services\Ai\Models\ModelServiceReservations;
 use App\Services\Helpers\ResourceReservation;
+use App\Services\Helpers\StoppedCapacity;
 use Illuminate\Http\JsonResponse;
 use Modules\Tenancy\Models\Tenant;
 use Modules\Tenancy\Services\TenantQuotaService;
@@ -96,13 +97,15 @@ class ResourceUsageController extends Controller
 
     /**
      * Admitted reservation of the region's projects in the current tenant schema — the same
-     * formula as tenant quota admission (ResourceReservation).
+     * formula as tenant quota admission (ResourceReservation); a project a stop released
+     * (StoppedCapacity) holds nothing.
      */
     protected function projectUsage(KnativeRegion $region): array
     {
         $projects = Project::where('knative_region_id', $region->id)
             ->with('xaasConfig', 'faasConfig', 'containerConfig')
-            ->get();
+            ->get()
+            ->reject(fn (Project $project) => StoppedCapacity::releases($project, (string) $region->id));
 
         $usage = ResourceReservation::sum($projects);
         // the tenant's running model services (docs/huggingface.md)

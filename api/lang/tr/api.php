@@ -123,6 +123,9 @@ return [
         'owner_assigned_body' => ':name projesinin faturalarını bundan sonra siz ödersiniz; içinde bulunulan ayın faturası da kapandığında size aittir.',
         'stopped_by_platform' => 'Bu projeyi platform durdurdu: yalnızca bir platform yöneticisi sürdürebilir.',
         'resume_version_gone' => 'Durdurmadan önce çalışan sürüm artık yok: projeyi yeniden çalıştırmak için bir sürüm dağıtın.',
+        // Sürdürülen proje yeniden kabul edilir (StoppedCapacity): durdurma kapasitesini bırakmıştı
+        'capacity_readmission' => ':region bölgesinde bu proje için yeniden yer yok: durdurulunca kapasitesini bıraktı, şimdi onu başka projeler kullanıyor. :problems Kapasite boşalınca dağıtın ya da bölgenin sağlayıcısından node eklemesini isteyin.',
+        'quota_readmission' => 'Organizasyonun :region bölgesindeki kotasında bu proje için yeniden yer yok: durdurulunca payını bıraktı, şimdi onu başka projeler kullanıyor. :message',
         // Ölçek (docs/scaling.md): min_scale <= max_scale, zamanlı ısıtıcı (config.scale_schedule)
         'min_above_max' => 'Minimum ölçek (:min) maksimum ölçekten (:max) büyük olamaz.',
         'scale_schedule_too_many' => 'Zamanlı ısıtıcı en fazla :max satır içerebilir.',
@@ -138,6 +141,15 @@ return [
         'memory' => 'Bellek',
         'always_on_exceeded' => ':resource limiti sürekli açık bütçede aşılıyor (overcommit yok): :needed gerekiyor, bölge kapasitesi :total içinden :available boş. Sürekli açık iş yükleri, Kata pod ek yükü, kuyruk tüketicileri, sandbox\'lar ve model servisleri gerçek kapasite ayırır.',
         'faas_exceeded' => ':resource limiti FaaS overcommit bütçesinde aşılıyor: :needed gerekiyor, :total içinden :available boş (bölge kapasitesi :capacity × :factor, eksi :reserved sürekli açık).',
+    ],
+
+    // Durdurulmuş projeleri geri gelmiş sayan bölge kapasite alarmı (ResourceThresholdService)
+    'capacity_alarm' => [
+        'budget_always_on' => 'sürekli açık bütçesi',
+        'budget_faas' => 'FaaS overcommit bütçesi',
+        'more' => 've :count tane daha',
+        'with_stopped' => 'Durdurulmuş :count projesi (toplam :stopped :resource) aynı anda sürdürülse bölgenin :budget %:percentage dolu olur (eşik %:threshold). %:threshold altında kalmak için en az :add :resource ekleyen node\'lar ekleyin. Durdurulmuş projeler: :projects.',
+        'with_stopped_exceeded' => 'Durdurulmuş :count projesi (toplam :stopped :resource) aynı anda sürdürülse bölgenin :budget %:percentage dolu olur: elindekinden :exceeded fazla. %:threshold altında kalmak için en az :add :resource ekleyen node\'lar ekleyin. Durdurulmuş projeler: :projects.',
     ],
 
     // ── Proje özel alan adları ──

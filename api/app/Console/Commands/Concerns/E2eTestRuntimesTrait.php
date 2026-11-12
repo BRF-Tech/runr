@@ -58,8 +58,22 @@ Q;
             $this->runtimeEntry('rt-q-queue', 'q', 'queue', self::RUNTIME_E2E_QUEUE_SCRIPT, $regionId, ['log' => 'processed hi (from Q)']),
         ];
 
-        $this->runTestsSequentially($tests);
+        // In waves the region runs at once, each wave's projects deleted once verified and its
+        // cold starts measured (E2eTestWavesTrait)
+        $this->runTestsInWaves($tests, $regionId, fn (array &$wave) => $this->verifyRuntimeCases($wave));
 
+        $this->info('');
+        $this->info('── Cold starts (scaled to zero → first response, curl time_total) ──');
+        foreach ($this->coldStarts as $name => $value) {
+            $this->line(sprintf('  %-18s %s', $name, is_float($value) ? sprintf('%.3f s', $value) : $value));
+        }
+
+        return $tests;
+    }
+
+    /** Checks each deployed case by its trigger, then times the cold start of each verified HTTP function. */
+    private function verifyRuntimeCases(array &$tests): void
+    {
         foreach ($tests as &$test) {
             if ($test['steps']['ready'] !== true) {
                 $test['steps']['verify'] ??= 'skipped';
@@ -81,14 +95,6 @@ Q;
                 $this->coldStarts[$test['name']] = $this->measureColdStart($test);
             }
         }
-
-        $this->info('');
-        $this->info('── Cold starts (scaled to zero → first response, curl time_total) ──');
-        foreach ($this->coldStarts as $name => $value) {
-            $this->line(sprintf('  %-18s %s', $name, is_float($value) ? sprintf('%.3f s', $value) : $value));
-        }
-
-        return $tests;
     }
 
     private function runtimeEntry(string $name, string $runtime, string $trigger, string $code, string $regionId, array $expect): array

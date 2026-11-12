@@ -20,6 +20,8 @@ concurrency:
 jobs:
   gitleaks:
     name: Secret scan (gitleaks)
+    # not on the dependency test bot's own push (its trailer): release-images.yml takes its tag
+    if: ${{ github.event_name != 'push' || !contains(github.event.head_commit.message, 'RunR-Deps-Bot:') }}
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     env:
@@ -38,6 +40,8 @@ jobs:
 
   reqs-mirror:
     name: Reqs mirror (anonymous pulls)
+    # not on the dependency test bot's own push (its trailer): release-images.yml takes its tag
+    if: ${{ github.event_name != 'push' || !contains(github.event.head_commit.message, 'RunR-Deps-Bot:') }}
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     steps:
@@ -51,6 +55,8 @@ jobs:
 
   build-scripts:
     name: Dockerfiles + build scripts
+    # not on the dependency test bot's own push (its trailer): release-images.yml takes its tag
+    if: ${{ github.event_name != 'push' || !contains(github.event.head_commit.message, 'RunR-Deps-Bot:') }}
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     steps:
@@ -71,6 +77,8 @@ jobs:
 
   helm:
     name: Helm chart (lint, template, kubeconform)
+    # not on the dependency test bot's own push (its trailer): release-images.yml takes its tag
+    if: ${{ github.event_name != 'push' || !contains(github.event.head_commit.message, 'RunR-Deps-Bot:') }}
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     env:
@@ -100,41 +108,21 @@ jobs:
   # the steps: api-tests.yml, which deps-test.yml runs too (a dependency bump of next)
   api:
     name: API (Pint, PHPUnit, Larastan)
+    # not on the dependency test bot's own push (its trailer): release-images.yml takes its tag
+    if: ${{ github.event_name != 'push' || !contains(github.event.head_commit.message, 'RunR-Deps-Bot:') }}
     uses: ./.github/workflows/api-tests.yml
 
+  # the steps: ui-tests.yml, which deps-test.yml runs too (a dependency bump of the console)
   ui:
     name: UI lint + unit tests + build
-    runs-on: ubuntu-24.04
-    timeout-minutes: 60
-    defaults:
-      run:
-        working-directory: vue
-    env:
-      NODE_OPTIONS: --max-old-space-size=4096
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-        with:
-          node-version: 22
-          cache: npm
-          cache-dependency-path: vue/package-lock.json
-      - run: npm ci --no-audit --no-fund
-      - run: npm run lint
-      # coverage.thresholds of vitest.config.js: fails below the floor
-      - run: npm run test:coverage
-      - run: npm run build
-      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        if: ${{ !cancelled() }}
-        with:
-          name: ui-coverage
-          path: vue/coverage/
-          if-no-files-found: ignore
-          retention-days: 7
+    # not on the dependency test bot's own push (its trailer): release-images.yml takes its tag
+    if: ${{ github.event_name != 'push' || !contains(github.event.head_commit.message, 'RunR-Deps-Bot:') }}
+    uses: ./.github/workflows/ui-tests.yml
 
   ui-e2e:
     name: UI e2e (mocked API)
+    # not on the dependency test bot's own push (its trailer): release-images.yml takes its tag
+    if: ${{ github.event_name != 'push' || !contains(github.event.head_commit.message, 'RunR-Deps-Bot:') }}
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     defaults:
@@ -168,6 +156,8 @@ jobs:
 
   go:
     name: Go (gofmt, vet, race tests)
+    # not on the dependency test bot's own push (its trailer): release-images.yml takes its tag
+    if: ${{ github.event_name != 'push' || !contains(github.event.head_commit.message, 'RunR-Deps-Bot:') }}
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     steps:
@@ -206,6 +196,8 @@ jobs:
 
   sdk-node:
     name: Workflow SDK (Node) typecheck + tests
+    # not on the dependency test bot's own push (its trailer): release-images.yml takes its tag
+    if: ${{ github.event_name != 'push' || !contains(github.event.head_commit.message, 'RunR-Deps-Bot:') }}
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     defaults:
@@ -226,3 +218,52 @@ jobs:
       - run: npm install --no-audit --no-fund
       - run: npm run typecheck
       - run: npm test
+
+  sdk-sandbox-node:
+    name: Sandbox SDK (Node) typecheck + tests
+    # not on the dependency test bot's own push (its trailer): release-images.yml takes its tag
+    if: ${{ github.event_name != 'push' || !contains(github.event.head_commit.message, 'RunR-Deps-Bot:') }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    defaults:
+      run:
+        working-directory: sdk/sandbox/node
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: sdk/sandbox/node/package-lock.json
+      - run: npm ci --no-audit --no-fund
+      - run: npm run typecheck
+      # node --test against a fake API server (test/)
+      - run: npm test
+
+  sdk-python:
+    name: Python SDKs (Workflow, Sandbox) tests
+    # not on the dependency test bot's own push (its trailer): release-images.yml takes its tag
+    if: ${{ github.event_name != 'push' || !contains(github.event.head_commit.message, 'RunR-Deps-Bot:') }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # The runner's Python 3 (3.12 on ubuntu-24.04; the SDKs declare requires-python >=3.9): a
+      # python-version of setup-python would be a toolchain pin of its own. The SDKs keep no
+      # lockfile: each is installed with its test extra into a venv of its own, as
+      # ci/deps-check.sh py-test does for a dependency bump.
+      - name: pytest (sdk/python, sdk/sandbox/python)
+        run: |
+          python3 --version
+          for dir in sdk/python sdk/sandbox/python; do
+            echo "::group::$dir"
+            venv="$RUNNER_TEMP/venv/$dir"
+            python3 -m venv "$venv"
+            "$venv/bin/pip" install --no-input --disable-pip-version-check "./${dir}[test]" || exit 1
+            (cd "$dir" && "$venv/bin/pytest" -p no:cacheprovider) || exit 1
+            echo "::endgroup::"
+          done

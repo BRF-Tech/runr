@@ -502,6 +502,17 @@ the bucket. That directory is on the pod's `emptyDir`: it needs room for the lar
 through the registry, and a restart empties it. The endpoint is the storage service's address with
 its scheme; the bucket is addressed by path (`<endpoint>/<bucket>`).
 
+The `ghcr.io` upstream, which builds take their base images through, has `maxRetries: 5` and
+`retryDelay: 2s`. A fetch from `ghcr.io` that fails goes on in the background; on the pinned Zot
+the next request for the image waits for it, and a build tries a failed pull again
+([runtimes.md](runtimes.md#compiled-languages)). Zot 2.1.3 and later also try each request to
+`ghcr.io` up to five more times, two seconds apart. The Docker Hub upstream gets no retries from
+RunR: a Zot older than 2.1.22 asks Docker Hub for every repository, a build's push included. A
+`ghcr.io` upstream you set to `stream: true` gets none either, because Zot does not start with
+both. A registry set up by an earlier release gets the retries with the next change
+`region:reconcile` makes to its config.json, or with `registry:upgrade-zot`: they alone do not
+restart it, and builds try their pulls again either way.
+
 `runr regions registry rm REGION` or `DELETE /knative-regions/{id}/registry` (`registry.manage`)
 removes the registry: for `internal` the node mirror, the Helm release and the namespace (with
 its volume) when RunR created it; for `external` RunR forgets it.
@@ -906,6 +917,7 @@ nodes count towards the capacity. What moves onto the workers and what stays on 
 | Change | Console | CLI | API |
 |---|---|---|---|
 | Overcommit factors | Workers → **Capacity** | `runr regions capacity set REGION --set faas_cpu_overcommit=4` | `PUT /api/knative-regions/{id}/capacity` |
+| What the region needs with its stopped projects back | Workers → **Capacity** → With stopped projects | — | `GET /api/knative-regions/{id}/capacity` → `with_stopped` |
 | Worker selection | Workers → **Apply Selection** | `runr regions nodes set REGION NODE…` | `POST /api/knative-regions/{id}/workers` with `{"nodes": [...]}` |
 
 ## Moving a region to another cluster
@@ -1459,7 +1471,7 @@ mutability check ([Regions in multi-tenant installs](#regions-in-multi-tenant-in
 | `GET /knative-regions/{id}/kubeconfig` | `regions.manage` | Download the kubeconfig |
 | `PUT /knative-regions/{id}/settings` | `regions.manage` | [General settings](#general) |
 | `PUT /knative-regions/{id}/monitoring` | `regions.manage` | The region's Prometheus and Loki ([Observability](#observability)) |
-| `GET /knative-regions/{id}/capacity` | `regions.view` | Capacity budgets and overcommit factors |
+| `GET /knative-regions/{id}/capacity` | `regions.view` | Capacity budgets and overcommit factors; `with_stopped`: the budgets with every stopped project resumed at once ([architecture.md](architecture.md#region-capacity-and-admission)) |
 | `PUT /knative-regions/{id}/capacity` | `regions.manage` | Overcommit factors |
 | `GET /knative-regions/{id}/nodes` | `regions.view` | Worker nodes with capacity and selection |
 | `POST /knative-regions/{id}/workers` | `regions.manage` | Select the dedicated workers |

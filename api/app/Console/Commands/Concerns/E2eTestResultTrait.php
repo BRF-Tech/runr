@@ -100,9 +100,9 @@ trait E2eTestResultTrait
      * A test row with its duration (the Time column), taken when the test's own work is done:
      * from its start to its last step, as the other e2e suites (test:e2e-tenancy, -ticket,
      * -authprovider) time each check. Functions deployed one after another
-     * (runTestsSequentially) are timed from build to ready: the verification that runs for all
-     * of them together afterwards is no single test's time. A row that never started
-     * (startTime 0) gets no duration.
+     * (runTestsSequentially, runTestsInWaves) are timed from build to ready: the verification
+     * that runs for all of them, or a wave, together afterwards is no single test's time. A row
+     * that never started (startTime 0) gets no duration.
      */
     private function finishTest(array $test): array
     {

@@ -41,3 +41,14 @@ regexTarget = "line"
 regexes = [
   '''`--secret-stdin=KEY`''',
 ]
+
+[[allowlists]]
+description = "The deploy keys of the dependency bot's test that do not load (runtime/test/deps_bot_test.sh: garbage, nobase64): made-up key blocks on one line, which a scan of the commits reads apart from the allowlist above"
+condition = "AND"
+paths = [
+  '''(^|/)runtime/test/deps_bot_test\.sh$''',
+]
+regexTarget = "line"
+regexes = [
+  '''(garbage|nobase64)\) pk=\$'-----BEGIN OPENSSH PRIVATE KEY-----''',
+]

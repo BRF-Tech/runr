@@ -87,6 +87,7 @@ return [
         'metric_text' => 'Son :window dakikada :value (eşik :threshold).',
         'metric_resolved' => ':value değerine döndü.',
         'resource_text' => ':region bölgesinin :resource rezervasyonu %:percentage (eşik %:threshold).',
+        'resource_text_with_stopped' => 'Durdurulmuş projelerin hepsi sürdürülse :region bölgesinin :resource rezervasyonu %:percentage olur (eşik %:threshold).',
     ],
 
     'url' => [

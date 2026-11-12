@@ -277,18 +277,29 @@ trait E2eTestShellTrait
 
     private function findShellCandidate(array $tests): ?array
     {
-        foreach ($tests as $t) {
+        $key = $this->shellCandidateKey($tests);
+
+        return $key === null ? null : $tests[$key];
+    }
+
+    /**
+     * The key of the first ready HTTP function whose project is still there (a wave's projects
+     * are deleted once it is verified, E2eTestWavesTrait), null without one.
+     */
+    private function shellCandidateKey(array $tests): int|string|null
+    {
+        foreach ($tests as $key => $t) {
             if ($t['steps']['ready'] !== true) {
                 continue;
             }
             if (($t['config']['trigger_type'] ?? '') !== 'http') {
                 continue;
             }
-            if (! $t['projectId']) {
+            if (! $t['projectId'] || ! empty($t['released'])) {
                 continue;
             }
 
-            return $t;
+            return $key;
         }
 
         return null;

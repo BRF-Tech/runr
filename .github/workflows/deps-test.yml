@@ -1,17 +1,41 @@
 # The dependency test bot (docs/development.md → Dependency test bot), every week and by hand:
 # every open issue of upstream-releases.yml whose version has no result yet ("deps: <chart>
-# <version> released", "Knative 1.<minor> released: …") is moved on the next branch of the private
-# development repository (origin), and tested with its dependency's suites. Green: the
-# bump lands on next as one commit, a fast-forward of the next it was tested on (never forced),
-# and the issue is closed with label "deps: passed". Red, or a bump that is not mechanical: label
-# "needs attention", a comment with what failed, next untouched. A labelled issue is tested again
-# when the workflow is run with its number; a newer release of the dependency supersedes it.
+# <version> released", "Knative 1.<minor> released: …") is moved on the last release tag of the
+# private development repository (origin), never on next, and tested alone with its dependency's
+# suites on the release it would make. The green ones of a run are then made again together on
+# the tag, one after the other (an urgent one first, then the oldest issue), with one release
+# commit; two or more are tested together in a second phase, with the union of their suites (one
+# that breaks the combination is left out, with the ones after it). They become ONE patch release
+# per run: the release commit and its signed tag go to the origin's main, next takes the release
+# as a merge (a fast-forward of next, never forced), this repository's main gets one commit of the
+# release's tree and the signed tag, whose push starts release-images.yml; once its images are
+# checked against the registry, the GitHub release (its notes list every bump) is made and the
+# chart's publish on helm.brf.sh dispatched and checked. The issues are closed with label "deps:
+# passed". Red, a bump that is not mechanical, that breaks the combination, or a release that
+# cannot be made: label "needs attention", a comment with what failed and what was done, nothing
+# pushed (or, past the origin's push, how to resume). A labelled issue is tested again when the
+# workflow is run with its number; a newer release of the dependency supersedes it. `dry_run`
+# makes and checks everything and pushes, creates and labels nothing.
 #
-# This repository's main, the release mirror, is never written: the GITHUB_TOKEN can only read
-# contents, and the one push goes to origin's next over SSH with a write deploy key (the variable
-# GITLAB_RUNR_REMOTE, the secret GITLAB_RUNR_PUSH_KEY, the host key in the variable
-# GITLAB_KNOWN_HOSTS), as a plain fast-forward of HEAD:refs/heads/next: next is protected (no force
-# push), main takes no deploy key.
+# The package groups of ci/check-package-releases.sh (Composer, npm, Go modules, Actions pins,
+# Dockerfile bases; ci/deps/packages.sh) go the same way; the bumps of theirs that change nothing
+# a release ships are made and tested on next, together the same way, and land on next in one
+# fast-forward of the origin's next, with no release; the next full release carries them.
+#
+# The bot's commits and tags carry the identity of RunR's public history (DEPS_BOT_NAME,
+# DEPS_BOT_EMAIL) and the trailer "RunR-Deps-Bot: <dep> <version>", which tells them apart
+# (ci/deps/check-attribution.sh). Its pushes made with the App's token start release-images.yml on
+# the tag; ci.yml and audit.yml skip a push whose head commit carries the trailer, and no other
+# workflow runs on a push.
+#
+# The GITHUB_TOKEN stays read-only on contents: this repository's main and tags are pushed with a
+# token of the GitHub App RunR deps bot (secrets RUNR_BOT_APP_ID, RUNR_BOT_APP_PRIVATE_KEY), whose
+# tag push starts release-images.yml (one of the GITHUB_TOKEN would not); the tags are signed with
+# the bot's key (secrets RUNR_BOT_GPG_PRIVATE_KEY, RUNR_BOT_GPG_PASSPHRASE; its fingerprint the
+# variable RUNR_BOT_GPG_FINGERPRINT). The origin is reached over SSH with a write deploy key (the
+# variable GITLAB_RUNR_REMOTE, the secret GITLAB_RUNR_PUSH_KEY, the host key in the variable
+# GITLAB_KNOWN_HOSTS): one atomic push of exactly its main, next and the release tag, fast-forwards
+# only.
 name: Dependency tests
 
 on:
@@ -24,13 +48,20 @@ on:
         description: 'Issue numbers to test (again), comma-separated; empty: every open deps issue without a result'
         default: ''
       attempt:
-        description: 'The bot sets it when next moved under a green bump (1: a new test)'
+        description: 'The bot sets it when the last release moved under the green bumps (1: a new test)'
         default: '1'
+      dry_run:
+        description: 'Make and check the release of the green bumps; push, create and label nothing'
+        type: boolean
+        default: false
+      resume:
+        description: 'A release tag v<x.y.z> of the bot that did not finish (its issues name it, with their numbers above): go on from where it stopped'
+        default: ''
 
 permissions:
   contents: read
 
-# one run at a time: two runs would land on the same next
+# one run at a time: two runs would release on the same tag
 concurrency:
   group: deps-test
   cancel-in-progress: false
@@ -38,9 +69,15 @@ concurrency:
 env:
   # the private development repository, an SSH URL (checked by ci/deps/ssh-key.sh)
   ORIGIN_REMOTE: ${{ vars.GITLAB_RUNR_REMOTE }}
-  # the author and committer of the bot's commits on next
-  DEPS_BOT_NAME: RunR deps bot
-  DEPS_BOT_EMAIL: deps-bot@runr.sh
+  # this repository: the release mirror (a fork of it tests the release on itself)
+  PUBLIC_REMOTE: https://github.com/${{ github.repository }}.git
+  GH_REPO: ${{ github.repository }}
+  # the author, committer and tagger of the bot's commits and tags
+  # (Burak's noreply identity, as RunR's public history; the trailer marks the bot's commits)
+  DEPS_BOT_NAME: Burak Faruk ŞAHİN
+  DEPS_BOT_EMAIL: 19393636+brkfun@users.noreply.github.com
+  DRY_RUN: ${{ inputs.dry_run && 'true' || 'false' }}
+  RESUME: ${{ inputs.resume }}
 
 jobs:
   plan:
@@ -53,6 +90,7 @@ jobs:
     outputs:
       tests: ${{ steps.plan.outputs.tests }}
       any: ${{ steps.plan.outputs.any }}
+      resume: ${{ steps.plan.outputs.resume }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -67,16 +105,28 @@ jobs:
             echo "::error::issue '${ONLY}': issue numbers separated by commas"
             exit 1
           fi
-          gh issue list --repo "$GITHUB_REPOSITORY" --state open --limit 300 --json number,title,labels > "$RUNNER_TEMP/issues.json"
+          if [ -n "$RESUME" ]; then
+            if ! [[ "$RESUME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || ! [[ "$only" =~ ^[0-9]+(,[0-9]+)*$ ]]; then
+              echo "::error::resume '${RESUME}': a release tag v<x.y.z>, with the issues it releases"
+              exit 1
+            fi
+            { echo "tests=[]"; echo "any=false"; echo "resume=${RESUME}"; } >> "$GITHUB_OUTPUT"
+            echo "### Resumed: the release ${RESUME} (#${only})" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          gh issue list --repo "$GITHUB_REPOSITORY" --state open --limit 300 --json number,title,labels,body > "$RUNNER_TEMP/issues.json"
           bash ci/deps-plan.sh "$RUNNER_TEMP/issues.json" --only="$only" > "$RUNNER_TEMP/plan.json"
           jq . "$RUNNER_TEMP/plan.json"
           {
             echo "tests=$(jq -c .tests "$RUNNER_TEMP/plan.json")"
             echo "any=$(jq -r '.tests | length > 0' "$RUNNER_TEMP/plan.json")"
+            echo "resume="
           } >> "$GITHUB_OUTPUT"
           jq -r '.tests[] | "- #\(.issue): \(.dep) \(.version)"' "$RUNNER_TEMP/plan.json" | sed '1i ### Tested in this run' >> "$GITHUB_STEP_SUMMARY"
-      # the labels (created once), superseded issues closed, re-triggered ones unlabelled
+      # the labels (created once), superseded issues closed, re-triggered ones unlabelled (not in a
+      # dry run)
       - name: Issues
+        if: env.DRY_RUN != 'true' && env.RESUME == ''
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
@@ -84,7 +134,7 @@ jobs:
           gh label create "needs attention" --repo "$GITHUB_REPOSITORY" --color d93f0b \
             --description "The dependency test bot holds it: a person decides" 2>/dev/null || true
           gh label create "deps: passed" --repo "$GITHUB_REPOSITORY" --color 0e8a16 \
-            --description "The dependency test bot tested it and it is on next" 2>/dev/null || true
+            --description "The dependency test bot tested and released it" 2>/dev/null || true
           jq -c '.superseded[]' "$RUNNER_TEMP/plan.json" | while read -r s; do
             issue=$(jq -r .issue <<< "$s"); by=$(jq -r .by <<< "$s"); version=$(jq -r .version <<< "$s")
             gh issue close "$issue" --repo "$GITHUB_REPOSITORY" --reason "not planned" \
@@ -101,14 +151,18 @@ jobs:
           done
 
   bump:
-    name: Bumps on next
+    name: Bumps on the last release
     needs: plan
     if: needs.plan.outputs.any == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     outputs:
       suites: ${{ steps.bumps.outputs.suites }}
+      checks: ${{ steps.bumps.outputs.checks }}
+      ui: ${{ steps.bumps.outputs.ui }}
+      ui-stack: ${{ steps.bumps.outputs.ui-stack }}
       unit: ${{ steps.bumps.outputs.unit }}
+      shell: ${{ steps.bumps.outputs.shell }}
       any: ${{ steps.bumps.outputs.any }}
     env:
       # the helm of the API image (api/Dockerfile.prod)
@@ -120,32 +174,48 @@ jobs:
           persist-credentials: false
       - name: Install helm (pinned, checksum verified)
         run: |
-          curl -fsSL -o /tmp/helm.tar.gz "https://get.helm.sh/helm-${HELM_VERSION}-linux-amd64.tar.gz"
+          curl -fsSL --retry 4 --retry-all-errors -o /tmp/helm.tar.gz "https://get.helm.sh/helm-${HELM_VERSION}-linux-amd64.tar.gz"
           echo "${HELM_SHA256}  /tmp/helm.tar.gz" | sha256sum -c -
           mkdir -p "$RUNNER_TEMP/bin"
           tar -xzf /tmp/helm.tar.gz -C "$RUNNER_TEMP/bin" --strip-components=1 linux-amd64/helm
           echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
-      # over SSH with the deploy key, in a 0600 file the step after the next removes
-      - name: Clone next (origin)
+      # over SSH with the deploy key, in a 0600 file the step after the next removes: main, next and
+      # the tags; the bumps start from the last release tag
+      - name: Clone the origin
         env:
           PUSH_KEY: ${{ secrets.GITLAB_RUNR_PUSH_KEY }}
           KNOWN_HOSTS: ${{ vars.GITLAB_KNOWN_HOSTS }}
         run: |
           GIT_SSH_COMMAND="$(bash ci/deps/ssh-key.sh "$RUNNER_TEMP/ssh")"
           export GIT_SSH_COMMAND
-          git clone -q --branch next --single-branch "$ORIGIN_REMOTE" "$RUNNER_TEMP/next"
-          git -C "$RUNNER_TEMP/next" log -1 --format='next: %H %s'
-          git -C "$RUNNER_TEMP/next" describe --tags --abbrev=0 --match 'v[0-9]*.[0-9]*.[0-9]*'
+          git clone -q --no-checkout "$ORIGIN_REMOTE" "$RUNNER_TEMP/origin"
+          tag="$(git -C "$RUNNER_TEMP/origin" tag -l 'v*' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -n 1)"
+          git -C "$RUNNER_TEMP/origin" checkout -q --detach "$tag"
+          git -C "$RUNNER_TEMP/origin" log -1 --format="last release ${tag}: %H %s"
+          git -C "$RUNNER_TEMP/origin" log -1 --format='main: %H %s' origin/main
+          git -C "$RUNNER_TEMP/origin" log -1 --format='next: %H %s' origin/next
       - name: Remove the deploy key
         if: always()
         run: rm -rf "$RUNNER_TEMP/ssh"
-      # RunR's values of the charts come from the API's code (ci/deps/helm-values.php)
+      # RunR's values of the charts come from the API's code of the release (ci/deps/helm-values.php)
       - uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # 2.40.0
         with:
           php-version: '8.2'
           tools: composer:v2
+      # the package groups' tools (ci/deps/bump-packages.sh): npm for the console's and the SDKs'
+      # lockfiles, go for the modules, as ci.yml has them
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          package-manager-cache: false
+      # npm 10's lockfile-only update fails on the console's tree (vite: "reading 'edgesOut'")
+      - run: npm install -g npm@11 --no-audit --no-fund
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: '1.26.9'
+          cache: false
       - name: Composer install (api)
-        working-directory: ${{ runner.temp }}/next/api
+        working-directory: ${{ runner.temp }}/origin/api
         run: composer install --no-interaction --prefer-dist --no-progress --no-dev
       - id: bumps
         env:
@@ -153,15 +223,23 @@ jobs:
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           echo "$TESTS" > "$RUNNER_TEMP/tests.json"
-          bash ci/deps-run.sh bumps "$RUNNER_TEMP/tests.json" "$RUNNER_TEMP/next" "$RUNNER_TEMP/deps" "$RUN_URL"
+          bash ci/deps-run.sh bumps "$RUNNER_TEMP/tests.json" "$RUNNER_TEMP/origin" "$RUNNER_TEMP/deps" "$PUBLIC_REMOTE" "$RUN_URL"
+          cat "$RUNNER_TEMP/deps/base.env"
           {
             echo "suites=$(jq -c . "$RUNNER_TEMP/deps/matrix-suites.json")"
+            echo "checks=$(jq -c . "$RUNNER_TEMP/deps/matrix-checks.json")"
+            echo "ui=$(jq -c . "$RUNNER_TEMP/deps/matrix-ui.json")"
+            echo "ui-stack=$(jq -c . "$RUNNER_TEMP/deps/matrix-ui-stack.json")"
             echo "unit=$(jq -c . "$RUNNER_TEMP/deps/matrix-unit.json")"
-            echo "any=$(jq -r 'length > 0' "$RUNNER_TEMP/deps/matrix-unit.json")"
+            echo "shell=$(jq -c . "$RUNNER_TEMP/deps/matrix-shell.json")"
+            echo "any=$(jq -r 'length > 0' "$RUNNER_TEMP/deps/matrix-shell.json")"
           } >> "$GITHUB_OUTPUT"
-          # next, the bumps (deps/<dep>) and the release tags, for the test jobs
+          # the origin's main and next, the release candidates (deps/<dep>) and the tags, for the
+          # test jobs and the release
+          git -C "$RUNNER_TEMP/origin" branch -f main origin/main
+          git -C "$RUNNER_TEMP/origin" branch -f next origin/next
           mkdir -p "$RUNNER_TEMP/tree"
-          git -C "$RUNNER_TEMP/next" bundle create "$RUNNER_TEMP/tree/repo.bundle" --branches --tags
+          git -C "$RUNNER_TEMP/origin" bundle create "$RUNNER_TEMP/tree/repo.bundle" --branches --tags
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: steps.bumps.outputs.any == 'true'
         with:
@@ -178,7 +256,7 @@ jobs:
   unit:
     name: ${{ matrix.dep }} unit
     needs: bump
-    if: needs.bump.outputs.any == 'true'
+    if: needs.bump.outputs.any == 'true' && needs.bump.outputs.unit != '[]'
     strategy:
       fail-fast: false
       matrix:
@@ -198,7 +276,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include: ${{ fromJSON(needs.bump.outputs.unit) }}
+        include: ${{ fromJSON(needs.bump.outputs.shell) }}
     steps:
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
@@ -231,10 +309,115 @@ jobs:
           path: ${{ runner.temp }}/result/
           retention-days: 7
 
+  # a package bump's checks (ci/deps-check.sh): the Caddyfiles, the SDKs' tests, Go modules, image
+  # builds, actionlint; each reads its result file, not only its exit status
+  check:
+    name: ${{ matrix.dep }} ${{ matrix.suite }}
+    needs: bump
+    if: needs.bump.outputs.any == 'true' && needs.bump.outputs.checks != '[]'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.bump.outputs.checks) }}
+    env:
+      CHECK: ${{ matrix.command }}
+      ACTIONLINT_VERSION: '1.7.12'
+      ACTIONLINT_SHA256: 8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: deps-tree
+          path: ${{ runner.temp }}/tree
+      - name: The bundle's tree
+        env:
+          REF: ${{ matrix.ref }}
+        run: |
+          git clone -q --no-checkout "$RUNNER_TEMP/tree/repo.bundle" .
+          git checkout -q --detach "refs/remotes/origin/${REF}"
+          git log -1 --format='%H %s'
+      # py-test: the runner's python3 (ubuntu-24.04: 3.12, with venv), as ci.yml's sdk-python job
+      - if: startsWith(matrix.command, 'npm-test:')
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          package-manager-cache: false
+      # npm 10 fails to resolve Vitest 4 without a lockfile (ci.yml's sdk-node job)
+      - if: startsWith(matrix.command, 'npm-test:')
+        run: npm install -g npm@11 --no-audit --no-fund
+      - if: startsWith(matrix.command, 'go:')
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: '1.26.9'
+          cache: false
+      - if: matrix.command == 'go:terraform-provider-runr'
+        uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+        with:
+          terraform_version: '1.13.3'
+          terraform_wrapper: false
+      - name: Install actionlint (pinned, checksum verified)
+        if: matrix.command == 'actionlint'
+        run: |
+          curl -fsSL --retry 4 --retry-all-errors -o /tmp/actionlint.tar.gz "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz"
+          echo "${ACTIONLINT_SHA256}  /tmp/actionlint.tar.gz" | sha256sum -c -
+          sudo tar -xzf /tmp/actionlint.tar.gz -C /usr/local/bin actionlint
+      - name: ci/deps-check.sh ${{ matrix.command }}
+        env:
+          GOTOOLCHAIN: auto
+          GOFLAGS: -mod=readonly
+          CHECKPOINT_DISABLE: '1'
+        run: bash ci/deps-check.sh "$CHECK" "$RUNNER_TEMP/result"
+      - name: Result
+        if: always()
+        env:
+          JOB_STATUS: ${{ job.status }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/result"
+          echo "$JOB_STATUS" > "$RUNNER_TEMP/result/status"
+          [ -s "$RUNNER_TEMP/result/failed" ] || echo 1 > "$RUNNER_TEMP/result/failed"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: deps-result-${{ matrix.dep }}-${{ matrix.suite }}
+          path: ${{ runner.temp }}/result/
+          retention-days: 7
+
+  # a console bump's tests (ui-tests.yml: lint, Vitest with the coverage floor, the build, as
+  # ci.yml's ui job) and the console against the dev stack (ui-stack-suite.yml, as e2e.yml's);
+  # each reads its report, not only its exit status (ci/ui-results.sh)
+  ui:
+    name: ${{ matrix.dep }} ${{ matrix.suite }}
+    needs: bump
+    if: needs.bump.outputs.any == 'true' && needs.bump.outputs.ui != '[]'
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.bump.outputs.ui) }}
+    uses: ./.github/workflows/ui-tests.yml
+    with:
+      tree-artifact: deps-tree
+      ref: ${{ matrix.ref }}
+      result-name: deps-result-${{ matrix.dep }}-${{ matrix.suite }}
+
+  ui-stack:
+    name: ${{ matrix.dep }} ${{ matrix.suite }}
+    needs: bump
+    if: needs.bump.outputs.any == 'true' && needs.bump.outputs.ui-stack != '[]'
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.bump.outputs.ui-stack) }}
+    uses: ./.github/workflows/ui-stack-suite.yml
+    with:
+      tree-artifact: deps-tree
+      ref: ${{ matrix.ref }}
+      result-name: deps-result-${{ matrix.dep }}-${{ matrix.suite }}
+
   kind:
     name: ${{ matrix.dep }} ${{ matrix.suite }}
     needs: bump
-    if: needs.bump.outputs.any == 'true'
+    if: needs.bump.outputs.any == 'true' && needs.bump.outputs.suites != '[]'
     strategy:
       fail-fast: false
       # one Kind cluster per runner, at most six runners at a time
@@ -252,17 +435,28 @@ jobs:
       result-name: deps-result-${{ matrix.dep }}-${{ matrix.suite }}
       timeout: 180
 
-  land:
-    name: Land green bumps, report on the issues
-    needs: [plan, bump, unit, shell, kind]
-    if: ${{ always() && needs.bump.result != 'skipped' && needs.plan.outputs.any == 'true' }}
+  # the run's green bumps together (ci/deps-run.sh batch), from the bundle of the bumps (no deploy
+  # key): those of the release made again one after the other on the last release tag by its own
+  # ci/deps-bump.sh, with one release commit (deps/batch), those of next only on next
+  # (deps/batch-next); two or more of a path go to the second test phase below
+  batch:
+    name: The green bumps together
+    needs: [plan, bump, unit, shell, check, ui, ui-stack, kind]
+    if: ${{ always() && needs.bump.result == 'success' && needs.bump.outputs.any == 'true' }}
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
-    permissions:
-      contents: read
-      issues: write
-      # the run of the bumps next moved under (attempt + 1)
-      actions: write
+    timeout-minutes: 45
+    outputs:
+      suites: ${{ steps.batch.outputs.suites }}
+      checks: ${{ steps.batch.outputs.checks }}
+      ui: ${{ steps.batch.outputs.ui }}
+      ui-stack: ${{ steps.batch.outputs.ui-stack }}
+      unit: ${{ steps.batch.outputs.unit }}
+      shell: ${{ steps.batch.outputs.shell }}
+      any: ${{ steps.batch.outputs.any }}
+    env:
+      # the helm of the API image (api/Dockerfile.prod)
+      HELM_VERSION: v3.16.0
+      HELM_SHA256: 327cfbc7ddc5a3eb644039ceb0cff66394628654c4f5a76bf715ed15b893983b
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -276,38 +470,509 @@ jobs:
           pattern: deps-result-*
           path: ${{ runner.temp }}/deps/results
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
-        if: needs.bump.outputs.any == 'true'
         with:
           name: deps-tree
           path: ${{ runner.temp }}/tree
-      - name: Outcome
+      # the clone of the bumps at the last release tag, its branches (main, next, deps/<dep>) as the
+      # bump job made them; two green bumps of one path or more are made again together
+      - name: The bumps' clone
+        id: clone
         run: |
           bash ci/deps-run.sh outcome "$RUNNER_TEMP/deps"
           for f in "$RUNNER_TEMP"/deps/outcome/*; do [ -f "$f" ] && echo "$(basename "$f"): $(cat "$f")"; done
-      # Each green bump as a fast-forward of the next it was tested on, in order; after the first,
-      # next has moved for the others, which the bot moves and tests again (attempt + 1)
-      - name: Land on next (origin)
+          o="$RUNNER_TEMP/origin"
+          git clone -q --no-checkout "$RUNNER_TEMP/tree/repo.bundle" "$o"
+          git -C "$o" checkout -q --detach "$(sed -n 's/^BASE_COMMIT=//p' "$RUNNER_TEMP/deps/base.env")"
+          git -C "$o" for-each-ref --format='%(refname:lstrip=3)' refs/remotes/origin/ | grep -vx HEAD | while read -r b; do
+            git -C "$o" branch -f "$b" "refs/remotes/origin/${b}"
+          done
+          n="$(while read -r d; do cat "$RUNNER_TEMP/deps/bump/$d/path" 2>/dev/null || echo release; done < "$RUNNER_TEMP/deps/green" | sort | uniq -c | awk '$1 >= 2' | wc -l)"
+          echo "remake=$([ "$n" -gt 0 ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+      # the bumps' tools, as the bump job has them (only when bumps are made again)
+      - name: Install helm (pinned, checksum verified)
+        if: steps.clone.outputs.remake == 'true'
+        run: |
+          curl -fsSL --retry 4 --retry-all-errors -o /tmp/helm.tar.gz "https://get.helm.sh/helm-${HELM_VERSION}-linux-amd64.tar.gz"
+          echo "${HELM_SHA256}  /tmp/helm.tar.gz" | sha256sum -c -
+          mkdir -p "$RUNNER_TEMP/bin"
+          tar -xzf /tmp/helm.tar.gz -C "$RUNNER_TEMP/bin" --strip-components=1 linux-amd64/helm
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+      - if: steps.clone.outputs.remake == 'true'
+        uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # 2.40.0
+        with:
+          php-version: '8.2'
+          tools: composer:v2
+      - if: steps.clone.outputs.remake == 'true'
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          package-manager-cache: false
+      # npm 10's lockfile-only update fails on the console's tree (vite: "reading 'edgesOut'")
+      - if: steps.clone.outputs.remake == 'true'
+        run: npm install -g npm@11 --no-audit --no-fund
+      - if: steps.clone.outputs.remake == 'true'
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: '1.26.9'
+          cache: false
+      - name: Composer install (api)
+        if: steps.clone.outputs.remake == 'true'
+        working-directory: ${{ runner.temp }}/origin/api
+        run: composer install --no-interaction --prefer-dist --no-progress --no-dev
+      - id: batch
+        run: |
+          bash ci/deps-run.sh batch "$RUNNER_TEMP/deps" "$RUNNER_TEMP/origin"
+          {
+            echo "suites=$(jq -c . "$RUNNER_TEMP/deps/batch/matrix-suites.json")"
+            echo "checks=$(jq -c . "$RUNNER_TEMP/deps/batch/matrix-checks.json")"
+            echo "ui=$(jq -c . "$RUNNER_TEMP/deps/batch/matrix-ui.json")"
+            echo "ui-stack=$(jq -c . "$RUNNER_TEMP/deps/batch/matrix-ui-stack.json")"
+            echo "unit=$(jq -c . "$RUNNER_TEMP/deps/batch/matrix-unit.json")"
+            echo "shell=$(jq -c . "$RUNNER_TEMP/deps/batch/matrix-shell.json")"
+            echo "any=$(jq -r 'length > 0' "$RUNNER_TEMP/deps/batch/matrix-shell.json")"
+          } >> "$GITHUB_OUTPUT"
+          # every branch (the bumps alone, deps/batch, deps/batch-next) and the tags, for the
+          # combined tests and the release
+          mkdir -p "$RUNNER_TEMP/batch-tree"
+          git -C "$RUNNER_TEMP/origin" bundle create "$RUNNER_TEMP/batch-tree/repo.bundle" --branches --tags
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: deps-batch-tree
+          path: ${{ runner.temp }}/batch-tree/repo.bundle
+          retention-days: 3
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: deps-batch
+          path: ${{ runner.temp }}/deps/batch/
+          retention-days: 14
+
+  # the second test phase: the combined tree of two or more green bumps of a path (deps/batch,
+  # deps/batch-next) runs the union of their suites, as the first phase runs one bump's
+  batch-unit:
+    name: ${{ matrix.dep }} unit
+    needs: batch
+    if: needs.batch.outputs.any == 'true' && needs.batch.outputs.unit != '[]'
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.batch.outputs.unit) }}
+    uses: ./.github/workflows/api-tests.yml
+    with:
+      tree-artifact: deps-batch-tree
+      ref: ${{ matrix.ref }}
+      result-name: deps-result-${{ matrix.dep }}-unit
+
+  batch-shell:
+    name: ${{ matrix.dep }} shell tests
+    needs: batch
+    if: needs.batch.outputs.any == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.batch.outputs.shell) }}
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: deps-batch-tree
+          path: ${{ runner.temp }}/tree
+      - name: The bundle's tree
+        env:
+          REF: ${{ matrix.ref }}
+        run: |
+          git clone -q --no-checkout "$RUNNER_TEMP/tree/repo.bundle" .
+          git checkout -q --detach "refs/remotes/origin/${REF}"
+      - name: runtime/test and the reqs mirror check
+        run: |
+          set -o pipefail
+          { for t in runtime/test/*_test.sh; do echo "── $t"; bash "$t" || exit 1; done; bash ci/check-reqs-mirror.sh; } 2>&1 | tee "$RUNNER_TEMP/shell.log"
+      - name: Result
+        if: always()
+        env:
+          JOB_STATUS: ${{ job.status }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/result"
+          echo "$JOB_STATUS" > "$RUNNER_TEMP/result/status"
+          tail -n 40 "$RUNNER_TEMP/shell.log" > "$RUNNER_TEMP/result/tail.txt" 2>/dev/null || true
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: deps-result-${{ matrix.dep }}-shell
+          path: ${{ runner.temp }}/result/
+          retention-days: 7
+
+  batch-check:
+    name: ${{ matrix.dep }} ${{ matrix.suite }}
+    needs: batch
+    if: needs.batch.outputs.any == 'true' && needs.batch.outputs.checks != '[]'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.batch.outputs.checks) }}
+    env:
+      CHECK: ${{ matrix.command }}
+      ACTIONLINT_VERSION: '1.7.12'
+      ACTIONLINT_SHA256: 8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: deps-batch-tree
+          path: ${{ runner.temp }}/tree
+      - name: The bundle's tree
+        env:
+          REF: ${{ matrix.ref }}
+        run: |
+          git clone -q --no-checkout "$RUNNER_TEMP/tree/repo.bundle" .
+          git checkout -q --detach "refs/remotes/origin/${REF}"
+          git log -1 --format='%H %s'
+      # py-test: the runner's python3 (ubuntu-24.04: 3.12, with venv), as ci.yml's sdk-python job
+      - if: startsWith(matrix.command, 'npm-test:')
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          package-manager-cache: false
+      - if: startsWith(matrix.command, 'npm-test:')
+        run: npm install -g npm@11 --no-audit --no-fund
+      - if: startsWith(matrix.command, 'go:')
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: '1.26.9'
+          cache: false
+      - if: matrix.command == 'go:terraform-provider-runr'
+        uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+        with:
+          terraform_version: '1.13.3'
+          terraform_wrapper: false
+      - name: Install actionlint (pinned, checksum verified)
+        if: matrix.command == 'actionlint'
+        run: |
+          curl -fsSL --retry 4 --retry-all-errors -o /tmp/actionlint.tar.gz "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz"
+          echo "${ACTIONLINT_SHA256}  /tmp/actionlint.tar.gz" | sha256sum -c -
+          sudo tar -xzf /tmp/actionlint.tar.gz -C /usr/local/bin actionlint
+      - name: ci/deps-check.sh ${{ matrix.command }}
+        env:
+          GOTOOLCHAIN: auto
+          GOFLAGS: -mod=readonly
+          CHECKPOINT_DISABLE: '1'
+        run: bash ci/deps-check.sh "$CHECK" "$RUNNER_TEMP/result"
+      - name: Result
+        if: always()
+        env:
+          JOB_STATUS: ${{ job.status }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/result"
+          echo "$JOB_STATUS" > "$RUNNER_TEMP/result/status"
+          [ -s "$RUNNER_TEMP/result/failed" ] || echo 1 > "$RUNNER_TEMP/result/failed"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: deps-result-${{ matrix.dep }}-${{ matrix.suite }}
+          path: ${{ runner.temp }}/result/
+          retention-days: 7
+
+  batch-ui:
+    name: ${{ matrix.dep }} ${{ matrix.suite }}
+    needs: batch
+    if: needs.batch.outputs.any == 'true' && needs.batch.outputs.ui != '[]'
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.batch.outputs.ui) }}
+    uses: ./.github/workflows/ui-tests.yml
+    with:
+      tree-artifact: deps-batch-tree
+      ref: ${{ matrix.ref }}
+      result-name: deps-result-${{ matrix.dep }}-${{ matrix.suite }}
+
+  batch-ui-stack:
+    name: ${{ matrix.dep }} ${{ matrix.suite }}
+    needs: batch
+    if: needs.batch.outputs.any == 'true' && needs.batch.outputs.ui-stack != '[]'
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.batch.outputs.ui-stack) }}
+    uses: ./.github/workflows/ui-stack-suite.yml
+    with:
+      tree-artifact: deps-batch-tree
+      ref: ${{ matrix.ref }}
+      result-name: deps-result-${{ matrix.dep }}-${{ matrix.suite }}
+
+  batch-kind:
+    name: ${{ matrix.dep }} ${{ matrix.suite }}
+    needs: batch
+    if: needs.batch.outputs.any == 'true' && needs.batch.outputs.suites != '[]'
+    strategy:
+      fail-fast: false
+      # one Kind cluster per runner, at most six runners at a time
+      max-parallel: 6
+      matrix:
+        include: ${{ fromJSON(needs.batch.outputs.suites) }}
+    uses: ./.github/workflows/kind-suite.yml
+    with:
+      command: ${{ matrix.command }}
+      k8s: ${{ matrix.k8s }}
+      kvm: ${{ matrix.kvm }}
+      env: ${{ matrix.env }}
+      tree-artifact: deps-batch-tree
+      ref: ${{ matrix.ref }}
+      result-name: deps-result-${{ matrix.dep }}-${{ matrix.suite }}
+      timeout: 180
+
+  # the bump job failed or was cancelled (the origin's clone, a tool's install): nothing was made, so
+  # nothing is tested or released; the planned issues hear so (in a dry run only the summary)
+  bump-failed:
+    name: The bumps could not be made, report on the issues
+    needs: [plan, bump]
+    if: ${{ always() && needs.plan.outputs.any == 'true' && needs.bump.result != 'success' && needs.bump.result != 'skipped' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - name: Report
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TESTS: ${{ needs.plan.outputs.tests }}
+          RESULT: ${{ needs.bump.result }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          msg="**The dependency test bot could not make the bumps** (the job \"Bumps on the last release\" ${RESULT}, [run](${RUN_URL})): nothing was tested, released or pushed. The job's log says why; the next run tries again."
+          { echo "### The bump job ${RESULT}"; echo ""; echo "$msg"; echo ""; jq -r '.[] | "- #\(.issue): \(.dep) \(.version)"' <<<"$TESTS"; } >> "$GITHUB_STEP_SUMMARY"
+          [ "$DRY_RUN" != true ] || exit 0
+          jq -r '.[].issue' <<<"$TESTS" | while read -r issue; do
+            gh issue comment "$issue" --repo "$GITHUB_REPOSITORY" --body "$msg"
+          done
+
+  release:
+    name: Release the green bumps, report on the issues
+    needs: [plan, bump, batch, batch-unit, batch-shell, batch-check, batch-ui, batch-ui-stack, batch-kind]
+    # only on bumps that were made (the bump job's artifacts), or a resumed release
+    if: ${{ always() && ((needs.bump.result == 'success' && needs.plan.outputs.any == 'true') || needs.plan.outputs.resume != '') }}
+    runs-on: ubuntu-24.04
+    # the images of a release take a while (release-images.yml), the chart's publish too
+    timeout-minutes: 330
+    permissions:
+      contents: read
+      issues: write
+      # the artifacts of release-images.yml's run, and the run of the bumps the release moved under
+      actions: write
+    env:
+      HELM_VERSION: v3.16.0
+      HELM_SHA256: 327cfbc7ddc5a3eb644039ceb0cff66394628654c4f5a76bf715ed15b893983b
+      CRANE_VERSION: v0.21.2
+      CRANE_SHA256: 897e7c342db072ba76531246fc18fbf3e8e298688b6ecf98916770984b263866
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # the release's and the landing's state (ci/deps-release.sh): release.env, steps, failed, moved
+      - name: The release's directory
+        run: |
+          echo "RELEASE_DIR=${RUNNER_TEMP}/deps/release" >> "$GITHUB_ENV"
+          echo "LAND_DIR=${RUNNER_TEMP}/deps/land" >> "$GITHUB_ENV"
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        if: env.RESUME == ''
+        with:
+          name: deps-bump
+          path: ${{ runner.temp }}/deps
+      # the results of both test phases (deps-result-<dep>-*, deps-result-batch-*)
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        if: env.RESUME == ''
+        with:
+          pattern: deps-result-*
+          path: ${{ runner.temp }}/deps/results
+      # the batches (none when their job did not finish: the green bumps wait for the next run)
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        if: env.RESUME == '' && needs.batch.result == 'success'
+        with:
+          name: deps-batch
+          path: ${{ runner.temp }}/deps/batch
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        if: env.RESUME == '' && needs.batch.result == 'success'
+        with:
+          name: deps-batch-tree
+          path: ${{ runner.temp }}/tree
+      # a GitHub release download that answers 5xx is tried again, then fetched through the API
+      # (the filex bot's #1808)
+      - name: Install crane and helm (pinned, checksums verified)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          crane="go-containerregistry_Linux_x86_64.tar.gz"
+          curl -fsSL --retry 4 --retry-all-errors -o /tmp/crane.tar.gz "https://github.com/google/go-containerregistry/releases/download/${CRANE_VERSION}/${crane}" \
+            || gh release download "$CRANE_VERSION" -R google/go-containerregistry -p "$crane" -O /tmp/crane.tar.gz --clobber
+          echo "${CRANE_SHA256}  /tmp/crane.tar.gz" | sha256sum -c -
+          curl -fsSL --retry 4 --retry-all-errors -o /tmp/helm.tar.gz "https://get.helm.sh/helm-${HELM_VERSION}-linux-amd64.tar.gz"
+          echo "${HELM_SHA256}  /tmp/helm.tar.gz" | sha256sum -c -
+          mkdir -p "$RUNNER_TEMP/bin"
+          tar -xzf /tmp/crane.tar.gz -C "$RUNNER_TEMP/bin" crane
+          tar -xzf /tmp/helm.tar.gz -C "$RUNNER_TEMP/bin" --strip-components=1 linux-amd64/helm
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+      # the run's release: its green bumps of the release, as the combined tests allow (all of them,
+      # or the ones before the bump that broke the combination); its landing: those of next only
+      - name: Outcome, the release and the landing
+        id: pick
+        if: env.RESUME == ''
+        run: |
+          bash ci/deps-run.sh outcome "$RUNNER_TEMP/deps"
+          for f in "$RUNNER_TEMP"/deps/outcome/*; do [ -f "$f" ] && echo "$(basename "$f"): $(cat "$f")"; done
+          picked="$(printf 'release=false\nland=false')"
+          if [ -s "$RUNNER_TEMP/deps/green" ]; then
+            [ ! -s "$RUNNER_TEMP/tree/repo.bundle" ] || git clone -q --no-checkout "$RUNNER_TEMP/tree/repo.bundle" "$RUNNER_TEMP/repo"
+            # release=true: a release; land=true: bumps of next only (nothing of them ships)
+            picked="$(bash ci/deps-run.sh pick "$RUNNER_TEMP/deps" "$RUNNER_TEMP/repo")"
+            cat "$RELEASE_DIR/release.env" "$LAND_DIR/release.env" 2>/dev/null || true
+          fi
+          echo "$picked" >> "$GITHUB_OUTPUT"
+      # the package groups' tools: a next that changed what the release changes gets every bump
+      # made again on it by next's own ci/deps-bump.sh at the push (ci/deps-release.sh merge-next)
+      - if: steps.pick.outputs.release == 'true'
+        uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # 2.40.0
+        with:
+          php-version: '8.2'
+          tools: composer:v2
+      - if: steps.pick.outputs.release == 'true'
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          package-manager-cache: false
+      - if: steps.pick.outputs.release == 'true'
+        run: npm install -g npm@11 --no-audit --no-fund
+      - if: steps.pick.outputs.release == 'true'
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: '1.26.9'
+          cache: false
+      # the files of the release's tree, as ci.yml scans every commit (its allowlist .gitleaks.toml),
+      # before anything is pushed: findings stop the release
+      - name: Secret scan of the release (gitleaks)
+        if: steps.pick.outputs.release == 'true'
+        env:
+          GITLEAKS_IMAGE: ghcr.io/gitleaks/gitleaks:v8.30.1
+        run: |
+          release="$(sed -n 's/^RELEASE=//p' "$RELEASE_DIR/release.env")"
+          mkdir -p "$RUNNER_TEMP/release-tree"
+          git -C "$RUNNER_TEMP/repo" archive "$release" | tar -x -C "$RUNNER_TEMP/release-tree"
+          if ! docker run --rm -v "$RUNNER_TEMP/release-tree:/tree:ro" -w /tree "$GITLEAKS_IMAGE" \
+              dir . --config /tree/.gitleaks.toml --redact --no-banner --verbose; then
+            echo "gitleaks: the release's tree has findings (this run's step \"Secret scan of the release\", redacted): nothing was pushed" > "$RELEASE_DIR/failed"
+          fi
+      # (a dry run reads this repository without it when the App is not set up yet)
+      - uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        id: push-token
+        if: steps.pick.outputs.release == 'true' || env.RESUME != ''
+        continue-on-error: ${{ inputs.dry_run == true }}
+        with:
+          app-id: ${{ secrets.RUNR_BOT_APP_ID }}
+          private-key: ${{ secrets.RUNR_BOT_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: ${{ github.event.repository.name }}
+          permission-contents: write
+      # the landing first (the bumps of next only: the origin's next, one fast-forward), then the
+      # release's git half: the tags signed, the origin's main, next (as it is after the landing)
+      # and tag in one atomic push, then this repository's main and tag (the App's token, given to
+      # git in its environment only)
+      - name: Release on the origin and here
+        id: publish
+        if: steps.pick.outputs.release == 'true' || steps.pick.outputs.land == 'true' || env.RESUME != ''
         env:
           PUSH_KEY: ${{ secrets.GITLAB_RUNR_PUSH_KEY }}
           KNOWN_HOSTS: ${{ vars.GITLAB_KNOWN_HOSTS }}
+          DEPS_SIGN_KEY: ${{ secrets.RUNR_BOT_GPG_PRIVATE_KEY }}
+          DEPS_SIGN_PASSPHRASE: ${{ secrets.RUNR_BOT_GPG_PASSPHRASE }}
+          DEPS_SIGN_FINGERPRINT: ${{ vars.RUNR_BOT_GPG_FINGERPRINT }}
+          # the internal names a public release must not carry (the release's scrub), kept out of
+          # this repository's files
+          DEPS_FORBIDDEN: ${{ secrets.RUNR_SCRUB_PATTERN }}
+          APP_TOKEN: ${{ steps.push-token.outputs.token }}
+          ISSUE: ${{ inputs.issue }}
+          LAND: ${{ steps.pick.outputs.land }}
+          PUBLISH: ${{ steps.pick.outputs.release }}
         run: |
-          mkdir -p "$RUNNER_TEMP/deps/land"
-          [ -s "$RUNNER_TEMP/deps/green" ] || { echo "nothing green to land"; exit 0; }
-          git clone -q --no-checkout "$RUNNER_TEMP/tree/repo.bundle" "$RUNNER_TEMP/repo"
           GIT_SSH_COMMAND="$(bash ci/deps/ssh-key.sh "$RUNNER_TEMP/ssh")"
           export GIT_SSH_COMMAND
-          while read -r dep; do
-            base=$(cat "$RUNNER_TEMP/deps/bump/${dep}/base")
-            head=$(cat "$RUNNER_TEMP/deps/bump/${dep}/head")
-            rc=0
-            out=$(cd "$RUNNER_TEMP/repo" && bash "$GITHUB_WORKSPACE/ci/deps-land.sh" "$ORIGIN_REMOTE" "$base" "$head" 2>&1) || rc=$?
-            echo "${dep}: ${out}"
-            echo "$out" | tail -n 1 > "$RUNNER_TEMP/deps/land/${dep}"
-            if [ "$rc" != 0 ] && [ "$rc" != 4 ]; then echo "::warning::${dep}: ${out}"; fi
-          done < "$RUNNER_TEMP/deps/green"
+          if [ -n "$APP_TOKEN" ]; then
+            auth="$(printf 'x-access-token:%s' "$APP_TOKEN" | base64 -w0)"
+            echo "::add-mask::${auth}"
+            export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0="http.https://github.com/.extraheader" GIT_CONFIG_VALUE_0="AUTHORIZATION: basic ${auth}"
+          elif [ "$DRY_RUN" != true ] && { [ "$PUBLISH" = true ] || [ -n "$RESUME" ]; }; then
+            echo "::error::no token of the GitHub App (secrets RUNR_BOT_APP_ID, RUNR_BOT_APP_PRIVATE_KEY)"
+            exit 1
+          fi
+          if [ -n "$RESUME" ]; then
+            git clone -q --no-checkout "$ORIGIN_REMOTE" "$RUNNER_TEMP/repo"
+            bash ci/deps-run.sh resume "$RUNNER_TEMP/deps" "$RUNNER_TEMP/repo" "$PUBLIC_REMOTE" "$RESUME" "$ISSUE"
+          fi
+          dry=""
+          [ "$DRY_RUN" != true ] || dry=--dry-run
+          if [ "$LAND" = true ]; then
+            # the bumps of next only: the origin's next, one fast-forward; nothing public, no release
+            bash ci/deps-release.sh land "$LAND_DIR" $dry
+            cat "$LAND_DIR/steps" "$LAND_DIR/failed" "$LAND_DIR/moved" 2>/dev/null || true
+          fi
+          if [ "$PUBLISH" = true ] || [ -n "$RESUME" ]; then
+            bash ci/deps-release.sh publish "$RELEASE_DIR" $dry
+            cat "$RELEASE_DIR/steps" "$RELEASE_DIR/failed" "$RELEASE_DIR/moved" 2>/dev/null || true
+          fi
       - name: Remove the deploy key
         if: always()
-        run: rm -rf "$RUNNER_TEMP/ssh"
+        run: rm -rf "$RUNNER_TEMP/ssh" "$RELEASE_DIR/gnupg-public"
+      # release-images.yml's run on the tag, and every image it pushed checked anonymously
+      - name: The images
+        if: steps.publish.conclusion == 'success' && (steps.pick.outputs.release == 'true' || env.RESUME != '')
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          dry=""
+          [ "$DRY_RUN" != true ] || dry=--dry-run
+          bash ci/deps-release.sh images "$RELEASE_DIR" $dry
+      - uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        id: release-token
+        if: steps.publish.conclusion == 'success' && (steps.pick.outputs.release == 'true' || env.RESUME != '')
+        continue-on-error: ${{ inputs.dry_run == true }}
+        with:
+          app-id: ${{ secrets.RUNR_BOT_APP_ID }}
+          private-key: ${{ secrets.RUNR_BOT_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: ${{ github.event.repository.name }}
+          permission-contents: write
+      # the dispatch of the chart's publish; without the App on BRF-Tech/helm-charts its schedule
+      # publishes the chart
+      - uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        id: charts-token
+        if: steps.publish.conclusion == 'success' && (steps.pick.outputs.release == 'true' || env.RESUME != '') && env.DRY_RUN != 'true'
+        continue-on-error: true
+        with:
+          app-id: ${{ secrets.RUNR_BOT_APP_ID }}
+          private-key: ${{ secrets.RUNR_BOT_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: helm-charts
+          permission-contents: write
+      - name: The GitHub release
+        if: steps.publish.conclusion == 'success' && (steps.pick.outputs.release == 'true' || env.RESUME != '')
+        env:
+          # (a dry run only reads the base release: the GITHUB_TOKEN does when the App is not set up yet)
+          GH_TOKEN: ${{ steps.release-token.outputs.token || (inputs.dry_run && secrets.GITHUB_TOKEN) || '' }}
+          DEPS_HELM_CHARTS_TOKEN: ${{ steps.charts-token.outputs.token }}
+          DEPS_HELM_CHARTS_REPO: ${{ vars.RUNR_HELM_CHARTS_REPO || 'BRF-Tech/helm-charts' }}
+        run: |
+          dry=""
+          [ "$DRY_RUN" != true ] || dry=--dry-run
+          bash ci/deps-release.sh github "$RELEASE_DIR" $dry
+      - name: The chart on helm.brf.sh
+        if: steps.publish.conclusion == 'success' && (steps.pick.outputs.release == 'true' || env.RESUME != '')
+        env:
+          DEPS_HELM_INDEX: ${{ vars.RUNR_HELM_INDEX || 'https://helm.brf.sh/index.yaml' }}
+        run: |
+          dry=""
+          [ "$DRY_RUN" != true ] || dry=--dry-run
+          bash ci/deps-release.sh helm "$RELEASE_DIR" $dry
       - name: Report on the issues
         if: always()
         env:
@@ -315,7 +980,9 @@ jobs:
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
           ATTEMPT: ${{ inputs.attempt || '1' }}
         run: |
-          bash ci/deps-run.sh actions "$RUNNER_TEMP/deps" "$RUN_URL" "$ATTEMPT"
+          dry=""
+          [ "$DRY_RUN" != true ] || dry=--dry-run
+          bash ci/deps-run.sh actions "$RUNNER_TEMP/deps" "$RUN_URL" "$ATTEMPT" $dry
           while IFS=$'\t' read -r action issue arg; do
             case "$action" in
               comment) gh issue comment "$issue" --repo "$GITHUB_REPOSITORY" --body-file "$arg" ;;
@@ -326,3 +993,24 @@ jobs:
             esac
           done < "$RUNNER_TEMP/deps/actions"
           cat "$RUNNER_TEMP"/deps/comments/*.md >> "$GITHUB_STEP_SUMMARY" 2>/dev/null || true
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: deps-release
+          path: |
+            ${{ runner.temp }}/deps/release/steps
+            ${{ runner.temp }}/deps/release/failed
+            ${{ runner.temp }}/deps/release/moved
+            ${{ runner.temp }}/deps/release/release.env
+            ${{ runner.temp }}/deps/release/text/
+            ${{ runner.temp }}/deps/release/attribution.txt
+            ${{ runner.temp }}/deps/release/images.txt
+            ${{ runner.temp }}/deps/land/steps
+            ${{ runner.temp }}/deps/land/failed
+            ${{ runner.temp }}/deps/land/moved
+            ${{ runner.temp }}/deps/land/release.env
+            ${{ runner.temp }}/deps/land/attribution.txt
+            ${{ runner.temp }}/deps/role/
+            ${{ runner.temp }}/deps/comments/
+          if-no-files-found: ignore
+          retention-days: 30

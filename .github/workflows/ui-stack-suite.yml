@@ -1,0 +1,156 @@
+# The console against the dev stack with Playwright (project `stack`): docker compose (postgres,
+# redis, api + migrator, horizon, reverb, mailpit, the vue dev server), single-tenant, the demo
+# data seeded; specs that need a Kubernetes cluster skip themselves. Called by e2e.yml (weekly,
+# this checkout) and deps-test.yml (a dependency bump, from the bundle its bump job made). The
+# outcome is what Playwright's JSON report says, not only its exit status (ci/ui-results.sh: no
+# unexpected result, no error of the run); `result-name` uploads it as an artifact of that name for
+# the caller's report.
+name: UI stack suite
+
+on:
+  workflow_call:
+    inputs:
+      tree-artifact:
+        description: 'An artifact with repo.bundle to test instead of this checkout (deps-test.yml)'
+        type: string
+        default: ''
+      ref:
+        description: 'The ref of the bundle to test'
+        type: string
+        default: ''
+      result-name:
+        description: 'Name of the result artifact (empty: none)'
+        type: string
+        default: ''
+
+permissions:
+  contents: read
+
+jobs:
+  ui-stack:
+    name: UI e2e (dev stack)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      TENANCY_ENABLED: 'false'
+      E2E_TENANCY: 'false'
+      # One account, two workers: above the console's per-user default (docs/development.md)
+      API_USER_RATE_LIMIT_PER_MINUTE: '3000'
+      # Horizon seeds the demo data the project specs need without a cluster
+      E2E_SEED_DEMO: 'true'
+      # the compose vue service (VUE_PORT)
+      E2E_BASE_URL: http://localhost:8061
+      NODE_OPTIONS: --max-old-space-size=4096
+    steps:
+      - if: inputs.tree-artifact == ''
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - if: inputs.tree-artifact != ''
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: ${{ inputs.tree-artifact }}
+          path: ${{ runner.temp }}/tree
+      - name: The bundle's tree
+        if: inputs.tree-artifact != ''
+        env:
+          REF: ${{ inputs.ref }}
+        run: |
+          git clone -q --no-checkout "$RUNNER_TEMP/tree/repo.bundle" .
+          git checkout -q --detach "refs/remotes/origin/${REF}"
+          git log -1 --format='%H %s'
+      - name: Start the dev stack
+        id: stack
+        run: |
+          # Secrets are encrypted at rest with APP_KEY (empty in api/.env.docker; devready.sh fills it in)
+          sed -i "s|^APP_KEY=.*|APP_KEY=base64:$(head -c 32 /dev/urandom | base64)|" api/.env.docker
+          # The API services also join the external `kind` network (docker-compose.yml), which only a
+          # Kind cluster creates
+          docker network inspect kind >/dev/null 2>&1 || docker network create kind
+          docker compose up -d --build --wait api
+          # Reverb and Mailpit as in an install: the API broadcasts to Reverb (REVERB_HOST) and the
+          # queued mail goes to Mailpit (MAIL_HOST, api/.env.docker)
+          docker compose up -d horizon reverb mailpit vue
+          # the vue service installs its packages first (up to 10 minutes)
+          for _ in $(seq 1 120); do
+            curl -sf "$E2E_BASE_URL/" >/dev/null && break
+            sleep 5
+          done
+          curl -sf "$E2E_BASE_URL/" >/dev/null || {
+            echo "::error::the vue service does not answer at ${E2E_BASE_URL}"
+            docker compose logs --tail 50 vue
+            exit 1
+          }
+      # the npm cache of this repository's lockfile (a bump's tree saves none)
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: ${{ inputs.tree-artifact == '' && 'npm' || '' }}
+          cache-dependency-path: vue/package-lock.json
+      # each step's output also goes to a log of its own, for the result's tail. Playwright's packages
+      # go to the runner's vue/node_modules: the mount point of the vue service's own packages (the
+      # vue_modules volume), which docker-compose.yml's vue-init created as the checkout's owner (the
+      # Docker daemon would create it as root, and npm ci fails with EACCES)
+      - id: npm
+        working-directory: vue
+        run: |
+          set -o pipefail
+          mkdir -p "$RUNNER_TEMP/ui-logs"
+          npm ci --no-audit --no-fund 2>&1 | tee "$RUNNER_TEMP/ui-logs/npm.log"
+      - id: browser
+        working-directory: vue
+        run: |
+          set -o pipefail
+          npx playwright install --with-deps chromium 2>&1 | tee "$RUNNER_TEMP/ui-logs/browser.log"
+      # the reporters of playwright.config.ts on CI (list, the HTML report, JUnit) and the JSON
+      # report the result reads
+      - id: playwright
+        working-directory: vue
+        env:
+          PLAYWRIGHT_JSON_OUTPUT_FILE: ${{ runner.temp }}/playwright.json
+          PLAYWRIGHT_JUNIT_OUTPUT_FILE: test-results/junit.xml
+          PLAYWRIGHT_HTML_OPEN: never
+        run: |
+          set -o pipefail
+          npm run test:e2e -- --reporter=list,html,junit,json 2>&1 | tee "$RUNNER_TEMP/ui-logs/playwright.log"
+      - name: Stack logs
+        if: ${{ !cancelled() }}
+        run: docker compose logs api horizon reverb vue > compose.log 2>&1 || true
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: ${{ !cancelled() }}
+        with:
+          name: ${{ inputs.result-name != '' && format('e2e-ui-stack-{0}', inputs.result-name) || 'e2e-ui-stack' }}
+          path: |
+            compose.log
+            vue/playwright-report/
+            vue/test-results/
+          if-no-files-found: ignore
+          retention-days: 7
+      # the outcome: also when a step failed or the run was cancelled; it fails the job when the
+      # report counts a failure the steps' exit status did not
+      - name: Result
+        if: always()
+        env:
+          JOB_STATUS: ${{ job.status }}
+          STACK: ${{ steps.stack.outcome }}
+          NPM: ${{ steps.npm.outcome }}
+          BROWSER: ${{ steps.browser.outcome }}
+          PLAYWRIGHT: ${{ steps.playwright.outcome }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/result"
+          echo "$JOB_STATUS" > "$RUNNER_TEMP/result/status"
+          echo "npm run test:e2e (Playwright, project stack) against the dev stack" > "$RUNNER_TEMP/result/command"
+          logs="$RUNNER_TEMP/ui-logs"
+          rc=0
+          bash ci/ui-results.sh playwright "$RUNNER_TEMP/playwright.json" "$RUNNER_TEMP/result" \
+            "the dev stack=${STACK}=${PWD}/compose.log" "npm ci=${NPM}=${logs}/npm.log" \
+            "playwright install=${BROWSER}=${logs}/browser.log" "npm run test:e2e=${PLAYWRIGHT}=${logs}/playwright.log" || rc=$?
+          # a reading that did not finish counts as a failure
+          [ -s "$RUNNER_TEMP/result/failed" ] || echo 1 > "$RUNNER_TEMP/result/failed"
+          exit "$rc"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always() && inputs.result-name != ''
+        with:
+          name: ${{ inputs.result-name }}
+          path: ${{ runner.temp }}/result/
+          retention-days: 7

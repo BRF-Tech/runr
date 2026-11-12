@@ -234,6 +234,8 @@ class RuntimeImageBuildService
             "--destination={$image}",
             // No upload before the build: a failed build leaves no empty repository behind
             BuildManifests::SKIP_PUSH_PERMISSION_CHECK,
+            // A failed pull of a FROM image or a failed push is tried again with backoff
+            ...BuildManifests::retryArgs(),
             '--insecure',
             '--insecure-pull',
             '--custom-platform=linux/amd64',

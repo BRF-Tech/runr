@@ -204,6 +204,8 @@ class RegistrySyncConfigReconcileStepTest extends TestCase
         $config = $this->installedConfig();
         unset($config['http']['compat']);
         $config['extensions']['sync']['registries'] = ZotManifests::syncRegistries(true, false);
+        // Nor for the ghcr.io retries alone: they come with the next change of the config
+        unset($config['extensions']['sync']['registries'][0]['maxRetries'], $config['extensions']['sync']['registries'][0]['retryDelay']);
         $this->seedZot($config, 'statefulsets', 'ghcr.io/project-zot/zot:v2.1.21');
 
         $this->assertSame([], (new RegistrySyncConfigStep)->run($this->cluster($this->region()), false));

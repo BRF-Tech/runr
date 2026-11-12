@@ -14,6 +14,10 @@ x-api-volumes: &api-volumes
     - api_vendor:/var/www/html/vendor
 
 services:
+  # Copies the image's Composer packages into the api_vendor volume and creates the volume's mount
+  # point in the checkout, api/vendor, owned like api/ (as vue-init does for vue/node_modules): the
+  # Docker daemon would create it as root at the first start of an API container, and a composer
+  # install on the host (devready.sh valet, an IDE) would then fail with EACCES
   vendor-init:
     build:
       context: ./api
@@ -21,7 +25,8 @@ services:
     image: ${RUNR_VENDOR_IMAGE:-runr-vendor}
     volumes:
       - api_vendor:/vendor
-    command: sh -c "cp -r /app/vendor/. /vendor/"
+      - ./api:/api
+    command: sh -c 'cp -r /app/vendor/. /vendor/ && mkdir -p /api/vendor && { chown "$$(stat -c %u:%g /api)" /api/vendor 2>/dev/null || true; }'
     restart: "no"
 
   postgres:
@@ -213,6 +218,18 @@ services:
       - "${MAILPIT_UI_PORT:-8066}:8025"
     restart: unless-stopped
 
+  # The vue service keeps its packages in the vue_modules volume, mounted inside ./vue. The Docker
+  # daemon creates a missing mount point as root, and an npm ci on the host (the Playwright suites,
+  # CI's UI e2e of the dev stack, devready.sh valet) then fails with EACCES in vue/node_modules.
+  # This creates it first, owned like vue/ (also when an earlier start made it root's). Docker
+  # Desktop's file sharing may refuse the chown; the owner does not matter there.
+  vue-init:
+    image: ghcr.io/brf-tech/runr/reqs/node:22-alpine
+    volumes:
+      - ./vue:/app
+    command: sh -c 'mkdir -p /app/node_modules && { chown "$$(stat -c %u:%g /app)" /app/node_modules 2>/dev/null || true; }'
+    restart: "no"
+
   vue:
     image: ghcr.io/brf-tech/runr/reqs/node:22-alpine
     # platform: linux/arm64  # uncomment for Apple Silicon (M1/M2/M3)
@@ -224,7 +241,10 @@ services:
       - vue_modules:/app/node_modules
     command: sh -c "npm install && npm run dev -- --host 0.0.0.0"
     depends_on:
-      - api
+      api:
+        condition: service_started
+      vue-init:
+        condition: service_completed_successfully
     environment:
       VITE_API_PROXY_TARGET: http://api
       VITE_REVERB_TARGET: http://reverb:8080

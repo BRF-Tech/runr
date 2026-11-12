@@ -879,9 +879,17 @@ first build: the default version of every built-in and platform runtime that bui
 Job `runr-registry-prewarm-<hash>` in the registry namespace that logs how long each image took.
 The Job waits while the registry restarts and tries each image three times; a Job that failed is
 started again by the next `region:reconcile`.
+A registry operation of a build that fails — the manifest of a `FROM` image, the layers Kaniko
+unpacks, the push — is tried up to five more times, Kaniko waiting 1, 2, 4, 8 and 16 seconds
+before them (`--image-download-retry`, `--image-fs-extract-retry`, `--push-retry`; runtime image
+builds too). Zot answers 503 or 404 when its fetch from upstream fails and refuses connections
+while it restarts; the build fails only when the last try fails as well (`unable to complete
+operation after 5 attempts`). The registry tries a failed fetch from `ghcr.io` again in the
+background ([regions.md](regions.md#registry)); on the pinned Zot a build's next try waits for
+that fetch.
 A build that still runs past its deadline while Kaniko waits for its base image (Kaniko's last log
-line `Retrieving image …`) is built once more; meanwhile its `build_error` says so. If the second
-build runs out of time too, the version fails.
+line `Retrieving image …`, or that line followed only by its retry warnings) is built once more;
+meanwhile its `build_error` says so. If the second build runs out of time too, the version fails.
 
 The image is pushed to the region registry as `runr-builds/<project>:v<N>` and old build images
 are trimmed by the registry retention. A build that fails leaves nothing in the registry (Kaniko

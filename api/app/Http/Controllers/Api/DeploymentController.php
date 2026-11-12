@@ -19,6 +19,7 @@ use App\Services\Environments\EnvironmentResolver;
 use App\Services\GitDeploy\DeploymentStarter;
 use App\Services\GitDeploy\DeployPendingException;
 use App\Services\GitDeploy\ImportException;
+use App\Services\Helpers\StoppedCapacity;
 use App\Services\KnativeDeployService;
 use App\Services\KnativeLogService;
 use App\Services\KnativeMetricsService;
@@ -373,8 +374,9 @@ class DeploymentController extends Controller
             'status' => ['required', Rule::in(Deployment::STATUSES)],
         ]);
 
-        // A stopped project's deployment cannot be set live again by hand
-        if (in_array($data['status'], Deployment::LIVE, true) && $project->isStopped()) {
+        // A stopped project's deployment cannot be set live again by hand, nor one of a resumed
+        // project that was not admitted again (StoppedCapacity) without being admitted
+        if (in_array($data['status'], Deployment::LIVE, true) && StoppedCapacity::awaitsAdmission($project)) {
             ProjectAdmission::assertDeployable($project);
         }
 

@@ -111,7 +111,7 @@ helm status runr -n runr      # prints how to read the first administrator's pas
 
 The chart installs the gateway, UI, API, Horizon, scheduler and Reverb and - unless you point it at
 external services - PostgreSQL, Redis and Mailpit, with migration and bootstrap hooks that create the
-first administrator. To install a specific release, pin the chart version (`--version 0.6.8`); the
+first administrator. To install a specific release, pin the chart version (`--version 0.6.9`); the
 API and UI images follow it. `edition=multi-tenant` switches on the Tenancy and Auth Provider
 modules and the multi-tenant console image.
 
@@ -522,12 +522,11 @@ median of 100 requests.
 | WebAssembly (Spin shim) | JavaScript | 2.12 s (2.58) | 11 ms |
 
 Kata was measured with Python only; Firecracker's root filesystem is on containerd's devmapper
-snapshotter. Sandbox API, create to first command (Kata Containers 4.3.1, the same VM; Python 3.15,
-500m / 512 MiB, median, n=10 per class): cold 2.33 s under gVisor (RunR 0.6.7, 2026-11-07; a
-command on gVisor takes ~0.1 s more since 0.6.7), 3.09 s under Kata Cloud Hypervisor and 3.43 s
-under Kata Firecracker (RunR 0.6.6, 2026-11-06; unchanged within noise on 0.6.7); 0.31–0.52 s from
-a warm pool of 2 (RunR 0.6.7, 2026-11-07). How the Kata cold start was brought down, and where the
-remaining time goes:
+snapshotter. Sandbox API, create to first command (RunR 0.6.8, 2026-11-08, Kata Containers 4.3.1,
+the same VM; Python 3.15, 500m / 512 MiB, median (p90), n=10 per class): cold 1.89 s (2.61) under
+gVisor, 3.11 s (3.43) under Kata Cloud Hypervisor and 3.57 s (3.84) under Kata Firecracker;
+0.25–0.43 s from a warm pool of 2; a command in a running sandbox 0.10–0.31 s. How the Kata cold
+start was brought down, and where the remaining time goes:
 [Kata hypervisors → Cold start](docs/kata-hypervisors.md#cold-start).
 
 <br>

@@ -8,6 +8,7 @@ use App\Models\KnativeRegion;
 use App\Models\Project;
 use App\Services\Environments\EnvironmentScope;
 use App\Services\Helpers\ResourceReservation;
+use App\Services\Helpers\StoppedCapacity;
 use App\Services\Helpers\WorkloadSizing;
 use App\Support\Projects\DeployIntent;
 use Illuminate\Database\QueryException;
@@ -34,6 +35,16 @@ use Modules\Billing\Support\BillingPolicy;
  *  - running(): what the project can reach with what runs now — a smaller request is refused
  *    (FixedRequests: "scale down first"), so usage above the allocation cannot happen and is never
  *    billed as overage.
+ *
+ * The allocations cover the projects that run. A project that is stopped — or resumed and not
+ * admitted again yet (StoppedCapacity) — runs nothing, and its allocation stays billed: its share
+ * is lent to the organization's other projects in the region (lending()). A running project may
+ * use, beyond its own allocation, what the organization's stopped projects there lend and its
+ * other running projects do not use yet; its own allocation is always its own. A project that
+ * comes back stops lending: its deploy (the resume's redeploy) has to fit its allocation minus
+ * what the others still use of the lent shares, else fixed_allocation_exceeded, like any deploy.
+ * The organization is the schema's own allocations (FixedRequest::own()): the installation on a
+ * single-tenant install, the tenant, or the platform's own projects.
  */
 class Admission
 {
@@ -78,9 +89,50 @@ class Admission
                 $previews,
             );
 
-        if ($message = $this->exceeded($footprint, $allocation)) {
-            $this->refuse('fixed_allocation_exceeded', $message);
+        // A resumed project that was not admitted again stops lending its share now
+        $readmitting = StoppedCapacity::marked(EnvironmentScope::base($project));
+        $lending = $this->lending($project, $regionId);
+        if ($message = $this->exceededWithLending($footprint, $allocation, $lending, $readmitting)) {
+            $this->refuse('fixed_allocation_exceeded', $message, ['region_id' => $regionId, 'shortfall' => $this->shortfall($footprint, $allocation, $lending, $readmitting)]);
         }
+    }
+
+    /**
+     * Per resource the worst case needs above what the project may have (its allocation and what
+     * is lent to it, allowance()): needed, available, missing — the resources that are short.
+     *
+     * @param  array{cpu_m: int, memory_mb: int, gpus: int, pods: int}  $footprint
+     * @param  array{lent: array{cpu_m: int, memory_mb: int, gpus: int}, used: array{cpu_m: int, memory_mb: int, gpus: int}}  $lending
+     * @return array<string, array{needed: int, available: int, missing: int}>
+     */
+    public function shortfall(array $footprint, FixedRequest $allocation, array $lending, bool $readmitting): array
+    {
+        $short = [];
+        foreach ($this->allowance($allocation, $lending, $readmitting) as $key => $allowed) {
+            if ($footprint[$key] > $allowed) {
+                $short[$key] = ['needed' => $footprint[$key], 'available' => max(0, $allowed), 'missing' => $footprint[$key] - max(0, $allowed)];
+            }
+        }
+
+        return $short;
+    }
+
+    /**
+     * What the project may have at its worst case: its own allocation plus what is lent and not
+     * used yet; coming back ($readmitting), minus what the others use of the lent shares beyond them.
+     *
+     * @param  array{lent: array{cpu_m: int, memory_mb: int, gpus: int}, used: array{cpu_m: int, memory_mb: int, gpus: int}}  $lending
+     * @return array{cpu_m: int, memory_mb: int, gpus: int}
+     */
+    private function allowance(FixedRequest $allocation, array $lending, bool $readmitting): array
+    {
+        $allowed = [];
+        foreach (['cpu_m' => (int) $allocation->cpu_m, 'memory_mb' => (int) $allocation->memory_mb, 'gpus' => (int) $allocation->gpu_count] as $key => $own) {
+            $free = $lending['lent'][$key] - $lending['used'][$key];
+            $allowed[$key] = $own + ($readmitting ? $free : max(0, $free));
+        }
+
+        return $allowed;
     }
 
     /**
@@ -108,12 +160,14 @@ class Admission
             return ['code' => 'fixed_max_scale_required', 'message' => (string) __('billing.fixed_max_scale_required')];
         }
 
-        $message = $this->exceeded(
+        $message = $this->exceededWithLending(
             WorkloadSizing::add(
                 WorkloadSizing::add(WorkloadSizing::peak($sizing, $this->plannedOverhead($project), $this->consumers->charged($regionId)), $this->runningIn($project, $regionId, self::PRIMARY)),
                 $this->previews($project, $sizing),
             ),
             $allocation,
+            $this->lending($project, $regionId),
+            false,
         );
 
         return $message === null ? null : ['code' => 'fixed_allocation_exceeded', 'message' => $message];
@@ -171,6 +225,108 @@ class Admission
         }
 
         return null;
+    }
+
+    /**
+     * The shares the organization's other projects with an allocation in the region lend the
+     * project: lent — the allocations of those that run nothing because they were stopped (or
+     * resumed and not admitted again, StoppedCapacity); used — what the running ones need above
+     * their own allocation at their worst case (their live deployments and previews), out of
+     * what is lent.
+     *
+     * @return array{lent: array{cpu_m: int, memory_mb: int, gpus: int}, used: array{cpu_m: int, memory_mb: int, gpus: int}}
+     */
+    public function lending(Project $project, string $regionId): array
+    {
+        $lending = ['lent' => self::noShare(), 'used' => self::noShare()];
+
+        try {
+            $allocations = FixedRequest::query()->own()->active()->where('region_id', $regionId)
+                ->where('project_id', '!=', (string) EnvironmentScope::base($project)->getKey())
+                ->orderByDesc('active_from')->get()->unique('project_id');
+        } catch (QueryException) {
+            return $lending;
+        }
+        if ($allocations->isEmpty()) {
+            return $lending;
+        }
+
+        $projects = Project::query()->whereIn('id', $allocations->pluck('project_id'))->with('knativeRegion')->get()->keyBy('id');
+        foreach ($allocations as $allocation) {
+            $other = $projects->get($allocation->project_id);
+            if (! $other instanceof Project) {
+                continue;
+            }
+            $own = ['cpu_m' => (int) $allocation->cpu_m, 'memory_mb' => (int) $allocation->memory_mb, 'gpus' => (int) $allocation->gpu_count];
+
+            if (StoppedCapacity::awaitsAdmission($other)) {
+                $lending['lent'] = self::addShare($lending['lent'], $own);
+
+                continue;
+            }
+
+            $runs = WorkloadSizing::add($this->runningIn($other, $regionId), $this->previewsIn($other, $regionId, WorkloadSizing::of($other)));
+            foreach (array_keys($own) as $key) {
+                $lending['used'][$key] += max(0, $runs[$key] - $own[$key]);
+            }
+        }
+
+        return $lending;
+    }
+
+    /**
+     * The refusal message when $footprint does not fit the allocation and what the organization's
+     * stopped projects lend (lending()), null when it does. A project within its own allocation
+     * always fits — unless it comes back ($readmitting) while the others use more of the lent
+     * shares than the projects still stopped lend: then they use its own share.
+     *
+     * @param  array{cpu_m: int, memory_mb: int, gpus: int, pods: int}  $footprint
+     * @param  array{lent: array{cpu_m: int, memory_mb: int, gpus: int}, used: array{cpu_m: int, memory_mb: int, gpus: int}}  $lending
+     */
+    public function exceededWithLending(array $footprint, FixedRequest $allocation, array $lending, bool $readmitting): ?string
+    {
+        $own = ['cpu_m' => (int) $allocation->cpu_m, 'memory_mb' => (int) $allocation->memory_mb, 'gpus' => (int) $allocation->gpu_count];
+        $free = [];
+        foreach (array_keys($own) as $key) {
+            $free[$key] = $lending['lent'][$key] - $lending['used'][$key];
+        }
+        if ($this->shortfall($footprint, $allocation, $lending, $readmitting) === []) {
+            return null;
+        }
+
+        // Nothing is lent or used: the project's own allocation decides
+        if ($lending['lent'] === self::noShare() && $lending['used'] === self::noShare()) {
+            return $this->exceeded($footprint, $allocation);
+        }
+
+        // Back from a stop within its own allocation: the others use its share
+        if ($readmitting && $footprint['cpu_m'] <= $own['cpu_m'] && $footprint['memory_mb'] <= $own['memory_mb'] && $footprint['gpus'] <= $own['gpus']) {
+            return __('billing.fixed_allocation_in_use', [
+                'cpu' => max(0, -$free['cpu_m']), 'memory' => max(0, -$free['memory_mb']), 'gpus' => max(0, -$free['gpus']),
+            ]);
+        }
+
+        return __('billing.fixed_allocation_exceeded_lent', [
+            'cpu' => $footprint['cpu_m'], 'memory' => $footprint['memory_mb'], 'gpus' => $footprint['gpus'], 'pods' => $footprint['pods'],
+            'allowed_cpu' => $own['cpu_m'], 'allowed_memory' => $own['memory_mb'], 'allowed_gpus' => $own['gpus'],
+            'lent_cpu' => max(0, $free['cpu_m']), 'lent_memory' => max(0, $free['memory_mb']), 'lent_gpus' => max(0, $free['gpus']),
+        ]);
+    }
+
+    /** @return array{cpu_m: int, memory_mb: int, gpus: int} */
+    private static function noShare(): array
+    {
+        return ['cpu_m' => 0, 'memory_mb' => 0, 'gpus' => 0];
+    }
+
+    /**
+     * @param  array{cpu_m: int, memory_mb: int, gpus: int}  $a
+     * @param  array{cpu_m: int, memory_mb: int, gpus: int}  $b
+     * @return array{cpu_m: int, memory_mb: int, gpus: int}
+     */
+    private static function addShare(array $a, array $b): array
+    {
+        return ['cpu_m' => $a['cpu_m'] + $b['cpu_m'], 'memory_mb' => $a['memory_mb'] + $b['memory_mb'], 'gpus' => $a['gpus'] + $b['gpus']];
     }
 
     /** Key of the project's own workload among its environments (runningIn's $except). */
@@ -257,8 +413,9 @@ class Admission
         return ResourceReservation::podOverhead($project->knativeRegion, $project->service_type);
     }
 
-    private function refuse(string $code, string $message): never
+    /** @param  array<string, mixed>  $extra  more of the refusal (region_id, shortfall) */
+    private function refuse(string $code, string $message, array $extra = []): never
     {
-        throw new HttpResponseException(response()->json(['message' => $message, 'code' => $code], 422));
+        throw new HttpResponseException(response()->json(['message' => $message, 'code' => $code] + $extra, 422));
     }
 }

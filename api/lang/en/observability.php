@@ -87,6 +87,7 @@ return [
         'metric_text' => ':value over the last :window minutes (threshold :threshold).',
         'metric_resolved' => 'Back to :value.',
         'resource_text' => ':resource reservation of region :region is at :percentage % (threshold :threshold %).',
+        'resource_text_with_stopped' => 'With every stopped project resumed, the :resource reservation of region :region would be at :percentage % (threshold :threshold %).',
     ],
 
     'url' => [

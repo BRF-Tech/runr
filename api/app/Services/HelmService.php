@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Support\GitHubReleaseAsset;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Sleep;
@@ -36,6 +37,9 @@ class HelmService
     public const TRANSIENT_FIRST_WAIT = 2;
 
     public const TRANSIENT_MAX_WAIT = 30;
+
+    /** Tries of a Helm call whose chart download keeps failing on the way (withChartDownload) */
+    public const DOWNLOAD_TRIES = GitHubReleaseAsset::TRIES;
 
     private ?string $tmpKubeconfig = null;
 
@@ -94,7 +98,100 @@ class HelmService
     }
 
     /**
-     * Install or upgrade a Helm release (upgrade --install).
+     * $attempt (a Helm call that downloads $chart, a repository's "repo/name", at $version) tried
+     * again while the chart's download fails on the way (HelmResult::chartDownloadFailure: a 5xx or
+     * 429 of the host, a timeout, as github.com answers a release download now and then),
+     * DOWNLOAD_TRIES tries in all, 2, 4, 8 s apart. A chart of a GitHub release that still does not
+     * come is fetched once through the GitHub API's asset endpoint (GitHubReleaseAsset::viaApi),
+     * checked against the digest the repository's index gives that version, and $attempt runs once
+     * more with that file as its chart. Any other result is returned at once, as is the last try's.
+     *
+     * @param  callable(string): HelmResult  $attempt  gets the chart to install: $chart, or the file
+     */
+    public function withChartDownload(string $chart, ?string $version, callable $attempt): HelmResult
+    {
+        for ($try = 1; ; $try++) {
+            $result = $attempt($chart);
+            $url = $result->chartDownloadFailure();
+            if ($url === null) {
+                return $result;
+            }
+            if ($try >= self::DOWNLOAD_TRIES) {
+                break;
+            }
+            $wait = min(self::TRANSIENT_MAX_WAIT, self::TRANSIENT_FIRST_WAIT * 2 ** ($try - 1));
+            Log::warning('Helm: the chart download failed on the way, trying again', [
+                'chart' => $chart,
+                'url' => $url,
+                'try' => $try + 1,
+                'of' => self::DOWNLOAD_TRIES,
+                'wait_s' => $wait,
+                'error' => $result->errorLine(),
+            ]);
+            Sleep::for($wait)->seconds();
+        }
+
+        $file = $this->chartViaGitHubApi($url, $chart, $version);
+        if ($file === null) {
+            return $result;
+        }
+        try {
+            return $attempt($file);
+        } finally {
+            @unlink($file);
+            @rmdir(dirname($file));
+        }
+    }
+
+    /**
+     * The chart of a GitHub release download URL through the API, as a file of its name; null for
+     * another URL, a chart that is no repository's "repo/name" at a version, a version the cached
+     * index gives no digest, or a download that does not come with it.
+     */
+    private function chartViaGitHubApi(string $url, string $chart, ?string $version): ?string
+    {
+        $parts = GitHubReleaseAsset::parse($url);
+        if ($parts === null || $version === null || str_contains($chart, '://') || substr_count($chart, '/') !== 1) {
+            return null;
+        }
+        [$repo, $name] = explode('/', $chart, 2);
+        $digest = $this->chartDigest($repo, $name, $version);
+        if ($digest === null) {
+            Log::warning('Helm: no digest of the chart in its repository index, so no download through the GitHub API', ['chart' => $chart, 'version' => $version]);
+
+            return null;
+        }
+        $body = GitHubReleaseAsset::viaApi($url, $digest);
+        if ($body === null) {
+            return null;
+        }
+        $dir = sys_get_temp_dir().'/runr-helm-chart-'.bin2hex(random_bytes(6));
+        if (! @mkdir($dir, 0700)) {
+            return null;
+        }
+        $file = $dir.'/'.basename($parts['file']);
+        file_put_contents($file, $body);
+
+        return $file;
+    }
+
+    /** The sha256 the repository's cached index gives a chart version (helm repo add / update) */
+    protected function chartDigest(string $repo, string $name, string $version): ?string
+    {
+        foreach ($this->getRepoChartEntries($repo, $name) as $entry) {
+            if (ltrim((string) ($entry['version'] ?? ''), 'v') === ltrim($version, 'v')) {
+                $digest = strtolower((string) ($entry['digest'] ?? ''));
+
+                return preg_match('/^[0-9a-f]{64}$/', $digest) === 1 ? $digest : null;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Install or upgrade a Helm release (upgrade --install). A chart download that fails on the way
+     * is tried again (withChartDownload).
      */
     public function install(
         string $release,
@@ -107,7 +204,8 @@ class HelmService
         array $setJsonValues = [],
         bool $wait = true,
     ): HelmResult {
-        $result = $this->runInstall($release, $chart, $namespace, $setValues, $kubeconfigYaml, $version, $valuesArray, $setJsonValues, $wait);
+        $run = fn (string $c) => $this->runInstall($release, $c, $namespace, $setValues, $kubeconfigYaml, $version, $valuesArray, $setJsonValues, $wait);
+        $result = $this->withChartDownload($chart, $version, $run);
 
         // the release's last operation was interrupted (a killed helm process): rolled back once
         // it is old enough, then the install runs again, once (recoverInterrupted)
@@ -120,7 +218,7 @@ class HelmService
             if ($recovered !== null) {
                 Log::warning('Helm: '.$recovered);
 
-                return $this->runInstall($release, $chart, $namespace, $setValues, $kubeconfigYaml, $version, $valuesArray, $setJsonValues, $wait);
+                return $this->withChartDownload($chart, $version, $run);
             }
         }
 
@@ -220,26 +318,30 @@ class HelmService
         array $setJsonValues,
         bool $wait = false,
     ): HelmResult {
-        $args = [
-            'helm', 'upgrade', $release, $chart,
-            '-n', $namespace,
-            '--kubeconfig', $this->writeKubeconfig($kubeconfigYaml),
-            '--reuse-values',
-            '--version', $version,
-        ];
+        $kubeconfig = $this->writeKubeconfig($kubeconfigYaml);
 
-        if ($wait) {
-            $args[] = '--wait';
-            $args[] = '--timeout';
-            $args[] = '10m';
-        }
+        return $this->withChartDownload($chart, $version, function (string $c) use ($release, $namespace, $kubeconfig, $version, $wait, $setJsonValues) {
+            $args = [
+                'helm', 'upgrade', $release, $c,
+                '-n', $namespace,
+                '--kubeconfig', $kubeconfig,
+                '--reuse-values',
+                '--version', $version,
+            ];
 
-        foreach ($setJsonValues as $key => $value) {
-            $args[] = '--set-json';
-            $args[] = "{$key}={$value}";
-        }
+            if ($wait) {
+                $args[] = '--wait';
+                $args[] = '--timeout';
+                $args[] = '10m';
+            }
 
-        return $this->run($args);
+            foreach ($setJsonValues as $key => $value) {
+                $args[] = '--set-json';
+                $args[] = "{$key}={$value}";
+            }
+
+            return $this->run($args);
+        });
     }
 
     /**
@@ -261,16 +363,17 @@ class HelmService
         array $valuesArray = [],
     ): HelmResult {
         $this->processTimeout = self::CHART_UPGRADE_SECONDS;
+        $kubeconfig = $this->writeKubeconfig($kubeconfigYaml);
         try {
-            return $this->runWithValues([
-                'helm', 'upgrade', $release, $chart,
+            return $this->withChartDownload($chart, $version, fn (string $c) => $this->runWithValues([
+                'helm', 'upgrade', $release, $c,
                 '-n', $namespace,
-                '--kubeconfig', $this->writeKubeconfig($kubeconfigYaml),
+                '--kubeconfig', $kubeconfig,
                 '--reset-then-reuse-values',
                 '--version', $version,
                 '--atomic',
                 '--timeout', '10m',
-            ], $valuesArray);
+            ], $valuesArray));
         } finally {
             $this->processTimeout = self::PROCESS_TIMEOUT;
         }
@@ -313,16 +416,17 @@ class HelmService
         file_put_contents($values, $valuesJson);
 
         $this->processTimeout = self::CHART_UPGRADE_SECONDS;
+        $kubeconfig = $this->writeKubeconfig($kubeconfigYaml);
         try {
-            return $this->run([
-                'helm', 'upgrade', $release, $chart,
+            return $this->withChartDownload($chart, $version, fn (string $c) => $this->run([
+                'helm', 'upgrade', $release, $c,
                 '-n', $namespace,
-                '--kubeconfig', $this->writeKubeconfig($kubeconfigYaml),
+                '--kubeconfig', $kubeconfig,
                 '--version', $version,
                 '--values', $values,
                 '--atomic',
                 '--timeout', '10m',
-            ]);
+            ]));
         } finally {
             $this->processTimeout = self::PROCESS_TIMEOUT;
             @unlink($values);

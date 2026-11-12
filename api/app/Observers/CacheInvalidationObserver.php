@@ -16,6 +16,7 @@ use App\Models\XaasConfig;
 use App\Services\CacheVersionService;
 use Illuminate\Contracts\Events\ShouldHandleEventsAfterCommit;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Facades\DB;
 
 /**
  * Bumps the response cache versions (App\Http\Middleware\ResponseCache) of what a change touches —
@@ -46,6 +47,16 @@ class CacheInvalidationObserver implements ShouldHandleEventsAfterCommit
         $this->invalidate($model);
     }
 
+    /**
+     * A change of $model written by the query builder — a guarded whereKey()->update(), which fires
+     * no model event (a project's stop, resume and readmission, ProjectStopService and
+     * StoppedCapacity) — bumped as an Eloquent update bumps it, after its transaction commits.
+     */
+    public static function touched(Model $model): void
+    {
+        DB::connection($model->getConnectionName())->afterCommit(fn () => app(self::class)->invalidate($model));
+    }
+
     private function invalidate(Model $model): void
     {
         $this->cacheVersion->bumpMany($this->scopesFor($model));
@@ -68,9 +79,15 @@ class CacheInvalidationObserver implements ShouldHandleEventsAfterCommit
                 'projects',
                 CacheVersionService::projectScope((string) $model->project_id),
             ],
+            // a project's size and scaling live here: what it reserves in its region, so the
+            // region's answers (settings: GET /knative-regions/{id}/capacity) change with them
             $model instanceof XaasConfig,
             $model instanceof FaasConfig,
-            $model instanceof ContainerConfig,
+            $model instanceof ContainerConfig => [
+                'projects',
+                CacheVersionService::projectScope((string) $model->project_id),
+                'settings',
+            ],
             $model instanceof ProjectDomain => [
                 'projects',
                 CacheVersionService::projectScope((string) $model->project_id),

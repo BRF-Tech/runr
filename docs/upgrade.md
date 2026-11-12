@@ -87,6 +87,96 @@ edit projects, deploy or change regions in that time: the previous version canno
 migration has just encrypted, shows env vars as empty and would save that. Its region status
 checks fail in that window and the new version's next check reports the region again.
 
+## 0.6.8 → 0.6.9
+
+From 0.6.8 the images keep their names and nothing has to be set. The upgrade runs two migrations,
+which only add a column; the region Job moves the region agent and the event gateway to 0.6.9
+([Order of operations](#order-of-operations)). Traefik, kube-prometheus-stack, Loki, Zot's chart
+and the sandbox installers stay where 0.6.8 left them.
+
+### Stopped projects give their capacity back
+
+The migration `2026_11_11_100001_add_capacity_released_at_to_projects` adds the nullable timestamp
+`projects.capacity_released_at`; a multi-tenant installation adds the same column to every tenant
+schema (`0111_add_capacity_released_at_to_projects`, through `tenancy:migrate` of the upgrade's
+migration Job). Existing projects keep what they have; the column stays empty until a project is
+resumed on 0.6.9.
+
+What changes once 0.6.9 runs ([architecture.md](architecture.md#region-capacity-and-admission),
+[billing.md](billing.md#project-stop-and-resume)):
+
+- **In a pay-as-you-go region — every region while billing is off — a stopped project holds no
+  capacity.** The projects that are stopped at the upgrade release their reservation at once: their
+  own workload and their environments count neither in the region's budgets nor in their
+  organization's quota, so other projects may use the room. Running projects are not touched.
+- **A resume admits the project again.** Its redeploy has to fit the region's budgets
+  (`capacity_exceeded`) and its organization's quota (`quota_exceeded`) next to what holds the
+  region then. When it does not fit, the resume answers `200` without a deployment
+  (`redeploy_error`, `redeploy_code`), the project holds nothing until a deploy of it fits, and a
+  console deploy or a git push of it is refused the same way (`422`). The project resource carries
+  `capacity_waiting` meanwhile, and the project page shows why it waits and what each resource
+  lacks.
+- **A fixed region keeps a stopped project's reservation.** Its allocation stays billed, and its
+  share is lent to its organization's other projects in the region; its resume has to fit its
+  allocation minus what the others still use of the lent shares (`fixed_allocation_exceeded`)
+  ([billing.md](billing.md#what-a-fixed-project-may-use)).
+
+### The capacity alarm with stopped projects
+
+Region → Workers → **Capacity** shows next to the budgets what the region would need with every
+stopped project resumed at the same time (`GET /api/knative-regions/{id}/capacity` → `with_stopped`).
+The capacity alarm watches that figure too: when it would cross the alarm's levels (60 % warning,
+80 % critical), the region's provider is told how much the region would be exceeded, how much
+capacity to add and which stopped projects need how much — a `resource_threshold` notification with
+`data.basis: "with_stopped"`, in the app, by mail and to the `resource_threshold` alert rules, once
+an hour per region, resource and level.
+
+**Look at the card before the upgrade** on a region with many stopped projects: the check runs every
+minute, so such a region alarms within minutes of the upgrade. Nothing has to be changed for it; add
+nodes, or delete projects that will not come back.
+
+### Capacity alarm recipients
+
+- **On a multi-tenant installation, the capacity alarm of an organization's own region goes to the
+  organization:** its members who manage its regions (owners and admins) see it in the app and get
+  the mail. The platform administrators no longer get that mail; the tenant provides that region's
+  nodes.
+- **A platform region's alarm also counts the platform's own projects**, next to every tenant's.
+- **Every capacity alarm mail honours the recipient's `resource_threshold` mail preference**
+  (`PUT /api/account/notification-preferences`).
+
+### Build and registry retries
+
+- **A build tries a failed registry operation again.** Function and runtime image builds try the
+  manifest of a `FROM` image, the layers Kaniko unpacks and the push up to five more times with
+  backoff ([runtimes.md](runtimes.md#compiled-languages)). Nothing has to be set.
+- **The region registry's `ghcr.io` upstream gets `maxRetries: 5` and `retryDelay: 2s`**
+  ([regions.md](regions.md#registry)). A registry set up by an earlier release gets them with the
+  next change `region:reconcile` makes to its config.json, or with `registry:upgrade-zot`; the
+  upgrade alone does not restart Zot.
+- **A region's setup survives a GitHub 5xx.** The charts a region installs from GitHub releases and
+  Knative Serving's CRDs are downloaded again on a 5xx, a 429 or a broken connection, then once
+  through the GitHub API's asset endpoint; a chart that comes that way is installed only with the
+  digest its repository's index gives it.
+
+### Back to 0.6.8
+
+A rollback to 0.6.8 is a `helm rollback` on the same database (`helm history runr -n runr` lists the
+revisions; where only one package version is kept, add the 0.6.8 package again and upgrade to it).
+**Never uninstall** to go back. The migrations stay: 0.6.8 has no file for them, its pods find
+nothing to do, and it ignores the column. The region Job of the rollback moves the region agent and
+the event gateway back to 0.6.8.
+
+On 0.6.8 a stopped project counts in its region again, as before the upgrade. Where other projects
+took the room while it was stopped, the region can be over its budgets: running deployments keep
+running, a deploy whose reservation does not grow passes, and one that grows is refused until there
+is room. A project resumed on 0.6.9 that still waits for capacity deploys on 0.6.8 without the
+admission.
+
+**Back on 0.6.9 again**, a project resumed on 0.6.9 and deployed on 0.6.8 still carries its mark
+(`capacity_released_at`): it counts as released and its page shows the waiting banner until its
+next deploy admits it. Deploy such projects once after the upgrade.
+
 ## 0.6.7 → 0.6.8
 
 ### Runtime sources

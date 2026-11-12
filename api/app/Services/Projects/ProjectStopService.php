@@ -12,12 +12,14 @@ use App\Models\Project;
 use App\Models\ProjectEnvironment;
 use App\Models\User;
 use App\Models\Version;
+use App\Observers\CacheInvalidationObserver;
 use App\Services\Audit\AuditLogger;
 use App\Services\Environments\EnvironmentManager;
 use App\Services\GitDeploy\DeploymentStarter;
 use App\Services\GitDeploy\DeployPendingException;
 use App\Services\GitDeploy\ImportException;
 use App\Services\GitDeploy\PreviewService;
+use App\Services\Helpers\StoppedCapacity;
 use App\Support\Rbac\Rbac;
 use App\Support\SchemaColumns;
 use Illuminate\Contracts\Auth\Authenticatable;
@@ -45,7 +47,12 @@ use Illuminate\Support\Facades\Log;
  *          was stopped, with that deployment's overrides (deploy_config), through the guarded
  *          deploy path (DeploymentStarter: version, region, data residency and supply-chain checks,
  *          ProjectAdmission). When the redeploy is refused the project stays resumed without a
- *          deployment and the answer says why. A version built into a registry the region's
+ *          deployment and the answer says why. The stop gave back what the project held — in a
+ *          pay-as-you-go region its capacity reservation, in a fixed region its share of the
+ *          organization's allocations (StoppedCapacity): the resume marks it, and it holds that
+ *          again only once a deploy admits it (the region's capacity and the organization's quota:
+ *          capacity_exceeded / quota_exceeded; a fixed region's allocation: fixed_allocation_exceeded).
+ *          A version built into a registry the region's
  *          cluster does not pull from (the region moved while the project was stopped) is built
  *          again and deployed when ready (VersionRebuilds; code VERSION_REBUILDING).
  */
@@ -204,6 +211,8 @@ class ProjectStopService
         }
 
         $project->refresh();
+        // a guarded update fires no model event: the cached answers of the project and its region go (ResponseCache)
+        CacheInvalidationObserver::touched($project);
         $this->removePreviews($project);
         $this->announceStop($project, $reason, $actorId);
 
@@ -235,6 +244,7 @@ class ProjectStopService
             throw new ProjectStopConflict('project_not_stopped', __('api.project.not_stopped'));
         }
         $project->refresh();
+        CacheInvalidationObserver::touched($project);
 
         $deployedBy = $actor instanceof User && $actor->username ? (string) $actor->username : $actorId;
         $deployment = $versionId ? $this->redeploy($project, (string) $versionId, $stoppedAt, $deployedBy, $actorId, $refusal, $refusalCode) : null;
@@ -270,6 +280,7 @@ class ProjectStopService
             throw new ProjectStopConflict('project_not_stopped', __('api.project.not_stopped'));
         }
         $project->refresh();
+        CacheInvalidationObserver::touched($project);
 
         $deployment = $versionId ? $this->redeploy($project, (string) $versionId, $stoppedAt, str_replace('_', '-', $system), null, $refusal, $refusalCode) : null;
         // the environments it stopped with the project (EnvironmentManager::stopAll) come back too
@@ -288,7 +299,12 @@ class ProjectStopService
         return $deployment;
     }
 
-    /** @return array<string, mixed> the columns a resume clears */
+    /**
+     * The columns a resume clears — and the mark that the project awaits admission: it holds
+     * nothing of what its stop gave back until a deploy admits it again (StoppedCapacity).
+     *
+     * @return array<string, mixed>
+     */
     private function liftAttributes(Project $project): array
     {
         $attributes = ['stopped_at' => null, 'stopped_by' => null, 'stop_reason' => null, 'stopped_version_id' => null, 'updated_at' => now()];
@@ -296,7 +312,7 @@ class ProjectStopService
             $attributes['stop_level'] = null;
         }
 
-        return $attributes;
+        return $attributes + StoppedCapacity::resumeAttributes($project);
     }
 
     /**
@@ -404,6 +420,7 @@ class ProjectStopService
         }
 
         $project->refresh();
+        CacheInvalidationObserver::touched($project);
         $this->announceStop($project, $reason, $actorId);
 
         return $project;

@@ -58,7 +58,8 @@ class ProjectStopController extends Controller
             'data' => $this->present($request, $project->refresh()),
             'deployment_id' => $deployment?->id,
             // The project is running again but the version that ran could not be deployed: why,
-            // and the code of a deploy guard's refusal (e.g. fixed_allocation_exceeded)
+            // and the code of a deploy guard's refusal (e.g. fixed_allocation_exceeded; a region
+            // or organization quota without room for it again: capacity_exceeded / quota_exceeded)
             'redeploy_error' => $refusal,
             'redeploy_code' => $refusalCode,
         ]);

@@ -42,6 +42,12 @@ class CheckBuildReadyJob implements ShouldQueue
     private const BASE_IMAGE_PULL = '/Retrieving image (?:manifest )?(\S+)/';
 
     /**
+     * Kaniko's warning before it tries a failed registry operation again
+     * (BuildManifests::REGISTRY_RETRIES); it logs nothing else while that try waits
+     */
+    private const RETRY_WARNING = '/Retrying operation after \S+ due to /';
+
+    /**
      * @param  bool  $retried  the build was submitted again after it ran out of time while the
      *                         registry fetched its base image (once per build)
      * @param  string|null  $token  the submission these checks follow (start()): the version's
@@ -216,7 +222,8 @@ class CheckBuildReadyJob implements ShouldQueue
 
     /**
      * The FROM image a Kaniko build was still waiting for when its Job ran past the deadline
-     * (condition DeadlineExceeded, Kaniko's last log line "Retrieving image …"), else null.
+     * (condition DeadlineExceeded, Kaniko's last log line "Retrieving image …", or that line followed
+     * only by the warnings of its retries), else null.
      */
     private function baseImageStillPulling(KubernetesClient $k8s, array $job, string $namespace): ?string
     {
@@ -227,8 +234,12 @@ class CheckBuildReadyJob implements ShouldQueue
             return null;
         }
 
-        $lines = array_values(array_filter(array_map('trim', explode("\n", (string) $k8s->getPodLogs($podName, $namespace, 'kaniko', 5)))));
-        $last = preg_replace('/\x1b\[[0-9;]*m/', '', (string) end($lines));
+        $logs = (string) $k8s->getPodLogs($podName, $namespace, 'kaniko', 5 + BuildManifests::REGISTRY_RETRIES);
+        $lines = array_values(array_filter(array_map(fn ($l) => trim(preg_replace('/\x1b\[[0-9;]*m/', '', $l)), explode("\n", $logs))));
+        while ($lines && preg_match(self::RETRY_WARNING, end($lines)) === 1) {
+            array_pop($lines);
+        }
+        $last = (string) end($lines);
 
         return preg_match(self::BASE_IMAGE_PULL, $last, $m) ? $m[1] : null;
     }

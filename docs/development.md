@@ -63,6 +63,15 @@ docker compose run --rm migrator-fresh    # from scratch (migrate:fresh --seed)
 | Mailpit      | 8065/8066 | SMTP (8065) / web UI (8066)  |
 | Sentry proxy | 8067      | Sentry tunnel (`proxy/`, Go) |
 
+The containers keep their packages in volumes mounted inside the checkout: `api_vendor` at
+`api/vendor` (the API containers) and `vue_modules` at `vue/node_modules` (the `vue` service,
+packages built for its Alpine image); packages the host installs in those directories stay apart
+from them. Two one-shot services run first: `vendor-init` fills `api_vendor` from the image, and
+`vendor-init` and `vue-init` create the two mount points owned like `api/` and `vue/`. The Docker
+daemon would create them as root, and on Linux a `composer install` or `npm ci` on the host
+(`devready.sh valet`, the Playwright suites) would then fail with `EACCES`. A mount point that an
+earlier start left to root is the checkout owner's again after the next `docker compose up`.
+
 ### Feature toggles
 
 Variables in the root `.env` switch the optional modules on and off for the whole stack:
@@ -699,55 +708,137 @@ cluster or in its OpenBao (`runtime/lib/test-region-move.sh` lists every case).
 ### Dependency test bot
 
 `.github/workflows/deps-test.yml` tests the new versions `upstream-releases.yml` files issues for,
-and moves them onto `next` when they pass. `next` is the development branch of the private
-development repository (origin). The bot never writes this repository: its `main` is the release
-mirror and moves only at releases (the workflow's `GITHUB_TOKEN` can only read contents).
+and releases the ones that pass: **one run, one release**, a patch release of RunR with every green
+bump of the run. It builds on the last release, not on `next` (the development branch of the
+private development repository, origin): nothing unfinished of `next` ships in a release of the
+bot. The workflow's `GITHUB_TOKEN` stays read-only on contents; the release is pushed with a GitHub
+App's token and the origin's deploy key.
 
 It runs on Saturdays at 06:41 UTC, after that day's release check, and by hand: **Actions →
 Dependency tests → Run workflow**, or `gh workflow run deps-test.yml -f issue=8`. A run takes every
-open issue `deps: <chart> <version> released` or `Knative 1.<minor> released: update
-KNATIVE_K8S_COMPAT` that has no label yet. Of several open issues of one dependency it tests the
+open issue `deps: <chart> <version> released`, `Knative 1.<minor> released: update
+KNATIVE_K8S_COMPAT` or `deps: <group> [<fingerprint>]: …` (a package group, see [Package
+dependencies](#package-dependencies)) that has no label yet. Of several open issues of one dependency it tests the
 newest version and closes the older ones as superseded. `Knative 1.<minor> is not in
 KNATIVE_K8S_COMPAT` only gets the label `needs attention`: a person adds the minor's row and its
 minimum Kubernetes version.
 
-For each version:
+**The base** is the newest release tag `v<x.y.z>` of the origin (`ci/deps-release.sh base`). The
+bot releases on top of it only when the origin's `main` is that tag, `next` contains it, and this
+repository's `main` is its public commit with the same tree. Otherwise every issue of the run gets
+`needs attention` with the reason, and nothing is tested: a release under way, commits on the
+public `main` that are in no release (the bot's tree would leave them out), or a release of the bot
+that did not finish (see *Resume*). A dependency the base's own bump does not know yet (a package
+group added after the tag: the tag's `ci/deps/packages.sh` has no row of it, or the tag has none)
+is held with that reason and no label: the next full release brings it, and a run after it tests
+the issue by itself.
 
-1. **The bump**, on a clone of `next`: `ci/deps-bump.sh <dep> <version>` (the charts and their
-   pins are the rows of `ci/check-helm-releases.sh`). It first renders the pinned and the new chart
-   with RunR's values (`ci/deps/helm-values.php`, from the code the install runs) on Kubernetes
-   1.30 and 1.35. Then it moves the pin, every test and doc that names the pinned version as the
-   current one, and adds a line under `[Unreleased]` → `Changed` of `CHANGELOG.md`. Lines that
-   record the past keep their version: a RunR release or a date next to them, a measurement, the
-   changelog, `docs/upgrade.md`. The commit is `fix(regions): <chart> chart <version>` (Kata:
-   `fix(kata): kata-deploy <version>`), with no trailer.
-2. **The suites** of the dependency, each Kind suite on a runner of its own (`kind-suite.yml`),
-   PHPUnit through `api-tests.yml`, and `runtime/test` with the reqs mirror check:
+Each version is first made and tested alone:
+
+1. **The bump**, on the base tag: the tag's own `ci/deps-bump.sh <dep> <version>` (the charts and
+   their pins are the rows of `ci/check-helm-releases.sh`). It first renders the pinned and the new
+   chart with RunR's values (`ci/deps/helm-values.php`, from the code the install runs) on
+   Kubernetes 1.30 and 1.35. Then it moves the pin, every test and doc that names the pinned
+   version as the current one, and adds a line under `[Unreleased]` → `Changed` of `CHANGELOG.md`.
+   Lines that record the past keep their version: a RunR release or a date next to them, a
+   measurement, the changelog, `docs/upgrade.md`. The commit is `fix(regions): <chart> chart
+   <version>` (Kata: `fix(kata): kata-deploy <version>`), the bot's, with its trailer.
+2. **The release commit** on it, `chore(release): <x.y.z+1>` (`ci/deps-release.sh prepare`):
+   `helm/Chart.yaml`'s `version` and `appVersion`; the docs' pins of the chart and the tag
+   (`ci/deps/release-pins.sh --server-only`: `--version`, `actions/deploy@v…`, `git clone --branch
+   v…`, the image tags); `CHANGELOG.md`'s section `[x.y.z+1]` with its `### Upgrade notes` from what
+   `[Unreleased]` held, and its links; `docs/upgrade.md`'s section `x.y.z → x.y.z+1` with the bump's
+   line and the suites that ran. A dependency release builds no CLI and no Terraform provider and
+   does not change runr.sh: the docs' CLI pins (`RUNR_VERSION=…`, "CLI release") and `landing/` keep
+   the last full release, whose CLI they name. A docs line that names the base version where the pin
+   rules do not know it as a pin or as history (`ci/deps/pin-keep.txt`: the "measured on RunR …"
+   labels, a third-party version that happens to be the same) sends the bump to a person.
+3. **Next must take the release** (`ci/deps-release.sh merge-next`): a fast-forward when `next` is
+   still the tag, otherwise a merge of the release into `next`, by the bot: what git merges, with
+   `CHANGELOG.md` and `docs/upgrade.md` taking the release's section above `next`'s newest one
+   (`next`'s `[Unreleased]` stays) and `next`'s own pins of the base version moved as well. Where
+   `next` changed lines the bumps change (a doc that names the pin, rewritten on `next`), `next`'s
+   own `ci/deps-bump.sh` makes every bump of the release again on `next` instead, in the release's
+   order (`--no-render`: the charts were compared on the tag; a package group with its finding's
+   updates). When such a bump needs a person, or `next` names the base version where the pin rules
+   do not know it, so does the release, before any suite runs: the next release from `next` must
+   contain this one.
+4. **The suites** of the dependency on the release commit (the branch `deps/<dep>`), each Kind
+   suite on a runner of its own (`kind-suite.yml`), PHPUnit through `api-tests.yml`, and
+   `runtime/test` with the reqs mirror check:
 
    | Dependency | Suites besides PHPUnit and `runtime/test` |
    |---|---|
-   | `traefik` | `ci.sh test`, `ci.sh test-network`, `ci.sh test-helm-upgrade --from=<last release tag>` (region:reconcile moves the region Traefik, step `traefik-chart`) |
-   | `kube-prometheus-stack`, `loki-stack` | `ci.sh test` (a new region installs it), `ci.sh test-observability`, `ci.sh test-helm-upgrade --from=<last release tag> --after-upgrade=cluster:patch-observability,{region}` |
-   | `zot` | `ci.sh test`, `ci.sh test-helm-upgrade --from=<last release tag> --after-upgrade=registry:upgrade-zot,{region}` |
-   | `kata-deploy` | `ci.sh test-sandbox-api` with Kata (`SANDBOX_KATA=1`, `RUNR_E2E_SANDBOX_CASES=kata`), `ci.sh test-helm-upgrade --from=<last release tag> --kata` (region:reconcile runs the new kata-deploy on a region with Kata, step `kata-sandbox`) |
+   | `traefik` | `ci.sh test`, `ci.sh test-network`, `ci.sh test-helm-upgrade --from=<base tag>` (region:reconcile moves the region Traefik, step `traefik-chart`) |
+   | `kube-prometheus-stack`, `loki-stack` | `ci.sh test` (a new region installs it), `ci.sh test-observability`, `ci.sh test-helm-upgrade --from=<base tag> --after-upgrade=cluster:patch-observability,{region}` |
+   | `zot` | `ci.sh test`, `ci.sh test-helm-upgrade --from=<base tag> --after-upgrade=registry:upgrade-zot,{region}` |
+   | `kata-deploy` | `ci.sh test-sandbox-api` with Kata (`SANDBOX_KATA=1`, `RUNR_E2E_SANDBOX_CASES=kata`), `ci.sh test-helm-upgrade --from=<base tag> --kata` (region:reconcile runs the new kata-deploy on a region with Kata, step `kata-sandbox`) |
    | Knative | `ci.sh test` on the reqs mirror's Kind node of the oldest Kubernetes the new minor supports |
 
    After an e2e suite, `ci/deps/after-e2e.sh` checks that the region runs the new version, and the
-   upgrade suites check the moved release (`--expect-release`): a green suite has exercised it.
-   The Kata suites need hardware virtualization: `kind-suite.yml` opens the runner's `/dev/kvm`
-   and fails with "Kata cannot run on a GitHub-hosted runner" where it does not work, so a
-   kata-deploy issue then needs a person (and a host with KVM).
-3. **Green**: the bump lands on `next` as one commit on top of the `next` it was tested on, a
-   fast-forward (`ci/deps-land.sh`, never forced). The issue gets the run, the commit and the
-   label `deps: passed`, and is closed: "fixed on next by <sha>, ships with the next release". It
-   is closed then, not at the release, because the issue's work is done and every later version
-   gets an issue of its own. When `next` moved meanwhile (another bump of the same run landed, or
-   someone pushed), the bot runs again for that issue on the new `next`, up to three runs in a
-   row; then the next weekly run tries.
-4. **Red**: the label `needs attention` and a comment with the failing suites, their errors and
-   the run. `next` is not touched. The version waits until someone runs the workflow with the
-   issue's number (which takes the label off and tests it again), or a newer release of the
-   dependency supersedes the issue.
+   upgrade suites check the moved release (`--expect-release`): a green suite has exercised it. A
+   suite is green when its job succeeded and its results say so too: a Kind suite whose script
+   ended 0 while `e2e-results-*.md` counts failed tests, or lists failures, is red. The Kata suites
+   need hardware virtualization: `kind-suite.yml` opens the runner's `/dev/kvm` and fails with
+   "Kata cannot run on a GitHub-hosted runner" where it does not work, so a kata-deploy issue then
+   needs a person (and a host with KVM).
+5. **Together** (`ci/deps-run.sh batch`, the job *The green bumps together*): the green bumps of
+   the run, an urgent one (a security advisory) first and then by issue, are made again one after
+   the other on the base tag. The first is its own bump commit; every other one is made on the one
+   before it by the tag's own `ci/deps-bump.sh` (with `--updates` for a package group), as its own
+   commit of the bot with its trailer. Then they get one release commit (`ci/deps-release.sh
+   prepare` takes one or more commits of the bot on the tag: one trailer line per bump, every bump's
+   line in the changelog's and `docs/upgrade.md`'s sections, the suites of all of them), which next
+   must take (step 3). A bump that is not made mechanically there (its bump needs a person or
+   fails, or the release cannot be made with it) stops the batch before it: it gets `needs
+   attention` with the reason, and the bumps after it a comment that they passed alone and wait for
+   the next run, with no label. Two bumps or more are tested together in a second test phase of
+   the same run, on `deps/batch`: the union of their suites (PHPUnit when one of them needs it,
+   `runtime/test`, their checks and Kind suites, each command and environment once). A batch of one
+   is the tree that was tested alone. When the combined tree fails a suite, the bump that breaks it
+   is the first from the second on whose suites, with those of the bumps before it, include a
+   failed one: the bot releases the bumps before it (the batch's own commits of them, with a release
+   commit of their own; not tested again, since each passed alone and its suites passed on the
+   larger tree; the first alone is its tree that was tested alone). The breaker gets `needs
+   attention` and a comment with the failed suites and the bumps it was combined with; the bumps
+   after it wait for the next run, with no label. A red bump is left out and blocks none of the
+   green ones. A security finding still starts a run of its own the same day
+   (`upstream-releases.yml`).
+6. **Green: the release** of the batch, one per run (one release at a time, the workflow's
+   concurrency group):
+   1. *publish*: the origin tag `v<x.y.z+1>` (signed, tagger the bot), and one atomic push of the
+      origin's `main` (the release commit, a fast-forward from the base), `next` (the merge, made
+      again on the `next` of that moment; a `next` that moves during the push is merged again, three
+      times at most) and the tag. Then this repository's `main` gets one commit `RunR <x.y.z+1>` of
+      the release's tree on the base's public commit, by the bot, and the signed tag on it, in one
+      atomic push with the App's token. Before any push the release's tree goes through gitleaks
+      (as `ci.yml` scans every commit), its diff and texts through the scrub
+      (`RUNR_SCRUB_PATTERN`), and `ci/deps/check-attribution.sh` checks the attribution rule on the
+      public commit and tag. The release changes nothing in `vue/`, `landing/` or `.github/`, which the bot
+      never publishes. An origin or a public `main` that moved before the push stops the release
+      with nothing pushed; every bump of the release is tested again on the new release, in one run
+      the bot starts, three runs in a row at most.
+   2. *images*: the tag's push starts `release-images.yml` (a push with the App's token starts
+      workflows; one with the `GITHUB_TOKEN` would not). The bot waits for that run (20 minutes to
+      appear, 3 hours to end) and requires its success, then checks the registry itself, without
+      credentials: every tag the run pushed names, for its platform, the digest the run's artifacts
+      `digests-amd64` / `digests-arm64` record, and every image of the release (`api`, `ui`, `ui`
+      `-mt`, `runtime/ci.sh release-images` of the release's tree) answers for linux/amd64 and
+      linux/arm64.
+   3. *github*: the GitHub release `v<x.y.z+1>`, latest, its notes made from the release commit
+      (every bump's changelog line, the upgrade command, the suites, the images, the chart, and that
+      the CLI, the provider and runr.sh are the last full release's); then BRF-Tech/helm-charts'
+      publish is dispatched (`product-released`).
+   4. *helm*: helm.brf.sh lists `runr <x.y.z+1>` within 30 minutes, and its chart is the release's
+      (`helm pull` against `helm package` of the release's `helm/`, file by file).
+
+   Every issue of the release gets the release, the bumps it came with, the commits, the run of
+   the images, its suites and those of the combined tree and the label `deps: passed`, and is
+   closed.
+7. **Red**: the label `needs attention` and a comment with the failing suites, their errors and
+   the run. Nothing of it is pushed; the run's other bumps go without it. The version waits until
+   someone runs the workflow with the issue's number (which takes the label off and tests it
+   again), or a newer release of the dependency supersedes the issue.
 
 A bump that is not mechanical goes to `needs attention` before any suite runs: the new chart
 refuses RunR's values or no longer has a value RunR sets, renders other objects, changes its CRDs
@@ -756,42 +847,239 @@ Traefik chart with a new app version (RunR pins its image from the reqs mirror, 
 BRF-Tech/runr-runtimes publishes first); a kata-deploy chart whose objects changed beyond its
 version (RunR renders kata-deploy's DaemonSet itself); a pin the console or the landing page
 names; a Knative minor without its unreleased row, or without a Kind node image of a Kubernetes it
-supports. The comment says which.
+supports; a release the pin rules or `next` cannot take. The comment says which.
 
-Besides its `GITHUB_TOKEN` (which gets `issues: write` for the comments and labels and
-`actions: write` to start itself again), the workflow needs a write deploy key of the origin: the
-bump job clones `next` with it and the landing pushes to it over SSH.
+**A release that fails** after its checks stops where it is and says so on its issues (label
+`needs attention`): what was done (the origin's push, the public push, the images, the GitHub
+release, the chart) and what failed. Nothing is published before the images are checked: a failed
+`release-images.yml` run or a tag that does not name the digest the run pushed makes no GitHub
+release, and the chart's publish waits for that release. **Resume**: once the cause is fixed (the
+failed jobs of the images' run re-run, a new package made public), run the workflow with `resume`
+= `v<x.y.z+1>` and the issues' numbers (comma-separated, as the comment names them): the bot reads
+the release and its bumps from the origin's tag (a tag of the bot only, its trailer lines), does
+what is not done yet (the public push, then the images, the GitHub release and the chart) and
+closes the issues. Every step checks what is there first, so it can run again.
+
+**Dry run** (`dry_run`): the whole run, with the release made, merged, signed and checked
+(attribution included) and nothing pushed, created, labelled or commented; the images, GitHub
+release and chart steps check the base release instead, read-only. The step summary has what the
+issues would get, the artifact `deps-release` the release notes and the steps. Without the App or
+the signing key a dry run reads anonymously and leaves its tags unsigned (it says so).
+
+A new kind of dependency adds what tells it apart, not a release: its issue title (`ci/deps-plan.sh`),
+its row of `DEPS_BOT` with its suites (`ci/deps/lib.sh`) and its bump in `ci/deps-bump.sh` (the pin,
+its `CHANGELOG.md` line, its `suites.json`). `ci/deps-release.sh` releases any bumps that are
+commits of the bot on the tag, each with its trailer and its line under `[Unreleased]`.
+
+#### Package dependencies
+
+Besides the charts and Knative, the bot follows every package RunR ships or builds with: the
+groups of `ci/deps/packages.sh` (`DEPS_PKG`, `DEPS_DOCKERFILES`, `DEPS_PINS`). `ci/check-package-releases.sh`
+(daily in `upstream-releases.yml`, read-only) files **one finding per group**: every minor and patch
+update of one manifest found in one check is one issue, `deps: <group> [<fingerprint>]: <n>
+updates: <name> <version>, …`, whose body ends with the marker the bot reads (`<!-- deps-bot
+{"group", "updates": [{name, from, to, …}], "urgent", "advisories"} -->`). The fingerprint is that
+of the set, so the same set is filed once; a new release of one of its packages files a new set,
+and the plan tests the newest issue of a group and closes the older ones as superseded. An update
+outside the manifest's constraint (a new major, a new minor of a 0.x caret range, an exact pin, a
+new Go major path, a toolchain image's next line, the Go toolchain an advisory of the standard
+library needs) is an issue of its own per release line, `deps: <group> <name> <line> released
+(outside <constraint>)`, which only gets `needs attention`: a person moves it with the code it
+needs. A security advisory (`composer audit`, `npm audit`, `govulncheck`) adds its package to the
+group's finding (a transitive one too), marks it `(security)` with the label `security`, and
+`upstream-releases.yml` starts `deps-test.yml` for it the same day; of a run's green bumps an urgent
+one goes first. Every tracked `composer.json`, `package.json`, `go.mod`, `pyproject.toml`,
+`requirements*.txt`, `Cargo.toml` and Dockerfile is a group's, a Dockerfile of the table or listed
+in `DEPS_UNTRACKED` with its reason (today the API's modules, merged into `api/composer.json`, and
+`examples/runtime-sources/`, a copy of BRF-Tech/runr-sample-custom-executor), and every version
+pin of a Dockerfile (`ARG *_VERSION=`, `ARG *_SHA256=`, but an ARG a `FROM` names) and of a
+workflow (`*_VERSION:`, `*_SHA256:`, `*_IMAGE:`, `*-version:` with a literal value) is a row of
+`DEPS_PINS` or listed in `DEPS_PINS_UNTRACKED` with its reason (`PHP_MIN_VERSION`, a floor the
+build checks against the base; `APP_VERSION`, set by the release build): `ci/check-package-releases.sh
+--known`, run by `runtime/test/deps_scope_test.sh` and before every check, so a new one cannot be
+missed.
+
+**Version pins** (`DEPS_PINS`, one row per pin: the files and variables that name it, its upstream,
+its line, its path, its checksums, its suites). The same version at every place, or the check
+fails (`its places pin different versions`). Its checksums move with it: the bump fetches the
+published checksum of the old and of the new version (the release's checksums file or `.sha256sum`
+asset, `get.helm.sh`'s and `dl.k8s.io`'s `.sha256`, GitHub's digest of an asset, the sha256 and
+the sha384 integrity of Scalar's file in the npm tarball the registry's sha512 checks) and replaces
+one with the other wherever the files pin it; a checksum that is not published, or that no file
+pins, sends the bump to a person. A release download that answers 5xx or 429 is tried again, then
+comes through the GitHub API's asset endpoint (`ci/deps/fetch.sh`, the filex bot's #1808). What
+each pin's line is: helm, Scalar, syft, cosign, oras, kind, cloud-provider-kind, kubeconform, crane,
+actionlint, gitleaks, Terraform and govulncheck move within their major (a 0.x version: its minor);
+kubectl within its minor (one minor of the Kubernetes it talks to); a newer line is a finding of
+its own. containerd-shim-spin (its version without RunR's `-runr.N`) is RunR's patched build of
+upstream: every newer release is a person's. The workflows' `go-version`, `node-version` and
+`php-version` are toolchains the code is written for: only a newer line is a finding (the Go one
+as `go-toolchain`, with the advisories' finding), never a bump.
+
+**Holds** (`ci/deps/holds.txt`, `GROUP NAME VERSIONS REASON`): what a person pinned on purpose.
+The check leaves them and names each one with its reason; a bump that would move one goes to a
+person. Today: `cronstrue` and `@playwright/test` (pinned exactly in `vue/package.json`: the warmer
+editor's tests compare cronstrue's wording; each Playwright brings its own Chromium), the Spin
+shim's Rust and cross-rs images (by digest, with upstream's toolchain) and its protoc, libseccomp
+and containerd-shim-wasm pins (upstream's build inputs, which move with containerd-shim-spin), the
+Terraform provider's `github.com/brf-tech/runr/cli` (RunR's own module, moved by the manual
+release), the workflows' `php-version` (the API's tests run on the oldest PHP of its constraint on
+purpose) and the examples' `@runr/workflows` and `runr-workflows` (RunR's own SDKs, on no registry
+yet).
+
+**The bump** (`ci/deps/bump-packages.sh`, through `ci/deps-bump.sh <group> <fingerprint>
+--updates=FILE`) is mechanical and made twice, in a scratch worktree and in the checkout: a lockfile
+that does not come out the same, a manifest constraint that moved, another Go line or a held
+package that moved goes to a person with nothing left changed.
+
+| Kind | Detection | Grouping | Bump | Release or next only | Suites |
+|---|---|---|---|---|---|
+| Composer (`composer-api`: `api/` require and require-dev; the modules' `composer.json` are merged into it) | `composer outdated --locked --minor-only` (direct; a transitive package only for an advisory), `--major-only`, `composer audit --locked` | one finding per check | `composer update <names> --with-dependencies --no-install` (composer.lock only) | release when `composer.lock`'s `packages` moved (the API image); `packages-dev` only: next | PHPUnit, Pint, Larastan, API reference; when it ships also `ci.sh test` and `ci.sh test-helm-upgrade --from=<base tag>` |
+| npm, console (`npm-vue`: `vue/` dependencies and devDependencies) | `npm view <name>@<range> version`, `npm view <name> dist-tags.latest`, `npm audit --package-lock-only` | one finding per check | `npm update <names> --package-lock-only`, `npm audit fix --package-lock-only` for an advisory (package-lock.json only), with npm 11 (npm 10's lockfile-only update fails on the console's tree) | release when a package the bundle or the build takes moved (`ci/deps/npm-shipped.mjs`: the dependencies and `DEPS_NPM_BUILD_ROOTS`, vite and its plugins, with everything they depend on); test and lint tooling only: next | `ui`: `ui-tests.yml`, the steps of `ci.yml`'s `ui` job (lint, Vitest with coverage, the build), its result read from Vitest's JSON report (`ci/ui-results.sh`: every test passed, no test file failed to load, `tests/composables/tutorialSteps.spec.js` ran and passed); when it ships also `ui-stack`: `ui-stack-suite.yml`, `e2e.yml`'s suite (the console against the dev stack, Playwright; its JSON report: no unexpected result, no error) |
+| npm, SDKs (`npm-sdk-sandbox`, `npm-sdk-workflows`) | as the console | one per check | the Sandbox SDK's lockfile as the console's; the Workflow SDK keeps no lockfile, so only its majors are findings | next (an npm package of its own, not in a release's images) | `npm-test:<dir>` (install, typecheck, tests) |
+| Go, region images (`go-agent`, `go-queue-consumer`, `go-gateway-auth`, `go-image-upload`) | `go list -m -u -json all` (direct requirements), the module proxy's next major path, `govulncheck` | one per module | `go get <module>@<version>…`, `go mod tidy` (go.mod, go.sum; another `go` line goes to a person) | release; gateway-auth and image-upload have versions of their own, which the bump moves a patch (`runtime/ci.sh release-images` lists the new tag, so `release-images.yml` builds it) | `go:<dir>` (gofmt, vet, `go test -race -json`), `image:<Dockerfile>` (the build), the Kind suites that deploy the image: agent and queue consumer `ci.sh test` (the e2e builds them from the checkout) and the upgrade suite, gateway-auth `test-api-product`, image-upload `test-images` and `test-org-transfer` |
+| Go, CLI, Terraform provider, dev tunnel (`go-cli`, `go-terraform-provider`, `go-proxy`) | as above | one per module | as above | next: a dependency release builds no CLI and no provider; `proxy/` is the dev stack's Sentry tunnel | `go:<dir>` |
+| GitHub Actions pins (`actions`) | the `uses: <action>@<sha> # <tag>` pins of `.github/workflows/` and `actions/*/action.yml`: `git ls-remote --tags` of each repository (a floating `@v4` only for its next major) | one per check | the pin's commit (the tag's, peeled) and its comment, in every workflow that pins the old one | next: no shipped bytes, a release never changes `.github/` and the App has no Workflows permission (a pin of RunR's own `actions/` would release; one in both goes to a person) | `actionlint` |
+| Dockerfile bases (`docker`: every Dockerfile of `DEPS_DOCKERFILES`) | the tags of each `FROM` image (its ARGs' defaults filled in) on ghcr.io, anonymously: the reqs mirror's, which BRF-Tech/runr-runtimes publishes, and other ghcr.io images (Trivy); the same form (prefix, components, suffix such as `-alpine`) and release line | one per check, across the Dockerfiles | the tag, and the digest of one pinned by digest | release when the Dockerfile of a release's image moved (api, ui, agent, queue-consumer; gateway-auth, image-upload, supply-chain and the Spin shim move their own version a patch); the dev stack's, the e2e's test images and the examples': next | `image:<Dockerfile>` and the suites of that image (the API's PHPUnit, e2e and upgrade; the UI's `caddy` and `ui-stack`; the Q interpreter's `ci.sh test-runtimes`; …, `DEPS_DOCKERFILES`) |
+| Version pins of the images (`pins-images`: helm, kubectl and Scalar of the API image, syft, cosign and oras of supply-chain, the Spin shim's upstream and build inputs) | the stable tags of the upstream's GitHub repository (`git ls-remote --tags`), npm's versions (Scalar), the crates.io index | one per check | the version at every place of the pin (`ARG`, the API reference page's script URL), and its checksums (above) | release: helm, kubectl and Scalar ship in the API image; syft, cosign and oras move supply-chain's own version a patch | `image:<Dockerfile>` and the suites of that image (the API's PHPUnit, e2e and upgrade; supply-chain's `ci.sh test-supply-chain`) |
+| Version pins of the workflows (`pins-ci`: helm, kubectl, kind, cloud-provider-kind, kubeconform, crane, actionlint, gitleaks, Terraform, govulncheck; the toolchains `go-version`, `node-version`, `php-version`) | the tags of the upstream's GitHub repository, ghcr.io (gitleaks), the module proxy (govulncheck), go.dev, nodejs.org's LTS lines, php.net (the toolchains) | one per check | as the images' pins, in every workflow (and the dev stack's and the e2e's copy of the same pin: cloud-provider-kind in `compose/kind-setup.sh` and `runtime/lib/test-runtimes.sh`, kubeconform's image in `ci/check-helm-chart.sh`) | next: no shipped bytes, and a release never changes `.github/` | `actionlint` (and the checksums the bump checked); the workflows that use the pins run from the default branch, so the next full release's CI is the first to run them |
+| npm, examples (`npm-example-mcp`, `npm-example-wasm-js`, `npm-example-workflows`) | as the console | one per check | none: no lockfile, so only their majors are findings | next | the MCP starter's image build (`image:`), `ci.sh test-wasm` (it deploys `examples/wasm/js`); none for the workflow sample (it needs a RunR to run against, and its only package is RunR's SDK, held) |
+| Go, examples (`go-example-q`, `go-example-wasm`) | as the region images'; a module that requires others without a `go.sum` (`examples/wasm/go`) is a manifest without its lockfile: a copy of its `go.mod` is read and only its majors are findings | one per module | as the region images' | next | the Q interpreter: `go:<dir>` (ci.yml's go job tests it too), `image:<Dockerfile>`, `ci.sh test-runtimes`; none for `examples/wasm/go` (TinyGo: ci.yml leaves `examples/wasm/` out, `test-wasm` deploys the Rust and JavaScript examples) |
+| Python (`pypi-sdk-workflows`, `pypi-sdk-sandbox`, `pypi-example-mcp`, `pypi-example-workflows`, `pypi-example-hf-weights`) | PyPI's JSON of each requirement of `pyproject.toml` (dependencies, optional dependencies, dependency groups, build-system requires) or `requirements.txt` (`ci/deps/manifests.py`, Python 3.11+) | one per check | none: no lockfile, so only a release outside the specifier (an upper bound, an exact pin, `~=`) or a new major above a floor alone (`pytest>=7` and pytest 9) is a finding, for a person | next | the SDKs: `py-test:<dir>` (a venv with the SDK and its test extra, `pip install <dir>[test]`, then pytest; its JUnit report: no failed or erroring test), as `ci.yml`'s `sdk-python` job runs them; the MCP starter's image build; none for the workflow sample and the weights sample |
+| Cargo (`cargo-example-wasm-rust`) | the crates.io index (its sparse protocol) of each dependency of `Cargo.toml` | one per check | none: no `Cargo.lock`, so only a release outside Cargo's requirement (a new major of `spin-sdk = "5.2.0"`) is a finding | next | `ci.sh test-wasm` (it deploys `examples/wasm/rust`) |
+
+The two pins groups are one finding per check each, as `actions` and `docker` are: a bump is made
+on the tag or on next by its group's path, and a release never changes `.github/`, so the pins of
+the images and the pins of the workflows cannot share a bump (helm is one finding in each). The
+examples' wasm manifests are copies of the built-in catalog's default build files
+(`api/resources/runtimes/builtin.json`), made for the wasm build images of BRF-Tech/runr-runtimes:
+their findings say which major is out, and a person moves the example, `builtin.json` and the
+build image together.
+
+The reqs mirror has only the tags BRF-Tech/runr-runtimes copies (`REQS_IMAGES` of its
+`lib/mirror.sh`): a base's new series reaches this check once that repository mirrors it. The
+`golang` images' minor is the Go toolchain (`DEPS_DOCKER_LINES`), which every `go.mod`, ci.yml's
+`setup-go` and the images move together, by a person; the `python` images' minor is Python's
+release line (the examples' 3.12-slim and 3.13-slim).
+
+**Release or next only.** A bump releases only when it changes what a RunR release ships: an
+image, the chart or the API's code. One that changes no shipped bytes is made and tested on the
+origin's `next` itself, not on the tag: the branch `deps/<group>` is `next` and the bump. The green
+ones of a run **land on next together**, with no release: made again one after the other on `next`
+by `next`'s own bump (step 5; two or more tested together on `deps/batch-next` in the second
+phase), and pushed in one fast-forward of the origin's `next` (`ci/deps-release.sh land`, with the
+deploy key, never forced, after the attribution check), before the release, whose merge into
+`next` takes the landed `next`. Their issues get `deps: passed` and are closed, and the next full
+release carries them. A bump made on the tag that turns out to ship nothing (composer
+`packages-dev` only, npm test tooling only) is made again on next. A `next` that moved since is
+tested again on the new one (the run's dispatch, as a moved release). One release and one landing
+per run.
+
+**A console npm bump** changes the UI image and is released like any other. The release takes it
+because the bot's commit changes nothing of `vue/` but `vue/package.json` and
+`vue/package-lock.json` (and `CHANGELOG.md` and the docs the release edits): `ci/deps-release.sh`
+refuses any other path of `vue/`, all of `landing/` and `.github/`, and `ci/deps/check-attribution.sh`
+allows exactly those two files to a commit of the bot (its trailer), which carries no
+`Co-Authored-By` (no Claude, no Can).
+
+Besides its `GITHUB_TOKEN` (`issues: write` for the comments and labels, `actions: write` to start
+itself again and read the images' run), the workflow needs:
 
 - The repository variable `GITLAB_RUNR_REMOTE`: the origin's SSH URL. No file of this repository
   names it; `ci/deps/ssh-key.sh` takes only an SSH URL (`git@HOST:GROUP/PROJECT.git`) of the host
   it pins.
-- The secret `GITLAB_RUNR_PUSH_KEY`: the deploy key's private key (ed25519, OpenSSH format).
-  `next`'s protection lets the key push and refuses a force push; `main` takes no deploy key. A
-  write deploy key may also write any branch the origin does not protect, so the landing pushes
-  exactly `HEAD:refs/heads/next`, a plain fast-forward, and `runtime/test/ci_workflows_test.sh`
-  fails on any other refspec, a second push, a tag, a deletion or a force.
+- The secret `GITLAB_RUNR_PUSH_KEY`: a write deploy key of the origin (ed25519, OpenSSH format,
+  no passphrase). `ci/deps/ssh-key.sh` writes its `-----BEGIN OPENSSH PRIVATE KEY-----` …
+  `-----END …-----` block alone (carriage returns, lines around it and a block folded onto one
+  line are dropped or reflowed) and requires `ssh-keygen -y` to load it: a bad secret fails at
+  once with "GITLAB_RUNR_PUSH_KEY does not load: …", never at the clone. A bump job that fails so
+  makes no release: the job "The bumps could not be made" comments on the planned issues (a dry
+  run only in its summary).
+  The bump job clones with it; the release pushes the origin's `main`, `next` and the release tag
+  with it, so the origin's protection of `main` and `next` lets this deploy key push (no force
+  push), and so does the protection of the tags `v*`, if any. A write deploy key may also write any
+  branch the origin does not protect: `ci/deps-release.sh` pushes exactly those three refs, and
+  `runtime/test/ci_workflows_test.sh` fails on any other refspec, a third push, a deletion or a
+  force.
 - The repository variable `GITLAB_KNOWN_HOSTS`: the host's key line (`HOST ssh-ed25519 AAAA…`).
   ssh trusts no other host key, and `ci/deps/ssh-key.sh` refuses a line of another host or with
   another fingerprint than the published one it pins
   (`SHA256:eUXGGm1YGsMAS7vkcx6JOJdOGHPem5gQp4taiCfCLB8`): a changed variable cannot send the push
   elsewhere.
+- The secrets `RUNR_BOT_APP_ID` and `RUNR_BOT_APP_PRIVATE_KEY`: the GitHub App *RunR deps bot*,
+  installed on this repository with **Contents: read and write** (its `main`, the tags, the
+  release) and on BRF-Tech/helm-charts with **Contents: read and write** (the `product-released`
+  dispatch; without it the chart waits for that repository's schedule). Metadata: read comes with
+  them; nothing else (no Workflows: the bot never changes `.github/`). `actions/create-github-app-token`
+  makes a token per step that needs one (one hour each): the push, the GitHub release, the dispatch.
+  **Protection:** neither repository protects its `main` or tags today (no ruleset, no branch
+  protection; the organization's plan has no organization rulesets). A ruleset added later on
+  this repository's `main` (no force push, no deletion, linear history are fine: the bot pushes
+  fast-forwards; "Require a pull request" and "Require status checks" are not) or on `refs/tags/v*`
+  (creation restricted) puts the App on its bypass list: **Settings → Rules → Rulesets → the
+  ruleset → Bypass list → Add bypass → Apps → RunR deps bot, Always allow** (the API:
+  `bypass_actors: [{"actor_type": "Integration", "actor_id": <the App's id>, "bypass_mode":
+  "always"}]`). The same on BRF-Tech/helm-charts is not needed: the bot only dispatches there
+  (`repository_dispatch`), it pushes nothing. A classic branch protection of `main` would need
+  "Allow specified actors to bypass required pull requests" with the App, and no "Require signed
+  commits" (the public commit is unsigned; its tag is signed).
+- The secrets `RUNR_BOT_GPG_PRIVATE_KEY` (ASCII-armored) and `RUNR_BOT_GPG_PASSPHRASE` (empty for a
+  key without one), and the repository variable `RUNR_BOT_GPG_FINGERPRINT`: the bot's signing key,
+  a key of its own (UID `RunR deps bot (brkfun) <19393636+brkfun@users.noreply.github.com>`, sign
+  only, its public key on the brkfun account, so the tags show Verified). `ci/deps/sign-tag.sh` signs in
+  a keyring of its own (`gpg --batch --pinentry-mode loopback`, the passphrase on a file
+  descriptor), refuses a key of another fingerprint and checks the tag with `git verify-tag`. Its
+  public key is what verifies the bot's tags (`git verify-tag`, the release's attribution check).
+- The secret `RUNR_SCRUB_PATTERN`: the scrub of the public releases, an extended regular expression
+  (case-insensitive) of the internal names a public release must not carry. No line the release
+  adds, none of its notes and messages may match it, and no file of this repository names them;
+  the failure says how many lines and which files, never the lines (the log is public). A release
+  does not run without it (a dry run notes it).
+- The repository variables `RUNR_HELM_CHARTS_REPO` and `RUNR_HELM_INDEX` (optional): the dispatch
+  and the index the chart step reads (`none` leaves them out, as on a fork).
 
-`ci/deps/ssh-key.sh` writes them for the two steps that use them, to files of mode 0600 in the
-runner's temporary directory (`IdentitiesOnly`, no agent, `StrictHostKeyChecking=yes`); a step that
-always runs removes them, and nothing prints the key.
+`ci/deps/ssh-key.sh` writes the deploy key for the two steps that use it, to files of mode 0600 in
+the runner's temporary directory (`IdentitiesOnly`, no agent, `StrictHostKeyChecking=yes`); a step
+that always runs removes them, and nothing prints the key. The App's token reaches git only in the
+push's environment (`GIT_CONFIG_*`, an `Authorization` header for `https://github.com/`), never as
+an argument or in a file.
 
-The bot's commits carry `RunR deps bot <deps-bot@runr.sh>` as author and committer
-(`DEPS_BOT_NAME`, `DEPS_BOT_EMAIL` of the workflow). They never reach this repository themselves:
-a release here is made from the release's tree, in commits of the maintainer, and the release's
-attribution check runs on those, so it accepts the bot's commits as they are.
+The bot's commits and tags carry the identity RunR's public history uses, `Burak Faruk ŞAHİN
+<19393636+brkfun@users.noreply.github.com>` (`DEPS_BOT_NAME`, `DEPS_BOT_EMAIL` of the workflow), as
+author, committer and tagger, and the trailer `RunR-Deps-Bot: <dep> <version>` (`DEPS_TRAILER`):
+the bump, the release commit, the merge into next, the public commit and the tags' messages (those
+of a release with one trailer line per bump, in its order). The
+trailer is what tells them apart: the attribution rule (`ci/deps/check-attribution.sh`, the manual
+release's check with the bot's trailer) takes a commit with it as the bot's, which is that
+identity as author and committer, has no `Co-Authored-By`, and changes nothing of `landing/` and of
+`vue/` only `package.json` and `package-lock.json`; the rest of the rule is unchanged. `resume`
+takes only a tag whose message has the trailer. Its check of the messages for internal names takes
+them from `DEPS_FORBIDDEN` (the scrub pattern), not from this repository.
+
+**No loop.** A push or tag made with the App's token starts workflows (one of the `GITHUB_TOKEN`
+would not). The bot's tag starts `release-images.yml`, as intended; `deps-test.yml` and
+`upstream-releases.yml` run on a schedule and by hand only, and every job of `ci.yml` and `audit.yml`,
+the workflows that run on a push of `main`, skips a push whose head commit carries the trailer
+(`runtime/test/ci_workflows_test.sh` holds every workflow that runs on a push to it, and no
+workflow runs on another's run). The landing on next goes to the origin, which runs no CI.
+
+**With the manual release.** A full release after dependency releases builds on them: its
+`PREV` is the last release of the bot, and the CLI pins and `landing/` still name the last full
+release. `ci/deps/release-pins.sh <PREV> <NEW>` moves both (the CLI's from the release
+`docs/cli.md` pins, `--cli-from`; `--only=docs` / `--only=landing` for the two commits) and makes
+the same edits as the release's `bump-pins.sh` when no release of the bot came in between. Its keep
+list is `ci/deps/pin-keep.txt`. The release's attribution check needs the bot's identity, as
+`ci/deps/check-attribution.sh` has it.
 
 A value RunR passes a chart and the chart does not read is found the same way: changed alone, it
 renders nothing new (`ci/deps/dead-values.php`). The bump sends a chart that stops reading one of
 them to a person, and its report lists the ones that wait for a condition.
 
-Locally, in a clean clone of `next` with `composer install` done in `api/`:
-`bash ci/deps-bump.sh traefik 42.3.1` makes the change the bot would commit (`git diff`), and its
-report says what it compared; `--no-render` leaves out the chart rendering.
+Locally, in a clean clone of the origin at the last release tag with `composer install` done in
+`api/`: `bash ci/deps-bump.sh traefik 42.3.1` makes the change the bot would commit (`git diff`),
+and its report says what it compared; `--no-render` leaves out the chart rendering.
+`bash ci/deps/release-pins.sh <x.y.z> <x.y.z+1> --server-only --check-only` lists the docs lines
+that would stop a release.
 
 ### Secret scan and dependency audits
 
@@ -817,17 +1105,19 @@ GitHub Actions is the repository's CI; the workflows live in `.github/workflows/
 | `ci.yml` → `build-scripts` | `ci/check-dockerfiles.sh` (no Docker Hub base image, `OTEL_SDK_DISABLED=true` before Spin runs in a build step, every image labels `org.opencontainers.image.source`); `ci/check-caddyfiles.sh` (`vue/Caddyfile` and `compose/Caddyfile` validate, index.html for every console route is never cached, the hashed build files for a year, a missing build file answers 404); `runtime/test/*_test.sh` (`runtime/ci.sh` without Docker or a registry, the pinned runtime images, the release workflow, these workflows) | same | yes |
 | `ci.yml` → `helm` | `ci/check-helm-chart.sh` (helm 3.16, kubeconform) | same | yes |
 | `ci.yml` → `api` | Pint, PHPUnit with the coverage floor, Larastan on PHP 8.2 (8.2.35 or later); the API reference as the image builds it, every module enabled (`api/docker/api-docs.sh --check`, `ApiDocsTest`); the steps are `api-tests.yml` | same | yes |
-| `ci.yml` → `ui` | lint without warnings, Vitest with the coverage floor (report: artifact `ui-coverage`), build | same | yes |
+| `ci.yml` → `ui` | lint without warnings, Vitest with the coverage floor (report: artifact `ui-coverage`), build; the steps are `ui-tests.yml`, whose result is read from Vitest's JSON report too (`ci/ui-results.sh`: a run where `tests/composables/tutorialSteps.spec.js` did not run and pass fails) | same | yes |
 | `ci.yml` → `ui-e2e` | Playwright, mocked API (report: artifact `playwright-report`) | same | yes |
 | `ci.yml` → `go` | gofmt, vet, race tests with coverage per `go.mod` | same | yes |
 | `ci.yml` → `sdk-node` | typecheck and Vitest of `sdk/node` | same | yes |
+| `ci.yml` → `sdk-sandbox-node` | typecheck and `node --test` of `sdk/sandbox/node` (its lockfile) | same | yes |
+| `ci.yml` → `sdk-python` | pytest of `sdk/python` and `sdk/sandbox/python`, each in a venv of its own with its test extra, on the runner's Python 3 | same | yes |
 | `audit.yml` → `npm` | `npm audit` of `vue/` | pushes to `main`, daily, pull requests touching `vue/package*.json` or `api/composer.*`, by hand | production deps: yes; dev tooling: no |
 | `audit.yml` → `composer` | `composer audit --locked` of `api/` | same | no |
 | `e2e.yml` → `kind` | `runtime/ci.sh test` (Kind, Knative and the Compose stack on the runner's Docker); the steps are `kind-suite.yml` | weekly, by hand | no |
-| `e2e.yml` → `ui-stack` | Playwright against the dev stack (`docker compose`, project `stack`, single-tenant, `E2E_SEED_DEMO=true`) | weekly, by hand | no |
+| `e2e.yml` → `ui-stack` | Playwright against the dev stack (`docker compose`, project `stack`, single-tenant, `E2E_SEED_DEMO=true`; report: artifact `e2e-ui-stack`); the steps are `ui-stack-suite.yml`, whose result is read from Playwright's JSON report too (`ci/ui-results.sh`) | weekly, by hand | no |
 | `upstream-releases.yml` → `check` | `ci/check-knative-releases.sh`, `ci/check-helm-releases.sh`; an issue per finding | daily, by hand | no |
-| `deps-test.yml` | the [dependency test bot](#dependency-test-bot): each new version of those issues moved on `next`, tested, landed or held | weekly, by hand | no |
-| `api-tests.yml`, `kind-suite.yml` | reusable workflows (`on: workflow_call`): the API checks of `ci.yml` and one `runtime/ci.sh` Kind suite of `e2e.yml`, also run on a dependency bump by `deps-test.yml` | when called | — |
+| `deps-test.yml` | the [dependency test bot](#dependency-test-bot): each new version of those issues moved on the last release tag and tested alone, then the green ones of the run together (their combined tree tested when two or more); one patch release of all of them per run (origin and this repository, the images, the GitHub release, the chart), merged into `next`; the bumps of `next` only landed in one fast-forward; else held | weekly, by hand (`dry_run`, `resume`) | no |
+| `api-tests.yml`, `ui-tests.yml`, `kind-suite.yml`, `ui-stack-suite.yml` | reusable workflows (`on: workflow_call`): the API checks and the UI checks of `ci.yml`, one `runtime/ci.sh` Kind suite and the UI stack suite of `e2e.yml`, also run on a dependency bump by `deps-test.yml` (both of its test phases) | when called | — |
 | `release-images.yml` | the release images (below) | release tag `v<version>`, by hand | — |
 
 By hand: Actions → the workflow → **Run workflow**, or `gh workflow run e2e.yml -f suite=kind -f
@@ -841,6 +1131,12 @@ RuntimeClass on the runc handler (the Kind nodes have no gVisor). The suites CI 
 a host of their own: `test-sandbox-api --sandbox-kata` (`/dev/kvm` inside the Kind nodes),
 `test-ai` with its GPU case, and the per-feature suites of [Testing](#testing) (`test-runtimes`,
 `test-wasm`, …, `test-region-move`, `test-global-projects`).
+
+The UI stack suite installs Playwright's packages on the runner (`npm ci` in `vue/`) after the
+compose `vue` service has started with its own packages in the `vue_modules` volume. The runner's
+Docker runs as root: `vue-init` creates that volume's mount point, `vue/node_modules`, as the
+checkout's owner first, as for a developer on Linux ([Services](#services)); without it `npm ci`
+fails with `EACCES`. `runtime/test/ci_workflows_test.sh` checks that `vue` waits for `vue-init`.
 
 `upstream-releases.yml` files an issue once per title (`deps: <chart> <version> released`,
 `Knative 1.<minor> released: …`): a title an issue already has, open or closed, is not filed again.
@@ -939,6 +1235,24 @@ stack running (Compose project `runr-upgrade`, API on `127.0.0.1:18060`).
   `gp-switchover` → `gp-postgres-replica` → `gp-p2-project`, `gp-data-services`)
 - **Kubeconfig**: for Kind, `kind get kubeconfig --internal` (the API services join the `kind` network and reach the control-plane container by name, on Linux hosts too); for an external cluster, `127.0.0.1` is rewritten to `host.docker.internal`. The file is copied into the container with `docker compose cp`
 - **Test command**: `docker compose exec api php artisan test:e2e --base-url=http://localhost --kubeconfig=/tmp/kubeconfig`
+- **Waves**: every project holds its reservation until it is deleted, scaled to zero or not
+  (or stopped: a stopped project holds nothing of a pay-as-you-go region until a deploy admits it
+  again, [Region capacity and admission](architecture.md#region-capacity-and-admission)), so a run that
+  kept every case would need the FaaS overcommit budget of all of them at once (the 33 cases of the
+  main matrix: 10750m CPU, more than a 4-vCPU runner's 2860m × 3). The deploy cases of the main
+  matrix, the sandbox cases and the runtime plugin cases therefore run in waves
+  (`E2eTestWavesTrait`): before each wave the run measures the region capacity again and takes the
+  next cases while one pod of each (the size admission counts, plus the e2e's curl / XADD pod on a
+  region without dedicated workers) fits the capacity minus what the region still holds and what
+  its stopped projects would hold again (the capacity endpoint's `with_stopped`: a case that stops a
+  project and resumes it later finds its room free). A wave is
+  built and deployed case by case, verified, and its projects are deleted; the next wave starts
+  once their pods are gone. Everything a wave wakes up runs at the same time, and no create is
+  refused for the budget. The first ready HTTP function stays for the shell tests; the node
+  placement check also covers the project pods noted before each wave was deleted. The log names
+  each wave (`Wave 2: tests 9–15, 2400m CPU / 1588 MB of 2510m CPU / … MB free`). With the 2860m
+  a GitHub-hosted runner's worker leaves for projects, the main matrix comes to five waves, the
+  sandbox cases to two and the runtime plugins to one
 - **Cleanup**: `docker compose down` + Kind cluster deletion (unless `--no-cleanup`); with `KIND_LOCK`,
   the lock is released only once the cluster is gone (the delete is retried; a cluster that cannot be
   deleted keeps the lock and the run says how to remove both). A run stopped from outside cleans up

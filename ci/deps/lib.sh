@@ -1,13 +1,22 @@
 # shellcheck shell=bash
-# The dependency test bot's shared functions (ci/deps-bump.sh, ci/deps-plan.sh, ci/deps-land.sh and
-# their tests). This file is sourced, so it has no shebang.
+# The dependency test bot's shared functions (ci/deps-bump.sh, ci/deps-plan.sh and their tests).
+# This file is sourced, so it has no shebang.
 #
 # The bot moves one upstream dependency of a region at a time (a Helm chart RunR installs, or the
-# Knative minors RunR offers) to a newer version on `next`, runs that dependency's suites, and
-# lands the change only when they pass (.github/workflows/deps-test.yml, docs/development.md →
-# Dependency test bot). The charts and their pins come from the DEPS rows of
-# ci/check-helm-releases.sh, the check that files the issues the bot works on; DEPS_BOT below adds
-# what the bot needs on top of them.
+# Knative minors RunR offers) to a newer version on the last release tag, runs that dependency's
+# suites on the release it would make, and releases it as the next patch version only when they
+# pass (.github/workflows/deps-test.yml, ci/deps-release.sh, docs/development.md → Dependency test
+# bot). The charts and their pins come from the DEPS rows of ci/check-helm-releases.sh, the check
+# that files the issues the bot works on; DEPS_BOT below adds what the bot needs on top of them.
+#
+# A new kind of dependency adds what tells it apart and nothing of the release: the issue title the
+# plan reads (ci/deps-plan.sh), its DEPS_BOT row with its suites, and its bump in ci/deps-bump.sh
+# (the pin moved, its CHANGELOG line under [Unreleased] through deps_changelog_add, its suites in
+# suites.json). ci/deps-release.sh releases any bump that is one commit on the tag with a line
+# under [Unreleased], whatever it moved. The package dependencies (composer, npm, Go modules,
+# GitHub Actions pins, Dockerfile base images) are groups of ci/deps/packages.sh (DEPS_PKG), found
+# by ci/check-package-releases.sh and moved by ci/deps/bump-packages.sh; a bump of theirs that
+# ships nothing lands on next only (ci/deps-release.sh land).
 
 DEPS_ROOT="${DEPS_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
 
@@ -89,10 +98,10 @@ deps_bot_row() {
   return 1
 }
 
-# deps_names — every dependency the bot can move
+# deps_names — every dependency the bot can move: the charts, Knative and the package groups
 deps_names() {
   local row
-  for row in "${DEPS_BOT[@]}"; do echo "${row%%|*}"; done
+  for row in "${DEPS_BOT[@]}" "${DEPS_PKG[@]}"; do echo "${row%%|*}"; done
 }
 
 # deps_read_pin FILE CONSTANT — the version a constant of a PHP file holds (as
@@ -205,3 +214,6 @@ deps_changelog_add() {
   cat "$out" > "$file"
   rm -f -- "$out"
 }
+
+# shellcheck source=ci/deps/packages.sh
+source "${DEPS_ROOT}/ci/deps/packages.sh"

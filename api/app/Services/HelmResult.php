@@ -57,6 +57,26 @@ class HelmResult
         return false;
     }
 
+    /**
+     * The chart URL whose download failed on the way, not on the chart: Helm's "failed to fetch
+     * <URL> : 504 Gateway Timeout" (any 5xx or a 429), or a request to the chart's .tgz that timed
+     * out or lost its connection. Null for any other result (a 404 is a chart that is not there).
+     */
+    public function chartDownloadFailure(): ?string
+    {
+        if ($this->success) {
+            return null;
+        }
+        if (preg_match('#failed to fetch (https?://\S+?)\s*:\s*(5\d\d|429)\b#', $this->error, $m)) {
+            return $m[1];
+        }
+        if (preg_match('#"(https?://[^"\s]+\.tgz)":?\s[^\n]*(timeout|connection reset by peer|unexpected EOF|TLS handshake timeout)#i', $this->error, $m)) {
+            return $m[1];
+        }
+
+        return null;
+    }
+
     /** The error on one line (Helm writes "Error: 1 error occurred:\n\t* …"), for a log line. */
     public function errorLine(int $width = 300): string
     {

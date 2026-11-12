@@ -130,6 +130,41 @@ class BuildDeadlineTest extends TestCase
         Bus::assertDispatchedTimes(CheckBuildReadyJob::class, 1);
     }
 
+    /**
+     * Kaniko tries a failed pull again (BuildManifests::REGISTRY_RETRIES) and logs nothing while that
+     * try waits for the registry: the base image is still the line before its retry warnings.
+     */
+    public function test_a_build_out_of_time_while_it_retries_its_base_image_is_built_once_more(): void
+    {
+        $warning = fn (int $s, string $after) => "\e[33mWARN\e[0m[00{$s}] Retrying operation after {$after} due to GET http://10.43.0.5:5000/v2/ghcr.io/brf-tech/runr/exec-java/manifests/25: unexpected status code 503 Service Unavailable";
+        $version = $this->failedBuild('DeadlineExceeded', implode("\n", [
+            "\e[36mINFO\e[0m[0003] Retrieving image 10.43.0.5:5000/ghcr.io/brf-tech/runr/exec-java:25 from registry 10.43.0.5:5000",
+            $warning(10, '1s'), $warning(11, '2s'), $warning(14, '4s'), $warning(18, '8s'), $warning(26, '16s'),
+        ]));
+        $this->mock(FunctionBuildService::class)->shouldReceive('submitBuild')->once();
+        Bus::fake([CheckBuildReadyJob::class]);
+
+        (new CheckBuildReadyJob($version, 12, 'user-1'))->handle();
+
+        $this->assertSame('building', $version->fresh()->build_status);
+        $this->assertStringContainsString('fetched the base image 10.43.0.5:5000/ghcr.io/brf-tech/runr/exec-java:25 for the first time', $version->fresh()->build_error);
+    }
+
+    public function test_a_build_out_of_time_while_it_retries_its_push_is_not_built_again(): void
+    {
+        $this->mock(FunctionBuildService::class)->shouldNotReceive('submitBuild');
+        Bus::fake([CheckBuildReadyJob::class]);
+        $version = $this->failedBuild('DeadlineExceeded', implode("\n", [
+            "\e[36mINFO\e[0m[0290] Pushing image to 10.43.0.5:5000/runr-builds/orders:v4",
+            "\e[33mWARN\e[0m[0299] Retrying operation after 1s due to PUT http://10.43.0.5:5000/v2/runr-builds/orders/manifests/v4: unexpected status code 503 Service Unavailable",
+        ]));
+
+        (new CheckBuildReadyJob($version, 12))->handle();
+
+        $this->assertSame('failed', $version->fresh()->build_status);
+        Bus::assertNotDispatched(CheckBuildReadyJob::class);
+    }
+
     public function test_a_build_out_of_time_in_its_own_steps_is_not_built_again(): void
     {
         $this->mock(FunctionBuildService::class)->shouldNotReceive('submitBuild');

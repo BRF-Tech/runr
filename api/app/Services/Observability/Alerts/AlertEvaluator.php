@@ -8,6 +8,7 @@ use App\Models\Observability\ProjectObservabilitySetting;
 use App\Models\Observability\RegionTracingConfig;
 use App\Models\Project;
 use App\Services\Observability\TenantScope;
+use App\Services\ResourceThresholdService;
 
 /**
  * Rule evaluation:
@@ -107,6 +108,9 @@ class AlertEvaluator
         $regionId = (string) ($data['region_id'] ?? '');
         $resource = (string) ($data['resource_type'] ?? '');
         $level = $notification->level;
+        // The region with its stopped projects back (ResourceThresholdService::WITH_STOPPED): an
+        // alert of its own, which says what to add
+        $withStopped = ($data['basis'] ?? null) === ResourceThresholdService::WITH_STOPPED;
 
         foreach ($this->alerts->rulesFor('resource_threshold') as $rule) {
             if ($rule->region_id && $rule->region_id !== $regionId) {
@@ -122,14 +126,14 @@ class AlertEvaluator
 
             $this->alerts->fire(
                 $rule,
-                "region:{$regionId}:{$resource}",
+                "region:{$regionId}:{$resource}".($withStopped ? ':'.ResourceThresholdService::WITH_STOPPED : ''),
                 $notification->title,
-                __('observability.alerts.resource_text', [
+                __($withStopped ? 'observability.alerts.resource_text_with_stopped' : 'observability.alerts.resource_text', [
                     'region' => $data['region_name'] ?? $regionId,
                     'resource' => strtoupper($resource) === 'CPU' ? 'CPU' : 'Memory',
                     'percentage' => $data['percentage'] ?? '?',
                     'threshold' => $data['threshold'] ?? '?',
-                ]),
+                ]).($withStopped && $notification->body ? ' '.$notification->body : ''),
                 [
                     'region' => (string) ($data['region_name'] ?? ''),
                     'value' => ($data['percentage'] ?? '?').' %',

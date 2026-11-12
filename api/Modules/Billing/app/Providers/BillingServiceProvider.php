@@ -7,6 +7,7 @@ use App\Mcp\Tools\ToolRegistry;
 use App\Models\KnativeRegion;
 use App\Models\Project;
 use App\Services\Bindings\BindingTenancy;
+use App\Services\Helpers\StoppedCapacity;
 use App\Services\OrgTransfer\Sections\SectionRegistry;
 use App\Services\Rightsizing\Savings;
 use App\Support\Projects\DeployIntent;
@@ -151,6 +152,9 @@ class BillingServiceProvider extends ServiceProvider
     {
         ProjectAdmission::guardDeploys(fn (Project $project, DeployIntent $intent) => app(Admission::class)->guardDeploy($project, $intent));
         ProjectAdmission::limitConfigs(fn (Project $project, ?string $regionId, array $config) => app(Admission::class)->limitConfig($project, $regionId, $config));
+        // A fixed region keeps a stopped project's capacity reservation: its allocation stays
+        // billed, and its share is lent to the organization's running projects (Admission)
+        StoppedCapacity::holdWhen(fn (string $regionId) => app(RegionTypes::class)->isFixed($regionId));
         // The timed warmer's preview: billing type and the cost of its warm hours (docs/scaling.md)
         WarmEstimates::priceWith(fn (?string $regionId, float $vcpuHours, float $memoryGbHours, string $trigger, ?Authenticatable $viewer) => app(WarmEstimate::class)->price($regionId, $vcpuHours, $memoryGbHours, $trigger, $viewer));
         Savings::priceWith(fn (Project $project, array $change) => app(RightsizingPricer::class)->price($project, $change));
@@ -195,6 +199,7 @@ class BillingServiceProvider extends ServiceProvider
     public static function unwire(): void
     {
         ProjectAdmission::reset();
+        StoppedCapacity::holdWhen(null);
         WarmEstimates::priceWith(null);
         Savings::reset();
         if (class_exists(TenantRegionShares::class)) {

@@ -2,10 +2,15 @@
 
 namespace Tests\Feature;
 
+use App\Models\KnativeRegion;
 use App\Services\Manifests\BuildManifests;
 use App\Services\Manifests\ZotManifests;
+use App\Services\Runtimes\RuntimeImageBuildService;
+use App\Services\Runtimes\RuntimeManifest;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Bus;
 use Tests\Concerns\FakesBuildCluster;
+use Tests\Concerns\RegistersRuntimes;
 use Tests\TestCase;
 
 /**
@@ -15,7 +20,7 @@ use Tests\TestCase;
  */
 class BuildBaseImagesTest extends TestCase
 {
-    use FakesBuildCluster, RefreshDatabase;
+    use FakesBuildCluster, RefreshDatabase, RegistersRuntimes;
 
     protected function setUp(): void
     {
@@ -70,6 +75,32 @@ class BuildBaseImagesTest extends TestCase
 
         $this->assertSame(['ghcr.io/brf-tech/runr/exec-python:3.14', 'ghcr.io/brf-tech/runr/exec-python:3.14'], $this->fromLines());
         $this->assertFalse(collect($this->calls)->contains(fn ($c) => str_contains($c['path'], 'runr-zot-config')));
+    }
+
+    /**
+     * Zot answers a pull of a base image it fails to fetch from upstream with 503 or 404, and a
+     * build without retries ended on that first answer ("unable to complete operation after 0
+     * attempts"). Both Kaniko Jobs try the pull, the layers and the push again with backoff.
+     */
+    public function test_a_failed_pull_through_the_registry_is_tried_again(): void
+    {
+        $retries = ['--image-download-retry=5', '--image-fs-extract-retry=5', '--push-retry=5'];
+        $this->assertSame($retries, BuildManifests::retryArgs());
+
+        $this->submit($this->buildVersion('python', null));
+        $args = $this->created('jobs')['spec']['template']['spec']['containers'][0]['args'];
+        foreach ($retries as $flag) {
+            $this->assertContains($flag, $args, 'function build');
+        }
+
+        $runtime = $this->registerRuntime($this->qManifest(), $this->qFiles());
+        $this->calls = [];
+        Bus::fake();
+        app(RuntimeImageBuildService::class)->ensure($runtime, (new RuntimeManifest($runtime->manifest))->version('1.0'), KnativeRegion::first());
+        $args = $this->created('jobs')['spec']['template']['spec']['containers'][0]['args'];
+        foreach ($retries as $flag) {
+            $this->assertContains($flag, $args, 'runtime image build');
+        }
     }
 
     public function test_kaniko_image_is_a_pinned_release(): void

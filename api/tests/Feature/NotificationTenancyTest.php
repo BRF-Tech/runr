@@ -23,7 +23,8 @@ use Tests\TestCase;
  * Multi-tenant: an organization's notifications and its members' read and deleted state of the
  * shared ones live in its schema (TenantMigrations 0007 and 0110), so one member's mark all as
  * read or delete all changes neither another member's view nor another organization's.
- * TenancyNotificationController keeps resource thresholds to the platform administrators.
+ * TenancyNotificationController keeps resource thresholds to the platform administrators and the
+ * organization's members who manage its regions (unless they switched them off in the app).
  * Runs on SQLite and on PostgreSQL (DB_CONNECTION=pgsql).
  */
 class NotificationTenancyTest extends TestCase
@@ -69,15 +70,40 @@ class NotificationTenancyTest extends TestCase
         parent::tearDown();
     }
 
-    private function member(Tenant $tenant): User
+    private function member(Tenant $tenant, string $role = 'developer'): User
     {
         $user = User::factory()->create(['username' => 'u'.Str::lower(Str::random(10))]);
         DB::connection('central')->table('tenant_users')->insert([
-            'tenant_id' => $tenant->id, 'user_id' => $user->id, 'role' => 'developer',
+            'tenant_id' => $tenant->id, 'user_id' => $user->id, 'role' => $role,
             'created_at' => now(), 'updated_at' => now(),
         ]);
 
         return $user;
+    }
+
+    public function test_the_capacity_alarm_of_an_organization_is_for_who_manages_its_regions(): void
+    {
+        $this->notify($this->acme, 'acme-dc: CPU 82%', 'resource_threshold');
+        $this->notify($this->acme, 'eu moved');
+        $admin = $this->member($this->acme, 'admin');
+        $quiet = $this->member($this->acme, 'owner');
+        // the organization's preferences, in its schema: the owner switched the capacity alarm off in the app
+        $this->acme->run(function () use ($quiet) {
+            Schema::create('notification_preferences', function ($table) {
+                $table->id();
+                $table->unsignedBigInteger('user_id');
+                $table->string('type');
+                $table->string('channel');
+                $table->boolean('enabled')->default(true);
+                $table->timestamps();
+            });
+            DB::table('notification_preferences')->insert(['user_id' => $quiet->id, 'type' => 'resource_threshold', 'channel' => 'in_app', 'enabled' => false]);
+        });
+
+        $this->assertSame(['list' => ['acme-dc: CPU 82%' => false, 'eu moved' => false], 'unread' => 2], $this->viewOf($this->acme, $admin));
+        $this->assertSame(['list' => ['eu moved' => false], 'unread' => 1], $this->viewOf($this->acme, $quiet));
+        $this->assertSame(['list' => ['eu moved' => false], 'unread' => 1], $this->viewOf($this->acme, $this->ada), 'a developer manages no regions');
+        $this->assertSame(['list' => ['acme-dc: CPU 82%' => false, 'eu moved' => false], 'unread' => 2], $this->viewOf($this->acme, $this->root));
     }
 
     private function notify(Tenant $tenant, string $title, string $type = 'region.migrated'): string

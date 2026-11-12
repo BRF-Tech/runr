@@ -412,7 +412,8 @@ class ZotRegistryService
      * only when the config changed. manifestCheckInterval is written only for a Zot image that
      * knows the key (older ones refuse to start on it), Docker Hub's content filter and http.compat
      * only for one that needs them (ZotManifests::surfacesSyncErrors(): an older one is not
-     * restarted for them; upgrade() writes them with the new version). The restart adds the
+     * restarted for them; upgrade() writes them with the new version), the ghcr.io retries only
+     * along with another change (ZotManifests::GHCR_MAX_RETRIES). The restart adds the
      * toleration of the dedicated-worker taint to a Zot without it, as an install of this release
      * has it.
      *
@@ -445,7 +446,8 @@ class ZotRegistryService
             return null;
         }
 
-        $what = "{$cmRef}: sync upstreams ghcr.io (→ {registry}/ghcr.io/, on demand"
+        $what = "{$cmRef}: sync upstreams ghcr.io (→ {registry}/ghcr.io/, on demand, "
+            .ZotManifests::GHCR_MAX_RETRIES.' retries '.ZotManifests::GHCR_RETRY_DELAY.' apart'
             .($interval ? ', manifestCheckInterval '.ZotManifests::GHCR_MANIFEST_CHECK_INTERVAL : '; Zot older than '.ZotManifests::MANIFEST_CHECK_INTERVAL_SINCE.': no manifestCheckInterval')
             .') + Docker Hub';
         $workloadRef = "{$kind} {$ns}/".self::ZOT_RELEASE_NAME;
