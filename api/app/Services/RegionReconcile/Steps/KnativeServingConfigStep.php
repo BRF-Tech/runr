@@ -2,9 +2,11 @@
 
 namespace App\Services\RegionReconcile\Steps;
 
+use App\Services\Ai\Gpu\GpuSupportManifests;
 use App\Services\KnativeInstallService;
 use App\Services\RegionReconcile\ClusterGroup;
 use App\Services\RegionReconcile\ReconcileStep;
+use App\Services\RegionReconcile\ReconcileTarget;
 use RuntimeException;
 
 /**
@@ -31,13 +33,19 @@ final class KnativeServingConfigStep implements ReconcileStep
      * existing region. Adding a section here = one line; the next `region:reconcile` (every Helm
      * upgrade) merge-patches it into all regions.
      *
+     * features: the pod spec features every region keeps enabled (KnativeInstallService::
+     * baseKnativeFeatures(): the model volume of model services among them), and those of GPU and
+     * model workloads where a region of the Serving namespace runs GPUs — only these keys, set to
+     * enabled; a feature the region turned off itself stays off.
+     *
      * @return array<string, array<string, string>>
      */
-    public static function configPatch(): array
+    public static function configPatch(bool $gpu = false): array
     {
         return [
             'gc' => KnativeInstallService::configGcValues(),
             'deployment' => KnativeInstallService::configDeploymentValues(),
+            'features' => KnativeInstallService::baseKnativeFeatures() + ($gpu ? GpuSupportManifests::knativeFeatures() : []),
         ];
     }
 
@@ -53,7 +61,9 @@ final class KnativeServingConfigStep implements ReconcileStep
                 continue;
             }
 
-            $patch = self::outdatedSections($cr['spec']['config'] ?? []);
+            $gpu = collect($cluster->targets)->contains(fn (ReconcileTarget $t) => ($t->region->knative_serving_namespace ?: 'knative-serving') === $ns
+                && ($t->region->gpu_mode ?? 'none') !== 'none');
+            $patch = self::outdatedSections($cr['spec']['config'] ?? [], $gpu);
             if (! $patch) {
                 continue;
             }
@@ -80,11 +90,11 @@ final class KnativeServingConfigStep implements ReconcileStep
      * @param  array<string, mixed>  $current
      * @return array<string, array<string, string>>
      */
-    public static function outdatedSections(array $current): array
+    public static function outdatedSections(array $current, bool $gpu = false): array
     {
         $patch = [];
 
-        foreach (self::configPatch() as $section => $values) {
+        foreach (self::configPatch($gpu) as $section => $values) {
             $have = is_array($current[$section] ?? null) ? $current[$section] : [];
 
             foreach ($values as $key => $value) {

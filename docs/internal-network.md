@@ -106,14 +106,22 @@ and the existing ones stop admitting calls at once; they work again when the set
 back on.
 
 A change reaches the project's region at once and is checked within ten seconds (the authz reads
-the policies every ten seconds).
+the policies every ten seconds). A change the region's API server does not take (refused, failed,
+not reached) is saved, answered with a `warning` and tried again for about twelve minutes; until it
+is there a removed or deleted caller is still admitted and an added one refused. The project's
+next deploy, or `region:reconcile` (below), writes it after that.
 
 ### Model services, queue triggers and previews
 
 - **Model services** ([huggingface.md](huggingface.md#binding-models-to-functions)) are cluster-local
   Knative Services on the internal network too. Their allow list is the projects bound to them; a
-  binding added or removed reaches the region at once. A bound project calls the service as
-  before, at `RUNR_MODEL_<ALIAS>_URL` without any header: its pods are known by their address.
+  binding added or removed reaches the region at once, also one made while the service deploys,
+  and so does a bound project renamed (its new name) or deleted (a later project of its name is
+  not admitted). A write the region's API server does not take (refused, failed, not reached) is
+  tried again for about twelve minutes; until it is there the bound project is refused (403).
+  `region:reconcile` writes a model service's allow list after that. A bound project calls the
+  service as before, at `RUNR_MODEL_<ALIAS>_URL` without any header: its pods are known by their
+  address.
 - **Queue triggers and the event gateway** ([triggers.md](triggers.md)) deliver each event as the
   project: its pod's address, and the project's `RUNR_INTERNAL_TOKEN` in `X-Runr-Internal-Token`.
 - **Environments** ([environments.md](environments.md)) are workloads of their own on the internal
@@ -256,7 +264,9 @@ releases there, and they enforce afterwards like a new one:
    pods of the projects listed, before anything refers to it;
 2. every Knative Service RunR runs gets its policy — the internal name, the project's allow list
    and access mode from the database, a model service its bound projects, the region demo's
-   backend its frontend — and every project its `runr.internal` route;
+   backend its frontend — and every project its `runr.internal` route. A model service or a
+   project's own Knative Service on the internal network already gets its allow list again when
+   it is not the database's (a change whose write did not reach the region);
 3. then the region Traefik's private entry point gets the Middlewares, once `private-ingress` has
    moved it (a Helm upgrade with the release's values; the Traefik pods roll once): enforcement
    starts with every policy in place.

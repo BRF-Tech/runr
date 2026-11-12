@@ -379,7 +379,8 @@ info.
 A model service is on the region's [internal network](internal-network.md): it admits the projects
 bound to it — a bound project calls it at its URL as before, its pods are known by their address —
 and refuses every other caller. A binding added or removed reaches the service's allow list at
-once; the playground calls as RunR.
+once; when the region's API server does not take the write, RunR tries it again for about twelve
+minutes, and `region:reconcile` writes it after that. The playground calls as RunR.
 
 A [global project](global-projects.md#what-a-global-project-cannot-use) cannot bind a model
 service: the service is cluster-local in one region and admits that cluster's callers only.

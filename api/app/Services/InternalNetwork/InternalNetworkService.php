@@ -2,6 +2,8 @@
 
 namespace App\Services\InternalNetwork;
 
+use App\Jobs\Ai\SyncModelServiceCallersJob;
+use App\Jobs\ApplyProjectNetworkJob;
 use App\Models\AiModelBinding;
 use App\Models\AiModelService;
 use App\Models\KnativeRegion;
@@ -9,6 +11,7 @@ use App\Models\Project;
 use App\Models\ProjectEnvironment;
 use App\Models\ProjectInternalCaller;
 use App\Models\ProjectRegion;
+use App\Services\Ai\Models\ModelServiceDeployer;
 use App\Services\Environments\EnvironmentProject;
 use App\Services\Environments\EnvironmentScope;
 use App\Services\GatewayService;
@@ -201,7 +204,11 @@ class InternalNetworkService
         }
     }
 
-    /** apply(), a region it does not reach noted in $warning */
+    /**
+     * apply(), a region it does not reach noted in $warning and tried again (ApplyProjectNetworkJob):
+     * else a removed or deleted caller stays admitted — a later project of its name too — until the
+     * project's next deploy.
+     */
     private function applyOrWarn(Project $project): void
     {
         $this->warning = null;
@@ -210,6 +217,7 @@ class InternalNetworkService
         } catch (Throwable $e) {
             Log::warning('Internal network not applied', ['project' => $project->slug, 'error' => $e->getMessage()]);
             $this->warning = __('api.network.not_applied', ['error' => $e->getMessage()]);
+            ApplyProjectNetworkJob::dispatch((string) EnvironmentScope::base($project)->getKey())->delay(now()->addSeconds(ApplyProjectNetworkJob::FIRST_TRY_SECONDS));
         }
     }
 
@@ -305,7 +313,9 @@ class InternalNetworkService
 
         $k8s ??= new KubernetesClient($region->kubeconfig);
         $ns = $this->namespace($region);
-        $ksvc = $k8s->getResourceStatus('serving.knative.dev/v1', 'Service', $project->slug, $ns);
+        // a 404 only: a failed read is no missing Knative Service (its routes stay, the allowlist
+        // route of its public host first of all)
+        $ksvc = $k8s->getResourceOrFail('serving.knative.dev/v1', 'Service', $project->slug, $ns);
         if (! $ksvc) {
             $this->removeRoutes($project, $k8s);
 
@@ -391,27 +401,69 @@ class InternalNetworkService
     }
 
     /**
-     * A model service's callers are the projects bound to it: written on its Knative Service when
-     * a binding comes or goes (and at its deploy, ModelServiceManifests).
+     * A model service's callers are the projects bound to it: on its Knative Service from its
+     * deploy (ModelServiceManifests), written there when a binding comes or goes, and after a
+     * deploy whose manifest was built before a binding made meanwhile. The region's authz reads
+     * them there and nowhere else: a write the region does not take is tried again
+     * (SyncModelServiceCallersJob), else the bound project would be refused (403) and an unbound
+     * one admitted until the service's next deploy.
      */
     public function syncModelService(AiModelService $service): void
     {
+        if (! $this->writeModelCallers($service)) {
+            SyncModelServiceCallersJob::dispatch((string) $service->getKey())->delay(now()->addSeconds(SyncModelServiceCallersJob::FIRST_TRY_SECONDS));
+        }
+    }
+
+    /**
+     * syncModelService() of the model services a project was bound to when its internal name
+     * changed: renamed (its new name), deleted (its bindings gone with it) — a later project of
+     * its former name is not admitted.
+     *
+     * @param  list<string>  $serviceIds
+     */
+    public function syncModelServices(array $serviceIds): void
+    {
+        foreach (AiModelService::query()->whereKey($serviceIds)->with('region')->get() as $service) {
+            $this->syncModelService($service);
+        }
+    }
+
+    /**
+     * Writes the internal-network metadata of the model service's Knative Service. True when it
+     * is there or the service has no Knative Service (its deploy writes it); false when the
+     * region did not take it: the API server not reached, the write refused, or the Knative
+     * Service not read (a failed read is no missing Knative Service). Knative validates the whole
+     * Knative Service on a metadata change too: a refusal for a pod spec feature that is off in its
+     * view (the model volume's) enables the features again for the next try.
+     */
+    public function writeModelCallers(AiModelService $service): bool
+    {
         $region = $service->region;
         if (! $region || $region->is_demo || ! $region->kubeconfig) {
-            return;
+            return true;
         }
 
         try {
             $k8s = new KubernetesClient($region->kubeconfig);
-            if (! $k8s->getResourceStatus('serving.knative.dev/v1', 'Service', $service->service_name, $service->namespace())) {
-                return;
+            if (! $k8s->getResourceOrFail('serving.knative.dev/v1', 'Service', $service->service_name, $service->namespace())) {
+                return true;
             }
-            $k8s->mergePatch('serving.knative.dev/v1', 'Service', $service->service_name, $service->namespace(), [
+            if ($k8s->mergePatch('serving.knative.dev/v1', 'Service', $service->service_name, $service->namespace(), [
                 'metadata' => self::modelMetadata($service),
-            ]);
+            ])) {
+                return true;
+            }
+            $error = (string) $k8s->lastApplyError();
+            Log::warning('Model service callers not updated', ['service' => $service->id, 'error' => mb_substr($error, 0, 500)]);
+            if (ModelServiceDeployer::refusedForAFeature($error)) {
+                ModelServiceDeployer::reassertFeatures($k8s, $service);
+            }
         } catch (Throwable $e) {
             Log::warning('Model service callers not updated', ['service' => $service->id, 'error' => $e->getMessage()]);
         }
+
+        return false;
     }
 
     /** The internal-network metadata of a model service's Knative Service */

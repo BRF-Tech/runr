@@ -1,5 +1,5 @@
 # The repository's checks: on every pull request, every push to main, and by hand for any branch.
-# The dependency audits (audit.yml), the long end-to-end suites (e2e.yml) and the upstream release
+# The dependency audits (dependency-audit.yml), the long end-to-end suites (e2e.yml) and the upstream release
 # checks (upstream-releases.yml) run in workflows of their own; the release images come from
 # release-images.yml. runtime/test/ci_workflows_test.sh keeps every check here.
 name: CI

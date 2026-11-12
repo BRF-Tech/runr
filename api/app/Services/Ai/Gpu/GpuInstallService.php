@@ -263,7 +263,16 @@ class GpuInstallService
         $configMap = $k8s->getResourceStatus('v1', 'ConfigMap', 'config-features', $servingNs);
         $inForce = self::featuresInForce($configMap, $features);
 
-        $cr = $k8s->getResourceStatus('operator.knative.dev/v1beta1', 'KnativeServing', 'knative-serving', $servingNs);
+        try {
+            // a 404 only: a CR that was not read is no install without the operator, whose
+            // config-features a direct patch would change behind the operator's back (it writes the
+            // ConfigMap from the CR again)
+            $cr = $k8s->getResourceOrFail('operator.knative.dev/v1beta1', 'KnativeServing', 'knative-serving', $servingNs);
+        } catch (\Throwable $e) {
+            Log::warning('Knative pod spec features not enabled: the KnativeServing CR was not read', ['region' => $region->name, 'error' => $e->getMessage()]);
+
+            return;
+        }
         if ($cr) {
             $k8s->mergePatch('operator.knative.dev/v1beta1', 'KnativeServing', 'knative-serving', $servingNs, [
                 'spec' => ['config' => ['features' => $features]],

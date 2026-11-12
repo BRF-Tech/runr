@@ -7,7 +7,7 @@
 #     with the coverage floor of docs/development.md, Larastan, the API reference with every module
 #     (api/docker/api-docs.sh --check), the UI lint, unit tests with coverage, build and mocked e2e,
 #     Go and the SDKs (the Node ones, the Python ones);
-#   - audit.yml audits the npm and Composer dependencies on main, every day and on pull requests
+#   - dependency-audit.yml audits the npm and Composer dependencies on main, every day and on pull requests
 #     that touch a lockfile; production npm dependencies block, dev tooling and Composer report;
 #   - e2e.yml runs the Kind suite (kind-suite.yml) and the UI suite against the dev stack every
 #     week and by hand, never on a pull request; ci.yml's API and UI checks and e2e.yml's Kind and
@@ -68,7 +68,7 @@ has() { grep -qF -- "$2" <<<"$1" || fail "$3"; }
 
 # --- GitHub Actions is the only CI ------------------------------------------------------------------
 [ -e "$root/.gitlab-ci.yml" ] && fail ".gitlab-ci.yml exists: GitHub Actions is the repository's only CI"
-for f in ci.yml audit.yml e2e.yml upstream-releases.yml release-images.yml deps-test.yml kind-suite.yml api-tests.yml ui-tests.yml ui-stack-suite.yml; do
+for f in ci.yml dependency-audit.yml e2e.yml upstream-releases.yml release-images.yml deps-test.yml kind-suite.yml api-tests.yml ui-tests.yml ui-stack-suite.yml; do
   [ -f "$wfdir/$f" ] || fail "no .github/workflows/${f}"
 done
 gitlab="$(grep -rnE 'GITLAB_TOKEN|gitlab-ci-token|CI_SERVER_URL|CI_PROJECT_(ID|PATH|DIR)|CI_DEFAULT_BRANCH|CI_PIPELINE_SOURCE|SCHEDULED_JOB|\.gitlab-ci\.yml' \
@@ -159,25 +159,25 @@ doc_min="$(grep -oE 'artisan test --compact --coverage --min=[0-9]+' "$root/docs
 [ -n "$ci_min" ] && [ "$ci_min" = "$doc_min" ] || fail "the API coverage floor of api-tests.yml (${ci_min}) is not docs/development.md's (${doc_min})"
 echo "ok - ci.yml: gitleaks, reqs mirror, Dockerfiles + runtime/test, Helm chart, Pint, PHPUnit (--min=${ci_min}), Larastan, API reference (every module), UI (ui-tests.yml, Vitest's report), UI e2e, Go, the Node and Python SDKs"
 
-# --- audit.yml --------------------------------------------------------------------------------------
-audit="$wfdir/audit.yml"
+# --- dependency-audit.yml --------------------------------------------------------------------------------------
+audit="$wfdir/dependency-audit.yml"
 on="$(block "$audit" on)"
-has "$on" 'branches: [main]' "audit.yml does not run on pushes to main"
-has "$on" "cron: '" "audit.yml has no schedule"
-grep -qxE '  workflow_dispatch:' <<<"$on" || fail "audit.yml cannot be run by hand"
+has "$on" 'branches: [main]' "dependency-audit.yml does not run on pushes to main"
+has "$on" "cron: '" "dependency-audit.yml has no schedule"
+grep -qxE '  workflow_dispatch:' <<<"$on" || fail "dependency-audit.yml cannot be run by hand"
 for f in vue/package-lock.json api/composer.lock; do
-  has "$on" "- ${f}" "audit.yml does not run on pull requests that touch ${f}"
+  has "$on" "- ${f}" "dependency-audit.yml does not run on pull requests that touch ${f}"
 done
 npm="$(job "$audit" npm)"
-has "$npm" 'npm audit --omit=dev --audit-level=high' "audit.yml does not audit the production npm dependencies"
+has "$npm" 'npm audit --omit=dev --audit-level=high' "dependency-audit.yml does not audit the production npm dependencies"
 grep -B2 -F 'run: npm audit --audit-level=high' <<<"$npm" | grep -qF 'continue-on-error: true' \
-  || fail "audit.yml: the dev tooling audit must report without failing"
+  || fail "dependency-audit.yml: the dev tooling audit must report without failing"
 grep -B1 -F 'run: npm audit --omit=dev' <<<"$npm" | grep -qF 'continue-on-error' \
-  && fail "audit.yml: the production npm audit must fail the run"
+  && fail "dependency-audit.yml: the production npm audit must fail the run"
 composer="$(job "$audit" composer)"
-has "$composer" 'composer audit --locked' "audit.yml does not audit composer.lock"
-has "$composer" 'continue-on-error: true' "audit.yml: the Composer audit must report without failing"
-echo "ok - audit.yml: npm (production blocking, dev tooling reported) and Composer (reported) on main, daily and on lockfile pull requests"
+has "$composer" 'composer audit --locked' "dependency-audit.yml does not audit composer.lock"
+has "$composer" 'continue-on-error: true' "dependency-audit.yml: the Composer audit must report without failing"
+echo "ok - dependency-audit.yml: npm (production blocking, dev tooling reported) and Composer (reported) on main, daily and on lockfile pull requests"
 
 # --- e2e.yml ----------------------------------------------------------------------------------------
 e2e="$wfdir/e2e.yml"
@@ -299,6 +299,19 @@ urls="$(grep -rnE 'git@[a-z0-9-]+\.[a-z0-9.-]+:[a-z0-9._-]+/|ssh://git@[a-z0-9-]
 grep -qF '^git@${host}:' "$root/ci/deps/ssh-key.sh" && grep -qF 'is no SSH URL of' "$root/ci/deps/ssh-key.sh" \
   || fail "ci/deps/ssh-key.sh does not check that the origin is an SSH URL of the pinned host"
 grep -qF 'GIT_SSH_COMMAND="$(bash ci/deps/ssh-key.sh' "$deps" || fail "deps-test.yml does not check the origin"
+# the bot's secrets are secrets of the environment release, which only main deploys to (a workflow
+# pushed to another branch cannot read them): exactly the bump and release jobs are in it, and every
+# secret but the GITHUB_TOKEN is in one of those two
+for j in bump release; do
+  grep -qxF '    environment: release' <<<"$(job "$deps" "$j")" || fail "deps-test.yml: the ${j} job is not in the environment release"
+done
+[ "$(grep -cE '^ +environment:' "$deps")" = 2 ] || fail "deps-test.yml: another job than bump and release in an environment"
+nontoken() { { grep -oE 'secrets\.[A-Za-z0-9_]+' || true; } | { grep -vxF secrets.GITHUB_TOKEN || true; } | wc -l; }
+[ "$(nontoken < "$deps")" = "$(( $(job "$deps" bump | nontoken) + $(job "$deps" release | nontoken) ))" ]   || fail "deps-test.yml: a secret other than the GITHUB_TOKEN outside the bump and release jobs (the environment release)"
+for wf in "$wfdir"/*.yml; do
+  [ "$wf" = "$deps" ] || ! grep -qE '^ +environment:' "$wf" || fail "$(basename "$wf"): a job in an environment (only deps-test.yml's bump and release)"
+done
+echo "ok - deps-test.yml: the bot's secrets only in the bump and release jobs, both in the environment release"
 # the deploy key: two steps (the clone, the release's push) get it, through ci/deps/ssh-key.sh, and
 # a step that always runs removes it after each; nothing prints it
 [ "$(grep -cF 'PUSH_KEY: ${{ secrets.GITLAB_RUNR_PUSH_KEY }}' "$deps")" = 2 ] || fail "deps-test.yml: the deploy key in other steps than the clone and the release's push"

@@ -161,7 +161,7 @@ return [
         'caller_invalid' => 'Name the caller by its internal name <project>.<organization> (lowercase letters, digits and dashes).',
         'cross_tenant_off' => 'The platform does not allow grants to projects of other organizations.',
         'workflow_public' => 'A workflow project stays public: the durable workflows engine calls it on its public URL.',
-        'not_applied' => 'Saved, but the region was not updated (:error). The next deploy of the project applies it.',
+        'not_applied' => 'Saved, but the region was not updated (:error). RunR tries again for a few minutes; the next deploy of the project applies it too.',
     ],
 
     'domain' => [

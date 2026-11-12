@@ -25,7 +25,7 @@
 # The bot's commits and tags carry the identity of RunR's public history (DEPS_BOT_NAME,
 # DEPS_BOT_EMAIL) and the trailer "RunR-Deps-Bot: <dep> <version>", which tells them apart
 # (ci/deps/check-attribution.sh). Its pushes made with the App's token start release-images.yml on
-# the tag; ci.yml and audit.yml skip a push whose head commit carries the trailer, and no other
+# the tag; ci.yml and dependency-audit.yml skip a push whose head commit carries the trailer, and no other
 # workflow runs on a push.
 #
 # The GITHUB_TOKEN stays read-only on contents: this repository's main and tags are pushed with a
@@ -154,6 +154,9 @@ jobs:
     name: Bumps on the last release
     needs: plan
     if: needs.plan.outputs.any == 'true'
+    # the deploy key is a secret of the environment release, which only main deploys to: a workflow
+    # pushed to another branch cannot read it (docs/development.md)
+    environment: release
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     outputs:
@@ -754,6 +757,9 @@ jobs:
     needs: [plan, bump, batch, batch-unit, batch-shell, batch-check, batch-ui, batch-ui-stack, batch-kind]
     # only on bumps that were made (the bump job's artifacts), or a resumed release
     if: ${{ always() && ((needs.bump.result == 'success' && needs.plan.outputs.any == 'true') || needs.plan.outputs.resume != '') }}
+    # the App's key, the deploy key, the signing key and the scrub pattern: secrets of the environment
+    # release, which only main deploys to
+    environment: release
     runs-on: ubuntu-24.04
     # the images of a release take a while (release-images.yml), the chart's publish too
     timeout-minutes: 330

@@ -144,7 +144,12 @@ What it puts on the cluster, in the namespace `runr-gpu`:
   `kubernetes.podspec-nodeselector`, `-affinity`, `-tolerations`, `-runtimeclassname`,
   `-persistent-volume-claim`, `-persistent-volume-write`, `-init-containers`, `-emptydir`. They
   stay enabled when the worker selection changes and are applied again when Knative Serving is
-  (re)installed on a GPU region.
+  (re)installed on a GPU region. The model volume's (`-persistent-volume-claim`,
+  `-persistent-volume-write`, with `-init-containers` and `-emptydir`) are on every region from its
+  install, and `region:reconcile` (step `knative-serving-config`) enables them again on every
+  region, the GPU set too on a GPU region; it only enables, a feature a region turned off itself
+  stays off. When Knative refuses a model service's Knative Service for one of them, RunR enables
+  them again before it tries the write again.
 
 ### GPU nodes only
 

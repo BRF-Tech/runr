@@ -32,8 +32,9 @@ use Throwable;
  *     listed, before anything refers to it;
  *  2. every Knative Service of RunR's gets its policy metadata — the internal name from its name
  *     and runr/tenant label, the allow list and access mode of the project in the database (the
- *     region demo's frontend granted on its backend), a model service its bound projects — and a
- *     project its runr.internal route;
+ *     region demo's frontend granted on its backend), a model service its bound projects — again
+ *     when its callers are not what the database says (a write that did not reach the region) —
+ *     and a project its runr.internal route;
  *  3. then the region Traefik's private entry point gets the Middlewares (RunR's Helm release,
  *     values reused, at the chart version it runs; the pods roll once) — once private-ingress
  *     moved it: enforcement starts with every policy in place.
@@ -123,9 +124,19 @@ final class InternalNetworkStep implements ReconcileStep
         );
     }
 
+    /** @return list<string> the callers of an internal-callers annotation, sorted */
+    private static function callerSet(?string $annotation): array
+    {
+        $callers = array_values(array_unique(array_filter(array_map('trim', explode(',', (string) $annotation)))));
+        sort($callers);
+
+        return $callers;
+    }
+
     /**
      * Policy metadata and runr.internal routes of the Knative Services RunR runs in a project
-     * namespace that have none yet.
+     * namespace that have none yet; the callers, too, of a model service that are not its
+     * bindings and of a project's own workload that are not its allow list.
      *
      * @param  list<ReconcileTarget>  $targets  the database contexts whose projects run there
      * @return list<string>
@@ -140,6 +151,8 @@ final class InternalNetworkStep implements ReconcileStep
         }
         $annotated = 0;
         $routed = 0;
+        /** @var list<string> $behind Knative Services whose allow list was refused (left as it was) */
+        $behind = [];
 
         foreach ($k8s->listResources('serving.knative.dev/v1', 'Service', $ns)['items'] ?? [] as $ksvc) {
             $name = (string) ($ksvc['metadata']['name'] ?? '');
@@ -163,7 +176,18 @@ final class InternalNetworkStep implements ReconcileStep
                     $labels['runr/tenant'] ?? null,
                 );
 
-            if (! isset($labels[M::LABEL_MANAGED]) || ! isset($annotations[M::ANNOTATION_NAME])) {
+            // callers the database no longer has are written here though the service is managed (a
+            // write that did not reach the region, its retries given up): a model service's are its
+            // bindings, a project's own workload's its allow list (an environment's maps the names
+            // to its environment, its deploy writes them)
+            $ownProject = $kind === 'project' && isset($labels['runr/project-id'], $projects[(string) $labels['runr/project-id']]);
+            $stale = match (true) {
+                $kind === 'model' && isset($models[$modelId]) => self::callerSet($annotations[M::ANNOTATION_CALLERS] ?? null) !== self::callerSet($models[$modelId]['annotations'][M::ANNOTATION_CALLERS]),
+                $ownProject => self::callerSet($annotations[M::ANNOTATION_CALLERS] ?? null) !== self::callerSet(implode(',', $projects[(string) $labels['runr/project-id']]['callers'])),
+                default => false,
+            };
+            $unmanaged = ! isset($labels[M::LABEL_MANAGED]) || ! isset($annotations[M::ANNOTATION_NAME]);
+            if ($unmanaged || $stale) {
                 // the project's own policy (a preview answers as its project); without a row, what
                 // the Knative Service carries
                 $policy = $projects[(string) ($projectId ?? $previewOf)] ?? [
@@ -177,9 +201,16 @@ final class InternalNetworkStep implements ReconcileStep
                     $meta['annotations'][M::ANNOTATION_KIND] = $kind;
                 }
                 if (! $dryRun && ! $k8s->mergePatch('serving.knative.dev/v1', 'Service', $name, $ns, ['metadata' => $meta])) {
-                    throw new RuntimeException("Knative Service {$ns}/{$name} was not annotated");
+                    // a Knative Service without its policy keeps the entry point from enforcing; one
+                    // whose callers are behind does not stop the region's other changes (its own
+                    // retries and the next run write it)
+                    if ($unmanaged) {
+                        throw new RuntimeException("Knative Service {$ns}/{$name} was not annotated");
+                    }
+                    $behind[] = "left alone: the allow list of Knative Service {$ns}/{$name} was not written (".mb_substr((string) $k8s->lastApplyError(), 0, 200).'); the next run writes it';
+                } else {
+                    $annotated++;
                 }
-                $annotated++;
             }
 
             if ($kind === 'project' && ! $k8s->getResourceStatus(ProjectDomainManifests::TRAEFIK_API, 'IngressRoute', M::internalRouteName($name), $ns)) {
@@ -202,7 +233,7 @@ final class InternalNetworkStep implements ReconcileStep
             $lines[] = ($dryRun ? 'would route' : 'routed')." {$routed} project(s) in {$ns} on <project>.<organization>.".InternalNetwork::DOMAIN;
         }
 
-        return $lines;
+        return [...$lines, ...$behind];
     }
 
     /**

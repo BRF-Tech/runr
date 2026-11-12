@@ -12,6 +12,8 @@ use App\Services\Ai\Gpu\GpuInstallService;
 use App\Services\Ai\Hub\HubToken;
 use App\Services\Helpers\ResourceReservation;
 use App\Services\InternalNetwork\InternalNetwork;
+use App\Services\InternalNetwork\InternalNetworkManifests;
+use App\Services\InternalNetwork\InternalNetworkService;
 use App\Services\KubernetesClient;
 use App\Support\DeployGate;
 use Illuminate\Support\Facades\Log;
@@ -121,6 +123,7 @@ class ModelServiceDeployer
             if (! $this->applyKnativeService($k8s, $manifest, $namespace, $service)) {
                 throw new \RuntimeException(__('ai.models.apply_failed', ['kind' => 'Knative Service']));
             }
+            $this->syncCallersBoundMeanwhile($service, $manifest);
 
             // The engine image onto the other nodes the service can run on (scale-out, a
             // rescheduled pod, a start from zero elsewhere)
@@ -148,8 +151,9 @@ class ModelServiceDeployer
      * turned them on it can still refuse the model volume ("Persistent volume claim support is
      * disabled") or a gated field ("must not set the field(s)") for a few seconds more than the
      * wait there gave it — on a busy cluster the first model service of a new region failed so.
-     * Such a refusal is tried again after FEATURE_RETRY_DELAYS (42 s in all), each retry logged;
-     * any other refusal fails at once.
+     * Such a refusal re-asserts the features (whatever turned them off in its view) and is tried
+     * again after FEATURE_RETRY_DELAYS (42 s in all), each retry logged; any other refusal fails
+     * at once.
      */
     private function applyKnativeService(KubernetesClient $k8s, array $manifest, string $namespace, AiModelService $service): bool
     {
@@ -165,12 +169,49 @@ class ModelServiceDeployer
             if (! self::refusedForAFeature($error) || $attempt === count(self::FEATURE_RETRY_DELAYS)) {
                 return false;
             }
-            Log::warning('Model service: Knative refused a pod spec feature it has not seen yet, applying again', [
+            Log::warning('Model service: Knative refused a pod spec feature it has not seen yet, enabling the features again and applying again', [
                 'service' => $service->name, 'attempt' => $attempt + 1, 'retry_in_seconds' => self::FEATURE_RETRY_DELAYS[$attempt], 'error' => mb_substr($error, 0, 500),
             ]);
+            self::reassertFeatures($k8s, $service);
         }
 
         return false;
+    }
+
+    /**
+     * Knative refused a model service's Knative Service for a pod spec feature that is off in
+     * its view: the features are enabled again (a merge patch of the keys, idempotent) before the
+     * write is tried again. Never fails the caller.
+     */
+    public static function reassertFeatures(KubernetesClient $k8s, AiModelService $service): void
+    {
+        $region = $service->region;
+        if (! $region) {
+            return;
+        }
+        try {
+            app(GpuInstallService::class)->enableKnativeFeatures($k8s, $region);
+        } catch (\Throwable $e) {
+            Log::warning('Model service: the Knative features were not enabled again', ['service' => $service->name, 'error' => $e->getMessage()]);
+        }
+    }
+
+    /**
+     * The callers of the internal network as the bindings are now, when they changed while the
+     * deploy ran: the manifest was built before the features' wait and the apply's retries, so a
+     * binding made meanwhile found no Knative Service to write to (the first deploy), or the apply
+     * wrote over it (a redeploy). Never fails the deploy: the service runs, its callers follow.
+     */
+    private function syncCallersBoundMeanwhile(AiModelService $service, array $manifest): void
+    {
+        try {
+            $applied = $manifest['metadata']['annotations'][InternalNetworkManifests::ANNOTATION_CALLERS] ?? null;
+            if ($applied !== InternalNetworkService::modelMetadata($service)['annotations'][InternalNetworkManifests::ANNOTATION_CALLERS]) {
+                app(InternalNetworkService::class)->syncModelService($service);
+            }
+        } catch (\Throwable $e) {
+            Log::warning('Model service callers bound during the deploy not written', ['service' => $service->name, 'error' => $e->getMessage()]);
+        }
     }
 
     /** A refusal of Knative's webhook for a pod spec feature that is off (in its view). */

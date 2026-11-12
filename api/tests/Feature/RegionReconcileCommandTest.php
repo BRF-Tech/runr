@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Models\KnativeRegion;
 use App\Models\Notification;
+use App\Services\Ai\Gpu\GpuSupportManifests;
 use App\Services\Helpers\RunrClusterIdentity;
 use App\Services\KnativeInstallService;
 use App\Services\RegionReconcile\ClusterGroup;
@@ -303,7 +304,7 @@ class RegionReconcileCommandTest extends TestCase
 
     // ── KnativeServing CR ────────────────────────────────────────────────────
 
-    public function test_knative_serving_cr_gets_a_merge_patch_of_gc_and_deployment_only(): void
+    public function test_knative_serving_cr_gets_a_merge_patch_of_gc_deployment_and_features_only(): void
     {
         $this->cluster('c1.test', ['config' => [
             'domain' => ['fn.example.test' => ''],
@@ -322,6 +323,7 @@ class RegionReconcileCommandTest extends TestCase
             'spec' => ['config' => [
                 'gc' => KnativeInstallService::configGcValues(),
                 'deployment' => KnativeInstallService::configDeploymentValues(),
+                'features' => KnativeInstallService::baseKnativeFeatures(),
             ]],
         ], json_decode($patches[0]['body'], true));
 
@@ -335,6 +337,8 @@ class RegionReconcileCommandTest extends TestCase
         $this->cluster('c1.test', ['config' => [
             'gc' => KnativeInstallService::configGcValues(),
             'deployment' => KnativeInstallService::configDeploymentValues(),
+            // another feature the region set itself: no reason to patch
+            'features' => KnativeInstallService::baseKnativeFeatures() + ['kubernetes.podspec-nodeselector' => 'disabled'],
         ]]);
         $this->fakeClusters();
         $this->region('fn', 'c1.test');
@@ -346,7 +350,60 @@ class RegionReconcileCommandTest extends TestCase
         $this->assertSame(['gc'], array_keys(KnativeServingConfigStep::outdatedSections([
             'gc' => ['min-non-active-revisions' => '1'] + KnativeInstallService::configGcValues(),
             'deployment' => KnativeInstallService::configDeploymentValues(),
+            'features' => KnativeInstallService::baseKnativeFeatures(),
         ])));
+    }
+
+    /**
+     * The model volume's pod spec features stay on every region whatever turned them off (CI run
+     * 43170135752: a model service refused "Persistent volume claim support is disabled" minutes
+     * after its own deploy had turned them on): every reconcile enables them again — only these
+     * keys, a feature the region turned off itself stays off.
+     */
+    public function test_the_model_volume_features_are_enabled_again_by_every_reconcile(): void
+    {
+        $this->cluster('c1.test', ['config' => [
+            'gc' => KnativeInstallService::configGcValues(),
+            'deployment' => KnativeInstallService::configDeploymentValues(),
+            'features' => [
+                'kubernetes.podspec-init-containers' => 'enabled',
+                'kubernetes.podspec-emptydir' => 'enabled',
+                'kubernetes.podspec-persistent-volume-claim' => 'disabled',
+                'kubernetes.podspec-tolerations' => 'disabled',
+            ],
+        ]]);
+        $this->fakeClusters();
+        $this->region('fn', 'c1.test');
+
+        $output = $this->reconcile();
+
+        $patches = $this->crPatches();
+        $this->assertCount(1, $patches);
+        $this->assertSame(['spec' => ['config' => ['features' => [
+            'kubernetes.podspec-init-containers' => 'enabled',
+            'kubernetes.podspec-emptydir' => 'enabled',
+            'kubernetes.podspec-persistent-volume-claim' => 'enabled',
+            'kubernetes.podspec-persistent-volume-write' => 'enabled',
+        ]]]], json_decode($patches[0]['body'], true), 'the region\'s own tolerations switch is not touched');
+        $this->assertStringContainsString('spec.config.features', $output);
+    }
+
+    public function test_a_gpu_region_keeps_the_gpu_and_model_features(): void
+    {
+        $this->cluster('c1.test', ['config' => [
+            'gc' => KnativeInstallService::configGcValues(),
+            'deployment' => KnativeInstallService::configDeploymentValues(),
+            'features' => KnativeInstallService::baseKnativeFeatures(),
+        ]]);
+        $this->fakeClusters();
+        $this->region('fn', 'c1.test', ['gpu_mode' => 'device-plugin']);
+
+        $this->reconcile();
+
+        $features = json_decode($this->crPatches()[0]['body'], true)['spec']['config']['features'];
+        foreach (GpuSupportManifests::knativeFeatures() as $key => $value) {
+            $this->assertSame($value, $features[$key], $key);
+        }
     }
 
     // ── Prometheus exposure ──────────────────────────────────────────────────

@@ -985,6 +985,14 @@ allows exactly those two files to a commit of the bot (its trailer), which carri
 Besides its `GITHUB_TOKEN` (`issues: write` for the comments and labels, `actions: write` to start
 itself again and read the images' run), the workflow needs:
 
+- The environment `release` of this repository: **Settings → Environments → New environment**
+  `release`, **Deployment branches and tags: Selected branches and tags**, the branch `main` alone,
+  no required reviewers (the bot runs unattended). The secrets below are **its** secrets, not the
+  repository's: only the jobs `bump` and `release` are in it, and GitHub hands them to a run of
+  `main` alone, so a workflow pushed to another branch (a stolen account's push of a workflow that
+  sends the CI secrets out) cannot read them. The variables stay repository variables (none is
+  secret). `runtime/test/ci_workflows_test.sh` fails on another job in an environment, or on a
+  secret but the `GITHUB_TOKEN` outside these two jobs.
 - The repository variable `GITLAB_RUNR_REMOTE`: the origin's SSH URL. No file of this repository
   names it; `ci/deps/ssh-key.sh` takes only an SSH URL (`git@HOST:GROUP/PROJECT.git`) of the host
   it pins.
@@ -1058,7 +1066,7 @@ them from `DEPS_FORBIDDEN` (the scrub pattern), not from this repository.
 
 **No loop.** A push or tag made with the App's token starts workflows (one of the `GITHUB_TOKEN`
 would not). The bot's tag starts `release-images.yml`, as intended; `deps-test.yml` and
-`upstream-releases.yml` run on a schedule and by hand only, and every job of `ci.yml` and `audit.yml`,
+`upstream-releases.yml` run on a schedule and by hand only, and every job of `ci.yml` and `dependency-audit.yml`,
 the workflows that run on a push of `main`, skips a push whose head commit carries the trailer
 (`runtime/test/ci_workflows_test.sh` holds every workflow that runs on a push to it, and no
 workflow runs on another's run). The landing on next goes to the origin, which runs no CI.
@@ -1111,8 +1119,8 @@ GitHub Actions is the repository's CI; the workflows live in `.github/workflows/
 | `ci.yml` → `sdk-node` | typecheck and Vitest of `sdk/node` | same | yes |
 | `ci.yml` → `sdk-sandbox-node` | typecheck and `node --test` of `sdk/sandbox/node` (its lockfile) | same | yes |
 | `ci.yml` → `sdk-python` | pytest of `sdk/python` and `sdk/sandbox/python`, each in a venv of its own with its test extra, on the runner's Python 3 | same | yes |
-| `audit.yml` → `npm` | `npm audit` of `vue/` | pushes to `main`, daily, pull requests touching `vue/package*.json` or `api/composer.*`, by hand | production deps: yes; dev tooling: no |
-| `audit.yml` → `composer` | `composer audit --locked` of `api/` | same | no |
+| `dependency-audit.yml` → `npm` | `npm audit` of `vue/` | pushes to `main`, daily, pull requests touching `vue/package*.json` or `api/composer.*`, by hand | production deps: yes; dev tooling: no |
+| `dependency-audit.yml` → `composer` | `composer audit --locked` of `api/` | same | no |
 | `e2e.yml` → `kind` | `runtime/ci.sh test` (Kind, Knative and the Compose stack on the runner's Docker); the steps are `kind-suite.yml` | weekly, by hand | no |
 | `e2e.yml` → `ui-stack` | Playwright against the dev stack (`docker compose`, project `stack`, single-tenant, `E2E_SEED_DEMO=true`; report: artifact `e2e-ui-stack`); the steps are `ui-stack-suite.yml`, whose result is read from Playwright's JSON report too (`ci/ui-results.sh`) | weekly, by hand | no |
 | `upstream-releases.yml` → `check` | `ci/check-knative-releases.sh`, `ci/check-helm-releases.sh`; an issue per finding | daily, by hand | no |

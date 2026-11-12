@@ -8,6 +8,76 @@ did not change says so.
 
 ## [Unreleased]
 
+## [0.6.10] - 2026-11-12
+
+### Upgrade notes
+
+- **A security release of the internal network: upgrade from 0.6.0 to 0.6.9.** On those releases a
+  project in access mode `allowlist` could lose the IP allow list of its public host, which then
+  answered every client, and a removed, unbound or deleted caller could stay admitted to a project or
+  a model service, until the next deploy ([0.6.9 → 0.6.10 in upgrade.md](docs/upgrade.md#069--0610)).
+  No migration, no new value; the images keep their names.
+- **The region Job of the upgrade puts lost callers right** (`region:reconcile`, step
+  `internal-network`: a model service's callers and a project's allow list where the region's differ
+  from the database's). **It does not bring back a deleted allowlist route:** after the upgrade, check
+  that every project in access mode `allowlist` has its IngressRoutes `runr-access-<service>` and
+  `-tls`, and redeploy one that has not
+  ([After the upgrade](docs/upgrade.md#after-the-upgrade-the-projects-in-access-mode-allowlist)).
+- **The same Job writes the model volume's Knative features** (persistent volume claims) into each
+  region's `config-features` once (`region:reconcile`, step `knative-serving-config`); nothing
+  restarts ([What 0.6.10 changes](docs/upgrade.md#what-0610-changes)).
+- **Back to 0.6.9 is a `helm rollback`** ([Back to 0.6.9](docs/upgrade.md#back-to-069)); nothing runs on
+  the database.
+
+### Fixed
+
+- **A model service's Knative Service is no longer refused for the model volume.** The pod spec
+  features of the model volume (a read-write PVC) were turned on by a region's first model service
+  deploy, and Knative's webhook went on refusing it ("Persistent volume claim support is
+  disabled") for tens of seconds while config-features already carried them, and at times again
+  later: the deploy failed, or a write to the deployed service (its callers on the internal network)
+  was refused. They are on every region from its install now, and every `region:reconcile` enables
+  them again (step `knative-serving-config`; on a GPU region the GPU features too). A refusal for a
+  feature enables them again before the write is tried again, a CR that could not be read no
+  longer has `config-features` patched behind the Knative Operator, and a refused allow list of a
+  service on the internal network no longer fails the region's internal-network change
+  (`test-internal-network`'s `in-cross-org` failed so).
+
+- **A project bound to a model service is admitted by it, also when the region did not take the
+  binding's write.** The internal network's authz reads a model service's callers from its Knative
+  Service, where a binding added or removed was written once: a refusal or an error of the region's
+  API server, or a failed read before it (taken for "not deployed"), lost it without a word. The
+  bound project was refused (403) until the model service's next deploy, and an unbound one kept
+  being admitted. The write is now tried again until the region takes it (for about twelve minutes;
+  then `region:reconcile`, whose `internal-network` step now also writes a model service's callers
+  when they are not its bindings). A binding made while the model service deploys is written after
+  the deploy's apply as well. `test-internal-network`'s `in-model` failed so on GitHub-hosted
+  runners: in-api was still refused six minutes after its binding.
+- **A deleted project leaves the model services it was bound to, and a renamed one is its new name
+  there.** Its bindings went with its row without a word to the region: the model service kept
+  admitting its old name, so a later project of that name in the organization was admitted
+  without a binding, and a renamed bound project was refused (403) under its new name. Both reach
+  the model service at once now, tried again like a binding.
+- **A change of a project's allow list or access mode that the region did not take is tried
+  again.** It was saved and answered with a `warning`, and waited for the project's next deploy:
+  meanwhile a removed caller, or one deleted with its project (a later project of its name too),
+  was still admitted. The change is now tried again for about twelve minutes, and
+  `region:reconcile` writes a project's allow list when its Knative Service has another.
+- **A failed read of a project's Knative Service no longer removes its routes.** A change of its
+  network took the failed read for a project without a Knative Service and deleted its
+  `runr.internal` route and, in access mode `allowlist`, the IP allow-list route of its public
+  host, which then answered every client until the next deploy. Only a missing Knative Service
+  removes them now; anything else is a change the region did not take (above).
+
+### Security
+
+- **The dependency bot's secrets are secrets of the GitHub environment `release`, which only `main`
+  deploys to.** Its jobs `bump` and `release` are the only ones in it, so a workflow pushed to another
+  branch with a stolen account cannot read the origin's deploy key, the GitHub App's key or the
+  bot's signing key. A fork that runs the bot creates the environment and sets the secrets there
+  ([docs/development.md](docs/development.md)). The dependency audits' workflow is
+  `dependency-audit.yml` ("Dependency audit"), no longer `audit.yml`.
+
 ## [0.6.9] - 2026-11-12
 
 ### Upgrade notes
@@ -4370,7 +4440,8 @@ Initial tagged release.
 - API gateways with routes, in-app notifications and support tickets.
 - Helm chart with a single-tenant / multi-tenant edition, an install form (`values.schema.json`), generated secrets and a Traefik ingress; a Docker Compose setup for development.
 
-[Unreleased]: https://github.com/brf-tech/runr/compare/v0.6.9...main
+[Unreleased]: https://github.com/brf-tech/runr/compare/v0.6.10...main
+[0.6.10]: https://github.com/brf-tech/runr/releases/tag/v0.6.10
 [0.6.9]: https://github.com/brf-tech/runr/releases/tag/v0.6.9
 [0.6.8]: https://github.com/brf-tech/runr/releases/tag/v0.6.8
 [0.6.7]: https://github.com/brf-tech/runr/releases/tag/v0.6.7

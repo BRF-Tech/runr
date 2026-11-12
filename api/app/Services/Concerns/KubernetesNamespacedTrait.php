@@ -474,10 +474,12 @@ trait KubernetesNamespacedTrait
     }
 
     /**
-     * JSON merge patch (RFC 7386) — works with CRDs unlike strategic merge patch.
+     * JSON merge patch (RFC 7386) — works with CRDs unlike strategic merge patch. A refusal's
+     * reason is lastApplyError(), as for applyResource().
      */
     public function mergePatch(string $apiVersion, string $kind, string $name, string $namespace, array $patch): bool
     {
+        $this->lastApplyError = null;
         $url = $this->resourceUrl($apiVersion, $kind, $namespace, $name);
 
         $response = $this->request()
@@ -488,6 +490,7 @@ trait KubernetesNamespacedTrait
             return true;
         }
 
+        $this->lastApplyError = self::applyFailure($response);
         Log::error('K8s merge patch failed', [
             'kind' => $kind,
             'name' => $name,

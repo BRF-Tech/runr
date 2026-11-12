@@ -5,12 +5,15 @@ namespace Tests\Feature\Ai;
 use App\Jobs\Ai\CheckModelServiceReadyJob;
 use App\Jobs\Ai\DeployModelServiceJob;
 use App\Models\AiModel;
+use App\Models\AiModelBinding;
 use App\Models\AiModelService;
 use App\Models\AiModelSnapshot;
+use App\Models\Project;
 use App\Models\User;
 use App\Services\Ai\Gpu\GpuSupportManifests;
 use App\Services\Ai\Models\ModelServiceDeployer;
 use App\Services\Ai\Models\ModelServiceManifests;
+use App\Services\InternalNetwork\InternalNetworkManifests;
 use App\Support\DeployGate;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
@@ -157,6 +160,40 @@ class ModelServiceDeployTest extends TestCase
         Queue::assertPushed(CheckModelServiceReadyJob::class, fn ($job) => $job->serviceId === $service->id);
     }
 
+    /**
+     * A feature refusal enables the features again before the next apply, not only waits: CI run
+     * 43170135752 refused the model volume for 42 s though config-features carried it.
+     */
+    public function test_a_feature_refusal_enables_the_features_again_before_the_next_apply(): void
+    {
+        Sleep::fake();
+        $service = $this->service(['mode' => 'online']);
+        $cr = '/apis/operator.knative.dev/v1beta1/namespaces/knative-serving/knativeservings/knative-serving';
+        $tries = 0;
+        $order = [];
+        $this->cluster([
+            "GET {$cr}" => ['spec' => ['config' => ['features' => GpuSupportManifests::knativeFeatures()]]],
+            "PATCH {$cr}" => function (Request $request) use (&$order) {
+                $order[] = 'features';
+
+                return Http::response(json_decode($request->body(), true), 200);
+            },
+            "PATCH /apis/serving.knative.dev/v1/namespaces/fn/services/{$service->service_name}" => function (Request $request) use (&$tries, &$order) {
+                $tries++;
+                $order[] = 'apply';
+
+                return $tries <= 2
+                    ? Http::response(['kind' => 'Status', 'message' => self::PVC_REFUSAL], 400)
+                    : Http::response(json_decode($request->body(), true), 200);
+            },
+        ]);
+
+        $service = $this->deploy($service);
+
+        $this->assertSame(AiModelService::STATUS_DEPLOYING, $service->status, (string) $service->status_message);
+        $this->assertSame(['features', 'apply', 'features', 'apply', 'features', 'apply'], $order, 'the deploy\'s own, then one before each new apply');
+    }
+
     public function test_a_feature_refusal_that_lasts_fails_the_service_after_the_retries(): void
     {
         Sleep::fake();
@@ -175,6 +212,41 @@ class ModelServiceDeployTest extends TestCase
         Sleep::assertSleptTimes(count(ModelServiceDeployer::FEATURE_RETRY_DELAYS));
         $this->assertSame(42, array_sum(ModelServiceDeployer::FEATURE_RETRY_DELAYS), 'about 30–60 s in all');
         Queue::assertNotPushed(CheckModelServiceReadyJob::class);
+    }
+
+    /**
+     * A binding made while the deploy ran — after its manifest was built, before its apply (the
+     * features' wait, the apply's retries): the binding's own write found no Knative Service
+     * yet, the apply wrote the callers the manifest was built with. The deploy writes them again.
+     */
+    public function test_a_binding_made_while_the_deploy_runs_reaches_the_knative_service(): void
+    {
+        $service = $this->service(['mode' => 'online']);
+        $project = Project::create(['name' => 'chat', 'service_type' => 'caas']);
+        $path = "/apis/serving.knative.dev/v1/namespaces/fn/services/{$service->service_name}";
+        $applied = null;
+        $this->cluster([
+            "PATCH {$path}" => function (Request $request) use ($service, $project, &$applied) {
+                $body = json_decode($request->body(), true);
+                if (str_contains($request->url(), 'fieldManager=runr') && ! AiModelBinding::query()->exists()) {
+                    AiModelBinding::create(['project_id' => $project->id, 'ai_model_service_id' => $service->id, 'alias' => 'EMBED']);
+                    $applied = $body;
+                }
+
+                return Http::response($body, 200);
+            },
+            "GET {$path}" => function () use (&$applied) {
+                return $applied ?? [['kind' => 'Status', 'code' => 404], 404];
+            },
+        ]);
+
+        $service = $this->deploy($service);
+
+        $this->assertSame(AiModelService::STATUS_DEPLOYING, $service->status, (string) $service->status_message);
+        $this->assertSame('', $applied['metadata']['annotations'][InternalNetworkManifests::ANNOTATION_CALLERS], 'built before the binding');
+        $merges = array_values(array_filter($this->k8sCallsTo('PATCH', $path), fn ($c) => str_contains((string) ($c['headers']['Content-Type'][0] ?? ''), 'merge-patch')));
+        $this->assertCount(1, $merges);
+        $this->assertSame('chat.platform', $merges[0]['body']['metadata']['annotations'][InternalNetworkManifests::ANNOTATION_CALLERS]);
     }
 
     public function test_only_a_feature_refusal_counts_as_one_knative_has_not_seen_yet(): void

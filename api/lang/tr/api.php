@@ -161,7 +161,7 @@ return [
         'caller_invalid' => 'Çağıranı iç adıyla (<proje>.<organizasyon>) yazın (küçük harf, rakam ve tire).',
         'cross_tenant_off' => 'Platform, başka organizasyonların projelerine izin verilmesine kapalı.',
         'workflow_public' => 'Bir iş akışı projesi herkese açık kalır: dayanıklı iş akışı motoru onu herkese açık URL\'sinden çağırır.',
-        'not_applied' => 'Kaydedildi, ancak bölge güncellenemedi (:error). Projenin bir sonraki dağıtımı bunu uygular.',
+        'not_applied' => 'Kaydedildi, ancak bölge güncellenemedi (:error). RunR birkaç dakika boyunca yeniden dener; projenin bir sonraki dağıtımı da bunu uygular.',
     ],
 
     'domain' => [

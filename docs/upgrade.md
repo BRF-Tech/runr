@@ -87,6 +87,74 @@ edit projects, deploy or change regions in that time: the previous version canno
 migration has just encrypted, shows env vars as empty and would save that. Its region status
 checks fail in that window and the new version's next check reports the region again.
 
+## 0.6.9 → 0.6.10
+
+0.6.10 is a security release of the internal network ([internal-network.md](internal-network.md)).
+It changes the API only: no migration, no new Helm value, and the images keep their names; the
+region Job moves the region agent and the event gateway to 0.6.10
+([Order of operations](#order-of-operations)). Upgrade every installation that has projects in
+access mode `allowlist`, allow lists or model services.
+
+### What was exposed
+
+From 0.6.0 to 0.6.9 a change of the internal network that the region's API server did not take
+(refused, failed, not reached) was saved and lost until the next deploy:
+
+- **A project in access mode `allowlist` could lose the IP allow list of its public host.** A change
+  of its network that could not read its Knative Service took it for a project without one and
+  deleted its routes: its `runr.internal` route and the IngressRoutes `runr-access-<service>` and
+  `runr-access-<service>-tls` with the Middleware `runr-access-<service>`. The public host then
+  answered every client until the project's next deploy.
+- **A caller removed from a project's allow list, or deleted with its project, was still admitted**
+  on the internal network until the project's next deploy, and so was a later project of the
+  deleted one's name in the same organization.
+- **A model service kept admitting a project that was unbound from it or deleted**, and a later
+  project of that name, until the model service's next deploy. A project bound to it was refused
+  (403) until then, and a bound project that was renamed was refused under its new name.
+
+### What 0.6.10 changes
+
+- A write of the internal network that the region does not take is tried again for about twelve
+  minutes (an allow list, an access mode, a model service's callers); a binding made while the
+  model service deploys is written after the deploy as well.
+- A failed read of a project's Knative Service no longer removes its routes: only a missing Knative
+  Service does.
+- A deleted project leaves the allow lists and the model services it was on; a renamed one is its
+  new name there.
+- `region:reconcile` (step `internal-network`) writes a model service's callers and a project's
+  allow list where the region's differ from the database's. **The region Job of the upgrade runs
+  it, so callers lost before the upgrade are put right with the upgrade.**
+- The model volume's pod spec features (persistent volume claims, their writes) are part of every
+  region's KnativeServing configuration from its install, and `region:reconcile` (step
+  `knative-serving-config`) enables them again; a refusal for a feature enables them before the
+  write is tried again. Before, they were turned on by a region's first model service deploy, and
+  Knative's webhook could refuse that service, or a write to it, for tens of seconds after. The
+  upgrade's region Job writes them into each region's `config-features` once; nothing restarts.
+
+### After the upgrade: the projects in access mode allowlist
+
+The region Job does not bring back the routes of a public host that an earlier release deleted.
+Every project in access mode `allowlist` (its **Network** tab, `GET /api/projects/{project}/network`)
+needs its two IngressRoutes in its region:
+
+```sh
+kubectl get ingressroute -A | grep runr-access-
+```
+
+and its public host answers `403` to a client outside its ranges. Redeploy a project whose routes
+are missing: its deploy writes them.
+
+Until the upgrade (0.6.0 to 0.6.9), the same steps put a lost write right: redeploy a project after
+a change of its allow list or access mode, and a model service after a binding changed or a bound
+project was deleted or renamed.
+
+### Back to 0.6.9
+
+A rollback to 0.6.9 is a `helm rollback` (`helm history runr -n runr` lists the revisions; where only
+one package version is kept, add the 0.6.9 package again and upgrade to it). Nothing runs on the
+database, and the region Job of the rollback moves the region agent and the event gateway back to
+0.6.9. **Never uninstall** to go back. 0.6.9 loses a write the region does not take again, as above.
+
 ## 0.6.8 → 0.6.9
 
 From 0.6.8 the images keep their names and nothing has to be set. The upgrade runs two migrations,

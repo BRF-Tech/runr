@@ -38,12 +38,9 @@ trait KnativeCRTrait
             ],
         ];
 
-        // Init containers + emptyDir always needed (the universal wrapper of runtime plugins is
-        // copied into an emptyDir by an init container), tolerations/nodeSelector only with workers
-        $spec['config']['features'] = [
-            'kubernetes.podspec-init-containers' => 'enabled',
-            'kubernetes.podspec-emptydir' => 'enabled',
-        ];
+        // Init containers, emptyDir and the model volume always (baseKnativeFeatures),
+        // tolerations/nodeSelector only with workers
+        $spec['config']['features'] = self::baseKnativeFeatures();
 
         if (! empty($settings['enable_podspec_features'])) {
             $spec['config']['features']['kubernetes.podspec-tolerations'] = 'enabled';
@@ -76,6 +73,29 @@ trait KnativeCRTrait
         }
 
         $k8s->applyResource($cr, $namespace);
+    }
+
+    /**
+     * spec.config.features every region keeps — set at install (applyKnativeServingCR) and on
+     * every region:reconcile (KnativeServingConfigStep): init containers and emptyDir (the
+     * universal wrapper of runtime plugins is copied into an emptyDir by an init container), and
+     * the model volume of model services, a read-write PVC (ModelServiceManifests). The model
+     * volume's were turned on only by a region's first model service deploy
+     * (GpuInstallService::enableKnativeFeatures): Knative's webhook then refused that Knative
+     * Service, and writes to it after it was created, for tens of seconds while its view of
+     * config-features lagged ("Persistent volume claim support is disabled"). Only enabled here:
+     * what a region turns off itself (tolerations, nodeSelector without workers) is not part of it.
+     *
+     * @return array<string, string>
+     */
+    public static function baseKnativeFeatures(): array
+    {
+        return [
+            'kubernetes.podspec-init-containers' => 'enabled',
+            'kubernetes.podspec-emptydir' => 'enabled',
+            'kubernetes.podspec-persistent-volume-claim' => 'enabled',
+            'kubernetes.podspec-persistent-volume-write' => 'enabled',
+        ];
     }
 
     /**

@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Models\AiModelBinding;
 use App\Models\AiModelService;
 use App\Models\KnativeRegion;
 use App\Models\Project;
@@ -23,6 +24,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
 use Symfony\Component\Yaml\Yaml;
+use Tests\Concerns\BuildsAiFixtures;
 use Tests\TestCase;
 
 /**
@@ -38,7 +40,7 @@ use Tests\TestCase;
  */
 class RegionInternalNetworkReconcileTest extends TestCase
 {
-    use RefreshDatabase;
+    use BuildsAiFixtures, RefreshDatabase;
 
     private const SERVING = 'knative-serving';
 
@@ -55,6 +57,9 @@ class RegionInternalNetworkReconcileTest extends TestCase
 
     /** The authz gets ready pods once applied */
     private bool $authzStarts = true;
+
+    /** @var list<string> "<resource> <namespace>/<name>" whose writes Knative's webhook refuses */
+    private array $refused = [];
 
     protected function setUp(): void
     {
@@ -139,6 +144,9 @@ class RegionInternalNetworkReconcileTest extends TestCase
         }
 
         $this->writes[] = "{$method} {$key}";
+        if (in_array($key, $this->refused, true)) {
+            return Http::response(['kind' => 'Status', 'code' => 400, 'message' => 'admission webhook "validation.webhook.serving.knative.dev" denied the request: validation failed: Persistent volume claim support is disabled'], 400);
+        }
         $body = json_decode($request->body(), true) ?? [];
         $type = (string) ($request->header('Content-Type')[0] ?? '');
         $this->objects[$key] = str_contains($type, 'merge-patch') ? $this->merge($this->objects[$key] ?? [], $body) : $body;
@@ -394,6 +402,97 @@ class RegionInternalNetworkReconcileTest extends TestCase
             array_search('helm upgrade', $this->writes, true),
             max(array_keys(array_filter($this->writes, fn ($w) => str_starts_with($w, 'PATCH services fn/')))),
         );
+    }
+
+    /**
+     * A model service's callers are its bindings, nothing else: a Knative Service whose callers
+     * are not (a binding whose write did not reach the region, the retries given up) gets them,
+     * though it is on the internal network already.
+     */
+    public function test_a_model_service_whose_callers_are_not_its_bindings_gets_them(): void
+    {
+        $region = $this->region();
+        $service = $this->modelService($this->hubModel(), $region);
+        foreach (['chat', 'search'] as $name) {
+            $project = Project::create(['name' => $name, 'service_type' => 'caas']);
+            $project->forceFill(['knative_region_id' => $region->id])->saveQuietly();
+            AiModelBinding::create(['project_id' => $project->id, 'ai_model_service_id' => $service->id, 'alias' => strtoupper($name)]);
+        }
+        $this->ksvc($service->service_name, [AiModelService::LABEL => $service->id, M::LABEL_MANAGED => 'managed'], [
+            M::ANNOTATION_NAME => "{$service->service_name}.platform", M::ANNOTATION_ORG => 'platform', M::ANNOTATION_CALLERS => 'chat.platform', M::ANNOTATION_KIND => 'model',
+        ]);
+
+        $lines = (new InternalNetworkStep)->run($this->cluster([$region]), false);
+
+        $this->assertContains('gave 1 Knative Service(s) in fn their internal-network policy', $lines);
+        $annotations = $this->getObject('services', 'fn', $service->service_name)['metadata']['annotations'];
+        $this->assertSame('chat.platform,search.platform', $annotations[M::ANNOTATION_CALLERS]);
+        $this->assertSame('model', $annotations[M::ANNOTATION_KIND]);
+
+        // up to date: left alone
+        $this->writes = [];
+        (new InternalNetworkStep)->run($this->cluster([$region->fresh()]), false);
+        $this->assertNotContains("PATCH services fn/{$service->service_name}", $this->writes);
+    }
+
+    /**
+     * A managed Knative Service whose allow list Knative refuses to write does not stop the
+     * region's other changes (CI run 43170135752: in-cross-org's mode change failed on the model
+     * service's refused patch); one without any policy still does — the entry point would enforce
+     * without it.
+     */
+    public function test_a_refused_allow_list_of_a_managed_service_does_not_fail_the_step(): void
+    {
+        $region = $this->region();
+        $service = $this->modelService($this->hubModel(), $region);
+        $project = Project::create(['name' => 'chat', 'service_type' => 'caas']);
+        $project->forceFill(['knative_region_id' => $region->id])->saveQuietly();
+        AiModelBinding::create(['project_id' => $project->id, 'ai_model_service_id' => $service->id, 'alias' => 'EMBED']);
+        $this->ksvc($service->service_name, [AiModelService::LABEL => $service->id, M::LABEL_MANAGED => 'managed'], [
+            M::ANNOTATION_NAME => "{$service->service_name}.platform", M::ANNOTATION_CALLERS => '', M::ANNOTATION_KIND => 'model',
+        ]);
+        $this->refused = ["services fn/{$service->service_name}"];
+
+        $lines = (new InternalNetworkStep)->run($this->cluster([$region]), false);
+
+        $this->assertNotEmpty(array_filter($lines, fn ($l) => str_starts_with($l, "left alone: the allow list of Knative Service fn/{$service->service_name} was not written")), implode("\n", $lines));
+        $this->assertNotEmpty(array_filter($lines, fn ($l) => str_starts_with($l, 'set the internal network\'s modes')), 'the region\'s own changes went on');
+
+        // never on the internal network: the step fails
+        $this->ksvc('shop', ['runr/project-id' => 'p1']);
+        $this->refused = ['services fn/shop'];
+        $this->expectExceptionMessage('Knative Service fn/shop was not annotated');
+        (new InternalNetworkStep)->run($this->cluster([$region->fresh()]), false);
+    }
+
+    /**
+     * A project's own workload whose callers are not its allow list (a caller deleted while the
+     * region did not take the write, the retries given up) gets its allow list; an environment's
+     * workload maps the names to its environment, its deploy writes them.
+     */
+    public function test_a_project_whose_callers_are_not_its_allow_list_gets_it(): void
+    {
+        $region = $this->region();
+        $orders = Project::create(['name' => 'orders', 'service_type' => 'caas']);
+        $orders->forceFill(['knative_region_id' => $region->id])->saveQuietly();
+        ProjectInternalCaller::query()->create(['project_id' => $orders->id, 'caller' => 'shop.platform']);
+        $managed = [M::LABEL_MANAGED => 'managed'];
+        $this->ksvc('orders', ['runr/project-id' => $orders->id] + $managed, [M::ANNOTATION_NAME => 'orders.platform', M::ANNOTATION_CALLERS => 'gone.platform,shop.platform']);
+        $this->ksvc('orders-staging', ['runr/environment-of' => $orders->id] + $managed, [M::ANNOTATION_NAME => 'orders-staging.platform', M::ANNOTATION_CALLERS => 'shop-staging.platform']);
+        foreach (['orders', 'orders-staging'] as $service) {
+            $this->putObject('ingressroutes', 'fn', ['metadata' => ['name' => M::internalRouteName($service)]]);
+        }
+
+        $lines = (new InternalNetworkStep)->run($this->cluster([$region]), false);
+
+        $this->assertContains('gave 1 Knative Service(s) in fn their internal-network policy', $lines);
+        $this->assertSame('shop.platform', $this->getObject('services', 'fn', 'orders')['metadata']['annotations'][M::ANNOTATION_CALLERS], 'gone.platform is no caller any more');
+        $this->assertNotContains('PATCH services fn/orders-staging', $this->writes);
+
+        // up to date: left alone
+        $this->writes = [];
+        (new InternalNetworkStep)->run($this->cluster([$region->fresh()]), false);
+        $this->assertNotContains('PATCH services fn/orders', $this->writes);
     }
 
     public function test_a_preview_that_shortened_its_projects_slug_answers_as_its_project(): void

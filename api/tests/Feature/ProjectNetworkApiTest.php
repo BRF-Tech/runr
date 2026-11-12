@@ -47,6 +47,9 @@ class ProjectNetworkApiTest extends TestCase
     /** The cluster refuses every write */
     private bool $clusterDown = false;
 
+    /** @var array<string, int> "METHOD /path" → how many of its next calls the API server answers 503 */
+    private array $refusals = [];
+
     protected function setUp(): void
     {
         parent::setUp();
@@ -55,6 +58,11 @@ class ProjectNetworkApiTest extends TestCase
             $path = (string) parse_url($request->url(), PHP_URL_PATH);
             $key = $request->method().' '.$path;
             $this->calls[] = $key;
+            if (($this->refusals[$key] ?? 0) > 0) {
+                $this->refusals[$key]--;
+
+                return Http::response(['kind' => 'Status', 'code' => 503, 'message' => 'the server is currently unable to handle the request'], 503);
+            }
             $this->bodies[$key] = json_decode($request->body(), true) ?? [];
             $this->types[$key] = (string) ($request->header('Content-Type')[0] ?? '');
             if ($this->clusterDown && $request->method() !== 'GET') {
@@ -365,6 +373,50 @@ class ProjectNetworkApiTest extends TestCase
         // deleted: a later project of its name does not inherit the grant
         $shop->fresh()->delete();
         $this->assertSame([], app(InternalNetworkService::class)->callers($billing));
+    }
+
+    /**
+     * A deleted caller leaves the callee's allow list on the region, also when the region refuses
+     * the first write: else a later project of its name would be admitted until the callee's next
+     * deploy.
+     */
+    public function test_a_deleted_caller_leaves_the_region_though_the_first_write_fails(): void
+    {
+        $shop = $this->project();
+        $billing = $this->project('billing');
+        $this->postJson($this->url($shop, '/callers'), ['caller' => 'billing'])->assertCreated();
+        $this->assertSame('billing.platform', $this->servicePatch()['metadata']['annotations'][M::ANNOTATION_CALLERS]);
+        $ksvc = 'PATCH /apis/serving.knative.dev/v1/namespaces/fn/services/shop';
+        $this->refusals[$ksvc] = 1;
+        $this->calls = [];
+
+        $billing->delete();
+
+        $this->assertCount(2, array_keys($this->calls, $ksvc, true), 'written again (the queue runs at once in the tests)');
+        $this->assertSame('', $this->servicePatch()['metadata']['annotations'][M::ANNOTATION_CALLERS]);
+    }
+
+    /**
+     * A failed read of the Knative Service is no missing one: the project keeps its routes — the
+     * allowlist route of its public host above all, without which the host answers everyone — and
+     * the change is tried again.
+     */
+    public function test_a_failed_read_keeps_the_routes_and_tries_the_change_again(): void
+    {
+        $shop = $this->project();
+        $this->putJson($this->url($shop), ['access_mode' => 'allowlist', 'allowed_cidrs' => ['203.0.113.0/24']])->assertOk();
+        $this->project('billing');
+        $this->refusals['GET /apis/serving.knative.dev/v1/namespaces/fn/services/shop'] = 1;
+        $this->calls = [];
+
+        $this->postJson($this->url($shop, '/callers'), ['caller' => 'billing'])
+            ->assertCreated()
+            ->assertJsonPath('warning', fn ($w) => is_string($w) && str_contains($w, 'tries again'));
+
+        foreach (['ingressroutes/runr-access-shop', 'ingressroutes/runr-access-shop-tls', 'middlewares/runr-access-shop', 'ingressroutes/runr-internal-shop'] as $route) {
+            $this->assertNotContains("DELETE /apis/traefik.io/v1alpha1/namespaces/fn/{$route}", $this->calls, "{$route} stays");
+        }
+        $this->assertSame('billing.platform', $this->servicePatch()['metadata']['annotations'][M::ANNOTATION_CALLERS], 'on the region after the retry');
     }
 
     // ── Permissions ─────────────────────────────────────────────────────────
