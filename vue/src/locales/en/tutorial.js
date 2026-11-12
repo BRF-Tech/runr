@@ -220,6 +220,8 @@ export default {
     detail: {
       header:          'Project Info',
       headerDesc:      'Project name, type, runtime and region are displayed here. Badges show a global project, the scaling mode, a timed warmer, the deploy strategy, runtime patches and the runtime\'s lifecycle (deprecated, orphaned, end of life, sunset).',
+      capacityWaiting:      'Waiting for capacity',
+      capacityWaitingDesc:  'The project was resumed, but its stop had given back what it held, and a deploy runs it only once that fits again: the region\'s capacity (capacity_exceeded), the organization\'s quota (quota_exceeded) or, in a fixed region, its approved resources that other projects use meanwhile (fixed_allocation_exceeded). The banner says what is missing and what to do; it holds no capacity until a deploy is admitted.',
       runtimeLifecycle:     'Runtime Lifecycle',
       runtimeLifecycleDesc: 'The runtime version of this project is deprecated, ended, or its runtime left its source: the banner tells until when the project can be saved and deployed and what to move it to. Running deployments are never stopped.',
       actions:         'Actions',
@@ -322,6 +324,15 @@ export default {
       searchDesc:     'Search the tickets by subject; support staff search every ticket. Press Enter to filter results.',
       ticketList:     'Ticket List',
       ticketListDesc: 'All support tickets are listed here with status, priority, category and creation date. Click a ticket to view the conversation and reply.',
+    },
+    // Region → Workers → Capacity (regionCapacitySteps)
+    regionCapacity: {
+      budgets:      'Capacity budgets',
+      budgetsDesc:  'Per resource the always-on budget (the region capacity, no overcommit) and the FaaS overcommit budget (capacity × factor). Projects are admitted against both, and the capacity alarm warns when the fuller one crosses 60 % or 80 %.',
+      stopped:      'With stopped projects',
+      stoppedDesc:  'A stopped project holds no capacity in a pay-as-you-go region: others may use its room, and its resume is admitted again — refused with capacity_exceeded when the region is full. This shows what the region would need if every stopped project were resumed at once. When it crosses {warning} % or {critical} %, the region\'s provider is told to add nodes: by how much, and which stopped projects need it. A fixed region keeps its stopped projects\' reservations.',
+      factors:      'Overcommit factors',
+      factorsDesc:  'How far the FaaS budget overcommits the capacity, per resource (1–10; 1 turns overcommit off). Save factors applies them at once.',
     },
     region: {
       general:      'Region Info',

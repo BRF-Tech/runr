@@ -29,6 +29,7 @@ import PrivateConnections from '@/components/project/PrivateConnections.vue'
 import ProjectModels from '@/components/project/ProjectModels.vue'
 import ProjectAccess from '@/components/rbac/ProjectAccess.vue'
 import ProjectStopBanner from '@/components/project/ProjectStopBanner.vue'
+import CapacityWaitingBanner from '@/components/project/CapacityWaitingBanner.vue'
 import RuntimeLifecycleBanner from '@/components/project/RuntimeLifecycleBanner.vue'
 import RightsizingCard from '@/components/project/RightsizingCard.vue'
 import ProjectStopModal from '@/components/project/ProjectStopModal.vue'
@@ -233,6 +234,9 @@ onMounted(() => init())
 
       <!-- ── Stopped project: reason for every member, resume for projects.stop ── -->
       <ProjectStopBanner :project="project" @resumed="onResumed" />
+
+      <!-- ── Resumed, waiting for capacity: why, what it lacks, what to do (capacity_waiting) ── -->
+      <CapacityWaitingBanner :project="project" />
 
       <!-- ── Runtime lifecycle: deprecated, left its source, ended (docs/runtimes.md#lifecycle) ── -->
       <RuntimeLifecycleBanner :project="project" />

@@ -299,6 +299,27 @@ export default {
         faas_memory_overcommit: 'Memory overcommit factor',
         save:                   'Save factors',
         saved:                  'Capacity settings saved.',
+        // with_stopped: every stopped project resumed at once (CapacityWithStopped)
+        withStopped: {
+          title:          'With stopped projects',
+          subtitle:       '{projects} hold no capacity now. If all of them were resumed at the same time:',
+          projects:       'no stopped project | 1 stopped project | {count} stopped projects',
+          none:           'No stopped project waits for capacity in this region.',
+          held:           'Stopped projects keep their reservation in this region: it has fixed resources, and their allocation stays billed.',
+          adds:           '+{value} of stopped projects',
+          full:           '{percent}% of the {budget}',
+          budgetAlwaysOn: 'always-on budget',
+          budgetFaas:     'FaaS budget',
+          exceeded:       '{value} more than the region has',
+          add:            'Add nodes: at least {value} to stay under {threshold}%',
+          waiting:        'resumed, waiting for capacity',
+          more:           '+{count} more',
+          alarm:          'The capacity alarm tells the region\'s provider when this figure crosses {warning}% or {critical}%, as it does for the budgets above.',
+          level: {
+            warning:  'Warning',
+            critical: 'Critical',
+          },
+        },
       },
       config: {
         title:              'Settings',

@@ -219,6 +219,8 @@ export default {
     detail: {
       header:          'Proje Bilgisi',
       headerDesc:      'Proje adı, türü, runtime ve bölge bilgisi burada görüntülenir. Rozetler global projeyi, ölçekleme modunu, zamanlı ön ısıtmayı, dağıtım stratejisini, runtime yamalarını ve runtime\'ın yaşam döngüsünü (önerilmiyor, kaynaksız, EOL, sonlandı) gösterir.',
+      capacityWaiting:      'Kapasite bekliyor',
+      capacityWaitingDesc:  'Proje sürdürüldü ama durdurulunca tuttuklarını bırakmıştı; bir dağıtım onu ancak bunlar yeniden sığınca çalıştırır: bölgenin kapasitesi (capacity_exceeded), organizasyonun kotası (quota_exceeded) ya da sabit kaynaklı bölgede bu arada başka projelerin kullandığı onaylı kaynakları (fixed_allocation_exceeded). Şerit neyin eksik olduğunu ve ne yapılacağını söyler; dağıtım kabul edilene kadar proje kapasite tutmaz.',
       runtimeLifecycle:     'Runtime Yaşam Döngüsü',
       runtimeLifecycleDesc: 'Bu projenin runtime sürümü artık önerilmiyor, sona erdi ya da runtime\'ı kaynağından çıktı: şerit, projenin ne zamana kadar kaydedilip deploy edilebileceğini ve neye taşınması gerektiğini söyler. Çalışan deployment\'lar hiçbir zaman durdurulmaz.',
       actions:         'Aksiyonlar',
@@ -321,6 +323,15 @@ export default {
       searchDesc:     'Talepleri konuya göre arayın; destek ekibi tüm talepleri arar. Filtrelemek için Enter\'a basın.',
       ticketList:     'Talep Listesi',
       ticketListDesc: 'Tüm destek talepleri durum, öncelik, kategori ve oluşturma tarihiyle listelenir. Konuşmayı görüntülemek ve yanıtlamak için bir talebe tıklayın.',
+    },
+    // Bölge → Worker'lar → Kapasite (regionCapacitySteps)
+    regionCapacity: {
+      budgets:      'Kapasite bütçeleri',
+      budgetsDesc:  'Her kaynak için sürekli açık bütçe (bölge kapasitesi, overcommit yok) ve FaaS overcommit bütçesi (kapasite × katsayı). Projeler ikisine göre kabul edilir; kapasite alarmı dolu olanı %60 ya da %80\'i geçince uyarır.',
+      stopped:      'Durdurulmuş projelerle',
+      stoppedDesc:  'Kullandıkça öde bölgesinde durdurulmuş bir proje kapasite tutmaz: yerini başka projeler kullanabilir, sürdürülünce yeniden kabul edilir — bölge doluysa capacity_exceeded ile reddedilir. Burada, durdurulmuş projelerin hepsi aynı anda sürdürülse bölgenin neye ihtiyaç duyacağı görünür. Bu değer {\'%\'}{warning} ya da {\'%\'}{critical}\'i geçince bölgenin sağlayıcısına node eklemesi söylenir: ne kadar ve hangi durdurulmuş projeler için. Sabit kaynaklı bölge, durdurulmuş projelerinin ayrımını tutar.',
+      factors:      'Overcommit katsayıları',
+      factorsDesc:  'FaaS bütçesinin kapasiteyi ne kadar aştığı, kaynak başına (1–10; 1 overcommit\'i kapatır). Katsayıları kaydet hemen uygular.',
     },
     region: {
       general:      'Bölge Bilgisi',

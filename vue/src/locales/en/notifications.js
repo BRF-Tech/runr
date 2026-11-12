@@ -7,6 +7,8 @@ export default {
     resourceCritical: 'Resource Critical',
     cpuThreshold: '{region}: CPU {percentage}%',
     memoryThreshold: '{region}: Memory {percentage}%',
+    cpuThresholdWithStopped: '{region}: CPU {percentage}% with stopped projects',
+    memoryThresholdWithStopped: '{region}: Memory {percentage}% with stopped projects',
     justNow: 'Just now',
     minutesAgo: '{n} min ago',
     hoursAgo: '{n}h ago',

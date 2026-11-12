@@ -329,5 +329,27 @@ export default {
     bannerHint:       'İş yükleri çalışmaz ve proje yeniden sürdürülene kadar dağıtılamaz.',
     bannerHintPlatform: 'İş yükleri çalışmaz ve proje dağıtılamaz; yalnızca platform sürdürebilir.',
     deployBlocked:    'Proje durduruldu: dağıtmadan önce sürdürün.',
+    // Kapasite bekleyen sürdürülmüş proje (capacity_waiting, CapacityWaitingBanner)
+    waiting: {
+      title:     'Bu proje kapasite bekliyor',
+      titleFits: 'Bu proje yeniden çalışabilir',
+      why: {
+        capacity_exceeded:         'Durdurulunca {region} bölgesindeki kapasitesini bıraktı, şimdi onu başka projeler kullanıyor: bölgede yeniden yer açılana kadar dağıtım reddedilir.',
+        quota_exceeded:            'Durdurulunca organizasyonun {region} bölgesindeki kotasından payını bıraktı, şimdi onu başka projeler kullanıyor: kotada yeniden yer açılana kadar dağıtım reddedilir.',
+        fixed_allocation_exceeded: 'Bu proje durdurulmuşken organizasyonun {region} bölgesindeki başka projeleri onaylı kaynaklarını devraldı ve hâlâ kullanıyor: ikisi aynı anda çalışamaz.',
+        fits:                      'Dağıtımsız sürdürüldü; {region} bölgesinde artık ona yer var.',
+      },
+      short:     '{resource}: {needed} gerekiyor, {available} boş — {missing} eksik',
+      gpus:      'GPU',
+      resource:  'Kaynak',
+      todo: {
+        capacity_exceeded:         'Başka projeler kapasite boşaltınca dağıtın ya da bölgenin sağlayıcısından node eklemesini isteyin.',
+        quota_exceeded:            'Organizasyonun bu bölgedeki başka projelerini durdurun ya da küçültün, ya da platformdan daha büyük bir kota isteyin.',
+        fixed_allocation_exceeded: 'O projeleri küçültün ya da birini durdurun, sonra bu projeyi dağıtın; veya Faturalandırma sekmesinden daha fazla kaynak talep edin.',
+        fits:                      'Yeniden çalıştırmak için bir sürüm dağıtın.',
+        other:                     'Yukarıdaki neden giderilince dağıtın.',
+      },
+      since:     '{date} tarihinden beri bekliyor',
+    },
   },
 }

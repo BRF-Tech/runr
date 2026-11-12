@@ -67,6 +67,9 @@ describe('notificationTitle', () => {
   it.each([
     [{ type: 'resource_threshold', data: { resource_type: 'cpu', region_name: 'eu', percentage: 91 } }, 'notifications.cpuThreshold {"region":"eu","percentage":91}'],
     [{ type: 'resource_threshold', data: { resource_type: 'memory', region_name: 'eu', percentage: 80 } }, 'notifications.memoryThreshold {"region":"eu","percentage":80}'],
+    // the region with every stopped project resumed at once
+    [{ type: 'resource_threshold', data: { resource_type: 'cpu', region_name: 'eu', percentage: 105, basis: 'with_stopped' } }, 'notifications.cpuThresholdWithStopped {"region":"eu","percentage":105}'],
+    [{ type: 'resource_threshold', data: { resource_type: 'memory', region_name: 'eu', percentage: 62, basis: 'with_stopped' } }, 'notifications.memoryThresholdWithStopped {"region":"eu","percentage":62}'],
     [{ type: 'knative.serving.install_failed', data: { region_name: 'eu' } }, 'notifications.knativeInstallFailed {"region":"eu","component":"serving"}'],
     [{ type: 'knative.operator.installed', data: { region_name: 'eu', component: 'Operator' } }, 'notifications.knativeInstalled {"region":"eu","component":"Operator"}'],
     [{ type: 'sandbox.kata.uninstalled', data: { region_name: 'eu' } }, 'notifications.sandboxUninstalled {"region":"eu","runtime":"kata"}'],
@@ -103,6 +106,8 @@ describe('notificationTitle', () => {
     ]
     for (const type of samples) notificationTitle({ type, data: { resource_type: 'cpu' } }, capture)
     notificationTitle({ type: 'resource_threshold', data: { resource_type: 'memory' } }, capture)
+    notificationTitle({ type: 'resource_threshold', data: { resource_type: 'cpu', basis: 'with_stopped' } }, capture)
+    notificationTitle({ type: 'resource_threshold', data: { resource_type: 'memory', basis: 'with_stopped' } }, capture)
 
     const missing = [...keys].filter(k => k.split('.').reduce((o, p) => o?.[p], en) === undefined)
     expect(missing).toEqual([])

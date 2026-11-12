@@ -299,6 +299,27 @@ export default {
         faas_memory_overcommit: 'Bellek overcommit katsayısı',
         save:                   'Katsayıları kaydet',
         saved:                  'Kapasite ayarları kaydedildi.',
+        // with_stopped: durdurulmuş projelerin hepsi aynı anda sürdürülse (CapacityWithStopped)
+        withStopped: {
+          title:          'Durdurulmuş projelerle',
+          subtitle:       '{projects} şu an kapasite tutmuyor. Hepsi aynı anda sürdürülse:',
+          projects:       'durdurulmuş proje yok | 1 durdurulmuş proje | {count} durdurulmuş proje',
+          none:           'Bu bölgede kapasite bekleyen durdurulmuş proje yok.',
+          held:           'Bu bölgede durdurulmuş projeler ayrımlarını tutar: bölge sabit kaynaklı, ayrılan kaynakları faturalanmaya devam eder.',
+          adds:           'durdurulmuş projelerden +{value}',
+          full:           '{budget} {\'%\'}{percent} dolu',
+          budgetAlwaysOn: 'sürekli açık bütçe',
+          budgetFaas:     'FaaS bütçesi',
+          exceeded:       'bölgede olandan {value} fazla',
+          add:            'Node ekleyin: {\'%\'}{threshold} altında kalmak için en az {value}',
+          waiting:        'sürdürüldü, kapasite bekliyor',
+          more:           '+{count} tane daha',
+          alarm:          'Kapasite alarmı, yukarıdaki bütçelerde olduğu gibi bu değer {\'%\'}{warning} ya da {\'%\'}{critical}\'i geçince bölgenin sağlayıcısına bildirir.',
+          level: {
+            warning:  'Uyarı',
+            critical: 'Kritik',
+          },
+        },
       },
       config: {
         title:              'Ayarlar',

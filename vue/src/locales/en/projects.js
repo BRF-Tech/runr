@@ -330,5 +330,27 @@ export default {
     bannerHint:       'Its workloads do not run and it cannot be deployed until it is resumed.',
     bannerHintPlatform: 'Its workloads do not run and it cannot be deployed; only the platform can resume it.',
     deployBlocked:    'The project is stopped: resume it before deploying.',
+    // A resumed project that waits for capacity (capacity_waiting, CapacityWaitingBanner)
+    waiting: {
+      title:     'This project waits for capacity',
+      titleFits: 'This project can run again',
+      why: {
+        capacity_exceeded:         'Its stop gave its capacity in region {region} back, and other projects use it now: a deploy is refused until the region has room for it again.',
+        quota_exceeded:            'Its stop gave its share of the organization\'s quota in region {region} back, and other projects use it now: a deploy is refused until the quota has room for it again.',
+        fixed_allocation_exceeded: 'While it was stopped, other projects of the organization in region {region} took over its approved resources and still use them: both cannot run at the same time.',
+        fits:                      'It was resumed without a deployment, and region {region} has room for it now.',
+      },
+      short:     '{resource}: needs {needed}, {available} free — {missing} missing',
+      gpus:      'GPUs',
+      resource:  'Resource',
+      todo: {
+        capacity_exceeded:         'Deploy it once other projects free capacity, or ask the region\'s provider to add nodes.',
+        quota_exceeded:            'Stop or shrink other projects of the organization in this region, or ask the platform for a larger quota.',
+        fixed_allocation_exceeded: 'Scale those projects down or stop one of them, then deploy this one; or request more resources on the Billing tab.',
+        fits:                      'Deploy a version to run it again.',
+        other:                     'Deploy once the reason above is fixed.',
+      },
+      since:     'Waiting since {date}',
+    },
   },
 }

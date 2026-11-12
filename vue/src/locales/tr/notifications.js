@@ -7,6 +7,8 @@ export default {
     resourceCritical: 'Kritik Kaynak',
     cpuThreshold: '{region}: CPU {\'%\'}{percentage}',
     memoryThreshold: '{region}: Bellek {\'%\'}{percentage}',
+    cpuThresholdWithStopped: '{region}: durdurulmuş projelerle CPU {\'%\'}{percentage}',
+    memoryThresholdWithStopped: '{region}: durdurulmuş projelerle bellek {\'%\'}{percentage}',
     justNow: 'Az önce',
     minutesAgo: '{n} dk önce',
     hoursAgo: '{n}sa önce',

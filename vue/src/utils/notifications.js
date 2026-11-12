@@ -27,10 +27,13 @@ export function notificationTitle(n, t) {
   const reg  = d.region_name
 
   // ── Resource threshold ──────────────────────────────────────────────────────
+  // basis "with_stopped": the region with every stopped project resumed at once (its body says
+  // by how much and how much to add)
   if (type === 'resource_threshold') {
+    const withStopped = d.basis === 'with_stopped' ? 'WithStopped' : ''
     const key = d.resource_type === 'cpu'
-      ? 'notifications.cpuThreshold'
-      : 'notifications.memoryThreshold'
+      ? `notifications.cpuThreshold${withStopped}`
+      : `notifications.memoryThreshold${withStopped}`
     return t(key, { region: reg, percentage: d.percentage })
   }
 

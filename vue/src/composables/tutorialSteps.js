@@ -274,6 +274,8 @@ export function runtimeSourceSteps(t) {
 export function detailVersionsSteps(t) {
   return [
     { element: '[data-tour="project-header"]',  popover: { title: t('tutorial.detail.header'),   description: t('tutorial.detail.headerDesc') } },
+    // Shown while a resumed project waits for capacity (capacity_waiting): why, what it lacks, what to do
+    { element: '[data-tour="capacity-waiting-banner"]', popover: { title: t('tutorial.detail.capacityWaiting'), description: t('tutorial.detail.capacityWaitingDesc') } },
     // Shown while the project's runtime version is deprecated, ended, or its runtime left its source
     { element: '[data-tour="runtime-lifecycle-banner"]', popover: { title: t('tutorial.detail.runtimeLifecycle'), description: t('tutorial.detail.runtimeLifecycleDesc') } },
     // The row carries the target only while the role has an action on the project
@@ -308,6 +310,18 @@ export function detailMetricsSteps(t) {
     { element: '[data-tour="metrics-range"]',   popover: { title: t('tutorial.detail.metricsRange'),   description: t('tutorial.detail.metricsRangeDesc') } },
     { element: '[data-tour="metrics-summary"]',  popover: { title: t('tutorial.detail.metricsSummary'), description: t('tutorial.detail.metricsSummaryDesc') } },
     { element: '[data-tour="metrics-charts"]',   popover: { title: t('tutorial.detail.metricsCharts'),  description: t('tutorial.detail.metricsChartsDesc') } },
+  ]
+}
+
+// Region → Workers → Capacity (CapacityCard): its "?" starts it. The budgets, the region with its
+// stopped projects back (a stopped project holds no capacity of a pay-as-you-go region; the
+// capacity alarm watches this figure too), the overcommit factors (regions.manage: the step drops
+// for a read-only role)
+export function regionCapacitySteps(t) {
+  return [
+    { element: '[data-tour="region-capacity-budgets"]', popover: { title: t('tutorial.regionCapacity.budgets'), description: t('tutorial.regionCapacity.budgetsDesc') } },
+    { element: '[data-tour="region-capacity-stopped"]', popover: { title: t('tutorial.regionCapacity.stopped'), description: t('tutorial.regionCapacity.stoppedDesc', { warning: 60, critical: 80 }) } },
+    { element: '[data-tour="region-capacity-factors"]', popover: { title: t('tutorial.regionCapacity.factors'), description: t('tutorial.regionCapacity.factorsDesc') } },
   ]
 }
 
