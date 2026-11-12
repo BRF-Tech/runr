@@ -8,6 +8,24 @@ did not change says so.
 
 ## [Unreleased]
 
+## [0.6.11] - 2026-11-12
+
+### Upgrade notes
+
+- **A dependency release of 0.6.10: upgrading needs no step.** There is no database migration, the
+  images keep their names and nothing has to be set; only the dependency below changes. The CLI, the
+  Terraform provider and runr.sh stay those of 0.6.10. See
+  [docs/upgrade.md](docs/upgrade.md#0610--0611).
+
+### Changed
+
+- **Queue consumer Go modules moved** (minor and patch updates): github.com/dgryski/go-rendezvous
+  v0.0.0-20200823014737-9f7001d12a5f → none, github.com/jackc/pglogrepl
+  v0.0.0-20261003132456-662581bb6bb6 → v0.0.0-20261111174325-d50336b09c47, github.com/jackc/pgx/v5
+  v5.11.0 → v5.13.0, github.com/klauspost/compress v1.20.0 → v1.20.2, github.com/nats-io/nats.go
+  v1.54.0 → v1.55.0, github.com/nats-io/nkeys v0.4.16 → v0.4.17, github.com/redis/go-redis/v9 v9.7.3
+  → v9.23.0, go.uber.org/atomic none → v1.12.0. The release's images carry them.
+
 ## [0.6.10] - 2026-11-12
 
 ### Upgrade notes
@@ -4440,7 +4458,8 @@ Initial tagged release.
 - API gateways with routes, in-app notifications and support tickets.
 - Helm chart with a single-tenant / multi-tenant edition, an install form (`values.schema.json`), generated secrets and a Traefik ingress; a Docker Compose setup for development.
 
-[Unreleased]: https://github.com/brf-tech/runr/compare/v0.6.10...main
+[Unreleased]: https://github.com/brf-tech/runr/compare/v0.6.11...main
+[0.6.11]: https://github.com/brf-tech/runr/releases/tag/v0.6.11
 [0.6.10]: https://github.com/brf-tech/runr/releases/tag/v0.6.10
 [0.6.9]: https://github.com/brf-tech/runr/releases/tag/v0.6.9
 [0.6.8]: https://github.com/brf-tech/runr/releases/tag/v0.6.8

@@ -87,6 +87,25 @@ edit projects, deploy or change regions in that time: the previous version canno
 migration has just encrypted, shows env vars as empty and would save that. Its region status
 checks fail in that window and the new version's next check reports the region again.
 
+## 0.6.10 → 0.6.11
+
+0.6.11 is a dependency release of 0.6.10, made by the dependency test bot: it moves one dependency
+of a region and nothing else. There is no database migration, the images keep their names, and
+nothing has to be set ([Procedure](#procedure)). The CLI, the Terraform provider and runr.sh stay
+those of 0.6.10.
+
+- **Queue consumer Go modules moved** (minor and patch updates): github.com/dgryski/go-rendezvous
+  v0.0.0-20200823014737-9f7001d12a5f → none, github.com/jackc/pglogrepl
+  v0.0.0-20261003132456-662581bb6bb6 → v0.0.0-20261111174325-d50336b09c47, github.com/jackc/pgx/v5
+  v5.11.0 → v5.13.0, github.com/klauspost/compress v1.20.0 → v1.20.2, github.com/nats-io/nats.go
+  v1.54.0 → v1.55.0, github.com/nats-io/nkeys v0.4.16 → v0.4.17, github.com/redis/go-redis/v9 v9.7.3
+  → v9.23.0, go.uber.org/atomic none → v1.12.0. The release's images carry them.
+
+The bot ran these suites on this release before it was tagged: `runtime/test`, `runtime/ci.sh test`,
+`runtime/ci.sh test-helm-upgrade --from=v0.6.10`, `ci/deps-check.sh go:runtime/queue-consumer`,
+`ci/deps-check.sh image:runtime/queue-consumer/Dockerfile`
+([run](https://github.com/BRF-Tech/runr/actions/runs/43218823525)).
+
 ## 0.6.9 → 0.6.10
 
 0.6.10 is a security release of the internal network ([internal-network.md](internal-network.md)).
